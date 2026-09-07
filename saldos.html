@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Saldos del Sistema - Club del Dinero</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-100 font-sans text-sm h-screen flex flex-col overflow-x-hidden">
+
+    <!-- NAVEGACIÓN SUPERIOR -->
+    <header class="bg-white border-b border-slate-300 p-2 flex flex-wrap gap-2 items-center shadow-sm">
+        <a href="dashboard.html" class="bg-slate-500 text-white px-3 py-1 rounded hover:bg-slate-600 transition shadow-sm">
+            <i class="fas fa-arrow-left"></i> Volver
+        </a>
+        <a href="clientes.html" class="bg-cyan-500 text-white px-3 py-1 rounded shadow-sm hover:bg-cyan-600">Clientes</a>
+        <a href="depositos.html" class="bg-emerald-600 text-white px-3 py-1 rounded shadow-sm hover:bg-emerald-700">Depósitos</a>
+        <a href="retiros.html" class="bg-red-500 text-white px-3 py-1 rounded shadow-sm hover:bg-red-600">Retiros</a>
+        <a href="transferencias.html" class="bg-amber-500 text-white px-3 py-1 rounded shadow-sm hover:bg-amber-600">Transferencias</a>
+        <a href="taquilla.html" class="bg-blue-600 text-white px-3 py-1 rounded shadow-sm hover:bg-blue-700">Apuestas</a>
+        <span class="bg-slate-900 text-white px-3 py-1 rounded shadow-sm font-medium">Reportes de Cierre</span>
+    </header>
+
+    <main class="p-4 flex-1 overflow-y-auto space-y-6 max-w-7xl mx-auto w-full">
+        
+        <h1 class="text-2xl font-bold text-slate-800"><i class="fas fa-balance-scale text-slate-700 mr-2"></i> Saldos del Sistema</h1>
+
+        <!-- BOTONERA -->
+        <div class="flex flex-wrap gap-2">
+            <button id="btnAbrirCero" class="bg-red-600 text-white px-4 py-2 rounded shadow-sm hover:bg-red-700 text-xs font-bold transition-colors">
+                <i class="fas fa-paint-brush mr-1"></i> Saldos en Cero
+            </button>
+            <button id="btnAbrirMasiva" class="bg-cyan-600 text-white px-4 py-2 rounded shadow-sm hover:bg-cyan-700 text-xs font-bold transition-colors">
+                <i class="fas fa-file-upload mr-1"></i> Carga Masiva
+            </button>
+        </div>
+
+        <!-- SECCIÓN 1: SALDO DE CLIENTES -->
+        <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+            <div class="p-4 border-b border-slate-200 flex flex-wrap justify-between items-center gap-4">
+                <h2 class="text-lg font-bold text-slate-800">Saldo de Clientes (USD)</h2>
+                <div class="flex gap-2">
+                    <button id="btnReporteWhatsapp" class="bg-emerald-700 text-white px-3 py-1.5 rounded shadow-sm hover:bg-emerald-800 text-xs font-bold flex items-center transition-colors">
+                        <i class="fab fa-whatsapp mr-1 text-base"></i> Reporte WhatsApp Clientes
+                    </button>
+                </div>
+            </div>
+            <div class="p-4">
+                <div class="flex justify-between items-center mb-3 text-xs">
+                    <label>Buscar: <input type="text" id="buscadorClientes" class="border border-slate-300 rounded px-2 py-1 outline-none focus:border-blue-500"></label>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs text-left border border-slate-200">
+                        <thead class="bg-slate-900 text-white">
+                            <tr>
+                                <th class="p-3 border-r border-slate-700">Cliente ↕</th>
+                                <th class="p-3 border-r border-slate-700 text-right">Saldo ↕</th>
+                                <th class="p-3 border-r border-slate-700 text-right text-amber-400">Aval ↕</th>
+                                <th class="p-3 text-center">Editar ↕</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cuerpoTablaClientes" class="divide-y divide-slate-200 text-slate-800 font-medium">
+                            <tr><td colspan="4" class="p-6 text-center text-slate-500">Cargando saldos...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECCIÓN 2: SALDO DE BANCOS -->
+        <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+            <div class="p-4 border-b border-slate-200 flex flex-wrap justify-between items-center gap-4">
+                <h2 class="text-lg font-bold text-slate-800">Saldo de Bancos por Moneda y en USD</h2>
+            </div>
+            <div class="p-4">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs text-left border border-slate-200">
+                        <thead class="bg-slate-900 text-white">
+                            <tr>
+                                <th class="p-3 border-r border-slate-700">Banco</th>
+                                <th class="p-3 border-r border-slate-700">Moneda</th>
+                                <th class="p-3 border-r border-slate-700 text-right">Saldo Sistema</th>
+                                <th class="p-3 text-center">Conciliar / Ajustar</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cuerpoTablaBancos" class="divide-y divide-slate-200 font-bold">
+                            <tr><td colspan="4" class="p-6 text-center text-slate-500">Cargando bancos...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ==========================================
+         MODALES ADMINISTRATIVOS Y DE REPORTE
+         ========================================== -->
+
+    <!-- Modal 1: Edición de Saldo / Aval Individual -->
+    <div id="modalEditarSaldo" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden border border-slate-200 flex flex-col">
+            <div id="modalHeaderBg" class="bg-orange-500 p-3 flex justify-between items-center text-white font-bold shrink-0">
+                <span id="modalTitulo"><i class="fas fa-pencil-alt mr-2"></i> Editar...</span>
+                <button class="cerrar-modal hover:text-slate-200"><i class="fas fa-times text-lg"></i></button>
+            </div>
+            <div class="p-6 space-y-4 text-xs">
+                <div>
+                    <p class="text-slate-500 font-medium">Saldo actual:</p>
+                    <p id="lblSaldoActual" class="text-xl font-bold text-blue-600">$0.00</p>
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Nuevo Monto (USD)</label>
+                    <input type="number" step="0.01" id="inputNuevoSaldo" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1"><i class="fas fa-university text-slate-500 mr-1"></i> Banco contraparte *</label>
+                    <select id="selectBancoAjuste" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none bg-white font-medium">
+                        <option value="">— Selecciona banco —</option>
+                    </select>
+                    <p class="text-[10px] text-slate-400 mt-1">El dinero sumado o restado afectará a este banco para mantener la contabilidad cuadrada.</p>
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Nota del ajuste (opcional)</label>
+                    <input type="text" id="inputNotaAjuste" placeholder="Ej: Corrección de transferencia..." class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-blue-500">
+                </div>
+            </div>
+            <div class="p-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 text-xs shrink-0">
+                <button class="cerrar-modal bg-slate-500 text-white px-4 py-2 rounded font-medium hover:bg-slate-600 transition-colors">Cancelar</button>
+                <button id="btnGuardarAjuste" class="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700 transition-colors shadow-sm"><i class="fas fa-save mr-1"></i> Ejecutar Ajuste</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 2: Poner Saldos en Cero -->
+    <div id="modalCero" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden border border-slate-200">
+            <div class="bg-red-600 p-3 flex justify-between items-center text-white font-bold">
+                <span class="flex items-center"><i class="fas fa-exclamation-triangle mr-2"></i> Poner Saldos en Cero</span>
+                <button class="cerrar-modal hover:text-slate-200"><i class="fas fa-times text-lg"></i></button>
+            </div>
+            <div class="p-6 space-y-4 text-xs">
+                <div class="bg-amber-50 border border-amber-200 text-amber-900 p-3 rounded leading-relaxed shadow-sm">
+                    <strong>⚠️ ATENCIÓN:</strong> Esta operación pondrá en cero los saldos de las billeteras.<br>
+                    <strong>NO se borran movimientos históricos</strong>, solo se resetean los saldos actuales para iniciar una nueva semana.<br>
+                    Esta acción <strong>NO SE PUEDE DESHACER</strong>.
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Para confirmar, escribe la palabra <span class="text-red-600">CONFIRMAR</span> en mayúsculas:</label>
+                    <input type="text" id="inputConfirmarCero" placeholder="Escribe CONFIRMAR" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-red-500 font-bold text-red-600 uppercase">
+                </div>
+            </div>
+            <div class="p-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 text-xs">
+                <button class="cerrar-modal bg-slate-500 text-white px-4 py-2 rounded font-medium hover:bg-slate-600 transition-colors">Cancelar</button>
+                <button id="btnEjecutarCero" class="bg-red-600 text-white px-4 py-2 rounded font-bold hover:bg-red-700 shadow-sm transition-colors"><i class="fas fa-trash-alt mr-1"></i> Poner en cero</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 3: Carga Masiva -->
+    <div id="modalMasiva" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden border border-slate-200">
+            <div class="bg-cyan-600 p-3 flex justify-between items-center text-white font-bold">
+                <span class="flex items-center"><i class="fas fa-file-upload mr-2"></i> Carga Masiva de Saldos</span>
+                <button class="cerrar-modal hover:text-slate-200"><i class="fas fa-times text-lg"></i></button>
+            </div>
+            <div class="p-6 space-y-4 text-xs">
+                <div class="bg-sky-50 border border-sky-200 text-sky-900 p-3 rounded">
+                    <i class="fas fa-info-circle text-blue-500 mr-1"></i> <strong>Cómo funciona:</strong> Pega el texto con la lista de clientes y montos (separados por espacio o tabulador). <br>
+                    Positivo = Se suma saldo (Depósito) | Negativo = Se resta saldo (Retiro).
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Banco contraparte (afectado):</label>
+                    <select id="selectBancoMasiva" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-cyan-500 font-medium"></select>
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Nota (opcional):</label>
+                    <input type="text" id="notaMasiva" placeholder="Ej: Cierre de semana anterior" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                </div>
+                <div>
+                    <textarea id="textoCargaMasiva" placeholder="Pega aqui las líneas. Formato: NOMBRE MONTO&#10;Ejemplos:&#10;EDDIE -140.00&#10;CLUB 204.25" class="w-full h-40 border border-slate-300 rounded p-3 text-sm font-mono outline-none focus:border-cyan-500 resize-none"></textarea>
+                </div>
+            </div>
+            <div class="p-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 text-xs">
+                <button class="cerrar-modal bg-slate-500 text-white px-4 py-2 rounded font-medium hover:bg-slate-600">Cancelar</button>
+                <button id="btnProcesarMasiva" class="bg-cyan-600 text-white px-4 py-2 rounded font-bold hover:bg-cyan-700 shadow-sm transition-colors"><i class="fas fa-bolt mr-1"></i> Ejecutar Carga Masiva</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 4: Exportar Reporte WhatsApp -->
+    <div id="modalWhatsapp" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden border border-slate-200">
+            <div class="p-4 flex flex-col gap-2 relative">
+                <div class="flex justify-between items-center mb-2">
+                    <div class="flex items-center text-emerald-600 font-bold text-sm">
+                        <i class="fas fa-check-square mr-2"></i> Reporte Generado
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="btnCopiarTexto" class="bg-emerald-700 text-white px-3 py-1 rounded shadow text-xs hover:bg-emerald-800 transition-colors"><i class="fas fa-copy mr-1"></i> Copiar</button>
+                        <button class="cerrar-modal bg-white border border-slate-300 text-slate-600 px-3 py-1 rounded shadow text-xs hover:bg-slate-50"><i class="fas fa-times mr-1"></i> Cerrar</button>
+                    </div>
+                </div>
+                <textarea id="textoWhatsapp" readonly class="w-full h-64 border border-emerald-200 bg-emerald-50 rounded p-3 text-sm font-mono text-slate-800 outline-none resize-none shadow-inner"></textarea>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/conexion.js"></script>
+    <script src="js/saldos.js"></script>
+</body>
+</html>

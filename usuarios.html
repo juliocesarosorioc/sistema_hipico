@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Usuarios - Club del Dinero</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-100 font-sans p-6">
+
+    <!-- Encabezado del Módulo -->
+    <div class="flex justify-between items-center mb-6">
+        <div class="flex items-center gap-4">
+            <!-- Botón Volver -->
+            <a href="dashboard.html" class="bg-white border border-slate-300 text-slate-700 px-3 py-1 rounded shadow-sm hover:bg-slate-50 transition-colors text-sm">
+                <i class="fas fa-arrow-left mr-1"></i> Volver
+            </a>
+            <h1 class="text-2xl font-bold text-slate-800">
+                <i class="fas fa-users text-indigo-800 mr-2"></i> Panel de Usuarios
+            </h1>
+        </div>
+        <!-- Botón Agregar -->
+        <button id="btnAbrirModal" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded shadow-sm font-medium transition-colors text-sm">
+            <i class="fas fa-plus mr-1"></i> Agregar Usuario
+        </button>
+    </div>
+
+    <!-- ==========================================
+         TABLA 1: GESTIÓN DE USUARIOS
+         ========================================== -->
+    <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-x-auto mb-8">
+        <table class="w-full text-sm text-left">
+            <thead class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                <tr>
+                    <th class="px-4 py-3">ID</th>
+                    <th class="px-4 py-3">Usuario</th>
+                    <th class="px-4 py-3">Rol</th>
+                    <th class="px-4 py-3">Estado</th>
+                    <th class="px-4 py-3">Sesión</th>
+                    <th class="px-4 py-3">Última IP</th>
+                    <th class="px-4 py-3">Ubicación</th>
+                    <th class="px-4 py-3 text-center">Acciones</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                <!-- Fila 1: Administrador -->
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="px-4 py-3 text-slate-500">2</td>
+                    <td class="px-4 py-3 font-medium text-slate-800">Jorge_Argentina</td>
+                    <td class="px-4 py-3 text-slate-600">Administrador</td>
+                    <td class="px-4 py-3">
+                        <span class="bg-green-500 text-white text-xs px-2 py-1 rounded mr-1"><i class="fas fa-check mr-1"></i>Activo</span>
+                        <span class="bg-green-500 text-white text-xs px-2 py-1 rounded"><i class="fas fa-check mr-1"></i>OK</span>
+                    </td>
+                    <td class="px-4 py-3"><span class="bg-slate-400 text-white text-xs px-2 py-1 rounded-full"><i class="fas fa-circle text-[8px] mr-1"></i>Sin sesión</span></td>
+                    <td class="px-4 py-3 text-slate-600">186.165.214.176</td>
+                    <td class="px-4 py-3 text-xs text-slate-500">
+                        <div class="bg-slate-500 text-white px-1 rounded inline-block mb-1">Venezuela</div><br>Barquisimeto
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        <!-- Botón de Mapa con parámetro de IP -->
+                        <button class="btn-mapa bg-cyan-100 text-cyan-700 border border-cyan-300 px-2 py-1 rounded text-xs hover:bg-cyan-200" data-ip="186.165.214.176"><i class="fas fa-map"></i> Ver</button>
+                    </td>
+                    <td class="px-4 py-3 flex gap-1 justify-center">
+                        <!-- Botones de Acción con parámetros de ID y Usuario -->
+                        <button class="btn-editar bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600 shadow-sm" data-id="2" data-usuario="Jorge_Argentina"><i class="fas fa-pencil-alt"></i> Editar</button>
+                        <button class="btn-reset bg-yellow-400 text-slate-800 px-2 py-1 rounded text-xs hover:bg-yellow-500 shadow-sm" data-id="2" data-usuario="Jorge_Argentina"><i class="fas fa-sync-alt"></i> Reset</button>
+                        <button class="btn-clave bg-slate-800 text-white px-2 py-1 rounded text-xs hover:bg-slate-900 shadow-sm" data-id="2" data-usuario="Jorge_Argentina"><i class="fas fa-lock"></i> Clave</button>
+                        <button class="btn-eliminar bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600 shadow-sm" data-id="2" data-usuario="Jorge_Argentina"><i class="fas fa-trash"></i> Eliminar</button>
+                    </td>
+                </tr>
+
+                <!-- Fila 2: Operador (Con sesión activa y botón expulsar) -->
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="px-4 py-3 text-slate-500">4</td>
+                    <td class="px-4 py-3 font-medium text-slate-800">Dinero_Argentina</td>
+                    <td class="px-4 py-3 text-slate-600">Administrador</td>
+                    <td class="px-4 py-3">
+                        <span class="bg-green-500 text-white text-xs px-2 py-1 rounded mr-1"><i class="fas fa-check mr-1"></i>Activo</span>
+                    </td>
+                    <td class="px-4 py-3"><span class="bg-green-500 text-white text-xs px-2 py-1 rounded-full animate-pulse"><i class="fas fa-circle text-[8px] mr-1"></i>Activa</span></td>
+                    <td class="px-4 py-3 text-slate-600">135.136.5.209</td>
+                    <td class="px-4 py-3 text-xs text-slate-500">
+                        <div class="bg-slate-500 text-white px-1 rounded inline-block mb-1">Estados Unidos</div><br>Miami
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        <button class="btn-mapa bg-cyan-100 text-cyan-700 border border-cyan-300 px-2 py-1 rounded text-xs hover:bg-cyan-200" data-ip="135.136.5.209"><i class="fas fa-map"></i> Ver</button>
+                    </td>
+                    <td class="px-4 py-3 flex gap-1 justify-center">
+                        <button class="btn-editar bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600 shadow-sm" data-id="4" data-usuario="Dinero_Argentina"><i class="fas fa-pencil-alt"></i> Editar</button>
+                        <button class="btn-reset bg-yellow-400 text-slate-800 px-2 py-1 rounded text-xs hover:bg-yellow-500 shadow-sm" data-id="4" data-usuario="Dinero_Argentina"><i class="fas fa-sync-alt"></i> Reset</button>
+                        <button class="btn-clave bg-slate-800 text-white px-2 py-1 rounded text-xs hover:bg-slate-900 shadow-sm" data-id="4" data-usuario="Dinero_Argentina"><i class="fas fa-lock"></i> Clave</button>
+                        <button class="btn-expulsar bg-cyan-500 text-white px-2 py-1 rounded text-xs hover:bg-cyan-600 shadow-sm" data-id="4" data-usuario="Dinero_Argentina"><i class="fas fa-sign-out-alt"></i> Expulsar</button>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ==========================================
+         TABLA 2: MONITOREO DE SEGURIDAD
+         ========================================== -->
+    <div class="bg-amber-50 rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+        <!-- Encabezado rojo de advertencia -->
+        <div class="bg-red-600 text-white px-4 py-2 flex justify-between items-center">
+            <h2 class="font-bold text-sm"><i class="fas fa-siren-on mr-2"></i> Monitoreo de Intentos Fallidos — Últimas 24 horas</h2>
+            <span class="bg-white text-red-600 text-xs font-bold px-2 py-1 rounded">4 IPs</span>
+        </div>
+        <table class="w-full text-sm text-left">
+            <thead class="bg-slate-800 text-slate-200 border-b border-slate-700">
+                <tr>
+                    <th class="px-4 py-2">IP</th>
+                    <th class="px-4 py-2">País</th>
+                    <th class="px-4 py-2">Ciudad</th>
+                    <th class="px-4 py-2">Intentos</th>
+                    <th class="px-4 py-2">Último Intento</th>
+                    <th class="px-4 py-2 text-center">Acción</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-amber-200">
+                <!-- Fila de Fallo -->
+                <tr class="hover:bg-amber-100 transition-colors">
+                    <td class="px-4 py-2 font-bold text-slate-800">23.82.141.135</td>
+                    <td class="px-4 py-2"><span class="bg-slate-500 text-white text-xs px-2 rounded">Estados Unidos</span></td>
+                    <td class="px-4 py-2 text-slate-600">Miami</td>
+                    <td class="px-4 py-2"><span class="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded shadow-sm">2 fallos</span></td>
+                    <td class="px-4 py-2 font-mono text-xs text-slate-600">2026-09-01 17:23:57</td>
+                    <td class="px-4 py-2 text-center">
+                        <button class="btn-mapa bg-cyan-100 text-cyan-700 border border-cyan-300 px-2 py-1 rounded text-xs hover:bg-cyan-200 mr-1" data-ip="23.82.141.135"><i class="fas fa-map"></i> Ver</button>
+                        <button class="btn-limpiar bg-emerald-600 text-white px-3 py-1 rounded text-xs hover:bg-emerald-700 shadow-sm" data-ip="23.82.141.135"><i class="fas fa-broom mr-1"></i> Limpiar</button>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+<!-- ==========================================
+         MODAL: AGREGAR NUEVO USUARIO (Oculto por defecto)
+         ========================================== -->
+    <!-- El id 'modalAgregarUsuario' nos permite controlarlo con JavaScript. 
+         'hidden' hace que no se vea hasta que demos la orden. -->
+    <div id="modalAgregarUsuario" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 z-50 flex items-center justify-center p-4">
+        
+        <!-- Esta es la caja blanca del formulario -->
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            
+            <!-- Cabecera del Modal -->
+            <div class="flex justify-between items-center p-4 border-b border-slate-200">
+                <h2 class="text-lg font-bold text-slate-800">Agregar Usuario</h2>
+                <!-- Botón X para cerrar -->
+                <button type="button" class="btn-cerrar-modal text-slate-400 hover:text-slate-600 transition-colors">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+
+            <!-- Cuerpo del Formulario -->
+            <form id="formularioNuevoUsuario" class="p-6 space-y-4">
+                
+                <!-- Campo: Usuario -->
+                <div>
+                    <label for="nuevoUsuario" class="block text-sm text-slate-700 mb-1">Usuario</label>
+                    <input type="text" id="nuevoUsuario" required
+                        class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                </div>
+
+                <!-- Campo: Contraseña -->
+                <div>
+                    <label for="nuevaClave" class="block text-sm text-slate-700 mb-1">Contraseña</label>
+                    <input type="password" id="nuevaClave" required
+                        class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                </div>
+
+                <!-- Campo: Rol (Lista desplegable) -->
+                <div>
+                    <label for="nuevoRol" class="block text-sm text-slate-700 mb-1">Rol</label>
+                    <!-- La etiqueta <select> crea el menú desplegable -->
+                    <select id="nuevoRol" class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:border-blue-500 bg-white">
+                        <option value="Administrador">Administrador</option>
+                        <option value="Supervisor">Supervisor</option>
+                        <option value="Operador">Operador</option>
+                        <option value="Basico">Basico</option>
+                        <option value="Consulta">Consulta</option>
+                        <option value="Socio">Socio</option>
+                        <option value="Enlace">Enlace</option>
+                    </select>
+                </div>
+
+                <!-- Campos: Checkboxes de Estado -->
+                <div class="space-y-2 pt-2">
+                    <label class="flex items-center cursor-pointer">
+                        <input type="checkbox" id="checkActivo" checked class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500">
+                        <span class="ml-2 text-sm text-slate-700">Activo</span>
+                    </label>
+                    <label class="flex items-center cursor-pointer">
+                        <input type="checkbox" id="checkBloqueado" class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500">
+                        <span class="ml-2 text-sm text-slate-700">Bloqueado</span>
+                    </label>
+                </div>
+
+                <!-- Pie del Formulario (Botones) -->
+                <div class="flex justify-end gap-2 pt-4 border-t border-slate-100 mt-6">
+                    <button type="button" class="btn-cerrar-modal bg-slate-500 hover:bg-slate-600 text-white px-4 py-2 rounded text-sm transition-colors">
+                        Cerrar
+                    </button>
+                    <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
+                        Guardar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- Enlace a la lógica segmentada de este módulo -->
+    <script src="js/usuarios.js"></script>
+</body>
+</html>

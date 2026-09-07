@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auditoría del Sistema - Club del Dinero</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-100 font-sans text-sm h-screen flex flex-col overflow-x-hidden">
+
+    <!-- NAVEGACIÓN MINIMALISTA (Estilo captura) -->
+    <header class="bg-white border-b border-slate-300 p-2 flex gap-2 items-center shadow-sm">
+        <a href="dashboard.html" class="bg-slate-500 text-white px-3 py-1.5 rounded hover:bg-slate-600 transition shadow-sm font-medium flex items-center">
+            <i class="fas fa-arrow-left mr-2"></i> Inicio
+        </a>
+        <a href="taquilla.html" class="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded hover:bg-slate-50 shadow-sm font-medium">
+            Apuestas
+        </a>
+    </header>
+
+    <main class="p-4 flex-1 overflow-y-auto space-y-4 max-w-[1600px] mx-auto w-full">
+        
+        <!-- BANNER PRINCIPAL DE AUDITORÍA -->
+        <div class="bg-slate-800 text-white p-6 rounded-lg shadow-sm flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold flex items-center"><i class="fas fa-search mr-3 text-blue-400"></i> Auditoría del Sistema</h1>
+                <p class="text-slate-400 text-xs mt-1">Dream America — Registro de todas las acciones</p>
+            </div>
+            <div class="text-right">
+                <span class="text-4xl font-bold">58</span>
+                <p class="text-slate-400 text-xs">registros encontrados</p>
+            </div>
+        </div>
+
+        <!-- TARJETAS DE MÉTRICAS (STATS) -->
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            <div class="bg-white p-3 rounded border border-slate-200 shadow-sm">
+                <p class="text-[10px] font-bold text-slate-500 uppercase">Clientes</p>
+                <p class="text-xl font-bold text-emerald-600">28</p>
+            </div>
+            <div class="bg-white p-3 rounded border border-slate-200 shadow-sm">
+                <p class="text-[10px] font-bold text-slate-500 uppercase">Carreras_WPS</p>
+                <p class="text-xl font-bold text-slate-800">8</p>
+            </div>
+            <div class="bg-white p-3 rounded border border-slate-200 shadow-sm">
+                <p class="text-[10px] font-bold text-slate-500 uppercase">Depositos</p>
+                <p class="text-xl font-bold text-slate-800">3</p>
+            </div>
+            <div class="bg-white p-3 rounded border border-slate-200 shadow-sm">
+                <p class="text-[10px] font-bold text-slate-500 uppercase">Auditoria</p>
+                <p class="text-xl font-bold text-slate-800">3</p>
+            </div>
+            <div class="bg-white p-3 rounded border border-slate-200 shadow-sm">
+                <p class="text-[10px] font-bold text-slate-500 uppercase">Transferencias</p>
+                <p class="text-xl font-bold text-slate-800">3</p>
+            </div>
+            <div class="bg-white p-3 rounded border border-slate-200 shadow-sm">
+                <p class="text-[10px] font-bold text-slate-500 uppercase">Apuestas</p>
+                <p class="text-xl font-bold text-blue-600">2</p>
+            </div>
+            <div class="bg-white p-3 rounded border border-slate-200 shadow-sm">
+                <p class="text-[10px] font-bold text-slate-500 uppercase">Cierre</p>
+                <p class="text-xl font-bold text-red-600">2</p>
+            </div>
+            <div class="bg-white p-3 rounded border border-slate-200 shadow-sm">
+                <p class="text-[10px] font-bold text-slate-500 uppercase">Login</p>
+                <p class="text-xl font-bold text-slate-800">2</p>
+            </div>
+            <div class="bg-white p-3 rounded border border-slate-200 shadow-sm lg:col-span-2 flex items-center gap-3">
+                <i class="fas fa-user-shield text-slate-400 text-2xl"></i>
+                <div>
+                    <p class="text-[10px] font-bold text-slate-500 uppercase">Dinero_Argentina</p>
+                    <p class="text-lg font-bold text-slate-800">58 acciones</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- BARRA DE FILTROS -->
+        <div class="bg-white p-4 rounded border border-slate-200 shadow-sm">
+            <form id="formFiltrosAuditoria" class="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1"><i class="far fa-calendar-alt text-blue-500 mr-1"></i> Desde</label>
+                    <input type="date" id="filtroDesde" value="2026-09-02" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1"><i class="far fa-calendar-alt text-blue-500 mr-1"></i> Hasta</label>
+                    <input type="date" id="filtroHasta" value="2026-09-02" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1"><i class="fas fa-box text-amber-600 mr-1"></i> Módulo</label>
+                    <select id="filtroModulo" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500 bg-white">
+                        <option value="">Todos</option>
+                        <option value="AUDITORIA">AUDITORIA</option>
+                        <option value="CARRERAS_WPS">CARRERAS_WPS</option>
+                        <option value="REMATES">REMATES</option>
+                        <option value="LOGIN">LOGIN</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1"><i class="fas fa-user text-purple-500 mr-1"></i> Usuario</label>
+                    <input type="text" id="filtroUsuario" placeholder="Nombre..." class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1"><i class="fas fa-bolt text-orange-500 mr-1"></i> Acción</label>
+                    <input type="text" id="filtroAccion" placeholder="Buscar acción..." class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500">
+                </div>
+                <div class="flex gap-2">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-slate-600 mb-1"><i class="fas fa-globe text-emerald-500 mr-1"></i> IP</label>
+                        <input type="text" id="filtroIP" placeholder="IP..." class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500">
+                    </div>
+                    <button type="submit" class="bg-blue-600 text-white px-4 py-1.5 rounded font-bold shadow hover:bg-blue-700 transition-colors h-[34px] self-end"><i class="fas fa-search mr-1"></i> Filtrar</button>
+                </div>
+            </form>
+
+            <!-- Botones Rápidos de Fecha -->
+            <div class="flex gap-2 mt-4 text-xs">
+                <button type="button" id="btnLimpiarFiltros" class="border border-slate-300 text-slate-600 px-3 py-1 rounded hover:bg-slate-50"><i class="fas fa-times text-slate-400 mr-1"></i> Limpiar filtros</button>
+                <button type="button" class="btn-fecha-rapida border border-blue-300 text-blue-600 px-3 py-1 rounded hover:bg-blue-50" data-rango="hoy"><i class="far fa-calendar text-blue-400 mr-1"></i> Hoy</button>
+                <button type="button" class="btn-fecha-rapida border border-blue-300 text-blue-600 px-3 py-1 rounded hover:bg-blue-50" data-rango="7dias"><i class="far fa-calendar-alt text-blue-400 mr-1"></i> Últimos 7 días</button>
+                <button type="button" class="btn-fecha-rapida border border-blue-300 text-blue-600 px-3 py-1 rounded hover:bg-blue-50" data-rango="mes"><i class="far fa-calendar-check text-blue-400 mr-1"></i> Este mes</button>
+            </div>
+        </div>
+
+        <!-- TABLA DE LOGS -->
+        <div class="bg-white rounded shadow-sm border border-slate-200 overflow-hidden">
+            <div class="bg-slate-800 p-2 flex justify-between items-center text-white text-xs font-bold">
+                <span><i class="fas fa-list-alt mr-2 text-blue-400"></i> Registros de Auditoría</span>
+                <span class="text-slate-300 font-normal">Mostrando 50 de 58 — Página 1 de 2</span>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs text-left whitespace-nowrap">
+                    <thead class="bg-slate-900 text-white">
+                        <tr>
+                            <th class="p-3 w-10">#</th>
+                            <th class="p-3">FECHA / HORA</th>
+                            <th class="p-3">USUARIO</th>
+                            <th class="p-3">MÓDULO</th>
+                            <th class="p-3">ACCIÓN</th>
+                            <th class="p-3">IP</th>
+                            <th class="p-3">UBICACIÓN</th>
+                            <th class="p-3">NAVEGADOR</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200 text-slate-700">
+                        <tr class="hover:bg-slate-50">
+                            <td class="p-3 text-slate-400">157</td>
+                            <td class="p-3 font-bold">02/09/2026<br><span class="text-[10px] font-normal text-slate-500">16:26:52</span></td>
+                            <td class="p-3 font-bold text-slate-900">Dinero_Argentina</td>
+                            <td class="p-3"><span class="bg-slate-600 text-white px-2 py-0.5 rounded-full text-[10px] font-bold">AUDITORIA</span></td>
+                            <td class="p-3">acceso_auditoria</td>
+                            <td class="p-3 font-mono text-[11px]">135.136.5.206</td>
+                            <td class="p-3 text-slate-400">—</td>
+                            <td class="p-3 text-slate-400 truncate max-w-[200px]" title="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36...">Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWe...</td>
+                        </tr>
+                        <tr class="hover:bg-slate-50">
+                            <td class="p-3 text-slate-400">156</td>
+                            <td class="p-3 font-bold">02/09/2026<br><span class="text-[10px] font-normal text-slate-500">16:11:24</span></td>
+                            <td class="p-3 font-bold text-slate-900">Dinero_Argentina</td>
+                            <td class="p-3"><span class="bg-slate-600 text-white px-2 py-0.5 rounded-full text-[10px] font-bold">REMATES</span></td>
+                            <td class="p-3">remate_creado: id=1 nombre=REMATE VIP INSTITUCIONAL</td>
+                            <td class="p-3 font-mono text-[11px]">135.136.5.209</td>
+                            <td class="p-3 text-slate-400">—</td>
+                            <td class="p-3 text-slate-400 truncate max-w-[200px]" title="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36...">Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWe...</td>
+                        </tr>
+                        <tr class="hover:bg-slate-50">
+                            <td class="p-3 text-slate-400">153</td>
+                            <td class="p-3 font-bold">02/09/2026<br><span class="text-[10px] font-normal text-slate-500">15:49:57</span></td>
+                            <td class="p-3 font-bold text-slate-900">Dinero_Argentina</td>
+                            <td class="p-3"><span class="bg-slate-600 text-white px-2 py-0.5 rounded-full text-[10px] font-bold">CARRERAS_WPS</span></td>
+                            <td class="p-3">house_configurado: pct=0 modalidad=perdidas</td>
+                            <td class="p-3 font-mono text-[11px]">135.136.5.209</td>
+                            <td class="p-3 text-slate-400">—</td>
+                            <td class="p-3 text-slate-400 truncate max-w-[200px]" title="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36...">Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWe...</td>
+                        </tr>
+                        <tr class="hover:bg-slate-50">
+                            <td class="p-3 text-slate-400">144</td>
+                            <td class="p-3 font-bold">02/09/2026<br><span class="text-[10px] font-normal text-slate-500">14:56:52</span></td>
+                            <td class="p-3 font-bold text-slate-900">Dinero_Argentina</td>
+                            <td class="p-3"><span class="bg-slate-600 text-white px-2 py-0.5 rounded-full text-[10px] font-bold">LOGIN</span></td>
+                            <td class="p-3 text-emerald-600 font-medium">Login exitoso desde Desconocida, Desconocido</td>
+                            <td class="p-3 font-mono text-[11px]">135.136.5.209</td>
+                            <td class="p-3 text-slate-400">—</td>
+                            <td class="p-3 text-slate-400 truncate max-w-[200px]" title="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36...">Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWe...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- 1. Tecnología Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- 2. Puente de conexión -->
+    <script src="js/conexion.js"></script>
+    <!-- 3. Lógica del módulo -->
+    <script src="js/auditoria.js"></script>
+</body>
+</html>

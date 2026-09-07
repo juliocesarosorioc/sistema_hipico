@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Transferencias - Club del Dinero</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-amber-50 font-sans text-sm h-screen flex flex-col overflow-x-hidden">
+
+    <!-- NAVEGACIÓN SUPERIOR -->
+    <header class="bg-white border-b border-slate-300 p-2 flex flex-wrap gap-2 items-center shadow-sm">
+        <a href="dashboard.html" class="bg-slate-500 text-white px-3 py-1 rounded hover:bg-slate-600 transition shadow-sm">
+            <i class="fas fa-arrow-left"></i> Volver
+        </a>
+        <a href="clientes.html" class="bg-cyan-500 text-white px-3 py-1 rounded shadow-sm hover:bg-cyan-600">Clientes</a>
+        <a href="depositos.html" class="bg-emerald-600 text-white px-3 py-1 rounded shadow-sm hover:bg-emerald-700">Depósitos</a>
+        <a href="retiros.html" class="bg-red-500 text-white px-3 py-1 rounded shadow-sm hover:bg-red-600">Retiros</a>
+        <a href="taquilla.html" class="bg-blue-600 text-white px-3 py-1 rounded shadow-sm hover:bg-blue-700">Apuestas</a>
+        <a href="saldos.html" class="bg-slate-800 text-white px-3 py-1 rounded shadow-sm hover:bg-slate-900">Saldos/Reportes</a>
+    </header>
+
+    <main class="p-4 flex-1 overflow-y-auto">
+        <!-- CABECERA DE MÓDULO -->
+        <div class="bg-white p-3 rounded-lg shadow-sm border border-slate-200 mb-3 flex justify-between items-center text-slate-800">
+            <h1 class="text-lg font-bold"><i class="fas fa-exchange-alt text-blue-500 mr-2"></i> Gestión de Transferencias</h1>
+            <span class="text-xs text-slate-500" id="fechaHeader">Cargando...</span>
+        </div>
+
+        <!-- BARRA DE FILTROS Y HERRAMIENTAS -->
+        <div class="bg-white p-3 rounded-lg shadow-sm border border-slate-200 mb-4 flex flex-wrap items-center gap-4 text-xs">
+            <div class="flex items-center gap-2">
+                <i class="far fa-calendar-alt text-blue-500"></i>
+                <span class="font-bold text-slate-700">Fecha:</span>
+                <input type="date" id="filtroFecha" class="border border-slate-300 rounded px-2 py-1 outline-none focus:border-orange-500">
+                <button class="border border-slate-300 bg-slate-50 px-3 py-1 rounded hover:bg-slate-100">Ver</button>
+            </div>
+            
+            <button id="btnSaldosWhatsapp" class="bg-purple-600 text-white px-4 py-1.5 rounded shadow-sm hover:bg-purple-700 font-bold">
+                <i class="fas fa-money-bag mr-1"></i> Saldos Clientes
+            </button>
+
+            <div class="flex items-center gap-3 border-l border-slate-300 pl-4">
+                <span class="font-bold text-slate-700">Saldos:</span>
+                <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked class="text-orange-500"> Iconos ✅/⚠️</label>
+                <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="filtroSaldo" class="text-blue-500" checked> Todos</label>
+                <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="filtroSaldo" class="text-blue-500"> ≥ $1</label>
+                <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="filtroSaldo" class="text-blue-500"> ≥ $1 + libres con movimiento</label>
+            </div>
+
+            <div class="ml-auto bg-orange-600 text-white px-3 py-1 rounded font-bold shadow-sm">
+                <i class="far fa-calendar-check mr-1"></i> Hoy — Abierto
+            </div>
+        </div>
+
+        <!-- ESTRUCTURA PRINCIPAL (GRID 1 Col Izq / 2 Cols Der) -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            
+            <!-- COLUMNA IZQUIERDA: FORMULARIO DE TRANSFERENCIA -->
+            <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden self-start">
+                <div class="bg-orange-500 text-white p-3 font-bold text-sm flex items-center">
+                    <i class="fas fa-sync-alt mr-2"></i> Registrar Transferencia
+                </div>
+                
+                <form id="formTransferencia" class="p-4 space-y-4">
+                    <!-- Notificación Banco Dual -->
+                    <div class="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-2 rounded flex items-center gap-2">
+                        <i class="fas fa-random"></i>
+                        <span><strong>Modo Banco Dual:</strong> solo transferencias entre clientes (💰 Pozo • 🛡️ Aval - $ Dolar EEUU)</span>
+                    </div>
+
+                    <!-- Cliente Origen -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Cliente Origen (Resta Saldo):</label>
+                        <select id="clienteOrigen" class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:border-orange-500 outline-none font-medium text-slate-700" required>
+                            <option value="">Cargando clientes...</option>
+                        </select>
+                    </div>
+
+                    <!-- Cliente Destino -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Cliente Destino (Suma Saldo):</label>
+                        <select id="clienteDestino" class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:border-orange-500 outline-none font-medium text-slate-700" required>
+                            <option value="">Cargando clientes...</option>
+                        </select>
+                    </div>
+
+                    <!-- Monto -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Monto (USD):</label>
+                        <input type="number" id="montoTransferencia" step="0.01" class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:border-orange-500 outline-none" required>
+                    </div>
+
+                    <!-- Nota -->
+                    <div>
+                        <label class="block text-xs text-slate-500 mb-1">Nota <span class="text-[10px]">(opcional)</span>:</label>
+                        <input type="text" id="notaTransferencia" placeholder="Ej: Pago de comisión, ref. 001..." class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:border-orange-500 outline-none">
+                    </div>
+
+                    <!-- Submit -->
+                    <button type="submit" class="w-full bg-orange-600 text-white font-bold py-2 rounded shadow hover:bg-orange-700 transition-colors">
+                        <i class="fas fa-share-square mr-1"></i> Registrar Transferencia
+                    </button>
+                </form>
+            </div>
+
+            <!-- COLUMNA DERECHA: TABLAS -->
+            <div class="lg:col-span-2 space-y-4">
+                
+                <!-- Tabla 1: Transferencias Registradas (Lectura Combinada) -->
+                <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="bg-orange-600 text-white p-2 font-bold text-sm flex items-center">
+                        <i class="fas fa-exchange-alt mr-2"></i> Transferencias Históricas
+                    </div>
+                    <div class="p-3">
+                        <div class="flex justify-between items-center mb-2 text-xs">
+                            <label>Mostrar <select class="border border-slate-300 rounded px-1"><option>10</option></select> registros</label>
+                            <label>Buscar: <input type="text" class="border border-slate-300 rounded px-2 py-1 outline-none focus:border-orange-500"></label>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-xs text-left">
+                                <thead class="bg-slate-900 text-white">
+                                    <tr>
+                                        <th class="p-2 cursor-pointer">Origen ↕</th>
+                                        <th class="p-2 cursor-pointer">Destino ↕</th>
+                                        <th class="p-2 cursor-pointer text-right">Monto USD ↕</th>
+                                        <th class="p-2 cursor-pointer">Fecha ↕</th>
+                                        <th class="p-2 cursor-pointer">Nota ↕</th>
+                                        <th class="p-2 text-center">Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="cuerpoTablaHistorial" class="divide-y divide-slate-200 text-slate-700">
+                                    <tr>
+                                        <td colspan="6" class="p-4 text-center text-slate-500 bg-slate-50 border-b border-slate-200">Cargando datos...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Contenedor inferior dividido en 2 (Saldos Clientes / Saldos Bancos) -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    
+                    <!-- Tabla 2: Saldos Actuales Clientes -->
+                    <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                        <div class="bg-cyan-500 text-white p-2 font-bold text-sm">
+                            Saldos Actuales de Clientes
+                        </div>
+                        <div class="p-3">
+                            <div class="flex justify-end items-center mb-2 text-xs">
+                                <label>Buscar: <input type="text" class="border border-slate-300 rounded px-2 py-1 outline-none focus:border-cyan-500"></label>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-xs text-left border border-slate-200">
+                                    <thead class="bg-slate-900 text-white">
+                                        <tr>
+                                            <th class="p-2 border-r border-slate-700">Cliente</th>
+                                            <th class="p-2 cursor-pointer text-right">Saldo USD ↕</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="cuerpoTablaSaldos" class="divide-y divide-slate-200 font-medium">
+                                        <tr class="hover:bg-slate-50"><td colspan="2" class="p-4 text-center text-slate-500">Cargando saldos...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tabla 3: Saldos Actuales Bancos (Pendiente de módulo bancos, pero visual) -->
+                    <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                        <div class="bg-slate-600 text-white p-2 font-bold text-sm">
+                            Saldos Actuales en Bancos
+                        </div>
+                        <div class="p-3">
+                            <div class="flex justify-between items-center mb-2 text-xs">
+                                <label>Mostrar <select class="border border-slate-300 rounded px-1"><option>10</option></select></label>
+                                <label>Buscar: <input type="text" class="border border-slate-300 rounded px-2 py-1 outline-none focus:border-slate-500"></label>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-xs text-left border border-slate-200">
+                                    <thead class="bg-slate-900 text-white">
+                                        <tr>
+                                            <th class="p-2 border-r border-slate-700">Banco</th>
+                                            <th class="p-2 border-r border-slate-700">Moneda Local</th>
+                                            <th class="p-2 cursor-pointer text-right">Equivalente USD ↕</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td colspan="3" class="p-4 text-center text-slate-500 bg-slate-50 border-b border-slate-200">No hay datos de bancos</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ==========================================
+         MODAL: EXPORTAR SALDOS A WHATSAPP
+         ========================================== -->
+    <div id="modalWhatsapp" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden border border-slate-200">
+            <div class="p-4 flex flex-col gap-2 relative">
+                <div class="flex justify-between items-center mb-2">
+                    <div class="flex items-center text-emerald-600 font-bold text-sm">
+                        <i class="fas fa-check-square mr-2"></i> Copiado automáticamente — listo para pegar en WhatsApp
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="btnCopiarTexto" class="bg-emerald-700 text-white px-3 py-1 rounded shadow text-xs hover:bg-emerald-800"><i class="fas fa-copy mr-1"></i> Copiar</button>
+                        <button class="cerrar-modal bg-white border border-slate-300 text-slate-600 px-3 py-1 rounded shadow text-xs hover:bg-slate-50"><i class="fas fa-times mr-1"></i> Cerrar</button>
+                    </div>
+                </div>
+                
+                <textarea id="textoWhatsapp" readonly class="w-full h-64 border border-blue-200 bg-blue-50 rounded p-3 text-sm font-mono text-slate-800 outline-none resize-none shadow-inner"></textarea>
+            </div>
+        </div>
+    </div>
+
+    <!-- 1. Tecnología Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- 2. Puente de conexión -->
+    <script src="js/conexion.js"></script>
+    <!-- 3. Lógica del módulo -->
+    <script src="js/transferencias.js"></script>
+</body>
+</html>

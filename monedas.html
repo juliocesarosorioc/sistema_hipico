@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Monedas - Club del Dinero</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-100 font-sans text-sm h-screen flex flex-col overflow-x-hidden">
+
+    <!-- NAVEGACIÓN SUPERIOR -->
+    <header class="bg-white border-b border-slate-300 p-2 flex flex-wrap gap-2 items-center shadow-sm z-10">
+        <a href="dashboard.html" class="bg-slate-500 text-white px-3 py-1 rounded hover:bg-slate-600 transition shadow-sm text-xs font-medium">
+            <i class="fas fa-arrow-left"></i> Volver
+        </a>
+        <a href="clientes.html" class="bg-cyan-500 text-white px-3 py-1 rounded shadow-sm hover:bg-cyan-600 text-xs font-medium">Clientes</a>
+        <a href="depositos.html" class="bg-emerald-600 text-white px-3 py-1 rounded shadow-sm hover:bg-emerald-700 text-xs font-medium">Depósitos</a>
+        <a href="retiros.html" class="bg-red-500 text-white px-3 py-1 rounded shadow-sm hover:bg-red-600 text-xs font-medium">Retiros</a>
+        <a href="transferencias.html" class="bg-amber-500 text-white px-3 py-1 rounded shadow-sm hover:bg-amber-600 text-xs font-medium">Transferencias</a>
+        <a href="saldos.html" class="bg-slate-800 text-white px-3 py-1 rounded shadow-sm hover:bg-slate-900 text-xs font-medium">Saldos/Reportes</a>
+        <span class="bg-white border border-slate-300 text-slate-700 px-3 py-1 rounded shadow-sm font-bold text-xs"><i class="fas fa-coins text-yellow-500"></i> Monedas</span>
+    </header>
+
+    <main class="p-4 flex-1 overflow-y-auto">
+        <!-- CABECERA -->
+        <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-200 mb-4 flex justify-between items-center">
+            <h1 class="text-xl font-bold text-slate-800"><i class="fas fa-money-bill-wave text-emerald-600 mr-2"></i> Gestión de Monedas y Tasas de Cambio</h1>
+            <button id="btnAbrirModalNuevaMoneda" class="bg-blue-600 text-white px-4 py-2 rounded font-bold shadow-sm hover:bg-blue-700 transition-colors">
+                <i class="fas fa-plus mr-1"></i> Nueva Moneda
+            </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            
+            <!-- PANEL IZQUIERDO: TASAS ACTUALES -->
+            <div class="lg:col-span-1 space-y-4">
+                <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="bg-slate-800 text-white p-3 font-bold flex justify-between items-center">
+                        <span><i class="fas fa-sync-alt mr-2"></i> Tasas del Día</span>
+                        <span class="text-xs bg-slate-700 px-2 py-1 rounded font-mono" id="relojTasas"></span>
+                    </div>
+                    
+                    <div class="p-4 space-y-4" id="contenedorTarjetasMonedas">
+                        <!-- Las tarjetas se generan dinámicamente aquí -->
+                        <div class="text-center text-slate-500 p-4">Cargando monedas...</div>
+                    </div>
+                </div>
+                
+                <!-- Notificación Contable -->
+                <div class="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-lg text-xs flex gap-2 shadow-sm">
+                    <i class="fas fa-exclamation-triangle mt-0.5"></i>
+                    <p><strong>Regla Contable:</strong> Al actualizar una tasa, el sistema crea un nuevo registro histórico inmutable. Las liquidaciones de días anteriores seguirán calculándose con la tasa que estuvo vigente en el momento exacto de la operación.</p>
+                </div>
+            </div>
+
+            <!-- PANEL DERECHO: LIBRO MAYOR (HISTÓRICO) -->
+            <div class="lg:col-span-2">
+                <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden h-full flex flex-col">
+                    <div class="bg-slate-100 border-b border-slate-200 p-3 flex justify-between items-center">
+                        <h2 class="font-bold text-slate-800"><i class="fas fa-history text-slate-500 mr-2"></i> Histórico de Tasas (Auditoría)</h2>
+                        <div class="flex gap-2 text-xs">
+                            <select id="filtroMoneda" class="border border-slate-300 rounded px-2 py-1 outline-none focus:border-blue-500 bg-white">
+                                <option value="">Todas las Monedas</option>
+                            </select>
+                            <input type="date" id="filtroFecha" class="border border-slate-300 rounded px-2 py-1 outline-none focus:border-blue-500">
+                            <button id="btnLimpiarFiltros" class="text-slate-500 hover:text-slate-800"><i class="fas fa-times"></i></button>
+                        </div>
+                    </div>
+                    
+                    <div class="overflow-x-auto p-3 flex-1">
+                        <table class="w-full text-xs text-left">
+                            <thead class="bg-slate-800 text-white">
+                                <tr>
+                                    <th class="p-2 rounded-tl">Fecha y Hora de Vigencia</th>
+                                    <th class="p-2">Moneda</th>
+                                    <th class="p-2 text-right">Tasa Registrada</th>
+                                    <th class="p-2 text-center">Registrado por</th>
+                                    <th class="p-2 text-center rounded-tr">Estado en Sistema</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cuerpoTablaHistorico" class="divide-y divide-slate-200 text-slate-700">
+                                <tr><td colspan="5" class="p-6 text-center text-slate-500">Cargando histórico...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- ==========================================
+         MODAL: CREAR NUEVA MONEDA
+         ========================================== -->
+    <div id="modalNuevaMoneda" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden flex flex-col">
+            <div class="bg-blue-600 p-4 flex justify-between items-center text-white font-bold shrink-0">
+                <span class="text-lg"><i class="fas fa-coins mr-2"></i> Añadir Nueva Moneda</span>
+                <button class="cerrar-modal text-blue-200 hover:text-white transition-colors"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div class="p-6">
+                <form id="formNuevaMoneda" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-1">Nombre de la Moneda</label>
+                        <input type="text" id="nuevaNombre" placeholder="Ej: Peso Colombiano" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" required>
+                    </div>
+                    <div class="flex gap-4">
+                        <div class="flex-[2]">
+                            <label class="block text-sm font-bold text-slate-700 mb-1">Código (ISO)</label>
+                            <input type="text" id="nuevaCodigo" placeholder="Ej: COP" maxlength="5" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-blue-500 uppercase" required>
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-sm font-bold text-slate-700 mb-1">Símbolo</label>
+                            <input type="text" id="nuevaSimbolo" placeholder="Ej: $" maxlength="3" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-blue-500" required>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-1">Tasa de cambio inicial (Por 1 USD)</label>
+                        <input type="number" id="nuevaTasa" step="0.01" min="0.01" placeholder="Ej: 4100.50" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-blue-500 font-mono" required>
+                    </div>
+                </form>
+            </div>
+            <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+                <button type="button" class="cerrar-modal bg-slate-500 text-white px-4 py-2 rounded text-sm font-medium hover:bg-slate-600 transition-colors">Cancelar</button>
+                <button type="submit" form="formNuevaMoneda" class="bg-blue-600 text-white px-5 py-2 rounded text-sm font-bold shadow hover:bg-blue-700 transition-colors">
+                    <i class="fas fa-save mr-1 text-blue-200"></i> Guardar Moneda
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/conexion.js"></script>
+    <script src="js/monedas.js"></script>
+</body>
+</html>

@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remates - Club del Dinero</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .vista-oculta { display: none !important; }
+    </style>
+</head>
+<body class="bg-slate-50 font-sans text-sm h-screen flex flex-col overflow-x-hidden">
+
+    <!-- NAVEGACIÓN SUPERIOR -->
+    <header class="bg-white border-b border-slate-300 p-2 flex flex-wrap gap-2 items-center shadow-sm z-10">
+        <a href="dashboard.html" class="bg-slate-500 text-white px-3 py-1 rounded hover:bg-slate-600 transition shadow-sm text-xs font-medium">
+            <i class="fas fa-arrow-left"></i> Volver
+        </a>
+        <a href="clientes.html" class="bg-cyan-500 text-white px-3 py-1 rounded shadow-sm hover:bg-cyan-600 text-xs font-medium">Clientes</a>
+        <a href="depositos.html" class="bg-emerald-600 text-white px-3 py-1 rounded shadow-sm hover:bg-emerald-700 text-xs font-medium">Depósitos</a>
+        <a href="retiros.html" class="bg-red-500 text-white px-3 py-1 rounded shadow-sm hover:bg-red-600 text-xs font-medium">Retiros</a>
+        <a href="transferencias.html" class="bg-amber-500 text-white px-3 py-1 rounded shadow-sm hover:bg-amber-600 text-xs font-medium">Transferencias</a>
+        <a href="taquilla.html" class="bg-blue-600 text-white px-3 py-1 rounded shadow-sm hover:bg-blue-700 text-xs font-medium">Apuestas</a>
+        <a href="pollas.html" class="bg-indigo-600 text-white px-3 py-1 rounded shadow-sm hover:bg-indigo-700 text-xs font-medium">Pollas</a>
+    </header>
+
+    <main class="p-4 flex-1 overflow-y-auto w-full">
+
+        <!-- ==========================================
+             VISTA 1: LISTADO GENERAL DE REMATES
+             ========================================== -->
+        <div id="vistaLista" class="max-w-7xl mx-auto space-y-6">
+            <div class="flex justify-between items-center">
+                <h1 class="text-3xl font-bold text-slate-800 flex items-center">
+                    <i class="fas fa-bell text-amber-500 mr-3"></i> Remates
+                </h1>
+                <button id="btnAbrirModalRemate" class="bg-blue-600 text-white px-4 py-2 rounded font-bold shadow-sm hover:bg-blue-700 transition-colors">
+                    <i class="fas fa-plus mr-1"></i> Nuevo Remate
+                </button>
+            </div>
+
+            <div class="bg-white rounded shadow-sm border border-slate-200 overflow-hidden">
+                <div class="bg-[#d97706] text-white p-3 font-bold text-sm flex items-center">
+                    <i class="fas fa-clipboard-list mr-2"></i> Remates Registrados
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs text-left">
+                        <thead class="bg-slate-900 text-white">
+                            <tr>
+                                <th class="p-3">Nombre</th>
+                                <th class="p-3">Hipódromo</th>
+                                <th class="p-3 text-center">Carrera</th>
+                                <th class="p-3">Fecha</th>
+                                <th class="p-3 text-center">Caballos</th>
+                                <th class="p-3 text-right">Subtotal USD</th>
+                                <th class="p-3 text-center">Estado</th>
+                                <th class="p-3 text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="listaRematesTbody" class="divide-y divide-slate-200">
+                            <tr><td colspan="8" class="p-4 text-center text-slate-500">Cargando remates...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==========================================
+             VISTA 2: PANEL INTERNO DEL REMATE
+             ========================================== -->
+        <div id="vistaDetalle" class="max-w-7xl mx-auto space-y-4 vista-oculta">
+            
+            <!-- Cabecera de Detalle -->
+            <div class="flex items-center gap-3 border-b border-slate-200 pb-3 mb-2">
+                <button id="btnVolverLista" class="bg-slate-500 text-white px-3 py-1.5 rounded hover:bg-slate-600 text-xs font-bold shadow-sm">
+                    <i class="fas fa-arrow-left mr-1"></i> Volver
+                </button>
+                <h1 id="detalleNombre" class="text-xl font-bold text-slate-800 uppercase flex items-center">
+                    <i class="fas fa-bell text-amber-500 mr-2"></i> Cargando...
+                </h1>
+                <span id="detalleEstado" class="bg-emerald-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-sm">...</span>
+            </div>
+
+            <!-- Grid Superior (3 Paneles) -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                
+                <!-- Panel: Información -->
+                <div class="bg-white rounded border border-slate-200 shadow-sm flex flex-col h-full">
+                    <div class="bg-[#b45309] text-white p-2 font-bold text-sm flex items-center">
+                        <i class="fas fa-file-alt mr-2"></i> Información
+                    </div>
+                    <div class="p-4 text-xs flex-1 flex flex-col">
+                        <table class="w-full mb-3">
+                            <tbody class="divide-y divide-slate-100">
+                                <tr><td class="py-1.5 text-slate-500">Hipódromo</td><td class="py-1.5 font-bold text-right" id="infoHipodromo">...</td></tr>
+                                <tr><td class="py-1.5 text-slate-500">Carrera</td><td class="py-1.5 font-bold text-right" id="infoCarrera">...</td></tr>
+                                <tr><td class="py-1.5 text-slate-500">Fecha</td><td class="py-1.5 font-bold text-right" id="infoFecha">...</td></tr>
+                                <tr><td class="py-1.5 text-slate-500">Cierre</td><td class="py-1.5 font-bold text-right" id="infoCierre">...</td></tr>
+                                <tr><td class="py-1.5 text-slate-500">Distancia</td><td class="py-1.5 font-bold text-right" id="infoDistancia">...</td></tr>
+                            </tbody>
+                        </table>
+                        <div class="text-slate-500 mb-4 flex-1 italic" id="infoNotas">...</div>
+                    </div>
+                </div>
+
+                <!-- Panel: Resumen Financiero -->
+                <div class="bg-white rounded border border-slate-200 shadow-sm flex flex-col h-full">
+                    <div class="bg-slate-800 text-white p-2 font-bold text-sm flex items-center">
+                        <i class="fas fa-money-bag mr-2 text-amber-400"></i> Resumen Financiero
+                    </div>
+                    <div class="p-4 text-xs flex-1 flex flex-col justify-between">
+                        <table class="w-full mb-2">
+                            <tbody class="divide-y divide-slate-100">
+                                <tr><td class="py-2 text-slate-600">Caballos</td><td class="py-2 font-bold text-right text-lg" id="valCaballos">0</td></tr>
+                                <tr><td class="py-2 text-slate-600">Subtotal pujas</td><td class="py-2 font-bold text-right text-emerald-600" id="valSubtotal">$0.00</td></tr>
+                                <tr><td class="py-2 text-slate-600">Incentivo</td><td class="py-2 font-bold text-right text-blue-600" id="valIncentivo">+$0.00</td></tr>
+                                <tr class="bg-amber-50"><td class="py-2 px-1 font-bold text-slate-800">Total bruto</td><td class="py-2 px-1 font-bold text-right text-slate-800 text-base" id="valBruto">$0.00</td></tr>
+                                <tr><td class="py-2 text-slate-600" id="lblComision">Comisión</td><td class="py-2 font-bold text-right text-red-500" id="valComision">-$0.00</td></tr>
+                                <tr class="bg-emerald-50"><td class="py-2 px-1 font-bold text-emerald-900">Premio al ganador</td><td class="py-2 px-1 font-bold text-right text-emerald-700 text-base" id="valPremio">$0.00</td></tr>
+                            </tbody>
+                        </table>
+                        <div class="flex items-center gap-2 mt-2 bg-slate-50 p-2 rounded border border-slate-200">
+                            <span class="text-amber-500"><i class="fas fa-lightbulb"></i></span>
+                            <span class="text-slate-600">Incentivo:</span>
+                            <input type="number" step="0.01" value="0.00" id="inputIncentivo" class="border border-slate-300 rounded px-2 py-1 w-20 outline-none focus:border-blue-500 font-bold text-blue-700">
+                            <button id="btnGuardarIncentivo" class="bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 shadow-sm"><i class="fas fa-save"></i></button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Panel: Acciones -->
+                <div class="bg-white rounded border border-slate-200 shadow-sm flex flex-col h-full">
+                    <div class="bg-slate-800 text-white p-2 font-bold text-sm flex items-center">
+                        <i class="fas fa-bolt mr-2 text-orange-400"></i> Acciones
+                    </div>
+                    <div class="p-4 flex flex-col gap-3 flex-1 justify-center">
+                        <button class="w-full bg-amber-400 text-slate-900 font-bold py-2.5 rounded shadow-sm hover:bg-amber-500 transition-colors">
+                            <i class="fas fa-lock mr-2"></i> Cerrar Remate y Cobrar
+                        </button>
+                        <button class="w-full bg-cyan-400 text-white font-bold py-2.5 rounded shadow-sm hover:bg-cyan-500 transition-colors text-shadow">
+                            <i class="fas fa-file-alt mr-2"></i> Reporte WhatsApp
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel Inferior: Tabla de Caballos -->
+            <div class="bg-white rounded border border-slate-200 shadow-sm overflow-hidden mt-4">
+                <div class="bg-[#d97706] p-2 flex justify-between items-center text-white">
+                    <h2 class="font-bold text-sm"><i class="fas fa-horse mr-2"></i> Caballos del Remate</h2>
+                    <div class="flex gap-2">
+                        <button id="btnAbrirAsignar" class="bg-white text-slate-800 px-3 py-1 rounded text-xs font-bold hover:bg-slate-100 shadow-sm transition-colors">
+                            <i class="fas fa-plus mr-1"></i> Asignar Caballo
+                        </button>
+                        <button id="btnAbrirGenerar" class="bg-amber-400 text-slate-900 px-3 py-1 rounded text-xs font-bold hover:bg-amber-500 shadow-sm transition-colors">
+                            <i class="fas fa-magic mr-1"></i> Generar Caballos
+                        </button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs text-left">
+                        <thead class="bg-slate-900 text-white">
+                            <tr>
+                                <th class="p-3 w-10 text-center">N°</th>
+                                <th class="p-3">Ejemplar</th>
+                                <th class="p-3">Cliente</th>
+                                <th class="p-3 text-right">Monto USD</th>
+                                <th class="p-3 text-center bg-indigo-900 text-indigo-100">Prob (%)</th>
+                                <th class="p-3 text-center bg-indigo-900 text-indigo-100">Prob (Imp)</th>
+                                <th class="p-3 text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-200" id="cuerpoCaballos">
+                            <tr id="filaVaciaCaballos"><td colspan="7" class="p-8 text-center text-slate-500 bg-slate-50">Cargando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- ==========================================
+         MODAL 1: CREAR NUEVO REMATE
+         ========================================== -->
+    <div id="modalNuevoRemate" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
+            <div class="bg-[#d97706] p-4 flex justify-between items-center text-white font-bold shrink-0">
+                <span class="text-lg"><i class="fas fa-plus mr-2"></i> Crear Nuevo Remate</span>
+                <button class="cerrar-modal text-orange-200 hover:text-white transition-colors"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div class="p-6">
+                <form id="formNuevoRemate" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-1">Nombre del Remate</label>
+                        <input type="text" id="remateNombre" placeholder="Ej: Remate La Rinconada C3" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 uppercase" required>
+                    </div>
+                    <div class="flex gap-4">
+                        <div class="flex-[2]">
+                            <label class="block text-sm font-bold text-slate-700 mb-1">Hipódromo</label>
+                            <select id="remateHipodromo" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-orange-500 bg-white" required>
+                                <option value="">Cargando...</option>
+                            </select>
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-sm font-bold text-slate-700 mb-1">Carrera #</label>
+                            <input type="text" id="remateCarrera" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-orange-500" required>
+                        </div>
+                        <div class="flex-[1.5]">
+                            <label class="block text-sm font-bold text-slate-700 mb-1">Fecha</label>
+                            <input type="date" id="remateFecha" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-orange-500" required>
+                        </div>
+                    </div>
+                    <div class="flex gap-4">
+                        <div class="flex-1">
+                            <label class="block text-sm font-bold text-slate-700 mb-1">Hora Cierre</label>
+                            <input type="time" id="remateCierre" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-orange-500">
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-sm font-bold text-slate-700 mb-1">Distancia</label>
+                            <input type="text" id="remateDistancia" placeholder="Ej: 1800m" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-orange-500">
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-sm font-bold text-slate-700 mb-1">Comisión %</label>
+                            <input type="number" id="remateComision" step="0.01" value="20" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-orange-500" required>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-1">Notas / Reglas</label>
+                        <textarea id="remateNotas" placeholder="Ej: De 500 en 500 hasta 5000..." class="w-full h-20 border border-slate-300 rounded p-3 text-sm outline-none focus:border-orange-500 resize-none"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+                <button type="button" class="cerrar-modal bg-slate-500 text-white px-4 py-2 rounded text-sm font-medium hover:bg-slate-600 transition-colors">Cancelar</button>
+                <button type="submit" form="formNuevoRemate" class="bg-[#d97706] text-white px-5 py-2 rounded text-sm font-bold shadow hover:bg-orange-700 transition-colors">
+                    <i class="fas fa-check-square mr-1 text-emerald-300"></i> Crear Remate
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         MODAL 2: ASIGNAR CABALLO (INDIVIDUAL)
+         ========================================== -->
+    <div id="modalAsignarCaballo" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden flex flex-col">
+            <div class="bg-[#b45309] p-4 flex justify-between items-center text-white font-bold shrink-0">
+                <span class="text-lg"><i class="fas fa-horse mr-2"></i> Asignar Caballo</span>
+                <button class="cerrar-modal text-orange-200 hover:text-white transition-colors"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div class="p-6">
+                <form id="formAsignarCaballo" class="space-y-4">
+                    <div class="flex gap-4">
+                        <div class="flex-1">
+                            <label class="block text-sm font-bold text-slate-700 mb-1">N° Caballo</label>
+                            <input type="number" id="asigNum" min="1" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-orange-500" required>
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-sm font-bold text-slate-700 mb-1">Monto (USD)</label>
+                            <input type="number" step="0.01" id="asigMonto" value="0" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-orange-500 font-bold" required>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-1">Nombre del Ejemplar</label>
+                        <input type="text" id="asigNombre" placeholder="EJ: FAS SENSATION" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-orange-500 uppercase" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-1">Cliente Pujador</label>
+                        <select id="asigCliente" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-orange-500 bg-white" required>
+                            <option value="">Cargando clientes...</option>
+                        </select>
+                        <p class="text-[11px] text-slate-500 mt-1">El saldo se descuenta al cerrar el remate.</p>
+                    </div>
+                </form>
+            </div>
+            <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+                <button type="button" class="cerrar-modal bg-slate-500 text-white px-4 py-2 rounded text-sm font-medium hover:bg-slate-600 transition-colors">Cancelar</button>
+                <button type="submit" form="formAsignarCaballo" class="bg-[#b45309] text-white px-5 py-2 rounded text-sm font-bold shadow hover:bg-[#9a4305] transition-colors">
+                    <i class="fas fa-save mr-1 text-emerald-300"></i> Guardar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         MODAL 3: GENERAR CABALLOS (MASIVO)
+         ========================================== -->
+    <div id="modalGenerarCaballos" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="bg-[#d97706] p-4 flex justify-between items-center text-white font-bold shrink-0">
+                <span class="text-lg"><i class="fas fa-horse-head mr-2"></i> Generar Caballos <span class="text-sm font-normal">(cliente = REMATE)</span></span>
+                <button class="cerrar-modal text-orange-200 hover:text-white transition-colors"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-1 flex flex-col gap-4">
+                <div class="bg-cyan-50 border border-cyan-200 text-cyan-800 p-3 rounded text-sm">
+                    Para asignar los caballos masivamente, el sistema buscará un cliente llamado <strong>"REMATE"</strong> (o usará el primer cliente disponible). Completa nombres y bases (USD).
+                </div>
+                
+                <div class="flex items-end gap-3">
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-1">¿Cuántos caballos?</label>
+                        <input type="number" id="genCantidad" value="8" min="1" max="24" class="w-24 border border-slate-300 rounded px-3 py-1.5 text-sm outline-none focus:border-orange-500">
+                    </div>
+                    <button id="btnCrearFilas" class="border border-blue-400 text-blue-600 px-3 py-1.5 rounded text-sm font-bold hover:bg-blue-50 transition-colors">Crear filas</button>
+                    <button id="btnAgregarFilaInd" class="text-emerald-600 px-3 py-1.5 rounded text-sm font-bold hover:bg-emerald-50 transition-colors"><i class="fas fa-plus mr-1"></i> Agregar fila</button>
+                </div>
+
+                <div class="border border-slate-200 rounded overflow-hidden">
+                    <table class="w-full text-sm text-left">
+                        <thead class="bg-slate-900 text-white">
+                            <tr>
+                                <th class="p-2 w-12 text-center">N°</th>
+                                <th class="p-2">Nombre del Ejemplar</th>
+                                <th class="p-2 w-32">Precio Base (USD)</th>
+                                <th class="p-2 w-12 text-center"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="cuerpoGenerarCaballos" class="divide-y divide-slate-200">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+                <button type="button" class="cerrar-modal bg-slate-500 text-white px-4 py-2 rounded text-sm font-medium hover:bg-slate-600 transition-colors">Cancelar</button>
+                <button id="btnProcesarGeneracion" class="bg-[#b45309] text-white px-5 py-2 rounded text-sm font-bold shadow hover:bg-[#9a4305] transition-colors">
+                    <i class="fas fa-save mr-1 text-emerald-300"></i> Generar Caballos
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts Backend -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/conexion.js"></script>
+    <script src="js/remates.js"></script>
+</body>
+</html>

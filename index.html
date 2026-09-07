@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iniciar Sesión - Club del Dinero</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-900 font-sans h-screen flex items-center justify-center">
+
+    <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md border border-slate-800">
+        <div class="text-center mb-6">
+            <div class="bg-emerald-600 text-white w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3 shadow-md">
+                <i class="fas fa-coins text-xl"></i>
+            </div>
+            <h1 class="text-2xl font-bold text-slate-800">Club del Dinero</h1>
+            <p class="text-xs text-slate-500 mt-1">Panel de Control y Sistema Hípico</p>
+        </div>
+
+        <form id="formLogin" class="space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Usuario</label>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><i class="fas fa-user"></i></span>
+                    <input type="text" id="loginUsuario" placeholder="Ej: admin" class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-emerald-500" required>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Contraseña</label>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><i class="fas fa-lock"></i></span>
+                    <input type="password" id="loginPassword" placeholder="••••••••" class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-emerald-500" required>
+                </div>
+            </div>
+
+            <div id="mensajeError" class="text-red-500 text-xs text-center font-medium hidden"></div>
+
+            <button type="submit" id="btnLogin" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-lg shadow transition-colors text-sm">
+                Iniciar Sesión
+            </button>
+        </form>
+    </div>
+
+    <!-- Supabase y Lógica de Login -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/conexion.js"></script>
+    <script>
+        document.getElementById('formLogin').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const usuarioInput = document.getElementById('loginUsuario').value.trim();
+            const passwordInput = document.getElementById('loginPassword').value.trim();
+            const btn = document.getElementById('btnLogin');
+            const errorDiv = document.getElementById('mensajeError');
+
+            errorDiv.classList.add('hidden');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Verificando...';
+            btn.disabled = true;
+
+            // Consultar a Supabase si el operador existe y la clave coincide
+            const { data: operador, error } = await supabase
+                .from('operadores')
+                .select('*')
+                .eq('usuario', usuarioInput)
+                .eq('password', passwordInput)
+                .eq('activo', true)
+                .single();
+
+            if (error || !operador) {
+                errorDiv.textContent = "Usuario o contraseña incorrectos.";
+                errorDiv.classList.remove('hidden');
+                btn.innerHTML = 'Iniciar Sesión';
+                btn.disabled = false;
+            } else {
+                // Guardar sesión activa en el navegador de forma segura
+                localStorage.setItem('club_sesion_activa', JSON.stringify({
+                    nombre: operador.nombre_completo,
+                    rol: operador.rol,
+                    loginTime: new Date().getTime()
+                }));
+
+                // Redirigir al panel principal
+                window.location.href = 'dashboard.html';
+            }
+        });
+    </script>
+</body>
+</html>
