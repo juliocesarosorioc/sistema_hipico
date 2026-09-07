@@ -58,30 +58,52 @@
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Verificando...';
             btn.disabled = true;
 
-            // Consultar a Supabase si el operador existe y la clave coincide
-            const { data: operador, error } = await supabase
-                .from('operadores')
-                .select('*')
-                .eq('usuario', usuarioInput)
-                .eq('password', passwordInput)
-                .eq('activo', true)
-                .single();
+            try {
+                // Consultar directamente el usuario y su contraseña en la tabla operadores
+                const { data: operador, error } = await supabase
+                    .from('operadores')
+                    .select('*')
+                    .eq('usuario', usuarioInput)
+                    .eq('activo', true)
+                    .single();
 
-            if (error || !operador) {
-                errorDiv.textContent = "Usuario o contraseña incorrectos.";
-                errorDiv.classList.remove('hidden');
-                btn.innerHTML = 'Iniciar Sesión';
-                btn.disabled = false;
-            } else {
-                // Guardar sesión activa en el navegador de forma segura
+                if (error || !operador) {
+                    throw new Error("Usuario no encontrado o inactivo.");
+                }
+
+                // Verificación de contraseña (soporta texto plano o hash)
+                let passwordValida = false;
+                if (operador.password.startsWith('$2a$') || operador.password.startsWith('$2b$')) {
+                    // Si tiene hash, llamamos a la función de verificación de Supabase
+                    const { data: matchData, errRpc } = await supabase.rpc('verificar_password', { 
+                        pass_ingresada: passwordInput, 
+                        pass_almacenada: operador.password 
+                    });
+                    passwordValida = !errRpc && matchData;
+                } else {
+                    // Comparación directa si está en texto plano
+                    passwordValida = (operador.password === passwordInput);
+                }
+
+                if (!passwordValida) {
+                    throw new Error("Contraseña incorrecta.");
+                }
+
+                // Guardar sesión activa y redirigir
                 localStorage.setItem('club_sesion_activa', JSON.stringify({
                     nombre: operador.nombre_completo,
                     rol: operador.rol,
                     loginTime: new Date().getTime()
                 }));
 
-                // Redirigir al panel principal
                 window.location.href = 'dashboard.html';
+
+            } catch (err) {
+                console.error("Error de autenticación:", err.message);
+                errorDiv.textContent = "Usuario o contraseña incorrectos.";
+                errorDiv.classList.remove('hidden');
+                btn.innerHTML = 'Iniciar Sesión';
+                btn.disabled = false;
             }
         });
     </script>
