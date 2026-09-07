@@ -12,9 +12,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. CARGAR LISTA DE OPERADORES
     // ==========================================
     async function cargarOperadores() {
+        if(!tabla) return; // Si la tabla no existe en la vista, salir.
+
         tabla.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-500">Cargando operadores...</td></tr>';
         
-        const { data, error } = await supabase.from('operadores').select('*').order('fecha_registro', { ascending: false });
+        // Uso estricto de window.supabase
+        const { data, error } = await window.supabase.from('operadores').select('*').order('id', { ascending: true });
 
         if (error || !data || data.length === 0) {
             tabla.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-500">No hay operadores registrados.</td></tr>';
@@ -23,10 +26,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         tabla.innerHTML = '';
         data.forEach(op => {
-            const fecha = new Date(op.fecha_registro).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
+            const fecha = op.fecha_registro ? new Date(op.fecha_registro).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : 'N/A';
             const badgeEstado = op.activo 
                 ? '<span class="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold">ACTIVO</span>'
                 : '<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] font-bold">INACTIVO</span>';
+            
+            // Distintivo visual de administrador
+            const badgeRol = op.rol.includes('Administrador') 
+                ? `<span class="text-blue-600 font-bold"><i class="fas fa-crown text-[10px] mr-1"></i>${op.rol}</span>` 
+                : `<span class="text-slate-600">${op.rol}</span>`;
 
             const btnEstadoTexto = op.activo ? 'Desactivar' : 'Activar';
             const btnEstadoClase = op.activo ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-500 hover:text-white' : 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-600 hover:text-white';
@@ -35,7 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <tr class="hover:bg-slate-50 transition-colors">
                     <td class="p-3 font-bold text-slate-800">${op.nombre_completo}</td>
                     <td class="p-3 font-mono text-slate-600">@${op.usuario}</td>
-                    <td class="p-3">${op.rol}</td>
+                    <td class="p-3">${badgeRol}</td>
                     <td class="p-3 text-center">${badgeEstado}</td>
                     <td class="p-3 text-slate-500">${fecha}</td>
                     <td class="p-3 text-center flex gap-1 justify-center">
@@ -59,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const id = document.getElementById('opId').value;
             const payload = {
                 nombre_completo: document.getElementById('opNombre').value.trim(),
-                usuario: document.getElementById('opUsuario').value.trim().toLowerCase(),
+                usuario: document.getElementById('opUsuario').value.trim(), // Se remueve toLowerCase() para respetar el nombre ingresado
                 password: document.getElementById('opPassword').value.trim(),
                 rol: document.getElementById('opRol').value
             };
@@ -71,11 +79,12 @@ document.addEventListener('DOMContentLoaded', () => {
             let error;
             if (id) {
                 // Actualizar
-                const res = await supabase.from('operadores').update(payload).eq('id', id);
+                const res = await window.supabase.from('operadores').update(payload).eq('id', id);
                 error = res.error;
             } else {
-                // Insertar nuevo
-                const res = await supabase.from('operadores').insert([payload]);
+                // Insertar nuevo asegurando que por defecto nace activo
+                payload.activo = true; 
+                const res = await window.supabase.from('operadores').insert([payload]);
                 error = res.error;
             }
 
@@ -103,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const id = this.getAttribute('data-id');
                 const estadoActual = this.getAttribute('data-estado') === 'true';
                 
-                await supabase.from('operadores').update({ activo: !estadoActual }).eq('id', id);
+                await window.supabase.from('operadores').update({ activo: !estadoActual }).eq('id', id);
                 cargarOperadores();
             });
         });
@@ -113,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.addEventListener('click', async function() {
                 if (confirm("¿Está seguro que desea eliminar permanentemente este operador?")) {
                     const id = this.getAttribute('data-id');
-                    await supabase.from('operadores').delete().eq('id', id);
+                    await window.supabase.from('operadores').delete().eq('id', id);
                     cargarOperadores();
                 }
             });
