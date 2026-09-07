@@ -59,8 +59,8 @@
             btn.disabled = true;
 
             try {
-                // Consultar directamente el usuario y su contraseña en la tabla operadores
-                const { data: operador, error } = await supabase
+                // Consultar a Supabase
+                const { data: operador, error } = await window.supabase
                     .from('operadores')
                     .select('*')
                     .eq('usuario', usuarioInput)
@@ -71,25 +71,12 @@
                     throw new Error("Usuario no encontrado o inactivo.");
                 }
 
-                // Verificación de contraseña (soporta texto plano o hash)
-                let passwordValida = false;
-                if (operador.password.startsWith('$2a$') || operador.password.startsWith('$2b$')) {
-                    // Si tiene hash, llamamos a la función de verificación de Supabase
-                    const { data: matchData, errRpc } = await supabase.rpc('verificar_password', { 
-                        pass_ingresada: passwordInput, 
-                        pass_almacenada: operador.password 
-                    });
-                    passwordValida = !errRpc && matchData;
-                } else {
-                    // Comparación directa si está en texto plano
-                    passwordValida = (operador.password === passwordInput);
-                }
-
-                if (!passwordValida) {
+                // Verificar contraseña exacta
+                if (operador.password !== passwordInput) {
                     throw new Error("Contraseña incorrecta.");
                 }
 
-                // Guardar sesión activa y redirigir
+                // Guardar sesión y entrar
                 localStorage.setItem('club_sesion_activa', JSON.stringify({
                     nombre: operador.nombre_completo,
                     rol: operador.rol,
@@ -99,8 +86,9 @@
                 window.location.href = 'dashboard.html';
 
             } catch (err) {
-                console.error("Error de autenticación:", err.message);
-                errorDiv.textContent = "Usuario o contraseña incorrectos.";
+                // Si hay un error, liberar el botón y mostrar el mensaje
+                console.error(err);
+                errorDiv.textContent = err.message;
                 errorDiv.classList.remove('hidden');
                 btn.innerHTML = 'Iniciar Sesión';
                 btn.disabled = false;
