@@ -5,13 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestión de Operadores - Club del Dinero</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Estilos CSS Colectivos Centralizados -->
+    <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="bg-slate-100 flex h-screen overflow-hidden font-sans">
 
     <!-- MENÚ LATERAL (SIDEBAR) -->
     <aside class="w-64 bg-slate-900 text-slate-300 flex flex-col h-full shadow-xl z-20">
-        <div class="p-5 border-b border-slate-700">
+        <div class="sidebar-header border-b border-slate-700">
             <h1 class="text-2xl font-bold text-white tracking-wide">Club del Dinero</h1>
             <p class="text-xs text-slate-400 mt-1 flex items-center">
                 <i class="fas fa-circle text-emerald-500 text-[8px] mr-1"></i> 
@@ -28,15 +30,76 @@
                     </a>
                 </li>
                 <li>
-                    <a href="operadores.html" class="flex items-center px-5 py-3 bg-blue-600 text-white border-l-4 border-blue-400">
-                        <i class="fas fa-user-shield w-6"></i>
-                        <span class="ml-2 font-medium">Operadores</span>
-                    </a>
-                </li>
-                <li>
                     <a href="clientes.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
                         <i class="fas fa-users w-6 text-cyan-400"></i>
                         <span class="ml-2">Clientes</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="depositos.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-arrow-down w-6 text-emerald-400"></i>
+                        <span class="ml-2">Depósitos</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="retiros.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-arrow-up w-6 text-red-400"></i>
+                        <span class="ml-2">Retiros</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="transferencias.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-exchange-alt w-6 text-amber-400"></i>
+                        <span class="ml-2">Transferencias</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="taquilla.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-receipt w-6 text-blue-400"></i>
+                        <span class="ml-2">Taquilla (Planos)</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="wps.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-horse w-6 text-teal-400"></i>
+                        <span class="ml-2">W.P.S.</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="remates.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-bell w-6 text-orange-400"></i>
+                        <span class="ml-2">Remates</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="pollas.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-trophy w-6 text-indigo-400"></i>
+                        <span class="ml-2">Pollas</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="saldos.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-balance-scale w-6 text-slate-400"></i>
+                        <span class="ml-2">Saldos/Reportes</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="hipodromos.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-horse-head w-6 text-purple-400"></i>
+                        <span class="ml-2">Hipódromos</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="monedas.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-coins w-6 text-yellow-400"></i>
+                        <span class="ml-2">Monedas y Tasas</span>
+                    </a>
+                </li>
+                <!-- Operadores ubicado al final del menú -->
+                <li>
+                    <a href="operadores.html" class="flex items-center px-5 py-3 bg-blue-600 text-white border-l-4 border-blue-400 border-t border-slate-800 mt-2">
+                        <i class="fas fa-user-shield w-6"></i>
+                        <span class="ml-2 font-medium">Operadores</span>
                     </a>
                 </li>
             </ul>
@@ -87,8 +150,8 @@
     </main>
 
     <!-- MODAL NUEVO / EDITAR OPERADOR -->
-    <div id="modalOperador" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 z-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+    <div id="modalOperador" class="hidden modal-overlay">
+        <div class="modal-container">
             <div class="bg-blue-600 p-4 text-white font-bold flex justify-between items-center">
                 <span id="modalTitulo"><i class="fas fa-user-plus mr-2"></i> Registrar Nuevo Operador</span>
                 <button class="cerrar-modal hover:text-slate-200"><i class="fas fa-times text-lg"></i></button>
@@ -137,12 +200,10 @@
             window.location.href = 'index.html';
         } else {
             const sesion = JSON.parse(sesionStr);
-            // Bloquear acceso a quienes no sean administradores
             if(!sesion.rol.includes('Administrador')) {
                 alert("Acceso denegado: No tienes permisos para gestionar operadores.");
                 window.location.href = 'dashboard.html';
             }
-            // Llenar datos de la barra lateral
             document.getElementById('sidebarUserName').textContent = sesion.nombre;
             document.getElementById('sidebarUserRole').textContent = sesion.rol;
         }
