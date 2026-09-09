@@ -122,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const { error } = await supabase.from('remates').insert([payload]);
-        if (error) alert("Error al crear remate.");
+        if (error) clubUI.toast("Error al crear remate.");
         else {
             this.reset();
             document.getElementById('modalNuevoRemate').classList.add('hidden');

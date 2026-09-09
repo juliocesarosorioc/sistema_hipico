@@ -6,116 +6,14 @@
     <title>Gestión de Operadores - Club del Dinero</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Estilos CSS Colectivos Centralizados -->
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="../css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="bg-slate-100 flex h-screen overflow-hidden font-sans">
 
     <!-- ==========================================
-         MENÚ LATERAL (SIDEBAR) ORGANIZADO
-         ========================================== -->
-    <aside class="w-64 bg-slate-900 text-slate-300 flex flex-col h-full shadow-xl z-20">
-        <div class="sidebar-header border-b border-slate-700 p-5">
-            <h1 class="text-2xl font-bold text-white tracking-wide">Club del Dinero</h1>
-            <p class="text-xs text-slate-400 mt-1 flex items-center">
-                <i class="fas fa-circle text-emerald-500 text-[8px] mr-1"></i> 
-                <span id="sidebarUserRole">Cargando...</span>
-            </p>
-            <p class="text-xs text-white font-bold mt-1" id="sidebarUserName"></p>
-        </div>
-        
-        <nav class="flex-1 overflow-y-auto py-2">
-            <ul class="text-sm">
-                <!-- PRINCIPAL -->
-                <li class="mt-2">
-                    <a href="dashboard.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-home w-6 text-blue-400"></i>
-                        <span class="ml-2">Inicio</span>
-                    </a>
-                </li>
-
-                <!-- MÓDULO HÍPICO -->
-                <li class="px-5 mt-6 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Módulo Hípico</li>
-                <li>
-                    <a href="taquilla.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-receipt w-6 text-blue-400"></i><span class="ml-2">Taquilla (Planos)</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="wps.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-horse w-6 text-teal-400"></i><span class="ml-2">W.P.S.</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="remates.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-bell w-6 text-orange-400"></i><span class="ml-2">Remates</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="pollas.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-trophy w-6 text-indigo-400"></i><span class="ml-2">Pollas</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="hipodromos.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-horse-head w-6 text-purple-400"></i><span class="ml-2">Hipódromos</span>
-                    </a>
-                </li>
-
-                <!-- CAJA Y FINANZAS -->
-                <li class="px-5 mt-6 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Caja y Finanzas</li>
-                <li>
-                    <a href="depositos.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-arrow-down w-6 text-emerald-400"></i><span class="ml-2">Depósitos</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="retiros.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-arrow-up w-6 text-red-400"></i><span class="ml-2">Retiros</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="transferencias.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-exchange-alt w-6 text-amber-400"></i><span class="ml-2">Transferencias</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="saldos.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-balance-scale w-6 text-slate-400"></i><span class="ml-2">Saldos/Reportes</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="monedas.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-coins w-6 text-yellow-400"></i><span class="ml-2">Monedas y Tasas</span>
-                    </a>
-                </li>
-
-                <!-- ADMINISTRACIÓN -->
-                <li class="px-5 mt-6 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Administración</li>
-                <li>
-                    <a href="clientes.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-users w-6 text-cyan-400"></i><span class="ml-2">Clientes</span>
-                    </a>
-                </li>
-                <li>
-                    <!-- Botón Activo -->
-                    <a href="operadores.html" class="flex items-center px-5 py-2.5 bg-blue-600 text-white border-l-4 border-blue-400">
-                        <i class="fas fa-user-shield w-6"></i><span class="ml-2 font-medium">Operadores</span>
-                    </a>
-                </li>
-            </ul>
-        </nav>
-        
-        <div class="p-4 border-t border-slate-700">
-            <a href="#" id="btnCerrarSesion" class="flex items-center text-red-400 hover:text-red-300 transition-colors">
-                <i class="fas fa-sign-out-alt w-6"></i>
-                <span class="ml-2 font-medium">Cerrar Sesión</span>
-            </a>
-        </div>
-    </aside>
-
-    <!-- ==========================================
          ÁREA CENTRAL DE CONTENIDO
+         (Sidebar inyectado por js/components/layout.js)
          ========================================== -->
     <main class="flex-1 flex flex-col h-full relative overflow-y-auto p-8">
         
@@ -198,30 +96,20 @@
     <!-- ==========================================
          SCRIPTS
          ========================================== -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="js/conexion.js"></script>
-    <script src="js/operadores.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="../js/components/db.js"></script>
+    <script src="../js/components/auth.js"></script>
+    <script src="../js/components/ui.js"></script>
+    <script src="../js/components/layout.js"></script>
+    <script src="../js/conexion.js"></script>
+    <script src="../js/operadores.js"></script>
     <script>
         // Validación de seguridad por sesión y rol
-        const sesionStr = localStorage.getItem('club_sesion_activa');
-        if (!sesionStr) {
-            window.location.href = 'index.html';
-        } else {
-            const sesion = JSON.parse(sesionStr);
-            if(!sesion.rol.includes('Administrador')) {
-                alert("Acceso denegado: No tienes permisos para gestionar operadores.");
-                window.location.href = 'dashboard.html';
-            }
-            document.getElementById('sidebarUserName').textContent = sesion.nombre;
-            document.getElementById('sidebarUserRole').textContent = sesion.rol;
+        const sesion = window.clubAuth.requireAuth();
+        if (sesion && !window.clubAuth.requiereRol(['Administrador'])) {
+            clubUI.toast('Acceso denegado: No tienes permisos para gestionar operadores.');
+            window.location.href = 'dashboard.html';
         }
-
-        // Lógica de Cerrar Sesión
-        document.getElementById('btnCerrarSesion')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            localStorage.removeItem('club_sesion_activa');
-            window.location.href = 'index.html';
-        });
     </script>
 </body>
 </html>

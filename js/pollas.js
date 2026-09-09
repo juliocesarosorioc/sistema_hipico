@@ -113,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const { error } = await supabase.from('pollas').insert([payload]);
 
             if (error) {
-                alert("Ocurrió un error al crear la Polla.");
+                clubUI.toast("Ocurrió un error al crear la Polla.");
                 console.error(error);
             } else {
                 modalNuevaPolla.classList.add('hidden');

@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Simulación de consulta a Supabase
             console.log("Aplicando filtros de auditoría:", filtros);
-            alert(`[BACKEND SIMULADO]\nConsultando a la base de datos registros desde ${filtros.desde} hasta ${filtros.hasta}...`);
+            clubUI.toast(`[BACKEND SIMULADO]\nConsultando a la base de datos registros desde ${filtros.desde} hasta ${filtros.hasta}...`);
         });
     }
 

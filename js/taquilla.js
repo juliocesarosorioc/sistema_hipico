@@ -180,8 +180,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        if (errores.length > 0) return alert("CORRIJA LOS SIGUIENTES ERRORES:\n\n" + errores.join('\n'));
-        if (ticketsValidos.length === 0) return alert("No hay tickets ingresados.");
+        if (errores.length > 0) return clubUI.toast("CORRIJA LOS SIGUIENTES ERRORES:\n\n" + errores.join('\n'));
+        if (ticketsValidos.length === 0) return clubUI.toast("No hay tickets ingresados.");
 
         modalProcesando.classList.remove('hidden');
 
@@ -196,12 +196,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 cJuega.saldo_actual = nuevoSaldo; 
             }
 
-            alert(`✅ ¡ÉXITO! Se registraron ${ticketsValidos.length} apuestas.`);
+            clubUI.toast(`✅ ¡ÉXITO! Se registraron ${ticketsValidos.length} apuestas.`);
             document.querySelectorAll('.btn-borrar').forEach(b => b.click());
 
         } catch (err) {
             console.error(err);
-            alert("Error al guardar en la base de datos.");
+            clubUI.toast("Error al guardar en la base de datos.");
         } finally {
             modalProcesando.classList.add('hidden');
         }

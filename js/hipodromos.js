@@ -81,9 +81,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (error) {
                 if (error.code === '23505') { // Error de valor único (UNIQUE)
-                    alert(`El hipódromo "${nombre}" ya existe en el catálogo.`);
+                    clubUI.toast(`El hipódromo "${nombre}" ya existe en el catálogo.`);
                 } else {
-                    alert("Ocurrió un error al registrar el hipódromo.");
+                    clubUI.toast("Ocurrió un error al registrar el hipódromo.");
                 }
             } else {
                 this.reset();
@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const { error } = await supabase.from('hipodromos').delete().eq('id', id);
 
                     if (error) {
-                        alert("Error al eliminar. Es posible que existan jugadas asociadas a este hipódromo.");
+                        clubUI.toast("Error al eliminar. Es posible que existan jugadas asociadas a este hipódromo.");
                         btnEliminar.innerHTML = '<i class="fas fa-trash-alt mr-1"></i> Eliminar';
                         btnEliminar.disabled = false;
                     } else {

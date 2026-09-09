@@ -5,9 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Panel de Usuarios - Club del Dinero</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
-<body class="bg-slate-100 font-sans p-6">
+<body class="bg-slate-100 font-sans h-screen flex overflow-hidden">
+
+    <div class="flex-1 flex flex-col overflow-y-auto p-6">
 
     <!-- Encabezado del Módulo -->
     <div class="flex justify-between items-center mb-6">
@@ -209,7 +212,11 @@
             </form>
         </div>
     </div>
+    </div>
     <!-- Enlace a la lógica segmentada de este módulo -->
-    <script src="js/usuarios.js"></script>
+    <script src="../js/components/auth.js"></script>
+    <script src="../js/components/ui.js"></script>
+    <script src="../js/components/layout.js"></script>
+    <script src="../js/usuarios.js"></script>
 </body>
 </html>

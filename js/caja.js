@@ -119,8 +119,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const nota = inputNota.value.trim();
         const metodo = comboMetodo.value;
 
-        if (!idOrigen) return alert("Debe seleccionar un cliente origen.");
-        if (isNaN(monto) || monto <= 0) return alert("El monto debe ser un número mayor a cero.");
+        if (!idOrigen) return clubUI.toast("Debe seleccionar un cliente origen.");
+        if (isNaN(monto) || monto <= 0) return clubUI.toast("El monto debe ser un número mayor a cero.");
 
         const clienteOrigen = clientesDB.find(c => c.id == idOrigen);
         
@@ -155,7 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     monto: monto, nota: nota
                 }]);
 
-                alert(`✅ Transferencia de $${monto} completada con éxito.`);
+                clubUI.toast(`✅ Transferencia de $${monto} completada con éxito.`);
 
             } else {
                 // MODO RETIRO
@@ -171,7 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     monto: monto, nota: nota
                 }]);
 
-                alert(`✅ Retiro de $${monto} por ${metodo} registrado.`);
+                clubUI.toast(`✅ Retiro de $${monto} por ${metodo} registrado.`);
             }
 
             // Limpiar y recargar
@@ -180,7 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
             inicializarCaja();
 
         } catch (error) {
-            alert(error.message || "Error procesando la transacción.");
+            clubUI.toast(error.message || "Error procesando la transacción.");
         }
 
         btnProcesar.disabled = false;
@@ -216,7 +216,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const txt = document.getElementById('textoWhatsapp');
         txt.select();
         document.execCommand('copy');
-        alert("¡Texto copiado al portapapeles!");
+        clubUI.toast("¡Texto copiado al portapapeles!");
     });
 
     document.querySelectorAll('.cerrar-modal').forEach(b => {

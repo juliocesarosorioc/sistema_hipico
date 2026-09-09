@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const hipodromo = comboHipodromo.value;
         const carrera = comboCarrera.value;
 
-        if(!hipodromo || !carrera) return alert("Seleccione Hipódromo y Carrera.");
+        if(!hipodromo || !carrera) return clubUI.toast("Seleccione Hipódromo y Carrera.");
 
         cuerpoTickets.innerHTML = '<tr><td colspan="7" class="p-4 text-center"><i class="fas fa-spinner fa-spin text-blue-500"></i> Cargando...</td></tr>';
 
@@ -69,7 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .eq('hipodromo', hipodromo)
             .eq('carrera', carrera);
 
-        if (errT || errTb) return alert("Error al cargar datos desde la base.");
+        if (errT || errTb) return clubUI.toast("Error al cargar datos desde la base.");
 
         if (tickets.length === 0) {
             cuerpoTickets.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No hay tickets pendientes para esta carrera.</td></tr>';
@@ -275,12 +275,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            alert("✅ ¡CARRERA LIQUIDADA CON ÉXITO! Los saldos fueron abonados a los ganadores.");
+            clubUI.toast("✅ ¡CARRERA LIQUIDADA CON ÉXITO! Los saldos fueron abonados a los ganadores.");
             window.location.reload();
 
         } catch (error) {
             console.error(error);
-            alert("Ocurrió un error en la liquidación en la base de datos.");
+            clubUI.toast("Ocurrió un error en la liquidación en la base de datos.");
             btnLiquidar.innerHTML = '<i class="fas fa-check-double mr-1"></i> Confirmar Cierre y Pagar Premios';
             btnLiquidar.disabled = false;
         }

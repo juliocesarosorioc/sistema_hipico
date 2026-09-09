@@ -175,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const nuevaTasa = parseFloat(inputMonto.value);
                 const monedaId = inputMonto.getAttribute('data-id');
                 
-                if (isNaN(nuevaTasa) || nuevaTasa <= 0) return alert("Ingrese un valor mayor a cero.");
+                if (isNaN(nuevaTasa) || nuevaTasa <= 0) return clubUI.toast("Ingrese un valor mayor a cero.");
 
                 if (confirm(`¿Confirma el registro histórico de la tasa a: ${nuevaTasa}?`)) {
                     const txt = this.textContent;
@@ -185,7 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const { error } = await supabase.from('tasas_cambio').insert([{ moneda_id: monedaId, tasa: nuevaTasa }]);
 
                     if (error) {
-                        alert("Error al actualizar la tasa.");
+                        clubUI.toast("Error al actualizar la tasa.");
                         this.textContent = txt;
                     } else {
                         this.textContent = "¡Guardado!";
@@ -211,7 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const fecha = inputFechaRep.value;
         const monedaId = selectMonedaRep.value;
 
-        if(!fecha || !monedaId) return alert("Seleccione fecha y moneda.");
+        if(!fecha || !monedaId) return clubUI.toast("Seleccione fecha y moneda.");
 
         const btn = document.getElementById('btnGenerarReporte');
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Calculando...';
@@ -301,7 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (e) {
             console.error(e);
-            alert("Error consultando la base de datos.");
+            clubUI.toast("Error consultando la base de datos.");
         }
 
         btn.innerHTML = '<i class="fas fa-calculator"></i> Calcular Cierre';
@@ -331,10 +331,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const { data: monedaGenerada, error } = await supabase.from('monedas').insert([payload]).select('id').single();
 
-        if (error) alert("El código de moneda ya existe o hubo un error.");
+        if (error) clubUI.toast("El código de moneda ya existe o hubo un error.");
         else {
             await supabase.from('tasas_cambio').insert([{ moneda_id: monedaGenerada.id, tasa: tasa }]);
-            alert(`Moneda registrada.`);
+            clubUI.toast(`Moneda registrada.`);
             this.reset();
             modalNueva.classList.add('hidden');
             cargarModulo();

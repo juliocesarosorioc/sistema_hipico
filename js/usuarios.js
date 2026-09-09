@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault(); 
             const nombre = document.getElementById('nuevoUsuario').value;
             const rol = document.getElementById('nuevoRol').value;
-            alert(`[BACKEND SIMULADO] Insertando en base de datos...\nUsuario: ${nombre}\nRol: ${rol}`);
+            clubUI.toast(`[BACKEND SIMULADO] Insertando en base de datos...\nUsuario: ${nombre}\nRol: ${rol}`);
             modal.classList.add('hidden');
             formulario.reset();
         });
@@ -42,7 +42,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const id = this.getAttribute('data-id');
             const usuario = this.getAttribute('data-usuario');
             // Aquí en el futuro abriremos un modal precargado con los datos del ID seleccionado
-            alert(`[BACKEND] Solicitando datos del usuario ${usuario} (ID: ${id}) para edición.`);
+            clubUI.toast(`[BACKEND] Solicitando datos del usuario ${usuario} (ID: ${id}) para edición.`);
         });
     });
 
@@ -51,7 +51,7 @@ document.addEventListener('DOMContentLoaded', function() {
         boton.addEventListener('click', function() {
             const usuario = this.getAttribute('data-usuario');
             if(confirm(`¿Desea resetear los parámetros de seguridad para ${usuario}?`)) {
-                alert(`[BACKEND] Parámetros reseteados para ${usuario}.`);
+                clubUI.toast(`[BACKEND] Parámetros reseteados para ${usuario}.`);
             }
         });
     });
@@ -61,7 +61,7 @@ document.addEventListener('DOMContentLoaded', function() {
         boton.addEventListener('click', function() {
             const usuario = this.getAttribute('data-usuario');
             if(confirm(`¿Generar enlace de recuperación de contraseña para ${usuario}?`)) {
-                alert(`[BACKEND] Correo de recuperación enviado a ${usuario}.`);
+                clubUI.toast(`[BACKEND] Correo de recuperación enviado a ${usuario}.`);
             }
         });
     });
@@ -76,7 +76,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Elimina la fila (tr) más cercana al botón presionado de la interfaz gráfica
                 const fila = this.closest('tr');
                 fila.remove();
-                alert(`[BACKEND] Instrucción DELETE ejecutada en base de datos para el ID: ${id}`);
+                clubUI.toast(`[BACKEND] Instrucción DELETE ejecutada en base de datos para el ID: ${id}`);
             }
         });
     });
@@ -93,7 +93,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Ocultamos el botón de expulsar ya que la sesión se cerró
                 this.style.display = 'none';
-                alert(`[BACKEND] Token de sesión revocado para ${usuario}.`);
+                clubUI.toast(`[BACKEND] Token de sesión revocado para ${usuario}.`);
             }
         });
     });
@@ -107,7 +107,7 @@ document.addEventListener('DOMContentLoaded', function() {
         boton.addEventListener('click', function() {
             const ip = this.getAttribute('data-ip');
             // En el futuro, esto consultará una API como ip-api.com
-            alert(`[API GEOLOCALIZACIÓN] Buscando coordenadas para la IP: ${ip}...`);
+            clubUI.toast(`[API GEOLOCALIZACIÓN] Buscando coordenadas para la IP: ${ip}...`);
         });
     });
 
@@ -120,7 +120,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Removemos la fila de la tabla de monitoreo
                 const fila = this.closest('tr');
                 fila.remove();
-                alert(`[BACKEND] IP ${ip} removida del registro de intentos fallidos.`);
+                clubUI.toast(`[BACKEND] IP ${ip} removida del registro de intentos fallidos.`);
                 
                 // Lógica pedagógica: Actualizar el contador de IPs rojas
                 const contadorElemento = document.querySelector('.bg-white.text-red-600.rounded');

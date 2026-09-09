@@ -56,7 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const { error } = await window.supabase.from('tipos_jugadas').insert([payload]);
         
         if (error) {
-            alert(error.code === '23505' ? 'Esta modalidad ya existe.' : 'Error al guardar.');
+            clubUI.toast(error.code === '23505' ? 'Esta modalidad ya existe.' : 'Error al guardar.');
         } else {
             formJugada.reset();
             cargarJugadas();

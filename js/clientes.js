@@ -125,7 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const { error } = await window.supabase.from('clientes').insert([{ nombre: nombre, es_socio: true }]);
         
         if(!error) { inp.value = ''; cargarClientes(); }
-        else { alert("Error o nombre duplicado."); }
+        else { clubUI.toast("Error o nombre duplicado."); }
         btnCrearSocio.innerHTML = 'Convertir a Socio';
     });
 
@@ -147,7 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
             es_socio: false
         }]);
 
-        if (error) alert("Error al registrar. Probablemente el nombre ya existe.");
+        if (error) clubUI.toast("Error al registrar. Probablemente el nombre ya existe.");
         else { this.reset(); cargarClientes(); }
         btn.innerHTML = 'Agregar'; btn.disabled = false;
     });
@@ -202,7 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnEjecutarDev?.addEventListener('click', async () => {
         const val = parseFloat(document.getElementById('inputDevolucionMasiva').value);
-        if(isNaN(val)) return alert("Ingrese un valor numérico.");
+        if(isNaN(val)) return clubUI.toast("Ingrese un valor numérico.");
         
         if(!confirm(`¿Aplicar ${val}% de devolución a los ${clientesFiltrados.length} clientes en pantalla?`)) return;
 

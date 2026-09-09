@@ -77,7 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sumaBaseTabla = parseFloat(lblSumaBase.textContent);
 
         if (!hipodromo || isNaN(carrera) || isNaN(montoTabla) || isNaN(premioOriginal) || sumaBaseTabla <= 0) {
-            return alert("Faltan campos obligatorios o la base de ponderación es cero.");
+            return clubUI.toast("Faltan campos obligatorios o la base de ponderación es cero.");
         }
 
         let caballosArr = [];
@@ -90,7 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        if (caballosArr.length < 2) return alert("Ingrese al menos 2 ejemplares.");
+        if (caballosArr.length < 2) return clubUI.toast("Ingrese al menos 2 ejemplares.");
 
         const btnOrigText = btnGuardarTabla.innerHTML;
         btnGuardarTabla.innerHTML = 'Guardando...'; btnGuardarTabla.disabled = true;
@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (error) {
             console.error("Error BD:", error.message || error);
-            alert("Error al registrar en la base de datos.");
+            clubUI.toast("Error al registrar en la base de datos.");
         } else {
             document.getElementById('montoTabla').value = '';
             contenedorCaballos.innerHTML = '';
@@ -191,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }).eq('id', id);
 
         if(!error) { document.getElementById('modalEditar').classList.add('hidden'); cargarTablas(); }
-        else { alert("Error al editar."); }
+        else { clubUI.toast("Error al editar."); }
     });
 
     // --- LÓGICA DE CLONACIÓN MASIVA ---
@@ -206,7 +206,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const gruposTexto = document.getElementById('txtGruposDuplicar').value.toUpperCase();
         
         const gruposNuevos = gruposTexto.split(',').map(g => g.trim()).filter(g => g !== '');
-        if(gruposNuevos.length === 0) return alert("Escriba al menos un grupo válido.");
+        if(gruposNuevos.length === 0) return clubUI.toast("Escriba al menos un grupo válido.");
 
         const tablaRef = datosTablaCompleta.find(t => t.id == idOriginal);
         if(!tablaRef) return;
@@ -231,7 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!error) {
             document.getElementById('modalDuplicar').classList.add('hidden');
             cargarTablas();
-        } else { alert("Error al clonar."); }
+        } else { clubUI.toast("Error al clonar."); }
     });
 
     // --- LÓGICA DE AUDITORÍA (Descuento Proporcional) ---

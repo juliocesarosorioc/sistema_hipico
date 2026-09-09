@@ -132,15 +132,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const clienteId = selectCliente.value;
         const cantidad = parseInt(inputCantidad.value);
 
-        if(!clienteId) return alert("Seleccione un cliente comprador.");
-        if(isNaN(cantidad) || cantidad <= 0) return alert("Cantidad inválida.");
+        if(!clienteId) return clubUI.toast("Seleccione un cliente comprador.");
+        if(isNaN(cantidad) || cantidad <= 0) return clubUI.toast("Cantidad inválida.");
 
         let limite = tablaSeleccionada.limite_ventas || 100;
         let vendidas = tablaSeleccionada.cantidad_vendida || 0;
         let disponibles = limite - vendidas;
 
         if(cantidad > disponibles) {
-            return alert(`No hay suficientes tablas disponibles. Solo quedan ${disponibles} cupos.`);
+            return clubUI.toast(`No hay suficientes tablas disponibles. Solo quedan ${disponibles} cupos.`);
         }
 
         const cliente = clientesDB.find(c => c.id == clienteId);
@@ -186,12 +186,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 saldo_actual: nuevoSaldoCliente
             }).eq('id', clienteId);
 
-            alert("✅ ¡Venta de tablas procesada con éxito! Inventario actualizado y saldo descontado.");
+            clubUI.toast("✅ ¡Venta de tablas procesada con éxito! Inventario actualizado y saldo descontado.");
             window.location.reload();
 
         } catch (e) {
             console.error(e);
-            alert("Ocurrió un error al procesar la venta en la base de datos.");
+            clubUI.toast("Ocurrió un error al procesar la venta en la base de datos.");
             btnProcesarVenta.disabled = false;
             btnProcesarVenta.textContent = "Procesar Venta de Tablas";
         }

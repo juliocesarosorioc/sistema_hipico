@@ -6,7 +6,7 @@
     <title>Gestión de Planos (Taquilla) - Club del Dinero</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Enlace al CSS centralizado -->
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="../css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script>if (!localStorage.getItem('club_sesion_activa')) window.location.href = 'index.html';</script>
     <style>
@@ -168,10 +168,13 @@
         <p class="text-slate-400 text-sm mt-2">Auditando inventario y descontando saldos</p>
     </div>
 
-    <!-- Scripts y Componentes -->
-    <script src="js/components/layout.js"></script>
+<!-- Scripts y Componentes -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="js/conexion.js"></script>
-    <script src="js/taquilla.js"></script>
+    <script src="../js/components/db.js"></script>
+    <script src="../js/components/auth.js"></script>
+    <script src="../js/components/ui.js"></script>
+    <script src="../js/components/layout.js"></script>
+    <script src="../js/conexion.js"></script>
+    <script src="../js/taquilla.js"></script>
 </body>
 </html>

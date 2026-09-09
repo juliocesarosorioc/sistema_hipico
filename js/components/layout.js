@@ -8,13 +8,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (paginaActual === 'index.html') return;
 
     // 2. Validar sesión de seguridad globalmente
-    const sesionStr = localStorage.getItem('club_sesion_activa');
-    if (!sesionStr) {
-        window.location.href = 'index.html';
-        return;
-    }
-
-    const sesion = JSON.parse(sesionStr);
+    const sesion = window.clubAuth.requireAuth();
+    if (!sesion) return;
 
     // 3. Plantilla HTML del Menú Lateral
     const sidebarHTML = `
@@ -79,7 +74,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 6. Asignar funcionalidad de cerrar sesión
     document.getElementById('btnCerrarSesionGlobal').addEventListener('click', () => {
-        localStorage.removeItem('club_sesion_activa');
-        window.location.href = 'index.html';
+        window.clubAuth.cerrarSesion();
     });
 });

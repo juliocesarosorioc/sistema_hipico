@@ -26,10 +26,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('retHipodromo').innerHTML = opcBase + optionsHip;
 
         // Cargar Clientes
-        const { data: clientes } = await supabase.from('clientes').select('id, nombre, saldo_usd').order('nombre');
+        const { data: clientes } = await supabase.from('clientes').select('id, nombre, saldo_actual').order('nombre');
         if (clientes) {
             clientesGlobal = clientes;
-            document.getElementById('wpsCliente').innerHTML = opcBase + clientes.map(c => `<option value="${c.id}">${c.nombre} (Disp: $${Number(c.saldo_usd).toFixed(2)})</option>`).join('');
+            document.getElementById('wpsCliente').innerHTML = opcBase + clientes.map(c => `<option value="${c.id}">${c.nombre} (Disp: $${Number(c.saldo_actual).toFixed(2)})</option>`).join('');
         }
 
         cargarJugadasHoy();
@@ -86,24 +86,24 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             
             const checks = ['chkW', 'chkP', 'chkS'].filter(id => document.getElementById(id).checked);
-            if (checks.length === 0) { alert("Seleccione al menos un tipo (W, P o S)."); return; }
+            if (checks.length === 0) { clubUI.toast("Seleccione al menos un tipo (W, P o S)."); return; }
 
             const clienteId = document.getElementById('wpsCliente').value;
             const montoPorJugada = parseFloat(document.getElementById('wpsMonto').value);
             const montoTotal = montoPorJugada * checks.length;
             
             const cliente = clientesGlobal.find(c => c.id === clienteId);
-            if (montoTotal > cliente.saldo_usd) {
-                if(!confirm(`Saldo insuficiente (Tiene $${cliente.saldo_usd}). ¿Forzar jugada en negativo?`)) return;
+            if (montoTotal > cliente.saldo_actual) {
+                if(!confirm(`Saldo insuficiente (Tiene $${cliente.saldo_actual}). ¿Forzar jugada en negativo?`)) return;
             }
 
             const btn = this.querySelector('button[type="submit"]');
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Registrando...'; btn.disabled = true;
 
             // Descontar total
-            const nuevoSaldo = Number(cliente.saldo_usd) - montoTotal;
-            await supabase.from('clientes').update({ saldo_usd: nuevoSaldo }).eq('id', clienteId);
-            cliente.saldo_usd = nuevoSaldo; // actualizar caché
+            const nuevoSaldo = Number(cliente.saldo_actual) - montoTotal;
+            await supabase.from('clientes').update({ saldo_actual: nuevoSaldo }).eq('id', clienteId);
+            cliente.saldo_actual = nuevoSaldo; // actualizar caché
 
             // Insertar tickets (uno por cada tipo seleccionado)
             const promesas = checks.map(id => {
@@ -198,13 +198,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     const premioTotal = abonosPorCliente[cId];
                     const clienteActual = clientesGlobal.find(c => c.id === cId);
                     if (clienteActual) {
-                        const nuevoSaldo = Number(clienteActual.saldo_usd) + premioTotal;
-                        await supabase.from('clientes').update({ saldo_usd: nuevoSaldo }).eq('id', cId);
+                        const nuevoSaldo = Number(clienteActual.saldo_actual) + premioTotal;
+                        await supabase.from('clientes').update({ saldo_actual: nuevoSaldo }).eq('id', cId);
                     }
                 }
             }
 
-            alert("✅ Carrera procesada. Saldos y premios actualizados.");
+            clubUI.toast("✅ Carrera procesada. Saldos y premios actualizados.");
             this.reset();
             btn.innerHTML = 'Procesar y Pagar'; btn.disabled = false;
             inicializarModulo();
@@ -251,13 +251,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     const devuelto = reembolsos[cId];
                     const clienteActual = clientesGlobal.find(c => c.id === cId);
                     if (clienteActual) {
-                        const nuevoSaldo = Number(clienteActual.saldo_usd) + devuelto;
-                        await supabase.from('clientes').update({ saldo_usd: nuevoSaldo }).eq('id', cId);
+                        const nuevoSaldo = Number(clienteActual.saldo_actual) + devuelto;
+                        await supabase.from('clientes').update({ saldo_actual: nuevoSaldo }).eq('id', cId);
                     }
                 }
-                alert(`✅ Caballos retirados. Se reembolsaron ${ticketsAfectados.length} jugadas.`);
+                clubUI.toast(`✅ Caballos retirados. Se reembolsaron ${ticketsAfectados.length} jugadas.`);
             } else {
-                alert("No se encontraron jugadas pendientes para los caballos indicados.");
+                clubUI.toast("No se encontraron jugadas pendientes para los caballos indicados.");
             }
 
             this.reset();

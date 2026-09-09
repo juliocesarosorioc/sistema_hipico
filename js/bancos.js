@@ -81,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const moneda = document.getElementById('monedaBanco').value;
         const saldo = parseFloat(document.getElementById('saldoInicial').value);
 
-        if(!nombre || !moneda || isNaN(saldo)) return alert("Complete todos los campos correctamente.");
+        if(!nombre || !moneda || isNaN(saldo)) return clubUI.toast("Complete todos los campos correctamente.");
 
         btnGuardarBanco.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
         btnGuardarBanco.disabled = true;
@@ -92,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
             saldo_local: saldo
         }]);
 
-        if (error) alert("Error al registrar banco en la base de datos.");
+        if (error) clubUI.toast("Error al registrar banco en la base de datos.");
         else {
             formBanco.reset();
             document.getElementById('saldoInicial').value = "0.00";
@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     document.getElementById('btnEliminarTodos').addEventListener('click', async function() {
-        if (bancosDB.length === 0) return alert("No hay bancos para eliminar.");
+        if (bancosDB.length === 0) return clubUI.toast("No hay bancos para eliminar.");
 
         if (confirm(`⚠️ ALERTA CONTABLE CRÍTICA ⚠️\n\n¿Desea ELIMINAR TODOS los bancos de tesorería? Esta acción borrará los registros de liquidez real.`)) {
             // Un truco seguro para borrar todo: borrar donde id sea mayor a 0
