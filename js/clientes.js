@@ -23,6 +23,28 @@ document.addEventListener('DOMContentLoaded', () => {
     let clientesFiltrados = [];
 
     // ==========================================
+    // HELPERS: campos reales de la tabla y teléfono válido
+    // (evita errores 400 al enviar columnas inexistentes o "" a columnas numéricas)
+    // ==========================================
+    const columnasReales = () => {
+        const fila = clientesGlobales[0];
+        return fila ? new Set(Object.keys(fila)) : null;
+    };
+    const soloColumnasExistentes = (payload) => {
+        const cols = columnasReales();
+        if (!cols) return payload;
+        return Object.fromEntries(Object.entries(payload).filter(([k]) => cols.has(k)));
+    };
+    const telefonoValido = (t) => {
+        const dig = String(t || '').replace(/\D/g, '');
+        return dig ? dig : null;
+    };
+    const numeroValido = (v) => {
+        const n = parseFloat(v);
+        return isNaN(n) ? 0 : n;
+    };
+
+    // ==========================================
     // 1. CARGA DE CLIENTES (DB REAL)
     // ==========================================
     async function cargarClientes() {
@@ -127,7 +149,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!nombre) return;
         
         btnCrearSocio.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        const { error } = await window.supabase.from('clientes').insert([{ nombre: nombre, es_socio: true }]);
+        const { error } = await window.supabase.from('clientes')
+            .insert([soloColumnasExistentes({ nombre: nombre, es_socio: true })]);
         
         if(!error) { inp.value = ''; cargarClientes(); }
         else { clubUI.toast('Error al crear socio: ' + error.message, 'error'); }
@@ -149,15 +172,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const { error } = await window.supabase.from('clientes').insert([{
+        const { error } = await window.supabase.from('clientes').insert([soloColumnasExistentes({
             nombre: nombre,
-            telefono: document.getElementById('telefonoCliente').value.trim(),
-            comision: parseFloat(document.getElementById('comisionCliente').value || 0),
+            telefono: telefonoValido(document.getElementById('telefonoCliente').value),
+            comision: numeroValido(document.getElementById('comisionCliente').value),
             libre: document.getElementById('libreCliente').value === 'true',
             socio_asignado: document.getElementById('socioCliente').value || null,
             mostrar_saldo_socio: document.getElementById('checkMostrarS').checked,
             es_socio: false
-        }]);
+        })]);
 
         if (error) clubUI.toast('Error al registrar: ' + error.message, 'error');
         else { this.reset(); cargarClientes(); }
@@ -194,13 +217,13 @@ document.addEventListener('DOMContentLoaded', () => {
     formEditar?.addEventListener('submit', async function(e) {
         e.preventDefault();
         const id = document.getElementById('editId').value;
-        const { error } = await window.supabase.from('clientes').update({
+        const { error } = await window.supabase.from('clientes').update(soloColumnasExistentes({
             nombre: document.getElementById('editNombre').value.trim().toUpperCase(),
-            telefono: document.getElementById('editTelefono').value.trim(),
-            comision: parseFloat(document.getElementById('editComision').value || 0),
+            telefono: telefonoValido(document.getElementById('editTelefono').value),
+            comision: numeroValido(document.getElementById('editComision').value),
             libre: document.getElementById('editLibre').value === 'true',
             mostrar_saldo_socio: document.getElementById('editMostrarS').value === 'true'
-        }).eq('id', id);
+        })).eq('id', id);
         if (error) return clubUI.toast('Error al actualizar: ' + error.message, 'error');
         modalEditar.classList.add('hidden');
         cargarClientes();

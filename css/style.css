@@ -176,3 +176,11 @@ th, td {
     justify-content: center;
     width: auto;
 }
+
+/* ==========================================
+   CONTENIDO: se desplaza con el menú lateral
+   ========================================== */
+.club-contenido {
+    transition: margin-left 0.28s ease;
+    will-change: margin-left;
+}

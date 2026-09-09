@@ -80,7 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 4. Plantilla HTML del Menú Lateral
     const sidebarHTML = `
-    <aside id="sidebarGlobal" class="fixed lg:static inset-y-0 left-0 w-64 bg-slate-900 text-slate-300 flex flex-col h-full shadow-xl z-40 shrink-0">
+    <aside id="sidebarGlobal" class="fixed inset-y-0 left-0 w-64 bg-slate-900 text-slate-300 flex flex-col h-full shadow-xl z-40 shrink-0">
         <div class="sidebar-header border-b border-slate-700 p-5">
             <h1 class="text-2xl font-bold text-white tracking-wide"><i class="fas fa-coins text-emerald-400 mr-2"></i><span class="logo-txt">Club del Dinero</span></h1>
             <p class="text-xs text-slate-400 mt-2 font-bold tracking-widest uppercase flex items-center">
@@ -120,12 +120,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const overlay = document.getElementById('overlaySidebar');
     const iconoToggle = btnToggle.querySelector('i');
     const mqDesktop = window.matchMedia('(min-width: 1024px)');
+    // En pantallas medianas (md+) el drawer EMPUJA el contenido; en móviles pequeños se superpone.
+    const mqPush = window.matchMedia('(min-width: 768px)');
+
+    // Contenido principal = primer hermano real del sidebar (main o div contenedor)
+    const contentArea = [...document.body.children].find(el => el !== sidebar && el.id !== 'btnToggleSidebar' && el.id !== 'overlaySidebar');
+    if (contentArea) contentArea.classList.add('club-contenido');
 
     const ESTADO_KEY = 'club_sidebar_estado';
     let compacto = localStorage.getItem(ESTADO_KEY) === 'compacto'; // solo aplica en escritorio
     let drawerAbierto = false; // solo aplica en móvil/tablet
 
     function esEscritorio() { return mqDesktop.matches; }
+
+    function setMargenContenido(px) {
+        if (contentArea) contentArea.style.marginLeft = px;
+    }
 
     function setAria() {
         const visible = esEscritorio() ? !compacto : drawerAbierto;
@@ -137,21 +147,23 @@ document.addEventListener('DOMContentLoaded', () => {
         sidebar.classList.remove('lg:w-16', 'lg:w-64', 'w-16', 'w-64');
 
         if (esEscritorio()) {
-            // Modo escritorio: colapsa a solo iconos o expande
+            // Escritorio: colapsa a solo iconos o expande -> el contenido se reacomoda
             sidebar.classList.add(compacto ? 'lg:w-16' : 'lg:w-64');
             sidebar.classList.toggle('colapsado', compacto);
             sidebar.classList.remove('-translate-x-full', 'translate-x-0');
-            sidebar.classList.add('lg:translate-x-0');
             overlay.classList.add('hidden');
             iconoToggle.className = 'fas ' + (compacto ? 'fa-bars' : 'fa-times');
+            setMargenContenido(compacto ? '4rem' : '16rem');
         } else {
-            // Modo móvil: drawer con overlay
+            // Móvil / tablet: drawer deslizante
             sidebar.classList.add('w-64');
             sidebar.classList.remove('colapsado');
             sidebar.classList.toggle('translate-x-0', drawerAbierto);
             sidebar.classList.toggle('-translate-x-full', !drawerAbierto);
             iconoToggle.className = 'fas ' + (drawerAbierto ? 'fa-times' : 'fa-bars');
             overlay.classList.toggle('hidden', !drawerAbierto);
+            // md+: el contenido se desplaza para dejar visible el menú; en móvil pequeño queda al frente
+            setMargenContenido(drawerAbierto && mqPush.matches ? '16rem' : '0');
         }
         setAria();
     }
@@ -198,6 +210,8 @@ document.addEventListener('DOMContentLoaded', () => {
         drawerAbierto = false;
         aplicar();
     });
+
+    mqPush.addEventListener('change', aplicar);
 
     // 9. Tooltips cuando está colapsado (accesibilidad)
     document.querySelectorAll('.nav-link').forEach(link => {
