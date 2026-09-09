@@ -1,201 +1,220 @@
-// Archivo: js/transferencias.js
-// Propósito: Validar saldos, ejecutar transferencias de fondos entre clientes en Supabase y gestionar reportes.
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Clientes - Club del Dinero</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>if (!localStorage.getItem('club_sesion_activa')) window.location.href = 'index.html';</script>
+</head>
+<body class="bg-[#f0f4f8] font-sans text-xs h-screen flex flex-col overflow-x-hidden">
 
-document.addEventListener('DOMContentLoaded', () => {
+    <!-- NAVEGACIÓN SUPERIOR -->
+    <header class="bg-white border-b border-slate-300 px-3 py-2 flex flex-wrap gap-2 items-center shadow-sm text-xs">
+        <a href="dashboard.html" class="bg-slate-600 text-white px-3 py-1 rounded hover:bg-slate-700 transition shadow-sm font-medium"><i class="fas fa-arrow-left mr-1"></i> Volver</a>
+        <a href="depositos.html" class="bg-emerald-600 text-white px-3 py-1 rounded shadow-sm hover:bg-emerald-700 font-medium">Depósitos</a>
+        <a href="retiros.html" class="bg-red-500 text-white px-3 py-1 rounded shadow-sm hover:bg-red-600 font-medium">Retiros</a>
+        <a href="transferencias.html" class="bg-amber-400 text-slate-900 px-3 py-1 rounded shadow-sm hover:bg-amber-500 font-medium">Transferencias</a>
+        <a href="taquilla.html" class="bg-blue-600 text-white px-3 py-1 rounded shadow-sm hover:bg-blue-700 font-medium">Apuestas</a>
+        <a href="saldos.html" class="bg-slate-800 text-white px-3 py-1 rounded shadow-sm hover:bg-slate-900 font-medium">Saldos/Reportes</a>
+        <span class="bg-amber-100 border border-amber-300 text-amber-900 px-3 py-1 rounded shadow-sm font-bold"><i class="fas fa-lock mr-1"></i> Clientes del Sistema</span>
+        <span class="bg-slate-200 text-slate-700 px-3 py-1 rounded shadow-sm font-medium"><i class="fas fa-camera mr-1"></i> Snapshots de Cierre</span>
+    </header>
 
-    const formTransferencia = document.getElementById('formTransferencia');
-    const selectOrigen = document.getElementById('clienteOrigen');
-    const selectDestino = document.getElementById('clienteDestino');
-    const inputMonto = document.getElementById('montoTransferencia');
-    const cuerpoSaldos = document.getElementById('cuerpoTablaSaldos');
-    const cuerpoHistorial = document.getElementById('cuerpoTablaHistorial');
-    let clientesData = []; // Caché para validaciones rápidas
-    
-    // Configurar fechas
-    const hoy = new Date();
-    document.getElementById('fechaHeader').textContent = hoy.toLocaleString('es-ES');
-    document.getElementById('filtroFecha').value = hoy.toISOString().split('T')[0];
-
-    // ==========================================
-    // 1. CARGAR DATOS DESDE SUPABASE (Read)
-    // ==========================================
-    async function cargarDatosGenerales() {
-        // A. Clientes y Saldos
-        const { data: clientes } = await supabase.from('clientes').select('id, nombre, saldo_usd').order('nombre');
+    <main class="p-4 flex-1 overflow-y-auto space-y-4 max-w-[1700px] mx-auto w-full">
         
-        if (clientes) {
-            clientesData = clientes;
-            selectOrigen.innerHTML = '<option value="">— Seleccione Origen —</option>';
-            selectDestino.innerHTML = '<option value="">— Seleccione Destino —</option>';
-            cuerpoSaldos.innerHTML = '';
+        <!-- CABECERA -->
+        <div class="bg-white px-4 py-3 rounded-lg shadow-sm border border-slate-200 flex justify-between items-center text-slate-800">
+            <h1 class="text-base font-bold flex items-center"><i class="fas fa-users text-slate-700 mr-2"></i> Gestión de Clientes</h1>
+            <span id="fechaRelojCabecera" class="text-slate-500 text-xs">Cargando fecha...</span>
+        </div>
 
-            clientes.forEach(c => {
-                selectOrigen.innerHTML += `<option value="${c.id}" data-saldo="${c.saldo_usd}">${c.nombre} - Disp: $${Number(c.saldo_usd).toFixed(2)}</option>`;
-                selectDestino.innerHTML += `<option value="${c.id}">${c.nombre}</option>`;
-                
-                cuerpoSaldos.innerHTML += `
-                    <tr class="hover:bg-slate-50">
-                        <td class="p-2 border-r border-slate-200 font-bold">${c.nombre}</td>
-                        <td class="p-2 text-right text-slate-800 font-bold ${c.saldo_usd < 0 ? 'text-red-500' : ''}">$${Number(c.saldo_usd).toFixed(2)}</td>
-                    </tr>
-                `;
-            });
-        }
+        <!-- FORMULARIO NUEVO CLIENTE -->
+        <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-200 space-y-3">
+            <form id="formNuevoCliente" class="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Nombre</label>
+                    <input type="text" id="nombreCliente" class="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-blue-500 uppercase" required>
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Teléfono</label>
+                    <input type="text" id="telefonoCliente" class="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Comisión (%)</label>
+                    <input type="number" id="comisionCliente" step="0.01" value="0.00" class="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Libre</label>
+                    <select id="libreCliente" class="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-blue-500">
+                        <option value="false">No</option>
+                        <option value="true">Sí</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Socio / Agencia</label>
+                    <select id="socioCliente" class="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-blue-500">
+                        <option value="">— Ninguno (Directo) —</option>
+                        <!-- Se llena vía JS -->
+                    </select>
+                </div>
+                <div class="pt-1 flex items-center gap-2">
+                    <label class="flex items-center gap-1 font-bold text-slate-700 cursor-pointer text-[10px]">
+                        <input type="checkbox" id="checkMostrarS" class="rounded"> Mostrar Saldo al Socio
+                    </label>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-1.5 rounded shadow flex-1 text-center transition-colors">
+                        Agregar
+                    </button>
+                </div>
+            </form>
+        </div>
 
-        // B. Historial de Transferencias (Solo buscamos depósitos/retiros etiquetados)
-        // Por simplicidad en este paso inicial, mostraremos retiros con etiqueta [TRANSFERENCIA]
-        const { data: transferencias } = await supabase
-            .from('retiros')
-            .select('monto_usd, referencia, fecha_registro, clientes(nombre)')
-            .ilike('referencia', '%[TRANSFERENCIA]%')
-            .order('fecha_registro', { ascending: false })
-            .limit(20);
+        <!-- ACORDEÓN GESTIÓN DE SOCIOS -->
+        <div id="btnAcordeonSocios" class="bg-slate-800 text-white px-4 py-2.5 rounded-lg shadow-sm flex justify-between items-center font-bold cursor-pointer hover:bg-slate-900 transition-colors">
+            <span class="flex items-center"><i class="fas fa-handshake mr-2 text-amber-400"></i> Gestión de Socios y Agencias</span>
+            <i id="iconoAcordeon" class="fas fa-chevron-down text-xs transition-transform duration-300"></i>
+        </div>
+        
+        <div id="panelSocios" class="hidden bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+            <p class="text-slate-500 mb-3">Aquí puedes registrar a clientes que actuarán como "Socios" o "Agencias" para tener afiliados bajo su estructura.</p>
+            <div class="flex gap-2">
+                <input type="text" id="nombreNuevoSocio" placeholder="Nombre del Socio/Agencia" class="border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 uppercase">
+                <button id="btnCrearSocio" class="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold px-4 py-1.5 rounded shadow">Convertir a Socio</button>
+            </div>
+            <div id="msgSocio" class="mt-2 text-green-600 font-bold text-[10px] hidden">Socio registrado correctamente.</div>
+        </div>
 
-        if (transferencias && transferencias.length > 0) {
-            cuerpoHistorial.innerHTML = '';
-            transferencias.forEach(t => {
-                const origen = t.clientes ? t.clientes.nombre : '—';
-                const fecha = new Date(t.fecha_registro).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
-                
-                // Extraer el destinatario y la nota real de la cadena de referencia
-                // Formato esperado: "[TRANSFERENCIA] Para: DESTINO | Nota: texto"
-                let destino = "—";
-                let notaLimpia = t.referencia;
-                
-                if (notaLimpia.includes('Para:')) {
-                    destino = notaLimpia.split('|')[0].replace('[TRANSFERENCIA] Para: ', '').trim();
-                    notaLimpia = notaLimpia.split('|')[1].replace('Nota: ', '').trim();
-                }
-
-                cuerpoHistorial.innerHTML += `
-                    <tr class="hover:bg-slate-50">
-                        <td class="p-2.5 font-bold text-red-600">${origen}</td>
-                        <td class="p-2.5 font-bold text-emerald-600">${destino}</td>
-                        <td class="p-2.5 text-right font-bold text-slate-800">$${Number(t.monto_usd).toFixed(2)}</td>
-                        <td class="p-2.5 text-slate-500">${fecha}</td>
-                        <td class="p-2.5 text-slate-600 truncate max-w-[150px]">${notaLimpia}</td>
-                        <td class="p-2.5 text-center"><button class="text-slate-400 hover:text-red-500"><i class="fas fa-trash-alt"></i></button></td>
-                    </tr>
-                `;
-            });
-        } else {
-            cuerpoHistorial.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500 bg-slate-50 border-b border-slate-200">No hay transferencias recientes</td></tr>';
-        }
-    }
-
-    // ==========================================
-    // 2. PROCESAMIENTO DEL FORMULARIO (Backend)
-    // ==========================================
-    if (formTransferencia) {
-        formTransferencia.addEventListener('submit', async function(e) {
-            e.preventDefault(); 
+        <!-- TABLA DE CLIENTES -->
+        <div class="space-y-2">
+            <h2 class="text-sm font-bold text-slate-800">Cartera de Clientes</h2>
             
-            const btnSubmit = this.querySelector('button[type="submit"]');
-            const origenId = selectOrigen.value;
-            const destinoId = selectDestino.value;
-            const monto = parseFloat(inputMonto.value);
-            const notaOriginal = document.getElementById('notaTransferencia').value.trim() || 'Sin nota';
+            <div class="flex flex-wrap justify-between items-center gap-2">
+                <div class="flex items-center gap-2">
+                    <div class="relative w-64">
+                        <i class="fas fa-search absolute left-3 top-2 text-slate-400"></i>
+                        <input type="text" id="buscadorClientes" placeholder="Buscar cliente o teléfono..." class="w-full border border-slate-300 rounded pl-8 pr-3 py-1.5 outline-none focus:border-blue-500">
+                    </div>
+                    <button id="btnRecargarClientes" class="border border-slate-300 bg-white px-2.5 py-1.5 rounded hover:bg-slate-50 text-slate-600 shadow-sm"><i class="fas fa-sync-alt"></i></button>
+                </div>
+                <button id="btnAbrirDevoluciones" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded font-bold shadow flex items-center transition-colors">
+                    <i class="fas fa-money-bill-wave mr-1.5"></i> Gestionar Devoluciones Masivas <i class="fas fa-chevron-right ml-1.5 text-[10px]"></i>
+                </button>
+            </div>
 
-            // 2.1 Validación básica
-            if (!origenId || !destinoId) {
-                alert("Error: Debe seleccionar tanto un Cliente Origen como un Cliente Destino.");
-                return;
-            }
+            <!-- TABLA EXTENDIDA -->
+            <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-slate-900 text-white text-[11px] uppercase tracking-wider">
+                            <tr>
+                                <th class="p-2 font-semibold whitespace-nowrap">Nombre</th>
+                                <th class="p-2 font-semibold whitespace-nowrap">Teléfono</th>
+                                <th class="p-2 text-center font-semibold whitespace-nowrap">Libre</th>
+                                <th class="p-2 text-center font-semibold whitespace-nowrap">Comisión</th>
+                                <th class="p-2 text-right font-semibold whitespace-nowrap">Saldo USD</th>
+                                <th class="p-2 text-right font-semibold whitespace-nowrap">Aval USD</th>
+                                <th class="p-2 text-right font-semibold whitespace-nowrap">Devolución</th>
+                                <th class="p-2 text-center font-semibold whitespace-nowrap" title="Mostrar Saldo al Socio">M.S.</th>
+                                <th class="p-2 font-semibold whitespace-nowrap">Socio</th>
+                                <th class="p-2 font-semibold whitespace-nowrap">Afiliado</th>
+                                <th class="p-2 text-center font-semibold whitespace-nowrap">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cuerpoTablaClientes" class="divide-y divide-slate-200 text-slate-700 text-[11px]">
+                            <tr><td colspan="11" class="p-6 text-center text-slate-500">Cargando datos...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
 
-            if (origenId === destinoId) {
-                alert("Operación denegada: El cliente origen y destino no pueden ser el mismo.");
-                selectDestino.focus();
-                return;
-            }
+    <!-- =====================================
+         MODALES 
+         ===================================== -->
+         
+    <!-- Modal Devoluciones Masivas -->
+    <div id="modalDevoluciones" class="hidden modal-overlay">
+        <div class="modal-container">
+            <div class="bg-purple-600 p-4 text-white font-bold flex justify-between items-center">
+                <span><i class="fas fa-percentage mr-2"></i> Asignar Devolución Masiva</span>
+                <button class="cerrar-modal hover:text-slate-200"><i class="fas fa-times text-lg"></i></button>
+            </div>
+            <div class="p-6 text-sm">
+                <p class="text-slate-600 mb-4">Esta acción aplicará un porcentaje fijo de devolución al saldo de todos los clientes filtrados o activos en la tabla actualmente.</p>
+                <div class="mb-4">
+                    <label class="block font-bold text-slate-700 mb-1">Porcentaje de Devolución Global (%)</label>
+                    <input type="number" id="inputDevolucionMasiva" step="0.01" placeholder="Ej: 5.00" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-purple-500 font-mono text-lg">
+                </div>
+                <div class="bg-yellow-50 border border-yellow-200 p-3 rounded text-yellow-800 text-xs flex gap-2">
+                    <i class="fas fa-exclamation-triangle mt-0.5"></i>
+                    <p>Precaución: Esta operación sobreescribirá el campo de devolución de todos los clientes listados.</p>
+                </div>
+            </div>
+            <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+                <button type="button" class="cerrar-modal bg-slate-500 text-white px-4 py-2 rounded font-medium hover:bg-slate-600">Cancelar</button>
+                <button id="btnEjecutarDevolucion" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded font-bold shadow-sm">
+                    Aplicar a Todos
+                </button>
+            </div>
+        </div>
+    </div>
 
-            // 2.2 Validación Matemática de Saldo
-            const clienteOrigen = clientesData.find(c => c.id === origenId);
-            const clienteDestino = clientesData.find(c => c.id === destinoId);
+    <!-- Modal Editar Cliente -->
+    <div id="modalEditarCliente" class="hidden modal-overlay">
+        <div class="modal-container">
+            <div class="bg-blue-600 p-4 text-white font-bold flex justify-between items-center">
+                <span><i class="fas fa-user-edit mr-2"></i> Editar Cliente</span>
+                <button class="cerrar-modal hover:text-slate-200"><i class="fas fa-times text-lg"></i></button>
+            </div>
+            <div class="p-6">
+                <form id="formEditarCliente" class="space-y-4">
+                    <input type="hidden" id="editId">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Nombre</label>
+                            <input type="text" id="editNombre" class="w-full border border-slate-300 rounded px-3 py-2 uppercase outline-none focus:border-blue-500" required>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Teléfono</label>
+                            <input type="text" id="editTelefono" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Comisión (%)</label>
+                            <input type="number" id="editComision" step="0.01" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Libre</label>
+                            <select id="editLibre" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-blue-500">
+                                <option value="false">No</option>
+                                <option value="true">Sí</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Mostrar S.</label>
+                            <select id="editMostrarS" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-blue-500">
+                                <option value="false">Oculto al Socio</option>
+                                <option value="true">Visible al Socio</option>
+                            </select>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 text-xs">
+                <button type="button" class="cerrar-modal bg-slate-500 text-white px-4 py-2 rounded font-medium hover:bg-slate-600">Cancelar</button>
+                <button type="submit" form="formEditarCliente" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold shadow-sm">Guardar</button>
+            </div>
+        </div>
+    </div>
 
-            if (monto > clienteOrigen.saldo_usd) {
-                if (!confirm(`El cliente ${clienteOrigen.nombre} solo tiene $${Number(clienteOrigen.saldo_usd).toFixed(2)} disponible.\n¿Forzar transferencia y dejarlo en negativo?`)) return;
-            } else {
-                const confirmacion = confirm(`¿Confirma transferir $${monto.toFixed(2)} desde ${clienteOrigen.nombre} hacia ${clienteDestino.nombre}?`);
-                if (!confirmacion) return;
-            }
-
-            btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Transfiriendo...';
-            btnSubmit.disabled = true;
-
-            // 2.3 Cálculo de nuevos saldos
-            const nuevoSaldoOrigen = Number(clienteOrigen.saldo_usd) - monto;
-            const nuevoSaldoDestino = Number(clienteDestino.saldo_usd) + monto;
-
-            // 2.4 Actualizar saldos en Supabase
-            await supabase.from('clientes').update({ saldo_usd: nuevoSaldoOrigen }).eq('id', origenId);
-            await supabase.from('clientes').update({ saldo_usd: nuevoSaldoDestino }).eq('id', destinoId);
-
-            // 2.5 Registrar Movimientos (Retiro para el origen, Depósito para el destino)
-            // Se etiqueta para que el historial lo identifique como transferencia
-            const refOrigen = `[TRANSFERENCIA] Para: ${clienteDestino.nombre} | Nota: ${notaOriginal}`;
-            const refDestino = `[TRANSFERENCIA] De: ${clienteOrigen.nombre} | Nota: ${notaOriginal}`;
-
-            await supabase.from('retiros').insert([{ cliente_id: origenId, monto_usd: monto, referencia: refOrigen }]);
-            await supabase.from('depositos').insert([{ cliente_id: destinoId, monto_usd: monto, monto_local: monto, tasa: 1, referencia: refDestino }]);
-
-            // Éxito
-            alert(`Transferencia Exitosa.\n- $${monto.toFixed(2)} descontado de ${clienteOrigen.nombre}.\n+ $${monto.toFixed(2)} acreditado a ${clienteDestino.nombre}.`);
-            
-            this.reset();
-            btnSubmit.innerHTML = '<i class="fas fa-share-square mr-1"></i> Registrar Transferencia';
-            btnSubmit.disabled = false;
-
-            cargarDatosGenerales(); // Refrescar las tablas
-        });
-    }
-
-    // ==========================================
-    // 3. MODAL Y PORTAPAPELES (WHATSAPP DINÁMICO)
-    // ==========================================
-    const modalWhatsapp = document.getElementById('modalWhatsapp');
-    const btnAbrirWhatsapp = document.getElementById('btnSaldosWhatsapp');
-    const btnCopiarTexto = document.getElementById('btnCopiarTexto');
-    const textoWhatsapp = document.getElementById('textoWhatsapp');
-
-    if (btnAbrirWhatsapp) {
-        btnAbrirWhatsapp.addEventListener('click', async function() {
-            // Consultar saldos reales desde BD
-            const { data: clientes } = await supabase.from('clientes').select('nombre, saldo_usd').order('nombre');
-            
-            let texto = `*💰 SALDOS DE CLIENTES*\n🗓️ ${hoy.toLocaleDateString('es-ES')}\n---------------------------\n`;
-            if (clientes) {
-                clientes.forEach(c => {
-                    const icono = c.saldo_usd >= 0 ? '✅' : '⚠️';
-                    texto += `${icono} ${c.nombre}: *${Number(c.saldo_usd).toFixed(2)}*\n`;
-                });
-            }
-
-            textoWhatsapp.value = texto;
-            modalWhatsapp.classList.remove('hidden');
-            textoWhatsapp.select();
-        });
-    }
-
-    document.querySelectorAll('.cerrar-modal').forEach(boton => {
-        boton.addEventListener('click', () => modalWhatsapp.classList.add('hidden'));
-    });
-
-    if (btnCopiarTexto) {
-        btnCopiarTexto.addEventListener('click', function() {
-            textoWhatsapp.select();
-            textoWhatsapp.setSelectionRange(0, 99999);
-            navigator.clipboard.writeText(textoWhatsapp.value).then(() => {
-                const textoOriginal = this.innerHTML;
-                this.innerHTML = '<i class="fas fa-check mr-1"></i> ¡Copiado!';
-                this.classList.replace('bg-emerald-700', 'bg-blue-600');
-                setTimeout(() => {
-                    this.innerHTML = textoOriginal;
-                    this.classList.replace('bg-blue-600', 'bg-emerald-700');
-                }, 2000);
-            });
-        });
-    }
-
-    // Inicializar todo
-    cargarDatosGenerales();
-});
+    <!-- Scripts Base -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/conexion.js"></script>
+    <script src="js/clientes.js"></script>
+    <script>
+        setInterval(() => document.getElementById('fechaRelojCabecera').textContent = new Date().toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }), 1000);
+    </script>
+</body>
+</html>

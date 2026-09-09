@@ -1,282 +1,216 @@
-// Archivo: js/taquilla.js
-// Propósito: Conexión de apuestas a BD, conservación de probabilidades y Parser IA para ventana flotante.
-
 document.addEventListener('DOMContentLoaded', () => {
 
-    const cuerpoTaquilla = document.getElementById('cuerpoTaquilla');
+    const tbody = document.getElementById('cuerpoTaquilla');
     const btnAgregarLineas = document.getElementById('btnAgregarLineas');
-    const selectHipodromo = document.getElementById('selectHipodromo');
+    const btnRegistrarCarrera = document.getElementById('btnRegistrarCarrera'); 
     const datalistClientes = document.getElementById('listaClientesDB');
-    const btnRegistrarCarrera = document.getElementById('btnRegistrarCarrera');
+    const datalistJugadas = document.getElementById('listaJugadasDB');
+    const modalProcesando = document.getElementById('modalProcesando');
     
-    document.getElementById('fechaCarrera').value = new Date().toISOString().split('T')[0];
+    // Configurar fecha por defecto a hoy
+    document.getElementById('fechaCarrera').valueAsDate = new Date();
 
-    let clientesGlobal = []; // Caché para validaciones rápidas
-    let contadorLineas = 0;
+    let clientesList = [];
+    let jugadasList = [];
 
     // ==========================================
-    // 1. CARGAR DATOS BASE (Hipódromos y Clientes)
+    // 1. CARGA DE DATOS (CLIENTES Y REGLAS)
     // ==========================================
-    async function cargarDatosBase() {
-        // Hipódromos
-        const { data: hipodromos } = await supabase.from('hipodromos').select('id, nombre').order('nombre');
-        if (hipodromos && hipodromos.length > 0) {
-            selectHipodromo.innerHTML = '';
-            hipodromos.forEach(h => selectHipodromo.innerHTML += `<option value="${h.id}">${h.nombre}</option>`);
-        } else {
-            selectHipodromo.innerHTML = '<option value="">Sin hipódromos - Configurar en catálogos</option>';
-        }
-
-        // Clientes para el Autocompletado (Datalist)
-        const { data: clientes } = await supabase.from('clientes').select('id, nombre, saldo_usd, aval_usd');
+    async function inicializarDatos() {
+        // Cargar Clientes
+        const { data: clientes } = await window.supabase.from('clientes').select('id, nombre, saldo_actual').order('nombre');
         if (clientes) {
-            clientesGlobal = clientes;
-            datalistClientes.innerHTML = '';
+            clientesList = clientes;
             clientes.forEach(c => {
-                datalistClientes.innerHTML += `<option value="${c.nombre}">`;
+                const opt = document.createElement('option');
+                opt.value = c.nombre;
+                datalistClientes.appendChild(opt);
             });
         }
-    }
 
-    // ==========================================
-    // 2. GENERADOR DINÁMICO DE TAQUILLA
-    // ==========================================
-    function crearLineaApuesta() {
-        contadorLineas++;
-        const tr = document.createElement('tr');
-        tr.className = "hover:bg-slate-50 transition-colors fila-apuesta";
-        
-        tr.innerHTML = `
-            <td class="p-2 text-center font-bold text-slate-500">${contadorLineas}</td>
-            <td class="p-2 text-center">
-                <button class="text-red-500 hover:text-red-700 px-1 border border-red-200 rounded mr-1 btn-eliminar-fila" onclick="this.closest('tr').remove()"><i class="fas fa-times"></i></button>
-            </td>
-            <td class="p-1"><input type="text" class="inp-jugada w-full border border-slate-300 rounded p-1 text-xs outline-none focus:border-blue-500 uppercase" placeholder="Ej: W, P, S..."></td>
-            <td class="p-1"><input type="text" class="inp-caballo w-full border border-slate-300 rounded p-1 text-xs outline-none focus:border-blue-500" placeholder="Ej: 5 o 2x3"></td>
-            
-            <!-- CAMPOS CRÍTICOS DE PROBABILIDAD (Conservados según directiva del usuario) -->
-            <td class="p-1 flex gap-1 bg-indigo-50">
-                <input type="number" step="0.01" class="inp-prob-pct w-1/2 border border-slate-300 rounded p-1 text-xs text-center font-mono outline-none focus:border-indigo-500" placeholder="%">
-                <input type="number" step="0.01" class="inp-prob-imp w-1/2 border border-slate-300 rounded p-1 text-xs text-center font-mono outline-none focus:border-indigo-500" placeholder="Imp.">
-            </td>
-            
-            <td class="p-1"><input type="number" step="0.01" class="inp-monto w-full border border-slate-300 rounded p-1 text-xs text-right font-bold outline-none focus:border-blue-500" placeholder="0.00"></td>
-            <td class="p-1"><input type="text" list="listaClientesDB" class="inp-cliente1 w-full border border-slate-300 rounded p-1 text-xs outline-none focus:border-blue-500 uppercase" placeholder="Buscar Cliente..."></td>
-            <td class="p-1"><input type="text" list="listaClientesDB" class="inp-cliente2 w-full border border-slate-300 rounded p-1 text-xs outline-none focus:border-blue-500 uppercase" placeholder="Buscar Cliente..."></td>
-        `;
-        cuerpoTaquilla.appendChild(tr);
-    }
-
-    // Generar 10 iniciales
-    for (let i = 0; i < 10; i++) crearLineaApuesta();
-    btnAgregarLineas.addEventListener('click', () => { for (let i = 0; i < 5; i++) crearLineaApuesta(); });
-
-    // ==========================================
-    // 3. REGISTRAR CARRERA Y DESCONTAR SALDOS
-    // ==========================================
-    btnRegistrarCarrera.addEventListener('click', async function() {
-        const hipodromoId = selectHipodromo.value;
-        const carrera = document.getElementById('selectCarrera').value;
-
-        if (!hipodromoId) {
-            alert("Seleccione un hipódromo válido antes de registrar.");
-            return;
+        // Cargar Tipos de Jugadas
+        const { data: jugadas } = await window.supabase.from('tipos_jugadas').select('*').eq('activo', true);
+        if (jugadas) {
+            jugadasList = jugadas;
+            jugadas.forEach(j => {
+                const opt = document.createElement('option');
+                opt.value = j.nombre;
+                datalistJugadas.appendChild(opt);
+            });
         }
 
-        const filas = document.querySelectorAll('.fila-apuesta');
-        let ticketsAInsertar = [];
+        // Generar las primeras 10 líneas
+        for(let i=1; i<=10; i++) agregarFila(i);
+    }
+
+    // ==========================================
+    // 2. MOTOR DE TABLA (FILAS DINÁMICAS)
+    // ==========================================
+    function agregarFila(indice = null) {
+        const tr = document.createElement('tr');
+        tr.className = 'border-b border-slate-200 fila-ticket hover:bg-slate-50 transition-colors';
+        const numLinea = indice || document.querySelectorAll('.fila-ticket').length + 1;
+        
+        tr.innerHTML = `
+            <td class="p-1 border-r border-slate-200 text-center font-bold text-slate-700 bg-slate-100 w-8">${numLinea}</td>
+            <td class="p-1 border-r border-slate-200 text-center w-16">
+                <button class="text-red-500 border border-red-200 rounded px-1.5 py-0.5 hover:bg-red-50 text-[10px] btn-borrar"><i class="fas fa-times"></i></button>
+            </td>
+            <td class="p-1 border-r border-slate-200">
+                <input type="text" list="listaJugadasDB" class="input-tbl in-jugada" placeholder="ESCRIBA...">
+            </td>
+            <td class="p-1 border-r border-slate-200">
+                <input type="text" class="input-tbl in-caballo" placeholder="Ej: 5 o 2x3 o 4*8">
+            </td>
+            <td class="p-1 border-r border-slate-200">
+                <input type="number" step="0.01" class="input-tbl in-monto text-right font-bold" placeholder="0.00">
+            </td>
+            <td class="p-1 border-r border-slate-200">
+                <input type="text" list="listaClientesDB" class="input-tbl in-juega" placeholder="Buscar Cliente...">
+            </td>
+            <td class="p-1 border-r border-slate-200">
+                <input type="text" list="listaClientesDB" class="input-tbl in-consigue" placeholder="Buscar Cliente...">
+            </td>
+            <td class="p-1 border-r border-slate-200 text-center text-slate-500 font-bold text-[11px] out-disp1">-</td>
+            <td class="p-1 text-center text-slate-500 font-bold text-[11px] out-disp2">-</td>
+        `;
+        
+        tbody.appendChild(tr);
+        asignarEventosFila(tr);
+    }
+
+    function asignarEventosFila(tr) {
+        // Botón Borrar limpia la fila
+        tr.querySelector('.btn-borrar').addEventListener('click', () => {
+            tr.querySelectorAll('.input-tbl').forEach(i => i.value = '');
+            tr.querySelector('.out-disp1').textContent = '-';
+            tr.querySelector('.out-disp2').textContent = '-';
+        });
+
+        // Autocompletar "Disponible 1" (Juega)
+        tr.querySelector('.in-juega').addEventListener('blur', function() {
+            const cliente = clientesList.find(c => c.nombre === this.value.trim().toUpperCase());
+            const celda = tr.querySelector('.out-disp1');
+            if(cliente) {
+                celda.textContent = parseFloat(cliente.saldo_actual).toFixed(2);
+                celda.className = `p-1 border-r border-slate-200 text-center font-bold text-[11px] out-disp1 ${cliente.saldo_actual < 0 ? 'text-red-500' : 'text-slate-800'}`;
+            } else { celda.textContent = '-'; }
+        });
+
+        // Autocompletar "Disponible 2" (Consigue)
+        tr.querySelector('.in-consigue').addEventListener('blur', function() {
+            const cliente = clientesList.find(c => c.nombre === this.value.trim().toUpperCase());
+            const celda = tr.querySelector('.out-disp2');
+            if(cliente) {
+                celda.textContent = parseFloat(cliente.saldo_actual).toFixed(2);
+                celda.className = `p-1 text-center font-bold text-[11px] out-disp2 ${cliente.saldo_actual < 0 ? 'text-red-500' : 'text-slate-800'}`;
+            } else { celda.textContent = '-'; }
+        });
+    }
+
+    btnAgregarLineas.addEventListener('click', () => {
+        for(let i=0; i<3; i++) agregarFila(); // Agrega de 3 en 3 al hacer click
+    });
+
+    // ==========================================
+    // 3. REGISTRO EN BASE DE DATOS Y DESCUENTO
+    // ==========================================
+    btnRegistrarCarrera.addEventListener('click', async () => {
+        const hipodromo = document.getElementById('selectHipodromo').value.trim();
+        const carrera = document.getElementById('selectCarrera').value;
+        
+        let ticketsValidos = [];
         let errores = [];
 
-        // Extraer y validar datos de la tabla
-        filas.forEach((fila, index) => {
-            const monto = parseFloat(fila.querySelector('.inp-monto').value);
-            const nombreCli1 = fila.querySelector('.inp-cliente1').value.trim().toUpperCase();
-            
-            if (monto > 0 && nombreCli1 !== "") {
-                const clienteObj = clientesGlobal.find(c => c.nombre === nombreCli1);
-                const nombreCli2 = fila.querySelector('.inp-cliente2').value.trim().toUpperCase();
-                const clienteObj2 = clientesGlobal.find(c => c.nombre === nombreCli2); // Puede ser undefined
+        document.querySelectorAll('.fila-ticket').forEach((tr, index) => {
+            const jugada = tr.querySelector('.in-jugada').value.trim().toUpperCase();
+            const caballo = tr.querySelector('.in-caballo').value.trim();
+            const monto = parseFloat(tr.querySelector('.in-monto').value);
+            const clienteJuegaNombre = tr.querySelector('.in-juega').value.trim().toUpperCase();
+            const clienteConsigueNombre = tr.querySelector('.in-consigue').value.trim().toUpperCase();
 
-                if (!clienteObj) {
-                    errores.push(`Fila ${index + 1}: El cliente '${nombreCli1}' no existe en la base de datos.`);
-                } else if (clienteObj.saldo_usd < monto) {
-                    errores.push(`Fila ${index + 1}: ${clienteObj.nombre} no tiene saldo suficiente (Saldo: $${clienteObj.saldo_usd}).`);
-                } else {
-                    // Preparamos el ticket conservando las probabilidades
-                    ticketsAInsertar.push({
-                        cliente_obj: clienteObj,
-                        ticket_data: {
-                            hipodromo_id: hipodromoId,
-                            carrera: carrera,
-                            jugada: fila.querySelector('.inp-jugada').value.toUpperCase(),
-                            caballo: fila.querySelector('.inp-caballo').value,
-                            prob_porcentaje: parseFloat(fila.querySelector('.inp-prob-pct').value) || 0.00,
-                            prob_implicita: parseFloat(fila.querySelector('.inp-prob-imp').value) || 0.00,
-                            monto_usd: monto,
-                            cliente_juega_id: clienteObj.id,
-                            cliente_consigue_id: clienteObj2 ? clienteObj2.id : null
-                        }
-                    });
-                }
+            if (!jugada && !caballo && isNaN(monto)) return; // Fila vacía, ignorar
+
+            if (!jugada || !caballo || isNaN(monto) || monto <= 0 || !clienteJuegaNombre) {
+                errores.push(`Línea ${index + 1}: Faltan datos obligatorios (Jugada, Caballo, Monto, Juega).`);
+                return;
+            }
+
+            const cJuega = clientesList.find(c => c.nombre === clienteJuegaNombre);
+            const cConsigue = clienteConsigueNombre ? clientesList.find(c => c.nombre === clienteConsigueNombre) : null;
+            const jugadaRegla = jugadasList.find(j => j.nombre === jugada);
+
+            if (!cJuega) errores.push(`Línea ${index + 1}: El cliente que juega "${clienteJuegaNombre}" no existe.`);
+            if (!jugadaRegla) errores.push(`Línea ${index + 1}: La regla de jugada "${jugada}" no existe en el sistema.`);
+            
+            if(errores.length === 0) {
+                ticketsValidos.push({
+                    hipodromo, carrera, 
+                    tipo_jugada_id: jugadaRegla.id, 
+                    nombre_jugada: jugadaRegla.nombre,
+                    caballo, 
+                    monto_jugado: monto, 
+                    monto_decidido: monto, 
+                    cliente_juega_id: cJuega.id, 
+                    cliente_juega_nombre: cJuega.nombre,
+                    cliente_consigue_id: cConsigue ? cConsigue.id : null, 
+                    cliente_consigue_nombre: cConsigue ? cConsigue.nombre : null
+                });
             }
         });
 
-        if (errores.length > 0) {
-            alert("NO SE PUEDE PROCESAR LA CARRERA. Corrija los siguientes errores:\n\n" + errores.join("\n"));
-            return;
-        }
+        if (errores.length > 0) return alert("CORRIJA LOS SIGUIENTES ERRORES:\n\n" + errores.join('\n'));
+        if (ticketsValidos.length === 0) return alert("No hay tickets ingresados.");
 
-        if (ticketsAInsertar.length === 0) {
-            alert("No hay jugadas válidas con monto y cliente asignado.");
-            return;
-        }
+        modalProcesando.classList.remove('hidden');
 
-        if (confirm(`¿Confirma el registro de ${ticketsAInsertar.length} jugadas en la base de datos y el descuento de saldos?`)) {
-            const textoOriginal = this.innerHTML;
-            this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Registrando...';
-            this.disabled = true;
+        try {
+            const { error: errTickets } = await window.supabase.from('tickets_apuestas').insert(ticketsValidos);
+            if (errTickets) throw errTickets;
 
-            try {
-                for (let item of ticketsAInsertar) {
-                    // 1. Descontar saldo del cliente 1
-                    const nuevoSaldo = Number(item.cliente_obj.saldo_usd) - item.ticket_data.monto_usd;
-                    await supabase.from('clientes').update({ saldo_usd: nuevoSaldo }).eq('id', item.cliente_obj.id);
-                    
-                    // 2. Insertar ticket
-                    await supabase.from('taquilla_tickets').insert([item.ticket_data]);
-                    
-                    // Actualizar caché local para no recargar todo
-                    item.cliente_obj.saldo_usd = nuevoSaldo; 
-                }
-                
-                alert("✅ Carrera procesada exitosamente. Tickets guardados y saldos descontados.");
-                
-                // Limpiar tabla
-                cuerpoTaquilla.innerHTML = '';
-                contadorLineas = 0;
-                for (let i = 0; i < 10; i++) crearLineaApuesta();
-
-            } catch (error) {
-                console.error(error);
-                alert("Ocurrió un error al procesar la base de datos.");
+            // Descuento de saldo automático
+            for (const t of ticketsValidos) {
+                const cJuega = clientesList.find(c => c.id === t.cliente_juega_id);
+                const nuevoSaldo = parseFloat(cJuega.saldo_actual) - parseFloat(t.monto_jugado);
+                await window.supabase.from('clientes').update({ saldo_actual: nuevoSaldo }).eq('id', t.cliente_juega_id);
+                cJuega.saldo_actual = nuevoSaldo; // Refrescar memoria local
             }
 
-            this.innerHTML = textoOriginal;
-            this.disabled = false;
-        }
-    });
-
-    // ==========================================
-    // 4. IA / PARSER DE TRANSACCIONES RÁPIDAS
-    // ==========================================
-    const btnProcesar = document.getElementById('btnProcesarTransacciones');
-    const cajaTexto = document.getElementById('textoTransacciones');
-    document.getElementById('btnLimpiarTransacciones').addEventListener('click', () => cajaTexto.value = '');
-
-    btnProcesar.addEventListener('click', async function() {
-        const textoBruto = cajaTexto.value.trim().split('\n');
-        let operacionesEjecutadas = 0;
-
-        if (textoBruto.length === 0 || textoBruto[0] === "") return;
-
-        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        
-        for (let linea of textoBruto) {
-            if (linea.trim() === '') continue;
+            alert(`✅ ¡ÉXITO! Se registraron ${ticketsValidos.length} apuestas.`);
             
-            const partes = linea.trim().split(' ').map(p => p.toUpperCase());
-            
-            if (partes.length >= 2) {
-                const nombreCli1 = partes[0];
-                const cliente1 = clientesGlobal.find(c => c.nombre === nombreCli1);
-                
-                if (!cliente1) {
-                    console.log(`Fallo Parseo: Cliente ${nombreCli1} no encontrado.`);
-                    continue;
-                }
+            // Limpiar tabla completa
+            document.querySelectorAll('.btn-borrar').forEach(b => b.click());
 
-                // Extraer el número matemático
-                const strNumero = partes.find(p => p.includes('+') || p.includes('-') || !isNaN(p));
-                const montoOriginal = parseFloat(strNumero);
-                const montoAbsoluto = Math.abs(montoOriginal);
-
-                // Evaluar la intención según la semántica
-                if (linea.toLowerCase().includes('aval')) {
-                    const nuevoAval = montoOriginal > 0 ? Number(cliente1.aval_usd) + montoAbsoluto : Math.max(0, Number(cliente1.aval_usd) - montoAbsoluto);
-                    await supabase.from('clientes').update({ aval_usd: nuevoAval }).eq('id', cliente1.id);
-                    cliente1.aval_usd = nuevoAval; // actualizar caché
-                    operacionesEjecutadas++;
-                } 
-                else if (partes.length >= 3 && !isNaN(partes[1])) {
-                    // Formato TRASLADO: FRANK 100 LUIS (Frank envía a Luis)
-                    const nombreCli2 = partes[2];
-                    const cliente2 = clientesGlobal.find(c => c.nombre === nombreCli2);
-                    
-                    if (cliente2 && montoAbsoluto > 0) {
-                        await supabase.from('clientes').update({ saldo_usd: Number(cliente1.saldo_usd) - montoAbsoluto }).eq('id', cliente1.id);
-                        await supabase.from('clientes').update({ saldo_usd: Number(cliente2.saldo_usd) + montoAbsoluto }).eq('id', cliente2.id);
-                        await supabase.from('retiros').insert([{ cliente_id: cliente1.id, monto_usd: montoAbsoluto, referencia: `Traslado a ${cliente2.nombre} (Ventanilla Flotante)` }]);
-                        await supabase.from('depositos').insert([{ cliente_id: cliente2.id, monto_usd: montoAbsoluto, monto_local: montoAbsoluto, tasa: 1, referencia: `Traslado de ${cliente1.nombre} (Ventanilla Flotante)` }]);
-                        
-                        cliente1.saldo_usd -= montoAbsoluto; cliente2.saldo_usd += montoAbsoluto;
-                        operacionesEjecutadas++;
-                    }
-                }
-                else if (montoOriginal > 0) {
-                    // Formato DEPÓSITO: LUIS +100
-                    await supabase.from('clientes').update({ saldo_usd: Number(cliente1.saldo_usd) + montoAbsoluto }).eq('id', cliente1.id);
-                    await supabase.from('depositos').insert([{ cliente_id: cliente1.id, monto_usd: montoAbsoluto, monto_local: montoAbsoluto, tasa: 1, referencia: 'Depósito Rápido (Ventanilla Flotante)' }]);
-                    cliente1.saldo_usd += montoAbsoluto;
-                    operacionesEjecutadas++;
-                }
-                else if (montoOriginal < 0) {
-                    // Formato RETIRO: JUAN -100
-                    await supabase.from('clientes').update({ saldo_usd: Number(cliente1.saldo_usd) - montoAbsoluto }).eq('id', cliente1.id);
-                    await supabase.from('retiros').insert([{ cliente_id: cliente1.id, monto_usd: montoAbsoluto, referencia: 'Retiro Rápido (Ventanilla Flotante)' }]);
-                    cliente1.saldo_usd -= montoAbsoluto;
-                    operacionesEjecutadas++;
-                }
-            }
-        }
-
-        this.innerHTML = `<span><i class="fas fa-check-square text-emerald-400 mr-1"></i> Procesar</span><span class="text-[9px] text-slate-400 mt-1">Ctrl+Shift+L</span>`;
-        alert(`Comandos procesados. ${operacionesEjecutadas} transacciones financieras ejecutadas en la nube.`);
-        cajaTexto.value = '';
-    });
-
-    // Atajos de teclado (Parser)
-    document.addEventListener('keydown', function(e) {
-        if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'l') {
-            e.preventDefault();
-            btnProcesar.click();
+        } catch (err) {
+            console.error(err);
+            alert("Error al guardar en la base de datos.");
+        } finally {
+            modalProcesando.classList.add('hidden');
         }
     });
 
     // ==========================================
-    // 5. FÍSICA DE VENTANA FLOTANTE (DRAG & DROP)
+    // 4. VENTANA FLOTANTE (DRAG & DROP)
     // ==========================================
     const ventana = document.getElementById('ventanaTransacciones');
     const cabecera = document.getElementById('cabeceraTransacciones');
-    let isDragging = false, startX, startY, initialX, initialY;
+    let isDragging = false, offsetX, offsetY;
 
-    cabecera.addEventListener('mousedown', function(e) {
+    cabecera.addEventListener('mousedown', (e) => {
         isDragging = true;
-        startX = e.clientX; startY = e.clientY;
-        const rect = ventana.getBoundingClientRect();
-        initialX = rect.left; initialY = rect.top;
-        ventana.style.right = 'auto'; ventana.style.bottom = 'auto';
-        ventana.style.left = initialX + 'px'; ventana.style.top = initialY + 'px';
+        offsetX = e.clientX - ventana.getBoundingClientRect().left;
+        offsetY = e.clientY - ventana.getBoundingClientRect().top;
     });
 
-    document.addEventListener('mousemove', function(e) {
+    document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
-        e.preventDefault();
-        ventana.style.left = (initialX + (e.clientX - startX)) + 'px';
-        ventana.style.top = (initialY + (e.clientY - startY)) + 'px';
+        ventana.style.left = `${e.clientX - offsetX}px`;
+        ventana.style.top = `${e.clientY - offsetY}px`;
+        ventana.style.right = 'auto'; 
     });
 
     document.addEventListener('mouseup', () => isDragging = false);
 
-    // Inicializar
-    cargarDatosBase();
+    // Arrancar
+    inicializarDatos();
 });

@@ -16,10 +16,10 @@
     <!-- ==========================================
          SECCIÓN 1: MENÚ LATERAL (SIDEBAR)
          ========================================== -->
-    <aside class="w-64 bg-slate-900 text-slate-300 flex flex-col h-full shadow-xl z-20">
+    <aside class="w-64 bg-slate-900 text-slate-300 flex flex-col h-full shadow-xl z-20 shrink-0">
         
         <!-- Encabezado del Menú -->
-        <div class="sidebar-header border-b border-slate-700">
+        <div class="sidebar-header border-b border-slate-700 p-5">
             <h1 class="text-2xl font-bold text-white tracking-wide">Club del Dinero</h1>
             <p class="text-xs text-slate-400 mt-1 flex items-center">
                 <i class="fas fa-circle text-emerald-500 text-[8px] mr-1"></i> 
@@ -28,86 +28,94 @@
             <p class="text-xs text-white font-bold mt-1" id="sidebarUserName"></p>
         </div>
 
-        <!-- Lista de Navegación (Inicio primero, Operadores al final) -->
-        <nav class="flex-1 overflow-y-auto py-4">
-            <ul class="space-y-1 text-sm">
-                <li>
+        <!-- Lista de Navegación Organizada -->
+        <nav class="flex-1 overflow-y-auto py-2">
+            <ul class="text-sm">
+                <!-- PRINCIPAL -->
+                <li class="mt-2">
                     <a href="dashboard.html" class="flex items-center px-5 py-3 bg-blue-600 text-white border-l-4 border-blue-400">
                         <i class="fas fa-home w-6"></i>
                         <span class="ml-2 font-medium">Inicio</span>
                     </a>
                 </li>
+
+                <!-- MÓDULO HÍPICO -->
+                <li class="px-5 mt-6 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Módulo Hípico</li>
                 <li>
-                    <a href="clientes.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-users w-6 text-cyan-400"></i>
-                        <span class="ml-2">Clientes</span>
+                    <a href="taquilla.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-receipt w-6 text-blue-400"></i><span class="ml-2">Taquilla (Planos)</span>
+                    </a>
+                </li>
+                <!-- NUEVO: CONFIGURACIÓN DE TABLAS FIJAS -->
+                <li>
+                    <a href="tablas.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors border-l-2 border-transparent hover:border-indigo-400">
+                        <i class="fas fa-table w-6 text-indigo-400"></i><span class="ml-2 font-medium">Config. Tablas Fijas</span>
                     </a>
                 </li>
                 <li>
-                    <a href="depositos.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-arrow-down w-6 text-emerald-400"></i>
-                        <span class="ml-2">Depósitos</span>
+                    <a href="wps.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-horse w-6 text-teal-400"></i><span class="ml-2">W.P.S.</span>
                     </a>
                 </li>
                 <li>
-                    <a href="retiros.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-arrow-up w-6 text-red-400"></i>
-                        <span class="ml-2">Retiros</span>
+                    <a href="remates.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-bell w-6 text-orange-400"></i><span class="ml-2">Remates</span>
                     </a>
                 </li>
                 <li>
-                    <a href="transferencias.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-exchange-alt w-6 text-amber-400"></i>
-                        <span class="ml-2">Transferencias</span>
+                    <a href="pollas.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-trophy w-6 text-indigo-400"></i><span class="ml-2">Pollas</span>
                     </a>
                 </li>
                 <li>
-                    <a href="taquilla.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-receipt w-6 text-blue-400"></i>
-                        <span class="ml-2">Taquilla (Planos)</span>
+                    <a href="hipodromos.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-horse-head w-6 text-purple-400"></i><span class="ml-2">Hipódromos</span>
+                    </a>
+                </li>
+
+                <!-- CAJA Y FINANZAS -->
+                <li class="px-5 mt-6 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Caja y Finanzas</li>
+                <li>
+                    <a href="depositos.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-arrow-down w-6 text-emerald-400"></i><span class="ml-2">Depósitos</span>
                     </a>
                 </li>
                 <li>
-                    <a href="wps.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-horse w-6 text-teal-400"></i>
-                        <span class="ml-2">W.P.S.</span>
+                    <a href="retiros.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-arrow-up w-6 text-red-400"></i><span class="ml-2">Retiros</span>
                     </a>
                 </li>
                 <li>
-                    <a href="remates.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-bell w-6 text-orange-400"></i>
-                        <span class="ml-2">Remates</span>
+                    <a href="transferencias.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-exchange-alt w-6 text-amber-400"></i><span class="ml-2">Transferencias</span>
                     </a>
                 </li>
                 <li>
-                    <a href="pollas.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-trophy w-6 text-indigo-400"></i>
-                        <span class="ml-2">Pollas</span>
+                    <a href="saldos.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-balance-scale w-6 text-slate-400"></i><span class="ml-2">Saldos/Reportes</span>
                     </a>
                 </li>
                 <li>
-                    <a href="saldos.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-balance-scale w-6 text-slate-400"></i>
-                        <span class="ml-2">Saldos/Reportes</span>
+                    <a href="monedas.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-coins w-6 text-yellow-400"></i><span class="ml-2">Monedas y Tasas</span>
+                    </a>
+                </li>
+
+                <!-- ADMINISTRACIÓN -->
+                <li class="px-5 mt-6 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Administración</li>
+                <li>
+                    <a href="clientes.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-users w-6 text-cyan-400"></i><span class="ml-2">Clientes</span>
                     </a>
                 </li>
                 <li>
-                    <a href="hipodromos.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-horse-head w-6 text-purple-400"></i>
-                        <span class="ml-2">Hipódromos</span>
+                    <a href="tipos_jugadas.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-cogs w-6 text-slate-400"></i><span class="ml-2">Reglas de Jugadas</span>
                     </a>
                 </li>
-                <li>
-                    <a href="monedas.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-coins w-6 text-yellow-400"></i>
-                        <span class="ml-2">Monedas y Tasas</span>
-                    </a>
-                </li>
-                <!-- Operadores ubicado al final del menú -->
                 <li id="menuOperadores" class="hidden">
-                    <a href="operadores.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors border-t border-slate-800 mt-2">
-                        <i class="fas fa-user-shield w-6 text-blue-400"></i>
-                        <span class="ml-2">Operadores</span>
+                    <a href="operadores.html" class="flex items-center px-5 py-2.5 hover:bg-slate-800 hover:text-white transition-colors border-t border-slate-800 mt-2">
+                        <i class="fas fa-user-shield w-6 text-blue-400"></i><span class="ml-2">Operadores</span>
                     </a>
                 </li>
             </ul>
@@ -128,7 +136,7 @@
     <main class="flex-1 flex flex-col h-full relative overflow-y-auto">
         
         <!-- Encabezado Superior (Reloj) -->
-        <header class="flex justify-between items-center p-6 bg-white border-b border-slate-200 shadow-sm">
+        <header class="flex justify-between items-center p-6 bg-white border-b border-slate-200 shadow-sm sticky top-0 z-10">
             <div class="flex items-center gap-2 text-emerald-700 font-bold text-xs bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg">
                 <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span> Supabase Cloud Conectada
             </div>
@@ -139,7 +147,7 @@
         </header>
 
         <!-- Contenedor Principal con Padding -->
-        <div class="p-8">
+        <div class="p-8 max-w-7xl mx-auto w-full">
             
             <!-- Panel de Control: Semana Activa -->
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
@@ -186,66 +194,126 @@
                 <p class="text-slate-500 mt-1">Selecciona un módulo en el menú lateral o accede directamente desde los accesos rápidos</p>
             </div>
 
-            <!-- Malla de Tarjetas de Módulos -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <!-- Malla de Tarjetas de Módulos (Incluye el nuevo módulo) -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 
                 <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
                     <div class="bg-blue-100 text-blue-600 p-3 rounded-full mb-3"><i class="fas fa-receipt text-xl"></i></div>
                     <h3 class="text-lg font-bold text-slate-800 mb-1">Taquilla (Planos)</h3>
                     <p class="text-xs text-slate-500 mb-4 flex-1">Gestión de carreras y parser IA</p>
-                    <a href="taquilla.html" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block">Abrir</a>
+                    <a href="taquilla.html" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
+                </div>
+
+                <!-- NUEVA TARJETA: TABLAS FIJAS -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
+                    <div class="bg-indigo-100 text-indigo-600 p-3 rounded-full mb-3"><i class="fas fa-table text-xl"></i></div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-1">Tablas Fijas</h3>
+                    <p class="text-xs text-slate-500 mb-4 flex-1">Ensamblaje y auditoría de retiros</p>
+                    <a href="tablas.html" class="bg-indigo-500 hover:bg-indigo-600 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
                 </div>
 
                 <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
                     <div class="bg-slate-200 text-slate-700 p-3 rounded-full mb-3"><i class="fas fa-balance-scale text-xl"></i></div>
                     <h3 class="text-lg font-bold text-slate-800 mb-1">Saldos y Reportes</h3>
                     <p class="text-xs text-slate-500 mb-4 flex-1">Gestión de balances y cuadres</p>
-                    <a href="saldos.html" class="bg-slate-800 hover:bg-slate-900 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block">Abrir</a>
+                    <a href="saldos.html" class="bg-slate-800 hover:bg-slate-900 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
                 </div>
 
                 <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
                     <div class="bg-cyan-100 text-cyan-600 p-3 rounded-full mb-3"><i class="fas fa-users text-xl"></i></div>
                     <h3 class="text-lg font-bold text-slate-800 mb-1">Clientes</h3>
                     <p class="text-xs text-slate-500 mb-4 flex-1">Gestión de apostadores</p>
-                    <a href="clientes.html" class="bg-cyan-500 hover:bg-cyan-600 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block">Abrir</a>
+                    <a href="clientes.html" class="bg-cyan-500 hover:bg-cyan-600 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
                 </div>
 
                 <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
                     <div class="bg-purple-100 text-purple-600 p-3 rounded-full mb-3"><i class="fas fa-horse-head text-xl"></i></div>
                     <h3 class="text-lg font-bold text-slate-800 mb-1">Hipódromos</h3>
                     <p class="text-xs text-slate-500 mb-4 flex-1">Catálogo de pistas y eventos</p>
-                    <a href="hipodromos.html" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block">Abrir</a>
+                    <a href="hipodromos.html" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
                 </div>
 
                 <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
                     <div class="bg-emerald-100 text-emerald-600 p-3 rounded-full mb-3"><i class="fas fa-arrow-down text-xl"></i></div>
                     <h3 class="text-lg font-bold text-slate-800 mb-1">Depósitos</h3>
                     <p class="text-xs text-slate-500 mb-4 flex-1">Ingresos y modo aval</p>
-                    <a href="depositos.html" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block">Abrir</a>
+                    <a href="depositos.html" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
                 </div>
 
                 <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
                     <div class="bg-red-100 text-red-600 p-3 rounded-full mb-3"><i class="fas fa-arrow-up text-xl"></i></div>
                     <h3 class="text-lg font-bold text-slate-800 mb-1">Retiros</h3>
                     <p class="text-xs text-slate-500 mb-4 flex-1">Salidas y vaciado en cero</p>
-                    <a href="retiros.html" class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block">Abrir</a>
+                    <a href="retiros.html" class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
                 </div>
 
                 <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
                     <div class="bg-orange-100 text-orange-600 p-3 rounded-full mb-3"><i class="fas fa-bell text-xl"></i></div>
                     <h3 class="text-lg font-bold text-slate-800 mb-1">Remates</h3>
                     <p class="text-xs text-slate-500 mb-4 flex-1">Subastas y comisiones</p>
-                    <a href="remates.html" class="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block">Abrir</a>
+                    <a href="remates.html" class="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
                 </div>
 
                 <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
                     <div class="bg-yellow-100 text-yellow-700 p-3 rounded-full mb-3"><i class="fas fa-coins text-xl"></i></div>
                     <h3 class="text-lg font-bold text-slate-800 mb-1">Monedas y Tasas</h3>
                     <p class="text-xs text-slate-500 mb-4 flex-1">Histórico inmutable de divisas</p>
-                    <a href="monedas.html" class="bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block">Abrir</a>
+                    <a href="monedas.html" class="bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
                 </div>
 
             </div>
+
+            <!-- TARJETAS DE INDICADORES (KPIs) INTELIGENTES -->
+            <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4">Indicadores Financieros</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <!-- KPI 1 -->
+                <div class="bg-white rounded-lg border border-slate-200 p-5 shadow-sm relative overflow-hidden">
+                    <div class="absolute right-0 top-0 w-16 h-16 bg-emerald-50 rounded-bl-full flex items-start justify-end p-3">
+                        <i class="fas fa-wallet text-emerald-400 text-xl"></i>
+                    </div>
+                    <h4 class="text-xs font-bold text-slate-500 mb-1">SALDOS EN SISTEMA</h4>
+                    <div class="text-3xl font-black text-slate-800 mb-2 font-mono" id="kpiSaldos">---</div>
+                    <div class="text-xs font-bold text-emerald-600 bg-emerald-50 inline-block px-2 py-1 rounded">
+                        <i class="fas fa-chart-line mr-1"></i> Fondos jugables
+                    </div>
+                </div>
+
+                <!-- KPI 2 -->
+                <div class="bg-white rounded-lg border border-slate-200 p-5 shadow-sm relative overflow-hidden">
+                    <div class="absolute right-0 top-0 w-16 h-16 bg-blue-50 rounded-bl-full flex items-start justify-end p-3">
+                        <i class="fas fa-ticket-alt text-blue-400 text-xl"></i>
+                    </div>
+                    <h4 class="text-xs font-bold text-slate-500 mb-1">TICKETS PENDIENTES</h4>
+                    <div class="text-3xl font-black text-slate-800 mb-2 font-mono" id="kpiTickets">---</div>
+                    <div class="text-xs font-bold text-blue-600 bg-blue-50 inline-block px-2 py-1 rounded">
+                        <i class="fas fa-clock mr-1"></i> Esperando auditoría
+                    </div>
+                </div>
+
+                <!-- KPI 3 -->
+                <div class="bg-white rounded-lg border border-slate-200 p-5 shadow-sm relative overflow-hidden">
+                    <div class="absolute right-0 top-0 w-16 h-16 bg-amber-50 rounded-bl-full flex items-start justify-end p-3">
+                        <i class="fas fa-shield-alt text-amber-400 text-xl"></i>
+                    </div>
+                    <h4 class="text-xs font-bold text-slate-500 mb-1">AVALES OTORGADOS</h4>
+                    <div class="text-3xl font-black text-slate-800 mb-2 font-mono" id="kpiAvales">---</div>
+                    <div class="text-xs font-bold text-amber-600 bg-amber-50 inline-block px-2 py-1 rounded">
+                        <i class="fas fa-exclamation-triangle mr-1"></i> Riesgo de crédito
+                    </div>
+                </div>
+            </div>
+
+            <!-- TABLA DE ACTIVIDAD RECIENTE -->
+            <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+                <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                    <h3 class="font-bold text-slate-700 text-sm"><i class="fas fa-history mr-2 text-slate-400"></i> Últimas transacciones del sistema</h3>
+                </div>
+                <div class="p-8 text-center text-slate-500 text-sm">
+                    <i class="fas fa-network-wired text-4xl text-slate-300 mb-3 block"></i>
+                    Conecta esta tabla con tu base de datos Supabase para visualizar la auditoría en tiempo real.
+                </div>
+            </div>
+
         </div>
     </main>
 

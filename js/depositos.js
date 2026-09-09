@@ -1,223 +1,268 @@
-// Archivo: js/depositos.js
-// Propósito: Conectar depósitos y avales con Supabase, generar reportes de WhatsApp.
-
 document.addEventListener('DOMContentLoaded', () => {
 
-    // Referencias al DOM
     const formDeposito = document.getElementById('formDeposito');
     const selectCliente = document.getElementById('clienteDeposito');
-    const cuerpoHistorial = document.getElementById('cuerpoTablaHistorial');
-    const cuerpoSaldos = document.getElementById('cuerpoTablaSaldos');
+    const inputTipoOperacion = document.getElementById('tipoOperacion');
+    const tbodySaldos = document.getElementById('cuerpoTablaSaldos');
+    const tbodyHistorial = document.getElementById('cuerpoTablaHistorial');
+    const modalWhatsapp = document.getElementById('modalWhatsapp');
     
-    // Configurar fecha de hoy en el Header y Filtro
-    const hoy = new Date();
-    document.getElementById('fechaHeader').textContent = hoy.toLocaleString('es-ES');
-    const filtroFecha = document.getElementById('filtroFecha');
-    if(filtroFecha) filtroFecha.value = hoy.toISOString().split('T')[0];
+    // Variables globales
+    let clientesGlobales = [];
+    let historialGlobal = [];
 
     // ==========================================
-    // 1. SISTEMA DE PESTAÑAS (TABS) DE OPERACIÓN
+    // 1. INICIALIZACIÓN DE DATOS CRUZADOS
     // ==========================================
-    const tabs = document.querySelectorAll('.tab-operacion');
-    let operacionSeleccionada = 'Normal'; // Valor por defecto
+    async function cargarDatos() {
+        await cargarClientes();
+        await cargarHistorial();
+    }
 
-    tabs.forEach(tab => {
-        tab.addEventListener('click', function() {
-            // Reiniciar diseño
-            tabs.forEach(t => {
-                t.className = 'tab-operacion flex-1 py-2 text-slate-500 bg-white hover:bg-slate-50 border-b-2 border-transparent transition-colors';
-            });
-
-            // Activar diseño actual
-            const tipo = this.getAttribute('data-tipo');
-            operacionSeleccionada = tipo;
-
-            if (tipo === 'Normal') {
-                this.className = 'tab-operacion flex-1 py-2 text-emerald-700 bg-emerald-50 border-b-2 border-emerald-600 transition-colors';
-            } else if (tipo === 'Otorgar Aval') {
-                this.className = 'tab-operacion flex-1 py-2 text-amber-700 bg-amber-50 border-b-2 border-amber-500 transition-colors';
-            } else if (tipo === 'Pagar Aval') {
-                this.className = 'tab-operacion flex-1 py-2 text-blue-700 bg-blue-50 border-b-2 border-blue-500 transition-colors';
-            }
-        });
-    });
-
-    // ==========================================
-    // 2. CARGAR DATOS DESDE SUPABASE (Read)
-    // ==========================================
-    async function cargarDatosGenerales() {
-        // A. Cargar Clientes para el Select y Tabla de Saldos
-        const { data: clientes, error: errClientes } = await supabase
+    async function cargarClientes() {
+        const { data, error } = await window.supabase
             .from('clientes')
-            .select('id, nombre, saldo_usd, aval_usd, libre')
-            .order('nombre');
+            .select('id, nombre, saldo_actual, aval, libre')
+            .order('nombre', { ascending: true });
 
-        if (!errClientes && clientes) {
-            // Llenar Select
-            selectCliente.innerHTML = '<option value="">— Seleccione Cliente —</option>';
-            clientes.forEach(c => selectCliente.innerHTML += `<option value="${c.id}">${c.nombre}</option>`);
+        if (!error && data) {
+            clientesGlobales = data;
+            
+            // Llenar Select de Formulario
+            selectCliente.innerHTML = '<option value="">— Seleccione un Cliente —</option>';
+            data.forEach(c => {
+                selectCliente.innerHTML += `<option value="${c.id}">${c.nombre}</option>`;
+            });
 
             // Llenar Tabla de Saldos
-            cuerpoSaldos.innerHTML = '';
-            clientes.forEach(c => {
-                cuerpoSaldos.innerHTML += `
-                    <tr class="hover:bg-slate-50">
-                        <td class="p-2 border-r border-slate-200 font-bold">${c.nombre} ${c.libre ? '<span class="text-[9px] bg-slate-200 text-slate-500 px-1 rounded ml-1">L</span>' : ''}</td>
-                        <td class="p-2 text-right border-r border-slate-200 text-emerald-700 font-bold">$${Number(c.saldo_usd).toFixed(2)}</td>
-                        <td class="p-2 text-right text-amber-600 font-bold">$${Number(c.aval_usd).toFixed(2)}</td>
+            tbodySaldos.innerHTML = '';
+            data.forEach(c => {
+                const saldo = parseFloat(c.saldo_actual || 0);
+                const aval = parseFloat(c.aval || 0);
+                const colorSaldo = saldo < 0 ? 'text-red-600' : 'text-emerald-600';
+                const icono = saldo > 0 ? '✅' : (saldo < 0 ? '⚠️' : '🔹');
+
+                tbodySaldos.innerHTML += `
+                    <tr class="hover:bg-cyan-50 transition-colors">
+                        <td class="p-2 border-b border-slate-100 font-bold text-slate-800">${icono} ${c.nombre} ${c.libre ? '<span class="text-[9px] bg-green-100 text-green-700 px-1 rounded ml-1">L</span>' : ''}</td>
+                        <td class="p-2 border-b border-slate-100 text-right font-mono font-bold ${colorSaldo}">$${saldo.toFixed(2)}</td>
+                        <td class="p-2 border-b border-slate-100 text-right font-mono text-amber-600">$${aval.toFixed(2)}</td>
                     </tr>
                 `;
             });
         }
+    }
 
-        // B. Cargar Historial de Depósitos
-        const { data: depositos, error: errDepositos } = await supabase
+    async function cargarHistorial() {
+        const { data, error } = await window.supabase
             .from('depositos')
-            .select('monto_usd, referencia, fecha_registro, clientes(nombre)')
-            .order('fecha_registro', { ascending: false })
-            .limit(20);
+            .select('*')
+            .order('fecha', { ascending: false })
+            .limit(100);
 
-        if (!errDepositos && depositos.length > 0) {
-            cuerpoHistorial.innerHTML = '';
-            depositos.forEach(dep => {
-                const nombre = dep.clientes ? dep.clientes.nombre : '—';
-                const fecha = new Date(dep.fecha_registro).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
-                
-                // Determinar el "Tipo" leyendo la referencia (si la inyectamos así al guardar)
-                let tipoVisual = '<span class="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold">NORMAL</span>';
-                let notaLimpia = dep.referencia || '—';
-
-                if (notaLimpia.startsWith('[AVAL]')) {
-                    tipoVisual = '<span class="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[10px] font-bold">OTORGÓ AVAL</span>';
-                    notaLimpia = notaLimpia.replace('[AVAL] ', '');
-                } else if (notaLimpia.startsWith('[PAGO_AVAL]')) {
-                    tipoVisual = '<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold">PAGÓ AVAL</span>';
-                    notaLimpia = notaLimpia.replace('[PAGO_AVAL] ', '');
-                }
-
-                cuerpoHistorial.innerHTML += `
-                    <tr class="hover:bg-slate-50">
-                        <td class="p-2.5 font-bold text-slate-800">${nombre}</td>
-                        <td class="p-2.5">${tipoVisual}</td>
-                        <td class="p-2.5 text-right font-bold text-slate-800">$${Number(dep.monto_usd).toFixed(2)}</td>
-                        <td class="p-2.5 text-slate-500">${fecha}</td>
-                        <td class="p-2.5 text-slate-600 truncate max-w-[150px]">${notaLimpia}</td>
-                        <td class="p-2.5 text-center"><button class="text-slate-400 hover:text-red-500"><i class="fas fa-trash-alt"></i></button></td>
-                    </tr>
-                `;
-            });
-        } else {
-            cuerpoHistorial.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500 bg-slate-50">Sin historial reciente</td></tr>';
+        if (!error && data) {
+            historialGlobal = data;
+            renderizarHistorial(data);
         }
     }
 
-    // ==========================================
-    // 3. PROCESAMIENTO DEL FORMULARIO (Backend)
-    // ==========================================
-    if (formDeposito) {
-        formDeposito.addEventListener('submit', async function(e) {
-            e.preventDefault();
+    function renderizarHistorial(datos) {
+        tbodyHistorial.innerHTML = '';
+        if (datos.length === 0) {
+            tbodyHistorial.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">No hay depósitos registrados.</td></tr>';
+            return;
+        }
+
+        datos.forEach(d => {
+            const fecha = new Date(d.fecha).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
             
-            const btnSubmit = this.querySelector('button[type="submit"]');
-            btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Procesando...';
-            btnSubmit.disabled = true;
+            let badgeOperacion = '';
+            if (d.tipo_operacion === 'Normal') badgeOperacion = '<span class="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold text-[10px]">NORMAL</span>';
+            else if (d.tipo_operacion === 'Otorgar Aval') badgeOperacion = '<span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold text-[10px]">AVAL +</span>';
+            else badgeOperacion = '<span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-bold text-[10px]">PAGO AVAL</span>';
 
-            const clienteId = selectCliente.value;
-            const monto = parseFloat(document.getElementById('montoDeposito').value);
-            let nota = document.getElementById('notaDeposito').value.trim();
-
-            // Consultar saldos actuales del cliente
-            const { data: cliente } = await supabase.from('clientes').select('saldo_usd, aval_usd').eq('id', clienteId).single();
-            
-            let updatePayload = {};
-            
-            // Lógica Matemática de la Operación
-            if (operacionSeleccionada === 'Normal') {
-                updatePayload = { saldo_usd: Number(cliente.saldo_usd) + monto };
-            } 
-            else if (operacionSeleccionada === 'Otorgar Aval') {
-                updatePayload = { aval_usd: Number(cliente.aval_usd) + monto };
-                nota = `[AVAL] ${nota}`; // Etiquetar para el historial
-            } 
-            else if (operacionSeleccionada === 'Pagar Aval') {
-                // Al pagar un aval, disminuye la deuda de aval. (Permitimos que llegue a cero).
-                updatePayload = { aval_usd: Math.max(0, Number(cliente.aval_usd) - monto) };
-                nota = `[PAGO_AVAL] ${nota}`;
-            }
-
-            // 1. Actualizar saldos en la tabla clientes
-            await supabase.from('clientes').update(updatePayload).eq('id', clienteId);
-
-            // 2. Registrar el movimiento en la tabla depositos
-            await supabase.from('depositos').insert([{
-                cliente_id: clienteId,
-                monto_usd: monto,
-                monto_local: monto,
-                tasa: 1,
-                referencia: nota
-            }]);
-
-            // Reset y Recarga
-            this.reset();
-            btnSubmit.innerHTML = '<i class="fas fa-money-bag mr-1"></i> Registrar Depósito';
-            btnSubmit.disabled = false;
-            
-            cargarDatosGenerales(); // Refrescar las tablas
+            tbodyHistorial.innerHTML += `
+                <tr class="hover:bg-slate-50 border-b border-slate-100 transition-colors">
+                    <td class="p-2 text-slate-500">${fecha}</td>
+                    <td class="p-2 font-bold text-slate-800">${d.cliente_nombre}</td>
+                    <td class="p-2">${badgeOperacion}</td>
+                    <td class="p-2 text-right font-mono font-bold text-emerald-700">$${parseFloat(d.monto).toFixed(2)}</td>
+                    <td class="p-2 text-slate-600 truncate max-w-[150px]" title="${d.nota || ''}">${d.nota || '-'}</td>
+                    <td class="p-2 text-center">
+                        <button class="btn-eliminar-historial text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors" data-id="${d.id}" data-monto="${d.monto}" data-tipo="${d.tipo_operacion}" data-cliente="${d.cliente_id}">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
         });
+        asignarBotonEliminar();
     }
 
     // ==========================================
-    // 4. MODAL Y PORTAPAPELES (WHATSAPP DINÁMICO)
+    // 2. LÓGICA DE INTERFAZ (Pestañas)
     // ==========================================
-    const modalWhatsapp = document.getElementById('modalWhatsapp');
-    const btnAbrirWhatsapp = document.getElementById('btnSaldosWhatsapp');
-    const btnCopiarTexto = document.getElementById('btnCopiarTexto');
-    const textoWhatsapp = document.getElementById('textoWhatsapp');
-
-    if (btnAbrirWhatsapp) {
-        btnAbrirWhatsapp.addEventListener('click', async function() {
-            // Generar el texto consultando la BD
-            const { data: clientes } = await supabase.from('clientes').select('nombre, saldo_usd, aval_usd').order('nombre');
+    document.querySelectorAll('.tab-operacion').forEach(btn => {
+        btn.addEventListener('click', function() {
+            // Resetear estilos de todos
+            document.querySelectorAll('.tab-operacion').forEach(b => {
+                b.classList.remove('text-emerald-700', 'bg-emerald-50', 'border-emerald-600');
+                b.classList.add('text-slate-500', 'bg-white', 'border-transparent');
+            });
+            // Aplicar estilo al seleccionado
+            this.classList.remove('text-slate-500', 'bg-white', 'border-transparent');
+            this.classList.add('text-emerald-700', 'bg-emerald-50', 'border-emerald-600');
             
-            let texto = `*💰 SALDOS DE CLIENTES*\n🗓️ ${hoy.toLocaleDateString('es-ES')}\n---------------------------\n`;
-            
-            if (clientes) {
-                clientes.forEach(c => {
-                    const icono = c.saldo_usd >= 0 ? '✅' : '⚠️';
-                    texto += `${icono} ${c.nombre}: *${Number(c.saldo_usd).toFixed(2)}*`;
-                    if(c.aval_usd > 0) texto += ` (Aval: ${Number(c.aval_usd).toFixed(2)})`;
-                    texto += '\n';
-                });
-            }
-
-            textoWhatsapp.value = texto;
-            modalWhatsapp.classList.remove('hidden');
-            textoWhatsapp.select();
+            // Actualizar input oculto
+            inputTipoOperacion.value = this.getAttribute('data-tipo');
         });
-    }
-
-    // Botones Cerrar Modal
-    document.querySelectorAll('.cerrar-modal').forEach(btn => {
-        btn.addEventListener('click', () => modalWhatsapp.classList.add('hidden'));
     });
 
-    // Copiar al Portapapeles
-    if (btnCopiarTexto) {
-        btnCopiarTexto.addEventListener('click', function() {
-            textoWhatsapp.select();
-            textoWhatsapp.setSelectionRange(0, 99999);
-            navigator.clipboard.writeText(textoWhatsapp.value).then(() => {
-                const textoOriginal = this.innerHTML;
-                this.innerHTML = '<i class="fas fa-check mr-1"></i> ¡Copiado!';
-                this.classList.replace('bg-emerald-700', 'bg-blue-600');
-                setTimeout(() => {
-                    this.innerHTML = textoOriginal;
-                    this.classList.replace('bg-blue-600', 'bg-emerald-700');
-                }, 2000);
+    // ==========================================
+    // 3. PROCESAMIENTO MATEMÁTICO DE TRANSACCIONES
+    // ==========================================
+    formDeposito.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const btnSubmit = formDeposito.querySelector('button[type="submit"]');
+        btnSubmit.disabled = true;
+        btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando...';
+
+        const clienteId = selectCliente.value;
+        const nombreCliente = selectCliente.options[selectCliente.selectedIndex].text;
+        const monto = parseFloat(document.getElementById('montoDeposito').value);
+        const nota = document.getElementById('notaDeposito').value.trim();
+        const tipoOp = inputTipoOperacion.value;
+
+        if (!clienteId || isNaN(monto) || monto <= 0) {
+            alert("Monto inválido.");
+            btnSubmit.disabled = false; btnSubmit.innerHTML = 'PROCESAR OPERACIÓN';
+            return;
+        }
+
+        // Obtener saldos actuales directamente de la BD por seguridad
+        const { data: currentClient } = await window.supabase.from('clientes').select('saldo_actual, aval').eq('id', clienteId).single();
+        
+        let nuevoSaldo = parseFloat(currentClient.saldo_actual || 0);
+        let nuevoAval = parseFloat(currentClient.aval || 0);
+
+        // LÓGICA DE NEGOCIO:
+        // Normal: Sube saldo jugable.
+        // Otorgar Aval: Sube saldo jugable y sube deuda de aval.
+        // Pagar Aval: Baja deuda de aval (el dinero no va al saldo jugable, va a cubrir el crédito).
+        if (tipoOp === 'Normal') {
+            nuevoSaldo += monto;
+        } else if (tipoOp === 'Otorgar Aval') {
+            nuevoSaldo += monto;
+            nuevoAval += monto;
+        } else if (tipoOp === 'Pagar Aval') {
+            nuevoAval -= monto;
+            if (nuevoAval < 0) nuevoAval = 0; // Evitar avales negativos
+        }
+
+        // 1. Registrar Historial
+        const { error: errDep } = await window.supabase.from('depositos').insert([{
+            cliente_id: clienteId,
+            cliente_nombre: nombreCliente,
+            tipo_operacion: tipoOp,
+            monto: monto,
+            nota: nota
+        }]);
+
+        // 2. Actualizar Tabla Clientes
+        const { error: errUpd } = await window.supabase.from('clientes').update({
+            saldo_actual: nuevoSaldo,
+            aval: nuevoAval
+        }).eq('id', clienteId);
+
+        if (!errDep && !errUpd) {
+            formDeposito.reset();
+            document.querySelector('.tab-operacion[data-tipo="Normal"]').click(); // Volver a normal
+            cargarDatos();
+        } else {
+            alert("Error al procesar la operación.");
+        }
+
+        btnSubmit.disabled = false;
+        btnSubmit.innerHTML = 'PROCESAR OPERACIÓN';
+    });
+
+    // ==========================================
+    // 4. ELIMINAR REGISTRO (REVERSO)
+    // ==========================================
+    function asignarBotonEliminar() {
+        document.querySelectorAll('.btn-eliminar-historial').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                if(!confirm("¿Borrar registro? Esta acción NO reversa el saldo automáticamente en esta versión de seguridad. Deberás ajustar el saldo del cliente manualmente haciendo un retiro equivalente.")) return;
+                
+                const idTransaccion = this.getAttribute('data-id');
+                await window.supabase.from('depositos').delete().eq('id', idTransaccion);
+                cargarHistorial();
             });
         });
     }
 
-    // Inicializar Tablas
-    cargarDatosGenerales();
+    // ==========================================
+    // 5. EXPORTAR A WHATSAPP
+    // ==========================================
+    document.getElementById('btnSaldosWhatsapp')?.addEventListener('click', () => {
+        let texto = "*💰 REPORTE DE ESTADO DE CUENTAS - CLUB DEL DINERO*\n";
+        texto += `*Fecha de Corte:* ${new Date().toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' })}\n`;
+        texto += "----------------------------------------\n\n";
+        
+        let totalCajaPositiva = 0;
+
+        clientesGlobales.forEach(c => {
+            const saldo = parseFloat(c.saldo_actual || 0);
+            const aval = parseFloat(c.aval || 0);
+            
+            if (saldo > 0) {
+               texto += `✅ *${c.nombre}:* $${saldo.toFixed(2)}\n`;
+               totalCajaPositiva += saldo;
+            } else if (saldo < 0) {
+               texto += `⚠️ *${c.nombre}:* -$${Math.abs(saldo).toFixed(2)}\n`;
+            } else {
+               texto += `🔹 *${c.nombre}:* $0.00\n`;
+            }
+            if (aval > 0) {
+                texto += `   ↳ _Deuda Aval:_ $${aval.toFixed(2)}\n`;
+            }
+        });
+
+        texto += "\n----------------------------------------\n";
+        texto += `*Fondo Flotante Total Jugable:* $${totalCajaPositiva.toFixed(2)}\n`;
+
+        document.getElementById('textoWhatsapp').value = texto;
+        modalWhatsapp.classList.remove('hidden');
+    });
+
+    document.getElementById('btnCopiarTexto')?.addEventListener('click', function() {
+        const text = document.getElementById('textoWhatsapp');
+        text.select();
+        document.execCommand('copy');
+        this.innerHTML = '<i class="fas fa-check mr-1"></i> ¡Copiado!';
+        setTimeout(() => this.innerHTML = '<i class="fas fa-copy mr-1"></i> Copiar al Portapapeles', 2000);
+    });
+
+    document.querySelectorAll('.cerrar-modal').forEach(b => {
+        b.addEventListener('click', () => modalWhatsapp.classList.add('hidden'));
+    });
+
+    // ==========================================
+    // FILTROS DE FECHA
+    // ==========================================
+    document.getElementById('btnFiltrarFecha')?.addEventListener('click', () => {
+        const f = document.getElementById('filtroFecha').value;
+        if(f) {
+            const filtrados = historialGlobal.filter(d => d.fecha.startsWith(f));
+            renderizarHistorial(filtrados);
+        }
+    });
+
+    document.getElementById('btnLimpiarFiltro')?.addEventListener('click', () => {
+        document.getElementById('filtroFecha').value = '';
+        renderizarHistorial(historialGlobal);
+    });
+
+    cargarDatos();
 });
