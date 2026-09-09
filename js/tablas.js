@@ -31,9 +31,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const { data } = await window.supabase.from('monedas').select('tasa_cambio').limit(1).single();
             if (data && data.tasa_cambio) {
                 tasaCambioGlobal = parseFloat(data.tasa_cambio);
-                document.getElementById('lblTasaGlobal').textContent = tasaCambioGlobal.toLocaleString();
+                document.getElementById('lblTasaGlobal').textContent = clubUI.formatoNumero(tasaCambioGlobal, 4);
                 const lblTasaRiesgo = document.getElementById('lblTasaRiesgo');
-                if (lblTasaRiesgo) lblTasaRiesgo.value = 'Bs ' + tasaCambioGlobal.toLocaleString() + ' / $';
+                if (lblTasaRiesgo) lblTasaRiesgo.value = 'Bs ' + clubUI.formatoNumero(tasaCambioGlobal, 4) + ' / $';
             }
         } catch (e) { console.warn("Fallo al cargar tasa global, usando 1.0"); }
     }
@@ -449,7 +449,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <tr class="hover:bg-slate-50 border-b border-slate-100">
                         <td class="p-2 font-bold">${t.hipodromo}<br><span class="text-blue-600">C${t.carrera}</span></td>
                         <td class="p-2">${chipsGrupos}</td>
-                        <td class="p-2 text-right"><span class="text-blue-700 font-bold">$${parseFloat(t.premio_recalculado).toLocaleString()}</span></td>
+                        <td class="p-2 text-right"><span class="text-blue-700 font-bold">$${clubUI.formatoNumero(parseFloat(t.premio_recalculado), 2)}</span></td>
                         <td class="p-2 text-center text-[10px]">${badgeEstado}</td>
                         <td class="p-2 text-center">${btnAcciones}</td>
                     </tr>
@@ -472,7 +472,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function eliminarTabla(id) {
         const t = datosTablaCompleta.find(x => x.id == id);
         if (!t) return;
-        if (!confirm(`⚠️ ELIMINAR TABLA\n\n${t.hipodromo} C${t.carrera} — $${parseFloat(t.premio_recalculado).toLocaleString()}\n\nSe borrarán también sus cupos por grupo. Esta acción NO se puede deshacer.`)) return;
+        if (!confirm(`⚠️ ELIMINAR TABLA\n\n${t.hipodromo} C${t.carrera} — $${clubUI.formatoNumero(parseFloat(t.premio_recalculado), 2)}\n\nSe borrarán también sus cupos por grupo. Esta acción NO se puede deshacer.`)) return;
 
         const { error } = await window.supabase.from('tablas_fijas').delete().eq('id', id);
         if (error) {

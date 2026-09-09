@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagnóstico del Club - Verificación de Esquema</title>
+    <link rel="stylesheet" href="../css/tailwind.css">
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>if (!localStorage.getItem('club_sesion_activa')) window.location.href = '../index.html';</script>
+</head>
+<body class="bg-slate-100 font-sans text-sm h-screen flex overflow-hidden">
+
+    <main class="flex-1 min-w-0 overflow-y-auto p-6">
+        <div class="max-w-5xl mx-auto space-y-6">
+
+            <header class="bg-white rounded-xl shadow-sm border border-slate-200 px-5 py-4 flex flex-wrap items-center gap-3 justify-between">
+                <div>
+                    <h1 class="text-xl font-black text-slate-800 uppercase tracking-wide">
+                        <i class="fas fa-stethoscope text-teal-500 mr-2"></i> Diagnóstico del Sistema
+                    </h1>
+                    <p class="text-xs text-slate-500 font-bold mt-1">Verifica que las tablas, columnas y funciones RPC existan. Los módulos marcados en rojo necesitan el SQL que se muestra al final.</p>
+                </div>
+                <button id="btnRepetir" class="bg-teal-600 hover:bg-teal-700 text-white font-black px-4 py-2 rounded-lg uppercase tracking-wider text-xs transition-colors">
+                    <i class="fas fa-rotate-right mr-1"></i> Repetir Diagnóstico
+                </button>
+            </header>
+
+            <div id="resumenGlobal" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="bg-slate-800 text-white p-3.5 font-bold text-xs uppercase tracking-wider flex items-center gap-2">
+                    <i class="fas fa-database text-teal-400"></i> Checklist de Esquema (tablas · columnas · RPC)
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs text-left">
+                        <thead class="bg-slate-100 text-slate-700 sticky top-0 shadow-sm">
+                            <tr>
+                                <th class="p-3 border-b border-slate-200 font-bold">MÓDULO</th>
+                                <th class="p-3 border-b border-slate-200 font-bold">RECURSO</th>
+                                <th class="p-3 border-b border-slate-200 font-bold">ESTADO</th>
+                                <th class="p-3 border-b border-slate-200 font-bold">QUÉ FALTA / ACCIÓN</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cuerpoChecklist" class="divide-y divide-slate-100 text-slate-700 bg-white">
+                            <tr><td colspan="4" class="p-6 text-center text-slate-400 italic">Ejecutando verificaciones...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="bg-slate-800 text-white p-3.5 font-bold text-xs uppercase tracking-wider flex items-center justify-between">
+                    <span><i class="fas fa-scroll text-teal-400 mr-2"></i> SQL Pendiente (cópiame y pégame en el SQL Editor)</span>
+                    <button id="btnCopiarSql" class="bg-teal-600 hover:bg-teal-700 text-white font-black px-3 py-1.5 rounded uppercase tracking-wider text-[10px] transition-colors">
+                        <i class="fas fa-copy mr-1"></i> Copiar
+                    </button>
+                </div>
+                <div class="p-3 bg-slate-900">
+                    <textarea id="sqlPendiente" readonly spellcheck="false" class="w-full h-64 bg-slate-900 text-emerald-300 font-mono text-[11px] leading-relaxed outline-none resize-y p-2 rounded"></textarea>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="../js/components/db.js"></script>
+    <script src="../js/components/auth.js"></script>
+    <script src="../js/components/ui.js"></script>
+    <script src="../js/components/layout.js"></script>
+    <script src="../js/diagnostico.js"></script>
+</body>
+</html>

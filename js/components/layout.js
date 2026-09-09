@@ -53,7 +53,8 @@ document.addEventListener('DOMContentLoaded', () => {
             titulo: 'Administración',
             items: [
                 { href: 'operadores.html', icon: 'fa-user-shield', txt: 'Operadores',         color: 'text-blue-400' },
-                { href: 'auditoria.html',  icon: 'fa-history',     txt: 'Auditoría',          color: 'text-purple-400' }
+                { href: 'auditoria.html',  icon: 'fa-history',     txt: 'Auditoría',          color: 'text-purple-400' },
+                { href: 'diagnostico.html', icon: 'fa-stethoscope', txt: 'Diagnóstico',       color: 'text-teal-400' }
             ]
         });
     }

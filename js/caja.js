@@ -272,7 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     nombre_beneficiario: (document.getElementById('nombreBeneficiario') || {}).value || null
                 })]);
 
-                clubUI.toast(`✅ Egreso de ${esBs ? 'Bs ' + monto.toLocaleString() : '$' + monto} por ${modalidad} registrado${referencia ? ' (Ref ' + referencia + ')' : ''}.`);
+                clubUI.toast(`✅ Egreso de ${esBs ? 'Bs ' + clubUI.formatoNumero(monto, 2) : '$' + clubUI.formatoNumero(monto, 2)} por ${modalidad} registrado${referencia ? ' (Ref ' + referencia + ')' : ''}.`);
                 if (window.clubDB?.logAccion) window.clubDB.logAccion('CAJA', `egreso: ${esBs ? 'Bs' : 'USD'} ${monto} ${clienteOrigen.nombre} via ${modalidad} (ref ${referencia || '-'})`);
             }
 
