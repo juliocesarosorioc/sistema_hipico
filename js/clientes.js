@@ -48,12 +48,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. CARGA DE CLIENTES (DB REAL)
     // ==========================================
     async function cargarClientes() {
-        tbody.innerHTML = '<tr><td colspan="11" class="p-6 text-center text-slate-500"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="p-6 text-center text-slate-500"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando...</td></tr>';
         
         const { data, error } = await window.supabase.from('clientes').select('*').order('nombre');
 
         if (error) {
-            tbody.innerHTML = '<tr><td colspan="11" class="p-6 text-center text-red-500">Error conectando a la BD.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="p-6 text-center text-red-500">Error conectando a la BD.</td></tr>';
             return;
         }
 
@@ -65,10 +65,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function actualizarSelectSocios() {
         const socios = clientesGlobales.filter(c => c.es_socio === true);
-        selectSocio.innerHTML = '<option value="">— Ninguno (Directo) —</option>';
-        socios.forEach(s => {
-            selectSocio.innerHTML += `<option value="${s.nombre}">${s.nombre}</option>`;
-        });
+        const opciones = socios.map(s => `<option value="${s.nombre}">${s.nombre}</option>`).join('');
+        if (selectSocio) selectSocio.innerHTML = '<option value="">— Ninguno (Directo) —</option>' + opciones;
+        const editSocio = document.getElementById('editSocio');
+        if (editSocio) editSocio.innerHTML = '<option value="">— Ninguno (Directo) —</option>' + opciones;
     }
 
     // ==========================================
@@ -77,7 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderizarTabla(lista) {
         tbody.innerHTML = '';
         if (lista.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="11" class="p-6 text-center text-slate-500">No hay registros.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="p-6 text-center text-slate-500">No hay registros.</td></tr>';
             document.getElementById('pag-cuerpoTablaClientes')?.remove();
             return;
         }
@@ -103,10 +103,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-2 font-bold text-slate-800">${c.nombre}</td>
                     <td class="p-2 text-slate-500 font-mono">${c.telefono || '-'}</td>
                     <td class="p-2 text-center">${badgeLibre}</td>
-                    <td class="p-2 text-center font-bold">${parseFloat(c.comision || 0)}%</td>
                     <td class="p-2 text-right font-mono font-bold ${colorS}">$${saldo.toFixed(2)}</td>
-                    <td class="p-2 text-right font-mono text-amber-600">$${aval.toFixed(2)}</td>
-                    <td class="p-2 text-right font-mono text-purple-600">${dev.toFixed(2)}%</td>
+                    <td class="p-2 text-right font-mono text-amber-600" title="Límite de pérdida (no es saldo)">$${aval.toFixed(2)}</td>
+                    <td class="p-2 text-right font-mono text-purple-600" title="Incentivo a buenos jugadores (cuenta individual)">${dev.toFixed(2)}%</td>
                     <td class="p-2 text-center">${badgeMS}</td>
                     <td class="p-2 font-medium text-slate-600">${socioLabel}</td>
                     <td class="p-2">${afiliadoLabel}</td>
@@ -185,7 +184,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const { error } = await window.supabase.from('clientes').insert([soloColumnasExistentes({
             nombre: nombre,
             telefono: telefonoValido(document.getElementById('telefonoCliente').value),
-            comision: numeroValido(document.getElementById('comisionCliente').value),
+            aval: numeroValido(document.getElementById('avalCliente').value),
+            devolucion: numeroValido(document.getElementById('devolucionCliente').value),
             libre: document.getElementById('libreCliente').value === 'true',
             socio_asignado: document.getElementById('socioCliente').value || null,
             mostrar_saldo_socio: document.getElementById('checkMostrarS').checked,
@@ -205,8 +205,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.getElementById('editId').value = c.id;
                     document.getElementById('editNombre').value = c.nombre;
                     document.getElementById('editTelefono').value = c.telefono || '';
-                    document.getElementById('editComision').value = c.comision;
+                    document.getElementById('editAval').value = c.aval;
+                    document.getElementById('editDevolucion').value = c.devolucion;
                     document.getElementById('editLibre').value = c.libre ? 'true' : 'false';
+                    document.getElementById('editSocio').value = c.socio_asignado || '';
                     document.getElementById('editMostrarS').value = c.mostrar_saldo_socio ? 'true' : 'false';
                     modalEditar.classList.remove('hidden');
                 }
@@ -230,8 +232,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const { error } = await window.supabase.from('clientes').update(soloColumnasExistentes({
             nombre: document.getElementById('editNombre').value.trim().toUpperCase(),
             telefono: telefonoValido(document.getElementById('editTelefono').value),
-            comision: numeroValido(document.getElementById('editComision').value),
+            aval: numeroValido(document.getElementById('editAval').value),
+            devolucion: numeroValido(document.getElementById('editDevolucion').value),
             libre: document.getElementById('editLibre').value === 'true',
+            socio_asignado: document.getElementById('editSocio').value || null,
             mostrar_saldo_socio: document.getElementById('editMostrarS').value === 'true'
         })).eq('id', id);
         if (error) return clubUI.toast('Error al actualizar: ' + error.message, 'error');

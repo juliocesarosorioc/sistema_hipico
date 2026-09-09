@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('retHipodromo').innerHTML = opcBase + optionsHip;
 
         // Cargar Clientes
-        const { data: clientes } = await supabase.from('clientes').select('id, nombre, saldo_actual').order('nombre');
+        const { data: clientes } = await supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre').order('nombre');
         if (clientes) {
             clientesGlobal = clientes;
             document.getElementById('wpsCliente').innerHTML = opcBase + clientes.map(c => `<option value="${c.id}">${c.nombre} (Disp: $${Number(c.saldo_actual).toFixed(2)})</option>`).join('');
@@ -93,7 +93,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const montoTotal = montoPorJugada * checks.length;
             
             const cliente = clientesGlobal.find(c => c.id === clienteId);
-            if (montoTotal > cliente.saldo_actual) {
+
+            // REGLA DE NEGOCIO (AVAL): límite de pérdida. Si no juega libre,
+            // su saldo puede quedar negativo pero nunca pasar de -AVAL.
+            const nuevoSaldo = Number(cliente.saldo_actual) - montoTotal;
+            if (!cliente.libre) {
+                const limiteAval = parseFloat(cliente.aval || 0);
+                if (nuevoSaldo < -limiteAval) {
+                    return clubUI.toast(`El cliente ${cliente.nombre} supera su límite de AVAL ($${limiteAval.toFixed(2)}). Debe abonar antes de jugar.`);
+                }
+            } else if (montoTotal > cliente.saldo_actual) {
                 if(!confirm(`Saldo insuficiente (Tiene $${cliente.saldo_actual}). ¿Forzar jugada en negativo?`)) return;
             }
 
@@ -101,7 +110,6 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Registrando...'; btn.disabled = true;
 
             // Descontar total
-            const nuevoSaldo = Number(cliente.saldo_actual) - montoTotal;
             await supabase.from('clientes').update({ saldo_actual: nuevoSaldo }).eq('id', clienteId);
             cliente.saldo_actual = nuevoSaldo; // actualizar caché
 

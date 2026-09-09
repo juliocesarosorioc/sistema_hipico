@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Consultas en paralelo: los 4 catálogos no dependen entre sí
         const segura = (promesa) => promesa.catch(e => ({ data: null, error: e }));
         const [rClientes, rJugadas, rTablas, rMoneda, rHipodromos] = await Promise.all([
-            segura(window.supabase.from('clientes').select('id, nombre, saldo_actual').order('nombre')),
+            segura(window.supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre').order('nombre')),
             segura(window.supabase.from('tipos_jugadas').select('*').eq('activo', true)),
             segura(window.supabase.from('tablas_fijas').select('*').eq('estado', 'Abierta')),
             segura(window.supabase.from('monedas').select('tasa_cambio').limit(1).single()),
@@ -163,9 +163,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // REGLA DE NEGOCIO (AVAL): el aval NO es saldo, es el LÍMITE de pérdida.
+            // Si el cliente no juega libre, su saldo puede bajar de cero pero nunca pasar de -AVAL.
+            if (!cJuega.libre) {
+                const limiteAval = parseFloat(cJuega.aval || 0);
+                const saldoTrasApuesta = parseFloat(cJuega.saldo_actual || 0) - monto;
+                if (saldoTrasApuesta < -limiteAval) {
+                    errores.push(`Línea ${index + 1}: ${cJuega.nombre} supera su límite de AVAL ($${limiteAval.toFixed(2)}). Debe abonar antes de jugar.`);
+                    return;
+                }
+            }
+
             let grupoVenta = 'GENERAL';
             let monedaTicket = 'USD';
-            let comisionAplicada = comisionGlobalInput;
+            // Comisión por TIPO DE JUGADA (la comisión vive en el tipo de jugada, no en el cliente)
+            let comisionAplicada = (jugadaRegla && !isNaN(parseFloat(jugadaRegla.base_comision)))
+                ? parseFloat(jugadaRegla.base_comision)
+                : comisionGlobalInput;
             let cantidadTablasVal = 1;
 
             if (jugada.includes('TABLA')) {

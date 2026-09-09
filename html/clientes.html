@@ -30,7 +30,7 @@
             <!-- FORMULARIO NUEVO CLIENTE -->
             <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-3">
                 <div class="text-sm font-bold text-slate-800 mb-3 border-b pb-2"><i class="fas fa-user-plus text-slate-400 mr-2"></i> Registrar Nuevo Cliente</div>
-                <form id="formNuevoCliente" class="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+                <form id="formNuevoCliente" class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                     <div>
                         <label class="block font-bold text-slate-700 mb-1">Nombre</label>
                         <input type="text" id="nombreCliente" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 uppercase" required>
@@ -40,14 +40,18 @@
                         <input type="text" id="telefonoCliente" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
                     </div>
                     <div>
-                        <label class="block font-bold text-slate-700 mb-1">Comisión (%)</label>
-                        <input type="number" id="comisionCliente" step="0.01" value="0.00" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                        <label class="block font-bold text-slate-700 mb-1">Aval / Límite de Pérdida (USD)</label>
+                        <input type="number" id="avalCliente" step="0.01" value="0.00" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 font-mono font-bold">
                     </div>
                     <div>
-                        <label class="block font-bold text-slate-700 mb-1">Libre</label>
+                        <label class="block font-bold text-slate-700 mb-1">Devolución / Incentivo (%)</label>
+                        <input type="number" id="devolucionCliente" step="0.01" value="0.00" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 font-mono font-bold">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Juega Libre</label>
                         <select id="libreCliente" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-bold text-slate-700 bg-slate-50">
-                            <option value="false">No</option>
-                            <option value="true">Sí</option>
+                            <option value="false">No (con Aval)</option>
+                            <option value="true">Sí (sin límite)</option>
                         </select>
                     </div>
                     <div>
@@ -56,8 +60,8 @@
                             <option value="">— Ninguno (Directo) —</option>
                         </select>
                     </div>
-                    <div class="pt-1 flex items-center gap-2">
-                        <label class="flex items-center gap-1 font-bold text-slate-700 cursor-pointer text-[10px] w-24 leading-tight">
+                    <div class="md:col-span-3 pt-1 flex items-center gap-2">
+                        <label class="flex items-center gap-1 font-bold text-slate-700 cursor-pointer text-[10px] w-40 leading-tight">
                             <input type="checkbox" id="checkMostrarS" class="rounded"> Mostrar Saldo al Socio
                         </label>
                         <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded shadow flex-1 text-center transition-colors uppercase tracking-wide">
@@ -107,7 +111,6 @@
                                     <th class="p-3 font-semibold border-b border-slate-700">Nombre</th>
                                     <th class="p-3 font-semibold border-b border-slate-700">Teléfono</th>
                                     <th class="p-3 text-center font-semibold border-b border-slate-700">Libre</th>
-                                    <th class="p-3 text-center font-semibold border-b border-slate-700">Comisión</th>
                                     <th class="p-3 text-right font-semibold border-b border-slate-700">Saldo USD</th>
                                     <th class="p-3 text-right font-semibold border-b border-slate-700 text-amber-400">Aval USD</th>
                                     <th class="p-3 text-right font-semibold border-b border-slate-700 text-purple-400">Devolución</th>
@@ -118,7 +121,7 @@
                                 </tr>
                             </thead>
                             <tbody id="cuerpoTablaClientes" class="divide-y divide-slate-200 text-slate-700 text-[11px] bg-white">
-                                <tr><td colspan="11" class="p-8 text-center text-slate-500">Cargando datos...</td></tr>
+                                <tr><td colspan="10" class="p-8 text-center text-slate-500">Cargando datos...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -135,7 +138,7 @@
                 <button class="cerrar-modal hover:text-slate-200"><i class="fas fa-times"></i></button>
             </div>
             <div class="p-6 text-sm">
-                <p class="text-slate-600 mb-5 leading-relaxed">Esta acción aplicará un porcentaje fijo de devolución al saldo de todos los clientes mostrados en la tabla actualmente.</p>
+                <p class="text-slate-600 mb-5 leading-relaxed">Definirá el porcentaje de <strong>devolución (incentivo)</strong> de estos clientes. No modifica saldos ni reportes de jugadas: queda registrado en la cuenta individual del cliente y en la contabilidad como incentivo a buenos jugadores.</p>
                 <div class="mb-4">
                     <label class="block font-bold text-slate-700 mb-2 text-xs uppercase tracking-wider">Porcentaje Global (%)</label>
                     <input type="number" id="inputDevolucionMasiva" step="0.01" placeholder="Ej: 5.00" class="w-full border border-slate-300 rounded-lg px-4 py-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500 font-mono text-xl font-bold text-center">
@@ -158,7 +161,7 @@
             <div class="p-6">
                 <form id="formEditarCliente" class="space-y-4">
                     <input type="hidden" id="editId">
-                    <div class="grid grid-cols-2 gap-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div class="col-span-2">
                             <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Nombre</label>
                             <input type="text" id="editNombre" class="w-full border border-slate-300 rounded-lg px-3 py-2 uppercase outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm" required>
@@ -168,14 +171,24 @@
                             <input type="text" id="editTelefono" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm font-mono">
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Comisión (%)</label>
-                            <input type="number" id="editComision" step="0.01" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm font-mono font-bold text-center">
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Juega Libre</label>
+                            <select id="editLibre" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm font-bold text-slate-700">
+                                <option value="false">No (con Aval)</option>
+                                <option value="true">Sí (sin límite)</option>
+                            </select>
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Libre</label>
-                            <select id="editLibre" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm font-bold text-slate-700">
-                                <option value="false">No</option>
-                                <option value="true">Sí</option>
+                            <label class="block text-xs font-bold text-amber-600 mb-1 uppercase tracking-wider">Aval / Límite (USD)</label>
+                            <input type="number" id="editAval" step="0.01" class="w-full border border-amber-300 rounded-lg px-3 py-2 outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-sm font-mono font-bold text-center">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-purple-600 mb-1 uppercase tracking-wider">Devolución / Incentivo (%)</label>
+                            <input type="number" id="editDevolucion" step="0.01" class="w-full border border-purple-300 rounded-lg px-3 py-2 outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-sm font-mono font-bold text-center">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Socio que lo Avala</label>
+                            <select id="editSocio" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm font-bold text-slate-700 bg-white">
+                                <option value="">— Ninguno (Directo) —</option>
                             </select>
                         </div>
                         <div class="col-span-2">

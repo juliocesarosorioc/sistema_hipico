@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Consultas en paralelo: clientes y tablas no dependen entre sí
         const segura = (promesa) => promesa.catch(e => ({ data: null, error: e }));
         const [rClientes, rTablas] = await Promise.all([
-            segura(window.supabase.from('clientes').select('id, nombre, saldo_actual').order('nombre')),
+            segura(window.supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre').order('nombre')),
             segura(window.supabase.from('tablas_fijas').select('*').eq('estado', 'Abierta'))
         ]);
 
@@ -150,6 +150,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const cliente = clientesDB.find(c => c.id == clienteId);
         let costoTotal = cantidad * tablaSeleccionada.monto_tabla;
+
+        // REGLA DE NEGOCIO (AVAL): límite de pérdida, no es saldo. Si no juega libre,
+        // su saldo puede quedar negativo pero nunca pasar de -AVAL.
+        if (!cliente.libre) {
+            const limiteAval = parseFloat(cliente.aval || 0);
+            if (parseFloat(cliente.saldo_actual) - costoTotal < -limiteAval) {
+                return clubUI.toast(`El cliente ${cliente.nombre} supera su límite de AVAL ($${limiteAval.toFixed(2)}). Debe abonar antes de comprar tablas.`);
+            }
+        }
 
         // Validar saldo del cliente (si opera en la misma moneda)
         if(tablaSeleccionada.moneda === 'USD' && parseFloat(cliente.saldo_actual) < costoTotal) {
