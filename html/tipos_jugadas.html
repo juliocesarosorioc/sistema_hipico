@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tipos de Jugadas - Club del Dinero</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>if (!localStorage.getItem('club_sesion_activa')) window.location.href = '../index.html';</script>
+</head>
+<body class="bg-slate-50 font-sans text-sm h-screen flex overflow-hidden">
+
+    <!-- El Sidebar se inyectará aquí automáticamente mediante layout.js -->
+
+    <!-- ÁREA CENTRAL DE CONTENIDO -->
+    <div class="flex-1 flex flex-col h-full relative overflow-hidden w-full">
+        
+        <!-- CABECERA -->
+        <header class="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm shrink-0 z-10">
+            <h1 class="text-xl font-bold text-slate-800 uppercase tracking-wide">
+                <i class="fas fa-cogs text-slate-500 mr-2"></i> Motor de Reglas y Tipos de Jugadas
+            </h1>
+            <div class="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-1.5 rounded-full text-xs font-bold shadow-inner flex items-center">
+                <i class="fas fa-info-circle mr-2"></i> Generalización de Procedimientos Activa
+            </div>
+        </header>
+
+        <main class="p-6 flex-1 overflow-y-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6 bg-slate-100">
+            
+            <!-- Formulario -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 self-start">
+                <h2 class="text-sm font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2 uppercase tracking-wide">
+                    Registrar Nueva Modalidad
+                </h2>
+                <form id="formJugada" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Nombre de la Jugada</label>
+                        <input type="text" id="nombreJugada" placeholder="Ej: Superfecta" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm uppercase outline-none focus:ring-2 focus:ring-blue-500 bg-white" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Base de Comisión (Socio)</label>
+                        <select id="baseComision" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white font-bold text-slate-700">
+                            <option value="Monto Jugado">Sobre el Monto Jugado</option>
+                            <option value="Monto Decidido">Sobre el Monto Decidido</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Modalidad de Pago / Recálculo</label>
+                        <select id="modPago" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white font-bold text-slate-700">
+                            <option value="Dinámico (Pizarra)">Dinámico (Pizarra Oficial)</option>
+                            <option value="Fijo">Fijo (Pactado al registrar)</option>
+                            <option value="Proporcional (Recálculo)">Proporcional (Recálculo por retiros)</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg shadow-md transition-colors text-xs uppercase tracking-wide mt-2">
+                        Guardar Regla
+                    </button>
+                </form>
+            </div>
+
+            <!-- Tabla -->
+            <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                <div class="bg-slate-900 text-white p-3.5 font-bold text-xs uppercase tracking-wider">
+                    Reglas Activas en el Sistema
+                </div>
+                <div class="overflow-x-auto flex-1">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-100 text-slate-700 border-b border-slate-200 sticky top-0 shadow-sm">
+                            <tr>
+                                <th class="p-3 font-bold uppercase tracking-wider">Modalidad</th>
+                                <th class="p-3 text-center font-bold uppercase tracking-wider">Base de Comisión</th>
+                                <th class="p-3 text-center font-bold uppercase tracking-wider">Comportamiento de Pago</th>
+                                <th class="p-3 text-center font-bold uppercase tracking-wider">Estado</th>
+                                <th class="p-3 text-center font-bold uppercase tracking-wider">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaJugadas" class="divide-y divide-slate-100 text-slate-800 bg-white">
+                            <tr><td colspan="5" class="p-8 text-center text-slate-500 italic">Cargando reglas...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Supabase y Componentes -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="../js/components/layout.js"></script>
+    <script src="../js/conexion.js"></script>
+    <script src="../js/tipos_jugadas.js"></script>
+</body>
+</html>

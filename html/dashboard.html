@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Club del Dinero</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Estilos CSS Colectivos Centralizados -->
+    <link rel="stylesheet" href="style.css">
+    <!-- FontAwesome para íconos -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Validación de seguridad ultrarrápida (Evita parpadeos antes de cargar el layout) -->
+    <script>if (!localStorage.getItem('club_sesion_activa')) window.location.href = 'index.html';</script>
+</head>
+<body class="bg-slate-100 flex h-screen overflow-hidden font-sans">
+
+    <!-- ==========================================
+         SECCIÓN 1: MENÚ LATERAL (SIDEBAR)
+         ========================================== -->
+    <!-- El Sidebar y su lógica de sesión se inyectarán aquí automáticamente mediante js/components/layout.js -->
+
+    <!-- ==========================================
+         SECCIÓN 2: ÁREA CENTRAL DE CONTENIDO
+         ========================================== -->
+    <main class="flex-1 flex flex-col h-full relative overflow-y-auto w-full">
+        
+        <!-- Encabezado Superior (Reloj) -->
+        <header class="flex justify-between items-center p-6 bg-white border-b border-slate-200 shadow-sm sticky top-0 z-10">
+            <div class="flex items-center gap-2 text-emerald-700 font-bold text-xs bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg">
+                <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span> Supabase Cloud Conectada
+            </div>
+            <div class="bg-slate-50 px-5 py-2 rounded-lg shadow-sm border border-slate-200 text-right">
+                <p id="fechaActual" class="text-xs text-slate-500 font-medium"></p>
+                <p id="relojActual" class="text-lg font-bold text-slate-800"></p>
+            </div>
+        </header>
+
+        <!-- Contenedor Principal con Padding -->
+        <div class="p-8 max-w-7xl mx-auto w-full">
+            
+            <!-- Panel de Control: Semana Activa -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-3">
+                        <i class="fas fa-calendar-alt text-blue-500 text-xl"></i>
+                        <h2 class="text-lg font-bold text-slate-800">Semana Activa</h2>
+                        <span class="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded">ABIERTA</span>
+                    </div>
+                </div>
+                
+                <!-- Días de la semana -->
+                <div class="flex flex-wrap gap-2 mb-6">
+                    <div class="bg-green-600 text-white rounded p-2 text-center w-20 flex flex-col items-center shadow-sm">
+                        <span class="text-xs font-bold">Mar</span>
+                        <span class="text-sm">01/09</span>
+                        <i class="fas fa-lock text-xs mt-1"></i>
+                    </div>
+                    <div class="bg-blue-500 text-white rounded p-2 text-center w-20 flex flex-col items-center shadow-sm ring-2 ring-blue-300">
+                        <span class="text-xs font-bold">Mié</span>
+                        <span class="text-sm">02/09</span>
+                        <i class="fas fa-calendar-day text-xs mt-1"></i>
+                    </div>
+                    <div class="bg-slate-100 text-slate-500 rounded p-2 text-center w-20 flex flex-col items-center border border-slate-200">
+                        <span class="text-xs font-bold">Jue</span>
+                        <span class="text-sm">03/09</span>
+                    </div>
+                </div>
+
+                <!-- Botones de Acción de la Semana -->
+                <div class="flex gap-3">
+                    <button id="btnAbrirCierre" class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors shadow-sm">
+                        <i class="fas fa-file-invoice mr-1"></i> Cierre del Día
+                    </button>
+                    <button class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors shadow-sm">
+                        <i class="fas fa-lock mr-1"></i> Cerrar Semana
+                    </button>
+                </div>
+            </div>
+
+            <!-- Título de Bienvenida -->
+            <div class="mb-6">
+                <h2 class="text-3xl font-bold text-slate-800">Bienvenido al Club del Dinero</h2>
+                <p class="text-slate-500 mt-1">Selecciona un módulo en el menú lateral o accede directamente desde los accesos rápidos</p>
+            </div>
+
+            <!-- Malla de Tarjetas de Módulos (Acceso Directo Completo) -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                
+                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
+                    <div class="bg-blue-100 text-blue-600 p-3 rounded-full mb-3"><i class="fas fa-receipt text-xl"></i></div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-1">Taquilla (Planos)</h3>
+                    <p class="text-xs text-slate-500 mb-4 flex-1">Gestión de carreras y parser IA</p>
+                    <a href="taquilla.html" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
+                    <div class="bg-indigo-100 text-indigo-600 p-3 rounded-full mb-3"><i class="fas fa-table text-xl"></i></div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-1">Tablas Fijas</h3>
+                    <p class="text-xs text-slate-500 mb-4 flex-1">Ensamblaje y auditoría</p>
+                    <a href="tablas.html" class="bg-indigo-500 hover:bg-indigo-600 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
+                    <div class="bg-emerald-100 text-emerald-600 p-3 rounded-full mb-3"><i class="fas fa-cash-register text-xl"></i></div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-1">Venta de Tablas</h3>
+                    <p class="text-xs text-slate-500 mb-4 flex-1">Taquilla de lotes y cupos</p>
+                    <a href="venta_tablas.html" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
+                    <div class="bg-slate-200 text-slate-700 p-3 rounded-full mb-3"><i class="fas fa-balance-scale text-xl"></i></div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-1">Saldos y Reportes</h3>
+                    <p class="text-xs text-slate-500 mb-4 flex-1">Gestión de balances y cuadres</p>
+                    <a href="saldos.html" class="bg-slate-800 hover:bg-slate-900 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
+                    <div class="bg-cyan-100 text-cyan-600 p-3 rounded-full mb-3"><i class="fas fa-users text-xl"></i></div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-1">Clientes</h3>
+                    <p class="text-xs text-slate-500 mb-4 flex-1">Gestión de apostadores</p>
+                    <a href="clientes.html" class="bg-cyan-500 hover:bg-cyan-600 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
+                    <div class="bg-emerald-100 text-emerald-600 p-3 rounded-full mb-3"><i class="fas fa-arrow-down text-xl"></i></div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-1">Depósitos</h3>
+                    <p class="text-xs text-slate-500 mb-4 flex-1">Ingresos y modo aval</p>
+                    <a href="depositos.html" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
+                    <div class="bg-orange-100 text-orange-600 p-3 rounded-full mb-3"><i class="fas fa-university text-xl"></i></div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-1">Bancos / Tesorería</h3>
+                    <p class="text-xs text-slate-500 mb-4 flex-1">Cuentas reales y liquidez</p>
+                    <a href="bancos.html" class="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow">
+                    <div class="bg-yellow-100 text-yellow-700 p-3 rounded-full mb-3"><i class="fas fa-coins text-xl"></i></div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-1">Monedas y Tasas</h3>
+                    <p class="text-xs text-slate-500 mb-4 flex-1">Histórico inmutable de divisas</p>
+                    <a href="monedas.html" class="bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-2 rounded shadow-sm w-full font-medium transition-colors block mt-auto">Abrir</a>
+                </div>
+
+            </div>
+
+        </div>
+    </main>
+
+    <!-- ==========================================
+         MODALES
+         ========================================== -->
+    <!-- MODAL: CIERRE DEL DÍA -->
+    <div id="modalCierreDia" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div class="bg-amber-400 p-4 border-b border-amber-500 flex items-center justify-between">
+                <h2 class="text-lg font-bold text-slate-900 flex items-center"><i class="fas fa-clipboard-list mr-2"></i> Cierre del Día</h2>
+                <button class="cerrar-modal text-slate-800 hover:text-black"><i class="fas fa-times text-lg"></i></button>
+            </div>
+            <div class="p-6">
+                <p class="text-sm text-slate-600 mb-4">Selecciona el día que deseas auditar y cerrar.</p>
+                <div class="mb-5">
+                    <label for="fechaCierre" class="block text-sm font-bold text-slate-700 mb-1">Fecha a cerrar</label>
+                    <input type="date" id="fechaCierre" class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:border-blue-500 text-slate-700">
+                </div>
+            </div>
+            <div class="bg-slate-50 p-4 border-t border-slate-200 flex justify-end gap-2">
+                <button type="button" class="cerrar-modal bg-slate-500 text-white px-4 py-2 rounded text-sm font-medium">Cancelar</button>
+                <button type="button" class="bg-amber-400 text-slate-900 px-4 py-2 rounded text-sm font-bold"><i class="fas fa-lock mr-1"></i> Confirmar Cierre</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         SCRIPTS Y LÓGICA
+         ========================================== -->
+    <!-- Inyección del Componente Layout (Sidebar) -->
+    <script src="js/components/layout.js"></script>
+
+    <!-- Lógica Exclusiva del Dashboard -->
+    <script>
+        document.getElementById('btnAbrirCierre')?.addEventListener('click', () => {
+            document.getElementById('modalCierreDia').classList.remove('hidden');
+            document.getElementById('fechaCierre').value = new Date().toISOString().split('T')[0];
+        });
+
+        document.querySelectorAll('.cerrar-modal').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.getElementById('modalCierreDia').classList.add('hidden');
+            });
+        });
+
+        function actualizarReloj() {
+            const ahora = new Date();
+            document.getElementById('fechaActual').textContent = ahora.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            document.getElementById('relojActual').textContent = ahora.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+        }
+        actualizarReloj(); setInterval(actualizarReloj, 1000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Planos (Taquilla) - Club del Dinero</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Enlace al CSS centralizado -->
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>if (!localStorage.getItem('club_sesion_activa')) window.location.href = 'index.html';</script>
+    <style>
+        /* CSS exclusivo para permitir arrastrar la ventana flotante de esta pantalla */
+        #ventanaTransacciones { cursor: grab; }
+        #ventanaTransacciones:active { cursor: grabbing; }
+    </style>
+</head>
+<body class="bg-slate-50 flex h-screen overflow-hidden font-sans">
+
+    <!-- El Sidebar Global se inyectará aquí automáticamente mediante js/components/layout.js -->
+
+    <!-- ÁREA CENTRAL DE CONTENIDO (Ocupa el resto de la pantalla) -->
+    <div class="flex-1 flex flex-col h-full relative overflow-hidden">
+
+        <!-- DATALIST OCULTO PARA AUTOCOMPLETADO DE CLIENTES Y JUGADAS -->
+        <datalist id="listaClientesDB"></datalist>
+        <datalist id="listaJugadasDB"></datalist>
+
+        <!-- BARRA SUPERIOR EXCLUSIVA DE TAQUILLA -->
+        <header class="bg-white border-b border-slate-200 p-3 flex flex-wrap justify-between items-center z-10 shadow-sm shrink-0">
+            <div class="flex gap-2 items-center">
+                <span class="bg-blue-100 text-blue-800 px-3 py-1.5 rounded-lg text-xs font-bold border border-blue-200 shadow-inner">
+                    <i class="fas fa-receipt mr-1"></i> Taquilla de Operaciones
+                </span>
+                <button class="bg-rose-500 text-white px-3 py-1.5 rounded hover:bg-rose-600 text-xs font-bold shadow-sm transition-colors"><i class="fas fa-book mr-1"></i> Reportes de Cierres</button>
+            </div>
+            
+            <div class="flex gap-2 items-center">
+                <div class="relative">
+                    <i class="fas fa-search absolute left-3 top-2 text-slate-400 text-xs"></i>
+                    <input type="text" placeholder="Buscar cliente..." class="border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 w-48 text-xs outline-none focus:border-blue-500 transition-colors">
+                </div>
+                <button class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg border border-indigo-300 hover:bg-indigo-200 text-xs font-bold shadow-sm transition-colors"><i class="fas fa-brain mr-1"></i> IA Análisis</button>
+            </div>
+        </header>
+
+        <!-- ÁREA DE CONTROL DE CARRERA -->
+        <section class="p-4 bg-white border-b border-slate-200 shadow-sm flex flex-wrap gap-6 items-start shrink-0">
+            <!-- Hipódromo y Carrera -->
+            <div class="flex-1 min-w-[300px]">
+                <h1 class="text-2xl font-bold text-slate-800 mb-4"><i class="fas fa-horse-head text-blue-600 mr-2"></i> Gestión de Planos</h1>
+                <div class="flex gap-4">
+                    <div class="w-1/2">
+                        <label class="block text-xs font-bold text-slate-700 mb-1">HIPÓDROMO</label>
+                        <select id="selectHipodromo" class="w-full border border-slate-300 rounded p-1.5 focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold text-slate-700">
+                            <option value="La Rinconada">La Rinconada</option>
+                            <option value="Valencia">Valencia</option>
+                            <option value="Santa Anita">Santa Anita</option>
+                            <option value="Gulfstream Park">Gulfstream Park</option>
+                        </select>
+                    </div>
+                    <div class="w-1/4">
+                        <label class="block text-xs font-bold text-slate-700 mb-1">CARRERA</label>
+                        <select id="selectCarrera" class="w-full border border-slate-300 rounded p-1.5 focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold text-slate-700 text-center">
+                            <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
+                            <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Resultados, Retirados y Comisión -->
+            <div class="flex-1 min-w-[400px]">
+                <div class="flex gap-4 mb-2">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-red-600 mb-1">RETIRADOS</label>
+                        <input type="text" id="inputRetirados" placeholder="Ej: 2, 5" class="w-full border border-slate-300 rounded p-1.5 outline-none focus:border-red-500 font-bold">
+                    </div>
+                    <div class="w-24">
+                        <label class="block text-xs font-bold text-blue-600 mb-1">COM %</label>
+                        <input type="number" id="inputComision" value="5" class="w-full border border-slate-300 rounded p-1.5 outline-none focus:border-blue-500 font-bold text-center">
+                    </div>
+                </div>
+                <button class="w-full bg-slate-100 border border-slate-300 rounded p-1.5 text-slate-700 font-bold hover:bg-slate-200 transition-colors">
+                    <i class="fas fa-random text-blue-500 mr-1"></i> Modalidad: CON CRUCES
+                </button>
+            </div>
+
+            <!-- Botones de Acción Rápida -->
+            <div class="w-72">
+                <div class="flex gap-1 mb-2">
+                    <button class="flex-1 bg-cyan-400 text-white font-bold py-1 rounded text-[11px] shadow-sm hover:bg-cyan-500 transition-colors">💰 Pozo</button>
+                    <button class="flex-1 bg-white border border-yellow-400 text-yellow-600 font-bold py-1 rounded text-[11px] shadow-sm hover:bg-yellow-50 transition-colors">🔄 Traslado</button>
+                    <button class="flex-1 bg-blue-600 text-white font-bold py-1 rounded text-[11px] shadow-sm hover:bg-blue-700 transition-colors">🛡️ Aval</button>
+                </div>
+                <input type="date" id="fechaCarrera" class="w-full border border-slate-300 rounded p-1 mb-2 text-xs outline-none font-bold text-slate-700 text-center">
+                <a href="clientes.html" class="block text-center w-full bg-emerald-700 text-white font-bold py-1.5 rounded hover:bg-emerald-800 shadow transition-colors text-xs"><i class="fas fa-plus mr-1"></i> Nuevo Cliente</a>
+            </div>
+        </section>
+
+        <!-- TABLA DE APUESTAS (TAQUILLA) -->
+        <main class="flex-1 overflow-y-auto bg-slate-100 p-2">
+            <table class="w-full bg-white border border-slate-300 shadow-sm text-xs border-collapse">
+                <thead class="bg-slate-800 text-white text-center sticky top-0 z-10">
+                    <tr>
+                        <th class="p-2 border-r border-slate-700 w-8">#</th>
+                        <th class="p-2 border-r border-slate-700 w-16">X</th>
+                        <th class="p-2 border-r border-slate-700">JUGADA</th>
+                        <th class="p-2 border-r border-slate-700">CABALLO</th>
+                        <th class="p-2 border-r border-slate-700 w-24">MONTO</th>
+                        <th class="p-2 border-r border-slate-700">JUEGA (CLIENTE 1)</th>
+                        <th class="p-2 border-r border-slate-700">CONSIGUE (CLIENTE 2)</th>
+                        <th class="p-2 border-r border-slate-700 w-24">DISP. 1</th>
+                        <th class="p-2 w-24">DISP. 2</th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpoTaquilla" class="divide-y divide-slate-200">
+                    <!-- Las filas se generarán vía JavaScript (taquilla.js) -->
+                </tbody>
+            </table>
+            
+            <div class="mt-6 mb-16 text-center">
+                <button id="btnAgregarLineas" class="bg-slate-900 text-white px-8 py-2.5 rounded-full hover:bg-black font-bold shadow-lg transition-transform hover:scale-105">
+                    <i class="fas fa-plus-circle mr-1"></i> Agregar líneas
+                </button>
+            </div>
+        </main>
+
+        <!-- FOOTER DE COMANDOS -->
+        <footer class="bg-white border-t border-slate-300 p-3 flex gap-2 justify-center items-center shadow-inner shrink-0 text-xs">
+            <button class="bg-amber-400 text-slate-900 font-bold px-4 py-2 rounded hover:bg-amber-500 transition-colors"><i class="fas fa-file-alt mr-1"></i> Preliminar Carrera (Ctrl+Q)</button>
+            <button class="bg-white border border-slate-400 text-slate-700 font-bold px-4 py-2 rounded hover:bg-slate-50 transition-colors"><i class="fas fa-border-all mr-1"></i> Preliminar Resultado (Ctrl+Y)</button>
+            <button id="btnRegistrarCarrera" class="bg-emerald-600 text-white font-bold px-5 py-2 rounded hover:bg-emerald-700 shadow-md transition-colors"><i class="fas fa-flag-checkered mr-1"></i> Registrar y Finalizar (Ctrl+R)</button>
+            <a href="saldos.html" class="bg-purple-600 text-white font-bold px-4 py-2 rounded hover:bg-purple-700 transition-colors"><i class="fas fa-wallet mr-1"></i> Saldos (Ctrl+F)</a>
+        </footer>
+
+        <!-- VENTANA FLOTANTE: TRANSACCIONES RÁPIDAS -->
+        <div id="ventanaTransacciones" class="absolute right-6 top-24 w-80 bg-white rounded-lg shadow-2xl border border-slate-300 z-50 flex flex-col overflow-hidden">
+            <div class="bg-slate-800 p-2.5 flex justify-between items-center select-none" id="cabeceraTransacciones">
+                <h3 class="font-bold text-white text-xs tracking-wide uppercase"><i class="fas fa-bolt text-amber-400 mr-1.5"></i> Comandos Rápidos</h3>
+                <span class="text-[10px] text-slate-400 font-medium bg-slate-700 px-2 py-0.5 rounded"><i class="fas fa-grip-lines mr-1"></i> Mover</span>
+            </div>
+            <div class="p-3 bg-slate-50 text-[10px] font-mono text-slate-600 leading-relaxed border-b border-slate-200">
+                <p class="text-emerald-600 font-bold mb-0.5">Luis +100 → <span class="font-normal text-slate-500">depósito</span></p>
+                <p class="text-red-600 font-bold mb-0.5">Juan -100 → <span class="font-normal text-slate-500">retiro</span></p>
+                <p class="text-blue-600 font-bold mb-0.5">Frank 100 Luis → <span class="font-normal text-slate-500">traslado</span></p>
+                <p class="text-purple-600 font-bold mb-0.5">Luis aval +100 → <span class="font-normal text-slate-500">otorgar aval</span></p>
+                <p class="text-rose-600 font-bold">Pedro aval -50 → <span class="font-normal text-slate-500">retirar aval</span></p>
+            </div>
+            <div class="p-3">
+                <textarea id="textoTransacciones" class="w-full h-28 border border-slate-300 rounded p-2 text-xs font-mono outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none" placeholder="Escriba aquí los comandos..."></textarea>
+            </div>
+            <div class="p-3 bg-white flex gap-2 pt-0">
+                <button id="btnProcesarTransacciones" class="flex-1 bg-slate-900 text-white font-bold py-2 rounded hover:bg-black transition-colors flex flex-col items-center justify-center leading-none shadow-sm">
+                    <span><i class="fas fa-check-circle text-emerald-400 mr-1"></i> Procesar</span>
+                    <span class="text-[9px] text-slate-400 mt-1 font-normal">Ctrl+Shift+L</span>
+                </button>
+                <button id="btnLimpiarTransacciones" class="bg-white border border-slate-300 text-slate-500 px-4 py-2 rounded hover:bg-red-50 hover:text-red-500 transition-colors" title="Limpiar"><i class="fas fa-trash-alt"></i></button>
+            </div>
+        </div>
+
+    </div> <!-- Fin Flex-1 central -->
+
+    <!-- MODAL PROCESANDO -->
+    <div id="modalProcesando" class="hidden fixed inset-0 bg-slate-900 bg-opacity-80 z-[60] flex flex-col items-center justify-center text-white backdrop-blur-sm">
+        <i class="fas fa-circle-notch fa-spin text-6xl text-blue-500 mb-6 drop-shadow-[0_0_15px_rgba(59,130,246,0.5)]"></i>
+        <h2 class="text-xl font-bold tracking-wide">Procesando Jugadas...</h2>
+        <p class="text-slate-400 text-sm mt-2">Auditando inventario y descontando saldos</p>
+    </div>
+
+    <!-- Scripts y Componentes -->
+    <script src="js/components/layout.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/conexion.js"></script>
+    <script src="js/taquilla.js"></script>
+</body>
+</html>

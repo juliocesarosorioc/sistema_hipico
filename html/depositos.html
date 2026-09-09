@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Depósitos - Club del Dinero</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>if (!localStorage.getItem('club_sesion_activa')) window.location.href = '../index.html';</script>
+</head>
+<body class="bg-emerald-50 font-sans text-sm h-screen flex overflow-hidden">
+
+    <!-- El Sidebar se inyectará aquí automáticamente mediante layout.js -->
+
+    <!-- ÁREA CENTRAL DE CONTENIDO -->
+    <div class="flex-1 flex flex-col h-full relative overflow-hidden w-full">
+
+        <!-- CABECERA DE MÓDULO -->
+        <header class="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm shrink-0 z-10">
+            <h1 class="text-xl font-black text-slate-800 uppercase tracking-wide"><i class="fas fa-arrow-down text-emerald-600 mr-2"></i> Procesador de Ingresos y Avales</h1>
+            <div class="flex gap-4 items-center">
+                <span class="text-xs text-slate-500 font-bold bg-slate-100 px-3 py-1.5 rounded border border-slate-200" id="fechaHeader"></span>
+            </div>
+        </header>
+
+        <main class="p-6 flex-1 overflow-y-auto max-w-[1700px] mx-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- COLUMNA IZQUIERDA: FORMULARIO -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden self-start">
+                <div class="bg-emerald-600 text-white p-3.5 font-bold text-xs uppercase tracking-wider flex items-center justify-between">
+                    <span><i class="fas fa-plus-circle mr-2"></i> Registrar Ingreso a Cuenta</span>
+                </div>
+                
+                <form id="formDeposito" class="p-6 space-y-5">
+                    <!-- Cliente -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Abonar al Cliente:</label>
+                        <select id="clienteDeposito" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-bold text-slate-800 bg-slate-50" required>
+                            <option value="">Cargando clientes...</option>
+                        </select>
+                    </div>
+
+                    <!-- Tipo Op -->
+                    <div>
+                        <input type="hidden" id="tipoOperacion" value="Normal">
+                        <div class="flex border border-slate-300 rounded-lg overflow-hidden text-xs font-bold text-center bg-slate-50 p-1 shadow-inner gap-1">
+                            <button type="button" class="tab-operacion flex-1 py-2.5 rounded text-emerald-700 bg-white shadow border border-slate-200 transition-all" data-tipo="Normal">
+                                <i class="fas fa-money-bill-wave block mb-1 text-lg"></i> Ingreso Físico
+                            </button>
+                            <button type="button" class="tab-operacion flex-1 py-2.5 rounded text-slate-500 hover:text-slate-700 transition-all" data-tipo="Otorgar Aval">
+                                <i class="fas fa-shield-alt block mb-1 text-lg text-amber-500"></i> Otorgar Aval
+                            </button>
+                            <button type="button" class="tab-operacion flex-1 py-2.5 rounded text-slate-500 hover:text-slate-700 transition-all" data-tipo="Pagar Aval">
+                                <i class="fas fa-hand-holding-usd block mb-1 text-lg text-blue-500"></i> Pagar Deuda Aval
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Banco Destino -->
+                    <div id="contenedorBancoReceptor">
+                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">El dinero entró en (Banco Empresa):</label>
+                        <select id="bancoReceptor" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-bold text-slate-800 bg-slate-50" required>
+                            <option value="">Cargando tesorería...</option>
+                        </select>
+                    </div>
+
+                    <!-- Monto y Nota -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Monto de Operación (USD):</label>
+                        <div class="relative">
+                            <span class="absolute left-4 top-2 font-black text-slate-400 text-lg">$</span>
+                            <input type="number" id="montoDeposito" step="0.01" class="w-full border border-slate-300 rounded-lg pl-9 pr-4 py-2.5 text-2xl font-black text-slate-900 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none text-center" placeholder="0.00" required>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Referencia / Nota:</label>
+                        <input type="text" id="notaDeposito" placeholder="Ref. 1234, o motivo del aval..." class="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none">
+                    </div>
+
+                    <button type="submit" class="w-full bg-emerald-600 text-white font-black py-3.5 rounded-lg shadow-lg hover:bg-emerald-700 transition-colors uppercase tracking-widest text-sm hover:scale-[1.02]">
+                        Aplicar Operación
+                    </button>
+                </form>
+            </div>
+
+            <!-- COLUMNA DERECHA: TABLAS -->
+            <div class="lg:col-span-2 space-y-6">
+                
+                <!-- Tabla 1: Saldos Actuales -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="bg-slate-800 text-white p-3.5 font-bold text-xs uppercase tracking-wider flex justify-between items-center">
+                        <span><i class="fas fa-wallet text-cyan-400 mr-2"></i> Saldos y Deudas Actuales</span>
+                        <div class="relative">
+                            <i class="fas fa-search absolute left-3 top-2 text-slate-400"></i>
+                            <input type="text" id="buscarSaldo" placeholder="Buscar cliente..." class="pl-8 pr-3 py-1.5 rounded bg-slate-700 text-white outline-none border border-slate-600 focus:border-cyan-400 text-xs w-48 transition-colors placeholder-slate-400">
+                        </div>
+                    </div>
+                    <div class="p-0 overflow-x-auto h-56 overflow-y-auto">
+                        <table class="w-full text-xs text-left border-collapse">
+                            <thead class="bg-slate-100 text-slate-700 sticky top-0 shadow-sm z-10">
+                                <tr>
+                                    <th class="p-3 font-bold border-b border-slate-200">CLIENTE</th>
+                                    <th class="p-3 font-bold text-right border-b border-slate-200">SALDO JUGABLE</th>
+                                    <th class="p-3 font-bold text-right border-b border-slate-200">DEUDA (AVAL)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cuerpoTablaSaldos" class="divide-y divide-slate-100 text-slate-800 bg-white">
+                                <tr><td colspan="3" class="p-6 text-center text-slate-400 italic">Cargando saldos...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tabla 2: Historial -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[350px]">
+                    <div class="bg-slate-100 text-slate-800 border-b border-slate-200 p-3.5 font-bold text-xs uppercase tracking-wider shrink-0">
+                        <i class="fas fa-history mr-2 text-slate-500"></i> Bitácora de Transacciones (Ingresos)
+                    </div>
+                    <div class="p-0 overflow-x-auto overflow-y-auto flex-1 bg-slate-50">
+                        <table class="w-full text-xs text-left">
+                            <thead class="bg-slate-200 text-slate-700 sticky top-0 shadow-sm z-10">
+                                <tr>
+                                    <th class="p-3 border-b border-slate-300 font-bold">FECHA</th>
+                                    <th class="p-3 border-b border-slate-300 font-bold">CLIENTE</th>
+                                    <th class="p-3 border-b border-slate-300 font-bold">OPERACIÓN</th>
+                                    <th class="p-3 border-b border-slate-300 text-right font-bold">MONTO</th>
+                                    <th class="p-3 border-b border-slate-300 font-bold">DESTINO / NOTA</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cuerpoTablaHistorial" class="divide-y divide-slate-100 text-slate-700 bg-white">
+                                <tr><td colspan="5" class="p-6 text-center text-slate-400 italic">Cargando bitácora...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="../js/components/layout.js"></script>
+    <script src="../js/conexion.js"></script>
+    <script src="../js/depositos.js"></script>
+    <script>setInterval(() => document.getElementById('fechaHeader').textContent = new Date().toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }), 1000);</script>
+</body>
+</html>
