@@ -113,3 +113,66 @@ th, td {
     max-width: 28rem;
     overflow: hidden;
 }
+
+/* ==========================================
+   SIDEBAR COLAPSABLE (SOLO ICONOS / DRAWER)
+   ========================================== */
+#sidebarGlobal {
+    transition: width 0.28s ease, transform 0.28s ease;
+    will-change: width, transform;
+}
+
+#sidebarGlobal.colapsado {
+    width: 4rem;
+}
+
+#sidebarGlobal.colapsado .sidebar-header {
+    padding: 1rem 0.75rem;
+    text-align: center;
+}
+
+#sidebarGlobal.colapsado .sidebar-header h1 {
+    font-size: 1rem;
+    white-space: nowrap;
+}
+
+#sidebarGlobal.colapsado .sidebar-header .logo-txt {
+    display: none;
+}
+
+#sidebarGlobal.colapsado .sidebar-header h1 i {
+    margin: 0;
+}
+
+#sidebarGlobal.colapsado .sidebar-header p {
+    display: none;
+}
+
+#sidebarGlobal.colapsado .s-grupo {
+    display: none;
+}
+
+#sidebarGlobal.colapsado .nav-link {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+#sidebarGlobal.colapsado .nav-link > i,
+#sidebarGlobal.colapsado .btn-cerrar > i {
+    margin: 0;
+}
+
+#sidebarGlobal.colapsado .txt-nav,
+#sidebarGlobal.colapsado .cerrar-sesion-txt {
+    display: none;
+}
+
+#sidebarGlobal .btn-cerrar {
+    justify-content: flex-start;
+}
+
+#sidebarGlobal.colapsado .btn-cerrar {
+    justify-content: center;
+    width: auto;
+}

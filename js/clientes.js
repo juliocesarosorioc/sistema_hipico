@@ -130,7 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const { error } = await window.supabase.from('clientes').insert([{ nombre: nombre, es_socio: true }]);
         
         if(!error) { inp.value = ''; cargarClientes(); }
-        else { clubUI.toast("Error o nombre duplicado."); }
+        else { clubUI.toast('Error al crear socio: ' + error.message, 'error'); }
         btnCrearSocio.innerHTML = 'Convertir a Socio';
     });
 
@@ -142,8 +142,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = this.querySelector('button[type="submit"]');
         btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
+        const nombre = document.getElementById('nombreCliente').value.trim().toUpperCase();
+        if (clientesGlobales.some(c => String(c.nombre).toUpperCase() === nombre)) {
+            clubUI.toast('Ya existe un cliente con ese nombre.', 'error');
+            btn.innerHTML = 'Agregar'; btn.disabled = false;
+            return;
+        }
+
         const { error } = await window.supabase.from('clientes').insert([{
-            nombre: document.getElementById('nombreCliente').value.trim().toUpperCase(),
+            nombre: nombre,
             telefono: document.getElementById('telefonoCliente').value.trim(),
             comision: parseFloat(document.getElementById('comisionCliente').value || 0),
             libre: document.getElementById('libreCliente').value === 'true',
@@ -152,7 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
             es_socio: false
         }]);
 
-        if (error) clubUI.toast("Error al registrar. Probablemente el nombre ya existe.");
+        if (error) clubUI.toast('Error al registrar: ' + error.message, 'error');
         else { this.reset(); cargarClientes(); }
         btn.innerHTML = 'Agregar'; btn.disabled = false;
     });
@@ -176,7 +183,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.btn-eliminar').forEach(b => {
             b.addEventListener('click', async function() {
                 if(confirm("¿Eliminar definitivamente? Se perderán sus saldos.")) {
-                    await window.supabase.from('clientes').delete().eq('id', this.dataset.id);
+                    const { error } = await window.supabase.from('clientes').delete().eq('id', this.dataset.id);
+                    if (error) return clubUI.toast('Error al eliminar: ' + error.message, 'error');
                     cargarClientes();
                 }
             });
@@ -186,13 +194,14 @@ document.addEventListener('DOMContentLoaded', () => {
     formEditar?.addEventListener('submit', async function(e) {
         e.preventDefault();
         const id = document.getElementById('editId').value;
-        await window.supabase.from('clientes').update({
+        const { error } = await window.supabase.from('clientes').update({
             nombre: document.getElementById('editNombre').value.trim().toUpperCase(),
             telefono: document.getElementById('editTelefono').value.trim(),
             comision: parseFloat(document.getElementById('editComision').value || 0),
             libre: document.getElementById('editLibre').value === 'true',
             mostrar_saldo_socio: document.getElementById('editMostrarS').value === 'true'
         }).eq('id', id);
+        if (error) return clubUI.toast('Error al actualizar: ' + error.message, 'error');
         modalEditar.classList.add('hidden');
         cargarClientes();
     });
@@ -214,8 +223,9 @@ document.addEventListener('DOMContentLoaded', () => {
         btnEjecutarDev.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         const ids = clientesFiltrados.map(c => c.id);
         
-        await window.supabase.from('clientes').update({ devolucion: val }).in('id', ids);
+        const { error } = await window.supabase.from('clientes').update({ devolucion: val }).in('id', ids);
         modalDevoluciones.classList.add('hidden');
+        if (error) return clubUI.toast('Error al aplicar devolución: ' + error.message, 'error');
         cargarClientes();
         btnEjecutarDev.innerHTML = 'Aplicar a Todos';
     });
