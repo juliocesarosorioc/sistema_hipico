@@ -156,26 +156,22 @@
                             <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Tasa Vinculada (Bs / $)</label>
                             <input type="text" id="lblTasaRiesgo" readonly class="w-full bg-slate-100 border border-slate-200 rounded-lg px-3 py-2 text-sm font-black text-right text-slate-700 font-mono">
                         </div>
-                        <div>
-                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Máximo a Riesgo en Bolívares (Bs)</label>
-                            <input type="number" id="maxRiesgoBs" min="0" step="0.01" value="0" class="in-max-riesgo w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-right text-amber-600">
-                        </div>
-                        <div>
-                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Máximo a Riesgo en Dólares ($)</label>
+                        <div class="col-span-2">
+                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Monto Máximo a Riesgo — Tope Único en Dólares ($) o su Equivalente en Bs vía tasa</label>
                             <input type="number" id="maxRiesgoUsd" min="0" step="0.01" value="0" class="in-max-riesgo w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-right text-red-600">
                         </div>
                         <div class="col-span-2 grid grid-cols-2 gap-4">
                             <div>
+                                <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Riesgo Actual en Dólares ($ Equivalente)</label>
+                                <input type="text" id="lblRiesgoUsd" readonly class="w-full bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm font-black text-right text-red-600 font-mono">
+                            </div>
+                            <div>
                                 <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Riesgo Actual en Bolívares (Bs)</label>
                                 <input type="text" id="lblRiesgoBs" readonly class="w-full bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm font-black text-right text-amber-600 font-mono">
                             </div>
-                            <div>
-                                <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Riesgo Actual en Dólares ($)</label>
-                                <input type="text" id="lblRiesgoUsd" readonly class="w-full bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm font-black text-right text-red-600 font-mono">
-                            </div>
                         </div>
                         <p id="lblExcesoRiesgo" class="col-span-2 hidden text-[11px] font-bold bg-red-100 border border-red-300 text-red-700 rounded-lg px-3 py-2">
-                            <i class="fas fa-exclamation-triangle mr-1"></i> El riesgo total supera el máximo permitido (Bs o $). Ajuste cupos, premio o el máximo.
+                            <i class="fas fa-exclamation-triangle mr-1"></i> El riesgo en dólares (o equivalente) supera el tope único. Ajuste cupos, premio o el tope.
                         </p>
                     </div>
 

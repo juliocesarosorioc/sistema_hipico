@@ -92,8 +92,14 @@ document.addEventListener('DOMContentLoaded', () => {
             // Buscar si es tabla fija para saber su premio real (descontando retiros)
             let premioBaseUnidad = 0;
             if (tk.nombre_jugada.includes('TABLA')) {
-                const tablaMatch = tablasReferencia.find(tb => tb.hipodromo === tk.hipodromo && tb.carrera === tk.carrera);
-                if(tablaMatch) premioBaseUnidad = tablaMatch.premio_recalculado; // Toma el premio ya auditado (proporcional)
+                // El premio queda CONGELADO al momento de la venta (premio_por_tabla).
+                // Si el ticket es viejo (sin congelar), se toma el premio actual de la tabla.
+                if (tk.premio_por_tabla != null && !isNaN(parseFloat(tk.premio_por_tabla))) {
+                    premioBaseUnidad = parseFloat(tk.premio_por_tabla);
+                } else {
+                    const tablaMatch = tablasReferencia.find(tb => tb.hipodromo === tk.hipodromo && tb.carrera === tk.carrera);
+                    if(tablaMatch) premioBaseUnidad = tablaMatch.premio_recalculado; // Toma el premio ya auditado (proporcional)
+                }
             }
 
             // Premio Total potencial (Si Gana) = Cantidad de tablas jugadas * Premio recalculado de la tabla

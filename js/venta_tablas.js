@@ -161,6 +161,77 @@ document.addEventListener('DOMContentLoaded', () => {
         lblTotalPagar.textContent = `${simbolo}${(pts * cant).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
     }
 
+    // ==========================================
+    // REPORTE DE VENTAS (riesgo por venta y por grupo)
+    // ==========================================
+    async function cargarReporteVentas() {
+        const { data } = await window.supabase
+            .from('tickets_apuestas')
+            .select('id, created_at, cliente_juega_nombre, grupo, hipodromo, carrera, caballo, cantidad_tablas, monto_jugado, premio_por_tabla, pts_ejemplar, premio_recalculado, moneda')
+            .order('created_at', { ascending: false })
+            .limit(100);
+        const cuerpo = document.getElementById('cuerpoReporteVentas');
+        const resumen = document.getElementById('resumenRiesgoGrupos');
+
+        const tickets = data || [];
+
+        if (tickets.length === 0) {
+            cuerpo.innerHTML = '<tr><td colspan="9" class="p-4 text-center text-slate-500">Aún no hay ventas de tablas fijas.</td></tr>';
+            resumen.innerHTML = '<div class="text-slate-400 italic text-xs">Sin ventas.</div>';
+            return;
+        }
+
+        // Resumen de riesgo por grupo
+        const porGrupo = {};
+        tickets.forEach(tk => {
+            const premioUnidad = (tk.premio_por_tabla != null && !isNaN(parseFloat(tk.premio_por_tabla)))
+                ? parseFloat(tk.premio_por_tabla)
+                : (parseFloat(tk.premio_recalculado) || 0);
+            const riesgo = parseFloat(tk.cantidad_tablas) * premioUnidad;
+            const clave = `${tk.grupo}`;
+            if (!porGrupo[clave]) porGrupo[clave] = { riesgoLocal: 0, usaVes: tk.moneda === 'VES', ventas: 0, tablas: 0, moneda: tk.moneda };
+            porGrupo[clave].riesgoLocal += riesgo;
+            porGrupo[clave].ventas += 1;
+            porGrupo[clave].tablas += parseInt(tk.cantidad_tablas) || 0;
+        });
+
+        resumen.innerHTML = Object.entries(porGrupo).map(([nombre, g]) => {
+            const simb = g.moneda === 'VES' ? 'Bs ' : '$';
+            const equivalenteUSD = g.moneda === 'VES' ? (g.riesgoLocal / (tasaCambioGlobal || 1)) : g.riesgoLocal;
+            return `
+                <div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-slate-800 text-sm">${nombre}</span>
+                        <span class="px-1.5 py-0.5 rounded text-[9px] font-black ${g.moneda === 'VES' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}">${g.moneda}</span>
+                    </div>
+                    <p class="text-lg font-black ${g.moneda === 'VES' ? 'text-amber-600' : 'text-emerald-600'} mt-1 font-mono">${simb}${g.riesgoLocal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                    <p class="text-[10px] text-slate-500 mt-1">${g.ventas} venta(s) · ${g.tablas} tablas · equiv. $ ${equivalenteUSD.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                </div>`;
+        }).join('');
+
+        // Detalle de ventas
+        cuerpo.innerHTML = tickets.map(tk => {
+            const premioUnidad = (tk.premio_por_tabla != null && !isNaN(parseFloat(tk.premio_por_tabla)))
+                ? parseFloat(tk.premio_por_tabla)
+                : (parseFloat(tk.premio_recalculado) || 0);
+            const riesgo = parseFloat(tk.cantidad_tablas) * premioUnidad;
+            const fecha = tk.created_at ? new Date(tk.created_at).toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+            const simb = tk.moneda === 'VES' ? 'Bs ' : '$';
+            return `
+                <tr class="hover:bg-slate-50">
+                    <td class="p-2 text-slate-500">${fecha}</td>
+                    <td class="p-2 font-bold text-slate-800">${tk.cliente_juega_nombre}</td>
+                    <td class="p-2"><span class="px-1.5 py-0.5 rounded text-[9px] font-black bg-slate-200 text-slate-700">${tk.grupo}</span></td>
+                    <td class="p-2">${tk.hipodromo} C${tk.carrera}</td>
+                    <td class="p-2">${tk.caballo}</td>
+                    <td class="p-2 text-right font-bold">${tk.cantidad_tablas}</td>
+                    <td class="p-2 text-right text-blue-600 font-bold">${parseFloat(tk.pts_ejemplar || 0).toFixed(1)}</td>
+                    <td class="p-2 text-right text-emerald-600 font-bold">${simb}${premioUnidad.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td class="p-2 text-right text-red-600 font-black">${simb}${riesgo.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                </tr>`;
+        }).join('');
+    }
+
     btnProcesarVenta.addEventListener('click', async () => {
         if (!tablaSeleccionada || !grupoTabla) return clubUI.toast("Seleccione primero grupo y carrera.");
         if (!ejemplarSeleccionado) return clubUI.toast("Seleccione el ejemplar (Posada Ganadora).");
@@ -210,6 +281,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 caballo: ejemplarSeleccionado.nombre,
                 cantidad_tablas: cantidad,
                 monto_jugado: costoTotal,
+                premio_por_tabla: parseFloat(tablaSeleccionada.premio_recalculado) || 0,
+                pts_ejemplar: pts,
                 comision_porcentaje: tablaSeleccionada.comision_grupo || 0,
                 moneda: groupSeleccionado.moneda,
                 tasa_cambio: tasaCambioGlobal,
@@ -237,5 +310,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    document.getElementById('btnActualizarReporte')?.addEventListener('click', cargarReporteVentas);
+
     inicializar();
+    cargarReporteVentas();
 });

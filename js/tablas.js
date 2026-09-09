@@ -9,7 +9,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const premioTabla = document.getElementById('premioTabla');
     const lblRiesgoBs = document.getElementById('lblRiesgoBs');
     const lblRiesgoUsd = document.getElementById('lblRiesgoUsd');
-    const maxRiesgoBs = document.getElementById('maxRiesgoBs');
     const maxRiesgoUsd = document.getElementById('maxRiesgoUsd');
     const lblExcesoRiesgo = document.getElementById('lblExcesoRiesgo');
 
@@ -269,14 +268,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (lblRiesgoUsd) lblRiesgoUsd.value = '$ ' + usd.toLocaleString(undefined, { minimumFractionDigits: 2 });
         lblPremioPts.textContent = '$' + prem.toLocaleString(undefined, { minimumFractionDigits: 2 });
 
-        const maxBs = parseFloat(maxRiesgoBs.value) || 0;
         const maxUsd = parseFloat(maxRiesgoUsd.value) || 0;
-        const excede = (maxBs > 0 && bs > maxBs) || (maxUsd > 0 && usd > maxUsd);
+        const excede = maxUsd > 0 && usd > maxUsd;
         if (lblExcesoRiesgo) lblExcesoRiesgo.classList.toggle('hidden', !excede);
     }
 
     premioTabla.addEventListener('input', actualizarRiesgo);
-    [maxRiesgoBs, maxRiesgoUsd].forEach(inp => inp.addEventListener('input', actualizarRiesgo));
+    maxRiesgoUsd.addEventListener('input', actualizarRiesgo);
     btnAgregarCaballo.addEventListener('click', () => crearFilaCaballo());
     crearFilaCaballo('1', 'Ejemplar A', '50');
     crearFilaCaballo('2', 'Ejemplar B', '60');
@@ -302,20 +300,19 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(x => x.cupos > 0);
         if (cuposPorGrupo.length === 0) return clubUI.toast("Asigne cupos a al menos un grupo.");
 
-        // ===== MAXIMOS A RIESGO (Bs y $ vinculado a la última tasa) =====
-        const maxBs = parseFloat(maxRiesgoBs.value) || 0;
+        // ===== TOPE ÚNICO A RIESGO (en $ o su equivalente en Bs vía tasa) =====
         const maxUsd = parseFloat(maxRiesgoUsd.value) || 0;
-        if (maxBs > 0 || maxUsd > 0) {
-            let rBs = 0, rUsd = 0;
+        if (maxUsd > 0) {
+            let rUsd = 0;
             cuposPorGrupo.forEach(x => {
                 const g = gruposActivos.find(gp => gp.id == x.grupo_id);
                 const mon = g ? g.moneda : 'USD';
                 const monto = x.cupos * premio;
-                if (mon === 'VES') { rBs += monto; rUsd += monto / (tasaCambioGlobal || 1); }
-                else { rUsd += monto; rBs += monto * (tasaCambioGlobal || 1); }
+                if (mon === 'VES') rUsd += monto / (tasaCambioGlobal || 1);
+                else rUsd += monto;
             });
-            if ((maxBs > 0 && rBs > maxBs) || (maxUsd > 0 && rUsd > maxUsd)) {
-                return clubUI.toast(`Riesgo supera el máximo permitido: Bs ${rBs.toLocaleString(undefined, {minimumFractionDigits:2})} / $ ${rUsd.toLocaleString(undefined, {minimumFractionDigits:2})}. Ajuste cupos o premio.`);
+            if (rUsd > maxUsd) {
+                return clubUI.toast(`Riesgo supera el tope único ($ ${rUsd.toLocaleString(undefined, {minimumFractionDigits:2})} equivalente). Ajuste cupos o premio.`);
             }
         }
 
@@ -440,19 +437,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const premio = parseFloat(document.getElementById('editPremio').value);
         const cuposInputs = [...document.querySelectorAll('.edit-cupo')];
 
-        const maxBs = parseFloat(maxRiesgoBs.value) || 0;
         const maxUsd = parseFloat(maxRiesgoUsd.value) || 0;
-        if (maxBs > 0 || maxUsd > 0) {
-            let rBs = 0, rUsd = 0;
+        if (maxUsd > 0) {
+            let rUsd = 0;
             cuposInputs.forEach(inp => {
                 const g = gruposActivos.find(gp => gp.id == inp.dataset.grupo);
                 const mon = g ? g.moneda : 'USD';
                 const monto = (parseInt(inp.value) || 0) * premio;
-                if (mon === 'VES') { rBs += monto; rUsd += monto / (tasaCambioGlobal || 1); }
-                else { rUsd += monto; rBs += monto * (tasaCambioGlobal || 1); }
+                if (mon === 'VES') rUsd += monto / (tasaCambioGlobal || 1);
+                else rUsd += monto;
             });
-            if ((maxBs > 0 && rBs > maxBs) || (maxUsd > 0 && rUsd > maxUsd)) {
-                return clubUI.toast(`La edición supera el máximo de riesgo: Bs ${rBs.toLocaleString(undefined, {minimumFractionDigits:2})} / $ ${rUsd.toLocaleString(undefined, {minimumFractionDigits:2})}.`);
+            if (rUsd > maxUsd) {
+                return clubUI.toast(`La edición supera el tope único de riesgo ($ ${rUsd.toLocaleString(undefined, {minimumFractionDigits:2})} equivalente).`);
             }
         }
 

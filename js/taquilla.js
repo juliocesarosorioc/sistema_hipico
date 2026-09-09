@@ -176,6 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let grupoVenta = 'GENERAL';
             let monedaTicket = 'USD';
+            let premioCongelado = null;
             // Comisión por TIPO DE JUGADA (la comisión vive en el tipo de jugada, no en el cliente)
             let comisionAplicada = (jugadaRegla && !isNaN(parseFloat(jugadaRegla.base_comision)))
                 ? parseFloat(jugadaRegla.base_comision)
@@ -189,6 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     monedaTicket = tablaAsociada.moneda;
                     comisionAplicada = tablaAsociada.comision_grupo;
                     cantidadTablasVal = tablaAsociada.cantidad_tablas;
+                    premioCongelado = parseFloat(tablaAsociada.premio_recalculado) || null;
                 }
             }
 
@@ -209,6 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     moneda: monedaTicket,
                     tasa_cambio: tasaCambioGlobal,
                     cantidad_tablas: cantidadTablasVal,
+                    premio_por_tabla: premioCongelado,
                     comision_porcentaje: comisionAplicada,
                     estado: 'Pendiente'
                 });
