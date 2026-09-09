@@ -2,207 +2,233 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const filtroGrupo = document.getElementById('filtroGrupo');
     const selectTablaConfig = document.getElementById('selectTablaConfig');
+    const selectEjemplar = document.getElementById('selectEjemplar');
     const panelCompra = document.getElementById('panelCompra');
     const selectCliente = document.getElementById('selectCliente');
     const inputCantidad = document.getElementById('cantidadComprar');
-    
-    // UI Resumen
+
     const lblCostoUnit = document.getElementById('lblCostoUnit');
     const lblPremioUnit = document.getElementById('lblPremioUnit');
+    const lblCostoTotal = document.getElementById('lblCostoTotal');
+    const lblPremioTotal = document.getElementById('lblPremioTotal');
     const lblDisponibles = document.getElementById('lblDisponibles');
     const lblTotalPagar = document.getElementById('lblTotalPagar');
     const btnProcesarVenta = document.getElementById('btnProcesarVenta');
 
-    // UI Riesgo
     const msgSeleccione = document.getElementById('msgSeleccioneTabla');
     const contenidoRiesgo = document.getElementById('contenidoRiesgo');
     const lblRiesgoMonto = document.getElementById('lblRiesgoMonto');
     const lblInventarioProgreso = document.getElementById('lblInventarioProgreso');
     const cuerpoEjemplares = document.getElementById('cuerpoEjemplaresTabla');
 
+    let gruposDB = [];
     let tablasDisponiblesDB = [];
-    let tablaSeleccionada = null;
     let clientesDB = [];
+    let groupSeleccionado = null;
+    let tablaSeleccionada = null;     // { id, premio_recalculado, caballos, hipodromo, carrera }
+    let grupoTabla = null;            // tabla_grupos row (cupos, cantidad_vendida) del grupo actual
+    let ejemplarSeleccionado = null;
+    let tasaCambioGlobal = 1.0;
+
+    function simboloDe(moneda) { return moneda === 'VES' ? 'Bs' : '$'; }
 
     async function inicializar() {
-        // Consultas en paralelo: clientes y tablas no dependen entre sí
-        const segura = (promesa) => promesa.catch(e => ({ data: null, error: e }));
-        const [rClientes, rTablas] = await Promise.all([
-            segura(window.supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre').order('nombre')),
-            segura(window.supabase.from('tablas_fijas').select('*').eq('estado', 'Abierta'))
+        const segura = (p) => p.catch(e => ({ data: null, error: e }));
+        const [rGrupos, rTablas, rClientes, rMoneda] = await Promise.all([
+            segura(window.supabase.from('grupos_venta').select('*').eq('activo', true).order('es_principal', { ascending: false })),
+            segura(window.supabase.from('tablas_fijas').select('*, tabla_grupos(*)').eq('estado', 'Abierta')),
+            segura(window.supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre, grupo_id').order('nombre')),
+            segura(window.supabase.from('monedas').select('tasa_cambio').limit(1).single())
         ]);
 
-        const clientes = rClientes.data;
-        if(clientes) {
-            clientesDB = clientes;
-            selectCliente.innerHTML = '<option value="">Seleccione apostador...</option>';
-            clientes.forEach(c => selectCliente.innerHTML += `<option value="${c.id}">${c.nombre} (Saldo: $${parseFloat(c.saldo_actual).toFixed(2)})</option>`);
-        }
+        if (rMoneda.data && rMoneda.data.tasa_cambio) tasaCambioGlobal = parseFloat(rMoneda.data.tasa_cambio);
 
-        const tablas = rTablas.data;
-        if(tablas) {
-            tablasDisponiblesDB = tablas;
-            let gruposUnicos = [...new Set(tablas.map(t => t.grupo_venta))];
-
+        if (rGrupos.data) {
+            gruposDB = rGrupos.data;
             filtroGrupo.innerHTML = '<option value="">Seleccione Grupo...</option>';
-            gruposUnicos.forEach(g => filtroGrupo.innerHTML += `<option value="${g}">${g}</option>`);
+            gruposDB.forEach(g => filtroGrupo.innerHTML += `<option value="${g.id}">${g.nombre} (${g.moneda})</option>`);
+            if (gruposDB.length === 0) filtroGrupo.innerHTML = '<option value="" disabled>Sin grupos activos (créelos en Tablas Fijas)</option>';
         }
+
+        if (rTablas.data) tablasDisponiblesDB = rTablas.data;
+        if (rClientes.data) clientesDB = rClientes.data;
     }
 
-    // Filtrar carreras al cambiar grupo
     filtroGrupo.addEventListener('change', () => {
-        const grupo = filtroGrupo.value;
+        const id = filtroGrupo.value;
+        const g = gruposDB.find(x => x.id == id);
         selectTablaConfig.innerHTML = '<option value="">Seleccione Hipódromo y Carrera...</option>';
-        
-        if(!grupo) {
-            selectTablaConfig.disabled = true;
-            panelCompra.classList.add('hidden');
-            msgSeleccione.classList.remove('hidden');
-            contenidoRiesgo.classList.add('hidden');
-            return;
-        }
+        panelCompra.classList.add('hidden');
+        msgSeleccione.classList.remove('hidden');
+        contenidoRiesgo.classList.add('hidden');
 
-        const filtradas = tablasDisponiblesDB.filter(t => t.grupo_venta === grupo);
-        filtradas.forEach(t => {
-            selectTablaConfig.innerHTML += `<option value="${t.id}">${t.hipodromo} - Carrera ${t.carrera} (${t.moneda})</option>`;
+        if (!g) { selectTablaConfig.disabled = true; return; }
+
+        groupSeleccionado = g;
+        const elegibles = tablasDisponiblesDB.filter(t => {
+            const tg = (t.tabla_grupos || []).find(x => x.grupo_id == g.id);
+            return tg && (tg.cupos - (tg.cantidad_vendida || 0)) > 0;
+        });
+
+        elegibles.forEach(t => {
+            selectTablaConfig.innerHTML += `<option value="${t.id}">${t.hipodromo} - Carrera ${t.carrera} (${g.moneda})</option>`;
         });
         selectTablaConfig.disabled = false;
     });
 
-    // Al seleccionar una tabla específica
     selectTablaConfig.addEventListener('change', () => {
         const id = selectTablaConfig.value;
-        if(!id) {
+        if (!id) {
             panelCompra.classList.add('hidden');
             msgSeleccione.classList.remove('hidden');
             contenidoRiesgo.classList.add('hidden');
             return;
         }
 
-        tablaSeleccionada = tablasDisponiblesDB.find(t => t.id == id);
+        const t = tablasDisponiblesDB.find(x => x.id == id);
+        const tg = (t.tabla_grupos || []).find(x => x.grupo_id == groupSeleccionado.id);
+        tablaSeleccionada = t;
+        grupoTabla = tg;
+
+        // Ejemplares disponibles (no retirados)
+        const caballos = (t.caballos || []).filter(c => !c.retirado);
+        selectEjemplar.innerHTML = '<option value="">Seleccione ejemplar...</option>';
+        caballos.forEach(c => selectEjemplar.innerHTML += `<option value="${c.numero}">${c.numero} - ${c.nombre} (${c.valor_ejemplar} pts)</option>`);
+
+        // Clientes del grupo
+        const delGrupo = clientesDB.filter(c => c.grupo_id == groupSeleccionado.id);
+        selectCliente.innerHTML = '<option value="">Seleccione apostador...</option>';
+        delGrupo.forEach(c => selectCliente.innerHTML += `<option value="${c.id}">${c.nombre} (Saldo: $${parseFloat(c.saldo_actual).toFixed(2)})</option>`);
+        if (delGrupo.length === 0) selectCliente.innerHTML += '<option value="" disabled>No hay clientes en este grupo</option>';
+
         renderizarPanelTabla();
     });
 
+    selectEjemplar.addEventListener('change', () => {
+        if (!tablaSeleccionada) return;
+        ejemplarSeleccionado = (tablaSeleccionada.caballos || []).find(c => c.numero == selectEjemplar.value) || null;
+        if (ejemplarSeleccionado) lblCostoUnit.textContent = ejemplarSeleccionado.valor_ejemplar + ' pts';
+        actualizarTotales();
+    });
+
     function renderizarPanelTabla() {
-        if(!tablaSeleccionada) return;
+        if (!tablaSeleccionada || !grupoTabla) return;
 
-        let simbolo = tablaSeleccionada.moneda === 'VES' ? 'Bs' : '$';
-        let limite = tablaSeleccionada.limite_ventas || 100;
-        let vendidas = tablaSeleccionada.cantidad_vendida || 0;
-        let disponibles = limite - vendidas;
+        const simbolo = simboloDe(groupSeleccionado.moneda);
+        const limite = grupoTabla.cupos || 0;
+        const vendidas = grupoTabla.cantidad_vendida || 0;
+        const disponibles = Math.max(0, limite - vendidas);
+        const premio = parseFloat(tablaSeleccionada.premio_recalculado);
 
-        lblCostoUnit.textContent = `${simbolo}${tablaSeleccionada.monto_tabla}`;
-        lblPremioUnit.textContent = `${simbolo}${parseFloat(tablaSeleccionada.premio_recalculado).toLocaleString()}`;
+        lblPremioUnit.textContent = `${simbolo}${premio.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
         lblDisponibles.textContent = disponibles;
 
-        // Actualizar totales de compra
-        actualizarTotalPagar();
-
-        // Mostrar Panel de Riesgo
         msgSeleccione.classList.add('hidden');
         contenidoRiesgo.classList.remove('hidden');
         contenidoRiesgo.classList.add('flex');
         panelCompra.classList.remove('hidden');
 
-        // Métricas de riesgo
-        let riesgoActual = disponibles * tablaSeleccionada.premio_recalculado;
-        lblRiesgoMonto.textContent = `${simbolo}${riesgoActual.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        lblRiesgoMonto.textContent = `${simbolo}${(disponibles * premio).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
         lblInventarioProgreso.textContent = `${vendidas} / ${limite}`;
 
-        // Tabla de ejemplares
         cuerpoEjemplares.innerHTML = '';
         tablaSeleccionada.caballos.forEach(c => {
+            const retirado = c.retirado;
             cuerpoEjemplares.innerHTML += `
-                <tr>
+                <tr class="${retirado ? 'opacity-50' : ''}">
                     <td class="p-2 text-center font-bold">${c.numero}</td>
                     <td class="p-2 font-bold text-slate-700">${c.nombre}</td>
                     <td class="p-2 text-right font-bold text-blue-600">${c.valor_ejemplar} pts</td>
+                    <td class="p-2 text-center">${retirado ? '<span class="text-[9px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded">RETIRADO</span>' : '<span class="text-[9px] font-black bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded">ACTIVO</span>'}</td>
                 </tr>
             `;
         });
+
+        actualizarTotales();
     }
 
-    inputCantidad.addEventListener('input', actualizarTotalPagar);
+    inputCantidad.addEventListener('input', actualizarTotales);
 
-    function actualizarTotalPagar() {
-        if(!tablaSeleccionada) return;
-        let cant = parseInt(inputCantidad.value) || 1;
-        let total = cant * tablaSeleccionada.monto_tabla;
-        let simbolo = tablaSeleccionada.moneda === 'VES' ? 'Bs' : '$';
-        lblTotalPagar.textContent = `${simbolo}${total.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+    function actualizarTotales() {
+        if (!tablaSeleccionada) return;
+        const cant = Math.max(1, parseInt(inputCantidad.value) || 1);
+        const simbolo = simboloDe(groupSeleccionado.moneda);
+        const premio = parseFloat(tablaSeleccionada.premio_recalculado);
+        const pts = ejemplarSeleccionado ? parseFloat(ejemplarSeleccionado.valor_ejemplar) : 0;
+
+        lblCostoTotal.textContent = `${simbolo}${(pts * cant).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+        lblPremioTotal.textContent = `${simbolo}${(premio * cant).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+        lblTotalPagar.textContent = `${simbolo}${(pts * cant).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
     }
 
-    // PROCESAR VENTA Y DESCONTAR SALDO
     btnProcesarVenta.addEventListener('click', async () => {
+        if (!tablaSeleccionada || !grupoTabla) return clubUI.toast("Seleccione primero grupo y carrera.");
+        if (!ejemplarSeleccionado) return clubUI.toast("Seleccione el ejemplar (Posada Ganadora).");
+
         const clienteId = selectCliente.value;
         const cantidad = parseInt(inputCantidad.value);
+        if (!clienteId) return clubUI.toast("Seleccione un cliente comprador.");
+        if (isNaN(cantidad) || cantidad <= 0) return clubUI.toast("Cantidad inválida.");
 
-        if(!clienteId) return clubUI.toast("Seleccione un cliente comprador.");
-        if(isNaN(cantidad) || cantidad <= 0) return clubUI.toast("Cantidad inválida.");
-
-        let limite = tablaSeleccionada.limite_ventas || 100;
-        let vendidas = tablaSeleccionada.cantidad_vendida || 0;
-        let disponibles = limite - vendidas;
-
-        if(cantidad > disponibles) {
-            return clubUI.toast(`No hay suficientes tablas disponibles. Solo quedan ${disponibles} cupos.`);
-        }
+        const limite = grupoTabla.cupos || 0;
+        const vendidas = grupoTabla.cantidad_vendida || 0;
+        const disponibles = limite - vendidas;
+        if (cantidad > disponibles) return clubUI.toast(`No hay suficientes tablas disponibles en el grupo. Solo quedan ${disponibles}.`);
 
         const cliente = clientesDB.find(c => c.id == clienteId);
-        let costoTotal = cantidad * tablaSeleccionada.monto_tabla;
+        if (!cliente) return clubUI.toast("Cliente no encontrado.");
+        if (cliente.grupo_id != groupSeleccionado.id) return clubUI.toast("El cliente no pertenece al grupo seleccionado.");
 
-        // REGLA DE NEGOCIO (AVAL): límite de pérdida, no es saldo. Si no juega libre,
-        // su saldo puede quedar negativo pero nunca pasar de -AVAL.
+        const pts = parseFloat(ejemplarSeleccionado.valor_ejemplar);
+        const costoTotal = pts * cantidad;
+        const esVES = groupSeleccionado.moneda === 'VES';
+        const costoUSD = esVES ? costoTotal / (tasaCambioGlobal || 1) : costoTotal;
+
         if (!cliente.libre) {
             const limiteAval = parseFloat(cliente.aval || 0);
-            if (parseFloat(cliente.saldo_actual) - costoTotal < -limiteAval) {
+            if (parseFloat(cliente.saldo_actual) - costoUSD < -limiteAval) {
                 return clubUI.toast(`El cliente ${cliente.nombre} supera su límite de AVAL ($${limiteAval.toFixed(2)}). Debe abonar antes de comprar tablas.`);
             }
         }
 
-        // Validar saldo del cliente (si opera en la misma moneda)
-        if(tablaSeleccionada.moneda === 'USD' && parseFloat(cliente.saldo_actual) < costoTotal) {
-            if(!confirm(`El cliente ${cliente.nombre} tiene saldo insuficiente ($${cliente.saldo_actual}). ¿Desea proceder de todas formas?`)) return;
+        if (!esVES && parseFloat(cliente.saldo_actual) < costoTotal) {
+            if (!confirm(`El cliente ${cliente.nombre} tiene saldo insuficiente ($${cliente.saldo_actual}). ¿Desea proceder de todas formas?`)) return;
         }
 
         btnProcesarVenta.disabled = true;
         btnProcesarVenta.textContent = "Procesando Venta...";
 
         try {
-            // 1. Registrar Ticket de Apuesta para el Módulo de Liquidación (saldos.js)
+            const nombreGrupo = groupSeleccionado.nombre;
             const { error: errTk } = await window.supabase.from('tickets_apuestas').insert([{
                 cliente_juega_id: clienteId,
                 cliente_juega_nombre: cliente.nombre,
-                grupo: tablaSeleccionada.grupo_venta,
+                grupo: nombreGrupo,
                 hipodromo: tablaSeleccionada.hipodromo,
                 carrera: tablaSeleccionada.carrera,
                 nombre_jugada: `TABLA FIJA (${tablaSeleccionada.hipodromo} C${tablaSeleccionada.carrera})`,
-                caballo: 'LOTE COMPLETO',
+                caballo: ejemplarSeleccionado.nombre,
                 cantidad_tablas: cantidad,
                 monto_jugado: costoTotal,
-                comision_porcentaje: tablaSeleccionada.comision_grupo,
-                moneda: tablaSeleccionada.moneda,
-                tasa_cambio: tablaSeleccionada.tasa_cambio,
+                comision_porcentaje: tablaSeleccionada.comision_grupo || 0,
+                moneda: groupSeleccionado.moneda,
+                tasa_cambio: tasaCambioGlobal,
                 estado: 'Pendiente'
             }]);
-            if(errTk) throw errTk;
+            if (errTk) throw errTk;
 
-            // 2. Actualizar inventario de la tabla (aumentar cantidad vendida)
-            let nuevoVendidas = vendidas + cantidad;
-            const { error: errTb } = await window.supabase.from('tablas_fijas').update({
+            const nuevoVendidas = vendidas + cantidad;
+            const { error: errTg } = await window.supabase.from('tabla_grupos').update({
                 cantidad_vendida: nuevoVendidas
-            }).eq('id', tablaSeleccionada.id);
-            if(errTb) throw errTb;
+            }).eq('id', grupoTabla.id);
+            if (errTg) throw errTg;
 
-            // 3. Descontar saldo del cliente
-            let nuevoSaldoCliente = parseFloat(cliente.saldo_actual) - costoTotal;
             await window.supabase.from('clientes').update({
-                saldo_actual: nuevoSaldoCliente
+                saldo_actual: parseFloat(cliente.saldo_actual) - costoUSD
             }).eq('id', clienteId);
 
-            clubUI.toast("✅ ¡Venta de tablas procesada con éxito! Inventario actualizado y saldo descontado.");
+            clubUI.toast("¡Venta de tablas procesada con éxito! Inventario actualizado y saldo descontado.");
             window.location.reload();
-
         } catch (e) {
             console.error(e);
             clubUI.toast("Ocurrió un error al procesar la venta en la base de datos.");

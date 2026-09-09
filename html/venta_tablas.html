@@ -14,8 +14,8 @@
     <!-- El Sidebar se inyectará aquí automáticamente mediante layout.js -->
 
     <!-- ÁREA CENTRAL DE CONTENIDO -->
-    <div class="flex-1 flex flex-col h-full relative overflow-hidden w-full">
-        
+    <div class="club-contenido flex-1 flex flex-col h-full relative overflow-hidden w-full">
+
         <!-- CABECERA DE CONTEXTO -->
         <header class="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm shrink-0 z-10">
             <h1 class="text-xl font-bold text-slate-800 uppercase tracking-wide">
@@ -26,15 +26,15 @@
             </div>
         </header>
 
-        <main class="p-6 flex-1 overflow-y-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6 bg-slate-100">
-            
+        <main class="club-contenido p-6 flex-1 overflow-y-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6 bg-slate-100">
+
             <!-- PANEL IZQUIERDO: SELECCIÓN Y VENTA -->
             <div class="lg:col-span-1 space-y-6">
-                
-                <!-- SELECCIÓN DE CARRERA -->
+
+                <!-- SELECCIÓN DE GRUPO Y TABLA -->
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                     <div class="bg-slate-900 text-white p-3.5 font-bold text-xs uppercase tracking-wider">
-                        <i class="fas fa-filter text-slate-400 mr-2"></i> 1. Seleccionar Lote / Carrera
+                        <i class="fas fa-filter text-slate-400 mr-2"></i> 1. Seleccionar Grupo y Carrera
                     </div>
                     <div class="p-5 space-y-4">
                         <div>
@@ -55,22 +55,37 @@
                 <!-- FORMULARIO DE COMPRA -->
                 <div id="panelCompra" class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hidden">
                     <div class="bg-emerald-600 text-white p-3.5 font-bold text-xs uppercase tracking-wider">
-                        <i class="fas fa-shopping-cart mr-2"></i> 2. Datos del Apostador y Cantidad
+                        <i class="fas fa-shopping-cart mr-2"></i> 2. Ejemplar, Apostador y Cantidad
                     </div>
                     <div class="p-5 space-y-5">
-                        
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Ejemplar (Valor / Pts)</label>
+                            <select id="selectEjemplar" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-500">
+                                <option value="">Seleccione ejemplar...</option>
+                            </select>
+                        </div>
+
                         <!-- Resumen Costos -->
                         <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 text-xs space-y-2 shadow-inner">
                             <div class="flex justify-between items-center border-b border-slate-200 pb-1">
-                                <span class="font-bold text-slate-600">Costo Unitario:</span> 
+                                <span class="font-bold text-slate-600">Costo Unitario (Pts):</span>
                                 <strong id="lblCostoUnit" class="text-emerald-700 text-sm">0.00</strong>
                             </div>
                             <div class="flex justify-between items-center border-b border-slate-200 pb-1">
-                                <span class="font-bold text-slate-600">Premio Pactado:</span> 
+                                <span class="font-bold text-slate-600">Premio Pactado / Tabla:</span>
                                 <strong id="lblPremioUnit" class="text-blue-700 text-sm">0.00</strong>
                             </div>
+                            <div class="flex justify-between items-center border-b border-slate-200 pb-1">
+                                <span class="font-bold text-slate-600">Costo Total (pts x cant.):</span>
+                                <strong id="lblCostoTotal" class="text-emerald-700 text-sm">0.00</strong>
+                            </div>
+                            <div class="flex justify-between items-center border-b border-slate-200 pb-1">
+                                <span class="font-bold text-slate-600">Premio a Pagar Total:</span>
+                                <strong id="lblPremioTotal" class="text-blue-700 text-sm">0.00</strong>
+                            </div>
                             <div class="flex justify-between items-center pt-1">
-                                <span class="font-bold text-slate-600">Tablas Disponibles:</span> 
+                                <span class="font-bold text-slate-600">Tablas Disponibles en Grupo:</span>
                                 <strong id="lblDisponibles" class="text-red-600 text-sm">0</strong>
                             </div>
                         </div>
@@ -91,7 +106,7 @@
                         </div>
 
                         <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 flex justify-between items-center shadow-sm">
-                            <span class="text-xs font-black text-blue-900 uppercase tracking-wider">Total a Pagar:</span>
+                            <span class="text-xs font-black text-blue-900 uppercase tracking-wider">Costo Total a Descontar:</span>
                             <span id="lblTotalPagar" class="text-2xl font-black text-blue-700 font-mono">0.00</span>
                         </div>
 
@@ -108,22 +123,22 @@
                     <div class="bg-[#1e3a8a] text-white p-3.5 font-bold text-xs uppercase tracking-wider flex items-center">
                         <i class="fas fa-chart-line text-blue-300 mr-2"></i> Monitor de Riesgo y Composición
                     </div>
-                    
+
                     <div class="p-8 flex-1 flex flex-col items-center justify-center text-slate-400" id="msgSeleccioneTabla">
                         <i class="fas fa-mouse-pointer text-5xl mb-4 opacity-30"></i>
                         <p class="text-sm font-medium">Seleccione un grupo y carrera en el panel izquierdo para ver el análisis de riesgo.</p>
                     </div>
 
                     <div id="contenidoRiesgo" class="hidden p-6 space-y-6 overflow-y-auto">
-                        
+
                         <!-- KPIs de Riesgo -->
                         <div class="grid grid-cols-2 gap-6">
                             <div class="bg-red-50 border border-red-200 p-5 rounded-xl text-center shadow-sm">
-                                <span class="text-xs font-bold text-red-700 uppercase tracking-wider">Riesgo Máximo Actual</span>
+                                <span class="text-xs font-bold text-red-700 uppercase tracking-wider">Riesgo Disponible del Grupo</span>
                                 <p class="text-3xl font-black text-red-600 mt-1 font-mono" id="lblRiesgoMonto">0.00</p>
                             </div>
                             <div class="bg-blue-50 border border-blue-200 p-5 rounded-xl text-center shadow-sm">
-                                <span class="text-xs font-bold text-blue-700 uppercase tracking-wider">Tablas Vendidas / Límite</span>
+                                <span class="text-xs font-bold text-blue-700 uppercase tracking-wider">Vendidas / Cupos (Grupo)</span>
                                 <p class="text-3xl font-black text-blue-600 mt-1 font-mono" id="lblInventarioProgreso">0 / 0</p>
                             </div>
                         </div>
@@ -140,6 +155,7 @@
                                             <th class="p-3 w-16 text-center font-bold">N°</th>
                                             <th class="p-3 font-bold">Ejemplar</th>
                                             <th class="p-3 text-right font-bold">Valor / Pts</th>
+                                            <th class="p-3 text-center font-bold">Estado</th>
                                         </tr>
                                     </thead>
                                     <tbody id="cuerpoEjemplaresTabla" class="divide-y divide-slate-100 bg-white">

@@ -92,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Buscar si es tabla fija para saber su premio real (descontando retiros)
             let premioBaseUnidad = 0;
             if (tk.nombre_jugada.includes('TABLA')) {
-                const tablaMatch = tablasReferencia.find(tb => tb.grupo_venta === tk.grupo && tb.moneda === tk.moneda);
+                const tablaMatch = tablasReferencia.find(tb => tb.hipodromo === tk.hipodromo && tb.carrera === tk.carrera);
                 if(tablaMatch) premioBaseUnidad = tablaMatch.premio_recalculado; // Toma el premio ya auditado (proporcional)
             }
 
