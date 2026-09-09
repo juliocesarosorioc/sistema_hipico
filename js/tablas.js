@@ -6,8 +6,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const lblPremioPts = document.getElementById('lblPremioPts');
     const btnGuardarTabla = document.getElementById('btnGuardarTabla');
     const tbodyMonitor = document.getElementById('cuerpoMonitorTablas');
-    const lblRiesgoEnVivo = document.getElementById('lblRiesgoEnVivo');
     const premioTabla = document.getElementById('premioTabla');
+    const lblRiesgoBs = document.getElementById('lblRiesgoBs');
+    const lblRiesgoUsd = document.getElementById('lblRiesgoUsd');
+    const maxRiesgoBs = document.getElementById('maxRiesgoBs');
+    const maxRiesgoUsd = document.getElementById('maxRiesgoUsd');
+    const lblExcesoRiesgo = document.getElementById('lblExcesoRiesgo');
 
     // Gestión de grupos
     const btnAcordeonGrupos = document.getElementById('btnAcordeonGrupos');
@@ -29,6 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data && data.tasa_cambio) {
                 tasaCambioGlobal = parseFloat(data.tasa_cambio);
                 document.getElementById('lblTasaGlobal').textContent = tasaCambioGlobal.toLocaleString();
+                const lblTasaRiesgo = document.getElementById('lblTasaRiesgo');
+                if (lblTasaRiesgo) lblTasaRiesgo.value = 'Bs ' + tasaCambioGlobal.toLocaleString() + ' / $';
             }
         } catch (e) { console.warn("Fallo al cargar tasa global, usando 1.0"); }
     }
@@ -246,18 +252,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function actualizarRiesgo() {
         const prem = parseFloat(premioTabla.value) || 0;
-        let total = 0;
+        let bs = 0, usd = 0;
+
         document.querySelectorAll('.in-cupo-grupo').forEach(inp => {
             const c = parseInt(inp.value) || 0;
-            total += c * prem;
+            const g = gruposActivos.find(x => x.id == inp.dataset.grupo);
+            const mon = g ? g.moneda : 'USD';
+            const monto = c * prem;
+            if (mon === 'VES') { bs += monto; usd += monto / (tasaCambioGlobal || 1); }
+            else { usd += monto; bs += monto * (tasaCambioGlobal || 1); }
             const rg = inp.closest('[data-grupo]')?.querySelector('.riesgo-grupo');
-            if (rg) rg.textContent = (c * prem).toLocaleString(undefined, { minimumFractionDigits: 2 });
+            if (rg) rg.textContent = monto.toLocaleString(undefined, { minimumFractionDigits: 2 });
         });
-        lblRiesgoEnVivo.value = total.toLocaleString(undefined, { minimumFractionDigits: 2 });
+
+        if (lblRiesgoBs) lblRiesgoBs.value = 'Bs ' + bs.toLocaleString(undefined, { minimumFractionDigits: 2 });
+        if (lblRiesgoUsd) lblRiesgoUsd.value = '$ ' + usd.toLocaleString(undefined, { minimumFractionDigits: 2 });
         lblPremioPts.textContent = '$' + prem.toLocaleString(undefined, { minimumFractionDigits: 2 });
+
+        const maxBs = parseFloat(maxRiesgoBs.value) || 0;
+        const maxUsd = parseFloat(maxRiesgoUsd.value) || 0;
+        const excede = (maxBs > 0 && bs > maxBs) || (maxUsd > 0 && usd > maxUsd);
+        if (lblExcesoRiesgo) lblExcesoRiesgo.classList.toggle('hidden', !excede);
     }
 
     premioTabla.addEventListener('input', actualizarRiesgo);
+    [maxRiesgoBs, maxRiesgoUsd].forEach(inp => inp.addEventListener('input', actualizarRiesgo));
     btnAgregarCaballo.addEventListener('click', () => crearFilaCaballo());
     crearFilaCaballo('1', 'Ejemplar A', '50');
     crearFilaCaballo('2', 'Ejemplar B', '60');
@@ -282,6 +301,23 @@ document.addEventListener('DOMContentLoaded', () => {
             .map(inp => ({ grupo_id: inp.dataset.grupo, cupos: parseInt(inp.value) || 0 }))
             .filter(x => x.cupos > 0);
         if (cuposPorGrupo.length === 0) return clubUI.toast("Asigne cupos a al menos un grupo.");
+
+        // ===== MAXIMOS A RIESGO (Bs y $ vinculado a la última tasa) =====
+        const maxBs = parseFloat(maxRiesgoBs.value) || 0;
+        const maxUsd = parseFloat(maxRiesgoUsd.value) || 0;
+        if (maxBs > 0 || maxUsd > 0) {
+            let rBs = 0, rUsd = 0;
+            cuposPorGrupo.forEach(x => {
+                const g = gruposActivos.find(gp => gp.id == x.grupo_id);
+                const mon = g ? g.moneda : 'USD';
+                const monto = x.cupos * premio;
+                if (mon === 'VES') { rBs += monto; rUsd += monto / (tasaCambioGlobal || 1); }
+                else { rUsd += monto; rBs += monto * (tasaCambioGlobal || 1); }
+            });
+            if ((maxBs > 0 && rBs > maxBs) || (maxUsd > 0 && rUsd > maxUsd)) {
+                return clubUI.toast(`Riesgo supera el máximo permitido: Bs ${rBs.toLocaleString(undefined, {minimumFractionDigits:2})} / $ ${rUsd.toLocaleString(undefined, {minimumFractionDigits:2})}. Ajuste cupos o premio.`);
+            }
+        }
 
         let caballosArr = [];
         document.querySelectorAll('.fila-caballo-config').forEach(fila => {
@@ -393,7 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="flex items-center gap-2 bg-white border border-slate-200 rounded px-2 py-1.5">
                 <span class="flex-1 text-sm font-bold text-slate-700">${tg.grupos_venta ? tg.grupos_venta.nombre : '?'}</span>
                 <span class="text-[10px] text-slate-500">Vendidas: ${tg.cantidad_vendida || 0}</span>
-                <input type="number" min="0" value="${tg.cupos}" data-id="${tg.id}" class="edit-cupo w-24 border border-slate-300 rounded-lg px-2 py-1 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500">
+                <input type="number" min="0" value="${tg.cupos}" data-id="${tg.id}" data-grupo="${tg.grupo_id}" class="edit-cupo w-24 border border-slate-300 rounded-lg px-2 py-1 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500">
             </div>
         `).join('') || '<p class="text-slate-400 italic text-xs">Esta tabla no tiene grupos asignados.</p>';
         document.getElementById('modalEditar').classList.remove('hidden');
@@ -403,6 +439,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const id = document.getElementById('editId').value;
         const premio = parseFloat(document.getElementById('editPremio').value);
         const cuposInputs = [...document.querySelectorAll('.edit-cupo')];
+
+        const maxBs = parseFloat(maxRiesgoBs.value) || 0;
+        const maxUsd = parseFloat(maxRiesgoUsd.value) || 0;
+        if (maxBs > 0 || maxUsd > 0) {
+            let rBs = 0, rUsd = 0;
+            cuposInputs.forEach(inp => {
+                const g = gruposActivos.find(gp => gp.id == inp.dataset.grupo);
+                const mon = g ? g.moneda : 'USD';
+                const monto = (parseInt(inp.value) || 0) * premio;
+                if (mon === 'VES') { rBs += monto; rUsd += monto / (tasaCambioGlobal || 1); }
+                else { rUsd += monto; rBs += monto * (tasaCambioGlobal || 1); }
+            });
+            if ((maxBs > 0 && rBs > maxBs) || (maxUsd > 0 && rUsd > maxUsd)) {
+                return clubUI.toast(`La edición supera el máximo de riesgo: Bs ${rBs.toLocaleString(undefined, {minimumFractionDigits:2})} / $ ${rUsd.toLocaleString(undefined, {minimumFractionDigits:2})}.`);
+            }
+        }
 
         let cuposSuma = 0;
         for (const inp of cuposInputs) {
