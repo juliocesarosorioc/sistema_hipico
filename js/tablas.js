@@ -78,12 +78,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         cont.innerHTML = todosGrupos.map(g => `
             <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                <div class="flex-1">
+                <div class="flex-1 min-w-0">
                     <span class="font-bold text-slate-800 text-sm">${g.nombre}</span>
                     <span class="ml-2 px-1.5 py-0.5 rounded text-[9px] font-black ${g.moneda === 'VES' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}">${g.moneda}</span>
-                    ${g.es_principal ? '<span class="ml-2 text-[9px] font-black bg-slate-800 text-white px-1.5 py-0.5 rounded">PRINCIPAL</span>' : ''}
-                    <span class="ml-2 text-[10px] text-slate-500">Cupos/tabla: <b>${g.cupo_tabla}</b> · Clientes: <b id="cntgrupo_${g.id}">?</b></span>
+                    <span class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-slate-200 text-slate-700" title="Moneda de cuadre">Cuadre: ${g.moneda_cuadre || g.moneda}</span>
+                    ${g.es_principal ? '<span class="ml-1 text-[9px] font-black bg-slate-800 text-white px-1.5 py-0.5 rounded">PRINCIPAL</span>' : ''}
+                    <div class="text-[10px] text-slate-500 mt-0.5 truncate">
+                        ${g.responsable ? `<i class="fas fa-user-tie mr-0.5 text-slate-400"></i><b>${g.responsable}</b>` : '<span class="italic">Sin responsable</span>'}
+                        ${g.cuenta_bancaria ? ` · <i class="fas fa-university mr-0.5 text-slate-400"></i>${g.cuenta_bancaria}` : ''}
+                    </div>
+                    <span class="text-[10px] text-slate-500">Cupos/tabla: <b>${g.cupo_tabla}</b> · Comisión: <b>${parseFloat(g.comision_default || 2.5)}%</b> · Clientes: <b id="cntgrupo_${g.id}">?</b></span>
                 </div>
+                <button class="btn-editar-grupo px-2 py-1 rounded text-xs font-bold bg-slate-200 text-slate-700 hover:bg-slate-300" data-id="${g.id}" title="Editar grupo"><i class="fas fa-edit"></i></button>
                 <button class="btn-toggle-grupo px-2 py-1 rounded text-xs font-bold ${g.activo ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}" data-id="${g.id}" data-activo="${g.activo}">
                     <i class="fas ${g.activo ? 'fa-toggle-on' : 'fa-toggle-off'}"></i>
                 </button>
@@ -93,6 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.querySelectorAll('.btn-del-grupo').forEach(b => b.addEventListener('click', eliminarGrupo));
         document.querySelectorAll('.btn-toggle-grupo').forEach(b => b.addEventListener('click', toggleGrupo));
+        document.querySelectorAll('.btn-editar-grupo').forEach(b => b.addEventListener('click', abrirModalEditarGrupo));
 
         // Contadores por grupo
         document.querySelectorAll('#gruposSeleccion').forEach(() => {});
@@ -105,12 +112,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const { error } = await window.supabase.from('grupos_venta').insert([{
             nombre: nombre,
             moneda: document.getElementById('monedaGrupo').value,
+            moneda_cuadre: document.getElementById('monedaCuadreGrupo').value,
             es_principal: document.getElementById('esPrincipalGrupo').checked,
-            cupo_tabla: parseInt(document.getElementById('cupoGrupo').value) || 100
+            cupo_tabla: parseInt(document.getElementById('cupoGrupo').value) || 100,
+            responsable: document.getElementById('responsableGrupo').value.trim().toUpperCase() || null,
+            cuenta_bancaria: document.getElementById('cuentaGrupo').value.trim().toUpperCase() || null,
+            comision_default: 2.5
         }]);
         if (error) return clubUI.toast(error.code === '23505' ? 'Ese grupo ya existe.' : 'Error al crear el grupo.');
         e.target.reset();
         document.getElementById('monedaGrupo').value = 'USD';
+        document.getElementById('monedaCuadreGrupo').value = 'USD';
         document.getElementById('cupoGrupo').value = 100;
         cargarGrupos();
         if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `grupo_creado: ${nombre}`);
@@ -138,6 +150,39 @@ document.addEventListener('DOMContentLoaded', () => {
         cargarGrupos();
         if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `grupo_eliminado: ${g.nombre} (id=${id})`);
     }
+
+    function abrirModalEditarGrupo(e) {
+        const g = todosGrupos.find(x => x.id == e.currentTarget.dataset.id);
+        if (!g) return;
+        document.getElementById('editGrupoId').value = g.id;
+        document.getElementById('editGrupoNombre').value = g.nombre;
+        document.getElementById('editGrupoMoneda').value = g.moneda || 'USD';
+        document.getElementById('editGrupoMonedaCuadre').value = g.moneda_cuadre || 'USD';
+        document.getElementById('editGrupoCupo').value = g.cupo_tabla || 100;
+        document.getElementById('editGrupoResponsable').value = g.responsable || '';
+        document.getElementById('editGrupoCuenta').value = g.cuenta_bancaria || '';
+        document.getElementById('editGrupoComision').value = parseFloat(g.comision_default || 2.5);
+        document.getElementById('modalEditarGrupo').classList.remove('hidden');
+    }
+
+    document.getElementById('btnGuardarGrupoEdit')?.addEventListener('click', async () => {
+        const id = document.getElementById('editGrupoId').value;
+        const g = todosGrupos.find(x => x.id == id);
+        const nombre = document.getElementById('editGrupoNombre').value.trim().toUpperCase();
+        const { error } = await window.supabase.from('grupos_venta').update({
+            nombre: nombre,
+            moneda: document.getElementById('editGrupoMoneda').value,
+            moneda_cuadre: document.getElementById('editGrupoMonedaCuadre').value,
+            cupo_tabla: parseInt(document.getElementById('editGrupoCupo').value) || 100,
+            responsable: document.getElementById('editGrupoResponsable').value.trim().toUpperCase() || null,
+            cuenta_bancaria: document.getElementById('editGrupoCuenta').value.trim().toUpperCase() || null,
+            comision_default: parseFloat(document.getElementById('editGrupoComision').value) || 2.5
+        }).eq('id', id);
+        if (error) return clubUI.toast('Error al guardar el grupo: ' + error.message, 'error');
+        document.getElementById('modalEditarGrupo').classList.add('hidden');
+        cargarGrupos();
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `grupo_editado: ${g?.nombre} -> ${nombre} (id=${id})`);
+    });
 
     btnAcordeonGrupos?.addEventListener('click', () => {
         panelGrupos.classList.toggle('hidden');
@@ -448,28 +493,86 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('editId').value = id;
         document.getElementById('editPremio').value = tabla.premio_recalculado;
         const ctn = document.getElementById('editCuposGrupos');
-        ctn.innerHTML = (tabla.tabla_grupos || []).map(tg => `
-            <div class="flex items-center gap-2 bg-white border border-slate-200 rounded px-2 py-1.5">
+        const yaAsignados = (tabla.tabla_grupos || []).map(tg => tg.grupo_id);
+
+        ctn.innerHTML = (tabla.tabla_grupos || []).map(tg => {
+            const vendidas = tg.cantidad_vendida || 0;
+            const botonEliminar = vendidas === 0
+                ? `<button type="button" class="btn-quitar-grupo-edit text-red-500 hover:text-red-700 px-1" data-tablagrupo="${tg.id}" title="Quitar grupo de esta tabla"><i class="fas fa-times-circle"></i></button>`
+                : `<span class="text-[9px] text-slate-400 font-bold" title="Tiene ${vendidas} venta(s), no se puede quitar">${vendidas} vend.</span>`;
+            return `
+            <div class="fila-cupo-editar flex items-center gap-2 bg-white border border-slate-200 rounded px-2 py-1.5" data-tablagrupo="${tg.id}" data-grupo="${tg.grupo_id}">
                 <span class="flex-1 text-sm font-bold text-slate-700">${tg.grupos_venta ? tg.grupos_venta.nombre : '?'}</span>
-                <span class="text-[10px] text-slate-500">Vendidas: ${tg.cantidad_vendida || 0}</span>
-                <input type="number" min="0" value="${tg.cupos}" data-id="${tg.id}" data-grupo="${tg.grupo_id}" class="edit-cupo w-24 border border-slate-300 rounded-lg px-2 py-1 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500">
-            </div>
-        `).join('') || '<p class="text-slate-400 italic text-xs">Esta tabla no tiene grupos asignados.</p>';
+                <span class="text-[10px] text-slate-500">${vendidas} vendidas</span>
+                <input type="number" min="0" value="${tg.cupos}" data-id="${tg.id}" data-grupo="${tg.grupo_id}" class="edit-cupo w-20 border border-slate-300 rounded-lg px-2 py-1 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500">
+                ${botonEliminar}
+            </div>`;
+        }).join('') || '<p class="text-slate-400 italic text-xs">Esta tabla no tiene grupos asignados.</p>';
+
+        // Selector para reasignar a un grupo nuevo
+        const selecNuevo = document.getElementById('nuevoGrupoEditar');
+        const opciones = gruposActivos
+            .filter(g => !yaAsignados.includes(g.id))
+            .map(g => `<option value="${g.id}">${g.nombre} (${g.moneda})</option>`)
+            .join('');
+        selecNuevo.innerHTML = '<option value="">Grupo a agregar...</option>' + opciones;
+        if (!opciones) selecNuevo.innerHTML = '<option value="" disabled>Todos los grupos ya están asignados</option>';
+        document.getElementById('nuevoCupoEditar').value = 50;
+
+        // Quitar grupo (solo suma si el boton existe)
+        ctn.querySelectorAll('.btn-quitar-grupo-edit').forEach(b => b.addEventListener('click', (e) => {
+            const fila = e.currentTarget.closest('.fila-cupo-editar');
+            const nombre = fila.querySelector('span').textContent;
+            if (confirm(`Quitar el grupo "${nombre}" de esta carrera?`)) {
+                fila.dataset.pendienteEliminar = '1';
+                fila.classList.add('opacity-40', 'pointer-events-none');
+                e.currentTarget.disabled = true;
+            }
+        }));
+
         document.getElementById('modalEditar').classList.remove('hidden');
     }
+
+    document.getElementById('btnAgregarGrupoEditar')?.addEventListener('click', () => {
+        const gid = document.getElementById('nuevoGrupoEditar').value;
+        const cupo = parseInt(document.getElementById('nuevoCupoEditar').value) || 0;
+        if (!gid) return clubUI.toast("Seleccione un grupo para reasignar.");
+        if (cupo <= 0) return clubUI.toast("El cupo debe ser mayor que 0.");
+        const g = gruposActivos.find(x => x.id == gid);
+        if (!g) return;
+        const ctn = document.getElementById('editCuposGrupos');
+        if (ctn.querySelector(`.edit-cupo[data-grupo="${gid}"]`)) return clubUI.toast("Ese grupo ya está asignado.");
+        ctn.insertAdjacentHTML('beforeend', `
+            <div class="fila-cupo-editar flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded px-2 py-1.5" data-grupo="${gid}">
+                <span class="flex-1 text-sm font-bold text-indigo-700">${g.nombre} <span class="text-[9px]">(nuevo)</span></span>
+                <span class="text-[10px] text-slate-500">0 vendidas</span>
+                <input type="number" min="0" value="${cupo}" data-grupo="${gid}" data-nuevo="1" class="edit-cupo w-20 border border-slate-300 rounded-lg px-2 py-1 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>`);
+        document.getElementById('nuevoGrupoEditar').value = '';
+    });
 
     document.getElementById('btnProcesarEdicion').addEventListener('click', async () => {
         const id = document.getElementById('editId').value;
         const premio = parseFloat(document.getElementById('editPremio').value);
-        const cuposInputs = [...document.querySelectorAll('.edit-cupo')];
+        if (isNaN(premio) || premio <= 0) return clubUI.toast("Premio inválido.");
+        const filas = [...document.querySelectorAll('.fila-cupo-editar')];
+        const cuposInputs = filas.map(f => ({
+            ngId: f.querySelector('.edit-cupo').dataset.grupo,
+            tgId: f.querySelector('.edit-cupo').dataset.id || null,
+            cupo: parseInt(f.querySelector('.edit-cupo').value) || 0,
+            eliminar: f.dataset.pendienteEliminar === '1'
+        }));
+
+        if (filas.length === 0) return clubUI.toast("Asigne al menos un grupo.");
 
         const maxUsd = parseFloat(maxRiesgoUsd.value) || 0;
         if (maxUsd > 0) {
             let rUsd = 0;
             cuposInputs.forEach(inp => {
-                const g = gruposActivos.find(gp => gp.id == inp.dataset.grupo);
+                if (inp.eliminar) return;
+                const g = gruposActivos.find(gp => gp.id == inp.ngId);
                 const mon = g ? g.moneda : 'USD';
-                const monto = (parseInt(inp.value) || 0) * premio;
+                const monto = inp.cupo * premio;
                 if (mon === 'VES') rUsd += monto / (tasaCambioGlobal || 1);
                 else rUsd += monto;
             });
@@ -480,8 +583,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let cuposSuma = 0;
         for (const inp of cuposInputs) {
-            cuposSuma += parseInt(inp.value) || 0;
-            await window.supabase.from('tabla_grupos').update({ cupos: parseInt(inp.value) || 0 }).eq('id', inp.dataset.id);
+            const tgId = inp.tgId;
+            if (inp.eliminar) {
+                if (tgId) await window.supabase.from('tabla_grupos').delete().eq('id', tgId);
+                continue;
+            }
+            cuposSuma += inp.cupo;
+            if (tgId) {
+                const tg = datosTablaCompleta.find(t => t.id == id)?.tabla_grupos?.find(x => x.id == tgId);
+                if (tg && inp.cupo < (tg.cantidad_vendida || 0)) {
+                    return clubUI.toast(`No puede reducir a ${inp.cupo}: ya se vendieron ${tg.cantidad_vendida} tablas en ese grupo.`);
+                }
+                await window.supabase.from('tabla_grupos').update({ cupos: inp.cupo }).eq('id', tgId);
+            } else {
+                await window.supabase.from('tabla_grupos').insert([{
+                    tabla_id: id, grupo_id: inp.ngId, cupos: inp.cupo, cantidad_vendida: 0
+                }]);
+            }
         }
         const { error } = await window.supabase.from('tablas_fijas').update({
             premio_original: premio, premio_recalculado: premio, limite_ventas: cuposSuma
@@ -490,7 +608,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!error) { document.getElementById('modalEditar').classList.add('hidden'); cargarTablas(); }
         else { clubUI.toast("Error al editar."); }
         const tEdit = datosTablaCompleta.find(t => t.id == id);
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `editada: ${tEdit?.hipodromo} C${tEdit?.carrera} premio=$${premio} (id=${id})`);
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `editada: ${tEdit?.hipodromo} C${tEdit?.carrera} premio=$${premio} cupos=${cuposSuma} (id=${id})`);
     });
 
     // ==========================================
@@ -598,6 +716,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('modalAuditoria').classList.add('hidden');
         document.getElementById('modalDuplicar').classList.add('hidden');
         document.getElementById('modalEditar').classList.add('hidden');
+        document.getElementById('modalEditarGrupo').classList.add('hidden');
     }));
 
     document.getElementById('btnRecargarTablas').addEventListener('click', () => {

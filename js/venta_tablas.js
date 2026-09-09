@@ -171,23 +171,26 @@ document.addEventListener('DOMContentLoaded', () => {
             .order('created_at', { ascending: false })
             .limit(100);
         const cuerpo = document.getElementById('cuerpoReporteVentas');
+        const consol = document.getElementById('cuerpoReporteConsolidado');
         const resumen = document.getElementById('resumenRiesgoGrupos');
 
         const tickets = data || [];
 
         if (tickets.length === 0) {
-            cuerpo.innerHTML = '<tr><td colspan="9" class="p-4 text-center text-slate-500">Aún no hay ventas de tablas fijas.</td></tr>';
+            cuerpo.innerHTML = '<tr><td colspan="10" class="p-4 text-center text-slate-500">Aún no hay ventas de tablas fijas.</td></tr>';
+            consol.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">Sin ventas.</td></tr>';
             resumen.innerHTML = '<div class="text-slate-400 italic text-xs">Sin ventas.</div>';
             return;
         }
 
+        const premioUnidad = (tk) => (tk.premio_por_tabla != null && !isNaN(parseFloat(tk.premio_por_tabla)))
+            ? parseFloat(tk.premio_por_tabla)
+            : (parseFloat(tk.premio_recalculado) || 0);
+
         // Resumen de riesgo por grupo
         const porGrupo = {};
         tickets.forEach(tk => {
-            const premioUnidad = (tk.premio_por_tabla != null && !isNaN(parseFloat(tk.premio_por_tabla)))
-                ? parseFloat(tk.premio_por_tabla)
-                : (parseFloat(tk.premio_recalculado) || 0);
-            const riesgo = parseFloat(tk.cantidad_tablas) * premioUnidad;
+            const riesgo = parseFloat(tk.cantidad_tablas) * premioUnidad(tk);
             const clave = `${tk.grupo}`;
             if (!porGrupo[clave]) porGrupo[clave] = { riesgoLocal: 0, usaVes: tk.moneda === 'VES', ventas: 0, tablas: 0, moneda: tk.moneda };
             porGrupo[clave].riesgoLocal += riesgo;
@@ -209,12 +212,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>`;
         }).join('');
 
+        // Reporte consolidado: grupo / carrera / ejemplar + monto arriesgado
+        const porGCE = {};
+        tickets.forEach(tk => {
+            const clave = `${tk.grupo}|${tk.hipodromo}|C${tk.carrera}|${tk.caballo}`;
+            if (!porGCE[clave]) porGCE[clave] = {
+                grupo: tk.grupo, hipodromo: tk.hipodromo, carrera: tk.carrera, ejemplar: tk.caballo,
+                tablas: 0, arriesgado: 0, premioPotencial: 0, simb: tk.moneda === 'VES' ? 'Bs ' : '$'
+            };
+            const n = parseInt(tk.cantidad_tablas) || 0;
+            porGCE[clave].tablas += n;
+            porGCE[clave].arriesgado += n * (parseFloat(tk.pts_ejemplar || 0) || 0);
+            porGCE[clave].premioPotencial += n * premioUnidad(tk);
+        });
+
+        consol.innerHTML = Object.values(porGCE).map(g => `
+            <tr class="hover:bg-emerald-50">
+                <td class="p-3"><span class="px-1.5 py-0.5 rounded text-[9px] font-black bg-slate-200 text-slate-700">${g.grupo}</span></td>
+                <td class="p-3 font-bold text-slate-800">${g.hipodromo} C${g.carrera}</td>
+                <td class="p-3 font-bold text-slate-700">${g.ejemplar}</td>
+                <td class="p-3 text-right font-black">${g.tablas}</td>
+                <td class="p-3 text-right font-mono font-bold text-red-600">${g.simb}${g.arriesgado.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td class="p-3 text-right font-mono font-bold text-emerald-600">${g.simb}${g.premioPotencial.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+            </tr>`).join('');
+
         // Detalle de ventas
         cuerpo.innerHTML = tickets.map(tk => {
-            const premioUnidad = (tk.premio_por_tabla != null && !isNaN(parseFloat(tk.premio_por_tabla)))
-                ? parseFloat(tk.premio_por_tabla)
-                : (parseFloat(tk.premio_recalculado) || 0);
-            const riesgo = parseFloat(tk.cantidad_tablas) * premioUnidad;
+            const premio = premioUnidad(tk);
+            const riesgo = parseFloat(tk.cantidad_tablas) * premio;
+            const montoArriesgado = parseFloat(tk.cantidad_tablas) * (parseFloat(tk.pts_ejemplar || 0) || 0);
             const fecha = tk.created_at ? new Date(tk.created_at).toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' }) : '—';
             const simb = tk.moneda === 'VES' ? 'Bs ' : '$';
             return `
@@ -226,10 +252,75 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-2">${tk.caballo}</td>
                     <td class="p-2 text-right font-bold">${tk.cantidad_tablas}</td>
                     <td class="p-2 text-right text-blue-600 font-bold">${parseFloat(tk.pts_ejemplar || 0).toFixed(1)}</td>
-                    <td class="p-2 text-right text-emerald-600 font-bold">${simb}${premioUnidad.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td class="p-2 text-right text-red-600 font-black">${simb}${riesgo.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td class="p-2 text-right text-emerald-600 font-bold">${simb}${premio.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td class="p-2 text-right text-red-600 font-bold">${simb}${montoArriesgado.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td class="p-2 text-right text-orange-600 font-black">${simb}${riesgo.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                 </tr>`;
         }).join('');
+    }
+
+    // ==========================================
+    // VENTA REUTILIZABLE (taquilla directa y aprobación de solicitudes)
+    // Retorna { ok: bool, error: string }
+    // ==========================================
+    async function procesarVenta({ cliente, cantidad, ejemplar, tabla, tg, grupo, permitirSobregiro = false }) {
+        if (!grupo) grupo = gruposDB.find(x => x.id == tg.grupo_id);
+        if (!grupo) return { ok: false, error: "Grupo no encontrado." };
+
+        const pts = parseFloat(ejemplar.valor_ejemplar);
+        const costoTotal = pts * cantidad;
+        const esVES = grupo.moneda === 'VES';
+        const costoUSD = esVES ? costoTotal / (tasaCambioGlobal || 1) : costoTotal;
+
+        if (!permitirSobregiro) {
+            if (!cliente.libre) {
+                const limiteAval = parseFloat(cliente.aval || 0);
+                if (parseFloat(cliente.saldo_actual) - costoUSD < -limiteAval) {
+                    return { ok: false, error: `El cliente ${cliente.nombre} supera su límite de AVAL ($${limiteAval.toFixed(2)}). Debe abonar antes de comprar tablas.` };
+                }
+            }
+            if (!esVES && parseFloat(cliente.saldo_actual) < costoTotal) {
+                return { ok: false, error: `El cliente ${cliente.nombre} tiene saldo insuficiente ($${cliente.saldo_actual.toFixed(2)}).` };
+            }
+        }
+
+        const vendidas = tg.cantidad_vendida || 0;
+        const disponibles = (tg.cupos || 0) - vendidas;
+        if (cantidad > disponibles) return { ok: false, error: `No hay suficientes tablas disponibles en el grupo. Solo quedan ${disponibles}.` };
+
+        const premio = parseFloat(tabla.premio_recalculado) || 0;
+
+        const { error: errTk } = await window.supabase.from('tickets_apuestas').insert([{
+            cliente_juega_id: cliente.id,
+            cliente_juega_nombre: cliente.nombre,
+            grupo: grupo.nombre,
+            hipodromo: tabla.hipodromo,
+            carrera: tabla.carrera,
+            nombre_jugada: `TABLA FIJA (${tabla.hipodromo} C${tabla.carrera})`,
+            caballo: ejemplar.nombre,
+            cantidad_tablas: cantidad,
+            monto_jugado: costoTotal,
+            premio_por_tabla: premio,
+            pts_ejemplar: pts,
+            comision_porcentaje: parseFloat(tabla.comision_grupo || 2.5),
+            moneda: grupo.moneda,
+            tasa_cambio: tasaCambioGlobal,
+            estado: 'Pendiente'
+        }]);
+        if (errTk) return { ok: false, error: 'Ticket: ' + (errTk.message || errTk.code) };
+
+        const nuevoVendidas = vendidas + cantidad;
+        const { error: errTg } = await window.supabase.from('tabla_grupos').update({
+            cantidad_vendida: nuevoVendidas
+        }).eq('id', tg.id);
+        if (errTg) return { ok: false, error: 'Inventario: ' + (errTg.message || errTg.code) };
+
+        const { error: errCl } = await window.supabase.from('clientes').update({
+            saldo_actual: parseFloat(cliente.saldo_actual) - costoUSD
+        }).eq('id', cliente.id);
+        if (errCl) return { ok: false, error: 'Saldo: ' + (errCl.message || errCl.code) };
+
+        return { ok: true, costoTotal };
     }
 
     btnProcesarVenta.addEventListener('click', async () => {
@@ -255,64 +346,138 @@ document.addEventListener('DOMContentLoaded', () => {
         const esVES = groupSeleccionado.moneda === 'VES';
         const costoUSD = esVES ? costoTotal / (tasaCambioGlobal || 1) : costoTotal;
 
+        let permitirSobregiro = false;
         if (!cliente.libre) {
             const limiteAval = parseFloat(cliente.aval || 0);
             if (parseFloat(cliente.saldo_actual) - costoUSD < -limiteAval) {
                 return clubUI.toast(`El cliente ${cliente.nombre} supera su límite de AVAL ($${limiteAval.toFixed(2)}). Debe abonar antes de comprar tablas.`);
             }
         }
-
         if (!esVES && parseFloat(cliente.saldo_actual) < costoTotal) {
             if (!confirm(`El cliente ${cliente.nombre} tiene saldo insuficiente ($${cliente.saldo_actual}). ¿Desea proceder de todas formas?`)) return;
+            permitirSobregiro = true;
         }
 
         btnProcesarVenta.disabled = true;
         btnProcesarVenta.textContent = "Procesando Venta...";
 
-        try {
-            const nombreGrupo = groupSeleccionado.nombre;
-            const { error: errTk } = await window.supabase.from('tickets_apuestas').insert([{
-                cliente_juega_id: clienteId,
-                cliente_juega_nombre: cliente.nombre,
-                grupo: nombreGrupo,
-                hipodromo: tablaSeleccionada.hipodromo,
-                carrera: tablaSeleccionada.carrera,
-                nombre_jugada: `TABLA FIJA (${tablaSeleccionada.hipodromo} C${tablaSeleccionada.carrera})`,
-                caballo: ejemplarSeleccionado.nombre,
-                cantidad_tablas: cantidad,
-                monto_jugado: costoTotal,
-                premio_por_tabla: parseFloat(tablaSeleccionada.premio_recalculado) || 0,
-                pts_ejemplar: pts,
-                comision_porcentaje: tablaSeleccionada.comision_grupo || 0,
-                moneda: groupSeleccionado.moneda,
-                tasa_cambio: tasaCambioGlobal,
-                estado: 'Pendiente'
-            }]);
-            if (errTk) throw errTk;
+        const res = await procesarVenta({
+            cliente, cantidad, ejemplar: ejemplarSeleccionado, tabla: tablaSeleccionada,
+            tg: grupoTabla, grupo: groupSeleccionado, permitirSobregiro
+        });
 
-            const nuevoVendidas = vendidas + cantidad;
-            const { error: errTg } = await window.supabase.from('tabla_grupos').update({
-                cantidad_vendida: nuevoVendidas
-            }).eq('id', grupoTabla.id);
-            if (errTg) throw errTg;
-
-            await window.supabase.from('clientes').update({
-                saldo_actual: parseFloat(cliente.saldo_actual) - costoUSD
-            }).eq('id', clienteId);
-
-            clubUI.toast("¡Venta de tablas procesada con éxito! Inventario actualizado y saldo descontado.");
-            if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta: ${cliente.nombre} ${cantidad} tablas ${nombreGrupo} ($${costoTotal.toFixed(2)}) ${tablaSeleccionada.hipodromo} C${tablaSeleccionada.carrera}`);
-            window.location.reload();
-        } catch (e) {
-            console.error(e);
-            clubUI.toast("Ocurrió un error al procesar la venta en la base de datos.");
+        if (!res.ok) {
+            clubUI.toast(res.error, 'error');
             btnProcesarVenta.disabled = false;
             btnProcesarVenta.textContent = "Procesar Venta de Tablas";
+            return;
         }
+
+        clubUI.toast("¡Venta de tablas procesada con éxito! Inventario actualizado y saldo descontado.");
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta: ${cliente.nombre} ${cantidad} tablas ${groupSeleccionado.nombre} ($${res.costoTotal.toFixed(2)}) ${tablaSeleccionada.hipodromo} C${tablaSeleccionada.carrera}`);
+        window.location.reload();
     });
 
+    // ==========================================
+    // SOLICITUDES DEL PORTAL (VALIDACIÓN ADMIN)
+    // ==========================================
+    async function cargarSolicitudesAdmin() {
+        const cuerpo = document.getElementById('cuerpoSolicitudesAdmin');
+        const { data } = await window.supabase
+            .from('solicitudes_tablas')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(50);
+
+        if (!data || data.length === 0) {
+            cuerpo.innerHTML = '<tr><td colspan="9" class="p-4 text-center text-slate-500">No hay solicitudes del portal.</td></tr>';
+            return;
+        }
+
+        cuerpo.innerHTML = data.map(s => {
+            const fecha = s.created_at ? new Date(s.created_at).toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+            const simb = s.moneda === 'VES' ? 'Bs ' : '$';
+            const badges = { Pendiente: 'bg-amber-100 text-amber-700', Aprobada: 'bg-emerald-100 text-emerald-700', Rechazada: 'bg-red-100 text-red-600' };
+            const acciones = s.estado === 'Pendiente'
+                ? `<div class="flex gap-1 justify-center">
+                        <button class="btn-aprobar-sol bg-emerald-600 text-white px-2 py-1 rounded text-[10px] font-black hover:bg-emerald-700" data-id="${s.id}" title="Aprobar (emite ticket y recibo)"><i class="fas fa-check"></i> Aprobar</button>
+                        <button class="btn-rechazar-sol bg-red-200 text-red-700 px-2 py-1 rounded text-[10px] font-black hover:bg-red-300" data-id="${s.id}" title="Rechazar"><i class="fas fa-times"></i></button>
+                    </div>`
+                : '<span class="text-slate-300">—</span>';
+            return `
+                <tr class="hover:bg-amber-50 ${s.estado === 'Pendiente' ? 'bg-amber-50/50' : 'opacity-70'}">
+                    <td class="p-2.5 text-slate-500">${fecha}</td>
+                    <td class="p-2.5 font-bold text-slate-800">${s.cliente_nombre}</td>
+                    <td class="p-2.5">${s.grupo_nombre || '-'}</td>
+                    <td class="p-2.5 font-bold">${s.hipodromo} C${s.carrera}</td>
+                    <td class="p-2.5">${s.ejemplar_numero} - ${s.ejemplar_nombre}</td>
+                    <td class="p-2.5 text-right font-black">${s.cantidad}</td>
+                    <td class="p-2.5 text-right font-mono font-bold">${simb}${parseFloat(s.monto_total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td class="p-2.5 text-center"><span class="px-2 py-0.5 rounded text-[9px] font-black ${badges[s.estado]}">${s.estado}</span></td>
+                    <td class="p-2.5 text-center">${acciones}</td>
+                </tr>`;
+        }).join('');
+
+        document.querySelectorAll('.btn-aprobar-sol').forEach(b => b.addEventListener('click', () => aprobarSolicitud(b.dataset.id)));
+        document.querySelectorAll('.btn-rechazar-sol').forEach(b => b.addEventListener('click', () => rechazarSolicitud(b.dataset.id)));
+    }
+
+    async function aprobarSolicitud(id) {
+        const { data: sol } = await window.supabase.from('solicitudes_tablas').select('*').eq('id', id).single();
+        if (!sol) return;
+        if (sol.estado !== 'Pendiente') return clubUI.toast('Esa solicitud ya fue atendida.', 'warning');
+
+        if (!confirm(`Aprobar compra de ${sol.cliente_nombre}: ${sol.cantidad} tabla(s) ${sol.hipodromo} C${sol.carrera} (${sol.ejemplar_numero} - ${sol.ejemplar_nombre}).\nSe descontará ${sol.moneda === 'VES' ? 'Bs ' : '$'}${parseFloat(sol.monto_total || 0).toFixed(2)} del saldo y se emitirá el recibo.`)) return;
+
+        const [rTabla, rCliente, rGrupo] = await Promise.all([
+            window.supabase.from('tablas_fijas').select('*, tabla_grupos(*)').eq('id', sol.tabla_id).single(),
+            window.supabase.from('clientes').select('*').eq('id', sol.cliente_id).single(),
+            sol.grupo_id ? window.supabase.from('grupos_venta').select('*').eq('id', sol.grupo_id).single() : null
+        ]);
+        if (rTabla.error || rCliente.error) return clubUI.toast("No se pudieron cargar los datos para aprobar.", 'error');
+
+        const tabla = rTabla.data;
+        const cliente = rCliente.data;
+        const grupo = rGrupo && !rGrupo.error ? rGrupo.data : null;
+        const tg = (tabla.tabla_grupos || []).find(x => x.grupo_id == sol.grupo_id);
+        if (!tg) return clubUI.toast("El grupo ya no tiene inventario en esta tabla.", 'error');
+
+        const ejemplar = { numero: sol.ejemplar_numero, nombre: sol.ejemplar_nombre, valor_ejemplar: parseFloat(sol.pts_ejemplar || 0) };
+
+        const res = await procesarVenta({ cliente, cantidad: sol.cantidad, ejemplar, tabla, tg, grupo });
+        if (!res.ok) return clubUI.toast(res.error, 'error');
+
+        const sesionS = window.clubAuth ? window.clubAuth.getSesion() : null;
+        const recibo = `T${tabla.hipodromo}-C${tabla.carrera}-${sol.ejemplar_numero}-${id.slice(0, 5).toUpperCase()}`;
+        await window.supabase.from('solicitudes_tablas').update({
+            estado: 'Aprobada', atendida_por: sesionS ? sesionS.nombre : 'Admin',
+            atendida_at: new Date().toISOString(), recibo
+        }).eq('id', id);
+
+        clubUI.toast(`Solicitud aprobada. Recibo ${recibo} registrado para ${cliente.nombre}.`, 'success');
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `solicitud_aprobada: ${cliente.nombre} ${sol.cantidad} tablas ${sol.hipodromo} C${sol.carrera} recibo=${recibo}`);
+        cargarSolicitudesAdmin();
+        cargarReporteVentas();
+    }
+
+    async function rechazarSolicitud(id) {
+        const { data: sol } = await window.supabase.from('solicitudes_tablas').select('*').eq('id', id).single();
+        if (!sol || sol.estado !== 'Pendiente') return;
+        if (!confirm(`Rechazar la solicitud de ${sol.cliente_nombre} (${sol.hipodromo} C${sol.carrera})?`)) return;
+        const sesionS = window.clubAuth ? window.clubAuth.getSesion() : null;
+        await window.supabase.from('solicitudes_tablas').update({
+            estado: 'Rechazada', atendida_por: sesionS ? sesionS.nombre : 'Admin',
+            atendida_at: new Date().toISOString()
+        }).eq('id', id);
+        clubUI.toast('Solicitud rechazada.', 'warning');
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `solicitud_rechazada: ${sol.cliente_nombre} (id=${id})`);
+        cargarSolicitudesAdmin();
+    }
+
     document.getElementById('btnActualizarReporte')?.addEventListener('click', cargarReporteVentas);
+    document.getElementById('btnActualizarSolicitudes')?.addEventListener('click', cargarSolicitudesAdmin);
 
     inicializar();
+    cargarSolicitudesAdmin();
     cargarReporteVentas();
 });

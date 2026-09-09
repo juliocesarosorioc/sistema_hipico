@@ -6,8 +6,9 @@
 document.addEventListener('DOMContentLoaded', () => {
 
     // 1. Evitar que se inyecte en la pantalla de Login (index.html)
+    //    y en el Portal del Cliente (portal.html), que es de acceso público con contraseña.
     const paginaActual = window.location.pathname.split('/').pop() || 'index.html';
-    if (paginaActual === 'index.html') return;
+    if (paginaActual === 'index.html' || paginaActual === 'portal.html') return;
 
     // 2. Validar sesión de seguridad globalmente
     const sesion = window.clubAuth.requireAuth();

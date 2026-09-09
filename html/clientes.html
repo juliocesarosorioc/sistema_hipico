@@ -60,6 +60,40 @@
                             <option value="">— Ninguno (Directo) —</option>
                         </select>
                     </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Método de Pago</label>
+                        <select id="metodoPagoCliente" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-bold text-slate-700 bg-slate-50">
+                            <option value="">— Seleccione —</option>
+                            <option>EFECTIVO</option>
+                            <option>TRANSFERENCIA</option>
+                            <option>ZELLE</option>
+                            <option>PAGO MÓVIL</option>
+                            <option>DIVISA</option>
+                            <option>OTRO</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Día de la Semana que se Cuadra</label>
+                        <select id="diaCuadreCliente" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-bold text-slate-700 bg-slate-50">
+                            <option value="">— Seleccione —</option>
+                            <option>LUNES</option><option>MARTES</option><option>MIÉRCOLES</option><option>JUEVES</option>
+                            <option>VIERNES</option><option>SÁBADO</option><option>DOMINGO</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Forma en que se Cuadra</label>
+                        <select id="formaCuadreCliente" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-bold text-slate-700 bg-slate-50">
+                            <option value="">— Seleccione —</option>
+                            <option>SALDO EN CONTADO</option>
+                            <option>EFECTIVO DIRECTO</option>
+                            <option>COMPENSACIÓN AVAL</option>
+                            <option>MIXTO</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Tasa de Cuadre Semanal (Bs/$)</label>
+                        <input type="number" id="tasaCuadreCliente" step="0.01" min="0" value="0" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-mono font-bold">
+                    </div>
                     <div class="md:col-span-3 pt-1 flex items-center gap-2">
                         <label class="flex items-center gap-1 font-bold text-slate-700 cursor-pointer text-[10px] w-40 leading-tight">
                             <input type="checkbox" id="checkMostrarS" class="rounded"> Mostrar Saldo al Socio
@@ -82,6 +116,43 @@
                 <div class="flex gap-2 max-w-lg">
                     <input type="text" id="nombreNuevoSocio" placeholder="Nombre del Socio/Agencia" class="flex-1 border border-slate-300 rounded px-3 py-2 outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 uppercase text-sm">
                     <button id="btnCrearSocio" class="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold px-5 py-2 rounded shadow transition-colors text-xs uppercase tracking-wide">Convertir a Socio</button>
+                </div>
+            </div>
+
+            <!-- REPORTE DE CUADRE SEMANAL -->
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
+                <div class="text-sm font-bold text-slate-800 border-b border-slate-200 pb-2"><i class="fas fa-calendar-week text-emerald-600 mr-2"></i> Reporte de Cuadre Semanal por Cliente</div>
+                <div class="flex flex-wrap gap-3 items-end">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Día de Cuadre</label>
+                        <select id="filtroDiaCuadre" class="w-full border border-slate-300 rounded px-3 py-2 text-sm font-bold bg-slate-50 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+                            <option value="">TODOS LOS DÍAS</option>
+                            <option>LUNES</option><option>MARTES</option><option>MIÉRCOLES</option><option>JUEVES</option>
+                            <option>VIERNES</option><option>SÁBADO</option><option>DOMINGO</option>
+                        </select>
+                    </div>
+                    <button id="btnGenerarReporteCuadre" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-lg font-bold shadow flex items-center transition-colors text-xs uppercase tracking-wide">
+                        <i class="fas fa-file-invoice-dollar mr-2"></i> Generar Reporte
+                    </button>
+                    <span id="totalCuadreReporte" class="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-2 rounded-lg"></span>
+                </div>
+                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-800 text-white text-[10px] uppercase tracking-wider">
+                            <tr>
+                                <th class="p-2.5 font-semibold">Cliente</th>
+                                <th class="p-2.5 font-semibold">Día</th>
+                                <th class="p-2.5 font-semibold">Método de Pago</th>
+                                <th class="p-2.5 font-semibold">Forma de Cuadre</th>
+                                <th class="p-2.5 text-right font-semibold">Tasa Cuadre</th>
+                                <th class="p-2.5 text-right font-semibold">Saldo USD</th>
+                                <th class="p-2.5 text-right font-semibold">Debe a la Tasa</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cuerpoReporteCuadre" class="divide-y divide-slate-100 bg-white">
+                            <tr><td colspan="7" class="p-6 text-center text-slate-500 italic">Seleccione un día (o todos) y pulse Generar Reporte.</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
@@ -117,6 +188,8 @@
                                     <th class="p-3 text-center font-semibold border-b border-slate-700" title="Mostrar Saldo al Socio">M.S.</th>
                                     <th class="p-3 font-semibold border-b border-slate-700">Socio</th>
                                     <th class="p-3 font-semibold border-b border-slate-700 text-amber-400">Agencia</th>
+                                    <th class="p-3 font-semibold border-b border-slate-700 text-emerald-400" title="Día / Tasa de cuadre">Cuadre</th>
+                                    <th class="p-3 text-center font-semibold border-b border-slate-700 text-cyan-400">Portal</th>
                                     <th class="p-3 text-center font-semibold border-b border-slate-700">Acciones</th>
                                 </tr>
                             </thead>
@@ -191,6 +264,34 @@
                                 <option value="">— Ninguno (Directo) —</option>
                             </select>
                         </div>
+                        <div>
+                            <label class="block text-xs font-bold text-emerald-600 mb-1 uppercase tracking-wider">Método de Pago</label>
+                            <select id="editMetodoPago" class="w-full border border-emerald-300 rounded-lg px-3 py-2 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm font-bold text-slate-700 bg-white">
+                                <option value="">— Seleccione —</option>
+                                <option>EFECTIVO</option><option>TRANSFERENCIA</option><option>ZELLE</option>
+                                <option>PAGO MÓVIL</option><option>DIVISA</option><option>OTRO</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-emerald-600 mb-1 uppercase tracking-wider">Día de la Semana que se Cuadra</label>
+                            <select id="editDiaCuadre" class="w-full border border-emerald-300 rounded-lg px-3 py-2 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm font-bold text-slate-700 bg-white">
+                                <option value="">— Seleccione —</option>
+                                <option>LUNES</option><option>MARTES</option><option>MIÉRCOLES</option><option>JUEVES</option>
+                                <option>VIERNES</option><option>SÁBADO</option><option>DOMINGO</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-emerald-600 mb-1 uppercase tracking-wider">Forma de Cuadre</label>
+                            <select id="editFormaCuadre" class="w-full border border-emerald-300 rounded-lg px-3 py-2 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm font-bold text-slate-700 bg-white">
+                                <option value="">— Seleccione —</option>
+                                <option>SALDO EN CONTADO</option><option>EFECTIVO DIRECTO</option>
+                                <option>COMPENSACIÓN AVAL</option><option>MIXTO</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-emerald-600 mb-1 uppercase tracking-wider">Tasa de Cuadre Semanal (Bs/$)</label>
+                            <input type="number" id="editTasaCuadre" step="0.01" min="0" class="w-full border border-emerald-300 rounded-lg px-3 py-2 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm font-mono font-bold text-center">
+                        </div>
                         <div class="col-span-2">
                             <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Mostrar Saldo al Socio</label>
                             <select id="editMostrarS" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm font-bold text-slate-700">
@@ -204,6 +305,68 @@
             <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
                 <button type="button" class="cerrar-modal bg-slate-300 text-slate-700 px-5 py-2 rounded-lg text-xs font-bold hover:bg-slate-400 transition-colors uppercase tracking-wide">Cancelar</button>
                 <button type="submit" form="formEditarCliente" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-md uppercase tracking-wide transition-colors">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Portal del Cliente -->
+    <div id="modalPortalCliente" class="hidden fixed inset-0 bg-slate-900 bg-opacity-60 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div class="bg-cyan-700 p-4 text-white font-bold flex justify-between items-center text-sm uppercase tracking-wide">
+                <span><i class="fas fa-link mr-2"></i> Portal de Consulta del Cliente</span>
+                <button class="cerrar-modal hover:text-slate-200"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="p-6 space-y-5">
+                <input type="hidden" id="portalClienteId">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Cliente</p>
+                        <p class="text-lg font-black text-slate-800" id="portalClienteNombre">-</p>
+                    </div>
+                    <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                        <input type="checkbox" id="portalHabilitado" class="rounded">
+                        Portal Habilitado
+                    </label>
+                </div>
+                <p class="text-xs text-slate-500 leading-relaxed bg-cyan-50 border border-cyan-200 p-3 rounded-lg">
+                    En cuanto habilite el portal podrá entregar al cliente su <b>enlace acortado</b> con su <b>código</b> y <b>contraseña</b>. La sesión del cliente no se cierra salvo que él la cierre, y el portal se actualiza solo constantemente.
+                </p>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Código del Enlace (token)</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="portalToken" readonly class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono font-bold text-cyan-700 bg-slate-50">
+                            <button type="button" id="btnRegenerarToken" class="bg-cyan-700 text-white px-3 rounded-lg text-xs font-bold hover:bg-cyan-800" title="Generar otro código"><i class="fas fa-sync-alt"></i></button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Contraseña</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="portalClave" readonly class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono font-bold text-cyan-700 bg-slate-50">
+                            <button type="button" id="btnRegenerarClave" class="bg-cyan-700 text-white px-3 rounded-lg text-xs font-bold hover:bg-cyan-800" title="Generar otra contraseña"><i class="fas fa-sync-alt"></i></button>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Enlace Completo</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="portalLinkLargo" readonly class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono bg-slate-50">
+                        <button type="button" class="btn-copiar-link bg-slate-200 text-slate-700 px-3 rounded-lg text-xs font-bold hover:bg-slate-300" data-input="portalLinkLargo"><i class="fas fa-copy"></i></button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Enlace Acortado</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="portalLinkCorto" readonly placeholder="Generando..." class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono bg-slate-50">
+                        <button type="button" class="btn-copiar-link bg-slate-200 text-slate-700 px-3 rounded-lg text-xs font-bold hover:bg-slate-300" data-input="portalLinkCorto"><i class="fas fa-copy"></i></button>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1">Se genera con is.gd (servicio externo). Si falla, entregue el enlace completo.</p>
+                </div>
+                <div class="text-xs text-slate-400 font-semibold" id="portalRecibidoMsg"></div>
+            </div>
+            <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
+                <button type="button" class="cerrar-modal bg-slate-300 text-slate-700 px-5 py-2 rounded-lg text-xs font-bold hover:bg-slate-400 transition-colors uppercase tracking-wide">Cerrar</button>
+                <button id="btnGuardarPortal" class="bg-cyan-700 hover:bg-cyan-800 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-md uppercase tracking-wide transition-colors">Guardar Portal</button>
             </div>
         </div>
     </div>

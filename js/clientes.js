@@ -48,12 +48,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. CARGA DE CLIENTES (DB REAL)
     // ==========================================
     async function cargarClientes() {
-        tbody.innerHTML = '<tr><td colspan="10" class="p-6 text-center text-slate-500"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando...</td></tr>';
-        
+        tbody.innerHTML = '<tr><td colspan="12" class="p-6 text-center text-slate-500"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando...</td></tr>';
+
         const { data, error } = await window.supabase.from('clientes').select('*').order('nombre');
 
         if (error) {
-            tbody.innerHTML = '<tr><td colspan="10" class="p-6 text-center text-red-500">Error conectando a la BD.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="12" class="p-6 text-center text-red-500">Error conectando a la BD.</td></tr>';
             return;
         }
 
@@ -77,7 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderizarTabla(lista) {
         tbody.innerHTML = '';
         if (lista.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="10" class="p-6 text-center text-slate-500">No hay registros.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="12" class="p-6 text-center text-slate-500">No hay registros.</td></tr>';
             document.getElementById('pag-cuerpoTablaClientes')?.remove();
             return;
         }
@@ -98,6 +98,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const colorS = saldo < 0 ? 'text-red-600' : 'text-emerald-600';
 
+            const cuadreLabel = `
+                <span class="text-[10px] font-bold">${c.dia_cuadre || '<span class="text-slate-400 italic">Sin día</span>'}</span>
+                <span class="text-[9px] text-emerald-600 block">${c.metodo_pago || ''}${parseFloat(c.tasa_cuadre || 0) > 0 ? ` · Tasa ${c.tasa_cuadre}` : ''}</span>
+            `;
+
+            const portalLabel = c.portal_habilitado
+                ? `<button class="btn-portal bg-cyan-100 text-cyan-700 hover:bg-cyan-200 p-1.5 rounded transition-colors" data-id="${c.id}" title="Ver enlace del portal"><i class="fas fa-link"></i></button>`
+                : `<button class="btn-portal bg-slate-200 text-slate-500 hover:bg-cyan-100 hover:text-cyan-700 p-1.5 rounded transition-colors" data-id="${c.id}" title="Generar enlace del portal"><i class="fas fa-link"></i></button>`;
+
             return `
                 <tr class="hover:bg-blue-50 border-b border-slate-100">
                     <td class="p-2 font-bold text-slate-800">${c.nombre}</td>
@@ -109,6 +118,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-2 text-center">${badgeMS}</td>
                     <td class="p-2 font-medium text-slate-600">${socioLabel}</td>
                     <td class="p-2">${afiliadoLabel}</td>
+                    <td class="p-2">${cuadreLabel}</td>
+                    <td class="p-2 text-center">${portalLabel}</td>
                     <td class="p-2 text-center flex gap-1 justify-center">
                         <button class="btn-editar bg-slate-200 text-slate-600 hover:text-blue-600 hover:bg-blue-100 p-1.5 rounded transition-colors" data-id="${c.id}"><i class="fas fa-edit"></i></button>
                         <button class="btn-eliminar bg-slate-200 text-slate-600 hover:text-red-600 hover:bg-red-100 p-1.5 rounded transition-colors" data-id="${c.id}"><i class="fas fa-trash-alt"></i></button>
@@ -190,6 +201,10 @@ document.addEventListener('DOMContentLoaded', () => {
             libre: document.getElementById('libreCliente').value === 'true',
             socio_asignado: document.getElementById('socioCliente').value || null,
             mostrar_saldo_socio: document.getElementById('checkMostrarS').checked,
+            metodo_pago: document.getElementById('metodoPagoCliente').value || null,
+            dia_cuadre: document.getElementById('diaCuadreCliente').value || null,
+            forma_cuadre: document.getElementById('formaCuadreCliente').value || null,
+            tasa_cuadre: numeroValido(document.getElementById('tasaCuadreCliente').value),
             es_socio: false
         })]);
 
@@ -211,6 +226,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.getElementById('editLibre').value = c.libre ? 'true' : 'false';
                     document.getElementById('editSocio').value = c.socio_asignado || '';
                     document.getElementById('editMostrarS').value = c.mostrar_saldo_socio ? 'true' : 'false';
+                    document.getElementById('editMetodoPago').value = c.metodo_pago || '';
+                    document.getElementById('editDiaCuadre').value = c.dia_cuadre || '';
+                    document.getElementById('editFormaCuadre').value = c.forma_cuadre || '';
+                    document.getElementById('editTasaCuadre').value = parseFloat(c.tasa_cuadre || 0);
                     modalEditar.classList.remove('hidden');
                 }
             });
@@ -227,6 +246,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         });
+
+        document.querySelectorAll('.btn-portal').forEach(b => {
+            b.addEventListener('click', function() {
+                abrirModalPortal(this.dataset.id);
+            });
+        });
     }
 
     formEditar?.addEventListener('submit', async function(e) {
@@ -239,7 +264,11 @@ document.addEventListener('DOMContentLoaded', () => {
             devolucion: numeroValido(document.getElementById('editDevolucion').value),
             libre: document.getElementById('editLibre').value === 'true',
             socio_asignado: document.getElementById('editSocio').value || null,
-            mostrar_saldo_socio: document.getElementById('editMostrarS').value === 'true'
+            mostrar_saldo_socio: document.getElementById('editMostrarS').value === 'true',
+            metodo_pago: document.getElementById('editMetodoPago').value || null,
+            dia_cuadre: document.getElementById('editDiaCuadre').value || null,
+            forma_cuadre: document.getElementById('editFormaCuadre').value || null,
+            tasa_cuadre: numeroValido(document.getElementById('editTasaCuadre').value)
         })).eq('id', id);
         if (error) return clubUI.toast('Error al actualizar: ' + error.message, 'error');
         modalEditar.classList.add('hidden');
@@ -249,7 +278,130 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ==========================================
-    // 6. DEVOLUCIONES MASIVAS
+    // 6. PORTAL DE CONSULTA DEL CLIENTE
+    // ==========================================
+    const generarCodigo = (n = 6) => {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let s = '';
+        for (let i = 0; i < n; i++) s += chars[Math.floor(Math.random() * chars.length)];
+        return s;
+    };
+
+    const urlPortal = () => {
+        const base = window.location.href.split('/html/')[0] + '/html/portal.html';
+        return base;
+    };
+
+    function abrirModalPortal(id) {
+        const c = clientesGlobales.find(x => x.id == id);
+        if (!c) return;
+        document.getElementById('portalClienteId').value = id;
+        document.getElementById('portalClienteNombre').textContent = c.nombre;
+        document.getElementById('portalHabilitado').checked = !!c.portal_habilitado;
+
+        // Código y clave: si ya existen se conservan; si no, se generan nuevos
+        const token = c.portal_token || generarCodigo(6);
+        const clave = c.portal_clave || generarCodigo(4);
+        document.getElementById('portalToken').value = token;
+        document.getElementById('portalClave').value = clave;
+
+        actualizarLinksPortal();
+        document.getElementById('portalRecibidoMsg').textContent =
+            c.portal_habilitado ? 'El cliente ya tiene acceso; puede regenerar el código y la contraseña.' : '';
+        document.getElementById('modalPortalCliente').classList.remove('hidden');
+    }
+
+    function actualizarLinksPortal() {
+        const id = document.getElementById('portalClienteId').value;
+        const token = document.getElementById('portalToken').value;
+        const clave = document.getElementById('portalClave').value;
+        const larga = `${urlPortal()}?c=${id}&k=${encodeURIComponent(token)}`;
+        document.getElementById('portalLinkLargo').value = larga;
+        document.getElementById('portalLinkCorto').value = 'Generando enlace corto...';
+        document.getElementById('portalLinkCorto').classList.add('text-cyan-700');
+
+        // Intentar acortar con is.gd (fallback: mostrar el enlace completo)
+        fetch('https://is.gd/create.php?format=simple&url=' + encodeURIComponent(larga))
+            .then(r => r.ok ? r.text() : Promise.reject())
+            .then(txt => {
+                const limpio = String(txt).trim();
+                if (limpio.startsWith('http')) document.getElementById('portalLinkCorto').value = limpio;
+                else document.getElementById('portalLinkCorto').value = larga;
+            })
+            .catch(() => { document.getElementById('portalLinkCorto').value = larga; });
+    }
+
+    document.getElementById('btnRegenerarToken')?.addEventListener('click', () => {
+        document.getElementById('portalToken').value = generarCodigo(6);
+        actualizarLinksPortal();
+    });
+    document.getElementById('btnRegenerarClave')?.addEventListener('click', () => {
+        document.getElementById('portalClave').value = generarCodigo(4);
+        actualizarLinksPortal();
+    });
+
+    document.querySelectorAll('.btn-copiar-link')?.forEach(b => b.addEventListener('click', () => {
+        const input = document.getElementById(b.dataset.input);
+        const texto = input ? input.value : '';
+        if (!texto) return;
+        if (navigator.clipboard?.writeText) navigator.clipboard.writeText(texto);
+        clubUI.toast('Enlace copiado al portapapeles.', 'success');
+    }));
+
+    document.getElementById('btnGuardarPortal')?.addEventListener('click', async () => {
+        const id = document.getElementById('portalClienteId').value;
+        const habilitado = document.getElementById('portalHabilitado').checked;
+        const { error } = await window.supabase.from('clientes').update(soloColumnasExistentes({
+            portal_habilitado: habilitado,
+            portal_token: document.getElementById('portalToken').value,
+            portal_clave: document.getElementById('portalClave').value
+        })).eq('id', id);
+        if (error) return clubUI.toast('Error al guardar el portal: ' + error.message, 'error');
+        const c = clientesGlobales.find(x => x.id == id);
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('CLIENTES', `portal_${habilitado ? 'habilitado' : 'deshabilitado'}: ${c?.nombre} (id=${id})`);
+        clubUI.toast('Portal guardado. Entregue el enlace y la contraseña al cliente.', 'success');
+        document.getElementById('modalPortalCliente').classList.add('hidden');
+        cargarClientes();
+    });
+
+    // ==========================================
+    // 7. REPORTE DE CUADRE SEMANAL
+    // ==========================================
+    document.getElementById('btnGenerarReporteCuadre')?.addEventListener('click', () => {
+        const dia = document.getElementById('filtroDiaCuadre').value;
+        const cuerpo = document.getElementById('cuerpoReporteCuadre');
+        const totalSpan = document.getElementById('totalCuadreReporte');
+
+        const lista = clientesGlobales.filter(c => !dia || c.dia_cuadre === dia);
+
+        if (lista.length === 0) {
+            cuerpo.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-500 italic">Ningún cliente cuadra ese día.</td></tr>';
+            totalSpan.textContent = '';
+            return;
+        }
+
+        cuerpo.innerHTML = lista.map(c => {
+            const tasa = parseFloat(c.tasa_cuadre || 0);
+            const saldo = parseFloat(c.saldo_actual || 0);
+            const debeTasa = tasa > 0 ? saldo * tasa : 0;
+            return `
+                <tr class="hover:bg-emerald-50">
+                    <td class="p-2.5 font-bold text-slate-800">${c.nombre}</td>
+                    <td class="p-2.5 font-bold text-emerald-700">${c.dia_cuadre || '-'}</td>
+                    <td class="p-2.5">${c.metodo_pago || '<span class="text-slate-400 italic">—</span>'}</td>
+                    <td class="p-2.5">${c.forma_cuadre || '<span class="text-slate-400 italic">—</span>'}</td>
+                    <td class="p-2.5 text-right font-mono font-bold">${tasa > 0 ? tasa.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '-'}</td>
+                    <td class="p-2.5 text-right font-mono font-bold ${saldo < 0 ? 'text-red-600' : 'text-emerald-600'}">$${saldo.toFixed(2)}</td>
+                    <td class="p-2.5 text-right font-mono font-bold text-amber-600">${tasa > 0 ? 'Bs ' + debeTasa.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '-'}</td>
+                </tr>`;
+        }).join('');
+
+        totalSpan.textContent = `${lista.length} cliente(s)`;
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('CLIENTES', `reporte_cuadre: dia=${dia || 'todos'} clientes=${lista.length}`);
+    });
+
+    // ==========================================
+    // 8. DEVOLUCIONES MASIVAS
     // ==========================================
     btnAbrirDev?.addEventListener('click', () => {
         document.getElementById('inputDevolucionMasiva').value = '';
@@ -277,6 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
         b.addEventListener('click', () => {
             modalEditar.classList.add('hidden');
             modalDevoluciones.classList.add('hidden');
+            document.getElementById('modalPortalCliente').classList.add('hidden');
         });
     });
 

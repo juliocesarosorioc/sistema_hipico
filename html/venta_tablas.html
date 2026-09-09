@@ -172,7 +172,7 @@
             <div class="lg:col-span-3">
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                     <div class="bg-slate-900 text-white p-3.5 font-bold text-xs uppercase tracking-wider flex justify-between items-center">
-                        <span><i class="fas fa-chart-bar text-emerald-400 mr-2"></i> Reporte de Ventas de Tablas Fijas (Riesgo por Venta y por Grupo)</span>
+                        <span><i class="fas fa-chart-bar text-emerald-400 mr-2"></i> Reporte de Ventas de Tablas Fijas</span>
                         <button id="btnActualizarReporte" class="bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded text-[10px] font-bold transition-colors"><i class="fas fa-sync-alt mr-1"></i> Actualizar</button>
                     </div>
 
@@ -187,14 +187,38 @@
                             </div>
                         </div>
 
+                        <!-- Reporte consolidado: grupo / carrera / ejemplar -->
+                        <div>
+                            <h4 class="text-xs font-black text-slate-700 mb-3 border-b border-slate-200 pb-2 uppercase tracking-wide">
+                                Tablas Compradas por Grupo · Carrera · Ejemplar (Monto Arriesgado por Ejemplar)
+                            </h4>
+                            <div class="border border-slate-200 rounded-lg overflow-hidden shadow-sm max-h-80 overflow-y-auto">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="bg-slate-100 text-slate-600 sticky top-0">
+                                        <tr>
+                                            <th class="p-3 font-bold">Grupo</th>
+                                            <th class="p-3 font-bold">Carrera</th>
+                                            <th class="p-3 font-bold">Ejemplar</th>
+                                            <th class="p-3 text-right font-bold">Tablas</th>
+                                            <th class="p-3 text-right font-bold">Monto Arriesgado (cant. × pts)</th>
+                                            <th class="p-3 text-right font-bold">Premio Potencial (cant. × premio)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="cuerpoReporteConsolidado" class="divide-y divide-slate-100 bg-white">
+                                        <tr><td colspan="6" class="p-4 text-center text-slate-500">Cargando...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
                         <!-- Detalle de ventas -->
                         <div>
                             <h4 class="text-xs font-black text-slate-700 mb-3 border-b border-slate-200 pb-2 uppercase tracking-wide">
                                 Detalle de Ventas (cada venta congelada con el premio y PTS de ese momento)
                             </h4>
-                            <div class="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+                            <div class="border border-slate-200 rounded-lg overflow-hidden shadow-sm max-h-96 overflow-y-auto">
                                 <table class="w-full text-left text-xs">
-                                    <thead class="bg-slate-100 text-slate-600">
+                                    <thead class="bg-slate-100 text-slate-600 sticky top-0">
                                         <tr>
                                             <th class="p-3 font-bold">Fecha</th>
                                             <th class="p-3 font-bold">Cliente</th>
@@ -204,15 +228,46 @@
                                             <th class="p-3 text-right font-bold">Tablas</th>
                                             <th class="p-3 text-right font-bold">PTS</th>
                                             <th class="p-3 text-right font-bold">Premio</th>
+                                            <th class="p-3 text-right font-bold">Monto Arriesgado (cant. × pts)</th>
                                             <th class="p-3 text-right font-bold">Riesgo (Premio × Tablas)</th>
                                         </tr>
                                     </thead>
                                     <tbody id="cuerpoReporteVentas" class="divide-y divide-slate-100 bg-white">
-                                        <tr><td colspan="9" class="p-4 text-center text-slate-500">Cargando ventas...</td></tr>
+                                        <tr><td colspan="10" class="p-4 text-center text-slate-500">Cargando ventas...</td></tr>
                                     </tbody>
                                 </table>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SOLICITUDES DEL PORTAL (VALIDACIÓN DEL ADMINISTRADOR) -->
+            <div class="lg:col-span-3">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="bg-amber-700 text-white p-3.5 font-bold text-xs uppercase tracking-wider flex justify-between items-center">
+                        <span><i class="fas fa-inbox text-amber-300 mr-2"></i> Solicitudes de Compra del Portal (Validación del Administrador)</span>
+                        <button id="btnActualizarSolicitudes" class="bg-amber-800 hover:bg-amber-900 px-3 py-1 rounded text-[10px] font-bold transition-colors"><i class="fas fa-sync-alt mr-1"></i> Actualizar</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-slate-100 text-slate-600">
+                                <tr>
+                                    <th class="p-3 font-bold">Fecha</th>
+                                    <th class="p-3 font-bold">Cliente</th>
+                                    <th class="p-3 font-bold">Grupo</th>
+                                    <th class="p-3 font-bold">Carrera</th>
+                                    <th class="p-3 font-bold">Ejemplar</th>
+                                    <th class="p-3 text-right font-bold">Tablas</th>
+                                    <th class="p-3 text-right font-bold">Monto</th>
+                                    <th class="p-3 text-center font-bold">Estado</th>
+                                    <th class="p-3 text-center font-bold">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cuerpoSolicitudesAdmin" class="divide-y divide-slate-100 bg-white">
+                                <tr><td colspan="9" class="p-4 text-center text-slate-500">Cargando solicitudes...</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>

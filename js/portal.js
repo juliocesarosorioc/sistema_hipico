@@ -1,0 +1,329 @@
+document.addEventListener('DOMContentLoaded', () => {
+
+    const KEY = 'club_portal_sesion';
+
+    const pantallaAcceso = document.getElementById('pantallaAcceso');
+    const vistaPortal = document.getElementById('vistaPortal');
+    const inputToken = document.getElementById('inputPortalToken');
+    const inputClave = document.getElementById('inputPortalClave');
+    const btnEntrar = document.getElementById('btnEntrarPortal');
+    const btnCerrar = document.getElementById('btnCerrarPortal');
+
+    const selectTabla = document.getElementById('portalSelectTabla');
+    const selectEjemplar = document.getElementById('portalSelectEjemplar');
+    const inputCantidad = document.getElementById('portalCantidad');
+    const lblTotalPagar = document.getElementById('portalTotalPagar');
+    const btnSolicitar = document.getElementById('btnEnviarSolicitud');
+    const msgCompra = document.getElementById('portalMsgCompra');
+
+    let sesion = null;
+    let clienteDatos = null;
+    let grupoDatos = null;
+    let tablasDisponibles = [];
+    let tablaSeleccionada = null;
+    let tasaGlobal = 1.0;
+
+    const sesionGuardada = () => {
+        try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch (e) { return null; }
+    };
+    const guardarSesion = (s) => localStorage.setItem(KEY, JSON.stringify(s));
+    const cerrarSesion = () => { localStorage.removeItem(KEY); window.location.reload(); };
+
+    // Prellenar el código desde el enlace (portal.html?c=..&k=..)
+    const params = new URLSearchParams(window.location.search);
+    const tkUrl = params.get('k');
+    if (tkUrl) inputToken.value = tkUrl;
+
+    // ==========================================
+    // ARRANQUE
+    // ==========================================
+    const arranque = sesionGuardada();
+    if (arranque && arranque.id) {
+        sesion = arranque;
+        entrarAlPortal();
+    }
+
+    btnEntrar.addEventListener('click', async () => {
+        const token = inputToken.value.trim().toUpperCase();
+        const clave = inputClave.value.trim();
+        if (!token || !clave) return clubUI.toast("Ingrese su código y contraseña.", 'warning');
+
+        const { data, error } = await window.supabase
+            .from('clientes')
+            .select('id, nombre, grupo_id')
+            .eq('portal_token', token)
+            .eq('portal_clave', clave)
+            .eq('portal_habilitado', true)
+            .maybeSingle();
+
+        if (error || !data) {
+            return clubUI.toast("Código, contraseña o acceso inválido. Solicite su enlace al administrador.", 'error');
+        }
+        sesion = { id: data.id, nombre: data.nombre, grupo_id: data.grupo_id };
+        guardarSesion(sesion);
+        entrarAlPortal();
+    });
+
+    btnCerrar.addEventListener('click', cerrarSesion);
+
+    // ==========================================
+    // ENTRAR AL PORTAL
+    // ==========================================
+    async function entrarAlPortal() {
+        pantallaAcceso.classList.add('hidden');
+        vistaPortal.classList.remove('hidden');
+        document.getElementById('portalNombre').textContent = sesion.nombre;
+        await refrescarCompleto();
+        setInterval(refrescarAutomatico, 30000);
+    }
+
+    async function refrescarCompleto() {
+        await Promise.all([
+            cargarCliente(),
+            cargarMovimientos(),
+            cargarSolicitudes()
+        ]);
+    }
+
+    async function refrescarAutomatico() {
+        if (!sesion) return;
+        await cargarCliente();
+        await cargarMovimientos();
+        await cargarSolicitudes();
+        cargarTablasDisponibles(true);
+    }
+
+    // ==========================================
+    // CLIENTE Y KPIs
+    // ==========================================
+    async function cargarCliente() {
+        const { data, error } = await window.supabase
+            .from('clientes')
+            .select('*')
+            .eq('id', sesion.id)
+            .single();
+        if (error || !data) return;
+        clienteDatos = data;
+
+        // Tasa global para el equivalente en Bs
+        try {
+            const { data: m } = await window.supabase.from('monedas').select('tasa_cambio').limit(1).single();
+            if (m && m.tasa_cambio) tasaGlobal = parseFloat(m.tasa_cambio);
+        } catch (e) { /* nada */ }
+
+        const saldo = parseFloat(data.saldo_actual || 0);
+        const aval = parseFloat(data.aval || 0);
+        document.getElementById('kpiSaldo').textContent = '$' + saldo.toFixed(2);
+        document.getElementById('kpiAval').textContent = '$' + aval.toFixed(2);
+        document.getElementById('kpiDisponible').textContent = '$' + (saldo + aval).toFixed(2);
+        document.getElementById('kpiLibre').textContent = data.libre ? 'Juega libre (sin límite de aval)' : 'Sujeto a aval';
+
+        // Saldo equivalente a la tasa de cuadre del cliente (o tasa global)
+        const tasaCuadre = parseFloat(data.tasa_cuadre || 0) || tasaGlobal;
+        document.getElementById('kpiSaldoEquiv').textContent = '≈ Bs ' + (saldo * tasaCuadre).toLocaleString(undefined, { minimumFractionDigits: 2 });
+
+        // Grupo
+        const { data: g } = await window.supabase.from('grupos_venta').select('nombre, moneda, moneda_cuadre').eq('id', data.grupo_id).maybeSingle();
+        if (g) {
+            grupoDatos = g;
+            document.getElementById('portalGrupo').textContent = g.nombre;
+            document.getElementById('portalMonedaCuadre').textContent = g.moneda_cuadre || g.moneda || 'USD';
+        }
+    }
+
+    // ==========================================
+    // MOVIMIENTOS
+    // ==========================================
+    async function cargarMovimientos() {
+        const { data } = await window.supabase
+            .from('tickets_apuestas')
+            .select('created_at, nombre_jugada, caballo, cantidad_tablas, monto_jugado, premio_pagar, premio_por_tabla, moneda, estado')
+            .eq('cliente_juega_id', sesion.id)
+            .order('created_at', { ascending: false })
+            .limit(30);
+
+        const cuerpo = document.getElementById('cuerpoMovimientos');
+        if (!data || data.length === 0) {
+            cuerpo.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-500 italic">Aún no tiene movimientos.</td></tr>';
+            return;
+        }
+
+        cuerpo.innerHTML = data.map(tk => {
+            const fecha = tk.created_at ? new Date(tk.created_at).toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+            const simp = tk.moneda === 'VES' ? 'Bs ' : '$';
+            const badge = {
+                Ganador: 'bg-emerald-100 text-emerald-700',
+                Perdedor: 'bg-slate-100 text-slate-500',
+                Pendiente: 'bg-amber-100 text-amber-700'
+            }[tk.estado] || 'bg-slate-100 text-slate-500';
+            const premio = tk.premio_pagar != null && tk.premio_por_tabla == null
+                ? parseFloat(tk.premio_pagar)
+                : (tk.premio_pagar != null ? parseFloat(tk.premio_pagar) : 0);
+            return `
+                <tr class="hover:bg-cyan-50">
+                    <td class="p-3 text-slate-500">${fecha}</td>
+                    <td class="p-3 font-bold text-slate-700">${tk.nombre_jugada || 'Jugada'}</td>
+                    <td class="p-3">${tk.caballo || '-'}${tk.cantidad_tablas ? ` (${tk.cantidad_tablas} tablas)` : ''}</td>
+                    <td class="p-3 text-right font-mono font-bold">${simp}${parseFloat(tk.monto_jugado || 0).toFixed(2)}</td>
+                    <td class="p-3 text-right font-mono font-bold text-emerald-600">${simp}${premio.toFixed(2)}</td>
+                    <td class="p-3 text-center"><span class="px-2 py-0.5 rounded text-[9px] font-black ${badge}">${tk.estado}</span></td>
+                </tr>`;
+        }).join('');
+    }
+
+    // ==========================================
+    // TABLAS DISPONIBLES PARA SU GRUPO
+    // ==========================================
+    async function cargarTablasDisponibles(soloSiVacio = false) {
+        if (soloSiVacio && selectTabla.value) return;
+        const { data } = await window.supabase
+            .from('tablas_fijas')
+            .select('*, tabla_grupos(*)')
+            .eq('estado', 'Abierta')
+            .order('id', { ascending: false });
+
+        tablasDisponibles = (data || []).filter(t => {
+            const tg = (t.tabla_grupos || []).find(x => x.grupo_id == sesion.grupo_id);
+            return tg && (tg.cupos - (tg.cantidad_vendida || 0)) > 0;
+        });
+
+        selectTabla.innerHTML = tablasDisponibles.length === 0
+            ? '<option value="">No hay carreras disponibles ahora</option>'
+            : '<option value="">Seleccione hipódromo / carrera...</option>';
+
+        tablasDisponibles.forEach(t => {
+            const tg = (t.tabla_grupos || []).find(x => x.grupo_id == sesion.grupo_id);
+            const disp = (tg.cupos || 0) - (tg.cantidad_vendida || 0);
+            selectTabla.innerHTML += `<option value="${t.id}">${t.hipodromo} - Carrera ${t.carrera} (disponibles: ${disp})</option>`;
+        });
+    }
+
+    selectTabla.addEventListener('change', () => {
+        const t = tablasDisponibles.find(x => x.id == selectTabla.value);
+        tablaSeleccionada = t || null;
+        selectEjemplar.innerHTML = '<option value="">Seleccione ejemplar...</option>';
+        if (!t) return;
+        (t.caballos || []).filter(c => !c.retirado).forEach(c => {
+            selectEjemplar.innerHTML += `<option value="${c.numero}">${c.numero} - ${c.nombre} (${c.valor_ejemplar} pts)</option>`;
+        });
+        actualizarTotalPagar();
+    });
+
+    selectEjemplar.addEventListener('change', actualizarTotalPagar);
+    inputCantidad.addEventListener('input', actualizarTotalPagar);
+
+    function actualizarTotalPagar() {
+        if (!tablaSeleccionada || !selectEjemplar.value) { lblTotalPagar.textContent = '$0.00'; return; }
+        const ej = (tablaSeleccionada.caballos || []).find(c => c.numero == selectEjemplar.value);
+        const cant = parseInt(inputCantidad.value) || 1;
+        const grupo = grupoDatos || { moneda: 'USD' };
+        const simb = grupo.moneda === 'VES' ? 'Bs ' : '$';
+        const total = (parseFloat(ej.valor_ejemplar) || 0) * cant;
+        lblTotalPagar.textContent = simb + total.toLocaleString(undefined, { minimumFractionDigits: 2 });
+    }
+
+    // ==========================================
+    // ENVIAR SOLICITUD DE COMPRA
+    // ==========================================
+    btnSolicitar.addEventListener('click', async () => {
+        if (!tablaSeleccionada) return clubUI.toast("Seleccione la carrera que desea comprar.", 'warning');
+        if (!selectEjemplar.value) return clubUI.toast("Seleccione el ejemplar.", 'warning');
+
+        const tg = (tablaSeleccionada.tabla_grupos || []).find(x => x.grupo_id == sesion.grupo_id);
+        const cant = parseInt(inputCantidad.value) || 0;
+        const disponibles = (tg.cupos || 0) - (tg.cantidad_vendida || 0);
+        if (cant <= 0) return clubUI.toast("Cantidad inválida.", 'warning');
+        if (cant > disponibles) return clubUI.toast(`Solo quedan ${disponibles} tablas disponibles en su grupo.`, 'warning');
+
+        const ej = (tablaSeleccionada.caballos || []).find(c => c.numero == selectEjemplar.value);
+        const pts = parseFloat(ej.valor_ejemplar) || 0;
+        const moneda = (grupoDatos && grupoDatos.moneda) || 'USD';
+        const montoTotal = pts * cant;
+        const costoUsd = moneda === 'VES' ? montoTotal / (tasaGlobal || 1) : montoTotal;
+        const premio = parseFloat(tablaSeleccionada.premio_recalculado) || 0;
+
+        btnSolicitar.disabled = true;
+        btnSolicitar.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Enviando...';
+
+        const vida = clienteDatos || (await (await window.supabase.from('clientes').select('*').eq('id', sesion.id).single())).data || {};
+
+        const { error } = await window.supabase.from('solicitudes_tablas').insert([{
+            cliente_id: sesion.id,
+            cliente_nombre: sesion.nombre,
+            grupo_id: sesion.grupo_id,
+            grupo_nombre: grupoDatos ? grupoDatos.nombre : null,
+            tabla_id: tablaSeleccionada.id,
+            hipodromo: tablaSeleccionada.hipodromo,
+            carrera: tablaSeleccionada.carrera,
+            ejemplar_numero: ej.numero,
+            ejemplar_nombre: ej.nombre,
+            cantidad: cant,
+            pts_ejemplar: pts,
+            premio_por_tabla: premio,
+            comision_porcentaje: parseFloat(tablaSeleccionada.comision_grupo || 2.5),
+            moneda: moneda,
+            tasa_cambio: tasaGlobal,
+            monto_total: montoTotal,
+            costo_usd: costoUsd,
+            estado: 'Pendiente',
+            recibo: `SOL-${tablaSeleccionada.hipodromo}-C${tablaSeleccionada.carrera}-${ej.numero}-${Date.now().toString(36).toUpperCase()}`
+        }]);
+
+        btnSolicitar.disabled = false;
+        btnSolicitar.innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Solicitar Compra';
+
+        if (error) return clubUI.toast('Error al enviar la solicitud: ' + (error.message || 'BD'), 'error');
+
+        msgCompra.classList.remove('hidden');
+        clubUI.toast('Solicitud enviada. Será validada por el administrador y se le enviará el recibo.', 'success');
+        inputCantidad.value = 1;
+        selectEjemplar.innerHTML = '<option value="">Primero seleccione la carrera</option>';
+        selectEjemplar.value = '';
+        tablaSeleccionada = null;
+        selectTabla.value = '';
+        cargarSolicitudes();
+    });
+
+    // ==========================================
+    // MIS SOLICITUDES
+    // ==========================================
+    async function cargarSolicitudes() {
+        const { data } = await window.supabase
+            .from('solicitudes_tablas')
+            .select('*')
+            .eq('cliente_id', sesion.id)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+        const cuerpo = document.getElementById('cuerpoSolicitudes');
+        if (!data || data.length === 0) {
+            cuerpo.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-500 italic">No tiene solicitudes pendientes.</td></tr>';
+            return;
+        }
+
+        const badges = {
+            Pendiente: 'bg-amber-100 text-amber-700',
+            Aprobada: 'bg-emerald-100 text-emerald-700',
+            Rechazada: 'bg-red-100 text-red-600'
+        };
+
+        cuerpo.innerHTML = data.map(s => {
+            const fecha = s.created_at ? new Date(s.created_at).toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+            const simp = s.moneda === 'VES' ? 'Bs ' : '$';
+            const badge = badges[s.estado] || 'bg-slate-100 text-slate-500';
+            const ext = s.estado === 'Aprobada' && s.recibo ? ` · <span class="text-[9px]">Recibo: ${s.recibo}</span>` : '';
+            return `
+                <tr class="hover:bg-amber-50">
+                    <td class="p-3 text-slate-500">${fecha}</td>
+                    <td class="p-3 font-bold text-slate-700">${s.hipodromo} C${s.carrera}</td>
+                    <td class="p-3">${s.ejemplar_numero} - ${s.ejemplar_nombre}</td>
+                    <td class="p-3 text-right font-bold">${s.cantidad}</td>
+                    <td class="p-3 text-right font-mono font-bold">${simp}${parseFloat(s.monto_total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td class="p-3 text-center"><span class="px-2 py-0.5 rounded text-[9px] font-black ${badge}">${s.estado}</span>${ext}</td>
+                </tr>`;
+        }).join('');
+    }
+
+    // Inicial
+    cargarTablasDisponibles();
+});
