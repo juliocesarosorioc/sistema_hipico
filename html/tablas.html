@@ -22,9 +22,9 @@
                 <i class="fas fa-table text-indigo-500 mr-2"></i> Ensamblaje de Tablas Fijas
             </h1>
             <div class="flex items-center gap-3">
-                <div class="bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 flex items-center shadow-inner">
-                    Tasa Global: <span class="ml-2 text-indigo-700" id="lblTasaGlobal">1.00</span>
-                </div>
+                <a href="grupos.html" class="inline-flex items-center gap-2 bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-900 transition-colors shadow-sm">
+                    <i class="fas fa-layer-group text-amber-400"></i> Grupos y Convenios
+                </a>
                 <button id="btnRecargarTablas" class="bg-white border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm transition-colors text-xs font-bold">
                     <i class="fas fa-sync-alt"></i>
                 </button>
@@ -32,112 +32,6 @@
         </header>
 
         <main class="p-6 flex-1 overflow-y-auto w-full grid grid-cols-1 xl:grid-cols-12 gap-6 bg-slate-100">
-
-            <!-- ===== GESTIÓN DE GRUPOS Y CLIENTES (Acordeón) ===== -->
-            <div class="xl:col-span-12">
-                <div id="btnAcordeonGrupos" class="bg-slate-800 text-white px-5 py-3 rounded-xl shadow-sm flex justify-between items-center font-bold cursor-pointer hover:bg-slate-900 transition-colors text-sm">
-                    <span class="flex items-center tracking-wide"><i class="fas fa-users-cog mr-2 text-amber-400"></i> Gestión de Grupos de Venta y Asignación de Clientes</span>
-                    <i id="iconoAcordeonGrupos" class="fas fa-chevron-down transition-transform duration-300"></i>
-                </div>
-
-                <div id="panelGrupos" class="hidden bg-white p-5 rounded-xl shadow-sm border border-slate-200 transition-all">
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-                        <!-- Crear / Listar Grupos -->
-                        <div class="space-y-4">
-                            <h3 class="text-xs font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-2">
-                                <i class="fas fa-layer-group text-slate-400 mr-1"></i> Crear Grupo
-                            </h3>
-                            <form id="formGrupo" class="grid grid-cols-3 gap-3 items-end">
-                                <div class="col-span-3">
-                                    <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Nombre del Grupo</label>
-                                    <input type="text" id="nombreGrupo" placeholder="Ej: SUCURSAL COSTA" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm uppercase font-bold outline-none focus:ring-2 focus:ring-indigo-500" required>
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Moneda de Venta</label>
-                                    <select id="monedaGrupo" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50">
-                                        <option value="USD">USD ($)</option>
-                                        <option value="VES">VES (Bs)</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Moneda de Cuadre</label>
-                                    <select id="monedaCuadreGrupo" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50">
-                                        <option value="USD">USD ($)</option>
-                                        <option value="VES">VES (Bs)</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Cupos por Tabla</label>
-                                    <input type="number" id="cupoGrupo" value="100" min="1" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500">
-                                </div>
-                                <div class="col-span-3">
-                                    <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Responsable del Grupo</label>
-                                    <input type="text" id="responsableGrupo" placeholder="Nombre de la persona encargada" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm uppercase font-bold outline-none focus:ring-2 focus:ring-indigo-500">
-                                </div>
-                                <div class="col-span-3">
-                                    <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Cuenta Bancaria para el Cuadre</label>
-                                    <input type="text" id="cuentaGrupo" placeholder="Banco / N° de cuenta" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm uppercase font-bold outline-none focus:ring-2 focus:ring-indigo-500">
-                                </div>
-                                <label class="col-span-3 flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer">
-                                    <input type="checkbox" id="esPrincipalGrupo" class="rounded"> Es el grupo Principal (concentra la contabilidad)
-                                </label>
-                                <div class="col-span-3">
-                                    <button type="submit" id="btnGuardarGrupo" class="w-full bg-indigo-600 text-white font-bold py-2.5 rounded-lg shadow hover:bg-indigo-700 transition-colors text-xs uppercase tracking-wide">
-                                        <i class="fas fa-plus-circle mr-2"></i> Crear Grupo
-                                    </button>
-                                </div>
-                            </form>
-
-                            <div>
-                                <h3 class="text-xs font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-2 mb-2">
-                                    <i class="fas fa-list text-slate-400 mr-1"></i> Grupos Registrados
-                                </h3>
-                                <div id="listaGrupos" class="space-y-2 max-h-64 overflow-y-auto pr-1">
-                                    <p class="text-slate-400 italic text-xs">Cargando grupos...</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Asignar Clientes -->
-                        <div class="space-y-4">
-                            <h3 class="text-xs font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-2">
-                                <i class="fas fa-user-tag text-slate-400 mr-1"></i> Asignar Clientes a Grupos
-                            </h3>
-                            <div class="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Grupo Origen</label>
-                                    <select id="selectGrupoOrigen" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50">
-                                        <option value="">Seleccione...</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Grupo Destino</label>
-                                    <select id="selectGrupoDestino" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50">
-                                        <option value="">Seleccione...</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="flex justify-between items-center text-xs font-bold text-slate-600">
-                                <span>Clientes del grupo origen:</span>
-                                <span id="resumenClientesGrupo" class="text-indigo-600">0</span>
-                            </div>
-                            <div id="listaClientesGrupo" class="space-y-1.5 max-h-48 overflow-y-auto border border-slate-200 rounded-lg p-2 bg-slate-50">
-                                <p class="text-slate-400 italic text-xs">Seleccione un grupo origen.</p>
-                            </div>
-                            <div class="flex gap-2">
-                                <button id="btnMoverClientes" class="flex-1 bg-indigo-600 text-white font-bold py-2 rounded-lg shadow hover:bg-indigo-700 transition-colors text-xs uppercase tracking-wide">
-                                    <i class="fas fa-arrow-right mr-1"></i> Mover seleccionados
-                                </button>
-                                <button id="btnMoverTodos" class="flex-1 bg-slate-700 text-white font-bold py-2 rounded-lg shadow hover:bg-slate-800 transition-colors text-xs uppercase tracking-wide">
-                                    <i class="fas fa-forward mr-1"></i> Mover todos
-                                </button>
-                            </div>
-                        </div>
-
-                    </div>
-                </div>
-            </div>
 
             <!-- PANEL SUPERIOR: CONFIGURACIÓN Y ENSAMBLAJE (7 Columnas) -->
             <div class="xl:col-span-7 space-y-6">
@@ -152,45 +46,17 @@
                                 <option value="">Seleccione hipódromo...</option>
                             </select>
                         </div>
-                        <div>
+                        <div class="col-span-2">
                             <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Carrera</label>
                             <input type="number" id="carreraTabla" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-center" placeholder="N°">
                         </div>
-                        <div>
-                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Comisión Grupo % (Estándar 2.5 del monto decidido)</label>
-                            <input type="number" id="comisionTabla" step="0.01" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-center" value="2.5">
-                        </div>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
-                        <div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div class="md:col-span-4">
                             <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Premio a Pagar</label>
-                            <input type="number" id="premioTabla" step="0.01" value="100" class="cal-riesgo w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-right text-emerald-600">
+                            <input type="number" id="premioTabla" step="0.01" value="100" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-right text-emerald-600">
                         </div>
-                        <div>
-                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Tasa Vinculada (Bs / $)</label>
-                            <input type="text" id="lblTasaRiesgo" readonly class="w-full bg-slate-100 border border-slate-200 rounded-lg px-3 py-2 text-sm font-black text-right text-slate-700 font-mono">
-                        </div>
-                        <div class="col-span-2">
-                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Monto Máximo a Riesgo (Opcional) — Tope por Ejemplar en Dólares ($) o su Equivalente en Bs vía tasa</label>
-                            <input type="number" id="maxRiesgoUsd" min="0" step="0.01" value="0" class="in-max-riesgo w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-right text-red-600">
-                        </div>
-                        <div class="col-span-2 grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Riesgo por Ejemplar (máx.) en Dólares ($ Equivalente)</label>
-                                <input type="text" id="lblRiesgoUsd" readonly class="w-full bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm font-black text-right text-red-600 font-mono">
-                            </div>
-                            <div>
-                                <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Riesgo por Ejemplar (máx.) en Bolívares (Bs)</label>
-                                <input type="text" id="lblRiesgoBs" readonly class="w-full bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm font-black text-right text-amber-600 font-mono">
-                            </div>
-                        </div>
-                        <p class="col-span-2 text-[10px] text-slate-400 font-semibold">
-                            <i class="fas fa-info-circle mr-1"></i> El riesgo se evalúa POR EJEMPLAR: se vende el ejemplar, así que el peor caso es vender todos los cupos al mismo ejemplar (cupos totales × premio). El tope es opcional.
-                        </p>
-                        <p id="lblExcesoRiesgo" class="col-span-2 hidden text-[11px] font-bold bg-red-100 border border-red-300 text-red-700 rounded-lg px-3 py-2">
-                            <i class="fas fa-exclamation-triangle mr-1"></i> El riesgo por ejemplar en dólares (o equivalente) supera el tope. Ajuste cupos, premio o el tope.
-                        </p>
                     </div>
 
                     <h3 class="text-xs font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-2 mt-5 mb-3">
@@ -351,59 +217,6 @@
             <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
                 <button type="button" class="cerrar-modal bg-slate-300 text-slate-700 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-400 transition-colors">Cancelar</button>
                 <button type="button" id="btnProcesarAuditoria" class="bg-amber-500 text-slate-900 px-5 py-2 rounded-lg text-xs font-bold hover:bg-amber-600 shadow-md uppercase">Procesar Auditoría</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal Editar Grupo -->
-    <div id="modalEditarGrupo" class="hidden fixed inset-0 bg-slate-900 bg-opacity-60 z-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div class="bg-slate-800 p-4 text-white font-bold flex justify-between items-center text-sm uppercase">
-                <span><i class="fas fa-edit mr-2"></i> Editar Grupo de Venta</span>
-                <button class="cerrar-modal text-slate-400 hover:text-white"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="p-5 space-y-4">
-                <input type="hidden" id="editGrupoId">
-                <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1 uppercase">Nombre</label>
-                    <input type="text" id="editGrupoNombre" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm uppercase font-bold outline-none focus:ring-2 focus:ring-indigo-500">
-                </div>
-                <div class="grid grid-cols-3 gap-3">
-                    <div>
-                        <label class="block text-[10px] font-bold text-slate-600 mb-1 uppercase">Moneda Venta</label>
-                        <select id="editGrupoMoneda" class="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50">
-                            <option value="USD">USD</option>
-                            <option value="VES">VES</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-[10px] font-bold text-slate-600 mb-1 uppercase">Moneda Cuadre</label>
-                        <select id="editGrupoMonedaCuadre" class="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50">
-                            <option value="USD">USD</option>
-                            <option value="VES">VES</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-[10px] font-bold text-slate-600 mb-1 uppercase">Cupos/Tabla</label>
-                        <input type="number" id="editGrupoCupo" min="1" class="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500">
-                    </div>
-                </div>
-                <div>
-                    <label class="block text-[10px] font-bold text-slate-600 mb-1 uppercase">Responsable</label>
-                    <input type="text" id="editGrupoResponsable" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm uppercase font-bold outline-none focus:ring-2 focus:ring-indigo-500">
-                </div>
-                <div>
-                    <label class="block text-[10px] font-bold text-slate-600 mb-1 uppercase">Cuenta Bancaria (Cuadre)</label>
-                    <input type="text" id="editGrupoCuenta" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm uppercase font-bold outline-none focus:ring-2 focus:ring-indigo-500">
-                </div>
-                <div>
-                    <label class="block text-[10px] font-bold text-slate-600 mb-1 uppercase">Comisión Estándar %</label>
-                    <input type="number" id="editGrupoComision" step="0.01" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500">
-                </div>
-            </div>
-            <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
-                <button type="button" class="cerrar-modal bg-slate-300 text-slate-700 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-400 transition-colors">Cancelar</button>
-                <button type="button" id="btnGuardarGrupoEdit" class="bg-indigo-600 text-white px-5 py-2 rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-md">Guardar Grupo</button>
             </div>
         </div>
     </div>

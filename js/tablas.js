@@ -7,34 +7,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnGuardarTabla = document.getElementById('btnGuardarTabla');
     const tbodyMonitor = document.getElementById('cuerpoMonitorTablas');
     const premioTabla = document.getElementById('premioTabla');
-    const lblRiesgoBs = document.getElementById('lblRiesgoBs');
-    const lblRiesgoUsd = document.getElementById('lblRiesgoUsd');
-    const maxRiesgoUsd = document.getElementById('maxRiesgoUsd');
-    const lblExcesoRiesgo = document.getElementById('lblExcesoRiesgo');
-
-    // Gestión de grupos
-    const btnAcordeonGrupos = document.getElementById('btnAcordeonGrupos');
-    const panelGrupos = document.getElementById('panelGrupos');
-    const iconoAcordeonGrupos = document.getElementById('iconoAcordeonGrupos');
 
     let tasaCambioGlobal = 1.0;
     let datosTablaCompleta = [];
     let gruposActivos = [];
     let todosGrupos = [];
-    let clientesTodos = [];
 
     // ==========================================
-    // TASA GLOBAL Y HIPÓDROMOS VINCULADOS
+    // TASA GLOBAL (interna: solo se guarda en el registro para el cuadre)
     // ==========================================
     async function cargarTasaGlobal() {
         try {
             const { data } = await window.supabase.from('monedas').select('tasa_cambio').limit(1).single();
-            if (data && data.tasa_cambio) {
-                tasaCambioGlobal = parseFloat(data.tasa_cambio);
-                document.getElementById('lblTasaGlobal').textContent = clubUI.formatoNumero(tasaCambioGlobal, 4);
-                const lblTasaRiesgo = document.getElementById('lblTasaRiesgo');
-                if (lblTasaRiesgo) lblTasaRiesgo.value = 'Bs ' + clubUI.formatoNumero(tasaCambioGlobal, 4) + ' / $';
-            }
+            if (data && data.tasa_cambio) tasaCambioGlobal = parseFloat(data.tasa_cambio);
         } catch (e) { console.warn("Fallo al cargar tasa global, usando 1.0"); }
     }
 
@@ -50,214 +35,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
-    // GRUPOS DE VENTA
+    // GRUPOS (solo carga: la gestión vive en Grupos y Convenios)
     // ==========================================
     async function cargarGrupos() {
         const { data, error } = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
         if (error) return;
         todosGrupos = data || [];
         gruposActivos = todosGrupos.filter(g => g.activo);
-        renderGruposGestion();
-        renderSelectsGrupos();
         renderCuposGrupos();
         renderGruposDup();
-        cargarClientesTodos();
     }
-
-    function renderSelectsGrupos() {
-        const opts = gruposActivos.map(g => `<option value="${g.id}">${g.nombre} (${g.moneda})</option>`).join('');
-        document.getElementById('selectGrupoOrigen').innerHTML = '<option value="">Seleccione...</option>' + opts;
-        document.getElementById('selectGrupoDestino').innerHTML = '<option value="">Seleccione...</option>' + opts;
-    }
-
-    function renderGruposGestion() {
-        const cont = document.getElementById('listaGrupos');
-        if (todosGrupos.length === 0) {
-            cont.innerHTML = '<p class="text-slate-400 italic text-xs">Sin grupos. Cree el primero.</p>';
-            return;
-        }
-        cont.innerHTML = todosGrupos.map(g => `
-            <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                <div class="flex-1 min-w-0">
-                    <span class="font-bold text-slate-800 text-sm">${g.nombre}</span>
-                    <span class="ml-2 px-1.5 py-0.5 rounded text-[9px] font-black ${g.moneda === 'VES' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}">${g.moneda}</span>
-                    <span class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-slate-200 text-slate-700" title="Moneda de cuadre">Cuadre: ${g.moneda_cuadre || g.moneda}</span>
-                    ${g.es_principal ? '<span class="ml-1 text-[9px] font-black bg-slate-800 text-white px-1.5 py-0.5 rounded">PRINCIPAL</span>' : ''}
-                    <div class="text-[10px] text-slate-500 mt-0.5 truncate">
-                        ${g.responsable ? `<i class="fas fa-user-tie mr-0.5 text-slate-400"></i><b>${g.responsable}</b>` : '<span class="italic">Sin responsable</span>'}
-                        ${g.cuenta_bancaria ? ` · <i class="fas fa-university mr-0.5 text-slate-400"></i>${g.cuenta_bancaria}` : ''}
-                    </div>
-                    <span class="text-[10px] text-slate-500">Cupos/tabla: <b>${g.cupo_tabla}</b> · Comisión: <b>${parseFloat(g.comision_default || 2.5)}%</b> · Clientes: <b id="cntgrupo_${g.id}">?</b></span>
-                </div>
-                <button class="btn-editar-grupo px-2 py-1 rounded text-xs font-bold bg-slate-200 text-slate-700 hover:bg-slate-300" data-id="${g.id}" title="Editar grupo"><i class="fas fa-edit"></i></button>
-                <button class="btn-toggle-grupo px-2 py-1 rounded text-xs font-bold ${g.activo ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}" data-id="${g.id}" data-activo="${g.activo}">
-                    <i class="fas ${g.activo ? 'fa-toggle-on' : 'fa-toggle-off'}"></i>
-                </button>
-                ${g.es_principal ? '' : `<button class="btn-del-grupo px-2 py-1 rounded text-xs bg-red-50 text-red-600 hover:bg-red-100" data-id="${g.id}" title="Eliminar"><i class="fas fa-trash-alt"></i></button>`}
-            </div>
-        `).join('');
-
-        document.querySelectorAll('.btn-del-grupo').forEach(b => b.addEventListener('click', eliminarGrupo));
-        document.querySelectorAll('.btn-toggle-grupo').forEach(b => b.addEventListener('click', toggleGrupo));
-        document.querySelectorAll('.btn-editar-grupo').forEach(b => b.addEventListener('click', abrirModalEditarGrupo));
-
-        // Contadores por grupo
-        document.querySelectorAll('#gruposSeleccion').forEach(() => {});
-    }
-
-    document.getElementById('formGrupo')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const nombre = document.getElementById('nombreGrupo').value.trim().toUpperCase();
-        if (!nombre) return;
-        const { error } = await window.supabase.from('grupos_venta').insert([{
-            nombre: nombre,
-            moneda: document.getElementById('monedaGrupo').value,
-            moneda_cuadre: document.getElementById('monedaCuadreGrupo').value,
-            es_principal: document.getElementById('esPrincipalGrupo').checked,
-            cupo_tabla: parseInt(document.getElementById('cupoGrupo').value) || 100,
-            responsable: document.getElementById('responsableGrupo').value.trim().toUpperCase() || null,
-            cuenta_bancaria: document.getElementById('cuentaGrupo').value.trim().toUpperCase() || null,
-            comision_default: 2.5
-        }]);
-        if (error) return clubUI.toast(error.code === '23505' ? 'Ese grupo ya existe.' : 'Error al crear el grupo.');
-        e.target.reset();
-        document.getElementById('monedaGrupo').value = 'USD';
-        document.getElementById('monedaCuadreGrupo').value = 'USD';
-        document.getElementById('cupoGrupo').value = 100;
-        cargarGrupos();
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `grupo_creado: ${nombre}`);
-    });
-
-    async function toggleGrupo(e) {
-        const id = e.currentTarget.dataset.id;
-        const nuevo = e.currentTarget.dataset.activo === 'false';
-        await window.supabase.from('grupos_venta').update({ activo: nuevo }).eq('id', id);
-        cargarGrupos();
-        const g = todosGrupos.find(x => x.id == id);
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `grupo_${nuevo ? 'activado' : 'desactivado'}: ${g?.nombre}`);
-    }
-
-    async function eliminarGrupo(e) {
-        const id = e.currentTarget.dataset.id;
-        const g = todosGrupos.find(x => x.id == id);
-        if (!g) return;
-        if (!confirm(`Eliminar el grupo "${g.nombre}"?\nSus clientes pasarán al grupo PRINCIPAL y se perderá su inventario de tablas.`)) return;
-        const principal = todosGrupos.find(x => x.es_principal);
-        if (principal && principal.id != id) {
-            await window.supabase.from('clientes').update({ grupo_id: principal.id }).eq('grupo_id', id);
-        }
-        await window.supabase.from('grupos_venta').delete().eq('id', id);
-        cargarGrupos();
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `grupo_eliminado: ${g.nombre} (id=${id})`);
-    }
-
-    function abrirModalEditarGrupo(e) {
-        const g = todosGrupos.find(x => x.id == e.currentTarget.dataset.id);
-        if (!g) return;
-        document.getElementById('editGrupoId').value = g.id;
-        document.getElementById('editGrupoNombre').value = g.nombre;
-        document.getElementById('editGrupoMoneda').value = g.moneda || 'USD';
-        document.getElementById('editGrupoMonedaCuadre').value = g.moneda_cuadre || 'USD';
-        document.getElementById('editGrupoCupo').value = g.cupo_tabla || 100;
-        document.getElementById('editGrupoResponsable').value = g.responsable || '';
-        document.getElementById('editGrupoCuenta').value = g.cuenta_bancaria || '';
-        document.getElementById('editGrupoComision').value = parseFloat(g.comision_default || 2.5);
-        document.getElementById('modalEditarGrupo').classList.remove('hidden');
-    }
-
-    document.getElementById('btnGuardarGrupoEdit')?.addEventListener('click', async () => {
-        const id = document.getElementById('editGrupoId').value;
-        const g = todosGrupos.find(x => x.id == id);
-        const nombre = document.getElementById('editGrupoNombre').value.trim().toUpperCase();
-        const { error } = await window.supabase.from('grupos_venta').update({
-            nombre: nombre,
-            moneda: document.getElementById('editGrupoMoneda').value,
-            moneda_cuadre: document.getElementById('editGrupoMonedaCuadre').value,
-            cupo_tabla: parseInt(document.getElementById('editGrupoCupo').value) || 100,
-            responsable: document.getElementById('editGrupoResponsable').value.trim().toUpperCase() || null,
-            cuenta_bancaria: document.getElementById('editGrupoCuenta').value.trim().toUpperCase() || null,
-            comision_default: parseFloat(document.getElementById('editGrupoComision').value) || 2.5
-        }).eq('id', id);
-        if (error) return clubUI.toast('Error al guardar el grupo: ' + error.message, 'error');
-        document.getElementById('modalEditarGrupo').classList.add('hidden');
-        cargarGrupos();
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `grupo_editado: ${g?.nombre} -> ${nombre} (id=${id})`);
-    });
-
-    btnAcordeonGrupos?.addEventListener('click', () => {
-        panelGrupos.classList.toggle('hidden');
-        iconoAcordeonGrupos.classList.toggle('rotate-180');
-    });
 
     // ==========================================
-    // ASIGNACIÓN DE CLIENTES A GRUPOS
-    // ==========================================
-    async function cargarClientesTodos() {
-        const { data } = await window.supabase.from('clientes').select('id, nombre, grupo_id').order('nombre');
-        clientesTodos = data || [];
-        todosGrupos.forEach(g => {
-            const cnt = document.getElementById('cntgrupo_' + g.id);
-            if (cnt) cnt.textContent = clientesTodos.filter(c => c.grupo_id === g.id).length;
-        });
-        renderClientesGrupo();
-    }
-
-    function renderClientesGrupo() {
-        const origen = document.getElementById('selectGrupoOrigen').value;
-        const cont = document.getElementById('listaClientesGrupo');
-        const resumen = document.getElementById('resumenClientesGrupo');
-        if (!origen) {
-            cont.innerHTML = '<p class="text-slate-400 italic text-xs">Seleccione un grupo origen.</p>';
-            resumen.textContent = '0';
-            return;
-        }
-        const lista = clientesTodos.filter(c => c.grupo_id === origen);
-        resumen.textContent = lista.length;
-        if (lista.length === 0) {
-            cont.innerHTML = '<p class="text-slate-400 italic text-xs">No hay clientes en este grupo.</p>';
-            return;
-        }
-        cont.innerHTML = lista.map(c => `
-            <label class="flex items-center gap-2 bg-white border border-slate-200 rounded px-2 py-1.5 cursor-pointer text-sm">
-                <input type="checkbox" value="${c.id}" class="chk-cliente rounded">
-                <span class="font-semibold text-slate-700">${c.nombre}</span>
-            </label>
-        `).join('');
-    }
-
-    ['selectGrupoOrigen', 'selectGrupoDestino'].forEach(id => {
-        document.getElementById(id).addEventListener('change', renderClientesGrupo);
-    });
-
-    async function moverClientes(ids) {
-        const destino = document.getElementById('selectGrupoDestino').value;
-        const origen = document.getElementById('selectGrupoOrigen').value;
-        if (!destino || !origen || ids.length === 0) return clubUI.toast("Seleccione origen, destino y clientes.");
-        if (origen === destino) return clubUI.toast("Origen y destino son el mismo.");
-        const { error } = await window.supabase.from('clientes').update({ grupo_id: destino }).in('id', ids);
-        if (error) return clubUI.toast('Error al mover clientes: ' + error.message);
-        cargarClientesTodos();
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `clientes_movidos: ${ids.length} de grupo ${origen} a ${destino}`);
-    }
-
-    document.getElementById('btnMoverClientes').addEventListener('click', () => {
-        const ids = [...document.querySelectorAll('.chk-cliente:checked')].map(c => c.value);
-        moverClientes(ids);
-    });
-
-    document.getElementById('btnMoverTodos').addEventListener('click', () => {
-        const origen = document.getElementById('selectGrupoOrigen').value;
-        const ids = clientesTodos.filter(c => c.grupo_id === origen).map(c => c.id);
-        moverClientes(ids);
-    });
-
-    // ==========================================
-    // CUPOS POR GRUPO (ensamblaje)
+    // CUPOS POR GRUPO (ensamblaje; la gestión vive en Grupos y Convenios)
     // ==========================================
     function renderCuposGrupos() {
         const cont = document.getElementById('contenedorCuposGrupos');
         if (gruposActivos.length === 0) {
-            cont.innerHTML = '<p class="text-slate-400 italic text-xs">No hay grupos activos. Créelos en "Gestión de Grupos y Clientes".</p>';
+            cont.innerHTML = '<p class="text-slate-400 italic text-xs">No hay grupos activos. Créelos en "Grupos y Convenios".</p>';
             return;
         }
         cont.innerHTML = gruposActivos.map(g => `
@@ -265,18 +60,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="flex-1">
                     <span class="font-bold text-slate-800 text-sm">${g.nombre}</span>
                     <span class="ml-2 px-1.5 py-0.5 rounded text-[9px] font-black ${g.moneda === 'VES' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}">${g.moneda}</span>
-                    <span class="ml-2 text-[10px] text-slate-500">Riesgo: <span class="riesgo-grupo text-red-600 font-bold">0.00</span></span>
                 </div>
                 <input type="number" min="0" value="${g.cupo_tabla}" data-grupo="${g.id}"
                     class="in-cupo-grupo w-24 border border-slate-300 rounded-lg px-2 py-1.5 text-sm font-black text-center outline-none focus:ring-2 focus:ring-indigo-500">
             </div>
         `).join('');
-        document.querySelectorAll('.in-cupo-grupo').forEach(inp => inp.addEventListener('input', actualizarRiesgo));
-        actualizarRiesgo();
     }
 
     // ==========================================
-    // CÁLCULOS EN VIVO (Ejemplares + Riesgo)
+    // CÁLCULOS EN VIVO (Ejemplares)
     // ==========================================
     function crearFilaCaballo(numSugerido = '', nomSugerido = '', valorSugerido = '') {
         const div = document.createElement('div');
@@ -296,35 +88,14 @@ document.addEventListener('DOMContentLoaded', () => {
         let suma = 0;
         document.querySelectorAll('.in-valor-ej').forEach(input => { suma += parseFloat(input.value) || 0; });
         lblSumaBase.textContent = clubUI.formatoNumero(suma, 1);
-        actualizarRiesgo();
     }
 
-    function actualizarRiesgo() {
+    function actualizarPremio() {
         const prem = parseFloat(premioTabla.value) || 0;
-        let bs = 0, usd = 0;
-
-        document.querySelectorAll('.in-cupo-grupo').forEach(inp => {
-            const c = parseInt(inp.value) || 0;
-            const g = gruposActivos.find(x => x.id == inp.dataset.grupo);
-            const mon = g ? g.moneda : 'USD';
-            const monto = c * prem;
-            if (mon === 'VES') { bs += monto; usd += monto / (tasaCambioGlobal || 1); }
-            else { usd += monto; bs += monto * (tasaCambioGlobal || 1); }
-            const rg = inp.closest('[data-grupo]')?.querySelector('.riesgo-grupo');
-            if (rg) rg.textContent = clubUI.formatoNumero(monto, 2);
-        });
-
-        if (lblRiesgoBs) lblRiesgoBs.value = 'Bs ' + clubUI.formatoNumero(bs, 2);
-        if (lblRiesgoUsd) lblRiesgoUsd.value = '$ ' + clubUI.formatoNumero(usd, 2);
-        lblPremioPts.textContent = '$' + clubUI.formatoNumero(prem, 2);
-
-        const maxUsd = parseFloat(maxRiesgoUsd.value) || 0;
-        const excede = maxUsd > 0 && usd > maxUsd;
-        if (lblExcesoRiesgo) lblExcesoRiesgo.classList.toggle('hidden', !excede);
+        if (lblPremioPts) lblPremioPts.textContent = '$' + clubUI.formatoNumero(prem, 2);
     }
 
-    premioTabla.addEventListener('input', actualizarRiesgo);
-    maxRiesgoUsd.addEventListener('input', actualizarRiesgo);
+    premioTabla.addEventListener('input', actualizarPremio);
     btnAgregarCaballo.addEventListener('click', () => crearFilaCaballo());
     crearFilaCaballo('1', 'Ejemplar A', '50');
     crearFilaCaballo('2', 'Ejemplar B', '60');
@@ -338,7 +109,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const hipodromo = document.getElementById('hipodromoTabla').value.trim().toUpperCase();
         const carrera = parseInt(document.getElementById('carreraTabla').value);
         const premio = parseFloat(premioTabla.value);
-        const comisionGrupo = parseFloat(document.getElementById('comisionTabla').value) || 0;
         const sumaBaseTabla = parseFloat(lblSumaBase.textContent);
 
         if (!hipodromo || isNaN(carrera) || isNaN(premio) || premio <= 0 || sumaBaseTabla <= 0) {
@@ -350,21 +120,9 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(x => x.cupos > 0);
         if (cuposPorGrupo.length === 0) return clubUI.toast("Asigne cupos a al menos un grupo.");
 
-        // ===== TOPE ÚNICO A RIESGO (en $ o su equivalente en Bs vía tasa) =====
-        const maxUsd = parseFloat(maxRiesgoUsd.value) || 0;
-        if (maxUsd > 0) {
-            let rUsd = 0;
-            cuposPorGrupo.forEach(x => {
-                const g = gruposActivos.find(gp => gp.id == x.grupo_id);
-                const mon = g ? g.moneda : 'USD';
-                const monto = x.cupos * premio;
-                if (mon === 'VES') rUsd += monto / (tasaCambioGlobal || 1);
-                else rUsd += monto;
-            });
-            if (rUsd > maxUsd) {
-                return clubUI.toast(`Riesgo supera el tope único ($ ${clubUI.formatoNumero(rUsd, 2)} equivalente). Ajuste cupos o premio.`);
-            }
-        }
+        // Comisión: proviene del convenio del grupo (sección Grupos y Convenios), no se pide aquí.
+        const grupoPrimario = gruposActivos.find(g => g.es_principal) || gruposActivos[0];
+        const comisionGrupo = parseFloat(grupoPrimario && grupoPrimario.comision_default) || 2.5;
 
         let caballosArr = [];
         document.querySelectorAll('.fila-caballo-config').forEach(fila => {
@@ -565,22 +323,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (filas.length === 0) return clubUI.toast("Asigne al menos un grupo.");
 
-        const maxUsd = parseFloat(maxRiesgoUsd.value) || 0;
-        if (maxUsd > 0) {
-            let rUsd = 0;
-            cuposInputs.forEach(inp => {
-                if (inp.eliminar) return;
-                const g = gruposActivos.find(gp => gp.id == inp.ngId);
-                const mon = g ? g.moneda : 'USD';
-                const monto = inp.cupo * premio;
-                if (mon === 'VES') rUsd += monto / (tasaCambioGlobal || 1);
-                else rUsd += monto;
-            });
-            if (rUsd > maxUsd) {
-                return clubUI.toast(`La edición supera el tope único de riesgo ($ ${clubUI.formatoNumero(rUsd, 2)} equivalente).`);
-            }
-        }
-
         let cuposSuma = 0;
         for (const inp of cuposInputs) {
             const tgId = inp.tgId;
@@ -716,7 +458,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('modalAuditoria').classList.add('hidden');
         document.getElementById('modalDuplicar').classList.add('hidden');
         document.getElementById('modalEditar').classList.add('hidden');
-        document.getElementById('modalEditarGrupo').classList.add('hidden');
     }));
 
     document.getElementById('btnRecargarTablas').addEventListener('click', () => {
@@ -728,5 +469,5 @@ document.addEventListener('DOMContentLoaded', () => {
     cargarHipodromos();
     cargarGrupos();
     cargarTablas();
-    actualizarRiesgo();
+    actualizarPremio();
 });
