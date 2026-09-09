@@ -31,7 +31,6 @@ document.addEventListener('DOMContentLoaded', () => {
             titulo: 'Contabilidad',
             items: [
                 { href: 'depositos.html', icon: 'fa-arrow-down',  txt: 'Ingresos / Avales',   color: 'text-emerald-400' },
-                { href: 'retiros.html',  icon: 'fa-arrow-up',     txt: 'Retiros',             color: 'text-red-400' },
                 { href: 'caja.html',     icon: 'fa-exchange-alt', txt: 'Caja Unificada',      color: 'text-orange-400' },
                 { href: 'bancos.html',   icon: 'fa-university',   txt: 'Bancos Reales',       color: 'text-blue-400' },
                 { href: 'saldos.html',   icon: 'fa-check-double', txt: 'Liquidación',         color: 'text-emerald-400' },
