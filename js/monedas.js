@@ -166,6 +166,112 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
+    // 4.5 TASAS DE REFERENCIA (BCV / BINANCE / EURO)
+    // ==========================================
+    const TIPOS_REF = [
+        { tipo: 'BCV',     nombre: 'Dólar BCV',    simbolo: 'USD', color: 'bg-slate-100 text-slate-700 border-slate-300' },
+        { tipo: 'BINANCE', nombre: 'Dólar Binance', simbolo: 'USD', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
+        { tipo: 'EURO',    nombre: 'Euro',          simbolo: 'EUR', color: 'bg-blue-100 text-blue-700 border-blue-300' }
+    ];
+
+    async function cargarTasasReferencia() {
+        const contenedor = document.getElementById('contenedorTasasReferencia');
+        contenedor.innerHTML = '';
+
+        for (const t of TIPOS_REF) {
+            const vigente = await (window.clubTasas ? window.clubTasas.vigente(t.tipo) : null);
+            contenedor.innerHTML += `
+                <div class="border ${t.color} rounded-xl p-3 shadow-sm bg-white">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-black text-xs uppercase tracking-wider">${t.nombre} (${t.simbolo})</span>
+                        <span class="text-[10px] text-slate-500">Vigente: <strong class="text-slate-700 font-mono">${vigente ? Number(vigente.tasa).toFixed(4) : '—'}</strong></span>
+                    </div>
+                    <div class="flex gap-2">
+                        <input type="date" class="inp-fecha-ref flex-1 border border-slate-300 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500 text-slate-700">
+                        <input type="number" step="0.0001" min="0.0001" data-tipo="${t.tipo}" class="inp-tasa-ref w-28 font-mono font-bold text-right border border-slate-300 rounded-lg px-2 py-1.5 focus:border-blue-500 outline-none text-slate-800">
+                        <button data-tipo="${t.tipo}" class="btn-guardar-tasa-ref text-xs bg-blue-600 text-white px-3 rounded-lg hover:bg-blue-700 font-bold transition-colors"><i class="fas fa-save mr-1"></i> Guardar</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        document.querySelectorAll('.inp-fecha-ref').forEach((inp, i) => {
+            inp.valueAsDate = new Date();
+            inp.dataset.tipo = TIPOS_REF[i].tipo;
+        });
+
+        document.querySelectorAll('.btn-guardar-tasa-ref').forEach(boton => {
+            boton.addEventListener('click', async function() {
+                const tipo = this.getAttribute('data-tipo');
+                const fila = this.closest('div').parentElement;
+                const fechaInput = fila.querySelector('.inp-fecha-ref');
+                const tasaInput = fila.querySelector('.inp-tasa-ref');
+                const fecha = fechaInput.value;
+                const tasa = parseFloat(tasaInput.value);
+
+                if (!fecha) return clubUI.toast("Seleccione la fecha a aplicar.");
+                if (isNaN(tasa) || tasa <= 0) return clubUI.toast("Ingrese una tasa mayor a cero.");
+
+                const txt = this.innerHTML;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                this.disabled = true;
+
+                const { error } = await supabase.from('tasas_referencia').insert([{ tipo, tasa, fecha_aplicar: fecha }]);
+
+                if (error) {
+                    clubUI.toast("Error al guardar la tasa. Verifique que ejecutó sql/tasas_referencia.sql.");
+                    console.error(error);
+                    this.innerHTML = txt;
+                } else {
+                    this.innerHTML = '<i class="fas fa-check"></i> ' + tipo;
+                    clubUI.toast(`Tasa ${tipo} registrada para el ${fecha}.`);
+                    setTimeout(() => { this.innerHTML = txt; }, 2000);
+                    cargarTasasReferencia();
+                    cargarHistoricoTasasRef();
+                }
+                this.disabled = false;
+            });
+        });
+    }
+
+    // ==========================================
+    // 4.6 HISTÓRICO DE TASAS DE REFERENCIA
+    // ==========================================
+    async function cargarHistoricoTasasRef() {
+        const cuerpo = document.getElementById('cuerpoTablaTasasRef');
+        const filtroTipo = document.getElementById('filtroTipoRef');
+        const filtroFecha = document.getElementById('filtroFechaRef');
+
+        cuerpo.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-slate-500">Cargando...</td></tr>';
+
+        let query = supabase.from('tasas_referencia').select('*').order('fecha_aplicar', { ascending: false });
+
+        if (filtroTipo.value !== "") query = query.eq('tipo', filtroTipo.value);
+        if (filtroFecha.value !== "") query = query.eq('fecha_aplicar', filtroFecha.value);
+
+        const { data, error } = await query;
+
+        if (error || !data || data.length === 0) {
+            cuerpo.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-slate-500">No hay tasas de referencia registradas.</td></tr>';
+            return;
+        }
+
+        cuerpo.innerHTML = '';
+        const colores = { BCV: 'text-slate-700 bg-slate-100', BINANCE: 'text-yellow-700 bg-yellow-100', EURO: 'text-blue-700 bg-blue-100' };
+
+        data.forEach(r => {
+            cuerpo.innerHTML += `
+                <tr class="border-b border-slate-100 hover:bg-slate-50">
+                    <td class="p-3 font-mono font-bold text-slate-700">${r.fecha_aplicar}</td>
+                    <td class="p-3"><span class="px-2 py-1 rounded text-[10px] font-bold ${colores[r.tipo] || 'bg-slate-100 text-slate-600'}">${r.tipo} · ${TIPOS_REF.find(t => t.tipo === r.tipo)?.nombre || ''}</span></td>
+                    <td class="p-3 text-right font-mono font-bold text-blue-600">${Number(r.tasa).toFixed(4)} Bs</td>
+                    <td class="p-3 font-mono text-slate-500">${new Date(r.created_at).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                </tr>
+            `;
+        });
+    }
+
+    // ==========================================
     // 5. ACTUALIZAR TASAS (INSERT INMUTABLE)
     // ==========================================
     function asignarEventosActualizacion() {
@@ -321,25 +427,40 @@ document.addEventListener('DOMContentLoaded', () => {
         const txt = btn.innerHTML;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Guardando...'; btn.disabled = true;
 
-        const payload = {
-            nombre: document.getElementById('nuevaNombre').value.trim(),
-            codigo: document.getElementById('nuevaCodigo').value.trim().toUpperCase(),
-            simbolo: document.getElementById('nuevaSimbolo').value.trim(),
-            es_base: false
-        };
-        const tasa = parseFloat(document.getElementById('nuevaTasa').value);
+        try {
+            const nombre = document.getElementById('nuevaNombre').value.trim();
+            const codigo = document.getElementById('nuevaCodigo').value.trim().toUpperCase();
+            const simbolo = document.getElementById('nuevaSimbolo').value.trim();
+            const tasa = parseFloat(document.getElementById('nuevaTasa').value);
 
-        const { data: monedaGenerada, error } = await supabase.from('monedas').insert([payload]).select('id').single();
+            if (!nombre || !codigo || !simbolo) throw new Error('Complete nombre, código y símbolo.');
+            if (isNaN(tasa) || tasa <= 0) throw new Error('Ingrese una tasa inicial mayor a cero.');
 
-        if (error) clubUI.toast("El código de moneda ya existe o hubo un error.");
-        else {
-            await supabase.from('tasas_cambio').insert([{ moneda_id: monedaGenerada.id, tasa: tasa }]);
-            clubUI.toast(`Moneda registrada.`);
+            const payload = {
+                nombre: nombre,
+                codigo: codigo,
+                simbolo: simbolo,
+                es_base: false,
+                tasa_cambio: tasa
+            };
+
+            const { data: monedaGenerada, error } = await supabase.from('monedas').insert([payload]).select('id').single();
+            if (error) throw error;
+
+            const { error: errTasa } = await supabase.from('tasas_cambio').insert([{ moneda_id: monedaGenerada.id, tasa: tasa }]);
+            if (errTasa) console.warn('Tasa inicial no quedó registrada en el historial:', errTasa.message);
+
+            clubUI.toast(`Moneda ${codigo} (${nombre}) registrada.`, 'success');
             this.reset();
             modalNueva.classList.add('hidden');
             cargarModulo();
+        } catch (err) {
+            console.error(err);
+            clubUI.toast('Error al registrar la moneda: ' + (err.message || err), 'error');
+        } finally {
+            btn.innerHTML = txt;
+            btn.disabled = false;
         }
-        btn.innerHTML = txt; btn.disabled = false;
     });
 
     // Filtros Histórico
@@ -347,5 +468,16 @@ document.addEventListener('DOMContentLoaded', () => {
     filtroFecha.addEventListener('change', cargarHistoricoTasas);
     document.getElementById('btnLimpiarFiltros').addEventListener('click', () => { filtroMoneda.value=""; filtroFecha.value=""; cargarHistoricoTasas(); });
 
+    // Filtros Tasas de Referencia
+    document.getElementById('filtroTipoRef').addEventListener('change', cargarHistoricoTasasRef);
+    document.getElementById('filtroFechaRef').addEventListener('change', cargarHistoricoTasasRef);
+    document.getElementById('btnLimpiarFiltrosRef').addEventListener('click', () => {
+        document.getElementById('filtroTipoRef').value = "";
+        document.getElementById('filtroFechaRef').value = "";
+        cargarHistoricoTasasRef();
+    });
+
     cargarModulo();
+    cargarTasasReferencia();
+    cargarHistoricoTasasRef();
 });
