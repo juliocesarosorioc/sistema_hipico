@@ -41,7 +41,7 @@ create table if not exists public.solicitudes_tablas (
     cliente_nombre      text not null,
     grupo_id            uuid references public.grupos_venta(id),
     grupo_nombre        text,
-    tabla_id            uuid references public.tablas_fijas(id),
+    tabla_id            bigint references public.tablas_fijas(id),
     hipodromo           text,
     carrera             int,
     ejemplar_numero     text,

@@ -36,7 +36,7 @@ where grupo_id is null;
 -- 3) INVENTARIO DE CUPOS POR TABLA Y POR GRUPO -----------------------
 create table if not exists public.tabla_grupos (
     id               uuid primary key default gen_random_uuid(),
-    tabla_id         uuid not null references public.tablas_fijas(id) on delete cascade,
+    tabla_id         bigint not null references public.tablas_fijas(id) on delete cascade,
     grupo_id         uuid not null references public.grupos_venta(id) on delete cascade,
     cupos            int not null default 100,          -- cupos asignados a ese grupo para esa tabla
     cantidad_vendida int not null default 0,
