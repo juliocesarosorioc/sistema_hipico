@@ -15,7 +15,31 @@ document.addEventListener('DOMContentLoaded', () => {
     let tasaCambioGlobal = 1.0;
 
     async function inicializarDatos() {
-        const { data: clientes } = await window.supabase.from('clientes').select('id, nombre, saldo_actual').order('nombre');
+        // Consultas en paralelo: los 4 catálogos no dependen entre sí
+        const segura = (promesa) => promesa.catch(e => ({ data: null, error: e }));
+        const [rClientes, rJugadas, rTablas, rMoneda, rHipodromos] = await Promise.all([
+            segura(window.supabase.from('clientes').select('id, nombre, saldo_actual').order('nombre')),
+            segura(window.supabase.from('tipos_jugadas').select('*').eq('activo', true)),
+            segura(window.supabase.from('tablas_fijas').select('*').eq('estado', 'Abierta')),
+            segura(window.supabase.from('monedas').select('tasa_cambio').limit(1).single()),
+            segura(window.supabase.from('hipodromos').select('nombre').order('nombre'))
+        ]);
+
+        const clientes = rClientes.data;
+        const jugadas = rJugadas.data;
+        const tablas = rTablas.data;
+        const monedaData = rMoneda.data;
+        const hipodromosDB = rHipodromos.data;
+
+        // Sincronizar lista de hipódromos con la BD (si hay registros reales).
+        // Si la consulta falla o está vacía, se conservan los <option> hardcodeados del HTML.
+        if (hipodromosDB && hipodromosDB.length) {
+            const selectHip = document.getElementById('selectHipodromo');
+            if (selectHip) {
+                selectHip.innerHTML = hipodromosDB.map(h => `<option value="${h.nombre}">${h.nombre}</option>`).join('');
+            }
+        }
+
         if (clientes) {
             clientesList = clientes;
             clientes.forEach(c => {
@@ -25,7 +49,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        const { data: jugadas } = await window.supabase.from('tipos_jugadas').select('*').eq('activo', true);
         if (jugadas) {
             jugadasList = jugadas;
             jugadas.forEach(j => {
@@ -35,12 +58,10 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        const { data: tablas } = await window.supabase.from('tablas_fijas').select('*').eq('estado', 'Abierta');
         if (tablas) {
             tablasConfigList = tablas;
         }
 
-        const { data: monedaData } = await window.supabase.from('monedas').select('tasa_cambio').limit(1).single();
         if (monedaData && monedaData.tasa_cambio) {
             tasaCambioGlobal = parseFloat(monedaData.tasa_cambio);
         }

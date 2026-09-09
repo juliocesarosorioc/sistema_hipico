@@ -25,20 +25,25 @@ document.addEventListener('DOMContentLoaded', () => {
     let clientesDB = [];
 
     async function inicializar() {
-        // 1. Cargar Clientes
-        const { data: clientes } = await window.supabase.from('clientes').select('id, nombre, saldo_actual').order('nombre');
+        // Consultas en paralelo: clientes y tablas no dependen entre sí
+        const segura = (promesa) => promesa.catch(e => ({ data: null, error: e }));
+        const [rClientes, rTablas] = await Promise.all([
+            segura(window.supabase.from('clientes').select('id, nombre, saldo_actual').order('nombre')),
+            segura(window.supabase.from('tablas_fijas').select('*').eq('estado', 'Abierta'))
+        ]);
+
+        const clientes = rClientes.data;
         if(clientes) {
             clientesDB = clientes;
             selectCliente.innerHTML = '<option value="">Seleccione apostador...</option>';
             clientes.forEach(c => selectCliente.innerHTML += `<option value="${c.id}">${c.nombre} (Saldo: $${parseFloat(c.saldo_actual).toFixed(2)})</option>`);
         }
 
-        // 2. Cargar Tablas Fijas Abiertas
-        const { data: tablas } = await window.supabase.from('tablas_fijas').select('*').eq('estado', 'Abierta');
+        const tablas = rTablas.data;
         if(tablas) {
             tablasDisponiblesDB = tablas;
             let gruposUnicos = [...new Set(tablas.map(t => t.grupo_venta))];
-            
+
             filtroGrupo.innerHTML = '<option value="">Seleccione Grupo...</option>';
             gruposUnicos.forEach(g => filtroGrupo.innerHTML += `<option value="${g}">${g}</option>`);
         }

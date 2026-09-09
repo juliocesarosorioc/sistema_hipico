@@ -1,219 +1,187 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestión de Operadores - Club del Dinero</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Estilos CSS Colectivos Centralizados -->
-    <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-</head>
-<body class="bg-slate-100 flex h-screen overflow-hidden font-sans">
+// Archivo: js/operadores.js
+// Propósito: CRUD real de operadores sobre la tabla `operadores` de Supabase.
+// Requiere rol Administrador.
 
-    <!-- MENÚ LATERAL (SIDEBAR) -->
-    <aside class="w-64 bg-slate-900 text-slate-300 flex flex-col h-full shadow-xl z-20">
-        <div class="sidebar-header border-b border-slate-700">
-            <h1 class="text-2xl font-bold text-white tracking-wide">Club del Dinero</h1>
-            <p class="text-xs text-slate-400 mt-1 flex items-center">
-                <i class="fas fa-circle text-emerald-500 text-[8px] mr-1"></i> 
-                <span id="sidebarUserRole">Cargando...</span>
-            </p>
-            <p class="text-xs text-white font-bold mt-1" id="sidebarUserName"></p>
-        </div>
-        <nav class="flex-1 overflow-y-auto py-4">
-            <ul class="space-y-1 text-sm">
-                <li>
-                    <a href="dashboard.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-home w-6 text-blue-400"></i>
-                        <span class="ml-2">Inicio</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="clientes.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-users w-6 text-cyan-400"></i>
-                        <span class="ml-2">Clientes</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="depositos.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-arrow-down w-6 text-emerald-400"></i>
-                        <span class="ml-2">Depósitos</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="retiros.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-arrow-up w-6 text-red-400"></i>
-                        <span class="ml-2">Retiros</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="transferencias.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-exchange-alt w-6 text-amber-400"></i>
-                        <span class="ml-2">Transferencias</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="taquilla.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-receipt w-6 text-blue-400"></i>
-                        <span class="ml-2">Taquilla (Planos)</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="wps.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-horse w-6 text-teal-400"></i>
-                        <span class="ml-2">W.P.S.</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="remates.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-bell w-6 text-orange-400"></i>
-                        <span class="ml-2">Remates</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="pollas.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-trophy w-6 text-indigo-400"></i>
-                        <span class="ml-2">Pollas</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="saldos.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-balance-scale w-6 text-slate-400"></i>
-                        <span class="ml-2">Saldos/Reportes</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="hipodromos.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-horse-head w-6 text-purple-400"></i>
-                        <span class="ml-2">Hipódromos</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="monedas.html" class="flex items-center px-5 py-3 hover:bg-slate-800 hover:text-white transition-colors">
-                        <i class="fas fa-coins w-6 text-yellow-400"></i>
-                        <span class="ml-2">Monedas y Tasas</span>
-                    </a>
-                </li>
-                <!-- Operadores ubicado al final del menú -->
-                <li>
-                    <a href="operadores.html" class="flex items-center px-5 py-3 bg-blue-600 text-white border-l-4 border-blue-400 border-t border-slate-800 mt-2">
-                        <i class="fas fa-user-shield w-6"></i>
-                        <span class="ml-2 font-medium">Operadores</span>
-                    </a>
-                </li>
-            </ul>
-        </nav>
-        <div class="p-4 border-t border-slate-700">
-            <a href="#" id="btnCerrarSesion" class="flex items-center text-red-400 hover:text-red-300 transition-colors">
-                <i class="fas fa-sign-out-alt w-6"></i>
-                <span class="ml-2 font-medium">Cerrar Sesión</span>
-            </a>
-        </div>
-    </aside>
+document.addEventListener('DOMContentLoaded', () => {
+    if (!window.clubAuth || !window.clubAuth.requiereRol(['Administrador'])) return;
 
-    <!-- ÁREA CENTRAL DE CONTENIDO -->
-    <main class="flex-1 flex flex-col h-full relative overflow-y-auto p-8">
-        
-        <!-- Cabecera -->
-        <div class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold text-slate-800"><i class="fas fa-user-shield text-slate-700 mr-2"></i> Gestión de Operadores y Accesos</h1>
-            <button id="btnAbrirModalOperador" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-xs font-bold shadow transition-colors flex items-center">
-                <i class="fas fa-user-plus mr-1"></i> Nuevo Operador
-            </button>
-        </div>
+    const tbody = document.getElementById('tablaOperadores');
+    const modal = document.getElementById('modalOperador');
+    const modalTitulo = document.getElementById('modalTitulo');
+    const form = document.getElementById('formOperador');
+    const btnNuevo = document.getElementById('btnAbrirModalOperador');
+    const btnCerrar = document.querySelectorAll('.cerrar-modal');
 
-        <!-- Tabla de Operadores -->
-        <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-            <div class="bg-slate-900 text-white p-3 font-bold text-sm">
-                <i class="fas fa-list-ul mr-2"></i> Operadores Autorizados
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-xs text-left">
-                    <thead class="bg-slate-100 text-slate-700 border-b border-slate-200">
-                        <tr>
-                            <th class="p-3">Nombre Completo</th>
-                            <th class="p-3">Usuario</th>
-                            <th class="p-3">Rol</th>
-                            <th class="p-3 text-center">Estado</th>
-                            <th class="p-3">Fecha Registro</th>
-                            <th class="p-3 text-center">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tablaOperadores" class="divide-y divide-slate-200 text-slate-800">
-                        <tr><td colspan="6" class="p-6 text-center text-slate-500">Cargando operadores...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+    const opId = document.getElementById('opId');
+    const opNombre = document.getElementById('opNombre');
+    const opUsuario = document.getElementById('opUsuario');
+    const opPassword = document.getElementById('opPassword');
+    const opRol = document.getElementById('opRol');
 
-    </main>
+    let operadores = [];
 
-    <!-- MODAL NUEVO / EDITAR OPERADOR -->
-    <div id="modalOperador" class="hidden modal-overlay">
-        <div class="modal-container">
-            <div class="bg-blue-600 p-4 text-white font-bold flex justify-between items-center">
-                <span id="modalTitulo"><i class="fas fa-user-plus mr-2"></i> Registrar Nuevo Operador</span>
-                <button class="cerrar-modal hover:text-slate-200"><i class="fas fa-times text-lg"></i></button>
-            </div>
-            <div class="p-6">
-                <form id="formOperador" class="space-y-4">
-                    <input type="hidden" id="opId">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1">Nombre Completo</label>
-                        <input type="text" id="opNombre" placeholder="Ej: Carlos Pérez" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-blue-500" required>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1">Usuario de Acceso</label>
-                        <input type="text" id="opUsuario" placeholder="Ej: cperez" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-blue-500" required>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1">Contraseña</label>
-                        <input type="text" id="opPassword" placeholder="Contraseña segura" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-blue-500" required>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1">Rol en el Sistema</label>
-                        <select id="opRol" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none bg-white">
-                            <option value="Administrador Principal">Administrador Principal</option>
-                            <option value="Operador">Operador Estándar</option>
-                        </select>
-                    </div>
-                </form>
-            </div>
-            <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 text-xs">
-                <button type="button" class="cerrar-modal bg-slate-500 text-white px-4 py-2 rounded font-medium hover:bg-slate-600">Cancelar</button>
-                <button type="submit" form="formOperador" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold shadow-sm">
-                    <i class="fas fa-save mr-1"></i> Guardar Operador
-                </button>
-            </div>
-        </div>
-    </div>
+    // ==========================================
+    // CARGA Y RENDERIZADO
+    // ==========================================
+    async function cargarOperadores() {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-500">Cargando operadores...</td></tr>';
+        const { data, error } = await window.supabase
+            .from('operadores')
+            .select('*')
+            .order('nombre_completo');
 
-    <!-- SCRIPTS -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="js/conexion.js"></script>
-    <script src="js/operadores.js"></script>
-    <script>
-        // Validación de seguridad por sesión y rol
-        const sesionStr = localStorage.getItem('club_sesion_activa');
-        if (!sesionStr) {
-            window.location.href = 'index.html';
-        } else {
-            const sesion = JSON.parse(sesionStr);
-            if(!sesion.rol.includes('Administrador')) {
-                alert("Acceso denegado: No tienes permisos para gestionar operadores.");
-                window.location.href = 'dashboard.html';
-            }
-            document.getElementById('sidebarUserName').textContent = sesion.nombre;
-            document.getElementById('sidebarUserRole').textContent = sesion.rol;
+        if (error) {
+            clubUI.toast('Error al cargar operadores: ' + error.message, 'error');
+            return;
+        }
+        operadores = data || [];
+        render();
+    }
+
+    function formatoFecha(valor) {
+        if (!valor) return '—';
+        const d = new Date(valor);
+        return isNaN(d) ? '—' : d.toLocaleDateString('es-ES');
+    }
+
+    function render() {
+        if (!operadores.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400 font-bold">Sin operadores registrados.</td></tr>';
+            return;
         }
 
-        // Lógica de Cerrar Sesión
-        document.getElementById('btnCerrarSesion')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            localStorage.removeItem('club_sesion_activa');
-            window.location.href = 'index.html';
-        });
-    </script>
-</body>
-</html>
+        tbody.innerHTML = operadores.map(op => `
+            <tr class="hover:bg-slate-50 transition-colors">
+                <td class="p-3 font-bold text-slate-800">${escapeHtml(op.nombre_completo || '')}</td>
+                <td class="p-3">${escapeHtml(op.usuario || '')}</td>
+                <td class="p-3">${escapeHtml(op.rol || '')}</td>
+                <td class="p-3 text-center">
+                    ${op.activo
+                        ? '<span class="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-[10px] font-bold">ACTIVO</span>'
+                        : '<span class="bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-[10px] font-bold">INACTIVO</span>'}
+                </td>
+                <td class="p-3 text-slate-500">${formatoFecha(op.fecha_registro || op.created_at)}</td>
+                <td class="p-3">
+                    <div class="flex flex-wrap gap-1 justify-center">
+                        <button class="btn-editar-op bg-blue-500 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-blue-600 shadow-sm"
+                                data-id="${op.id}"><i class="fas fa-user-edit mr-1"></i>Editar</button>
+                        <button class="btn-toggle-op ${op.activo ? 'bg-amber-500' : 'bg-emerald-500'} text-white px-2 py-1 rounded text-[10px] font-bold hover:opacity-80 shadow-sm"
+                                data-id="${op.id}"><i class="fas ${op.activo ? 'fa-pause' : 'fa-play'} mr-1"></i>${op.activo ? 'Desactivar' : 'Activar'}</button>
+                        <button class="btn-del-op bg-red-500 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-red-600 shadow-sm"
+                                data-id="${op.id}"><i class="fas fa-trash mr-1"></i>Eliminar</button>
+                    </div>
+                </td>
+            </tr>`).join('');
+    }
+
+    function escapeHtml(texto) {
+        return String(texto).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    // ==========================================
+    // MODAL NUEVO / EDITAR
+    // ==========================================
+    btnNuevo.addEventListener('click', () => {
+        opId.value = '';
+        form.reset();
+        modalTitulo.innerHTML = '<i class="fas fa-user-plus mr-2"></i> Registrar Nuevo Operador';
+        opPassword.required = true;
+        opUsuario.disabled = false;
+        modal.classList.remove('hidden');
+    });
+
+    btnCerrar.forEach(btn => btn.addEventListener('click', () => modal.classList.add('hidden')));
+
+    tbody.addEventListener('click', (e) => {
+        const btnEditar = e.target.closest('.btn-editar-op');
+        const btnToggle = e.target.closest('.btn-toggle-op');
+        const btnDel = e.target.closest('.btn-del-op');
+
+        if (btnEditar) return abrirEditar(Number(btnEditar.dataset.id));
+        if (btnToggle) return toggleActivo(Number(btnToggle.dataset.id));
+        if (btnDel) return eliminarOperador(Number(btnDel.dataset.id));
+    });
+
+    function abrirEditar(id) {
+        const op = operadores.find(o => o.id === id);
+        if (!op) return;
+        opId.value = op.id;
+        opNombre.value = op.nombre_completo || '';
+        opUsuario.value = op.usuario || '';
+        opPassword.value = '';
+        opRol.value = op.rol || 'Operador';
+        opPassword.placeholder = 'Dejar en blanco para no cambiar';
+        opPassword.required = false;
+        opUsuario.disabled = true;
+        modalTitulo.innerHTML = '<i class="fas fa-user-edit mr-2"></i> Editar Operador';
+        modal.classList.remove('hidden');
+    }
+
+    // ==========================================
+    // GUARDAR (INSERT / UPDATE)
+    // ==========================================
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const nombre = opNombre.value.trim();
+        const usuario = opUsuario.value.trim();
+        const password = opPassword.value;
+        const rol = opRol.value;
+        const id = opId.value;
+
+        if (id) {
+            const updates = { nombre_completo: nombre, rol };
+            if (password) updates.password = password;
+            const { error } = await window.supabase.from('operadores').update(updates).eq('id', id);
+            if (error) return clubUI.toast('Error al actualizar: ' + error.message, 'error');
+            clubUI.toast('Operador actualizado correctamente.', 'success');
+            window.clubDB?.logAccion('OPERADORES', `operador_actualizado: id=${id} usuario=${usuario}`);
+        } else {
+            if (!password) return clubUI.toast('La contraseña es obligatoria.', 'error');
+            const { data, error } = await window.supabase.from('operadores').insert({
+                nombre_completo: nombre,
+                usuario,
+                password,
+                rol,
+                activo: true,
+                fecha_registro: new Date().toISOString()
+            }).select().single();
+            if (error) return clubUI.toast('Error al registrar: ' + error.message, 'error');
+            clubUI.toast('Operador registrado correctamente.', 'success');
+            window.clubDB?.logAccion('OPERADORES', `operador_creado: id=${data.id} usuario=${usuario}`);
+        }
+
+        modal.classList.add('hidden');
+        cargarOperadores();
+    });
+
+    // ==========================================
+    // ACTIVAR / DESACTIVAR
+    // ==========================================
+    async function toggleActivo(id) {
+        const op = operadores.find(o => o.id === id);
+        if (!op) return;
+        if (!confirm(`¿${op.activo ? 'Desactivar' : 'Activar'} a ${op.usuario}?`)) return;
+        const { error } = await window.supabase.from('operadores').update({ activo: !op.activo }).eq('id', id);
+        if (error) return clubUI.toast('Error: ' + error.message, 'error');
+        clubUI.toast(`Operador ${op.activo ? 'desactivado' : 'activado'}.`, 'success');
+        window.clubDB?.logAccion('OPERADORES', `operador_${op.activo ? 'desactivado' : 'activado'}: id=${id}`);
+        cargarOperadores();
+    }
+
+    // ==========================================
+    // ELIMINAR
+    // ==========================================
+    async function eliminarOperador(id) {
+        const op = operadores.find(o => o.id === id);
+        if (!op) return;
+        if (!confirm(`¿Eliminar permanentemente al operador "${op.usuario}"? No se puede deshacer.`)) return;
+        const { error } = await window.supabase.from('operadores').delete().eq('id', id);
+        if (error) return clubUI.toast('Error al eliminar: ' + error.message, 'error');
+        clubUI.toast('Operador eliminado.', 'success');
+        window.clubDB?.logAccion('OPERADORES', `operador_eliminado: id=${id} usuario=${op.usuario}`);
+        cargarOperadores();
+    }
+
+    cargarOperadores();
+});

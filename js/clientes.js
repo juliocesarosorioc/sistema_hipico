@@ -56,16 +56,17 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = '';
         if (lista.length === 0) {
             tbody.innerHTML = '<tr><td colspan="11" class="p-6 text-center text-slate-500">No hay registros.</td></tr>';
+            document.getElementById('pag-cuerpoTablaClientes')?.remove();
             return;
         }
 
-        lista.forEach(c => {
+        const filasHtml = lista.map(c => {
             const badgeLibre = c.libre ? '<span class="text-emerald-600 font-bold">SÍ</span>' : '<span class="text-slate-400">NO</span>';
             const badgeMS = c.mostrar_saldo_socio ? '<i class="fas fa-eye text-blue-500" title="Visible al socio"></i>' : '<i class="fas fa-eye-slash text-slate-300" title="Oculto"></i>';
             const socioLabel = c.socio_asignado || '<span class="text-slate-400 italic">Directo</span>';
-            
+
             const countAfiliados = clientesGlobales.filter(sub => sub.socio_asignado === c.nombre).length;
-            const afiliadoLabel = c.es_socio 
+            const afiliadoLabel = c.es_socio
                 ? `<span class="bg-amber-100 text-amber-800 px-2 rounded font-bold">Agencia (${countAfiliados})</span>`
                 : `<span class="text-slate-400">-</span>`;
 
@@ -75,7 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const colorS = saldo < 0 ? 'text-red-600' : 'text-emerald-600';
 
-            tbody.innerHTML += `
+            return `
                 <tr class="hover:bg-blue-50 border-b border-slate-100">
                     <td class="p-2 font-bold text-slate-800">${c.nombre}</td>
                     <td class="p-2 text-slate-500 font-mono">${c.telefono || '-'}</td>
@@ -94,7 +95,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 </tr>
             `;
         });
-        asignarEventosFila();
+
+        clubUI.paginar(tbody, filasHtml, 25, (paginaHtml) => {
+            tbody.innerHTML = paginaHtml.join('');
+            asignarEventosFila();
+        });
     }
 
     // ==========================================

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Auditoría del Sistema - Club del Dinero</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../css/tailwind.css">
     <link rel="stylesheet" href="../css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -120,7 +120,7 @@
         <div class="bg-white rounded shadow-sm border border-slate-200 overflow-hidden">
             <div class="bg-slate-800 p-2 flex justify-between items-center text-white text-xs font-bold">
                 <span><i class="fas fa-list-alt mr-2 text-blue-400"></i> Registros de Auditoría</span>
-                <span class="text-slate-300 font-normal">Mostrando 50 de 58 — Página 1 de 2</span>
+                <span id="resumenRegistros" class="text-slate-300 font-normal">Cargando registros...</span>
             </div>
             
             <div class="overflow-x-auto">
@@ -137,48 +137,7 @@
                             <th class="p-3">NAVEGADOR</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-200 text-slate-700">
-                        <tr class="hover:bg-slate-50">
-                            <td class="p-3 text-slate-400">157</td>
-                            <td class="p-3 font-bold">02/09/2026<br><span class="text-[10px] font-normal text-slate-500">16:26:52</span></td>
-                            <td class="p-3 font-bold text-slate-900">Dinero_Argentina</td>
-                            <td class="p-3"><span class="bg-slate-600 text-white px-2 py-0.5 rounded-full text-[10px] font-bold">AUDITORIA</span></td>
-                            <td class="p-3">acceso_auditoria</td>
-                            <td class="p-3 font-mono text-[11px]">135.136.5.206</td>
-                            <td class="p-3 text-slate-400">—</td>
-                            <td class="p-3 text-slate-400 truncate max-w-[200px]" title="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36...">Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWe...</td>
-                        </tr>
-                        <tr class="hover:bg-slate-50">
-                            <td class="p-3 text-slate-400">156</td>
-                            <td class="p-3 font-bold">02/09/2026<br><span class="text-[10px] font-normal text-slate-500">16:11:24</span></td>
-                            <td class="p-3 font-bold text-slate-900">Dinero_Argentina</td>
-                            <td class="p-3"><span class="bg-slate-600 text-white px-2 py-0.5 rounded-full text-[10px] font-bold">REMATES</span></td>
-                            <td class="p-3">remate_creado: id=1 nombre=REMATE VIP INSTITUCIONAL</td>
-                            <td class="p-3 font-mono text-[11px]">135.136.5.209</td>
-                            <td class="p-3 text-slate-400">—</td>
-                            <td class="p-3 text-slate-400 truncate max-w-[200px]" title="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36...">Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWe...</td>
-                        </tr>
-                        <tr class="hover:bg-slate-50">
-                            <td class="p-3 text-slate-400">153</td>
-                            <td class="p-3 font-bold">02/09/2026<br><span class="text-[10px] font-normal text-slate-500">15:49:57</span></td>
-                            <td class="p-3 font-bold text-slate-900">Dinero_Argentina</td>
-                            <td class="p-3"><span class="bg-slate-600 text-white px-2 py-0.5 rounded-full text-[10px] font-bold">CARRERAS_WPS</span></td>
-                            <td class="p-3">house_configurado: pct=0 modalidad=perdidas</td>
-                            <td class="p-3 font-mono text-[11px]">135.136.5.209</td>
-                            <td class="p-3 text-slate-400">—</td>
-                            <td class="p-3 text-slate-400 truncate max-w-[200px]" title="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36...">Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWe...</td>
-                        </tr>
-                        <tr class="hover:bg-slate-50">
-                            <td class="p-3 text-slate-400">144</td>
-                            <td class="p-3 font-bold">02/09/2026<br><span class="text-[10px] font-normal text-slate-500">14:56:52</span></td>
-                            <td class="p-3 font-bold text-slate-900">Dinero_Argentina</td>
-                            <td class="p-3"><span class="bg-slate-600 text-white px-2 py-0.5 rounded-full text-[10px] font-bold">LOGIN</span></td>
-                            <td class="p-3 text-emerald-600 font-medium">Login exitoso desde Desconocida, Desconocido</td>
-                            <td class="p-3 font-mono text-[11px]">135.136.5.209</td>
-                            <td class="p-3 text-slate-400">—</td>
-                            <td class="p-3 text-slate-400 truncate max-w-[200px]" title="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36...">Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWe...</td>
-                        </tr>
-                    </tbody>
+                    <tbody id="tablaRegistrosAuditoria" class="divide-y divide-slate-200 text-slate-700"></tbody>
                 </table>
             </div>
         </div>

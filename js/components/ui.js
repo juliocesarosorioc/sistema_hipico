@@ -47,5 +47,56 @@ window.clubUI = (() => {
         item.addEventListener('click', () => { clearTimeout(timer); cerrar(); });
     }
 
-    return { toast };
+    // ==========================================
+    // PAGINACIÓN CLIENT-SIDE REUTILIZABLE
+    // Uso:
+    //   clubUI.paginar(tbody, filasHtml, 25, (filasPagina) => {
+    //       tbody.innerHTML = filasPagina.join('');
+    //       asignarEventosFila(); // re-vincular acciones por fila
+    //   });
+    // ==========================================
+    function paginar(tbody, filas, porPagina = 25, alCambiar) {
+        if (!tbody) return;
+        porPagina = Math.max(1, porPagina);
+        const total = filas.length;
+        const totalPaginas = Math.max(1, Math.ceil(total / porPagina));
+        let pagina = 1;
+
+        const padre = tbody.parentElement;
+        const navId = 'pag-' + (tbody.id || ('tabla-' + Math.random().toString(36).slice(2)));
+        document.getElementById(navId)?.remove();
+
+        const nav = document.createElement('div');
+        nav.id = navId;
+        nav.className = 'flex flex-wrap items-center justify-between gap-2 p-2 text-[11px] text-slate-600';
+        padre.appendChild(nav);
+
+        const render = () => {
+            const ini = (pagina - 1) * porPagina;
+            const paginaActual = filas.slice(ini, ini + porPagina);
+            if (alCambiar) alCambiar(paginaActual, { pagina, totalPaginas, ini, total });
+
+            const btnBase = 'px-2 py-1 rounded border transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-bold ';
+            nav.innerHTML = `
+                <span>Mostrando ${total ? ini + 1 : 0}-${ini + paginaActual.length} de ${total} registros</span>
+                <div class="flex items-center gap-1">
+                    <button data-pag="${pagina - 1}" ${pagina <= 1 ? 'disabled' : ''}
+                            class="${btnBase} bg-white border-slate-300 text-slate-600 hover:bg-slate-100">‹ Anterior</button>
+                    <span class="px-2">Pág. ${pagina} / ${totalPaginas}</span>
+                    <button data-pag="${pagina + 1}" ${pagina >= totalPaginas ? 'disabled' : ''}
+                            class="${btnBase} bg-white border-slate-300 text-slate-600 hover:bg-slate-100">Siguiente ›</button>
+                </div>`;
+
+            nav.querySelectorAll('button[data-pag]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const nueva = parseInt(btn.dataset.pag, 10);
+                    if (nueva >= 1 && nueva <= totalPaginas) { pagina = nueva; render(); }
+                });
+            });
+        };
+
+        render();
+    }
+
+    return { toast, paginar };
 })();

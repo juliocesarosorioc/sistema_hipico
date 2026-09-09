@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Iniciar Sesión - Club del Dinero</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../css/tailwind.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script>
         // Si el usuario entra al index, destruimos la sesión existente por seguridad
@@ -95,6 +95,8 @@
                     rol: operador.rol,
                     loginTime: new Date().getTime()
                 }));
+
+                if (window.clubDB) window.clubDB.logAccion('LOGIN', `Login exitoso: usuario=${operador.usuario}`);
 
                 window.location.href = 'dashboard.html';
 

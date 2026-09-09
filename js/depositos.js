@@ -16,8 +16,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. INICIALIZACIÓN
     // ==========================================
     async function cargarDatos() {
-        // Cargar Clientes
-        const { data: cData } = await window.supabase.from('clientes').select('id, nombre, saldo_actual, aval').order('nombre');
+        // Consultas en paralelo: clientes y bancos no dependen entre sí
+        const segura = (promesa) => promesa.catch(e => ({ data: null, error: e }));
+        const [rClientes, rBancos] = await Promise.all([
+            segura(window.supabase.from('clientes').select('id, nombre, saldo_actual, aval').order('nombre')),
+            segura(window.supabase.from('bancos').select('id, nombre, moneda_codigo').order('nombre'))
+        ]);
+
+        const cData = rClientes.data;
         if (cData) {
             clientesGlobales = cData;
             selectCliente.innerHTML = '<option value="">Seleccione cliente...</option>';
@@ -25,8 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderizarSaldos(cData);
         }
 
-        // Cargar Bancos de Tesorería Real
-        const { data: bData } = await window.supabase.from('bancos').select('id, nombre, moneda_codigo').order('nombre');
+        const bData = rBancos.data;
         if (bData) {
             bancosGlobales = bData;
             selectBanco.innerHTML = '<option value="">Seleccione banco receptor...</option>';

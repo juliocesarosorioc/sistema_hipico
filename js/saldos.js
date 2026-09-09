@@ -56,18 +56,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         cuerpoTickets.innerHTML = '<tr><td colspan="7" class="p-4 text-center"><i class="fas fa-spinner fa-spin text-blue-500"></i> Cargando...</td></tr>';
 
-        // A. Traer Tickets pendientes de esa carrera
-        const { data: tickets, error: errT } = await window.supabase.from('tickets_apuestas')
-            .select('*')
-            .eq('hipodromo', hipodromo)
-            .eq('carrera', carrera)
-            .eq('estado', 'Pendiente');
+        // A+B. Traer tickets pendientes y tablas fijas de la carrera en paralelo
+        const segura = (promesa) => promesa.catch(e => ({ data: null, error: e }));
+        const [rTickets, rTablas] = await Promise.all([
+            segura(window.supabase.from('tickets_apuestas')
+                .select('*')
+                .eq('hipodromo', hipodromo)
+                .eq('carrera', carrera)
+                .eq('estado', 'Pendiente')),
+            segura(window.supabase.from('tablas_fijas')
+                .select('*')
+                .eq('hipodromo', hipodromo)
+                .eq('carrera', carrera))
+        ]);
 
-        // B. Traer las Tablas Fijas de esa carrera (para cruzar datos de premios recalculados)
-        const { data: tablas, error: errTb } = await window.supabase.from('tablas_fijas')
-            .select('*')
-            .eq('hipodromo', hipodromo)
-            .eq('carrera', carrera);
+        const tickets = rTickets.data;
+        const errT = rTickets.error;
+        const tablas = rTablas.data;
+        const errTb = rTablas.error;
 
         if (errT || errTb) return clubUI.toast("Error al cargar datos desde la base.");
 
