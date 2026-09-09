@@ -5,113 +5,81 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestión de Depósitos - Club del Dinero</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script>
-        if (!localStorage.getItem('club_sesion_activa')) window.location.href = 'index.html';
-    </script>
+    <script>if (!localStorage.getItem('club_sesion_activa')) window.location.href = 'index.html';</script>
 </head>
 <body class="bg-emerald-50 font-sans text-sm h-screen flex flex-col overflow-x-hidden">
 
     <!-- NAVEGACIÓN SUPERIOR -->
-    <header class="bg-white border-b border-slate-300 p-2 flex flex-wrap gap-2 items-center shadow-sm text-xs">
-        <a href="dashboard.html" class="bg-slate-500 text-white px-3 py-1 rounded hover:bg-slate-600 transition shadow-sm font-medium"><i class="fas fa-arrow-left"></i> Volver</a>
+    <header class="bg-white border-b border-slate-300 p-2 flex flex-wrap gap-2 items-center shadow-sm text-xs z-10">
+        <a href="dashboard.html" class="bg-slate-500 text-white px-3 py-1 rounded hover:bg-slate-600 transition shadow-sm font-medium"><i class="fas fa-arrow-left"></i> Panel</a>
         <a href="clientes.html" class="bg-cyan-500 text-white px-3 py-1 rounded shadow-sm hover:bg-cyan-600 font-medium">Clientes</a>
         <a href="retiros.html" class="bg-red-500 text-white px-3 py-1 rounded shadow-sm hover:bg-red-600 font-medium">Retiros</a>
-        <a href="transferencias.html" class="bg-yellow-400 text-slate-800 font-medium px-3 py-1 rounded shadow-sm hover:bg-yellow-500 font-medium">Transferencias</a>
-        <a href="taquilla.html" class="bg-blue-600 text-white px-3 py-1 rounded shadow-sm hover:bg-blue-700 font-medium">Apuestas</a>
-        <a href="saldos.html" class="bg-slate-800 text-white px-3 py-1 rounded shadow-sm hover:bg-slate-900 font-medium">Saldos/Reportes</a>
-        
-        <!-- NUEVO BOTÓN DE REGLAS -->
-        <a href="tipos_jugadas.html" class="bg-indigo-600 text-white px-3 py-1 rounded shadow-sm hover:bg-indigo-700 font-medium"><i class="fas fa-cogs mr-1"></i> Reglas</a>
-        
-        <span class="bg-emerald-100 border border-emerald-300 text-emerald-900 px-3 py-1 rounded shadow-sm font-bold"><i class="fas fa-money-bag mr-1"></i> Depósitos</span>
+        <a href="caja.html" class="bg-orange-500 text-white px-3 py-1 rounded shadow-sm hover:bg-orange-600 font-medium">Caja Unificada</a>
+        <a href="taquilla.html" class="bg-blue-600 text-white px-3 py-1 rounded shadow-sm hover:bg-blue-700 font-medium">Taquilla</a>
+        <span class="bg-emerald-100 border border-emerald-300 text-emerald-900 px-3 py-1 rounded shadow-sm font-bold"><i class="fas fa-arrow-down mr-1"></i> Depósitos y Avales</span>
     </header>
 
     <main class="p-4 flex-1 overflow-y-auto max-w-[1700px] mx-auto w-full">
         <!-- CABECERA DE MÓDULO -->
-        <div class="bg-white p-3 rounded-lg shadow-sm border border-slate-200 mb-3 flex justify-between items-center text-emerald-800">
-            <h1 class="text-lg font-bold"><i class="fas fa-money-bill-wave mr-2"></i> Gestión de Depósitos e Ingresos</h1>
-            <span class="text-xs text-slate-500 font-bold" id="fechaHeader">Cargando fecha...</span>
+        <div class="bg-white p-3 rounded-lg shadow-sm border border-slate-200 mb-4 flex justify-between items-center text-emerald-800">
+            <h1 class="text-lg font-bold uppercase"><i class="fas fa-money-bill-wave mr-2"></i> Procesador de Ingresos y Avales</h1>
+            <span class="text-xs text-slate-500 font-bold" id="fechaHeader"></span>
         </div>
 
-        <!-- BARRA DE FILTROS Y HERRAMIENTAS -->
-        <div class="bg-white p-3 rounded-lg shadow-sm border border-slate-200 mb-4 flex flex-wrap items-center gap-4 text-xs">
-            <div class="flex items-center gap-2">
-                <i class="far fa-calendar-alt text-blue-500"></i>
-                <span class="font-bold">Fecha:</span>
-                <input type="date" id="filtroFecha" class="border border-slate-300 rounded px-2 py-1 outline-none focus:border-emerald-500">
-                <button id="btnFiltrarFecha" class="border border-slate-300 bg-slate-50 px-3 py-1 rounded hover:bg-slate-100 shadow-sm font-bold">Filtrar</button>
-                <button id="btnLimpiarFiltro" class="border border-slate-300 bg-red-50 text-red-600 px-3 py-1 rounded hover:bg-red-100 shadow-sm font-bold"><i class="fas fa-times"></i></button>
-            </div>
-            
-            <button id="btnSaldosWhatsapp" class="bg-purple-600 text-white px-4 py-1.5 rounded shadow-sm hover:bg-purple-700 font-bold transition-colors">
-                <i class="fab fa-whatsapp mr-1 text-lg align-middle"></i> Exportar Saldos
-            </button>
-
-            <div class="ml-auto bg-emerald-700 text-white px-3 py-1.5 rounded font-bold shadow-sm">
-                <i class="far fa-calendar-check mr-1"></i> Semana Activa — Abierta
-            </div>
-        </div>
-
-        <!-- ESTRUCTURA PRINCIPAL (GRID 1 Col Izq / 2 Cols Der) -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
             
-            <!-- COLUMNA IZQUIERDA: FORMULARIO DE DEPÓSITO -->
-            <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden self-start sticky top-4">
+            <!-- COLUMNA IZQUIERDA: FORMULARIO -->
+            <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden self-start">
                 <div class="bg-emerald-600 text-white p-3 font-bold text-sm flex items-center justify-between">
-                    <span><i class="fas fa-plus-circle mr-2"></i> Registrar Ingreso</span>
+                    <span><i class="fas fa-plus-circle mr-2"></i> Registrar Ingreso a Cuenta</span>
                 </div>
                 
-                <form id="formDeposito" class="p-5 space-y-5">
+                <form id="formDeposito" class="p-5 space-y-4">
                     <!-- Cliente -->
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1">Seleccionar Cliente:</label>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Abonar al Cliente:</label>
                         <select id="clienteDeposito" class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:border-emerald-500 outline-none font-bold text-slate-800" required>
                             <option value="">Cargando clientes...</option>
                         </select>
                     </div>
 
-                    <!-- Notificación Banco Dual -->
-                    <div class="bg-blue-50 border border-blue-200 text-blue-800 text-[11px] p-2.5 rounded leading-tight">
-                        <i class="fas fa-info-circle mr-1"></i> <strong>Modo Banco Dual:</strong> Las operaciones normales suman al saldo jugable. Los avales son créditos temporales.
-                    </div>
-
-                    <!-- Pestañas de Tipo de Operación -->
+                    <!-- Tipo Op -->
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1">Tipo de operación:</label>
                         <input type="hidden" id="tipoOperacion" value="Normal">
                         <div class="flex border border-slate-300 rounded overflow-hidden text-xs font-bold text-center">
                             <button type="button" class="tab-operacion flex-1 py-2 text-emerald-700 bg-emerald-50 border-b-2 border-emerald-600 transition-colors" data-tipo="Normal">
-                                <i class="fas fa-money-bill-wave block mb-1 text-lg"></i> Normal
+                                <i class="fas fa-money-bill-wave block mb-1 text-lg"></i> Ingreso Físico
                             </button>
                             <button type="button" class="tab-operacion flex-1 py-2 text-slate-500 bg-white hover:bg-slate-50 border-b-2 border-transparent transition-colors" data-tipo="Otorgar Aval">
-                                <i class="fas fa-shield-alt block mb-1 text-lg text-amber-500"></i> Otorgar Aval
+                                <i class="fas fa-shield-alt block mb-1 text-lg text-amber-500"></i> Otorgar Aval (Crédito)
                             </button>
                             <button type="button" class="tab-operacion flex-1 py-2 text-slate-500 bg-white hover:bg-slate-50 border-b-2 border-transparent transition-colors" data-tipo="Pagar Aval">
-                                <i class="fas fa-hand-holding-usd block mb-1 text-lg text-blue-500"></i> Pagar Aval
+                                <i class="fas fa-hand-holding-usd block mb-1 text-lg text-blue-500"></i> Pagar Deuda Aval
                             </button>
                         </div>
                     </div>
 
-                    <!-- Monto -->
-                    <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1">Monto (USD):</label>
-                        <div class="relative">
-                            <span class="absolute left-3 top-2 font-bold text-emerald-700">$</span>
-                            <input type="number" id="montoDeposito" step="0.01" class="w-full border border-emerald-300 bg-emerald-50 rounded pl-7 pr-3 py-2 text-base font-bold text-slate-900 focus:border-emerald-600 outline-none" required>
-                        </div>
+                    <!-- Banco Destino -->
+                    <div id="contenedorBancoReceptor">
+                        <label class="block text-xs font-bold text-slate-700 mb-1">El dinero entró en (Banco Empresa):</label>
+                        <select id="bancoReceptor" class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:border-emerald-500 outline-none font-bold text-slate-800" required>
+                            <option value="">Cargando tesorería...</option>
+                        </select>
                     </div>
 
-                    <!-- Nota -->
+                    <!-- Monto y Nota -->
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1">Nota o Referencia <span class="text-[10px] font-normal text-slate-500">(opcional)</span>:</label>
-                        <input type="text" id="notaDeposito" placeholder="Ej: Zelle LuisP, Pago Móvil Ref 1234..." class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:border-emerald-500 outline-none">
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Monto de Operación (USD):</label>
+                        <input type="number" id="montoDeposito" step="0.01" class="w-full border border-emerald-300 bg-emerald-50 rounded px-3 py-2 text-xl font-black text-slate-900 focus:border-emerald-600 outline-none" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Referencia / Nota:</label>
+                        <input type="text" id="notaDeposito" placeholder="Ref. 1234, o motivo del aval..." class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:border-emerald-500 outline-none">
                     </div>
 
-                    <!-- Submit -->
-                    <button type="submit" class="w-full bg-emerald-600 text-white font-bold py-2.5 rounded shadow hover:bg-emerald-700 transition-colors">
-                        PROCESAR OPERACIÓN
+                    <button type="submit" class="w-full bg-emerald-600 text-white font-bold py-3 rounded shadow-md hover:bg-emerald-700 transition-colors uppercase tracking-wider">
+                        Aplicar Operación
                     </button>
                 </form>
             </div>
@@ -121,44 +89,44 @@
                 
                 <!-- Tabla 1: Saldos Actuales -->
                 <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-                    <div class="bg-cyan-600 text-white p-2.5 font-bold text-sm flex items-center justify-between">
-                        <span><i class="fas fa-wallet mr-2"></i> Estado de Cuentas y Avales</span>
+                    <div class="bg-slate-800 text-white p-2.5 font-bold text-sm flex justify-between items-center">
+                        <span><i class="fas fa-wallet mr-2"></i> Saldos y Deudas Actuales</span>
+                        <input type="text" id="buscarSaldo" placeholder="Buscar cliente..." class="text-xs px-2 py-1 rounded text-slate-800 outline-none">
                     </div>
-                    <div class="p-0 overflow-x-auto h-64 overflow-y-auto">
+                    <div class="p-0 overflow-x-auto h-56 overflow-y-auto">
                         <table class="w-full text-xs text-left border-collapse">
-                            <thead class="bg-slate-100 text-slate-700 sticky top-0 z-10 shadow-sm">
+                            <thead class="bg-slate-100 text-slate-700 sticky top-0 shadow-sm">
                                 <tr>
-                                    <th class="p-2 font-bold border-b border-slate-200">Cliente</th>
-                                    <th class="p-2 font-bold text-right border-b border-slate-200">Saldo USD</th>
-                                    <th class="p-2 font-bold text-right border-b border-slate-200">Aval Deuda USD</th>
+                                    <th class="p-2 font-bold border-b">Cliente</th>
+                                    <th class="p-2 font-bold text-right border-b">Saldo Jugable</th>
+                                    <th class="p-2 font-bold text-right border-b">Deuda Pendiente (Aval)</th>
                                 </tr>
                             </thead>
-                            <tbody id="cuerpoTablaSaldos" class="divide-y divide-slate-100 text-slate-800 font-medium">
-                                <tr><td colspan="3" class="p-4 text-center text-slate-500">Cargando saldos...</td></tr>
+                            <tbody id="cuerpoTablaSaldos" class="divide-y divide-slate-100 text-slate-800">
+                                <tr><td colspan="3" class="p-4 text-center">Cargando...</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
 
-                <!-- Tabla 2: Historial de Depósitos -->
+                <!-- Tabla 2: Historial -->
                 <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-                    <div class="bg-slate-800 text-white p-2.5 font-bold text-sm">
-                        <i class="fas fa-history mr-2"></i> Historial de Transacciones de Ingreso
+                    <div class="bg-slate-100 text-slate-800 border-b border-slate-200 p-2.5 font-bold text-sm">
+                        <i class="fas fa-history mr-2 text-slate-400"></i> Bitácora de Transacciones (Ingresos)
                     </div>
-                    <div class="p-0 overflow-x-auto h-80 overflow-y-auto">
-                        <table class="w-full text-xs text-left border-collapse">
-                            <thead class="bg-slate-100 text-slate-700 sticky top-0 z-10 shadow-sm">
+                    <div class="p-0 overflow-x-auto h-64 overflow-y-auto">
+                        <table class="w-full text-xs text-left">
+                            <thead class="bg-slate-50 text-slate-600 sticky top-0 shadow-sm">
                                 <tr>
-                                    <th class="p-2 font-bold border-b border-slate-200">Fecha y Hora</th>
-                                    <th class="p-2 font-bold border-b border-slate-200">Cliente</th>
-                                    <th class="p-2 font-bold border-b border-slate-200">Operación</th>
-                                    <th class="p-2 font-bold text-right border-b border-slate-200">Monto USD</th>
-                                    <th class="p-2 font-bold border-b border-slate-200">Referencia / Nota</th>
-                                    <th class="p-2 font-bold text-center border-b border-slate-200">Borrar</th>
+                                    <th class="p-2 border-b">Fecha</th>
+                                    <th class="p-2 border-b">Cliente</th>
+                                    <th class="p-2 border-b">Operación</th>
+                                    <th class="p-2 border-b text-right">Monto</th>
+                                    <th class="p-2 border-b">Destino (Banco) / Nota</th>
                                 </tr>
                             </thead>
                             <tbody id="cuerpoTablaHistorial" class="divide-y divide-slate-100 text-slate-700">
-                                <tr><td colspan="6" class="p-4 text-center text-slate-500">Cargando historial...</td></tr>
+                                <tr><td colspan="5" class="p-4 text-center">Cargando...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -168,32 +136,9 @@
         </div>
     </main>
 
-    <!-- ==========================================
-         MODAL: EXPORTAR SALDOS A WHATSAPP
-         ========================================== -->
-    <div id="modalWhatsapp" class="hidden fixed inset-0 bg-slate-900 bg-opacity-50 z-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden border border-slate-200">
-            <div class="p-4 flex flex-col gap-2 relative">
-                <div class="flex justify-between items-center mb-2">
-                    <div class="flex items-center text-emerald-600 font-bold text-sm">
-                        <i class="fas fa-check-square mr-2"></i> Generador de Reporte
-                    </div>
-                    <div class="flex gap-2">
-                        <button id="btnCopiarTexto" class="bg-emerald-600 text-white px-3 py-1 rounded shadow text-xs font-bold hover:bg-emerald-700"><i class="fas fa-copy mr-1"></i> Copiar al Portapapeles</button>
-                        <button class="cerrar-modal bg-white border border-slate-300 text-slate-600 px-3 py-1 rounded shadow text-xs font-bold hover:bg-slate-50"><i class="fas fa-times mr-1"></i> Cerrar</button>
-                    </div>
-                </div>
-                <textarea id="textoWhatsapp" readonly class="w-full h-72 border border-slate-300 bg-slate-50 rounded p-3 text-[11px] font-mono text-slate-800 outline-none resize-none shadow-inner leading-relaxed"></textarea>
-            </div>
-        </div>
-    </div>
-
-    <!-- Scripts Base -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="js/conexion.js"></script>
     <script src="js/depositos.js"></script>
-    <script>
-        setInterval(() => document.getElementById('fechaHeader').textContent = new Date().toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' }), 1000);
-    </script>
+    <script>setInterval(() => document.getElementById('fechaHeader').textContent = new Date().toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }), 1000);</script>
 </body>
 </html>

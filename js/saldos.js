@@ -1,293 +1,290 @@
-// Archivo: js/saldos.js
-// Propósito: Panel de auditoría, ajustes manuales, cargas masivas desde texto y puesta en cero de saldos.
-
 document.addEventListener('DOMContentLoaded', () => {
 
-    let clientesGlobal = [];
-    let bancosGlobal = [];
+    const comboHipodromo = document.getElementById('filtroHipodromo');
+    const comboCarrera = document.getElementById('filtroCarrera');
+    const btnCargarCarrera = document.getElementById('btnCargarCarrera');
+    const btnLiquidar = document.getElementById('btnLiquidar');
+    
+    const cuerpoTickets = document.getElementById('cuerpoTickets');
+    const cuerpoComisionesGrupos = document.getElementById('cuerpoComisionesGrupos');
+
+    // Resúmenes UI
+    const resMontoJugado = document.getElementById('resMontoJugado');
+    const resPremiosPagar = document.getElementById('resPremiosPagar');
+    const resComisiones = document.getElementById('resComisiones');
+    const resUtilidadNeta = document.getElementById('resUtilidadNeta');
+
+    let ticketsActuales = [];
+    let tablasReferencia = [];
 
     // ==========================================
-    // 1. CARGA INICIAL DE DATOS (READ)
+    // 1. CARGA INICIAL DE FILTROS
     // ==========================================
-    async function inicializarTablas() {
-        // Cargar Clientes
-        const { data: clientes } = await supabase.from('clientes').select('id, nombre, saldo_usd, aval_usd').order('nombre');
-        const tbodyClientes = document.getElementById('cuerpoTablaClientes');
+    async function inicializarFiltros() {
+        // Buscar hipódromos únicos en tickets pendientes
+        const { data, error } = await window.supabase.from('tickets_apuestas')
+                                      .select('hipodromo, carrera')
+                                      .eq('estado', 'Pendiente');
         
-        if (clientes) {
-            clientesGlobal = clientes;
-            tbodyClientes.innerHTML = '';
-            clientes.forEach(c => {
-                const tr = document.createElement('tr');
-                tr.className = 'hover:bg-slate-50 transition-colors';
-                tr.innerHTML = `
-                    <td class="p-3 border-r border-slate-200">${c.nombre}</td>
-                    <td class="p-3 text-right border-r border-slate-200 ${c.saldo_usd < 0 ? 'text-red-500' : 'text-emerald-700'}">$${Number(c.saldo_usd).toFixed(2)}</td>
-                    <td class="p-3 text-right border-r border-slate-200 text-amber-600">$${Number(c.aval_usd).toFixed(2)}</td>
-                    <td class="p-3 text-center flex gap-1 justify-center">
-                        <button class="btn-editar-saldo bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded text-[11px] font-bold shadow-sm transition-colors" data-id="${c.id}" data-nombre="${c.nombre}" data-tipo="saldo" data-valor="${c.saldo_usd}"><i class="fas fa-pen mr-1"></i> Saldo</button>
-                        <button class="btn-editar-saldo bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 rounded text-[11px] font-bold shadow-sm transition-colors" data-id="${c.id}" data-nombre="${c.nombre}" data-tipo="aval" data-valor="${c.aval_usd}"><i class="fas fa-pen mr-1"></i> Aval</button>
-                    </td>
-                `;
-                tbodyClientes.appendChild(tr);
-            });
-            asignarEventosEditar();
-        }
-
-        // Cargar Bancos
-        const { data: bancos } = await supabase.from('bancos').select('*').order('nombre');
-        const tbodyBancos = document.getElementById('cuerpoTablaBancos');
-        const selectBancoAjuste = document.getElementById('selectBancoAjuste');
-        const selectBancoMasiva = document.getElementById('selectBancoMasiva');
-        
-        if (bancos) {
-            bancosGlobal = bancos;
-            tbodyBancos.innerHTML = '';
-            let optionsBancos = '<option value="">— Selecciona banco —</option>';
-            
-            bancos.forEach(b => {
-                optionsBancos += `<option value="${b.id}">${b.nombre}</option>`;
-                tbodyBancos.innerHTML += `
-                    <tr class="hover:bg-slate-50">
-                        <td class="p-3 border-r border-slate-200 text-slate-800">${b.nombre}</td>
-                        <td class="p-3 border-r border-slate-200 text-slate-500">${b.moneda_codigo}</td>
-                        <td class="p-3 text-right border-r border-slate-200 text-blue-700">$${Number(b.saldo_sistema).toFixed(2)}</td>
-                        <td class="p-3 text-center">
-                            <button class="bg-slate-200 text-slate-600 px-3 py-1 rounded text-[11px] font-bold hover:bg-slate-300 transition-colors">Ajustar Banco</button>
-                        </td>
-                    </tr>
-                `;
+        if (data && !error) {
+            let hipodromosUnicos = [...new Set(data.map(t => t.hipodromo))];
+            comboHipodromo.innerHTML = '<option value="">Seleccione...</option>';
+            hipodromosUnicos.forEach(h => {
+                comboHipodromo.innerHTML += `<option value="${h}">${h}</option>`;
             });
 
-            selectBancoAjuste.innerHTML = optionsBancos;
-            selectBancoMasiva.innerHTML = optionsBancos;
+            // Lógica para llenar carreras al seleccionar hipódromo
+            comboHipodromo.addEventListener('change', () => {
+                const hipSeleccionado = comboHipodromo.value;
+                const carreras = [...new Set(data.filter(t => t.hipodromo === hipSeleccionado).map(t => t.carrera))];
+                comboCarrera.innerHTML = '<option value="">---</option>';
+                carreras.sort((a,b)=>a-b).forEach(c => {
+                    comboCarrera.innerHTML += `<option value="${c}">${c}</option>`;
+                });
+            });
         }
     }
 
     // ==========================================
-    // 2. AJUSTE MANUAL INDIVIDUAL
+    // 2. CARGAR Y EVALUAR TICKETS
     // ==========================================
-    let clienteEditando = null;
-    let tipoEdicion = null; // 'saldo' o 'aval'
+    btnCargarCarrera.addEventListener('click', async () => {
+        const hipodromo = comboHipodromo.value;
+        const carrera = comboCarrera.value;
 
-    function asignarEventosEditar() {
-        document.querySelectorAll('.btn-editar-saldo').forEach(btn => {
-            btn.addEventListener('click', function() {
-                clienteEditando = {
-                    id: this.getAttribute('data-id'),
-                    nombre: this.getAttribute('data-nombre'),
-                    valorActual: parseFloat(this.getAttribute('data-valor'))
-                };
-                tipoEdicion = this.getAttribute('data-tipo');
-                
-                // Configurar Modal
-                document.getElementById('modalTitulo').innerHTML = `<i class="fas fa-pencil-alt mr-2"></i> Editar ${tipoEdicion.toUpperCase()} — ${clienteEditando.nombre}`;
-                document.getElementById('lblSaldoActual').textContent = `$${clienteEditando.valorActual.toFixed(2)}`;
-                document.getElementById('inputNuevoSaldo').value = clienteEditando.valorActual.toFixed(2);
-                
-                // Color temático
-                const bg = document.getElementById('modalHeaderBg');
-                if(tipoEdicion === 'saldo') { bg.classList.replace('bg-amber-500', 'bg-emerald-600'); }
-                else { bg.classList.replace('bg-emerald-600', 'bg-amber-500'); }
+        if(!hipodromo || !carrera) return alert("Seleccione Hipódromo y Carrera.");
 
-                document.getElementById('modalEditarSaldo').classList.remove('hidden');
-            });
-        });
-    }
+        cuerpoTickets.innerHTML = '<tr><td colspan="7" class="p-4 text-center"><i class="fas fa-spinner fa-spin text-blue-500"></i> Cargando...</td></tr>';
 
-    document.getElementById('btnGuardarAjuste').addEventListener('click', async function() {
-        const nuevoValor = parseFloat(document.getElementById('inputNuevoSaldo').value);
-        const bancoId = document.getElementById('selectBancoAjuste').value;
-        const nota = document.getElementById('inputNotaAjuste').value.trim() || 'Ajuste Manual en Auditoría';
+        // A. Traer Tickets pendientes de esa carrera
+        const { data: tickets, error: errT } = await window.supabase.from('tickets_apuestas')
+            .select('*')
+            .eq('hipodromo', hipodromo)
+            .eq('carrera', carrera)
+            .eq('estado', 'Pendiente');
 
-        if (isNaN(nuevoValor)) { alert("Ingrese un monto válido."); return; }
-        if (!bancoId) { alert("Debe seleccionar un banco para el cuadre."); return; }
+        // B. Traer las Tablas Fijas de esa carrera (para cruzar datos de premios recalculados)
+        const { data: tablas, error: errTb } = await window.supabase.from('tablas_fijas')
+            .select('*')
+            .eq('hipodromo', hipodromo)
+            .eq('carrera', carrera);
 
-        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ejecutando...';
-        this.disabled = true;
+        if (errT || errTb) return alert("Error al cargar datos desde la base.");
 
-        const diferencia = nuevoValor - clienteEditando.valorActual;
-        
-        // 1. Actualizar Cliente
-        let payloadCliente = {};
-        if(tipoEdicion === 'saldo') payloadCliente.saldo_usd = nuevoValor;
-        else payloadCliente.aval_usd = nuevoValor;
-        
-        await supabase.from('clientes').update(payloadCliente).eq('id', clienteEditando.id);
-
-        // 2. Registrar Transacción (Si hay diferencia)
-        if (diferencia !== 0) {
-            const montoAbsoluto = Math.abs(diferencia);
-            const notaFinal = `[AJUSTE ${tipoEdicion.toUpperCase()}] ${nota}`;
-            
-            if (diferencia > 0) { // Si subió el saldo, es como si hubiera depositado
-                await supabase.from('depositos').insert([{ cliente_id: clienteEditando.id, banco_id: bancoId, monto_usd: montoAbsoluto, monto_local: montoAbsoluto, tasa: 1, referencia: notaFinal }]);
-            } else { // Si bajó, es como un retiro
-                await supabase.from('retiros').insert([{ cliente_id: clienteEditando.id, banco_id: bancoId, monto_usd: montoAbsoluto, referencia: notaFinal }]);
-            }
-
-            // 3. Actualizar Banco
-            const banco = bancosGlobal.find(b => b.id === bancoId);
-            const nuevoSaldoBanco = Number(banco.saldo_sistema) + diferencia;
-            await supabase.from('bancos').update({ saldo_sistema: nuevoSaldoBanco }).eq('id', bancoId);
-        }
-
-        alert("Ajuste procesado y cuadrado correctamente.");
-        document.getElementById('modalEditarSaldo').classList.add('hidden');
-        document.getElementById('inputNotaAjuste').value = '';
-        this.innerHTML = '<i class="fas fa-save mr-1"></i> Ejecutar Ajuste';
-        this.disabled = false;
-        
-        inicializarTablas();
-    });
-
-    // ==========================================
-    // 3. SALDOS EN CERO (RESET SEMANAL)
-    // ==========================================
-    document.getElementById('btnAbrirCero').addEventListener('click', () => {
-        document.getElementById('inputConfirmarCero').value = '';
-        document.getElementById('modalCero').classList.remove('hidden');
-    });
-
-    document.getElementById('btnEjecutarCero').addEventListener('click', async function() {
-        const confirmacion = document.getElementById('inputConfirmarCero').value;
-        if (confirmacion !== 'CONFIRMAR') {
-            alert("Debe escribir la palabra CONFIRMAR (en mayúsculas) para ejecutar el borrado.");
+        if (tickets.length === 0) {
+            cuerpoTickets.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No hay tickets pendientes para esta carrera.</td></tr>';
+            btnLiquidar.classList.add('hidden');
             return;
         }
 
-        this.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Reseteando...';
-        this.disabled = true;
-
-        // Resetear todos los clientes
-        const ids = clientesGlobal.map(c => c.id);
-        if (ids.length > 0) {
-            await supabase.from('clientes').update({ saldo_usd: 0, aval_usd: 0 }).in('id', ids);
-        }
+        tablasReferencia = tablas || [];
         
-        // Resetear todos los bancos
-        const bIds = bancosGlobal.map(b => b.id);
-        if (bIds.length > 0) {
-            await supabase.from('bancos').update({ saldo_sistema: 0 }).in('id', bIds);
-        }
-
-        alert("Los saldos de clientes, avales y bancos han vuelto a cero.");
-        document.getElementById('modalCero').classList.add('hidden');
-        this.innerHTML = '<i class="fas fa-trash-alt mr-1"></i> Poner en cero';
-        this.disabled = false;
-        
-        inicializarTablas();
-    });
-
-    // ==========================================
-    // 4. CARGA MASIVA PARSEADA
-    // ==========================================
-    document.getElementById('btnAbrirMasiva').addEventListener('click', () => {
-        document.getElementById('textoCargaMasiva').value = '';
-        document.getElementById('modalMasiva').classList.remove('hidden');
-    });
-
-    document.getElementById('btnProcesarMasiva').addEventListener('click', async function() {
-        const texto = document.getElementById('textoCargaMasiva').value.trim();
-        const bancoId = document.getElementById('selectBancoMasiva').value;
-        const nota = document.getElementById('notaMasiva').value.trim() || 'Carga Masiva';
-
-        if (!texto) return;
-        if (!bancoId) { alert("Seleccione un banco para asentar la carga."); return; }
-
-        const lineas = texto.split('\n');
-        let operaciones = 0;
-        let errores = [];
-
-        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        this.disabled = true;
-
-        const banco = bancosGlobal.find(b => b.id === bancoId);
-        let acumuladoBanco = Number(banco.saldo_sistema);
-
-        for (let linea of lineas) {
-            linea = linea.trim();
-            if (linea === "") continue;
-
-            // Dividir por el último espacio para separar nombre de monto
-            const lastSpaceIndex = linea.lastIndexOf(' ');
-            if (lastSpaceIndex === -1) continue;
-
-            const nombreStr = linea.substring(0, lastSpaceIndex).trim().toUpperCase();
-            const montoStr = linea.substring(lastSpaceIndex + 1).trim();
-            const monto = parseFloat(montoStr);
-
-            if (isNaN(monto)) continue;
-
-            const cliente = clientesGlobal.find(c => c.nombre.toUpperCase() === nombreStr);
-            if (!cliente) {
-                errores.push(`Cliente no encontrado: ${nombreStr}`);
-                continue;
-            }
-
-            const montoAbsoluto = Math.abs(monto);
-            const nuevoSaldoCliente = Number(cliente.saldo_usd) + monto;
+        // C. Procesar cada ticket y agregar variables dinámicas para evaluación
+        ticketsActuales = tickets.map(tk => {
+            tk.resultado_temp = 'PERDEDOR'; // Por defecto todos pierden hasta que el admin marque al ganador
             
-            // Actualizar Cliente
-            await supabase.from('clientes').update({ saldo_usd: nuevoSaldoCliente }).eq('id', cliente.id);
-            cliente.saldo_usd = nuevoSaldoCliente; // Update caché local
-
-            // Asentar Transacción y Banco
-            acumuladoBanco += monto;
-            if (monto > 0) {
-                await supabase.from('depositos').insert([{ cliente_id: cliente.id, banco_id: bancoId, monto_usd: montoAbsoluto, monto_local: montoAbsoluto, tasa: 1, referencia: nota }]);
-            } else if (monto < 0) {
-                await supabase.from('retiros').insert([{ cliente_id: cliente.id, banco_id: bancoId, monto_usd: montoAbsoluto, referencia: nota }]);
+            // Buscar si es tabla fija para saber su premio real (descontando retiros)
+            let premioBaseUnidad = 0;
+            if (tk.nombre_jugada.includes('TABLA')) {
+                const tablaMatch = tablasReferencia.find(tb => tb.grupo_venta === tk.grupo && tb.moneda === tk.moneda);
+                if(tablaMatch) premioBaseUnidad = tablaMatch.premio_recalculado; // Toma el premio ya auditado (proporcional)
             }
 
-            operaciones++;
+            // Premio Total potencial (Si Gana) = Cantidad de tablas jugadas * Premio recalculado de la tabla
+            tk.premio_potencial = parseFloat(tk.cantidad_tablas) * parseFloat(premioBaseUnidad);
+            tk.comision_porcentaje = parseFloat(tk.comision_porcentaje) || 0;
+            
+            return tk;
+        });
+
+        renderizarTickets();
+        btnLiquidar.classList.remove('hidden');
+    });
+
+    // ==========================================
+    // 3. RENDERIZADO Y CÁLCULOS DINÁMICOS
+    // ==========================================
+    function renderizarTickets() {
+        cuerpoTickets.innerHTML = '';
+        
+        ticketsActuales.forEach((tk, index) => {
+            const esGanador = tk.resultado_temp === 'GANADOR';
+            const simbolo = tk.moneda === 'VES' ? 'Bs ' : '$';
+
+            // REGLA DE NEGOCIO (COMISIONES DUALES):
+            // Si Gana: Comisión basada en el PREMIO
+            // Si Pierde: Comisión basada en el MONTO JUGADO
+            let comisionDinámica = 0;
+            let premioMostrar = 0;
+
+            if (esGanador) {
+                premioMostrar = tk.premio_potencial;
+                comisionDinámica = tk.premio_potencial * (tk.comision_porcentaje / 100);
+            } else {
+                premioMostrar = 0;
+                comisionDinámica = parseFloat(tk.monto_jugado) * (tk.comision_porcentaje / 100);
+            }
+
+            // Guardar para el cálculo global
+            tk.comision_calculada = comisionDinámica;
+            tk.premio_a_pagar = premioMostrar;
+
+            const bgRow = esGanador ? 'bg-emerald-50' : 'hover:bg-slate-50';
+            
+            cuerpoTickets.innerHTML += `
+                <tr class="${bgRow} border-b border-slate-100 transition-colors">
+                    <td class="p-2 text-center font-bold text-slate-500">${tk.id}</td>
+                    <td class="p-2">
+                        <span class="font-bold text-slate-800">${tk.cliente_juega_nombre}</span><br>
+                        <span class="text-[9px] bg-slate-200 text-slate-700 px-1 rounded uppercase">${tk.grupo}</span>
+                    </td>
+                    <td class="p-2">
+                        <span class="font-bold text-slate-700">${tk.nombre_jugada}</span><br>
+                        <span class="text-[10px] text-blue-600">Ejemplar: ${tk.caballo} (${tk.cantidad_tablas} Tablas)</span>
+                    </td>
+                    <td class="p-2 text-right font-bold text-slate-700">
+                        ${simbolo}${parseFloat(tk.monto_jugado).toLocaleString(undefined, {minimumFractionDigits: 2})}
+                    </td>
+                    <td class="p-2 text-right font-bold ${esGanador ? 'text-emerald-700' : 'text-slate-400'} bg-blue-50/30">
+                        ${simbolo}${premioMostrar.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                    </td>
+                    <td class="p-2 text-right font-bold text-purple-700 bg-purple-50/30">
+                        ${simbolo}${comisionDinámica.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                        <div class="text-[9px] text-slate-500 font-normal">(${tk.comision_porcentaje}%)</div>
+                    </td>
+                    <td class="p-2 text-center">
+                        <div class="flex justify-center gap-1">
+                            <button class="btn-perdedor px-2 py-1 rounded text-[10px] font-bold ${!esGanador ? 'bg-red-500 text-white shadow-inner' : 'bg-slate-200 text-slate-500 hover:bg-red-200'}" data-index="${index}">
+                                <i class="fas fa-times"></i> PIERDE
+                            </button>
+                            <button class="btn-ganador px-2 py-1 rounded text-[10px] font-bold ${esGanador ? 'bg-emerald-500 text-white shadow-inner' : 'bg-slate-200 text-slate-500 hover:bg-emerald-200'}" data-index="${index}">
+                                <i class="fas fa-check"></i> GANA
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+
+        asignarEventosResultados();
+        actualizarCuadreGlobal();
+    }
+
+    function asignarEventosResultados() {
+        document.querySelectorAll('.btn-ganador').forEach(b => {
+            b.addEventListener('click', (e) => {
+                ticketsActuales[e.currentTarget.dataset.index].resultado_temp = 'GANADOR';
+                renderizarTickets();
+            });
+        });
+        document.querySelectorAll('.btn-perdedor').forEach(b => {
+            b.addEventListener('click', (e) => {
+                ticketsActuales[e.currentTarget.dataset.index].resultado_temp = 'PERDEDOR';
+                renderizarTickets();
+            });
+        });
+    }
+
+    function actualizarCuadreGlobal() {
+        let totalJugado = 0;
+        let totalPremios = 0;
+        let gruposResumen = {}; // Agrupación de comisiones
+
+        ticketsActuales.forEach(tk => {
+            // Unificamos todo en base 1 para los cálculos visuales, o asumimos que todo es multi-moneda por separado.
+            // Simplificación contable: Mostraremos los totales netos. 
+            // Si vendiste en Bs, debes hacer la conversión. Por ahora asumimos todo en USD para el global neto.
+            let tasa = parseFloat(tk.tasa_cambio) || 1;
+            let mult = tk.moneda === 'VES' ? (1 / tasa) : 1; 
+
+            totalJugado += parseFloat(tk.monto_jugado) * mult;
+            totalPremios += tk.premio_a_pagar * mult;
+
+            let comisionNormalizada = tk.comision_calculada * mult;
+            const llaveGrupo = `${tk.grupo} (${tk.moneda})`;
+            
+            if(!gruposResumen[llaveGrupo]) gruposResumen[llaveGrupo] = 0;
+            gruposResumen[llaveGrupo] += tk.comision_calculada; // Guardamos en la moneda original para la tabla chica
+        });
+
+        let totalComisionesDolares = 0;
+        cuerpoComisionesGrupos.innerHTML = '';
+        for (const [nombre, monto] of Object.entries(gruposResumen)) {
+            let simboloLocal = nombre.includes('VES') ? 'Bs ' : '$';
+            let valorDolares = nombre.includes('VES') ? (monto / tasaCambioGlobal) : monto;
+            totalComisionesDolares += valorDolares;
+
+            cuerpoComisionesGrupos.innerHTML += `
+                <tr>
+                    <td class="p-2 border-b border-slate-100 font-bold text-slate-700 text-[10px]">${nombre}</td>
+                    <td class="p-2 border-b border-slate-100 text-right font-bold text-purple-700">${simboloLocal}${monto.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                </tr>
+            `;
         }
-
-        // Guardar saldo consolidado en banco
-        await supabase.from('bancos').update({ saldo_sistema: acumuladoBanco }).eq('id', bancoId);
-
-        let msj = `Proceso finalizado. ${operaciones} operaciones ejecutadas en la nube.`;
-        if (errores.length > 0) msj += `\n\nHubo líneas ignoradas:\n` + errores.join('\n');
-        alert(msj);
-
-        document.getElementById('modalMasiva').classList.add('hidden');
-        this.innerHTML = '<i class="fas fa-bolt mr-1"></i> Ejecutar Carga Masiva';
-        this.disabled = false;
         
-        inicializarTablas();
-    });
+        let utilidad = totalJugado - totalPremios - totalComisionesDolares;
+
+        resMontoJugado.textContent = `$${totalJugado.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        resPremiosPagar.textContent = `$${totalPremios.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        resComisiones.textContent = `$${totalComisionesDolares.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        
+        resUtilidadNeta.textContent = `$${utilidad.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        resUtilidadNeta.className = utilidad < 0 ? "text-lg font-black text-red-600" : "text-lg font-black text-emerald-600";
+    }
 
     // ==========================================
-    // 5. REPORTE WHATSAPP
+    // 4. EJECUTAR LIQUIDACIÓN FINAL
     // ==========================================
-    document.getElementById('btnReporteWhatsapp').addEventListener('click', () => {
-        let txt = `*💰 ESTADO DE CUENTAS*\n🗓️ ${new Date().toLocaleDateString('es-ES')}\n---------------------------\n`;
-        
-        clientesGlobal.forEach(c => {
-            const icono = c.saldo_usd >= 0 ? '✅' : '⚠️';
-            txt += `${icono} ${c.nombre}: *${Number(c.saldo_usd).toFixed(2)}*\n`;
-        });
+    btnLiquidar.addEventListener('click', async () => {
+        if(!confirm("¿Está seguro de Liquidar la carrera? Se pagarán los premios a los saldos de los clientes y los tickets se cerrarán definitivamente.")) return;
 
-        document.getElementById('textoWhatsapp').value = txt;
-        document.getElementById('modalWhatsapp').classList.remove('hidden');
-        document.getElementById('textoWhatsapp').select();
+        btnLiquidar.innerHTML = '<i class="fas fa-spinner fa-spin"></i> PROCESANDO...';
+        btnLiquidar.disabled = true;
+
+        try {
+            // 1. Obtener todos los clientes actuales para actualizar su saldo
+            const { data: clientesData, error: errC } = await window.supabase.from('clientes').select('id, saldo_actual');
+            if (errC) throw errC;
+
+            // Procesar cada ticket de forma asíncrona
+            for (let tk of ticketsActuales) {
+                let nuevoEstado = tk.resultado_temp === 'GANADOR' ? 'Ganador' : 'Perdedor';
+                
+                // Actualizar DB Ticket (Guardando premio a pagar y comisión exacta calculada)
+                await window.supabase.from('tickets_apuestas').update({
+                    estado: nuevoEstado,
+                    premio_pagar: tk.premio_a_pagar,
+                    comision_pagada: tk.comision_calculada
+                }).eq('id', tk.id);
+
+                // Si es GANADOR, sumarle el premio al saldo del cliente
+                if (nuevoEstado === 'Ganador' && tk.premio_a_pagar > 0) {
+                    let cliente = clientesData.find(c => c.id === tk.cliente_juega_id);
+                    if (cliente) {
+                        // OJO: Asume que el cliente y el premio están en la misma moneda. 
+                        // Si el cliente maneja un saldo universal (USD), debes aplicar la tasa si el premio es en VES.
+                        let abono = tk.premio_a_pagar;
+                        if(tk.moneda === 'VES') {
+                            abono = tk.premio_a_pagar / parseFloat(tk.tasa_cambio); // Convertir premio VES a USD para la billetera del cliente
+                        }
+
+                        let nuevoSaldo = parseFloat(cliente.saldo_actual) + parseFloat(abono);
+                        await window.supabase.from('clientes').update({ saldo_actual: nuevoSaldo }).eq('id', tk.cliente_juega_id);
+                        cliente.saldo_actual = nuevoSaldo; // actualizar en memoria por si el cliente ganó varios tickets
+                    }
+                }
+            }
+
+            alert("✅ ¡CARRERA LIQUIDADA CON ÉXITO! Los saldos fueron abonados a los ganadores.");
+            window.location.reload();
+
+        } catch (error) {
+            console.error(error);
+            alert("Ocurrió un error en la liquidación en la base de datos.");
+            btnLiquidar.innerHTML = '<i class="fas fa-check-double mr-1"></i> Confirmar Cierre y Pagar Premios';
+            btnLiquidar.disabled = false;
+        }
     });
 
-    document.getElementById('btnCopiarTexto').addEventListener('click', function() {
-        const textarea = document.getElementById('textoWhatsapp');
-        textarea.select();
-        navigator.clipboard.writeText(textarea.value).then(() => {
-            const original = this.innerHTML;
-            this.innerHTML = '<i class="fas fa-check"></i> Copiado';
-            setTimeout(() => this.innerHTML = original, 2000);
-        });
-    });
-
-    // Modales genéricos
-    document.querySelectorAll('.cerrar-modal').forEach(b => {
-        b.addEventListener('click', function() { this.closest('.fixed.z-50').classList.add('hidden'); });
-    });
-
-    // Arranque
-    inicializarTablas();
+    inicializarFiltros();
 });

@@ -6,24 +6,28 @@
     <title>Iniciar Sesión - Club del Dinero</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        // Si el usuario entra al index, destruimos la sesión existente por seguridad
+        localStorage.removeItem('club_sesion_activa');
+    </script>
 </head>
-<body class="bg-slate-900 font-sans h-screen flex items-center justify-center">
+<body class="bg-slate-900 font-sans h-screen flex items-center justify-center bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
 
     <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md border border-slate-800">
         <div class="text-center mb-6">
-            <div class="bg-emerald-600 text-white w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3 shadow-md">
-                <i class="fas fa-coins text-xl"></i>
+            <div class="bg-emerald-600 text-white w-14 h-14 rounded-xl flex items-center justify-center mx-auto mb-3 shadow-lg">
+                <i class="fas fa-coins text-2xl"></i>
             </div>
-            <h1 class="text-2xl font-bold text-slate-800">Club del Dinero</h1>
-            <p class="text-xs text-slate-500 mt-1">Panel de Control y Sistema Hípico</p>
+            <h1 class="text-2xl font-black text-slate-800 tracking-wide uppercase">Club del Dinero</h1>
+            <p class="text-xs text-slate-500 mt-1 font-bold">Panel Administrativo y Contable</p>
         </div>
 
-        <form id="formLogin" class="space-y-4">
+        <form id="formLogin" class="space-y-5">
             <div>
                 <label class="block text-xs font-bold text-slate-700 mb-1">Usuario</label>
                 <div class="relative">
                     <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><i class="fas fa-user"></i></span>
-                    <input type="text" id="loginUsuario" placeholder="Ej: admin" class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-emerald-500" required>
+                    <input type="text" id="loginUsuario" placeholder="Ej: admin" class="w-full pl-9 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-emerald-500 font-medium text-slate-700 bg-slate-50" required>
                 </div>
             </div>
 
@@ -31,22 +35,36 @@
                 <label class="block text-xs font-bold text-slate-700 mb-1">Contraseña</label>
                 <div class="relative">
                     <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><i class="fas fa-lock"></i></span>
-                    <input type="password" id="loginPassword" placeholder="••••••••" class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-emerald-500" required>
+                    <input type="password" id="loginPassword" placeholder="••••••••" class="w-full pl-9 pr-10 py-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-emerald-500 font-medium text-slate-700 bg-slate-50" required>
+                    <button type="button" id="btnTogglePass" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-emerald-600 focus:outline-none">
+                        <i class="fas fa-eye"></i>
+                    </button>
                 </div>
             </div>
 
-            <div id="mensajeError" class="text-red-500 text-xs text-center font-medium hidden"></div>
+            <div id="mensajeError" class="bg-red-50 border border-red-200 text-red-600 text-xs text-center font-bold p-2 rounded hidden"></div>
 
-            <button type="submit" id="btnLogin" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-lg shadow transition-colors text-sm">
-                Iniciar Sesión
+            <button type="submit" id="btnLogin" class="w-full bg-slate-800 hover:bg-black text-white font-bold py-3 rounded-lg shadow-lg transition-colors text-sm uppercase tracking-wider">
+                <i class="fas fa-sign-in-alt mr-2"></i> Iniciar Sesión
             </button>
         </form>
     </div>
 
-    <!-- Supabase y Lógica de Login -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="js/conexion.js"></script>
     <script>
+        // Toggle de contraseña
+        const passInput = document.getElementById('loginPassword');
+        document.getElementById('btnTogglePass').addEventListener('click', function() {
+            if (passInput.type === "password") {
+                passInput.type = "text";
+                this.innerHTML = '<i class="fas fa-eye-slash"></i>';
+            } else {
+                passInput.type = "password";
+                this.innerHTML = '<i class="fas fa-eye"></i>';
+            }
+        });
+
         document.getElementById('formLogin').addEventListener('submit', async function(e) {
             e.preventDefault();
             const usuarioInput = document.getElementById('loginUsuario').value.trim();
@@ -55,11 +73,10 @@
             const errorDiv = document.getElementById('mensajeError');
 
             errorDiv.classList.add('hidden');
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Verificando...';
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Autenticando...';
             btn.disabled = true;
 
             try {
-                // Consultar a Supabase
                 const { data: operador, error } = await window.supabase
                     .from('operadores')
                     .select('*')
@@ -67,16 +84,9 @@
                     .eq('activo', true)
                     .single();
 
-                if (error || !operador) {
-                    throw new Error("Usuario no encontrado o inactivo.");
-                }
+                if (error || !operador) throw new Error("Usuario no encontrado o inactivo.");
+                if (operador.password !== passwordInput) throw new Error("Contraseña incorrecta.");
 
-                // Verificar contraseña exacta
-                if (operador.password !== passwordInput) {
-                    throw new Error("Contraseña incorrecta.");
-                }
-
-                // Guardar sesión y entrar
                 localStorage.setItem('club_sesion_activa', JSON.stringify({
                     nombre: operador.nombre_completo,
                     rol: operador.rol,
@@ -86,11 +96,10 @@
                 window.location.href = 'dashboard.html';
 
             } catch (err) {
-                // Si hay un error, liberar el botón y mostrar el mensaje
                 console.error(err);
                 errorDiv.textContent = err.message;
                 errorDiv.classList.remove('hidden');
-                btn.innerHTML = 'Iniciar Sesión';
+                btn.innerHTML = '<i class="fas fa-sign-in-alt mr-2"></i> Iniciar Sesión';
                 btn.disabled = false;
             }
         });
