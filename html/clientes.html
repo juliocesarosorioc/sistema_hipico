@@ -36,8 +36,19 @@
                         <input type="text" id="nombreCliente" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 uppercase" required>
                     </div>
                     <div>
-                        <label class="block font-bold text-slate-700 mb-1">Teléfono</label>
-                        <input type="text" id="telefonoCliente" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                        <label class="block font-bold text-slate-700 mb-1">Teléfono (WhatsApp)</label>
+                        <div class="flex gap-1">
+                            <select id="codigoPaisNuevo" class="w-28 border border-slate-300 rounded px-2 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-bold bg-slate-50 text-[11px]" title="Código de país"></select>
+                            <input type="text" id="telefonoCliente" placeholder="412 123 4567" class="flex-1 border border-slate-300 rounded px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Email</label>
+                        <input type="email" id="emailCliente" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 placeholder-slate-300" placeholder="cliente@correo.com">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Cédula / RIF</label>
+                        <input type="text" id="cedulaRifCliente" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 uppercase font-mono" placeholder="V-12.345.678 o J-12345678-9">
                     </div>
                     <div>
                         <label class="block font-bold text-slate-700 mb-1">Aval / Límite de Pérdida (USD)</label>
@@ -60,17 +71,12 @@
                             <option value="">— Ninguno (Directo) —</option>
                         </select>
                     </div>
-                    <div>
-                        <label class="block font-bold text-slate-700 mb-1">Método de Pago</label>
+                    <div class="md:col-span-3">
+                        <label class="block font-bold text-slate-700 mb-1">Método de Pago (Bancos de Venezuela, Zelle o Binance)</label>
                         <select id="metodoPagoCliente" class="w-full border border-slate-300 rounded px-3 py-2 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-bold text-slate-700 bg-slate-50">
                             <option value="">— Seleccione —</option>
-                            <option>EFECTIVO</option>
-                            <option>TRANSFERENCIA</option>
-                            <option>ZELLE</option>
-                            <option>PAGO MÓVIL</option>
-                            <option>DIVISA</option>
-                            <option>OTRO</option>
                         </select>
+                        <div id="bloqueDatosPagoNuevo" class="hidden mt-2 grid grid-cols-1 md:grid-cols-3 gap-3 p-3 rounded-lg bg-emerald-50 border border-emerald-200"></div>
                     </div>
                     <div>
                         <label class="block font-bold text-slate-700 mb-1">Día de la Semana que se Cuadra</label>
@@ -151,6 +157,34 @@
                         </thead>
                         <tbody id="cuerpoReporteCuadre" class="divide-y divide-slate-100 bg-white">
                             <tr><td colspan="7" class="p-6 text-center text-slate-500 italic">Seleccione un día (o todos) y pulse Generar Reporte.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- NOTIFICACIONES DEL PORTAL -->
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <div class="text-sm font-bold text-slate-800">
+                        <i class="fas fa-bell text-cyan-600 mr-2"></i> Notificaciones del Portal del Cliente
+                        <span id="contadorNotif" class="hidden ml-2 bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full"></span>
+                    </div>
+                    <button id="btnRecargarNotif" class="border border-slate-300 bg-white px-3 py-1.5 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm transition-colors text-xs" title="Refrescar"><i class="fas fa-sync-alt"></i></button>
+                </div>
+                <p class="text-xs text-slate-500 leading-relaxed">Cuando un cliente actualiza sus datos desde su portal, entra aquí la solicitud. Puede <b>aplicarla</b> (se actualiza el cliente) o <b>ignorarla</b>.</p>
+                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-800 text-white text-[10px] uppercase tracking-wider">
+                            <tr>
+                                <th class="p-2.5 font-semibold">Fecha</th>
+                                <th class="p-2.5 font-semibold">Cliente</th>
+                                <th class="p-2.5 font-semibold">Detalle de la Solicitud</th>
+                                <th class="p-2.5 text-center font-semibold">Estado</th>
+                                <th class="p-2.5 text-center font-semibold">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cuerpoNotificaciones" class="divide-y divide-slate-100 bg-white">
+                            <tr><td colspan="5" class="p-6 text-center text-slate-500 italic">Cargando notificaciones...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -240,8 +274,19 @@
                             <input type="text" id="editNombre" class="w-full border border-slate-300 rounded-lg px-3 py-2 uppercase outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm" required>
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Teléfono</label>
-                            <input type="text" id="editTelefono" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm font-mono">
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Teléfono (WhatsApp) con Código de País</label>
+                            <div class="flex gap-1">
+                                <select id="editCodigoPais" class="w-28 border border-slate-300 rounded-lg px-2 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-[11px] font-bold text-slate-700 bg-white"></select>
+                                <input type="text" id="editNumeroTelefono" placeholder="412 123 4567" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm font-mono">
+                            </div>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Email</label>
+                            <input type="email" id="editEmail" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Cédula / RIF</label>
+                            <input type="text" id="editCedulaRif" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm font-mono uppercase" placeholder="V-12.345.678 o J-12345678-9">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Juega Libre</label>
@@ -264,13 +309,12 @@
                                 <option value="">— Ninguno (Directo) —</option>
                             </select>
                         </div>
-                        <div>
-                            <label class="block text-xs font-bold text-emerald-600 mb-1 uppercase tracking-wider">Método de Pago</label>
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-emerald-600 mb-1 uppercase tracking-wider">Método de Pago (Bancos de Venezuela, Zelle o Binance)</label>
                             <select id="editMetodoPago" class="w-full border border-emerald-300 rounded-lg px-3 py-2 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm font-bold text-slate-700 bg-white">
                                 <option value="">— Seleccione —</option>
-                                <option>EFECTIVO</option><option>TRANSFERENCIA</option><option>ZELLE</option>
-                                <option>PAGO MÓVIL</option><option>DIVISA</option><option>OTRO</option>
                             </select>
+                            <div id="bloqueDatosPagoEditar" class="hidden mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-lg bg-emerald-50 border border-emerald-200"></div>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-emerald-600 mb-1 uppercase tracking-wider">Día de la Semana que se Cuadra</label>

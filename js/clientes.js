@@ -45,6 +45,110 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ==========================================
+    // 0. SELECTS COMPARTIDOS Y DATOS DE PAGO
+    // ==========================================
+    const val = (id) => document.getElementById(id)?.value ?? '';
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
+
+    document.getElementById('codigoPaisNuevo').innerHTML = clubUI.htmlOpcionesCodigoPais('+58');
+    document.getElementById('editCodigoPais').innerHTML = clubUI.htmlOpcionesCodigoPais('+58');
+    document.getElementById('metodoPagoCliente').innerHTML = '<option value="">— Seleccione —</option>' + clubUI.htmlOpcionesMetodos();
+    document.getElementById('editMetodoPago').innerHTML = '<option value="">— Seleccione —</option>' + clubUI.htmlOpcionesMetodos();
+
+    // Bloque dinámico según el método de pago elegido
+    function renderBloqueDatosPago(pref, metodo, dp) {
+        const cont = document.getElementById(pref === 'nuevo' ? 'bloqueDatosPagoNuevo' : 'bloqueDatosPagoEditar');
+        if (!metodo) { cont.classList.add('hidden'); cont.innerHTML = ''; return; }
+
+        const lbl = 'block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider';
+        const inp = 'w-full border border-emerald-300 rounded-lg px-3 py-2 text-xs outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 bg-white';
+        const dis = inp + ' bg-emerald-50 font-bold text-emerald-800 cursor-not-allowed';
+
+        let html;
+        if (clubUI.esBancoVzla(metodo)) {
+            const [codigo, ...resto] = metodo.split(' · ');
+            const nombre = resto.join(' · ');
+            html = `
+                <div>
+                    <label class="${lbl}">Banco (predeterminado)</label>
+                    <input id="${pref}BancoNombre" readonly value="${nombre}" class="${dis}">
+                </div>
+                <div>
+                    <label class="${lbl}">Código SUDEBAN</label>
+                    <input id="${pref}BancoCodigo" readonly value="${codigo}" class="${dis}">
+                </div>
+                <div>
+                    <label class="${lbl}">Tipo de Cuenta</label>
+                    <select id="${pref}TipoCuenta" class="${inp} font-bold">
+                        <option>CORRIENTE</option><option>AHORRO</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="${lbl}">Número de Cuenta</label>
+                    <input id="${pref}NumeroCuenta" inputmode="numeric" placeholder="01020330445566778890" class="${inp} font-mono">
+                </div>
+                <div>
+                    <label class="${lbl}">Titular (nombre en la cuenta)</label>
+                    <input id="${pref}Titular" class="${inp} uppercase">
+                </div>`;
+        } else if (metodo === 'ZELLE' || metodo === 'BINANCE') {
+            html = `
+                <div>
+                    <label class="${lbl}">Tipo de dato</label>
+                    <select id="${pref}TipoContacto" class="${inp} font-bold">
+                        <option value="correo">Correo electrónico</option>
+                        <option value="telefono">Número de teléfono</option>
+                    </select>
+                </div>
+                <div class="${pref === 'nuevo' ? 'md:col-span-2' : ''}">
+                    <label class="${lbl}">Dato de ${metodo} (correo o teléfono)</label>
+                    <input id="${pref}DatoContacto" placeholder="${metodo === 'ZELLE' ? 'ej. correo@mail.com o +1 555 123 4567' : 'ID o correo vinculado a Binance'}" class="${inp}">
+                </div>
+                ${metodo === 'BINANCE' ? `
+                <div>
+                    <label class="${lbl}">ID / UID de Binance (opcional)</label>
+                    <input id="${pref}IdBinance" class="${inp}">
+                </div>` : ''}`;
+        } else {
+            html = `<div class="${pref === 'nuevo' ? 'md:col-span-3' : 'col-span-2'} text-[11px] text-slate-500"><i class="fas fa-info-circle mr-1"></i>Para <b>${metodo}</b> no se requieren datos bancarios adicionales.</div>`;
+        }
+
+        cont.innerHTML = html;
+        cont.classList.remove('hidden');
+
+        if (dp && typeof dp === 'object') {
+            set(`${pref}TipoCuenta`, dp.tipo_cuenta);
+            set(`${pref}NumeroCuenta`, dp.numero_cuenta);
+            set(`${pref}Titular`, dp.titular);
+            set(`${pref}TipoContacto`, dp.tipo_contacto);
+            set(`${pref}DatoContacto`, dp.dato);
+            set(`${pref}IdBinance`, dp.id_binance);
+        }
+    }
+
+    function leerDatosPago(pref, metodo) {
+        if (!metodo) return null;
+        if (clubUI.esBancoVzla(metodo)) {
+            const [codigo, ...resto] = metodo.split(' · ');
+            return {
+                banco: resto.join(' · '), codigo,
+                tipo_cuenta: val(`${pref}TipoCuenta`),
+                numero_cuenta: val(`${pref}NumeroCuenta`),
+                titular: val(`${pref}Titular`)
+            };
+        }
+        if (metodo === 'ZELLE' || metodo === 'BINANCE') {
+            const dp = { tipo_contacto: val(`${pref}TipoContacto`) || 'correo', dato: val(`${pref}DatoContacto`) };
+            if (metodo === 'BINANCE') dp.id_binance = val(`${pref}IdBinance`) || null;
+            return dp;
+        }
+        return {};
+    }
+
+    document.getElementById('metodoPagoCliente').addEventListener('change', (e) => renderBloqueDatosPago('nuevo', e.target.value, null));
+    document.getElementById('editMetodoPago').addEventListener('change', (e) => renderBloqueDatosPago('editar', e.target.value, null));
+
+    // ==========================================
     // 1. CARGA DE CLIENTES (DB REAL)
     // ==========================================
     async function cargarClientes() {
@@ -98,9 +202,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const colorS = saldo < 0 ? 'text-red-600' : 'text-emerald-600';
 
+            const pagoResumen = window.clubUI.resumenDatosPago(c.datos_pago);
             const cuadreLabel = `
                 <span class="text-[10px] font-bold">${c.dia_cuadre || '<span class="text-slate-400 italic">Sin día</span>'}</span>
-                <span class="text-[9px] text-emerald-600 block">${c.metodo_pago || ''}${parseFloat(c.tasa_cuadre || 0) > 0 ? ` · Tasa ${c.tasa_cuadre}` : ''}</span>
+                <span class="text-[9px] text-emerald-600 block">${c.metodo_pago || '—'}${pagoResumen ? ' · ' + pagoResumen : ''}${parseFloat(c.tasa_cuadre || 0) > 0 ? ' · Tasa ' + c.tasa_cuadre : ''}</span>
             `;
 
             const portalLabel = c.portal_habilitado
@@ -112,9 +217,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-2 font-bold text-slate-800">${c.nombre}</td>
                     <td class="p-2 text-slate-500 font-mono">${c.telefono || '-'}</td>
                     <td class="p-2 text-center">${badgeLibre}</td>
-                    <td class="p-2 text-right font-mono font-bold ${colorS}">$${saldo.toFixed(2)}</td>
-                    <td class="p-2 text-right font-mono text-amber-600" title="Límite de pérdida (no es saldo)">$${aval.toFixed(2)}</td>
-                    <td class="p-2 text-right font-mono text-purple-600" title="Incentivo a buenos jugadores (cuenta individual)">${dev.toFixed(2)}%</td>
+                    <td class="p-2 text-right font-mono font-bold ${colorS}">$${clubUI.formatoNumero(saldo, 2)}</td>
+                    <td class="p-2 text-right font-mono text-amber-600" title="Límite de pérdida (no es saldo)">$${clubUI.formatoNumero(aval, 2)}</td>
+                    <td class="p-2 text-right font-mono text-purple-600" title="Incentivo a buenos jugadores (cuenta individual)">${clubUI.formatoNumero(dev, 2)}%</td>
                     <td class="p-2 text-center">${badgeMS}</td>
                     <td class="p-2 font-medium text-slate-600">${socioLabel}</td>
                     <td class="p-2">${afiliadoLabel}</td>
@@ -195,7 +300,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const { error } = await window.supabase.from('clientes').insert([soloColumnasExistentes({
             nombre: nombre,
-            telefono: telefonoValido(document.getElementById('telefonoCliente').value),
+            telefono: clubUI.componerTelefono(document.getElementById('codigoPaisNuevo').value, document.getElementById('telefonoCliente').value) || null,
+            codigo_pais: document.getElementById('codigoPaisNuevo').value,
+            email: document.getElementById('emailCliente').value.trim() || null,
+            cedula_rif: document.getElementById('cedulaRifCliente').value.trim().toUpperCase() || null,
             aval: numeroValido(document.getElementById('avalCliente').value),
             devolucion: numeroValido(document.getElementById('devolucionCliente').value),
             libre: document.getElementById('libreCliente').value === 'true',
@@ -205,6 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
             dia_cuadre: document.getElementById('diaCuadreCliente').value || null,
             forma_cuadre: document.getElementById('formaCuadreCliente').value || null,
             tasa_cuadre: numeroValido(document.getElementById('tasaCuadreCliente').value),
+            datos_pago: leerDatosPago('nuevo', document.getElementById('metodoPagoCliente').value),
             es_socio: false
         })]);
 
@@ -218,15 +327,20 @@ document.addEventListener('DOMContentLoaded', () => {
             b.addEventListener('click', function() {
                 const c = clientesGlobales.find(x => x.id == this.dataset.id);
                 if (c) {
+                    const tel = clubUI.desglosarTelefono(c.telefono);
                     document.getElementById('editId').value = c.id;
                     document.getElementById('editNombre').value = c.nombre;
-                    document.getElementById('editTelefono').value = c.telefono || '';
+                    set('editCodigoPais', tel.codigo);
+                    document.getElementById('editNumeroTelefono').value = tel.numero;
+                    document.getElementById('editEmail').value = c.email || '';
+                    document.getElementById('editCedulaRif').value = c.cedula_rif || '';
                     document.getElementById('editAval').value = c.aval;
                     document.getElementById('editDevolucion').value = c.devolucion;
                     document.getElementById('editLibre').value = c.libre ? 'true' : 'false';
                     document.getElementById('editSocio').value = c.socio_asignado || '';
                     document.getElementById('editMostrarS').value = c.mostrar_saldo_socio ? 'true' : 'false';
                     document.getElementById('editMetodoPago').value = c.metodo_pago || '';
+                    renderBloqueDatosPago('editar', c.metodo_pago || '', c.datos_pago);
                     document.getElementById('editDiaCuadre').value = c.dia_cuadre || '';
                     document.getElementById('editFormaCuadre').value = c.forma_cuadre || '';
                     document.getElementById('editTasaCuadre').value = parseFloat(c.tasa_cuadre || 0);
@@ -259,7 +373,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const id = document.getElementById('editId').value;
         const { error } = await window.supabase.from('clientes').update(soloColumnasExistentes({
             nombre: document.getElementById('editNombre').value.trim().toUpperCase(),
-            telefono: telefonoValido(document.getElementById('editTelefono').value),
+            telefono: clubUI.componerTelefono(document.getElementById('editCodigoPais').value, document.getElementById('editNumeroTelefono').value) || null,
+            codigo_pais: document.getElementById('editCodigoPais').value,
+            email: document.getElementById('editEmail').value.trim() || null,
+            cedula_rif: document.getElementById('editCedulaRif').value.trim().toUpperCase() || null,
             aval: numeroValido(document.getElementById('editAval').value),
             devolucion: numeroValido(document.getElementById('editDevolucion').value),
             libre: document.getElementById('editLibre').value === 'true',
@@ -268,7 +385,8 @@ document.addEventListener('DOMContentLoaded', () => {
             metodo_pago: document.getElementById('editMetodoPago').value || null,
             dia_cuadre: document.getElementById('editDiaCuadre').value || null,
             forma_cuadre: document.getElementById('editFormaCuadre').value || null,
-            tasa_cuadre: numeroValido(document.getElementById('editTasaCuadre').value)
+            tasa_cuadre: numeroValido(document.getElementById('editTasaCuadre').value),
+            datos_pago: leerDatosPago('editar', document.getElementById('editMetodoPago').value)
         })).eq('id', id);
         if (error) return clubUI.toast('Error al actualizar: ' + error.message, 'error');
         modalEditar.classList.add('hidden');
@@ -390,9 +508,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-2.5 font-bold text-emerald-700">${c.dia_cuadre || '-'}</td>
                     <td class="p-2.5">${c.metodo_pago || '<span class="text-slate-400 italic">—</span>'}</td>
                     <td class="p-2.5">${c.forma_cuadre || '<span class="text-slate-400 italic">—</span>'}</td>
-                    <td class="p-2.5 text-right font-mono font-bold">${tasa > 0 ? tasa.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '-'}</td>
-                    <td class="p-2.5 text-right font-mono font-bold ${saldo < 0 ? 'text-red-600' : 'text-emerald-600'}">$${saldo.toFixed(2)}</td>
-                    <td class="p-2.5 text-right font-mono font-bold text-amber-600">${tasa > 0 ? 'Bs ' + debeTasa.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '-'}</td>
+                    <td class="p-2.5 text-right font-mono font-bold">${tasa > 0 ? clubUI.formatoNumero(tasa, 2) : '-'}</td>
+                    <td class="p-2.5 text-right font-mono font-bold ${saldo < 0 ? 'text-red-600' : 'text-emerald-600'}">$${clubUI.formatoNumero(saldo, 2)}</td>
+                    <td class="p-2.5 text-right font-mono font-bold text-amber-600">${tasa > 0 ? 'Bs ' + clubUI.formatoNumero(debeTasa, 2) : '-'}</td>
                 </tr>`;
         }).join('');
 
@@ -425,6 +543,111 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.clubDB?.logAccion) window.clubDB.logAccion('CLIENTES', `devolucion_masiva: ${val}% a ${ids.length} clientes`);
     });
 
+    // ==========================================
+    // 9. NOTIFICACIONES DEL PORTAL (ADMIN)
+    // ==========================================
+    let notificacionesGlobales = [];
+    const cuerpoNotif = document.getElementById('cuerpoNotificaciones');
+    const contadorNotif = document.getElementById('contadorNotif');
+
+    function resumenNotificacion(n) {
+        const d = n.datos || {};
+        const partes = [];
+        const etiqueta = (k) => ({ telefono: 'Tlf', email: 'Email', cedula_rif: 'Cédula/RIF', direccion: 'Dirección', metodo_pago: 'Método', codigo_pais: 'País' }[k] || k);
+        [['telefono', 'email', 'cedula_rif', 'direccion', 'metodo_pago']].forEach(keys => keys.forEach(k => { if (d[k]) partes.push(`<b>${etiqueta(k)}:</b> ${d[k]}`); }));
+        if (d.datos_pago && typeof d.datos_pago === 'object') {
+            const r = clubUI.resumenDatosPago(d.datos_pago);
+            if (r) partes.push(`<b>Detalle pago:</b> ${r}`);
+        }
+        if (partes.length === 0) partes.push(n.mensaje || 'Solicitud de actualización de datos.');
+        return partes.join(' · ');
+    }
+
+    async function cargarNotificaciones() {
+        const { data, error } = await window.supabase
+            .from('notificaciones').select('*').order('created_at', { ascending: false }).limit(40);
+
+        if (error) {
+            cuerpoNotif.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-slate-500 italic">Ejecute sql/pagos_vzla.sql para activar las notificaciones.</td></tr>';
+            return;
+        }
+        notificacionesGlobales = data || [];
+
+        const nuevas = notificacionesGlobales.filter(x => x.estado === 'Nueva').length;
+        contadorNotif.classList.toggle('hidden', nuevas === 0);
+        contadorNotif.textContent = nuevas;
+
+        if (notificacionesGlobales.length === 0) {
+            cuerpoNotif.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-slate-500 italic">Sin notificaciones. Cuando un cliente pida cambios desde su portal, aparecerán aquí.</td></tr>';
+            return;
+        }
+
+        const badges = { Nueva: 'bg-amber-100 text-amber-700', Aplicada: 'bg-emerald-100 text-emerald-700', Ignorada: 'bg-slate-200 text-slate-500' };
+
+        cuerpoNotif.innerHTML = notificacionesGlobales.map(n => {
+            const fecha = n.created_at ? new Date(n.created_at).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+            const acciones = n.estado === 'Nueva'
+                ? `<div class="flex gap-1 justify-center">
+                        <button class="btn-aplicar-notif bg-emerald-600 text-white px-2 py-1 rounded text-[10px] font-black hover:bg-emerald-700" data-id="${n.id}" title="Aplicar los datos al cliente"><i class="fas fa-check"></i> Aplicar</button>
+                        <button class="btn-ignorar-notif bg-slate-200 text-slate-600 px-2 py-1 rounded text-[10px] font-black hover:bg-slate-300" data-id="${n.id}" title="Ignorar la solicitud"><i class="fas fa-times"></i></button>
+                    </div>`
+                : `<span class="text-slate-300">—</span>`;
+            return `
+                <tr class="hover:bg-amber-50 ${n.estado === 'Nueva' ? 'bg-amber-50/40' : 'opacity-70'}">
+                    <td class="p-2.5 text-slate-500 whitespace-nowrap">${fecha}</td>
+                    <td class="p-2.5 font-bold text-slate-800">${n.cliente_nombre}</td>
+                    <td class="p-2.5 text-[10px] text-slate-600 max-w-[420px]">${resumenNotificacion(n)}</td>
+                    <td class="p-2.5 text-center"><span class="px-2 py-0.5 rounded text-[9px] font-black ${badges[n.estado]}">${n.estado}</span></td>
+                    <td class="p-2.5 text-center">${acciones}</td>
+                </tr>`;
+        }).join('');
+
+        document.querySelectorAll('.btn-aplicar-notif').forEach(b => b.addEventListener('click', () => aplicarNotificacion(b.dataset.id)));
+        document.querySelectorAll('.btn-ignorar-notif').forEach(b => b.addEventListener('click', () => ignorarNotificacion(b.dataset.id)));
+    }
+
+    async function aplicarNotificacion(id) {
+        const n = notificacionesGlobales.find(x => x.id == id);
+        if (!n || n.estado !== 'Nueva') return;
+        if (!confirm(`Aplicar los datos del portal al cliente ${n.cliente_nombre}? Esto actualizará su teléfono, email, cédula/RIF y método de pago.`)) return;
+
+        const d = n.datos || {};
+        const payload = {};
+        if (d.telefono) payload.telefono = d.telefono;
+        if (d.codigo_pais) payload.codigo_pais = d.codigo_pais;
+        if (d.email) payload.email = d.email;
+        if (d.cedula_rif) payload.cedula_rif = d.cedula_rif;
+        if (d.direccion) payload.direccion = d.direccion;
+        if (d.metodo_pago) payload.metodo_pago = d.metodo_pago;
+        if (d.datos_pago) payload.datos_pago = d.datos_pago;
+
+        const sesionS = window.clubAuth ? window.clubAuth.getSesion() : null;
+        const { error } = await window.supabase.from('clientes').update(soloColumnasExistentes(payload)).eq('id', n.cliente_id);
+        if (error) return clubUI.toast('Error al aplicar: ' + error.message, 'error');
+
+        await window.supabase.from('notificaciones').update({
+            estado: 'Aplicada', atendida_por: sesionS ? sesionS.nombre : 'Admin', atendida_at: new Date().toISOString()
+        }).eq('id', id);
+
+        clubUI.toast('Datos aplicados al cliente.', 'success');
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('CLIENTES', `notificacion_aplicada: ${n.cliente_nombre} (id=${id})`);
+        cargarNotificaciones();
+        cargarClientes();
+    }
+
+    async function ignorarNotificacion(id) {
+        const n = notificacionesGlobales.find(x => x.id == id);
+        if (!n) return;
+        const sesionS = window.clubAuth ? window.clubAuth.getSesion() : null;
+        await window.supabase.from('notificaciones').update({
+            estado: 'Ignorada', atendida_por: sesionS ? sesionS.nombre : 'Admin', atendida_at: new Date().toISOString()
+        }).eq('id', id);
+        clubUI.toast('Solicitud ignorada.', 'warning');
+        cargarNotificaciones();
+    }
+
+    document.getElementById('btnRecargarNotif')?.addEventListener('click', cargarNotificaciones);
+
     document.querySelectorAll('.cerrar-modal').forEach(b => {
         b.addEventListener('click', () => {
             modalEditar.classList.add('hidden');
@@ -434,4 +657,5 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     cargarClientes();
+    cargarNotificaciones();
 });

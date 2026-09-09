@@ -155,13 +155,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="text-[10px] text-blue-600">Ejemplar: ${tk.caballo} (${tk.cantidad_tablas} Tablas)</span>
                     </td>
                     <td class="p-2 text-right font-bold text-slate-700">
-                        ${simbolo}${parseFloat(tk.monto_jugado).toLocaleString(undefined, {minimumFractionDigits: 2})}
+                        ${simbolo}${clubUI.formatoNumero(parseFloat(tk.monto_jugado), 2)}
                     </td>
                     <td class="p-2 text-right font-bold ${esGanador ? 'text-emerald-700' : 'text-slate-400'} bg-blue-50/30">
-                        ${simbolo}${premioMostrar.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                        ${simbolo}${clubUI.formatoNumero(premioMostrar, 2)}
                     </td>
                     <td class="p-2 text-right font-bold text-purple-700 bg-purple-50/30">
-                        ${simbolo}${comisionDinámica.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                        ${simbolo}${comisionDináclubUI.formatoNumero(mica, 2)}
                         <div class="text-[9px] text-slate-500 font-normal">(${tk.comision_porcentaje}%)</div>
                     </td>
                     <td class="p-2 text-center">
@@ -229,18 +229,18 @@ document.addEventListener('DOMContentLoaded', () => {
             cuerpoComisionesGrupos.innerHTML += `
                 <tr>
                     <td class="p-2 border-b border-slate-100 font-bold text-slate-700 text-[10px]">${nombre}</td>
-                    <td class="p-2 border-b border-slate-100 text-right font-bold text-purple-700">${simboloLocal}${monto.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                    <td class="p-2 border-b border-slate-100 text-right font-bold text-purple-700">${simboloLocal}${clubUI.formatoNumero(monto, 2)}</td>
                 </tr>
             `;
         }
         
         let utilidad = totalJugado - totalPremios - totalComisionesDolares;
 
-        resMontoJugado.textContent = `$${totalJugado.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-        resPremiosPagar.textContent = `$${totalPremios.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-        resComisiones.textContent = `$${totalComisionesDolares.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        resMontoJugado.textContent = `$${clubUI.formatoNumero(totalJugado, 2)}`;
+        resPremiosPagar.textContent = `$${clubUI.formatoNumero(totalPremios, 2)}`;
+        resComisiones.textContent = `$${clubUI.formatoNumero(totalComisionesDolares, 2)}`;
         
-        resUtilidadNeta.textContent = `$${utilidad.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        resUtilidadNeta.textContent = `$${clubUI.formatoNumero(utilidad, 2)}`;
         resUtilidadNeta.className = utilidad < 0 ? "text-lg font-black text-red-600" : "text-lg font-black text-emerald-600";
     }
 

@@ -295,7 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function calcularSumaBaseTotal() {
         let suma = 0;
         document.querySelectorAll('.in-valor-ej').forEach(input => { suma += parseFloat(input.value) || 0; });
-        lblSumaBase.textContent = suma.toFixed(1);
+        lblSumaBase.textContent = clubUI.formatoNumero(suma, 1);
         actualizarRiesgo();
     }
 
@@ -311,12 +311,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (mon === 'VES') { bs += monto; usd += monto / (tasaCambioGlobal || 1); }
             else { usd += monto; bs += monto * (tasaCambioGlobal || 1); }
             const rg = inp.closest('[data-grupo]')?.querySelector('.riesgo-grupo');
-            if (rg) rg.textContent = monto.toLocaleString(undefined, { minimumFractionDigits: 2 });
+            if (rg) rg.textContent = clubUI.formatoNumero(monto, 2);
         });
 
-        if (lblRiesgoBs) lblRiesgoBs.value = 'Bs ' + bs.toLocaleString(undefined, { minimumFractionDigits: 2 });
-        if (lblRiesgoUsd) lblRiesgoUsd.value = '$ ' + usd.toLocaleString(undefined, { minimumFractionDigits: 2 });
-        lblPremioPts.textContent = '$' + prem.toLocaleString(undefined, { minimumFractionDigits: 2 });
+        if (lblRiesgoBs) lblRiesgoBs.value = 'Bs ' + clubUI.formatoNumero(bs, 2);
+        if (lblRiesgoUsd) lblRiesgoUsd.value = '$ ' + clubUI.formatoNumero(usd, 2);
+        lblPremioPts.textContent = '$' + clubUI.formatoNumero(prem, 2);
 
         const maxUsd = parseFloat(maxRiesgoUsd.value) || 0;
         const excede = maxUsd > 0 && usd > maxUsd;
@@ -362,7 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 else rUsd += monto;
             });
             if (rUsd > maxUsd) {
-                return clubUI.toast(`Riesgo supera el tope único ($ ${rUsd.toLocaleString(undefined, {minimumFractionDigits:2})} equivalente). Ajuste cupos o premio.`);
+                return clubUI.toast(`Riesgo supera el tope único ($ ${clubUI.formatoNumero(rUsd, 2)} equivalente). Ajuste cupos o premio.`);
             }
         }
 
@@ -577,7 +577,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 else rUsd += monto;
             });
             if (rUsd > maxUsd) {
-                return clubUI.toast(`La edición supera el tope único de riesgo ($ ${rUsd.toLocaleString(undefined, {minimumFractionDigits:2})} equivalente).`);
+                return clubUI.toast(`La edición supera el tope único de riesgo ($ ${clubUI.formatoNumero(rUsd, 2)} equivalente).`);
             }
         }
 
@@ -692,7 +692,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.chk-retiro:checked').forEach(c => valRet += parseFloat(c.dataset.valor));
         let p = premioOrigTemp;
         if (sumaBaseTemp > 0 && valRet > 0) p = premioOrigTemp * (1 - (valRet / sumaBaseTemp));
-        document.getElementById('lblPremioRecalculado').textContent = Math.max(0, p).toFixed(2);
+        document.getElementById('lblPremioRecalculado').textContent = clubUI.formatoNumero(Math.max(0, p), 2);
     }
 
     document.getElementById('btnProcesarAuditoria').addEventListener('click', async () => {

@@ -67,24 +67,67 @@
 
                     <div id="bloqueRetiro" class="hidden space-y-4">
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Método / Banco de Salida:</label>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Modalidad de Salida (Banco de la Empresa / Zelle / Binance):</label>
                             <select id="metodoPago" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-orange-500 outline-none font-bold text-slate-700 bg-slate-50">
                                 <option value="">Cargando tesorería...</option>
                             </select>
                         </div>
+                        <div>
+                            <label class="block text-xs text-slate-500 font-bold mb-1">Referencia <span class="font-normal text-[10px]">(obligatoria en egresos)</span>:</label>
+                            <input type="text" id="refOperacion" placeholder="N.º de referencia de la transferencia / pago..." class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-orange-500 outline-none">
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Moneda del Egreso</label>
+                                <select id="monedaRetiro" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-orange-500 outline-none font-bold text-slate-700 bg-slate-50">
+                                    <option value="USD">USD ($)</option>
+                                    <option value="VES">Bs</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Tasa (Bs/$)</label>
+                                <input type="number" id="tasaRetiro" step="0.0001" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-mono font-bold focus:ring-2 focus:ring-orange-500 outline-none">
+                            </div>
+                        </div>
+                        <div class="text-right text-[10px] font-bold text-slate-500" id="lblRetiroUsd"></div>
+                        <div class="bg-orange-50 border border-orange-200 rounded-lg p-3 space-y-3">
+                            <p class="text-[10px] font-black text-orange-700 uppercase tracking-wider"><i class="fas fa-user-check mr-1"></i> Quién recibe el pago (la plataforma es quien paga)</p>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Número de Cuenta</label>
+                                    <input type="text" id="numeroCuentaRetiro" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono outline-none focus:ring-2 focus:ring-orange-500">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Tipo de Cuenta</label>
+                                    <select id="tipoCuentaRetiro" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold text-slate-700 bg-slate-50 outline-none focus:ring-2 focus:ring-orange-500">
+                                        <option value="CORRIENTE">CORRIENTE</option>
+                                        <option value="AHORRO">AHORRO</option>
+                                        <option value="">— No aplica —</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Cédula / RIF del Beneficiario</label>
+                                    <input type="text" id="cedulaRifRetiro" placeholder="V-12.345.678 o J-12345678-9" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono uppercase outline-none focus:ring-2 focus:ring-orange-500">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Nombre de quien se le paga</label>
+                                    <input type="text" id="nombreBeneficiario" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs uppercase outline-none focus:ring-2 focus:ring-orange-500">
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1">Monto (USD):</label>
+                        <label class="block text-xs font-bold text-slate-700 mb-1" id="lblMonto">Monto (USD):</label>
                         <div class="relative">
-                            <span class="absolute left-3 top-2 font-black text-slate-400">$</span>
+                            <span class="absolute left-3 top-2 font-black text-slate-400" id="simbMonto">$</span>
                             <input type="number" id="montoOperacion" step="0.01" class="w-full border border-slate-300 rounded-lg pl-7 pr-3 py-2 text-xl font-black text-slate-800 focus:ring-2 focus:ring-orange-500 outline-none" placeholder="0.00">
                         </div>
                     </div>
 
                     <div>
-                        <label class="block text-xs text-slate-500 font-bold mb-1">Referencia / Nota <span class="font-normal text-[10px]">(opcional)</span>:</label>
-                        <input type="text" id="notaOperacion" placeholder="Motivo o Ref. Zelle..." class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-orange-500 outline-none">
+                        <label class="block text-xs text-slate-500 font-bold mb-1">Motivo / Nota <span class="font-normal text-[10px]">(opcional)</span>:</label>
+                        <input type="text" id="notaOperacion" placeholder="Motivo del traslado o pago..." class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-orange-500 outline-none">
                     </div>
 
                     <button id="btnProcesarOperacion" class="w-full bg-slate-800 text-white font-bold py-3 rounded-lg shadow-md hover:bg-black uppercase tracking-wider transition-colors text-sm">
@@ -111,10 +154,11 @@
                                     <th class="p-3 font-bold border-b border-slate-200">ORIGEN</th>
                                     <th class="p-3 font-bold border-b border-slate-200">DESTINO / BANCO</th>
                                     <th class="p-3 font-bold border-b border-slate-200 text-right">MONTO</th>
+                                    <th class="p-3 font-bold border-b border-slate-200">REF / TASA</th>
                                 </tr>
                             </thead>
                             <tbody id="cuerpoTablaHistorial" class="divide-y divide-slate-100 text-slate-700 bg-white">
-                                <tr><td colspan="5" class="p-6 text-center text-slate-400 italic">Cargando libro mayor...</td></tr>
+                                <tr><td colspan="6" class="p-6 text-center text-slate-400 italic">Cargando libro mayor...</td></tr>
                             </tbody>
                         </table>
                     </div>

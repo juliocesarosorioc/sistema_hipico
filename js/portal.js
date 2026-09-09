@@ -35,6 +35,122 @@ document.addEventListener('DOMContentLoaded', () => {
     if (tkUrl) inputToken.value = tkUrl;
 
     // ==========================================
+    // ACTUALIZAR MIS DATOS (prellenado + solicitud)
+    // ==========================================
+    const cpPortal = document.getElementById('cpPortal');
+    const tfPortal = document.getElementById('tfPortal');
+    const metodoPortal = document.getElementById('metodoPortal');
+    const bloqueDatosPortal = document.getElementById('bloqueDatosPagoPortal');
+    const val = (id) => document.getElementById(id)?.value ?? '';
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
+
+    cpPortal.innerHTML = clubUI.htmlOpcionesCodigoPais('+58');
+    metodoPortal.innerHTML = '<option value="">— Seleccione —</option>' + clubUI.htmlOpcionesMetodos();
+
+    function renderBloqueDatosPortal(metodo, dp) {
+        if (!metodo) { bloqueDatosPortal.classList.add('hidden'); bloqueDatosPortal.innerHTML = ''; return; }
+        const lbl = 'block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider';
+        const inp = 'w-full border border-cyan-300 rounded-lg px-3 py-2 text-xs outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 bg-white';
+        const dis = inp + ' bg-cyan-50 font-bold text-cyan-800 cursor-not-allowed';
+        let html;
+        if (clubUI.esBancoVzla(metodo)) {
+            const [codigo, ...resto] = metodo.split(' · ');
+            const nombre = resto.join(' · ');
+            html = `
+                <div><label class="${lbl}">Banco (predeterminado)</label><input readonly value="${nombre}" class="${dis}"></div>
+                <div><label class="${lbl}">Código SUDEBAN</label><input readonly value="${codigo}" class="${dis}"></div>
+                <div><label class="${lbl}">Tipo de Cuenta</label><select id="pvTipoCuenta" class="${inp} font-bold"><option>CORRIENTE</option><option>AHORRO</option></select></div>
+                <div><label class="${lbl}">Número de Cuenta</label><input id="pvNumeroCuenta" inputmode="numeric" class="${inp} font-mono"></div>
+                <div><label class="${lbl}">Titular (nombre en la cuenta)</label><input id="pvTitular" class="${inp} uppercase"></div>`;
+        } else if (metodo === 'ZELLE' || metodo === 'BINANCE') {
+            html = `
+                <div><label class="${lbl}">Tipo de dato</label><select id="pvTipoContacto" class="${inp} font-bold"><option value="correo">Correo electrónico</option><option value="telefono">Número de teléfono</option></select></div>
+                <div class="md:col-span-2"><label class="${lbl}">Dato de ${metodo} (correo o teléfono)</label><input id="pvDatoContacto" class="${inp}"></div>
+                ${metodo === 'BINANCE' ? `<div><label class="${lbl}">ID / UID Binance (opcional)</label><input id="pvIdBinance" class="${inp}"></div>` : ''}`;
+        } else {
+            html = `<div class="md:col-span-3 text-[11px] text-slate-500"><i class="fas fa-info-circle mr-1"></i>Para <b>${metodo}</b> no se requieren datos bancarios adicionales.</div>`;
+        }
+        bloqueDatosPortal.innerHTML = html;
+        bloqueDatosPortal.classList.remove('hidden');
+        if (dp && typeof dp === 'object') {
+            set('pvTipoCuenta', dp.tipo_cuenta);
+            set('pvNumeroCuenta', dp.numero_cuenta);
+            set('pvTitular', dp.titular);
+            set('pvTipoContacto', dp.tipo_contacto);
+            set('pvDatoContacto', dp.dato);
+            set('pvIdBinance', dp.id_binance);
+        }
+    }
+
+    function leerDatosPortal() {
+        const metodo = metodoPortal.value;
+        if (!metodo) return null;
+        if (clubUI.esBancoVzla(metodo)) {
+            const [codigo, ...resto] = metodo.split(' · ');
+            return { banco: resto.join(' · '), codigo, tipo_cuenta: val('pvTipoCuenta'), numero_cuenta: val('pvNumeroCuenta'), titular: val('pvTitular') };
+        }
+        if (metodo === 'ZELLE' || metodo === 'BINANCE') {
+            const d = { tipo_contacto: val('pvTipoContacto') || 'correo', dato: val('pvDatoContacto') };
+            if (metodo === 'BINANCE') d.id_binance = val('pvIdBinance') || null;
+            return d;
+        }
+        return {};
+    }
+
+    metodoPortal.addEventListener('change', () => renderBloqueDatosPortal(metodoPortal.value, null));
+
+    let perfilSembrado = false;
+    function sembrarPerfil(data) {
+        if (perfilSembrado) return;
+        perfilSembrado = true;
+        const tel = clubUI.desglosarTelefono(data.telefono);
+        cpPortal.value = data.codigo_pais || tel.codigo || '+58';
+        tfPortal.value = tel.numero;
+        set('emailPortal', data.email || '');
+        set('cedulaPortal', data.cedula_rif || '');
+        set('direccionPortal', data.direccion || '');
+        metodoPortal.value = data.metodo_pago || '';
+        renderBloqueDatosPortal(metodoPortal.value, data.datos_pago);
+    }
+
+    document.getElementById('btnActualizarDatos').addEventListener('click', async () => {
+        const nuevoMetodo = metodoPortal.value;
+        if (!nuevoMetodo) return clubUI.toast('Seleccione su método de pago.', 'warning');
+        if ((nuevoMetodo === 'ZELLE' || nuevoMetodo === 'BINANCE') && !val('pvDatoContacto')) return clubUI.toast('Indique el correo o teléfono para ' + nuevoMetodo + '.', 'warning');
+        if (clubUI.esBancoVzla(nuevoMetodo) && !val('pvNumeroCuenta')) return clubUI.toast('Indique el número de cuenta.', 'warning');
+
+        const datos = {
+            telefono: clubUI.componerTelefono(cpPortal.value, tfPortal.value) || null,
+            codigo_pais: cpPortal.value,
+            email: val('emailPortal').trim() || null,
+            cedula_rif: val('cedulaPortal').trim().toUpperCase() || null,
+            direccion: val('direccionPortal').trim() || null,
+            metodo_pago: nuevoMetodo,
+            datos_pago: leerDatosPortal()
+        };
+
+        const btn = document.getElementById('btnActualizarDatos');
+        btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Enviando...';
+
+        const { error } = await window.supabase.from('notificaciones').insert([{
+            tipo: 'portal_datos',
+            titulo: 'Actualización de datos desde el portal',
+            mensaje: `${sesion.nombre} solicitó actualizar sus datos (teléfono/email/método de pago).`,
+            cliente_id: sesion.id,
+            cliente_nombre: sesion.nombre,
+            datos: datos,
+            estado: 'Nueva'
+        }]);
+
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Solicitar Actualización';
+
+        if (error) return clubUI.toast('Error al enviar la solicitud: ' + (error.message || 'BD'), 'error');
+
+        document.getElementById('portalMsgDatos').classList.remove('hidden');
+        clubUI.toast('Solicitud enviada. El administrador la revisará y aplicará.', 'success');
+    });
+
+    // ==========================================
     // ARRANQUE
     // ==========================================
     const arranque = sesionGuardada();
@@ -104,6 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .single();
         if (error || !data) return;
         clienteDatos = data;
+        sembrarPerfil(data);
 
         // Tasa global para el equivalente en Bs
         try {
@@ -113,14 +230,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const saldo = parseFloat(data.saldo_actual || 0);
         const aval = parseFloat(data.aval || 0);
-        document.getElementById('kpiSaldo').textContent = '$' + saldo.toFixed(2);
-        document.getElementById('kpiAval').textContent = '$' + aval.toFixed(2);
-        document.getElementById('kpiDisponible').textContent = '$' + (saldo + aval).toFixed(2);
+        document.getElementById('kpiSaldo').textContent = '$' + clubUI.formatoNumero(saldo, 2);
+        document.getElementById('kpiAval').textContent = '$' + clubUI.formatoNumero(aval, 2);
+        document.getElementById('kpiDisponible').textContent = '$' + clubUI.formatoNumero((saldo + aval), 2);
         document.getElementById('kpiLibre').textContent = data.libre ? 'Juega libre (sin límite de aval)' : 'Sujeto a aval';
 
         // Saldo equivalente a la tasa de cuadre del cliente (o tasa global)
         const tasaCuadre = parseFloat(data.tasa_cuadre || 0) || tasaGlobal;
-        document.getElementById('kpiSaldoEquiv').textContent = '≈ Bs ' + (saldo * tasaCuadre).toLocaleString(undefined, { minimumFractionDigits: 2 });
+        document.getElementById('kpiSaldoEquiv').textContent = '≈ Bs ' + clubUI.formatoNumero((saldo * tasaCuadre), 2);
 
         // Grupo
         const { data: g } = await window.supabase.from('grupos_venta').select('nombre, moneda, moneda_cuadre').eq('id', data.grupo_id).maybeSingle();
@@ -164,8 +281,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-3 text-slate-500">${fecha}</td>
                     <td class="p-3 font-bold text-slate-700">${tk.nombre_jugada || 'Jugada'}</td>
                     <td class="p-3">${tk.caballo || '-'}${tk.cantidad_tablas ? ` (${tk.cantidad_tablas} tablas)` : ''}</td>
-                    <td class="p-3 text-right font-mono font-bold">${simp}${parseFloat(tk.monto_jugado || 0).toFixed(2)}</td>
-                    <td class="p-3 text-right font-mono font-bold text-emerald-600">${simp}${premio.toFixed(2)}</td>
+                    <td class="p-3 text-right font-mono font-bold">${simp}${clubUI.formatoNumero(parseFloat(tk.monto_jugado || 0), 2)}</td>
+                    <td class="p-3 text-right font-mono font-bold text-emerald-600">${simp}${clubUI.formatoNumero(premio, 2)}</td>
                     <td class="p-3 text-center"><span class="px-2 py-0.5 rounded text-[9px] font-black ${badge}">${tk.estado}</span></td>
                 </tr>`;
         }).join('');
@@ -219,7 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const grupo = grupoDatos || { moneda: 'USD' };
         const simb = grupo.moneda === 'VES' ? 'Bs ' : '$';
         const total = (parseFloat(ej.valor_ejemplar) || 0) * cant;
-        lblTotalPagar.textContent = simb + total.toLocaleString(undefined, { minimumFractionDigits: 2 });
+        lblTotalPagar.textContent = simb + clubUI.formatoNumero(total, 2);
     }
 
     // ==========================================
@@ -318,7 +435,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-3 font-bold text-slate-700">${s.hipodromo} C${s.carrera}</td>
                     <td class="p-3">${s.ejemplar_numero} - ${s.ejemplar_nombre}</td>
                     <td class="p-3 text-right font-bold">${s.cantidad}</td>
-                    <td class="p-3 text-right font-mono font-bold">${simp}${parseFloat(s.monto_total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td class="p-3 text-right font-mono font-bold">${simp}${clubUI.formatoNumero(parseFloat(s.monto_total || 0), 2)}</td>
                     <td class="p-3 text-center"><span class="px-2 py-0.5 rounded text-[9px] font-black ${badge}">${s.estado}</span>${ext}</td>
                 </tr>`;
         }).join('');

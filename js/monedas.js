@@ -86,7 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         .eq('moneda_id', moneda.id)
                         .order('fecha_registro', { ascending: false }).limit(1).single();
 
-                    const valorTasa = ultimaTasa ? Number(ultimaTasa.tasa).toFixed(4) : '0.00';
+                    const valorTasa = ultimaTasa ? clubUI.formatoNumero(Number(ultimaTasa.tasa), 4) : '0.00';
 
                     contenedorTarjetas.innerHTML += `
                         <div class="bg-white border border-blue-200 p-3 rounded-lg flex items-center justify-between shadow-sm relative overflow-hidden">
@@ -158,7 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <tr class="${estiloFila} border-b border-slate-100">
                     <td class="p-3 font-mono">${fechaStr}</td>
                     <td class="p-3 font-bold">${monedaStr}</td>
-                    <td class="p-3 text-right font-mono font-bold ${estiloFila.includes('bg-slate-50') ? '' : 'text-blue-600'}">${Number(t.tasa).toFixed(4)}</td>
+                    <td class="p-3 text-right font-mono font-bold ${estiloFila.includes('bg-slate-50') ? '' : 'text-blue-600'}">${clubUI.formatoNumero(Number(t.tasa), 4)}</td>
                     <td class="p-3 text-center">${badgeEstado}</td>
                 </tr>
             `;
@@ -184,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="border ${t.color} rounded-xl p-3 shadow-sm bg-white">
                     <div class="flex items-center justify-between mb-2">
                         <span class="font-black text-xs uppercase tracking-wider">${t.nombre} (${t.simbolo})</span>
-                        <span class="text-[10px] text-slate-500">Vigente: <strong class="text-slate-700 font-mono">${vigente ? Number(vigente.tasa).toFixed(4) : '—'}</strong></span>
+                        <span class="text-[10px] text-slate-500">Vigente: <strong class="text-slate-700 font-mono">${vigente ? clubUI.formatoNumero(Number(vigente.tasa), 4) : '—'}</strong></span>
                     </div>
                     <div class="flex gap-2">
                         <input type="date" class="inp-fecha-ref flex-1 border border-slate-300 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500 text-slate-700">
@@ -265,7 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <tr class="border-b border-slate-100 hover:bg-slate-50">
                     <td class="p-3 font-mono font-bold text-slate-700">${r.fecha_aplicar}</td>
                     <td class="p-3"><span class="px-2 py-1 rounded text-[10px] font-bold ${colores[r.tipo] || 'bg-slate-100 text-slate-600'}">${r.tipo} · ${TIPOS_REF.find(t => t.tipo === r.tipo)?.nombre || ''}</span></td>
-                    <td class="p-3 text-right font-mono font-bold text-blue-600">${Number(r.tasa).toFixed(4)} Bs</td>
+                    <td class="p-3 text-right font-mono font-bold text-blue-600">${clubUI.formatoNumero(Number(r.tasa), 4)} Bs</td>
                     <td class="p-3 font-mono text-slate-500">${new Date(r.created_at).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}</td>
                 </tr>
             `;
@@ -356,7 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 vistaReporte.classList.remove('hidden');
                 vistaReporte.classList.add('flex');
 
-                document.getElementById('lblTasaAplicada').textContent = tasaReporte.toFixed(4);
+                document.getElementById('lblTasaAplicada').textContent = clubUI.formatoNumero(tasaReporte, 4);
                 document.getElementById('lblSimboloAplicado').textContent = monedaObj.simbolo;
 
                 let totalBaseUSD_Jugado = 0;
@@ -390,8 +390,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             <td class="p-2 border-b text-slate-500 font-bold">#${tk.id} <span class="text-[10px] font-normal block">${hora}</span></td>
                             <td class="p-2 border-b font-bold text-slate-700">${tk.nombre_jugada} <span class="text-[10px] font-normal block text-slate-500">${tk.cliente_juega_nombre}</span></td>
                             <td class="p-2 border-b text-center">${badgeE}</td>
-                            <td class="p-2 border-b text-right font-bold text-blue-600">${monedaObj.simbolo}${jugadoFila.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                            <td class="p-2 border-b text-right font-bold text-emerald-600">${monedaObj.simbolo}${premioFila.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                            <td class="p-2 border-b text-right font-bold text-blue-600">${monedaObj.simbolo}${clubUI.formatoNumero(jugadoFila, 2)}</td>
+                            <td class="p-2 border-b text-right font-bold text-emerald-600">${monedaObj.simbolo}${clubUI.formatoNumero(premioFila, 2)}</td>
                         </tr>
                     `;
                 });
@@ -402,9 +402,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 let repUtilidad = repJugado - repPremios;
 
                 document.getElementById('resCantidad').textContent = tickets.length;
-                document.getElementById('resJugado').textContent = `${monedaObj.simbolo}${repJugado.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-                document.getElementById('resPremios').textContent = `${monedaObj.simbolo}${repPremios.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-                document.getElementById('resUtilidad').textContent = `${monedaObj.simbolo}${repUtilidad.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+                document.getElementById('resJugado').textContent = `${monedaObj.simbolo}${clubUI.formatoNumero(repJugado, 2)}`;
+                document.getElementById('resPremios').textContent = `${monedaObj.simbolo}${clubUI.formatoNumero(repPremios, 2)}`;
+                document.getElementById('resUtilidad').textContent = `${monedaObj.simbolo}${clubUI.formatoNumero(repUtilidad, 2)}`;
                 document.getElementById('resUtilidad').className = repUtilidad < 0 ? "text-xl font-black text-red-600" : "text-xl font-black text-emerald-600";
             }
 

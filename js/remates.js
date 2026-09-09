@@ -193,9 +193,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-3 text-center font-bold text-slate-500">${c.numero}</td>
                     <td class="p-3 font-bold text-slate-800">${c.nombre}</td>
                     <td class="p-3 text-blue-600 font-bold">${clienteStr}</td>
-                    <td class="p-3 text-right font-bold text-emerald-700">$${Number(c.monto_usd).toFixed(2)}</td>
-                    <td class="p-3 text-center font-mono text-xs">${Number(c.prob_porcentaje).toFixed(2)}%</td>
-                    <td class="p-3 text-center font-mono text-xs">${Number(c.prob_implicita).toFixed(2)}</td>
+                    <td class="p-3 text-right font-bold text-emerald-700">$${clubUI.formatoNumero(Number(c.monto_usd), 2)}</td>
+                    <td class="p-3 text-center font-mono text-xs">${clubUI.formatoNumero(Number(c.prob_porcentaje), 2)}%</td>
+                    <td class="p-3 text-center font-mono text-xs">${clubUI.formatoNumero(Number(c.prob_implicita), 2)}</td>
                     <td class="p-3 text-center">
                         <button class="btn-eliminar-caballo text-slate-400 hover:text-red-500" data-id="${c.id}"><i class="fas fa-trash-alt"></i></button>
                     </td>
@@ -228,11 +228,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const premioGanador = totalBruto - descuentoComision;
 
         document.getElementById('valCaballos').textContent = caballosDelRemate.length;
-        document.getElementById('valSubtotal').textContent = `$${subtotal.toFixed(2)}`;
-        document.getElementById('valIncentivo').textContent = `+$${incentivo.toFixed(2)}`;
-        document.getElementById('valBruto').textContent = `$${totalBruto.toFixed(2)}`;
-        document.getElementById('valComision').textContent = `-$${descuentoComision.toFixed(2)}`;
-        document.getElementById('valPremio').textContent = `$${premioGanador.toFixed(2)}`;
+        document.getElementById('valSubtotal').textContent = `$${clubUI.formatoNumero(subtotal, 2)}`;
+        document.getElementById('valIncentivo').textContent = `+$${clubUI.formatoNumero(incentivo, 2)}`;
+        document.getElementById('valBruto').textContent = `$${clubUI.formatoNumero(totalBruto, 2)}`;
+        document.getElementById('valComision').textContent = `-$${clubUI.formatoNumero(descuentoComision, 2)}`;
+        document.getElementById('valPremio').textContent = `$${clubUI.formatoNumero(premioGanador, 2)}`;
     }
 
     // Guardar incentivo
@@ -241,7 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await supabase.from('remates').update({ incentivo: inc }).eq('id', remateActivo.id);
         remateActivo.incentivo = inc;
         recalcularFinanzas();
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('REMATES', `incentivo: ${remateActivo.nombre} = $${inc.toFixed(2)}`);
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('REMATES', `incentivo: ${remateActivo.nombre} = $${clubUI.formatoNumero(inc, 2)}`);
     });
 
     // ==========================================

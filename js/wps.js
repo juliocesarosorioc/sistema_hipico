@@ -29,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const { data: clientes } = await supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre').order('nombre');
         if (clientes) {
             clientesGlobal = clientes;
-            document.getElementById('wpsCliente').innerHTML = opcBase + clientes.map(c => `<option value="${c.id}">${c.nombre} (Disp: $${Number(c.saldo_actual).toFixed(2)})</option>`).join('');
+            document.getElementById('wpsCliente').innerHTML = opcBase + clientes.map(c => `<option value="${c.id}">${c.nombre} (Disp: $${clubUI.formatoNumero(Number(c.saldo_actual), 2)})</option>`).join('');
         }
 
         cargarJugadasHoy();
@@ -70,9 +70,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-2 text-center font-bold">${t.carrera}</td>
                     <td class="p-2 text-center font-bold text-slate-800">${t.caballo}</td>
                     <td class="p-2 text-center font-bold text-blue-600">${t.tipo}</td>
-                    <td class="p-2 text-right font-bold text-slate-700">$${Number(t.monto_usd).toFixed(2)}</td>
+                    <td class="p-2 text-right font-bold text-slate-700">$${clubUI.formatoNumero(Number(t.monto_usd), 2)}</td>
                     <td class="p-2 text-center"><span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${colorEstado}">${t.estado}</span></td>
-                    <td class="p-2 text-right font-bold ${t.premio > 0 ? 'text-emerald-600' : 'text-slate-400'}">$${Number(t.premio).toFixed(2)}</td>
+                    <td class="p-2 text-right font-bold ${t.premio > 0 ? 'text-emerald-600' : 'text-slate-400'}">$${clubUI.formatoNumero(Number(t.premio), 2)}</td>
                 </tr>
             `;
         });
@@ -100,7 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!cliente.libre) {
                 const limiteAval = parseFloat(cliente.aval || 0);
                 if (nuevoSaldo < -limiteAval) {
-                    return clubUI.toast(`El cliente ${cliente.nombre} supera su límite de AVAL ($${limiteAval.toFixed(2)}). Debe abonar antes de jugar.`);
+                    return clubUI.toast(`El cliente ${cliente.nombre} supera su límite de AVAL ($${clubUI.formatoNumero(limiteAval, 2)}). Debe abonar antes de jugar.`);
                 }
             } else if (montoTotal > cliente.saldo_actual) {
                 if(!confirm(`Saldo insuficiente (Tiene $${cliente.saldo_actual}). ¿Forzar jugada en negativo?`)) return;

@@ -98,5 +98,132 @@ window.clubUI = (() => {
         render();
     }
 
-    return { toast, paginar };
+    // ==========================================
+    // BANCOS DE VENEZUELA (códigos SUDEBAN)
+    // Nota (administrador): revise/ajuste los códigos si su banco
+    // aparece con dígitos distintos en la lista oficial vigente.
+    // ==========================================
+    const BANCOS_VZLA = [
+        { codigo: '0102', nombre: 'BANCO DE VENEZUELA' },
+        { codigo: '0104', nombre: 'BANCO VENEZOLANO DE CREDITO' },
+        { codigo: '0105', nombre: 'BANCO MERCANTIL' },
+        { codigo: '0108', nombre: 'BBVA PROVINCIAL' },
+        { codigo: '0114', nombre: 'BANCO OCCIDENTAL DE DESCUENTO (BOD)' },
+        { codigo: '0115', nombre: 'BANCO EXTERIOR' },
+        { codigo: '0128', nombre: 'BANCO CARONI' },
+        { codigo: '0134', nombre: 'BANESCO' },
+        { codigo: '0137', nombre: 'BANCO SOFITASA' },
+        { codigo: '0138', nombre: 'BANCO PLAZA' },
+        { codigo: '0146', nombre: 'BANCARIBE' },
+        { codigo: '0151', nombre: 'BANCO DEL SUR' },
+        { codigo: '0156', nombre: 'BANCO PICHINCHA' },
+        { codigo: '0163', nombre: 'BANCO DEL TESORO' },
+        { codigo: '0164', nombre: 'MIBANCO' },
+        { codigo: '0166', nombre: 'BANCO AGRICOLA' },
+        { codigo: '0171', nombre: 'BANCO ACTIVO' },
+        { codigo: '0172', nombre: 'BANCAMIGA' },
+        { codigo: '0173', nombre: 'BANCO CAFETERO' },
+        { codigo: '0175', nombre: 'BANCO BICENTENARIO' },
+        { codigo: '0191', nombre: 'BANCO NACIONAL DE CREDITO (BNC)' }
+    ];
+
+    // ==========================================
+    // PAÍSES / CÓDIGOS DE TELÉFONO (búsqueda inteligente)
+    // ==========================================
+    const PAISES_TELEFONO = [
+        { codigo: '+58', pais: 'Venezuela' },
+        { codigo: '+1', pais: 'EE. UU. / Canadá' },
+        { codigo: '+57', pais: 'Colombia' },
+        { codigo: '+58', pais: 'Venezuela' },
+        { codigo: '+507', pais: 'Panamá' },
+        { codigo: '+52', pais: 'México' },
+        { codigo: '+34', pais: 'España' },
+        { codigo: '+51', pais: 'Perú' },
+        { codigo: '+56', pais: 'Chile' },
+        { codigo: '+54', pais: 'Argentina' },
+        { codigo: '+593', pais: 'Ecuador' },
+        { codigo: '+55', pais: 'Brasil' },
+        { codigo: '+44', pais: 'Reino Unido' },
+        { codigo: '+351', pais: 'Portugal' },
+        { codigo: '+39', pais: 'Italia' },
+        { codigo: '+49', pais: 'Alemania' }
+    ];
+
+    // Modalidades de pago completas: simples + Zelle/Binance + bancos Vzla
+    const METODOS_PAGO = [
+        'EFECTIVO', 'DIVISA', 'PAGO MÓVIL', 'TRANSFERENCIA', 'PAYPAL',
+        'ZELLE', 'BINANCE', 'OTRO'
+    ];
+
+    const listMetodosPago = (incluirBancos = true) => {
+        return incluirBancos
+            ? [...METODOS_PAGO, ...BANCOS_VZLA.map(b => `${b.codigo} · ${b.nombre}`)]
+            : [...METODOS_PAGO];
+    };
+
+    const esBancoVzla = (metodo) => /^\d{4}\s·\s/.test(metodo || '');
+
+    // ==========================================
+    // FORMATO REGIONAL DE VENEZUELA (es-VE)
+    // 1.234,56  ->  decimales con coma, millares con punto
+    // ==========================================
+    function formatoNumero(v, dec = 2) {
+        const n = parseFloat(v);
+        if (isNaN(n)) return (0).toLocaleString('es-VE', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+        return n.toLocaleString('es-VE', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    }
+
+    function formatoMoneda(m, v, dec = 2) {
+        const esVes = String(m || '').toUpperCase() === 'VES' || String(m || '').toUpperCase() === 'BS';
+        return (esVes ? 'Bs ' : '$ ') + formatoNumero(v, dec);
+    }
+
+    // ==========================================
+    // TELÉFONO INTELIGENTE (código de país)
+    // ==========================================
+    // construye "+58 4121234567" quitando el 0 nacional inicial
+    function componerTelefono(codigo, numero) {
+        let dig = String(numero || '').replace(/[^\d]/g, '');
+        if (codigo === '+58' && dig.startsWith('0')) dig = dig.slice(1);
+        return codigo + ' ' + dig;
+    }
+
+    // separa "+58 4121234567" en { codigo: '+58', numero: '4121234567' }
+    function desglosarTelefono(tel) {
+        const t = String(tel || '').trim();
+        if (!t) return { codigo: '+58', numero: '' };
+        const m = t.match(/^(\+?\d{1,4})\s*([\d\s-]*)$/);
+        if (m) return { codigo: (m[1] || '+58'), numero: m[2].replace(/[^\d]/g, '') };
+        const dig = t.replace(/[^\d]/g, '');
+        return { codigo: '+58', numero: dig.startsWith('0') ? dig : dig };
+    }
+
+    function htmlOpcionesCodigoPais(actual) {
+        const unicos = [];
+        PAISES_TELEFONO.forEach(p => {
+            if (!unicos.some(u => u.codigo === p.codigo)) unicos.push(p);
+        });
+        return unicos.map(p => `<option value="${p.codigo}" ${p.codigo === actual ? 'selected' : ''}>${p.codigo} ${p.pais}</option>`).join('');
+    }
+
+    function htmlOpcionesMetodos(actual, incluirBancos = true) {
+        return listMetodosPago(incluirBancos).map(m => `<option ${m === actual ? 'selected' : ''}>${m}</option>`).join('');
+    }
+
+    // resumen corto para mostrar en tablas: "BANESCO (0134) · CtA CORRIENTE ·•1234"
+    function resumenDatosPago(dp) {
+        if (!dp || typeof dp !== 'object') return '';
+        if (dp.banco || dp.codigo) {
+            const banco = dp.nombre || dp.banco || '';
+            const cod = dp.codigo ? `(${dp.codigo})` : '';
+            const num = dp.numero_cuenta ? ` · ${dp.tipo_cuenta || ''} •${String(dp.numero_cuenta).slice(-4)}` : '';
+            return `${banco} ${cod}${num}`.trim();
+        }
+        if (dp.tipo_contacto || dp.dato) {
+            return `${dp.tipo_contacto === 'telefono' ? 'Tlf' : dp.tipo_contacto === 'correo' ? 'Correo' : 'Dato'}: ${dp.dato || ''}`;
+        }
+        return '';
+    }
+
+    return { toast, paginar, BANCOS_VZLA, PAISES_TELEFONO, METODOS_PAGO, listMetodosPago, esBancoVzla, formatoNumero, formatoMoneda, componerTelefono, desglosarTelefono, htmlOpcionesCodigoPais, htmlOpcionesMetodos, resumenDatosPago };
 })();

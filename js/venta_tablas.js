@@ -98,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Clientes del grupo
         const delGrupo = clientesDB.filter(c => c.grupo_id == groupSeleccionado.id);
         selectCliente.innerHTML = '<option value="">Seleccione apostador...</option>';
-        delGrupo.forEach(c => selectCliente.innerHTML += `<option value="${c.id}">${c.nombre} (Saldo: $${parseFloat(c.saldo_actual).toFixed(2)})</option>`);
+        delGrupo.forEach(c => selectCliente.innerHTML += `<option value="${c.id}">${c.nombre} (Saldo: $${clubUI.formatoNumero(parseFloat(c.saldo_actual), 2)})</option>`);
         if (delGrupo.length === 0) selectCliente.innerHTML += '<option value="" disabled>No hay clientes en este grupo</option>';
 
         renderizarPanelTabla();
@@ -120,7 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const disponibles = Math.max(0, limite - vendidas);
         const premio = parseFloat(tablaSeleccionada.premio_recalculado);
 
-        lblPremioUnit.textContent = `${simbolo}${premio.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+        lblPremioUnit.textContent = `${simbolo}${clubUI.formatoNumero(premio, 2)}`;
         lblDisponibles.textContent = disponibles;
 
         msgSeleccione.classList.add('hidden');
@@ -128,7 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
         contenidoRiesgo.classList.add('flex');
         panelCompra.classList.remove('hidden');
 
-        lblRiesgoMonto.textContent = `${simbolo}${(disponibles * premio).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+        lblRiesgoMonto.textContent = `${simbolo}${clubUI.formatoNumero((disponibles * premio), 2)}`;
         lblInventarioProgreso.textContent = `${vendidas} / ${limite}`;
 
         cuerpoEjemplares.innerHTML = '';
@@ -156,9 +156,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const premio = parseFloat(tablaSeleccionada.premio_recalculado);
         const pts = ejemplarSeleccionado ? parseFloat(ejemplarSeleccionado.valor_ejemplar) : 0;
 
-        lblCostoTotal.textContent = `${simbolo}${(pts * cant).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-        lblPremioTotal.textContent = `${simbolo}${(premio * cant).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-        lblTotalPagar.textContent = `${simbolo}${(pts * cant).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+        lblCostoTotal.textContent = `${simbolo}${clubUI.formatoNumero((pts * cant), 2)}`;
+        lblPremioTotal.textContent = `${simbolo}${clubUI.formatoNumero((premio * cant), 2)}`;
+        lblTotalPagar.textContent = `${simbolo}${clubUI.formatoNumero((pts * cant), 2)}`;
     }
 
     // ==========================================
@@ -207,8 +207,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="font-bold text-slate-800 text-sm">${nombre}</span>
                         <span class="px-1.5 py-0.5 rounded text-[9px] font-black ${g.moneda === 'VES' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}">${g.moneda}</span>
                     </div>
-                    <p class="text-lg font-black ${g.moneda === 'VES' ? 'text-amber-600' : 'text-emerald-600'} mt-1 font-mono">${simb}${g.riesgoLocal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                    <p class="text-[10px] text-slate-500 mt-1">${g.ventas} venta(s) · ${g.tablas} tablas · equiv. $ ${equivalenteUSD.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                    <p class="text-lg font-black ${g.moneda === 'VES' ? 'text-amber-600' : 'text-emerald-600'} mt-1 font-mono">${simb}${clubUI.formatoNumero(g.riesgoLocal, 2)}</p>
+                    <p class="text-[10px] text-slate-500 mt-1">${g.ventas} venta(s) · ${g.tablas} tablas · equiv. $ ${clubUI.formatoNumero(equivalenteUSD, 2)}</p>
                 </div>`;
         }).join('');
 
@@ -232,8 +232,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="p-3 font-bold text-slate-800">${g.hipodromo} C${g.carrera}</td>
                 <td class="p-3 font-bold text-slate-700">${g.ejemplar}</td>
                 <td class="p-3 text-right font-black">${g.tablas}</td>
-                <td class="p-3 text-right font-mono font-bold text-red-600">${g.simb}${g.arriesgado.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                <td class="p-3 text-right font-mono font-bold text-emerald-600">${g.simb}${g.premioPotencial.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td class="p-3 text-right font-mono font-bold text-red-600">${g.simb}${clubUI.formatoNumero(g.arriesgado, 2)}</td>
+                <td class="p-3 text-right font-mono font-bold text-emerald-600">${g.simb}${clubUI.formatoNumero(g.premioPotencial, 2)}</td>
             </tr>`).join('');
 
         // Detalle de ventas
@@ -251,10 +251,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-2">${tk.hipodromo} C${tk.carrera}</td>
                     <td class="p-2">${tk.caballo}</td>
                     <td class="p-2 text-right font-bold">${tk.cantidad_tablas}</td>
-                    <td class="p-2 text-right text-blue-600 font-bold">${parseFloat(tk.pts_ejemplar || 0).toFixed(1)}</td>
-                    <td class="p-2 text-right text-emerald-600 font-bold">${simb}${premio.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td class="p-2 text-right text-red-600 font-bold">${simb}${montoArriesgado.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td class="p-2 text-right text-orange-600 font-black">${simb}${riesgo.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td class="p-2 text-right text-blue-600 font-bold">${clubUI.formatoNumero(parseFloat(tk.pts_ejemplar || 0), 1)}</td>
+                    <td class="p-2 text-right text-emerald-600 font-bold">${simb}${clubUI.formatoNumero(premio, 2)}</td>
+                    <td class="p-2 text-right text-red-600 font-bold">${simb}${clubUI.formatoNumero(montoArriesgado, 2)}</td>
+                    <td class="p-2 text-right text-orange-600 font-black">${simb}${clubUI.formatoNumero(riesgo, 2)}</td>
                 </tr>`;
         }).join('');
     }
@@ -276,11 +276,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!cliente.libre) {
                 const limiteAval = parseFloat(cliente.aval || 0);
                 if (parseFloat(cliente.saldo_actual) - costoUSD < -limiteAval) {
-                    return { ok: false, error: `El cliente ${cliente.nombre} supera su límite de AVAL ($${limiteAval.toFixed(2)}). Debe abonar antes de comprar tablas.` };
+                    return { ok: false, error: `El cliente ${cliente.nombre} supera su límite de AVAL ($${clubUI.formatoNumero(limiteAval, 2)}). Debe abonar antes de comprar tablas.` };
                 }
             }
             if (!esVES && parseFloat(cliente.saldo_actual) < costoTotal) {
-                return { ok: false, error: `El cliente ${cliente.nombre} tiene saldo insuficiente ($${cliente.saldo_actual.toFixed(2)}).` };
+                return { ok: false, error: `El cliente ${cliente.nombre} tiene saldo insuficiente ($${clubUI.formatoNumero(cliente.saldo_actual, 2)}).` };
             }
         }
 
@@ -350,7 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!cliente.libre) {
             const limiteAval = parseFloat(cliente.aval || 0);
             if (parseFloat(cliente.saldo_actual) - costoUSD < -limiteAval) {
-                return clubUI.toast(`El cliente ${cliente.nombre} supera su límite de AVAL ($${limiteAval.toFixed(2)}). Debe abonar antes de comprar tablas.`);
+                return clubUI.toast(`El cliente ${cliente.nombre} supera su límite de AVAL ($${clubUI.formatoNumero(limiteAval, 2)}). Debe abonar antes de comprar tablas.`);
             }
         }
         if (!esVES && parseFloat(cliente.saldo_actual) < costoTotal) {
@@ -374,7 +374,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         clubUI.toast("¡Venta de tablas procesada con éxito! Inventario actualizado y saldo descontado.");
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta: ${cliente.nombre} ${cantidad} tablas ${groupSeleccionado.nombre} ($${res.costoTotal.toFixed(2)}) ${tablaSeleccionada.hipodromo} C${tablaSeleccionada.carrera}`);
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta: ${cliente.nombre} ${cantidad} tablas ${groupSeleccionado.nombre} ($${clubUI.formatoNumero(res.costoTotal, 2)}) ${tablaSeleccionada.hipodromo} C${tablaSeleccionada.carrera}`);
         window.location.reload();
     });
 
@@ -412,7 +412,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-2.5 font-bold">${s.hipodromo} C${s.carrera}</td>
                     <td class="p-2.5">${s.ejemplar_numero} - ${s.ejemplar_nombre}</td>
                     <td class="p-2.5 text-right font-black">${s.cantidad}</td>
-                    <td class="p-2.5 text-right font-mono font-bold">${simb}${parseFloat(s.monto_total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td class="p-2.5 text-right font-mono font-bold">${simb}${clubUI.formatoNumero(parseFloat(s.monto_total || 0), 2)}</td>
                     <td class="p-2.5 text-center"><span class="px-2 py-0.5 rounded text-[9px] font-black ${badges[s.estado]}">${s.estado}</span></td>
                     <td class="p-2.5 text-center">${acciones}</td>
                 </tr>`;
@@ -427,7 +427,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!sol) return;
         if (sol.estado !== 'Pendiente') return clubUI.toast('Esa solicitud ya fue atendida.', 'warning');
 
-        if (!confirm(`Aprobar compra de ${sol.cliente_nombre}: ${sol.cantidad} tabla(s) ${sol.hipodromo} C${sol.carrera} (${sol.ejemplar_numero} - ${sol.ejemplar_nombre}).\nSe descontará ${sol.moneda === 'VES' ? 'Bs ' : '$'}${parseFloat(sol.monto_total || 0).toFixed(2)} del saldo y se emitirá el recibo.`)) return;
+        if (!confirm(`Aprobar compra de ${sol.cliente_nombre}: ${sol.cantidad} tabla(s) ${sol.hipodromo} C${sol.carrera} (${sol.ejemplar_numero} - ${sol.ejemplar_nombre}).\nSe descontará ${sol.moneda === 'VES' ? 'Bs ' : '$'}${clubUI.formatoNumero(parseFloat(sol.monto_total || 0), 2)} del saldo y se emitirá el recibo.`)) return;
 
         const [rTabla, rCliente, rGrupo] = await Promise.all([
             window.supabase.from('tablas_fijas').select('*, tabla_grupos(*)').eq('id', sol.tabla_id).single(),

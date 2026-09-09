@@ -113,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const cliente = clientesList.find(c => c.nombre === this.value.trim().toUpperCase());
             const celda = tr.querySelector('.out-disp1');
             if(cliente) {
-                celda.textContent = parseFloat(cliente.saldo_actual).toLocaleString(undefined, {minimumFractionDigits: 2});
+                celda.textContent = clubUI.formatoNumero(parseFloat(cliente.saldo_actual), 2);
                 celda.className = `p-1 border-r border-slate-200 text-center font-bold text-[11px] out-disp1 ${cliente.saldo_actual < 0 ? 'text-red-500' : 'text-slate-800'}`;
             } else { celda.textContent = '-'; }
         });
@@ -122,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const cliente = clientesList.find(c => c.nombre === this.value.trim().toUpperCase());
             const celda = tr.querySelector('.out-disp2');
             if(cliente) {
-                celda.textContent = parseFloat(cliente.saldo_actual).toLocaleString(undefined, {minimumFractionDigits: 2});
+                celda.textContent = clubUI.formatoNumero(parseFloat(cliente.saldo_actual), 2);
                 celda.className = `p-1 text-center font-bold text-[11px] out-disp2 ${cliente.saldo_actual < 0 ? 'text-red-500' : 'text-slate-800'}`;
             } else { celda.textContent = '-'; }
         });
@@ -169,7 +169,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const limiteAval = parseFloat(cJuega.aval || 0);
                 const saldoTrasApuesta = parseFloat(cJuega.saldo_actual || 0) - monto;
                 if (saldoTrasApuesta < -limiteAval) {
-                    errores.push(`Línea ${index + 1}: ${cJuega.nombre} supera su límite de AVAL ($${limiteAval.toFixed(2)}). Debe abonar antes de jugar.`);
+                    errores.push(`Línea ${index + 1}: ${cJuega.nombre} supera su límite de AVAL ($${clubUI.formatoNumero(limiteAval, 2)}). Debe abonar antes de jugar.`);
                     return;
                 }
             }

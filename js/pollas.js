@@ -63,10 +63,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="p-3">${hip}</td>
                 <td class="p-3">${p.fecha}</td>
                 <td class="p-3 text-center">${badgeTipo}</td>
-                <td class="p-3 text-right font-medium text-emerald-700">$${Number(p.valor_usd).toFixed(2)}</td>
+                <td class="p-3 text-right font-medium text-emerald-700">$${clubUI.formatoNumero(Number(p.valor_usd), 2)}</td>
                 <td class="p-3 text-center font-bold text-slate-600">${p.carreras}</td>
                 <td class="p-3 text-center font-bold text-slate-600">${jugadores}</td>
-                <td class="p-3 text-right font-bold text-slate-800">$${recaudado.toFixed(2)}</td>
+                <td class="p-3 text-right font-bold text-slate-800">$${clubUI.formatoNumero(recaudado, 2)}</td>
                 <td class="p-3 text-center"><span class="bg-emerald-600 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase">${p.estado}</span></td>
                 <td class="p-3 text-center">
                     <button class="btn-eliminar-polla bg-red-50 text-red-500 border border-red-200 px-2 py-1 rounded text-[11px] font-bold shadow-sm hover:bg-red-500 hover:text-white transition-colors" data-id="${p.id}" data-nombre="${p.nombre}"><i class="fas fa-trash-alt"></i></button>

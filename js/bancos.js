@@ -58,9 +58,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <tr class="hover:bg-slate-50 border-b border-slate-100 fila-banco">
                     <td class="p-3 font-bold text-slate-800 nombre-td uppercase">${b.nombre}</td>
                     <td class="p-3 font-bold text-slate-500 moneda-td">${b.moneda_codigo}</td>
-                    <td class="p-3 text-right font-bold text-slate-700">${datosMoneda.simbolo}${saldoLocal.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                    <td class="p-3 text-right text-slate-400 font-mono text-[10px]">${tasaAplicada.toFixed(4)}</td>
-                    <td class="p-3 text-right font-black text-emerald-600 bg-emerald-50/30">$${equivalenteUSD.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                    <td class="p-3 text-right font-bold text-slate-700">${datosMoneda.simbolo}${clubUI.formatoNumero(saldoLocal, 2)}</td>
+                    <td class="p-3 text-right text-slate-400 font-mono text-[10px]">${clubUI.formatoNumero(tasaAplicada, 4)}</td>
+                    <td class="p-3 text-right font-black text-emerald-600 bg-emerald-50/30">$${clubUI.formatoNumero(equivalenteUSD, 2)}</td>
                     <td class="p-3 text-center">
                         <button class="btn-eliminar border border-red-300 text-red-500 hover:bg-red-50 px-2 py-1 rounded text-[10px] font-bold transition-colors" data-id="${b.id}" data-nombre="${b.nombre}">Eliminar</button>
                     </td>
@@ -68,7 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         });
 
-        lblGranTotal.textContent = `$${granTotalUSD.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        lblGranTotal.textContent = `$${clubUI.formatoNumero(granTotalUSD, 2)}`;
         asignarEventosEliminar();
     }
 
