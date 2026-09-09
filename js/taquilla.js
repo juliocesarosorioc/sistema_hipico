@@ -235,6 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             clubUI.toast(`✅ ¡ÉXITO! Se registraron ${ticketsValidos.length} apuestas.`);
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('TAQUILLA', `apuestas_registradas: ${ticketsValidos.length} (${[...new Set(ticketsValidos.map(t => t.hipodromo + ' C' + t.carrera))].join(', ') || '-'})`);
             document.querySelectorAll('.btn-borrar').forEach(b => b.click());
 
         } catch (err) {

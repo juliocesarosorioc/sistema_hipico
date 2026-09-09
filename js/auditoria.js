@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const inputHasta = document.getElementById('filtroHasta');
     const resumen = document.getElementById('resumenRegistros');
     const tbody = document.getElementById('tablaRegistrosAuditoria');
+    const totalRegistros = document.getElementById('totalRegistrosBig');
 
     const LIMITE = 100;
 
@@ -44,6 +45,7 @@ document.addEventListener('DOMContentLoaded', function() {
         resumen.textContent = registros.length
             ? `Mostrando ${registros.length} de ${(count ?? registros.length)} registros — ordenados por fecha descendente`
             : 'Sin registros para los filtros aplicados';
+        if (totalRegistros) totalRegistros.textContent = (count ?? registros.length);
 
         if (!registros.length) {
             tbody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-slate-400 font-bold">Sin registros de auditoría.</td></tr>';
@@ -125,7 +127,73 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // ==========================================
-    // 4. LIMPIAR FILTROS
+    // 4. ESTADÍSTICAS REALES POR MÓDULO
+    // ==========================================
+    const GRUPOS_STATS = [
+        ['CLIENTES', 'CLIENTES'],
+        ['HIPODROMOS', 'HIPODROMOS'],
+        ['TABLAS', 'TABLAS'],
+        ['VENTA_TABLAS', 'VENTA_TABLAS'],
+        ['TAQUILLA', 'TAQUILLA'],
+        ['SALDOS', 'SALDOS'],
+        ['MONEDAS', 'MONEDAS'],
+        ['OPERADORES', 'OPERADORES'],
+        ['WPS', 'WPS'],
+        ['REMATES', 'REMATES'],
+        ['FINANZAS', ['BANCOS', 'CAJA', 'DEPOSITOS', 'BANCOS_REALES']],
+        ['LOGIN', 'LOGIN']
+    ];
+
+    async function cargarStats() {
+        for (const [statKey, modulos] of GRUPOS_STATS) {
+            const lista = Array.isArray(modulos) ? modulos : [modulos];
+            let total = 0;
+            for (const m of lista) {
+                const { count } = await window.supabase.from('auditoria')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('modulo', m);
+                total += (count ?? 0);
+            }
+            const el = document.querySelector(`[data-stats="${statKey}"]`);
+            if (el) el.textContent = total;
+        }
+    }
+
+    // ==========================================
+    // 5. LIMPIEZA DE AUDITORÍA (RPC segura)
+    // ==========================================
+    document.getElementById('btnLimpiarAuditoria')?.addEventListener('click', async function() {
+        const dias = parseInt(document.getElementById('diasLimpiar').value);
+        if (isNaN(dias) || dias < 1) return window.clubUI.toast('Ingrese una cantidad válida de días.', 'error');
+
+        const fechaCorte = new Date();
+        fechaCorte.setDate(fechaCorte.getDate() - dias);
+        const corteTxt = fechaCorte.toLocaleDateString('es-ES');
+
+        if (!confirm(`⚠️ LIMPIEZA DE AUDITORÍA\n\n¿Eliminar los registros de auditoría ANTIGUOS (más de ${dias} días, antes del ${corteTxt})?\n\nEsta acción no se puede deshacer.`)) return;
+
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Limpiando...';
+
+        try {
+            const { data, error } = await window.supabase.rpc('club_limpiar_auditoria', { p_dias: dias });
+            if (error) throw error;
+
+            window.clubUI.toast(`Limpieza completada: ${data ?? 0} registro(s) eliminados.`, 'success');
+            cargarStats();
+            formFiltros.dispatchEvent(new Event('submit'));
+        } catch (e) {
+            console.error(e);
+            window.clubUI.toast('Error al limpiar: ejecuta primero sql/limpieza_auditoria.sql en Supabase. ' + (e.message || ''), 'error');
+        }
+
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-broom mr-1"></i> Limpiar registros';
+    });
+
+    // ==========================================
+    // 6. LIMPIAR FILTROS
     // ==========================================
     if (btnLimpiar) {
         btnLimpiar.addEventListener('click', function() {
@@ -142,5 +210,6 @@ document.addEventListener('DOMContentLoaded', function() {
     inputDesde.value = hoy;
     inputHasta.value = hoy;
     buscarRegistros({ desde: hoy, hasta: hoy, modulo: '', usuario: '', accion: '', ip: '' });
+    cargarStats();
 
 });

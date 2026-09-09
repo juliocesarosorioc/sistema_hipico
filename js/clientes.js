@@ -164,6 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!error) { inp.value = ''; cargarClientes(); }
         else { clubUI.toast('Error al crear socio: ' + error.message, 'error'); }
         btnCrearSocio.innerHTML = 'Convertir a Socio';
+        if (!error && window.clubDB?.logAccion) window.clubDB.logAccion('CLIENTES', `socio_convertido: ${nombre}`);
     });
 
     // ==========================================
@@ -193,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
         })]);
 
         if (error) clubUI.toast('Error al registrar: ' + error.message, 'error');
-        else { this.reset(); cargarClientes(); }
+        else { this.reset(); cargarClientes(); if (window.clubDB?.logAccion) window.clubDB.logAccion('CLIENTES', `creado: ${nombre}`); }
         btn.innerHTML = 'Agregar'; btn.disabled = false;
     });
 
@@ -220,7 +221,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(confirm("¿Eliminar definitivamente? Se perderán sus saldos.")) {
                     const { error } = await window.supabase.from('clientes').delete().eq('id', this.dataset.id);
                     if (error) return clubUI.toast('Error al eliminar: ' + error.message, 'error');
+                    const c = clientesGlobales.find(x => x.id == this.dataset.id);
                     cargarClientes();
+                    if (window.clubDB?.logAccion) window.clubDB.logAccion('CLIENTES', `eliminado: ${c?.nombre} (id=${this.dataset.id})`);
                 }
             });
         });
@@ -241,6 +244,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (error) return clubUI.toast('Error al actualizar: ' + error.message, 'error');
         modalEditar.classList.add('hidden');
         cargarClientes();
+        const c = clientesGlobales.find(x => x.id == id);
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('CLIENTES', `editado: ${c?.nombre} (id=${id})`);
     });
 
     // ==========================================
@@ -265,6 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (error) return clubUI.toast('Error al aplicar devolución: ' + error.message, 'error');
         cargarClientes();
         btnEjecutarDev.innerHTML = 'Aplicar a Todos';
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('CLIENTES', `devolucion_masiva: ${val}% a ${ids.length} clientes`);
     });
 
     document.querySelectorAll('.cerrar-modal').forEach(b => {

@@ -225,6 +225,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     this.innerHTML = '<i class="fas fa-check"></i> ' + tipo;
                     clubUI.toast(`Tasa ${tipo} registrada para el ${fecha}.`);
+                    if (window.clubDB?.logAccion) window.clubDB.logAccion('MONEDAS', `tasa_referencia: ${tipo} = ${tasa} Bs (aplica ${fecha})`);
                     setTimeout(() => { this.innerHTML = txt; }, 2000);
                     cargarTasasReferencia();
                     cargarHistoricoTasasRef();
@@ -304,6 +305,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             this.disabled = false;
                         }, 2000);
                         cargarHistoricoTasas();
+                        const monedaLog = monedasGlobales.find(m => m.id == monedaId);
+                        if (window.clubDB?.logAccion) window.clubDB.logAccion('MONEDAS', `tasa_moneda: ${monedaLog?.simbolo || monedaId} = ${nuevaTasa}`);
                     }
                 }
             });
@@ -451,6 +454,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (errTasa) console.warn('Tasa inicial no quedó registrada en el historial:', errTasa.message);
 
             clubUI.toast(`Moneda ${codigo} (${nombre}) registrada.`, 'success');
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('MONEDAS', `moneda_creada: ${codigo} (${nombre}) tasa=${tasa} (id=${monedaGenerada.id})`);
             this.reset();
             modalNueva.classList.add('hidden');
             cargarModulo();

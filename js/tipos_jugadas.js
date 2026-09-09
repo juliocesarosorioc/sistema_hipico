@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-3 text-center font-medium text-blue-700">${j.modalidad_pago}</td>
                     <td class="p-3 text-center">${badgeEstado}</td>
                     <td class="p-3 text-center">
-                        <button class="btn-toggle text-slate-500 hover:text-slate-800 transition-colors" data-id="${j.id}" data-activo="${j.activo}">
+                        <button class="btn-toggle text-slate-500 hover:text-slate-800 transition-colors" data-id="${j.id}" data-nombre="${j.nombre}" data-activo="${j.activo}">
                             <i class="fas fa-power-off"></i>
                         </button>
                     </td>
@@ -37,9 +37,11 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.btn-toggle').forEach(btn => {
             btn.addEventListener('click', async function() {
                 const id = this.getAttribute('data-id');
+                const nombre = this.getAttribute('data-nombre') || '?';
                 const nuevoEstado = this.getAttribute('data-activo') === 'false';
                 await window.supabase.from('tipos_jugadas').update({ activo: nuevoEstado }).eq('id', id);
                 cargarJugadas();
+                if (window.clubDB?.logAccion) window.clubDB.logAccion('TIPOS_JUGADAS', `jugada_${nuevoEstado ? 'activada' : 'desactivada'}: ${nombre} (id=${id})`);
             });
         });
     }
@@ -60,6 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             formJugada.reset();
             cargarJugadas();
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('TIPOS_JUGADAS', `creada: ${payload.nombre} comision=${payload.base_comision} modalidad=${payload.modalidad_pago}`);
         }
     });
 

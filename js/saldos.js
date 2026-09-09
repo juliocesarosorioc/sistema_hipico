@@ -288,6 +288,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             clubUI.toast("✅ ¡CARRERA LIQUIDADA CON ÉXITO! Los saldos fueron abonados a los ganadores.");
+            if (window.clubDB?.logAccion) {
+                const ganadores = ticketsActuales.filter(t => t.resultado_temp === 'GANADOR').length;
+                const hipodromoCarreras = [...new Set(ticketsActuales.map(t => `${t.hipodromo} C${t.carrera}`))].join(', ') || '-';
+                window.clubDB.logAccion('SALDOS', `liquidada: ${hipodromoCarreras} ganadores=${ganadores} total=${ticketsActuales.length} tickets`);
+            }
             window.location.reload();
 
         } catch (error) {

@@ -97,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
             formBanco.reset();
             document.getElementById('saldoInicial').value = "0.00";
             cargarBancosDB();
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('BANCOS', `creado: ${nombre} (${moneda}) saldo=${saldo}`);
         }
 
         btnGuardarBanco.innerHTML = 'Añadir Banco';
@@ -127,6 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (confirm(`¿Eliminar la cuenta "${nombre}" del directorio?`)) {
                     await window.supabase.from('bancos').delete().eq('id', id);
                     cargarBancosDB();
+                    if (window.clubDB?.logAccion) window.clubDB.logAccion('BANCOS', `eliminado: ${nombre} (id=${id})`);
                 }
             });
         });
@@ -139,6 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Un truco seguro para borrar todo: borrar donde id sea mayor a 0
             await window.supabase.from('bancos').delete().gt('id', 0);
             cargarBancosDB();
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('BANCOS', `eliminados_todos: ${bancosDB.length} cuentas`);
         }
     });
 

@@ -69,7 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="p-3 text-right font-bold text-slate-800">$${recaudado.toFixed(2)}</td>
                 <td class="p-3 text-center"><span class="bg-emerald-600 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase">${p.estado}</span></td>
                 <td class="p-3 text-center">
-                    <button class="btn-eliminar-polla bg-red-50 text-red-500 border border-red-200 px-2 py-1 rounded text-[11px] font-bold shadow-sm hover:bg-red-500 hover:text-white transition-colors" data-id="${p.id}"><i class="fas fa-trash-alt"></i></button>
+                    <button class="btn-eliminar-polla bg-red-50 text-red-500 border border-red-200 px-2 py-1 rounded text-[11px] font-bold shadow-sm hover:bg-red-500 hover:text-white transition-colors" data-id="${p.id}" data-nombre="${p.nombre}"><i class="fas fa-trash-alt"></i></button>
                 </td>
             `;
             tablaPollas.appendChild(tr);
@@ -80,8 +80,10 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.addEventListener('click', async function() {
                 if (confirm("¿Seguro que desea eliminar esta polla? Esta acción no se puede deshacer.")) {
                     const id = this.getAttribute('data-id');
+                    const nombre = this.getAttribute('data-nombre') || '?';
                     await supabase.from('pollas').delete().eq('id', id);
                     cargarListaPollas();
+                    if (window.clubDB?.logAccion) window.clubDB.logAccion('POLLAS', `eliminada: ${nombre} (id=${id})`);
                 }
             });
         });
@@ -120,6 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 this.reset();
                 inputFecha.value = hoy;
                 cargarListaPollas(); // Refrescar vista
+                if (window.clubDB?.logAccion) window.clubDB.logAccion('POLLAS', `creada: ${payload.nombre} (${payload.tipo}) valor=$${payload.valor_usd}`);
             }
 
             btnSubmit.innerHTML = btnOriginal;

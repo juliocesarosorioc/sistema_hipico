@@ -93,8 +93,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.btn-eliminar-remate').forEach(btn => {
             btn.addEventListener('click', async function() {
                 if(confirm("¿Seguro que desea eliminar TODO el remate y sus caballos asignados?")) {
-                    await supabase.from('remates').delete().eq('id', this.getAttribute('data-id'));
+                    const id = this.getAttribute('data-id');
+                    await supabase.from('remates').delete().eq('id', id);
                     cargarListaRemates();
+                    if (window.clubDB?.logAccion) window.clubDB.logAccion('REMATES', `eliminado: id=${id}`);
                 }
             });
         });
@@ -127,6 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.reset();
             document.getElementById('modalNuevoRemate').classList.add('hidden');
             cargarListaRemates();
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('REMATES', `creado: ${payload.nombre} (${payload.hipodromo_id} C${payload.carrera} ${payload.fecha})`);
         }
         
         btn.innerHTML = originalText; btn.disabled = false;
@@ -205,8 +208,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Eliminar caballo
         document.querySelectorAll('.btn-eliminar-caballo').forEach(btn => {
             btn.addEventListener('click', async function() {
-                await supabase.from('remate_caballos').delete().eq('id', this.getAttribute('data-id'));
+                const cid = this.getAttribute('data-id');
+                await supabase.from('remate_caballos').delete().eq('id', cid);
                 cargarCaballosDelRemate();
+                if (window.clubDB?.logAccion) window.clubDB.logAccion('REMATES', `caballo_eliminado: remate=${remateActivo?.nombre} id=${cid}`);
             });
         });
     }
@@ -236,6 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await supabase.from('remates').update({ incentivo: inc }).eq('id', remateActivo.id);
         remateActivo.incentivo = inc;
         recalcularFinanzas();
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('REMATES', `incentivo: ${remateActivo.nombre} = $${inc.toFixed(2)}`);
     });
 
     // ==========================================
@@ -256,6 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
         this.reset();
         document.getElementById('modalAsignarCaballo').classList.add('hidden');
         cargarCaballosDelRemate();
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('REMATES', `caballo_asignado: ${payload.nombre} #${payload.numero} $${payload.monto_usd} en ${remateActivo?.nombre}`);
     });
 
     // Modales comunes
@@ -330,6 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.innerHTML = originalText; btn.disabled = false;
             document.getElementById('modalGenerarCaballos').classList.add('hidden');
             cargarCaballosDelRemate();
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('REMATES', `generador_masivo: ${payloads.length} caballos en ${remateActivo.nombre}`);
         }
     });
 

@@ -161,6 +161,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         await window.supabase.from('clientes').update({ saldo_actual: nuevoSaldo, aval: nuevoAval }).eq('id', clienteId);
 
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('DEPOSITOS', `${tipoOp}: $${monto} ${nombreCliente} (${notaBase})`);
+
         formDeposito.reset();
         document.querySelector('.tab-operacion[data-tipo="Normal"]').click();
         cargarDatos();

@@ -130,6 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             this.reset();
             btn.innerHTML = 'Registrar Jugada'; btn.disabled = false;
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('WPS', `jugadas_registradas: ${cliente.nombre} ${checks.length} tipo(s) x $${montoPorJugada} (${document.getElementById('wpsHipodromo').value} C${document.getElementById('wpsCarrera').value})`);
             inicializarModulo(); // Recargar todo para actualizar saldos en el select y la tabla
         });
     }
@@ -215,6 +216,7 @@ document.addEventListener('DOMContentLoaded', () => {
             clubUI.toast("✅ Carrera procesada. Saldos y premios actualizados.");
             this.reset();
             btn.innerHTML = 'Procesar y Pagar'; btn.disabled = false;
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('WPS', `resultados_procesados: carrera ${carrera} ganador=${winCab} place=${plaCab} show=${shoCab}`);
             inicializarModulo();
         });
     }
@@ -264,6 +266,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
                 clubUI.toast(`✅ Caballos retirados. Se reembolsaron ${ticketsAfectados.length} jugadas.`);
+                if (window.clubDB?.logAccion) window.clubDB.logAccion('WPS', `retirados: carrera ${carrera} caballos=[${caballosStr}] reembolsos=${ticketsAfectados.length}`);
             } else {
                 clubUI.toast("No se encontraron jugadas pendientes para los caballos indicados.");
             }

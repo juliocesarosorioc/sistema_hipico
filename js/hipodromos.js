@@ -53,6 +53,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-3 text-slate-600 text-xs">${fecha}</td>
                     <td class="p-3 text-center">${estadoBadge}</td>
                     <td class="p-3 text-center">
+                        <button class="btn-editar border border-blue-300 text-blue-500 hover:bg-blue-50 hover:text-blue-700 px-3 py-1 rounded text-xs transition-colors shadow-sm mr-1" data-id="${h.id}" data-nombre="${h.nombre}">
+                            <i class="fas fa-pen mr-1"></i> Editar
+                        </button>
                         <button class="btn-eliminar border border-red-300 text-red-500 hover:bg-red-50 hover:text-red-700 px-3 py-1 rounded text-xs transition-colors shadow-sm" data-id="${h.id}" data-nombre="${h.nombre}">
                             <i class="fas fa-trash-alt mr-1"></i> Eliminar
                         </button>
@@ -88,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 this.reset();
                 cargarHipodromos(); // Recargar para mostrar el nuevo
+                if (window.clubDB?.logAccion) window.clubDB.logAccion('HIPODROMOS', `creado: ${nombre}`);
             }
 
             btn.innerHTML = btnOriginal;
@@ -96,12 +100,35 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
-    // 4. LÓGICA DE ELIMINACIÓN (Delete)
+    // 4. LÓGICA DE EDICIÓN Y ELIMINACIÓN (Update / Delete)
     // ==========================================
     if (cuerpoTabla) {
         cuerpoTabla.addEventListener('click', async function(e) {
             const btnEliminar = e.target.closest('.btn-eliminar');
-            
+            const btnEditar = e.target.closest('.btn-editar');
+
+            // ---- EDICIÓN ----
+            if (btnEditar) {
+                const id = btnEditar.getAttribute('data-id');
+                const nombre = btnEditar.getAttribute('data-nombre');
+                const nuevoNombre = prompt(`Editar hipódromo "${nombre}":`, nombre);
+                if (nuevoNombre === null) return;
+
+                const nombreLimpio = nuevoNombre.trim().toUpperCase();
+                if (!nombreLimpio || nombreLimpio === nombre) return;
+
+                const { error } = await supabase.from('hipodromos').update({ nombre: nombreLimpio }).eq('id', id);
+                if (error) {
+                    if (error.code === '23505') clubUI.toast(`El hipódromo "${nombreLimpio}" ya existe en el catálogo.`);
+                    else clubUI.toast('Error al editar el hipódromo.');
+                } else {
+                    cargarHipodromos();
+                    if (window.clubDB?.logAccion) window.clubDB.logAccion('HIPODROMOS', `editado: id=${id} "${nombre}" -> "${nombreLimpio}"`);
+                }
+                return;
+            }
+
+            // ---- ELIMINACIÓN ----
             if (btnEliminar) {
                 const id = btnEliminar.getAttribute('data-id');
                 const nombre = btnEliminar.getAttribute('data-nombre');
@@ -119,6 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         btnEliminar.disabled = false;
                     } else {
                         cargarHipodromos(); // Recargar tabla
+                        if (window.clubDB?.logAccion) window.clubDB.logAccion('HIPODROMOS', `eliminado: ${nombre} (id=${id})`);
                     }
                 }
             }

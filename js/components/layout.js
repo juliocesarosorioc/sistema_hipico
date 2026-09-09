@@ -52,7 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
         GRUPOS.push({
             titulo: 'Administración',
             items: [
-                { href: 'operadores.html', icon: 'fa-user-shield', txt: 'Operadores',         color: 'text-blue-400' }
+                { href: 'operadores.html', icon: 'fa-user-shield', txt: 'Operadores',         color: 'text-blue-400' },
+                { href: 'auditoria.html',  icon: 'fa-history',     txt: 'Auditoría',          color: 'text-purple-400' }
             ]
         });
     }
@@ -227,7 +228,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 11. Asignar funcionalidad de cerrar sesión
-    document.getElementById('btnCerrarSesionGlobal').addEventListener('click', () => {
+    document.getElementById('btnCerrarSesionGlobal').addEventListener('click', async () => {
+        try {
+            if (window.clubDB?.logAccion) {
+                await window.clubDB.logAccion('LOGIN', 'Cierre de sesión');
+            }
+        } catch (e) {
+            console.warn('No se pudo registrar el cierre de sesión:', e.message);
+        }
         window.clubAuth.cerrarSesion();
     });
 

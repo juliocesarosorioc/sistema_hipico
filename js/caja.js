@@ -156,6 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }]);
 
                 clubUI.toast(`✅ Transferencia de $${monto} completada con éxito.`);
+                if (window.clubDB?.logAccion) window.clubDB.logAccion('CAJA', `transferencia: $${monto} ${clienteOrigen.nombre} -> ${clienteDestino.nombre} (${nota || 'sin nota'})`);
 
             } else {
                 // MODO RETIRO
@@ -172,6 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }]);
 
                 clubUI.toast(`✅ Retiro de $${monto} por ${metodo} registrado.`);
+                if (window.clubDB?.logAccion) window.clubDB.logAccion('CAJA', `retiro: $${monto} ${clienteOrigen.nombre} via ${metodo} (${nota || 'sin nota'})`);
             }
 
             // Limpiar y recargar

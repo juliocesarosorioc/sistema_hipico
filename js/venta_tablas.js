@@ -301,6 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }).eq('id', clienteId);
 
             clubUI.toast("¡Venta de tablas procesada con éxito! Inventario actualizado y saldo descontado.");
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta: ${cliente.nombre} ${cantidad} tablas ${nombreGrupo} ($${costoTotal.toFixed(2)}) ${tablaSeleccionada.hipodromo} C${tablaSeleccionada.carrera}`);
             window.location.reload();
         } catch (e) {
             console.error(e);

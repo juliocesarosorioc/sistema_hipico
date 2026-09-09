@@ -113,6 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('monedaGrupo').value = 'USD';
         document.getElementById('cupoGrupo').value = 100;
         cargarGrupos();
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `grupo_creado: ${nombre}`);
     });
 
     async function toggleGrupo(e) {
@@ -120,6 +121,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const nuevo = e.currentTarget.dataset.activo === 'false';
         await window.supabase.from('grupos_venta').update({ activo: nuevo }).eq('id', id);
         cargarGrupos();
+        const g = todosGrupos.find(x => x.id == id);
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `grupo_${nuevo ? 'activado' : 'desactivado'}: ${g?.nombre}`);
     }
 
     async function eliminarGrupo(e) {
@@ -133,6 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         await window.supabase.from('grupos_venta').delete().eq('id', id);
         cargarGrupos();
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `grupo_eliminado: ${g.nombre} (id=${id})`);
     }
 
     btnAcordeonGrupos?.addEventListener('click', () => {
@@ -188,6 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const { error } = await window.supabase.from('clientes').update({ grupo_id: destino }).in('id', ids);
         if (error) return clubUI.toast('Error al mover clientes: ' + error.message);
         cargarClientesTodos();
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `clientes_movidos: ${ids.length} de grupo ${origen} a ${destino}`);
     }
 
     document.getElementById('btnMoverClientes').addEventListener('click', () => {
@@ -348,6 +353,7 @@ document.addEventListener('DOMContentLoaded', () => {
             contenedorCaballos.innerHTML = '';
             crearFilaCaballo(); crearFilaCaballo();
             calcularSumaBaseTotal(); cargarTablas();
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `publicada: ${hipodromo} C${carrera} premio=$${premio} cupos=${limiteTotal} (id=${nueva.id})`);
         }
         btnGuardarTabla.innerHTML = btnOrigText; btnGuardarTabla.disabled = false;
     });
@@ -390,6 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <button class="btn-editar bg-slate-200 text-slate-700 px-2 py-1 rounded hover:bg-slate-300" data-id="${t.id}" title="Editar"><i class="fas fa-edit"></i></button>
                         <button class="btn-clonar bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200" data-id="${t.id}" title="Clonar"><i class="fas fa-copy"></i></button>
                         ${t.estado === 'Abierta' ? `<button class="btn-auditar bg-amber-400 text-slate-900 px-2 py-1 rounded hover:bg-amber-500 font-bold" data-id="${t.id}">Auditar</button>` : ''}
+                        <button class="btn-eliminar bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200" data-id="${t.id}" title="Eliminar"><i class="fas fa-trash-alt"></i></button>
                     </div>
                 `;
 
@@ -407,9 +414,28 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.btn-editar').forEach(b => b.addEventListener('click', (e) => abrirModalEditar(e.currentTarget.dataset.id)));
             document.querySelectorAll('.btn-clonar').forEach(b => b.addEventListener('click', (e) => abrirModalClonar(e.currentTarget.dataset.id)));
             document.querySelectorAll('.btn-auditar').forEach(b => b.addEventListener('click', (e) => abrirModalAuditoria(e.currentTarget.dataset.id)));
+            document.querySelectorAll('.btn-eliminar').forEach(b => b.addEventListener('click', (e) => eliminarTabla(e.currentTarget.dataset.id)));
         } catch (e) {
             console.error(e);
             tbodyMonitor.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-red-500">Error cargando tablas.</td></tr>';
+        }
+    }
+
+    // ==========================================
+    // ELIMINAR TABLA (con liquidaciones pendientes)
+    // ==========================================
+    async function eliminarTabla(id) {
+        const t = datosTablaCompleta.find(x => x.id == id);
+        if (!t) return;
+        if (!confirm(`⚠️ ELIMINAR TABLA\n\n${t.hipodromo} C${t.carrera} — $${parseFloat(t.premio_recalculado).toLocaleString()}\n\nSe borrarán también sus cupos por grupo. Esta acción NO se puede deshacer.`)) return;
+
+        const { error } = await window.supabase.from('tablas_fijas').delete().eq('id', id);
+        if (error) {
+            clubUI.toast('Error al eliminar. Verifique que no tenga liquidaciones (saldos) asociadas.');
+        } else {
+            clubUI.toast(`Tabla ${t.hipodromo} C${t.carrera} eliminada.`, 'success');
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `eliminada: ${t.hipodromo} C${t.carrera} (id=${id})`);
+            cargarTablas();
         }
     }
 
@@ -463,6 +489,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!error) { document.getElementById('modalEditar').classList.add('hidden'); cargarTablas(); }
         else { clubUI.toast("Error al editar."); }
+        const tEdit = datosTablaCompleta.find(t => t.id == id);
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `editada: ${tEdit?.hipodromo} C${tEdit?.carrera} premio=$${premio} (id=${id})`);
     });
 
     // ==========================================
@@ -511,6 +539,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await window.supabase.from('tabla_grupos').insert(filas);
             document.getElementById('modalDuplicar').classList.add('hidden');
             cargarTablas();
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `clonada: ${tablaRef.hipodromo} C${tablaRef.carrera} (id=${nueva.id}) desde id=${idOriginal}`);
         } else { clubUI.toast("Error al clonar."); }
 
         btn.textContent = "Ejecutar Clonación"; btn.disabled = false;
@@ -561,6 +590,8 @@ document.addEventListener('DOMContentLoaded', () => {
             premio_recalculado: np, caballos: caballosModalTemp, estado: 'Auditada', retirados_oficiales: ret.length > 0 ? ret.join(',') : 'Ninguno'
         }).eq('id', id);
         if (!error) { document.getElementById('modalAuditoria').classList.add('hidden'); cargarTablas(); }
+        const tAud = datosTablaCompleta.find(x => x.id == id);
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `auditada: ${tAud?.hipodromo} C${tAud?.carrera} premio_recalculado=$${np} retirados=[${ret}] (id=${id})`);
     });
 
     document.querySelectorAll('.cerrar-modal').forEach(b => b.addEventListener('click', () => {
