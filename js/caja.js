@@ -326,6 +326,14 @@ document.addEventListener('DOMContentLoaded', () => {
         clubUI.toast("¡Texto copiado al portapapeles!");
     });
 
+    document.getElementById('btnAbrirWhatsapp').addEventListener('click', () => {
+        const txt = document.getElementById('textoWhatsapp').value.trim();
+        if (!txt) return clubUI.toast('Primero genera el texto para enviar.', 'warning');
+        const url = 'https://wa.me/?text=' + encodeURIComponent(txt);
+        window.open(url, '_blank');
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('CAJA', 'reporte_whatsapp: abierto wa.me con reporte general');
+    });
+
     document.querySelectorAll('.cerrar-modal').forEach(b => {
         b.addEventListener('click', () => document.getElementById('modalWhatsapp').classList.add('hidden'));
     });

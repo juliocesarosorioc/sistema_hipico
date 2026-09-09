@@ -39,6 +39,12 @@ document.addEventListener('DOMContentLoaded', () => {
             ]
         },
         {
+            titulo: 'Comunicación',
+            items: [
+                { href: 'whatsapp.html', icon: 'fa-brands fa-whatsapp', txt: 'WhatsApp',      color: 'text-emerald-400' }
+            ]
+        },
+        {
             titulo: 'Configuración',
             items: [
                 { href: 'clientes.html', icon: 'fa-users',        txt: 'Clientes/Socios',     color: 'text-cyan-400' },
