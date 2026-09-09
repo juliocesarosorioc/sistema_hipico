@@ -149,8 +149,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!nombre) return;
         
         btnCrearSocio.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        const { error } = await window.supabase.from('clientes')
-            .insert([soloColumnasExistentes({ nombre: nombre, es_socio: true })]);
+        const existente = clientesGlobales.find(c => String(c.nombre).toUpperCase() === nombre);
+        let error = null;
+
+        if (existente) {
+            // Ya existe: CONVERTIR al registro en Socio (no crear duplicado)
+            ({ error } = await window.supabase.from('clientes')
+                .update({ es_socio: true }).eq('id', existente.id));
+        } else {
+            // No existe: registra el nuevo Socio/Agencia
+            ({ error } = await window.supabase.from('clientes')
+                .insert([soloColumnasExistentes({ nombre: nombre, es_socio: true })]));
+        }
         
         if(!error) { inp.value = ''; cargarClientes(); }
         else { clubUI.toast('Error al crear socio: ' + error.message, 'error'); }
