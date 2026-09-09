@@ -2,51 +2,60 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const contenedorCaballos = document.getElementById('contenedorCaballos');
     const btnAgregarCaballo = document.getElementById('btnAgregarCaballo');
-    const lblTotalIncidencia = document.getElementById('totalIncidencia');
+    const lblSumaBase = document.getElementById('totalSumaBase');
     const btnGuardarTabla = document.getElementById('btnGuardarTabla');
     const tbodyMonitor = document.getElementById('cuerpoMonitorTablas');
     
+    let tasaCambioGlobal = 1.0;
+
+    // Obtener la tasa global de conversión configurada en el sistema
+    async function cargarTasaGlobal() {
+        const { data } = await window.supabase.from('monedas').select('tasa_cambio').limit(1).single();
+        if (data && data.tasa_cambio) {
+            tasaCambioGlobal = parseFloat(data.tasa_cambio);
+            document.getElementById('lblTasaGlobal').textContent = tasaCambioGlobal.toLocaleString();
+        } else {
+            document.getElementById('lblTasaGlobal').textContent = '1.00';
+        }
+    }
+
     // ==========================================
-    // 1. CONSTRUCTOR DINÁMICO DE CABALLOS
+    // 1. CONSTRUCTOR DE EJEMPLARES (PONDERACIÓN)
     // ==========================================
-    function crearFilaCaballo() {
+    function crearFilaCaballo(numSugerido = '', nomSugerido = '', valorSugerido = '') {
         const div = document.createElement('div');
         div.className = 'flex gap-2 items-center fila-caballo-config';
         div.innerHTML = `
-            <input type="text" class="input-tbl w-16 text-center in-num-cab font-bold" placeholder="N°">
-            <input type="text" class="input-tbl flex-1 in-nom-cab" placeholder="Nombre del Caballo">
-            <div class="relative w-24">
-                <input type="number" class="input-tbl w-full text-center text-red-700 font-bold in-incidencia pr-6" placeholder="%">
-                <span class="absolute right-2 top-1.5 text-xs text-slate-400 font-bold">%</span>
-            </div>
+            <input type="text" class="input-tbl w-16 text-center in-num-cab font-bold" value="${numSugerido}" placeholder="N°">
+            <input type="text" class="input-tbl flex-1 in-nom-cab" value="${nomSugerido}" placeholder="Nombre del Ejemplar">
+            <input type="number" step="0.1" class="input-tbl w-24 text-center text-blue-700 font-bold in-valor-ej" value="${valorSugerido}" placeholder="Valor">
             <button type="button" class="text-red-400 hover:text-red-600 px-1 btn-quitar-cab"><i class="fas fa-trash-alt"></i></button>
         `;
         
         contenedorCaballos.appendChild(div);
 
-        // Eventos
         div.querySelector('.btn-quitar-cab').addEventListener('click', () => {
             div.remove();
-            calcularIncidenciaTotal();
+            calcularSumaBaseTotal();
         });
-        div.querySelector('.in-incidencia').addEventListener('input', calcularIncidenciaTotal);
+        div.querySelector('.in-valor-ej').addEventListener('input', calcularSumaBaseTotal);
     }
 
-    function calcularIncidenciaTotal() {
-        let total = 0;
-        document.querySelectorAll('.in-incidencia').forEach(input => {
-            const val = parseFloat(input.value) || 0;
-            total += val;
+    function calcularSumaBaseTotal() {
+        let suma = 0;
+        document.querySelectorAll('.in-valor-ej').forEach(input => {
+            suma += parseFloat(input.value) || 0;
         });
-        lblTotalIncidencia.textContent = total.toFixed(1);
-        lblTotalIncidencia.className = total === 100 ? 'text-emerald-600' : 'text-red-500';
+        lblSumaBase.textContent = suma.toFixed(1);
     }
 
-    btnAgregarCaballo.addEventListener('click', crearFilaCaballo);
+    btnAgregarCaballo.addEventListener('click', () => crearFilaCaballo());
     
-    // Iniciar con 2 caballos mínimos
-    crearFilaCaballo();
-    crearFilaCaballo();
+    // Iniciar con 3 ejemplares de prueba por defecto para conformar una base (ej. 160 o 170)
+    crearFilaCaballo('1', 'Ejemplar A', '50');
+    crearFilaCaballo('2', 'Ejemplar B', '60');
+    crearFilaCaballo('3', 'Ejemplar C', '50');
+    calcularSumaBaseTotal();
 
     // ==========================================
     // 2. REGISTRO EN BASE DE DATOS
@@ -54,61 +63,74 @@ document.addEventListener('DOMContentLoaded', () => {
     btnGuardarTabla.addEventListener('click', async () => {
         const hipodromo = document.getElementById('hipodromoTabla').value.trim().toUpperCase();
         const carrera = parseInt(document.getElementById('carreraTabla').value);
-        const monto = parseFloat(document.getElementById('montoTabla').value);
-        const premio = parseFloat(document.getElementById('premioTabla').value);
+        const grupo = document.getElementById('grupoTabla').value.trim().toUpperCase() || 'GENERAL';
+        const moneda = document.getElementById('monedaTabla').value;
+        const cantidadTablas = parseInt(document.getElementById('cantidadTablas').value) || 1;
+        const comisionGrupo = parseFloat(document.getElementById('comisionTabla').value) || 0;
+        const montoTabla = parseFloat(document.getElementById('montoTabla').value);
+        const premioOriginal = parseFloat(document.getElementById('premioTabla').value);
 
-        if (!hipodromo || isNaN(carrera) || isNaN(monto) || isNaN(premio)) {
-            return alert("Complete Hipódromo, Carrera, Valor y Premio.");
+        if (!hipodromo || isNaN(carrera) || isNaN(montoTabla) || isNaN(premioOriginal)) {
+            return alert("Complete los campos obligatorios de la tabla.");
         }
 
-        const sumaIncidencia = parseFloat(lblTotalIncidencia.textContent);
-        if (sumaIncidencia !== 100) {
-            return alert("El peso de incidencia de los caballos debe sumar exactamente 100%. Actualmente suma: " + sumaIncidencia + "%");
+        const sumaBaseTabla = parseFloat(lblSumaBase.textContent);
+        if (sumaBaseTabla <= 0) {
+            return alert("La suma base de los ejemplares no puede ser cero.");
         }
 
         let caballosArr = [];
         let errorCaballos = false;
         
         document.querySelectorAll('.fila-caballo-config').forEach(fila => {
-            const num = fila.querySelector('.in-num-cab').value.trim();
-            const nom = fila.querySelector('.in-nom-cab').value.trim().toUpperCase();
-            const inc = parseFloat(fila.querySelector('.in-incidencia').value);
+            const numero = fila.querySelector('.in-num-cab').value.trim();
+            const nombre = fila.querySelector('.in-nom-cab').value.trim().toUpperCase();
+            const valor = parseFloat(fila.querySelector('.in-valor-ej').value);
 
-            if (!num || !nom || isNaN(inc)) errorCaballos = true;
-            caballosArr.push({ numero: num, nombre: nom, incidencia_porcentaje: inc, retirado: false });
+            if (!numero || !nombre || isNaN(valor)) errorCaballos = true;
+            caballosArr.push({ numero, nombre, valor_ejemplar: valor, retirado: false });
         });
 
-        if (errorCaballos || caballosArr.length < 2) return alert("Revise la lista de caballos. Faltan datos o hay menos de 2.");
+        if (errorCaballos || caballosArr.length < 2) return alert("Revise los ejemplares. Faltan datos o hay menos de 2.");
 
-        const btnOrig = btnGuardarTabla.innerHTML;
-        btnGuardarTabla.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando...';
+        const btnOrigText = btnGuardarTabla.innerHTML;
+        btnGuardarTabla.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
         btnGuardarTabla.disabled = true;
 
         const { error } = await window.supabase.from('tablas_fijas').insert([{
-            hipodromo, carrera,
-            monto_tabla: monto, premio_original: premio, premio_recalculado: premio,
-            caballos: caballosArr, estado: 'Abierta'
+            hipodromo, 
+            carrera,
+            grupo_venta: grupo,
+            moneda,
+            tasa_cambio: tasaCambioGlobal,
+            suma_base_tabla: sumaBaseTabla,
+            cantidad_tablas: cantidadTablas,
+            monto_tabla: montoTabla,
+            premio_original: premioOriginal,
+            premio_recalculado: premioOriginal,
+            comision_grupo: comisionGrupo,
+            caballos: caballosArr,
+            estado: 'Abierta'
         }]);
 
         if (error) {
-            alert("Error al guardar la tabla.");
+            alert("Error al registrar la tabla.");
             console.error(error);
         } else {
-            // Limpiar form
             document.getElementById('montoTabla').value = '';
-            document.getElementById('premioTabla').value = '';
             contenedorCaballos.innerHTML = '';
-            crearFilaCaballo(); crearFilaCaballo();
-            calcularIncidenciaTotal();
+            crearFilaCaballo('1', '', '');
+            crearFilaCaballo('2', '', '');
+            calcularSumaBaseTotal();
             cargarTablas();
         }
 
-        btnGuardarTabla.innerHTML = btnOrig;
+        btnGuardarTabla.innerHTML = btnOrigText;
         btnGuardarTabla.disabled = false;
     });
 
     // ==========================================
-    // 3. MONITOR Y MOTOR DE AUDITORÍA
+    // 3. MONITOR Y MOTOR DE AUDITORÍA PROPORCIONAL
     // ==========================================
     async function cargarTablas() {
         const { data, error } = await window.supabase.from('tablas_fijas')
@@ -116,54 +138,61 @@ document.addEventListener('DOMContentLoaded', () => {
             .order('id', { ascending: false });
 
         if (error || !data) {
-            tbodyMonitor.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-red-500">Error al cargar.</td></tr>';
+            tbodyMonitor.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-red-500">Error al cargar datos.</td></tr>';
             return;
         }
 
         tbodyMonitor.innerHTML = '';
         data.forEach(t => {
             let caballosHTML = t.caballos.map(c => 
-                `<span class="${c.retirado ? 'line-through text-red-500' : 'text-slate-700'}">${c.numero}-${c.nombre} <span class="text-[9px] text-slate-400">(${c.incidencia_porcentaje}%)</span></span>`
+                `<span class="${c.retirado ? 'line-through text-red-500 font-bold' : 'text-slate-700'}">${c.numero}-${c.nombre} <span class="text-[9px] text-slate-400">(${c.valor_ejemplar} pts)</span></span>`
             ).join(', ');
 
-            let badgeEstado = '';
-            if (t.estado === 'Abierta') badgeEstado = '<span class="bg-green-100 text-green-700 px-2 rounded text-[10px] font-bold">ABIERTA</span>';
-            else if (t.estado === 'Auditada') badgeEstado = '<span class="bg-blue-100 text-blue-700 px-2 rounded text-[10px] font-bold">AUDITADA</span>';
-            
-            // Botón de auditoría (solo si no está auditada aún para simplificar el flujo)
+            let badgeEstado = t.estado === 'Abierta' 
+                ? '<span class="bg-green-100 text-green-700 px-2 rounded text-[10px] font-bold">ABIERTA</span>' 
+                : '<span class="bg-blue-100 text-blue-700 px-2 rounded text-[10px] font-bold">AUDITADA</span>';
+
             let btnAccion = t.estado === 'Abierta' 
-                ? `<button class="btn-auditar bg-amber-400 text-slate-900 px-2 py-1 rounded shadow text-[10px] font-bold hover:bg-amber-500" data-id="${t.id}" data-premio="${t.premio_original}" data-caballos='${JSON.stringify(t.caballos)}'><i class="fas fa-balance-scale"></i> Auditar Retiros</button>`
-                : `<span class="text-[10px] text-slate-400 font-bold"><i class="fas fa-check-double text-blue-500"></i> Listo</span>`;
+                ? `<button type="button" class="btn-auditar bg-amber-400 text-slate-900 px-2 py-1 rounded shadow text-[10px] font-bold hover:bg-amber-500" data-id="${t.id}" data-premio="${t.premio_original}" data-sumabase="${t.suma_base_tabla}" data-caballos='${JSON.stringify(t.caballos)}'><i class="fas fa-balance-scale"></i> Auditar</button>`
+                : `<span class="text-[10px] text-blue-600 font-bold"><i class="fas fa-check-double"></i> Retirados: ${t.retirados_oficiales}</span>`;
+
+            let simboloMoneda = t.moneda === 'VES' ? 'Bs' : '$';
 
             tbodyMonitor.innerHTML += `
                 <tr class="hover:bg-blue-50 transition-colors">
                     <td class="p-2 border-b border-slate-100 font-bold text-slate-800">${t.hipodromo} <br><span class="text-blue-600">C${t.carrera}</span></td>
-                    <td class="p-2 border-b border-slate-100 text-[10px] leading-tight">${caballosHTML}</td>
-                    <td class="p-2 border-b border-slate-100 text-right font-bold text-slate-600">$${parseFloat(t.monto_tabla).toFixed(2)}</td>
-                    <td class="p-2 border-b border-slate-100 text-right font-bold text-blue-700">$${parseFloat(t.premio_recalculado).toFixed(2)}</td>
+                    <td class="p-2 border-b border-slate-100 text-[11px] font-medium text-slate-600">${t.grupo_venta} <br><span class="bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded text-[10px] font-bold">${t.moneda}</span></td>
+                    <td class="p-2 border-b border-slate-100 text-[10px] leading-tight max-w-xs">${caballosHTML}</td>
+                    <td class="p-2 border-b border-slate-100 text-right font-bold text-slate-700">
+                        Valor: ${simboloMoneda}${parseFloat(t.monto_tabla).toLocaleString()}<br>
+                        <span class="text-blue-700">Premio: ${simboloMoneda}${parseFloat(t.premio_recalculado).toLocaleString()}</span>
+                    </td>
                     <td class="p-2 border-b border-slate-100 text-center">${badgeEstado}</td>
                     <td class="p-2 border-b border-slate-100 text-center">${btnAccion}</td>
                 </tr>
             `;
         });
 
-        // Asignar eventos de Auditoría
         document.querySelectorAll('.btn-auditar').forEach(btn => {
             btn.addEventListener('click', function() {
-                abrirModalAuditoria(this.dataset.id, this.dataset.premio, JSON.parse(this.dataset.caballos));
+                abrirModalAuditoria(this.dataset.id, this.dataset.premio, this.dataset.sumabase, JSON.parse(this.dataset.caballos));
             });
         });
     }
 
-    // LÓGICA MATEMÁTICA DEL MODAL
+    // MOTOR MATEMÁTICO DEL MODAL DE AUDITORÍA PROPORCIONAL
     const modalAuditoria = document.getElementById('modalAuditoria');
     let caballosModalTemp = [];
     let premioOrigTemp = 0;
+    let sumaBaseTemp = 0;
 
-    function abrirModalAuditoria(id, premioOrig, caballosJSON) {
+    function abrirModalAuditoria(id, premioOrig, sumaBase, caballosJSON) {
         document.getElementById('auditoriaTablaId').value = id;
         premioOrigTemp = parseFloat(premioOrig);
-        document.getElementById('lblPremioOrig').textContent = '$' + premioOrigTemp.toFixed(2);
+        sumaBaseTemp = parseFloat(sumaBase);
+        
+        document.getElementById('lblPremioOrig').textContent = premioOrigTemp.toLocaleString();
+        document.getElementById('lblSumaBase').textContent = sumaBaseTemp.toLocaleString();
         
         caballosModalTemp = caballosJSON;
         const contenedor = document.getElementById('listaCaballosAuditoria');
@@ -171,41 +200,47 @@ document.addEventListener('DOMContentLoaded', () => {
 
         caballosModalTemp.forEach((c, index) => {
             contenedor.innerHTML += `
-                <label class="flex items-center gap-2 bg-white border border-slate-200 p-2 rounded cursor-pointer hover:bg-red-50">
-                    <input type="checkbox" class="chk-retiro" data-index="${index}" data-incidencia="${c.incidencia_porcentaje}">
+                <label class="flex items-center gap-2 bg-white border border-slate-200 p-2 rounded cursor-pointer hover:bg-red-50 text-xs">
+                    <input type="checkbox" class="chk-retiro" data-index="${index}" data-valor="${c.valor_ejemplar}">
                     <span class="font-bold text-slate-700">${c.numero} - ${c.nombre}</span>
-                    <span class="ml-auto text-xs text-red-500 font-bold bg-red-100 px-2 rounded">-${c.incidencia_porcentaje}%</span>
+                    <span class="ml-auto text-red-600 font-bold bg-red-100 px-2 py-0.5 rounded">Valor: ${c.valor_ejemplar}</span>
                 </label>
             `;
         });
 
-        actualizarCalculoModal();
+        actualizarCalculoProporcionalModal();
         
         document.querySelectorAll('.chk-retiro').forEach(chk => {
-            chk.addEventListener('change', actualizarCalculoModal);
+            chk.addEventListener('change', actualizarCalculoProporcionalModal);
         });
 
         modalAuditoria.classList.remove('hidden');
     }
 
-    function actualizarCalculoModal() {
-        let porcentajeDeducir = 0;
+    function actualizarCalculoProporcionalModal() {
+        let valorRetirados = 0;
         document.querySelectorAll('.chk-retiro:checked').forEach(chk => {
-            porcentajeDeducir += parseFloat(chk.dataset.incidencia);
+            valorRetirados += parseFloat(chk.dataset.valor);
         });
 
-        // Fórmula: Premio Original * (1 - (PorcentajeRetirado / 100))
-        const multiplicador = 1 - (porcentajeDeducir / 100);
-        const nuevoPremio = premioOrigTemp * multiplicador;
-        
-        document.getElementById('lblPremioRecalculado').textContent = '$' + nuevoPremio.toFixed(2);
+        // Fórmula Proporcional: 
+        // Si no hay retiros, paga el 100% del premio pactado.
+        // Si hay retiros, se descuenta proporcionalmente el valor del ejemplar retirado de la suma base.
+        // Premio Recalculado = Premio Original * [1 - (Valor Retirados / Suma Base Total)]
+        let nuevoPremio = premioOrigTemp;
+        if (sumaBaseTemp > 0 && valorRetirados > 0) {
+            const proporcionDescuento = valorRetirados / sumaBaseTemp;
+            nuevoPremio = premioOrigTemp * (1 - proporcionDescuento);
+            if (nuevoPremio < 0) nuevoPremio = 0;
+        }
+
+        document.getElementById('lblPremioRecalculado').textContent = nuevoPremio.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
 
     document.getElementById('btnProcesarAuditoria').addEventListener('click', async () => {
         const idTabla = document.getElementById('auditoriaTablaId').value;
-        const nuevoPremio = parseFloat(document.getElementById('lblPremioRecalculado').textContent.replace('$', ''));
+        const nuevoPremio = parseFloat(document.getElementById('lblPremioRecalculado').textContent.replace(/,/g, ''));
         
-        // Actualizar el JSON de caballos marcando los retirados
         let nombresRetirados = [];
         document.querySelectorAll('.chk-retiro').forEach(chk => {
             const index = chk.dataset.index;
@@ -240,5 +275,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('btnRecargarTablas').addEventListener('click', cargarTablas);
 
+    cargarTasaGlobal();
     cargarTablas();
 });
