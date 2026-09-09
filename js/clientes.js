@@ -68,8 +68,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (clubUI.esBancoVzla(metodo)) {
             const [codigo, ...resto] = metodo.split(' · ');
             const nombre = resto.join(' · ');
+            const esSudeban = codigo === '0157';
+            const hint = esSudeban
+                ? `<p class="mt-1 text-[9px] font-bold text-blue-700 md:col-span-3 bg-blue-50 border border-blue-200 rounded p-2">💡 <b>SUDEBAN:</b> tu cuenta del banco SUDEBAN tiene 20 dígitos (${codigo} + 16). Coloca <u>solo los 16 dígitos restantes</u> que aparecen después de ${codigo}.</p>`
+                : `<p class="mt-1 text-[9px] font-medium text-slate-500 md:col-span-3 bg-slate-50 border border-slate-200 rounded p-2">💡 En las cuentas de Venezuela el código del banco (${codigo}) va <b>antes</b> del número de cuenta. Escribe únicamente los <b>16 dígitos</b> de tu cuenta, sin el código.</p>`;
             html = `
-                <div>
+                <div class="md:col-span-2">
                     <label class="${lbl}">Banco (predeterminado)</label>
                     <input id="${pref}BancoNombre" readonly value="${nombre}" class="${dis}">
                 </div>
@@ -84,12 +88,31 @@ document.addEventListener('DOMContentLoaded', () => {
                     </select>
                 </div>
                 <div>
-                    <label class="${lbl}">Número de Cuenta</label>
-                    <input id="${pref}NumeroCuenta" inputmode="numeric" placeholder="01020330445566778890" class="${inp} font-mono">
+                    <label class="${lbl}">Número de Cuenta <span class="text-[9px] font-bold text-blue-600">(16 dígitos)</span></label>
+                    <input id="${pref}NumeroCuenta" inputmode="numeric" maxlength="16" placeholder="${esSudeban ? 'SOLO los 16 dígitos restantes (sin ' + codigo + ')' : 'Los 16 dígitos de tu cuenta'} (sin el código ${codigo})" class="${inp} font-mono">
                 </div>
-                <div>
+                <div class="md:col-span-2">
                     <label class="${lbl}">Titular (nombre en la cuenta)</label>
                     <input id="${pref}Titular" class="${inp} uppercase">
+                </div>
+                ${hint}`;
+        } else if (metodo === 'PAGO MÓVIL') {
+            html = `
+                <div>
+                    <label class="${lbl}">Banco (donde está tu pago móvil) <span class="text-red-500">*</span></label>
+                    <select id="${pref}BancoMovil" class="${inp} font-bold">${clubUI.htmlOpcionesBancosVzla()}</select>
+                </div>
+                <div>
+                    <label class="${lbl}">Teléfono vinculado <span class="text-red-500">*</span></label>
+                    <input id="${pref}TlfMovil" inputmode="numeric" placeholder="0412 123 4567" class="${inp} font-mono">
+                </div>
+                <div>
+                    <label class="${lbl}">Titular (nombre, opcional)</label>
+                    <input id="${pref}TitularMovil" class="${inp} uppercase">
+                </div>
+                <div>
+                    <label class="${lbl}">Cédula / RIF (opcional)</label>
+                    <input id="${pref}CedulaMovil" class="${inp} font-mono uppercase" placeholder="V-12.345.678">
                 </div>`;
         } else if (metodo === 'ZELLE' || metodo === 'BINANCE') {
             html = `
@@ -117,23 +140,43 @@ document.addEventListener('DOMContentLoaded', () => {
         cont.classList.remove('hidden');
 
         if (dp && typeof dp === 'object') {
-            set(`${pref}TipoCuenta`, dp.tipo_cuenta);
-            set(`${pref}NumeroCuenta`, dp.numero_cuenta);
-            set(`${pref}Titular`, dp.titular);
-            set(`${pref}TipoContacto`, dp.tipo_contacto);
-            set(`${pref}DatoContacto`, dp.dato);
-            set(`${pref}IdBinance`, dp.id_binance);
+            if (metodo === 'PAGO MÓVIL') {
+                const [bCod, ...bNom] = (dp.banco || '').split(' · ');
+                set(`${pref}BancoMovil`, (bNom.length ? bCod + ' · ' + bNom.join(' · ') : (dp.codigo ? dp.codigo + ' · ' + (dp.banco || '') : (dp.banco || ''))) || clubUI.BANCOS_VZLA[0]?.codigo + ' · ' + clubUI.BANCOS_VZLA[0]?.nombre);
+                set(`${pref}TlfMovil`, dp.telefono || dp.dato || '');
+                set(`${pref}TitularMovil`, dp.titular || '');
+                set(`${pref}CedulaMovil`, dp.cedula_rif || '');
+            } else {
+                set(`${pref}TipoCuenta`, dp.tipo_cuenta);
+                set(`${pref}NumeroCuenta`, dp.numero_cuenta);
+                set(`${pref}Titular`, dp.titular);
+                set(`${pref}TipoContacto`, dp.tipo_contacto);
+                set(`${pref}DatoContacto`, dp.dato);
+                set(`${pref}IdBinance`, dp.id_binance);
+            }
         }
     }
 
     function leerDatosPago(pref, metodo) {
         if (!metodo) return null;
+        if (metodo === 'PAGO MÓVIL') {
+            const bSel = val(`${pref}BancoMovil`);
+            const [codigo, ...resto] = bSel.split(' · ');
+            return {
+                banco: resto.join(' · '), codigo,
+                tipo_cuenta: 'PAGO MÓVIL',
+                telefono: val(`${pref}TlfMovil`),
+                titular: val(`${pref}TitularMovil`),
+                cedula_rif: val(`${pref}CedulaMovil`)
+            };
+        }
         if (clubUI.esBancoVzla(metodo)) {
             const [codigo, ...resto] = metodo.split(' · ');
+            const numero = val(`${pref}NumeroCuenta`);
             return {
                 banco: resto.join(' · '), codigo,
                 tipo_cuenta: val(`${pref}TipoCuenta`),
-                numero_cuenta: val(`${pref}NumeroCuenta`),
+                numero_cuenta: (numero && codigo === '0157') ? codigo + numero : numero,
                 titular: val(`${pref}Titular`)
             };
         }
@@ -187,7 +230,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const filasHtml = lista.map(c => {
-            const badgeLibre = c.libre ? '<span class="text-emerald-600 font-bold">SÍ</span>' : '<span class="text-slate-400">NO</span>';
+            const modoCliente = c.modo_juego || (c.libre ? 'libre' : 'aval');
+            const badgeModo = {
+                aval: '<span class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-[10px] font-bold">Con Aval</span>',
+                libre: '<span class="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-[10px] font-bold">Libre</span>',
+                pozo: '<span class="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full text-[10px] font-bold">Pozo</span>'
+            }[modoCliente] || '<span class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-[10px] font-bold">Con Aval</span>';
             const badgeMS = c.mostrar_saldo_socio ? '<i class="fas fa-eye text-blue-500" title="Visible al socio"></i>' : '<i class="fas fa-eye-slash text-slate-300" title="Oculto"></i>';
             const socioLabel = c.socio_asignado || '<span class="text-slate-400 italic">Directo</span>';
 
@@ -214,9 +262,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             return `
                 <tr class="hover:bg-blue-50 border-b border-slate-100">
-                    <td class="p-2 font-bold text-slate-800">${c.nombre}</td>
+                    <td class="p-2 font-bold text-slate-800">${c.seudonimo || c.nombre}${(c.nombre && c.nombre !== (c.seudonimo || c.nombre)) ? `<span class="block text-[9px] font-medium text-slate-400">${c.nombre}</span>` : ''}</td>
                     <td class="p-2 text-slate-500 font-mono">${c.telefono || '-'}</td>
-                    <td class="p-2 text-center">${badgeLibre}</td>
+                    <td class="p-2 text-center">${badgeModo}</td>
                     <td class="p-2 text-right font-mono font-bold ${colorS}">$${clubUI.formatoNumero(saldo, 2)}</td>
                     <td class="p-2 text-right font-mono text-amber-600" title="Límite de pérdida (no es saldo)">$${clubUI.formatoNumero(aval, 2)}</td>
                     <td class="p-2 text-right font-mono text-purple-600" title="Incentivo a buenos jugadores (cuenta individual)">${clubUI.formatoNumero(dev, 2)}%</td>
@@ -249,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     buscador?.addEventListener('input', (e) => {
         const txt = e.target.value.toLowerCase();
-        clientesFiltrados = clientesGlobales.filter(c => c.nombre.toLowerCase().includes(txt) || (c.telefono && c.telefono.includes(txt)));
+        clientesFiltrados = clientesGlobales.filter(c => (c.nombre || '').toLowerCase().includes(txt) || (c.seudonimo || '').toLowerCase().includes(txt) || (c.telefono && c.telefono.includes(txt)));
         renderizarTabla(clientesFiltrados);
     });
 
@@ -291,22 +339,34 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = this.querySelector('button[type="submit"]');
         btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
-        const nombre = document.getElementById('nombreCliente').value.trim().toUpperCase();
-        if (clientesGlobales.some(c => String(c.nombre).toUpperCase() === nombre)) {
-            clubUI.toast('Ya existe un cliente con ese nombre.', 'error');
+        const seudonimo = document.getElementById('seudonimoCliente').value.trim().toUpperCase();
+        if (!seudonimo) {
+            clubUI.toast('El seudónimo es obligatorio para operar.', 'warning');
             btn.innerHTML = 'Agregar'; btn.disabled = false;
             return;
         }
+        if (clientesGlobales.some(c => String(c.seudonimo || c.nombre || '').toUpperCase() === seudonimo)) {
+            clubUI.toast('Ya existe un cliente con ese seudónimo.', 'error');
+            btn.innerHTML = 'Agregar'; btn.disabled = false;
+            return;
+        }
+        const nombreReal = document.getElementById('nombresCliente').value.trim().toUpperCase();
+        const apellido = document.getElementById('apellidoCliente').value.trim().toUpperCase();
+        const nombre = [nombreReal, apellido].filter(Boolean).join(' ') || seudonimo;
+        const modo = document.getElementById('modoCliente').value || 'aval';
 
         const { error } = await window.supabase.from('clientes').insert([soloColumnasExistentes({
             nombre: nombre,
+            seudonimo: seudonimo,
+            apellido: apellido || null,
+            modo_juego: modo,
+            libre: modo === 'libre',
             telefono: clubUI.componerTelefono(document.getElementById('codigoPaisNuevo').value, document.getElementById('telefonoCliente').value) || null,
             codigo_pais: document.getElementById('codigoPaisNuevo').value,
             email: document.getElementById('emailCliente').value.trim() || null,
             cedula_rif: document.getElementById('cedulaRifCliente').value.trim().toUpperCase() || null,
             aval: numeroValido(document.getElementById('avalCliente').value),
             devolucion: numeroValido(document.getElementById('devolucionCliente').value),
-            libre: document.getElementById('libreCliente').value === 'true',
             socio_asignado: document.getElementById('socioCliente').value || null,
             mostrar_saldo_socio: document.getElementById('checkMostrarS').checked,
             metodo_pago: document.getElementById('metodoPagoCliente').value || null,
@@ -329,14 +389,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (c) {
                     const tel = clubUI.desglosarTelefono(c.telefono);
                     document.getElementById('editId').value = c.id;
-                    document.getElementById('editNombre').value = c.nombre;
+                    set('editSeudonimo', c.seudonimo || c.nombre);
+                    const apellidoC = c.apellido || '';
+                    let nombresC = c.nombre || '';
+                    if (apellidoC && String(nombresC).toUpperCase().endsWith(String(apellidoC).toUpperCase())) {
+                        nombresC = String(nombresC).slice(0, String(nombresC).length - apellidoC.length).trim();
+                    } else if (apellidoC || c.seudonimo) {
+                        nombresC = '';
+                    }
+                    set('editNombres', nombresC);
+                    set('editApellido', apellidoC);
                     set('editCodigoPais', tel.codigo);
                     document.getElementById('editNumeroTelefono').value = tel.numero;
                     document.getElementById('editEmail').value = c.email || '';
                     document.getElementById('editCedulaRif').value = c.cedula_rif || '';
                     document.getElementById('editAval').value = c.aval;
                     document.getElementById('editDevolucion').value = c.devolucion;
-                    document.getElementById('editLibre').value = c.libre ? 'true' : 'false';
+                    document.getElementById('editModo').value = c.modo_juego || (c.libre ? 'libre' : 'aval');
                     document.getElementById('editSocio').value = c.socio_asignado || '';
                     document.getElementById('editMostrarS').value = c.mostrar_saldo_socio ? 'true' : 'false';
                     document.getElementById('editMetodoPago').value = c.metodo_pago || '';
@@ -371,15 +440,25 @@ document.addEventListener('DOMContentLoaded', () => {
     formEditar?.addEventListener('submit', async function(e) {
         e.preventDefault();
         const id = document.getElementById('editId').value;
+        const seudonimo = document.getElementById('editSeudonimo').value.trim().toUpperCase();
+        if (!seudonimo) return clubUI.toast('El seudónimo es obligatorio para operar.', 'warning');
+        const nombres = document.getElementById('editNombres').value.trim().toUpperCase();
+        const apellido = document.getElementById('editApellido').value.trim().toUpperCase();
+        const nombre = [nombres, apellido].filter(Boolean).join(' ') || seudonimo;
+        const modo = document.getElementById('editModo').value || 'aval';
+
         const { error } = await window.supabase.from('clientes').update(soloColumnasExistentes({
-            nombre: document.getElementById('editNombre').value.trim().toUpperCase(),
+            nombre: nombre,
+            seudonimo: seudonimo,
+            apellido: apellido || null,
+            modo_juego: modo,
+            libre: modo === 'libre',
             telefono: clubUI.componerTelefono(document.getElementById('editCodigoPais').value, document.getElementById('editNumeroTelefono').value) || null,
             codigo_pais: document.getElementById('editCodigoPais').value,
             email: document.getElementById('editEmail').value.trim() || null,
             cedula_rif: document.getElementById('editCedulaRif').value.trim().toUpperCase() || null,
             aval: numeroValido(document.getElementById('editAval').value),
             devolucion: numeroValido(document.getElementById('editDevolucion').value),
-            libre: document.getElementById('editLibre').value === 'true',
             socio_asignado: document.getElementById('editSocio').value || null,
             mostrar_saldo_socio: document.getElementById('editMostrarS').value === 'true',
             metodo_pago: document.getElementById('editMetodoPago').value || null,

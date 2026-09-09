@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('retHipodromo').innerHTML = opcBase + optionsHip;
 
         // Cargar Clientes
-        const { data: clientes } = await supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre').order('nombre');
+        const { data: clientes } = await supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre, modo_juego').order('nombre');
         if (clientes) {
             clientesGlobal = clientes;
             document.getElementById('wpsCliente').innerHTML = opcBase + clientes.map(c => `<option value="${c.id}">${c.nombre} (Disp: $${clubUI.formatoNumero(Number(c.saldo_actual), 2)})</option>`).join('');
@@ -96,8 +96,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // REGLA DE NEGOCIO (AVAL): límite de pérdida. Si no juega libre,
             // su saldo puede quedar negativo pero nunca pasar de -AVAL.
+            // Si juega con POZO, solo puede jugar lo que tiene abonado.
             const nuevoSaldo = Number(cliente.saldo_actual) - montoTotal;
-            if (!cliente.libre) {
+            const modoJuega = cliente.modo_juego || (cliente.libre ? 'libre' : 'aval');
+            if (modoJuega === 'pozo') {
+                if (montoTotal > Number(cliente.saldo_actual)) {
+                    return clubUI.toast(`El cliente ${cliente.nombre} juega con Pozo y no tiene saldo disponible (tiene $${clubUI.formatoNumero(cliente.saldo_actual, 2)} y esta jugada cuesta $${clubUI.formatoNumero(montoTotal, 2)}). Debe abonar antes de jugar.`);
+                }
+            } else if (!cliente.libre) {
                 const limiteAval = parseFloat(cliente.aval || 0);
                 if (nuevoSaldo < -limiteAval) {
                     return clubUI.toast(`El cliente ${cliente.nombre} supera su límite de AVAL ($${clubUI.formatoNumero(limiteAval, 2)}). Debe abonar antes de jugar.`);

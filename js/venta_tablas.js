@@ -37,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const [rGrupos, rTablas, rClientes, rMoneda] = await Promise.all([
             segura(window.supabase.from('grupos_venta').select('*').eq('activo', true).order('es_principal', { ascending: false })),
             segura(window.supabase.from('tablas_fijas').select('*, tabla_grupos(*)').eq('estado', 'Abierta')),
-            segura(window.supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre, grupo_id').order('nombre')),
+            segura(window.supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre, modo_juego, grupo_id').order('nombre')),
             segura(window.supabase.from('monedas').select('tasa_cambio').limit(1).single())
         ]);
 
@@ -273,7 +273,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const costoUSD = esVES ? costoTotal / (tasaCambioGlobal || 1) : costoTotal;
 
         if (!permitirSobregiro) {
-            if (!cliente.libre) {
+            const modoJuega = cliente.modo_juego || (cliente.libre ? 'libre' : 'aval');
+            if (modoJuega === 'pozo') {
+                const disp = parseFloat(cliente.saldo_actual);
+                if (disp < costoUSD) {
+                    return { ok: false, error: `El cliente ${cliente.nombre} juega con Pozo y no tiene saldo disponible (tiene $${clubUI.formatoNumero(disp, 2)}). Debe abonar antes de comprar tablas.` };
+                }
+            } else if (!cliente.libre) {
                 const limiteAval = parseFloat(cliente.aval || 0);
                 if (parseFloat(cliente.saldo_actual) - costoUSD < -limiteAval) {
                     return { ok: false, error: `El cliente ${cliente.nombre} supera su límite de AVAL ($${clubUI.formatoNumero(limiteAval, 2)}). Debe abonar antes de comprar tablas.` };
@@ -347,7 +353,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const costoUSD = esVES ? costoTotal / (tasaCambioGlobal || 1) : costoTotal;
 
         let permitirSobregiro = false;
-        if (!cliente.libre) {
+        const modoJuega = cliente.modo_juego || (cliente.libre ? 'libre' : 'aval');
+        if (modoJuega === 'pozo') {
+            const disp = parseFloat(cliente.saldo_actual || 0);
+            if (disp < costoUSD) {
+                return clubUI.toast(`El cliente ${cliente.nombre} juega con Pozo y no tiene saldo disponible (tiene $${clubUI.formatoNumero(disp, 2)}). Debe abonar antes de comprar tablas.`);
+            }
+        } else if (!cliente.libre) {
             const limiteAval = parseFloat(cliente.aval || 0);
             if (parseFloat(cliente.saldo_actual) - costoUSD < -limiteAval) {
                 return clubUI.toast(`El cliente ${cliente.nombre} supera su límite de AVAL ($${clubUI.formatoNumero(limiteAval, 2)}). Debe abonar antes de comprar tablas.`);

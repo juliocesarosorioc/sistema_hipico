@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Consultas en paralelo: los 4 catálogos no dependen entre sí
         const segura = (promesa) => promesa.catch(e => ({ data: null, error: e }));
         const [rClientes, rJugadas, rTablas, rMoneda, rHipodromos] = await Promise.all([
-            segura(window.supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre').order('nombre')),
+            segura(window.supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre, modo_juego').order('nombre')),
             segura(window.supabase.from('tipos_jugadas').select('*').eq('activo', true)),
             segura(window.supabase.from('tablas_fijas').select('*').eq('estado', 'Abierta')),
             segura(window.supabase.from('monedas').select('tasa_cambio').limit(1).single()),
@@ -163,15 +163,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // REGLA DE NEGOCIO (AVAL): el aval NO es saldo, es el LÍMITE de pérdida.
+// REGLA DE NEGOCIO (AVAL): el aval NO es saldo, es el LÍMITE de pérdida.
             // Si el cliente no juega libre, su saldo puede bajar de cero pero nunca pasar de -AVAL.
-            if (!cJuega.libre) {
+            const modoJuega = cJuega.modo_juego || (cJuega.libre ? 'libre' : 'aval');
+            if (modoJuega === 'pozo') {
+                const disp = parseFloat(cJuega.saldo_actual || 0);
+                if (disp < monto) {
+                    errores.push(`Línea ${index + 1}: ${cJuega.nombre} juega con Pozo y no tiene saldo disponible (tiene $${clubUI.formatoNumero(disp, 2)} y esta jugada cuesta $${clubUI.formatoNumero(monto, 2)}). Debe abonar antes de jugar.`);
+                    return;
+                }
+            } else if (!cJuega.libre && modoJuega !== 'libre') {
                 const limiteAval = parseFloat(cJuega.aval || 0);
                 const saldoTrasApuesta = parseFloat(cJuega.saldo_actual || 0) - monto;
                 if (saldoTrasApuesta < -limiteAval) {
                     errores.push(`Línea ${index + 1}: ${cJuega.nombre} supera su límite de AVAL ($${clubUI.formatoNumero(limiteAval, 2)}). Debe abonar antes de jugar.`);
                     return;
-                }
+}
             }
 
             let grupoVenta = 'GENERAL';
@@ -229,9 +236,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             for (const t of ticketsValidos) {
                 const cJuega = clientesList.find(c => c.id === t.cliente_juega_id);
-                const nuevoSaldo = parseFloat(cJuega.saldo_actual) - parseFloat(t.monto_jugado);
+                const modo = cJuega.modo_juego || (cJuega.libre ? 'libre' : 'aval');
+                const pozo = modo === 'pozo';
+                let nuevoSaldo = parseFloat(cJuega.saldo_actual);
+                if (pozo) nuevoSaldo -= parseFloat(t.monto_jugado);
                 await window.supabase.from('clientes').update({ saldo_actual: nuevoSaldo }).eq('id', t.cliente_juega_id);
-                cJuega.saldo_actual = nuevoSaldo; 
+                cJuega.saldo_actual = nuevoSaldo;
             }
 
             clubUI.toast(`✅ ¡ÉXITO! Se registraron ${ticketsValidos.length} apuestas.`);

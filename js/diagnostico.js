@@ -57,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // --- TABLAS Y COLUMNAS CLAVE ---
         const recurso = [
-            ['clientes', ['email', 'cedula_rif', 'direccion', 'codigo_pais', 'datos_pago', 'telefono', 'comision', 'grupo_id']],
+            ['clientes', ['email', 'cedula_rif', 'direccion', 'codigo_pais', 'datos_pago', 'telefono', 'comision', 'grupo_id', 'seudonimo', 'apellido', 'modo_juego']],
             ['depositos', ['modalidad', 'referencia', 'moneda', 'tasa_cambio', 'monto_usd']],
             ['transacciones_financieras', ['referencia', 'moneda', 'tasa_cambio', 'monto_usd', 'numero_cuenta', 'tipo_cuenta', 'cedula_rif', 'nombre_beneficiario']],
             ['notificaciones', ['tipo', 'titulo', 'mensaje', 'cliente_id', 'cliente_nombre', 'datos', 'estado']],

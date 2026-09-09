@@ -15,6 +15,27 @@
 -- ============================================================
 
 -- ============================================================
+-- (0) SEUDONIMO, APELLIDO Y MODO DE JUEGO EN CLIENTES
+--     seudonimo: alias obligatorio para operar (crear clientes)
+--     apellido:  es opcional junto al nombre real
+--     modo_juego: 'aval' (limite) | 'libre' | 'pozo' (abona primero)
+-- ============================================================
+ALTER TABLE public.clientes
+    ADD COLUMN IF NOT EXISTS seudonimo  TEXT,
+    ADD COLUMN IF NOT EXISTS apellido   TEXT,
+    ADD COLUMN IF NOT EXISTS modo_juego TEXT NOT NULL DEFAULT 'aval';
+
+-- Espalda: los clientes existentes heredan su nombre como seudonimo
+UPDATE public.clientes
+   SET seudonimo = nombre
+ WHERE seudonimo IS NULL OR seudonimo = '';
+
+-- Espalda: los que jugaban libre mantienen su modo; el resto queda 'aval'
+UPDATE public.clientes
+   SET modo_juego = 'libre'
+ WHERE libre = true AND modo_juego = 'aval';
+
+-- ============================================================
 -- (1) COLUMNAS FALTANTES EN CLIENTES
 -- ============================================================
 ALTER TABLE public.clientes

@@ -56,12 +56,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (clubUI.esBancoVzla(metodo)) {
             const [codigo, ...resto] = metodo.split(' · ');
             const nombre = resto.join(' · ');
+            const esSudeban = codigo === '0157';
+            const hint = esSudeban
+                ? `<p class="md:col-span-3 mt-1 text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded p-2">💡 <b>SUDEBAN:</b> coloca los <u>16 dígitos</u> que van después del código ${codigo}.</p>`
+                : '';
             html = `
-                <div><label class="${lbl}">Banco (predeterminado)</label><input readonly value="${nombre}" class="${dis}"></div>
+                <div class="md:col-span-2"><label class="${lbl}">Banco (predeterminado)</label><input readonly value="${nombre}" class="${dis}"></div>
                 <div><label class="${lbl}">Código SUDEBAN</label><input readonly value="${codigo}" class="${dis}"></div>
                 <div><label class="${lbl}">Tipo de Cuenta</label><select id="pvTipoCuenta" class="${inp} font-bold"><option>CORRIENTE</option><option>AHORRO</option></select></div>
-                <div><label class="${lbl}">Número de Cuenta</label><input id="pvNumeroCuenta" inputmode="numeric" class="${inp} font-mono"></div>
-                <div><label class="${lbl}">Titular (nombre en la cuenta)</label><input id="pvTitular" class="${inp} uppercase"></div>`;
+                <div><label class="${lbl}">Número de Cuenta <span class="text-[9px] font-bold text-cyan-600">(16 dígitos)</span></label><input id="pvNumeroCuenta" inputmode="numeric" maxlength="16" placeholder="${esSudeban ? 'SOLO los 16 dígitos (sin ' + codigo + ')' : '16 dígitos (sin el código ' + codigo + ')'}" class="${inp} font-mono"></div>
+                <div><label class="${lbl}">Titular (nombre en la cuenta)</label><input id="pvTitular" class="${inp} uppercase"></div>
+                ${hint}`;
+        } else if (metodo === 'PAGO MÓVIL') {
+            html = `
+                <div><label class="${lbl}">Banco (pago móvil)</label><select id="pvBancoMovil" class="${inp} font-bold">${clubUI.htmlOpcionesBancosVzla()}</select></div>
+                <div><label class="${lbl}">Teléfono vinculado</label><input id="pvTlfMovil" inputmode="numeric" placeholder="0412 123 4567" class="${inp} font-mono"></div>
+                <div><label class="${lbl}">Titular (opcional)</label><input id="pvTitularMovil" class="${inp} uppercase"></div>
+                <div><label class="${lbl}">Cédula / RIF (opcional)</label><input id="pvCedulaMovil" class="${inp} font-mono uppercase" placeholder="V-12.345.678"></div>`;
         } else if (metodo === 'ZELLE' || metodo === 'BINANCE') {
             html = `
                 <div><label class="${lbl}">Tipo de dato</label><select id="pvTipoContacto" class="${inp} font-bold"><option value="correo">Correo electrónico</option><option value="telefono">Número de teléfono</option></select></div>
@@ -73,21 +84,41 @@ document.addEventListener('DOMContentLoaded', () => {
         bloqueDatosPortal.innerHTML = html;
         bloqueDatosPortal.classList.remove('hidden');
         if (dp && typeof dp === 'object') {
-            set('pvTipoCuenta', dp.tipo_cuenta);
-            set('pvNumeroCuenta', dp.numero_cuenta);
-            set('pvTitular', dp.titular);
-            set('pvTipoContacto', dp.tipo_contacto);
-            set('pvDatoContacto', dp.dato);
-            set('pvIdBinance', dp.id_binance);
+            if (metodo === 'PAGO MÓVIL') {
+                set('pvBancoMovil', (dp.codigo && dp.banco) ? dp.codigo + ' · ' + dp.banco : (dp.banco || ''));
+                set('pvTlfMovil', dp.telefono || dp.dato || '');
+                set('pvTitularMovil', dp.titular || '');
+                set('pvCedulaMovil', dp.cedula_rif || '');
+            } else {
+                set('pvTipoCuenta', dp.tipo_cuenta);
+                set('pvNumeroCuenta', dp.numero_cuenta ? (dp.codigo ? String(dp.numero_cuenta).replace(dp.codigo, '') : dp.numero_cuenta) : dp.numero_cuenta);
+                set('pvTitular', dp.titular);
+                set('pvTipoContacto', dp.tipo_contacto);
+                set('pvDatoContacto', dp.dato);
+                set('pvIdBinance', dp.id_binance);
+            }
         }
     }
 
     function leerDatosPortal() {
         const metodo = metodoPortal.value;
         if (!metodo) return null;
+        if (metodo === 'PAGO MÓVIL') {
+            const [codigo, ...resto] = val('pvBancoMovil').split(' · ');
+            return {
+                banco: resto.join(' · '), codigo, tipo_cuenta: 'PAGO MÓVIL',
+                telefono: val('pvTlfMovil'), titular: val('pvTitularMovil'), cedula_rif: val('pvCedulaMovil')
+            };
+        }
         if (clubUI.esBancoVzla(metodo)) {
             const [codigo, ...resto] = metodo.split(' · ');
-            return { banco: resto.join(' · '), codigo, tipo_cuenta: val('pvTipoCuenta'), numero_cuenta: val('pvNumeroCuenta'), titular: val('pvTitular') };
+            const numero = val('pvNumeroCuenta');
+            return {
+                banco: resto.join(' · '), codigo,
+                tipo_cuenta: val('pvTipoCuenta'),
+                numero_cuenta: (numero && codigo === '0157') ? codigo + numero : numero,
+                titular: val('pvTitular')
+            };
         }
         if (metodo === 'ZELLE' || metodo === 'BINANCE') {
             const d = { tipo_contacto: val('pvTipoContacto') || 'correo', dato: val('pvDatoContacto') };
@@ -118,6 +149,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!nuevoMetodo) return clubUI.toast('Seleccione su método de pago.', 'warning');
         if ((nuevoMetodo === 'ZELLE' || nuevoMetodo === 'BINANCE') && !val('pvDatoContacto')) return clubUI.toast('Indique el correo o teléfono para ' + nuevoMetodo + '.', 'warning');
         if (clubUI.esBancoVzla(nuevoMetodo) && !val('pvNumeroCuenta')) return clubUI.toast('Indique el número de cuenta.', 'warning');
+        if (nuevoMetodo === 'PAGO MÓVIL') {
+            if (!val('pvBancoMovil')) return clubUI.toast('Seleccione el banco del pago móvil.', 'warning');
+            if (!val('pvTlfMovil')) return clubUI.toast('Indique el teléfono vinculado al pago móvil.', 'warning');
+        }
 
         const datos = {
             telefono: clubUI.componerTelefono(cpPortal.value, tfPortal.value) || null,
@@ -166,7 +201,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const { data, error } = await window.supabase
             .from('clientes')
-            .select('id, nombre, grupo_id')
+            .select('id, nombre, seudonimo, grupo_id')
             .eq('portal_token', token)
             .eq('portal_clave', clave)
             .eq('portal_habilitado', true)
@@ -175,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (error || !data) {
             return clubUI.toast("Código, contraseña o acceso inválido. Solicite su enlace al administrador.", 'error');
         }
-        sesion = { id: data.id, nombre: data.nombre, grupo_id: data.grupo_id };
+        sesion = { id: data.id, nombre: data.nombre, seudonimo: data.seudonimo, grupo_id: data.grupo_id };
         guardarSesion(sesion);
         entrarAlPortal();
     });
@@ -188,7 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function entrarAlPortal() {
         pantallaAcceso.classList.add('hidden');
         vistaPortal.classList.remove('hidden');
-        document.getElementById('portalNombre').textContent = sesion.nombre;
+        document.getElementById('portalNombre').textContent = sesion.seudonimo || sesion.nombre;
         await refrescarCompleto();
         setInterval(refrescarAutomatico, 30000);
     }
@@ -230,10 +265,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const saldo = parseFloat(data.saldo_actual || 0);
         const aval = parseFloat(data.aval || 0);
+        const modo = data.modo_juego || (data.libre ? 'libre' : 'aval');
         document.getElementById('kpiSaldo').textContent = '$' + clubUI.formatoNumero(saldo, 2);
-        document.getElementById('kpiAval').textContent = '$' + clubUI.formatoNumero(aval, 2);
+        document.getElementById('kpiIncentivo').textContent = clubUI.formatoNumero(parseFloat(data.devolucion || 0), 2) + '%';
+        const msjModo = modo === 'pozo'
+            ? 'Cuenta de pozo: recarga antes de jugar'
+            : modo === 'libre'
+                ? 'Juega libre'
+                : 'Juega con modalidad de cuenta';
+        document.getElementById('kpiLibre').textContent = msjModo;
         document.getElementById('kpiDisponible').textContent = '$' + clubUI.formatoNumero((saldo + aval), 2);
-        document.getElementById('kpiLibre').textContent = data.libre ? 'Juega libre (sin límite de aval)' : 'Sujeto a aval';
 
         // Saldo equivalente a la tasa de cuadre del cliente (o tasa global)
         const tasaCuadre = parseFloat(data.tasa_cuadre || 0) || tasaGlobal;

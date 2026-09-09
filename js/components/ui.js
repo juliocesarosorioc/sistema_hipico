@@ -117,6 +117,7 @@ window.clubUI = (() => {
         { codigo: '0146', nombre: 'BANCARIBE' },
         { codigo: '0151', nombre: 'BANCO DEL SUR' },
         { codigo: '0156', nombre: 'BANCO PICHINCHA' },
+        { codigo: '0157', nombre: 'BANCO SUDEBAN' },
         { codigo: '0163', nombre: 'BANCO DEL TESORO' },
         { codigo: '0164', nombre: 'MIBANCO' },
         { codigo: '0166', nombre: 'BANCO AGRICOLA' },
@@ -162,6 +163,11 @@ window.clubUI = (() => {
     };
 
     const esBancoVzla = (metodo) => /^\d{4}\s·\s/.test(metodo || '');
+
+    // Options para selects de banco (pago móvil y banco receptor)
+    const htmlOpcionesBancosVzla = (actual = '') => BANCOS_VZLA
+        .map(b => `<option value="${b.codigo} · ${b.nombre}" ${(actual === `${b.codigo} · ${b.nombre}` || actual === b.nombre) ? 'selected' : ''}>${b.codigo} · ${b.nombre}</option>`)
+        .join('');
 
     // ==========================================
     // FORMATO REGIONAL DE VENEZUELA (es-VE)
@@ -213,11 +219,18 @@ window.clubUI = (() => {
     // resumen corto para mostrar en tablas: "BANESCO (0134) · CtA CORRIENTE ·•1234"
     function resumenDatosPago(dp) {
         if (!dp || typeof dp !== 'object') return '';
+        if (dp.telefono) {
+            // Pago móvil: siempre muestra el banco vinculado
+            const nom = dp.banco || dp.nombre || '';
+            const cod = dp.codigo ? `(${dp.codigo})` : '';
+            const tlf = ` Telf •${String(dp.telefono || '').replace(/\D/g, '').slice(-4)}`;
+            return `${nom} ${cod}${tlf}`.trim();
+        }
         if (dp.banco || dp.codigo) {
             const banco = dp.nombre || dp.banco || '';
-            const cod = dp.codigo ? `(${dp.codigo})` : '';
-            const num = dp.numero_cuenta ? ` · ${dp.tipo_cuenta || ''} •${String(dp.numero_cuenta).slice(-4)}` : '';
-            return `${banco} ${cod}${num}`.trim();
+            const cod = dp.codigo || '';
+            const num = dp.numero_cuenta ? ` · ${dp.tipo_cuenta || ''} ${cod}••${String(dp.numero_cuenta).replace(/\D/g, '').slice(-4)}` : '';
+            return `${banco} (${cod})${num}`.trim();
         }
         if (dp.tipo_contacto || dp.dato) {
             return `${dp.tipo_contacto === 'telefono' ? 'Tlf' : dp.tipo_contacto === 'correo' ? 'Correo' : 'Dato'}: ${dp.dato || ''}`;
@@ -225,5 +238,5 @@ window.clubUI = (() => {
         return '';
     }
 
-    return { toast, paginar, BANCOS_VZLA, PAISES_TELEFONO, METODOS_PAGO, listMetodosPago, esBancoVzla, formatoNumero, formatoMoneda, componerTelefono, desglosarTelefono, htmlOpcionesCodigoPais, htmlOpcionesMetodos, resumenDatosPago };
+    return { toast, paginar, BANCOS_VZLA, PAISES_TELEFONO, METODOS_PAGO, listMetodosPago, esBancoVzla, htmlOpcionesBancosVzla, formatoNumero, formatoMoneda, componerTelefono, desglosarTelefono, htmlOpcionesCodigoPais, htmlOpcionesMetodos, resumenDatosPago };
 })();
