@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const NACIONALIDADES = ['VE', 'USA', 'BR', 'AR', 'CL', 'MX', 'PA', 'PE', 'CO', 'EC', 'UY', 'OTRA'];
 
     // Modelos Flash de respaldo (la app primero consulta a la API cuáles existen hoy)
-    const MODELOS_GEMINI = ['gemini-3.6-flash', 'gemini-3-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+    const MODELOS_GEMINI = ['gemini-3.6-flash', 'gemini-3-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
     async function listaModelosFlash(clave) {
         try {
@@ -39,6 +39,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     let estado = { imagenes: [], paginas: [], carreras: [] };
+
+    // ---------- TRAMPA DE ERRORES VISIBLES ----------
+    // Cualquier error (aunque venga de una librería o de la red) se muestra en
+    // la caja de estado/ diagnóstico para que el operador NO vea un "error que
+    // no conoce": siempre aparece el mensaje técnico en pantalla.
+    function mostrarErrorVisible(msg) {
+        try {
+            const ue = document.getElementById('estadoIA');
+            const diagEl = document.getElementById('diagGaceta');
+            if (ue) ue.textContent = '⚠ ' + msg;
+            if (diagEl) {
+                diagEl.classList.remove('hidden');
+                diagEl.textContent = 'ERROR: ' + msg;
+            }
+            console.error('[gaceta]', msg);
+        } catch (e) { console.error('[gaceta] error oculto:', e, msg); }
+    }
+    window.addEventListener('error', (e) => mostrarErrorVisible((e.message || 'error') + ' (línea ' + e.lineno + ')'));
+    window.addEventListener('unhandledrejection', (e) => mostrarErrorVisible('Promesa no controlada: ' + ((e.reason && e.reason.message) || e.reason)));
 
     // ---------- REGISTRO PERSISTENTE ----------
     // Las carreras del día quedan guardadas hasta que se cargue un nuevo
@@ -417,44 +436,11 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                 return {
                     contents: [{ parts: [{ text: parteTexto }, ...imgs] }],
                     systemInstruction: { parts: [{ text: SYS }] },
-                    generationConfig: estricto
-                        ? { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: 'application/json' }
-                        : {
-                            temperature: 0,
-                            maxOutputTokens: 8192,
-                            responseMimeType: 'application/json',
-                            responseSchema: {
-                                type: 'OBJECT',
-                                properties: {
-                                    carreras: {
-                                        type: 'ARRAY',
-                                        items: {
-                                            type: 'OBJECT',
-                                            properties: {
-                                                carrera: { type: 'INTEGER' },
-                                                hipodromo: { type: 'STRING' },
-                                                fecha: { type: 'STRING' },
-                                                distancia: { type: 'INTEGER' },
-                                                superficie: { type: 'STRING' },
-                                                premio: { type: 'NUMBER' },
-                                                ejemplares: {
-                                                    type: 'ARRAY',
-                                                    items: {
-                                                        type: 'OBJECT',
-                                                        properties: {
-                                                            numero: { type: 'INTEGER' },
-                                                            nombre: { type: 'STRING' },
-                                                            nacionalidad: { type: 'STRING' },
-                                                            valor: { type: 'NUMBER' }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    generationConfig: {
+                        temperature: estricto ? 0.2 : 0,
+                        maxOutputTokens: 8192,
+                        responseMimeType: 'application/json'
+                    }
                 };
             }
 
@@ -558,12 +544,14 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
             }
 
             function fusionarCarreras(nuevas) {
-                for (const c of (nuevas || [])) {
-                    const key = `${(c.hipodromo || '').toUpperCase()}|${c.carrera ?? ''}`;
-                    const ex = (key === '|') ? null : estado.carreras.find(x => `${(x.hipodromo || '').toUpperCase()}|${x.carrera ?? ''}` === key);
+                for (const c of (Array.isArray(nuevas) ? nuevas : [])) {
+                    if (!c || typeof c !== 'object') continue;
+                    c.ejemplares = Array.isArray(c.ejemplares) ? c.ejemplares : [];
+                    const key = `${String(c.hipodromo || '').toUpperCase()}|${c.carrera ?? ''}`;
+                    const ex = (key === '|') ? null : estado.carreras.find(x => `${String(x.hipodromo || '').toUpperCase()}|${x.carrera ?? ''}` === key);
                     if (!ex) { estado.carreras.push(c); continue; }
                     const nums = new Set((ex.ejemplares || []).map(e => String(e.numero)));
-                    (c.ejemplares || []).forEach(e => { if (!nums.has(String(e.numero))) { ex.ejemplares.push(e); nums.add(String(e.numero)); } });
+                    c.ejemplares.forEach(e => { if (!nums.has(String(e.numero))) { ex.ejemplares.push(e); nums.add(String(e.numero)); } });
                 }
             }
 
@@ -641,6 +629,10 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
             console.error(e);
             estadoIA.textContent = 'ERROR: ' + (e.message || e);
             clubUI.toast('Falló la transformación con IA.', 'error');
+            try {
+                const diagEl = document.getElementById('diagGaceta');
+                if (diagEl) { diagEl.classList.remove('hidden'); diagEl.textContent = 'ERROR: ' + (e.message || e); }
+            } catch (err2) { /* nada */ }
         }
         window.clubIndicador?.fin();
         validarHabilitacion();
@@ -756,7 +748,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                     <div>
                         <label class="block text-[9px] font-bold text-slate-500 uppercase">Superficie</label>
                         <select class="gac-superficie w-full border border-slate-300 rounded px-1 py-1 text-xs font-bold outline-none bg-slate-50 uppercase">
-                            ${SUPERFICIES.map(s => `<option value="${s}" ${(c.superficie || '').toUpperCase() === s ? 'selected' : ''}>${s}</option>`).join('')}
+                            ${SUPERFICIES.map(s => `<option value="${s}" ${String(c.superficie || '').toUpperCase() === s ? 'selected' : ''}>${s}</option>`).join('')}
                         </select>
                     </div>
                     <div>
@@ -779,7 +771,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                             </tr>
                         </thead>
                         <tbody>
-                            ${(c.ejemplares || []).map(ej => `
+                            ${(Array.isArray(c.ejemplares) ? c.ejemplares : []).map(ej => `
                                 <tr class="gac-fila-ejemplar border-t border-slate-100">
                                     <td class="p-1 text-center"><input class="gac-num w-10 border border-slate-200 rounded px-1 py-0.5 text-center text-xs font-bold outline-none" value="${ej.numero ?? ''}"></td>
                                     <td class="p-1"><input class="gac-nombre w-full border border-slate-200 rounded px-1 py-0.5 text-xs font-bold uppercase outline-none" value="${ej.nombre || ''}">
@@ -987,5 +979,5 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
     });
 
     validarHabilitacion();
-    cargarRegistroGuardado();
+    cargarRegistroGuardado().catch(err => console.warn('Registro guardado corrupto en el arranque:', err.message || err));
 });
