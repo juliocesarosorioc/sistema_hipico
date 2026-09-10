@@ -3,6 +3,14 @@
 // y aplicar las mejores prácticas de UI/UX: drawer móvil con overlay, persistencia
 // de estado, accesibilidad (ARIA / teclado) y colapso a solo iconos en escritorio.
 
+// El indicador global de acción (caballito corriendo) se inserta como script
+// síncrono para que capture también las primeras cargas de cada módulo.
+(function () {
+    const paginaBase = window.location.pathname.split('/').pop() || 'index.html';
+    if (paginaBase === 'index.html' || paginaBase === 'portal.html') return;
+    document.write('<script src="../js/components/indicador_accion.js"><\/script>');
+})();
+
 document.addEventListener('DOMContentLoaded', () => {
 
     // 1. Evitar que se inyecte en la pantalla de Login (index.html)
@@ -252,14 +260,11 @@ document.addEventListener('DOMContentLoaded', () => {
     aplicar();
 
     // ==========================================
-    // 12. RELOJ "PENSANDO" + CAMPANA DE NOVEDADES (indicador global)
+    // 12. CAMPANA DE NOVEDADES (el indicador de acción "caballito" lo
+    //     aporta js/components/indicador_accion.js, cargado síncronamente)
     // ==========================================
     const indicadoresHTML = `
     <div id="clubIndicadores" class="fixed bottom-4 right-4 z-[60] flex flex-col items-end gap-2">
-        <div id="clubReloj" class="hidden items-center gap-2 bg-slate-900/90 text-white text-[10px] font-bold rounded-full pl-2 pr-3 py-1.5 shadow-lg border border-slate-700">
-            <i class="fas fa-clock animate-spin text-emerald-400"></i>
-            <span>Procesando...</span>
-        </div>
         <div class="relative">
             <button id="btnNovedades" title="Novedades del sistema" aria-label="Novedades del sistema"
                     class="w-10 h-10 rounded-full bg-slate-900/90 text-amber-300 hover:text-amber-200 hover:bg-slate-800 flex items-center justify-center shadow-lg border border-slate-700 transition-colors">
@@ -279,49 +284,6 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
     </div>`;
     document.body.insertAdjacentHTML('beforeend', indicadoresHTML);
-
-    // --- Reloj de "pensando" (se enciende con cualquier petición a Supabase o IA) ---
-    const reloj = document.getElementById('clubReloj');
-    const barra = document.createElement('div');
-    barra.id = 'barraProgreso';
-    barra.className = 'fixed top-0 left-0 h-1 bg-gradient-to-r from-cyan-500 via-blue-500 to-emerald-500 z-[60] transition-all duration-200';
-    barra.style.width = '0%';
-    document.body.appendChild(barra);
-
-    let peticiones = 0, progreso = 0, timerBarra = null;
-
-    function pintarIndicador() {
-        if (peticiones > 0) {
-            reloj.classList.remove('hidden');
-            reloj.classList.add('flex');
-            clearInterval(timerBarra);
-            timerBarra = setInterval(() => {
-                progreso = Math.min(93, progreso + 13);
-                barra.style.width = progreso + '%';
-            }, 150);
-        } else {
-            clearInterval(timerBarra);
-            progreso = 100;
-            barra.style.width = '100%';
-            setTimeout(() => { if (peticiones === 0) barra.style.width = '0%'; }, 400);
-            setTimeout(() => { reloj.classList.add('hidden'); reloj.classList.remove('flex'); }, 300);
-        }
-    }
-
-    function esPeticionPlataforma(url) {
-        return typeof url === 'string' &&
-            (url.includes('supabase.co') || url.includes('generativelanguage.googleapis.com'));
-    }
-
-    const fetchOriginal = window.fetch.bind(window);
-    window.fetch = function (url, opts) {
-        const cuenta = esPeticionPlataforma(url);
-        if (cuenta) { peticiones++; pintarIndicador(); }
-        return fetchOriginal(url, opts).then(
-            r => { if (cuenta) { peticiones--; pintarIndicador(); } return r; },
-            e => { if (cuenta) { peticiones--; pintarIndicador(); } throw e; }
-        );
-    };
 
     // --- Campana de novedades (última actividad de la plataforma) ---
     const LIMITE_NOVEDADES = 14;

@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // CARGAS (robustas: no rompe si falta el SQL de columnas)
     // ------------------------------------------------------------------
     async function inicializarDatos() {
+        window.clubIndicador?.accion('Cargando clientes, saldos y jugadas…');
         const segura = (promesa) => promesa.catch(e => ({ data: null, error: e }));
         const [rClientes, rJugadas, rTablas, rMoneda, rHipodromos] = await Promise.all([
             segura(window.supabase.from('clientes').select('*').order('nombre')),
@@ -76,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (monedaData && monedaData.tasa_cambio) tasaCambioGlobal = parseFloat(monedaData.tasa_cambio);
 
         for (let i = 1; i <= 10; i++) agregarFila(i);
+        window.clubIndicador?.fin();
     }
 
     // Busca por nombre, seudónimo o apellido (insensible a mayúsculas)
@@ -299,6 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ticketsValidos.length === 0) return clubUI.toast("No hay tickets ingresados.");
 
         modalProcesando.classList.remove('hidden');
+        window.clubIndicador?.accion('Guardando boletos y saldos…');
 
         try {
             const { error: errTickets } = await window.supabase.from('tickets_apuestas').insert(ticketsValidos);
@@ -324,6 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
             clubUI.toast("Error al guardar en la base de datos.", 'error');
         } finally {
             modalProcesando.classList.add('hidden');
+            window.clubIndicador?.fin();
         }
     });
 

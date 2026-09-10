@@ -113,6 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
         estado.imagenes = [];
         miniminiaturas();
         estadoIA.textContent = 'Procesando archivo...';
+        window.clubIndicador?.accion('Leyendo el programa (PDF/imagen)…');
         try {
             if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
                 if (!(await asegurarPdfJS())) {
@@ -145,6 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
             estadoIA.textContent = 'No se pudo leer el archivo. (¿PDF? ¿Imagen?).';
             clubUI.toast('No se pudo leer el archivo.', 'error');
         }
+        window.clubIndicador?.fin();
         validarHabilitacion();
     }
 
@@ -235,6 +237,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         estadoIA.textContent = 'Enviando a la IA (Gemini)... puede tardar 20–60 seg.';
         btnTransformar.disabled = true;
+        window.clubIndicador?.accion('La IA está leyendo el programa…');
 
         const SYS = `
 Eres el transcriptor de la gaceta hípica venezolana. Recibes páginas/imágenes del programa oficial de carreras.
@@ -346,6 +349,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
             estadoIA.textContent = 'ERROR: ' + (e.message || e);
             clubUI.toast('Falló la transformación con IA.', 'error');
         }
+        window.clubIndicador?.fin();
         validarHabilitacion();
     });
 
