@@ -138,3 +138,34 @@ $$;
 
 revoke all on function public.club_limpiar_auditoria(integer) from anon;
 grant execute on function public.club_limpiar_auditoria(integer) to anon;
+
+-- ============================================================
+-- (5) PADRON DE EJEMPLARES + DISTANCIA Y SUPERFICIE EN TABLAS FIJAS
+--     Base para la futura herramienta de estadisticas de ejemplares
+--     de Venezuela: el nombre NO se repite; si hay homonimos, se
+--     desambigua por NACIONALIDAD (ej: 'DUKE' (VE) vs 'DUKE' (USA)).
+--     Al ensamblar una tabla fija se vincula el ejemplar (ejemplar_id)
+--     y se guarda su valor en la tabla (valor_ejemplar).
+-- ============================================================
+create table if not exists public.ejemplares (
+    id            uuid primary key default gen_random_uuid(),
+    nombre        text not null,
+    nacionalidad  text not null default 'VE',
+    created_at    timestamptz not null default now()
+);
+
+create unique index if not exists uq_ejemplares_nombre_nac
+    on public.ejemplares (lower(nombre), upper(nacionalidad));
+
+comment on table public.ejemplares is
+    'Padron de ejemplares: nombre unico por nacionalidad (base de estadisticas)';
+
+comment on column public.ejemplares.nombre is 'Nombre oficial del ejemplar (unico por nacionalidad)';
+comment on column public.ejemplares.nacionalidad is 'Pais de origen del ejemplar: VE, USA, BR, AR, etc.';
+
+alter table public.tablas_fijas
+    add column if not exists distancia_carrera numeric,
+    add column if not exists superficie      text;
+
+comment on column public.tablas_fijas.distancia_carrera is 'Distancia de la carrera en metros (ej: 1100, 1300, 1600)';
+comment on column public.tablas_fijas.superficie is 'Superficie de la pista: ARENA, FANGO, CESPED, TAPETA, etc.';

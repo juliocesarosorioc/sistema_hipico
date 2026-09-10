@@ -12,6 +12,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let datosTablaCompleta = [];
     let gruposActivos = [];
     let todosGrupos = [];
+    let padronEjemplares = [];
+
+    const OPCIONES_NACIONALIDAD = ['VE', 'USA', 'BR', 'AR', 'CL', 'MX', 'PA', 'PE', 'CO', 'EC', 'UY', 'OTRA'];
+    const SUPERFICIES = ['ARENA', 'CESPED', 'FANGO', 'TAPETA', 'OTRA'];
 
     // ==========================================
     // TASA GLOBAL (interna: solo se guarda en el registro para el cuadre)
@@ -68,20 +72,75 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
+    // PADRÓN DE EJEMPLARES (base de estadísticas)
+    // ==========================================
+    async function cargarEjemplares() {
+        const { data } = await window.supabase.from('ejemplares').select('id, nombre, nacionalidad').order('nombre');
+        padronEjemplares = data || [];
+    }
+
+    function llenarSuperficies() {
+        const sel = document.getElementById('superficieTabla');
+        sel.innerHTML = '<option value="">Seleccione superficie...</option>' + SUPERFICIES.map(s => `<option value="${s}">${s}</option>`).join('');
+    }
+
+    async function resolverEjemplar(nombre, nacionalidad) {
+        const norm = (nombre || '').trim().toUpperCase();
+        const nac = (nacionalidad || 'VE').trim().toUpperCase();
+        const existe = padronEjemplares.find(e => e.nombre.toUpperCase() === norm && e.nacionalidad.toUpperCase() === nac);
+        if (existe) return existe.id;
+        const { data, error } = await window.supabase.from('ejemplares').insert([{ nombre: norm, nacionalidad: nac }]).select('id').single();
+        if (error) return null;
+        padronEjemplares.push({ id: data.id, nombre: norm, nacionalidad: nac });
+        return data.id;
+    }
+
+    // ==========================================
     // CÁLCULOS EN VIVO (Ejemplares)
     // ==========================================
-    function crearFilaCaballo(numSugerido = '', nomSugerido = '', valorSugerido = '') {
+    function revisarEjemplarFila(div) {
+        const nombre = (div.querySelector('.in-nom-cab').value || '').trim().toUpperCase();
+        const nac = div.querySelector('.in-nac-cab').value;
+        const pista = div.querySelector('.pista-ejemplar');
+        if (!nombre) { pista.classList.add('hidden'); pista.textContent = ''; return; }
+        const mismos = padronEjemplares.filter(e => e.nombre.toUpperCase() === nombre);
+        let msg, cls;
+        if (mismos.length === 0) {
+            msg = 'Nuevo ejemplar: se registrará en el padrón.';
+            cls = 'text-emerald-600';
+        } else if (mismos.some(e => e.nacionalidad.toUpperCase() === nac)) {
+            msg = `Ya registrado (${nac}): se vinculará automáticamente al padrón.`;
+            cls = 'text-amber-600';
+        } else {
+            msg = `Nombre existente en ${mismos.map(e => e.nacionalidad).join('/')}: quedará como nuevo ejemplar (${nac}).`;
+            cls = 'text-rose-600';
+        }
+        pista.classList.remove('hidden');
+        pista.textContent = msg;
+        pista.className = `pista-ejemplar mt-1 text-[10px] font-bold ${cls}`;
+    }
+
+    function crearFilaCaballo(numSugerido = '', nomSugerido = '', valorSugerido = '', nacSugerido = 'VE') {
         const div = document.createElement('div');
-        div.className = 'flex gap-2 items-center fila-caballo-config';
+        div.className = 'fila-caballo-config bg-slate-50 border border-slate-200 rounded-lg p-1.5 space-y-1';
         div.innerHTML = `
-            <input type="text" class="input-tbl w-16 text-center in-num-cab font-bold" value="${numSugerido}" placeholder="N°">
-            <input type="text" class="input-tbl flex-1 in-nom-cab" value="${nomSugerido}" placeholder="Ejemplar">
-            <input type="number" step="0.1" class="input-tbl w-24 text-center text-blue-700 font-bold in-valor-ej" value="${valorSugerido}" placeholder="Pts">
-            <button type="button" class="text-red-400 hover:text-red-600 px-1 btn-quitar-cab"><i class="fas fa-trash-alt"></i></button>
+            <div class="flex gap-2 items-center">
+                <input type="text" class="input-tbl w-14 text-center in-num-cab font-bold" value="${numSugerido}" placeholder="N°">
+                <input type="text" class="input-tbl flex-1 in-nom-cab uppercase" value="${nomSugerido}" placeholder="Ejemplar">
+                <select class="input-tbl w-24 in-nac-cab text-xs font-bold uppercase">
+                    ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}" ${n === nacSugerido ? 'selected' : ''}>${n}</option>`).join('')}
+                </select>
+                <input type="number" step="0.1" class="input-tbl w-20 text-center text-blue-700 font-bold in-valor-ej" value="${valorSugerido}" placeholder="Pts">
+                <button type="button" class="text-red-400 hover:text-red-600 px-1 btn-quitar-cab" title="Quitar"><i class="fas fa-trash-alt"></i></button>
+            </div>
+            <p class="pista-ejemplar text-[10px] font-bold hidden"></p>
         `;
         contenedorCaballos.appendChild(div);
         div.querySelector('.btn-quitar-cab').addEventListener('click', () => { div.remove(); calcularSumaBaseTotal(); });
         div.querySelector('.in-valor-ej').addEventListener('input', calcularSumaBaseTotal);
+        div.querySelector('.in-nom-cab').addEventListener('input', () => revisarEjemplarFila(div));
+        div.querySelector('.in-nac-cab').addEventListener('change', () => revisarEjemplarFila(div));
+        revisarEjemplarFila(div);
     }
 
     function calcularSumaBaseTotal() {
@@ -110,10 +169,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const carrera = parseInt(document.getElementById('carreraTabla').value);
         const premio = parseFloat(premioTabla.value);
         const sumaBaseTabla = parseFloat(lblSumaBase.textContent);
+        const distancia = parseFloat(document.getElementById('distanciaTabla').value);
+        const superficie = document.getElementById('superficieTabla').value;
 
         if (!hipodromo || isNaN(carrera) || isNaN(premio) || premio <= 0 || sumaBaseTabla <= 0) {
             return clubUI.toast("Faltan campos obligatorios o la base de ponderación es cero.");
         }
+        if (!superficie) return clubUI.toast("Seleccione la superficie de la pista (arena, césped, fango, tapeta...).");
+        if (isNaN(distancia) || distancia <= 0) return clubUI.toast("Indique la distancia de la carrera en metros.");
 
         const cuposPorGrupo = [...document.querySelectorAll('.in-cupo-grupo')]
             .map(inp => ({ grupo_id: inp.dataset.grupo, cupos: parseInt(inp.value) || 0 }))
@@ -125,25 +188,39 @@ document.addEventListener('DOMContentLoaded', () => {
         const comisionGrupo = parseFloat(grupoPrimario && grupoPrimario.comision_default) || 2.5;
 
         let caballosArr = [];
+        const clavesNombreNac = new Set();
         document.querySelectorAll('.fila-caballo-config').forEach(fila => {
             const numero = fila.querySelector('.in-num-cab').value.trim();
             const nombre = fila.querySelector('.in-nom-cab').value.trim().toUpperCase();
+            const nacionalidad = fila.querySelector('.in-nac-cab').value;
             const valor = parseFloat(fila.querySelector('.in-valor-ej').value);
             if (numero && nombre && !isNaN(valor)) {
-                caballosArr.push({ numero, nombre, valor_ejemplar: valor, retirado: false });
+                const clave = nombre + '|' + nacionalidad;
+                if (clavesNombreNac.has(clave)) {
+                    caballosArr.push(null);
+                    return;
+                }
+                clavesNombreNac.add(clave);
+                caballosArr.push({ numero, nombre, nacionalidad, valor_ejemplar: valor, retirado: false, ejemplar_id: null });
             }
         });
+        if (caballosArr.some(c => c === null)) return clubUI.toast("Un ejemplar (nombre + nacionalidad) está repetido en la misma tabla.");
         if (caballosArr.length < 2) return clubUI.toast("Ingrese al menos 2 ejemplares.");
 
         const limiteTotal = cuposPorGrupo.reduce((a, b) => a + b.cupos, 0);
         const btnOrigText = btnGuardarTabla.innerHTML;
         btnGuardarTabla.innerHTML = 'Guardando...'; btnGuardarTabla.disabled = true;
 
+        for (const c of caballosArr) {
+            c.ejemplar_id = await resolverEjemplar(c.nombre, c.nacionalidad);
+        }
+
         const { data: nueva, error } = await window.supabase.from('tablas_fijas').insert([{
             hipodromo, carrera, grupo_venta: 'GRUPOS', moneda: 'USD', tasa_cambio: tasaCambioGlobal,
             suma_base_tabla: sumaBaseTabla, limite_ventas: limiteTotal, cantidad_vendida: 0,
             premio_original: premio, premio_recalculado: premio,
-            comision_grupo: comisionGrupo, caballos: caballosArr, estado: 'Abierta'
+            comision_grupo: comisionGrupo, caballos: caballosArr, estado: 'Abierta',
+            distancia_carrera: distancia, superficie
         }]).select('id').single();
 
         if (error) {
@@ -155,8 +232,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (errG) console.error("Error cupos:", errG.message);
             contenedorCaballos.innerHTML = '';
             crearFilaCaballo(); crearFilaCaballo();
-            calcularSumaBaseTotal(); cargarTablas();
-            if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `publicada: ${hipodromo} C${carrera} premio=$${premio} cupos=${limiteTotal} (id=${nueva.id})`);
+            calcularSumaBaseTotal(); cargarTablas(); cargarEjemplares();
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `publicada: ${hipodromo} C${carrera} ${distancia}m ${superficie} premio=$${premio} cupos=${limiteTotal} (id=${nueva.id})`);
         }
         btnGuardarTabla.innerHTML = btnOrigText; btnGuardarTabla.disabled = false;
     });
@@ -205,7 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 tbodyMonitor.innerHTML += `
                     <tr class="hover:bg-slate-50 border-b border-slate-100">
-                        <td class="p-2 font-bold">${t.hipodromo}<br><span class="text-blue-600">C${t.carrera}</span></td>
+                        <td class="p-2 font-bold">${t.hipodromo}<br><span class="text-blue-600">C${t.carrera}</span> ${t.distancia_carrera ? `<span class="text-slate-400 font-normal"> · ${t.distancia_carrera}m</span>` : ''} ${t.superficie ? `<span class="inline-block ml-1 text-[9px] border border-slate-300 rounded px-1 font-bold text-slate-600 uppercase">${t.superficie}</span>` : ''}</td>
                         <td class="p-2">${chipsGrupos}</td>
                         <td class="p-2 text-right"><span class="text-blue-700 font-bold">$${clubUI.formatoNumero(parseFloat(t.premio_recalculado), 2)}</span></td>
                         <td class="p-2 text-center text-[10px]">${badgeEstado}</td>
@@ -461,13 +538,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }));
 
     document.getElementById('btnRecargarTablas').addEventListener('click', () => {
-        cargarTasaGlobal(); cargarHipodromos(); cargarGrupos(); cargarTablas();
+        cargarTasaGlobal(); cargarHipodromos(); cargarGrupos(); cargarEjemplares(); cargarTablas();
     });
 
     // Arranque
+    llenarSuperficies();
     cargarTasaGlobal();
     cargarHipodromos();
     cargarGrupos();
+    cargarEjemplares();
     cargarTablas();
     actualizarPremio();
 });

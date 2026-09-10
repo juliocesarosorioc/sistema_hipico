@@ -39,16 +39,26 @@
                     <h2 class="text-sm font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2 uppercase tracking-wide flex items-center">
                         <i class="fas fa-tools text-slate-400 mr-2"></i> Parámetros de la Tabla
                     </h2>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                        <div class="col-span-2">
+                    <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4">
+                        <div class="col-span-3 md:col-span-2">
                             <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Hipódromo</label>
                             <select id="hipodromoTabla" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 uppercase font-bold bg-slate-50">
                                 <option value="">Seleccione hipódromo...</option>
                             </select>
                         </div>
-                        <div class="col-span-2">
-                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Carrera</label>
+                        <div class="col-span-3 md:col-span-2">
+                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Carrera (N°)</label>
                             <input type="number" id="carreraTabla" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-center" placeholder="N°">
+                        </div>
+                        <div class="col-span-6 md:col-span-2">
+                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Distancia (metros)</label>
+                            <input type="number" id="distanciaTabla" min="400" step="50" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-center" placeholder="Ej: 1100">
+                        </div>
+                        <div class="col-span-6 md:col-span-6">
+                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Superficie</label>
+                            <select id="superficieTabla" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 uppercase font-bold bg-slate-50">
+                                <option value="">Seleccione superficie...</option>
+                            </select>
                         </div>
                     </div>
 
@@ -73,7 +83,10 @@
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col h-full">
                     <div class="flex justify-between items-center mb-4 border-b border-slate-200 pb-2">
                         <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wide"><i class="fas fa-horse-head text-amber-600 mr-2"></i> Ejemplares</h2>
-                        <button id="btnAgregarCaballo" class="bg-slate-800 text-white px-3 py-1 rounded text-xs font-bold hover:bg-black transition-colors shadow-sm"><i class="fas fa-plus"></i> Añadir</button>
+                        <div class="flex items-center gap-2">
+                            <a href="ejemplares.html" class="text-rose-600 hover:text-rose-800 text-[10px] font-black uppercase tracking-wide"><i class="fas fa-book-open"></i> Padrón</a>
+                            <button id="btnAgregarCaballo" class="bg-slate-800 text-white px-3 py-1 rounded text-xs font-bold hover:bg-black transition-colors shadow-sm"><i class="fas fa-plus"></i> Añadir</button>
+                        </div>
                     </div>
 
                     <div id="contenedorCaballos" class="flex-1 overflow-y-auto space-y-2 pr-2 max-h-48">

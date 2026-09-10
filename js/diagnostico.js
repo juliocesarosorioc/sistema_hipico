@@ -64,6 +64,8 @@ document.addEventListener('DOMContentLoaded', () => {
             ['grupos_venta', ['tabla_id', 'grupo_id', 'numero_boleto', 'estado']],
             ['solicitudes_tablas', ['tabla_id', 'grupo_id', 'solicitante', 'estado']],
             ['tabla_grupos', ['tabla_id', 'grupo_id']],
+            ['ejemplares', ['nombre', 'nacionalidad']],
+            ['tablas_fijas', ['distancia_carrera', 'superficie']],
             ['tasas_referencia', ['tipo', 'tasa', 'fecha_aplicar']],
             ['auditoria', ['usuario', 'modulo', 'accion']]
         ];

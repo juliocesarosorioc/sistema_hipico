@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Padrón de Ejemplares - Club del Dinero</title>
+    <link rel="stylesheet" href="../css/tailwind.css">
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>if (!localStorage.getItem('club_sesion_activa')) window.location.href = '../index.html';</script>
+</head>
+<body class="bg-slate-50 font-sans text-sm h-screen flex overflow-hidden">
+
+    <!-- El Sidebar se inyectará aquí automáticamente mediante layout.js -->
+
+    <!-- ÁREA CENTRAL DE CONTENIDO -->
+    <div class="flex-1 flex flex-col h-full relative overflow-hidden w-full">
+
+        <!-- CABECERA -->
+        <header class="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm shrink-0 z-10">
+            <h1 class="text-xl font-bold text-slate-800 uppercase tracking-wide">
+                <i class="fas fa-horse text-rose-500 mr-2"></i> Padrón de Ejemplares
+            </h1>
+            <div class="flex items-center gap-3">
+                <a href="tablas.html" class="inline-flex items-center gap-2 bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-900 transition-colors shadow-sm">
+                    <i class="fas fa-table text-indigo-400"></i> Ir al Ensamblaje
+                </a>
+                <button id="btnRecargarPadron" class="bg-white border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm transition-colors text-xs font-bold">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </header>
+
+        <main class="p-6 flex-1 overflow-y-auto w-full bg-slate-100">
+            <div class="max-w-5xl mx-auto space-y-6">
+
+                <!-- RESUMEN -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 text-center">
+                        <span class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Ejemplares Registrados</span>
+                        <span class="text-3xl font-black text-rose-600" id="statEjemplares">0</span>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 text-center">
+                        <span class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Nacionalidades</span>
+                        <span class="text-3xl font-black text-amber-600" id="statNacionalidades">0</span>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 text-center">
+                        <span class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Vinculados a Tablas</span>
+                        <span class="text-3xl font-black text-emerald-600" id="statVinculados">0</span>
+                    </div>
+                </div>
+
+                <!-- LISTADO -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="p-4 border-b border-slate-200 flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
+                        <h3 class="text-xs font-black text-slate-700 uppercase tracking-wider">
+                            <i class="fas fa-book-open text-slate-400 mr-1"></i> Registro por Nombre y Nacionalidad
+                        </h3>
+                        <div class="flex gap-2 w-full sm:w-auto">
+                            <input type="text" id="buscarEjemplar" placeholder="Buscar nombre o nacionalidad..." class="flex-1 sm:w-72 border border-slate-300 rounded-lg px-3 py-2 text-sm uppercase font-bold outline-none focus:ring-2 focus:ring-rose-500">
+                            <button id="btnExportarPadron" class="bg-emerald-600 text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-emerald-700 shadow-sm">
+                                <i class="fas fa-file-csv mr-1"></i> CSV
+                            </button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-slate-100 text-slate-700 shadow-sm border-b border-slate-200">
+                                <tr>
+                                    <th class="p-3 font-bold uppercase tracking-wider">Ejemplar (Nombre Oficial)</th>
+                                    <th class="p-3 text-center font-bold uppercase tracking-wider">Nacionalidad</th>
+                                    <th class="p-3 text-center font-bold uppercase tracking-wider">En Tablas</th>
+                                    <th class="p-3 font-bold uppercase tracking-wider">Última Aparición</th>
+                                    <th class="p-3 text-right font-bold uppercase tracking-wider">Registrado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cuerpoPadron" class="divide-y divide-slate-100 text-slate-800 bg-white">
+                                <tr><td colspan="5" class="p-8 text-center text-slate-500 italic">Cargando padrón...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <p class="text-[11px] text-slate-500 italic leading-relaxed">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    El padrón se alimenta automáticamente al ensamblar una Tabla Fija: cada ejemplar se registra una sola vez por
+                    nombre + nacionalidad (los homónimos se distinguen por su país de origen). A futuro servirá como base de
+                    estadísticas de ejemplares, sobre todo los de Venezuela.
+                </p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts y Componentes -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="../js/components/db.js"></script>
+    <script src="../js/components/auth.js"></script>
+    <script src="../js/components/ui.js"></script>
+    <script src="../js/components/layout.js"></script>
+    <script src="../js/conexion.js"></script>
+    <script src="../js/ejemplares.js"></script>
+</body>
+</html>
