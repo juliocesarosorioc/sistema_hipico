@@ -228,13 +228,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const paginas = (capPaginas > 0 ? Math.min(capPaginas, pdf.numPages) : pdf.numPages);
                 for (let i = 1; i <= paginas; i++) {
                     const page = await pdf.getPage(i);
-                    const vp = page.getViewport({ scale: 2.0 });
+                    const vp = page.getViewport({ scale: 1.5 });
                     const canvas = document.createElement('canvas');
-                    canvas.width = Math.min(vp.width, 2000);
+                    canvas.width = Math.min(vp.width, 1500);
                     canvas.height = Math.round(canvas.width * (vp.height / vp.width));
                     const ctx = canvas.getContext('2d');
                     await page.render({ canvasContext: ctx, viewport: vp }).promise;
-                    estado.paginas.push({ num: i, durl: canvas.toDataURL('image/jpeg', 0.75), incluida: true });
+                    estado.paginas.push({ num: i, durl: canvas.toDataURL('image/jpeg', 0.6), incluida: true });
                     window.clubIndicador?.progreso(i / paginas)
                 }
                 estadoIA.textContent = `PDF: ${paginas} página(s) listas.`;
@@ -421,7 +421,32 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
             }
 
             const descubiertos = await listaModelosFlash(clave);
-            const modelos = [...new Set(descubiertos.concat(MODELOS_GEMINI))].slice(0, 6);
+            // Cada familia de Flash tiene SU PROPIA cuota gratuita diaria. Se ordenan
+            // primero por familia vieja (la que casi siempre conserva cuota) y
+            // luego por versión dentro de la familia.
+            const elegirModelos = () => {
+                const unicos = [...new Set(descubiertos.concat(MODELOS_GEMINI))]
+                    .filter(m => !/image|preview|tuned|babbage/i.test(m));
+                const porFamilia = {};
+                for (const m of unicos) {
+                    const v = (m.match(/gemini[_-]?(\d+)/i) || [])[1] || '0';
+                    const fam = v.slice(0, 1); // '1','2','3'
+                    (porFamilia[fam] = porFamilia[fam] || []).push(m);
+                }
+                const orden = ['1', '2', '3'];
+                const out = [];
+                for (const fam of orden) {
+                    const ms = (porFamilia[fam] || []).sort((a, b) => {
+                        const va = parseFloat((a.match(/gemini[_-]?([\d.]+)/i) || [])[1] || '0');
+                        const vb = parseFloat((b.match(/gemini[_-]?([\d.]+)/i) || [])[1] || '0');
+                        return vb - va;
+                    });
+                    out.push(...ms);
+                }
+                for (const fam of Object.keys(porFamilia).sort()) if (!orden.includes(fam)) out.push(...porFamilia[fam]);
+                return out.slice(0, 10);
+            };
+            const modelos = elegirModelos();
             if (!modelos.length) throw new Error('Tu clave no devolvió modelos Flash. Verifica la clave en aistudio.google.com/apikey y tu conexión.');
 
             function armarBody(durls, estricto) {
@@ -463,7 +488,11 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                 } catch (errNet) {
                     return { ok: false, tipo: 'salto', msg: `Sin conexión al probar ${model} (${errNet.name === 'AbortError' ? 'tiempo agotado (120s)' : (errNet.message || 'red')}).` };
                 }
-                if (resp.status === 429) return { ok: false, tipo: 'cuota', msg: `Cuota agotada en ${model} (HTTP 429).` };
+                if (resp.status === 429) {
+                    const txt429 = await resp.text().catch(() => '');
+                    const esDiaria = /RESOURCE_EXHAUSTED|quota|per day|daily|rpd/i.test(txt429);
+                    return { ok: false, tipo: esDiaria ? 'cuotaDia' : 'cuotaRpm', msg: `${esDiaria ? 'CUOTA DIARIA' : 'LÍMITE POR MINUTO'} en ${model} (HTTP 429).` };
+                }
                 if (resp.status === 503) return { ok: false, tipo: 'salto503', msg: `Modelo ${model} saturado (HTTP 503, alta demanda temporal).` };
                 if (resp.status === 404) return { ok: false, tipo: 'salto', msg: `Modelo ${model} no disponible (HTTP 404).` };
                 if (!resp.ok) {
@@ -489,9 +518,9 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                 return { ok: true, texto };
             }
 
-            let esperaCuotaHecha = false;
             async function extraerLote(nombresPag, durls, etiqueta) {
                 let reintento503 = false;
+                let reintentoRpm = false;
                 for (let i = 0; i < modelos.length; i++) {
                     const model = modelos[i];
                     if (i > 0) await esperar(1200);
@@ -509,16 +538,28 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                         if (r.ok) { diag.ultimoError = `${etiqueta}: ${model} devolvió 0 carreras.`; pintarDiag(); continue; }
                     }
                     if (r.tipo === 'clave') throw new Error(r.msg + ' Revisa la clave en aistudio.google.com/apikey y guárdala de nuevo.');
-                    if (r.tipo === 'cuota') {
-                        if (!esperaCuotaHecha) {
-                            esperaCuotaHecha = true;
-                            estadoIA.textContent = 'Cuota gratuita alcanzada. Esperando 65 segundos para reintentar automáticamente…';
-                            pintarDiag('esperando 65s por cuota…');
+                    if (r.tipo === 'cuotaDia') {
+                        // Cuota DIARIA de esta familia agotada: NUNCA se espera en
+                        // vano. Se salta al siguiente modelo (otra familia tiene su
+                        // propia cuota gratis). Si ninguna responde, el ciclo lo dirá.
+                        diag.ultimoError = `${etiqueta}: ${r.msg}`;
+                        pintarDiag();
+                        continue;
+                    }
+                    if (r.tipo === 'cuotaRpm') {
+                        // Límite por MINUTO (transitorio): una sola espera larga y
+                        // se reintenta; si vuelve a chocar se cambia de modelo.
+                        if (!reintentoRpm) {
+                            reintentoRpm = true;
+                            estadoIA.textContent = `${etiqueta}: límite por minuto de ${model}, esperando 65s y reintentando…`;
+                            pintarDiag(`${etiqueta}: esperando 65s por límite por minuto…`);
                             await esperar(65000);
                             i--;
                             continue;
                         }
-                        throw new Error('La cuota gratuita de IA está agotada. Espera unos minutos y reintenta, o usa otra clave de IA (aistudio.google.com/apikey).');
+                        diag.ultimoError = `${etiqueta}: ${r.msg}`;
+                        pintarDiag();
+                        continue;
                     }
                     if (r.tipo === 'salto503' && !reintento503) {
                         // Pico temporal de demanda: Google pide reintentar más tarde.
@@ -564,28 +605,34 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
             estado.carreras = [];
             let loteN = 0;
             let ciclo = 1;
+            let cuotaTotal = false; // ninguna familia de Gemini respondió por cuota
             while (true) {
                 for (const lote of lotes) {
                     loteN++;
                     const etiqueta = `Lote ${loteN}/${lotes.length} (pág. ${lote.map(p => p.num).join(',')})`;
-                    estadoIA.textContent = `${etiqueta}: enviando a la IA…`;
-                    window.clubIndicador?.accion(`La IA lee el programa: lote ${loteN} de ${lotes.length}…`);
-                    window.clubIndicador?.progreso(loteN / lotes.length);
-                    pintarDiag(etiqueta + ' en curso…');
+                    if (!cuotaTotal) {
+                        estadoIA.textContent = `${etiqueta}: enviando a la IA…`;
+                        window.clubIndicador?.accion(`La IA lee el programa: lote ${loteN} de ${lotes.length}…`);
+                        window.clubIndicador?.progreso(loteN / lotes.length);
+                        pintarDiag(etiqueta + ' en curso…');
+                    }
                     try {
                         const carreras = await extraerLote(lote.map(p => p.num), lote.map(p => p.durl), etiqueta);
                         fusionarCarreras(carreras);
                         estadoIA.textContent = `${etiqueta}: ${carreras.length} carrera(s). Total acumulado: ${estado.carreras.length}.`;
                         pintarDiag();
                     } catch (errLote) {
-                        if (/cuota|clave|API key/i.test(errLote.message || '')) throw errLote;
+                        if (/clave|API key/i.test(errLote.message || '')) throw errLote;
                         diag.ultimoError = `${etiqueta}: ${errLote.message}`;
                         pintarDiag();
-                        clubUI.toast(`${etiqueta} falló (${errLote.message}). Se continúa con el siguiente.`, 'error');
+                        clubUI.toast(`${etiqueta} falló (${errLote.message}).`, /CUOTA DIARIA/i.test(errLote.message || '') ? 'warning' : 'error');
+                        if (/CUOTA DIARIA/i.test(errLote.message || '')) { cuotaTotal = true; break; }
                     }
                 }
                 // ¿Resultado aunque sea parcial? Se entrega AHORA.
                 if (estado.carreras.length > 0) break;
+                // Cuota diaria agotada en TODAS las familias: esperar es inútil.
+                if (cuotaTotal) break;
                 // Sin resultados por fallo/saturación: se rehace el ciclo completo
                 // automáticamente (máx 3) antes de declarar fracaso.
                 if (ciclo >= 3 || !diag.ultimoError) break;
@@ -598,25 +645,31 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
             }
 
             if (estado.carreras.length === 0) {
-                estadoIA.textContent = 'No se extrajeron carreras. Revisa el diagnóstico (caja negra debajo del botón) y reintenta con menos páginas o con otra clave.';
-                clubUI.toast('La IA no devolvió carreras. Mira el diagnóstico para el motivo exacto.', 'error');
+                if (cuotaTotal) {
+                    estadoIA.textContent = 'Cuota DIARIA gratuita de Gemini agotada. Prueba otra vez mañana o consigue otra clave gratis (aistudio.google.com/apikey); así cambias al cupo de otra cuenta.';
+                    clubUI.toast('Cuota diaria gratuita agotada: cambia de clave o reintenta mañana.', 'warning');
+                } else {
+                    estadoIA.textContent = 'No se extrajeron carreras. Revisa el diagnóstico (caja negra debajo del botón) y reintenta con menos páginas o con otra clave.';
+                    clubUI.toast('La IA no devolvió carreras. Mira el diagnóstico para el motivo exacto.', 'error');
+                }
             } else {
                 // ---------- ENTREGA INMEDIATA ----------
                 // El resultado de la IA SIEMPRE se muestra; el padrón se registra
                 // por detrás y NO bloquea las cards (antes, si la tabla 'ejemplares'
                 // faltaba o tardaba, el resultado jamás aparecía).
+                if (cuotaTotal) clubUI.toast(`Cuota agotada en parte de Gemini: se muestra el resultado PARCIAL extraído (${estado.carreras.length} carrera(s)).`, 'warning');
                 estado.carreras.forEach(c => { c.enviada = false; c.aplicada = false; });
                 persistirRegistro();
                 renderCarreras({ nuevos: 0, vinculados: 0 });
                 resultadoGaceta.classList.remove('hidden');
-                estadoIA.textContent = `Listo: ${estado.carreras.length} carrera(s) transcritas. Vinculando padrón…`;
+                estadoIA.textContent = (cuotaTotal ? 'PARCIAL · ' : '') + `Listo: ${estado.carreras.length} carrera(s) transcritas. Vinculando padrón…`;
                 window.clubIndicador?.listo(`${estado.carreras.length} carrera(s) extraídas`);
                 guardarHistorial();
-                if (window.clubDB?.logAccion) window.clubDB.logAccion('GACETA_IA', `transcrita: ${estado.carreras.length} carreras`);
+                if (window.clubDB?.logAccion) window.clubDB.logAccion('GACETA_IA', `transcrita: ${estado.carreras.length} carreras${cuotaTotal ? ' (parcial por cuota)' : ''}`);
                 registrarPadron()
                     .then(res => {
-                        if (estadoIA.textContent.startsWith('Listo:')) {
-                            estadoIA.textContent = `Listo: ${estado.carreras.length} carrera(s), ${res.nuevos} ejemplar(es) nuevos registrados.`;
+                        if (estadoIA.textContent.includes('Listo:')) {
+                            estadoIA.textContent = (estadoIA.textContent.startsWith('PARCIAL') ? 'PARCIAL · ' : '') + `Listo: ${estado.carreras.length} carrera(s), ${res.nuevos} ejemplar(es) nuevos registrados.`;
                         }
                         actualizarVinculosPadron(res);
                     })
