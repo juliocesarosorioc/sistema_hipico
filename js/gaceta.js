@@ -575,42 +575,67 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
 
             estado.carreras = [];
             let loteN = 0;
-            for (const lote of lotes) {
-                loteN++;
-                const etiqueta = `Lote ${loteN}/${lotes.length} (pág. ${lote.map(p => p.num).join(',')})`;
-                estadoIA.textContent = `${etiqueta}: enviando a la IA…`;
-                window.clubIndicador?.accion(`La IA lee el programa: lote ${loteN} de ${lotes.length}…`);
-                window.clubIndicador?.progreso(loteN / lotes.length);
-                pintarDiag(etiqueta + ' en curso…');
-                try {
-                    const carreras = await extraerLote(lote.map(p => p.num), lote.map(p => p.durl), etiqueta);
-                    fusionarCarreras(carreras);
-                    estadoIA.textContent = `${etiqueta}: ${carreras.length} carrera(s). Total acumulado: ${estado.carreras.length}.`;
-                    pintarDiag();
-                } catch (errLote) {
-                    if (/cuota|clave|API key/i.test(errLote.message || '')) throw errLote;
-                    diag.ultimoError = `${etiqueta}: ${errLote.message}`;
-                    pintarDiag();
-                    clubUI.toast(`${etiqueta} falló (${errLote.message}). Se continúa con el siguiente.`, 'error');
+            let ciclo = 1;
+            while (true) {
+                for (const lote of lotes) {
+                    loteN++;
+                    const etiqueta = `Lote ${loteN}/${lotes.length} (pág. ${lote.map(p => p.num).join(',')})`;
+                    estadoIA.textContent = `${etiqueta}: enviando a la IA…`;
+                    window.clubIndicador?.accion(`La IA lee el programa: lote ${loteN} de ${lotes.length}…`);
+                    window.clubIndicador?.progreso(loteN / lotes.length);
+                    pintarDiag(etiqueta + ' en curso…');
+                    try {
+                        const carreras = await extraerLote(lote.map(p => p.num), lote.map(p => p.durl), etiqueta);
+                        fusionarCarreras(carreras);
+                        estadoIA.textContent = `${etiqueta}: ${carreras.length} carrera(s). Total acumulado: ${estado.carreras.length}.`;
+                        pintarDiag();
+                    } catch (errLote) {
+                        if (/cuota|clave|API key/i.test(errLote.message || '')) throw errLote;
+                        diag.ultimoError = `${etiqueta}: ${errLote.message}`;
+                        pintarDiag();
+                        clubUI.toast(`${etiqueta} falló (${errLote.message}). Se continúa con el siguiente.`, 'error');
+                    }
                 }
+                // ¿Resultado aunque sea parcial? Se entrega AHORA.
+                if (estado.carreras.length > 0) break;
+                // Sin resultados por fallo/saturación: se rehace el ciclo completo
+                // automáticamente (máx 3) antes de declarar fracaso.
+                if (ciclo >= 3 || !diag.ultimoError) break;
+                ciclo++;
+                estadoIA.textContent = `Sin carreras aún: ${diag.ultimoError}. Reintentando el ciclo completo (${ciclo}/3) en 30 seg…`;
+                pintarDiag(`reintento del ciclo completo #${ciclo} tras 30s (saturación/fallo)…`);
+                window.clubIndicador?.accion(`Reintento de extracción (ciclo ${ciclo}/3)…`);
+                await esperar(30000);
+                loteN = 0;
             }
 
             if (estado.carreras.length === 0) {
                 estadoIA.textContent = 'No se extrajeron carreras. Revisa el diagnóstico (caja negra debajo del botón) y reintenta con menos páginas o con otra clave.';
                 clubUI.toast('La IA no devolvió carreras. Mira el diagnóstico para el motivo exacto.', 'error');
             } else {
-                const resPadron = await registrarPadron();
-                // El registro del día queda guardado (enviada=false) hasta un
-                // nuevo documento o que el operador lo limpie.
+                // ---------- ENTREGA INMEDIATA ----------
+                // El resultado de la IA SIEMPRE se muestra; el padrón se registra
+                // por detrás y NO bloquea las cards (antes, si la tabla 'ejemplares'
+                // faltaba o tardaba, el resultado jamás aparecía).
                 estado.carreras.forEach(c => { c.enviada = false; c.aplicada = false; });
                 persistirRegistro();
-                guardarHistorial();
-                renderCarreras(resPadron);
-
+                renderCarreras({ nuevos: 0, vinculados: 0 });
                 resultadoGaceta.classList.remove('hidden');
-                estadoIA.textContent = `Listo: ${estado.carreras.length} carrera(s), ${resPadron.nuevos} ejemplar(es) nuevos registrados.`;
-                if (window.clubDB?.logAccion) window.clubDB.logAccion('GACETA_IA', `transcrita: ${estado.carreras.length} carreras, ${resPadron.nuevos} ejemplares nuevos`);
+                estadoIA.textContent = `Listo: ${estado.carreras.length} carrera(s) transcritas. Vinculando padrón…`;
                 window.clubIndicador?.listo(`${estado.carreras.length} carrera(s) extraídas`);
+                guardarHistorial();
+                if (window.clubDB?.logAccion) window.clubDB.logAccion('GACETA_IA', `transcrita: ${estado.carreras.length} carreras`);
+                registrarPadron()
+                    .then(res => {
+                        if (estadoIA.textContent.startsWith('Listo:')) {
+                            estadoIA.textContent = `Listo: ${estado.carreras.length} carrera(s), ${res.nuevos} ejemplar(es) nuevos registrados.`;
+                        }
+                        actualizarVinculosPadron(res);
+                    })
+                    .catch(err => {
+                        console.warn('Padrón en segundo plano falló por completo:', err.message || err);
+                        actualizarVinculosPadron({ nuevos: 0, vinculados: 0 });
+                    });
             }
         } catch (e) {
             console.error(e);
@@ -661,22 +686,29 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
 
     async function registrarPadron() {
         let nuevos = 0, vinculados = 0;
+        if (!window.supabase) return { nuevos, vinculados };
         if (!Array.isArray(estado.carreras)) estado.carreras = [];
         for (const c of estado.carreras) {
             c.ejemplares = c.ejemplares || [];
             for (const ej of c.ejemplares) {
-                const nombre = String(ej.nombre || '').trim().toUpperCase();
-                const nac = String(ej.nacionalidad || 'VE').trim().toUpperCase() || 'VE';
-                ej.nombre = nombre;
-                ej.nacionalidad = nac;
-                if (!nombre) { ej.ejemplar_id = null; continue; }
-                const existe = await window.supabase.from('ejemplares').select('id').eq('nombre', nombre).eq('nacionalidad', nac).maybeSingle();
-                if (existe?.data) {
-                    ej.ejemplar_id = existe.data.id; ej.nuevo = false; vinculados++;
-                } else {
-                    const insertado = await window.supabase.from('ejemplares').insert({ nombre, nacionalidad: nac }).select('id').single();
-                    if (!insertado.error) { ej.ejemplar_id = insertado.data.id; ej.nuevo = true; nuevos++; }
-                    else { ej.ejemplar_id = null; console.warn('No se pudo registrar ejemplar:', insertado.error); }
+                try {
+                    const nombre = String(ej.nombre || '').trim().toUpperCase();
+                    const nac = String(ej.nacionalidad || 'VE').trim().toUpperCase() || 'VE';
+                    ej.nombre = nombre;
+                    ej.nacionalidad = nac;
+                    if (!nombre) { ej.ejemplar_id = null; continue; }
+                    const existe = await window.supabase.from('ejemplares').select('id').eq('nombre', nombre).eq('nacionalidad', nac).maybeSingle();
+                    if (existe?.data) {
+                        ej.ejemplar_id = existe.data.id; ej.nuevo = false; vinculados++;
+                    } else {
+                        const insertado = await window.supabase.from('ejemplares').insert({ nombre, nacionalidad: nac }).select('id').single();
+                        if (!insertado.error) { ej.ejemplar_id = insertado.data.id; ej.nuevo = true; nuevos++; }
+                        else { ej.ejemplar_id = null; console.warn('No se pudo registrar ejemplar:', insertado.error); }
+                    }
+                } catch (errPadron) {
+                    // Un fallo puntual de red/tabla NO debe abortar el padrón ni el resultado
+                    ej.ejemplar_id = null;
+                    console.warn('Padrón: fallo puntual, se sigue con el siguiente ejemplar:', errPadron.message || errPadron);
                 }
             }
         }
@@ -751,7 +783,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                                 <tr class="gac-fila-ejemplar border-t border-slate-100">
                                     <td class="p-1 text-center"><input class="gac-num w-10 border border-slate-200 rounded px-1 py-0.5 text-center text-xs font-bold outline-none" value="${ej.numero ?? ''}"></td>
                                     <td class="p-1"><input class="gac-nombre w-full border border-slate-200 rounded px-1 py-0.5 text-xs font-bold uppercase outline-none" value="${ej.nombre || ''}">
-                                        ${ej.ejemplar_id ? `<span class="text-[9px] font-black ${ej.nuevo ? 'text-emerald-600' : 'text-slate-400'}">${ej.nuevo ? '★ nuevo' : '✓ vinculado'}</span>` : '<span class="text-[9px] text-red-500 font-bold">sin padrón</span>'}
+                                        ${ej.ejemplar_id ? `<span class="gac-badge-padron text-[9px] font-black ${ej.nuevo ? 'text-emerald-600' : 'text-slate-400'}">${ej.nuevo ? '★ nuevo' : '✓ vinculado'}</span>` : '<span class="gac-badge-padron text-[9px] text-red-500 font-bold">sin padrón</span>'}
                                     </td>
                                     <td class="p-1 text-center">
                                         <select class="gac-nac w-full border border-slate-200 rounded px-0.5 py-0.5 text-[10px] font-bold outline-none uppercase">
@@ -770,6 +802,31 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
             </div>
         `).join('');
         actualizarBtnTodo();
+    }
+
+    // El padrón se registra EN SEGUNDO PLANO; cuando termina se actualizan las
+    // insignias en pantalla SIN reconstruir las cards (no se pierde lo que el
+    // operador esté editando).
+    function actualizarVinculosPadron(res) {
+        const resumen = document.getElementById('resumenExtraccion');
+        if (resumen) resumen.textContent = `(${estado.carreras.length} carreras · ${res.nuevos} nuevos / ${res.vinculados} vinculados al padrón)`;
+        document.querySelectorAll('.gac-fila-ejemplar').forEach(fila => {
+            const nombre = (fila.querySelector('.gac-nombre')?.value || '').trim().toUpperCase();
+            const nac = (fila.querySelector('.gac-nac')?.value || 'VE').toUpperCase();
+            if (!nombre) return;
+            let info = null;
+            for (const c of estado.carreras) {
+                for (const ej of (c.ejemplares || [])) {
+                    if (String(ej.nombre || '').trim().toUpperCase() === nombre && String(ej.nacionalidad || 'VE').toUpperCase() === nac) { info = ej; break; }
+                }
+                if (info) break;
+            }
+            if (!info) return;
+            const span = fila.querySelector('.gac-badge-padron');
+            if (!span) return;
+            span.textContent = info.ejemplar_id ? (info.nuevo ? '★ nuevo' : '✓ vinculado') : 'sin padrón';
+            span.className = 'gac-badge-padron text-[9px] font-black' + (info.ejemplar_id ? (info.nuevo ? ' text-emerald-600' : ' text-slate-400') : ' text-red-500 font-bold');
+        });
     }
 
     // Lee UNA carrera desde su card (usa los valores editados en pantalla)
