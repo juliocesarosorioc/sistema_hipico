@@ -21,7 +21,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let estado = { imagenes: [], carreras: [] };
 
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+    // Limpieza de claves antiguas (OpenAI quedó en desuso: ahora se usa Gemini gratis)
+    if (localStorage.getItem('club_openai_key')) {
+        localStorage.removeItem('club_openai_key');
+        console.info('Clave OpenAI antigua eliminada del navegador.');
+    }
 
     // ---------- CLAVE ----------
     const guadarClaveAnt = localStorage.getItem(CLAVE_KEY) || '';
