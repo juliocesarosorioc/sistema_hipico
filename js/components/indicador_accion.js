@@ -68,8 +68,8 @@
         }
         if (pill) {
             if (txt) txt.textContent = mensajeManual || mensajeParaUrl(url);
-            pill.classList.remove('hidden');
-            pill.classList.add('flex', 'club-accion-on');
+            pill.classList.remove('club-oculto');
+            pill.classList.add('club-on');
         }
         if (!timerBarra) {
             timerBarra = setInterval(tick, 150);
@@ -82,8 +82,7 @@
         progreso = 100;
         pintarProgreso();
         if (pill) {
-            pill.classList.add('hidden');
-            pill.classList.remove('flex', 'club-accion-on');
+            pill.classList.remove('club-on');
         }
         var fin = function () {
             if (!activo && !peticiones && !manualActivo) {
@@ -119,33 +118,53 @@
 
         var style = document.createElement('style');
         style.id = 'clubEstiloCaballo';
-        style.textContent = '.caballo-corriendo{display:inline-flex;animation:galopar .45s ease-in-out infinite;filter:drop-shadow(0 0 6px rgba(255,255,255,.55))}' +
+        style.textContent = '.club-pill{position:fixed;right:14px;bottom:92px;z-index:70;display:none;align-items:center;gap:9px;' +
+            'background:linear-gradient(135deg,#059669 0%,#10b981 55%,#0d9488 100%);color:#fff;' +
+            'font-size:13px;font-weight:800;letter-spacing:.02em;line-height:1;' +
+            'border:2px solid #6ee7b7;border-radius:999px;padding:9px 11px;max-width:min(92vw,540px);' +
+            'box-shadow:0 10px 30px rgba(16,185,129,.45),0 4px 14px rgba(0,0,0,.25);animation:club-pulso 1.4s ease-in-out infinite}' +
+            '.club-pill.club-on{display:flex}' +
+            '.club-pill.club-oculto{display:none!important}' +
+            '@keyframes club-pulso{0%,100%{box-shadow:0 0 0 0 rgba(16,255,160,.55),0 10px 30px rgba(16,185,129,.45)}60%{box-shadow:0 0 0 10px rgba(16,255,160,0),0 10px 30px rgba(16,185,129,.45)}}' +
+            '.club-pill .clb-icon{font-size:22px;color:#fff}' +
+            '.club-pill .clb-txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+            '.club-pill .clb-pct{display:inline-flex;align-items:center;justify-content:center;min-width:52px;padding:4px 9px;border-radius:999px;' +
+            'background:#fff;color:#047857;border:1px solid #10b981;font-size:12px;font-weight:900;font-variant-numeric:tabular-nums;flex:none}' +
+            '.club-pill .clb-cerrar{display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:999px;' +
+            'background:rgba(0,0,0,.22);color:#fff;font-size:11px;font-weight:900;line-height:1;cursor:pointer;border:0;flex:none}' +
+            '.club-pill .clb-cerrar:hover{background:rgba(0,0,0,.45)}' +
+            '.club-pill .caballo-corriendo{display:inline-flex;flex:none;animation:galopar .45s ease-in-out infinite;filter:drop-shadow(0 0 6px rgba(255,255,255,.55))}' +
             '@keyframes galopar{0%,100%{transform:translateY(0) rotate(-7deg)}25%{transform:translateY(-2px) rotate(4deg)}50%{transform:translateY(0) rotate(-7deg)}75%{transform:translateY(-2px) rotate(4deg)}}' +
-            '.lineas-carrera{display:inline-flex;gap:3px;align-items:center;height:14px;overflow:hidden}' +
+            '.lineas-carrera{display:inline-flex;gap:3px;align-items:center;height:14px;overflow:hidden;flex:none}' +
             '.lineas-carrera i{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.95);filter:blur(.5px);animation:correr-l .5s linear infinite}' +
             '.lineas-carrera i:nth-child(2){animation-delay:.16s}' +
             '.lineas-carrera i:nth-child(3){animation-delay:.32s}' +
             '@keyframes correr-l{0%{transform:translateX(8px);opacity:0}25%{opacity:1}100%{transform:translateX(-14px);opacity:0}}' +
-            '.club-accion-on{animation:club-pulso 1.2s ease-in-out infinite}' +
-            '@keyframes club-pulso{0%,100%{box-shadow:0 0 0 0 rgba(16,255,160,.6)}60%{box-shadow:0 0 0 12px rgba(16,255,160,0)}}';
+            '.club-barra{position:fixed;top:0;left:0;height:6px;width:0%;z-index:70;' +
+            'background:linear-gradient(90deg,#34d399,#22c55e,#22d3ee);box-shadow:0 0 14px rgba(52,211,153,.95);transition:width .22s ease}';
         document.head.appendChild(style);
 
         pill = document.createElement('div');
         pill.id = 'clubAccion';
-        pill.className = 'hidden fixed bottom-24 right-4 z-[70] items-center gap-2.5 rounded-full pl-3 pr-3 py-2 bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 text-white text-sm font-black uppercase tracking-wide border-2 border-emerald-300 shadow-[0_10px_35px_rgba(16,255,160,.5)]';
+        pill.className = 'club-pill';
         pill.setAttribute('role', 'status');
         pill.setAttribute('aria-live', 'polite');
-        pill.innerHTML = '<span class="caballo-corriendo"><i class="fas fa-horse text-3xl text-white"></i></span>' +
+        pill.innerHTML = '<span class="caballo-corriendo"><i class="fas fa-horse clb-icon"></i></span>' +
             '<span class="lineas-carrera" aria-hidden="true"><i></i><i></i><i></i></span>' +
-            '<span>Procesando…</span>' +
-            '<span class="inline-flex items-center justify-center min-w-[52px] px-2 py-1 rounded-full bg-white text-emerald-700 border border-emerald-400 font-black text-xs tabular-nums">0%</span>';
+            '<span class="clb-txt">Procesando…</span>' +
+            '<span class="clb-pct">0%</span>' +
+            '<button type="button" class="clb-cerrar" title="Ocultar este aviso" aria-label="Ocultar"><i class="fas fa-xmark"></i></button>';
         document.body.appendChild(pill);
-        txt = pill.children[2];
-        lblProg = pill.querySelector('span:last-child');
+        txt = pill.querySelector('.clb-txt');
+        lblProg = pill.querySelector('.clb-pct');
+        pill.querySelector('.clb-cerrar').addEventListener('click', function (e) {
+            e.stopPropagation();
+            pill.classList.add('club-oculto');
+        });
 
         barra = document.createElement('div');
         barra.id = 'barraProgreso';
-        barra.className = 'fixed top-0 left-0 h-1.5 bg-gradient-to-r from-emerald-400 via-green-500 to-cyan-400 z-[70] transition-all duration-200 shadow-[0_0_14px_rgba(52,211,153,.9)]';
+        barra.className = 'club-barra';
         barra.style.width = '0%';
         document.body.appendChild(barra);
     }

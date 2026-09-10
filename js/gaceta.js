@@ -156,10 +156,11 @@ document.addEventListener('DOMContentLoaded', () => {
         miniaturas.innerHTML = '';
         estado.paginas.forEach(p => {
             const div = document.createElement('div');
-            div.className = `relative rounded border-2 p-0.5 cursor-pointer transition-all ${p.incluida ? 'border-emerald-400 hover:border-emerald-500' : 'border-slate-200 opacity-40 hover:opacity-70'}`;
+            div.className = `relative group rounded border-2 p-0.5 cursor-pointer transition-all ${p.incluida ? 'border-emerald-400 hover:border-emerald-500' : 'border-slate-200 opacity-40 hover:opacity-70'}`;
             div.dataset.num = p.num;
             div.innerHTML = `
                 <span class="absolute top-0.5 left-0.5 z-10 bg-slate-900 text-white text-[9px] font-bold px-1 rounded">${p.num}</span>
+                <span class="absolute top-0.5 right-0.5 z-10 bg-cyan-600 text-white rounded-full text-[9px] w-5 h-5 flex items-center justify-center shadow" data-lupa="${p.num}" title="Ver la página en grande"><i class="fas fa-search"></i></span>
                 <img src="${p.durl}" class="rounded h-16 object-cover w-full pointer-events-none">
                 <span class="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full ${p.incluida ? 'bg-emerald-500' : 'bg-white border border-slate-300'} text-[9px] flex items-center justify-center z-10 pointer-events-none">
                     <i class="fas ${p.incluida ? 'fa-check text-white' : 'fa-circle text-slate-300'}"></i>
@@ -200,6 +201,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     miniaturas.addEventListener('click', (e) => {
+        const lupa = e.target.closest('[data-lupa]');
+        if (lupa) {
+            const idx = estado.paginas.findIndex(x => x.num == lupa.dataset.lupa);
+            if (idx >= 0) abrirVistaPrevia(idx);
+            return;
+        }
         const t = e.target.closest('[data-num]');
         if (!t) return;
         const p = estado.paginas.find(x => x.num == t.dataset.num);
@@ -207,6 +214,43 @@ document.addEventListener('DOMContentLoaded', () => {
             p.incluida = !p.incluida;
             actualizarSeleccion();
         }
+    });
+
+    // Vista previa de una página de la gaceta en grande
+    let vistaActualPrevia = -1;
+    const modalVistaPrevia = document.getElementById('modalVistaPrevia');
+    const imgVistaPrevia = document.getElementById('imgVistaPrevia');
+    const lblVistaPrevia = document.getElementById('lblVistaPrevia');
+
+    function pintarVistaPrevia() {
+        const p = estado.paginas[vistaActualPrevia];
+        if (!p || !imgVistaPrevia) return;
+        imgVistaPrevia.src = p.durl;
+        lblVistaPrevia.textContent = `Página ${p.num} de ${estado.paginas.length}`;
+    }
+
+    function abrirVistaPrevia(idx) {
+        vistaActualPrevia = idx;
+        modalVistaPrevia.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+        pintarVistaPrevia();
+    }
+
+    function cerrarVistaPrevia() {
+        modalVistaPrevia.classList.add('hidden');
+        document.body.style.overflow = '';
+    }
+
+    document.getElementById('btnCerrarVista').addEventListener('click', cerrarVistaPrevia);
+    document.getElementById('btnPrevVista').addEventListener('click', () => {
+        if (estado.paginas.length) abrirVistaPrevia((vistaActualPrevia - 1 + estado.paginas.length) % estado.paginas.length);
+    });
+    document.getElementById('btnNextVista').addEventListener('click', () => {
+        if (estado.paginas.length) abrirVistaPrevia((vistaActualPrevia + 1) % estado.paginas.length);
+    });
+    modalVistaPrevia.addEventListener('click', (e) => { if (e.target === modalVistaPrevia) cerrarVistaPrevia(); });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !modalVistaPrevia.classList.contains('hidden')) cerrarVistaPrevia();
     });
 
     document.getElementById('btnAplicarRango').addEventListener('click', () => {
@@ -255,43 +299,49 @@ Para cada carrera devuelve:
 REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un ejemplar aparece repetido entre páginas, mantenlo tal cual. Si el documento no tiene carreras, devuelve {"carreras":[]}.
 `;
 
-        try {
-            const imgs = estado.imagenes.map(d => {
-                const [, meta] = d.split(',');
-                const mime = d.split(';')[0].replace('data:', '');
-                return { inline_data: { mime_type: mime, data: meta } };
-            });
+        const intentos = estado.imagenes.length > 8
+            ? [estado.imagenes, estado.imagenes.slice(0, 8)]
+            : [estado.imagenes];
 
-            const body = {
-                contents: [{ parts: [{ text: 'Gaceta adjunta. Extrae las carreras y sus ejemplares.' }, ...imgs] }],
-                systemInstruction: { parts: [{ text: SYS }] },
-                generationConfig: {
-                    temperature: 0,
-                    maxOutputTokens: 8192,
-                    responseMimeType: 'application/json',
-                    responseSchema: {
-                        type: 'OBJECT',
-                        properties: {
-                            carreras: {
-                                type: 'ARRAY',
-                                items: {
-                                    type: 'OBJECT',
-                                    properties: {
-                                        carrera: { type: 'INTEGER' },
-                                        hipodromo: { type: 'STRING' },
-                                        fecha: { type: 'STRING' },
-                                        distancia: { type: 'INTEGER' },
-                                        superficie: { type: 'STRING' },
-                                        premio: { type: 'NUMBER' },
-                                        ejemplares: {
-                                            type: 'ARRAY',
-                                            items: {
-                                                type: 'OBJECT',
-                                                properties: {
-                                                    numero: { type: 'INTEGER' },
-                                                    nombre: { type: 'STRING' },
-                                                    nacionalidad: { type: 'STRING' },
-                                                    pts: { type: 'NUMBER' }
+        try {
+            async function pedirIA(durls) {
+                const imgs = durls.map(d => {
+                    const [, meta] = d.split(',');
+                    const mime = d.split(';')[0].replace('data:', '');
+                    return { inline_data: { mime_type: mime, data: meta } };
+                });
+
+                const body = {
+                    contents: [{ parts: [{ text: 'Gaceta adjunta. Extrae las carreras y sus ejemplares.' }, ...imgs] }],
+                    systemInstruction: { parts: [{ text: SYS }] },
+                    generationConfig: {
+                        temperature: 0,
+                        maxOutputTokens: 8192,
+                        responseMimeType: 'application/json',
+                        responseSchema: {
+                            type: 'OBJECT',
+                            properties: {
+                                carreras: {
+                                    type: 'ARRAY',
+                                    items: {
+                                        type: 'OBJECT',
+                                        properties: {
+                                            carrera: { type: 'INTEGER' },
+                                            hipodromo: { type: 'STRING' },
+                                            fecha: { type: 'STRING' },
+                                            distancia: { type: 'INTEGER' },
+                                            superficie: { type: 'STRING' },
+                                            premio: { type: 'NUMBER' },
+                                            ejemplares: {
+                                                type: 'ARRAY',
+                                                items: {
+                                                    type: 'OBJECT',
+                                                    properties: {
+                                                        numero: { type: 'INTEGER' },
+                                                        nombre: { type: 'STRING' },
+                                                        nacionalidad: { type: 'STRING' },
+                                                        pts: { type: 'NUMBER' }
+                                                    }
                                                 }
                                             }
                                         }
@@ -300,55 +350,63 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
                             }
                         }
                     }
-                }
-            };
+                };
 
-            let texto = '';
-            let ultimoError = null;
-            const esperar = (ms) => new Promise(r => setTimeout(r, ms));
-            const descubiertos = await listaModelosFlash(clave);
-            const modelos = [...new Set(descubiertos.concat(MODELOS_GEMINI))].slice(0, 12);
-            for (let i = 0; i < modelos.length; i++) {
-                const model = modelos[i];
-                if (i > 0) await esperar(1000);
-                let resp;
-                try {
-                    resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': clave },
-                        body: JSON.stringify(body)
-                    });
-                } catch (errNet) {
-                    ultimoError = `Sin conexión al probar ${model} (${errNet.message || 'red'}).`;
-                    continue;
-                }
+                let ultimoError = null;
+                const esperar = (ms) => new Promise(r => setTimeout(r, ms));
+                const descubiertos = await listaModelosFlash(clave);
+                const modelos = [...new Set(descubiertos.concat(MODELOS_GEMINI))].slice(0, 12);
+                for (let i = 0; i < modelos.length; i++) {
+                    const model = modelos[i];
+                    if (i > 0) await esperar(1000);
+                    let resp;
+                    try {
+                        resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': clave },
+                            body: JSON.stringify(body)
+                        });
+                    } catch (errNet) {
+                        ultimoError = `Sin conexión al probar ${model} (${errNet.message || 'red'}).`;
+                        continue;
+                    }
 
-                if (resp.status === 429) {
-                    throw new Error('La cuota gratuita de IA está agotada en este momento. Espera unos minutos y reintenta, o usa otra clave de IA.');
-                }
-                if (resp.status === 404 || resp.status === 503) {
-                    ultimoError = `Modelo ${model} no disponible o saturado (HTTP ${resp.status}), probando el siguiente...`;
-                    continue;
-                }
-                if (!resp.ok) {
-                    const txtErr = await resp.text();
-                    let msg = `Error de IA (HTTP ${resp.status}).`;
-                    try { msg = 'IA: ' + (JSON.parse(txtErr).error?.message || msg); } catch (e) { msg = txtErr.slice(0, 180); }
-                    throw new Error(msg);
-                }
+                    if (resp.status === 429) {
+                        throw new Error('La cuota gratuita de IA está agotada en este momento. Espera unos minutos y reintenta, o usa otra clave de IA.');
+                    }
+                    if (resp.status === 404 || resp.status === 503) {
+                        ultimoError = `Modelo ${model} no disponible o saturado (HTTP ${resp.status}), probando el siguiente...`;
+                        continue;
+                    }
+                    if (!resp.ok) {
+                        const txtErr = await resp.text();
+                        let msg = `Error de IA (HTTP ${resp.status}).`;
+                        try { msg = 'IA: ' + (JSON.parse(txtErr).error?.message || msg); } catch (e) { msg = txtErr.slice(0, 180); }
+                        throw new Error(msg);
+                    }
 
-                const datos = await resp.json();
-                texto = (datos.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '').trim();
-                if (!texto) {
-                    ultimoError = `Modelo ${model} respondió vacío, probando el siguiente...`;
-                    continue;
+                    const datos = await resp.json();
+                    const texto = (datos.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '').trim();
+                    if (!texto) {
+                        ultimoError = `Modelo ${model} respondió vacío, probando el siguiente...`;
+                        continue;
+                    }
+                    return texto;
                 }
-                break;
+                throw new Error(ultimoError + ' El sistema ya probó todos los modelos Flash disponibles. Espera 1–2 min y reintenta; si persiste, usa otra clave de IA (aistudio.google.com/apikey).');
             }
 
-            if (ultimoError && !texto) throw new Error(ultimoError + ' El sistema ya probó todos los modelos Flash disponibles. Espera 1–2 min y reintenta; si persiste, usa otra clave de IA (aistudio.google.com/apikey).');
-
-            estado.carreras = parsearJSON(texto);
+            for (const durls of intentos) {
+                const texto = await pedirIA(durls);
+                estado.carreras = parsearJSON(texto);
+                if (estado.carreras.length > 0) break;
+                if (durls.length > 8) {
+                    estadoIA.textContent = 'No se detectaron carreras con todas las páginas; reintentando con las primeras 8…';
+                    clubUI.toast('Sin carreras con todas las páginas; reintentando con las primeras 8.', 'warning');
+                } else {
+                    estadoIA.textContent = 'La IA no detectó carreras. Pruebe con más páginas o mejor resolución.';
+                }
+            }
 
             const resPadron = await registrarPadron();
             guardarHistorial();
@@ -386,6 +444,11 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
         const fin = t.lastIndexOf('}');
         if (ini >= 0 && fin > ini) {
             try { intentos.push(JSON.parse(t.slice(ini, fin + 1))); } catch (e2) { /* sigue */ }
+        }
+        const iniArr = t.indexOf('[');
+        const finArr = t.lastIndexOf(']');
+        if (iniArr >= 0 && finArr > iniArr) {
+            try { intentos.push(JSON.parse(t.slice(iniArr, finArr + 1))); } catch (e3) { /* sigue */ }
         }
         for (const obj of intentos) {
             if (Array.isArray(obj)) return obj;
