@@ -332,7 +332,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ------------------------------------------------------------------
-    // VENTANA FLOTANTE (pasiva; los comandos se procesarán en taquilla.js)
+    // VENTANA FLOTANTE: COMANDOS RÁPIDOS
+    // Luis +100 (abono) · Juan -100 (retiro) · Frank 100 Luis (traslado)
+    // Luis aval +100 (otorgar aval) · Pedro aval -50 (pagar aval)
     // ------------------------------------------------------------------
     const ventana = document.getElementById('ventanaTransacciones');
     const cabecera = document.getElementById('cabeceraTransacciones');
@@ -352,6 +354,176 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.addEventListener('mouseup', () => isDragging = false);
+
+    const textoTransacciones = document.getElementById('textoTransacciones');
+    const resultadoTransacciones = document.getElementById('resultadoTransacciones');
+    const btnProcesarTransacciones = document.getElementById('btnProcesarTransacciones');
+    const btnLimpiarTransacciones = document.getElementById('btnLimpiarTransacciones');
+
+    // Columnas reales de depositos (tolerante si falta el SQL)
+    let colsDepCmd = null;
+    async function columnasDepositosCmd() {
+        if (colsDepCmd) return colsDepCmd;
+        try {
+            const { data } = await window.supabase.from('depositos').select('*').limit(1);
+            colsDepCmd = (data && data[0]) ? new Set(Object.keys(data[0])) : null;
+        } catch (e) { colsDepCmd = null; }
+        return colsDepCmd;
+    }
+
+    function resolverClienteRapido(nombre) {
+        const n = (nombre || '').trim().toUpperCase();
+        if (!n) return { error: 'nombre vacío' };
+        const clave = (c) => ((c.seudonimo || c.nombre || '').trim().toUpperCase());
+        const exactos = clientesList.filter(c => clave(c) === n || (c.nombre || '').trim().toUpperCase() === n);
+        if (exactos.length === 1) return { cliente: exactos[0] };
+        if (exactos.length > 1) return { error: `cliente ambiguo "${nombre}"` };
+        const parcial = clientesList.filter(c => clave(c).includes(n) || (c.nombre || '').toUpperCase().includes(n));
+        if (parcial.length === 1) return { cliente: parcial[0] };
+        if (parcial.length > 1) return { error: `cliente ambiguo "${nombre}"` };
+        return { error: `cliente "${nombre}" no encontrado` };
+    }
+
+    function parsearComando(linea) {
+        const t = (linea || '').trim().replace(/\s+/g, ' ');
+        if (!t || t.startsWith('#')) return null;
+        let m = t.match(/^(.+?)\s+aval\s*([+-])\s*(\d+(?:\.\d+)?)$/i);
+        if (m) return { tipo: m[2] === '+' ? 'otorgar_aval' : 'pagar_aval', nombre: m[1].trim(), monto: parseFloat(m[3]) };
+        m = t.match(/^(.+?)\s*([+-])\s*(\d+(?:\.\d+)?)$/);
+        if (m) return { tipo: m[2] === '+' ? 'abono' : 'retiro', nombre: m[1].trim(), monto: parseFloat(m[3]) };
+        m = t.match(/^(.+?)\s+(\d+(?:\.\d+)?)\s+(.+)$/);
+        if (m) return { tipo: 'traslado', origen: m[1].trim(), monto: parseFloat(m[2]), destino: m[3].trim() };
+        return { error: `formato no reconocido: "${t}"` };
+    }
+
+    async function procesarTransacciones() {
+        const lineas = (textoTransacciones.value || '').split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+        if (lineas.length === 0) return clubUI.toast('Escriba al menos un comando.', 'warning');
+        await columnasDepositosCmd();
+        const filtrar = (obj) => (!colsDepCmd ? obj : Object.fromEntries(Object.entries(obj).filter(([k]) => colsDepCmd.has(k))));
+
+        btnProcesarTransacciones.disabled = true;
+        window.clubIndicador?.accion('Procesando comandos rápidos…');
+
+        // Saldos en memoria (sembrados desde lo cargado) para que varias
+        // líneas del mismo cliente en un lote queden consistentes entre sí.
+        const saldos = new Map(clientesList.map(c => [c.id, { saldo: parseFloat(c.saldo_actual || 0), aval: parseFloat(c.aval || 0) }]));
+        const bal = (id) => saldos.get(id);
+        const okLineas = [], errLineas = [];
+        const fmt = (v) => '$' + clubUI.formatoNumero(v, 2);
+
+        async function filaDeposito(fila) {
+            const { error } = await window.supabase.from('depositos').insert([filtrar(fila)]);
+            if (error) throw new Error('no se pudo guardar el historial: ' + (error.message || 'BD'));
+        }
+        async function guardarCliente(id) {
+            const b = bal(id);
+            const { error } = await window.supabase.from('clientes').update({ saldo_actual: b.saldo, aval: b.aval }).eq('id', id);
+            if (error) throw new Error('no se pudo actualizar el saldo: ' + (error.message || 'BD'));
+        }
+        const baseFila = (c) => ({
+            cliente_id: c.id, cliente_nombre: c.seudonimo || c.nombre,
+            modalidad: 'TAQUILLA · comando rápido',
+            banco_id: null, banco_nombre: null, banco_codigo: null, referencia: null,
+            moneda: 'USD', tasa_cambio: 1
+        });
+
+        for (const linea of lineas) {
+            try {
+                const cmd = parsearComando(linea);
+                if (!cmd) continue;
+                if (cmd.error) throw new Error(cmd.error);
+                if (!(cmd.monto > 0)) throw new Error(`monto inválido en "${linea}"`);
+
+                if (cmd.tipo === 'abono' || cmd.tipo === 'retiro' || cmd.tipo === 'otorgar_aval' || cmd.tipo === 'pagar_aval') {
+                    const r = resolverClienteRapido(cmd.nombre);
+                    if (r.error) throw new Error(r.error);
+                    const c = r.cliente, b = bal(c.id);
+                    if (cmd.tipo === 'abono') {
+                        b.saldo += cmd.monto;
+                        await filaDeposito({ ...baseFila(c), tipo_operacion: 'Normal', monto: cmd.monto, monto_usd: cmd.monto, nota: `Abono (comando rápido taquilla): ${linea}` });
+                        await guardarCliente(c.id);
+                        okLineas.push(`✓ ${linea} → saldo ${fmt(b.saldo)}`);
+                    } else if (cmd.tipo === 'retiro') {
+                        if ((b.saldo - cmd.monto) < -b.aval) throw new Error(`${c.seudonimo || c.nombre} superaría su límite de AVAL (${fmt(b.aval)}). Debe abonar antes.`);
+                        b.saldo -= cmd.monto;
+                        await filaDeposito({ ...baseFila(c), tipo_operacion: 'Normal', monto: -cmd.monto, monto_usd: -cmd.monto, nota: `Retiro/pago (comando rápido taquilla): ${linea}` });
+                        await guardarCliente(c.id);
+                        okLineas.push(`✓ ${linea} → saldo ${fmt(b.saldo)}`);
+                    } else if (cmd.tipo === 'otorgar_aval') {
+                        b.saldo += cmd.monto; b.aval += cmd.monto;
+                        await filaDeposito({ ...baseFila(c), tipo_operacion: 'Otorgar Aval', monto: cmd.monto, monto_usd: cmd.monto, nota: `Otorgar aval (comando rápido taquilla): ${linea}` });
+                        await guardarCliente(c.id);
+                        okLineas.push(`✓ ${linea} → aval ${fmt(b.aval)}`);
+                    } else {
+                        if (b.aval <= 0) throw new Error(`${c.seudonimo || c.nombre} no tiene aval pendiente.`);
+                        const aplicado = Math.min(cmd.monto, b.aval);
+                        b.aval -= aplicado;
+                        await filaDeposito({ ...baseFila(c), tipo_operacion: 'Pagar Aval', monto: aplicado, monto_usd: aplicado, nota: `Pagar aval (comando rápido taquilla): ${linea}` });
+                        await guardarCliente(c.id);
+                        okLineas.push(`✓ ${linea} → aval ${fmt(b.aval)}`);
+                    }
+                } else if (cmd.tipo === 'traslado') {
+                    const ro = resolverClienteRapido(cmd.origen);
+                    if (ro.error) throw new Error(ro.error);
+                    const rd = resolverClienteRapido(cmd.destino);
+                    if (rd.error) throw new Error(rd.error);
+                    if (ro.cliente.id === rd.cliente.id) throw new Error('origen y destino son el mismo cliente.');
+                    const bo = bal(ro.cliente.id), bd = bal(rd.cliente.id);
+                    if ((bo.saldo - cmd.monto) < -bo.aval) throw new Error(`${ro.cliente.seudonimo || ro.cliente.nombre} superaría su límite de AVAL (${fmt(bo.aval)}). Debe abonar antes.`);
+                    bo.saldo -= cmd.monto; bd.saldo += cmd.monto;
+                    await filaDeposito({ ...baseFila(ro.cliente), tipo_operacion: 'Normal', monto: -cmd.monto, monto_usd: -cmd.monto, nota: `Traslado a ${rd.cliente.seudonimo || rd.cliente.nombre} (comando rápido taquilla): ${linea}` });
+                    await filaDeposito({ ...baseFila(rd.cliente), tipo_operacion: 'Normal', monto: cmd.monto, monto_usd: cmd.monto, nota: `Traslado desde ${ro.cliente.seudonimo || ro.cliente.nombre} (comando rápido taquilla): ${linea}` });
+                    await guardarCliente(ro.cliente.id);
+                    await guardarCliente(rd.cliente.id);
+                    okLineas.push(`✓ ${linea} → ${fmt(bo.saldo)} / ${fmt(bd.saldo)}`);
+                }
+            } catch (eOp) {
+                errLineas.push(`✗ ${linea} → ${eOp.message || eOp}`);
+            }
+        }
+
+        // Refresca saldos para las jugadas de taquilla
+        try {
+            const { data } = await window.supabase.from('clientes').select('*').order('nombre');
+            if (data) {
+                clientesList = data;
+                datalistClientes.innerHTML = '';
+                data.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.seudonimo || c.nombre;
+                    datalistClientes.appendChild(opt);
+                });
+            }
+        } catch (e) { /* nada */ }
+
+        if (resultadoTransacciones) {
+            resultadoTransacciones.classList.remove('hidden');
+            resultadoTransacciones.innerHTML =
+                okLineas.map(l => `<p class="text-emerald-700 font-bold">${l}</p>`).join('') +
+                errLineas.map(l => `<p class="text-red-600 font-bold">${l}</p>`).join('') || '<p class="text-slate-400 italic">Sin líneas procesables.</p>';
+        }
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('TAQUILLA', `comandos_rapidos: ${okLineas.length} ok, ${errLineas.length} errores`);
+        clubUI.toast(
+            errLineas.length === 0 ? `Comandos listos: ${okLineas.length} aplicado(s).` : `${okLineas.length} aplicado(s), ${errLineas.length} con error (ver detalle en la ventana).`,
+            errLineas.length === 0 ? 'success' : 'warning');
+
+        btnProcesarTransacciones.disabled = false;
+        window.clubIndicador?.fin();
+    }
+
+    btnProcesarTransacciones?.addEventListener('click', procesarTransacciones);
+    btnLimpiarTransacciones?.addEventListener('click', () => {
+        textoTransacciones.value = '';
+        if (resultadoTransacciones) { resultadoTransacciones.innerHTML = ''; resultadoTransacciones.classList.add('hidden'); }
+        textoTransacciones.focus();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.shiftKey && (e.key === 'L' || e.key === 'l')) {
+            e.preventDefault();
+            procesarTransacciones();
+        }
+    });
 
     inicializarDatos();
 });
