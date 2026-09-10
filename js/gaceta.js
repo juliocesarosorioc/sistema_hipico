@@ -126,13 +126,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const paginas = (capPaginas > 0 ? Math.min(capPaginas, pdf.numPages) : pdf.numPages);
                 for (let i = 1; i <= paginas; i++) {
                     const page = await pdf.getPage(i);
-                    const vp = page.getViewport({ scale: 1.6 });
+                    const vp = page.getViewport({ scale: 2.0 });
                     const canvas = document.createElement('canvas');
-                    canvas.width = Math.min(vp.width, 1500);
+                    canvas.width = Math.min(vp.width, 2000);
                     canvas.height = Math.round(canvas.width * (vp.height / vp.width));
                     const ctx = canvas.getContext('2d');
                     await page.render({ canvasContext: ctx, viewport: vp }).promise;
-                    estado.paginas.push({ num: i, durl: canvas.toDataURL('image/jpeg', 0.85), incluida: true });
+                    estado.paginas.push({ num: i, durl: canvas.toDataURL('image/jpeg', 0.9), incluida: true });
                     window.clubIndicador?.progreso(i / paginas)
                 }
                 estadoIA.textContent = `PDF: ${paginas} página(s) listas.`;
@@ -304,43 +304,50 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
             : [estado.imagenes];
 
         try {
-            async function pedirIA(durls) {
+            async function pedirIA(durls, estricto) {
                 const imgs = durls.map(d => {
                     const [, meta] = d.split(',');
                     const mime = d.split(';')[0].replace('data:', '');
                     return { inline_data: { mime_type: mime, data: meta } };
                 });
 
+                const parteTexto = estricto
+                    ? 'Gaceta adjunta. Extrae las carreras y responde ÚNICAMENTE con JSON válido con el formato {"carreras":[...]}, sin markdown, sin comillas decorativas ni explicaciones.'
+                    : 'Gaceta adjunta. Extrae las carreras y sus ejemplares.';
+
                 const body = {
-                    contents: [{ parts: [{ text: 'Gaceta adjunta. Extrae las carreras y sus ejemplares.' }, ...imgs] }],
+                    contents: [{ parts: [{ text: parteTexto }, ...imgs] }],
                     systemInstruction: { parts: [{ text: SYS }] },
-                    generationConfig: {
-                        temperature: 0,
-                        maxOutputTokens: 8192,
-                        responseMimeType: 'application/json',
-                        responseSchema: {
-                            type: 'OBJECT',
-                            properties: {
-                                carreras: {
-                                    type: 'ARRAY',
-                                    items: {
-                                        type: 'OBJECT',
-                                        properties: {
-                                            carrera: { type: 'INTEGER' },
-                                            hipodromo: { type: 'STRING' },
-                                            fecha: { type: 'STRING' },
-                                            distancia: { type: 'INTEGER' },
-                                            superficie: { type: 'STRING' },
-                                            premio: { type: 'NUMBER' },
-                                            ejemplares: {
-                                                type: 'ARRAY',
-                                                items: {
-                                                    type: 'OBJECT',
-                                                    properties: {
-                                                        numero: { type: 'INTEGER' },
-                                                        nombre: { type: 'STRING' },
-                                                        nacionalidad: { type: 'STRING' },
-                                                        pts: { type: 'NUMBER' }
+                    generationConfig: estricto
+                        ? { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: 'application/json' }
+                        : {
+                            temperature: 0,
+                            maxOutputTokens: 8192,
+                            responseMimeType: 'application/json',
+                            responseSchema: {
+                                type: 'OBJECT',
+                                properties: {
+                                    carreras: {
+                                        type: 'ARRAY',
+                                        items: {
+                                            type: 'OBJECT',
+                                            properties: {
+                                                carrera: { type: 'INTEGER' },
+                                                hipodromo: { type: 'STRING' },
+                                                fecha: { type: 'STRING' },
+                                                distancia: { type: 'INTEGER' },
+                                                superficie: { type: 'STRING' },
+                                                premio: { type: 'NUMBER' },
+                                                ejemplares: {
+                                                    type: 'ARRAY',
+                                                    items: {
+                                                        type: 'OBJECT',
+                                                        properties: {
+                                                            numero: { type: 'INTEGER' },
+                                                            nombre: { type: 'STRING' },
+                                                            nacionalidad: { type: 'STRING' },
+                                                            pts: { type: 'NUMBER' }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -349,7 +356,6 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
                                 }
                             }
                         }
-                    }
                 };
 
                 let ultimoError = null;
@@ -396,15 +402,25 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
                 throw new Error(ultimoError + ' El sistema ya probó todos los modelos Flash disponibles. Espera 1–2 min y reintenta; si persiste, usa otra clave de IA (aistudio.google.com/apikey).');
             }
 
+            let ultimoTexto = '';
             for (const durls of intentos) {
-                const texto = await pedirIA(durls);
-                estado.carreras = parsearJSON(texto);
+                ultimoTexto = await pedirIA(durls);
+                estado.carreras = parsearJSON(ultimoTexto);
                 if (estado.carreras.length > 0) break;
                 if (durls.length > 8) {
                     estadoIA.textContent = 'No se detectaron carreras con todas las páginas; reintentando con las primeras 8…';
                     clubUI.toast('Sin carreras con todas las páginas; reintentando con las primeras 8.', 'warning');
                 } else {
-                    estadoIA.textContent = 'La IA no detectó carreras. Pruebe con más páginas o mejor resolución.';
+                    estadoIA.textContent = 'La IA no devolvió carreras; haciendo un segundo intento (JSON estricto)…';
+                }
+            }
+
+            if (estado.carreras.length === 0) {
+                ultimoTexto = await pedirIA(intentos[intentos.length - 1], true);
+                estado.carreras = parsearJSON(ultimoTexto);
+                if (estado.carreras.length === 0) {
+                    console.warn('[gaceta] La IA respondió sin carreras. Texto recibido:\n', ultimoTexto);
+                    estadoIA.textContent = 'No se extrajeron carreras. Respuesta de la IA: "' + (ultimoTexto || '').slice(0, 220) + '"';
                 }
             }
 
@@ -415,6 +431,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
             resultadoGaceta.classList.remove('hidden');
             estadoIA.textContent = `Listo: ${estado.carreras.length} carrera(s), ${resPadron.nuevos} ejemplar(es) nuevos registrados.`;
             if (window.clubDB?.logAccion) window.clubDB.logAccion('GACETA_IA', `transcrita: ${estado.carreras.length} carreras, ${resPadron.nuevos} ejemplares nuevos`);
+            if (estado.carreras.length > 0) window.clubIndicador?.listo(`${estado.carreras.length} carrera(s) extraídas`);
         } catch (e) {
             console.error(e);
             estadoIA.textContent = 'ERROR: ' + (e.message || e);

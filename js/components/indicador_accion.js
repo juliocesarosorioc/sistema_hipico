@@ -11,7 +11,7 @@
     if (window.clubIndicador) return;
 
     var pill = null, txt = null, lblProg = null, barra = null;
-    var peticiones = 0, timerBarra = null;
+    var peticiones = 0, timerBarra = null, timerExito = null;
     var progreso = 0, activo = false, usaReal = false;
     var manualActivo = false, mensajeManual = '';
 
@@ -67,6 +67,8 @@
             pintarProgreso();
         }
         if (pill) {
+            clearTimeout(timerExito);
+            pill.classList.remove('club-exito');
             if (txt) txt.textContent = mensajeManual || mensajeParaUrl(url);
             pill.classList.remove('club-oculto');
             pill.classList.add('club-on');
@@ -140,6 +142,7 @@
             '.lineas-carrera i:nth-child(2){animation-delay:.16s}' +
             '.lineas-carrera i:nth-child(3){animation-delay:.32s}' +
             '@keyframes correr-l{0%{transform:translateX(8px);opacity:0}25%{opacity:1}100%{transform:translateX(-14px);opacity:0}}' +
+            '.club-pill.club-exito{animation:none;background:linear-gradient(135deg,#047857 0%,#059669 100%);border-color:#a7f3d0}' +
             '.club-barra{position:fixed;top:0;left:0;height:6px;width:0%;z-index:70;' +
             'background:linear-gradient(90deg,#34d399,#22c55e,#22d3ee);box-shadow:0 0 14px rgba(52,211,153,.95);transition:width .22s ease}';
         document.head.appendChild(style);
@@ -178,6 +181,7 @@
             if (manualActivo) pintar();
         },
         fin: function () {
+            clearTimeout(timerExito);
             mensajeManual = '';
             manualActivo = false;
             pintar();
@@ -191,6 +195,34 @@
             usaReal = true;
             progreso = Math.round(Math.min(1, v) * 100);
             pintarProgreso();
+        },
+        // Confirma visualmente que una tarea TERMINÓ con éxito (✓ verde).
+        // El aviso se oculta solo después de unos segundos.
+        listo: function (texto) {
+            clearInterval(timerBarra);
+            timerBarra = null;
+            clearTimeout(timerExito);
+            mensajeManual = '';
+            manualActivo = false;
+            activo = false;
+            usaReal = false;
+            peticiones = 0;
+            if (pill) {
+                if (txt) txt.textContent = '✓ ' + (texto || 'Listo');
+                pill.classList.add('club-on', 'club-exito');
+                pill.classList.remove('club-oculto');
+            }
+            progreso = 100;
+            pintarProgreso();
+            timerExito = setTimeout(function () {
+                if (pill) {
+                    pill.classList.add('club-oculto');
+                    pill.classList.remove('club-exito');
+                    if (txt) txt.textContent = 'Procesando…';
+                }
+                progreso = 0;
+                pintarProgreso();
+            }, 2400);
         }
     };
 
