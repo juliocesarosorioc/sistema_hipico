@@ -47,8 +47,18 @@
                             <input type="file" id="archivoGaceta" accept=".pdf,image/*" class="hidden">
                         </div>
                         <div id="previewGaceta" class="hidden mt-4">
-                            <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Vista previa (páginas a enviar a la IA):</p>
+                            <div class="flex items-center justify-between mb-2">
+                                <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Vista previa — toque una página para incluirla/excluirla</p>
+                                <span id="lblSeleccionPaginas" class="text-[10px] font-black text-cyan-700"></span>
+                            </div>
                             <div id="miniaturas" class="grid grid-cols-4 sm:grid-cols-6 gap-2"></div>
+                            <div class="flex items-center gap-2 mt-3">
+                                <span class="text-[10px] font-bold text-slate-500 uppercase">Enviar páginas:</span>
+                                <input id="rangoPaginas" placeholder="Ej: 1-4,6,8" class="w-24 border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold text-center outline-none focus:ring-2 focus:ring-cyan-500">
+                                <button id="btnAplicarRango" class="bg-slate-800 text-white text-[10px] font-bold px-3 py-1.5 rounded hover:bg-slate-900 transition-colors">Aplicar</button>
+                                <button id="btnTodasPaginas" class="border border-slate-300 text-slate-600 text-[10px] font-bold px-3 py-1.5 rounded hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 transition-colors">Todas</button>
+                                <button id="btnNingunaPagina" class="border border-slate-300 text-slate-600 text-[10px] font-bold px-3 py-1.5 rounded hover:bg-red-50 hover:text-red-600 hover:border-red-300 transition-colors">Ninguna</button>
+                            </div>
                         </div>
                         <div class="mt-4 flex items-center gap-3">
                             <label class="text-xs font-bold text-slate-600 uppercase">Páginas del PDF a leer</label>
@@ -115,6 +125,6 @@
     <script src="../js/components/ui.js"></script>
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
-    <script src="../js/gaceta.js?v=20260909-4"></script>
+    <script src="../js/gaceta.js?v=20260909-5"></script>
 </body>
 </html>

@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const estadoIA = document.getElementById('estadoIA');
     const maxPaginas = document.getElementById('maxPaginas');
     const miniaturas = document.getElementById('miniaturas');
+    const lblSeleccionPaginas = document.getElementById('lblSeleccionPaginas');
     const previewGaceta = document.getElementById('previewGaceta');
     const resultadoGaceta = document.getElementById('resultadoGaceta');
     const carrerasGaceta = document.getElementById('carrerasGaceta');
@@ -37,7 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    let estado = { imagenes: [], carreras: [] };
+    let estado = { imagenes: [], paginas: [], carreras: [] };
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
@@ -96,17 +97,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     canvas.height = Math.round(canvas.width * (vp.height / vp.width));
                     const ctx = canvas.getContext('2d');
                     await page.render({ canvasContext: ctx, viewport: vp }).promise;
-                    estado.imagenes.push(canvas.toDataURL('image/jpeg', 0.85));
-                    agregarMiniatura(estado.imagenes[estado.imagenes.length - 1]);
+                    estado.paginas.push({ num: i, durl: canvas.toDataURL('image/jpeg', 0.85), incluida: true });
                 }
                 estadoIA.textContent = `PDF: ${paginas} página(s) listas.`;
             } else {
                 const durl = await dataURLImagen(file);
-                estado.imagenes.push(durl);
-                agregarMiniatura(durl);
+                estado.paginas.push({ num: 1, durl, incluida: true });
                 estadoIA.textContent = 'Imagen lista.';
             }
-            previewGaceta.classList.remove('hidden');
+            actualizarSeleccion();
         } catch (e) {
             console.error(e);
             estadoIA.textContent = 'No se pudo leer el archivo. (¿PDF? ¿Imagen?).';
@@ -115,14 +114,80 @@ document.addEventListener('DOMContentLoaded', () => {
         validarHabilitacion();
     }
 
-    function agregarMiniatura(durl) {
-        const img = document.createElement('img');
-        img.src = durl;
-        img.className = 'rounded border border-slate-200 h-16 object-cover w-full';
-        miniaturas.appendChild(img);
+    function renderMiniaturas() {
+        miniaturas.innerHTML = '';
+        estado.paginas.forEach(p => {
+            const div = document.createElement('div');
+            div.className = `relative rounded border-2 p-0.5 cursor-pointer transition-all ${p.incluida ? 'border-emerald-400 hover:border-emerald-500' : 'border-slate-200 opacity-40 hover:opacity-70'}`;
+            div.dataset.num = p.num;
+            div.innerHTML = `
+                <span class="absolute top-0.5 left-0.5 z-10 bg-slate-900 text-white text-[9px] font-bold px-1 rounded">${p.num}</span>
+                <img src="${p.durl}" class="rounded h-16 object-cover w-full pointer-events-none">
+                <span class="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full ${p.incluida ? 'bg-emerald-500' : 'bg-white border border-slate-300'} text-[9px] flex items-center justify-center z-10 pointer-events-none">
+                    <i class="fas ${p.incluida ? 'fa-check text-white' : 'fa-circle text-slate-300'}"></i>
+                </span>`;
+            miniaturas.appendChild(div);
+        });
     }
 
-    function miniminiaturas() { miniaturas.innerHTML = ''; previewGaceta.classList.add('hidden'); }
+    function actualizarSeleccion() {
+        estado.imagenes = estado.paginas.filter(p => p.incluida).map(p => p.durl);
+        lblSeleccionPaginas.textContent = `Enviar ${estado.imagenes.length} de ${estado.paginas.length} página(s)`;
+        renderMiniaturas();
+        validarHabilitacion();
+    }
+
+    function parsearRangoPaginas(txt) {
+        const set = new Set();
+        (txt || '').split(',').forEach(part => {
+            part = part.trim();
+            if (!part) return;
+            const m = part.match(/^(\d+)\s*-\s*(\d+)$/);
+            if (m) {
+                const a = Math.min(+m[1], +m[2]);
+                const b = Math.max(+m[1], +m[2]);
+                for (let i = a; i <= b; i++) set.add(i);
+            } else if (/^\d+$/.test(part)) {
+                set.add(+part);
+            }
+        });
+        return set;
+    }
+
+    function miniminiaturas() {
+        miniaturas.innerHTML = '';
+        previewGaceta.classList.add('hidden');
+        estado.paginas = [];
+        if (lblSeleccionPaginas) lblSeleccionPaginas.textContent = '';
+    }
+
+    miniaturas.addEventListener('click', (e) => {
+        const t = e.target.closest('[data-num]');
+        if (!t) return;
+        const p = estado.paginas.find(x => x.num == t.dataset.num);
+        if (p) {
+            p.incluida = !p.incluida;
+            actualizarSeleccion();
+        }
+    });
+
+    document.getElementById('btnAplicarRango').addEventListener('click', () => {
+        const rango = document.getElementById('rangoPaginas').value.trim();
+        const set = parsearRangoPaginas(rango);
+        if (!set.size) return clubUI.toast('Formato de páginas: 1-4,6,8', 'warning');
+        estado.paginas.forEach(p => p.incluida = set.has(p.num));
+        actualizarSeleccion();
+    });
+
+    document.getElementById('btnTodasPaginas').addEventListener('click', () => {
+        estado.paginas.forEach(p => p.incluida = true);
+        actualizarSeleccion();
+    });
+
+    document.getElementById('btnNingunaPagina').addEventListener('click', () => {
+        estado.paginas.forEach(p => p.incluida = false);
+        actualizarSeleccion();
+    });
 
     function validarHabilitacion() {
         btnTransformar.disabled = !(claveOpenAI.value.trim() && estado.imagenes.length > 0);
