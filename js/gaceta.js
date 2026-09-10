@@ -224,6 +224,10 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
 
                 const datos = await resp.json();
                 texto = (datos.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '').trim();
+                if (!texto) {
+                    ultimoError = `Modelo ${model} respondió vacío, probando otro...`;
+                    continue;
+                }
                 break;
             }
 
@@ -246,19 +250,42 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
         validarHabilitacion();
     });
 
+    function coaccionarCarreras(v) {
+        if (Array.isArray(v)) return v;
+        if (v && typeof v === 'object') {
+            if (Array.isArray(v.carrera)) return v.carrera;
+            const vals = Object.values(v);
+            if (vals.length && typeof vals[0] === 'object') return vals;
+        }
+        return [];
+    }
+
     function parsearJSON(texto) {
         let t = (texto || '').trim();
-        try { return JSON.parse(t).carreras || JSON.parse(t).length ? JSON.parse(t) : []; } catch (e) { /* sigue */ }
+        const cercos = t.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (cercos) t = cercos[1].trim();
+        const intentos = [];
+        try { intentos.push(JSON.parse(t)); } catch (e) { /* sigue */ }
         const ini = t.indexOf('{');
         const fin = t.lastIndexOf('}');
         if (ini >= 0 && fin > ini) {
-            try { return JSON.parse(t.slice(ini, fin + 1)).carreras || []; } catch (e2) { /* sigue */ }
+            try { intentos.push(JSON.parse(t.slice(ini, fin + 1))); } catch (e2) { /* sigue */ }
+        }
+        for (const obj of intentos) {
+            if (Array.isArray(obj)) return obj;
+            if (obj && typeof obj === 'object') {
+                const c = coaccionarCarreras(obj.carreras);
+                if (c.length) return c;
+                const c2 = coaccionarCarreras(obj.carrera);
+                if (c2.length) return c2;
+            }
         }
         return [];
     }
 
     async function registrarPadron() {
         let nuevos = 0, vinculados = 0;
+        if (!Array.isArray(estado.carreras)) estado.carreras = [];
         for (const c of estado.carreras) {
             c.ejemplares = c.ejemplares || [];
             for (const ej of c.ejemplares) {
