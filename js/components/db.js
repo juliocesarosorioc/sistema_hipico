@@ -2,6 +2,13 @@
 // Propósito: Conexión única y reusable a Supabase.
 // Todas las páginas deben cargar: supabase CDN -> db.js -> conexion.js
 
+// Carga el indicador global de acción (caballito corriendo + % de avance)
+// ANTES de crear el cliente de Supabase, para que toda consulta quede
+// contabilizada (el cliente debe usar el fetch "vivo" de la página).
+if (!window.clubIndicador) {
+    document.write('<script src="../js/components/indicador_accion.js"><\/script>');
+}
+
 const SUPABASE_URL = 'https://dbkvnqzchtcabhiaqdyi.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia3ZucXpjaHRjYWJoaWFxZHlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzNTkxOTYsImV4cCI6MjEwMzkzNTE5Nn0._ciSMFx_7Ogrt9XAy9YJzJTb2FKYWSwxf_0ryvgU35E';
 
@@ -16,7 +23,11 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
         return;
     }
 
-    window.__clubSupabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // "fetch" vivo: cada llamada pasa por window.fetch (que el indicador
+    // contabiliza), aunque el cliente se haya creado antes de montarlo.
+    window.__clubSupabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: { fetch: (...args) => window.fetch(...args) }
+    });
     window.supabase = window.__clubSupabaseClient;
     console.log('Conexión con Supabase configurada exitosamente.');
 })();

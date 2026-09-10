@@ -133,6 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const ctx = canvas.getContext('2d');
                     await page.render({ canvasContext: ctx, viewport: vp }).promise;
                     estado.paginas.push({ num: i, durl: canvas.toDataURL('image/jpeg', 0.85), incluida: true });
+                    window.clubIndicador?.progreso(i / paginas)
                 }
                 estadoIA.textContent = `PDF: ${paginas} página(s) listas.`;
             } else {

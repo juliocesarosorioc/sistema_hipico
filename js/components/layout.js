@@ -3,11 +3,13 @@
 // y aplicar las mejores prácticas de UI/UX: drawer móvil con overlay, persistencia
 // de estado, accesibilidad (ARIA / teclado) y colapso a solo iconos en escritorio.
 
-// El indicador global de acción (caballito corriendo) se inserta como script
-// síncrono para que capture también las primeras cargas de cada módulo.
+// El indicador global de acción (caballito corriendo) lo carga db.js ANTES
+// de crear el cliente de Supabase. layout.js solo lo garantiza si por alguna
+// razón la página aún no lo tiene (evita una segunda carga).
 (function () {
     const paginaBase = window.location.pathname.split('/').pop() || 'index.html';
     if (paginaBase === 'index.html' || paginaBase === 'portal.html') return;
+    if (window.clubIndicador) return;
     document.write('<script src="../js/components/indicador_accion.js"><\/script>');
 })();
 
