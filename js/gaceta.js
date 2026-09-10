@@ -296,7 +296,7 @@ Para cada carrera devuelve:
   - superficie: una de ARENA, CESPED, FANGO, TAPETA u otra si se lee explícita; si no ARENA
   - premio: número si se lee (ej: 15000), si no 0
   - ejemplares: lista con numero (puesto/orden del ejemplar), nombre (MAYÚSCULAS, EXACTO como aparece), nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si no se indica usa VE), valor (monta/valor del ejemplar: número si aparece, si no 0. Acepta también la clave pts con el mismo significado)
-REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un ejemplar aparece repetido entre páginas, mantenlo tal cual. Si el documento no tiene carreras, devuelve {"carreras":[]}.
+REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGISTRA TODOS los ejemplares de cada carrera sin omitir ninguno (todos los números de participante que aparezcan). Si un ejemplar aparece repetido entre páginas, mantenlo tal cual. Si el documento no tiene carreras, devuelve {"carreras":[]}.
 `;
 
         const intentos = estado.imagenes.length > 8

@@ -104,9 +104,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     function contarCarreras() {
         if (lblTotalCarreras) lblTotalCarreras.textContent = carrerasBol.length;
-        if (contenedorCarreras.querySelector('.empty-ensamblaje')) {
-            contenedorCarreras.querySelector('.empty-ensamblaje').classList.toggle('hidden', carrerasBol.length > 0);
-        }
+        const empty = contenedorCarreras.querySelector('.empty-ensamblaje');
+        if (empty) empty.classList.toggle('hidden', carrerasBol.length > 0);
     }
 
     function filaCaballoCard(c) {
@@ -146,7 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span><i class="fas fa-horse-head text-amber-500 mr-1"></i> Ejemplares</span>
                 <span class="cont-caballos-card bg-slate-100 text-slate-600 px-1.5 rounded-full font-black">0</span>
             </div>
-            <div class="lista-caballos-card px-2 py-1 space-y-1 overflow-y-auto max-h-56 flex-1"></div>
+            <div class="lista-caballos-card px-2 py-1 space-y-1 overflow-y-auto max-h-72 flex-1"></div>
             <div class="add-caballo-card border-t border-slate-200 p-2 space-y-1 bg-slate-50">
                 <div class="flex gap-1 items-center">
                     <input type="text" class="nuevo-num w-10 border border-slate-300 rounded px-0.5 py-1 text-xs font-bold text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="N°">
@@ -244,9 +243,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const numero = fila.querySelector('.in-cab-num').value.trim();
             const nombre = fila.querySelector('.in-cab-nom').value.trim().toUpperCase();
             const nacionalidad = fila.querySelector('.in-cab-nac').value;
-            const valor = parseFloat(fila.querySelector('.in-cab-valor').value);
+            // Valor en blanco se toma como 0: NO se descarta el ejemplar
+            const valor = parseFloat(fila.querySelector('.in-cab-valor').value) || 0;
             if (!numero && !nombre) return;
-            if (numero && nombre && !isNaN(valor)) {
+            if (numero && nombre) {
                 const clave = nombre + '|' + nacionalidad;
                 if (clavesNombreNac.has(clave)) { caballosArr.push(null); return; }
                 clavesNombreNac.add(clave);
@@ -658,9 +658,6 @@ document.addEventListener('DOMContentLoaded', () => {
         cargarTasaGlobal(); cargarHipodromos(); cargarGrupos(); cargarEjemplares(); cargarTablas();
     });
 
-    // El catálogo se espera UNA vez y se reutiliza para el prellenado.
-    const catalogoListo = Promise.all([cargarHipodromos(), cargarGrupos(), cargarEjemplares()]);
-
     // ==========================================
     // AÑADIR CARRERA DESDE LOS PARÁMETROS
     // ==========================================
@@ -731,33 +728,54 @@ document.addEventListener('DOMContentLoaded', () => {
         limpiar('gaceta_prellenado');
         if (carreras.length === 0) return;
 
-        await catalogoListo;
-
-        carreras.forEach(pre => {
-            const caballos = (pre.caballos || []).map(c => ({
-                numero: c.numero, nombre: c.nombre, nacionalidad: c.nacionalidad || 'VE',
-                valor: c.valor ?? c.pts ?? null
-            })).filter(c => c.nombre);
-            const card = crearCardCarrera({
-                hipodromo: pre.hipodromo || '',
-                carrera: pre.carrera || '',
-                distancia: pre.distancia || '',
-                superficie: pre.superficie || '',
-                premio: pre.premio || premioTabla.value || 100,
-                caballos
-            });
-            if (pre.hipodromo) {
-                // Asegurar que el hipódromo quede en el catálogo (los propios de la gaceta)
-                const selHipo = document.getElementById('hipodromoTabla');
-                if (![...selHipo.options].some(o => o.value.toUpperCase() === pre.hipodromo.toUpperCase())) {
-                    asegurarHipodromoEnDB(pre.hipodromo);
+        // Las cards se dibujan INMEDIATAMENTE, sin esperar catálogos.
+        // Los catálogos (hipódromos/grupos/padrón) se cargan por detrás;
+        // si fallan no bloquean el ensamblaje.
+        try {
+            carreras.forEach(pre => {
+                const caballos = (pre.caballos || []).map(c => ({
+                    numero: c.numero, nombre: c.nombre, nacionalidad: c.nacionalidad || 'VE',
+                    valor: c.valor ?? c.pts ?? null
+                })).filter(c => c.nombre);
+                crearCardCarrera({
+                    hipodromo: pre.hipodromo || '',
+                    carrera: pre.carrera || '',
+                    distancia: pre.distancia || '',
+                    superficie: pre.superficie || '',
+                    premio: pre.premio || premioTabla.value || 100,
+                    caballos
+                });
+                if (pre.hipodromo) {
+                    // Asegurar que el hipódromo quede en el catálogo (los propios de la gaceta)
+                    const selHipo = document.getElementById('hipodromoTabla');
+                    if (![...selHipo.options].some(o => o.value.toUpperCase() === pre.hipodromo.toUpperCase())) {
+                        asegurarHipodromoEnDB(pre.hipodromo);
+                    }
                 }
-            }
-            void card;
-        });
+            });
+        } catch (err) {
+            console.error('Error al montar cards del ensamblaje:', err);
+        }
+
+        // Catálogos en segundo plano (no bloquean): reformado y tolerante a fallos
+        Promise.all([cargarHipodromos(), cargarGrupos(), cargarEjemplares()].map(p => p.catch(() => {})))
+            .catch(() => { /* silencioso */ });
 
         clubUI.toast(`${carreras.length} carrera(s) cargada(s) desde la gaceta. Revise los VALORES y publique.`, 'success');
         contenedorCarreras.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // Botón de rescate manual: vuelve a pegar las carreras guardadas por la gaceta
+    const btnPegarGaceta = document.getElementById('btnPegarGaceta');
+    if (btnPegarGaceta) {
+        btnPegarGaceta.addEventListener('click', () => {
+            // Restaura en storage lo que el botón de gaceta guarda, y aplica de nuevo
+            const leer = (k) => localStorage.getItem(k) || sessionStorage.getItem(k);
+            const arr = leer('ensamblaje_carreras');
+            const solo = leer('gaceta_prellenado');
+            if (!arr && !solo) return clubUI.toast('El navegador no tiene carreras guardadas de la gaceta.', 'warning');
+            aplicarPrellenadoGaceta();
+        });
     }
 
     // ==========================================
@@ -766,5 +784,7 @@ document.addEventListener('DOMContentLoaded', () => {
     llenarSuperficies();
     cargarTasaGlobal();
     cargarTablas();
+    // Catálogos: cargan siempre, pero nunca bloquean el ensamblaje si fallan
+    [cargarHipodromos(), cargarGrupos(), cargarEjemplares()].forEach(p => p && p.catch && p.catch(() => {}));
     aplicarPrellenadoGaceta();
 });
