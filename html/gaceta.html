@@ -87,10 +87,14 @@
                         <button id="btnGuardarClave" class="mt-2 w-full bg-emerald-600 text-white font-bold py-2 rounded-lg hover:bg-emerald-700 transition-colors text-xs uppercase tracking-wide">
                             <i class="fas fa-save mr-1"></i> Guardar clave (en este navegador)
                         </button>
-                        <button id="btnTransformar" disabled class="mt-4 w-full bg-cyan-600 text-white font-bold py-3 rounded-lg shadow hover:bg-cyan-700 transition-colors text-sm uppercase tracking-wide">
+<button id="btnTransformar" disabled class="mt-4 w-full bg-cyan-600 text-white font-bold py-3 rounded-lg shadow hover:bg-cyan-700 transition-colors text-sm uppercase tracking-wide">
                             <i class="fas fa-wand-magic-sparkles mr-2"></i> Transformar con IA (gratis)
                         </button>
+                        <button id="btnProbarClave" class="mt-2 w-full bg-slate-700 text-white font-bold py-2 rounded-lg hover:bg-slate-800 transition-colors text-[11px] uppercase tracking-wide">
+                            <i class="fas fa-plug-circle-check mr-1"></i> Probar clave de IA
+                        </button>
                         <p id="estadoIA" class="text-[11px] text-slate-500 mt-2 text-center"></p>
+                        <div id="diagGaceta" class="hidden mt-2 text-[10px] font-mono bg-slate-900 text-emerald-300 rounded-lg p-2 whitespace-pre-wrap break-words max-h-44 overflow-y-auto"></div>
                     </div>
                 </div>
 
@@ -110,7 +114,7 @@
 
                 <p class="text-[11px] text-slate-500 italic leading-relaxed">
                     <i class="fas fa-lightbulb mr-1 text-amber-500"></i>
-                    La IA transcribe la gaceta tal cual: no inventa nombres. Usted revisa Puntos (PTS), premio, distancia y
+La IA transcribe la gaceta tal cual: no inventa nombres. Usted revisa Valor, premio, distancia y
                     superficie de cada carrera, y con <b>Cargar en el Ensamblaje</b> queda lista para publicar. Los ejemplares
                     se registran en el padrón por nombre + nacionalidad (los homónimos se desambiguan por país).
                 </p>
@@ -143,6 +147,6 @@
     <script src="../js/components/ui.js"></script>
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
-    <script src="../js/gaceta.js?v=20260909-13"></script>
+    <script src="../js/gaceta.js?v=20260909-14"></script>
 </body>
 </html>

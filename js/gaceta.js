@@ -91,6 +91,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
     claveOpenAI.addEventListener('input', () => { localStorage.removeItem(CLAVE_KEY); validarHabilitacion(); });
 
+    // Prueba rápida de la clave: valida en segundos si el problema es la clave,
+    // la conexión o el PDF (sin gastar cuota en una extracción completa).
+    document.getElementById('btnProbarClave')?.addEventListener('click', async () => {
+        const k = claveOpenAI.value.trim();
+        const diagEl = document.getElementById('diagGaceta');
+        if (!k) return clubUI.toast('Escriba primero la clave.', 'warning');
+        const btn = document.getElementById('btnProbarClave');
+        btn.disabled = true;
+        try {
+            const lista = await listaModelosFlash(k);
+            if (!lista.length) {
+                if (diagEl) { diagEl.classList.remove('hidden'); diagEl.textContent = 'clave: NO VÁLIDA o sin conexión (Google no devolvió modelos). Revisa la clave en aistudio.google.com/apikey.'; }
+                clubUI.toast('La clave no responde. Revísala en aistudio.google.com/apikey.', 'error');
+                return;
+            }
+            let ok = false, detalle = '', codigo = 0;
+            try {
+                const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${lista[0]}:generateContent`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: 'Responde solo con: OK' }] }] })
+                });
+                codigo = r.status; ok = r.ok;
+                detalle = ok
+                    ? String((await r.json()).candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '').slice(0, 40)
+                    : (await r.text()).slice(0, 160);
+            } catch (ePrueba) { detalle = ePrueba.message || 'red'; }
+            if (diagEl) {
+                diagEl.classList.remove('hidden');
+                diagEl.textContent = `clave: ${ok ? 'VÁLIDA' : 'PROBLEMA (HTTP ' + codigo + ')'}\nmodelos flash: ${lista.slice(0, 6).join(', ')}${lista.length > 6 ? '…' : ''}\nprueba mínima: ${ok ? 'OK (' + detalle + ')' : detalle}`;
+            }
+            clubUI.toast(ok ? 'Clave válida y conexión OK. Si la extracción falla, el problema es el PDF o la cuota.' : `La clave lista modelos pero la prueba falló (HTTP ${codigo}).`, ok ? 'success' : 'error');
+        } catch (e) {
+            clubUI.toast('Sin conexión con Google IA: ' + (e.message || 'red'), 'error');
+        }
+        btn.disabled = false;
+    });
+
     // ---------- CARGA DE ARCHIVO ----------
     zonaDrop.addEventListener('click', () => inputArchivo.click());
     inputArchivo.addEventListener('change', (e) => { if (e.target.files[0]) leerArchivo(e.target.files[0]); });
@@ -132,7 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     canvas.height = Math.round(canvas.width * (vp.height / vp.width));
                     const ctx = canvas.getContext('2d');
                     await page.render({ canvasContext: ctx, viewport: vp }).promise;
-                    estado.paginas.push({ num: i, durl: canvas.toDataURL('image/jpeg', 0.9), incluida: true });
+                    estado.paginas.push({ num: i, durl: canvas.toDataURL('image/jpeg', 0.75), incluida: true });
                     window.clubIndicador?.progreso(i / paginas)
                 }
                 estadoIA.textContent = `PDF: ${paginas} página(s) listas.`;
@@ -299,23 +337,39 @@ Para cada carrera devuelve:
 REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGISTRA TODOS los ejemplares de cada carrera sin omitir ninguno (todos los números de participante que aparezcan). Si un ejemplar aparece repetido entre páginas, mantenlo tal cual. Si el documento no tiene carreras, devuelve {"carreras":[]}.
 `;
 
-        const intentos = estado.imagenes.length > 8
-            ? [estado.imagenes, estado.imagenes.slice(0, 8)]
-            : [estado.imagenes];
-
         try {
-            async function pedirIA(durls, estricto) {
+            // ---------- Motor de extracción por LOTES ----------
+            // Cada lote (3 páginas) es liviano: evita el HTTP 400 por petición
+            // gigante y no quema la cuota gratuita de un solo golpe.
+            const esperar = (ms) => new Promise(r => setTimeout(r, ms));
+            const diagEl = document.getElementById('diagGaceta');
+            const diag = { respondio: '', ultimoError: '' };
+            const pesoKB = (durls) => Math.round(durls.reduce((a, d) => a + (((d.split(',')[1]) || '').length * 3 / 4), 0) / 1024);
+            function pintarDiag(extra) {
+                if (!diagEl) return;
+                diagEl.classList.remove('hidden');
+                diagEl.textContent =
+                    `clave: ${clave ? clave.slice(0, 4) + '…' + clave.slice(-3) + ' (' + clave.length + ' car.)' : 'AUSENTE'}\n` +
+                    `páginas elegidas: ${estado.imagenes.length} · peso aprox: ${(pesoKB(estado.imagenes) / 1024).toFixed(1)} MB\n` +
+                    (diag.respondio ? `respondió: ${diag.respondio}\n` : '') +
+                    (diag.ultimoError ? `último error: ${diag.ultimoError}\n` : '') +
+                    (extra || '');
+            }
+
+            const descubiertos = await listaModelosFlash(clave);
+            const modelos = [...new Set(descubiertos.concat(MODELOS_GEMINI))].slice(0, 4);
+            if (!modelos.length) throw new Error('Tu clave no devolvió modelos Flash. Verifica la clave en aistudio.google.com/apikey y tu conexión.');
+
+            function armarBody(durls, estricto) {
                 const imgs = durls.map(d => {
                     const [, meta] = d.split(',');
                     const mime = d.split(';')[0].replace('data:', '');
                     return { inline_data: { mime_type: mime, data: meta } };
                 });
-
                 const parteTexto = estricto
-                    ? 'Gaceta adjunta. Extrae las carreras y responde ÚNICAMENTE con JSON válido con el formato {"carreras":[...]}, sin markdown, sin comillas decorativas ni explicaciones.'
+                    ? 'Gaceta adjunta. Extrae las carreras y responde ÚNICAMENTE con JSON válido con el formato {"carreras":[...]}, sin markdown, sin decoraciones ni explicaciones.'
                     : 'Gaceta adjunta. Extrae las carreras y sus ejemplares.';
-
-                const body = {
+                return {
                     contents: [{ parts: [{ text: parteTexto }, ...imgs] }],
                     systemInstruction: { parts: [{ text: SYS }] },
                     generationConfig: estricto
@@ -357,81 +411,145 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                             }
                         }
                 };
-
-                let ultimoError = null;
-                const esperar = (ms) => new Promise(r => setTimeout(r, ms));
-                const descubiertos = await listaModelosFlash(clave);
-                const modelos = [...new Set(descubiertos.concat(MODELOS_GEMINI))].slice(0, 12);
-                for (let i = 0; i < modelos.length; i++) {
-                    const model = modelos[i];
-                    if (i > 0) await esperar(1000);
-                    let resp;
-                    try {
-                        resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': clave },
-                            body: JSON.stringify(body)
-                        });
-                    } catch (errNet) {
-                        ultimoError = `Sin conexión al probar ${model} (${errNet.message || 'red'}).`;
-                        continue;
-                    }
-
-                    if (resp.status === 429) {
-                        throw new Error('La cuota gratuita de IA está agotada en este momento. Espera unos minutos y reintenta, o usa otra clave de IA.');
-                    }
-                    if (resp.status === 404 || resp.status === 503) {
-                        ultimoError = `Modelo ${model} no disponible o saturado (HTTP ${resp.status}), probando el siguiente...`;
-                        continue;
-                    }
-                    if (!resp.ok) {
-                        const txtErr = await resp.text();
-                        let msg = `Error de IA (HTTP ${resp.status}).`;
-                        try { msg = 'IA: ' + (JSON.parse(txtErr).error?.message || msg); } catch (e) { msg = txtErr.slice(0, 180); }
-                        throw new Error(msg);
-                    }
-
-                    const datos = await resp.json();
-                    const texto = (datos.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '').trim();
-                    if (!texto) {
-                        ultimoError = `Modelo ${model} respondió vacío, probando el siguiente...`;
-                        continue;
-                    }
-                    return texto;
-                }
-                throw new Error(ultimoError + ' El sistema ya probó todos los modelos Flash disponibles. Espera 1–2 min y reintenta; si persiste, usa otra clave de IA (aistudio.google.com/apikey).');
             }
 
-            let ultimoTexto = '';
-            for (const durls of intentos) {
-                ultimoTexto = await pedirIA(durls);
-                estado.carreras = parsearJSON(ultimoTexto);
-                if (estado.carreras.length > 0) break;
-                if (durls.length > 8) {
-                    estadoIA.textContent = 'No se detectaron carreras con todas las páginas; reintentando con las primeras 8…';
-                    clubUI.toast('Sin carreras con todas las páginas; reintentando con las primeras 8.', 'warning');
-                } else {
-                    estadoIA.textContent = 'La IA no devolvió carreras; haciendo un segundo intento (JSON estricto)…';
+            async function postIA(url, body, ms) {
+                const ctl = new AbortController();
+                const t = setTimeout(() => ctl.abort(), ms || 120000);
+                try {
+                    return await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': clave },
+                        body: JSON.stringify(body), signal: ctl.signal
+                    });
+                } finally { clearTimeout(t); }
+            }
+
+            async function llamarModelo(model, durls, estricto) {
+                let resp;
+                try {
+                    resp = await postIA(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, armarBody(durls, estricto));
+                } catch (errNet) {
+                    return { ok: false, tipo: 'salto', msg: `Sin conexión al probar ${model} (${errNet.name === 'AbortError' ? 'tiempo agotado (120s)' : (errNet.message || 'red')}).` };
+                }
+                if (resp.status === 429) return { ok: false, tipo: 'cuota', msg: `Cuota agotada en ${model} (HTTP 429).` };
+                if (resp.status === 404 || resp.status === 503) return { ok: false, tipo: 'salto', msg: `Modelo ${model} no disponible o saturado (HTTP ${resp.status}).` };
+                if (!resp.ok) {
+                    const txtErr = await resp.text().catch(() => '');
+                    let msg = `Error de IA (HTTP ${resp.status}).`;
+                    try { msg = 'IA: ' + (JSON.parse(txtErr).error?.message || msg); } catch (e) { if (txtErr) msg = txtErr.slice(0, 220); }
+                    if (/API_KEY_INVALID|API key not valid|API_KEY_NOT_FOUND|PERMISSION_DENIED/i.test(msg)) {
+                        return { ok: false, tipo: 'clave', msg };
+                    }
+                    if (resp.status === 400 && durls.length > 1 && /large|tokens|size|payload|maximum|invalid argument/i.test(msg)) {
+                        return { ok: false, tipo: 'grande', msg };
+                    }
+                    return { ok: false, tipo: 'duro', msg };
+                }
+                let datos;
+                try { datos = await resp.json(); }
+                catch (e) { return { ok: false, tipo: 'salto', msg: `Modelo ${model} devolvió respuesta ilegible.` }; }
+                const texto = (datos.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '').trim();
+                if (!texto) {
+                    const fr = datos.candidates?.[0]?.finishReason || datos.promptFeedback?.blockReason || 'vacío';
+                    return { ok: false, tipo: 'salto', msg: `Modelo ${model} respondió vacío (${fr}).` };
+                }
+                return { ok: true, texto };
+            }
+
+            let esperaCuotaHecha = false;
+            async function extraerLote(nombresPag, durls, etiqueta) {
+                for (let i = 0; i < modelos.length; i++) {
+                    const model = modelos[i];
+                    if (i > 0) await esperar(1200);
+                    let r = await llamarModelo(model, durls, false);
+                    let carreras = [];
+                    if (r.ok) {
+                        carreras = parsearJSON(r.texto);
+                        if (carreras.length === 0) {
+                            estadoIA.textContent = `${etiqueta}: sin carreras, segundo intento (JSON estricto)…`;
+                            const r2 = await llamarModelo(model, durls, true);
+                            if (r2.ok) { r = r2; carreras = parsearJSON(r2.texto); }
+                            else { r = r2; }
+                        }
+                        if (r.ok && carreras.length > 0) { diag.respondio = model; return carreras; }
+                        if (r.ok) { diag.ultimoError = `${etiqueta}: ${model} devolvió 0 carreras.`; pintarDiag(); continue; }
+                    }
+                    if (r.tipo === 'clave') throw new Error(r.msg + ' Revisa la clave en aistudio.google.com/apikey y guárdala de nuevo.');
+                    if (r.tipo === 'cuota') {
+                        if (!esperaCuotaHecha) {
+                            esperaCuotaHecha = true;
+                            estadoIA.textContent = 'Cuota gratuita alcanzada. Esperando 65 segundos para reintentar automáticamente…';
+                            pintarDiag('esperando 65s por cuota…');
+                            await esperar(65000);
+                            i--;
+                            continue;
+                        }
+                        throw new Error('La cuota gratuita de IA está agotada. Espera unos minutos y reintenta, o usa otra clave de IA (aistudio.google.com/apikey).');
+                    }
+                    if (r.tipo === 'grande' && durls.length > 1) {
+                        const mitad = Math.ceil(durls.length / 2);
+                        estadoIA.textContent = `${etiqueta}: lote muy pesado, dividiendo en 2…`;
+                        const a = await extraerLote(nombresPag.slice(0, mitad), durls.slice(0, mitad), etiqueta + 'a');
+                        const b = await extraerLote(nombresPag.slice(mitad), durls.slice(mitad), etiqueta + 'b');
+                        return a.concat(b);
+                    }
+                    diag.ultimoError = `${etiqueta}: ${r.msg}`;
+                    pintarDiag();
+                }
+                throw new Error(diag.ultimoError + ' Se probaron los modelos Flash disponibles para este lote.');
+            }
+
+            function fusionarCarreras(nuevas) {
+                for (const c of (nuevas || [])) {
+                    const key = `${(c.hipodromo || '').toUpperCase()}|${c.carrera ?? ''}`;
+                    const ex = (key === '|') ? null : estado.carreras.find(x => `${(x.hipodromo || '').toUpperCase()}|${x.carrera ?? ''}` === key);
+                    if (!ex) { estado.carreras.push(c); continue; }
+                    const nums = new Set((ex.ejemplares || []).map(e => String(e.numero)));
+                    (c.ejemplares || []).forEach(e => { if (!nums.has(String(e.numero))) { ex.ejemplares.push(e); nums.add(String(e.numero)); } });
+                }
+            }
+
+            const incluidas = estado.paginas.filter(p => p.incluida);
+            const TAM_LOTE = 3;
+            const lotes = [];
+            for (let i = 0; i < incluidas.length; i += TAM_LOTE) lotes.push(incluidas.slice(i, i + TAM_LOTE));
+            pintarDiag('modelos a probar por lote: ' + modelos.join(', '));
+
+            estado.carreras = [];
+            let loteN = 0;
+            for (const lote of lotes) {
+                loteN++;
+                const etiqueta = `Lote ${loteN}/${lotes.length} (pág. ${lote.map(p => p.num).join(',')})`;
+                estadoIA.textContent = `${etiqueta}: enviando a la IA…`;
+                window.clubIndicador?.progreso(loteN / lotes.length);
+                pintarDiag(etiqueta + ' en curso…');
+                try {
+                    const carreras = await extraerLote(lote.map(p => p.num), lote.map(p => p.durl), etiqueta);
+                    fusionarCarreras(carreras);
+                    estadoIA.textContent = `${etiqueta}: ${carreras.length} carrera(s). Total acumulado: ${estado.carreras.length}.`;
+                    pintarDiag();
+                } catch (errLote) {
+                    if (/cuota|clave|API key/i.test(errLote.message || '')) throw errLote;
+                    diag.ultimoError = `${etiqueta}: ${errLote.message}`;
+                    pintarDiag();
+                    clubUI.toast(`${etiqueta} falló (${errLote.message}). Se continúa con el siguiente.`, 'error');
                 }
             }
 
             if (estado.carreras.length === 0) {
-                ultimoTexto = await pedirIA(intentos[intentos.length - 1], true);
-                estado.carreras = parsearJSON(ultimoTexto);
-                if (estado.carreras.length === 0) {
-                    console.warn('[gaceta] La IA respondió sin carreras. Texto recibido:\n', ultimoTexto);
-                    estadoIA.textContent = 'No se extrajeron carreras. Respuesta de la IA: "' + (ultimoTexto || '').slice(0, 220) + '"';
-                }
+                estadoIA.textContent = 'No se extrajeron carreras. Revisa el diagnóstico (caja negra debajo del botón) y reintenta con menos páginas o con otra clave.';
+                clubUI.toast('La IA no devolvió carreras. Mira el diagnóstico para el motivo exacto.', 'error');
+            } else {
+                const resPadron = await registrarPadron();
+                guardarHistorial();
+                renderCarreras(resPadron);
+
+                resultadoGaceta.classList.remove('hidden');
+                estadoIA.textContent = `Listo: ${estado.carreras.length} carrera(s), ${resPadron.nuevos} ejemplar(es) nuevos registrados.`;
+                if (window.clubDB?.logAccion) window.clubDB.logAccion('GACETA_IA', `transcrita: ${estado.carreras.length} carreras, ${resPadron.nuevos} ejemplares nuevos`);
+                window.clubIndicador?.listo(`${estado.carreras.length} carrera(s) extraídas`);
             }
-
-            const resPadron = await registrarPadron();
-            guardarHistorial();
-            renderCarreras(resPadron);
-
-            resultadoGaceta.classList.remove('hidden');
-            estadoIA.textContent = `Listo: ${estado.carreras.length} carrera(s), ${resPadron.nuevos} ejemplar(es) nuevos registrados.`;
-            if (window.clubDB?.logAccion) window.clubDB.logAccion('GACETA_IA', `transcrita: ${estado.carreras.length} carreras, ${resPadron.nuevos} ejemplares nuevos`);
-            if (estado.carreras.length > 0) window.clubIndicador?.listo(`${estado.carreras.length} carrera(s) extraídas`);
         } catch (e) {
             console.error(e);
             estadoIA.textContent = 'ERROR: ' + (e.message || e);
