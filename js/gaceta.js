@@ -122,7 +122,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 const buf = await file.arrayBuffer();
                 const pdf = await window.pdfjsLib.getDocument({ data: buf, disableWorker: true }).promise;
-                const paginas = Math.min(parseInt(maxPaginas.value) || 8, pdf.numPages);
+                const capPaginas = parseInt(maxPaginas.value, 10);
+                const paginas = (capPaginas > 0 ? Math.min(capPaginas, pdf.numPages) : pdf.numPages);
                 for (let i = 1; i <= paginas; i++) {
                     const page = await pdf.getPage(i);
                     const vp = page.getViewport({ scale: 1.6 });
@@ -512,6 +513,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
             caballos
         };
         sessionStorage.setItem('gaceta_prellenado', JSON.stringify(carrera));
+        localStorage.setItem('gaceta_prellenado', JSON.stringify(carrera));
         clubUI.toast('Carrera enviada al Ensamblaje. Revise y publique.', 'success');
         setTimeout(() => location.href = 'tablas.html', 600);
     });

@@ -546,14 +546,72 @@ document.addEventListener('DOMContentLoaded', () => {
         cargarTasaGlobal(); cargarHipodromos(); cargarGrupos(); cargarEjemplares(); cargarTablas();
     });
 
+    // El catálogo (hipódromos, grupos, ejemplares) se espera UNA vez y se
+    // reutiliza para el prellenado; así no se borra la selección al re-renderizar.
+    const catalogoListo = Promise.all([cargarHipodromos(), cargarGrupos(), cargarEjemplares()]);
+
     // Arranque
     llenarSuperficies();
     cargarTasaGlobal();
-    cargarHipodromos();
-    cargarGrupos();
-    cargarEjemplares();
     cargarTablas();
     actualizarPremio();
+    actualizarVistaPrevia();
+
+    // ==========================================
+    // VISTA PREVIA DEL ENSAMBLAJE (en vivo)
+    // ==========================================
+    function actualizarVistaPrevia() {
+        const cont = document.getElementById('vistaPreviaEnsamblaje');
+        if (!cont) return;
+        const hipo = (document.getElementById('hipodromoTabla').value || '').trim().toUpperCase() || '—';
+        const carrera = (document.getElementById('carreraTabla').value || '').trim() || '—';
+        const dist = (document.getElementById('distanciaTabla').value || '').trim() || '—';
+        const sup = (document.getElementById('superficieTabla').value || '').trim().toUpperCase() || '—';
+        const premio = parseFloat(premioTabla.value) || 0;
+
+        const caballos = [...document.querySelectorAll('.fila-caballo-config')]
+            .map(f => ({
+                num: f.querySelector('.in-num-cab').value.trim(),
+                nombre: f.querySelector('.in-nom-cab').value.trim().toUpperCase(),
+                nac: f.querySelector('.in-nac-cab').value,
+                valor: parseFloat(f.querySelector('.in-valor-ej').value) || 0
+            }))
+            .filter(c => c.nombre);
+        const sumaBase = caballos.reduce((a, c) => a + c.valor, 0);
+
+        const dato = (label, valor, extra) => `
+            <div class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 ${extra || ''}">
+                <span class="block text-[9px] font-black uppercase tracking-wider text-slate-400">${label}</span>
+                <span class="font-bold text-slate-800 text-sm">${valor}</span>
+            </div>`;
+
+        cont.innerHTML = `
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs mb-2">
+                ${dato('Hipódromo', hipo)}
+                ${dato('Carrera', 'C' + carrera)}
+                ${dato('Distancia', dist === '—' ? '—' : dist + ' m')}
+                ${dato('Superficie', sup)}
+                ${dato('Premio a Pagar', '$' + clubUI.formatoNumero(premio, 2), 'bg-emerald-50 border-emerald-200')}
+                ${dato('Ejemplares', caballos.length + (sumaBase ? ' · ' + clubUI.formatoNumero(sumaBase, 1) + ' pts' : ''))}
+            </div>
+            ${caballos.length
+                ? '<div class="flex flex-wrap gap-1">' + caballos.map(c =>
+                    `<span class="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                        <span class="text-blue-600">#${c.num || '?'}</span> ${c.nombre}
+                        <span class="text-slate-400">${c.nac}</span>
+                        <span class="text-blue-700">${clubUI.formatoNumero(c.valor, 1)}</span>
+                     </span>`).join('') + '</div>'
+                : '<p class="text-slate-400 italic text-[11px] mt-1">Sin ejemplares aún. Cárguela desde la Gaceta o añádalos manualmente.</p>'}
+        `;
+    }
+
+    ['hipodromoTabla', 'carreraTabla', 'distanciaTabla', 'superficieTabla', 'premioTabla'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', actualizarVistaPrevia);
+    });
+    contenedorCaballos.addEventListener('input', actualizarVistaPrevia);
+    contenedorCaballos.addEventListener('change', actualizarVistaPrevia);
+
     // Registra el hipódromo en la BD si no existe (los hipódromos VE/USA
     // ya vienen sembrados por el SQL; esto cubre los que NO están listados).
     const HIPODROMOS_USA = ['aqueduct', 'belmont park', 'charles town', 'churchill downs', 'del mar', 'fair grounds',
@@ -577,19 +635,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    aplicarPrellenadoGaceta();
-});
-
     // ==========================================
-    // PRELLENADO DESDE GACETA (cuando el usuario la envía desde Gaceta → Tablas)
+    // PRELLENADO DESDE GACETA
     // ==========================================
-    function aplicarPrellenadoGaceta() {
-        const raw = sessionStorage.getItem('gaceta_prellenado');
+    async function aplicarPrellenadoGaceta() {
+        const raw = localStorage.getItem('gaceta_prellenado') || sessionStorage.getItem('gaceta_prellenado');
         if (!raw) return;
+        localStorage.removeItem('gaceta_prellenado');
         sessionStorage.removeItem('gaceta_prellenado');
         let pre;
         try { pre = JSON.parse(raw); } catch (e) { return; }
         if (!pre || !pre.hipodromo) return;
+
+        await catalogoListo;
 
         const selHipo = document.getElementById('hipodromoTabla');
         const selSup = document.getElementById('superficieTabla');
@@ -612,12 +670,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (pre.premio) { premioTabla.value = pre.premio; actualizarPremio(); }
 
-        if (pre.caballos && pre.caballos.length >= 2) {
-            Promise.all([cargarHipodromos(), cargarGrupos(), cargarEjemplares()]).then(() => {
-                contenedorCaballos.innerHTML = '';
-                pre.caballos.forEach(c => crearFilaCaballo(c.numero, c.nombre, c.pts, c.nacionalidad || 'VE'));
-                calcularSumaBaseTotal();
-            });
+        if (pre.caballos && pre.caballos.length >= 1) {
+            contenedorCaballos.innerHTML = '';
+            pre.caballos.forEach(c => crearFilaCaballo(c.numero, c.nombre, c.pts, c.nacionalidad || 'VE'));
+            calcularSumaBaseTotal();
+        }
+
+        actualizarVistaPrevia();
+        const cardPrev = document.getElementById('cardVistaPrevia');
+        if (cardPrev) {
+            cardPrev.classList.add('ring-2', 'ring-emerald-300');
+            setTimeout(() => cardPrev.classList.remove('ring-2', 'ring-emerald-300'), 4000);
+            cardPrev.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
         clubUI.toast(`Carrera C${pre.carrera || '?'} (${pre.hipodromo}) cargada desde la gaceta. Revise PTS y publique.`, 'success');
     }
+
+    aplicarPrellenadoGaceta();
+});
