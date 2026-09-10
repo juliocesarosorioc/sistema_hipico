@@ -82,9 +82,13 @@
                         <input type="number" id="inputComision" value="5" class="w-full border border-slate-300 rounded p-1.5 outline-none focus:border-blue-500 font-bold text-center">
                     </div>
                 </div>
-                <button class="w-full bg-slate-100 border border-slate-300 rounded p-1.5 text-slate-700 font-bold hover:bg-slate-200 transition-colors">
+                <button id="btnModalidadCruces" class="w-full bg-slate-100 border border-slate-300 rounded p-1.5 text-slate-700 font-bold hover:bg-slate-200 transition-colors text-xs">
                     <i class="fas fa-random text-blue-500 mr-1"></i> Modalidad: CON CRUCES
                 </button>
+                <p class="text-[9px] text-slate-400 mt-1 leading-snug">
+                    Cruce = varios ejemplares (2x3, 4*8). Monto es <b>por cruce</b>; el COBRO suma monto × cruces.
+                    Paga cada ejemplar ganador por separado.
+                </p>
             </div>
 
             <!-- Botones de Acción Rápida -->
@@ -109,6 +113,7 @@
                         <th class="p-2 border-r border-slate-700">JUGADA</th>
                         <th class="p-2 border-r border-slate-700">CABALLO</th>
                         <th class="p-2 border-r border-slate-700 w-24">MONTO</th>
+                        <th class="p-2 border-r border-slate-700 w-20">COBRO</th>
                         <th class="p-2 border-r border-slate-700">JUEGA (CLIENTE 1)</th>
                         <th class="p-2 border-r border-slate-700">CONSIGUE (CLIENTE 2)</th>
                         <th class="p-2 border-r border-slate-700 w-24">DISP. 1</th>
@@ -125,6 +130,17 @@
                     <i class="fas fa-plus-circle mr-1"></i> Agregar líneas
                 </button>
             </div>
+            <p class="text-[10px] text-slate-500 leading-relaxed mb-1">
+                <b class="text-blue-700">CÓMO SE COBRA:</b> cada línea registra <b>monto × cruces</b> (si juega "2x3" con $10 son dos boletos de $10 = cobro $20).
+                Se descuenta del saldo si el cliente juega en modo <b>Pozo</b>; en modo <b>Aval</b> solo se controla que no exceda su límite de pérdida.
+            </p>
+            <p class="text-[10px] text-slate-500 leading-relaxed mb-1">
+                <b class="text-emerald-600">CÓMO SE PAGA (si gana):</b> jugadas <b>Por Tabla</b> → cantidad de tablas × premio de la tabla (congelado al auditar).
+                Otras jugadas → monto × <b>pago si gana</b> definido en Reglas de Jugadas. Comisión del socio: sobre el <b>premio</b> si gana o sobre el <b>monto</b> si pierde.
+            </p>
+            <p class="text-[10px] text-slate-500 leading-relaxed">
+                <b class="text-slate-600">NOTA:</b> si la Taquilla no muestra clientes ni saldos, verifica que el paquete SQL (columnas y permisos, secciones 0 y 7) esté ejecutado en Supabase y recarga con Ctrl+Shift+R.
+            </p>
         </main>
 
         <!-- FOOTER DE COMANDOS -->
@@ -176,6 +192,7 @@
     <script src="../js/components/ui.js"></script>
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
+    <script src="../js/components/calculo_jugadas.js"></script>
     <script src="../js/taquilla.js"></script>
 </body>
 </html>

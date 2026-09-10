@@ -554,6 +554,29 @@ document.addEventListener('DOMContentLoaded', () => {
     cargarEjemplares();
     cargarTablas();
     actualizarPremio();
+    // Registra el hipódromo en la BD si no existe (los hipódromos VE/USA
+    // ya vienen sembrados por el SQL; esto cubre los que NO están listados).
+    const HIPODROMOS_USA = ['aqueduct', 'belmont park', 'charles town', 'churchill downs', 'del mar', 'fair grounds',
+        'finger lakes', 'golden gate fields', 'gulfstream park', 'keeneland', 'laurel park', 'los alamitos',
+        'monmouth park', 'oaklawn park', 'pimlico', 'santa anita', 'saratoga', 'tampa bay downs'];
+    function adivinarPaisHipodromo(nombre) {
+        const n = (nombre || '').toLowerCase();
+        if (HIPODROMOS_USA.some(h => n.includes(h) || h.includes(n))) return 'USA';
+        if (n.includes('rinconada') || n.includes('valencia') || n.includes('santa rita') || n.includes('pomona')) return 'VE';
+        return 'OTRO';
+    }
+    async function asegurarHipodromoEnDB(nombre) {
+        try {
+            const { data } = await window.supabase.from('hipodromos').select('id').eq('nombre', nombre).maybeSingle();
+            if (data) return;
+            const { error } = await window.supabase.from('hipodromos').insert({ nombre, pais: adivinarPaisHipodromo(nombre) });
+            if (error) console.warn('No se pudo registrar el hipódromo automáticamente:', error);
+            else clubUI.toast(`Hipódromo "${nombre}" registrado en el catálogo.`, 'success');
+        } catch (e) {
+            console.warn('No se pudo registrar el hipódromo automáticamente:', e);
+        }
+    }
+
     aplicarPrellenadoGaceta();
 });
 
@@ -578,6 +601,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const nueva = document.createElement('option');
                 nueva.value = pre.hipodromo; nueva.textContent = pre.hipodromo;
                 selHipo.appendChild(nueva); selHipo.value = pre.hipodromo;
+                asegurarHipodromoEnDB(pre.hipodromo);
             }
         }
         if (pre.carrera) document.getElementById('carreraTabla').value = pre.carrera;

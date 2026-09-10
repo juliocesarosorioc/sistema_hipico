@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <link rel="icon" href="data:,">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tipos de Jugadas - Club del Dinero</title>
+    <title>Reglas de Jugadas - Club del Dinero</title>
     <link rel="stylesheet" href="../css/tailwind.css">
     <link rel="stylesheet" href="../css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -16,68 +16,102 @@
 
     <!-- ÁREA CENTRAL DE CONTENIDO -->
     <div class="flex-1 flex flex-col h-full relative overflow-hidden w-full">
-        
+
         <!-- CABECERA -->
         <header class="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm shrink-0 z-10">
             <h1 class="text-xl font-bold text-slate-800 uppercase tracking-wide">
-                <i class="fas fa-cogs text-slate-500 mr-2"></i> Motor de Reglas y Tipos de Jugadas
+                <i class="fas fa-cogs text-slate-500 mr-2"></i> Reglas de Jugadas (Cobro / Pago)
             </h1>
             <div class="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-1.5 rounded-full text-xs font-bold shadow-inner flex items-center">
-                <i class="fas fa-info-circle mr-2"></i> Generalización de Procedimientos Activa
+                <i class="fas fa-calculator mr-2"></i> Motor de cálculo activo
             </div>
         </header>
 
         <main class="p-6 flex-1 overflow-y-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6 bg-slate-100">
-            
-            <!-- Formulario -->
+
+            <!-- FORMULARIO -->
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 self-start">
-                <h2 class="text-sm font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2 uppercase tracking-wide">
-                    Registrar Nueva Modalidad
+                <h2 id="tituloFormJugada" class="text-sm font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2 uppercase tracking-wide">
+                    Registrar Jugada
                 </h2>
-                <form id="formJugada" class="space-y-4">
+                <form id="formJugada" class="space-y-3">
+                    <input type="hidden" id="jugadaId">
                     <div>
                         <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Nombre de la Jugada</label>
-                        <input type="text" id="nombreJugada" placeholder="Ej: Superfecta" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm uppercase outline-none focus:ring-2 focus:ring-blue-500 bg-white" required>
+                        <input type="text" id="nombreJugada" placeholder="Ej: GANADOR" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm uppercase outline-none focus:ring-2 focus:ring-blue-500 bg-white" required>
                     </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Base de Comisión (Socio)</label>
-                        <select id="baseComision" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white font-bold text-slate-700">
-                            <option value="Monto Jugado">Sobre el Monto Jugado</option>
-                            <option value="Monto Decidido">Sobre el Monto Decidido</option>
-                        </select>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Comisión %</label>
+                            <input type="number" id="baseComisionPct" min="0" step="0.1" value="5" class="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Base de Comisión</label>
+                            <select id="comisionBase" class="w-full border border-slate-300 rounded-lg px-1 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500 bg-white font-bold text-slate-700">
+                                <option value="PREMIO">Sobre Premio (gana)</option>
+                                <option value="MONTO">Sobre Monto (pierde)</option>
+                            </select>
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Modalidad de Pago / Recálculo</label>
-                        <select id="modPago" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white font-bold text-slate-700">
-                            <option value="Dinámico (Pizarra)">Dinámico (Pizarra Oficial)</option>
-                            <option value="Fijo">Fijo (Pactado al registrar)</option>
-                            <option value="Proporcional (Recálculo)">Proporcional (Recálculo por retiros)</option>
-                        </select>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Tipo de Cálculo</label>
+                            <select id="tipoCalculo" class="w-full border border-slate-300 rounded-lg px-1 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500 bg-white font-bold text-slate-700">
+                                <option value="POR_UNIDAD">Por Unidad (juega X $)</option>
+                                <option value="POR_TABLA">Por Tabla (fija/pizarra)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Pago si Gana (× monto)</label>
+                            <input type="number" id="premioPagar" min="0" step="0.01" value="1" class="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
                     </div>
-                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg shadow-md transition-colors text-xs uppercase tracking-wide mt-2">
-                        Guardar Regla
-                    </button>
+                    <div class="flex items-center gap-4 pt-1">
+                        <label class="flex items-center gap-2 text-xs font-bold text-slate-700">
+                            <input type="checkbox" id="permiteCruces" checked class="accent-blue-600 w-4 h-4"> Permite cruces (2x3)
+                        </label>
+                        <label class="flex items-center gap-2 text-xs font-bold text-slate-700">
+                            <input type="checkbox" id="jugadaActiva" checked class="accent-emerald-600 w-4 h-4"> Activa
+                        </label>
+                    </div>
+                    <div class="flex gap-2">
+                        <button type="submit" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg shadow-md transition-colors text-xs uppercase tracking-wide">
+                            <i class="fas fa-save mr-1"></i> Guardar
+                        </button>
+                        <button type="button" id="btnCancelarEdicion" class="hidden bg-slate-200 hover:bg-slate-300 text-slate-600 font-bold px-3 py-2.5 rounded-lg text-xs uppercase transition-colors">
+                            Cancelar
+                        </button>
+                    </div>
                 </form>
+                <div class="mt-4 bg-blue-50 border border-blue-100 rounded-lg p-3 text-[10px] leading-relaxed text-slate-600">
+                    <b class="text-blue-700 uppercase">Cómo se calcula:</b><br>
+                    <b>Cobrar</b> (al registrar) = monto × número de cruces.<br>
+                    <b>Pagar</b> (si gana): tabla → cantidad × premio de la tabla; otro → monto × pago si gana.<br>
+                    <b>Perder</b>: no se paga; la comisión se calcula sobre el monto.
+                </div>
             </div>
 
-            <!-- Tabla -->
+            <!-- TABLA -->
             <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-                <div class="bg-slate-900 text-white p-3.5 font-bold text-xs uppercase tracking-wider">
-                    Reglas Activas en el Sistema
+                <div class="bg-slate-900 text-white p-3.5 font-bold text-xs uppercase tracking-wider flex justify-between items-center">
+                    <span>Jugadas del Sistema</span>
+                    <span class="text-[10px] text-slate-400 font-normal normal-case">ordenado alfabético</span>
                 </div>
                 <div class="overflow-x-auto flex-1">
                     <table class="w-full text-left text-xs">
                         <thead class="bg-slate-100 text-slate-700 border-b border-slate-200 sticky top-0 shadow-sm">
                             <tr>
-                                <th class="p-3 font-bold uppercase tracking-wider">Modalidad</th>
-                                <th class="p-3 text-center font-bold uppercase tracking-wider">Base de Comisión</th>
-                                <th class="p-3 text-center font-bold uppercase tracking-wider">Comportamiento de Pago</th>
+                                <th class="p-3 font-bold uppercase tracking-wider">Jugada</th>
+                                <th class="p-3 text-center font-bold uppercase tracking-wider">Comisión</th>
+                                <th class="p-3 text-center font-bold uppercase tracking-wider">Cálculo</th>
+                                <th class="p-3 text-center font-bold uppercase tracking-wider">Pago si Gana</th>
+                                <th class="p-3 text-center font-bold uppercase tracking-wider">Cruces</th>
                                 <th class="p-3 text-center font-bold uppercase tracking-wider">Estado</th>
                                 <th class="p-3 text-center font-bold uppercase tracking-wider">Acciones</th>
                             </tr>
                         </thead>
                         <tbody id="tablaJugadas" class="divide-y divide-slate-100 text-slate-800 bg-white">
-                            <tr><td colspan="5" class="p-8 text-center text-slate-500 italic">Cargando reglas...</td></tr>
+                            <tr><td colspan="7" class="p-8 text-center text-slate-500 italic">Cargando reglas...</td></tr>
                         </tbody>
                     </table>
                 </div>
