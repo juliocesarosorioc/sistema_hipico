@@ -139,6 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 estadoIA.textContent = 'Imagen lista.';
             }
             actualizarSeleccion();
+            previewGaceta.classList.remove('hidden');
         } catch (e) {
             console.error(e);
             estadoIA.textContent = 'No se pudo leer el archivo. (¿PDF? ¿Imagen?).';
