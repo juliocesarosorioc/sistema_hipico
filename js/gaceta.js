@@ -104,25 +104,41 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!lista.length) {
                 if (diagEl) { diagEl.classList.remove('hidden'); diagEl.textContent = 'clave: NO VÁLIDA o sin conexión (Google no devolvió modelos). Revisa la clave en aistudio.google.com/apikey.'; }
                 clubUI.toast('La clave no responde. Revísala en aistudio.google.com/apikey.', 'error');
+                btn.disabled = false;
                 return;
             }
-            let ok = false, detalle = '', codigo = 0;
-            try {
-                const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${lista[0]}:generateContent`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: 'Responde solo con: OK' }] }] })
-                });
-                codigo = r.status; ok = r.ok;
-                detalle = ok
-                    ? String((await r.json()).candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '').slice(0, 40)
-                    : (await r.text()).slice(0, 160);
-            } catch (ePrueba) { detalle = ePrueba.message || 'red'; }
+            let ok = false, detalle = '', codigo = 0, modeloOK = '';
+            const saturados = [];
+            const candidatos = lista.slice(0, 6);
+            for (const m of candidatos) {
+                try {
+                    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: 'Responde solo con: OK' }] }] })
+                    });
+                    codigo = r.status;
+                    if (r.ok) {
+                        ok = true; modeloOK = m;
+                        detalle = String((await r.json()).candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '').slice(0, 40);
+                        break;
+                    }
+                    const txt = (await r.text()).slice(0, 160);
+                    if (r.status === 503 || r.status === 404) { saturados.push(m + ':' + r.status); continue; }
+                    detalle = `HTTP ${r.status}: ${txt}`; break;
+                } catch (ePrueba) { detalle = ePrueba.message || 'red'; break; }
+            }
+            const todoSaturado = !ok && saturados.length === candidatos.length;
             if (diagEl) {
                 diagEl.classList.remove('hidden');
-                diagEl.textContent = `clave: ${ok ? 'VÁLIDA' : 'PROBLEMA (HTTP ' + codigo + ')'}\nmodelos flash: ${lista.slice(0, 6).join(', ')}${lista.length > 6 ? '…' : ''}\nprueba mínima: ${ok ? 'OK (' + detalle + ')' : detalle}`;
+                diagEl.textContent = `clave: ${ok ? 'VÁLIDA (responde ' + modeloOK + ')' : (todoSaturado ? 'VÁLIDA, pero Google saturado' : 'PROBLEMA')}\n` +
+                    `modelos flash: ${lista.slice(0, 6).join(', ')}${lista.length > 6 ? '…' : ''}\n` +
+                    `prueba mínima: ${ok ? 'OK (' + detalle + ')' : (todoSaturado ? 'todos saturados (503): ' + saturados.slice(0, 3).join(', ') + '… espera unos minutos y reintenta' : detalle)}`;
             }
-            clubUI.toast(ok ? 'Clave válida y conexión OK. Si la extracción falla, el problema es el PDF o la cuota.' : `La clave lista modelos pero la prueba falló (HTTP ${codigo}).`, ok ? 'success' : 'error');
+            clubUI.toast(
+                ok ? `Clave válida y conexión OK (responde ${modeloOK}). Si la extracción falla, es el PDF o saturación temporal.`
+                    : (todoSaturado ? 'Tu clave es válida, pero Google está saturado ahora. Espera unos minutos y reintenta.' : `La prueba falló: ${detalle || ('HTTP ' + codigo)}.`),
+                ok ? 'success' : (todoSaturado ? 'warning' : 'error'));
         } catch (e) {
             clubUI.toast('Sin conexión con Google IA: ' + (e.message || 'red'), 'error');
         }
@@ -357,7 +373,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
             }
 
             const descubiertos = await listaModelosFlash(clave);
-            const modelos = [...new Set(descubiertos.concat(MODELOS_GEMINI))].slice(0, 4);
+            const modelos = [...new Set(descubiertos.concat(MODELOS_GEMINI))].slice(0, 6);
             if (!modelos.length) throw new Error('Tu clave no devolvió modelos Flash. Verifica la clave en aistudio.google.com/apikey y tu conexión.');
 
             function armarBody(durls, estricto) {
@@ -433,7 +449,8 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                     return { ok: false, tipo: 'salto', msg: `Sin conexión al probar ${model} (${errNet.name === 'AbortError' ? 'tiempo agotado (120s)' : (errNet.message || 'red')}).` };
                 }
                 if (resp.status === 429) return { ok: false, tipo: 'cuota', msg: `Cuota agotada en ${model} (HTTP 429).` };
-                if (resp.status === 404 || resp.status === 503) return { ok: false, tipo: 'salto', msg: `Modelo ${model} no disponible o saturado (HTTP ${resp.status}).` };
+                if (resp.status === 503) return { ok: false, tipo: 'salto503', msg: `Modelo ${model} saturado (HTTP 503, alta demanda temporal).` };
+                if (resp.status === 404) return { ok: false, tipo: 'salto', msg: `Modelo ${model} no disponible (HTTP 404).` };
                 if (!resp.ok) {
                     const txtErr = await resp.text().catch(() => '');
                     let msg = `Error de IA (HTTP ${resp.status}).`;
@@ -459,6 +476,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
 
             let esperaCuotaHecha = false;
             async function extraerLote(nombresPag, durls, etiqueta) {
+                let reintento503 = false;
                 for (let i = 0; i < modelos.length; i++) {
                     const model = modelos[i];
                     if (i > 0) await esperar(1200);
@@ -486,6 +504,16 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                             continue;
                         }
                         throw new Error('La cuota gratuita de IA está agotada. Espera unos minutos y reintenta, o usa otra clave de IA (aistudio.google.com/apikey).');
+                    }
+                    if (r.tipo === 'salto503' && !reintento503) {
+                        // Pico temporal de demanda: Google pide reintentar más tarde.
+                        // Se espera 20s y se reintenta el MISMO modelo una vez.
+                        reintento503 = true;
+                        estadoIA.textContent = `${etiqueta}: ${model} saturado, esperando 20s y reintentando…`;
+                        pintarDiag(`${etiqueta}: esperando 20s por saturación de ${model}…`);
+                        await esperar(20000);
+                        i--;
+                        continue;
                     }
                     if (r.tipo === 'grande' && durls.length > 1) {
                         const mitad = Math.ceil(durls.length / 2);
