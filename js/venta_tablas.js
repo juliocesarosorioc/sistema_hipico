@@ -82,8 +82,25 @@ document.addEventListener('DOMContentLoaded', () => {
         elegibles.forEach(t => {
             selectTablaConfig.innerHTML += `<option value="${t.id}">${t.hipodromo} - Carrera ${t.carrera} (${g.moneda})</option>`;
         });
+        preseleccionarTablaPrograma(elegibles);
         selectTablaConfig.disabled = false;
     });
+
+    // Programa del día compartido: si la carrera cargada por el Ensamblaje está
+    // en venta para este grupo, la deja preseleccionada.
+    function preseleccionarTablaPrograma(lista) {
+        const prog = window.clubPrograma && window.clubPrograma.obtener();
+        const primera = prog && prog.carreras && prog.carreras[0];
+        if (!primera || !lista.length) return;
+        const match = lista.find(t =>
+            String(t.hipodromo || '').toUpperCase() === String(primera.hipodromo || '').toUpperCase() &&
+            (primera.carrera ? String(t.carrera) === String(primera.carrera) : true)
+        );
+        if (match) {
+            selectTablaConfig.value = match.id;
+            selectTablaConfig.dispatchEvent(new Event('change'));
+        }
+    }
 
     selectTablaConfig.addEventListener('change', () => {
         const id = selectTablaConfig.value;

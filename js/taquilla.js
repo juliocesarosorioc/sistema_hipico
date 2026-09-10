@@ -76,8 +76,36 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tablas) tablasConfigList = tablas;
         if (monedaData && monedaData.tasa_cambio) tasaCambioGlobal = parseFloat(monedaData.tasa_cambio);
 
+        aplicarProgramaDiaTaquilla();
+
         for (let i = 1; i <= 10; i++) agregarFila(i);
         window.clubIndicador?.fin();
+    }
+
+    // Programa del día compartido: precarga el hipódromo y muestra cuántas
+    // carreras fueron cargadas desde la Gaceta/Ensamblaje.
+    async function aplicarProgramaDiaTaquilla() {
+        const sel = document.getElementById('selectHipodromo');
+        if (!sel || !window.clubPrograma) return;
+        const prog = await window.clubPrograma.cargar();
+        const nombres = (prog.hipodromos || []).filter(Boolean);
+        const existentes = [...sel.options].map(o => o.value.toUpperCase());
+        nombres.forEach(n => {
+            if (n && !existentes.includes(n.toUpperCase())) {
+                sel.appendChild(new Option(n, n));
+                existentes.push(n.toUpperCase());
+            }
+        });
+        if (nombres.length && !sel.value) sel.value = nombres[0];
+        const lbl = document.getElementById('clubProgramaResumen');
+        if (lbl) {
+            if (prog.carreras.length) {
+                lbl.textContent = `<i class="fas fa-calendar-day mr-1"></i> Programa del día: ${prog.carreras.length} carrera(s) · ${nombres.join(', ')}`;
+                lbl.classList.remove('hidden');
+            } else {
+                lbl.classList.add('hidden');
+            }
+        }
     }
 
     // Busca por nombre, seudónimo o apellido (insensible a mayúsculas)

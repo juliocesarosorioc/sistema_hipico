@@ -33,10 +33,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 comboHipodromo.innerHTML += `<option value="${h}">${h}</option>`;
             });
 
+            // + Hipódromos del programa del día (compartido con el Ensamblaje)
+            window.clubPrograma?.cargar().then(prog => {
+                if (!prog) return;
+                const ya = new Set(hipodromosUnicos.map(h => String(h).toUpperCase()));
+                (prog.hipodromos || []).forEach(h => {
+                    if (h && !ya.has(String(h).toUpperCase())) {
+                        comboHipodromo.innerHTML += `<option value="${h}">${h}</option>`;
+                        ya.add(String(h).toUpperCase());
+                    }
+                });
+            }).catch(() => {});
+
             // Lógica para llenar carreras al seleccionar hipódromo
             comboHipodromo.addEventListener('change', () => {
                 const hipSeleccionado = comboHipodromo.value;
-                const carreras = [...new Set(data.filter(t => t.hipodromo === hipSeleccionado).map(t => t.carrera))];
+                const deTickets = data.filter(t => t.hipodromo === hipSeleccionado).map(t => t.carrera);
+                const delPrograma = ((window.clubPrograma && window.clubPrograma.obtener().carreras) || [])
+                    .filter(c => String(c.hipodromo || '').toUpperCase() === String(hipSeleccionado).toUpperCase())
+                    .map(c => c.carrera)
+                    .filter(c => c != null);
+                const carreras = [...new Set([...deTickets, ...delPrograma])];
                 comboCarrera.innerHTML = '<option value="">---</option>';
                 carreras.sort((a,b)=>a-b).forEach(c => {
                     comboCarrera.innerHTML += `<option value="${c}">${c}</option>`;

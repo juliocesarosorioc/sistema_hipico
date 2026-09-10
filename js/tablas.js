@@ -310,6 +310,11 @@ document.addEventListener('DOMContentLoaded', () => {
         contarCarreras();
         cargarTablas(); cargarEjemplares();
         if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `publicada: ${hipodromo} C${carrera} ${distancia}m ${superficie} premio=$${premio} cupos=${limiteTotal} ejemplares=${caballosArr.length} (id=${nueva.id})`);
+        // Publicó una carrera del día: la deja disponible para los demás módulos
+        window.clubPrograma?.agregarCarrera({
+            hipodromo, carrera, distancia, superficie, premio,
+            caballos: caballosArr.map(c => ({ numero: c.numero, nombre: c.nombre, nacionalidad: c.nacionalidad, valor: c.valor_ejemplar }))
+        })?.catch?.(() => {});
         if (silencio) return { ok: true, msg: `C${carrera} ${hipodromo}: ${caballosArr.length} ej. (id=${nueva.id})` };
         clubUI.toast(`Carrera C${carrera} (${hipodromo}) publicada con ${caballosArr.length} ejemplares (valor total calculado: privado).`, 'success');
     }
@@ -789,6 +794,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     premio: pre.premio || premioTabla.value || 100,
                     caballos
                 });
+                // El programa del día queda grabado para los demás módulos
+                window.clubPrograma?.agregarCarrera({
+                    hipodromo: pre.hipodromo || '',
+                    carrera: pre.carrera || null,
+                    distancia: pre.distancia || null,
+                    superficie: pre.superficie || '',
+                    premio: pre.premio || 0,
+                    caballos
+                })?.catch?.(() => {});
                 if (pre.hipodromo) {
                     // Asegurar que el hipódromo quede en el catálogo (los propios de la gaceta)
                     const selHipo = document.getElementById('hipodromoTabla');

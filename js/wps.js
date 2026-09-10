@@ -25,6 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('procHipodromo').innerHTML = opcBase + optionsHip;
         document.getElementById('retHipodromo').innerHTML = opcBase + optionsHip;
 
+        precargarHipodromoPrograma();
+
         // Cargar Clientes
         const { data: clientes } = await supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre, modo_juego').order('nombre');
         if (clientes) {
@@ -33,6 +35,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         cargarJugadasHoy();
+    }
+
+    // Programa del día: preselecciona el hipódromo cargado por el Ensamblaje
+    async function precargarHipodromoPrograma() {
+        if (!window.clubPrograma) return;
+        const prog = await window.clubPrograma.cargar();
+        const principal = (prog.hipodromos || [])[0];
+        if (!principal) return;
+        const sel = document.getElementById('wpsHipodromo');
+        if (!sel) return;
+        const opcion = [...sel.options].find(o => String(o.text).trim().toUpperCase() === String(principal).toUpperCase());
+        if (opcion) sel.value = opcion.value;
     }
 
     async function cargarJugadasHoy() {
