@@ -192,3 +192,26 @@ comment on table public.gaceta_procesada is
 
 comment on column public.gaceta_procesada.contenido is
     'JSON con las carreras y ejemplares extraidos de la gaceta por la IA';
+
+-- ============================================================
+-- (7) PERMISOS DE LA APP CON EL ROL ANON (evita errores 401/403)
+--     La app funciona 100% con la anon key (sin autenticación).
+--     Si alguna tabla quedó con RLS activado desde el dashboard
+--     (p.ej. grupos_venta), el anon no puede insertar/leer y
+--     Supabase responde 401. Aquí se normaliza TODO el esquema:
+--     RLS desactivado + privilegios concedidos al rol anon.
+-- ============================================================
+do $$
+declare
+    t text;
+begin
+    for t in
+        select tablename from pg_tables
+        where schemaname = 'public'
+    loop
+        execute format('alter table public.%I disable row level security', t);
+        execute format('grant usage on schema public to anon', t);
+        execute format('grant select, insert, update, delete on table public.%I to anon', t);
+    end loop;
+end;
+$$;

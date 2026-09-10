@@ -43,7 +43,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     async function cargarGrupos() {
         const { data, error } = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
-        if (error) return;
+        if (error) {
+            if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {
+                clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
+            }
+            return;
+        }
         todosGrupos = data || [];
         gruposActivos = todosGrupos.filter(g => g.activo);
         renderCuposGrupos();

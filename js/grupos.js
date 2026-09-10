@@ -8,7 +8,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     async function cargarGrupos() {
         const { data, error } = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
-        if (error) return clubUI.toast('Error cargando grupos: ' + error.message, 'error');
+        if (error) {
+            if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {
+                return clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
+            }
+            return clubUI.toast('Error cargando grupos: ' + error.message, 'error');
+        }
         todosGrupos = data || [];
         renderGruposGestion();
         renderSelectsGrupos();
@@ -71,7 +76,12 @@ document.addEventListener('DOMContentLoaded', () => {
             responsable: document.getElementById('responsableGrupo').value.trim().toUpperCase() || null,
             cuenta_bancaria: document.getElementById('cuentaGrupo').value.trim().toUpperCase() || null
         }]);
-        if (error) return clubUI.toast(error.code === '23505' ? 'Ese grupo ya existe.' : 'Error al crear el grupo.', 'error');
+        if (error) {
+            if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {
+                return clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
+            }
+            return clubUI.toast(error.code === '23505' ? 'Ese grupo ya existe.' : 'Error al crear el grupo.', 'error');
+        }
         e.target.reset();
         document.getElementById('monedaGrupo').value = 'USD';
         document.getElementById('monedaCuadreGrupo').value = 'USD';

@@ -250,4 +250,152 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     aplicar();
+
+    // ==========================================
+    // 12. RELOJ "PENSANDO" + CAMPANA DE NOVEDADES (indicador global)
+    // ==========================================
+    const indicadoresHTML = `
+    <div id="clubIndicadores" class="fixed bottom-4 right-4 z-[60] flex flex-col items-end gap-2">
+        <div id="clubReloj" class="hidden items-center gap-2 bg-slate-900/90 text-white text-[10px] font-bold rounded-full pl-2 pr-3 py-1.5 shadow-lg border border-slate-700">
+            <i class="fas fa-clock animate-spin text-emerald-400"></i>
+            <span>Procesando...</span>
+        </div>
+        <div class="relative">
+            <button id="btnNovedades" title="Novedades del sistema" aria-label="Novedades del sistema"
+                    class="w-10 h-10 rounded-full bg-slate-900/90 text-amber-300 hover:text-amber-200 hover:bg-slate-800 flex items-center justify-center shadow-lg border border-slate-700 transition-colors">
+                <i class="fas fa-bell"></i>
+                <span id="badgeNovedades" class="hidden absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[9px] font-black items-center justify-center px-1"></span>
+            </button>
+            <div id="panelNovedades" class="hidden absolute bottom-12 right-0 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
+                <div class="bg-slate-800 text-white px-4 py-2.5 text-xs font-bold uppercase tracking-wider flex justify-between items-center">
+                    <span><i class="fas fa-bell text-amber-400 mr-1"></i> Novedades</span>
+                    <button id="btnRecargarNovedades" class="text-slate-300 hover:text-white"><i class="fas fa-sync-alt"></i></button>
+                </div>
+                <div id="listaNovedades" class="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                    <p class="p-4 text-center text-slate-400 italic text-xs">Cargando...</p>
+                </div>
+                <div class="px-4 py-2 border-t border-slate-100 bg-slate-50 text-[10px] text-slate-500">Actividad reciente del sistema (auditoría)</div>
+            </div>
+        </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', indicadoresHTML);
+
+    // --- Reloj de "pensando" (se enciende con cualquier petición a Supabase o IA) ---
+    const reloj = document.getElementById('clubReloj');
+    const barra = document.createElement('div');
+    barra.id = 'barraProgreso';
+    barra.className = 'fixed top-0 left-0 h-1 bg-gradient-to-r from-cyan-500 via-blue-500 to-emerald-500 z-[60] transition-all duration-200';
+    barra.style.width = '0%';
+    document.body.appendChild(barra);
+
+    let peticiones = 0, progreso = 0, timerBarra = null;
+
+    function pintarIndicador() {
+        if (peticiones > 0) {
+            reloj.classList.remove('hidden');
+            reloj.classList.add('flex');
+            clearInterval(timerBarra);
+            timerBarra = setInterval(() => {
+                progreso = Math.min(93, progreso + 13);
+                barra.style.width = progreso + '%';
+            }, 150);
+        } else {
+            clearInterval(timerBarra);
+            progreso = 100;
+            barra.style.width = '100%';
+            setTimeout(() => { if (peticiones === 0) barra.style.width = '0%'; }, 400);
+            setTimeout(() => { reloj.classList.add('hidden'); reloj.classList.remove('flex'); }, 300);
+        }
+    }
+
+    function esPeticionPlataforma(url) {
+        return typeof url === 'string' &&
+            (url.includes('supabase.co') || url.includes('generativelanguage.googleapis.com'));
+    }
+
+    const fetchOriginal = window.fetch.bind(window);
+    window.fetch = function (url, opts) {
+        const cuenta = esPeticionPlataforma(url);
+        if (cuenta) { peticiones++; pintarIndicador(); }
+        return fetchOriginal(url, opts).then(
+            r => { if (cuenta) { peticiones--; pintarIndicador(); } return r; },
+            e => { if (cuenta) { peticiones--; pintarIndicador(); } throw e; }
+        );
+    };
+
+    // --- Campana de novedades (última actividad de la plataforma) ---
+    const LIMITE_NOVEDADES = 14;
+    const CLAVE_VISTAS = 'club_novedades_ultima_vista';
+    const panel = document.getElementById('panelNovedades');
+    const lista = document.getElementById('listaNovedades');
+    const badge = document.getElementById('badgeNovedades');
+    let novedadesActuales = [];
+
+    function haceTiempo(iso) {
+        const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+        if (s < 60) return 'recién';
+        if (s < 3600) return `hace ${Math.floor(s / 60)} min`;
+        if (s < 86400) return `hace ${Math.floor(s / 3600)} h`;
+        return `hace ${Math.floor(s / 86400)} d`;
+    }
+
+    function pintarBadge() {
+        const ultimaVista = parseInt(localStorage.getItem(CLAVE_VISTAS) || '0', 10) || 0;
+        const nuevas = novedadesActuales.filter(n => new Date(n.fecha).getTime() > ultimaVista).length;
+        if (nuevas > 0) {
+            badge.textContent = nuevas > 9 ? '9+' : String(nuevas);
+            badge.classList.remove('hidden');
+            badge.classList.add('flex');
+        } else {
+            badge.classList.add('hidden');
+            badge.classList.remove('flex');
+        }
+    }
+
+    function pintarLista() {
+        if (!novedadesActuales.length) {
+            lista.innerHTML = '<p class="p-4 text-center text-slate-400 italic text-xs">Sin actividad reciente por ahora.</p>';
+            return;
+        }
+        const colorModulo = {
+            TABLAS: 'text-indigo-600', VENTA: 'text-emerald-600', CLIENTES: 'text-cyan-600',
+            GACETA_IA: 'text-cyan-600', LOGIN: 'text-slate-500', DIAGNOSTICO: 'text-teal-600'
+        };
+        lista.innerHTML = novedadesActuales.map(n => `
+            <div class="px-4 py-2 flex items-start gap-2 hover:bg-slate-50">
+                <i class="fas fa-circle text-[7px] mt-1.5 ${colorModulo[n.modulo] || 'text-slate-300'}"></i>
+                <div class="flex-1 min-w-0">
+                    <p class="text-[10px] font-black uppercase text-slate-500">${n.modulo || 'SISTEMA'} <span class="font-normal text-slate-300 normal-case">· ${haceTiempo(n.fecha)}</span></p>
+                    <p class="text-xs text-slate-700 leading-snug break-words">${n.accion}</p>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async function cargarNovedades() {
+        try {
+            const { data } = await window.supabase
+                .from('auditoria')
+                .select('fecha, modulo, accion')
+                .order('fecha', { ascending: false })
+                .limit(LIMITE_NOVEDADES);
+            novedadesActuales = data || [];
+            pintarLista();
+            pintarBadge();
+        } catch (e) {
+            lista.innerHTML = '<p class="p-4 text-center text-slate-400 italic text-xs">Auditoría no disponible (¿falta el SQL?).</p>';
+        }
+    }
+
+    document.getElementById('btnNovedades').addEventListener('click', () => {
+        const abrir = panel.classList.toggle('hidden');
+        if (!abrir) {
+            localStorage.setItem(CLAVE_VISTAS, String(Date.now()));
+            cargarNovedades();
+            pintarBadge();
+        }
+    });
+    document.getElementById('btnRecargarNovedades').addEventListener('click', cargarNovedades);
+
+    cargarNovedades();
 });

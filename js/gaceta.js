@@ -16,8 +16,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const SUPERFICIES = ['ARENA', 'CESPED', 'FANGO', 'TAPETA', 'OTRA'];
     const NACIONALIDADES = ['VE', 'USA', 'BR', 'AR', 'CL', 'MX', 'PA', 'PE', 'CO', 'EC', 'UY', 'OTRA'];
 
-    // Modelos gratuitos de Gemini (Flash); si uno no existe/da 404 se prueba el siguiente.
-    const MODELOS_GEMINI = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-1.5-flash'];
+    // Modelos Flash de respaldo (la app primero consulta a la API cuáles existen hoy)
+    const MODELOS_GEMINI = ['gemini-3.6-flash', 'gemini-3-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+
+    async function listaModelosFlash(clave) {
+        try {
+            const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(clave)}`);
+            if (!r.ok) return [];
+            const datos = await r.json();
+            const flash = (datos.models || [])
+                .map(m => m.name.replace('models/', ''))
+                .filter(n => /flash/i.test(n));
+            if (!flash.length) return [];
+            const ver = n => { const m = n.match(/gemini-([\d.]+)/); return m ? parseFloat(m[1]) : 0; };
+            const lite = n => /-lite/i.test(n);
+            flash.sort((a, b) => (ver(b) - ver(a)) || ((lite(a) ? 1 : 0) - (lite(b) ? 1 : 0)));
+            return flash;
+        } catch (e) {
+            return [];
+        }
+    }
 
     let estado = { imagenes: [], carreras: [] };
 
@@ -183,18 +201,24 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
 
             let texto = '';
             let ultimoError = null;
-            for (const model of MODELOS_GEMINI) {
+            const descubiertos = await listaModelosFlash(clave);
+            const modelos = [...new Set(descubiertos.concat(MODELOS_GEMINI))];
+            for (const model of modelos) {
                 const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': clave },
                     body: JSON.stringify(body)
                 });
 
-                if (resp.status === 404) { ultimoError = 'Modelo no disponible, probando otro...'; continue; }
+                if (resp.status === 404 || resp.status === 503) {
+                    ultimoError = `Modelo ${model} no disponible o saturado, probando otro...`;
+                    continue;
+                }
                 if (!resp.ok) {
                     const txtErr = await resp.text();
                     let msg = `Error de IA (HTTP ${resp.status}).`;
                     try { msg = 'IA: ' + (JSON.parse(txtErr).error?.message || msg); } catch (e) { msg = txtErr.slice(0, 180); }
+                    if (resp.status === 429) msg = 'IA agotó la cuota gratuita por ahora. Espera unos minutos y reintenta, o usa otra cuenta de Google.';
                     throw new Error(msg);
                 }
 
