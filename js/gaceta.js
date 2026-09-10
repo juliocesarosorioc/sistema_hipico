@@ -550,6 +550,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                 loteN++;
                 const etiqueta = `Lote ${loteN}/${lotes.length} (pág. ${lote.map(p => p.num).join(',')})`;
                 estadoIA.textContent = `${etiqueta}: enviando a la IA…`;
+                window.clubIndicador?.accion(`La IA lee el programa: lote ${loteN} de ${lotes.length}…`);
                 window.clubIndicador?.progreso(loteN / lotes.length);
                 pintarDiag(etiqueta + ' en curso…');
                 try {
@@ -679,7 +680,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
         carrerasGaceta.innerHTML = estado.carreras.map((c, i) => `
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4" data-carrera="${i}" data-numero="${c.carrera || i + 1}">
                 <div class="flex justify-between items-center mb-2">
-                    <span class="font-black text-cyan-700 uppercase"><i class="fas fa-flag-checkered mr-1"></i> Carrera ${c.carrera || i + 1}</span>
+                    <span class="font-black text-cyan-700 uppercase flex items-center gap-2"><input type="checkbox" class="gac-sel w-4 h-4 accent-cyan-600" checked title="Incluir al enviar todo al Ensamblaje"><i class="fas fa-flag-checkered mr-1"></i> Carrera ${c.carrera || i + 1}</span>
                     <input class="gac-hipodromo text-right text-[11px] font-bold uppercase text-slate-500 bg-transparent border-b border-dotted border-slate-300 outline-none w-40" value="${c.hipodromo || ''}" placeholder="Hipódromo">
                 </div>
                 <div class="grid grid-cols-4 gap-2 mb-2">
@@ -735,12 +736,11 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                 </button>
             </div>
         `).join('');
+        actualizarBtnTodo();
     }
 
-    carrerasGaceta.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-acc="cargar"]');
-        if (!btn) return;
-        const card = btn.closest('.bg-white');
+    // Lee UNA carrera desde su card (usa los valores editados en pantalla)
+    function leerCarreraDeCard(card) {
         const caballos = [...card.querySelectorAll('.gac-fila-ejemplar')].map(f => ({
             numero: f.querySelector('.gac-num')?.value?.trim() || '',
             nombre: f.querySelector('.gac-nombre')?.value?.trim().toUpperCase() || '',
@@ -748,7 +748,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
             valor: parseFloat(f.querySelector('.gac-valor')?.value) || parseFloat(f.querySelector('.gac-pts')?.value) || 0
         })).filter(c => c.nombre);
 
-        const carrera = {
+        return {
             hipodromo: card.querySelector('.gac-hipodromo')?.value?.trim().toUpperCase() || '',
             fecha: card.querySelector('.gac-fecha')?.value || null,
             carrera: parseInt(card.dataset.numero) || null,
@@ -757,22 +757,60 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
             premio: parseFloat(card.querySelector('.gac-premio')?.value) || 0,
             caballos
         };
+    }
 
-        // Acumula la carrera en el Ensamblaje (varias carreras por envío)
+    // Acumula carreras en el Ensamblaje (varias por envío). Retorna el total.
+    function acumularEnEnsamblaje(carreras) {
         const leerArr = () => {
             try { const x = JSON.parse(sessionStorage.getItem('ensamblaje_carreras')); if (Array.isArray(x)) return x; } catch (err) { /* nada */ }
             try { const x = JSON.parse(localStorage.getItem('ensamblaje_carreras')); if (Array.isArray(x)) return x; } catch (err) { /* nada */ }
             return [];
         };
         const arr = leerArr();
-        arr.push(carrera);
+        carreras.forEach(c => arr.push(c));
         sessionStorage.setItem('ensamblaje_carreras', JSON.stringify(arr));
         localStorage.setItem('ensamblaje_carreras', JSON.stringify(arr));
-        // Por compatibilidad se conserva también la carrera única
-        sessionStorage.setItem('gaceta_prellenado', JSON.stringify(carrera));
-        localStorage.setItem('gaceta_prellenado', JSON.stringify(carrera));
+        // Por compatibilidad se conserva también la última como carrera única
+        const ultima = carreras[carreras.length - 1];
+        sessionStorage.setItem('gaceta_prellenado', JSON.stringify(ultima));
+        localStorage.setItem('gaceta_prellenado', JSON.stringify(ultima));
+        return arr.length;
+    }
 
-        clubUI.toast(`Carrera C${carrera.carrera || '?'} enviada al Ensamblaje (total en el envío: ${arr.length}). Revise y publique.`, 'success');
+    function actualizarBtnTodo() {
+        const lbl = document.getElementById('lblEnviarTodo');
+        if (!lbl) return;
+        const cards = [...carrerasGaceta.querySelectorAll('.bg-white')];
+        const sel = carrerasGaceta.querySelectorAll('.gac-sel:checked').length;
+        lbl.textContent = sel === 0 ? 'Enviar al Ensamblaje (sin selección)'
+            : (sel === cards.length ? `Enviar TODAS al Ensamblaje (${sel})` : `Enviar seleccionadas (${sel})`);
+    }
+
+    carrerasGaceta.addEventListener('change', (e) => {
+        if (e.target.closest('.gac-sel')) actualizarBtnTodo();
+    });
+
+    // Envío MASIVO: todas las marcadas, de una vez, con una sola navegación
+    document.getElementById('btnEnviarTodoEnsamblaje')?.addEventListener('click', () => {
+        const cards = [...carrerasGaceta.querySelectorAll('.bg-white')]
+            .filter(card => card.querySelector('.gac-sel')?.checked);
+        if (cards.length === 0) return clubUI.toast('Marca con el ✓ al menos una carrera para enviar.', 'warning');
+        const carreras = cards.map(leerCarreraDeCard).filter(c => c.caballos.length > 0);
+        if (carreras.length === 0) return clubUI.toast('Las carreras marcadas no tienen ejemplares con nombre.', 'warning');
+        const total = acumularEnEnsamblaje(carreras);
+        clubUI.toast(`${carreras.length} carrera(s) enviada(s) al Ensamblaje (total en el envío: ${total}). Revise y publique.`, 'success');
+        setTimeout(() => location.href = 'tablas.html', 600);
+    });
+
+    carrerasGaceta.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-acc="cargar"]');
+        if (!btn) return;
+        const card = btn.closest('.bg-white');
+        const carrera = leerCarreraDeCard(card);
+        if (carrera.caballos.length === 0) return clubUI.toast('Esta carrera no tiene ejemplares con nombre.', 'warning');
+
+        const total = acumularEnEnsamblaje([carrera]);
+        clubUI.toast(`Carrera C${carrera.carrera || '?'} enviada al Ensamblaje (total en el envío: ${total}). Revise y publique.`, 'success');
         setTimeout(() => location.href = 'tablas.html', 600);
     });
 

@@ -184,6 +184,7 @@
             clearTimeout(timerExito);
             mensajeManual = '';
             manualActivo = false;
+            usaReal = false;
             pintar();
         },
         // Reporta progreso real (0 a 1). Con cualquier valor >0 detiene la

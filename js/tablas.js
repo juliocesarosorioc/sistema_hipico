@@ -106,6 +106,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (lblTotalCarreras) lblTotalCarreras.textContent = carrerasBol.length;
         const empty = contenedorCarreras.querySelector('.empty-ensamblaje');
         if (empty) empty.classList.toggle('hidden', carrerasBol.length > 0);
+        const btnTodas = document.getElementById('btnPublicarTodas');
+        if (btnTodas) btnTodas.disabled = carrerasBol.length === 0;
     }
 
     function filaCaballoCard(c) {
@@ -229,7 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     // PUBLICAR UNA CARRERA DEL ENSAMBLAJE
     // ==========================================
-    async function publicarCard(card) {
+    async function publicarCard(card, silencio) {
         const hipodromo = (card.querySelector('.in-hipo-card').value || '').trim().toUpperCase();
         const carrera = parseInt(card.querySelector('.in-carrera-card').value);
         const premio = parseFloat(card.querySelector('.in-premio-card').value);
@@ -255,18 +257,20 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        if (caballosArr.some(c => c === null)) return clubUI.toast("Un ejemplar (nombre + nacionalidad) está repetido en la misma tabla.");
-        if (caballosArr.length < 2) return clubUI.toast("Ingrese al menos 2 ejemplares.");
+        const fallo = msg => { if (silencio) return { ok: false, msg }; clubUI.toast(msg); return { ok: false, msg }; };
+
+        if (caballosArr.some(c => c === null)) return fallo("Un ejemplar (nombre + nacionalidad) está repetido en la misma tabla.");
+        if (caballosArr.length < 2) return fallo("Ingrese al menos 2 ejemplares.");
         if (!hipodromo || isNaN(carrera) || isNaN(premio) || premio <= 0 || sumaBaseTabla <= 0) {
-            return clubUI.toast("Faltan campos obligatorios o la base de ponderación es cero.");
+            return fallo("Faltan campos obligatorios o la base de ponderación es cero.");
         }
-        if (!superficie) return clubUI.toast("Seleccione la superficie de la pista.");
-        if (isNaN(distancia) || distancia <= 0) return clubUI.toast("Indique la distancia de la carrera en metros.");
+        if (!superficie) return fallo("Seleccione la superficie de la pista.");
+        if (isNaN(distancia) || distancia <= 0) return fallo("Indique la distancia de la carrera en metros.");
 
         const cuposPorGrupo = [...document.querySelectorAll('.in-cupo-grupo')]
             .map(inp => ({ grupo_id: inp.dataset.grupo, cupos: parseInt(inp.value) || 0 }))
             .filter(x => x.cupos > 0);
-        if (cuposPorGrupo.length === 0) return clubUI.toast("Asigne cupos a al menos un grupo.");
+        if (cuposPorGrupo.length === 0) return fallo("Asigne cupos a al menos un grupo.");
 
         const grupoPrimario = gruposActivos.find(g => g.es_principal) || gruposActivos[0];
         const comisionGrupo = parseFloat(grupoPrimario && grupoPrimario.comision_default) || 2.5;
@@ -294,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (error) {
             console.error("Error BD:", error.message || error);
-            return clubUI.toast("Error al registrar en la base de datos.");
+            return fallo("Error al registrar en la base de datos.");
         }
 
         const filasGrupos = cuposPorGrupo.map(x => ({ tabla_id: nueva.id, grupo_id: x.grupo_id, cupos: x.cupos, cantidad_vendida: 0 }));
@@ -305,8 +309,45 @@ document.addEventListener('DOMContentLoaded', () => {
         card.remove();
         contarCarreras();
         cargarTablas(); cargarEjemplares();
-        clubUI.toast(`Carrera C${carrera} (${hipodromo}) publicada con ${caballosArr.length} ejemplares (valor total calculado: privado).`, 'success');
         if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `publicada: ${hipodromo} C${carrera} ${distancia}m ${superficie} premio=$${premio} cupos=${limiteTotal} ejemplares=${caballosArr.length} (id=${nueva.id})`);
+        if (silencio) return { ok: true, msg: `C${carrera} ${hipodromo}: ${caballosArr.length} ej. (id=${nueva.id})` };
+        clubUI.toast(`Carrera C${carrera} (${hipodromo}) publicada con ${caballosArr.length} ejemplares (valor total calculado: privado).`, 'success');
+    }
+
+    // ==========================================
+    // PUBLICAR TODAS LAS CARRERAS DEL ENSAMBLAJE
+    // ==========================================
+    async function publicarTodas() {
+        const cards = [...document.querySelectorAll('.card-carrera')];
+        if (cards.length === 0) return clubUI.toast('No hay carreras en el ensamblaje para publicar.', 'warning');
+        const total = cards.length;
+        const btn = document.getElementById('btnPublicarTodas');
+        const orig = btn ? btn.innerHTML : '';
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Publicando…'; }
+
+        window.clubIndicador?.accion(`Publicando ${total} carrera(s)…`);
+        const ok = [], fail = [];
+        for (let i = 0; i < total; i++) {
+            const card = document.querySelector(`.card-carrera[data-uid="${cards[i].dataset.uid}"]`);
+            if (!card) continue;
+            window.clubIndicador?.progreso(i / total);
+            let r;
+            try { r = await publicarCard(card, true); } catch (e) { r = { ok: false, msg: e && e.message ? e.message : String(e) }; }
+            if (r && r.ok) ok.push(r.msg);
+            else {
+                fail.push(r && r.msg ? r.msg : 'error inesperado');
+                card.classList.add('ring-2', 'ring-red-400');
+            }
+        }
+        if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+        contarCarreras();
+        if (fail.length === 0) {
+            window.clubIndicador?.listo(`${total} carrera(s) publicada(s)`);
+            clubUI.toast(`${total} carrera(s) publicada(s) correctamente.`, 'success');
+        } else {
+            window.clubIndicador?.fin();
+            clubUI.toast(`${ok.length} publicada(s) · ${fail.length} con error (marcadas en rojo).`, 'error');
+        }
     }
 
     // ==========================================
@@ -657,6 +698,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnRecargarTablas').addEventListener('click', () => {
         cargarTasaGlobal(); cargarHipodromos(); cargarGrupos(); cargarEjemplares(); cargarTablas();
     });
+
+    const btnPublicarTodas = document.getElementById('btnPublicarTodas');
+    if (btnPublicarTodas) btnPublicarTodas.addEventListener('click', publicarTodas);
 
     // ==========================================
     // AÑADIR CARRERA DESDE LOS PARÁMETROS
