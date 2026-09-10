@@ -58,18 +58,26 @@
 
                     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                         <h3 class="text-xs font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-2 mb-4">
-                            <i class="fas fa-key text-slate-400 mr-1"></i> Clave de la IA (OpenAI)
+                            <i class="fas fa-key text-slate-400 mr-1"></i> Clave de la IA (Gemini, gratis)
                         </h3>
                         <p class="text-[11px] text-slate-500 leading-relaxed mb-3">
+                            Con Inteligencia Artificial gratuita de Google (Gemini). <b>Sin costo y sin tarjeta.</b>
                             La clave se guarda <b>solo en este navegador</b> (no se sube al repositorio).
-                            Consíguela en <span class="text-cyan-600 font-bold">platform.openai.com → API Keys</span>.
                         </p>
-                        <input type="password" id="claveOpenAI" placeholder="sk-..." class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-cyan-500 font-mono">
-                        <button id="btnGuardarClave" class="mt-2 w-full bg-slate-800 text-white font-bold py-2 rounded-lg hover:bg-black transition-colors text-xs uppercase tracking-wide">
+                        <ol class="text-[11px] text-slate-600 list-decimal list-inside space-y-1 mb-3 bg-slate-50 border border-slate-200 rounded-lg p-3">
+                            <li>Entra a <b>aistudio.google.com/apikey</b> (con tu cuenta de Google).</li>
+                            <li>Click en <b>Create API key</b> y copia la clave (empieza con <b>AIza...</b>).</li>
+                            <li>Pégala abajo y presiona <b>Guardar clave</b>.</li>
+                        </ol>
+                        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 hover:text-emerald-800 mb-2">
+                            <i class="fas fa-external-link-alt"></i> Obtener mi clave gratis
+                        </a>
+                        <input type="password" id="claveOpenAI" placeholder="AIza..." class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 font-mono">
+                        <button id="btnGuardarClave" class="mt-2 w-full bg-emerald-600 text-white font-bold py-2 rounded-lg hover:bg-emerald-700 transition-colors text-xs uppercase tracking-wide">
                             <i class="fas fa-save mr-1"></i> Guardar clave (en este navegador)
                         </button>
                         <button id="btnTransformar" disabled class="mt-4 w-full bg-cyan-600 text-white font-bold py-3 rounded-lg shadow hover:bg-cyan-700 transition-colors text-sm uppercase tracking-wide">
-                            <i class="fas fa-wand-magic-sparkles mr-2"></i> Transformar con IA
+                            <i class="fas fa-wand-magic-sparkles mr-2"></i> Transformar con IA (gratis)
                         </button>
                         <p id="estadoIA" class="text-[11px] text-slate-500 mt-2 text-center"></p>
                     </div>

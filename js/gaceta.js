@@ -12,9 +12,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultadoGaceta = document.getElementById('resultadoGaceta');
     const carrerasGaceta = document.getElementById('carrerasGaceta');
 
-    const CLAVE_KEY = 'club_openai_key';
+    const CLAVE_KEY = 'club_gemini_key';
     const SUPERFICIES = ['ARENA', 'CESPED', 'FANGO', 'TAPETA', 'OTRA'];
     const NACIONALIDADES = ['VE', 'USA', 'BR', 'AR', 'CL', 'MX', 'PA', 'PE', 'CO', 'EC', 'UY', 'OTRA'];
+
+    // Modelos gratuitos de Gemini (Flash); si uno no existe/da 404 se prueba el siguiente.
+    const MODELOS_GEMINI = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-1.5-flash'];
 
     let estado = { imagenes: [], carreras: [] };
 
@@ -26,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnGuardarClave.addEventListener('click', () => {
         const k = claveOpenAI.value.trim();
-        if (!k) return clubUI.toast('Escriba una clave de OpenAI.', 'warning');
+        if (!k) return clubUI.toast('Escriba una clave de Gemini.', 'warning');
         localStorage.setItem(CLAVE_KEY, k);
         clubUI.toast('Clave guardada en este navegador.', 'success');
         validarHabilitacion();
@@ -107,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!clave) { clubUI.toast('Guarde primero una clave de IA.', 'warning'); return; }
         if (estado.imagenes.length === 0) { clubUI.toast('Suba primero la gaceta.', 'warning'); return; }
 
-        estadoIA.textContent = 'Enviando a la IA... puede tardar 20–60 seg.';
+        estadoIA.textContent = 'Enviando a la IA (Gemini)... puede tardar 20–60 seg.';
         btnTransformar.disabled = true;
 
         const SYS = `
@@ -122,40 +125,80 @@ Para cada carrera devuelve:
   - premio: número si se lee (ej: 15000), si no 0
   - ejemplares: lista con numero (puesto/orden del ejemplar), nombre (MAYÚSCULAS, EXACTO como aparece), nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si no se indica usa VE), pts (valor/bolígrafo numérico si aparece; si no 0)
 REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un ejemplar aparece repetido entre páginas, mantenlo tal cual. Si el documento no tiene carreras, devuelve {"carreras":[]}.
-Responde SOLO con JSON válido en la forma: {"carreras":[...]}.
 `;
 
         try {
-            const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + clave },
-                body: JSON.stringify({
-                    model: 'gpt-4o-mini',
-                    temperature: 0,
-                    max_tokens: 6000,
-                    response_format: { type: 'json_object' },
-                    messages: [
-                        { role: 'system', content: SYS },
-                        {
-                            role: 'user',
-                            content: [
-                                { type: 'text', text: 'Gaceta adjunta. Extrae las carreras y sus ejemplares.' },
-                                ...estado.imagenes.map(d => ({ type: 'image_url', image_url: { url: d } }))
-                            ]
-                        }
-                    ]
-                })
+            const imgs = estado.imagenes.map(d => {
+                const [, meta] = d.split(',');
+                const mime = d.split(';')[0].replace('data:', '');
+                return { inline_data: { mime_type: mime, data: meta } };
             });
 
-            if (!resp.ok) {
-                const txtErr = await resp.text();
-                let msg = `Error de IA (HTTP ${resp.status}).`;
-                try { msg = 'IA: ' + (JSON.parse(txtErr).error?.message || msg); } catch (e) { msg = txtErr.slice(0, 180); }
-                throw new Error(msg);
+            const body = {
+                contents: [{ parts: [{ text: 'Gaceta adjunta. Extrae las carreras y sus ejemplares.' }, ...imgs] }],
+                systemInstruction: { parts: [{ text: SYS }] },
+                generationConfig: {
+                    temperature: 0,
+                    maxOutputTokens: 8192,
+                    responseMimeType: 'application/json',
+                    responseSchema: {
+                        type: 'OBJECT',
+                        properties: {
+                            carreras: {
+                                type: 'ARRAY',
+                                items: {
+                                    type: 'OBJECT',
+                                    properties: {
+                                        carrera: { type: 'INTEGER' },
+                                        hipodromo: { type: 'STRING' },
+                                        fecha: { type: 'STRING' },
+                                        distancia: { type: 'INTEGER' },
+                                        superficie: { type: 'STRING' },
+                                        premio: { type: 'NUMBER' },
+                                        ejemplares: {
+                                            type: 'ARRAY',
+                                            items: {
+                                                type: 'OBJECT',
+                                                properties: {
+                                                    numero: { type: 'INTEGER' },
+                                                    nombre: { type: 'STRING' },
+                                                    nacionalidad: { type: 'STRING' },
+                                                    pts: { type: 'NUMBER' }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            let texto = '';
+            let ultimoError = null;
+            for (const model of MODELOS_GEMINI) {
+                const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': clave },
+                    body: JSON.stringify(body)
+                });
+
+                if (resp.status === 404) { ultimoError = 'Modelo no disponible, probando otro...'; continue; }
+                if (!resp.ok) {
+                    const txtErr = await resp.text();
+                    let msg = `Error de IA (HTTP ${resp.status}).`;
+                    try { msg = 'IA: ' + (JSON.parse(txtErr).error?.message || msg); } catch (e) { msg = txtErr.slice(0, 180); }
+                    throw new Error(msg);
+                }
+
+                const datos = await resp.json();
+                texto = (datos.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '').trim();
+                break;
             }
 
-            const datos = await resp.json();
-            const texto = datos.choices?.[0]?.message?.content || '';
+            if (ultimoError && !texto) throw new Error(ultimoError);
+
             estado.carreras = parsearJSON(texto);
 
             const resPadron = await registrarPadron();
