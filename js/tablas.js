@@ -549,4 +549,46 @@ document.addEventListener('DOMContentLoaded', () => {
     cargarEjemplares();
     cargarTablas();
     actualizarPremio();
+    aplicarPrellenadoGaceta();
 });
+
+    // ==========================================
+    // PRELLENADO DESDE GACETA (cuando el usuario la envía desde Gaceta → Tablas)
+    // ==========================================
+    function aplicarPrellenadoGaceta() {
+        const raw = sessionStorage.getItem('gaceta_prellenado');
+        if (!raw) return;
+        sessionStorage.removeItem('gaceta_prellenado');
+        let pre;
+        try { pre = JSON.parse(raw); } catch (e) { return; }
+        if (!pre || !pre.hipodromo) return;
+
+        const selHipo = document.getElementById('hipodromoTabla');
+        const selSup = document.getElementById('superficieTabla');
+
+        if (pre.hipodromo && selHipo) {
+            const op = [...selHipo.options].find(o => o.value.toUpperCase() === pre.hipodromo.toUpperCase());
+            if (op) selHipo.value = op.value;
+            else {
+                const nueva = document.createElement('option');
+                nueva.value = pre.hipodromo; nueva.textContent = pre.hipodromo;
+                selHipo.appendChild(nueva); selHipo.value = pre.hipodromo;
+            }
+        }
+        if (pre.carrera) document.getElementById('carreraTabla').value = pre.carrera;
+        if (pre.distancia) document.getElementById('distanciaTabla').value = pre.distancia;
+        if (pre.superficie && selSup) {
+            const opS = [...selSup.options].find(o => o.value === pre.superficie.toUpperCase());
+            if (opS) selSup.value = opS.value;
+        }
+        if (pre.premio) { premioTabla.value = pre.premio; actualizarPremio(); }
+
+        if (pre.caballos && pre.caballos.length >= 2) {
+            Promise.all([cargarHipodromos(), cargarGrupos(), cargarEjemplares()]).then(() => {
+                contenedorCaballos.innerHTML = '';
+                pre.caballos.forEach(c => crearFilaCaballo(c.numero, c.nombre, c.pts, c.nacionalidad || 'VE'));
+                calcularSumaBaseTotal();
+            });
+        }
+        clubUI.toast(`Carrera C${pre.carrera || '?'} (${pre.hipodromo}) cargada desde la gaceta. Revise PTS y publique.`, 'success');
+    }

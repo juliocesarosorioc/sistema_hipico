@@ -169,3 +169,26 @@ alter table public.tablas_fijas
 
 comment on column public.tablas_fijas.distancia_carrera is 'Distancia de la carrera en metros (ej: 1100, 1300, 1600)';
 comment on column public.tablas_fijas.superficie is 'Superficie de la pista: ARENA, FANGO, CESPED, TAPETA, etc.';
+
+-- ============================================================
+-- (6) HISTORIAL DE GACETAS PROCESADAS POR IA
+--     Guarda el resultado de la transcripción (JSON) cuando se
+--     convierte la gaceta hípica en carreras a cargar. Sirve de
+--     memoria para la futura herramienta de estadísticas.
+-- ============================================================
+create table if not exists public.gaceta_procesada (
+    id            uuid primary key default gen_random_uuid(),
+    fecha_gaceta  date,
+    num_carreras  int not null default 0,
+    contenido     jsonb not null,               -- carreras extraidas: [{carrera, hipodromo, distancia, superficie, premio, ejemplares:[{numero,nombre,nacionalidad,pts}]}]
+    creado_por    text,
+    created_at    timestamptz not null default now()
+);
+
+create index if not exists idx_gaceta_procesada_fecha on public.gaceta_procesada (fecha_gaceta desc);
+
+comment on table public.gaceta_procesada is
+    'Historial de transcripciones de la gaceta hípica realizadas con IA';
+
+comment on column public.gaceta_procesada.contenido is
+    'JSON con las carreras y ejemplares extraidos de la gaceta por la IA';

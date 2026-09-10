@@ -65,6 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ['solicitudes_tablas', ['tabla_id', 'grupo_id', 'solicitante', 'estado']],
             ['tabla_grupos', ['tabla_id', 'grupo_id']],
             ['ejemplares', ['nombre', 'nacionalidad']],
+            ['gaceta_procesada', ['fecha_gaceta', 'num_carreras', 'contenido']],
             ['tablas_fijas', ['distancia_carrera', 'superficie']],
             ['tasas_referencia', ['tipo', 'tasa', 'fecha_aplicar']],
             ['auditoria', ['usuario', 'modulo', 'accion']]

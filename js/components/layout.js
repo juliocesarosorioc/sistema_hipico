@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
             items: [
                 { href: 'taquilla.html', icon: 'fa-receipt',      txt: 'Taquilla',            color: 'text-blue-400' },
                 { href: 'tablas.html',   icon: 'fa-table',        txt: 'Tablas Fijas',         color: 'text-indigo-400' },
+                { href: 'gaceta.html',   icon: 'fa-newspaper',    txt: 'Gaceta → Tablas (IA)', color: 'text-cyan-400' },
                 { href: 'grupos.html',   icon: 'fa-layer-group',  txt: 'Grupos y Convenios',   color: 'text-amber-400' },
                 { href: 'ejemplares.html', icon: 'fa-horse',      txt: 'Ejemplares (Padrón)',  color: 'text-rose-400' },
                 { href: 'venta_tablas.html', icon: 'fa-cash-register', txt: 'Venta de Tablas', color: 'text-emerald-400' },

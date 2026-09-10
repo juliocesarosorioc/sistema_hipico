@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gaceta a Tablas (IA) - Club del Dinero</title>
+    <link rel="stylesheet" href="../css/tailwind.css">
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>if (!localStorage.getItem('club_sesion_activa')) window.location.href = '../index.html';</script>
+</head>
+<body class="bg-slate-50 font-sans text-sm h-screen flex overflow-hidden">
+
+    <!-- El Sidebar se inyectará aquí automáticamente mediante layout.js -->
+
+    <!-- ÁREA CENTRAL DE CONTENIDO -->
+    <div class="flex-1 flex flex-col h-full relative overflow-hidden w-full">
+
+        <!-- CABECERA -->
+        <header class="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm shrink-0 z-10">
+            <h1 class="text-xl font-bold text-slate-800 uppercase tracking-wide">
+                <i class="fas fa-newspaper text-cyan-500 mr-2"></i> Gaceta Hípica a Tablas
+            </h1>
+            <div class="flex items-center gap-3">
+                <a href="tablas.html" class="inline-flex items-center gap-2 bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-900 transition-colors shadow-sm">
+                    <i class="fas fa-table text-indigo-400"></i> Ensamblaje
+                </a>
+                <button id="btnRecargarGaceta" class="bg-white border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm transition-colors text-xs font-bold">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </header>
+
+        <main class="p-6 flex-1 overflow-y-auto w-full bg-slate-100">
+            <div class="max-w-6xl mx-auto space-y-6">
+
+                <!-- CARGA Y CLAVE IA -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                        <h3 class="text-xs font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-2 mb-4">
+                            <i class="fas fa-file-upload text-slate-400 mr-1"></i> Subir la Gaceta (PDF o Imagen)
+                        </h3>
+                        <div id="zonaDrop" class="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-cyan-400 hover:bg-cyan-50/40 transition-colors">
+                            <i class="fas fa-cloud-upload-alt text-3xl text-slate-400 mb-2"></i>
+                            <p class="text-sm font-bold text-slate-600">Arrastre el PDF o la imagen de la gaceta aquí</p>
+                            <p class="text-xs text-slate-400 mt-1">o haga clic para elegir el archivo (JPG, PNG, WEBP o PDF)</p>
+                            <input type="file" id="archivoGaceta" accept=".pdf,image/*" class="hidden">
+                        </div>
+                        <div id="previewGaceta" class="hidden mt-4">
+                            <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Vista previa (páginas a enviar a la IA):</p>
+                            <div id="miniaturas" class="grid grid-cols-4 sm:grid-cols-6 gap-2"></div>
+                        </div>
+                        <div class="mt-4 flex items-center gap-3">
+                            <label class="text-xs font-bold text-slate-600 uppercase">Páginas del PDF a leer</label>
+                            <input type="number" id="maxPaginas" value="8" min="1" max="15" class="w-20 border border-slate-300 rounded-lg px-2 py-1.5 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-cyan-500">
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                        <h3 class="text-xs font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-2 mb-4">
+                            <i class="fas fa-key text-slate-400 mr-1"></i> Clave de la IA (OpenAI)
+                        </h3>
+                        <p class="text-[11px] text-slate-500 leading-relaxed mb-3">
+                            La clave se guarda <b>solo en este navegador</b> (no se sube al repositorio).
+                            Consíguela en <span class="text-cyan-600 font-bold">platform.openai.com → API Keys</span>.
+                        </p>
+                        <input type="password" id="claveOpenAI" placeholder="sk-..." class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-cyan-500 font-mono">
+                        <button id="btnGuardarClave" class="mt-2 w-full bg-slate-800 text-white font-bold py-2 rounded-lg hover:bg-black transition-colors text-xs uppercase tracking-wide">
+                            <i class="fas fa-save mr-1"></i> Guardar clave (en este navegador)
+                        </button>
+                        <button id="btnTransformar" disabled class="mt-4 w-full bg-cyan-600 text-white font-bold py-3 rounded-lg shadow hover:bg-cyan-700 transition-colors text-sm uppercase tracking-wide">
+                            <i class="fas fa-wand-magic-sparkles mr-2"></i> Transformar con IA
+                        </button>
+                        <p id="estadoIA" class="text-[11px] text-slate-500 mt-2 text-center"></p>
+                    </div>
+                </div>
+
+                <!-- RESULTADO -->
+                <div id="resultadoGaceta" class="hidden">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-sm font-black text-slate-800 uppercase tracking-wider">
+                            <i class="fas fa-list-ol text-cyan-600 mr-1"></i> Carreras Extraídas
+                            <span id="resumenExtraccion" class="text-xs font-bold text-slate-500 normal-case"></span>
+                        </h3>
+                        <button id="btnRegistrarPadron" class="bg-rose-600 text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-rose-700 shadow-sm">
+                            <i class="fas fa-horse mr-1"></i> Registrar ejemplares en el padrón
+                        </button>
+                    </div>
+                    <div id="carrerasGaceta" class="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+                </div>
+
+                <p class="text-[11px] text-slate-500 italic leading-relaxed">
+                    <i class="fas fa-lightbulb mr-1 text-amber-500"></i>
+                    La IA transcribe la gaceta tal cual: no inventa nombres. Usted revisa Puntos (PTS), premio, distancia y
+                    superficie de cada carrera, y con <b>Cargar en el Ensamblaje</b> queda lista para publicar. Los ejemplares
+                    se registran en el padrón por nombre + nacionalidad (los homónimos se desambiguan por país).
+                </p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts y Componentes -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="../js/components/db.js"></script>
+    <script src="../js/components/auth.js"></script>
+    <script src="../js/components/ui.js"></script>
+    <script src="../js/components/layout.js"></script>
+    <script src="../js/conexion.js"></script>
+    <script src="../js/gaceta.js"></script>
+</body>
+</html>
