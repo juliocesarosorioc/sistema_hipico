@@ -304,37 +304,48 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
 
             let texto = '';
             let ultimoError = null;
+            const esperar = (ms) => new Promise(r => setTimeout(r, ms));
             const descubiertos = await listaModelosFlash(clave);
-            const modelos = [...new Set(descubiertos.concat(MODELOS_GEMINI))];
-            for (const model of modelos) {
-                const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': clave },
-                    body: JSON.stringify(body)
-                });
+            const modelos = [...new Set(descubiertos.concat(MODELOS_GEMINI))].slice(0, 12);
+            for (let i = 0; i < modelos.length; i++) {
+                const model = modelos[i];
+                if (i > 0) await esperar(1000);
+                let resp;
+                try {
+                    resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': clave },
+                        body: JSON.stringify(body)
+                    });
+                } catch (errNet) {
+                    ultimoError = `Sin conexión al probar ${model} (${errNet.message || 'red'}).`;
+                    continue;
+                }
 
+                if (resp.status === 429) {
+                    throw new Error('La cuota gratuita de IA está agotada en este momento. Espera unos minutos y reintenta, o usa otra clave de IA.');
+                }
                 if (resp.status === 404 || resp.status === 503) {
-                    ultimoError = `Modelo ${model} no disponible o saturado, probando otro...`;
+                    ultimoError = `Modelo ${model} no disponible o saturado (HTTP ${resp.status}), probando el siguiente...`;
                     continue;
                 }
                 if (!resp.ok) {
                     const txtErr = await resp.text();
                     let msg = `Error de IA (HTTP ${resp.status}).`;
                     try { msg = 'IA: ' + (JSON.parse(txtErr).error?.message || msg); } catch (e) { msg = txtErr.slice(0, 180); }
-                    if (resp.status === 429) msg = 'IA agotó la cuota gratuita por ahora. Espera unos minutos y reintenta, o usa otra cuenta de Google.';
                     throw new Error(msg);
                 }
 
                 const datos = await resp.json();
                 texto = (datos.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '').trim();
                 if (!texto) {
-                    ultimoError = `Modelo ${model} respondió vacío, probando otro...`;
+                    ultimoError = `Modelo ${model} respondió vacío, probando el siguiente...`;
                     continue;
                 }
                 break;
             }
 
-            if (ultimoError && !texto) throw new Error(ultimoError);
+            if (ultimoError && !texto) throw new Error(ultimoError + ' El sistema ya probó todos los modelos Flash disponibles. Espera 1–2 min y reintenta; si persiste, usa otra clave de IA (aistudio.google.com/apikey).');
 
             estado.carreras = parsearJSON(texto);
 
@@ -415,13 +426,20 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
         try {
             const carreras = estado.carreras;
             const fecha = carreras.find(c => c.fecha)?.fecha || null;
-            await window.supabase.from('gaceta_procesada').insert({
+            const { error } = await window.supabase.from('gaceta_procesada').insert({
                 fecha_gaceta: fecha || null,
                 num_carreras: carreras.length,
                 contenido: carreras,
                 creado_por: window.clubAuth?.getSesion?.()?.nombre || 'desconocido'
             });
-        } catch (e) { console.warn('No se guardó el historial:', e); }
+            if (error) throw error;
+        } catch (e) {
+            console.warn('No se guardó el historial (gaceta_procesada):', e.message || e);
+            if (!sessionStorage.getItem('club_gaceta_sql_aviso')) {
+                sessionStorage.setItem('club_gaceta_sql_aviso', '1');
+                clubUI.toast('La gaceta se procesó bien, pero el historial no se pudo guardar (falta la tabla o permisos para "gaceta_procesada"). Ejecute el paquete SQL completo y recargue.', 'warning');
+            }
+        }
     }
 
     // ---------- RENDER ----------

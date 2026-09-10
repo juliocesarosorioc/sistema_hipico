@@ -1,17 +1,20 @@
 -- ============================================================
---  PAQUETE FINAL: PENDIENTES DE INFRAESTRUCTURA (ejecutar UNA vez)
+--  PAQUETE FINAL: PENDIENTES DE INFRAESTRUCTURA
 -- ============================================================
 --  Combina (en orden seguro) los scripts que faltaban:
 --    1) columnas_faltantes  -> clientes.telefono/comision/socio_asignado
 --    2) tasas_referencia    -> historial de tasas BCV/Binance/EURO con fecha
 --    3) seguridad           -> tabla auditoria + RPC club_log_accion + RLS
 --    4) limpieza_auditoria  -> RPC club_limpiar_auditoria (borra >N dias)
+--    5) grupos_venta        -> permisos del rol anon (0 errores 401/403)
+--    6) gaceta_procesada    -> historial de transcripciones de la gaceta IA
+--    7) permisos globales   -> RLS apagado + grants al rol anon (TODAS las tablas)
+--    8) hipodromos/jugadas  -> columnas de calculo + siembra de hipodromos VE/USA
 --
---  TODO es idempotente (if not exists / create or replace), así que si
---  el SQL Editor revierte todo por un error, corrige y pega de nuevo.
---  Verificación sugerida después de correrlo:
---     select public.club_limpiar_auditoria(30);
---  (borra auditoría con más de 30 días y devuelve cuántas filas borró)
+--  IMPORTANTE: ejecute SIEMPRE el archivo COMPLETO (no solo un fragmento).
+--  TODO es idempotente (if not exists / create or replace / DO con fallos
+--  aislados), así que puede pegarlo y ejecutarlo nuevamente las veces que
+--  quiera sin romper nada: completa columnas, permisos y siembra que falten.
 -- ============================================================
 
 -- ============================================================
