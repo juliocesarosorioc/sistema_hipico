@@ -209,9 +209,25 @@ begin
         select tablename from pg_tables
         where schemaname = 'public'
     loop
+        -- auditoria se trata aparte: solo lectura para anon (escrituras via club_log_accion)
+        if t = 'auditoria' then
+            continue;
+        end if;
         execute format('alter table public.%I disable row level security', t);
-        execute format('grant usage on schema public to anon', t);
         execute format('grant select, insert, update, delete on table public.%I to anon', t);
     end loop;
 end;
 $$;
+
+grant usage on schema public to anon;
+
+-- auditoría: el anon SOLO lee (el insert queda vedado; las escrituras van por club_log_accion)
+alter table public.auditoria enable row level security;
+drop policy if exists "anon_read_temporal" on public.auditoria;
+create policy "anon_read_temporal" on public.auditoria
+    for select to anon using (true);
+revoke all on public.auditoria from anon;
+grant select on table public.auditoria to anon;
+
+-- VERIFICACIÓN (debe devolver filas):
+--   select * from public.auditoria order by fecha desc limit 5;
