@@ -40,7 +40,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let estado = { imagenes: [], paginas: [], carreras: [] };
 
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    // pdf.js puede quedar bloqueado por el Edge (Tracking Prevention).
+    // Si no está, se intenta cargar desde CDNs alternativos antes de usarlo.
+    const PDFJS_URLS = [
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+        'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js',
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js'
+    ];
+
+    function inyectarScript(url) {
+        return new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = url;
+            s.onload = () => res(true);
+            s.onerror = () => rej(new Error('no carga ' + url));
+            document.head.appendChild(s);
+        });
+    }
+
+    async function asegurarPdfJS() {
+        if (typeof window.pdfjsLib !== 'undefined') return true;
+        for (const u of PDFJS_URLS) {
+            try { await inyectarScript(u); } catch (e) { console.warn(e.message); }
+            if (typeof window.pdfjsLib !== 'undefined') break;
+        }
+        return typeof window.pdfjsLib !== 'undefined';
+    }
+
+    if (typeof window.pdfjsLib !== 'undefined') {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    }
 
     // Limpieza de claves antiguas (OpenAI quedó en desuso: ahora se usa Gemini gratis)
     if (localStorage.getItem('club_openai_key')) {
@@ -86,8 +115,12 @@ document.addEventListener('DOMContentLoaded', () => {
         estadoIA.textContent = 'Procesando archivo...';
         try {
             if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+                if (!(await asegurarPdfJS())) {
+                    estadoIA.textContent = 'No se pudo cargar el lector de PDF (bloqueado por tu navegador). Pruebe con una imagen (foto/captura del programa).';
+                    return clubUI.toast('Permita cdn.jsdelivr.net/cdnjs en el bloqueo de rastreadores de Edge, o suba el programa como imagen.', 'error');
+                }
                 const buf = await file.arrayBuffer();
-                const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+                const pdf = await window.pdfjsLib.getDocument({ data: buf, disableWorker: true }).promise;
                 const paginas = Math.min(parseInt(maxPaginas.value) || 8, pdf.numPages);
                 for (let i = 1; i <= paginas; i++) {
                     const page = await pdf.getPage(i);
