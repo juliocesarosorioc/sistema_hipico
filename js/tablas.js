@@ -128,26 +128,26 @@ document.addEventListener('DOMContentLoaded', () => {
         card.className = 'card-carrera bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden flex flex-col';
         card.dataset.uid = uid;
         card.innerHTML = `
-            <div class="bg-indigo-600 text-white px-3 py-2">
+            <div class="bg-indigo-600 px-2 py-1.5" style="color:#fff">
                 <div class="flex items-center justify-between gap-2">
-                    <span class="font-black text-sm whitespace-nowrap"><i class="fas fa-flag-checkered mr-1"></i> Carrera
-                        <input type="number" class="in-carrera-card w-14 bg-white/20 rounded px-1 py-0.5 text-center font-black outline-none text-white" value="${opts?.carrera ?? ''}" placeholder="N°">
+                    <span class="font-black text-xs whitespace-nowrap"><i class="fas fa-flag-checkered mr-1"></i> Carrera
+                        <input type="number" class="in-carrera-card w-12 rounded px-1 py-0.5 text-center font-black outline-none" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.carrera ?? ''}" placeholder="N°">
                     </span>
-                    <input type="text" class="in-hipo-card bg-white/20 rounded px-2 py-0.5 text-[10px] font-bold uppercase outline-none w-32 text-right placeholder-white/50" value="${opts?.hipodromo ?? ''}" placeholder="Hipódromo">
+                    <input type="text" class="in-hipo-card rounded px-2 py-0.5 text-[10px] font-bold uppercase outline-none w-32 text-right" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.hipodromo ?? ''}" placeholder="Hipódromo">
                 </div>
-                <div class="flex flex-wrap gap-1 mt-1.5 text-[9px] font-bold">
-                    <span class="bg-white/20 rounded px-1.5 py-0.5">Dist: <input type="number" class="in-dist-card w-14 bg-transparent outline-none text-center font-black placeholder-white/50" value="${opts?.distancia ?? ''}" placeholder="m"></span>
-                    <select class="in-sup-card bg-white/20 rounded px-1 py-0.5 outline-none uppercase text-[9px] font-bold">
+                <div class="flex flex-wrap gap-1 mt-1 text-[9px] font-bold">
+                    <span class="rounded px-1.5 py-0.5" style="background:rgba(255,255,255,.18)">Dist: <input type="number" class="in-dist-card w-14 outline-none text-center font-black" style="background:transparent;color:#fff" value="${opts?.distancia ?? ''}" placeholder="m"></span>
+                    <select class="in-sup-card rounded px-1 py-0.5 outline-none uppercase text-[9px] font-bold" style="background:rgba(255,255,255,.18)">
                         ${SUPERFICIES.map(s => `<option value="${s}" ${(opts?.superficie || '').toUpperCase() === s ? 'selected' : ''}>${s}</option>`).join('')}
                     </select>
-                    <span class="bg-white/20 rounded px-1.5 py-0.5">Premio $ <input type="number" step="0.01" class="in-premio-card w-20 bg-transparent outline-none text-right font-black placeholder-white/50" value="${opts?.premio ?? premioTabla.value ?? 100}"></span>
+                    <span class="rounded px-1.5 py-0.5" style="background:rgba(255,255,255,.18)">Premio $ <input type="number" step="0.01" class="in-premio-card w-20 outline-none text-right font-black" style="background:transparent;color:#fff" value="${opts?.premio ?? premioTabla.value ?? 100}"></span>
                 </div>
             </div>
             <div class="px-3 pt-1.5 pb-0.5 text-[9px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
                 <span><i class="fas fa-horse-head text-amber-500 mr-1"></i> Ejemplares</span>
                 <span class="cont-caballos-card bg-slate-100 text-slate-600 px-1.5 rounded-full font-black">0</span>
             </div>
-            <div class="lista-caballos-card px-2 py-1 space-y-1 overflow-y-auto max-h-72 flex-1"></div>
+            <div class="lista-caballos-card px-1.5 py-1 space-y-1 flex-1"></div>
             <div class="add-caballo-card border-t border-slate-200 p-2 space-y-1 bg-slate-50">
                 <div class="flex gap-1 items-center">
                     <input type="text" class="nuevo-num w-10 border border-slate-300 rounded px-0.5 py-1 text-xs font-bold text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="N°">
@@ -382,6 +382,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             datosTablaCompleta = data || [];
             tbodyMonitor.innerHTML = '';
+            const lblMonitor = document.getElementById('lblTotalMonitor');
+            if (lblMonitor) lblMonitor.textContent = String(datosTablaCompleta.length);
             if (datosTablaCompleta.length === 0) {
                 tbodyMonitor.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No hay tablas registradas.</td></tr>';
                 return;
@@ -750,38 +752,62 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
-    // PRELLENADO DESDE GACETA (una o varias carreras)
+    // PRELLENADO DESDE GACETA (registro persistente del día)
     // ==========================================
-    async function aplicarPrellenadoGaceta() {
+    // La Gaceta guarda en 'gaceta_registro' las carreras del día con las
+    // marcas enviada/aplicada. Aquí sólo se vuelven a pegar las que aún no
+    // se aplicaron, sin re-transformar y sin duplicar cards.
+    function leerGacetaRegistro() {
+        try { const a = JSON.parse(localStorage.getItem('gaceta_registro')); if (Array.isArray(a)) return a; } catch (e) { /* nada */ }
+        try { const a = JSON.parse(sessionStorage.getItem('gaceta_registro')); if (Array.isArray(a)) return a; } catch (e) { /* nada */ }
+        return [];
+    }
+    function escribirGacetaRegistro(arr, marcarAplicada = true) {
+        const actuales = leerGacetaRegistro();
+        const claves = ['gaceta_registro'];
+        let base = actuales;
+        if (marcarAplicada && actuales.length === 0) {
+            // Sólo cuando la gaceta ya no tiene registro y migramos legacy:
+            // se construye la base desde lo pendiente.
+            base = arr;
+        }
+        const unidas = base.map(item => {
+            const aplicada = arr.some(pend => String(pend.hipodromo || '').toUpperCase() === String(item.hipodromo || '').toUpperCase() && String(pend.carrera) === String(item.carrera));
+            return Object.assign({}, item, { aplicada: item.aplicada === true || aplicada || item.enviada === true });
+        });
+        claves.forEach(k => {
+            try { localStorage.setItem(k, JSON.stringify(unidas)); } catch (e) { /* nada */ }
+            try { sessionStorage.setItem(k, JSON.stringify(unidas)); } catch (e) { /* nada */ }
+        });
+        ['ensamblaje_carreras', 'gaceta_prellenado'].forEach(k => {
+            try { localStorage.removeItem(k); } catch (e) { /* nada */ }
+            try { sessionStorage.removeItem(k); } catch (e) { /* nada */ }
+        });
+        return unidas;
+    }
+    function migrarLegacy() {
+        // Compatibilidad con el flujo previo (antes del registro persistente):
+        // se convierte una única vez y se borran las claves viejas.
         const leer = (k) => localStorage.getItem(k) || sessionStorage.getItem(k);
-        const limpiar = (k) => { localStorage.removeItem(k); sessionStorage.removeItem(k); };
+        let migradas = [];
+        try {
+            const arr = JSON.parse(leer('ensamblaje_carreras'));
+            if (Array.isArray(arr)) migradas = migradas.concat(arr.map(c => Object.assign({}, c, { enviada: false })));
+        } catch (e) { /* nada */ }
+        try {
+            const p = JSON.parse(leer('gaceta_prellenado'));
+            if (p && p.hipodromo) migradas.push(Object.assign({}, p, { enviada: false }));
+        } catch (e) { /* nada */ }
+        return migradas;
+    }
 
-        let carreras = [];
-        const arr = leer('ensamblaje_carreras');
-        if (arr) {
-            try {
-                const parsed = JSON.parse(arr);
-                if (Array.isArray(parsed) && parsed.length) carreras = parsed;
-            } catch (e) { /* nada */ }
-        }
-        if (carreras.length === 0) {
-            const solo = leer('gaceta_prellenado');
-            if (solo) {
-                try {
-                    const p = JSON.parse(solo);
-                    if (p && p.hipodromo) carreras = [p];
-                } catch (e) { /* nada */ }
-            }
-        }
-        limpiar('ensamblaje_carreras');
-        limpiar('gaceta_prellenado');
-        if (carreras.length === 0) return;
-
+    function construirCardsGaceta(pendientes) {
         // Las cards se dibujan INMEDIATAMENTE, sin esperar catálogos.
         // Los catálogos (hipódromos/grupos/padrón) se cargan por detrás;
         // si fallan no bloquean el ensamblaje.
+        let montadas = 0;
         try {
-            carreras.forEach(pre => {
+            pendientes.forEach(pre => {
                 const caballos = (pre.caballos || []).map(c => ({
                     numero: c.numero, nombre: c.nombre, nacionalidad: c.nacionalidad || 'VE',
                     valor: c.valor ?? c.pts ?? null
@@ -794,6 +820,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     premio: pre.premio || premioTabla.value || 100,
                     caballos
                 });
+                montadas++;
                 // El programa del día queda grabado para los demás módulos
                 window.clubPrograma?.agregarCarrera({
                     hipodromo: pre.hipodromo || '',
@@ -814,25 +841,42 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             console.error('Error al montar cards del ensamblaje:', err);
         }
+        return montadas;
+    }
 
+    function pegarPendientesGaceta({ silencio = false } = {}) {
+        let pendientes = [];
+        const registro = leerGacetaRegistro();
+        if (registro.length) {
+            pendientes = registro.filter(c => c.enviada && !c.aplicada);
+        } else {
+            pendientes = migrarLegacy();
+        }
+        if (pendientes.length === 0) {
+            if (!silencio) clubUI.toast('No hay carreras pendientes de la gaceta en el registro.', 'warning');
+            return 0;
+        }
+        const montadas = construirCardsGaceta(pendientes);
+        escribirGacetaRegistro(pendientes);
         // Catálogos en segundo plano (no bloquean): reformado y tolerante a fallos
         Promise.all([cargarHipodromos(), cargarGrupos(), cargarEjemplares()].map(p => p.catch(() => {})))
             .catch(() => { /* silencioso */ });
-
-        clubUI.toast(`${carreras.length} carrera(s) cargada(s) desde la gaceta. Revise los VALORES y publique.`, 'success');
-        contenedorCarreras.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        contarCarreras();
+        if (!silencio) {
+            clubUI.toast(`${montadas} carrera(s) pegada(s) desde la gaceta. Revise los VALORES y publique.`, 'success');
+            contenedorCarreras.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        return montadas;
     }
 
-    // Botón de rescate manual: vuelve a pegar las carreras guardadas por la gaceta
+    // Pegado manual (rescate): vuelve a pegar lo que la gaceta dejó pendiente.
     const btnPegarGaceta = document.getElementById('btnPegarGaceta');
     if (btnPegarGaceta) {
         btnPegarGaceta.addEventListener('click', () => {
-            // Restaura en storage lo que el botón de gaceta guarda, y aplica de nuevo
             const leer = (k) => localStorage.getItem(k) || sessionStorage.getItem(k);
-            const arr = leer('ensamblaje_carreras');
-            const solo = leer('gaceta_prellenado');
-            if (!arr && !solo) return clubUI.toast('El navegador no tiene carreras guardadas de la gaceta.', 'warning');
-            aplicarPrellenadoGaceta();
+            const sinNada = !leer('gaceta_registro') && !leer('ensamblaje_carreras') && !leer('gaceta_prellenado');
+            if (sinNada) return clubUI.toast('El navegador no tiene carreras guardadas de la gaceta.', 'warning');
+            pegarPendientesGaceta();
         });
     }
 
@@ -844,5 +888,16 @@ document.addEventListener('DOMContentLoaded', () => {
     cargarTablas();
     // Catálogos: cargan siempre, pero nunca bloquean el ensamblaje si fallan
     [cargarHipodromos(), cargarGrupos(), cargarEjemplares()].forEach(p => p && p.catch && p.catch(() => {}));
-    aplicarPrellenadoGaceta();
+    pegarPendientesGaceta({ silencio: true });
+
+    // Monitor de publicadas: plegable para que la pantalla no haga scroll
+    const btnToggleMonitor = document.getElementById('btnToggleMonitor');
+    const cuerpoMonitor = document.getElementById('cuerpoMonitor');
+    if (btnToggleMonitor && cuerpoMonitor) {
+        btnToggleMonitor.addEventListener('click', () => {
+            cuerpoMonitor.classList.toggle('hidden');
+            const icono = btnToggleMonitor.querySelector('i.fa-chevron-down, i.fa-chevron-up');
+            if (icono) icono.className = cuerpoMonitor.classList.contains('hidden') ? 'fas fa-chevron-down' : 'fas fa-chevron-up';
+        });
+    }
 });

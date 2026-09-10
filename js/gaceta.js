@@ -40,6 +40,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let estado = { imagenes: [], paginas: [], carreras: [] };
 
+    // ---------- REGISTRO PERSISTENTE ----------
+    // Las carreras del día quedan guardadas hasta que se cargue un nuevo
+    // documento o el operador presione "Limpiar registro".
+    const REGISTRO_KEY = 'gaceta_registro';
+
+    function leerRegistro() {
+        try { const a = JSON.parse(localStorage.getItem(REGISTRO_KEY)); if (Array.isArray(a)) return a; } catch (e) { /* vacío */ }
+        try { const a = JSON.parse(sessionStorage.getItem(REGISTRO_KEY)); if (Array.isArray(a)) return a; } catch (e) { /* vacío */ }
+        return null;
+    }
+    function escribirRegistro(arr) {
+        try { localStorage.setItem(REGISTRO_KEY, JSON.stringify(arr)); } catch (e) { /* vacío */ }
+        try { sessionStorage.setItem(REGISTRO_KEY, JSON.stringify(arr)); } catch (e) { /* vacío */ }
+    }
+    function persistirRegistro() {
+        escribirRegistro(estado.carreras.map(c => Object.assign({}, c, { enviada: !!c.enviada, aplicada: !!c.aplicada })));
+    }
+    function marcarEnviadas(carreras) {
+        carreras.forEach(ce => {
+            estado.carreras.forEach(c => {
+                if (String(c.hipodromo || '').toUpperCase() === String(ce.hipodromo || '').toUpperCase() && c.carrera === ce.carrera) {
+                    c.enviada = true;
+                    c.aplicada = false;
+                }
+            });
+        });
+        persistirRegistro();
+    }
+
     // pdf.js puede quedar bloqueado por el Edge (Tracking Prevention).
     // Si no está, se intenta cargar desde CDNs alternativos antes de usarlo.
     const PDFJS_URLS = [
@@ -571,6 +600,10 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                 clubUI.toast('La IA no devolvió carreras. Mira el diagnóstico para el motivo exacto.', 'error');
             } else {
                 const resPadron = await registrarPadron();
+                // El registro del día queda guardado (enviada=false) hasta un
+                // nuevo documento o que el operador lo limpie.
+                estado.carreras.forEach(c => { c.enviada = false; c.aplicada = false; });
+                persistirRegistro();
                 guardarHistorial();
                 renderCarreras(resPadron);
 
@@ -790,6 +823,63 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
         if (e.target.closest('.gac-sel')) actualizarBtnTodo();
     });
 
+    // Con Tab (o Enter) sobre el VALOR de un ejemplar salta directo al valor
+    // del siguiente ejemplar, para no pasar por número/nombre/nacionalidad.
+    carrerasGaceta.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== 'Tab') return;
+        const inp = e.target.closest('.gac-valor');
+        if (!inp) return;
+        e.preventDefault();
+        const valores = [...carrerasGaceta.querySelectorAll('.gac-valor')];
+        const i = valores.indexOf(inp);
+        if (i === -1) return;
+        const siguiente = valores[(i + 1) % valores.length];
+        siguiente.focus();
+        siguiente.select();
+    });
+
+    // ---------- LIMPIAR / RECUPERAR REGISTRO ----------
+    function limpiarRegistro() {
+        try { localStorage.removeItem(REGISTRO_KEY); } catch (e) { /* vacío */ }
+        try { sessionStorage.removeItem(REGISTRO_KEY); } catch (e) { /* vacío */ }
+        try { localStorage.removeItem('ensamblaje_carreras'); } catch (e) { /* vacío */ }
+        try { sessionStorage.removeItem('ensamblaje_carreras'); } catch (e) { /* vacío */ }
+        try { localStorage.removeItem('gaceta_prellenado'); } catch (e) { /* vacío */ }
+        try { sessionStorage.removeItem('gaceta_prellenado'); } catch (e) { /* vacío */ }
+        estado.carreras = [];
+        renderCarreras({ nuevos: 0, vinculados: 0 });
+        estadoIA.textContent = 'Registro limpiado. Cargue un nuevo documento para empezar.';
+        actualizarBtnTodo();
+    }
+
+    // Si el operador volvió sin haber ensamblado todas, recupera las que
+    // quedaron pendientes SIN re-transformar con la IA.
+    async function cargarRegistroGuardado() {
+        const arr = leerRegistro();
+        if (!arr || !arr.length) return;
+        const pendientes = arr.filter(c => !c.enviada);
+        if (!pendientes.length) {
+            estadoIA.textContent = `${arr.filter(c => c.enviada).length} carrera(s) ya se enviaron al Ensamblaje. Cargue un nuevo programa o use "Limpiar registro" para empezar de nuevo.`;
+            return;
+        }
+        estado.carreras = pendientes.map(c => {
+            const copia = Object.assign({}, c);
+            delete copia.enviada;
+            delete copia.aplicada;
+            return copia;
+        });
+        window.clubIndicador?.accion('Recuperando las carreras guardadas…');
+        const resPadron = await registrarPadron();
+        persistirRegistro();
+        renderCarreras(resPadron);
+        resultadoGaceta.classList.remove('hidden');
+        const enviadas = arr.filter(c => c.enviada).length;
+        estadoIA.textContent = `${pendientes.length} carrera(s) guardada(s) pendientes de ensamblar${enviadas ? ` · ${enviadas} ya enviada(s)` : ''}. Puede enviarlas al Ensamblaje sin volver a transformar.`;
+        clubUI.toast(`${pendientes.length} carrera(s) pendientes recuperadas del registro (sin re-transformar).`, 'success');
+        window.clubIndicador?.fin();
+        actualizarBtnTodo();
+    }
+
     // Envío MASIVO: todas las marcadas, de una vez, con una sola navegación
     document.getElementById('btnEnviarTodoEnsamblaje')?.addEventListener('click', () => {
         const cards = [...carrerasGaceta.querySelectorAll('.bg-white')]
@@ -797,6 +887,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
         if (cards.length === 0) return clubUI.toast('Marca con el ✓ al menos una carrera para enviar.', 'warning');
         const carreras = cards.map(leerCarreraDeCard).filter(c => c.caballos.length > 0);
         if (carreras.length === 0) return clubUI.toast('Las carreras marcadas no tienen ejemplares con nombre.', 'warning');
+        marcarEnviadas(carreras);
         const total = acumularEnEnsamblaje(carreras);
         clubUI.toast(`${carreras.length} carrera(s) enviada(s) al Ensamblaje (total en el envío: ${total}). Revise y publique.`, 'success');
         setTimeout(() => location.href = 'tablas.html', 600);
@@ -809,6 +900,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
         const carrera = leerCarreraDeCard(card);
         if (carrera.caballos.length === 0) return clubUI.toast('Esta carrera no tiene ejemplares con nombre.', 'warning');
 
+        marcarEnviadas([carrera]);
         const total = acumularEnEnsamblaje([carrera]);
         clubUI.toast(`Carrera C${carrera.carrera || '?'} enviada al Ensamblaje (total en el envío: ${total}). Revise y publique.`, 'success');
         setTimeout(() => location.href = 'tablas.html', 600);
@@ -826,5 +918,17 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
         validarHabilitacion();
     });
 
+    document.getElementById('btnLimpiarRegistro')?.addEventListener('click', () => {
+        const arr = leerRegistro();
+        const pendientes = (arr || []).filter(c => !c.enviada).length;
+        const mensaje = pendientes > 0
+            ? `Hay ${pendientes} carrera(s) pendientes de ensamblar. `
+            : 'El registro no tiene carreras pendientes. ';
+        if (!confirm(`¿Limpiar el registro del día?\n\n${mensaje}Esta acción borra el registro guardado (no afecta las tablas ya publicadas).`)) return;
+        limpiarRegistro();
+        clubUI.toast('Registro del día limpiado.', 'success');
+    });
+
     validarHabilitacion();
+    cargarRegistroGuardado();
 });
