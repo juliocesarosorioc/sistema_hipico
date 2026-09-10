@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let gruposDB = [];
     let tablasDisponiblesDB = [];
     let clientesDB = [];
+    let miembrosExtraPorGrupo = {}; // { grupo_id: [cliente_id,...] } pertenencias adicionales (multi-grupo)
     let groupSeleccionado = null;
     let tablaSeleccionada = null;     // { id, premio_recalculado, caballos, hipodromo, carrera }
     let grupoTabla = null;            // tabla_grupos row (cupos, cantidad_vendida) del grupo actual
@@ -34,11 +35,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function inicializar() {
         const segura = (p) => p.catch(e => ({ data: null, error: e }));
-        const [rGrupos, rTablas, rClientes, rMoneda] = await Promise.all([
+        const [rGrupos, rTablas, rClientes, rMoneda, rMembresias] = await Promise.all([
             segura(window.supabase.from('grupos_venta').select('*').eq('activo', true).order('es_principal', { ascending: false })),
             segura(window.supabase.from('tablas_fijas').select('*, tabla_grupos(*)').eq('estado', 'Abierta')),
             segura(window.supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre, modo_juego, grupo_id').order('nombre')),
-            segura(window.supabase.from('monedas').select('tasa_cambio').limit(1).single())
+            segura(window.supabase.from('monedas').select('tasa_cambio').limit(1).single()),
+            segura(window.supabase.from('clientes_grupos').select('grupo_id, cliente_id'))
         ]);
 
         if (rMoneda.data && rMoneda.data.tasa_cambio) tasaCambioGlobal = parseFloat(rMoneda.data.tasa_cambio);
@@ -52,6 +54,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (rTablas.data) tablasDisponiblesDB = rTablas.data;
         if (rClientes.data) clientesDB = rClientes.data;
+
+        // Pertenencias adicionales (clientes_grupos) para listar miembros de un grupo
+        if (rMembresias.data && rMembresias.data.length) {
+            rMembresias.data.forEach(m => {
+                (miembrosExtraPorGrupo[m.grupo_id] = miembrosExtraPorGrupo[m.grupo_id] || []).push(m.cliente_id);
+            });
+        }
     }
 
     filtroGrupo.addEventListener('change', () => {
@@ -90,13 +99,29 @@ document.addEventListener('DOMContentLoaded', () => {
         tablaSeleccionada = t;
         grupoTabla = tg;
 
-        // Ejemplares disponibles (no retirados)
+// Ejemplares disponibles (no retirados)
         const caballos = (t.caballos || []).filter(c => !c.retirado);
         selectEjemplar.innerHTML = '<option value="">Seleccione ejemplar...</option>';
-        caballos.forEach(c => selectEjemplar.innerHTML += `<option value="${c.numero}">${c.numero} - ${c.nombre} (${c.valor_ejemplar} pts)</option>`);
+        caballos.forEach(c => selectEjemplar.innerHTML += `<option value="${c.numero}">${c.numero} - ${c.nombre} (Valor: ${c.valor_ejemplar ?? 0})</option>`);
 
-        // Clientes del grupo
-        const delGrupo = clientesDB.filter(c => c.grupo_id == groupSeleccionado.id);
+        // Aviso de retirados de esta carrera
+        const retirados = (t.caballos || []).filter(c => c.retirado).map(c => c.numero);
+        const retirosEl = document.getElementById('ventaRetirosInfo');
+        const retirosTexto = document.getElementById('ventaRetirosTexto');
+        if (retirosEl && retirosTexto) {
+            if (retirados.length > 0) {
+                retirosTexto.textContent = 'Ejemplares retirados de esta carrera: ' + retirados.map(n => 'N° ' + n).join(', ') + '. Se descuentan del pago y el ganador no puede ser uno de ellos.';
+                retirosEl.classList.remove('hidden');
+            } else {
+                retirosEl.classList.add('hidden');
+            }
+        }
+
+        // Clientes del grupo (principales + pertenencia adicional multi-grupo)
+        const extraIds = (miembrosExtraPorGrupo[groupSeleccionado.id] || []).filter(id => !clientesDB.find(c => c.id == id && c.grupo_id == groupSeleccionado.id));
+        const delGrupo = clientesDB
+            .filter(c => c.grupo_id == groupSeleccionado.id || extraIds.includes(c.id))
+            .sort((a, b) => a.nombre.localeCompare(b.nombre));
         selectCliente.innerHTML = '<option value="">Seleccione apostador...</option>';
         delGrupo.forEach(c => selectCliente.innerHTML += `<option value="${c.id}">${c.nombre} (Saldo: $${clubUI.formatoNumero(parseFloat(c.saldo_actual), 2)})</option>`);
         if (delGrupo.length === 0) selectCliente.innerHTML += '<option value="" disabled>No hay clientes en este grupo</option>';
@@ -107,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
     selectEjemplar.addEventListener('change', () => {
         if (!tablaSeleccionada) return;
         ejemplarSeleccionado = (tablaSeleccionada.caballos || []).find(c => c.numero == selectEjemplar.value) || null;
-        if (ejemplarSeleccionado) lblCostoUnit.textContent = ejemplarSeleccionado.valor_ejemplar + ' pts';
+        if (ejemplarSeleccionado) lblCostoUnit.textContent = 'Valor: ' + (ejemplarSeleccionado.valor_ejemplar ?? 0);
         actualizarTotales();
     });
 
@@ -138,7 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <tr class="${retirado ? 'opacity-50' : ''}">
                     <td class="p-2 text-center font-bold">${c.numero}</td>
                     <td class="p-2 font-bold text-slate-700">${c.nombre}</td>
-                    <td class="p-2 text-right font-bold text-blue-600">${c.valor_ejemplar} pts</td>
+                    <td class="p-2 text-right font-bold text-blue-600">Valor: ${c.valor_ejemplar ?? 0}</td>
                     <td class="p-2 text-center">${retirado ? '<span class="text-[9px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded">RETIRADO</span>' : '<span class="text-[9px] font-black bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded">ACTIVO</span>'}</td>
                 </tr>
             `;

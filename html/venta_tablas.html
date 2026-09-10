@@ -60,17 +60,21 @@
                     </div>
                     <div class="p-5 space-y-5">
 
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Ejemplar (Valor / Pts)</label>
+<div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Ejemplar (Valor)</label>
                             <select id="selectEjemplar" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-500">
                                 <option value="">Seleccione ejemplar...</option>
                             </select>
                         </div>
 
+                        <div id="ventaRetirosInfo" class="hidden text-[11px] font-bold bg-rose-50 border border-rose-200 text-rose-700 rounded-lg px-3 py-2">
+                            <i class="fas fa-user-slash mr-1"></i> <span id="ventaRetirosTexto"></span>
+                        </div>
+
                         <!-- Resumen Costos -->
                         <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 text-xs space-y-2 shadow-inner">
                             <div class="flex justify-between items-center border-b border-slate-200 pb-1">
-                                <span class="font-bold text-slate-600">Costo Unitario (Pts):</span>
+                                <span class="font-bold text-slate-600">Costo Unitario (Valor):</span>
                                 <strong id="lblCostoUnit" class="text-emerald-700 text-sm">0.00</strong>
                             </div>
                             <div class="flex justify-between items-center border-b border-slate-200 pb-1">
@@ -78,7 +82,7 @@
                                 <strong id="lblPremioUnit" class="text-blue-700 text-sm">0.00</strong>
                             </div>
                             <div class="flex justify-between items-center border-b border-slate-200 pb-1">
-                                <span class="font-bold text-slate-600">Costo Total (pts x cant.):</span>
+                                <span class="font-bold text-slate-600">Costo Total (valor x cant.):</span>
                                 <strong id="lblCostoTotal" class="text-emerald-700 text-sm">0.00</strong>
                             </div>
                             <div class="flex justify-between items-center border-b border-slate-200 pb-1">
@@ -282,6 +286,6 @@
     <script src="../js/components/ui.js"></script>
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
-    <script src="../js/venta_tablas.js"></script>
+    <script src="../js/venta_tablas.js?v=20260909-13"></script>
 </body>
 </html>

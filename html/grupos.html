@@ -95,7 +95,9 @@
                 <!-- Asignar Clientes -->
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 h-fit">
                     <h3 class="text-xs font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-2 mb-4">
-                        <i class="fas fa-user-tag text-slate-400 mr-1"></i> Asignar Clientes a Grupos
+                        <i class="fas fa-user-tag text-slate-400 mr-1"></i> Clientes por Grupo (un cliente puede estar en VARIOS grupos)
+
+                        <p class="text-[10px] text-slate-400 mt-1">El <b>Grupo Origen</b> muestra los miembros actuales del grupo. Marque clientes y use <b>Agregar al destino</b> (pertenencia adicional) o <b>Quitar del origen</b>.</p>
                     </h3>
                     <div class="grid grid-cols-2 gap-3 mb-3">
                         <div>
@@ -118,12 +120,15 @@
                     <div id="listaClientesGrupo" class="space-y-1.5 max-h-72 overflow-y-auto border border-slate-200 rounded-lg p-2 bg-slate-50">
                         <p class="text-slate-400 italic text-xs">Seleccione un grupo origen.</p>
                     </div>
-                    <div class="flex gap-2 mt-3">
+<div class="flex gap-2 mt-3">
                         <button id="btnMoverClientes" class="flex-1 bg-amber-500 text-slate-900 font-bold py-2 rounded-lg shadow hover:bg-amber-600 transition-colors text-xs uppercase tracking-wide">
-                            <i class="fas fa-arrow-right mr-1"></i> Mover seleccionados
+                            <i class="fas fa-arrow-right mr-1"></i> Agregar al destino
                         </button>
                         <button id="btnMoverTodos" class="flex-1 bg-slate-700 text-white font-bold py-2 rounded-lg shadow hover:bg-slate-800 transition-colors text-xs uppercase tracking-wide">
-                            <i class="fas fa-forward mr-1"></i> Mover todos
+                            <i class="fas fa-forward mr-1"></i> Agregar todos al destino
+                        </button>
+                        <button id="btnQuitarClientesGrupo" class="flex-1 bg-red-50 text-red-600 font-bold py-2 rounded-lg shadow hover:bg-red-100 transition-colors text-xs uppercase tracking-wide">
+                            <i class="fas fa-user-minus mr-1"></i> Quitar del origen
                         </button>
                     </div>
                 </div>
@@ -194,6 +199,6 @@
     <script src="../js/components/ui.js"></script>
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
-    <script src="../js/grupos.js"></script>
+    <script src="../js/grupos.js?v=20260909-13"></script>
 </body>
 </html>

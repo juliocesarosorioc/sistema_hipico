@@ -19,6 +19,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let sesion = null;
     let clienteDatos = null;
     let grupoDatos = null;
+    let miembrosGrupos = [];    // grupos a los que pertenece el cliente (multi-pertenencia)
+    let grupoActivo = null;     // grupo con el que compra en este momento
+    let selectGrupoEl = null;   // <select> de grupos (solo si el cliente está en varios)
     let tablasDisponibles = [];
     let tablaSeleccionada = null;
     let tasaGlobal = 1.0;
@@ -280,12 +283,60 @@ document.addEventListener('DOMContentLoaded', () => {
         const tasaCuadre = parseFloat(data.tasa_cuadre || 0) || tasaGlobal;
         document.getElementById('kpiSaldoEquiv').textContent = '≈ Bs ' + clubUI.formatoNumero((saldo * tasaCuadre), 2);
 
-        // Grupo
-        const { data: g } = await window.supabase.from('grupos_venta').select('nombre, moneda, moneda_cuadre').eq('id', data.grupo_id).maybeSingle();
+        // Grupo (o grupos): un cliente puede pertenecer a VARIOS grupos
+        const { data: mem } = await window.supabase
+            .from('clientes_grupos')
+            .select('grupo_id, es_principal')
+            .eq('cliente_id', sesion.id)
+            .eq('activo', true);
+        miembrosGrupos = (mem && mem.length)
+            ? mem
+            : (data.grupo_id ? [{ grupo_id: data.grupo_id, es_principal: true }] : []);
+
+        // Grupo activo por defecto: el principal (clientes.grupo_id) o el primero
+        const principal = miembrosGrupos.find(m => m.grupo_id == data.grupo_id) || miembrosGrupos[0];
+        grupoActivo = principal || { grupo_id: data.grupo_id };
+        sesion.grupo_id = grupoActivo.grupo_id;
+
+        const { data: g } = await window.supabase.from('grupos_venta').select('nombre, moneda, moneda_cuadre').eq('id', grupoActivo.grupo_id).maybeSingle();
         if (g) {
             grupoDatos = g;
             document.getElementById('portalGrupo').textContent = g.nombre;
             document.getElementById('portalMonedaCuadre').textContent = g.moneda_cuadre || g.moneda || 'USD';
+        }
+
+        // Selector: si el cliente está en varios grupos, se muestra para elegir con cuál comprar
+        selectGrupoEl = document.getElementById('portalSelectGrupo');
+        const bloqueGrupo = document.getElementById('bloqueSelectGrupo');
+        if (miembrosGrupos.length > 1 && selectGrupoEl && bloqueGrupo) {
+            let nombres = [];
+            const { data: gruposNombres } = await window.supabase.from('grupos_venta').select('id, nombre').in('id', miembrosGrupos.map(m => m.grupo_id));
+            (gruposNombres || []).forEach(gn => { nombres[gn.id] = gn.nombre; });
+            selectGrupoEl.innerHTML = miembrosGrupos.map(m => `<option value="${m.grupo_id}">${nombres[m.grupo_id] || 'Grupo'}</option>`).join('');
+            selectGrupoEl.value = grupoActivo.grupo_id;
+            bloqueGrupo.classList.remove('hidden');
+            const extra = document.getElementById('portalGruposExtra');
+            if (extra) extra.textContent = 'También en: ' + miembrosGrupos
+                .filter(m => m.grupo_id != grupoActivo.grupo_id)
+                .map(m => nombres[m.grupo_id] || 'Grupo').join(', ');
+
+            selectGrupoEl.addEventListener('change', async () => {
+                grupoActivo = { grupo_id: selectGrupoEl.value };
+                sesion.grupo_id = selectGrupoEl.value;
+                const { data: gn } = await window.supabase.from('grupos_venta').select('nombre, moneda, moneda_cuadre').eq('id', selectGrupoEl.value).maybeSingle();
+                if (gn) {
+                    grupoDatos = gn;
+                    document.getElementById('portalGrupo').textContent = gn.nombre;
+                    document.getElementById('portalMonedaCuadre').textContent = gn.moneda_cuadre || gn.moneda || 'USD';
+                }
+                tablaSeleccionada = null;
+                selectTabla.value = '';
+                selectEjemplar.innerHTML = '<option value="">Primero seleccione la carrera</option>';
+                lblTotalPagar.textContent = '$0.00';
+                cargarTablasDisponibles();
+            });
+        } else if (selectGrupoEl && bloqueGrupo) {
+            bloqueGrupo.classList.add('hidden');
         }
     }
 
@@ -334,6 +385,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     async function cargarTablasDisponibles(soloSiVacio = false) {
         if (soloSiVacio && selectTabla.value) return;
+        // Grupo con el que compra: el seleccionado en el selector (si existe) o el activo
+        const gid = (selectGrupoEl && selectGrupoEl.value) ? selectGrupoEl.value : (sesion.grupo_id || grupoActivo?.grupo_id);
         const { data } = await window.supabase
             .from('tablas_fijas')
             .select('*, tabla_grupos(*)')
@@ -341,7 +394,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .order('id', { ascending: false });
 
         tablasDisponibles = (data || []).filter(t => {
-            const tg = (t.tabla_grupos || []).find(x => x.grupo_id == sesion.grupo_id);
+            const tg = (t.tabla_grupos || []).find(x => x.grupo_id == gid);
             return tg && (tg.cupos - (tg.cantidad_vendida || 0)) > 0;
         });
 
@@ -350,7 +403,7 @@ document.addEventListener('DOMContentLoaded', () => {
             : '<option value="">Seleccione hipódromo / carrera...</option>';
 
         tablasDisponibles.forEach(t => {
-            const tg = (t.tabla_grupos || []).find(x => x.grupo_id == sesion.grupo_id);
+            const tg = (t.tabla_grupos || []).find(x => x.grupo_id == gid);
             const disp = (tg.cupos || 0) - (tg.cantidad_vendida || 0);
             selectTabla.innerHTML += `<option value="${t.id}">${t.hipodromo} - Carrera ${t.carrera} (disponibles: ${disp})</option>`;
         });
@@ -360,9 +413,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const t = tablasDisponibles.find(x => x.id == selectTabla.value);
         tablaSeleccionada = t || null;
         selectEjemplar.innerHTML = '<option value="">Seleccione ejemplar...</option>';
-        if (!t) return;
+        const retirosEl = document.getElementById('portalRetirosInfo');
+        if (!t) {
+            if (retirosEl) retirosEl.classList.add('hidden');
+            actualizarTotalPagar();
+            return;
+        }
+        // Ejemplares retirados visibles para el cliente (si los hubo; por defecto no hay)
+        const retirados = (t.caballos || []).filter(c => c.retirado).map(c => c.numero);
+        if (retirosEl) {
+            const retirosTexto = document.getElementById('portalRetirosTexto');
+            if (retirados.length > 0) {
+                retirosTexto.textContent = 'Ejemplares retirados de esta carrera: ' + retirados.map(n => 'N° ' + n).join(', ');
+                retirosEl.classList.remove('hidden');
+            } else {
+                retirosEl.classList.add('hidden');
+            }
+        }
         (t.caballos || []).filter(c => !c.retirado).forEach(c => {
-            selectEjemplar.innerHTML += `<option value="${c.numero}">${c.numero} - ${c.nombre} (${c.valor_ejemplar} pts)</option>`;
+            selectEjemplar.innerHTML += `<option value="${c.numero}">${c.numero} - ${c.nombre} (Valor: ${c.valor_ejemplar ?? 0})</option>`;
         });
         actualizarTotalPagar();
     });

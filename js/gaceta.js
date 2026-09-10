@@ -295,7 +295,7 @@ Para cada carrera devuelve:
   - distancia: distancia de la carrera en metros (entero) si se lee, si no 0
   - superficie: una de ARENA, CESPED, FANGO, TAPETA u otra si se lee explícita; si no ARENA
   - premio: número si se lee (ej: 15000), si no 0
-  - ejemplares: lista con numero (puesto/orden del ejemplar), nombre (MAYÚSCULAS, EXACTO como aparece), nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si no se indica usa VE), pts (valor/bolígrafo numérico si aparece; si no 0)
+  - ejemplares: lista con numero (puesto/orden del ejemplar), nombre (MAYÚSCULAS, EXACTO como aparece), nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si no se indica usa VE), valor (monta/valor del ejemplar: número si aparece, si no 0. Acepta también la clave pts con el mismo significado)
 REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un ejemplar aparece repetido entre páginas, mantenlo tal cual. Si el documento no tiene carreras, devuelve {"carreras":[]}.
 `;
 
@@ -346,7 +346,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
                                                             numero: { type: 'INTEGER' },
                                                             nombre: { type: 'STRING' },
                                                             nacionalidad: { type: 'STRING' },
-                                                            pts: { type: 'NUMBER' }
+                                                            valor: { type: 'NUMBER' }
                                                         }
                                                     }
                                                 }
@@ -563,7 +563,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
                                 <th class="p-1.5 text-center font-bold w-10">N°</th>
                                 <th class="p-1.5 text-left font-bold">Ejemplar</th>
                                 <th class="p-1.5 text-center font-bold w-20">Nac.</th>
-                                <th class="p-1.5 text-right font-bold w-20">Puntos</th>
+                                <th class="p-1.5 text-right font-bold w-20">Valor</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -578,13 +578,13 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
                                             ${NACIONALIDADES.map(n => `<option value="${n}" ${(ej.nacionalidad || 'VE') === n ? 'selected' : ''}>${n}</option>`).join('')}
                                         </select>
                                     </td>
-                                    <td class="p-1 text-right"><input type="number" step="0.1" class="gac-pts w-16 border border-slate-200 rounded px-1 py-0.5 text-right text-xs font-bold text-blue-700 outline-none" value="${ej.pts ?? ''}"></td>
+                                    <td class="p-1 text-right"><input type="number" step="0.1" class="gac-valor w-16 border border-slate-200 rounded px-1 py-0.5 text-right text-xs font-bold text-blue-700 outline-none" value="${ej.valor ?? ej.pts ?? ''}"></td>
                                 </tr>
                             `).join('') || '<tr><td colspan="4" class="p-3 text-center text-slate-400 italic">Sin ejemplares detectados</td></tr>'}
                         </tbody>
                     </table>
                 </div>
-                <button class="btn-cargar-ensamblaje w-full bg-cyan-600 text-white font-bold py-2 rounded-lg shadow hover:bg-cyan-700 transition-colors text-xs uppercase tracking-wide" data-acc="cargar" title="Lleva esta carrera al Ensamblaje para revisar PTS y publicar">
+                <button class="btn-cargar-ensamblaje w-full bg-cyan-600 text-white font-bold py-2 rounded-lg shadow hover:bg-cyan-700 transition-colors text-xs uppercase tracking-wide" data-acc="cargar" title="Lleva esta carrera al Ensamblaje para revisar sus VALORES y publicar">
                     <i class="fas fa-arrow-right mr-1"></i> Cargar en el Ensamblaje
                 </button>
             </div>
@@ -599,7 +599,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
             numero: f.querySelector('.gac-num')?.value?.trim() || '',
             nombre: f.querySelector('.gac-nombre')?.value?.trim().toUpperCase() || '',
             nacionalidad: f.querySelector('.gac-nac')?.value || 'VE',
-            pts: parseFloat(f.querySelector('.gac-pts')?.value) || 0
+            valor: parseFloat(f.querySelector('.gac-valor')?.value) || parseFloat(f.querySelector('.gac-pts')?.value) || 0
         })).filter(c => c.nombre);
 
         const carrera = {
@@ -611,9 +611,22 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. Si un 
             premio: parseFloat(card.querySelector('.gac-premio')?.value) || 0,
             caballos
         };
+
+        // Acumula la carrera en el Ensamblaje (varias carreras por envío)
+        const leerArr = () => {
+            try { const x = JSON.parse(sessionStorage.getItem('ensamblaje_carreras')); if (Array.isArray(x)) return x; } catch (err) { /* nada */ }
+            try { const x = JSON.parse(localStorage.getItem('ensamblaje_carreras')); if (Array.isArray(x)) return x; } catch (err) { /* nada */ }
+            return [];
+        };
+        const arr = leerArr();
+        arr.push(carrera);
+        sessionStorage.setItem('ensamblaje_carreras', JSON.stringify(arr));
+        localStorage.setItem('ensamblaje_carreras', JSON.stringify(arr));
+        // Por compatibilidad se conserva también la carrera única
         sessionStorage.setItem('gaceta_prellenado', JSON.stringify(carrera));
         localStorage.setItem('gaceta_prellenado', JSON.stringify(carrera));
-        clubUI.toast('Carrera enviada al Ensamblaje. Revise y publique.', 'success');
+
+        clubUI.toast(`Carrera C${carrera.carrera || '?'} enviada al Ensamblaje (total en el envío: ${arr.length}). Revise y publique.`, 'success');
         setTimeout(() => location.href = 'tablas.html', 600);
     });
 

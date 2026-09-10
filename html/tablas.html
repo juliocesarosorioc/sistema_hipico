@@ -32,94 +32,69 @@
             </div>
         </header>
 
-        <main class="p-6 flex-1 overflow-y-auto w-full grid grid-cols-1 xl:grid-cols-12 gap-6 bg-slate-100">
+        <main class="p-6 flex-1 overflow-y-auto w-full space-y-6 bg-slate-100">
 
-            <!-- PANEL SUPERIOR: CONFIGURACIÓN Y ENSAMBLAJE (7 Columnas) -->
-            <div class="xl:col-span-7 space-y-6">
-                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                    <h2 class="text-sm font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2 uppercase tracking-wide flex items-center">
-                        <i class="fas fa-tools text-slate-400 mr-2"></i> Parámetros de la Tabla
-                    </h2>
-                    <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4">
-                        <div class="col-span-3 md:col-span-2">
-                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Hipódromo</label>
-                            <select id="hipodromoTabla" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 uppercase font-bold bg-slate-50">
-                                <option value="">Seleccione hipódromo...</option>
-                            </select>
-                        </div>
-                        <div class="col-span-3 md:col-span-2">
-                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Carrera (N°)</label>
-                            <input type="number" id="carreraTabla" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-center" placeholder="N°">
-                        </div>
-                        <div class="col-span-6 md:col-span-2">
-                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Distancia (metros)</label>
-                            <input type="number" id="distanciaTabla" min="400" step="50" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-center" placeholder="Ej: 1100">
-                        </div>
-                        <div class="col-span-6 md:col-span-6">
-                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Superficie</label>
-                            <select id="superficieTabla" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 uppercase font-bold bg-slate-50">
-                                <option value="">Seleccione superficie...</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
-                        <div class="md:col-span-4">
-                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Premio a Pagar</label>
-                            <input type="number" id="premioTabla" step="0.01" value="100" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-right text-emerald-600">
-                        </div>
-                    </div>
-
-<h3 class="text-xs font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-2 mt-5 mb-3">
-                        <i class="fas fa-tachometer-alt text-slate-400 mr-1"></i> Cupos de Tabla por Grupo
-                    </h3>
-                    <div id="contenedorCuposGrupos" class="space-y-2">
-                        <p class="text-slate-400 italic text-xs">Cargando grupos...</p>
-                    </div>
-                </div>
-
-                <div class="bg-white rounded-xl shadow-sm border border-emerald-200 p-5" id="cardVistaPrevia">
-                    <h2 class="text-sm font-bold text-slate-800 mb-4 border-b border-emerald-100 pb-2 uppercase tracking-wide flex items-center">
-                        <i class="fas fa-eye text-emerald-500 mr-2"></i> Vista previa del Ensamblaje
-                    </h2>
-                    <div id="vistaPreviaEnsamblaje" class="text-slate-400 italic text-xs">Aún no hay carrera ensamblada. Envíe la carrera desde la <b>Gaceta → Tablas (IA)</b> o complétela aquí manualmente.</div>
-                </div>
-            </div>
-
-            <!-- PANEL SUPERIOR: EJEMPLARES (5 Columnas) -->
-            <div class="xl:col-span-5 space-y-6">
-                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col h-full">
-                    <div class="flex justify-between items-center mb-4 border-b border-slate-200 pb-2">
-                        <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wide"><i class="fas fa-horse-head text-amber-600 mr-2"></i> Ejemplares</h2>
-                        <div class="flex items-center gap-2">
-                            <a href="ejemplares.html" class="text-rose-600 hover:text-rose-800 text-[10px] font-black uppercase tracking-wide"><i class="fas fa-book-open"></i> Padrón</a>
-                            <button id="btnAgregarCaballo" class="bg-slate-800 text-white px-3 py-1 rounded text-xs font-bold hover:bg-black transition-colors shadow-sm"><i class="fas fa-plus"></i> Añadir</button>
-                        </div>
-                    </div>
-
-                    <div id="contenedorCaballos" class="flex-1 overflow-y-auto space-y-2 pr-2 max-h-48">
-                        <!-- Las filas de caballos se inyectan aquí -->
-                    </div>
-
-                    <div class="mt-4 pt-3 border-t border-slate-200 grid grid-cols-2 gap-4">
-                        <div class="bg-slate-50 p-2 rounded-lg border border-slate-200 text-center">
-                            <span class="block text-[10px] font-bold text-slate-500 uppercase">Suma Base (Pts)</span>
-                            <span class="text-lg font-black text-slate-800" id="totalSumaBase">0.0</span>
-                        </div>
-                        <div class="bg-emerald-50 p-2 rounded-lg border border-emerald-200 text-center">
-                            <span class="block text-[10px] font-bold text-emerald-600 uppercase">Premio / Pts</span>
-                            <span class="text-lg font-black text-emerald-600" id="lblPremioPts">-</span>
-                        </div>
-                    </div>
-
-                    <button id="btnGuardarTabla" class="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg mt-4 shadow-md hover:bg-indigo-700 transition-colors uppercase tracking-wide text-sm">
-                        <i class="fas fa-save mr-2"></i> Ensamblar y Publicar Tabla
+            <!-- PARÁMETROS DE LA PRÓXIMA CARRERA -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                <h2 class="text-sm font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2 uppercase tracking-wide flex items-center justify-between">
+                    <span><i class="fas fa-tools text-slate-400 mr-2"></i> Parámetros de la próxima carrera</span>
+                    <button id="btnAgregarCarrera" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold shadow transition-colors">
+                        <i class="fas fa-plus mr-1"></i> Añadir carrera al Ensamblaje
                     </button>
+                </h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-12 gap-3 items-end">
+                    <div class="col-span-2 md:col-span-2 xl:col-span-4">
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Hipódromo</label>
+                        <select id="hipodromoTabla" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 uppercase font-bold bg-slate-50">
+                            <option value="">Seleccione hipódromo...</option>
+                        </select>
+                    </div>
+                    <div class="col-span-1 md:col-span-1 xl:col-span-2">
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Carrera (N°)</label>
+                        <input type="number" id="carreraTabla" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-center" placeholder="N°">
+                    </div>
+                    <div class="col-span-1 md:col-span-1 xl:col-span-2">
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Distancia (m)</label>
+                        <input type="number" id="distanciaTabla" min="400" step="50" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-center" placeholder="1100">
+                    </div>
+                    <div class="col-span-2 md:col-span-2 xl:col-span-2">
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Superficie</label>
+                        <select id="superficieTabla" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 uppercase font-bold bg-slate-50">
+                            <option value="">Seleccione...</option>
+                        </select>
+                    </div>
+                    <div class="col-span-2 md:col-span-2 xl:col-span-2">
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Premio a Pagar ($)</label>
+                        <input type="number" id="premioTabla" step="0.01" value="100" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-right text-emerald-600">
+                    </div>
+                </div>
+
+                <h3 class="text-xs font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-2 mt-5 mb-3">
+                    <i class="fas fa-tachometer-alt text-slate-400 mr-1"></i> Cupos de Tabla por Grupo
+                </h3>
+                <div id="contenedorCuposGrupos" class="space-y-2">
+                    <p class="text-slate-400 italic text-xs">Cargando grupos...</p>
                 </div>
             </div>
 
-            <!-- PANEL INFERIOR: MONITOR DE TABLAS -->
-            <div class="xl:col-span-12 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <!-- CARRERAS EN EL ENSAMBLAJE (grilla de 4 columnas) -->
+            <div>
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                        <i class="fas fa-layer-group text-indigo-500"></i> Carreras en el Ensamblaje
+                        <span id="lblTotalCarreras" class="text-[10px] font-black bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">0</span>
+                    </h2>
+                    <span class="text-[10px] text-slate-400 font-semibold italic">4 carreras por línea · se ven todas en una sola hoja</span>
+                </div>
+                <div id="carrerasEnsamblaje" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                    <p class="text-slate-400 italic text-sm md:col-span-2 xl:col-span-4 text-center py-4 bg-white rounded-xl border border-dashed border-slate-300">
+                        Aún no hay carreras armadas. Cárguelas desde la <b>Gaceta → Tablas (IA)</b>, use los parámetros de arriba o presione <b>“Añadir carrera”</b>.
+                    </p>
+                </div>
+            </div>
+
+            <!-- MONITOR DE TABLAS -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="bg-slate-900 text-white p-3.5 font-bold text-xs uppercase tracking-wider flex items-center">
                     <i class="fas fa-desktop text-indigo-400 mr-2"></i> Monitor de Tablas Publicadas
                 </div>
@@ -128,8 +103,8 @@
                         <thead class="bg-slate-100 text-slate-700 sticky top-0 shadow-sm border-b border-slate-200">
                             <tr>
                                 <th class="p-3 font-bold uppercase tracking-wider">Carrera</th>
-                                <th class="p-3 font-bold uppercase tracking-wider">Grupos (Vendidas / Cupos)</th>
                                 <th class="p-3 text-right font-bold uppercase tracking-wider">Premio</th>
+                                <th class="p-3 text-center font-bold uppercase tracking-wider">Retiros / Ganador</th>
                                 <th class="p-3 text-center font-bold uppercase tracking-wider">Estado</th>
                                 <th class="p-3 text-center font-bold uppercase tracking-wider">Acciones</th>
                             </tr>
@@ -211,11 +186,11 @@
         </div>
     </div>
 
-    <!-- Modal Auditoría (Retiros y Descuentos) -->
+    <!-- Modal Auditoría (Resultado, Retiros y Premio por Modalidad) -->
     <div id="modalAuditoria" class="hidden fixed inset-0 bg-slate-900 bg-opacity-60 z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
             <div class="bg-amber-500 p-4 text-slate-900 font-bold flex justify-between items-center text-sm uppercase tracking-wide">
-                <span><i class="fas fa-balance-scale mr-2"></i> Auditoría (Retiros Oficiales)</span>
+                <span><i class="fas fa-balance-scale mr-2"></i> Resultado de la Carrera (Auditoría)</span>
                 <button class="cerrar-modal hover:text-white"><i class="fas fa-times"></i></button>
             </div>
             <div class="p-5">
@@ -224,20 +199,22 @@
                     <span class="text-xs font-bold text-slate-600 uppercase">Suma Base Inicial:</span>
                     <span class="text-lg font-black text-slate-800" id="lblSumaBase">0</span>
                 </div>
-                <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Marque los ejemplares retirados:</p>
-
-                <div id="listaCaballosAuditoria" class="space-y-2 max-h-48 overflow-y-auto mb-4 border border-slate-200 p-2 rounded-lg bg-slate-50">
+                <p class="text-[10px] font-bold text-cyan-700 uppercase tracking-wider mb-1">Ganador de la carrera:</p>
+                <div id="listaGanadorAuditoria" class="space-y-1.5 max-h-32 overflow-y-auto mb-4 border border-slate-200 p-2 rounded-lg bg-slate-50">
+                    <!-- Se inyectan los radios aquí -->
+                </div>
+                <p class="text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-2">Ejemplares retirados (si no marca ninguno quedará “No hubo retiros”):</p>
+                <div id="listaCaballosAuditoria" class="space-y-2 max-h-40 overflow-y-auto mb-4 border border-slate-200 p-2 rounded-lg bg-slate-50">
                     <!-- Se inyectan los checkboxes aquí -->
                 </div>
-
                 <div class="bg-emerald-50 p-3 rounded-lg border border-emerald-200 flex justify-between items-center shadow-inner">
-                    <span class="text-xs font-bold text-emerald-800 uppercase">Premio Recalculado:</span>
+                    <span class="text-xs font-bold text-emerald-800 uppercase">Premio Recalculado (resultado):</span>
                     <span class="text-xl font-black text-emerald-600" id="lblPremioRecalculado">0.00</span>
                 </div>
             </div>
             <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
                 <button type="button" class="cerrar-modal bg-slate-300 text-slate-700 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-400 transition-colors">Cancelar</button>
-                <button type="button" id="btnProcesarAuditoria" class="bg-amber-500 text-slate-900 px-5 py-2 rounded-lg text-xs font-bold hover:bg-amber-600 shadow-md uppercase">Procesar Auditoría</button>
+                <button type="button" id="btnProcesarAuditoria" class="bg-amber-500 text-slate-900 px-5 py-2 rounded-lg text-xs font-bold hover:bg-amber-600 shadow-md uppercase">Registrar Resultado</button>
             </div>
         </div>
     </div>
@@ -249,6 +226,6 @@
     <script src="../js/components/ui.js"></script>
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
-    <script src="../js/tablas.js"></script>
+    <script src="../js/tablas.js?v=20260909-13"></script>
 </body>
 </html>

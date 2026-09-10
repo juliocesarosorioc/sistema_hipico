@@ -1,10 +1,8 @@
 document.addEventListener('DOMContentLoaded', () => {
 
-    const contenedorCaballos = document.getElementById('contenedorCaballos');
-    const btnAgregarCaballo = document.getElementById('btnAgregarCaballo');
-    const lblSumaBase = document.getElementById('totalSumaBase');
-    const lblPremioPts = document.getElementById('lblPremioPts');
-    const btnGuardarTabla = document.getElementById('btnGuardarTabla');
+    const btnAgregarCarrera = document.getElementById('btnAgregarCarrera');
+    const contenedorCarreras = document.getElementById('carrerasEnsamblaje');
+    const lblTotalCarreras = document.getElementById('lblTotalCarreras');
     const tbodyMonitor = document.getElementById('cuerpoMonitorTablas');
     const premioTabla = document.getElementById('premioTabla');
 
@@ -13,12 +11,19 @@ document.addEventListener('DOMContentLoaded', () => {
     let gruposActivos = [];
     let todosGrupos = [];
     let padronEjemplares = [];
+    let carrerasBol = [];        // uids de las carreras armadas (sin publicar)
 
     const OPCIONES_NACIONALIDAD = ['VE', 'USA', 'BR', 'AR', 'CL', 'MX', 'PA', 'PE', 'CO', 'EC', 'UY', 'OTRA'];
     const SUPERFICIES = ['ARENA', 'CESPED', 'FANGO', 'TAPETA', 'OTRA'];
+    const NO_RETIROS = 'NO HUBO RETIROS';
+
+    const htmlSelectNac = (val = 'VE') =>
+        `<select class="in-cab-nac w-14 border border-slate-200 rounded px-0.5 py-0.5 text-[9px] font-bold uppercase outline-none bg-white">
+            ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}" ${n === (val || 'VE') ? 'selected' : ''}>${n}</option>`).join('')}
+        </select>`;
 
     // ==========================================
-    // TASA GLOBAL (interna: solo se guarda en el registro para el cuadre)
+    // TASA GLOBAL (interna: solo se guarda para el cuadre)
     // ==========================================
     async function cargarTasaGlobal() {
         try {
@@ -55,9 +60,6 @@ document.addEventListener('DOMContentLoaded', () => {
         renderGruposDup();
     }
 
-    // ==========================================
-    // CUPOS POR GRUPO (ensamblaje; la gestión vive en Grupos y Convenios)
-    // ==========================================
     function renderCuposGrupos() {
         const cont = document.getElementById('contenedorCuposGrupos');
         if (gruposActivos.length === 0) {
@@ -76,9 +78,6 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
     }
 
-    // ==========================================
-    // PADRÓN DE EJEMPLARES (base de estadísticas)
-    // ==========================================
     async function cargarEjemplares() {
         const { data } = await window.supabase.from('ejemplares').select('id, nombre, nacionalidad').order('nombre');
         padronEjemplares = data || [];
@@ -86,7 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function llenarSuperficies() {
         const sel = document.getElementById('superficieTabla');
-        sel.innerHTML = '<option value="">Seleccione superficie...</option>' + SUPERFICIES.map(s => `<option value="${s}">${s}</option>`).join('');
+        sel.innerHTML = '<option value="">Seleccione...</option>' + SUPERFICIES.map(s => `<option value="${s}">${s}</option>`).join('');
     }
 
     async function resolverEjemplar(nombre, nacionalidad) {
@@ -101,86 +100,167 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
-    // CÁLCULOS EN VIVO (Ejemplares)
+    // CARRERAS EN EL ENSAMBLAJE (grilla 4 columnas)
     // ==========================================
-    function revisarEjemplarFila(div) {
-        const nombre = (div.querySelector('.in-nom-cab').value || '').trim().toUpperCase();
-        const nac = div.querySelector('.in-nac-cab').value;
-        const pista = div.querySelector('.pista-ejemplar');
-        if (!nombre) { pista.classList.add('hidden'); pista.textContent = ''; return; }
-        const mismos = padronEjemplares.filter(e => e.nombre.toUpperCase() === nombre);
-        let msg, cls;
-        if (mismos.length === 0) {
-            msg = 'Nuevo ejemplar: se registrará en el padrón.';
-            cls = 'text-emerald-600';
-        } else if (mismos.some(e => e.nacionalidad.toUpperCase() === nac)) {
-            msg = `Ya registrado (${nac}): se vinculará automáticamente al padrón.`;
-            cls = 'text-amber-600';
-        } else {
-            msg = `Nombre existente en ${mismos.map(e => e.nacionalidad).join('/')}: quedará como nuevo ejemplar (${nac}).`;
-            cls = 'text-rose-600';
+    function contarCarreras() {
+        if (lblTotalCarreras) lblTotalCarreras.textContent = carrerasBol.length;
+        if (contenedorCarreras.querySelector('.empty-ensamblaje')) {
+            contenedorCarreras.querySelector('.empty-ensamblaje').classList.toggle('hidden', carrerasBol.length > 0);
         }
-        pista.classList.remove('hidden');
-        pista.textContent = msg;
-        pista.className = `pista-ejemplar mt-1 text-[10px] font-bold ${cls}`;
     }
 
-    function crearFilaCaballo(numSugerido = '', nomSugerido = '', valorSugerido = '', nacSugerido = 'VE') {
-        const div = document.createElement('div');
-        div.className = 'fila-caballo-config bg-slate-50 border border-slate-200 rounded-lg p-1.5 space-y-1';
-        div.innerHTML = `
-            <div class="flex gap-2 items-center">
-                <input type="text" class="input-tbl w-14 text-center in-num-cab font-bold" value="${numSugerido}" placeholder="N°">
-                <input type="text" class="input-tbl flex-1 in-nom-cab uppercase" value="${nomSugerido}" placeholder="Ejemplar">
-                <select class="input-tbl w-24 in-nac-cab text-xs font-bold uppercase">
-                    ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}" ${n === nacSugerido ? 'selected' : ''}>${n}</option>`).join('')}
-                </select>
-                <input type="number" step="0.1" class="input-tbl w-20 text-center text-blue-700 font-bold in-valor-ej" value="${valorSugerido}" placeholder="Pts">
-                <button type="button" class="text-red-400 hover:text-red-600 px-1 btn-quitar-cab" title="Quitar"><i class="fas fa-trash-alt"></i></button>
+    function filaCaballoCard(c) {
+        const vacio = (c && c.nombre) ? '' : 'opacity-70';
+        return `
+            <div class="fila-caballo-card flex gap-1 items-center bg-slate-50 border border-slate-200 rounded p-1 ${vacio}">
+                <input type="text" class="in-cab-num w-10 border border-slate-200 rounded px-0.5 py-0.5 text-center text-xs font-bold outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="N°">
+                <input type="text" class="in-cab-nom flex-1 border border-slate-200 rounded px-1 py-0.5 text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar">
+                ${htmlSelectNac(c?.nacionalidad)}
+                <input type="number" step="0.1" class="in-cab-valor w-14 border border-slate-200 rounded px-0.5 py-0.5 text-right text-xs font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="Valor">
+                <button type="button" class="btn-del-cab-card text-red-400 hover:text-red-600 px-0.5" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
+            </div>`;
+    }
+
+    function crearCardCarrera(opts) {
+        const uid = 'car-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        const card = document.createElement('div');
+        card.className = 'card-carrera bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden flex flex-col';
+        card.dataset.uid = uid;
+        card.innerHTML = `
+            <div class="bg-indigo-600 text-white px-3 py-2">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="font-black text-sm whitespace-nowrap"><i class="fas fa-flag-checkered mr-1"></i> Carrera
+                        <input type="number" class="in-carrera-card w-14 bg-white/20 rounded px-1 py-0.5 text-center font-black outline-none text-white" value="${opts?.carrera ?? ''}" placeholder="N°">
+                    </span>
+                    <input type="text" class="in-hipo-card bg-white/20 rounded px-2 py-0.5 text-[10px] font-bold uppercase outline-none w-32 text-right placeholder-white/50" value="${opts?.hipodromo ?? ''}" placeholder="Hipódromo">
+                </div>
+                <div class="flex flex-wrap gap-1 mt-1.5 text-[9px] font-bold">
+                    <span class="bg-white/20 rounded px-1.5 py-0.5">Dist: <input type="number" class="in-dist-card w-14 bg-transparent outline-none text-center font-black placeholder-white/50" value="${opts?.distancia ?? ''}" placeholder="m"></span>
+                    <select class="in-sup-card bg-white/20 rounded px-1 py-0.5 outline-none uppercase text-[9px] font-bold">
+                        ${SUPERFICIES.map(s => `<option value="${s}" ${(opts?.superficie || '').toUpperCase() === s ? 'selected' : ''}>${s}</option>`).join('')}
+                    </select>
+                    <span class="bg-white/20 rounded px-1.5 py-0.5">Premio $ <input type="number" step="0.01" class="in-premio-card w-20 bg-transparent outline-none text-right font-black placeholder-white/50" value="${opts?.premio ?? premioTabla.value ?? 100}"></span>
+                </div>
             </div>
-            <p class="pista-ejemplar text-[10px] font-bold hidden"></p>
+            <div class="px-3 pt-1.5 pb-0.5 text-[9px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                <span><i class="fas fa-horse-head text-amber-500 mr-1"></i> Ejemplares</span>
+                <span class="cont-caballos-card bg-slate-100 text-slate-600 px-1.5 rounded-full font-black">0</span>
+            </div>
+            <div class="lista-caballos-card px-2 py-1 space-y-1 overflow-y-auto max-h-56 flex-1"></div>
+            <div class="add-caballo-card border-t border-slate-200 p-2 space-y-1 bg-slate-50">
+                <div class="flex gap-1 items-center">
+                    <input type="text" class="nuevo-num w-10 border border-slate-300 rounded px-0.5 py-1 text-xs font-bold text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="N°">
+                    <input type="text" class="nuevo-nom flex-1 border border-slate-300 rounded px-1 py-1 text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Ejemplar nuevo">
+                    <select class="nuevo-nac w-14 border border-slate-300 rounded px-0.5 py-1 text-[9px] font-bold uppercase outline-none bg-white">
+                        ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}">${n}</option>`).join('')}
+                    </select>
+                    <input type="number" step="0.1" class="nuevo-valor w-14 border border-slate-300 rounded px-0.5 py-1 text-right text-xs font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Valor">
+                    <button type="button" class="btn-add-caballo-card bg-indigo-600 hover:bg-indigo-700 text-white rounded px-2 py-1" title="Añadir ejemplar"><i class="fas fa-plus"></i></button>
+                </div>
+            </div>
+            <div class="px-2 py-2 border-t border-slate-200 flex gap-2 bg-white">
+                <button type="button" class="btn-publicar-card flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black py-2 rounded-lg shadow transition-colors uppercase tracking-wide">
+                    <i class="fas fa-save mr-1"></i> Publicar
+                </button>
+                <button type="button" class="btn-quitar-card bg-red-50 hover:bg-red-100 text-red-600 px-3 py-2 rounded-lg text-xs font-bold transition-colors" title="Quitar esta carrera del ensamblaje">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
         `;
-        contenedorCaballos.appendChild(div);
-        div.querySelector('.btn-quitar-cab').addEventListener('click', () => { div.remove(); calcularSumaBaseTotal(); });
-        div.querySelector('.in-valor-ej').addEventListener('input', calcularSumaBaseTotal);
-        div.querySelector('.in-nom-cab').addEventListener('input', () => revisarEjemplarFila(div));
-        div.querySelector('.in-nac-cab').addEventListener('change', () => revisarEjemplarFila(div));
-        revisarEjemplarFila(div);
+
+        (opts?.caballos || []).forEach(c => {
+            card.querySelector('.lista-caballos-card').insertAdjacentHTML('beforeend', filaCaballoCard(c));
+        });
+        actualizarContCaballos(card);
+
+        contenedorCarreras.appendChild(card);
+        carrerasBol.push(uid);
+        contarCarreras();
+        return card;
     }
 
-    function calcularSumaBaseTotal() {
-        let suma = 0;
-        document.querySelectorAll('.in-valor-ej').forEach(input => { suma += parseFloat(input.value) || 0; });
-        lblSumaBase.textContent = clubUI.formatoNumero(suma, 1);
+    function actualizarContCaballos(card) {
+        const n = card.querySelectorAll('.fila-caballo-card .in-cab-nom').length;
+        const cont = card.querySelector('.cont-caballos-card');
+        if (cont) cont.textContent = n;
     }
 
-    function actualizarPremio() {
-        const prem = parseFloat(premioTabla.value) || 0;
-        if (lblPremioPts) lblPremioPts.textContent = '$' + clubUI.formatoNumero(prem, 2);
-    }
+    // Delegación de eventos sobre la grilla de carreras
+    contenedorCarreras.addEventListener('click', async (e) => {
+        const btnAdd = e.target.closest('.btn-add-caballo-card');
+        if (btnAdd) {
+            const card = btnAdd.closest('.card-carrera');
+            const nombre = card.querySelector('.nuevo-nom').value.trim().toUpperCase();
+            if (!nombre) return clubUI.toast('Escriba el nombre del ejemplar para añadirlo.', 'warning');
+            card.querySelector('.lista-caballos-card').insertAdjacentHTML('beforeend', filaCaballoCard({
+                numero: card.querySelector('.nuevo-num').value.trim(),
+                nombre,
+                nacionalidad: card.querySelector('.nuevo-nac').value,
+                valor: card.querySelector('.nuevo-valor').value
+            }));
+            card.querySelector('.nuevo-num').value = '';
+            card.querySelector('.nuevo-nom').value = '';
+            card.querySelector('.nuevo-valor').value = '';
+            actualizarContCaballos(card);
+            return;
+        }
 
-    premioTabla.addEventListener('input', actualizarPremio);
-    btnAgregarCaballo.addEventListener('click', () => crearFilaCaballo());
-    crearFilaCaballo('1', 'Ejemplar A', '50');
-    crearFilaCaballo('2', 'Ejemplar B', '60');
-    crearFilaCaballo('3', 'Ejemplar C', '50');
-    calcularSumaBaseTotal();
+        const btnDel = e.target.closest('.btn-del-cab-card');
+        if (btnDel) {
+            const card = btnDel.closest('.card-carrera');
+            btnDel.closest('.fila-caballo-card').remove();
+            actualizarContCaballos(card);
+            return;
+        }
+
+        const btnQuitar = e.target.closest('.btn-quitar-card');
+        if (btnQuitar) {
+            const card = btnQuitar.closest('.card-carrera');
+            if (!confirm('¿Quitar esta carrera del ensamblaje? (no se ha publicado)')) return;
+            carrerasBol = carrerasBol.filter(u => u !== card.dataset.uid);
+            card.remove();
+            contarCarreras();
+            return;
+        }
+
+        const btnPub = e.target.closest('.btn-publicar-card');
+        if (btnPub) await publicarCard(btnPub.closest('.card-carrera'));
+    });
 
     // ==========================================
-    // ENSAMBLAR Y PUBLICAR
+    // PUBLICAR UNA CARRERA DEL ENSAMBLAJE
     // ==========================================
-    btnGuardarTabla.addEventListener('click', async () => {
-        const hipodromo = document.getElementById('hipodromoTabla').value.trim().toUpperCase();
-        const carrera = parseInt(document.getElementById('carreraTabla').value);
-        const premio = parseFloat(premioTabla.value);
-        const sumaBaseTabla = parseFloat(lblSumaBase.textContent);
-        const distancia = parseFloat(document.getElementById('distanciaTabla').value);
-        const superficie = document.getElementById('superficieTabla').value;
+    async function publicarCard(card) {
+        const hipodromo = (card.querySelector('.in-hipo-card').value || '').trim().toUpperCase();
+        const carrera = parseInt(card.querySelector('.in-carrera-card').value);
+        const premio = parseFloat(card.querySelector('.in-premio-card').value);
+        const distancia = parseFloat(card.querySelector('.in-dist-card').value);
+        const superficie = card.querySelector('.in-sup-card').value;
 
+        let sumaBaseTabla = 0;
+        const caballosArr = [];
+        const clavesNombreNac = new Set();
+        card.querySelectorAll('.fila-caballo-card').forEach(fila => {
+            const numero = fila.querySelector('.in-cab-num').value.trim();
+            const nombre = fila.querySelector('.in-cab-nom').value.trim().toUpperCase();
+            const nacionalidad = fila.querySelector('.in-cab-nac').value;
+            const valor = parseFloat(fila.querySelector('.in-cab-valor').value);
+            if (!numero && !nombre) return;
+            if (numero && nombre && !isNaN(valor)) {
+                const clave = nombre + '|' + nacionalidad;
+                if (clavesNombreNac.has(clave)) { caballosArr.push(null); return; }
+                clavesNombreNac.add(clave);
+                sumaBaseTabla += valor;
+                caballosArr.push({ numero, nombre, nacionalidad, valor_ejemplar: valor, retirado: false, ganador: false, ejemplar_id: null });
+            }
+        });
+
+        if (caballosArr.some(c => c === null)) return clubUI.toast("Un ejemplar (nombre + nacionalidad) está repetido en la misma tabla.");
+        if (caballosArr.length < 2) return clubUI.toast("Ingrese al menos 2 ejemplares.");
         if (!hipodromo || isNaN(carrera) || isNaN(premio) || premio <= 0 || sumaBaseTabla <= 0) {
             return clubUI.toast("Faltan campos obligatorios o la base de ponderación es cero.");
         }
-        if (!superficie) return clubUI.toast("Seleccione la superficie de la pista (arena, césped, fango, tapeta...).");
+        if (!superficie) return clubUI.toast("Seleccione la superficie de la pista.");
         if (isNaN(distancia) || distancia <= 0) return clubUI.toast("Indique la distancia de la carrera en metros.");
 
         const cuposPorGrupo = [...document.querySelectorAll('.in-cupo-grupo')]
@@ -188,33 +268,14 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(x => x.cupos > 0);
         if (cuposPorGrupo.length === 0) return clubUI.toast("Asigne cupos a al menos un grupo.");
 
-        // Comisión: proviene del convenio del grupo (sección Grupos y Convenios), no se pide aquí.
         const grupoPrimario = gruposActivos.find(g => g.es_principal) || gruposActivos[0];
         const comisionGrupo = parseFloat(grupoPrimario && grupoPrimario.comision_default) || 2.5;
-
-        let caballosArr = [];
-        const clavesNombreNac = new Set();
-        document.querySelectorAll('.fila-caballo-config').forEach(fila => {
-            const numero = fila.querySelector('.in-num-cab').value.trim();
-            const nombre = fila.querySelector('.in-nom-cab').value.trim().toUpperCase();
-            const nacionalidad = fila.querySelector('.in-nac-cab').value;
-            const valor = parseFloat(fila.querySelector('.in-valor-ej').value);
-            if (numero && nombre && !isNaN(valor)) {
-                const clave = nombre + '|' + nacionalidad;
-                if (clavesNombreNac.has(clave)) {
-                    caballosArr.push(null);
-                    return;
-                }
-                clavesNombreNac.add(clave);
-                caballosArr.push({ numero, nombre, nacionalidad, valor_ejemplar: valor, retirado: false, ejemplar_id: null });
-            }
-        });
-        if (caballosArr.some(c => c === null)) return clubUI.toast("Un ejemplar (nombre + nacionalidad) está repetido en la misma tabla.");
-        if (caballosArr.length < 2) return clubUI.toast("Ingrese al menos 2 ejemplares.");
-
         const limiteTotal = cuposPorGrupo.reduce((a, b) => a + b.cupos, 0);
-        const btnOrigText = btnGuardarTabla.innerHTML;
-        btnGuardarTabla.innerHTML = 'Guardando...'; btnGuardarTabla.disabled = true;
+
+        const btn = card.querySelector('.btn-publicar-card');
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Guardando...';
+        btn.disabled = true;
 
         for (const c of caballosArr) {
             c.ejemplar_id = await resolverEjemplar(c.nombre, c.nacionalidad);
@@ -225,27 +286,46 @@ document.addEventListener('DOMContentLoaded', () => {
             suma_base_tabla: sumaBaseTabla, limite_ventas: limiteTotal, cantidad_vendida: 0,
             premio_original: premio, premio_recalculado: premio,
             comision_grupo: comisionGrupo, caballos: caballosArr, estado: 'Abierta',
-            distancia_carrera: distancia, superficie
+            distancia_carrera: distancia, superficie, retirados_oficiales: NO_RETIROS
         }]).select('id').single();
+
+        btn.innerHTML = orig;
+        btn.disabled = false;
 
         if (error) {
             console.error("Error BD:", error.message || error);
-            clubUI.toast("Error al registrar en la base de datos.");
-        } else {
-            const filasGrupos = cuposPorGrupo.map(x => ({ tabla_id: nueva.id, grupo_id: x.grupo_id, cupos: x.cupos, cantidad_vendida: 0 }));
-            const { error: errG } = await window.supabase.from('tabla_grupos').insert(filasGrupos);
-            if (errG) console.error("Error cupos:", errG.message);
-            contenedorCaballos.innerHTML = '';
-            crearFilaCaballo(); crearFilaCaballo();
-            calcularSumaBaseTotal(); cargarTablas(); cargarEjemplares();
-            if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `publicada: ${hipodromo} C${carrera} ${distancia}m ${superficie} premio=$${premio} cupos=${limiteTotal} (id=${nueva.id})`);
+            return clubUI.toast("Error al registrar en la base de datos.");
         }
-        btnGuardarTabla.innerHTML = btnOrigText; btnGuardarTabla.disabled = false;
-    });
+
+        const filasGrupos = cuposPorGrupo.map(x => ({ tabla_id: nueva.id, grupo_id: x.grupo_id, cupos: x.cupos, cantidad_vendida: 0 }));
+        const { error: errG } = await window.supabase.from('tabla_grupos').insert(filasGrupos);
+        if (errG) console.error("Error cupos:", errG.message);
+
+        carrerasBol = carrerasBol.filter(u => u !== card.dataset.uid);
+        card.remove();
+        contarCarreras();
+        cargarTablas(); cargarEjemplares();
+        clubUI.toast(`Carrera C${carrera} (${hipodromo}) publicada con ${caballosArr.length} ejemplares (valor total calculado: privado).`, 'success');
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `publicada: ${hipodromo} C${carrera} ${distancia}m ${superficie} premio=$${premio} cupos=${limiteTotal} ejemplares=${caballosArr.length} (id=${nueva.id})`);
+    }
 
     // ==========================================
     // MONITOR
     // ==========================================
+    function badgeRetiros(t) {
+        const r = (t.retirados_oficiales || '').trim().toUpperCase();
+        if (!r || r === 'NO HUBO RETIROS' || r === 'NINGUNO' || r === '') {
+            return '<span class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 text-[10px] font-black"><i class="fas fa-check-circle"></i> No hubo retiros</span>';
+        }
+        return `<span class="inline-flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 rounded-full px-2 py-0.5 text-[10px] font-black"><i class="fas fa-user-slash"></i> Retirados: ${r}</span>`;
+    }
+
+    function chipGanador(t) {
+        const ganador = (t.caballos || []).find(c => c.ganador);
+        if (!ganador) return '';
+        return `<span class="inline-flex items-center gap-1 bg-amber-100 text-amber-700 border border-amber-300 rounded-full px-2 py-0.5 text-[10px] font-black mt-1"><i class="fas fa-trophy"></i> Ganador #${ganador.numero} ${ganador.nombre}</span>`;
+    }
+
     async function cargarTablas() {
         try {
             const { data, error } = await window.supabase
@@ -264,7 +344,7 @@ document.addEventListener('DOMContentLoaded', () => {
             datosTablaCompleta.forEach(t => {
                 const badgeEstado = t.estado === 'Abierta' ? '<span class="text-green-600 font-bold">ABIERTA</span>' : '<span class="text-blue-600 font-bold">AUDITADA</span>';
 
-                let chipsGrupos = (t.tabla_grupos || []).map(tg => {
+                const chipsGrupos = (t.tabla_grupos || []).map(tg => {
                     const nombre = tg.grupos_venta ? tg.grupos_venta.nombre : '?';
                     const moneda = tg.grupos_venta ? tg.grupos_venta.moneda : '';
                     const disp = (tg.cupos || 0) - (tg.cantidad_vendida || 0);
@@ -276,20 +356,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     </span>`;
                 }).join(' ') || '<span class="text-slate-400 italic text-[10px]">Sin cupos</span>';
 
-                let btnAcciones = `
+                const btnAcciones = `
                     <div class="flex flex-wrap gap-1 justify-center">
                         <button class="btn-editar bg-slate-200 text-slate-700 px-2 py-1 rounded hover:bg-slate-300" data-id="${t.id}" title="Editar"><i class="fas fa-edit"></i></button>
                         <button class="btn-clonar bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200" data-id="${t.id}" title="Clonar"><i class="fas fa-copy"></i></button>
-                        ${t.estado === 'Abierta' ? `<button class="btn-auditar bg-amber-400 text-slate-900 px-2 py-1 rounded hover:bg-amber-500 font-bold" data-id="${t.id}">Auditar</button>` : ''}
+                        ${t.estado === 'Abierta' ? `<button class="btn-auditar bg-amber-400 text-slate-900 px-2 py-1 rounded hover:bg-amber-500 font-bold" data-id="${t.id}">Auditar</button>` : `<button class="btn-auditar bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 font-bold" data-id="${t.id}">Resultado</button>`}
                         <button class="btn-eliminar bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200" data-id="${t.id}" title="Eliminar"><i class="fas fa-trash-alt"></i></button>
                     </div>
                 `;
 
                 tbodyMonitor.innerHTML += `
                     <tr class="hover:bg-slate-50 border-b border-slate-100">
-                        <td class="p-2 font-bold">${t.hipodromo}<br><span class="text-blue-600">C${t.carrera}</span> ${t.distancia_carrera ? `<span class="text-slate-400 font-normal"> · ${t.distancia_carrera}m</span>` : ''} ${t.superficie ? `<span class="inline-block ml-1 text-[9px] border border-slate-300 rounded px-1 font-bold text-slate-600 uppercase">${t.superficie}</span>` : ''}</td>
-                        <td class="p-2">${chipsGrupos}</td>
+                        <td class="p-2 font-bold">${t.hipodromo}<br><span class="text-blue-600">C${t.carrera}</span> ${t.distancia_carrera ? `<span class="text-slate-400 font-normal"> · ${t.distancia_carrera}m</span>` : ''} ${t.superficie ? `<span class="inline-block ml-1 text-[9px] border border-slate-300 rounded px-1 font-bold text-slate-600 uppercase">${t.superficie}</span>` : ''}
+                            <div class="mt-1">${chipsGrupos}</div></td>
                         <td class="p-2 text-right"><span class="text-blue-700 font-bold">$${clubUI.formatoNumero(parseFloat(t.premio_recalculado), 2)}</span></td>
+                        <td class="p-2 text-center">${badgeRetiros(t)}${chipGanador(t)}</td>
                         <td class="p-2 text-center text-[10px]">${badgeEstado}</td>
                         <td class="p-2 text-center">${btnAcciones}</td>
                     </tr>
@@ -307,7 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
-    // ELIMINAR TABLA (con liquidaciones pendientes)
+    // ELIMINAR TABLA
     // ==========================================
     async function eliminarTabla(id) {
         const t = datosTablaCompleta.find(x => x.id == id);
@@ -349,7 +430,6 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>`;
         }).join('') || '<p class="text-slate-400 italic text-xs">Esta tabla no tiene grupos asignados.</p>';
 
-        // Selector para reasignar a un grupo nuevo
         const selecNuevo = document.getElementById('nuevoGrupoEditar');
         const opciones = gruposActivos
             .filter(g => !yaAsignados.includes(g.id))
@@ -359,7 +439,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!opciones) selecNuevo.innerHTML = '<option value="" disabled>Todos los grupos ya están asignados</option>';
         document.getElementById('nuevoCupoEditar').value = 50;
 
-        // Quitar grupo (solo suma si el boton existe)
         ctn.querySelectorAll('.btn-quitar-grupo-edit').forEach(b => b.addEventListener('click', (e) => {
             const fila = e.currentTarget.closest('.fila-cupo-editar');
             const nombre = fila.querySelector('span').textContent;
@@ -436,7 +515,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ==========================================
-    // CLONACIÓN (duplicar en mismos grupos)
+    // CLONACIÓN
     // ==========================================
     function renderGruposDup() {
         const cont = document.getElementById('listaGruposDup');
@@ -473,7 +552,9 @@ document.addEventListener('DOMContentLoaded', () => {
             grupo_venta: 'GRUPOS', moneda: tablaRef.moneda, tasa_cambio: tablaRef.tasa_cambio,
             suma_base_tabla: tablaRef.suma_base_tabla, limite_ventas: cuposTotales, cantidad_vendida: 0,
             premio_original: tablaRef.premio_original, premio_recalculado: tablaRef.premio_recalculado,
-            comision_grupo: tablaRef.comision_grupo, caballos: tablaRef.caballos, estado: 'Abierta'
+            comision_grupo: tablaRef.comision_grupo, caballos: tablaRef.caballos, estado: 'Abierta',
+            distancia_carrera: tablaRef.distancia_carrera, superficie: tablaRef.superficie,
+            retirados_oficiales: NO_RETIROS
         }]).select('id').single();
 
         if (!error) {
@@ -488,26 +569,49 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ==========================================
-    // AUDITORÍA (Retiros y Descuento Proporcional)
+    // AUDITORÍA / RESULTADO (ganador + retiros + premio por modalidad)
     // ==========================================
     let premioOrigTemp = 0, sumaBaseTemp = 0, caballosModalTemp = [];
 
     function abrirModalAuditoria(id) {
         const t = datosTablaCompleta.find(x => x.id == id);
+        if (!t) return;
         document.getElementById('auditoriaTablaId').value = id;
-        premioOrigTemp = t.premio_original; sumaBaseTemp = t.suma_base_tabla;
-        caballosModalTemp = t.caballos;
+        premioOrigTemp = parseFloat(t.premio_original) || 0;
+        sumaBaseTemp = parseFloat(t.suma_base_tabla) || 0;
+        caballosModalTemp = [...(t.caballos || [])].map(c => ({ ...c }));
 
-        document.getElementById('lblSumaBase').textContent = sumaBaseTemp;
-        const ctn = document.getElementById('listaCaballosAuditoria'); ctn.innerHTML = '';
-        caballosModalTemp.forEach((c, i) => {
-            ctn.innerHTML += `<label class="flex items-center gap-2 bg-white border border-slate-200 p-2 rounded cursor-pointer text-xs">
-                <input type="checkbox" class="chk-retiro" data-index="${i}" data-valor="${c.valor_ejemplar}">
-                <span class="font-bold text-slate-700">${c.numero} - ${c.nombre} (Valor: ${c.valor_ejemplar})</span>
-            </label>`;
-        });
-        document.getElementById('lblPremioRecalculado').textContent = premioOrigTemp;
-        document.querySelectorAll('.chk-retiro').forEach(chk => chk.addEventListener('change', actualizarCalculoRecalculado));
+        document.getElementById('lblSumaBase').textContent = clubUI.formatoNumero(sumaBaseTemp, 1);
+
+        const contGanador = document.getElementById('listaGanadorAuditoria');
+        contGanador.innerHTML = caballosModalTemp.map((c, i) => `
+            <label class="flex items-center gap-2 bg-white border border-slate-200 p-2 rounded cursor-pointer text-xs">
+                <input type="radio" name="ganador-carrera" class="rdo-ganador" data-index="${i}" ${c.ganador ? 'checked' : ''}>
+                <span class="font-bold text-slate-700">${c.numero} - ${c.nombre} ${c.retirado ? '<span class="text-red-500 text-[9px] font-black">(RETIRADO)</span>' : ''}</span>
+            </label>
+        `).join('') || '<p class="text-xs text-slate-400 italic">Sin ejemplares.</p>';
+
+        const contRetiros = document.getElementById('listaCaballosAuditoria');
+        contRetiros.innerHTML = caballosModalTemp.map((c, i) => `
+            <label class="flex items-center gap-2 bg-white border border-slate-200 p-2 rounded cursor-pointer text-xs">
+                <input type="checkbox" class="chk-retiro" data-index="${i}" data-valor="${c.valor_ejemplar}" ${c.retirado ? 'checked' : ''}>
+                <span class="font-bold text-slate-700">${c.numero} - ${c.nombre} (Valor: ${clubUI.formatoNumero(parseFloat(c.valor_ejemplar) || 0, 1)})</span>
+            </label>
+        `).join('') || '<p class="text-xs text-slate-400 italic">Sin ejemplares.</p>';
+
+        document.getElementById('lblPremioRecalculado').textContent = clubUI.formatoNumero(parseFloat(t.premio_recalculado) || premioOrigTemp, 2);
+        document.querySelectorAll('.chk-retiro').forEach(chk => chk.addEventListener('change', () => {
+            actualizarCalculoRecalculado();
+            // Un retirado no puede ser ganador: quitar la selección si estaba marcado
+            const idx = parseInt(chk.dataset.index);
+            if (chk.checked) {
+                caballosModalTemp[idx].retirado = true;
+                const rdo = contGanador.querySelector(`.rdo-ganador[data-index="${idx}"]`);
+                if (rdo && rdo.checked) rdo.checked = false;
+            } else {
+                caballosModalTemp[idx].retirado = false;
+            }
+        }));
         document.getElementById('modalAuditoria').classList.remove('hidden');
     }
 
@@ -528,12 +632,20 @@ document.addEventListener('DOMContentLoaded', () => {
             caballosModalTemp[idx].retirado = c.checked;
             if (c.checked) ret.push(caballosModalTemp[idx].numero);
         });
+        const rdoGanador = document.querySelector('.rdo-ganador:checked');
+        if (rdoGanador) {
+            const idxG = parseInt(rdoGanador.dataset.index);
+            caballosModalTemp.forEach((c, i) => { c.ganador = (i === idxG); });
+        }
         const { error } = await window.supabase.from('tablas_fijas').update({
-            premio_recalculado: np, caballos: caballosModalTemp, estado: 'Auditada', retirados_oficiales: ret.length > 0 ? ret.join(',') : 'Ninguno'
+            premio_recalculado: np,
+            caballos: caballosModalTemp,
+            estado: 'Auditada',
+            retirados_oficiales: ret.length > 0 ? ret.join(',') : NO_RETIROS
         }).eq('id', id);
         if (!error) { document.getElementById('modalAuditoria').classList.add('hidden'); cargarTablas(); }
         const tAud = datosTablaCompleta.find(x => x.id == id);
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `auditada: ${tAud?.hipodromo} C${tAud?.carrera} premio_recalculado=$${np} retirados=[${ret}] (id=${id})`);
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `auditada: ${tAud?.hipodromo} C${tAud?.carrera} premio_recalculado=$${np} retirados=[${ret.length ? ret.join(',') : NO_RETIROS}] (id=${id})`);
     });
 
     document.querySelectorAll('.cerrar-modal').forEach(b => b.addEventListener('click', () => {
@@ -546,74 +658,30 @@ document.addEventListener('DOMContentLoaded', () => {
         cargarTasaGlobal(); cargarHipodromos(); cargarGrupos(); cargarEjemplares(); cargarTablas();
     });
 
-    // El catálogo (hipódromos, grupos, ejemplares) se espera UNA vez y se
-    // reutiliza para el prellenado; así no se borra la selección al re-renderizar.
+    // El catálogo se espera UNA vez y se reutiliza para el prellenado.
     const catalogoListo = Promise.all([cargarHipodromos(), cargarGrupos(), cargarEjemplares()]);
 
-    // Arranque
-    llenarSuperficies();
-    cargarTasaGlobal();
-    cargarTablas();
-    actualizarPremio();
-    actualizarVistaPrevia();
-
     // ==========================================
-    // VISTA PREVIA DEL ENSAMBLAJE (en vivo)
+    // AÑADIR CARRERA DESDE LOS PARÁMETROS
     // ==========================================
-    function actualizarVistaPrevia() {
-        const cont = document.getElementById('vistaPreviaEnsamblaje');
-        if (!cont) return;
-        const hipo = (document.getElementById('hipodromoTabla').value || '').trim().toUpperCase() || '—';
-        const carrera = (document.getElementById('carreraTabla').value || '').trim() || '—';
-        const dist = (document.getElementById('distanciaTabla').value || '').trim() || '—';
-        const sup = (document.getElementById('superficieTabla').value || '').trim().toUpperCase() || '—';
-        const premio = parseFloat(premioTabla.value) || 0;
-
-        const caballos = [...document.querySelectorAll('.fila-caballo-config')]
-            .map(f => ({
-                num: f.querySelector('.in-num-cab').value.trim(),
-                nombre: f.querySelector('.in-nom-cab').value.trim().toUpperCase(),
-                nac: f.querySelector('.in-nac-cab').value,
-                valor: parseFloat(f.querySelector('.in-valor-ej').value) || 0
-            }))
-            .filter(c => c.nombre);
-        const sumaBase = caballos.reduce((a, c) => a + c.valor, 0);
-
-        const dato = (label, valor, extra) => `
-            <div class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 ${extra || ''}">
-                <span class="block text-[9px] font-black uppercase tracking-wider text-slate-400">${label}</span>
-                <span class="font-bold text-slate-800 text-sm">${valor}</span>
-            </div>`;
-
-        cont.innerHTML = `
-            <div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs mb-2">
-                ${dato('Hipódromo', hipo)}
-                ${dato('Carrera', 'C' + carrera)}
-                ${dato('Distancia', dist === '—' ? '—' : dist + ' m')}
-                ${dato('Superficie', sup)}
-                ${dato('Premio a Pagar', '$' + clubUI.formatoNumero(premio, 2), 'bg-emerald-50 border-emerald-200')}
-                ${dato('Ejemplares', caballos.length + (sumaBase ? ' · ' + clubUI.formatoNumero(sumaBase, 1) + ' pts' : ''))}
-            </div>
-            ${caballos.length
-                ? '<div class="flex flex-wrap gap-1">' + caballos.map(c =>
-                    `<span class="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 text-[10px] font-bold text-slate-700">
-                        <span class="text-blue-600">#${c.num || '?'}</span> ${c.nombre}
-                        <span class="text-slate-400">${c.nac}</span>
-                        <span class="text-blue-700">${clubUI.formatoNumero(c.valor, 1)}</span>
-                     </span>`).join('') + '</div>'
-                : '<p class="text-slate-400 italic text-[11px] mt-1">Sin ejemplares aún. Cárguela desde la Gaceta o añádalos manualmente.</p>'}
-        `;
-    }
-
-    ['hipodromoTabla', 'carreraTabla', 'distanciaTabla', 'superficieTabla', 'premioTabla'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', actualizarVistaPrevia);
+    btnAgregarCarrera.addEventListener('click', () => {
+        const hipodromo = document.getElementById('hipodromoTabla').value;
+        const carrera = document.getElementById('carreraTabla').value;
+        const distancia = document.getElementById('distanciaTabla').value;
+        const superficie = document.getElementById('superficieTabla').value;
+        const premio = premioTabla.value;
+        if (!hipodromo) return clubUI.toast('Seleccione el hipódromo.', 'warning');
+        if (!carrera) return clubUI.toast('Indique el número de carrera.', 'warning');
+        if (hipodromo && ![ ...document.getElementById('hipodromoTabla').options].some(o => o.value === hipodromo)) {
+            asegurarHipodromoEnDB(hipodromo);
+        }
+        crearCardCarrera({ hipodromo, carrera, distancia, superficie, premio, caballos: [] });
+        clubUI.toast(`Carrera C${carrera} (${hipodromo}) añadida al Ensamblaje. Agregue sus ejemplares.`, 'success');
     });
-    contenedorCaballos.addEventListener('input', actualizarVistaPrevia);
-    contenedorCaballos.addEventListener('change', actualizarVistaPrevia);
 
-    // Registra el hipódromo en la BD si no existe (los hipódromos VE/USA
-    // ya vienen sembrados por el SQL; esto cubre los que NO están listados).
+    // ==========================================
+    // HIPÓDROMOS NO LISTADOS -> se registran
+    // ==========================================
     const HIPODROMOS_USA = ['aqueduct', 'belmont park', 'charles town', 'churchill downs', 'del mar', 'fair grounds',
         'finger lakes', 'golden gate fields', 'gulfstream park', 'keeneland', 'laurel park', 'los alamitos',
         'monmouth park', 'oaklawn park', 'pimlico', 'santa anita', 'saratoga', 'tampa bay downs'];
@@ -636,55 +704,67 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
-    // PRELLENADO DESDE GACETA
+    // PRELLENADO DESDE GACETA (una o varias carreras)
     // ==========================================
     async function aplicarPrellenadoGaceta() {
-        const raw = localStorage.getItem('gaceta_prellenado') || sessionStorage.getItem('gaceta_prellenado');
-        if (!raw) return;
-        localStorage.removeItem('gaceta_prellenado');
-        sessionStorage.removeItem('gaceta_prellenado');
-        let pre;
-        try { pre = JSON.parse(raw); } catch (e) { return; }
-        if (!pre || !pre.hipodromo) return;
+        const leer = (k) => localStorage.getItem(k) || sessionStorage.getItem(k);
+        const limpiar = (k) => { localStorage.removeItem(k); sessionStorage.removeItem(k); };
+
+        let carreras = [];
+        const arr = leer('ensamblaje_carreras');
+        if (arr) {
+            try {
+                const parsed = JSON.parse(arr);
+                if (Array.isArray(parsed) && parsed.length) carreras = parsed;
+            } catch (e) { /* nada */ }
+        }
+        if (carreras.length === 0) {
+            const solo = leer('gaceta_prellenado');
+            if (solo) {
+                try {
+                    const p = JSON.parse(solo);
+                    if (p && p.hipodromo) carreras = [p];
+                } catch (e) { /* nada */ }
+            }
+        }
+        limpiar('ensamblaje_carreras');
+        limpiar('gaceta_prellenado');
+        if (carreras.length === 0) return;
 
         await catalogoListo;
 
-        const selHipo = document.getElementById('hipodromoTabla');
-        const selSup = document.getElementById('superficieTabla');
-
-        if (pre.hipodromo && selHipo) {
-            const op = [...selHipo.options].find(o => o.value.toUpperCase() === pre.hipodromo.toUpperCase());
-            if (op) selHipo.value = op.value;
-            else {
-                const nueva = document.createElement('option');
-                nueva.value = pre.hipodromo; nueva.textContent = pre.hipodromo;
-                selHipo.appendChild(nueva); selHipo.value = pre.hipodromo;
-                asegurarHipodromoEnDB(pre.hipodromo);
+        carreras.forEach(pre => {
+            const caballos = (pre.caballos || []).map(c => ({
+                numero: c.numero, nombre: c.nombre, nacionalidad: c.nacionalidad || 'VE',
+                valor: c.valor ?? c.pts ?? null
+            })).filter(c => c.nombre);
+            const card = crearCardCarrera({
+                hipodromo: pre.hipodromo || '',
+                carrera: pre.carrera || '',
+                distancia: pre.distancia || '',
+                superficie: pre.superficie || '',
+                premio: pre.premio || premioTabla.value || 100,
+                caballos
+            });
+            if (pre.hipodromo) {
+                // Asegurar que el hipódromo quede en el catálogo (los propios de la gaceta)
+                const selHipo = document.getElementById('hipodromoTabla');
+                if (![...selHipo.options].some(o => o.value.toUpperCase() === pre.hipodromo.toUpperCase())) {
+                    asegurarHipodromoEnDB(pre.hipodromo);
+                }
             }
-        }
-        if (pre.carrera) document.getElementById('carreraTabla').value = pre.carrera;
-        if (pre.distancia) document.getElementById('distanciaTabla').value = pre.distancia;
-        if (pre.superficie && selSup) {
-            const opS = [...selSup.options].find(o => o.value === pre.superficie.toUpperCase());
-            if (opS) selSup.value = opS.value;
-        }
-        if (pre.premio) { premioTabla.value = pre.premio; actualizarPremio(); }
+            void card;
+        });
 
-        if (pre.caballos && pre.caballos.length >= 1) {
-            contenedorCaballos.innerHTML = '';
-            pre.caballos.forEach(c => crearFilaCaballo(c.numero, c.nombre, c.pts, c.nacionalidad || 'VE'));
-            calcularSumaBaseTotal();
-        }
-
-        actualizarVistaPrevia();
-        const cardPrev = document.getElementById('cardVistaPrevia');
-        if (cardPrev) {
-            cardPrev.classList.add('ring-2', 'ring-emerald-300');
-            setTimeout(() => cardPrev.classList.remove('ring-2', 'ring-emerald-300'), 4000);
-            cardPrev.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-        clubUI.toast(`Carrera C${pre.carrera || '?'} (${pre.hipodromo}) cargada desde la gaceta. Revise PTS y publique.`, 'success');
+        clubUI.toast(`${carreras.length} carrera(s) cargada(s) desde la gaceta. Revise los VALORES y publique.`, 'success');
+        contenedorCarreras.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
+    // ==========================================
+    // ARRANQUE
+    // ==========================================
+    llenarSuperficies();
+    cargarTasaGlobal();
+    cargarTablas();
     aplicarPrellenadoGaceta();
 });

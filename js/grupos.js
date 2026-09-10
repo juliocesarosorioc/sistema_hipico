@@ -2,6 +2,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let todosGrupos = [];
     let clientesTodos = [];
+    let miembrosPorGrupo = {};      // { grupo_id: [cliente_id,...] } para pertenencias adicionales
+    let tablasMultiGrupo = false;   // true si clientes_grupos existe
 
     // ==========================================
     // CARGA DE GRUPOS
@@ -109,6 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (principal && principal.id != id) {
             await window.supabase.from('clientes').update({ grupo_id: principal.id }).eq('grupo_id', id);
         }
+        await window.supabase.from('clientes_grupos').delete().eq('grupo_id', id);
         await window.supabase.from('grupos_venta').delete().eq('id', id);
         cargarGrupos();
         if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `eliminado: ${g.nombre} (id=${id})`);
@@ -166,15 +169,33 @@ document.addEventListener('DOMContentLoaded', () => {
     async function cargarClientesTodos() {
         const { data } = await window.supabase.from('clientes').select('id, nombre, grupo_id').order('nombre');
         clientesTodos = data || [];
+        miembrosPorGrupo = {};
+        try {
+            const { data: mem } = await window.supabase.from('clientes_grupos').select('grupo_id, cliente_id');
+            if (!mem) { tablasMultiGrupo = false; }
+            else {
+                tablasMultiGrupo = true;
+                mem.forEach(m => {
+                    (miembrosPorGrupo[m.grupo_id] = miembrosPorGrupo[m.grupo_id] || []).push(m.cliente_id);
+                });
+            }
+        } catch (err) {
+            tablasMultiGrupo = false;
+        }
         todosGrupos.forEach(g => {
             const cnt = document.getElementById('cntgrupo_' + g.id);
-            if (cnt) cnt.textContent = clientesTodos.filter(c => c.grupo_id === g.id).length;
+            if (cnt) {
+                const principales = clientesTodos.filter(c => c.grupo_id === g.id);
+                const extra = (miembrosPorGrupo[g.id] || []).filter(id => !principales.find(c => c.id === id));
+                cnt.textContent = [...new Set(principales.map(c => c.id).concat(extra))].length;
+            }
         });
         renderClientesGrupo();
     }
 
     function renderClientesGrupo() {
         const origen = document.getElementById('selectGrupoOrigen').value;
+        const lnk = document.getElementById('quitarGpoDetalle');
         const cont = document.getElementById('listaClientesGrupo');
         const resumen = document.getElementById('resumenClientesGrupo');
         if (!origen) {
@@ -182,44 +203,100 @@ document.addEventListener('DOMContentLoaded', () => {
             resumen.textContent = '0';
             return;
         }
-        const lista = clientesTodos.filter(c => c.grupo_id === origen);
-        resumen.textContent = lista.length;
-        if (lista.length === 0) {
+        const principales = clientesTodos.filter(c => c.grupo_id === origen);
+        const extraIds = (miembrosPorGrupo[origen] || []).filter(id => !principales.find(c => c.id === id));
+        const listaIds = [...new Set(principales.map(c => c.id).concat(extraIds))];
+        resumen.textContent = listaIds.length;
+        if (listaIds.length === 0) {
             cont.innerHTML = '<p class="text-slate-400 italic text-xs">No hay clientes en este grupo.</p>';
             return;
         }
-        cont.innerHTML = lista.map(c => `
-            <label class="flex items-center gap-2 bg-white border border-slate-200 rounded px-2 py-1.5 cursor-pointer text-sm">
-                <input type="checkbox" value="${c.id}" class="chk-cliente rounded">
-                <span class="font-semibold text-slate-700">${c.nombre}</span>
-            </label>
-        `).join('');
+        cont.innerHTML = listaIds.map(id => {
+            const c = clientesTodos.find(x => x.id === id);
+            const nombre = c ? c.nombre : 'Cliente';
+            const principal = !!(c && c.grupo_id === origen);
+            const etiqueta = tablasMultiGrupo && !principal ? ' <span class="text-[9px] font-black bg-cyan-100 text-cyan-700 px-1 py-0.5 rounded">adicional</span>' : ' <span class="text-[9px] font-black bg-slate-200 text-slate-700 px-1 py-0.5 rounded">principal</span>';
+            return `
+                <label class="flex items-center gap-2 bg-white border border-slate-200 rounded px-2 py-1.5 cursor-pointer text-sm">
+                    <input type="checkbox" value="${id}" class="chk-cliente rounded">
+                    <span class="font-semibold text-slate-700">${nombre}</span>${etiqueta}
+                </label>`;
+        }).join('');
     }
 
     ['selectGrupoOrigen', 'selectGrupoDestino'].forEach(id => {
         document.getElementById(id).addEventListener('change', renderClientesGrupo);
     });
 
-    async function moverClientes(ids) {
+    async function agregarClientesGrupo(ids, todos = false) {
         const destino = document.getElementById('selectGrupoDestino').value;
         const origen = document.getElementById('selectGrupoOrigen').value;
-        if (!destino || !origen || ids.length === 0) return clubUI.toast("Seleccione origen, destino y clientes.");
-        if (origen === destino) return clubUI.toast("Origen y destino son el mismo.");
-        const { error } = await window.supabase.from('clientes').update({ grupo_id: destino }).in('id', ids);
-        if (error) return clubUI.toast('Error al mover clientes: ' + error.message, 'error');
+        let idsFinal = ids;
+        if (todos) {
+            idsFinal = clientesTodos.filter(c => c.grupo_id === origen).map(c => c.id)
+                .concat(miembrosPorGrupo[origen] || []);
+        }
+        idsFinal = [...new Set(idsFinal)].filter(id => id != destino);
+        if (!destino) return clubUI.toast("Seleccione el grupo destino.");
+        if (idsFinal.length === 0) return clubUI.toast("No hay clientes marcados (o ya están en el destino).");
+
+        if (tablasMultiGrupo) {
+            const filas = idsFinal.map(id => ({
+                cliente_id: id,
+                grupo_id: destino,
+                es_principal: false,
+                activo: true
+            }));
+            // No duplicar pertenencias existentes (ni principales ni adicionales del destino)
+            const principalesDestino = new Set(clientesTodos.filter(c => c.grupo_id === destino).map(c => c.id));
+            const { data: existentes } = await window.supabase.from('clientes_grupos').select('cliente_id').eq('grupo_id', destino);
+            const yaExisten = new Set((existentes || []).map(x => x.cliente_id));
+            const nuevas = filas.filter(f => !yaExisten.has(f.cliente_id) && !principalesDestino.has(f.cliente_id));
+            if (nuevas.length === 0) return clubUI.toast("Los marcados ya pertenecen al grupo destino.", 'warning');
+            const { error } = await window.supabase.from('clientes_grupos').insert(nuevas);
+            if (error) return clubUI.toast('Error al agregar: ' + error.message, 'error');
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `clientes_agregados: ${nuevas.length} al grupo ${destino}`);
+        } else {
+            // Fallback (sin clientes_grupos): se mueven como antes
+            const { error } = await window.supabase.from('clientes').update({ grupo_id: destino }).in('id', idsFinal);
+            if (error) return clubUI.toast('Error al mover clientes: ' + error.message, 'error');
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `clientes_movidos: ${idsFinal.length} al grupo ${destino} (fallback)`);
+        }
         cargarClientesTodos();
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `clientes_movidos: ${ids.length} de grupo ${origen} a ${destino}`);
+        clubUI.toast(tablasMultiGrupo ? 'Clientes agregados al grupo destino como pertenencia adicional.' : 'Clientes movidos al grupo destino.', 'success');
+    }
+
+    async function quitarClientesGrupo(ids) {
+        const origen = document.getElementById('selectGrupoOrigen').value;
+        if (!origen || ids.length === 0) return clubUI.toast("Seleccione un grupo y clientes Marcados.");
+        if (!tablasMultiGrupo) return clubUI.toast("No hay pertenencias adicionales en este esquema.", 'warning');
+        try {
+            const { data: mem } = await window.supabase.from('clientes_grupos').select('cliente_id').eq('grupo_id', origen);
+            const extra = (mem || []).map(x => x.cliente_id);
+            const aQuitar = ids.filter(id => extra.includes(id)); // solo pertenencias adicionales, nunca el principal
+            if (aQuitar.length === 0) return clubUI.toast("Los marcados son clientes PRINCIPALES del grupo (no se quitan por aquí).", 'warning');
+            const { error } = await window.supabase.from('clientes_grupos').delete().eq('grupo_id', origen).in('cliente_id', aQuitar);
+            if (error) return clubUI.toast('Error al quitar: ' + error.message, 'error');
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `clientes_quitados: ${aQuitar.length} del grupo ${origen}`);
+            cargarClientesTodos();
+            clubUI.toast('Pertenencia adicional eliminada.', 'success');
+        } catch (err) {
+            return clubUI.toast('Tabla clientes_grupos no disponible.', 'warning');
+        }
     }
 
     document.getElementById('btnMoverClientes').addEventListener('click', () => {
         const ids = [...document.querySelectorAll('.chk-cliente:checked')].map(c => c.value);
-        moverClientes(ids);
+        agregarClientesGrupo(ids);
     });
 
     document.getElementById('btnMoverTodos').addEventListener('click', () => {
-        const origen = document.getElementById('selectGrupoOrigen').value;
-        const ids = clientesTodos.filter(c => c.grupo_id === origen).map(c => c.id);
-        moverClientes(ids);
+        agregarClientesGrupo([], true);
+    });
+
+    document.getElementById('btnQuitarClientesGrupo').addEventListener('click', () => {
+        const ids = [...document.querySelectorAll('.chk-cliente:checked')].map(c => c.value);
+        quitarClientesGrupo(ids);
     });
 
     document.getElementById('btnRecargarGrupos')?.addEventListener('click', () => cargarGrupos());

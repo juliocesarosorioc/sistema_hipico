@@ -51,6 +51,7 @@
                 <div>
                     <h1 class="text-lg font-black uppercase tracking-wide">Hola, <span id="portalNombre">...</span></h1>
                     <p class="text-[11px] text-slate-400 font-semibold">Grupo: <span id="portalGrupo">...</span> · <span id="portalMonedaCuadre">USD</span></p>
+                    <div id="portalGruposExtra" class="text-[10px] text-cyan-300 font-bold mt-0.5"></div>
                 </div>
             </div>
             <div class="flex items-center gap-3">
@@ -113,7 +114,11 @@
                 <div class="bg-emerald-700 text-white p-4 font-black text-xs uppercase tracking-wider flex items-center">
                     <i class="fas fa-table text-emerald-300 mr-2"></i> Comprar Tablas Fijas
                 </div>
-                <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+<div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div id="bloqueSelectGrupo" class="md:col-span-2 hidden">
+                        <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Comprar con mi grupo / sucursal</label>
+                        <select id="portalSelectGrupo" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm font-bold bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500"></select>
+                    </div>
                     <div>
                         <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Hipódromo / Carrera</label>
                         <select id="portalSelectTabla" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm font-bold bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500">
@@ -140,8 +145,11 @@
                         </button>
                     </div>
                 </div>
-                <div id="portalMsgCompra" class="hidden mx-5 mb-5 text-xs font-bold bg-amber-50 border border-amber-300 text-amber-800 rounded-lg px-4 py-3">
+<div id="portalMsgCompra" class="hidden mx-5 mb-5 text-xs font-bold bg-amber-50 border border-amber-300 text-amber-800 rounded-lg px-4 py-3">
                     <i class="fas fa-info-circle mr-1"></i> Su compra será <b>validada por el administrador</b> y se le enviará el <b>recibo</b> de su tabla fija.
+                </div>
+                <div id="portalRetirosInfo" class="mx-5 mb-5 hidden text-xs font-bold bg-rose-50 border border-rose-200 text-rose-700 rounded-lg px-4 py-3">
+                    <i class="fas fa-user-slash mr-1"></i> <span id="portalRetirosTexto"></span>
                 </div>
             </div>
 
@@ -221,6 +229,6 @@
     <script src="../js/components/ui.js"></script>
     <script src="../js/components/indicador_accion.js"></script>
     <script src="../js/conexion.js"></script>
-    <script src="../js/portal.js"></script>
+    <script src="../js/portal.js?v=20260909-13"></script>
 </body>
 </html>
