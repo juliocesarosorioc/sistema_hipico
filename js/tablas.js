@@ -762,28 +762,15 @@ document.addEventListener('DOMContentLoaded', () => {
         try { const a = JSON.parse(sessionStorage.getItem('gaceta_registro')); if (Array.isArray(a)) return a; } catch (e) { /* nada */ }
         return [];
     }
-    function escribirGacetaRegistro(arr, marcarAplicada = true) {
-        const actuales = leerGacetaRegistro();
-        const claves = ['gaceta_registro'];
-        let base = actuales;
-        if (marcarAplicada && actuales.length === 0) {
-            // Sólo cuando la gaceta ya no tiene registro y migramos legacy:
-            // se construye la base desde lo pendiente.
-            base = arr;
-        }
-        const unidas = base.map(item => {
-            const aplicada = arr.some(pend => String(pend.hipodromo || '').toUpperCase() === String(item.hipodromo || '').toUpperCase() && String(pend.carrera) === String(item.carrera));
-            return Object.assign({}, item, { aplicada: item.aplicada === true || aplicada || item.enviada === true });
-        });
-        claves.forEach(k => {
-            try { localStorage.setItem(k, JSON.stringify(unidas)); } catch (e) { /* nada */ }
-            try { sessionStorage.setItem(k, JSON.stringify(unidas)); } catch (e) { /* nada */ }
-        });
+    function escribirGacetaRegistro(arr) {
+        // Escritura SIMPLE: el array se guarda como llega. Aquí también se
+        // limpia el "buzón" de envío para que el siguiente envío no duplique.
+        try { localStorage.setItem('gaceta_registro', JSON.stringify(arr)); } catch (e) { /* nada */ }
+        try { sessionStorage.setItem('gaceta_registro', JSON.stringify(arr)); } catch (e) { /* nada */ }
         ['ensamblaje_carreras', 'gaceta_prellenado'].forEach(k => {
             try { localStorage.removeItem(k); } catch (e) { /* nada */ }
             try { sessionStorage.removeItem(k); } catch (e) { /* nada */ }
         });
-        return unidas;
     }
     function migrarLegacy() {
         // Compatibilidad con el flujo previo (antes del registro persistente):
@@ -801,6 +788,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return migradas;
     }
 
+    // El registro guarda la lista como "ejemplares"; el buzón (entrega directa)
+    // la guarda como "caballos". Se aceptan ambos.
+    function listaHors(p) {
+        if (Array.isArray(p.caballos) && p.caballos.length) return p.caballos;
+        if (Array.isArray(p.ejemplares)) return p.ejemplares;
+        return [];
+    }
+
     function construirCardsGaceta(pendientes) {
         // Las cards se dibujan INMEDIATAMENTE, sin esperar catálogos.
         // Los catálogos (hipódromos/grupos/padrón) se cargan por detrás;
@@ -808,7 +803,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let montadas = 0;
         try {
             pendientes.forEach(pre => {
-                const caballos = (pre.caballos || []).map(c => ({
+                const caballos = listaHors(pre).map(c => ({
                     numero: c.numero, nombre: c.nombre, nacionalidad: c.nacionalidad || 'VE',
                     valor: c.valor ?? c.pts ?? null
                 })).filter(c => c.nombre);
@@ -845,25 +840,54 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function pegarPendientesGaceta({ silencio = false } = {}) {
-        let pendientes = [];
+        // 1) El buzón de envío (ensamblaje_carreras / gaceta_prellenado) es la
+        //    entrega DIRECTA de la gaceta: SIEMPRE se consume, incluso si los
+        //    flags del registro no cuajan (p. ej. la IA no devolvió carrera N°).
+        let pendientes = migrarLegacy();
+        // 2) Y se suman las del registro marcadas como enviadas y aún no aplicadas.
         const registro = leerGacetaRegistro();
-        if (registro.length) {
-            pendientes = registro.filter(c => c.enviada && !c.aplicada);
-        } else {
-            pendientes = migrarLegacy();
+        for (const c of registro) {
+            if (c.enviada && !c.aplicada) pendientes.push(c);
         }
-        if (pendientes.length === 0) {
+        // 3) Dedupe por hipódromo + carrera + nombres, para no repetir cards.
+        const vistos = new Set();
+        const unicos = [];
+        for (const p of pendientes) {
+            if (!p || typeof p !== 'object') continue;
+            const hipo = String(p.hipodromo || '').trim().toUpperCase();
+            const num = String(p.carrera ?? '');
+            const cab = listaHors(p).map(c => String(c.nombre || '')).join('|').toUpperCase();
+            const clave = `${hipo}#${num}#${cab}`;
+            if (vistos.has(clave)) continue;
+            vistos.add(clave);
+            unicos.push(p);
+        }
+        if (unicos.length === 0) {
             if (!silencio) clubUI.toast('No hay carreras pendientes de la gaceta en el registro.', 'warning');
             return 0;
         }
-        const montadas = construirCardsGaceta(pendientes);
-        escribirGacetaRegistro(pendientes);
+        const montadas = construirCardsGaceta(unicos);
+        // 4) Actualiza el registro: lo construido queda como enviado+aplicado;
+        //    si venía sólo del buzón (sin entrada previa), se agrega.
+        const finales = registro.map(item => {
+            const aplica = unicos.some(p =>
+                String(p.hipodromo || '').trim().toUpperCase() === String(item.hipodromo || '').trim().toUpperCase()
+                && (String(p.carrera ?? '') === String(item.carrera ?? '') || (!item.carrera && !p.carrera)));
+            return aplica ? Object.assign({}, item, { enviada: true, aplicada: true }) : item;
+        });
+        for (const p of unicos) {
+            const ya = finales.some(item =>
+                String(item.hipodromo || '').trim().toUpperCase() === String(p.hipodromo || '').trim().toUpperCase()
+                && String(item.carrera ?? '') === String(p.carrera ?? ''));
+            if (!ya) finales.push(Object.assign({}, p, { enviada: true, aplicada: true }));
+        }
+        escribirGacetaRegistro(finales);
         // Catálogos en segundo plano (no bloquean): reformado y tolerante a fallos
         Promise.all([cargarHipodromos(), cargarGrupos(), cargarEjemplares()].map(p => p.catch(() => {})))
             .catch(() => { /* silencioso */ });
         contarCarreras();
         if (!silencio) {
-            clubUI.toast(`${montadas} carrera(s) pegada(s) desde la gaceta. Revise los VALORES y publique.`, 'success');
+            clubUI.toast(`${montadas} carrera(s) con ${unicos.reduce((a, p) => a + listaHors(p).length, 0)} ejemplares pegada(s) desde la gaceta. Revise los VALORES y publique.`, 'success');
             contenedorCarreras.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
         return montadas;
@@ -879,6 +903,26 @@ document.addEventListener('DOMContentLoaded', () => {
             pegarPendientesGaceta();
         });
     }
+
+    // ==========================================
+    // SOLO NÚMEROS en los campos Valor (tablas y gaceta): se bloquean letras y
+    // se limpia lo que venga de un pegado.
+    // ==========================================
+    const INPUTS_VALOR = '.in-cab-valor, .nuevo-valor, .gac-valor, .in-premio-card';
+    document.addEventListener('keydown', (e) => {
+        const t = e.target;
+        if (!t || !t.matches || !t.matches(INPUTS_VALOR)) return;
+        if (e.key === 'Tab' || e.key === 'Enter' || e.key === 'Backspace' || e.key === 'Delete' ||
+            e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End' ||
+            e.ctrlKey || e.metaKey || /^[0-9.,eE+-]$/.test(e.key)) return;
+        e.preventDefault();
+    });
+    document.addEventListener('input', (e) => {
+        const t = e.target;
+        if (!t || !t.matches || !t.matches(INPUTS_VALOR)) return;
+        const limpio = String(t.value || '').replace(/[^0-9.,eE+-]/g, '');
+        if (limpio !== t.value) t.value = limpio;
+    });
 
     // ==========================================
     // ARRANQUE

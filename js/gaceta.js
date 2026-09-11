@@ -77,13 +77,18 @@ document.addEventListener('DOMContentLoaded', () => {
         escribirRegistro(estado.carreras.map(c => Object.assign({}, c, { enviada: !!c.enviada, aplicada: !!c.aplicada })));
     }
     function marcarEnviadas(carreras) {
+        // Coincidencia robusta: hipódromo+carrera, si no sólo hipódromo, si no
+        // una pendiente con hipódromo vacío, y como última vía el primero sin
+        // marcar (funciona aunque la IA no haya dado el número de carrera).
+        const porMarcar = estado.carreras.filter(c => !c.enviada);
         carreras.forEach(ce => {
-            estado.carreras.forEach(c => {
-                if (String(c.hipodromo || '').toUpperCase() === String(ce.hipodromo || '').toUpperCase() && c.carrera === ce.carrera) {
-                    c.enviada = true;
-                    c.aplicada = false;
-                }
-            });
+            const hipo = String(ce.hipodromo || '').trim().toUpperCase();
+            let idx = porMarcar.findIndex(c => String(c.hipodromo || '').trim().toUpperCase() === hipo && String(c.carrera ?? '') === String(ce.carrera ?? ''));
+            if (idx === -1 && hipo) idx = porMarcar.findIndex(c => String(c.hipodromo || '').trim().toUpperCase() === hipo);
+            if (idx === -1) idx = porMarcar.findIndex(c => !String(c.hipodromo || '').trim());
+            if (idx === -1) idx = 0;
+            const objetivo = porMarcar.splice(idx, 1)[0];
+            if (objetivo) { objetivo.enviada = true; objetivo.aplicada = false; }
         });
         persistirRegistro();
     }
@@ -397,7 +402,7 @@ Para cada carrera devuelve:
   - distancia: distancia de la carrera en metros (entero) si se lee, si no 0
   - superficie: una de ARENA, CESPED, FANGO, TAPETA u otra si se lee explícita; si no ARENA
   - premio: número si se lee (ej: 15000), si no 0
-  - ejemplares: lista con numero (puesto/orden del ejemplar), nombre (MAYÚSCULAS, EXACTO como aparece), nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si no se indica usa VE), valor (monta/valor del ejemplar: número si aparece, si no 0. Acepta también la clave pts con el mismo significado)
+  - ejemplares: lista con numero (puesto/orden del ejemplar), nombre (MAYÚSCULAS, EXACTO como aparece), nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si no se indica usa VE), valor (monta del ejemplar: SOLO número si aparece, si no 0)
 REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGISTRA TODOS los ejemplares de cada carrera sin omitir ninguno (todos los números de participante que aparezcan). Si un ejemplar aparece repetido entre páginas, mantenlo tal cual. Si el documento no tiene carreras, devuelve {"carreras":[]}.
 `;
 
