@@ -1111,4 +1111,21 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
 
     validarHabilitacion();
     cargarRegistroGuardado().catch(err => console.warn('Registro guardado corrupto en el arranque:', err.message || err));
+
+    // Verifica que la tabla "ejemplares" (padrón) exista: si falta, es la causa
+    // de que el Padrón quede vacío al transformar la gaceta.
+    async function verificarSqlGaceta() {
+        if (!window.supabase) return;
+        try {
+            const { error } = await window.supabase.from('ejemplares').select('id').limit(1);
+            if (error && /does not exist|does not have a column|42703|42P01|permission|row-level security/i.test(String(error.message || ''))) {
+                setTimeout(() => {
+                    clubUI.aviso('SQL pendiente para el Padrón de ejemplares',
+                        `La tabla "ejemplares" no está disponible en la base de datos. Por eso el Padrón se ve vacío al transformar la gaceta.\n\nEjecute en Supabase → SQL Editor:\n\nsql/paquete_pendientes.sql\n\nDespués recargue esta página y vuelva a transformar (o use "Registrar ejemplares en el padrón").`,
+                        'error');
+                }, 2500);
+            }
+        } catch (e) { /* ignorar errores de red */ }
+    }
+    verificarSqlGaceta();
 });

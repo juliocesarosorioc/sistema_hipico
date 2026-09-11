@@ -17,10 +17,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const SUPERFICIES = ['ARENA', 'CESPED', 'FANGO', 'TAPETA', 'OTRA'];
     const NO_RETIROS = 'NO HUBO RETIROS';
 
-    const htmlSelectNac = (val = 'VE') =>
-        `<select class="in-cab-nac w-14 border border-slate-200 rounded px-0.5 py-0.5 text-[9px] font-bold uppercase outline-none bg-white">
-            ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}" ${n === (val || 'VE') ? 'selected' : ''}>${n}</option>`).join('')}
-        </select>`;
+    const htmlSelectNac = (val = 'VE') => {
+        const nac = (val || 'VE').trim().toUpperCase();
+        const FLAGS = { VE: '🇻🇪', USA: '🇺🇸', BR: '🇧🇷', AR: '🇦🇷', CL: '🇨🇱', MX: '🇲🇽', PA: '🇵🇦', PE: '🇵🇪', CO: '🇨🇴', EC: '🇪🇨', UY: '🇺🇾', OTRA: '🏳️' };
+        return `<span class="bandera-nac text-sm leading-none" title="${nac}">${FLAGS[nac] || '🏳️'}</span>
+            <input type="hidden" class="in-cab-nac" value="${nac}">`;
+    };
 
     // ==========================================
     // TASA GLOBAL (interna: solo se guarda para el cuadre)
@@ -218,8 +220,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnQuitar) {
             const card = btnQuitar.closest('.card-carrera');
             if (!confirm('¿Quitar esta carrera del ensamblaje? (no se ha publicado)')) return;
+            const hipoQ = (card.querySelector('.in-hipo-card').value || '').trim();
+            const carQ = (card.querySelector('.in-carrera-card').value || '').trim();
             carrerasBol = carrerasBol.filter(u => u !== card.dataset.uid);
             card.remove();
+            eliminarDelRegistroGaceta(hipoQ, carQ);
             contarCarreras();
             return;
         }
@@ -307,6 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         carrerasBol = carrerasBol.filter(u => u !== card.dataset.uid);
         card.remove();
+        eliminarDelRegistroGaceta(hipodromo, carrera);
         contarCarreras();
         cargarTablas(); cargarEjemplares();
         if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `publicada: ${hipodromo} C${carrera} ${distancia}m ${superficie} premio=$${premio} cupos=${limiteTotal} ejemplares=${caballosArr.length} (id=${nueva.id})`);
@@ -768,15 +774,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function escribirGacetaRegistro(arr) {
         // Escritura SIMPLE: el array se guarda como llega. Aquí también se
-        // limpia el "buzón" de envío para que el siguiente envío no duplique
-        // y se resetea el guard de montaje para que la pestaña siguiente
-        // pueda volver a mostrar las carreras del día.
+        // limpia el "buzón" de envío para que el siguiente envío no duplique.
         try { localStorage.setItem('gaceta_registro', JSON.stringify(arr)); } catch (e) { /* nada */ }
         try { sessionStorage.setItem('gaceta_registro', JSON.stringify(arr)); } catch (e) { /* nada */ }
-        ['ensamblaje_carreras', 'gaceta_prellenado', 'ensamblaje_montado'].forEach(k => {
+        ['ensamblaje_carreras', 'gaceta_prellenado'].forEach(k => {
             try { localStorage.removeItem(k); } catch (e) { /* nada */ }
             try { sessionStorage.removeItem(k); } catch (e) { /* nada */ }
         });
+    }
+    // Al publicar (o quitar) una carrera del Ensamblaje, se quita del registro:
+    // así al volver a entrar la página no reaparece una carrera ya publicada.
+    function eliminarDelRegistroGaceta(hipodromo, carrera) {
+        const reg = leerGacetaRegistro();
+        if (!reg.length) return;
+        const h = String(hipodromo || '').trim().toUpperCase();
+        const c = String(carrera ?? '');
+        const filtrados = reg.filter(item =>
+            String(item.hipodromo || '').trim().toUpperCase() !== h
+            || String(item.carrera ?? '') !== c
+        );
+        if (filtrados.length !== reg.length) escribirGacetaRegistro(filtrados);
     }
     function migrarLegacy() {
         // Compatibilidad con el flujo previo (antes del registro persistente):
@@ -846,16 +863,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function pegarPendientesGaceta({ silencio = false, forzar = false } = {}) {
-        // Guarda por pestaña: al refrescar la misma pestaña no se vuelven a montar
-        // las carreras (evita duplicar), pero una pestaña NUEVA (botón derecho →
-        // abrir en nueva pestaña) SÍ las vuelve a mostrar (sessionStorage es por pestaña).
-        if (!forzar && sessionStorage.getItem('ensamblaje_montado') === '1') {
+        // Las carreras del día se montan en CADA entrada a la página (primera vez,
+        // segunda vez o pestaña nueva). Dentro de la misma visita, si ya se montaron
+        // cards, no se vuelven a crear (evita duplicar con el botón manual).
+        if (!forzar && carrerasBol.length > 0) {
             if (!silencio) clubUI.toast('Las carreras del día ya están montadas en esta pestaña.', 'warning');
             return 0;
         }
-        // 1) Buzón legacy + registro completo del día (enviadas y pendientes).
-        //    Siempre se montan todas las carreras del día: en pestaña nueva se
-        //    re-muestran; en refresco de la misma pestaña el guard evita duplicar.
+        // 1) Buzón legacy + registro completo del día.
         let pendientes = migrarLegacy();
         const registro = leerGacetaRegistro();
         for (const c of registro) pendientes.push(c);
@@ -878,7 +893,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return 0;
         }
         const montadas = construirCardsGaceta(unicos);
-        // 3) Actualizar el registro guardado: integrar las que venían solo del buzón.
+        // 3) Actualizar el registro guardado.
         const finales = [...registro];
         for (const p of unicos) {
             if (!finales.some(item =>
@@ -891,7 +906,6 @@ document.addEventListener('DOMContentLoaded', () => {
         Promise.all([cargarHipodromos(), cargarGrupos(), cargarEjemplares()].map(p => p.catch(() => {})))
             .catch(() => { /* silencioso */ });
         contarCarreras();
-        sessionStorage.setItem('ensamblaje_montado', '1');
         if (!silencio) {
             clubUI.toast(`${montadas} carrera(s) con ${unicos.reduce((a, p) => a + listaHors(p).length, 0)} ejemplares montada(s) en el Ensamblaje. Revise y publique.`, 'success');
             contenedorCarreras.scrollIntoView({ behavior: 'smooth', block: 'start' });
