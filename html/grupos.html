@@ -83,10 +83,14 @@
                     </div>
 
                     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                        <h3 class="text-xs font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-2 mb-2">
+<h3 class="text-xs font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-2 mb-2">
                             <i class="fas fa-list text-slate-400 mr-1"></i> Grupos Registrados
                         </h3>
-                        <div id="listaGrupos" class="space-y-2 max-h-[26rem] overflow-y-auto pr-1">
+                        <div class="flex items-center gap-2 mb-2">
+                            <input id="buscarGrupo" type="search" placeholder="Buscar grupo..." class="flex-1 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-amber-500">
+                            <span class="text-[10px] font-black text-slate-500 whitespace-nowrap">Total: <span id="statTotalGrupos" class="text-amber-600">0</span> · Activos: <span id="statActivos" class="text-emerald-600">0</span></span>
+                        </div>
+                        <div id="listaGrupos" class="space-y-2 max-h-[24rem] overflow-y-auto pr-1">
                             <p class="text-slate-400 italic text-xs">Cargando grupos...</p>
                         </div>
                     </div>
@@ -196,9 +200,9 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../js/components/db.js"></script>
     <script src="../js/components/auth.js"></script>
-    <script src="../js/components/ui.js"></script>
+    <script src="../js/components/ui.js?v=20260911-1"></script>
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
-    <script src="../js/grupos.js?v=20260909-13"></script>
+    <script src="../js/grupos.js?v=20260911-1"></script>
 </body>
 </html>

@@ -17,9 +17,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return clubUI.toast('Error cargando grupos: ' + error.message, 'error');
         }
         todosGrupos = data || [];
+        renderEstadisticas();
         renderGruposGestion();
         renderSelectsGrupos();
         cargarClientesTodos();
+    }
+
+    function renderEstadisticas() {
+        const total = document.getElementById('statTotalGrupos');
+        const activos = document.getElementById('statActivos');
+        if (total) total.textContent = todosGrupos.length;
+        if (activos) activos.textContent = todosGrupos.filter(g => g.activo).length;
     }
 
     function renderSelectsGrupos() {
@@ -31,11 +39,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderGruposGestion() {
         const cont = document.getElementById('listaGrupos');
-        if (todosGrupos.length === 0) {
-            cont.innerHTML = '<p class="text-slate-400 italic text-xs">Sin grupos. Cree el primero.</p>';
+        const filtro = (document.getElementById('buscarGrupo')?.value || '').trim().toUpperCase();
+        const visibles = todosGrupos.filter(g => !filtro || g.nombre.toUpperCase().includes(filtro));
+        if (visibles.length === 0) {
+            cont.innerHTML = todosGrupos.length === 0
+                ? '<p class="text-slate-400 italic text-xs">Sin grupos. Cree el primero.</p>'
+                : '<p class="text-slate-400 italic text-xs">Ningún grupo coincide con la búsqueda.</p>';
             return;
         }
-        cont.innerHTML = todosGrupos.map(g => `
+        cont.innerHTML = visibles.map(g => `
             <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                 <div class="flex-1 min-w-0">
                     <span class="font-bold text-slate-800 text-sm">${g.nombre}</span>
@@ -91,15 +103,26 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('comisionGrupo').value = 2.5;
         cargarGrupos();
         if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `creado: ${nombre} comision=${document.getElementById('comisionGrupo').value || 2.5}`);
+        const principal = document.getElementById('esPrincipalGrupo').checked;
+        clubUI.aviso('Grupo creado',
+            `Grupo "${nombre}" registrado y listo para vender.\n\n` +
+            `· Moneda de venta: ${document.getElementById('monedaGrupo').value}\n` +
+            `· Cupos por tabla: ${document.getElementById('cupoGrupo').value || 100}\n` +
+            `· Convenio tablas fijas: ${document.getElementById('comisionGrupo').value || 2.5}%\n` +
+            `${principal ? '· Marcado como PRINCIPAL' : ''}`,
+            'success');
     });
 
     async function toggleGrupo(e) {
         const id = e.currentTarget.dataset.id;
         const nuevo = e.currentTarget.dataset.activo === 'false';
         await window.supabase.from('grupos_venta').update({ activo: nuevo }).eq('id', id);
-        cargarGrupos();
         const g = todosGrupos.find(x => x.id == id);
+        cargarGrupos();
         if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `grupo_${nuevo ? 'activado' : 'desactivado'}: ${g?.nombre}`);
+        clubUI.aviso(`Grupo ${nuevo ? 'activado' : 'desactivado'}`,
+            `El grupo "${g?.nombre}" ahora está ${nuevo ? 'ACTIVO y disponible para vender' : 'DESACTIVADO y oculto en las opciones de venta'}.`,
+            nuevo ? 'success' : 'warning');
     }
 
     async function eliminarGrupo(e) {
@@ -115,6 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await window.supabase.from('grupos_venta').delete().eq('id', id);
         cargarGrupos();
         if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `eliminado: ${g.nombre} (id=${id})`);
+        clubUI.aviso('Grupo eliminado', `El grupo "${g.nombre}" fue eliminado. Sus clientes fueron movidos al grupo principal.`, 'warning');
     }
 
     // ==========================================
@@ -157,6 +181,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('modalEditarGrupo').classList.add('hidden');
         cargarGrupos();
         if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `editado: ${g?.nombre} -> ${nombre} (id=${id})`);
+        clubUI.aviso('Grupo actualizado',
+            `Cambios guardados en "${nombre}".\n\n` +
+            `· Moneda venta: ${document.getElementById('editGrupoMoneda').value}\n` +
+            `· Cupos por tabla: ${document.getElementById('editGrupoCupo').value || 100}\n` +
+            `· Convenio tablas fijas: ${document.getElementById('editGrupoComision').value || 2.5}%\n` +
+            `${esPrincipal ? '· Ahora es el PRINCIPAL del sistema' : ''}`,
+            'success');
     });
 
     document.querySelectorAll('.cerrar-modal').forEach(b => b.addEventListener('click', () => {
@@ -256,6 +287,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const { error } = await window.supabase.from('clientes_grupos').insert(nuevas);
             if (error) return clubUI.toast('Error al agregar: ' + error.message, 'error');
             if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `clientes_agregados: ${nuevas.length} al grupo ${destino}`);
+            const grupoDestino = todosGrupos.find(x => x.id == destino);
+            clubUI.aviso('Clientes agregados', `${nuevas.length} cliente(s) fue(fueron) agregado(s) como pertenencia adicional al grupo "${grupoDestino?.nombre}".`, 'success');
         } else {
             // Fallback (sin clientes_grupos): se mueven como antes
             const { error } = await window.supabase.from('clientes').update({ grupo_id: destino }).in('id', idsFinal);
@@ -279,7 +312,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error) return clubUI.toast('Error al quitar: ' + error.message, 'error');
             if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `clientes_quitados: ${aQuitar.length} del grupo ${origen}`);
             cargarClientesTodos();
-            clubUI.toast('Pertenencia adicional eliminada.', 'success');
+            const grupoOrigen = todosGrupos.find(x => x.id == origen);
+            clubUI.aviso('Clientes quitados', `${aQuitar.length} pertenencia(s) adicional(es) eliminada(s) del grupo "${grupoOrigen?.nombre}".`, 'success');
         } catch (err) {
             return clubUI.toast('Tabla clientes_grupos no disponible.', 'warning');
         }
@@ -300,6 +334,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('btnRecargarGrupos')?.addEventListener('click', () => cargarGrupos());
+
+    const buscarGrupo = document.getElementById('buscarGrupo');
+    if (buscarGrupo) {
+        buscarGrupo.addEventListener('input', () => renderGruposGestion());
+    }
 
     // Arranque
     cargarGrupos();

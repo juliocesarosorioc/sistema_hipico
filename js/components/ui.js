@@ -48,6 +48,52 @@ window.clubUI = (() => {
     }
 
     // ==========================================
+    // AVISO EMERGENTE DE VALIDACIÓN (modal confirmable)
+    // Uso:
+    //   clubUI.aviso(titulo, mensaje, tipo?, onOk?)
+    // El usuario SIEMPRE debe pulsar "Entendido" para validar la tarea.
+    // ==========================================
+    function aviso(titulo, mensaje, tipo = 'success', onOk = null) {
+        document.getElementById('clubAvisoOverlay')?.remove();
+        const color = COLORS[tipo] || COLORS.info;
+        const icono = ICONS[tipo] || ICONS.info;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'clubAvisoOverlay';
+        overlay.setAttribute('aria-live', 'assertive');
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(2,6,23,.55);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:1rem;';
+
+        overlay.innerHTML = `
+            <div style="background:#fff;border-radius:1rem;box-shadow:0 25px 50px -12px rgba(0,0,0,.45);width:100%;max-width:25rem;overflow:hidden;border-top:5px solid ${color};">
+                <div style="display:flex;align-items:center;gap:.6rem;padding:.9rem 1.15rem;border-bottom:1px solid #e2e8f0;">
+                    <i class="fas ${icono}" style="color:${color};font-size:1.05rem;"></i>
+                    <span id="clubAvisoTitulo" style="font-weight:800;color:#0f172a;font-size:.9rem;text-transform:uppercase;letter-spacing:.03em;"></span>
+                </div>
+                <div id="clubAvisoMsg" style="max-height:50vh;overflow-y:auto;padding:.9rem 1.15rem;color:#334155;font-size:.85rem;line-height:1.5;white-space:pre-line;font-weight:600;"></div>
+                <div style="padding:.7rem 1.15rem;border-top:1px solid #e2e8f0;background:#f8fafc;display:flex;justify-content:flex-end;">
+                    <button type="button" id="clubAvisoOk" style="background:${color};color:#fff;border:none;border-radius:.5rem;padding:.5rem 1.4rem;font-weight:800;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;cursor:pointer;box-shadow:0 4px 10px -3px rgba(0,0,0,.3);transition:filter .15s;">
+                        Entendido
+                    </button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        overlay.querySelector('#clubAvisoTitulo').textContent = String(titulo || 'Aviso');
+        overlay.querySelector('#clubAvisoMsg').textContent = String(mensaje || '');
+
+        const cerrar = () => {
+            overlay.remove();
+            document.removeEventListener('keydown', enTecla, true);
+            if (onOk) onOk();
+        };
+        const enTecla = (e) => { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); cerrar(); } };
+        overlay.querySelector('#clubAvisoOk').addEventListener('click', cerrar);
+        overlay.querySelector('#clubAvisoOk').addEventListener('mouseover', () => { overlay.querySelector('#clubAvisoOk').style.filter = 'brightness(1.1)'; });
+        overlay.querySelector('#clubAvisoOk').addEventListener('mouseout', () => { overlay.querySelector('#clubAvisoOk').style.filter = 'brightness(1)'; });
+        document.addEventListener('keydown', enTecla, true);
+    }
+
+    // ==========================================
     // PAGINACIÓN CLIENT-SIDE REUTILIZABLE
     // Uso:
     //   clubUI.paginar(tbody, filasHtml, 25, (filasPagina) => {
@@ -238,5 +284,5 @@ window.clubUI = (() => {
         return '';
     }
 
-    return { toast, paginar, BANCOS_VZLA, PAISES_TELEFONO, METODOS_PAGO, listMetodosPago, esBancoVzla, htmlOpcionesBancosVzla, formatoNumero, formatoMoneda, componerTelefono, desglosarTelefono, htmlOpcionesCodigoPais, htmlOpcionesMetodos, resumenDatosPago };
+    return { toast, aviso, paginar, BANCOS_VZLA, PAISES_TELEFONO, METODOS_PAGO, listMetodosPago, esBancoVzla, htmlOpcionesBancosVzla, formatoNumero, formatoMoneda, componerTelefono, desglosarTelefono, htmlOpcionesCodigoPais, htmlOpcionesMetodos, resumenDatosPago };
 })();

@@ -677,10 +677,29 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                             estadoIA.textContent = (estadoIA.textContent.startsWith('PARCIAL') ? 'PARCIAL · ' : '') + `Listo: ${estado.carreras.length} carrera(s), ${res.nuevos} ejemplar(es) nuevos registrados.`;
                         }
                         actualizarVinculosPadron(res);
+                        const parcial = estadoIA.textContent.startsWith('PARCIAL') ? 'Resultado PARCIAL · ' : '';
+                        if (res.errorDb) {
+                            clubUI.aviso('Transcripción lista (padrón sin conexión)',
+                                `${parcial}${estado.carreras.length} carrera(s) transcritas por la IA.\n\nPero no se pudo vincular el padrón:\n${res.errorDb}\n\nEjecute sql/paquete_pendientes.sql en Supabase y luego use "Registrar ejemplares en el padrón"`,
+                                'warning');
+                        } else if (res.fallidos > (res.nuevos + res.vinculados) && res.nuevos === 0) {
+                            clubUI.aviso('Transcripción lista (padrón incompleto)',
+                                `${parcial}${estado.carreras.length} carrera(s) extraídas. ${res.fallidos} ejemplar(es) no pudieron vincularse.\n\nVerifique que ejecutó sql/paquete_pendientes.sql en Supabase.`,
+                                'warning');
+                        } else {
+                            clubUI.aviso('Tarea completada',
+                                `${parcial}${estado.carreras.length} carrera(s) transcritas e ingresadas por la IA.\n\n` +
+                                `Padrón: ${res.nuevos} nuevo(s) · ${res.vinculados} vinculado(s).\n\n` +
+                                `Revise abajo los datos, ajuste valores si desea y envíelas al Ensamblaje.`,
+                                cuotaTotal ? 'warning' : 'success');
+                        }
                     })
                     .catch(err => {
                         console.warn('Padrón en segundo plano falló por completo:', err.message || err);
                         actualizarVinculosPadron({ nuevos: 0, vinculados: 0 });
+                        clubUI.aviso('Transcripción lista (padrón falló)',
+                            `${estado.carreras.length} carrera(s) transcritas por la IA.\n\nVinculación al padrón falló por completo: ${err.message || err}\n\nIntente con "Registrar ejemplares en el padrón" o verifique sql/paquete_pendientes.sql`,
+                            'warning');
                     });
             }
         } catch (e) {
@@ -735,34 +754,61 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
     }
 
     async function registrarPadron() {
-        let nuevos = 0, vinculados = 0;
-        if (!window.supabase) return { nuevos, vinculados };
+        const totales = { nuevos: 0, vinculados: 0, fallidos: 0, errorDb: null };
+        if (!window.supabase) return totales;
         if (!Array.isArray(estado.carreras)) estado.carreras = [];
+
+        let mapa = new Map();
+        try {
+            const { data, error } = await window.supabase.from('ejemplares').select('id, nombre, nacionalidad');
+            if (error) throw error;
+            (data || []).forEach(e => {
+                const clave = `${String(e.nombre || '').trim().toUpperCase()}|${String(e.nacionalidad || 'VE').trim().toUpperCase() || 'VE'}`;
+                mapa.set(clave, e.id);
+            });
+        } catch (e) {
+            const n = estado.carreras.reduce((a, c) => a + (Array.isArray(c.ejemplares) ? c.ejemplares.length : 0), 0);
+            totales.fallidos = n;
+            totales.errorDb = e.message || String(e);
+            return totales;
+        }
+
         for (const c of estado.carreras) {
-            c.ejemplares = c.ejemplares || [];
+            c.ejemplares = Array.isArray(c.ejemplares) ? c.ejemplares : [];
             for (const ej of c.ejemplares) {
+                const nombre = String(ej.nombre || '').trim().toUpperCase();
+                const nac = (String(ej.nacionalidad || 'VE').trim().toUpperCase() || 'VE');
+                ej.nombre = nombre;
+                ej.nacionalidad = nac;
+                if (!nombre) { ej.ejemplar_id = null; continue; }
+                const clave = `${nombre}|${nac}`;
+                if (mapa.has(clave)) {
+                    ej.ejemplar_id = mapa.get(clave);
+                    ej.nuevo = false;
+                    totales.vinculados++;
+                    continue;
+                }
                 try {
-                    const nombre = String(ej.nombre || '').trim().toUpperCase();
-                    const nac = String(ej.nacionalidad || 'VE').trim().toUpperCase() || 'VE';
-                    ej.nombre = nombre;
-                    ej.nacionalidad = nac;
-                    if (!nombre) { ej.ejemplar_id = null; continue; }
-                    const existe = await window.supabase.from('ejemplares').select('id').eq('nombre', nombre).eq('nacionalidad', nac).maybeSingle();
-                    if (existe?.data) {
-                        ej.ejemplar_id = existe.data.id; ej.nuevo = false; vinculados++;
-                    } else {
-                        const insertado = await window.supabase.from('ejemplares').insert({ nombre, nacionalidad: nac }).select('id').single();
-                        if (!insertado.error) { ej.ejemplar_id = insertado.data.id; ej.nuevo = true; nuevos++; }
-                        else { ej.ejemplar_id = null; console.warn('No se pudo registrar ejemplar:', insertado.error); }
+                    const { data, error } = await window.supabase.from('ejemplares').insert({ nombre, nacionalidad: nac }).select('id').single();
+                    if (error) {
+                        if (error.code === '23505') {
+                            const { data: existente } = await window.supabase.from('ejemplares').select('id').eq('nombre', nombre).eq('nacionalidad', nac).limit(1).single();
+                            if (existente) { ej.ejemplar_id = existente.id; ej.nuevo = false; totales.vinculados++; continue; }
+                        }
+                        ej.ejemplar_id = null; ej.nuevo = false; totales.fallidos++; continue;
                     }
-                } catch (errPadron) {
-                    // Un fallo puntual de red/tabla NO debe abortar el padrón ni el resultado
-                    ej.ejemplar_id = null;
-                    console.warn('Padrón: fallo puntual, se sigue con el siguiente ejemplar:', errPadron.message || errPadron);
+                    if (data?.id) {
+                        ej.ejemplar_id = data.id; ej.nuevo = true; totales.nuevos++;
+                        mapa.set(clave, data.id);
+                    } else {
+                        ej.ejemplar_id = null; ej.nuevo = false; totales.fallidos++;
+                    }
+                } catch (e2) {
+                    ej.ejemplar_id = null; ej.nuevo = false; totales.fallidos++;
                 }
             }
         }
-        return { nuevos, vinculados };
+        return totales;
     }
 
     async function guardarHistorial() {
@@ -1014,9 +1060,36 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
     });
 
     document.getElementById('btnRegistrarPadron').addEventListener('click', async () => {
-        const res = await registrarPadron();
-        clubUI.toast(`Padrón actualizado: ${res.nuevos} nuevos, ${res.vinculados} ya vinculados.`, 'success');
-        renderCarreras(res);
+        const btn = document.getElementById('btnRegistrarPadron');
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Registrando…';
+        btn.disabled = true;
+        try {
+            const res = await registrarPadron();
+            renderCarreras(res);
+            if (res.errorDb) {
+                clubUI.aviso('Padrón no disponible',
+                    `No se pudo conectar con la tabla "ejemplares" para registrar los ejemplares (${res.fallidos}).\n\n` +
+                    `ERROR: ${res.errorDb}\n\n` +
+                    `Ejecute el paquete SQL completo en Supabase SQL Editor:\n` +
+                    `  sql/paquete_pendientes.sql\n\n` +
+                    `Después recargue esta página y vuelva a intentarlo.`,
+                    'error');
+            } else if (res.vinculados === 0 && res.nuevos === 0 && res.fallidos === 0) {
+                clubUI.aviso('Sin ejemplares', 'No se encontraron ejemplares con nombre en las carreras extraídas para registrar en el Padrón.', 'info');
+            } else if (res.fallidos > 0) {
+                clubUI.aviso('Padrón actualizado (con errores)',
+                    `${res.nuevos} nuevo(s) · ${res.vinculados} vinculado(s) · ${res.fallidos} con error.\n\nLos marcados en rojo quedan "sin padrón". Si no se guardó ninguno, verifique que ejecutó: sql/paquete_pendientes.sql`,
+                    'warning');
+            } else {
+                clubUI.aviso('Padrón actualizado',
+                    `${res.nuevos} ejemplar(es) nuevo(s) registrado(s) en el Padrón · ${res.vinculados} ya vinculado(s) con tablas previas.`,
+                    'success');
+            }
+        } finally {
+            btn.innerHTML = orig;
+            btn.disabled = false;
+        }
     });
 
     document.getElementById('btnRecargarGaceta').addEventListener('click', () => {

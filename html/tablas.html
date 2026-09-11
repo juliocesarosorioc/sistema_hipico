@@ -32,7 +32,7 @@
             </div>
         </header>
 
-        <main class="p-3 flex-1 flex flex-col min-h-0 w-full gap-3 bg-slate-100 overflow-hidden">
+        <main class="p-3 flex-1 flex flex-col w-full gap-3 bg-slate-100 overflow-y-auto">
 
             <!-- PARÁMETROS DE LA PRÓXIMA CARRERA -->
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-3 shrink-0">
@@ -80,7 +80,7 @@
             </div>
 
             <!-- CARRERAS EN EL ENSAMBLAJE (grilla de 4 columnas) -->
-            <div class="flex-1 min-h-0 flex flex-col">
+            <div class="shrink-0 flex flex-col">
                 <div class="flex justify-between items-center mb-2 gap-2 shrink-0">
                     <h2 class="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
                         <i class="fas fa-layer-group text-indigo-500"></i> Carreras en el Ensamblaje
@@ -93,10 +93,9 @@
                         <button id="btnPublicarTodas" disabled class="disabled:opacity-40 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg shadow text-[9px] font-black uppercase tracking-wide transition-colors" title="Publica de una vez todas las carreras del ensamblaje (con avance)">
                             <i class="fas fa-rocket mr-1"></i> Publicar todas
                         </button>
-                        <span class="text-[10px] text-slate-400 font-semibold italic hidden sm:inline">4 por línea · sin scroll</span>
                     </div>
                 </div>
-                <div id="carrerasEnsamblaje" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 min-h-0 p-1 overflow-y-auto">
+                <div id="carrerasEnsamblaje" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 p-1">
                     <p class="empty-ensamblaje text-slate-400 italic text-sm md:col-span-2 xl:col-span-4 text-center py-4 bg-white rounded-xl border border-dashed border-slate-300">
                         Aún no hay carreras armadas. Cárguelas desde la <b>Gaceta → Tablas (IA)</b>, use los parámetros de arriba o presione <b>“Añadir carrera”</b>.
                     </p>
@@ -236,10 +235,10 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../js/components/db.js"></script>
     <script src="../js/components/auth.js"></script>
-    <script src="../js/components/ui.js"></script>
+    <script src="../js/components/ui.js?v=20260911-1"></script>
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
     <script src="../js/components/programa_dia.js?v=20260910-17"></script>
-    <script src="../js/tablas.js?v=20260910-19"></script>
+    <script src="../js/tablas.js?v=20260910-20"></script>
 </body>
 </html>

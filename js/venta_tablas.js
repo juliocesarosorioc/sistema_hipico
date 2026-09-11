@@ -55,6 +55,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (rTablas.data) tablasDisponiblesDB = rTablas.data;
         if (rClientes.data) clientesDB = rClientes.data;
 
+        if (rTablas.error) {
+            clubUI.aviso('Error cargando tablas publicadas',
+                `No se pudieron obtener las tablas fijas: ${rTablas.error.message || rTablas.error}\n\nVerifique que ejecutó el SQL completo (paquete_pendientes.sql) y que las carreras estén publicadas desde el Ensamblaje.`, 'error');
+        } else if (tablasDisponiblesDB.length === 0 && !sessionStorage.getItem('venta_tablas_vacio_aviso')) {
+            sessionStorage.setItem('venta_tablas_vacio_aviso', '1');
+            clubUI.aviso('Sin tablas disponibles para vender',
+                'No hay tablas fijas publicadas (estado "Abierta").\n\n' +
+                'Vaya a Ensamblaje de Tablas Fijas → publice las carreras del día y luego regrese aquí para vender.', 'warning');
+        }
+
         // Pertenencias adicionales (clientes_grupos) para listar miembros de un grupo
         if (rMembresias.data && rMembresias.data.length) {
             rMembresias.data.forEach(m => {

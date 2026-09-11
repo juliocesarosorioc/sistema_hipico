@@ -113,12 +113,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function filaCaballoCard(c) {
         const vacio = (c && c.nombre) ? '' : 'opacity-70';
         return `
-            <div class="fila-caballo-card flex gap-1 items-center bg-slate-50 border border-slate-200 rounded p-1 ${vacio}">
-                <input type="text" class="in-cab-num w-10 border border-slate-200 rounded px-0.5 py-0.5 text-center text-xs font-bold outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="N°">
-                <input type="text" class="in-cab-nom flex-1 border border-slate-200 rounded px-1 py-0.5 text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar">
+            <div class="fila-caballo-card flex gap-1 items-center bg-slate-50 border border-slate-200 rounded px-1 py-0.5 ${vacio}">
+                <input type="text" class="in-cab-num w-9 border border-slate-200 rounded px-0.5 py-px text-center text-[10px] font-bold outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="N°">
+                <input type="text" class="in-cab-nom flex-1 min-w-0 border border-slate-200 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar">
                 ${htmlSelectNac(c?.nacionalidad)}
-                <input type="number" step="0.1" class="in-cab-valor w-14 border border-slate-200 rounded px-0.5 py-0.5 text-right text-xs font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="Valor">
-                <button type="button" class="btn-del-cab-card text-red-400 hover:text-red-600 px-0.5" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
+                <input type="number" step="0.1" class="in-cab-valor w-12 border border-slate-200 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="Valor">
+                <button type="button" class="btn-del-cab-card text-red-400 hover:text-red-600 px-0.5 leading-none" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
             </div>`;
     }
 
@@ -128,42 +128,42 @@ document.addEventListener('DOMContentLoaded', () => {
         card.className = 'card-carrera bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden flex flex-col';
         card.dataset.uid = uid;
         card.innerHTML = `
-            <div class="bg-indigo-600 px-2 py-1.5" style="color:#fff">
+            <div class="bg-indigo-600 px-2 py-1" style="color:#fff">
                 <div class="flex items-center justify-between gap-2">
-                    <span class="font-black text-xs whitespace-nowrap"><i class="fas fa-flag-checkered mr-1"></i> Carrera
-                        <input type="number" class="in-carrera-card w-12 rounded px-1 py-0.5 text-center font-black outline-none" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.carrera ?? ''}" placeholder="N°">
+                    <span class="font-black text-[10px] whitespace-nowrap"><i class="fas fa-flag-checkered mr-1"></i> Carrera
+                        <input type="number" class="in-carrera-card w-11 rounded px-1 py-px text-center font-black outline-none" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.carrera ?? ''}" placeholder="N°">
                     </span>
-                    <input type="text" class="in-hipo-card rounded px-2 py-0.5 text-[10px] font-bold uppercase outline-none w-32 text-right" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.hipodromo ?? ''}" placeholder="Hipódromo">
+                    <input type="text" class="in-hipo-card rounded px-1.5 py-px text-[9px] font-bold uppercase outline-none w-28 text-right" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.hipodromo ?? ''}" placeholder="Hipódromo">
                 </div>
-                <div class="flex flex-wrap gap-1 mt-1 text-[9px] font-bold">
-                    <span class="rounded px-1.5 py-0.5" style="background:rgba(255,255,255,.18)">Dist: <input type="number" class="in-dist-card w-14 outline-none text-center font-black" style="background:transparent;color:#fff" value="${opts?.distancia ?? ''}" placeholder="m"></span>
-                    <select class="in-sup-card rounded px-1 py-0.5 outline-none uppercase text-[9px] font-bold" style="background:rgba(255,255,255,.18)">
+                <div class="flex flex-wrap gap-1 mt-0.5 text-[8px] font-bold">
+                    <span class="rounded px-1.5 py-px" style="background:rgba(255,255,255,.18)">Dist: <input type="number" class="in-dist-card w-12 outline-none text-center font-black" style="background:transparent;color:#fff" value="${opts?.distancia ?? ''}" placeholder="m"></span>
+                    <select class="in-sup-card rounded px-0.5 py-px outline-none uppercase text-[8px] font-bold" style="background:rgba(255,255,255,.18)">
                         ${SUPERFICIES.map(s => `<option value="${s}" ${(opts?.superficie || '').toUpperCase() === s ? 'selected' : ''}>${s}</option>`).join('')}
                     </select>
-                    <span class="rounded px-1.5 py-0.5" style="background:rgba(255,255,255,.18)">Premio $ <input type="number" step="0.01" class="in-premio-card w-20 outline-none text-right font-black" style="background:transparent;color:#fff" value="${opts?.premio ?? premioTabla.value ?? 100}"></span>
+                    <span class="rounded px-1.5 py-px" style="background:rgba(255,255,255,.18)">Premio $ <input type="number" step="0.01" class="in-premio-card w-16 outline-none text-right font-black" style="background:transparent;color:#fff" value="${opts?.premio ?? premioTabla.value ?? 100}"></span>
                 </div>
             </div>
-            <div class="px-3 pt-1.5 pb-0.5 text-[9px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                <span><i class="fas fa-horse-head text-amber-500 mr-1"></i> Ejemplares</span>
+            <div class="px-2 pt-1 pb-0.5 text-[8px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                <span><i class="fas fa-horse-head text-amber-500 mr-0.5"></i> Ejemplares</span>
                 <span class="cont-caballos-card bg-slate-100 text-slate-600 px-1.5 rounded-full font-black">0</span>
             </div>
-            <div class="lista-caballos-card px-1.5 py-1 space-y-1 flex-1"></div>
-            <div class="add-caballo-card border-t border-slate-200 p-2 space-y-1 bg-slate-50">
+            <div class="lista-caballos-card px-1.5 py-0.5 space-y-0.5 flex-1"></div>
+            <div class="add-caballo-card border-t border-slate-200 px-1.5 py-1 space-y-0.5 bg-slate-50">
                 <div class="flex gap-1 items-center">
-                    <input type="text" class="nuevo-num w-10 border border-slate-300 rounded px-0.5 py-1 text-xs font-bold text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="N°">
-                    <input type="text" class="nuevo-nom flex-1 border border-slate-300 rounded px-1 py-1 text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Ejemplar nuevo">
-                    <select class="nuevo-nac w-14 border border-slate-300 rounded px-0.5 py-1 text-[9px] font-bold uppercase outline-none bg-white">
+                    <input type="text" class="nuevo-num w-9 border border-slate-300 rounded px-0.5 py-px text-[10px] font-bold text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="N°">
+                    <input type="text" class="nuevo-nom flex-1 min-w-0 border border-slate-300 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Ejemplar nuevo">
+                    <select class="nuevo-nac w-12 border border-slate-300 rounded px-0.5 py-px text-[8px] font-bold uppercase outline-none bg-white">
                         ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}">${n}</option>`).join('')}
                     </select>
-                    <input type="number" step="0.1" class="nuevo-valor w-14 border border-slate-300 rounded px-0.5 py-1 text-right text-xs font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Valor">
-                    <button type="button" class="btn-add-caballo-card bg-indigo-600 hover:bg-indigo-700 text-white rounded px-2 py-1" title="Añadir ejemplar"><i class="fas fa-plus"></i></button>
+                    <input type="number" step="0.1" class="nuevo-valor w-12 border border-slate-300 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Valor">
+                    <button type="button" class="btn-add-caballo-card bg-indigo-600 hover:bg-indigo-700 text-white rounded px-1.5 py-px text-[10px]" title="Añadir ejemplar"><i class="fas fa-plus"></i></button>
                 </div>
             </div>
-            <div class="px-2 py-2 border-t border-slate-200 flex gap-2 bg-white">
-                <button type="button" class="btn-publicar-card flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black py-2 rounded-lg shadow transition-colors uppercase tracking-wide">
+            <div class="px-2 py-1.5 border-t border-slate-200 flex gap-2 bg-white">
+                <button type="button" class="btn-publicar-card flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black py-1.5 rounded-lg shadow transition-colors uppercase tracking-wide">
                     <i class="fas fa-save mr-1"></i> Publicar
                 </button>
-                <button type="button" class="btn-quitar-card bg-red-50 hover:bg-red-100 text-red-600 px-3 py-2 rounded-lg text-xs font-bold transition-colors" title="Quitar esta carrera del ensamblaje">
+                <button type="button" class="btn-quitar-card bg-red-50 hover:bg-red-100 text-red-600 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors" title="Quitar esta carrera del ensamblaje">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
@@ -298,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (error) {
             console.error("Error BD:", error.message || error);
-            return fallo("Error al registrar en la base de datos.");
+            return fallo(`Error al guardar la carrera: ${error.message || 'verifique la conexión'}`);
         }
 
         const filasGrupos = cuposPorGrupo.map(x => ({ tabla_id: nueva.id, grupo_id: x.grupo_id, cupos: x.cupos, cantidad_vendida: 0 }));
@@ -348,10 +348,14 @@ document.addEventListener('DOMContentLoaded', () => {
         contarCarreras();
         if (fail.length === 0) {
             window.clubIndicador?.listo(`${total} carrera(s) publicada(s)`);
-            clubUI.toast(`${total} carrera(s) publicada(s) correctamente.`, 'success');
+            clubUI.aviso('Publicar todas · Completado',
+                `${total}/${total} tablas fijas publicadas correctamente.\n\nLas ${total} carrera(s) quedaron disponibles para taquilla, venta y saldos. Puede verificar en la sección "Venta de Tablas" o "Taquilla".`,
+                'success');
         } else {
             window.clubIndicador?.fin();
-            clubUI.toast(`${ok.length} publicada(s) · ${fail.length} con error (marcadas en rojo).`, 'error');
+            clubUI.aviso('Publicar todas · Con errores',
+                `${ok.length} publicada(s) correctamente · ${fail.length} con error.\n\nRevise las tarjetas marcadas en rojo en el Ensamblaje.\n\nPrimer error: ${fail[0] || 'desconocido'}`,
+                'error');
         }
     }
 
@@ -764,10 +768,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function escribirGacetaRegistro(arr) {
         // Escritura SIMPLE: el array se guarda como llega. Aquí también se
-        // limpia el "buzón" de envío para que el siguiente envío no duplique.
+        // limpia el "buzón" de envío para que el siguiente envío no duplique
+        // y se resetea el guard de montaje para que la pestaña siguiente
+        // pueda volver a mostrar las carreras del día.
         try { localStorage.setItem('gaceta_registro', JSON.stringify(arr)); } catch (e) { /* nada */ }
         try { sessionStorage.setItem('gaceta_registro', JSON.stringify(arr)); } catch (e) { /* nada */ }
-        ['ensamblaje_carreras', 'gaceta_prellenado'].forEach(k => {
+        ['ensamblaje_carreras', 'gaceta_prellenado', 'ensamblaje_montado'].forEach(k => {
             try { localStorage.removeItem(k); } catch (e) { /* nada */ }
             try { sessionStorage.removeItem(k); } catch (e) { /* nada */ }
         });
@@ -839,17 +845,22 @@ document.addEventListener('DOMContentLoaded', () => {
         return montadas;
     }
 
-    function pegarPendientesGaceta({ silencio = false } = {}) {
-        // 1) El buzón de envío (ensamblaje_carreras / gaceta_prellenado) es la
-        //    entrega DIRECTA de la gaceta: SIEMPRE se consume, incluso si los
-        //    flags del registro no cuajan (p. ej. la IA no devolvió carrera N°).
-        let pendientes = migrarLegacy();
-        // 2) Y se suman las del registro marcadas como enviadas y aún no aplicadas.
-        const registro = leerGacetaRegistro();
-        for (const c of registro) {
-            if (c.enviada && !c.aplicada) pendientes.push(c);
+    function pegarPendientesGaceta({ silencio = false, forzar = false } = {}) {
+        // Guarda por pestaña: al refrescar la misma pestaña no se vuelven a montar
+        // las carreras (evita duplicar), pero una pestaña NUEVA (botón derecho →
+        // abrir en nueva pestaña) SÍ las vuelve a mostrar (sessionStorage es por pestaña).
+        if (!forzar && sessionStorage.getItem('ensamblaje_montado') === '1') {
+            if (!silencio) clubUI.toast('Las carreras del día ya están montadas en esta pestaña.', 'warning');
+            return 0;
         }
-        // 3) Dedupe por hipódromo + carrera + nombres, para no repetir cards.
+        // 1) Buzón legacy + registro completo del día (enviadas y pendientes).
+        //    Siempre se montan todas las carreras del día: en pestaña nueva se
+        //    re-muestran; en refresco de la misma pestaña el guard evita duplicar.
+        let pendientes = migrarLegacy();
+        const registro = leerGacetaRegistro();
+        for (const c of registro) pendientes.push(c);
+
+        // 2) Dedupe por hipódromo + carrera + nombres.
         const vistos = new Set();
         const unicos = [];
         for (const p of pendientes) {
@@ -863,31 +874,26 @@ document.addEventListener('DOMContentLoaded', () => {
             unicos.push(p);
         }
         if (unicos.length === 0) {
-            if (!silencio) clubUI.toast('No hay carreras pendientes de la gaceta en el registro.', 'warning');
+            if (!silencio) clubUI.toast('No hay carreras del día en el registro para mostrar.', 'warning');
             return 0;
         }
         const montadas = construirCardsGaceta(unicos);
-        // 4) Actualiza el registro: lo construido queda como enviado+aplicado;
-        //    si venía sólo del buzón (sin entrada previa), se agrega.
-        const finales = registro.map(item => {
-            const aplica = unicos.some(p =>
-                String(p.hipodromo || '').trim().toUpperCase() === String(item.hipodromo || '').trim().toUpperCase()
-                && (String(p.carrera ?? '') === String(item.carrera ?? '') || (!item.carrera && !p.carrera)));
-            return aplica ? Object.assign({}, item, { enviada: true, aplicada: true }) : item;
-        });
+        // 3) Actualizar el registro guardado: integrar las que venían solo del buzón.
+        const finales = [...registro];
         for (const p of unicos) {
-            const ya = finales.some(item =>
+            if (!finales.some(item =>
                 String(item.hipodromo || '').trim().toUpperCase() === String(p.hipodromo || '').trim().toUpperCase()
-                && String(item.carrera ?? '') === String(p.carrera ?? ''));
-            if (!ya) finales.push(Object.assign({}, p, { enviada: true, aplicada: true }));
+                && String(item.carrera ?? '') === String(p.carrera ?? '')
+            )) finales.push(Object.assign({}, p));
         }
         escribirGacetaRegistro(finales);
-        // Catálogos en segundo plano (no bloquean): reformado y tolerante a fallos
+        // 4) Catálogos en segundo plano.
         Promise.all([cargarHipodromos(), cargarGrupos(), cargarEjemplares()].map(p => p.catch(() => {})))
             .catch(() => { /* silencioso */ });
         contarCarreras();
+        sessionStorage.setItem('ensamblaje_montado', '1');
         if (!silencio) {
-            clubUI.toast(`${montadas} carrera(s) con ${unicos.reduce((a, p) => a + listaHors(p).length, 0)} ejemplares pegada(s) desde la gaceta. Revise los VALORES y publique.`, 'success');
+            clubUI.toast(`${montadas} carrera(s) con ${unicos.reduce((a, p) => a + listaHors(p).length, 0)} ejemplares montada(s) en el Ensamblaje. Revise y publique.`, 'success');
             contenedorCarreras.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
         return montadas;
@@ -933,6 +939,23 @@ document.addEventListener('DOMContentLoaded', () => {
     // Catálogos: cargan siempre, pero nunca bloquean el ensamblaje si fallan
     [cargarHipodromos(), cargarGrupos(), cargarEjemplares()].forEach(p => p && p.catch && p.catch(() => {}));
     pegarPendientesGaceta({ silencio: true });
+
+    async function verificarSqlPendiente() {
+        if (!window.supabase) return;
+        try {
+            const [rEj, rCol] = await Promise.all([
+                window.supabase.from('ejemplares').select('id').limit(1),
+                window.supabase.from('tablas_fijas').select('distancia_carrera').limit(1)
+            ]);
+            const msg = [rEj.error?.message, rCol.error?.message].filter(Boolean).join(' | ');
+            if (msg && (/does not exist|does not have a column|42703|42P01|permission|row-level security/i.test(msg))) {
+                clubUI.aviso('SQL pendiente de ejecutar',
+                    `Faltan objetos en la base de datos (tabla ejemplares o columnas distancia_carrera / superficie).\n\nEjecute en Supabase → SQL Editor:\n\nsql/paquete_pendientes.sql\n\nDespués recargue esta página.\n\nErrores detectados: ${msg}`,
+                    'error');
+            }
+        } catch (e) { /* ignorar errores de red */ }
+    }
+    verificarSqlPendiente();
 
     // Monitor de publicadas: plegable para que la pantalla no haga scroll
     const btnToggleMonitor = document.getElementById('btnToggleMonitor');
