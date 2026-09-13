@@ -136,7 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const numColor = colorDeNumero(c?.numero);
         return `
             <div class="fila-caballo-card flex gap-px items-center bg-slate-50 border border-slate-200 rounded px-0.5 py-0.5 ${vacio}">
-                <input type="text" inputmode="numeric" class="in-cab-num w-4 shrink-0 border border-slate-200 rounded px-0 py-px text-center text-[9px] font-black outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar" style="color:${numColor};border-color:${numColor}">
+                <input type="text" inputmode="numeric" class="in-cab-num w-5 shrink-0 border border-slate-200 rounded px-0 py-px text-center text-[9px] font-black outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar" style="background-color:${numColor};color:#fff;border-color:${numColor}">
                 <input type="text" class="in-cab-nom flex-1 min-w-[4.5rem] border border-slate-200 rounded px-1 py-px text-[11px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
                 ${htmlSelectNac(c?.nacionalidad)}
                 <input type="text" inputmode="decimal" class="in-cab-valor w-9 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="Valor" title="Valor / monta del ejemplar">
@@ -172,7 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="lista-caballos-card px-1.5 py-0.5 space-y-0.5 flex-1"></div>
             <div class="add-caballo-card border-t border-slate-200 px-1.5 py-1 space-y-0.5 bg-slate-50">
                 <div class="flex gap-1 items-center">
-                    <input type="text" inputmode="numeric" class="nuevo-num w-5 shrink-0 border border-slate-300 rounded px-0 py-px text-[9px] font-black text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Nº" style="color:#94a3b8;border-color:#cbd5e1">
+                    <input type="text" inputmode="numeric" class="nuevo-num w-5 shrink-0 border border-slate-300 rounded px-0 py-px text-[9px] font-black text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Nº" style="background-color:#fff;color:#94a3b8;border-color:#cbd5e1">
                     <input type="text" class="nuevo-nom flex-1 min-w-[4.5rem] border border-slate-300 rounded px-1 py-px text-[11px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Ejemplar nuevo">
                     <select class="nuevo-nac w-auto shrink-0 border border-slate-300 rounded px-0.5 py-px text-[8px] font-bold uppercase outline-none bg-white">
                         ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}">${n}</option>`).join('')}
@@ -275,10 +275,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const t = e.target;
         if (!t || !t.classList) return;
         if (t.classList.contains('in-cab-num') || t.classList.contains('nuevo-num')) {
-            const c = colorDeNumero(t.value);
-            t.style.color = c;
-            t.style.borderColor = c;
-            if (!t.value) { t.style.borderColor = '#cbd5e1'; t.style.color = '#94a3b8'; }
+            if (t.value) {
+                const c = colorDeNumero(t.value);
+                t.style.backgroundColor = c;
+                t.style.color = '#fff';
+                t.style.borderColor = c;
+            } else {
+                t.style.backgroundColor = '#fff';
+                t.style.color = '#94a3b8';
+                t.style.borderColor = '#cbd5e1';
+            }
         }
     });
 
