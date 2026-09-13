@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const htmlSelectNac = (val = 'VE') => {
         const nac = (val || 'VE').trim().toUpperCase();
         const FLAGS = { VE: '🇻🇪', USA: '🇺🇸', BR: '🇧🇷', AR: '🇦🇷', CL: '🇨🇱', MX: '🇲🇽', PA: '🇵🇦', PE: '🇵🇪', CO: '🇨🇴', EC: '🇪🇨', UY: '🇺🇾', OTRA: '🏳️' };
-        return `<span class="bandera-nac text-sm leading-none" title="${nac}">${FLAGS[nac] || '🏳️'}</span>
+        return `<span class="bandera-nac w-5 shrink-0 inline-flex justify-center text-sm leading-none" title="${nac}">${FLAGS[nac] || '🏳️'}</span>
             <input type="hidden" class="in-cab-nac" value="${nac}">`;
     };
 
@@ -116,11 +116,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const vacio = (c && c.nombre) ? '' : 'opacity-70';
         return `
             <div class="fila-caballo-card flex gap-1 items-center bg-slate-50 border border-slate-200 rounded px-1 py-0.5 ${vacio}">
-                <input type="text" class="in-cab-num w-9 border border-slate-200 rounded px-0.5 py-px text-center text-[10px] font-bold outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="N°">
-                <input type="text" class="in-cab-nom flex-1 min-w-0 border border-slate-200 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar">
+                <input type="text" class="in-cab-num w-7 shrink-0 border border-slate-200 rounded px-0.5 py-px text-center text-[9px] font-bold outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar">
+                <input type="text" class="in-cab-nom flex-1 min-w-0 border border-slate-200 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
                 ${htmlSelectNac(c?.nacionalidad)}
-                <input type="number" step="0.1" class="in-cab-valor w-12 border border-slate-200 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="Valor">
-                <button type="button" class="btn-del-cab-card text-red-400 hover:text-red-600 px-0.5 leading-none" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
+                <input type="number" step="0.1" class="in-cab-valor w-11 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="Valor" title="Valor / monta del ejemplar">
+                <button type="button" class="btn-del-cab-card shrink-0 text-red-400 hover:text-red-600 px-0.5 leading-none -ml-0.5" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
             </div>`;
     }
 
@@ -152,12 +152,12 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="lista-caballos-card px-1.5 py-0.5 space-y-0.5 flex-1"></div>
             <div class="add-caballo-card border-t border-slate-200 px-1.5 py-1 space-y-0.5 bg-slate-50">
                 <div class="flex gap-1 items-center">
-                    <input type="text" class="nuevo-num w-9 border border-slate-300 rounded px-0.5 py-px text-[10px] font-bold text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="N°">
+                    <input type="text" class="nuevo-num w-8 shrink-0 border border-slate-300 rounded px-0.5 py-px text-[10px] font-bold text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Nº">
                     <input type="text" class="nuevo-nom flex-1 min-w-0 border border-slate-300 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Ejemplar nuevo">
-                    <select class="nuevo-nac w-12 border border-slate-300 rounded px-0.5 py-px text-[8px] font-bold uppercase outline-none bg-white">
+                    <select class="nuevo-nac w-auto shrink-0 border border-slate-300 rounded px-0.5 py-px text-[8px] font-bold uppercase outline-none bg-white">
                         ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}">${n}</option>`).join('')}
                     </select>
-                    <input type="number" step="0.1" class="nuevo-valor w-12 border border-slate-300 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Valor">
+                    <input type="number" step="0.1" class="nuevo-valor w-12 shrink-0 border border-slate-300 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Valor">
                     <button type="button" class="btn-add-caballo-card bg-indigo-600 hover:bg-indigo-700 text-white rounded px-1.5 py-px text-[10px]" title="Añadir ejemplar"><i class="fas fa-plus"></i></button>
                 </div>
             </div>
@@ -236,6 +236,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     // PUBLICAR UNA CARRERA DEL ENSAMBLAJE
     // ==========================================
+    // Inserta en tablas_fijas y, si la BD exige columnas legacy (p. ej.
+    // "monto_tabla"), las completa automáticamente tras detectar el error
+    // de Postgres, sin abortar la publicación.
+    async function insertarTablaFija(payload) {
+        const LEGACY = {
+            monto_tabla: (p) => parseFloat(p.premio_recalculado) || 0
+        };
+        const extras = {};
+        for (let i = 0; i < 5; i++) {
+            const body = Object.assign({}, payload, extras);
+            const { data, error } = await window.supabase.from('tablas_fijas').insert([body]).select('id').single();
+            if (!error) return { data, error };
+            const m = /null value in column "([^"]+)"/.exec(String(error.message || ''));
+            if (!m) return { data, error };
+            const col = m[1];
+            if (extras[col] !== undefined) return { data, error };
+            extras[col] = LEGACY[col] ? LEGACY[col](payload) : 0;
+        }
+        return { data: null, error: { message: 'No se pudo completar la inserción (columnas requeridas faltantes en la BD).' } };
+    }
     async function publicarCard(card, silencio) {
         const hipodromo = (card.querySelector('.in-hipo-card').value || '').trim().toUpperCase();
         const carrera = parseInt(card.querySelector('.in-carrera-card').value);
@@ -290,13 +310,13 @@ document.addEventListener('DOMContentLoaded', () => {
             c.ejemplar_id = await resolverEjemplar(c.nombre, c.nacionalidad);
         }
 
-        const { data: nueva, error } = await window.supabase.from('tablas_fijas').insert([{
+        const { data: nueva, error } = await insertarTablaFija({
             hipodromo, carrera, grupo_venta: 'GRUPOS', moneda: 'USD', tasa_cambio: tasaCambioGlobal,
             suma_base_tabla: sumaBaseTabla, limite_ventas: limiteTotal, cantidad_vendida: 0,
             premio_original: premio, premio_recalculado: premio,
             comision_grupo: comisionGrupo, caballos: caballosArr, estado: 'Abierta',
             distancia_carrera: distancia, superficie, retirados_oficiales: NO_RETIROS
-        }]).select('id').single();
+        });
 
         btn.innerHTML = orig;
         btn.disabled = false;
