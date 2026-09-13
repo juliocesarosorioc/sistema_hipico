@@ -17,6 +17,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const SUPERFICIES = ['ARENA', 'CESPED', 'FANGO', 'TAPETA', 'OTRA'];
     const NO_RETIROS = 'NO HUBO RETIROS';
 
+    // Acepta "3,5" y "3.5" (decimal con coma típico en Vzla)
+    const aNum = (v) => {
+        if (v === null || v === undefined) return null;
+        const s = String(v).trim();
+        if (!s) return null;
+        const n = parseFloat(s.replace(/,/g, '.'));
+        return Number.isFinite(n) ? n : null;
+    };
+
+    // Paleta oficial de colores por número del ejemplar (se repite cada 10)
+    const COLOR_NUMEROS = {
+        1: '#dc2626', 2: '#2563eb', 3: '#16a34a', 4: '#92400e', 5: '#111827',
+        6: '#db2777', 7: '#ea580c', 8: '#0ea5e9', 9: '#7c3aed', 10: '#0f766e'
+    };
+    const colorDeNumero = (n) => {
+        const x = parseInt(n, 10);
+        if (!x) return '#94a3b8';
+        return COLOR_NUMEROS[((x - 1) % 10) + 1] || '#94a3b8';
+    };
+
     const htmlSelectNac = (val = 'VE') => {
         const nac = (val || 'VE').trim().toUpperCase();
         const FLAGS = { VE: '🇻🇪', USA: '🇺🇸', BR: '🇧🇷', AR: '🇦🇷', CL: '🇨🇱', MX: '🇲🇽', PA: '🇵🇦', PE: '🇵🇪', CO: '🇨🇴', EC: '🇪🇨', UY: '🇺🇾', OTRA: '🏳️' };
@@ -113,12 +133,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function filaCaballoCard(c) {
         const vacio = (c && c.nombre) ? '' : 'opacity-70';
+        const numColor = colorDeNumero(c?.numero);
         return `
-            <div class="fila-caballo-card flex gap-1 items-center bg-slate-50 border border-slate-200 rounded px-1 py-0.5 ${vacio}">
-                <input type="text" class="in-cab-num w-7 shrink-0 border border-slate-200 rounded px-0.5 py-px text-center text-[9px] font-bold outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar">
-                <input type="text" class="in-cab-nom flex-1 min-w-0 border border-slate-200 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
+            <div class="fila-caballo-card flex gap-0.5 items-center bg-slate-50 border border-slate-200 rounded px-1 py-0.5 ${vacio}">
+                <input type="text" inputmode="numeric" class="in-cab-num w-5 shrink-0 border border-slate-200 rounded px-0 py-px text-center text-[9px] font-black outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar" style="color:${numColor};border-color:${numColor}">
+                <input type="text" class="in-cab-nom flex-1 min-w-0 border border-slate-200 rounded px-1 py-px text-[11px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
                 ${htmlSelectNac(c?.nacionalidad)}
-                <input type="number" step="0.1" class="in-cab-valor w-11 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="Valor" title="Valor / monta del ejemplar">
+                <input type="text" inputmode="decimal" class="in-cab-valor w-9 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="Valor" title="Valor / monta del ejemplar">
                 <button type="button" tabindex="-1" class="btn-del-cab-card shrink-0 text-red-400 hover:text-red-600 px-0.5 leading-none -ml-0.5" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
             </div>`;
     }
@@ -151,12 +172,12 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="lista-caballos-card px-1.5 py-0.5 space-y-0.5 flex-1"></div>
             <div class="add-caballo-card border-t border-slate-200 px-1.5 py-1 space-y-0.5 bg-slate-50">
                 <div class="flex gap-1 items-center">
-                    <input type="text" class="nuevo-num w-8 shrink-0 border border-slate-300 rounded px-0.5 py-px text-[10px] font-bold text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Nº">
-                    <input type="text" class="nuevo-nom flex-1 min-w-0 border border-slate-300 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Ejemplar nuevo">
+                    <input type="text" inputmode="numeric" class="nuevo-num w-6 shrink-0 border border-slate-300 rounded px-0 py-px text-[9px] font-black text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Nº" style="color:#94a3b8;border-color:#cbd5e1">
+                    <input type="text" class="nuevo-nom flex-1 min-w-0 border border-slate-300 rounded px-1 py-px text-[11px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Ejemplar nuevo">
                     <select class="nuevo-nac w-auto shrink-0 border border-slate-300 rounded px-0.5 py-px text-[8px] font-bold uppercase outline-none bg-white">
                         ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}">${n}</option>`).join('')}
                     </select>
-                    <input type="number" step="0.1" class="nuevo-valor w-12 shrink-0 border border-slate-300 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Valor">
+                    <input type="text" inputmode="decimal" class="nuevo-valor w-12 shrink-0 border border-slate-300 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Valor">
                     <button type="button" tabindex="-1" class="btn-add-caballo-card bg-indigo-600 hover:bg-indigo-700 text-white rounded px-1.5 py-px text-[10px]" title="Añadir ejemplar"><i class="fas fa-plus"></i></button>
                 </div>
             </div>
@@ -250,6 +271,17 @@ document.addEventListener('DOMContentLoaded', () => {
         next.select?.();
     });
 
+    contenedorCarreras.addEventListener('input', (e) => {
+        const t = e.target;
+        if (!t || !t.classList) return;
+        if (t.classList.contains('in-cab-num') || t.classList.contains('nuevo-num')) {
+            const c = colorDeNumero(t.value);
+            t.style.color = c;
+            t.style.borderColor = c;
+            if (!t.value) { t.style.borderColor = '#cbd5e1'; t.style.color = '#94a3b8'; }
+        }
+    });
+
     // ==========================================
     // PUBLICAR UNA CARRERA DEL ENSAMBLAJE
     // ==========================================
@@ -299,7 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const nombre = fila.querySelector('.in-cab-nom').value.trim().toUpperCase();
             const nacionalidad = fila.querySelector('.bandera-nac')?.dataset?.nac || 'VE';
             // Valor en blanco se toma como 0: NO se descarta el ejemplar
-            const valor = parseFloat(fila.querySelector('.in-cab-valor').value) || 0;
+            const valor = aNum(fila.querySelector('.in-cab-valor').value) || 0;
             if (!numero && !nombre) return;
             if (numero && nombre) {
                 const clave = nombre + '|' + nacionalidad;
@@ -876,7 +908,7 @@ document.addEventListener('DOMContentLoaded', () => {
             pendientes.forEach(pre => {
                 const caballos = listaHors(pre).map(c => ({
                     numero: c.numero, nombre: c.nombre, nacionalidad: c.nacionalidad || 'VE',
-                    valor: c.valor ?? c.pts ?? null
+                    valor: aNum(c.valor) ?? aNum(c.pts) ?? null
                 })).filter(c => c.nombre);
                 crearCardCarrera({
                     hipodromo: pre.hipodromo || '',

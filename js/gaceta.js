@@ -64,6 +64,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // documento o el operador presione "Limpiar registro".
     const REGISTRO_KEY = 'gaceta_registro';
 
+    // Acepta "3,5" y "3.5" (decimal con coma típico en Vzla)
+    const aNum = (v) => {
+        if (v === null || v === undefined) return null;
+        const s = String(v).trim();
+        if (!s) return null;
+        const n = parseFloat(s.replace(/,/g, '.'));
+        return Number.isFinite(n) ? n : null;
+    };
+
     function leerRegistro() {
         try { const a = JSON.parse(localStorage.getItem(REGISTRO_KEY)); if (Array.isArray(a)) return a; } catch (e) { /* vacío */ }
         try { const a = JSON.parse(sessionStorage.getItem(REGISTRO_KEY)); if (Array.isArray(a)) return a; } catch (e) { /* vacío */ }
@@ -88,7 +97,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (idx === -1) idx = porMarcar.findIndex(c => !String(c.hipodromo || '').trim());
             if (idx === -1) idx = 0;
             const objetivo = porMarcar.splice(idx, 1)[0];
-            if (objetivo) { objetivo.enviada = true; objetivo.aplicada = false; }
+            if (objetivo) {
+                objetivo.enviada = true; objetivo.aplicada = false;
+                // Guarda los VALORES editados en pantalla: sin esto, el registro
+                // conservaba los valores originales de la IA y al regresar al
+                // Ensamblaje no aparecían los que el operador colocó en la carga.
+                const porNombre = new Map();
+                (ce.caballos || []).forEach(cb => porNombre.set(String(cb.nombre || '').toUpperCase(), cb));
+                (objetivo.ejemplares || []).forEach(ej => {
+                    const cb = porNombre.get(String(ej.nombre || '').toUpperCase());
+                    if (cb) { ej.numero = cb.numero; ej.valor = cb.valor; }
+                });
+            }
         });
         persistirRegistro();
     }
@@ -913,7 +933,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                                             ${NACIONALIDADES.map(n => `<option value="${n}" ${(ej.nacionalidad || 'VE') === n ? 'selected' : ''}>${n}</option>`).join('')}
                                         </select>
                                     </td>
-                                    <td class="p-1 text-right"><input type="number" step="0.1" class="gac-valor w-16 border border-slate-200 rounded px-1 py-0.5 text-right text-xs font-bold text-blue-700 outline-none" value="${ej.valor ?? ej.pts ?? ''}"></td>
+                                    <td class="p-1 text-right"><input type="text" inputmode="decimal" class="gac-valor w-16 border border-slate-200 rounded px-1 py-0.5 text-right text-xs font-bold text-blue-700 outline-none" value="${ej.valor ?? ej.pts ?? ''}" title="Valor / monta del ejemplar"></td>
                                 </tr>
                             `).join('') || '<tr><td colspan="4" class="p-3 text-center text-slate-400 italic">Sin ejemplares detectados</td></tr>'}
                         </tbody>
@@ -958,7 +978,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
             numero: f.querySelector('.gac-num')?.value?.trim() || '',
             nombre: f.querySelector('.gac-nombre')?.value?.trim().toUpperCase() || '',
             nacionalidad: f.querySelector('.gac-nac')?.value || 'VE',
-            valor: parseFloat(f.querySelector('.gac-valor')?.value) || parseFloat(f.querySelector('.gac-pts')?.value) || 0
+            valor: aNum(f.querySelector('.gac-valor')?.value) ?? aNum(f.querySelector('.gac-pts')?.value) ?? 0
         })).filter(c => c.nombre);
 
         return {
