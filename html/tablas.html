@@ -199,34 +199,56 @@
     </div>
 
     <!-- Modal Auditoría (Resultado, Retiros y Premio por Modalidad) -->
-    <div id="modalAuditoria" class="hidden fixed inset-0 bg-slate-900 bg-opacity-60 z-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div class="bg-amber-500 p-4 text-slate-900 font-bold flex justify-between items-center text-sm uppercase tracking-wide">
-                <span><i class="fas fa-balance-scale mr-2"></i> Resultado de la Carrera (Auditoría)</span>
-                <button class="cerrar-modal hover:text-white"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="p-5">
-                <input type="hidden" id="auditoriaTablaId">
-                <div class="bg-slate-100 p-3 rounded-lg border border-slate-200 mb-4 flex justify-between items-center">
-                    <span class="text-xs font-bold text-slate-600 uppercase">Suma Base Inicial:</span>
-                    <span class="text-lg font-black text-slate-800" id="lblSumaBase">0</span>
+    <div id="modalAuditoria" class="hidden fixed inset-0 z-50 bg-slate-900 bg-opacity-60 overflow-y-auto p-4">
+        <div class="flex min-h-full items-center justify-center">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg my-auto overflow-hidden flex flex-col max-h-[92vh]">
+                <div class="bg-amber-500 p-4 text-slate-900 font-bold flex justify-between items-center text-sm uppercase tracking-wide shrink-0">
+                    <span><i class="fas fa-balance-scale mr-2"></i> Auditoría / Resultado de la Carrera</span>
+                    <button class="cerrar-modal hover:text-white"><i class="fas fa-times"></i></button>
                 </div>
-                <p class="text-[10px] font-bold text-cyan-700 uppercase tracking-wider mb-1">Ganador de la carrera:</p>
-                <div id="listaGanadorAuditoria" class="space-y-1.5 max-h-32 overflow-y-auto mb-4 border border-slate-200 p-2 rounded-lg bg-slate-50">
-                    <!-- Se inyectan los radios aquí -->
+                <div class="p-5 space-y-4 overflow-y-auto">
+                    <input type="hidden" id="auditoriaTablaId">
+                    <div id="auditoriaInfoCabecera" class="text-[11px] font-bold text-slate-600 bg-slate-100 rounded-lg px-3 py-2 border border-slate-200"></div>
+
+                    <!-- Valores editables de la tabla (quedan registrados para próximas jugadas) -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1" for="inpPremioOriginal">Premio Original (oficial)</label>
+                            <input type="text" inputmode="decimal" id="inpPremioOriginal" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-amber-500">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1" for="inpSumaBase">Suma Base de la Tabla</label>
+                            <input type="text" inputmode="decimal" id="inpSumaBase" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-amber-500">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1" for="inpComisionGrupo">Comisión del Grupo (%)</label>
+                            <input type="text" inputmode="decimal" id="inpComisionGrupo" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-amber-500">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1" for="inpPremioRecalculado">Premio Recalculado (resultado)</label>
+                            <div class="flex gap-1">
+                                <input type="text" inputmode="decimal" id="inpPremioRecalculado" class="flex-1 min-w-0 border border-slate-300 rounded-lg px-3 py-2 text-sm font-black text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500">
+                                <button type="button" id="btnRecalcularPremio" title="Recalcular automáticamente con los retiros" class="bg-emerald-100 text-emerald-700 px-2.5 rounded-lg hover:bg-emerald-200 font-bold text-sm"><i class="fas fa-sync-alt"></i></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <p class="text-[10px] font-bold text-cyan-700 uppercase tracking-wider mb-1">Ejemplares — marque ganador, retirados y ajuste valores:</p>
+                        <div id="listaEjemplaresAuditoria" class="space-y-1.5 max-h-52 overflow-y-auto border border-slate-200 p-2 rounded-lg bg-slate-50">
+                            <!-- Se inyectan las filas aquí -->
+                        </div>
+                    </div>
+
+                    <div class="bg-emerald-50 p-3 rounded-lg border border-emerald-200 text-center">
+                        <p class="text-[10px] font-bold text-emerald-800 uppercase">Premio a publicar (tras retiros) · se usará en las próximas ventas</p>
+                        <p class="text-2xl font-black text-emerald-600" id="lblPremioRecalculadoBig">0.00</p>
+                    </div>
                 </div>
-                <p class="text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-2">Ejemplares retirados (si no marca ninguno quedará “No hubo retiros”):</p>
-                <div id="listaCaballosAuditoria" class="space-y-2 max-h-40 overflow-y-auto mb-4 border border-slate-200 p-2 rounded-lg bg-slate-50">
-                    <!-- Se inyectan los checkboxes aquí -->
+                <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 shrink-0">
+                    <button type="button" class="cerrar-modal bg-slate-300 text-slate-700 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-400 transition-colors">Cancelar</button>
+                    <button type="button" id="btnProcesarAuditoria" class="bg-amber-500 text-slate-900 px-5 py-2 rounded-lg text-xs font-bold hover:bg-amber-600 shadow-md uppercase">Registrar Resultado</button>
                 </div>
-                <div class="bg-emerald-50 p-3 rounded-lg border border-emerald-200 flex justify-between items-center shadow-inner">
-                    <span class="text-xs font-bold text-emerald-800 uppercase">Premio Recalculado (resultado):</span>
-                    <span class="text-xl font-black text-emerald-600" id="lblPremioRecalculado">0.00</span>
-                </div>
-            </div>
-            <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
-                <button type="button" class="cerrar-modal bg-slate-300 text-slate-700 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-400 transition-colors">Cancelar</button>
-                <button type="button" id="btnProcesarAuditoria" class="bg-amber-500 text-slate-900 px-5 py-2 rounded-lg text-xs font-bold hover:bg-amber-600 shadow-md uppercase">Registrar Resultado</button>
             </div>
         </div>
     </div>
@@ -239,6 +261,6 @@
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
     <script src="../js/components/programa_dia.js?v=20260910-17"></script>
-    <script src="../js/tablas.js?v=20260913-1"></script>
+    <script src="../js/tablas.js?v=20260913-2"></script>
 </body>
 </html>
