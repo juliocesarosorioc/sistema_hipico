@@ -753,6 +753,35 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
         return [];
     }
 
+    // Inserta en ejemplares completando columnas NOT NULL legacy que exija
+    // la BD (sin abortar el lote) tras detectar el error de Postgres.
+    async function insertarEjemplar(nombre, nacionalidad) {
+        const extras = {};
+        for (let i = 0; i < 5; i++) {
+            const body = Object.assign({ nombre, nacionalidad }, extras);
+            const { data, error } = await window.supabase.from('ejemplares').insert(body).select('id').single();
+            if (!error) return { data, error };
+            if (error.code === '23505') return { data, error };
+            const msg = String(error.message || '');
+            const nullM = /null value in column "([^"]+)"/.exec(msg);
+            if (nullM) {
+                const col = nullM[1];
+                if (extras[col] !== undefined) return { data, error };
+                extras[col] = 0;
+                continue;
+            }
+            const tipoM = /column "([^"]+)" is of type (?:text|character varying|boolean)/i.exec(msg);
+            if (tipoM) {
+                const col = tipoM[1];
+                if (extras[col] !== undefined) return { data, error };
+                extras[col] = /boolean/i.test(tipoM[2]) ? false : '';
+                continue;
+            }
+            return { data, error };
+        }
+        return { data: null, error: { message: 'Columnas requeridas faltantes en ejemplares' } };
+    }
+
     async function registrarPadron() {
         const totales = { nuevos: 0, vinculados: 0, fallidos: 0, errorDb: null };
         if (!window.supabase) return totales;
@@ -776,8 +805,8 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
         for (const c of estado.carreras) {
             c.ejemplares = Array.isArray(c.ejemplares) ? c.ejemplares : [];
             for (const ej of c.ejemplares) {
-                const nombre = String(ej.nombre || '').trim().toUpperCase();
-                const nac = (String(ej.nacionalidad || 'VE').trim().toUpperCase() || 'VE');
+                const nombre = String(ej.nombre || '').trim().toUpperCase().slice(0, 100);
+                const nac = (String(ej.nacionalidad || 'VE').trim().toUpperCase() || 'VE').slice(0, 3);
                 ej.nombre = nombre;
                 ej.nacionalidad = nac;
                 if (!nombre) { ej.ejemplar_id = null; continue; }
@@ -788,22 +817,20 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                     totales.vinculados++;
                     continue;
                 }
-                try {
-                    const { data, error } = await window.supabase.from('ejemplares').insert({ nombre, nacionalidad: nac }).select('id').single();
-                    if (error) {
-                        if (error.code === '23505') {
-                            const { data: existente } = await window.supabase.from('ejemplares').select('id').eq('nombre', nombre).eq('nacionalidad', nac).limit(1).single();
-                            if (existente) { ej.ejemplar_id = existente.id; ej.nuevo = false; totales.vinculados++; continue; }
-                        }
-                        ej.ejemplar_id = null; ej.nuevo = false; totales.fallidos++; continue;
+                const { data, error } = await insertarEjemplar(nombre, nac);
+                if (error) {
+                    if (error.code === '23505') {
+                        const { data: existente } = await window.supabase.from('ejemplares').select('id').eq('nombre', nombre).eq('nacionalidad', nac).limit(1).single();
+                        if (existente) { ej.ejemplar_id = existente.id; ej.nuevo = false; totales.vinculados++; continue; }
                     }
-                    if (data?.id) {
-                        ej.ejemplar_id = data.id; ej.nuevo = true; totales.nuevos++;
-                        mapa.set(clave, data.id);
-                    } else {
-                        ej.ejemplar_id = null; ej.nuevo = false; totales.fallidos++;
-                    }
-                } catch (e2) {
+                    totales.errorDb = totales.errorDb || (error.message || String(error));
+                    ej.ejemplar_id = null; ej.nuevo = false; totales.fallidos++;
+                    continue;
+                }
+                if (data?.id) {
+                    ej.ejemplar_id = data.id; ej.nuevo = true; totales.nuevos++;
+                    mapa.set(clave, data.id);
+                } else {
                     ej.ejemplar_id = null; ej.nuevo = false; totales.fallidos++;
                 }
             }
