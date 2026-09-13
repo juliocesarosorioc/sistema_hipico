@@ -427,146 +427,20 @@ document.addEventListener('DOMContentLoaded', () => {
             </table>
             <div class="aviso">La comisión se calcula sobre la ganancia (premio − monto jugado) si el ejemplar gana.</div>
         `;
-        imprimirHTML(`Reporte — ${nombreGrupo}`, html);
+        window.VentaTablasCore.printHTML(`Reporte — ${nombreGrupo}`, html);
     }
 
     // ==========================================
     // VENTA REUTILIZABLE (taquilla directa y aprobación de solicitudes)
-    // Retorna { ok: bool, error: string }
+    // Delega la transacción al núcleo compartido VentaTablasCore
+    // (congela premio_por_tabla y pts_ejemplar en el ticket)
     // ==========================================
     async function procesarVenta({ cliente, cantidad, ejemplar, tabla, tg, grupo, permitirSobregiro = false }) {
         if (!grupo) grupo = gruposDB.find(x => x.id == tg.grupo_id);
-        if (!grupo) return { ok: false, error: "Grupo no encontrado." };
-
-        const pts = parseFloat(ejemplar.valor_ejemplar);
-        const costoTotal = pts * cantidad;
-        const esVES = grupo.moneda === 'VES';
-        const costoUSD = esVES ? costoTotal / (tasaCambioGlobal || 1) : costoTotal;
-
-        if (!permitirSobregiro) {
-            const modoJuega = cliente.modo_juego || (cliente.libre ? 'libre' : 'aval');
-            if (modoJuega === 'pozo') {
-                const disp = parseFloat(cliente.saldo_actual);
-                if (disp < costoUSD) {
-                    return { ok: false, error: `El cliente ${cliente.nombre} juega con Pozo y no tiene saldo disponible (tiene $${clubUI.formatoNumero(disp, 2)}). Debe abonar antes de comprar tablas.` };
-                }
-            } else if (!cliente.libre) {
-                const limiteAval = parseFloat(cliente.aval || 0);
-                if (parseFloat(cliente.saldo_actual) - costoUSD < -limiteAval) {
-                    return { ok: false, error: `El cliente ${cliente.nombre} supera su límite de AVAL ($${clubUI.formatoNumero(limiteAval, 2)}). Debe abonar antes de comprar tablas.` };
-                }
-            }
-            if (!esVES && parseFloat(cliente.saldo_actual) < costoTotal) {
-                return { ok: false, error: `El cliente ${cliente.nombre} tiene saldo insuficiente ($${clubUI.formatoNumero(cliente.saldo_actual, 2)}).` };
-            }
-        }
-
-        const vendidas = tg.cantidad_vendida || 0;
-        const disponibles = (tg.cupos || 0) - vendidas;
-        if (cantidad > disponibles) return { ok: false, error: `No hay suficientes tablas disponibles en el grupo. Solo quedan ${disponibles}.` };
-
-        const premio = parseFloat(tabla.premio_recalculado) || 0;
-        const premioTotal = premio * cantidad;
-        const gananciaTotal = Math.max(0, premioTotal - costoTotal);
-        const comisionPorc = parseFloat(tabla.comision_grupo || 2.5);
-        const comisionEstimada = gananciaTotal * (comisionPorc / 100);
-
-        const { error: errTk } = await window.supabase.from('tickets_apuestas').insert([{
-            cliente_juega_id: cliente.id,
-            cliente_juega_nombre: cliente.nombre,
-            grupo: grupo.nombre,
-            hipodromo: tabla.hipodromo,
-            carrera: tabla.carrera,
-            nombre_jugada: `TABLA FIJA (${tabla.hipodromo} C${tabla.carrera})`,
-            caballo: ejemplar.nombre,
-            cantidad_tablas: cantidad,
-            monto_jugado: costoTotal,
-            premio_por_tabla: premio,
-            pts_ejemplar: pts,
-            monto_decidido: gananciaTotal,
-            comision_porcentaje: comisionPorc,
-            moneda: grupo.moneda,
-            tasa_cambio: tasaCambioGlobal,
-            estado: 'Pendiente'
-        }]);
-        if (errTk) return { ok: false, error: 'Ticket: ' + (errTk.message || errTk.code) };
-
-        const nuevoVendidas = vendidas + cantidad;
-        const { error: errTg } = await window.supabase.from('tabla_grupos').update({
-            cantidad_vendida: nuevoVendidas
-        }).eq('id', tg.id);
-        if (errTg) return { ok: false, error: 'Inventario: ' + (errTg.message || errTg.code) };
-
-        const { error: errCl } = await window.supabase.from('clientes').update({
-            saldo_actual: parseFloat(cliente.saldo_actual) - costoUSD
-        }).eq('id', cliente.id);
-        if (errCl) return { ok: false, error: 'Saldo: ' + (errCl.message || errCl.code) };
-
-        return {
-            ok: true, costoTotal, premioTotal, gananciaTotal,
-            comisionEstimada, comisionPorc, premio, pts, cantidad, esVES
-        };
-    }
-
-    // ==========================================
-    // COMPROBANTE IMPRIMIBLE PARA EL CLIENTE
-    // ==========================================
-    function simboloMoneda(m) { return m === 'VES' ? 'Bs ' : '$'; }
-
-    function imprimirHTML(titulo, html) {
-        const w = window.open('', '_blank', 'width=460,height=680');
-        if (!w) { alert('Permita ventanas emergentes para poder imprimir la recepción.'); return; }
-        w.document.write(`<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>${titulo}</title>
-<style>
-    body{font-family:'Segoe UI',Arial,sans-serif;color:#0f172a;margin:22px;font-size:13px}
-    h1{font-size:16px;text-align:center;border-bottom:2px solid #10b981;padding-bottom:8px;margin:0 0 4px}
-    .sub{text-align:center;color:#64748b;font-size:11px;margin-bottom:12px}
-    table{width:100%;border-collapse:collapse;margin-top:8px}
-    td,th{border:1px solid #cbd5e1;padding:5px 8px;text-align:left;font-size:12px}
-    th{background:#f1f5f9}
-    .r{text-align:right}.b{font-weight:700}
-    .gran{border-top:3px double #0f172a;margin-top:6px;background:#ecfdf5;font-weight:700}
-    .aviso{font-size:10px;color:#475569;margin-top:10px;text-align:center}
-</style></head><body>${html}</body></html>`);
-        w.document.close();
-        w.focus();
-        setTimeout(() => { w.print(); }, 350);
-    }
-
-    function generarComprobante({ cliente, ejemplar, tabla, grupo, cantidad, res }) {
-        const simb = simboloMoneda(grupo.moneda);
-        const fecha = new Date().toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
-        const folio = `T-${tabla.hipodromo}-C${tabla.carrera}-N${ejemplar.numero || ejemplar.nombre}-${Date.now().toString().slice(-6)}`;
-        const notas = [];
-        const costoUSDComp = res.esVES ? res.costoTotal / (tasaCambioGlobal || 1) : res.costoTotal;
-        const saldoPosterior = parseFloat(cliente.saldo_actual || 0) - costoUSDComp;
-        if (saldoPosterior < 0) {
-            notas.push(`Aviso: tras la venta, el cliente ${cliente.nombre} queda con saldo negativo de $${clubUI.formatoNumero(Math.abs(saldoPosterior), 2)} (aval activo).`);
-        }
-        const html = `
-            <h1>Comprobante de Venta · Tabla Fija</h1>
-            <div class="sub">Folio: ${folio} &nbsp;·&nbsp; ${fecha}</div>
-            <table>
-                <tr><th>Cliente</th><td class="b">${cliente.nombre}</td></tr>
-                <tr><th>Grupo</th><td>${grupo.nombre}</td></tr>
-                <tr><th>Carrera</th><td>${tabla.hipodromo} · C${tabla.carrera}</td></tr>
-                <tr><th>Ejemplar</th><td>N° ${ejemplar.numero || '-'} — ${ejemplar.nombre}</td></tr>
-                <tr><th>Cantidad de Tablas</th><td class="r b">${res.cantidad}</td></tr>
-                <tr><th>Valor por Tabla</th><td class="r b">${simb}${clubUI.formatoNumero(res.pts, 2)}</td></tr>
-                <tr><th>Premio por Tabla (tras retiros)</th><td class="r b">${simb}${clubUI.formatoNumero(res.premio, 2)}</td></tr>
-                <tr><th>Total Pagado</th><td class="r b">${simb}${clubUI.formatoNumero(res.costoTotal, 2)}</td></tr>
-                <tr><th>Premio a Cobrar (si gana)</th><td class="r b">${simb}${clubUI.formatoNumero(res.premioTotal, 2)}</td></tr>
-                <tr><th>Ganancia (si gana)</th><td class="r b">${simb}${clubUI.formatoNumero(res.gananciaTotal, 2)}</td></tr>
-                <tr class="gran"><th>Comisión del Grupo (${clubUI.formatoNumero(res.comisionPorc, 1)}% s/ganancia)</th><td class="r b">${simb}${clubUI.formatoNumero(res.comisionEstimada, 2)}</td></tr>
-            </table>
-            <div class="aviso">
-                El premio indicado ya está ajustado por los retiros oficiales de la carrera.<br>
-                La liquidación del premio se realiza al cierre de la carrera.
-                ${notas.length ? '<br>' + notas.join('<br>') : ''}
-            </div>
-        `;
-        imprimirHTML(`Comprobante — ${cliente.nombre}`, html);
+        return await window.VentaTablasCore.venderTabla({
+            cliente, cantidad, ejemplar, tabla, tg, grupo,
+            tasaCambio: tasaCambioGlobal, permitirSobregiro
+        });
     }
 
     btnProcesarVenta.addEventListener('click', async () => {
@@ -627,10 +501,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         clubUI.toast("¡Venta de tablas procesada con éxito! Inventario actualizado y saldo descontado.");
         if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta: ${cliente.nombre} ${cantidad} tablas ${groupSeleccionado.nombre} ($${clubUI.formatoNumero(res.costoTotal, 2)}) ${tablaSeleccionada.hipodromo} C${tablaSeleccionada.carrera}`);
-        generarComprobante({
+        const saldoPosteriorVenta = (parseFloat(cliente.saldo_actual || 0)) - (res.esVES ? res.costoTotal / (tasaCambioGlobal || 1) : res.costoTotal);
+        const htmlComp = window.VentaTablasCore.comprobanteHTML({
             cliente, ejemplar: ejemplarSeleccionado, tabla: tablaSeleccionada,
-            grupo: groupSeleccionado, cantidad, res
+            grupo: groupSeleccionado, cantidad, res,
+            tasaCambio: tasaCambioGlobal, saldoPosterior: saldoPosteriorVenta
         });
+        window.VentaTablasCore.printHTML(`Comprobante — ${cliente.nombre}`, htmlComp);
         window.location.reload();
     });
 

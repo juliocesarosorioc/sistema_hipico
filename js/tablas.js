@@ -504,7 +504,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="flex flex-wrap gap-1 justify-center">
                         <button class="btn-editar bg-slate-200 text-slate-700 px-2 py-1 rounded hover:bg-slate-300" data-id="${t.id}" title="Editar"><i class="fas fa-edit"></i></button>
                         <button class="btn-clonar bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200" data-id="${t.id}" title="Clonar"><i class="fas fa-copy"></i></button>
-                        ${t.estado === 'Abierta' ? `<button class="btn-auditar bg-amber-400 text-slate-900 px-2 py-1 rounded hover:bg-amber-500 font-bold" data-id="${t.id}">Auditar</button>` : `<button class="btn-auditar bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 font-bold" data-id="${t.id}">Resultado</button>`}
+                        ${t.estado === 'Abierta' ? `<button class="btn-vender bg-emerald-500 text-white px-2 py-1 rounded hover:bg-emerald-600 font-bold" data-id="${t.id}">Vender</button><button class="btn-auditar bg-amber-400 text-slate-900 px-2 py-1 rounded hover:bg-amber-500 font-bold" data-id="${t.id}">Auditar</button>` : `<button class="btn-auditar bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 font-bold" data-id="${t.id}">Resultado</button>`}
                         <button class="btn-eliminar bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200" data-id="${t.id}" title="Eliminar"><i class="fas fa-trash-alt"></i></button>
                     </div>
                 `;
@@ -523,6 +523,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             document.querySelectorAll('.btn-editar').forEach(b => b.addEventListener('click', (e) => abrirModalEditar(e.currentTarget.dataset.id)));
             document.querySelectorAll('.btn-clonar').forEach(b => b.addEventListener('click', (e) => abrirModalClonar(e.currentTarget.dataset.id)));
+            document.querySelectorAll('.btn-vender').forEach(b => b.addEventListener('click', (e) => abrirModalVenta(e.currentTarget.dataset.id)));
             document.querySelectorAll('.btn-auditar').forEach(b => b.addEventListener('click', (e) => abrirModalAuditoria(e.currentTarget.dataset.id)));
             document.querySelectorAll('.btn-eliminar').forEach(b => b.addEventListener('click', (e) => eliminarTabla(e.currentTarget.dataset.id)));
         } catch (e) {
@@ -557,6 +558,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!tabla) return;
         document.getElementById('editId').value = id;
         document.getElementById('editPremio').value = tabla.premio_recalculado;
+        document.getElementById('editPremioOrig').value = (tabla.premio_original ?? tabla.premio_recalculado ?? '');
+        document.getElementById('editSumaBase').value = (tabla.suma_base_tabla ?? '');
+        document.getElementById('editComision').value = (tabla.comision_grupo ?? '');
+        const contCab = document.getElementById('editCaballos');
+        contCab.innerHTML = (tabla.caballos || []).map((c, i) => `
+            <label class="flex items-center gap-2 bg-white border border-slate-200 rounded px-2 py-1 text-xs">
+                <span class="w-6 h-6 flex items-center justify-center rounded-full text-white text-[10px] font-black shrink-0" style="background:${colorDeNumero(c.numero)}">${c.numero}</span>
+                <span class="flex-1 font-bold text-slate-700 truncate" title="${c.nombre}">${c.nombre} ${c.retirado ? '<span class="text-red-500 text-[9px] font-black">(RETIRADO)</span>' : ''}</span>
+                <input type="text" inputmode="decimal" class="edit-valor-cab w-20 text-right border border-slate-300 rounded px-1 py-0.5 text-[11px] font-bold outline-none focus:ring-2 focus:ring-indigo-500" data-index="${i}" value="${clubUI.formatoNumero(parseFloat(c.valor_ejemplar) || 0, 1)}" title="Valor del ejemplar (afecta solo próximas ventas)">
+            </label>
+        `).join('') || '<p class="text-slate-400 italic text-xs">Sin ejemplares.</p>';
         const ctn = document.getElementById('editCuposGrupos');
         const yaAsignados = (tabla.tabla_grupos || []).map(tg => tg.grupo_id);
 
@@ -616,8 +628,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('btnProcesarEdicion').addEventListener('click', async () => {
         const id = document.getElementById('editId').value;
-        const premio = parseFloat(document.getElementById('editPremio').value);
-        if (isNaN(premio) || premio <= 0) return clubUI.toast("Premio inválido.");
+        const premio = aNum(document.getElementById('editPremio').value);
+        if (premio === null || premio <= 0) return clubUI.toast("Premio inválido.");
+        const premioOrig = aNum(document.getElementById('editPremioOrig').value) || premio;
+        const sumaBase = aNum(document.getElementById('editSumaBase').value) || 0;
+        const comision = aNum(document.getElementById('editComision').value) || 0;
+        const tEdit = datosTablaCompleta.find(t => t.id == id);
+        const caballosNuevos = [...(tEdit?.caballos || [])];
+        [...document.querySelectorAll('#editCaballos .edit-valor-cab')].forEach(inp => {
+            const i = parseInt(inp.dataset.index);
+            const v = aNum(inp.value) || 0;
+            if (caballosNuevos[i]) caballosNuevos[i] = { ...caballosNuevos[i], valor_ejemplar: v };
+        });
         const filas = [...document.querySelectorAll('.fila-cupo-editar')];
         const cuposInputs = filas.map(f => ({
             ngId: f.querySelector('.edit-cupo').dataset.grupo,
@@ -648,14 +670,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 }]);
             }
         }
-        const { error } = await window.supabase.from('tablas_fijas').update({
-            premio_original: premio, premio_recalculado: premio, limite_ventas: cuposSuma
+const { error } = await window.supabase.from('tablas_fijas').update({
+            premio_original: premioOrig, premio_recalculado: premio, suma_base_tabla: sumaBase,
+            comision_grupo: comision, limite_ventas: cuposSuma, caballos: caballosNuevos
         }).eq('id', id);
 
         if (!error) { document.getElementById('modalEditar').classList.add('hidden'); cargarTablas(); }
         else { clubUI.toast("Error al editar."); }
-        const tEdit = datosTablaCompleta.find(t => t.id == id);
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `editada: ${tEdit?.hipodromo} C${tEdit?.carrera} premio=$${premio} cupos=${cuposSuma} (id=${id})`);
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `editada: ${tEdit?.hipodromo} C${tEdit?.carrera} premio=$${premio} premOriginal=$${premioOrig} comision=${comision}% cupos=${cuposSuma} (id=${id})`);
     });
 
     // ==========================================
@@ -720,6 +742,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function inpValAud(id) { return document.getElementById(id); }
 
+    function actualizarDesglosePremio(premioMostrado, valRet) {
+        const el = inpValAud('lblDesglosePremio');
+        const campo = inpValAud('inpPremioRecalculado').value;
+        if (!el) return;
+        if (premioManual) {
+            el.textContent = `Ajuste manual: el premio que se publicará será ${clubUI.formatoNumero(aNum(campo) || 0, 2)} por tabla.`;
+            return;
+        }
+        if (valRet > 0 && sumaBaseTemp > 0) {
+            const pct = (valRet / sumaBaseTemp) * 100;
+            el.textContent = `Premio original ${clubUI.formatoNumero(premioOrigTemp, 2)} − retiros ${clubUI.formatoNumero(valRet, 1)} (${clubUI.formatoNumero(pct, 1)}%) = ${clubUI.formatoNumero(premioMostrado, 2)}`;
+        } else {
+            el.textContent = `Premio oficial ${clubUI.formatoNumero(premioOrigTemp, 2)} por tabla — sin descuento por retiros`;
+        }
+    }
+
     function refrescarPremioAuditoria() {
         if (premioManual) return;
         let valRet = 0;
@@ -729,6 +767,7 @@ document.addEventListener('DOMContentLoaded', () => {
         p = Math.max(0, p);
         inpValAud('inpPremioRecalculado').value = clubUI.formatoNumero(p, 2);
         inpValAud('lblPremioRecalculadoBig').textContent = clubUI.formatoNumero(p, 2);
+        actualizarDesglosePremio(p, valRet);
     }
 
     function syncAuditoriaDesdeDOM() {
@@ -808,6 +847,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }));
 
         inpValAud('modalAuditoria').classList.remove('hidden');
+
+        const valRetAbierto = caballosModalTemp.reduce((acc, c) => acc + (c.retirado ? (parseFloat(c.valor_ejemplar) || 0) : 0), 0);
+        const pFormula = sumaBaseTemp > 0 && valRetAbierto > 0 ? premioOrigTemp * (1 - (valRetAbierto / sumaBaseTemp)) : premioOrigTemp;
+        const elDesg = inpValAud('lblDesglosePremio');
+        if (Math.abs(pFormula - premioInicial) > 0.001) {
+            elDesg.textContent = `Fórmula: ${clubUI.formatoNumero(premioOrigTemp, 2)} − retiros ${clubUI.formatoNumero(valRetAbierto, 1)} = ${clubUI.formatoNumero(Math.max(0, pFormula), 2)} · publicado: ${clubUI.formatoNumero(premioInicial, 2)} (ajuste manual)`;
+        } else {
+            actualizarDesglosePremio(premioInicial, valRetAbierto);
+        }
     }
 
     inpValAud('inpPremioOriginal').addEventListener('input', () => {
@@ -823,6 +871,7 @@ document.addEventListener('DOMContentLoaded', () => {
     inpValAud('inpPremioRecalculado').addEventListener('input', () => {
         premioManual = true;
         inpValAud('lblPremioRecalculadoBig').textContent = clubUI.formatoNumero(aNum(inpValAud('inpPremioRecalculado').value) || 0, 2);
+        actualizarDesglosePremio(0, 0);
     });
     inpValAud('btnRecalcularPremio').addEventListener('click', () => { premioManual = false; refrescarPremioAuditoria(); });
 
@@ -873,14 +922,205 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `auditada: ${tAud?.hipodromo} C${tAud?.carrera} premio=${np} retirados=[${ret.length ? ret.join(',') : NO_RETIROS}] cambios=[${cambios.join(' | ') || 'ninguno'}] (id=${id})`);
     });
 
+    // ==========================================
+    // VENTA DE TABLAS FIJAS DESDE EL MONITOR
+    // ==========================================
+    let clientesVentaCache = [];
+    let ventaModalAbierta = false;
+
+    function gruposDeCliente(cliId) {
+        const c = clientesVentaCache.find(x => String(x.id) === String(cliId));
+        return c ? (c.grupos || []) : [];
+    }
+
+    async function cargarClientesVenta() {
+        const sel = document.getElementById('selectClienteVenta');
+        if (!sel) return;
+        try {
+            const { data: cli, error: e1 } = await window.supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre, modo_juego, grupo_id');
+            if (e1) throw e1;
+            const { data: cg, error: e2 } = await window.supabase.from('clientes_grupos').select('grupo_id, cliente_id');
+            if (e2) throw e2;
+            clientesVentaCache = (cli || []).map(c => ({
+                ...c,
+                grupos: [...new Set([...((cg || []).filter(x => x.cliente_id == c.id).map(x => x.grupo_id)), c.grupo_id].filter(Boolean))]
+            }));
+            if (ventaModalAbierta) poblarClientesVenta();
+        } catch (e) { console.error(e); }
+    }
+
+    function poblarClientesVenta() {
+        const sel = document.getElementById('selectClienteVenta');
+        sel.innerHTML = '<option value="">Seleccione el jugador...</option>' + clientesVentaCache.map(c => {
+            const etiqueta = (c.grupos || []).map(gid => {
+                const g = gruposActivos.find(x => x.id == gid);
+                return g ? g.nombre : '';
+            }).filter(Boolean).join(', ');
+            return `<option value="${c.id}" data-saldo="${c.saldo_actual ?? 0}">${c.nombre}${etiqueta ? ` — [${etiqueta}]` : ''}</option>`;
+        }).join('');
+        actualizarResumenVenta();
+    }
+
+    function ticksGrupoVenta(t) {
+        return (t && t.tabla_grupos ? t.tabla_grupos : []).map(tg => {
+            const g = gruposActivos.find(x => x.id == tg.grupo_id);
+            const disp = (tg.cupos || 0) - (tg.cantidad_vendida || 0);
+            return `<option value="${tg.id}" data-groupid="${tg.grupo_id}">${g ? g.nombre : 'Grupo #' + tg.grupo_id} (${disp} disp)</option>`;
+        }).join('');
+    }
+
+    async function abrirModalVenta(id) {
+        ventaModalAbierta = true;
+        const t = datosTablaCompleta.find(x => x.id == id);
+        if (!t) return clubUI.toast('Tabla no encontrada. Recargue el monitor.', 'error');
+
+        document.getElementById('selectCarreraVenta').innerHTML = '<option value="">Seleccione la carrera...</option>' + datosTablaCompleta.filter(x => x.estado === 'Abierta').map(x => `
+            <option value="${x.id}" ${x.id == id ? 'selected' : ''}>${x.hipodromo} C${x.carrera} — ${x.moneda === 'VES' ? 'Bs ' : '$'}${clubUI.formatoNumero(parseFloat(x.premio_recalculado) || 0, 2)}</option>
+        `).join('');
+        document.getElementById('selectGrupoVenta').innerHTML = ticksGrupoVenta(t);
+        document.getElementById('selectEjemplarVenta').innerHTML = (t.caballos || []).map((c, i) => `
+            <option value="${i}">N° ${c.numero} — ${c.nombre} (${c.valor_ejemplar})</option>
+        `).join('') || '<option value="">Sin ejemplares</option>';
+        document.getElementById('cantidadVenta').value = 1;
+        document.getElementById('modalVenta').classList.remove('hidden');
+        await cargarClientesVenta();
+        actualizarResumenVenta();
+    }
+
+    function actualizarResumenVenta() {
+        const idCar = document.getElementById('selectCarreraVenta').value;
+        const idTg = document.getElementById('selectGrupoVenta').value;
+        const idxEje = document.getElementById('selectEjemplarVenta').value;
+        const idCli = document.getElementById('selectClienteVenta').value;
+        const cantidad = Math.max(1, parseInt(document.getElementById('cantidadVenta').value) || 1);
+        const t = datosTablaCompleta.find(x => x.id == idCar);
+        const monedaS = t?.moneda === 'VES' ? 'Bs ' : '$';
+        const tg = (t?.tabla_grupos || []).find(x => String(x.id) === String(idTg));
+        const ej = tg && idxEje !== '' ? (t.caballos || [])[parseInt(idxEje)] : null;
+
+        const publDisp = document.getElementById('lblDispGrupoVenta');
+        document.getElementById('lblValorUnitVenta').textContent = '0.00';
+        document.getElementById('lblCostoVenta').textContent = '0.00';
+        document.getElementById('lblPremioUnitVenta').textContent = '0.00';
+        document.getElementById('lblPremioTotalVenta').textContent = '0.00';
+        document.getElementById('lblGananciaVenta').textContent = '0.00';
+        document.getElementById('lblComisionVenta').textContent = '0.00';
+        document.getElementById('lblSaldoClienteVenta').textContent = '$0.00';
+        publiLasTxt(document.getElementById('lblGrupoClienteVenta'), '');
+        if (!t || !tg || !ej) { publDisp.textContent = '0'; return; }
+
+        const disp = (tg.cupos || 0) - (tg.cantidad_vendida || 0);
+        publDisp.textContent = disp;
+        publDisp.className = disp >= cantidad ? 'text-emerald-600' : 'text-red-600';
+
+        const pts = parseFloat(ej.valor_ejemplar) || 0;
+        const premio = parseFloat(t.premio_recalculado) || 0;
+        const costoTotal = pts * cantidad;
+        const premioTotal = premio * cantidad;
+        const ganancia = Math.max(0, premioTotal - costoTotal);
+        const comPorc = parseFloat(t.comision_grupo || 2.5);
+        document.getElementById('lblValorUnitVenta').textContent = monedaS + clubUI.formatoNumero(pts, 2);
+        document.getElementById('lblCostoVenta').textContent = monedaS + clubUI.formatoNumero(costoTotal, 2);
+        document.getElementById('lblPremioUnitVenta').textContent = monedaS + clubUI.formatoNumero(premio, 2);
+        document.getElementById('lblPremioTotalVenta').textContent = monedaS + clubUI.formatoNumero(premioTotal, 2);
+        document.getElementById('lblGananciaVenta').textContent = monedaS + clubUI.formatoNumero(ganancia, 2);
+        document.getElementById('lblComisionPorcVenta').textContent = clubUI.formatoNumero(comPorc, 1);
+        document.getElementById('lblComisionVenta').textContent = monedaS + clubUI.formatoNumero(ganancia * comPorc / 100, 2);
+
+        if (idCli) {
+            const cli = clientesVentaCache.find(c => String(c.id) === String(idCli));
+            if (cli) {
+                document.getElementById('lblSaldoClienteVenta').textContent = '$' + clubUI.formatoNumero(parseFloat(cli.saldo_actual) || 0, 2);
+                const grpCliV = (cli.grupos || [])
+                    .map(gid => gruposActivos.find(g => g.id == gid))
+                    .filter(Boolean);
+                const grpCarrera = (t.tabla_grupos || []).map(x => String(x.grupo_id));
+                const enCarrera = grpCliV.filter(g => grpCarrera.includes(String(g.id)));
+                const nombreGrupo = gruposActivos.find(g => g.id == tg.grupo_id)?.nombre || '';
+                if (grpCliV.length === 0) {
+                    publiLasTxt(document.getElementById('lblGrupoClienteVenta'), 'Jugador sin grupo asignado.', true);
+                } else if (enCarrera.length === 0) {
+                    publiLasTxt(document.getElementById('lblGrupoClienteVenta'), `Grupo(s): ${grpCliV.map(g => g.nombre).join(', ')} — no pertenece a "${nombreGrupo}" de esta carrera.`, true);
+                } else {
+                    publiLasTxt(document.getElementById('lblGrupoClienteVenta'), `Grupo(s): ${grpCliV.map(g => g.nombre).join(', ')}`);
+                }
+            }
+        }
+    }
+
+    function publiLasTxt(el, txt, peligro = false) {
+        el.innerHTML = txt;
+        el.classList.toggle('text-red-600', peligro);
+        el.classList.toggle('text-slate-500', !peligro);
+    }
+
+    ['selectCarreraVenta', 'selectGrupoVenta', 'selectEjemplarVenta', 'selectClienteVenta'].forEach(id => {
+        document.getElementById(id)?.addEventListener('change', () => {
+            if (id === 'selectCarreraVenta') {
+                const t = datosTablaCompleta.find(x => x.id == document.getElementById(id).value);
+                document.getElementById('selectGrupoVenta').innerHTML = ticksGrupoVenta(t);
+                document.getElementById('selectEjemplarVenta').innerHTML = (t && t.caballos ? t.caballos : []).map((c, i) => `
+                    <option value="${i}">N° ${c.numero} — ${c.nombre} (${c.valor_ejemplar})</option>
+                `).join('') || '<option value="">Sin ejemplares</option>';
+            }
+            if (id === 'selectClienteVenta') {
+                const gidsCli = gruposDeCliente(document.getElementById(id).value);
+                if (gidsCli.length === 1) {
+                    const opt = [...document.getElementById('selectGrupoVenta').options].find(o => o.dataset.groupid == gidsCli[0]);
+                    if (opt) document.getElementById('selectGrupoVenta').value = opt.value;
+                }
+            }
+            actualizarResumenVenta();
+        });
+    });
+    document.getElementById('cantidadVenta')?.addEventListener('input', actualizarResumenVenta);
+
+    document.getElementById('btnProcesarVentaModal').addEventListener('click', async () => {
+        const idCar = document.getElementById('selectCarreraVenta').value;
+        const idTg = document.getElementById('selectGrupoVenta').value;
+        const idxEje = document.getElementById('selectEjemplarVenta').value;
+        const idCli = document.getElementById('selectClienteVenta').value;
+        if (!idCar || !idTg || idxEje === '' || !idCli) return clubUI.toast('Complete todos los campos de la venta.', 'warning');
+        const cantidad = parseInt(document.getElementById('cantidadVenta').value) || 0;
+        if (cantidad <= 0) return clubUI.toast('Cantidad inválida.', 'warning');
+
+        const t = datosTablaCompleta.find(x => x.id == idCar);
+        const tg = (t?.tabla_grupos || []).find(x => String(x.id) === String(idTg));
+        const ej = (t?.caballos || [])[parseInt(idxEje)];
+        const cli = clientesVentaCache.find(c => String(c.id) === String(idCli));
+        const grupo = gruposActivos.find(g => g.id == tg?.grupo_id);
+        if (!t || !tg || !ej || !cli) return clubUI.toast('Datos de venta inconsistentes. Recargue las tablas.', 'error');
+        if (!grupo) return clubUI.toast('Grupo no encontrado.', 'error');
+        const gruposCli = cli.grupos || [];
+        if (gruposCli.length > 0 && !gruposCli.includes(grupo.id)) {
+            return clubUI.toast(`El jugador ${cli.nombre} no pertenece al grupo "${grupo.nombre}" de esta carrera.`, 'error');
+        }
+
+        const btnP = document.getElementById('btnProcesarVentaModal');
+        btnP.disabled = true;
+        try {
+            const res = await VentaTablasCore.venderTabla({ cliente: cli, cantidad, ejemplar: ej, tabla: t, tg, grupo, tasaCambio: tasaCambioGlobal });
+            if (!res.ok) { clubUI.toast(res.error || 'No se pudo procesar la venta.', 'error'); return; }
+            const saldoPosterior = (parseFloat(cli.saldo_actual) || 0) - (grupo.moneda === 'VES' ? res.costoTotal / (tasaCambioGlobal || 1) : res.costoTotal);
+            VentaTablasCore.printHTML('Comprobante de Venta', VentaTablasCore.comprobanteHTML({ cliente: cli, ejemplar: ej, tabla: t, grupo, cantidad, res, tasaCambio: tasaCambioGlobal, saldoPosterior }));
+            document.getElementById('modalVenta').classList.add('hidden');
+            ventaModalAbierta = false;
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `Venta modal: ${cli.nombre} x${cantidad} ${ej.nombre} ${VentaTablasCore.simboloMoneda(grupo.moneda)}${res.costoTotal} (idTabla=${t.id} grupo=${grupo.nombre})`);
+            cargarTablas(); cargarClientesVenta();
+            clubUI.aviso('Venta registrada', `Ticket de ${cantidad} Tabla(s) para <strong>${cli.nombre}</strong> (${grupo.nombre}).<br>Premio si gana: ${VentaTablasCore.simboloMoneda(grupo.moneda)}${clubUI.formatoNumero(res.premioTotal, 2)}`, 'success');
+        } finally { btnP.disabled = false; }
+    });
+
     document.querySelectorAll('.cerrar-modal').forEach(b => b.addEventListener('click', () => {
         document.getElementById('modalAuditoria').classList.add('hidden');
         document.getElementById('modalDuplicar').classList.add('hidden');
         document.getElementById('modalEditar').classList.add('hidden');
+        document.getElementById('modalVenta').classList.add('hidden');
+        ventaModalAbierta = false;
     }));
 
     document.getElementById('btnRecargarTablas').addEventListener('click', () => {
-        cargarTasaGlobal(); cargarHipodromos(); cargarGrupos(); cargarEjemplares(); cargarTablas();
+        cargarTasaGlobal(); cargarHipodromos(); cargarGrupos(); cargarEjemplares(); cargarTablas(); cargarClientesVenta();
     });
 
     const btnPublicarTodas = document.getElementById('btnPublicarTodas');
@@ -1117,6 +1357,7 @@ document.addEventListener('DOMContentLoaded', () => {
     llenarSuperficies();
     cargarTasaGlobal();
     cargarTablas();
+    cargarClientesVenta();
     // Catálogos: cargan siempre, pero nunca bloquean el ensamblaje si fallan
     [cargarHipodromos(), cargarGrupos(), cargarEjemplares()].forEach(p => p && p.catch && p.catch(() => {}));
     pegarPendientesGaceta({ silencio: true });
