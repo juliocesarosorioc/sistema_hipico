@@ -20,8 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const htmlSelectNac = (val = 'VE') => {
         const nac = (val || 'VE').trim().toUpperCase();
         const FLAGS = { VE: '🇻🇪', USA: '🇺🇸', BR: '🇧🇷', AR: '🇦🇷', CL: '🇨🇱', MX: '🇲🇽', PA: '🇵🇦', PE: '🇵🇪', CO: '🇨🇴', EC: '🇪🇨', UY: '🇺🇾', OTRA: '🏳️' };
-        return `<span class="bandera-nac w-5 shrink-0 inline-flex justify-center text-sm leading-none" title="${nac}">${FLAGS[nac] || '🏳️'}</span>
-            <input type="hidden" class="in-cab-nac" value="${nac}">`;
+        return `<span class="bandera-nac w-5 shrink-0 inline-flex justify-center text-sm leading-none" title="${nac}" data-nac="${nac}">${FLAGS[nac] || '🏳️'}</span>`;
     };
 
     // ==========================================
@@ -120,7 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <input type="text" class="in-cab-nom flex-1 min-w-0 border border-slate-200 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
                 ${htmlSelectNac(c?.nacionalidad)}
                 <input type="number" step="0.1" class="in-cab-valor w-11 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="Valor" title="Valor / monta del ejemplar">
-                <button type="button" class="btn-del-cab-card shrink-0 text-red-400 hover:text-red-600 px-0.5 leading-none -ml-0.5" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
+                <button type="button" tabindex="-1" class="btn-del-cab-card shrink-0 text-red-400 hover:text-red-600 px-0.5 leading-none -ml-0.5" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
             </div>`;
     }
 
@@ -158,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}">${n}</option>`).join('')}
                     </select>
                     <input type="number" step="0.1" class="nuevo-valor w-12 shrink-0 border border-slate-300 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Valor">
-                    <button type="button" class="btn-add-caballo-card bg-indigo-600 hover:bg-indigo-700 text-white rounded px-1.5 py-px text-[10px]" title="Añadir ejemplar"><i class="fas fa-plus"></i></button>
+                    <button type="button" tabindex="-1" class="btn-add-caballo-card bg-indigo-600 hover:bg-indigo-700 text-white rounded px-1.5 py-px text-[10px]" title="Añadir ejemplar"><i class="fas fa-plus"></i></button>
                 </div>
             </div>
             <div class="px-2 py-1.5 border-t border-slate-200 flex gap-2 bg-white">
@@ -233,6 +232,24 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnPub) await publicarCard(btnPub.closest('.card-carrera'));
     });
 
+    // Navegación de teclado entre celdas del ensamblaje:
+    // Tab avanza Nº → Nombre → Valor (y a la siguiente fila/card);
+    // Shift+Tab vuelve a la celda anterior (retrocede).
+    contenedorCarreras.addEventListener('keydown', (e) => {
+        if (e.key !== 'Tab') return;
+        const actual = e.target;
+        if (!(actual instanceof HTMLInputElement)) return;
+        if (!actual.matches('.in-cab-num, .in-cab-nom, .in-cab-valor')) return;
+        const celdas = Array.from(contenedorCarreras.querySelectorAll('.in-cab-num, .in-cab-nom, .in-cab-valor'));
+        const i = celdas.indexOf(actual);
+        if (i === -1 || celdas.length < 2) return;
+        e.preventDefault();
+        const delta = e.shiftKey ? -1 : 1;
+        const next = celdas[(i + delta + celdas.length) % celdas.length];
+        next.focus();
+        next.select?.();
+    });
+
     // ==========================================
     // PUBLICAR UNA CARRERA DEL ENSAMBLAJE
     // ==========================================
@@ -280,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
         card.querySelectorAll('.fila-caballo-card').forEach(fila => {
             const numero = fila.querySelector('.in-cab-num').value.trim();
             const nombre = fila.querySelector('.in-cab-nom').value.trim().toUpperCase();
-            const nacionalidad = fila.querySelector('.in-cab-nac').value;
+            const nacionalidad = fila.querySelector('.bandera-nac')?.dataset?.nac || 'VE';
             // Valor en blanco se toma como 0: NO se descarta el ejemplar
             const valor = parseFloat(fila.querySelector('.in-cab-valor').value) || 0;
             if (!numero && !nombre) return;
