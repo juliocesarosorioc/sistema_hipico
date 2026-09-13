@@ -244,15 +244,26 @@ document.addEventListener('DOMContentLoaded', () => {
             monto_tabla: (p) => parseFloat(p.premio_recalculado) || 0
         };
         const extras = {};
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 6; i++) {
             const body = Object.assign({}, payload, extras);
             const { data, error } = await window.supabase.from('tablas_fijas').insert([body]).select('id').single();
             if (!error) return { data, error };
-            const m = /null value in column "([^"]+)"/.exec(String(error.message || ''));
-            if (!m) return { data, error };
-            const col = m[1];
-            if (extras[col] !== undefined) return { data, error };
-            extras[col] = LEGACY[col] ? LEGACY[col](payload) : 0;
+            const msg = String(error.message || '');
+            const nullM = /null value in column "([^"]+)"/.exec(msg);
+            if (nullM) {
+                const col = nullM[1];
+                if (extras[col] !== undefined) return { data, error };
+                extras[col] = LEGACY[col] ? LEGACY[col](payload) : 0;
+                continue;
+            }
+            const tipoM = /column "([^"]+)" is of type (?:text|character varying|boolean)/i.exec(msg);
+            if (tipoM) {
+                const col = tipoM[1];
+                if (extras[col] !== undefined) return { data, error };
+                extras[col] = /boolean/i.test(tipoM[2]) ? false : '';
+                continue;
+            }
+            return { data, error };
         }
         return { data: null, error: { message: 'No se pudo completar la inserción (columnas requeridas faltantes en la BD).' } };
     }
