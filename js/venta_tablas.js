@@ -13,6 +13,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const lblPremioTotal = document.getElementById('lblPremioTotal');
     const lblDisponibles = document.getElementById('lblDisponibles');
     const lblTotalPagar = document.getElementById('lblTotalPagar');
+    const lblGananciaTotal = document.getElementById('lblGananciaTotal');
+    const lblComisionPorc = document.getElementById('lblComisionPorc');
+    const lblComisionGrupo = document.getElementById('lblComisionGrupo');
     const btnProcesarVenta = document.getElementById('btnProcesarVenta');
 
     const msgSeleccione = document.getElementById('msgSeleccioneTabla');
@@ -20,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const lblRiesgoMonto = document.getElementById('lblRiesgoMonto');
     const lblInventarioProgreso = document.getElementById('lblInventarioProgreso');
     const cuerpoEjemplares = document.getElementById('cuerpoEjemplaresTabla');
+    const cuerpoReporteClientes = document.getElementById('cuerpoReporteClientes');
 
     let gruposDB = [];
     let tablasDisponiblesDB = [];
@@ -205,12 +209,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!tablaSeleccionada) return;
         const cant = Math.max(1, parseInt(inputCantidad.value) || 1);
         const simbolo = simboloDe(groupSeleccionado.moneda);
-        const premio = parseFloat(tablaSeleccionada.premio_recalculado);
+        const premio = parseFloat(tablaSeleccionada.premio_recalculado) || 0;
         const pts = ejemplarSeleccionado ? parseFloat(ejemplarSeleccionado.valor_ejemplar) : 0;
+        const costoTotal = pts * cant;
+        const premioTotal = premio * cant;
+        const gananciaTotal = Math.max(0, premioTotal - costoTotal);
+        const comisionPorc = parseFloat(tablaSeleccionada.comision_grupo || 2.5);
+        const comisionEstimada = gananciaTotal * (comisionPorc / 100);
 
-        lblCostoTotal.textContent = `${simbolo}${clubUI.formatoNumero((pts * cant), 2)}`;
-        lblPremioTotal.textContent = `${simbolo}${clubUI.formatoNumero((premio * cant), 2)}`;
-        lblTotalPagar.textContent = `${simbolo}${clubUI.formatoNumero((pts * cant), 2)}`;
+        lblCostoTotal.textContent = `${simbolo}${clubUI.formatoNumero(costoTotal, 2)}`;
+        lblPremioTotal.textContent = `${simbolo}${clubUI.formatoNumero(premioTotal, 2)}`;
+        lblGananciaTotal.textContent = `${simbolo}${clubUI.formatoNumero(gananciaTotal, 2)}`;
+        lblComisionPorc.textContent = clubUI.formatoNumero(comisionPorc, 1);
+        lblComisionGrupo.textContent = `${simbolo}${clubUI.formatoNumero(comisionEstimada, 2)}`;
+        lblTotalPagar.textContent = `${simbolo}${clubUI.formatoNumero(costoTotal, 2)}`;
     }
 
     // ==========================================
@@ -219,7 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function cargarReporteVentas() {
         const { data } = await window.supabase
             .from('tickets_apuestas')
-            .select('id, created_at, cliente_juega_nombre, grupo, hipodromo, carrera, caballo, cantidad_tablas, monto_jugado, premio_por_tabla, pts_ejemplar, premio_recalculado, moneda')
+            .select('id, created_at, cliente_juega_nombre, grupo, hipodromo, carrera, caballo, cantidad_tablas, monto_jugado, premio_por_tabla, pts_ejemplar, premio_recalculado, comision_porcentaje, moneda')
             .order('created_at', { ascending: false })
             .limit(100);
         const cuerpo = document.getElementById('cuerpoReporteVentas');
@@ -229,8 +241,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const tickets = data || [];
 
         if (tickets.length === 0) {
-            cuerpo.innerHTML = '<tr><td colspan="10" class="p-4 text-center text-slate-500">Aún no hay ventas de tablas fijas.</td></tr>';
+            cuerpo.innerHTML = '<tr><td colspan="12" class="p-4 text-center text-slate-500">Aún no hay ventas de tablas fijas.</td></tr>';
             consol.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">Sin ventas.</td></tr>';
+            cuerpoReporteClientes.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">Sin ventas.</td></tr>';
             resumen.innerHTML = '<div class="text-slate-400 italic text-xs">Sin ventas.</div>';
             return;
         }
@@ -243,9 +256,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const porGrupo = {};
         tickets.forEach(tk => {
             const riesgo = parseFloat(tk.cantidad_tablas) * premioUnidad(tk);
+            const montoA = parseFloat(tk.cantidad_tablas) * (parseFloat(tk.pts_ejemplar || 0) || 0);
+            const ganancia = Math.max(0, riesgo - montoA);
+            const comision = ganancia * (parseFloat(tk.comision_porcentaje || 0) / 100);
             const clave = `${tk.grupo}`;
-            if (!porGrupo[clave]) porGrupo[clave] = { riesgoLocal: 0, usaVes: tk.moneda === 'VES', ventas: 0, tablas: 0, moneda: tk.moneda };
+            if (!porGrupo[clave]) porGrupo[clave] = { riesgoLocal: 0, gananciaLocal: 0, comisionLocal: 0, usaVes: tk.moneda === 'VES', ventas: 0, tablas: 0, moneda: tk.moneda };
             porGrupo[clave].riesgoLocal += riesgo;
+            porGrupo[clave].gananciaLocal += ganancia;
+            porGrupo[clave].comisionLocal += comision;
             porGrupo[clave].ventas += 1;
             porGrupo[clave].tablas += parseInt(tk.cantidad_tablas) || 0;
         });
@@ -261,8 +279,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <p class="text-lg font-black ${g.moneda === 'VES' ? 'text-amber-600' : 'text-emerald-600'} mt-1 font-mono">${simb}${clubUI.formatoNumero(g.riesgoLocal, 2)}</p>
                     <p class="text-[10px] text-slate-500 mt-1">${g.ventas} venta(s) · ${g.tablas} tablas · equiv. $ ${clubUI.formatoNumero(equivalenteUSD, 2)}</p>
+                    <p class="text-[11px] font-bold mt-1 text-emerald-700">Ganancia: ${simb}${clubUI.formatoNumero(g.gananciaLocal, 2)}</p>
+                    <p class="text-[11px] font-bold text-purple-700">Comisión Grupo: ${simb}${clubUI.formatoNumero(g.comisionLocal, 2)}</p>
+                    <button class="btn-reporte-grupo mt-2 w-full px-2 py-1 rounded text-[10px] font-bold bg-slate-800 text-white hover:bg-slate-700" data-grupo="${nombre}">
+                        <i class="fas fa-print"></i> Imprimir reporte del grupo
+                    </button>
                 </div>`;
         }).join('');
+
+        document.querySelectorAll('.btn-reporte-grupo').forEach(b => b.addEventListener('click', () => imprimirReporteGrupo(b.dataset.grupo, tickets, premioUnidad)));
 
         // Reporte consolidado: grupo / carrera / ejemplar + monto arriesgado
         const porGCE = {};
@@ -293,6 +318,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const premio = premioUnidad(tk);
             const riesgo = parseFloat(tk.cantidad_tablas) * premio;
             const montoArriesgado = parseFloat(tk.cantidad_tablas) * (parseFloat(tk.pts_ejemplar || 0) || 0);
+            const ganancia = Math.max(0, riesgo - montoArriesgado);
+            const comision = ganancia * (parseFloat(tk.comision_porcentaje || 0) / 100);
             const fecha = tk.created_at ? new Date(tk.created_at).toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' }) : '—';
             const simb = tk.moneda === 'VES' ? 'Bs ' : '$';
             return `
@@ -307,8 +334,100 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-2 text-right text-emerald-600 font-bold">${simb}${clubUI.formatoNumero(premio, 2)}</td>
                     <td class="p-2 text-right text-red-600 font-bold">${simb}${clubUI.formatoNumero(montoArriesgado, 2)}</td>
                     <td class="p-2 text-right text-orange-600 font-black">${simb}${clubUI.formatoNumero(riesgo, 2)}</td>
+                    <td class="p-2 text-right text-emerald-700 font-bold">${simb}${clubUI.formatoNumero(ganancia, 2)}</td>
+                    <td class="p-2 text-right text-purple-700 font-bold">${simb}${clubUI.formatoNumero(comision, 2)}</td>
                 </tr>`;
         }).join('');
+
+        // Resumen por cliente
+        const porCliente = {};
+        tickets.forEach(tk => {
+            const premio = premioUnidad(tk);
+            const n = parseInt(tk.cantidad_tablas) || 0;
+            const montoA = n * (parseFloat(tk.pts_ejemplar || 0) || 0);
+            const ganancia = Math.max(0, (n * premio) - montoA);
+            const comision = ganancia * (parseFloat(tk.comision_porcentaje || 0) / 100);
+            const nombre = tk.cliente_juega_nombre || 'Sin cliente';
+            if (!porCliente[nombre]) porCliente[nombre] = { tablas: 0, monto: 0, premio: 0, ganancia: 0, comision: 0, ventas: 0, moneda: tk.moneda };
+            porCliente[nombre].tablas += n;
+            porCliente[nombre].monto += montoA;
+            porCliente[nombre].premio += n * premio;
+            porCliente[nombre].ganancia += ganancia;
+            porCliente[nombre].comision += comision;
+            porCliente[nombre].ventas += 1;
+        });
+
+        cuerpoReporteClientes.innerHTML = Object.entries(porCliente).map(([nombre, c]) => {
+            const simb = c.moneda === 'VES' ? 'Bs ' : '$';
+            return `
+                <tr class="hover:bg-slate-50">
+                    <td class="p-2 font-bold text-slate-800">${nombre}</td>
+                    <td class="p-2 text-center">${c.ventas}</td>
+                    <td class="p-2 text-right font-bold">${c.tablas}</td>
+                    <td class="p-2 text-right font-bold text-red-600">${simb}${clubUI.formatoNumero(c.monto, 2)}</td>
+                    <td class="p-2 text-right font-bold text-emerald-600">${simb}${clubUI.formatoNumero(c.premio, 2)}</td>
+                    <td class="p-2 text-right font-bold text-emerald-700">${simb}${clubUI.formatoNumero(c.ganancia, 2)}</td>
+                    <td class="p-2 text-right font-bold text-purple-700">${simb}${clubUI.formatoNumero(c.comision, 2)}</td>
+                </tr>`;
+        }).join('');
+    }
+
+    function imprimirReporteGrupo(nombreGrupo, tickets, premioUnidad) {
+        const delGrupo = tickets.filter(tk => tk.grupo === nombreGrupo);
+        if (!delGrupo.length) return clubUI.toast("Sin ventas para este grupo.");
+        const simb = delGrupo[0].moneda === 'VES' ? 'Bs ' : '$';
+        const filas = delGrupo.map((tk, i) => {
+            const premio = premioUnidad(tk);
+            const n = parseInt(tk.cantidad_tablas) || 0;
+            const montoA = n * (parseFloat(tk.pts_ejemplar || 0) || 0);
+            const riesgo = n * premio;
+            const ganancia = Math.max(0, riesgo - montoA);
+            const comision = ganancia * (parseFloat(tk.comision_porcentaje || 0) / 100);
+            const fecha = tk.created_at ? new Date(tk.created_at).toLocaleString('es-VE', { dateStyle: 'short' }) : '—';
+            return `<tr>
+                <td>${i + 1}</td>
+                <td>${fecha}</td>
+                <td>${tk.cliente_juega_nombre}</td>
+                <td>${tk.hipodromo} C${tk.carrera}</td>
+                <td>${tk.caballo}</td>
+                <td class="r b">${n}</td>
+                <td class="r">${simb}${clubUI.formatoNumero(montoA, 2)}</td>
+                <td class="r">${simb}${clubUI.formatoNumero(riesgo, 2)}</td>
+                <td class="r b">${simb}${clubUI.formatoNumero(ganancia, 2)}</td>
+                <td class="r b">${simb}${clubUI.formatoNumero(comision, 2)}</td>
+            </tr>`;
+        }).join('');
+
+        const tot = delGrupo.reduce((a, tk) => {
+            const premio = premioUnidad(tk);
+            const n = parseInt(tk.cantidad_tablas) || 0;
+            const montoA = n * (parseFloat(tk.pts_ejemplar || 0) || 0);
+            const riesgo = n * premio;
+            const ganancia = Math.max(0, riesgo - montoA);
+            a.monto += montoA; a.riesgo += riesgo; a.ganancia += ganancia;
+            a.comision += ganancia * (parseFloat(tk.comision_porcentaje || 0) / 100);
+            a.tablas += n; return a;
+        }, { monto: 0, riesgo: 0, ganancia: 0, comision: 0, tablas: 0 });
+
+        const fechaGen = new Date().toLocaleString('es-VE', { dateStyle: 'long', timeStyle: 'short' });
+        const html = `
+            <h1>Reporte de Ventas — Tabla Fija</h1>
+            <div class="sub">Grupo: <b>${nombreGrupo}</b> · Generado: ${fechaGen}</div>
+            <table>
+                <tr><th>#</th><th>Fecha</th><th>Cliente</th><th>Carrera</th><th>Ejemplar</th><th>Tablas</th><th>Monto</th><th>Premio</th><th>Ganancia</th><th>Comisión Grupo</th></tr>
+                ${filas}
+                <tr class="gran">
+                    <td colspan="5">TOTALES (${delGrupo.length} ventas · ${tot.tablas} tablas)</td>
+                    <td class="r b">${tot.tablas}</td>
+                    <td class="r b">${simb}${clubUI.formatoNumero(tot.monto, 2)}</td>
+                    <td class="r b">${simb}${clubUI.formatoNumero(tot.riesgo, 2)}</td>
+                    <td class="r b">${simb}${clubUI.formatoNumero(tot.ganancia, 2)}</td>
+                    <td class="r b">${simb}${clubUI.formatoNumero(tot.comision, 2)}</td>
+                </tr>
+            </table>
+            <div class="aviso">La comisión se calcula sobre la ganancia (premio − monto jugado) si el ejemplar gana.</div>
+        `;
+        imprimirHTML(`Reporte — ${nombreGrupo}`, html);
     }
 
     // ==========================================
@@ -347,6 +466,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cantidad > disponibles) return { ok: false, error: `No hay suficientes tablas disponibles en el grupo. Solo quedan ${disponibles}.` };
 
         const premio = parseFloat(tabla.premio_recalculado) || 0;
+        const premioTotal = premio * cantidad;
+        const gananciaTotal = Math.max(0, premioTotal - costoTotal);
+        const comisionPorc = parseFloat(tabla.comision_grupo || 2.5);
+        const comisionEstimada = gananciaTotal * (comisionPorc / 100);
 
         const { error: errTk } = await window.supabase.from('tickets_apuestas').insert([{
             cliente_juega_id: cliente.id,
@@ -360,7 +483,8 @@ document.addEventListener('DOMContentLoaded', () => {
             monto_jugado: costoTotal,
             premio_por_tabla: premio,
             pts_ejemplar: pts,
-            comision_porcentaje: parseFloat(tabla.comision_grupo || 2.5),
+            monto_decidido: gananciaTotal,
+            comision_porcentaje: comisionPorc,
             moneda: grupo.moneda,
             tasa_cambio: tasaCambioGlobal,
             estado: 'Pendiente'
@@ -378,7 +502,71 @@ document.addEventListener('DOMContentLoaded', () => {
         }).eq('id', cliente.id);
         if (errCl) return { ok: false, error: 'Saldo: ' + (errCl.message || errCl.code) };
 
-        return { ok: true, costoTotal };
+        return {
+            ok: true, costoTotal, premioTotal, gananciaTotal,
+            comisionEstimada, comisionPorc, premio, pts, cantidad, esVES
+        };
+    }
+
+    // ==========================================
+    // COMPROBANTE IMPRIMIBLE PARA EL CLIENTE
+    // ==========================================
+    function simboloMoneda(m) { return m === 'VES' ? 'Bs ' : '$'; }
+
+    function imprimirHTML(titulo, html) {
+        const w = window.open('', '_blank', 'width=460,height=680');
+        if (!w) { alert('Permita ventanas emergentes para poder imprimir la recepción.'); return; }
+        w.document.write(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${titulo}</title>
+<style>
+    body{font-family:'Segoe UI',Arial,sans-serif;color:#0f172a;margin:22px;font-size:13px}
+    h1{font-size:16px;text-align:center;border-bottom:2px solid #10b981;padding-bottom:8px;margin:0 0 4px}
+    .sub{text-align:center;color:#64748b;font-size:11px;margin-bottom:12px}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    td,th{border:1px solid #cbd5e1;padding:5px 8px;text-align:left;font-size:12px}
+    th{background:#f1f5f9}
+    .r{text-align:right}.b{font-weight:700}
+    .gran{border-top:3px double #0f172a;margin-top:6px;background:#ecfdf5;font-weight:700}
+    .aviso{font-size:10px;color:#475569;margin-top:10px;text-align:center}
+</style></head><body>${html}</body></html>`);
+        w.document.close();
+        w.focus();
+        setTimeout(() => { w.print(); }, 350);
+    }
+
+    function generarComprobante({ cliente, ejemplar, tabla, grupo, cantidad, res }) {
+        const simb = simboloMoneda(grupo.moneda);
+        const fecha = new Date().toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
+        const folio = `T-${tabla.hipodromo}-C${tabla.carrera}-N${ejemplar.numero || ejemplar.nombre}-${Date.now().toString().slice(-6)}`;
+        const notas = [];
+        const costoUSDComp = res.esVES ? res.costoTotal / (tasaCambioGlobal || 1) : res.costoTotal;
+        const saldoPosterior = parseFloat(cliente.saldo_actual || 0) - costoUSDComp;
+        if (saldoPosterior < 0) {
+            notas.push(`Aviso: tras la venta, el cliente ${cliente.nombre} queda con saldo negativo de $${clubUI.formatoNumero(Math.abs(saldoPosterior), 2)} (aval activo).`);
+        }
+        const html = `
+            <h1>Comprobante de Venta · Tabla Fija</h1>
+            <div class="sub">Folio: ${folio} &nbsp;·&nbsp; ${fecha}</div>
+            <table>
+                <tr><th>Cliente</th><td class="b">${cliente.nombre}</td></tr>
+                <tr><th>Grupo</th><td>${grupo.nombre}</td></tr>
+                <tr><th>Carrera</th><td>${tabla.hipodromo} · C${tabla.carrera}</td></tr>
+                <tr><th>Ejemplar</th><td>N° ${ejemplar.numero || '-'} — ${ejemplar.nombre}</td></tr>
+                <tr><th>Cantidad de Tablas</th><td class="r b">${res.cantidad}</td></tr>
+                <tr><th>Valor por Tabla</th><td class="r b">${simb}${clubUI.formatoNumero(res.pts, 2)}</td></tr>
+                <tr><th>Premio por Tabla (tras retiros)</th><td class="r b">${simb}${clubUI.formatoNumero(res.premio, 2)}</td></tr>
+                <tr><th>Total Pagado</th><td class="r b">${simb}${clubUI.formatoNumero(res.costoTotal, 2)}</td></tr>
+                <tr><th>Premio a Cobrar (si gana)</th><td class="r b">${simb}${clubUI.formatoNumero(res.premioTotal, 2)}</td></tr>
+                <tr><th>Ganancia (si gana)</th><td class="r b">${simb}${clubUI.formatoNumero(res.gananciaTotal, 2)}</td></tr>
+                <tr class="gran"><th>Comisión del Grupo (${clubUI.formatoNumero(res.comisionPorc, 1)}% s/ganancia)</th><td class="r b">${simb}${clubUI.formatoNumero(res.comisionEstimada, 2)}</td></tr>
+            </table>
+            <div class="aviso">
+                El premio indicado ya está ajustado por los retiros oficiales de la carrera.<br>
+                La liquidación del premio se realiza al cierre de la carrera.
+                ${notas.length ? '<br>' + notas.join('<br>') : ''}
+            </div>
+        `;
+        imprimirHTML(`Comprobante — ${cliente.nombre}`, html);
     }
 
     btnProcesarVenta.addEventListener('click', async () => {
@@ -439,6 +627,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         clubUI.toast("¡Venta de tablas procesada con éxito! Inventario actualizado y saldo descontado.");
         if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta: ${cliente.nombre} ${cantidad} tablas ${groupSeleccionado.nombre} ($${clubUI.formatoNumero(res.costoTotal, 2)}) ${tablaSeleccionada.hipodromo} C${tablaSeleccionada.carrera}`);
+        generarComprobante({
+            cliente, ejemplar: ejemplarSeleccionado, tabla: tablaSeleccionada,
+            grupo: groupSeleccionado, cantidad, res
+        });
         window.location.reload();
     });
 

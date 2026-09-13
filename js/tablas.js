@@ -691,7 +691,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         btn.textContent = "Clonando..."; btn.disabled = true;
 
-        const { data: nueva, error } = await window.supabase.from('tablas_fijas').insert([{
+        const { data: nueva, error } = await insertarTablaFija({
             hipodromo: tablaRef.hipodromo, carrera: tablaRef.carrera,
             grupo_venta: 'GRUPOS', moneda: tablaRef.moneda, tasa_cambio: tablaRef.tasa_cambio,
             suma_base_tabla: tablaRef.suma_base_tabla, limite_ventas: cuposTotales, cantidad_vendida: 0,
@@ -699,7 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
             comision_grupo: tablaRef.comision_grupo, caballos: tablaRef.caballos, estado: 'Abierta',
             distancia_carrera: tablaRef.distancia_carrera, superficie: tablaRef.superficie,
             retirados_oficiales: NO_RETIROS
-        }]).select('id').single();
+        });
 
         if (!error) {
             const filas = grupoIds.map(gid => ({ tabla_id: nueva.id, grupo_id: gid, cupos: todosGrupos.find(g => g.id == gid)?.cupo_tabla || 100, cantidad_vendida: 0 }));

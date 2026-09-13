@@ -139,19 +139,29 @@ document.addEventListener('DOMContentLoaded', () => {
         ticketsActuales.forEach((tk, index) => {
             const esGanador = tk.resultado_temp === 'GANADOR';
             const simbolo = tk.moneda === 'VES' ? 'Bs ' : '$';
+            const esTabla = /TABLA/.test(tk.nombre_jugada || '');
 
-            // REGLA DE NEGOCIO (COMISIONES DUALES):
-            // Si Gana: Comisión basada en el PREMIO
-            // Si Pierde: Comisión basada en el MONTO JUGADO
+            // REGLA DE NEGOCIO:
+            // - TABLA FIJA: comisión sobre GANANCIA (premio − monto jugado). Pierde → comisión 0.
+            // - Otras jugadas (taquilla): comisión sobre PREMIO (gana) o MONTO JUGADO (pierde).
             let comisionDinámica = 0;
             let premioMostrar = 0;
 
             if (esGanador) {
                 premioMostrar = tk.premio_potencial;
-                comisionDinámica = tk.premio_potencial * (tk.comision_porcentaje / 100);
+                if (esTabla) {
+                    const ganancia = Math.max(0, (tk.premio_potencial || 0) - parseFloat(tk.monto_jugado || 0));
+                    comisionDinámica = ganancia * (tk.comision_porcentaje / 100);
+                } else {
+                    comisionDinámica = tk.premio_potencial * (tk.comision_porcentaje / 100);
+                }
             } else {
                 premioMostrar = 0;
-                comisionDinámica = parseFloat(tk.monto_jugado) * (tk.comision_porcentaje / 100);
+                if (esTabla) {
+                    comisionDinámica = 0;
+                } else {
+                    comisionDinámica = parseFloat(tk.monto_jugado) * (tk.comision_porcentaje / 100);
+                }
             }
 
             // Guardar para el cálculo global
@@ -178,8 +188,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${simbolo}${clubUI.formatoNumero(premioMostrar, 2)}
                     </td>
                     <td class="p-2 text-right font-bold text-purple-700 bg-purple-50/30">
-                        ${simbolo}${comisionDináclubUI.formatoNumero(mica, 2)}
-                        <div class="text-[9px] text-slate-500 font-normal">(${tk.comision_porcentaje}%)</div>
+                        ${simbolo}${clubUI.formatoNumero(comisionDinámica, 2)}
+                        <div class="text-[9px] text-slate-500 font-normal">(${tk.comision_porcentaje}%${esTabla ? ' s/ganancia' : ''})</div>
                     </td>
                     <td class="p-2 text-center">
                         <div class="flex justify-center gap-1">
