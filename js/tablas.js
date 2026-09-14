@@ -1450,7 +1450,7 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         return montadas;
     }
 
-    function pegarPendientesGaceta({ silencio = false, forzar = false } = {}) {
+    function pegarPendientesGaceta({ silencio = false, forzar = false, soloPendientes = false } = {}) {
         // Las carreras del día se montan en CADA entrada a la página (primera vez,
         // segunda vez o pestaña nueva). Dentro de la misma visita, si ya se montaron
         // cards, no se vuelven a crear (evita duplicar con el botón manual).
@@ -1458,10 +1458,17 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             if (!silencio) clubUI.toast('Las carreras del día ya están montadas en esta pestaña.', 'warning');
             return 0;
         }
-        // 1) Buzón legacy + registro completo del día.
-        let pendientes = migrarLegacy();
+        // 1) Buzón legacy + registro del día.
+        // ARRANQUE (soloPendientes=false): sólo se montan las carreras ENVIADAS
+        // explícitamente por la Gaceta (enviada=true). Las pendientes NO se envían
+        // solas: que queden en la gaceta no las lleva al Ensamblaje.
+        // Botón manual "Pegar desde Gaceta" (soloPendientes=true): trae SOLO las
+        // que faltan por enviar.
+        let pendientes = soloPendientes ? [] : migrarLegacy();
         const registro = leerGacetaRegistro();
-        for (const c of registro) pendientes.push(c);
+        for (const c of registro) {
+            if (soloPendientes ? !c.enviada : !!c.enviada) pendientes.push(c);
+        }
 
         // 2) Dedupe por hipódromo + carrera + nombres.
         const vistos = new Set();
@@ -1477,7 +1484,7 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             unicos.push(p);
         }
         if (unicos.length === 0) {
-            if (!silencio) clubUI.toast('No hay carreras del día en el registro para mostrar.', 'warning');
+            if (!silencio) clubUI.toast(soloPendientes ? 'No hay carreras pendientes por enviar al Ensamblaje.' : 'No hay carreras enviadas desde la Gaceta para mostrar.', 'warning');
             return 0;
         }
         const montadas = construirCardsGaceta(unicos);
@@ -1487,7 +1494,14 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             if (!finales.some(item =>
                 String(item.hipodromo || '').trim().toUpperCase() === String(p.hipodromo || '').trim().toUpperCase()
                 && String(item.carrera ?? '') === String(p.carrera ?? '')
-            )) finales.push(Object.assign({}, p));
+            )) {
+                // Legacy del buzón: al montarlas en el arranque se marcan como
+                // enviadas para que no se re-monten solas en la próxima visita.
+                // El pegado manual (soloPendientes) conserva la marca pendiente.
+                const copia = Object.assign({}, p);
+                if (!soloPendientes) copia.enviada = true;
+                finales.push(copia);
+            }
         }
         escribirGacetaRegistro(finales);
         // 4) Catálogos en segundo plano.
@@ -1508,7 +1522,9 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             const leer = (k) => localStorage.getItem(k) || sessionStorage.getItem(k);
             const sinNada = !leer('gaceta_registro') && !leer('ensamblaje_carreras') && !leer('gaceta_prellenado');
             if (sinNada) return clubUI.toast('El navegador no tiene carreras guardadas de la gaceta.', 'warning');
-            pegarPendientesGaceta();
+            // Solo trae las carreras que el operador NO ha enviado (las enviadas
+            // ya aparecen solas en el Ensamblaje).
+            pegarPendientesGaceta({ forzar: true, soloPendientes: true });
         });
     }
 

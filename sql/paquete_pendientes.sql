@@ -460,3 +460,31 @@ grant all privileges on table public.solicitudes_tablas to anon;
 grant all privileges on table public.tablas_fijas      to anon;
 alter table public.solicitudes_tablas disable row level security;
 grant all privileges on table public.solicitudes_tablas to anon;
+
+-- ============================================================
+-- (10) RESULTADO CENTRAL DE CARRERAS (compartido entre módulos)
+--      Una sola fila por (hipódromo, carrera, fecha). La Taquilla
+--      carga aquí el resultado oficial (ganador/empates y
+--      retirados); el mismo se usa para recalcular el premio de
+--      las tablas fijas (baja proporcional) y para que
+--      Liquidación (saldos) pague sin re-preguntar el ganador.
+-- ============================================================
+create table if not exists public.resultados_carreras (
+    id               uuid primary key default gen_random_uuid(),
+    fecha            date not null default current_date,
+    hipodromo        text not null,
+    carrera          int  not null,
+    ganadores        text[],                 -- números ganadores (empates = varios)
+    retirados        text,                   -- ej: '2, 5' o 'NO HUBO RETIROS'
+    premio_oficial   numeric,                -- premio publicado en la gaceta
+    premio_recalculado numeric,              -- premio con baja proporcional aplicada
+    detalle          jsonb not null default '[]',  -- [{numero, valor, retirado}]
+    aplicado_a_tablas boolean not null default false,
+    cargado_por      text,
+    created_at       timestamptz not null default now(),
+    updated_at       timestamptz not null default now(),
+    constraint resultados_carreras_unico unique (fecha, hipodromo, carrera)
+);
+
+alter table public.resultados_carreras disable row level security;
+grant all privileges on table public.resultados_carreras to anon, authenticated, service_role;

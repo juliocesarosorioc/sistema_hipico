@@ -17,6 +17,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const SUPERFICIES = ['ARENA', 'CESPED', 'FANGO', 'TAPETA', 'OTRA'];
     const NACIONALIDADES = ['VE', 'USA', 'BR', 'AR', 'CL', 'MX', 'PA', 'PE', 'CO', 'EC', 'UY', 'OTRA'];
 
+    // Hipódromos de EE.UU. sembrados en la BD: si la carrera es de uno de ellos,
+    // sus ejemplares quedan con nacionalidad USA por defecto; los de Venezuela (o
+    // no reconocidos, el programa es venezolano) quedan VE.
+    const HIPODROMOS_USA = [
+        'AQUEDUCT', 'BELMONT PARK', 'CHARLES TOWN', 'CHURCHILL DOWNS', 'DEL MAR',
+        'FAIR GROUNDS', 'FINGER LAKES', 'GOLDEN GATE FIELDS', 'GULFSTREAM PARK',
+        'KEENELAND', 'LAUREL PARK', 'LOS ALAMITOS', 'MONMOUTH PARK', 'OAKLAWN PARK',
+        'PIMLICO', 'SANTA ANITA', 'SARATOGA', 'TAMPA BAY DOWNS'
+    ];
+    function paisHipodromo(hipo) {
+        const h = String(hipo || '').trim().toUpperCase();
+        if (!h) return null;
+        if (HIPODROMOS_USA.some(n => h.includes(n))) return 'USA';
+        return 'VE';
+    }
+    // Nacionalidad por defecto de un ejemplar: la que trajo la IA si es válida,
+    // si no la del país del hipódromo de la carrera (USA/VE).
+    function nacEjemplar(ej, hipo) {
+        const nac = String(ej?.nacionalidad || '').trim().toUpperCase();
+        if (NACIONALIDADES.includes(nac)) return nac;
+        return paisHipodromo(hipo) || 'VE';
+    }
+
     // Modelos Flash de respaldo (la app primero consulta a la API cuáles existen hoy)
     const MODELOS_GEMINI = ['gemini-3.6-flash', 'gemini-3-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
@@ -422,7 +445,7 @@ Para cada carrera devuelve:
   - distancia: distancia de la carrera en metros (entero) si se lee, si no 0
   - superficie: una de ARENA, CESPED, FANGO, TAPETA u otra si se lee explícita; si no ARENA
   - premio: número si se lee (ej: 15000), si no 0
-  - ejemplares: lista con numero (puesto/orden del ejemplar), nombre (MAYÚSCULAS, EXACTO como aparece), nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si no se indica usa VE), valor (monta del ejemplar: SOLO número si aparece, si no 0)
+  - ejemplares: lista con numero (puesto/orden del ejemplar), nombre (MAYÚSCULAS, EXACTO como aparece), nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si NO se indica: USA si el hipódromo es de Estados Unidos, si no VE), valor (monta del ejemplar: SOLO número si aparece, si no 0)
 REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGISTRA TODOS los ejemplares de cada carrera sin omitir ninguno (todos los números de participante que aparezcan). Si un ejemplar aparece repetido entre páginas, mantenlo tal cual. Si el documento no tiene carreras, devuelve {"carreras":[]}.
 `;
 
@@ -613,6 +636,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
                 for (const c of (Array.isArray(nuevas) ? nuevas : [])) {
                     if (!c || typeof c !== 'object') continue;
                     c.ejemplares = Array.isArray(c.ejemplares) ? c.ejemplares : [];
+                    c.ejemplares.forEach(ej => { ej.nacionalidad = nacEjemplar(ej, c.hipodromo); ej.nombre = String(ej.nombre || '').trim().toUpperCase(); });
                     const key = `${String(c.hipodromo || '').toUpperCase()}|${c.carrera ?? ''}`;
                     const ex = (key === '|') ? null : estado.carreras.find(x => `${String(x.hipodromo || '').toUpperCase()}|${x.carrera ?? ''}` === key);
                     if (!ex) { estado.carreras.push(c); continue; }
@@ -879,71 +903,90 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
     }
 
     // ---------- RENDER ----------
+    // Paleta oficial de 14 colores de gualdrapa (idéntica a la del Ensamblaje)
+    function colorDeNumeroGac(n) {
+        const x = parseInt(n, 10);
+        const PALETA = [
+            { bg: '#FF0000', fg: '#FFFFFF' }, { bg: '#FFFFFF', fg: '#000000' },
+            { bg: '#0000FF', fg: '#FFFFFF' }, { bg: '#FFFF00', fg: '#000000' },
+            { bg: '#008000', fg: '#FFFFFF' }, { bg: '#000000', fg: '#FFFF00' },
+            { bg: '#FFA500', fg: '#000000' }, { bg: '#FFC0CB', fg: '#000000' },
+            { bg: '#40E0D0', fg: '#000000' }, { bg: '#800080', fg: '#FFFFFF' },
+            { bg: '#808080', fg: '#FF0000' }, { bg: '#32CD32', fg: '#000000' },
+            { bg: '#8B4513', fg: '#FFFFFF' }, { bg: '#800000', fg: '#FFFFFF' }
+        ];
+        if (!x) return { bg: '#94a3b8', fg: '#FFFFFF' };
+        return PALETA[((x - 1) % 14)];
+    }
+
+    function filaEjemplarGac(ej, hipo) {
+        const num = ej?.numero ?? '';
+        const colores = colorDeNumeroGac(num);
+        const nac = nacEjemplar(ej, hipo);
+        return `
+            <div class="gac-fila-ejemplar flex items-center gap-0.5 bg-slate-50 border border-slate-200 rounded px-1 py-0.5">
+                <input type="text" inputmode="numeric" title="Número del ejemplar" placeholder="Nº"
+                    class="gac-num w-5 h-5 shrink-0 border rounded px-0 py-px text-center text-[8px] font-black outline-none focus:ring-1 focus:ring-cyan-400"
+                    value="${num}" style="background-color:${colores.bg};color:${colores.fg};border-color:${colores.bg}">
+                <input type="text" title="Nombre del ejemplar" placeholder="Ejemplar"
+                    class="gac-nombre flex-1 min-w-0 border border-slate-200 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-cyan-400"
+                    value="${ej?.nombre || ''}">
+                <select title="Nacionalidad" class="gac-nac w-14 shrink-0 border border-slate-200 rounded px-0.5 py-px text-[8px] font-bold uppercase outline-none bg-white">
+                    ${NACIONALIDADES.map(n => `<option value="${n}" ${nac === n ? 'selected' : ''}>${n}</option>`).join('')}
+                </select>
+                <input type="text" inputmode="decimal" title="Valor / monta del ejemplar" placeholder="$"
+                    class="gac-valor w-12 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[11px] font-black text-blue-700 outline-none focus:ring-1 focus:ring-cyan-400"
+                    value="${ej?.valor ?? ej?.pts ?? ''}">
+                <span class="gac-badge-padron w-4 shrink-0 text-center text-[9px] font-black ${ej?.ejemplar_id ? (ej?.nuevo ? 'text-emerald-600' : 'text-slate-400') : 'text-red-400'}" title="${ej?.ejemplar_id ? (ej?.nuevo ? 'Nuevo en el padrón' : 'Vinculado al padrón') : 'Sin padrón'}">${ej?.ejemplar_id ? (ej?.nuevo ? '★' : '✓') : '✗'}</span>
+            </div>`;
+    }
+
+    // Las cards de las carreras extraídas se dibujan IGUAL que las del Ensamblaje
+    // (cabecera índigo con hipódromo/carrera/distancia/superficie/premio), para que
+    // el operador vea desde aquí cómo quedará la tabla antes de enviarla.
     function renderCarreras(resPadron) {
-        document.getElementById('resumenExtraccion').textContent = `(${estado.carreras.length} carreras · ${resPadron.nuevos} nuevos / ${resPadron.vinculados} vinculados al padrón)`;
+        document.getElementById('resumenExtraccion').textContent = `(${estado.carreras.length} carreras · ${(resPadron.nuevos || 0)} nuevos / ${(resPadron.vinculados || 0)} vinculados al padrón)`;
         if (estado.carreras.length === 0) {
             carrerasGaceta.innerHTML = '<div class="col-span-full text-center p-8 text-slate-500 italic">No se detectaron carreras. Pruebe con más páginas del PDF o mejor resolución de imagen.</div>';
             return;
         }
-        carrerasGaceta.innerHTML = estado.carreras.map((c, i) => `
-            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4" data-carrera="${i}" data-numero="${c.carrera || i + 1}">
-                <div class="flex justify-between items-center mb-2">
-                    <span class="font-black text-cyan-700 uppercase flex items-center gap-2"><input type="checkbox" class="gac-sel w-4 h-4 accent-cyan-600" checked title="Incluir al enviar todo al Ensamblaje"><i class="fas fa-flag-checkered mr-1"></i> Carrera ${c.carrera || i + 1}</span>
-                    <input class="gac-hipodromo text-right text-[11px] font-bold uppercase text-slate-500 bg-transparent border-b border-dotted border-slate-300 outline-none w-40" value="${c.hipodromo || ''}" placeholder="Hipódromo">
-                </div>
-                <div class="grid grid-cols-4 gap-2 mb-2">
-                    <div>
-                        <label class="block text-[9px] font-bold text-slate-500 uppercase">Distancia (m)</label>
-                        <input type="number" class="gac-distancia w-full border border-slate-300 rounded px-2 py-1 text-xs font-bold text-center outline-none" value="${c.distancia || ''}" placeholder="m">
+        carrerasGaceta.innerHTML = estado.carreras.map((c, i) => {
+            const numCarrera = c.carrera || i + 1;
+            const ejemplares = Array.isArray(c.ejemplares) ? c.ejemplares : [];
+            return `
+            <div class="card-gac bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden flex flex-col" data-carrera="${i}" data-numero="${numCarrera}">
+                <div class="bg-indigo-600 px-2 py-1" style="color:#fff">
+                    <div class="flex items-center justify-between gap-1">
+                        <input type="text" class="gac-hipodromo rounded px-1.5 py-px text-[9px] font-bold uppercase outline-none flex-1 min-w-0" style="background:rgba(255,255,255,.18);color:#fff" value="${c.hipodromo || ''}" placeholder="Hipódromo">
+                        <span class="font-black text-[10px] whitespace-nowrap flex items-center gap-1">
+                            <i class="fas fa-flag-checkered mr-0.5"></i>C
+                            <input type="number" class="gac-carrera w-7 rounded px-1 py-px text-center font-black outline-none" style="background:rgba(255,255,255,.18);color:#fff" value="${numCarrera}" placeholder="N°">
+                        </span>
+                        <input type="checkbox" class="gac-sel w-4 h-4 accent-cyan-500 shrink-0" checked title="Incluir al enviar al Ensamblaje">
                     </div>
-                    <div>
-                        <label class="block text-[9px] font-bold text-slate-500 uppercase">Superficie</label>
-                        <select class="gac-superficie w-full border border-slate-300 rounded px-1 py-1 text-xs font-bold outline-none bg-slate-50 uppercase">
+                    <div class="flex flex-wrap gap-1 mt-0.5 text-[8px] font-bold items-center">
+                        <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)">Dist: <input type="number" class="gac-distancia w-11 outline-none text-center font-black" style="background:transparent;color:#fff" value="${c.distancia ?? ''}" placeholder="m"></span>
+                        <select class="gac-superficie rounded px-0.5 py-px outline-none uppercase text-[8px] font-bold" style="background:rgba(255,255,255,.18)">
                             ${SUPERFICIES.map(s => `<option value="${s}" ${String(c.superficie || '').toUpperCase() === s ? 'selected' : ''}>${s}</option>`).join('')}
                         </select>
-                    </div>
-                    <div>
-                        <label class="block text-[9px] font-bold text-slate-500 uppercase">Premio ($)</label>
-                        <input type="number" class="gac-premio w-full border border-slate-300 rounded px-2 py-1 text-xs font-bold text-center outline-none" value="${c.premio || ''}" placeholder="$">
-                    </div>
-                    <div>
-                        <label class="block text-[9px] font-bold text-slate-500 uppercase">Fecha</label>
-                        <input type="date" class="gac-fecha w-full border border-slate-300 rounded px-1 py-1 text-xs font-bold outline-none" value="${c.fecha || ''}">
+                        <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)">Premio: $<input type="number" class="gac-premio w-14 outline-none text-right font-black" style="background:transparent;color:#fff" value="${c.premio ?? ''}" placeholder="0"></span>
+                        <input type="date" class="gac-fecha rounded px-0.5 py-px text-[8px] font-bold" style="background:rgba(255,255,255,.18);color:#fff" value="${c.fecha || ''}">
                     </div>
                 </div>
-                <div class="border border-slate-200 rounded-lg overflow-hidden mb-2">
-                    <table class="w-full text-xs">
-                        <thead class="bg-slate-100 text-slate-600">
-                            <tr>
-                                <th class="p-1.5 text-center font-bold w-10">N°</th>
-                                <th class="p-1.5 text-left font-bold">Ejemplar</th>
-                                <th class="p-1.5 text-center font-bold w-20">Nac.</th>
-                                <th class="p-1.5 text-right font-bold w-20">Valor</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${(Array.isArray(c.ejemplares) ? c.ejemplares : []).map(ej => `
-                                <tr class="gac-fila-ejemplar border-t border-slate-100">
-                                    <td class="p-1 text-center"><input class="gac-num w-10 border border-slate-200 rounded px-1 py-0.5 text-center text-xs font-bold outline-none" value="${ej.numero ?? ''}"></td>
-                                    <td class="p-1"><input class="gac-nombre w-full border border-slate-200 rounded px-1 py-0.5 text-xs font-bold uppercase outline-none" value="${ej.nombre || ''}">
-                                        ${ej.ejemplar_id ? `<span class="gac-badge-padron text-[9px] font-black ${ej.nuevo ? 'text-emerald-600' : 'text-slate-400'}">${ej.nuevo ? '★ nuevo' : '✓ vinculado'}</span>` : '<span class="gac-badge-padron text-[9px] text-red-500 font-bold">sin padrón</span>'}
-                                    </td>
-                                    <td class="p-1 text-center">
-                                        <select class="gac-nac w-full border border-slate-200 rounded px-0.5 py-0.5 text-[10px] font-bold outline-none uppercase">
-                                            ${NACIONALIDADES.map(n => `<option value="${n}" ${(ej.nacionalidad || 'VE') === n ? 'selected' : ''}>${n}</option>`).join('')}
-                                        </select>
-                                    </td>
-                                    <td class="p-1 text-right"><input type="text" inputmode="decimal" class="gac-valor w-16 border border-slate-200 rounded px-1 py-0.5 text-right text-xs font-bold text-blue-700 outline-none" value="${ej.valor ?? ej.pts ?? ''}" title="Valor / monta del ejemplar"></td>
-                                </tr>
-                            `).join('') || '<tr><td colspan="4" class="p-3 text-center text-slate-400 italic">Sin ejemplares detectados</td></tr>'}
-                        </tbody>
-                    </table>
+                <div class="px-2 pt-1 pb-0.5 text-[8px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                    <span class="flex items-center gap-1"><i class="fas fa-horse-head text-amber-500"></i> Ejemplares</span>
+                    <span class="gac-cont-caballos bg-slate-100 text-slate-600 px-1.5 rounded-full font-black">${ejemplares.length}</span>
                 </div>
-                <button class="btn-cargar-ensamblaje w-full bg-cyan-600 text-white font-bold py-2 rounded-lg shadow hover:bg-cyan-700 transition-colors text-xs uppercase tracking-wide" data-acc="cargar" title="Lleva esta carrera al Ensamblaje para revisar sus VALORES y publicar">
-                    <i class="fas fa-arrow-right mr-1"></i> Cargar en el Ensamblaje
-                </button>
-            </div>
-        `).join('');
+                <div class="px-1.5 py-0.5 space-y-0.5 flex-1">
+                    ${ejemplares.map(ej => filaEjemplarGac(ej, c.hipodromo)).join('') || '<p class="text-[10px] text-slate-400 italic px-1 py-1">Sin ejemplares detectados.</p>'}
+                </div>
+                <div class="px-2 py-1.5 border-t border-slate-200 flex gap-2 bg-white">
+                    <button type="button" class="btn-cargar-ensamblaje flex-1 bg-cyan-600 hover:bg-cyan-700 text-white text-[10px] font-black py-1.5 rounded-lg shadow transition-colors uppercase tracking-wide" data-acc="cargar" title="Lleva esta carrera al Ensamblaje para revisar sus VALORES y publicar">
+                        <i class="fas fa-arrow-right mr-1"></i> Cargar en el Ensamblaje
+                    </button>
+                </div>
+            </div>`;
+        }).join('');
         actualizarBtnTodo();
     }
 
@@ -967,8 +1010,9 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
             if (!info) return;
             const span = fila.querySelector('.gac-badge-padron');
             if (!span) return;
-            span.textContent = info.ejemplar_id ? (info.nuevo ? '★ nuevo' : '✓ vinculado') : 'sin padrón';
-            span.className = 'gac-badge-padron text-[9px] font-black' + (info.ejemplar_id ? (info.nuevo ? ' text-emerald-600' : ' text-slate-400') : ' text-red-500 font-bold');
+            span.textContent = info.ejemplar_id ? (info.nuevo ? '★' : '✓') : '✗';
+            span.title = info.ejemplar_id ? (info.nuevo ? 'Nuevo en el padrón' : 'Vinculado al padrón') : 'Sin padrón';
+            span.className = 'gac-badge-padron w-4 shrink-0 text-center text-[9px] font-black' + (info.ejemplar_id ? (info.nuevo ? ' text-emerald-600' : ' text-slate-400') : ' text-red-400');
         });
     }
 
