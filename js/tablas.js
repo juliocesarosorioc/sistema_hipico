@@ -273,22 +273,38 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnPub) await publicarCard(btnPub.closest('.card-carrera'));
     });
 
-    // Navegación de teclado entre celdas del ensamblaje:
-    // Tab avanza Nº → Nombre → Valor (y a la siguiente fila/card);
-    // Shift+Tab vuelve a la celda anterior (retrocede).
+    // Navegación de teclado tipo planilla en el ensamblaje:
+    // Tab / Enter / Flecha abajo → siguiente fila (misma columna);
+    // Shift+Tab / Flecha arriba → fila anterior (misma columna);
+    // al terminar la columna de una card salta a la misma columna de la card siguiente.
     contenedorCarreras.addEventListener('keydown', (e) => {
-        if (e.key !== 'Tab') return;
+        const TIPOS = ['.in-cab-num', '.in-cab-nom', '.in-cab-valor'];
+        const esNavegacion = e.key === 'Enter' || e.key === 'Tab' || e.key === 'ArrowUp' || e.key === 'ArrowDown';
+        if (!esNavegacion) return;
         const actual = e.target;
         if (!(actual instanceof HTMLInputElement)) return;
-        if (!actual.matches('.in-cab-num, .in-cab-nom, .in-cab-valor')) return;
-        const celdas = Array.from(contenedorCarreras.querySelectorAll('.in-cab-num, .in-cab-nom, .in-cab-valor'));
-        const i = celdas.indexOf(actual);
-        if (i === -1 || celdas.length < 2) return;
+        const cls = TIPOS.find(c => actual.matches(c));
+        if (!cls) return;
         e.preventDefault();
-        const delta = e.shiftKey ? -1 : 1;
-        const next = celdas[(i + delta + celdas.length) % celdas.length];
-        next.focus();
-        next.select?.();
+        let dir;
+        if (e.key === 'Enter' || e.key === 'Tab') dir = e.shiftKey ? -1 : 1;
+        else dir = e.key === 'ArrowDown' ? 1 : -1;
+        const cards = Array.from(contenedorCarreras.querySelectorAll('.card-carrera'));
+        const cardActual = actual.closest('.card-carrera');
+        const columnas = Array.from(cardActual.querySelectorAll(cls));
+        const idx = columnas.indexOf(actual);
+        if (idx === -1) return;
+        const sigIdx = idx + dir;
+        let destino = null;
+        if (sigIdx >= 0 && sigIdx < columnas.length) {
+            destino = columnas[sigIdx];
+        } else {
+            const ci = cards.indexOf(cardActual);
+            const prox = cards[(ci + dir + cards.length) % cards.length];
+            const colProx = prox.querySelectorAll(cls);
+            if (colProx.length) destino = colProx[dir > 0 ? 0 : colProx.length - 1];
+        }
+        if (destino) { destino.focus(); destino.select?.(); }
     });
 
     contenedorCarreras.addEventListener('input', (e) => {
