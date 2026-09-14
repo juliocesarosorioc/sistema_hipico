@@ -26,15 +26,32 @@ document.addEventListener('DOMContentLoaded', () => {
         return Number.isFinite(n) ? n : null;
     };
 
-    // Paleta oficial de colores por número del ejemplar (se repite cada 10)
-    const COLOR_NUMEROS = {
-        1: '#dc2626', 2: '#2563eb', 3: '#16a34a', 4: '#92400e', 5: '#111827',
-        6: '#db2777', 7: '#ea580c', 8: '#0ea5e9', 9: '#7c3aed', 10: '#0f766e'
-    };
+    // Paleta oficial de 14 colores de gualdrapa (se repite cada 14)
+    const COLORES_NUMEROS = [
+        { bg: '#FF0000', fg: '#FFFFFF' },  // 1  Rojo / Blanco
+        { bg: '#FFFFFF', fg: '#000000' },  // 2  Blanco / Negro
+        { bg: '#0000FF', fg: '#FFFFFF' },  // 3  Azul / Blanco
+        { bg: '#FFFF00', fg: '#000000' },  // 4  Amarillo / Negro
+        { bg: '#008000', fg: '#FFFFFF' },  // 5  Verde / Blanco
+        { bg: '#000000', fg: '#FFFF00' },  // 6  Negro / Amarillo
+        { bg: '#FFA500', fg: '#000000' },  // 7  Naranja / Negro
+        { bg: '#FFC0CB', fg: '#000000' },  // 8  Rosa / Negro
+        { bg: '#40E0D0', fg: '#000000' },  // 9  Turquesa / Negro
+        { bg: '#800080', fg: '#FFFFFF' },  // 10 Morado / Blanco
+        { bg: '#808080', fg: '#FF0000' },  // 11 Gris / Rojo
+        { bg: '#32CD32', fg: '#000000' },  // 12 Verde Lima / Negro
+        { bg: '#8B4513', fg: '#FFFFFF' },  // 13 Marrón / Blanco
+        { bg: '#800000', fg: '#FFFFFF' },  // 14 Granate / Blanco
+    ];
     const colorDeNumero = (n) => {
         const x = parseInt(n, 10);
         if (!x) return '#94a3b8';
-        return COLOR_NUMEROS[((x - 1) % 10) + 1] || '#94a3b8';
+        return COLORES_NUMEROS[((x - 1) % 14)].bg;
+    };
+    const textoDeNumero = (n) => {
+        const x = parseInt(n, 10);
+        if (!x) return '#FFFFFF';
+        return COLORES_NUMEROS[((x - 1) % 14)].fg;
     };
 
     const htmlSelectNac = (val = 'VE') => {
@@ -136,7 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const numColor = colorDeNumero(c?.numero);
         return `
             <div class="fila-caballo-card flex gap-px items-center bg-slate-50 border border-slate-200 rounded px-0.5 py-0.5 ${vacio}">
-                <input type="text" inputmode="numeric" class="in-cab-num w-5 shrink-0 border border-slate-200 rounded px-0 py-px text-center text-[9px] font-black outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar" style="background-color:${numColor};color:#fff;border-color:${numColor}">
+                <input type="text" inputmode="numeric" class="in-cab-num w-4 h-5 shrink-0 border rounded px-0 py-px text-center text-[8px] font-black outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar" style="background-color:${numColor};color:${textoDeNumero(c?.numero)};border-color:${numColor}">
                 <input type="text" class="in-cab-nom flex-1 min-w-[4.5rem] border border-slate-200 rounded px-1 py-px text-[11px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
                 ${htmlSelectNac(c?.nacionalidad)}
                 <input type="text" inputmode="decimal" class="in-cab-valor w-9 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="Valor" title="Valor / monta del ejemplar">
@@ -172,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="lista-caballos-card px-1.5 py-0.5 space-y-0.5 flex-1"></div>
             <div class="add-caballo-card border-t border-slate-200 px-1.5 py-1 space-y-0.5 bg-slate-50">
                 <div class="flex gap-1 items-center">
-                    <input type="text" inputmode="numeric" class="nuevo-num w-5 shrink-0 border border-slate-300 rounded px-0 py-px text-[9px] font-black text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Nº" style="background-color:#fff;color:#94a3b8;border-color:#cbd5e1">
+                    <input type="text" inputmode="numeric" class="nuevo-num w-4 h-5 shrink-0 border border-slate-300 rounded px-0 py-px text-[8px] font-black text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Nº" style="background-color:#fff;color:#94a3b8;border-color:#cbd5e1">
                     <input type="text" class="nuevo-nom flex-1 min-w-[4.5rem] border border-slate-300 rounded px-1 py-px text-[11px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Ejemplar nuevo">
                     <select class="nuevo-nac w-auto shrink-0 border border-slate-300 rounded px-0.5 py-px text-[8px] font-bold uppercase outline-none bg-white">
                         ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}">${n}</option>`).join('')}
@@ -278,7 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (t.value) {
                 const c = colorDeNumero(t.value);
                 t.style.backgroundColor = c;
-                t.style.color = '#fff';
+                t.style.color = textoDeNumero(t.value);
                 t.style.borderColor = c;
             } else {
                 t.style.backgroundColor = '#fff';
@@ -564,7 +581,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const contCab = document.getElementById('editCaballos');
         contCab.innerHTML = (tabla.caballos || []).map((c, i) => `
             <label class="flex items-center gap-2 bg-white border border-slate-200 rounded px-2 py-1 text-xs">
-                <span class="w-6 h-6 flex items-center justify-center rounded-full text-white text-[10px] font-black shrink-0" style="background:${colorDeNumero(c.numero)}">${c.numero}</span>
+                <span class="w-5 h-5 flex items-center justify-center rounded-full text-[9px] font-black shrink-0" style="background:${colorDeNumero(c.numero)};color:${textoDeNumero(c.numero)}">${c.numero}</span>
                 <span class="flex-1 font-bold text-slate-700 truncate" title="${c.nombre}">${c.nombre} ${c.retirado ? '<span class="text-red-500 text-[9px] font-black">(RETIRADO)</span>' : ''}</span>
                 <input type="text" inputmode="decimal" class="edit-valor-cab w-20 text-right border border-slate-300 rounded px-1 py-0.5 text-[11px] font-bold outline-none focus:ring-2 focus:ring-indigo-500" data-index="${i}" value="${clubUI.formatoNumero(parseFloat(c.valor_ejemplar) || 0, 1)}" title="Valor del ejemplar (afecta solo próximas ventas)">
             </label>
@@ -812,7 +829,7 @@ const { error } = await window.supabase.from('tablas_fijas').update({
                 <label class="flex items-center gap-2 bg-white border border-slate-200 p-2 rounded cursor-pointer text-xs ${c.retirado ? 'opacity-60' : ''}">
                     <input type="radio" name="ganador-carrera" class="rdo-ganador" data-index="${i}" ${c.ganador ? 'checked' : ''} title="Ganador de la carrera">
                     <input type="checkbox" class="chk-retiro" data-index="${i}" ${c.retirado ? 'checked' : ''} title="Marcar como retirado">
-                    <span class="w-6 h-6 flex items-center justify-center rounded-full text-white text-[11px] font-black shrink-0" style="background:${colorDeNumero(c.numero)}">${c.numero}</span>
+                    <span class="w-5 h-5 flex items-center justify-center rounded-full text-[9px] font-black shrink-0" style="background:${colorDeNumero(c.numero)};color:${textoDeNumero(c.numero)}">${c.numero}</span>
                     <span class="flex-1 font-bold text-slate-700 truncate" title="${c.nombre}">${c.nombre}${badgeRetirado}</span>
                     <input type="text" inputmode="decimal" class="inp-valor-aud w-20 text-right border border-slate-300 rounded px-1 py-0.5 text-[11px] font-bold outline-none focus:ring-2 focus:ring-amber-500 ${c.retirado ? 'bg-slate-100 text-slate-400' : 'bg-white'}" data-index="${i}" value="${clubUI.formatoNumero(parseFloat(c.valor_ejemplar) || 0, 1)}" title="Valor del ejemplar en la tabla">
                 </label>`;
