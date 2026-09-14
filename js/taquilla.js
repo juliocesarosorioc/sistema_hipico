@@ -360,6 +360,318 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ------------------------------------------------------------------
+    // CARGA CENTRAL DE RESULTADOS (Taquilla)
+    // Los resultados de la carrera (ganador/empate, retiros, premio con baja
+    // proporcional y dividendos por tipo de jugada) se registran AQUÍ, una vez,
+    // usando la tabla resultados_carreras con clave (fecha, hipodromo, carrera).
+    // Los módulos individuales NO cargan resultados.
+    // ------------------------------------------------------------------
+    const btnPreliminarResultado = document.getElementById('btnPreliminarResultado');
+    const chipResultadoEstado = document.getElementById('chipResultadoEstado');
+    const inputRetirados = document.getElementById('inputRetirados');
+    const fFecha = document.getElementById('fechaCarrera');
+    const fHipo = document.getElementById('selectHipodromo');
+    const fCarrera = document.getElementById('selectCarrera');
+
+    const DIV_LABELS = {
+        win: 'Win / Ganador',
+        place: 'Place / Lugar',
+        show: 'Show / Mostrar',
+        puestos: 'Puestos (exacta)',
+        marcas: 'Marcas (trifecta)'
+    };
+
+    function ctxResultado() {
+        return {
+            fecha: fFecha?.value || new Date().toISOString().slice(0, 10),
+            hipodromo: (fHipo?.value || '').trim(),
+            carrera: String(fCarrera?.value || ''),
+            preRetirados: (inputRetirados?.value || '').trim()
+        };
+    }
+
+    function sesionOperador() {
+        try {
+            const s = window.clubAuth?.getSesion?.();
+            return (s && s.nombre) ? s.nombre : 'anon';
+        } catch (e) { return 'anon'; }
+    }
+
+    // (Re)consulta el resultado ya cargado para (fecha, hipodromo, carrera)
+    async function resultadoCargado(ctx) {
+        try {
+            const { data, error } = await window.supabase.from('resultados_carreras')
+                .select('*')
+                .eq('fecha', ctx.fecha)
+                .eq('hipodromo', ctx.hipodromo)
+                .eq('carrera', parseInt(ctx.carrera, 10))
+                .maybeSingle();
+            if (error && error.code === 'PGRST205') {
+                clubUI.toast('Falta la tabla resultados_carreras. Ejecute el SQL del paquete (sección 10).', 'warning');
+                return null;
+            }
+            if (error) return null;
+            return data || null;
+        } catch (e) { return null; }
+    }
+
+    // Busca la tabla fija del día para precargar los caballos y premios
+    async function buscarTablaDelDia(ctx) {
+        const lista = tablasConfigList.length ? tablasConfigList : null;
+        if (lista) {
+            const t = lista.find(x => String(x.hipodromo || '').toUpperCase() === ctx.hipodromo.toUpperCase() && String(x.carrera) === ctx.carrera);
+            if (t) return t;
+        }
+        try {
+            const { data } = await window.supabase.from('tablas_fijas')
+                .select('*').eq('estado', 'Abierta')
+                .eq('hipodromo', ctx.hipodromo.toUpperCase())
+                .eq('carrera', parseInt(ctx.carrera, 10));
+            return (data && data[0]) || null;
+        } catch (e) { return null; }
+    }
+
+    function marcarRetirosEnCaballos(caballos, textoRetirados) {
+        const nums = new Set(String(textoRetirados || '').split(/[,\s]+/).map(s => parseInt(s, 10)).filter(n => n > 0));
+        if (!nums.size) return caballos;
+        return caballos.map(c => ({ ...c, retirado: nums.has(parseInt(c.numero, 10)) || !!c.retirado, ganador: nums.has(parseInt(c.numero, 10)) ? false : c.ganador }));
+    }
+
+    async function guardarResultadoCentral(ctx, datos, dividendos) {
+        const ganadores = (datos.ejemplares || []).filter(e => e.ganador).map(e => String(e.numero));
+        const ret = datos.retirados || [];
+        const fila = {
+            fecha: ctx.fecha,
+            hipodromo: ctx.hipodromo,
+            carrera: parseInt(ctx.carrera, 10),
+            ganadores: ganadores.length ? ganadores : null,
+            retirados: ret.length ? ret.join(',') : 'NO HUBO RETIROS',
+            premio_oficial: datos.premioOriginal,
+            premio_recalculado: datos.premioRecalculado,
+            detalle: datos.ejemplares,
+            dividendos: dividendos || {},
+            aplicado_a_tablas: true,
+            cargado_por: sesionOperador(),
+            updated_at: new Date().toISOString()
+        };
+        try {
+            const { error } = await window.supabase.from('resultados_carreras')
+                .upsert([fila], { onConflict: 'fecha,hipodromo,carrera' });
+            if (error) throw error;
+            return { ok: true, fila };
+        } catch (err) {
+            clubUI.toast('Resultado guardado en la tabla fija, pero el central no se registró: ' + (err?.message || err), 'warning');
+            return { ok: false, fila };
+        }
+    }
+
+    // Aplica la baja proporcional + retirados + ganador a la tabla fija del día
+    async function aplicarResultadoATablas(ctx, datos) {
+        const tabla = await buscarTablaDelDia(ctx);
+        if (!tabla) { clubUI.toast(`No hay tabla "Abierta" para ${ctx.hipodromo} C${ctx.carrera}.`, 'warning'); return; }
+        const ret = (datos.retirados || []).map(String);
+        try {
+            const caballosActualizados = (datos.ejemplares || []).map(e => {
+                const prev = (tabla.caballos || []).find(x => String(x.numero) === String(e.numero));
+                return {
+                    numero: e.numero, nombre: e.nombre, nacionalidad: e.nacionalidad || prev?.nacionalidad || 'VE',
+                    valor_ejemplar: prev?.valor_ejemplar ?? e.valor_ejemplar,
+                    retirado: !!e.retirado, ganador: !!e.ganador,
+                    ejemplar_id: prev?.ejemplar_id || null
+                };
+            });
+            const { error } = await window.supabase.from('tablas_fijas').update({
+                premio_recalculado: datos.premioRecalculado,
+                retirados_oficiales: ret.length ? ret.join(',') : 'NO HUBO RETIROS',
+                caballos: caballosActualizados
+            }).eq('id', tabla.id);
+            if (error) throw error;
+            tablasConfigList = tablasConfigList.map(t => t.id === tabla.id ? { ...t, premio_recalculado: datos.premioRecalculado, retirados_oficiales: ret.length ? ret.join(',') : 'NO HUBO RETIROS', caballos: caballosActualizados } : t);
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('TAQUILLA', `resultado_aplicado_tabla: ${ctx.hipodromo} C${ctx.carrera} premio=${datos.premioRecalculado} retirados=[${ret.join(',') || 'ninguno'}]`);
+        } catch (err) {
+            clubUI.toast('No se pudo aplicar el resultado a la tabla fija: ' + (err?.message || err), 'error');
+        }
+    }
+
+    function actualizarChipResultado(res, conDivs) {
+        if (!chipResultadoEstado) return;
+        if (!res) {
+            chipResultadoEstado.className = 'text-[10px] font-bold inline-flex items-center gap-1 bg-rose-100 border border-rose-300 text-rose-600 px-2 py-1.5 rounded-full';
+            chipResultadoEstado.innerHTML = '<i class="fas fa-hourglass-half"></i> Sin resultado';
+            return;
+        }
+        const ganador = (res.ganadores || []).join(',');
+        const divs = conDivs ? '<br><span class="text-[9px] text-emerald-700">dividendos guardados</span>' : '';
+        chipResultadoEstado.className = 'text-[10px] font-bold inline-flex items-center gap-1 bg-emerald-100 border border-emerald-300 text-emerald-700 px-2 py-1.5 rounded-full';
+        chipResultadoEstado.innerHTML = `<i class="fas fa-check-circle"></i> C${res.carrera} · G:${ganador || '—'} ${divs}`;
+    }
+
+    async function abrirCargaResultados() {
+        if (!window.clubModalResultado) return clubUI.toast('Falta el componente js/components/modal_resultado.js', 'error');
+        const ctx = ctxResultado();
+        if (!ctx.hipodromo || !ctx.carrera) return clubUI.toast('Seleccione hipódromo y carrera.', 'warning');
+
+        window.clubIndicador?.accion('Preparando carga de resultados…');
+        let tabla = await buscarTablaDelDia(ctx);
+        const existente = await resultadoCargado(ctx);
+
+        const caballosBase = (tabla?.caballos && Array.isArray(tabla.caballos) ? tabla.caballos : Array.isArray(existente?.detalle) ? existente.detalle : []).map(c => ({ ...c, valor_ejemplar: c.valor_ejemplar ?? c.valor ?? c.pts ?? '' }));
+        // Si ya había resultado, restaurar estado marcado (ganadores/retirados)
+        if (existente) {
+            (caballosBase).forEach(c => {
+                c.ganador = (existente.ganadores || []).includes(String(c.numero)); 
+            });
+            const retNums = new Set(String(existente.retirados || '').split(/[,\s]+/).map(s => parseInt(s, 10)).filter(n => n > 0));
+            caballosBase.forEach(c => { if (retNums.has(parseInt(c.numero, 10))) c.retirado = true; });
+        }
+        // Pre-marcar retiros escritos en el campo RETIRADOS
+        const conRetirosInput = marcarRetirosEnCaballos(caballosBase, ctx.preRetirados);
+        // También sincronizar el input con retiros ya registrados
+        if (existente && inputRetirados && !ctx.preRetirados) {
+            inputRetirados.value = (existente.retirados || '').toString().toUpperCase() === 'NO HUBO RETIROS' ? '' : existente.retirados;
+        }
+
+        const premioOrig = parseFloat(existente?.premio_oficial ?? tabla?.premio_original ?? 100) || 100;
+        const sumaBase = parseFloat(tabla?.suma_base_tabla ?? 160) || 160;
+        const premioInicial = parseFloat(existente?.premio_recalculado ?? tabla?.premio_recalculado ?? premioOrig) || premioOrig;
+
+        window.clubModalResultado.abrir({
+            titulo: 'Carga de Resultados',
+            subtitulo: `${ctx.hipodromo || '-'} · Carrera ${ctx.carrera ?? '-'} · ${ctx.fecha}${tabla ? ' · Premio a Pagar/Tabla: $' + clubUI.formatoNumero(tabla.premio_recalculado, 2) : ''}`,
+            datosIniciales: { premioOriginal: premioOrig, sumaBase: sumaBase, premioRecalculado: premioInicial },
+            ejemplares: conRetirosInput,
+            onRegistrar: async (datos) => {
+                if (inputRetirados) {
+                    const ret = datos.retirados || [];
+                    inputRetirados.value = ret.length ? ret.join(', ') : '';
+                }
+                modalProcesando.classList.remove('hidden');
+                window.clubIndicador?.accion('Guardando resultado central y aplicando a tablas…');
+                try {
+                    await aplicarResultadoATablas(ctx, datos);
+                    const guardado = await guardarResultadoCentral(ctx, datos, existente?.dividendos || {});
+                    actualizarChipResultado({ ...guardado.fila }, !!(existente?.dividendos && Object.keys(existente.dividendos).length));
+                } finally {
+                    modalProcesando.classList.add('hidden');
+                    window.clubIndicador?.fin();
+                }
+                // Segundo paso: dividendos por tipo de jugada
+                abrirModalDividendos(ctx, datos, !!(existente?.dividendos && Object.keys(existente.dividendos).length) ? existente.dividendos : null);
+                return true;
+            }
+        });
+    }
+
+    async function abrirModalDividendos(ctx, datos, dividendosPrevios) {
+        try {
+            const { data: tickets } = await window.supabase.from('tickets_apuestas')
+                .select('*').eq('hipodromo', ctx.hipodromo).eq('carrera', parseInt(ctx.carrera, 10));
+            const ganadores = (datos.ejemplares || []).filter(e => e.ganador).map(e => String(e.numero));
+            const calcRes = window.clubDividendos?.calcular(tickets || [], ganadores) || { sugeridos: {}, por_tipo: {}, pool_total: 0, orden: ganadores };
+            const sugeridos = calcRes.sugeridos || {};
+            const poolTotal = calcRes.pool_total || 0;
+            const porTipo = calcRes.por_tipo || {};
+
+            const modal = document.getElementById('modalDividendos');
+            const resumen = document.getElementById('divResumenCarrera');
+            const grid = document.getElementById('gridDividendos');
+            const resumenPool = document.getElementById('divResumenPool');
+            if (!modal || !grid) return;
+
+            if (resumen) resumen.textContent = `${ctx.hipodromo} · Carrera ${ctx.carrera} · ${ctx.fecha} · Ganador: ${calcRes.orden.join(', ') || '—'}`;
+            grid.innerHTML = '';
+            window.clubDividendos.CLAVES.forEach(clave => {
+                const label = DIV_LABELS[clave] || clave;
+                const val = dividendosPrevios?.[clave] != null ? dividendosPrevios[clave] : (sugeridos[clave] ?? '');
+                const div = document.createElement('div');
+                div.innerHTML = `
+                    <label class="block text-[10px] font-black uppercase tracking-wider text-indigo-700 mb-0.5" for="div-${clave}">${label}</label>
+                    <div class="relative">
+                        <span class="absolute left-2 top-1.5 text-[10px] font-black text-slate-400">$</span>
+                        <input type="number" step="0.01" min="0" id="div-${clave}" value="${val}" placeholder="—"
+                               class="w-full border border-slate-300 rounded-lg pl-6 pr-2 py-1.5 text-sm font-black text-emerald-700 outline-none focus:ring-2 focus:ring-indigo-500"
+                               title="Pago por cada $1 apostado a ${label}">
+                    </div>`;
+                grid.appendChild(div);
+            });
+            if (resumenPool) {
+                resumenPool.innerHTML = `
+                    <p class="text-[9px] font-black uppercase tracking-wider text-slate-500 mb-1"><i class="fas fa-money-bill-wave text-emerald-500 mr-1"></i> Pozo de la carrera: $${clubUI.formatoNumero(poolTotal, 2)}</p>
+                    <p class="text-[9px] text-slate-500 leading-relaxed">WIN $${clubUI.formatoNumero(porTipo.win || 0, 2)} · PLACE $${clubUI.formatoNumero(porTipo.place || 0, 2)} · SHOW $${clubUI.formatoNumero(porTipo.show || 0, 2)} · PUESTOS $${clubUI.formatoNumero(porTipo.puestos || 0, 2)} · MARCAS $${clubUI.formatoNumero(porTipo.marcas || 0, 2)}</p>`;
+            }
+            modal.classList.remove('hidden');
+        } catch (e) {
+            console.error('Error abriendo dividendos:', e);
+            clubUI.toast('No se pudo abrir el registro de dividendos: ' + (e?.message || e), 'error');
+        }
+    }
+
+    function leerDividendosDelModal() {
+        const divs = {};
+        window.clubDividendos.CLAVES.forEach(clave => {
+            const inp = document.getElementById('div-' + clave);
+            const v = inp ? parseFloat(inp.value) : null;
+            if (v && v > 0) divs[clave] = v;
+        });
+        return divs;
+    }
+
+    document.getElementById('btnGuardarDividendos')?.addEventListener('click', async () => {
+        const ctx = ctxResultado();
+        const divs = leerDividendosDelModal();
+        try {
+            const { data } = await window.supabase.from('resultados_carreras').select('*')
+                .eq('fecha', ctx.fecha).eq('hipodromo', ctx.hipodromo).eq('carrera', parseInt(ctx.carrera, 10)).maybeSingle();
+            if (!data) { clubUI.toast('Primero registre el resultado de la carrera.', 'warning'); return; }
+            const { error } = await window.supabase.from('resultados_carreras').update({ dividendos: divs, updated_at: new Date().toISOString() })
+                .eq('fecha', ctx.fecha).eq('hipodromo', ctx.hipodromo).eq('carrera', parseInt(ctx.carrera, 10));
+            if (error) throw error;
+            document.getElementById('modalDividendos').classList.add('hidden');
+            actualizarChipResultado(data, true);
+            clubUI.aviso('Dividendos guardados', 'Pago por $1: ' + Object.entries(divs).map(([k, v]) => `<b>${DIV_LABELS[k]}</b> $${v}`).join(' · ') || 'Sin dividendos.', 'success');
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('TAQUILLA', `dividendos_guardados: ${JSON.stringify(divs)} (${ctx.hipodromo} C${ctx.carrera})`);
+        } catch (err) {
+            clubUI.toast('Error al guardar dividendos: ' + (err?.message || err), 'error');
+        }
+    });
+
+    document.getElementById('btnCerrarSinDividendos')?.addEventListener('click', () => {
+        document.getElementById('modalDividendos').classList.add('hidden');
+    });
+
+    document.getElementById('cerrarModalDividendos')?.addEventListener('click', () => {
+        document.getElementById('modalDividendos').classList.add('hidden');
+    });
+
+    btnPreliminarResultado?.addEventListener('click', abrirCargaResultados);
+
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && !e.shiftKey && (e.key === 'y' || e.key === 'Y')) {
+            e.preventDefault();
+            abrirCargaResultados();
+        }
+    });
+
+    // Estado inicial del chip: si ya hay resultado hoy, mostrarlo
+    (async () => {
+        try {
+            const ctx = ctxResultado();
+            const res = await resultadoCargado(ctx);
+            actualizarChipResultado(res, res?.dividendos && Object.keys(res.dividendos).length ? true : false);
+        } catch (e) { /* silencioso */ }
+    })();
+
+    // Refrescar el chip al cambiar hipódromo/carrera/fecha
+    [fHipo, fCarrera, fFecha].forEach(el => el?.addEventListener('change', async () => {
+        const ctx = ctxResultado();
+        if (!ctx.hipodromo || !ctx.carrera) { actualizarChipResultado(null); return; }
+        try {
+            const res = await resultadoCargado(ctx);
+            actualizarChipResultado(res, res?.dividendos && Object.keys(res.dividendos).length ? true : false);
+        } catch (e) { /* silencioso */ }
+    }));
+
+    // ------------------------------------------------------------------
     // VENTANA FLOTANTE: COMANDOS RÁPIDOS
     // Luis +100 (abono) · Juan -100 (retiro) · Frank 100 Luis (traslado)
     // Luis aval +100 (otorgar aval) · Pedro aval -50 (pagar aval)

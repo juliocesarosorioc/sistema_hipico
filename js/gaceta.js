@@ -1,4 +1,16 @@
+// ============================================================
+//  gaceta.js — Interfaz (UI) del módulo Gaceta del Día.
+//  Depende de la segmentación:
+//    - js/gaceta_helpers.js  (window.clubGacetaHelpers)
+//    - js/gaceta_ia.js       (window.clubGacetaIA)
+//    - js/gaceta_padron.js   (window.clubGacetaPadron)
+//  Esta capa solo maneja DOM, estado visual y flujo del operador.
+// ============================================================
 document.addEventListener('DOMContentLoaded', () => {
+
+    const H = window.clubGacetaHelpers;
+    const IA = window.clubGacetaIA;
+    const PAD = window.clubGacetaPadron;
 
     const zonaDrop = document.getElementById('zonaDrop');
     const inputArchivo = document.getElementById('archivoGaceta');
@@ -14,58 +26,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const carrerasGaceta = document.getElementById('carrerasGaceta');
 
     const CLAVE_KEY = 'club_gemini_key';
-    const SUPERFICIES = ['ARENA', 'CESPED', 'FANGO', 'TAPETA', 'OTRA'];
-    const NACIONALIDADES = ['VE', 'USA', 'BR', 'AR', 'CL', 'MX', 'PA', 'PE', 'CO', 'EC', 'UY', 'OTRA'];
-
-    // Hipódromos de EE.UU. sembrados en la BD: si la carrera es de uno de ellos,
-    // sus ejemplares quedan con nacionalidad USA por defecto; los de Venezuela (o
-    // no reconocidos, el programa es venezolano) quedan VE.
-    const HIPODROMOS_USA = [
-        'AQUEDUCT', 'BELMONT PARK', 'CHARLES TOWN', 'CHURCHILL DOWNS', 'DEL MAR',
-        'FAIR GROUNDS', 'FINGER LAKES', 'GOLDEN GATE FIELDS', 'GULFSTREAM PARK',
-        'KEENELAND', 'LAUREL PARK', 'LOS ALAMITOS', 'MONMOUTH PARK', 'OAKLAWN PARK',
-        'PIMLICO', 'SANTA ANITA', 'SARATOGA', 'TAMPA BAY DOWNS'
-    ];
-    function paisHipodromo(hipo) {
-        const h = String(hipo || '').trim().toUpperCase();
-        if (!h) return null;
-        if (HIPODROMOS_USA.some(n => h.includes(n))) return 'USA';
-        return 'VE';
-    }
-    // Nacionalidad por defecto de un ejemplar: la que trajo la IA si es válida,
-    // si no la del país del hipódromo de la carrera (USA/VE).
-    function nacEjemplar(ej, hipo) {
-        const nac = String(ej?.nacionalidad || '').trim().toUpperCase();
-        if (NACIONALIDADES.includes(nac)) return nac;
-        return paisHipodromo(hipo) || 'VE';
-    }
-
-    // Modelos Flash de respaldo (la app primero consulta a la API cuáles existen hoy)
-    const MODELOS_GEMINI = ['gemini-3.6-flash', 'gemini-3-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
-
-    async function listaModelosFlash(clave) {
-        try {
-            const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(clave)}`);
-            if (!r.ok) return [];
-            const datos = await r.json();
-            const flash = (datos.models || [])
-                .map(m => m.name.replace('models/', ''))
-                .filter(n => /flash/i.test(n));
-            if (!flash.length) return [];
-            const ver = n => { const m = n.match(/gemini-([\d.]+)/); return m ? parseFloat(m[1]) : 0; };
-            const lite = n => /-lite/i.test(n);
-            flash.sort((a, b) => (ver(b) - ver(a)) || ((lite(a) ? 1 : 0) - (lite(b) ? 1 : 0)));
-            return flash;
-        } catch (e) {
-            return [];
-        }
-    }
+    const SUPERFICIES = H.SUPERFICIES;
+    const FLAGS = H.FLAGS;
 
     let estado = { imagenes: [], paginas: [], carreras: [] };
 
     // ---------- TRAMPA DE ERRORES VISIBLES ----------
     // Cualquier error (aunque venga de una librería o de la red) se muestra en
-    // la caja de estado/ diagnóstico para que el operador NO vea un "error que
+    // la caja de estado/diagnóstico para que el operador NO vea un "error que
     // no conoce": siempre aparece el mensaje técnico en pantalla.
     function mostrarErrorVisible(msg) {
         try {
@@ -82,96 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('error', (e) => mostrarErrorVisible((e.message || 'error') + ' (línea ' + e.lineno + ')'));
     window.addEventListener('unhandledrejection', (e) => mostrarErrorVisible('Promesa no controlada: ' + ((e.reason && e.reason.message) || e.reason)));
 
-    // ---------- REGISTRO PERSISTENTE ----------
-    // Las carreras del día quedan guardadas hasta que se cargue un nuevo
-    // documento o el operador presione "Limpiar registro".
-    const REGISTRO_KEY = 'gaceta_registro';
-
-    // Acepta "3,5" y "3.5" (decimal con coma típico en Vzla)
-    const aNum = (v) => {
-        if (v === null || v === undefined) return null;
-        const s = String(v).trim();
-        if (!s) return null;
-        const n = parseFloat(s.replace(/,/g, '.'));
-        return Number.isFinite(n) ? n : null;
-    };
-
-    function leerRegistro() {
-        try { const a = JSON.parse(localStorage.getItem(REGISTRO_KEY)); if (Array.isArray(a)) return a; } catch (e) { /* vacío */ }
-        try { const a = JSON.parse(sessionStorage.getItem(REGISTRO_KEY)); if (Array.isArray(a)) return a; } catch (e) { /* vacío */ }
-        return null;
-    }
-    function escribirRegistro(arr) {
-        try { localStorage.setItem(REGISTRO_KEY, JSON.stringify(arr)); } catch (e) { /* vacío */ }
-        try { sessionStorage.setItem(REGISTRO_KEY, JSON.stringify(arr)); } catch (e) { /* vacío */ }
-    }
-    function persistirRegistro() {
-        escribirRegistro(estado.carreras.map(c => Object.assign({}, c, { enviada: !!c.enviada, aplicada: !!c.aplicada })));
-    }
-    function marcarEnviadas(carreras) {
-        // Coincidencia robusta: hipódromo+carrera, si no sólo hipódromo, si no
-        // una pendiente con hipódromo vacío, y como última vía el primero sin
-        // marcar (funciona aunque la IA no haya dado el número de carrera).
-        const porMarcar = estado.carreras.filter(c => !c.enviada);
-        carreras.forEach(ce => {
-            const hipo = String(ce.hipodromo || '').trim().toUpperCase();
-            let idx = porMarcar.findIndex(c => String(c.hipodromo || '').trim().toUpperCase() === hipo && String(c.carrera ?? '') === String(ce.carrera ?? ''));
-            if (idx === -1 && hipo) idx = porMarcar.findIndex(c => String(c.hipodromo || '').trim().toUpperCase() === hipo);
-            if (idx === -1) idx = porMarcar.findIndex(c => !String(c.hipodromo || '').trim());
-            if (idx === -1) idx = 0;
-            const objetivo = porMarcar.splice(idx, 1)[0];
-            if (objetivo) {
-                objetivo.enviada = true; objetivo.aplicada = false;
-                // Guarda los VALORES editados en pantalla: sin esto, el registro
-                // conservaba los valores originales de la IA y al regresar al
-                // Ensamblaje no aparecían los que el operador colocó en la carga.
-                const porNombre = new Map();
-                (ce.caballos || []).forEach(cb => porNombre.set(String(cb.nombre || '').toUpperCase(), cb));
-                (objetivo.ejemplares || []).forEach(ej => {
-                    const cb = porNombre.get(String(ej.nombre || '').toUpperCase());
-                    if (cb) { ej.numero = cb.numero; ej.valor = cb.valor; }
-                });
-            }
-        });
-        persistirRegistro();
-    }
-
-    // pdf.js puede quedar bloqueado por el Edge (Tracking Prevention).
-    // Si no está, se intenta cargar desde CDNs alternativos antes de usarlo.
-    const PDFJS_URLS = [
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
-        'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js',
-        'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js'
-    ];
-
-    function inyectarScript(url) {
-        return new Promise((res, rej) => {
-            const s = document.createElement('script');
-            s.src = url;
-            s.onload = () => res(true);
-            s.onerror = () => rej(new Error('no carga ' + url));
-            document.head.appendChild(s);
-        });
-    }
-
-    async function asegurarPdfJS() {
-        if (typeof window.pdfjsLib !== 'undefined') return true;
-        for (const u of PDFJS_URLS) {
-            try { await inyectarScript(u); } catch (e) { console.warn(e.message); }
-            if (typeof window.pdfjsLib !== 'undefined') break;
-        }
-        return typeof window.pdfjsLib !== 'undefined';
-    }
-
-    if (typeof window.pdfjsLib !== 'undefined') {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-    }
-
-    // Limpieza de claves antiguas (OpenAI quedó en desuso: ahora se usa Gemini gratis)
-    if (localStorage.getItem('club_openai_key')) {
-        localStorage.removeItem('club_openai_key');
-        console.info('Clave OpenAI antigua eliminada del navegador.');
-    }
+    function aNum(v) { return H.aNum(v); }
 
     // ---------- CLAVE ----------
     const guadarClaveAnt = localStorage.getItem(CLAVE_KEY) || '';
@@ -196,7 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = document.getElementById('btnProbarClave');
         btn.disabled = true;
         try {
-            const lista = await listaModelosFlash(k);
+            const lista = await IA.listaModelosFlash(k);
             if (!lista.length) {
                 if (diagEl) { diagEl.classList.remove('hidden'); diagEl.textContent = 'clave: NO VÁLIDA o sin conexión (Google no devolvió modelos). Revisa la clave en aistudio.google.com/apikey.'; }
                 clubUI.toast('La clave no responde. Revísala en aistudio.google.com/apikey.', 'error');
@@ -241,6 +120,44 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.disabled = false;
     });
 
+    // ---------- PDF.JS ----------
+    // pdf.js puede quedar bloqueado por el Edge (Tracking Prevention).
+    // Si no está, se intenta cargar desde CDNs alternativos antes de usarlo.
+    const PDFJS_URLS = [
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+        'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js',
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js'
+    ];
+
+    function inyectarScript(url) {
+        return new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = url;
+            s.onload = () => res(true);
+            s.onerror = () => rej(new Error('no carga ' + url));
+            document.head.appendChild(s);
+        });
+    }
+
+    async function asegurarPdfJS() {
+        if (typeof window.pdfjsLib !== 'undefined') return true;
+        for (const u of PDFJS_URLS) {
+            try { await inyectarScript(u); } catch (e) { console.warn(e.message); }
+            if (typeof window.pdfjsLib !== 'undefined') break;
+        }
+        return typeof window.pdfjsLib !== 'undefined';
+    }
+
+    if (typeof window.pdfjsLib !== 'undefined') {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    }
+
+    // Limpieza de claves antiguas (OpenAI quedó en desuso: ahora se usa Gemini gratis)
+    if (localStorage.getItem('club_openai_key')) {
+        localStorage.removeItem('club_openai_key');
+        console.info('Clave OpenAI antigua eliminada del navegador.');
+    }
+
     // ---------- CARGA DE ARCHIVO ----------
     zonaDrop.addEventListener('click', () => inputArchivo.click());
     inputArchivo.addEventListener('change', (e) => { if (e.target.files[0]) leerArchivo(e.target.files[0]); });
@@ -249,15 +166,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ev === 'dragover') zonaDrop.classList.add('border-cyan-500', 'bg-cyan-50');
         else { zonaDrop.classList.remove('border-cyan-500', 'bg-cyan-50'); if (e.dataTransfer.files[0]) leerArchivo(e.dataTransfer.files[0]); }
     }));
-
-    function dataURLImagen(file) {
-        return new Promise((resolve, reject) => {
-            const rd = new FileReader();
-            rd.onload = () => resolve(rd.result);
-            rd.onerror = reject;
-            rd.readAsDataURL(file);
-        });
-    }
 
     async function leerArchivo(file) {
         estado.imagenes = [];
@@ -287,7 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 estadoIA.textContent = `PDF: ${paginas} página(s) listas.`;
             } else {
-                const durl = await dataURLImagen(file);
+                const durl = await H.dataURLImagen(file);
                 estado.paginas.push({ num: 1, durl, incluida: true });
                 estadoIA.textContent = 'Imagen lista.';
             }
@@ -324,23 +232,6 @@ document.addEventListener('DOMContentLoaded', () => {
         lblSeleccionPaginas.textContent = `Enviar ${estado.imagenes.length} de ${estado.paginas.length} página(s)`;
         renderMiniaturas();
         validarHabilitacion();
-    }
-
-    function parsearRangoPaginas(txt) {
-        const set = new Set();
-        (txt || '').split(',').forEach(part => {
-            part = part.trim();
-            if (!part) return;
-            const m = part.match(/^(\d+)\s*-\s*(\d+)$/);
-            if (m) {
-                const a = Math.min(+m[1], +m[2]);
-                const b = Math.max(+m[1], +m[2]);
-                for (let i = a; i <= b; i++) set.add(i);
-            } else if (/^\d+$/.test(part)) {
-                set.add(+part);
-            }
-        });
-        return set;
     }
 
     function miniminiaturas() {
@@ -405,7 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('btnAplicarRango').addEventListener('click', () => {
         const rango = document.getElementById('rangoPaginas').value.trim();
-        const set = parsearRangoPaginas(rango);
+        const set = H.parsearRangoPaginas(rango);
         if (!set.size) return clubUI.toast('Formato de páginas: 1-4,6,8', 'warning');
         estado.paginas.forEach(p => p.incluida = set.has(p.num));
         actualizarSeleccion();
@@ -425,7 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btnTransformar.disabled = !(claveOpenAI.value.trim() && estado.imagenes.length > 0);
     }
 
-    // ---------- IA ----------
+    // ---------- IA (motor delegado en gaceta_ia.js) ----------
     btnTransformar.addEventListener('click', async () => {
         const clave = claveOpenAI.value.trim();
         if (!clave) { clubUI.toast('Guarde primero una clave de IA.', 'warning'); return; }
@@ -435,263 +326,9 @@ document.addEventListener('DOMContentLoaded', () => {
         btnTransformar.disabled = true;
         window.clubIndicador?.accion('La IA está leyendo el programa…');
 
-        const SYS = `
-Eres el transcriptor de la gaceta hípica venezolana. Recibes páginas/imágenes del programa oficial de carreras.
-Extrae TODAS las carreras visibles y sus ejemplares participantes.
-Para cada carrera devuelve:
-  - carrera: número de la carrera (entero)
-  - hipodromo: nombre del hipódromo (MAYÚSCULAS; ej: LA RINCONADA, SANTA RITA). Si no se lee usa "".
-  - fecha: fecha de la jornada en formato YYYY-MM-DD si aparece, si no null
-  - distancia: distancia de la carrera en metros (entero) si se lee, si no 0
-  - superficie: una de ARENA, CESPED, FANGO, TAPETA u otra si se lee explícita; si no ARENA
-  - premio: número si se lee (ej: 15000), si no 0
-  - ejemplares: lista con numero (puesto/orden del ejemplar), nombre (MAYÚSCULAS, EXACTO como aparece), nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si NO se indica: USA si el hipódromo es de Estados Unidos, si no VE), valor (monta del ejemplar: SOLO número si aparece, si no 0)
-REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGISTRA TODOS los ejemplares de cada carrera sin omitir ninguno (todos los números de participante que aparezcan). Si un ejemplar aparece repetido entre páginas, mantenlo tal cual. Si el documento no tiene carreras, devuelve {"carreras":[]}.
-`;
-
         try {
-            // ---------- Motor de extracción por LOTES ----------
-            // Cada lote (3 páginas) es liviano: evita el HTTP 400 por petición
-            // gigante y no quema la cuota gratuita de un solo golpe.
-            const esperar = (ms) => new Promise(r => setTimeout(r, ms));
-            const diagEl = document.getElementById('diagGaceta');
-            const diag = { respondio: '', ultimoError: '' };
-            const pesoKB = (durls) => Math.round(durls.reduce((a, d) => a + (((d.split(',')[1]) || '').length * 3 / 4), 0) / 1024);
-            function pintarDiag(extra) {
-                if (!diagEl) return;
-                diagEl.classList.remove('hidden');
-                diagEl.textContent =
-                    `clave: ${clave ? clave.slice(0, 4) + '…' + clave.slice(-3) + ' (' + clave.length + ' car.)' : 'AUSENTE'}\n` +
-                    `páginas elegidas: ${estado.imagenes.length} · peso aprox: ${(pesoKB(estado.imagenes) / 1024).toFixed(1)} MB\n` +
-                    (diag.respondio ? `respondió: ${diag.respondio}\n` : '') +
-                    (diag.ultimoError ? `último error: ${diag.ultimoError}\n` : '') +
-                    (extra || '');
-            }
-
-            const descubiertos = await listaModelosFlash(clave);
-            // Cada familia de Flash tiene SU PROPIA cuota gratuita diaria. Se ordenan
-            // primero por familia vieja (la que casi siempre conserva cuota) y
-            // luego por versión dentro de la familia.
-            const elegirModelos = () => {
-                const unicos = [...new Set(descubiertos.concat(MODELOS_GEMINI))]
-                    .filter(m => !/image|preview|tuned|babbage/i.test(m));
-                const porFamilia = {};
-                for (const m of unicos) {
-                    const v = (m.match(/gemini[_-]?(\d+)/i) || [])[1] || '0';
-                    const fam = v.slice(0, 1); // '1','2','3'
-                    (porFamilia[fam] = porFamilia[fam] || []).push(m);
-                }
-                const orden = ['1', '2', '3'];
-                const out = [];
-                for (const fam of orden) {
-                    const ms = (porFamilia[fam] || []).sort((a, b) => {
-                        const va = parseFloat((a.match(/gemini[_-]?([\d.]+)/i) || [])[1] || '0');
-                        const vb = parseFloat((b.match(/gemini[_-]?([\d.]+)/i) || [])[1] || '0');
-                        return vb - va;
-                    });
-                    out.push(...ms);
-                }
-                for (const fam of Object.keys(porFamilia).sort()) if (!orden.includes(fam)) out.push(...porFamilia[fam]);
-                return out.slice(0, 10);
-            };
-            const modelos = elegirModelos();
-            if (!modelos.length) throw new Error('Tu clave no devolvió modelos Flash. Verifica la clave en aistudio.google.com/apikey y tu conexión.');
-
-            function armarBody(durls, estricto) {
-                const imgs = durls.map(d => {
-                    const [, meta] = d.split(',');
-                    const mime = d.split(';')[0].replace('data:', '');
-                    return { inline_data: { mime_type: mime, data: meta } };
-                });
-                const parteTexto = estricto
-                    ? 'Gaceta adjunta. Extrae las carreras y responde ÚNICAMENTE con JSON válido con el formato {"carreras":[...]}, sin markdown, sin decoraciones ni explicaciones.'
-                    : 'Gaceta adjunta. Extrae las carreras y sus ejemplares.';
-                return {
-                    contents: [{ parts: [{ text: parteTexto }, ...imgs] }],
-                    systemInstruction: { parts: [{ text: SYS }] },
-                    generationConfig: {
-                        temperature: estricto ? 0.2 : 0,
-                        maxOutputTokens: 8192,
-                        responseMimeType: 'application/json'
-                    }
-                };
-            }
-
-            async function postIA(url, body, ms) {
-                const ctl = new AbortController();
-                const t = setTimeout(() => ctl.abort(), ms || 120000);
-                try {
-                    return await fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': clave },
-                        body: JSON.stringify(body), signal: ctl.signal
-                    });
-                } finally { clearTimeout(t); }
-            }
-
-            async function llamarModelo(model, durls, estricto) {
-                let resp;
-                try {
-                    resp = await postIA(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, armarBody(durls, estricto));
-                } catch (errNet) {
-                    return { ok: false, tipo: 'salto', msg: `Sin conexión al probar ${model} (${errNet.name === 'AbortError' ? 'tiempo agotado (120s)' : (errNet.message || 'red')}).` };
-                }
-                if (resp.status === 429) {
-                    const txt429 = await resp.text().catch(() => '');
-                    const esDiaria = /RESOURCE_EXHAUSTED|quota|per day|daily|rpd/i.test(txt429);
-                    return { ok: false, tipo: esDiaria ? 'cuotaDia' : 'cuotaRpm', msg: `${esDiaria ? 'CUOTA DIARIA' : 'LÍMITE POR MINUTO'} en ${model} (HTTP 429).` };
-                }
-                if (resp.status === 503) return { ok: false, tipo: 'salto503', msg: `Modelo ${model} saturado (HTTP 503, alta demanda temporal).` };
-                if (resp.status === 404) return { ok: false, tipo: 'salto', msg: `Modelo ${model} no disponible (HTTP 404).` };
-                if (!resp.ok) {
-                    const txtErr = await resp.text().catch(() => '');
-                    let msg = `Error de IA (HTTP ${resp.status}).`;
-                    try { msg = 'IA: ' + (JSON.parse(txtErr).error?.message || msg); } catch (e) { if (txtErr) msg = txtErr.slice(0, 220); }
-                    if (/API_KEY_INVALID|API key not valid|API_KEY_NOT_FOUND|PERMISSION_DENIED/i.test(msg)) {
-                        return { ok: false, tipo: 'clave', msg };
-                    }
-                    if (resp.status === 400 && durls.length > 1 && /large|tokens|size|payload|maximum|invalid argument/i.test(msg)) {
-                        return { ok: false, tipo: 'grande', msg };
-                    }
-                    return { ok: false, tipo: 'duro', msg };
-                }
-                let datos;
-                try { datos = await resp.json(); }
-                catch (e) { return { ok: false, tipo: 'salto', msg: `Modelo ${model} devolvió respuesta ilegible.` }; }
-                const texto = (datos.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '').trim();
-                if (!texto) {
-                    const fr = datos.candidates?.[0]?.finishReason || datos.promptFeedback?.blockReason || 'vacío';
-                    return { ok: false, tipo: 'salto', msg: `Modelo ${model} respondió vacío (${fr}).` };
-                }
-                return { ok: true, texto };
-            }
-
-            async function extraerLote(nombresPag, durls, etiqueta) {
-                let reintento503 = false;
-                let reintentoRpm = false;
-                for (let i = 0; i < modelos.length; i++) {
-                    const model = modelos[i];
-                    if (i > 0) await esperar(1200);
-                    let r = await llamarModelo(model, durls, false);
-                    let carreras = [];
-                    if (r.ok) {
-                        carreras = parsearJSON(r.texto);
-                        if (carreras.length === 0) {
-                            estadoIA.textContent = `${etiqueta}: sin carreras, segundo intento (JSON estricto)…`;
-                            const r2 = await llamarModelo(model, durls, true);
-                            if (r2.ok) { r = r2; carreras = parsearJSON(r2.texto); }
-                            else { r = r2; }
-                        }
-                        if (r.ok && carreras.length > 0) { diag.respondio = model; return carreras; }
-                        if (r.ok) { diag.ultimoError = `${etiqueta}: ${model} devolvió 0 carreras.`; pintarDiag(); continue; }
-                    }
-                    if (r.tipo === 'clave') throw new Error(r.msg + ' Revisa la clave en aistudio.google.com/apikey y guárdala de nuevo.');
-                    if (r.tipo === 'cuotaDia') {
-                        // Cuota DIARIA de esta familia agotada: NUNCA se espera en
-                        // vano. Se salta al siguiente modelo (otra familia tiene su
-                        // propia cuota gratis). Si ninguna responde, el ciclo lo dirá.
-                        diag.ultimoError = `${etiqueta}: ${r.msg}`;
-                        pintarDiag();
-                        continue;
-                    }
-                    if (r.tipo === 'cuotaRpm') {
-                        // Límite por MINUTO (transitorio): una sola espera larga y
-                        // se reintenta; si vuelve a chocar se cambia de modelo.
-                        if (!reintentoRpm) {
-                            reintentoRpm = true;
-                            estadoIA.textContent = `${etiqueta}: límite por minuto de ${model}, esperando 65s y reintentando…`;
-                            pintarDiag(`${etiqueta}: esperando 65s por límite por minuto…`);
-                            await esperar(65000);
-                            i--;
-                            continue;
-                        }
-                        diag.ultimoError = `${etiqueta}: ${r.msg}`;
-                        pintarDiag();
-                        continue;
-                    }
-                    if (r.tipo === 'salto503' && !reintento503) {
-                        // Pico temporal de demanda: Google pide reintentar más tarde.
-                        // Se espera 20s y se reintenta el MISMO modelo una vez.
-                        reintento503 = true;
-                        estadoIA.textContent = `${etiqueta}: ${model} saturado, esperando 20s y reintentando…`;
-                        pintarDiag(`${etiqueta}: esperando 20s por saturación de ${model}…`);
-                        await esperar(20000);
-                        i--;
-                        continue;
-                    }
-                    if (r.tipo === 'grande' && durls.length > 1) {
-                        const mitad = Math.ceil(durls.length / 2);
-                        estadoIA.textContent = `${etiqueta}: lote muy pesado, dividiendo en 2…`;
-                        const a = await extraerLote(nombresPag.slice(0, mitad), durls.slice(0, mitad), etiqueta + 'a');
-                        const b = await extraerLote(nombresPag.slice(mitad), durls.slice(mitad), etiqueta + 'b');
-                        return a.concat(b);
-                    }
-                    diag.ultimoError = `${etiqueta}: ${r.msg}`;
-                    pintarDiag();
-                }
-                throw new Error(diag.ultimoError + ' Se probaron los modelos Flash disponibles para este lote.');
-            }
-
-            function fusionarCarreras(nuevas) {
-                for (const c of (Array.isArray(nuevas) ? nuevas : [])) {
-                    if (!c || typeof c !== 'object') continue;
-                    c.ejemplares = Array.isArray(c.ejemplares) ? c.ejemplares : [];
-                    c.ejemplares.forEach(ej => { ej.nacionalidad = nacEjemplar(ej, c.hipodromo); ej.nombre = String(ej.nombre || '').trim().toUpperCase(); });
-                    const key = `${String(c.hipodromo || '').toUpperCase()}|${c.carrera ?? ''}`;
-                    const ex = (key === '|') ? null : estado.carreras.find(x => `${String(x.hipodromo || '').toUpperCase()}|${x.carrera ?? ''}` === key);
-                    if (!ex) { estado.carreras.push(c); continue; }
-                    const nums = new Set((ex.ejemplares || []).map(e => String(e.numero)));
-                    c.ejemplares.forEach(e => { if (!nums.has(String(e.numero))) { ex.ejemplares.push(e); nums.add(String(e.numero)); } });
-                }
-            }
-
-            const incluidas = estado.paginas.filter(p => p.incluida);
-            const TAM_LOTE = 3;
-            const lotes = [];
-            for (let i = 0; i < incluidas.length; i += TAM_LOTE) lotes.push(incluidas.slice(i, i + TAM_LOTE));
-            pintarDiag('modelos a probar por lote: ' + modelos.join(', '));
-
-            estado.carreras = [];
-            let loteN = 0;
-            let ciclo = 1;
-            let cuotaTotal = false; // ninguna familia de Gemini respondió por cuota
-            while (true) {
-                for (const lote of lotes) {
-                    loteN++;
-                    const etiqueta = `Lote ${loteN}/${lotes.length} (pág. ${lote.map(p => p.num).join(',')})`;
-                    if (!cuotaTotal) {
-                        estadoIA.textContent = `${etiqueta}: enviando a la IA…`;
-                        window.clubIndicador?.accion(`La IA lee el programa: lote ${loteN} de ${lotes.length}…`);
-                        window.clubIndicador?.progreso(loteN / lotes.length);
-                        pintarDiag(etiqueta + ' en curso…');
-                    }
-                    try {
-                        const carreras = await extraerLote(lote.map(p => p.num), lote.map(p => p.durl), etiqueta);
-                        fusionarCarreras(carreras);
-                        estadoIA.textContent = `${etiqueta}: ${carreras.length} carrera(s). Total acumulado: ${estado.carreras.length}.`;
-                        pintarDiag();
-                    } catch (errLote) {
-                        if (/clave|API key/i.test(errLote.message || '')) throw errLote;
-                        diag.ultimoError = `${etiqueta}: ${errLote.message}`;
-                        pintarDiag();
-                        clubUI.toast(`${etiqueta} falló (${errLote.message}).`, /CUOTA DIARIA/i.test(errLote.message || '') ? 'warning' : 'error');
-                        if (/CUOTA DIARIA/i.test(errLote.message || '')) { cuotaTotal = true; break; }
-                    }
-                }
-                // ¿Resultado aunque sea parcial? Se entrega AHORA.
-                if (estado.carreras.length > 0) break;
-                // Cuota diaria agotada en TODAS las familias: esperar es inútil.
-                if (cuotaTotal) break;
-                // Sin resultados por fallo/saturación: se rehace el ciclo completo
-                // automáticamente (máx 3) antes de declarar fracaso.
-                if (ciclo >= 3 || !diag.ultimoError) break;
-                ciclo++;
-                estadoIA.textContent = `Sin carreras aún: ${diag.ultimoError}. Reintentando el ciclo completo (${ciclo}/3) en 30 seg…`;
-                pintarDiag(`reintento del ciclo completo #${ciclo} tras 30s (saturación/fallo)…`);
-                window.clubIndicador?.accion(`Reintento de extracción (ciclo ${ciclo}/3)…`);
-                await esperar(30000);
-                loteN = 0;
-            }
+            const { carreras, cuotaTotal } = await IA.transformar({ clave, imagenes: estado.imagenes.slice() });
+            estado.carreras = carreras || [];
 
             if (estado.carreras.length === 0) {
                 if (cuotaTotal) {
@@ -704,18 +341,24 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
             } else {
                 // ---------- ENTREGA INMEDIATA ----------
                 // El resultado de la IA SIEMPRE se muestra; el padrón se registra
-                // por detrás y NO bloquea las cards (antes, si la tabla 'ejemplares'
-                // faltaba o tardaba, el resultado jamás aparecía).
+                // por detrás y NO bloquea las cards.
                 if (cuotaTotal) clubUI.toast(`Cuota agotada en parte de Gemini: se muestra el resultado PARCIAL extraído (${estado.carreras.length} carrera(s)).`, 'warning');
                 estado.carreras.forEach(c => { c.enviada = false; c.aplicada = false; });
-                persistirRegistro();
+                H.persistirRegistro(estado);
                 renderCarreras({ nuevos: 0, vinculados: 0 });
                 resultadoGaceta.classList.remove('hidden');
                 estadoIA.textContent = (cuotaTotal ? 'PARCIAL · ' : '') + `Listo: ${estado.carreras.length} carrera(s) transcritas. Vinculando padrón…`;
                 window.clubIndicador?.listo(`${estado.carreras.length} carrera(s) extraídas`);
-                guardarHistorial();
                 if (window.clubDB?.logAccion) window.clubDB.logAccion('GACETA_IA', `transcrita: ${estado.carreras.length} carreras${cuotaTotal ? ' (parcial por cuota)' : ''}`);
-                registrarPadron()
+                PAD.guardarHistorial(window.supabase, estado.carreras, window.clubAuth?.getSesion?.()?.nombre || 'desconocido')
+                    .catch(e => {
+                        console.warn('No se guardó el historial (gaceta_procesada):', e.message || e);
+                        if (!sessionStorage.getItem('club_gaceta_sql_aviso')) {
+                            sessionStorage.setItem('club_gaceta_sql_aviso', '1');
+                            clubUI.toast('La gaceta se procesó bien, pero el historial no se pudo guardar (falta la tabla o permisos para "gaceta_procesada"). Ejecute el paquete SQL completo y recargue.', 'warning');
+                        }
+                    });
+                PAD.registrar(window.supabase, estado.carreras)
                     .then(res => {
                         if (estadoIA.textContent.includes('Listo:')) {
                             estadoIA.textContent = (estadoIA.textContent.startsWith('PARCIAL') ? 'PARCIAL · ' : '') + `Listo: ${estado.carreras.length} carrera(s), ${res.nuevos} ejemplar(es) nuevos registrados.`;
@@ -759,191 +402,30 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
         validarHabilitacion();
     });
 
-    function coaccionarCarreras(v) {
-        if (Array.isArray(v)) return v;
-        if (v && typeof v === 'object') {
-            if (Array.isArray(v.carrera)) return v.carrera;
-            const vals = Object.values(v);
-            if (vals.length && typeof vals[0] === 'object') return vals;
-        }
-        return [];
-    }
-
-    function parsearJSON(texto) {
-        let t = (texto || '').trim();
-        const cercos = t.match(/```(?:json)?\s*([\s\S]*?)```/);
-        if (cercos) t = cercos[1].trim();
-        const intentos = [];
-        try { intentos.push(JSON.parse(t)); } catch (e) { /* sigue */ }
-        const ini = t.indexOf('{');
-        const fin = t.lastIndexOf('}');
-        if (ini >= 0 && fin > ini) {
-            try { intentos.push(JSON.parse(t.slice(ini, fin + 1))); } catch (e2) { /* sigue */ }
-        }
-        const iniArr = t.indexOf('[');
-        const finArr = t.lastIndexOf(']');
-        if (iniArr >= 0 && finArr > iniArr) {
-            try { intentos.push(JSON.parse(t.slice(iniArr, finArr + 1))); } catch (e3) { /* sigue */ }
-        }
-        for (const obj of intentos) {
-            if (Array.isArray(obj)) return obj;
-            if (obj && typeof obj === 'object') {
-                const c = coaccionarCarreras(obj.carreras);
-                if (c.length) return c;
-                const c2 = coaccionarCarreras(obj.carrera);
-                if (c2.length) return c2;
-            }
-        }
-        return [];
-    }
-
-    // Inserta en ejemplares completando columnas NOT NULL legacy que exija
-    // la BD (sin abortar el lote) tras detectar el error de Postgres.
-    async function insertarEjemplar(nombre, nacionalidad) {
-        const extras = {};
-        for (let i = 0; i < 5; i++) {
-            const body = Object.assign({ nombre, nacionalidad }, extras);
-            const { data, error } = await window.supabase.from('ejemplares').insert(body).select('id').single();
-            if (!error) return { data, error };
-            if (error.code === '23505') return { data, error };
-            const msg = String(error.message || '');
-            const nullM = /null value in column "([^"]+)"/.exec(msg);
-            if (nullM) {
-                const col = nullM[1];
-                if (extras[col] !== undefined) return { data, error };
-                extras[col] = 0;
-                continue;
-            }
-            const tipoM = /column "([^"]+)" is of type (?:text|character varying|boolean)/i.exec(msg);
-            if (tipoM) {
-                const col = tipoM[1];
-                if (extras[col] !== undefined) return { data, error };
-                extras[col] = /boolean/i.test(tipoM[2]) ? false : '';
-                continue;
-            }
-            return { data, error };
-        }
-        return { data: null, error: { message: 'Columnas requeridas faltantes en ejemplares' } };
-    }
-
-    async function registrarPadron() {
-        const totales = { nuevos: 0, vinculados: 0, fallidos: 0, errorDb: null };
-        if (!window.supabase) return totales;
-        if (!Array.isArray(estado.carreras)) estado.carreras = [];
-
-        let mapa = new Map();
-        try {
-            const { data, error } = await window.supabase.from('ejemplares').select('id, nombre, nacionalidad');
-            if (error) throw error;
-            (data || []).forEach(e => {
-                const clave = `${String(e.nombre || '').trim().toUpperCase()}|${String(e.nacionalidad || 'VE').trim().toUpperCase() || 'VE'}`;
-                mapa.set(clave, e.id);
-            });
-        } catch (e) {
-            const n = estado.carreras.reduce((a, c) => a + (Array.isArray(c.ejemplares) ? c.ejemplares.length : 0), 0);
-            totales.fallidos = n;
-            totales.errorDb = e.message || String(e);
-            return totales;
-        }
-
-        for (const c of estado.carreras) {
-            c.ejemplares = Array.isArray(c.ejemplares) ? c.ejemplares : [];
-            for (const ej of c.ejemplares) {
-                const nombre = String(ej.nombre || '').trim().toUpperCase().slice(0, 100);
-                const nac = (String(ej.nacionalidad || 'VE').trim().toUpperCase() || 'VE').slice(0, 3);
-                ej.nombre = nombre;
-                ej.nacionalidad = nac;
-                if (!nombre) { ej.ejemplar_id = null; continue; }
-                const clave = `${nombre}|${nac}`;
-                if (mapa.has(clave)) {
-                    ej.ejemplar_id = mapa.get(clave);
-                    ej.nuevo = false;
-                    totales.vinculados++;
-                    continue;
-                }
-                const { data, error } = await insertarEjemplar(nombre, nac);
-                if (error) {
-                    if (error.code === '23505') {
-                        const { data: existente } = await window.supabase.from('ejemplares').select('id').eq('nombre', nombre).eq('nacionalidad', nac).limit(1).single();
-                        if (existente) { ej.ejemplar_id = existente.id; ej.nuevo = false; totales.vinculados++; continue; }
-                    }
-                    totales.errorDb = totales.errorDb || (error.message || String(error));
-                    ej.ejemplar_id = null; ej.nuevo = false; totales.fallidos++;
-                    continue;
-                }
-                if (data?.id) {
-                    ej.ejemplar_id = data.id; ej.nuevo = true; totales.nuevos++;
-                    mapa.set(clave, data.id);
-                } else {
-                    ej.ejemplar_id = null; ej.nuevo = false; totales.fallidos++;
-                }
-            }
-        }
-        return totales;
-    }
-
-    async function guardarHistorial() {
-        try {
-            const carreras = estado.carreras;
-            const fecha = carreras.find(c => c.fecha)?.fecha || null;
-            const { error } = await window.supabase.from('gaceta_procesada').insert({
-                fecha_gaceta: fecha || null,
-                num_carreras: carreras.length,
-                contenido: carreras,
-                creado_por: window.clubAuth?.getSesion?.()?.nombre || 'desconocido'
-            });
-            if (error) throw error;
-        } catch (e) {
-            console.warn('No se guardó el historial (gaceta_procesada):', e.message || e);
-            if (!sessionStorage.getItem('club_gaceta_sql_aviso')) {
-                sessionStorage.setItem('club_gaceta_sql_aviso', '1');
-                clubUI.toast('La gaceta se procesó bien, pero el historial no se pudo guardar (falta la tabla o permisos para "gaceta_procesada"). Ejecute el paquete SQL completo y recargue.', 'warning');
-            }
-        }
-    }
-
     // ---------- RENDER ----------
-    // Paleta oficial de 14 colores de gualdrapa (idéntica a la del Ensamblaje)
-    function colorDeNumeroGac(n) {
-        const x = parseInt(n, 10);
-        const PALETA = [
-            { bg: '#FF0000', fg: '#FFFFFF' }, { bg: '#FFFFFF', fg: '#000000' },
-            { bg: '#0000FF', fg: '#FFFFFF' }, { bg: '#FFFF00', fg: '#000000' },
-            { bg: '#008000', fg: '#FFFFFF' }, { bg: '#000000', fg: '#FFFF00' },
-            { bg: '#FFA500', fg: '#000000' }, { bg: '#FFC0CB', fg: '#000000' },
-            { bg: '#40E0D0', fg: '#000000' }, { bg: '#800080', fg: '#FFFFFF' },
-            { bg: '#808080', fg: '#FF0000' }, { bg: '#32CD32', fg: '#000000' },
-            { bg: '#8B4513', fg: '#FFFFFF' }, { bg: '#800000', fg: '#FFFFFF' }
-        ];
-        if (!x) return { bg: '#94a3b8', fg: '#FFFFFF' };
-        return PALETA[((x - 1) % 14)];
-    }
-
     function filaEjemplarGac(ej, hipo) {
         const num = ej?.numero ?? '';
-        const colores = colorDeNumeroGac(num);
-        const nac = nacEjemplar(ej, hipo);
+        const colores = H.colorDeNumeroGac(num);
+        const nac = H.nacEjemplar(ej, hipo);
         return `
-            <div class="gac-fila-ejemplar flex items-center gap-0.5 bg-slate-50 border border-slate-200 rounded px-1 py-0.5">
+            <div class="gac-fila-ejemplar flex gap-0.5 items-center bg-slate-50 border border-slate-200 rounded px-1 py-0.5">
                 <input type="text" inputmode="numeric" title="Número del ejemplar" placeholder="Nº"
-                    class="gac-num w-5 h-5 shrink-0 border rounded px-0 py-px text-center text-[8px] font-black outline-none focus:ring-1 focus:ring-cyan-400"
+                    class="gac-num w-4 h-5 shrink-0 border rounded px-0 py-px text-center text-[8px] font-black outline-none focus:ring-1 focus:ring-indigo-400"
                     value="${num}" style="background-color:${colores.bg};color:${colores.fg};border-color:${colores.bg}">
                 <input type="text" title="Nombre del ejemplar" placeholder="Ejemplar"
-                    class="gac-nombre flex-1 min-w-0 border border-slate-200 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-cyan-400"
+                    class="gac-nombre flex-1 min-w-0 max-w-[6.5rem] border border-slate-200 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400"
                     value="${ej?.nombre || ''}">
-                <select title="Nacionalidad" class="gac-nac w-14 shrink-0 border border-slate-200 rounded px-0.5 py-px text-[8px] font-bold uppercase outline-none bg-white">
-                    ${NACIONALIDADES.map(n => `<option value="${n}" ${nac === n ? 'selected' : ''}>${n}</option>`).join('')}
-                </select>
+                <span class="gac-nac bandera-nac w-4 shrink-0 inline-flex justify-center text-sm leading-none" title="${nac}" data-nac="${nac}">${FLAGS[nac] || '🏳️'}</span>
                 <input type="text" inputmode="decimal" title="Valor / monta del ejemplar" placeholder="$"
-                    class="gac-valor w-12 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[11px] font-black text-blue-700 outline-none focus:ring-1 focus:ring-cyan-400"
+                    class="gac-valor w-12 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[12px] font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400"
                     value="${ej?.valor ?? ej?.pts ?? ''}">
                 <span class="gac-badge-padron w-4 shrink-0 text-center text-[9px] font-black ${ej?.ejemplar_id ? (ej?.nuevo ? 'text-emerald-600' : 'text-slate-400') : 'text-red-400'}" title="${ej?.ejemplar_id ? (ej?.nuevo ? 'Nuevo en el padrón' : 'Vinculado al padrón') : 'Sin padrón'}">${ej?.ejemplar_id ? (ej?.nuevo ? '★' : '✓') : '✗'}</span>
             </div>`;
     }
 
     // Las cards de las carreras extraídas se dibujan IGUAL que las del Ensamblaje
-    // (cabecera índigo con hipódromo/carrera/distancia/superficie/premio), para que
-    // el operador vea desde aquí cómo quedará la tabla antes de enviarla.
+    // (cabecera índigo con hipódromo/carrera/distancia/superficie y "Monto a Pagar /
+    // Tabla" por defecto $100, filas Nº/nombre/bandera/valor, y la "Suma de la Tabla").
     function renderCarreras(resPadron) {
         document.getElementById('resumenExtraccion').textContent = `(${estado.carreras.length} carreras · ${(resPadron.nuevos || 0)} nuevos / ${(resPadron.vinculados || 0)} vinculados al padrón)`;
         if (estado.carreras.length === 0) {
@@ -953,32 +435,42 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
         carrerasGaceta.innerHTML = estado.carreras.map((c, i) => {
             const numCarrera = c.carrera || i + 1;
             const ejemplares = Array.isArray(c.ejemplares) ? c.ejemplares : [];
+            const suma = ejemplares.reduce((a, ej) => a + (H.aNum(ej?.valor) ?? H.aNum(ej?.pts) ?? 0), 0);
             return `
             <div class="card-gac bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden flex flex-col" data-carrera="${i}" data-numero="${numCarrera}">
                 <div class="bg-indigo-600 px-2 py-1" style="color:#fff">
                     <div class="flex items-center justify-between gap-1">
                         <input type="text" class="gac-hipodromo rounded px-1.5 py-px text-[9px] font-bold uppercase outline-none flex-1 min-w-0" style="background:rgba(255,255,255,.18);color:#fff" value="${c.hipodromo || ''}" placeholder="Hipódromo">
-                        <span class="font-black text-[10px] whitespace-nowrap flex items-center gap-1">
+                        <span class="font-black text-[10px] whitespace-nowrap">
                             <i class="fas fa-flag-checkered mr-0.5"></i>C
                             <input type="number" class="gac-carrera w-7 rounded px-1 py-px text-center font-black outline-none" style="background:rgba(255,255,255,.18);color:#fff" value="${numCarrera}" placeholder="N°">
                         </span>
-                        <input type="checkbox" class="gac-sel w-4 h-4 accent-cyan-500 shrink-0" checked title="Incluir al enviar al Ensamblaje">
+                        <input type="checkbox" class="gac-sel w-4 h-4 accent-indigo-500 shrink-0" checked title="Incluir al enviar al Ensamblaje">
                     </div>
                     <div class="flex flex-wrap gap-1 mt-0.5 text-[8px] font-bold items-center">
                         <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)">Dist: <input type="number" class="gac-distancia w-11 outline-none text-center font-black" style="background:transparent;color:#fff" value="${c.distancia ?? ''}" placeholder="m"></span>
                         <select class="gac-superficie rounded px-0.5 py-px outline-none uppercase text-[8px] font-bold" style="background:rgba(255,255,255,.18)">
                             ${SUPERFICIES.map(s => `<option value="${s}" ${String(c.superficie || '').toUpperCase() === s ? 'selected' : ''}>${s}</option>`).join('')}
                         </select>
-                        <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)">Premio: $<input type="number" class="gac-premio w-14 outline-none text-right font-black" style="background:transparent;color:#fff" value="${c.premio ?? ''}" placeholder="0"></span>
-                        <input type="date" class="gac-fecha rounded px-0.5 py-px text-[8px] font-bold" style="background:rgba(255,255,255,.18);color:#fff" value="${c.fecha || ''}">
+                        <input type="date" class="gac-fecha hidden" value="${c.fecha || ''}">
+                    </div>
+                    <div class="mt-1 flex items-center justify-between rounded px-2 py-1" style="background:rgba(255,255,255,.20)">
+                        <span class="text-[9px] font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-0.5"></i> Monto a Pagar / Tabla</span>
+                        <span class="flex items-center gap-0.5 font-black text-sm" style="color:#fff">$<input type="number" step="0.01" class="gac-premio w-14 bg-transparent outline-none text-right font-black" style="color:#fff;border-bottom:2px solid rgba(255,255,255,.5)" value="100"></span>
                     </div>
                 </div>
                 <div class="px-2 pt-1 pb-0.5 text-[8px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                    <span class="flex items-center gap-1"><i class="fas fa-horse-head text-amber-500"></i> Ejemplares</span>
+                    <span><i class="fas fa-horse-head text-amber-500 mr-0.5"></i> Ejemplares</span>
                     <span class="gac-cont-caballos bg-slate-100 text-slate-600 px-1.5 rounded-full font-black">${ejemplares.length}</span>
                 </div>
                 <div class="px-1.5 py-0.5 space-y-0.5 flex-1">
                     ${ejemplares.map(ej => filaEjemplarGac(ej, c.hipodromo)).join('') || '<p class="text-[10px] text-slate-400 italic px-1 py-1">Sin ejemplares detectados.</p>'}
+                </div>
+                <div class="px-2 py-1 border-t border-slate-200 bg-white flex items-center justify-between">
+                    <span class="inline-flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-slate-400">
+                        <i class="fas fa-calculator text-indigo-400"></i> Suma de la Tabla
+                    </span>
+                    <span class="suma-tabla-card font-black text-[11px] text-indigo-700" title="Sumatoria de los valores de todos los ejemplares">$ ${clubUI.formatoNumero(suma, 2)}</span>
                 </div>
                 <div class="px-2 py-1.5 border-t border-slate-200 flex gap-2 bg-white">
                     <button type="button" class="btn-cargar-ensamblaje flex-1 bg-cyan-600 hover:bg-cyan-700 text-white text-[10px] font-black py-1.5 rounded-lg shadow transition-colors uppercase tracking-wide" data-acc="cargar" title="Lleva esta carrera al Ensamblaje para revisar sus VALORES y publicar">
@@ -998,7 +490,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
         if (resumen) resumen.textContent = `(${estado.carreras.length} carreras · ${res.nuevos} nuevos / ${res.vinculados} vinculados al padrón)`;
         document.querySelectorAll('.gac-fila-ejemplar').forEach(fila => {
             const nombre = (fila.querySelector('.gac-nombre')?.value || '').trim().toUpperCase();
-            const nac = (fila.querySelector('.gac-nac')?.value || 'VE').toUpperCase();
+            const nac = (fila.querySelector('.gac-nac')?.dataset.nac || 'VE').toUpperCase();
             if (!nombre) return;
             let info = null;
             for (const c of estado.carreras) {
@@ -1021,8 +513,8 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
         const caballos = [...card.querySelectorAll('.gac-fila-ejemplar')].map(f => ({
             numero: f.querySelector('.gac-num')?.value?.trim() || '',
             nombre: f.querySelector('.gac-nombre')?.value?.trim().toUpperCase() || '',
-            nacionalidad: f.querySelector('.gac-nac')?.value || 'VE',
-            valor: aNum(f.querySelector('.gac-valor')?.value) ?? aNum(f.querySelector('.gac-pts')?.value) ?? 0
+            nacionalidad: f.querySelector('.gac-nac')?.dataset.nac || 'VE',
+            valor: H.aNum(f.querySelector('.gac-valor')?.value) ?? H.aNum(f.querySelector('.gac-pts')?.value) ?? 0
         })).filter(c => c.nombre);
 
         return {
@@ -1057,7 +549,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
     function actualizarBtnTodo() {
         const lbl = document.getElementById('lblEnviarTodo');
         if (!lbl) return;
-        const cards = [...carrerasGaceta.querySelectorAll('.bg-white')];
+        const cards = [...carrerasGaceta.querySelectorAll('.card-gac')];
         const sel = carrerasGaceta.querySelectorAll('.gac-sel:checked').length;
         lbl.textContent = sel === 0 ? 'Enviar al Ensamblaje (sin selección)'
             : (sel === cards.length ? `Enviar TODAS al Ensamblaje (${sel})` : `Enviar seleccionadas (${sel})`);
@@ -1082,10 +574,21 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
         siguiente.select();
     });
 
+    // Mantiene al día la "Suma de la Tabla" de cada card mientras se editan valores.
+    carrerasGaceta.addEventListener('input', (e) => {
+        const inp = e.target.closest('.gac-valor');
+        if (!inp) return;
+        const card = inp.closest('.card-gac');
+        if (!card) return;
+        const total = [...card.querySelectorAll('.gac-valor')].reduce((a, x) => a + (H.aNum(x.value) || 0), 0);
+        const el = card.querySelector('.suma-tabla-card');
+        if (el) el.textContent = '$ ' + clubUI.formatoNumero(total, 2);
+    });
+
     // ---------- LIMPIAR / RECUPERAR REGISTRO ----------
     function limpiarRegistro() {
-        try { localStorage.removeItem(REGISTRO_KEY); } catch (e) { /* vacío */ }
-        try { sessionStorage.removeItem(REGISTRO_KEY); } catch (e) { /* vacío */ }
+        try { localStorage.removeItem(H.REGISTRO_KEY); } catch (e) { /* vacío */ }
+        try { sessionStorage.removeItem(H.REGISTRO_KEY); } catch (e) { /* vacío */ }
         try { localStorage.removeItem('ensamblaje_carreras'); } catch (e) { /* vacío */ }
         try { sessionStorage.removeItem('ensamblaje_carreras'); } catch (e) { /* vacío */ }
         try { localStorage.removeItem('gaceta_prellenado'); } catch (e) { /* vacío */ }
@@ -1099,7 +602,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
     // Si el operador volvió sin haber ensamblado todas, recupera las que
     // quedaron pendientes SIN re-transformar con la IA.
     async function cargarRegistroGuardado() {
-        const arr = leerRegistro();
+        const arr = H.leerRegistro();
         if (!arr || !arr.length) return;
         const pendientes = arr.filter(c => !c.enviada);
         if (!pendientes.length) {
@@ -1113,8 +616,8 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
             return copia;
         });
         window.clubIndicador?.accion('Recuperando las carreras guardadas…');
-        const resPadron = await registrarPadron();
-        persistirRegistro();
+        const resPadron = await PAD.registrar(window.supabase, estado.carreras);
+        H.persistirRegistro(estado);
         renderCarreras(resPadron);
         resultadoGaceta.classList.remove('hidden');
         const enviadas = arr.filter(c => c.enviada).length;
@@ -1126,12 +629,12 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
 
     // Envío MASIVO: todas las marcadas, de una vez, con una sola navegación
     document.getElementById('btnEnviarTodoEnsamblaje')?.addEventListener('click', () => {
-        const cards = [...carrerasGaceta.querySelectorAll('.bg-white')]
+        const cards = [...carrerasGaceta.querySelectorAll('.card-gac')]
             .filter(card => card.querySelector('.gac-sel')?.checked);
         if (cards.length === 0) return clubUI.toast('Marca con el ✓ al menos una carrera para enviar.', 'warning');
         const carreras = cards.map(leerCarreraDeCard).filter(c => c.caballos.length > 0);
         if (carreras.length === 0) return clubUI.toast('Las carreras marcadas no tienen ejemplares con nombre.', 'warning');
-        marcarEnviadas(carreras);
+        H.marcarEnviadas(estado, carreras);
         const total = acumularEnEnsamblaje(carreras);
         clubUI.toast(`${carreras.length} carrera(s) enviada(s) al Ensamblaje (total en el envío: ${total}). Revise y publique.`, 'success');
         setTimeout(() => location.href = 'tablas.html', 600);
@@ -1140,11 +643,11 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
     carrerasGaceta.addEventListener('click', (e) => {
         const btn = e.target.closest('[data-acc="cargar"]');
         if (!btn) return;
-        const card = btn.closest('.bg-white');
+        const card = btn.closest('.card-gac');
         const carrera = leerCarreraDeCard(card);
         if (carrera.caballos.length === 0) return clubUI.toast('Esta carrera no tiene ejemplares con nombre.', 'warning');
 
-        marcarEnviadas([carrera]);
+        H.marcarEnviadas(estado, [carrera]);
         const total = acumularEnEnsamblaje([carrera]);
         clubUI.toast(`Carrera C${carrera.carrera || '?'} enviada al Ensamblaje (total en el envío: ${total}). Revise y publique.`, 'success');
         setTimeout(() => location.href = 'tablas.html', 600);
@@ -1156,10 +659,11 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
         btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Registrando…';
         btn.disabled = true;
         try {
-            const res = await registrarPadron();
+            const res = await PAD.registrar(window.supabase, estado.carreras);
             renderCarreras(res);
             if (res.errorDb) {
-                clubUI.aviso('Padrón no disponible',
+                const rls = /row-level security|permission denied|42501/i.test(String(res.errorDb));
+                clubUI.aviso(rls ? 'SQL pendiente (RLS activo en "ejemplares")' : 'Padrón no disponible',
                     `No se pudo conectar con la tabla "ejemplares" para registrar los ejemplares (${res.fallidos}).\n\n` +
                     `ERROR: ${res.errorDb}\n\n` +
                     `Ejecute el paquete SQL completo en Supabase SQL Editor:\n` +
@@ -1190,7 +694,7 @@ REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGIST
     });
 
     document.getElementById('btnLimpiarRegistro')?.addEventListener('click', () => {
-        const arr = leerRegistro();
+        const arr = H.leerRegistro();
         const pendientes = (arr || []).filter(c => !c.enviada).length;
         const mensaje = pendientes > 0
             ? `Hay ${pendientes} carrera(s) pendientes de ensamblar. `

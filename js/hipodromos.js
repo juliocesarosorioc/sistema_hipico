@@ -1,6 +1,30 @@
 // Archivo: js/hipodromos.js
 // Gestión de hipódromos: CREATE/READ/UPDATE/DELETE ordenados alfabéticamente,
 // con país y estado. Los hipódromos de VE y USA vienen sembrados por el SQL (sección 8).
+// Incluye validación fuzzy (Levenshtein) para evitar cuasi-duplicados.
+
+// Distancia de Levenshtein normalizada (0 = igual, 1 = totalmente distinto)
+function levenshteinNorm(a, b) {
+    if (!a || !b) return 1;
+    a = a.toUpperCase().replace(/\s+/g, '');
+    b = b.toUpperCase().replace(/\s+/g, '');
+    if (a === b) return 0;
+    const m = a.length, n = b.length;
+    const dp = Array.from({ length: m + 1 }, (_, i) => Array(n + 1).fill(0));
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            dp[i][j] = Math.min(
+                dp[i - 1][j] + 1,      // deletion
+                dp[i][j - 1] + 1,      // insertion
+                dp[i - 1][j - 1] + cost // substitution
+            );
+        }
+    }
+    return dp[m][n] / Math.max(m, n);
+}
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -75,6 +99,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const nombre = inputNombre.value.trim().toUpperCase();
             if (!nombre) return;
             const pais = selectPais.value;
+
+            // Validación fuzzy: busca coincidencias cercanas en la lista local
+            const dup = hipodromosData.find(h => 
+                h.pais === pais && levenshteinNorm(h.nombre, nombre) < 0.15
+            );
+            if (dup) {
+                clubUI.toast(`Ya existe un hipódromo muy similar: "${dup.nombre}" (${dup.pais}). No se permite duplicados.`, 'warning');
+                return;
+            }
 
             const btn = this.querySelector('button[type="submit"]');
             const btnOriginal = btn.innerHTML;

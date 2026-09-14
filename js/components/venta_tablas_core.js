@@ -32,18 +32,20 @@
 
     // ============================================================
     // VENTA: crea el ticket (premio/valor congelados), descuenta
-    // el cupo del grupo y ajusta el saldo del cliente.
+    // el cupo del grupo que COBRA y ajusta el saldo del cliente.
+    // Se registra además el grupo que recibe la COMISIÓN.
     // Retorna { ok, costoTotal, premioTotal, gananciaTotal,
     //           comisionEstimada, comisionPorc, premio, pts,
     //           cantidad, esVES }
     // ============================================================
-    async function venderTabla({ cliente, cantidad, ejemplar, tabla, tg, grupo, tasaCambio, permitirSobregiro = false }) {
+    async function venderTabla({ cliente, cantidad, ejemplar, tabla, tg, grupo, grupoComision, tasaCambio, permitirSobregiro = false }) {
         if (!grupo) return { ok: false, error: 'Grupo no encontrado.' };
         const pts = parseFloat(ejemplar.valor_ejemplar) || 0;
         const costoTotal = pts * cantidad;
         const esVES = grupo.moneda === 'VES';
         const tasa = parseFloat(tasaCambio) || 1;
         const costoUSD = esVES ? costoTotal / (tasa || 1) : costoTotal;
+        const gCom = grupoComision || grupo;
 
         const modoJuega = cliente.modo_juego || (cliente.libre ? 'libre' : 'aval');
         if (!permitirSobregiro) {
@@ -68,13 +70,18 @@
         const premio = parseFloat(tabla.premio_recalculado) || 0;
         const premioTotal = premio * cantidad;
         const gananciaTotal = Math.max(0, premioTotal - costoTotal);
-        const comisionPorc = parseFloat(tabla.comision_grupo || 2.5);
+        const comisionTabla = parseFloat(tabla.comision_grupo);
+        const comisionPorc = !isNaN(comisionTabla) ? comisionTabla : parseFloat(gCom.comision_default || 2.5);
         const comisionEstimada = gananciaTotal * (comisionPorc / 100);
 
         const { error: errTk } = await window.supabase.from('tickets_apuestas').insert([{
             cliente_juega_id: cliente.id,
             cliente_juega_nombre: cliente.nombre,
             grupo: grupo.nombre,
+            grupo_cobro_id: grupo.id,
+            grupo_cobro_nombre: grupo.nombre,
+            grupo_comision_id: gCom.id,
+            grupo_comision_nombre: gCom.nombre,
             hipodromo: tabla.hipodromo,
             carrera: tabla.carrera,
             nombre_jugada: `TABLA FIJA (${tabla.hipodromo} C${tabla.carrera})`,

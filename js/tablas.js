@@ -628,7 +628,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="flex flex-wrap gap-1 justify-center">
                         <button class="btn-editar bg-slate-200 text-slate-700 px-2 py-1 rounded hover:bg-slate-300" data-id="${t.id}" title="Editar"><i class="fas fa-edit"></i></button>
                         <button class="btn-clonar bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200" data-id="${t.id}" title="Clonar"><i class="fas fa-copy"></i></button>
-                        ${t.estado === 'Abierta' ? `<button class="btn-vender bg-emerald-500 text-white px-2 py-1 rounded hover:bg-emerald-600 font-bold" data-id="${t.id}">Vender</button><button class="btn-auditar bg-amber-400 text-slate-900 px-2 py-1 rounded hover:bg-amber-500 font-bold" data-id="${t.id}">Actualizar</button>` : `<button class="btn-auditar bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 font-bold" data-id="${t.id}">Resultado</button>`}
+                        ${t.estado === 'Abierta' ? `<button class="btn-vender bg-emerald-500 text-white px-2 py-1 rounded hover:bg-emerald-600 font-bold" data-id="${t.id}">Vender</button>` : ''}
                         <button class="btn-eliminar bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200" data-id="${t.id}" title="Eliminar"><i class="fas fa-trash-alt"></i></button>
                     </div>
                 `;
@@ -648,7 +648,6 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.btn-editar').forEach(b => b.addEventListener('click', (e) => abrirModalEditar(e.currentTarget.dataset.id)));
             document.querySelectorAll('.btn-clonar').forEach(b => b.addEventListener('click', (e) => abrirModalClonar(e.currentTarget.dataset.id)));
             document.querySelectorAll('.btn-vender').forEach(b => b.addEventListener('click', (e) => abrirModalVenta(e.currentTarget.dataset.id)));
-            document.querySelectorAll('.btn-auditar').forEach(b => b.addEventListener('click', (e) => abrirModalAuditoria(e.currentTarget.dataset.id)));
             document.querySelectorAll('.btn-eliminar').forEach(b => b.addEventListener('click', (e) => eliminarTabla(e.currentTarget.dataset.id)));
         } catch (e) {
             console.error(e);
@@ -684,7 +683,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('editPremio').value = (tabla.premio_recalculado ?? 100);
         document.getElementById('editPremioOrig').value = (tabla.premio_original ?? tabla.premio_recalculado ?? 100);
         document.getElementById('editSumaBase').value = (tabla.suma_base_tabla ?? 160);
-        document.getElementById('editComision').value = (tabla.comision_grupo ?? '');
         const contCab = document.getElementById('editCaballos');
         contCab.innerHTML = (tabla.caballos || []).map((c, i) => `
             <label class="flex items-center gap-2 bg-white border border-slate-200 rounded px-2 py-1 text-xs">
@@ -756,7 +754,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (premio === null || premio <= 0) return clubUI.toast("Premio inválido.");
         const premioOrig = aNum(document.getElementById('editPremioOrig').value) || premio;
         const sumaBase = aNum(document.getElementById('editSumaBase').value) || 0;
-        const comision = aNum(document.getElementById('editComision').value) || 0;
         const tEdit = datosTablaCompleta.find(t => t.id == id);
         const caballosNuevos = [...(tEdit?.caballos || [])];
         [...document.querySelectorAll('#editCaballos .edit-valor-cab')].forEach(inp => {
@@ -796,12 +793,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 const { error } = await window.supabase.from('tablas_fijas').update({
             premio_original: premioOrig, premio_recalculado: premio, suma_base_tabla: sumaBase,
-            comision_grupo: comision, limite_ventas: cuposSuma, caballos: caballosNuevos
+            limite_ventas: cuposSuma, caballos: caballosNuevos
         }).eq('id', id);
 
         if (!error) { document.getElementById('modalEditar').classList.add('hidden'); cargarTablas(); }
         else { clubUI.toast("Error al editar."); }
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `editada: ${tEdit?.hipodromo} C${tEdit?.carrera} premio=$${premio} premOriginal=$${premioOrig} comision=${comision}% cupos=${cuposSuma} (id=${id})`);
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `editada: ${tEdit?.hipodromo} C${tEdit?.carrera} premio=$${premio} premOriginal=$${premioOrig} cupos=${cuposSuma} (id=${id})`);
     });
 
     // ==========================================
@@ -856,236 +853,6 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         } else { clubUI.toast("Error al clonar."); }
 
         btn.textContent = "Ejecutar Clonación"; btn.disabled = false;
-    });
-
-    // ==========================================
-    // AUDITORÍA / RESULTADO (ganador + retiros + premio por modalidad)
-    // Los valores editables quedan REGISTRADOS en la tabla para las próximas jugadas
-    // ==========================================
-    let premioOrigTemp = 0, sumaBaseTemp = 0, caballosModalTemp = [], premioManual = false;
-
-    function inpValAud(id) { return document.getElementById(id); }
-
-    function actualizarDesglosePremio(premioMostrado, valRet) {
-        const el = inpValAud('lblDesglosePremio');
-        const campo = inpValAud('inpPremioRecalculado').value;
-        if (!el) return;
-        if (premioManual) {
-            el.textContent = `Ajuste manual: el premio que se publicará será ${clubUI.formatoNumero(aNum(campo) || 0, 2)} por tabla.`;
-            return;
-        }
-        if (valRet > 0 && sumaBaseTemp > 0) {
-            const pct = (valRet / sumaBaseTemp) * 100;
-            el.textContent = `Premio original ${clubUI.formatoNumero(premioOrigTemp, 2)} − retiros ${clubUI.formatoNumero(valRet, 1)} (${clubUI.formatoNumero(pct, 1)}%) = ${clubUI.formatoNumero(premioMostrado, 2)}`;
-        } else {
-            el.textContent = `Premio oficial ${clubUI.formatoNumero(premioOrigTemp, 2)} por tabla — sin descuento por retiros`;
-        }
-    }
-
-    function refrescarPremioAuditoria() {
-        if (premioManual) return;
-        let valRet = 0;
-        caballosModalTemp.forEach(c => { if (c.retirado) valRet += parseFloat(c.valor_ejemplar) || 0; });
-        let p = premioOrigTemp;
-        if (sumaBaseTemp > 0 && valRet > 0) p = premioOrigTemp * (1 - (valRet / sumaBaseTemp));
-        p = Math.max(0, p);
-        inpValAud('inpPremioRecalculado').value = clubUI.formatoNumero(p, 2);
-        inpValAud('lblPremioRecalculadoBig').textContent = clubUI.formatoNumero(p, 2);
-        actualizarDesglosePremio(p, valRet);
-    }
-
-    function syncAuditoriaDesdeDOM() {
-        document.querySelectorAll('.inp-valor-aud').forEach(inp => {
-            const idx = parseInt(inp.dataset.index);
-            const v = aNum(inp.value);
-            if (caballosModalTemp[idx]) caballosModalTemp[idx].valor_ejemplar = (v === null || v === undefined) ? 0 : v;
-        });
-        document.querySelectorAll('.chk-retiro').forEach(chk => {
-            const idx = parseInt(chk.dataset.index);
-            if (caballosModalTemp[idx]) caballosModalTemp[idx].retirado = chk.checked;
-        });
-        const rdoGanador = document.querySelector('.rdo-ganador:checked');
-        if (rdoGanador) {
-            const idxG = parseInt(rdoGanador.dataset.index);
-            caballosModalTemp.forEach((c, i) => { c.ganador = (i === idxG); });
-            if (caballosModalTemp[idxG]) caballosModalTemp[idxG].retirado = false;
-        }
-    }
-
-    function abrirModalAuditoria(id) {
-        const t = datosTablaCompleta.find(x => x.id == id);
-        if (!t) return;
-        inpValAud('auditoriaTablaId').value = id;
-        premioOrigTemp = parseFloat(t.premio_original) || 100;
-        sumaBaseTemp = parseFloat(t.suma_base_tabla) || 160;
-        caballosModalTemp = [...(t.caballos || [])].map(c => ({ ...c }));
-        premioManual = false;
-
-        inpValAud('auditoriaInfoCabecera').textContent = `${t.hipodromo || '-'} · Carrera ${t.carrera ?? '-'} · ${t.distancia_carrera || '-'} m · Superficie: ${t.superficie || '-'} · Moneda: ${t.moneda || '-'} · Estado: ${t.estado || '-'}`;
-        inpValAud('inpPremioOriginal').value = clubUI.formatoNumero(premioOrigTemp, 2);
-        inpValAud('inpSumaBase').value = clubUI.formatoNumero(sumaBaseTemp, 1);
-        inpValAud('inpComisionGrupo').value = clubUI.formatoNumero(parseFloat(t.comision_grupo) || 0, 2);
-        const premioInicial = parseFloat(t.premio_recalculado) || premioOrigTemp;
-        inpValAud('lblPremioRecalculadoBig').textContent = clubUI.formatoNumero(premioInicial, 2);
-        inpValAud('inpPremioRecalculado').value = clubUI.formatoNumero(premioInicial, 2);
-
-        const cont = inpValAud('listaEjemplaresAuditoria');
-        cont.innerHTML = caballosModalTemp.map((c, i) => {
-            const badgeRetirado = c.retirado ? ' <span class="text-red-500 text-[9px] font-black">(RETIRADO)</span>' : '';
-            return `
-                <label class="flex items-center gap-2 bg-white border border-slate-200 p-2 rounded cursor-pointer text-xs ${c.retirado ? 'opacity-60' : ''}">
-                    <input type="radio" name="ganador-carrera" class="rdo-ganador" data-index="${i}" ${c.ganador ? 'checked' : ''} title="Ganador de la carrera">
-                    <input type="checkbox" class="chk-retiro" data-index="${i}" ${c.retirado ? 'checked' : ''} title="Marcar como retirado">
-                    <span class="w-5 h-5 flex items-center justify-center rounded-full text-[9px] font-black shrink-0" style="background:${colorDeNumero(c.numero)};color:${textoDeNumero(c.numero)}">${c.numero}</span>
-                    <span class="flex-1 font-bold text-slate-700 truncate" title="${c.nombre}">${c.nombre}${badgeRetirado}</span>
-                    <input type="text" inputmode="decimal" class="inp-valor-aud w-20 text-right border border-slate-300 rounded px-1 py-0.5 text-[11px] font-bold outline-none focus:ring-2 focus:ring-amber-500 ${c.retirado ? 'bg-slate-100 text-slate-400' : 'bg-white'}" data-index="${i}" value="${clubUI.formatoNumero(parseFloat(c.valor_ejemplar) || 0, 1)}" title="Valor del ejemplar en la tabla">
-                </label>`;
-        }).join('') || '<p class="text-xs text-slate-400 italic text-center py-2">Sin ejemplares.</p>';
-
-        cont.querySelectorAll('.inp-valor-aud').forEach(inp => inp.addEventListener('input', () => {
-            const idx = parseInt(inp.dataset.index);
-            const v = aNum(inp.value);
-            if (caballosModalTemp[idx]) caballosModalTemp[idx].valor_ejemplar = (v === null || v === undefined) ? 0 : v;
-            refrescarPremioAuditoria();
-        }));
-
-        cont.querySelectorAll('.chk-retiro').forEach(chk => chk.addEventListener('change', () => {
-            const idx = parseInt(chk.dataset.index);
-            if (!caballosModalTemp[idx]) return;
-            caballosModalTemp[idx].retirado = chk.checked;
-            const label = chk.closest('label');
-            const inpV = label.querySelector('.inp-valor-aud');
-            const txtNom = label.querySelector('.flex-1');
-            if (chk.checked) {
-                label.classList.add('opacity-60');
-                inpV.classList.remove('bg-white'); inpV.classList.add('bg-slate-100', 'text-slate-400');
-                const rdo = cont.querySelector(`.rdo-ganador[data-index="${idx}"]`);
-                if (rdo && rdo.checked) rdo.checked = false;
-                if (!txtNom.querySelector('.text-red-500')) txtNom.insertAdjacentHTML('beforeend', ' <span class="text-red-500 text-[9px] font-black">(RETIRADO)</span>');
-            } else {
-                label.classList.remove('opacity-60');
-                inpV.classList.add('bg-white'); inpV.classList.remove('bg-slate-100', 'text-slate-400');
-                const badge = txtNom.querySelector('.text-red-500');
-                if (badge) badge.remove();
-            }
-            refrescarPremioAuditoria();
-        }));
-
-        cont.querySelectorAll('.rdo-ganador').forEach(rdo => rdo.addEventListener('change', () => {
-            if (!rdo.checked) return;
-            const idx = parseInt(rdo.dataset.index);
-            const label = rdo.closest('label');
-            const chk = label.querySelector('.chk-retiro');
-            const inpV = label.querySelector('.inp-valor-aud');
-            if (chk && chk.checked) {
-                chk.checked = false;
-                if (caballosModalTemp[idx]) {
-                    caballosModalTemp[idx].retirado = false;
-                    caballosModalTemp[idx].ganador = true;
-                }
-                label.classList.remove('opacity-60');
-                inpV.classList.remove('bg-slate-100', 'text-slate-400');
-                inpV.classList.add('bg-white');
-                const badge = label.querySelector('.flex-1 .text-red-500');
-                if (badge) badge.remove();
-                refrescarPremioAuditoria();
-            } else if (caballosModalTemp[idx]) {
-                caballosModalTemp[idx].ganador = true;
-            }
-        }));
-
-        inpValAud('modalAuditoria').classList.remove('hidden');
-
-        const valRetAbierto = caballosModalTemp.reduce((acc, c) => acc + (c.retirado ? (parseFloat(c.valor_ejemplar) || 0) : 0), 0);
-        const pFormula = sumaBaseTemp > 0 && valRetAbierto > 0 ? premioOrigTemp * (1 - (valRetAbierto / sumaBaseTemp)) : premioOrigTemp;
-        const elDesg = inpValAud('lblDesglosePremio');
-        if (Math.abs(pFormula - premioInicial) > 0.001) {
-            elDesg.textContent = `Fórmula: ${clubUI.formatoNumero(premioOrigTemp, 2)} − retiros ${clubUI.formatoNumero(valRetAbierto, 1)} = ${clubUI.formatoNumero(Math.max(0, pFormula), 2)} · publicado: ${clubUI.formatoNumero(premioInicial, 2)} (ajuste manual)`;
-        } else {
-            actualizarDesglosePremio(premioInicial, valRetAbierto);
-        }
-    }
-
-    inpValAud('inpPremioOriginal').addEventListener('input', () => {
-        premioOrigTemp = aNum(inpValAud('inpPremioOriginal').value) || 0;
-        premioManual = false;
-        refrescarPremioAuditoria();
-    });
-    inpValAud('inpSumaBase').addEventListener('input', () => {
-        sumaBaseTemp = aNum(inpValAud('inpSumaBase').value) || 0;
-        premioManual = false;
-        refrescarPremioAuditoria();
-    });
-    inpValAud('inpPremioRecalculado').addEventListener('input', () => {
-        premioManual = true;
-        inpValAud('lblPremioRecalculadoBig').textContent = clubUI.formatoNumero(aNum(inpValAud('inpPremioRecalculado').value) || 0, 2);
-        actualizarDesglosePremio(0, 0);
-    });
-    inpValAud('btnRecalcularPremio').addEventListener('click', () => { premioManual = false; refrescarPremioAuditoria(); });
-
-    // Enter / Tab: navegar DE VALOR EN VALOR dentro del modal de auditoría
-    inpValAud('modalAuditoria').addEventListener('keydown', (e) => {
-        if (!['Enter', 'Tab'].includes(e.key)) return;
-        const t = e.target;
-        const esValor = t.tagName === 'INPUT' && (t.classList.contains('inp-valor-aud')
-            || ['inpPremioOriginal', 'inpSumaBase', 'inpComisionGrupo', 'inpPremioRecalculado'].includes(t.id));
-        if (!esValor) return;
-        e.preventDefault();
-        const campos = [
-            ...['inpPremioOriginal', 'inpSumaBase', 'inpComisionGrupo', 'inpPremioRecalculado'].map(id => inpValAud(id)).filter(Boolean),
-            ...[...inpValAud('listaEjemplaresAuditoria').querySelectorAll('.inp-valor-aud')]
-        ].filter(el => !el.disabled);
-        const idx = campos.indexOf(t);
-        const dir = (e.key === 'Tab' && e.shiftKey) ? -1 : 1;
-        const sig = campos[(idx + dir + campos.length) % campos.length];
-        if (sig) { sig.focus(); if (sig.select) sig.select(); }
-    });
-
-    inpValAud('btnProcesarAuditoria').addEventListener('click', async () => {
-        const id = inpValAud('auditoriaTablaId').value;
-        const np = aNum(inpValAud('inpPremioRecalculado').value);
-        if (np === null || np === undefined) return clubUI.toast('El premio recalculado es inválido.', 'error');
-        premioOrigTemp = aNum(inpValAud('inpPremioOriginal').value) || 0;
-        sumaBaseTemp = aNum(inpValAud('inpSumaBase').value) || 0;
-        const comision = aNum(inpValAud('inpComisionGrupo').value) || 0;
-
-        syncAuditoriaDesdeDOM();
-
-        const ret = caballosModalTemp.filter(c => c.retirado).map(c => c.numero);
-        const tAud = datosTablaCompleta.find(x => x.id == id);
-
-        // Registro de la modificación (diferencias con los valores previos)
-        const cambios = [];
-        if (tAud) {
-            if ((parseFloat(tAud.premio_original) || 0) !== premioOrigTemp) cambios.push(`Premio Original ${clubUI.formatoNumero(parseFloat(tAud.premio_original) || 0, 2)} → ${clubUI.formatoNumero(premioOrigTemp, 2)}`);
-            if ((parseFloat(tAud.suma_base_tabla) || 0) !== sumaBaseTemp) cambios.push(`Suma Base ${tAud.suma_base_tabla} → ${sumaBaseTemp}`);
-            if ((parseFloat(tAud.comision_grupo) || 0) !== comision) cambios.push(`Comisión ${tAud.comision_grupo}% → ${comision}%`);
-            if ((parseFloat(tAud.premio_recalculado) || 0) !== np) cambios.push(`Premio Recalculado ${clubUI.formatoNumero(parseFloat(tAud.premio_recalculado) || 0, 2)} → ${clubUI.formatoNumero(np, 2)}`);
-            (tAud.caballos || []).forEach((o, i) => {
-                const c = caballosModalTemp[i];
-                if (c && (parseFloat(o.valor_ejemplar) || 0) !== (parseFloat(c.valor_ejemplar) || 0)) {
-                    cambios.push(`Valor N°${c.numero} ${clubUI.formatoNumero(parseFloat(o.valor_ejemplar) || 0, 1)} → ${clubUI.formatoNumero(parseFloat(c.valor_ejemplar) || 0, 1)}`);
-                }
-            });
-        }
-
-        const { error } = await window.supabase.from('tablas_fijas').update({
-            premio_original: premioOrigTemp,
-            suma_base_tabla: sumaBaseTemp,
-            comision_grupo: comision,
-            premio_recalculado: np,
-            caballos: caballosModalTemp,
-            estado: 'Auditada',
-            retirados_oficiales: ret.length > 0 ? ret.join(',') : NO_RETIROS
-        }).eq('id', id);
-
-        if (error) return clubUI.toast('Error al registrar: ' + (error.message || error.code), 'error');
-
-        inpValAud('modalAuditoria').classList.add('hidden');
-        cargarTablas();
-        const resumenCambios = cambios.length > 0 ? 'Cambios registrados:<br>• ' + cambios.join('<br>• ') : 'Resultado registrado sin cambios de valores.';
-        clubUI.aviso('Auditoría registrada', `${resumenCambios}<br><br>Los valores quedan vigentes para las próximas jugadas.`, 'success');
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `auditada: ${tAud?.hipodromo} C${tAud?.carrera} premio=${np} retirados=[${ret.length ? ret.join(',') : NO_RETIROS}] cambios=[${cambios.join(' | ') || 'ninguno'}] (id=${id})`);
     });
 
     // ==========================================
@@ -1293,7 +1060,6 @@ const { error } = await window.supabase.from('tablas_fijas').update({
     });
 
     document.querySelectorAll('.cerrar-modal').forEach(b => b.addEventListener('click', () => {
-        document.getElementById('modalAuditoria').classList.add('hidden');
         document.getElementById('modalDuplicar').classList.add('hidden');
         document.getElementById('modalEditar').classList.add('hidden');
         document.getElementById('modalVenta').classList.add('hidden');

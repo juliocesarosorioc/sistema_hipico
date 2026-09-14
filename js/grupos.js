@@ -4,6 +4,42 @@ document.addEventListener('DOMContentLoaded', () => {
     let clientesTodos = [];
     let miembrosPorGrupo = {};      // { grupo_id: [cliente_id,...] } para pertenencias adicionales
     let tablasMultiGrupo = false;   // true si clientes_grupos existe
+    let tiposJugadasList = [];      // para convenios por tipo
+    let conveniosGrupo = [];        // convenio_tipo_grupo del grupo seleccionado
+
+    // ==========================================
+    // SELECTOR UNIFORME DE BANCOS (catálogo BANCOS_VZLA)
+    // ==========================================
+    function poblarSelectoresBancos() {
+        const opts = (clubUI.htmlOpcionesBancosVzla && clubUI.htmlOpcionesBancosVzla()) || '';
+        ['bancoGrupo', 'editBancoGrupo'].forEach(id => {
+            const sel = document.getElementById(id);
+            if (sel) sel.innerHTML = '<option value="">Seleccione el banco...</option>' + opts;
+        });
+    }
+
+    // "0102 · BANCO DE VENEZUELA / N° 1234" -> { banco, numero }
+    function desglosarCuenta(cuenta) {
+        const t = String(cuenta || '').trim();
+        if (!t) return { banco: '', numero: '' };
+        const idx = t.indexOf('N°');
+        if (idx === -1) return { banco: t, numero: '' };
+        return { banco: t.slice(0, idx).replace(/\s*\/?\s*$/, ''), numero: t.slice(idx + 2).trim() };
+    }
+
+    function componerCuenta(banco, numero) {
+        const b = String(banco || '').trim();
+        const n = String(numero || '').trim();
+        if (!b) return null;
+        return n ? `${b} / N° ${n}` : b;
+    }
+
+    function seleccionarBancoEn(sel, cuenta) {
+        if (!sel) return;
+        const { banco } = desglosarCuenta(cuenta);
+        const value = Array.from(sel.options).some(o => o.value === banco) ? banco : (Array.from(sel.options).find(o => o.text === banco)?.value || '');
+        sel.value = value || '';
+    }
 
     // ==========================================
     // CARGA DE GRUPOS
@@ -35,6 +71,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const opts = activos.map(g => `<option value="${g.id}">${g.nombre} (${g.moneda})</option>`).join('');
         document.getElementById('selectGrupoOrigen').innerHTML = '<option value="">Seleccione...</option>' + opts;
         document.getElementById('selectGrupoDestino').innerHTML = '<option value="">Seleccione...</option>' + opts;
+        const selConvenio = document.getElementById('selectConvenioGrupo');
+        if (selConvenio) {
+            const selActual = selConvenio.value;
+            selConvenio.innerHTML = '<option value="">Seleccione un grupo...</option>' + opts;
+            if (selActual && todosGrupos.some(g => g.id == selActual)) selConvenio.value = selActual;
+        }
     }
 
     function renderGruposGestion() {
@@ -80,6 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         const nombre = document.getElementById('nombreGrupo').value.trim().toUpperCase();
         if (!nombre) return clubUI.toast('Indique el nombre del grupo.', 'warning');
+        const cuenta = componerCuenta(document.getElementById('bancoGrupo').value, document.getElementById('numeroCuentaGrupo').value);
         const { error } = await window.supabase.from('grupos_venta').insert([{
             nombre: nombre,
             moneda: document.getElementById('monedaGrupo').value,
@@ -88,7 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cupo_tabla: parseInt(document.getElementById('cupoGrupo').value) || 100,
             comision_default: parseFloat(document.getElementById('comisionGrupo').value) || 2.5,
             responsable: document.getElementById('responsableGrupo').value.trim().toUpperCase() || null,
-            cuenta_bancaria: document.getElementById('cuentaGrupo').value.trim().toUpperCase() || null
+            cuenta_bancaria: cuenta
         }]);
         if (error) {
             if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {
@@ -101,6 +144,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('monedaCuadreGrupo').value = 'USD';
         document.getElementById('cupoGrupo').value = 100;
         document.getElementById('comisionGrupo').value = 2.5;
+        document.getElementById('bancoGrupo').value = '';
+        document.getElementById('numeroCuentaGrupo').value = '';
         cargarGrupos();
         if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `creado: ${nombre} comision=${document.getElementById('comisionGrupo').value || 2.5}`);
         const principal = document.getElementById('esPrincipalGrupo').checked;
@@ -154,7 +199,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('editGrupoCupo').value = g.cupo_tabla || 100;
         document.getElementById('editGrupoComision').value = parseFloat(g.comision_default || 2.5);
         document.getElementById('editGrupoResponsable').value = g.responsable || '';
-        document.getElementById('editGrupoCuenta').value = g.cuenta_bancaria || '';
+        const { banco, numero } = desglosarCuenta(g.cuenta_bancaria);
+        seleccionarBancoEn(document.getElementById('editBancoGrupo'), banco);
+        document.getElementById('editNumeroCuentaGrupo').value = numero || '';
         document.getElementById('editGrupoPrincipal').checked = !!g.es_principal;
         document.getElementById('modalEditarGrupo').classList.remove('hidden');
     }
@@ -164,6 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const g = todosGrupos.find(x => x.id == id);
         const nombre = document.getElementById('editGrupoNombre').value.trim().toUpperCase();
         const esPrincipal = document.getElementById('editGrupoPrincipal').checked;
+        const cuenta = componerCuenta(document.getElementById('editBancoGrupo').value, document.getElementById('editNumeroCuentaGrupo').value);
         const { error } = await window.supabase.from('grupos_venta').update({
             nombre: nombre,
             moneda: document.getElementById('editGrupoMoneda').value,
@@ -171,7 +219,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cupo_tabla: parseInt(document.getElementById('editGrupoCupo').value) || 100,
             comision_default: parseFloat(document.getElementById('editGrupoComision').value) || 2.5,
             responsable: document.getElementById('editGrupoResponsable').value.trim().toUpperCase() || null,
-            cuenta_bancaria: document.getElementById('editGrupoCuenta').value.trim().toUpperCase() || null,
+            cuenta_bancaria: cuenta,
             es_principal: esPrincipal
         }).eq('id', id);
         if (error) return clubUI.toast('Error al guardar el grupo: ' + error.message, 'error');
@@ -333,6 +381,122 @@ document.addEventListener('DOMContentLoaded', () => {
         quitarClientesGrupo(ids);
     });
 
+    // ==========================================
+    // CONVENIOS POR TIPO DE JUGADA Y GRUPO
+    // ==========================================
+    async function cargarTiposJugadas() {
+        try {
+            const { data, error } = await window.supabase.from('tipos_jugadas').select('*').eq('activo', true).order('nombre');
+            if (error) throw error;
+            tiposJugadasList = data || [];
+        } catch (e) {
+            tiposJugadasList = [];
+            clubUI.toast('No se pudieron cargar los tipos de jugada: ' + (e?.message || e), 'warning');
+        }
+    }
+
+    async function cargarConvenios(grupoId) {
+        const lista = document.getElementById('listaConvenios');
+        if (!grupoId) {
+            lista.innerHTML = '<p class="text-slate-400 italic text-xs">Seleccione un grupo para ver sus convenios.</p>';
+            conveniosGrupo = [];
+            return;
+        }
+        if (!tiposJugadasList.length) await cargarTiposJugadas();
+        try {
+            const { data, error } = await window.supabase.from('convenio_tipo_grupo').select('*').eq('grupo_id', grupoId);
+            if (error) {
+                if (error.code === 'PGRST205' || /relation .* does not exist/i.test(String(error.message || ''))) {
+                    lista.innerHTML = '<p class="text-slate-400 italic text-xs">Falta la tabla <b>convenio_tipo_grupo</b>. Ejecute el nuevo SQL del paquete de pendientes.</p>';
+                    conveniosGrupo = [];
+                    return;
+                }
+                throw error;
+            }
+            conveniosGrupo = data || [];
+        } catch (err) {
+            conveniosGrupo = [];
+            return clubUI.toast('Error al cargar convenios: ' + (err?.message || err), 'error');
+        }
+        renderConvenios(grupoId);
+    }
+
+    // res alta => marca LUGAR/RANKING (win/place/show); con multiplicador => WIN/PLACE/SHOW base
+    const ETIQUETA_TIPO = (nombre) => {
+        const n = String(nombre || '').toUpperCase();
+        if (/TABLA/.test(n)) return 'comisión por tablas fijas';
+        if (/WIN|GANADOR|GANANCIA/.test(n)) return 'win · ganador';
+        if (/PLACE|LUGAR/.test(n)) return 'place · 1.º/2.º';
+        if (/SHOW|MOSTRAR/.test(n)) return 'show · 1.º/2.º/3.º';
+        if (/PUESTOS|EXACTA|PERFECTA/.test(n)) return 'puestos · exacta';
+        if (/MARCAS|TRIFECTA/.test(n)) return 'marcas · trifecta';
+        return 'comisión por ticket';
+    };
+
+    function renderConvenios(grupoId) {
+        const lista = document.getElementById('listaConvenios');
+        if (!tiposJugadasList.length) {
+            lista.innerHTML = '<p class="text-slate-400 italic text-xs">No hay tipos de jugada activos.</p>';
+            return;
+        }
+        lista.innerHTML = tiposJugadasList.map(t => {
+            const c = conveniosGrupo.find(x => x.tipo_jugada_id === t.id) || {};
+            const esTabla = /TABLA/i.test(t.nombre || '');
+            const comision = c.comision != null ? c.comision : (esTabla ? '' : '');
+            return `
+                <div class="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-2 py-1.5" data-conv-tipo="${t.id}">
+                    <div class="flex-1 min-w-0">
+                        <span class="font-bold text-slate-700 text-xs uppercase">${t.nombre}</span>
+                        <span class="block text-[9px] text-slate-400 truncate">${ETIQUETA_TIPO(t.nombre)}</span>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0">
+                        <label class="text-[9px] font-black text-slate-500 uppercase">%</label>
+                        <input type="number" step="0.01" min="0" class="conv-comision w-14 border border-slate-300 rounded px-1 py-0.5 text-right text-[11px] font-bold text-amber-700 outline-none focus:ring-1 focus:ring-amber-400" data-conv-tipo="${t.id}" value="${comision}" placeholder="${esTabla ? 'grupo' : '0'}">
+                        <label class="text-[9px] font-black text-slate-500 uppercase ml-1">Base $</label>
+                        <input type="number" step="0.01" min="0" class="conv-base w-14 border border-slate-300 rounded px-1 py-0.5 text-right text-[11px] font-bold text-slate-700 outline-none focus:ring-1 focus:ring-amber-400" data-conv-tipo="${t.id}" value="${c.comision_base ?? ''}" placeholder="0">
+                        <label class="flex items-center gap-1 ml-1 cursor-pointer" title="Permite cruces / combinaciones en este tipo">
+                            <input type="checkbox" class="conv-cruces" data-conv-tipo="${t.id}" ${c.permite_cruces === false ? '' : 'checked'}>
+                            <span class="text-[9px] font-black text-slate-500 uppercase">Cruces</span>
+                        </label>
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    document.getElementById('selectConvenioGrupo')?.addEventListener('change', (e) => {
+        cargarConvenios(e.target.value);
+    });
+
+    document.getElementById('btnGuardarConvenios')?.addEventListener('click', async () => {
+        const grupoId = document.getElementById('selectConvenioGrupo').value;
+        if (!grupoId) return clubUI.toast('Seleccione el grupo para guardar sus convenios.', 'warning');
+        if (!tiposJugadasList.length) return clubUI.toast('No hay tipos de jugada activos.', 'warning');
+        const filas = tiposJugadasList.map(t => {
+            const fila = { tipo_jugada_id: t.id, grupo_id: grupoId };
+            const inpCom = document.querySelector(`.conv-comision[data-conv-tipo="${t.id}"]`);
+            const inpBase = document.querySelector(`.conv-base[data-conv-tipo="${t.id}"]`);
+            const chkCruces = document.querySelector(`.conv-cruces[data-conv-tipo="${t.id}"]`);
+            const com = inpCom ? parseFloat(inpCom.value) : null;
+            const base = inpBase ? parseFloat(inpBase.value) : null;
+            fila.comision = (com && com > 0) ? com : 0;
+            fila.comision_base = (base && base > 0) ? base : 0;
+            fila.permite_cruces = chkCruces ? chkCruces.checked : true;
+            return fila;
+        });
+        try {
+            const { error } = await window.supabase.from('convenio_tipo_grupo').upsert(filas, { onConflict: 'tipo_jugada_id,grupo_id' });
+            if (error) throw error;
+            conveniosGrupo = filas;
+            clubUI.aviso('Convenios guardados', `Se actualizaron ${filas.length} convenio(s) para el grupo seleccionado, con su % de comisión, base $ y permiso de cruces por tipo de jugada.`, 'success');
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `convenios_tipo_grupo: ${filas.length} filas (grupo=${grupoId})`);
+        } catch (err) {
+            if (err?.code === 'PGRST205' || /relation .* does not exist/i.test(String(err?.message || ''))) {
+                return clubUI.toast('Falta la tabla convenio_tipo_grupo. Ejecute el nuevo SQL del paquete de pendientes.', 'error');
+            }
+            return clubUI.toast('Error al guardar convenios: ' + (err?.message || err), 'error');
+        }
+    });
+
     document.getElementById('btnRecargarGrupos')?.addEventListener('click', () => cargarGrupos());
 
     const buscarGrupo = document.getElementById('buscarGrupo');
@@ -341,5 +505,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Arranque
+    poblarSelectoresBancos();
+    cargarTiposJugadas();
     cargarGrupos();
 });

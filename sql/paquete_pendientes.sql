@@ -64,6 +64,9 @@ create index if not exists idx_tasas_ref_tipo_fecha
 comment on table public.tasas_referencia is
     'Historial de tasas de referencia: BCV, Binance y EURO con su fecha de aplicacion';
 
+alter table public.tasas_referencia disable row level security;
+grant all privileges on table public.tasas_referencia to anon;
+
 -- ============================================================
 -- (3) SEGURIDAD Y AUDITORIA (tabla + RPC SECURITY DEFINER)
 -- ============================================================
@@ -193,6 +196,9 @@ create table if not exists public.gaceta_procesada (
 
 create index if not exists idx_gaceta_procesada_fecha on public.gaceta_procesada (fecha_gaceta desc);
 
+alter table public.gaceta_procesada disable row level security;
+grant all privileges on table public.gaceta_procesada to anon;
+
 comment on table public.gaceta_procesada is
     'Historial de transcripciones de la gaceta hípica realizadas con IA';
 
@@ -257,9 +263,30 @@ create table if not exists public.hipodromos (
     pais           text not null default 'OTRO'
 );
 
+create unique index if not exists uq_hipodromos_nombre_norm
+    on public.hipodromos (upper(regexp_replace(nombre, '\s+', '', 'g')));
+
+-- Limpieza de duplicados exactos y cuasi-duplicados (fuzzy: ignora espacios/acentos)
+with normalizados as (
+    select 
+        id,
+        upper(regexp_replace(nombre, '\s+', '', 'g')) as norm,
+        fecha_creacion,
+        row_number() over (
+            partition by upper(regexp_replace(nombre, '\s+', '', 'g'))
+            order by fecha_creacion desc
+        ) as rn
+    from public.hipodromos
+)
+delete from public.hipodromos
+where id in (select id from normalizados where rn > 1);
+
 alter table public.hipodromos
     add column if not exists pais text not null default 'OTRO',
     add column if not exists estado text not null default 'Activo';
+
+alter table public.hipodromos disable row level security;
+grant all privileges on table public.hipodromos to anon;
 
 -- ---- Siembra: HIPÓDROMOS DE VENEZUELA ----
 do $$
@@ -267,14 +294,38 @@ begin
     insert into public.hipodromos (nombre, pais)
     select v.nombre, v.pais
     from (values
-        ('La Rinconada', 'VE'),
-        ('Valencia', 'VE'),
-        ('Hipódromo Nacional de Santa Rita', 'VE'),
-        ('La Pomona', 'VE')
+        ('LA RINCONADA', 'VE'),
+        ('VALENCIA', 'VE'),
+        ('LA PASTORA', 'VE'),
+        ('SANTA RITA', 'VE'),
+        ('MARACAIBO', 'VE'),
+        ('BARQUISIMETO', 'VE'),
+        ('ACARIGUA', 'VE'),
+        ('GUANARE', 'VE'),
+        ('ELORZA', 'VE'),
+        ('CALABOZO', 'VE'),
+        ('TUCUPIDO', 'VE'),
+        ('SAN FERNANDO DE APURE', 'VE'),
+        ('GUASDUALITO', 'VE'),
+        ('PALMARITO', 'VE'),
+        ('SAN JUAN DE LOS MORROS', 'VE'),
+        ('CAGUA', 'VE'),
+        ('LOS TEQUES', 'VE'),
+        ('PUNTO FIJO', 'VE'),
+        ('CUMANÁ', 'VE'),
+        ('MATURÍN', 'VE'),
+        ('CIUDAD BOLÍVAR', 'VE'),
+        ('PUERTO ORDAZ', 'VE'),
+        ('UPATA', 'VE'),
+        ('TUMEREMO', 'VE'),
+        ('EL CALLAO', 'VE'),
+        ('SANTA ELENA DE UAIREN', 'VE'),
+        ('SAN FELIX', 'VE')
     ) as v(nombre, pais)
     where not exists (
         select 1 from public.hipodromos h
-        where lower(h.nombre) = lower(v.nombre)
+        where upper(regexp_replace(h.nombre, '\s+', '', 'g')) = upper(regexp_replace(v.nombre, '\s+', '', 'g'))
+          and upper(h.pais) = v.pais
     );
 exception when others then
     raise notice 'No se pudo sembrar hipodromos de VE: %', sqlerrm;
@@ -287,28 +338,61 @@ begin
     insert into public.hipodromos (nombre, pais)
     select v.nombre, v.pais
     from (values
-        ('Aqueduct', 'USA'),
-        ('Belmont Park', 'USA'),
-        ('Charles Town', 'USA'),
-        ('Churchill Downs', 'USA'),
-        ('Del Mar', 'USA'),
-        ('Fair Grounds', 'USA'),
-        ('Finger Lakes', 'USA'),
-        ('Golden Gate Fields', 'USA'),
-        ('Gulfstream Park', 'USA'),
-        ('Keeneland', 'USA'),
-        ('Laurel Park', 'USA'),
-        ('Los Alamitos', 'USA'),
-        ('Monmouth Park', 'USA'),
-        ('Oaklawn Park', 'USA'),
-        ('Pimlico', 'USA'),
-        ('Santa Anita', 'USA'),
-        ('Saratoga', 'USA'),
-        ('Tampa Bay Downs', 'USA')
+        ('CHURCHILL DOWNS', 'USA'),
+        ('SARATOGA', 'USA'),
+        ('BELMONT PARK', 'USA'),
+        ('AQUEDUCT', 'USA'),
+        ('KEENELAND', 'USA'),
+        ('DEL MAR', 'USA'),
+        ('SANTA ANITA', 'USA'),
+        ('GULFSTREAM PARK', 'USA'),
+        ('TAMPA BAY DOWNS', 'USA'),
+        ('FAIR GROUNDS', 'USA'),
+        ('OAKLAWN PARK', 'USA'),
+        ('PIMLICO', 'USA'),
+        ('MONMOUTH PARK', 'USA'),
+        ('PARX RACING', 'USA'),
+        ('LAUREL PARK', 'USA'),
+        ('WOODBINE', 'USA'),
+        ('HAWTHORNE', 'USA'),
+        ('ARLINGTON PARK', 'USA'),
+        ('LONE STAR PARK', 'USA'),
+        ('REMINGTON PARK', 'USA'),
+        ('ZIA PARK', 'USA'),
+        ('SUNLAND PARK', 'USA'),
+        ('ALBUQUERQUE', 'USA'),
+        ('TURF PARADISE', 'USA'),
+        ('EVANGELINE DOWNS', 'USA'),
+        ('LOUISIANA DOWNS', 'USA'),
+        ('DELTA DOWNS', 'USA'),
+        ('FAIR MEADOWS', 'USA'),
+        ('WILL ROGERS DOWNS', 'USA'),
+        ('INDIANA GRAND', 'USA'),
+        ('HORSESHOE INDIANAPOLIS', 'USA'),
+        ('BELTERRA PARK', 'USA'),
+        ('THISTLEDOWN', 'USA'),
+        ('MAHONING VALLEY', 'USA'),
+        ('MOUNT AIRY', 'USA'),
+        ('PENN NATIONAL', 'USA'),
+        ('PRESQUE ISLE DOWNS', 'USA'),
+        ('CHARLES TOWN', 'USA'),
+        ('HOLLYWOOD CASINO AT PENN', 'USA'),
+        ('MEADOWLANDS', 'USA'),
+        ('FREEHOLD RACEWAY', 'USA'),
+        ('YONKERS RACEWAY', 'USA'),
+        ('POCONO DOWNS', 'USA'),
+        ('HARRINGTON RACEWAY', 'USA'),
+        ('DOVER DOWNS', 'USA'),
+        ('SCIOTO DOWNS', 'USA'),
+        ('NORTHFIELD PARK', 'USA'),
+        ('HIALEAH PARK', 'USA'),
+        ('CALDER RACE COURSE', 'USA'),
+        ('GULFSTREAM PARK WEST', 'USA')
     ) as v(nombre, pais)
     where not exists (
         select 1 from public.hipodromos h
-        where lower(h.nombre) = lower(v.nombre)
+        where upper(regexp_replace(h.nombre, '\s+', '', 'g')) = upper(regexp_replace(v.nombre, '\s+', '', 'g'))
+          and upper(h.pais) = v.pais
     );
 exception when others then
     raise notice 'No se pudo sembrar hipodromos de USA: %', sqlerrm;
@@ -486,5 +570,91 @@ create table if not exists public.resultados_carreras (
     constraint resultados_carreras_unico unique (fecha, hipodromo, carrera)
 );
 
+alter table public.resultados_carreras
+    add column if not exists dividendos    jsonb,   -- { win, place, show, puestos, marcas }: pago por $1
+    add column if not exists orden_llegada jsonb;   -- [{numero, puesto}] orden de llegada oficial
+
 alter table public.resultados_carreras disable row level security;
 grant all privileges on table public.resultados_carreras to anon, authenticated, service_role;
+
+-- ============================================================
+-- (11) VENTA DE TABLAS: GRUPO QUE COBRA Y GRUPO QUE RECIBE COMISIÓN
+--      El ticket congela además del premio/PTS al grupo que factura
+--      (grupo_cobro) y al grupo destinatario de la comisión
+--      (grupo_comision), para que las liquidaciones no dependan de
+--      los valores actuales de la tabla ni del grupo.
+-- ============================================================
+alter table public.tickets_apuestas
+    add column if not exists grupo_cobro_id      uuid,
+    add column if not exists grupo_cobro_nombre  text,
+    add column if not exists grupo_comision_id   uuid,
+    add column if not exists grupo_comision_nombre text,
+    add column if not exists monto_decidido      numeric;
+
+alter table public.tickets_apuestas disable row level security;
+grant all privileges on table public.tickets_apuestas to anon;
+
+-- ============================================================
+-- (12) CONVENIOS POR TIPO DE JUGADA Y GRUPO
+--      Matriz de comisión que usa Grupos (js/grupos.js): cada grupo
+--      define la comisión/base y si permite cruces POR jugada.
+-- ============================================================
+create table if not exists public.convenio_tipo_grupo (
+    id                uuid primary key default gen_random_uuid(),
+    tipo_jugada_id    bigint not null references public.tipos_jugadas(id) on delete cascade,
+    grupo_id          uuid not null references public.grupos_venta(id) on delete cascade,
+    comision          text not null default '5%',
+    comision_base     text not null default 'PREMIO',
+    comision_porcentaje numeric not null default 5,
+    permite_cruces    boolean not null default true,
+    created_at        timestamptz not null default now(),
+    constraint convenio_tipo_grupo_unico unique (tipo_jugada_id, grupo_id)
+);
+
+alter table public.convenio_tipo_grupo disable row level security;
+grant all privileges on table public.convenio_tipo_grupo to anon;
+
+-- ============================================================
+-- (13) TICKETS POR SOLUCIONAR: DISPUTAS DE JUGADAS
+--      El cliente disputa una jugada desde el Portal; la casa
+--      responde cambiando CREADO -> EN_REVISION -> SOLUCIONADO
+--      y (opcional) abonando/reembolsando al saldo del cliente.
+--      Al cerrar, el cliente responde una encuesta de satisfacción
+--      (1-5) con comentario opcional.
+-- ============================================================
+create table if not exists public.tickets_jugadas (
+    id                   uuid primary key default gen_random_uuid(),
+    numero_ticket        serial unique,
+    cliente_id           uuid references public.clientes(id),
+    cliente_nombre       text,
+    jugada_origen        text,
+    jugada_id            text,
+    tipo_jugada          text,
+    fecha_jugada         date,
+    hipodromo            text,
+    carrera              int,
+    monto                numeric,
+    premio_recalculado   numeric,
+    motivo               text,
+    imagen_soporte       text,
+    estado               text not null default 'CREADO'
+        check (estado in ('CREADO', 'EN_REVISION', 'SOLUCIONADO')),
+    respuesta_casa       text,
+    accion_aplicada      text check (accion_aplicada in ('ABONO','REEMBOLSO','RECHAZO','AJUSTE')),
+    monto_resuelto       numeric,
+    respondido_por       text,
+    respondido_at        timestamptz,
+    encuesta_satisfaccion int check (encuesta_satisfaccion between 1 and 5),
+    encuesta_comentario  text,
+    encuesta_at          timestamptz,
+    creado_por           text,
+    creado_at            timestamptz not null default now(),
+    updated_at           timestamptz not null default now()
+);
+
+create index if not exists idx_tickets_jugadas_estado on public.tickets_jugadas (estado);
+create index if not exists idx_tickets_jugadas_cliente on public.tickets_jugadas (cliente_id);
+create index if not exists idx_tickets_jugadas_fecha on public.tickets_jugadas (fecha_jugada desc);
+
+alter table public.tickets_jugadas disable row level security;
+grant all privileges on table public.tickets_jugadas to anon;

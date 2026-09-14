@@ -147,9 +147,10 @@
         <!-- FOOTER DE COMANDOS -->
         <footer class="bg-white border-t border-slate-300 p-3 flex gap-2 justify-center items-center shadow-inner shrink-0 text-xs">
             <button class="bg-amber-400 text-slate-900 font-bold px-4 py-2 rounded hover:bg-amber-500 transition-colors"><i class="fas fa-file-alt mr-1"></i> Preliminar Carrera (Ctrl+Q)</button>
-            <button class="bg-white border border-slate-400 text-slate-700 font-bold px-4 py-2 rounded hover:bg-slate-50 transition-colors"><i class="fas fa-border-all mr-1"></i> Preliminar Resultado (Ctrl+Y)</button>
+            <button id="btnPreliminarResultado" class="bg-white border border-slate-400 text-slate-700 font-bold px-4 py-2 rounded hover:bg-slate-50 transition-colors"><i class="fas fa-border-all mr-1"></i> Carga de Resultados (Ctrl+Y)</button>
             <button id="btnRegistrarCarrera" class="bg-emerald-600 text-white font-bold px-5 py-2 rounded hover:bg-emerald-700 shadow-md transition-colors"><i class="fas fa-flag-checkered mr-1"></i> Registrar y Finalizar (Ctrl+R)</button>
             <a href="saldos.html" class="bg-purple-600 text-white font-bold px-4 py-2 rounded hover:bg-purple-700 transition-colors"><i class="fas fa-wallet mr-1"></i> Saldos (Ctrl+F)</a>
+            <span id="chipResultadoEstado" class="text-[10px] font-bold inline-flex items-center gap-1 bg-slate-100 border border-slate-300 text-slate-600 px-2 py-1.5 rounded-full"><i class="fas fa-spinner fa-spin text-slate-400"></i></span>
         </footer>
 
         <!-- VENTANA FLOTANTE: TRANSACCIONES RÁPIDAS -->
@@ -187,6 +188,31 @@
         <p class="text-slate-400 text-sm mt-2">Auditando inventario y descontando saldos</p>
     </div>
 
+    <!-- MODAL DIVIDENDOS (tras registrar el resultado de la carrera) -->
+    <div id="modalDividendos" class="hidden fixed inset-0 z-[70] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh]">
+            <header class="bg-indigo-600 px-4 py-3 text-white shrink-0 flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <h3 class="text-sm font-black uppercase tracking-wide flex items-center gap-2"><i class="fas fa-chart-line mr-1"></i> Dividendos / Pago por Tipo</h3>
+                    <p class="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mt-0.5 truncate" id="divResumenCarrera"></p>
+                </div>
+                <button type="button" id="cerrarModalDividendos" class="text-indigo-200 hover:text-white text-xl leading-none shrink-0" title="Cerrar"><i class="fas fa-times"></i></button>
+            </header>
+            <div class="p-4 overflow-y-auto flex-1 space-y-3">
+                <p class="text-[10px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 leading-relaxed">
+                    <i class="fas fa-lightbulb text-amber-500 mr-1"></i> El motor de pozo sugiere el <b>pago por cada $1</b> apostado para cada tipo de jugada
+                    (WIN/PLACE/SHOW/PUESTOS/MARCAS). Puede ajustarlos manualmente; los valores se guardan en <b>resultados_carreras</b>.
+                </p>
+                <div id="gridDividendos" class="grid grid-cols-2 gap-3"></div>
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-3" id="divResumenPool"></div>
+            </div>
+            <footer class="px-4 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2 shrink-0">
+                <button type="button" id="btnCerrarSinDividendos" class="bg-slate-300 text-slate-700 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-400 transition-colors">Omitir dividendos</button>
+                <button type="button" id="btnGuardarDividendos" class="bg-amber-500 hover:bg-amber-600 text-slate-900 px-5 py-2 rounded-lg text-xs font-black shadow-md uppercase transition-colors"><i class="fas fa-check mr-1"></i> Guardar Dividendos</button>
+            </footer>
+        </div>
+    </div>
+
 <!-- Scripts y Componentes -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../js/components/db.js"></script>
@@ -195,7 +221,9 @@
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
     <script src="../js/components/calculo_jugadas.js"></script>
+    <script src="../js/components/calculo_dividendos.js?v=20260914-1"></script>
+    <script src="../js/components/modal_resultado.js?v=20260914-1"></script>
     <script src="../js/components/programa_dia.js?v=20260910-17"></script>
-    <script src="../js/taquilla.js?v=20260910-17"></script>
+    <script src="../js/taquilla.js?v=20260914-1"></script>
 </body>
 </html>

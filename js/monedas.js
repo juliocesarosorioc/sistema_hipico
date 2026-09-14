@@ -18,32 +18,88 @@ document.addEventListener('DOMContentLoaded', () => {
     const vistaReporte = document.getElementById('vistaReporte');
     const cuerpoReporte = document.getElementById('cuerpoReporte');
 
-    inputFechaRep.valueAsDate = new Date(); // Por defecto hoy
+    inputFechaRep.valueAsDate = new Date();
     let monedasGlobales = [];
+
+    // ==========================================
+    // MODAL NUEVA MONEDA — WAI-ARIA Dialog Pattern
+    // ==========================================
+    const modalNueva = document.getElementById('modalNuevaMoneda');
+    const btnAbrirModal = document.getElementById('btnAbrirModalNuevaMoneda');
+    const formNuevaMoneda = document.getElementById('formNuevaMoneda');
+    let lastFocused = null;
+
+    function openModal() {
+        lastFocused = document.activeElement;
+        modalNueva.classList.remove('hidden');
+        modalNueva.classList.add('flex');
+        document.body.style.overflow = 'hidden';
+        trapFocus(modalNueva);
+        setTimeout(() => document.getElementById('nuevaNombre')?.focus(), 50);
+    }
+
+    function closeModal() {
+        modalNueva.classList.add('hidden');
+        modalNueva.classList.remove('flex');
+        document.body.style.overflow = '';
+        lastFocused?.focus();
+    }
+
+    function trapFocus(container) {
+        const focusable = container.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        container.addEventListener('keydown', function handler(e) {
+            if (e.key === 'Tab') {
+                if (e.shiftKey && document.activeElement === first) {
+                    e.preventDefault(); last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault(); first.focus();
+                }
+            }
+            if (e.key === 'Escape') { e.preventDefault(); closeModal(); }
+        });
+        container._trapHandler = handler;
+    }
+
+    function untrapFocus(container) {
+        container?.removeEventListener('keydown', container._trapHandler);
+    }
+
+    btnAbrirModal?.addEventListener('click', openModal);
+    modalNueva?.querySelectorAll('.cerrar-modal').forEach(b => b.addEventListener('click', closeModal));
+    modalNueva?.addEventListener('click', (e) => { if (e.target === modalNueva) closeModal(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalNueva.classList.contains('hidden')) closeModal(); });
 
     // ==========================================
     // 1. LÓGICA DE PESTAÑAS
     // ==========================================
-    tabReporte.addEventListener('click', () => {
-        tabReporte.className = 'px-6 py-2 text-sm font-bold rounded shadow bg-white text-indigo-600 border border-slate-200 transition-all';
-        tabHistorico.className = 'px-6 py-2 text-sm font-bold rounded text-slate-500 hover:text-slate-700 transition-all';
-        panelReporte.classList.remove('hidden');
-        panelHistorico.classList.add('hidden');
-    });
-
-    tabHistorico.addEventListener('click', () => {
-        tabHistorico.className = 'px-6 py-2 text-sm font-bold rounded shadow bg-white text-indigo-600 border border-slate-200 transition-all';
-        tabReporte.className = 'px-6 py-2 text-sm font-bold rounded text-slate-500 hover:text-slate-700 transition-all';
-        panelHistorico.classList.remove('hidden');
-        panelReporte.classList.add('hidden');
-    });
+    function switchTab(activeTab) {
+        const isReporte = activeTab === tabReporte;
+        tabReporte.className = isReporte 
+            ? 'px-6 py-2.5 text-sm font-bold rounded-lg shadow-sm bg-white text-indigo-600 border border-slate-200 transition-all'
+            : 'px-6 py-2.5 text-sm font-bold rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-200 transition-all';
+        tabHistorico.className = !isReporte
+            ? 'px-6 py-2.5 text-sm font-bold rounded-lg shadow-sm bg-white text-indigo-600 border border-slate-200 transition-all'
+            : 'px-6 py-2.5 text-sm font-bold rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-200 transition-all';
+        panelReporte.classList.toggle('hidden', !isReporte);
+        panelHistorico.classList.toggle('hidden', isReporte);
+        tabReporte.setAttribute('aria-selected', isReporte);
+        tabHistorico.setAttribute('aria-selected', !isReporte);
+        panelReporte.setAttribute('aria-hidden', !isReporte);
+        panelHistorico.setAttribute('aria-hidden', isReporte);
+    }
+    tabReporte?.addEventListener('click', () => switchTab(tabReporte));
+    tabHistorico?.addEventListener('click', () => switchTab(tabHistorico));
 
     // ==========================================
     // 2. RELOJ EN VIVO
     // ==========================================
     function actualizarRelojTasas() {
         const ahora = new Date();
-        document.getElementById('relojTasas').textContent = ahora.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+        const el = document.getElementById('relojTasas');
+        if (el) el.textContent = ahora.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
     }
     actualizarRelojTasas(); setInterval(actualizarRelojTasas, 1000);
 
@@ -51,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 3. CARGA DE MONEDAS (READ)
     // ==========================================
     async function cargarModulo() {
-        const { data: monedas } = await supabase.from('monedas').select('*').order('es_base', { ascending: false });
+        const { data: monedas } = await window.supabase.from('monedas').select('*').order('es_base', { ascending: false });
         
         if (monedas) {
             monedasGlobales = monedas;
@@ -66,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (moneda.es_base) {
                     contenedorTarjetas.innerHTML += `
-                        <div class="bg-slate-50 border border-slate-200 p-3 rounded-lg flex items-center justify-between shadow-sm">
+                        <div class="bg-slate-50 border border-slate-200 p-3 rounded-lg flex items-center justify-between shadow-sm" role="listitem">
                             <div class="flex items-center gap-3">
                                 <div class="bg-emerald-100 text-emerald-700 rounded-full h-10 w-10 flex items-center justify-center font-bold text-lg">${moneda.simbolo}</div>
                                 <div>
@@ -80,7 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                     `;
                 } else {
-                    const { data: ultimaTasa } = await supabase
+                    const { data: ultimaTasa } = await window.supabase
                         .from('tasas_cambio')
                         .select('tasa')
                         .eq('moneda_id', moneda.id)
@@ -89,7 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const valorTasa = ultimaTasa ? clubUI.formatoNumero(Number(ultimaTasa.tasa), 4) : '0.00';
 
                     contenedorTarjetas.innerHTML += `
-                        <div class="bg-white border border-blue-200 p-3 rounded-lg flex items-center justify-between shadow-sm relative overflow-hidden">
+                        <div class="bg-white border border-blue-200 p-3 rounded-lg flex items-center justify-between shadow-sm relative overflow-hidden" role="listitem">
                             <div class="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
                             <div class="flex items-center gap-3 pl-2">
                                 <div class="bg-blue-100 text-blue-700 rounded-full h-10 w-10 flex items-center justify-center font-bold text-lg">${moneda.simbolo}</div>
@@ -98,7 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </div>
                             </div>
                             <div class="flex flex-col items-end gap-1">
-                                <input type="number" step="0.0001" value="${valorTasa}" data-id="${moneda.id}" class="inp-tasa w-28 font-mono font-bold text-right border border-slate-300 rounded px-2 py-1 focus:border-blue-500 outline-none text-slate-800">
+                                <input type="number" step="0.0001" value="${valorTasa}" data-id="${moneda.id}" class="inp-tasa w-28 font-mono font-bold text-right border border-slate-300 rounded px-2 py-1 focus:border-blue-500 outline-none text-slate-800" aria-label="Tasa actual ${moneda.codigo}">
                                 <button class="btn-actualizar-tasa text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2 py-1 rounded hover:bg-blue-100 font-bold w-28 transition-colors">Actualizar</button>
                             </div>
                         </div>
@@ -119,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function cargarHistoricoTasas() {
         cuerpoHistorico.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-slate-500">Cargando histórico...</td></tr>';
 
-        let query = supabase.from('tasas_cambio').select(`*, monedas(nombre, codigo)`).order('fecha_registro', { ascending: false });
+        let query = window.supabase.from('tasas_cambio').select(`*, monedas(nombre, codigo)`).order('fecha_registro', { ascending: false });
 
         if (filtroMoneda.value !== "") query = query.eq('moneda_id', filtroMoneda.value);
         if (filtroFecha.value !== "") {
@@ -166,7 +222,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
-    // 4.5 TASAS DE REFERENCIA (BCV / BINANCE / EURO)
+    // 5. TASAS DE REFERENCIA (BCV / BINANCE / EURO)
     // ==========================================
     const TIPOS_REF = [
         { tipo: 'BCV',     nombre: 'Dólar BCV',    simbolo: 'USD', color: 'bg-slate-100 text-slate-700 border-slate-300' },
@@ -187,9 +243,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="text-[10px] text-slate-500">Vigente: <strong class="text-slate-700 font-mono">${vigente ? clubUI.formatoNumero(Number(vigente.tasa), 4) : '—'}</strong></span>
                     </div>
                     <div class="flex gap-2">
-                        <input type="date" class="inp-fecha-ref flex-1 border border-slate-300 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500 text-slate-700">
-                        <input type="number" step="0.0001" min="0.0001" data-tipo="${t.tipo}" class="inp-tasa-ref w-28 font-mono font-bold text-right border border-slate-300 rounded-lg px-2 py-1.5 focus:border-blue-500 outline-none text-slate-800">
-                        <button data-tipo="${t.tipo}" class="btn-guardar-tasa-ref text-xs bg-blue-600 text-white px-3 rounded-lg hover:bg-blue-700 font-bold transition-colors"><i class="fas fa-save mr-1"></i> Guardar</button>
+                        <input type="date" class="inp-fecha-ref flex-1 border border-slate-300 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500 text-slate-700" aria-label="Fecha a aplicar para ${t.nombre}">
+                        <input type="number" step="0.0001" min="0.0001" data-tipo="${t.tipo}" class="inp-tasa-ref w-28 font-mono font-bold text-right border border-slate-300 rounded-lg px-2 py-1.5 focus:border-blue-500 outline-none text-slate-800" aria-label="Tasa ${t.tipo} en Bolívares" placeholder="Tasa">
+                        <button data-tipo="${t.tipo}" class="btn-guardar-tasa-ref text-xs bg-blue-600 text-white px-3 rounded-lg hover:bg-blue-700 font-bold transition-colors" aria-label="Guardar tasa ${t.tipo}"><i class="fas fa-save mr-1"></i> Guardar</button>
                     </div>
                 </div>
             `;
@@ -216,11 +272,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
                 this.disabled = true;
 
-                const { error } = await supabase.from('tasas_referencia').insert([{ tipo, tasa, fecha_aplicar: fecha }]);
+                const { error } = await window.supabase.from('tasas_referencia').insert([{ tipo, tasa, fecha_aplicar: fecha }]);
 
                 if (error) {
-                    clubUI.toast("Error al guardar la tasa. Verifique que ejecutó sql/tasas_referencia.sql.");
-                    console.error(error);
+                    clubUI.toast("Error al guardar la tasa: " + (error.message || error.code));
+                    console.error('[monedas] tasas_referencia error:', error);
                     this.innerHTML = txt;
                 } else {
                     this.innerHTML = '<i class="fas fa-check"></i> ' + tipo;
@@ -236,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
-    // 4.6 HISTÓRICO DE TASAS DE REFERENCIA
+    // 6. HISTÓRICO DE TASAS DE REFERENCIA
     // ==========================================
     async function cargarHistoricoTasasRef() {
         const cuerpo = document.getElementById('cuerpoTablaTasasRef');
@@ -245,7 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         cuerpo.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-slate-500">Cargando...</td></tr>';
 
-        let query = supabase.from('tasas_referencia').select('*').order('fecha_aplicar', { ascending: false });
+        let query = window.supabase.from('tasas_referencia').select('*').order('fecha_aplicar', { ascending: false });
 
         if (filtroTipo.value !== "") query = query.eq('tipo', filtroTipo.value);
         if (filtroFecha.value !== "") query = query.eq('fecha_aplicar', filtroFecha.value);
@@ -273,7 +329,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
-    // 5. ACTUALIZAR TASAS (INSERT INMUTABLE)
+    // 7. ACTUALIZAR TASAS (INSERT INMUTABLE)
     // ==========================================
     function asignarEventosActualizacion() {
         document.querySelectorAll('.btn-actualizar-tasa').forEach(boton => {
@@ -289,7 +345,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
                     this.disabled = true;
 
-                    const { error } = await supabase.from('tasas_cambio').insert([{ moneda_id: monedaId, tasa: nuevaTasa }]);
+                    const { error } = await window.supabase.from('tasas_cambio').insert([{ moneda_id: monedaId, tasa: nuevaTasa }]);
 
                     if (error) {
                         clubUI.toast("Error al actualizar la tasa.");
@@ -314,9 +370,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
-    // 6. MOTOR DE REPORTE CONVERSIVO
+    // 8. MOTOR DE REPORTE CONVERSIVO
     // ==========================================
-    document.getElementById('btnGenerarReporte').addEventListener('click', async () => {
+    document.getElementById('btnGenerarReporte')?.addEventListener('click', async () => {
         const fecha = inputFechaRep.value;
         const monedaId = selectMonedaRep.value;
 
@@ -333,7 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if(!monedaObj.es_base) {
                 const endOfDay = `${fecha}T23:59:59`;
-                const { data: tasaHist } = await supabase.from('tasas_cambio')
+                const { data: tasaHist } = await window.supabase.from('tasas_cambio')
                     .select('tasa').eq('moneda_id', monedaId).lte('fecha_registro', endOfDay).order('fecha_registro', {ascending: false}).limit(1).single();
                 
                 if(tasaHist) tasaReporte = parseFloat(tasaHist.tasa);
@@ -343,7 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const startDate = `${fecha}T00:00:00`;
             const endDate = `${fecha}T23:59:59`;
             
-            const { data: tickets, error } = await supabase.from('tickets_apuestas')
+            const { data: tickets, error } = await window.supabase.from('tickets_apuestas')
                 .select('*').gte('created_at', startDate).lte('created_at', endDate);
 
             if (error) throw error;
@@ -366,7 +422,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // C. Convertir cada ticket a Dólares (Base), y luego multiplicarlo por la Tasa del Reporte
                 tickets.forEach(tk => {
-                    // tk.moneda dice en qué se vendió ('USD' o 'VES') y tk.tasa_cambio la tasa que tenía en ese momento exacto
                     let divisorParaLlevarAUSD = tk.moneda === 'VES' ? (parseFloat(tk.tasa_cambio) || 1) : 1;
                     
                     let jugadoUSD = parseFloat(tk.monto_jugado) / divisorParaLlevarAUSD;
@@ -418,13 +473,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ==========================================
-    // 7. CREACIÓN DE MONEDAS
+    // 9. CREACIÓN DE MONEDAS (con modal ARIA)
     // ==========================================
-    const modalNueva = document.getElementById('modalNuevaMoneda');
-    document.getElementById('btnAbrirModalNuevaMoneda')?.addEventListener('click', () => modalNueva.classList.remove('hidden'));
-    document.querySelectorAll('.cerrar-modal').forEach(b => b.addEventListener('click', () => modalNueva.classList.add('hidden')));
-
-    document.getElementById('formNuevaMoneda')?.addEventListener('submit', async function(e) {
+    formNuevaMoneda?.addEventListener('submit', async function(e) {
         e.preventDefault();
         const btn = this.querySelector('button[type="submit"]');
         const txt = btn.innerHTML;
@@ -447,16 +498,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 tasa_cambio: tasa
             };
 
-            const { data: monedaGenerada, error } = await supabase.from('monedas').insert([payload]).select('id').single();
+            const { data: monedaGenerada, error } = await window.supabase.from('monedas').insert([payload]).select('id').single();
             if (error) throw error;
 
-            const { error: errTasa } = await supabase.from('tasas_cambio').insert([{ moneda_id: monedaGenerada.id, tasa: tasa }]);
+            const { error: errTasa } = await window.supabase.from('tasas_cambio').insert([{ moneda_id: monedaGenerada.id, tasa: tasa }]);
             if (errTasa) console.warn('Tasa inicial no quedó registrada en el historial:', errTasa.message);
 
             clubUI.toast(`Moneda ${codigo} (${nombre}) registrada.`, 'success');
             if (window.clubDB?.logAccion) window.clubDB.logAccion('MONEDAS', `moneda_creada: ${codigo} (${nombre}) tasa=${tasa} (id=${monedaGenerada.id})`);
             this.reset();
             modalNueva.classList.add('hidden');
+            modalNueva.classList.remove('flex');
+            document.body.style.overflow = '';
             cargarModulo();
         } catch (err) {
             console.error(err);
@@ -468,14 +521,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Filtros Histórico
-    filtroMoneda.addEventListener('change', cargarHistoricoTasas);
-    filtroFecha.addEventListener('change', cargarHistoricoTasas);
-    document.getElementById('btnLimpiarFiltros').addEventListener('click', () => { filtroMoneda.value=""; filtroFecha.value=""; cargarHistoricoTasas(); });
+    filtroMoneda?.addEventListener('change', cargarHistoricoTasas);
+    filtroFecha?.addEventListener('change', cargarHistoricoTasas);
+    document.getElementById('btnLimpiarFiltros')?.addEventListener('click', () => { filtroMoneda.value=""; filtroFecha.value=""; cargarHistoricoTasas(); });
 
     // Filtros Tasas de Referencia
-    document.getElementById('filtroTipoRef').addEventListener('change', cargarHistoricoTasasRef);
-    document.getElementById('filtroFechaRef').addEventListener('change', cargarHistoricoTasasRef);
-    document.getElementById('btnLimpiarFiltrosRef').addEventListener('click', () => {
+    document.getElementById('filtroTipoRef')?.addEventListener('change', cargarHistoricoTasasRef);
+    document.getElementById('filtroFechaRef')?.addEventListener('change', cargarHistoricoTasasRef);
+    document.getElementById('btnLimpiarFiltrosRef')?.addEventListener('click', () => {
         document.getElementById('filtroTipoRef').value = "";
         document.getElementById('filtroFechaRef').value = "";
         cargarHistoricoTasasRef();
