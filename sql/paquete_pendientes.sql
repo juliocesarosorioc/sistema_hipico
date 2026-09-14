@@ -166,6 +166,9 @@ comment on table public.ejemplares is
 comment on column public.ejemplares.nombre is 'Nombre oficial del ejemplar (unico por nacionalidad)';
 comment on column public.ejemplares.nacionalidad is 'Pais de origen del ejemplar: VE, USA, BR, AR, etc.';
 
+alter table public.ejemplares disable row level security;
+grant all privileges on table public.ejemplares to anon;
+
 alter table public.tablas_fijas
     add column if not exists distancia_carrera numeric,
     add column if not exists superficie      text;
