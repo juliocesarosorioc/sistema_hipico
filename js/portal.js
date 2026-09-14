@@ -199,7 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnEntrar.addEventListener('click', async () => {
         const token = inputToken.value.trim().toUpperCase();
-        const clave = inputClave.value.trim();
+        const clave = inputClave.value.trim().toUpperCase();
         if (!token || !clave) return clubUI.toast("Ingrese su código y contraseña.", 'warning');
 
         const { data, error } = await window.supabase
@@ -211,12 +211,53 @@ document.addEventListener('DOMContentLoaded', () => {
             .maybeSingle();
 
         if (error || !data) {
-            return clubUI.toast("Código, contraseña o acceso inválido. Solicite su enlace al administrador.", 'error');
+            return clubUI.toast(await diagnosticarErrorPortal(token, clave, error), 'error');
         }
         sesion = { id: data.id, nombre: data.nombre, seudonimo: data.seudonimo, grupo_id: data.grupo_id };
         guardarSesion(sesion);
         entrarAlPortal();
     });
+
+    // Ubica la causa real del acceso fallido (columna faltante, no habilitado,
+    // código o contraseña incorrectos) para que el mensaje sea accionable.
+    async function diagnosticarErrorPortal(token, clave, err) {
+        const esFaltaSQL = (e) => {
+            const m = String((e && (e.message || e.code)) || '').toLowerCase();
+            return /does not exist|column|42703|permission|row-level security/.test(m);
+        };
+        if (err) {
+            if (esFaltaSQL(err)) {
+                return 'El portal no está configurado en la base de datos: ejécute sql/portal_cuadre.sql (columnas portal_token, portal_clave, portal_habilitado). DETALLE: ' + (err.message || err.code);
+            }
+            return 'Error de red al validar el acceso: ' + (err.message || err.code);
+        }
+        const r = await window.supabase
+            .from('clientes')
+            .select('id, portal_habilitado')
+            .eq('portal_token', token);
+        if (r.error) {
+            if (esFaltaSQL(r.error)) {
+                return 'El portal no está configurado en la base de datos: ejécute sql/portal_cuadre.sql (columnas portal_token, portal_clave, portal_habilitado). DETALLE: ' + (r.error.message || r.error.code);
+            }
+            return 'Error al verificar el código: ' + (r.error.message || r.error.code);
+        }
+        if (!r.data || r.data.length === 0) {
+            return 'Código no reconocido. Verifique el enlace recibido o solicítelo de nuevo al administrador.';
+        }
+        if (!r.data.some(c => c.portal_habilitado === true)) {
+            return 'Tu acceso aún no está habilitado. El administrador debe activarlo en Clientes (botón de enlace).';
+        }
+        const c = await window.supabase
+            .from('clientes')
+            .select('id')
+            .eq('portal_token', token)
+            .eq('portal_clave', clave);
+        if (c.error) return 'Error al verificar la contraseña: ' + (c.error.message || c.error.code);
+        if (!c.data || c.data.length === 0) {
+            return 'Contraseña incorrecta. Solicite al administrador que regenere la clave.';
+        }
+        return 'Código, contraseña o acceso inválido. Solicite su enlace al administrador.';
+    }
 
     btnCerrar.addEventListener('click', cerrarSesion);
 

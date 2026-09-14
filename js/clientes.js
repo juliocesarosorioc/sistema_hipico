@@ -548,11 +548,19 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnGuardarPortal')?.addEventListener('click', async () => {
         const id = document.getElementById('portalClienteId').value;
         const habilitado = document.getElementById('portalHabilitado').checked;
-        const { error } = await window.supabase.from('clientes').update(soloColumnasExistentes({
+        const portPoster = {
             portal_habilitado: habilitado,
             portal_token: document.getElementById('portalToken').value,
             portal_clave: document.getElementById('portalClave').value
-        })).eq('id', id);
+        };
+        const payload = soloColumnasExistentes(portPoster);
+        const faltan = Object.keys(portPoster).filter(k => !(k in payload));
+        if (habilitado && faltan.length) {
+            return clubUI.aviso('SQL pendiente para el portal',
+                `La base de datos no tiene las columnas del portal (${faltan.join(', ')}), así que el acceso NO se guardó.\n\nEjecute en Supabase → SQL Editor:\n\nsql/portal_cuadre.sql\n\nDespués vuelva a guardar el portal de este cliente.`,
+                'error');
+        }
+        const { error } = await window.supabase.from('clientes').update(payload).eq('id', id);
         if (error) return clubUI.toast('Error al guardar el portal: ' + error.message, 'error');
         const c = clientesGlobales.find(x => x.id == id);
         if (window.clubDB?.logAccion) window.clubDB.logAccion('CLIENTES', `portal_${habilitado ? 'habilitado' : 'deshabilitado'}: ${c?.nombre} (id=${id})`);
