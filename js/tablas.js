@@ -152,12 +152,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const vacio = (c && c.nombre) ? '' : 'opacity-70';
         const numColor = colorDeNumero(c?.numero);
         return `
-            <div class="fila-caballo-card flex gap-px items-center bg-slate-50 border border-slate-200 rounded px-0.5 py-0.5 ${vacio}">
+            <div class="fila-caballo-card flex gap-0.5 items-center bg-slate-50 border border-slate-200 rounded px-1 py-0.5 ${vacio}">
                 <input type="text" inputmode="numeric" class="in-cab-num w-4 h-5 shrink-0 border rounded px-0 py-px text-center text-[8px] font-black outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar" style="background-color:${numColor};color:${textoDeNumero(c?.numero)};border-color:${numColor}">
-                <input type="text" class="in-cab-nom flex-1 min-w-[3.5rem] border border-slate-200 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
+                <input type="text" class="in-cab-nom flex-1 min-w-0 max-w-[6.5rem] border border-slate-200 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
                 ${htmlSelectNac(c?.nacionalidad)}
-                <input type="text" inputmode="decimal" class="in-cab-valor w-8 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[9px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="$" title="Valor / monta del ejemplar">
-                <button type="button" tabindex="-1" class="btn-del-cab-card shrink-0 text-red-400 hover:text-red-600 px-0.5 leading-none -ml-0.5" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
+                <input type="text" inputmode="decimal" class="in-cab-valor w-12 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[12px] font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="$" title="Valor / monta del ejemplar">
+                <button type="button" tabindex="-1" class="btn-del-cab-card shrink-0 text-red-400 hover:text-red-600 px-0.5 leading-none" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
             </div>`;
     }
 
@@ -193,11 +193,11 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="add-caballo-card border-t border-slate-200 px-1.5 py-1 space-y-0.5 bg-slate-50">
                 <div class="flex gap-1 items-center">
                     <input type="text" inputmode="numeric" class="nuevo-num w-4 h-5 shrink-0 border border-slate-300 rounded px-0 py-px text-[8px] font-black text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Nº" style="background-color:#fff;color:#94a3b8;border-color:#cbd5e1">
-                    <input type="text" class="nuevo-nom flex-1 min-w-[3.5rem] border border-slate-300 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Ejemplar nuevo">
+                    <input type="text" class="nuevo-nom flex-1 min-w-0 max-w-[6.5rem] border border-slate-300 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Ejemplar nuevo">
                     <select class="nuevo-nac w-auto shrink-0 border border-slate-300 rounded px-0.5 py-px text-[8px] font-bold uppercase outline-none bg-white">
                         ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}">${n}</option>`).join('')}
                     </select>
-                    <input type="text" inputmode="decimal" class="nuevo-valor w-10 shrink-0 border border-slate-300 rounded px-0.5 py-px text-right text-[9px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="$">
+                    <input type="text" inputmode="decimal" class="nuevo-valor w-12 shrink-0 border border-slate-300 rounded px-0.5 py-px text-right text-[12px] font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="$">
                     <button type="button" tabindex="-1" class="btn-add-caballo-card bg-indigo-600 hover:bg-indigo-700 text-white rounded px-1.5 py-px text-[10px]" title="Añadir ejemplar"><i class="fas fa-plus"></i></button>
                 </div>
             </div>
