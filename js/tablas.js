@@ -154,9 +154,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return `
             <div class="fila-caballo-card flex gap-px items-center bg-slate-50 border border-slate-200 rounded px-0.5 py-0.5 ${vacio}">
                 <input type="text" inputmode="numeric" class="in-cab-num w-4 h-5 shrink-0 border rounded px-0 py-px text-center text-[8px] font-black outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar" style="background-color:${numColor};color:${textoDeNumero(c?.numero)};border-color:${numColor}">
-                <input type="text" class="in-cab-nom flex-1 min-w-[4.5rem] border border-slate-200 rounded px-1 py-px text-[11px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
+                <input type="text" class="in-cab-nom flex-1 min-w-[3.5rem] border border-slate-200 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
                 ${htmlSelectNac(c?.nacionalidad)}
-                <input type="text" inputmode="decimal" class="in-cab-valor w-9 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="Valor" title="Valor / monta del ejemplar">
+                <input type="text" inputmode="decimal" class="in-cab-valor w-8 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[9px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="$" title="Valor / monta del ejemplar">
                 <button type="button" tabindex="-1" class="btn-del-cab-card shrink-0 text-red-400 hover:text-red-600 px-0.5 leading-none -ml-0.5" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
             </div>`;
     }
@@ -168,18 +168,21 @@ document.addEventListener('DOMContentLoaded', () => {
         card.dataset.uid = uid;
         card.innerHTML = `
             <div class="bg-indigo-600 px-2 py-1" style="color:#fff">
-                <div class="flex items-center justify-between gap-2">
-                    <span class="font-black text-[10px] whitespace-nowrap"><i class="fas fa-flag-checkered mr-1"></i> Carrera
-                        <input type="number" class="in-carrera-card w-11 rounded px-1 py-px text-center font-black outline-none" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.carrera ?? ''}" placeholder="N°">
+                <div class="flex items-center justify-between gap-1">
+                    <input type="text" class="in-hipo-card rounded px-1.5 py-px text-[9px] font-bold uppercase outline-none flex-1 min-w-0" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.hipodromo ?? ''}" placeholder="Hipódromo">
+                    <span class="font-black text-[10px] whitespace-nowrap"><i class="fas fa-flag-checkered mr-0.5"></i>C
+                        <input type="number" class="in-carrera-card w-7 rounded px-1 py-px text-center font-black outline-none" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.carrera ?? ''}" placeholder="N°">
                     </span>
-                    <input type="text" class="in-hipo-card rounded px-1.5 py-px text-[9px] font-bold uppercase outline-none w-28 text-right" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.hipodromo ?? ''}" placeholder="Hipódromo">
                 </div>
-                <div class="flex flex-wrap gap-1 mt-0.5 text-[8px] font-bold">
-                    <span class="rounded px-1.5 py-px" style="background:rgba(255,255,255,.18)">Dist: <input type="number" class="in-dist-card w-12 outline-none text-center font-black" style="background:transparent;color:#fff" value="${opts?.distancia ?? ''}" placeholder="m"></span>
+                <div class="flex flex-wrap gap-1 mt-0.5 text-[8px] font-bold items-center">
+                    <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)">Dist: <input type="number" class="in-dist-card w-11 outline-none text-center font-black" style="background:transparent;color:#fff" value="${opts?.distancia ?? ''}" placeholder="m"></span>
                     <select class="in-sup-card rounded px-0.5 py-px outline-none uppercase text-[8px] font-bold" style="background:rgba(255,255,255,.18)">
                         ${SUPERFICIES.map(s => `<option value="${s}" ${(opts?.superficie || '').toUpperCase() === s ? 'selected' : ''}>${s}</option>`).join('')}
                     </select>
-                    <span class="rounded px-1.5 py-px" style="background:rgba(255,255,255,.18)">Premio $ <input type="number" step="0.01" class="in-premio-card w-16 outline-none text-right font-black" style="background:transparent;color:#fff" value="${opts?.premio ?? premioTabla.value ?? 100}"></span>
+                </div>
+                <div class="mt-1 flex items-center justify-between rounded px-2 py-1" style="background:rgba(255,255,255,.20)">
+                    <span class="text-[9px] font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-0.5"></i> Monto a Pagar / Tabla</span>
+                    <span class="flex items-center gap-0.5 font-black text-sm" style="color:#fff">$<input type="number" step="0.01" class="in-premio-card w-14 bg-transparent outline-none text-right font-black" style="color:#fff;border-bottom:2px solid rgba(255,255,255,.5)" value="${opts?.premio ?? premioTabla.value ?? 100}"></span>
                 </div>
             </div>
             <div class="px-2 pt-1 pb-0.5 text-[8px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
@@ -190,11 +193,11 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="add-caballo-card border-t border-slate-200 px-1.5 py-1 space-y-0.5 bg-slate-50">
                 <div class="flex gap-1 items-center">
                     <input type="text" inputmode="numeric" class="nuevo-num w-4 h-5 shrink-0 border border-slate-300 rounded px-0 py-px text-[8px] font-black text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Nº" style="background-color:#fff;color:#94a3b8;border-color:#cbd5e1">
-                    <input type="text" class="nuevo-nom flex-1 min-w-[4.5rem] border border-slate-300 rounded px-1 py-px text-[11px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Ejemplar nuevo">
+                    <input type="text" class="nuevo-nom flex-1 min-w-[3.5rem] border border-slate-300 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Ejemplar nuevo">
                     <select class="nuevo-nac w-auto shrink-0 border border-slate-300 rounded px-0.5 py-px text-[8px] font-bold uppercase outline-none bg-white">
                         ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}">${n}</option>`).join('')}
                     </select>
-                    <input type="text" inputmode="decimal" class="nuevo-valor w-12 shrink-0 border border-slate-300 rounded px-0.5 py-px text-right text-[10px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Valor">
+                    <input type="text" inputmode="decimal" class="nuevo-valor w-10 shrink-0 border border-slate-300 rounded px-0.5 py-px text-right text-[9px] font-bold text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="$">
                     <button type="button" tabindex="-1" class="btn-add-caballo-card bg-indigo-600 hover:bg-indigo-700 text-white rounded px-1.5 py-px text-[10px]" title="Añadir ejemplar"><i class="fas fa-plus"></i></button>
                 </div>
             </div>
@@ -1301,7 +1304,7 @@ const { error } = await window.supabase.from('tablas_fijas').update({
                     carrera: pre.carrera || '',
                     distancia: pre.distancia || '',
                     superficie: pre.superficie || '',
-                    premio: pre.premio || premioTabla.value || 100,
+                    premio: premioTabla.value || 100,
                     caballos
                 });
                 montadas++;

@@ -66,7 +66,7 @@
                         </select>
                     </div>
                     <div class="col-span-2 md:col-span-2 xl:col-span-2">
-                        <label class="block text-[9px] font-bold text-slate-500 mb-0.5 uppercase tracking-wider">Premio a Pagar ($)</label>
+                        <label class="block text-[9px] font-bold text-slate-500 mb-0.5 uppercase tracking-wider">Monto a Pagar ($)</label>
                         <input type="number" id="premioTabla" step="0.01" value="100" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-right text-emerald-600">
                     </div>
                 </div>
@@ -95,7 +95,7 @@
                         </button>
                     </div>
                 </div>
-                <div id="carrerasEnsamblaje" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 p-1">
+                <div id="carrerasEnsamblaje" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2 p-1">
                     <p class="empty-ensamblaje text-slate-400 italic text-sm md:col-span-2 xl:col-span-4 text-center py-4 bg-white rounded-xl border border-dashed border-slate-300">
                         Aún no hay carreras armadas. Cárguelas desde la <b>Gaceta → Tablas (IA)</b>, use los parámetros de arriba o presione <b>“Añadir carrera”</b>.
                     </p>
@@ -337,10 +337,11 @@
                     </div>
 
                     <div>
-                        <p class="text-[10px] font-bold text-cyan-700 uppercase tracking-wider mb-1">Ejemplares — marque ganador, retirados y ajuste valores:</p>
-                        <div id="listaEjemplaresAuditoria" class="space-y-1.5 max-h-52 overflow-y-auto border border-slate-200 p-2 rounded-lg bg-slate-50">
+                        <p class="text-[10px] font-bold text-cyan-700 uppercase tracking-wider mb-1">Ejemplares — puede corregir N°, nombre y valor; marque ganador / retirado:</p>
+                        <div id="listaEjemplaresAuditoria" class="space-y-1.5 max-h-48 overflow-y-auto border border-slate-200 p-2 rounded-lg bg-slate-50">
                             <!-- Se inyectan las filas aquí -->
                         </div>
+                        <button type="button" id="btnAgregarEjemplarAud" class="mt-2 w-full text-[11px] font-bold text-cyan-700 bg-cyan-50 border border-dashed border-cyan-300 rounded-lg py-1.5 hover:bg-cyan-100 transition-colors"><i class="fas fa-plus mr-1"></i> Agregar ejemplar faltante</button>
                     </div>
 
                     <div class="bg-emerald-50 p-3 rounded-lg border border-emerald-200 text-center">
@@ -351,6 +352,7 @@
                 </div>
                 <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 shrink-0">
                     <button type="button" class="cerrar-modal bg-slate-300 text-slate-700 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-400 transition-colors">Cancelar</button>
+                    <button type="button" id="btnActualizarEjemplares" class="bg-indigo-600 text-white px-5 py-2 rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-md uppercase">Actualizar</button>
                     <button type="button" id="btnProcesarAuditoria" class="bg-amber-500 text-slate-900 px-5 py-2 rounded-lg text-xs font-bold hover:bg-amber-600 shadow-md uppercase">Registrar Resultado</button>
                 </div>
             </div>
@@ -366,6 +368,6 @@
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
     <script src="../js/components/programa_dia.js?v=20260910-17"></script>
-    <script src="../js/tablas.js?v=20260913-5"></script>
+    <script src="../js/tablas.js?v=20260914-1"></script>
 </body>
 </html>
