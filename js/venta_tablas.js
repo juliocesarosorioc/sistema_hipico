@@ -38,14 +38,20 @@ document.addEventListener('DOMContentLoaded', () => {
     function simboloDe(moneda) { return moneda === 'VES' ? 'Bs' : '$'; }
 
     async function inicializar() {
-        const segura = (p) => p.catch(e => ({ data: null, error: e }));
-        const [rGrupos, rTablas, rClientes, rMoneda, rMembresias] = await Promise.all([
-            segura(window.supabase.from('grupos_venta').select('*').eq('activo', true).order('es_principal', { ascending: false })),
-            segura(window.supabase.from('tablas_fijas').select('*, tabla_grupos(*)').eq('estado', 'Abierta')),
-            segura(window.supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre, modo_juego, grupo_id').order('nombre')),
-            segura(window.supabase.from('monedas').select('tasa_cambio').limit(1).single()),
-            segura(window.supabase.from('clientes_grupos').select('grupo_id, cliente_id'))
+        const logErr = (ctx, e) => console.error(`[venta_tablas] ${ctx}:`, e?.message || e || 'error desconocido');
+        const safe = (p) => p.catch(e => { console.error('[venta_tablas] query failed:', e); return { data: null, error: e }; });
+
+        const [rGrupos, rTablasRaw, rClientes, rMoneda, rMembresias] = await Promise.all([
+            safe(window.supabase.from('grupos_venta').select('*').eq('activo', true).order('es_principal', { ascending: false })),
+            safe(window.supabase.from('tablas_fijas').select('*, tabla_grupos(*)').eq('estado', 'Abierta')),
+            safe(window.supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre, modo_juego, grupo_id').order('nombre')),
+            safe(window.supabase.from('monedas').select('tasa_cambio').limit(1).single()),
+            safe(window.supabase.from('clientes_grupos').select('grupo_id, cliente_id'))
         ]);
+
+        if (rGrupos.error) logErr('grupos_venta', rGrupos.error);
+        if (rTablasRaw.error) logErr('tablas_fijas', rTablasRaw.error);
+        if (rClientes.error) logErr('clientes', rClientes.error);
 
         if (rMoneda.data && rMoneda.data.tasa_cambio) tasaCambioGlobal = parseFloat(rMoneda.data.tasa_cambio);
 
@@ -54,14 +60,33 @@ document.addEventListener('DOMContentLoaded', () => {
             filtroGrupo.innerHTML = '<option value="">Seleccione Grupo...</option>';
             gruposDB.forEach(g => filtroGrupo.innerHTML += `<option value="${g.id}">${g.nombre} (${g.moneda})</option>`);
             if (gruposDB.length === 0) filtroGrupo.innerHTML = '<option value="" disabled>Sin grupos activos (créelos en Tablas Fijas)</option>';
+        } else if (rGrupos.error) {
+            filtroGrupo.innerHTML = '<option value="" disabled>Error cargando grupos. Ver consola (F12).</option>';
         }
 
-        if (rTablas.data) tablasDisponiblesDB = rTablas.data;
+        tablasDisponiblesDB = rTablasRaw.data || [];
         if (rClientes.data) clientesDB = rClientes.data;
 
-        if (rTablas.error) {
+        // Si el join tabla_grupos(*) falló o devolvió null, traerlos por separado
+        const joinFallo = tablasDisponiblesDB.some(t => !t.tabla_grupos || t.tabla_grupos.length === 0);
+        const todosSinGrupos = tablasDisponiblesDB.length > 0 && joinFallo;
+        if (todosSinGrupos) {
+            console.warn('[venta_tablas] tabla_grupos join vacío o nulo — intentando carga separada...');
+            const { data: tgRows, error: tgErr } = await safe(window.supabase.from('tabla_grupos').select('*'));
+            if (tgErr) logErr('tabla_grupos (fallback)', tgErr);
+            if (tgRows && tgRows.length) {
+                const tgMap = {};
+                tgRows.forEach(r => { (tgMap[r.tabla_id] = tgMap[r.tabla_id] || []).push(r); });
+                tablasDisponiblesDB.forEach(t => { t.tabla_grupos = tgMap[t.id] || []; });
+                console.log(`[venta_tablas] Fallback OK: ${tgRows.length} filas tabla_grupos anexadas.`);
+            } else {
+                console.warn('[venta_tablas] tabla_grupos sin datos. Verifique que publicó cupos por grupo en el Ensamblaje.');
+            }
+        }
+
+        if (rTablasRaw.error) {
             clubUI.aviso('Error cargando tablas publicadas',
-                `No se pudieron obtener las tablas fijas: ${rTablas.error.message || rTablas.error}\n\nVerifique que ejecutó el SQL completo (paquete_pendientes.sql) y que las carreras estén publicadas desde el Ensamblaje.`, 'error');
+                `No se pudieron obtener las tablas fijas: ${rTablasRaw.error.message || rTablasRaw.error}\n\nVerifique que ejecutó el SQL completo (paquete_pendientes.sql) y que las carreras estén publicadas desde el Ensamblaje.`, 'error');
         } else if (tablasDisponiblesDB.length === 0 && !sessionStorage.getItem('venta_tablas_vacio_aviso')) {
             sessionStorage.setItem('venta_tablas_vacio_aviso', '1');
             clubUI.aviso('Sin tablas disponibles para vender',
@@ -148,10 +173,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Clientes del grupo (principales + pertenencia adicional multi-grupo)
+        // Clientes del grupo (principales + pertenencia adicional multi-grupo + sin grupo asignado)
         const extraIds = (miembrosExtraPorGrupo[groupSeleccionado.id] || []).filter(id => !clientesDB.find(c => c.id == id && c.grupo_id == groupSeleccionado.id));
         const delGrupo = clientesDB
-            .filter(c => c.grupo_id == groupSeleccionado.id || extraIds.includes(c.id))
+            .filter(c => c.grupo_id == groupSeleccionado.id || !c.grupo_id || extraIds.includes(c.id))
             .sort((a, b) => a.nombre.localeCompare(b.nombre));
         selectCliente.innerHTML = '<option value="">Seleccione apostador...</option>';
         delGrupo.forEach(c => selectCliente.innerHTML += `<option value="${c.id}">${c.nombre} (Saldo: $${clubUI.formatoNumero(parseFloat(c.saldo_actual), 2)})</option>`);

@@ -14,6 +14,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderPadron(filtro = '') {
         const f = filtro.trim().toUpperCase();
+        const FLAGS = { VE: '🇻🇪', USA: '🇺🇸', BR: '🇧🇷', AR: '🇦🇷', CL: '🇨🇱', MX: '🇲🇽', PA: '🇵🇦', PE: '🇵🇪', CO: '🇨🇴', EC: '🇪🇨', UY: '🇺🇾' };
+        const PAISES = { VE: 'Venezuela', USA: 'Estados Unidos', BR: 'Brasil', AR: 'Argentina', CL: 'Chile', MX: 'México', PA: 'Panamá', PE: 'Perú', CO: 'Colombia', EC: 'Ecuador', UY: 'Uruguay' };
         const filas = padronCompleto
             .filter(e => !f || e.nombre.includes(f) || e.nacionalidad.includes(f))
             .sort((a, b) => b.totalTablas - a.totalTablas || (a.nombre > b.nombre ? 1 : -1));
@@ -27,17 +29,24 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        cuerpoPadron.innerHTML = filas.map(e => `
+        cuerpoPadron.innerHTML = filas.map(e => {
+            const nac = (e.nacionalidad || 'VE').toUpperCase();
+            const flag = FLAGS[nac] || '🏳️';
+            const pais = PAISES[nac] || nac;
+            return `
             <tr class="hover:bg-slate-50 border-b border-slate-100">
                 <td class="p-2 font-bold">${e.nombre}</td>
                 <td class="p-2 text-center">
-                    <span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-black ${e.nacionalidad === 'VE' ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-slate-100 text-slate-700 border border-slate-200'}">${e.nacionalidad}</span>
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black ${nac === 'VE' ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-slate-50 text-slate-700 border border-slate-200'}" title="${pais}">
+                        <span class="w-5 h-5 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-200 text-sm leading-none">${flag}</span>
+                        <span>${nac}</span>
+                    </span>
                 </td>
                 <td class="p-2 text-center font-bold ${e.totalTablas > 0 ? 'text-emerald-600' : 'text-slate-400'}">${e.totalTablas || 0}</td>
                 <td class="p-2 text-slate-600">${e.ultimaTabla || '-'}</td>
                 <td class="p-2 text-right text-slate-500">${fmtFecha(e.registrado)}</td>
-            </tr>
-        `).join('');
+            </tr>`;
+        }).join('');
     }
 
     async function cargarPadron() {

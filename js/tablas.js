@@ -377,6 +377,49 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return { data: null, error: { message: 'No se pudo completar la inserción (columnas requeridas faltantes en la BD).' } };
     }
+    async function buscarTablaDelDia(hipodromo, carrera) {
+        const hoy = new Date();
+        const inicio = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).toISOString();
+        const fin = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 1).toISOString();
+        const { data } = await window.supabase
+            .from('tablas_fijas')
+            .select('id, estado')
+            .eq('hipodromo', hipodromo)
+            .eq('carrera', carrera)
+            .gte('created_at', inicio)
+            .lt('created_at', fin)
+            .limit(1)
+            .maybeSingle();
+        return data || null;
+    }
+
+    // Upsert de cupos por grupo: actualiza sin perder lo ya vendido en cada grupo.
+    async function guardarCuposGrupos(tablaId, cuposPorGrupo) {
+        const { data: actuales } = await window.supabase
+            .from('tabla_grupos')
+            .select('id, grupo_id, cantidad_vendida')
+            .eq('tabla_id', tablaId);
+        const mapActual = new Map((actuales || []).map(tg => [tg.grupo_id, tg]));
+        const incluidos = new Set(cuposPorGrupo.map(x => x.grupo_id));
+        for (const x of cuposPorGrupo) {
+            const actual = mapActual.get(x.grupo_id);
+            if (actual) {
+                await window.supabase.from('tabla_grupos')
+                    .update({ cupos: x.cupos })
+                    .eq('id', actual.id);
+            } else {
+                await window.supabase.from('tabla_grupos')
+                    .insert([{ tabla_id: tablaId, grupo_id: x.grupo_id, cupos: x.cupos, cantidad_vendida: 0 }]);
+            }
+        }
+        const sobrantes = (actuales || []).filter(tg => !incluidos.has(tg.grupo_id));
+        if (sobrantes.length) {
+            await window.supabase.from('tabla_grupos')
+                .delete()
+                .in('id', sobrantes.map(s => s.id));
+        }
+    }
+
     async function publicarCard(card, silencio) {
         const hipodromo = (card.querySelector('.in-hipo-card').value || '').trim().toUpperCase();
         const carrera = parseInt(card.querySelector('.in-carrera-card').value);
@@ -431,39 +474,65 @@ document.addEventListener('DOMContentLoaded', () => {
             c.ejemplar_id = await resolverEjemplar(c.nombre, c.nacionalidad);
         }
 
-        const { data: nueva, error } = await insertarTablaFija({
+        const existente = await buscarTablaDelDia(hipodromo, carrera);
+
+        const datosTabla = {
             hipodromo, carrera, grupo_venta: 'GRUPOS', moneda: 'USD', tasa_cambio: tasaCambioGlobal,
-            suma_base_tabla: sumaBaseTabla, limite_ventas: limiteTotal, cantidad_vendida: 0,
+            suma_base_tabla: sumaBaseTabla, limite_ventas: limiteTotal,
             premio_original: premio, premio_recalculado: premio,
-            comision_grupo: comisionGrupo, caballos: caballosArr, estado: 'Abierta',
-            distancia_carrera: distancia, superficie, retirados_oficiales: NO_RETIROS
-        });
+            comision_grupo: comisionGrupo, caballos: caballosArr,
+            distancia_carrera: distancia, superficie
+        };
 
-        btn.innerHTML = orig;
-        btn.disabled = false;
+        let tablaId;
+        let esActualizacion = !!existente;
 
-        if (error) {
-            console.error("Error BD:", error.message || error);
-            return fallo(`Error al guardar la carrera: ${error.message || 'verifique la conexión'}`);
+        if (existente) {
+            const { error: errUpd } = await window.supabase
+                .from('tablas_fijas')
+                .update(datosTabla)
+                .eq('id', existente.id);
+            if (errUpd) {
+                btn.innerHTML = orig;
+                btn.disabled = false;
+                console.error("Error BD:", errUpd.message || errUpd);
+                return fallo(`Error al actualizar la carrera: ${errUpd.message || 'verifique la conexión'}`);
+            }
+            tablaId = existente.id;
+        } else {
+            const { data: nueva, error } = await insertarTablaFija({ ...datosTabla, cantidad_vendida: 0, estado: 'Abierta', retirados_oficiales: NO_RETIROS });
+            btn.innerHTML = orig;
+            btn.disabled = false;
+            if (error) {
+                console.error("Error BD:", error.message || error);
+                return fallo(`Error al guardar la carrera: ${error.message || 'verifique la conexión'}`);
+            }
+            tablaId = nueva.id;
         }
 
-        const filasGrupos = cuposPorGrupo.map(x => ({ tabla_id: nueva.id, grupo_id: x.grupo_id, cupos: x.cupos, cantidad_vendida: 0 }));
-        const { error: errG } = await window.supabase.from('tabla_grupos').insert(filasGrupos);
-        if (errG) console.error("Error cupos:", errG.message);
+        await guardarCuposGrupos(tablaId, cuposPorGrupo);
 
         carrerasBol = carrerasBol.filter(u => u !== card.dataset.uid);
         card.remove();
         eliminarDelRegistroGaceta(hipodromo, carrera);
         contarCarreras();
         cargarTablas(); cargarEjemplares();
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `publicada: ${hipodromo} C${carrera} ${distancia}m ${superficie} premio=$${premio} cupos=${limiteTotal} ejemplares=${caballosArr.length} (id=${nueva.id})`);
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `${esActualizacion ? 'actualizada' : 'publicada'}: ${hipodromo} C${carrera} ${distancia}m ${superficie} premio=$${premio} cupos=${limiteTotal} ejemplares=${caballosArr.length} (id=${tablaId})`);
         // Publicó una carrera del día: la deja disponible para los demás módulos
         window.clubPrograma?.agregarCarrera({
             hipodromo, carrera, distancia, superficie, premio,
             caballos: caballosArr.map(c => ({ numero: c.numero, nombre: c.nombre, nacionalidad: c.nacionalidad, valor: c.valor_ejemplar }))
         })?.catch?.(() => {});
-        if (silencio) return { ok: true, msg: `C${carrera} ${hipodromo}: ${caballosArr.length} ej. (id=${nueva.id})` };
-        clubUI.toast(`Carrera C${carrera} (${hipodromo}) publicada con ${caballosArr.length} ejemplares (valor total calculado: privado).`, 'success');
+        if (silencio) {
+            return esActualizacion
+                ? { ok: true, msg: `C${carrera} ${hipodromo}: valores actualizados.` }
+                : { ok: true, msg: `C${carrera} ${hipodromo}: ${caballosArr.length} ej. (id=${tablaId})` };
+        }
+        if (esActualizacion) {
+            clubUI.toast(`C${carrera} (${hipodromo}) YA existía: se actualizaron sus valores. Los nuevos montos aplican desde ahora; los tickets vendidos conservan su valor.`, 'info');
+        } else {
+            clubUI.toast(`Carrera C${carrera} (${hipodromo}) publicada con ${caballosArr.length} ejemplares (valor total calculado: privado).`, 'success');
+        }
     }
 
     // ==========================================
@@ -1043,7 +1112,10 @@ const { error } = await window.supabase.from('tablas_fijas').update({
                 grupos: [...new Set([...((cg || []).filter(x => x.cliente_id == c.id).map(x => x.grupo_id)), c.grupo_id].filter(Boolean))]
             }));
             if (ventaModalAbierta) poblarClientesVenta();
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error('[tablas] cargarClientesVenta error:', e);
+            if (sel) sel.innerHTML = '<option value="" disabled>Error cargando jugadores. Ver consola (F12).</option>';
+        }
     }
 
     function poblarClientesVenta() {
@@ -1071,10 +1143,22 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         const t = datosTablaCompleta.find(x => x.id == id);
         if (!t) return clubUI.toast('Tabla no encontrada. Recargue el monitor.', 'error');
 
+        // Asegurar que los grupos estén cargados antes de poblar el select
+        if (gruposActivos.length === 0) {
+            await cargarGrupos();
+        }
+
+        // Si tabla_grupos vino vacío del join, traerlo por separado
+        if (!t.tabla_grupos || t.tabla_grupos.length === 0) {
+            const { data: tgRows } = await window.supabase.from('tabla_grupos').select('*').eq('tabla_id', t.id);
+            if (tgRows && tgRows.length) t.tabla_grupos = tgRows;
+        }
+
         document.getElementById('selectCarreraVenta').innerHTML = '<option value="">Seleccione la carrera...</option>' + datosTablaCompleta.filter(x => x.estado === 'Abierta').map(x => `
             <option value="${x.id}" ${x.id == id ? 'selected' : ''}>${x.hipodromo} C${x.carrera} — ${x.moneda === 'VES' ? 'Bs ' : '$'}${clubUI.formatoNumero(parseFloat(x.premio_recalculado) || 0, 2)}</option>
         `).join('');
-        document.getElementById('selectGrupoVenta').innerHTML = ticksGrupoVenta(t);
+        const tgOpts = ticksGrupoVenta(t);
+        document.getElementById('selectGrupoVenta').innerHTML = tgOpts || '<option value="" disabled>Sin cupos asignados a grupos</option>';
         document.getElementById('selectEjemplarVenta').innerHTML = (t.caballos || []).map((c, i) => `
             <option value="${i}">N° ${c.numero} — ${c.nombre} (${c.valor_ejemplar})</option>
         `).join('') || '<option value="">Sin ejemplares</option>';

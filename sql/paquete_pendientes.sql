@@ -380,3 +380,83 @@ create table if not exists public.programa_dia (
 
 alter table public.programa_dia disable row level security;
 grant all privileges on table public.programa_dia to anon, authenticated, service_role;
+
+-- ============================================================
+-- (9) PLATAFORMA DE TABLAS POR GRUPOS: PERMISOS EXPLÍCITOS
+--     Cuando plataforma_tablas.sql se ejecutó ANTES que la sección
+--     (7), sus tablas pudieron quedar con RLS activado por defecto.
+--     Esto bloquea la lectura anidada tabla_grupos(*) que usan
+--     Venta de Tablas, el Portal y el Monitor (dropdown vacíos).
+--     Aquí se normaliza TODO de forma idempotente.
+-- ============================================================
+
+-- Tablas aseguradas primero (idempotente: no fallan si ya existen o no)
+create table if not exists public.grupos_venta (
+    id            uuid primary key default gen_random_uuid(),
+    nombre        text not null unique,
+    moneda        text not null default 'USD',
+    es_principal  boolean not null default false,
+    cupo_tabla    int  not null default 100,
+    activo        boolean not null default true,
+    created_at    timestamptz not null default now()
+);
+
+create table if not exists public.tabla_grupos (
+    id               uuid primary key default gen_random_uuid(),
+    tabla_id         bigint not null references public.tablas_fijas(id) on delete cascade,
+    grupo_id         uuid not null references public.grupos_venta(id) on delete cascade,
+    cupos            int not null default 100,
+    cantidad_vendida int not null default 0,
+    unique (tabla_id, grupo_id)
+);
+
+create table if not exists public.clientes_grupos (
+    id            uuid primary key default gen_random_uuid(),
+    cliente_id    uuid not null,
+    grupo_id      uuid not null references public.grupos_venta(id) on delete cascade,
+    unique (cliente_id, grupo_id)
+);
+
+create table if not exists public.solicitudes_tablas (
+    id            uuid primary key default gen_random_uuid(),
+    cliente_id    uuid not null,
+    cliente_nombre text not null,
+    tabla_id      bigint not null,
+    grupo_id      uuid,
+    grupo_nombre  text,
+    hipodromo     text not null,
+    carrera       int not null,
+    ejemplar_numero int not null,
+    ejemplar_nombre text not null,
+    pts_ejemplar  numeric not null default 0,
+    cantidad      int not null default 1,
+    monto_total   numeric not null default 0,
+    moneda        text not null default 'USD',
+    estado        text not null default 'Pendiente',
+    atendida_por  text,
+    atendida_at   timestamptz,
+    recibo        text,
+    created_at    timestamptz not null default now()
+);
+
+-- Normalización de columnas del grupo (idempotente; el app usa estos nombres)
+alter table public.grupos_venta
+    add column if not exists responsable      text,
+    add column if not exists cuenta_bancaria  text,
+    add column if not exists moneda_cuadre    text not null default 'USD',
+    add column if not exists comision_default numeric not null default 2.5;
+
+-- Permisos: RLS apagado + anon con acceso total (lectura anidada tabla_grupos*)
+alter table public.grupos_venta     disable row level security;
+alter table public.tabla_grupos     disable row level security;
+alter table public.clientes_grupos  disable row level security;
+alter table public.solicitudes_tablas disable row level security;
+alter table public.tablas_fijas     disable row level security;
+
+grant all privileges on table public.grupos_venta      to anon;
+grant all privileges on table public.tabla_grupos      to anon;
+grant all privileges on table public.clientes_grupos   to anon;
+grant all privileges on table public.solicitudes_tablas to anon;
+grant all privileges on table public.tablas_fijas      to anon;
+alter table public.solicitudes_tablas disable row level security;
+grant all privileges on table public.solicitudes_tablas to anon;
