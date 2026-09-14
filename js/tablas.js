@@ -504,7 +504,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="flex flex-wrap gap-1 justify-center">
                         <button class="btn-editar bg-slate-200 text-slate-700 px-2 py-1 rounded hover:bg-slate-300" data-id="${t.id}" title="Editar"><i class="fas fa-edit"></i></button>
                         <button class="btn-clonar bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200" data-id="${t.id}" title="Clonar"><i class="fas fa-copy"></i></button>
-                        ${t.estado === 'Abierta' ? `<button class="btn-vender bg-emerald-500 text-white px-2 py-1 rounded hover:bg-emerald-600 font-bold" data-id="${t.id}">Vender</button><button class="btn-auditar bg-amber-400 text-slate-900 px-2 py-1 rounded hover:bg-amber-500 font-bold" data-id="${t.id}">Auditar</button>` : `<button class="btn-auditar bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 font-bold" data-id="${t.id}">Resultado</button>`}
+                        ${t.estado === 'Abierta' ? `<button class="btn-vender bg-emerald-500 text-white px-2 py-1 rounded hover:bg-emerald-600 font-bold" data-id="${t.id}">Vender</button><button class="btn-auditar bg-amber-400 text-slate-900 px-2 py-1 rounded hover:bg-amber-500 font-bold" data-id="${t.id}">Actualizar</button>` : `<button class="btn-auditar bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 font-bold" data-id="${t.id}">Resultado</button>`}
                         <button class="btn-eliminar bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200" data-id="${t.id}" title="Eliminar"><i class="fas fa-trash-alt"></i></button>
                     </div>
                 `;
@@ -557,9 +557,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const tabla = datosTablaCompleta.find(t => t.id == id);
         if (!tabla) return;
         document.getElementById('editId').value = id;
-        document.getElementById('editPremio').value = tabla.premio_recalculado;
-        document.getElementById('editPremioOrig').value = (tabla.premio_original ?? tabla.premio_recalculado ?? '');
-        document.getElementById('editSumaBase').value = (tabla.suma_base_tabla ?? '');
+        document.getElementById('editPremio').value = (tabla.premio_recalculado ?? 100);
+        document.getElementById('editPremioOrig').value = (tabla.premio_original ?? tabla.premio_recalculado ?? 100);
+        document.getElementById('editSumaBase').value = (tabla.suma_base_tabla ?? 160);
         document.getElementById('editComision').value = (tabla.comision_grupo ?? '');
         const contCab = document.getElementById('editCaballos');
         contCab.innerHTML = (tabla.caballos || []).map((c, i) => `
@@ -784,6 +784,7 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         if (rdoGanador) {
             const idxG = parseInt(rdoGanador.dataset.index);
             caballosModalTemp.forEach((c, i) => { c.ganador = (i === idxG); });
+            if (caballosModalTemp[idxG]) caballosModalTemp[idxG].retirado = false;
         }
     }
 
@@ -791,8 +792,8 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         const t = datosTablaCompleta.find(x => x.id == id);
         if (!t) return;
         inpValAud('auditoriaTablaId').value = id;
-        premioOrigTemp = parseFloat(t.premio_original) || 0;
-        sumaBaseTemp = parseFloat(t.suma_base_tabla) || 0;
+        premioOrigTemp = parseFloat(t.premio_original) || 100;
+        sumaBaseTemp = parseFloat(t.suma_base_tabla) || 160;
         caballosModalTemp = [...(t.caballos || [])].map(c => ({ ...c }));
         premioManual = false;
 
@@ -844,6 +845,29 @@ const { error } = await window.supabase.from('tablas_fijas').update({
                 if (badge) badge.remove();
             }
             refrescarPremioAuditoria();
+        }));
+
+        cont.querySelectorAll('.rdo-ganador').forEach(rdo => rdo.addEventListener('change', () => {
+            if (!rdo.checked) return;
+            const idx = parseInt(rdo.dataset.index);
+            const label = rdo.closest('label');
+            const chk = label.querySelector('.chk-retiro');
+            const inpV = label.querySelector('.inp-valor-aud');
+            if (chk && chk.checked) {
+                chk.checked = false;
+                if (caballosModalTemp[idx]) {
+                    caballosModalTemp[idx].retirado = false;
+                    caballosModalTemp[idx].ganador = true;
+                }
+                label.classList.remove('opacity-60');
+                inpV.classList.remove('bg-slate-100', 'text-slate-400');
+                inpV.classList.add('bg-white');
+                const badge = label.querySelector('.flex-1 .text-red-500');
+                if (badge) badge.remove();
+                refrescarPremioAuditoria();
+            } else if (caballosModalTemp[idx]) {
+                caballosModalTemp[idx].ganador = true;
+            }
         }));
 
         inpValAud('modalAuditoria').classList.remove('hidden');
