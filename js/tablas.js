@@ -875,6 +875,24 @@ const { error } = await window.supabase.from('tablas_fijas').update({
     });
     inpValAud('btnRecalcularPremio').addEventListener('click', () => { premioManual = false; refrescarPremioAuditoria(); });
 
+    // Enter / Tab: navegar DE VALOR EN VALOR dentro del modal de auditoría
+    inpValAud('modalAuditoria').addEventListener('keydown', (e) => {
+        if (!['Enter', 'Tab'].includes(e.key)) return;
+        const t = e.target;
+        const esValor = t.tagName === 'INPUT' && (t.classList.contains('inp-valor-aud')
+            || ['inpPremioOriginal', 'inpSumaBase', 'inpComisionGrupo', 'inpPremioRecalculado'].includes(t.id));
+        if (!esValor) return;
+        e.preventDefault();
+        const campos = [
+            ...['inpPremioOriginal', 'inpSumaBase', 'inpComisionGrupo', 'inpPremioRecalculado'].map(id => inpValAud(id)).filter(Boolean),
+            ...[...inpValAud('listaEjemplaresAuditoria').querySelectorAll('.inp-valor-aud')]
+        ].filter(el => !el.disabled);
+        const idx = campos.indexOf(t);
+        const dir = (e.key === 'Tab' && e.shiftKey) ? -1 : 1;
+        const sig = campos[(idx + dir + campos.length) % campos.length];
+        if (sig) { sig.focus(); if (sig.select) sig.select(); }
+    });
+
     inpValAud('btnProcesarAuditoria').addEventListener('click', async () => {
         const id = inpValAud('auditoriaTablaId').value;
         const np = aNum(inpValAud('inpPremioRecalculado').value);
