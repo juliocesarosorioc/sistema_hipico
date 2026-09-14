@@ -201,6 +201,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button type="button" tabindex="-1" class="btn-add-caballo-card bg-indigo-600 hover:bg-indigo-700 text-white rounded px-1.5 py-px text-[10px]" title="Añadir ejemplar"><i class="fas fa-plus"></i></button>
                 </div>
             </div>
+            <div class="px-2 py-1 border-t border-slate-200 bg-white flex items-center justify-between">
+                <span class="inline-flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-slate-400">
+                    <i class="fas fa-calculator text-indigo-400"></i> Suma de la Tabla
+                </span>
+                <span class="suma-tabla-card font-black text-[11px] text-indigo-700" title="Sumatoria de los valores de todos los ejemplares">$ 0</span>
+            </div>
             <div class="px-2 py-1.5 border-t border-slate-200 flex gap-2 bg-white">
                 <button type="button" class="btn-publicar-card flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black py-1.5 rounded-lg shadow transition-colors uppercase tracking-wide">
                     <i class="fas fa-save mr-1"></i> Publicar
@@ -226,6 +232,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const n = card.querySelectorAll('.fila-caballo-card .in-cab-nom').length;
         const cont = card.querySelector('.cont-caballos-card');
         if (cont) cont.textContent = n;
+        actualizarSumaValores(card);
+    }
+
+    function actualizarSumaValores(card) {
+        const total = Array.from(card.querySelectorAll('.fila-caballo-card .in-cab-valor'))
+            .reduce((acc, inp) => acc + (aNum(inp.value) || 0), 0);
+        const el = card.querySelector('.suma-tabla-card');
+        if (el) el.textContent = '$ ' + clubUI.formatoNumero(total, 2);
     }
 
     // Delegación de eventos sobre la grilla de carreras
@@ -310,6 +324,11 @@ document.addEventListener('DOMContentLoaded', () => {
     contenedorCarreras.addEventListener('input', (e) => {
         const t = e.target;
         if (!t || !t.classList) return;
+        if (t.classList.contains('in-cab-valor') || t.classList.contains('nuevo-valor')) {
+            const card = t.closest('.card-carrera');
+            if (card) actualizarSumaValores(card);
+            return;
+        }
         if (t.classList.contains('in-cab-num') || t.classList.contains('nuevo-num')) {
             if (t.value) {
                 const c = colorDeNumero(t.value);
