@@ -78,6 +78,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (rClientes.error) logErr('clientes', rClientes.error);
         if (rMoneda.data?.tasa_cambio) tasaCambioGlobal = parseFloat(rMoneda.data.tasa_cambio);
 
+        if ((!rGrupos.data || rGrupos.data.length === 0)) {
+            // Sin grupos activos: intenta asegurar el PRINCIPAL vía RPC segura
+            // (no depende del RLS) antes de dar por vacío el listado.
+            await window.supabase.rpc('club_garantizar_grupo_principal').catch(() => {});
+            const reG = await safe(window.supabase.from('grupos_venta').select('*').eq('activo', true).order('es_principal', { ascending: false }));
+            if (reG.data) rGrupos = reG;
+        }
+
         if (rGrupos.data) {
             gruposDB = rGrupos.data;
             filtroGrupo.innerHTML = '<option value="">Grupo de Venta...</option>';

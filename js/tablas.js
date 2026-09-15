@@ -93,14 +93,22 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if (!data || data.length === 0) {
-            // Garantiza siempre el grupo PRINCIPAL (Administrador/Sistema) para publicar
-            const { error: errSeed } = await window.supabase
-                .from('grupos_venta')
-                .insert([{ nombre: 'PRINCIPAL', moneda: 'USD', es_principal: true, cupo_tabla: 100, activo: true }]);
-            const re = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
-            data = re.data || [];
-            if (errSeed && (!re.data || !re.data.length)) {
-                clubUI.toast('No hay grupos y no se pudo crear el principal: ' + (errSeed.message || errSeed.code), 'error');
+            // Garantiza siempre el grupo PRINCIPAL (Administrador/Sistema) para publicar.
+            // Primero intenta la RPC segura (security definer: funciona aunque el RLS
+            // de grupos_venta esté activo); si la RPC no existe aún, cae al INSERT.
+            await window.supabase.rpc('club_garantizar_grupo_principal').catch(() => {});
+            const re = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false }).catch(() => null);
+            if (re) {
+                data = re.data || [];
+            } else {
+                const { error: errSeed } = await window.supabase
+                    .from('grupos_venta')
+                    .insert([{ nombre: 'PRINCIPAL', moneda: 'USD', es_principal: true, cupo_tabla: 100, activo: true }]);
+                const re2 = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false }).catch(() => null);
+                data = re2?.data || [];
+                if (errSeed && (!re2?.data || !re2.data.length)) {
+                    clubUI.toast('No hay grupos y no se pudo crear el principal: ' + (errSeed.message || errSeed.code), 'error');
+                }
             }
         }
         todosGrupos = data || [];

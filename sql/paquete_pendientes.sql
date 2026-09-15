@@ -605,6 +605,58 @@ alter table public.solicitudes_tablas disable row level security;
 grant all privileges on table public.solicitudes_tablas to anon;
 
 -- ============================================================
+-- (9.5) RPC SEGURA: GARANTIZAR GRUPO PRINCIPAL
+--      security definer: corre como dueño de la tabla, así el rol
+--      anon puede crear/proteger el grupo PRINCIPAL aunque el RLS de
+--      grupos_venta esté activo (Ensamblaje y Venta dependen de esto).
+-- ============================================================
+create or replace function public.club_garantizar_grupo_principal()
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_id uuid;
+begin
+    -- Ya existe un grupo marcado como principal?
+    select id into v_id
+    from public.grupos_venta
+    where es_principal = true
+    limit 1;
+
+    if v_id is null then
+        -- ¿Ya hay uno llamado PRINCIPAL pero sin el flag? -> promuévelo
+        select id into v_id
+        from public.grupos_venta
+        where upper(trim(nombre)) = 'PRINCIPAL'
+        limit 1;
+
+        if v_id is not null then
+            update public.grupos_venta
+            set es_principal = true, activo = true,
+                moneda_cuadre = coalesce(moneda_cuadre, 'USD'),
+                comision_default = coalesce(comision_default, 2.5)
+            where id = v_id;
+        else
+            -- No existe: créalo
+            insert into public.grupos_venta
+                (nombre, moneda, es_principal, cupo_tabla, activo, responsable, moneda_cuadre, comision_default)
+            values
+                ('PRINCIPAL', 'USD', true, 100, true, 'Sistema', 'USD', 2.5)
+            on conflict (nombre) do nothing
+            returning id into v_id;
+        end if;
+    end if;
+
+    return v_id;
+end;
+$$;
+
+revoke all on function public.club_garantizar_grupo_principal() from anon;
+grant execute on function public.club_garantizar_grupo_principal() to anon;
+
+-- ============================================================
 -- (10) RESULTADO CENTRAL DE CARRERAS (compartido entre módulos)
 --      Una sola fila por (hipódromo, carrera, fecha). La Taquilla
 --      carga aquí el resultado oficial (ganador/empates y
