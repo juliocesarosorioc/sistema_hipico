@@ -559,17 +559,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target.closest('.gac-sel')) actualizarBtnTodo();
     });
 
-    // Con Tab (o Enter) sobre el VALOR de un ejemplar salta directo al valor
-    // del siguiente ejemplar, para no pasar por número/nombre/nacionalidad.
+    // Navegación de teclado tipo planilla sobre el VALOR de los ejemplares:
+    // Tab / Enter / Flecha abajo → valor del siguiente ejemplar;
+    // Shift+Tab / Flecha arriba → valor del ejemplar anterior;
+    // al terminar el último (o primero) continua en la siguie (o anterior) card.
     carrerasGaceta.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter' && e.key !== 'Tab') return;
+        const esNavegacion = e.key === 'Enter' || e.key === 'Tab' || e.key === 'ArrowUp' || e.key === 'ArrowDown';
+        if (!esNavegacion) return;
         const inp = e.target.closest('.gac-valor');
         if (!inp) return;
         e.preventDefault();
+        let dir;
+        if (e.key === 'Enter' || e.key === 'Tab') dir = e.shiftKey ? -1 : 1;
+        else dir = e.key === 'ArrowDown' ? 1 : -1;
         const valores = [...carrerasGaceta.querySelectorAll('.gac-valor')];
         const i = valores.indexOf(inp);
         if (i === -1) return;
-        const siguiente = valores[(i + 1) % valores.length];
+        const siguiente = valores[(i + dir + valores.length) % valores.length];
         siguiente.focus();
         siguiente.select();
     });
