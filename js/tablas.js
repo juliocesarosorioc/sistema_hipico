@@ -55,9 +55,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const htmlSelectNac = (val = 'VE') => {
         const nac = (val || 'VE').trim().toUpperCase();
-        return window.clubUI?.bandera
-            ? `<span class="bandera-nac w-4 shrink-0 inline-flex justify-center items-center" title="${nac}">${window.clubUI.bandera(nac, 16)}</span>`
-            : `<span class="bandera-nac w-4 shrink-0 inline-flex justify-center text-sm leading-none" title="${nac}" data-nac="${nac}">${nac}</span>`;
+        const img = window.clubUI?.bandera ? window.clubUI.bandera(nac, 16) : '';
+        if (img) {
+            return `<span class="bandera-nac w-5 shrink-0 inline-flex justify-center items-center" title="${nac}" data-nac="${nac}">${img}</span>`;
+        }
+        return `<span class="bandera-nac w-5 shrink-0 inline-flex justify-center items-center text-[10px] font-black leading-none text-slate-500" title="${nac}" data-nac="${nac}">${nac}</span>`;
     };
 
     // ==========================================
@@ -127,7 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2" data-grupo="${g.id}">
                 <div class="flex-1">
                     <span class="font-bold text-slate-800 text-sm">${g.nombre}</span>
-                    <span class="ml-2 px-1.5 py-0.5 rounded text-[9px] font-black ${g.moneda === 'VES' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}">${g.moneda}</span>
+                    <span class="ml-2 px-1.5 py-0.5 rounded text-[11px] font-black ${g.moneda === 'VES' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}">${g.moneda}</span>
                 </div>
                 <input type="number" min="0" value="${g.cupo_tabla}" data-grupo="${g.id}"
                     class="in-cupo-grupo w-24 border border-slate-300 rounded-lg px-2 py-1.5 text-sm font-black text-center outline-none focus:ring-2 focus:ring-indigo-500">
@@ -181,12 +183,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const vacio = (c && c.nombre) ? '' : 'opacity-70';
         const numColor = colorDeNumero(c?.numero);
         return `
-            <div class="fila-caballo-card flex gap-0.5 items-center bg-slate-50 border border-slate-200 rounded px-1 py-0.5 ${vacio}">
-                <input type="text" inputmode="numeric" class="in-cab-num w-4 h-5 shrink-0 border rounded px-0 py-px text-center text-[8px] font-black outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar" style="background-color:${numColor};color:${textoDeNumero(c?.numero)};border-color:${numColor}">
-                <input type="text" class="in-cab-nom flex-1 min-w-0 max-w-[6.5rem] border border-slate-200 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
+            <div class="fila-caballo-card flex gap-1 items-center bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 ${vacio}">
+                <input type="text" inputmode="numeric" class="in-cab-num w-6 h-6 shrink-0 border rounded-md px-0 py-px text-center text-xs font-black outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar" style="background-color:${numColor};color:${textoDeNumero(c?.numero)};border-color:${numColor}">
+                <input type="text" class="in-cab-nom flex-1 min-w-0 border border-slate-200 rounded px-1.5 py-0.5 text-sm font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
                 ${htmlSelectNac(c?.nacionalidad)}
-                <input type="text" inputmode="decimal" class="in-cab-valor w-12 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[12px] font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="$" title="Valor / monta del ejemplar">
-                <button type="button" tabindex="-1" class="btn-del-cab-card shrink-0 text-red-400 hover:text-red-600 px-0.5 leading-none" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
+                <input type="text" inputmode="decimal" class="in-cab-valor w-12 shrink-0 border border-slate-200 rounded px-1 py-0.5 text-right text-sm font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="$" title="Valor / monta del ejemplar">
+                <button type="button" tabindex="-1" class="btn-del-cab-card shrink-0 text-red-400 hover:text-red-600 px-1 leading-none" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
             </div>`;
     }
 
@@ -196,51 +198,51 @@ document.addEventListener('DOMContentLoaded', () => {
         card.className = 'card-carrera bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden flex flex-col';
         card.dataset.uid = uid;
         card.innerHTML = `
-            <div class="bg-indigo-600 px-2 py-1" style="color:#fff">
-                <div class="flex items-center justify-between gap-1">
-                    <input type="text" class="in-hipo-card rounded px-1.5 py-px text-[9px] font-bold uppercase outline-none flex-1 min-w-0" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.hipodromo ?? ''}" placeholder="Hipódromo">
-                    <span class="font-black text-[10px] whitespace-nowrap"><i class="fas fa-flag-checkered mr-0.5"></i>C
-                        <input type="number" class="in-carrera-card w-7 rounded px-1 py-px text-center font-black outline-none" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.carrera ?? ''}" placeholder="N°">
+            <div class="bg-indigo-600 px-3 py-1.5" style="color:#fff">
+                <div class="flex items-center justify-between gap-2">
+                    <input type="text" class="in-hipo-card rounded px-2 py-0.5 text-xs font-bold uppercase outline-none flex-1 min-w-0" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.hipodromo ?? ''}" placeholder="Hipódromo">
+                    <span class="font-black text-sm whitespace-nowrap"><i class="fas fa-flag-checkered mr-1"></i>C
+                        <input type="number" class="in-carrera-card w-8 rounded px-1 py-0.5 text-center font-black outline-none" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.carrera ?? ''}" placeholder="N°">
                     </span>
                 </div>
-                <div class="flex flex-wrap gap-1 mt-0.5 text-[8px] font-bold items-center">
-                    <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)">Dist: <input type="number" class="in-dist-card w-11 outline-none text-center font-black" style="background:transparent;color:#fff" value="${opts?.distancia ?? ''}" placeholder="m"></span>
-                    <select class="in-sup-card rounded px-0.5 py-px outline-none uppercase text-[8px] font-bold" style="background:rgba(255,255,255,.18)">
+                <div class="flex flex-wrap gap-1 mt-1 text-[11px] font-bold items-center">
+                    <span class="rounded px-1.5 py-0.5" style="background:rgba(255,255,255,.18)">Dist: <input type="number" class="in-dist-card w-12 outline-none text-center font-black" style="background:transparent;color:#fff" value="${opts?.distancia ?? ''}" placeholder="m"></span>
+                    <select class="in-sup-card rounded px-1 py-0.5 outline-none uppercase text-[11px] font-bold" style="background:rgba(255,255,255,.18)">
                         ${SUPERFICIES.map(s => `<option value="${s}" ${(opts?.superficie || '').toUpperCase() === s ? 'selected' : ''}>${s}</option>`).join('')}
                     </select>
                 </div>
-                <div class="mt-1 flex items-center justify-between rounded px-2 py-1" style="background:rgba(255,255,255,.20)">
-                    <span class="text-[9px] font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-0.5"></i> Monto a Pagar / Tabla</span>
-                    <span class="flex items-center gap-0.5 font-black text-sm" style="color:#fff">$<input type="number" step="0.01" class="in-premio-card w-14 bg-transparent outline-none text-right font-black" style="color:#fff;border-bottom:2px solid rgba(255,255,255,.5)" value="${opts?.premio ?? premioTabla.value ?? 100}"></span>
+                <div class="mt-1.5 flex items-center justify-between rounded-lg px-3 py-1.5" style="background:rgba(255,255,255,.20)">
+                    <span class="text-xs font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-1"></i> Monto a Pagar / Tabla</span>
+                    <span class="flex items-center gap-0.5 font-black text-xl" style="color:#fff">$<input type="number" step="0.01" class="in-premio-card w-16 bg-transparent outline-none text-right font-black" style="color:#fff;border-bottom:2px solid rgba(255,255,255,.5)" value="${opts?.premio ?? premioTabla.value ?? 100}"></span>
                 </div>
             </div>
-            <div class="px-2 pt-1 pb-0.5 text-[8px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                <span><i class="fas fa-horse-head text-amber-500 mr-0.5"></i> Ejemplares</span>
-                <span class="cont-caballos-card bg-slate-100 text-slate-600 px-1.5 rounded-full font-black">0</span>
+            <div class="px-3 pt-2 pb-1 text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                <span><i class="fas fa-horse-head text-amber-500 mr-1"></i> Ejemplares</span>
+                <span class="cont-caballos-card bg-slate-100 text-slate-600 px-2 rounded-full font-black">0</span>
             </div>
-            <div class="lista-caballos-card px-1.5 py-0.5 space-y-0.5 flex-1"></div>
-            <div class="add-caballo-card border-t border-slate-200 px-1.5 py-1 space-y-0.5 bg-slate-50">
+            <div class="lista-caballos-card px-1.5 py-1 space-y-1 flex-1"></div>
+            <div class="add-caballo-card border-t border-slate-200 px-2 py-1.5 space-y-1 bg-slate-50">
                 <div class="flex gap-1 items-center">
-                    <input type="text" inputmode="numeric" class="nuevo-num w-4 h-5 shrink-0 border border-slate-300 rounded px-0 py-px text-[8px] font-black text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Nº" style="background-color:#fff;color:#94a3b8;border-color:#cbd5e1">
-                    <input type="text" class="nuevo-nom flex-1 min-w-0 max-w-[5.5rem] border border-slate-300 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Ejemplar nuevo">
-                    <select class="nuevo-nac w-auto shrink-0 border border-slate-300 rounded px-0.5 py-px text-[8px] font-bold uppercase outline-none bg-white">
+                    <input type="text" inputmode="numeric" class="nuevo-num w-6 h-6 shrink-0 border border-slate-300 rounded-md px-0 py-px text-xs font-black text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Nº" style="background-color:#fff;color:#94a3b8;border-color:#cbd5e1">
+                    <input type="text" class="nuevo-nom flex-1 min-w-0 border border-slate-300 rounded px-1.5 py-1 text-sm font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Ejemplar nuevo">
+                    <select class="nuevo-nac w-auto shrink-0 border border-slate-300 rounded px-1 py-1 text-xs font-bold uppercase outline-none bg-white">
                         ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}">${n}</option>`).join('')}
                     </select>
-                    <input type="text" inputmode="decimal" class="nuevo-valor w-10 shrink-0 border border-slate-300 rounded px-0.5 py-px text-right text-[11px] font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="$">
-                    <button type="button" tabindex="-1" class="btn-add-caballo-card bg-indigo-600 hover:bg-indigo-700 text-white rounded px-1.5 py-px text-[10px]" title="Añadir ejemplar"><i class="fas fa-plus"></i></button>
+                    <input type="text" inputmode="decimal" class="nuevo-valor w-12 shrink-0 border border-slate-300 rounded px-1 py-1 text-right text-base font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="$">
+                    <button type="button" tabindex="-1" class="btn-add-caballo-card bg-indigo-600 hover:bg-indigo-700 text-white rounded-md px-2 py-1 text-xs" title="Añadir ejemplar"><i class="fas fa-plus"></i></button>
                 </div>
             </div>
-            <div class="px-2 py-1 border-t border-slate-200 bg-white flex items-center justify-between">
-                <span class="inline-flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-slate-400">
+            <div class="px-3 py-1.5 border-t border-slate-200 bg-white flex items-center justify-between">
+                <span class="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-slate-400">
                     <i class="fas fa-calculator text-indigo-400"></i> Suma de la Tabla
                 </span>
-                <span class="suma-tabla-card font-black text-[11px] text-indigo-700" title="Sumatoria de los valores de todos los ejemplares">$ 0</span>
+                <span class="suma-tabla-card font-black text-base text-indigo-700" title="Sumatoria de los valores de todos los ejemplares">$ 0</span>
             </div>
-            <div class="px-2 py-1.5 border-t border-slate-200 flex gap-2 bg-white">
-                <button type="button" class="btn-publicar-card flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black py-1.5 rounded-lg shadow transition-colors uppercase tracking-wide">
+            <div class="px-3 py-2 border-t border-slate-200 flex gap-2 bg-white">
+                <button type="button" class="btn-publicar-card flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black py-2 rounded-lg shadow transition-colors uppercase tracking-wide">
                     <i class="fas fa-save mr-1"></i> Publicar
                 </button>
-                <button type="button" class="btn-quitar-card bg-red-50 hover:bg-red-100 text-red-600 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors" title="Quitar esta carrera del ensamblaje">
+                <button type="button" class="btn-quitar-card bg-red-50 hover:bg-red-100 text-red-600 px-3 py-2 rounded-lg text-xs font-bold transition-colors" title="Quitar esta carrera del ensamblaje">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
@@ -619,15 +621,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function badgeRetiros(t) {
         const r = (t.retirados_oficiales || '').trim().toUpperCase();
         if (!r || r === 'NO HUBO RETIROS' || r === 'NINGUNO' || r === '') {
-            return '<span class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 text-[10px] font-black"><i class="fas fa-check-circle"></i> No hubo retiros</span>';
+            return '<span class="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-1 text-[11px] font-black"><i class="fas fa-check-circle"></i> No hubo retiros</span>';
         }
-        return `<span class="inline-flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 rounded-full px-2 py-0.5 text-[10px] font-black"><i class="fas fa-user-slash"></i> Retirados: ${r}</span>`;
+        return `<span class="inline-flex items-center gap-1.5 bg-red-50 text-red-600 border border-red-200 rounded-full px-2.5 py-1 text-[11px] font-black"><i class="fas fa-user-slash"></i> Retirados: ${r}</span>`;
     }
 
     function chipGanador(t) {
         const ganador = (t.caballos || []).find(c => c.ganador);
         if (!ganador) return '';
-        return `<span class="inline-flex items-center gap-1 bg-amber-100 text-amber-700 border border-amber-300 rounded-full px-2 py-0.5 text-[10px] font-black mt-1"><i class="fas fa-trophy"></i> Ganador #${ganador.numero} ${ganador.nombre}</span>`;
+        return `<span class="inline-flex items-center gap-1.5 bg-amber-100 text-amber-700 border border-amber-300 rounded-full px-2.5 py-1 text-[11px] font-black mt-1"><i class="fas fa-trophy"></i> Ganador #${ganador.numero} ${ganador.nombre}</span>`;
     }
 
     const contenedorMon = document.getElementById('cuerpoMonitorGrid');
@@ -652,96 +654,96 @@ document.addEventListener('DOMContentLoaded', () => {
 
             contenedorMon.innerHTML = datosTablaCompleta.map(t => {
                 const badgeEstado = t.estado === 'Abierta'
-                    ? '<span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 text-[9px] font-black uppercase"><i class="fas fa-circle text-[6px]"></i> Abierta</span>'
-                    : '<span class="inline-flex items-center gap-1 bg-blue-100 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5 text-[9px] font-black uppercase"><i class="fas fa-lock text-[8px]"></i> Auditada</span>';
+                    ? '<span class="inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-0.5 text-[11px] font-black uppercase"><i class="fas fa-circle text-[7px]"></i> Abierta</span>'
+                    : '<span class="inline-flex items-center gap-1.5 bg-blue-100 text-blue-700 border border-blue-200 rounded-full px-2.5 py-0.5 text-[11px] font-black uppercase"><i class="fas fa-lock text-[9px]"></i> Auditada</span>';
 
                 const chipsGrupos = (t.tabla_grupos || []).map(tg => {
                     const nombre = tg.grupos_venta ? tg.grupos_venta.nombre : '?';
                     const moneda = tg.grupos_venta ? tg.grupos_venta.moneda : '';
                     const disp = (tg.cupos || 0) - (tg.cantidad_vendida || 0);
                     const color = disp < 10 ? 'text-red-600' : 'text-slate-700';
-                    return `<span class="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 text-[10px]">
+                    return `<span class="inline-flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-xs">
                         <span class="font-black">${nombre}</span>
                         <span class="font-bold ${color}">${tg.cantidad_vendida || 0}/${tg.cupos}</span>
                         <span class="text-slate-400">${moneda}</span>
                     </span>`;
-                }).join(' ') || '<span class="text-slate-400 italic text-[10px]">Sin cupos</span>';
+                }).join(' ') || '<span class="text-slate-400 italic text-xs">Sin cupos</span>';
 
                 const ejemplares = Array.isArray(t.caballos) ? t.caballos : [];
                 const suma = ejemplares.reduce((acc, c) => acc + (parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0), 0);
                 const simb = t.moneda === 'VES' ? 'Bs ' : '$';
 
+                const filasSala = ejemplares.length
+                    ? `<div class="overflow-y-auto space-y-1 pr-0.5" style="height:150px">${ejemplares.map(c => {
+                        const bg = colorDeNumero(c.numero);
+                        const fg = textoDeNumero(c.numero);
+                        const retirado = !!c.retirado;
+                        const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
+                        return `
+                        <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 ${retirado ? 'opacity-40' : ''}">
+                            <span class="w-5 h-5 shrink-0 rounded-md flex items-center justify-center text-[11px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
+                            <span class="flex-1 min-w-0 truncate text-sm font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
+                            ${htmlSelectNac(c.nacionalidad)}
+                            <span class="shrink-0 text-right text-base font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 1)}</span>
+                        </div>`;
+                    }).join('')}</div>`
+                    : '<p class="text-sm text-slate-400 italic px-2 py-2">Sin ejemplares registrados.</p>';
+
                 return `
                 <div class="card-monitor bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden flex flex-col" data-tabla="${t.id}">
-                    <div class="bg-indigo-600 px-2 py-1" style="color:#fff">
-                        <div class="flex items-center justify-between gap-1">
-                            <span class="rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wider truncate" style="background:rgba(255,255,255,.18);color:#fff">${t.hipodromo || ''}</span>
-                            <span class="font-black text-[10px] whitespace-nowrap"><i class="fas fa-flag-checkered mr-0.5"></i>C${t.carrera ?? ''}</span>
+                    <div class="bg-indigo-600 px-3 py-1.5" style="color:#fff">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="rounded px-2 py-0.5 text-xs font-bold uppercase tracking-wider truncate" style="background:rgba(255,255,255,.18);color:#fff">${t.hipodromo || ''}</span>
+                            <span class="font-black text-sm whitespace-nowrap"><i class="fas fa-flag-checkered mr-1"></i>C${t.carrera ?? ''}</span>
                         </div>
-                        <div class="flex flex-wrap gap-1 mt-0.5 text-[8px] font-bold items-center">
-                            <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)">Dist: ${t.distancia_carrera ?? ''} m</span>
-                            <span class="rounded px-1 py-px uppercase" style="background:rgba(255,255,255,.18)">${t.superficie || 'ARENA'}</span>
-                            <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)">${t.fecha || ''}</span>
+                        <div class="flex flex-wrap gap-1 mt-1 text-[11px] font-bold items-center">
+                            <span class="rounded px-1.5 py-0.5" style="background:rgba(255,255,255,.18)">Dist: ${t.distancia_carrera ?? ''} m</span>
+                            <span class="rounded px-1.5 py-0.5 uppercase" style="background:rgba(255,255,255,.18)">${t.superficie || 'ARENA'}</span>
+                            <span class="rounded px-1.5 py-0.5" style="background:rgba(255,255,255,.18)">${t.fecha || ''}</span>
                         </div>
-                        <div class="mt-1 flex items-center justify-between rounded px-2 py-1" style="background:rgba(255,255,255,.20)">
-                            <span class="text-[9px] font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-0.5"></i> Monto a Pagar / Tabla</span>
-                            <span class="font-black text-sm" style="color:#fff">${simb}${clubUI.formatoNumero(parseFloat(t.premio_recalculado), 2)}</span>
+                        <div class="mt-1.5 flex items-center justify-between rounded-lg px-3 py-1.5" style="background:rgba(255,255,255,.20)">
+                            <span class="text-xs font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-1"></i> Monto a Pagar / Tabla</span>
+                            <span class="font-black text-xl" style="color:#fff">${simb}${clubUI.formatoNumero(parseFloat(t.premio_recalculado), 2)}</span>
                         </div>
                     </div>
 
-                    <div class="px-2 pt-1 pb-0.5 text-[8px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                        <span><i class="fas fa-horse-head text-amber-500 mr-0.5"></i> Ejemplares</span>
-                        <span class="bg-slate-100 text-slate-600 px-1.5 rounded-full font-black">${ejemplares.length}</span>
+                    <div class="px-3 pt-2 pb-1 text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                        <span><i class="fas fa-horse-head text-amber-500 mr-1"></i> Ejemplares</span>
+                        <span class="bg-slate-100 text-slate-600 px-2 rounded-full font-black">${ejemplares.length}</span>
                     </div>
 
-                    <div class="px-1.5 py-0.5 space-y-0.5 flex-1">
-                        ${ejemplares.map(c => {
-                            const bg = colorDeNumero(c.numero);
-                            const fg = textoDeNumero(c.numero);
-                            const retirado = !!c.retirado;
-                            const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
-                            return `
-                            <div class="flex gap-0.5 items-center bg-slate-50 border border-slate-200 rounded px-1 py-0.5 ${retirado ? 'opacity-40' : ''}">
-                                <span class="w-4 h-5 shrink-0 rounded px-0 py-px text-center text-[8px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
-                                <span class="flex-1 min-w-0 truncate text-[10px] font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
-                                ${htmlSelectNac(c.nacionalidad)}
-                                <span class="shrink-0 w-11 text-right text-[11px] font-black ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 1)}</span>
-                            </div>`;
-                        }).join('') || '<p class="text-[10px] text-slate-400 italic px-1 py-1">Sin ejemplares registrados.</p>'}
+                    <div class="px-1.5 py-1 border-y border-slate-100 bg-white">
+                        ${filasSala}
                     </div>
 
-                    <div class="px-2 py-1 border-t border-slate-200 bg-white flex items-center justify-between">
-                        <span class="inline-flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-slate-400">
+                    <div class="px-3 py-1.5 bg-white flex items-center justify-between">
+                        <span class="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-slate-400">
                             <i class="fas fa-calculator text-indigo-400"></i> Suma de la Tabla
                         </span>
-                        <span class="font-black text-[11px] text-indigo-700" title="Sumatoria de los valores de todos los ejemplares">${simb}${clubUI.formatoNumero(suma, 1)}</span>
+                        <span class="font-black text-base text-indigo-700" title="Sumatoria de los valores de todos los ejemplares">${simb}${clubUI.formatoNumero(suma, 1)}</span>
                     </div>
 
-                    <div class="px-2 py-1 border-t border-slate-100 bg-white space-y-1">
+                    <div class="px-3 py-1.5 border-t border-slate-100 bg-white space-y-1.5 flex-1">
                         <div class="flex flex-wrap gap-1 items-center">${badgeRetiros(t)}${chipGanador(t)}</div>
-                        <div class="flex items-center justify-between gap-1">
-                            <span class="text-[8px] font-black uppercase tracking-wider text-slate-500 shrink-0"><i class="fas fa-boxes text-indigo-400 mr-1"></i> Disponibles</span>
-                            <span class="flex flex-wrap justify-end gap-0.5">${chipsGrupos}</span>
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-[11px] font-black uppercase tracking-wider text-slate-500 shrink-0"><i class="fas fa-boxes text-indigo-400 mr-1"></i> Disponibles</span>
+                            <span class="flex flex-wrap justify-end gap-1">${chipsGrupos}</span>
                         </div>
                         <div class="flex items-center justify-between pt-1">${badgeEstado}</div>
                     </div>
 
-                    <div class="px-2 py-1.5 border-t border-slate-200 flex gap-2 bg-white">
-                        <button type="button" class="btn-editar-mon bg-slate-200 text-slate-700 flex-1 text-[10px] font-bold py-1.5 rounded-lg hover:bg-slate-300 transition-colors" data-id="${t.id}" title="Editar premio, valores y cupos"><i class="fas fa-edit mr-1"></i> Editar</button>
-                        <button type="button" class="btn-clonar-mon bg-indigo-100 text-indigo-700 flex-1 text-[10px] font-bold py-1.5 rounded-lg hover:bg-indigo-200 transition-colors" data-id="${t.id}" title="Clonar carrera"><i class="fas fa-copy mr-1"></i> Clonar</button>
-                        ${t.estado === 'Abierta' ? `<button type="button" class="btn-vender-mon bg-emerald-600 text-white flex-1 text-[10px] font-black py-1.5 rounded-lg hover:bg-emerald-700 transition-colors uppercase" data-id="${t.id}" title="Vender en la taquilla"><i class="fas fa-cash-register mr-1"></i> Vender</button>` : ''}
-                        <button type="button" class="btn-eliminar-mon bg-red-50 text-red-600 flex-1 text-[10px] font-bold py-1.5 rounded-lg hover:bg-red-100 transition-colors" data-id="${t.id}" title="Eliminar"><i class="fas fa-trash-alt mr-1"></i></button>
+                    <div class="px-3 py-2 border-t border-slate-200 flex gap-2 bg-white">
+                        <button type="button" class="btn-editar-mon bg-slate-200 hover:bg-slate-300 text-slate-700 flex-1 text-xs font-bold py-2 rounded-lg transition-colors" data-id="${t.id}" title="Editar premio, valores y cupos"><i class="fas fa-edit mr-1"></i> Editar</button>
+                        <button type="button" class="btn-clonar-mon bg-indigo-100 hover:bg-indigo-200 text-indigo-700 flex-1 text-xs font-bold py-2 rounded-lg transition-colors" data-id="${t.id}" title="Clonar carrera"><i class="fas fa-copy mr-1"></i> Clonar</button>
+                        ${t.estado === 'Abierta' ? `<button type="button" class="btn-vender-mon bg-emerald-600 hover:bg-emerald-700 text-white flex-1 text-xs font-black py-2 rounded-lg transition-colors uppercase" data-id="${t.id}" title="Vender en la taquilla"><i class="fas fa-cash-register mr-1"></i> Vender</button>` : ''}
+                        <button type="button" class="btn-eliminar-mon bg-red-50 hover:bg-red-100 text-red-600 flex-1 text-xs font-bold py-2 rounded-lg transition-colors" data-id="${t.id}" title="Eliminar"><i class="fas fa-trash-alt mr-1"></i></button>
                     </div>
                 </div>`;
             }).join('');
 
             contenedorMon.querySelectorAll('.btn-editar-mon').forEach(b => b.addEventListener('click', () => abrirModalEditar(b.dataset.id)));
             contenedorMon.querySelectorAll('.btn-clonar-mon').forEach(b => b.addEventListener('click', () => abrirModalClonar(b.dataset.id)));
-            contenedorMon.querySelectorAll('.btn-vender-mon').forEach(b => b.addEventListener('click', () => {
-                const t = datosTablaCompleta.find(x => x.id == b.dataset.id);
-                const hipo = t?.hipodromo ? encodeURIComponent(String(t.hipodromo)) : '';
-                window.location.href = 'venta_tablas.html' + (hipo ? '?hipodromo=' + hipo : '');
-            }));
+            contenedorMon.querySelectorAll('.btn-vender-mon').forEach(b => b.addEventListener('click', () => abrirModalVenta(b.dataset.id)));
             contenedorMon.querySelectorAll('.btn-eliminar-mon').forEach(b => b.addEventListener('click', () => eliminarTabla(b.dataset.id)));
         } catch (e) {
             console.error(e);
@@ -981,6 +983,7 @@ const { error } = await window.supabase.from('tablas_fijas').update({
 
     function poblarClientesVenta() {
         const sel = document.getElementById('selectClienteVenta');
+        if (!sel) return;
         sel.innerHTML = '<option value="">Seleccione el jugador...</option>' + clientesVentaCache.map(c => {
             const etiqueta = (c.grupos || []).map(gid => {
                 const g = gruposActivos.find(x => x.id == gid);
@@ -988,15 +991,191 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             }).filter(Boolean).join(', ');
             return `<option value="${c.id}" data-saldo="${c.saldo_actual ?? 0}">${c.nombre}${etiqueta ? ` — [${etiqueta}]` : ''}</option>`;
         }).join('');
-        actualizarResumenVenta();
+        renderVenta();
     }
 
-    function ticksGrupoVenta(t) {
-        return (t && t.tabla_grupos ? t.tabla_grupos : []).map(tg => {
-            const g = gruposActivos.find(x => x.id == tg.grupo_id);
-            const disp = (tg.cupos || 0) - (tg.cantidad_vendida || 0);
-            return `<option value="${tg.id}" data-groupid="${tg.grupo_id}">${g ? g.nombre : 'Grupo #' + tg.grupo_id} (${disp} disp)</option>`;
+    // Estados de la venta desde el monitor
+    let ventaTablaCtx = null;       // tabla seleccionada
+    let ventaCarrito = [];          // [{ ejemplar, cantidad, tg }]
+
+    function ventaTg() {
+        const sel = document.getElementById('selectGrupoVenta');
+        const gid = sel ? sel.value : '';
+        return (ventaTablaCtx?.tabla_grupos || []).find(tg => String(tg.id) === String(gid)) || null;
+    }
+
+    function ventaDisp(tg) {
+        return tg ? Math.max(0, (tg.cupos || 0) - (tg.cantidad_vendida || 0)) : 0;
+    }
+
+    function ventaSimb() {
+        return ventaTablaCtx?.moneda === 'VES' ? 'Bs ' : '$';
+    }
+
+    // Vista "solo lectura" de la tabla seleccionada (visual similar al monitor)
+    function vistaTablaVenderHTML() {
+        const t = ventaTablaCtx;
+        if (!t) return '';
+        const ejemplares = Array.isArray(t.caballos) ? t.caballos : [];
+        const simb = ventaSimb();
+        return `
+            <div class="bg-indigo-600" style="color:#fff">
+                <div class="px-3 py-2 flex items-center justify-between gap-2">
+                    <span class="rounded px-2 py-0.5 text-xs font-bold uppercase tracking-wider truncate" style="background:rgba(255,255,255,.18);color:#fff">${t.hipodromo || ''}</span>
+                    <span class="font-black text-sm whitespace-nowrap"><i class="fas fa-flag-checkered mr-1"></i>C${t.carrera ?? ''}</span>
+                </div>
+                <div class="px-1.5 flex flex-wrap gap-1 pb-1 text-[11px] font-bold items-center">
+                    <span class="rounded px-1.5 py-0.5" style="background:rgba(255,255,255,.18)">Dist: ${t.distancia_carrera ?? ''} m</span>
+                    <span class="rounded px-1.5 py-0.5 uppercase" style="background:rgba(255,255,255,.18)">${t.superficie || 'ARENA'}</span>
+                    <span class="rounded px-1.5 py-0.5" style="background:rgba(255,255,255,.18)">${t.fecha || ''}</span>
+                </div>
+                <div class="mx-2 mb-2 flex items-center justify-between rounded-lg px-3 py-2" style="background:rgba(255,255,255,.20)">
+                    <span class="text-xs font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-1"></i> Monto a Pagar / Tabla</span>
+                    <span class="font-black text-xl" style="color:#fff">${simb}${clubUI.formatoNumero(parseFloat(t.premio_recalculado), 2)}</span>
+                </div>
+            </div>
+            <div class="px-2.5 py-1.5 text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between border-b border-slate-100">
+                <span><i class="fas fa-horse-head text-amber-500 mr-1"></i> Ejemplares</span>
+                <span class="bg-slate-100 text-slate-600 px-2 rounded-full font-black">${ejemplares.length}</span>
+            </div>
+            <div id="vistaResumenCaballos" class="px-1.5 py-1 space-y-0.5"></div>`;
+    }
+
+    function renderCaballosVista() {
+        const el = document.getElementById('vistaResumenCaballos');
+        if (!el) return;
+        const t = ventaTablaCtx;
+        const ejemplares = Array.isArray(t?.caballos) ? t.caballos : [];
+        el.innerHTML = ejemplares.map(c => {
+            const bg = colorDeNumero(c.numero);
+            const fg = textoDeNumero(c.numero);
+            const retirado = !!c.retirado;
+            const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
+            return `
+            <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 ${retirado ? 'opacity-40' : ''}">
+                <span class="w-5 h-5 shrink-0 rounded-md flex items-center justify-center text-[11px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
+                <span class="flex-1 min-w-0 truncate text-sm font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
+                ${htmlSelectNac(c.nacionalidad)}
+                <span class="shrink-0 text-right text-base font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 1)}</span>
+            </div>`;
         }).join('');
+    }
+
+    // Lista de ejemplares con botón "Enviar al carrito"
+    function renderCaballosVenta() {
+        const el = document.getElementById('listaVentaCaballos');
+        if (!el) return;
+        const t = ventaTablaCtx;
+        const ejemplares = Array.isArray(t?.caballos) ? t.caballos : [];
+        if (!ejemplares.length) {
+            el.innerHTML = '<p class="text-sm text-slate-400 italic px-1 py-2">Sin ejemplares registrados.</p>';
+            return;
+        }
+        el.innerHTML = ejemplares.map(c => {
+            const bg = colorDeNumero(c.numero);
+            const fg = textoDeNumero(c.numero);
+            const retirado = !!c.retirado;
+            const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
+            const enCarrito = ventaCarrito.find(i => String(i.ejemplar.numero) === String(c.numero));
+            const cant = enCarrito ? enCarrito.cantidad : 0;
+            const yaCant = enCarrito ? `<div class="flex items-center gap-1">
+                <button class="btn-carrito-menos bg-slate-200 hover:bg-slate-300 w-7 h-7 rounded font-black" data-num="${c.numero}">−</button>
+                <span class="w-6 text-center font-black text-emerald-700">${cant}</span>
+                <button class="btn-carrito-mas bg-emerald-100 hover:bg-emerald-200 text-emerald-700 w-7 h-7 rounded font-black" data-num="${c.numero}">+</button>
+            </div>` : '';
+            return `
+            <div class="flex items-center gap-1.5 bg-white border rounded-lg px-2 py-1.5 ${retirado ? 'opacity-40' : ''}">
+                <span class="w-5 h-5 shrink-0 rounded-md flex items-center justify-center text-[11px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
+                <span class="flex-1 min-w-0 truncate text-sm font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
+                ${htmlSelectNac(c.nacionalidad)}
+                <span class="shrink-0 text-right text-base font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 1)}</span>
+                ${retirado ? '<span class="shrink-0 text-[10px] font-black uppercase text-red-400 bg-red-50 rounded px-1.5 py-1">No vendible</span>'
+                    : (yaCant || `<button class="btn-venta-agregar bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase px-3 py-1.5 rounded-lg transition-colors shrink-0" data-num="${c.numero}">
+                    <i class="fas fa-cart-plus mr-1"></i> Enviar al carrito
+                </button>`)}
+            </div>`;
+        }).join('');
+    }
+
+    function renderVenta() {
+        renderCaballosVista();
+        renderCaballosVenta();
+        renderCarrito();
+        pushEventosVenta();
+    }
+
+    // Vuelve a asociar eventos luego de cada render
+    function pushEventosVenta() {
+        document.querySelectorAll('.btn-venta-agregar').forEach(b => b.addEventListener('click', () => {
+            const t = ventaTablaCtx;
+            const num = b.dataset.num;
+            const ej = (t?.caballos || []).find(c => String(c.numero) === String(num));
+            const tg = ventaTg();
+            if (!ej || !tg) return clubUI.toast('Seleccione el grupo de venta primero.', 'warning');
+            if (!t || t.estado !== 'Abierta') return clubUI.toast('La tabla no está en estado Abierta.', 'warning');
+            if (ej.retirado) return clubUI.toast('El ejemplar está retirado y no puede venderse.', 'warning');
+            const cant = 1;
+            if (cant > ventaDisp(tg)) return clubUI.toast(`No quedan tablas disponibles en el grupo (quedan ${ventaDisp(tg)}).`, 'warning');
+            const exist = ventaCarrito.find(i => String(i.ejemplar.numero) === String(num));
+            if (exist) exist.cantidad += 1;
+            else ventaCarrito.push({ ejemplar: ej, cantidad: cant, tg });
+            renderVenta();
+        }));
+        document.querySelectorAll('.btn-carrito-mas').forEach(b => b.addEventListener('click', () => {
+            const num = b.dataset.num;
+            const item = ventaCarrito.find(i => String(i.ejemplar.numero) === String(num));
+            if (!item) return;
+            if (item.cantidad + 1 > ventaDisp(item.tg)) return clubUI.toast(`No quedan tablas disponibles (quedan ${ventaDisp(item.tg)}).`, 'warning');
+            item.cantidad += 1;
+            renderVenta();
+        }));
+        document.querySelectorAll('.btn-carrito-menos').forEach(b => b.addEventListener('click', () => {
+            const num = b.dataset.num;
+            const i = ventaCarrito.findIndex(x => String(x.ejemplar.numero) === String(num));
+            if (i === -1) return;
+            ventaCarrito[i].cantidad -= 1;
+            if (ventaCarrito[i].cantidad <= 0) ventaCarrito.splice(i, 1);
+            renderVenta();
+        }));
+        document.querySelectorAll('.btn-carrito-quitar').forEach(b => b.addEventListener('click', () => {
+            ventaCarrito = ventaCarrito.filter((_, i) => i != b.dataset.i);
+            renderVenta();
+        }));
+    }
+
+    function renderCarrito() {
+        const box = document.getElementById('ventaCarritoBox');
+        const items = document.getElementById('ventaCarritoItems');
+        if (!box || !items) return;
+        box.classList.toggle('hidden', ventaCarrito.length === 0);
+        items.innerHTML = ventaCarrito.map((it, i) => {
+            const c = it.ejemplar;
+            const bg = colorDeNumero(c.numero);
+            const fg = textoDeNumero(c.numero);
+            const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
+            const subtotal = valor * it.cantidad;
+            return `
+            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1.5">
+                <span class="w-5 h-5 shrink-0 rounded-md flex items-center justify-center text-[10px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
+                <span class="flex-1 min-w-0 truncate text-xs font-bold uppercase text-slate-700">${c.nombre || 'Sin nombre'}</span>
+                <span class="shrink-0 text-xs font-black text-slate-500">x${it.cantidad}</span>
+                <span class="shrink-0 text-sm font-black text-blue-700">${ventaSimb()}${clubUI.formatoNumero(valor, 1)}</span>
+                <button class="btn-carrito-quitar text-red-400 hover:text-red-600 text-xs px-1" data-i="${i}" title="Quitar"><i class="fas fa-times"></i></button>
+            </div>`;
+        }).join('');
+        const totTablas = ventaCarrito.reduce((a, it) => a + it.cantidad, 0);
+        const totCosto = ventaCarrito.reduce((a, it) => a + (parseFloat(it.ejemplar.valor_ejemplar ?? it.ejemplar.valor ?? it.ejemplar.pts) || 0) * it.cantidad, 0);
+        document.getElementById('ventaCarritoTablas').textContent = totTablas;
+        document.getElementById('ventaCarritoTotal').textContent = `${ventaSimb()}${clubUI.formatoNumero(totCosto, 2)}`;
+        const btnCerrar = document.getElementById('btnProcesarVentaModal');
+        if (btnCerrar) btnCerrar.disabled = ventaCarrito.length === 0;
+    }
+
+    function cerrarModalVentaMon() {
+        document.getElementById('modalVenta').classList.add('hidden');
+        ventaModalAbierta = false;
+        ventaTablaCtx = null;
+        ventaCarrito = [];
     }
 
     async function abrirModalVenta(id) {
@@ -1004,160 +1183,169 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         const t = datosTablaCompleta.find(x => x.id == id);
         if (!t) return clubUI.toast('Tabla no encontrada. Recargue el monitor.', 'error');
 
-        // Asegurar que los grupos estén cargados antes de poblar el select
-        if (gruposActivos.length === 0) {
-            await cargarGrupos();
-        }
+        if (gruposActivos.length === 0) await cargarGrupos();
 
-        // Si tabla_grupos vino vacío del join, traerlo por separado
         if (!t.tabla_grupos || t.tabla_grupos.length === 0) {
             const { data: tgRows } = await window.supabase.from('tabla_grupos').select('*').eq('tabla_id', t.id);
             if (tgRows && tgRows.length) t.tabla_grupos = tgRows;
         }
 
-        document.getElementById('selectCarreraVenta').innerHTML = '<option value="">Seleccione la carrera...</option>' + datosTablaCompleta.filter(x => x.estado === 'Abierta').map(x => `
-            <option value="${x.id}" ${x.id == id ? 'selected' : ''}>${x.hipodromo} C${x.carrera} — ${x.moneda === 'VES' ? 'Bs ' : '$'}${clubUI.formatoNumero(parseFloat(x.premio_recalculado) || 0, 2)}</option>
-        `).join('');
-        const tgOpts = ticksGrupoVenta(t);
-        document.getElementById('selectGrupoVenta').innerHTML = tgOpts || '<option value="" disabled>Sin cupos asignados a grupos</option>';
-        document.getElementById('selectEjemplarVenta').innerHTML = (t.caballos || []).map((c, i) => `
-            <option value="${i}">N° ${c.numero} — ${c.nombre} (${c.valor_ejemplar})</option>
-        `).join('') || '<option value="">Sin ejemplares</option>';
-        document.getElementById('cantidadVenta').value = 1;
+        ventaTablaCtx = t;
+        ventaCarrito = [];
+
+        document.getElementById('vistaTablaVender').innerHTML = vistaTablaVenderHTML();
+        document.getElementById('listaVentaCaballos').innerHTML = '';
+        document.getElementById('ventaCarritoItems').innerHTML = '';
+        document.getElementById('ventaCarritoTablas').textContent = '0';
+        document.getElementById('ventaCarritoTotal').textContent = '$ 0.00';
+        document.getElementById('btnProcesarVentaModal').disabled = true;
+
+        const selGrupo = document.getElementById('selectGrupoVenta');
+        const tgOpts = (t.tabla_grupos || []).map(tg => {
+            const g = gruposActivos.find(x => x.id == tg.grupo_id);
+            const disp = ventaDisp(tg);
+            return `<option value="${tg.id}" data-groupid="${tg.grupo_id}">${g ? g.nombre : 'Grupo #' + tg.grupo_id} (${disp} disp)</option>`;
+        }).join('');
+        selGrupo.innerHTML = tgOpts || '<option value="" disabled>Sin cupos asignados a grupos</option>';
+
+        document.getElementById('selectClienteVenta').innerHTML = '<option value="">Seleccione el jugador...</option>';
         document.getElementById('modalVenta').classList.remove('hidden');
         await cargarClientesVenta();
-        actualizarResumenVenta();
+        renderVenta();
     }
 
-    function actualizarResumenVenta() {
-        const idCar = document.getElementById('selectCarreraVenta').value;
-        const idTg = document.getElementById('selectGrupoVenta').value;
-        const idxEje = document.getElementById('selectEjemplarVenta').value;
+    // Botón "Cerrar venta": procesa todos los items del carrito, muestra recibo y opción WhatsApp
+    async function cerrarVenta() {
+        const items = ventaCarrito;
+        if (!items.length) return clubUI.toast('El carrito está vacío.', 'warning');
         const idCli = document.getElementById('selectClienteVenta').value;
-        const cantidad = Math.max(1, parseInt(document.getElementById('cantidadVenta').value) || 1);
-        const t = datosTablaCompleta.find(x => x.id == idCar);
-        const monedaS = t?.moneda === 'VES' ? 'Bs ' : '$';
-        const tg = (t?.tabla_grupos || []).find(x => String(x.id) === String(idTg));
-        const ej = tg && idxEje !== '' ? (t.caballos || [])[parseInt(idxEje)] : null;
+        if (!idCli) return clubUI.toast('Seleccione el jugador que compra.', 'warning');
+        const t = ventaTablaCtx;
+        if (!t) return clubUI.toast('Tabla no encontrada. Recargue el monitor.', 'error');
 
-        const publDisp = document.getElementById('lblDispGrupoVenta');
-        document.getElementById('lblValorUnitVenta').textContent = '0.00';
-        document.getElementById('lblCostoVenta').textContent = '0.00';
-        document.getElementById('lblPremioUnitVenta').textContent = '0.00';
-        document.getElementById('lblPremioTotalVenta').textContent = '0.00';
-        document.getElementById('lblGananciaVenta').textContent = '0.00';
-        document.getElementById('lblComisionVenta').textContent = '0.00';
-        document.getElementById('lblSaldoClienteVenta').textContent = '$0.00';
-        publiLasTxt(document.getElementById('lblGrupoClienteVenta'), '');
-        if (!t || !tg || !ej) { publDisp.textContent = '0'; return; }
-
-        const disp = (tg.cupos || 0) - (tg.cantidad_vendida || 0);
-        publDisp.textContent = disp;
-        publDisp.className = disp >= cantidad ? 'text-emerald-600' : 'text-red-600';
-
-        const pts = parseFloat(ej.valor_ejemplar) || 0;
-        const premio = parseFloat(t.premio_recalculado) || 0;
-        const costoTotal = pts * cantidad;
-        const premioTotal = premio * cantidad;
-        const ganancia = Math.max(0, premioTotal - costoTotal);
-        const comPorc = parseFloat(t.comision_grupo || 2.5);
-        document.getElementById('lblValorUnitVenta').textContent = monedaS + clubUI.formatoNumero(pts, 2);
-        document.getElementById('lblCostoVenta').textContent = monedaS + clubUI.formatoNumero(costoTotal, 2);
-        document.getElementById('lblPremioUnitVenta').textContent = monedaS + clubUI.formatoNumero(premio, 2);
-        document.getElementById('lblPremioTotalVenta').textContent = monedaS + clubUI.formatoNumero(premioTotal, 2);
-        document.getElementById('lblGananciaVenta').textContent = monedaS + clubUI.formatoNumero(ganancia, 2);
-        document.getElementById('lblComisionPorcVenta').textContent = clubUI.formatoNumero(comPorc, 1);
-        document.getElementById('lblComisionVenta').textContent = monedaS + clubUI.formatoNumero(ganancia * comPorc / 100, 2);
-
-        if (idCli) {
-            const cli = clientesVentaCache.find(c => String(c.id) === String(idCli));
-            if (cli) {
-                document.getElementById('lblSaldoClienteVenta').textContent = '$' + clubUI.formatoNumero(parseFloat(cli.saldo_actual) || 0, 2);
-                const grpCliV = (cli.grupos || [])
-                    .map(gid => gruposActivos.find(g => g.id == gid))
-                    .filter(Boolean);
-                const grpCarrera = (t.tabla_grupos || []).map(x => String(x.grupo_id));
-                const enCarrera = grpCliV.filter(g => grpCarrera.includes(String(g.id)));
-                const nombreGrupo = gruposActivos.find(g => g.id == tg.grupo_id)?.nombre || '';
-                if (grpCliV.length === 0) {
-                    publiLasTxt(document.getElementById('lblGrupoClienteVenta'), 'Jugador sin grupo asignado.', true);
-                } else if (enCarrera.length === 0) {
-                    publiLasTxt(document.getElementById('lblGrupoClienteVenta'), `Grupo(s): ${grpCliV.map(g => g.nombre).join(', ')} — no pertenece a "${nombreGrupo}" de esta carrera.`, true);
-                } else {
-                    publiLasTxt(document.getElementById('lblGrupoClienteVenta'), `Grupo(s): ${grpCliV.map(g => g.nombre).join(', ')}`);
-                }
-            }
-        }
-    }
-
-    function publiLasTxt(el, txt, peligro = false) {
-        el.innerHTML = txt;
-        el.classList.toggle('text-red-600', peligro);
-        el.classList.toggle('text-slate-500', !peligro);
-    }
-
-    ['selectCarreraVenta', 'selectGrupoVenta', 'selectEjemplarVenta', 'selectClienteVenta'].forEach(id => {
-        document.getElementById(id)?.addEventListener('change', () => {
-            if (id === 'selectCarreraVenta') {
-                const t = datosTablaCompleta.find(x => x.id == document.getElementById(id).value);
-                document.getElementById('selectGrupoVenta').innerHTML = ticksGrupoVenta(t);
-                document.getElementById('selectEjemplarVenta').innerHTML = (t && t.caballos ? t.caballos : []).map((c, i) => `
-                    <option value="${i}">N° ${c.numero} — ${c.nombre} (${c.valor_ejemplar})</option>
-                `).join('') || '<option value="">Sin ejemplares</option>';
-            }
-            if (id === 'selectClienteVenta') {
-                const gidsCli = gruposDeCliente(document.getElementById(id).value);
-                if (gidsCli.length === 1) {
-                    const opt = [...document.getElementById('selectGrupoVenta').options].find(o => o.dataset.groupid == gidsCli[0]);
-                    if (opt) document.getElementById('selectGrupoVenta').value = opt.value;
-                }
-            }
-            actualizarResumenVenta();
-        });
-    });
-    document.getElementById('cantidadVenta')?.addEventListener('input', actualizarResumenVenta);
-
-    document.getElementById('btnProcesarVentaModal').addEventListener('click', async () => {
-        const idCar = document.getElementById('selectCarreraVenta').value;
-        const idTg = document.getElementById('selectGrupoVenta').value;
-        const idxEje = document.getElementById('selectEjemplarVenta').value;
-        const idCli = document.getElementById('selectClienteVenta').value;
-        if (!idCar || !idTg || idxEje === '' || !idCli) return clubUI.toast('Complete todos los campos de la venta.', 'warning');
-        const cantidad = parseInt(document.getElementById('cantidadVenta').value) || 0;
-        if (cantidad <= 0) return clubUI.toast('Cantidad inválida.', 'warning');
-
-        const t = datosTablaCompleta.find(x => x.id == idCar);
-        const tg = (t?.tabla_grupos || []).find(x => String(x.id) === String(idTg));
-        const ej = (t?.caballos || [])[parseInt(idxEje)];
         const cli = clientesVentaCache.find(c => String(c.id) === String(idCli));
-        const grupo = gruposActivos.find(g => g.id == tg?.grupo_id);
-        if (!t || !tg || !ej || !cli) return clubUI.toast('Datos de venta inconsistentes. Recargue las tablas.', 'error');
-        if (!grupo) return clubUI.toast('Grupo no encontrado.', 'error');
-        const gruposCli = cli.grupos || [];
-        if (gruposCli.length > 0 && !gruposCli.includes(grupo.id)) {
-            return clubUI.toast(`El jugador ${cli.nombre} no pertenece al grupo "${grupo.nombre}" de esta carrera.`, 'error');
+        if (!cli) return clubUI.toast('Cliente no encontrado.', 'error');
+
+        // Pre-validación de disponibilidad
+        for (const it of items) {
+            if (it.cantidad > ventaDisp(it.tg)) return clubUI.toast(`No hay suficientes tablas de ${it.ejemplar.nombre}. Solo quedan ${ventaDisp(it.tg)}.`, 'warning');
         }
 
-        const btnP = document.getElementById('btnProcesarVentaModal');
-        btnP.disabled = true;
-        try {
-            const res = await VentaTablasCore.venderTabla({ cliente: cli, cantidad, ejemplar: ej, tabla: t, tg, grupo, tasaCambio: tasaCambioGlobal });
-            if (!res.ok) { clubUI.toast(res.error || 'No se pudo procesar la venta.', 'error'); return; }
-            const saldoPosterior = (parseFloat(cli.saldo_actual) || 0) - (grupo.moneda === 'VES' ? res.costoTotal / (tasaCambioGlobal || 1) : res.costoTotal);
-            VentaTablasCore.printHTML('Comprobante de Venta', VentaTablasCore.comprobanteHTML({ cliente: cli, ejemplar: ej, tabla: t, grupo, cantidad, res, tasaCambio: tasaCambioGlobal, saldoPosterior }));
-            document.getElementById('modalVenta').classList.add('hidden');
-            ventaModalAbierta = false;
-            if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `Venta modal: ${cli.nombre} x${cantidad} ${ej.nombre} ${VentaTablasCore.simboloMoneda(grupo.moneda)}${res.costoTotal} (idTabla=${t.id} grupo=${grupo.nombre})`);
-            cargarTablas(); cargarClientesVenta();
-            clubUI.aviso('Venta registrada', `Ticket de ${cantidad} Tabla(s) para <strong>${cli.nombre}</strong> (${grupo.nombre}).<br>Premio si gana: ${VentaTablasCore.simboloMoneda(grupo.moneda)}${clubUI.formatoNumero(res.premioTotal, 2)}`, 'success');
-        } finally { btnP.disabled = false; }
+        const gruposItems = [...new Set(items.map(it => it.tg.grupo_id))];
+        for (const gid of gruposItems) {
+            const gi = gruposActivos.find(x => x.id == gid);
+            if (!gi) continue;
+            const esMiembro = cli.grupo_id == gi.id || !cli.grupo_id || ((clientesVentaCache.find(c => c.id == cli.id)?.grupos || []).includes(gi.id));
+            if (!esMiembro) return clubUI.toast(`El jugador no pertenece al grupo ${gi.nombre} (inventario del carrito).`, 'warning');
+        }
+
+        const btnC = document.getElementById('btnProcesarVentaModal');
+        btnC.disabled = true;
+        const orig = btnC.innerHTML;
+        btnC.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Procesando...';
+
+        const resultados = [];
+        let fallo = null;
+        for (const it of items) {
+            const grupo = gruposActivos.find(x => x.id == it.tg.grupo_id);
+            if (!grupo) { fallo = 'Grupo de venta no encontrado.'; break; }
+            const res = await VentaTablasCore.venderTabla({
+                cliente: cli, cantidad: it.cantidad, ejemplar: it.ejemplar, tabla: t, tg: it.tg,
+                grupo, tasaCambio: tasaCambioGlobal
+            });
+            if (!res.ok) { fallo = res.error; break; }
+            resultados.push({ it, res, grupo });
+        }
+
+        if (fallo) {
+            clubUI.toast('Venta interrumpida: ' + fallo, 'error');
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta_monitor_fallida: ${cli.nombre} error=${fallo}`);
+        } else {
+            const totalCosto = resultados.reduce((a, r) => a + r.res.costoTotal, 0);
+            const totalPremio = resultados.reduce((a, r) => a + r.res.premioTotal, 0);
+            const monedaSim = t.moneda === 'VES' ? 'Bs ' : '$';
+            clubUI.toast(`¡Venta cerrada! ${resultados.length} ejemplar(es) · ${monedaSim}${clubUI.formatoNumero(totalCosto, 2)}`, 'success');
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta_monitor: ${cli.nombre} ${resultados.length} items (${monedaSim}${clubUI.formatoNumero(totalCosto, 2)})`);
+
+            mostrarRecibo({ cliente: cli, resultados, totalCosto, totalPremio, monedaSim });
+            cerrarModalVentaMon();
+            cargarTablas();
+        }
+
+        btnC.disabled = false;
+        btnC.innerHTML = orig;
+    }
+
+    function mostrarRecibo({ cliente, resultados, totalCosto, totalPremio, monedaSim }) {
+        const fecha = new Date().toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
+        const folio = `T-MONITOR-${Date.now().toString().slice(-8)}`;
+        const filas = resultados.map(r => `
+            <span class="block">N° ${r.it.ejemplar.numero || '-'} — ${r.it.ejemplar.nombre} · ${r.it.cantidad} tabla(s) a ${monedaSim}${clubUI.formatoNumero(r.res.pts, 1)}</span>`).join('');
+
+        const resumen = document.getElementById('resumenReciboVenta');
+        resumen.innerHTML = `
+            <span class="font-black text-slate-800">${cliente.nombre}</span>
+            <span class="block text-slate-500">Folio: ${folio} · ${fecha}</span>
+            <span class="block text-slate-500">${resultados[0]?.grupo?.nombre || 'Grupo'}</span>
+            <span class="block text-slate-500">${ventaTablaCtx?.hipodromo || ''} · C${ventaTablaCtx?.carrera ?? ''} · Dist. ${ventaTablaCtx?.distancia_carrera ?? ''} m</span>
+            ${filas}
+            <span class="block pt-1 border-t border-slate-200 mt-1 font-black text-emerald-700">Total Pagado: ${monedaSim}${clubUI.formatoNumero(totalCosto, 2)}</span>
+            <span class="block font-black text-blue-700">Premio a cobrar (si gana): ${monedaSim}${clubUI.formatoNumero(totalPremio, 2)}</span>`;
+
+        const texto = `🎫 *RECIBO DE VENTA — TABLA FIJA*\n` +
+            `🧑 *Jugador:* ${cliente.nombre}\n` +
+            `🏇 *Carrera:* ${ventaTablaCtx?.hipodromo || ''} · C${ventaTablaCtx?.carrera ?? ''} (Dist. ${ventaTablaCtx?.distancia_carrera ?? ''} m)\n` +
+            `👥 *Grupo:* ${resultados[0]?.grupo?.nombre || ''}\n\n` +
+            `📋 *Ejemplares:*\n` +
+            resultados.map(r => `  N° ${r.it.ejemplar.numero || '-'} ${r.it.ejemplar.nombre} — ${r.it.cantidad} tabla(s) a ${monedaSim}${clubUI.formatoNumero(r.res.pts, 1)}\n`).join('') +
+            `\n✅ *Total Pagado:* ${monedaSim}${clubUI.formatoNumero(totalCosto, 2)}\n` +
+            `🏆 *Premio si gana:* ${monedaSim}${clubUI.formatoNumero(totalPremio, 2)}\n\n` +
+            `📅 ${fecha}\nFolio: ${folio}`;
+
+        document.getElementById('textoReciboVenta').value = texto;
+        document.getElementById('modalReciboVenta').classList.remove('hidden');
+    }
+
+    // Recibo: WhatsApp y copiar
+    document.getElementById('btnAbrirWhatsappRecibo').addEventListener('click', () => {
+        const txt = document.getElementById('textoReciboVenta').value.trim();
+        if (!txt) return clubUI.toast('Primero genera el recibo.', 'warning');
+        window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
     });
+    document.getElementById('btnCopiarWhatsappRecibo').addEventListener('click', () => {
+        const tx = document.getElementById('textoReciboVenta');
+        tx.select();
+        document.execCommand('copy');
+        clubUI.toast('¡Recibo copiado al portapapeles!');
+    });
+
+    document.getElementById('btnVaciarCarritoVenta').addEventListener('click', () => {
+        ventaCarrito = [];
+        renderVenta();
+    });
+
+    document.getElementById('btnProcesarVentaModal').addEventListener('click', cerrarVenta);
+    document.getElementById('selectClienteVenta').addEventListener('change', () => {
+        const gidsCli = gruposDeCliente(document.getElementById('selectClienteVenta').value);
+        if (gidsCli.length === 1) {
+            const opt = [...document.getElementById('selectGrupoVenta').options].find(o => o.dataset.groupid == gidsCli[0]);
+            if (opt) document.getElementById('selectGrupoVenta').value = opt.value;
+        }
+        renderVenta();
+    });
+    document.getElementById('selectGrupoVenta').addEventListener('change', renderVenta);
 
     document.querySelectorAll('.cerrar-modal').forEach(b => b.addEventListener('click', () => {
         document.getElementById('modalDuplicar').classList.add('hidden');
         document.getElementById('modalEditar').classList.add('hidden');
         document.getElementById('modalVenta').classList.add('hidden');
+        document.getElementById('modalReciboVenta').classList.add('hidden');
         ventaModalAbierta = false;
+        ventaTablaCtx = null;
+        ventaCarrito = [];
+    }));
+    document.querySelectorAll('.cerrar-modal-reciibo').forEach(b => b.addEventListener('click', () => {
+        document.getElementById('modalReciboVenta').classList.add('hidden');
     }));
 
     document.getElementById('btnRecargarTablas').addEventListener('click', () => {

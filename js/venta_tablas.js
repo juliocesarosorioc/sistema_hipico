@@ -101,8 +101,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const htmlBanderaNac = (nac) => {
         const n = (nac || 'VE').trim().toUpperCase();
         return window.clubUI?.bandera
-            ? `<span class="bandera-nac w-4 shrink-0 inline-flex justify-center items-center" title="${n}">${window.clubUI.bandera(n, 16)}</span>`
-            : `<span class="bandera-nac w-4 shrink-0 inline-flex justify-center text-sm leading-none" title="${n}">${n}</span>`;
+            ? `<span class="bandera-nac w-5 shrink-0 inline-flex justify-center items-center" title="${n}">${window.clubUI.bandera(n, 16)}</span>`
+            : `<span class="bandera-nac w-5 shrink-0 inline-flex justify-center items-center text-[10px] font-black leading-none text-slate-500" title="${n}" data-nac="${n}">${n}</span>`;
     };
 
     // ==========================================

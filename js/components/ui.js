@@ -242,7 +242,10 @@ window.clubUI = (() => {
         const iso = ISO_NAC[n];
         if (iso) {
             const h = Math.max(12, Math.round(size * 0.66));
-            return `<span class="club-bandera" style="display:inline-flex;border-radius:3px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,0.10);line-height:0;vertical-align:middle" title="${n}"><img src="https://flagcdn.com/w${size * 2}/${iso}.png" alt="${n}" width="${size}" height="${h}" loading="lazy" style="display:block"></span>`;
+            const anchos = [20, 40, 60, 80, 100, 120, 160, 240, 320, 480, 640, 960, 1280];
+            const w = anchos.find(a => a >= size * 2) || 320;
+            const fb = `<span style="display:inline-flex;align-items:center;justify-content:center;min-width:${Math.max(size, 20)}px;height:${Math.max(size, 20)}px;border-radius:9999px;background:#e2e8f0;font-size:${Math.max(9, Math.round(size * 0.5))}px;font-weight:800;color:#475569;white-space:nowrap" title="${n}">${n}</span>`;
+            return `<span class="club-bandera" style="display:inline-flex;border-radius:3px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,0.10);line-height:0;vertical-align:middle" title="${n}"><img src="https://flagcdn.com/w${w}/${iso}.png" alt="${n}" width="${size}" height="${h}" loading="lazy" style="display:block" onerror="this.outerHTML='${fb.replace(/"/g, '&quot;')}'"></span>`;
         }
         return `<span class="club-bandera" style="display:inline-flex;align-items:center;justify-content:center;min-width:${Math.max(size, 20)}px;height:${Math.max(size, 20)}px;border-radius:9999px;background:#e2e8f0;font-size:${Math.max(9, Math.round(size * 0.5))}px;font-weight:800;color:#475569;vertical-align:middle" title="${n}">${n === 'OTRA' ? '🏳️' : n}</span>`;
     }
