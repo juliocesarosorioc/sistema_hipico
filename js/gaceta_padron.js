@@ -7,7 +7,16 @@ window.clubGacetaPadron = (() => {
 
     // Inserta en ejemplares completando columnas NOT NULL legacy que exija
     // la BD (sin abortar el lote) tras detectar el error de Postgres.
+    // Primero intenta la RPC segura club_asegurar_ejemplar (security definer:
+    // funciona aunque el RLS de ejemplares esté activo); si no existe aún, cae
+    // al INSERT directo como antes.
     async function insertarEjemplar(supabase, nombre, nacionalidad) {
+        const rpcId = await supabase
+            .rpc('club_asegurar_ejemplar', { v_nombre: nombre, v_nacionalidad: nacionalidad })
+            .then(r => r.error ? null : r.data)
+            .catch(() => null);
+        if (rpcId) return { data: { id: rpcId }, error: null };
+
         const extras = {};
         for (let i = 0; i < 5; i++) {
             const body = Object.assign({ nombre, nacionalidad }, extras);

@@ -150,6 +150,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const nac = (nacionalidad || 'VE').trim().toUpperCase();
         const existe = padronEjemplares.find(e => e.nombre.toUpperCase() === norm && e.nacionalidad.toUpperCase() === nac);
         if (existe) return existe.id;
+        // RPC segura (security definer): funciona aunque el RLS de ejemplares
+        // esté activo; si la RPC no existe aún, cae al INSERT directo.
+        const rpcId = await window.supabase
+            .rpc('club_asegurar_ejemplar', { v_nombre: norm, v_nacionalidad: nac })
+            .then(r => r.error ? null : r.data)
+            .catch(() => null);
+        if (rpcId) {
+            padronEjemplares.push({ id: rpcId, nombre: norm, nacionalidad: nac });
+            return rpcId;
+        }
         const { data, error } = await window.supabase.from('ejemplares').insert([{ nombre: norm, nacionalidad: nac }]).select('id').single();
         if (error) return null;
         padronEjemplares.push({ id: data.id, nombre: norm, nacionalidad: nac });

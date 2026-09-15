@@ -657,6 +657,59 @@ revoke all on function public.club_garantizar_grupo_principal() from anon;
 grant execute on function public.club_garantizar_grupo_principal() to anon;
 
 -- ============================================================
+-- (9.6) RPC SEGURA: ASEGURAR EJEMPLAR EN EL PADRÓN
+--      security definer: corre como dueño de la tabla, así el rol
+--      anon puede insertar/reutilizar el ejemplar aunque el RLS de
+--      ejemplares esté activo (Gaceta y Ensamblaje dependen de esto).
+--      Devuelve el id existente o el recién creado; lanza error si
+--      no puede. Lógica idéntica al INSERT con fallback del cliente.
+-- ============================================================
+create or replace function public.club_asegurar_ejemplar(v_nombre text, v_nacionalidad text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_id uuid;
+    v_norm text;
+    v_nac  text;
+begin
+    v_norm := upper(btrim(coalesce(v_nombre, '')));
+    v_nac  := upper(btrim(coalesce(v_nacionalidad, 'VE')));
+    if v_norm = '' then
+        return null;
+    end if;
+
+    select e.id into v_id
+    from public.ejemplares e
+    where lower(e.nombre) = lower(v_norm)
+      and upper(e.nacionalidad) = upper(v_nac)
+    limit 1;
+
+    if v_id is null then
+        insert into public.ejemplares (nombre, nacionalidad)
+        values (v_norm, v_nac)
+        on conflict (lower(nombre), upper(nacionalidad)) do nothing
+        returning id into v_id;
+    end if;
+
+    if v_id is null then
+        select e.id into v_id
+        from public.ejemplares e
+        where lower(e.nombre) = lower(v_norm)
+          and upper(e.nacionalidad) = upper(v_nac)
+        limit 1;
+    end if;
+
+    return v_id;
+end;
+$$;
+
+revoke all on function public.club_asegurar_ejemplar(text, text) from anon;
+grant execute on function public.club_asegurar_ejemplar(text, text) to anon;
+
+-- ============================================================
 -- (10) RESULTADO CENTRAL DE CARRERAS (compartido entre módulos)
 --      Una sola fila por (hipódromo, carrera, fecha). La Taquilla
 --      carga aquí el resultado oficial (ganador/empates y
