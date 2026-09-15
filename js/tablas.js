@@ -85,12 +85,23 @@ document.addEventListener('DOMContentLoaded', () => {
     // GRUPOS (solo carga: la gestión vive en Grupos y Convenios)
     // ==========================================
     async function cargarGrupos() {
-        const { data, error } = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
+        let { data, error } = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
         if (error) {
             if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {
                 clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
             }
             return;
+        }
+        if (!data || data.length === 0) {
+            // Garantiza siempre el grupo PRINCIPAL (Administrador/Sistema) para publicar
+            const { error: errSeed } = await window.supabase
+                .from('grupos_venta')
+                .insert([{ nombre: 'PRINCIPAL', moneda: 'USD', es_principal: true, cupo_tabla: 100, activo: true }]);
+            const re = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
+            data = re.data || [];
+            if (errSeed && (!re.data || !re.data.length)) {
+                clubUI.toast('No hay grupos y no se pudo crear el principal: ' + (errSeed.message || errSeed.code), 'error');
+            }
         }
         todosGrupos = data || [];
         gruposActivos = todosGrupos.filter(g => g.activo);
@@ -456,12 +467,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!superficie) return fallo("Seleccione la superficie de la pista.");
         if (isNaN(distancia) || distancia <= 0) return fallo("Indique la distancia de la carrera en metros.");
 
-        const cuposPorGrupo = [...document.querySelectorAll('.in-cupo-grupo')]
+        let cuposPorGrupo = [...document.querySelectorAll('.in-cupo-grupo')]
             .map(inp => ({ grupo_id: inp.dataset.grupo, cupos: parseInt(inp.value) || 0 }))
             .filter(x => x.cupos > 0);
+        if (cuposPorGrupo.length === 0 && gruposActivos.length === 0) {
+            await cargarGrupos();
+        }
+        let grupoPrimario = gruposActivos.find(g => g.es_principal) || gruposActivos[0];
+        if (!grupoPrimario) grupoPrimario = todosGrupos.find(g => g.es_principal) || todosGrupos[0];
+        if (cuposPorGrupo.length === 0 && grupoPrimario) {
+            // Publica por defecto en el grupo principal (Administrador del sistema)
+            const cuposDefault = parseInt(grupoPrimario.cupo_tabla) || 100;
+            cuposPorGrupo = [{ grupo_id: grupoPrimario.id, cupos: cuposDefault }];
+        }
         if (cuposPorGrupo.length === 0) return fallo("Asigne cupos a al menos un grupo.");
 
-        const grupoPrimario = gruposActivos.find(g => g.es_principal) || gruposActivos[0];
         const comisionGrupo = parseFloat(grupoPrimario && grupoPrimario.comision_default) || 2.5;
         const limiteTotal = cuposPorGrupo.reduce((a, b) => a + b.cupos, 0);
 
