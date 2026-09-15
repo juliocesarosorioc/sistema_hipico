@@ -263,23 +263,82 @@ create table if not exists public.hipodromos (
     pais           text not null default 'OTRO'
 );
 
+-- Limpieza de duplicados exactos y cuasi-duplicados (fuzzy: ignora espacios)
+-- ANTES de crear el índice único, para que filas históricas repetidas
+-- ("LA RINCONADA" y "LA RINCONADA") no hagan fallar el índice.
+-- Antes de borrar, se reasigna TODA referencia (FK) que apunte al duplicado
+-- hacia el hipódromo que se conserva; si aún no se puede borrar, se
+-- renombra el duplicado para que la normalización sea única.
+do $$
+declare
+    rec   record;
+    fk    record;
+    keep  public.hipodromos.id%type;
+begin
+    for rec in
+        with normalizados as (
+            select
+                id,
+                upper(regexp_replace(nombre, '\s+', '', 'g')) as norm,
+                row_number() over (
+                    partition by upper(regexp_replace(nombre, '\s+', '', 'g'))
+                    order by fecha_creacion desc
+                ) as rn
+            from public.hipodromos
+        )
+        select * from normalizados where rn > 1
+    loop
+        select id into keep
+          from public.hipodromos
+         where upper(regexp_replace(nombre, '\s+', '', 'g')) = rec.norm
+           and id <> rec.id
+         order by fecha_creacion desc
+         limit 1;
+
+        -- 1) Reapuntar hacia el hipódromo conservado TODAS las FKs que
+        --    referencian al duplicado (wps_tickets u otras).
+        for fk in
+            select c.conrelid::regclass::text as tbl,
+                   a.attname as col
+              from pg_constraint c
+              join pg_attribute a
+                on a.attrelid = c.conrelid
+               and a.attnum = any(c.conkey)
+             where c.contype = 'f'
+               and c.confrelid = 'public.hipodromos'::regclass
+        loop
+            execute format('update %s set %I = $1 where %I = $2', fk.tbl, fk.col, fk.col)
+                using keep, rec.id;
+        end loop;
+
+        -- 2) Cuadrar los textos de tickets de tabla fija (sin FK; por consistencia)
+        if exists (
+            select 1 from information_schema.tables
+            where table_schema = 'public' and table_name = 'tickets_apuestas'
+        ) then
+            update public.tickets_apuestas
+               set hipodromo = k.nombre
+              from public.hipodromos k
+             where tickets_apuestas.hipodromo is not null
+               and upper(regexp_replace(tickets_apuestas.hipodromo, '\s+', '', 'g')) = rec.norm
+               and k.id = keep;
+        end if;
+
+        -- 3) Eliminar el duplicado (o renombrarlo si algo aún lo retiene)
+        begin
+            delete from public.hipodromos where id = rec.id;
+        exception when foreign_key_violation then
+            update public.hipodromos
+               set nombre = nombre || ' #' || upper(md5(random()::text))
+             where id = rec.id;
+            raise notice 'hipodromo duplicado id=% no se borró; se renombró para desbloquear el índice único.', rec.id;
+        end;
+    end loop;
+end;
+$$;
+
 create unique index if not exists uq_hipodromos_nombre_norm
     on public.hipodromos (upper(regexp_replace(nombre, '\s+', '', 'g')));
-
--- Limpieza de duplicados exactos y cuasi-duplicados (fuzzy: ignora espacios/acentos)
-with normalizados as (
-    select 
-        id,
-        upper(regexp_replace(nombre, '\s+', '', 'g')) as norm,
-        fecha_creacion,
-        row_number() over (
-            partition by upper(regexp_replace(nombre, '\s+', '', 'g'))
-            order by fecha_creacion desc
-        ) as rn
-    from public.hipodromos
-)
-delete from public.hipodromos
-where id in (select id from normalizados where rn > 1);
 
 alter table public.hipodromos
     add column if not exists pais text not null default 'OTRO',

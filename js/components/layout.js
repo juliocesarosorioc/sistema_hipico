@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 { href: 'wps.html',      icon: 'fa-horse',        txt: 'W.P.S.',              color: 'text-teal-400' },
                 { href: 'remates.html',  icon: 'fa-bell',         txt: 'Remates',             color: 'text-orange-400' },
                 { href: 'pollas.html',   icon: 'fa-trophy',       txt: 'Pollas',              color: 'text-indigo-400' },
+                { href: 'tickets.html',  icon: 'fa-life-ring',    txt: 'Tickets / Reclamos',  color: 'text-sky-400' },
                 { href: 'hipodromos.html', icon: 'fa-horse-head',  txt: 'Hipódromos',          color: 'text-purple-400' }
             ]
         },

@@ -25,6 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let tablasDisponibles = [];
     let tablaSeleccionada = null;
     let tasaGlobal = 1.0;
+    let movimientosPorId = {};
+    let estrellasSeleccion = {};
 
     const sesionGuardada = () => {
         try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch (e) { return null; }
@@ -276,7 +278,8 @@ document.addEventListener('DOMContentLoaded', () => {
         await Promise.all([
             cargarCliente(),
             cargarMovimientos(),
-            cargarSolicitudes()
+            cargarSolicitudes(),
+            cargarTickets()
         ]);
     }
 
@@ -285,6 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await cargarCliente();
         await cargarMovimientos();
         await cargarSolicitudes();
+        cargarTickets();
         cargarTablasDisponibles(true);
     }
 
@@ -387,18 +391,20 @@ document.addEventListener('DOMContentLoaded', () => {
     async function cargarMovimientos() {
         const { data } = await window.supabase
             .from('tickets_apuestas')
-            .select('created_at, nombre_jugada, caballo, cantidad_tablas, monto_jugado, premio_pagar, premio_por_tabla, moneda, estado')
+            .select('id, created_at, hipodromo, carrera, nombre_jugada, caballo, cantidad_tablas, monto_jugado, premio_pagar, premio_por_tabla, moneda, estado')
             .eq('cliente_juega_id', sesion.id)
             .order('created_at', { ascending: false })
             .limit(30);
 
         const cuerpo = document.getElementById('cuerpoMovimientos');
+        movimientosPorId = {};
         if (!data || data.length === 0) {
-            cuerpo.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-500 italic">Aún no tiene movimientos.</td></tr>';
+            cuerpo.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-500 italic">Aún no tiene movimientos.</td></tr>';
             return;
         }
 
         cuerpo.innerHTML = data.map(tk => {
+            movimientosPorId[tk.id] = tk;
             const fecha = tk.created_at ? new Date(tk.created_at).toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' }) : '—';
             const simp = tk.moneda === 'VES' ? 'Bs ' : '$';
             const badge = {
@@ -417,8 +423,210 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-3 text-right font-mono font-bold">${simp}${clubUI.formatoNumero(parseFloat(tk.monto_jugado || 0), 2)}</td>
                     <td class="p-3 text-right font-mono font-bold text-emerald-600">${simp}${clubUI.formatoNumero(premio, 2)}</td>
                     <td class="p-3 text-center"><span class="px-2 py-0.5 rounded text-[9px] font-black ${badge}">${tk.estado}</span></td>
+                    <td class="p-3 text-center">
+                        ${['Perdedor', 'Pendiente'].includes(tk.estado)
+                            ? `<button data-disputar="${tk.id}" class="px-2 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white text-[9px] font-black uppercase tracking-wider"><i class="fas fa-life-ring mr-1"></i> Disputar</button>`
+                            : '<span class="text-[9px] text-slate-300 font-bold">—</span>'}
+                    </td>
                 </tr>`;
         }).join('');
+    }
+
+    // ==========================================
+    // DISPUTAR / RECLAMAR UNA JUGADA
+    // ==========================================
+    const modalDisputa = document.getElementById('modalDisputa');
+    const disputaResumen = document.getElementById('disputaResumen');
+    const disputaMotivo = document.getElementById('disputaMotivo');
+    const disputaDetalle = document.getElementById('disputaDetalle');
+    const disputaPreviewWrap = document.getElementById('disputaPreviewWrap');
+    const disputaPreview = document.getElementById('disputaPreview');
+
+    let disputaActual = null;
+    let disputaImagen = null;
+
+    const cerrarDisputa = () => { modalDisputa.classList.add('hidden'); disputaActual = null; disputaImagen = null; };
+
+    function abrirDisputa(tk) {
+        disputaActual = tk;
+        disputaImagen = null;
+        disputaMotivo.value = '';
+        disputaDetalle.value = '';
+        disputaPreviewWrap.classList.add('hidden');
+        disputaPreview.removeAttribute('src');
+        const simp = tk.moneda === 'VES' ? 'Bs ' : '$';
+        const premioT = parseFloat(tk.premio_total ?? tk.premio_por_tabla ?? tk.premio_pagar) || 0;
+        disputaResumen.innerHTML = `
+            <div><span class="text-slate-400">Jugada:</span> ${tk.nombre_jugada || '—'}${tk.hipodromo ? ` (${tk.hipodromo}${tk.carrera ? ' C' + tk.carrera : ''})` : ''}</div>
+            <div><span class="text-slate-400">Ejemplar:</span> ${tk.caballo || '—'}${tk.cantidad_tablas ? ` · ${tk.cantidad_tablas} tablas` : ''}</div>
+            <div><span class="text-slate-400">Fecha:</span> ${tk.fecha || '—'}</div>
+            <div><span class="text-slate-400">Monto jugado:</span> ${simp}${clubUI.formatoNumero(parseFloat(tk.monto_jugado || 0), 2)} · <span class="text-slate-400">Premio:</span> ${simp}${clubUI.formatoNumero(premioT, 2)}</div>`;
+        modalDisputa.classList.remove('hidden');
+        disputaMotivo.focus();
+    }
+
+    // Pegar captura (Ctrl + V) como evidencia
+    document.addEventListener('paste', (e) => {
+        if (modalDisputa.classList.contains('hidden')) return;
+        const item = (e.clipboardData?.items || []).find(x => x.type && x.type.startsWith('image/'));
+        if (!item) return;
+        e.preventDefault();
+        const archivo = item.getAsFile();
+        if (!archivo) return;
+        const lector = new FileReader();
+        lector.onload = () => {
+            disputaImagen = String(lector.result);
+            disputaPreview.src = disputaImagen;
+            disputaPreview.classList.remove('hidden');
+            disputaPreviewWrap.classList.remove('hidden');
+            clubUI.toast('Imagen adjuntada como evidencia.', 'success');
+        };
+        lector.readAsDataURL(archivo);
+    });
+
+    document.getElementById('btnCerrarDisputa').addEventListener('click', cerrarDisputa);
+    document.getElementById('btnCancelarDisputa').addEventListener('click', cerrarDisputa);
+    document.getElementById('btnQuitarEvidencia').addEventListener('click', () => {
+        disputaImagen = null;
+        disputaPreview.removeAttribute('src');
+        disputaPreviewWrap.classList.add('hidden');
+    });
+    modalDisputa.addEventListener('click', (e) => { if (e.target === modalDisputa) cerrarDisputa(); });
+
+    document.getElementById('cuerpoMovimientos').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-disputar]');
+        if (!btn) return;
+        const tk = movimientosPorId[btn.dataset.disputar];
+        if (tk) abrirDisputa(tk);
+    });
+
+    document.getElementById('btnEnviarDisputa').addEventListener('click', async () => {
+        if (!disputaActual) return cerrarDisputa();
+        const motivo = disputaMotivo.value;
+        if (!motivo) return clubUI.toast('Seleccione el motivo del reclamo.', 'warning');
+
+        const tk = disputaActual;
+        const { data: dup } = await window.supabase
+            .from('tickets_jugadas')
+            .select('id')
+            .eq('cliente_id', sesion.id)
+            .eq('jugada_id', tk.id)
+            .in('estado', ['CREADO', 'EN_REVISION']);
+        if (dup && dup.length > 0) {
+            return clubUI.toast('Esta jugada ya tiene un reclamo en curso.', 'warning');
+        }
+
+        const btn = document.getElementById('btnEnviarDisputa');
+        btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Enviando...';
+
+        const { error } = await window.supabase.from('tickets_jugadas').insert([{
+            cliente_id: sesion.id,
+            cliente_nombre: sesion.nombre,
+            jugada_origen: 'APUESTA',
+            jugada_id: String(tk.id),
+            tipo_jugada: tk.nombre_jugada || null,
+            fecha_jugada: tk.created_at ? String(tk.created_at).slice(0, 10) : null,
+            hipodromo: tk.hipodromo || null,
+            carrera: tk.carrera || null,
+            monto: parseFloat(tk.monto_jugado) || null,
+            premio_recalculado: parseFloat(tk.premio_total ?? tk.premio_por_tabla ?? tk.premio_pagar) || null,
+            motivo: disputaDetalle.value.trim() ? `${motivo} — ${disputaDetalle.value.trim()}` : motivo,
+            imagen_soporte: disputaImagen,
+            estado: 'CREADO',
+            creado_por: sesion.seudonimo || sesion.nombre
+        }]);
+
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-paper-plane mr-1"></i> Enviar reclamo';
+
+        if (error) return clubUI.toast('Error al enviar el reclamo: ' + (error.message || 'BD'), 'error');
+        clubUI.toast('Reclamo recibido. La casa lo revisará y le responderá.', 'success');
+        cerrarDisputa();
+        cargarTickets();
+    });
+
+    // ==========================================
+    // MIS RECLAMOS / TICKETS + ENCUESTA 1-5
+    // ==========================================
+    const badgesTickets = {
+        CREADO: 'bg-amber-100 text-amber-700',
+        EN_REVISION: 'bg-sky-100 text-sky-700',
+        SOLUCIONADO: 'bg-emerald-100 text-emerald-700'
+    };
+
+    async function cargarTickets() {
+        const { data } = await window.supabase
+            .from('tickets_jugadas')
+            .select('*')
+            .eq('cliente_id', sesion.id)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+        const cuerpo = document.getElementById('cuerpoMisTickets');
+        if (!data || data.length === 0) {
+            cuerpo.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-500 italic">No tiene reclamos. Use el botón "Disputar" en sus movimientos.</td></tr>';
+            return;
+        }
+
+        cuerpo.innerHTML = data.map(t => {
+            const fech = t.created_at ? new Date(t.created_at).toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+            const badge = badgesTickets[t.estado] || 'bg-slate-100 text-slate-500';
+            let evaluar = '<span class="text-[9px] text-slate-300 font-bold">—</span>';
+            if (t.estado === 'SOLUCIONADO') {
+                if (t.encuesta_satisfaccion) {
+                    evaluar = `<span class="text-xs font-black text-amber-500">${'★'.repeat(t.encuesta_satisfaccion)}</span><span class="block text-[9px] text-slate-400">${t.encuesta_satisfaccion}/5</span>`;
+                } else {
+                    evaluar = `
+                        <div class="flex flex-col items-center gap-1">
+                            <div class="flex gap-0.5 text-base" data-evaluar="${t.id}">
+                                ${[1, 2, 3, 4, 5].map(n => `<button type="button" data-nota="${n}" aria-label="${n} de 5" class="star text-slate-300 hover:text-amber-400 transition-colors">★</button>`).join('')}
+                            </div>
+                            <input data-evaluar-coment="${t.id}" placeholder="Comentario (opcional)" class="w-full border border-slate-200 rounded px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-sky-500">
+                            <button type="button" data-enviar-evaluar="${t.id}" class="px-2 py-1 rounded bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-black uppercase tracking-wider">Evaluar</button>
+                        </div>`;
+                }
+            }
+            return `
+                <tr class="hover:bg-sky-50">
+                    <td class="p-3 font-mono font-bold text-sky-700">#${t.numero_ticket}</td>
+                    <td class="p-3 text-slate-500">${fech}</td>
+                    <td class="p-3 font-bold text-slate-700">${t.tipo_jugada || 'Jugada'}${t.hipodromo ? `<span class="block text-[9px] font-normal text-slate-400">${t.hipodromo}${t.carrera ? ' C' + t.carrera : ''}</span>` : ''}</td>
+                    <td class="p-3 max-w-[180px]"><span class="block truncate" title="${t.motivo || ''}">${t.motivo || '—'}</span></td>
+                    <td class="p-3 text-center"><span class="px-2 py-0.5 rounded text-[9px] font-black ${badge}">${t.estado}</span></td>
+                    <td class="p-3 max-w-[220px] text-slate-600"><span class="block truncate" title="${t.respuesta_casa || ''}">${t.respuesta_casa || '<span class="text-slate-300 italic">Pendiente...</span>'}</span>${t.accion_aplicada ? `<span class="block text-[9px] font-black text-sky-600 mt-0.5">${t.accion_aplicada}${t.monto_resuelto != null ? ' · $' + clubUI.formatoNumero(parseFloat(t.monto_resuelto), 2) : ''}</span>` : ''}</td>
+                    <td class="p-3 text-center">${evaluar}</td>
+                </tr>`;
+        }).join('');
+    }
+
+    document.getElementById('cuerpoMisTickets').addEventListener('click', (e) => {
+        const starBtn = e.target.closest('[data-nota]');
+        if (starBtn) {
+            const caja = starBtn.closest('[data-evaluar]');
+            const id = caja.dataset.evaluar;
+            estrellasSeleccion[id] = parseInt(starBtn.dataset.nota, 10);
+            caja.querySelectorAll('.star').forEach(b => {
+                b.classList.toggle('text-amber-400', parseInt(b.dataset.nota, 10) <= estrellasSeleccion[id]);
+                b.classList.toggle('text-slate-300', parseInt(b.dataset.nota, 10) > estrellasSeleccion[id]);
+            });
+            return;
+        }
+        const enviar = e.target.closest('[data-enviar-evaluar]');
+        if (enviar) enviarEvaluacion(enviar.dataset.enviarEvaluar);
+    });
+
+    async function enviarEvaluacion(id) {
+        const nota = estrellasSeleccion[id];
+        if (!nota) return clubUI.toast('Seleccione una calificación de 1 a 5.', 'warning');
+        const comentar = document.querySelector(`[data-evaluar-coment="${id}"]`)?.value || null;
+        const { error } = await window.supabase.from('tickets_jugadas').update({
+            encuesta_satisfaccion: nota,
+            encuesta_comentario: comentar,
+            encuesta_at: new Date().toISOString()
+        }).eq('id', id);
+        if (error) return clubUI.toast('Error al guardar la evaluación: ' + (error.message || 'BD'), 'error');
+        clubUI.toast('¡Gracias por tu evaluación!', 'success');
+        cargarTickets();
     }
 
     // ==========================================

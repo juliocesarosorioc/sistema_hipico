@@ -98,12 +98,39 @@
                                 <th class="p-3 font-bold">Jugada</th>
                                 <th class="p-3 font-bold">Ejemplar</th>
                                 <th class="p-3 text-right font-bold">Monto</th>
-                                <th class="p-3 text-right font-bold">Premio</th>
+<th class="p-3 text-right font-bold">Premio</th>
                                 <th class="p-3 text-center font-bold">Estado</th>
+                                <th class="p-3 text-center font-bold">Reclamo</th>
                             </tr>
                         </thead>
                         <tbody id="cuerpoMovimientos" class="divide-y divide-slate-100">
-                            <tr><td colspan="6" class="p-6 text-center text-slate-500 italic">Cargando...</td></tr>
+                            <tr><td colspan="7" class="p-6 text-center text-slate-500 italic">Cargando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- MIS TICKETS / RECLAMOS -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="bg-sky-800 text-white p-4 font-black text-xs uppercase tracking-wider flex items-center justify-between">
+                    <span><i class="fas fa-life-ring text-sky-300 mr-2"></i> Mis Reclamos / Tickets</span>
+                    <span class="text-[9px] font-bold bg-sky-900 px-2 py-1 rounded-full">Respuesta de la casa</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-100 text-slate-600">
+                            <tr>
+                                <th class="p-3 font-bold">N°</th>
+                                <th class="p-3 font-bold">Fecha</th>
+                                <th class="p-3 font-bold">Jugada</th>
+                                <th class="p-3 font-bold">Motivo</th>
+                                <th class="p-3 text-center font-bold">Estado</th>
+                                <th class="p-3 font-bold">Respuesta de la casa</th>
+                                <th class="p-3 text-center font-bold">Evaluar</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cuerpoMisTickets" class="divide-y divide-slate-100">
+                            <tr><td colspan="7" class="p-6 text-center text-slate-500 italic">Cargando...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -223,12 +250,57 @@
         </main>
     </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- ============ MODAL: DISPUTAR / RECLAMAR JUGADA ============ -->
+    <div id="modalDisputa" class="hidden fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modalDisputaTitulo">
+        <div class="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div class="bg-sky-800 text-white px-5 py-4 font-black text-xs uppercase tracking-wider flex items-center justify-between">
+                <span id="modalDisputaTitulo"><i class="fas fa-life-ring text-sky-300 mr-2"></i> Disputar jugada</span>
+                <button id="btnCerrarDisputa" class="text-sky-200 hover:text-white" aria-label="Cerrar"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+                <div id="disputaResumen" class="text-[11px] bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-0.5 font-bold text-slate-600"></div>
+                <div>
+                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Motivo del reclamo</label>
+                    <select id="disputaMotivo" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm font-bold bg-slate-50 outline-none focus:ring-2 focus:ring-sky-500">
+                        <option value="">Seleccione el motivo...</option>
+                        <option>Premio no pagado</option>
+                        <option>Premio menor al esperado</option>
+                        <option>Jugada mal registrada</option>
+                        <option>Descuento incorrecto</option>
+                        <option>Tabla fija / ejemplar no reconocido</option>
+                        <option>Otro</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Detalle (opcional)</label>
+                    <textarea id="disputaDetalle" rows="3" placeholder="Explique brevemente qué esperaba y qué ocurrió..." class="w-full border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-sky-500"></textarea>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Evidencia (captura)</label>
+                    <div id="disputaSoltar" class="border-2 border-dashed border-slate-300 rounded-lg p-4 text-center text-[11px] text-slate-400 font-bold hover:border-sky-400 hover:bg-sky-50 transition-colors">
+                        <i class="fas fa-camera mr-1"></i> Pega aquí una captura con <b>Ctrl + V</b>
+                    </div>
+                    <div id="disputaPreviewWrap" class="hidden mt-2">
+                        <img id="disputaPreview" alt="Evidencia" class="w-full rounded-lg border border-slate-200 max-h-56 object-contain bg-slate-50">
+                        <button id="btnQuitarEvidencia" class="mt-1 text-[10px] font-black text-red-500 uppercase tracking-wider"><i class="fas fa-trash mr-1"></i> Quitar imagen</button>
+                    </div>
+                </div>
+            </div>
+            <div class="px-5 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+                <button id="btnCancelarDisputa" class="px-4 py-2.5 rounded-lg border border-slate-300 text-slate-600 font-black text-xs uppercase tracking-wider">Cancelar</button>
+                <button id="btnEnviarDisputa" class="px-4 py-2.5 rounded-lg bg-sky-700 hover:bg-sky-800 text-white font-black text-xs uppercase tracking-wider shadow">
+                    <i class="fas fa-paper-plane mr-1"></i> Enviar reclamo
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../js/components/db.js"></script>
     <script src="../js/components/auth.js"></script>
     <script src="../js/components/ui.js"></script>
     <script src="../js/components/indicador_accion.js"></script>
     <script src="../js/conexion.js"></script>
-    <script src="../js/portal.js?v=20260913-6"></script>
+    <script src="../js/portal.js?v=20260914-1"></script>
 </body>
 </html>
