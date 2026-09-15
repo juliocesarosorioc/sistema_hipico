@@ -700,7 +700,8 @@ alter table public.tickets_apuestas
     add column if not exists grupo_cobro_nombre  text,
     add column if not exists grupo_comision_id   uuid,
     add column if not exists grupo_comision_nombre text,
-    add column if not exists monto_decidido      numeric;
+    add column if not exists monto_decidido      numeric,
+    add column if not exists ejemplar_numero     int;
 
 alter table public.tickets_apuestas disable row level security;
 grant all privileges on table public.tickets_apuestas to anon;

@@ -755,6 +755,99 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnActualizarSolicitudes').addEventListener('click', cargarSolicitudesAdmin);
 
     // ==========================================
+    // RESUMEN DE VENTAS POR WHATSAPP
+    // Mensaje por día: hipódromo, carrera, número de
+    // ejemplar, nombre y valor, que quepa en un WhatsApp.
+    // ==========================================
+    const modalWsp = document.getElementById('modalWhatsappVentas');
+    const textWsp = document.getElementById('textoWhatsappVentas');
+    const fechaWsp = document.getElementById('fechaReporteWhatsapp');
+    fechaWsp.valueAsDate = new Date();
+
+    function abrirModalWsp() {
+        modalWsp.classList.remove('hidden');
+        setTimeout(() => generarWhatsappVentas(), 0);
+    }
+
+    function cerrarModalWsp() {
+        modalWsp.classList.add('hidden');
+    }
+
+    async function generarWhatsappVentas() {
+        const dia = fechaWsp.value;
+        if (!dia) return clubUI.toast('Seleccione la fecha del reporte.', 'warning');
+
+        const fechaFin = new Date(dia + 'T23:59:59.999Z').toISOString();
+        const fechaIni = new Date(dia + 'T00:00:00.000Z').toISOString();
+        textWsp.value = 'Consultando ventas del día…';
+
+        const { data } = await window.supabase
+            .from('tickets_apuestas')
+            .select('id, created_at, hipodromo, carrera, caballo, ejemplar_numero, cantidad_tablas, pts_ejemplar, monto_jugado, premio_por_tabla, moneda')
+            .gte('created_at', fechaIni)
+            .lte('created_at', fechaFin)
+            .limit(5000);
+
+        const tickets = (data || []).filter(t => t.hipodromo && t.carrera);
+        if (!tickets.length) {
+            textWsp.value = `No hay ventas registradas el día ${new Date(dia + 'T12:00:00').toLocaleDateString('es-VE')}.`;
+            clubUI.toast('Sin ventas en esa fecha.', 'warning');
+            return;
+        }
+
+        const simb = (moneda) => moneda === 'VES' ? 'Bs ' : '$';
+        const porHipoCarrera = {};
+        tickets.forEach(tk => {
+            const clave = `${String(tk.hipodromo).toUpperCase().trim()}|C${tk.carrera}`;
+            if (!porHipoCarrera[clave]) porHipoCarrera[clave] = { hipodromo: String(tk.hipodromo).toUpperCase().trim(), carrera: tk.carrera, ejemplares: {} };
+            const num = tk.ejemplar_numero ? `N° ${tk.ejemplar_numero}` : `#${String(tk.caballo || '').slice(0, 1).toUpperCase() || '·'}`;
+            const pad = porHipoCarrera[clave].ejemplares;
+            if (!pad[num]) pad[num] = { nombre: tk.caballo || '', tablas: 0, valor: parseFloat(tk.pts_ejemplar || 0) || 0, moneda: tk.moneda };
+            pad[num].tablas += parseInt(tk.cantidad_tablas) || 0;
+            pad[num].valor = parseFloat(tk.pts_ejemplar || 0) || 0;
+        });
+
+        let texto = `🐎 *VENTA DE TABLAS FIJAS*\n`;
+        texto += `📅 ${new Date(dia + 'T12:00:00').toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}\n\n`;
+
+        let totalTablas = 0;
+        let totalMonto = 0;
+        Object.values(porHipoCarrera).forEach(hc => {
+            texto += `🏇 ${hc.hipodromo} · Carrera ${hc.carrera}\n`;
+            Object.entries(hc.ejemplares).forEach(([num, e]) => {
+                const monto = e.tablas * e.valor;
+                totalTablas += e.tablas;
+                totalMonto += monto;
+                texto += `  ${num} ${e.nombre} — ${e.tablas} tabla(s) a ${simb(e.moneda)}${fmt(e.valor, 1)}\n`;
+            });
+        });
+
+        texto += `\n✅ *Total: ${totalTablas} tabla(s) · ${simb(tickets[0].moneda)}${fmt(totalMonto)}*`;
+
+        textWsp.value = texto;
+        clubUI.toast(`Resumen de ${tickets.length} venta(s) del día.`);
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `whatsapp_ventas: dia=${dia} ventas=${tickets.length} tablas=${totalTablas}`);
+    }
+
+    document.getElementById('btnAbrirWhatsappVentasResumen').addEventListener('click', abrirModalWsp);
+    document.getElementById('btnGenerarWhatsappVentas').addEventListener('click', generarWhatsappVentas);
+    document.getElementById('cerrarModalWhatsappVentas').addEventListener('click', cerrarModalWsp);
+    document.querySelectorAll('.cerrar-modal-wsp').forEach(b => b.addEventListener('click', cerrarModalWsp));
+
+    document.getElementById('btnAbrirWhatsappVentas').addEventListener('click', () => {
+        const txt = textWsp.value.trim();
+        if (!txt) return clubUI.toast('Primero genera el texto para enviar.', 'warning');
+        const url = 'https://wa.me/?text=' + encodeURIComponent(txt);
+        window.open(url, '_blank');
+    });
+
+    document.getElementById('btnCopiarWhatsappVentas').addEventListener('click', () => {
+        textWsp.select();
+        document.execCommand('copy');
+        clubUI.toast('¡Texto copiado al portapapeles!');
+    });
+
+    // ==========================================
     // ARRANQUE
     // ==========================================
     inicializar();

@@ -58,6 +58,9 @@
                         <button id="btnActualizarVista" class="bg-slate-800 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-900 transition-colors self-end">
                             <i class="fas fa-sync-alt mr-1"></i> Actualizar
                         </button>
+                        <button id="btnAbrirWhatsappVentasResumen" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors self-end">
+                            <i class="fab fa-whatsapp mr-1"></i> Ventas por WhatsApp
+                        </button>
                     </div>
                 </div>
 
@@ -209,15 +212,38 @@
         </div>
     </div>
 
+    <!-- MODAL WHATSAPP (reporte de ventas) -->
+    <div id="modalWhatsappVentas" class="hidden fixed inset-0 bg-slate-900 bg-opacity-60 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div class="p-4 bg-emerald-600 flex justify-between items-center text-white">
+                <div class="font-bold text-sm uppercase tracking-wide"><i class="fab fa-whatsapp mr-2"></i> Resumen de Ventas por WhatsApp</div>
+                <button id="cerrarModalWhatsappVentas" class="hover:text-emerald-200"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="flex items-center gap-2 px-5 pt-4">
+                <label class="text-xs font-bold text-slate-700 uppercase tracking-wider shrink-0">Fecha:</label>
+                <input type="date" id="fechaReporteWhatsapp" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-500">
+                <button id="btnGenerarWhatsappVentas" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors shrink-0"><i class="fas fa-sync-alt mr-1"></i> Generar</button>
+            </div>
+            <div class="p-5">
+                <textarea id="textoWhatsappVentas" readonly class="w-full h-72 border border-slate-300 bg-slate-50 rounded-lg p-3 text-[11px] font-mono text-slate-800 outline-none resize-none shadow-inner"></textarea>
+            </div>
+            <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+                <button class="cerrar-modal-wsp bg-slate-300 text-slate-700 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-400 transition-colors">Cerrar</button>
+                <button id="btnAbrirWhatsappVentas" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors"><i class="fab fa-whatsapp mr-1"></i> Abrir WhatsApp</button>
+                <button id="btnCopiarWhatsappVentas" class="bg-slate-800 text-white px-5 py-2 rounded-lg shadow text-xs font-bold hover:bg-black transition-colors"><i class="fas fa-copy mr-1"></i> Copiar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../js/components/db.js"></script>
     <script src="../js/components/auth.js"></script>
     <script src="../js/components/ui.js?v=20260911-1"></script>
     <script src="../js/components/indicador_accion.js"></script>
-    <script src="../js/components/venta_tablas_core.js?v=20260914-1"></script>
+    <script src="../js/components/venta_tablas_core.js?v=20260914-2"></script>
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
-    <script src="../js/venta_tablas.js?v=20260914-5"></script>
+    <script src="../js/venta_tablas.js?v=20260914-6"></script>
 </body>
 </html>

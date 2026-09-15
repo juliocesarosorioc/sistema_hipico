@@ -86,6 +86,7 @@
             carrera: tabla.carrera,
             nombre_jugada: `TABLA FIJA (${tabla.hipodromo} C${tabla.carrera})`,
             caballo: ejemplar.nombre,
+            ejemplar_numero: parseInt(ejemplar.numero, 10) || null,
             cantidad_tablas: cantidad,
             monto_jugado: costoTotal,
             premio_por_tabla: premio,       // CONGELADO al momento de la venta
