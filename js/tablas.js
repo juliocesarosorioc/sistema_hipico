@@ -55,11 +55,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const htmlSelectNac = (val = 'VE') => {
         const nac = (val || 'VE').trim().toUpperCase();
-        const img = window.clubUI?.bandera ? window.clubUI.bandera(nac, 16) : '';
+        const img = window.clubUI?.bandera ? window.clubUI.bandera(nac, 20) : '';
         if (img) {
-            return `<span class="bandera-nac w-5 shrink-0 inline-flex justify-center items-center" title="${nac}" data-nac="${nac}">${img}</span>`;
+            return `<span class="bandera-nac w-6 h-5 shrink-0 inline-flex justify-center items-center" title="${nac}" data-nac="${nac}">${img}</span>`;
         }
-        return `<span class="bandera-nac w-5 shrink-0 inline-flex justify-center items-center text-[10px] font-black leading-none text-slate-500" title="${nac}" data-nac="${nac}">${nac}</span>`;
+        return `<span class="bandera-nac w-6 h-5 shrink-0 inline-flex justify-center items-center text-[11px] font-black leading-none text-slate-500" title="${nac}" data-nac="${nac}">${nac}</span>`;
     };
 
     // ==========================================
@@ -183,11 +183,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const vacio = (c && c.nombre) ? '' : 'opacity-70';
         const numColor = colorDeNumero(c?.numero);
         return `
-            <div class="fila-caballo-card bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 ${vacio}" style="display:grid;grid-template-columns:2.5rem 1fr 2rem 3.5rem auto;column-gap:0.5rem;align-items:center">
+            <div class="fila-caballo-card bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 ${vacio}" style="display:grid;grid-template-columns:2.5rem 1fr 2.5rem 3.5rem auto;column-gap:0.5rem;align-items:center">
                 <input type="text" inputmode="numeric" class="in-cab-num w-10 h-10 shrink-0 rounded-md px-0 py-px text-center text-lg font-black outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar" style="background-color:${numColor};color:${textoDeNumero(c?.numero)};border-color:${numColor}">
                 <input type="text" class="in-cab-nom w-full min-w-0 border border-slate-200 rounded px-1.5 py-0.5 text-sm font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
                 <span style="display:flex;justify-content:center">${htmlSelectNac(c?.nacionalidad)}</span>
-                <input type="text" inputmode="decimal" class="in-cab-valor w-full shrink-0 border border-slate-200 rounded px-1 py-0.5 text-right text-sm font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="$" title="Valor / monta del ejemplar">
+                <input type="text" inputmode="decimal" class="in-cab-valor w-full shrink-0 border border-slate-200 rounded px-1 py-0.5 text-right text-base font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="$" title="Valor / monta del ejemplar">
                 <button type="button" tabindex="-1" class="btn-del-cab-card shrink-0 text-red-400 hover:text-red-600 px-1 leading-none" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
             </div>`;
     }
@@ -228,7 +228,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <select class="nuevo-nac w-auto shrink-0 border border-slate-300 rounded px-1 py-1 text-xs font-bold uppercase outline-none bg-white">
                         ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}">${n}</option>`).join('')}
                     </select>
-                    <input type="text" inputmode="decimal" class="nuevo-valor w-12 shrink-0 border border-slate-300 rounded px-1 py-1 text-right text-base font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="$">
+                    <input type="text" inputmode="decimal" class="nuevo-valor w-12 shrink-0 border border-slate-300 rounded px-1 py-1 text-right text-lg font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="$">
                     <button type="button" tabindex="-1" class="btn-add-caballo-card bg-indigo-600 hover:bg-indigo-700 text-white rounded-md px-2 py-1 text-xs" title="Añadir ejemplar"><i class="fas fa-plus"></i></button>
                 </div>
             </div>
@@ -680,11 +680,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         const retirado = !!c.retirado;
                         const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
                         return `
-                        <div class="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 ${retirado ? 'opacity-40' : ''}" style="display:grid;grid-template-columns:2.5rem 1fr 2rem auto;column-gap:0.625rem;align-items:center">
+                        <div class="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 ${retirado ? 'opacity-40' : ''}" style="display:grid;grid-template-columns:2.5rem 1fr 2.5rem auto;column-gap:0.625rem;align-items:center">
                             <span class="justify-self-center w-10 h-10 rounded-lg flex items-center justify-center text-lg font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
                             <span class="min-w-0 truncate text-sm font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
                             <span style="display:flex;justify-content:center">${htmlSelectNac(c.nacionalidad)}</span>
-                            <span class="text-right text-sm font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 0)}</span>
+                            <span class="text-right text-base font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 0)}</span>
                         </div>`;
                     }).join('')}</div>`
                     : '<p class="text-sm text-slate-400 italic px-2 py-2">Sin ejemplares registrados.</p>';
@@ -1052,11 +1052,11 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             const retirado = !!c.retirado;
             const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
             return `
-            <div class="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 ${retirado ? 'opacity-40' : ''}" style="display:grid;grid-template-columns:2.5rem 1fr 2rem auto;column-gap:0.625rem;align-items:center">
+            <div class="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 ${retirado ? 'opacity-40' : ''}" style="display:grid;grid-template-columns:2.5rem 1fr 2.5rem auto;column-gap:0.625rem;align-items:center">
                 <span class="justify-self-center w-10 h-10 rounded-lg flex items-center justify-center text-lg font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
                 <span class="min-w-0 truncate text-sm font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
                 <span style="display:flex;justify-content:center">${htmlSelectNac(c.nacionalidad)}</span>
-                <span class="text-right text-sm font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 0)}</span>
+                <span class="text-right text-base font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 0)}</span>
             </div>`;
         }).join('');
     }
@@ -1084,11 +1084,11 @@ const { error } = await window.supabase.from('tablas_fijas').update({
                 <button class="btn-carrito-mas bg-emerald-100 hover:bg-emerald-200 text-emerald-700 w-7 h-7 rounded font-black" data-num="${c.numero}">+</button>
             </div>` : '';
             return `
-            <div class="bg-white border rounded-lg px-2 py-1.5 ${retirado ? 'opacity-40' : ''}" style="display:grid;grid-template-columns:2.5rem 1fr 2rem auto auto;column-gap:0.625rem;align-items:center">
+            <div class="bg-white border rounded-lg px-2 py-1.5 ${retirado ? 'opacity-40' : ''}" style="display:grid;grid-template-columns:2.5rem 1fr 2.5rem auto auto;column-gap:0.625rem;align-items:center">
                 <span class="justify-self-center w-10 h-10 rounded-lg flex items-center justify-center text-lg font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
                 <span class="min-w-0 truncate text-sm font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
                 <span style="display:flex;justify-content:center">${htmlSelectNac(c.nacionalidad)}</span>
-                <span class="text-right text-sm font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 0)}</span>
+                <span class="text-right text-base font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 0)}</span>
                 ${retirado ? '<span class="text-[10px] font-black uppercase text-red-400 bg-red-50 rounded px-1.5 py-1">No vendible</span>'
                     : (yaCant || `<button class="btn-venta-agregar bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase px-3 py-1.5 rounded-lg transition-colors shrink-0" data-num="${c.numero}">
                     <i class="fas fa-cart-plus mr-1"></i> Enviar al carrito
@@ -1155,11 +1155,11 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
             const subtotal = valor * it.cantidad;
             return `
-            <div class="bg-white border border-slate-200 rounded-lg px-2 py-1.5" style="display:grid;grid-template-columns:2rem 1fr auto auto auto;column-gap:0.5rem;align-items:center">
+            <div class="bg-white border border-slate-200 rounded-lg px-2 py-1.5" style="display:grid;grid-template-columns:2.5rem 1fr auto auto auto;column-gap:0.5rem;align-items:center">
                 <span class="justify-self-center w-10 h-10 rounded-lg flex items-center justify-center text-lg font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
                 <span class="min-w-0 truncate text-xs font-bold uppercase text-slate-700">${c.nombre || 'Sin nombre'}</span>
                 <span class="text-xs font-black text-slate-500">x${it.cantidad}</span>
-                <span class="text-sm font-black text-blue-700">${ventaSimb()}${clubUI.formatoNumero(valor, 0)}</span>
+                <span class="text-base font-black text-blue-700">${ventaSimb()}${clubUI.formatoNumero(valor, 0)}</span>
                 <button class="btn-carrito-quitar text-red-400 hover:text-red-600 text-xs px-1" data-i="${i}" title="Quitar"><i class="fas fa-times"></i></button>
             </div>`;
         }).join('');
