@@ -49,14 +49,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const simboloDe = (m) => m === 'VES' ? 'Bs ' : '$';
     const fmt = (v, d = 2) => window.clubUI?.formatoNumero ? window.clubUI.formatoNumero(Number(v) || 0, d) : (Number(v) || 0).toFixed(d);
 
-    function colorNumero(n) {
-        const pal = [
-            ['#1d4ed8', '#fff'], ['#b91c1c', '#fff'], ['#047857', '#fff'], ['#a16207', '#fff'],
-            ['#be123c', '#fff'], ['#7c3aed', '#fff'], ['#0e7490', '#fff'], ['#15803d', '#fff'],
-            ['#b45309', '#fff'], ['#334155', '#fff']
-        ];
-        return pal[(parseInt(n, 10) || 1) % pal.length];
-    }
+    // Paleta oficial de 14 colores de gualdrapa (idéntica al Ensamblaje)
+    const COLORES_NUMEROS = [
+        { bg: '#FF0000', fg: '#FFFFFF' }, { bg: '#FFFFFF', fg: '#000000' }, { bg: '#0000FF', fg: '#FFFFFF' },
+        { bg: '#FFFF00', fg: '#000000' }, { bg: '#008000', fg: '#FFFFFF' }, { bg: '#000000', fg: '#FFFF00' },
+        { bg: '#FFA500', fg: '#000000' }, { bg: '#FFC0CB', fg: '#000000' }, { bg: '#40E0D0', fg: '#000000' },
+        { bg: '#800080', fg: '#FFFFFF' }, { bg: '#808080', fg: '#FF0000' }, { bg: '#32CD32', fg: '#000000' },
+        { bg: '#8B4513', fg: '#FFFFFF' }, { bg: '#800000', fg: '#FFFFFF' },
+    ];
+    const colorDeNumero = (n) => {
+        const x = parseInt(n, 10);
+        return x ? COLORES_NUMEROS[((x - 1) % 14)].bg : '#94a3b8';
+    };
+    const textoDeNumero = (n) => {
+        const x = parseInt(n, 10);
+        return x ? COLORES_NUMEROS[((x - 1) % 14)].fg : '#FFFFFF';
+    };
+    const FLAGS_NAC = { VE: '🇻🇪', USA: '🇺🇸', BR: '🇧🇷', AR: '🇦🇷', CL: '🇨🇱', MX: '🇲🇽', PA: '🇵🇦', PE: '🇵🇪', CO: '🇨🇴', EC: '🇪🇨', UY: '🇺🇾', OTRA: '🏳️' };
+    const htmlBanderaNac = (nac) => {
+        const n = (nac || 'VE').trim().toUpperCase();
+        return `<span class="bandera-nac w-4 shrink-0 inline-flex justify-center text-sm leading-none" title="${n}">${FLAGS_NAC[n] || '🏳️'}</span>`;
+    };
 
     // ==========================================
     // CARGA INICIAL
@@ -183,8 +196,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const suma = ejemplares.reduce((a, c) => a + (parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0), 0);
 
             return `
-            <div class="card-venta bg-white rounded-xl shadow-sm border border-emerald-200 overflow-hidden flex flex-col" data-tabla="${t.id}">
-                <div class="bg-emerald-600 px-2 py-1 text-white">
+            <div class="card-venta bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden flex flex-col" data-tabla="${t.id}">
+                <div class="bg-indigo-600 px-2 py-1" style="color:#fff">
                     <div class="flex items-center justify-between gap-1">
                         <span class="text-[9px] font-bold uppercase tracking-wider flex-1 min-w-0 truncate">${t.hipodromo || 'Hipódromo'}</span>
                         <span class="font-black text-[10px] whitespace-nowrap"><i class="fas fa-flag-checkered mr-0.5"></i>C${t.carrera ?? ''}</span>
@@ -195,46 +208,48 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)">${t.fecha || ''}</span>
                     </div>
                     <div class="mt-1 flex items-center justify-between rounded px-2 py-1" style="background:rgba(255,255,255,.20)">
-                        <span class="text-[9px] font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-0.5"></i> Premio / Tabla</span>
+                        <span class="text-[9px] font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-0.5"></i> Monto a Pagar / Tabla</span>
                         <span class="font-black text-sm">${simboloDe(g.moneda)}${fmt(premio)}</span>
                     </div>
                 </div>
 
                 <div class="px-2 pt-1 pb-0.5 text-[8px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                    <span><i class="fas fa-horse-head text-amber-500 mr-0.5"></i> Ejemplares · toca para vender</span>
+                    <span><i class="fas fa-horse-head text-amber-500 mr-0.5"></i> Ejemplares · toca para comprar</span>
                     <span class="bg-slate-100 text-slate-600 px-1.5 rounded-full font-black">${ejemplares.length}</span>
                 </div>
 
                 <div class="px-1.5 py-0.5 space-y-0.5 flex-1">
                     ${ejemplares.map(c => {
-                        const [bg, fg] = colorNumero(c.numero);
+                        const bg = colorDeNumero(c.numero);
+                        const fg = textoDeNumero(c.numero);
                         const retirado = !!c.retirado;
                         const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
                         return `
-                        <button type="button" class="ej-btn w-full flex gap-1 items-center bg-slate-50 border border-slate-200 rounded px-1 py-0.5 text-left transition-colors ${retirado ? 'opacity-40 pointer-events-none' : 'hover:border-emerald-400 hover:bg-emerald-50 cursor-pointer'}"
-                            data-tabla="${t.id}" data-numero="${c.numero}" ${retirado ? 'disabled' : ''} title="${retirado ? 'Retirado de la carrera' : 'Vender tablas de ' + (c.nombre || '')}">
+                        <button type="button" class="js-ejemplar-venta w-full flex gap-1 items-center bg-slate-50 border border-slate-200 rounded px-1 py-0.5 text-left transition-colors ${retirado ? 'opacity-40 pointer-events-none' : 'hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer'}"
+                            data-tabla="${t.id}" data-numero="${c.numero}" ${retirado ? 'disabled' : ''} title="${retirado ? 'Retirado de la carrera' : 'Comprar tablas de ' + (c.nombre || '')}">
                             <span class="w-4 h-5 shrink-0 rounded px-0 text-center text-[8px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
+                            ${htmlBanderaNac(c.nacionalidad)}
                             <span class="flex-1 min-w-0 truncate text-[10px] font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
-                            <span class="shrink-0 text-[9px] font-black ${retirado ? 'text-red-500' : 'text-amber-600'}">${retirado ? 'RETIRADO' : 'Valor: ' + fmt(valor, 1)}</span>
-                            <span class="shrink-0 w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[9px] flex items-center justify-center"><i class="fas fa-cart-plus"></i></span>
+                            <span class="shrink-0 text-[9px] font-black ${retirado ? 'text-red-500' : 'text-blue-700'}">${retirado ? 'RETIRADO' : fmt(valor, 1)}</span>
+                            <span class="shrink-0 w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[9px] flex items-center justify-center"><i class="fas fa-cart-plus"></i></span>
                         </button>`;
                     }).join('') || '<p class="text-[10px] text-slate-400 italic px-1 py-1">Sin ejemplares registrados.</p>'}
                 </div>
 
                 <div class="px-2 py-1 border-t border-slate-200 bg-white flex items-center justify-between">
                     <span class="inline-flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-slate-400">
-                        <i class="fas fa-boxes text-emerald-500"></i> Disponibles grupo
+                        <i class="fas fa-boxes text-indigo-500"></i> Disponibles grupo
                     </span>
                     <span class="font-black text-[11px] text-emerald-700">${disponibles} / ${cupos}</span>
                 </div>
-                <div class="px-2 py-1 border-t border-slate-100 bg-emerald-50 flex items-center justify-between">
-                    <span class="text-[8px] font-black uppercase tracking-wider text-slate-400"><i class="fas fa-calculator text-indigo-400 mr-1"></i> Suma de la Tabla</span>
+                <div class="px-2 py-1 border-t border-slate-100 bg-indigo-50 flex items-center justify-between">
+                    <span class="text-[8px] font-black uppercase tracking-wider text-slate-500"><i class="fas fa-calculator text-indigo-400 mr-1"></i> Suma de la Tabla</span>
                     <span class="font-black text-[11px] text-indigo-700">${simboloDe(g.moneda)}${fmt(suma)}</span>
                 </div>
             </div>`;
         }).join('');
 
-        carrerasVenta.querySelectorAll('.ej-btn').forEach(btn => {
+        carrerasVenta.querySelectorAll('.js-ejemplar-venta').forEach(btn => {
             btn.addEventListener('click', () => {
                 const tabla = tablasDB.find(t => t.id == btn.dataset.tabla);
                 const ejemplar = (tabla?.caballos || []).find(c => c.numero == btn.dataset.numero);
