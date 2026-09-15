@@ -24,6 +24,36 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('statNacionalidades').textContent = new Set(padronCompleto.map(e => e.nacionalidad)).size;
         document.getElementById('statVinculados').textContent = padronCompleto.filter(e => e.totalTablas > 0).length;
 
+        // Chips de nacionalidad con bandera: clic filtra el listado
+        const gridNac = document.getElementById('gridNacionalidades');
+        const porNac = {};
+        padronCompleto.forEach(e => {
+            const nac = (e.nacionalidad || 'VE').toUpperCase();
+            porNac[nac] = (porNac[nac] || 0) + 1;
+        });
+        gridNac.innerHTML = Object.entries(porNac)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([nac, n]) => {
+                const active = f && f === nac;
+                return `<button type="button" class="chk-nacionalidad inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-black border transition-colors ${active ? 'bg-amber-500 text-white border-amber-600 shadow' : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'}" data-nac="${nac}" title="${PAISES[nac] || nac} — toque para filtrar">
+                    <span class="w-5 h-5 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-200 text-sm leading-none">${FLAGS[nac] || '🏳️'}</span>
+                    <span>${nac}</span>
+                    <span class="rounded-full ${active ? 'bg-white/25' : 'bg-white'} px-1.5 text-[10px]">${n}</span>
+                </button>`;
+            }).join('') || '<p class="text-[11px] text-slate-400 italic">Sin ejemplares registrados.</p>';
+
+        gridNac.querySelectorAll('.chk-nacionalidad').forEach(chip => {
+            chip.addEventListener('click', () => {
+                const nac = chip.dataset.nac;
+                if (buscarEjemplar.value.trim().toUpperCase() === nac) {
+                    buscarEjemplar.value = '';
+                } else {
+                    buscarEjemplar.value = nac;
+                }
+                renderPadron(buscarEjemplar.value);
+            });
+        });
+
         if (filas.length === 0) {
             cuerpoPadron.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-500 italic">Sin resultados.</td></tr>';
             return;
@@ -105,6 +135,13 @@ document.addEventListener('DOMContentLoaded', () => {
     buscarEjemplar.addEventListener('input', () => renderPadron(buscarEjemplar.value));
     document.getElementById('btnRecargarPadron').addEventListener('click', cargarPadron);
     document.getElementById('btnExportarPadron').addEventListener('click', exportarCSV);
+
+    // Al volver a la pestaña "Registro de Ejemplares", refresca el padrón
+    // para reflejar los ejemplares registrados desde la Gaceta (IA) o el Ensamblaje.
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        if (btn.dataset.tab !== 'padron') return;
+        btn.addEventListener('click', () => cargarPadron());
+    });
 
     cargarPadron();
 });
