@@ -150,6 +150,71 @@
         </main>
     </div>
 
+    <!-- MENÚ FLOTANTE POR EJEMPLAR (agregar al carrito) -->
+    <div id="menuEjemplarFlotante" class="hidden fixed z-40 w-72 bg-white rounded-2xl shadow-2xl border border-indigo-200 overflow-hidden">
+        <div class="bg-indigo-600 text-white px-3 py-2 flex items-center justify-between">
+            <span id="mefTitulo" class="text-[10px] font-black uppercase tracking-wider truncate">Ejemplar</span>
+            <button id="mefCerrar" class="text-white/80 hover:text-white p-0.5" aria-label="Cerrar"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="p-3 space-y-3">
+            <div class="bg-slate-50 rounded-lg p-2 border border-slate-200 text-xs space-y-1">
+                <div class="flex justify-between"><span class="font-bold text-slate-600">Carrera:</span> <span id="mefCarrera" class="font-black text-slate-800">—</span></div>
+                <div class="flex justify-between"><span class="font-bold text-slate-600">Ejemplar:</span> <span id="mefEjemplar" class="font-bold text-slate-800 truncate">—</span></div>
+                <div class="flex justify-between"><span class="font-bold text-slate-600">Valor / Tabla:</span> <span id="mefValor" class="font-black text-blue-700">—</span></div>
+                <div class="flex justify-between"><span class="font-bold text-slate-600">Disponibles:</span> <span id="mefDisponibles" class="font-black text-emerald-700">—</span></div>
+            </div>
+            <div>
+                <label class="block text-[10px] font-black text-slate-700 mb-1 uppercase tracking-wider">Cantidad de Tablas</label>
+                <div class="flex items-center gap-2">
+                    <button type="button" id="mefMenos" class="w-9 h-9 bg-slate-200 hover:bg-slate-300 rounded-lg font-black text-lg shrink-0">−</button>
+                    <input type="number" id="mefCantidad" value="1" min="1" class="flex-1 border border-slate-300 rounded-lg p-2 text-lg font-black text-center outline-none focus:ring-2 focus:ring-indigo-500">
+                    <button type="button" id="mefMas" class="w-9 h-9 bg-slate-200 hover:bg-slate-300 rounded-lg font-black text-lg shrink-0">+</button>
+                </div>
+            </div>
+            <button id="mefAgregar" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-2.5 rounded-lg shadow transition-colors uppercase tracking-wide">
+                <i class="fas fa-cart-plus mr-1"></i> Agregar al carrito
+            </button>
+        </div>
+    </div>
+
+    <!-- CARRITO FLOTANTE -->
+    <div id="barraCarrito" class="fixed bottom-3 right-3 z-40 hidden w-[22rem] max-w-[calc(100vw-1.5rem)]">
+        <div id="carritoMini" class="bg-slate-900 text-white rounded-xl shadow-2xl border border-slate-700 overflow-hidden cursor-pointer select-none">
+            <div class="flex items-center gap-2 px-3 py-2">
+                <span class="w-8 h-8 rounded-lg bg-emerald-500 text-white flex items-center justify-center text-sm shrink-0"><i class="fas fa-shopping-cart"></i></span>
+                <span class="flex-1 text-[11px] font-bold leading-tight">
+                    <span id="carritoMiniResumen" class="block">Carrito vacío</span>
+                    <span id="carritoMiniTotal" class="block text-emerald-400 text-[10px] font-black">$ 0.00</span>
+                </span>
+                <span id="carritoMiniBadge" class="hidden bg-amber-500 text-slate-900 text-[10px] font-black rounded-full px-2 py-0.5 shrink-0">0</span>
+                <i id="carritoChevron" class="fas fa-chevron-up text-slate-400 text-[10px] shrink-0"></i>
+            </div>
+        </div>
+        <div id="carritoDetalle" class="hidden mt-2 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden max-h-[55vh] flex flex-col">
+            <div id="carritoLista" class="p-2 space-y-1 overflow-y-auto flex-1"></div>
+            <div class="border-t border-slate-200 bg-slate-50 p-2 space-y-1.5 text-[11px]">
+                <div class="flex justify-between font-black text-slate-700">
+                    <span>Total tablas:</span>
+                    <span id="carritoTotTablas">0</span>
+                </div>
+                <div class="flex justify-between font-black text-blue-700">
+                    <span>Costo Total:</span>
+                    <span id="carritoTotCosto">$ 0.00</span>
+                </div>
+                <div class="flex justify-between font-black text-emerald-700">
+                    <span>Premio a ganar:</span>
+                    <span id="carritoTotPremio">$ 0.00</span>
+                </div>
+                <button id="carritoVender" class="w-full mt-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 rounded-lg shadow transition-colors uppercase tracking-wide">
+                    <i class="fas fa-user-check mr-1"></i> Vender a Cliente
+                </button>
+                <button id="carritoVaciar" class="w-full text-slate-500 hover:text-red-600 text-[10px] font-bold py-1 transition-colors">
+                    <i class="fas fa-trash-alt mr-1"></i> Vaciar carrito
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- MODAL DE VENTA (estilo modal_resultado) -->
     <div id="modalVenta" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col" role="dialog" aria-modal="true" aria-labelledby="modalVentaTitulo">
@@ -160,6 +225,10 @@
                 <button id="cerrarModalVenta" class="text-white hover:text-amber-200 p-1" aria-label="Cerrar"><i class="fas fa-times"></i></button>
             </div>
             <div class="p-4 space-y-4 overflow-y-auto flex-1">
+                <div id="mvResumenCarrito" class="hidden bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+                    <div id="mvResumenCarritoTitulo" class="text-[10px] font-black uppercase tracking-wider text-indigo-500 mb-1"><i class="fas fa-shopping-cart mr-1"></i> Venta múltiple — N items</div>
+                    <div id="mvResumenCarritoItems" class="text-[11px] text-slate-700 font-bold max-h-36 overflow-y-auto space-y-0.5"></div>
+                </div>
                 <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 text-xs">
                     <div class="flex justify-between"><span class="font-bold text-slate-600">Carrera:</span> <span id="mvCarrera" class="font-black text-slate-800">—</span></div>
                     <div class="flex justify-between mt-1"><span class="font-bold text-slate-600">Ejemplar:</span> <span id="mvEjemplar" class="font-bold text-slate-800">—</span></div>
@@ -239,11 +308,11 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../js/components/db.js"></script>
     <script src="../js/components/auth.js"></script>
-    <script src="../js/components/ui.js?v=20260911-1"></script>
+    <script src="../js/components/ui.js?v=20260914-1"></script>
     <script src="../js/components/indicador_accion.js"></script>
     <script src="../js/components/venta_tablas_core.js?v=20260914-2"></script>
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
-    <script src="../js/venta_tablas.js?v=20260914-7"></script>
+    <script src="../js/venta_tablas.js?v=20260914-8"></script>
 </body>
 </html>

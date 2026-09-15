@@ -56,8 +56,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const htmlSelectNac = (val = 'VE') => {
         const nac = (val || 'VE').trim().toUpperCase();
-        const FLAGS = { VE: '🇻🇪', USA: '🇺🇸', BR: '🇧🇷', AR: '🇦🇷', CL: '🇨🇱', MX: '🇲🇽', PA: '🇵🇦', PE: '🇵🇪', CO: '🇨🇴', EC: '🇪🇨', UY: '🇺🇾', OTRA: '🏳️' };
-        return `<span class="bandera-nac w-4 shrink-0 inline-flex justify-center text-sm leading-none" title="${nac}" data-nac="${nac}">${FLAGS[nac] || '🏳️'}</span>`;
+        return window.clubUI?.bandera
+            ? `<span class="bandera-nac w-4 shrink-0 inline-flex justify-center items-center" title="${nac}">${window.clubUI.bandera(nac, 16)}</span>`
+            : `<span class="bandera-nac w-4 shrink-0 inline-flex justify-center text-sm leading-none" title="${nac}" data-nac="${nac}">${nac}</span>`;
     };
 
     // ==========================================

@@ -15,7 +15,7 @@
 // ==========================================
 window.clubModalResultado = (() => {
     const NACIONES = ['VE', 'USA', 'BR', 'AR', 'CL', 'MX', 'PA', 'PE', 'CO', 'EC', 'UY', 'OTRA'];
-    const BANDERAS = { VE: '🇻🇪', USA: '🇺🇸', BR: '🇧🇷', AR: '🇦🇷', CL: '🇨🇱', MX: '🇲🇽', PA: '🇵🇦', PE: '🇵🇪', CO: '🇨🇴', EC: '🇪🇨', UY: '🇺🇾', OTRA: '🏳️' };
+    const PAISES_NAC = { VE: 'Venezuela', USA: 'Estados Unidos', BR: 'Brasil', AR: 'Argentina', CL: 'Chile', MX: 'México', PA: 'Panamá', PE: 'Perú', CO: 'Colombia', EC: 'Ecuador', UY: 'Uruguay', OTRA: 'Otra' };
     const PALETA = [
         { bg: '#FF0000', fg: '#FFFFFF' }, { bg: '#FFFFFF', fg: '#000000' },
         { bg: '#0000FF', fg: '#FFFFFF' }, { bg: '#FFFF00', fg: '#000000' },

@@ -231,6 +231,23 @@ window.clubUI = (() => {
     }
 
     // ==========================================
+    // BANDERA POR NACIONALIDAD (imagen)
+    // Los emojis de bandera no se renderizan en Windows/Chrome;
+    // usa flagcdn.com (código ISO en minúscula). Si el código no
+    // está soportado, devuelve el badge con el código de país.
+    // ==========================================
+    const ISO_NAC = { VE: 've', USA: 'us', BR: 'br', AR: 'ar', CL: 'cl', MX: 'mx', PA: 'pa', PE: 'pe', CO: 'co', EC: 'ec', UY: 'uy' };
+    function bandera(nac, size = 20) {
+        const n = (nac || 'VE').trim().toUpperCase();
+        const iso = ISO_NAC[n];
+        if (iso) {
+            const h = Math.max(12, Math.round(size * 0.66));
+            return `<span class="club-bandera" style="display:inline-flex;border-radius:3px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,0.10);line-height:0;vertical-align:middle" title="${n}"><img src="https://flagcdn.com/w${size * 2}/${iso}.png" alt="${n}" width="${size}" height="${h}" loading="lazy" style="display:block"></span>`;
+        }
+        return `<span class="club-bandera" style="display:inline-flex;align-items:center;justify-content:center;min-width:${Math.max(size, 20)}px;height:${Math.max(size, 20)}px;border-radius:9999px;background:#e2e8f0;font-size:${Math.max(9, Math.round(size * 0.5))}px;font-weight:800;color:#475569;vertical-align:middle" title="${n}">${n === 'OTRA' ? '🏳️' : n}</span>`;
+    }
+
+    // ==========================================
     // TELÉFONO INTELIGENTE (código de país)
     // ==========================================
     // construye "+58 4121234567" quitando el 0 nacional inicial
@@ -284,5 +301,5 @@ window.clubUI = (() => {
         return '';
     }
 
-    return { toast, aviso, paginar, BANCOS_VZLA, PAISES_TELEFONO, METODOS_PAGO, listMetodosPago, esBancoVzla, htmlOpcionesBancosVzla, formatoNumero, formatoMoneda, componerTelefono, desglosarTelefono, htmlOpcionesCodigoPais, htmlOpcionesMetodos, resumenDatosPago };
+    return { toast, aviso, paginar, BANCOS_VZLA, PAISES_TELEFONO, METODOS_PAGO, listMetodosPago, esBancoVzla, htmlOpcionesBancosVzla, formatoNumero, formatoMoneda, bandera, componerTelefono, desglosarTelefono, htmlOpcionesCodigoPais, htmlOpcionesMetodos, resumenDatosPago };
 })();

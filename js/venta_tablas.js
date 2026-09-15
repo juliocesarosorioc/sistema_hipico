@@ -37,6 +37,35 @@ document.addEventListener('DOMContentLoaded', () => {
     const mvDisponibles = document.getElementById('mvDisponibles');
     const mvConfirmar = document.getElementById('mvConfirmar');
 
+    const menuEjemplarFlotante = document.getElementById('menuEjemplarFlotante');
+    const mefTitulo = document.getElementById('mefTitulo');
+    const mefCerrar = document.getElementById('mefCerrar');
+    const mefCarrera = document.getElementById('mefCarrera');
+    const mefEjemplar = document.getElementById('mefEjemplar');
+    const mefValor = document.getElementById('mefValor');
+    const mefDisponibles = document.getElementById('mefDisponibles');
+    const mefCantidad = document.getElementById('mefCantidad');
+    const mefMenos = document.getElementById('mefMenos');
+    const mefMas = document.getElementById('mefMas');
+    const mefAgregar = document.getElementById('mefAgregar');
+
+    const barraCarrito = document.getElementById('barraCarrito');
+    const carritoMini = document.getElementById('carritoMini');
+    const carritoMiniResumen = document.getElementById('carritoMiniResumen');
+    const carritoMiniTotal = document.getElementById('carritoMiniTotal');
+    const carritoMiniBadge = document.getElementById('carritoMiniBadge');
+    const carritoChevron = document.getElementById('carritoChevron');
+    const carritoDetalle = document.getElementById('carritoDetalle');
+    const carritoLista = document.getElementById('carritoLista');
+    const carritoTotTablas = document.getElementById('carritoTotTablas');
+    const carritoTotCosto = document.getElementById('carritoTotCosto');
+    const carritoTotPremio = document.getElementById('carritoTotPremio');
+    const carritoVender = document.getElementById('carritoVender');
+    const carritoVaciar = document.getElementById('carritoVaciar');
+
+    const mvResumenCarrito = document.getElementById('mvResumenCarrito');
+    const mvResumenCarritoItems = document.getElementById('mvResumenCarritoItems');
+
     let gruposDB = [];
     let tablasDB = [];
     let clientesDB = [];
@@ -44,7 +73,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let grupoSeleccionado = null;
     let tasaCambioGlobal = 1.0;
     let aportadoPorCliente = false;
-    let ventaCtx = null; // { tabla, ejemplar, tg }
+    let ventaCtx = null; // { tabla, ejemplar, tg } — contexto de la venta actual
+    let carrito = []; // [{ tabla, ejemplar, tg, cantidad }] escaneos pendientes de confirmar
 
     const simboloDe = (m) => m === 'VES' ? 'Bs ' : '$';
     const fmt = (v, d = 2) => window.clubUI?.formatoNumero ? window.clubUI.formatoNumero(Number(v) || 0, d) : (Number(v) || 0).toFixed(d);
@@ -68,7 +98,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const FLAGS_NAC = { VE: '🇻🇪', USA: '🇺🇸', BR: '🇧🇷', AR: '🇦🇷', CL: '🇨🇱', MX: '🇲🇽', PA: '🇵🇦', PE: '🇵🇪', CO: '🇨🇴', EC: '🇪🇨', UY: '🇺🇾', OTRA: '🏳️' };
     const htmlBanderaNac = (nac) => {
         const n = (nac || 'VE').trim().toUpperCase();
-        return `<span class="bandera-nac w-4 shrink-0 inline-flex justify-center text-sm leading-none" title="${n}">${FLAGS_NAC[n] || '🏳️'}</span>`;
+        return window.clubUI?.bandera
+            ? `<span class="bandera-nac w-4 shrink-0 inline-flex justify-center items-center" title="${n}">${window.clubUI.bandera(n, 16)}</span>`
+            : `<span class="bandera-nac w-4 shrink-0 inline-flex justify-center text-sm leading-none" title="${n}">${n}</span>`;
     };
 
     // ==========================================
@@ -185,7 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        msgSinCarreras.classList.add('hidden');
+msgSinCarreras.classList.add('hidden');
         carrerasVenta.innerHTML = tablas.map(t => {
             const tg = (t.tabla_grupos || []).find(x => x.grupo_id == g.id);
             const cupos = tg.cupos || 0;
@@ -193,13 +225,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const disponibles = Math.max(0, cupos - vendidas);
             const premio = parseFloat(t.premio_recalculado) || 0;
             const ejemplares = Array.isArray(t.caballos) ? t.caballos : [];
-            const suma = ejemplares.reduce((a, c) => a + (parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0), 0);
+            const suma = ejemplares.reduce((acc, c) => acc + (parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0), 0);
 
             return `
-            <div class="card-venta bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden flex flex-col" data-tabla="${t.id}">
+            <div class="card-carrera bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden flex flex-col" data-tabla="${t.id}">
                 <div class="bg-indigo-600 px-2 py-1" style="color:#fff">
                     <div class="flex items-center justify-between gap-1">
-                        <span class="text-[9px] font-bold uppercase tracking-wider flex-1 min-w-0 truncate">${t.hipodromo || 'Hipódromo'}</span>
+                        <span class="rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wider truncate" style="background:rgba(255,255,255,.18);color:#fff">${t.hipodromo || ''}</span>
                         <span class="font-black text-[10px] whitespace-nowrap"><i class="fas fa-flag-checkered mr-0.5"></i>C${t.carrera ?? ''}</span>
                     </div>
                     <div class="flex flex-wrap gap-1 mt-0.5 text-[8px] font-bold items-center">
@@ -209,12 +241,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="mt-1 flex items-center justify-between rounded px-2 py-1" style="background:rgba(255,255,255,.20)">
                         <span class="text-[9px] font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-0.5"></i> Monto a Pagar / Tabla</span>
-                        <span class="font-black text-sm">${simboloDe(g.moneda)}${fmt(premio)}</span>
+                        <span class="font-black text-sm" style="color:#fff">${simboloDe(g.moneda)}${fmt(premio)}</span>
                     </div>
                 </div>
 
                 <div class="px-2 pt-1 pb-0.5 text-[8px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                    <span><i class="fas fa-horse-head text-amber-500 mr-0.5"></i> Ejemplares · toca para comprar</span>
+                    <span><i class="fas fa-horse-head text-amber-500 mr-0.5"></i> Ejemplares · toca para vender</span>
                     <span class="bg-slate-100 text-slate-600 px-1.5 rounded-full font-black">${ejemplares.length}</span>
                 </div>
 
@@ -225,12 +257,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         const retirado = !!c.retirado;
                         const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
                         return `
-                        <button type="button" class="js-ejemplar-venta w-full flex gap-1 items-center bg-slate-50 border border-slate-200 rounded px-1 py-0.5 text-left transition-colors ${retirado ? 'opacity-40 pointer-events-none' : 'hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer'}"
+                        <button type="button" class="js-ejemplar-venta flex gap-0.5 items-center w-full text-left bg-slate-50 border border-slate-200 rounded px-1 py-0.5 ${retirado ? 'opacity-40 pointer-events-none' : 'hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer'}"
                             data-tabla="${t.id}" data-numero="${c.numero}" ${retirado ? 'disabled' : ''} title="${retirado ? 'Retirado de la carrera' : 'Comprar tablas de ' + (c.nombre || '')}">
-                            <span class="w-4 h-5 shrink-0 rounded px-0 text-center text-[8px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
-                            ${htmlBanderaNac(c.nacionalidad)}
+                            <span class="w-4 h-5 shrink-0 rounded px-0 py-px text-center text-[8px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
                             <span class="flex-1 min-w-0 truncate text-[10px] font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
-                            <span class="shrink-0 text-[9px] font-black ${retirado ? 'text-red-500' : 'text-blue-700'}">${retirado ? 'RETIRADO' : fmt(valor, 1)}</span>
+                            ${htmlBanderaNac(c.nacionalidad)}
+                            <span class="shrink-0 w-11 text-right text-[11px] font-black ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : fmt(valor, 1)}</span>
                             <span class="shrink-0 w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[9px] flex items-center justify-center"><i class="fas fa-cart-plus"></i></span>
                         </button>`;
                     }).join('') || '<p class="text-[10px] text-slate-400 italic px-1 py-1">Sin ejemplares registrados.</p>'}
@@ -238,24 +270,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 <div class="px-2 py-1 border-t border-slate-200 bg-white flex items-center justify-between">
                     <span class="inline-flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-slate-400">
-                        <i class="fas fa-boxes text-indigo-500"></i> Disponibles grupo
+                        <i class="fas fa-calculator text-indigo-400"></i> Suma de la Tabla
                     </span>
-                    <span class="font-black text-[11px] text-emerald-700">${disponibles} / ${cupos}</span>
+                    <span class="font-black text-[11px] text-indigo-700" title="Sumatoria de los valores de todos los ejemplares">${simboloDe(g.moneda)}${fmt(suma)}</span>
                 </div>
                 <div class="px-2 py-1 border-t border-slate-100 bg-indigo-50 flex items-center justify-between">
-                    <span class="text-[8px] font-black uppercase tracking-wider text-slate-500"><i class="fas fa-calculator text-indigo-400 mr-1"></i> Suma de la Tabla</span>
-                    <span class="font-black text-[11px] text-indigo-700">${simboloDe(g.moneda)}${fmt(suma)}</span>
+                    <span class="text-[8px] font-black uppercase tracking-wider text-slate-500"><i class="fas fa-boxes text-indigo-400 mr-1"></i> Disponibles grupo</span>
+                    <span class="font-black text-[11px] text-emerald-700">${disponibles} / ${cupos}</span>
                 </div>
             </div>`;
         }).join('');
 
+        // Delegación de eventos: tocar un ejemplar abre el menú flotante de compra
+        // (agregar al carrito). Si ya está en el carrito se avisa y no se reabre.
         carrerasVenta.querySelectorAll('.js-ejemplar-venta').forEach(btn => {
             btn.addEventListener('click', () => {
                 const tabla = tablasDB.find(t => t.id == btn.dataset.tabla);
                 const ejemplar = (tabla?.caballos || []).find(c => c.numero == btn.dataset.numero);
                 const tg = (tabla?.tabla_grupos || []).find(x => x.grupo_id == g.id);
                 if (!tabla || !ejemplar || !tg) return clubUI.toast('No se pudo preparar la venta (falta inventario del grupo).', 'error');
-                abrirModalVenta({ tabla, ejemplar, tg });
+                const ya = carrito.find(c => c.tabla.id == tabla.id && String(c.ejemplar.numero) === String(ejemplar.numero));
+                if (ya) return clubUI.toast(`${ejemplar.nombre} ya está en el carrito (${ya.cantidad} tabla(s)). Puede ajustar desde la barra del carrito.`, 'info');
+                abrirMenuEjemplar(btn, { tabla, ejemplar, tg });
             });
         });
     }
@@ -314,6 +350,195 @@ document.addEventListener('DOMContentLoaded', () => {
         aportadoPorCliente = false;
     }
 
+    // ==========================================
+    // CARRITO MÚLTIPLE DE VENTA
+    // ==========================================
+    const dispDe = (tg) => Math.max(0, (tg.cupos || 0) - (tg.cantidad_vendida || 0));
+
+    function abrirMenuEjemplar(btn, ctx) {
+        ventaCtx = ctx;
+        const { tabla, ejemplar, tg } = ctx;
+        const g = grupoSeleccionado;
+        const pts = parseFloat(ejemplar.valor_ejemplar ?? ejemplar.valor ?? ejemplar.pts) || 0;
+
+        mefCarrera.textContent = `${tabla.hipodromo} · C${tabla.carrera}`;
+        mefEjemplar.textContent = `N° ${ejemplar.numero ?? ''} — ${ejemplar.nombre}`;
+        mefValor.textContent = `${simboloDe(g.moneda)}${fmt(pts)}`;
+        mefDisponibles.textContent = `${dispDe(tg)} tabla(s)`;
+        mefCantidad.value = Math.min(1, dispDe(tg) || 1);
+
+        const r = btn ? btn.getBoundingClientRect() : null;
+        const w = menuEjemplarFlotante.offsetWidth || 288;
+        const h = menuEjemplarFlotante.offsetHeight || 280;
+        let left = r ? r.left : 12;
+        let top = r ? r.bottom + 8 : 220;
+        left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+        if (top + h > window.innerHeight - 8) top = Math.max(8, window.innerHeight - h - 8);
+        menuEjemplarFlotante.style.left = left + 'px';
+        menuEjemplarFlotante.style.top = top + 'px';
+        menuEjemplarFlotante.classList.remove('hidden');
+        requestAnimationFrame(() => mefCantidad.focus());
+    }
+
+    function cerrarMenuEjemplar() {
+        menuEjemplarFlotante.classList.add('hidden');
+        ventaCtx = null;
+    }
+
+    mefCerrar.addEventListener('click', cerrarMenuEjemplar);
+    mefMenos.addEventListener('click', () => {
+        mefCantidad.value = Math.max(1, (parseInt(mefCantidad.value) || 1) - 1);
+    });
+    mefMas.addEventListener('click', () => {
+        const disp = ventaCtx ? dispDe(ventaCtx.tg) : 999;
+        mefCantidad.value = Math.min(disp || 999, (parseInt(mefCantidad.value) || 1) + 1);
+    });
+    mefCantidad.addEventListener('input', () => {
+        if (!ventaCtx) return;
+        const disp = dispDe(ventaCtx.tg);
+        const v = parseInt(mefCantidad.value) || 1;
+        if (v > disp) mefCantidad.value = disp || 1;
+        if (v < 1) mefCantidad.value = 1;
+    });
+    mefAgregar.addEventListener('click', () => {
+        if (!ventaCtx) return;
+        const { tabla, ejemplar, tg } = ventaCtx;
+        const cantidad = Math.max(1, parseInt(mefCantidad.value) || 1);
+        const disp = dispDe(tg);
+        if (cantidad > disp) return clubUI.toast(`Solo quedan ${disp} tabla(s) de ${ejemplar.nombre}.`, 'warning');
+
+        const existente = carrito.find(c => c.tabla.id == tabla.id && String(c.ejemplar.numero) === String(ejemplar.numero));
+        if (existente) {
+            return clubUI.toast(`${ejemplar.nombre} ya está en el carrito (${existente.cantidad} tabla(s)).`);
+        }
+        carrito.push({ tabla, ejemplar, tg, cantidad });
+        cerrarMenuEjemplar();
+        renderCarrito();
+        render();
+        clubUI.toast(`${cantidad} tabla(s) de ${ejemplar.nombre} agregadas al carrito.`, 'success');
+    });
+
+    function renderCarrito() {
+        const totalItems = carrito.length;
+        const totalTablas = carrito.reduce((a, c) => a + c.cantidad, 0);
+        const g = grupoSeleccionado;
+        const simb = g ? simboloDe(g.moneda) : '$';
+        const totalCosto = carrito.reduce((a, c) => a + (parseFloat(c.ejemplar.valor_ejemplar ?? c.ejemplar.valor ?? c.ejemplar.pts) || 0) * c.cantidad, 0);
+        const totalPremio = carrito.reduce((a, c) => a + (parseFloat(c.tabla.premio_recalculado) || 0) * c.cantidad, 0);
+
+        if (carrito.length === 0) {
+            barraCarrito.classList.add('hidden');
+            return;
+        }
+        barraCarrito.classList.remove('hidden');
+        carritoMiniResumen.textContent = `${totalItems} ejemplar(es) · ${totalTablas} tabla(s)`;
+        carritoMiniTotal.textContent = `${simb}${fmt(totalCosto)}`;
+        carritoMiniBadge.textContent = totalTablas;
+        carritoMiniBadge.classList.remove('hidden');
+        carritoTotTablas.textContent = totalTablas;
+        carritoTotCosto.textContent = `${simb}${fmt(totalCosto)}`;
+        carritoTotPremio.textContent = `${simb}${fmt(totalPremio)}`;
+
+        carritoLista.innerHTML = carrito.map((c, i) => {
+            const bg = colorDeNumero(c.ejemplar.numero);
+            return `
+            <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5">
+                <span class="w-4 h-5 shrink-0 rounded px-0 py-px text-center text-[8px] font-black border" style="background-color:${bg};color:${textoDeNumero(c.ejemplar.numero)};border-color:${bg}">${c.ejemplar.numero ?? ''}</span>
+                <div class="flex-1 min-w-0">
+                    <div class="text-[10px] font-bold uppercase truncate text-slate-800">${c.ejemplar.nombre || ''}</div>
+                    <div class="text-[8px] text-slate-500 uppercase">${c.tabla.hipodromo} C${c.tabla.carrera}</div>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                    <button type="button" data-act="menos" data-i="${i}" class="w-6 h-6 rounded bg-slate-200 hover:bg-slate-300 font-black text-sm leading-none">−</button>
+                    <span class="w-8 text-center text-[11px] font-black text-slate-800">${c.cantidad}</span>
+                    <button type="button" data-act="mas" data-i="${i}" class="w-6 h-6 rounded bg-slate-200 hover:bg-slate-300 font-black text-sm leading-none">+</button>
+                </div>
+                <span class="w-16 shrink-0 text-right text-[10px] font-black text-blue-700">${simb}${fmt((parseFloat(c.ejemplar.valor_ejemplar ?? c.ejemplar.valor ?? c.ejemplar.pts) || 0) * c.cantidad)}</span>
+                <button type="button" data-act="quitar" data-i="${i}" class="w-6 h-6 shrink-0 rounded text-red-400 hover:text-red-600 hover:bg-red-50"><i class="fas fa-trash-alt text-[10px]"></i></button>
+            </div>`;
+        }).join('');
+
+        carritoLista.querySelectorAll('button[data-act]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const i = parseInt(btn.dataset.i, 10);
+                const item = carrito[i];
+                if (!item) return;
+                if (btn.dataset.act === 'mas') {
+                    const disp = dispDe(item.tg);
+                    if (item.cantidad + 1 > disp) { clubUI.toast(`Solo quedan ${disp} tabla(s) de ${item.ejemplar.nombre}.`, 'warning'); return; }
+                    item.cantidad += 1;
+                } else if (btn.dataset.act === 'menos') {
+                    item.cantidad -= 1;
+                    if (item.cantidad <= 0) item.cantidad = 1;
+                } else {
+                    carrito.splice(i, 1);
+                }
+                renderCarrito();
+                render();
+            });
+        });
+    }
+
+    carritoMini.addEventListener('click', () => {
+        const abierto = !carritoDetalle.classList.contains('hidden');
+        carritoDetalle.classList.toggle('hidden');
+        carritoChevron.className = 'fas fa-chevron-' + (abierto ? 'up' : 'down') + ' text-slate-400 text-[10px] shrink-0';
+    });
+    carritoVaciar.addEventListener('click', () => {
+        carrito = [];
+        renderCarrito();
+        render();
+        clubUI.toast('Carrito vaciado.', 'info');
+    });
+    carritoVender.addEventListener('click', () => {
+        if (carrito.length === 0) return clubUI.toast('El carrito está vacío.', 'warning');
+        abrirModalVentaCarrito();
+    });
+
+    function abrirModalVentaCarrito() {
+        if (carrito.length === 0) return;
+        const g = grupoSeleccionado;
+        const simb = simboloDe(g.moneda);
+        const { tabla, ejemplar, tg } = carrito[0];
+
+        ventaCtx = null;
+        const premio = parseFloat(tabla.premio_recalculado) || 0;
+        const pts = parseFloat(ejemplar.valor_ejemplar ?? ejemplar.valor ?? ejemplar.pts) || 0;
+
+        mvCarrera.textContent = `${tabla.hipodromo} · C${tabla.carrera} (+${carrito.length - 1} más)`;
+        mvEjemplar.textContent = `N° ${ejemplar.numero ?? ''} — ${ejemplar.nombre}`;
+        mvValor.textContent = `${simb}${fmt(pts)}`;
+        mvPremio.textContent = `${simb}${fmt(premio)}`;
+
+        mvResumenCarrito.classList.remove('hidden');
+        document.getElementById('mvResumenCarritoTitulo').textContent = `Venta múltiple — ${carrito.length} ejemplar(es) · ${carrito.reduce((a, c) => a + c.cantidad, 0)} tabla(s)`;
+        mvResumenCarritoItems.innerHTML = carrito.map(c => `
+            <div class="flex justify-between"><span class="truncate">N° ${c.ejemplar.numero ?? ''} — ${c.ejemplar.nombre} (${c.tabla.hipodromo} C${c.tabla.carrera})</span><strong class="shrink-0">${c.cantidad} × ${simb}${fmt(parseFloat(c.ejemplar.valor_ejemplar ?? c.ejemplar.valor ?? c.ejemplar.pts) || 0)}</strong></div>
+        `).join('');
+
+        mvGrupoCobro.innerHTML = `<option value="${g.id}">${g.nombre} (${g.moneda})</option>`;
+
+        const extraIds = (miembrosExtraPorGrupo[g.id] || []).filter(id => !clientesDB.find(c => c.id == id && c.grupo_id == g.id));
+        const delGrupo = clientesDB
+            .filter(c => c.grupo_id == g.id || !c.grupo_id || extraIds.includes(c.id))
+            .sort((a, b) => a.nombre.localeCompare(b.nombre));
+        mvCliente.innerHTML = '<option value="">Seleccione apostador...</option>';
+        delGrupo.forEach(c => mvCliente.innerHTML += `<option value="${c.id}">${c.nombre} (Saldo: $${fmt(parseFloat(c.saldo_actual) || 0)})</option>`);
+        mvCliente.disabled = delGrupo.length === 0;
+        if (delGrupo.length === 0) mvCliente.innerHTML += '<option value="" disabled>No hay clientes en este grupo</option>';
+
+        mvGrupoComision.innerHTML = '';
+        gruposDB.filter(x => x.activo).forEach(x => mvGrupoComision.innerHTML += `<option value="${x.id}">${x.nombre} (comisión ${fmt(parseFloat(x.comision_default ?? 2.5), 1)}%)</option>`);
+        mvGrupoComision.value = g.id.toString();
+
+        mvCantidad.value = 1;
+        actualizarTotalesModal();
+        modalVenta.classList.remove('hidden');
+        modalVenta.classList.add('flex');
+        document.body.style.overflow = 'hidden';
+        requestAnimationFrame(() => mvCliente.focus());
+    }
+
     // El grupo que COBRA es siempre el grupo que vende (donde juega el cliente
     // en esta operación), así el inventario (tg), la moneda y el descuento
     // quedan consistentes aunque el cliente tenga pertenencia multi-grupo.
@@ -329,79 +554,94 @@ document.addEventListener('DOMContentLoaded', () => {
     modalVenta.addEventListener('click', (e) => { if (e.target === modalVenta) cerrarModalVenta(); });
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && !modalVenta.classList.contains('hidden')) cerrarModalVenta();
+        if (e.key === 'Escape' && !menuEjemplarFlotante.classList.contains('hidden')) cerrarMenuEjemplar();
+    });
+    document.addEventListener('click', (e) => {
+        if (menuEjemplarFlotante.classList.contains('hidden')) return;
+        if (!menuEjemplarFlotante.contains(e.target) && !e.target.closest('.js-ejemplar-venta')) {
+            cerrarMenuEjemplar();
+        }
     });
 
     function comisionPorcActual() {
         const gCom = gruposDB.find(x => x.id == mvGrupoComision.value);
+        if (carrito.length) {
+            const deTabla = parseFloat(carrito[0].tabla.comision_grupo);
+            if (!isNaN(deTabla)) return deTabla;
+            return parseFloat(gCom?.comision_default ?? 2.5);
+        }
         const deTabla = parseFloat(ventaCtx?.tabla?.comision_grupo);
         if (!isNaN(deTabla)) return deTabla;
         return parseFloat(gCom?.comision_default ?? 2.5);
     }
 
+    function itemsVenta() {
+        return carrito.length ? carrito : (ventaCtx ? [{ tabla: ventaCtx.tabla, ejemplar: ventaCtx.ejemplar, tg: ventaCtx.tg, cantidad: Math.max(1, parseInt(mvCantidad.value) || 1) }] : []);
+    }
+
     function actualizarTotalesModal() {
-        if (!ventaCtx) return;
-        const { tg } = ventaCtx;
-        const pts = parseFloat(ventaCtx.ejemplar.valor_ejemplar ?? ventaCtx.ejemplar.valor ?? ventaCtx.ejemplar.pts) || 0;
-        const premio = parseFloat(ventaCtx.tabla.premio_recalculado) || 0;
-        const cant = Math.max(1, parseInt(mvCantidad.value) || 1);
+        const items = itemsVenta();
+        if (items.length === 0 || !grupoSeleccionado) return;
         const g = grupoSeleccionado;
         const simb = simboloDe(g.moneda);
-
-        const costoTotal = pts * cant;
-        const premioTotal = premio * cant;
-        const ganancia = Math.max(0, premioTotal - costoTotal);
+        const ptsTotalRaw = items.reduce((a, it) => a + (parseFloat(it.ejemplar.valor_ejemplar ?? it.ejemplar.valor ?? it.ejemplar.pts) || 0) * it.cantidad, 0);
+        const premioTotalRaw = items.reduce((a, it) => a + (parseFloat(it.tabla.premio_recalculado) || 0) * it.cantidad, 0);
+        const cantTotal = items.reduce((a, it) => a + it.cantidad, 0);
         const comisionPorc = comisionPorcActual();
+        const ganancia = Math.max(0, premioTotalRaw - ptsTotalRaw);
         const comision = ganancia * (comisionPorc / 100);
 
-        mvCostoUnit.textContent = `${simb}${fmt(pts)}`;
-        mvCostoTotal.textContent = `${simb}${fmt(costoTotal)}`;
-        mvPremioTotal.textContent = `${simb}${fmt(premioTotal)}`;
+        mvCostoUnit.textContent = `${simb}${fmt(cantTotal ? ptsTotalRaw / cantTotal : 0)}`;
+        mvCostoTotal.textContent = `${simb}${fmt(ptsTotalRaw)}`;
+        mvPremioTotal.textContent = `${simb}${fmt(premioTotalRaw)}`;
         mvComisionEst.textContent = `${simb}${fmt(comision)} (${fmt(comisionPorc, 1)}%)`;
         mvGanancia.textContent = `${simb}${fmt(ganancia)}`;
-        const dispon = (tg.cupos || 0) - (tg.cantidad_vendida || 0);
-        mvDisponibles.textContent = `Disponibles en ${grupoSeleccionado.nombre}: ${dispon} tabla(s)`;
+        const disponibleMin = Math.min(...items.map(it => dispDe(it.tg)));
+        mvDisponibles.textContent = carrito.length
+            ? `Venta múltiple de ${items.length} ejemplar(es) · ${cantTotal} tabla(s) · disponible mínimo: ${disponibleMin}`
+            : `Disponibles en ${grupoSeleccionado.nombre}: ${disponibleMin} tabla(s)`;
     }
 
     mvConfirmar.addEventListener('click', async () => {
-        if (!ventaCtx || !grupoSeleccionado) return;
-        const { tabla, ejemplar, tg } = ventaCtx;
+        const items = itemsVenta();
+        if (items.length === 0 || !grupoSeleccionado) return;
         const clienteId = mvCliente.value;
-        const cantidad = parseInt(mvCantidad.value);
-        const g = grupoSeleccionado;
-
         if (!clienteId) return clubUI.toast('Seleccione el jugador que compra.', 'warning');
-        if (isNaN(cantidad) || cantidad <= 0) return clubUI.toast('Cantidad inválida.', 'warning');
 
-        const dispon = (tg.cupos || 0) - (tg.cantidad_vendida || 0);
-        if (cantidad > dispon) return clubUI.toast(`No hay suficientes tablas en el grupo. Solo quedan ${dispon}.`, 'warning');
+        // Pre-validación de disponibilidad combinada
+        for (const it of items) {
+            const cant = Math.max(1, parseInt(it.cantidad) || 1);
+            if (cant > dispDe(it.tg)) return clubUI.toast(`No hay suficientes tablas de ${it.ejemplar.nombre} (${it.tabla.hipodromo} C${it.tabla.carrera}). Solo quedan ${dispDe(it.tg)}.`, 'warning');
+            it.cantidad = cant;
+        }
 
         const cliente = clientesDB.find(c => c.id == clienteId);
         if (!cliente) return clubUI.toast('Cliente no encontrado.', 'error');
 
+        const g = grupoSeleccionado;
         const esMiembro = cliente.grupo_id == g.id || !cliente.grupo_id || (miembrosExtraPorGrupo[g.id]?.includes(cliente.id));
         if (!esMiembro) return clubUI.toast('El jugador no pertenece al grupo de venta seleccionado.', 'warning');
 
         const grupoComision = gruposDB.find(x => x.id == mvGrupoComision.value) || g;
         const cobroGrupo = gruposDB.find(x => x.id == mvGrupoCobro.value) || g;
 
-        const pts = parseFloat(ejemplar.valor_ejemplar ?? ejemplar.valor ?? ejemplar.pts) || 0;
-        const costoTotal = pts * cantidad;
         const esVES = g.moneda === 'VES';
-        const costoUSD = esVES ? costoTotal / (tasaCambioGlobal || 1) : costoTotal;
+        const ptsTotal = items.reduce((a, it) => a + (parseFloat(it.ejemplar.valor_ejemplar ?? it.ejemplar.valor ?? it.ejemplar.pts) || 0) * it.cantidad, 0);
+        const costoTotalUSD = esVES ? ptsTotal / (tasaCambioGlobal || 1) : ptsTotal;
 
-        // Validaciones de saldo (mismas reglas que el core)
+        // Validaciones de saldo combinadas (mismas reglas que el core)
         const modoJuega = cliente.modo_juego || (cliente.libre ? 'libre' : 'aval');
         let permitirSobregiro = false;
         if (modoJuega === 'pozo') {
             const disp = parseFloat(cliente.saldo_actual || 0);
-            if (disp < costoUSD) return clubUI.toast(`El jugador ${cliente.nombre} juega con Pozo y no tiene saldo disponible (tiene $${fmt(disp)}). Debe abonar antes de comprar.`, 'warning');
+            if (disp < costoTotalUSD) return clubUI.toast(`El jugador ${cliente.nombre} juega con Pozo y no tiene saldo disponible (tiene $${fmt(disp)}). Debe abonar antes de comprar.`, 'warning');
         } else if (!cliente.libre) {
             const limiteAval = parseFloat(cliente.aval || 0);
-            if ((parseFloat(cliente.saldo_actual) || 0) - costoUSD < -limiteAval) {
+            if ((parseFloat(cliente.saldo_actual) || 0) - costoTotalUSD < -limiteAval) {
                 return clubUI.toast(`El jugador ${cliente.nombre} supera su límite de AVAL ($${fmt(limiteAval)}). Debe abonar antes de comprar.`, 'warning');
             }
         }
-        if (!esVES && parseFloat(cliente.saldo_actual) < costoTotal) {
+        if (!esVES && parseFloat(cliente.saldo_actual) < costoTotalUSD) {
             if (!confirm(`El jugador ${cliente.nombre} tiene saldo insuficiente ($${fmt(cliente.saldo_actual)}). ¿Desea proceder de todas formas?`)) return;
             permitirSobregiro = true;
         }
@@ -410,35 +650,88 @@ document.addEventListener('DOMContentLoaded', () => {
         const orig = mvConfirmar.innerHTML;
         mvConfirmar.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Procesando...';
 
-        const res = await window.VentaTablasCore.venderTabla({
-            cliente, cantidad, ejemplar, tabla, tg,
-            grupo: cobroGrupo, grupoComision,
-            tasaCambio: tasaCambioGlobal, permitirSobregiro
-        });
-
-        if (!res.ok) {
-            clubUI.toast(res.error, 'error');
-            mvConfirmar.disabled = false;
-            mvConfirmar.innerHTML = orig;
-            return;
+        // Vende cada item del carrito secuencialmente para congelar su premio/valor y descontar inventario
+        const resultados = [];
+        let fallo = null;
+        for (const it of items) {
+            const res = await window.VentaTablasCore.venderTabla({
+                cliente, cantidad: it.cantidad, ejemplar: it.ejemplar, tabla: it.tabla, tg: it.tg,
+                grupo: cobroGrupo, grupoComision,
+                tasaCambio: tasaCambioGlobal, permitirSobregiro
+            });
+            if (!res.ok) { fallo = res.error; break; }
+            resultados.push({ it, res });
         }
 
-        clubUI.toast(`¡Venta procesada! ${cobroGrupo.nombre} cobra, ${grupoComision.nombre} recibe comisión.`, 'success');
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta: ${cliente.nombre} ${cantidad} tablas ${cobroGrupo.nombre} ($${fmt(res.costoTotal)}) ${tabla.hipodromo} C${tabla.carrera} comision=${grupoComision.nombre}`);
+        if (fallo) {
+            clubUI.toast('Venta interrumpida: ' + fallo, 'error');
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta_multi_fallida: ${cliente.nombre} items_ok=${resultados.length} error=${fallo}`);
+        } else {
+            const totalCosto = resultados.reduce((a, r) => a + r.res.costoTotal, 0);
+            const totalPremio = resultados.reduce((a, r) => a + r.res.premioTotal, 0);
+            const totalGanancia = resultados.reduce((a, r) => a + r.res.gananciaTotal, 0);
+            const totalComision = resultados.reduce((a, r) => a + r.res.comisionEstimada, 0);
+            clubUI.toast(`¡Venta procesada! ${resultados.length} item(s) · ${cobroGrupo.nombre} cobra, ${grupoComision.nombre} recibe comisión.`, 'success');
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta: ${cliente.nombre} ${resultados.length} items ($${fmt(totalCosto)}) ${cobroGrupo.nombre} comision=${grupoComision.nombre}`);
 
-        const saldoPosterior = (parseFloat(cliente.saldo_actual || 0)) - (esVES ? res.costoTotal / (tasaCambioGlobal || 1) : res.costoTotal);
-        const htmlComp = window.VentaTablasCore.comprobanteHTML({
-            cliente, ejemplar, tabla, grupo: cobroGrupo, cantidad, res,
-            tasaCambio: tasaCambioGlobal, saldoPosterior
-        });
-        window.VentaTablasCore.printHTML(`Comprobante — ${cliente.nombre}`, htmlComp);
+            const saldoPosterior = (parseFloat(cliente.saldo_actual || 0)) - costoTotalUSD;
+            const htmlComp = comprobanteMultiHTML({ cliente, resultados, grupo: cobroGrupo, grupoComision, totalCosto, totalPremio, totalGanancia, totalComision, saldoPosterior, esVES });
+            window.VentaTablasCore.printHTML(`Comprobante — ${cliente.nombre} (${resultados.length} items)`, htmlComp);
+        }
 
+        mvConfirmar.disabled = false;
+        mvConfirmar.innerHTML = orig;
         cerrarModalVenta();
+        if (!fallo) {
+            carrito = [];
+            renderCarrito();
+        }
         await cargarReporteVentas();
         await cargarSolicitudesAdmin();
         await inicializarDatosUtiles();
         render();
     });
+
+    function comprobanteMultiHTML({ cliente, resultados, grupo, grupoComision, totalCosto, totalPremio, totalGanancia, totalComision, saldoPosterior, esVES }) {
+        const simb = grupo.moneda === 'VES' ? 'Bs ' : '$';
+        const fecha = new Date().toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
+        const folio = `T-MULTI-${Date.now().toString().slice(-8)}`;
+        const filas = resultados.map(r => `
+            <tr>
+                <td>${r.it.tabla.hipodromo} · C${r.it.tabla.carrera}</td>
+                <td>N° ${r.it.ejemplar.numero || '-'} — ${r.it.ejemplar.nombre}</td>
+                <td class="r">${r.it.cantidad}</td>
+                <td class="r">${simb}${fmt(r.res.pts)}</td>
+                <td class="r">${simb}${fmt(r.res.premio)}</td>
+                <td class="r b">${simb}${fmt(r.res.costoTotal)}</td>
+                <td class="r b">${simb}${fmt(r.res.premioTotal)}</td>
+            </tr>`).join('');
+        const notas = [];
+        if (parseFloat(saldoPosterior) < 0) notas.push(`Aviso: tras la venta, el cliente ${cliente.nombre} queda con saldo negativo de $${fmt(Math.abs(saldoPosterior))} (aval activo).`);
+        const comP = resultados[0]?.res.comisionPorc ?? 0;
+        return `
+            <h1>Comprobante de Venta · Tabla Fija (Múltiple)</h1>
+            <div class="sub">Folio: ${folio} &nbsp;·&nbsp; ${fecha}</div>
+            <table>
+                <tr><th>Cliente</th><td class="b">${cliente.nombre}</td></tr>
+                <tr><th>Grupo que cobra</th><td>${grupo.nombre}</td></tr>
+                <tr><th>Grupo comisión</th><td>${grupoComision.nombre}</td></tr>
+            </table>
+            <table>
+                <tr><th>Carrera</th><th>Ejemplar</th><th>Tablas</th><th>Pts c/u</th><th>Premio c/u</th><th class="r">Costo</th><th class="r">Premio total</th></tr>
+                ${filas}
+            </table>
+            <table>
+                <tr class="gran"><th>Total Pagado</th><td class="r b">${simb}${fmt(totalCosto)}</td></tr>
+                <tr><th>Premio a Cobrar (si gana)</th><td class="r b">${simb}${fmt(totalPremio)}</td></tr>
+                <tr><th>Ganancia (si gana)</th><td class="r b">${simb}${fmt(totalGanancia)}</td></tr>
+                <tr class="gran"><th>Comisión del Grupo (${fmt(comP, 1)}% s/ganancia)</th><td class="r b">${simb}${fmt(totalComision)}</td></tr>
+            </table>
+            <div class="aviso">
+                Premios ajustados por retiros oficiales de cada carrera. Liquidación al cierre de la carrera.<br>
+                ${notas.length ? notas.join('<br>') : ''}
+            </div>`;
+    }
 
     // Recarga liviana de datos (sin reiniciar la página)
     let recargando = false;
@@ -470,6 +763,11 @@ document.addEventListener('DOMContentLoaded', () => {
         filtroCliente.disabled = !grupoSeleccionado;
         filtroCliente.value = '';
         aportadoPorCliente = false;
+        if (carrito.length) {
+            carrito = [];
+            renderCarrito();
+            clubUI.toast('Se cambió el grupo. Carrito vaciado.', 'info');
+        }
         poblarFiltroTablas();
         render();
     });

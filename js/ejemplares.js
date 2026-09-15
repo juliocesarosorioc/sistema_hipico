@@ -14,8 +14,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderPadron(filtro = '') {
         const f = filtro.trim().toUpperCase();
-        const FLAGS = { VE: '🇻🇪', USA: '🇺🇸', BR: '🇧🇷', AR: '🇦🇷', CL: '🇨🇱', MX: '🇲🇽', PA: '🇵🇦', PE: '🇵🇪', CO: '🇨🇴', EC: '🇪🇨', UY: '🇺🇾' };
         const PAISES = { VE: 'Venezuela', USA: 'Estados Unidos', BR: 'Brasil', AR: 'Argentina', CL: 'Chile', MX: 'México', PA: 'Panamá', PE: 'Perú', CO: 'Colombia', EC: 'Ecuador', UY: 'Uruguay' };
+        const bandera = (nac) => window.clubUI?.bandera ? window.clubUI.bandera(nac) : (nac || 'VE');
         const filas = padronCompleto
             .filter(e => !f || e.nombre.includes(f) || e.nacionalidad.includes(f))
             .sort((a, b) => b.totalTablas - a.totalTablas || (a.nombre > b.nombre ? 1 : -1));
@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .map(([nac, n]) => {
                 const active = f && f === nac;
                 return `<button type="button" class="chk-nacionalidad inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-black border transition-colors ${active ? 'bg-amber-500 text-white border-amber-600 shadow' : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'}" data-nac="${nac}" title="${PAISES[nac] || nac} — toque para filtrar">
-                    <span class="w-5 h-5 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-200 text-sm leading-none">${FLAGS[nac] || '🏳️'}</span>
+                    ${bandera(nac)}
                     <span>${nac}</span>
                     <span class="rounded-full ${active ? 'bg-white/25' : 'bg-white'} px-1.5 text-[10px]">${n}</span>
                 </button>`;
@@ -63,14 +63,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         cuerpoPadron.innerHTML = filas.map(e => {
             const nac = (e.nacionalidad || 'VE').toUpperCase();
-            const flag = FLAGS[nac] || '🏳️';
             const pais = PAISES[nac] || nac;
             return `
             <tr class="hover:bg-slate-50 border-b border-slate-100">
                 <td class="p-2 font-bold">${e.nombre}</td>
                 <td class="p-2 text-center">
                     <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black ${nac === 'VE' ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-slate-50 text-slate-700 border border-slate-200'}" title="${pais}">
-                        <span class="w-5 h-5 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-200 text-sm leading-none">${flag}</span>
+                        ${bandera(nac)}
                         <span>${nac}</span>
                     </span>
                 </td>
