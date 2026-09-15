@@ -52,8 +52,15 @@ window.clubGacetaPadron = (() => {
 
         let mapa = new Map();
         try {
-            const { data, error } = await supabase.from('ejemplares').select('id, nombre, nacionalidad');
-            if (error) throw error;
+            // Lee el padrón intentando la RPC segura primero; si no existe, cae al SELECT.
+            let data = null;
+            const rpc = await supabase.rpc('club_listar_ejemplares').catch(() => ({ error: true }));
+            if (!rpc.error && Array.isArray(rpc.data)) data = rpc.data;
+            else {
+                const directo = await supabase.from('ejemplares').select('id, nombre, nacionalidad');
+                if (!directo.error) data = directo.data;
+                else throw directo.error;
+            }
             (data || []).forEach(e => {
                 const clave = `${String(e.nombre || '').trim().toUpperCase()}|${String(e.nacionalidad || 'VE').trim().toUpperCase() || 'VE'}`;
                 mapa.set(clave, e.id);

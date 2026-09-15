@@ -710,6 +710,35 @@ revoke all on function public.club_asegurar_ejemplar(text, text) from anon;
 grant execute on function public.club_asegurar_ejemplar(text, text) to anon;
 
 -- ============================================================
+-- (9.7) RPC SEGURA: LISTAR EL PADRÓN DE EJEMPLARES
+--      security definer: devuelve el padrón completo aunque el RLS
+--      de ejemplares esté activo (la app usa la anon key). Si la RPC
+--      no existe aún, el cliente cae al SELECT directo.
+-- ============================================================
+create or replace function public.club_listar_ejemplares()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_out jsonb;
+begin
+    select coalesce(jsonb_agg(
+        jsonb_build_object('id', e.id, 'nombre', e.nombre, 'nacionalidad', e.nacionalidad, 'created_at', e.created_at)
+        order by e.nombre
+    ), '[]'::jsonb)
+    into v_out
+    from public.ejemplares e;
+
+    return v_out;
+end;
+$$;
+
+revoke all on function public.club_listar_ejemplares() from anon;
+grant execute on function public.club_listar_ejemplares() to anon;
+
+-- ============================================================
 -- (10) RESULTADO CENTRAL DE CARRERAS (compartido entre módulos)
 --      Una sola fila por (hipódromo, carrera, fecha). La Taquilla
 --      carga aquí el resultado oficial (ganador/empates y

@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const nac = (e.nacionalidad || 'VE').toUpperCase();
             porNac[nac] = (porNac[nac] || 0) + 1;
         });
-        gridNac.innerHTML = Object.entries(porNac)
+        const chipsNac = Object.entries(porNac)
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([nac, n]) => {
                 const active = f && f === nac;
@@ -41,18 +41,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="rounded-full ${active ? 'bg-white/25' : 'bg-white'} px-1.5 text-[10px]">${n}</span>
                 </button>`;
             }).join('') || '<p class="text-[11px] text-slate-400 italic">Sin ejemplares registrados.</p>';
-
-        gridNac.querySelectorAll('.chk-nacionalidad').forEach(chip => {
-            chip.addEventListener('click', () => {
-                const nac = chip.dataset.nac;
-                if (buscarEjemplar.value.trim().toUpperCase() === nac) {
-                    buscarEjemplar.value = '';
-                } else {
-                    buscarEjemplar.value = nac;
-                }
-                renderPadron(buscarEjemplar.value);
+        if (gridNac) {
+            gridNac.innerHTML = chipsNac;
+            gridNac.querySelectorAll('.chk-nacionalidad').forEach(chip => {
+                chip.addEventListener('click', () => {
+                    const nac = chip.dataset.nac;
+                    if (buscarEjemplar.value.trim().toUpperCase() === nac) {
+                        buscarEjemplar.value = '';
+                    } else {
+                        buscarEjemplar.value = nac;
+                    }
+                    renderPadron(buscarEjemplar.value);
+                });
             });
-        });
+        }
 
         if (filas.length === 0) {
             cuerpoPadron.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-500 italic">Sin resultados.</td></tr>';
@@ -81,14 +83,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function cargarPadron() {
         cuerpoPadron.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-500 italic">Cargando padrón...</td></tr>';
+        const gridNac = document.getElementById('gridNacionalidades');
+        if (gridNac) gridNac.innerHTML = '<p class="text-[11px] text-slate-400 italic">Cargando nacionalidades...</p>';
 
-        const [{ data: ejemplares, error: errE }, { data: tablas, error: errT }] = await Promise.all([
-            window.supabase.from('ejemplares').select('id, nombre, nacionalidad, created_at').order('nombre'),
-            window.supabase.from('tablas_fijas').select('id, hipodromo, carrera, caballos')
+        const safe = (p) => p.then(r => ({ data: r.data, error: r.error || null })).catch(e => ({ data: null, error: { message: e?.message || String(e) } }));
+
+        // Lee el padrón intentando la RPC segura (funciona aunque el RLS de
+        // ejemplares esté activo); si la RPC no existe, cae al SELECT directo.
+        async function leerPadron() {
+            const rpc = await safe(window.supabase.rpc('club_listar_ejemplares'));
+            if (!rpc.error && Array.isArray(rpc.data)) return rpc;
+            return safe(window.supabase.from('ejemplares').select('id, nombre, nacionalidad, created_at').order('nombre'));
+        }
+
+        const [rE, rT] = await Promise.all([
+            leerPadron(),
+            safe(window.supabase.from('tablas_fijas').select('id, hipodromo, carrera, caballos'))
         ]);
 
-        if (errE) { cuerpoPadron.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-red-500">Error cargando el padrón (¿ejecutó el SQL del paquete?).</td></tr>'; return; }
-        if (errT) console.warn("No se pudieron cargar tablas para el conteo:", errT);
+        if (rE.error) {
+            const mensaje = (rE.error.message || rE.error.code || String(rE.error));
+            const rls = /row-level security|permission denied|42501|401/i.test(mensaje);
+            cuerpoPadron.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-red-500"><b>Error cargando el padrón.</b><br><span class="text-[11px]">${rls ? 'Permisos bloqueados (RLS). Ejecute el SQL del paquete en Supabase (sección 5 desactiva RLS en ejemplares).' : mensaje}</span></td></tr>`;
+            if (gridNac) gridNac.innerHTML = '<p class="text-[11px] text-red-400 italic">No se pudo cargar el padrón: ' + mensaje + '</p>';
+            return;
+        }
+
+        const ejemplares = rE.data || [];
+        const tablas = rT.data || [];
+        if (rT.error) {
+            console.warn("No se pudieron cargar tablas para el conteo:", rT.error);
+            clubUI.toast('No se pudieron cargar las tablas para el conteo: ' + (rT.error.message || rT.error), 'warning');
+        }
 
         const conteo = new Map();   // ejemplar_id -> { tablas:Set, ultimaId, ultimaTxt }
         (tablas || []).forEach(t => {
