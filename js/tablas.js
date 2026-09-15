@@ -184,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const numColor = colorDeNumero(c?.numero);
         return `
             <div class="fila-caballo-card flex gap-1 items-center bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 ${vacio}">
-                <input type="text" inputmode="numeric" class="in-cab-num w-6 h-6 shrink-0 border rounded-md px-0 py-px text-center text-xs font-black outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar" style="background-color:${numColor};color:${textoDeNumero(c?.numero)};border-color:${numColor}">
+                <input type="text" inputmode="numeric" class="in-cab-num w-7 h-7 shrink-0 border rounded-md px-0 py-px text-center text-sm font-black outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar" style="background-color:${numColor};color:${textoDeNumero(c?.numero)};border-color:${numColor}">
                 <input type="text" class="in-cab-nom flex-1 min-w-0 border border-slate-200 rounded px-1.5 py-0.5 text-sm font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
                 ${htmlSelectNac(c?.nacionalidad)}
                 <input type="text" inputmode="decimal" class="in-cab-valor w-12 shrink-0 border border-slate-200 rounded px-1 py-0.5 text-right text-sm font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="$" title="Valor / monta del ejemplar">
@@ -674,17 +674,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 const simb = t.moneda === 'VES' ? 'Bs ' : '$';
 
                 const filasSala = ejemplares.length
-                    ? `<div class="overflow-y-auto space-y-1 pr-0.5" style="height:150px">${ejemplares.map(c => {
+                    ? `<div class="space-y-1">${ejemplares.map(c => {
                         const bg = colorDeNumero(c.numero);
                         const fg = textoDeNumero(c.numero);
                         const retirado = !!c.retirado;
                         const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
                         return `
                         <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 ${retirado ? 'opacity-40' : ''}">
-                            <span class="w-5 h-5 shrink-0 rounded-md flex items-center justify-center text-[11px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
+                            <span class="w-7 h-7 shrink-0 rounded-md flex items-center justify-center text-sm font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
                             <span class="flex-1 min-w-0 truncate text-sm font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
                             ${htmlSelectNac(c.nacionalidad)}
-                            <span class="shrink-0 text-right text-base font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 1)}</span>
+                            <span class="shrink-0 text-right text-sm font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 1)}</span>
                         </div>`;
                     }).join('')}</div>`
                     : '<p class="text-sm text-slate-400 italic px-2 py-2">Sin ejemplares registrados.</p>';
@@ -1053,10 +1053,10 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
             return `
             <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 ${retirado ? 'opacity-40' : ''}">
-                <span class="w-5 h-5 shrink-0 rounded-md flex items-center justify-center text-[11px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
+                <span class="w-7 h-7 shrink-0 rounded-md flex items-center justify-center text-sm font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
                 <span class="flex-1 min-w-0 truncate text-sm font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
                 ${htmlSelectNac(c.nacionalidad)}
-                <span class="shrink-0 text-right text-base font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 1)}</span>
+                <span class="shrink-0 text-right text-sm font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 1)}</span>
             </div>`;
         }).join('');
     }
@@ -1085,10 +1085,10 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             </div>` : '';
             return `
             <div class="flex items-center gap-1.5 bg-white border rounded-lg px-2 py-1.5 ${retirado ? 'opacity-40' : ''}">
-                <span class="w-5 h-5 shrink-0 rounded-md flex items-center justify-center text-[11px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
+                <span class="w-7 h-7 shrink-0 rounded-md flex items-center justify-center text-sm font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
                 <span class="flex-1 min-w-0 truncate text-sm font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
                 ${htmlSelectNac(c.nacionalidad)}
-                <span class="shrink-0 text-right text-base font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 1)}</span>
+                <span class="shrink-0 text-right text-sm font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 1)}</span>
                 ${retirado ? '<span class="shrink-0 text-[10px] font-black uppercase text-red-400 bg-red-50 rounded px-1.5 py-1">No vendible</span>'
                     : (yaCant || `<button class="btn-venta-agregar bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase px-3 py-1.5 rounded-lg transition-colors shrink-0" data-num="${c.numero}">
                     <i class="fas fa-cart-plus mr-1"></i> Enviar al carrito
