@@ -440,6 +440,15 @@ document.addEventListener('DOMContentLoaded', () => {
     async function guardarResultadoCentral(ctx, datos, dividendos) {
         const ganadores = (datos.ejemplares || []).filter(e => e.ganador).map(e => String(e.numero));
         const ret = datos.retirados || [];
+        const dividendosPorEjemplar = {};
+        const ordenLlegada = [];
+        (datos.ejemplares || []).forEach(e => {
+            const div = parseFloat(e.dividendo) || 0;
+            if (div > 0) dividendosPorEjemplar[String(e.numero)] = div;
+            const puesto = parseInt(e.orden, 10);
+            if (puesto >= 1) ordenLlegada.push({ numero: String(e.numero), puesto });
+        });
+        ordenLlegada.sort((a, b) => a.puesto - b.puesto);
         const fila = {
             fecha: ctx.fecha,
             hipodromo: ctx.hipodromo,
@@ -449,7 +458,8 @@ document.addEventListener('DOMContentLoaded', () => {
             premio_oficial: datos.premioOriginal,
             premio_recalculado: datos.premioRecalculado,
             detalle: datos.ejemplares,
-            dividendos: dividendos || {},
+            dividendos: Object.keys(dividendosPorEjemplar).length ? dividendosPorEjemplar : (dividendos || {}),
+            orden_llegada: ordenLlegada.length ? ordenLlegada : null,
             aplicado_a_tablas: true,
             cargado_por: sesionOperador(),
             updated_at: new Date().toISOString()
@@ -476,6 +486,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 return {
                     numero: e.numero, nombre: e.nombre, nacionalidad: e.nacionalidad || prev?.nacionalidad || 'VE',
                     valor_ejemplar: prev?.valor_ejemplar ?? e.valor_ejemplar,
+                    orden: e.orden ?? prev?.orden ?? '',
+                    dividendo: e.dividendo ?? prev?.dividendo ?? '',
                     retirado: !!e.retirado, ganador: !!e.ganador,
                     ejemplar_id: prev?.ejemplar_id || null
                 };
@@ -500,10 +512,13 @@ document.addEventListener('DOMContentLoaded', () => {
             chipResultadoEstado.innerHTML = '<i class="fas fa-hourglass-half"></i> Sin resultado';
             return;
         }
-        const ganador = (res.ganadores || []).join(',');
-        const divs = conDivs ? '<br><span class="text-[9px] text-emerald-700">dividendos guardados</span>' : '';
+        const ganadores = res.ganadores || [];
+        const ganador = ganadores.length > 1 ? ganadores.join(' = ') : ganadores.join(',');
+        const conDivsFormato = conDivs
+            ? '<br><span class="text-[9px] text-emerald-700">' + Object.entries(res.dividendos || {}).filter(([k]) => ganadores.includes(k)).map(([k, v]) => `💲${k}: ${v}`).join(' · ') + (Object.entries(res.dividendos || {}).filter(([k]) => ganadores.includes(k)).length ? ' <i>(por ejemplar)</i>' : 'dividendos guardados') + '</span>'
+            : '';
         chipResultadoEstado.className = 'text-[10px] font-bold inline-flex items-center gap-1 bg-emerald-100 border border-emerald-300 text-emerald-700 px-2 py-1.5 rounded-full';
-        chipResultadoEstado.innerHTML = `<i class="fas fa-check-circle"></i> C${res.carrera} · G:${ganador || '—'} ${divs}`;
+        chipResultadoEstado.innerHTML = `<i class="fas fa-check-circle"></i> C${res.carrera} · G:${ganador || '—'} ${conDivsFormato}`;
     }
 
     async function abrirCargaResultados() {
@@ -516,10 +531,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const existente = await resultadoCargado(ctx);
 
         const caballosBase = (tabla?.caballos && Array.isArray(tabla.caballos) ? tabla.caballos : Array.isArray(existente?.detalle) ? existente.detalle : []).map(c => ({ ...c, valor_ejemplar: c.valor_ejemplar ?? c.valor ?? c.pts ?? '' }));
-        // Si ya había resultado, restaurar estado marcado (ganadores/retirados)
+        // Si ya había resultado, restaurar estado marcado (ganadores/empates/orden/dividendo/retirados)
         if (existente) {
             (caballosBase).forEach(c => {
-                c.ganador = (existente.ganadores || []).includes(String(c.numero)); 
+                c.ganador = (existente.ganadores || []).includes(String(c.numero));
+                const ord = (existente.orden_llegada || []).find(o => String(o.numero) === String(c.numero));
+                if (ord) c.orden = ord.puesto;
+                if (existente.dividendos && existente.dividendos[String(c.numero)] != null) c.dividendo = existente.dividendos[String(c.numero)];
             });
             const retNums = new Set(String(existente.retirados || '').split(/[,\s]+/).map(s => parseInt(s, 10)).filter(n => n > 0));
             caballosBase.forEach(c => { if (retNums.has(parseInt(c.numero, 10))) c.retirado = true; });
@@ -549,14 +567,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.clubIndicador?.accion('Guardando resultado central y aplicando a tablas…');
                 try {
                     await aplicarResultadoATablas(ctx, datos);
-                    const guardado = await guardarResultadoCentral(ctx, datos, existente?.dividendos || {});
-                    actualizarChipResultado({ ...guardado.fila }, !!(existente?.dividendos && Object.keys(existente.dividendos).length));
+                    const guardado = await guardarResultadoCentral(ctx, datos, null);
+                    actualizarChipResultado({ ...guardado.fila }, !!guardado.fila.dividendos && Object.keys(guardado.fila.dividendos).length);
                 } finally {
                     modalProcesando.classList.add('hidden');
                     window.clubIndicador?.fin();
                 }
-                // Segundo paso: dividendos por tipo de jugada
-                abrirModalDividendos(ctx, datos, !!(existente?.dividendos && Object.keys(existente.dividendos).length) ? existente.dividendos : null);
                 return true;
             }
         });

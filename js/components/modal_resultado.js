@@ -5,12 +5,13 @@
 //     titulo: '...',
 //     subtitulo: 'Hipódromo · Carrera · Dist. · Superficie · Moneda · Estado',
 //     datosIniciales: { premioOriginal, sumaBase, premioRecalculado },
-//     ejemplares: [{ numero, nombre, nacionalidad, valor_ejemplar, ganador, retirado }],
+//     ejemplares: [{ numero, nombre, nacionalidad, valor_ejemplar, ganador, retirado, orden, dividendo }],
 //     onRegistrar: async (datos) => { /* guarda en BD */ ; return true; }, // true => cierra
 //     onCancelar: () => {}
 //   });
-// La comisión de grupo NO se gestiona aquí: solo vive en "Convenios por tipo de
-// jugadas por grupo" (sección Grupos y Convenios).
+// Registra POR EJEMPLAR: ganador (varios = empate), orden de llegada,
+// dividendo que paga y retiro. La comisión de grupo NO se gestiona aquí:
+// solo vive en "Convenios por tipo de jugadas por grupo" (Grupos y Convenios).
 // ==========================================
 window.clubModalResultado = (() => {
     const NACIONES = ['VE', 'USA', 'BR', 'AR', 'CL', 'MX', 'PA', 'PE', 'CO', 'EC', 'UY', 'OTRA'];
@@ -54,6 +55,8 @@ window.clubModalResultado = (() => {
         const nombre = (c?.nombre || '').trim().toUpperCase();
         const nac = (c?.nacionalidad || 'VE').toUpperCase();
         const valor = c?.valor_ejemplar ?? c?.valor ?? '';
+        const orden = c?.orden ?? '';
+        const dividendo = c?.dividendo ?? '';
         const retirado = !!c?.retirado;
         return `
         <div class="fila-mr flex gap-0.5 items-center bg-slate-50 border rounded px-1 py-0.5 ${retirado ? 'border-red-200 opacity-60' : 'border-slate-200'}">
@@ -62,9 +65,11 @@ window.clubModalResultado = (() => {
             <select class="mr-nac w-5 shrink-0 border-0 bg-transparent text-[13px] leading-none cursor-pointer" title="Nacionalidad">
                 ${NACIONES.map(n => `<option value="${n}" ${nac === n ? 'selected' : ''}>${BANDERAS[n] || '🏳️'}</option>`).join('')}
             </select>
-            <input type="text" inputmode="decimal" class="mr-valor w-12 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[12px] font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400 ${retirado ? 'bg-slate-100 text-slate-400' : ''}" value="${valor ?? ''}" placeholder="$" title="Valor / monta del ejemplar">
-            <label class="mr-lbl-ganador relative w-5 h-5 shrink-0 flex items-center justify-center rounded cursor-pointer border border-slate-200 bg-white" title="Ganador de la carrera">
-                <input type="radio" name="mr-ganador-radio" class="mr-ganador sr-only" data-i="${i}" ${c?.ganador ? 'checked' : ''}>
+            <input type="text" inputmode="decimal" class="mr-valor w-11 shrink-0 border border-slate-200 rounded px-0.5 py-px text-right text-[11px] font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400 ${retirado ? 'bg-slate-100 text-slate-400' : ''}" value="${valor ?? ''}" placeholder="$" title="Valor / monta del ejemplar">
+            <input type="text" inputmode="numeric" class="mr-orden w-6 shrink-0 border border-slate-300 rounded px-0.5 py-px text-center text-[11px] font-black text-slate-700 outline-none focus:ring-1 focus:ring-indigo-400 ${retirado ? 'bg-slate-100 text-slate-400' : ''}" value="${orden ?? ''}" placeholder="L" title="Orden de llegada (1=ganador, 2=segundo...)" style="background-color:${retirado ? '#f1f5f9' : (orden == 1 ? '#fef3c7' : 'transparent')}">
+            <input type="text" inputmode="decimal" class="mr-dividendo w-12 shrink-0 border border-slate-300 rounded px-0.5 py-px text-right text-[11px] font-black text-emerald-700 outline-none focus:ring-1 focus:ring-indigo-400 ${retirado ? 'bg-slate-100 text-slate-400' : ''}" value="${dividendo ?? ''}" placeholder="$" title="Dividendo que paga este ejemplar (por $1)">
+            <label class="mr-lbl-ganador relative w-5 h-5 shrink-0 flex items-center justify-center rounded cursor-pointer border border-slate-200 bg-white" title="Ganador (marque varios si hubo empate)">
+                <input type="checkbox" class="mr-ganador sr-only" data-i="${i}" ${c?.ganador ? 'checked' : ''}>
                 <i class="fas fa-trophy text-[9px] pointer-events-none ${c?.ganador ? 'text-amber-500' : 'text-slate-300'}"></i>
             </label>
             <label class="mr-lbl-retiro relative w-5 h-5 shrink-0 flex items-center justify-center rounded cursor-pointer border border-slate-200 bg-white" title="Marcar como retirado">
@@ -112,48 +117,44 @@ window.clubModalResultado = (() => {
     }
 
     function leerDatos() {
-        const d = { premioOriginal: 0, sumaBase: 0, premioRecalculado: 0, ejemplares: [], retirados: [] };
+        const d = { premioOriginal: 0, sumaBase: 0, premioRecalculado: 0, ejemplares: [], retirados: [], ganadores: [] };
         if (!raiz) return d;
         d.premioOriginal = aNum(raiz.querySelector('#mr-premio-original')?.value) || 0;
         d.sumaBase = aNum(raiz.querySelector('#mr-suma-base')?.value) || 0;
         d.premioRecalculado = aNum(raiz.querySelector('#mr-premio-recalculado')?.value) || 0;
-        const marcados = [...punteroLista.querySelectorAll('.mr-ganador:checked')];
-        const ganadorIdx = marcados.length ? [...punteroLista.querySelectorAll('.fila-mr')].indexOf(marcados[0].closest('.fila-mr')) : -1;
-        punteroLista.querySelectorAll('.fila-mr').forEach((fila, idx) => {
+        punteroLista.querySelectorAll('.fila-mr').forEach(fila => {
+            const numero = fila.querySelector('.mr-num')?.value?.trim() || '';
             d.ejemplares.push({
-                numero: fila.querySelector('.mr-num')?.value?.trim() || '',
+                numero,
                 nombre: (fila.querySelector('.mr-nombre')?.value || '').trim().toUpperCase(),
                 nacionalidad: fila.querySelector('.mr-nac')?.value || 'VE',
                 valor_ejemplar: aNum(fila.querySelector('.mr-valor')?.value) || 0,
-                ganador: idx === ganadorIdx,
+                orden: fila.querySelector('.mr-orden')?.value?.trim() || '',
+                dividendo: aNum(fila.querySelector('.mr-dividendo')?.value) || 0,
+                ganador: !!fila.querySelector('.mr-ganador')?.checked,
                 retirado: !!fila.querySelector('.mr-retirado')?.checked
             });
         });
+        d.ganadores = d.ejemplares.filter(e => e.ganador).map(e => e.numero);
         d.retirados = d.ejemplares.filter(e => e.retirado).map(e => e.numero);
         return d;
     }
 
     function quitarFila(fila) {
-        const eraGanador = fila.querySelector('.mr-ganador')?.checked;
         fila.remove();
-        if (eraGanador && contador() > 0) {
-            const primera = punteroLista.querySelector('.fila-mr');
-            const radio = primera?.querySelector('.mr-ganador');
-            if (radio) { radio.checked = true; pintarGanador(); }
-        }
         recalcular();
     }
 
     function pintarGanador() {
         if (!punteroLista) return;
-        const marcados = [...punteroLista.querySelectorAll('.mr-ganador:checked')];
-        const idx = marcados.length ? [...punteroLista.querySelectorAll('.fila-mr')].indexOf(marcados[0].closest('.fila-mr')) : -1;
         punteroLista.querySelectorAll('.fila-mr').forEach((fila, i) => {
             fila.dataset.i = i;
-            const radio = fila.querySelector('.mr-ganador');
-            if (radio) radio.dataset.i = i;
+            const chk = fila.querySelector('.mr-ganador');
+            if (chk) chk.dataset.i = i;
             const icono = fila.querySelector('.mr-lbl-ganador .fas');
-            if (icono) icono.className = 'fas fa-trophy text-[9px] pointer-events-none ' + (i === idx ? 'text-amber-500' : 'text-slate-300');
+            const retirado = !!fila.querySelector('.mr-retirado')?.checked;
+            const activo = !!chk?.checked && !retirado;
+            if (icono) icono.className = 'fas fa-trophy text-[9px] pointer-events-none ' + (activo ? 'text-amber-500' : 'text-slate-300');
         });
     }
 
@@ -165,11 +166,16 @@ window.clubModalResultado = (() => {
             if (chk) chk.dataset.i = i;
             const icono = fila.querySelector('.mr-lbl-retiro .fas');
             const valor = fila.querySelector('.mr-valor');
+            const orden = fila.querySelector('.mr-orden');
+            const dividendo = fila.querySelector('.mr-dividendo');
+            const retirado = !!chk?.checked;
             fila.classList.toggle('opacity-60', retirado);
             fila.classList.toggle('border-red-200', retirado);
             fila.classList.toggle('border-slate-200', !retirado);
             if (icono) icono.className = 'fas fa-times text-[10px] pointer-events-none ' + (retirado ? 'text-red-500' : 'text-slate-300');
             if (valor) { valor.classList.toggle('bg-slate-100', retirado); valor.classList.toggle('text-slate-400', retirado); }
+            if (orden) { orden.classList.toggle('bg-slate-100', retirado); orden.classList.toggle('text-slate-400', retirado); }
+            if (dividendo) { dividendo.classList.toggle('bg-slate-100', retirado); dividendo.classList.toggle('text-slate-400', retirado); }
             if (retirado) {
                 const r = chk.closest('.fila-mr').querySelector('.mr-ganador');
                 if (r) r.checked = false;
@@ -183,10 +189,10 @@ window.clubModalResultado = (() => {
         if (!['Enter', 'Tab'].includes(e.key)) return;
         const t = e.target;
         if (!(t instanceof HTMLInputElement)) return;
-        const esValor = t.classList.contains('mr-valor');
-        if (!esValor) return;
+        const esNav = t.classList.contains('mr-valor') || t.classList.contains('mr-orden') || t.classList.contains('mr-dividendo');
+        if (!esNav) return;
         e.preventDefault();
-        const valores = [...punteroLista.querySelectorAll('.mr-valor')];
+        const valores = [...punteroLista.querySelectorAll('.mr-valor, .mr-orden, .mr-dividendo')];
         const i = valores.indexOf(t);
         if (i === -1) return;
         const dir = (e.key === 'Tab' && e.shiftKey) ? -1 : 1;
@@ -257,6 +263,7 @@ window.clubModalResultado = (() => {
                             </p>
                             <button type="button" id="mr-agregar" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow transition-colors shrink-0"><i class="fas fa-plus mr-1"></i> Agregar</button>
                         </div>
+                        <p class="text-[9px] text-slate-400 uppercase tracking-wider mb-1 px-1">Por ejemplar → Nº · Nombre · 🇨🇴 · Valor($) · Orden(1º) · Dividendo($ por $1) · 🏆 Ganador (varios = empate) · ✗ Retirado</p>
                         <div class="overflow-y-auto max-h-[46vh] border border-slate-200 rounded-xl p-1 space-y-0.5 bg-slate-100/60">
                             ${ejemplares.map((c, i) => filaHTML(c, i)).join('') || '<p class="text-[11px] text-slate-400 italic text-center py-3">Sin ejemplares. Use "Agregar" para incluir participantes.</p>'}
                         </div>
@@ -309,17 +316,23 @@ window.clubModalResultado = (() => {
                 return;
             }
         });
-        raiz.addEventListener('change', (e) => {
-            if (e.target.classList.contains('mr-ganador')) { pintarGanador(); }
-            if (e.target.classList.contains('mr-retirado')) { pintarRetiros(); }
-        });
         raiz.addEventListener('input', (e) => {
             if (e.target.classList.contains('mr-num')) {
                 const style = `background-color:${colorDeNumero(e.target.value)};color:${textoDeNumero(e.target.value)};border-color:${colorDeNumero(e.target.value)}`;
                 e.target.setAttribute('style', style);
             }
             if (e.target.classList.contains('mr-valor')) recalcular();
+            if (e.target.classList.contains('mr-orden')) {
+                const ret = !!e.target.closest('.fila-mr')?.querySelector('.mr-retirado')?.checked;
+                const esPrimero = !ret && parseInt(e.target.value, 10) === 1;
+                e.target.style.backgroundColor = esPrimero ? '#fef3c7' : '';
+                pintarGanador();
+            }
             if (e.target.id === 'mr-premio-original' || e.target.id === 'mr-suma-base') recalcular();
+        });
+        raiz.addEventListener('change', (e) => {
+            if (e.target.classList.contains('mr-ganador')) pintarGanador();
+            if (e.target.classList.contains('mr-retirado')) pintarRetiros();
         });
         raiz.addEventListener('keydown', navegar);
 
