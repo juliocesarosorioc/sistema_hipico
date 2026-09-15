@@ -15,9 +15,21 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderPadron(filtro = '') {
         const f = filtro.trim().toUpperCase();
         const PAISES = { VE: 'Venezuela', USA: 'Estados Unidos', BR: 'Brasil', AR: 'Argentina', CL: 'Chile', MX: 'México', PA: 'Panamá', PE: 'Perú', CO: 'Colombia', EC: 'Ecuador', UY: 'Uruguay' };
+        // Si el filtro es un código ISO de país (ej. "BR" al tocar la bandera),
+        // se compara SOLO con la nacionalidad exacta y nunca con el nombre:
+        // evita que "BROTHER" o "CHIEF BRADY" (subcadena "BR") pasen siendo VE.
         const bandera = (nac) => window.clubUI?.bandera ? window.clubUI.bandera(nac) : (nac || 'VE');
+        const CODIGOS_ISO = new Set(['VE', 'USA', 'BR', 'AR', 'CL', 'MX', 'PA', 'PE', 'CO', 'EC', 'UY']);
+        const esCodigoISO = f.length > 0 && f.length <= 3 && CODIGOS_ISO.has(f);
         const filas = padronCompleto
-            .filter(e => !f || e.nombre.includes(f) || e.nacionalidad.includes(f))
+            .filter(e => {
+                if (!f) return true;
+                // Clic en bandera → el filtro es el código ISO (p. ej. "BR").
+                // DEBE comparar solo la nacionalidad exacta, NUNCA el nombre:
+                // evita que "BROTHER WILL" / "CHIEF BRADY" (contienen "BR") pasen siendo VE.
+                if (esCodigoISO) return (e.nacionalidad || 'VE').toUpperCase() === f;
+                return (e.nombre || '').toUpperCase().includes(f) || (e.nacionalidad || '').toUpperCase().includes(f);
+            })
             .sort((a, b) => b.totalTablas - a.totalTablas || (a.nombre > b.nombre ? 1 : -1));
 
         document.getElementById('statEjemplares').textContent = padronCompleto.length;
