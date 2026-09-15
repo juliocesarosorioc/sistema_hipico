@@ -8,6 +8,7 @@
 document.addEventListener('DOMContentLoaded', () => {
 
     const filtroGrupo = document.getElementById('filtroGrupo');
+    const filtroHipodromo = document.getElementById('filtroHipodromo');
     const filtroTabla = document.getElementById('filtroTabla');
     const filtroCliente = document.getElementById('filtroCliente');
     const btnActualizarVista = document.getElementById('btnActualizarVista');
@@ -47,6 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const mefCantidad = document.getElementById('mefCantidad');
     const mefMenos = document.getElementById('mefMenos');
     const mefMas = document.getElementById('mefMas');
+    const mefGrupo = document.getElementById('mefGrupo');
     const mefAgregar = document.getElementById('mefAgregar');
 
     const barraCarrito = document.getElementById('barraCarrito');
@@ -142,6 +144,19 @@ document.addEventListener('DOMContentLoaded', () => {
         tablasDB = rTablasRaw.data || [];
         if (rClientes.data) clientesDB = rClientes.data;
 
+        // Poblar el monitor por hipódromo: abre todas las carreras
+        // publicadas del hipódromo (mismo UX que gaceta/ensamblaje).
+        poblarFiltroHipodromo();
+
+        // Preselección por URL (?hipodromo=... desde el monitor "Vender")
+        const qs = new URLSearchParams(window.location.search);
+        const hipoQs = (qs.get('hipodromo') || '').trim();
+        if (hipoQs) {
+            const opt = [...filtroHipodromo.options].find(o => o.value.toLowerCase() === hipoQs.toLowerCase());
+            if (opt) filtroHipodromo.value = opt.value;
+            else filtroHipodromo.value = hipoQs;
+        }
+
         // Fallback: si el join tabla_grupos(*) vino vacío, cargarlo por separado
         const joinFallo = tablasDB.some(t => !t.tabla_grupos || t.tabla_grupos.length === 0);
         if (tablasDB.length > 0 && joinFallo) {
@@ -168,6 +183,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         poblarFiltroClientes();
+        poblarFiltroTablas();
+        render();
     }
 
     function poblarFiltroClientes() {
@@ -177,33 +194,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ==========================================
     // RENDER DE TARJETAS (mismo estilo gaceta/ensamblaje)
+    // Monitor por HIPÓDROMO: abre todas las carreras del
+    // hipódromo con su inventario por grupo, sin depender de
+    // haber elegido primero un grupo. El grupo de venta se
+    // elige por caballo (menú flotante) o queda fijado por la
+    // cabecera si se seleccionó.
     // ==========================================
-    function render() {
-        if (!grupoSeleccionado) {
-            carrerasVenta.innerHTML = '';
-            msgSinCarreras.classList.remove('hidden');
-            return;
-        }
+    function gruposInventarioDe(t) {
+        return (t.tabla_grupos || [])
+            .filter(x => ((x.cupos || 0) - (x.cantidad_vendida || 0)) > 0)
+            .map(x => {
+                const gr = gruposDB.find(g => g.id == x.grupo_id);
+                return { tg: x, grupo: gr };
+            })
+            .filter(x => x.grupo);
+    }
 
+    function render() {
+        const hipo = filtroHipodromo.value;
         const filtroTablaId = filtroTabla.value;
         const filtroClienteId = filtroCliente.value;
-        const g = grupoSeleccionado;
 
         let tablas = tablasDB.filter(t => {
-            const tg = (t.tabla_grupos || []).find(x => x.grupo_id == g.id);
-            if (!tg) return false;
+            if (hipo && String(t.hipodromo || '').trim().toLowerCase() !== hipo.toLowerCase()) return false;
             if (filtroTablaId && t.id != filtroTablaId) return false;
-            return (tg.cupos || 0) - (tg.cantidad_vendida || 0) > 0;
+            const tgs = gruposInventarioDe(t);
+            // Si hay grupo fijado en cabecera, restringe al inventario de ese grupo.
+            if (grupoSeleccionado) return tgs.some(x => x.grupo.id == grupoSeleccionado.id);
+            return tgs.length > 0;
         });
 
         const clienteFiltro = filtroClienteId ? clientesDB.find(c => c.id == filtroClienteId) : null;
         if (clienteFiltro) {
-            const clienteGrupos = new Set([clienteFiltro.grupo_id, ...(miembrosExtraPorGrupo[clienteFiltro.grupo_id]?.includes(clienteFiltro.id) ? [g.id] : [])].filter(Boolean));
+            const clienteGrupos = new Set([clienteFiltro.grupo_id, ...(miembrosExtraPorGrupo[clienteFiltro.grupo_id]?.includes(clienteFiltro.id) ? [grupoSeleccionado?.id] : [])].filter(Boolean));
             tablas = tablas.filter(t => (t.tabla_grupos || []).some(tg => clienteGrupos.has(tg.grupo_id)));
-            if (!tablas.length && clienteFiltro.grupo_id == g.id) {
+            if (clienteFiltro.grupo_id && tablas.length === 0) {
                 tablas = tablasDB.filter(t => {
-                    const tg = (t.tabla_grupos || []).find(x => x.grupo_id == g.id);
-                    return tg && (tg.cupos || 0) - (tg.cantidad_vendida || 0) > 0;
+                    if (hipo && String(t.hipodromo || '').trim().toLowerCase() !== hipo.toLowerCase()) return false;
+                    return (t.tabla_grupos || []).some(tg => tg.grupo_id == clienteFiltro.grupo_id && ((tg.cupos || 0) - (tg.cantidad_vendida || 0)) > 0);
                 });
             }
         }
@@ -211,21 +239,32 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tablas.length === 0) {
             carrerasVenta.innerHTML = '';
             msgSinCarreras.classList.remove('hidden');
-            msgSinCarreras.querySelector('p').textContent = filtroTablaId || clienteFiltro
+            msgSinCarreras.querySelector('p').textContent = filtroTablaId || hipo || clienteFiltro
                 ? 'Ninguna carrera coincide con los filtros. Ajuste los filtros o pulse "Actualizar".'
-                : `El grupo ${g.nombre} no tiene tablas publicadas con inventario disponible. Publique cupos desde el Ensamblaje.`;
+                : 'No hay tablas fijas publicadas (estado "Abierta") con inventario disponible. Publique carreras desde el Ensamblaje.';
             return;
         }
 
 msgSinCarreras.classList.add('hidden');
         carrerasVenta.innerHTML = tablas.map(t => {
-            const tg = (t.tabla_grupos || []).find(x => x.grupo_id == g.id);
-            const cupos = tg.cupos || 0;
-            const vendidas = tg.cantidad_vendida || 0;
+            const gs = gruposInventarioDe(t);
+            const g = grupoSeleccionado && gs.find(x => x.grupo.id == grupoSeleccionado.id)
+                ? gs.find(x => x.grupo.id == grupoSeleccionado.id)
+                : gs[0];
+            const tg = g ? g.tg : null;
+            const cupos = tg?.cupos || 0;
+            const vendidas = tg?.cantidad_vendida || 0;
             const disponibles = Math.max(0, cupos - vendidas);
             const premio = parseFloat(t.premio_recalculado) || 0;
             const ejemplares = Array.isArray(t.caballos) ? t.caballos : [];
             const suma = ejemplares.reduce((acc, c) => acc + (parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0), 0);
+            const simb = g ? simboloDe(g.grupo.moneda) : '$';
+
+            const chips = gs.map(x => {
+                const disp = (x.tg.cupos || 0) - (x.tg.cantidad_vendida || 0);
+                const activo = g && g.grupo.id == x.grupo.id;
+                return `<span class="inline-flex items-center gap-1 rounded px-1.5 py-px text-[8px] font-black ${activo ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}" title="Disponibles en ${x.grupo.nombre}">${x.grupo.nombre}: <b>${disp}</b></span>`;
+            }).join(' ') || '<span class="text-[9px] text-slate-400 italic">Sin inventario</span>';
 
             return `
             <div class="card-carrera bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden flex flex-col" data-tabla="${t.id}">
@@ -241,7 +280,7 @@ msgSinCarreras.classList.add('hidden');
                     </div>
                     <div class="mt-1 flex items-center justify-between rounded px-2 py-1" style="background:rgba(255,255,255,.20)">
                         <span class="text-[9px] font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-0.5"></i> Monto a Pagar / Tabla</span>
-                        <span class="font-black text-sm" style="color:#fff">${simboloDe(g.moneda)}${fmt(premio)}</span>
+                        <span class="font-black text-sm" style="color:#fff">${simb}${fmt(premio)}</span>
                     </div>
                 </div>
 
@@ -272,11 +311,11 @@ msgSinCarreras.classList.add('hidden');
                     <span class="inline-flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-slate-400">
                         <i class="fas fa-calculator text-indigo-400"></i> Suma de la Tabla
                     </span>
-                    <span class="font-black text-[11px] text-indigo-700" title="Sumatoria de los valores de todos los ejemplares">${simboloDe(g.moneda)}${fmt(suma)}</span>
+                    <span class="font-black text-[11px] text-indigo-700" title="Sumatoria de los valores de todos los ejemplares">${simb}${fmt(suma)}</span>
                 </div>
-                <div class="px-2 py-1 border-t border-slate-100 bg-indigo-50 flex items-center justify-between">
-                    <span class="text-[8px] font-black uppercase tracking-wider text-slate-500"><i class="fas fa-boxes text-indigo-400 mr-1"></i> Disponibles grupo</span>
-                    <span class="font-black text-[11px] text-emerald-700">${disponibles} / ${cupos}</span>
+                <div class="px-2 py-1 border-t border-slate-100 bg-indigo-50 flex items-center justify-between gap-1">
+                    <span class="text-[8px] font-black uppercase tracking-wider text-slate-500 shrink-0"><i class="fas fa-boxes text-indigo-400 mr-1"></i> Disponibles</span>
+                    <span class="flex flex-wrap justify-end gap-0.5">${chips}</span>
                 </div>
             </div>`;
         }).join('');
@@ -287,11 +326,15 @@ msgSinCarreras.classList.add('hidden');
             btn.addEventListener('click', () => {
                 const tabla = tablasDB.find(t => t.id == btn.dataset.tabla);
                 const ejemplar = (tabla?.caballos || []).find(c => c.numero == btn.dataset.numero);
-                const tg = (tabla?.tabla_grupos || []).find(x => x.grupo_id == g.id);
-                if (!tabla || !ejemplar || !tg) return clubUI.toast('No se pudo preparar la venta (falta inventario del grupo).', 'error');
+                if (!tabla || !ejemplar) return clubUI.toast('No se pudo preparar la venta (ejemplar no encontrado).', 'error');
+                const gs = gruposInventarioDe(tabla);
+                if (gs.length === 0) return clubUI.toast('No hay inventario disponible en ningún grupo para esta carrera.', 'warning');
+                const tgPre = (grupoSeleccionado && gs.find(x => x.grupo.id == grupoSeleccionado.id))
+                    ? gs.find(x => x.grupo.id == grupoSeleccionado.id).tg
+                    : gs[0].tg;
                 const ya = carrito.find(c => c.tabla.id == tabla.id && String(c.ejemplar.numero) === String(ejemplar.numero));
                 if (ya) return clubUI.toast(`${ejemplar.nombre} ya está en el carrito (${ya.cantidad} tabla(s)). Puede ajustar desde la barra del carrito.`, 'info');
-                abrirMenuEjemplar(btn, { tabla, ejemplar, tg });
+                abrirMenuEjemplar(btn, { tabla, ejemplar, tg: tgPre });
             });
         });
     }
@@ -358,14 +401,29 @@ msgSinCarreras.classList.add('hidden');
     function abrirMenuEjemplar(btn, ctx) {
         ventaCtx = ctx;
         const { tabla, ejemplar, tg } = ctx;
-        const g = grupoSeleccionado;
         const pts = parseFloat(ejemplar.valor_ejemplar ?? ejemplar.valor ?? ejemplar.pts) || 0;
+
+        // Grupos con inventario disponible para ESTA carrera (el grupo de venta
+        // se elige por caballo, igual que en la taquilla). El grupo de cabecera
+        // (si se eligió) queda preseleccionado.
+        const gs = gruposInventarioDe(tabla);
+        const pre = (grupoSeleccionado && gs.find(x => x.grupo.id == grupoSeleccionado.id))
+            ? gs.find(x => x.grupo.id == grupoSeleccionado.id)
+            : (gs.find(x => x.tg.id == tg.id) || gs[0]);
+        const g = pre ? pre.grupo : null;
+
+        mefGrupo.innerHTML = gs.map(x =>
+            `<option value="${x.tg.id}" data-grupo-id="${x.grupo.id}">${x.grupo.nombre} (${simboloDe(x.grupo.moneda)})</option>`
+        ).join('') || '<option value="">Sin inventario</option>';
+        mefGrupo.disabled = gs.length === 0;
+        if (g) mefGrupo.value = String(pre.tg.id);
+        ventaCtx.tg = gs.find(x => String(x.tg.id) === String(mefGrupo.value))?.tg || tg;
+        atualizarMenuGrupo();
 
         mefCarrera.textContent = `${tabla.hipodromo} · C${tabla.carrera}`;
         mefEjemplar.textContent = `N° ${ejemplar.numero ?? ''} — ${ejemplar.nombre}`;
-        mefValor.textContent = `${simboloDe(g.moneda)}${fmt(pts)}`;
-        mefDisponibles.textContent = `${dispDe(tg)} tabla(s)`;
-        mefCantidad.value = Math.min(1, dispDe(tg) || 1);
+        mefCantidad.value = Math.min(1, dispDe(ventaCtx.tg) || 1);
+        atualizarMenuGrupo();
 
         const r = btn ? btn.getBoundingClientRect() : null;
         const w = menuEjemplarFlotante.offsetWidth || 288;
@@ -379,6 +437,21 @@ msgSinCarreras.classList.add('hidden');
         menuEjemplarFlotante.classList.remove('hidden');
         requestAnimationFrame(() => mefCantidad.focus());
     }
+
+    function atualizarMenuGrupo() {
+        if (!ventaCtx) return;
+        const { ejemplar } = ventaCtx;
+        const pendItem = gruposInventarioDe(ventaCtx.tabla).find(x => String(x.tg.id) === String(mefGrupo.value));
+        const g = pendItem ? pendItem.grupo : (grupoSeleccionado || null);
+        if (pendItem) ventaCtx.tg = pendItem.tg;
+        const pts = parseFloat(ejemplar.valor_ejemplar ?? ejemplar.valor ?? ejemplar.pts) || 0;
+        mefValor.textContent = `${g ? simboloDe(g.moneda) : '$'}${fmt(pts)}`;
+        mefDisponibles.textContent = `${dispDe(ventaCtx.tg)} tabla(s)`;
+        const cant = parseInt(mefCantidad.value) || 1;
+        mefCantidad.value = Math.min(cant, dispDe(ventaCtx.tg) || 1);
+    }
+
+    mefGrupo.addEventListener('change', atualizarMenuGrupo);
 
     function cerrarMenuEjemplar() {
         menuEjemplarFlotante.classList.add('hidden');
@@ -421,7 +494,7 @@ msgSinCarreras.classList.add('hidden');
     function renderCarrito() {
         const totalItems = carrito.length;
         const totalTablas = carrito.reduce((a, c) => a + c.cantidad, 0);
-        const g = grupoSeleccionado;
+        const g = grupoSeleccionado || gruposDB.find(x => x.id == (carrito[0]?.tg.grupo_id)) || null;
         const simb = g ? simboloDe(g.moneda) : '$';
         const totalCosto = carrito.reduce((a, c) => a + (parseFloat(c.ejemplar.valor_ejemplar ?? c.ejemplar.valor ?? c.ejemplar.pts) || 0) * c.cantidad, 0);
         const totalPremio = carrito.reduce((a, c) => a + (parseFloat(c.tabla.premio_recalculado) || 0) * c.cantidad, 0);
@@ -497,7 +570,12 @@ msgSinCarreras.classList.add('hidden');
 
     function abrirModalVentaCarrito() {
         if (carrito.length === 0) return;
-        const g = grupoSeleccionado;
+        // Los grupos pueden variar por item (cada caballo eligió su grupo de
+        // venta). El grupo que COBRA del primer item define moneda y clientes
+        // a mostrar; los demás items conservan su propio tg al confirmar.
+        const primerGrupo = gruposDB.find(x => x.id == carrito[0].tg.grupo_id) || grupoSeleccionado;
+        if (!primerGrupo) return clubUI.toast('Grupo de venta no encontrado para el carrito.', 'error');
+        const g = primerGrupo;
         const simb = simboloDe(g.moneda);
         const { tabla, ejemplar, tg } = carrito[0];
 
@@ -512,11 +590,23 @@ msgSinCarreras.classList.add('hidden');
 
         mvResumenCarrito.classList.remove('hidden');
         document.getElementById('mvResumenCarritoTitulo').textContent = `Venta múltiple — ${carrito.length} ejemplar(es) · ${carrito.reduce((a, c) => a + c.cantidad, 0)} tabla(s)`;
-        mvResumenCarritoItems.innerHTML = carrito.map(c => `
-            <div class="flex justify-between"><span class="truncate">N° ${c.ejemplar.numero ?? ''} — ${c.ejemplar.nombre} (${c.tabla.hipodromo} C${c.tabla.carrera})</span><strong class="shrink-0">${c.cantidad} × ${simb}${fmt(parseFloat(c.ejemplar.valor_ejemplar ?? c.ejemplar.valor ?? c.ejemplar.pts) || 0)}</strong></div>
-        `).join('');
+        mvResumenCarritoItems.innerHTML = carrito.map(c => {
+            const grIt = gruposDB.find(x => x.id == c.tg.grupo_id);
+            const sIt = grIt ? simboloDe(grIt.moneda) : simb;
+            return `
+            <div class="flex justify-between gap-2"><span class="truncate">${grIt ? grIt.nombre + ' · ' : ''}N° ${c.ejemplar.numero ?? ''} — ${c.ejemplar.nombre} (${c.tabla.hipodromo} C${c.tabla.carrera})</span><strong class="shrink-0">${c.cantidad} × ${sIt}${fmt(parseFloat(c.ejemplar.valor_ejemplar ?? c.ejemplar.valor ?? c.ejemplar.pts) || 0)}</strong></div>`;
+        }).join('');
 
-        mvGrupoCobro.innerHTML = `<option value="${g.id}">${g.nombre} (${g.moneda})</option>`;
+        // Grupo que COBRA: se lista el del primer item; si todos comparten grupo se
+        // fija; si hay varios, el cobro se aplica por item (cada uno con su grupo).
+        const gruposUnicos = [...new Set(carrito.map(c => c.tg.grupo_id))];
+        if (gruposUnicos.length === 1) {
+            mvGrupoCobro.innerHTML = `<option value="${g.id}">${g.nombre} (${g.moneda})</option>`;
+            mvGrupoCobro.disabled = true;
+        } else {
+            mvGrupoCobro.disabled = true;
+            mvGrupoCobro.innerHTML = `<option value="${g.id}">${g.nombre} (${g.moneda}) — grupo del 1er item (los demás cobran en su propio grupo)</option>`;
+        }
 
         const extraIds = (miembrosExtraPorGrupo[g.id] || []).filter(id => !clientesDB.find(c => c.id == id && c.grupo_id == g.id));
         const delGrupo = clientesDB
@@ -581,9 +671,9 @@ msgSinCarreras.classList.add('hidden');
 
     function actualizarTotalesModal() {
         const items = itemsVenta();
-        if (items.length === 0 || !grupoSeleccionado) return;
-        const g = grupoSeleccionado;
-        const simb = simboloDe(g.moneda);
+        if (items.length === 0) return;
+        const g = grupoSeleccionado || gruposDB.find(x => x.id == items[0].tg.grupo_id) || null;
+        const simb = g ? simboloDe(g.moneda) : '$';
         const ptsTotalRaw = items.reduce((a, it) => a + (parseFloat(it.ejemplar.valor_ejemplar ?? it.ejemplar.valor ?? it.ejemplar.pts) || 0) * it.cantidad, 0);
         const premioTotalRaw = items.reduce((a, it) => a + (parseFloat(it.tabla.premio_recalculado) || 0) * it.cantidad, 0);
         const cantTotal = items.reduce((a, it) => a + it.cantidad, 0);
@@ -596,15 +686,17 @@ msgSinCarreras.classList.add('hidden');
         mvPremioTotal.textContent = `${simb}${fmt(premioTotalRaw)}`;
         mvComisionEst.textContent = `${simb}${fmt(comision)} (${fmt(comisionPorc, 1)}%)`;
         mvGanancia.textContent = `${simb}${fmt(ganancia)}`;
-        const disponibleMin = Math.min(...items.map(it => dispDe(it.tg)));
+        let disponibleMin = Infinity;
+        items.forEach(it => { disponibleMin = Math.min(disponibleMin, dispDe(it.tg)); });
+        if (!Number.isFinite(disponibleMin)) disponibleMin = 0;
         mvDisponibles.textContent = carrito.length
             ? `Venta múltiple de ${items.length} ejemplar(es) · ${cantTotal} tabla(s) · disponible mínimo: ${disponibleMin}`
-            : `Disponibles en ${grupoSeleccionado.nombre}: ${disponibleMin} tabla(s)`;
+            : `Disponibles en ${g ? g.nombre : 'grupo'}: ${disponibleMin} tabla(s)`;
     }
 
     mvConfirmar.addEventListener('click', async () => {
         const items = itemsVenta();
-        if (items.length === 0 || !grupoSeleccionado) return;
+        if (items.length === 0) return;
         const clienteId = mvCliente.value;
         if (!clienteId) return clubUI.toast('Seleccione el jugador que compra.', 'warning');
 
@@ -618,18 +710,29 @@ msgSinCarreras.classList.add('hidden');
         const cliente = clientesDB.find(c => c.id == clienteId);
         if (!cliente) return clubUI.toast('Cliente no encontrado.', 'error');
 
-        const g = grupoSeleccionado;
-        const esMiembro = cliente.grupo_id == g.id || !cliente.grupo_id || (miembrosExtraPorGrupo[g.id]?.includes(cliente.id));
-        if (!esMiembro) return clubUI.toast('El jugador no pertenece al grupo de venta seleccionado.', 'warning');
+        // Valida la pertenencia por cada grupo involucrado en el carrito
+        // (cada item conserva su propio grupo de venta/inventario).
+        const gruposItems = [...new Set(items.map(it => it.tg.grupo_id))];
+        for (const gid of gruposItems) {
+            const gi = gruposDB.find(x => x.id == gid);
+            if (!gi) continue;
+            const esMiembro = cliente.grupo_id == gi.id || !cliente.grupo_id || (miembrosExtraPorGrupo[gi.id]?.includes(cliente.id));
+            if (!esMiembro) return clubUI.toast(`El jugador no pertenece al grupo ${gi.nombre} (inventario del carrito).`, 'warning');
+        }
 
-        const grupoComision = gruposDB.find(x => x.id == mvGrupoComision.value) || g;
-        const cobroGrupo = gruposDB.find(x => x.id == mvGrupoCobro.value) || g;
+        const grupoComision = gruposDB.find(x => x.id == mvGrupoComision.value) || gruposDB.find(x => x.id == gruposItems[0]) || null;
+        const cobroGrupo = gruposDB.find(x => x.id == mvGrupoCobro.value) || gruposDB.find(x => x.id == gruposItems[0]) || null;
 
-        const esVES = g.moneda === 'VES';
-        const ptsTotal = items.reduce((a, it) => a + (parseFloat(it.ejemplar.valor_ejemplar ?? it.ejemplar.valor ?? it.ejemplar.pts) || 0) * it.cantidad, 0);
-        const costoTotalUSD = esVES ? ptsTotal / (tasaCambioGlobal || 1) : ptsTotal;
+        // Conversión global del costo para validaciones de saldo (USD). Cada
+        // item se convierte en la moneda de SU grupo.
+        let costoTotalUSD = 0;
+        for (const it of items) {
+            const gIt = gruposDB.find(x => x.id == it.tg.grupo_id) || cobroGrupo;
+            const ptsItem = (parseFloat(it.ejemplar.valor_ejemplar ?? it.ejemplar.valor ?? it.ejemplar.pts) || 0) * it.cantidad;
+            costoTotalUSD += (gIt?.moneda === 'VES') ? ptsItem / (tasaCambioGlobal || 1) : ptsItem;
+        }
 
-        // Validaciones de saldo combinadas (mismas reglas que el core)
+        // Validaciones de saldo combinadas (reglas por modo de juego)
         const modoJuega = cliente.modo_juego || (cliente.libre ? 'libre' : 'aval');
         let permitirSobregiro = false;
         if (modoJuega === 'pozo') {
@@ -641,7 +744,8 @@ msgSinCarreras.classList.add('hidden');
                 return clubUI.toast(`El jugador ${cliente.nombre} supera su límite de AVAL ($${fmt(limiteAval)}). Debe abonar antes de comprar.`, 'warning');
             }
         }
-        if (!esVES && parseFloat(cliente.saldo_actual) < costoTotalUSD) {
+        const esVESGlobal = gruposDB.find(x => x.id == gruposItems[0])?.moneda === 'VES';
+        if (!esVESGlobal && parseFloat(cliente.saldo_actual) < costoTotalUSD) {
             if (!confirm(`El jugador ${cliente.nombre} tiene saldo insuficiente ($${fmt(cliente.saldo_actual)}). ¿Desea proceder de todas formas?`)) return;
             permitirSobregiro = true;
         }
@@ -650,13 +754,16 @@ msgSinCarreras.classList.add('hidden');
         const orig = mvConfirmar.innerHTML;
         mvConfirmar.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Procesando...';
 
-        // Vende cada item del carrito secuencialmente para congelar su premio/valor y descontar inventario
+        // Vende cada item del carrito con SU grupo (el dueño del inventario/tg),
+        // congelando premio/valor y descontando inventario por item.
         const resultados = [];
         let fallo = null;
         for (const it of items) {
+            const gIt = gruposDB.find(x => x.id == it.tg.grupo_id) || cobroGrupo;
+            if (!gIt) { fallo = 'Grupo de venta no encontrado.'; break; }
             const res = await window.VentaTablasCore.venderTabla({
                 cliente, cantidad: it.cantidad, ejemplar: it.ejemplar, tabla: it.tabla, tg: it.tg,
-                grupo: cobroGrupo, grupoComision,
+                grupo: gIt, grupoComision,
                 tasaCambio: tasaCambioGlobal, permitirSobregiro
             });
             if (!res.ok) { fallo = res.error; break; }
@@ -671,11 +778,11 @@ msgSinCarreras.classList.add('hidden');
             const totalPremio = resultados.reduce((a, r) => a + r.res.premioTotal, 0);
             const totalGanancia = resultados.reduce((a, r) => a + r.res.gananciaTotal, 0);
             const totalComision = resultados.reduce((a, r) => a + r.res.comisionEstimada, 0);
-            clubUI.toast(`¡Venta procesada! ${resultados.length} item(s) · ${cobroGrupo.nombre} cobra, ${grupoComision.nombre} recibe comisión.`, 'success');
-            if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta: ${cliente.nombre} ${resultados.length} items ($${fmt(totalCosto)}) ${cobroGrupo.nombre} comision=${grupoComision.nombre}`);
+            clubUI.toast(`¡Venta procesada! ${resultados.length} item(s) · ${cobroGrupo?.nombre || 'grupos'}, comisión a ${grupoComision?.nombre || 'grupos'}.`, 'success');
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta: ${cliente.nombre} ${resultados.length} items ($${fmt(costoTotalUSD)}) comision=${grupoComision?.nombre || ''}`);
 
             const saldoPosterior = (parseFloat(cliente.saldo_actual || 0)) - costoTotalUSD;
-            const htmlComp = comprobanteMultiHTML({ cliente, resultados, grupo: cobroGrupo, grupoComision, totalCosto, totalPremio, totalGanancia, totalComision, saldoPosterior, esVES });
+            const htmlComp = comprobanteMultiHTML({ cliente, resultados, grupo: cobroGrupo, grupoComision, totalCosto, totalPremio, totalGanancia, totalComision, saldoPosterior, esVES: esVESGlobal });
             window.VentaTablasCore.printHTML(`Comprobante — ${cliente.nombre} (${resultados.length} items)`, htmlComp);
         }
 
@@ -693,7 +800,8 @@ msgSinCarreras.classList.add('hidden');
     });
 
     function comprobanteMultiHTML({ cliente, resultados, grupo, grupoComision, totalCosto, totalPremio, totalGanancia, totalComision, saldoPosterior, esVES }) {
-        const simb = grupo.moneda === 'VES' ? 'Bs ' : '$';
+        const primerGrupo = resultados[0]?.it.tg ? (gruposDB.find(x => x.id == resultados[0].it.tg.grupo_id) || grupo) : grupo;
+        const simb = (primerGrupo?.moneda || esVES ? 'VES' : 'USD') === 'VES' ? 'Bs ' : '$';
         const fecha = new Date().toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
         const folio = `T-MULTI-${Date.now().toString().slice(-8)}`;
         const filas = resultados.map(r => `
@@ -714,8 +822,8 @@ msgSinCarreras.classList.add('hidden');
             <div class="sub">Folio: ${folio} &nbsp;·&nbsp; ${fecha}</div>
             <table>
                 <tr><th>Cliente</th><td class="b">${cliente.nombre}</td></tr>
-                <tr><th>Grupo que cobra</th><td>${grupo.nombre}</td></tr>
-                <tr><th>Grupo comisión</th><td>${grupoComision.nombre}</td></tr>
+                <tr><th>Grupo que cobra</th><td>${grupo?.nombre || primerGrupo?.nombre || '—'}</td></tr>
+                <tr><th>Grupo comisión</th><td>${grupoComision?.nombre || '—'}</td></tr>
             </table>
             <table>
                 <tr><th>Carrera</th><th>Ejemplar</th><th>Tablas</th><th>Pts c/u</th><th>Premio c/u</th><th class="r">Costo</th><th class="r">Premio total</th></tr>
@@ -743,24 +851,41 @@ msgSinCarreras.classList.add('hidden');
         ]);
         if (rTablas.data) tablasDB = rTablas.data;
         if (rClientes.data) clientesDB = rClientes.data;
+        poblarFiltroHipodromo();
+        poblarFiltroTablas();
     }
 
     // ==========================================
     // FILTROS
     // ==========================================
-    function poblarFiltroTablas() {
-        filtroTabla.innerHTML = '<option value="">Todas las carreras de este grupo...</option>';
-        filtroTabla.disabled = !grupoSeleccionado;
-        if (!grupoSeleccionado) return;
-        const g = grupoSeleccionado;
-        tablasDB.filter(t => (t.tabla_grupos || []).some(x => x.grupo_id == g.id)).forEach(t => {
-            filtroTabla.innerHTML += `<option value="${t.id}">${t.hipodromo} - C${t.carrera} (${g.moneda})</option>`;
-        });
+    function poblarFiltroHipodromo() {
+        const actual = filtroHipodromo.value;
+        const hipos = [...new Map(tablasDB.filter(t => t.hipodromo).map(t => [String(t.hipodromo).trim().toLowerCase(), String(t.hipodromo).trim()])).values()].sort((a, b) => a.localeCompare(b));
+        filtroHipodromo.innerHTML = '<option value="">Todos los Hipódromos...</option>';
+        hipos.forEach(h => filtroHipodromo.innerHTML += `<option value="${h}">${h}</option>`);
+        if (actual && hipos.includes(actual)) filtroHipodromo.value = actual;
     }
+
+    function poblarFiltroTablas() {
+        const hipo = filtroHipodromo.value;
+        let lista = tablasDB;
+        if (hipo) {
+            const h = hipo.toLowerCase();
+            lista = lista.filter(t => String(t.hipodromo || '').trim().toLowerCase() === h);
+        }
+        filtroTabla.innerHTML = '<option value="">Todas las carreras de este filtro...</option>';
+        filtroTabla.disabled = lista.length === 0;
+        lista.forEach(t => filtroTabla.innerHTML += `<option value="${t.id}">${t.hipodromo} - C${t.carrera}${grupoSeleccionado ? ' (' + grupoSeleccionado.moneda + ')' : ''}</option>`);
+    }
+
+    filtroHipodromo.addEventListener('change', () => {
+        poblarFiltroTablas();
+        render();
+    });
 
     filtroGrupo.addEventListener('change', () => {
         grupoSeleccionado = gruposDB.find(g => g.id == filtroGrupo.value) || null;
-        filtroCliente.disabled = !grupoSeleccionado;
+        filtroCliente.disabled = false;
         filtroCliente.value = '';
         aportadoPorCliente = false;
         if (carrito.length) {
@@ -778,8 +903,9 @@ msgSinCarreras.classList.add('hidden');
         await inicializar();
         if (grupoSeleccionado) {
             filtroGrupo.value = grupoSeleccionado.id;
-            poblarFiltroTablas();
         }
+        poblarFiltroHipodromo();
+        poblarFiltroTablas();
         render();
         btnActualizarVista.disabled = false;
         clubUI.toast('Datos actualizados.', 'success');

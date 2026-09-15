@@ -3,7 +3,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnAgregarCarrera = document.getElementById('btnAgregarCarrera');
     const contenedorCarreras = document.getElementById('carrerasEnsamblaje');
     const lblTotalCarreras = document.getElementById('lblTotalCarreras');
-    const tbodyMonitor = document.getElementById('cuerpoMonitorTablas');
     const premioTabla = document.getElementById('premioTabla');
 
     let tasaCambioGlobal = 1.0;
@@ -631,6 +630,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return `<span class="inline-flex items-center gap-1 bg-amber-100 text-amber-700 border border-amber-300 rounded-full px-2 py-0.5 text-[10px] font-black mt-1"><i class="fas fa-trophy"></i> Ganador #${ganador.numero} ${ganador.nombre}</span>`;
     }
 
+    const contenedorMon = document.getElementById('cuerpoMonitorGrid');
+
     async function cargarTablas() {
         try {
             const { data, error } = await window.supabase
@@ -640,16 +641,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error) throw error;
 
             datosTablaCompleta = data || [];
-            tbodyMonitor.innerHTML = '';
             const lblMonitor = document.getElementById('lblTotalMonitor');
             if (lblMonitor) lblMonitor.textContent = String(datosTablaCompleta.length);
+            const msgVacio = document.getElementById('msgMonitorVacio');
+            if (msgVacio) msgVacio.classList.toggle('hidden', datosTablaCompleta.length > 0);
             if (datosTablaCompleta.length === 0) {
-                tbodyMonitor.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No hay tablas registradas.</td></tr>';
+                contenedorMon.innerHTML = '';
                 return;
             }
 
-            datosTablaCompleta.forEach(t => {
-                const badgeEstado = t.estado === 'Abierta' ? '<span class="text-green-600 font-bold">ABIERTA</span>' : '<span class="text-blue-600 font-bold">AUDITADA</span>';
+            contenedorMon.innerHTML = datosTablaCompleta.map(t => {
+                const badgeEstado = t.estado === 'Abierta'
+                    ? '<span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 text-[9px] font-black uppercase"><i class="fas fa-circle text-[6px]"></i> Abierta</span>'
+                    : '<span class="inline-flex items-center gap-1 bg-blue-100 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5 text-[9px] font-black uppercase"><i class="fas fa-lock text-[8px]"></i> Auditada</span>';
 
                 const chipsGrupos = (t.tabla_grupos || []).map(tg => {
                     const nombre = tg.grupos_venta ? tg.grupos_venta.nombre : '?';
@@ -663,34 +667,85 @@ document.addEventListener('DOMContentLoaded', () => {
                     </span>`;
                 }).join(' ') || '<span class="text-slate-400 italic text-[10px]">Sin cupos</span>';
 
-                const btnAcciones = `
-                    <div class="flex flex-wrap gap-1 justify-center">
-                        <button class="btn-editar bg-slate-200 text-slate-700 px-2 py-1 rounded hover:bg-slate-300" data-id="${t.id}" title="Editar"><i class="fas fa-edit"></i></button>
-                        <button class="btn-clonar bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200" data-id="${t.id}" title="Clonar"><i class="fas fa-copy"></i></button>
-                        ${t.estado === 'Abierta' ? `<button class="btn-vender bg-emerald-500 text-white px-2 py-1 rounded hover:bg-emerald-600 font-bold" data-id="${t.id}">Vender</button>` : ''}
-                        <button class="btn-eliminar bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200" data-id="${t.id}" title="Eliminar"><i class="fas fa-trash-alt"></i></button>
+                const ejemplares = Array.isArray(t.caballos) ? t.caballos : [];
+                const suma = ejemplares.reduce((acc, c) => acc + (parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0), 0);
+                const simb = t.moneda === 'VES' ? 'Bs ' : '$';
+
+                return `
+                <div class="card-monitor bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden flex flex-col" data-tabla="${t.id}">
+                    <div class="bg-indigo-600 px-2 py-1" style="color:#fff">
+                        <div class="flex items-center justify-between gap-1">
+                            <span class="rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wider truncate" style="background:rgba(255,255,255,.18);color:#fff">${t.hipodromo || ''}</span>
+                            <span class="font-black text-[10px] whitespace-nowrap"><i class="fas fa-flag-checkered mr-0.5"></i>C${t.carrera ?? ''}</span>
+                        </div>
+                        <div class="flex flex-wrap gap-1 mt-0.5 text-[8px] font-bold items-center">
+                            <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)">Dist: ${t.distancia_carrera ?? ''} m</span>
+                            <span class="rounded px-1 py-px uppercase" style="background:rgba(255,255,255,.18)">${t.superficie || 'ARENA'}</span>
+                            <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)">${t.fecha || ''}</span>
+                        </div>
+                        <div class="mt-1 flex items-center justify-between rounded px-2 py-1" style="background:rgba(255,255,255,.20)">
+                            <span class="text-[9px] font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-0.5"></i> Monto a Pagar / Tabla</span>
+                            <span class="font-black text-sm" style="color:#fff">${simb}${clubUI.formatoNumero(parseFloat(t.premio_recalculado), 2)}</span>
+                        </div>
                     </div>
-                `;
 
-                tbodyMonitor.innerHTML += `
-                    <tr class="hover:bg-slate-50 border-b border-slate-100">
-                        <td class="p-2 font-bold">${t.hipodromo}<br><span class="text-blue-600">C${t.carrera}</span> ${t.distancia_carrera ? `<span class="text-slate-400 font-normal"> · ${t.distancia_carrera}m</span>` : ''} ${t.superficie ? `<span class="inline-block ml-1 text-[9px] border border-slate-300 rounded px-1 font-bold text-slate-600 uppercase">${t.superficie}</span>` : ''}
-                            <div class="mt-1">${chipsGrupos}</div></td>
-                        <td class="p-2 text-right"><span class="text-blue-700 font-bold">${t.moneda === 'VES' ? 'Bs ' : '$'}${clubUI.formatoNumero(parseFloat(t.premio_recalculado), 2)}</span></td>
-                        <td class="p-2 text-center">${badgeRetiros(t)}${chipGanador(t)}</td>
-                        <td class="p-2 text-center text-[10px]">${badgeEstado}</td>
-                        <td class="p-2 text-center">${btnAcciones}</td>
-                    </tr>
-                `;
-            });
+                    <div class="px-2 pt-1 pb-0.5 text-[8px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                        <span><i class="fas fa-horse-head text-amber-500 mr-0.5"></i> Ejemplares</span>
+                        <span class="bg-slate-100 text-slate-600 px-1.5 rounded-full font-black">${ejemplares.length}</span>
+                    </div>
 
-            document.querySelectorAll('.btn-editar').forEach(b => b.addEventListener('click', (e) => abrirModalEditar(e.currentTarget.dataset.id)));
-            document.querySelectorAll('.btn-clonar').forEach(b => b.addEventListener('click', (e) => abrirModalClonar(e.currentTarget.dataset.id)));
-            document.querySelectorAll('.btn-vender').forEach(b => b.addEventListener('click', (e) => abrirModalVenta(e.currentTarget.dataset.id)));
-            document.querySelectorAll('.btn-eliminar').forEach(b => b.addEventListener('click', (e) => eliminarTabla(e.currentTarget.dataset.id)));
+                    <div class="px-1.5 py-0.5 space-y-0.5 flex-1">
+                        ${ejemplares.map(c => {
+                            const bg = colorDeNumero(c.numero);
+                            const fg = textoDeNumero(c.numero);
+                            const retirado = !!c.retirado;
+                            const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
+                            return `
+                            <div class="flex gap-0.5 items-center bg-slate-50 border border-slate-200 rounded px-1 py-0.5 ${retirado ? 'opacity-40' : ''}">
+                                <span class="w-4 h-5 shrink-0 rounded px-0 py-px text-center text-[8px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
+                                <span class="flex-1 min-w-0 truncate text-[10px] font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
+                                ${htmlSelectNac(c.nacionalidad)}
+                                <span class="shrink-0 w-11 text-right text-[11px] font-black ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 1)}</span>
+                            </div>`;
+                        }).join('') || '<p class="text-[10px] text-slate-400 italic px-1 py-1">Sin ejemplares registrados.</p>'}
+                    </div>
+
+                    <div class="px-2 py-1 border-t border-slate-200 bg-white flex items-center justify-between">
+                        <span class="inline-flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-slate-400">
+                            <i class="fas fa-calculator text-indigo-400"></i> Suma de la Tabla
+                        </span>
+                        <span class="font-black text-[11px] text-indigo-700" title="Sumatoria de los valores de todos los ejemplares">${simb}${clubUI.formatoNumero(suma, 1)}</span>
+                    </div>
+
+                    <div class="px-2 py-1 border-t border-slate-100 bg-white space-y-1">
+                        <div class="flex flex-wrap gap-1 items-center">${badgeRetiros(t)}${chipGanador(t)}</div>
+                        <div class="flex items-center justify-between gap-1">
+                            <span class="text-[8px] font-black uppercase tracking-wider text-slate-500 shrink-0"><i class="fas fa-boxes text-indigo-400 mr-1"></i> Disponibles</span>
+                            <span class="flex flex-wrap justify-end gap-0.5">${chipsGrupos}</span>
+                        </div>
+                        <div class="flex items-center justify-between pt-1">${badgeEstado}</div>
+                    </div>
+
+                    <div class="px-2 py-1.5 border-t border-slate-200 flex gap-2 bg-white">
+                        <button type="button" class="btn-editar-mon bg-slate-200 text-slate-700 flex-1 text-[10px] font-bold py-1.5 rounded-lg hover:bg-slate-300 transition-colors" data-id="${t.id}" title="Editar premio, valores y cupos"><i class="fas fa-edit mr-1"></i> Editar</button>
+                        <button type="button" class="btn-clonar-mon bg-indigo-100 text-indigo-700 flex-1 text-[10px] font-bold py-1.5 rounded-lg hover:bg-indigo-200 transition-colors" data-id="${t.id}" title="Clonar carrera"><i class="fas fa-copy mr-1"></i> Clonar</button>
+                        ${t.estado === 'Abierta' ? `<button type="button" class="btn-vender-mon bg-emerald-600 text-white flex-1 text-[10px] font-black py-1.5 rounded-lg hover:bg-emerald-700 transition-colors uppercase" data-id="${t.id}" title="Vender en la taquilla"><i class="fas fa-cash-register mr-1"></i> Vender</button>` : ''}
+                        <button type="button" class="btn-eliminar-mon bg-red-50 text-red-600 flex-1 text-[10px] font-bold py-1.5 rounded-lg hover:bg-red-100 transition-colors" data-id="${t.id}" title="Eliminar"><i class="fas fa-trash-alt mr-1"></i></button>
+                    </div>
+                </div>`;
+            }).join('');
+
+            contenedorMon.querySelectorAll('.btn-editar-mon').forEach(b => b.addEventListener('click', () => abrirModalEditar(b.dataset.id)));
+            contenedorMon.querySelectorAll('.btn-clonar-mon').forEach(b => b.addEventListener('click', () => abrirModalClonar(b.dataset.id)));
+            contenedorMon.querySelectorAll('.btn-vender-mon').forEach(b => b.addEventListener('click', () => {
+                const t = datosTablaCompleta.find(x => x.id == b.dataset.id);
+                const hipo = t?.hipodromo ? encodeURIComponent(String(t.hipodromo)) : '';
+                window.location.href = 'venta_tablas.html' + (hipo ? '?hipodromo=' + hipo : '');
+            }));
+            contenedorMon.querySelectorAll('.btn-eliminar-mon').forEach(b => b.addEventListener('click', () => eliminarTabla(b.dataset.id)));
         } catch (e) {
             console.error(e);
-            tbodyMonitor.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-red-500">Error cargando tablas.</td></tr>';
+            contenedorMon.innerHTML = '<p class="p-4 text-center text-red-500 text-sm">Error cargando tablas.</p>';
         }
     }
 

@@ -14,7 +14,7 @@
         .tab-btn:hover { color: #475569; }
         .tab-btn.active { color: #4f46e5; border-bottom-color: #4f46e5; }
         @media (min-width:640px){
-            #carrerasGaceta, #carrerasEnsamblaje { grid-template-columns: repeat(3, minmax(0,1fr)) !important; }
+            #carrerasGaceta, #carrerasEnsamblaje, #cuerpoMonitorGrid { grid-template-columns: repeat(3, minmax(0,1fr)) !important; }
         }
     </style>
 </head>
@@ -40,7 +40,6 @@
         <!-- TAB NAVIGATION -->
         <div class="flex border-b border-slate-200 bg-white px-4 shrink-0 z-10 overflow-x-auto">
             <button class="tab-btn active" data-tab="ensamblaje"><i class="fas fa-hammer mr-1"></i> Ensamblaje</button>
-            <button class="tab-btn" data-tab="venta"><i class="fas fa-cash-register mr-1"></i> Venta</button>
         </div>
 
         <!-- ================= TAB: ENSAMBLAJE ================= -->
@@ -113,234 +112,22 @@
                     </div>
                 </div>
 
-                <!-- MONITOR DE TABLAS PUBLICADAS -->
+                // MONITOR DE TABLAS PUBLICADAS
                 <div id="seccionMonitor" class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden shrink-0">
                     <button type="button" id="btnToggleMonitor" class="w-full bg-slate-900 text-white p-2.5 font-bold text-xs uppercase tracking-wider flex items-center justify-between hover:bg-slate-800 transition-colors">
                         <span class="flex items-center"><i class="fas fa-desktop text-indigo-400 mr-2"></i> Monitor de Tablas Publicadas <span id="lblTotalMonitor" class="ml-2 text-[10px] bg-slate-700 rounded-full px-2 py-0.5">0</span></span>
                         <i class="fas fa-chevron-down"></i>
                     </button>
                     <div id="cuerpoMonitor" class="hidden">
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-xs">
-                                <thead class="bg-slate-100 text-slate-700 sticky top-0 shadow-sm border-b border-slate-200">
-                                    <tr>
-                                        <th class="p-2.5 font-bold uppercase tracking-wider">Carrera</th>
-                                        <th class="p-2.5 text-right font-bold uppercase tracking-wider">Premio</th>
-                                        <th class="p-2.5 text-center font-bold uppercase tracking-wider">Retiros / Ganador</th>
-                                        <th class="p-2.5 text-center font-bold uppercase tracking-wider">Estado</th>
-                                        <th class="p-2.5 text-center font-bold uppercase tracking-wider">Acciones</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="cuerpoMonitorTablas" class="divide-y divide-slate-100 text-slate-800 bg-white">
-                                    <tr><td colspan="5" class="p-6 text-center text-slate-500 italic">Cargando monitor...</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
+                        <div id="msgMonitorVacio" class="text-center p-6 text-slate-500 italic text-sm hidden">No hay tablas publicadas.</div>
+                        <div id="cuerpoMonitorGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 p-2"></div>
                     </div>
                 </div>
             </main>
         </div>
 
-        <!-- ================= TAB: VENTA ================= -->
-        <div id="panel-venta" class="tab-panel hidden flex-1 flex flex-col overflow-y-auto bg-slate-100">
-            <main class="p-6 flex-1 overflow-y-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <!-- IZQUIERDA: Selector + Compra -->
-                <div class="lg:col-span-1 space-y-4">
-                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                        <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center mb-4">
-                            <i class="fas fa-shopping-cart text-emerald-500 mr-2"></i> Venta de Tablas
-                        </h2>
-                        <div class="space-y-3">
-                            <div>
-                                <label class="block text-xs font-bold text-slate-700 mb-1 uppercase">Grupo</label>
-                                <select id="filtroGrupo" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-500">
-                                    <option value="">Seleccione Grupo...</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-700 mb-1 uppercase">Hipódromo - Carrera</label>
-                                <select id="selectTablaConfig" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-500" disabled>
-                                    <option value="">Seleccione Hipódromo y Carrera...</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                    <p id="msgSeleccioneTabla" class="text-center text-slate-400 italic text-xs">Seleccione grupo y carrera para vender.</p>
-                    <div id="panelCompra" class="hidden bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-3">
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase">Ejemplar (Posada Ganadora)</label>
-                            <select id="selectEjemplar" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-500">
-                                <option value="">Seleccione ejemplar...</option>
-                            </select>
-                        </div>
-                        <div id="ventaRetirosInfo" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-2">
-                            <p class="text-[10px] font-bold text-amber-700" id="ventaRetirosTexto"></p>
-                        </div>
-                        <div class="grid grid-cols-2 gap-3">
-                            <div class="bg-slate-50 rounded-lg p-3 border border-slate-200">
-                                <p class="text-[9px] font-bold text-slate-500 uppercase">Costo Unitario</p>
-                                <p class="text-lg font-black text-slate-800" id="lblCostoUnit">$0</p>
-                            </div>
-                            <div class="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                                <p class="text-[9px] font-bold text-blue-600 uppercase">Premio por Tabla</p>
-                                <p class="text-lg font-black text-blue-700" id="lblPremioUnit">$0</p>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase">Jugador (Cliente)</label>
-                            <select id="selectCliente" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-500">
-                                <option value="">Seleccione apostador...</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase">Cantidad de Tablas</label>
-                            <input type="number" id="cantidadComprar" value="1" min="1" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-black text-center outline-none focus:ring-2 focus:ring-emerald-500">
-                        </div>
-                        <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3 space-y-1.5">
-                            <div class="flex justify-between text-xs font-bold"><span class="text-slate-600">Disponibles:</span><span id="lblDisponibles" class="text-emerald-700">0</span></div>
-                            <div class="flex justify-between text-xs font-bold"><span class="text-slate-600">Costo Total:</span><span id="lblCostoTotal" class="text-slate-800">$0.00</span></div>
-                            <div class="flex justify-between text-xs font-bold"><span class="text-blue-600">Premio Total:</span><span id="lblPremioTotal" class="text-blue-700">$0.00</span></div>
-                            <div class="flex justify-between text-xs font-bold border-t border-emerald-200 pt-1"><span class="text-emerald-700">Ganancia:</span><span id="lblGananciaTotal" class="text-emerald-700">$0.00</span></div>
-                            <div class="flex justify-between text-xs font-bold"><span class="text-purple-600">Comisión (<span id="lblComisionPorc">2.5</span>%):</span><span id="lblComisionGrupo" class="text-purple-700">$0.00</span></div>
-                            <div class="flex justify-between text-sm font-black border-t border-emerald-300 pt-1"><span class="text-slate-800">TOTAL A PAGAR:</span><span id="lblTotalPagar" class="text-emerald-700">$0.00</span></div>
-                        </div>
-                        <button id="btnProcesarVenta" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-lg text-xs font-black uppercase tracking-wide shadow transition-colors">
-                            <i class="fas fa-check-circle mr-1"></i> Procesar Venta
-                        </button>
-                    </div>
-                </div>
-
-                <!-- DERECHA: Riesgo + Reportes -->
-                <div class="lg:col-span-2 space-y-4">
-                    <!-- Monitor de Riesgo -->
-                    <div id="contenidoRiesgo" class="hidden bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                        <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center mb-3">
-                            <i class="fas fa-chart-bar text-indigo-500 mr-2"></i> Monitor de Riesgo
-                        </h2>
-                        <div class="grid grid-cols-2 gap-3 mb-3">
-                            <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
-                                <p class="text-lg font-black text-red-600" id="lblRiesgoMonto">$0.00</p>
-                                <p class="text-[9px] font-bold text-slate-500 uppercase">Riesgo Total</p>
-                            </div>
-                            <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
-                                <p class="text-lg font-black text-amber-600" id="lblInventarioProgreso">0 / 0</p>
-                                <p class="text-[9px] font-bold text-slate-500 uppercase">Inventario</p>
-                            </div>
-                        </div>
-                        <div class="overflow-x-auto border border-slate-200 rounded-lg">
-                            <table class="w-full text-xs">
-                                <thead class="bg-slate-100 text-slate-700 sticky top-0 border-b border-slate-200">
-                                    <tr>
-                                        <th class="p-2 text-center font-bold uppercase">N°</th>
-                                        <th class="p-2 text-left font-bold uppercase">Ejemplar</th>
-                                        <th class="p-2 text-right font-bold uppercase">Valor</th>
-                                        <th class="p-2 text-center font-bold uppercase">Estado</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="cuerpoEjemplaresTabla" class="divide-y divide-slate-100"></tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- Reporte de Ventas -->
-                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                        <div class="flex items-center justify-between mb-4">
-                            <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center">
-                                <i class="fas fa-chart-pie text-indigo-500 mr-2"></i> Reporte de Ventas
-                            </h2>
-                            <button id="btnActualizarReporte" class="bg-white border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm transition-colors text-xs font-bold">
-                                <i class="fas fa-sync-alt"></i> Actualizar
-                            </button>
-                        </div>
-                        <div id="resumenRiesgoGrupos" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mb-4">
-                            <div class="text-slate-400 italic text-xs">Sin ventas.</div>
-                        </div>
-                        <div class="overflow-x-auto border border-slate-200 rounded-lg mb-4">
-                            <table class="w-full text-xs">
-                                <thead class="bg-slate-100 text-slate-700 sticky top-0 border-b border-slate-200">
-                                    <tr>
-                                        <th class="p-2 text-left font-bold uppercase">Grupo</th>
-                                        <th class="p-2 text-left font-bold uppercase">Carrera</th>
-                                        <th class="p-2 text-left font-bold uppercase">Ejemplar</th>
-                                        <th class="p-2 text-right font-bold uppercase">Tablas</th>
-                                        <th class="p-2 text-right font-bold uppercase">Arriesgado</th>
-                                        <th class="p-2 text-right font-bold uppercase">Premio Pot.</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="cuerpoReporteConsolidado" class="divide-y divide-slate-100"></tbody>
-                            </table>
-                        </div>
-                        <div class="overflow-x-auto border border-slate-200 rounded-lg mb-4">
-                            <table class="w-full text-xs">
-                                <thead class="bg-slate-100 text-slate-700 sticky top-0 border-b border-slate-200">
-                                    <tr>
-                                        <th class="p-2 text-left font-bold uppercase">Fecha</th>
-                                        <th class="p-2 text-left font-bold uppercase">Cliente</th>
-                                        <th class="p-2 text-left font-bold uppercase">Grupo</th>
-                                        <th class="p-2 text-left font-bold uppercase">Carrera</th>
-                                        <th class="p-2 text-left font-bold uppercase">Ejemplar</th>
-                                        <th class="p-2 text-right font-bold uppercase">Tablas</th>
-                                        <th class="p-2 text-right font-bold uppercase">Valor</th>
-                                        <th class="p-2 text-right font-bold uppercase">Premio</th>
-                                        <th class="p-2 text-right font-bold uppercase">Monto</th>
-                                        <th class="p-2 text-right font-bold uppercase">Riesgo</th>
-                                        <th class="p-2 text-right font-bold uppercase">Ganancia</th>
-                                        <th class="p-2 text-right font-bold uppercase">Comisión</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="cuerpoReporteVentas" class="divide-y divide-slate-100"></tbody>
-                            </table>
-                        </div>
-                        <div class="overflow-x-auto border border-slate-200 rounded-lg">
-                            <table class="w-full text-xs">
-                                <thead class="bg-slate-100 text-slate-700 sticky top-0 border-b border-slate-200">
-                                    <tr>
-                                        <th class="p-2 text-left font-bold uppercase">Cliente</th>
-                                        <th class="p-2 text-center font-bold uppercase">Ventas</th>
-                                        <th class="p-2 text-right font-bold uppercase">Tablas</th>
-                                        <th class="p-2 text-right font-bold uppercase">Monto</th>
-                                        <th class="p-2 text-right font-bold uppercase">Premio</th>
-                                        <th class="p-2 text-right font-bold uppercase">Ganancia</th>
-                                        <th class="p-2 text-right font-bold uppercase">Comisión</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="cuerpoReporteClientes" class="divide-y divide-slate-100"></tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- Solicitudes del Portal -->
-                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                        <div class="flex items-center justify-between mb-4">
-                            <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center">
-                                <i class="fas fa-globe text-cyan-500 mr-2"></i> Solicitudes del Portal
-                            </h2>
-                            <button id="btnActualizarSolicitudes" class="bg-white border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm transition-colors text-xs font-bold">
-                                <i class="fas fa-sync-alt"></i> Actualizar
-                            </button>
-                        </div>
-                        <div class="overflow-x-auto border border-slate-200 rounded-lg">
-                            <table class="w-full text-xs">
-                                <thead class="bg-slate-100 text-slate-700 sticky top-0 border-b border-slate-200">
-                                    <tr>
-                                        <th class="p-2 text-left font-bold uppercase">Fecha</th>
-                                        <th class="p-2 text-left font-bold uppercase">Cliente</th>
-                                        <th class="p-2 text-left font-bold uppercase">Grupo</th>
-                                        <th class="p-2 text-left font-bold uppercase">Carrera</th>
-                                        <th class="p-2 text-left font-bold uppercase">Ejemplar</th>
-                                        <th class="p-2 text-right font-bold uppercase">Cant.</th>
-                                        <th class="p-2 text-right font-bold uppercase">Monto</th>
-                                        <th class="p-2 text-center font-bold uppercase">Estado</th>
-                                        <th class="p-2 text-center font-bold uppercase">Acciones</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="cuerpoSolicitudesAdmin" class="divide-y divide-slate-100"></tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </main>
-        </div>
+        <!-- ================= TAB: VENTA (ELIMINADA) ================= -->
+        <!-- La venta de tablas fijas se realiza en la taquilla dedicada: venta_tablas.html -->
 
     </div>
 
@@ -580,18 +367,21 @@
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
     <script src="../js/components/programa_dia.js?v=20260910-17"></script>
-    <script src="../js/tablas.js?v=20260914-9"></script>
+    <script src="../js/tablas.js?v=20260914-10"></script>
     <script src="../js/grupos.js"></script>
     <script src="../js/ejemplares.js"></script>
-    <script src="../js/venta_tablas.js?v=20260914-6"></script>
     <script>
-        // Tab switching logic
+        // La única pestaña es el Ensamblaje (la venta se hace en la taquilla venta_tablas.html).
+        document.querySelectorAll('.tab-panel').forEach(p => {
+            if (p.dataset.tab !== 'ensamblaje') p.classList.add('hidden');
+        });
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
                 document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
                 btn.classList.add('active');
-                document.getElementById('panel-' + btn.dataset.tab).classList.remove('hidden');
+                const p = document.getElementById('panel-' + btn.dataset.tab);
+                if (p) p.classList.remove('hidden');
             });
         });
     </script>
