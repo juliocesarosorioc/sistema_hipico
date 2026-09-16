@@ -661,8 +661,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         const retirado = !!c.retirado;
                         const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
                         return `
-                        <div class="bg-slate-50 border border-slate-200 rounded px-1 py-px cursor-pointer hover:border-indigo-300 hover:bg-indigo-50 transition-colors ${retirado ? 'opacity-40' : ''}" data-tabla-id="${t.id}" data-ejemplar-idx="${idx}" style="display:grid;grid-template-columns:2rem 1fr 2rem auto;column-gap:0.375rem;align-items:center">
-                            <span class="justify-self-center w-4 h-4 rounded flex items-center justify-center text-[8px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
+                        <div class="bg-slate-50 border border-slate-200 rounded px-1 py-px cursor-pointer hover:border-indigo-300 hover:bg-indigo-50 transition-colors ${retirado ? 'opacity-40' : ''}" data-tabla-id="${t.id}" data-ejemplar-idx="${idx}" style="display:grid;grid-template-columns:2.25rem 1fr 2rem auto;column-gap:0.375rem;align-items:center">
+                            <input type="text" inputmode="numeric" title="Número del ejemplar" placeholder="Nº"
+                                class="gac-num w-4 h-5 shrink-0 border rounded px-0 py-px text-center text-[10px] font-black outline-none focus:ring-1 focus:ring-indigo-400"
+                                value="${c.numero ?? ''}" style="background-color:${bg};color:${fg};border-color:${bg}">
                             <span class="min-w-0 truncate text-[10px] font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
                             <span style="display:flex;justify-content:center">${htmlSelectNac(c.nacionalidad)}</span>
                             <span class="text-right text-[11px] font-black whitespace-nowrap ${c.retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${c.retirado ? 'RET.' : clubUI.formatoNumero(valor, 0)}</span>
@@ -760,7 +762,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const contCab = document.getElementById('editCaballos');
         contCab.innerHTML = (tabla.caballos || []).map((c, i) => `
             <label class="flex items-center gap-1.5 bg-white border border-slate-200 rounded px-1.5 py-0.5 text-[10px]">
-                <span class="justify-self-center w-9 h-8 shrink-0 rounded-md flex items-center justify-center text-[17px] font-black border" style="background:${colorDeNumero(c.numero)};color:${textoDeNumero(c.numero)};border-color:${colorDeNumero(c.numero)}">${c.numero}</span>
+                <input type="text" inputmode="numeric" title="Número del ejemplar" placeholder="Nº"
+                    class="gac-num w-4 h-5 shrink-0 border rounded px-0 py-px text-center text-[10px] font-black outline-none focus:ring-1 focus:ring-indigo-400"
+                    value="${c.numero ?? ''}" style="background-color:${colorDeNumero(c.numero)};color:${textoDeNumero(c.numero)};border-color:${colorDeNumero(c.numero)}">
                 <span class="flex-1 font-bold text-slate-700 truncate" title="${c.nombre}">${c.nombre} ${c.retirado ? '<span class="text-red-500 text-[8px] font-black">(RET.)</span>' : ''}</span>
                 <input type="text" inputmode="decimal" class="edit-valor-cab w-16 text-right border border-slate-300 rounded px-1 py-0.5 text-[10px] font-bold outline-none focus:ring-2 focus:ring-indigo-500" data-index="${i}" value="${clubUI.formatoNumero(parseFloat(c.valor_ejemplar) || 0, 1)}" title="Valor del ejemplar (afecta solo próximas ventas)">
             </label>
