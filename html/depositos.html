@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <link rel="icon" href="data:,">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GestiÃ³n de DepÃ³sitos - Club del Dinero</title>
+    <title>Gestión de Depósitos - Club del Dinero</title>
     <link rel="stylesheet" href="../css/tailwind.css">
     <link rel="stylesheet" href="../css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -12,9 +12,9 @@
 </head>
 <body class="bg-emerald-50 font-sans text-sm h-screen flex overflow-hidden">
 
-    <!-- El Sidebar se inyectarÃ¡ aquÃ­ automÃ¡ticamente mediante layout.js -->
+    <!-- El Sidebar se inyectará aquí automáticamente mediante layout.js -->
 
-    <!-- ÃREA CENTRAL DE CONTENIDO -->
+    <!-- ÁREA CENTRAL DE CONTENIDO -->
     <div class="flex-1 flex flex-col h-full relative overflow-hidden w-full">
 
         <!-- CABECERA DE MÃ“DULO -->
@@ -44,11 +44,11 @@
 
                     <!-- Modalidad de Pago del Cliente -->
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Â¿Con quÃ© pagÃ³ el cliente?</label>
+                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Â¿Con qué pagó el cliente?</label>
                         <select id="modalidadCliente" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-bold text-slate-800 bg-slate-50" required>
                             <option value="">Seleccione modalidad...</option>
                         </select>
-                        <p class="text-[9px] text-slate-400 mt-1">Si pagÃ³ con Zelle/Binance la modalidad pide el correo o telÃ©fono; los bancos de Venezuela piden cuenta.</p>
+                        <p class="text-[9px] text-slate-400 mt-1">Si pagó con Zelle/Binance la modalidad pide el correo o teléfono; los bancos de Venezuela piden cuenta.</p>
                     </div>
 
                     <!-- Tipo Op -->
@@ -56,7 +56,7 @@
                         <input type="hidden" id="tipoOperacion" value="Normal">
                         <div class="flex border border-slate-300 rounded-lg overflow-hidden text-xs font-bold text-center bg-slate-50 p-1 shadow-inner gap-1">
                             <button type="button" class="tab-operacion flex-1 py-2.5 rounded text-emerald-700 bg-white shadow border border-slate-200 transition-all" data-tipo="Normal">
-                                <i class="fas fa-money-bill-wave block mb-1 text-lg"></i> Ingreso FÃ­sico
+                                <i class="fas fa-money-bill-wave block mb-1 text-lg"></i> Ingreso Físico
                             </button>
                             <button type="button" class="tab-operacion flex-1 py-2.5 rounded text-slate-500 hover:text-slate-700 transition-all" data-tipo="Otorgar Aval">
                                 <i class="fas fa-shield-alt block mb-1 text-lg text-amber-500"></i> Otorgar Aval
@@ -69,9 +69,9 @@
 
                     <!-- Banco Destino -->
                     <div id="contenedorBancoReceptor">
-                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">El dinero entrÃ³ en (Banco Empresa):</label>
+                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">El dinero entró en (Banco Empresa):</label>
                         <select id="bancoReceptor" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-bold text-slate-800 bg-slate-50" required>
-                            <option value="">Cargando tesorerÃ­a...</option>
+                            <option value="">Cargando tesorería...</option>
                         </select>
                     </div>
 
@@ -96,7 +96,7 @@
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Referencia <span class="font-normal text-[10px]">(obligatoria)</span>:</label>
-                        <input type="text" id="referenciaDeposito" placeholder="N.Âº de transferencia / cÃ³digo Zelle, Pago MÃ³vil, etc..." class="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none">
+                        <input type="text" id="referenciaDeposito" placeholder="N.Âº de transferencia / código Zelle, Pago Móvil, etc..." class="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none">
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Nota / Motivo:</label>
@@ -104,7 +104,7 @@
                     </div>
 
                     <button type="submit" class="w-full bg-emerald-600 text-white font-black py-3.5 rounded-lg shadow-lg hover:bg-emerald-700 transition-colors uppercase tracking-widest text-sm hover:scale-[1.02]">
-                        Aplicar OperaciÃ³n
+                        Aplicar Operación
                     </button>
                 </form>
             </div>
@@ -140,7 +140,7 @@
                 <!-- Tabla 2: Historial -->
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[350px]">
                     <div class="bg-slate-100 text-slate-800 border-b border-slate-200 p-3.5 font-bold text-xs uppercase tracking-wider shrink-0">
-                        <i class="fas fa-history mr-2 text-slate-500"></i> BitÃ¡cora de Transacciones (Ingresos)
+                        <i class="fas fa-history mr-2 text-slate-500"></i> Bitácora de Transacciones (Ingresos)
                     </div>
                     <div class="p-0 overflow-x-auto overflow-y-auto flex-1 bg-slate-50">
                         <table class="w-full text-xs text-left">
@@ -155,7 +155,7 @@
                                 </tr>
                             </thead>
                             <tbody id="cuerpoTablaHistorial" class="divide-y divide-slate-100 text-slate-700 bg-white">
-                                <tr><td colspan="6" class="p-6 text-center text-slate-400 italic">Cargando bitÃ¡cora...</td></tr>
+                                <tr><td colspan="6" class="p-6 text-center text-slate-400 italic">Cargando bitácora...</td></tr>
                             </tbody>
                         </table>
                     </div>

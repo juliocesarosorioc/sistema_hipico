@@ -20,7 +20,7 @@
                     <h1 class="text-xl font-black text-slate-800 uppercase tracking-wide">
                         <i class="fa-brands fa-whatsapp text-emerald-500 mr-2"></i> Centro de Notificaciones WhatsApp
                     </h1>
-                    <p class="text-xs text-slate-500 font-bold mt-1">EnvÃ­a reportes de saldos, recordatorios de aval y avisos a tus clientes por WhatsApp. Los envÃ­os quedan registrados automÃ¡ticamente.</p>
+                    <p class="text-xs text-slate-500 font-bold mt-1">Envía reportes de saldos, recordatorios de aval y avisos a tus clientes por WhatsApp. Los envíos quedan registrados automáticamente.</p>
                 </div>
                 <span class="text-xs text-slate-500 font-bold bg-slate-100 px-4 py-1.5 rounded-lg border border-slate-200 shadow-inner" id="fechaHeaderWsp">Cargando...</span>
             </header>
@@ -35,7 +35,7 @@
                         <span><i class="fas fa-chart-line mr-2 text-emerald-200"></i> Reporte General de Saldos</span>
                     </div>
                     <div class="p-5 space-y-3">
-                        <p class="text-[11px] text-slate-500 font-medium">Genera el balance dÃ­a a dÃ­a de todos los clientes. Luego cÃ³pialo o Ã¡brelo directamente en tu WhatsApp.</p>
+                        <p class="text-[11px] text-slate-500 font-medium">Genera el balance día a día de todos los clientes. Luego cópialo o ábrelo directamente en tu WhatsApp.</p>
                         <div class="flex items-center justify-between gap-2">
                             <button id="btnGenerarReporte" class="bg-emerald-700 hover:bg-emerald-800 text-white font-black px-4 py-2.5 rounded-lg text-xs uppercase tracking-wider transition-colors">
                                 <i class="fas fa-sync-alt mr-1"></i> Generar / Actualizar
@@ -53,10 +53,10 @@
                     </div>
                 </div>
 
-                <!-- ================= ENVÃO INDIVIDUAL ================= -->
+                <!-- ================= ENVÍO INDIVIDUAL ================= -->
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden self-start">
                     <div class="bg-slate-800 p-3.5 text-white font-bold text-xs uppercase tracking-wider">
-                        <i class="fa-brands fa-whatsapp mr-2 text-emerald-400"></i> EnvÃ­o Individual por Cliente
+                        <i class="fa-brands fa-whatsapp mr-2 text-emerald-400"></i> Envío Individual por Cliente
                     </div>
                     <div class="p-5 space-y-4">
                         <div>
@@ -67,15 +67,15 @@
                         </div>
 
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase">TelÃ©fono WhatsApp</label>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase">Teléfono WhatsApp</label>
                             <div class="flex gap-2 items-center">
                                 <select id="wspCodigoPais" class="border border-slate-300 rounded-lg px-2 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 w-28"></select>
                                 <input id="wspTelefono" type="tel" placeholder="4121234567" class="flex-1 border border-slate-300 rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 font-mono">
-                                <button id="btnGuardarTelefono" title="Guardar telÃ©fono en el cliente" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2.5 rounded-lg text-xs font-bold transition-colors">
+                                <button id="btnGuardarTelefono" title="Guardar teléfono en el cliente" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2.5 rounded-lg text-xs font-bold transition-colors">
                                     <i class="fas fa-save"></i>
                                 </button>
                             </div>
-                            <p id="wspAvisoTel" class="hidden mt-1 text-[10px] font-bold text-amber-600"><i class="fas fa-exclamation-triangle mr-1"></i> Este cliente no tiene telÃ©fono registrado. EscrÃ­belo y guarda.</p>
+                            <p id="wspAvisoTel" class="hidden mt-1 text-[10px] font-bold text-amber-600"><i class="fas fa-exclamation-triangle mr-1"></i> Este cliente no tiene teléfono registrado. Escríbelo y guarda.</p>
                         </div>
 
                         <div>
@@ -89,7 +89,7 @@
                         </div>
 
                         <div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-widest">Vista previa (asÃ­ lo verÃ¡ el cliente)</label>
+                            <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-widest">Vista previa (así lo verá el cliente)</label>
                             <div id="wspPreview" class="whitespace-pre-wrap text-xs font-mono text-slate-700 leading-relaxed bg-white rounded p-3 border border-slate-200">â€”</div>
                         </div>
 
@@ -104,7 +104,7 @@
             <!-- ================= HISTORIAL ================= -->
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="bg-slate-800 p-3.5 text-white font-bold text-xs uppercase tracking-wider flex justify-between items-center">
-                    <span><i class="fas fa-history mr-2 text-emerald-400"></i> Historial de EnvÃ­os WhatsApp</span>
+                    <span><i class="fas fa-history mr-2 text-emerald-400"></i> Historial de Envíos WhatsApp</span>
                     <button id="btnRefrescarHistorial" class="bg-slate-700 text-white px-3 py-1 rounded text-[10px] flex items-center hover:bg-slate-600 transition-colors">
                         <i class="fas fa-sync-alt mr-1 text-emerald-400"></i> Actualizar
                     </button>
@@ -116,7 +116,7 @@
                                 <th class="p-3 font-bold uppercase tracking-wider">Fecha</th>
                                 <th class="p-3 font-bold uppercase tracking-wider">Cliente</th>
                                 <th class="p-3 font-bold uppercase tracking-wider">Tipo</th>
-                                <th class="p-3 font-bold uppercase tracking-wider">TelÃ©fono</th>
+                                <th class="p-3 font-bold uppercase tracking-wider">Teléfono</th>
                                 <th class="p-3 font-bold uppercase tracking-wider">Mensaje</th>
                                 <th class="p-3 text-center font-bold uppercase tracking-wider">Estado</th>
                             </tr>

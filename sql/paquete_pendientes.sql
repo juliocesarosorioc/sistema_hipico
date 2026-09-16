@@ -33,6 +33,10 @@ UPDATE public.clientes
    SET seudonimo = nombre
  WHERE seudonimo IS NULL OR seudonimo = '';
 
+-- Tiempos: la RPC club_registrar_cliente_grupo y otros flujos ordenan por created_at.
+ALTER TABLE public.clientes
+    ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+
 -- Espalda: los que jugaban libre mantienen su modo; el resto queda 'aval'
 UPDATE public.clientes
    SET modo_juego = 'libre'
@@ -1114,7 +1118,7 @@ begin
     select id into v_cliente_id
     from public.clientes
     where upper(trim(nombre)) = v_nombre
-    order by created_at asc
+    order by id
     limit 1;
 
     if v_cliente_id is null then

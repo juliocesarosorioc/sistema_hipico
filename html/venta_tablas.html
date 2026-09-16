@@ -19,7 +19,7 @@
 
     <!-- Sidebar se inyecta por layout.js -->
 
-    <!-- ÃREA CENTRAL -->
+    <!-- ÁREA CENTRAL -->
     <div class="club-contenido flex-1 flex flex-col h-full relative overflow-hidden w-full">
 
         <!-- CABECERA -->
@@ -29,13 +29,13 @@
             </h1>
             <div class="flex items-center gap-3 flex-wrap">
                 <select id="filtroHipodromo" class="border border-slate-300 rounded-lg p-2 text-sm font-bold bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500 w-64">
-                    <option value="">Todos los HipÃ³dromos...</option>
+                    <option value="">Todos los Hipódromos...</option>
                 </select>
                 <select id="filtroGrupo" class="border border-slate-300 rounded-lg p-2 text-sm font-bold bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500 w-56">
                     <option value="">Grupo de Venta...</option>
                 </select>
                 <span class="bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-1.5 rounded-full text-xs font-bold shadow-inner flex items-center gap-1">
-                    <i class="fas fa-cash-register"></i> EmisiÃ³n Directa
+                    <i class="fas fa-cash-register"></i> Emisión Directa
                 </span>
             </div>
         </header>
@@ -43,11 +43,11 @@
         <main class="club-contenido p-6 flex-1 overflow-y-auto w-full bg-slate-100">
             <div class="max-w-[1700px] mx-auto space-y-6">
 
-                <!-- FILTROS RÃPIDOS -->
+                <!-- FILTROS RÁPIDOS -->
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
                     <div class="flex flex-wrap items-center gap-4">
                         <div class="flex-1 min-w-[200px]">
-                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">HipÃ³dromo / Carrera</label>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Hipódromo / Carrera</label>
                             <select id="filtroTabla" class="w-full border border-slate-300 rounded-lg p-2 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-500">
                                 <option value="">Todas las carreras del filtro...</option>
                             </select>
@@ -105,7 +105,7 @@
                                         <th class="p-3 font-bold">Fecha</th>
                                         <th class="p-3 font-bold">Cliente</th>
                                         <th class="p-3 font-bold">Grupo Cobro</th>
-                                        <th class="p-3 font-bold">Grupo ComisiÃ³n</th>
+                                        <th class="p-3 font-bold">Grupo Comisión</th>
                                         <th class="p-3 font-bold">Carrera</th>
                                         <th class="p-3 font-bold">Ejemplar</th>
                                         <th class="p-3 text-right font-bold">Tablas</th>
@@ -114,7 +114,7 @@
                                         <th class="p-3 text-right font-bold">Monto Arriesgado</th>
                                         <th class="p-3 text-right font-bold">Riesgo</th>
                                         <th class="p-3 text-right font-bold">Ganancia</th>
-                                        <th class="p-3 text-right font-bold">ComisiÃ³n</th>
+                                        <th class="p-3 text-right font-bold">Comisión</th>
                                     </tr>
                                 </thead>
                                 <tbody id="cuerpoReporteVentas" class="divide-y divide-slate-100 bg-white"></tbody>
@@ -126,7 +126,7 @@
                 <!-- SOLICITUDES PORTAL -->
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                     <div class="bg-amber-700 text-white p-3 font-bold text-xs uppercase tracking-wider flex justify-between items-center">
-                        <span><i class="fas fa-inbox text-amber-300 mr-2"></i> Solicitudes del Portal (ValidaciÃ³n Admin)</span>
+                        <span><i class="fas fa-inbox text-amber-300 mr-2"></i> Solicitudes del Portal (Validación Admin)</span>
                         <button id="btnActualizarSolicitudes" class="bg-amber-800 hover:bg-amber-900 px-3 py-1 rounded text-[10px] font-bold transition-colors"><i class="fas fa-sync-alt mr-1"></i> Actualizar</button>
                     </div>
                     <div class="overflow-x-auto">
@@ -190,7 +190,7 @@
             <div class="flex items-center gap-2 px-3 py-2">
                 <span class="w-8 h-8 rounded-lg bg-emerald-500 text-white flex items-center justify-center text-sm shrink-0"><i class="fas fa-shopping-cart"></i></span>
                 <span class="flex-1 text-[11px] font-bold leading-tight">
-                    <span id="carritoMiniResumen" class="block">Carrito vacÃ­o</span>
+                    <span id="carritoMiniResumen" class="block">Carrito vacío</span>
                     <span id="carritoMiniTotal" class="block text-emerald-400 text-[10px] font-black">$ 0.00</span>
                 </span>
                 <span id="carritoMiniBadge" class="hidden bg-amber-500 text-slate-900 text-[10px] font-black rounded-full px-2 py-0.5 shrink-0">0</span>
@@ -233,7 +233,7 @@
             </div>
             <div class="p-4 space-y-4 overflow-y-auto flex-1">
                 <div id="mvResumenCarrito" class="hidden bg-indigo-50 border border-indigo-200 rounded-lg p-3">
-                    <div id="mvResumenCarritoTitulo" class="text-[10px] font-black uppercase tracking-wider text-indigo-500 mb-1"><i class="fas fa-shopping-cart mr-1"></i> Venta mÃºltiple â€” N items</div>
+                    <div id="mvResumenCarritoTitulo" class="text-[10px] font-black uppercase tracking-wider text-indigo-500 mb-1"><i class="fas fa-shopping-cart mr-1"></i> Venta múltiple â€” N items</div>
                     <div id="mvResumenCarritoItems" class="text-[11px] text-slate-700 font-bold max-h-36 overflow-y-auto space-y-0.5"></div>
                 </div>
                 <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 text-xs">
@@ -274,7 +274,7 @@
                     <div class="flex justify-between"><span class="font-bold text-slate-600">Costo Unitario:</span> <strong id="mvCostoUnit" class="text-blue-700">0</strong></div>
                     <div class="flex justify-between"><span class="font-bold text-slate-600">Costo Total:</span> <strong id="mvCostoTotal" class="text-emerald-700">0</strong></div>
                     <div class="flex justify-between"><span class="font-bold text-slate-600">Premio Total (si gana):</span> <strong id="mvPremioTotal" class="text-emerald-700">0</strong></div>
-                    <div class="flex justify-between border-t border-slate-200 pt-1"><span class="font-bold text-purple-800">ComisiÃ³n estimada:</span> <strong id="mvComisionEst" class="text-purple-700">0</strong></div>
+                    <div class="flex justify-between border-t border-slate-200 pt-1"><span class="font-bold text-purple-800">Comisión estimada:</span> <strong id="mvComisionEst" class="text-purple-700">0</strong></div>
                     <div class="flex justify-between bg-emerald-50/60 rounded p-1 mt-1"><span class="font-bold text-emerald-800">Ganancia (si gana):</span> <strong id="mvGanancia" class="text-emerald-700">0</strong></div>
                 </div>
 

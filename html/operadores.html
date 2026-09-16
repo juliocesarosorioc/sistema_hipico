@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <link rel="icon" href="data:,">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GestiÃ³n de Operadores - Club del Dinero</title>
+    <title>Gestión de Operadores - Club del Dinero</title>
     <link rel="stylesheet" href="../css/tailwind.css">
     <!-- Estilos CSS Colectivos Centralizados -->
     <link rel="stylesheet" href="../css/style.css">
@@ -13,14 +13,14 @@
 <body class="bg-slate-100 flex h-screen overflow-hidden font-sans">
 
     <!-- ==========================================
-         ÃREA CENTRAL DE CONTENIDO
+         ÁREA CENTRAL DE CONTENIDO
          (Sidebar inyectado por js/components/layout.js)
          ========================================== -->
     <main class="flex-1 flex flex-col h-full relative overflow-y-auto p-8">
         
         <!-- Cabecera -->
         <div class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold text-slate-800"><i class="fas fa-user-shield text-slate-700 mr-2"></i> GestiÃ³n de Operadores y Accesos</h1>
+            <h1 class="text-2xl font-bold text-slate-800"><i class="fas fa-user-shield text-slate-700 mr-2"></i> Gestión de Operadores y Accesos</h1>
             <button id="btnAbrirModalOperador" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-xs font-bold shadow transition-colors flex items-center">
                 <i class="fas fa-user-plus mr-1"></i> Nuevo Operador
             </button>
@@ -66,21 +66,21 @@
                     <input type="hidden" id="opId">
                     <div>
                         <label class="block text-xs font-bold text-slate-700 mb-1">Nombre Completo</label>
-                        <input type="text" id="opNombre" placeholder="Ej: Carlos PÃ©rez" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-blue-500" required>
+                        <input type="text" id="opNombre" placeholder="Ej: Carlos Pérez" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-blue-500" required>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-700 mb-1">Usuario de Acceso</label>
                         <input type="text" id="opUsuario" placeholder="Ej: cperez" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-blue-500" required>
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1">ContraseÃ±a</label>
-                        <input type="text" id="opPassword" placeholder="ContraseÃ±a segura" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-blue-500" required>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Contraseña</label>
+                        <input type="text" id="opPassword" placeholder="Contraseña segura" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-blue-500" required>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-700 mb-1">Rol en el Sistema</label>
                         <select id="opRol" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none bg-white">
                             <option value="Administrador Principal">Administrador Principal</option>
-                            <option value="Operador">Operador EstÃ¡ndar</option>
+                            <option value="Operador">Operador Estándar</option>
                         </select>
                     </div>
                 </form>
@@ -105,7 +105,7 @@
     <script src="../js/conexion.js"></script>
     <script src="../js/operadores.js"></script>
     <script>
-        // ValidaciÃ³n de seguridad por sesiÃ³n y rol
+        // Validación de seguridad por sesión y rol
         const sesion = window.clubAuth.requireAuth();
         if (sesion && !window.clubAuth.requiereRol(['Administrador'])) {
             clubUI.toast('Acceso denegado: No tienes permisos para gestionar operadores.');

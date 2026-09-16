@@ -41,6 +41,11 @@ Restricción: `resultados_carreras_unico unique (fecha, hipodromo, carrera)`.
 | **Puestos** | Acierta posición exacta o combinación ordenada (exacta) | ✅ Motor de dividendos implementado en Taquilla |
 | **Marcas** | Marcaciones especiales (trifecta o formato propio) | ✅ Motor de dividendos implementado en Taquilla |
 | **Tabla** | Por tabla fija (ya existe `tablas_fijas` + `tickets_apuestas`) | En uso |
+| **Dupleta** | Acierta 1.er y 2.º puesto en orden exacto (formato de dupleta) | ⏳ **Pendiente de crear el formato** |
+
+> ⏳ **DUPELETA (pendiente):** crear el formato/entrada del boleto de dupleta (selección del 1.er y
+> 2.º puesto en orden), su precio/monto, el cálculo de dividendo, el parseo en Taquilla y el registro
+> en `tickets_apuestas`/`resultados_carreras.dividendos`.
 
 Cada tipo genera su propio **dividendo** cuando se registra el resultado central.  
 Los dividendos se calculan a partir de los montos apostados (pozo) y el tipo de jugada.  

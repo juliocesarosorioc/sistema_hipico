@@ -22,19 +22,19 @@
                 </div>
                 <div class="p-8 space-y-5 bg-white">
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">CÃ³digo del enlace</label>
-                        <input type="text" id="inputPortalToken" placeholder="CÃ³digo recibido" autocomplete="off"
+                        <label class="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Código del enlace</label>
+                        <input type="text" id="inputPortalToken" placeholder="Código recibido" autocomplete="off"
                             class="w-full border border-slate-300 rounded-lg px-4 py-3 text-center text-lg font-mono font-black tracking-widest uppercase outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-300">
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">ContraseÃ±a</label>
+                        <label class="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Contraseña</label>
                         <div class="relative">
                             <i class="fas fa-lock absolute left-3 top-3.5 text-slate-400"></i>
-                            <input type="password" id="inputPortalClave" placeholder="ContraseÃ±a del portal" autocomplete="off"
+                            <input type="password" id="inputPortalClave" placeholder="Contraseña del portal" autocomplete="off"
                                 class="w-full border border-slate-300 rounded-lg pl-10 pr-3 py-3 text-center font-mono font-bold outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-300">
                         </div>
                     </div>
-                    <p class="text-[11px] text-slate-400 italic">Su sesiÃ³n permanecerÃ¡ abierta en este dispositivo hasta que usted la cierre.</p>
+                    <p class="text-[11px] text-slate-400 italic">Su sesión permanecerá abierta en este dispositivo hasta que usted la cierre.</p>
                     <button id="btnEntrarPortal" class="w-full bg-cyan-700 hover:bg-cyan-800 text-white font-black py-3.5 rounded-lg shadow-lg uppercase tracking-wider text-sm transition-colors">
                         <i class="fas fa-sign-in-alt mr-2"></i> Entrar a mi portal
                     </button>
@@ -59,7 +59,7 @@
                     <i class="fas fa-sync-alt mr-1"></i> Se actualiza solo cada 30 seg.
                 </span>
                 <button id="btnCerrarPortal" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wide shadow transition-colors">
-                    <i class="fas fa-power-off mr-1"></i> Cerrar sesiÃ³n
+                    <i class="fas fa-power-off mr-1"></i> Cerrar sesión
                 </button>
             </div>
         </header>
@@ -74,7 +74,7 @@
                     <p id="kpiSaldoEquiv" class="text-xs text-slate-400 font-bold"></p>
                 </div>
                 <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-                    <p class="text-[10px] font-black text-slate-500 uppercase tracking-wider">Mi Incentivo / DevoluciÃ³n</p>
+                    <p class="text-[10px] font-black text-slate-500 uppercase tracking-wider">Mi Incentivo / Devolución</p>
                     <p id="kpiIncentivo" class="text-4xl font-black text-purple-600 font-mono mt-1">0%</p>
                     <p id="kpiLibre" class="text-xs text-slate-400 font-bold"></p>
                 </div>
@@ -147,7 +147,7 @@
                         <select id="portalSelectGrupo" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm font-bold bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500"></select>
                     </div>
                     <div>
-                        <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">HipÃ³dromo / Carrera</label>
+                        <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Hipódromo / Carrera</label>
                         <select id="portalSelectTabla" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm font-bold bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500">
                             <option value="">Cargando carreras disponibles...</option>
                         </select>
@@ -173,7 +173,7 @@
                     </div>
                 </div>
 <div id="portalMsgCompra" class="hidden mx-5 mb-5 text-xs font-bold bg-amber-50 border border-amber-300 text-amber-800 rounded-lg px-4 py-3">
-                    <i class="fas fa-info-circle mr-1"></i> Su compra serÃ¡ <b>validada por el administrador</b> y se le enviarÃ¡ el <b>recibo</b> de su tabla fija.
+                    <i class="fas fa-info-circle mr-1"></i> Su compra será <b>validada por el administrador</b> y se le enviará el <b>recibo</b> de su tabla fija.
                 </div>
                 <div id="portalRetirosInfo" class="mx-5 mb-5 hidden text-xs font-bold bg-rose-50 border border-rose-200 text-rose-700 rounded-lg px-4 py-3">
                     <i class="fas fa-user-slash mr-1"></i> <span id="portalRetirosTexto"></span>
@@ -213,7 +213,7 @@
                     <p class="text-[11px] text-slate-500 leading-relaxed">Modifique sus datos de contacto y pago. Al solicitar el cambio, el administrador lo recibe y lo aplica a su cuenta.</p>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">TelÃ©fono (WhatsApp)</label>
+                            <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Teléfono (WhatsApp)</label>
                             <div class="flex gap-1">
                                 <select id="cpPortal" class="w-28 border border-slate-300 rounded-lg px-2 py-2.5 text-[11px] font-bold bg-slate-50 outline-none focus:ring-2 focus:ring-cyan-500"></select>
                                 <input type="text" id="tfPortal" placeholder="412 123 4567" class="flex-1 border border-slate-300 rounded-lg p-2.5 text-sm font-mono outline-none focus:ring-2 focus:ring-cyan-500">
@@ -224,26 +224,26 @@
                             <input type="email" id="emailPortal" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">CÃ©dula / RIF</label>
+                            <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Cédula / RIF</label>
                             <input type="text" id="cedulaPortal" placeholder="V-12.345.678 o J-12345678-9" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm uppercase font-mono outline-none focus:ring-2 focus:ring-cyan-500">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">MÃ©todo de Pago</label>
+                            <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Método de Pago</label>
                             <select id="metodoPortal" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm font-bold bg-slate-50 outline-none focus:ring-2 focus:ring-cyan-500">
                                 <option value="">â€” Seleccione â€”</option>
                             </select>
                         </div>
                         <div id="bloqueDatosPagoPortal" class="hidden md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3 p-3 rounded-lg bg-cyan-50 border border-cyan-200"></div>
                         <div class="md:col-span-2">
-                            <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">DirecciÃ³n (opcional)</label>
+                            <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Dirección (opcional)</label>
                             <input type="text" id="direccionPortal" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500">
                         </div>
                     </div>
                     <div id="portalMsgDatos" class="hidden text-xs font-bold bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-lg px-4 py-3">
-                        <i class="fas fa-check-circle mr-1"></i> Solicitud enviada. El administrador la revisarÃ¡ y la aplicarÃ¡ a su cuenta.
+                        <i class="fas fa-check-circle mr-1"></i> Solicitud enviada. El administrador la revisará y la aplicará a su cuenta.
                     </div>
                     <button id="btnActualizarDatos" class="w-full bg-cyan-700 hover:bg-cyan-800 text-white font-black py-3 rounded-lg shadow uppercase tracking-wider text-sm transition-colors">
-                        <i class="fas fa-paper-plane mr-2"></i> Solicitar ActualizaciÃ³n
+                        <i class="fas fa-paper-plane mr-2"></i> Solicitar Actualización
                     </button>
                 </div>
             </div>
@@ -273,12 +273,12 @@
                 </div>
                 <div>
                     <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Detalle (opcional)</label>
-                    <textarea id="disputaDetalle" rows="3" placeholder="Explique brevemente quÃ© esperaba y quÃ© ocurriÃ³..." class="w-full border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-sky-500"></textarea>
+                    <textarea id="disputaDetalle" rows="3" placeholder="Explique brevemente qué esperaba y qué ocurrió..." class="w-full border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-sky-500"></textarea>
                 </div>
                 <div>
                     <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Evidencia (captura)</label>
                     <div id="disputaSoltar" class="border-2 border-dashed border-slate-300 rounded-lg p-4 text-center text-[11px] text-slate-400 font-bold hover:border-sky-400 hover:bg-sky-50 transition-colors">
-                        <i class="fas fa-camera mr-1"></i> Pega aquÃ­ una captura con <b>Ctrl + V</b>
+                        <i class="fas fa-camera mr-1"></i> Pega aquí una captura con <b>Ctrl + V</b>
                     </div>
                     <div id="disputaPreviewWrap" class="hidden mt-2">
                         <img id="disputaPreview" alt="Evidencia" class="w-full rounded-lg border border-slate-200 max-h-56 object-contain bg-slate-50">

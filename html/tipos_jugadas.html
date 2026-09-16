@@ -12,9 +12,9 @@
 </head>
 <body class="bg-slate-50 font-sans text-sm h-screen flex overflow-hidden">
 
-    <!-- El Sidebar se inyectarÃ¡ aquÃ­ automÃ¡ticamente mediante layout.js -->
+    <!-- El Sidebar se inyectará aquí automáticamente mediante layout.js -->
 
-    <!-- ÃREA CENTRAL DE CONTENIDO -->
+    <!-- ÁREA CENTRAL DE CONTENIDO -->
     <div class="flex-1 flex flex-col h-full relative overflow-hidden w-full">
 
         <!-- CABECERA -->
@@ -23,7 +23,7 @@
                 <i class="fas fa-cogs text-slate-500 mr-2"></i> Reglas de Jugadas (Cobro / Pago)
             </h1>
             <div class="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-1.5 rounded-full text-xs font-bold shadow-inner flex items-center">
-                <i class="fas fa-calculator mr-2"></i> Motor de cÃ¡lculo activo
+                <i class="fas fa-calculator mr-2"></i> Motor de cálculo activo
             </div>
         </header>
 
@@ -42,11 +42,11 @@
                     </div>
                     <div class="grid grid-cols-2 gap-2">
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">ComisiÃ³n %</label>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Comisión %</label>
                             <input type="number" id="baseComisionPct" min="0" step="0.1" value="5" class="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-blue-500">
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Base de ComisiÃ³n</label>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Base de Comisión</label>
                             <select id="comisionBase" class="w-full border border-slate-300 rounded-lg px-1 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500 bg-white font-bold text-slate-700">
                                 <option value="PREMIO">Sobre Premio (gana)</option>
                                 <option value="MONTO">Sobre Monto (pierde)</option>
@@ -55,7 +55,7 @@
                     </div>
                     <div class="grid grid-cols-2 gap-2">
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Tipo de CÃ¡lculo</label>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Tipo de Cálculo</label>
                             <select id="tipoCalculo" class="w-full border border-slate-300 rounded-lg px-1 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500 bg-white font-bold text-slate-700">
                                 <option value="POR_UNIDAD">Por Unidad (juega X $)</option>
                                 <option value="POR_TABLA">Por Tabla (fija/pizarra)</option>
@@ -84,10 +84,10 @@
                     </div>
                 </form>
                 <div class="mt-4 bg-blue-50 border border-blue-100 rounded-lg p-3 text-[10px] leading-relaxed text-slate-600">
-                    <b class="text-blue-700 uppercase">CÃ³mo se calcula:</b><br>
-                    <b>Cobrar</b> (al registrar) = monto Ã— nÃºmero de cruces.<br>
+                    <b class="text-blue-700 uppercase">Cómo se calcula:</b><br>
+                    <b>Cobrar</b> (al registrar) = monto Ã— número de cruces.<br>
                     <b>Pagar</b> (si gana): tabla â†’ cantidad Ã— premio de la tabla; otro â†’ monto Ã— pago si gana.<br>
-                    <b>Perder</b>: no se paga; la comisiÃ³n se calcula sobre el monto.
+                    <b>Perder</b>: no se paga; la comisión se calcula sobre el monto.
                 </div>
             </div>
 
@@ -95,15 +95,15 @@
             <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                 <div class="bg-slate-900 text-white p-3.5 font-bold text-xs uppercase tracking-wider flex justify-between items-center">
                     <span>Jugadas del Sistema</span>
-                    <span class="text-[10px] text-slate-400 font-normal normal-case">ordenado alfabÃ©tico</span>
+                    <span class="text-[10px] text-slate-400 font-normal normal-case">ordenado alfabético</span>
                 </div>
                 <div class="overflow-x-auto flex-1">
                     <table class="w-full text-left text-xs">
                         <thead class="bg-slate-100 text-slate-700 border-b border-slate-200 sticky top-0 shadow-sm">
                             <tr>
                                 <th class="p-3 font-bold uppercase tracking-wider">Jugada</th>
-                                <th class="p-3 text-center font-bold uppercase tracking-wider">ComisiÃ³n</th>
-                                <th class="p-3 text-center font-bold uppercase tracking-wider">CÃ¡lculo</th>
+                                <th class="p-3 text-center font-bold uppercase tracking-wider">Comisión</th>
+                                <th class="p-3 text-center font-bold uppercase tracking-wider">Cálculo</th>
                                 <th class="p-3 text-center font-bold uppercase tracking-wider">Pago si Gana</th>
                                 <th class="p-3 text-center font-bold uppercase tracking-wider">Cruces</th>
                                 <th class="p-3 text-center font-bold uppercase tracking-wider">Estado</th>

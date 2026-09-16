@@ -21,9 +21,9 @@
 </head>
 <body class="bg-slate-100 font-sans text-sm h-screen flex overflow-hidden">
 
-    <!-- El Sidebar se inyectarÃ¡ aquÃ­ automÃ¡ticamente mediante layout.js -->
+    <!-- El Sidebar se inyectará aquí automáticamente mediante layout.js -->
 
-    <!-- ÃREA CENTRAL DE CONTENIDO -->
+    <!-- ÁREA CENTRAL DE CONTENIDO -->
     <div class="flex-1 flex flex-col h-full relative overflow-hidden w-full">
 
         <!-- CABECERA -->
@@ -45,10 +45,10 @@
         <div id="panel-ensamblaje" class="tab-panel flex-1 flex flex-col overflow-y-auto bg-slate-100">
             <main class="p-4 flex-1 flex flex-col w-full gap-4">
 
-                <!-- PARÃMETROS DE LA PRÃ“XIMA CARRERA -->
+                <!-- PARÁMETROS DE LA PRÃ“XIMA CARRERA -->
                 <section id="seccionParametros" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden shrink-0">
                     <button type="button" id="btnToggleParametros" class="w-full bg-slate-900 text-white p-3.5 font-bold text-sm uppercase tracking-wider flex items-center justify-between hover:bg-slate-800 transition-colors" aria-expanded="false">
-                        <span class="flex items-center"><i class="fas fa-tools text-indigo-400 mr-2"></i> ParÃ¡metros de la prÃ³xima carrera</span>
+                        <span class="flex items-center"><i class="fas fa-tools text-indigo-400 mr-2"></i> Parámetros de la próxima carrera</span>
                         <i class="fas fa-chevron-down"></i>
                     </button>
                     <div id="cuerpoParametros" class="hidden p-4">
@@ -57,15 +57,15 @@
                                 <i class="fas fa-tools text-indigo-500 mr-2"></i> Configure la nueva carrera
                             </p>
                             <button id="btnAgregarCarrera" class="bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white px-4 py-2 rounded-lg text-sm font-bold shadow transition-all">
-                                <i class="fas fa-plus mr-1"></i> AÃ±adir carrera
+                                <i class="fas fa-plus mr-1"></i> Añadir carrera
                             </button>
                         </div>
 
                         <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-12 gap-3 items-end">
                             <div class="col-span-2 md:col-span-2 xl:col-span-4">
-                                <label for="hipodromoTabla" class="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">HipÃ³dromo</label>
+                                <label for="hipodromoTabla" class="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">Hipódromo</label>
                                 <select id="hipodromoTabla" class="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 uppercase font-bold bg-white transition-shadow">
-                                    <option value="">Seleccione hipÃ³dromo...</option>
+                                    <option value="">Seleccione hipódromo...</option>
                                 </select>
                             </div>
                             <div class="col-span-1 md:col-span-1 xl:col-span-2">
@@ -105,7 +105,7 @@
                     </button>
                     <div id="cuerpoEnsamblaje" class="hidden p-3">
                         <div class="flex justify-end items-center mb-2 gap-2 flex-wrap">
-                            <button id="btnPegarGaceta" class="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg shadow text-xs font-black uppercase tracking-wide transition-colors" title="Vuelve a pegar las carreras que la Gaceta tiene pendientes en el registro del dÃ­a">
+                            <button id="btnPegarGaceta" class="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg shadow text-xs font-black uppercase tracking-wide transition-colors" title="Vuelve a pegar las carreras que la Gaceta tiene pendientes en el registro del día">
                                 <i class="fas fa-paste mr-1"></i> Pegar desde Gaceta
                             </button>
                             <button id="btnPublicarTodas" disabled class="disabled:opacity-40 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg shadow text-xs font-black uppercase tracking-wide transition-colors" title="Publica de una vez todas las carreras del ensamblaje (con avance)">
@@ -116,7 +116,7 @@
                         <div id="carrerasEnsamblaje" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-1.5 p-0.5">
                             <div class="hidden empty-ensamblaje text-slate-400 italic text-sm md:col-span-4 text-center py-10 bg-white rounded-2xl border-2 border-dashed border-slate-300">
                                 <i class="fas fa-horse-head text-4xl text-slate-300 block mb-3"></i>
-                                AÃºn no hay carreras armadas. CÃ¡rguelas desde <b>Ejemplares y Gaceta</b> (envÃ­elas desde la pestaÃ±a de Gaceta), use los parÃ¡metros de arriba o presione <b>"AÃ±adir carrera"</b>.
+                                Aún no hay carreras armadas. Cárguelas desde <b>Ejemplares y Gaceta</b> (envíelas desde la pestaña de Gaceta), use los parámetros de arriba o presione <b>"Añadir carrera"</b>.
                             </div>
                         </div>
                     </div>
@@ -166,7 +166,7 @@
             <div class="p-2 space-y-1.5 overflow-y-auto flex-1">
                 <input type="hidden" id="editId">
                 <p class="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 leading-tight">
-                    <i class="fas fa-info-circle mr-1"></i> Tickets ya vendidos mantienen premio/valor congelados: solo afectan prÃ³ximas ventas.
+                    <i class="fas fa-info-circle mr-1"></i> Tickets ya vendidos mantienen premio/valor congelados: solo afectan próximas ventas.
                 </p>
                 <div class="grid grid-cols-2 gap-1.5">
                     <div>
@@ -183,7 +183,7 @@
                     </div>
                 </div>
                 <div>
-                    <label class="block text-[9px] font-bold text-slate-600 mb-px uppercase">Valores por Ejemplar (solo prÃ³ximas ventas)</label>
+                    <label class="block text-[9px] font-bold text-slate-600 mb-px uppercase">Valores por Ejemplar (solo próximas ventas)</label>
                     <div id="editCaballos" class="space-y-0.5 max-h-32 overflow-y-auto border border-slate-200 rounded-md p-1 bg-slate-50">
                         <p class="text-slate-400 italic text-[10px]">Cargando...</p>
                     </div>
@@ -226,12 +226,12 @@
     <div id="modalDuplicar" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-hidden flex flex-col">
             <div class="bg-indigo-600 p-4 text-white font-bold flex justify-between items-center text-sm uppercase shrink-0">
-                <span><i class="fas fa-copy mr-2"></i> ClonaciÃ³n de Tabla</span>
+                <span><i class="fas fa-copy mr-2"></i> Clonación de Tabla</span>
                 <button class="cerrar-modal text-indigo-200 hover:text-white" aria-label="Cerrar"><i class="fas fa-times"></i></button>
             </div>
             <div class="p-5 overflow-y-auto flex-1">
                 <input type="hidden" id="dupId">
-                <p class="text-sm text-slate-600 mb-4 leading-relaxed">Se duplicarÃ¡ esta carrera con sus cupos por grupo (ventas en cero). Marque los grupos en los que se replica.</p>
+                <p class="text-sm text-slate-600 mb-4 leading-relaxed">Se duplicará esta carrera con sus cupos por grupo (ventas en cero). Marque los grupos en los que se replica.</p>
                 <label class="block text-xs font-bold text-slate-600 mb-1 uppercase">Grupos Destino</label>
                 <div id="listaGruposDup" class="space-y-2 max-h-52 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50">
                     <p class="text-slate-400 italic text-sm">Cargando grupos...</p>
@@ -239,7 +239,7 @@
             </div>
             <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 shrink-0">
                 <button type="button" class="cerrar-modal bg-slate-300 hover:bg-slate-400 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-bold transition-colors">Cancelar</button>
-                <button type="button" id="btnProcesarDuplicado" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-md transition-colors">Ejecutar ClonaciÃ³n</button>
+                <button type="button" id="btnProcesarDuplicado" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-md transition-colors">Ejecutar Clonación</button>
             </div>
         </div>
     </div>
@@ -368,7 +368,7 @@
                         <input type="number" id="editGrupoCupo" min="1" class="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
                     </div>
                     <div>
-                        <label for="editGrupoComision" class="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">ComisiÃ³n (%)</label>
+                        <label for="editGrupoComision" class="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Comisión (%)</label>
                         <input type="number" id="editGrupoComision" min="0" step="0.1" class="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
                     </div>
                 </div>
@@ -402,7 +402,7 @@
         </div>
     </div>
 
-    <!-- Modal Registrar Grupo Nuevo (desde venta rÃ¡pida sin grupos) -->
+    <!-- Modal Registrar Grupo Nuevo (desde venta rápida sin grupos) -->
     <div id="modalRegistrarGrupo" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[92vh]">
             <div class="bg-indigo-600 p-4 text-white font-bold flex justify-between items-center text-sm uppercase shrink-0">
@@ -428,7 +428,7 @@
                     </div>
                 </div>
                 <div>
-                    <label for="nuevoGrupoComision" class="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">ComisiÃ³n Tablas Fijas %</label>
+                    <label for="nuevoGrupoComision" class="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Comisión Tablas Fijas %</label>
                     <input type="number" id="nuevoGrupoComision" step="0.01" min="0" value="2.5" class="w-full border border-amber-300 rounded-xl px-3 py-2.5 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
                 </div>
             </div>
@@ -441,7 +441,7 @@
         </div>
     </div>
 
-    <!-- Modal Registrar Jugador en el Grupo (desde venta rÃ¡pida sin grupos) -->
+    <!-- Modal Registrar Jugador en el Grupo (desde venta rápida sin grupos) -->
     <div id="modalRegistrarJugadorGrupo" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[92vh]">
             <div class="bg-emerald-600 p-4 text-white font-bold flex justify-between items-center text-sm uppercase shrink-0">
@@ -477,7 +477,7 @@
     <script src="../js/grupos.js?v=20260916-7"></script>
     <script src="../js/ejemplares.js?v=20260916-6"></script>
     <script>
-        // La Ãºnica pestaÃ±a es el Ensamblaje (la venta se hace en la taquilla venta_tablas.html).
+        // La única pestaña es el Ensamblaje (la venta se hace en la taquilla venta_tablas.html).
         document.querySelectorAll('.tab-panel').forEach(p => {
             p.style.display = p.id === 'panel-ensamblaje' ? 'flex' : 'none';
         });

@@ -38,7 +38,7 @@
                         <thead class="bg-slate-900 text-white">
                             <tr>
                                 <th class="p-3">Nombre</th>
-                                <th class="p-3">HipÃ³dromo</th>
+                                <th class="p-3">Hipódromo</th>
                                 <th class="p-3 text-center">Carrera</th>
                                 <th class="p-3">Fecha</th>
                                 <th class="p-3 text-center">Caballos</th>
@@ -74,15 +74,15 @@
             <!-- Grid Superior (3 Paneles) -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 
-                <!-- Panel: InformaciÃ³n -->
+                <!-- Panel: Información -->
                 <div class="bg-white rounded border border-slate-200 shadow-sm flex flex-col h-full">
                     <div class="bg-[#b45309] text-white p-2 font-bold text-sm flex items-center">
-                        <i class="fas fa-file-alt mr-2"></i> InformaciÃ³n
+                        <i class="fas fa-file-alt mr-2"></i> Información
                     </div>
                     <div class="p-4 text-xs flex-1 flex flex-col">
                         <table class="w-full mb-3">
                             <tbody class="divide-y divide-slate-100">
-                                <tr><td class="py-1.5 text-slate-500">HipÃ³dromo</td><td class="py-1.5 font-bold text-right" id="infoHipodromo">...</td></tr>
+                                <tr><td class="py-1.5 text-slate-500">Hipódromo</td><td class="py-1.5 font-bold text-right" id="infoHipodromo">...</td></tr>
                                 <tr><td class="py-1.5 text-slate-500">Carrera</td><td class="py-1.5 font-bold text-right" id="infoCarrera">...</td></tr>
                                 <tr><td class="py-1.5 text-slate-500">Fecha</td><td class="py-1.5 font-bold text-right" id="infoFecha">...</td></tr>
                                 <tr><td class="py-1.5 text-slate-500">Cierre</td><td class="py-1.5 font-bold text-right" id="infoCierre">...</td></tr>
@@ -105,7 +105,7 @@
                                 <tr><td class="py-2 text-slate-600">Subtotal pujas</td><td class="py-2 font-bold text-right text-emerald-600" id="valSubtotal">$0.00</td></tr>
                                 <tr><td class="py-2 text-slate-600">Incentivo</td><td class="py-2 font-bold text-right text-blue-600" id="valIncentivo">+$0.00</td></tr>
                                 <tr class="bg-amber-50"><td class="py-2 px-1 font-bold text-slate-800">Total bruto</td><td class="py-2 px-1 font-bold text-right text-slate-800 text-base" id="valBruto">$0.00</td></tr>
-                                <tr><td class="py-2 text-slate-600" id="lblComision">ComisiÃ³n</td><td class="py-2 font-bold text-right text-red-500" id="valComision">-$0.00</td></tr>
+                                <tr><td class="py-2 text-slate-600" id="lblComision">Comisión</td><td class="py-2 font-bold text-right text-red-500" id="valComision">-$0.00</td></tr>
                                 <tr class="bg-emerald-50"><td class="py-2 px-1 font-bold text-emerald-900">Premio al ganador</td><td class="py-2 px-1 font-bold text-right text-emerald-700 text-base" id="valPremio">$0.00</td></tr>
                             </tbody>
                         </table>
@@ -187,7 +187,7 @@
                     </div>
                     <div class="flex gap-4">
                         <div class="flex-[2]">
-                            <label class="block text-sm font-bold text-slate-700 mb-1">HipÃ³dromo</label>
+                            <label class="block text-sm font-bold text-slate-700 mb-1">Hipódromo</label>
                             <select id="remateHipodromo" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-orange-500 bg-white" required>
                                 <option value="">Cargando...</option>
                             </select>
@@ -211,7 +211,7 @@
                             <input type="text" id="remateDistancia" placeholder="Ej: 1800m" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-orange-500">
                         </div>
                         <div class="flex-1">
-                            <label class="block text-sm font-bold text-slate-700 mb-1">ComisiÃ³n %</label>
+                            <label class="block text-sm font-bold text-slate-700 mb-1">Comisión %</label>
                             <input type="number" id="remateComision" step="0.01" value="20" class="w-full border border-slate-300 rounded px-3 py-2 text-sm outline-none focus:border-orange-500" required>
                         </div>
                     </div>
@@ -284,12 +284,12 @@
             </div>
             <div class="p-6 overflow-y-auto flex-1 flex flex-col gap-4">
                 <div class="bg-cyan-50 border border-cyan-200 text-cyan-800 p-3 rounded text-sm">
-                    Para asignar los caballos masivamente, el sistema buscarÃ¡ un cliente llamado <strong>"REMATE"</strong> (o usarÃ¡ el primer cliente disponible). Completa nombres y bases (USD).
+                    Para asignar los caballos masivamente, el sistema buscará un cliente llamado <strong>"REMATE"</strong> (o usará el primer cliente disponible). Completa nombres y bases (USD).
                 </div>
                 
                 <div class="flex items-end gap-3">
                     <div>
-                        <label class="block text-sm font-bold text-slate-700 mb-1">Â¿CuÃ¡ntos caballos?</label>
+                        <label class="block text-sm font-bold text-slate-700 mb-1">Â¿Cuántos caballos?</label>
                         <input type="number" id="genCantidad" value="8" min="1" max="24" class="w-24 border border-slate-300 rounded px-3 py-1.5 text-sm outline-none focus:border-orange-500">
                     </div>
                     <button id="btnCrearFilas" class="border border-blue-400 text-blue-600 px-3 py-1.5 rounded text-sm font-bold hover:bg-blue-50 transition-colors">Crear filas</button>
