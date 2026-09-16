@@ -156,6 +156,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (opt) filtroHipodromo.value = opt.value;
             else filtroHipodromo.value = hipoQs;
         }
+        // Preselección por URL (?grupo=... desde el registro de grupo en venta rápida)
+        const grupoQs = (qs.get('grupo') || '').trim();
+        if (grupoQs && gruposDB.some(g => String(g.id) === grupoQs)) {
+            filtroGrupo.value = grupoQs;
+            filtroGrupo.dispatchEvent(new Event('change'));
+        }
 
         // Fallback: si el join tabla_grupos(*) vino vacío, cargarlo por separado
         const joinFallo = tablasDB.some(t => !t.tabla_grupos || t.tabla_grupos.length === 0);

@@ -195,13 +195,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const numColor = colorDeNumero(c?.numero);
         const nac = (c?.nacionalidad || 'VE').trim().toUpperCase();
         return `
-            <div class="fila-caballo-card bg-slate-50 border border-slate-200 rounded px-1 py-px ${vacio}" style="display:grid;grid-template-columns:2.25rem 1fr 2rem auto auto;column-gap:0.375rem;align-items:center">
+            <div class="fila-caballo-card bg-slate-50 border border-slate-200 rounded px-1 py-px ${vacio}" style="display:grid;grid-template-columns:2rem 1fr 1.75rem 3.5rem auto;column-gap:0.375rem;align-items:center">
                 <input type="text" inputmode="numeric" title="Número del ejemplar" placeholder="Nº"
                     class="in-cab-num gac-num w-4 h-5 shrink-0 border rounded px-0 py-px text-center text-[10px] font-black outline-none focus:ring-1 focus:ring-indigo-400"
                     value="${c?.numero ?? ''}" style="background-color:${numColor};color:${textoDeNumero(c?.numero)};border-color:${numColor}">
-                <input type="text" class="in-cab-nom w-full min-w-0 border border-slate-200 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
+                <input type="text" class="in-cab-nom w-full min-w-0 border border-slate-200 rounded px-1 py-px text-[11px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
                 <span style="display:flex;justify-content:center">${nac === 'VE' ? '' : htmlSelectNac(c?.nacionalidad)}</span>
-                <input type="text" inputmode="decimal" class="in-cab-valor w-full shrink-0 border border-slate-200 rounded px-1 py-px text-right text-[11px] font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="$" title="Valor / monta del ejemplar">
+                <input type="text" inputmode="decimal" class="in-cab-valor w-14 shrink-0 border border-slate-200 rounded px-1 py-px text-right text-[11px] font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="$" title="Valor / monta del ejemplar">
                 <button type="button" tabindex="-1" class="btn-del-cab-card shrink-0 text-red-400 hover:text-red-600 px-1 leading-none" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
             </div>`;
     }
@@ -242,7 +242,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <select class="nuevo-nac w-auto shrink-0 border border-slate-300 rounded px-1 py-1 text-xs font-bold uppercase outline-none bg-white">
                         ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}">${n}</option>`).join('')}
                     </select>
-                    <input type="text" inputmode="decimal" class="nuevo-valor w-12 shrink-0 border border-slate-300 rounded px-1 py-1 text-right text-lg font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="$">
+                    <input type="text" inputmode="decimal" class="nuevo-valor w-14 shrink-0 border border-slate-300 rounded px-1 py-1 text-right text-sm font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" placeholder="$">
                     <button type="button" tabindex="-1" class="btn-add-caballo-card bg-indigo-600 hover:bg-indigo-700 text-white rounded-md px-2 py-1 text-xs" title="Añadir ejemplar"><i class="fas fa-plus"></i></button>
                 </div>
             </div>
@@ -1039,7 +1039,37 @@ const { error } = await window.supabase.from('tablas_fijas').update({
                         <label for="cantidadModalEj" class="block text-[10px] font-bold text-slate-500 mb-0.5 uppercase">Cantidad de Tablas</label>
                         <input type="number" id="cantidadModalEj" min="1" value="1" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-emerald-500">
                     </div>
-                </div>` : `<p class="text-xs text-slate-400 italic">${retirado ? 'Ejemplar retirado: no puede venderse.' : t.estado !== 'Abierta' ? 'Tabla no disponible para venta (estado ' + (t.estado || '?') + ').' : 'Sin grupos/cupos asignados para vender.'}</p>`}
+                </div>` : (t.estado === 'Abierta' && !retirado) ? `
+                <div class="space-y-2">
+                    <p class="text-[10px] text-slate-400 italic">No hay grupos asignados a esta tabla. Seleccione un grupo del sistema o registre uno nuevo para vender.</p>
+                    <div>
+                        <label for="selectGrupoSistemaEj" class="block text-[10px] font-bold text-slate-500 mb-0.5 uppercase">Grupo de venta (sistema)</label>
+                        <div class="flex gap-1.5">
+                            <select id="selectGrupoSistemaEj" class="flex-1 min-w-0 border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-indigo-500">
+                                <option value="">Seleccione el grupo...</option>
+                                ${(gruposActivos || []).map(g => `<option value="${g.id}">${g.nombre} (${g.moneda})</option>`).join('')}
+                            </select>
+                            <button type="button" id="btnRegistrarGrupoSistemaEj" title="Registrar grupo nuevo"
+                                class="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase px-3 rounded-xl transition-colors shadow-sm">
+                                <i class="fas fa-plus mr-0.5"></i> Grupo
+                            </button>
+                        </div>
+                    </div>
+                    <div id="bloqueJugadorGrupoSistemaEj" class="hidden space-y-2">
+                        <div>
+                            <label for="selectJugadorGrupoSistemaEj" class="block text-[10px] font-bold text-slate-500 mb-0.5 uppercase">Jugador de ese grupo</label>
+                            <div class="flex gap-1.5">
+                                <select id="selectJugadorGrupoSistemaEj" class="flex-1 min-w-0 border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <option value="">Seleccione el jugador...</option>
+                                </select>
+                                <button type="button" id="btnRegistrarJugadorSistemaEj" title="Registrar jugador en el grupo"
+                                    class="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase px-3 rounded-xl transition-colors shadow-sm">
+                                    <i class="fas fa-user-plus mr-0.5"></i> Jugador
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>` : `<p class="text-xs text-slate-400 italic">${retirado ? 'Ejemplar retirado: no puede venderse.' : 'Tabla no disponible para venta (estado ' + (t.estado || '?') + ').'}</p>`}
             </div>
         `;
 
@@ -1064,8 +1094,48 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             } else {
                 poblarClientesModalEj(selCli);
             }
+        } else {
+            const selGpSis = cuerpo.querySelector('#selectGrupoSistemaEj');
+            const bloqueJug = cuerpo.querySelector('#bloqueJugadorGrupoSistemaEj');
+            if (selGpSis && bloqueJug) {
+                const selJug = cuerpo.querySelector('#selectJugadorGrupoSistemaEj');
+                selGpSis.addEventListener('change', () => {
+                    const gid = selGpSis.value;
+                    if (!gid) {
+                        bloqueJug.classList.add('hidden');
+                        return;
+                    }
+                    bloqueJug.classList.remove('hidden');
+                    if (clientesVentaCache.length === 0) {
+                        cargarClientesVenta().then(() => poblarJugadoresDelGrupo(selJug, gid));
+                    } else {
+                        poblarJugadoresDelGrupo(selJug, gid);
+                    }
+                    selJug.dataset.grupoint = gid;
+                });
+                const btnGp = cuerpo.querySelector('#btnRegistrarGrupoSistemaEj');
+                if (btnGp) btnGp.addEventListener('click', () => {
+                    document.getElementById('modalRegistrarGrupo')?.classList.remove('hidden');
+                });
+                const btnJug = cuerpo.querySelector('#btnRegistrarJugadorSistemaEj');
+                if (btnJug) btnJug.addEventListener('click', () => {
+                    const gid = selGpSis.value;
+                    if (!gid) return clubUI.toast('Seleccione primero el grupo.', 'warning');
+                    const g = gruposActivos.find(x => x.id == gid);
+                    document.getElementById('nombreGrupoDestino').textContent = 'Grupo: ' + (g ? g.nombre : 'Grupo #' + gid);
+                    document.getElementById('btnGuardarJugadorGrupo').dataset.grupoid = gid;
+                    document.getElementById('modalRegistrarJugadorGrupo')?.classList.remove('hidden');
+                });
+            }
         }
         m.classList.remove('hidden');
+    }
+
+    function poblarJugadoresDelGrupo(sel, gid) {
+        const miembros = clientesVentaCache.filter(c => (c.grupos || []).map(x => String(x)).includes(String(gid)));
+        sel.innerHTML = '<option value="">Seleccione el jugador...</option>' + miembros.map(c =>
+            `<option value="${c.id}" data-saldo="${c.saldo_actual ?? 0}">${c.nombre}</option>`
+        ).join('');
     }
 
     function poblarClientesModalEj(sel) {
@@ -1602,6 +1672,70 @@ const { error } = await window.supabase.from('tablas_fijas').update({
     document.querySelectorAll('.cerrar-modal-reciibo').forEach(b => b.addEventListener('click', () => {
         document.getElementById('modalReciboVenta').classList.add('hidden');
     }));
+
+    // ==========================================
+    // VENTA RÁPIDA SIN GRUPOS: REGISTRAR GRUPO / JUGADOR
+    // ==========================================
+    document.getElementById('modalRegistrarGrupo')?.querySelectorAll('.cerrar-modal').forEach(b => b.addEventListener('click', () => {
+        document.getElementById('modalRegistrarGrupo').classList.add('hidden');
+    }));
+    document.getElementById('modalRegistrarJugadorGrupo')?.querySelectorAll('.cerrar-modal').forEach(b => b.addEventListener('click', () => {
+        document.getElementById('modalRegistrarJugadorGrupo').classList.add('hidden');
+    }));
+    document.getElementById('btnGuardarGrupoNuevo')?.addEventListener('click', async () => {
+        const nombre = document.getElementById('nuevoGrupoNombre').value.trim().toUpperCase();
+        if (!nombre) return clubUI.toast('Indique el nombre del grupo.', 'warning');
+        const { data, error } = await window.supabase.from('grupos_venta').insert([{
+            nombre: nombre,
+            moneda: document.getElementById('nuevoGrupoMoneda').value,
+            moneda_cuadre: document.getElementById('nuevoGrupoMoneda').value,
+            es_principal: false,
+            cupo_tabla: parseInt(document.getElementById('nuevoGrupoCupo').value) || 100,
+            comision_default: parseFloat(document.getElementById('nuevoGrupoComision').value) || 2.5
+        }]).select();
+        if (error) {
+            if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {
+                return clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
+            }
+            return clubUI.toast('Error al crear el grupo: ' + error.message, 'error');
+        }
+        const grupoNuevo = (data || [])[0];
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `grupo_creado: ${grupoNuevo?.id}`);
+        clubUI.toast('Grupo creado. Redirigiendo a Venta de Tablas...', 'success');
+        setTimeout(() => { window.location.href = 'venta_tablas.html?grupo=' + (grupoNuevo?.id || ''); }, 900);
+    });
+    document.getElementById('btnGuardarJugadorGrupo')?.addEventListener('click', async () => {
+        const gid = document.getElementById('btnGuardarJugadorGrupo').dataset.grupoid;
+        const nombre = document.getElementById('nuevoJugadorNombre').value.trim().toUpperCase();
+        if (!gid) return clubUI.toast('Seleccione primero el grupo.', 'warning');
+        if (!nombre) return clubUI.toast('Indique el nombre del jugador.', 'warning');
+        const { data: cli, error: e1 } = await window.supabase.from('clientes').insert([{
+            nombre: nombre,
+            saldo_actual: 0,
+            modo_juego: 'aval',
+            libre: false
+        }]).select();
+        if (e1) return clubUI.toast('Error al crear el jugador: ' + e1.message, 'error');
+        const cliNuevo = (cli || [])[0];
+        if (!cliNuevo) return clubUI.toast('No se pudo crear el jugador.', 'error');
+        const { error: e2 } = await window.supabase.from('clientes_grupos').insert([{
+            cliente_id: cliNuevo.id,
+            grupo_id: gid,
+            es_principal: false,
+            activo: true
+        }]);
+        if (e2) return clubUI.toast('Error al asignar al grupo: ' + e2.message, 'error');
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `jugador_creado: ${cliNuevo.id} -> grupo ${gid}`);
+        clubUI.toast('Jugador registrado en el grupo.', 'success');
+        document.getElementById('modalRegistrarJugadorGrupo').classList.add('hidden');
+        document.getElementById('nuevoJugadorNombre').value = '';
+        await cargarClientesVenta();
+        const selJug = document.getElementById('selectJugadorGrupoSistemaEj');
+        if (selJug) {
+            poblarJugadoresDelGrupo(selJug, gid);
+            selJug.value = String(cliNuevo.id);
+        }
+    });
 
     document.getElementById('btnRecargarTablas').addEventListener('click', () => {
         cargarTasaGlobal(); cargarHipodromos(); cargarGrupos(); cargarEjemplares(); cargarTablas(); cargarClientesVenta();
