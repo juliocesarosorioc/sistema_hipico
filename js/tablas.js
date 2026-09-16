@@ -53,13 +53,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return COLORES_NUMEROS[((x - 1) % 14)].fg;
     };
 
+    const FLAGS_NAC = { VE: '🇻🇪', USA: '🇺🇸', BR: '🇧🇷', AR: '🇦🇷', CL: '🇨🇱', MX: '🇲🇽', PA: '🇵🇦', PE: '🇵🇪', CO: '🇨🇴', EC: '🇪🇨', UY: '🇺🇾', OTRA: '🏳️' };
+
     const htmlSelectNac = (val = 'VE') => {
         const nac = (val || 'VE').trim().toUpperCase();
-        const img = window.clubUI?.bandera ? window.clubUI.bandera(nac, 22) : '';
-        if (img) {
-            return `<span class="bandera-nac w-7 h-6 shrink-0 inline-flex justify-center items-center" title="${nac}" data-nac="${nac}">${img}</span>`;
-        }
-        return `<span class="bandera-nac w-7 h-6 shrink-0 inline-flex justify-center items-center text-[11px] font-black leading-none text-slate-500" title="${nac}" data-nac="${nac}">${nac}</span>`;
+        const flag = FLAGS_NAC[nac] || '🏳️';
+        return `<span class="bandera-nac w-5 h-5 shrink-0 inline-flex justify-center items-center text-base leading-none" title="${nac}" data-nac="${nac}">${flag}</span>`;
     };
 
     // ==========================================
@@ -195,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const numColor = colorDeNumero(c?.numero);
         const nac = (c?.nacionalidad || 'VE').trim().toUpperCase();
         return `
-            <div class="fila-caballo-card bg-slate-50 border border-slate-200 rounded px-1 py-px ${vacio}" style="display:grid;grid-template-columns:2rem 1fr 1.75rem 3.5rem auto;column-gap:0.375rem;align-items:center">
+            <div class="fila-caballo-card bg-slate-50 border border-slate-200 rounded px-1 py-px ${vacio}" style="display:grid;grid-template-columns:1.75rem 1fr 1.25rem 3.25rem auto;column-gap:0.25rem;align-items:center">
                 <input type="text" inputmode="numeric" title="Número del ejemplar" placeholder="Nº"
                     class="in-cab-num gac-num w-4 h-5 shrink-0 border rounded px-0 py-px text-center text-[10px] font-black outline-none focus:ring-1 focus:ring-indigo-400"
                     value="${c?.numero ?? ''}" style="background-color:${numColor};color:${textoDeNumero(c?.numero)};border-color:${numColor}">
@@ -234,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span><i class="fas fa-horse-head text-amber-500 mr-1"></i> Ejemplares</span>
                 <span class="cont-caballos-card bg-slate-100 text-slate-600 px-1.5 rounded-full font-black text-[9px]">0</span>
             </div>
-            <div class="lista-caballos-card px-1.5 py-1 space-y-1 flex-1"></div>
+            <div class="lista-caballos-card px-1 py-px space-y-px flex-1"></div>
             <div class="add-caballo-card border-t border-slate-200 px-2 py-1.5 space-y-1 bg-slate-50">
                 <div class="flex gap-1 items-center">
                     <input type="text" inputmode="numeric" class="nuevo-num w-10 h-10 shrink-0 border border-slate-300 rounded-md px-0 py-px text-[21px] font-black text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Nº" style="background-color:#fff;color:#94a3b8;border-color:#cbd5e1">
