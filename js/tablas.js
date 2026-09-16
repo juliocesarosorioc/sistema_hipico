@@ -759,12 +759,12 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('editSumaBase').value = (tabla.suma_base_tabla ?? 160);
         const contCab = document.getElementById('editCaballos');
         contCab.innerHTML = (tabla.caballos || []).map((c, i) => `
-            <label class="flex items-center gap-2 bg-white border border-slate-200 rounded px-2 py-1 text-xs">
-                <span class="justify-self-center w-9 h-9 rounded-lg flex items-center justify-center text-base font-black border" style="background:${colorDeNumero(c.numero)};color:${textoDeNumero(c.numero)};border-color:${colorDeNumero(c.numero)}">${c.numero}</span>
-                <span class="flex-1 font-bold text-slate-700 truncate" title="${c.nombre}">${c.nombre} ${c.retirado ? '<span class="text-red-500 text-[9px] font-black">(RETIRADO)</span>' : ''}</span>
-                <input type="text" inputmode="decimal" class="edit-valor-cab w-20 text-right border border-slate-300 rounded px-1 py-0.5 text-[11px] font-bold outline-none focus:ring-2 focus:ring-indigo-500" data-index="${i}" value="${clubUI.formatoNumero(parseFloat(c.valor_ejemplar) || 0, 1)}" title="Valor del ejemplar (afecta solo próximas ventas)">
+            <label class="flex items-center gap-1.5 bg-white border border-slate-200 rounded px-1.5 py-0.5 text-[10px]">
+                <span class="justify-self-center w-7 h-7 shrink-0 rounded-md flex items-center justify-center text-sm font-black border" style="background:${colorDeNumero(c.numero)};color:${textoDeNumero(c.numero)};border-color:${colorDeNumero(c.numero)}">${c.numero}</span>
+                <span class="flex-1 font-bold text-slate-700 truncate" title="${c.nombre}">${c.nombre} ${c.retirado ? '<span class="text-red-500 text-[8px] font-black">(RET.)</span>' : ''}</span>
+                <input type="text" inputmode="decimal" class="edit-valor-cab w-16 text-right border border-slate-300 rounded px-1 py-0.5 text-[10px] font-bold outline-none focus:ring-2 focus:ring-indigo-500" data-index="${i}" value="${clubUI.formatoNumero(parseFloat(c.valor_ejemplar) || 0, 1)}" title="Valor del ejemplar (afecta solo próximas ventas)">
             </label>
-        `).join('') || '<p class="text-slate-400 italic text-xs">Sin ejemplares.</p>';
+        `).join('') || '<p class="text-slate-400 italic text-[10px]">Sin ejemplares.</p>';
         const ctn = document.getElementById('editCuposGrupos');
         const yaAsignados = (tabla.tabla_grupos || []).map(tg => tg.grupo_id);
 
@@ -774,10 +774,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? `<button type="button" class="btn-quitar-grupo-edit text-red-500 hover:text-red-700 px-1" data-tablagrupo="${tg.id}" title="Quitar grupo de esta tabla"><i class="fas fa-times-circle"></i></button>`
                 : `<span class="text-[9px] text-slate-400 font-bold" title="Tiene ${vendidas} venta(s), no se puede quitar">${vendidas} vend.</span>`;
             return `
-            <div class="fila-cupo-editar flex items-center gap-2 bg-white border border-slate-200 rounded px-2 py-1.5" data-tablagrupo="${tg.id}" data-grupo="${tg.grupo_id}">
-                <span class="flex-1 text-sm font-bold text-slate-700">${tg.grupos_venta ? tg.grupos_venta.nombre : '?'}</span>
-                <span class="text-[10px] text-slate-500">${vendidas} vendidas</span>
-                <input type="number" min="0" value="${tg.cupos}" data-id="${tg.id}" data-grupo="${tg.grupo_id}" class="edit-cupo w-20 border border-slate-300 rounded-lg px-2 py-1 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500">
+            <div class="fila-cupo-editar flex items-center gap-2 bg-white border border-slate-200 rounded px-1.5 py-1" data-tablagrupo="${tg.id}" data-grupo="${tg.grupo_id}">
+                <span class="flex-1 text-[11px] font-bold text-slate-700">${tg.grupos_venta ? tg.grupos_venta.nombre : '?'}</span>
+                <span class="text-[9px] text-slate-500">${vendidas} vendidas</span>
+                <input type="number" min="0" value="${tg.cupos}" data-id="${tg.id}" data-grupo="${tg.grupo_id}" class="edit-cupo w-16 border border-slate-300 rounded-md px-1 py-0.5 text-[11px] font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500">
                 ${botonEliminar}
             </div>`;
         }).join('') || '<p class="text-slate-400 italic text-xs">Esta tabla no tiene grupos asignados.</p>';
@@ -821,10 +821,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const ctn = document.getElementById('editCuposGrupos');
         if (ctn.querySelector(`.edit-cupo[data-grupo="${gid}"]`)) return clubUI.toast("Ese grupo ya está asignado.");
         ctn.insertAdjacentHTML('beforeend', `
-            <div class="fila-cupo-editar flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded px-2 py-1.5" data-grupo="${gid}">
-                <span class="flex-1 text-sm font-bold text-indigo-700">${g.nombre} <span class="text-[9px]">(nuevo)</span></span>
-                <span class="text-[10px] text-slate-500">0 vendidas</span>
-                <input type="number" min="0" value="${cupo}" data-grupo="${gid}" data-nuevo="1" class="edit-cupo w-20 border border-slate-300 rounded-lg px-2 py-1 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500">
+            <div class="fila-cupo-editar flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-1" data-grupo="${gid}">
+                <span class="flex-1 text-[11px] font-bold text-indigo-700">${g.nombre} <span class="text-[8px]">(nuevo)</span></span>
+                <span class="text-[9px] text-slate-500">0 vendidas</span>
+                <input type="number" min="0" value="${cupo}" data-grupo="${gid}" data-nuevo="1" class="edit-cupo w-16 border border-slate-300 rounded-md px-1 py-0.5 text-[11px] font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500">
             </div>`);
         document.getElementById('nuevoGrupoEditar').value = '';
     });
