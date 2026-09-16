@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -12,9 +12,9 @@
 </head>
 <body class="bg-slate-50 font-sans text-sm h-screen flex overflow-hidden">
 
-    <!-- El Sidebar se inyectará aquí automáticamente mediante layout.js -->
+    <!-- El Sidebar se inyectarÃ¡ aquÃ­ automÃ¡ticamente mediante layout.js -->
 
-    <!-- ÁREA CENTRAL DE CONTENIDO -->
+    <!-- ÃREA CENTRAL DE CONTENIDO -->
     <div class="flex-1 flex flex-col h-full relative overflow-hidden w-full">
 
         <!-- CABECERA -->
@@ -32,9 +32,9 @@
             <!-- INSTRUCCIONES -->
             <div class="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-xs leading-relaxed">
                 <i class="fas fa-lightbulb mr-1"></i>
-                El cliente disputa una jugada desde el <b>Portal del Cliente</b> (botón "Disputar" en sus movimientos). Aquí la casa lo revisa:
-                <b>CREADO → EN_REVISION → SOLUCIONADO</b>. Al responder, indique la <b>acción aplicada</b> y el <b>monto resuelto</b> si aplica.
-                Cuando el ticket queda SOLUCIONADO, el cliente ve la respuesta y evalúa de 1 a 5.
+                El cliente disputa una jugada desde el <b>Portal del Cliente</b> (botÃ³n "Disputar" en sus movimientos). AquÃ­ la casa lo revisa:
+                <b>CREADO â†’ EN_REVISION â†’ SOLUCIONADO</b>. Al responder, indique la <b>acciÃ³n aplicada</b> y el <b>monto resuelto</b> si aplica.
+                Cuando el ticket queda SOLUCIONADO, el cliente ve la respuesta y evalÃºa de 1 a 5.
             </div>
 
             <!-- FILTROS -->
@@ -42,14 +42,14 @@
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div class="md:col-span-2">
                         <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Buscar (cliente / jugada / motivo)</label>
-                        <input type="text" id="filtroTicketsTexto" placeholder="Ej: María, C4, premio..." class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-sky-500 bg-white">
+                        <input type="text" id="filtroTicketsTexto" placeholder="Ej: MarÃ­a, C4, premio..." class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-sky-500 bg-white">
                     </div>
                     <div>
                         <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Estado</label>
                         <select id="filtroTicketsEstado" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-bold outline-none focus:ring-2 focus:ring-sky-500 bg-white">
                             <option value="">Todos los estados</option>
                             <option value="CREADO">CREADO (nuevo)</option>
-                            <option value="EN_REVISION">EN REVISIÓN</option>
+                            <option value="EN_REVISION">EN REVISIÃ“N</option>
                             <option value="SOLUCIONADO">SOLUCIONADO</option>
                         </select>
                     </div>
@@ -68,7 +68,7 @@
                     <table class="w-full text-left text-xs">
                         <thead class="bg-slate-100 text-slate-600 sticky top-0 shadow-sm">
                             <tr>
-                                <th class="p-3 font-bold uppercase tracking-wider">N°</th>
+                                <th class="p-3 font-bold uppercase tracking-wider">NÂ°</th>
                                 <th class="p-3 font-bold uppercase tracking-wider">Fecha</th>
                                 <th class="p-3 font-bold uppercase tracking-wider">Cliente</th>
                                 <th class="p-3 font-bold uppercase tracking-wider">Jugada</th>
@@ -111,18 +111,18 @@
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">Estado intermedio</label>
                     <div class="flex gap-2">
-                        <button id="btnPasarRevision" class="flex-1 bg-sky-100 hover:bg-sky-200 text-sky-800 px-4 py-2 rounded-lg font-black text-xs uppercase tracking-wide transition-colors"><i class="fas fa-search mr-1"></i> Pasar a EN_REVISIÓN</button>
+                        <button id="btnPasarRevision" class="flex-1 bg-sky-100 hover:bg-sky-200 text-sky-800 px-4 py-2 rounded-lg font-black text-xs uppercase tracking-wide transition-colors"><i class="fas fa-search mr-1"></i> Pasar a EN_REVISIÃ“N</button>
                         <button id="btnRegresarCreado" class="flex-1 bg-amber-100 hover:bg-amber-200 text-amber-800 px-4 py-2 rounded-lg font-black text-xs uppercase tracking-wide transition-colors"><i class="fas fa-undo mr-1"></i> Volver a CREADO</button>
                     </div>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">Acción aplicada</label>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">AcciÃ³n aplicada</label>
                     <select id="respuestaAccion" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-sky-500 bg-white">
-                        <option value="">— Seleccione —</option>
+                        <option value="">â€” Seleccione â€”</option>
                         <option value="ABONO">ABONO (se abona al saldo del cliente)</option>
                         <option value="REEMBOLSO">REEMBOLSO (se devuelve el monto jugado)</option>
                         <option value="RECHAZO">RECHAZO (el reclamo no procede)</option>
-                        <option value="AJUSTE">AJUSTE (corrección de jugada)</option>
+                        <option value="AJUSTE">AJUSTE (correcciÃ³n de jugada)</option>
                     </select>
                 </div>
                 <div>
@@ -131,7 +131,7 @@
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">Respuesta de la casa</label>
-                    <textarea id="respuestaTexto" rows="3" placeholder="Explique al cliente la resolución..." class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-500 bg-white"></textarea>
+                    <textarea id="respuestaTexto" rows="3" placeholder="Explique al cliente la resoluciÃ³n..." class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-500 bg-white"></textarea>
                 </div>
                 <button id="btnSolucionarTicket" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-lg transition-colors text-xs uppercase tracking-wide">
                     <i class="fas fa-check-circle mr-1"></i> Marcar como SOLUCIONADO
@@ -141,7 +141,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="../js/components/db.js"></script>
+    <script src="../js/components/db.js?v=20260916-2"></script>
     <script src="../js/components/auth.js"></script>
     <script src="../js/components/ui.js"></script>
     <script src="../js/components/layout.js"></script>

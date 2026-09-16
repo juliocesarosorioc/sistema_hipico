@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <link rel="icon" href="data:,">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestión de Planos (Taquilla) - Club del Dinero</title>
+    <title>GestiÃ³n de Planos (Taquilla) - Club del Dinero</title>
     <link rel="stylesheet" href="../css/tailwind.css">
     <!-- Enlace al CSS centralizado -->
     <link rel="stylesheet" href="../css/style.css">
@@ -18,9 +18,9 @@
 </head>
 <body class="bg-slate-50 flex h-screen overflow-hidden font-sans">
 
-    <!-- El Sidebar Global se inyectará aquí automáticamente mediante js/components/layout.js -->
+    <!-- El Sidebar Global se inyectarÃ¡ aquÃ­ automÃ¡ticamente mediante js/components/layout.js -->
 
-    <!-- ÁREA CENTRAL DE CONTENIDO (Ocupa el resto de la pantalla) -->
+    <!-- ÃREA CENTRAL DE CONTENIDO (Ocupa el resto de la pantalla) -->
     <div class="flex-1 flex flex-col h-full relative overflow-hidden">
 
         <!-- DATALIST OCULTO PARA AUTOCOMPLETADO DE CLIENTES Y JUGADAS -->
@@ -41,18 +41,18 @@
                     <i class="fas fa-search absolute left-3 top-2 text-slate-400 text-xs"></i>
                     <input type="text" placeholder="Buscar cliente..." class="border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 w-48 text-xs outline-none focus:border-blue-500 transition-colors">
                 </div>
-                <button class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg border border-indigo-300 hover:bg-indigo-200 text-xs font-bold shadow-sm transition-colors"><i class="fas fa-brain mr-1"></i> IA Análisis</button>
+                <button class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg border border-indigo-300 hover:bg-indigo-200 text-xs font-bold shadow-sm transition-colors"><i class="fas fa-brain mr-1"></i> IA AnÃ¡lisis</button>
             </div>
         </header>
 
-        <!-- ÁREA DE CONTROL DE CARRERA -->
+        <!-- ÃREA DE CONTROL DE CARRERA -->
         <section class="p-4 bg-white border-b border-slate-200 shadow-sm flex flex-wrap gap-6 items-start shrink-0">
-            <!-- Hipódromo y Carrera -->
+            <!-- HipÃ³dromo y Carrera -->
             <div class="flex-1 min-w-[300px]">
-                <h1 class="text-2xl font-bold text-slate-800 mb-4"><i class="fas fa-horse-head text-blue-600 mr-2"></i> Gestión de Planos</h1>
+                <h1 class="text-2xl font-bold text-slate-800 mb-4"><i class="fas fa-horse-head text-blue-600 mr-2"></i> GestiÃ³n de Planos</h1>
                 <div class="flex gap-4">
                     <div class="w-1/2">
-                        <label class="block text-xs font-bold text-slate-700 mb-1">HIPÓDROMO</label>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">HIPÃ“DROMO</label>
                         <select id="selectHipodromo" class="w-full border border-slate-300 rounded p-1.5 focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold text-slate-700">
                             <option value="La Rinconada">La Rinconada</option>
                             <option value="Valencia">Valencia</option>
@@ -71,7 +71,7 @@
                 </div>
             </div>
 
-            <!-- Resultados, Retirados y Comisión -->
+            <!-- Resultados, Retirados y ComisiÃ³n -->
             <div class="flex-1 min-w-[400px]">
                 <div class="flex gap-4 mb-2">
                     <div class="flex-1">
@@ -87,17 +87,17 @@
                     <i class="fas fa-random text-blue-500 mr-1"></i> Modalidad: CON CRUCES
                 </button>
                 <p class="text-[9px] text-slate-400 mt-1 leading-snug">
-                    Cruce = varios ejemplares (2x3, 4*8). Monto es <b>por cruce</b>; el COBRO suma monto × cruces.
+                    Cruce = varios ejemplares (2x3, 4*8). Monto es <b>por cruce</b>; el COBRO suma monto Ã— cruces.
                     Paga cada ejemplar ganador por separado.
                 </p>
             </div>
 
-            <!-- Botones de Acción Rápida -->
+            <!-- Botones de AcciÃ³n RÃ¡pida -->
             <div class="w-72">
                 <div class="flex gap-1 mb-2">
-                    <button class="flex-1 bg-cyan-400 text-white font-bold py-1 rounded text-[11px] shadow-sm hover:bg-cyan-500 transition-colors">💰 Pozo</button>
-                    <button class="flex-1 bg-white border border-yellow-400 text-yellow-600 font-bold py-1 rounded text-[11px] shadow-sm hover:bg-yellow-50 transition-colors">🔄 Traslado</button>
-                    <button class="flex-1 bg-blue-600 text-white font-bold py-1 rounded text-[11px] shadow-sm hover:bg-blue-700 transition-colors">🛡️ Aval</button>
+                    <button class="flex-1 bg-cyan-400 text-white font-bold py-1 rounded text-[11px] shadow-sm hover:bg-cyan-500 transition-colors">ðŸ’° Pozo</button>
+                    <button class="flex-1 bg-white border border-yellow-400 text-yellow-600 font-bold py-1 rounded text-[11px] shadow-sm hover:bg-yellow-50 transition-colors">ðŸ”„ Traslado</button>
+                    <button class="flex-1 bg-blue-600 text-white font-bold py-1 rounded text-[11px] shadow-sm hover:bg-blue-700 transition-colors">ðŸ›¡ï¸ Aval</button>
                 </div>
                 <input type="date" id="fechaCarrera" class="w-full border border-slate-300 rounded p-1 mb-2 text-xs outline-none font-bold text-slate-700 text-center">
                 <a href="clientes.html" class="block text-center w-full bg-emerald-700 text-white font-bold py-1.5 rounded hover:bg-emerald-800 shadow transition-colors text-xs"><i class="fas fa-plus mr-1"></i> Nuevo Cliente</a>
@@ -122,25 +122,25 @@
                     </tr>
                 </thead>
                 <tbody id="cuerpoTaquilla" class="divide-y divide-slate-200">
-                    <!-- Las filas se generarán vía JavaScript (taquilla.js) -->
+                    <!-- Las filas se generarÃ¡n vÃ­a JavaScript (taquilla.js) -->
                 </tbody>
             </table>
             
             <div class="mt-6 mb-16 text-center">
                 <button id="btnAgregarLineas" class="bg-slate-900 text-white px-8 py-2.5 rounded-full hover:bg-black font-bold shadow-lg transition-transform hover:scale-105">
-                    <i class="fas fa-plus-circle mr-1"></i> Agregar líneas
+                    <i class="fas fa-plus-circle mr-1"></i> Agregar lÃ­neas
                 </button>
             </div>
             <p class="text-[10px] text-slate-500 leading-relaxed mb-1">
-                <b class="text-blue-700">CÓMO SE COBRA:</b> cada línea registra <b>monto × cruces</b> (si juega "2x3" con $10 son dos boletos de $10 = cobro $20).
-                Se descuenta del saldo si el cliente juega en modo <b>Pozo</b>; en modo <b>Aval</b> solo se controla que no exceda su límite de pérdida.
+                <b class="text-blue-700">CÃ“MO SE COBRA:</b> cada lÃ­nea registra <b>monto Ã— cruces</b> (si juega "2x3" con $10 son dos boletos de $10 = cobro $20).
+                Se descuenta del saldo si el cliente juega en modo <b>Pozo</b>; en modo <b>Aval</b> solo se controla que no exceda su lÃ­mite de pÃ©rdida.
             </p>
             <p class="text-[10px] text-slate-500 leading-relaxed mb-1">
-                <b class="text-emerald-600">CÓMO SE PAGA (si gana):</b> jugadas <b>Por Tabla</b> → cantidad de tablas × premio de la tabla (congelado al auditar).
-                Otras jugadas → monto × <b>pago si gana</b> definido en Reglas de Jugadas. Comisión del socio: sobre el <b>premio</b> si gana o sobre el <b>monto</b> si pierde.
+                <b class="text-emerald-600">CÃ“MO SE PAGA (si gana):</b> jugadas <b>Por Tabla</b> â†’ cantidad de tablas Ã— premio de la tabla (congelado al auditar).
+                Otras jugadas â†’ monto Ã— <b>pago si gana</b> definido en Reglas de Jugadas. ComisiÃ³n del socio: sobre el <b>premio</b> si gana o sobre el <b>monto</b> si pierde.
             </p>
             <p class="text-[10px] text-slate-500 leading-relaxed">
-                <b class="text-slate-600">NOTA:</b> si la Taquilla no muestra clientes ni saldos, verifica que el paquete SQL (columnas y permisos, secciones 0 y 7) esté ejecutado en Supabase y recarga con Ctrl+Shift+R.
+                <b class="text-slate-600">NOTA:</b> si la Taquilla no muestra clientes ni saldos, verifica que el paquete SQL (columnas y permisos, secciones 0 y 7) estÃ© ejecutado en Supabase y recarga con Ctrl+Shift+R.
             </p>
         </main>
 
@@ -153,21 +153,21 @@
             <span id="chipResultadoEstado" class="text-[10px] font-bold inline-flex items-center gap-1 bg-slate-100 border border-slate-300 text-slate-600 px-2 py-1.5 rounded-full"><i class="fas fa-spinner fa-spin text-slate-400"></i></span>
         </footer>
 
-        <!-- VENTANA FLOTANTE: TRANSACCIONES RÁPIDAS -->
+        <!-- VENTANA FLOTANTE: TRANSACCIONES RÃPIDAS -->
         <div id="ventanaTransacciones" class="absolute right-6 top-24 w-80 bg-white rounded-lg shadow-2xl border border-slate-300 z-50 flex flex-col overflow-hidden">
             <div class="bg-slate-800 p-2.5 flex justify-between items-center select-none" id="cabeceraTransacciones">
-                <h3 class="font-bold text-white text-xs tracking-wide uppercase"><i class="fas fa-bolt text-amber-400 mr-1.5"></i> Comandos Rápidos</h3>
+                <h3 class="font-bold text-white text-xs tracking-wide uppercase"><i class="fas fa-bolt text-amber-400 mr-1.5"></i> Comandos RÃ¡pidos</h3>
                 <span class="text-[10px] text-slate-400 font-medium bg-slate-700 px-2 py-0.5 rounded"><i class="fas fa-grip-lines mr-1"></i> Mover</span>
             </div>
             <div class="p-3 bg-slate-50 text-[10px] font-mono text-slate-600 leading-relaxed border-b border-slate-200">
-                <p class="text-emerald-600 font-bold mb-0.5">Luis +100 → <span class="font-normal text-slate-500">depósito</span></p>
-                <p class="text-red-600 font-bold mb-0.5">Juan -100 → <span class="font-normal text-slate-500">retiro</span></p>
-                <p class="text-blue-600 font-bold mb-0.5">Frank 100 Luis → <span class="font-normal text-slate-500">traslado</span></p>
-                <p class="text-purple-600 font-bold mb-0.5">Luis aval +100 → <span class="font-normal text-slate-500">otorgar aval</span></p>
-                <p class="text-rose-600 font-bold">Pedro aval -50 → <span class="font-normal text-slate-500">retirar aval</span></p>
+                <p class="text-emerald-600 font-bold mb-0.5">Luis +100 â†’ <span class="font-normal text-slate-500">depÃ³sito</span></p>
+                <p class="text-red-600 font-bold mb-0.5">Juan -100 â†’ <span class="font-normal text-slate-500">retiro</span></p>
+                <p class="text-blue-600 font-bold mb-0.5">Frank 100 Luis â†’ <span class="font-normal text-slate-500">traslado</span></p>
+                <p class="text-purple-600 font-bold mb-0.5">Luis aval +100 â†’ <span class="font-normal text-slate-500">otorgar aval</span></p>
+                <p class="text-rose-600 font-bold">Pedro aval -50 â†’ <span class="font-normal text-slate-500">retirar aval</span></p>
             </div>
             <div class="p-3">
-                <textarea id="textoTransacciones" class="w-full h-28 border border-slate-300 rounded p-2 text-xs font-mono outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none" placeholder="Escriba aquí los comandos..."></textarea>
+                <textarea id="textoTransacciones" class="w-full h-28 border border-slate-300 rounded p-2 text-xs font-mono outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none" placeholder="Escriba aquÃ­ los comandos..."></textarea>
                 <div id="resultadoTransacciones" class="hidden mt-2 max-h-32 overflow-y-auto text-[10px] font-mono leading-relaxed bg-slate-50 border border-slate-200 rounded p-2"></div>
             </div>
             <div class="p-3 bg-white flex gap-2 pt-0">
@@ -215,7 +215,7 @@
 
 <!-- Scripts y Componentes -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="../js/components/db.js"></script>
+    <script src="../js/components/db.js?v=20260916-2"></script>
     <script src="../js/components/auth.js"></script>
     <script src="../js/components/ui.js"></script>
     <script src="../js/components/layout.js"></script>
@@ -224,6 +224,6 @@
     <script src="../js/components/calculo_dividendos.js?v=20260914-1"></script>
     <script src="../js/components/modal_resultado.js?v=20260914-2"></script>
     <script src="../js/components/programa_dia.js?v=20260910-17"></script>
-    <script src="../js/taquilla.js?v=20260914-2"></script>
+    <script src="../js/taquilla.js?v=20260916-3"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -19,7 +19,7 @@
 
     <!-- Sidebar se inyecta por layout.js -->
 
-    <!-- ÁREA CENTRAL -->
+    <!-- ÃREA CENTRAL -->
     <div class="club-contenido flex-1 flex flex-col h-full relative overflow-hidden w-full">
 
         <!-- CABECERA -->
@@ -29,13 +29,13 @@
             </h1>
             <div class="flex items-center gap-3 flex-wrap">
                 <select id="filtroHipodromo" class="border border-slate-300 rounded-lg p-2 text-sm font-bold bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500 w-64">
-                    <option value="">Todos los Hipódromos...</option>
+                    <option value="">Todos los HipÃ³dromos...</option>
                 </select>
                 <select id="filtroGrupo" class="border border-slate-300 rounded-lg p-2 text-sm font-bold bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500 w-56">
                     <option value="">Grupo de Venta...</option>
                 </select>
                 <span class="bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-1.5 rounded-full text-xs font-bold shadow-inner flex items-center gap-1">
-                    <i class="fas fa-cash-register"></i> Emisión Directa
+                    <i class="fas fa-cash-register"></i> EmisiÃ³n Directa
                 </span>
             </div>
         </header>
@@ -43,11 +43,11 @@
         <main class="club-contenido p-6 flex-1 overflow-y-auto w-full bg-slate-100">
             <div class="max-w-[1700px] mx-auto space-y-6">
 
-                <!-- FILTROS RÁPIDOS -->
+                <!-- FILTROS RÃPIDOS -->
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
                     <div class="flex flex-wrap items-center gap-4">
                         <div class="flex-1 min-w-[200px]">
-                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Hipódromo / Carrera</label>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">HipÃ³dromo / Carrera</label>
                             <select id="filtroTabla" class="w-full border border-slate-300 rounded-lg p-2 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-500">
                                 <option value="">Todas las carreras del filtro...</option>
                             </select>
@@ -105,7 +105,7 @@
                                         <th class="p-3 font-bold">Fecha</th>
                                         <th class="p-3 font-bold">Cliente</th>
                                         <th class="p-3 font-bold">Grupo Cobro</th>
-                                        <th class="p-3 font-bold">Grupo Comisión</th>
+                                        <th class="p-3 font-bold">Grupo ComisiÃ³n</th>
                                         <th class="p-3 font-bold">Carrera</th>
                                         <th class="p-3 font-bold">Ejemplar</th>
                                         <th class="p-3 text-right font-bold">Tablas</th>
@@ -114,7 +114,7 @@
                                         <th class="p-3 text-right font-bold">Monto Arriesgado</th>
                                         <th class="p-3 text-right font-bold">Riesgo</th>
                                         <th class="p-3 text-right font-bold">Ganancia</th>
-                                        <th class="p-3 text-right font-bold">Comisión</th>
+                                        <th class="p-3 text-right font-bold">ComisiÃ³n</th>
                                     </tr>
                                 </thead>
                                 <tbody id="cuerpoReporteVentas" class="divide-y divide-slate-100 bg-white"></tbody>
@@ -126,7 +126,7 @@
                 <!-- SOLICITUDES PORTAL -->
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                     <div class="bg-amber-700 text-white p-3 font-bold text-xs uppercase tracking-wider flex justify-between items-center">
-                        <span><i class="fas fa-inbox text-amber-300 mr-2"></i> Solicitudes del Portal (Validación Admin)</span>
+                        <span><i class="fas fa-inbox text-amber-300 mr-2"></i> Solicitudes del Portal (ValidaciÃ³n Admin)</span>
                         <button id="btnActualizarSolicitudes" class="bg-amber-800 hover:bg-amber-900 px-3 py-1 rounded text-[10px] font-bold transition-colors"><i class="fas fa-sync-alt mr-1"></i> Actualizar</button>
                     </div>
                     <div class="overflow-x-auto">
@@ -153,7 +153,7 @@
         </main>
     </div>
 
-    <!-- MENÚ FLOTANTE POR EJEMPLAR (agregar al carrito) -->
+    <!-- MENÃš FLOTANTE POR EJEMPLAR (agregar al carrito) -->
     <div id="menuEjemplarFlotante" class="hidden fixed z-40 w-72 bg-white rounded-2xl shadow-2xl border border-indigo-200 overflow-hidden">
         <div class="bg-indigo-600 text-white px-3 py-2 flex items-center justify-between">
             <span id="mefTitulo" class="text-[10px] font-black uppercase tracking-wider truncate">Ejemplar</span>
@@ -161,10 +161,10 @@
         </div>
         <div class="p-3 space-y-3">
             <div class="bg-slate-50 rounded-lg p-2 border border-slate-200 text-xs space-y-1">
-                <div class="flex justify-between"><span class="font-bold text-slate-600">Carrera:</span> <span id="mefCarrera" class="font-black text-slate-800">—</span></div>
-                <div class="flex justify-between"><span class="font-bold text-slate-600">Ejemplar:</span> <span id="mefEjemplar" class="font-bold text-slate-800 truncate">—</span></div>
-                <div class="flex justify-between"><span class="font-bold text-slate-600">Valor / Tabla:</span> <span id="mefValor" class="font-black text-blue-700">—</span></div>
-                <div class="flex justify-between"><span class="font-bold text-slate-600">Disponibles:</span> <span id="mefDisponibles" class="font-black text-emerald-700">—</span></div>
+                <div class="flex justify-between"><span class="font-bold text-slate-600">Carrera:</span> <span id="mefCarrera" class="font-black text-slate-800">â€”</span></div>
+                <div class="flex justify-between"><span class="font-bold text-slate-600">Ejemplar:</span> <span id="mefEjemplar" class="font-bold text-slate-800 truncate">â€”</span></div>
+                <div class="flex justify-between"><span class="font-bold text-slate-600">Valor / Tabla:</span> <span id="mefValor" class="font-black text-blue-700">â€”</span></div>
+                <div class="flex justify-between"><span class="font-bold text-slate-600">Disponibles:</span> <span id="mefDisponibles" class="font-black text-emerald-700">â€”</span></div>
             </div>
             <div>
                 <label class="block text-[10px] font-black text-slate-700 mb-1 uppercase tracking-wider">Grupo de Venta</label>
@@ -173,7 +173,7 @@
             <div>
                 <label class="block text-[10px] font-black text-slate-700 mb-1 uppercase tracking-wider">Cantidad de Tablas</label>
                 <div class="flex items-center gap-2">
-                    <button type="button" id="mefMenos" class="w-9 h-9 bg-slate-200 hover:bg-slate-300 rounded-lg font-black text-lg shrink-0">−</button>
+                    <button type="button" id="mefMenos" class="w-9 h-9 bg-slate-200 hover:bg-slate-300 rounded-lg font-black text-lg shrink-0">âˆ’</button>
                     <input type="number" id="mefCantidad" value="1" min="1" class="flex-1 border border-slate-300 rounded-lg p-2 text-lg font-black text-center outline-none focus:ring-2 focus:ring-indigo-500">
                     <button type="button" id="mefMas" class="w-9 h-9 bg-slate-200 hover:bg-slate-300 rounded-lg font-black text-lg shrink-0">+</button>
                 </div>
@@ -190,7 +190,7 @@
             <div class="flex items-center gap-2 px-3 py-2">
                 <span class="w-8 h-8 rounded-lg bg-emerald-500 text-white flex items-center justify-center text-sm shrink-0"><i class="fas fa-shopping-cart"></i></span>
                 <span class="flex-1 text-[11px] font-bold leading-tight">
-                    <span id="carritoMiniResumen" class="block">Carrito vacío</span>
+                    <span id="carritoMiniResumen" class="block">Carrito vacÃ­o</span>
                     <span id="carritoMiniTotal" class="block text-emerald-400 text-[10px] font-black">$ 0.00</span>
                 </span>
                 <span id="carritoMiniBadge" class="hidden bg-amber-500 text-slate-900 text-[10px] font-black rounded-full px-2 py-0.5 shrink-0">0</span>
@@ -233,14 +233,14 @@
             </div>
             <div class="p-4 space-y-4 overflow-y-auto flex-1">
                 <div id="mvResumenCarrito" class="hidden bg-indigo-50 border border-indigo-200 rounded-lg p-3">
-                    <div id="mvResumenCarritoTitulo" class="text-[10px] font-black uppercase tracking-wider text-indigo-500 mb-1"><i class="fas fa-shopping-cart mr-1"></i> Venta múltiple — N items</div>
+                    <div id="mvResumenCarritoTitulo" class="text-[10px] font-black uppercase tracking-wider text-indigo-500 mb-1"><i class="fas fa-shopping-cart mr-1"></i> Venta mÃºltiple â€” N items</div>
                     <div id="mvResumenCarritoItems" class="text-[11px] text-slate-700 font-bold max-h-36 overflow-y-auto space-y-0.5"></div>
                 </div>
                 <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 text-xs">
-                    <div class="flex justify-between"><span class="font-bold text-slate-600">Carrera:</span> <span id="mvCarrera" class="font-black text-slate-800">—</span></div>
-                    <div class="flex justify-between mt-1"><span class="font-bold text-slate-600">Ejemplar:</span> <span id="mvEjemplar" class="font-bold text-slate-800">—</span></div>
-                    <div class="flex justify-between mt-1"><span class="font-bold text-slate-600">Valor:</span> <span id="mvValor" class="font-black text-blue-700">—</span></div>
-                    <div class="flex justify-between mt-1"><span class="font-bold text-slate-600">Premio (ajustado):</span> <span id="mvPremio" class="font-black text-emerald-700">—</span></div>
+                    <div class="flex justify-between"><span class="font-bold text-slate-600">Carrera:</span> <span id="mvCarrera" class="font-black text-slate-800">â€”</span></div>
+                    <div class="flex justify-between mt-1"><span class="font-bold text-slate-600">Ejemplar:</span> <span id="mvEjemplar" class="font-bold text-slate-800">â€”</span></div>
+                    <div class="flex justify-between mt-1"><span class="font-bold text-slate-600">Valor:</span> <span id="mvValor" class="font-black text-blue-700">â€”</span></div>
+                    <div class="flex justify-between mt-1"><span class="font-bold text-slate-600">Premio (ajustado):</span> <span id="mvPremio" class="font-black text-emerald-700">â€”</span></div>
                 </div>
 
                 <div>
@@ -258,7 +258,7 @@
                         </select>
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Grupo que recibe COMISIÓN</label>
+                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Grupo que recibe COMISIÃ“N</label>
                         <select id="mvGrupoComision" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-500">
                             <option value="">(auto: mismo que cobra)</option>
                         </select>
@@ -274,7 +274,7 @@
                     <div class="flex justify-between"><span class="font-bold text-slate-600">Costo Unitario:</span> <strong id="mvCostoUnit" class="text-blue-700">0</strong></div>
                     <div class="flex justify-between"><span class="font-bold text-slate-600">Costo Total:</span> <strong id="mvCostoTotal" class="text-emerald-700">0</strong></div>
                     <div class="flex justify-between"><span class="font-bold text-slate-600">Premio Total (si gana):</span> <strong id="mvPremioTotal" class="text-emerald-700">0</strong></div>
-                    <div class="flex justify-between border-t border-slate-200 pt-1"><span class="font-bold text-purple-800">Comisión estimada:</span> <strong id="mvComisionEst" class="text-purple-700">0</strong></div>
+                    <div class="flex justify-between border-t border-slate-200 pt-1"><span class="font-bold text-purple-800">ComisiÃ³n estimada:</span> <strong id="mvComisionEst" class="text-purple-700">0</strong></div>
                     <div class="flex justify-between bg-emerald-50/60 rounded p-1 mt-1"><span class="font-bold text-emerald-800">Ganancia (si gana):</span> <strong id="mvGanancia" class="text-emerald-700">0</strong></div>
                 </div>
 
@@ -313,13 +313,13 @@
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="../js/components/db.js"></script>
+    <script src="../js/components/db.js?v=20260916-2"></script>
     <script src="../js/components/auth.js"></script>
     <script src="../js/components/ui.js?v=20260916-2"></script>
     <script src="../js/components/indicador_accion.js"></script>
     <script src="../js/components/venta_tablas_core.js?v=20260914-2"></script>
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
-    <script src="../js/venta_tablas.js?v=20260916-5"></script>
+    <script src="../js/venta_tablas.js?v=20260916-6"></script>
 </body>
 </html>

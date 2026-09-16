@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <link rel="icon" href="data:,">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Saldos y Liquidación - Club del Dinero</title>
+    <title>Saldos y LiquidaciÃ³n - Club del Dinero</title>
     <link rel="stylesheet" href="../css/tailwind.css">
     <link rel="stylesheet" href="../css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -17,7 +17,7 @@
     <div class="px-4 py-3 bg-white border-b border-slate-200 shadow-sm shrink-0 flex flex-wrap gap-4 justify-between items-center">
         <div class="flex gap-2 items-end">
             <div>
-                <label class="block text-[10px] font-bold text-slate-700 mb-1">HIPÓDROMO A LIQUIDAR</label>
+                <label class="block text-[10px] font-bold text-slate-700 mb-1">HIPÃ“DROMO A LIQUIDAR</label>
                 <select id="filtroHipodromo" class="border border-slate-300 rounded p-1.5 text-xs font-bold w-40 outline-none focus:border-blue-500">
                     <option value="">Seleccione...</option>
                 </select>
@@ -73,14 +73,14 @@
             <!-- TABLA DE COMISIONES POR GRUPO -->
             <div class="bg-white rounded-lg shadow-sm border border-slate-300 overflow-hidden">
                 <div class="bg-slate-800 text-white p-3 font-bold text-xs uppercase tracking-wide">
-                    <i class="fas fa-users text-amber-400 mr-1"></i> Liquidación de Grupos
+                    <i class="fas fa-users text-amber-400 mr-1"></i> LiquidaciÃ³n de Grupos
                 </div>
                 <div class="p-0 max-h-64 overflow-y-auto">
                     <table class="w-full text-left text-xs">
                         <thead class="bg-slate-100 text-slate-600 sticky top-0">
                             <tr>
                                 <th class="p-2 border-b border-slate-200">GRUPO (MONEDA)</th>
-                                <th class="p-2 border-b border-slate-200 text-right">COMISIÓN NETA</th>
+                                <th class="p-2 border-b border-slate-200 text-right">COMISIÃ“N NETA</th>
                             </tr>
                         </thead>
                         <tbody id="cuerpoComisionesGrupos" class="divide-y divide-slate-100 bg-white">
@@ -94,7 +94,7 @@
         <!-- PANEL DERECHO: DETALLE DE TICKETS Y RESULTADOS -->
         <div class="xl:col-span-3 bg-white rounded-lg shadow-sm border border-slate-300 flex flex-col overflow-hidden h-full">
             <div class="bg-[#1e3a8a] text-white p-3 font-bold text-xs uppercase flex justify-between items-center">
-                <span><i class="fas fa-ticket-alt mr-1"></i> Auditoría de Tickets Vendidos</span>
+                <span><i class="fas fa-ticket-alt mr-1"></i> AuditorÃ­a de Tickets Vendidos</span>
                 <span class="bg-blue-800 px-2 py-0.5 rounded text-[10px]">Asigne Ganadores y Perdedores</span>
             </div>
             
@@ -107,12 +107,12 @@
                             <th class="p-2 border-b border-slate-300">JUGADA (EJEMPLAR)</th>
                             <th class="p-2 border-b border-slate-300 text-right">MONTO JUGADO</th>
                             <th class="p-2 border-b border-slate-300 text-right bg-blue-50">PREMIO CALC.</th>
-                            <th class="p-2 border-b border-slate-300 text-right bg-purple-50">COMISIÓN</th>
+                            <th class="p-2 border-b border-slate-300 text-right bg-purple-50">COMISIÃ“N</th>
                             <th class="p-2 border-b border-slate-300 w-32 text-center">RESULTADO</th>
                         </tr>
                     </thead>
                     <tbody id="cuerpoTickets" class="divide-y divide-slate-200 bg-white">
-                        <tr><td colspan="7" class="p-8 text-center text-slate-500 font-bold">Seleccione un Hipódromo y Carrera para evaluar los tickets pendientes.</td></tr>
+                        <tr><td colspan="7" class="p-8 text-center text-slate-500 font-bold">Seleccione un HipÃ³dromo y Carrera para evaluar los tickets pendientes.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -122,12 +122,12 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="../js/components/db.js"></script>
+    <script src="../js/components/db.js?v=20260916-2"></script>
     <script src="../js/components/auth.js"></script>
     <script src="../js/components/ui.js"></script>
     <script src="../js/components/layout.js"></script>
     <script src="../js/conexion.js"></script>
     <script src="../js/components/programa_dia.js?v=20260910-17"></script>
-    <script src="../js/saldos.js?v=20260913-1"></script>
+    <script src="../js/saldos.js?v=20260916-2"></script>
 </body>
 </html>
