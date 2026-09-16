@@ -980,20 +980,30 @@ begin
         update public.grupos_venta set es_principal = false where es_principal = true;
     end if;
 
-    insert into public.grupos_venta
-        (nombre, moneda, moneda_cuadre, es_principal, cupo_tabla, comision_default, responsable, cuenta_bancaria, activo)
-    values
-        (v_nombre, v_moneda, v_moneda_cuadre, v_principal, v_cupo, v_comision, v_responsable, v_cuenta, true)
-    on conflict (nombre) do update set
-        moneda = excluded.moneda,
-        moneda_cuadre = excluded.moneda_cuadre,
-        es_principal = excluded.es_principal,
-        cupo_tabla = excluded.cupo_tabla,
-        comision_default = excluded.comision_default,
-        responsable = excluded.responsable,
-        cuenta_bancaria = excluded.cuenta_bancaria,
-        activo = true
-    returning id into v_id;
+    -- Reutiliza por nombre normalizado (no depende de un unique constraint real)
+    select id into v_id
+    from public.grupos_venta
+    where lower(trim(nombre)) = lower(v_nombre)
+    limit 1;
+
+    if v_id is null then
+        insert into public.grupos_venta
+            (nombre, moneda, moneda_cuadre, es_principal, cupo_tabla, comision_default, responsable, cuenta_bancaria, activo)
+        values
+            (v_nombre, v_moneda, v_moneda_cuadre, v_principal, v_cupo, v_comision, v_responsable, v_cuenta, true)
+        returning id into v_id;
+    else
+        update public.grupos_venta set
+            moneda = v_moneda,
+            moneda_cuadre = v_moneda_cuadre,
+            es_principal = v_principal,
+            cupo_tabla = v_cupo,
+            comision_default = v_comision,
+            responsable = v_responsable,
+            cuenta_bancaria = v_cuenta,
+            activo = true
+        where id = v_id;
+    end if;
 
     return v_id;
 end;

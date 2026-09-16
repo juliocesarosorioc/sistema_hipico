@@ -153,8 +153,8 @@ document.addEventListener('DOMContentLoaded', () => {
         ({ error: error } = await window.supabase.from('grupos_venta').insert([{ ...datos, activo: true }]));
         if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
             // RLS activo: la RPC segura crea el grupo como dueño de la tabla.
-            const { error: errRpc } = await window.supabase.rpc('club_guardar_grupo', { p_datos: datos }).catch(() => ({}));
-            error = errRpc;
+            const { error: errRpc } = await window.supabase.rpc('club_guardar_grupo', { p_datos: datos });
+            error = errRpc || (error && { status: 401, message: 'Permisos bloqueados (RLS). La RPC club_guardar_grupo no respondió.' });
         }
         if (error) {
             if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {
@@ -163,7 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (/número de cuenta inválido/i.test(String(error.message || ''))) {
                 return clubUI.toast(error.message, 'error');
             }
-            return clubUI.toast(error.code === '23505' ? 'Ese grupo ya existe.' : 'Error al crear el grupo.', 'error');
+            return clubUI.toast(error.code === '23505' ? 'Ese grupo ya existe.' : 'Error al crear el grupo: ' + (error.message || error.details || error.code), 'error');
         }
         e.target.reset();
         document.getElementById('monedaGrupo').value = 'USD';
