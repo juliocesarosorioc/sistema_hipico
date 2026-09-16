@@ -193,12 +193,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function filaCaballoCard(c) {
         const vacio = (c && c.nombre) ? '' : 'opacity-70';
         const numColor = colorDeNumero(c?.numero);
+        const nac = (c?.nacionalidad || 'VE').trim().toUpperCase();
         return `
-            <div class="fila-caballo-card bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 ${vacio}" style="display:grid;grid-template-columns:2.5rem 1fr 2.5rem 3.5rem auto;column-gap:0.5rem;align-items:center">
-                <input type="text" inputmode="numeric" class="in-cab-num w-9 h-9 shrink-0 rounded-md px-0 py-px text-center text-[19px] font-black outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar" style="background-color:${numColor};color:${textoDeNumero(c?.numero)};border-color:${numColor}">
-                <input type="text" class="in-cab-nom w-full min-w-0 border border-slate-200 rounded px-1.5 py-0.5 text-sm font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
-                <span style="display:flex;justify-content:center">${htmlSelectNac(c?.nacionalidad)}</span>
-                <input type="text" inputmode="decimal" class="in-cab-valor w-full shrink-0 border border-slate-200 rounded px-1 py-0.5 text-right text-base font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="$" title="Valor / monta del ejemplar">
+            <div class="fila-caballo-card bg-slate-50 border border-slate-200 rounded px-1 py-px ${vacio}" style="display:grid;grid-template-columns:2.25rem 1fr 2rem auto auto;column-gap:0.375rem;align-items:center">
+                <input type="text" inputmode="numeric" title="Número del ejemplar" placeholder="Nº"
+                    class="in-cab-num gac-num w-4 h-5 shrink-0 border rounded px-0 py-px text-center text-[10px] font-black outline-none focus:ring-1 focus:ring-indigo-400"
+                    value="${c?.numero ?? ''}" style="background-color:${numColor};color:${textoDeNumero(c?.numero)};border-color:${numColor}">
+                <input type="text" class="in-cab-nom w-full min-w-0 border border-slate-200 rounded px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
+                <span style="display:flex;justify-content:center">${nac === 'VE' ? '' : htmlSelectNac(c?.nacionalidad)}</span>
+                <input type="text" inputmode="decimal" class="in-cab-valor w-full shrink-0 border border-slate-200 rounded px-1 py-px text-right text-[11px] font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="$" title="Valor / monta del ejemplar">
                 <button type="button" tabindex="-1" class="btn-del-cab-card shrink-0 text-red-400 hover:text-red-600 px-1 leading-none" title="Quitar ejemplar"><i class="fas fa-trash-alt"></i></button>
             </div>`;
     }
