@@ -136,52 +136,72 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     document.getElementById('formGrupo')?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const nombre = document.getElementById('nombreGrupo').value.trim().toUpperCase();
-        if (!nombre) return clubUI.toast('Indique el nombre del grupo.', 'warning');
-        const cuenta = componerCuenta(document.getElementById('bancoGrupo').value, document.getElementById('numeroCuentaGrupo').value);
-        const datos = {
-            nombre: nombre,
-            moneda: document.getElementById('monedaGrupo').value,
-            moneda_cuadre: document.getElementById('monedaCuadreGrupo').value,
-            es_principal: document.getElementById('esPrincipalGrupo').checked,
-            cupo_tabla: parseInt(document.getElementById('cupoGrupo').value) || 100,
-            comision_default: parseFloat(document.getElementById('comisionGrupo').value) || 2.5,
-            responsable: document.getElementById('responsableGrupo').value.trim().toUpperCase() || null,
-            cuenta_bancaria: cuenta
-        };
-        let error;
-        ({ error: error } = await window.supabase.from('grupos_venta').insert([{ ...datos, activo: true }]));
-        if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
-            // RLS activo: la RPC segura crea el grupo como dueño de la tabla.
-            const { error: errRpc } = await window.supabase.rpc('club_guardar_grupo', { p_datos: datos });
-            error = errRpc || (error && { status: 401, message: 'Permisos bloqueados (RLS). La RPC club_guardar_grupo no respondió.' });
-        }
-        if (error) {
-            if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {
-                return clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
+        try {
+            const nombre = document.getElementById('nombreGrupo').value.trim().toUpperCase();
+            if (!nombre) return clubUI.toast('Indique el nombre del grupo.', 'warning');
+            const cuenta = componerCuenta(document.getElementById('bancoGrupo').value, document.getElementById('numeroCuentaGrupo').value);
+            const datos = {
+                nombre: nombre,
+                moneda: document.getElementById('monedaGrupo').value,
+                moneda_cuadre: document.getElementById('monedaCuadreGrupo').value,
+                es_principal: document.getElementById('esPrincipalGrupo').checked,
+                cupo_tabla: parseInt(document.getElementById('cupoGrupo').value) || 100,
+                comision_default: parseFloat(document.getElementById('comisionGrupo').value) || 2.5,
+                responsable: document.getElementById('responsableGrupo').value.trim().toUpperCase() || null,
+                cuenta_bancaria: cuenta
+            };
+            let error;
+            const conTimeout = (p, ms = 20000) => Promise.race([
+                p,
+                new Promise((_, rej) => setTimeout(() => rej(new Error('La consulta a Supabase se quedó colgada (timeout 20s).')), ms))
+            ]);
+            try {
+                ({ error: error } = await conTimeout(window.supabase.from('grupos_venta').insert([{ ...datos, activo: true }])));
+            } catch (errConexion) {
+                error = { message: errConexion.message || String(errConexion), code: 'TIMEOUT' };
             }
-            if (/número de cuenta inválido/i.test(String(error.message || ''))) {
-                return clubUI.toast(error.message, 'error');
+            if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
+                // RLS activo: la RPC segura crea el grupo como dueño de la tabla.
+                try {
+                    const rpcRes = await conTimeout(window.supabase.rpc('club_guardar_grupo', { p_datos: datos }));
+                    error = rpcRes.error;
+                    if (error && /Could not find the function/i.test(String(error.message || ''))) {
+                        error = { status: 401, message: 'Permisos bloqueados (RLS) y la RPC club_guardar_grupo no existe. Ejecute el paquete_pendientes.sql completo en Supabase.' };
+                    }
+                } catch (errRpc) {
+                    error = { message: errRpc.message || String(errRpc), code: 'TIMEOUT' };
+                }
             }
-            return clubUI.toast(error.code === '23505' ? 'Ese grupo ya existe.' : 'Error al crear el grupo: ' + (error.message || error.details || error.code), 'error');
+            if (error) {
+                if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {
+                    return clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
+                }
+                if (/número de cuenta inválido/i.test(String(error.message || ''))) {
+                    return clubUI.toast(error.message, 'error');
+                }
+                return clubUI.toast(error.code === '23505' ? 'Ese grupo ya existe.' : 'Error al crear el grupo: ' + (error.message || error.details || error.code), 'error');
+            }
+            e.target.reset();
+            document.getElementById('monedaGrupo').value = 'USD';
+            document.getElementById('monedaCuadreGrupo').value = 'USD';
+            document.getElementById('cupoGrupo').value = 100;
+            document.getElementById('comisionGrupo').value = 2.5;
+            document.getElementById('bancoGrupo').value = '';
+            document.getElementById('numeroCuentaGrupo').value = '';
+            cargarGrupos();
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `creado: ${nombre} comision=${document.getElementById('comisionGrupo').value || 2.5}`);
+            const principal = document.getElementById('esPrincipalGrupo').checked;
+            clubUI.aviso('Grupo creado',
+                `Grupo "${nombre}" registrado y listo para vender.\n\n` +
+                `· Moneda de venta: ${document.getElementById('monedaGrupo').value}\n` +
+                `· Cupos por tabla: ${document.getElementById('cupoGrupo').value || 100}\n` +
+                `· Convenio tablas fijas: ${document.getElementById('comisionGrupo').value || 2.5}%\n` +
+                `${principal ? '· Marcado como PRINCIPAL' : ''}`,
+                'success');
+        } catch (errInesperado) {
+            console.error('[grupos] Error inesperado creando grupo:', errInesperado);
+            clubUI.toast('Error inesperado: ' + (errInesperado?.message || errInesperado), 'error');
         }
-        e.target.reset();
-        document.getElementById('monedaGrupo').value = 'USD';
-        document.getElementById('monedaCuadreGrupo').value = 'USD';
-        document.getElementById('cupoGrupo').value = 100;
-        document.getElementById('comisionGrupo').value = 2.5;
-        document.getElementById('bancoGrupo').value = '';
-        document.getElementById('numeroCuentaGrupo').value = '';
-        cargarGrupos();
-        if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `creado: ${nombre} comision=${document.getElementById('comisionGrupo').value || 2.5}`);
-        const principal = document.getElementById('esPrincipalGrupo').checked;
-        clubUI.aviso('Grupo creado',
-            `Grupo "${nombre}" registrado y listo para vender.\n\n` +
-            `· Moneda de venta: ${document.getElementById('monedaGrupo').value}\n` +
-            `· Cupos por tabla: ${document.getElementById('cupoGrupo').value || 100}\n` +
-            `· Convenio tablas fijas: ${document.getElementById('comisionGrupo').value || 2.5}%\n` +
-            `${principal ? '· Marcado como PRINCIPAL' : ''}`,
-            'success');
     });
 
     async function toggleGrupo(e) {
