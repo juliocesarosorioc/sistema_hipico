@@ -115,7 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const gridNac = document.getElementById('gridNacionalidades');
         if (gridNac) gridNac.innerHTML = '<p class="text-[11px] text-slate-400 italic">Cargando nacionalidades...</p>';
 
-        const safe = (p) => p.then(r => ({ data: r.data, error: r.error || null })).catch(e => ({ data: null, error: { message: e?.message || String(e) } }));
+        const safe = async (p) => { try { return await p; } catch (e) { return { data: null, error: { message: e?.message || String(e) } }; } };
 
         // Lee el padrón intentando la RPC segura (funciona aunque el RLS de
         // ejemplares esté activo); si la RPC no existe, cae al SELECT directo.

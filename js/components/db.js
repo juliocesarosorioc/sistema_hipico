@@ -36,6 +36,16 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // Utilidades compartidas de base de datos
 // ==========================================
 window.clubDB = {
+    // Llama a una RPC sin romper la app: el builder de supabase-js v2 no
+    // siempre expone .catch, así que se envuelve en try/await.
+    async rpc(nombre, params) {
+        try {
+            return await window.supabase.rpc(nombre, params || {});
+        } catch (e) {
+            return { error: e || {} };
+        }
+    },
+
     // Registra una acción en la tabla de auditoría (requiere función club_log_accion).
     // Si la función aún no existe en la BD, falla en silencio sin romper la app.
     async logAccion(modulo, accion) {

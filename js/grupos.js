@@ -53,6 +53,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     // CARGA DE GRUPOS
     // ==========================================
+    async function rpcSeguro(nombre, params) {
+        try {
+            return await window.supabase.rpc(nombre, params || {});
+        } catch (e) {
+            return { error: e || {} };
+        }
+    }
+
     async function cargarGrupos() {
         let { data, error } = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
         console.log('[grupos] SELECT grupos_venta ->', { data, error });
@@ -62,7 +70,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // filas silenciosamente) o rechazar con 401/permiso. En ambos casos la
             // RPC segura (security definer) lee los grupos aunque el anon no tenga
             // acceso directo a la tabla.
-            const { data: viaRpc, error: errRpc } = await window.supabase.rpc('club_listar_grupos').catch(() => ({}));
+            let viaRpc, errRpc;
+            const resRpc = await rpcSeguro('club_listar_grupos');
+            viaRpc = resRpc.data; errRpc = resRpc.error;
             console.log('[grupos] Fallback club_listar_grupos ->', viaRpc, errRpc);
             if (Array.isArray(viaRpc) && viaRpc.length > 0) {
                 data = viaRpc;
@@ -243,7 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const nuevo = e.currentTarget.dataset.activo === 'false';
         let { error } = await window.supabase.from('grupos_venta').update({ activo: nuevo }).eq('id', id);
         if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
-            ({ error: error } = await window.supabase.rpc('club_toggle_grupo', { p_id: id, p_activo: nuevo }).catch(() => ({})));
+            ({ error: error } = await rpcSeguro('club_toggle_grupo', { p_id: id, p_activo: nuevo }));
         }
         if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
             return clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
@@ -276,7 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) blocked = true;
         }
         if (blocked) {
-            const { error: errRpc } = await window.supabase.rpc('club_eliminar_grupo', { p_id: id }).catch(() => ({}));
+            const { error: errRpc } = await rpcSeguro('club_eliminar_grupo', { p_id: id });
             if (errRpc && (errRpc.status === 401 || /permission|row-level security/i.test(String(errRpc.message || '')))) {
                 return clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
             }
@@ -328,7 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let { error } = await window.supabase.from('grupos_venta').update(datos).eq('id', id);
         if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
             // RLS activo: la RPC segura actualiza como dueño de la tabla.
-            ({ error: error } = await window.supabase.rpc('club_actualizar_grupo', { p_id: id, p_datos: datos }).catch(() => ({})));
+            ({ error: error } = await rpcSeguro('club_actualizar_grupo', { p_id: id, p_datos: datos }));
         }
         if (error) {
             if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {

@@ -11,10 +11,11 @@ window.clubGacetaPadron = (() => {
     // funciona aunque el RLS de ejemplares esté activo); si no existe aún, cae
     // al INSERT directo como antes.
     async function insertarEjemplar(supabase, nombre, nacionalidad) {
-        const rpcId = await supabase
-            .rpc('club_asegurar_ejemplar', { v_nombre: nombre, v_nacionalidad: nacionalidad })
-            .then(r => r.error ? null : r.data)
-            .catch(() => null);
+        let rpcId = null;
+        try {
+            const r = await supabase.rpc('club_asegurar_ejemplar', { v_nombre: nombre, v_nacionalidad: nacionalidad });
+            rpcId = r.error ? null : r.data;
+        } catch (e) { rpcId = null; }
         if (rpcId) return { data: { id: rpcId }, error: null };
 
         const extras = {};
@@ -54,7 +55,7 @@ window.clubGacetaPadron = (() => {
         try {
             // Lee el padrón intentando la RPC segura primero; si no existe, cae al SELECT.
             let data = null;
-            const rpc = await supabase.rpc('club_listar_ejemplares').catch(() => ({ error: true }));
+            const rpc = await (window.clubDB?.rpc ? window.clubDB.rpc('club_listar_ejemplares') : supabase.rpc('club_listar_ejemplares'));
             if (!rpc.error && Array.isArray(rpc.data)) data = rpc.data;
             else {
                 const directo = await supabase.from('ejemplares').select('id, nombre, nacionalidad');

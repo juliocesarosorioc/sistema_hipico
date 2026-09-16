@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     async function inicializar() {
         const logErr = (ctx, e) => console.error(`[venta_tablas] ${ctx}:`, e?.message || e || 'error desconocido');
-        const safe = (p) => p.catch(e => { console.error('[venta_tablas] query failed:', e); return { data: null, error: e }; });
+        const safe = async (p) => { try { return await p; } catch (e) { console.error('[venta_tablas] query failed:', e); return { data: null, error: e }; } };
 
         const [rGrupos, rTablasRaw, rClientes, rMoneda, rMembresias] = await Promise.all([
             safe(window.supabase.from('grupos_venta').select('*').eq('activo', true).order('es_principal', { ascending: false })),
@@ -128,7 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if ((!rGrupos.data || rGrupos.data.length === 0)) {
             // Sin grupos activos: intenta asegurar el PRINCIPAL vía RPC segura
             // (no depende del RLS) antes de dar por vacío el listado.
-            await window.supabase.rpc('club_garantizar_grupo_principal').catch(() => {});
+            await window.clubDB.rpc('club_garantizar_grupo_principal');
             const reG = await safe(window.supabase.from('grupos_venta').select('*').eq('activo', true).order('es_principal', { ascending: false }));
             if (reG.data) rGrupos = reG;
         }
@@ -858,7 +858,7 @@ msgSinCarreras.classList.add('hidden');
     // Recarga liviana de datos (sin reiniciar la página)
     let recargando = false;
     async function inicializarDatosUtiles() {
-        const safe = (p) => p.catch(e => ({ data: null, error: e }));
+        const safe = async (p) => { try { return await p; } catch (e) { return { data: null, error: e }; } };
         const [rTablas, rClientes] = await Promise.all([
             safe(window.supabase.from('tablas_fijas').select('*, tabla_grupos(*)').eq('estado', 'Abierta')),
             safe(window.supabase.from('clientes').select('id, nombre, saldo_actual, aval, libre, modo_juego, grupo_id').order('nombre'))

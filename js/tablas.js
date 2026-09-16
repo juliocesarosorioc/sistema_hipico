@@ -90,7 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
             // Grupos_venta quedó con RLS activo: la RPC segura (security definer)
             // lee los grupos aunque el anon no tiene acceso directo.
-            const { data: viaRpc, error: errRpc } = await window.supabase.rpc('club_listar_grupos').catch(() => ({}));
+            const { data: viaRpc, error: errRpc } = await window.clubDB.rpc('club_listar_grupos');
             if (Array.isArray(viaRpc)) {
                 data = viaRpc;
                 error = null;
@@ -109,12 +109,16 @@ document.addEventListener('DOMContentLoaded', () => {
             // Garantiza siempre el grupo PRINCIPAL (Administrador/Sistema) para publicar.
             // Primero intenta la RPC segura (security definer: funciona aunque el RLS
             // de grupos_venta esté activo); si la RPC no existe aún, cae al INSERT.
-            await window.supabase.rpc('club_garantizar_grupo_principal').catch(() => {});
-            const re = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false }).catch(() => null);
+            await window.clubDB.rpc('club_garantizar_grupo_principal');
+            let re = null;
+            try {
+                re = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
+            } catch (e) { re = null; }
             if (re && Array.isArray(re.data)) {
                 data = re.data;
             } else {
-                const viaRpc2 = await window.supabase.rpc('club_listar_grupos').catch(() => null);
+                const reR = await window.clubDB.rpc('club_listar_grupos');
+                const viaRpc2 = reR;
                 data = Array.isArray(viaRpc2?.data) ? viaRpc2.data : [];
             }
             if (!data || data.length === 0) {
@@ -178,10 +182,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (existe) return existe.id;
         // RPC segura (security definer): funciona aunque el RLS de ejemplares
         // esté activo; si la RPC no existe aún, cae al INSERT directo.
-        const rpcId = await window.supabase
-            .rpc('club_asegurar_ejemplar', { v_nombre: norm, v_nacionalidad: nac })
-            .then(r => r.error ? null : r.data)
-            .catch(() => null);
+        let rpcId = null;
+        try {
+            const r = await window.supabase.rpc('club_asegurar_ejemplar', { v_nombre: norm, v_nacionalidad: nac });
+            rpcId = r.error ? null : r.data;
+        } catch (e) { rpcId = null; }
         if (rpcId) {
             padronEjemplares.push({ id: rpcId, nombre: norm, nacionalidad: nac });
             return rpcId;
@@ -1710,7 +1715,7 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         ({ data, error } = await window.supabase.from('grupos_venta').insert([{ ...datos, activo: true }]).select());
         if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
             // RLS activo: la RPC segura crea el grupo y devuelve su id.
-            const { data: rpcId, error: errRpc } = await window.supabase.rpc('club_guardar_grupo', { p_datos: datos }).catch(() => ({}));
+            const { data: rpcId, error: errRpc } = await window.clubDB.rpc('club_guardar_grupo', { p_datos: datos });
             error = errRpc;
             if (!error && rpcId) data = [{ id: rpcId }];
         }
@@ -1740,7 +1745,7 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         const cliOk = !e1 && (cli || [])[0];
         if (!cliOk) {
             // RLS activo en clientes: la RPC segura crea/reutiliza el jugador en el grupo.
-            const { data: rpcRes, error: errRpc } = await window.supabase.rpc('club_registrar_cliente_grupo', { p_grupo_id: gid, p_nombre: nombre, p_ingreso: 0 }).catch(() => ({}));
+            const { data: rpcRes, error: errRpc } = await window.clubDB.rpc('club_registrar_cliente_grupo', { p_grupo_id: gid, p_nombre: nombre, p_ingreso: 0 });
             e2 = errRpc;
             if (!e2 && rpcRes?.cliente_id) cliNuevo = { id: rpcRes.cliente_id };
             if (!e2 && !cliNuevo) return clubUI.toast('No se pudo crear el jugador.', 'error');
@@ -1753,7 +1758,7 @@ const { error } = await window.supabase.from('tablas_fijas').update({
                 activo: true
             }]);
             if (errAsig && (errAsig.status === 401 || /permission|row-level security/i.test(String(errAsig.message || '')))) {
-                const { error: errRpc } = await window.supabase.rpc('club_registrar_cliente_grupo', { p_grupo_id: gid, p_nombre: nombre, p_ingreso: 0 }).catch(() => ({}));
+                const { error: errRpc } = await window.clubDB.rpc('club_registrar_cliente_grupo', { p_grupo_id: gid, p_nombre: nombre, p_ingreso: 0 });
                 e2 = errRpc;
             } else if (errAsig) {
                 e2 = errAsig;

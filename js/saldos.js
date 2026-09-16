@@ -74,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cuerpoTickets.innerHTML = '<tr><td colspan="7" class="p-4 text-center"><i class="fas fa-spinner fa-spin text-blue-500"></i> Cargando...</td></tr>';
 
         // A+B. Traer tickets pendientes y tablas fijas de la carrera en paralelo
-        const segura = (promesa) => promesa.catch(e => ({ data: null, error: e }));
+        const segura = async (promesa) => { try { return await promesa; } catch (e) { return { data: null, error: e }; } };
         const [rTickets, rTablas] = await Promise.all([
             segura(window.supabase.from('tickets_apuestas')
                 .select('*')

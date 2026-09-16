@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------
     async function inicializarDatos() {
         window.clubIndicador?.accion('Cargando clientes, saldos y jugadas…');
-        const segura = (promesa) => promesa.catch(e => ({ data: null, error: e }));
+        const segura = async (promesa) => { try { return await promesa; } catch (e) { return { data: null, error: e }; } };
         const [rClientes, rJugadas, rTablas, rMoneda, rHipodromos] = await Promise.all([
             segura(window.supabase.from('clientes').select('*').order('nombre')),
             segura(window.supabase.from('tipos_jugadas').select('*').eq('activo', true).order('nombre')),

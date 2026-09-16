@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     async function cargarDatos() {
         // Consultas en paralelo: clientes y bancos no dependen entre sí
-        const segura = (promesa) => promesa.catch(e => ({ data: null, error: e }));
+        const segura = async (promesa) => { try { return await promesa; } catch (e) { return { data: null, error: e }; } };
         const [rClientes, rBancos] = await Promise.all([
             segura(window.supabase.from('clientes').select('id, nombre, saldo_actual, aval').order('nombre')),
             segura(window.supabase.from('bancos').select('id, nombre, moneda_codigo').order('nombre'))
