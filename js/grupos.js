@@ -139,7 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const nombre = document.getElementById('nombreGrupo').value.trim().toUpperCase();
         if (!nombre) return clubUI.toast('Indique el nombre del grupo.', 'warning');
         const cuenta = componerCuenta(document.getElementById('bancoGrupo').value, document.getElementById('numeroCuentaGrupo').value);
-        const { error } = await window.supabase.from('grupos_venta').insert([{
+        const datos = {
             nombre: nombre,
             moneda: document.getElementById('monedaGrupo').value,
             moneda_cuadre: document.getElementById('monedaCuadreGrupo').value,
@@ -148,10 +148,20 @@ document.addEventListener('DOMContentLoaded', () => {
             comision_default: parseFloat(document.getElementById('comisionGrupo').value) || 2.5,
             responsable: document.getElementById('responsableGrupo').value.trim().toUpperCase() || null,
             cuenta_bancaria: cuenta
-        }]);
+        };
+        let error;
+        ({ error: error } = await window.supabase.from('grupos_venta').insert([{ ...datos, activo: true }]));
+        if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
+            // RLS activo: la RPC segura crea el grupo como dueño de la tabla.
+            const { error: errRpc } = await window.supabase.rpc('club_guardar_grupo', { p_datos: datos }).catch(() => ({}));
+            error = errRpc;
+        }
         if (error) {
             if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {
                 return clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
+            }
+            if (/número de cuenta inválido/i.test(String(error.message || ''))) {
+                return clubUI.toast(error.message, 'error');
             }
             return clubUI.toast(error.code === '23505' ? 'Ese grupo ya existe.' : 'Error al crear el grupo.', 'error');
         }
@@ -177,7 +187,13 @@ document.addEventListener('DOMContentLoaded', () => {
     async function toggleGrupo(e) {
         const id = e.currentTarget.dataset.id;
         const nuevo = e.currentTarget.dataset.activo === 'false';
-        await window.supabase.from('grupos_venta').update({ activo: nuevo }).eq('id', id);
+        let { error } = await window.supabase.from('grupos_venta').update({ activo: nuevo }).eq('id', id);
+        if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
+            ({ error: error } = await window.supabase.rpc('club_toggle_grupo', { p_id: id, p_activo: nuevo }).catch(() => ({})));
+        }
+        if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
+            return clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
+        }
         const g = todosGrupos.find(x => x.id == id);
         cargarGrupos();
         if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `grupo_${nuevo ? 'activado' : 'desactivado'}: ${g?.nombre}`);
@@ -192,11 +208,26 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!g) return;
         if (!confirm(`Eliminar el grupo "${g.nombre}"?\nSus clientes pasarán al grupo PRINCIPAL y se perderá su inventario de tablas.`)) return;
         const principal = todosGrupos.find(x => x.es_principal);
+        let blocked = false;
         if (principal && principal.id != id) {
-            await window.supabase.from('clientes').update({ grupo_id: principal.id }).eq('grupo_id', id);
+            let { error } = await window.supabase.from('clientes').update({ grupo_id: principal.id }).eq('grupo_id', id);
+            if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) blocked = true;
         }
-        await window.supabase.from('clientes_grupos').delete().eq('grupo_id', id);
-        await window.supabase.from('grupos_venta').delete().eq('id', id);
+        if (!blocked) {
+            let { error } = await window.supabase.from('clientes_grupos').delete().eq('grupo_id', id);
+            if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) blocked = true;
+        }
+        if (!blocked) {
+            let { error } = await window.supabase.from('grupos_venta').delete().eq('id', id);
+            if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) blocked = true;
+        }
+        if (blocked) {
+            const { error: errRpc } = await window.supabase.rpc('club_eliminar_grupo', { p_id: id }).catch(() => ({}));
+            if (errRpc && (errRpc.status === 401 || /permission|row-level security/i.test(String(errRpc.message || '')))) {
+                return clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
+            }
+            if (errRpc) return clubUI.toast('Error al eliminar el grupo: ' + (errRpc.message || errRpc), 'error');
+        }
         cargarGrupos();
         if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `eliminado: ${g.nombre} (id=${id})`);
         clubUI.aviso('Grupo eliminado', `El grupo "${g.nombre}" fue eliminado. Sus clientes fueron movidos al grupo principal.`, 'warning');
@@ -228,7 +259,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const nombre = document.getElementById('editGrupoNombre').value.trim().toUpperCase();
         const esPrincipal = document.getElementById('editGrupoPrincipal').checked;
         const cuenta = componerCuenta(document.getElementById('editBancoGrupo').value, document.getElementById('editNumeroCuentaGrupo').value);
-        const { error } = await window.supabase.from('grupos_venta').update({
+        const datos = {
             nombre: nombre,
             moneda: document.getElementById('editGrupoMoneda').value,
             moneda_cuadre: document.getElementById('editGrupoMonedaCuadre').value,
@@ -237,8 +268,21 @@ document.addEventListener('DOMContentLoaded', () => {
             responsable: document.getElementById('editGrupoResponsable').value.trim().toUpperCase() || null,
             cuenta_bancaria: cuenta,
             es_principal: esPrincipal
-        }).eq('id', id);
-        if (error) return clubUI.toast('Error al guardar el grupo: ' + error.message, 'error');
+        };
+        let { error } = await window.supabase.from('grupos_venta').update(datos).eq('id', id);
+        if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
+            // RLS activo: la RPC segura actualiza como dueño de la tabla.
+            ({ error: error } = await window.supabase.rpc('club_actualizar_grupo', { p_id: id, p_datos: datos }).catch(() => ({})));
+        }
+        if (error) {
+            if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {
+                return clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
+            }
+            if (/número de cuenta inválido/i.test(String(error.message || ''))) {
+                return clubUI.toast(error.message, 'error');
+            }
+            return clubUI.toast('Error al guardar el grupo: ' + error.message, 'error');
+        }
         if (esPrincipal) {
             await window.supabase.from('grupos_venta').update({ es_principal: false }).neq('id', id).eq('es_principal', true);
         }

@@ -1698,15 +1698,22 @@ const { error } = await window.supabase.from('tablas_fijas').update({
     document.getElementById('btnGuardarGrupoNuevo')?.addEventListener('click', async () => {
         const nombre = document.getElementById('nuevoGrupoNombre').value.trim().toUpperCase();
         if (!nombre) return clubUI.toast('Indique el nombre del grupo.', 'warning');
-        const { data, error } = await window.supabase.from('grupos_venta').insert([{
+        const datos = {
             nombre: nombre,
             moneda: document.getElementById('nuevoGrupoMoneda').value,
             moneda_cuadre: document.getElementById('nuevoGrupoMoneda').value,
             es_principal: false,
-            activo: true,
             cupo_tabla: parseInt(document.getElementById('nuevoGrupoCupo').value) || 100,
             comision_default: parseFloat(document.getElementById('nuevoGrupoComision').value) || 2.5
-        }]).select();
+        };
+        let data = null, error = null;
+        ({ data, error } = await window.supabase.from('grupos_venta').insert([{ ...datos, activo: true }]).select());
+        if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
+            // RLS activo: la RPC segura crea el grupo y devuelve su id.
+            const { data: rpcId, error: errRpc } = await window.supabase.rpc('club_guardar_grupo', { p_datos: datos }).catch(() => ({}));
+            error = errRpc;
+            if (!error && rpcId) data = [{ id: rpcId }];
+        }
         if (error) {
             if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {
                 return clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
@@ -1723,21 +1730,35 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         const nombre = document.getElementById('nuevoJugadorNombre').value.trim().toUpperCase();
         if (!gid) return clubUI.toast('Seleccione primero el grupo.', 'warning');
         if (!nombre) return clubUI.toast('Indique el nombre del jugador.', 'warning');
-        const { data: cli, error: e1 } = await window.supabase.from('clientes').insert([{
+        let cliNuevo = null, e2 = null;
+        ({ data: cli, error: e1 } = await window.supabase.from('clientes').insert([{
             nombre: nombre,
             saldo_actual: 0,
             modo_juego: 'aval',
             libre: false
-        }]).select();
-        if (e1) return clubUI.toast('Error al crear el jugador: ' + e1.message, 'error');
-        const cliNuevo = (cli || [])[0];
-        if (!cliNuevo) return clubUI.toast('No se pudo crear el jugador.', 'error');
-        const { error: e2 } = await window.supabase.from('clientes_grupos').insert([{
-            cliente_id: cliNuevo.id,
-            grupo_id: gid,
-            es_principal: false,
-            activo: true
-        }]);
+        }]).select());
+        const cliOk = !e1 && (cli || [])[0];
+        if (!cliOk) {
+            // RLS activo en clientes: la RPC segura crea/reutiliza el jugador en el grupo.
+            const { data: rpcRes, error: errRpc } = await window.supabase.rpc('club_registrar_cliente_grupo', { p_grupo_id: gid, p_nombre: nombre, p_ingreso: 0 }).catch(() => ({}));
+            e2 = errRpc;
+            if (!e2 && rpcRes?.cliente_id) cliNuevo = { id: rpcRes.cliente_id };
+            if (!e2 && !cliNuevo) return clubUI.toast('No se pudo crear el jugador.', 'error');
+        } else {
+            cliNuevo = cli[0];
+            const { error: errAsig } = await window.supabase.from('clientes_grupos').insert([{
+                cliente_id: cliNuevo.id,
+                grupo_id: gid,
+                es_principal: false,
+                activo: true
+            }]);
+            if (errAsig && (errAsig.status === 401 || /permission|row-level security/i.test(String(errAsig.message || '')))) {
+                const { error: errRpc } = await window.supabase.rpc('club_registrar_cliente_grupo', { p_grupo_id: gid, p_nombre: nombre, p_ingreso: 0 }).catch(() => ({}));
+                e2 = errRpc;
+            } else if (errAsig) {
+                e2 = errAsig;
+            }
+        }
         if (e2) return clubUI.toast('Error al asignar al grupo: ' + e2.message, 'error');
         if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `jugador_creado: ${cliNuevo.id} -> grupo ${gid}`);
         clubUI.toast('Jugador registrado en el grupo.', 'success');

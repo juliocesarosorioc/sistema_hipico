@@ -945,6 +945,187 @@ revoke all on function public.club_listar_grupos() from anon;
 grant execute on function public.club_listar_grupos() to anon;
 
 -- ============================================================
+-- (14.6) RPC SEGURAS: CRUD DE GRUPOS DE VENTA
+--      security definer: corren como dueño de las tablas, así el
+--      anon puede crear/editar/activar/desactivar/eliminar grupos
+--      aunque los_venta quede con RLS activo. Se parametriza con
+--      jsonb para no exponer columnas individuales.
+-- ============================================================
+create or replace function public.club_guardar_grupo(p_datos jsonb)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_id uuid;
+    v_nombre text := upper(trim(coalesce(p_datos->>'nombre', '')));
+    v_moneda text := coalesce(p_datos->>'moneda', 'USD');
+    v_moneda_cuadre text := coalesce(p_datos->>'moneda_cuadre', 'USD');
+    v_principal boolean := coalesce((p_datos->>'es_principal')::boolean, false);
+    v_cupo integer := coalesce((p_datos->>'cupo_tabla')::integer, 100);
+    v_comision numeric := coalesce((p_datos->>'comision_default')::numeric, 2.5);
+    v_responsable text := nullif(upper(trim(coalesce(p_datos->>'responsable', ''))), '');
+    v_cuenta text := nullif(trim(coalesce(p_datos->>'cuenta_bancaria', '')), '');
+begin
+    if v_nombre = '' then
+        raise exception 'Indique el nombre del grupo';
+    end if;
+    if v_cuenta is not null and not public.club_cuenta_bancaria_valida(v_cuenta) then
+        raise exception 'Número de cuenta inválido. Use el formato XXXX-XX-XXXX-XXXX-XX (solo números).';
+    end if;
+
+    -- Un solo PRINCIPAL: limpia el flag antes de asignarlo
+    if v_principal then
+        update public.grupos_venta set es_principal = false where es_principal = true;
+    end if;
+
+    insert into public.grupos_venta
+        (nombre, moneda, moneda_cuadre, es_principal, cupo_tabla, comision_default, responsable, cuenta_bancaria, activo)
+    values
+        (v_nombre, v_moneda, v_moneda_cuadre, v_principal, v_cupo, v_comision, v_responsable, v_cuenta, true)
+    on conflict (nombre) do update set
+        moneda = excluded.moneda,
+        moneda_cuadre = excluded.moneda_cuadre,
+        es_principal = excluded.es_principal,
+        cupo_tabla = excluded.cupo_tabla,
+        comision_default = excluded.comision_default,
+        responsable = excluded.responsable,
+        cuenta_bancaria = excluded.cuenta_bancaria,
+        activo = true
+    returning id into v_id;
+
+    return v_id;
+end;
+$$;
+
+revoke all on function public.club_guardar_grupo(jsonb) from anon;
+grant execute on function public.club_guardar_grupo(jsonb) to anon;
+
+create or replace function public.club_actualizar_grupo(p_id uuid, p_datos jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_nombre text := upper(trim(coalesce(p_datos->>'nombre', '')));
+    v_moneda text := coalesce(p_datos->>'moneda', 'USD');
+    v_moneda_cuadre text := coalesce(p_datos->>'moneda_cuadre', 'USD');
+    v_principal boolean := coalesce((p_datos->>'es_principal')::boolean, false);
+    v_cupo integer := coalesce((p_datos->>'cupo_tabla')::integer, 100);
+    v_comision numeric := coalesce((p_datos->>'comision_default')::numeric, 2.5);
+    v_responsable text := nullif(upper(trim(coalesce(p_datos->>'responsable', ''))), '');
+    v_cuenta text := nullif(trim(coalesce(p_datos->>'cuenta_bancaria', '')), '');
+begin
+    if v_nombre = '' then
+        raise exception 'Indique el nombre del grupo';
+    end if;
+    if v_cuenta is not null and not public.club_cuenta_bancaria_valida(v_cuenta) then
+        raise exception 'Número de cuenta inválido. Use el formato XXXX-XX-XXXX-XXXX-XX (solo números).';
+    end if;
+
+    if v_principal then
+        update public.grupos_venta set es_principal = false where es_principal = true and id <> p_id;
+    end if;
+
+    update public.grupos_venta set
+        nombre = v_nombre,
+        moneda = v_moneda,
+        moneda_cuadre = v_moneda_cuadre,
+        es_principal = v_principal,
+        cupo_tabla = v_cupo,
+        comision_default = v_comision,
+        responsable = v_responsable,
+        cuenta_bancaria = v_cuenta
+    where id = p_id;
+end;
+$$;
+
+revoke all on function public.club_actualizar_grupo(uuid, jsonb) from anon;
+grant execute on function public.club_actualizar_grupo(uuid, jsonb) to anon;
+
+create or replace function public.club_toggle_grupo(p_id uuid, p_activo boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+    update public.grupos_venta set activo = p_activo where id = p_id;
+end;
+$$;
+
+revoke all on function public.club_toggle_grupo(uuid, boolean) from anon;
+grant execute on function public.club_toggle_grupo(uuid, boolean) to anon;
+
+create or replace function public.club_eliminar_grupo(p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_principal uuid;
+begin
+    -- Mueve los clientes del grupo al PRINCIPAL antes de borrar
+    select id into v_principal from public.grupos_venta where es_principal = true and id <> p_id limit 1;
+    if v_principal is not null then
+        update public.clientes set grupo_id = v_principal where grupo_id = p_id;
+    end if;
+    delete from public.clientes_grupos where grupo_id = p_id;
+    delete from public.grupos_venta where id = p_id;
+end;
+$$;
+
+revoke all on function public.club_eliminar_grupo(uuid) from anon;
+grant execute on function public.club_eliminar_grupo(uuid) to anon;
+
+-- ============================================================
+-- (14.7) RPC SEGURA: REGISTRAR JUGADOR EN EL GRUPO (venta rápida)
+--      Añade/actualiza el cliente y su lazo con el grupo, sin
+--      importar el RLS de clientes / clientes_grupos.
+-- ============================================================
+create or replace function public.club_registrar_cliente_grupo(p_grupo_id uuid, p_nombre text, p_ingreso numeric)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_cliente_id uuid;
+    v_nombre text := upper(trim(coalesce(p_nombre, '')));
+begin
+    if v_nombre = '' then
+        raise exception 'Indique el nombre del jugador';
+    end if;
+
+    -- Reutiliza el cliente por nombre (normalizado)
+    select id into v_cliente_id
+    from public.clientes
+    where upper(trim(nombre)) = v_nombre
+    order by created_at asc
+    limit 1;
+
+    if v_cliente_id is null then
+        insert into public.clientes (nombre, grupo_id, saldo_actual, libre, modo_juego, aval)
+        values (v_nombre, p_grupo_id, coalesce(p_ingreso, 0), true, 'cuadre', false)
+        returning id into v_cliente_id;
+    end if;
+
+    insert into public.clientes_grupos (grupo_id, cliente_id)
+    values (p_grupo_id, v_cliente_id)
+    on conflict (grupo_id, cliente_id) do nothing
+    on conflict on constraint clientes_grupos_pkey do nothing;
+
+    return jsonb_build_object('cliente_id', v_cliente_id);
+end;
+$$;
+
+revoke all on function public.club_registrar_cliente_grupo(uuid, text, numeric) from anon;
+grant execute on function public.club_registrar_cliente_grupo(uuid, text, numeric) to anon;
+
+-- ============================================================
 -- (15) REFUERZO FINAL DE PERMISOS (RLS apagado + grants anon)
 --      La app trabaja 100% con la anon key. Si algún script anterior
 --      corrió a medias, o el dashboard re-activó el RLS, el anon
