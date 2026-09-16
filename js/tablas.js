@@ -150,6 +150,17 @@ document.addEventListener('DOMContentLoaded', () => {
     async function resolverEjemplar(nombre, nacionalidad) {
         const norm = (nombre || '').trim().toUpperCase();
         const nac = (nacionalidad || 'VE').trim().toUpperCase();
+        // REGLA ANTI-DUPLICADO: el nombre es la clave perceptible del padrón.
+        // Aunque exista un ejemplar con el MISMO NOMBRE y OTRA nacionalidad
+        // (p. ej. BROTHER WILL/VE y BROTHER WILL/USA), NO se crea un segundo:
+        // se reutiliza el existente y se avisa al usuario.
+        const porNombre = padronEjemplares.find(e => e.nombre.toUpperCase() === norm);
+        if (porNombre) {
+            if (porNombre.nacionalidad.toUpperCase() !== nac) {
+                clubUI.toast(`El ejemplar "${norm}" ya está registrado como ${porNombre.nacionalidad.toUpperCase()}. No se crea otro.`, 'warning');
+            }
+            return porNombre.id;
+        }
         const existe = padronEjemplares.find(e => e.nombre.toUpperCase() === norm && e.nacionalidad.toUpperCase() === nac);
         if (existe) return existe.id;
         // RPC segura (security definer): funciona aunque el RLS de ejemplares

@@ -19,15 +19,33 @@ document.addEventListener('DOMContentLoaded', () => {
         // se compara SOLO con la nacionalidad exacta y nunca con el nombre:
         // evita que "BROTHER" o "CHIEF BRADY" (subcadena "BR") pasen siendo VE.
         const bandera = (nac) => window.clubUI?.bandera ? window.clubUI.bandera(nac) : (nac || 'VE');
-        const CODIGOS_ISO = new Set(['VE', 'USA', 'BR', 'AR', 'CL', 'MX', 'PA', 'PE', 'CO', 'EC', 'UY']);
-        const esCodigoISO = f.length > 0 && f.length <= 3 && CODIGOS_ISO.has(f);
+        // Códigos ISO (2-3 letras) Y nombres de países en español ("PANAMA", "PANAMÁ",
+        // "PAN", "BRASIL/BRAZIL", "MEXICO", "USA/ESTADOS UNIDOS"...): si el término
+        // coincide con un país, se filtra SOLO por la nacionalidad exacta y JAMÁS por
+        // subcadena en el nombre — evita que "PANPURA" (VE) pase al buscar "PANAMA".
+        const NOMBRES_PAIS = {
+            VE: new Set(['VE', 'VENEZUELA', 'VEN']),
+            USA: new Set(['USA', 'US', 'EEUU', 'ESTADOS UNIDOS', 'EUA']),
+            BR: new Set(['BR', 'BRA', 'BRASIL', 'BRAZIL']),
+            AR: new Set(['AR', 'ARG', 'ARGENTINA']),
+            CL: new Set(['CL', 'CHILE']),
+            MX: new Set(['MX', 'MEX', 'MEXICO']),
+            PA: new Set(['PA', 'PAN', 'PANAMA', 'PANAMÁ']),
+            PE: new Set(['PE', 'PER', 'PERU', 'PERÚ']),
+            CO: new Set(['CO', 'COL', 'COLOMBIA']),
+            EC: new Set(['EC', 'ECU', 'ECUADOR']),
+            UY: new Set(['UY', 'URU', 'URUGUAY'])
+        };
+        let nacExacta = ''; // nacionalidad que el término representa (si es un país)
+        if (f) {
+            for (const [cod, sinonimos] of Object.entries(NOMBRES_PAIS)) {
+                if (sinonimos.has(f)) { nacExacta = cod; break; }
+            }
+        }
         const filas = padronCompleto
             .filter(e => {
                 if (!f) return true;
-                // Clic en bandera → el filtro es el código ISO (p. ej. "BR").
-                // DEBE comparar solo la nacionalidad exacta, NUNCA el nombre:
-                // evita que "BROTHER WILL" / "CHIEF BRADY" (contienen "BR") pasen siendo VE.
-                if (esCodigoISO) return (e.nacionalidad || 'VE').toUpperCase() === f;
+                if (nacExacta) return (e.nacionalidad || 'VE').toUpperCase() === nacExacta;
                 return (e.nombre || '').toUpperCase().includes(f) || (e.nacionalidad || '').toUpperCase().includes(f);
             })
             .sort((a, b) => b.totalTablas - a.totalTablas || (a.nombre > b.nombre ? 1 : -1));
