@@ -745,6 +745,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function abrirModalEditar(id) {
         const tabla = datosTablaCompleta.find(t => t.id == id);
         if (!tabla) return;
+        const simb = tabla.moneda === 'VES' ? 'Bs ' : '$';
+        document.getElementById('editTablaHipo').textContent = tabla.hipodromo || '-';
+        document.getElementById('editTablaCarrera').textContent = tabla.carrera ?? '-';
+        document.getElementById('editTablaDist').textContent = tabla.distancia_carrera ?? '-';
+        document.getElementById('editTablaSup').textContent = (tabla.superficie || 'ARENA').toUpperCase();
+        const montoEl = document.getElementById('editTablaMonto');
+        montoEl.dataset.simb = simb;
+        montoEl.textContent = `${simb}${clubUI.formatoNumero(parseFloat(tabla.premio_recalculado) || 0, 0)}`;
         document.getElementById('editId').value = id;
         document.getElementById('editPremio').value = (tabla.premio_recalculado ?? 100);
         document.getElementById('editPremioOrig').value = (tabla.premio_original ?? tabla.premio_recalculado ?? 100);
@@ -795,6 +803,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.getElementById('modalEditar').classList.remove('hidden');
     }
+
+    document.getElementById('editPremio')?.addEventListener('input', () => {
+        const montoEl = document.getElementById('editTablaMonto');
+        if (!montoEl) return;
+        const v = aNum(document.getElementById('editPremio').value);
+        montoEl.textContent = `${montoEl.dataset.simb || '$'}${clubUI.formatoNumero(v || 0, 0)}`;
+    });
 
     document.getElementById('btnAgregarGrupoEditar')?.addEventListener('click', () => {
         const gid = document.getElementById('nuevoGrupoEditar').value;
