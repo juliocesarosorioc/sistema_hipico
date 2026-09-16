@@ -304,5 +304,14 @@ window.clubUI = (() => {
         return '';
     }
 
-    return { toast, aviso, paginar, BANCOS_VZLA, PAISES_TELEFONO, METODOS_PAGO, listMetodosPago, esBancoVzla, htmlOpcionesBancosVzla, formatoNumero, formatoMoneda, bandera, componerTelefono, desglosarTelefono, htmlOpcionesCodigoPais, htmlOpcionesMetodos, resumenDatosPago };
+    // Número de cuenta: solo números, máx 16 dígitos, formato XXXX-XX-XXXX-XXXX-XX
+    function formatearCuenta(num) {
+        const d = String(num || '').replace(/[^\d]/g, '').slice(0, 16);
+        if (!d) return '';
+        const grupos = [d.slice(0, 4), d.slice(4, 6), d.slice(6, 10), d.slice(10, 14), d.slice(14, 16)]
+            .filter(Boolean);
+        return grupos.join('-');
+    }
+
+    return { toast, aviso, paginar, BANCOS_VZLA, PAISES_TELEFONO, METODOS_PAGO, listMetodosPago, esBancoVzla, htmlOpcionesBancosVzla, formatoNumero, formatoMoneda, bandera, componerTelefono, desglosarTelefono, htmlOpcionesCodigoPais, htmlOpcionesMetodos, resumenDatosPago, formatearCuenta };
 })();

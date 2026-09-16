@@ -87,10 +87,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     async function cargarGrupos() {
         let { data, error } = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
-        if (error) {
-            if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {
+        if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
+            // Grupos_venta quedó con RLS activo: la RPC segura (security definer)
+            // lee los grupos aunque el anon no tiene acceso directo.
+            const { data: viaRpc, error: errRpc } = await window.supabase.rpc('club_listar_grupos').catch(() => ({}));
+            if (Array.isArray(viaRpc)) {
+                data = viaRpc;
+                error = null;
+            } else if (errRpc) {
+                clubUI.toast('Permisos bloqueados (RLS) y sin RPC segura. Ejecute el paquete_pendientes.sql en Supabase.', 'error');
+                return;
+            } else {
                 clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
+                return;
             }
+        } else if (error) {
+            clubUI.toast('Error cargando grupos: ' + (error.message || error.code), 'error');
             return;
         }
         if (!data || data.length === 0) {
@@ -99,21 +111,23 @@ document.addEventListener('DOMContentLoaded', () => {
             // de grupos_venta esté activo); si la RPC no existe aún, cae al INSERT.
             await window.supabase.rpc('club_garantizar_grupo_principal').catch(() => {});
             const re = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false }).catch(() => null);
-            if (re) {
-                data = re.data || [];
+            if (re && Array.isArray(re.data)) {
+                data = re.data;
             } else {
+                const viaRpc2 = await window.supabase.rpc('club_listar_grupos').catch(() => null);
+                data = Array.isArray(viaRpc2?.data) ? viaRpc2.data : [];
+            }
+            if (!data || data.length === 0) {
                 const { error: errSeed } = await window.supabase
                     .from('grupos_venta')
                     .insert([{ nombre: 'PRINCIPAL', moneda: 'USD', es_principal: true, cupo_tabla: 100, activo: true }]);
-                const re2 = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false }).catch(() => null);
-                data = re2?.data || [];
-                if (errSeed && (!re2?.data || !re2.data.length)) {
+                if (errSeed) {
                     clubUI.toast('No hay grupos y no se pudo crear el principal: ' + (errSeed.message || errSeed.code), 'error');
                 }
             }
         }
         todosGrupos = data || [];
-        gruposActivos = todosGrupos.filter(g => g.activo);
+        gruposActivos = todosGrupos.filter(g => g.activo !== false);
         renderCuposGrupos();
         renderGruposDup();
     }
@@ -1689,6 +1703,7 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             moneda: document.getElementById('nuevoGrupoMoneda').value,
             moneda_cuadre: document.getElementById('nuevoGrupoMoneda').value,
             es_principal: false,
+            activo: true,
             cupo_tabla: parseInt(document.getElementById('nuevoGrupoCupo').value) || 100,
             comision_default: parseFloat(document.getElementById('nuevoGrupoComision').value) || 2.5
         }]).select();

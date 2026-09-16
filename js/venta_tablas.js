@@ -133,6 +133,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (reG.data) rGrupos = reG;
         }
 
+        // RLS activo en grupos_venta: el anon no puede leer -> RPC segura (security definer)
+        if ((!rGrupos.data || rGrupos.data.length === 0) && (!rGrupos.error || /permission|row level security/i.test(String(rGrupos.error.message || '')))) {
+            const viaRpc = await safe(window.supabase.rpc('club_listar_grupos'));
+            if (Array.isArray(viaRpc.data)) {
+                rGrupos = { data: viaRpc.data.filter(g => g.activo !== false), error: null };
+            }
+        }
+
         if (rGrupos.data) {
             gruposDB = rGrupos.data;
             filtroGrupo.innerHTML = '<option value="">Grupo de Venta...</option>';

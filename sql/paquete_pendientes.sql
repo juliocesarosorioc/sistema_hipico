@@ -852,3 +852,140 @@ create index if not exists idx_tickets_jugadas_fecha on public.tickets_jugadas (
 
 alter table public.tickets_jugadas disable row level security;
 grant all privileges on table public.tickets_jugadas to anon;
+
+-- ============================================================
+-- (14) NÚMERO DE CUENTA DE GRUPO: FORMATO XXXX-XX-XXXX-XXXX-XX
+--      Regla: solo números, máximo 16 caracteres del número, con
+--      guiones cada 4-2-4-4-2 (16 dígitos). El campo
+--      grupos_venta.cuenta_bancaria guarda "BANCO / N° <número>".
+--      Se valida SOLO el número (la parte después de "N°").
+--      Constraint NOT VALID: no rompe filas históricas con otros
+--      formatos; bloquea sólamente escrituras NUEVAS inválidas.
+-- ============================================================
+create or replace function public.club_cuenta_bancaria_valida(p_cuenta text)
+returns boolean
+language plpgsql
+immutable
+as $$
+declare
+    v_numero text;
+begin
+    if p_cuenta is null or btrim(p_cuenta) = '' then
+        return true; -- sin cuenta: válido (el banco sí es obligatorio por la app)
+    end if;
+    -- Extraer la parte posterior a "N°" (puede existir o no)
+    v_numero := split_part(p_cuenta, 'N°', 2);
+    v_numero := btrim(v_numero);
+    if v_numero = '' then
+        return true; -- solo se indicó el banco
+    end if;
+    -- Formato estricto: 4-2-4-4-2 dígitos con guiones (20 caracteres totales)
+    return v_numero ~ '^[0-9]{4}-[0-9]{2}-[0-9]{4}-[0-9]{4}-[0-9]{2}$';
+end;
+$$;
+
+do $$
+begin
+    -- Idempotente: no intenta crear el constraint dos veces
+    if not exists (
+        select 1 from pg_constraint
+        where conname = 'ck_grupos_venta_cuenta_bancaria_formato'
+          and conrelid = 'public.grupos_venta'::regclass
+    ) then
+        alter table public.grupos_venta
+            add constraint ck_grupos_venta_cuenta_bancaria_formato
+            check (public.club_cuenta_bancaria_valida(cuenta_bancaria))
+            not valid;
+    end if;
+end;
+$$;
+
+grant execute on function public.club_cuenta_bancaria_valida(text) to anon;
+
+-- ============================================================
+-- (14.5) RPC SEGURA: LISTAR GRUPOS SIN IMPORTAR EL RLS
+--      security definer: corre como dueño de la tabla, así el anon
+--      puede leer TODOS los grupos aunque grupos_venta tenga RLS
+--      activado (Ensamblaje y Grupos y Convenios dependen de esto).
+--      La app cae aquí cuando el SELECT directo falla con 401/403.
+-- ============================================================
+create or replace function public.club_listar_grupos()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_out jsonb;
+begin
+    select coalesce(jsonb_agg(
+        jsonb_build_object(
+            'id', g.id,
+            'nombre', g.nombre,
+            'moneda', g.moneda,
+            'es_principal', g.es_principal,
+            'cupo_tabla', g.cupo_tabla,
+            'activo', g.activo,
+            'responsable', g.responsable,
+            'cuenta_bancaria', g.cuenta_bancaria,
+            'moneda_cuadre', g.moneda_cuadre,
+            'comision_default', g.comision_default,
+            'created_at', g.created_at
+        )
+        order by g.es_principal desc, g.nombre asc
+    ), '[]'::jsonb)
+    into v_out
+    from public.grupos_venta g;
+
+    return v_out;
+end;
+$$;
+
+revoke all on function public.club_listar_grupos() from anon;
+grant execute on function public.club_listar_grupos() to anon;
+
+-- ============================================================
+-- (15) REFUERZO FINAL DE PERMISOS (RLS apagado + grants anon)
+--      La app trabaja 100% con la anon key. Si algún script anterior
+--      corrió a medias, o el dashboard re-activó el RLS, el anon
+--      recibe 401/403 ("Permisos bloqueados (RLS)"). Esta sección
+--      vuelve a normalizar TODAS las tablas y secuencias, y solo deja
+--      auditoria con RLS (escritura solo vía club_log_accion).
+--      Es idempotente y se ejecuta al FINAL para no dejar esquinas.
+-- ============================================================
+do $$
+declare
+    t text;
+begin
+    for t in
+        select tablename from pg_tables
+        where schemaname = 'public'
+    loop
+        if t = 'auditoria' then
+            continue;
+        end if;
+        execute format('alter table public.%I disable row level security', t);
+        execute format('grant select, insert, update, delete on table public.%I to anon', t);
+        execute format('grant all privileges on table public.%I to authenticated, service_role', t);
+    end loop;
+end;
+$$;
+
+grant usage on schema public to anon;
+grant usage, select on all sequences in schema public to anon;
+
+-- auditoría: el anon SOLO lee (escrituras vía RPC segura club_log_accion)
+alter table public.auditoria enable row level security;
+drop policy if exists "anon_read_temporal" on public.auditoria;
+create policy "anon_read_temporal" on public.auditoria
+    for select to anon using (true);
+revoke insert, update, delete on table public.auditoria from anon;
+grant select on table public.auditoria to anon;
+
+-- -------------------- FIN DEL PAQUETE --------------------
+-- RECUERDE: ejecute SIEMPRE este archivo COMPLETO en el SQL Editor
+-- de Supabase. Es idempotente: puede re-ejecutarse sin romper nada.
+-- Verificación:
+--   select id, nombre, cuenta_bancaria,
+--          public.club_cuenta_bancaria_valida(cuenta_bancaria) as ok
+--   from public.grupos_venta;

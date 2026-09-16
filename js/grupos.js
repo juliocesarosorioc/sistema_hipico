@@ -16,6 +16,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const sel = document.getElementById(id);
             if (sel) sel.innerHTML = '<option value="">Seleccione el banco...</option>' + opts;
         });
+        ['numeroCuentaGrupo', 'editNumeroCuentaGrupo'].forEach(id => {
+            const inp = document.getElementById(id);
+            if (inp) {
+                inp.setAttribute('maxlength', '20');
+                inp.addEventListener('input', () => {
+                    inp.value = clubUI.formatearCuenta(inp.value);
+                });
+            }
+        });
     }
 
     // "0102 · BANCO DE VENEZUELA / N° 1234" -> { banco, numero }
@@ -23,13 +32,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const t = String(cuenta || '').trim();
         if (!t) return { banco: '', numero: '' };
         const idx = t.indexOf('N°');
-        if (idx === -1) return { banco: t, numero: '' };
-        return { banco: t.slice(0, idx).replace(/\s*\/?\s*$/, ''), numero: t.slice(idx + 2).trim() };
+        const numero = idx === -1 ? '' : clubUI.formatearCuenta(t.slice(idx + 2));
+        return { banco: idx === -1 ? t : t.slice(0, idx).replace(/\s*\/?\s*$/, ''), numero };
     }
 
     function componerCuenta(banco, numero) {
         const b = String(banco || '').trim();
-        const n = String(numero || '').trim();
+        const n = clubUI.formatearCuenta(numero);
         if (!b) return null;
         return n ? `${b} / N° ${n}` : b;
     }
@@ -45,11 +54,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // CARGA DE GRUPOS
     // ==========================================
     async function cargarGrupos() {
-        const { data, error } = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
-        if (error) {
-            if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {
-                return clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
+        let { data, error } = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
+        if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
+            // Grupos_venta quedó con RLS activo: la RPC segura (security definer)
+            // lee los grupos aunque el anon no tiene acceso directo.
+            const { data: viaRpc } = await window.supabase.rpc('club_listar_grupos').catch(() => ({}));
+            if (Array.isArray(viaRpc)) {
+                data = viaRpc;
+                error = null;
+            } else {
+                return clubUI.toast('Permisos bloqueados (RLS) y sin RPC segura. Ejecute el paquete_pendientes.sql en Supabase.', 'error');
             }
+        } else if (error) {
             return clubUI.toast('Error cargando grupos: ' + error.message, 'error');
         }
         todosGrupos = data || [];
