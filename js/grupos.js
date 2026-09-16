@@ -62,13 +62,22 @@ document.addEventListener('DOMContentLoaded', () => {
             // filas silenciosamente) o rechazar con 401/permiso. En ambos casos la
             // RPC segura (security definer) lee los grupos aunque el anon no tenga
             // acceso directo a la tabla.
-            const { data: viaRpc } = await window.supabase.rpc('club_listar_grupos').catch(() => ({}));
-            console.log('[grupos] Fallback club_listar_grupos ->', viaRpc);
+            const { data: viaRpc, error: errRpc } = await window.supabase.rpc('club_listar_grupos').catch(() => ({}));
+            console.log('[grupos] Fallback club_listar_grupos ->', viaRpc, errRpc);
             if (Array.isArray(viaRpc) && viaRpc.length > 0) {
                 data = viaRpc;
                 error = null;
-            } else if (bloqueadoRLS) {
-                return clubUI.toast('Permisos bloqueados (RLS) y sin RPC segura. Ejecute el paquete_pendientes.sql en Supabase.', 'error');
+            } else {
+                const rpcNoExiste = /Could not find the function|does not exist/i.test(String(errRpc?.message || ''));
+                if (bloqueadoRLS || rpcNoExiste || (!error && data && data.length === 0)) {
+                    return clubUI.aviso('Grupos no accesibles',
+                        'El SELECT directo no devolvió datos y la RPC segura club_listar_grupos no está disponible.\n\n' +
+                        'Ejecute el archivo SQL en Supabase (SQL Editor) y vuelva a entrar:\n' +
+                        '1. Abra Diagnóstico → botón "Copiar SQL".\n' +
+                        '2. Péguelo en el SQL Editor de https://supabase.com/dashboard.\n' +
+                        '3. Ejecute y luego recargue esta página (F5).',
+                        'error');
+                }
             }
         } else if (error) {
             return clubUI.toast('Error cargando grupos: ' + error.message, 'error');
