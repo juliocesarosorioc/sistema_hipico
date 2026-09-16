@@ -697,22 +697,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${filasSala}
                     </div>
 
-                    <div class="px-3 py-1.5 border-t border-slate-100 bg-white flex items-center justify-between">
-                        <span class="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-slate-400">
-                            <i class="fas fa-calculator text-indigo-400"></i> Suma de la Tabla
+                    <div class="px-3 py-1.5 border-t border-slate-100 bg-white flex items-center justify-between gap-2">
+                        <span class="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-400">
+                            <button type="button" class="btn-editar-mon inline-flex items-center justify-center w-6 h-6 bg-indigo-100 hover:bg-indigo-200 text-indigo-600 rounded-md text-[10px] transition-colors" data-id="${t.id}" title="Editar premio, valores y cupos"><i class="fas fa-edit"></i></button>
+                            <i class="fas fa-calculator text-indigo-300"></i> Suma de la Tabla
                         </span>
-                        <span class="font-black text-lg text-indigo-700" title="Sumatoria de la tabla">$ ${clubUI.formatoNumero(suma, 0)}</span>
-                    </div>
-
-                    <div class="px-3 py-2 border-t border-slate-200 flex gap-2 bg-white">
-                        <button type="button" class="btn-editar-mon bg-slate-200 hover:bg-slate-300 text-slate-700 flex-1 text-xs font-bold py-2 rounded-lg transition-colors" data-id="${t.id}" title="Editar premio, valores y cupos"><i class="fas fa-edit mr-1"></i> Editar</button>
-                        ${t.estado === 'Abierta' ? `<button type="button" class="btn-vender-mon bg-emerald-600 hover:bg-emerald-700 text-white flex-1 text-xs font-black py-2 rounded-lg transition-colors uppercase" data-id="${t.id}" title="Vender en la taquilla"><i class="fas fa-cash-register mr-1"></i> Vender</button>` : ''}
+                        <span class="text-[10px] font-semibold text-indigo-200" title="Sumatoria de la tabla">$ ${clubUI.formatoNumero(suma, 0)}</span>
                     </div>
                 </div>`;
             }).join('');
 
             contenedorMon.querySelectorAll('.btn-editar-mon').forEach(b => b.addEventListener('click', () => abrirModalEditar(b.dataset.id)));
-            contenedorMon.querySelectorAll('.btn-vender-mon').forEach(b => b.addEventListener('click', () => abrirModalVenta(b.dataset.id)));
             contenedorMon.querySelectorAll('[data-ejemplar-idx]').forEach(f => {
                 f.addEventListener('click', () => {
                     const tablaId = f.dataset.tablaId;
