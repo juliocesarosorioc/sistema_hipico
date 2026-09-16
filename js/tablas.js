@@ -655,7 +655,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const simb = t.moneda === 'VES' ? 'Bs ' : '$';
 
                 const filasSala = ejemplares.length
-                    ? `<div class="space-y-1">${ejemplares.map((c, idx) => {
+                    ? `<div class="space-y-px">${ejemplares.map((c, idx) => {
                         const bg = colorDeNumero(c.numero);
                         const fg = textoDeNumero(c.numero);
                         const retirado = !!c.retirado;
@@ -666,7 +666,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 class="gac-num w-4 h-5 shrink-0 border rounded px-0 py-px text-center text-[10px] font-black outline-none focus:ring-1 focus:ring-indigo-400"
                                 value="${c.numero ?? ''}" style="background-color:${bg};color:${fg};border-color:${bg}">
                             <span class="min-w-0 truncate text-[10px] font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
-                            <span style="display:flex;justify-content:center">${htmlSelectNac(c.nacionalidad)}</span>
+<span style="display:flex;justify-content:center">${((c.nacionalidad || 'VE').trim().toUpperCase() === 'VE') ? '' : htmlSelectNac(c.nacionalidad)}</span>
                             <span class="text-right text-[11px] font-black whitespace-nowrap ${c.retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${c.retirado ? 'RET.' : clubUI.formatoNumero(valor, 0)}</span>
                         </div>`;
                     }).join('')}</div>`
