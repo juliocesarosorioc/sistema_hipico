@@ -209,27 +209,27 @@ document.addEventListener('DOMContentLoaded', () => {
         card.className = 'card-carrera bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden flex flex-col';
         card.dataset.uid = uid;
         card.innerHTML = `
-            <div class="bg-indigo-600 px-3 py-1.5" style="color:#fff">
-                <div class="flex items-center justify-between gap-2">
-                    <input type="text" class="in-hipo-card rounded px-2 py-0.5 text-xs font-bold uppercase outline-none flex-1 min-w-0" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.hipodromo ?? ''}" placeholder="Hipódromo">
-                    <span class="font-black text-sm whitespace-nowrap"><i class="fas fa-flag-checkered mr-1"></i>C
-                        <input type="number" class="in-carrera-card w-8 rounded px-1 py-0.5 text-center font-black outline-none" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.carrera ?? ''}" placeholder="N°">
+            <div class="bg-indigo-600 px-1.5 py-px" style="color:#fff">
+                <div class="flex items-center justify-between gap-1 leading-none">
+                    <input type="text" class="in-hipo-card rounded px-1.5 py-px text-[11px] font-bold uppercase outline-none flex-1 min-w-0" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.hipodromo ?? ''}" placeholder="Hipódromo">
+                    <span class="font-black text-xs whitespace-nowrap leading-none"><i class="fas fa-flag-checkered mr-1"></i>C
+                        <input type="number" class="in-carrera-card w-7 rounded px-1 py-px text-center font-black outline-none" style="background:rgba(255,255,255,.18);color:#fff" value="${opts?.carrera ?? ''}" placeholder="N°">
                     </span>
                 </div>
-                <div class="flex flex-wrap gap-1 mt-1 text-[11px] font-bold items-center">
-                    <span class="rounded px-1.5 py-0.5" style="background:rgba(255,255,255,.18)">Dist: <input type="number" class="in-dist-card w-12 outline-none text-center font-black" style="background:transparent;color:#fff" value="${opts?.distancia ?? ''}" placeholder="m"></span>
-                    <select class="in-sup-card rounded px-1 py-0.5 outline-none uppercase text-[11px] font-bold" style="background:rgba(255,255,255,.18)">
+                <div class="flex flex-wrap gap-1 mt-0.5 text-[9px] font-bold items-center leading-none">
+                    <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)">Dist: <input type="number" class="in-dist-card w-10 outline-none text-center font-black" style="background:transparent;color:#fff" value="${opts?.distancia ?? ''}" placeholder="m"></span>
+                    <select class="in-sup-card rounded px-1 py-px outline-none uppercase text-[9px] font-bold" style="background:rgba(255,255,255,.18)">
                         ${SUPERFICIES.map(s => `<option value="${s}" ${(opts?.superficie || '').toUpperCase() === s ? 'selected' : ''}>${s}</option>`).join('')}
                     </select>
                 </div>
-                <div class="mt-1.5 flex items-center justify-between rounded-lg px-3 py-1.5" style="background:rgba(255,255,255,.20)">
-                    <span class="text-xs font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-1"></i> Monto a Pagar / Tabla</span>
-                    <span class="flex items-center gap-0.5 font-black text-xl" style="color:#fff">$<input type="number" step="0.01" class="in-premio-card w-16 bg-transparent outline-none text-right font-black" style="color:#fff;border-bottom:2px solid rgba(255,255,255,.5)" value="${opts?.premio ?? premioTabla.value ?? 100}"></span>
+                <div class="mt-0.5 flex items-center justify-between rounded px-1.5 py-px leading-none" style="background:rgba(255,255,255,.20)">
+                    <span class="text-[8px] font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-1"></i> Monto a Pagar / Tabla</span>
+                    <span class="flex items-center gap-0.5 font-black text-sm leading-none" style="color:#fff">$<input type="number" step="0.01" class="in-premio-card w-14 bg-transparent outline-none text-right font-black" style="color:#fff;border-bottom:1px solid rgba(255,255,255,.5)" value="${opts?.premio ?? premioTabla.value ?? 100}"></span>
                 </div>
             </div>
-            <div class="px-3 pt-2 pb-1 text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+            <div class="px-1.5 pt-1 pb-0.5 text-[9px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between leading-none">
                 <span><i class="fas fa-horse-head text-amber-500 mr-1"></i> Ejemplares</span>
-                <span class="cont-caballos-card bg-slate-100 text-slate-600 px-2 rounded-full font-black">0</span>
+                <span class="cont-caballos-card bg-slate-100 text-slate-600 px-1.5 rounded-full font-black text-[9px]">0</span>
             </div>
             <div class="lista-caballos-card px-1.5 py-1 space-y-1 flex-1"></div>
             <div class="add-caballo-card border-t border-slate-200 px-2 py-1.5 space-y-1 bg-slate-50">
@@ -243,11 +243,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button type="button" tabindex="-1" class="btn-add-caballo-card bg-indigo-600 hover:bg-indigo-700 text-white rounded-md px-2 py-1 text-xs" title="Añadir ejemplar"><i class="fas fa-plus"></i></button>
                 </div>
             </div>
-            <div class="px-3 py-1.5 border-t border-slate-200 bg-white flex items-center justify-between">
-                <span class="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-slate-400">
+            <div class="px-1.5 py-0.5 border-t border-slate-200 bg-white flex items-center justify-between">
+                <span class="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none">
                     <i class="fas fa-calculator text-indigo-400"></i> Suma de la Tabla
                 </span>
-                <span class="suma-tabla-card font-black text-base text-indigo-700" title="Sumatoria de los valores de todos los ejemplares">$ 0</span>
+                <span class="suma-tabla-card font-black text-xs text-indigo-700" title="Sumatoria de los valores de todos los ejemplares">$ 0</span>
             </div>
             <div class="px-3 py-2 border-t border-slate-200 flex gap-2 bg-white">
                 <button type="button" class="btn-publicar-card flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black py-2 rounded-lg shadow transition-colors uppercase tracking-wide">
