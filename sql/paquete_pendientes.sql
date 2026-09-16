@@ -1115,8 +1115,7 @@ begin
 
     insert into public.clientes_grupos (grupo_id, cliente_id)
     values (p_grupo_id, v_cliente_id)
-    on conflict (grupo_id, cliente_id) do nothing
-    on conflict on constraint clientes_grupos_pkey do nothing;
+    on conflict do nothing;
 
     return jsonb_build_object('cliente_id', v_cliente_id);
 end;
