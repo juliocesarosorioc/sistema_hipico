@@ -661,6 +661,50 @@ revoke all on function public.club_garantizar_grupo_principal() from anon;
 grant execute on function public.club_garantizar_grupo_principal() to anon;
 
 -- ============================================================
+-- (9.5b) RPC SEGURA: GARANTIZAR INVENTARIO tabla_grupos
+--      security definer: cuando la tabla no tiene grupos
+--      asignados (RLS activo / venta rápida sin grupos), crea
+--      la fila de inventario (tabla_id, grupo_id) con los cupos
+--      del grupo y devuelve su id. Si ya existe, no la modifica.
+--      Habilita "Enviar al carrito" desde el modal Ejemplar.
+-- ============================================================
+create or replace function public.club_garantizar_grupo_tabla(p_tabla_id bigint, p_grupo_id uuid, p_cupos int default 100)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_id   uuid;
+    v_cupo int := greatest(coalesce(p_cupos, 100), 0);
+begin
+    select id into v_id
+    from public.tabla_grupos
+    where tabla_id = p_tabla_id and grupo_id = p_grupo_id
+    limit 1;
+
+    if v_id is null then
+        insert into public.tabla_grupos (tabla_id, grupo_id, cupos, cantidad_vendida)
+        values (p_tabla_id, p_grupo_id, v_cupo, 0)
+        on conflict (tabla_id, grupo_id) do nothing
+        returning id into v_id;
+
+        if v_id is null then
+            select id into v_id
+            from public.tabla_grupos
+            where tabla_id = p_tabla_id and grupo_id = p_grupo_id
+            limit 1;
+        end if;
+    end if;
+
+    return v_id;
+end;
+$$;
+
+revoke all on function public.club_garantizar_grupo_tabla(bigint, uuid, int) from anon;
+grant execute on function public.club_garantizar_grupo_tabla(bigint, uuid, int) to anon;
+
+-- ============================================================
 -- (9.6) RPC SEGURA: ASEGURAR EJEMPLAR EN EL PADRÓN
 --      security definer: corre como dueño de la tabla, así el rol
 --      anon puede insertar/reutilizar el ejemplar aunque el RLS de

@@ -1111,12 +1111,17 @@ const { error } = await window.supabase.from('tablas_fijas').update({
                             </div>
                         </div>
                     </div>
+                    <div>
+                        <label for="cantidadModalEjSistema" class="block text-[10px] font-bold text-slate-500 mb-0.5 uppercase">Cantidad de Tablas</label>
+                        <input type="number" id="cantidadModalEjSistema" min="1" value="1" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
                 </div>` : `<p class="text-xs text-slate-400 italic">${retirado ? 'Ejemplar retirado: no puede venderse.' : 'Tabla no disponible para venta (estado ' + (t.estado || '?') + ').'}</p>`}
             </div>
         `;
 
         const btnEnviar = document.getElementById('btnEnviarCarritoEjemplar');
-        if (btnEnviar) btnEnviar.classList.toggle('hidden', !puedoVender);
+        const puedeVentaRapida = t.estado === 'Abierta' && !retirado;
+        if (btnEnviar) btnEnviar.classList.toggle('hidden', !puedeVentaRapida);
 
         const rein = cuerpo.querySelector('#btnRehabilitarEjemplar');
         if (rein) rein.addEventListener('click', rehabilitarEjemplar);
@@ -1287,13 +1292,56 @@ const { error } = await window.supabase.from('tablas_fijas').update({
     async function enviarCarritoEjemplar() {
         const ctx = modalEjemplarCtx;
         const t = ctx.t, c = ctx.c;
-        const idCli = document.getElementById('selectClienteModalEj')?.value;
-        if (!idCli) return clubUI.toast('Seleccione el jugador que compra.', 'warning');
-        const selGrp = document.getElementById('selectGrupoModalEj');
-        const tgId = selGrp ? selGrp.value : '';
-        const tg = (t.tabla_grupos || []).find(x => String(x.id) === String(tgId));
-        if (!tg) return clubUI.toast('Seleccione el grupo de venta.', 'warning');
-        const cant = parseInt(document.getElementById('cantidadModalEj').value) || 1;
+        const btn = document.getElementById('btnEnviarCarritoEjemplar');
+        const restaurarBtn = () => { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cart-plus mr-1"></i> Enviar al carrito'; } };
+
+        // Rama normal: tabla con grupos asignados (selects selectClienteModalEj / selectGrupoModalEj)
+        // Rama sistema: tabla sin grupos asignados (selects selectGrupoSistemaEj / selectJugadorGrupoSistemaEj)
+        const esSistema = !document.getElementById('selectClienteModalEj');
+
+        let idCli, tg, cant;
+        if (esSistema) {
+            const selGrpSis = document.getElementById('selectGrupoSistemaEj');
+            const gid = selGrpSis ? selGrpSis.value : '';
+            if (!gid) return clubUI.toast('Seleccione el grupo de venta.', 'warning');
+            idCli = document.getElementById('selectJugadorGrupoSistemaEj')?.value;
+            if (!idCli) return clubUI.toast('Seleccione el jugador que compra.', 'warning');
+            cant = parseInt(document.getElementById('cantidadModalEjSistema')?.value) || 1;
+
+            const grupoSel = gruposActivos.find(x => x.id == gid);
+            if (!grupoSel) return clubUI.toast('Grupo de venta no encontrado.', 'error');
+
+            // Busca la fila de inventario; si no existe la garantiza vía RPC segura
+            tg = (t.tabla_grupos || []).find(x => String(x.grupo_id) === String(gid));
+            if (!tg) {
+                if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Preparando...'; }
+                const cupos = parseInt(grupoSel.cupo_tabla) || 100;
+                let tgId = null;
+                try {
+                    const { data: rpcId, error: errRpc } = await window.clubDB.rpc('club_garantizar_grupo_tabla', { p_tabla_id: t.id, p_grupo_id: gid, p_cupos: cupos });
+                    if (errRpc) throw errRpc;
+                    tgId = rpcId;
+                } catch (eRpc) {
+                    console.error('[tablas] garantizar_grupo_tabla:', eRpc);
+                    restaurarBtn();
+                    return clubUI.toast('No se pudo preparar el inventario del grupo. Ejecute el SQL del paquete (club_garantizar_grupo_tabla).', 'error');
+                }
+                if (tgId) {
+                    tg = { id: tgId, tabla_id: t.id, grupo_id: gid, cupos: cupos, cantidad_vendida: 0 };
+                    t.tabla_grupos = [...(t.tabla_grupos || []), tg];
+                }
+            }
+            if (!tg) { restaurarBtn(); return clubUI.toast('No se pudo preparar el inventario del grupo.', 'error'); }
+        } else {
+            const selGrp = document.getElementById('selectGrupoModalEj');
+            const tgId = selGrp ? selGrp.value : '';
+            tg = (t.tabla_grupos || []).find(x => String(x.id) === String(tgId));
+            if (!tg) return clubUI.toast('Seleccione el grupo de venta.', 'warning');
+            idCli = document.getElementById('selectClienteModalEj')?.value;
+            if (!idCli) return clubUI.toast('Seleccione el jugador que compra.', 'warning');
+            cant = parseInt(document.getElementById('cantidadModalEj')?.value) || 1;
+        }
+
         if (cant <= 0) return clubUI.toast('Cantidad inválida.', 'warning');
         const disp = Math.max(0, (tg.cupos || 0) - (tg.cantidad_vendida || 0));
         if (cant > disp) return clubUI.toast(`No quedan tablas disponibles (quedan ${disp}).`, 'warning');
@@ -1301,11 +1349,10 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         if (!cli) return clubUI.toast('Cliente no encontrado.', 'error');
         const grupo = gruposActivos.find(x => x.id == tg.grupo_id);
         if (!grupo) return clubUI.toast('Grupo de venta no encontrado.', 'error');
-        const btn = document.getElementById('btnEnviarCarritoEjemplar');
         if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Enviando...'; }
         try {
             const res = await VentaTablasCore.venderTabla({ cliente: cli, cantidad: cant, ejemplar: c, tabla: t, tg, grupo, tasaCambio: tasaCambioGlobal });
-            if (!res.ok) { clubUI.toast('No se pudo enviar: ' + res.error, 'error'); if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cart-plus mr-1"></i> Enviar al carrito'; } return; }
+            if (!res.ok) { clubUI.toast('No se pudo enviar: ' + res.error, 'error'); restaurarBtn(); return; }
             const monedaSim = t.moneda === 'VES' ? 'Bs ' : '$';
             clubUI.toast(`Venta enviada al carrito: ${cli.nombre} - N°${c.numero} ${c.nombre} x${cant} (${monedaSim}${clubUI.formatoNumero(res.costoTotal, 2)})`, 'success');
             if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta_rapida_ejemplar: ${cli.nombre} N°${c.numero} ${c.nombre} x${cant} (${monedaSim}${clubUI.formatoNumero(res.costoTotal, 2)})`);
@@ -1314,7 +1361,7 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         } catch (e) {
             console.error(e);
             clubUI.toast('Error al enviar al carrito.', 'error');
-            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cart-plus mr-1"></i> Enviar al carrito'; }
+            restaurarBtn();
         }
     }
 
