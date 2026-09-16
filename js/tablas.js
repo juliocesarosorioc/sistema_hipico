@@ -691,11 +691,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         const retirado = !!c.retirado;
                         const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
                         return `
-                        <div class="bg-slate-50 border border-slate-200 rounded px-1 py-0.5 ${retirado ? 'opacity-40' : ''}" style="display:grid;grid-template-columns:2rem 1fr 2rem auto;column-gap:0.625rem;align-items:center">
-                            <span class="justify-self-center w-4 h-5 rounded flex items-center justify-center text-[8px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
+                        <div class="bg-slate-50 border border-slate-200 rounded px-1 py-px ${retirado ? 'opacity-40' : ''}" style="display:grid;grid-template-columns:2rem 1fr 2rem auto;column-gap:0.375rem;align-items:center">
+                            <span class="justify-self-center w-4 h-4 rounded flex items-center justify-center text-[8px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
                             <span class="min-w-0 truncate text-[10px] font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
                             <span style="display:flex;justify-content:center">${htmlSelectNac(c.nacionalidad)}</span>
-                            <span class="text-right text-[12px] font-black whitespace-nowrap ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : clubUI.formatoNumero(valor, 0)}</span>
+                            <span class="text-right text-[11px] font-black whitespace-nowrap ${c.retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${c.retirado ? 'RET.' : clubUI.formatoNumero(valor, 0)}</span>
                         </div>`;
                     }).join('')}</div>`
                     : '<p class="text-sm text-slate-400 italic px-2 py-2">Sin ejemplares registrados.</p>';
@@ -723,7 +723,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="bg-slate-100 text-slate-600 px-2 rounded-full font-black">${ejemplares.length}</span>
                     </div>
 
-                    <div class="px-1.5 py-1 border-y border-slate-100 bg-white">
+                    <div class="px-1 py-0.5 border-y border-slate-100 bg-white">
                         ${filasSala}
                     </div>
 
