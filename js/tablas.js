@@ -727,13 +727,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${filasSala}
                     </div>
 
-                    <div class="px-3 py-1.5 bg-white flex items-center justify-between">
-                        <span class="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-slate-400">
-                            <i class="fas fa-calculator text-indigo-400"></i> Suma de la Tabla
-                        </span>
-                        <span class="font-black text-lg text-indigo-700" title="Sumatoria de los valores de todos los ejemplares">${simb}${clubUI.formatoNumero(suma, 0)}</span>
-                    </div>
-
                     <div class="px-3 py-1.5 border-t border-slate-100 bg-white space-y-1.5 flex-1">
                         <div class="flex flex-wrap gap-1 items-center">${badgeRetiros(t)}${chipGanador(t)}</div>
                         <div class="flex items-center justify-between gap-2">
@@ -741,6 +734,13 @@ document.addEventListener('DOMContentLoaded', () => {
                             <span class="flex flex-wrap justify-end gap-1">${chipsGrupos}</span>
                         </div>
                         <div class="flex items-center justify-between pt-1">${badgeEstado}</div>
+                    </div>
+
+                    <div class="px-3 py-1.5 border-t border-slate-100 bg-white flex items-center justify-between">
+                        <span class="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-slate-400">
+                            <i class="fas fa-calculator text-indigo-400"></i> Suma de la Tabla
+                        </span>
+                        <span class="font-black text-lg text-indigo-700" title="Sumatoria de la tabla">$ ${clubUI.formatoNumero(suma, 0)}</span>
                     </div>
 
                     <div class="px-3 py-2 border-t border-slate-200 flex gap-2 bg-white">
