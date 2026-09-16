@@ -55,6 +55,26 @@ por cada `$1` (win/place/show/puestos/marcas), editable en la Taquilla antes de 
 
 ---
 
+## Módulo de Remates — Roadmap
+
+> ⏳ **REMATES (pendiente):** los remates deben tomar sus ejemplares de las **carreras ya cargadas
+> en los hipódromos y días** (programa del día), en lugar de capturarse manualmente. Al elegir
+> un **hipódromo** y una **fecha/día**, el sistema debe listar las **carreras de ese día** y sus
+> **ejemplares** (los mismos del programa/Gaceta) para asignarlos al remate.
+
+| Tipo | Descripción | Estado |
+|------|-------------|--------|
+| **Remate manual** | Caballos cargados a mano en el remate (actual) | En uso |
+| **Remate por programa** | Ejemplares tomados de las carreras cargadas en hipódromos y días | ⏳ **Pendiente** |
+
+### Esquema propuesto (a validar)
+- El formulario de nuevo remate debe cargar: **Hipódromo** → **Día/Fecha** → **Carrera** (select),
+  y de ahí poblar automáticamente los **ejemplares** de esa carrera (de `programa_dia`/Gaceta o del
+  padrón de la carrera), sin escribirlos a mano.
+- Vincular cada caballo del remate con su origen: `hipodromo_id`, `fecha`, `carrera`, `ejemplar_numero`.
+
+---
+
 ## Pendientes Relacionados
 
 ### Módulo de Taquilla
@@ -89,6 +109,12 @@ por cada `$1` (win/place/show/puestos/marcas), editable en la Taquilla antes de 
 ### Módulo de Resultados (pendiente de conectar a reportes)
 - [ ] Mostrar `dividendos` y `orden_llegada` en los reportes de liquidación y en el portal.
   - (Infra lista: `resultados_carreras.dividendos/orden_llegada` ya existen como columnas — paquete SQL, sección 10.)
+
+### Módulo de Remates
+- [ ] Cargar los ejemplares del remate desde las **carreras cargadas en los hipódromos y días**
+      (programa del día) en vez de capturarlos manualmente.
+- [ ] Encadenar el formulario: **Hipódromo → Fecha/Día → Carrera → Ejemplares** (selects poblados
+      desde el programa/Gaceta).
 
 ---
 
@@ -164,9 +190,10 @@ create table if not exists tickets_jugadas (
 | `js/tablas.js` | Tablas fijas — ya sin carga de resultados |
 | `sql/paquete_pendientes.sql` sec. 10 | Definición SQL de `resultados_carreras` |
 | `html/wps.html` + `js/wps.js` | Motor WPS separado (dividendos americanos) |
+| `html/remates.html` + `js/remates.js` | Remates — (pendiente) tomar ejemplares de las carreras cargadas en hipódromos y días |
 | `html/tickets.html` + `js/tickets.js` | (NUEVO) Tickets por solucionar — disputas de jugadas |
 | `js/gaceta_helpers.js` · `js/gaceta_ia.js` · `js/gaceta_padron.js` | (NUEVO) Segmentación del módulo gaceta |
 
 ---
 
-*Última actualización: 2026-09-14 (tickets por solucionar + avance ejecutado)*
+*Última actualización: 2026-09-16 (remates desde carreras cargadas en hipódromos y días)*
