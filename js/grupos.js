@@ -56,15 +56,18 @@ document.addEventListener('DOMContentLoaded', () => {
     async function cargarGrupos() {
         let { data, error } = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
         console.log('[grupos] SELECT grupos_venta ->', { data, error });
-        if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
-            // Grupos_venta quedó con RLS activo: la RPC segura (security definer)
-            // lee los grupos aunque el anon no tiene acceso directo.
+        const bloqueadoRLS = error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')));
+        if (bloqueadoRLS || (!error && data && data.length === 0)) {
+            // RLS activo: el SELECT directo puede devolver [] SIN error (RLS filtra
+            // filas silenciosamente) o rechazar con 401/permiso. En ambos casos la
+            // RPC segura (security definer) lee los grupos aunque el anon no tenga
+            // acceso directo a la tabla.
             const { data: viaRpc } = await window.supabase.rpc('club_listar_grupos').catch(() => ({}));
             console.log('[grupos] Fallback club_listar_grupos ->', viaRpc);
-            if (Array.isArray(viaRpc)) {
+            if (Array.isArray(viaRpc) && viaRpc.length > 0) {
                 data = viaRpc;
                 error = null;
-            } else {
+            } else if (bloqueadoRLS) {
                 return clubUI.toast('Permisos bloqueados (RLS) y sin RPC segura. Ejecute el paquete_pendientes.sql en Supabase.', 'error');
             }
         } else if (error) {
@@ -109,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         cont.innerHTML = visibles.map(g => `
-            <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+            <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2" data-id="${g.id}">
                 <div class="flex-1 min-w-0">
                     <span class="font-bold text-slate-800 text-sm">${g.nombre}</span>
                     <span class="ml-2 px-1.5 py-0.5 rounded text-[9px] font-black ${g.moneda === 'VES' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}">${g.moneda}</span>
@@ -139,17 +142,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     document.getElementById('formGrupo')?.addEventListener('submit', async (e) => {
         e.preventDefault();
+        const btnGuardar = document.getElementById('btnGuardarGrupo');
+        const textoBtn = btnGuardar.innerHTML;
+        btnGuardar.disabled = true;
+        btnGuardar.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Guardando...';
         try {
             const nombre = document.getElementById('nombreGrupo').value.trim().toUpperCase();
             if (!nombre) return clubUI.toast('Indique el nombre del grupo.', 'warning');
+            const moneda = document.getElementById('monedaGrupo').value;
+            const cupo = parseInt(document.getElementById('cupoGrupo').value) || 100;
+            const comisionLeida = parseFloat(document.getElementById('comisionGrupo').value);
+            const comision = isNaN(comisionLeida) ? 2.5 : comisionLeida;
+            const principal = document.getElementById('esPrincipalGrupo').checked;
             const cuenta = componerCuenta(document.getElementById('bancoGrupo').value, document.getElementById('numeroCuentaGrupo').value);
             const datos = {
                 nombre: nombre,
-                moneda: document.getElementById('monedaGrupo').value,
+                moneda: moneda,
                 moneda_cuadre: document.getElementById('monedaCuadreGrupo').value,
-                es_principal: document.getElementById('esPrincipalGrupo').checked,
-                cupo_tabla: parseInt(document.getElementById('cupoGrupo').value) || 100,
-                comision_default: parseFloat(document.getElementById('comisionGrupo').value) || 2.5,
+                es_principal: principal,
+                cupo_tabla: cupo,
+                comision_default: comision,
                 responsable: document.getElementById('responsableGrupo').value.trim().toUpperCase() || null,
                 cuenta_bancaria: cuenta
             };
@@ -191,28 +203,29 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('comisionGrupo').value = 2.5;
             document.getElementById('bancoGrupo').value = '';
             document.getElementById('numeroCuentaGrupo').value = '';
-            cargarGrupos();
-            if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `creado: ${nombre} comision=${document.getElementById('comisionGrupo').value || 2.5}`);
-            const principal = document.getElementById('esPrincipalGrupo').checked;
-            // Verificación: confirma que el grupo recién creado salió en la recarga.
-            setTimeout(async () => {
-                const cargados = await cargarGrupos();
-                const existe = (cargados || []).some(g => g.nombre === nombre);
-                console.log(`[grupos] Verificación tras crear "${nombre}": existe=${existe}, total=${(cargados || []).length}`);
-                if (!existe) {
-                    clubUI.toast(`El grupo se guardó pero no aparece al recargar. Total devuelto por Supabase: ${(cargados || []).length}. Revise la consola (F12).`, 'warning');
-                }
-            }, 1200);
+            await cargarGrupos();
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `creado: ${nombre} comision=${comision}`);
+            // Resalta el grupo recién creado en la lista para confirmación visual.
+            const tarjeta = [...document.querySelectorAll('#listaGrupos [data-id]')].find(el =>
+                todosGrupos.find(g => String(g.id) === el.dataset.id)?.nombre === nombre);
+            if (tarjeta) {
+                tarjeta.classList.add('ring-2', 'ring-amber-400', 'bg-amber-50');
+                tarjeta.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                setTimeout(() => tarjeta.classList.remove('ring-2', 'ring-amber-400', 'bg-amber-50'), 2500);
+            }
             clubUI.aviso('Grupo creado',
                 `Grupo "${nombre}" registrado y listo para vender.\n\n` +
-                `· Moneda de venta: ${document.getElementById('monedaGrupo').value}\n` +
-                `· Cupos por tabla: ${document.getElementById('cupoGrupo').value || 100}\n` +
-                `· Convenio tablas fijas: ${document.getElementById('comisionGrupo').value || 2.5}%\n` +
+                `· Moneda de venta: ${moneda}\n` +
+                `· Cupos por tabla: ${cupo}\n` +
+                `· Convenio tablas fijas: ${comision}%\n` +
                 `${principal ? '· Marcado como PRINCIPAL' : ''}`,
                 'success');
         } catch (errInesperado) {
             console.error('[grupos] Error inesperado creando grupo:', errInesperado);
             clubUI.toast('Error inesperado: ' + (errInesperado?.message || errInesperado), 'error');
+        } finally {
+            btnGuardar.disabled = false;
+            btnGuardar.innerHTML = textoBtn;
         }
     });
 
@@ -290,13 +303,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const g = todosGrupos.find(x => x.id == id);
         const nombre = document.getElementById('editGrupoNombre').value.trim().toUpperCase();
         const esPrincipal = document.getElementById('editGrupoPrincipal').checked;
+        const comisionEditLeida = parseFloat(document.getElementById('editGrupoComision').value);
+        const comisionEdit = isNaN(comisionEditLeida) ? 2.5 : comisionEditLeida;
         const cuenta = componerCuenta(document.getElementById('editBancoGrupo').value, document.getElementById('editNumeroCuentaGrupo').value);
         const datos = {
             nombre: nombre,
             moneda: document.getElementById('editGrupoMoneda').value,
             moneda_cuadre: document.getElementById('editGrupoMonedaCuadre').value,
             cupo_tabla: parseInt(document.getElementById('editGrupoCupo').value) || 100,
-            comision_default: parseFloat(document.getElementById('editGrupoComision').value) || 2.5,
+            comision_default: comisionEdit,
             responsable: document.getElementById('editGrupoResponsable').value.trim().toUpperCase() || null,
             cuenta_bancaria: cuenta,
             es_principal: esPrincipal
@@ -325,7 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
             `Cambios guardados en "${nombre}".\n\n` +
             `· Moneda venta: ${document.getElementById('editGrupoMoneda').value}\n` +
             `· Cupos por tabla: ${document.getElementById('editGrupoCupo').value || 100}\n` +
-            `· Convenio tablas fijas: ${document.getElementById('editGrupoComision').value || 2.5}%\n` +
+            `· Convenio tablas fijas: ${comisionEdit}%\n` +
             `${esPrincipal ? '· Ahora es el PRINCIPAL del sistema' : ''}`,
             'success');
     });

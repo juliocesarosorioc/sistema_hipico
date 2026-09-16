@@ -210,9 +210,26 @@ window.clubUI = (() => {
 
     const esBancoVzla = (metodo) => /^\d{4}\s·\s/.test(metodo || '');
 
+    // Opciones compactas para selects de banco: se muestran cortas (evita que el
+    // dropdown nativo se salga de pantalla) pero el value conserva "0102 · BANCO DE
+    // VENEZUELA" para no romper el almacenamiento y los resúmenes.
+    const BANCO_LABEL = {
+        '0102': 'VENEZUELA', '0104': 'VEN. CRÉDITO', '0105': 'MERCANTIL',
+        '0108': 'BBVA PROVINCIAL', '0114': 'OCCIDENTAL (BOD)', '0115': 'EXTERIOR',
+        '0128': 'CARONI', '0134': 'BANESCO', '0137': 'SOFITASA', '0138': 'PLAZA',
+        '0146': 'BANCARIBE', '0151': 'DEL SUR', '0156': 'PICHINCHA',
+        '0157': 'SUDEBAN', '0163': 'DEL TESORO', '0164': 'MIBANCO',
+        '0166': 'AGRÍCOLA', '0171': 'ACTIVO', '0172': 'BANCAMIGA',
+        '0173': 'CAFETERO', '0175': 'BICENTENARIO', '0191': 'BNC'
+    };
+
     // Options para selects de banco (pago móvil y banco receptor)
-    const htmlOpcionesBancosVzla = (actual = '') => BANCOS_VZLA
-        .map(b => `<option value="${b.codigo} · ${b.nombre}" ${(actual === `${b.codigo} · ${b.nombre}` || actual === b.nombre) ? 'selected' : ''}>${b.codigo} · ${b.nombre}</option>`)
+    const htmlOpcionesBancosVzla = (actual = '', corto = true) => BANCOS_VZLA
+        .map(b => {
+            const etiqueta = corto ? `${b.codigo} · ${BANCO_LABEL[b.codigo] || b.nombre}` : `${b.codigo} · ${b.nombre}`;
+            const valor = `${b.codigo} · ${b.nombre}`;
+            return `<option value="${valor}" ${(actual === valor || actual === b.nombre) ? 'selected' : ''}>${etiqueta}</option>`;
+        })
         .join('');
 
     // ==========================================
