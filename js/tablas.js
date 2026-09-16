@@ -629,20 +629,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     // MONITOR
     // ==========================================
-    function badgeRetiros(t) {
-        const r = (t.retirados_oficiales || '').trim().toUpperCase();
-        if (!r || r === 'NO HUBO RETIROS' || r === 'NINGUNO' || r === '') {
-            return '<span class="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-1 text-[11px] font-black"><i class="fas fa-check-circle"></i> No hubo retiros</span>';
-        }
-        return `<span class="inline-flex items-center gap-1.5 bg-red-50 text-red-600 border border-red-200 rounded-full px-2.5 py-1 text-[11px] font-black"><i class="fas fa-user-slash"></i> Retirados: ${r}</span>`;
-    }
-
-    function chipGanador(t) {
-        const ganador = (t.caballos || []).find(c => c.ganador);
-        if (!ganador) return '';
-        return `<span class="inline-flex items-center gap-1.5 bg-amber-100 text-amber-700 border border-amber-300 rounded-full px-2.5 py-1 text-[11px] font-black mt-1"><i class="fas fa-trophy"></i> Ganador #${ganador.numero} ${ganador.nombre}</span>`;
-    }
-
     const contenedorMon = document.getElementById('cuerpoMonitorGrid');
 
     async function cargarTablas() {
@@ -664,34 +650,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             contenedorMon.innerHTML = datosTablaCompleta.map(t => {
-                const badgeEstado = t.estado === 'Abierta'
-                    ? '<span class="inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-0.5 text-[11px] font-black uppercase"><i class="fas fa-circle text-[7px]"></i> Abierta</span>'
-                    : '<span class="inline-flex items-center gap-1.5 bg-blue-100 text-blue-700 border border-blue-200 rounded-full px-2.5 py-0.5 text-[11px] font-black uppercase"><i class="fas fa-lock text-[9px]"></i> Auditada</span>';
-
-                const chipsGrupos = (t.tabla_grupos || []).map(tg => {
-                    const nombre = tg.grupos_venta ? tg.grupos_venta.nombre : '?';
-                    const moneda = tg.grupos_venta ? tg.grupos_venta.moneda : '';
-                    const disp = (tg.cupos || 0) - (tg.cantidad_vendida || 0);
-                    const color = disp < 10 ? 'text-red-600' : 'text-slate-700';
-                    return `<span class="inline-flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-xs">
-                        <span class="font-black">${nombre}</span>
-                        <span class="font-bold ${color}">${tg.cantidad_vendida || 0}/${tg.cupos}</span>
-                        <span class="text-slate-400">${moneda}</span>
-                    </span>`;
-                }).join(' ') || '<span class="text-slate-400 italic text-xs">Sin cupos</span>';
-
                 const ejemplares = Array.isArray(t.caballos) ? t.caballos : [];
-                const suma = ejemplares.reduce((acc, c) => acc + (parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0), 0);
+                const suma = ejemplares.reduce((acc, c) => acc + (c.retirado ? 0 : (parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0)), 0);
                 const simb = t.moneda === 'VES' ? 'Bs ' : '$';
 
                 const filasSala = ejemplares.length
-                    ? `<div class="space-y-1">${ejemplares.map(c => {
+                    ? `<div class="space-y-1">${ejemplares.map((c, idx) => {
                         const bg = colorDeNumero(c.numero);
                         const fg = textoDeNumero(c.numero);
                         const retirado = !!c.retirado;
                         const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
                         return `
-                        <div class="bg-slate-50 border border-slate-200 rounded px-1 py-px ${retirado ? 'opacity-40' : ''}" style="display:grid;grid-template-columns:2rem 1fr 2rem auto;column-gap:0.375rem;align-items:center">
+                        <div class="bg-slate-50 border border-slate-200 rounded px-1 py-px cursor-pointer hover:border-indigo-300 hover:bg-indigo-50 transition-colors ${retirado ? 'opacity-40' : ''}" data-tabla-id="${t.id}" data-ejemplar-idx="${idx}" style="display:grid;grid-template-columns:2rem 1fr 2rem auto;column-gap:0.375rem;align-items:center">
                             <span class="justify-self-center w-4 h-4 rounded flex items-center justify-center text-[8px] font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
                             <span class="min-w-0 truncate text-[10px] font-bold uppercase text-slate-800">${c.nombre || 'Sin nombre'}</span>
                             <span style="display:flex;justify-content:center">${htmlSelectNac(c.nacionalidad)}</span>
@@ -727,15 +697,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${filasSala}
                     </div>
 
-                    <div class="px-3 py-1.5 border-t border-slate-100 bg-white space-y-1.5 flex-1">
-                        <div class="flex flex-wrap gap-1 items-center">${badgeRetiros(t)}${chipGanador(t)}</div>
-                        <div class="flex items-center justify-between gap-2">
-                            <span class="text-[11px] font-black uppercase tracking-wider text-slate-500 shrink-0"><i class="fas fa-boxes text-indigo-400 mr-1"></i> Disponibles</span>
-                            <span class="flex flex-wrap justify-end gap-1">${chipsGrupos}</span>
-                        </div>
-                        <div class="flex items-center justify-between pt-1">${badgeEstado}</div>
-                    </div>
-
                     <div class="px-3 py-1.5 border-t border-slate-100 bg-white flex items-center justify-between">
                         <span class="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-slate-400">
                             <i class="fas fa-calculator text-indigo-400"></i> Suma de la Tabla
@@ -745,17 +706,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     <div class="px-3 py-2 border-t border-slate-200 flex gap-2 bg-white">
                         <button type="button" class="btn-editar-mon bg-slate-200 hover:bg-slate-300 text-slate-700 flex-1 text-xs font-bold py-2 rounded-lg transition-colors" data-id="${t.id}" title="Editar premio, valores y cupos"><i class="fas fa-edit mr-1"></i> Editar</button>
-                        <button type="button" class="btn-clonar-mon bg-indigo-100 hover:bg-indigo-200 text-indigo-700 flex-1 text-xs font-bold py-2 rounded-lg transition-colors" data-id="${t.id}" title="Clonar carrera"><i class="fas fa-copy mr-1"></i> Clonar</button>
                         ${t.estado === 'Abierta' ? `<button type="button" class="btn-vender-mon bg-emerald-600 hover:bg-emerald-700 text-white flex-1 text-xs font-black py-2 rounded-lg transition-colors uppercase" data-id="${t.id}" title="Vender en la taquilla"><i class="fas fa-cash-register mr-1"></i> Vender</button>` : ''}
-                        <button type="button" class="btn-eliminar-mon bg-red-50 hover:bg-red-100 text-red-600 flex-1 text-xs font-bold py-2 rounded-lg transition-colors" data-id="${t.id}" title="Eliminar"><i class="fas fa-trash-alt mr-1"></i></button>
                     </div>
                 </div>`;
             }).join('');
 
             contenedorMon.querySelectorAll('.btn-editar-mon').forEach(b => b.addEventListener('click', () => abrirModalEditar(b.dataset.id)));
-            contenedorMon.querySelectorAll('.btn-clonar-mon').forEach(b => b.addEventListener('click', () => abrirModalClonar(b.dataset.id)));
             contenedorMon.querySelectorAll('.btn-vender-mon').forEach(b => b.addEventListener('click', () => abrirModalVenta(b.dataset.id)));
-            contenedorMon.querySelectorAll('.btn-eliminar-mon').forEach(b => b.addEventListener('click', () => eliminarTabla(b.dataset.id)));
+            contenedorMon.querySelectorAll('[data-ejemplar-idx]').forEach(f => {
+                f.addEventListener('click', () => {
+                    const tablaId = f.dataset.tablaId;
+                    const idx = parseInt(f.dataset.ejemplarIdx, 10);
+                    abrirModalEjemplar(tablaId, idx);
+                });
+            });
         } catch (e) {
             console.error(e);
             contenedorMon.innerHTML = '<p class="p-4 text-center text-red-500 text-sm">Error cargando tablas.</p>';
@@ -961,6 +925,269 @@ const { error } = await window.supabase.from('tablas_fijas').update({
 
         btn.textContent = "Ejecutar Clonación"; btn.disabled = false;
     });
+
+// ==========================================
+    // MODAL DE EJEMPLAR: RETIRAR / REHABILITAR / VENTA RAPIDA AL CARRITO
+    // ==========================================
+    let modalEjemplarCtx = { t: null, idx: -1 };
+
+    function asegurarModalEjemplar() {
+        let m = document.getElementById('modalEjemplar');
+        if (m) return m;
+        m = document.createElement('div');
+        m.id = 'modalEjemplar';
+        m.className = 'hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm overflow-y-auto p-4';
+        m.innerHTML = `
+            <div class="flex min-h-full items-center justify-center">
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md my-auto overflow-hidden flex flex-col max-h-[94vh]">
+                    <div class="bg-indigo-600 p-4 text-white font-bold flex justify-between items-center text-sm uppercase shrink-0">
+                        <span><i class="fas fa-horse-head mr-2"></i> Ejemplar</span>
+                        <button class="cerrar-modal-ejemplar text-indigo-200 hover:text-white" aria-label="Cerrar"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div id="cuerpoModalEjemplar" class="p-4 space-y-4 overflow-y-auto flex-1"></div>
+                    <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 shrink-0">
+                        <button type="button" class="cerrar-modal-ejemplar bg-slate-300 hover:bg-slate-400 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-bold transition-colors">Cancelar</button>
+                        <button type="button" id="btnEnviarCarritoEjemplar" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl text-sm font-black shadow-md transition-colors">
+                            <i class="fas fa-cart-plus mr-1"></i> Enviar al carrito
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(m);
+        m.querySelectorAll('.cerrar-modal-ejemplar').forEach(b => b.addEventListener('click', cerrarModalEjemplar));
+        document.getElementById('btnEnviarCarritoEjemplar').addEventListener('click', enviarCarritoEjemplar);
+        return m;
+    }
+
+    function cerrarModalEjemplar() {
+        const m = document.getElementById('modalEjemplar');
+        if (m) m.classList.add('hidden');
+        modalEjemplarCtx = { t: null, idx: -1 };
+    }
+
+    function abrirModalEjemplar(tablaId, idx) {
+        const t = datosTablaCompleta.find(x => String(x.id) === String(tablaId));
+        if (!t) return clubUI.toast('Tabla no encontrada.', 'error');
+        const c = (Array.isArray(t.caballos) ? t.caballos : [])[idx];
+        if (!c) return clubUI.toast('Ejemplar no encontrado.', 'error');
+        modalEjemplarCtx = { t, idx, c };
+        const m = asegurarModalEjemplar();
+        const cuerpo = document.getElementById('cuerpoModalEjemplar');
+        const bg = colorDeNumero(c.numero);
+        const fg = textoDeNumero(c.numero);
+        const retirado = !!c.retirado;
+        const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
+        const simb = t.moneda === 'VES' ? 'Bs ' : '$';
+        const hayGrupos = (t.tabla_grupos || []).length > 0;
+        const puedoVender = t.estado === 'Abierta' && !retirado && hayGrupos;
+
+        cuerpo.innerHTML = `
+            <div class="flex items-center gap-3">
+                <span class="w-12 h-12 rounded-xl flex items-center justify-center text-xl font-black border-2 shrink-0" style="background:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
+                <div class="min-w-0 flex-1">
+                    <span class="block text-base font-black uppercase text-slate-800 truncate">${c.nombre || 'Sin nombre'}</span>
+                    <span class="block text-xs font-bold text-slate-500">${htmlSelectNac(c.nacionalidad)} N° ${c.numero ?? '-'}</span>
+                </div>
+                <span class="${retirado ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700'} inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-black uppercase shrink-0">
+                    <i class="fas ${retirado ? 'fa-user-slash' : 'fa-circle-check'}"></i> ${retirado ? 'Retirado' : 'Activo'}
+                </span>
+            </div>
+
+            <div class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                <span class="block text-[10px] font-black uppercase tracking-wider text-slate-400">Valor por Tabla</span>
+                <span class="block text-lg font-black ${retirado ? 'text-red-500 line-through' : 'text-blue-700'}">${retirado ? 'RET.' : simb + clubUI.formatoNumero(valor, 0)}</span>
+            </div>
+
+            ${retirado ? `
+            <button type="button" id="btnRehabilitarEjemplar" class="w-full bg-amber-500 hover:bg-amber-600 text-white text-xs font-black uppercase py-2.5 rounded-xl transition-colors shadow-sm">
+                <i class="fas fa-rotate-left mr-1"></i> Rehabilitar ejemplar
+            </button>` : `
+            <button type="button" id="btnRetirarEjemplar" class="w-full bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase py-2.5 rounded-xl transition-colors shadow-sm">
+                <i class="fas fa-user-slash mr-1"></i> Retirar ejemplar
+            </button>`}
+
+            <div class="border-t border-slate-100 pt-3">
+                <span class="block text-xs font-black uppercase tracking-wider text-slate-500 mb-2"><i class="fas fa-cash-register text-emerald-500 mr-1"></i> Venta rápida (al carrito)</span>
+                ${puedoVender ? `
+                <div class="space-y-2">
+                    <div>
+                        <label for="selectClienteModalEj" class="block text-[10px] font-bold text-slate-500 mb-0.5 uppercase">Jugador / Cliente</label>
+                        <select id="selectClienteModalEj" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-500"><option value="">Seleccione el jugador...</option></select>
+                    </div>
+                    <div>
+                        <label for="selectGrupoModalEj" class="block text-[10px] font-bold text-slate-500 mb-0.5 uppercase">Grupo de venta</label>
+                        <select id="selectGrupoModalEj" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-500"></select>
+                    </div>
+                    <div>
+                        <label for="cantidadModalEj" class="block text-[10px] font-bold text-slate-500 mb-0.5 uppercase">Cantidad de Tablas</label>
+                        <input type="number" id="cantidadModalEj" min="1" value="1" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-center outline-none focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                </div>` : `<p class="text-xs text-slate-400 italic">${retirado ? 'Ejemplar retirado: no puede venderse.' : t.estado !== 'Abierta' ? 'Tabla no disponible para venta (estado ' + (t.estado || '?') + ').' : 'Sin grupos/cupos asignados para vender.'}</p>`}
+            </div>
+        `;
+
+        const btnEnviar = document.getElementById('btnEnviarCarritoEjemplar');
+        if (btnEnviar) btnEnviar.classList.toggle('hidden', !puedoVender);
+
+        const rein = cuerpo.querySelector('#btnRehabilitarEjemplar');
+        if (rein) rein.addEventListener('click', rehabilitarEjemplar);
+        const ret = cuerpo.querySelector('#btnRetirarEjemplar');
+        if (ret) ret.addEventListener('click', retirarEjemplar);
+
+        if (puedoVender) {
+            const selGrp = cuerpo.querySelector('#selectGrupoModalEj');
+            selGrp.innerHTML = (t.tabla_grupos || []).map(tg => {
+                const g = gruposActivos.find(x => x.id == tg.grupo_id);
+                const disp = Math.max(0, (tg.cupos || 0) - (tg.cantidad_vendida || 0));
+                return `<option value="${tg.id}" data-groupid="${tg.grupo_id}" data-disp="${disp}">${g ? g.nombre : 'Grupo #' + tg.grupo_id} (${disp} disp)</option>`;
+            }).join('') || '<option value="" disabled>Sin grupos</option>';
+            const selCli = cuerpo.querySelector('#selectClienteModalEj');
+            if (clientesVentaCache.length === 0) {
+                cargarClientesVenta().then(() => poblarClientesModalEj(selCli));
+            } else {
+                poblarClientesModalEj(selCli);
+            }
+        }
+        m.classList.remove('hidden');
+    }
+
+    function poblarClientesModalEj(sel) {
+        sel.innerHTML = '<option value="">Seleccione el jugador...</option>' + clientesVentaCache.map(c =>
+            `<option value="${c.id}" data-saldo="${c.saldo_actual ?? 0}">${c.nombre}</option>`
+        ).join('');
+    }
+
+    async function reembolsarTicketsRetirado(t, c) {
+        try {
+            const { data: tickets } = await window.supabase.from('tickets_apuestas')
+                .select('id, cliente_juega_id, monto_jugado, moneda')
+                .eq('hipodromo', t.hipodromo)
+                .eq('carrera', t.carrera)
+                .eq('ejemplar_numero', parseInt(c.numero, 10))
+                .eq('estado', 'Pendiente');
+            if (!tickets || tickets.length === 0) return 0;
+            for (const tk of tickets) {
+                const monto = parseFloat(tk.monto_jugado) || 0;
+                await window.supabase.from('tickets_apuestas').update({
+                    estado: 'Retirado',
+                    premio_pagar: 0,
+                    accion_aplicada: 'REEMBOLSO',
+                    monto_resuelto: monto
+                }).eq('id', tk.id);
+                if (monto > 0 && tk.cliente_juega_id) {
+                    const { data: cl } = await window.supabase.from('clientes').select('saldo_actual').eq('id', tk.cliente_juega_id).maybeSingle();
+                    if (cl) {
+                        await window.supabase.from('clientes').update({
+                            saldo_actual: (parseFloat(cl.saldo_actual) || 0) + monto
+                        }).eq('id', tk.cliente_juega_id);
+                    }
+                }
+            }
+            return tickets.length;
+        } catch (e) {
+            console.error('[tablas] reembolso error:', e);
+            return 0;
+        }
+    }
+
+    async function retirarEjemplar() {
+        const ctx = modalEjemplarCtx;
+        const t = ctx.t, idx = ctx.idx;
+        const c = (Array.isArray(t.caballos) ? t.caballos : [])[idx];
+        if (!c) return;
+        if (!confirm(`Retirar el ejemplar N°${c.numero} ${c.nombre}?\n\nSe marcará como RETIRADO:\n - No podrá venderse\n - Se recalculará el premio (baja proporcional)\n - Se reembolsará el saldo de los tickets pendientes\n\n¿Continuar?`)) return;
+        const btn = document.getElementById('btnRetirarEjemplar');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Retirando...'; }
+        try {
+            const caballosNuevos = (Array.isArray(t.caballos) ? t.caballos : []).map((x, i) => i === idx ? { ...x, retirado: true, ganador: false } : x);
+            const base = parseFloat(t.suma_base_tabla) || 0;
+            const sumaRetirados = caballosNuevos.filter(x => x.retirado).reduce((a, x) => a + (parseFloat(x.valor_ejemplar) || 0), 0);
+            let nuevoPremio = parseFloat(t.premio_original ?? t.premio_recalculado ?? 0) || 0;
+            if (base > 0) nuevoPremio = Math.max(0, nuevoPremio * (1 - (sumaRetirados / base)));
+            const nums = caballosNuevos.filter(x => x.retirado).map(x => x.numero).join(',') || 'NO HUBO RETIROS';
+            const { error } = await window.supabase.from('tablas_fijas').update({
+                caballos: caballosNuevos,
+                retirados_oficiales: nums,
+                premio_recalculado: nuevoPremio
+            }).eq('id', t.id);
+            if (error) throw error;
+            const reembolsados = await reembolsarTicketsRetirado(t, c);
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `retirado_ejemplar: ${t.hipodromo} C${t.carrera} N°${c.numero} ${c.nombre} premio_nuevo=$${nuevoPremio} reembolsos=${reembolsados}`);
+            clubUI.toast(`Ejemplar N°${c.numero} retirado. Premio recalculado a $${clubUI.formatoNumero(nuevoPremio, 2)}${reembolsados ? ` (${reembolsados} reembolso(s))` : ''}.`, 'success');
+            cerrarModalEjemplar();
+            cargarTablas();
+        } catch (e) {
+            console.error(e);
+            clubUI.toast('Error retirando el ejemplar: ' + (e.message || e.code), 'error');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-user-slash mr-1"></i> Retirar ejemplar'; }
+        }
+    }
+
+    async function rehabilitarEjemplar() {
+        const ctx = modalEjemplarCtx;
+        const t = ctx.t, idx = ctx.idx;
+        const c = (Array.isArray(t.caballos) ? t.caballos : [])[idx];
+        if (!c) return;
+        if (!confirm(`Rehabilitar el ejemplar N°${c.numero} ${c.nombre}?\n\nSe restaurará como activo y se recalculará el premio nuevamente.`)) return;
+        const btn = document.getElementById('btnRehabilitarEjemplar');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Rehabilitando...'; }
+        try {
+            const caballosNuevos = (Array.isArray(t.caballos) ? t.caballos : []).map((x, i) => i === idx ? { ...x, retirado: false } : x);
+            const base = parseFloat(t.suma_base_tabla) || 0;
+            const sumaRetirados = caballosNuevos.filter(x => x.retirado).reduce((a, x) => a + (parseFloat(x.valor_ejemplar) || 0), 0);
+            let nuevoPremio = parseFloat(t.premio_original ?? t.premio_recalculado ?? 0) || 0;
+            if (base > 0) nuevoPremio = Math.max(0, nuevoPremio * (1 - (sumaRetirados / base)));
+            const nums = caballosNuevos.filter(x => x.retirado).map(x => x.numero).join(',') || 'NO HUBO RETIROS';
+            const { error } = await window.supabase.from('tablas_fijas').update({
+                caballos: caballosNuevos,
+                retirados_oficiales: nums,
+                premio_recalculado: nuevoPremio
+            }).eq('id', t.id);
+            if (error) throw error;
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `rehabilitado_ejemplar: ${t.hipodromo} C${t.carrera} N°${c.numero} ${c.nombre} premio_nuevo=$${nuevoPremio}`);
+            clubUI.toast(`Ejemplar N°${c.numero} rehabilitado. Premio recalculado a $${clubUI.formatoNumero(nuevoPremio, 2)}.`, 'success');
+            cerrarModalEjemplar();
+            cargarTablas();
+        } catch (e) {
+            console.error(e);
+            clubUI.toast('Error rehabilitando el ejemplar: ' + (e.message || e.code), 'error');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-rotate-left mr-1"></i> Rehabilitar ejemplar'; }
+        }
+    }
+
+    async function enviarCarritoEjemplar() {
+        const ctx = modalEjemplarCtx;
+        const t = ctx.t, c = ctx.c;
+        const idCli = document.getElementById('selectClienteModalEj')?.value;
+        if (!idCli) return clubUI.toast('Seleccione el jugador que compra.', 'warning');
+        const selGrp = document.getElementById('selectGrupoModalEj');
+        const tgId = selGrp ? selGrp.value : '';
+        const tg = (t.tabla_grupos || []).find(x => String(x.id) === String(tgId));
+        if (!tg) return clubUI.toast('Seleccione el grupo de venta.', 'warning');
+        const cant = parseInt(document.getElementById('cantidadModalEj').value) || 1;
+        if (cant <= 0) return clubUI.toast('Cantidad inválida.', 'warning');
+        const disp = Math.max(0, (tg.cupos || 0) - (tg.cantidad_vendida || 0));
+        if (cant > disp) return clubUI.toast(`No quedan tablas disponibles (quedan ${disp}).`, 'warning');
+        const cli = clientesVentaCache.find(x => String(x.id) === String(idCli));
+        if (!cli) return clubUI.toast('Cliente no encontrado.', 'error');
+        const grupo = gruposActivos.find(x => x.id == tg.grupo_id);
+        if (!grupo) return clubUI.toast('Grupo de venta no encontrado.', 'error');
+        const btn = document.getElementById('btnEnviarCarritoEjemplar');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Enviando...'; }
+        try {
+            const res = await VentaTablasCore.venderTabla({ cliente: cli, cantidad: cant, ejemplar: c, tabla: t, tg, grupo, tasaCambio: tasaCambioGlobal });
+            if (!res.ok) { clubUI.toast('No se pudo enviar: ' + res.error, 'error'); if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cart-plus mr-1"></i> Enviar al carrito'; } return; }
+            const monedaSim = t.moneda === 'VES' ? 'Bs ' : '$';
+            clubUI.toast(`Venta enviada al carrito: ${cli.nombre} - N°${c.numero} ${c.nombre} x${cant} (${monedaSim}${clubUI.formatoNumero(res.costoTotal, 2)})`, 'success');
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta_rapida_ejemplar: ${cli.nombre} N°${c.numero} ${c.nombre} x${cant} (${monedaSim}${clubUI.formatoNumero(res.costoTotal, 2)})`);
+            cerrarModalEjemplar();
+            cargarTablas();
+        } catch (e) {
+            console.error(e);
+            clubUI.toast('Error al enviar al carrito.', 'error');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cart-plus mr-1"></i> Enviar al carrito'; }
+        }
+    }
 
     // ==========================================
     // VENTA DE TABLAS FIJAS DESDE EL MONITOR
