@@ -106,27 +106,51 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if (!data || data.length === 0) {
-            // Garantiza siempre el grupo PRINCIPAL (Administrador/Sistema) para publicar.
-            // Primero intenta la RPC segura (security definer: funciona aunque el RLS
-            // de grupos_venta esté activo); si la RPC no existe aún, cae al INSERT.
+            // RLS activo: el SELECT directo devuelve [] SIN error (filtra filas
+            // en silencio). La RPC segura (security definer) crea y lee aunque
+            // el anon no tenga acceso directo a la tabla.
             await window.clubDB.rpc('club_garantizar_grupo_principal');
-            let re = null;
-            try {
-                re = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
-            } catch (e) { re = null; }
-            if (re && Array.isArray(re.data)) {
-                data = re.data;
+            const reR = await window.clubDB.rpc('club_listar_grupos');
+            if (Array.isArray(reR?.data)) {
+                data = reR.data;
             } else {
-                const reR = await window.clubDB.rpc('club_listar_grupos');
-                const viaRpc2 = reR;
-                data = Array.isArray(viaRpc2?.data) ? viaRpc2.data : [];
+                // La RPC no está instalada aún: última opción, SELECT directo
+                // (sirve solo si el RLS realmente está desactivado).
+                try {
+                    const re = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
+                    data = (re && Array.isArray(re.data)) ? re.data : [];
+                } catch (e) { data = []; }
             }
             if (!data || data.length === 0) {
+                const errRpc = (reR && reR.error) ? (reR.error.message || reR.error) : '';
+                const rlsEvidente = /permission|row-level security/i.test(String(errRpc)) || (reR && reR.error && /Could not find the function|does not exist/i.test(String(errRpc)));
+                if (rlsEvidente) {
+                    return clubUI.aviso('Grupos no accesibles en Ensamblaje',
+                        'RLS sigue activo en grupos_venta y la RPC segura no está disponible.\n\n' +
+                        'Ejecute el paquete SQL completo en Supabase:\n' +
+                        '1. Diagnóstico → botón "Copiar SQL".\n' +
+                        '2. Péguelo en el SQL Editor de https://supabase.com/dashboard y ejecute (Run).\n' +
+                        '3. Recargue esta página con F5.\n\n' +
+                        'Ese paquete desactiva el RLS y crea el grupo PRINCIPAL por usted.',
+                        'error');
+                }
                 const { error: errSeed } = await window.supabase
                     .from('grupos_venta')
                     .insert([{ nombre: 'PRINCIPAL', moneda: 'USD', es_principal: true, cupo_tabla: 100, activo: true }]);
                 if (errSeed) {
-                    clubUI.toast('No hay grupos y no se pudo crear el principal: ' + (errSeed.message || errSeed.code), 'error');
+                    if (/row-level security|permission/i.test(String(errSeed.message || errSeed.code || ''))) {
+                        return clubUI.aviso('Grupos no accesibles en Ensamblaje',
+                            'El INSERT directo fue bloqueado por el RLS (new row violates row-level security policy).\n\n' +
+                            'Ejecute el paquete SQL completo en Supabase:\n' +
+                            '1. Diagnóstico → botón "Copiar SQL".\n' +
+                            '2. Péguelo en el SQL Editor y ejecute (Run).\n' +
+                            '3. Recargue con F5.\n\n' +
+                            'El paquete desactiva el RLS con: alter table public.grupos_venta disable row level security;',
+                            'error');
+                    }
+                    clubUI.toast('No se pudo crear el grupo PRINCIPAL: ' + (errSeed.message || errSeed.code), 'error');
+                } else {
+                    data = [{ nombre: 'PRINCIPAL', moneda: 'USD', es_principal: true, cupo_tabla: 100, activo: true }];
                 }
             }
         }

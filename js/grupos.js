@@ -251,15 +251,40 @@ document.addEventListener('DOMContentLoaded', () => {
     async function toggleGrupo(e) {
         const id = e.currentTarget.dataset.id;
         const nuevo = e.currentTarget.dataset.activo === 'false';
-        let { error } = await window.supabase.from('grupos_venta').update({ activo: nuevo }).eq('id', id);
-        if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
-            ({ error: error } = await rpcSeguro('club_toggle_grupo', { p_id: id, p_activo: nuevo }));
-        }
-        if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
-            return clubUI.toast('Permisos bloqueados (RLS). Ejecute en SQL: alter table public.grupos_venta disable row level security;', 'error');
-        }
         const g = todosGrupos.find(x => x.id == id);
-        cargarGrupos();
+        // La tarjeta refleja el cambio al instante y se re-lee la BD al final.
+        if (g) { g.activo = nuevo; renderGruposGestion(); }
+        let error = null;
+        const resDirecto = await window.supabase.from('grupos_venta').update({ activo: nuevo }).eq('id', id);
+        error = resDirecto.error;
+        if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
+            // RLS activo: reintenta con la RPC segura (security definer).
+            const resRpc = await rpcSeguro('club_toggle_grupo', { p_id: id, p_activo: nuevo });
+            error = resRpc.error;
+        }
+        if (error) {
+            // SOLO se muestra éxito si NO quedó ningún error (ni siquiera el de
+            // "función no existe"), así no se anuncia ACTIVO sin haber cambiado.
+            if (/Could not find the function|does not exist/i.test(String(error.message || ''))) {
+                return clubUI.aviso('Falta realizar la instalación SQL',
+                    'El UPDATE directo fue bloqueado (RLS) y la RPC segura club_toggle_grupo no está en su base de datos.\n\n' +
+                    'Ejecute el paquete completo de SQL:\n' +
+                    '1. Abra Diagnóstico → botón "Copiar SQL".\n' +
+                    '2. Péguelo en el SQL Editor de https://supabase.com/dashboard y ejecute (Run).\n' +
+                    '3. Luego recargue esta página con F5.\n\n' +
+                    'Ese paquete desactiva el RLS y crea las funciones de respaldo.',
+                    'error');
+            }
+            if (error.status === 401 || /permission|row-level security/i.test(String(error.message || ''))) {
+                return clubUI.aviso('Permisos bloqueados (RLS)',
+                    'No se pudo cambiar el estado del grupo. Para corregirlo de raíz ejecute:\n\n' +
+                    'alter table public.grupos_venta disable row level security;\n\n' +
+                    'O mejor, el paquete completo en Diagnóstico → "Copiar SQL".',
+                    'error');
+            }
+            return clubUI.toast('Error al cambiar el estado: ' + (error.message || error), 'error');
+        }
+        await cargarGrupos();
         if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `grupo_${nuevo ? 'activado' : 'desactivado'}: ${g?.nombre}`);
         clubUI.aviso(`Grupo ${nuevo ? 'activado' : 'desactivado'}`,
             `El grupo "${g?.nombre}" ahora está ${nuevo ? 'ACTIVO y disponible para vender' : 'DESACTIVADO y oculto en las opciones de venta'}.`,
