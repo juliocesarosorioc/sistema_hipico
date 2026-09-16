@@ -693,7 +693,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="bg-slate-100 text-slate-600 px-2 rounded-full font-black">${ejemplares.length}</span>
                     </div>
 
-                    <div class="px-1 py-0.5 border-y border-slate-100 bg-white">
+                    <div class="px-1 py-0.5 border-y border-slate-100 bg-white flex-1 min-h-0 overflow-hidden">
                         ${filasSala}
                     </div>
 
