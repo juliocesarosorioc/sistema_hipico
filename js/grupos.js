@@ -55,10 +55,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     async function cargarGrupos() {
         let { data, error } = await window.supabase.from('grupos_venta').select('*').order('es_principal', { ascending: false });
+        console.log('[grupos] SELECT grupos_venta ->', { data, error });
         if (error && (error.status === 401 || /permission|row-level security/i.test(String(error.message || '')))) {
             // Grupos_venta quedó con RLS activo: la RPC segura (security definer)
             // lee los grupos aunque el anon no tiene acceso directo.
             const { data: viaRpc } = await window.supabase.rpc('club_listar_grupos').catch(() => ({}));
+            console.log('[grupos] Fallback club_listar_grupos ->', viaRpc);
             if (Array.isArray(viaRpc)) {
                 data = viaRpc;
                 error = null;
@@ -73,6 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderGruposGestion();
         renderSelectsGrupos();
         cargarClientesTodos();
+        return todosGrupos;
     }
 
     function renderEstadisticas() {
@@ -191,6 +194,15 @@ document.addEventListener('DOMContentLoaded', () => {
             cargarGrupos();
             if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `creado: ${nombre} comision=${document.getElementById('comisionGrupo').value || 2.5}`);
             const principal = document.getElementById('esPrincipalGrupo').checked;
+            // Verificación: confirma que el grupo recién creado salió en la recarga.
+            setTimeout(async () => {
+                const cargados = await cargarGrupos();
+                const existe = (cargados || []).some(g => g.nombre === nombre);
+                console.log(`[grupos] Verificación tras crear "${nombre}": existe=${existe}, total=${(cargados || []).length}`);
+                if (!existe) {
+                    clubUI.toast(`El grupo se guardó pero no aparece al recargar. Total devuelto por Supabase: ${(cargados || []).length}. Revise la consola (F12).`, 'warning');
+                }
+            }, 1200);
             clubUI.aviso('Grupo creado',
                 `Grupo "${nombre}" registrado y listo para vender.\n\n` +
                 `· Moneda de venta: ${document.getElementById('monedaGrupo').value}\n` +
