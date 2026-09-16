@@ -674,34 +674,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 return `
                 <div class="card-monitor bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden flex flex-col" data-tabla="${t.id}">
-                    <div class="bg-indigo-600 px-3 py-1.5" style="color:#fff">
-                        <div class="flex items-center justify-between gap-2">
-                            <span class="rounded px-2 py-0.5 text-xs font-bold uppercase tracking-wider truncate" style="background:rgba(255,255,255,.18);color:#fff">${t.hipodromo || ''}</span>
-                            <span class="font-black text-sm whitespace-nowrap"><i class="fas fa-flag-checkered mr-1"></i>C${t.carrera ?? ''}</span>
+                    <div class="bg-indigo-600 px-1.5 py-px" style="color:#fff">
+                        <div class="flex items-center justify-between gap-1 leading-none">
+                            <span class="rounded px-1.5 py-px text-[11px] font-bold uppercase tracking-wider truncate" style="background:rgba(255,255,255,.18);color:#fff">${t.hipodromo || ''}</span>
+                            <span class="font-black text-xs whitespace-nowrap leading-none"><i class="fas fa-flag-checkered mr-1"></i>C${t.carrera ?? ''}</span>
                         </div>
-                        <div class="flex flex-wrap gap-1 mt-1 text-[11px] font-bold items-center">
-                            <span class="rounded px-1.5 py-0.5" style="background:rgba(255,255,255,.18)">Dist: ${t.distancia_carrera ?? ''} m</span>
-                            <span class="rounded px-1.5 py-0.5 uppercase" style="background:rgba(255,255,255,.18)">${t.superficie || 'ARENA'}</span>
-                            <span class="rounded px-1.5 py-0.5" style="background:rgba(255,255,255,.18)">${t.fecha || ''}</span>
+                        <div class="flex flex-wrap gap-1 mt-0.5 text-[9px] font-bold items-center leading-none">
+                            <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)">Dist: ${t.distancia_carrera ?? ''} m</span>
+                            <span class="rounded px-1 py-px uppercase" style="background:rgba(255,255,255,.18)">${t.superficie || 'ARENA'}</span>
+                            <span class="rounded px-1 py-px tracking-tight" style="background:rgba(255,255,255,.18)">${t.fecha || ''}</span>
                         </div>
-                        <div class="mt-1.5 flex items-center justify-between rounded-lg px-3 py-1.5" style="background:rgba(255,255,255,.20)">
-                            <span class="text-xs font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-1"></i> Monto a Pagar / Tabla</span>
-<span class="font-black text-xl" style="color:#fff">${simb}${clubUI.formatoNumero(parseFloat(t.premio_recalculado), 0)}</span>
+                        <div class="mt-0.5 flex items-center justify-between rounded px-1.5 py-px leading-none" style="background:rgba(255,255,255,.20)">
+                            <span class="text-[8px] font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-1"></i> Monto a Pagar / Tabla</span>
+                            <span class="font-black text-sm whitespace-nowrap" style="color:#fff">${simb}${clubUI.formatoNumero(parseFloat(t.premio_recalculado), 0)}</span>
                         </div>
                     </div>
 
-                    <div class="px-3 pt-2 pb-1 text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                    <div class="px-1.5 pt-1 pb-0.5 text-[9px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between leading-none">
                         <span><i class="fas fa-horse-head text-amber-500 mr-1"></i> Ejemplares</span>
-                        <span class="bg-slate-100 text-slate-600 px-2 rounded-full font-black">${ejemplares.length}</span>
+                        <span class="bg-slate-100 text-slate-600 px-1.5 rounded-full font-black text-[9px]">${ejemplares.length}</span>
                     </div>
 
                     <div class="px-1 py-0.5 border-y border-slate-100 bg-white flex-1 min-h-0 overflow-hidden">
                         ${filasSala}
                     </div>
 
-                    <div class="px-3 py-1.5 border-t border-slate-100 bg-white flex items-center justify-between gap-2">
-                        <span class="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-400">
-                            <button type="button" class="btn-editar-mon inline-flex items-center justify-center w-6 h-6 bg-indigo-100 hover:bg-indigo-200 text-indigo-600 rounded-md text-[10px] transition-colors" data-id="${t.id}" title="Editar premio, valores y cupos"><i class="fas fa-edit"></i></button>
+                    <div class="px-1.5 py-0.5 border-t border-slate-100 bg-white flex items-center justify-between gap-2">
+                        <span class="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none">
+                            <button type="button" class="btn-editar-mon inline-flex items-center justify-center w-5 h-5 bg-indigo-100 hover:bg-indigo-200 text-indigo-600 rounded-md text-[9px] transition-colors" data-id="${t.id}" title="Editar premio, valores y cupos"><i class="fas fa-edit"></i></button>
                             <i class="fas fa-calculator text-indigo-300"></i> Suma de la Tabla
                         </span>
                         <span class="text-[10px] font-semibold text-indigo-200" title="Sumatoria de la tabla">$ ${clubUI.formatoNumero(suma, 0)}</span>
