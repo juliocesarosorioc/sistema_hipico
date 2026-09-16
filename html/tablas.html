@@ -147,67 +147,67 @@
     <!-- ================= MODALES ================= -->
 
     <!-- Modal Editar -->
-    <div id="modalEditar" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-2">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[76vh] overflow-hidden flex flex-col">
-            <div class="bg-indigo-600 px-1.5 py-px" style="color:#fff">
+    <div id="modalEditar" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-1">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[70vh] overflow-hidden flex flex-col">
+            <div class="bg-indigo-600 px-1 py-px" style="color:#fff">
                 <div class="flex items-center justify-between gap-1 leading-none">
                     <span id="editTablaHipo" class="text-[11px] font-bold uppercase tracking-wide truncate min-w-0" style="color:#fff">-</span>
                     <span class="font-black text-xs whitespace-nowrap leading-none"><i class="fas fa-flag-checkered mr-1"></i>C<span id="editTablaCarrera" class="font-black">-</span></span>
                 </div>
-                <div class="flex items-center justify-between gap-1 mt-0.5 text-[9px] font-bold leading-none">
+                <div class="flex items-center justify-between gap-1 text-[9px] font-bold leading-none">
                     <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)">Dist: <span id="editTablaDist" class="font-black">-</span> m</span>
                     <span id="editTablaSup" class="rounded px-1 py-px uppercase max-w-[45%] truncate" style="background:rgba(255,255,255,.18)">-</span>
                 </div>
-                <div class="mt-0.5 flex items-center justify-between rounded px-1.5 py-px leading-none" style="background:rgba(255,255,255,.20)">
+                <div class="flex items-center justify-between rounded px-1.5 py-px leading-none" style="background:rgba(255,255,255,.20)">
                     <span class="text-[8px] font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-1"></i> Monto a Pagar / Tabla</span>
                     <span id="editTablaMonto" class="font-black text-sm whitespace-nowrap" style="color:#fff">$0</span>
                 </div>
             </div>
-            <div class="p-2 space-y-1.5 overflow-y-auto flex-1">
+            <div class="p-1.5 space-y-1 overflow-y-auto flex-1">
                 <input type="hidden" id="editId">
                 <p class="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 leading-tight">
                     <i class="fas fa-info-circle mr-1"></i> Tickets ya vendidos mantienen premio/valor congelados: solo afectan próximas ventas.
                 </p>
-                <div class="grid grid-cols-2 gap-1.5">
+                <div class="grid grid-cols-2 gap-1">
                     <div>
                         <label class="block text-[9px] font-bold text-slate-600 mb-px uppercase" for="editPremioOrig">Premio Original</label>
-                        <input type="text" inputmode="decimal" id="editPremioOrig" class="w-full border border-slate-300 rounded-md px-1.5 py-1 text-[11px] outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 font-bold transition-shadow">
+                        <input type="text" inputmode="decimal" id="editPremioOrig" class="w-full border border-slate-300 rounded-md px-1 py-0.5 text-[11px] outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 font-bold transition-shadow">
                     </div>
                     <div>
                         <label class="block text-[9px] font-bold text-slate-600 mb-px uppercase" for="editSumaBase">Suma Base</label>
-                        <input type="text" inputmode="decimal" id="editSumaBase" class="w-full border border-slate-300 rounded-md px-1.5 py-1 text-[11px] outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 font-bold transition-shadow">
+                        <input type="text" inputmode="decimal" id="editSumaBase" class="w-full border border-slate-300 rounded-md px-1 py-0.5 text-[11px] outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 font-bold transition-shadow">
                     </div>
                     <div class="col-span-2">
                         <label class="block text-[9px] font-bold text-slate-600 mb-px uppercase" for="editPremio">Premio Recalculado (con retiros)</label>
-                        <input type="text" inputmode="decimal" id="editPremio" class="w-full border border-emerald-300 rounded-md px-1.5 py-1 text-[11px] outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-emerald-600 transition-shadow">
+                        <input type="text" inputmode="decimal" id="editPremio" class="w-full border border-emerald-300 rounded-md px-1 py-0.5 text-[11px] outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-emerald-600 transition-shadow">
                     </div>
                 </div>
                 <div>
                     <label class="block text-[9px] font-bold text-slate-600 mb-px uppercase">Valores por Ejemplar (solo próximas ventas)</label>
-                    <div id="editCaballos" class="space-y-0.5 max-h-32 overflow-y-auto border border-slate-200 rounded-md p-1 bg-slate-50">
+                    <div id="editCaballos" class="space-y-0.5 max-h-28 overflow-y-auto border border-slate-200 rounded-md p-0.5 bg-slate-50">
                         <p class="text-slate-400 italic text-[10px]">Cargando...</p>
                     </div>
                 </div>
                 <div>
                     <label class="block text-[9px] font-bold text-slate-600 mb-px uppercase">Cupos por Grupo</label>
-                    <div id="editCuposGrupos" class="space-y-0.5 max-h-32 overflow-y-auto border border-slate-200 rounded-md p-1 bg-slate-50">
+                    <div id="editCuposGrupos" class="space-y-0.5 max-h-28 overflow-y-auto border border-slate-200 rounded-md p-0.5 bg-slate-50">
                         <p class="text-slate-400 italic text-[10px]">Cargando...</p>
                     </div>
                 </div>
-                <div class="border border-indigo-200 bg-indigo-50 rounded-md p-1.5 space-y-1">
+                <div class="border border-indigo-200 bg-indigo-50 rounded-md p-1 space-y-1">
                     <p class="text-[9px] font-black text-indigo-800 uppercase tracking-wider"><i class="fas fa-arrows-alt-h mr-1"></i> Reasignar a otro grupo</p>
-                    <div class="flex gap-1.5 items-end">
+                    <div class="flex gap-1 items-end">
                         <div class="flex-1">
                             <label class="block text-[9px] font-bold text-indigo-500 mb-px uppercase" for="nuevoGrupoEditar">Grupo</label>
-                            <select id="nuevoGrupoEditar" class="w-full border border-slate-300 rounded-md px-1 py-1 text-[11px] font-bold bg-white outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
+                            <select id="nuevoGrupoEditar" class="w-full border border-slate-300 rounded-md px-1 py-0.5 text-[11px] font-bold bg-white outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
                                 <option value="">Grupo a agregar...</option>
                             </select>
                         </div>
                         <div class="w-16">
                             <label class="block text-[9px] font-bold text-indigo-500 mb-px uppercase" for="nuevoCupoEditar">Cupos</label>
-                            <input type="number" id="nuevoCupoEditar" value="50" min="1" class="w-full border border-slate-300 rounded-md px-1 py-1 text-[11px] font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
+                            <input type="number" id="nuevoCupoEditar" value="50" min="1" class="w-full border border-slate-300 rounded-md px-1 py-0.5 text-[11px] font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
                         </div>
-                        <button type="button" id="btnAgregarGrupoEditar" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-md text-[11px] font-bold shadow transition-colors" title="Agregar grupo">
+                        <button type="button" id="btnAgregarGrupoEditar" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-0.5 rounded-md text-[11px] font-bold shadow transition-colors" title="Agregar grupo">
                             <i class="fas fa-plus"></i>
                         </button>
                     </div>
