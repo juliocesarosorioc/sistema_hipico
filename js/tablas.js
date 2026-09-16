@@ -2023,4 +2023,18 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             if (icono) icono.className = cuerpoMonitor.classList.contains('hidden') ? 'fas fa-chevron-down' : 'fas fa-chevron-up';
         });
     }
+    // Parámetros y Ensamblaje: menús plegables ocultos por defecto (estilo Monitor)
+    function pliegaMenu(btnId, cuerpoId) {
+        const btn = document.getElementById(btnId);
+        const cuerpo = document.getElementById(cuerpoId);
+        if (btn && cuerpo) {
+            btn.addEventListener('click', () => {
+                cuerpo.classList.toggle('hidden');
+                const icono = btn.querySelector('i.fa-chevron-down, i.fa-chevron-up');
+                if (icono) icono.className = cuerpo.classList.contains('hidden') ? 'fas fa-chevron-down' : 'fas fa-chevron-up';
+            });
+        }
+    }
+    pliegaMenu('btnToggleParametros', 'cuerpoParametros');
+    pliegaMenu('btnToggleEnsamblaje', 'cuerpoEnsamblaje');
 });
