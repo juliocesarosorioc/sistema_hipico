@@ -195,7 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const numColor = colorDeNumero(c?.numero);
         return `
             <div class="fila-caballo-card bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 ${vacio}" style="display:grid;grid-template-columns:2.5rem 1fr 2.5rem 3.5rem auto;column-gap:0.5rem;align-items:center">
-                <input type="text" inputmode="numeric" class="in-cab-num w-9 h-9 shrink-0 rounded-md px-0 py-px text-center text-base font-black outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar" style="background-color:${numColor};color:${textoDeNumero(c?.numero)};border-color:${numColor}">
+                <input type="text" inputmode="numeric" class="in-cab-num w-9 h-9 shrink-0 rounded-md px-0 py-px text-center text-[19px] font-black outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.numero ?? ''}" placeholder="Nº" title="Número del ejemplar" style="background-color:${numColor};color:${textoDeNumero(c?.numero)};border-color:${numColor}">
                 <input type="text" class="in-cab-nom w-full min-w-0 border border-slate-200 rounded px-1.5 py-0.5 text-sm font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.nombre ?? ''}" placeholder="Ejemplar" title="Nombre del ejemplar">
                 <span style="display:flex;justify-content:center">${htmlSelectNac(c?.nacionalidad)}</span>
                 <input type="text" inputmode="decimal" class="in-cab-valor w-full shrink-0 border border-slate-200 rounded px-1 py-0.5 text-right text-base font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400" value="${c?.valor ?? c?.pts ?? ''}" placeholder="$" title="Valor / monta del ejemplar">
@@ -234,7 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="lista-caballos-card px-1.5 py-1 space-y-1 flex-1"></div>
             <div class="add-caballo-card border-t border-slate-200 px-2 py-1.5 space-y-1 bg-slate-50">
                 <div class="flex gap-1 items-center">
-                    <input type="text" inputmode="numeric" class="nuevo-num w-10 h-10 shrink-0 border border-slate-300 rounded-md px-0 py-px text-lg font-black text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Nº" style="background-color:#fff;color:#94a3b8;border-color:#cbd5e1">
+                    <input type="text" inputmode="numeric" class="nuevo-num w-10 h-10 shrink-0 border border-slate-300 rounded-md px-0 py-px text-[21px] font-black text-center outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Nº" style="background-color:#fff;color:#94a3b8;border-color:#cbd5e1">
                     <input type="text" class="nuevo-nom flex-1 min-w-0 border border-slate-300 rounded px-1.5 py-1 text-sm font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Ejemplar nuevo">
                     <select class="nuevo-nac w-auto shrink-0 border border-slate-300 rounded px-1 py-1 text-xs font-bold uppercase outline-none bg-white">
                         ${OPCIONES_NACIONALIDAD.map(n => `<option value="${n}">${n}</option>`).join('')}
@@ -760,7 +760,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const contCab = document.getElementById('editCaballos');
         contCab.innerHTML = (tabla.caballos || []).map((c, i) => `
             <label class="flex items-center gap-1.5 bg-white border border-slate-200 rounded px-1.5 py-0.5 text-[10px]">
-                <span class="justify-self-center w-9 h-8 shrink-0 rounded-md flex items-center justify-center text-sm font-black border" style="background:${colorDeNumero(c.numero)};color:${textoDeNumero(c.numero)};border-color:${colorDeNumero(c.numero)}">${c.numero}</span>
+                <span class="justify-self-center w-9 h-8 shrink-0 rounded-md flex items-center justify-center text-[17px] font-black border" style="background:${colorDeNumero(c.numero)};color:${textoDeNumero(c.numero)};border-color:${colorDeNumero(c.numero)}">${c.numero}</span>
                 <span class="flex-1 font-bold text-slate-700 truncate" title="${c.nombre}">${c.nombre} ${c.retirado ? '<span class="text-red-500 text-[8px] font-black">(RET.)</span>' : ''}</span>
                 <input type="text" inputmode="decimal" class="edit-valor-cab w-16 text-right border border-slate-300 rounded px-1 py-0.5 text-[10px] font-bold outline-none focus:ring-2 focus:ring-indigo-500" data-index="${i}" value="${clubUI.formatoNumero(parseFloat(c.valor_ejemplar) || 0, 1)}" title="Valor del ejemplar (afecta solo próximas ventas)">
             </label>
