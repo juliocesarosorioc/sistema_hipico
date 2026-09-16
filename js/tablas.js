@@ -760,7 +760,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const contCab = document.getElementById('editCaballos');
         contCab.innerHTML = (tabla.caballos || []).map((c, i) => `
             <label class="flex items-center gap-1.5 bg-white border border-slate-200 rounded px-1.5 py-0.5 text-[10px]">
-                <span class="justify-self-center w-7 h-7 shrink-0 rounded-md flex items-center justify-center text-sm font-black border" style="background:${colorDeNumero(c.numero)};color:${textoDeNumero(c.numero)};border-color:${colorDeNumero(c.numero)}">${c.numero}</span>
+                <span class="justify-self-center w-9 h-8 shrink-0 rounded-md flex items-center justify-center text-sm font-black border" style="background:${colorDeNumero(c.numero)};color:${textoDeNumero(c.numero)};border-color:${colorDeNumero(c.numero)}">${c.numero}</span>
                 <span class="flex-1 font-bold text-slate-700 truncate" title="${c.nombre}">${c.nombre} ${c.retirado ? '<span class="text-red-500 text-[8px] font-black">(RET.)</span>' : ''}</span>
                 <input type="text" inputmode="decimal" class="edit-valor-cab w-16 text-right border border-slate-300 rounded px-1 py-0.5 text-[10px] font-bold outline-none focus:ring-2 focus:ring-indigo-500" data-index="${i}" value="${clubUI.formatoNumero(parseFloat(c.valor_ejemplar) || 0, 1)}" title="Valor del ejemplar (afecta solo próximas ventas)">
             </label>
