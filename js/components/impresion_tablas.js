@@ -56,17 +56,17 @@ window.clubImpresionTablas = (function () {
     .sub-hoja { font-size:11px; color:#64748b; font-weight:600; margin-top:1px; }
     .grilla-15 { flex:1; min-height:0; display:grid; grid-template-columns:repeat(5,1fr); grid-template-rows:repeat(3,1fr); gap:6px; }
     .tabla-imp { border:1.5px solid #334155; border-radius:7px; overflow:hidden; display:flex; flex-direction:column; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.08); min-height:0; }
-    .hd-tabla { background:linear-gradient(135deg,#1e40af,#4338ca); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:3px 8px; }
-    .hd-hipo { font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .hd-carrera { font-size:15px; font-weight:900; background:rgba(255,255,255,.18); border-radius:5px; padding:0 7px; }
-    .hd-premio { display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:800; color:#b45309; padding:2px 8px; background:#fffbeb; border-bottom:1px solid #f1f5f9; text-transform:uppercase; }
-    .hd-premio .premio-val { font-size:13px; font-weight:900; color:#b45309; }
+    .hd-tabla { background:linear-gradient(135deg,#1e40af,#4338ca); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:0 6px; }
+    .hd-hipo { font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1; }
+    .hd-carrera { font-size:15px; font-weight:900; background:rgba(255,255,255,.18); border-radius:5px; padding:0 7px; line-height:1.2; }
+    .hd-premio { display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:800; color:#b45309; padding:1px 8px; background:#fffbeb; border-bottom:1px solid #f1f5f9; text-transform:uppercase; }
+    .hd-premio .premio-val { font-size:13px; font-weight:900; color:#b45309; line-height:1; }
     .grilla-prin { flex:1; min-height:0; display:flex; flex-direction:column; padding:0; overflow:hidden; }
-    .grilla-ej { display:grid; align-items:center; gap:1px; padding:0; margin:0; border-bottom:1px solid #eef2f7; flex:1; min-height:0; line-height:1; }
+    .grilla-ej { display:grid; align-items:center; align-content:center; gap:1px; padding:0; margin:0; border-bottom:1px solid #eef2f7; flex:1; min-height:0; line-height:1; }
     .grilla-ej:last-child { border-bottom:none; }
     .grilla-ej:nth-child(even) { background:#f3f6fb; }
     .grilla-ej.retirado { opacity:.40; }
-    .nro-grilla { border-radius:3px; border:1px solid; display:flex; align-items:center; justify-content:center; font-weight:900; flex:none; margin:0; padding:0; line-height:1; }
+    .nro-grilla { border-radius:2px; border:1px solid; display:flex; align-items:center; justify-content:center; font-weight:900; flex:none; margin:0; padding:0; line-height:1; }
     .nombre-grilla { font-weight:700; text-transform:uppercase; white-space:nowrap; min-width:0; line-height:1; }
     .valor-grilla { font-weight:800; color:#1d4ed8; text-align:right; white-space:nowrap; padding-left:4px; line-height:1; }
     .sin-ej { grid-column:1/-1; font-size:11px; color:#94a3b8; font-style:italic; padding:12px; }
@@ -90,14 +90,18 @@ window.clubImpresionTablas = (function () {
         const k = Math.min(1, Math.max(0.5, filaH / 18));
         const fsNom = Math.round(Math.min(9.5, Math.max(5.5, filaH * 0.5)) * 10) / 10;
         const fsVal = Math.round(fsNom * 1.3 * 10) / 10;
+        // Celda del número FIJA y pequeña: siempre igual sin importar cuántos
+        // ejemplares haya en la línea.
+        const nroW = 18;
+        const nroH = 14;
         return {
             rows,
             k,
-            nroW: Math.max(14, Math.round(22 * k)),
-            nroH: Math.max(13, Math.round(17 * k)),
-            fsNum: Math.round(Math.min(11, Math.max(7, filaH * 0.62)) * 10) / 10,
+            nroW,
+            nroH,
+            fsNum: Math.round(Math.min(10, Math.max(6.5, filaH * 0.58)) * 10) / 10,
             fsNom,
-            box: `${Math.round(22 * k)}px ${Math.round(17 * k)}px`,
+            box: `${nroW}px ${nroH}px`,
             fsVal
         };
     }
