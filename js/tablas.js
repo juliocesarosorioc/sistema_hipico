@@ -1569,8 +1569,10 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         const box = document.getElementById('ventaCarritoBox');
         const items = document.getElementById('ventaCarritoItems');
         if (!box || !items) return;
-        box.classList.toggle('hidden', ventaCarrito.length === 0);
-        items.innerHTML = ventaCarrito.map((it, i) => {
+        box.classList.remove('hidden');
+        items.innerHTML = ventaCarrito.length === 0
+            ? `<div class="text-center text-xs font-bold uppercase tracking-wider text-slate-400 py-4"><i class="fas fa-shopping-cart mr-1"></i> El carrito está vacío</div>`
+            : ventaCarrito.map((it, i) => {
             const c = it.ejemplar;
             const bg = colorDeNumero(c.numero);
             const fg = textoDeNumero(c.numero);
@@ -1591,6 +1593,8 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         document.getElementById('ventaCarritoTotal').textContent = `${ventaSimb()}${clubUI.formatoNumero(totCosto, 0)}`;
         const btnCerrar = document.getElementById('btnProcesarVentaModal');
         if (btnCerrar) btnCerrar.disabled = ventaCarrito.length === 0;
+        const btnVaciar = document.getElementById('btnVaciarCarritoVenta');
+        if (btnVaciar) btnVaciar.disabled = ventaCarrito.length === 0;
     }
 
     function cerrarModalVentaMon() {
