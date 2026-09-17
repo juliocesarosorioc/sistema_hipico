@@ -685,6 +685,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error) throw error;
 
             datosTablaCompleta = data || [];
+            const btnImpresion = document.getElementById('btnImprimirTablas');
+            if (btnImpresion) btnImpresion.style.display = datosTablaCompleta.some(t => String(t.estado || '').trim().toLowerCase() === 'abierta') ? '' : 'none';
             const lblMonitor = document.getElementById('lblTotalMonitor');
             if (lblMonitor) lblMonitor.textContent = String(datosTablaCompleta.length);
             const msgVacio = document.getElementById('msgMonitorVacio');
@@ -811,7 +813,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     class="gac-num w-4 h-5 shrink-0 border rounded px-0 py-px text-center text-[10px] font-black outline-none focus:ring-1 focus:ring-indigo-400"
                     value="${c.numero ?? ''}" style="background-color:${colorDeNumero(c.numero)};color:${textoDeNumero(c.numero)};border-color:${colorDeNumero(c.numero)}">
                 <span class="flex-1 font-bold text-slate-700 truncate" title="${c.nombre}">${c.nombre} ${c.retirado ? '<span class="text-red-500 text-[8px] font-black">(RET.)</span>' : ''}</span>
-                <input type="text" inputmode="decimal" class="edit-valor-cab w-16 text-right border border-slate-300 rounded px-1 py-0.5 text-[10px] font-bold outline-none focus:ring-2 focus:ring-indigo-500" data-index="${i}" value="${clubUI.formatoNumero(parseFloat(c.valor_ejemplar) || 0, 1)}" title="Valor del ejemplar (afecta solo próximas ventas)">
+                <input type="text" inputmode="decimal" class="edit-valor-cab w-16 text-right border border-slate-300 rounded px-1 py-0.5 text-[10px] font-bold outline-none focus:ring-2 focus:ring-indigo-500" data-index="${i}" value="${parseFloat(c.valor_ejemplar) ? clubUI.formatoNumero(parseFloat(c.valor_ejemplar), 1) : ''}" title="Valor del ejemplar (afecta solo próximas ventas)">
             </label>
         `).join('') || '<p class="text-slate-400 italic text-[10px]">Sin ejemplares.</p>';
         const ctn = document.getElementById('editCuposGrupos');
@@ -2043,7 +2045,11 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             nombre: nombre,
             saldo_actual: 0,
             modo_juego: 'aval',
-            libre: false
+            libre: false,
+            // Vincula el jugador al grupo desde el cliente (aparece en el
+            // dropdown de jugadores y en la lista de Clientes/Grupos aunque
+            // clientes_grupos no esté disponible por RLS o esquema).
+            grupo_id: gid
         }]).select());
         const cliOk = !e1 && (cli || [])[0];
         if (!cliOk) {
@@ -2054,20 +2060,36 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             if (!e2 && !cliNuevo) return clubUI.toast('No se pudo crear el jugador.', 'error');
         } else {
             cliNuevo = cli[0];
+            // Enlace adicional en clientes_grupos (solo columnas comunes entre
+            // esquemas). Si falla por RLS o la tabla no tiene las columnas
+            // nuevas, el jugador YA quedó vinculado vía clientes.grupo_id.
             const { error: errAsig } = await window.supabase.from('clientes_grupos').insert([{
                 cliente_id: cliNuevo.id,
-                grupo_id: gid,
-                es_principal: false,
-                activo: true
+                grupo_id: gid
             }]);
-            if (errAsig && (errAsig.status === 401 || /permission|row-level security/i.test(String(errAsig.message || '')))) {
-                const { error: errRpc } = await window.clubDB.rpc('club_registrar_cliente_grupo', { p_grupo_id: gid, p_nombre: nombre, p_ingreso: 0 });
-                e2 = errRpc;
-            } else if (errAsig) {
-                e2 = errAsig;
+            if (!errAsig) {
+                // Asegurar grupos (el enlace directo pudo quedar bloqueado por RLS)
+                try {
+                    await window.supabase.from('clientes').update({ grupo_id: gid }).eq('id', cliNuevo.id);
+                } catch (e) { /* no crítico */ }
+            } else {
+                const esSchemalRls = errAsig.status === 401
+                    || /permission|row-level security/i.test(String(errAsig.message || ''))
+                    || /could not find/i.test(String(errAsig.message || ''));
+                if (esSchemalRls) {
+                    // RLS o esquema incompleto: la RPC segura (security definer)
+                    // crea/reutiliza el jugador y lo enlaza sin depender del RLS.
+                    const { error: errRpc } = await window.clubDB.rpc('club_registrar_cliente_grupo', { p_grupo_id: gid, p_nombre: nombre, p_ingreso: 0 });
+                    e2 = errRpc || null;
+                } else {
+                    console.warn('[tablas] enlace clientes_grupos omitido:', errAsig.message || errAsig);
+                }
+                try {
+                    await window.supabase.from('clientes').update({ grupo_id: gid }).eq('id', cliNuevo.id);
+                } catch (e) { /* no crítico */ }
             }
         }
-        if (e2) return clubUI.toast('Error al asignar al grupo: ' + e2.message, 'error');
+        if (e2) return clubUI.toast('Jugador creado, pero el enlace al grupo falló: ' + e2.message, 'warning');
         if (window.clubDB?.logAccion) window.clubDB.logAccion('GRUPOS', `jugador_creado: ${cliNuevo.id} -> grupo ${gid}`);
         clubUI.toast('Jugador registrado en el grupo.', 'success');
         document.getElementById('modalRegistrarJugadorGrupo').classList.add('hidden');
@@ -2082,6 +2104,251 @@ const { error } = await window.supabase.from('tablas_fijas').update({
 
     document.getElementById('btnRecargarTablas').addEventListener('click', () => {
         cargarTasaGlobal(); cargarHipodromos(); cargarGrupos(); cargarEjemplares(); cargarTablas(); cargarClientesVenta();
+    });
+
+    // ==========================================
+    // IMPRESIÓN DE TABLAS PUBLICADAS (todas, 16 por hoja)
+    // ==========================================
+    const modalConfigImpresion = document.getElementById('modalConfigImpresion');
+    const btnImprimirTablas = document.getElementById('btnImprimirTablas');
+    const cerrarConfigImpresion = document.getElementById('cerrarConfigImpresion');
+    const filtroImpresionHipodromo = document.getElementById('filtroImpresionHipodromo');
+    const filtroImpresionDia = document.getElementById('filtroImpresionDia');
+    const btnExportPDF = document.getElementById('btnExportPDF');
+    const btnExportJPG = document.getElementById('btnExportJPG');
+    const btnExportPNG = document.getElementById('btnExportPNG');
+
+    function abrirConfigImpresion() {
+        const publicadas = (datosTablaCompleta || []).filter(t => String(t.estado || '').trim().toLowerCase() === 'abierta');
+        const hipos = [...new Set(publicadas.map(t => String(t.hipodromo || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+        filtroImpresionHipodromo.innerHTML = '<option value="">Todos los Hipódromos...</option>';
+        hipos.forEach(h => filtroImpresionHipodromo.innerHTML += `<option value="${h}">${h}</option>`);
+
+        const dias = [...new Set(publicadas.map(t => String(t.fecha || '').trim()).filter(Boolean))].sort();
+        filtroImpresionDia.innerHTML = '<option value="">Todos los días...</option>';
+        dias.forEach(d => filtroImpresionDia.innerHTML += `<option value="${d}">${d}</option>`);
+
+        modalConfigImpresion.classList.remove('hidden');
+        modalConfigImpresion.classList.add('flex');
+    }
+
+    function cerrarModalConfigImpresion() {
+        modalConfigImpresion.classList.add('hidden');
+        modalConfigImpresion.classList.remove('flex');
+    }
+
+    async function exportarTablasConfiguradas(formato) {
+        const hipo = filtroImpresionHipodromo.value;
+        const dia = filtroImpresionDia.value;
+        cerrarModalConfigImpresion();
+        const btn = { PDF: btnExportPDF, JPG: btnExportJPG, PNG: btnExportPNG }[formato];
+        const antes = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generando...';
+        try {
+            await imprimirTablasPublicadas(hipo, dia, formato);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = antes;
+        }
+    }
+
+    async function imprimirTablasPublicadas(hipoFiltro = '', diaFiltro = '', formato = 'pdf') {
+        // SIEMPRE recarga la última versión de valores desde Supabase (sin caché)
+        let tablas = [];
+        try {
+            const r = await window.supabase
+                .from('tablas_fijas')
+                .select('*, tabla_grupos(*)')
+                .eq('estado', 'Abierta');
+            if (r.error) throw r.error;
+            tablas = r.data || [];
+        } catch (e) {
+            clubUI.toast('No se pudieron actualizar los valores: ' + (e.message || e), 'error');
+            return null;
+        }
+        if (tablas.length) datosTablaCompleta = tablas;
+
+        const fmt = (v, d = 2) => window.clubUI?.formatoNumero ? window.clubUI.formatoNumero(Number(v) || 0, d) : (Number(v) || 0).toFixed(d);
+
+        if (hipoFiltro) {
+            tablas = tablas.filter(t => String(t.hipodromo || '').trim().toLowerCase() === String(hipoFiltro).trim().toLowerCase());
+        }
+        if (diaFiltro) {
+            tablas = tablas.filter(t => String(t.fecha || '').slice(0, 10) === String(diaFiltro).slice(0, 10));
+        }
+        if (tablas.length === 0) return clubUI.toast('No hay tablas publicadas para imprimir (estado "Abierta").', 'warning');
+        tablas.sort((a, b) => String(a.hipodromo || '').localeCompare(String(b.hipodromo || '')) || (Number(a.carrera) || 0) - (Number(b.carrera) || 0));
+
+        const POR_HOJA = 16;
+        const paginas = [];
+        for (let i = 0; i < tablas.length; i += POR_HOJA) paginas.push(tablas.slice(i, i + POR_HOJA));
+
+        const fecha = new Date().toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
+
+        const cardHTML = (t) => {
+            const premio = parseFloat(t.premio_recalculado) || 0;
+            const ejemplares = (Array.isArray(t.caballos) ? t.caballos : []).slice(0, 16);
+            const suma = ejemplares.reduce((acc, c) => acc + (parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0), 0);
+
+            const grilla = ejemplares.map(c => {
+                const bg = colorDeNumero(c.numero);
+                const fg = textoDeNumero(c.numero);
+                const ret = !!c.retirado;
+                const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
+                return `
+                    <div class="grilla-ej ${ret ? 'retirado' : ''}">
+                        <div class="nro-grilla" style="background:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</div>
+                        <div class="nombre-grilla">${c.nombre || ''}</div>
+                        <div class="valor-grilla">${ret ? 'RET.' : fmt(valor, 0)}</div>
+                    </div>`;
+            }).join('') || '<div class="sin-ej">Sin ejemplares registrados.</div>';
+
+            return `
+                <div class="tabla-imp">
+                    <div class="hd-tabla">
+                        <div class="hd-hipo">${t.hipodromo || ''}</div>
+                        <div class="hd-carrera">C${t.carrera ?? ''}</div>
+                    </div>
+                    <div class="hd-meta">
+                        <span>Dist: ${t.distancia_carrera ?? ''} m</span>
+                        <span>${t.superficie || 'ARENA'}</span>
+                        <span>${t.fecha || ''}</span>
+                    </div>
+                    <div class="hd-premio">
+                        <span>Monto a Pagar / Tabla</span>
+                        <span class="premio-val">$${fmt(premio)}</span>
+                    </div>
+                    <div class="grilla-prin">${grilla}</div>
+                    <div class="ft-tabla">
+                        <span><i class="numerico-nro"></i>Suma: $${fmt(suma)}</span>
+                        <span class="ft-total">${ejemplares.length} ej.</span>
+                    </div>
+                </div>`;
+        };
+
+        const hojas = paginas.map((pag, pidx) => `
+            <div class="hoja">
+                <div class="cabecera-hoja">
+                    <div class="titulo-hoja">TABLAS FIJAS PUBLICADAS</div>
+                    <div class="sub-hoja">${fecha} · Hoja ${pidx + 1} de ${paginas.length} · Total ${tablas.length} carreras · última versión de valores</div>
+                </div>
+                <div class="grilla-16">
+                    ${pag.map(cardHTML).join('')}
+                </div>
+            </div>`).join('');
+
+        if (formato === 'pdf') {
+            const w = window.open('', '_blank', 'width=1400,height=900');
+            if (!w) { alert('Permita ventanas emergentes para poder imprimir el documento.'); return null; }
+            w.document.write(`<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><title>Tablas Fijas Publicadas</title>
+<style>
+    @page { size: letter landscape; margin: 8mm; }
+    * { box-sizing: border-box; }
+    body { font-family:'Segoe UI',Arial,sans-serif; color:#0f172a; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .hoja { width:100%; page-break-after: always; display:flex; flex-direction:column; gap:5px; }
+    .hoja:last-child { page-break-after: auto; }
+    .cabecera-hoja { border-bottom:3px solid #1d4ed8; padding-bottom:5px; margin-bottom:5px; }
+    .titulo-hoja { font-size:20px; font-weight:900; letter-spacing:1px; color:#1e3a8a; text-transform:uppercase; }
+    .sub-hoja { font-size:11px; color:#64748b; font-weight:600; margin-top:2px; }
+    .grilla-16 { display:grid; grid-template-columns:repeat(4, 1fr); grid-template-rows:repeat(4, 1fr); gap:7px; height:176mm; }
+    .tabla-imp { border:1.5px solid #334155; border-radius:8px; overflow:hidden; display:flex; flex-direction:column; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.08); }
+    .hd-tabla { background:linear-gradient(135deg,#1e40af,#4338ca); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:6px 10px; }
+    .hd-hipo { font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .hd-carrera { font-size:18px; font-weight:900; background:rgba(255,255,255,.18); border-radius:6px; padding:1px 8px; }
+    .hd-meta { display:flex; gap:8px; font-size:10px; font-weight:700; color:#475569; padding:4px 10px; border-bottom:1px solid #e2e8f0; }
+    .hd-premio { display:flex; justify-content:space-between; align-items:center; font-size:11px; font-weight:800; color:#b45309; padding:4px 10px; background:#fffbeb; border-bottom:1px solid #f1f5f9; text-transform:uppercase; }
+    .hd-premio .premio-val { font-size:16px; font-weight:900; color:#b45309; }
+    .grilla-prin { flex:1; display:grid; grid-template-columns:repeat(4,1fr); align-content:start; gap:3px; padding:6px; overflow:hidden; }
+    .grilla-ej { display:grid; grid-template-columns:30px 1fr auto; align-items:center; gap:4px; border-bottom:1px solid #f1f5f9; padding:1px 2px; }
+    .grilla-ej.retirado { opacity:.38; }
+    .nro-grilla { width:26px; height:20px; border-radius:3px; border:1px solid; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:900; }
+    .nombre-grilla { font-size:8.5px; font-weight:700; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .valor-grilla { font-size:9px; font-weight:800; color:#1d4ed8; }
+    .ft-tabla { display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:800; color:#0f766e; padding:4px 10px; background:#f0fdfa; border-top:1px solid #ccfbf1; }
+    .ft-total { background:#d1d5db; color:#334155; border-radius:999px; padding:0 8px; font-size:9px; }
+    .sin-ej { grid-column:1/-1; font-size:10px; color:#94a3b8; font-style:italic; padding:10px; }
+</style></head><body>${hojas}</body></html>`);
+            w.document.close();
+            w.focus();
+            setTimeout(() => { w.print(); }, 450);
+            return true;
+        }
+
+        // Formato imagen (JPG/PNG): html2canvas sobre un contenedor oculto.
+        if (typeof window.html2canvas !== 'function') {
+            clubUI.toast('Falta la librería html2canvas para generar imágenes. Recargue la página.', 'error');
+            return null;
+        }
+
+        const contenedor = document.createElement('div');
+        contenedor.id = 'contenedorImagenTablas';
+        contenedor.style.position = 'fixed';
+        contenedor.style.left = '-9999px';
+        contenedor.style.top = '0';
+        contenedor.style.background = '#fff';
+        contenedor.style.padding = '10px';
+        contenedor.style.width = '1200px';
+        contenedor.innerHTML = `<style>
+    .hoja { width:100%; display:flex; flex-direction:column; gap:5px; margin-bottom:14px; }
+    .cabecera-hoja { border-bottom:3px solid #1d4ed8; padding-bottom:5px; margin-bottom:5px; }
+    .titulo-hoja { font-size:20px; font-weight:900; letter-spacing:1px; color:#1e3a8a; text-transform:uppercase; }
+    .sub-hoja { font-size:11px; color:#64748b; font-weight:600; margin-top:2px; }
+    .grilla-16 { display:grid; grid-template-columns:repeat(4, 1fr); grid-template-rows:repeat(4, 1fr); gap:7px; height:158mm; }
+    .tabla-imp { border:1.5px solid #334155; border-radius:8px; overflow:hidden; display:flex; flex-direction:column; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.08); }
+    .hd-tabla { background:linear-gradient(135deg,#1e40af,#4338ca); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:6px 10px; }
+    .hd-hipo { font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .hd-carrera { font-size:18px; font-weight:900; background:rgba(255,255,255,.18); border-radius:6px; padding:1px 8px; }
+    .hd-meta { display:flex; gap:8px; font-size:10px; font-weight:700; color:#475569; padding:4px 10px; border-bottom:1px solid #e2e8f0; }
+    .hd-premio { display:flex; justify-content:space-between; align-items:center; font-size:11px; font-weight:800; color:#b45309; padding:4px 10px; background:#fffbeb; border-bottom:1px solid #f1f5f9; text-transform:uppercase; }
+    .hd-premio .premio-val { font-size:16px; font-weight:900; color:#b45309; }
+    .grilla-prin { flex:1; display:grid; grid-template-columns:repeat(4,1fr); align-content:start; gap:3px; padding:6px; overflow:hidden; }
+    .grilla-ej { display:grid; grid-template-columns:30px 1fr auto; align-items:center; gap:4px; border-bottom:1px solid #f1f5f9; padding:1px 2px; }
+    .grilla-ej.retirado { opacity:.38; }
+    .nro-grilla { width:26px; height:20px; border-radius:3px; border:1px solid; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:900; }
+    .nombre-grilla { font-size:8.5px; font-weight:700; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .valor-grilla { font-size:9px; font-weight:800; color:#1d4ed8; }
+    .ft-tabla { display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:800; color:#0f766e; padding:4px 10px; background:#f0fdfa; border-top:1px solid #ccfbf1; }
+    .ft-total { background:#d1d5db; color:#334155; border-radius:999px; padding:0 8px; font-size:9px; }
+    .sin-ej { grid-column:1/-1; font-size:10px; color:#94a3b8; font-style:italic; padding:10px; }
+    * { box-sizing:border-box; font-family:'Segoe UI',Arial,sans-serif; }
+</style>${hojas}`;
+        document.body.appendChild(contenedor);
+
+        try {
+            await new Promise(r => setTimeout(r, 120));
+            const canvas = await window.html2canvas(contenedor, {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                logging: false
+            });
+            const url = canvas.toDataURL(formato === 'png' ? 'image/png' : 'image/jpeg', formato === 'png' ? undefined : 0.92);
+            const nom = `tablas_fijas_${(diaFiltro || 'todas')}_${Date.now()}.${formato}`;
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = nom;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            clubUI.toast(`Imagen ${formato.toUpperCase()} generada correctamente.`, 'success');
+            return true;
+        } catch (err) {
+            clubUI.toast('Error generando la imagen: ' + (err.message || err), 'error');
+            return null;
+        } finally {
+            contenedor.remove();
+        }
+    }
+
+    if (btnImprimirTablas) btnImprimirTablas.addEventListener('click', abrirConfigImpresion);
+    if (cerrarConfigImpresion) cerrarConfigImpresion.addEventListener('click', cerrarModalConfigImpresion);
+    if (btnExportPDF) btnExportPDF.addEventListener('click', () => exportarTablasConfiguradas('PDF'));
+    if (btnExportJPG) btnExportJPG.addEventListener('click', () => exportarTablasConfiguradas('JPG'));
+    if (btnExportPNG) btnExportPNG.addEventListener('click', () => exportarTablasConfiguradas('PNG'));
+    if (modalConfigImpresion) modalConfigImpresion.addEventListener('click', (e) => {
+        if (e.target === modalConfigImpresion) cerrarModalConfigImpresion();
     });
 
     const btnPublicarTodas = document.getElementById('btnPublicarTodas');

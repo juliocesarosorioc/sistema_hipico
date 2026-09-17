@@ -564,6 +564,13 @@ create table if not exists public.clientes_grupos (
     unique (cliente_id, grupo_id)
 );
 
+-- Normaliza columnas (idempotente): multi_grupos.sql las define, pero si este
+-- paquete corrió primero la tabla quedó sin ellas y el app no debe fallar.
+alter table public.clientes_grupos
+    add column if not exists es_principal boolean not null default false,
+    add column if not exists activo       boolean not null default true,
+    add column if not exists created_at   timestamptz not null default now();
+
 create table if not exists public.solicitudes_tablas (
     id            uuid primary key default gen_random_uuid(),
     cliente_id    uuid not null,
@@ -1167,8 +1174,13 @@ begin
 
     if v_cliente_id is null then
         insert into public.clientes (nombre, grupo_id, saldo_actual, libre, modo_juego, aval)
-        values (v_nombre, p_grupo_id, coalesce(p_ingreso, 0), true, 'cuadre', false)
+        values (v_nombre, p_grupo_id, coalesce(p_ingreso, 0), true, 'cuadre', coalesce(p_ingreso, 0))
         returning id into v_cliente_id;
+    else
+        -- El cliente ya existe: asegura su grupo principal si es nulo
+        update public.clientes
+        set grupo_id = coalesce(grupo_id, p_grupo_id)
+        where id = v_cliente_id;
     end if;
 
     insert into public.clientes_grupos (grupo_id, cliente_id)

@@ -1,31 +1,102 @@
 // Archivo: js/whatsapp.js
-// Propósito: Centro de notificaciones WhatsApp: reporte general, envío individual
-// con plantillas dinámicas, registro del historial en notificaciones (tipo 'whatsapp').
+// Propósito: Centro de notificaciones WhatsApp: reporte general (editable), envío
+// individual con plantillas dinámicas editables, editor de mensajes de la plataforma
+// (persistencia local) y registro del historial en notificaciones (tipo 'whatsapp').
 
 document.addEventListener('DOMContentLoaded', () => {
 
-    const PLANTILLAS = {
+    // ==========================================
+    // MENSAJES DE LA PLATAFORMA (editables)
+    //   Persistencia: localStorage (por ahora solo
+    //   se aplican aquí; el resto queda listo para
+    //   conectar a Caja / Ventas de Tablas / Tablas).
+    // ==========================================
+    const CLAVE_MSJ = 'club_mensajes_whatsapp';
+
+    const MENSAJES_DEFAULT = {
         saldo: {
+            grupo: 'Plantillas del Centro WhatsApp',
             label: 'Saldo actual',
+            variables: '{nombre} {saldo} {aval} {club}',
             txt: 'Hola {nombre} 👋\n\n*{club}*\n\nTu saldo actual es:\n💰 *$ {saldo} USD*\n\nAval vigente: $ {aval}\n\n¡Gracias por tu confianza!'
         },
         aval: {
+            grupo: 'Plantillas del Centro WhatsApp',
             label: 'Recordatorio de aval',
+            variables: '{nombre} {aval} {club}',
             txt: 'Hola {nombre} ⚠️\n\n*{club}*\n\nTe recordamos que tienes un aval pendiente de *$ {aval} USD*.\n\nPara mantener tu cuenta al día, pasa por taquilla o coordina tu abono. ¡Gracias!'
         },
         bienvenida: {
+            grupo: 'Plantillas del Centro WhatsApp',
             label: 'Bienvenida',
+            variables: '{nombre} {saldo}',
             txt: '¡Hola {nombre}! 🎉\n\nBienvenido(a) al *Club del Dinero*.\nTu cuenta queda activa con un saldo de *$ {saldo} USD*.\n\n¡Éxitos y buenas jugadas! 🏇'
         },
         negativo: {
+            grupo: 'Plantillas del Centro WhatsApp',
             label: 'Saldo pendiente por abonar',
+            variables: '{nombre} {saldo} {club}',
             txt: 'Hola {nombre} 🙏\n\n*{club}*\n\nTu cuenta presenta un saldo pendiente de *$ {saldo} USD*.\nTe pedimos abonar para continuar disfrutando del servicio.\n\n¡Gracias!'
         },
         personalizada: {
+            grupo: 'Plantillas del Centro WhatsApp',
             label: 'Mensaje personalizado',
+            variables: '{nombre}',
             txt: 'Hola {nombre} 👋\n\n'
+        },
+        reporte_general: {
+            grupo: 'Reportes de saldos',
+            label: 'Reporte general (Centro WhatsApp)',
+            variables: '{fecha} {club} {lineas} {balance}',
+            txt: '📊 *REPORTE DE SALDOS - {club}*\n📅 Fecha: {fecha}\n\n{lineas}💰 *BALANCE GLOBAL (A favor de los clientes):* $ {balance}'
+        },
+        reporte_caja: {
+            grupo: 'Reportes de saldos',
+            label: 'Reporte de saldos (Caja)',
+            variables: '{fecha} {club} {lineas} {balance}',
+            txt: '📊 *REPORTE DE SALDOS - {club}*\n📅 Fecha: {fecha}\n\n{lineas}💰 *BALANCE GLOBAL (A favor de los clientes):* $ {balance}'
+        },
+        resumen_ventas: {
+            grupo: 'Ventas y recibos',
+            label: 'Resumen de ventas del día',
+            variables: '{fecha} {lineas} {total}',
+            txt: '🐎 *VENTA DE TABLAS FIJAS*\n📅 {fecha}\n\n{lineas}✅ *Total: {total}*'
+        },
+        recibo_venta: {
+            grupo: 'Ventas y recibos',
+            label: 'Recibo de venta de tablas',
+            variables: '{cliente} {carrera} {tickets} {lineas_cliente} {total} {premio} {fecha} {folio}',
+            txt: '🎫 *RECIBO DE VENTA — TABLA FIJA*\n🧑 *Jugador(es):* {cliente}\n🏇 *Carrera:* {carrera}\n\n{tickets}\n👥 *Totales por cliente:*\n{lineas_cliente}\n✅ *Total Pagado:* {total}\n🏆 *Premio si gana:* {premio}\n\n📅 {fecha}\nFolio: {folio}'
         }
     };
+
+    function cargarMensajes() {
+        let guardados = {};
+        try { guardados = JSON.parse(localStorage.getItem(CLAVE_MSJ) || '{}'); } catch (e) { guardados = {}; }
+        const m = {};
+        Object.entries(MENSAJES_DEFAULT).forEach(([k, v]) => {
+            m[k] = { ...v, txt: (guardados[k] && typeof guardados[k].txt === 'string') ? guardados[k].txt : v.txt };
+        });
+        return m;
+    }
+
+    let MENSAJES = cargarMensajes();
+
+    // Las plantillas del envío individual son referencias vivas a MENSAJES:
+    // si el usuario edita el texto, el cambio se aplica de inmediato.
+    const PLANTILLAS = {
+        saldo: MENSAJES.saldo,
+        aval: MENSAJES.aval,
+        bienvenida: MENSAJES.bienvenida,
+        negativo: MENSAJES.negativo,
+        personalizada: MENSAJES.personalizada
+    };
+
+    function persistirMensajes() {
+        const pers = {};
+        Object.keys(MENSAJES).forEach(k => { pers[k] = { txt: MENSAJES[k].txt }; });
+        localStorage.setItem(CLAVE_MSJ, JSON.stringify(pers));
+    }
 
     const CLUB = 'Club del Dinero';
     const el = id => document.getElementById(id);
@@ -81,23 +152,25 @@ document.addEventListener('DOMContentLoaded', () => {
     // REPORTE GENERAL DE SALDOS
     // ==========================================
     function generarReporte() {
-        let texto = "📊 *REPORTE DE SALDOS - " + CLUB.toUpperCase() + "*\n";
-        texto += '📅 Fecha: ' + fechaHoy() + '\n\n';
-
+        const t = MENSAJES.reporte_general.txt;
+        let lineas = '';
         let totalCaja = 0, conSaldo = 0;
         clientes.forEach(c => {
             const s = Number(c.saldo_actual);
             if (s !== 0) {
                 const icono = s > 0 ? '🟢' : '🔴';
-                texto += `${icono} *${c.nombre}:* $${clubUI.formatoNumero(s, 2)}\n`;
+                lineas += `${icono} *${c.nombre}:* $${clubUI.formatoNumero(s, 2)}\n`;
                 totalCaja += s; conSaldo++;
             }
         });
 
-        if (conSaldo === 0) texto += 'Sin movimientos pendientes. ✅\n';
+        if (conSaldo === 0) lineas += 'Sin movimientos pendientes. ✅\n';
 
-        texto += `\n💰 *BALANCE GLOBAL (A favor clientes):* $${clubUI.formatoNumero(totalCaja, 2)}`;
-        return texto;
+        return t
+            .replace(/\{fecha\}/g, fechaHoy())
+            .replace(/\{club\}/g, CLUB)
+            .replace(/\{lineas\}/g, lineas)
+            .replace(/\{balance\}/g, clubUI.formatoNumero(totalCaja, 2));
     }
 
     async function refrescarReporte() {
@@ -302,12 +375,82 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
+    // EDITOR DE MENSAJES DE LA PLATAFORMA
+    // ==========================================
+    const selectMsj = el('msjMensaje');
+    const areaMsj = el('msjTexto');
+    const avisoMsj = el('msjVars');
+
+    function poblarSelectMensajes() {
+        const grupos = [...new Set(Object.values(MENSAJES_DEFAULT).map(v => v.grupo))];
+        selectMsj.innerHTML = grupos.map(grp => {
+            const opts = Object.entries(MENSAJES_DEFAULT)
+                .filter(([, v]) => v.grupo === grp)
+                .map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
+            return `<optgroup label="${grp}">${opts}</optgroup>`;
+        }).join('');
+        selectMsj.value = 'saldo';
+    }
+
+    function mostrarMensajeSeleccionado() {
+        const m = MENSAJES[selectMsj.value];
+        if (!m) return;
+        areaMsj.value = m.txt;
+        avisoMsj.textContent = 'Variables disponibles: ' + m.variables;
+    }
+
+    function guardarMensajeActual() {
+        const k = selectMsj.value;
+        if (!k) return clubUI.toast('Selecciona un mensaje.', 'warning');
+        MENSAJES[k].txt = areaMsj.value;
+        persistirMensajes();
+        actualizarPreview(clienteSel);
+        clubUI.toast('Mensaje guardado: ' + MENSAJES[k].label + '.');
+        if (window.clubDB?.logAccion) window.clubDB.logAccion('WHATSAPP', 'mensaje_editado: ' + k);
+    }
+
+    function restaurarMensajeActual() {
+        const k = selectMsj.value;
+        if (!k || !MENSAJES_DEFAULT[k]) return;
+        MENSAJES[k].txt = MENSAJES_DEFAULT[k].txt;
+        persistirMensajes();
+        mostrarMensajeSeleccionado();
+        actualizarPreview(clienteSel);
+        clubUI.toast('Mensaje restaurado al texto original.', 'info');
+    }
+
+    function restaurarTodosMensajes() {
+        Object.keys(MENSAJES_DEFAULT).forEach(k => { MENSAJES[k].txt = MENSAJES_DEFAULT[k].txt; });
+        persistirMensajes();
+        mostrarMensajeSeleccionado();
+        actualizarPreview(clienteSel);
+        clubUI.toast('Todos los mensajes restaurados.', 'info');
+    }
+
+    selectMsj.addEventListener('change', mostrarMensajeSeleccionado);
+    el('btnGuardarMensaje').addEventListener('click', guardarMensajeActual);
+    el('btnRestaurarMensaje').addEventListener('click', restaurarMensajeActual);
+    el('btnRestaurarMensajes').addEventListener('click', () => {
+        if (typeof clubUI.aviso === 'function') {
+            return clubUI.aviso('Restaurar mensajes', '¿Restaurar todos los mensajes WhatsApp a su texto original?', 'warning', restaurarTodosMensajes);
+        }
+        restaurarTodosMensajes();
+    });
+    el('btnCopiarMensaje').addEventListener('click', () => {
+        areaMsj.select();
+        document.execCommand('copy');
+        clubUI.toast('Texto copiado al portapapeles.');
+    });
+
+    // ==========================================
     // ARRANQUE
     // ==========================================
     el('fechaHeaderWsp').textContent = new Date().toLocaleString('es-ES');
     selectPlantilla.innerHTML = Object.entries(PLANTILLAS)
         .map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
     selectPlantilla.value = 'saldo';
+    poblarSelectMensajes();
+    mostrarMensajeSeleccionado();
 
     el('btnRefrescarHistorial').addEventListener('click', cargarHistorial);
     cargarClientes();
