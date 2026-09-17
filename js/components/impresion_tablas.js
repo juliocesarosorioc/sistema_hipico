@@ -54,21 +54,21 @@ window.clubImpresionTablas = (function () {
     .cabecera-hoja { border-bottom:3px solid #1d4ed8; padding-bottom:3px; }
     .titulo-hoja { font-size:20px; font-weight:900; letter-spacing:1px; color:#1e3a8a; text-transform:uppercase; }
     .sub-hoja { font-size:11px; color:#64748b; font-weight:600; margin-top:1px; }
-    .grilla-16 { flex:1; min-height:0; display:grid; grid-template-columns:repeat(4,1fr); grid-template-rows:repeat(4,1fr); gap:7px; }
+    .grilla-15 { flex:1; min-height:0; display:grid; grid-template-columns:repeat(5,1fr); grid-template-rows:repeat(3,1fr); gap:6px; }
     .tabla-imp { border:1.5px solid #334155; border-radius:7px; overflow:hidden; display:flex; flex-direction:column; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.08); min-height:0; }
     .hd-tabla { background:linear-gradient(135deg,#1e40af,#4338ca); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:3px 8px; }
     .hd-hipo { font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .hd-carrera { font-size:15px; font-weight:900; background:rgba(255,255,255,.18); border-radius:5px; padding:0 7px; }
-    .hd-meta { display:flex; gap:8px; font-size:9.5px; font-weight:700; color:#475569; padding:1px 8px 2px; border-bottom:1px solid #e2e8f0; white-space:nowrap; overflow:hidden; }
     .hd-premio { display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:800; color:#b45309; padding:2px 8px; background:#fffbeb; border-bottom:1px solid #f1f5f9; text-transform:uppercase; }
     .hd-premio .premio-val { font-size:13px; font-weight:900; color:#b45309; }
-    .grilla-prin { flex:1; min-height:0; display:flex; flex-direction:column; padding:3px 5px 2px; overflow:hidden; }
-    .grilla-ej { display:grid; align-items:center; gap:4px; border-bottom:1px solid #eef2f7; padding:0; flex:1; min-height:0; }
+    .grilla-prin { flex:1; min-height:0; display:flex; flex-direction:column; padding:0; overflow:hidden; }
+    .grilla-ej { display:grid; align-items:center; gap:2px; padding:0; margin:0; border-bottom:1px solid #eef2f7; flex:1; min-height:0; }
     .grilla-ej:last-child { border-bottom:none; }
+    .grilla-ej:nth-child(even) { background:#f3f6fb; }
     .grilla-ej.retirado { opacity:.40; }
     .nro-grilla { border-radius:3px; border:1px solid; display:flex; align-items:center; justify-content:center; font-weight:900; flex:none; }
-    .nombre-grilla { font-weight:700; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .valor-grilla { font-weight:800; color:#1d4ed8; text-align:right; white-space:nowrap; }
+    .nombre-grilla { font-weight:700; text-transform:uppercase; white-space:nowrap; min-width:0; line-height:1.1; }
+    .valor-grilla { font-weight:800; color:#1d4ed8; text-align:right; white-space:nowrap; padding-left:4px; }
     .sin-ej { grid-column:1/-1; font-size:11px; color:#94a3b8; font-style:italic; padding:12px; }
     .notas-hoja { display:flex; justify-content:space-between; gap:14px; font-size:10.5px; color:#78350f; background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:4px 10px; font-weight:700; }
     `;
@@ -85,7 +85,7 @@ window.clubImpresionTablas = (function () {
     function tamanoTarjeta(n) {
         const rows = Math.max(1, n);
         // Alto aproximado (px) del área de lista dentro de la tarjeta.
-        const altoLista = 185;
+        const altoLista = 280;
         const filaH = altoLista / rows;
         const k = Math.min(1, Math.max(0.5, filaH / 18));
         const fsNom = Math.round(Math.min(10, Math.max(6, filaH * 0.55)) * 10) / 10;
@@ -124,11 +124,6 @@ window.clubImpresionTablas = (function () {
                     <div class="hd-hipo">${t.hipodromo || ''}</div>
                     <div class="hd-carrera">C${t.carrera ?? ''}</div>
                 </div>
-                <div class="hd-meta">
-                    <span>Dist: ${t.distancia_carrera ?? ''} m</span>
-                    <span>${t.superficie || 'ARENA'}</span>
-                    <span>${t.fecha || ''}</span>
-                </div>
                 <div class="hd-premio">
                     <span>Monto a Pagar / Tabla</span>
                     <span class="premio-val">$${fmt(premio)}</span>
@@ -145,7 +140,7 @@ window.clubImpresionTablas = (function () {
                     <div class="titulo-hoja">TABLAS FIJAS PUBLICADAS</div>
                     <div class="sub-hoja">${fecha} · Hoja ${pidx + 1} de ${paginas.length} · Total ${tablas.length} carreras · última versión de valores</div>
                 </div>
-                <div class="grilla-16">
+                <div class="grilla-15">
                     ${pag.map(cardHTML).join('')}
                 </div>
                 <div class="notas-hoja">
@@ -246,7 +241,7 @@ window.clubImpresionTablas = (function () {
         }
         tablas.sort((a, b) => String(a.hipodromo || '').localeCompare(String(b.hipodromo || '')) || (Number(a.carrera) || 0) - (Number(b.carrera) || 0));
 
-        const POR_HOJA = 16;
+        const POR_HOJA = 15;
         const paginas = [];
         for (let i = 0; i < tablas.length; i += POR_HOJA) paginas.push(tablas.slice(i, i + POR_HOJA));
 
