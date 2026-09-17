@@ -120,23 +120,29 @@
     }
 
     // ============================================================
-    // IMPRESIÓN: abre una ventana limpia lista para imprimir
+    // IMPRESIÓN: abre una ventana limpia lista para imprimir.
+    // El ancho por defecto es 460px; se puede pasar un ancho mayor
+    // (p. ej. 940) para tickets/comprobantes amplios.
     // ============================================================
-    function printHTML(titulo, html) {
-        const w = window.open('', '_blank', 'width=460,height=680');
+    function printHTML(titulo, html, ancho = 460) {
+        const w = window.open('', '_blank', `width=${ancho},height=720`);
         if (!w) { alert('Permita ventanas emergentes para poder imprimir el documento.'); return; }
         w.document.write(`<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${titulo}</title>
 <style>
     body{font-family:'Segoe UI',Arial,sans-serif;color:#0f172a;margin:22px;font-size:13px}
-    h1{font-size:16px;text-align:center;border-bottom:2px solid #10b981;padding-bottom:8px;margin:0 0 4px}
+    h1{font-size:17px;text-align:center;border-bottom:2px solid #10b981;padding-bottom:8px;margin:0 0 4px}
     .sub{text-align:center;color:#64748b;font-size:11px;margin-bottom:12px}
     table{width:100%;border-collapse:collapse;margin-top:8px}
     td,th{border:1px solid #cbd5e1;padding:5px 8px;text-align:left;font-size:12px}
     th{background:#f1f5f9}
     .r{text-align:right}.b{font-weight:700}
     .gran{border-top:3px double #0f172a;margin-top:6px;background:#ecfdf5;font-weight:700}
+    .cli-titulo{background:#eef2ff;font-weight:800;text-transform:uppercase;font-size:11px}
+    .cli-sub{background:#f8fafc;font-weight:700;border-top:1px dashed #cbd5e1}
     .aviso{font-size:10px;color:#475569;margin-top:10px;text-align:center}
+    .condiciones{font-size:10.5px;color:#78350f;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:8px 10px;margin-top:12px;text-align:left}
+    .condiciones b{color:#92400e}
 </style></head><body>${html}</body></html>`);
         w.document.close();
         w.focus();
@@ -174,6 +180,10 @@
                 El premio indicado ya está ajustado por los retiros oficiales de la carrera.<br>
                 La liquidación del premio se realiza al cierre de la carrera.
                 ${notas.length ? '<br>' + notas.join('<br>') : ''}
+            </div>
+            <div class="condiciones">
+                <b>Condiciones generales:</b> El monto a cobrar está sujeto a ajuste por retiros de ejemplares.<br>
+                Si hay retiros se ajusta el monto a pagar. En caso de empates se divide el premio.
             </div>
         `;
     }

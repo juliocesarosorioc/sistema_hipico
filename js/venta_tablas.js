@@ -364,190 +364,11 @@ msgSinCarreras.classList.add('hidden');
     // ==========================================
     
     async function imprimirTablasPublicadas(hipoFiltro = '', diaFiltro = '', formato = 'pdf') {
-        // SIEMPRE recarga la última versión de valores desde Supabase (sin caché)
-        let tablas = [];
-        try {
-            const r = await window.supabase
-                .from('tablas_fijas')
-                .select('*, tabla_grupos(*)')
-                .eq('estado', 'Abierta');
-            if (r.error) throw r.error;
-            tablas = r.data || [];
-        } catch (e) {
-            clubUI.toast('No se pudieron actualizar los valores: ' + (e.message || e), 'error');
-            return null;
+        if (window.clubImpresionTablas) {
+            return window.clubImpresionTablas.imprimirTablasPublicadas(hipoFiltro, diaFiltro, formato);
         }
-        if (tablas.length) tablasDB = tablas;
-
-        if (hipoFiltro) {
-            tablas = tablas.filter(t => String(t.hipodromo || '').trim().toLowerCase() === String(hipoFiltro).trim().toLowerCase());
-        }
-        if (diaFiltro) {
-            tablas = tablas.filter(t => String(t.fecha || '').slice(0, 10) === String(diaFiltro).slice(0, 10));
-        }
-        if (tablas.length === 0) return clubUI.toast('No hay tablas publicadas para imprimir (estado "Abierta").', 'warning');
-        tablas.sort((a, b) => String(a.hipodromo || '').localeCompare(String(b.hipodromo || '')) || (Number(a.carrera) || 0) - (Number(b.carrera) || 0));
-
-        const POR_HOJA = 16;
-        const paginas = [];
-        for (let i = 0; i < tablas.length; i += POR_HOJA) paginas.push(tablas.slice(i, i + POR_HOJA));
-
-        const fecha = new Date().toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
-
-        const cardHTML = (t) => {
-            const premio = parseFloat(t.premio_recalculado) || 0;
-            const ejemplares = (Array.isArray(t.caballos) ? t.caballos : []).slice(0, 16);
-            const suma = ejemplares.reduce((acc, c) => acc + (parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0), 0);
-
-            const grilla = ejemplares.map(c => {
-                const bg = colorDeNumero(c.numero);
-                const fg = textoDeNumero(c.numero);
-                const ret = !!c.retirado;
-                const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
-                return `
-                    <div class="grilla-ej ${ret ? 'retirado' : ''}">
-                        <div class="nro-grilla" style="background:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</div>
-                        <div class="nombre-grilla">${c.nombre || ''}</div>
-                        <div class="valor-grilla">${ret ? 'RET.' : fmt(valor, 0)}</div>
-                    </div>`;
-            }).join('') || '<div class="sin-ej">Sin ejemplares registrados.</div>';
-
-            return `
-                <div class="tabla-imp">
-                    <div class="hd-tabla">
-                        <div class="hd-hipo">${t.hipodromo || ''}</div>
-                        <div class="hd-carrera">C${t.carrera ?? ''}</div>
-                    </div>
-                    <div class="hd-meta">
-                        <span>Dist: ${t.distancia_carrera ?? ''} m</span>
-                        <span>${t.superficie || 'ARENA'}</span>
-                        <span>${t.fecha || ''}</span>
-                    </div>
-                    <div class="hd-premio">
-                        <span>Monto a Pagar / Tabla</span>
-                        <span class="premio-val">$${fmt(premio)}</span>
-                    </div>
-                    <div class="grilla-prin">${grilla}</div>
-                    <div class="ft-tabla">
-                        <span><i class="numerico-nro"></i>Suma: $${fmt(suma)}</span>
-                        <span class="ft-total">${ejemplares.length} ej.</span>
-                    </div>
-                </div>`;
-        };
-
-        const hojas = paginas.map((pag, pidx) => `
-            <div class="hoja">
-                <div class="cabecera-hoja">
-                    <div class="titulo-hoja">TABLAS FIJAS PUBLICADAS</div>
-                    <div class="sub-hoja">${fecha} · Hoja ${pidx + 1} de ${paginas.length} · Total ${tablas.length} carreras · última versión de valores</div>
-                </div>
-                <div class="grilla-16">
-                    ${pag.map(cardHTML).join('')}
-                </div>
-            </div>`).join('');
-
-        if (formato === 'pdf') {
-            const w = window.open('', '_blank', 'width=1400,height=900');
-            if (!w) { alert('Permita ventanas emergentes para poder imprimir el documento.'); return null; }
-            w.document.write(`<!DOCTYPE html>
-<html lang="es"><head><meta charset="utf-8"><title>Tablas Fijas Publicadas</title>
-<style>
-    @page { size: letter landscape; margin: 8mm; }
-    * { box-sizing: border-box; }
-    body { font-family:'Segoe UI',Arial,sans-serif; color:#0f172a; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-    .hoja { width:100%; page-break-after: always; display:flex; flex-direction:column; gap:5px; }
-    .hoja:last-child { page-break-after: auto; }
-    .cabecera-hoja { border-bottom:3px solid #1d4ed8; padding-bottom:5px; margin-bottom:5px; }
-    .titulo-hoja { font-size:20px; font-weight:900; letter-spacing:1px; color:#1e3a8a; text-transform:uppercase; }
-    .sub-hoja { font-size:11px; color:#64748b; font-weight:600; margin-top:2px; }
-    .grilla-16 { display:grid; grid-template-columns:repeat(4, 1fr); grid-template-rows:repeat(4, 1fr); gap:7px; height:176mm; }
-    .tabla-imp { border:1.5px solid #334155; border-radius:8px; overflow:hidden; display:flex; flex-direction:column; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.08); }
-    .hd-tabla { background:linear-gradient(135deg,#1e40af,#4338ca); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:6px 10px; }
-    .hd-hipo { font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .hd-carrera { font-size:18px; font-weight:900; background:rgba(255,255,255,.18); border-radius:6px; padding:1px 8px; }
-    .hd-meta { display:flex; gap:8px; font-size:10px; font-weight:700; color:#475569; padding:4px 10px; border-bottom:1px solid #e2e8f0; }
-    .hd-premio { display:flex; justify-content:space-between; align-items:center; font-size:11px; font-weight:800; color:#b45309; padding:4px 10px; background:#fffbeb; border-bottom:1px solid #f1f5f9; text-transform:uppercase; }
-    .hd-premio .premio-val { font-size:16px; font-weight:900; color:#b45309; }
-    .grilla-prin { flex:1; display:grid; grid-template-columns:repeat(4,1fr); align-content:start; gap:3px; padding:6px; overflow:hidden; }
-    .grilla-ej { display:grid; grid-template-columns:30px 1fr auto; align-items:center; gap:4px; border-bottom:1px solid #f1f5f9; padding:1px 2px; }
-    .grilla-ej.retirado { opacity:.38; }
-    .nro-grilla { width:26px; height:20px; border-radius:3px; border:1px solid; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:900; }
-    .nombre-grilla { font-size:8.5px; font-weight:700; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .valor-grilla { font-size:9px; font-weight:800; color:#1d4ed8; }
-    .ft-tabla { display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:800; color:#0f766e; padding:4px 10px; background:#f0fdfa; border-top:1px solid #ccfbf1; }
-    .ft-total { background:#d1d5db; color:#334155; border-radius:999px; padding:0 8px; font-size:9px; }
-    .sin-ej { grid-column:1/-1; font-size:10px; color:#94a3b8; font-style:italic; padding:10px; }
-</style></head><body>${hojas}</body></html>`);
-            w.document.close();
-            w.focus();
-            setTimeout(() => { w.print(); }, 450);
-            return true;
-        }
-
-        // Formato imagen (JPG/PNG): html2canvas sobre un contenedor oculto.
-        if (typeof window.html2canvas !== 'function') {
-            clubUI.toast('Falta la librería html2canvas para generar imágenes. Recargue la página.', 'error');
-            return null;
-        }
-
-        const contenedor = document.createElement('div');
-        contenedor.id = 'contenedorImagenTablas';
-        contenedor.style.position = 'fixed';
-        contenedor.style.left = '-9999px';
-        contenedor.style.top = '0';
-        contenedor.style.background = '#fff';
-        contenedor.style.padding = '10px';
-        contenedor.style.width = '1200px';
-        contenedor.innerHTML = `<style>
-    .hoja { width:100%; display:flex; flex-direction:column; gap:5px; margin-bottom:14px; }
-    .cabecera-hoja { border-bottom:3px solid #1d4ed8; padding-bottom:5px; margin-bottom:5px; }
-    .titulo-hoja { font-size:20px; font-weight:900; letter-spacing:1px; color:#1e3a8a; text-transform:uppercase; }
-    .sub-hoja { font-size:11px; color:#64748b; font-weight:600; margin-top:2px; }
-    .grilla-16 { display:grid; grid-template-columns:repeat(4, 1fr); grid-template-rows:repeat(4, 1fr); gap:7px; height:158mm; }
-    .tabla-imp { border:1.5px solid #334155; border-radius:8px; overflow:hidden; display:flex; flex-direction:column; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.08); }
-    .hd-tabla { background:linear-gradient(135deg,#1e40af,#4338ca); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:6px 10px; }
-    .hd-hipo { font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .hd-carrera { font-size:18px; font-weight:900; background:rgba(255,255,255,.18); border-radius:6px; padding:1px 8px; }
-    .hd-meta { display:flex; gap:8px; font-size:10px; font-weight:700; color:#475569; padding:4px 10px; border-bottom:1px solid #e2e8f0; }
-    .hd-premio { display:flex; justify-content:space-between; align-items:center; font-size:11px; font-weight:800; color:#b45309; padding:4px 10px; background:#fffbeb; border-bottom:1px solid #f1f5f9; text-transform:uppercase; }
-    .hd-premio .premio-val { font-size:16px; font-weight:900; color:#b45309; }
-    .grilla-prin { flex:1; display:grid; grid-template-columns:repeat(4,1fr); align-content:start; gap:3px; padding:6px; overflow:hidden; }
-    .grilla-ej { display:grid; grid-template-columns:30px 1fr auto; align-items:center; gap:4px; border-bottom:1px solid #f1f5f9; padding:1px 2px; }
-    .grilla-ej.retirado { opacity:.38; }
-    .nro-grilla { width:26px; height:20px; border-radius:3px; border:1px solid; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:900; }
-    .nombre-grilla { font-size:8.5px; font-weight:700; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .valor-grilla { font-size:9px; font-weight:800; color:#1d4ed8; }
-    .ft-tabla { display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:800; color:#0f766e; padding:4px 10px; background:#f0fdfa; border-top:1px solid #ccfbf1; }
-    .ft-total { background:#d1d5db; color:#334155; border-radius:999px; padding:0 8px; font-size:9px; }
-    .sin-ej { grid-column:1/-1; font-size:10px; color:#94a3b8; font-style:italic; padding:10px; }
-    * { box-sizing:border-box; font-family:'Segoe UI',Arial,sans-serif; }
-</style>${hojas}`;
-        document.body.appendChild(contenedor);
-
-        try {
-            await new Promise(r => setTimeout(r, 120));
-            const canvas = await window.html2canvas(contenedor, {
-                scale: 2,
-                useCORS: true,
-                backgroundColor: '#ffffff',
-                logging: false
-            });
-            const url = canvas.toDataURL(formato === 'png' ? 'image/png' : 'image/jpeg', formato === 'png' ? undefined : 0.92);
-            const nom = `tablas_fijas_${(diaFiltro || 'todas')}_${Date.now()}.${formato}`;
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = nom;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            clubUI.toast(`Imagen ${formato.toUpperCase()} generada correctamente.`, 'success');
-            return true;
-        } catch (err) {
-            clubUI.toast('Error generando la imagen: ' + (err.message || err), 'error');
-            return null;
-        } finally {
-            contenedor.remove();
-        }
+        clubUI.toast('No se cargó el componente de impresión. Recargue la página.', 'error');
+        return null;
     }
 
     // ==========================================
@@ -1032,7 +853,7 @@ msgSinCarreras.classList.add('hidden');
 
             const saldoPosterior = (parseFloat(cliente.saldo_actual || 0)) - costoTotalUSD;
             const htmlComp = comprobanteMultiHTML({ cliente, resultados, grupo: cobroGrupo, grupoComision, totalCosto, totalPremio, totalGanancia, totalComision, saldoPosterior, esVES: esVESGlobal });
-            window.VentaTablasCore.printHTML(`Comprobante — ${cliente.nombre} (${resultados.length} items)`, htmlComp);
+            window.VentaTablasCore.printHTML(`Comprobante — ${cliente.nombre} (${resultados.length} items)`, htmlComp, 940);
         }
 
         mvConfirmar.disabled = false;
@@ -1087,6 +908,10 @@ msgSinCarreras.classList.add('hidden');
             <div class="aviso">
                 Premios ajustados por retiros oficiales de cada carrera. Liquidación al cierre de la carrera.<br>
                 ${notas.length ? notas.join('<br>') : ''}
+            </div>
+            <div class="condiciones">
+                <b>Condiciones generales:</b> El monto a cobrar está sujeto a ajuste por retiros de ejemplares.<br>
+                Si hay retiros se ajusta el monto a pagar. En caso de empates se divide el premio.
             </div>`;
     }
 

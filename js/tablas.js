@@ -1664,7 +1664,8 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         else localStorage.removeItem(CLAVE_CARRITO_ESTADO);
     }
 
-    // Imprime SOLO el ticket de un grupo del carrito (un ticket por grupo, sin mezclar)
+    // Imprime SOLO el ticket de un grupo del carrito (un ticket por grupo, sin mezclar).
+    // Cuadro AMPLIO: lista cada jugador con su jugada y su monto, luego el total del grupo.
     function imprimirTicketGrupoCarrito(gi) {
         const g = carritoGruposCache[gi];
         if (!g || !g.items || !g.items.length) return clubUI.toast('Grupo no encontrado en el carrito.', 'warning');
@@ -1672,28 +1673,54 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         const monedaSim = t?.moneda === 'VES' ? 'Bs ' : '$';
         const fecha = new Date().toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
         const folio = `T-${t?.hipodromo || ''}-C${t?.carrera ?? ''}-G${g.grupo?.id ?? ''}-${Date.now().toString().slice(-6)}`;
-        const filas = g.items.map(it => {
-            const c = it.ejemplar;
-            const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
-            const sub = valor * it.cantidad;
-            return `<tr>
-                <td>N° ${c.numero || '-'}</td><td>${c.nombre}</td>
-                <td class="r">${it.cantidad}</td><td class="r">${monedaSim}${clubUI.formatoNumero(valor, 2)}</td>
-                <td class="r b">${monedaSim}${clubUI.formatoNumero(sub, 2)}</td>
-            </tr>`;
+
+        // Agrupar por jugador (si el item ya tiene jugador asignado)
+        const porJugador = new Map();
+        g.items.forEach(it => {
+            const cid = String(it.cli?.id ?? '');
+            const nom = it.cli?.nombre || 'Jugador';
+            if (!porJugador.has(cid)) porJugador.set(cid, { nombre: nom, items: [] });
+            porJugador.get(cid).items.push(it);
+        });
+
+        const seccionesPorJugador = [...porJugador.values()].map(ju => {
+            const filas = ju.items.map(it => {
+                const c = it.ejemplar;
+                const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
+                const sub = valor * it.cantidad;
+                return `<tr>
+                    <td>N° ${c.numero || '-'}</td><td>${c.nombre}</td>
+                    <td class="r">${it.cantidad}</td><td class="r">${monedaSim}${clubUI.formatoNumero(valor, 2)}</td>
+                    <td class="r b">${monedaSim}${clubUI.formatoNumero(sub, 2)}</td>
+                </tr>`;
+            }).join('');
+            const subJug = ju.items.reduce((a, it) => a + (parseFloat(it.ejemplar.valor_ejemplar ?? it.ejemplar.valor ?? it.ejemplar.pts) || 0) * it.cantidad, 0);
+            return `
+                <tr class="cli-titulo"><td colspan="5">${ju.nombre}</td></tr>
+                ${filas}
+                <tr class="cli-sub"><td colspan="4" class="r">Total ${ju.nombre}</td><td class="r b">${monedaSim}${clubUI.formatoNumero(subJug, 2)}</td></tr>`;
         }).join('');
+
         const total = g.items.reduce((a, it) => a + (parseFloat(it.ejemplar.valor_ejemplar ?? it.ejemplar.valor ?? it.ejemplar.pts) || 0) * it.cantidad, 0);
-        const clientes = [...new Set(g.items.map(it => it.cli?.nombre || '').filter(Boolean))].join(', ');
+        const premioTabla = parseFloat(t?.premio_recalculado) || 0;
+        const premioGrupo = g.items.reduce((a, it) => a + premioTabla * it.cantidad, 0);
         const html = `
             <h1>Ticket de Venta · Tabla Fija · ${g.grupo?.nombre || 'Grupo'}</h1>
-            <div class="sub">Folio: ${folio} &nbsp;·&nbsp; ${fecha}</div>
+            <div class="sub">Folio: ${folio} &nbsp;·&nbsp; ${fecha} &nbsp;·&nbsp; ${t?.hipodromo || ''} C${t?.carrera ?? ''} (Dist. ${t?.distancia_carrera ?? ''} m)</div>
             <table>
                 <tr><th>Ejemplar</th><th>Cliente</th><th class="r">Cant</th><th class="r">Valor</th><th class="r">Subtotal</th></tr>
-                ${filas}
+                ${seccionesPorJugador}
                 <tr class="gran"><td colspan="4" class="r b">TOTAL ${g.grupo?.nombre || 'GRUPO'}</td><td class="r b">${monedaSim}${clubUI.formatoNumero(total, 2)}</td></tr>
             </table>
-            <div class="aviso">${clientes ? 'Clientes: ' + clientes + '<br>' : ''}Un ticket por grupo. La venta se confirma en "Cerrar Venta".</div>`;
-        VentaTablasCore.printHTML(`Ticket — ${g.grupo?.nombre || 'Grupo'}`, html);
+            <div class="aviso">
+                Premio si gana: ${monedaSim}${clubUI.formatoNumero(premioGrupo, 2)} (por cada carrera).<br>
+                Un ticket por grupo, un jugador por sección. La venta se confirma en "Cerrar Venta".
+            </div>
+            <div class="condiciones">
+                <b>Condiciones generales:</b> Sujeto a ajuste por retiros de ejemplares. Si hay retiros se ajusta el monto a pagar.<br>
+                En caso de empates se divide el premio.
+            </div>`;
+        VentaTablasCore.printHTML(`Ticket — ${g.grupo?.nombre || 'Grupo'}`, html, 940);
     }
 
     function cerrarModalVentaMon() {
@@ -1842,22 +1869,55 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             porCliente.get(cid).premio += r.res.premioTotal;
         });
 
-        const clientesGrupo = [...new Set(resultados.map(r => r.it.cli?.nombre || '').filter(Boolean))].join(', ') || 'Cliente';
+        // Agrupa los resultados de un grupo por jugador (cada jugador lista su jugada + total)
+        const porJugadorDeGrupo = (g) => {
+            const map = new Map();
+            g.items.forEach(r => {
+                const cid = String(r.it.cli?.id ?? '');
+                const nom = r.it.cli?.nombre || 'Cliente';
+                if (!map.has(cid)) map.set(cid, { nombre: nom, items: [] });
+                map.get(cid).items.push(r);
+            });
+            return [...map.values()];
+        };
 
-        const seccionesGrupo = [...porGrupo.values()].map(g => {
-            const filasG = g.items.map(r => `
-                <span class="block">N° ${r.it.ejemplar.numero || '-'} — ${r.it.ejemplar.nombre} · ${r.it.cantidad} tabla(s) a ${monedaSim}${clubUI.formatoNumero(r.res.pts, 1)} = ${monedaSim}${clubUI.formatoNumero(r.res.costoTotal, 2)}</span>`).join('');
+        // Texto WhatsApp de UN solo grupo (ticket individual por grupo)
+        const textoTicketGrupo = (g) => {
+            const lin = porJugadorDeGrupo(g).map(ju => {
+                const jugadas = ju.items.map(r => `    N° ${r.it.ejemplar.numero || '-'} ${r.it.ejemplar.nombre} — ${r.it.cantidad} tabla(s) a ${monedaSim}${clubUI.formatoNumero(r.res.pts, 1)} = ${monedaSim}${clubUI.formatoNumero(r.res.costoTotal, 2)}\n`).join('');
+                const subJug = ju.items.reduce((a, r) => a + r.res.costoTotal, 0);
+                return `  👤 *${ju.nombre}*\n${jugadas}    ➜ Total ${ju.nombre}: ${monedaSim}${clubUI.formatoNumero(subJug, 2)}\n`;
+            }).join('');
+            const subG = g.items.reduce((a, r) => a + r.res.costoTotal, 0);
+            const premG = g.items.reduce((a, r) => a + r.res.premioTotal, 0);
+            return `🎫 *TICKET DE VENTA — ${g.grupo?.nombre || 'GRUPO'}*\n\n${lin}✅ *Total del grupo:* ${monedaSim}${clubUI.formatoNumero(subG, 2)}\n🏆 *Premio si gana (por carrera):* ${monedaSim}${clubUI.formatoNumero(premG, 2)} — Si hay retiros se ajusta el monto a pagar.\n\n📌 *Condiciones:* Sujeto a ajuste por retiros de ejemplares. En caso de empates se divide el premio.\n\n📅 ${fecha} · Folio: ${folio}`;
+        };
+
+        const bloquesGrupo = [...porGrupo.values()].map(g => {
+            const jugadores = porJugadorDeGrupo(g).map(ju => {
+                const jugadas = ju.items.map(r => `
+                    <span class="block text-[11px] text-slate-600 ml-4">N° ${r.it.ejemplar.numero || '-'} — ${r.it.ejemplar.nombre} · ${r.it.cantidad} tabla(s) a ${monedaSim}${clubUI.formatoNumero(r.res.pts, 1)} = <b>${monedaSim}${clubUI.formatoNumero(r.res.costoTotal, 2)}</b></span>`).join('');
+                const subJug = ju.items.reduce((a, r) => a + r.res.costoTotal, 0);
+                return `
+                <span class="block text-xs font-bold text-slate-800 mt-1"><i class="fas fa-user text-indigo-400 mr-1"></i> ${ju.nombre} — Total: <b class="text-emerald-600">${monedaSim}${clubUI.formatoNumero(subJug, 0)}</b></span>
+                ${jugadas}`;
+            }).join('');
             const subG = g.items.reduce((a, r) => a + r.res.costoTotal, 0);
             const premG = g.items.reduce((a, r) => a + r.res.premioTotal, 0);
             return `
             <div class="border border-emerald-200 bg-white rounded-lg p-2">
                 <span class="flex items-center justify-between gap-1">
                     <span class="block font-black text-emerald-700 uppercase tracking-wide text-xs"><i class="fas fa-ticket-alt mr-1"></i> Ticket · ${g.grupo?.nombre || 'Grupo'}</span>
-                    <button type="button" class="btn-imprimir-recibo-grupo bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded transition-colors shrink-0" data-gidx="${[...porGrupo.keys()].indexOf(String(g.grupo?.id ?? ''))}" title="Imprimir ticket de este grupo"><i class="fas fa-print mr-1"></i> Imprimir</button>
+                    <button type="button" class="btn-imprimir-recibo-grupo bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded transition-colors shrink-0" data-gidx="${[...porGrupo.keys()].indexOf(String(g.grupo?.id ?? ''))}" title="Imprimir ticket de este grupo (cuadro amplio)"><i class="fas fa-print mr-1"></i> Imprimir</button>
                 </span>
-                ${filasG}
+                ${jugadores}
                 <span class="block text-xs font-black text-slate-700 pt-1 border-t border-emerald-100 mt-1">Subtotal grupo: <span class="text-emerald-600">${monedaSim}${clubUI.formatoNumero(subG, 0)}</span></span>
-                <span class="block text-[11px] font-bold text-blue-600">Premio si gana: ${monedaSim}${clubUI.formatoNumero(premG, 0)}</span>
+                <span class="block text-[11px] font-bold text-blue-600">Premio si gana (por carrera): ${monedaSim}${clubUI.formatoNumero(premG, 0)} — <i>si hay retiros se ajusta el monto a pagar.</i></span>
+                <textarea id="msgGrupoRecibo_${[...porGrupo.keys()].indexOf(String(g.grupo?.id ?? ''))}" readonly class="w-full mt-2 border border-slate-300 bg-slate-50 rounded-xl p-2 text-[11px] font-mono text-slate-700 outline-none resize-none" rows="5">${textoTicketGrupo(g)}</textarea>
+                <span class="flex gap-1 mt-1">
+                    <button type="button" class="btn-whatsapp-grupo flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase px-2 py-1 rounded" data-gidx="${[...porGrupo.keys()].indexOf(String(g.grupo?.id ?? ''))}"><i class="fab fa-whatsapp mr-1"></i> WhatsApp del grupo</button>
+                    <button type="button" class="btn-copiar-grupo flex-1 bg-slate-800 hover:bg-black text-white text-[10px] font-black uppercase px-2 py-1 rounded" data-gidx="${[...porGrupo.keys()].indexOf(String(g.grupo?.id ?? ''))}"><i class="fas fa-copy mr-1"></i> Copiar</button>
+                </span>
             </div>`;
         }).join('');
 
@@ -1866,33 +1926,28 @@ const { error } = await window.supabase.from('tablas_fijas').update({
 
         const resumen = document.getElementById('resumenReciboVenta');
         resumen.innerHTML = `
-            <span class="font-black text-slate-800">${clientesGrupo}</span>
+            <span class="font-black text-slate-800">Recibo de venta — Tabla Fija</span>
             <span class="block text-slate-500">Folio: ${folio} · ${fecha}</span>
-            <span class="block text-slate-500">${t?.hipodromo || ''} · C${t?.carrera ?? ''} · Dist. ${t?.distancia_carrera ?? ''} m</span>
-            <span class="block text-[10px] font-black uppercase tracking-wider text-slate-400 mt-1">Tickets por grupo</span>
-            ${seccionesGrupo}
+            <span class="block text-[10px] font-black uppercase tracking-wider text-slate-400 mt-1">Tickets por grupo · cada jugador con su jugada</span>
+            ${bloquesGrupo}
             <span class="block text-[10px] font-black uppercase tracking-wider text-slate-400 mt-2">Totales por cliente</span>
             ${filasPorCliente}
             <span class="block pt-1 border-t border-slate-200 mt-1 font-black text-emerald-700">Total Pagado: ${monedaSim}${clubUI.formatoNumero(totalCosto, 0)}</span>
-            <span class="block font-black text-blue-700">Premio a cobrar (si gana): ${monedaSim}${clubUI.formatoNumero(totalPremio, 0)}</span>`;
+            <span class="block font-black text-blue-700">Premio a cobrar (por carrera, si gana): ${monedaSim}${clubUI.formatoNumero(totalPremio, 0)}</span>
+            <span class="block text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 mt-1">⚠️ Monto a cobrar sujeto a ajuste por retiros de ejemplares.</span>
+            <span class="block text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">⚖️ En caso de empates se divide el premio.</span>`;
 
-        const bloquesGrupo = [...porGrupo.values()].map(g => {
-            const lin = g.items.map(r => `  N° ${r.it.ejemplar.numero || '-'} ${r.it.ejemplar.nombre} — ${r.it.cantidad} tabla(s) a ${monedaSim}${clubUI.formatoNumero(r.res.pts, 1)}\n`).join('');
-            const subG = g.items.reduce((a, r) => a + r.res.costoTotal, 0);
-            return `🎫 *TICKET · ${g.grupo?.nombre || 'GRUPO'}*\n${lin}  ➜ Subtotal grupo: ${monedaSim}${clubUI.formatoNumero(subG, 2)}\n`;
-        }).join('');
+        // Mensaje completo (todos los grupos) como antes, SIN jugadores/carreras genéricos arriba
         const lineasCliente = [...porCliente.values()].map(c => `  👤 *${c.nombre}:* ${monedaSim}${clubUI.formatoNumero(c.costo, 2)}\n`).join('');
-
-        const texto = `🎫 *RECIBO DE VENTA — TABLA FIJA*\n` +
-            `🧑 *Jugador(es):* ${clientesGrupo}\n` +
-            `🏇 *Carrera:* ${t?.hipodromo || ''} · C${t?.carrera ?? ''} (Dist. ${t?.distancia_carrera ?? ''} m)\n\n` +
-            bloquesGrupo +
-            `\n👥 *Totales por cliente:*\n` + lineasCliente +
-            `\n✅ *Total Pagado:* ${monedaSim}${clubUI.formatoNumero(totalCosto, 2)}\n` +
-            `🏆 *Premio si gana:* ${monedaSim}${clubUI.formatoNumero(totalPremio, 2)}\n\n` +
+        const textoCompleto = `🎫 *RECIBO DE VENTA — TABLA FIJA*\n\n` +
+            [...porGrupo.values()].map(textoTicketGrupo).join('\n\n──────────\n\n') +
+            `\n\n👥 *Totales por cliente:*\n` + lineasCliente +
+            `\n✅ *Total Pagado:* ${monedaSim}${clubUI.formatoNumero(totalCosto, 2)} (sujeto a ajuste por retiros de ejemplares)\n` +
+            `🏆 *Premio si gana (por carrera):* ${monedaSim}${clubUI.formatoNumero(totalPremio, 2)} — Si hay retiros se ajusta el monto a pagar.\n` +
+            `📌 *Condiciones:* Sujeto a ajuste por retiros de ejemplares. En caso de empates se divide el premio.\n\n` +
             `📅 ${fecha}\nFolio: ${folio}`;
 
-        document.getElementById('textoReciboVenta').value = texto;
+        document.getElementById('textoReciboVenta').value = textoCompleto;
         document.getElementById('modalReciboVenta').classList.remove('hidden');
 
         // Imprimir ticket por grupo desde el recibo
@@ -1901,37 +1956,76 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             const g = gruposArr[parseInt(b.dataset.gidx, 10)];
             if (g) imprimirTicketGrupoRecibo(g, { monedaSim, hipodromo: t?.hipodromo, carrera: t?.carrera });
         }));
+
+        // Mensaje individual por grupo: WhatsApp del grupo + copiar
+        document.querySelectorAll('.btn-whatsapp-grupo').forEach(b => {
+            b.addEventListener('click', () => {
+                const ta = document.getElementById('msgGrupoRecibo_' + b.dataset.gidx);
+                if (!ta) return;
+                window.open('https://wa.me/?text=' + encodeURIComponent(ta.value), '_blank');
+            });
+        });
+        document.querySelectorAll('.btn-copiar-grupo').forEach(b => {
+            b.addEventListener('click', () => {
+                const ta = document.getElementById('msgGrupoRecibo_' + b.dataset.gidx);
+                if (!ta) return;
+                ta.select();
+                document.execCommand('copy');
+                clubUI.toast('Mensaje del grupo copiado al portapapeles!');
+            });
+        });
     }
 
-    // Imprime SOLO el ticket de un grupo ya vendido (valores congelados)
+    // Imprime SOLO el ticket de un grupo ya vendido (valores congelados).
+    // Cuadro AMPLIO: cada jugador lista su jugada y su monto, con el total del grupo.
     function imprimirTicketGrupoRecibo(g, { monedaSim, hipodromo, carrera }) {
         if (!g || !g.items || !g.items.length) return clubUI.toast('Grupo no encontrado en el recibo.', 'warning');
         const fecha = new Date().toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
         const folio = `T-${hipodromo || ''}-C${carrera ?? ''}-G${g.grupo?.id ?? ''}-${Date.now().toString().slice(-6)}`;
-        const filas = g.items.map(r => `
-            <tr>
-                <td>N° ${r.it.ejemplar.numero || '-'}</td><td>${r.it.ejemplar.nombre}</td>
-                <td class="r">${r.it.cantidad}</td><td class="r">${monedaSim}${clubUI.formatoNumero(r.res.pts, 2)}</td>
-                <td class="r b">${monedaSim}${clubUI.formatoNumero(r.res.costoTotal, 2)}</td>
-            </tr>`).join('');
+
+        // Cada jugador lista sus jugadas (detalle) y su total
+        const porJugadorRecibo = new Map();
+        g.items.forEach(r => {
+            const cid = String(r.it.cli?.id ?? '');
+            const nom = r.it.cli?.nombre || 'Cliente';
+            if (!porJugadorRecibo.has(cid)) porJugadorRecibo.set(cid, { nombre: nom, items: [] });
+            porJugadorRecibo.get(cid).items.push(r);
+        });
+
+        const seccionesPorJugador = [...porJugadorRecibo.values()].map(ju => {
+            const filas = ju.items.map(r => `
+                <tr>
+                    <td>N° ${r.it.ejemplar.numero || '-'}</td><td>${r.it.ejemplar.nombre}</td>
+                    <td class="r">${r.it.cantidad}</td><td class="r">${monedaSim}${clubUI.formatoNumero(r.res.pts, 2)}</td>
+                    <td class="r b">${monedaSim}${clubUI.formatoNumero(r.res.costoTotal, 2)}</td>
+                </tr>`).join('');
+            const subJug = ju.items.reduce((a, r) => a + r.res.costoTotal, 0);
+            return `
+                <tr class="cli-titulo"><td colspan="5">${ju.nombre}</td></tr>
+                ${filas}
+                <tr class="cli-sub"><td colspan="4" class="r">Total ${ju.nombre}</td><td class="r b">${monedaSim}${clubUI.formatoNumero(subJug, 2)}</td></tr>`;
+        }).join('');
+
         const subG = g.items.reduce((a, r) => a + r.res.costoTotal, 0);
         const premG = g.items.reduce((a, r) => a + r.res.premioTotal, 0);
         const ganG = g.items.reduce((a, r) => a + r.res.gananciaTotal, 0);
-        const clientes = [...new Set(g.items.map(r => r.it.cli?.nombre || '').filter(Boolean))].join(', ');
         const html = `
             <h1>Ticket de Venta · Tabla Fija · ${g.grupo?.nombre || 'Grupo'}</h1>
-            <div class="sub">Folio: ${folio} &nbsp;·&nbsp; ${fecha}</div>
+            <div class="sub">Folio: ${folio} &nbsp;·&nbsp; ${fecha} &nbsp;·&nbsp; ${hipodromo || ''} C${carrera ?? ''}</div>
             <table>
-                <tr><th>Ejemplar</th><th>Cliente</th><th class="r">Cant</th><th class="r">Valor</th><th class="r">Subtotal</th></tr>
-                ${filas}
+                <tr><th>Ejemplar</th><th>Jugador (sección)</th><th class="r">Cant</th><th class="r">Valor</th><th class="r">Subtotal</th></tr>
+                ${seccionesPorJugador}
                 <tr class="gran"><td colspan="4" class="r b">TOTAL ${g.grupo?.nombre || 'GRUPO'}</td><td class="r b">${monedaSim}${clubUI.formatoNumero(subG, 2)}</td></tr>
             </table>
             <div class="aviso">
-                ${clientes ? 'Clientes: ' + clientes + '<br>' : ''}
                 Premio si gana: ${monedaSim}${clubUI.formatoNumero(premG, 2)} · Ganancia: ${monedaSim}${clubUI.formatoNumero(ganG, 2)}<br>
-                Un ticket por grupo. Valores congelados al momento de la venta.
+                Un ticket por grupo, un jugador por sección. Valores congelados al momento de la venta.
+            </div>
+            <div class="condiciones">
+                <b>Condiciones generales:</b> El monto a cobrar está sujeto a ajuste por retiros de ejemplares.<br>
+                Si hay retiros se ajusta el monto a pagar. En caso de empates se divide el premio.
             </div>`;
-        VentaTablasCore.printHTML(`Ticket — ${g.grupo?.nombre || 'Grupo'}`, html);
+        VentaTablasCore.printHTML(`Ticket — ${g.grupo?.nombre || 'Grupo'}`, html, 940);
     }
 
     // Recibo: WhatsApp y copiar
@@ -2154,192 +2248,11 @@ const { error } = await window.supabase.from('tablas_fijas').update({
     }
 
     async function imprimirTablasPublicadas(hipoFiltro = '', diaFiltro = '', formato = 'pdf') {
-        // SIEMPRE recarga la última versión de valores desde Supabase (sin caché)
-        let tablas = [];
-        try {
-            const r = await window.supabase
-                .from('tablas_fijas')
-                .select('*, tabla_grupos(*)')
-                .eq('estado', 'Abierta');
-            if (r.error) throw r.error;
-            tablas = r.data || [];
-        } catch (e) {
-            clubUI.toast('No se pudieron actualizar los valores: ' + (e.message || e), 'error');
-            return null;
+        if (window.clubImpresionTablas) {
+            return window.clubImpresionTablas.imprimirTablasPublicadas(hipoFiltro, diaFiltro, formato);
         }
-        if (tablas.length) datosTablaCompleta = tablas;
-
-        const fmt = (v, d = 2) => window.clubUI?.formatoNumero ? window.clubUI.formatoNumero(Number(v) || 0, d) : (Number(v) || 0).toFixed(d);
-
-        if (hipoFiltro) {
-            tablas = tablas.filter(t => String(t.hipodromo || '').trim().toLowerCase() === String(hipoFiltro).trim().toLowerCase());
-        }
-        if (diaFiltro) {
-            tablas = tablas.filter(t => String(t.fecha || '').slice(0, 10) === String(diaFiltro).slice(0, 10));
-        }
-        if (tablas.length === 0) return clubUI.toast('No hay tablas publicadas para imprimir (estado "Abierta").', 'warning');
-        tablas.sort((a, b) => String(a.hipodromo || '').localeCompare(String(b.hipodromo || '')) || (Number(a.carrera) || 0) - (Number(b.carrera) || 0));
-
-        const POR_HOJA = 16;
-        const paginas = [];
-        for (let i = 0; i < tablas.length; i += POR_HOJA) paginas.push(tablas.slice(i, i + POR_HOJA));
-
-        const fecha = new Date().toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
-
-        const cardHTML = (t) => {
-            const premio = parseFloat(t.premio_recalculado) || 0;
-            const ejemplares = (Array.isArray(t.caballos) ? t.caballos : []).slice(0, 16);
-            const suma = ejemplares.reduce((acc, c) => acc + (parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0), 0);
-
-            const grilla = ejemplares.map(c => {
-                const bg = colorDeNumero(c.numero);
-                const fg = textoDeNumero(c.numero);
-                const ret = !!c.retirado;
-                const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
-                return `
-                    <div class="grilla-ej ${ret ? 'retirado' : ''}">
-                        <div class="nro-grilla" style="background:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</div>
-                        <div class="nombre-grilla">${c.nombre || ''}</div>
-                        <div class="valor-grilla">${ret ? 'RET.' : fmt(valor, 0)}</div>
-                    </div>`;
-            }).join('') || '<div class="sin-ej">Sin ejemplares registrados.</div>';
-
-            return `
-                <div class="tabla-imp">
-                    <div class="hd-tabla">
-                        <div class="hd-hipo">${t.hipodromo || ''}</div>
-                        <div class="hd-carrera">C${t.carrera ?? ''}</div>
-                    </div>
-                    <div class="hd-meta">
-                        <span>Dist: ${t.distancia_carrera ?? ''} m</span>
-                        <span>${t.superficie || 'ARENA'}</span>
-                        <span>${t.fecha || ''}</span>
-                    </div>
-                    <div class="hd-premio">
-                        <span>Monto a Pagar / Tabla</span>
-                        <span class="premio-val">$${fmt(premio)}</span>
-                    </div>
-                    <div class="grilla-prin">${grilla}</div>
-                    <div class="ft-tabla">
-                        <span><i class="numerico-nro"></i>Suma: $${fmt(suma)}</span>
-                        <span class="ft-total">${ejemplares.length} ej.</span>
-                    </div>
-                </div>`;
-        };
-
-        const hojas = paginas.map((pag, pidx) => `
-            <div class="hoja">
-                <div class="cabecera-hoja">
-                    <div class="titulo-hoja">TABLAS FIJAS PUBLICADAS</div>
-                    <div class="sub-hoja">${fecha} · Hoja ${pidx + 1} de ${paginas.length} · Total ${tablas.length} carreras · última versión de valores</div>
-                </div>
-                <div class="grilla-16">
-                    ${pag.map(cardHTML).join('')}
-                </div>
-            </div>`).join('');
-
-        if (formato === 'pdf') {
-            const w = window.open('', '_blank', 'width=1400,height=900');
-            if (!w) { alert('Permita ventanas emergentes para poder imprimir el documento.'); return null; }
-            w.document.write(`<!DOCTYPE html>
-<html lang="es"><head><meta charset="utf-8"><title>Tablas Fijas Publicadas</title>
-<style>
-    @page { size: letter landscape; margin: 8mm; }
-    * { box-sizing: border-box; }
-    body { font-family:'Segoe UI',Arial,sans-serif; color:#0f172a; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-    .hoja { width:100%; page-break-after: always; display:flex; flex-direction:column; gap:5px; }
-    .hoja:last-child { page-break-after: auto; }
-    .cabecera-hoja { border-bottom:3px solid #1d4ed8; padding-bottom:5px; margin-bottom:5px; }
-    .titulo-hoja { font-size:20px; font-weight:900; letter-spacing:1px; color:#1e3a8a; text-transform:uppercase; }
-    .sub-hoja { font-size:11px; color:#64748b; font-weight:600; margin-top:2px; }
-    .grilla-16 { display:grid; grid-template-columns:repeat(4, 1fr); grid-template-rows:repeat(4, 1fr); gap:7px; height:176mm; }
-    .tabla-imp { border:1.5px solid #334155; border-radius:8px; overflow:hidden; display:flex; flex-direction:column; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.08); }
-    .hd-tabla { background:linear-gradient(135deg,#1e40af,#4338ca); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:6px 10px; }
-    .hd-hipo { font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .hd-carrera { font-size:18px; font-weight:900; background:rgba(255,255,255,.18); border-radius:6px; padding:1px 8px; }
-    .hd-meta { display:flex; gap:8px; font-size:10px; font-weight:700; color:#475569; padding:4px 10px; border-bottom:1px solid #e2e8f0; }
-    .hd-premio { display:flex; justify-content:space-between; align-items:center; font-size:11px; font-weight:800; color:#b45309; padding:4px 10px; background:#fffbeb; border-bottom:1px solid #f1f5f9; text-transform:uppercase; }
-    .hd-premio .premio-val { font-size:16px; font-weight:900; color:#b45309; }
-    .grilla-prin { flex:1; display:grid; grid-template-columns:repeat(4,1fr); align-content:start; gap:3px; padding:6px; overflow:hidden; }
-    .grilla-ej { display:grid; grid-template-columns:30px 1fr auto; align-items:center; gap:4px; border-bottom:1px solid #f1f5f9; padding:1px 2px; }
-    .grilla-ej.retirado { opacity:.38; }
-    .nro-grilla { width:26px; height:20px; border-radius:3px; border:1px solid; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:900; }
-    .nombre-grilla { font-size:8.5px; font-weight:700; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .valor-grilla { font-size:9px; font-weight:800; color:#1d4ed8; }
-    .ft-tabla { display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:800; color:#0f766e; padding:4px 10px; background:#f0fdfa; border-top:1px solid #ccfbf1; }
-    .ft-total { background:#d1d5db; color:#334155; border-radius:999px; padding:0 8px; font-size:9px; }
-    .sin-ej { grid-column:1/-1; font-size:10px; color:#94a3b8; font-style:italic; padding:10px; }
-</style></head><body>${hojas}</body></html>`);
-            w.document.close();
-            w.focus();
-            setTimeout(() => { w.print(); }, 450);
-            return true;
-        }
-
-        // Formato imagen (JPG/PNG): html2canvas sobre un contenedor oculto.
-        if (typeof window.html2canvas !== 'function') {
-            clubUI.toast('Falta la librería html2canvas para generar imágenes. Recargue la página.', 'error');
-            return null;
-        }
-
-        const contenedor = document.createElement('div');
-        contenedor.id = 'contenedorImagenTablas';
-        contenedor.style.position = 'fixed';
-        contenedor.style.left = '-9999px';
-        contenedor.style.top = '0';
-        contenedor.style.background = '#fff';
-        contenedor.style.padding = '10px';
-        contenedor.style.width = '1200px';
-        contenedor.innerHTML = `<style>
-    .hoja { width:100%; display:flex; flex-direction:column; gap:5px; margin-bottom:14px; }
-    .cabecera-hoja { border-bottom:3px solid #1d4ed8; padding-bottom:5px; margin-bottom:5px; }
-    .titulo-hoja { font-size:20px; font-weight:900; letter-spacing:1px; color:#1e3a8a; text-transform:uppercase; }
-    .sub-hoja { font-size:11px; color:#64748b; font-weight:600; margin-top:2px; }
-    .grilla-16 { display:grid; grid-template-columns:repeat(4, 1fr); grid-template-rows:repeat(4, 1fr); gap:7px; height:158mm; }
-    .tabla-imp { border:1.5px solid #334155; border-radius:8px; overflow:hidden; display:flex; flex-direction:column; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.08); }
-    .hd-tabla { background:linear-gradient(135deg,#1e40af,#4338ca); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:6px 10px; }
-    .hd-hipo { font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .hd-carrera { font-size:18px; font-weight:900; background:rgba(255,255,255,.18); border-radius:6px; padding:1px 8px; }
-    .hd-meta { display:flex; gap:8px; font-size:10px; font-weight:700; color:#475569; padding:4px 10px; border-bottom:1px solid #e2e8f0; }
-    .hd-premio { display:flex; justify-content:space-between; align-items:center; font-size:11px; font-weight:800; color:#b45309; padding:4px 10px; background:#fffbeb; border-bottom:1px solid #f1f5f9; text-transform:uppercase; }
-    .hd-premio .premio-val { font-size:16px; font-weight:900; color:#b45309; }
-    .grilla-prin { flex:1; display:grid; grid-template-columns:repeat(4,1fr); align-content:start; gap:3px; padding:6px; overflow:hidden; }
-    .grilla-ej { display:grid; grid-template-columns:30px 1fr auto; align-items:center; gap:4px; border-bottom:1px solid #f1f5f9; padding:1px 2px; }
-    .grilla-ej.retirado { opacity:.38; }
-    .nro-grilla { width:26px; height:20px; border-radius:3px; border:1px solid; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:900; }
-    .nombre-grilla { font-size:8.5px; font-weight:700; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .valor-grilla { font-size:9px; font-weight:800; color:#1d4ed8; }
-    .ft-tabla { display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:800; color:#0f766e; padding:4px 10px; background:#f0fdfa; border-top:1px solid #ccfbf1; }
-    .ft-total { background:#d1d5db; color:#334155; border-radius:999px; padding:0 8px; font-size:9px; }
-    .sin-ej { grid-column:1/-1; font-size:10px; color:#94a3b8; font-style:italic; padding:10px; }
-    * { box-sizing:border-box; font-family:'Segoe UI',Arial,sans-serif; }
-</style>${hojas}`;
-        document.body.appendChild(contenedor);
-
-        try {
-            await new Promise(r => setTimeout(r, 120));
-            const canvas = await window.html2canvas(contenedor, {
-                scale: 2,
-                useCORS: true,
-                backgroundColor: '#ffffff',
-                logging: false
-            });
-            const url = canvas.toDataURL(formato === 'png' ? 'image/png' : 'image/jpeg', formato === 'png' ? undefined : 0.92);
-            const nom = `tablas_fijas_${(diaFiltro || 'todas')}_${Date.now()}.${formato}`;
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = nom;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            clubUI.toast(`Imagen ${formato.toUpperCase()} generada correctamente.`, 'success');
-            return true;
-        } catch (err) {
-            clubUI.toast('Error generando la imagen: ' + (err.message || err), 'error');
-            return null;
-        } finally {
-            contenedor.remove();
-        }
+        clubUI.toast('No se cargó el componente de impresión. Recargue la página.', 'error');
+        return null;
     }
 
     if (btnImprimirTablas) btnImprimirTablas.addEventListener('click', abrirConfigImpresion);

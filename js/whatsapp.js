@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
             grupo: 'Ventas y recibos',
             label: 'Recibo de venta de tablas',
             variables: '{cliente} {carrera} {tickets} {lineas_cliente} {total} {premio} {fecha} {folio}',
-            txt: '🎫 *RECIBO DE VENTA — TABLA FIJA*\n🧑 *Jugador(es):* {cliente}\n🏇 *Carrera:* {carrera}\n\n{tickets}\n👥 *Totales por cliente:*\n{lineas_cliente}\n✅ *Total Pagado:* {total}\n🏆 *Premio si gana:* {premio}\n\n📅 {fecha}\nFolio: {folio}'
+            txt: '🎫 *RECIBO DE VENTA — TABLA FIJA*\n🧑 *Jugador(es):* {cliente}\n🏇 *Carrera:* {carrera}\n\n{tickets}\n👥 *Totales por cliente:*\n{lineas_cliente}\n✅ *Total Pagado:* {total} (sujeto a ajuste por retiros de ejemplares)\n🏆 *Premio si gana:* {premio} — Si hay retiros se ajusta el monto a pagar.\n\n📌 *Condiciones:* Sujeto a ajuste por retiros de ejemplares. En caso de empates se divide el premio.\n\n📅 {fecha}\nFolio: {folio}'
         }
     };
 
