@@ -48,18 +48,22 @@
         const gCom = grupoComision || grupo;
 
         const modoJuega = cliente.modo_juego || (cliente.libre ? 'libre' : 'aval');
+        const saldoAct = parseFloat(cliente.saldo_actual) || 0;
+        const limiteAval = parseFloat(cliente.aval || 0);
         if (!permitirSobregiro) {
             if (modoJuega === 'pozo') {
-                const disp = parseFloat(cliente.saldo_actual) || 0;
-                if (disp < costoUSD) return { ok: false, error: `El cliente ${cliente.nombre} juega con Pozo y no tiene saldo disponible (tiene $${fmt(disp)}). Debe abonar antes.` };
-            } else if (!cliente.libre) {
-                const limiteAval = parseFloat(cliente.aval || 0);
-                if ((parseFloat(cliente.saldo_actual) || 0) - costoUSD < -limiteAval) {
-                    return { ok: false, error: `El cliente ${cliente.nombre} supera su límite de AVAL ($${fmt(limiteAval)}). Debe abonar antes.` };
+                if (saldoAct < costoUSD) return { ok: false, error: `El cliente ${cliente.nombre} juega con Pozo y no tiene saldo disponible (tiene $${fmt(saldoAct)}). Debe abonar antes.` };
+            } else {
+                // AVAL como línea de crédito: el cliente puede quedar con
+                // saldo NEGATIVO hasta el monto de su aval. No se exige
+                // saldo completo al cliente avalado.
+                if (limiteAval > 0) {
+                    if (saldoAct - costoUSD < -limiteAval) {
+                        return { ok: false, error: `El cliente ${cliente.nombre} supera su límite de AVAL ($${fmt(limiteAval)}). Debe abonar antes.` };
+                    }
+                } else if (!esVES && saldoAct < costoTotal) {
+                    return { ok: false, error: `El cliente ${cliente.nombre} tiene saldo insuficiente ($${fmt(saldoAct)}).` };
                 }
-            }
-            if (!esVES && (parseFloat(cliente.saldo_actual) || 0) < costoTotal) {
-                return { ok: false, error: `El cliente ${cliente.nombre} tiene saldo insuficiente ($${fmt(cliente.saldo_actual)}).` };
             }
         }
 
