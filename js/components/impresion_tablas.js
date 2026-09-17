@@ -62,13 +62,13 @@ window.clubImpresionTablas = (function () {
     .hd-premio { display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:800; color:#b45309; padding:2px 8px; background:#fffbeb; border-bottom:1px solid #f1f5f9; text-transform:uppercase; }
     .hd-premio .premio-val { font-size:13px; font-weight:900; color:#b45309; }
     .grilla-prin { flex:1; min-height:0; display:flex; flex-direction:column; padding:0; overflow:hidden; }
-    .grilla-ej { display:grid; align-items:center; gap:2px; padding:0; margin:0; border-bottom:1px solid #eef2f7; flex:1; min-height:0; }
+    .grilla-ej { display:grid; align-items:center; gap:1px; padding:0; margin:0; border-bottom:1px solid #eef2f7; flex:1; min-height:0; line-height:1; }
     .grilla-ej:last-child { border-bottom:none; }
     .grilla-ej:nth-child(even) { background:#f3f6fb; }
     .grilla-ej.retirado { opacity:.40; }
-    .nro-grilla { border-radius:3px; border:1px solid; display:flex; align-items:center; justify-content:center; font-weight:900; flex:none; }
-    .nombre-grilla { font-weight:700; text-transform:uppercase; white-space:nowrap; min-width:0; line-height:1.1; }
-    .valor-grilla { font-weight:800; color:#1d4ed8; text-align:right; white-space:nowrap; padding-left:4px; }
+    .nro-grilla { border-radius:3px; border:1px solid; display:flex; align-items:center; justify-content:center; font-weight:900; flex:none; margin:0; padding:0; line-height:1; }
+    .nombre-grilla { font-weight:700; text-transform:uppercase; white-space:nowrap; min-width:0; line-height:1; }
+    .valor-grilla { font-weight:800; color:#1d4ed8; text-align:right; white-space:nowrap; padding-left:4px; line-height:1; }
     .sin-ej { grid-column:1/-1; font-size:11px; color:#94a3b8; font-style:italic; padding:12px; }
     .notas-hoja { display:flex; justify-content:space-between; gap:14px; font-size:10.5px; color:#78350f; background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:4px 10px; font-weight:700; }
     `;
@@ -88,16 +88,17 @@ window.clubImpresionTablas = (function () {
         const altoLista = 280;
         const filaH = altoLista / rows;
         const k = Math.min(1, Math.max(0.5, filaH / 18));
-        const fsNom = Math.round(Math.min(10, Math.max(6, filaH * 0.55)) * 10) / 10;
+        const fsNom = Math.round(Math.min(9.5, Math.max(5.5, filaH * 0.5)) * 10) / 10;
+        const fsVal = Math.round(fsNom * 1.3 * 10) / 10;
         return {
             rows,
             k,
             nroW: Math.max(14, Math.round(22 * k)),
             nroH: Math.max(13, Math.round(17 * k)),
-            fsNum: Math.round(Math.min(12, Math.max(7.5, filaH * 0.68)) * 10) / 10,
+            fsNum: Math.round(Math.min(11, Math.max(7, filaH * 0.62)) * 10) / 10,
             fsNom,
             box: `${Math.round(22 * k)}px ${Math.round(17 * k)}px`,
-            fsVal: fsNom
+            fsVal
         };
     }
 
