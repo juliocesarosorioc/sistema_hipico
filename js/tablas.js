@@ -1419,6 +1419,7 @@ const { error } = await window.supabase.from('tablas_fijas').update({
     // Estados de la venta desde el monitor
     let ventaTablaCtx = null;       // tabla seleccionada
     let ventaCarrito = [];          // [{ ejemplar, cantidad, tg }]
+    let carritoGruposCache = [];    // grupos segmentados del carrito para imprimir
 
     function ventaTg() {
         const sel = document.getElementById('selectGrupoVenta');
@@ -1570,23 +1571,59 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         const items = document.getElementById('ventaCarritoItems');
         if (!box || !items) return;
         box.classList.remove('hidden');
-        items.innerHTML = ventaCarrito.length === 0
-            ? `<div class="text-center text-xs font-bold uppercase tracking-wider text-slate-400 py-4"><i class="fas fa-shopping-cart mr-1"></i> El carrito está vacío</div>`
-            : ventaCarrito.map((it, i) => {
-            const c = it.ejemplar;
-            const bg = colorDeNumero(c.numero);
-            const fg = textoDeNumero(c.numero);
-            const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
-            const subtotal = valor * it.cantidad;
-            return `
-            <div class="bg-white border border-slate-200 rounded-lg px-2 py-1.5" style="display:grid;grid-template-columns:2.5rem 1fr auto auto auto;column-gap:0.5rem;align-items:center">
-                <span class="justify-self-center w-9 h-9 rounded-lg flex items-center justify-center text-base font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
-                <span class="min-w-0 truncate text-xs font-bold uppercase text-slate-700">${c.nombre || 'Sin nombre'}</span>
-                <span class="text-xs font-black text-slate-500">x${it.cantidad}</span>
-                <span class="text-base font-black text-blue-700">${ventaSimb()}${clubUI.formatoNumero(valor, 0)}</span>
-                <button class="btn-carrito-quitar text-red-400 hover:text-red-600 text-xs px-1" data-i="${i}" title="Quitar"><i class="fas fa-times"></i></button>
-            </div>`;
-        }).join('');
+        if (ventaCarrito.length === 0) {
+            items.innerHTML = `<div class="text-center text-xs font-bold uppercase tracking-wider text-slate-400 py-4"><i class="fas fa-shopping-cart mr-1"></i> El carrito está vacío</div>`;
+            carritoGruposCache = [];
+        } else {
+            // Segmentar por grupo: cada grupo será un ticket independiente
+            const porGrupo = new Map();
+            ventaCarrito.forEach((it, i) => {
+                const gid = it.tg?.grupo_id ?? it.grupo?.id ?? '0';
+                const key = String(gid);
+                if (!porGrupo.has(key)) {
+                    const grupo = it.grupo || gruposActivos.find(g => String(g.id) === String(gid)) || null;
+                    porGrupo.set(key, { grupo, items: [] });
+                }
+                porGrupo.get(key).items.push({ ...it, _idx: i });
+            });
+            carritoGruposCache = [...porGrupo.values()];
+
+            items.innerHTML = [...porGrupo.values()].map((g, gi) => {
+                const nombreGrupo = g.grupo?.nombre || `Grupo N°${gi + 1}`;
+                const filas = g.items.map((it) => {
+                    const c = it.ejemplar;
+                    const bg = colorDeNumero(c.numero);
+                    const fg = textoDeNumero(c.numero);
+                    const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
+                    return `
+                    <div class="bg-white border border-slate-200 rounded-lg px-2 py-1.5" style="display:grid;grid-template-columns:2.5rem 1fr auto auto auto;column-gap:0.5rem;align-items:center">
+                        <span class="justify-self-center w-9 h-9 rounded-lg flex items-center justify-center text-base font-black border" style="background-color:${bg};color:${fg};border-color:${bg}">${c.numero ?? ''}</span>
+                        <span class="min-w-0 truncate text-xs font-bold uppercase text-slate-700">${c.nombre || 'Sin nombre'}</span>
+                        <span class="text-xs font-black text-slate-500">x${it.cantidad}</span>
+                        <span class="text-base font-black text-blue-700">${ventaSimb()}${clubUI.formatoNumero(valor, 0)}</span>
+                        <button class="btn-carrito-quitar text-red-400 hover:text-red-600 text-xs px-1" data-i="${it._idx}" title="Quitar"><i class="fas fa-times"></i></button>
+                    </div>`;
+                }).join('');
+                const subGrupo = g.items.reduce((a, it) => a + (parseFloat(it.ejemplar.valor_ejemplar ?? it.ejemplar.valor ?? it.ejemplar.pts) || 0) * it.cantidad, 0);
+                return `
+                <div class="border border-indigo-300 rounded-xl overflow-hidden bg-slate-50">
+                    <div class="bg-slate-800 text-white px-2 py-1.5 flex items-center justify-between gap-1">
+                        <span class="text-[11px] font-black uppercase tracking-wider truncate"><i class="fas fa-ticket-alt mr-1 text-indigo-300"></i> ${nombreGrupo}</span>
+                        <button type="button" class="btn-imprimir-ticket-grupo bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase px-2 py-1 rounded transition-colors shrink-0" data-gi="${gi}" title="Imprimir el ticket de este grupo"><i class="fas fa-print mr-1"></i> Imprimir</button>
+                    </div>
+                    <div class="p-1.5 space-y-1">${filas}</div>
+                    <div class="border-t border-slate-200 bg-white px-2 py-1 flex justify-between items-center text-xs font-black text-slate-700">
+                        <span class="uppercase tracking-wider"><i class="fas fa-calculator text-indigo-400 mr-1"></i> Subtotal del grupo</span>
+                        <span class="text-emerald-600">${ventaSimb()}${clubUI.formatoNumero(subGrupo, 0)}</span>
+                    </div>
+                </div>`;
+            }).join('');
+
+            // Delegación para imprimir ticket por grupo
+            document.querySelectorAll('.btn-imprimir-ticket-grupo').forEach(b => b.addEventListener('click', () => {
+                imprimirTicketGrupoCarrito(parseInt(b.dataset.gi, 10));
+            }));
+        }
         const totTablas = ventaCarrito.reduce((a, it) => a + it.cantidad, 0);
         const totCosto = ventaCarrito.reduce((a, it) => a + (parseFloat(it.ejemplar.valor_ejemplar ?? it.ejemplar.valor ?? it.ejemplar.pts) || 0) * it.cantidad, 0);
         document.getElementById('ventaCarritoTablas').textContent = totTablas;
@@ -1595,6 +1632,38 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         if (btnCerrar) btnCerrar.disabled = ventaCarrito.length === 0;
         const btnVaciar = document.getElementById('btnVaciarCarritoVenta');
         if (btnVaciar) btnVaciar.disabled = ventaCarrito.length === 0;
+    }
+
+    // Imprime SOLO el ticket de un grupo del carrito (un ticket por grupo, sin mezclar)
+    function imprimirTicketGrupoCarrito(gi) {
+        const g = carritoGruposCache[gi];
+        if (!g || !g.items || !g.items.length) return clubUI.toast('Grupo no encontrado en el carrito.', 'warning');
+        const t = ventaTablaCtx;
+        const monedaSim = t?.moneda === 'VES' ? 'Bs ' : '$';
+        const fecha = new Date().toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
+        const folio = `T-${t?.hipodromo || ''}-C${t?.carrera ?? ''}-G${g.grupo?.id ?? ''}-${Date.now().toString().slice(-6)}`;
+        const filas = g.items.map(it => {
+            const c = it.ejemplar;
+            const valor = parseFloat(c.valor_ejemplar ?? c.valor ?? c.pts) || 0;
+            const sub = valor * it.cantidad;
+            return `<tr>
+                <td>N° ${c.numero || '-'}</td><td>${c.nombre}</td>
+                <td class="r">${it.cantidad}</td><td class="r">${monedaSim}${clubUI.formatoNumero(valor, 2)}</td>
+                <td class="r b">${monedaSim}${clubUI.formatoNumero(sub, 2)}</td>
+            </tr>`;
+        }).join('');
+        const total = g.items.reduce((a, it) => a + (parseFloat(it.ejemplar.valor_ejemplar ?? it.ejemplar.valor ?? it.ejemplar.pts) || 0) * it.cantidad, 0);
+        const clientes = [...new Set(g.items.map(it => it.cli?.nombre || '').filter(Boolean))].join(', ');
+        const html = `
+            <h1>Ticket de Venta · Tabla Fija · ${g.grupo?.nombre || 'Grupo'}</h1>
+            <div class="sub">Folio: ${folio} &nbsp;·&nbsp; ${fecha}</div>
+            <table>
+                <tr><th>Ejemplar</th><th>Cliente</th><th class="r">Cant</th><th class="r">Valor</th><th class="r">Subtotal</th></tr>
+                ${filas}
+                <tr class="gran"><td colspan="4" class="r b">TOTAL ${g.grupo?.nombre || 'GRUPO'}</td><td class="r b">${monedaSim}${clubUI.formatoNumero(total, 2)}</td></tr>
+            </table>
+            <div class="aviso">${clientes ? 'Clientes: ' + clientes + '<br>' : ''}Un ticket por grupo. La venta se confirma en "Cerrar Venta".</div>`;
+        VentaTablasCore.printHTML(`Ticket — ${g.grupo?.nombre || 'Grupo'}`, html);
     }
 
     function cerrarModalVentaMon() {
@@ -1640,7 +1709,8 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         renderVenta();
     }
 
-    // Botón "Cerrar venta": procesa todos los items del carrito, muestra recibo y opción WhatsApp
+    // Botón "Cerrar venta": procesa los items del carrito por GRUPO (un ticket por grupo),
+    // muestra el recibo segmentado por grupo/cliente y opción WhatsApp.
     async function cerrarVenta() {
         const items = ventaCarrito;
         if (!items.length) return clubUI.toast('El carrito está vacío.', 'warning');
@@ -1648,8 +1718,14 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         const t = ventaTablaCtx;
         if (!t) return clubUI.toast('Tabla no encontrada. Recargue el monitor.', 'error');
 
-        const cli = (items[0] && items[0].cli) || clientesVentaCache.find(c => String(c.id) === String(idCli));
-        if (!cli) return clubUI.toast('Seleccione el jugador que compra.', 'warning');
+        // Cada item guarda su propio cliente (set en enviarCarritoEjemplar)
+        for (const it of items) {
+            if (!it.cli) {
+                const c = clientesVentaCache.find(x => String(x.id) === String(idCli));
+                if (c) it.cli = c;
+            }
+        }
+        if (items.some(it => !it.cli)) return clubUI.toast('Faltan jugadores en algunos items del carrito.', 'warning');
 
         // Pre-validación de disponibilidad
         for (const it of items) {
@@ -1657,12 +1733,12 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             if (it.cantidad > d) return clubUI.toast(`No hay suficientes tablas de ${it.ejemplar.nombre}. Solo quedan ${d}.`, 'warning');
         }
 
-        const gruposItems = [...new Set(items.map(it => it.tg.grupo_id))];
-        for (const gid of gruposItems) {
-            const gi = gruposActivos.find(x => x.id == gid);
-            if (!gi) continue;
-            const esMiembro = cli.grupo_id == gi.id || !cli.grupo_id || ((clientesVentaCache.find(c => c.id == cli.id)?.grupos || []).includes(gi.id));
-            if (!esMiembro) return clubUI.toast(`El jugador no pertenece al grupo ${gi.nombre} (inventario del carrito).`, 'warning');
+        // Validar pertenencia de CADA cliente a su grupo (por item)
+        for (const it of items) {
+            const gi = gruposActivos.find(x => x.id == it.tg?.grupo_id);
+            if (!gi) return clubUI.toast('Grupo de venta no encontrado en el carrito.', 'warning');
+            const esMiembro = it.cli.grupo_id == gi.id || !it.cli.grupo_id || ((clientesVentaCache.find(c => c.id == it.cli.id)?.grupos || []).includes(gi.id));
+            if (!esMiembro) return clubUI.toast(`El jugador ${it.cli.nombre} no pertenece al grupo ${gi.nombre}.`, 'warning');
         }
 
         const btnC = document.getElementById('btnProcesarVentaModal');
@@ -1670,30 +1746,44 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         const orig = btnC.innerHTML;
         btnC.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Procesando...';
 
+        // Agrupar por grupo: un ticket por grupo, sin mezclar grupos
+        const porGrupo = new Map();
+        items.forEach(it => {
+            const gid = String(it.tg.grupo_id);
+            if (!porGrupo.has(gid)) porGrupo.set(gid, []);
+            porGrupo.get(gid).push(it);
+        });
+
         const resultados = [];
         let fallo = null;
-        for (const it of items) {
-            const grupo = gruposActivos.find(x => x.id == it.tg.grupo_id);
+        for (const [gid, grupoItems] of porGrupo) {
+            if (fallo) break;
+            const grupo = gruposActivos.find(x => String(x.id) === String(gid));
             if (!grupo) { fallo = 'Grupo de venta no encontrado.'; break; }
-            const res = await VentaTablasCore.venderTabla({
-                cliente: it.cli || cli, cantidad: it.cantidad, ejemplar: it.ejemplar, tabla: it.tabla || t, tg: it.tg,
-                grupo, tasaCambio: tasaCambioGlobal
-            });
-            if (!res.ok) { fallo = res.error; break; }
-            resultados.push({ it, res, grupo });
+            for (const it of grupoItems) {
+                if (fallo) break;
+                const res = await VentaTablasCore.venderTabla({
+                    cliente: it.cli, cantidad: it.cantidad, ejemplar: it.ejemplar, tabla: it.tabla || t, tg: it.tg,
+                    grupo, tasaCambio: tasaCambioGlobal
+                });
+                if (!res.ok) { fallo = res.error; break; }
+                resultados.push({ it, res, grupo });
+            }
         }
 
         if (fallo) {
             clubUI.toast('Venta interrumpida: ' + fallo, 'error');
-            if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta_monitor_fallida: ${cli.nombre} error=${fallo}`);
+            const nombres = [...new Set(items.map(it => it.cli?.nombre).filter(Boolean))].join(', ');
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta_monitor_fallida: ${nombres} error=${fallo}`);
         } else {
             const totalCosto = resultados.reduce((a, r) => a + r.res.costoTotal, 0);
             const totalPremio = resultados.reduce((a, r) => a + r.res.premioTotal, 0);
             const monedaSim = t.moneda === 'VES' ? 'Bs ' : '$';
             clubUI.toast(`¡Venta cerrada! ${resultados.length} ejemplar(es) · ${monedaSim}${clubUI.formatoNumero(totalCosto, 2)}`, 'success');
-            if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta_monitor: ${cli.nombre} ${resultados.length} items (${monedaSim}${clubUI.formatoNumero(totalCosto, 2)})`);
+            const nombres = [...new Set(resultados.map(r => r.it.cli?.nombre).filter(Boolean))].join(', ');
+            if (window.clubDB?.logAccion) window.clubDB.logAccion('VENTA_TABLAS', `venta_monitor: ${nombres} ${resultados.length} items (${monedaSim}${clubUI.formatoNumero(totalCosto, 2)})`);
 
-            mostrarRecibo({ cliente: cli, resultados, totalCosto, totalPremio, monedaSim });
+            mostrarRecibo({ resultados, totalCosto, totalPremio, monedaSim });
             cerrarModalVentaMon();
             cargarTablas();
         }
@@ -1702,34 +1792,116 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         btnC.innerHTML = orig;
     }
 
-    function mostrarRecibo({ cliente, resultados, totalCosto, totalPremio, monedaSim }) {
+    function mostrarRecibo({ resultados, totalCosto, totalPremio, monedaSim }) {
         const fecha = new Date().toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
         const folio = `T-MONITOR-${Date.now().toString().slice(-8)}`;
-        const filas = resultados.map(r => `
-            <span class="block">N° ${r.it.ejemplar.numero || '-'} — ${r.it.ejemplar.nombre} · ${r.it.cantidad} tabla(s) a ${monedaSim}${clubUI.formatoNumero(r.res.pts, 1)}</span>`).join('');
+        const t = ventaTablaCtx;
+
+        // Totalizar POR GRUPO (cada grupo = un ticket) y POR CLIENTE
+        const porGrupo = new Map();
+        resultados.forEach(r => {
+            const gid = String(r.grupo?.id ?? '');
+            if (!porGrupo.has(gid)) porGrupo.set(gid, { grupo: r.grupo, items: [] });
+            porGrupo.get(gid).items.push(r);
+        });
+        const porCliente = new Map();
+        resultados.forEach(r => {
+            const cid = String(r.it.cli?.id ?? '');
+            if (!porCliente.has(cid)) porCliente.set(cid, { nombre: r.it.cli?.nombre || 'Cliente', costo: 0, premio: 0 });
+            porCliente.get(cid).costo += r.res.costoTotal;
+            porCliente.get(cid).premio += r.res.premioTotal;
+        });
+
+        const clientesGrupo = [...new Set(resultados.map(r => r.it.cli?.nombre || '').filter(Boolean))].join(', ') || 'Cliente';
+
+        const seccionesGrupo = [...porGrupo.values()].map(g => {
+            const filasG = g.items.map(r => `
+                <span class="block">N° ${r.it.ejemplar.numero || '-'} — ${r.it.ejemplar.nombre} · ${r.it.cantidad} tabla(s) a ${monedaSim}${clubUI.formatoNumero(r.res.pts, 1)} = ${monedaSim}${clubUI.formatoNumero(r.res.costoTotal, 2)}</span>`).join('');
+            const subG = g.items.reduce((a, r) => a + r.res.costoTotal, 0);
+            const premG = g.items.reduce((a, r) => a + r.res.premioTotal, 0);
+            return `
+            <div class="border border-emerald-200 bg-white rounded-lg p-2">
+                <span class="flex items-center justify-between gap-1">
+                    <span class="block font-black text-emerald-700 uppercase tracking-wide text-xs"><i class="fas fa-ticket-alt mr-1"></i> Ticket · ${g.grupo?.nombre || 'Grupo'}</span>
+                    <button type="button" class="btn-imprimir-recibo-grupo bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded transition-colors shrink-0" data-gidx="${[...porGrupo.keys()].indexOf(String(g.grupo?.id ?? ''))}" title="Imprimir ticket de este grupo"><i class="fas fa-print mr-1"></i> Imprimir</button>
+                </span>
+                ${filasG}
+                <span class="block text-xs font-black text-slate-700 pt-1 border-t border-emerald-100 mt-1">Subtotal grupo: <span class="text-emerald-600">${monedaSim}${clubUI.formatoNumero(subG, 0)}</span></span>
+                <span class="block text-[11px] font-bold text-blue-600">Premio si gana: ${monedaSim}${clubUI.formatoNumero(premG, 0)}</span>
+            </div>`;
+        }).join('');
+
+        const filasPorCliente = [...porCliente.values()].map(c => `
+            <span class="block text-xs"><i class="fas fa-user text-slate-400 mr-1"></i> ${c.nombre} — Pagó: <b class="text-emerald-600">${monedaSim}${clubUI.formatoNumero(c.costo, 0)}</b> · Premio: <b class="text-blue-600">${monedaSim}${clubUI.formatoNumero(c.premio, 0)}</b></span>`).join('');
 
         const resumen = document.getElementById('resumenReciboVenta');
         resumen.innerHTML = `
-            <span class="font-black text-slate-800">${cliente.nombre}</span>
+            <span class="font-black text-slate-800">${clientesGrupo}</span>
             <span class="block text-slate-500">Folio: ${folio} · ${fecha}</span>
-            <span class="block text-slate-500">${resultados[0]?.grupo?.nombre || 'Grupo'}</span>
-            <span class="block text-slate-500">${ventaTablaCtx?.hipodromo || ''} · C${ventaTablaCtx?.carrera ?? ''} · Dist. ${ventaTablaCtx?.distancia_carrera ?? ''} m</span>
-            ${filas}
+            <span class="block text-slate-500">${t?.hipodromo || ''} · C${t?.carrera ?? ''} · Dist. ${t?.distancia_carrera ?? ''} m</span>
+            <span class="block text-[10px] font-black uppercase tracking-wider text-slate-400 mt-1">Tickets por grupo</span>
+            ${seccionesGrupo}
+            <span class="block text-[10px] font-black uppercase tracking-wider text-slate-400 mt-2">Totales por cliente</span>
+            ${filasPorCliente}
             <span class="block pt-1 border-t border-slate-200 mt-1 font-black text-emerald-700">Total Pagado: ${monedaSim}${clubUI.formatoNumero(totalCosto, 0)}</span>
             <span class="block font-black text-blue-700">Premio a cobrar (si gana): ${monedaSim}${clubUI.formatoNumero(totalPremio, 0)}</span>`;
 
+        const bloquesGrupo = [...porGrupo.values()].map(g => {
+            const lin = g.items.map(r => `  N° ${r.it.ejemplar.numero || '-'} ${r.it.ejemplar.nombre} — ${r.it.cantidad} tabla(s) a ${monedaSim}${clubUI.formatoNumero(r.res.pts, 1)}\n`).join('');
+            const subG = g.items.reduce((a, r) => a + r.res.costoTotal, 0);
+            return `🎫 *TICKET · ${g.grupo?.nombre || 'GRUPO'}*\n${lin}  ➜ Subtotal grupo: ${monedaSim}${clubUI.formatoNumero(subG, 2)}\n`;
+        }).join('');
+        const lineasCliente = [...porCliente.values()].map(c => `  👤 *${c.nombre}:* ${monedaSim}${clubUI.formatoNumero(c.costo, 2)}\n`).join('');
+
         const texto = `🎫 *RECIBO DE VENTA — TABLA FIJA*\n` +
-            `🧑 *Jugador:* ${cliente.nombre}\n` +
-            `🏇 *Carrera:* ${ventaTablaCtx?.hipodromo || ''} · C${ventaTablaCtx?.carrera ?? ''} (Dist. ${ventaTablaCtx?.distancia_carrera ?? ''} m)\n` +
-            `👥 *Grupo:* ${resultados[0]?.grupo?.nombre || ''}\n\n` +
-            `📋 *Ejemplares:*\n` +
-            resultados.map(r => `  N° ${r.it.ejemplar.numero || '-'} ${r.it.ejemplar.nombre} — ${r.it.cantidad} tabla(s) a ${monedaSim}${clubUI.formatoNumero(r.res.pts, 1)}\n`).join('') +
+            `🧑 *Jugador(es):* ${clientesGrupo}\n` +
+            `🏇 *Carrera:* ${t?.hipodromo || ''} · C${t?.carrera ?? ''} (Dist. ${t?.distancia_carrera ?? ''} m)\n\n` +
+            bloquesGrupo +
+            `\n👥 *Totales por cliente:*\n` + lineasCliente +
             `\n✅ *Total Pagado:* ${monedaSim}${clubUI.formatoNumero(totalCosto, 2)}\n` +
             `🏆 *Premio si gana:* ${monedaSim}${clubUI.formatoNumero(totalPremio, 2)}\n\n` +
             `📅 ${fecha}\nFolio: ${folio}`;
 
         document.getElementById('textoReciboVenta').value = texto;
         document.getElementById('modalReciboVenta').classList.remove('hidden');
+
+        // Imprimir ticket por grupo desde el recibo
+        const gruposArr = [...porGrupo.values()];
+        document.querySelectorAll('.btn-imprimir-recibo-grupo').forEach(b => b.addEventListener('click', () => {
+            const g = gruposArr[parseInt(b.dataset.gidx, 10)];
+            if (g) imprimirTicketGrupoRecibo(g, { monedaSim, hipodromo: t?.hipodromo, carrera: t?.carrera });
+        }));
+    }
+
+    // Imprime SOLO el ticket de un grupo ya vendido (valores congelados)
+    function imprimirTicketGrupoRecibo(g, { monedaSim, hipodromo, carrera }) {
+        if (!g || !g.items || !g.items.length) return clubUI.toast('Grupo no encontrado en el recibo.', 'warning');
+        const fecha = new Date().toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
+        const folio = `T-${hipodromo || ''}-C${carrera ?? ''}-G${g.grupo?.id ?? ''}-${Date.now().toString().slice(-6)}`;
+        const filas = g.items.map(r => `
+            <tr>
+                <td>N° ${r.it.ejemplar.numero || '-'}</td><td>${r.it.ejemplar.nombre}</td>
+                <td class="r">${r.it.cantidad}</td><td class="r">${monedaSim}${clubUI.formatoNumero(r.res.pts, 2)}</td>
+                <td class="r b">${monedaSim}${clubUI.formatoNumero(r.res.costoTotal, 2)}</td>
+            </tr>`).join('');
+        const subG = g.items.reduce((a, r) => a + r.res.costoTotal, 0);
+        const premG = g.items.reduce((a, r) => a + r.res.premioTotal, 0);
+        const ganG = g.items.reduce((a, r) => a + r.res.gananciaTotal, 0);
+        const clientes = [...new Set(g.items.map(r => r.it.cli?.nombre || '').filter(Boolean))].join(', ');
+        const html = `
+            <h1>Ticket de Venta · Tabla Fija · ${g.grupo?.nombre || 'Grupo'}</h1>
+            <div class="sub">Folio: ${folio} &nbsp;·&nbsp; ${fecha}</div>
+            <table>
+                <tr><th>Ejemplar</th><th>Cliente</th><th class="r">Cant</th><th class="r">Valor</th><th class="r">Subtotal</th></tr>
+                ${filas}
+                <tr class="gran"><td colspan="4" class="r b">TOTAL ${g.grupo?.nombre || 'GRUPO'}</td><td class="r b">${monedaSim}${clubUI.formatoNumero(subG, 2)}</td></tr>
+            </table>
+            <div class="aviso">
+                ${clientes ? 'Clientes: ' + clientes + '<br>' : ''}
+                Premio si gana: ${monedaSim}${clubUI.formatoNumero(premG, 2)} · Ganancia: ${monedaSim}${clubUI.formatoNumero(ganG, 2)}<br>
+                Un ticket por grupo. Valores congelados al momento de la venta.
+            </div>`;
+        VentaTablasCore.printHTML(`Ticket — ${g.grupo?.nombre || 'Grupo'}`, html);
     }
 
     // Recibo: WhatsApp y copiar
