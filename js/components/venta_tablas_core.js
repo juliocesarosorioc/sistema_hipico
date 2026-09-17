@@ -53,6 +53,9 @@
         if (!permitirSobregiro) {
             if (modoJuega === 'pozo') {
                 if (saldoAct < costoUSD) return { ok: false, error: `El cliente ${cliente.nombre} juega con Pozo y no tiene saldo disponible (tiene $${fmt(saldoAct)}). Debe abonar antes.` };
+            } else if (modoJuega === 'libre') {
+                // MODO LIBRE: el cliente no tiene limitaciones por saldo.
+                // Puede jugar/clientar si limite alguno.
             } else {
                 // AVAL como línea de crédito: el cliente puede quedar con
                 // saldo NEGATIVO hasta el monto de su aval. No se exige

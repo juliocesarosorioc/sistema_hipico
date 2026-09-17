@@ -985,16 +985,15 @@ msgSinCarreras.classList.add('hidden');
         if (modoJuega === 'pozo') {
             const disp = parseFloat(cliente.saldo_actual || 0);
             if (disp < costoTotalUSD) return clubUI.toast(`El jugador ${cliente.nombre} juega con Pozo y no tiene saldo disponible (tiene $${fmt(disp)}). Debe abonar antes de comprar.`, 'warning');
-        } else if (!cliente.libre) {
+        } else if (modoJuega === 'libre') {
+            // MODO LIBRE: sin limitaciones por saldo.
+        } else {
+            // MODO AVAL: el cliente puede quedar con saldo NEGATIVO hasta
+            // el monto de su AVAL (línea de crédito). No se exige saldo completo.
             const limiteAval = parseFloat(cliente.aval || 0);
             if ((parseFloat(cliente.saldo_actual) || 0) - costoTotalUSD < -limiteAval) {
                 return clubUI.toast(`El jugador ${cliente.nombre} supera su límite de AVAL ($${fmt(limiteAval)}). Debe abonar antes de comprar.`, 'warning');
             }
-        }
-        const esVESGlobal = gruposDB.find(x => x.id == gruposItems[0])?.moneda === 'VES';
-        if (!esVESGlobal && parseFloat(cliente.saldo_actual) < costoTotalUSD) {
-            if (!confirm(`El jugador ${cliente.nombre} tiene saldo insuficiente ($${fmt(cliente.saldo_actual)}). ¿Desea proceder de todas formas?`)) return;
-            permitirSobregiro = true;
         }
 
         mvConfirmar.disabled = true;
