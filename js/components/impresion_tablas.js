@@ -49,29 +49,28 @@ window.clubImpresionTablas = (function () {
     const ESTILOS = `
     * { box-sizing: border-box; }
     .imp-pages { position: fixed; left: -9999px; top: 0; width:${ANCHO}px; background:#fff; font-family:'Segoe UI',Arial,sans-serif; color:#0f172a; }
-    .hoja { width:${ANCHO}px; height:${ALTO_HOJA}px; padding:26px 22px 22px; display:flex; flex-direction:column; gap:6px; break-after:always; page-break-after:always; background:#fff; }
+    .hoja { width:${ANCHO}px; height:${ALTO_HOJA}px; padding:12px 12px 10px; display:flex; flex-direction:column; gap:5px; break-after:always; page-break-after:always; background:#fff; }
     .hoja:last-child { break-after:auto; page-break-after:auto; }
-    .cabecera-hoja { border-bottom:3px solid #1d4ed8; padding-bottom:6px; }
-    .titulo-hoja { font-size:24px; font-weight:900; letter-spacing:1.5px; color:#1e3a8a; text-transform:uppercase; }
-    .sub-hoja { font-size:12px; color:#64748b; font-weight:600; margin-top:2px; }
-    .grilla-16 { flex:1; min-height:0; display:grid; grid-template-columns:repeat(4,1fr); grid-template-rows:repeat(4,1fr); gap:9px; }
-    .tabla-imp { border:2px solid #334155; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; background:#fff; box-shadow:0 2px 3px rgba(15,23,42,.10); min-height:0; }
-    .hd-tabla { background:linear-gradient(135deg,#1e40af,#4338ca); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:7px 11px; }
-    .hd-hipo { font-size:14px; font-weight:900; text-transform:uppercase; letter-spacing:.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .hd-carrera { font-size:20px; font-weight:900; background:rgba(255,255,255,.18); border-radius:6px; padding:1px 9px; }
-    .hd-meta { display:flex; gap:9px; font-size:10.5px; font-weight:700; color:#475569; padding:4px 11px; border-bottom:1px solid #e2e8f0; white-space:nowrap; overflow:hidden; }
-    .hd-premio { display:flex; justify-content:space-between; align-items:center; font-size:11.5px; font-weight:800; color:#b45309; padding:4px 11px; background:#fffbeb; border-bottom:1px solid #f1f5f9; text-transform:uppercase; }
-    .hd-premio .premio-val { font-size:17px; font-weight:900; color:#b45309; }
-    .grilla-prin { flex:1; min-height:0; display:grid; align-content:start; gap:2px; padding:5px 6px; overflow:hidden; }
-    .grilla-ej { display:grid; align-items:center; gap:5px; border-bottom:1px solid #f1f5f9; padding:1px 1px; }
+    .cabecera-hoja { border-bottom:3px solid #1d4ed8; padding-bottom:3px; }
+    .titulo-hoja { font-size:20px; font-weight:900; letter-spacing:1px; color:#1e3a8a; text-transform:uppercase; }
+    .sub-hoja { font-size:11px; color:#64748b; font-weight:600; margin-top:1px; }
+    .grilla-16 { flex:1; min-height:0; display:grid; grid-template-columns:repeat(4,1fr); grid-template-rows:repeat(4,1fr); gap:7px; }
+    .tabla-imp { border:1.5px solid #334155; border-radius:7px; overflow:hidden; display:flex; flex-direction:column; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.08); min-height:0; }
+    .hd-tabla { background:linear-gradient(135deg,#1e40af,#4338ca); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:3px 8px; }
+    .hd-hipo { font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .hd-carrera { font-size:15px; font-weight:900; background:rgba(255,255,255,.18); border-radius:5px; padding:0 7px; }
+    .hd-meta { display:flex; gap:8px; font-size:9.5px; font-weight:700; color:#475569; padding:1px 8px 2px; border-bottom:1px solid #e2e8f0; white-space:nowrap; overflow:hidden; }
+    .hd-premio { display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:800; color:#b45309; padding:2px 8px; background:#fffbeb; border-bottom:1px solid #f1f5f9; text-transform:uppercase; }
+    .hd-premio .premio-val { font-size:13px; font-weight:900; color:#b45309; }
+    .grilla-prin { flex:1; min-height:0; display:flex; flex-direction:column; padding:3px 5px 2px; overflow:hidden; }
+    .grilla-ej { display:grid; align-items:center; gap:4px; border-bottom:1px solid #eef2f7; padding:0; flex:1; min-height:0; }
+    .grilla-ej:last-child { border-bottom:none; }
     .grilla-ej.retirado { opacity:.40; }
-    .nro-grilla { border-radius:4px; border:1px solid; display:flex; align-items:center; justify-content:center; font-weight:900; }
+    .nro-grilla { border-radius:3px; border:1px solid; display:flex; align-items:center; justify-content:center; font-weight:900; flex:none; }
     .nombre-grilla { font-weight:700; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .valor-grilla { font-weight:800; color:#1d4ed8; text-align:right; white-space:nowrap; }
-    .ft-tabla { display:flex; justify-content:space-between; align-items:center; font-size:10.5px; font-weight:800; color:#0f766e; padding:4px 11px; background:#f0fdfa; border-top:1px solid #ccfbf1; }
-    .ft-total { background:#d1d5db; color:#334155; border-radius:999px; padding:0 8px; font-size:9.5px; }
     .sin-ej { grid-column:1/-1; font-size:11px; color:#94a3b8; font-style:italic; padding:12px; }
-    .notas-hoja { display:flex; justify-content:space-between; gap:14px; font-size:10.5px; color:#78350f; background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:6px 10px; font-weight:700; }
+    .notas-hoja { display:flex; justify-content:space-between; gap:14px; font-size:10.5px; color:#78350f; background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:4px 10px; font-weight:700; }
     `;
 
     function limpiarValor(c) {
@@ -80,29 +79,31 @@ window.clubImpresionTablas = (function () {
     }
 
     // Devuelve estilos inline de la tarjeta según la cantidad de ejemplares.
-    // rows > 4 (más de 16 caballos) → reduce el tamaño de letra proporcionalmente.
+    // Lista VERTICAL compacta: cada ejemplar ocupa una fila. El alto disponible
+    // de la lista se reparte entre las filas (flex:1) y se ajusta la letra para
+    // que todo quepa, manteniendo uniformidad en todas las tarjetas.
     function tamanoTarjeta(n) {
-        const cols = 4;
-        const rows = Math.max(1, Math.ceil(n / cols));
-        const k = rows <= 4 ? 1 : rows <= 6 ? 0.86 : rows <= 8 ? 0.74 : rows <= 10 ? 0.64 : rows <= 12 ? 0.56 : 0.48;
+        const rows = Math.max(1, n);
+        // Alto aproximado (px) del área de lista dentro de la tarjeta.
+        const altoLista = 185;
+        const filaH = altoLista / rows;
+        const k = Math.min(1, Math.max(0.5, filaH / 18));
+        const fsNom = Math.round(Math.min(10, Math.max(6, filaH * 0.55)) * 10) / 10;
         return {
-            cols, rows, k,
-            nroW: Math.round(27 * k),
-            nroH: Math.round(21 * k),
-            fsNum: Math.round((13 * k) * 10) / 10,
-            fsNom: Math.round((9.5 * k) * 10) / 10,
-            gridCols: `repeat(${cols},1fr)`,
-            rowH: `repeat(${rows}, minmax(0,1fr))`,
-            box: `${Math.round(27 * k)}px ${Math.round(21 * k)}px`,
-            fsVal: Math.round((10 * k) * 10) / 10,
-            rowsPlantilla: rows
+            rows,
+            k,
+            nroW: Math.max(14, Math.round(22 * k)),
+            nroH: Math.max(13, Math.round(17 * k)),
+            fsNum: Math.round(Math.min(12, Math.max(7.5, filaH * 0.68)) * 10) / 10,
+            fsNom,
+            box: `${Math.round(22 * k)}px ${Math.round(17 * k)}px`,
+            fsVal: fsNom
         };
     }
 
     function cardHTML(t) {
         const premio = parseFloat(t.premio_recalculado) || 0;
         const ejemplares = Array.isArray(t.caballos) ? t.caballos : [];
-        const suma = ejemplares.reduce((acc, c) => acc + (c.retirado ? 0 : limpiarValor(c)), 0);
         const T = tamanoTarjeta(ejemplares.length);
 
         const grilla = ejemplares.map(c => {
@@ -110,7 +111,7 @@ window.clubImpresionTablas = (function () {
             const fg = textoDeNumero(c.numero);
             const ret = !!c.retirado;
             return `
-                <div class="grilla-ej ${ret ? 'retirado' : ''}" style="grid-template-columns:${T.box} 1fr 1.6rem">
+                <div class="grilla-ej ${ret ? 'retirado' : ''}" style="grid-template-columns:${T.box} 1fr auto">
                     <div class="nro-grilla" style="background:${bg};color:${fg};border-color:${bg};width:${T.nroW}px;height:${T.nroH}px;font-size:${T.fsNum}px">${c.numero ?? ''}</div>
                     <div class="nombre-grilla" style="font-size:${T.fsNom}px">${c.nombre || ''}</div>
                     <div class="valor-grilla" style="font-size:${T.fsVal}px">${ret ? 'RET.' : fmt(limpiarValor(c), 0)}</div>
@@ -132,11 +133,7 @@ window.clubImpresionTablas = (function () {
                     <span>Monto a Pagar / Tabla</span>
                     <span class="premio-val">$${fmt(premio)}</span>
                 </div>
-                <div class="grilla-prin" style="grid-template-columns:${T.gridCols};grid-template-rows:${T.rowH}">${grilla}</div>
-                <div class="ft-tabla">
-                    <span>Suma: $${fmt(suma)}</span>
-                    <span class="ft-total">${ejemplares.length} ej.</span>
-                </div>
+                <div class="grilla-prin">${grilla}</div>
             </div>`;
     }
 
