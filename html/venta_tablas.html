@@ -156,7 +156,7 @@
         </main>
     </div>
 
-    <!-- MENÃš FLOTANTE POR EJEMPLAR (agregar al carrito) -->
+    <!-- MENÚ FLOTANTE POR EJEMPLAR (agregar al carrito) -->
     <div id="menuEjemplarFlotante" class="hidden fixed z-40 w-72 bg-white rounded-2xl shadow-2xl border border-indigo-200 overflow-hidden">
         <div class="bg-indigo-600 text-white px-3 py-2 flex items-center justify-between">
             <span id="mefTitulo" class="text-[10px] font-black uppercase tracking-wider truncate">Ejemplar</span>
@@ -164,10 +164,10 @@
         </div>
         <div class="p-3 space-y-3">
             <div class="bg-slate-50 rounded-lg p-2 border border-slate-200 text-xs space-y-1">
-                <div class="flex justify-between"><span class="font-bold text-slate-600">Carrera:</span> <span id="mefCarrera" class="font-black text-slate-800">â€”</span></div>
-                <div class="flex justify-between"><span class="font-bold text-slate-600">Ejemplar:</span> <span id="mefEjemplar" class="font-bold text-slate-800 truncate">â€”</span></div>
-                <div class="flex justify-between"><span class="font-bold text-slate-600">Valor / Tabla:</span> <span id="mefValor" class="font-black text-blue-700">â€”</span></div>
-                <div class="flex justify-between"><span class="font-bold text-slate-600">Disponibles:</span> <span id="mefDisponibles" class="font-black text-emerald-700">â€”</span></div>
+                <div class="flex justify-between"><span class="font-bold text-slate-600">Carrera:</span> <span id="mefCarrera" class="font-black text-slate-800">—</span></div>
+                <div class="flex justify-between"><span class="font-bold text-slate-600">Ejemplar:</span> <span id="mefEjemplar" class="font-bold text-slate-800 truncate">—</span></div>
+                <div class="flex justify-between"><span class="font-bold text-slate-600">Valor / Tabla:</span> <span id="mefValor" class="font-black text-blue-700">—</span></div>
+                <div class="flex justify-between"><span class="font-bold text-slate-600">Disponibles:</span> <span id="mefDisponibles" class="font-black text-emerald-700">—</span></div>
             </div>
             <div>
                 <label class="block text-[10px] font-black text-slate-700 mb-1 uppercase tracking-wider">Grupo de Venta</label>
@@ -176,7 +176,7 @@
             <div>
                 <label class="block text-[10px] font-black text-slate-700 mb-1 uppercase tracking-wider">Cantidad de Tablas</label>
                 <div class="flex items-center gap-2">
-                    <button type="button" id="mefMenos" class="w-9 h-9 bg-slate-200 hover:bg-slate-300 rounded-lg font-black text-lg shrink-0">âˆ’</button>
+                    <button type="button" id="mefMenos" class="w-9 h-9 bg-slate-200 hover:bg-slate-300 rounded-lg font-black text-lg shrink-0">−</button>
                     <input type="number" id="mefCantidad" value="1" min="1" class="flex-1 border border-slate-300 rounded-lg p-2 text-lg font-black text-center outline-none focus:ring-2 focus:ring-indigo-500">
                     <button type="button" id="mefMas" class="w-9 h-9 bg-slate-200 hover:bg-slate-300 rounded-lg font-black text-lg shrink-0">+</button>
                 </div>
@@ -236,14 +236,14 @@
             </div>
             <div class="p-4 space-y-4 overflow-y-auto flex-1">
                 <div id="mvResumenCarrito" class="hidden bg-indigo-50 border border-indigo-200 rounded-lg p-3">
-                    <div id="mvResumenCarritoTitulo" class="text-[10px] font-black uppercase tracking-wider text-indigo-500 mb-1"><i class="fas fa-shopping-cart mr-1"></i> Venta múltiple â€” N items</div>
+                    <div id="mvResumenCarritoTitulo" class="text-[10px] font-black uppercase tracking-wider text-indigo-500 mb-1"><i class="fas fa-shopping-cart mr-1"></i> Venta múltiple — N items</div>
                     <div id="mvResumenCarritoItems" class="text-[11px] text-slate-700 font-bold max-h-36 overflow-y-auto space-y-0.5"></div>
                 </div>
                 <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 text-xs">
-                    <div class="flex justify-between"><span class="font-bold text-slate-600">Carrera:</span> <span id="mvCarrera" class="font-black text-slate-800">â€”</span></div>
-                    <div class="flex justify-between mt-1"><span class="font-bold text-slate-600">Ejemplar:</span> <span id="mvEjemplar" class="font-bold text-slate-800">â€”</span></div>
-                    <div class="flex justify-between mt-1"><span class="font-bold text-slate-600">Valor:</span> <span id="mvValor" class="font-black text-blue-700">â€”</span></div>
-                    <div class="flex justify-between mt-1"><span class="font-bold text-slate-600">Premio (ajustado):</span> <span id="mvPremio" class="font-black text-emerald-700">â€”</span></div>
+                    <div class="flex justify-between"><span class="font-bold text-slate-600">Carrera:</span> <span id="mvCarrera" class="font-black text-slate-800">—</span></div>
+                    <div class="flex justify-between mt-1"><span class="font-bold text-slate-600">Ejemplar:</span> <span id="mvEjemplar" class="font-bold text-slate-800">—</span></div>
+                    <div class="flex justify-between mt-1"><span class="font-bold text-slate-600">Valor:</span> <span id="mvValor" class="font-black text-blue-700">—</span></div>
+                    <div class="flex justify-between mt-1"><span class="font-bold text-slate-600">Premio (ajustado):</span> <span id="mvPremio" class="font-black text-emerald-700">—</span></div>
                 </div>
 
                 <div>
@@ -261,7 +261,7 @@
                         </select>
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Grupo que recibe COMISIÃ“N</label>
+                        <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Grupo que recibe COMISIÓN</label>
                         <select id="mvGrupoComision" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-500">
                             <option value="">(auto: mismo que cobra)</option>
                         </select>

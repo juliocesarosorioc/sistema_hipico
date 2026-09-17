@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 3. Datos del menú (un solo lugar para editar y fácil de colapsar)
     const GRUPOS = [
         {
+            id: 'hipico',
             titulo: 'Módulo Hípico',
             items: [
                 { href: 'taquilla.html', icon: 'fa-receipt',      txt: 'Taquilla',            color: 'text-blue-400' },
@@ -41,6 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ]
         },
         {
+            id: 'contabilidad',
             titulo: 'Contabilidad',
             items: [
                 { href: 'depositos.html', icon: 'fa-arrow-down',  txt: 'Ingresos / Avales',   color: 'text-emerald-400' },
@@ -51,12 +53,14 @@ document.addEventListener('DOMContentLoaded', () => {
             ]
         },
         {
+            id: 'comunicacion',
             titulo: 'Comunicación',
             items: [
                 { href: 'whatsapp.html', icon: 'fa-brands fa-whatsapp', txt: 'WhatsApp',      color: 'text-emerald-400' }
             ]
         },
         {
+            id: 'configuracion',
             titulo: 'Configuración',
             items: [
                 { href: 'clientes.html', icon: 'fa-users',        txt: 'Clientes/Socios',     color: 'text-cyan-400' },
@@ -68,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const ES_ADMIN = sesion.rol.includes('Administrador');
     if (ES_ADMIN) {
         GRUPOS.push({
+            id: 'administracion',
             titulo: 'Administración',
             items: [
                 { href: 'operadores.html', icon: 'fa-user-shield', txt: 'Operadores',         color: 'text-blue-400' },
@@ -78,6 +83,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const esActivo = (href) => href === paginaActual;
+
+    // Estado persistente del acordeón por sección (abierta/cerrada)
+    const CLAVE_GRUPOS = 'club_sidebar_grupos';
+    let estadoGrupos = {};
+    try { estadoGrupos = JSON.parse(localStorage.getItem(CLAVE_GRUPOS) || '{}'); } catch (e) { estadoGrupos = {}; }
+    const grupoAbierto = (id) => (id in estadoGrupos) ? !!estadoGrupos[id] : true;
 
     const renderItems = () => GRUPOS.map(g => {
         const enlaces = g.items.map(it => {
@@ -92,10 +103,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
 
         const marcaActiva = g.items.some(it => esActivo(it.href));
+        const abierto = grupoAbierto(g.id);
 
         return `
-            <li class="s-grupo px-6 mt-6 mb-2 text-[10px] text-slate-500 uppercase tracking-widest font-bold ${marcaActiva ? 'text-blue-400' : ''}">${g.titulo}</li>
-            ${enlaces}`;
+            <li class="mt-5">
+                <button type="button" class="btn-grupo w-full flex items-center justify-between px-6 py-1.5 text-[10px] text-slate-500 uppercase tracking-widest font-bold hover:text-slate-300 transition-colors" data-grupo="${g.id}" aria-expanded="${abierto}" aria-controls="grupo-${g.id}">
+                    <span class="${marcaActiva ? 'text-blue-400' : ''}">${g.titulo}</span>
+                    <i class="fas fa-chevron-down text-[9px] btn-grupo-flecha ${abierto ? '' : 'btn-grupo-cerrado'}"></i>
+                </button>
+                <ul id="grupo-${g.id}" class="space-y-1 ${abierto ? '' : 'hidden'}">${enlaces}</ul>
+            </li>`;
     }).join('');
 
     // 4. Plantilla HTML del Menú Lateral
@@ -232,6 +249,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     mqPush.addEventListener('change', aplicar);
+
+    // 8b. Acordeón por sección: alternar visibilidad de las opciones del grupo
+    document.querySelectorAll('.btn-grupo').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.grupo;
+            const lista = document.getElementById('grupo-' + id);
+            const abierto = lista.classList.toggle('hidden');
+            btn.classList.toggle('active', !abierto);
+            btn.setAttribute('aria-expanded', String(!abierto));
+            btn.querySelector('.btn-grupo-flecha').classList.toggle('btn-grupo-cerrado', abierto);
+            estadoGrupos[id] = !abierto;
+            localStorage.setItem(CLAVE_GRUPOS, JSON.stringify(estadoGrupos));
+        });
+    });
 
     // 9. Tooltips cuando está colapsado (accesibilidad)
     document.querySelectorAll('.nav-link').forEach(link => {

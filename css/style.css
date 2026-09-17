@@ -148,8 +148,21 @@ th, td {
     display: none;
 }
 
-#sidebarGlobal.colapsado .s-grupo {
+#sidebarGlobal.colapsado .s-grupo,
+#sidebarGlobal.colapsado .btn-grupo {
     display: none;
+}
+
+.btn-grupo-flecha {
+    transition: transform 0.2s ease;
+}
+
+.btn-grupo-flecha.btn-grupo-cerrado {
+    transform: rotate(-90deg);
+}
+
+.btn-grupo.active > span {
+    color: #60a5fa;
 }
 
 #sidebarGlobal.colapsado .nav-link {

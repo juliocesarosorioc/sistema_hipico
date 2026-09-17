@@ -52,7 +52,7 @@
                 <h1 class="text-2xl font-bold text-slate-800 mb-4"><i class="fas fa-horse-head text-blue-600 mr-2"></i> Gestión de Planos</h1>
                 <div class="flex gap-4">
                     <div class="w-1/2">
-                        <label class="block text-xs font-bold text-slate-700 mb-1">HIPÃ“DROMO</label>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">HIPÓDROMO</label>
                         <select id="selectHipodromo" class="w-full border border-slate-300 rounded p-1.5 focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold text-slate-700">
                             <option value="La Rinconada">La Rinconada</option>
                             <option value="Valencia">Valencia</option>
@@ -87,7 +87,7 @@
                     <i class="fas fa-random text-blue-500 mr-1"></i> Modalidad: CON CRUCES
                 </button>
                 <p class="text-[9px] text-slate-400 mt-1 leading-snug">
-                    Cruce = varios ejemplares (2x3, 4*8). Monto es <b>por cruce</b>; el COBRO suma monto Ã— cruces.
+                    Cruce = varios ejemplares (2x3, 4*8). Monto es <b>por cruce</b>; el COBRO suma monto × cruces.
                     Paga cada ejemplar ganador por separado.
                 </p>
             </div>
@@ -95,9 +95,9 @@
             <!-- Botones de Acción Rápida -->
             <div class="w-72">
                 <div class="flex gap-1 mb-2">
-                    <button class="flex-1 bg-cyan-400 text-white font-bold py-1 rounded text-[11px] shadow-sm hover:bg-cyan-500 transition-colors">ðŸ’° Pozo</button>
-                    <button class="flex-1 bg-white border border-yellow-400 text-yellow-600 font-bold py-1 rounded text-[11px] shadow-sm hover:bg-yellow-50 transition-colors">ðŸ”„ Traslado</button>
-                    <button class="flex-1 bg-blue-600 text-white font-bold py-1 rounded text-[11px] shadow-sm hover:bg-blue-700 transition-colors">ðŸ›¡ï¸ Aval</button>
+                    <button class="flex-1 bg-cyan-400 text-white font-bold py-1 rounded text-[11px] shadow-sm hover:bg-cyan-500 transition-colors">💰 Pozo</button>
+                    <button class="flex-1 bg-white border border-yellow-400 text-yellow-600 font-bold py-1 rounded text-[11px] shadow-sm hover:bg-yellow-50 transition-colors">🔒 Traslado</button>
+                    <button class="flex-1 bg-blue-600 text-white font-bold py-1 rounded text-[11px] shadow-sm hover:bg-blue-700 transition-colors">🛡️ Aval</button>
                 </div>
                 <input type="date" id="fechaCarrera" class="w-full border border-slate-300 rounded p-1 mb-2 text-xs outline-none font-bold text-slate-700 text-center">
                 <a href="clientes.html" class="block text-center w-full bg-emerald-700 text-white font-bold py-1.5 rounded hover:bg-emerald-800 shadow transition-colors text-xs"><i class="fas fa-plus mr-1"></i> Nuevo Cliente</a>
@@ -132,12 +132,12 @@
                 </button>
             </div>
             <p class="text-[10px] text-slate-500 leading-relaxed mb-1">
-                <b class="text-blue-700">CÃ“MO SE COBRA:</b> cada línea registra <b>monto Ã— cruces</b> (si juega "2x3" con $10 son dos boletos de $10 = cobro $20).
+                <b class="text-blue-700">CÓMO SE COBRA:</b> cada línea registra <b>monto × cruces</b> (si juega "2x3" con $10 son dos boletos de $10 = cobro $20).
                 Se descuenta del saldo si el cliente juega en modo <b>Pozo</b>; en modo <b>Aval</b> solo se controla que no exceda su límite de pérdida.
             </p>
             <p class="text-[10px] text-slate-500 leading-relaxed mb-1">
-                <b class="text-emerald-600">CÃ“MO SE PAGA (si gana):</b> jugadas <b>Por Tabla</b> â†’ cantidad de tablas Ã— premio de la tabla (congelado al auditar).
-                Otras jugadas â†’ monto Ã— <b>pago si gana</b> definido en Reglas de Jugadas. Comisión del socio: sobre el <b>premio</b> si gana o sobre el <b>monto</b> si pierde.
+                <b class="text-emerald-600">CÓMO SE PAGA (si gana):</b> jugadas <b>Por Tabla</b> → cantidad de tablas × premio de la tabla (congelado al auditar).
+                Otras jugadas → monto × <b>pago si gana</b> definido en Reglas de Jugadas. Comisión del socio: sobre el <b>premio</b> si gana o sobre el <b>monto</b> si pierde.
             </p>
             <p class="text-[10px] text-slate-500 leading-relaxed">
                 <b class="text-slate-600">NOTA:</b> si la Taquilla no muestra clientes ni saldos, verifica que el paquete SQL (columnas y permisos, secciones 0 y 7) esté ejecutado en Supabase y recarga con Ctrl+Shift+R.
@@ -160,11 +160,11 @@
                 <span class="text-[10px] text-slate-400 font-medium bg-slate-700 px-2 py-0.5 rounded"><i class="fas fa-grip-lines mr-1"></i> Mover</span>
             </div>
             <div class="p-3 bg-slate-50 text-[10px] font-mono text-slate-600 leading-relaxed border-b border-slate-200">
-                <p class="text-emerald-600 font-bold mb-0.5">Luis +100 â†’ <span class="font-normal text-slate-500">depósito</span></p>
-                <p class="text-red-600 font-bold mb-0.5">Juan -100 â†’ <span class="font-normal text-slate-500">retiro</span></p>
-                <p class="text-blue-600 font-bold mb-0.5">Frank 100 Luis â†’ <span class="font-normal text-slate-500">traslado</span></p>
-                <p class="text-purple-600 font-bold mb-0.5">Luis aval +100 â†’ <span class="font-normal text-slate-500">otorgar aval</span></p>
-                <p class="text-rose-600 font-bold">Pedro aval -50 â†’ <span class="font-normal text-slate-500">retirar aval</span></p>
+                <p class="text-emerald-600 font-bold mb-0.5">Luis +100 → <span class="font-normal text-slate-500">depósito</span></p>
+                <p class="text-red-600 font-bold mb-0.5">Juan -100 → <span class="font-normal text-slate-500">retiro</span></p>
+                <p class="text-blue-600 font-bold mb-0.5">Frank 100 Luis → <span class="font-normal text-slate-500">traslado</span></p>
+                <p class="text-purple-600 font-bold mb-0.5">Luis aval +100 → <span class="font-normal text-slate-500">otorgar aval</span></p>
+                <p class="text-rose-600 font-bold">Pedro aval -50 → <span class="font-normal text-slate-500">retirar aval</span></p>
             </div>
             <div class="p-3">
                 <textarea id="textoTransacciones" class="w-full h-28 border border-slate-300 rounded p-2 text-xs font-mono outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none" placeholder="Escriba aquí los comandos..."></textarea>

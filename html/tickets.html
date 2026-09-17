@@ -33,7 +33,7 @@
             <div class="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-xs leading-relaxed">
                 <i class="fas fa-lightbulb mr-1"></i>
                 El cliente disputa una jugada desde el <b>Portal del Cliente</b> (botón "Disputar" en sus movimientos). Aquí la casa lo revisa:
-                <b>CREADO â†’ EN_REVISION â†’ SOLUCIONADO</b>. Al responder, indique la <b>acción aplicada</b> y el <b>monto resuelto</b> si aplica.
+                <b>CREADO → EN_REVISION → SOLUCIONADO</b>. Al responder, indique la <b>acción aplicada</b> y el <b>monto resuelto</b> si aplica.
                 Cuando el ticket queda SOLUCIONADO, el cliente ve la respuesta y evalúa de 1 a 5.
             </div>
 
@@ -49,7 +49,7 @@
                         <select id="filtroTicketsEstado" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-bold outline-none focus:ring-2 focus:ring-sky-500 bg-white">
                             <option value="">Todos los estados</option>
                             <option value="CREADO">CREADO (nuevo)</option>
-                            <option value="EN_REVISION">EN REVISIÃ“N</option>
+                            <option value="EN_REVISION">EN REVISIÓN</option>
                             <option value="SOLUCIONADO">SOLUCIONADO</option>
                         </select>
                     </div>
@@ -111,14 +111,14 @@
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">Estado intermedio</label>
                     <div class="flex gap-2">
-                        <button id="btnPasarRevision" class="flex-1 bg-sky-100 hover:bg-sky-200 text-sky-800 px-4 py-2 rounded-lg font-black text-xs uppercase tracking-wide transition-colors"><i class="fas fa-search mr-1"></i> Pasar a EN_REVISIÃ“N</button>
+                        <button id="btnPasarRevision" class="flex-1 bg-sky-100 hover:bg-sky-200 text-sky-800 px-4 py-2 rounded-lg font-black text-xs uppercase tracking-wide transition-colors"><i class="fas fa-search mr-1"></i> Pasar a EN_REVISIÓN</button>
                         <button id="btnRegresarCreado" class="flex-1 bg-amber-100 hover:bg-amber-200 text-amber-800 px-4 py-2 rounded-lg font-black text-xs uppercase tracking-wide transition-colors"><i class="fas fa-undo mr-1"></i> Volver a CREADO</button>
                     </div>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">Acción aplicada</label>
                     <select id="respuestaAccion" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-sky-500 bg-white">
-                        <option value="">â€” Seleccione â€”</option>
+                        <option value="">— Seleccione —</option>
                         <option value="ABONO">ABONO (se abona al saldo del cliente)</option>
                         <option value="REEMBOLSO">REEMBOLSO (se devuelve el monto jugado)</option>
                         <option value="RECHAZO">RECHAZO (el reclamo no procede)</option>
