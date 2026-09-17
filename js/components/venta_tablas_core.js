@@ -48,24 +48,24 @@
         const gCom = grupoComision || grupo;
 
         const modoJuega = cliente.modo_juego || (cliente.libre ? 'libre' : 'aval');
+        // Un jugador JUEGA LIBRE si el flag libre=true (lo crea así el RPC
+        // club_registrar_cliente_grupo con modo_juego='cuadre') o si su
+        // modo_juego es exactamente 'libre'. En ese caso NO hay límite de saldo.
+        const esLibre = !!cliente.libre || String(cliente.modo_juego || '') === 'libre';
         const saldoAct = parseFloat(cliente.saldo_actual) || 0;
         const limiteAval = parseFloat(cliente.aval || 0);
         if (!permitirSobregiro) {
             if (modoJuega === 'pozo') {
                 if (saldoAct < costoUSD) return { ok: false, error: `El cliente ${cliente.nombre} juega con Pozo y no tiene saldo disponible (tiene $${fmt(saldoAct)}). Debe abonar antes.` };
-            } else if (modoJuega === 'libre') {
-                // MODO LIBRE: el cliente no tiene limitaciones por saldo.
-                // Puede jugar/clientar si limite alguno.
+            } else if (esLibre) {
+                // MODO LIBRE (flag libre o modo 'libre'): sin limitaciones por
+                // saldo. El cliente puede quedar con saldo NEGATIVO libremente.
             } else {
                 // AVAL como línea de crédito: el cliente puede quedar con
                 // saldo NEGATIVO hasta el monto de su aval. No se exige
                 // saldo completo al cliente avalado.
-                if (limiteAval > 0) {
-                    if (saldoAct - costoUSD < -limiteAval) {
-                        return { ok: false, error: `El cliente ${cliente.nombre} supera su límite de AVAL ($${fmt(limiteAval)}). Debe abonar antes.` };
-                    }
-                } else if (!esVES && saldoAct < costoTotal) {
-                    return { ok: false, error: `El cliente ${cliente.nombre} tiene saldo insuficiente ($${fmt(saldoAct)}).` };
+                if (saldoAct - costoUSD < -limiteAval) {
+                    return { ok: false, error: `El cliente ${cliente.nombre} supera su límite de AVAL ($${fmt(limiteAval)}). Debe abonar antes.` };
                 }
             }
         }

@@ -979,13 +979,16 @@ msgSinCarreras.classList.add('hidden');
             costoTotalUSD += (gIt?.moneda === 'VES') ? ptsItem / (tasaCambioGlobal || 1) : ptsItem;
         }
 
-        // Validaciones de saldo combinadas (reglas por modo de juego)
+        // Validaciones de saldo combinadas (reglas por modo de juego).
+        // El RPC club_registrar_cliente_grupo crea jugadores con libre=true y
+        // modo_juego='cuadre': el flag libre debe tratarse como MODO LIBRE.
         const modoJuega = cliente.modo_juego || (cliente.libre ? 'libre' : 'aval');
+        const esLibre = !!cliente.libre || String(cliente.modo_juego || '') === 'libre';
         let permitirSobregiro = false;
         if (modoJuega === 'pozo') {
             const disp = parseFloat(cliente.saldo_actual || 0);
             if (disp < costoTotalUSD) return clubUI.toast(`El jugador ${cliente.nombre} juega con Pozo y no tiene saldo disponible (tiene $${fmt(disp)}). Debe abonar antes de comprar.`, 'warning');
-        } else if (modoJuega === 'libre') {
+        } else if (esLibre) {
             // MODO LIBRE: sin limitaciones por saldo.
         } else {
             // MODO AVAL: el cliente puede quedar con saldo NEGATIVO hasta

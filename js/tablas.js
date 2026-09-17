@@ -1396,7 +1396,9 @@ const { error } = await window.supabase.from('tablas_fijas').update({
                 ...c,
                 grupos: [...new Set([...((cg || []).filter(x => x.cliente_id == c.id).map(x => x.grupo_id)), c.grupo_id].filter(Boolean))]
             }));
-            if (ventaModalAbierta) poblarClientesVenta();
+            // Refresca SIEMPRE la venta rápida del monitor (selectClienteVenta)
+            // para que un jugador recién registrado aparezca de inmediato.
+            if (document.getElementById('selectClienteVenta')) poblarClientesVenta();
         } catch (e) {
             console.error('[tablas] cargarClientesVenta error:', e);
             if (sel) sel.innerHTML = '<option value="" disabled>Error cargando jugadores. Ver consola (F12).</option>';
@@ -1560,17 +1562,26 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             if (ventaCarrito[i].cantidad <= 0) ventaCarrito.splice(i, 1);
             renderVenta();
         }));
-        document.querySelectorAll('.btn-carrito-quitar').forEach(b => b.addEventListener('click', () => {
-            ventaCarrito = ventaCarrito.filter((_, i) => i != b.dataset.i);
-            renderVenta();
-        }));
     }
+
+    const CLAVE_CARRITO_ESTADO = 'club_venta_carrito_colapsado';
 
     function renderCarrito() {
         const box = document.getElementById('ventaCarritoBox');
         const items = document.getElementById('ventaCarritoItems');
         if (!box || !items) return;
         box.classList.remove('hidden');
+        const totTablas = ventaCarrito.length ? ventaCarrito.reduce((a, it) => a + it.cantidad, 0) : 0;
+        const totCosto = ventaCarrito.reduce((a, it) => a + (parseFloat(it.ejemplar.valor_ejemplar ?? it.ejemplar.valor ?? it.ejemplar.pts) || 0) * it.cantidad, 0);
+        const min = document.getElementById('ventaCarritoMin');
+        if (min) {
+            min.classList.remove('hidden');
+            document.getElementById('ventaCarritoMinInfo').textContent = `${totTablas} · ${ventaSimb()}${clubUI.formatoNumero(totCosto, 0)}`;
+        }
+        if (estadoCarritoColapsado()) {
+            box.classList.add('hidden');
+            return;
+        }
         if (ventaCarrito.length === 0) {
             items.innerHTML = `<div class="text-center text-xs font-bold uppercase tracking-wider text-slate-400 py-4"><i class="fas fa-shopping-cart mr-1"></i> El carrito está vacío</div>`;
             carritoGruposCache = [];
@@ -1623,15 +1634,32 @@ const { error } = await window.supabase.from('tablas_fijas').update({
             document.querySelectorAll('.btn-imprimir-ticket-grupo').forEach(b => b.addEventListener('click', () => {
                 imprimirTicketGrupoCarrito(parseInt(b.dataset.gi, 10));
             }));
+            // Quitar una jugada del carrito (se enlaza aquí porque renderCarrito
+            // puede ejecutarse sin pasar por pushEventosVenta, p. ej. al agregar
+            // desde el modal de ejemplar).
+            document.querySelectorAll('.btn-carrito-quitar').forEach(b => b.addEventListener('click', () => {
+                const pos = parseInt(b.dataset.i, 10);
+                if (!Number.isFinite(pos)) return;
+                ventaCarrito = ventaCarrito.filter((_, i) => i !== pos);
+                carritoGruposCache = [];
+                renderVenta();
+            }));
         }
-        const totTablas = ventaCarrito.reduce((a, it) => a + it.cantidad, 0);
-        const totCosto = ventaCarrito.reduce((a, it) => a + (parseFloat(it.ejemplar.valor_ejemplar ?? it.ejemplar.valor ?? it.ejemplar.pts) || 0) * it.cantidad, 0);
         document.getElementById('ventaCarritoTablas').textContent = totTablas;
         document.getElementById('ventaCarritoTotal').textContent = `${ventaSimb()}${clubUI.formatoNumero(totCosto, 0)}`;
         const btnCerrar = document.getElementById('btnProcesarVentaModal');
         if (btnCerrar) btnCerrar.disabled = ventaCarrito.length === 0;
         const btnVaciar = document.getElementById('btnVaciarCarritoVenta');
         if (btnVaciar) btnVaciar.disabled = ventaCarrito.length === 0;
+    }
+
+    function estadoCarritoColapsado() {
+        return localStorage.getItem(CLAVE_CARRITO_ESTADO) === '1';
+    }
+
+    function setCarritoColapsado(colapsado) {
+        if (colapsado) localStorage.setItem(CLAVE_CARRITO_ESTADO, '1');
+        else localStorage.removeItem(CLAVE_CARRITO_ESTADO);
     }
 
     // Imprime SOLO el ticket de un grupo del carrito (un ticket por grupo, sin mezclar)
@@ -1922,6 +1950,16 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         renderVenta();
     });
 
+    document.getElementById('btnColapsarCarrito')?.addEventListener('click', () => {
+        setCarritoColapsado(true);
+        renderVenta();
+    });
+
+    document.getElementById('ventaCarritoMin')?.addEventListener('click', () => {
+        setCarritoColapsado(false);
+        renderVenta();
+    });
+
     document.getElementById('btnProcesarVentaModal').addEventListener('click', cerrarVenta);
     document.getElementById('selectClienteVenta').addEventListener('change', () => {
         const gidsCli = gruposDeCliente(document.getElementById('selectClienteVenta').value);
@@ -1991,6 +2029,16 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         if (!gid) return clubUI.toast('Seleccione primero el grupo.', 'warning');
         if (!nombre) return clubUI.toast('Indique el nombre del jugador.', 'warning');
         let cliNuevo = null, e2 = null;
+        // No permitir duplicar el mismo nombre de jugador en el mismo grupo.
+        const { data: dupCli, error: eDupCli } = await window.supabase.from('clientes').select('id, nombre, grupo_id').ilike('nombre', nombre);
+        if (eDupCli) return clubUI.toast('No se pudo verificar jugadores: ' + eDupCli.message, 'error');
+        const { data: dupCG, error: eDupCG } = await window.supabase.from('clientes_grupos').select('cliente_id').eq('grupo_id', gid);
+        if (eDupCG) return clubUI.toast('No se pudo verificar jugadores: ' + eDupCG.message, 'error');
+        const idsEnGrupo = new Set();
+        (dupCG || []).forEach(x => idsEnGrupo.add(String(x.cliente_id)));
+        (dupCli || []).filter(c => c.grupo_id && String(c.grupo_id) === String(gid)).forEach(c => idsEnGrupo.add(String(c.id)));
+        const dupEnGrupo = (dupCli || []).find(c => idsEnGrupo.has(String(c.id)));
+        if (dupEnGrupo) return clubUI.toast(`Ya existe un jugador con el nombre "${dupEnGrupo.nombre}" en este grupo.`, 'warning');
         ({ data: cli, error: e1 } = await window.supabase.from('clientes').insert([{
             nombre: nombre,
             saldo_actual: 0,
