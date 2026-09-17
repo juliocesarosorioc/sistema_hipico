@@ -56,19 +56,20 @@ window.clubImpresionTablas = (function () {
     .sub-hoja { font-size:11px; color:#64748b; font-weight:600; margin-top:1px; }
     .grilla-15 { flex:1; min-height:0; display:grid; grid-template-columns:repeat(5,1fr); grid-template-rows:repeat(3,1fr); gap:6px; }
     .tabla-imp { border:1.5px solid #334155; border-radius:7px; overflow:hidden; display:flex; flex-direction:column; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.08); min-height:0; }
-    .hd-tabla { background:linear-gradient(135deg,#1e40af,#4338ca); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:0 6px; }
-    .hd-hipo { font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1; }
-    .hd-carrera { font-size:15px; font-weight:900; background:rgba(255,255,255,.18); border-radius:5px; padding:0 7px; line-height:1.2; }
-    .hd-premio { display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:800; color:#b45309; padding:1px 8px; background:#fffbeb; border-bottom:1px solid #f1f5f9; text-transform:uppercase; }
-    .hd-premio .premio-val { font-size:13px; font-weight:900; color:#b45309; line-height:1; }
-    .grilla-prin { flex:1; min-height:0; display:flex; flex-direction:column; padding:0; overflow:hidden; }
-    .grilla-ej { display:grid; align-items:center; align-content:center; gap:1px; padding:0; margin:0; border-bottom:1px solid #eef2f7; flex:1; min-height:0; line-height:1; }
+    .hd-tabla { position:relative; background:linear-gradient(135deg,#1e40af,#4338ca); color:#fff; display:block; padding:0 6px; white-space:nowrap; }
+    .hd-hipo { display:inline-block; vertical-align:middle; font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.3px; overflow:hidden; text-overflow:ellipsis; max-width:72%; margin:0; padding:0 46px 0 0; }
+    .hd-carrera { position:absolute; right:6px; top:0; height:100%; font-size:15px; font-weight:900; background:rgba(255,255,255,.18); border-radius:5px; padding:0 7px; }
+    .hd-premio { position:relative; display:block; background:#fffbeb; border-bottom:1px solid #f1f5f9; padding:0 8px; white-space:nowrap; }
+    .hd-premio .hd-premio-txt { display:inline-block; vertical-align:middle; font-size:10px; font-weight:800; color:#b45309; text-transform:uppercase; margin:0; }
+    .hd-premio .premio-val { position:absolute; right:8px; top:0; height:100%; font-size:13px; font-weight:900; color:#b45309; }
+    .grilla-prin { flex:1; min-height:0; display:flex; flex-direction:column; justify-content:flex-start; padding:0; overflow:hidden; }
+    .grilla-ej { display:block; padding:0; margin:0; border-bottom:1px solid #eef2f7; white-space:nowrap; flex:none; }
     .grilla-ej:last-child { border-bottom:none; }
     .grilla-ej:nth-child(even) { background:#f3f6fb; }
     .grilla-ej.retirado { opacity:.40; }
-    .nro-grilla { border-radius:2px; border:1px solid; display:flex; align-items:center; justify-content:center; font-weight:900; flex:none; margin:0; padding:0; line-height:1; }
-    .nombre-grilla { font-weight:700; text-transform:uppercase; white-space:nowrap; min-width:0; line-height:1; }
-    .valor-grilla { font-weight:800; color:#1d4ed8; text-align:right; white-space:nowrap; padding-left:4px; line-height:1; }
+    .nro-grilla { display:inline-block; vertical-align:middle; text-align:center; border-radius:2px; font-weight:900; margin:0 4px 0 0; padding:0; }
+    .nombre-grilla { display:inline-block; vertical-align:middle; font-weight:700; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:calc(100% - 74px); margin:0; padding:0; }
+    .valor-grilla { display:inline-block; vertical-align:middle; font-weight:800; color:#1d4ed8; text-align:right; white-space:nowrap; margin:0; padding:0 0 0 4px; }
     .sin-ej { grid-column:1/-1; font-size:11px; color:#94a3b8; font-style:italic; padding:12px; }
     .notas-hoja { display:flex; justify-content:space-between; gap:14px; font-size:10.5px; color:#78350f; background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:4px 10px; font-weight:700; }
     `;
@@ -86,7 +87,10 @@ window.clubImpresionTablas = (function () {
         const rows = Math.max(1, n);
         // Alto aproximado (px) del área de lista dentro de la tarjeta.
         const altoLista = 280;
-        const filaH = altoLista / rows;
+        // filaH fija por ejemplar: se usa como height Y line-height para que el
+        // texto quede centrado verticalmente en su celda (html2canvas alinea bien
+        // con line-height, no con flex).
+        const filaH = Math.floor(altoLista / rows);
         const k = Math.min(1, Math.max(0.5, filaH / 18));
         const fsNom = Math.round(Math.min(9.5, Math.max(5.5, filaH * 0.5)) * 10) / 10;
         const fsVal = Math.round(fsNom * 1.3 * 10) / 10;
@@ -96,13 +100,16 @@ window.clubImpresionTablas = (function () {
         const nroH = 14;
         return {
             rows,
+            filaH,
             k,
             nroW,
             nroH,
             fsNum: Math.round(Math.min(10, Math.max(6.5, filaH * 0.58)) * 10) / 10,
             fsNom,
             box: `${nroW}px ${nroH}px`,
-            fsVal
+            fsVal,
+            hdH: 22,
+            premioH: 18
         };
     }
 
@@ -116,22 +123,22 @@ window.clubImpresionTablas = (function () {
             const fg = textoDeNumero(c.numero);
             const ret = !!c.retirado;
             return `
-                <div class="grilla-ej ${ret ? 'retirado' : ''}" style="grid-template-columns:${T.box} 1fr auto">
-                    <div class="nro-grilla" style="background:${bg};color:${fg};border-color:${bg};width:${T.nroW}px;height:${T.nroH}px;font-size:${T.fsNum}px">${c.numero ?? ''}</div>
-                    <div class="nombre-grilla" style="font-size:${T.fsNom}px">${c.nombre || ''}</div>
-                    <div class="valor-grilla" style="font-size:${T.fsVal}px">${ret ? 'RET.' : fmt(limpiarValor(c), 0)}</div>
+                <div class="grilla-ej ${ret ? 'retirado' : ''}" style="height:${T.filaH}px;line-height:${T.filaH}px">
+                    <span class="nro-grilla" style="background:${bg};color:${fg};border:1px solid ${bg};width:${T.nroW}px;height:${T.nroH}px;line-height:${T.nroH}px;font-size:${T.fsNum}px">${c.numero ?? ''}</span>
+                    <span class="nombre-grilla" style="font-size:${T.fsNom}px;line-height:${T.filaH}px">${c.nombre || ''}</span>
+                    <span class="valor-grilla" style="font-size:${T.fsVal}px;line-height:${T.filaH}px">${ret ? 'RET.' : fmt(limpiarValor(c), 0)}</span>
                 </div>`;
         }).join('') || '<div class="sin-ej">Sin ejemplares registrados.</div>';
 
         return `
             <div class="tabla-imp">
-                <div class="hd-tabla">
-                    <div class="hd-hipo">${t.hipodromo || ''}</div>
-                    <div class="hd-carrera">C${t.carrera ?? ''}</div>
+                <div class="hd-tabla" style="height:${T.hdH}px">
+                    <span class="hd-hipo" style="line-height:${T.hdH}px">${t.hipodromo || ''}</span>
+                    <span class="hd-carrera" style="line-height:${T.hdH}px">C${t.carrera ?? ''}</span>
                 </div>
-                <div class="hd-premio">
-                    <span>Monto a Pagar / Tabla</span>
-                    <span class="premio-val">$${fmt(premio)}</span>
+                <div class="hd-premio" style="height:${T.premioH}px;line-height:${T.premioH}px">
+                    <span class="hd-premio-txt">Monto a Pagar / Tabla</span>
+                    <span class="premio-val" style="line-height:${T.premioH}px">$${fmt(premio)}</span>
                 </div>
                 <div class="grilla-prin">${grilla}</div>
             </div>`;
