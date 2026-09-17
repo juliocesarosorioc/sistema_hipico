@@ -66,9 +66,9 @@ window.clubImpresionTablas = (function () {
     .grilla-ej:last-child { border-bottom:none; }
     .grilla-ej:nth-child(even) { background:#f3f6fb; }
     .grilla-ej.retirado { opacity:.40; }
-.nro-grilla { position:relative; top:-2px; border-radius:3px; border:1px solid; display:flex; align-items:center; justify-content:center; font-weight:900; flex:none; margin:0; padding:0; line-height:1; }
-.nombre-grilla { position:relative; top:-2px; font-weight:700; text-transform:uppercase; white-space:nowrap; min-width:0; line-height:1; }
-.valor-grilla { position:relative; top:-2px; font-weight:800; color:#1d4ed8; text-align:right; white-space:nowrap; padding-left:4px; line-height:1; }
+.nro-grilla { position:relative; top:-6px; border-radius:3px; border:1px solid; display:flex; align-items:center; justify-content:center; font-weight:900; flex:none; margin:0; padding:0; line-height:1; }
+.nombre-grilla { position:relative; top:-6px; font-weight:700; text-transform:uppercase; white-space:nowrap; min-width:0; line-height:1; }
+.valor-grilla { position:relative; top:-6px; font-weight:800; color:#1d4ed8; text-align:right; white-space:nowrap; padding-left:4px; line-height:1; }
     .sin-ej { grid-column:1/-1; font-size:11px; color:#94a3b8; font-style:italic; padding:12px; }
     .notas-hoja { display:flex; justify-content:space-between; gap:14px; font-size:10.5px; color:#78350f; background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:4px 10px; font-weight:700; }
     `;
