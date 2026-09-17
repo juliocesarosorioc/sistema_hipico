@@ -55,23 +55,20 @@ window.clubImpresionTablas = (function () {
     .titulo-hoja { font-size:20px; font-weight:900; letter-spacing:1px; color:#1e3a8a; text-transform:uppercase; }
     .sub-hoja { font-size:11px; color:#64748b; font-weight:600; margin-top:1px; }
     .grilla-15 { flex:1; min-height:0; display:grid; grid-template-columns:repeat(5,1fr); grid-template-rows:repeat(3,1fr); gap:6px; }
-    .tabla-imp { border:1.5px solid #334155; border-radius:7px; overflow:hidden; display:block; height:100%; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.08); min-height:0; }
-    .tabla-imp > table { width:100%; height:100%; table-layout:fixed; border-collapse:collapse; border-spacing:0; }
-    .tabla-imp td { padding:0; }
-    .fila-hd { background:linear-gradient(135deg,#1e40af,#4338ca); }
-    .fila-hd td { color:#fff; font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; vertical-align:middle; }
-    .hd-hipo { display:inline; }
-    .hd-carrera { float:right; font-size:15px; font-weight:900; background:rgba(255,255,255,.18); border-radius:5px; padding:0 7px; }
-    .fila-premio { background:#fffbeb; border-bottom:1px solid #f1f5f9; }
-    .fila-premio td { font-size:10px; font-weight:800; color:#b45309; text-transform:uppercase; white-space:nowrap; overflow:hidden; vertical-align:middle; }
-    .premio-val { float:right; font-size:13px; font-weight:900; color:#b45309; }
-    .fila-ej td { vertical-align:middle; }
-    .fila-ej { border-bottom:1px solid #f1f5f9; }
-    .fila-ej.even td { background:#f3f6fb; }
-    .fila-ej.retirado td { opacity:.40; }
-    .cel-nro { text-align:center; }
-    .cel-nom { font-weight:700; font-size:9px; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .cel-val { font-size:11px; font-weight:800; color:#1d4ed8; text-align:right; }
+    .tabla-imp { border:1.5px solid #334155; border-radius:7px; overflow:hidden; display:flex; flex-direction:column; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.08); min-height:0; }
+    .hd-tabla { background:linear-gradient(135deg,#1e40af,#4338ca); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:3px 8px; }
+    .hd-hipo { font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .hd-carrera { font-size:15px; font-weight:900; background:rgba(255,255,255,.18); border-radius:5px; padding:0 7px; }
+    .hd-premio { display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:800; color:#b45309; padding:2px 8px; background:#fffbeb; border-bottom:1px solid #f1f5f9; text-transform:uppercase; }
+    .hd-premio .premio-val { font-size:13px; font-weight:900; color:#b45309; }
+    .grilla-prin { flex:1; min-height:0; display:flex; flex-direction:column; padding:0; overflow:hidden; }
+    .grilla-ej { display:grid; align-items:center; gap:1px; padding:0; margin:0; border-bottom:1px solid #eef2f7; flex:1; min-height:0; line-height:1; }
+    .grilla-ej:last-child { border-bottom:none; }
+    .grilla-ej:nth-child(even) { background:#f3f6fb; }
+    .grilla-ej.retirado { opacity:.40; }
+    .nro-grilla { border-radius:3px; border:1px solid; display:flex; align-items:center; justify-content:center; font-weight:900; flex:none; margin:0; padding:0; line-height:1; }
+    .nombre-grilla { font-weight:700; text-transform:uppercase; white-space:nowrap; min-width:0; line-height:1; }
+    .valor-grilla { font-weight:800; color:#1d4ed8; text-align:right; white-space:nowrap; padding-left:4px; line-height:1; }
     .sin-ej { grid-column:1/-1; font-size:11px; color:#94a3b8; font-style:italic; padding:12px; }
     .notas-hoja { display:flex; justify-content:space-between; gap:14px; font-size:10.5px; color:#78350f; background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:4px 10px; font-weight:700; }
     `;
@@ -89,21 +86,18 @@ window.clubImpresionTablas = (function () {
         const rows = Math.max(1, n);
         // Alto aproximado (px) del área de lista dentro de la tarjeta.
         const altoLista = 280;
-        const filaH = Math.floor(altoLista / rows);
+        const filaH = altoLista / rows;
         const k = Math.min(1, Math.max(0.5, filaH / 18));
-        // Nombres y valores se ajustan por densidad para que quepan en su fila.
         const fsNom = Math.round(Math.min(9.5, Math.max(5.5, filaH * 0.5)) * 10) / 10;
         const fsVal = Math.round(fsNom * 1.3 * 10) / 10;
-        const nroW = 18;
-        const nroH = 14;
         return {
             rows,
-            filaH,
             k,
-            nroW,
-            nroH,
-            fsNum: Math.round(Math.min(10, Math.max(6.5, filaH * 0.58)) * 10) / 10,
+            nroW: Math.max(14, Math.round(22 * k)),
+            nroH: Math.max(13, Math.round(17 * k)),
+            fsNum: Math.round(Math.min(11, Math.max(7, filaH * 0.62)) * 10) / 10,
             fsNom,
+            box: `${Math.round(22 * k)}px ${Math.round(17 * k)}px`,
             fsVal
         };
     }
@@ -113,37 +107,29 @@ window.clubImpresionTablas = (function () {
         const ejemplares = Array.isArray(t.caballos) ? t.caballos : [];
         const T = tamanoTarjeta(ejemplares.length);
 
-        const filas = ejemplares.map((c, i) => {
+        const grilla = ejemplares.map(c => {
             const bg = colorDeNumero(c.numero);
             const fg = textoDeNumero(c.numero);
             const ret = !!c.retirado;
             return `
-                <tr class="fila-ej ${i % 2 === 1 ? 'even' : ''} ${ret ? 'retirado' : ''}">
-                    <td class="cel-nro">
-                        <span style="display:inline-block;background:${bg};color:${fg};border:1px solid ${bg};border-radius:2px;width:${T.nroW}px;height:${T.nroH}px;line-height:${T.nroH}px;font-size:${T.fsNum}px;font-weight:900;text-align:center">${c.numero ?? ''}</span>
-                    </td>
-                    <td class="cel-nom" style="font-size:${T.fsNom}px">${c.nombre || ''}</td>
-                    <td class="cel-val" style="font-size:${T.fsVal}px">${ret ? 'RET.' : fmt(limpiarValor(c), 0)}</td>
-                </tr>`;
-        }).join('') || '<tr class="fila-ej"><td class="cel-nom" colspan="3">Sin ejemplares registrados.</td></tr>';
+                <div class="grilla-ej ${ret ? 'retirado' : ''}" style="grid-template-columns:${T.box} 1fr auto">
+                    <div class="nro-grilla" style="background:${bg};color:${fg};border-color:${bg};width:${T.nroW}px;height:${T.nroH}px;font-size:${T.fsNum}px">${c.numero ?? ''}</div>
+                    <div class="nombre-grilla" style="font-size:${T.fsNom}px">${c.nombre || ''}</div>
+                    <div class="valor-grilla" style="font-size:${T.fsVal}px">${ret ? 'RET.' : fmt(limpiarValor(c), 0)}</div>
+                </div>`;
+        }).join('') || '<div class="sin-ej">Sin ejemplares registrados.</div>';
 
         return `
             <div class="tabla-imp">
-                <table>
-                    <tr class="fila-hd">
-                        <td colspan="3">
-                            <span class="hd-hipo">${t.hipodromo || ''}</span>
-                            <span class="hd-carrera">C${t.carrera ?? ''}</span>
-                        </td>
-                    </tr>
-                    <tr class="fila-premio">
-                        <td colspan="3">
-                            <span>Monto a Pagar / Tabla</span>
-                            <span class="premio-val">$${fmt(premio)}</span>
-                        </td>
-                    </tr>
-                    ${filas}
-                </table>
+                <div class="hd-tabla">
+                    <div class="hd-hipo">${t.hipodromo || ''}</div>
+                    <div class="hd-carrera">C${t.carrera ?? ''}</div>
+                </div>
+                <div class="hd-premio">
+                    <span>Monto a Pagar / Tabla</span>
+                    <span class="premio-val">$${fmt(premio)}</span>
+                </div>
+                <div class="grilla-prin">${grilla}</div>
             </div>`;
     }
 
@@ -191,7 +177,11 @@ window.clubImpresionTablas = (function () {
                 scale: scale || 2,
                 useCORS: true,
                 backgroundColor: '#ffffff',
-                logging: false
+                logging: false,
+                // CLAVE: sin el offset de scroll el contenido se dibuja desplazado
+                // hacia abajo (todo "cae" y lo tapa la fila inferior).
+                scrollX: 0,
+                scrollY: 0
             });
             return canvas;
         } finally {
