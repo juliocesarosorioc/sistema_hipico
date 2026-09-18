@@ -195,7 +195,7 @@ function armarDesdeTickets(tickets,idx){
     e.cantTablas+=parseInt(t.cantidad_tablas)||0;
     p.montoJugado+=parseFloat(t.monto_jugado)||0;
     p.tablas+=parseInt(t.cantidad_tablas)||0;
-    if(String(t.estado||"").trim().toUpperCase()==="SOLUCIONADO"){e.pagado+=parseFloat(t.monto_resuelto)||0;p.montoPagado+=parseFloat(t.monto_resuelto)||0;}
+    if(String(t.estado||"").trim().toUpperCase()==="SOLUCIONADO"){e.pagado+=parseFloat(t.monto_decidido)||0;p.montoPagado+=parseFloat(t.monto_decidido)||0;}
   });
   return Object.keys(pj).map(function(k){
     var p=pj[k];
