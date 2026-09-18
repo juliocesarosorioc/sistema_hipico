@@ -6,108 +6,280 @@
 <title>Monitor Tablas Publicadas - Imprimir / WhatsApp</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:system-ui,Arial,sans-serif;background:#f1f5f9;padding:14px;}
-.bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;max-width:1300px;margin:0 auto 12px;}
-h1{font-size:17px;font-weight:800;color:#0f172a;}
+body{font-family:system-ui,Arial,sans-serif;background:#eef2f7;padding:14px;color:#0f172a;}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;max-width:1400px;margin:0 auto 12px;}
+h1{font-size:18px;font-weight:800;color:#0f172a;}
 h1 small{display:block;font-size:10px;font-weight:600;color:#64748b;margin-top:2px;}
 .botones{display:flex;gap:7px;flex-wrap:wrap;}
-.btn{border:0;border-radius:8px;padding:7px 12px;font-size:11px;font-weight:700;cursor:pointer;color:#fff;}
-.btn-verde{background:#059669;}.btn-azul{background:#1d4ed8;}.btn-wa{background:#25d366;}
-.btn:hover{filter:brightness(1.1);}
-.aviso{max-width:1300px;margin:0 auto 10px;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;font-size:10px;border-radius:8px;padding:7px 10px;}
-.grid{max-width:1300px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr);gap:6px;}
-.tarjeta{background:#fff;border:1px solid #e2e8f0;border-radius:9px;padding:8px;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(0,0,0,.05);}
-.enc{display:flex;justify-content:space-between;align-items:flex-start;}
-.hip{font-size:9px;font-weight:800;color:#334155;text-transform:uppercase;}
-.moneda{font-size:8px;font-weight:800;color:#92400e;background:#fef3c7;border-radius:99px;padding:1px 6px;}
-.fila{display:flex;align-items:center;gap:6px;margin-top:5px;}
-.num{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;flex:none;}
-.cab{font-size:9px;font-weight:700;color:#475569;line-height:1.2;}
-.inf{display:flex;justify-content:space-between;margin-top:auto;padding-top:4px;font-size:8px;color:#64748b;}
-.inf b{color:#047857;font-size:10px;}
-.foot{margin-top:14px;max-width:1300px;margin-left:auto;margin-right:auto;font-size:8px;color:#475569;line-height:1.55;text-align:justify;border-top:1px solid #cbd5e1;padding-top:7px;}
+.btn{border:0;border-radius:8px;padding:8px 13px;font-size:11px;font-weight:800;color:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+.b-pdf{background:#dc2626;} .b-jpg{background:#1d4ed8;} .b-png{background:#059669;} .b-wa{background:#25d366;}
+.btn:hover{filter:brightness(1.08);}
+.aviso{max-width:1400px;margin:0 auto 10px;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;font-size:10px;border-radius:8px;padding:8px 12px;line-height:1.5;}
+.aviso.ok{background:#ecfdf5;border-color:#a7f3d0;color:#065f46;}
+.fuente{color:#64748b;font-size:10px;font-weight:700;margin:0 auto 8px;max-width:1400px;}
+#contenedor{max-width:1400px;margin:0 auto;}
+.ph{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 4px;font-size:10px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.4px;}
+.ph b{color:#0f172a;}
+.hoja{background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(15,23,42,.08);padding:10px;display:grid;grid-template-columns:repeat(5,1fr);grid-auto-rows:auto;gap:9px;}
+.tarjeta{background:#fff;border:1px solid #cbd5e1;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(0,0,0,.04);}
+.enc{background:#0f172a;color:#fff;padding:6px 8px;}
+.l1{display:flex;align-items:center;gap:6px;justify-content:space-between;}
+.hip{font-size:10px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1;}
+.cc{background:rgba(255,255,255,.16);border-radius:6px;font-size:10px;font-weight:900;padding:1px 7px;white-space:nowrap;flex:none;}
+.l2{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:3px;font-size:8.5px;font-weight:700;color:#cbd5e1;}
+.meta{display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+.fecha{margin-left:auto;white-space:nowrap;font-weight:800;color:#7dd3fc;}
+.filas{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;padding:5px 7px;min-height:0;font-size:var(--fs,10px);}
+.fila{display:flex;align-items:center;gap:6px;line-height:1.1;min-height:0;}
+.num{width:1.4em;height:1.4em;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:0.95em;flex:none;line-height:1;}
+.cab{flex:1;font-weight:700;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cab.ret{color:#dc2626;text-decoration:line-through;}
+.mon{font-weight:800;color:#475569;white-space:nowrap;font-size:0.95em;}
+.mon.cero{color:#94a3b8;}
+.pie{display:flex;justify-content:space-between;align-items:center;gap:6px;border-top:1px solid #e2e8f0;background:#f8fafc;padding:5px 8px;font-size:8.5px;font-weight:700;color:#475569;white-space:nowrap;}
+.pie b{color:#047857;font-size:10px;}
+.normas{max-width:1400px;margin:14px auto 0;font-size:8px;color:#64748b;line-height:1.55;text-align:justify;border-top:1px solid #cbd5e1;padding-top:7px;}
+.vacio{padding:60px 20px;text-align:center;color:#94a3b8;font-size:13px;font-weight:700;}
 .toast{position:fixed;bottom:14px;right:14px;background:#0f172a;color:#fff;padding:8px 14px;border-radius:8px;font-size:11px;opacity:0;transform:translateY(8px);transition:all .2s;max-width:280px;}
 .toast.mostrar{opacity:1;transform:translateY(0);}
-#zonaVista{max-width:1300px;margin:14px auto 0;display:none;}
-#zonaVista.mostrar{display:block;}
-@media (max-width:900px){.grid{grid-template-columns:repeat(2,1fr);}}
-@media print{body *{visibility:hidden;}
-#zonaVista,#zonaVista *{visibility:visible;}
-#zonaVista{display:block!important;position:absolute;left:0;top:0;width:100%;}
- #zonaVista .tarjeta{page-break-inside:avoid;}}
+@media (max-width:1100px){.hoja{grid-template-columns:repeat(3,1fr);}}
+@media (max-width:700px){.hoja{grid-template-columns:repeat(2,1fr);}}
+@page{size:A4 portrait;margin:6mm;}
+@media print{
+  body *{visibility:hidden;}
+  #contenedor,#contenedor *{visibility:visible;}
+  #contenedor{position:absolute;left:0;top:0;width:100%;max-width:none;}
+  .hoja{box-shadow:none;border-radius:0;margin:0;padding:2mm;gap:2.2mm;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(3,1fr);height:auto;break-after:page;}
+  .tarjeta{break-inside:avoid;border-radius:4px;}
+  .fuente,.aviso,.bar{display:none !important;}
+}
 </style>
 </head>
 <body>
 <div class="bar">
-  <h1>MONITOR TABLAS PUBLICADAS<small>15 tablas por hoja (5x3) - PDF nativo / JPG / PNG / WhatsApp</small></h1>
+  <h1>MONITOR TABLAS PUBLICADAS<small>15 carreras por hoja (5x3) - PDF nativo / JPG / PNG / WhatsApp</small></h1>
   <div class="botones">
-    <button class="btn btn-verde" id="bPDF">PDF</button>
-    <button class="btn btn-azul" id="bJPG">JPG</button>
-    <button class="btn btn-azul" id="bPNG">PNG</button>
-    <button class="btn btn-wa" id="bWA">WhatsApp</button>
+    <button class="btn b-pdf" onclick="exportar('PDF')">&#128196; PDF</button>
+    <button class="btn b-jpg" onclick="exportar('JPG')">&#128444; JPG</button>
+    <button class="btn b-png" onclick="exportar('PNG')">&#128444; PNG</button>
+    <button class="btn b-wa" onclick="waReporte()">&#128172; WhatsApp</button>
   </div>
 </div>
-<div class="aviso">Demo con 15 tablas de ejemplo. Para conectar sus tablas reales de supabase vea el bloque CARGAR_DATOS dentro del script.</div>
-<div class="grid" id="grid"></div>
-<div id="zonaVista"></div>
-<div class="foot" id="normas">NORMAS TABLAS FIJAS: 1) La tabla fija publicada constituye apuesta cerrada para la carrera y el hipodromo indicados. 2) El premio corresponde al valor publicado y vigente al momento del cobro. 3) Presente este tablero en caja junto a su documento de identidad. 4) En caso de retiro o empate el pago se ajusta segun el reglamento del hipodromo. 5) Esta tabla es valida exclusivamente para el ejemplar cuyo numero y color coinciden con la publicacion. 6) Cualquier alteracion invalida la tabla.</div>
+<div class="aviso" id="aviso">Conectando a la base de datos...</div>
+<div class="fuente" id="fuente"></div>
+<div id="contenedor"></div>
+<div class="normas">NORMAS TABLAS FIJAS: 1) La tabla fija publicada constituye apuesta cerrada para la carrera y el hipodromo indicados. 2) El premio corresponde al valor publicado y vigente al momento del cobro. 3) Presente este tablero en caja junto a su documento de identidad. 4) En caso de retiro o empate el pago se ajusta segun el reglamento del hipodromo. 5) Esta tabla es valida exclusivamente para el ejemplar cuyo numero y color coinciden con la publicacion. 6) Cualquier alteracion invalida la tabla.</div>
 <div class="toast" id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/components/db.js"></script>
 <script>
+// ============================================================
+// MONITOR TABLAS PUBLICADAS - rediseno v2
+// Tarjeta = CARRERA COMPLETA con todos sus ejemplares.
+// Auto-ajuste de letra por card: px = BASE * (MAX_N / N).
+// Fecha de la carrera al lado derecho de la superficie.
+// Datos REALES: tablas_fijas (Abierta) + montos de tickets_apuestas.
+// ============================================================
 var PALETA14=[
-{bg:"#e11d48",fg:"#ffffff"},{bg:"#ffffff",fg:"#111827"},{bg:"#1d4ed8",fg:"#ffffff"},{bg:"#facc15",fg:"#111827"},{bg:"#16a34a",fg:"#ffffff"},{bg:"#111827",fg:"#facc15"},{bg:"#f97316",fg:"#111827"},{bg:"#fbcfe8",fg:"#111827"},{bg:"#22d3ee",fg:"#111827"},{bg:"#7c3aed",fg:"#ffffff"},{bg:"#9caeff",fg:"#111827"},{bg:"#84cc16",fg:"#111827"},{bg:"#92400e",fg:"#ffffff"},{bg:"#7f1d1d",fg:"#ffffff"}
+  {bg:"#e11d48",fg:"#ffffff"},{bg:"#ffffff",fg:"#111827"},{bg:"#1d4ed8",fg:"#ffffff"},{bg:"#facc15",fg:"#111827"},{bg:"#16a34a",fg:"#ffffff"},{bg:"#111827",fg:"#facc15"},{bg:"#f97316",fg:"#111827"},{bg:"#fbcfe8",fg:"#111827"},{bg:"#22d3ee",fg:"#111827"},{bg:"#7c3aed",fg:"#ffffff"},{bg:"#9caeff",fg:"#111827"},{bg:"#84cc16",fg:"#111827"},{bg:"#92400e",fg:"#ffffff"},{bg:"#7f1d1d",fg:"#ffffff"}
 ];
+var MAX_N=20, FS_BASE=8.6, FS_MIN=7.4, FS_MAX=13.5;
 function col(n){var i=(parseInt(n,10)-1)%14;return PALETA14[i>=0?i:0];}
 function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
-function fmt(n){return new Intl.NumberFormat("es-VE",{minimumFractionDigits:2,maximumFractionDigits:2}).format(parseFloat(n)||0);}
-function toast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("mostrar");clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove("mostrar");},2200);}
-var caballos=["REY DEL PASO","LA PERLA NEGRA","TROMPO LOCO","SIEMPRE LISTO","EL GALLITO","MISS PINKY","TATA VIEJO","LA PUERTA AZUL","PEPE EL CORREDOR","NINA BONITA","EL FRESITA","DOCTOR TITO","LA CRIOLLA","BANDIDO REAL","EL JEFE FINAL","LA CHIQUITA","PEPE EL LOCO","TITA BELLA","EL NEGRO","REY MORENO"];
-function demo(){var d=[];for(var i=1;i<=15;i++){d.push({id:i,hipodromo:"HIPODROMO LA RINCONADA",carrera:1+(i%3),ejemplar_numero:i,caballo:getC(caballos,i),monto_jugado:100*i,premio_por_tabla:250,moneda:"Bs",tabla_numero:"T"+(1000+i)});}return d;}
-function getC(a,i){return a[i-1]||("EJEMPLAR "+i);}
-var todas=[],carritos=[];
-function render(lista,target){var h="";lista.forEach(function(t){
-var c=col(t.ejemplar_numero);
-h+='<div class="tarjeta">';
-h+='<div class="enc"><span class="hip">'+esc(t.hipodromo)+" C"+esc(t.carrera)+'</span><span class="moneda">'+esc(t.moneda)+'</span></div>';
-h+='<div class="fila"><span class="num" style="background:'+c.bg+';color:'+c.fg+'">'+esc(t.ejemplar_numero)+'</span><span class="cab">'+esc(t.caballo)+'</span></div>';
-h+='<div class="inf"><span>Jugado <b>'+fmt(t.monto_jugado)+'</b></span><span>Premio <b>'+fmt(t.premio_por_tabla)+'</b></span></div>';
-h+="</div>";});
-document.getElementById(target).innerHTML=h;
+function fmt(n){try{return new Intl.NumberFormat("es-VE",{minimumFractionDigits:2,maximumFractionDigits:2}).format(parseFloat(n)||0);}catch(e){return (parseFloat(n)||0).toFixed(2);}}
+function mon(v,m){var s=String(m||"").toUpperCase();return (s.indexOf("VES")>=0||s==="BS")?"Bs "+fmt(v):"$ "+fmt(v);}
+function fsAuto(n){n=Math.min(Math.max(parseInt(n,10)||1,1),MAX_N);var p=FS_BASE*MAX_N/n;return (Math.min(FS_MAX,Math.max(FS_MIN,p))*10|0)/10;}
+function fmtFecha(d){if(!d)return "—";var p=String(d).slice(0,10).split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:String(d);}
+function hoy(){var d=new Date();return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear();}
+function toast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("mostrar");clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove("mostrar");},2400);}
+
+var carreras=[];
+
+// ---------- DEMO (fallback si no hay conexion) ----------
+var NOMBRES=["REY DEL PASO","LA PERLA NEGRA","TROMPO LOCO","SIEMPRE LISTO","EL GALLITO","MISS PINKY","TATA VIEJO","LA PUERTA AZUL","PEPE EL CORREDOR","NINA BONITA","EL FRESITA","DOCTOR TITO","LA CRIOLLA","BANDIDO REAL","EL JEFE FINAL","LA CHIQUITA","PEPE EL LOCO","TITA BELLA","EL NEGRO","REY MORENO"];
+var CHECK_EJ=[8,12,16,6,10,14,8,11,16,7,12,9,13,8,15];
+var SUPS=["ARENA","CESPED","FANGO","TAPETA","ARENA","CESPED"];
+function demo(){
+  var d=[],base=Date.now();
+  for(var i=1;i<=15;i++){
+    var n=CHECK_EJ[i-1], ej=[];
+    for(var j=0;j<n;j++){var num=j+1;ej.push({numero:num,nombre:NOMBRES[(j+i*3)%20],retirado:(num===2||num===13),valor_ejemplar:8+((num*7)%6),jugado:(num*37)%1200+50});}
+    d.push({hipodromo:"HIPODROMO LA RINCONADA",carrera:1+(i%3),fecha:new Date(base-(i-1)*86400000).toISOString().slice(0,10),distancia:1100+(i%5)*150,superficie:SUPS[i%6],premio:[100,150,250][i%3],moneda:"Bs",ejemplares:ej,dem:true});
+  }
+  return d;
 }
-function cargar(){todas=demo();render(todas,"grid");toast("Demo: 15 tablas listas.");}
-function exportar(formato){if(!todas.length){toast("No hay tablas.");return;}
-var z=document.getElementById("zonaVista");z.innerHTML="";render(todas,"zonaVista");z.classList.add("mostrar");
-if(formato==="PDF"){window.print();return;}
-var cv=document.createElement("canvas");cv.width=2480;cv.height=3508;var ctx=cv.getContext("2d");
-ctx.fillStyle="#ffffff";ctx.fillRect(0,0,2480,3508);
-var m=120,cw=(2480-2*m)/5,ch=(3508-2*m-140)/3;
-todas.forEach(function(t,i){var r=Math.floor(i/5),colOct=i%5,x=m+colOct*cw+(colOct+1)*0?0:0,y=m+r*ch;
-var c=col(t.ejemplar_numero);ctx.strokeStyle="#94a3b8";ctx.strokeRect(x+5,y+5,cw-10,ch-10);
-ctx.fillStyle="#334155";ctx.font="bold 38px Arial";ctx.fillText(String(t.hipodromo)+" C"+String(t.carrera),x+40,y+80);
-ctx.fillStyle=c.bg;ctx.beginPath();ctx.rect(x+40,y+110,90,90);ctx.fill();
-ctx.fillStyle=c.fg;ctx.font="bold 52px Arial";ctx.textAlign="center";ctx.fillText(String(t.ejemplar_numero),x+85,y+180);
-ctx.fillStyle="#475569";ctx.font="bold 40px Arial";ctx.textAlign="left";ctx.fillText(String(t.caballo).slice(0,20),x+170,y+170);
-ctx.fillStyle="#047857";ctx.font="bold 42px Arial";ctx.fillText("PAGO: "+fmt(t.premio_por_tabla)+" "+String(t.moneda),x+40,y+ch-30);
-});
-ctx.fillStyle="#64748b";ctx.font="28px Arial";ctx.textAlign="center";
-ctx.fillText("NORMAS TABLAS FIJAS: presentar en caja con documento de identidad. Premio vigente al momento del cobro.",1240,3440);
-var a=document.createElement("a");
-if(formato==="PNG"){a.href=cv.toDataURL("image/png");a.download="tablas_fijas_"+new Date().toISOString().slice(0,10)+".png";}
-else{a.href=cv.toDataURL("image/jpeg",0.93);a.download="tablas_fijas_"+new Date().toISOString().slice(0,10)+".jpg";}
-document.body.appendChild(a);a.click();document.body.removeChild(a);
-toast("Descargado "+formato+".");}
-function whatsApp(){if(!todas.length){toast("No hay tablas.");return;}
-var tel="584141234567";var texto="TABLAS FIJAS PUBLICADAS "+new Date().toISOString().slice(0,10)+"
-";
-todas.forEach(function(t){texto+=t.ejemplar_numero+" "+t.caballo+" -> PAGO "+fmt(t.premio_por_tabla)+" "+t.moneda+"
-";});
-texto+="NORMAS: valida solo para la carrera y el ejemplar indicados. Presente en caja.";
-window.open("https://wa.me/"+tel+"?text="+encodeURIComponent(texto),"_blank");}
-// CARGAR_DATOS: para conectar sus tablas reales de supabase reemplace los datos del bloque CARGAR
-document.getElementById("bPDF").addEventListener("click",function(){exportar("PDF");});
-document.getElementById("bJPG").addEventListener("click",function(){exportar("JPG");});
-document.getElementById("bPNG").addEventListener("click",function(){exportar("PNG");});
-document.getElementById("bWA").addEventListener("click",whatsApp);
-cargar();
+
+// ---------- DATOS REALES ----------
+async function cargarReales(){
+  var aviso=document.getElementById("aviso");
+  try{
+    if(typeof window.supabase==="undefined"||!window.supabase) throw new Error("sin conexion");
+    var cl=window.__clubSupabaseClient?window.__clubSupabaseClient:window.supabase;
+    var tfQ=cl.from("tablas_fijas").select("id,fecha,hipodromo,carrera,distancia_carrera,superficie,premio_recalculado,suma_base_tabla,moneda,caballos").ilike("estado","abierta");
+    var r1=await tfQ;
+    if(r1.error) throw r1.error;
+    var r2=await cl.from("tickets_apuestas").select("hipodromo,carrera,ejemplar_numero,monto_jugado");
+    if(r2.error) throw r2.error;
+    var jugado={};
+    (r2.data||[]).forEach(function(t){
+      var k=[String(t.hipodromo||"").trim().toUpperCase(),String(t.carrera),String(t.ejemplar_numero)].join("|");
+      jugado[k]=(jugado[k]||0)+(parseFloat(t.monto_jugado)||0);
+    });
+    carreras=(r1.data||[]).map(function(t){
+      var ej=(Array.isArray(t.caballos)?t.caballos:[]).map(function(c){
+        var k=[String(t.hipodromo||"").trim().toUpperCase(),String(t.carrera),String(c.numero)].join("|");
+        return {numero:String(c.numero),nombre:String(c.nombre||""),retirado:!!c.retirado,valor_ejemplar:parseFloat(c.valor_ejemplar)||parseFloat(c.valor)||0,jugado:jugado[k]||0};
+      }).sort(function(a,b){return (parseInt(a.numero,10)||0)-(parseInt(b.numero,10)||0);});
+      return {
+        hipodromo:String(t.hipodromo||"").trim().toUpperCase()||"—",
+        carrera:String(t.carrera)||"",fecha:t.fecha||"",distancia:t.distancia_carrera||"",
+        superficie:String(t.superficie||"").toUpperCase()||"ARENA",premio:parseFloat(t.premio_recalculado)||0,
+        moneda:t.moneda||"USD",ejemplares:ej
+      };
+    });
+    carreras.sort(function(a,b){return String(a.fecha).localeCompare(String(b.fecha))||String(a.hipodromo).localeCompare(String(b.hipodromo),'es')||(parseInt(a.carrera,10)||0)-(parseInt(b.carrera,10)||0);});
+    if(!carreras.length){carreras=demo();aviso.className="aviso";aviso.innerHTML="No hay carreras publicadas (estado Abierta) en tablas_fijas. Mostrando datos DEMO.";return;}
+    aviso.className="aviso ok";aviso.innerHTML="Datos reales: <b>"+carreras.length+"</b> carreras publicadas ("+carreras.reduce(function(a,c){return a+c.ejemplares.length;},0)+" ejemplares) desde tablas_fijas + tickets_apuestas.";
+  }catch(e){
+    console.warn("[monitor_imprimir] fallback demo:",e);
+    carreras=demo();aviso.className="aviso";aviso.innerHTML="Sin conexion a la base de datos o error de permisos. Mostrando datos DEMO ("+String(e&&e.message||e).slice(0,80)+").";
+  }
+  document.getElementById("fuente").textContent=carreras.length+" carreras · "+(carreras.some(function(c){return c.dem;})?"modo DEMO":"datos reales");
+  renderPaginado();
+}
+
+// ---------- TARJETA ----------
+function cardHTML(t){
+  var n=t.ejemplares.length, fs=fsAuto(n), simb=(String(t.moneda||"").toUpperCase().indexOf("VES")>=0||String(t.moneda||"").toUpperCase()==="BS")?"Bs ":"$ ";
+  var suma=t.ejemplares.reduce(function(a,e){return a+(e.retirado?0:(parseFloat(e.valor_ejemplar)||0));},0);
+  var filas=t.ejemplares.map(function(e){
+    var c=col(e.numero), jug=parseFloat(e.jugado)||0;
+    return '<div class="fila"><span class="num" style="background:'+c.bg+';color:'+c.fg+'">'+esc(e.numero)+'</span><span class="cab'+(e.retirado?" ret":"")+'" title="'+esc(e.nombre)+'">'+esc(e.nombre)+'</span><span class="mon'+(jug===0?" cero":"")+'">'+(jug===0?"&ndash;":mon(jug,t.moneda))+'</span></div>';
+  }).join("");
+  return '<div class="tarjeta">'
+    +'<div class="enc">'
+    +'<div class="l1"><span class="hip" title="'+esc(t.hipodromo)+'">'+esc(t.hipodromo)+'</span><span class="cc">C'+esc(t.carrera)+'</span></div>'
+    +'<div class="l2"><span class="meta"><b>DIST '+esc(t.distancia)+' m</b> &middot; '+esc(t.superficie)+'</span><span class="fecha">'+fmtFecha(t.fecha)+'</span></div>'
+    +'</div>'
+    +'<div class="filas" style="--fs:'+fs+'px">'+filas+'</div>'
+    +'<div class="pie"><span>&Sigma; SUMA <b>'+simb+fmt(suma)+'</b></span><span>PREMIO/TABLA <b>'+simb+fmt(t.premio)+'</b></span></div>'
+    +'</div>';
+}
+
+function renderPaginado(){
+  var cont=document.getElementById("contenedor");
+  if(!carreras.length){cont.innerHTML='<div class="vacio"><i class="no">Sin carreras publicadas.</i></div>';return;}
+  var nP=Math.ceil(carreras.length/15)||1, h="";
+  for(var p=0;p<nP;p++){
+    var chunk=carreras.slice(p*15,p*15+15);
+    h+='<div class="ph"><span><b>TABLAS FIJAS PUBLICADAS</b></span><span>Pagina '+(p+1)+' de '+nP+' &middot; '+hoy()+'</span></div>';
+    h+='<div class="hoja">'+chunk.map(cardHTML).join("")+'</div>';
+  }
+  cont.innerHTML=h;
+}
+
+// ---------- EXPORTAR CANVAS (JPG/PNG nativo, sin CDN de captura) ----------
+function roundRect(ctx,x,y,w,h,r){
+  r=Math.min(r,w/2,h/2);
+  ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+}
+function fsCanvas(n){n=Math.min(Math.max(n||1,1),MAX_N);var p=26*MAX_N/n;return Math.round(Math.min(40,Math.max(22,p)));}
+function drawCardC(ctx,t,x,y,w,h){
+  var c0="#cbd5e1";
+  ctx.strokeStyle=c0;ctx.lineWidth=4;roundRect(ctx,x+2,y+2,w-4,h-4,16);ctx.stroke();
+  var hh=Math.round(h*0.17), footC=Math.round(h*0.15);
+  ctx.fillStyle="#0f172a";roundRect(ctx,x,y,w,hh,14);ctx.fill();
+  ctx.fillStyle="#fff";ctx.textAlign="left";ctx.textBaseline="alphabetic";
+  ctx.font="bold 30px Arial,sans-serif";
+  var hip=String(t.hipodromo||"");
+  ctx.fillText(truncate(ctx,hip,x+34,x+w-150),x+34,y+52);
+  ctx.textAlign="right";ctx.font="bold 30px Arial,sans-serif";ctx.fillText("C"+String(t.carrera),x+w-34,y+52);
+  ctx.textAlign="left";ctx.font="bold 22px Arial,sans-serif";ctx.fillStyle="#cbd5e1";
+  ctx.fillText("DIST "+String(t.distancia)+" m  \u00b7  "+String(t.superficie||"ARENA"),x+34,y+hh-24);
+  ctx.textAlign="right";ctx.fillStyle="#7dd3fc";ctx.fillText(fmtFecha(t.fecha),x+w-34,y+hh-24);
+  var filas=t.ejemplares||[],N=filas.length||1;
+  var top=y+hh+24, bot=y+h-footC-20, dispo=bot-top;
+  var fsC=fsCanvas(N), rowH=dispo/N;
+  filas.forEach(function(e,i){
+    var cy=top+rowH*i+rowH/2, c=col(e.numero), ch=Math.min(Math.max(rowH*0.72,fsC*1.35),64);
+    ctx.fillStyle=c.bg;roundRect(ctx,x+28,cy-ch/2,ch,ch,8);ctx.fill();
+    ctx.fillStyle=c.fg;ctx.textAlign="center";ctx.font="bold "+(fsC*0.92)+"px Arial,sans-serif";ctx.textBaseline="middle";ctx.fillText(String(e.numero),x+28+ch/2,cy+1);
+    ctx.textAlign="left";ctx.textBaseline="middle";
+    if(e.retirado){ctx.fillStyle="#dc2626";}
+    else{ctx.fillStyle="#334155";}
+    ctx.font="bold "+fsC+"px Arial,sans-serif";
+    ctx.fillText(truncate(ctx,String(e.nombre||""),x+28+ch+22,x+w-190),x+28+ch+22,cy);
+    ctx.textAlign="right";ctx.font="bold "+fsC+"px Arial,sans-serif";
+    var jug=parseFloat(e.jugado)||0;
+    ctx.fillStyle=jug===0?"#94a3b8":"#475569";
+    ctx.fillText(jug===0?"\u2013":mon(jug,t.moneda),x+w-28,cy);
+  });
+  ctx.fillStyle="#f1f5f9";roundRect(ctx,x, y+h-footC, w, footC-4,12);ctx.fill();
+  ctx.strokeStyle="#e2e8f0";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x+8,y+h-footC);ctx.lineTo(x+w-8,y+h-footC);ctx.stroke();
+  var simb=(String(t.moneda||"").toUpperCase().indexOf("VES")>=0)?"Bs ":"$ ";
+  var suma=t.ejemplares.reduce(function(a,e){return a+(e.retirado?0:(parseFloat(e.valor_ejemplar)||0));},0);
+  ctx.textAlign="left";ctx.font="bold 24px Arial,sans-serif";ctx.fillStyle="#475569";
+  ctx.fillText("\u03a3 SUMA",x+34,y+h-footC+36);
+  ctx.font="bold 26px Arial,sans-serif";ctx.fillStyle="#047857";
+  ctx.fillText(simb+fmt(suma),x+34+150,y+h-footC+36);
+  ctx.textAlign="right";ctx.font="bold 24px Arial,sans-serif";ctx.fillStyle="#475569";
+  ctx.fillText("PREMIO/TABLA",x+w-34,y+h-footC+36);
+  ctx.fillStyle="#047857";ctx.font="bold 28px Arial,sans-serif";
+  ctx.fillText(simb+fmt(t.premio),x+w-54,y+h-footC+66);
+}
+function truncate(ctx,s,xMin,xMax){
+  s=String(s==null?"":s);
+  if(ctx.measureText(s).width<=xMax-xMin) return s;
+  while(s.length>1&&ctx.measureText(s+"\u2026").width>xMax-xMin)s=s.slice(0,-1);
+  return s+"\u2026";
+}
+function exportar(formato){
+  if(!carreras.length){toast("No hay tablas para exportar.");return;}
+  if(formato==="PDF"){window.print();return;}
+  var nP=Math.ceil(carreras.length/15)||1, PW=2480, PH=3508;
+  var cv=document.createElement("canvas");cv.width=PW;cv.height=PH*nP;
+  var ctx=cv.getContext("2d");
+  for(var p=0;p<nP;p++)dibujarPaginaC(ctx,p);
+  var a=document.createElement("a");
+  if(formato==="PNG"){a.href=cv.toDataURL("image/png");a.download="tablas_fijas_"+new Date().toISOString().slice(0,10)+".png";}
+  else{a.href=cv.toDataURL("image/jpeg",0.93);a.download="tablas_fijas_"+new Date().toISOString().slice(0,10)+".jpg";}
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  toast(formato+" descargado ("+nP+" paginas).");
+}
+function dibujarPaginaC(ctx,p){
+  var oy=p*PH,PW=2480,PHI=3508;
+  ctx.fillStyle="#ffffff";ctx.fillRect(0,oy,PW,PHI);
+  ctx.fillStyle="#0f172a";ctx.fillRect(0,oy,PW,130);
+  ctx.fillStyle="#fff";ctx.font="bold 42px Arial,sans-serif";ctx.textAlign="left";ctx.textBaseline="middle";
+  ctx.fillText("TABLAS FIJAS PUBLICADAS",70,oy+65);
+  ctx.textAlign="right";ctx.font="bold 30px Arial,sans-serif";ctx.fillStyle="#cbd5e1";
+  ctx.fillText("Pagina "+(p+1)+" de "+Math.ceil(carreras.length/15)+"  \u00b7  "+hoy(),PW-70,oy+65);
+  var chunk=carreras.slice(p*15,p*15+15);
+  var mx=70, top=190, gap=14, footY=PHI-240;
+  var gridW=PW-2*mx, gridH=footY-46-top;
+  var cw=(gridW-(5-1)*gap)/5, ch=(gridH-(3-1)*gap)/3;
+  chunk.forEach(function(t,i){var r=Math.floor(i/5),c=i%5;drawCardC(ctx,t,mx+c*(cw+gap),oy+top+r*(ch+gap),cw,ch);});
+  ctx.strokeStyle="#cbd5e1";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(70,oy+footY-40);ctx.lineTo(PW-70,oy+footY-40);ctx.stroke();
+  ctx.fillStyle="#64748b";ctx.font="26px Arial,sans-serif";ctx.textAlign="center";ctx.textBaseline="alphabetic";
+  ctx.fillText("NORMAS TABLAS FIJAS: presentar en caja con documento de identidad. Premio vigente al momento del cobro.",1240,oy+footY);
+}
+
+// ---------- WHATSAPP ----------
+function waReporte(){
+  if(!carreras.length){toast("No hay tablas.");return;}
+  var tel="584141234567";
+  var texto="TABLAS FIJAS PUBLICADAS "+hoy()+"\n";
+  carreras.forEach(function(c){
+    var simb=(String(c.moneda||"").toUpperCase().indexOf("VES")>=0)?"Bs ":"$ ";
+    texto+=c.hipodromo+" C"+c.carrera+" \u00b7 "+ (c.superficie||"") +" \u00b7 "+fmtFecha(c.fecha)+" \u00b7 "+c.ejemplares.length+" ej. \u00b7 PAGO/TABLA "+simb+fmt(c.premio)+"\n";
+  });
+  texto=texto+"\nNORMAS: válida solo para la carrera y el ejemplar indicados. Presente en caja.";
+  window.open("https://wa.me/"+tel+"?text="+encodeURIComponent(texto),"_blank");
+}
+
+// ---------- ARRANQUE ----------
+window.addEventListener("DOMContentLoaded",function(){cargarReales();});
+if(document.readyState!=="loading")cargarReales();
 </script>
 </body>
 </html>
