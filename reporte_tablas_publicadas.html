@@ -132,19 +132,44 @@ async function cargarReales(){
     var cl=window.__clubSupabaseClient?window.__clubSupabaseClient:window.supabase;
     var tt=await cl.from("tickets_apuestas").select("id,created_at,hipodromo,carrera,ejemplar_numero,caballo,cantidad_tablas,monto_jugado,monto_resuelto,cliente_juega_nombre,grupo,moneda,estado").order("created_at");
     if(tt.error) throw tt.error;
-    var tf=await cl.from("tablas_fijas").select("hipodromo,carrera,fecha,distancia_carrera,superficie,moneda");
+    var tf=await cl.from("tablas_fijas").select("hipodromo,carrera,fecha,distancia_carrera,superficie,moneda,caballos").ilike("estado","abierta");
     if(tf.error) throw tf.error;
     var idx={};
     (tf.data||[]).forEach(function(t){idx[String(t.hipodromo||"").trim().toUpperCase()+"|"+String(t.carrera)]=t;});
     jugadores=armarDesdeTickets(tt.data||[],idx);
-    if(!jugadores.length){jugadores=demo();aviso.className="aviso";aviso.innerHTML="No hay ventas de tablas fijas para reportar. Mostrando datos DEMO.";}
+    // Tablas publicadas (estado Abierta) que NADIE ha tomado: se muestran para
+    // que la oferta real quede visible aunque no haya tickets.
+    var tomadas={};
+    (tt.data||[]).forEach(function(t){
+      var ck=String(t.hipodromo||"").trim().toUpperCase()+"|"+String(t.carrera||"").trim();
+      tomadas[ck]=true;
+    });
+    var reales=(tf.data||[]);
+    var sinApuestas=[];
+    reales.forEach(function(t){
+      var ck=String(t.hipodromo||"").trim().toUpperCase()+"|"+String(t.carrera||"").trim();
+      if(tomadas[ck])return;
+      var ej=(Array.isArray(t.caballos)?t.caballos:[]).map(function(c){
+        return {numero:String(c.numero||""),nombre:String(c.nombre||""),jugado:0,pagado:0};
+      });
+      if(!ej.length)return;
+      sinApuestas.push({jugador:"SIN APUESTAS",grupo:"PUBLICADAS",nivel:"SIN VENTA",moneda:t.moneda||"USD",montoJugado:0,montoPagado:0,tablas:0,carreras:[
+        {hipodromo:String(t.hipodromo||""),carrera:String(t.carrera||""),fecha:t.fecha||"",distancia:t.distancia_carrera||"",superficie:t.superficie||"",moneda:t.moneda||"USD",ejemplares:ej}
+      ]});
+    });
+    jugadores=jugadores.concat(sinApuestas);
+    if(!jugadores.length){
+      aviso.className="aviso";
+      aviso.innerHTML="No hay tablas publicadas (estado Abierta) en tablas_fijas ni tickets de apuestas para reportar.";
+    }
     else{
       aviso.className="aviso ok";
-      aviso.innerHTML="Datos reales: <b>"+jugadores.length+"</b> jugadores, "+jugadores.reduce(function(a,p){return a+p.tablas;},0)+" tablas vendidas, desde tickets_apuestas + tablas_fijas.";
+      aviso.innerHTML="Datos reales: <b>"+jugadores.length+"</b> entradas ("+(jugadores.length-sinApuestas.length)+" jugadores con ventas, <b>"+sinApuestas.length+"</b> tablas publicadas SIN APUESTAS), desde tablas_fijas + tickets_apuestas.";
     }
   }catch(e){
-    console.warn("[reporte_tablas] fallback demo:",e);
-    jugadores=demo();aviso.className="aviso";aviso.innerHTML="Sin conexion o error de permisos. Mostrando datos DEMO ("+String(e&&e.message||e).slice(0,80)+").";
+    console.warn("[reporte_tablas] error real:",e);
+    aviso.className="aviso";
+    aviso.innerHTML="No se pudieron cargar los datos reales. Error: "+String(e&&e.message||e).slice(0,120);
   }
   finalizar();
 }
