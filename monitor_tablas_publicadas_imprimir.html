@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema Hipico - Monitor Tablas Publicadas (Imprimir / WhatsApp)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f1f5f9; }
+    .btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1rem; border-radius:.5rem; font-size:.78rem; font-weight:700; color:#fff; border:0; cursor:pointer; transition:all .15s; }
+    .btn-em { background:#059669; } .btn-em:hover { background:#047857; }
+    .btn-wa { background:#25d366; } .btn-wa:hover { background:#1da851; }
+    .toast { position:fixed; bottom:1.25rem; right:1.25rem; background:#0f172a; color:#fff; padding:.75rem 1.25rem; border-radius:.5rem; font-size:.8rem; z-index:60; opacity:0; transform:translateY(8px); transition:all .2s; box-shadow:0 4px 12px rgba(0,0,0,.2); }
+    .toast.show { opacity:1; transform:translateY(0); }
+    #zonaImpresion { width:210mm; margin:0 auto; background:#fff; padding:8mm; display:none; }
+    #zonaImpresion.mostrar { display:block; }
+    .celda { border:1px solid #94a3b8; border-radius:4px; padding:6px; display:flex; flex-direction:column; height:44mm; overflow:hidden; page-break-inside:avoid; }
+    .chip-num { width:26px; height:26px; border-radius:4px; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:14px; }
+    @media print { body * { visibility:hidden; } #zonaImpresion, #zonaImpresion * { visibility:visible; } #zonaImpresion { display:block!important; position:absolute; left:0; top:0; } }
+  </style>
+</head>
+<body class="min-h-screen p-4">
+  <div class="max-w-6xl mx-auto">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div>
+        <h1 class="text-xl font-extrabold text-slate-800"><i class="fas fa-list-alt mr-2 text-emerald-500"></i>Monitor Tablas Publicadas</h1>
+        <p class="text-xs text-slate-500 mt-1">Imprima la hoja 5x3 (15 tablas) como PDF / JPG / PNG o enviela por WhatsApp</p>
+      </div>
+      <div class="flex gap-2 flex-wrap">
+        <button class="btn btn-em" onclick="exportar('PDF')"><i class="fas fa-file-pdf"></i> PDF</button>
+        <button class="btn btn-em" onclick="exportar('JPG')"><i class="fas fa-file-image"></i> JPG</button>
+        <button class="btn btn-em" onclick="exportar('PNG')"><i class="fas fa-file-image"></i> PNG</button>
+        <button class="btn btn-wa" onclick="enviarWhatsApp()"><i class="fab fa-whatsapp"></i> WhatsApp</button>
+      </div>
+    </div>
+    <div class="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg px-3 py-2 mb-3">Demo con datos de ejemplo. Al conectar su tabla real de supabase, cargarAlReiniciar() los reemplaza por los tickets_apuestas de su hipodromo.</div>
+    <div id="gridCarreras" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+  </div>
+  <div id="zonaImpresion"></div>
+  <div class="toast" id="toast"></div>
+  <script>
+    // PALETA14 REAL (venta_tablas_core.js L94-98): numero -> (fondo, texto)
+    var PALETA14 = [
+      {bg:"#e11d48",fg:"#fff"},{bg:"#fff",fg:"#111"},{bg:"#1d4ed8",fg:"#fff"},{bg:"#facc15",fg:"#111"},{bg:"#16a34a",fg:"#fff"},{bg:"#111",fg:"#facc15"},{bg:"#f97316",fg:"#111"},{bg:"#fbcfe8",fg:"#111"},{bg:"#22d3ee",fg:"#111"},{bg:"#7c3aed",fg:"#fff"},{bg:"#9caeff",fg:"#111"},{bg:"#84cc16",fg:"#111"},{bg:"#92400e",fg:"#fff"},{bg:"#7f1d1d",fg:"#fff"}
+    ];
+    function colorNum(n){ var i=(parseInt(n,10)-1)%14; return PALETA14[i>=0?i:0]; }
+    function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+    function fmt(n){ return new Intl.NumberFormat("es-VE",{minimumFractionDigits:2,maximumFractionDigits:2}).format(parseFloat(n)||0); }
+    var todas=[], corriendo=false;
+    function toast(m){ var t=document.getElementById("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(toast._t); toast._t=setTimeout(function(){t.classList.remove("show");},2600); }
+    function demo(){ // 15 tablas demo: 5 por fila x 3 filas
+      var dem=[];
+      for(var i=1;i<=15;i++){ dem.push({ id:i, hipodromo:"HIPODROMO LA RINCONADA", carrera:1+(i%3), ejemplar_numero:i, caballo:["REY DEL PASO","LA PERLA NEGRA","TROMPO LOCO","SIEMPRE LISTO","EL GALLITO","MISS PINKY","TATA VIEJO","LA PUERTA AZUL","PEPE EL CORREDOR","NINA BONITA","EL FRESITA","DOCTOR TITO","LA CRIOLLA","BANDIDO REAL","EL JEFE FINAL"][i-1], monto_jugado:100*i, premio_por_tabla:250, moneda:"Bs", tabla_numero:"T-"+(100+i), cliente_juega_nombre:"DEMO CLIENTE" }); }
+      return dem;
+    }
+    function render(){
+      var g=document.getElementById("gridCarreras"), h="";
+      todas.forEach(function(t){
+        var c=colorNum(t.ejemplar_numero);
+        h+='<div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">';
+        h+='<div class="flex justify-between items-start mb-1"><span class="font-bold text-slate-700 text-sm">'+esc(t.hipodromo)+" C"+esc(t.carrera)+'</span><span class="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full">'+esc(t.moneda)+'</span></div>';
+        h+='<div class="flex items-center gap-2 mt-1"><span class="chip-num" style="background:'+c.bg+';color:'+c.fg+'">'+esc(t.ejemplar_numero)+'</span><span class="text-slate-600 text-xs font-semibold">'+esc(t.caballo)+'</span></div>';
+        h+='<div class="flex justify-between text-[11px] text-slate-500 mt-2"><span>Jugado <b class="text-slate-700">'+fmt(t.monto_jugado)+'</b></span><span>Tabla <b class="text-emerald-600">'+esc(t.tabla_numero)+'</b></span></div>';
+        h+="</div>";
+      });
+      g.innerHTML=h;
+    }
+    function cargarAlReiniciar(){
+      // PUNTO DE ENGANCHADO REAL: reemplazar debajo por su consulta a tickets_apuestas
+      // if (window.supabase) { var {data,error}=await window.supabase
+      //   .from("tickets_apuestas").select("*").order("created_at",{ascending:false}).limit(50);
+      //   if(!error) todas=data; }
+      todas=demo(); render();
+      toast("Demostracion lista: 15 tablas (5x3). Conecte su supabase para datos reales.");
+    }
+    function tarjetas(){
+      var h='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4mm;margin-bottom:6mm;">';
+      todas.forEach(function(t){
+        var c=colorNum(t.ejemplar_numero);
+        h+='<div class="celda">';
+        h+='<div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#334155;">'+esc(t.hipodromo)+" C"+esc(t.carrera)+'</div>';
+        h+='<div style="display:flex;align-items:center;gap:6px;margin-top:6px;"><span class="chip-num" style="background:'+c.bg+';color:'+c.fg+'">'+esc(t.ejemplar_numero)+'</span><span style="font-size:10px;font-weight:700;line-height:1.15;">'+esc(t.caballo)+'</span></div>';
+        h+='<div style="margin-top:auto;font-size:11px;font-weight:800;color:#047857;">PAGO: '+fmt(t.premio_por_tabla)+' '+esc(t.moneda)+'</div>';
+        h+="</div>";
+      });
+      h+='</div><div style="padding:3mm;border-top:1px solid #cbd5e1;font-size:7px;color:#475569;line-height:1.5;text-align:justify;">';
+      h+="NORMAS TABLAS FIJAS: 1) Tabla fija publicada = apuesta cerrada para la carrera y hipodromo indicados. 2) El premio corresponde al valor publicado y vigente al momento del cobro. 3) Presente este tablero en caja junto a su documento de identidad. 4) En caso de retiro o empate el pago se ajusta segun reglamento del hipodromo. 5) Esta tabla es valida unica y exclusivamente para el ejemplar cuyo numero y color coinciden con la publicacion. 6) Cualquier violacion a las normas exime a la administracion de responsabilidad.";
+      h+="</div>";
+      return h;
+    }
+    function exportar(formato){
+      if(!todas.length){ toast("No hay tablas que imprimir."); return; }
+      var z=document.getElementById("zonaImpresion");
+      z.innerHTML=tarjetas(); z.classList.add("mostrar");
+      if(formato==="PDF"){ window.print(); } else {
+        if(!window.html2canvas){
+          var s=document.createElement("script"); s.src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+          s.onload=function(){ capturar(z,formato); }; s.onerror=function(){ toast("Sin internet no puedo cargar html2canvas. Ultimo recurso: Ctrl+P -> Guardar como PDF."); window.print(); };
+          document.body.appendChild(s);
+        } else capturar(z,formato);
+      }
+    }
+    function capturar(el,formato){
+      try {
+        html2canvas(el,{ scale:2, backgroundColor:"#ffffff", useCORS:true }).then(function(canvas){
+          var a=document.createElement("a");
+          var ext=formato.toLowerCase();
+          if(ext==="png"){ a.href=canvas.toDataURL("image/png"); a.download="tablas_publicadas_"+new Date().toISOString().slice(0,10)+".png"; }
+          else { a.href=canvas.toDataURL("image/jpeg",0.92); a.download="tablas_publicadas_"+new Date().toISOString().slice(0,10)+".jpg"; }
+          document.body.appendChild(a); a.click();
+          toast("Download "+formato+" listo.");
+        });
+      } catch(e){ toast("Error generando imagen: "+e.message); }
+    }
+    function enviarWhatsApp(){
+      if(!todas.length){ toast("No hay tablas."); return; }
+      var tel="584141234567";
+      var texto="TABLAS FIJAS PUBLICADAS "+new Date().toISOString().slice(0,10)+"
+";
+      var nombres={1:"UNO",2:"DOS"}; // color del numero en texto
+      todas.forEach(function(t){ texto+=t.ejemplar_numero+" "+t.caballo+" -> pago "+fmt(t.premio_por_tabla)+"
+"; });
+      texto+="Normas: valida solo para el ejemplar, carrera y hipodromo indicados. Presente en caja para cobro.";
+      window.open("https://wa.me/"+tel+"?text="+encodeURIComponent(texto),"_blank");
+    }
+    document.addEventListener("DOMContentLoaded", cargarAlReiniciar);
+  </script>
+</body>
+</html>
