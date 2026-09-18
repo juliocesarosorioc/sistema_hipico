@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -96,33 +96,11 @@ function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"
 function fmt(n){try{return new Intl.NumberFormat("es-VE",{minimumFractionDigits:2,maximumFractionDigits:2}).format(parseFloat(n)||0);}catch(e){return (parseFloat(n)||0).toFixed(2);}}
 function mon(v,m){var s=String(m||"").toUpperCase();return (s.indexOf("VES")>=0||s==="BS")?"Bs "+fmt(v):"$ "+fmt(v);}
 function fsAuto(n){n=Math.min(Math.max(parseInt(n,10)||1,1),MAX_N);var p=FS_BASE*MAX_N/n;return (Math.min(FS_MAX,Math.max(FS_MIN,p))*10|0)/10;}
-function fmtFecha(d){if(!d)return "—";var p=String(d).slice(0,10).split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:String(d);}
+function fmtFecha(d){if(!d)return "â€”";var p=String(d).slice(0,10).split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:String(d);}
 function hoy(){var d=new Date();return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear();}
 function toast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("mostrar");clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove("mostrar");},2600);}
 
 var jugadores=[];
-
-// ---------- DEMO ----------
-function fechaISO(off){var d=new Date(Date.now()+off*86400000);return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2);}
-function demo(){
-  return [
-    {jugador:"JOSE PEREZ",grupo:"GRUPO A",nivel:"NIVEL 1",moneda:"Bs",montoJugado:5000,montoPagado:4250,tablas:6,dem:true,carreras:[
-      {hipodromo:"HIPODROMO LA RINCONADA",carrera:"3",fecha:fechaISO(-1),distancia:1100,superficie:"ARENA",moneda:"Bs",ejemplares:[
-        {numero:"3",nombre:"REY DEL PASO",jugado:500,pagado:425},{numero:"7",nombre:"LA PERLA NEGRA",jugado:900,pagado:765},{numero:"1",nombre:"TROMPO LOCO",jugado:600,pagado:510},{numero:"11",nombre:"SIEMPRE LISTO",jugado:700,pagado:595},{numero:"5",nombre:"EL GALLITO",jugado:1100,pagado:935},{numero:"13",nombre:"MISS PINKY",jugado:1200,pagado:1020}
-      ]}
-    ]},
-    {jugador:"MARIA LOPEZ",grupo:"GRUPO A",nivel:"NIVEL 2",moneda:"Bs",montoJugado:7800,montoPagado:5920,tablas:9,dem:true,carreras:[
-      {hipodromo:"HIPODROMO LA RINCONADA",carrera:"4",fecha:fechaISO(-1),distancia:1300,superficie:"CESPED",moneda:"Bs",ejemplares:[
-        {numero:"2",nombre:"TATA VIEJO",jugado:800,pagado:680},{numero:"6",nombre:"LA PUERTA AZUL",jugado:1000,pagado:850},{numero:"9",nombre:"PEPE EL CORREDOR",jugado:900,pagado:765},{numero:"4",nombre:"NINA BONITA",jugado:700,pagado:595},{numero:"8",nombre:"EL FRESITA",jugado:1100,pagado:935},{numero:"12",nombre:"DOCTOR TITO",jugado:1300,pagado:1105},{numero:"14",nombre:"LA CRIOLLA",jugado:700,pagado:595},{numero:"10",nombre:"BANDIDO REAL",jugado:900,pagado:765},{numero:"15",nombre:"EL JEFE FINAL",jugado:400,pagado:340}
-      ]}
-    ]},
-    {jugador:"CARLOS GOMEZ",grupo:"GRUPO B",nivel:"NIVEL 1",moneda:"Bs",montoJugado:3200,montoPagado:3020,tablas:4,dem:true,carreras:[
-      {hipodromo:"HIPODROMO OCCIDENTAL",carrera:"1",fecha:fechaISO(-2),distancia:1600,superficie:"FANGO",moneda:"Bs",ejemplares:[
-        {numero:"14",nombre:"LA CRIOLLA",jugado:800,pagado:756},{numero:"5",nombre:"EL GALLITO",jugado:700,pagado:661},{numero:"8",nombre:"EL FRESITA",jugado:900,pagado:850},{numero:"2",nombre:"TATA VIEJO",jugado:800,pagado:753}
-      ]}
-    ]}
-  ];
-}
 
 // ---------- DATOS REALES ----------
 async function cargarReales(){
@@ -182,7 +160,7 @@ function paramsURL(){
 }
 function finalizar(){
   var q=paramsURL(), f=String(q.auto||"").toUpperCase();
-  document.getElementById("fuente").textContent=jugadores.length+" jugadores · "+(jugadores.some(function(p){return p.dem;})?"modo DEMO":"datos reales");
+  document.getElementById("fuente").textContent=jugadores.length+" jugadores Â· "+(jugadores.some(function(p){return p.dem;})?"modo DEMO":"datos reales");
   if(q.hipo||q.dia){
     jugadores=jugadores.map(function(p){
       var cs=p.carreras.filter(function(c){
@@ -263,7 +241,7 @@ function cardRepHTML(p){
       return '<div class="frac"><span class="num" style="background:'+cc.bg+';color:'+cc.fg+'">'+esc(e.numero)+'</span><span class="cab">'+esc(e.nombre)+'</span><span class="jj">'+mon(e.jugado,c.moneda||p.moneda)+'</span><span class="pp">'+mon(e.pagado,c.moneda||p.moneda)+'</span></div>';
     }).join("");
     h+='<div class="carr"><div class="cl1"><span class="hip" title="'+esc(c.hipodromo)+'">'+esc(c.hipodromo)+'</span><span class="cc">C'+esc(c.carrera)+'</span></div>';
-    h+='<div class="cl2"><span class="meta"><b>DIST '+(c.distancia!==""&&c.distancia!=null?esc(c.distancia):"—")+' m</b> &middot; '+esc(c.superficie||"—")+'</span><span class="fecha">'+fmtFecha(c.fecha)+'</span></div>';
+    h+='<div class="cl2"><span class="meta"><b>DIST '+(c.distancia!==""&&c.distancia!=null?esc(c.distancia):"â€”")+' m</b> &middot; '+esc(c.superficie||"â€”")+'</span><span class="fecha">'+fmtFecha(c.fecha)+'</span></div>';
     h+='<div class="filasrep" style="--fs:'+fs+'px">'+filas+'</div></div>';
   });
   h+="</div>";
@@ -356,7 +334,7 @@ function drawCardC_rep(ctx,item,oy){
     ctx.fillText(truncate(ctx,c.hipodromo,x+18,x+w-120),x+18,yy+18);
     ctx.font="bold 22px Arial,sans-serif";ctx.fillStyle="#4338ca";ctx.textAlign="right";ctx.fillText("C"+String(c.carrera),x+w-18,yy+18);
     ctx.font="20px Arial,sans-serif";ctx.fillStyle="#64748b";ctx.textAlign="left";
-    ctx.fillText("DIST "+(c.distancia!==""&&c.distancia!=null?c.distancia:"—")+" m  \u00b7  "+String(c.superficie||"—"),x+18,yy+42);
+    ctx.fillText("DIST "+(c.distancia!==""&&c.distancia!=null?c.distancia:"â€”")+" m  \u00b7  "+String(c.superficie||"â€”"),x+18,yy+42);
     ctx.textAlign="right";ctx.font="bold 22px Arial,sans-serif";ctx.fillStyle="#2563eb";ctx.fillText(fmtFecha(c.fecha),x+w-18,yy+42);
     filas.forEach(function(e,i){
       var cy=yy+BLOCKH+rowH*0.62+i*rowH, cc=col(e.numero), ch=Math.min(rowH*0.8,fsC*1.35);

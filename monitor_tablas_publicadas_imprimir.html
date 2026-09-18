@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -26,6 +26,7 @@ h1 small{display:block;font-size:10px;font-weight:600;color:#64748b;margin-top:2
 .l1{display:flex;align-items:center;gap:6px;justify-content:space-between;}
 .hip{font-size:10px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1;}
 .cc{background:rgba(255,255,255,.16);border-radius:6px;font-size:10px;font-weight:900;padding:1px 7px;white-space:nowrap;flex:none;}
+.badge-sin{display:block;margin:5px 7px -4px;padding:3px 7px;border-radius:6px;background:#fee2e2;border:1px solid #fecaca;color:#b91c1c;font-size:8px;font-weight:800;letter-spacing:.3px;text-align:center;text-transform:uppercase;}
 .l2{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:3px;font-size:8.5px;font-weight:700;color:#cbd5e1;}
 .meta{display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
 .fecha{margin-left:auto;white-space:nowrap;font-weight:800;color:#7dd3fc;}
@@ -89,25 +90,11 @@ function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"
 function fmt(n){try{return new Intl.NumberFormat("es-VE",{minimumFractionDigits:2,maximumFractionDigits:2}).format(parseFloat(n)||0);}catch(e){return (parseFloat(n)||0).toFixed(2);}}
 function mon(v,m){var s=String(m||"").toUpperCase();return (s.indexOf("VES")>=0||s==="BS")?"Bs "+fmt(v):"$ "+fmt(v);}
 function fsAuto(n){n=Math.min(Math.max(parseInt(n,10)||1,1),MAX_N);var p=FS_BASE*MAX_N/n;return (Math.min(FS_MAX,Math.max(FS_MIN,p))*10|0)/10;}
-function fmtFecha(d){if(!d)return "—";var p=String(d).slice(0,10).split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:String(d);}
+function fmtFecha(d){if(!d)return "â€”";var p=String(d).slice(0,10).split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:String(d);}
 function hoy(){var d=new Date();return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear();}
 function toast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("mostrar");clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove("mostrar");},2400);}
 
 var carreras=[];
-
-// ---------- DEMO (fallback si no hay conexion) ----------
-var NOMBRES=["REY DEL PASO","LA PERLA NEGRA","TROMPO LOCO","SIEMPRE LISTO","EL GALLITO","MISS PINKY","TATA VIEJO","LA PUERTA AZUL","PEPE EL CORREDOR","NINA BONITA","EL FRESITA","DOCTOR TITO","LA CRIOLLA","BANDIDO REAL","EL JEFE FINAL","LA CHIQUITA","PEPE EL LOCO","TITA BELLA","EL NEGRO","REY MORENO"];
-var CHECK_EJ=[8,12,16,6,10,14,8,11,16,7,12,9,13,8,15];
-var SUPS=["ARENA","CESPED","FANGO","TAPETA","ARENA","CESPED"];
-function demo(){
-  var d=[],base=Date.now();
-  for(var i=1;i<=15;i++){
-    var n=CHECK_EJ[i-1], ej=[];
-    for(var j=0;j<n;j++){var num=j+1;ej.push({numero:num,nombre:NOMBRES[(j+i*3)%20],retirado:(num===2||num===13),valor_ejemplar:8+((num*7)%6),jugado:(num*37)%1200+50});}
-    d.push({hipodromo:"HIPODROMO LA RINCONADA",carrera:1+(i%3),fecha:new Date(base-(i-1)*86400000).toISOString().slice(0,10),distancia:1100+(i%5)*150,superficie:SUPS[i%6],premio:[100,150,250][i%3],moneda:"Bs",ejemplares:ej,dem:true});
-  }
-  return d;
-}
 
 // ---------- DATOS REALES ----------
 async function cargarReales(){
@@ -131,7 +118,7 @@ async function cargarReales(){
         return {numero:String(c.numero),nombre:String(c.nombre||""),retirado:!!c.retirado,valor_ejemplar:parseFloat(c.valor_ejemplar)||parseFloat(c.valor)||0,jugado:jugado[k]||0};
       }).sort(function(a,b){return (parseInt(a.numero,10)||0)-(parseInt(b.numero,10)||0);});
       return {
-        hipodromo:String(t.hipodromo||"").trim().toUpperCase()||"—",
+        hipodromo:String(t.hipodromo||"").trim().toUpperCase()||"â€”",
         carrera:String(t.carrera)||"",fecha:t.fecha||"",distancia:t.distancia_carrera||"",
         superficie:String(t.superficie||"").toUpperCase()||"ARENA",premio:parseFloat(t.premio_recalculado)||0,
         moneda:t.moneda||"USD",ejemplares:ej
@@ -155,7 +142,7 @@ function paramsURL(){
 }
 function finalizar(){
   var q=paramsURL(), f=String(q.auto||"").toUpperCase();
-  document.getElementById("fuente").textContent=carreras.length+" carreras · "+(carreras.some(function(c){return c.dem;})?"modo DEMO":"datos reales");
+  document.getElementById("fuente").textContent=carreras.length+" carreras Â· "+(carreras.some(function(c){return c.dem;})?"modo DEMO":"datos reales");
   if(q.hipo)carreras=carreras.filter(function(c){return String(c.hipodromo||"").toUpperCase()===String(q.hipo).toUpperCase();});
   if(q.dia)carreras=carreras.filter(function(c){return String(c.fecha||"").slice(0,10)===String(q.dia).slice(0,10);});
   renderPaginado();
@@ -167,6 +154,7 @@ function finalizar(){
 function cardHTML(t){
   var n=t.ejemplares.length, fs=fsAuto(n), simb=(String(t.moneda||"").toUpperCase().indexOf("VES")>=0||String(t.moneda||"").toUpperCase()==="BS")?"Bs ":"$ ";
   var suma=t.ejemplares.reduce(function(a,e){return a+(e.retirado?0:(parseFloat(e.valor_ejemplar)||0));},0);
+  var jugadoT=t.ejemplares.reduce(function(a,e){return a+(parseFloat(e.jugado)||0);},0);
   var filas=t.ejemplares.map(function(e){
     var c=col(e.numero), jug=parseFloat(e.jugado)||0;
     return '<div class="fila"><span class="num" style="background:'+c.bg+';color:'+c.fg+'">'+esc(e.numero)+'</span><span class="cab'+(e.retirado?" ret":"")+'" title="'+esc(e.nombre)+'">'+esc(e.nombre)+'</span><span class="mon'+(jug===0?" cero":"")+'">'+(jug===0?"&ndash;":mon(jug,t.moneda))+'</span></div>';
@@ -176,6 +164,7 @@ function cardHTML(t){
     +'<div class="l1"><span class="hip" title="'+esc(t.hipodromo)+'">'+esc(t.hipodromo)+'</span><span class="cc">C'+esc(t.carrera)+'</span></div>'
     +'<div class="l2"><span class="meta"><b>DIST '+esc(t.distancia)+' m</b> &middot; '+esc(t.superficie)+'</span><span class="fecha">'+fmtFecha(t.fecha)+'</span></div>'
     +'</div>'
+    +((t.ejemplares.reduce(function(a,e){return a+(parseFloat(e.jugado)||0);},0)===0)?'<div class="badge-sin">&#9888; SIN APUESTAS</div>':"")
     +'<div class="filas" style="--fs:'+fs+'px">'+filas+'</div>'
     +'<div class="pie"><span>&Sigma; SUMA <b>'+simb+fmt(suma)+'</b></span><span>PREMIO/TABLA <b>'+simb+fmt(t.premio)+'</b></span></div>'
     +'</div>';
@@ -288,7 +277,7 @@ function waReporte(){
     var simb=(String(c.moneda||"").toUpperCase().indexOf("VES")>=0)?"Bs ":"$ ";
     texto+=c.hipodromo+" C"+c.carrera+" \u00b7 "+ (c.superficie||"") +" \u00b7 "+fmtFecha(c.fecha)+" \u00b7 "+c.ejemplares.length+" ej. \u00b7 PAGO/TABLA "+simb+fmt(c.premio)+"\n";
   });
-  texto=texto+"\nNORMAS: válida solo para la carrera y el ejemplar indicados. Presente en caja.";
+  texto=texto+"\nNORMAS: vÃ¡lida solo para la carrera y el ejemplar indicados. Presente en caja.";
   window.open("https://wa.me/"+tel+"?text="+encodeURIComponent(texto),"_blank");
 }
 
