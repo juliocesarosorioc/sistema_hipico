@@ -138,14 +138,29 @@ async function cargarReales(){
       };
     });
     carreras.sort(function(a,b){return String(a.fecha).localeCompare(String(b.fecha))||String(a.hipodromo).localeCompare(String(b.hipodromo),'es')||(parseInt(a.carrera,10)||0)-(parseInt(b.carrera,10)||0);});
-    if(!carreras.length){carreras=demo();aviso.className="aviso";aviso.innerHTML="No hay carreras publicadas (estado Abierta) en tablas_fijas. Mostrando datos DEMO.";return;}
-    aviso.className="aviso ok";aviso.innerHTML="Datos reales: <b>"+carreras.length+"</b> carreras publicadas ("+carreras.reduce(function(a,c){return a+c.ejemplares.length;},0)+" ejemplares) desde tablas_fijas + tickets_apuestas.";
+    if(!carreras.length){carreras=demo();aviso.className="aviso";aviso.innerHTML="No hay carreras publicadas (estado Abierta) en tablas_fijas. Mostrando datos DEMO.";}
+    else{aviso.className="aviso ok";aviso.innerHTML="Datos reales: <b>"+carreras.length+"</b> carreras publicadas ("+carreras.reduce(function(a,c){return a+c.ejemplares.length;},0)+" ejemplares) desde tablas_fijas + tickets_apuestas.";}
   }catch(e){
     console.warn("[monitor_imprimir] fallback demo:",e);
     carreras=demo();aviso.className="aviso";aviso.innerHTML="Sin conexion a la base de datos o error de permisos. Mostrando datos DEMO ("+String(e&&e.message||e).slice(0,80)+").";
   }
+  finalizar();
+}
+
+// ---------- PARAMETROS DE URL (generacion automatica desde el SISTEMA) ----------
+function paramsURL(){
+  var q={};
+  location.search.replace(/[?&]([^=&#]+)=([^&#]*)/g,function(_,k,v){q[decodeURIComponent(k)]=decodeURIComponent(v);});
+  return q;
+}
+function finalizar(){
+  var q=paramsURL(), f=String(q.auto||"").toUpperCase();
   document.getElementById("fuente").textContent=carreras.length+" carreras · "+(carreras.some(function(c){return c.dem;})?"modo DEMO":"datos reales");
+  if(q.hipo)carreras=carreras.filter(function(c){return String(c.hipodromo||"").toUpperCase()===String(q.hipo).toUpperCase();});
+  if(q.dia)carreras=carreras.filter(function(c){return String(c.fecha||"").slice(0,10)===String(q.dia).slice(0,10);});
   renderPaginado();
+  if(!carreras.length)toast("Sin resultados con los filtros indicados.");
+  if(f==="PDF"||f==="JPG"||f==="PNG")setTimeout(function(){exportar(f);},350);
 }
 
 // ---------- TARJETA ----------

@@ -106,17 +106,17 @@ var jugadores=[];
 function fechaISO(off){var d=new Date(Date.now()+off*86400000);return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2);}
 function demo(){
   return [
-    {jugador:"JOSE PEREZ",grupo:"GRUPO A",nivel:"NIVEL 1",moneda:"Bs",montoJugado:5000,montoPagado:4250,tablas:6,carreras:[
+    {jugador:"JOSE PEREZ",grupo:"GRUPO A",nivel:"NIVEL 1",moneda:"Bs",montoJugado:5000,montoPagado:4250,tablas:6,dem:true,carreras:[
       {hipodromo:"HIPODROMO LA RINCONADA",carrera:"3",fecha:fechaISO(-1),distancia:1100,superficie:"ARENA",moneda:"Bs",ejemplares:[
         {numero:"3",nombre:"REY DEL PASO",jugado:500,pagado:425},{numero:"7",nombre:"LA PERLA NEGRA",jugado:900,pagado:765},{numero:"1",nombre:"TROMPO LOCO",jugado:600,pagado:510},{numero:"11",nombre:"SIEMPRE LISTO",jugado:700,pagado:595},{numero:"5",nombre:"EL GALLITO",jugado:1100,pagado:935},{numero:"13",nombre:"MISS PINKY",jugado:1200,pagado:1020}
       ]}
     ]},
-    {jugador:"MARIA LOPEZ",grupo:"GRUPO A",nivel:"NIVEL 2",moneda:"Bs",montoJugado:7800,montoPagado:5920,tablas:9,carreras:[
+    {jugador:"MARIA LOPEZ",grupo:"GRUPO A",nivel:"NIVEL 2",moneda:"Bs",montoJugado:7800,montoPagado:5920,tablas:9,dem:true,carreras:[
       {hipodromo:"HIPODROMO LA RINCONADA",carrera:"4",fecha:fechaISO(-1),distancia:1300,superficie:"CESPED",moneda:"Bs",ejemplares:[
         {numero:"2",nombre:"TATA VIEJO",jugado:800,pagado:680},{numero:"6",nombre:"LA PUERTA AZUL",jugado:1000,pagado:850},{numero:"9",nombre:"PEPE EL CORREDOR",jugado:900,pagado:765},{numero:"4",nombre:"NINA BONITA",jugado:700,pagado:595},{numero:"8",nombre:"EL FRESITA",jugado:1100,pagado:935},{numero:"12",nombre:"DOCTOR TITO",jugado:1300,pagado:1105},{numero:"14",nombre:"LA CRIOLLA",jugado:700,pagado:595},{numero:"10",nombre:"BANDIDO REAL",jugado:900,pagado:765},{numero:"15",nombre:"EL JEFE FINAL",jugado:400,pagado:340}
       ]}
     ]},
-    {jugador:"CARLOS GOMEZ",grupo:"GRUPO B",nivel:"NIVEL 1",moneda:"Bs",montoJugado:3200,montoPagado:3020,tablas:4,carreras:[
+    {jugador:"CARLOS GOMEZ",grupo:"GRUPO B",nivel:"NIVEL 1",moneda:"Bs",montoJugado:3200,montoPagado:3020,tablas:4,dem:true,carreras:[
       {hipodromo:"HIPODROMO OCCIDENTAL",carrera:"1",fecha:fechaISO(-2),distancia:1600,superficie:"FANGO",moneda:"Bs",ejemplares:[
         {numero:"14",nombre:"LA CRIOLLA",jugado:800,pagado:756},{numero:"5",nombre:"EL GALLITO",jugado:700,pagado:661},{numero:"8",nombre:"EL FRESITA",jugado:900,pagado:850},{numero:"2",nombre:"TATA VIEJO",jugado:800,pagado:753}
       ]}
@@ -137,15 +137,46 @@ async function cargarReales(){
     var idx={};
     (tf.data||[]).forEach(function(t){idx[String(t.hipodromo||"").trim().toUpperCase()+"|"+String(t.carrera)]=t;});
     jugadores=armarDesdeTickets(tt.data||[],idx);
-    if(!jugadores.length){jugadores=demo();aviso.className="aviso";aviso.innerHTML="No hay ventas de tablas fijas para reportar. Mostrando datos DEMO.";return;}
-    aviso.className="aviso ok";
-    aviso.innerHTML="Datos reales: <b>"+jugadores.length+"</b> jugadores, "+jugadores.reduce(function(a,p){return a+p.tablas;},0)+" tablas vendidas, desde tickets_apuestas + tablas_fijas.";
+    if(!jugadores.length){jugadores=demo();aviso.className="aviso";aviso.innerHTML="No hay ventas de tablas fijas para reportar. Mostrando datos DEMO.";}
+    else{
+      aviso.className="aviso ok";
+      aviso.innerHTML="Datos reales: <b>"+jugadores.length+"</b> jugadores, "+jugadores.reduce(function(a,p){return a+p.tablas;},0)+" tablas vendidas, desde tickets_apuestas + tablas_fijas.";
+    }
   }catch(e){
     console.warn("[reporte_tablas] fallback demo:",e);
     jugadores=demo();aviso.className="aviso";aviso.innerHTML="Sin conexion o error de permisos. Mostrando datos DEMO ("+String(e&&e.message||e).slice(0,80)+").";
   }
+  finalizar();
+}
+
+// ---------- PARAMETROS DE URL (generacion automatica desde el SISTEMA) ----------
+function paramsURL(){
+  var q={};
+  location.search.replace(/[?&]([^=&#]+)=([^&#]*)/g,function(_,k,v){q[decodeURIComponent(k)]=decodeURIComponent(v);});
+  return q;
+}
+function finalizar(){
+  var q=paramsURL(), f=String(q.auto||"").toUpperCase();
   document.getElementById("fuente").textContent=jugadores.length+" jugadores · "+(jugadores.some(function(p){return p.dem;})?"modo DEMO":"datos reales");
+  if(q.hipo||q.dia){
+    jugadores=jugadores.map(function(p){
+      var cs=p.carreras.filter(function(c){
+        var okH=!q.hipo||String(c.hipodromo||"").toUpperCase()===String(q.hipo).toUpperCase();
+        var okD=!q.dia||String(c.fecha||"").slice(0,10)===String(q.dia).slice(0,10);
+        return okH&&okD;
+      });
+      p.carreras=cs;return p;
+    }).filter(function(p){
+      if(!p.carreras.length)return false;
+      p.montoJugado=0;p.montoPagado=0;p.tablas=0;
+      p.carreras.forEach(function(c){c.ejemplares.forEach(function(e){p.montoJugado+=e.jugado;p.montoPagado+=e.pagado;p.tablas+=e.cantTablas||0;});});
+      p.montoJugado=+p.montoJugado.toFixed(2);p.montoPagado=+p.montoPagado.toFixed(2);
+      return true;
+    });
+    if(!jugadores.length)toast("Sin resultados con los filtros indicados.");
+  }
   render();
+  if(f==="PDF"||f==="JPG"||f==="PNG")setTimeout(function(){exportar(f);},350);
 }
 function armarDesdeTickets(tickets,idx){
   var pj={},ordG={};

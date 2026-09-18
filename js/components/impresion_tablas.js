@@ -287,5 +287,24 @@ window.clubImpresionTablas = (function () {
         }
     }
 
-    return { imprimirTablasPublicadas };
+    // ==========================================================================
+    // NUEVO DISEÑO: abre la página autónoma rediseñada en una pestaña nueva,
+    // pasando los filtros y el formato por URL. La página:
+    //   1) Carga datos reales (o demo), 2) aplica hipódromo/día, 3) re-renderiza
+    //   y 4) genera el documento automáticamente (PDF nativo / JPG / PNG canvas).
+    // Mantiene cero duplicación de lógica: el diseño vive en las páginas
+    // standalone (print nativo, sin CDN de captura).
+    // ==========================================================================
+    function abrirImpresion(tipo = 'tablas', hipoFiltro = '', diaFiltro = '', formato = 'pdf') {
+        const esReporte = String(tipo).toLowerCase() === 'reporte';
+        const pagina = esReporte ? '../reporte_tablas_publicadas.html' : '../monitor_tablas_publicadas_imprimir.html';
+        const qs = new URLSearchParams();
+        if (hipoFiltro) qs.set('hipo', hipoFiltro);
+        if (diaFiltro) qs.set('dia', diaFiltro);
+        qs.set('auto', String(formato).toUpperCase());
+        window.open(`${pagina}?${qs.toString()}`, '_blank');
+        return true;
+    }
+
+    return { imprimirTablasPublicadas, abrirImpresion };
 })();

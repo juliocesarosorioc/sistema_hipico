@@ -2211,6 +2211,20 @@ const { error } = await window.supabase.from('tablas_fijas').update({
     const btnExportPDF = document.getElementById('btnExportPDF');
     const btnExportJPG = document.getElementById('btnExportJPG');
     const btnExportPNG = document.getElementById('btnExportPNG');
+    const tipoBtnTablas = document.getElementById('tipoImpresionTablas');
+    const tipoBtnReporte = document.getElementById('tipoImpresionReporte');
+
+    // Tipo de documento: 'tablas' = monitor rediseñado (tarjetas por carrera),
+    // 'reporte' = reporte por jugador/grupo/nivel.
+    let tipoImpresion = 'tablas';
+    const CLS_TIPO_BASE = 'py-2.5 rounded-lg text-xs font-black uppercase tracking-wide transition-colors flex items-center justify-center gap-2';
+    const CLS_TIPO_ON = 'bg-emerald-600 text-white ' + CLS_TIPO_BASE;
+    const CLS_TIPO_OFF = 'bg-slate-200 text-slate-700 hover:bg-slate-300 ' + CLS_TIPO_BASE;
+    function setTipoImpresion(t) {
+        tipoImpresion = t === 'reporte' ? 'reporte' : 'tablas';
+        if (tipoBtnTablas) tipoBtnTablas.className = tipoImpresion === 'tablas' ? CLS_TIPO_ON : CLS_TIPO_OFF;
+        if (tipoBtnReporte) tipoBtnReporte.className = tipoImpresion === 'reporte' ? CLS_TIPO_ON : CLS_TIPO_OFF;
+    }
 
     function abrirConfigImpresion() {
         const publicadas = (datosTablaCompleta || []).filter(t => String(t.estado || '').trim().toLowerCase() === 'abierta');
@@ -2235,15 +2249,15 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         const hipo = filtroImpresionHipodromo.value;
         const dia = filtroImpresionDia.value;
         cerrarModalConfigImpresion();
-        const btn = { PDF: btnExportPDF, JPG: btnExportJPG, PNG: btnExportPNG }[formato];
-        const antes = btn.innerHTML;
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generando...';
         try {
+            if (window.clubImpresionTablas && typeof window.clubImpresionTablas.abrirImpresion === 'function') {
+                window.clubImpresionTablas.abrirImpresion(tipoImpresion, hipo, dia, formato);
+                clubUI.toast((tipoImpresion === 'reporte' ? 'Generando reporte por jugador' : 'Generando tablas publicadas') + ' (' + formato + ') en pestaña nueva...', 'success');
+                return;
+            }
             await imprimirTablasPublicadas(hipo, dia, formato);
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = antes;
+        } catch (e) {
+            clubUI.toast('Error generando el documento: ' + (e && e.message || e), 'error');
         }
     }
 
@@ -2257,6 +2271,8 @@ const { error } = await window.supabase.from('tablas_fijas').update({
 
     if (btnImprimirTablas) btnImprimirTablas.addEventListener('click', abrirConfigImpresion);
     if (cerrarConfigImpresion) cerrarConfigImpresion.addEventListener('click', cerrarModalConfigImpresion);
+    if (tipoBtnTablas) tipoBtnTablas.addEventListener('click', () => setTipoImpresion('tablas'));
+    if (tipoBtnReporte) tipoBtnReporte.addEventListener('click', () => setTipoImpresion('reporte'));
     if (btnExportPDF) btnExportPDF.addEventListener('click', () => exportarTablasConfiguradas('PDF'));
     if (btnExportJPG) btnExportJPG.addEventListener('click', () => exportarTablasConfiguradas('JPG'));
     if (btnExportPNG) btnExportPNG.addEventListener('click', () => exportarTablasConfiguradas('PNG'));

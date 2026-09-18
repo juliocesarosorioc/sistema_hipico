@@ -20,7 +20,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnExportPDF = document.getElementById('btnExportPDF');
     const btnExportJPG = document.getElementById('btnExportJPG');
     const btnExportPNG = document.getElementById('btnExportPNG');
+    const tipoBtnTablas = document.getElementById('tipoImpresionTablas');
+    const tipoBtnReporte = document.getElementById('tipoImpresionReporte');
     const msgSinCarreras = document.getElementById('msgSinCarreras');
+
     const carrerasVenta = document.getElementById('carrerasVenta');
 
     const btnToggleReportes = document.getElementById('btnToggleReportes');
@@ -363,6 +366,18 @@ msgSinCarreras.classList.add('hidden');
 
     // ==========================================
     
+    // Tipo de documento: 'tablas' = monitor rediseñado (tarjetas por carrera),
+    // 'reporte' = reporte por jugador/grupo/nivel.
+    let tipoImpresion = 'tablas';
+    const CLS_TIPO_BASE = 'py-2.5 rounded-lg text-xs font-black uppercase tracking-wide transition-colors flex items-center justify-center gap-2';
+    const CLS_TIPO_ON = 'bg-emerald-600 text-white ' + CLS_TIPO_BASE;
+    const CLS_TIPO_OFF = 'bg-slate-200 text-slate-700 hover:bg-slate-300 ' + CLS_TIPO_BASE;
+    function setTipoImpresion(t) {
+        tipoImpresion = t === 'reporte' ? 'reporte' : 'tablas';
+        if (tipoBtnTablas) tipoBtnTablas.className = tipoImpresion === 'tablas' ? CLS_TIPO_ON : CLS_TIPO_OFF;
+        if (tipoBtnReporte) tipoBtnReporte.className = tipoImpresion === 'reporte' ? CLS_TIPO_ON : CLS_TIPO_OFF;
+    }
+
     async function imprimirTablasPublicadas(hipoFiltro = '', diaFiltro = '', formato = 'pdf') {
         if (window.clubImpresionTablas) {
             return window.clubImpresionTablas.imprimirTablasPublicadas(hipoFiltro, diaFiltro, formato);
@@ -401,6 +416,10 @@ msgSinCarreras.classList.add('hidden');
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generando...';
         try {
+            if (window.clubImpresionTablas && typeof window.clubImpresionTablas.abrirImpresion === 'function') {
+                window.clubImpresionTablas.abrirImpresion(tipoImpresion, hipo, dia, formato);
+                return;
+            }
             await imprimirTablasPublicadas(hipo, dia, formato);
         } finally {
             btn.disabled = false;
@@ -989,6 +1008,8 @@ msgSinCarreras.classList.add('hidden');
     btnExportPDF.addEventListener('click', () => exportarTablasConfiguradas('PDF'));
     btnExportJPG.addEventListener('click', () => exportarTablasConfiguradas('JPG'));
     btnExportPNG.addEventListener('click', () => exportarTablasConfiguradas('PNG'));
+    if (tipoBtnTablas) tipoBtnTablas.addEventListener('click', () => setTipoImpresion('tablas'));
+    if (tipoBtnReporte) tipoBtnReporte.addEventListener('click', () => setTipoImpresion('reporte'));
     modalConfigImpresion.addEventListener('click', (e) => {
         if (e.target === modalConfigImpresion) cerrarModalConfigImpresion();
     });
