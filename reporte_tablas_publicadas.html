@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reporte de Tablas - Resultado por Jugador / Grupo / Nivel</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:system-ui,-apple-system,sans-serif;background:#f8fafc;padding:14px;color:#1e293b;}
+    .wrap{max-width:1200px;margin:0 auto;}
+    .cab{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;}
+    .cab h1{font-size:19px;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:8px;}
+    .cab h1 small{display:block;font-size:10px;font-weight:600;color:#64748b;}
+    .btns{display:flex;gap:8px;flex-wrap:wrap;}
+    .btn{border:0;border-radius:8px;padding:9px 13px;font-size:11px;font-weight:700;color:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+    .btn b{font-size:13px;} 
+    .b-pdf{background:#dc2626;} .b-jpg{background:#1d4ed8;} .b-png{background:#059669;} .b-wa{background:#25d366;}
+    .b-re{background:#7c3aed;}
+    .btn:hover{filter:brightness(1.08);}
+    .aviso{background:#fef3c7;border:1px solid #fcd34d;color:#92400e;font-size:10px;border-radius:8px;padding:8px 12px;margin-bottom:12px;line-height:1.5;}
+    table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+    th{background:#0f172a;color:#fff;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;padding:8px 10px;text-align:left;}
+    td{font-size:11px;padding:8px 10px;border-bottom:1px solid #e2e8f0;}
+    tr:nth-child(even) td{background:#f8fafc;}
+    .derecha{text-align:right;}
+    .chip{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:5px;font-weight:900;font-size:11px;}
+    .grp{display:inline-block;font-size:9px;font-weight:800;color:#7c3aed;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:99px;padding:2px 8px;}
+    .niv{display:inline-block;font-size:9px;font-weight:800;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:99px;padding:2px 8px;}
+    .verde{color:#047857;font-weight:800;} .rojo{color:#b91c1c;font-weight:800;}
+    .tot{background:#f0fdf4!important;font-weight:900;} .tot td{color:#065f46;}
+    .normas{margin-top:12px;font-size:8px;color:#64748b;line-height:1.6;text-align:justify;border-top:1px solid #cbd5e1;padding-top:8px;}
+    .soloImpresion{display:none;}
+    @media print{ body *{visibility:hidden;} #zonaImpresion,#zonaImpresion *{visibility:visible;} #zonaImpresion{display:block!important;position:absolute;left:0;top:0;width:100%;} }
+    @media (max-width:700px){ th,td{font-size:9px;padding:5px;} table{display:block;overflow-x:auto;} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="cab">
+      <h1><span style="color:#7c3aed;">&#9632;</span> REPORTE DE TABLAS<small>Resultado: monto jugado vs pagado, acumulado por jugador - grupo - nivel</small></h1>
+      <div class="btns">
+        <button class="btn b-pdf" onclick="exportar('PDF')">&#128196; PDF</button>
+        <button class="btn b-jpg" onclick="exportar('JPG')">&#128444; JPG</button>
+        <button class="btn b-png" onclick="exportar('PNG')">&#128444; PNG</button>
+        <button class="btn b-wa" onclick="waReporte()">&#128172; WhatsApp</button>
+        <button class="btn b-re" onclick="window.print()">&#128424; Imprimir</button>
+      </div>
+    </div>
+    <div class="aviso">DEMO: datos de ejemplo (3 jugadores, 3 grupos, 2 niveles). Para conectar sus datos reales reemplace el bloque CARGAR_REAL al final del script por su consulta a tickets_apuestas.</div>
+    <div id="cuerpoTabla" class="soloImpresion"></div>
+    <div id="contenedor"></div>
+  </div>
+  <div class="toast" id="toast" style="position:fixed;bottom:16px;right:16px;background:#0f172a;color:#fff;padding:10px 16px;border-radius:8px;font-size:11px;opacity:0;transition:.2s;pointer-events:none;"></div>
+  <script>
+    function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+    function fmt(n){try{return new Intl.NumberFormat("es-VE",{minimumFractionDigits:2,maximumFractionDigits:2}).format(parseFloat(n)||0);}catch(e){return (parseFloat(n)||0).toFixed(2);}}
+    var PALETA14=[
+      {bg:"#e11d48",fg:"#fff"},{bg:"#ffffff",fg:"#111"},{bg:"#1d4ed8",fg:"#fff"},{bg:"#facc15",fg:"#111"},{bg:"#16a34a",fg:"#fff"},{bg:"#111",fg:"#facc15"},{bg:"#f97316",fg:"#111"},{bg:"#fbcfe8",fg:"#111"},{bg:"#22d3ee",fg:"#111"},{bg:"#7c3aed",fg:"#fff"},{bg:"#9caeff",fg:"#111"},{bg:"#84cc16",fg:"#111"},{bg:"#92400e",fg:"#fff"},{bg:"#7f1d1d",fg:"#fff"}
+    ];
+    function colorNum(n){var i=(parseInt(n,10)-1)%14;return PALETA14[i>=0?i:0];}
+    var todas=[],corriendo=false;
+    function toast(m){var t=document.getElementById("toast");t.textContent=m;t.style.opacity=1;clearTimeout(toast._t);toast._t=setTimeout(function(){t.style.opacity=0;},2400);}
+    function demo(){
+      // jugador -> grupo -> nivel: filas jugado/pagado
+      return [
+        {jugador:"JOSE PEREZ",grupo:"GRUPO A",nivel:"NIVEL 1",monto_jugado:5000,monto_pagado:4250,moneda:"Bs",tablas:6,ejemplares:[{n:3,cab:"REY DEL PASO",jugado:500,pagado:425},{n:7,cab:"LA PERLA",jugado:900,pagado:765},{n:1,cab:"TROMPO LOCO",jugado:600,pagado:510},{n:11,cab:"SIEMPRE LISTO",jugado:700,pagado:595},{n:5,cab:"EL GALLITO",jugado:1100,pagado:935},{n:13,cab:"MISS PINKY",jugado:1200,pagado:1020}]},
+        {jugador:"MARIA LOPEZ",grupo:"GRUPO A",nivel:"NIVEL 2",monto_jugado:7800,monto_pagado:5920,moneda:"Bs",tablas:9,ejemplares:[{n:2,cab:"TATA VIEJO",jugado:800,pagado:680},{n:6,cab:"LA PUERTA AZUL",jugado:1000,pagado:850},{n:9,cab:"PEPE EL CORREDOR",jugado:900,pagado:765},{n:4,cab:"NINA BONITA",jugado:700,pagado:595},{n:8,cab:"EL FRESITA",jugado:1100,pagado:935},{n:12,cab:"DOCTOR TITO",jugado:1300,pagado:1105},{n:14,cab:"LA CRIOLLA",jugado:700,pagado:595},{n:10,cab:"BANDIDO REAL",jugado:900,pagado:765},{n:15,cab:"EL JEFE FINAL",jugado:400,pagado:340}]},
+        {jugador:"CARLOS GOMEZ",grupo:"GRUPO B",nivel:"NIVEL 1",monto_jugado:3200,monto_pagado:3020,moneda:"Bs",tablas:4,ejemplares:[{n:14,cab:"LA CRIOLLA",jugado:800,pagado:756},{n:5,cab:"EL GALLITO",jugado:700,pagado:661},{n:8,cab:"EL FRESITA",jugado:900,pagado:850},{n:2,cab:"TATA VIEJO",jugado:800,pagado:753}]}
+      ];
+    }
+    function render(){
+      var h='<h2 style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:10px;">RESULTADO POR JUGADOR / GRUPO / NIVEL</h2>';
+      h+='<table id="tablaReporte"><thead><tr><th>Jugador</th><th>Grupo</th><th>Nivel</th><th class="derecha">Tablas</th><th class="derecha">Jugado</th><th class="derecha">Pagado</th><th class="derecha">Diferencia</th><th>Estado</th></tr></thead><tbody>';
+      var tj=0,tp=0,tt=0;
+      todas.forEach(function(j){
+        var d=j.monto_jugado-j.monto_pagado,ok=(j.monto_pagado<=j.monto_jugado);
+        h+="<tr>";
+        h+='<td><b>'+esc(j.jugador)+'</b></td>';
+        h+='<td><span class="grp">'+esc(j.grupo)+'</span></td>';
+        h+='<td><span class="niv">'+esc(j.nivel)+'</span></td>';
+        h+='<td class="derecha">'+j.tablas+'</td>';
+        h+='<td class="derecha">'+fmt(j.monto_jugado)+'</td>';
+        h+='<td class="derecha verde">'+fmt(j.monto_pagado)+'</td>';
+        h+='<td class="derecha '+(ok?"verde":"rojo")+'">'+fmt(Math.abs(d))+'</td>';
+        h+='<td>'+(ok?"<span class="verde">EN ORDEN</span>":"<span class="rojo">ATENCION</span>")+'</td>';
+        h+="</tr>";
+        tj+=j.monto_jugado;tp+=j.monto_pagado;tt+=j.tablas;
+      });
+      h+='<tr class="tot"><td>TOTAL</td><td></td><td></td><td class="derecha">'+tt+'</td><td class="derecha">'+fmt(tj)+'</td><td class="derecha">'+fmt(tp)+'</td><td class="derecha">'+fmt(tj-tp)+'</td><td></td></tr>';
+      h+="</tbody></table>";
+      h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;margin-top:14px;">';
+      todas.forEach(function(j){
+        h+='<div style="border:1px solid #e2e8f0;border-radius:10px;padding:10px;background:#fff;">';
+        h+='<div style="font-size:11px;font-weight:800;color:#0f172a;margin-bottom:2px;">'+esc(j.jugador)+'</div>';
+        h+='<div style="font-size:9px;color:#7c3aed;font-weight:700;margin-bottom:6px;">'+esc(j.grupo)+" / "+esc(j.nivel)+'</div>';
+        j.ejemplares.forEach(function(e){var c=colorNum(e.n);
+          h+='<div style="display:flex;align-items:center;gap:6px;margin:3px 0;">';
+          h+='<span class="chip" style="background:'+c.bg+';color:'+c.fg+'">'+e.n+'</span>';
+          h+='<span style="font-size:10px;font-weight:600;flex:1;">'+esc(e.cab)+'</span>';
+          h+='<span style="font-size:9px;color:#475569;">J:'+fmt(e.jugado)+'</span>';
+          h+='<span style="font-size:9px;color:#047857;font-weight:700;">P:'+fmt(e.pagado)+'</span>';
+          h+="</div>";
+        });
+        h+="</div>";
+      });
+      h+="</div>";
+      h+='<div class="normas">NORMAS: 1) Reporte demo de resultado por tablas fijas. 2) Los montos se expresan en la moneda del hipodromo. 3) La diferencia jugado-pagado debe ser cero o positiva al cierre de carrera. 4) Cualquier atencion debe reportarse al operador de taquilla antes del cobro siguiente. 5) Valido solo para las tablas fijas publicadas y no reclamadas. 6) Este reporte es de control interno.</div>';
+      document.getElementById("contenedor").innerHTML=h;
+      document.getElementById("cuerpoTabla").innerHTML=h;
+    }
+    function exportar(formato){
+      var z=document.getElementById("cuerpoTabla");z.classList.remove("soloImpresion");
+      var cv=document.createElement("canvas");cv.width=1400;cv.height=Math.max(1000,z.offsetHeight*2);
+      var ctx=cv.getContext("2d");ctx.fillStyle="#ffffff";ctx.fillRect(0,0,cv.width,cv.height);
+      ctx.fillStyle="#000";ctx.font="28px Arial";ctx.fillText("REPORTE DE TABLAS - RESULTADO",40,60);
+      ctx.fillStyle="#64748b";ctx.font="16px Arial";ctx.fillText(new Date().toLocaleDateString("es-VE"),40,90);
+      // dibujar filas manualmente (sin librerias)
+      try{var htm=z.innerHTML;var tmp=document.createElement("div");tmp.innerHTML=htm;tmp.style.width="1200px";tmp.style.position="absolute";tmp.style.left="-9999px";document.body.appendChild(tmp);
+        // simplificado: dibujar tabla resumida
+        ctx.fillStyle="#0f172a";ctx.fillRect(40,120,1320,40);ctx.fillStyle="#fff";ctx.font="bold 15px Arial";
+        ["Jugador","Grupo","Nivel","Tablas","Jugado","Pagado","Dif.","Estado"].forEach(function(c,i){ctx.fillText(c,60+i*165,145);});
+        var y=180;todas.forEach(function(j){
+          ctx.fillStyle="#1e293b";ctx.font="bold 14px Arial";ctx.fillText(j.jugador,60,y);
+          ctx.fillStyle="#7c3aed";ctx.fillText(j.grupo,225,y);ctx.fillText(j.nivel,390,y);
+          ctx.fillStyle="#1e293b";ctx.fillText(String(j.tablas),555,y);
+          ctx.fillStyle="#1e293b";ctx.fillText(fmt(j.monto_jugado),720,y);
+          ctx.fillStyle="#047857";ctx.fillText(fmt(j.monto_pagado),885,y);
+          ctx.fillStyle="#059669";ctx.fillText(fmt(Math.abs(j.monto_jugado-j.monto_pagado)),1050,y);
+          ctx.fillStyle="#059669";ctx.fillText("OK",1215,y);
+          y+=34;
+        });
+        document.body.removeChild(tmp);
+        var a=document.createElement("a");
+        if(formato==="PNG"){a.href=cv.toDataURL("image/png");a.download="reporte_tablas_"+new Date().toISOString().slice(0,10)+".png";}
+        else{a.href=cv.toDataURL("image/jpeg",0.92);a.download="reporte_tablas_"+new Date().toISOString().slice(0,10)+".jpg";}
+        document.body.appendChild(a);a.click();document.body.removeChild(a);
+        toast("Reporte "+formato+" descargado.");
+      }catch(e){toast("Error generando imagen: "+e.message);}
+      z.classList.add("soloImpresion");
+    }
+    function waReporte(){
+      if(!todas.length){toast("No hay datos.");return;}
+      var texto="REPORTE DE TABLAS "+new Date().toISOString().slice(0,10)+"
+";
+      todas.forEach(function(j){texto+=j.jugador+" ["+j.grupo+" - "+j.nivel+"] JUGADO "+fmt(j.monto_jugado)+" / PAGADO "+fmt(j.monto_pagado)+"
+";});
+      texto+="Diferencia total: "+fmt(todas.reduce(function(a,j){return a+(j.monto_jugado-j.monto_pagado);},0));
+      window.open("https://wa.me/584141234567?text="+encodeURIComponent(texto),"_blank");
+    }
+    // CARGAR_REAL: reemplace el siguiente bloque por su consulta a supabase real
+    // if(window.supabase){var {data,error}=await window.supabase.from("tickets_apuestas").select("*");if(!error)todas=data;}
+    todas=demo();render();toast("Demo lista (3 jugadores). Conecte sus datos reales en CARGAR_REAL.");
+  </script>
+</body>
+</html>
