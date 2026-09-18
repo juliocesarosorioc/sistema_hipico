@@ -66,9 +66,6 @@
                 <i class="fas fa-table text-indigo-500 mr-2"></i> Tablas Fijas
             </h1>
             <div class="flex items-center gap-2">
-                <button id="btnImprimirTablas" class="bg-slate-800 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-900 transition-colors" title="Imprimir las tablas fijas publicadas (16 por hoja)" style="display:none">
-                    <i class="fas fa-print mr-1"></i> Imprimir Tablas
-                </button>
                 <button id="btnRecargarTablas" class="bg-white border border-slate-300 text-slate-600 px-4 py-2 rounded-lg hover:bg-slate-50 hover:text-indigo-600 shadow-sm transition-all text-sm font-bold" title="Recargar datos">
                     <i class="fas fa-sync-alt"></i>
                 </button>
@@ -163,10 +160,15 @@
 
                 <!-- MONITOR DE TABLAS PUBLICADAS -->
                 <section id="seccionMonitor" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden shrink-0">
-                    <button type="button" id="btnToggleMonitor" class="w-full bg-slate-900 text-white p-3.5 font-bold text-sm uppercase tracking-wider flex items-center justify-between hover:bg-slate-800 transition-colors" aria-expanded="false">
-                        <span class="flex items-center"><i class="fas fa-desktop text-indigo-400 mr-2"></i> Monitor de Tablas Publicadas <span id="lblTotalMonitor" class="ml-2 text-xs bg-slate-700 rounded-full px-2 py-0.5">0</span></span>
-                        <i class="fas fa-chevron-down"></i>
-                    </button>
+                    <div class="flex items-stretch">
+                        <button type="button" id="btnToggleMonitor" class="flex-1 min-w-0 bg-slate-900 text-white p-3.5 font-bold text-sm uppercase tracking-wider flex items-center justify-between hover:bg-slate-800 transition-colors" aria-expanded="false">
+                            <span class="flex items-center min-w-0"><i class="fas fa-desktop text-indigo-400 mr-2"></i> Monitor de Tablas Publicadas <span id="lblTotalMonitor" class="ml-2 text-xs bg-slate-700 rounded-full px-2 py-0.5">0</span></span>
+                            <i class="fas fa-chevron-down shrink-0 ml-2"></i>
+                        </button>
+                        <button type="button" id="btnImprimirTablas" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 text-xs font-black uppercase tracking-wide transition-colors shrink-0" title="Imprimir las tablas fijas publicadas (16 por hoja)" style="display:none">
+                            <i class="fas fa-print mr-1"></i> Imprimir Tablas
+                        </button>
+                    </div>
                     <div id="cuerpoMonitor" class="hidden">
                         <div id="msgMonitorVacio" class="text-center p-10 text-slate-400 italic text-sm hidden">
                             <i class="fas fa-inbox text-4xl text-slate-200 block mb-3"></i>
