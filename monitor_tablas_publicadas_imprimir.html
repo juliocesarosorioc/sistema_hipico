@@ -103,7 +103,7 @@ async function cargarReales(){
   try{
     if(typeof window.supabase==="undefined"||!window.supabase) throw new Error("sin conexion");
     var cl=window.__clubSupabaseClient?window.__clubSupabaseClient:window.supabase;
-    var tfQ=cl.from("tablas_fijas").select("id,fecha,hipodromo,carrera,distancia_carrera,superficie,premio_recalculado,suma_base_tabla,moneda,caballos").ilike("estado","abierta");
+    var tfQ=cl.from("tablas_fijas").select("id,fecha_creacion,hipodromo,carrera,distancia_carrera,superficie,premio_recalculado,suma_base_tabla,moneda,caballos").ilike("estado","abierta");
     var r1=await tfQ;
     if(r1.error) throw r1.error;
     var r2=await cl.from("tickets_apuestas").select("hipodromo,carrera,ejemplar_numero,monto_jugado");
@@ -120,7 +120,7 @@ async function cargarReales(){
       }).sort(function(a,b){return (parseInt(a.numero,10)||0)-(parseInt(b.numero,10)||0);});
       return {
         hipodromo:String(t.hipodromo||"").trim().toUpperCase()||"â€”",
-        carrera:String(t.carrera)||"",fecha:t.fecha||"",distancia:t.distancia_carrera||"",
+        carrera:String(t.carrera)||"",fecha:t.fecha_creacion||"",distancia:t.distancia_carrera||"",
         superficie:String(t.superficie||"").toUpperCase()||"ARENA",premio:parseFloat(t.premio_recalculado)||0,
         moneda:t.moneda||"USD",ejemplares:ej
       };
