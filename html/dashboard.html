@@ -281,15 +281,27 @@
                 error = { message: err.message || String(err) };
             }
             if (error) {
-                // si no existe el RPC, cargar desde la tabla directa como fallback visual
+                // Sin el RPC club_listar_grupos aun creado en Supabase, fallamos al
+                // SELECT directo; ese SELECT puede volver vacio SIN error por RLS,
+                // por eso aqui se distingue: [vacio, sin error] => falta crear la
+                // RPC segura en el SQL Editor (paso manual que pide este modulo).
+                const msg = 'Falta ejecutar en Supabase: sql/paquete_pendientes.sql (crea club_listar_grupos). ' +
+                    'Sin esa RPC segura, RLS oculta los grupos al visitante.';
                 try {
                     const fallback = await conTimeout(window.supabase.from('grupos_venta').select('id,nombre').order('nombre'));
-                    grupos = fallback.error ? [] : (fallback.data || []);
-                    selectParamGrupo.innerHTML = '<option value="">Seleccione grupo…</option>' +
-                        grupos.map(g => `<option value="${g.id}">${g.nombre}</option>`).join('');
-                    return;
-                } catch (err2) { /* sin fallback */ }
-                selectParamGrupo.innerHTML = '<option value="">Sin grupos disponibles</option>';
+                    if (!fallback.error && fallback.data && fallback.data.length) {
+                        selectParamGrupo.innerHTML = '<option value="">Seleccione grupo…</option>' +
+                            fallback.data.map(g => `<option value="${g.id}">${g.nombre}</option>`).join('');
+                        return;
+                    }
+                    if (!fallback.error) {
+                        selectParamGrupo.innerHTML = '<option value="">' + msg + '</option>';
+                        console.warn(msg);
+                        return;
+                    }
+                } catch (err) { /* sin fallback */ }
+                selectParamGrupo.innerHTML = '<option value="">' + msg + '</option>';
+                console.warn(msg);
                 return;
             }
             selectParamGrupo.innerHTML = '<option value="">Seleccione grupo…</option>' +
