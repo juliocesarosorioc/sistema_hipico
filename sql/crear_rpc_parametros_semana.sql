@@ -53,9 +53,8 @@ begin
              meta_semanal, comision_pct, nota)
         values
             (v_grupo_id, v_fecha_desde, v_fecha_hasta, v_dias,
-             v_meta, v_comision, v_nota)
-        returning * into ...;
-        -- no se usa el RETURNING: se retorna via query al final
+             v_meta, v_comision, v_nota);
+        -- no se usa RETURNING: se retorna via query al final
     else
         update public.parametros_semana_grupo set
             grupo_id      = v_grupo_id,
