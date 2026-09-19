@@ -287,8 +287,8 @@
             let grupos = [];
             let error;
             try {
-                const res = await conTimeout(window.supabase.rpc('club_listar_parametros_semana'));
-                // nota: el RPC de guardado no devuelve grupos; los grupos vienen de club_listar_grupos
+                const res = await conTimeout(window.supabase.rpc('club_listar_grupos'));
+                // nota: el RPC que lista los grupos es club_listar_grupos (patron grupos.js)
                 error = res.error;
                 grupos = error ? [] : (res.data || []);
             } catch (err) {
