@@ -42,6 +42,20 @@
     // Carga el programa del día desde la BD; si falta la tabla usa localStorage.
     async function cargar() {
         try {
+            const viaRpc = await window.supabase.rpc('club_leer_programa_dia');
+            if (viaRpc.error) throw viaRpc.error;
+            if (viaRpc.data && viaRpc.data.length) {
+                const t = viaRpc.data[0];
+                const p = {
+                    fecha: t.fecha || hoy(),
+                    hipodromos: t.hipodromos || [],
+                    carreras: t.carreras || []
+                };
+                escribirLocal(p);
+                return p;
+            }
+        } catch (e1) { /* segundo intento: select directo */ }
+        try {
             const { data } = await window.supabase
                 .from('programa_dia')
                 .select('fecha, hipodromos, carreras')
@@ -69,17 +83,28 @@
         };
         escribirLocal(p);
         try {
-            await window.supabase.from('programa_dia').upsert(
-                {
-                    fecha: p.fecha,
-                    hipodromos: p.hipodromos,
-                    carreras: p.carreras,
-                    resumen: p.carreras.length + ' carrera(s) · ' + p.hipodromos.join(', '),
-                    creado_por: (window.clubAuth && window.clubAuth.getSesion && window.clubAuth.getSesion().nombre) || 'desconocido'
-                },
-                { onConflict: 'fecha' }
-            );
-        } catch (e) { /* sin tabla: el respaldo local ya quedó escrito */ }
+            const creadoPor = (window.clubAuth && window.clubAuth.getSesion && window.clubAuth.getSesion().nombre) || 'desconocido';
+            const r = await window.supabase.rpc('club_guardar_programa_dia', {
+                p_fecha: p.fecha,
+                p_hipodromos: p.hipodromos,
+                p_carreras: p.carreras,
+                p_creado_por: creadoPor
+            });
+            if (r.error) throw r.error;
+        } catch (e1) {
+            try {
+                await window.supabase.from('programa_dia').upsert(
+                    {
+                        fecha: p.fecha,
+                        hipodromos: p.hipodromos,
+                        carreras: p.carreras,
+                        resumen: p.carreras.length + ' carrera(s) · ' + p.hipodromos.join(', '),
+                        creado_por: (window.clubAuth && window.clubAuth.getSesion && window.clubAuth.getSesion().nombre) || 'desconocido'
+                    },
+                    { onConflict: 'fecha' }
+                );
+            } catch (e2) { /* sin tabla: el respaldo local ya quedó escrito */ }
+        }
         return p;
     }
 
