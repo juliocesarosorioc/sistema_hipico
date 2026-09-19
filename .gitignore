@@ -3,4 +3,6 @@ dist/
 npm-debug.log*
 *.log
 .env**
-.DS_Store
+.DS_Store_backup_apuestas_y_carreras_*
+
+_backup_*
