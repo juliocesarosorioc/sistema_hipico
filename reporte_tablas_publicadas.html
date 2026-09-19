@@ -110,7 +110,7 @@ async function cargarReales(){
     var cl=window.__clubSupabaseClient?window.__clubSupabaseClient:window.supabase;
     var tt=await cl.from("tickets_apuestas").select("id,fecha_registro,hipodromo,carrera,ejemplar_numero,caballo,cantidad_tablas,monto_jugado,monto_decidido,cliente_juega_nombre,grupo,moneda,estado").order("fecha_registro");
     if(tt.error) throw tt.error;
-    var tf=await cl.from("tablas_fijas").select("hipodromo,carrera,fecha_creacion,distancia_carrera,superficie,premio_recalculado,suma_base_tabla,moneda,caballos").ilike("estado","abierta");
+    var tf=await cl.from("tablas_fijas").select("hipodromo,carrera,fecha,fecha_creacion,distancia_carrera,superficie,premio_recalculado,suma_base_tabla,moneda,caballos").ilike("estado","abierta");
     if(tf.error) throw tf.error;
     var idx={};
     (tf.data||[]).forEach(function(t){idx[String(t.hipodromo||"").trim().toUpperCase()+"|"+String(t.carrera)]=t;});
@@ -132,7 +132,7 @@ async function cargarReales(){
       });
       if(!ej.length)return;
       sinApuestas.push({jugador:"SIN APUESTAS",grupo:"PUBLICADAS",nivel:"SIN VENTA",moneda:t.moneda||"USD",montoJugado:0,montoPagado:0,tablas:0,carreras:[
-        {hipodromo:String(t.hipodromo||""),carrera:String(t.carrera||""),fecha:t.fecha_creacion||"",distancia:t.distancia_carrera||"",superficie:t.superficie||"",moneda:t.moneda||"USD",ejemplares:ej}
+        {hipodromo:String(t.hipodromo||""),carrera:String(t.carrera||""),fecha:t.fecha||t.fecha_creacion||"",distancia:t.distancia_carrera||"",superficie:t.superficie||"",moneda:t.moneda||"USD",ejemplares:ej}
       ]});
     });
     jugadores=jugadores.concat(sinApuestas);
@@ -187,7 +187,7 @@ function armarDesdeTickets(tickets,idx){
     var jug=t.cliente_juega_nombre||"SIN NOMBRE", grp=t.grupo||"SIN GRUPO";
     if(!pj[jug]){ordG[grp]=(ordG[grp]||0)+1;pj[jug]={jugador:jug,grupo:grp,nivel:"NIVEL "+ordG[grp],moneda:t.moneda||"USD",carreras:{},montoJugado:0,montoPagado:0,tablas:0,ord:ordG[grp]};}
     var p=pj[jug], hipo=String(t.hipodromo||"").trim().toUpperCase(), cr=String(t.carrera), ck=hipo+"|"+cr, meta=idx[ck];
-      if(!p.carreras[ck])p.carreras[ck]={hipodromo:hipo,carrera:cr,fecha:(meta&&(meta.fecha_creacion||meta.fecha))||String(t.fecha_registro||"").slice(0,10),distancia:(meta&&meta.distancia_carrera)!=null?meta.distancia_carrera:"",superficie:meta&&meta.superficie,moneda:t.moneda||p.moneda,ind:{}};
+      if(!p.carreras[ck])p.carreras[ck]={hipodromo:hipo,carrera:cr,fecha:(meta&&(meta.fecha||meta.fecha_creacion))||String(t.fecha_registro||"").slice(0,10),distancia:(meta&&meta.distancia_carrera)!=null?meta.distancia_carrera:"",superficie:meta&&meta.superficie,moneda:t.moneda||p.moneda,ind:{}};
     var k=String(t.ejemplar_numero);
     if(!p.carreras[ck].ind[k])p.carreras[ck].ind[k]={numero:k,nombre:String(t.caballo||""),jugado:0,pagado:0,cantTablas:0};
     var e=p.carreras[ck].ind[k];
