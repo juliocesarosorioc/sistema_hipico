@@ -553,6 +553,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const sumaBase = parseFloat(tabla?.suma_base_tabla ?? 160) || 160;
         const premioInicial = parseFloat(existente?.premio_recalculado ?? tabla?.premio_recalculado ?? premioOrig) || premioOrig;
 
+        // PIZARRA RÁPIDA pendiente (orden de llegada con empates entre paréntesis)
+        // Ej: "1-(2-3)-4-5" → 1º el 1; 2º empatados 2 y 3; luego el 4 y el 5.
+        if (window.clubPizarraPendiente?.grupos?.length) {
+            const mapaGrupo = new Map();
+            window.clubPizarraPendiente.grupos.forEach(g => g.nums.forEach(n => mapaGrupo.set(String(n), g)));
+            conRetirosInput.forEach(c => {
+                const gr = mapaGrupo.get(String(c.numero));
+                if (gr) {
+                    c.orden = gr.puesto;
+                    c.ganador = gr.puesto === 1;
+                }
+            });
+            window.clubPizarraPendiente = null;
+        }
+
         window.clubModalResultado.abrir({
             titulo: 'Carga de Resultados',
             subtitulo: `${ctx.hipodromo || '-'} · Carrera ${ctx.carrera ?? '-'} · ${ctx.fecha}${tabla ? ' · Premio a Pagar/Tabla: $' + clubUI.formatoNumero(tabla.premio_recalculado, 2) : ''}`,
@@ -880,6 +895,79 @@ document.addEventListener('DOMContentLoaded', () => {
             procesarTransacciones();
         }
     });
+
+    // ------------------------------------------------------------------
+    // VENTANA FLOTANTE: HABILITAR / DESHABILITAR (ambos botones)
+    // ------------------------------------------------------------------
+    const btnHabilitarComandos = document.getElementById('btnHabilitarComandos');
+    const btnCerrarComandos = document.getElementById('btnCerrarComandos');
+
+    function habilitarVentanaComandos() {
+        if (ventana) ventana.classList.remove('hidden');
+        window.clubIndicador?.mensajeRapido?.('Ventana flotante de Comandos Rápidos habilitada.');
+        if (textoTransacciones) textoTransacciones.focus();
+    }
+    function deshabilitarVentanaComandos() {
+        if (ventana) ventana.classList.add('hidden');
+        window.clubIndicador?.mensajeRapido?.('Ventana flotante de Comandos Rápidos deshabilitada.');
+    }
+
+    btnHabilitarComandos?.addEventListener('click', habilitarVentanaComandos);
+    btnCerrarComandos?.addEventListener('click', deshabilitarVentanaComandos);
+
+    // ------------------------------------------------------------------
+    // PIZARRA RÁPIDA: "1-(2-3)-4-5" → orden de llegada con empates
+    // ------------------------------------------------------------------
+    const inputPizarraRapida = document.getElementById('inputPizarraRapida');
+    const btnAplicarPizarraRapida = document.getElementById('btnAplicarPizarraRapida');
+
+    function parsearPizarraRapida(texto) {
+        const t = String(texto || '').trim();
+        if (!t) return { error: 'Escriba el orden de llegada, p. ej. 1-(2-3)-4-5.' };
+        const grupos = [];
+        let fallaPar = false; // paréntesis desbalanceado
+        const re = /(\([^()]*\)|[0-9]+)/g;
+        let m, puesto = 0;
+        while ((m = re.exec(t))) {
+            const tok = m[1];
+            if (tok.startsWith('(')) {
+                const inner = tok.slice(1, -1).trim();
+                const nums = inner.split(/[^0-9]+/).map(s => parseInt(s, 10)).filter(n => n > 0);
+                if (!nums.length) return { error: `Grupo de empate vacío: "${tok}".` };
+                puesto++;
+                grupos.push({ puesto, nums });
+            } else {
+                const n = parseInt(tok, 10);
+                if (n > 0) { puesto++; grupos.push({ puesto, nums: [n] }); }
+            }
+        }
+        // Validar que el resto del texto no tenga caracteres raros sobrantes
+        const sobra = t.replace(/\([^()]*\)|[0-9]+|[\s\-]+/g, '').trim();
+        if (sobra) return { error: `Caracteres no reconocidos: "${sobra}". Use solo números, guiones y paréntesis.` };
+        if (!grupos.length) return { error: 'No se reconoció ningún ejemplar.' };
+        return { grupos };
+    }
+
+    function aplicarPizarraRapida() {
+        const res = parsearPizarraRapida(inputPizarraRapida?.value);
+        if (res.error) return window.clubUI?.toast(res.error, 'warning');
+        // Guardar para que abrirCargaResultados() lo consuma (ya previsto en clubPizarraPendiente)
+        window.clubPizarraPendiente = { grupos: res.grupos };
+        window.clubIndicador?.mensajeRapido?.('Pizarra aplicada: ' + inputPizarraRapida.value.trim() + ' → abriendo carga de resultados…');
+        abrirCargaResultados();
+    }
+
+    btnAplicarPizarraRapida?.addEventListener('click', aplicarPizarraRapida);
+    inputPizarraRapida?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            aplicarPizarraRapida();
+        }
+    });
+
+    // Gestión de resultados desde la ventana flotante (modal completo)
+    const btnAbrirCargaResultadosModal = document.getElementById('btnAbrirCargaResultadosModal');
+    btnAbrirCargaResultadosModal?.addEventListener('click', abrirCargaResultados);
 
     inicializarDatos();
 });
