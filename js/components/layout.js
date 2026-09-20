@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
             id: 'hipico',
             titulo: 'Módulo Hípico',
             items: [
-                { href: 'taquilla.html', icon: 'fa-receipt',      txt: 'Taquilla',            color: 'text-blue-400' },
+                { href: 'taquilla.html', icon: 'fa-receipt',      txt: 'Gestión de Jugadas',         color: 'text-blue-400' },
                 { href: 'tablas.html?v=20260916-25',   icon: 'fa-table',        txt: 'Tablas Fijas',         color: 'text-indigo-400' },
                 { href: 'grupos.html',   icon: 'fa-layer-group',  txt: 'Grupos y Convenios',   color: 'text-amber-400' },
                 { href: 'ejemplares.html', icon: 'fa-horse',      txt: 'Ejemplares y Gaceta',  color: 'text-rose-400' },

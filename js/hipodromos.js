@@ -3,6 +3,8 @@
 // con país y estado. Los hipódromos de VE y USA vienen sembrados por el SQL (sección 8).
 // Incluye validación fuzzy (Levenshtein) para evitar cuasi-duplicados.
 
+function toTitleCase(t){return String(t||"").trim().replace(/\s+/g," ").toLowerCase().replace(/\b[a-záéíóúñ]|\b\d+\b/g,function(m){return m.toUpperCase();}).replace(/\b(al|del|de|la|los|las|y|en|a|o|u|por|para)\b/gi,function(w){return w.toLowerCase();});}
+
 // Distancia de Levenshtein normalizada (0 = igual, 1 = totalmente distinto)
 function levenshteinNorm(a, b) {
     if (!a || !b) return 1;
@@ -96,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formHipodromo.addEventListener('submit', async function(e) {
             e.preventDefault();
 
-            const nombre = inputNombre.value.trim().toUpperCase();
+            const nombre = toTitleCase(inputNombre.value);
             if (!nombre) return;
             const pais = selectPais.value;
 
@@ -149,7 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnGuardarModal?.addEventListener('click', async () => {
         const id = document.getElementById('editarHipodromoId').value;
-        const nombre = document.getElementById('editarHipodromoNombre').value.trim().toUpperCase();
+        const nombre = toTitleCase(document.getElementById('editarHipodromoNombre').value);
         const pais = document.getElementById('editarHipodromoPais').value;
         const estado = document.getElementById('editarHipodromoEstado').value;
         if (!id || !nombre) return;
