@@ -608,6 +608,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
         await guardarCuposGrupos(tablaId, cuposPorGrupo);
 
+        // DUAL-ESCRITOR RELACIONAL (auto-carga IA/Gaceta/Ejemplares)
+        // El jsonb ya quedó publicado (tablaId listo). Ahora sembramos el
+        // modelo relacional vía RPC club_guardar_pizarra_carrera con el
+        // MISMO contenido, para que el monitor dual pueda leerlo. Si el RPC
+        // falla, la publicación jsonb ya hecha NO se toca (fallback silencioso).
+        try {
+            const relDatos = {
+                fecha: String(datosTabla.fecha ?? datosTabla.fecha_creacion ?? '').slice(0, 10) || null,
+                hipodromo,
+                numero_carrera: carrera,
+                distancia_carrera: parseFloat(datosTabla.distancia_carrera) || null,
+                superficie: datosTabla.superficie || null,
+                premio_original: parseFloat(datosTabla.premio_original) || 0,
+                premio_recalculado: parseFloat(datosTabla.premio_recalculado) || 0,
+                moneda: datosTabla.moneda || 'USD',
+                estado: 'Abierta',
+                ejemplares: caballosArr.map(c => ({
+                    numero: c.numero,
+                    nombre: c.nombre,
+                    nacionalidad: c.nacionalidad || 'VE',
+                    valor_ejemplar: parseFloat(c.valor_ejemplar) || 0,
+                    retirado: !!c.retirado
+                }))
+            };
+            const rpcRel = await window.supabase.rpc('club_guardar_pizarra_carrera', { p_datos: relDatos });
+            if (rpcRel.error) console.warn('[dual-rel]', rpcRel.error.message || rpcRel.error);
+            else if (window.clubDB?.logAccion) window.clubDB.logAccion('TABLAS', `dual-rel: C${carrera} ${hipodromo} sembrada (${caballosArr.length} ej.)`);
+        } catch (eRel) {
+            console.warn('[dual-rel] fallo silencioso:', eRel && eRel.message || eRel);
+        }
+
         carrerasBol = carrerasBol.filter(u => u !== card.dataset.uid);
         card.remove();
         eliminarDelRegistroGaceta(hipodromo, carrera);
@@ -678,6 +709,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function cargarTablas() {
         try {
+            // ==========================================
+            // MONITOR DUAL: primero el relacional (carreras),
+            // si tiene data la usa; si viene VACÍO cae al jsonb
+            // (fallback). La pantalla jamás queda en blanco.
+            // ==========================================
+            let usoRelacional = false;
+            try {
+                const rDias = await window.supabase.rpc('club_listar_dias_carreras');
+                if (!rDias.error && Array.isArray(rDias.data) && rDias.data.length) {
+                    const dias = rDias.data;
+                    const pzTodas = [];
+                    for (const d of dias) {
+                        const rPz = await window.supabase.rpc('club_listar_pizarra_dia', { p_fecha: d.fecha });
+                        if (rPz.error) continue;
+                        if (Array.isArray(rPz.data) && rPz.data.length) {
+                            pzTodas.push(...rPz.data.map(c => ({
+                                ...c,
+                                estado: c.estado || 'Abierta',
+                                articulo: 'tabla_carrera' // marcador relacional
+                            })));
+                        }
+                    }
+                    if (pzTodas.length) {
+                        datosTablaCompleta = pzTodas;
+                        usoRelacional = true;
+                    }
+                }
+            } catch (eDual) {
+                console.warn('[monitor-dual] relacional:', eDual && eDual.message || eDual);
+            }
+
+            if (usoRelacional && datosTablaCompleta.length) {
+                return renderizarDatosRelacionales(datosTablaCompleta);
+            }
+
             // 1) Intento la RPC club_listar_tablas_fijas_publicadas
             //    (SECURITY DEFINER → ignora RLS) para que el monitor y el
             //    filtro de días traigan TODAS las tablas publicadas (Abierta)
@@ -756,15 +822,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 return `
                 <div class="card-monitor bg-white rounded-xl shadow-sm border border-indigo-200 overflow-hidden flex flex-col" data-tabla="${t.id}">
-                    <div class="bg-indigo-600 px-1.5 py-px" style="color:#fff">
+                    <div class="px-1.5 py-px" style="color:#fff;background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 60%,#9333ea 100%)">
                         <div class="flex items-center justify-between gap-1 leading-none">
-                            <span class="rounded px-1.5 py-px text-[11px] font-bold uppercase tracking-wider truncate" style="background:rgba(255,255,255,.18);color:#fff">${t.hipodromo || ''}</span>
+                            <span class="rounded px-1.5 py-px text-[11px] font-bold uppercase tracking-wider truncate" style="background:rgba(255,255,255,.18);color:#fff"><i class="fas fa-building-columns mr-1 opacity-80"></i>${t.hipodromo || ''}</span>
                             <span class="font-black text-xs whitespace-nowrap leading-none"><i class="fas fa-flag-checkered mr-1"></i>C${t.carrera ?? ''}</span>
                         </div>
                         <div class="flex flex-wrap gap-1 mt-0.5 text-[9px] font-bold items-center leading-none">
-                            <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)">Dist: ${t.distancia_carrera ?? ''} m</span>
+                            <span class="rounded px-1 py-px" style="background:rgba(255,255,255,.18)"><i class="fas fa-ruler mr-0.5 opacity-80"></i>${t.distancia_carrera ?? ''} m</span>
                             <span class="rounded px-1 py-px uppercase" style="background:rgba(255,255,255,.18)">${t.superficie || 'ARENA'}</span>
-                            <span class="rounded px-1 py-px tracking-tight" style="background:rgba(255,255,255,.18)">${t.fecha || ''}</span>
+                            <span class="rounded px-1 py-px tracking-tight" style="background:rgba(255,255,255,.18)"><i class="fas fa-calendar-day mr-0.5 opacity-80"></i>${t.fecha || ''}</span>
                         </div>
                         <div class="mt-0.5 flex items-center justify-between rounded px-1.5 py-px leading-none" style="background:rgba(255,255,255,.20)">
                             <span class="text-[8px] font-black uppercase tracking-wider opacity-90"><i class="fas fa-dollar-sign mr-1"></i> Monto a Pagar / Tabla</span>
