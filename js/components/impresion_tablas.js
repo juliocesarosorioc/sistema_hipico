@@ -220,15 +220,30 @@ window.clubImpresionTablas = (function () {
     }
 
     async function imprimirTablasPublicadas(hipoFiltro = '', diaFiltro = '', formato = 'pdf') {
-        // SIEMPRE recarga la última versión de valores desde Supabase (sin caché)
+        // SIEMPRE recarga la última versión de valores desde Supabase (sin caché).
+        // Se intenta primero la RPC club_listar_tablas_fijas_publicadas
+        // (SECURITY DEFINER: listar = blindado ante RLS, igual que grupos y
+        // ejemplares). Si la RPC no existe todavía, cae al SELECT directo; si el
+        // SELECT directo devuelve vacío sin error, es RLS aplicándose y el
+        // mensaje le indica el SQL que falta ejecutar.
         let tablas = [];
+        let bloqueadoRLS = false;
         try {
-            const r = await window.supabase
-                .from('tablas_fijas')
-                .select('*, tabla_grupos(*)')
-                .eq('estado', 'Abierta');
-            if (r.error) throw r.error;
-            tablas = r.data || [];
+            const rpc = await window.supabase.rpc('club_listar_tablas_fijas_publicadas');
+            if (!rpc.error && Array.isArray(rpc.data) && rpc.data.length) {
+                tablas = rpc.data;
+            } else {
+                if (rpc.error && /rls|row.level|permission denied|42501|^PGRST/i.test(String(rpc.error.message || rpc.error.code || rpc.error))) {
+                    bloqueadoRLS = true;
+                }
+                const r = await window.supabase
+                    .from('tablas_fijas')
+                    .select('*, tabla_grupos(*)')
+                    .eq('estado', 'Abierta');
+                if (r.error) throw r.error;
+                tablas = r.data || [];
+                if (tablas.length === 0 && !rpc.error) bloqueadoRLS = true;
+            }
         } catch (e) {
             window.clubUI?.toast('No se pudieron actualizar los valores: ' + (e.message || e), 'error');
             return null;
@@ -238,10 +253,22 @@ window.clubImpresionTablas = (function () {
             tablas = tablas.filter(t => String(t.hipodromo || '').trim().toLowerCase() === String(hipoFiltro).trim().toLowerCase());
         }
         if (diaFiltro) {
-            tablas = tablas.filter(t => String(t.fecha || '').slice(0, 10) === String(diaFiltro).slice(0, 10));
+            // FIX (2026-09-19): la columna "fecha" está NULL en la BD real; el
+            // día del evento (2026-09-19) vive en "fecha_creacion". Filtramos
+            // por fecha_creacion::date con fallback a "fecha".
+            const fd = String(t.fecha_creacion || t.fecha || '').trim();
+            if (fd) {
+                tablas = tablas.filter(t => String(t.fecha_creacion || t.fecha || '').slice(0, 10) === String(diaFiltro).slice(0, 10));
+            }
         }
         if (tablas.length === 0) {
-            window.clubUI?.toast('No hay tablas publicadas para imprimir (estado "Abierta").', 'warning');
+            if (bloqueadoRLS) {
+                window.clubUI?.toast('La impresión necesita permiso de lectura (RLS). Ejecute en Supabase el SQL: sql/crear_rpc_club_listar_tablas_fijas_publicadas.sql y vuelva a intentar.', 'error');
+            } else if (!bloqueadoRLS && diaFiltro) {
+                window.clubUI?.toast('No hay tablas fijas publicadas para el día seleccionado.', 'warning');
+            } else {
+                window.clubUI?.toast('No hay tablas publicadas para imprimir (estado "Abierta").', 'warning');
+            }
             return null;
         }
         tablas.sort((a, b) => String(a.hipodromo || '').localeCompare(String(b.hipodromo || '')) || (Number(a.carrera) || 0) - (Number(b.carrera) || 0));

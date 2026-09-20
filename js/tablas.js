@@ -678,13 +678,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function cargarTablas() {
         try {
-            const { data, error } = await window.supabase
-                .from('tablas_fijas')
-                .select('*, tabla_grupos(*, grupos_venta(nombre, moneda))')
-                .order('id', { ascending: false });
-            if (error) throw error;
+            // 1) Intento la RPC club_listar_tablas_fijas_publicadas
+            //    (SECURITY DEFINER → ignora RLS) para que el monitor y el
+            //    filtro de días traigan TODAS las tablas publicadas (Abierta)
+            //    con sus valores actuales.
+            let bloqueoRLS = false;
+            try {
+                const rpc = await window.supabase.rpc('club_listar_tablas_fijas_publicadas');
+                if (rpc.error) {
+                    if (/rls|row.level|permission denied|42501|^PGRST/i.test(String(rpc.error.message || rpc.error.code || rpc.error))) {
+                        bloqueoRLS = true;
+                    }
+                } else if (Array.isArray(rpc.data) && rpc.data.length) {
+                    datosTablaCompleta = rpc.data;
+                } else {
+                    strikeDirecto();
+                    if (datosTablaCompleta.length === 0) bloqueoRLS = true; // RPC devolvió [] → RLS bloqueando
+                }
+            } catch (eRpc) {
+                strikeDirecto();
+                if (/rls|row.level|permission denied|42501|^PGRST/i.test(String((eRpc && (eRpc.message || eRpc)) || '')) && datosTablaCompleta.length === 0) {
+                    bloqueoRLS = true;
+                }
+            }
 
-            datosTablaCompleta = data || [];
+            async function strikeDirecto() {
+                const { data, error } = await window.supabase
+                    .from('tablas_fijas')
+                    .select('*, tabla_grupos(*)')
+                    .order('id', { ascending: false });
+                if (error) throw error;
+                datosTablaCompleta = data || [];
+            }
+
+            if (bloqueoRLS && datosTablaCompleta.length === 0) {
+                window.clubUI?.toast(
+                    'RLS bloqueando "tablas_fijas": el monitor y el filtro de días ' +
+                    'quedaron vacíos.\n\nPara arreglarlo, pegue en el Editor SQL de ' +
+                    'Supabase el archivo:\n  sql/crear_rpc_club_listar_tablas_fijas_publicadas.sql\n' +
+                    'y pulse "Run". Luego recargue esta página.', 'error');
+                return;
+            }
+
             const btnImpresion = document.getElementById('btnImprimirTablas');
             if (btnImpresion) btnImpresion.style.display = datosTablaCompleta.some(t => String(t.estado || '').trim().toLowerCase() === 'abierta') ? '' : 'none';
             const lblMonitor = document.getElementById('lblTotalMonitor');
@@ -2232,7 +2267,15 @@ const { error } = await window.supabase.from('tablas_fijas').update({
         filtroImpresionHipodromo.innerHTML = '<option value="">Todos los Hipódromos...</option>';
         hipos.forEach(h => filtroImpresionHipodromo.innerHTML += `<option value="${h}">${h}</option>`);
 
-        const dias = [...new Set(publicadas.map(t => String(t.fecha || '').trim()).filter(Boolean))].sort();
+        // FIX (2026-09-19): la columna "fecha" quedó en NULL en la BD real; el
+        // día del evento vive en "fecha_creacion" (columna 2026-09-19).
+        // Tomamos fecha_creacion::date como día, con fallback a "fecha".
+        const dias = [...new Set(publicadas.map(t => {
+            const fc = String(t.fecha_creacion || '').trim();
+            const f = String(t.fecha || '').trim();
+            const dia = (fc || f).slice(0, 10);
+            return dia;
+        }).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
         filtroImpresionDia.innerHTML = '<option value="">Todos los días...</option>';
         dias.forEach(d => filtroImpresionDia.innerHTML += `<option value="${d}">${d}</option>`);
 
