@@ -12,7 +12,7 @@
    ------------------------------------------------------- */
 :root {
     /* Marca · base "Club" (indigo → violeta) */
-    --club-bg:        oklch(0.965 0.008 267);   /* fondo app */
+    --club-bg:        oklch(0.952 0.045 300);   /* fondo app — tinte lila visible */
     --club-bg-dark:   oklch(0.145 0.02 265);    /* sidebar */
     --club-bg-card:   oklch(1 0 0);
     --club-ink:       oklch(0.21 0.04 265);     /* texto principal */
