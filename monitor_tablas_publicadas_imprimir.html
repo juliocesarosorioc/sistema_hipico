@@ -157,8 +157,8 @@ function cardHTML(t){
   var suma=t.ejemplares.reduce(function(a,e){return a+(e.retirado?0:(parseFloat(e.valor_ejemplar)||0));},0);
   var jugadoT=t.ejemplares.reduce(function(a,e){return a+(parseFloat(e.jugado)||0);},0);
   var filas=t.ejemplares.map(function(e){
-    var c=col(e.numero), jug=parseFloat(e.jugado)||0;
-    return '<div class="fila"><span class="num" style="background:'+c.bg+';color:'+c.fg+'">'+esc(e.numero)+'</span><span class="cab'+(e.retirado?" ret":"")+'" title="'+esc(e.nombre)+'">'+esc(e.nombre)+'</span><span class="mon'+(jug===0?" cero":"")+'">'+(jug===0?"&ndash;":mon(jug,t.moneda))+'</span></div>';
+    var c=col(e.numero), val=parseFloat(e.valor_ejemplar)||0;
+    return '<div class="fila"><span class="num" style="background:'+c.bg+';color:'+c.fg+'">'+esc(e.numero)+'</span><span class="cab'+(e.retirado?" ret":"")+'" title="'+esc(e.nombre)+'">'+esc(e.nombre)+'</span><span class="mon'+(val===0?" cero":"")+'">'+(val===0?"&ndash;":mon(val,t.moneda))+'</span></div>';
   }).join("");
   return '<div class="tarjeta">'
     +'<div class="enc">'
@@ -215,9 +215,9 @@ function drawCardC(ctx,t,x,y,w,h){
     ctx.font="bold "+fsC+"px Arial,sans-serif";
     ctx.fillText(truncate(ctx,String(e.nombre||""),x+28+ch+22,x+w-190),x+28+ch+22,cy);
     ctx.textAlign="right";ctx.font="bold "+fsC+"px Arial,sans-serif";
-    var jug=parseFloat(e.jugado)||0;
-    ctx.fillStyle=jug===0?"#94a3b8":"#475569";
-    ctx.fillText(jug===0?"\u2013":mon(jug,t.moneda),x+w-28,cy);
+    var val=parseFloat(e.valor_ejemplar)||0;
+    ctx.fillStyle=val===0?"#94a3b8":"#475569";
+    ctx.fillText(val===0?"\u2013":mon(val,t.moneda),x+w-28,cy);
   });
   ctx.fillStyle="#f1f5f9";roundRect(ctx,x, y+h-footC, w, footC-4,12);ctx.fill();
   ctx.strokeStyle="#e2e8f0";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x+8,y+h-footC);ctx.lineTo(x+w-8,y+h-footC);ctx.stroke();
