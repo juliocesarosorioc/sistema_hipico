@@ -216,6 +216,33 @@
     return true;
   }
 
+  /* ===== AUTO-MONTAJE VISUAL (item 1 R14): sin tocar taquilla.js ni
+     el HTML. Se inyecta su propio contenedor flotante la primera vez y llama
+     renderPanel(el). Un solo disparo en DOMContentLoaded (retraso 250ms para
+     que taquilla.js haya resuelto clientes/saldo sin interferir). ===== */
+  function clubTiposAutoMontar() {
+    setTimeout(function () {
+      try {
+        var ancla = document.getElementById('clubTiposPanel');
+        var esNuevo = false;
+        if (!ancla) {
+          ancla = document.createElement('div');
+          ancla.id = 'clubTiposPanel';
+          ancla.className = 'fixed bottom-16 right-4 z-[90] w-[340px] max-h-[70vh] ' +
+                            'overflow-auto bg-white/95 backdrop-blur border border-slate-200 ' +
+                            'rounded-xl shadow-2xl p-2 text-slate-800';
+          document.body.appendChild(ancla);
+          esNuevo = true;
+        }
+        if (window.clubTiposJugada && window.clubTiposJugada.renderPanel) {
+          window.clubTiposJugada.renderPanel(ancla);
+          if (esNuevo) ancla.title = 'Gestión de Tipos (R14)';
+        }
+      } catch (e) { /* sin romper el flujo de taquilla */ }
+    }, 250);
+  }
+  document.addEventListener('DOMContentLoaded', clubTiposAutoMontar);
+
   window.clubTiposJugada = {
     grupos: FAMILIAS,
     todos: todos,
