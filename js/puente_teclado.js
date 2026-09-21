@@ -75,6 +75,19 @@
             }
             return;
           }
+          /* R14-UX: el motor ACEPTÓ -> confirmación visual visible.
+             Sin esto, el Enter se consume y el usuario cree que NO se
+             registró. El insert real del ticket lo hace taquilla.js
+             registraTickets; aquí solo damos el feedback que faltaba. */
+          if (r && !r.error && r.esRegistro) {
+            if (window.clubUI && window.clubUI.toast) {
+              var _mn = r.montoParseado;
+              if (_mn && window.clubUI.formatoNumero) _mn = window.clubUI.formatoNumero(_mn, 0);
+              window.clubUI.toast('Boleto registrado: ' + (r.tipoReconocido || r.tipo || 'jugada') +
+                (_mn ? ' · $' + _mn : ''), 'ok');
+            }
+          }
+
           /* Si el motor NO reconoce (error de sintaxis hípica pero sin cliente)
              NO bloqueamos: la línea pasa al flujo de cliente normal. */
         } catch (err) {
