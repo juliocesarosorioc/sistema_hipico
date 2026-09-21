@@ -758,6 +758,27 @@ document.addEventListener('DOMContentLoaded', () => {
     function parsearComando(linea) {
         const t = (linea || '').trim().replace(/\s+/g, ' ');
         if (!t || t.startsWith('#')) return null;
+
+        // Formato jugada de carrera:  JUGADA  EJEMPLAR  MONTO  JUGADOR1 [JUGADOR2]
+        // Ej: "2n 7 25 Eddie Manuel", "1/2 4 60 Camacho rucio", "1/2 y 2n 7 100 Eddie Manuel"
+        const mMix = t.match(/^(\S+(?:\s+y\s+\S+)*)\s+([A-Za-z0-9]+)\s+(\d+(?:[.,]\d+)?)\s+(.+)$/);
+        if (mMix) {
+            const jugadores = mMix[4].trim().split(/\s+/).filter(Boolean);
+            if (jugadores.length >= 1) {
+                const sc = document.getElementById('selectCarrera');
+                const sh = document.getElementById('selectHipodromo');
+                return {
+                    tipo: 'jugada',
+                    jugada: mMix[1].replace(/\s+y\s+/g, ' y ').trim(),
+                    ejemplar: mMix[2],
+                    monto: parseFloat(mMix[3].replace(',', '.')),
+                    jugadores,
+                    carreraId: sc ? sc.value : '',
+                    hipodromoId: sh ? sh.value : ''
+                };
+            }
+        }
+
         let m = t.match(/^(.+?)\s+aval\s*([+-])\s*(\d+(?:\.\d+)?)$/i);
         if (m) return { tipo: m[2] === '+' ? 'otorgar_aval' : 'pagar_aval', nombre: m[1].trim(), monto: parseFloat(m[3]) };
         m = t.match(/^(.+?)\s*([+-])\s*(\d+(?:\.\d+)?)$/);
@@ -969,5 +990,52 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnAbrirCargaResultadosModal = document.getElementById('btnAbrirCargaResultadosModal');
     btnAbrirCargaResultadosModal?.addEventListener('click', abrirCargaResultados);
 
-    inicializarDatos();
+    async function poblarCarrerasDeHoy() {
+        const cont = document.getElementById('carrerasDeHoy');
+        const selCarr = document.getElementById('selectCarrera');
+        const selHip = document.getElementById('selectHipodromo');
+        const fc = document.getElementById('fechaCarrera');
+        if (!cont || !selCarr) return;
+        const hip = selHip?.value || '';
+        const fecha = fc?.value || new Date().toISOString().slice(0, 10);
+        let nums = [...selCarr.options].map(o => o.value);
+        try {
+            const prog = window.clubPrograma?.cargar ? await window.clubPrograma.cargar() : null;
+            const lista = (prog && Array.isArray(prog.carreras)) ? prog.carreras : [];
+            if (lista.length) nums = lista.map(c => String(c.carrera ?? c.numero ?? c));
+        } catch (e) { /* respaldo: opciones del selector */ }
+        if (!fc?.value) { fc.value = new Date().toISOString().slice(0, 10); }
+        if (!nums.length) {
+            cont.innerHTML = '<span class="text-[10px] text-slate-400">Sin carreras cargadas hoy.</span>';
+            return;
+        }
+        let contadas = {};
+        try {
+            const q = window.supabase.from('tickets_jugadas').select('carrera').eq('fecha_carrera', fecha);
+            if (hip) q.eq('hipodromo', hip);
+            const { data, error } = await q;
+            if (error) throw error;
+            (data || []).forEach(t => { contadas[String(t.carrera)] = (contadas[String(t.carrera)] || 0) + 1; });
+        } catch (e) { /* sin base o columna distinta: chips básicos sin conteo */ }
+        cont.innerHTML = nums.map(num => {
+            const n = contadas[num] || 0;
+            const activa = String(selCarr.value) === String(num);
+            const cls = activa
+                ? 'ring-2 ring-blue-500 bg-blue-600 text-white'
+                : n
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    : 'bg-amber-50 text-slate-600 border border-slate-300';
+            return '<button type="button" data-carrera="' + num + '" class="carreraDeHoyChip px-2 py-0.5 rounded text-[10px] font-bold ' + cls + '">C' + num + (n ? ' · ' + n : '') + '</button>';
+        }).join(' ');
+        cont.querySelectorAll('.carreraDeHoyChip').forEach(btn => {
+            btn.addEventListener('click', () => {
+                selCarr.value = btn.getAttribute('data-carrera');
+                selCarr.dispatchEvent(new Event('change'));
+                poblarCarrerasDeHoy();
+            });
+        });
+    }
+    [document.getElementById('selectHipodromo'), document.getElementById('selectCarrera')].forEach(el => el?.addEventListener('change', poblarCarrerasDeHoy));
+    window.clubCarrerasDeHoy = poblarCarrerasDeHoy;
+    poblarCarrerasDeHoy();
 });

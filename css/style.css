@@ -220,8 +220,15 @@ th, td {
     will-change: margin-left;
 }
 
-/* R2: reduccion -30% cuerpo (títulos conservados) - Club del Dinero */
-body { font-size: 0.7rem !important; }
+/* R2: reduccion -10% neto (factor 0.9) - Club del Dinero */
+/* R2 v1.1: títulos tamaño ORIGINAL; cuerpo/tablas -10% neto para evaluar */
+h1 { font-size: 1.75rem !important; }
+h2 { font-size: 1.5rem !important; }
+h3 { font-size: 1.125rem !important; }
+body { font-size: 0.95rem !important; }
+body p, body span, body label, body input, body select, body td, body th, body button, body a {
+font-size: 0.9em !important;
+}
 main p, main span, main li, main label, main input, main select, main td, main th, main button, main a {
-    font-size: 0.7em !important;
+font-size: 0.9em !important;
 }
