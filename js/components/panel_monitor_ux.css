@@ -1,0 +1,55 @@
+/* ============================================================
+ *  PANEL MONITOR — RESTYLE VISUAL R16 (override, no toca JS/motor)
+ *  Objetivo UX: el monitor actual es denso y plano; este CSS le da
+ *  jerarquia moderna: header degradado, cards con numero grande,
+ *  tabla zebra + row hover + sticky header, toast con slide-in. */
+:root {
+  --club-emerald:#10b981; --club-ink:#0f172a; --club-soft:#f8fafc;
+}
+
+/* Header del monitor con gradiente y marca */
+.monitor-header {
+  background:linear-gradient(135deg,#0f172a 0%,#134e4a 55%,#0f766e 100%);
+}
+
+/* Cards de metrica: numero grande font-black + pivot emerald */
+#metricaTickets, #metricaVolumen, #metricaPendientes {
+  font-variant-numeric:tabular-nums; letter-spacing:-0.02em;
+}
+.metric-card { position:relative; overflow:hidden; }
+.metric-card::after {
+  content:""; position:absolute; right:-18px; top:-18px; width:64px; height:64px;
+  border-radius:9999px; background:rgba(16,185,129,0.10);
+}
+
+/* Tabla: zebra sutil + hover marcado + header sticky con blur */
+#tablaTickets { border-collapse:separate; border-spacing:0; }
+#tablaTickets thead th {
+  background:#0f172a; color:#e2e8f0; position:sticky; top:0; z-index:5;
+  border-bottom:3px solid #10b981; text-transform:uppercase;
+  font-size:10px; letter-spacing:0.08em; padding:10px 12px;
+}
+#tablaTickets tbody tr:nth-child(even){ background:#f1f5f9; }
+#tablaTickets tbody tr:hover{ background:#d1fae5; box-shadow:inset 3px 0 0 #10b981; }
+#tablaTickets td { padding:9px 12px; border-bottom:1px solid #e2e8f0; }
+
+/* Mosaico de chips en celda comando: siglas hípicas destacadas */
+.chip-jugada {
+  display:inline-block; padding:1px 6px; border-radius:4px; font-family:ui-monospace,monospace;
+  font-size:10px; font-weight:700; background:#d1fae5; color:#065f46;
+  border:1px solid #a7f3d0; margin-right:3px;
+}
+
+/* Toast: slide-in desde abajo-derecha con progreso */
+.club-toast {
+  animation:clubSlideIn 0.28s ease-out both; box-shadow:0 8px 24px rgba(2,44,34,0.25);
+}
+@keyframes clubSlideIn { from{ transform:translateY(16px);opacity:0; } to{ transform:translateY(0);opacity:1; } }
+
+/* Inputs: altura fija y foco emerald mas visible */
+.monitor-input { height:36px; font-size:13px; }
+
+/* Scrollbar fino para el cuerpo del monitor */
+.monitor-scroll::-webkit-scrollbar{ width:8px; height:8px; }
+.monitor-scroll::-webkit-scrollbar-thumb{ background:#94a3b8; border-radius:8px; }
+.monitor-scroll::-webkit-scrollbar-track{ background:transparent; }
