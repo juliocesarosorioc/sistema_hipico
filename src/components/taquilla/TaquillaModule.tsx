@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { BetSlip } from "@/components/taquilla/BetSlip";
+import { ListaTickets } from "@/components/taquilla/ListaTickets";
 
 type Modalidad = "puestos" | "wps" | "remates" | "dupletas";
 
@@ -58,7 +59,10 @@ export function TaquillaModule() {
       </div>
 
       {modalidad === "puestos" ? (
-        <BetSlip />
+        <>
+          <BetSlip />
+          <ListaTickets />
+        </>
       ) : (
         <div className="rounded-2xl border border-line bg-surface p-8 text-center">
           <p className="text-sm font-bold text-slate-300">{PENDIENTE[modalidad].titulo}</p>

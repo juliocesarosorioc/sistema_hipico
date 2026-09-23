@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useBetSlipStore } from "@/store/bet-slip";
+import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { validarComando } from "@/lib/taquilla/validar";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -13,19 +13,17 @@ const EJEMPLOS = ["100 2n", "50 3p", "200 1 y 2n", "100 10/PP", "400 1/2n y 2n"]
 export function BetSlip() {
   const [comando, setComando] = useState("");
   const [mensaje, setMensaje] = useState("");
-  const add = useBetSlipStore((s) => s.add);
+  const agregarTicket = useTaquillaStore((s) => s.agregarTicket);
 
   const validacion = useMemo(() => validarComando(comando), [comando]);
 
   const registrar = () => {
     if (!validacion.ok) return;
-    add({
-      hipodromo: "—",
-      carrera: "—",
-      tipo_jugada: validacion.tipo,
-      caballo: validacion.tipo,
+    agregarTicket({
+      comando: `${validacion.monto} ${validacion.tipo}`,
       monto: validacion.monto,
-      fechas: [],
+      gananciaProyectada: validacion.proyeccion.gananciaProyectada,
+      comision: validacion.proyeccion.comision,
     });
     setComando("");
     setMensaje(`Jugada registrada: $${validacion.monto} ${validacion.tipo}`);
