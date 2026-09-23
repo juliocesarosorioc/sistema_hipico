@@ -98,11 +98,49 @@ function combinada(t: TicketMotor): ResultadoMotor | null {
   return { ok: true, motivo: "COMBINADA GANADORA (" + p1 + s1 + " y " + p2 + s2 + ") · balance neto " + balTotal, totalClienteNeto: brutoTotal - comi, balanceBanca: balTotal - comi, gananciaCasa: comi };
 }
 
+/* ------- COMPUESTA / ANIDADA (ej. 1/2n y 2n, o 2n y 2/2n) ------- */
+/* Split 50/50 entre dos bloques separados por " y " o " & " · cada bloque se
+   liquida por delegación (combinada con su bloqueo de pizarra, o nini/puesto
+   simple) · se consolidan totalClienteNeto y balanceBanca */
+function resolve(t: TicketMotor, tipo: string, monto: number): ResultadoMotor | null {
+  const sub: TicketMotor = { ...t, tipo_jugada: tipo, monto };
+  const ap = aPremio(sub);
+  if (ap) return ap;
+  const cb = combinada(sub);
+  if (cb) return cb;
+  if (/n$/i.test(tipo)) return nini(sub);
+  if (/p$/i.test(tipo)) return puesto(sub);
+  return null;
+}
+
+function compuesta(t: TicketMotor): ResultadoMotor | null {
+  const m = String(t.tipo_jugada).trim().match(/^(.+?)\s+(?:y|&)\s+(.+)$/i);
+  if (!m) return null;
+  const a = m[1].trim();
+  const b = m[2].trim();
+  const mitad = t.monto / 2;
+
+  const rA = resolve(t, a, mitad);
+  if (!rA) return { ok: false, motivo: "COMPUESTA: bloque A inválido (" + a + ")", totalClienteNeto: 0, balanceBanca: 0, gananciaCasa: 0 };
+  const rB = resolve(t, b, mitad);
+  if (!rB) return { ok: false, motivo: "COMPUESTA: bloque B inválido (" + b + ")", totalClienteNeto: 0, balanceBanca: 0, gananciaCasa: 0 };
+
+  return {
+    ok: rA.ok && rB.ok,
+    motivo: "COMPUESTA (" + a + ") 50/50 (" + b + "): " + rA.motivo + " | " + rB.motivo,
+    totalClienteNeto: rA.totalClienteNeto + rB.totalClienteNeto,
+    balanceBanca: rA.balanceBanca + rB.balanceBanca,
+    gananciaCasa: rA.gananciaCasa + rB.gananciaCasa
+  };
+}
+
 export function procesarPuestos(t: TicketMotor): ResultadoMotor {
   const ap = aPremio(t);
   if (ap) return ap;
   const cb = combinada(t);
   if (cb) return cb;
+  const cp = compuesta(t);
+  if (cp) return cp;
   return /n$/i.test(t.tipo_jugada) ? nini(t) : puesto(t);
 }
 
@@ -110,3 +148,4 @@ registrarProcesador("puestos-puro", procesarPuestos);
 registrarProcesador("nini", procesarPuestos);
 registrarProcesador("a-premio", procesarPuestos);
 registrarProcesador("combinada", procesarPuestos);
+registrarProcesador("compuesta", procesarPuestos);
