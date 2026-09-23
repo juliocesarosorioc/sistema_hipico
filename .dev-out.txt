@@ -1,0 +1,6 @@
+   ▲ Next.js 15.5.26
+   - Local:        http://localhost:3000
+   - Network:      http://172.21.113.137:3000
+
+ ✓ Starting...
+[?25h
