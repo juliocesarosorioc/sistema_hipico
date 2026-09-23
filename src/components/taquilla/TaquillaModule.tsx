@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { BetSlip } from "@/components/taquilla/BetSlip";
 import { ListaTickets } from "@/components/taquilla/ListaTickets";
+import { PagarCarreraModal } from "@/components/taquilla/PagarCarreraModal";
 
 type Modalidad = "puestos" | "wps" | "remates" | "dupletas";
 
@@ -62,6 +63,7 @@ export function TaquillaModule() {
         <>
           <BetSlip />
           <ListaTickets />
+          <PagarCarreraModal />
         </>
       ) : (
         <div className="rounded-2xl border border-line bg-surface p-8 text-center">
