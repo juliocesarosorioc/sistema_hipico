@@ -34,21 +34,79 @@ function puesto(t: TicketMotor): ResultadoMotor {
   return { ok: false, motivo: "PUESTO pierde", totalClienteNeto: 0, balanceBanca: t.monto, gananciaCasa: 0 };
 }
 
-export function procesarPuestos(t: TicketMotor): ResultadoMotor {
-  const eg = t.tipo_jugada.match(/^(\d+)\/(\d+(?:\.\d+)?|PP)$/i);
-  if (eg) {
-    const solitario = t.puesto_final === 1 || t.puesto_final === 0;
-    if (!solitario || (t.pizarra.primero === t.pizarra.segundo)) {
-      return { ok: false, motivo: "EllePremio empate 1°: ANULADO (devuelve capital)", totalClienteNeto: t.monto, balanceBanca: 0, gananciaCasa: 0 };
-    }
-    const bruto = t.monto * (1 + 1 / parseFloat(eg[1]));
+/* ------- A PREMIO (PP o 10/X) ------- */
+/* Gana SOLO 1° EN SOLITARIO · empate 1° = ANULA (devuelve capital, NO fracciona) ·
+   llega >1° = PIERDE · pago proporcional (ej. 10/2.5 -> dobla según fracción) */
+function aPremio(t: TicketMotor): ResultadoMotor | null {
+  const soloPP = /^pp$/i.test(t.tipo_jugada) || /^\d+\/pp$/i.test(t.tipo_jugada);
+  const egA = /^(\d+)\/(\d+(?:\.\d+)?|PP)$/i.exec(t.tipo_jugada);
+  if (!egA && !soloPP) return null;
+  const proporcion = soloPP ? 10 : (egA![2].toUpperCase() === "PP" ? 10 : parseFloat(egA![2]));
+
+  const pos = typeof t.puesto_final === "number" ? t.puesto_final : t.puesto_final === "EMP1" ? 1 : Infinity;
+  const empate1 = typeof t.pizarra.segundo === "number" && t.pizarra.primero === t.pizarra.segundo;
+
+  if ((pos === 1 || pos === 0) && !empate1) {
+    const bruto = t.monto * (1 + proporcion / 10);
     const ganancia = bruto - t.monto;
     const comi = ganancia * COMISION.rate;
-    return { ok: true, motivo: "EllePremio ganado", totalClienteNeto: bruto - comi, balanceBanca: -(ganancia - comi), gananciaCasa: comi };
+    return { ok: true, motivo: "A PREMIO gana 1° en solitario (proporción " + proporcion + ":10)", totalClienteNeto: bruto - comi, balanceBanca: -(ganancia - comi), gananciaCasa: comi };
   }
+  if (empate1) {
+    return { ok: false, motivo: "A PREMIO empate 1°: ANULADA (devuelve capital)", totalClienteNeto: t.monto, balanceBanca: 0, gananciaCasa: 0 };
+  }
+  return { ok: false, motivo: "A PREMIO pierde (no llegó 1° en solitario)", totalClienteNeto: 0, balanceBanca: t.monto, gananciaCasa: 0 };
+}
+
+/* ------- COMBINADA CONSECUTIVA (ej. 1 y 2n) ------- */
+/* Monto 50/50 entre partes · Bloqueo de Pizarra si P2 != P1 y P2 != P1+1 ·
+   cada parte se liquida con su lógica (n/puro) y se suman los balances netos */
+function evaluarTramo(n: number, suf: string, mitad: number, t: TicketMotor): { bruto: number; bal: number } {
+  const pos = typeof t.puesto_final === "number" ? t.puesto_final : t.puesto_final === "EMP1" ? 1 : Infinity;
+  if (suf === "n") {
+    if (pos < n) return { bruto: mitad * 2, bal: -mitad };
+    if (pos === n) return { bruto: mitad, bal: 0 };
+    return { bruto: 0, bal: mitad };
+  }
+  return pos <= n ? { bruto: mitad * 2, bal: -mitad } : { bruto: 0, bal: mitad };
+}
+
+function combinada(t: TicketMotor): ResultadoMotor | null {
+  const m = /^([1-8])([pn]?)\s*(?:y|\/)\s*([1-8])([pn]?)$/i.exec(t.tipo_jugada);
+  if (!m) return null;
+  const p1 = parseInt(m[1], 10);
+  const p2 = parseInt(m[3], 10);
+  const s1 = (m[2] || "p").toLowerCase();
+  const s2 = (m[4] || "p").toLowerCase();
+
+  if (p2 !== p1 && p2 !== p1 + 1) {
+    return { ok: false, motivo: "BLOQUEO DE PIZARRA: la parte 2 (" + p2 + ") debe ser igual a la parte 1 (" + p1 + ") o su inmediato superior (P1+1). La jugada no se registra.", totalClienteNeto: 0, balanceBanca: 0, gananciaCasa: 0 };
+  }
+
+  const mitad = t.monto / 2;
+  const a1 = evaluarTramo(p1, s1, mitad, t);
+  const a2 = evaluarTramo(p2, s2, mitad, t);
+  const brutoTotal = a1.bruto + a2.bruto;
+  const balTotal = a1.bal + a2.bal;
+  const ganancia = brutoTotal - t.monto;
+  const estado = brutoTotal > t.monto ? "GANADORA" : brutoTotal === t.monto ? "EMPATA" : "PERDIDA";
+
+  if (ganancia <= 0) {
+    return { ok: brutoTotal > 0, motivo: "COMBINADA " + estado + " · balance neto " + balTotal, totalClienteNeto: brutoTotal, balanceBanca: balTotal, gananciaCasa: 0 };
+  }
+  const comi = ganancia * COMISION.rate;
+  return { ok: true, motivo: "COMBINADA GANADORA (" + p1 + s1 + " y " + p2 + s2 + ") · balance neto " + balTotal, totalClienteNeto: brutoTotal - comi, balanceBanca: balTotal - comi, gananciaCasa: comi };
+}
+
+export function procesarPuestos(t: TicketMotor): ResultadoMotor {
+  const ap = aPremio(t);
+  if (ap) return ap;
+  const cb = combinada(t);
+  if (cb) return cb;
   return /n$/i.test(t.tipo_jugada) ? nini(t) : puesto(t);
 }
 
 registrarProcesador("puestos-puro", procesarPuestos);
 registrarProcesador("nini", procesarPuestos);
 registrarProcesador("a-premio", procesarPuestos);
+registrarProcesador("combinada", procesarPuestos);
