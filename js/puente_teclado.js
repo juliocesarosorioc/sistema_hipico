@@ -63,7 +63,7 @@
            bloquea la línea y muestra toast. Si NO da error -> el ticket
            sigue al insert normal (estado Pendiente). */
         try {
-          var r = window.MotorHipico.procesarComando(texto, null, false);
+          var r = window.MotorHipico.procesarComando(texto, null, false, window.clubTasaComisionActual);
           if (r && r.error) {
             e.stopImmediatePropagation();
             e.stopPropagation();

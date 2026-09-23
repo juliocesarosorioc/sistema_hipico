@@ -245,6 +245,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const cConsigue = clienteConsigueNombre ? buscarCliente(clienteConsigueNombre) : null;
             const jugadaRegla = jugadasList.find(j => j.nombre === jugada);
 
+            // Comisión jerárquica: la del cliente anula la default por tipo.
+            const tasaCliente = (cJuega && typeof cJuega.comision_personalizada === 'number')
+                ? cJuega.comision_personalizada : undefined;
+            window.clubTasaComisionActual = tasaCliente;
+
             if (!cJuega) {
                 errores.push(`Línea ${index + 1}: El cliente "${clienteJuegaNombre}" no existe.`);
                 return;
@@ -1056,9 +1061,6 @@ document.addEventListener('DOMContentLoaded', () => {
     [document.getElementById('selectHipodromo'), document.getElementById('selectCarrera')].forEach(el => el?.addEventListener('change', poblarCarrerasDeHoy));
     window.clubCarrerasDeHoy = poblarCarrerasDeHoy;
     poblarCarrerasDeHoy();
-            });
-        });
-    }
     [document.getElementById('selectHipodromo'), document.getElementById('selectCarrera')].forEach(el => el?.addEventListener('change', poblarCarrerasDeHoy));
     window.clubCarrerasDeHoy = poblarCarrerasDeHoy;
     poblarCarrerasDeHoy();

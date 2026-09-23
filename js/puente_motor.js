@@ -63,7 +63,7 @@
       var puesto = (typeof window.clubPuestoLlegada !== 'undefined') ? window.clubPuestoLlegada : null;
       var empate = (typeof window.clubEmpate1erLugar !== 'undefined') ? !!window.clubEmpate1erLugar : false;
       try {
-        var a = window.MotorHipico.procesarComando(linea, puesto, empate);
+        var a = window.MotorHipico.procesarComando(linea, puesto, empate, window.clubTasaComisionActual);
         if (a && a.error) return { error: a.error, ticket: tk, linea: linea };
       } catch (e) {
         return { error: 'MotorHipico: ' + (e && e.message ? e.message : String(e)), ticket: tk, linea: linea };

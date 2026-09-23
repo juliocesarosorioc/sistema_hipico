@@ -41,7 +41,9 @@
 (function () {
   'use strict';
 
-  var TASA_COMISION = 10; // % sobre ganancia neta del jugador
+  var TASA_COMISION = 10; // % default sobre ganancia neta del jugador
+  var COMISIONES_DEFECTO = { PREMIO: 10, COMBINADA: 10, NINI: 10, PUESTO: 10 };
+  var TASA_COMISION_CLIENTE = undefined; // si tiene valor anula la default
 
   /* ---------- Utilidad de construcción de respuesta ---------- */
   function buildRegistroValido(tipo, monto) {
@@ -55,7 +57,10 @@
 
     // Comisión SOLO sobre la ganancia neta; el capital queda intacto.
     if (gananciaBruta > 0) {
-      comision = gananciaBruta * (TASA_COMISION / 100);
+      var tasaResuelta = (typeof TASA_COMISION_CLIENTE === 'number' && TASA_COMISION_CLIENTE > 0)
+        ? TASA_COMISION_CLIENTE
+        : (COMISIONES_DEFECTO[tipo.split(' ')[0].toUpperCase()] || TASA_COMISION);
+      comision = gananciaBruta * (tasaResuelta / 100);
       clienteNeto = parseFloat((clienteBruto - comision).toFixed(2));
     }
 
@@ -234,7 +239,10 @@
   window.MotorHipico = {
     TASA_COMISION: TASA_COMISION,
 
-    procesarComando: function (comandoTexto, puestoLlegada, empate1erLugar) {
+    procesarComando: function (comandoTexto, puestoLlegada, empate1erLugar, tasaComisionCliente) {
+      var grr = (tasaComisionCliente !== undefined && tasaComisionCliente !== null) ? tasaComisionCliente
+        : (window && window.clubTasaComisionActual !== undefined ? window.clubTasaComisionActual : undefined);
+      TASA_COMISION_CLIENTE = (grr === undefined || grr === null) ? undefined : parseFloat(grr);
       return parsearComandoMotor(comandoTexto, puestoLlegada || null, !!empate1erLugar);
     }
   };
