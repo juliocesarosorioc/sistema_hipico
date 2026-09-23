@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
-export type ButtonVariant = "primary" | "success" | "danger" | "ghost" | "outline";
+export type ButtonVariant = "default" | "outline" | "success" | "danger" | "ghost";
 export type ButtonSize = "sm" | "md" | "lg";
 
 type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -9,12 +9,13 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
   children?: ReactNode;
 };
 
+/** Variantes del Design System (paleta semántica tailwind.config). */
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: "bg-blue-600 text-white hover:bg-blue-500 focus-visible:ring-blue-500",
-  success: "bg-emerald-600 text-white hover:bg-emerald-500 focus-visible:ring-emerald-500",
-  danger: "bg-red-600 text-white hover:bg-red-500 focus-visible:ring-red-500",
-  ghost: "bg-transparent text-slate-300 hover:bg-slate-800 focus-visible:ring-slate-400",
-  outline: "bg-transparent text-slate-200 border border-slate-600 hover:bg-slate-800 focus-visible:ring-slate-400",
+  default: "bg-primary-600 text-white hover:bg-primary-500 focus-visible:ring-primary-500",
+  outline: "bg-transparent text-slate-200 border border-line hover:bg-surfaceAlt focus-visible:ring-primary-500",
+  success: "bg-success-600 text-white hover:bg-success-500 focus-visible:ring-success-500",
+  danger: "bg-danger-600 text-white hover:bg-danger-500 focus-visible:ring-danger-500",
+  ghost: "bg-transparent text-slate-300 hover:bg-surfaceAlt focus-visible:ring-primary-500",
 };
 
 const SIZE: Record<ButtonSize, string> = {
@@ -24,7 +25,7 @@ const SIZE: Record<ButtonSize, string> = {
 };
 
 export function Button({
-  variant = "primary",
+  variant = "default",
   size = "md",
   className = "",
   children,
@@ -42,3 +43,5 @@ export function Button({
     </button>
   );
 }
+
+export default Button;

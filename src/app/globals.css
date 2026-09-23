@@ -2,64 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ---- Base global de la SPA (estilo "casino de planta abierta"): fondo oscuro ---- */
+:root {
+  color-scheme: dark;
+}
+
 html {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
 }
 
 body {
-  @apply bg-slate-950 text-slate-100 antialiased;
+  @apply bg-background text-slate-100 antialiased;
 }
 
-/* ---- Scrollbar fina para el Bet Slip (persistente, dock-in) ---- */
+/* Scrollbar fina (panel lateral persistente) */
 .bet-slip-scroll::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 .bet-slip-scroll::-webkit-scrollbar-thumb {
-  @apply bg-slate-700 rounded-full;
+  @apply bg-surfaceAlt rounded-full;
 }
 .bet-slip-scroll::-webkit-scrollbar-track {
-  @apply bg-transparent;
-}
-
-/* ---- Animation para el panel que hace dock (móvil) ---- */
-@keyframes bet-slip-dock {
-  from {
-    opacity: 0;
-    transform: translateY(24px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-@keyframes bet-slip-slide {
-  from {
-    opacity: 0;
-    transform: translateX(24px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-@keyframes flash-total {
-  0% {
-    background-color: rgba(16, 185, 129, 0.55);
-  }
-  100% {
-    background-color: transparent;
-  }
-}
-
-.animate-bet-slip-dock {
-  animation: bet-slip-dock 0.22s ease-out both;
-}
-.animate-bet-slip-slide {
-  animation: bet-slip-slide 0.22s ease-out both;
-}
-.animate-flash-total {
-  animation: flash-total 0.7s ease-out both;
+  background: transparent;
 }
