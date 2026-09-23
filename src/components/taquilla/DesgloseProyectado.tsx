@@ -8,10 +8,10 @@ const COP = new Intl.NumberFormat("es-CO", {
   maximumFractionDigits: 0,
 });
 
-function fila(label: string, valor: string, clase = "text-slate-200") {
+function fila(label: string, valor: string, clase = "text-slate-700") {
   return (
     <div className="flex items-center justify-between py-1">
-      <span className="text-[11px] font-semibold text-slate-400">{label}</span>
+      <span className="text-[11px] font-semibold text-slate-600">{label}</span>
       <span className={`text-[13px] font-bold ${clase}`}>{valor}</span>
     </div>
   );
@@ -47,10 +47,10 @@ export function DesgloseProyectado({ validacion }: { validacion: ValidacionComan
       </div>
       <div className="divide-y divide-line rounded-xl border border-line bg-surfaceAlt/40 px-3 py-1">
         {fila("Monto invertido", COP.format(p.monto))}
-        {fila("Resultado simulado", p.escenario, "text-slate-400 text-[10px]")}
+        {fila("Resultado simulado", p.escenario, "text-slate-500 text-[10px]")}
         {fila("Ganancia proyectada", COP.format(Math.max(p.gananciaProyectada, 0)), "text-success-500")}
         {fila("Comisión de la casa", COP.format(p.comision), "text-warning-500")}
-        {fila("Total a recibir (neto)", COP.format(p.totalClienteNeto), "text-primary-400 text-sm")}
+        {fila("Total a recibir (neto)", COP.format(p.totalClienteNeto), "text-primary-600 text-sm")}
       </div>
     </div>
   );

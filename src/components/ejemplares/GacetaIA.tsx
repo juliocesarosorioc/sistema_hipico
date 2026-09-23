@@ -136,7 +136,7 @@ export function GacetaIA() {
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="rounded-2xl border border-line bg-surface p-5 lg:col-span-2">
-          <h3 className="mb-4 border-b border-line pb-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+          <h3 className="mb-4 border-b border-line pb-2 text-xs font-bold uppercase tracking-wider text-slate-600">
             📤 Subir la Gaceta (PDF o Imagen)
           </h3>
           <div
@@ -148,7 +148,7 @@ export function GacetaIA() {
             }}
             className="cursor-pointer rounded-xl border-2 border-dashed border-line p-8 text-center transition-colors hover:border-primary-500/60 hover:bg-primary-500/5"
           >
-            <p className="mb-1 text-sm font-bold text-slate-400">☁️ Arrastre el PDF o la imagen de la gaceta aquí</p>
+            <p className="mb-1 text-sm font-bold text-slate-600">☁️ Arrastre el PDF o la imagen de la gaceta aquí</p>
             <p className="text-xs text-slate-500">o haga clic para elegir el archivo (JPG, PNG, WEBP o PDF)</p>
             <input
               ref={inputRef}
@@ -205,14 +205,14 @@ export function GacetaIA() {
         </div>
 
         <div className="rounded-2xl border border-line bg-surface p-5">
-          <h3 className="mb-4 border-b border-line pb-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+          <h3 className="mb-4 border-b border-line pb-2 text-xs font-bold uppercase tracking-wider text-slate-600">
             🔑 Clave de la IA (Gemini, gratis)
           </h3>
           <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
             Con IA gratuita de Google (Gemini). <b>Sin costo y sin tarjeta.</b> La clave se guarda{" "}
             <b>solo en este navegador</b>.
           </p>
-          <ul className="mb-3 list-inside list-decimal space-y-1 rounded-lg border border-line bg-surfaceAlt p-3 text-[11px] text-slate-400">
+          <ul className="mb-3 list-inside list-decimal space-y-1 rounded-lg border border-line bg-surfaceAlt p-3 text-[11px] text-slate-600">
             <li>Entra a aistudio.google.com/apikey (con tu cuenta de Google).</li>
             <li>Click en Create API key y copia la clave (empieza con AIza...).</li>
             <li>Pégala abajo y presiona Guardar clave.</li>
@@ -230,7 +230,7 @@ export function GacetaIA() {
             value={clave}
             onChange={(e) => setClave(e.target.value)}
             placeholder="AIza..."
-            className="w-full rounded-lg border border-line bg-surface px-3 py-2 font-mono text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-success-500"
+            className="w-full rounded-lg border border-line bg-surface px-3 py-2 font-mono text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-success-500"
           />
           <Button variant="success" size="md" className="mt-2 w-full" onClick={guardarClave}>
             💾 Guardar clave (en este navegador)
@@ -257,7 +257,7 @@ export function GacetaIA() {
       </div>
 
       <div>
-        <label className="mb-1 block text-[11px] font-semibold text-slate-400">
+        <label className="mb-1 block text-[11px] font-semibold text-slate-600">
           Vista de resultados
         </label>
         <div className="flex flex-wrap gap-2">
@@ -272,13 +272,13 @@ export function GacetaIA() {
 
       {carreras.length > 0 && (
         <div className="rounded-2xl border border-line bg-surface p-4">
-          <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-300">
+          <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-700">
             📋 Carreras Extraídas ({carreras.length})
           </h3>
           <div className={`grid gap-2 ${densa ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1"}`}>
             {carreras.map((c, i) => (
               <div key={i} className="rounded-xl border border-line bg-surfaceAlt/60 p-3">
-                <p className="text-xs font-bold text-primary-400">
+                <p className="text-xs font-bold text-primary-600">
                   {String(c.hipodromo || "?").toUpperCase()} · C{c.carrera ?? "?"}
                 </p>
                 {densa ? null : (
@@ -286,7 +286,7 @@ export function GacetaIA() {
                     {c.fecha ?? "-"} · {(c.distancia || 0) > 0 ? `${c.distancia} m` : "-"} · {c.superficie || "ARENA"} · premio {c.premio || 0}
                   </p>
                 )}
-                <ul className="mt-2 max-h-40 space-y-0.5 overflow-y-auto text-[10px] text-slate-400">
+                <ul className="mt-2 max-h-40 space-y-0.5 overflow-y-auto text-[10px] text-slate-600">
                   {(c.ejemplares || []).map((ej, j) => (
                     <li key={j}>
                       {ej.numero} · <b>{ej.nombre}</b> ({ej.nacionalidad ?? "VE"}){Number(ej.valor) > 0 ? ` · $${ej.valor}` : ""}

@@ -5,7 +5,7 @@ export default function DashboardLayout({
 }) {
   return (
     <div className="flex flex-1 flex-col gap-4 p-4">
-      {/* Línea 1 — carrera en vivo (poco perceptivo: se puebla desde store/APAC) */}
+      {/* Línea 1 — carrera en vivo (se puebla desde store/APAC) */}
       <section
         aria-label="Resumen del día"
         className="rounded-2xl border border-line bg-surface p-4"

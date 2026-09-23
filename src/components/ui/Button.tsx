@@ -12,10 +12,10 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
 /** Variantes del Design System (paleta semántica tailwind.config). */
 const VARIANT: Record<ButtonVariant, string> = {
   default: "bg-primary-600 text-white hover:bg-primary-500 focus-visible:ring-primary-500",
-  outline: "bg-transparent text-slate-200 border border-line hover:bg-surfaceAlt focus-visible:ring-primary-500",
+  outline: "bg-transparent text-slate-700 border border-line hover:bg-surfaceAlt focus-visible:ring-primary-500",
   success: "bg-success-600 text-white hover:bg-success-500 focus-visible:ring-success-500",
   danger: "bg-danger-600 text-white hover:bg-danger-500 focus-visible:ring-danger-500",
-  ghost: "bg-transparent text-slate-300 hover:bg-surfaceAlt focus-visible:ring-primary-500",
+  ghost: "bg-transparent text-slate-600 hover:bg-surfaceAlt focus-visible:ring-primary-500",
 };
 
 const SIZE: Record<ButtonSize, string> = {

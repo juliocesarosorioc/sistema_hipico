@@ -15,7 +15,7 @@ export function EjemplaresModule() {
   return (
     <section className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-200">
+        <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-700">
           🐴 Ejemplares y Gaceta
         </div>
         <div className="flex items-center gap-2">
@@ -26,7 +26,7 @@ export function EjemplaresModule() {
                 type="button"
                 onClick={() => setTab(t.id as "padron" | "gaceta")}
                 className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-colors ${
-                  tab === t.id ? "bg-primary-600 text-white" : "bg-surface text-slate-400 hover:text-slate-200"
+                  tab === t.id ? "bg-primary-600 text-white" : "bg-surface text-slate-500 hover:text-slate-700"
                 }`}
               >
                 {t.label}

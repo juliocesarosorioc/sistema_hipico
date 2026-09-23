@@ -1,17 +1,16 @@
 /**
- * Aterrizaje del Dashboard (grupo (dashboard)).
- * Server Component puro — sin imports propios. El acceso a módulos usa
- * enlaces nativos <a>; el Bet Slip lateral persiste (layout raíz), por eso
- * no se agrega panel aquí.
+ * Aterrizaje del Dashboard — ruta real `/dashboard` (fuera del grupo `(dashboard)`,
+ * porque los grupos NO aportan segmento de URL: `(dashboard)/page.tsx` sería `/`).
+ * Enlaces nativos <a>; el Bet Slip lateral persiste (layout raíz).
  */
 export default function DashboardHome() {
   return (
     <section className="flex flex-col gap-4 p-4">
       <div className="rounded-2xl border border-line bg-surface p-4">
-        <h1 className="text-lg font-extrabold text-slate-100">
+        <h1 className="text-lg font-extrabold text-slate-900">
           Sistema Hípico — Dashboard
         </h1>
-        <p className="mt-1 text-xs text-slate-400">
+        <p className="mt-1 text-xs text-slate-600">
           Selecciona un módulo. El Boleto de Apuestas permanece abierto a la
           derecha en toda la navegación.
         </p>
@@ -26,7 +25,7 @@ export default function DashboardHome() {
           <p className="text-sm font-bold text-success-500">
             Sistema operativo — todo subido y en verde
           </p>
-          <p className="mt-0.5 text-[11px] text-slate-400">
+          <p className="mt-0.5 text-[11px] text-slate-600">
             Motor matemático (Nini, Puesto, A Premio, Combinada, Compuesta) +
             Comisión de la Casa y el nuevo Design System están desplegados en
             GitHub y listos para apostar.
@@ -40,7 +39,7 @@ export default function DashboardHome() {
           className="rounded-2xl border border-line bg-surface p-4 text-center transition-colors hover:border-primary-500/60 hover:bg-surfaceAlt/80"
         >
           <span className="block text-3xl">🎟️</span>
-          <span className="mt-2 block text-sm font-bold text-slate-200">
+          <span className="mt-2 block text-sm font-bold text-slate-700">
             Taquilla
           </span>
           <span className="mt-0.5 block text-[10px] text-slate-500">
@@ -53,7 +52,7 @@ export default function DashboardHome() {
           className="rounded-2xl border border-line bg-surface p-4 text-center transition-colors hover:border-primary-500/60 hover:bg-surfaceAlt/80"
         >
           <span className="block text-3xl">🎟️</span>
-          <span className="mt-2 block text-sm font-bold text-slate-200">
+          <span className="mt-2 block text-sm font-bold text-slate-700">
             Boleto
           </span>
           <span className="mt-0.5 block text-[10px] text-slate-500">
@@ -66,7 +65,7 @@ export default function DashboardHome() {
           className="rounded-2xl border border-line bg-surface p-4 text-center transition-colors hover:border-primary-500/60 hover:bg-surfaceAlt/80"
         >
           <span className="block text-3xl">🏇</span>
-          <span className="mt-2 block text-sm font-bold text-slate-200">
+          <span className="mt-2 block text-sm font-bold text-slate-700">
             Carreras
           </span>
           <span className="mt-0.5 block text-[10px] text-slate-500">
@@ -79,7 +78,7 @@ export default function DashboardHome() {
           className="rounded-2xl border border-line bg-surface p-4 text-center transition-colors hover:border-primary-500/60 hover:bg-surfaceAlt/80"
         >
           <span className="block text-3xl">🏆</span>
-          <span className="mt-2 block text-sm font-bold text-slate-200">
+          <span className="mt-2 block text-sm font-bold text-slate-700">
             Ranking
           </span>
           <span className="mt-0.5 block text-[10px] text-slate-500">
@@ -92,7 +91,7 @@ export default function DashboardHome() {
           className="rounded-2xl border border-line bg-surface p-4 text-center transition-colors hover:border-primary-500/60 hover:bg-surfaceAlt/80"
         >
           <span className="block text-3xl">🗺️</span>
-          <span className="mt-2 block text-sm font-bold text-slate-200">
+          <span className="mt-2 block text-sm font-bold text-slate-700">
             Hipódromos
           </span>
           <span className="mt-0.5 block text-[10px] text-slate-500">
@@ -105,7 +104,7 @@ export default function DashboardHome() {
           className="rounded-2xl border border-line bg-surface p-4 text-center transition-colors hover:border-primary-500/60 hover:bg-surfaceAlt/80"
         >
           <span className="block text-3xl">💵</span>
-          <span className="mt-2 block text-sm font-bold text-slate-200">
+          <span className="mt-2 block text-sm font-bold text-slate-700">
             Caja
           </span>
           <span className="mt-0.5 block text-[10px] text-slate-500">

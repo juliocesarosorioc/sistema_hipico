@@ -36,7 +36,7 @@ export function TaquillaModule() {
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-4">
-        <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-200">
+        <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-700">
           🎟️ Taquilla
         </div>
 
@@ -50,7 +50,7 @@ export function TaquillaModule() {
               className={`rounded-lg px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide transition-colors ${
                 modalidad === m.id
                   ? "bg-primary-600 text-white"
-                  : "bg-surfaceAlt text-slate-400 hover:bg-surfaceAlt/80 hover:text-slate-200"
+                  : "bg-surfaceAlt text-slate-500 hover:bg-surfaceAlt/80 hover:text-slate-700"
               }`}
             >
               {m.label}
@@ -67,14 +67,14 @@ export function TaquillaModule() {
         </>
       ) : (
         <div className="rounded-2xl border border-line bg-surface p-8 text-center">
-          <p className="text-sm font-bold text-slate-300">{PENDIENTE[modalidad].titulo}</p>
+          <p className="text-sm font-bold text-slate-700">{PENDIENTE[modalidad].titulo}</p>
           <p className="mx-auto mt-2 max-w-md text-[11px] leading-relaxed text-slate-500">
             {PENDIENTE[modalidad].texto}
           </p>
           <button
             type="button"
             onClick={() => setModalidad("puestos")}
-            className="mt-4 text-[11px] font-bold text-primary-400 hover:text-primary-300"
+            className="mt-4 text-[11px] font-bold text-primary-600 hover:text-primary-700"
           >
             ← Volver a Puestos
           </button>

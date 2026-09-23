@@ -33,7 +33,7 @@ export function BetSlip() {
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-2xl border border-line bg-surface p-4">
-        <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-400">
+        <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-600">
           🎟️ Comando de Jugada
         </h3>
         <p className="mb-3 text-[11px] text-slate-500">
@@ -59,7 +59,7 @@ export function BetSlip() {
               key={ej}
               type="button"
               onClick={() => setComando(ej)}
-              className="rounded-full border border-line bg-surfaceAlt px-2.5 py-1 text-[10px] font-bold text-slate-400 transition-colors hover:border-primary-500/60 hover:text-primary-400"
+              className="rounded-full border border-line bg-surfaceAlt px-2.5 py-1 text-[10px] font-bold text-slate-500 transition-colors hover:border-primary-500/60 hover:text-primary-600"
             >
               {ej}
             </button>

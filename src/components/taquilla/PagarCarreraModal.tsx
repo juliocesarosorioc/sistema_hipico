@@ -94,25 +94,25 @@ export function PagarCarreraModal() {
   return (
     <div className="rounded-2xl border border-line bg-surface p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+        <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-600">
           💵 Pagar Carrera (cierra la Tabla Fija automáticamente)
         </h3>
-        <span className="rounded-full bg-primary-500/10 px-2 py-0.5 text-[10px] font-bold text-primary-400">
+        <span className="rounded-full bg-primary-500/10 px-2 py-0.5 text-[10px] font-bold text-primary-600">
           {tickets.length} ticket(s) por liquidar
         </span>
       </div>
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
-        <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-400">
+        <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">
           Hipódromo
           <input
             value={hipodromo}
             onChange={(e) => setHipodromo(e.target.value)}
             placeholder="LA RINCONADA"
-            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold uppercase text-slate-100 placeholder:font-normal"
+            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold uppercase text-slate-900 placeholder:font-normal"
           />
         </label>
-        <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-400">
+        <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">
           Carrera N°
           <input
             value={carrera}
@@ -120,34 +120,34 @@ export function PagarCarreraModal() {
             type="number"
             min={1}
             placeholder="4"
-            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold text-slate-100"
+            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold text-slate-900"
           />
         </label>
-        <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-400">
+        <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">
           1er lugar
           <input
             value={primero}
             onChange={(e) => setPrimero(e.target.value)}
             placeholder="5"
-            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold text-slate-100"
+            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold text-slate-900"
           />
         </label>
-        <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-400">
+        <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">
           2do lugar (opcional)
           <input
             value={segundo}
             onChange={(e) => setSegundo(e.target.value)}
             placeholder="2"
-            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold text-slate-100"
+            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold text-slate-900"
           />
         </label>
-        <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-400">
+        <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">
           3er lugar (opcional)
           <input
             value={tercero}
             onChange={(e) => setTercero(e.target.value)}
             placeholder="8"
-            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold text-slate-100"
+            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold text-slate-900"
           />
         </label>
       </div>
@@ -177,7 +177,7 @@ export function PagarCarreraModal() {
       </div>
 
       {resultado && (
-        <p className="mt-3 rounded-xl bg-primary-500/10 p-3 text-[11px] font-semibold text-primary-400">
+        <p className="mt-3 rounded-xl bg-primary-500/10 p-3 text-[11px] font-semibold text-primary-600">
           {resultado}
         </p>
       )}
@@ -197,7 +197,7 @@ export function PagarCarreraModal() {
         <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-line bg-surfaceAlt/40 p-3 text-[11px] sm:grid-cols-4">
           <div>
             <p className="text-slate-500">Invertido</p>
-            <p className="font-bold text-slate-200">{COP.format(resumen.totalInvertido)}</p>
+            <p className="font-bold text-slate-700">{COP.format(resumen.totalInvertido)}</p>
           </div>
           <div>
             <p className="text-slate-500">A pagar (neto)</p>
@@ -209,7 +209,7 @@ export function PagarCarreraModal() {
           </div>
           <div>
             <p className="text-slate-500">Comisión casa</p>
-            <p className="font-bold text-primary-400">{COP.format(resumen.gananciaCasa)}</p>
+            <p className="font-bold text-primary-600">{COP.format(resumen.gananciaCasa)}</p>
           </div>
         </div>
       )}

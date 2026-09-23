@@ -20,7 +20,7 @@ export function ListaTickets() {
   return (
     <div className="rounded-2xl border border-line bg-surface">
       <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+        <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-600">
           🧾 Tickets de la Sesión ({tickets.length})
         </h3>
         {tickets.length > 0 && (
@@ -46,7 +46,7 @@ export function ListaTickets() {
                     #{t.id}
                   </span>
                   <div className="min-w-0">
-                    <p className="truncate font-mono text-[12px] font-bold text-slate-200">{t.comando}</p>
+                    <p className="truncate font-mono text-[12px] font-bold text-slate-700">{t.comando}</p>
                     <p className="text-[10px] text-slate-500">
                       Gana {COP.format(t.gananciaProyectada)} · casa {COP.format(t.comision)}
                     </p>

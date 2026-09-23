@@ -82,7 +82,7 @@ export function PadronTabla() {
       </div>
 
       <div className="rounded-2xl border border-line bg-surface p-4">
-        <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">
+        <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-600">
           🌎 Nacionalidades del Padrón
         </h3>
         <div className="flex flex-wrap gap-2">
@@ -115,7 +115,7 @@ export function PadronTabla() {
 
       <div className="overflow-hidden rounded-2xl border border-line bg-surface">
         <div className="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
             📖 Registro por Nombre y Nacionalidad
           </h3>
           <div className="flex w-full gap-2 sm:w-auto">
@@ -145,7 +145,7 @@ export function PadronTabla() {
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="border-b border-line bg-surfaceAlt text-slate-400">
+            <thead className="border-b border-line bg-surfaceAlt text-slate-500">
               <tr>
                 <th className="p-3 font-bold uppercase tracking-wider">Ejemplar (Nombre Oficial)</th>
                 <th className="p-3 text-center font-bold uppercase tracking-wider">Nacionalidad</th>
@@ -154,7 +154,7 @@ export function PadronTabla() {
                 <th className="p-3 text-right font-bold uppercase tracking-wider">Registrado</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-line text-slate-200">
+            <tbody className="divide-y divide-line text-slate-700">
               {cargando ? (
                 <tr>
                   <td colSpan={5} className="p-8 text-center italic text-slate-500">
@@ -179,7 +179,7 @@ export function PadronTabla() {
                           className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold border ${
                             ve
                               ? "border-danger-200 bg-danger-500/10 text-danger-700"
-                              : "border-line bg-surfaceAlt text-slate-400"
+                              : "border-line bg-surfaceAlt text-slate-500"
                           }`}
                           title={nombrePais(nac)}
                         >
@@ -189,7 +189,7 @@ export function PadronTabla() {
                       <td className={`p-2 text-center font-bold ${e.totalTablas > 0 ? "text-success-500" : "text-slate-500"}`}>
                         {e.totalTablas || 0}
                       </td>
-                      <td className="p-2 text-slate-400">{e.ultimaTabla || "-"}</td>
+                      <td className="p-2 text-slate-500">{e.ultimaTabla || "-"}</td>
                       <td className="p-2 text-right text-slate-500">{fmtFecha(e.registrado)}</td>
                     </tr>
                   );

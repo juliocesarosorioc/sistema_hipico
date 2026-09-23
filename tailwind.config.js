@@ -1,6 +1,6 @@
 const colors = require("tailwindcss/colors");
 
-/** Design System centralizado — paleta semántica (estándar casino oscuro). */
+/** Design System centralizado — paleta semántica (área central en tema claro). */
 module.exports = {
   content: [
     "./html/**/*.html",
@@ -11,10 +11,10 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        background: colors.slate[950],
-        surface: colors.slate[900],
-        surfaceAlt: colors.slate[800],
-        line: colors.slate[800],
+        background: colors.gray[50],
+        surface: colors.white,
+        surfaceAlt: colors.gray[100],
+        line: colors.gray[200],
         primary: colors.cyan,
         secondary: colors.blue,
         success: colors.emerald,

@@ -16,7 +16,7 @@ export function BetSlipPanel() {
   return (
     <aside
       aria-label="Boleto de apuestas"
-      className="hidden h-[calc(100vh-3.5rem)] w-80 shrink-0 flex-col border-l border-slate-800 bg-slate-950/95 md:flex"
+      className="hidden h-full w-80 shrink-0 flex-col border-l border-slate-800 bg-slate-950/95 md:flex"
     >
       <header className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
         <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">

@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 html {
@@ -12,7 +12,7 @@ html {
 }
 
 body {
-  @apply bg-background text-slate-100 antialiased;
+  @apply bg-background text-slate-900 antialiased;
 }
 
 /* Scrollbar fina (panel lateral persistente) */
@@ -24,5 +24,17 @@ body {
   @apply bg-surfaceAlt rounded-full;
 }
 .bet-slip-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Scrollbar fina (menú lateral oscuro) */
+.sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  @apply bg-slate-700 rounded-full;
+}
+.sidebar-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
