@@ -2,8 +2,8 @@
 
 import {
   aNum,
+  banderaGaceta,
   colorDeNumeroGac,
-  FLAGS,
   nacEjemplar,
   SUPERFICIES,
   type CarreraRegistro,
@@ -15,6 +15,7 @@ type Props = {
   carrera: CarreraRegistro;
   onChange: (c: CarreraRegistro) => void;
   onEnviar: (i: number) => void;
+  onEliminar?: () => void;
 };
 
 /**
@@ -25,7 +26,7 @@ type Props = {
  *  con insignia del padrón (✗ sin padrón, ✓ vinculado, ★ nuevo), pie con la
  *  "Suma de la Tabla" en vivo y el botón "Cargar en el Ensamblaje".
  */
-export function CarreraGacetaCard({ index, carrera, onChange, onEnviar }: Props) {
+export function CarreraGacetaCard({ index, carrera, onChange, onEnviar, onEliminar }: Props) {
   const numCarrera = carrera.carrera || index + 1;
   const ejemplares = Array.isArray(carrera.ejemplares) ? carrera.ejemplares : [];
   const suma = ejemplares.reduce((a, ej) => a + (aNum(ej.valor) ?? aNum(ej.pts) ?? 0), 0);
@@ -69,13 +70,24 @@ export function CarreraGacetaCard({ index, carrera, onChange, onEnviar }: Props)
               className={`${inpClaro} w-7 text-center`}
             />
           </span>
-          <input
-            type="checkbox"
-            checked={!!carrera.seleccionada}
-            onChange={(e) => set({ seleccionada: e.target.checked })}
-            title="Incluir al enviar al Ensamblaje"
-            className="h-3.5 w-3.5 shrink-0 accent-indigo-500"
-          />
+          <span className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onEliminar?.()}
+              title="Eliminar esta carrera del registro"
+              aria-label="Eliminar esta carrera"
+              className="rounded px-0.5 text-[11px] leading-none transition-colors hover:bg-white/20"
+            >
+              🗑️
+            </button>
+            <input
+              type="checkbox"
+              checked={!!carrera.seleccionada}
+              onChange={(e) => set({ seleccionada: e.target.checked })}
+              title="Incluir al enviar al Ensamblaje"
+              className="h-3.5 w-3.5 shrink-0 accent-indigo-500"
+            />
+          </span>
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-1 text-[8px] font-bold">
           <span className={`${inpClaro} inline-flex items-center gap-0.5 rounded px-1 py-px`}>
@@ -149,6 +161,7 @@ export function CarreraGacetaCard({ index, carrera, onChange, onEnviar }: Props)
                 onChange={(e) => setEj(j, { numero: e.target.value })}
                 placeholder="Nº"
                 title="Número del ejemplar"
+                tabIndex={-1}
                 className={`w-4 shrink-0 rounded px-0 py-px text-center text-[8px] font-black outline-none focus:ring-1 focus:ring-indigo-400 ${inpEdit}`}
                 style={{ backgroundColor: color.bg, color: color.fg, borderColor: color.bg }}
               />
@@ -158,17 +171,22 @@ export function CarreraGacetaCard({ index, carrera, onChange, onEnviar }: Props)
                 onChange={(e) => setEj(j, { nombre: e.target.value.toUpperCase() })}
                 placeholder="Ejemplar"
                 title="Nombre del ejemplar"
-                className={`min-w-0 max-w-[6.5rem] flex-1 rounded border border-slate-200 px-1 py-px text-[10px] font-bold uppercase text-slate-800 outline-none focus:ring-1 focus:ring-indigo-400`}
+                readOnly
+                tabIndex={-1}
+                className="min-w-0 w-full flex-1 rounded border border-slate-200 px-1 py-px text-[10px] font-bold uppercase text-slate-800 outline-none focus:ring-1 focus:ring-indigo-400"
               />
-              <span className="inline-flex w-4 shrink-0 justify-center text-sm leading-none" title={nac}>
-                {FLAGS[nac] || "🏳️"}
-              </span>
+              {banderaGaceta(nac) && (
+                <span className="inline-flex w-4 shrink-0 justify-center text-sm leading-none" title={nac}>
+                  {banderaGaceta(nac)}
+                </span>
+              )}
               <input
                 type="text"
                 inputMode="decimal"
                 value={ej.valor ?? ej.pts ?? ""}
-                onChange={(e) => setEj(j, { valor: e.target.value })}
-                placeholder="$"
+                onChange={(e) => setEj(j, { valor: e.target.value.replace(/^0+(?=\d)/, "") })}
+                onFocus={(e) => (e.target as HTMLInputElement).select()}
+                placeholder="0"
                 title="Valor / monta del ejemplar"
                 data-gac-valor
                 className="w-12 shrink-0 rounded border border-slate-200 px-0.5 py-px text-right text-[12px] font-black text-blue-700 outline-none focus:ring-1 focus:ring-indigo-400"

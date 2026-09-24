@@ -30,6 +30,16 @@ export const FLAGS: Record<string, string> = {
   OTRA: "🏳️",
 };
 
+const NAC_VE = new Set(["VE", "VEN", "VZLA", "VENEZUELA", "VZ"]);
+
+/** Bandera emoji de un ejemplar para la Gaceta: Venezuela se sobreentiende y
+ *  NO renderiza nada; el resto muestra solo el emoji (sin siglas en texto). */
+export function banderaGaceta(nac?: string): string {
+  const n = String(nac ?? "VE").trim().toUpperCase();
+  if (NAC_VE.has(n)) return "";
+  return FLAGS[n] || "";
+}
+
 // Hipódromos de EE.UU. sembrados en la BD: si la carrera es de uno de ellos,
 // sus ejemplares quedan con nacionalidad USA por defecto; los no reconocidos
 // (el programa es venezolano) quedan VE. Igual que js/gaceta_helpers.js.

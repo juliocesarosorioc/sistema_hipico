@@ -39,6 +39,10 @@ export const CLAVE_GEMINI_KEY = "club_gemini_key";
 // hoy). Mismo listado que js/gaceta_helpers.js.
 export const MODELOS_GEMINI = ["gemini-3.6-flash", "gemini-3-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
 
+// Familias Flash RETIRADAS por Google (HTTP 404 garantizado en generateContent).
+// Probarlas solo desperdicia intentos y tiempo; se descartan sin llamar.
+const FLASH_RETIRADOS = /^gemini-(?:1\.\d|2\.\d)-.*flash/i;
+
 const NACIONALIDADES = ["VE", "USA", "BR", "AR", "CL", "MX", "PA", "PE", "CO", "EC", "UY", "OTRA"];
 
 // Hipódromos de EE.UU. sembrados en la BD: si la carrera es de uno de ellos,
@@ -147,6 +151,7 @@ function fusionarCarreras(carreras: CarreraExtraida[], nuevas: CarreraExtraida[]
     c.ejemplares.forEach((ej) => {
       ej.nacionalidad = nacEjemplar(ej, c.hipodromo);
       ej.nombre = String(ej.nombre || "").trim().toUpperCase();
+      ej.valor = 0;
     });
     const key = `${String(c.hipodromo || "").toUpperCase()}|${c.carrera ?? ""}`;
     const ex = key === "|" ? null : carreras.find((x) => `${String(x.hipodromo || "").toUpperCase()}|${x.carrera ?? ""}` === key);
@@ -201,10 +206,13 @@ async function listaModelosFlash(clave: string): Promise<string[]> {
 }
 
 /** Cada familia de Flash tiene SU PROPIA cuota gratuita diaria. Se ordenan
- *  primero por familia vieja y luego por versión dentro de la familia. */
+ *  primero por familia vieja y luego por versión dentro de la familia.
+ *  Se excluyen los modelos Flash retirados (404) y los no aptos (imagen/tts). */
 function elegirModelos(descubiertos: string[]): string[] {
   const unicos = [...new Set(descubiertos.concat(MODELOS_GEMINI))].filter(
-    (m) => !/image|preview|tuned|babbage|-tts|embedding/i.test(m)
+    (m) =>
+      !/image|preview|tuned|babbage|-tts|embedding/i.test(m) &&
+      !FLASH_RETIRADOS.test(m)
   );
   const porFamilia: Record<string, string[]> = {};
   for (const m of unicos) {
@@ -336,8 +344,8 @@ async function extraerLote(
   onEstado?: (s: string) => void
 ): Promise<CarreraExtraida[]> {
   const durls = paginas.map((p) => p.durl);
-  let reintento503 = false;
-  let reintentoRpm = false;
+  let reintentos503 = 0;
+  let reintentosRpm = 0;
   for (let i = 0; i < modelos.length; i++) {
     const model = modelos[i];
     if (i > 0) await esperar(1200);
@@ -370,21 +378,23 @@ async function extraerLote(
       continue;
     }
     if (r.tipo === "cuotaRpm") {
-      // Límite por MINUTO (transitorio): una sola espera larga y se reintenta.
-      if (!reintentoRpm) {
-        reintentoRpm = true;
-        if (onEstado) onEstado(`${etiqueta}: límite por minuto de ${model}, esperando 65s y reintentando…`);
-        await esperar(65000);
+      // Límite por MINUTO (transitorio): hasta 2 esperas y se reintenta.
+      if (reintentosRpm < 2) {
+        reintentosRpm++;
+        const espera = reintentosRpm === 1 ? 45000 : 90000;
+        if (onEstado) onEstado(`${etiqueta}: límite por minuto de ${model}, esperando ${Math.round(espera / 1000)}s y reintentando…`);
+        await esperar(espera);
         i--;
         continue;
       }
       diag.ultimoError = `${etiqueta}: ${r.msg}`;
       continue;
     }
-    if (r.tipo === "salto503" && !reintento503) {
-      // Pico temporal de demanda: se espera 20s y se reintenta el MISMO modelo una vez.
-      reintento503 = true;
-      if (onEstado) onEstado(`${etiqueta}: ${model} saturado, esperando 20s y reintentando…`);
+    if (r.tipo === "salto503" && reintentos503 < 2) {
+      // Pico temporal de demanda: se espera y se reintenta el MISMO modelo
+      // hasta 2 veces (los 503 son transitorios; el último 3.x responde).
+      reintentos503++;
+      if (onEstado) onEstado(`${etiqueta}: ${model} saturado (503), esperando 20s y reintentando… (${reintentos503}/2)`);
       await esperar(20000);
       i--;
       continue;
@@ -477,11 +487,11 @@ export async function transformarGaceta(
       if (carreras.length > 0) break;
       // Cuota diaria agotada en TODAS las familias: esperar es inútil.
       if (cuotaTotal) break;
-      // Sin resultados por fallo/saturación: se rehace el ciclo (máx 3).
-      if (ciclo >= 3 || !diag.ultimoError) break;
+      // Sin resultados por fallo/saturación: se rehace el ciclo (máx 5).
+      if (ciclo >= 5 || !diag.ultimoError) break;
       ciclo++;
-      onEstado?.(`Sin carreras aún: ${diag.ultimoError}. Reintentando el ciclo completo (${ciclo}/3) en 30 seg…`);
-      await esperar(30000);
+      onEstado?.(`Sin carreras aún: ${diag.ultimoError}. Reintentando el ciclo completo (${ciclo}/5) en 25 seg…`);
+      await esperar(25000);
       loteN = 0;
     }
 
@@ -491,7 +501,9 @@ export async function transformarGaceta(
     return {
       ok: false,
       carreras: [],
-      error: diag.ultimoError || "No se obtuvieron carreras de la IA (páginas sin texto legible).",
+      error:
+        (diag.ultimoError || "No se obtuvieron carreras de la IA (páginas sin texto legible).") +
+        " — Probá de nuevo en unos minutos: los 429 (cuota) y 503 (saturación) son transitorios. Si persiste con 404/503, regenerá tu clave gratuita en aistudio.google.com/apikey y guardala de nuevo.",
       diag: pintarDiag(),
       cuotaTotal,
     };

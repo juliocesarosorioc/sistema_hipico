@@ -32,7 +32,6 @@ function leerArchivoComoDataUrl(file: File): Promise<string> {
 
 const MAX_ENVIO_PX = 1500;
 const CALIDAD_JPEG = 0.6;
-const MAX_ARCHIVO_MB = 25;
 
 function pesoMB(dataUrl: string): number {
   return ((dataUrl.split(",")[1] || "").length * 3) / 4 / 1024 / 1024;
@@ -230,12 +229,6 @@ export function GacetaIA() {
         setEstado("Solo se aceptan PDF, JPG, PNG o WEBP.");
         return;
       }
-      if (arr.some((f) => f.size > MAX_ARCHIVO_MB * 1024 * 1024)) {
-        const arch = arr.find((f) => f.size > MAX_ARCHIVO_MB * 1024 * 1024);
-        setEstado(`Error: ${arch?.name ?? "el archivo"} supera ${MAX_ARCHIVO_MB} MB.`);
-        toast(`El archivo supera ${MAX_ARCHIVO_MB} MB.`, "error");
-        return;
-      }
       setLeyendo(true);
       setEstado("Leyendo archivos...");
       setDiag("");
@@ -351,7 +344,8 @@ export function GacetaIA() {
       if (res.cuotaTotal) toast(`Cuota agotada en parte de Gemini: resultado PARCIAL (${res.carreras.length} carrera(s)).`, "warning");
       const lista: CarreraRegistro[] = res.carreras.map((c) => ({
         ...c,
-        premio: Number(c.premio) || 100,
+        premio: 100,
+        ejemplares: (c.ejemplares || []).map((e) => ({ ...e, valor: 0, pts: 0 })),
         seleccionada: true,
         enviada: false,
         aplicada: false,
@@ -469,6 +463,22 @@ export function GacetaIA() {
     setEstado("Registro limpiado. Cargue un nuevo documento para empezar.");
     toast("Registro del día limpiado.", "success");
   }, [carreras, toast]);
+
+  const eliminarCarrera = useCallback(
+    (i: number) => {
+      const c = carreras[i];
+      if (!c) return;
+      setCarreras((prev) => {
+        const rest = prev.filter((_, k) => k !== i);
+        persistirRegistro(rest);
+        return rest;
+      });
+      const resto = carreras.length - 1;
+      setEstado(`Carrera C${c.carrera ?? i + 1} del ${c.hipodromo || "programa"} eliminada del registro.`);
+      toast(resto > 0 ? `Carrera eliminada (quedan ${resto}).` : "Registro vacío tras eliminar la carrera.", "info");
+    },
+    [carreras, toast]
+  );
 
   // Navegación de teclado tipo planilla sobre los VALORES (Tab/Enter/↑↓),
   // igual que el legacy js/gaceta.js.
@@ -766,7 +776,7 @@ export function GacetaIA() {
               </Button>
             </div>
           </div>
-          <div ref={gridRef} onKeyDown={onGridKeyDown} className="grid gap-2 p-1 sm:grid-cols-2 md:grid-cols-3">
+          <div ref={gridRef} onKeyDown={onGridKeyDown} className="grid grid-cols-1 gap-2 p-1 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-4">
             {carreras.map((c, i) => (
               <CarreraGacetaCard
                 key={`${String(c.hipodromo || "")}-${String(c.carrera ?? "")}-${i}`}
@@ -774,6 +784,7 @@ export function GacetaIA() {
                 carrera={c}
                 onChange={(nc) => setCarreras((prev) => prev.map((x, k) => (k === i ? nc : x)))}
                 onEnviar={(id) => void enviar([carreras[id]])}
+                onEliminar={() => eliminarCarrera(i)}
               />
             ))}
           </div>
