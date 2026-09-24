@@ -158,6 +158,57 @@ export async function publicarTabla(t: TablaFijaRow): Promise<{ ok: boolean; id?
   }
 }
 
+export type ErrorPublicacionLote = { hipodromo: string; carrera: number | null; error: string };
+
+/**
+ * Publicación en LOTE ("Publicar todas"): resuelve los ids existentes (upsert
+ * por hipódromo+carrera) y hace INSERT batch ([...payloads]) en una sola
+ * llamada para las nuevas. Nunca es silenciosa: devuelve okCount + errores
+ * legibles por tabla para los toasts del módulo.
+ */
+export async function publicarTablasLote(
+  tablas: TablaFijaRow[]
+): Promise<{ ok: boolean; okCount: number; errores: ErrorPublicacionLote[] }> {
+  if (!supabase) return { ok: false, okCount: 0, errores: tablas.map((t) => ({ hipodromo: t.hipodromo ?? "", carrera: t.carrera ?? null, error: "Sin conexión a Supabase" })) };
+  const errores: ErrorPublicacionLote[] = [];
+  const ids: Array<string | number> = [];
+  const nuevos: TablaFijaRow[] = [];
+
+  for (const t of tablas) {
+    try {
+      const id = await idExistente(t.hipodromo, t.carrera);
+      if (id != null) {
+        const { error } = await supabase.from("tablas_fijas").update(payloadDeTabla(t)).eq("id", id);
+        if (error) throw error;
+        ids.push(id);
+      } else {
+        nuevos.push(t);
+      }
+    } catch (e) {
+      errores.push({ hipodromo: t.hipodromo ?? "", carrera: t.carrera ?? null, error: (e as Error).message });
+    }
+  }
+
+  if (nuevos.length) {
+    try {
+      const { data, error } = await supabase
+        .from("tablas_fijas")
+        .insert(nuevos.map((t) => payloadDeTabla(t)))
+        .select("id");
+      if (error) throw error;
+      (data ?? []).forEach((d) => {
+        const id = (d as { id: string | number }).id;
+        if (id != null) ids.push(id);
+      });
+    } catch (e) {
+      const msg = (e as Error).message;
+      nuevos.forEach((t) => errores.push({ hipodromo: t.hipodromo ?? "", carrera: t.carrera ?? null, error: msg }));
+    }
+  }
+
+  return { ok: errores.length === 0, okCount: ids.length, errores };
+}
+
 const COLUMNAS_EDITABLES = [
   "premio_original",
   "premio_recalculado",

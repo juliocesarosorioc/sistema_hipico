@@ -4,7 +4,7 @@ import { TablasModule } from "@/components/tablas/TablasModule";
 import type { StoredTablaFija } from "@/store/useTablasFijasStore";
 import type { VentaTablaItem } from "@/components/tablas/MonitorTablas";
 import type { PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
-import { publicarTabla, actualizarTabla, registrarVenta, guardarPizarraCarrera } from "@/lib/tablas/rpc";
+import { publicarTabla, publicarTablasLote, actualizarTabla, registrarVenta, guardarPizarraCarrera } from "@/lib/tablas/rpc";
 import { cerrarTablaFija } from "@/lib/tablas-fijas";
 import { upsertResultadoCentral } from "@/lib/carreras-dia";
 
@@ -22,7 +22,11 @@ export default function TablasFijasPage() {
       <TablasModule
         persistirPublicacion={async (t: StoredTablaFija) => {
           const r = await publicarTabla(t);
-          return r.ok ? (r.id ?? t.id) : null;
+          return { ok: r.ok, id: r.id ?? t.id, error: r.error };
+        }}
+        persistirLote={async (lote: StoredTablaFija[]) => {
+          const r = await publicarTablasLote(lote);
+          return { ok: r.ok, okCount: r.okCount, errores: r.errores };
         }}
         persistirEdicion={async (t: StoredTablaFija, patch: Record<string, unknown>) => {
           const r = await actualizarTabla(t.id, patch);

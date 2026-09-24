@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useTablasFijasStore, type StoredTablaFija } from "@/store/useTablasFijasStore";
-import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { parseNum, sumaBase, fmtMoney, type DraftCarrera, type ItemCarritoVenta } from "@/lib/tablas/tipos";
 import { aDraftCarrera, eliminarDelRegistroGaceta, leerBuzonEnsamblaje, limpiarBuzonEnsamblaje } from "@/lib/gaceta/ui";
@@ -16,9 +15,15 @@ import { ToastHost } from "@/components/ui/ToastHost";
 import { Guard } from "@/components/ui/Guard";
 import type { PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 
+export type ErrorPublicacion = { hipodromo: string; carrera: number | null; error: string };
+
 type Props = {
-  /** Devuelve el id real de Supabase (o null si falla). El contenedor reemplaza el id del store. */
-  persistirPublicacion?: (t: StoredTablaFija) => Promise<string | number | null>;
+  /** Devuelve el id real de Supabase + error legible. El contenedor reemplaza el id del store. */
+  persistirPublicacion?: (t: StoredTablaFija) => Promise<{ ok: boolean; id?: string | number | null; error?: string }>;
+  /** Publicación en lote (batch) para "Publicar todas". */
+  persistirLote?: (
+    lote: StoredTablaFija[]
+  ) => Promise<{ ok: boolean; okCount: number; errores: ErrorPublicacion[] }>;
   persistirEdicion?: (t: StoredTablaFija, patch: Record<string, unknown>) => Promise<boolean>;
   persistirVenta?: (t: StoredTablaFija, v: VentaTablaItem) => Promise<boolean>;
   persistirLiquidacion?: (t: StoredTablaFija, r: PizarraResultados) => Promise<boolean>;
@@ -35,7 +40,7 @@ type Props = {
  *    suscripción realtime a tablas_fijas, defensiva).
  */
 export function TablasModule(props: Props) {
-  const { persistirPublicacion, persistirEdicion, persistirVenta, persistirLiquidacion } = props;
+  const { persistirPublicacion, persistirLote, persistirEdicion, persistirVenta, persistirLiquidacion } = props;
 
   const tablas = useTablasFijasStore((s) => s.tablas);
   const setTablas = useTablasFijasStore((s) => s.setTablas);
@@ -115,11 +120,15 @@ export function TablasModule(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const publicar = async (tabla: TablaFijaRow) => {
-    const id = persistirPublicacion ? await persistirPublicacion(tabla as StoredTablaFija) : (tabla as StoredTablaFija).id;
-    if (id == null) return false;
-    setTablas([...tablas.filter((t) => String(t.id) !== String(tabla.id)), { ...tabla, id } as StoredTablaFija]);
-    return true;
+  const publicar = async (tabla: StoredTablaFija): Promise<{ ok: boolean; error?: string }> => {
+    if (!persistirPublicacion) {
+      setTablas([...tablas.filter((t) => String(t.id) !== String(tabla.id)), tabla as StoredTablaFija]);
+      return { ok: true };
+    }
+    const r = await persistirPublicacion(tabla);
+    if (!r.ok) return { ok: false, error: r.error || "desconocido" };
+    setTablas([...tablas.filter((t) => String(t.id) !== String(tabla.id)), { ...tabla, id: r.id ?? tabla.id } as StoredTablaFija]);
+    return { ok: true };
   };
 
   const draftATabla = (d: DraftCarrera): StoredTablaFija => ({
@@ -141,7 +150,17 @@ export function TablasModule(props: Props) {
     retirados_oficiales: null,
     comision_grupo: 0,
     grupo_venta: null,
-    caballos: d.caballos,
+    // Saneamiento del payload: `valor_ejemplar` siempre a Number y ceros
+    // explícitos, para que Supabase reciba datos limpios (sin NaN/cadenas).
+    caballos: (d.caballos ?? []).map((cb) => ({
+      numero: cb.numero,
+      nombre: String(cb.nombre || "").trim().toUpperCase(),
+      nacionalidad: cb.nacionalidad ? String(cb.nacionalidad).toUpperCase() : "VE",
+      valor_ejemplar: parseNum(cb.valor_ejemplar) || 0,
+      retirado: !!cb.retirado,
+      ganador: !!cb.ganador,
+      ejemplar_id: cb.ejemplar_id ?? null,
+    })),
     tabla_grupos: null,
     cerrada: false,
   });
@@ -150,19 +169,58 @@ export function TablasModule(props: Props) {
     if (!d.hipodromo.trim()) return toast("Escriba el hipódromo de la carrera.", "warning");
     if (!d.carrera.trim()) return toast("Indique el número de la carrera.", "warning");
     if ((d.caballos ?? []).length === 0) return toast("Añada al menos un ejemplar antes de publicar.", "warning");
-    const ok = await publicar(draftATabla(d));
-    if (ok) {
-      toast(`✅ Tabla ${d.hipodromo.toUpperCase()} C${d.carrera} publicada.`, "success");
+    const res = await publicar(draftATabla(d));
+    if (res.ok) {
+      toast(`✅ Tabla ${d.hipodromo.toUpperCase()} C${d.carrera} publicada con éxito.`, "success");
       eliminarDelRegistroGaceta(d.hipodromo.toUpperCase(), d.carrera);
       setDrafts((ds) => ds.filter((x) => x.uid !== d.uid));
     } else {
-      toast("No se pudo publicar la tabla. Revise la conexión con Supabase.", "error");
+      toast("Error al publicar: " + (res.error || "desconocido"), "error");
     }
   };
 
   const publicarTodas = async () => {
     if (drafts.length === 0) return toast("No hay carreras en el ensamblaje.", "info");
-    for (const d of drafts) await publicarDraft(d);
+    const validas = drafts.filter(
+      (d) => d.hipodromo.trim() && d.carrera.trim() && (d.caballos ?? []).length > 0
+    );
+    if (validas.length === 0)
+      return toast("Ninguna carrera válida para publicar (revise hipódromo, carrera y ejemplares).", "warning");
+    const lote = validas.map((d) => draftATabla(d));
+    const claveDeDraft = (d: DraftCarrera) =>
+      `${d.hipodromo.trim().toUpperCase()}|${Math.round(parseNum(d.carrera)) || d.carrera}`;
+    const draftPorClave = new Map(validas.map((d) => [claveDeDraft(d), d]));
+
+    let okCount = 0;
+    let errores: ErrorPublicacion[] = [];
+    if (persistirLote) {
+      const r = await persistirLote(lote);
+      okCount = r.okCount;
+      errores = r.errores ?? [];
+    } else {
+      for (const t of lote) {
+        const r = await publicar(t);
+        if (r.ok) okCount++;
+        else errores.push({ hipodromo: t.hipodromo ?? "", carrera: t.carrera ?? null, error: r.error || "desconocido" });
+      }
+    }
+
+    // Una vez publicadas, salen del Ensamblaje (solo vuelven las que fallaron).
+    const restantes = drafts.filter((d) => !validas.some((v) => v.uid === d.uid));
+    errores.forEach((e) => {
+      const d = draftPorClave.get(`${String(e.hipodromo).toUpperCase()}|${e.carrera}`);
+      if (d) restantes.push(d);
+    });
+    setDrafts(restantes);
+    validas.forEach((d) => eliminarDelRegistroGaceta(d.hipodromo.toUpperCase(), d.carrera));
+
+    if (okCount === lote.length) {
+      toast(`✅ ${okCount} tabla(s) publicada(s) con éxito.`, "success");
+    } else if (okCount > 0) {
+      toast(`⚠️ ${okCount} tabla(s) publicada(s), ${errores.length} con error: ${errores.map((e) => e.error).join("; ")}.`, "warning");
+    } else {
+      toast(`Error al publicar: ${errores.map((e) => e.error).join("; ") || "desconocido"}`, "error");
+    }
   };
 
   const pegarDesdeGaceta = () => {
