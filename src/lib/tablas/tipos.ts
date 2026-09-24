@@ -163,6 +163,12 @@ export type ItemCarritoVenta = {
   numero: string;
   nombre: string;
   monto: number;
+  /** Cantidad de tablas vendidas (Venta Rápida del modal EJEMPLAR). */
+  cantidad?: number;
+  /** Grupo de venta cobrado (centralización "Carreras del Día"). */
+  grupo?: { id: string | number; nombre: string } | null;
+  /** Jugador/Cliente comprador de la Venta Rápida. */
+  jugador?: { id: string | number; nombre: string; saldo_actual?: number } | null;
 };
 
 /** Acepta coma decimal (misma aNum del legacy). */

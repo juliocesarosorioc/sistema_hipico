@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla } from "@/lib/liquidacion/pagarYCerrar";
+import { upsertResultadoCentral } from "@/lib/carreras-dia";
+import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { Button } from "@/components/ui/Button";
 
 const COP = new Intl.NumberFormat("es-CO", {
@@ -12,7 +14,13 @@ const COP = new Intl.NumberFormat("es-CO", {
   maximumFractionDigits: 0,
 });
 
-/** Modal "Pagar Carrera": procesa los tickets de la sesión y auto-cierra la Tabla Fija. */
+/**
+ * Modal "Pagar Carrera": procesa los tickets de la sesión contra el motor y
+ * auto-cierra la Tabla Fija. La pizarra se carga con el MISMO modal de 8
+ * posiciones + Dead Heat que usa el Monitor de Tablas Fijas (CargaResultadosModal),
+ * y el resultado se centraliza en resultados_carreras ("Carreras del Día") con
+ * pago automático de las tablas vendidas.
+ */
 export function PagarCarreraModal() {
   const tickets = useTaquillaStore((s) => s.tickets);
   const limpiar = useTaquillaStore((s) => s.limpiarTickets);
@@ -20,9 +28,7 @@ export function PagarCarreraModal() {
 
   const [hipodromo, setHipodromo] = useState("");
   const [carrera, setCarrera] = useState("");
-  const [primero, setPrimero] = useState("");
-  const [segundo, setSegundo] = useState("");
-  const [tercero, setTercero] = useState("");
+  const [cargandoResultados, setCargandoResultados] = useState(false);
 
   const [trabajando, setTrabajando] = useState(false);
   const [resultado, setResultado] = useState<string>("");
@@ -43,12 +49,13 @@ export function PagarCarreraModal() {
       )
     : [];
 
-  const pagar = async () => {
+  const pagar = async (r: PizarraResultados) => {
+    setCargandoResultados(false);
     if (!hipodromo.trim() || !carrera.trim()) {
       setResultado("Indica Hipódromo y N° de Carrera.");
       return;
     }
-    if (!primero.trim()) {
+    if (r.llenas < 1 || !r.pizarra.primero) {
       setResultado("Indica el 1er lugar de la pizarra.");
       return;
     }
@@ -63,13 +70,28 @@ export function PagarCarreraModal() {
     const res = await liquidarCarreraYCerrarTabla({
       hipodromo: hipodromo.trim().toUpperCase(),
       carrera: Number(carrera),
-      pizarra: {
-        primero,
-        segundo: segundo.trim() || undefined,
-        tercero: tercero.trim() || undefined,
-      },
+      pizarra: r.pizarra,
       tickets: tickets.map((t) => ({ comando: t.comando, monto: t.monto })),
     });
+    if (res.ok) {
+      // Centraliza el resultado en resultados_carreras (fuente de verdad) y
+      // dispara el pago automático de las tablas vendidas (estado Liquidada).
+      const tabla = tablas.find(
+        (t) =>
+          t.hipodromo === hipodromo.trim().toUpperCase() &&
+          t.carrera === Number(carrera)
+      );
+      await upsertResultadoCentral({
+        hipodromo: hipodromo.trim().toUpperCase(),
+        carrera: Number(carrera),
+        ganadores: [r.pizarra.primero],
+        retirados: tabla?.retirados_oficiales ?? "NO HUBO RETIROS",
+        premio_oficial: tabla?.premio_original ?? undefined,
+        premio_recalculado: tabla?.premio_recalculado ?? undefined,
+        detalle: { caballos: tabla?.caballos },
+        cargado_por: "TAQUILLA",
+      });
+    }
     setTrabajando(false);
 
     if (!res.ok) {
@@ -85,7 +107,7 @@ export function PagarCarreraModal() {
     setResultado(res.motivo);
     setTablaMensaje(
       res.tablaCerrada?.ok
-        ? `Tabla Fija ${hipodromo.trim().toUpperCase()} C${carrera} → CERRADA automáticamente (${res.tablaCerrada.conteo ?? 0} fila).`
+        ? `Tabla Fija ${hipodromo.trim().toUpperCase()} C${carrera} → CERRADA automáticamente (${res.tablaCerrada.conteo ?? 0} fila). Resultado centralizado.`
         : `Aviso: no se pudo cerrar la tabla (${res.tablaCerrada?.error ?? "RLS o sin credenciales"}).`
     );
     limpiar();
@@ -102,7 +124,7 @@ export function PagarCarreraModal() {
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">
           Hipódromo
           <input
@@ -124,31 +146,15 @@ export function PagarCarreraModal() {
           />
         </label>
         <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">
-          1er lugar
-          <input
-            value={primero}
-            onChange={(e) => setPrimero(e.target.value)}
-            placeholder="5"
-            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold text-slate-900"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">
-          2do lugar (opcional)
-          <input
-            value={segundo}
-            onChange={(e) => setSegundo(e.target.value)}
-            placeholder="2"
-            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold text-slate-900"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">
-          3er lugar (opcional)
-          <input
-            value={tercero}
-            onChange={(e) => setTercero(e.target.value)}
-            placeholder="8"
-            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold text-slate-900"
-          />
+          Pizarra (llegada)
+          <Button
+            variant="outline"
+            onClick={() => setCargandoResultados(true)}
+            disabled={trabajando}
+            className="justify-start border-dashed"
+          >
+            🏁 Cargar Resultados → 8 puestos
+          </Button>
         </label>
       </div>
 
@@ -171,7 +177,14 @@ export function PagarCarreraModal() {
             <span className="italic">Sin tablas en caché — el cierre igual se aplica en la BD.</span>
           )}
         </div>
-        <Button variant="success" onClick={() => void pagar()} disabled={trabajando}>
+        <Button
+          variant="success"
+          onClick={() => {
+            if (!hipodromo.trim() || !carrera.trim()) return setResultado("Indica Hipódromo y N° de Carrera.");
+            setCargandoResultados(true);
+          }}
+          disabled={trabajando}
+        >
           {trabajando ? "Liquidando..." : "Pagar Carrera"}
         </Button>
       </div>
@@ -212,6 +225,17 @@ export function PagarCarreraModal() {
             <p className="font-bold text-primary-600">{COP.format(resumen.gananciaCasa)}</p>
           </div>
         </div>
+      )}
+
+      {cargandoResultados && (
+        <CargaResultadosModal
+          abierto
+          onCerrar={() => setCargandoResultados(false)}
+          hipodromo={hipodromo.trim().toUpperCase()}
+          carrera={carrera.trim()}
+          caballos={tablas.find((t) => t.hipodromo === hipodromo.trim().toUpperCase() && t.carrera === Number(carrera))?.caballos ?? null}
+          onConfirmar={(r) => void pagar(r)}
+        />
       )}
     </div>
   );

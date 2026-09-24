@@ -39,7 +39,8 @@ body {
   background: transparent;
 }
 
-/* Impresión: oculta el shell (sidebars/topbar) y libera el scroll del main. */
+/* Impresión: oculta el shell (sidebars/topbar), modales y carrito; libera el
+   scroll del main y conserva los colores de gualdrapas/tarjetas (cero-scroll). */
 @media print {
   html,
   body {
@@ -57,6 +58,14 @@ body {
   }
   .h-screen {
     height: auto !important;
+    overflow: visible !important;
+  }
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .bet-slip-scroll,
+  .sticky {
     overflow: visible !important;
   }
 }

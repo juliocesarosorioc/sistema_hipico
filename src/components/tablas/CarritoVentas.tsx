@@ -60,8 +60,10 @@ export function CarritoVentas({ items, onQuitarItem, onVaciar, onCerrarVenta }: 
                     <span className="block truncate text-[11px] font-black uppercase text-slate-800">
                       {it.hipodromo} C{it.carrera} · N{it.numero} {it.nombre === "TABLA COMPLETA" ? "" : it.nombre}
                     </span>
-                    <span className="text-[10px] font-semibold text-slate-500">
+                    <span className="block text-[10px] font-semibold text-slate-500">
                       {it.nombre === "TABLA COMPLETA" ? "Tabla completa" : `Ejemplar Nº ${it.numero}`}
+                      {it.cantidad != null && it.cantidad > 1 ? ` · ${it.cantidad} tabla(s)` : ""}
+                      {it.jugador ? ` · 👤 ${it.jugador.nombre}` : ""}
                     </span>
                   </span>
                   <span className="whitespace-nowrap text-[11px] font-black text-slate-900">{fmtMoney(it.monto, it.moneda)}</span>

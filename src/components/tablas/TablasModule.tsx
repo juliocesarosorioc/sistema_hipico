@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useTablasFijasStore, type StoredTablaFija } from "@/store/useTablasFijasStore";
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { useTaquillaStore } from "@/store/useTaquillaStore";
-import { parseNum, sumaBase, type DraftCarrera, type ItemCarritoVenta } from "@/lib/tablas/tipos";
+import { parseNum, sumaBase, fmtMoney, type DraftCarrera, type ItemCarritoVenta } from "@/lib/tablas/tipos";
 import { aDraftCarrera, eliminarDelRegistroGaceta, leerBuzonEnsamblaje, limpiarBuzonEnsamblaje } from "@/lib/gaceta/ui";
+import { useCarrerasDiaStore } from "@/store/useCarrerasDiaStore";
 import { SeccionPliegue } from "@/components/tablas/SeccionPliegue";
 import { ParametrosCarrera } from "@/components/tablas/ParametrosCarrera";
 import { TarjetaEnsamblaje } from "@/components/tablas/TarjetaEnsamblaje";
@@ -40,6 +41,7 @@ export function TablasModule(props: Props) {
   const setTablas = useTablasFijasStore((s) => s.setTablas);
   const marcarCerrada = useTablasFijasStore((s) => s.marcarCerrada);
   const agregarTicket = useTaquillaStore((s) => s.agregarTicket);
+  const carrerasDia = useCarrerasDiaStore((s) => s.carreras);
 
   const [secciones, setSecciones] = useState({ parametros: false, ensamblaje: false, monitor: true });
   const [drafts, setDrafts] = useState<DraftCarrera[]>([]);
@@ -94,6 +96,9 @@ export function TablasModule(props: Props) {
           .channel(`tablas-fijas-${Date.now()}`)
           .on("postgres_changes", { event: "*", schema: "public", table: "tablas_fijas" }, () => {
             void refresh();
+          })
+          .on("postgres_changes", { event: "*", schema: "public", table: "resultados_carreras" }, () => {
+            void import("@/lib/carreras-dia").then((m) => m.cargarCarrerasDelDia().catch(() => {}));
           })
           .subscribe();
       } catch {
@@ -179,6 +184,9 @@ export function TablasModule(props: Props) {
       numero: v.numero,
       nombre: v.nombre,
       monto: v.monto,
+      cantidad: v.cantidad ?? v.monto,
+      grupo: v.grupo,
+      jugador: v.jugador,
     };
     setCarrito((c) => [...c, item]);
   };
@@ -202,6 +210,15 @@ export function TablasModule(props: Props) {
       if (persistirVenta) {
         await persistirVenta(tabla, { tablaId: item.tablaId, numero: item.numero, nombre: item.nombre, monto: item.monto });
       }
+      // Centralización: registra la venta en el ledger "Carreras del Día".
+      useCarrerasDiaStore.getState().agregarVenta(item.hipodromo, item.carrera ?? 0, {
+        numero: item.numero,
+        nombre: item.nombre,
+        cantidad: item.cantidad ?? item.monto,
+        grupo: item.grupo?.nombre ?? null,
+        jugador: item.jugador?.nombre ?? null,
+        tablaId: item.tablaId,
+      });
       setTablas(
         tablas.map((t) =>
           String(t.id) === String(item.tablaId)
@@ -231,6 +248,23 @@ export function TablasModule(props: Props) {
     } else {
       setTablas(tablas.map((t) => (String(t.id) === String(tabla.id) ? { ...t, ...patch } : t)));
     }
+  };
+
+  const retirar = async (tabla: StoredTablaFija, indice: number, retirado: boolean): Promise<boolean> => {
+    const { retirarEjemplarTabla } = await import("@/lib/tablas/rpc");
+    const r = await retirarEjemplarTabla(tabla, indice, retirado);
+    if (!r.ok) {
+      toast(`No se pudo ${retirado ? "retirar" : "rehabilitar"} el ejemplar: ${r.error ?? "Error"}.`, "error");
+      return false;
+    }
+    toast(
+      `Ejemplar ${retirado ? "retirado" : "rehabilitado"}. Premio recalculado: ${fmtMoney(r.premio ?? null, tabla.moneda)}${
+        r.reembolsos ? ` (${r.reembolsos} reembolso(s))` : ""
+      }`,
+      "success"
+    );
+    void refresh();
+    return true;
   };
 
   const als = "flex items-stretch";
@@ -337,7 +371,34 @@ export function TablasModule(props: Props) {
         }
       >
         <div className="p-4">
-          <MonitorTablas tablas={tablas} onVender={agregarAlCarrito} onLiquidar={liquidar} onEditar={editar} />
+          <div className="mb-3 flex flex-wrap items-center gap-1.5 no-print">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">🚦 Carreras del Día</span>
+            {tablas.filter((t) => !t.cerrada).map((t) => {
+              const est = carrerasDia.find(
+                (c) => c.hipodromo === (t.hipodromo ?? "").toUpperCase() && c.carrera === t.carrera
+              );
+              const color =
+                est?.estado === "Liquidada"
+                  ? "border-slate-400 bg-slate-100 text-slate-600"
+                  : est?.estado === "Resultados"
+                    ? "border-amber-400 bg-amber-50 text-amber-700"
+                    : "border-emerald-400 bg-emerald-50 text-emerald-700";
+              return (
+                <span
+                  key={String(t.id)}
+                  className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase ${color}`}
+                  title={
+                    est?.pago
+                      ? `Pago automático de tablas vendidas: ${fmtMoney(est.pago.totalPagado)} (${est.pago.tablasPagadas} tabla(s))`
+                      : `${est?.ventas?.length ?? 0} venta(s) registrada(s)`
+                  }
+                >
+                  {t.hipodromo} C{t.carrera} · {est?.estado ?? "Programada"}
+                </span>
+              );
+            })}
+          </div>
+          <MonitorTablas tablas={tablas} onVender={agregarAlCarrito} onLiquidar={liquidar} onEditar={editar} onRetirar={retirar} />
         </div>
       </SeccionPliegue>
 
