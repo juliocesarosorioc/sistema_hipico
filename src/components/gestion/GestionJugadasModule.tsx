@@ -12,6 +12,8 @@ import { SemaforoCarreras } from "@/components/gestion/SemaforoCarreras";
 import { Button } from "@/components/ui/Button";
 import { fmtMoney } from "@/lib/tablas/tipos";
 import { listarClientesVenta, saldoDeCliente, type ClienteVenta } from "@/lib/grupos";
+import { listarCarrerasPorDia } from "@/lib/tablas/rpc";
+import { hoyLocal } from "@/lib/gaceta/programa";
 
 type FilaCarga = {
   jugada: string;
@@ -33,6 +35,10 @@ const filaVacia = (): FilaCarga => ({
 });
 
 const MONEDA = "VES";
+
+function hipoKey(h: unknown): string {
+  return String(h ?? "").toUpperCase().replace(/\s+/g, "");
+}
 
 /**
  * Gestión de Jugadas — Taquilla (clon del legacy):
@@ -59,6 +65,8 @@ const MONEDA = "VES";
 export function GestionJugadasModule() {
   const [hipodromo, setHipodromo] = useState("LA RINCONADA");
   const hipodromos = useHipodromosActivos();
+  const [fecha, setFecha] = useState(() => hoyLocal());
+  const [carrerasPorDia, setCarrerasPorDia] = useState<number[]>([]);
   const [carrera, setCarrera] = useState(1);
   const [retirados, setRetirados] = useState("");
   const [comision, setComision] = useState("5");
@@ -84,6 +92,31 @@ export function GestionJugadasModule() {
       vivo = false;
     };
   }, []);
+
+  // Semáforo dinámico: carreras registradas en la BD para [fecha + hipódromo].
+  // Al cambiar cualquiera de los dos, se re-consulta y la vista vuelve a C1.
+  useEffect(() => {
+    let vivo = true;
+    setCarrerasPorDia([]);
+    setCarrera(1);
+    listarCarrerasPorDia(fecha, hipodromo)
+      .then((c) => {
+        if (vivo) setCarrerasPorDia(c);
+      })
+      .catch(() => {
+        /* sin red → semáforo vacío */
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [fecha, hipodromo]);
+
+  // Aislamiento por carrera: al cambiar de carrera se limpia la pizarra de la
+  // vista anterior y se refresca el indicador de jugadas cargadas.
+  useEffect(() => {
+    setUltimaPizarra(null);
+    setResumen(null);
+  }, [carrera]);
 
   const [modalPreliminar, setModalPreliminar] = useState(false);
   const [modalResultados, setModalResultados] = useState(false);
@@ -210,8 +243,18 @@ export function GestionJugadasModule() {
   };
 
   const ticketsDeCarrera = useMemo(
-    () => tickets.filter((t) => !/^TABLA /i.test(t.comando)),
-    [tickets]
+    () =>
+      tickets.filter((t) => {
+        if (/^TABLA /i.test(t.comando)) return false;
+        // Aislamiento por [Fecha + Hipódromo + N° Carrera]: los tickets con
+        // contexto solo cuentan si coinciden; los legacy (sin contexto) se
+        // conservan en la vista para no perder la sesión anterior.
+        if (t.carrera !== undefined && t.carrera !== carrera) return false;
+        if (t.fecha !== undefined && t.fecha !== fecha) return false;
+        if (t.hipodromo !== undefined && hipoKey(t.hipodromo) !== hipoKey(hipodromo)) return false;
+        return true;
+      }),
+    [tickets, carrera, fecha, hipodromo]
   );
 
   const totalInvertidoSesion = useMemo(
@@ -245,6 +288,9 @@ export function GestionJugadasModule() {
         caballo: f.caballo.trim() || undefined,
         gananciaProyectada: round2(mejorCobre - v.monto),
         comision: comisionMejor,
+        fecha,
+        hipodromo,
+        carrera,
       });
       n += 1;
     }
@@ -367,7 +413,7 @@ export function GestionJugadasModule() {
       </div>
 
       {/* Inputs superiores */}
-      <div className="grid gap-3 rounded-2xl border border-line bg-surface p-4 lg:grid-cols-5">
+      <div className="grid gap-3 rounded-2xl border border-line bg-surface p-4 lg:grid-cols-6">
         <div>
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">Hipódromo</label>
           <SearchableSelect
@@ -375,6 +421,15 @@ export function GestionJugadasModule() {
             value={hipodromo}
             onChange={setHipodromo}
             placeholder="Buscar hipódromo…"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">Fecha 📅</label>
+          <input
+            type="date"
+            value={fecha}
+            onChange={(e) => setFecha(e.target.value || hoyLocal())}
+            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           />
         </div>
         <div>
@@ -405,13 +460,19 @@ export function GestionJugadasModule() {
           Con Cruces
         </label>
         <div className="rounded-xl border border-line bg-gray-50 px-3 py-2 text-right">
-          <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">En sesión</p>
+          <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">En sesión · {fecha}</p>
           <p className="text-sm font-black text-slate-900">{monedaFmt(totalInvertidoSesion)}</p>
-          <p className="text-[9px] text-slate-400">{ticketsDeCarrera.length} ticket(s) · <span className="font-semibold text-slate-600">C{carrera}</span></p>
+          <p className="text-[9px] text-slate-400">{ticketsDeCarrera.length} ticket(s) · <span className="font-semibold text-slate-600">{hipodromo.toUpperCase()} C{carrera}</span></p>
         </div>
       </div>
 
-      <SemaforoCarreras hipodromo={hipodromo} activa={carrera} onSeleccionar={setCarrera} />
+      <SemaforoCarreras
+        hipodromo={hipodromo}
+        fecha={fecha}
+        carreras={carrerasPorDia}
+        activa={carrera}
+        onSeleccionar={setCarrera}
+      />
 
       {/* Tabla de Carga Individual (clon 1:1 del legacy) */}
       <div className="rounded-2xl border border-line bg-surface p-3">

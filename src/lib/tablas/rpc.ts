@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { parseNum } from "@/lib/tablas/tipos";
+import { leerProgramaPorFecha } from "@/lib/gaceta/programa";
 
 export const FALLBACK_HIPODROMOS = [
   "LA RINCONADA",
@@ -59,6 +60,58 @@ export async function listarHipodromos(): Promise<OpcionHipodromo[]> {
 }
 
 const nombrarRpc = "club_listar_tablas_fijas_publicadas";
+
+/** Normaliza el nombre de hipódromo para comparaciones (mayus, sin espacios). */
+function hipoKey(h: unknown): string {
+  return String(h ?? "").toUpperCase().replace(/\s+/g, "");
+}
+
+/**
+ * Carreras registradas para [fecha + hipódromo] en la BD.
+ * Cruza dos fuentes: el Programa del Día (programa_dia) y las Tablas Fijas
+ * publicadas (tablas_fijas). Devuelve números únicos ordenados — alimenta el
+ * semáforo dinámico de la Taquilla contextualizada por fecha.
+ */
+export async function listarCarrerasPorDia(fecha: string, hipodromo: string): Promise<number[]> {
+  const set = new Set<number>();
+  const clave = hipoKey(hipodromo);
+
+  const fuentePrograma = async () => {
+    if (!fecha) return;
+    const r = await leerProgramaPorFecha(fecha);
+    for (const c of r.data?.carreras ?? []) {
+      if (!c.carrera) continue;
+      if (clave && hipoKey(c.hipodromo) !== clave) continue;
+      set.add(Number(c.carrera));
+    }
+  };
+
+  const fuenteTablas = async () => {
+    if (!supabase || !fecha) return;
+    try {
+      const { data, error } = await supabase
+        .from("tablas_fijas")
+        .select("carrera, hipodromo, fecha, fecha_creacion")
+        .ilike("hipodromo", `%${hipodromo}%`)
+        .or(`fecha.eq.${fecha},fecha_creacion.like.${fecha}%`);
+      if (error) return;
+      for (const r of (data ?? []) as Array<{ carrera?: unknown; hipodromo?: unknown }>) {
+        const n = Number(r.carrera);
+        if (Number.isFinite(n) && n > 0) set.add(n);
+      }
+    } catch {
+      /* RLS o esquema distinto → se ignora */
+    }
+  };
+
+  try {
+    await Promise.all([fuentePrograma(), fuenteTablas()]);
+  } catch {
+    /* insignificante */
+  }
+
+  return [...set].sort((a, b) => a - b);
+}
 
 /** Lee las Tablas Fijas publicadas (Abierta) desde la RPC del legacy. */
 export async function listarTablasPublicadas(): Promise<TablaFijaRow[]> {

@@ -12,6 +12,10 @@ export type TicketTaquilla = {
   gananciaProyectada: number;
   /** Comisión de casa proyectada del mejor escenario. */
   comision: number;
+  /** Contexto [Fecha + Hipódromo + N° Carrera] — aislamiento de la vista Taquilla. */
+  fecha?: string;
+  hipodromo?: string;
+  carrera?: number;
   /** Timestamp (ms) de registro en la sesión. */
   addedAt: number;
 };
