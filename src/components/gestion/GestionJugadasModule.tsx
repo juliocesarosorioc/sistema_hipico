@@ -82,6 +82,15 @@ export function GestionJugadasModule() {
   const [jugadasPorCarrera, setJugadasPorCarrera] = useState<number[]>([]);
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
 
+  /** Opciones del Autocomplete CLIENTE 1/CLIENTE 2 (value = nombre real en BD). */
+  const opcionesClientes = useMemo(
+    () =>
+      [...new Map(clientes.map((c) => [String(c.nombre).trim().toUpperCase(), c])).values()]
+        .map((c) => ({ value: String(c.nombre), label: String(c.nombre) }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [clientes]
+  );
+
   // Registro de clientes con saldos (validación inline CLIENTE 1 / CLIENTE 2)
   useEffect(() => {
     let vivo = true;
@@ -482,7 +491,40 @@ export function GestionJugadasModule() {
             {hipodromo} · C{carrera} · Retirados: {retirados.trim() || "—"}
           </span>
         </div>
-        <table className="w-full table-fixed border-collapse text-xs">
+
+        {/* Panel lateral de ejemplares (solo si la BD registró caballos) */}
+        <div className={tablaDeCarrera?.caballos?.length ? "flex flex-col gap-3 lg:flex-row" : ""}>
+          {tablaDeCarrera?.caballos?.length && (
+            <aside className="shrink-0 rounded-xl border border-line bg-gray-50 p-2 lg:w-[28%]">
+              <p className="px-1 pb-1.5 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                🐎 Ejemplares registrados ({tablaDeCarrera.caballos.length})
+              </p>
+              <ul className="max-h-72 divide-y divide-line/60 overflow-y-auto">
+                {tablaDeCarrera.caballos.map((c, ci) => (
+                  <li
+                    key={ci}
+                    className="flex items-center gap-2 px-1 py-1"
+                    style={{ backgroundColor: c.retirado ? "rgba(239,68,68,0.06)" : undefined }}
+                  >
+                    <span
+                      className="grid h-5 w-7 shrink-0 place-items-center rounded text-[10px] font-black text-white"
+                      style={{ backgroundColor: cardColor(c.numero) }}
+                    >
+                      {c.numero}
+                    </span>
+                    <span className={`min-w-0 flex-1 truncate text-xs font-bold uppercase ${c.retirado ? "text-red-500 line-through" : "text-slate-700"}`}>
+                      {c.nombre}
+                    </span>
+                    {c.retirado && (
+                      <span className="shrink-0 rounded bg-red-100 px-1 text-[8px] font-black text-red-600">RET</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </aside>
+          )}
+          <div className={tablaDeCarrera?.caballos?.length ? "min-w-0 flex-1" : "w-full"}>
+            <table className="w-full table-fixed border-collapse text-xs">
           <thead>
             <tr className="bg-slate-800 text-white">
               <th className="w-[4%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">#</th>
@@ -574,24 +616,32 @@ export function GestionJugadasModule() {
                     />
                   </td>
                   <td className="relative h-12 px-1 py-0 align-middle">
-                    <input
+                    <SearchableSelect
+                      options={opcionesClientes}
                       value={f.cliente1}
-                      onChange={(e) => setFila(i, { cliente1: e.target.value })}
+                      onChange={(v) => setFila(i, { cliente1: v })}
                       placeholder="Cliente 1…"
-                      className="w-full rounded-md border border-line bg-white px-1 py-1 text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      allowCustom={false}
+                      displayValue={f.cliente1}
+                      className=""
+                      inputClassName="w-full rounded-md border border-line bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
-                    <span className="pointer-events-none absolute bottom-0.5 left-1 right-1 leading-none">
+                    <span className="pointer-events-none absolute bottom-0 left-1 right-1 leading-none">
                       {infoCliente(f.cliente1, f.monto, v.ok && v.cliente1 ? v.cliente1.cobroNeto : 0)}
                     </span>
                   </td>
                   <td className="relative h-12 px-1 py-0 align-middle">
-                    <input
+                    <SearchableSelect
+                      options={opcionesClientes}
                       value={f.cliente2}
-                      onChange={(e) => setFila(i, { cliente2: e.target.value })}
+                      onChange={(v) => setFila(i, { cliente2: v })}
                       placeholder="Cliente 2…"
-                      className="w-full rounded-md border border-line bg-white px-1 py-1 text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      allowCustom={false}
+                      displayValue={f.cliente2}
+                      className=""
+                      inputClassName="w-full rounded-md border border-line bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
-                    <span className="pointer-events-none absolute bottom-0.5 left-1 right-1 leading-none">
+                    <span className="pointer-events-none absolute bottom-0 left-1 right-1 leading-none">
                       {infoCliente(f.cliente2, f.monto, v.ok && v.cliente2 ? v.cliente2.cobroNeto : 0)}
                     </span>
                   </td>
@@ -600,6 +650,8 @@ export function GestionJugadasModule() {
             })}
           </tbody>
         </table>
+          </div>
+        </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button size="sm" variant="ghost" onClick={() => setModalCargaRapida(true)}>
             ⚡ Carga Rápida <span className="ml-1 rounded bg-warning-500/20 px-1.5 text-[9px] font-black text-warning-700">texto</span>

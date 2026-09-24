@@ -14,6 +14,8 @@ type Props = {
   /** Texto a mostrar cuando el `value` es un id y el label debe ser otro (p. ej. cliente). */
   displayValue?: string;
   className?: string;
+  /** Clases del <input> interno (para compactarlo en grillas densas). */
+  inputClassName?: string;
 };
 
 /**
@@ -29,6 +31,7 @@ export function SearchableSelect({
   allowCustom = true,
   displayValue,
   className = "",
+  inputClassName = "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold uppercase text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500",
 }: Props) {
   const [abierto, setAbierto] = useState(false);
   const [texto, setTexto] = useState("");
@@ -87,7 +90,7 @@ export function SearchableSelect({
             e.preventDefault();
             const op = filtradas[activo];
             if (op) elegir(op.value);
-            else if (texto.trim()) elegir(texto.trim().toUpperCase());
+            else if (allowCustom && texto.trim()) elegir(texto.trim().toUpperCase());
           } else if (e.key === "Escape") {
             setAbierto(false);
           }
