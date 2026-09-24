@@ -14,6 +14,8 @@ export type CaballoPrograma = {
   valor?: number;
   ejemplar_id?: string | number | null;
   nuevo?: boolean;
+  jockey?: string;
+  peso?: number | string;
 };
 
 export type CarreraPrograma = {
@@ -53,6 +55,8 @@ function norm(c: unknown): CarreraPrograma {
         nacionalidad: String(cb.nacionalidad ?? "VE").toUpperCase() || "VE",
         valor: Number(cb.valor ?? cb.pts ?? 0) || 0,
         ejemplar_id: (cb.ejemplar_id as string | number | null | undefined) ?? null,
+        jockey: cb.jockey ? String(cb.jockey) : undefined,
+        peso: cb.peso !== undefined ? (cb.peso as string | number) : undefined,
       }))
     : [];
   return {
