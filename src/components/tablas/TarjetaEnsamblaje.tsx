@@ -109,7 +109,7 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
           return (
             <div key={i} className="grid items-center rounded border border-slate-200 bg-slate-50 px-1 py-px" style={{ gridTemplateColumns: "1.75rem 1fr 3.25rem auto" }}>
               <span
-                className="w-4 py-px text-center text-[10px] font-black"
+                className="flex h-7 w-7 shrink-0 flex-none items-center justify-center text-center text-[10px] font-bold"
                 style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
               >
                 {c.numero}

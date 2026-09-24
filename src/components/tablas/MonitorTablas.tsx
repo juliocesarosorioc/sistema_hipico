@@ -172,7 +172,7 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                       style={{ gridTemplateColumns: "2rem 1fr 1.25rem 3rem" }}
                     >
                       <span
-                        className="w-5 rounded py-px text-center text-[10px] font-black"
+                        className="flex h-7 w-7 shrink-0 flex-none items-center justify-center rounded text-center text-[10px] font-bold"
                         style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
                       >
                         {c.numero}
@@ -363,7 +363,7 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
               {(t.caballos ?? []).map((c, i) => (
                 <tr key={i} className={c.retirado ? "text-red-500" : ""}>
                   <td
-                    className="w-6 px-1 py-px text-center font-black"
+                    className="w-7 shrink-0 p-0 text-center align-middle font-bold"
                     style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
                   >
                     {c.numero}

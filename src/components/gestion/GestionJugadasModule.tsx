@@ -507,7 +507,7 @@ export function GestionJugadasModule() {
                     style={{ backgroundColor: c.retirado ? "rgba(239,68,68,0.06)" : undefined }}
                   >
                     <span
-                      className="grid h-5 w-7 shrink-0 place-items-center rounded text-[10px] font-black text-white"
+                      className="flex h-7 w-7 shrink-0 flex-none items-center justify-center text-center text-[10px] font-bold text-white"
                       style={{ backgroundColor: cardColor(c.numero) }}
                     >
                       {c.numero}
@@ -771,7 +771,7 @@ export function GestionJugadasModule() {
                     : []
                   ).map((c, i) => (
                     <li key={i} className="flex items-center gap-2 py-1.5 text-sm">
-                      <span className="grid h-6 w-8 place-items-center rounded text-[10px] font-black text-white"
+                      <span className="flex h-7 w-7 shrink-0 flex-none items-center justify-center rounded text-center text-[10px] font-bold text-white"
                         style={{ backgroundColor: c.retirado ? "#ef4444" : cardColor(c.numero) }}>
                         {c.numero}
                       </span>
