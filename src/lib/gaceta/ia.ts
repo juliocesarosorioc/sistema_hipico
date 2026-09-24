@@ -1,3 +1,13 @@
+// ============================================================
+//  Motor de extracción de carreras con Gemini (Gemini REST API).
+//  RÉPLICA EXACTA del motor legacy `js/gaceta_ia.js` (+ helpers):
+//  envío por LOTES, reintentos por saturación/cuota, cambio de
+//  modelo, partición de lotes pesados y fusión de resultados.
+//  Todo ocurre en el navegador: NO hay servidor Next.js de por
+//  medio (el build es `output:"export"`, 100% estático; no hay
+//  API Routes ni Server Actions que reciban el PDF).
+// ============================================================
+
 export type EjemplarExtraido = {
   numero: string | number;
   nombre: string;
@@ -20,11 +30,26 @@ export type ResultadoGaceta = {
   carreras: CarreraExtraida[];
   error?: string;
   diag?: string;
+  cuotaTotal?: boolean;
 };
 
 export const CLAVE_GEMINI_KEY = "club_gemini_key";
 
-export const MODELOS_GEMINI = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-lite"];
+// Modelos Flash de respaldo (la app primero consulta a la API cuáles existen
+// hoy). Mismo listado que js/gaceta_helpers.js.
+export const MODELOS_GEMINI = ["gemini-3.6-flash", "gemini-3-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+
+const NACIONALIDADES = ["VE", "USA", "BR", "AR", "CL", "MX", "PA", "PE", "CO", "EC", "UY", "OTRA"];
+
+// Hipódromos de EE.UU. sembrados en la BD: si la carrera es de uno de ellos,
+// sus ejemplares quedan con nacionalidad USA por defecto; los de Venezuela (o
+// no reconocidos, el programa es venezolano) quedan VE. Igual que el legacy.
+const HIPODROMOS_USA = [
+  "AQUEDUCT", "BELMONT PARK", "CHARLES TOWN", "CHURCHILL DOWNS", "DEL MAR",
+  "FAIR GROUNDS", "FINGER LAKES", "GOLDEN GATE FIELDS", "GULFSTREAM PARK",
+  "KEENELAND", "LAUREL PARK", "LOS ALAMITOS", "MONMOUTH PARK", "OAKLAWN PARK",
+  "PIMLICO", "SANTA ANITA", "SARATOGA", "TAMPA BAY DOWNS",
+];
 
 const SYS = `Eres el transcriptor de la gaceta hípica venezolana. Recibes páginas/imágenes del programa oficial de carreras.
 Extrae TODAS las carreras visibles y sus ejemplares participantes.
@@ -44,54 +69,111 @@ function pesoKB(durls: string[]): number {
   return Math.round(durls.reduce((a, d) => a + ((d.split(",")[1] || "").length * 3) / 4, 0) / 1024);
 }
 
-/** La API REST de Gemini acepta hasta ~20 MB de datos inline por request. */
-const MAX_LOTE_KB = 12000;
+// ---------- Helpers puros (iguales a js/gaceta_helpers.js) ----------
 
-/** Error tipado con el estado HTTP de la llamada a Gemini (para traducirlo a UI). */
-class ErrorIA extends Error {
-  status: number | null;
-  detalle: string;
-  constructor(msg: string, status: number | null, detalle: string) {
-    super(msg);
-    this.name = "ErrorIA";
-    this.status = status;
-    this.detalle = detalle;
+function paisHipodromo(hipo?: string): string | null {
+  const h = String(hipo || "").trim().toUpperCase();
+  if (!h) return null;
+  if (HIPODROMOS_USA.some((n) => h.includes(n))) return "USA";
+  return "VE";
+}
+
+/** Nacionalidad por defecto de un ejemplar: la que trajo la IA si es válida,
+ *  si no la del país del hipódromo de la carrera (USA/VE). */
+function nacEjemplar(ej?: { nacionalidad?: string } | null, hipo?: string): string {
+  const nac = String(ej?.nacionalidad || "").trim().toUpperCase();
+  if (NACIONALIDADES.includes(nac)) return nac;
+  return paisHipodromo(hipo) || "VE";
+}
+
+function coaccionarCarreras(v: unknown): CarreraExtraida[] {
+  if (Array.isArray(v)) return v as CarreraExtraida[];
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    if (Array.isArray(o.carrera)) return o.carrera as CarreraExtraida[];
+    const vals = Object.values(o);
+    if (vals.length && typeof vals[0] === "object") return vals as CarreraExtraida[];
+  }
+  return [];
+}
+
+/** Parser tolerante de la respuesta de Gemini (markdown, JSON suelto, arrays). */
+function parsearJSON(texto: string): CarreraExtraida[] {
+  let t = (texto || "").trim();
+  const cercos = t.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (cercos) t = cercos[1].trim();
+  const intentos: unknown[] = [];
+  try {
+    intentos.push(JSON.parse(t));
+  } catch {
+    /* sigue */
+  }
+  const ini = t.indexOf("{");
+  const fin = t.lastIndexOf("}");
+  if (ini >= 0 && fin > ini) {
+    try {
+      intentos.push(JSON.parse(t.slice(ini, fin + 1)));
+    } catch {
+      /* sigue */
+    }
+  }
+  const iniArr = t.indexOf("[");
+  const finArr = t.lastIndexOf("]");
+  if (iniArr >= 0 && finArr > iniArr) {
+    try {
+      intentos.push(JSON.parse(t.slice(iniArr, finArr + 1)));
+    } catch {
+      /* sigue */
+    }
+  }
+  for (const obj of intentos) {
+    if (Array.isArray(obj)) return obj as CarreraExtraida[];
+    if (obj && typeof obj === "object") {
+      const o = obj as Record<string, unknown>;
+      const c = coaccionarCarreras(o.carreras);
+      if (c.length) return c;
+      const c2 = coaccionarCarreras(o.carrera);
+      if (c2.length) return c2;
+    }
+  }
+  return [];
+}
+
+/** Fusiona carreras extraídas (merge por hipódromo|número, igual que el legacy). */
+function fusionarCarreras(carreras: CarreraExtraida[], nuevas: CarreraExtraida[]): void {
+  for (const c of Array.isArray(nuevas) ? nuevas : []) {
+    if (!c || typeof c !== "object") continue;
+    c.ejemplares = Array.isArray(c.ejemplares) ? c.ejemplares : [];
+    c.ejemplares.forEach((ej) => {
+      ej.nacionalidad = nacEjemplar(ej, c.hipodromo);
+      ej.nombre = String(ej.nombre || "").trim().toUpperCase();
+    });
+    const key = `${String(c.hipodromo || "").toUpperCase()}|${c.carrera ?? ""}`;
+    const ex = key === "|" ? null : carreras.find((x) => `${String(x.hipodromo || "").toUpperCase()}|${x.carrera ?? ""}` === key);
+    if (!ex) {
+      carreras.push(c);
+      continue;
+    }
+    const nums = new Set((ex.ejemplares || []).map((e) => String(e.numero)));
+    (c.ejemplares || []).forEach((e) => {
+      if (!nums.has(String(e.numero))) {
+        ex.ejemplares.push(e);
+        nums.add(String(e.numero));
+      }
+    });
   }
 }
 
-/** Traduce errores crudos de Gemini a mensajes claros para el operador. */
-export function traducirErrorIA(status: number | null, detalle: string): string {
-  const t = detalle.toLowerCase();
-  if (status === 413 || status === 400 && /payload|too large|size.*exceed|exceed.*size|too many|large/i.test(t)) {
-    return "Error: el lote de páginas es muy pesado para Gemini (máx. ~20 MB por request). Selecciona menos páginas por vez o usa imágenes más livianas.";
-  }
-  if (status === 429 || /quota|rate.?limit|resource.*exceed|insufficient/i.test(t)) {
-    return "Error: límite de cuota de Gemini free alcanzado (429). Espera unos segundos o prueba con otra clave.";
-  }
-  if (status === 403 || /forbidden|permission|api.?key.*invalid/i.test(t)) {
-    return "Error: la clave fue rechazada por Gemini (403). Verifica la API key en aistudio.google.com/apikey.";
-  }
-  if (status === 401 || /unauthorized|key.*(invalid|missing)/i.test(t)) {
-    return "Error: clave de Gemini inválida o faltante (401). Vuelve a guardar tu clave.";
-  }
-  if (status === 404 || /model.*found|not ?found/i.test(t)) {
-    return "Error: el modelo de IA no está disponible (404). Prueba de nuevo en unos minutos.";
-  }
-  if (status === 500 || status === 503) {
-    return "Error: Gemini está procesando con sobrecarga (500/503). Intenta de nuevo en unos segundos.";
-  }
-  if (status === 0 || /network|fetch|internet|failed to fetch/i.test(t)) {
-    return "Error de red: no se pudo contactar con Gemini. Revisa tu conexión a internet.";
-  }
-  return `Error de la IA (HTTP ${status ?? "?"}): ${detalle.slice(0, 220)}`;
-}
+// ---------- Modelos ----------
 
 async function listaModelosFlash(clave: string): Promise<string[]> {
   try {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(clave)}`);
     if (!r.ok) return [];
     const datos = (await r.json()) as { models?: Array<{ name: string }> };
-    const flash = (datos.models || []).map((m) => m.name.replace("models/", "")).filter((n) => /flash/i.test(n));
+    const flash = (datos.models || [])
+      .map((m) => m.name.replace("models/", ""))
+      .filter((n) => /flash/i.test(n));
     if (!flash.length) return [];
     const ver = (n: string) => {
       const m = n.match(/gemini-([\d.]+)/);
@@ -100,12 +182,13 @@ async function listaModelosFlash(clave: string): Promise<string[]> {
     const lite = (n: string) => /-lite/i.test(n);
     flash.sort((a, b) => ver(b) - ver(a) || (lite(a) ? 1 : 0) - (lite(b) ? 1 : 0));
     return flash;
-  } catch (e) {
-    void e;
+  } catch {
     return [];
   }
 }
 
+/** Cada familia de Flash tiene SU PROPIA cuota gratuita diaria. Se ordenan
+ *  primero por familia vieja y luego por versión dentro de la familia. */
 function elegirModelos(descubiertos: string[]): string[] {
   const unicos = [...new Set(descubiertos.concat(MODELOS_GEMINI))].filter((m) => !/image|preview|tuned|babbage/i.test(m));
   const porFamilia: Record<string, string[]> = {};
@@ -128,142 +211,282 @@ function elegirModelos(descubiertos: string[]): string[] {
   return out.slice(0, 10);
 }
 
-async function generarLote(
-  clave: string,
-  modelo: string,
-  durls: string[]
-): Promise<CarreraExtraida[]> {
-  const partes: Array<Record<string, unknown>> = durls.map((d) => {
+// ---------- Cuerpo de la petición (idéntico al legacy) ----------
+
+function armarBody(durls: string[], estricto: boolean): Record<string, unknown> {
+  const imgs = durls.map((d) => {
     const [, meta] = d.split(",");
     const mime = d.split(";")[0].replace("data:", "");
     return { inline_data: { mime_type: mime, data: meta } };
   });
-  const cuerpo = {
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: SYS }, ...partes, { text: "Gaceta adjunta. Responde ÚNICAMENTE con JSON válido: {\"carreras\":[...]}. Sin markdown, sin decoraciones ni explicaciones." }],
-      },
-    ],
-    generationConfig: { temperature: 0, response_mime_type: "application/json" },
+  const parteTexto = estricto
+    ? 'Gaceta adjunta. Extrae las carreras y responde ÚNICAMENTE con JSON válido con el formato {"carreras":[...]}, sin markdown, sin decoraciones ni explicaciones.'
+    : "Gaceta adjunta. Extrae las carreras y sus ejemplares.";
+  return {
+    contents: [{ parts: [{ text: parteTexto }, ...imgs] }],
+    systemInstruction: { parts: [{ text: SYS }] },
+    generationConfig: {
+      temperature: estricto ? 0.2 : 0,
+      maxOutputTokens: 8192,
+      responseMimeType: "application/json",
+    },
   };
-  const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(clave)}`,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) }
-  );
-  if (!r.ok) {
-    const txt = await r.text();
-    throw new ErrorIA(`HTTP ${r.status}`, r.status, txt.slice(0, 300));
+}
+
+async function postIA(url: string, body: Record<string, unknown>, clave: string, ms = 120000): Promise<Response> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    return await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": clave },
+      body: JSON.stringify(body),
+      signal: ctl.signal,
+    });
+  } finally {
+    clearTimeout(t);
   }
-  const datos = (await r.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
-  const txt = datos.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  const json = txt.replace(/```json|```/g, "").trim();
-  const inicio = json.indexOf("{");
-  const fin = json.lastIndexOf("}");
-  if (inicio < 0 || fin < inicio) throw new Error("La IA no devolvió JSON válido.");
-  const parsed = JSON.parse(json.slice(inicio, fin + 1)) as { carreras?: CarreraExtraida[] };
-  return Array.isArray(parsed.carreras) ? parsed.carreras : [];
 }
 
-function normalizarNacionalidad(nac?: string, hipodromo?: string): string {
-  if (nac && /^[A-Z]{2,3}$/i.test(nac.trim())) return nac.trim().toUpperCase();
-  return /RINCONADA|LA RINCONADA/i.test(hipodromo ?? "") ? "VE" : (hipodromo ? "USA" : "VE");
+type LlamadaIA =
+  | { ok: true; texto: string }
+  | { ok: false; tipo: "salto" | "clave" | "cuotaDia" | "cuotaRpm" | "salto503" | "grande" | "duro"; msg: string };
+
+type RespuestaGemini = {
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>;
+  promptFeedback?: { blockReason?: string };
+};
+
+async function llamarModelo(clave: string, model: string, durls: string[], estricto: boolean): Promise<LlamadaIA> {
+  let resp: Response;
+  try {
+    resp = await postIA(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      armarBody(durls, estricto),
+      clave
+    );
+  } catch (errNet) {
+    const e = errNet instanceof Error ? errNet : new Error(String(errNet));
+    return {
+      ok: false,
+      tipo: "salto",
+      msg: `Sin conexión al probar ${model} (${e.name === "AbortError" ? "tiempo agotado (120s)" : e.message || "red"}).`,
+    };
+  }
+  if (resp.status === 429) {
+    const txt429 = await resp.text().catch(() => "");
+    const esDiaria = /RESOURCE_EXHAUSTED|quota|per day|daily|rpd/i.test(txt429);
+    return { ok: false, tipo: esDiaria ? "cuotaDia" : "cuotaRpm", msg: `${esDiaria ? "CUOTA DIARIA" : "LÍMITE POR MINUTO"} en ${model} (HTTP 429).` };
+  }
+  if (resp.status === 503) return { ok: false, tipo: "salto503", msg: `Modelo ${model} saturado (HTTP 503, alta demanda temporal).` };
+  if (resp.status === 404) return { ok: false, tipo: "salto", msg: `Modelo ${model} no disponible (HTTP 404).` };
+  if (!resp.ok) {
+    const txtErr = await resp.text().catch(() => "");
+    let msg = `Error de IA (HTTP ${resp.status}).`;
+    try {
+      msg = "IA: " + ((JSON.parse(txtErr) as { error?: { message?: string } }).error?.message || msg);
+    } catch {
+      if (txtErr) msg = txtErr.slice(0, 220);
+    }
+    if (/API_KEY_INVALID|API key not valid|API_KEY_NOT_FOUND|PERMISSION_DENIED/i.test(msg)) {
+      return { ok: false, tipo: "clave", msg };
+    }
+    if (resp.status === 400 && durls.length > 1 && /large|tokens|size|payload|maximum|invalid argument/i.test(msg)) {
+      return { ok: false, tipo: "grande", msg };
+    }
+    return { ok: false, tipo: "duro", msg };
+  }
+  let datos: RespuestaGemini | null = null;
+  try {
+    datos = (await resp.json()) as RespuestaGemini;
+  } catch {
+    return { ok: false, tipo: "salto", msg: `Modelo ${model} devolvió respuesta ilegible.` };
+  }
+  const texto = (datos?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "").trim();
+  if (!texto) {
+    const fr = datos?.candidates?.[0]?.finishReason || datos?.promptFeedback?.blockReason || "vacío";
+    return { ok: false, tipo: "salto", msg: `Modelo ${model} respondió vacío (${fr}).` };
+  }
+  return { ok: true, texto };
 }
 
-/** Transforma las páginas (dataURLs) con Gemini por lotes (≤ MAX_LOTE_KB) y fusiona carreras. */
+// ---------- Extracción por lotes (idéntico al legacy) ----------
+
+async function extraerLote(
+  clave: string,
+  modelos: string[],
+  paginas: Array<{ num: number; durl: string }>,
+  etiqueta: string,
+  diag: { respondio: string; ultimoError: string },
+  onEstado?: (s: string) => void
+): Promise<CarreraExtraida[]> {
+  const durls = paginas.map((p) => p.durl);
+  let reintento503 = false;
+  let reintentoRpm = false;
+  for (let i = 0; i < modelos.length; i++) {
+    const model = modelos[i];
+    if (i > 0) await esperar(1200);
+    let r = await llamarModelo(clave, model, durls, false);
+    if (r.ok) {
+      let lotesCarreras = parsearJSON(r.texto);
+      if (lotesCarreras.length === 0) {
+        if (onEstado) onEstado(`${etiqueta}: sin carreras, segundo intento (JSON estricto)…`);
+        const r2 = await llamarModelo(clave, model, durls, true);
+        if (r2.ok) {
+          r = r2;
+          lotesCarreras = parsearJSON(r2.texto);
+        } else {
+          r = r2;
+        }
+      }
+      if (r.ok && lotesCarreras.length > 0) {
+        diag.respondio = model;
+        return lotesCarreras;
+      }
+      if (r.ok) {
+        diag.ultimoError = `${etiqueta}: ${model} devolvió 0 carreras.`;
+        continue;
+      }
+    }
+    if (r.tipo === "clave") throw new Error(r.msg + " Revisa la clave en aistudio.google.com/apikey y guárdala de nuevo.");
+    if (r.tipo === "cuotaDia") {
+      // Cuota DIARIA de esta familia agotada: NUNCA se espera en vano.
+      diag.ultimoError = `${etiqueta}: ${r.msg}`;
+      continue;
+    }
+    if (r.tipo === "cuotaRpm") {
+      // Límite por MINUTO (transitorio): una sola espera larga y se reintenta.
+      if (!reintentoRpm) {
+        reintentoRpm = true;
+        if (onEstado) onEstado(`${etiqueta}: límite por minuto de ${model}, esperando 65s y reintentando…`);
+        await esperar(65000);
+        i--;
+        continue;
+      }
+      diag.ultimoError = `${etiqueta}: ${r.msg}`;
+      continue;
+    }
+    if (r.tipo === "salto503" && !reintento503) {
+      // Pico temporal de demanda: se espera 20s y se reintenta el MISMO modelo una vez.
+      reintento503 = true;
+      if (onEstado) onEstado(`${etiqueta}: ${model} saturado, esperando 20s y reintentando…`);
+      await esperar(20000);
+      i--;
+      continue;
+    }
+    if (r.tipo === "grande" && durls.length > 1) {
+      const mitad = Math.ceil(durls.length / 2);
+      if (onEstado) onEstado(`${etiqueta}: lote muy pesado, dividiendo en 2…`);
+      const a = await extraerLote(clave, modelos, paginas.slice(0, mitad), etiqueta + "a", diag, onEstado);
+      const b = await extraerLote(clave, modelos, paginas.slice(mitad), etiqueta + "b", diag, onEstado);
+      return a.concat(b);
+    }
+    diag.ultimoError = `${etiqueta}: ${r.msg}`;
+  }
+  throw new Error(diag.ultimoError + " Se probaron los modelos Flash disponibles para este lote.");
+}
+
+// ---------- Punto de entrada ----------
+
+/** Transforma las páginas (dataURLs) con Gemini por LOTES de 3 (igual que el
+ *  legacy), con reintentos de ciclo (máx 3) y entrega resultados parciales.
+ *  onLote → progreso; onEstado → mensajes en vivo para la UI. */
 export async function transformarGaceta(
   clave: string,
   imagenes: string[],
-  onLote?: (hecho: number, total: number) => void
+  onLote?: (hecho: number, total: number) => void,
+  onEstado?: (s: string) => void
 ): Promise<ResultadoGaceta> {
-  const diag: string[] = [];
-  const peso = `${(pesoKB(imagenes) / 1024).toFixed(1)} MB`;
+  const diag = { respondio: "", ultimoError: "" };
+  let cuotaTotal = false;
+  const pintarDiag = (extra?: string): string =>
+    [
+      `clave: ${clave ? clave.slice(0, 4) + "…" + clave.slice(-3) + " (" + clave.length + " car.)" : "AUSENTE"}`,
+      `páginas elegidas: ${imagenes.length} · peso aprox: ${(pesoKB(imagenes) / 1024).toFixed(1)} MB`,
+      diag.respondio ? `respondió: ${diag.respondio}` : "",
+      diag.ultimoError ? `último error: ${diag.ultimoError}` : "",
+      extra || "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
   try {
     if (!imagenes.length) {
-      return { ok: false, carreras: [], error: "No hay páginas seleccionadas para enviar.", diag: `peso ${peso}` };
-    }
-    if (pesoKB(imagenes) > 18 * 1024) {
-      return {
-        ok: false,
-        carreras: [],
-        error: "Error: el archivo es muy pesado (" + peso + "). Gemini admite máx. ~20 MB por request. Reduce la selección de páginas o la resolución del PDF.",
-        diag: `peso total enviado: ${peso}`,
-      };
+      return { ok: false, carreras: [], error: "No hay páginas seleccionadas para enviar.", diag: pintarDiag() };
     }
     const descubiertos = await listaModelosFlash(clave);
     const modelos = elegirModelos(descubiertos);
     if (!modelos.length) {
-      return { ok: false, carreras: [], error: "Tu clave no devolvió modelos Flash. Verifica la clave en aistudio.google.com/apikey y tu conexión.", diag: `modelos: 0 · peso: ${peso}` };
+      return {
+        ok: false,
+        carreras: [],
+        error: "Tu clave no devolvió modelos Flash. Verifica la clave en aistudio.google.com/apikey y tu conexión.",
+        diag: pintarDiag(),
+      };
     }
 
-    // Lotes dinámicos: nunca superar ~12 MB por request (margen bajo el límite real de 20 MB).
-    const lotes: string[][] = [];
-    let actual: string[] = [];
-    let kbs = 0;
-    for (const d of imagenes) {
-      const kb = ((d.split(",")[1] || "").length * 3) / 4;
-      if (actual.length && kbs + kb > MAX_LOTE_KB) {
-        lotes.push(actual);
-        actual = [];
-        kbs = 0;
-      }
-      actual.push(d);
-      kbs += kb;
-    }
-    if (actual.length) lotes.push(actual);
-    if (!lotes.length) return { ok: false, carreras: [], error: "No hay páginas válidas para enviar.", diag: `peso ${peso}` };
+    const incluidas = (imagenes || []).map((durl, i) => ({ num: i + 1, durl }));
+    const TAM_LOTE = 3;
+    const lotes: Array<Array<{ num: number; durl: string }>> = [];
+    for (let i = 0; i < incluidas.length; i += TAM_LOTE) lotes.push(incluidas.slice(i, i + TAM_LOTE));
 
     const carreras: CarreraExtraida[] = [];
-    let hecho = 0;
-    for (const lote of lotes) {
-      let okLote = false;
-      let ultimoError = "";
-      for (const modelo of modelos) {
+    let loteN = 0;
+    let ciclo = 1;
+
+    while (true) {
+      for (const lote of lotes) {
+        loteN++;
+        const etiqueta = `Lote ${loteN}/${lotes.length} (pág. ${lote.map((p) => p.num).join(",")})`;
+        if (!cuotaTotal) {
+          onLote?.(Math.min(loteN, lotes.length), lotes.length);
+          onEstado?.(`${etiqueta}: enviando a la IA…`);
+        }
         try {
-          const nuevas = await generarLote(clave, modelo, lote);
-          for (const c of nuevas) {
-            c.ejemplares.forEach((ej) => {
-              ej.nombre = String(ej.nombre || "").trim().toUpperCase();
-              ej.nacionalidad = normalizarNacionalidad(ej.nacionalidad, c.hipodromo);
-            });
-            const key = `${String(c.hipodromo || "").toUpperCase()}|${c.carrera ?? ""}`;
-            const ex = key === "|" ? null : carreras.find((x) => `${String(x.hipodromo || "").toUpperCase()}|${x.carrera ?? ""}` === key);
-            if (!ex) {
-              carreras.push(c);
-            } else {
-              const nums = new Set((ex.ejemplares || []).map((e) => String(e.numero)));
-              (c.ejemplares || []).forEach((e) => {
-                if (!nums.has(String(e.numero))) {
-                  ex.ejemplares.push(e);
-                  nums.add(String(e.numero));
-                }
-              });
-            }
+          const nuevas = await extraerLote(clave, modelos, lote, etiqueta, diag, onEstado);
+          fusionarCarreras(carreras, nuevas);
+          onEstado?.(`${etiqueta}: ${nuevas.length} carrera(s). Total acumulado: ${carreras.length}.`);
+        } catch (errLote) {
+          const msg = errLote instanceof Error ? errLote.message : String(errLote);
+          if (/clave|API key/i.test(msg)) {
+            return { ok: false, carreras, error: msg, diag: pintarDiag(), cuotaTotal };
           }
-          okLote = true;
-          diag.push(`lote ${hecho + 1}/${lotes.length} · modelo ${modelo} ✔ (${lote.length} págs)`);
-          break;
-        } catch (e) {
-          ultimoError = e instanceof ErrorIA ? traducirErrorIA(e.status, e.detalle) : e instanceof Error ? e.message : String(e);
-          diag.push(`lote ${hecho + 1}/${lotes.length} · modelo ${modelo} ✘`);
-          await esperar(800);
+          diag.ultimoError = `${etiqueta}: ${msg}`;
+          if (/CUOTA DIARIA/i.test(msg)) {
+            cuotaTotal = true;
+            break;
+          }
         }
       }
-      hecho += 1;
-      onLote?.(hecho, lotes.length);
-      if (!okLote) {
-        return {
-          ok: false,
-          carreras: [],
-          error: ultimoError || "Fallo de la IA al procesar el lote.",
-          diag: `${diag.join(" · ")} · peso total enviado ${peso}`,
-        };
-      }
+      // ¿Resultado aunque sea parcial? Se entrega AHORA.
+      if (carreras.length > 0) break;
+      // Cuota diaria agotada en TODAS las familias: esperar es inútil.
+      if (cuotaTotal) break;
+      // Sin resultados por fallo/saturación: se rehace el ciclo (máx 3).
+      if (ciclo >= 3 || !diag.ultimoError) break;
+      ciclo++;
+      onEstado?.(`Sin carreras aún: ${diag.ultimoError}. Reintentando el ciclo completo (${ciclo}/3) en 30 seg…`);
+      await esperar(30000);
+      loteN = 0;
     }
-    return { ok: true, carreras, diag: `${diag.join(" · ")} · peso total ${peso}` };
+
+    if (carreras.length > 0) {
+      return { ok: true, carreras, diag: pintarDiag(), cuotaTotal };
+    }
+    return {
+      ok: false,
+      carreras: [],
+      error: diag.ultimoError || "No se obtuvieron carreras de la IA (páginas sin texto legible).",
+      diag: pintarDiag(),
+      cuotaTotal,
+    };
   } catch (e) {
-    return { ok: false, carreras: [], error: e instanceof Error ? e.message : String(e), diag: `peso total enviado ${peso}` };
+    return {
+      ok: false,
+      carreras: [],
+      error: e instanceof Error ? e.message : String(e),
+      diag: pintarDiag(),
+      cuotaTotal,
+    };
   }
 }

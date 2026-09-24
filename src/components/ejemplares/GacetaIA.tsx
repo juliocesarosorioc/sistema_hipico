@@ -21,35 +21,9 @@ function leerArchivoComoDataUrl(file: File): Promise<string> {
   });
 }
 
-const MAX_ENVIO_PX = 1600;
+const MAX_ENVIO_PX = 1500;
+const CALIDAD_JPEG = 0.6;
 const MAX_ARCHIVO_MB = 25;
-
-/** Re-convierte una imagen (dataURL) a JPEG ≤ MAX_ENVIO_PX para que el payload a Gemini sea liviano. */
-function prepararEnvio(dataUrl: string): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const escala = Math.min(1, MAX_ENVIO_PX / Math.max(img.width, img.height));
-        const w = Math.max(1, Math.round(img.width * escala));
-        const h = Math.max(1, Math.round(img.height * escala));
-        const cv = document.createElement("canvas");
-        cv.width = w;
-        cv.height = h;
-        const ctx = cv.getContext("2d");
-        if (!ctx) return resolve(dataUrl);
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(cv.toDataURL("image/jpeg", 0.82));
-      } catch {
-        resolve(dataUrl);
-      }
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
-}
 
 function pesoMB(dataUrl: string): number {
   return ((dataUrl.split(",")[1] || "").length * 3) / 4 / 1024 / 1024;
@@ -98,14 +72,15 @@ async function renderPdfAPaginas(file: File, onProgreso: (pagina: number, total:
     for (let i = 1; i <= doc.numPages; i++) {
       onProgreso(i, doc.numPages);
       const page = await doc.getPage(i);
-      const viewport = page.getViewport({ scale: 1.5 });
+      const vp = page.getViewport({ scale: 1.5 });
       const canvas = document.createElement("canvas");
-      canvas.width = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
+      // Misma regla que el legacy (js/gaceta.js): ancho tope 1500 px.
+      canvas.width = Math.min(vp.width, MAX_ENVIO_PX);
+      canvas.height = Math.round(canvas.width * (vp.height / vp.width));
       const ctx = canvas.getContext("2d");
       if (!ctx) continue;
-      await page.render({ canvasContext: ctx, viewport }).promise;
-      paginas.push(await prepararEnvio(canvas.toDataURL("image/png")));
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      paginas.push(canvas.toDataURL("image/jpeg", CALIDAD_JPEG));
       try {
         page.cleanup();
       } catch {
@@ -189,7 +164,7 @@ export function GacetaIA() {
             const paginas = await renderPdfAPaginas(f, (pag, total) => setEstado(`Renderizando ${f.name} · página ${pag} de ${total}...`));
             for (const d of paginas) nuevas.push(generar(d));
           } else {
-            const dataUrl = await prepararEnvio(await leerArchivoComoDataUrl(f));
+            const dataUrl = await leerArchivoComoDataUrl(f);
             nuevas.push(generar(dataUrl));
           }
         } catch (e) {
@@ -258,12 +233,16 @@ export function GacetaIA() {
     setEstado(`Transcribiendo ${imgs.length} página(s) (${pesoSel}) con Gemini (gratis)...`);
     setDiag("");
     try {
-      const res = await transformarGaceta(clave.trim(), imgs, (hecho, total) => setProgreso({ hecho, total }));
+      const res = await transformarGaceta(clave.trim(), imgs, (hecho, total) => setProgreso({ hecho, total }), (s) => setEstado(s));
       setDiag(res.diag ?? "");
       if (!res.ok) {
         setEstado(res.error ?? "Error transformando.");
         setCarreras([]);
-        window.dispatchEvent(new CustomEvent("toast", { detail: { msg: "❌ " + (res.error ?? "Error transformando."), tipo: "error" } }));
+        window.dispatchEvent(
+          new CustomEvent("toast", {
+            detail: { msg: "❌ " + (res.error ?? "Error transformando."), tipo: res.cuotaTotal ? "warning" : "error" },
+          })
+        );
         return;
       }
       setCarreras(res.carreras);
