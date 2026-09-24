@@ -13,7 +13,7 @@ const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
     items: [
       { href: "/dashboard", emoji: "🏠", txt: "Inicio / Dashboard" },
       { href: "/taquilla", emoji: "🎟️", txt: "Gestión de Jugadas" },
-      { emoji: "📋", txt: "Tablas Fijas" },
+      { href: "/tablas-fijas", emoji: "📋", txt: "Tablas Fijas" },
       { emoji: "🗂️", txt: "Grupos y Convenios" },
       { href: "/ejemplares", emoji: "🐴", txt: "Ejemplares y Gaceta" },
       { emoji: "🏇", txt: "W.P.S." },

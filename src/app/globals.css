@@ -38,3 +38,25 @@ body {
 .sidebar-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Impresión: oculta el shell (sidebars/topbar) y libera el scroll del main. */
+@media print {
+  html,
+  body {
+    background: #fff !important;
+  }
+  aside,
+  header,
+  .no-print {
+    display: none !important;
+  }
+  main {
+    overflow: visible !important;
+    height: auto !important;
+    background: #fff !important;
+  }
+  .h-screen {
+    height: auto !important;
+    overflow: visible !important;
+  }
+}

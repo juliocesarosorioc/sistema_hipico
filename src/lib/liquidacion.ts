@@ -10,6 +10,13 @@ export type PizarraCarrera = {
   segundo?: string;
   tercero?: string;
   cuarto?: string;
+  quinto?: string;
+  sexto?: string;
+  septimo?: string;
+  octavo?: string;
+  /** Posiciones con empate (Dead Heat): el motor aplica la regla de CERO
+      fraccionamiento (A PREMIO con 1° empatado = ANULADA, devuelve capital). */
+  empates?: number[];
 };
 
 export type PayloadPagar = {
