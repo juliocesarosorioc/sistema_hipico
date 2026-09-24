@@ -170,10 +170,20 @@ async function listaModelosFlash(clave: string): Promise<string[]> {
   try {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(clave)}`);
     if (!r.ok) return [];
-    const datos = (await r.json()) as { models?: Array<{ name: string }> };
+    const datos = (await r.json()) as { models?: Array<{ name: string; supportedGenerationMethods?: string[] }> };
     const flash = (datos.models || [])
-      .map((m) => m.name.replace("models/", ""))
-      .filter((n) => /flash/i.test(n));
+      .map((m) => ({ name: m.name.replace("models/", ""), metodos: m.supportedGenerationMethods ?? null }))
+      // Solo modelos que sirven para transcribir la gaceta: Flash de chat.
+      // Se descarta cualquier nombre que no acepte generateContent (p.ej. los
+      // modelos TTS gemini-3.x-flash-tts y -lite-tts SIEMPRE dan HTTP 400) y
+      // audio/imagen/preview/tuned/embedding.
+      .filter(
+        (m) =>
+          /flash/i.test(m.name) &&
+          !/(?:-tts|image|preview|tuned|babbage|embedding)/i.test(m.name) &&
+          (m.metodos == null || m.metodos.length === 0 || m.metodos.includes("generateContent"))
+      )
+      .map((m) => m.name);
     if (!flash.length) return [];
     const ver = (n: string) => {
       const m = n.match(/gemini-([\d.]+)/);
@@ -181,6 +191,9 @@ async function listaModelosFlash(clave: string): Promise<string[]> {
     };
     const lite = (n: string) => /-lite/i.test(n);
     flash.sort((a, b) => ver(b) - ver(a) || (lite(a) ? 1 : 0) - (lite(b) ? 1 : 0));
+    // Nota: supportedGenerationMethods es opcional en la respuesta; filtrar
+    // SOLO por el nombre evita que una respuesta sin ese campo deje la lista
+    // vacía y degrade la experiencia (ya se descartan TTS/imagen arriba).
     return flash;
   } catch {
     return [];
@@ -190,7 +203,9 @@ async function listaModelosFlash(clave: string): Promise<string[]> {
 /** Cada familia de Flash tiene SU PROPIA cuota gratuita diaria. Se ordenan
  *  primero por familia vieja y luego por versión dentro de la familia. */
 function elegirModelos(descubiertos: string[]): string[] {
-  const unicos = [...new Set(descubiertos.concat(MODELOS_GEMINI))].filter((m) => !/image|preview|tuned|babbage/i.test(m));
+  const unicos = [...new Set(descubiertos.concat(MODELOS_GEMINI))].filter(
+    (m) => !/image|preview|tuned|babbage|-tts|embedding/i.test(m)
+  );
   const porFamilia: Record<string, string[]> = {};
   for (const m of unicos) {
     const v = (m.match(/gemini[_-]?(\d+)/i) || [])[1] || "0";
