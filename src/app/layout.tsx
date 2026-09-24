@@ -3,6 +3,7 @@ import "./globals.css";
 import { Topbar } from "@/components/layout/Topbar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { BetSlipPanel } from "@/components/betting/BetSlipPanel";
+import { AuthBootstrap } from "@/components/auth/AuthBootstrap";
 
 export const metadata: Metadata = {
   title: "Club del Dinero — Sistema Hípico",
@@ -26,6 +27,7 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body>
+        <AuthBootstrap />
         <div className="flex h-screen overflow-hidden">
           {/* Zona lateral izquierda: menú de navegación (persistente) */}
           <Sidebar />
