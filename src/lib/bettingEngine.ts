@@ -172,6 +172,8 @@ export type TicketMotor = BetSlipEntry & {
   puesto_final: number | "SOC" | "EMP1";
   pizarra: PizarraCarrera;
   dividendos: Record<string, number> | null;
+  /** Premio por tabla fija (Tablas): bruto = monto × premio_por_tabla. */
+  premio_por_tabla?: number | null;
 };
 
 export type ResultadoMotor = {

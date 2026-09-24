@@ -136,3 +136,31 @@ export async function encuestarTicket(id: string | number, puntuacion: number, c
     return { ok: false, error: (e as Error).message };
   }
 }
+
+/** Teléfono del cliente (para el enlace wa.me de notificación). */
+export async function telefonoDeCliente(clienteId: string | number): Promise<{ telefono?: string; codigo_pais?: string } | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("clientes")
+      .select("telefono, codigo_pais")
+      .eq("id", clienteId as never)
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    return { telefono: data.telefono ? String(data.telefono) : undefined, codigo_pais: data.codigo_pais ? String(data.codigo_pais) : undefined };
+  } catch {
+    return null;
+  }
+}
+
+/** Enlace wa.me para notificar al cliente la resolución de su ticket. */
+export async function enlaceWhatsAppTicket(t: TicketDisputa): Promise<string | null> {
+  if (!t.cliente_id) return null;
+  const tel = await telefonoDeCliente(t.cliente_id);
+  if (!tel?.telefono) return null;
+  const codigo = tel.codigo_pais || "+58";
+  const numeroInt = String(codigo).replace(/\D/g, "") + String(tel.telefono).replace(/\D/g, "");
+  const mensaje = `Hola ${t.cliente_nombre ?? "cliente"} 👋\n\n*Club del Dinero*\n\nTu ticket T-${t.numero_ticket ?? String(t.id).slice(0, 6)} fue resuelto:\n• Acción: ${t.accion_aplicada ?? "Atendido"}${t.monto_resuelto != null && Number(t.monto_resuelto) > 0 ? ` ($${Number(t.monto_resuelto).toFixed(2)})` : ""}\n• Respuesta: ${t.respuesta_casa ?? ""}\n\n¡Gracias por tu confianza!`;
+  return `https://wa.me/${numeroInt}?text=${encodeURIComponent(mensaje)}`;
+}

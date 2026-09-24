@@ -224,6 +224,56 @@ export async function reclamarJugada(ticketId: string | number): Promise<{ ok: b
   }
 }
 
+export type DisputaJugada = {
+  cliente: ClienteRow;
+  /** Fila del movimiento que se disputa (tickets_apuestas). */
+  jugada_id: string | number;
+  jugada_origen?: string | null;
+  hipodromo: string;
+  carrera: number;
+  monto: number;
+  motivo: string;
+  image?: File | null;
+};
+
+/**
+ * "Disputar jugada" — crea un ticket de disputa (tipo DISPUTA) referenciando
+ * el movimiento real (jugada_id) y adjuntando la imagen pegada con Ctrl+V
+ * (subida al bucket `reclamos`). El admin lo atiende desde la consola Tickets.
+ */
+export async function disputarJugada(datos: DisputaJugada): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  try {
+    let imagen: string | null = null;
+    if (datos.image) {
+      const up = await guardarImagenReclamo(datos.cliente.id, datos.image);
+      if (up.error) return { ok: false, error: `Imagen: ${up.error}` };
+      imagen = up.url ?? null;
+    }
+    const { error } = await supabase.from("tickets_jugadas").insert([
+      {
+        cliente_id: datos.cliente.id,
+        cliente_nombre: datos.cliente.nombre || datos.cliente.seudonimo,
+        tipo_jugada: "DISPUTA",
+        jugada_id: String(datos.jugada_id),
+        jugada_origen: datos.jugada_origen ?? null,
+        fecha_jugada: new Date().toISOString().slice(0, 10),
+        hipodromo: datos.hipodromo,
+        carrera: datos.carrera || 0,
+        monto: datos.monto || 0,
+        motivo: datos.motivo,
+        imagen_soporte: imagen,
+        estado: "EN_REVISION",
+        creado_por: "portal",
+      },
+    ]);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Solicitudes de compra de tablas fijas (el admin valida)
 // ---------------------------------------------------------------------------

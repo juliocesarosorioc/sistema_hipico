@@ -28,7 +28,9 @@ function posicion(t: TicketMotor): number {
 }
 
 /* ---------- Envoltorio ÚNICO de Comisión y Suma Cero ---------- */
-function finalizar(ok: boolean, motivo: string, clienteBruto: number, monto: number, tasa: number): ResultadoMotor {
+/** Exportado para el Motor Universal (oficiales.ts): aplica comisión 5% SOLO
+    sobre la ganancia bruta y calcula balanceBanca = monto − bruto + comisión. */
+export function finalizar(ok: boolean, motivo: string, clienteBruto: number, monto: number, tasa: number): ResultadoMotor {
   const gananciaBruta = clienteBruto - monto;
   const comision = gananciaBruta > 0 ? gananciaBruta * (tasa / 100) : 0;
   return {

@@ -4,9 +4,13 @@ import { useState } from "react";
 import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla } from "@/lib/liquidacion/pagarYCerrar";
+import { aplicarLiquidacionSaldos } from "@/lib/liquidacion/saldos";
 import { upsertResultadoCentral } from "@/lib/carreras-dia";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { Button } from "@/components/ui/Button";
+
+const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
+  window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
 
 const COP = new Intl.NumberFormat("es-CO", {
   style: "currency",
@@ -71,6 +75,7 @@ export function PagarCarreraModal() {
       hipodromo: hipodromo.trim().toUpperCase(),
       carrera: Number(carrera),
       pizarra: r.pizarra,
+      dividendos: r.dividendos ?? null,
       tickets: tickets.map((t) => ({ comando: t.comando, monto: t.monto })),
     });
     if (res.ok) {
@@ -90,7 +95,21 @@ export function PagarCarreraModal() {
         premio_recalculado: tabla?.premio_recalculado ?? undefined,
         detalle: { caballos: tabla?.caballos },
         cargado_por: "TAQUILLA",
+        orden_llegada: ordenLlegadaDePizarra(r.pizarra),
+        dividendos: r.dividendos ?? null,
       });
+      // Bloque 3 · Saldos: aplica la liquidación universal al saldo real de
+      // los clientes (transaccional, idempotente sobre tickets Pendientes).
+      const s = await aplicarLiquidacionSaldos({
+        hipodromo: hipodromo.trim().toUpperCase(),
+        carrera: Number(carrera),
+        pizarra: r.pizarra,
+        dividendos: r.dividendos ?? null,
+        premio_por_tabla: r.premio_por_tabla ?? tabla?.premio_recalculado ?? tabla?.premio_original ?? null,
+      });
+      if (!s.ok && s.errores.length) {
+        toast("Aviso de saldos: " + s.errores[0], "warning");
+      }
     }
     setTrabajando(false);
 
@@ -239,6 +258,17 @@ export function PagarCarreraModal() {
       )}
     </div>
   );
+}
+
+/** Orden de llegada oficial [{numero, puesto}] derivada de la pizarra. */
+function ordenLlegadaDePizarra(p: PizarraResultados["pizarra"]): Array<{ numero: string; puesto: number }> {
+  const orden = ["primero", "segundo", "tercero", "cuarto", "quinto", "sexto", "septimo", "octavo"] as const;
+  const out: Array<{ numero: string; puesto: number }> = [];
+  orden.forEach((k, i) => {
+    const v = p[k];
+    if (typeof v === "string" && v.trim() !== "") out.push({ numero: v.trim(), puesto: i + 1 });
+  });
+  return out;
 }
 
 export default PagarCarreraModal;

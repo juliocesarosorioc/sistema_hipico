@@ -8,6 +8,7 @@ import {
   listarTicketsAdmin,
   pasarARevision,
   resolverTicket,
+  enlaceWhatsAppTicket,
   type AccionTicket,
   type EstadoTicket,
   type TicketDisputa,
@@ -86,6 +87,18 @@ export function TicketsModule() {
     toast("Ticket resuelto. El cliente ya puede ver la respuesta.", "success");
     setResolviendo(null);
     void cargar();
+    void notificarWhatsApp(t, datos);
+  };
+
+  const notificarWhatsApp = async (t: TicketDisputa, datos: { respuesta: string; accion: AccionTicket; monto: number | null }) => {
+    const link = await enlaceWhatsAppTicket({ ...t, respuesta_casa: datos.respuesta, accion_aplicada: datos.accion, monto_resuelto: datos.monto });
+    if (!link) return toast("SIN teléfono registrado del cliente — no se pudo armar el enlace wa.me.", "warning");
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(link);
+    } catch {
+      /* clipboard opcional */
+    }
+    window.open(link, "_blank");
   };
 
   return (
@@ -164,6 +177,30 @@ const tono = (t: TicketDisputa) =>
 
 function TicketCard({ t, onRevision, onResolver }: { t: TicketDisputa; onRevision: () => void; onResolver: () => void }) {
   const tipo = t.tipo_jugada ?? "DISPUTA";
+  const [wa, setWa] = useState<string | null>(null);
+
+  useEffect(() => {
+    let vivo = true;
+    if (t.estado === "SOLUCIONADO") {
+      void enlaceWhatsAppTicket(t).then((l) => {
+        if (vivo) setWa(l);
+      });
+    }
+    return () => {
+      vivo = false;
+    };
+  }, [t.id, t.estado]);
+
+  const abrirWa = () => {
+    if (!wa) return;
+    try {
+      if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(wa);
+    } catch {
+      /* sinop */
+    }
+    window.open(wa, "_blank");
+  };
+
   return (
     <div className="rounded-2xl border border-line bg-white p-4 shadow-sm space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -230,6 +267,11 @@ function TicketCard({ t, onRevision, onResolver }: { t: TicketDisputa; onRevisio
       ) : null}
 
       <div className="flex justify-end gap-2">
+        {t.estado === "SOLUCIONADO" && wa ? (
+          <Button variant="outline" size="sm" onClick={abrirWa} title="Copia el enlace y abre WhatsApp con el cliente">
+            <i className="fab fa-whatsapp mr-1 text-green-600"></i> Enviar por WhatsApp
+          </Button>
+        ) : null}
         {t.estado === "CREADO" ? (
           <Button variant="outline" size="sm" onClick={onRevision}>
             <i className="fas fa-magnifying-glass mr-1"></i> Marcar en revisión

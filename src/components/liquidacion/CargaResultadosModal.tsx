@@ -10,6 +10,10 @@ export type PizarraResultados = {
   pizarra: PizarraCarrera;
   empates: number[];
   llenas: number; // cuántas posiciones de llegada se cargaron
+  /** Dividendos oficiales por $1 (win/place/show/puestos/marcas/tabla/remate). */
+  dividendos?: Record<string, number> | null;
+  /** Premio por tabla fija (se usa como bruto por tabla cuando el 1º gana). */
+  premio_por_tabla?: number | null;
 };
 
 const ORDENES = [
@@ -48,10 +52,16 @@ type Props = {
 export function CargaResultadosModal({ abierto, onCerrar, hipodromo, carrera, caballos, onConfirmar }: Props) {
   const [filas, setFilas] = useState<Fila[]>([]);
   const [puestos, setPuestos] = useState(PUESTOS_MIN);
+  const [usoDividendos, setUsoDividendos] = useState(false);
+  const [dividendos, setDividendos] = useState<Record<string, string>>({});
+  const [premioTabla, setPremioTabla] = useState("");
 
   useEffect(() => {
     if (!abierto) return;
     setPuestos(PUESTOS_MIN);
+    setUsoDividendos(false);
+    setDividendos({});
+    setPremioTabla("");
     const base = Array.from({ length: PUESTOS_MIN }, (_, i) => {
       const n = (caballos ?? [])[i];
       return { numero: n ? String(n.numero) : "", empate: false };
@@ -65,6 +75,7 @@ export function CargaResultadosModal({ abierto, onCerrar, hipodromo, carrera, ca
     setFilas((f) => f.map((r, j) => (j === i ? { ...r, numero: v.replace(/[^0-9]/g, "") } : r)));
   const toggleEmpate = (i: number) =>
     setFilas((f) => f.map((r, j) => (j === i ? { ...r, empate: !r.empate } : r)));
+  const setDiv = (k: string, v: string) => setDividendos((d) => ({ ...d, [k]: v.replace(/[^\d.]/g, "") }));
 
   const confirmar = () => {
     const ordenNombres = new Map<number, string>(ORDENES.map((o) => [o.orden, o.nombre]));
@@ -79,7 +90,20 @@ export function CargaResultadosModal({ abierto, onCerrar, hipodromo, carrera, ca
       if (r.empate) empates.push(i + 1);
     });
     if (!pizarra.primero) return;
-    onConfirmar({ pizarra: { ...pizarra, empates: empates.length ? empates : undefined } as PizarraCarrera, empates, llenas });
+    const divFinal: Record<string, number> = {};
+    if (usoDividendos) {
+      for (const [k, v] of Object.entries(dividendos)) {
+        const n = parseFloat(v);
+        if (Number.isFinite(n) && n > 0) divFinal[k] = n;
+      }
+    }
+    onConfirmar({
+      pizarra: { ...pizarra, empates: empates.length ? empates : undefined } as PizarraCarrera,
+      empates,
+      llenas,
+      dividendos: usoDividendos && Object.keys(divFinal).length ? divFinal : null,
+      premio_por_tabla: premioTabla ? parseFloat(premioTabla) || null : null,
+    });
   };
 
   return (
@@ -143,6 +167,45 @@ export function CargaResultadosModal({ abierto, onCerrar, hipodromo, carrera, ca
               >
                 ＋ Añadir puesto {puestos + 1}° ({PUESTOS_MAX - puestos} restante(s))
               </button>
+            </div>
+          )}
+        </div>
+
+        {/* Dividendos oficiales (Liquidación Universal) */}
+        <div className="border-t border-line bg-indigo-50/50 px-4 py-3">
+          <label className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-indigo-700">
+            <input
+              type="checkbox"
+              checked={usoDividendos}
+              onChange={(e) => setUsoDividendos(e.target.checked)}
+              className="h-4 w-4 accent-indigo-600"
+            />
+            Cargar dividendos oficiales (pago por $1) · comisión 5% sobre premio bruto
+          </label>
+          {usoDividendos && (
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {(["win", "place", "show", "puestos", "marcas", "tabla", "nini", "remate"] as const).map((k) => (
+                <label key={k} className="flex flex-col gap-0.5 text-[9px] font-bold uppercase text-slate-500">
+                  {k}
+                  <input
+                    value={dividendos[k] ?? ""}
+                    onChange={(e) => setDiv(k, e.target.value)}
+                    inputMode="decimal"
+                    placeholder="2.00"
+                    className="w-full rounded-lg border border-line bg-white px-2 py-1.5 text-sm font-black text-slate-900 font-mono placeholder:text-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  />
+                </label>
+              ))}
+              <label className="flex flex-col gap-0.5 text-[9px] font-bold uppercase text-slate-500 col-span-2">
+                Premio por tabla (bruto × tablas)
+                <input
+                  value={premioTabla}
+                  onChange={(e) => setPremioTabla(e.target.value.replace(/[^\d.]/g, ""))}
+                  inputMode="decimal"
+                  placeholder="ej. 2.50"
+                  className="w-full rounded-lg border border-line bg-white px-2 py-1.5 text-sm font-black text-slate-900 font-mono placeholder:text-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                />
+              </label>
             </div>
           )}
         </div>

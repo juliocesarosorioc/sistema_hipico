@@ -8,6 +8,7 @@ import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import {
   actualizarDatosCliente,
   cerrarSesion,
+  disputarJugada,
   entrarPortal,
   reanudarSesion,
   reportarJugadaFaltante,
@@ -288,11 +289,32 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
     () => sesion.arbolTickets.jugadas.slice(0, 60),
     [sesion.arbolTickets.jugadas]
   );
+  const [disputa, setDisputa] = useState<(typeof jugadas)[number] | null>(null);
 
   const reclamar = async (id: string) => {
     const r = await reclamarJugada(id);
     if (!r.ok) return toast(r.error ?? "No se pudo reclamar.", "error");
     toast("Reclamo enviado. La casa lo revisará.", "success");
+    const re = await reanudarSesion();
+    if (re) onCambio(re);
+  };
+
+  const confirmarDisputa = async (d: { motivo: string; image?: File | null }) => {
+    if (!disputa) return;
+    toast("Enviando tu disputa…", "info");
+    const r = await disputarJugada({
+      cliente: sesion.cliente,
+      jugada_id: disputa.id,
+      jugada_origen: disputa.jugada,
+      hipodromo: disputa.hipodromo,
+      carrera: disputa.carrera,
+      monto: disputa.montoJugado,
+      motivo: d.motivo,
+      image: d.image,
+    });
+    if (!r.ok) return toast(r.error ?? "No se pudo enviar la disputa.", "error");
+    toast("Disputa registrada. La casa la revisará y te responderá por WhatsApp.", "success");
+    setDisputa(null);
     const re = await reanudarSesion();
     if (re) onCambio(re);
   };
@@ -337,10 +359,19 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
                   </td>
                   <td className="px-3 py-2 text-right">
                     {j.estado === "Pendiente" ? (
-                      <Button variant="outline" size="sm" onClick={() => void reclamar(j.id)} title="Reclamar esta jugada">
-                        <i className="fas fa-flag text-red-500"></i> Reclamar
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="outline" size="sm" onClick={() => setDisputa(j)} title="Disputar esta jugada">
+                          <i className="fas fa-scale-balanced text-amber-600"></i> Disputar
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => void reclamar(j.id)} title="Reclamar esta jugada">
+                          <i className="fas fa-flag text-red-500"></i> Reclamar
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button variant="ghost" size="sm" onClick={() => setDisputa(j)} title="Disputar esta jugada">
+                        <i className="fas fa-scale-balanced text-slate-400"></i> Disputar
                       </Button>
-                    ) : null}
+                    )}
                   </td>
                 </tr>
               ))}
@@ -353,6 +384,116 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
               ) : null}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {disputa ? (
+        <DisputarModal jugada={disputa} onCerrar={() => setDisputa(null)} onEnviar={(d) => void confirmarDisputa(d)} />
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Disputar jugada (Ctrl+V para pegar imagen de soporte)
+// ---------------------------------------------------------------------------
+
+function DisputarModal({
+  jugada,
+  onCerrar,
+  onEnviar,
+}: {
+  jugada: { id: string; hipodromo: string; carrera: number; jugada: string; caballo: string; montoJugado: number; moneda: string };
+  onCerrar: () => void;
+  onEnviar: (d: { motivo: string; image?: File | null }) => void;
+}) {
+  const [motivo, setMotivo] = useState("");
+  const [imagen, setImagen] = useState<File | null>(null);
+  const [previa, setPrevia] = useState<string | null>(null);
+  const [aviso, setAviso] = useState("");
+
+  const areaRef = (el: HTMLDivElement | null) => {
+    if (el) el.focus();
+  };
+
+  const onPaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const it of items) {
+      if (it.type.startsWith("image/")) {
+        const archivo = it.getAsFile();
+        if (archivo) {
+          setImagen(archivo);
+          setPrevia(URL.createObjectURL(archivo));
+          setAviso("📸 Imagen capturada del portapapeles.");
+          e.preventDefault();
+          return;
+        }
+      }
+    }
+    setAviso("");
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" role="dialog" aria-modal>
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-black text-slate-800">
+            <i className="fas fa-scale-balanced mr-1 text-amber-600"></i> Disputar jugada
+          </h3>
+          <button onClick={onCerrar} className="text-slate-400 hover:text-slate-600" aria-label="Cerrar">
+            ✕
+          </button>
+        </div>
+
+        <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <b>{jugada.hipodromo} · Carrera {jugada.carrera}</b> · {jugada.jugada} · {jugada.caballo} ·{" "}
+          <span className="font-mono">{formatoMoneda(jugada.moneda, jugada.montoJugado)}</span>
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Motivo de la disputa *</label>
+          <textarea
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value.toUpperCase())}
+            className="w-full border border-line rounded-xl bg-surface px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-200 resize-none uppercase"
+            rows={2}
+            placeholder="Ej. EL PREMIO PAGADO NO CORRESPONDE A MI JUGADA…"
+          />
+        </div>
+
+        <div
+          ref={areaRef}
+          tabIndex={0}
+          onPaste={onPaste}
+          className="rounded-xl border-2 border-dashed border-amber-300 bg-amber-50/40 p-4 text-center outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+        >
+          <div className="text-[11px] font-black uppercase tracking-wide text-amber-700">
+            {imagen ? <i className="fas fa-image mr-1"></i> : <i className="fas fa-paste mr-1"></i>}
+            {imagen ? "Imagen adjunta" : "Pegá el comprobante (Ctrl+V)"}
+          </div>
+          <p className="mx-auto mt-1 max-w-[24ch] text-[10px] text-amber-600/80">
+            Hacé clic aquí y presioná Ctrl+V con la captura en el portapapeles.
+          </p>
+          {previa ? (
+            <img src={previa} alt="Comprobante" className="mx-auto mt-2 max-h-32 rounded-lg border border-amber-200 shadow-sm" />
+          ) : null}
+          {aviso ? <p className="mt-1 text-[10px] font-bold text-emerald-600">{aviso}</p> : null}
+        </div>
+
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" size="sm" onClick={onCerrar}>
+            Cancelar
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
+            className="bg-amber-600 hover:bg-amber-500"
+            disabled={!motivo.trim()}
+            onClick={() => onEnviar({ motivo, image: imagen })}
+          >
+            <i className="fas fa-paper-plane mr-1"></i> Enviar disputa
+          </Button>
         </div>
       </div>
     </div>
