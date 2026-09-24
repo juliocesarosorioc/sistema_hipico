@@ -30,9 +30,13 @@ export const PERMISOS_CANONICOS: Permiso[] = [
   { id: 50, clave: "ver_contabilidad", modulo: "contabilidad", descripcion: "Ver módulo de contabilidad" },
   { id: 51, clave: "registrar_ingresos", modulo: "contabilidad", descripcion: "Registrar ingresos / avales" },
   { id: 52, clave: "autorizar_pagos", modulo: "contabilidad", descripcion: "Autorizar pagos y cierres" },
+  // clientes / portal
+  { id: 45, clave: "gestionar_clientes", modulo: "clientes", descripcion: "Ver y operar Gestión de Clientes (cartera, portal y reclamos)" },
   // seguridad
   { id: 60, clave: "administrar_seguridad", modulo: "seguridad", descripcion: "Administrar perfiles y accesos" },
   { id: 61, clave: "ver_auditoria", modulo: "seguridad", descripcion: "Ver trazabilidad / auditoría" },
+  // portal del cliente
+  { id: 70, clave: "acceso_portal", modulo: "portal", descripcion: "Acceso al Portal del Cliente" },
 ];
 
 export const MODULOS = [...new Set(PERMISOS_CANONICOS.map((p) => p.modulo))];
@@ -66,11 +70,13 @@ export const PERFILES_DEFECTO: Perfil[] = [
   { id: 1, nombre: "Admin", descripcion: "Administrador Principal" },
   { id: 2, nombre: "Taquillero", descripcion: "Operador de taquilla" },
   { id: 3, nombre: "Auditor", descripcion: "Auditoría (solo lectura)" },
+  { id: 4, nombre: "Cliente", descripcion: "Acceso solo al Portal del Cliente" },
 ];
 
 /** Accesos por defecto según el nombre del perfil (si la BD no existe). */
 export function accesosPorDefecto(nombrePerfil: string): Set<string> {
   const n = (nombrePerfil ?? "").toLowerCase();
+  if (n.includes("cliente")) return new Set(["acceso_portal"]);
   if (n.includes("admin")) return todasLasClaves();
   if (n.includes("taqui")) return new Set(CLAVES_TAQUILLERO);
   if (n.includes("audit")) return new Set(CLAVES_AUDITOR);

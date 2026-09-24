@@ -45,7 +45,7 @@ const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
     id: "configuracion",
     titulo: "Configuración",
     items: [
-      { emoji: "👥", txt: "Clientes/Socios" },
+      { href: "/clientes", emoji: "👥", txt: "Clientes/Socios" },
       { emoji: "⚙️", txt: "Reglas de Jugadas" },
     ],
   },
@@ -129,6 +129,20 @@ export function Sidebar() {
                   <li key={it.href}>
                     {it.href === "/seguridad" ? (
                       <Guard permiso="administrar_seguridad">
+                        <Link
+                          href={it.href}
+                          className={`flex items-center gap-3 border-l-4 px-5 py-3 text-base font-semibold transition-colors ${
+                            activo
+                              ? "border-blue-400 bg-blue-600 text-white"
+                              : "border-transparent text-slate-300 hover:bg-slate-800 hover:text-white"
+                          }`}
+                        >
+                          <span className="w-6 text-center">{it.emoji}</span>
+                          <span>{it.txt}</span>
+                        </Link>
+                      </Guard>
+                    ) : it.href === "/clientes" ? (
+                      <Guard permiso="gestionar_clientes">
                         <Link
                           href={it.href}
                           className={`flex items-center gap-3 border-l-4 px-5 py-3 text-base font-semibold transition-colors ${

@@ -57,7 +57,8 @@ create policy "anon todo (RLS off legado)" on public.usuario_permisos for all us
 insert into public.perfiles (id, nombre, descripcion) values
   (1, 'Admin',      'Administrador Principal: acceso total al sistema'),
   (2, 'Taquillero', 'Operador de taquilla: registra jugadas, tablas y boletos'),
-  (3, 'Auditor',    'Auditoría: lectura, reportes y trazabilidad sin operar caja')
+  (3, 'Auditor',    'Auditoría: lectura, reportes y trazabilidad sin operar caja'),
+  (4, 'Cliente',    'Cliente del hipódromo: acceso solo al Portal del Cliente (/portal)')
 on conflict (id) do update set nombre = excluded.nombre, descripcion = excluded.descripcion;
 
 -- ------------------------------------------------------------- seed permisos
@@ -80,13 +81,17 @@ insert into public.permisos (id, clave, modulo, descripcion) values
   -- módulo ejemplares y gaceta
   (40,  'ver_ejemplares',        'ejemplares',    'Ver ejemplares y gaceta'),
   (41,  'administrar_ejemplares','ejemplares',    'Editar padrón de ejemplares'),
+  -- módulo clientes
+  (45,  'gestionar_clientes',    'clientes',      'Ver y operar Gestión de Clientes (cartera, portal y reclamos)'),
   -- módulo contabilidad
   (50,  'ver_contabilidad',      'contabilidad',  'Ver módulo de contabilidad'),
   (51,  'registrar_ingresos',    'contabilidad',  'Registrar ingresos / avales'),
   (52,  'autorizar_pagos',       'contabilidad',  'Autorizar pagos y cierres'),
   -- módulo seguridad
   (60,  'administrar_seguridad', 'seguridad',     'Administrar perfiles y accesos'),
-  (61,  'ver_auditoria',         'seguridad',     'Ver trazabilidad / auditoría')
+  (61,  'ver_auditoria',         'seguridad',     'Ver trazabilidad / auditoría'),
+  -- módulo portal del cliente
+  (70,  'acceso_portal',         'portal',        'Acceso al Portal del Cliente')
 on conflict (id) do update set clave = excluded.clave, modulo = excluded.modulo, descripcion = excluded.descripcion;
 
 -- ------------------------------------------------- seed perfil <> permisos
@@ -94,15 +99,17 @@ insert into public.perfil_permisos (perfil_id, permiso_id, activo) values
   -- Admin: TODO
   (1, 1, true), (1, 10, true), (1, 11, true), (1, 12, true), (1, 13, true),
   (1, 20, true), (1, 21, true), (1, 22, true), (1, 23, true), (1, 24, true),
-  (1, 30, true), (1, 40, true), (1, 41, true),
+  (1, 30, true), (1, 40, true), (1, 41, true), (1, 45, true),
   (1, 50, true), (1, 51, true), (1, 52, true),
-  (1, 60, true), (1, 61, true),
+  (1, 60, true), (1, 61, true), (1, 70, true),
   -- Taquillero: operar taquilla y tablas
   (2, 1, true), (2, 10, true), (2, 11, true), (2, 13, true),
   (2, 20, true), (2, 23, true), (2, 24, true), (2, 30, true), (2, 40, true),
   -- Auditor: solo lectura
   (3, 1, true), (3, 10, true), (3, 20, true), (3, 30, true),
-  (3, 40, true), (3, 50, true), (3, 61, true)
+  (3, 40, true), (3, 50, true), (3, 61, true),
+  -- Cliente: SOLO el portal (no debe tocar el Dashboard administrativo)
+  (4, 70, true)
 on conflict (perfil_id, permiso_id) do update set activo = excluded.activo;
 
 -- ============================================================================
