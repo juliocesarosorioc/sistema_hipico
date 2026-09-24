@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { hasPermission } from "@/store/useAuthStore";
 
 type Props = {
@@ -34,6 +34,19 @@ type Props = {
  * contenido en estado deshabilitado según cómo se le pase por prop.
  */
 export function Guard({ permiso, modo: _modo = "ocultar", disabled, fallback = null, children }: Props) {
+  const [montado, setMontado] = useState(false);
+
+  // Hidratación: el HTML del servidor se genera con los permisos por defecto
+  // (Admin → todos), mientras que el estado persistido (zustand) puede diferir.
+  // Si evaluáramos aquí `hasPermission`, el primer render del cliente no
+  // coincidiría con el servidor (ej. el enlace /clientes oculto) → hydration
+  // mismatch. Se devuelven los hijos en la primera pasada (espejo del SSR) y
+  // recién se aplica el RBAC real al montar el componente.
+  useEffect(() => {
+    setMontado(true);
+  }, []);
+  if (!montado) return <>{children}</>;
+
   const permite = hasPermission(permiso);
   if (permite) return <>{children}</>;
 
