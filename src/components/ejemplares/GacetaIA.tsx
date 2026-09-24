@@ -431,13 +431,23 @@ export function GacetaIA() {
       setEnviando(true);
       const prev = carreras.map((c) => ({ ...c }));
       marcarEnviadas(prev, conNombre);
-      setCarreras(prev.map((c) => ({ ...c, ejemplares: (c.ejemplares || []).map((e) => ({ ...e })) })));
       const total = acumularEnEnsamblaje(conNombre);
-      const etiqueta =
-        conNombre.length > 1
-          ? `${conNombre.length} carrera(s) enviada(s) al Ensamblaje`
-          : `Carrera C${conNombre[0].carrera || "?"} enviada al Ensamblaje`;
-      toast(`${etiqueta} (total en el envío: ${total}). Revise y publique.`, "success");
+      // Registro automático en el Padrón (UPSERT por nombre + nacionalidad).
+      const tot = await registrarEjemplares(conNombre as unknown as Array<Record<string, unknown>>);
+      // Limpieza del estado local: solo quedan las carreras NO enviadas, para
+      // evitar envíos duplicados (la sección queda en blanco tras enviar).
+      const restantes = prev
+        .filter((c) => !c.enviada)
+        .map((c) => ({ ...c, ejemplares: (c.ejemplares || []).map((e) => ({ ...e })) }));
+      persistirRegistro(restantes.map((c) => ({ ...c, enviada: !!c.enviada, aplicada: !!c.aplicada })));
+      setCarreras(restantes);
+      const nEjemplares = (tot?.nuevos ?? 0) + (tot?.vinculados ?? 0);
+      toast(
+        `${conNombre.length} carrera(s) enviadas al ensamblaje y ${nEjemplares} ejemplares registrados en el padrón.${
+          tot?.fallidos ? ` (${tot.fallidos} ejemplar(es) fallido(s))` : ""
+        }`,
+        tot?.fallidos ? "warning" : "success"
+      );
       setEnviando(false);
       setTimeout(() => router.push("/tablas-fijas"), 700);
     },
