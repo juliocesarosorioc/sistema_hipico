@@ -46,7 +46,7 @@ export const useBetSlipStore = create<BetSlipState>()(
   persist(
     (set) => ({
       entries: [],
-      isOpen: false,
+      isOpen: true,
       isDocked: false,
       lastAddedId: null,
       flashTotal: false,
