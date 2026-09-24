@@ -8,12 +8,12 @@ import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { BuscadorPadron, type OpcionPadron } from "@/components/ejemplares/BuscadorPadron";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useHipodromosActivos } from "@/store/useHipodromosStore";
 import { registrarEjemplares, listarPadronSimple } from "@/lib/gaceta/padron";
 import {
   guardarPrograma,
   hoyLocal,
   leerProgramaPorFecha,
-  listarHipodromosCatalogo,
   type CarreraPrograma,
   type ProgramaDia,
 } from "@/lib/gaceta/programa";
@@ -134,7 +134,7 @@ function parseLineas(t: string, hipo: string): Caballo[] {
 export function CargaPrograma() {
   const [fecha, setFecha] = useState(() => hoyLocal());
   const [hipodromo, setHipodromo] = useState("");
-  const [catalogo, setCatalogo] = useState<Array<{ id: string | number; nombre: string }>>([]);
+  const hipodromosActivos = useHipodromosActivos();
   const [padron, setPadron] = useState<OpcionPadron[]>([]);
   const [programa, setPrograma] = useState<ProgramaDia | null>(null);
   const [carreras, setCarreras] = useState<CarreraPrograma[]>([]);
@@ -156,17 +156,12 @@ export function CargaPrograma() {
     setPrograma(res.ok ? (res.data ?? null) : null);
   }, []);
 
-  // Inicial: catálogo de hipódromos + padrón de ejemplares + programa de la fecha.
+  // Inicial: padrón de ejemplares + programa de la fecha (catálogo vía store).
   useEffect(() => {
     let vivo = true;
     (async () => {
-      const [hipos, pad, prog] = await Promise.all([
-        listarHipodromosCatalogo(),
-        listarPadronSimple(),
-        leerProgramaPorFecha(hoyLocal()),
-      ]);
+      const [pad, prog] = await Promise.all([listarPadronSimple(), leerProgramaPorFecha(hoyLocal())]);
       if (!vivo) return;
-      setCatalogo(hipos);
       setPadron(pad);
       setPrograma(prog.ok ? (prog.data ?? null) : null);
       setCargando(false);
@@ -184,11 +179,11 @@ export function CargaPrograma() {
 
   const opcionesHipodromo = useMemo(
     () =>
-      catalogo.map((h) => ({
-        value: h.nombre.toUpperCase(),
-        label: h.nombre.toUpperCase(),
+      hipodromosActivos.map((h) => ({
+        value: h.value,
+        label: h.label,
       })),
-    [catalogo]
+    [hipodromosActivos]
   );
 
   const opcionesPadron = useMemo(() => ({ opciones: padron }), [padron]);

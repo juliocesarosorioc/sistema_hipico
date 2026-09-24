@@ -22,11 +22,15 @@ export const FALLBACK_HIPODROMOS = [
 
 export type OpcionHipodromo = { value: string; label: string };
 
-/** Lista de hipódromos operativos (Supabase si responde, si no, fallback local). */
+/** Lista de hipódromos operativos (Solo Activos — Supabase si responde, si no, fallback local). */
 export async function listarHipodromos(): Promise<OpcionHipodromo[]> {
   try {
     if (supabase) {
-      const { data } = await supabase.from("hipodromos").select("id, nombre").order("nombre");
+      const { data } = await supabase
+        .from("hipodromos")
+        .select("id, nombre")
+        .eq("estado", "Activo")
+        .order("nombre");
       if (data && data.length) {
         return data
           .map((h) => ({ value: String(h.nombre).toUpperCase(), label: String(h.nombre) }))

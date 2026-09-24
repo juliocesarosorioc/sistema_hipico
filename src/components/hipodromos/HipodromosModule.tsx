@@ -13,6 +13,7 @@ import {
   eliminarHipodromo,
 } from "@/lib/hipodromos/servicio";
 import { formatearNombre, levenshteinNorm, PAISES, type Hipodromo } from "@/lib/hipodromos/tipos";
+import { useHipodromosStore } from "@/store/useHipodromosStore";
 
 const BANDERA = (pais: string): string => banderas[(pais || "OTRO").toUpperCase()] ?? "🌐";
 const estActiva = (estado: string) => (estado || "Activo") === "Activo";
@@ -44,6 +45,10 @@ export function HipodromosModule() {
 
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
+  }, []);
+
+  const invalidarSelectores = useCallback(() => {
+    useHipodromosStore.getState().invalidar();
   }, []);
 
   const refrescar = useCallback(async () => {
@@ -125,6 +130,7 @@ export function HipodromosModule() {
     }
     toast(modal.editando ? `✅ Hipódromo "${nombre}" actualizado.` : `✅ Hipódromo "${nombre}" creado.`, "success");
     cerrarModal();
+    invalidarSelectores();
     void refrescar();
   };
 
@@ -136,6 +142,7 @@ export function HipodromosModule() {
       return;
     }
     toast(`🗑️ Hipódromo "${h.nombre}" eliminado.`, "success");
+    invalidarSelectores();
     void refrescar();
   };
 

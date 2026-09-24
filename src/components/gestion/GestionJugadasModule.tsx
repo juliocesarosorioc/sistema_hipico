@@ -6,7 +6,7 @@ import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla, type ResLiquidarCarrera } from "@/lib/liquidacion/pagarYCerrar";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
-import { listarHipodromos } from "@/lib/tablas/rpc";
+import { useHipodromosActivos } from "@/store/useHipodromosStore";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { SemaforoCarreras } from "@/components/gestion/SemaforoCarreras";
 import { Button } from "@/components/ui/Button";
@@ -35,7 +35,7 @@ const MONEDA = "VES";
  */
 export function GestionJugadasModule() {
   const [hipodromo, setHipodromo] = useState("LA RINCONADA");
-  const [hipodromos, setHipodromos] = useState<Array<{ value: string; label: string }>>([]);
+  const hipodromos = useHipodromosActivos();
   const [carrera, setCarrera] = useState(1);
   const [retirados, setRetirados] = useState("");
   const [comision, setComision] = useState("5");
@@ -61,10 +61,6 @@ export function GestionJugadasModule() {
   const eliminarTicket = useTaquillaStore((s) => s.eliminarTicket);
   const agregarTicket = useTaquillaStore((s) => s.agregarTicket);
   const tablas = useTablasFijasStore((s) => s.tablas);
-
-  useEffect(() => {
-    listarHipodromos().then(setHipodromos);
-  }, []);
 
   // Atajos de la Barra de Comandos (real keyboard events)
   useEffect(() => {

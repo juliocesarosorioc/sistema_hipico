@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { SearchableSelect, type OpcionSelect } from "@/components/ui/SearchableSelect";
+import { useState } from "react";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { useHipodromosActivos } from "@/store/useHipodromosStore";
 import { SUPERFICIES, draftVacio, type DraftCarrera } from "@/lib/tablas/tipos";
 
 type Props = {
@@ -14,16 +15,8 @@ type Props = {
  * que crea una tarjeta editable dentro de "Carreras en el Ensamblaje".
  */
 export function ParametrosCarrera({ onAgregar }: Props) {
-  const [hipodromos, setHipodromos] = useState<OpcionSelect[]>([]);
+  const hipodromos = useHipodromosActivos();
   const [f, setF] = useState<DraftCarrera>(() => ({ ...draftVacio(), uid: "" }));
-
-  useEffect(() => {
-    (async () => {
-      const { listarHipodromos } = await import("@/lib/tablas/rpc");
-      const hipos = await listarHipodromos();
-      setHipodromos(hipos);
-    })();
-  }, []);
 
   const camposValidos = f.hipodromo.trim() && f.carrera.trim() && f.premio.trim();
 

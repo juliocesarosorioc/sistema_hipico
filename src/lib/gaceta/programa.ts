@@ -106,18 +106,6 @@ export async function leerProgramaPorFecha(fecha: string): Promise<ResPrograma> 
   }
 }
 
-/** Lista de hipódromos del catálogo `hipodromos` para el selector de fecha+día. */
-export async function listarHipodromosCatalogo(): Promise<Array<{ id: string | number; nombre: string }>> {
-  if (!supabase) return [];
-  try {
-    const { data, error } = await supabase.from("hipodromos").select("id, nombre").order("nombre", { ascending: true });
-    if (error) return [];
-    return ((data ?? []) as Array<{ id: string | number; nombre: string }>).filter((h) => String(h.nombre || "").trim());
-  } catch {
-    return [];
-  }
-}
-
 /**
  * UPSERT masivo en `programa_dia` (RPC club_guardar_programa_dia → upsert por
  * `fecha`). Devuelve el programa persistido para reflejo inmediato en la UI.
