@@ -4,8 +4,13 @@ import { useEffect, useState } from "react";
 import { useTablasFijasStore, type StoredTablaFija } from "@/store/useTablasFijasStore";
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { useTaquillaStore } from "@/store/useTaquillaStore";
-import { EnsamblajeTabla } from "@/components/tablas/EnsamblajeTabla";
+import { parseNum, sumaBase, type DraftCarrera, type ItemCarritoVenta } from "@/lib/tablas/tipos";
+import { SeccionPliegue } from "@/components/tablas/SeccionPliegue";
+import { ParametrosCarrera } from "@/components/tablas/ParametrosCarrera";
+import { TarjetaEnsamblaje } from "@/components/tablas/TarjetaEnsamblaje";
 import { MonitorTablas, type VentaTablaItem } from "@/components/tablas/MonitorTablas";
+import { CarritoVentas } from "@/components/tablas/CarritoVentas";
+import { ToastHost } from "@/components/ui/ToastHost";
 import type { PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 
 type Props = {
@@ -17,28 +22,72 @@ type Props = {
 };
 
 /**
- * Módulo Tablas Fijas — contenedor con pestañas [Ensamblaje | Monitor].
- * Mantiene la caché reactiva en Zustand (useTablasFijasStore): al liquidar,
- * marcarCerrada() hace desaparecer la tarjeta del Monitor sin recargar.
+ * Módulo Tablas Fijas — clon 1:1 de html/tablas.html:
+ *  · Cabecera blanca con botón refrescar
+ *  · Bloques desplegables: Parámetros de la próxima carrera / Carreras en el
+ *    Ensamblaje / Monitor de Tablas Publicadas (con botón verde IMPRIMIR TABLAS)
+ *  · Carrito de venta flotante arriba a la derecha (Cerrar Venta → taquilla)
+ *  · Auto-cierre reactivo: al liquidar, la tabla se cierra en Supabase (UPDATE
+ *    estado='Cerrada') y desaparece del Monitor sin recargar (marcarCerrada +
+ *    suscripción realtime a tablas_fijas, defensiva).
  */
 export function TablasModule(props: Props) {
   const { persistirPublicacion, persistirEdicion, persistirVenta, persistirLiquidacion } = props;
-  const [tab, setTab] = useState<"ensamblaje" | "monitor">("ensamblaje");
+
   const tablas = useTablasFijasStore((s) => s.tablas);
   const setTablas = useTablasFijasStore((s) => s.setTablas);
   const marcarCerrada = useTablasFijasStore((s) => s.marcarCerrada);
   const agregarTicket = useTaquillaStore((s) => s.agregarTicket);
 
-  useEffect(() => {
-    if (tab === "monitor") refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+  const [secciones, setSecciones] = useState({ parametros: false, ensamblaje: false, monitor: true });
+  const [drafts, setDrafts] = useState<DraftCarrera[]>([]);
+  const [carrito, setCarrito] = useState<ItemCarritoVenta[]>([]);
+
+  const openCount = tablas.filter((t) => !t.cerrada).length;
+
+  const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
+    window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
 
   const refresh = async () => {
     const { listarTablasPublicadas } = await import("@/lib/tablas/rpc");
     const filas = await listarTablasPublicadas();
-    if (filas.length) setTablas(filas);
+    setTablas(filas);
   };
+
+  // Carga inicial
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Realtime defensivo: si tablas_fijas está en la publicación supabase_realtime,
+  // cualquier UPDATE/INSERT/DELETE (otra sesión, liquidación…) refresca el Monitor
+  // al instante. Si no, basta con el botón Refrescar / la ruta reactiva local.
+  useEffect(() => {
+    let canal: { unsubscribe: () => void } | null = null;
+    (async () => {
+      const { supabase } = await import("@/lib/supabase");
+      if (!supabase) return;
+      try {
+        canal = supabase
+          .channel(`tablas-fijas-${Date.now()}`)
+          .on("postgres_changes", { event: "*", schema: "public", table: "tablas_fijas" }, () => {
+            void refresh();
+          })
+          .subscribe();
+      } catch {
+        /* sin realtime → refresh manual */
+      }
+    })();
+    return () => {
+      try {
+        canal?.unsubscribe();
+      } catch {
+        /* noop */
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const publicar = async (tabla: TablaFijaRow) => {
     const id = persistirPublicacion ? await persistirPublicacion(tabla as StoredTablaFija) : (tabla as StoredTablaFija).id;
@@ -47,24 +96,101 @@ export function TablasModule(props: Props) {
     return true;
   };
 
-  const vender = async (v: VentaTablaItem) => {
+  const draftATabla = (d: DraftCarrera): StoredTablaFija => ({
+    id: d.uid,
+    hipodromo: d.hipodromo.trim().toUpperCase(),
+    hipodromo_id: null,
+    carrera: Math.round(parseNum(d.carrera)) || null,
+    fecha: new Date().toISOString().slice(0, 10),
+    estado: "Abierta",
+    premio_original: parseNum(d.premio),
+    premio_recalculado: parseNum(d.premio),
+    suma_base_tabla: sumaBase(d.caballos),
+    limite_ventas: 0,
+    cantidad_vendida: 0,
+    moneda: "USD",
+    tasa_cambio: null,
+    distancia_carrera: d.distancia,
+    superficie: (d.superficie || "ARENA").toUpperCase(),
+    retirados_oficiales: null,
+    comision_grupo: 0,
+    grupo_venta: null,
+    caballos: d.caballos,
+    tabla_grupos: null,
+    cerrada: false,
+  });
+
+  const publicarDraft = async (d: DraftCarrera) => {
+    if (!d.hipodromo.trim()) return toast("Escriba el hipódromo de la carrera.", "warning");
+    if (!d.carrera.trim()) return toast("Indique el número de la carrera.", "warning");
+    if ((d.caballos ?? []).length === 0) return toast("Añada al menos un ejemplar antes de publicar.", "warning");
+    const ok = await publicar(draftATabla(d));
+    if (ok) {
+      toast(`✅ Tabla ${d.hipodromo.toUpperCase()} C${d.carrera} publicada.`, "success");
+      setDrafts((ds) => ds.filter((x) => x.uid !== d.uid));
+    } else {
+      toast("No se pudo publicar la tabla. Revise la conexión con Supabase.", "error");
+    }
+  };
+
+  const publicarTodas = async () => {
+    if (drafts.length === 0) return toast("No hay carreras en el ensamblaje.", "info");
+    for (const d of drafts) await publicarDraft(d);
+  };
+
+  const pegarDesdeGaceta = () => {
+    const uid = "car-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    setDrafts((ds) => [{ uid, hipodromo: "", carrera: "", distancia: "1100", superficie: "ARENA", premio: "100", caballos: [] }, ...ds]);
+    toast("📋 Tarjeta nueva creada en el ensamblaje.", "info");
+  };
+
+  const agregarAlCarrito = (v: VentaTablaItem) => {
     const tabla = tablas.find((t) => String(t.id) === String(v.tablaId));
     if (!tabla) return;
-    const base = (tabla.premio_recalculado ?? 0) * v.monto;
-    agregarTicket({
-      comando: `TABLA ${tabla.hipodromo} C${tabla.carrera} ${v.nombre === "TABLA COMPLETA" ? "TABLA COMPLETA" : `N${v.numero} ${v.nombre}`}`,
+    const item: ItemCarritoVenta = {
+      id: "it-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      tablaId: v.tablaId,
+      hipodromo: tabla.hipodromo ?? "",
+      carrera: tabla.carrera ?? null,
+      premio: tabla.premio_recalculado ?? 0,
+      moneda: tabla.moneda,
+      numero: v.numero,
+      nombre: v.nombre,
       monto: v.monto,
-      gananciaProyectada: base,
-      comision: base * 0.05,
-    });
-    if (persistirVenta) await persistirVenta(tabla, v);
-    setTablas(
-      tablas.map((t) =>
-        String(t.id) === String(v.tablaId)
-          ? { ...t, cantidad_vendida: (t.cantidad_vendida ?? 0) + v.monto }
-          : t
-      )
-    );
+    };
+    setCarrito((c) => [...c, item]);
+  };
+
+  const cerrarVenta = async () => {
+    if (carrito.length === 0) return;
+    let vendidos = 0;
+    for (const item of carrito) {
+      const tabla = tablas.find((t) => String(t.id) === String(item.tablaId));
+      if (!tabla) continue;
+      const base = (tabla.premio_recalculado ?? 0) * item.monto;
+      agregarTicket({
+        comando:
+          item.nombre === "TABLA COMPLETA"
+            ? `TABLA ${item.hipodromo} C${item.carrera} TABLA COMPLETA`
+            : `TABLA ${item.hipodromo} C${item.carrera} N${item.numero} ${item.nombre}`,
+        monto: item.monto,
+        gananciaProyectada: base,
+        comision: base * 0.05,
+      });
+      if (persistirVenta) {
+        await persistirVenta(tabla, { tablaId: item.tablaId, numero: item.numero, nombre: item.nombre, monto: item.monto });
+      }
+      setTablas(
+        tablas.map((t) =>
+          String(t.id) === String(item.tablaId)
+            ? { ...t, cantidad_vendida: (t.cantidad_vendida ?? 0) + item.monto }
+            : t
+        )
+      );
+      vendidos++;
+    }
+    setCarrito([]);
+    if (vendidos > 0) toast(`✅ Venta cerrada: ${vendidos} tabla(s) enviada(s) a la taquilla.`, "success");
   };
 
   const liquidar = async (tabla: StoredTablaFija, r: PizarraResultados) => {
@@ -85,24 +211,111 @@ export function TablasModule(props: Props) {
     }
   };
 
+  const als = "flex items-stretch";
+
   return (
     <div className="space-y-4">
-      <div className="no-print flex items-center gap-2 border-b border-line pb-3">
-        {(["ensamblaje", "monitor"] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={`rounded-full px-4 py-1.5 text-xs font-black uppercase transition-colors ${
-              tab === t ? "bg-slate-900 text-white" : "bg-line/60 text-slate-600 hover:bg-line"
-            }`}
-          >
-            {t === "ensamblaje" ? "🔧 Ensamblaje" : "📊 Monitor"}
-          </button>
-        ))}
+      {/* Cabecera blanca del módulo */}
+      <div className="no-print flex items-center justify-between gap-2 border-b border-line pb-3">
+        <div>
+          <h1 className="text-lg font-black uppercase text-slate-900">🏇 Tablas Fijas</h1>
+          <p className="text-xs text-slate-500">Ensambla, publica, vende e imprime — sincronizado con Supabase.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          className="flex items-center gap-1.5 rounded-full border border-line bg-white px-4 py-1.5 text-xs font-black uppercase text-slate-600 transition-colors hover:bg-surface"
+          title="Refrescar del servidor"
+        >
+          🔄 <span className="hidden sm:inline">Refrescar</span>
+        </button>
       </div>
 
-      {tab === "ensamblaje" ? <EnsamblajeTabla onPublicar={publicar} /> : <MonitorTablas tablas={tablas} onVender={vender} onLiquidar={liquidar} onEditar={editar} />}
+      {/* Bloque 1: Parámetros */}
+      <SeccionPliegue
+        titulo="Parámetros de la próxima carrera"
+        icono="🔧"
+        abierto={secciones.parametros}
+        onToggle={() => setSecciones((s) => ({ ...s, parametros: !s.parametros }))}
+      >
+        <ParametrosCarrera onAgregar={(d) => setDrafts((ds) => [...ds, d])} />
+      </SeccionPliegue>
+
+      {/* Bloque 2: Carreras en el Ensamblaje */}
+      <SeccionPliegue
+        titulo="Carreras en el Ensamblaje"
+        icono="🗂️"
+        contador={drafts.length}
+        abierto={secciones.ensamblaje}
+        onToggle={() => setSecciones((s) => ({ ...s, ensamblaje: !s.ensamblaje }))}
+        accion={
+          <div className={als}>
+            <button
+              type="button"
+              onClick={pegarDesdeGaceta}
+              className="m-1.5 whitespace-nowrap rounded-lg bg-cyan-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-cyan-700"
+              title="Crear una tarjeta nueva en el ensamblaje"
+            >
+              📋 Pegar desde Gaceta
+            </button>
+            <button
+              type="button"
+              onClick={() => void publicarTodas()}
+              disabled={drafts.length === 0}
+              className="m-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              🚀 Publicar todas
+            </button>
+          </div>
+        }
+      >
+        <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+          {drafts.length === 0 ? (
+            <div className="col-span-full rounded-2xl border border-dashed border-line bg-surface p-8 text-center">
+              <p className="text-sm font-semibold text-slate-500">El ensamblaje está vacío.</p>
+              <p className="mt-1 text-xs text-slate-400">Añade una carrera desde “Parámetros de la próxima carrera”.</p>
+            </div>
+          ) : (
+            drafts.map((d) => (
+              <TarjetaEnsamblaje
+                key={d.uid}
+                draft={d}
+                onChange={(nd) => setDrafts((ds) => ds.map((x) => (x.uid === d.uid ? nd : x)))}
+                onPublicar={publicarDraft}
+                onQuitar={(uid) => setDrafts((ds) => ds.filter((x) => x.uid !== uid))}
+              />
+            ))
+          )}
+        </div>
+      </SeccionPliegue>
+
+      {/* Bloque 3: Monitor de Tablas Publicadas + botón verde IMPRIMIR TABLAS */}
+      <SeccionPliegue
+        titulo="Monitor de Tablas Publicadas"
+        icono="🖥️"
+        contador={openCount}
+        abierto={secciones.monitor}
+        onToggle={() => setSecciones((s) => ({ ...s, monitor: !s.monitor }))}
+        accion={
+          <div className="flex items-center bg-slate-900 pr-2">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="my-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-4 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-emerald-700"
+            >
+              🖨️ Imprimir Tablas
+            </button>
+          </div>
+        }
+      >
+        <div className="p-4">
+          <MonitorTablas tablas={tablas} onVender={agregarAlCarrito} onLiquidar={liquidar} onEditar={editar} />
+        </div>
+      </SeccionPliegue>
+
+      {/* Carrito flotante + toasts */}
+      <CarritoVentas items={carrito} onQuitarItem={(id) => setCarrito((c) => c.filter((i) => i.id !== id))} onVaciar={() => setCarrito([])} onCerrarVenta={() => void cerrarVenta()} />
+      <ToastHost />
     </div>
   );
 }

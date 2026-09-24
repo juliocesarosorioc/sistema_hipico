@@ -130,6 +130,41 @@ export function sumaBase(caballos: EjemplarTabla[] | null | undefined): number {
     .reduce((a, c) => a + (parseNum(c.valor_ejemplar) || 0), 0);
 }
 
+/** Carrera en el Ensamblaje (drag local — igual que el legacy: no se persiste
+    hasta presionar "Publicar", que la manda a tablas_fijas con estado Abierta). */
+export type DraftCarrera = {
+  uid: string;
+  hipodromo: string;
+  carrera: string;
+  distancia: string;
+  superficie: string;
+  premio: string;
+  caballos: EjemplarTabla[];
+};
+
+export const draftVacio = (): DraftCarrera => ({
+  uid: "",
+  hipodromo: "",
+  carrera: "",
+  distancia: "1100",
+  superficie: "ARENA",
+  premio: "100",
+  caballos: [],
+});
+
+/** Item del carrito de venta flotante (arriba a la derecha). */
+export type ItemCarritoVenta = {
+  id: string;
+  tablaId: string | number;
+  hipodromo: string;
+  carrera: number | null;
+  premio: number;
+  moneda?: string | null;
+  numero: string;
+  nombre: string;
+  monto: number;
+};
+
 /** Acepta coma decimal (misma aNum del legacy). */
 export function parseNum(v: unknown): number {
   if (typeof v === "number") return v;

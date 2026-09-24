@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { StoredTablaFija } from "@/store/useTablasFijasStore";
 import { colorDeNumero, textoDeNumero, fmtMoney, FLAG, sumaBase, parseNum } from "@/lib/tablas/tipos";
 import { Button } from "@/components/ui/Button";
@@ -16,10 +16,11 @@ type Props = {
 };
 
 /**
- * Monitor de Tablas Publicadas (clon 1:1 de js/tablas.js).
- * Tarjeta por carrera con cabecera degradada, pestañas de datos, lista de
- * ejemplares y acciones: Editar / Vender / Liquidar. La sección de impresión
- * va en `hidden print:block` (15 tablas/hoja del legacy).
+ * Monitor de Tablas Publicadas — clon 1:1 de js/tablas.js (L823-857):
+ * tarjeta con cabecera de color degradada diagonal (indigo→púrpura→fucsia),
+ * chips de hipódromo/carrera/distancia/superficie/fecha, fila "Monto a Pagar /
+ * Tabla", lista numerada de ejemplares y pie con suma. "Vender" manda el item
+ * al Carrito flotante; "Liquidar" cierra la tabla (desaparece sin F5).
  */
 export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar }: Props) {
   const [vendiendo, setVendiendo] = useState<StoredTablaFija | null>(null);
@@ -30,8 +31,7 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar }: Props)
   const [patchEdicion, setPatchEdicion] = useState<Record<string, unknown>>({});
   const [aviso, setAviso] = useState("");
 
-  const abiertas = useMemo(() => tablas.filter((t) => !t.cerrada), [tablas]);
-  const cerradas = tablas.length - abiertas.length;
+  const abiertas = tablas.filter((t) => !t.cerrada);
 
   const lanzarVenta = () => {
     if (!vendiendo || !ejemplarVenta.trim() || !montoVenta.trim()) {
@@ -46,7 +46,7 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar }: Props)
     setVendiendo(null);
     setEjemplarVenta("");
     setMontoVenta("");
-    setAviso("✅ Jugada enviada a la taquilla.");
+    setAviso("🛒 Agregado al carrito de venta (arriba a la derecha).");
   };
 
   const guardarEdicion = () => {
@@ -58,113 +58,112 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar }: Props)
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 no-print">
-        <div>
-          <h2 className="text-base font-black uppercase text-slate-900">📊 Monitor de Tablas Publicadas</h2>
-          <p className="text-xs text-slate-500">
-            {abiertas.length} abiertas · {cerradas} cerradas · sincronizado con Supabase.
-          </p>
-        </div>
-        <Button size="sm" onClick={() => window.print()}>🖨️ Imprimir Tablas</Button>
-      </div>
-
       {aviso && <p className="rounded-lg bg-success-500/10 px-3 py-2 text-xs font-semibold text-success-700 no-print">{aviso}</p>}
 
       {/* Vista en pantalla */}
-      <div className="grid gap-4 print:hidden xl:grid-cols-2">
+      <div className="grid gap-4 print:hidden sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {abiertas.length === 0 && (
           <div className="col-span-full rounded-2xl border border-dashed border-line bg-surface p-10 text-center">
             <p className="text-sm font-semibold text-slate-500">No hay tablas publicadas abiertas.</p>
-            <p className="mt-1 text-xs text-slate-400">Usa la pestaña “Ensamblaje” para publicar una tabla fija.</p>
+            <p className="mt-1 text-xs text-slate-400">Añade una carrera en “Parámetros de la próxima carrera” y publícala desde el Ensamblaje.</p>
           </div>
         )}
         {abiertas.map((t) => (
-          <div key={String(t.id)} className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
-            <div className="flex items-center justify-between bg-gradient-to-r from-indigo-600 via-purple-600 to-fuchsia-600 px-4 py-3 text-white">
-              <div>
-                <h3 className="text-sm font-black uppercase leading-tight">{t.hipodromo}</h3>
-                <p className="text-[10px] font-semibold uppercase tracking-widest opacity-80">
-                  Carrera {t.carrera} · {t.fecha}
-                </p>
+          <div key={String(t.id)} className="flex flex-col overflow-hidden rounded-xl border border-indigo-200 bg-white shadow-sm">
+            {/* Cabecera color (legacy L825: linear-gradient(135deg,#4f46e5,#7c3aed,#9333ea)) */}
+            <div className="px-1.5 py-px text-white" style={{ background: "linear-gradient(135deg,#4f46e5 0%,#7c3aed 60%,#9333ea 100%)" }}>
+              <div className="flex items-center justify-between gap-1 leading-none">
+                <span className="min-w-0 truncate rounded bg-white/20 px-1.5 py-px text-[11px] font-bold uppercase tracking-wider">
+                  🏛️ {t.hipodromo || ""}
+                </span>
+                <span className="whitespace-nowrap text-xs font-black leading-none">
+                  🏁 C{t.carrera ?? ""}
+                </span>
               </div>
-              <div className="text-right">
-                <span className="rounded-full bg-green-400/20 px-2.5 py-0.5 text-[10px] font-black uppercase">Abierta</span>
-                <p className="mt-1 text-[10px] font-semibold opacity-80">
-                  {t.distancia_carrera ?? "—"}m · {t.superficie ?? "—"}
-                </p>
+              <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[9px] font-bold leading-none">
+                <span className="rounded bg-white/20 px-1 py-px">📏 {t.distancia_carrera ?? ""} m</span>
+                <span className="rounded bg-white/20 px-1 py-px uppercase">{t.superficie || "ARENA"}</span>
+                <span className="rounded bg-white/20 px-1 py-px">📅 {t.fecha ?? ""}</span>
               </div>
-            </div>
-
-            <div className="grid grid-cols-3 divide-x divide-line border-b border-line bg-gray-50 text-center">
-              <div className="px-2 py-2">
-                <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Monto a Pagar / Tabla</p>
-                <p className="text-sm font-black text-slate-900">{fmtMoney(t.premio_recalculado ?? null, t.moneda)}</p>
-              </div>
-              <div className="px-2 py-2">
-                <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Suma de la Tabla</p>
-                <p className="text-sm font-black text-slate-900">{fmtMoney(t.suma_base_tabla ?? sumaBase(t.caballos), t.moneda)}</p>
-              </div>
-              <div className="px-2 py-2">
-                <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Ventas / Límite</p>
-                <p className="text-sm font-black text-slate-900">
-                  {fmtMoney(t.cantidad_vendida ?? 0, t.moneda)} / {fmtMoney(t.limite_ventas ?? 0, t.moneda)}
-                </p>
+              <div className="mt-0.5 flex items-center justify-between rounded bg-white/20 px-1.5 py-px leading-none">
+                <span className="text-[8px] font-black uppercase tracking-wider opacity-90">💰 Monto a Pagar / Tabla</span>
+                <span className="whitespace-nowrap text-sm font-black">{fmtMoney(t.premio_recalculado ?? null, t.moneda)}</span>
               </div>
             </div>
 
-            <div className="max-h-56 overflow-y-auto px-2 py-1.5">
-              <table className="w-full text-xs">
-                <tbody className="divide-y divide-line/60">
-                  {(t.caballos ?? []).map((c, i) => (
-                    <tr key={i} className={c.retirado ? "opacity-50" : ""}>
-                      <td className="w-9 py-1 pr-2">
-                        <span
-                          className="grid h-6 w-8 place-items-center rounded text-[10px] font-black"
-                          style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
-                        >
-                          {c.numero}
-                        </span>
-                      </td>
-                      <td className="py-1 pr-2 font-bold uppercase text-slate-800">
-                        {c.nombre}
-                        {c.retirado && <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-black text-red-600">RET.</span>}
-                      </td>
-                      <td className="w-10 py-1 pr-2 text-center">{FLAG(c.nacionalidad)}</td>
-                      <td className="w-20 py-1 pr-2 text-right font-black text-slate-900">
-                        {c.retirado ? <span className="text-red-500 line-through">{fmtMoney(parseNum(c.valor_ejemplar), t.moneda)}</span> : fmtMoney(parseNum(c.valor_ejemplar), t.moneda)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* Subetiqueta ejemplares */}
+            <div className="flex items-center justify-between px-1.5 pb-0.5 pt-1 text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none">
+              <span>🐴 Ejemplares</span>
+              <span className="rounded-full bg-slate-100 px-1.5 text-[9px] font-black text-slate-600">{(t.caballos ?? []).length}</span>
             </div>
 
-            <div className="flex items-center justify-between gap-2 border-t border-line bg-gray-50 px-3 py-2.5">
-              <p className="text-[10px] font-semibold text-slate-500">
-                {t.retirados_oficiales ? `Retirados: ${t.retirados_oficiales}` : "Sin retirados oficiales"}
-              </p>
-              <div className="flex flex-wrap items-center gap-1.5 no-print">
-                <Button variant="ghost" size="sm" onClick={() => { setEditando(t); setPatchEdicion({}); }}>✏️ Editar</Button>
-                <Button size="sm" onClick={() => { setVendiendo(t); setEjemplarVenta(""); setMontoVenta(""); }}>🎟️ Vender</Button>
-                <Button variant="danger" size="sm" onClick={() => setLiquidando(t)}>🏁 Liquidar</Button>
-              </div>
+            {/* Ejemplares numerados */}
+            <div className="max-h-40 flex-1 overflow-y-auto px-1 py-0.5">
+              {(t.caballos ?? []).length === 0 && (
+                <p className="px-2 py-2 text-sm italic text-slate-400">Sin ejemplares registrados.</p>
+              )}
+              {(t.caballos ?? []).map((c, i) => {
+                const valor = parseNum(c.valor_ejemplar);
+                return (
+                  <div
+                    key={i}
+                    className={`grid items-center gap-1 rounded px-1 py-px ${c.retirado ? "opacity-50" : ""}`}
+                    style={{ gridTemplateColumns: "2rem 1fr 1.25rem 3rem" }}
+                  >
+                    <span
+                      className="w-5 rounded py-px text-center text-[10px] font-black"
+                      style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
+                    >
+                      {c.numero}
+                    </span>
+                    <span className="min-w-0 truncate text-[10px] font-bold uppercase text-slate-800">{c.nombre || "Sin nombre"}</span>
+                    <span className="text-center text-[10px] leading-none">{FLAG(c.nacionalidad)}</span>
+                    <span className={`whitespace-nowrap text-right text-[11px] font-black ${c.retirado ? "text-red-500 line-through" : "text-blue-700"}`}>
+                      {c.retirado ? "RET." : fmtMoney(valor, t.moneda)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Pie: suma */}
+            <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-white px-1.5 py-0.5">
+              <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none">
+                🧮 Suma de la Tabla
+              </span>
+              <span className="text-xs font-black text-indigo-700">
+                {fmtMoney(t.suma_base_tabla ?? sumaBase(t.caballos), t.moneda)}
+              </span>
+            </div>
+
+            {/* Acciones */}
+            <div className="flex items-center gap-1.5 border-t border-slate-100 bg-white px-2 py-1.5 no-print">
+              <Button variant="ghost" size="sm" className="flex-1" onClick={() => { setEditando(t); setPatchEdicion({}); }}>
+                ✏️ Editar
+              </Button>
+              <Button size="sm" className="flex-1" onClick={() => { setVendiendo(t); setEjemplarVenta(""); setMontoVenta(""); }}>
+                🎟️ Vender
+              </Button>
+              <Button variant="danger" size="sm" className="flex-1" onClick={() => setLiquidando(t)}>
+                🏁 Liquidar
+              </Button>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Sección de impresión: se oculta en pantalla, se muestra al imprimir */}
+      {/* Sección de impresión (solo tablas Abiertas): oculta en pantalla, visible al imprimir */}
       <div className="hidden print:block print:bg-white print:px-2 print:py-2">
         <h1 className="mb-3 border-b-2 border-black pb-1 text-center text-base font-black uppercase text-black">
           Tablas Fijas Publicadas
         </h1>
         <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-black">
-          {tablas.map((t) => (
+          {abiertas.map((t) => (
             <div key={String(t.id)} className="break-inside-avoid border border-black px-2 py-1.5 text-[10px] leading-tight">
               <p className="font-black uppercase">{t.hipodromo} — Carrera {t.carrera}</p>
               <p className="mb-1 font-semibold">
                 Monto a Pagar: {fmtMoney(t.premio_recalculado ?? null, t.moneda)} · Suma:{" "}
-                {fmtMoney(t.suma_base_tabla ?? sumaBase(t.caballos), t.moneda)} · Estado: {t.estado}
+                {fmtMoney(t.suma_base_tabla ?? sumaBase(t.caballos), t.moneda)}
               </p>
               <table className="w-full text-[9px]">
                 <tbody>
@@ -182,12 +181,12 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar }: Props)
         </div>
       </div>
 
-      {/* Modal Venta */}
+      {/* Modal Venta → al carrito */}
       {vendiendo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 no-print">
           <div className="w-full max-w-sm rounded-2xl border border-line bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
-              <h3 className="text-xs font-black uppercase">🎟️ Venta — {vendiendo.hipodromo} C{vendiendo.carrera}</h3>
+              <h3 className="text-xs font-black uppercase">🛒 Venta — {vendiendo.hipodromo} C{vendiendo.carrera}</h3>
               <button type="button" onClick={() => setVendiendo(null)} className="text-slate-300 hover:text-white">✕</button>
             </div>
             <div className="space-y-3 p-4">
@@ -221,7 +220,7 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar }: Props)
             </div>
             <div className="flex justify-end gap-2 border-t border-line bg-gray-50 px-4 py-3">
               <Button variant="ghost" size="sm" onClick={() => setVendiendo(null)}>Cancelar</Button>
-              <Button variant="success" size="md" onClick={lanzarVenta}>Enviar a la taquilla</Button>
+              <Button variant="success" size="md" onClick={lanzarVenta}>Agregar al carrito</Button>
             </div>
           </div>
         </div>
@@ -254,6 +253,7 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar }: Props)
               {([
                 ["premio_original", "Premio Original"],
                 ["premio_recalculado", "Premio Recalculado"],
+                ["suma_base_tabla", "Suma Base de la Tabla"],
                 ["limite_ventas", "Límite de Ventas"],
               ] as const).map(([key, label]) => (
                 <div key={key}>
