@@ -8,6 +8,8 @@ export type TablaFijaRow = {
   hipodromo_id?: string | number | null;
   carrera?: number | null;
   fecha?: string | null;
+  /** Día del evento cuando la columna "fecha" está NULL (fix legacy 2026-09-19). */
+  fecha_creacion?: string | null;
   estado?: string | null;
   premio_original?: number | null;
   premio_recalculado?: number | null;

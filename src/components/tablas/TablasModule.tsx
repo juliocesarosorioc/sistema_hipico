@@ -10,6 +10,7 @@ import { SeccionPliegue } from "@/components/tablas/SeccionPliegue";
 import { ParametrosCarrera } from "@/components/tablas/ParametrosCarrera";
 import { TarjetaEnsamblaje } from "@/components/tablas/TarjetaEnsamblaje";
 import { MonitorTablas, type VentaTablaItem } from "@/components/tablas/MonitorTablas";
+import { ConfigImpresionModal } from "@/components/tablas/ConfigImpresionModal";
 import { CarritoVentas } from "@/components/tablas/CarritoVentas";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { Guard } from "@/components/ui/Guard";
@@ -49,6 +50,7 @@ export function TablasModule(props: Props) {
   const carrerasDia = useCarrerasDiaStore((s) => s.carreras);
 
   const [secciones, setSecciones] = useState({ parametros: false, ensamblaje: false, monitor: true });
+  const [impresionAbierta, setImpresionAbierta] = useState(false);
   const [drafts, setDrafts] = useState<DraftCarrera[]>([]);
   const [carrito, setCarrito] = useState<ItemCarritoVenta[]>([]);
 
@@ -137,6 +139,7 @@ export function TablasModule(props: Props) {
     hipodromo_id: null,
     carrera: Math.round(parseNum(d.carrera)) || null,
     fecha: new Date().toISOString().slice(0, 10),
+    fecha_creacion: new Date().toISOString(),
     estado: "Abierta",
     premio_original: parseNum(d.premio),
     premio_recalculado: parseNum(d.premio),
@@ -419,7 +422,7 @@ export function TablasModule(props: Props) {
             <Guard permiso="imprimir_tablas">
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={() => setImpresionAbierta(true)}
                 className="my-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-4 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-emerald-700"
               >
                 🖨️ Imprimir Tablas
@@ -462,6 +465,7 @@ export function TablasModule(props: Props) {
 
       {/* Carrito flotante + toasts */}
       <CarritoVentas items={carrito} onQuitarItem={(id) => setCarrito((c) => c.filter((i) => i.id !== id))} onVaciar={() => setCarrito([])} onCerrarVenta={() => void cerrarVenta()} />
+      <ConfigImpresionModal abierto={impresionAbierta} onCerrar={() => setImpresionAbierta(false)} />
       <ToastHost />
     </div>
   );
