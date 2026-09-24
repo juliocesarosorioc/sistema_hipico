@@ -39,7 +39,7 @@ const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
   {
     id: "comunicacion",
     titulo: "Comunicación",
-    items: [{ emoji: "💬", txt: "WhatsApp" }],
+    items: [{ href: "/whatsapp", emoji: "💬", txt: "WhatsApp" }],
   },
   {
     id: "configuracion",

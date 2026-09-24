@@ -11,6 +11,8 @@ type Props = {
   placeholder?: string;
   /** Permite escribir un valor libre (hipódromo inexistente en el listado). */
   allowCustom?: boolean;
+  /** Texto a mostrar cuando el `value` es un id y el label debe ser otro (p. ej. cliente). */
+  displayValue?: string;
   className?: string;
 };
 
@@ -25,6 +27,7 @@ export function SearchableSelect({
   onChange,
   placeholder = "Buscar…",
   allowCustom = true,
+  displayValue,
   className = "",
 }: Props) {
   const [abierto, setAbierto] = useState(false);
@@ -61,7 +64,7 @@ export function SearchableSelect({
   return (
     <div ref={ref} className={`relative ${className}`}>
       <input
-        value={abierto ? texto : value}
+        value={abierto ? texto : (displayValue ?? value)}
         onChange={(e) => {
           setTexto(e.target.value);
           setAbierto(true);
@@ -69,7 +72,7 @@ export function SearchableSelect({
           if (allowCustom) onChange(e.target.value.toUpperCase());
         }}
         onFocus={() => {
-          setTexto(value);
+          setTexto(displayValue ?? value);
           setAbierto(true);
         }}
         onKeyDown={(e) => {
