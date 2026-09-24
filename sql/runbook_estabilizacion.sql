@@ -131,6 +131,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.tickets_jugadas TO service_role;
 --    (best-effort: si no existe la publicación o la tabla ya está, no falla)
 -- ----------------------------------------------------------------------------
 DO $$
+DECLARE
+    table_name TEXT;
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
         FOREACH table_name IN ARRAY ARRAY[
