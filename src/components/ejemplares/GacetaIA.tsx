@@ -62,8 +62,11 @@ async function cargarPdfJs(): Promise<PdfLib> {
     | { default?: PdfLib }
     | PdfLib;
   const lib = (mod as { default?: PdfLib }).default ?? (mod as PdfLib);
-  const worker = (await import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url")).default;
-  lib.GlobalWorkerOptions.workerSrc = worker;
+  // Worker vía CDN (mismo patrón que el legacy: js/gaceta.js). Emitirlo como
+  // asset local rompe el build: el worker de pdfjs-dist 4.x es ESM (.mjs) y el
+  // minificador de Next (Terser) no compila `import`/`export` toplevel. Con el
+  // sufijo `?url` además quedaba workerSrc === undefined y ningún PDF cargaba.
+  lib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.worker.min.mjs";
   return lib;
 }
 
