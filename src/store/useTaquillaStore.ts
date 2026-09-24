@@ -6,6 +6,8 @@ export type TicketTaquilla = {
   /** Comando crudo tal como lo tipeó el operador (ej. "100 1 y 2n"). */
   comando: string;
   monto: number;
+  /** Número del ejemplar apostado (columna CABALLO) — necesario para NINIS. */
+  caballo?: string;
   /** Ganancia proyectada según el motor (mejor escenario neto − monto). */
   gananciaProyectada: number;
   /** Comisión de casa proyectada del mejor escenario. */

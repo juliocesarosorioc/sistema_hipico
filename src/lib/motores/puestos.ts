@@ -13,6 +13,7 @@
  *    cliente ANTES de comisiones, más la comisión retenida (Juego de Suma Cero).
  */
 import { registrarProcesador, TicketMotor, ResultadoMotor, COMISION_CASA } from "../bettingEngine";
+import { parsearNini, liquidarNini } from "../bettingEngine";
 
 /** Tasa porcentual por defecto de la casa (COMISION_CASA.rate = 0.05 -> 5%). */
 const TASA_DEFECTO = COMISION_CASA.rate * 100;
@@ -188,6 +189,8 @@ function compuesta(t: TicketMotor, tasa: number): ResultadoMotor | null {
 export function liquidarPuestos(t: TicketMotor, tasaComision?: number | null): ResultadoMotor {
   const tasa = (typeof tasaComision === "number" && isFinite(tasaComision) && tasaComision >= 0)
     ? tasaComision : TASA_DEFECTO;
+  // NINI puro/cantón (2N · 1N · 1y2N) → Motor Nini (cruce del caballo contra la Pizarra).
+  if (parsearNini(t.tipo_jugada)) return liquidarNini(t, tasa);
   const ap = aPremio(t, tasa);
   if (ap) return ap;
   const cr = cruce(t, tasa);

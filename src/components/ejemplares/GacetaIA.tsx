@@ -565,21 +565,37 @@ export function GacetaIA() {
                         onClick={() => togglePagina(p.id)}
                         role="checkbox"
                         aria-checked={activa}
-                        className={`relative block w-full overflow-hidden rounded-lg border-2 transition-transform ${
-                          activa ? "border-primary-500 shadow-lg" : "border-line opacity-60 hover:opacity-80"
+                        className={`relative block w-full cursor-pointer overflow-hidden rounded-lg border-2 select-none transition-all ${
+                          activa ? "border-primary-500 shadow-lg ring-2 ring-primary-500/50" : "border-line opacity-60 hover:opacity-90"
                         }`}
                         title={activa ? "Quitar de la selección" : "Incluir en la selección"}
                       >
-                        <img src={p.dataUrl} alt={`Página ${p.num}`} className="h-20 w-full object-cover" />
+                        <img src={p.dataUrl} alt={`Página ${p.num}`} className="h-20 w-full object-cover" draggable={false} />
                         <span
-                          className={`absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded border-2 bg-white/90 text-[10px] font-black leading-none ${
-                            activa ? "border-primary-600 bg-primary-600 text-white" : "border-slate-400 text-transparent"
+                          className={`absolute left-1 top-1 z-20 flex h-5 w-5 items-center justify-center rounded-md border-2 transition-colors ${
+                            activa ? "border-primary-700 bg-primary-600" : "border-slate-400 bg-white"
                           }`}
                           aria-hidden
                         >
-                          {activa ? "✓" : ""}
+                          {activa && (
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="h-3.5 w-3.5 text-white"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={4}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
                         </span>
-                        <span className="absolute bottom-0 left-0 bg-slate-950/80 px-1 text-[9px] font-bold text-slate-200">
+                        <span
+                          className={`absolute bottom-0 left-0 z-20 px-1 text-[9px] font-bold ${
+                            activa ? "bg-primary-700 text-white" : "bg-slate-950/80 text-slate-200"
+                          }`}
+                        >
                           {p.num}
                         </span>
                       </button>

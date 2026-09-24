@@ -7,6 +7,8 @@ import type { PizarraCarrera } from "@/lib/liquidacion";
 export type TicketPagar = {
   comando: string;
   monto: number;
+  /** Número del ejemplar apostado (columna CABALLO) — necesario para NINIS. */
+  caballo?: string;
 };
 
 export type ResLiquidarCarrera = {
@@ -58,7 +60,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     const ticketMotor: TicketMotor = {
       hipodromo,
       carrera: String(carrera),
-      caballo: m[2].trim().toUpperCase(),
+      caballo: String(t.caballo ?? "").trim(),
       fechas: [],
       id: "liquidar-" + procesados.length,
       cruces: 1,

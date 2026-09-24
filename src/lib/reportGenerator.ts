@@ -13,7 +13,9 @@
  * Formato de montos local (es-VE): 40,00 / 2.951.
  */
 import { supabase } from "@/lib/supabase";
-import { COMISION_CASA } from "@/lib/bettingEngine";
+import { COMISION_CASA, parsearNini, normalizarNini, liquidarNini } from "@/lib/bettingEngine";
+import type { TicketMotor } from "@/lib/bettingEngine";
+import type { PizarraCarrera } from "@/lib/liquidacion";
 
 // ============================================================
 // Tipos
@@ -28,6 +30,9 @@ export type MetaCarrera = {
   carrera: number | string;
   retirados?: string;
   pizarra?: string;
+  /** Números de los ejemplares (hasta 8 puestos) en orden de llegada, para
+   *  resolver NINIS contra la pizarra oficial con el motor matemático. */
+  pizarraPuestos?: string[];
 };
 
 export type JugadaRelacion = {
@@ -41,6 +46,8 @@ export type JugadaRelacion = {
   monto: number;
   /** Cliente que COBRA si acierta ("da [Cliente2]"). Opcional (jugada sola). */
   clienteConsigue?: string;
+  /** Modalidad Normalizada del ticket ("NINI" cuando la jugada usa sintaxis N). */
+  modalidad?: "NINI" | "GENERICA";
   cantidadTablas?: number;
   premioPorTabla?: number;
   /** Premio potencial bruto (tokenTable columna premio_potencial). */
@@ -170,9 +177,13 @@ export type BalanceJugada = {
  *   pérdida         = monto financiado          → lo que arriesgó el "Juega".
  */
 export function balanceJugada(j: JugadaRelacion): BalanceJugada {
-  const premioPotencial = j.ganador
-    ? Math.max(0, num(j.premioPotencial) || num(j.cantidadTablas) * num(j.premioPorTabla))
+  let premioPotencial = j.ganador
+    ? num(j.premioPotencial) || num(j.cantidadTablas) * num(j.premioPorTabla)
     : 0;
+  // NINI a la par: si no vino premio de la base, el premio bruto es 2× monto.
+  if (j.modalidad === "NINI" && j.ganador && premioPotencial <= 0) {
+    premioPotencial = num(j.monto) * 2;
+  }
   const gananciaBruta = Math.max(0, premioPotencial - num(j.monto));
   const comision =
     gananciaBruta > 0
@@ -187,6 +198,65 @@ export function balanceJugada(j: JugadaRelacion): BalanceJugada {
   };
 }
 
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+const CLAVES_PIZARRA = [
+  "primero",
+  "segundo",
+  "tercero",
+  "cuarto",
+  "quinto",
+  "sexto",
+  "septimo",
+  "octavo",
+] as const;
+
+/** Convierte una lista de números de ejemplares (hasta 8) en PizarraCarrera. */
+export function pizarraDesdeNums(nums?: string[]): PizarraCarrera {
+  const base: Record<string, string> = { primero: "" };
+  (nums ?? []).slice(0, 8).forEach((v, i) => {
+    base[CLAVES_PIZARRA[i]] = String(v).trim();
+  });
+  return base as unknown as PizarraCarrera;
+}
+
+/** Resuelve el balance de un NINI con el motor matemático (pizarra oficial). */
+function niniDesdePizarra(j: JugadaRelacion, puestos: string[]): BalanceJugada | null {
+  if (j.modalidad !== "NINI" || !puestos.length || !j.caballo) return null;
+  const ticket: TicketMotor = {
+    hipodromo: "",
+    carrera: "",
+    caballo: String(j.caballo).trim(),
+    fechas: [],
+    id: "reporte-" + j.clienteJuega,
+    cruces: 1,
+    cuota: null,
+    total: num(j.monto),
+    addedAt: 0,
+    tipo_jugada: normNini(j.jugada),
+    monto: num(j.monto),
+    puesto_final: 1 as TicketMotor["puesto_final"],
+    pizarra: pizarraDesdeNums(puestos),
+    dividendos: null,
+  };
+  const r = liquidarNini(ticket, num(j.comisionPct));
+  const premio = r.ok ? num(j.monto) * 2 : 0;
+  return {
+    jugada: j,
+    premioPotencial: premio,
+    gananciaBruta: r.ok ? num(j.monto) : 0,
+    comision: r.gananciaCasa,
+    gananciaNeta: Math.max(0, r.totalClienteNeto - num(j.monto)),
+  };
+}
+
+function normNini(tipo: string): string {
+  const info = parsearNini(tipo);
+  return info ? info.modalidad : String(tipo ?? "").trim().toUpperCase();
+}
+
 export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[]): string {
   const cuerpo: string[] = [];
   const balances = new Map<string, number>();
@@ -197,19 +267,37 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
   };
 
   jugadas.forEach((j, i) => {
-    const b = balanceJugada(j);
-    // Leg "Juega": siempre pierde lo financiado.
+    const b = niniDesdePizarra(j, meta.pizarraPuestos ?? []) ?? balanceJugada(j);
+    // Leg "Juega": en jugadas clásicas pierde lo financiado; en NINI gana si NO figura.
     const perdida = num(j.monto);
     // Leg "Consigue": cobra la ganancia neta (si no hay consigue, la cobra el propio jugador).
     const beneficiario = j.clienteConsigue || "";
     cuerpo.push(`${i + 1}) ${j.jugada} (${j.caballo}) con ${fmtMonto(j.monto)}`);
-    cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
-    acumular(j.clienteJuega, -perdida);
-    if (beneficiario) {
-      cuerpo.push(`Consigue ${beneficiario} $ +${fmtMonto(b.gananciaNeta)}`);
-      acumular(beneficiario, b.gananciaNeta);
-    } else {
+    if (j.modalidad === "NINI" && b.gananciaNeta > 0) {
+      // El nini ganó: el caballo NO figuró → cobra el que JUEGA.
+      cuerpo.push(`Juega ${j.clienteJuega} $ +${fmtMonto(b.gananciaNeta)}`);
       acumular(j.clienteJuega, b.gananciaNeta);
+    } else if (j.modalidad === "NINI") {
+      // El nini perdió: el caballo figuró → pierde el que JUEGA; el "da" cobra.
+      cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
+      acumular(j.clienteJuega, -perdida);
+      if (beneficiario) {
+        const premioNini = num(j.monto) * 2;
+        const tasa = num(j.comisionPct) > 0 ? num(j.comisionPct) : COMISION_CASA.rate * 100;
+        const com2 = round2((premioNini - num(j.monto)) * (tasa / 100));
+        const netoC2 = round2(premioNini - com2 - num(j.monto));
+        cuerpo.push(`Consigue ${beneficiario} $ +${fmtMonto(netoC2)}`);
+        acumular(beneficiario, netoC2);
+      }
+    } else {
+      cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
+      acumular(j.clienteJuega, -perdida);
+      if (beneficiario) {
+        cuerpo.push(`Consigue ${beneficiario} $ +${fmtMonto(b.gananciaNeta)}`);
+        acumular(beneficiario, b.gananciaNeta);
+      } else {
+        acumular(j.clienteJuega, b.gananciaNeta);
+      }
     }
   });
 
@@ -259,12 +347,15 @@ export type TicketApuestaJugada = {
 };
 
 function mapearJugada(r: TicketApuestaJugada): JugadaRelacion {
+  const jugadaCruda = String(r.nombre_jugada ?? "").trim();
+  const esNini = parsearNini(jugadaCruda) !== null;
   return {
     clienteJuega: String(r.cliente_juega_nombre ?? "—"),
-    jugada: String(r.nombre_jugada ?? "").trim(),
+    jugada: esNini ? normalizarNini(jugadaCruda) : jugadaCruda,
     caballo: String(r.caballo ?? "").trim(),
     monto: num(r.monto_jugado),
     clienteConsigue: r.cliente_consigue_nombre ? String(r.cliente_consigue_nombre) : undefined,
+    modalidad: esNini ? "NINI" : "GENERICA",
     cantidadTablas: num(r.cantidad_tablas),
     premioPorTabla: num(r.premio_por_tabla),
     premioPotencial: num(r.premio_potencial),
