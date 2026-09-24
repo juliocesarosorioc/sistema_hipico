@@ -5,6 +5,7 @@ import { useTablasFijasStore, type StoredTablaFija } from "@/store/useTablasFija
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { parseNum, sumaBase, type DraftCarrera, type ItemCarritoVenta } from "@/lib/tablas/tipos";
+import { aDraftCarrera, eliminarDelRegistroGaceta, leerBuzonEnsamblaje, limpiarBuzonEnsamblaje } from "@/lib/gaceta/ui";
 import { SeccionPliegue } from "@/components/tablas/SeccionPliegue";
 import { ParametrosCarrera } from "@/components/tablas/ParametrosCarrera";
 import { TarjetaEnsamblaje } from "@/components/tablas/TarjetaEnsamblaje";
@@ -58,6 +59,25 @@ export function TablasModule(props: Props) {
   // Carga inicial
   useEffect(() => {
     void refresh();
+    // Hidrata las tarjetas desde el buzón de la Gaceta (ensamblaje_carreras +
+    // gaceta_prellenado), igual que el legacy js/tablas.js migrarLegacy, y luego
+    // CONSUME el buzón para que no se dupliquen al recargar.
+    const buzon = leerBuzonEnsamblaje();
+    const hidratadas = buzon
+      .map((c) => aDraftCarrera(c))
+      .filter((d) => d.caballos.length > 0);
+    if (hidratadas.length > 0) {
+      setDrafts((ds) => [...hidratadas, ...ds]);
+      window.dispatchEvent(
+        new CustomEvent("toast", {
+          detail: {
+            msg: `🗂️ ${hidratadas.length} carrera(s) llegaron de la Gaceta. Revise y publique.`,
+            tipo: "info",
+          },
+        })
+      );
+    }
+    limpiarBuzonEnsamblaje();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -128,6 +148,7 @@ export function TablasModule(props: Props) {
     const ok = await publicar(draftATabla(d));
     if (ok) {
       toast(`✅ Tabla ${d.hipodromo.toUpperCase()} C${d.carrera} publicada.`, "success");
+      eliminarDelRegistroGaceta(d.hipodromo.toUpperCase(), d.carrera);
       setDrafts((ds) => ds.filter((x) => x.uid !== d.uid));
     } else {
       toast("No se pudo publicar la tabla. Revise la conexión con Supabase.", "error");
@@ -283,7 +304,11 @@ export function TablasModule(props: Props) {
                 draft={d}
                 onChange={(nd) => setDrafts((ds) => ds.map((x) => (x.uid === d.uid ? nd : x)))}
                 onPublicar={publicarDraft}
-                onQuitar={(uid) => setDrafts((ds) => ds.filter((x) => x.uid !== uid))}
+                onQuitar={(uid) => {
+                  const quitable = drafts.find((x) => x.uid === uid);
+                  if (quitable) eliminarDelRegistroGaceta(quitable.hipodromo.toUpperCase(), quitable.carrera);
+                  setDrafts((ds) => ds.filter((x) => x.uid !== uid));
+                }}
               />
             ))
           )}

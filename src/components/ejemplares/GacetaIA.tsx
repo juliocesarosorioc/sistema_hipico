@@ -1,16 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  CLAVE_GEMINI_KEY,
-  transformarGaceta,
-  type CarreraExtraida,
-} from "@/lib/gaceta/ia";
+import { useRouter } from "next/navigation";
+import { CLAVE_GEMINI_KEY, transformarGaceta } from "@/lib/gaceta/ia";
 import { guardarHistorialGaceta, registrarEjemplares } from "@/lib/gaceta/padron";
 import { Button } from "@/components/ui/Button";
 import { ToastHost } from "@/components/ui/ToastHost";
+import { CarreraGacetaCard } from "@/components/ejemplares/CarreraGacetaCard";
+import {
+  acumularEnEnsamblaje,
+  leerRegistro,
+  limpiarTodoRegistro,
+  listaHors,
+  marcarEnviadas,
+  parsearRangoPaginas,
+  persistirRegistro,
+  type CarreraRegistro,
+  type ResumenPadron,
+} from "@/lib/gaceta/ui";
 
-type PaginaGaceta = { id: string; dataUrl: string; orden: number };
+type PaginaGaceta = { id: string; dataUrl: string; num: number; orden: number };
 
 function leerArchivoComoDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -32,7 +41,8 @@ function pesoMB(dataUrl: string): number {
 // ---- Renderizado de PDFs a miniaturas (client-side) ----------------------
 // pdfjs renderiza cada página del PDF a un canvas → PNG. Así la vista previa
 // funciona (el <img> no sabe pintar application/pdf) y las páginas seleccionadas
-// se envían a Gemini como imágenes.
+// se envían a Gemini como imágenes. Misma regla que el legacy (js/gaceta.js):
+// ancho tope 1500 px y JPEG al 60%.
 type PdfLib = {
   GlobalWorkerOptions: { workerSrc: string };
   getDocument: (opts: { data: ArrayBuffer }) => { promise: Promise<PdfDoc> };
@@ -57,8 +67,13 @@ async function cargarPdfJs(): Promise<PdfLib> {
   return lib;
 }
 
-/** Convierte un PDF (File → ArrayBuffer) en N dataURLs PNG (una por página). */
-async function renderPdfAPaginas(file: File, onProgreso: (pagina: number, total: number) => void): Promise<string[]> {
+/** Convierte un PDF (File → ArrayBuffer) en N dataURLs PNG (una por página).
+ *  `tope` limita las páginas leídas (input "Páginas del PDF a leer"). */
+async function renderPdfAPaginas(
+  file: File,
+  onProgreso: (pagina: number, total: number) => void,
+  tope?: number
+): Promise<string[]> {
   const lib = await cargarPdfJs();
   const buffer = await file.arrayBuffer();
   let doc: PdfDoc;
@@ -67,14 +82,14 @@ async function renderPdfAPaginas(file: File, onProgreso: (pagina: number, total:
   } catch (e) {
     throw new Error(`No se pudo leer el PDF: ${e instanceof Error ? e.message : String(e)}`);
   }
+  const total = tope && tope > 0 ? Math.min(tope, doc.numPages) : doc.numPages;
   const paginas: string[] = [];
   try {
-    for (let i = 1; i <= doc.numPages; i++) {
-      onProgreso(i, doc.numPages);
+    for (let i = 1; i <= total; i++) {
+      onProgreso(i, total);
       const page = await doc.getPage(i);
       const vp = page.getViewport({ scale: 1.5 });
       const canvas = document.createElement("canvas");
-      // Misma regla que el legacy (js/gaceta.js): ancho tope 1500 px.
       canvas.width = Math.min(vp.width, MAX_ENVIO_PX);
       canvas.height = Math.round(canvas.width * (vp.height / vp.width));
       const ctx = canvas.getContext("2d");
@@ -97,6 +112,8 @@ async function renderPdfAPaginas(file: File, onProgreso: (pagina: number, total:
   return paginas;
 }
 
+const SQL_AVISO_KEY = "club_gaceta_sql_aviso";
+
 export function GacetaIA() {
   const [paginas, setPaginas] = useState<PaginaGaceta[]>([]);
   const [seleccionadas, setSeleccionadas] = useState<Set<string>>(new Set());
@@ -106,12 +123,23 @@ export function GacetaIA() {
   const [estado, setEstado] = useState("");
   const [diag, setDiag] = useState("");
   const [progreso, setProgreso] = useState<{ hecho: number; total: number } | null>(null);
-  const [carreras, setCarreras] = useState<CarreraExtraida[]>([]);
-  const [densa, setDensa] = useState(true);
+  const [rango, setRango] = useState("");
+  const [topePaginas, setTopePaginas] = useState("");
+  const [vistaIndice, setVistaIndice] = useState(-1);
+  const [carreras, setCarreras] = useState<CarreraRegistro[]>([]);
+  const [resumen, setResumen] = useState<ResumenPadron>({ nuevos: 0, vinculados: 0 });
   const [registrando, setRegistrando] = useState(false);
   const [historial, setHistorial] = useState(false);
+  const [enviando, setEnviando] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
+  const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
+    window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
+  }, []);
+
+  // Clave guardada solo en este navegador.
   useEffect(() => {
     try {
       const k = localStorage.getItem(CLAVE_GEMINI_KEY) ?? "";
@@ -120,6 +148,51 @@ export function GacetaIA() {
       void e;
     }
   }, []);
+
+  // Recupera las carreras pendientes del registro (sin re-transformar).
+  useEffect(() => {
+    const arr = leerRegistro();
+    if (!arr || !arr.length) return;
+    const pendientes = arr.filter((c) => !c.enviada);
+    const enviadas = arr.length - pendientes.length;
+    if (!pendientes.length) {
+      setEstado(`${enviadas} carrera(s) ya se enviaron al Ensamblaje. Cargue un nuevo programa o use "Limpiar registro" para empezar de nuevo.`);
+      return;
+    }
+    const lista = pendientes.map((c) => {
+      const copia: CarreraRegistro = Object.assign({}, c);
+      delete copia.enviada;
+      delete copia.aplicada;
+      return copia;
+    });
+    setCarreras(lista.map((c) => ({ ...c, seleccionada: true })));
+    setEstado("Recuperando las carreras guardadas…");
+    void registrarEjemplares(lista as unknown as Array<Record<string, unknown>>)
+      .then((tot) => {
+        setResumen({ nuevos: tot.nuevos, vinculados: tot.vinculados });
+        setCarreras((prev) => prev.map((c) => ({ ...c, ejemplares: (c.ejemplares || []).map((e) => ({ ...e })) })));
+        setEstado(
+          `${lista.length} carrera(s) guardada(s) pendientes de ensamblar${enviadas ? ` · ${enviadas} ya enviada(s)` : ""}. Puede enviarlas al Ensamblaje sin volver a transformar.`
+        );
+      })
+      .catch(() => {
+        setCarreras((prev) => prev.map((c) => ({ ...c, ejemplares: (c.ejemplares || []).map((e) => ({ ...e })) })));
+        setEstado(`${lista.length} carrera(s) guardada(s) pendientes de ensamblar. Puede enviarlas al Ensamblaje sin volver a transformar.`);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Teclado de la vista previa en grande (Esc / flechas).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (vistaIndice < 0 || paginas.length === 0) return;
+      if (e.key === "Escape") setVistaIndice(-1);
+      else if (e.key === "ArrowLeft") setVistaIndice((i) => (i - 1 + paginas.length) % paginas.length);
+      else if (e.key === "ArrowRight") setVistaIndice((i) => (i + 1) % paginas.length);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [vistaIndice, paginas.length]);
 
   const togglePagina = useCallback((id: string) => {
     setSeleccionadas((prev) => {
@@ -138,63 +211,90 @@ export function GacetaIA() {
     setSeleccionadas(new Set());
   }, []);
 
-  const onArchivos = useCallback(async (files: FileList | File[]) => {
-    const arr = Array.from(files).filter((f) => /\.(pdf|jpe?g|png|webp)$/i.test(f.name) || f.type.startsWith("image/"));
-    if (!arr.length) {
-      setEstado("Solo se aceptan PDF, JPG, PNG o WEBP.");
+  const aplicarRango = useCallback(() => {
+    const set = parsearRangoPaginas(rango);
+    if (!set.size) {
+      toast("Formato de páginas: 1-4,6,8", "warning");
       return;
     }
-    if (arr.some((f) => f.size > MAX_ARCHIVO_MB * 1024 * 1024)) {
-      const msj = `Error: ${arr.find((f) => f.size > MAX_ARCHIVO_MB * 1024 * 1024)?.name ?? "el archivo"} supera ${MAX_ARCHIVO_MB} MB.`;
-      setEstado(msj);
-      window.dispatchEvent(new CustomEvent("toast", { detail: { msg: msj, tipo: "error" } }));
-      return;
-    }
-    setLeyendo(true);
-    setEstado("Leyendo archivos...");
-    setDiag("");
-    try {
-      const nuevas: PaginaGaceta[] = [];
-      const generar = (dataUrl: string) => ({ id: `${dataUrl.slice(0, 24)}-${nuevas.length}-${Date.now()}`, dataUrl, orden: nuevas.length });
-      for (const f of arr) {
-        try {
-          const esPdf = /\.pdf$/i.test(f.name) || f.type === "application/pdf";
-          if (esPdf) {
-            setEstado(`Renderizando ${f.name}...`);
-            const paginas = await renderPdfAPaginas(f, (pag, total) => setEstado(`Renderizando ${f.name} · página ${pag} de ${total}...`));
-            for (const d of paginas) nuevas.push(generar(d));
-          } else {
-            const dataUrl = await leerArchivoComoDataUrl(f);
-            nuevas.push(generar(dataUrl));
-          }
-        } catch (e) {
-          setEstado("Error leyendo " + f.name + ": " + (e instanceof Error ? e.message : String(e)));
-        }
+    setSeleccionadas(new Set(paginas.filter((p) => set.has(p.num)).map((p) => p.id)));
+  }, [rango, paginas, toast]);
+
+  const onArchivos = useCallback(
+    async (files: FileList | File[]) => {
+      const arr = Array.from(files).filter((f) => /\.(pdf|jpe?g|png|webp)$/i.test(f.name) || f.type.startsWith("image/"));
+      if (!arr.length) {
+        setEstado("Solo se aceptan PDF, JPG, PNG o WEBP.");
+        return;
       }
-      if (nuevas.length) {
-        setPaginas((prev) => [...prev, ...nuevas]);
-        setSeleccionadas((prev) => {
-          const n = new Set(prev);
-          nuevas.forEach((p) => n.add(p.id));
-          return n;
+      if (arr.some((f) => f.size > MAX_ARCHIVO_MB * 1024 * 1024)) {
+        const arch = arr.find((f) => f.size > MAX_ARCHIVO_MB * 1024 * 1024);
+        setEstado(`Error: ${arch?.name ?? "el archivo"} supera ${MAX_ARCHIVO_MB} MB.`);
+        toast(`El archivo supera ${MAX_ARCHIVO_MB} MB.`, "error");
+        return;
+      }
+      setLeyendo(true);
+      setEstado("Leyendo archivos...");
+      setDiag("");
+      try {
+        const nuevas: PaginaGaceta[] = [];
+        const generar = (dataUrl: string) => ({
+          id: `${dataUrl.slice(0, 24)}-${nuevas.length}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          dataUrl,
+          num: nuevas.length + 1,
+          orden: nuevas.length,
         });
-        setEstado(`${nuevas.length} página(s) listas.`);
+        for (const f of arr) {
+          try {
+            const esPdf = /\.pdf$/i.test(f.name) || f.type === "application/pdf";
+            if (esPdf) {
+              setEstado(`Renderizando ${f.name}...`);
+              const tope = parseInt(topePaginas, 10);
+              const pag = await renderPdfAPaginas(
+                f,
+                (pag, total) => setEstado(`Renderizando ${f.name} · página ${pag} de ${total}...`),
+                tope > 0 ? tope : undefined
+              );
+              for (const d of pag) nuevas.push(generar(d));
+            } else {
+              const dataUrl = await leerArchivoComoDataUrl(f);
+              nuevas.push(generar(dataUrl));
+            }
+          } catch (e) {
+            setEstado("Error leyendo " + f.name + ": " + (e instanceof Error ? e.message : String(e)));
+          }
+        }
+        if (nuevas.length) {
+          setPaginas((prev) => [...prev, ...nuevas]);
+          setSeleccionadas((prev) => {
+            const n = new Set(prev);
+            nuevas.forEach((p) => n.add(p.id));
+            return n;
+          });
+          setEstado(`${nuevas.length} página(s) listas.`);
+        }
+      } finally {
+        setLeyendo(false);
       }
-    } finally {
-      setLeyendo(false);
-    }
-  }, []);
+    },
+    [topePaginas, toast]
+  );
 
   const guardarClave = useCallback(() => {
     try {
       localStorage.setItem(CLAVE_GEMINI_KEY, clave.trim());
       setEstado("Clave guardada (solo en este navegador).");
+      toast("Clave guardada en este navegador.", "success");
     } catch (e) {
       setDiag(String(e));
     }
-  }, [clave]);
+  }, [clave, toast]);
 
   const probarClave = useCallback(async () => {
+    if (!clave.trim()) {
+      toast("Escriba primero la clave.", "warning");
+      return;
+    }
     setTrabajando(true);
     setEstado("Probando clave con Gemini...");
     setDiag("");
@@ -203,83 +303,196 @@ export function GacetaIA() {
       const d = (await r.json()).models || [];
       setDiag(r.ok ? `Clave válida — ${d.length} modelos disponibles.` : `HTTP ${r.status}: ${JSON.stringify(d).slice(0, 160)}`);
       setEstado(r.ok ? "Clave válida." : "Clave rechazada.");
+      toast(r.ok ? "Clave válida y conexión OK." : "La prueba falló; revise la clave.", r.ok ? "success" : "error");
     } catch (e) {
       setEstado("Error de red al probar la clave.");
       setDiag(e instanceof Error ? e.message : String(e));
     } finally {
       setTrabajando(false);
     }
-  }, [clave]);
+  }, [clave, toast]);
 
-  const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
-    window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
-  }, []);
-
-  const transformar = useCallback(async () => {
+  const alTransformar = useCallback(async () => {
     if (!clave.trim()) {
       setEstado("Primero guarda tu clave de Gemini.");
-      window.dispatchEvent(new CustomEvent("toast", { detail: { msg: "Primero guarda tu clave de Gemini.", tipo: "warning" } }));
+      toast("Primero guarda tu clave de Gemini.", "warning");
       return;
     }
     const imgs = paginas.filter((p) => seleccionadas.has(p.id)).map((p) => p.dataUrl);
     if (!imgs.length) {
       setEstado("Selecciona al menos una página.");
-      window.dispatchEvent(new CustomEvent("toast", { detail: { msg: "Selecciona al menos una página.", tipo: "warning" } }));
+      toast("Selecciona al menos una página.", "warning");
       return;
     }
-    const pesoSel = `${(imgs.reduce((a, d) => a + pesoMB(d), 0)).toFixed(1)} MB`;
+    const pesoSel = `${imgs.reduce((a, d) => a + pesoMB(d), 0).toFixed(1)} MB`;
     setTrabajando(true);
-    setProgreso({ hecho: 0, total: 1 });
     setEstado(`Transcribiendo ${imgs.length} página(s) (${pesoSel}) con Gemini (gratis)...`);
     setDiag("");
     try {
       const res = await transformarGaceta(clave.trim(), imgs, (hecho, total) => setProgreso({ hecho, total }), (s) => setEstado(s));
       setDiag(res.diag ?? "");
       if (!res.ok) {
-        setEstado(res.error ?? "Error transformando.");
+        setEstado(res.cuotaTotal ? "Cuota DIARIA gratuita de Gemini agotada. Prueba otra vez mañana o consigue otra clave gratis (aistudio.google.com/apikey)." : res.error ?? "Error transformando.");
         setCarreras([]);
-        window.dispatchEvent(
-          new CustomEvent("toast", {
-            detail: { msg: "❌ " + (res.error ?? "Error transformando."), tipo: res.cuotaTotal ? "warning" : "error" },
-          })
+        setResumen({ nuevos: 0, vinculados: 0 });
+        toast(
+          res.cuotaTotal
+            ? "Cuota diaria gratuita agotada: cambia de clave o reintenta mañana."
+            : "❌ " + (res.error ?? "Error transformando."),
+          res.cuotaTotal ? "warning" : "error"
         );
         return;
       }
-      setCarreras(res.carreras);
-      setEstado(`Extraídas ${res.carreras.length} carrera(s) de ${imgs.length} página(s).`);
-      window.dispatchEvent(new CustomEvent("toast", { detail: { msg: `✅ Extraídas ${res.carreras.length} carreras.`, tipo: "success" } }));
+      // Entrega inmediata: el resultado SIEMPRE se muestra; el padrón se
+      // vincula por detrás y NO bloquea las cards.
+      if (res.cuotaTotal) toast(`Cuota agotada en parte de Gemini: resultado PARCIAL (${res.carreras.length} carrera(s)).`, "warning");
+      const lista: CarreraRegistro[] = res.carreras.map((c) => ({
+        ...c,
+        premio: Number(c.premio) || 100,
+        seleccionada: true,
+        enviada: false,
+        aplicada: false,
+      }));
+      setCarreras(lista);
+      setResumen({ nuevos: 0, vinculados: 0 });
+      persistirRegistro(lista);
+      setEstado(`Listo: ${lista.length} carrera(s) transcritas, σ Vinculando padrón…`);
+      toast(`✅ Extraídas ${lista.length} carreras.`, "success");
+
+      // Historlae (gaceta_procesada) en segundo plano, sin bloquear.
+      const fecha = lista.find((c) => c.fecha)?.fecha ?? null;
+      guardarHistorialGaceta(lista, fecha, "desconocido").catch((e) => {
+        console.warn("No se guardó el historial (gaceta_procesada):", e?.message || e);
+        if (!sessionStorage.getItem(SQL_AVISO_KEY)) {
+          sessionStorage.setItem(SQL_AVISO_KEY, "1");
+          toast("La gaceta se procesó bien, pero el historial no se pudo guardar (falta la tabla o permisos).", "warning");
+        }
+      });
+
+      // Vinculación al padrón en segundo plano (actualiza las insignias ✗/✓/★).
+      void registrarEjemplares(lista as unknown as Array<Record<string, unknown>>)
+        .then((tot) => {
+          setResumen({ nuevos: tot.nuevos, vinculados: tot.vinculados });
+          setCarreras((prev) => prev.map((c) => ({ ...c, ejemplares: (c.ejemplares || []).map((e) => ({ ...e })) })));
+          setEstado(
+            `${res.cuotaTotal ? "PARCIAL · " : ""}Listo: ${lista.length} carrera(s), ${tot.nuevos} ejemplar(es) nuevos registrados.`
+          );
+          if (tot.errorDb) {
+            toast(`Transcripción lista (padrón sin conexión): ${tot.errorDb}. Ejecute el paquete SQL y use "Registrar ejemplares en el padrón".`, "warning");
+          } else if (tot.fallidos > 0) {
+            toast(`Padrón: ${tot.nuevos} nuevo(s), ${tot.vinculados} vinculado(s), ${tot.fallidos} fallido(s).`, "warning");
+          } else {
+            toast(`Padrón: ${tot.nuevos} nuevo(s), ${tot.vinculados} vinculado(s).`, "success");
+          }
+        })
+        .catch((e) => {
+          console.warn("Padrón en segundo plano falló:", e?.message || e);
+          toast("La transcripción quedó lista, pero la vinculación al padrón falló.", "warning");
+        });
     } catch (e) {
       const msj = e instanceof Error ? e.message : String(e);
       setEstado("Error: " + msj);
-      window.dispatchEvent(new CustomEvent("toast", { detail: { msg: "❌ " + msj, tipo: "error" } }));
+      toast("❌ " + msj, "error");
     } finally {
       setTrabajando(false);
       setProgreso(null);
     }
-  }, [clave, paginas, seleccionadas]);
+  }, [clave, paginas, seleccionadas, toast]);
 
-  /** Registra los ejemplares extraídos en `ejemplares` (paridad gaceta_padron.registrar). */
   const registrarEnPadron = useCallback(async () => {
+    if (registrando || carreras.length === 0) return;
     setRegistrando(true);
     setEstado("Vinculando ejemplares con el padrón...");
     const tot = await registrarEjemplares(carreras as unknown as Array<Record<string, unknown>>);
-    setCarreras([...carreras]);
+    setResumen({ nuevos: tot.nuevos, vinculados: tot.vinculados });
+    setCarreras((prev) => prev.map((c) => ({ ...c, ejemplares: (c.ejemplares || []).map((e) => ({ ...e })) })));
     setRegistrando(false);
     toast(
       `Padrón: ${tot.nuevos} nuevo(s), ${tot.vinculados} vinculado(s)${tot.fallidos ? `, ${tot.fallidos} fallido(s)` : ""}.`,
-      tot.fallidos ? "warning" : "success"
+      tot.fallidos || tot.errorDb ? "warning" : "success"
     );
     setEstado(`Padrón actualizado: ${tot.nuevos} nuevos, ${tot.vinculados} vinculados${tot.fallidos ? `, ${tot.fallidos} fallidos` : ""}.`);
-  }, [carreras, toast]);
+  }, [carreras, registrando, toast]);
 
-  /** Guarda el historial de la transcripción en `gaceta_procesada`. */
-  const guardarHistorial = useCallback(async () => {
+  const guardarHist = useCallback(async () => {
+    if (historial || carreras.length === 0) return;
     setHistorial(true);
     const fecha = carreras.find((c) => c.fecha)?.fecha ?? null;
-    const r = await guardarHistorialGaceta(carreras, fecha, "operador-admin");
+    const r = await guardarHistorialGaceta(carreras, fecha, "desconocido");
     setHistorial(false);
     toast(r.ok ? "🗂️ Historial guardado en gaceta_procesada." : `⚠️ ${r.error ?? "Error al guardar el historial."}`, r.ok ? "success" : "error");
+  }, [carreras, historial, toast]);
+
+  const enviar = useCallback(
+    async (lista: CarreraRegistro[]) => {
+      if (enviando) return;
+      const conNombre = lista.filter((c) => listaHors(c).some((e) => String(e.nombre || "").trim()));
+      if (!conNombre.length) {
+        toast("Las carreras marcadas no tienen ejemplares con nombre.", "warning");
+        return;
+      }
+      setEnviando(true);
+      const prev = carreras.map((c) => ({ ...c }));
+      marcarEnviadas(prev, conNombre);
+      setCarreras(prev.map((c) => ({ ...c, ejemplares: (c.ejemplares || []).map((e) => ({ ...e })) })));
+      const total = acumularEnEnsamblaje(conNombre);
+      const etiqueta =
+        conNombre.length > 1
+          ? `${conNombre.length} carrera(s) enviada(s) al Ensamblaje`
+          : `Carrera C${conNombre[0].carrera || "?"} enviada al Ensamblaje`;
+      toast(`${etiqueta} (total en el envío: ${total}). Revise y publique.`, "success");
+      setEnviando(false);
+      setTimeout(() => router.push("/tablas-fijas"), 700);
+    },
+    [carreras, enviando, router, toast]
+  );
+
+  const enviarSeleccionadas = useCallback(() => {
+    const sel = carreras.filter((c) => c.seleccionada);
+    if (!sel.length) {
+      toast("Marca con el ✓ al menos una carrera para enviar.", "warning");
+      return;
+    }
+    void enviar(sel);
+  }, [carreras, enviar, toast]);
+
+  const limpiar = useCallback(() => {
+    const pendientes = carreras.filter((c) => !c.enviada).length;
+    const msj = pendientes > 0 ? `Hay ${pendientes} carrera(s) pendientes de ensamblar. ` : "El registro no tiene carreras pendientes. ";
+    if (!window.confirm(`¿Limpiar el registro del día?\n\n${msj}Esta acción borra el registro guardado (no afecta las tablas ya publicadas).`)) return;
+    limpiarTodoRegistro();
+    setCarreras([]);
+    setResumen({ nuevos: 0, vinculados: 0 });
+    setEstado("Registro limpiado. Cargue un nuevo documento para empezar.");
+    toast("Registro del día limpiado.", "success");
   }, [carreras, toast]);
+
+  // Navegación de teclado tipo planilla sobre los VALORES (Tab/Enter/↑↓),
+  // igual que el legacy js/gaceta.js.
+  const onGridKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const esNav = e.key === "Enter" || e.key === "Tab" || e.key === "ArrowUp" || e.key === "ArrowDown";
+    if (!esNav) return;
+    const inp = e.target as HTMLElement;
+    if (inp.dataset.gacValor === undefined) return;
+    e.preventDefault();
+    const dir = e.key === "Enter" || e.key === "Tab" ? (e.shiftKey ? -1 : 1) : e.key === "ArrowDown" ? 1 : -1;
+    const valores = Array.from(gridRef.current?.querySelectorAll<HTMLElement>("[data-gac-valor]") ?? []);
+    const i = valores.indexOf(inp);
+    if (i === -1) return;
+    const sig = valores[(i + dir + valores.length) % valores.length];
+    sig?.focus();
+    (sig as HTMLInputElement | null)?.select();
+  };
+
+  const selCount = paginas.filter((p) => seleccionadas.has(p.id)).length;
+  const pesoSel = paginas.filter((p) => seleccionadas.has(p.id)).reduce((a, p) => a + pesoMB(p.dataUrl), 0);
+  const carrerasSeleccionadas = carreras.filter((c) => c.seleccionada).length;
+  const labelEnvio =
+    carrerasSeleccionadas === 0
+      ? "Enviar al Ensamblaje (sin selección)"
+      : carrerasSeleccionadas === carreras.length
+        ? `Enviar TODAS al Ensamblaje (${carrerasSeleccionadas})`
+        : `Enviar seleccionadas (${carrerasSeleccionadas})`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -333,46 +546,68 @@ export function GacetaIA() {
             <div className="mt-4">
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  Vista previa — marque/desmarque las páginas que desea enviar a la IA
+                  Vista previa — toque una página para incluirla/excluirla
                 </p>
                 <span className="rounded-full bg-primary-100 px-2 py-0.5 text-[10px] font-black text-primary-700">
-                  {seleccionadas.size} páginas ·{" "}
-                  {paginas.filter((p) => seleccionadas.has(p.id)).reduce((a, p) => a + pesoMB(p.dataUrl), 0).toFixed(1)} MB
+                  Enviar {selCount} de {paginas.length} página(s) · {pesoSel.toFixed(1)} MB
                 </span>
               </div>
               <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
-                {paginas.map((p) => {
+                {paginas.map((p, idx) => {
                   const activa = seleccionadas.has(p.id);
                   return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => togglePagina(p.id)}
-                      role="checkbox"
-                      aria-checked={activa}
-                      className={`relative overflow-hidden rounded-lg border-2 transition-transform ${
-                        activa ? "border-primary-500 shadow-lg" : "border-line opacity-60 hover:opacity-80"
-                      }`}
-                      title={activa ? "Quitar de la selección" : "Incluir en la selección"}
-                    >
-                      <img src={p.dataUrl} alt={`Página ${p.orden + 1}`} className="h-20 w-full object-cover" />
-                      <span
-                        className={`absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded border-2 bg-white/90 text-[10px] font-black leading-none ${
-                          activa ? "border-primary-600 bg-primary-600 text-white" : "border-slate-400 text-transparent"
+                    <div key={p.id} className="relative">
+                      <button
+                        type="button"
+                        onClick={() => togglePagina(p.id)}
+                        role="checkbox"
+                        aria-checked={activa}
+                        className={`relative block w-full overflow-hidden rounded-lg border-2 transition-transform ${
+                          activa ? "border-primary-500 shadow-lg" : "border-line opacity-60 hover:opacity-80"
                         }`}
-                        aria-hidden
+                        title={activa ? "Quitar de la selección" : "Incluir en la selección"}
                       >
-                        {activa ? "✓" : ""}
-                      </span>
-                      <span className="absolute bottom-0 left-0 bg-slate-950/80 px-1 text-[9px] font-bold text-slate-200">
-                        {p.orden + 1}
-                      </span>
-                    </button>
+                        <img src={p.dataUrl} alt={`Página ${p.num}`} className="h-20 w-full object-cover" />
+                        <span
+                          className={`absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded border-2 bg-white/90 text-[10px] font-black leading-none ${
+                            activa ? "border-primary-600 bg-primary-600 text-white" : "border-slate-400 text-transparent"
+                          }`}
+                          aria-hidden
+                        >
+                          {activa ? "✓" : ""}
+                        </span>
+                        <span className="absolute bottom-0 left-0 bg-slate-950/80 px-1 text-[9px] font-bold text-slate-200">
+                          {p.num}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVistaIndice(idx)}
+                        title="Ver la página en grande"
+                        aria-label="Ver la página en grande"
+                        className="absolute right-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full text-[10px] text-white shadow transition-colors"
+                        style={{ backgroundColor: "#0891b2" }}
+                      >
+                        🔍
+                      </button>
+                    </div>
                   );
                 })}
               </div>
-              <div className="mt-3 flex items-center gap-2">
-                <span className="text-[10px] font-bold uppercase text-slate-500">Selección:</span>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-bold uppercase text-slate-500">Enviar páginas:</span>
+                <input
+                  value={rango}
+                  onChange={(e) => setRango(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") aplicarRango();
+                  }}
+                  placeholder="Ej: 1-4,6,8"
+                  className="w-24 rounded-lg border border-line bg-surface px-2 py-1 text-center text-xs font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                />
+                <Button variant="ghost" size="sm" onClick={aplicarRango}>
+                  Aplicar
+                </Button>
                 <Button variant="ghost" size="sm" onClick={seleccionarTodas}>
                   Todas
                 </Button>
@@ -382,6 +617,23 @@ export function GacetaIA() {
               </div>
             </div>
           )}
+
+          <div className="mt-4 flex items-center gap-3">
+            <label htmlFor="max-paginas" className="text-xs font-bold uppercase text-slate-600">
+              Páginas del PDF a leer
+            </label>
+            <input
+              id="max-paginas"
+              type="number"
+              min={1}
+              max={99}
+              value={topePaginas}
+              onChange={(e) => setTopePaginas(e.target.value)}
+              placeholder="Todas"
+              title="Limita las páginas que se renderizan del PDF (vacío = todas)"
+              className="w-20 rounded-lg border border-line bg-surface px-2 py-1.5 text-center text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
+            />
+          </div>
         </div>
 
         <div className="rounded-2xl border border-line bg-surface p-5">
@@ -420,7 +672,7 @@ export function GacetaIA() {
             size="lg"
             className="mt-4 w-full"
             disabled={trabajando || !clave.trim() || seleccionadas.size === 0}
-            onClick={() => void transformar()}
+            onClick={() => void alTransformar()}
             title={
               seleccionadas.size === 0
                 ? "Selecciona al menos una página para extraer sus carreras"
@@ -471,55 +723,92 @@ export function GacetaIA() {
         </div>
       </div>
 
-      <div>
-        <label className="mb-1 block text-[11px] font-semibold text-slate-600">
-          Vista de resultados
-        </label>
-        <div className="flex flex-wrap gap-2">
-          <Button variant={densa ? "default" : "ghost"} size="sm" onClick={() => setDensa(true)}>
-            Compacta
-          </Button>
-          <Button variant={densa ? "ghost" : "default"} size="sm" onClick={() => setDensa(false)}>
-            Detallada
-          </Button>
-        </div>
-      </div>
-
       {carreras.length > 0 && (
         <div className="rounded-2xl border border-line bg-surface p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-              📋 Carreras Extraídas ({carreras.length})
+            <h3 className="text-sm font-black uppercase tracking-wider text-slate-700">
+              📋 Carreras Extraídas{" "}
+              <span className="text-xs font-bold normal-case text-slate-500">
+                ({carreras.length} carreras · {resumen.nuevos} nuevos / {resumen.vinculados} vinculados al padrón)
+              </span>
             </h3>
             <div className="flex flex-wrap gap-2">
-              <Button variant="default" size="sm" disabled={registrando || historial} onClick={() => void registrarEnPadron()}>
+              <Button variant="default" size="sm" disabled={registrando || historial || enviando} onClick={() => void registrarEnPadron()}>
                 {registrando ? "Vinculando…" : "✔ Registrar en el padrón"}
               </Button>
-              <Button variant="outline" size="sm" disabled={historial || registrando} onClick={() => void guardarHistorial()}>
+              <Button variant="outline" size="sm" disabled={historial || registrando || enviando} onClick={() => void guardarHist()}>
                 {historial ? "Guardando…" : "🗂️ Guardar historial"}
+              </Button>
+              <Button variant="default" size="sm" disabled={enviando || carreras.length === 0} onClick={enviarSeleccionadas}>
+                {enviando ? "Enviando…" : `📤 ${labelEnvio}`}
+              </Button>
+              <Button variant="danger" size="sm" disabled={enviando} onClick={limpiar}>
+                🧹 Limpiar registro
               </Button>
             </div>
           </div>
-          <div className={`grid gap-2 ${densa ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1"}`}>
+          <div ref={gridRef} onKeyDown={onGridKeyDown} className="grid gap-2 p-1 sm:grid-cols-2 md:grid-cols-3">
             {carreras.map((c, i) => (
-              <div key={i} className="rounded-xl border border-line bg-surfaceAlt/60 p-3">
-                <p className="text-xs font-bold text-primary-600">
-                  {String(c.hipodromo || "?").toUpperCase()} · C{c.carrera ?? "?"}
-                </p>
-                {densa ? null : (
-                  <p className="mt-0.5 text-[10px] text-slate-500">
-                    {c.fecha ?? "-"} · {(c.distancia || 0) > 0 ? `${c.distancia} m` : "-"} · {c.superficie || "ARENA"} · premio {c.premio || 0}
-                  </p>
-                )}
-                <ul className="mt-2 max-h-40 space-y-0.5 overflow-y-auto text-[10px] text-slate-600">
-                  {(c.ejemplares || []).map((ej, j) => (
-                    <li key={j}>
-                      {ej.numero} · <b>{ej.nombre}</b> ({ej.nacionalidad ?? "VE"}){Number(ej.valor) > 0 ? ` · $${ej.valor}` : ""}
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              <CarreraGacetaCard
+                key={`${String(c.hipodromo || "")}-${String(c.carrera ?? "")}-${i}`}
+                index={i}
+                carrera={c}
+                onChange={(nc) => setCarreras((prev) => prev.map((x, k) => (k === i ? nc : x)))}
+                onEnviar={(id) => void enviar([carreras[id]])}
+              />
             ))}
+          </div>
+          <p className="mt-3 text-[11px] italic leading-relaxed text-slate-500">
+            💡 La IA transcribe la gaceta tal cual: no inventa nombres. Usted revisa Valor, premio, distancia y superficie de
+            cada carrera, y con <b>Cargar en el Ensamblaje</b> (o el envío masivo) decide CUÁNDO llevarlas. Nada se envía solo:
+            los ejemplares se registran en el padrón por nombre + nacionalidad (los homónimos se desambiguan por país; EE.UU.
+            por defecto USA y Venezuela VE).
+          </p>
+        </div>
+      )}
+
+      {/* Vista previa de una página de la gaceta en grande */}
+      {vistaIndice >= 0 && paginas[vistaIndice] && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-5"
+          style={{ backgroundColor: "rgba(0,0,0,.88)" }}
+          onClick={() => setVistaIndice(-1)}
+        >
+          <div className="relative w-full" style={{ maxWidth: 980 }} onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setVistaIndice(-1)}
+                className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-slate-900 hover:bg-slate-200"
+              >
+                ✕ Cerrar (Esc)
+              </button>
+              <span className="text-xs font-black text-white">
+                Página {paginas[vistaIndice].num} de {paginas.length}
+              </span>
+            </div>
+            <img
+              src={paginas[vistaIndice].dataUrl}
+              alt={`Página ${paginas[vistaIndice].num}`}
+              className="w-full rounded-lg shadow-2xl"
+              style={{ maxHeight: "80vh", objectFit: "contain" }}
+            />
+            <div className="mt-3 flex justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setVistaIndice((i) => (i - 1 + paginas.length) % paginas.length)}
+                className="rounded-lg bg-cyan-600 px-4 py-2 text-xs font-bold text-white hover:bg-cyan-700"
+              >
+                ◀ Anterior
+              </button>
+              <button
+                type="button"
+                onClick={() => setVistaIndice((i) => (i + 1) % paginas.length)}
+                className="rounded-lg bg-cyan-600 px-4 py-2 text-xs font-bold text-white hover:bg-cyan-700"
+              >
+                Siguiente ▶
+              </button>
+            </div>
           </div>
         </div>
       )}
