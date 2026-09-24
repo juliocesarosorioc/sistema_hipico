@@ -23,7 +23,6 @@ import {
   desglosarTelefono,
   esBancoVzla,
   formatoMoneda,
-  resumenDatosPago,
   listMetodosPago,
   type DatosPago,
 } from "@/lib/vzla";
@@ -235,11 +234,17 @@ export function ClientesModule() {
                       checked={paginado.length > 0 && paginado.every((c) => seleccion.has(String(c.id)))}
                     />
                   </th>
-                  <th className={th}>Cliente</th>
-                  <th className={th}>Contacto</th>
-                  <th className={th}>Modo / Aval</th>
-                  <th className={th}>Tasa / % Dev.</th>
-                  <th className={th}>Pago</th>
+                  <th className={th}>Seudónimo</th>
+                  <th className={th}>Teléfono</th>
+                  <th className={th + " text-center"}>Modo</th>
+                  <th className={th + " text-right bg-emerald-50/50"}>Saldo USD</th>
+                  <th className={th + " text-right text-amber-600"}>Aval USD</th>
+                  <th className={th + " text-right text-purple-600"}>Devolución</th>
+                  <th className={th + " text-center"} title="Mostrar Saldo al Socio">M.S.</th>
+                  <th className={th}>Socio</th>
+                  <th className={th + " text-amber-600"}>Agencia</th>
+                  <th className={th + " text-emerald-600"} title="Día / Tasa de cuadre">Cuadre</th>
+                  <th className={th + " text-center text-cyan-600"}>Portal</th>
                   <th className={th + " w-52"}>Acciones</th>
                 </tr>
               </thead>
@@ -255,13 +260,13 @@ export function ClientesModule() {
                       />
                     </td>
                     <td className={td}>
-                      <div className="font-bold text-slate-800 truncate">{c.nombre || c.seudonimo || "—"}</div>
+                      <div className="font-bold text-slate-800 truncate">{c.seudonimo || c.nombre || "—"}</div>
                       <div className="text-[10px] text-slate-400 flex items-center gap-1 flex-wrap">
+                        {c.nombre && c.nombre !== c.seudonimo ? <span>{c.nombre}</span> : null}
                         {c.es_socio ? <span className="text-amber-600">
                           <i className="fas fa-crown"></i> Socio
                         </span> : null}
                         {c.grupo_id ? <span className="text-indigo-500">· Grupo</span> : null}
-                        {c.modo_juego ? <span>· {c.modo_juego}</span> : null}
                       </div>
                     </td>
                     <td className={td}>
@@ -269,19 +274,57 @@ export function ClientesModule() {
                       {c.email ? <div className="text-[10px] text-slate-500 truncate">{c.email}</div> : null}
                       {c.cedula_rif ? <div className="text-[10px] text-slate-500">{c.cedula_rif}</div> : null}
                     </td>
-                    <td className={td}>
-                      <span className="font-bold text-slate-700">{formatoMoneda("USD", num(c.aval))}</span>
-                      <span className="text-[10px] text-slate-400 block">{c.libre ? "Libre" : "Con Aval"}</span>
+                    <td className={td + " text-center"}>
+                      <span className="font-bold text-slate-700">{c.modo_juego === "libre" ? "Libre" : c.modo_juego === "pozo" ? "Pozo" : "Aval"}</span>
+                    </td>
+                    <td className={td + " text-right"}>
+                      <span className={`font-mono font-black ${
+                        num(c.saldo_actual) > 0
+                          ? "text-emerald-700"
+                          : num(c.saldo_actual) < 0
+                            ? "text-danger-600"
+                            : "text-slate-700"
+                      }`}>
+                        {formatoMoneda("USD", num(c.saldo_actual))}
+                      </span>
+                    </td>
+                    <td className={td + " text-right"}>
+                      <span className="font-mono font-black text-amber-700">{formatoMoneda("USD", num(c.aval))}</span>
+                    </td>
+                    <td className={td + " text-right"}>
+                      <span className="font-mono font-black text-purple-700">{num(c.devolucion) ? `${num(c.devolucion)}%` : "—"}</span>
+                    </td>
+                    <td className={td + " text-center"}>
+                      {c.mostrar_saldo_socio ? (
+                        <i className="fas fa-eye text-emerald-600" title="Visible al socio"></i>
+                      ) : (
+                        <i className="fas fa-eye-slash text-slate-300" title="Oculto al socio"></i>
+                      )}
                     </td>
                     <td className={td}>
-                      {num(c.tasa_cuadre) ? (
-                        <div className="font-mono text-right">Bs {String(c.tasa_cuadre)}</div>
-                      ) : null}
-                      <div className="text-[10px] font-black text-purple-600 text-right">{num(c.devolucion) ? `${num(c.devolucion)}%` : "—"}</div>
+                      <span className="font-bold text-slate-700 truncate block">{c.socio_asignado || "—"}</span>
                     </td>
                     <td className={td}>
-                      <span className="font-bold text-slate-700 truncate block">{c.metodo_pago || "—"}</span>
-                      <span className="text-[10px] text-slate-500">{resumenDatosPago(c.datos_pago) || ""}</span>
+                      <span className="text-amber-600 font-bold truncate block">{c.es_socio ? "SÍ" : "—"}</span>
+                    </td>
+                    <td className={td}>
+                      {c.dia_cuadre ? (
+                        <>
+                          <span className="font-bold text-slate-700">{c.dia_cuadre}</span>
+                          <span className="block text-[10px] font-mono text-slate-500">
+                            {c.forma_cuadre || ""} {num(c.tasa_cuadre) ? `· Bs ${String(c.tasa_cuadre)}` : ""}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className={td + " text-center"}>
+                      {c.portal_habilitado ? (
+                        <i className="fas fa-link text-cyan-600" title="Portal habilitado"></i>
+                      ) : (
+                        <i className="fas fa-unlink text-slate-300" title="Portal deshabilitado"></i>
+                      )}
                     </td>
                     <td className={td}>
                       <div className="flex flex-wrap gap-1">
@@ -311,7 +354,7 @@ export function ClientesModule() {
                 ))}
                 {paginado.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-3 py-10 text-center text-slate-400">
+                    <td colSpan={12} className="px-3 py-10 text-center text-slate-400">
                       {cargando ? <i className="fas fa-spinner fa-spin mr-2"></i> : <i className="fas fa-inbox mr-2"></i>}
                       {cargando ? "Cargando cartera…" : "Sin clientes que coincidan."}
                     </td>
@@ -351,7 +394,7 @@ export function ClientesModule() {
       )}
 
       {/* Modales */}
-      {abrirNuevo ? <ModalNuevoCliente onClose={() => setAbrirNuevo(false)} onGuardado={() => void recargar()} /> : null}
+      {abrirNuevo ? <ModalNuevoCliente clientes={clientes} onClose={() => setAbrirNuevo(false)} onGuardado={() => void recargar()} /> : null}
       {editando ? <ModalEditarCliente cliente={editando} onClose={() => setEditando(null)} onGuardado={() => void recargar()} /> : null}
       {portalDe ? <ModalPortalCliente cliente={portalDe} onClose={() => setPortalDe(null)} onGuardado={() => void recargar()} /> : null}
 
@@ -436,7 +479,15 @@ export function ClientesModule() {
 // Modal "Nuevo Cliente" (registro rápido, clon del legacy)
 // ---------------------------------------------------------------------------
 
-function ModalNuevoCliente({ onClose, onGuardado }: { onClose: () => void; onGuardado: () => void }) {
+function ModalNuevoCliente({
+  clientes,
+  onClose,
+  onGuardado,
+}: {
+  clientes: ClienteRow[];
+  onClose: () => void;
+  onGuardado: () => void;
+}) {
   const [seudonimo, setSeudonimo] = useState("");
   const [nombres, setNombres] = useState("");
   const [apellido, setApellido] = useState("");
@@ -445,11 +496,22 @@ function ModalNuevoCliente({ onClose, onGuardado }: { onClose: () => void; onGua
   const [email, setEmail] = useState("");
   const [cedulaRif, setCedulaRif] = useState("");
   const [modo, setModo] = useState("aval");
+  const [aval, setAval] = useState("");
   const [devolucion, setDevolucion] = useState("");
+  const [socioAsignado, setSocioAsignado] = useState("");
   const [metodo, setMetodo] = useState("");
   const [datosPago, setDatosPago] = useState<Record<string, unknown>>({});
+  const [diaCuadre, setDiaCuadre] = useState("");
+  const [formaCuadre, setFormaCuadre] = useState("");
+  const [tasaCuadre, setTasaCuadre] = useState("");
+  const [mostrarSaldo, setMostrarSaldo] = useState(false);
   const [esSocio, setEsSocio] = useState(false);
   const [guardando, setGuardando] = useState(false);
+
+  const socios = useMemo(
+    () => clientes.filter((c) => c.es_socio === true && String(c.id) !== String(0)),
+    [clientes]
+  );
 
   const guardar = async () => {
     if (!seudonimo.trim()) return toast("El seudónimo es obligatorio.", "warning");
@@ -462,13 +524,19 @@ function ModalNuevoCliente({ onClose, onGuardado }: { onClose: () => void; onGua
       modo_juego: modo,
       libre: modo === "libre",
       es_socio: esSocio || null,
+      aval: num(aval) || null,
       telefono: componerTelefono(codigoPais, telefono) || null,
       codigo_pais: codigoPais,
       email: email.trim() || null,
       cedula_rif: cedulaRif.trim().toUpperCase() || null,
       devolucion: num(devolucion),
+      socio_asignado: socioAsignado || null,
       metodo_pago: metodo || null,
       datos_pago: !metodo || !Object.keys(datosPago).length ? null : (datosPago as unknown as DatosPago),
+      dia_cuadre: diaCuadre || null,
+      forma_cuadre: formaCuadre || null,
+      tasa_cuadre: num(tasaCuadre) || null,
+      mostrar_saldo_socio: mostrarSaldo || null,
     });
     setGuardando(false);
     if (!r.ok) return toast(r.error ?? "Error al crear.", "error");
@@ -478,6 +546,8 @@ function ModalNuevoCliente({ onClose, onGuardado }: { onClose: () => void; onGua
   };
 
   const inpTxt = "w-full border border-line rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary-500 bg-surface";
+  const dias = ["LUNES", "MARTES", "MIÉRCOLES", "JUEVES", "VIERNES", "SÁBADO", "DOMINGO"];
+  const formas = ["SALDO EN CONTADO", "EFECTIVO DIRECTO", "COMPENSACIÓN AVAL", "MIXTO"];
 
   return (
     <div
@@ -499,79 +569,139 @@ function ModalNuevoCliente({ onClose, onGuardado }: { onClose: () => void; onGua
         </div>
 
         <div className="p-5 max-h-[75vh] overflow-y-auto space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Seudónimo *</label>
-              <input value={seudonimo} onChange={(e) => setSeudonimo(e.target.value.toUpperCase())} className={inpTxt + " font-black uppercase"} autoFocus />
+          <div className="mb-2 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-line pb-1">
+              <i className="fas fa-id-badge text-primary-500 mr-1"></i> Identidad
             </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Nombres</label>
-              <input value={nombres} onChange={(e) => setNombres(e.target.value.toUpperCase())} className={inpTxt + " uppercase"} />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Seudónimo *</label>
+                <input value={seudonimo} onChange={(e) => setSeudonimo(e.target.value.toUpperCase())} className={inpTxt + " font-black uppercase"} autoFocus />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Nombre(s)</label>
+                <input value={nombres} onChange={(e) => setNombres(e.target.value.toUpperCase())} className={inpTxt + " uppercase"} />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Apellido</label>
+                <input value={apellido} onChange={(e) => setApellido(e.target.value.toUpperCase())} className={inpTxt + " uppercase"} />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Código de país</label>
+                <select value={codigoPais} onChange={(e) => setCodigoPais(e.target.value)} className={inpTxt + " font-bold"}>
+                  {codigosPaisUnicos().map((p) => (
+                    <option key={p.codigo} value={p.codigo}>
+                      {p.codigo} {p.pais}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Teléfono (WhatsApp)</label>
+                <input value={telefono} onChange={(e) => setTelefono(e.target.value)} className={inpTxt + " font-mono"} placeholder="412 123 4567" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Email</label>
+                <input value={email} onChange={(e) => setEmail(e.target.value)} className={inpTxt} type="email" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Cédula / RIF</label>
+                <input value={cedulaRif} onChange={(e) => setCedulaRif(e.target.value.toUpperCase())} className={inpTxt + " font-mono uppercase"} placeholder="V-12.345.678" />
+              </div>
             </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Apellido</label>
-              <input value={apellido} onChange={(e) => setApellido(e.target.value.toUpperCase())} className={inpTxt + " uppercase"} />
+
+            <div className="mb-2 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-line pb-1">
+              <i className="fas fa-dice text-amber-500 mr-1"></i> Reglas de Juego y Cuenta
             </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Modo de juego</label>
+                <select value={modo} onChange={(e) => setModo(e.target.value)} className={inpTxt + " font-bold"}>
+                  {modoOpts.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-amber-600 mb-1 uppercase tracking-wider">Aval / Límite de Pérdida (USD)</label>
+                <input value={aval} onChange={(e) => setAval(e.target.value)} className={inpTxt + " font-mono font-bold text-right text-amber-700"} inputMode="decimal" placeholder="0.00" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-purple-600 mb-1 uppercase tracking-wider">Devolución / Incentivo %</label>
+                <input value={devolucion} onChange={(e) => setDevolucion(e.target.value)} className={inpTxt + " font-mono font-bold text-right text-purple-700"} inputMode="decimal" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Socio / Agencia</label>
+                <select value={socioAsignado} onChange={(e) => setSocioAsignado(e.target.value)} className={inpTxt + " font-bold"}>
+                  <option value="">— Ninguno (Directo) —</option>
+                  {socios.map((s) => (
+                    <option key={String(s.id)} value={String(s.seudonimo || s.nombre || "")}>
+                      {s.seudonimo || s.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 pb-1">
+                  <input type="checkbox" checked={esSocio} onChange={(e) => setEsSocio(e.target.checked)} className="h-4 w-4 accent-amber-500" />
+                  <span className="text-[10px] font-black uppercase text-amber-600">
+                    <i className="fas fa-crown mr-1"></i>Es socio
+                  </span>
+                </label>
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 pb-1">
+                  <input type="checkbox" checked={mostrarSaldo} onChange={(e) => setMostrarSaldo(e.target.checked)} className="h-4 w-4 accent-emerald-500" />
+                  <span className="text-[10px] font-black uppercase text-emerald-600">
+                    <i className="fas fa-eye mr-1"></i>Mostrar saldo al socio
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div className="mb-2 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-line pb-1">
+              <i className="fas fa-calendar-week text-emerald-600 mr-1"></i> Cuadre Semanal
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Día de la semana que se cuadra</label>
+                <select value={diaCuadre} onChange={(e) => setDiaCuadre(e.target.value)} className={inpTxt + " font-bold"}>
+                  <option value="">— Seleccione —</option>
+                  {dias.map((d) => (
+                    <option key={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Forma en que se cuadra</label>
+                <select value={formaCuadre} onChange={(e) => setFormaCuadre(e.target.value)} className={inpTxt + " font-bold"}>
+                  <option value="">— Seleccione —</option>
+                  {formas.map((f) => (
+                    <option key={f}>{f}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Tasa de cuadre semanal (Bs/$)</label>
+                <input value={tasaCuadre} onChange={(e) => setTasaCuadre(e.target.value)} className={inpTxt + " font-mono font-bold text-right"} inputMode="decimal" placeholder="0" />
+              </div>
+            </div>
+
             <div>
-              <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Código de país</label>
-              <select value={codigoPais} onChange={(e) => setCodigoPais(e.target.value)} className={inpTxt + " font-bold"}>
-                {codigosPaisUnicos().map((p) => (
-                  <option key={p.codigo} value={p.codigo}>
-                    {p.codigo} {p.pais}
+              <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Método de pago</label>
+              <select value={metodo} onChange={(e) => setMetodo(e.target.value)} className={inpTxt + " font-bold"}>
+                <option value="">— Seleccione —</option>
+                {listMetodosPago(true).map((m) => (
+                  <option key={m} value={m}>
+                    {esBancoVzla(m) ? m : m}
                   </option>
                 ))}
               </select>
             </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Teléfono</label>
-              <input value={telefono} onChange={(e) => setTelefono(e.target.value)} className={inpTxt + " font-mono"} placeholder="412 123 4567" />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Email</label>
-              <input value={email} onChange={(e) => setEmail(e.target.value)} className={inpTxt} type="email" />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Cédula / RIF</label>
-              <input value={cedulaRif} onChange={(e) => setCedulaRif(e.target.value.toUpperCase())} className={inpTxt + " font-mono uppercase"} placeholder="V-12.345.678" />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Modo de juego</label>
-              <select value={modo} onChange={(e) => setModo(e.target.value)} className={inpTxt + " font-bold"}>
-                {modoOpts.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Devolución / Incentivo %</label>
-              <input value={devolucion} onChange={(e) => setDevolucion(e.target.value)} className={inpTxt + " font-mono font-bold text-right text-purple-700"} inputMode="decimal" />
-            </div>
-            <div className="flex items-end">
-              <label className="flex items-center gap-2 pb-1">
-                <input type="checkbox" checked={esSocio} onChange={(e) => setEsSocio(e.target.checked)} className="h-4 w-4 accent-amber-500" />
-                <span className="text-[10px] font-black uppercase text-amber-600">
-                  <i className="fas fa-crown mr-1"></i>Es socio
-                </span>
-              </label>
-            </div>
-          </div>
 
-          <div>
-            <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Método de pago</label>
-            <select value={metodo} onChange={(e) => setMetodo(e.target.value)} className={inpTxt + " font-bold"}>
-              <option value="">— Seleccione —</option>
-              {listMetodosPago(true).map((m) => (
-                <option key={m} value={m}>
-                  {esBancoVzla(m) ? m : m}
-                </option>
-              ))}
-            </select>
+            {metodo ? <DatosPagoForm prefijo="nuevo" metodo={metodo} onChange={(dp) => setDatosPago(dp as unknown as Record<string, unknown>)} /> : null}
           </div>
-
-          {metodo ? <DatosPagoForm prefijo="nuevo" metodo={metodo} onChange={(dp) => setDatosPago(dp as unknown as Record<string, unknown>)} /> : null}
-        </div>
 
         <div className="px-5 py-4 bg-slate-50 border-t border-line flex justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onClose}>
