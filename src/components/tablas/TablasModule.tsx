@@ -2,14 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useTablasFijasStore, type StoredTablaFija } from "@/store/useTablasFijasStore";
+import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { EnsamblajeTabla } from "@/components/tablas/EnsamblajeTabla";
 import { MonitorTablas, type VentaTablaItem } from "@/components/tablas/MonitorTablas";
 import type { PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 
 type Props = {
-  /** El contenedor decide el modo persistencia (local en Structure / Supabase en la integración). */
-  persistirPublicacion?: (t: StoredTablaFija) => Promise<boolean>;
+  /** Devuelve el id real de Supabase (o null si falla). El contenedor reemplaza el id del store. */
+  persistirPublicacion?: (t: StoredTablaFija) => Promise<string | number | null>;
   persistirEdicion?: (t: StoredTablaFija, patch: Record<string, unknown>) => Promise<boolean>;
   persistirVenta?: (t: StoredTablaFija, v: VentaTablaItem) => Promise<boolean>;
   persistirLiquidacion?: (t: StoredTablaFija, r: PizarraResultados) => Promise<boolean>;
@@ -39,32 +40,31 @@ export function TablasModule(props: Props) {
     if (filas.length) setTablas(filas);
   };
 
-  const publicar = async (tabla: StoredTablaFija) => {
-    const ok = persistirPublicacion ? await persistirPublicacion(tabla) : true;
-    if (ok) setTablas([...tablas.filter((t) => String(t.id) !== String(tabla.id)), tabla]);
+  const publicar = async (tabla: TablaFijaRow) => {
+    const id = persistirPublicacion ? await persistirPublicacion(tabla as StoredTablaFija) : (tabla as StoredTablaFija).id;
+    if (id == null) return false;
+    setTablas([...tablas.filter((t) => String(t.id) !== String(tabla.id)), { ...tabla, id } as StoredTablaFija]);
+    return true;
   };
 
   const vender = async (v: VentaTablaItem) => {
     const tabla = tablas.find((t) => String(t.id) === String(v.tablaId));
     if (!tabla) return;
-    const base = v.nombre === "TABLA COMPLETA" ? (tabla.premio_recalculado ?? 0) * v.monto : (tabla.premio_recalculado ?? 0) * v.monto;
+    const base = (tabla.premio_recalculado ?? 0) * v.monto;
     agregarTicket({
       comando: `TABLA ${tabla.hipodromo} C${tabla.carrera} ${v.nombre === "TABLA COMPLETA" ? "TABLA COMPLETA" : `N${v.numero} ${v.nombre}`}`,
       monto: v.monto,
       gananciaProyectada: base,
       comision: base * 0.05,
     });
-    if (persistirVenta) {
-      await persistirVenta(tabla, v);
-    } else {
-      setTablas(
-        tablas.map((t) =>
-          String(t.id) === String(v.tablaId)
-            ? { ...t, cantidad_vendida: (t.cantidad_vendida ?? 0) + v.monto }
-            : t
-        )
-      );
-    }
+    if (persistirVenta) await persistirVenta(tabla, v);
+    setTablas(
+      tablas.map((t) =>
+        String(t.id) === String(v.tablaId)
+          ? { ...t, cantidad_vendida: (t.cantidad_vendida ?? 0) + v.monto }
+          : t
+      )
+    );
   };
 
   const liquidar = async (tabla: StoredTablaFija, r: PizarraResultados) => {
@@ -102,7 +102,7 @@ export function TablasModule(props: Props) {
         ))}
       </div>
 
-      {tab === "ensamblaje" ? <EnsamblajeTabla onPublicar={(f) => publicar(f as StoredTablaFija)} /> : <MonitorTablas tablas={tablas} onVender={vender} onLiquidar={liquidar} onEditar={editar} />}
+      {tab === "ensamblaje" ? <EnsamblajeTabla onPublicar={publicar} /> : <MonitorTablas tablas={tablas} onVender={vender} onLiquidar={liquidar} onEditar={editar} />}
     </div>
   );
 }

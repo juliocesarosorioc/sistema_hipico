@@ -10,7 +10,7 @@ import { listarHipodromos } from "@/lib/tablas/rpc";
 import { useEffect } from "react";
 
 type Props = {
-  onPublicar: (tabla: TablaFijaRow) => void;
+  onPublicar: (tabla: TablaFijaRow) => Promise<boolean>;
 };
 
 function filaVacia(): EjemplarTabla {
@@ -47,7 +47,7 @@ export function EnsamblajeTabla({ onPublicar }: Props) {
     ejemplares.reduce((a, c) => a + parseNum(c.valor_ejemplar), 0),
   [ejemplares]);
 
-  const publicar = () => {
+  const publicar = async () => {
     if (!hipodromo.trim()) return setMensaje("Indica el hipódromo.");
     if (!carrera.trim()) return setMensaje("Indica el número de carrera.");
     const caballos = ejemplares.filter((c) => c.nombre.trim());
@@ -71,7 +71,11 @@ export function EnsamblajeTabla({ onPublicar }: Props) {
       caballos,
     };
 
-    onPublicar(fila);
+    const ok = await onPublicar(fila);
+    if (!ok) {
+      setMensaje(`❌ No se pudo publicar ${fila.hipodromo} C${fila.carrera}. Revisa la conexión con Supabase.`);
+      return;
+    }
     setEjemplares([filaVacia()]);
     setPremioOriginal("");
     setMensaje(`✅ Tabla ${fila.hipodromo} C${fila.carrera} publicada.`);

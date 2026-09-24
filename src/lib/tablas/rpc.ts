@@ -95,3 +95,135 @@ export function normalizarFilas(data: unknown[]): TablaFijaRow[] {
     };
   });
 }
+
+/** Payload SQL seguro para tablas_fijas (mismas columnas que js/tablas.js). */
+function payloadDeTabla(t: TablaFijaRow): Record<string, unknown> {
+  return {
+    hipodromo: t.hipodromo,
+    hipodromo_id: t.hipodromo_id ?? null,
+    carrera: t.carrera,
+    fecha: t.fecha,
+    estado: "Abierta",
+    premio: t.premio_original,
+    premio_original: t.premio_original,
+    premio_recalculado: t.premio_recalculado,
+    suma_base_tabla: t.suma_base_tabla,
+    limite_ventas: t.limite_ventas ?? 0,
+    cantidad_vendida: t.cantidad_vendida ?? 0,
+    moneda: t.moneda ?? "USD",
+    distancia_carrera: t.distancia_carrera,
+    superficie: t.superficie,
+    retirados_oficiales: t.retirados_oficiales || "NO HUBO RETIROS",
+    comision_grupo: t.comision_grupo ?? 0,
+    grupo_venta: t.grupo_venta ?? null,
+    tasa_cambio: t.tasa_cambio ?? null,
+    caballos: t.caballos ?? [],
+  };
+}
+
+/** Busca la fila existente por (hipodromo, carrera) para actualizar en vez de duplicar. */
+async function idExistente(hipodromo?: string | null, carrera?: number | null): Promise<number | string | null> {
+  if (!supabase || !hipodromo || !carrera) return null;
+  const { data, error } = await supabase
+    .from("tablas_fijas")
+    .select("id")
+    .ilike("hipodromo", hipodromo)
+    .eq("carrera", carrera)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return (data as { id: number | string }).id;
+}
+
+/** Publica una tabla en Supabase (upsert por hipódromo+carrera). RLS off → anon OK. */
+export async function publicarTabla(t: TablaFijaRow): Promise<{ ok: boolean; id?: string | number; error?: string }> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  try {
+    const existente = await idExistente(t.hipodromo, t.carrera);
+    if (existente != null) {
+      const { error } = await supabase.from("tablas_fijas").update(payloadDeTabla(t)).eq("id", existente);
+      if (error) throw error;
+      return { ok: true, id: existente };
+    }
+    const { data, error } = await supabase.from("tablas_fijas").insert(payloadDeTabla(t)).select("id").single();
+    if (error) throw error;
+    return { ok: true, id: data?.id };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+const COLUMNAS_EDITABLES = [
+  "premio_original",
+  "premio_recalculado",
+  "suma_base_tabla",
+  "limite_ventas",
+  "cantidad_vendida",
+  "distancia_carrera",
+  "superficie",
+  "retirados_oficiales",
+] as const;
+
+/** Actualiza solo columnas seguras de una tabla por su id real. */
+export async function actualizarTabla(
+  id: string | number,
+  patch: Record<string, unknown>
+): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  const limpio: Record<string, unknown> = {};
+  for (const key of COLUMNAS_EDITABLES) {
+    if (key in patch) limpio[key] = patch[key];
+  }
+  if (!Object.keys(limpio).length) return { ok: true };
+  try {
+    const { error } = await supabase.from("tablas_fijas").update(limpio).eq("id", id);
+    if (error) throw error;
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+/** Incrementa las ventas de una tabla (+ monto) para el contador del Monitor. */
+export async function registrarVenta(
+  id: string | number,
+  monto: number
+): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  try {
+    const { data } = await supabase
+      .from("tablas_fijas")
+      .select("cantidad_vendida")
+      .eq("id", id)
+      .maybeSingle();
+    const actual = data && data.cantidad_vendida != null ? Number(data.cantidad_vendida) : 0;
+    const { error } = await supabase
+      .from("tablas_fijas")
+      .update({ cantidad_vendida: actual + monto })
+      .eq("id", id);
+    if (error) throw error;
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+/** Guarda la pizarra de resultados (RPC opcional del paquete SQL, si existe). */
+export async function guardarPizarraCarrera(opts: {
+  hipodromo?: string | null;
+  carrera?: number | null;
+  pizarra: Record<string, unknown>;
+}): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.rpc("club_guardar_pizarra_carrera", {
+      p_hipodromo: opts.hipodromo,
+      p_carrera: opts.carrera,
+      p_pizarra: opts.pizarra,
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
