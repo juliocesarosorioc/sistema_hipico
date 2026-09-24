@@ -16,6 +16,7 @@ import {
   type SesionPortal,
 } from "@/lib/portal";
 import { codigosPaisUnicos, desglosarTelefono, formatoMoneda, listMetodosPago } from "@/lib/vzla";
+import { encuestarTicket, listarMisTickets, type TicketDisputa } from "@/lib/tickets";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -25,7 +26,7 @@ const num = (v: number | string | null | undefined): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-type TabPortal = "resumen" | "reportar" | "comprar" | "datos";
+type TabPortal = "resumen" | "reportar" | "tickets" | "comprar" | "datos";
 
 const BADGE: Record<string, string> = {
   Ganador: "bg-emerald-100 text-emerald-700",
@@ -234,6 +235,7 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
             [
               ["resumen", "Resumen y movimientos"],
               ["reportar", "Reportar jugada faltante"],
+              ["tickets", "Mis tickets"],
               ["comprar", "Comprar tablas fijas"],
               ["datos", "Mis datos"],
             ] as [TabPortal, string][]
@@ -252,6 +254,7 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
 
         {tab === "resumen" ? <ResumenView sesion={sesion} onCambio={onActualizar} /> : null}
         {tab === "reportar" ? <ReportarView cliente={sesion.cliente} /> : null}
+        {tab === "tickets" ? <MisTicketsView cliente={sesion.cliente} /> : null}
         {tab === "comprar" ? <ComprarView cliente={sesion.cliente} /> : null}
         {tab === "datos" ? <DatosView cliente={sesion.cliente} /> : null}
       </main>
@@ -440,6 +443,158 @@ function ReportarView({ cliente }: { cliente: SesionPortal["cliente"] }) {
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mis tickets (reclamos y disputas + encuesta 1-5)
+// ---------------------------------------------------------------------------
+
+function MisTicketsView({ cliente }: { cliente: SesionPortal["cliente"] }) {
+  const [tickets, setTickets] = useState<TicketDisputa[]>([]);
+  const [cargando, setCargando] = useState(true);
+
+  const cargar = async () => {
+    setCargando(true);
+    setTickets(await listarMisTickets(cliente.id));
+    setCargando(false);
+  };
+
+  useEffect(() => {
+    void cargar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cliente.id]);
+
+  const encuestar = async (t: TicketDisputa, puntuacion: number, comentario: string) => {
+    const r = await encuestarTicket(t.id, puntuacion, comentario);
+    if (!r.ok) return toast(r.error ?? "No se pudo guardar la encuesta.", "error");
+    toast("¡Gracias por tu valoración!", "success");
+    void cargar();
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl border border-line bg-white p-5 shadow-sm">
+        <h2 className="text-sm font-black text-slate-800">
+          <i className="fas fa-life-ring mr-2 text-sky-600"></i> Mis tickets y reclamos
+        </h2>
+        <p className="mt-1 text-[11px] text-slate-500">
+          Estado de tus reportes de jugada faltante y disputas. Cuando la casa responda, podrás valorar la atención con 1 a 5 estrellas.
+        </p>
+      </div>
+
+      {cargando ? (
+        <div className="rounded-2xl bg-white p-8 text-center text-slate-400">
+          <i className="fas fa-spinner fa-spin text-xl"></i>
+        </div>
+      ) : tickets.length === 0 ? (
+        <div className="rounded-2xl bg-white p-8 text-center text-slate-400">
+          <i className="fas fa-inbox mr-2"></i> No tienes tickets abiertos.
+        </div>
+      ) : (
+        tickets.map((t) => <MtCard key={String(t.id)} t={t} onEncuesta={(p, c) => void encuestar(t, p, c)} />)
+      )}
+    </div>
+  );
+}
+
+function MtCard({ t, onEncuesta }: { t: TicketDisputa; onEncuesta: (puntuacion: number, comentario: string) => void }) {
+  const [estrella, setEstrella] = useState(0);
+  const [hover, setHover] = useState(0);
+  const [comentario, setComentario] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  const badge =
+    t.estado === "SOLUCIONADO"
+      ? "bg-emerald-100 text-emerald-700"
+      : t.estado === "EN_REVISION"
+      ? "bg-amber-100 text-amber-700"
+      : "bg-sky-100 text-sky-700";
+
+  return (
+    <div className="rounded-2xl border border-line bg-white p-4 shadow-sm space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-50 text-sky-600">
+            <i className={`fas ${t.tipo_jugada === "REPORTE_FALTANTE" ? "fa-flag" : "fa-scale-balanced"} text-xs`}></i>
+          </span>
+          <div>
+            <div className="text-xs font-black text-slate-800">
+              T-{t.numero_ticket ?? String(t.id).slice(0, 6)} · {t.motivo || t.tipo_jugada}
+            </div>
+            <div className="text-[10px] text-slate-400">
+              {t.hipodromo ? `${t.hipodromo}${t.carrera ? ` · Carrera ${t.carrera}` : ""}` : t.fecha_jugada ? String(t.fecha_jugada).slice(0, 10) : ""}
+              {t.hipodromo && t.fecha_jugada ? ` · ${String(t.fecha_jugada).slice(0, 10)}` : ""}
+            </div>
+          </div>
+        </div>
+        <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${badge}`}>
+          {t.estado?.replace("_", " ") ?? "—"}
+        </span>
+      </div>
+
+      {t.imagen_soporte ? (
+        <a href={t.imagen_soporte} target="_blank" rel="noreferrer" className="block text-[11px] font-bold text-sky-600 underline">
+          <i className="fas fa-image mr-1"></i> Ver comprobante adjunto
+        </a>
+      ) : null}
+
+      {t.estado === "SOLUCIONADO" ? (
+        <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs">
+          <div className="font-bold text-emerald-800">
+            {t.accion_aplicada ? `${t.accion_aplicada}${num(t.monto_resuelto) > 0 ? ` de ${formatoMoneda("USD", num(t.monto_resuelto))}` : ""}` : "Atendido"}
+            {t.respuesta_casa ? ` — ${t.respuesta_casa}` : ""}
+          </div>
+
+          {t.encuesta_satisfaccion != null ? (
+            <div className="mt-1.5 text-slate-600">
+              <span className="text-amber-500">{Array.from({ length: t.encuesta_satisfaccion }).map((_, i) => <i key={i} className="fas fa-star text-xs"></i>)}</span>
+              {t.encuesta_comentario ? <span className="ml-1">· “{t.encuesta_comentario}”</span> : null}
+            </div>
+          ) : (
+            <div className="mt-2">
+              <div className="mb-1 text-[9px] font-black uppercase text-emerald-600">¿Cómo calificas la atención?</div>
+              <div className="flex gap-1 text-xl">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onMouseEnter={() => setHover(n)}
+                    onMouseLeave={() => setHover(0)}
+                    onClick={() => setEstrella(n)}
+                    className={n <= (hover || estrella) ? "text-amber-400" : "text-slate-300"}
+                    aria-label={`${n} estrellas`}
+                  >
+                    <i className="fas fa-star"></i>
+                  </button>
+                ))}
+              </div>
+              <input
+                value={comentario}
+                onChange={(e) => setComentario(e.target.value)}
+                className="mt-2 w-full border border-line rounded-xl bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-200 uppercase"
+                placeholder="Comentario (opcional)…"
+              />
+              <button
+                type="button"
+                disabled={estrella === 0 || enviando}
+                onClick={() => {
+                  setEnviando(true);
+                  onEncuesta(estrella, comentario);
+                }}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {enviando ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-star"></i>} Enviar valoración
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="text-[11px] text-slate-500">
+          <i className="fas fa-hourglass-half mr-1 text-amber-500"></i> La casa está revisando este ticket. Te avisaremos con la respuesta.
+        </p>
+      )}
     </div>
   );
 }

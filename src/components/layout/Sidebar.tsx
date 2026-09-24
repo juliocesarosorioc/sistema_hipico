@@ -23,7 +23,7 @@ const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
       { emoji: "🏇", txt: "W.P.S." },
       { emoji: "🔔", txt: "Remates" },
       { emoji: "🏆", txt: "Pollas" },
-      { emoji: "🛟", txt: "Tickets / Reclamos" },
+      { href: "/tickets", emoji: "🛟", txt: "Tickets / Reclamos" },
       { href: "/hipodromos", emoji: "🗺️", txt: "Hipódromos" },
     ],
   },
