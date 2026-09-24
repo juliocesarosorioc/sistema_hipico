@@ -1,5 +1,6 @@
 import { liquidarPuestos } from "@/lib/motores/puestos";
 import type { TicketMotor, ResultadoMotor } from "@/lib/bettingEngine";
+import { parsearNini, liquidarNini } from "@/lib/bettingEngine";
 
 export type Proyeccion = {
   monto: number;
@@ -58,8 +59,15 @@ export function detectarModalidad(texto: string): ModalidadAuto | null {
  * (1..8). Si el motor reporta BLOQUEO/malformado/inválido → regla rota.
  * La proyección usa el mejor escenario de posiciones (pago monto*2 o la
  * proporción A Premio), restando la comisión de la casa del resultado neto.
+ * Para NINIS (2N · 1y2N) se resuelve con el Motor Nini: se proyectan los dos
+ * escenarios posibles (caballo NO figura → gana 2×; caballo figura → pierde)
+ * y se reporta el ganador (mejor escenario).
  */
-export function validarComando(texto: string, tasaComision?: number | null): ValidacionComando {
+export function validarComando(
+  texto: string,
+  tasaComision?: number | null,
+  caballo?: string
+): ValidacionComando {
   const t = String(texto ?? "").trim();
   const m = /^(\d+(?:\.\d+)?)\s+(.+?)\s*$/i.exec(t);
   if (!m) {
@@ -70,6 +78,43 @@ export function validarComando(texto: string, tasaComision?: number | null): Val
     return { ok: false, motivo: "El monto debe ser un número mayor a $0." };
   }
   const tipo = m[2].trim().toUpperCase();
+
+  const infoNini = parsearNini(tipo);
+  if (infoNini) {
+    const caballoTicket = String(caballo ?? "1").trim().replace(/[^0-9]/g, "") || "1";
+    const base: TicketMotor = {
+      hipodromo: "",
+      carrera: "",
+      caballo: caballoTicket,
+      fechas: [],
+      id: "preview-nini",
+      cruces: 1,
+      cuota: null,
+      total: monto,
+      addedAt: 0,
+      tipo_jugada: infoNini.modalidad,
+      monto,
+      puesto_final: 1 as TicketMotor["puesto_final"],
+      pizarra: { primero: "1" },
+      dividendos: null,
+    };
+    const rGana = liquidarNini({ ...base, pizarra: { primero: "" } }, tasaComision);
+    const rPierde = liquidarNini({ ...base, pizarra: { primero: caballoTicket } }, tasaComision);
+    const brutoGana = rGana.totalClienteNeto + rGana.gananciaCasa;
+    const brutoPierde = rPierde.totalClienteNeto + rPierde.gananciaCasa;
+    const mejor = brutoGana >= brutoPierde ? rGana : rPierde;
+
+    const proyeccion: Proyeccion = {
+      monto,
+      mejorBruto: Math.max(brutoGana, brutoPierde),
+      totalClienteNeto: mejor.totalClienteNeto,
+      gananciaProyectada: round2(mejor.totalClienteNeto - monto),
+      comision: mejor.gananciaCasa,
+      balanceBanca: mejor.balanceBanca,
+      escenario: mejor.motivo ?? "",
+    };
+    return { ok: true, tipo: infoNini.modalidad, monto, simulada: mejor, proyeccion };
+  }
 
   let mejor: ResultadoMotor | null = null;
   let brutoMejor = -Infinity;
@@ -154,6 +199,7 @@ const CRUCE_RE = /^(\d+)\s*X\s*(\d+)(?:\s+(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)
  */
 export function proyectarFila(opts: {
   jugada: string;
+  caballo?: string;
   monto: string;
   tasaComision?: number | null;
 }): FilaProyeccion {
@@ -191,10 +237,13 @@ export function proyectarFila(opts: {
     };
   }
 
-  const v = validarComando(`${monto} ${jugada}`, opts.tasaComision);
+  const v = validarComando(`${monto} ${jugada}`, opts.tasaComision, opts.caballo);
   if (!v.ok) return { ok: false, motivo: v.motivo };
   const bruto = v.simulada.totalClienteNeto + v.simulada.gananciaCasa;
-  const caballo = v.tipo.replace(/[a-z]+/gi, "").split(/\s+|\//)[0] || "?";
+  const caballo =
+    (opts.caballo ?? "").trim().replace(/[^0-9]/g, "") ||
+    v.tipo.replace(/[a-z]+/gi, "").split(/\s+|\//)[0] ||
+    "?";
   const c1: CobroCliente = {
     caballo,
     cobroBruto: round2(bruto),
@@ -227,42 +276,177 @@ export type LineaRapida =
   | { ok: false; motivo: string };
 
 /**
- * Parser línea a línea del Modal de Carga Rápida (paridad con el legacy):
- *   JUGADA CABALLO MONTO CLIENTE1 [CLIENTE2]
- *   ej: "2n 7 25 Eddie Manuel" · "1/2 4 60 Camacho rucio" · "1/2 y 2n 7 100 Eddie Manuel"
- *   ej cruce nuevo: "2x3 10/8 2 100 Juan Pedro"
- * El monto es el ÚLTIMO número de la línea; el token anterior es el caballo; los
- * tokens restantes (1 o 2) son los clientes. Acepta "#" como comentario.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  MOTOR HEURÍSTICO POR TOKENS  (parser universal de Carga Rápida)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ *  Abandona los Regex rígidos: cualquier orden de campos es válido.
+ *  El operador puede pegar desde "2p 1 100 Perrito molinas" hasta
+ *  "Juega Lolo 2p (1) con 300 da Mar" — todos desembocan en la misma
+ *  estructura de 5 columnas { jugada, caballo, monto, cliente1, cliente2 }.
+ *
+ *  Pipeline:
+ *   1. ↓ minúsculas + split(' ')              → tokens crudos
+ *   2. limpieza de puntuación                 → se conservan .,/x- (decimales y
+ *      sintaxis de jugadas) y se descarta ( ) ' " ; ¿ ? ...
+ *   3. filtro de stop-words                   → juega/con/da/por/en/$/bs/el/la
+ *   4. clasificación por eliminación:
+ *        JUGADA   → token con clave de apuesta (p, n, y, pp, /, x) + número
+ *                   o cruce "NX M/P"; agrupa tramos contiguos (1/2 y 2n).
+ *        CABALLO  → número pequeño (< 20), pareo NxM, o el que iba entre
+ *                   paréntesis "(6)".
+ *        MONTO    → número "grande" (>= 20) o con separadores (.,); fallback
+ *                   al último número restante (monto = último del legacy).
+ *        CLIENTES → lo que sobra: 1° → CLIENTE 1, resto → CLIENTE 2.
+ *   5. tolerancia a fallos                    → si falta JUGADA o MONTO se
+ *      devuelve { ok:false } (el caller pinta la fila en rojo ⚠️, no rompe).
+ *
+ *  Acepta "#" al inicio como comentario (se ignora → null).
+ */
+const STOP_WORDS = new Set(["juega", "con", "da", "por", "en", "$", "bs", "el", "la"]);
+
+const RE_PURGADO = /[^\p{L}\p{N}.,/x-]/gu;
+
+/** Token puramente numérico (admite separadores de miles/decimales . y ,). */
+const RE_NUMERICO = /^\d+(?:[.,]\d+)*$/;
+/** Pareo de caballos: "6x7". */
+const RE_PAREO = /^\d+[x]\d+$/;
+/** Cruce con proporción: "2x3" seguido de "10/8" (formato legacy). */
+const RE_CRUCE_A = /^\d+[x]\d+$/;
+const RE_CRUCE_B = /^\d+\/\d+(?:[.,]\d+)?$/;
+/** Jugada con letra de apuesta + dígito: 2p, 2n, 1y2n, 3y3, pp (nunca un número pelado). */
+const RE_JUGADA_LETRA = /^(?:\d+[y]\d*[pn]?|\d+[pn]|pp)$/;
+const RE_JUGADA_BARRA = /^\d+\/\d+(?![\d.])/;
+
+function limpiarToken(tok: string): string {
+  return tok.replace(RE_PURGADO, "");
+}
+
+function tokenNumerico(tok: string): number | null {
+  const t = String(tok ?? "").trim();
+  if (!RE_NUMERICO.test(t)) return null;
+  let n: number;
+  if (/^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(t)) {
+    // Miles con punto y decimal con coma: 1.200,50
+    n = parseFloat(t.replace(/\./g, "").replace(",", "."));
+  } else {
+    n = parseFloat(t.replace(",", "."));
+  }
+  return Number.isFinite(n) ? n : null;
+}
+
+type TokenAnalizado = {
+  raw: string;
+  limpio: string;
+  enParentesis: boolean;
+};
+
+function esJugadaLetra(tok: string): boolean {
+  return RE_JUGADA_LETRA.test(tok);
+}
+
+/**
+ * Clasifica la línea en las 5 columnas de la taquilla. Devuelve null para
+ * líneas en blanco / comentarios, { ok:false } para ilegibles.
  */
 export function parsearLineaRapida(linea: string): LineaRapida | null {
-  const t = String(linea ?? "").trim().replace(/\s+/g, " ");
+  const t = String(linea ?? "").trim();
   if (!t || t.startsWith("#")) return null;
 
-  const tokens = t.split(" ");
-  let montoIdx = -1;
-  for (let i = tokens.length - 1; i >= 0; i--) {
-    if (/^\d+(?:[.,]\d+)?$/.test(tokens[i])) {
-      montoIdx = i;
+  const crudos = t.split(/[ \t]+/);
+  if (crudos.length === 0) return null;
+
+  // 1) Limpieza + 2) stop-words. Se conserva el flag de "(n)" para el caballo.
+  const tokens: TokenAnalizado[] = [];
+  for (const c of crudos) {
+    const enParentesis = /^\((\d+)\)$/.test(c);
+    const limpio = limpiarToken(c).toLowerCase();
+    if (!limpio) continue;
+    if (STOP_WORDS.has(limpio)) continue;
+    tokens.push({ raw: c, limpio, enParentesis });
+  }
+  if (tokens.length === 0) return null;
+
+  const usados = new Set<number>();
+  let jugada = "";
+  let caballo = "";
+  let monto = "";
+
+  const marcarJugada = (rango: [number, number]) => {
+    jugada = tokens.slice(rango[0], rango[1] + 1).map((k) => k.limpio).join(" ");
+    for (let i = rango[0]; i <= rango[1]; i++) usados.add(i);
+  };
+
+  // 3) JUGADA — cruce legacy "2x3 10/8" primero (par de tokens contiguos).
+  for (let i = 0; i < tokens.length - 1; i++) {
+    if (RE_CRUCE_A.test(tokens[i].limpio) && RE_CRUCE_B.test(tokens[i + 1].limpio)) {
+      marcarJugada([i, i + 1]);
       break;
     }
   }
-  if (montoIdx < 1) {
-    return { ok: false, motivo: `Falta el monto numérico: esperado "JUGADA CABALLO MONTO CLIENTE1 [CLIENTE2]".` };
+
+  if (!jugada) {
+    // JUGADA con letra de apuesta o "/" → tramo contiguo (preservando
+    // conectores "y"/"&"): un solo token = simple, varios = compuesta.
+    // Un pareo NxM suelto (ej. "6x7") NO se pega a otra jugada: pasa a CABALLO.
+    const yesIdx = tokens
+      .map((k, i) => (esJugadaLetra(k.limpio) || RE_JUGADA_BARRA.test(k.limpio) ? i : -1))
+      .filter((i) => i !== -1);
+    if (yesIdx.length > 0) {
+      marcarJugada([yesIdx[0], yesIdx[yesIdx.length - 1]]);
+    } else {
+      // Pareo NxM como jugada única ("6x7 100 Juan").
+      const idx = tokens.findIndex((k) => RE_PAREO.test(k.limpio));
+      if (idx !== -1) marcarJugada([idx, idx]);
+    }
   }
-  const monto = tokens[montoIdx].replace(",", ".");
-  if (!(parseFloat(monto) > 0)) {
-    return { ok: false, motivo: `Monto inválido "${tokens[montoIdx]}".` };
+
+  if (!jugada) {
+    return { ok: false, motivo: `No se detectó una JUGADA válida (ej. 2p, 2n, 3y3, 1/2, 2x3) en "${t}".` };
   }
-  const caballo = tokens[montoIdx - 1];
-  const jugada = tokens.slice(0, montoIdx - 1).join(" ");
-  const clientes = tokens.slice(montoIdx + 1).filter(Boolean);
+
+  // 4) MONTO — número grande (>= 20) o con separadores; fallback al último.
+  const numericos = tokens
+    .map((k, i) => ({ i, k, n: tokenNumerico(k.limpio) ?? NaN }))
+    .filter((x) => Number.isFinite(x.n) && !usados.has(x.i));
+  const numericosGrandes = numericos.filter((x) => x.n >= 20 || /[.,]/.test(x.k.limpio));
+  const montoSel = numericosGrandes.length > 0 ? numericosGrandes[numericosGrandes.length - 1] : numericos[numericos.length - 1];
+  if (!montoSel) {
+    return { ok: false, motivo: `No se detectó el MONTO numérico en "${t}".` };
+  }
+  monto = /^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(montoSel.k.raw) ? String(montoSel.n).replace(".", ",") : montoSel.k.raw;
+  usados.add(montoSel.i);
+
+  // 5) CABALLO — el que iba entre paréntesis, un número pequeño restante,
+  //    o un pareo NxM restante.
+  const paren = tokens.findIndex((k, i) => k.enParentesis && !usados.has(i) && RE_NUMERICO.test(k.limpio));
+  let cabIdx = -1;
+  if (paren !== -1) cabIdx = paren;
+  else {
+    cabIdx = (numericos.find((x) => !usados.has(x.i) && /^\d+$/.test(x.k.limpio) && x.n < 20) ?? numericos.find((x) => !usados.has(x.i)))?.i ?? -1;
+  }
+  if (cabIdx === -1) {
+    cabIdx = tokens.findIndex((k, i) => !usados.has(i) && RE_PAREO.test(k.limpio));
+  }
+  if (cabIdx !== -1) {
+    caballo = tokens[cabIdx].limpio;
+    usados.add(cabIdx);
+  }
+
+  // 6) CLIENTES — lo sobrante: 1° → CLIENTE 1, el resto → CLIENTE 2.
+  const restantes = tokens
+    .filter((_, i) => !usados.has(i))
+    .map((k) => k.raw.trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""));
+  const cliente1 = restantes[0] ?? "";
+  const cliente2 = restantes.slice(1).join(" ");
+
   return {
     ok: true,
-    jugada,
-    caballo,
+    jugada: jugada.toUpperCase(),
+    caballo: caballo.toUpperCase(),
     monto,
-    cliente1: clientes[0] ?? "",
-    cliente2: clientes.slice(1).join(" "),
+    cliente1,
+    cliente2,
   };
 }
 

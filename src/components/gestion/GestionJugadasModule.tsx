@@ -19,6 +19,9 @@ type FilaCarga = {
   monto: string;
   cliente1: string;
   cliente2: string;
+  /** Motivo si el parser universal marcó la línea como ilegible (fila roja ⚠️).
+   *  El operador la corrige a mano y el flag se limpia al editarla. */
+  error?: string;
 };
 
 const filaVacia = (): FilaCarga => ({
@@ -124,7 +127,8 @@ export function GestionJugadasModule() {
     return Number.isFinite(n) && n >= 0 ? n : 5;
   }, [comision]);
 
-  const valida = (f: FilaCarga) => proyectarFila({ jugada: f.jugada, monto: f.monto, tasaComision: comisionNum });
+  const valida = (f: FilaCarga) =>
+    proyectarFila({ jugada: f.jugada, caballo: f.caballo.trim(), monto: f.monto, tasaComision: comisionNum });
 
   const tablaDeCarrera = useMemo(
     () =>
@@ -216,16 +220,18 @@ export function GestionJugadasModule() {
   );
 
   const setFila = (i: number, patch: Partial<FilaCarga>) =>
-    setFilas((f) => f.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+    setFilas((f) => f.map((r, j) => (j === i ? { ...r, ...patch, error: undefined } : r)));
 
   const cargarAtaquilla = () => {
     let n = 0;
     const errores: string[] = [];
+    const indicesError: number[] = [];
     for (const f of filas) {
       if (!f.jugada.trim() && !f.monto.trim()) continue;
       const v = valida(f);
       if (!v.ok) {
         errores.push(`Fila ${filas.indexOf(f) + 1}: ${v.motivo}`);
+        indicesError.push(filas.indexOf(f));
         continue;
       }
       const mejorCobre = Math.max(v.cliente1?.cobroNeto ?? 0, v.cliente2?.cobroNeto ?? 0);
@@ -236,23 +242,33 @@ export function GestionJugadasModule() {
       agregarTicket({
         comando: `${v.monto} ${v.tipo}`,
         monto: v.monto,
+        caballo: f.caballo.trim() || undefined,
         gananciaProyectada: round2(mejorCobre - v.monto),
         comision: comisionMejor,
       });
       n += 1;
     }
     if (n === 0) {
+      if (indicesError.length > 0) {
+        setFilas((fs) => fs.map((r, i) => (indicesError.includes(i) ? { ...r, error: errores.find((e) => e.startsWith(`Fila ${i + 1}`)) } : r)));
+      }
       return setAviso("Carga al menos una jugada válida (JUGADA + MONTO). " + (errores[0] ?? ""));
     }
     if (!jugadasPorCarrera.includes(carrera)) setJugadasPorCarrera((j) => [...j, carrera]);
-    setFilas([filaVacia()]);
-    setAviso(`✅ ${n} jugada(s) enviada(s) a la taquilla (C${carrera}).` + (errores.length ? ` ${errores.length} fila(s) con error ignorada(s).` : ""));
+    setFilas((fs) => {
+      // Las filas con error NO se pierden: quedan en rojo ⚠️ para corregir y reenviar.
+      const conservar = fs
+        .map((r, i) => ({ r, i }))
+        .filter(({ i }) => indicesError.includes(i))
+        .map(({ r, i }) => ({ ...r, error: r.error ?? errores.find((e) => e.startsWith(`Fila ${i + 1}`)) }));
+      return [...conservar, filaVacia()];
+    });
+    setAviso(`✅ ${n} jugada(s) enviada(s) a la taquilla (C${carrera}).` + (errores.length ? ` ${errores.length} fila(s) con error quedaron en rojo para corregir.` : ""));
   };
 
   const poblarCargaRapida = () => {
     const lineas = textoCargaRapida.split("\n");
     const filasNuevas: FilaCarga[] = [];
-    const errs: string[] = [];
     let ok = 0;
     for (const l of lineas) {
       const p = parsearLineaRapida(l);
@@ -267,16 +283,24 @@ export function GestionJugadasModule() {
         });
         ok += 1;
       } else {
-        errs.push(`${l.trim()} → ${p.motivo}`);
+        // Línea ilegible: NO se descarta — se pinta en rojo ⚠️ para que el
+        // operador la corrija manualmente en la tabla antes de enviar a la BD.
+        filasNuevas.push({ ...filaVacia(), jugada: l.trim(), error: p.motivo });
       }
     }
+    const ilegibles = filasNuevas.filter((f) => f.error).length;
     if (filasNuevas.length > 0) {
       setFilas(filasNuevas);
       setTextoCargaRapida("");
       setModalCargaRapida(false);
-      setAviso(`⚡ ${ok} fila(s) poblada(s) desde el bloque de texto.` + (errs.length ? ` ${errs.length} línea(s) con error ignorada(s).` : ""));
+      setAviso(
+        ok > 0
+          ? `⚡ ${ok} fila(s) poblada(s) desde el bloque de texto.` +
+              (ilegibles ? ` ⚠️ ${ilegibles} línea(s) ilegible(s) quedaron en rojo para corregir.` : "")
+          : `⚠️ Ninguna línea fue legible. ${ilegibles} fila(s) quedaron en rojo — corregí jugada y monto, o escribí el bloque con "JUGADA CABALLO MONTO CLIENTE1 [CLIENTE2]".`
+      );
     } else {
-      setAviso("⚠️ No se pudieron parsear líneas válidas. " + (errs[0] ?? ""));
+      setAviso("⚠️ Pegá al menos una línea con una jugada para poder poblarla.");
     }
   };
 
@@ -291,7 +315,7 @@ export function GestionJugadasModule() {
       hipodromo,
       carrera,
       pizarra: ultimaPizarra.pizarra,
-      tickets: ticketsDeCarrera.map((t) => ({ comando: t.comando, monto: t.monto })),
+      tickets: ticketsDeCarrera.map((t) => ({ comando: t.comando, monto: t.monto, caballo: t.caballo })),
       tasaComision: comisionNum,
     });
     setResumen(r);
@@ -415,9 +439,17 @@ export function GestionJugadasModule() {
               const detectado = f.jugada.trim() ? detectarModalidad(f.jugada) : null;
               const ejemplar = ejemplarResuelto(f.caballo);
               return (
-                <tr key={i} className="align-middle">
+                <tr key={i} className={`align-middle ${f.error ? "bg-red-50" : ""}`} title={f.error ?? undefined}>
                   <td className="relative h-12 px-1 py-0 align-middle text-xs text-slate-400">
-                    <span className="block truncate">{i + 1}</span>
+                    <span className="block truncate">
+                      {f.error ? (
+                        <span className="inline-flex items-center gap-1 text-red-500">
+                          ⚠️ <span className="hidden text-[9px] font-bold">{f.error}</span>
+                        </span>
+                      ) : (
+                        i + 1
+                      )}
+                    </span>
                   </td>
                   <td className="relative h-12 px-1 py-0 align-middle text-center">
                     <button
@@ -788,12 +820,14 @@ export function GestionJugadasModule() {
                 onChange={(e) => setTextoCargaRapida(e.target.value)}
                 rows={10}
                 spellCheck={false}
-                placeholder={"Pegá el bloque de jugadas (1 por línea):\n\n1/2 4 60 Camacho rucio\n2n 7 25 Eddie Manuel\n1/2 y 2n 7 100 Eddie Manuel\n2x3 10/8 2 100 Juan Pedro"}
+                placeholder={"Pegá el bloque de jugadas (1 por línea, CUALQUIER orden):\n\n3y3 9 40 emy mar\n2p 1 100 Perrito molinas\nJuega Lolo 2p (1) con 300 da Mar\n1/2 y 2n 7 100 Eddie Manuel\n2x3 10/8 2 100 Juan Pedro"}
                 className="w-full resize-y rounded-xl border border-line bg-white p-3 font-mono text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
               />
               <p className="text-[10px] font-semibold text-slate-500">
-                Formato por línea: <b>JUGADA CABALLO MONTO CLIENTE1 [CLIENTE2]</b> — p. ej. <i>2x3 10/8 2 100 Juan Pedro</i>. El
-                motor parsea el bloque línea por línea y puebla automáticamente las filas de la tabla.
+                Motor heurístico por <b>tokens</b>: detecta <b>JUGADA · CABALLO · MONTO · CLIENTE 1 · CLIENTE 2</b>{" "}
+                sin importar el orden (ej. <i>3y3 9 40 emy mar</i> o <i>Juega Lolo 2p (1) con 300 da Mar</i>). Líneas
+                ilegibles quedan en <span className="font-black text-red-600">rojo ⚠️</span> en la tabla para
+                corregirlas manualmente, sin romper el resto del bloque.
               </p>
             </div>
             <div className="flex justify-end gap-2 border-t border-line bg-gray-50 px-4 py-3">
