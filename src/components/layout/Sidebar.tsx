@@ -12,7 +12,7 @@ const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
     titulo: "Módulo Hípico",
     items: [
       { href: "/dashboard", emoji: "🏠", txt: "Inicio / Dashboard" },
-      { href: "/taquilla", emoji: "🎟️", txt: "Gestión de Jugadas" },
+      { href: "/gestion-jugadas", emoji: "🎟️", txt: "Gestión de Jugadas" },
       { href: "/tablas-fijas", emoji: "📋", txt: "Tablas Fijas" },
       { emoji: "🗂️", txt: "Grupos y Convenios" },
       { href: "/ejemplares", emoji: "🐴", txt: "Ejemplares y Gaceta" },

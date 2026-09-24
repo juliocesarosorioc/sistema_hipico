@@ -70,7 +70,10 @@ function aPremio(t: TicketMotor, tasa: number): ResultadoMotor | null {
   const proporcion = soloPP ? 10 : (egA![2].toUpperCase() === "PP" ? 10 : parseFloat(egA![2]));
 
   const pos = posicion(t);
-  const empate1 = typeof t.pizarra.segundo === "number" && t.pizarra.primero === t.pizarra.segundo;
+  const empate1 =
+    typeof t.pizarra.segundo === "number" && t.pizarra.primero === t.pizarra.segundo
+      ? true
+      : (t.pizarra.empates ?? []).includes(1);
 
   if ((pos === 1 || pos === 0) && !empate1) {
     const bruto = t.monto * (1 + proporcion / 10);
