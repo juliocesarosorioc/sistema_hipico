@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { detectarModalidad, parsearLineaRapida, proyectarFila } from "@/lib/taquilla/validar";
 import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
@@ -11,6 +11,7 @@ import { CargaResultadosModal, type PizarraResultados } from "@/components/liqui
 import { SemaforoCarreras } from "@/components/gestion/SemaforoCarreras";
 import { Button } from "@/components/ui/Button";
 import { fmtMoney } from "@/lib/tablas/tipos";
+import { listarClientesVenta, saldoDeCliente, type ClienteVenta } from "@/lib/grupos";
 
 type FilaCarga = {
   jugada: string;
@@ -18,8 +19,6 @@ type FilaCarga = {
   monto: string;
   cliente1: string;
   cliente2: string;
-  disp1: string;
-  disp2: string;
 };
 
 const filaVacia = (): FilaCarga => ({
@@ -28,8 +27,6 @@ const filaVacia = (): FilaCarga => ({
   monto: "",
   cliente1: "",
   cliente2: "",
-  disp1: "",
-  disp2: "",
 });
 
 const MONEDA = "VES";
@@ -37,15 +34,24 @@ const MONEDA = "VES";
 /**
  * Gestión de Jugadas — Taquilla (clon del legacy):
  *  - Carga Individual con columnas # | X | JUGADA | CABALLO | MONTO |
- *    CLIENTE 1 | CLIENTE 2 | DISP 1 | DISP 2 (sin COBRO, tipografía text-xs)
+ *    CLIENTE 1 | CLIENTE 2 (sin COBRO ni DISP, tipografía text-xs)
  *  - JUGADA solo nomenclatura pura (2x3 10/8 · 1p · 2n) + MONTO numérico aparte;
  *    el motor cruza la modalidad con el monto y proyecta el cobro por cliente
+ *  - Saldo inline por cliente (registro de clientes): ✅ si alcanza el MONTO,
+ *    ⚠️ "Max: X" si no; saldo azul (positivo) / rojo (negativo)
+ *  - Auto-resolución del ejemplar: el número de CABALLO se cruza con la tabla
+ *    publicada y bajo el input se muestra "N - NOMBRE" en gris
+ *  - Alineación estricta: celdas h-12 + align-middle, mensajes inline con
+ *    posición absolute para no descuadrar las filas
+ *  - Pre-visualización de jugadas cargadas en sesión con acciones ✏️ (devuelve
+ *    la jugada a la tabla para corregirla como inputs editables) y ✕
  *  - Modal Carga Rápida: textarea con bloque de texto (formato legacy) que el
  *    motor parsea línea por línea y puebla las filas automáticamente
  *  - Inputs: Retirados · COM % · Modalidad (Con Cruces) · Saldos Pozo/Traslado/Aval
  *  - Hipódromo buscable + Semáforo de carreras (gris/verde/amarillo/rojo)
  *  - Barra de comandos flotante con atajos: Ctrl+Q / Ctrl+Y / Ctrl+R / Ctrl+Shift+K
- *  - Liquidación con motor + 8 posiciones + Dead Heat (cero fraccionamiento)
+ *  - Liquidación con motor + posiciones dinámicas (5 por defecto, hasta 8)
+ *    + Dead Heat (cero fraccionamiento)
  */
 export function GestionJugadasModule() {
   const [hipodromo, setHipodromo] = useState("LA RINCONADA");
@@ -63,6 +69,18 @@ export function GestionJugadasModule() {
   const [filas, setFilas] = useState<FilaCarga[]>([filaVacia()]);
   const [aviso, setAviso] = useState("");
   const [jugadasPorCarrera, setJugadasPorCarrera] = useState<number[]>([]);
+  const [clientes, setClientes] = useState<ClienteVenta[]>([]);
+
+  // Registro de clientes con saldos (validación inline CLIENTE 1 / CLIENTE 2)
+  useEffect(() => {
+    let vivo = true;
+    listarClientesVenta().then((c) => {
+      if (vivo) setClientes(c);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, []);
 
   const [modalPreliminar, setModalPreliminar] = useState(false);
   const [modalResultados, setModalResultados] = useState(false);
@@ -120,6 +138,72 @@ export function GestionJugadasModule() {
 
   const monedaFmt = (n: number): string =>
     fmtMoney(Number.isFinite(n) ? n : 0, MONEDA);
+
+  /** Cliente del registro que coincide con el texto tipeado (exacto o único por prefijo). */
+  const saldoCliente = (texto: string): ClienteVenta | null => {
+    const t = texto.trim().toLowerCase();
+    if (!t) return null;
+    const exacto = clientes.find((c) => c.nombre.toLowerCase() === t);
+    if (exacto) return exacto;
+    const porPrefijo = clientes.filter((c) => c.nombre.toLowerCase().startsWith(t));
+    return porPrefijo.length === 1 ? porPrefijo[0] : null;
+  };
+
+  /**
+   * Indicador inline de la celda del cliente: ✅ si el saldo alcanza el MONTO,
+   * ⚠️ "Max: X" si no alcanza, o "Saldo X" en azul/rojo según el signo.
+   * Fallback: cobro proyectado cuando el cliente no está en el registro.
+   */
+  const infoCliente = (texto: string, montoStr: string, cobroNeto: number): ReactNode => {
+    const c = saldoCliente(texto);
+    if (!c) {
+      if (cobroNeto > 0) {
+        return <span className="truncate text-[9px] font-black text-emerald-600">Cobra {monedaFmt(cobroNeto)}</span>;
+      }
+      return null;
+    }
+    const saldo = saldoDeCliente(c);
+    const monto = parseFloat(String(montoStr).replace(",", "."));
+    const montoValido = Number.isFinite(monto) && monto > 0;
+    if (montoValido) {
+      if (saldo >= monto) {
+        return <span className="truncate text-[9px] font-black text-emerald-600">✅ Saldo {monedaFmt(saldo)}</span>;
+      }
+      return <span className="truncate text-[9px] font-black text-red-500">⚠️ Max: {monedaFmt(saldo)}</span>;
+    }
+    const cls = saldo < 0 ? "text-red-600" : "text-blue-600";
+    return <span className={`truncate text-[9px] font-bold ${cls}`}>Saldo {monedaFmt(saldo)}</span>;
+  };
+
+  /** Ejemplar de la tabla publicada que coincide con el número tipeado en CABALLO. */
+  const ejemplarResuelto = useMemo(
+    () => (texto: string) => {
+      const t = texto.trim();
+      if (!t || !tablaDeCarrera?.caballos?.length) return null;
+      const n = t.replace(/[^0-9]/g, "");
+      if (!n) return null;
+      return tablaDeCarrera.caballos.find((c) => String(c.numero) === n) ?? null;
+    },
+    [tablaDeCarrera]
+  );
+
+  /** Convierte el comando de un ticket de vuelta a una fila editable (jugada + monto). */
+  const desarmarTicket = (comando: string): FilaCarga => {
+    const m = /^(\d+(?:[.,]\d+)?)\s+(.+)$/.exec(String(comando).trim());
+    const base = filaVacia();
+    if (m) return { ...base, monto: m[1].trim(), jugada: m[2].trim() };
+    return { ...base, jugada: String(comando).trim() };
+  };
+
+  /** ✏️ Devuelve una jugada cargada a la tabla como inputs editables (sin borrarla). */
+  const editarTicket = (id: string) => {
+    const t = tickets.find((x) => x.id === id);
+    if (!t) return;
+    eliminarTicket(id);
+    const fila = desarmarTicket(t.comando);
+    setFilas((f) => [fila, ...f]);
+    setAviso(`✏️ “${t.comando}” devuelto a la tabla para corregirlo.`);
+  };
 
   const ticketsDeCarrera = useMemo(
     () => tickets.filter((t) => !/^TABLA /i.test(t.comando)),
@@ -180,8 +264,6 @@ export function GestionJugadasModule() {
           monto: p.monto,
           cliente1: p.cliente1,
           cliente2: p.cliente2,
-          disp1: "",
-          disp2: "",
         });
         ok += 1;
       } else {
@@ -232,7 +314,7 @@ export function GestionJugadasModule() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-black uppercase text-slate-900">🎟️ Gestión de Jugadas (Taquilla)</h2>
-          <p className="text-xs text-slate-500">Carga individual + liquidación con motor (8 posiciones · Dead Heat).</p>
+          <p className="text-xs text-slate-500">Carga individual + liquidación con motor (posiciones dinámicas · Dead Heat).</p>
         </div>
         <div className="flex items-center gap-2">
           {(["POZO", "TRASLADO", "AVAL"] as const).map((nombre) => {
@@ -321,22 +403,23 @@ export function GestionJugadasModule() {
               <th className="w-[4%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">#</th>
               <th className="w-[3%] border-r border-slate-700 px-1 py-1 text-center font-bold uppercase">X</th>
               <th className="w-[22%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Jugada</th>
-              <th className="w-[10%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Caballo</th>
-              <th className="w-[13%] border-r border-slate-700 px-1 py-1 text-right font-bold uppercase">Monto</th>
-              <th className="w-[16%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 1</th>
-              <th className="w-[16%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 2</th>
-              <th className="w-[8%] border-r border-slate-700 px-1 py-1 text-right font-bold uppercase">Disp 1</th>
-              <th className="w-[8%] px-1 py-1 text-right font-bold uppercase">Disp 2</th>
+              <th className="w-[12%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Caballo</th>
+              <th className="w-[12%] border-r border-slate-700 px-1 py-1 text-right font-bold uppercase">Monto</th>
+              <th className="w-[23.5%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 1</th>
+              <th className="w-[23.5%] px-1 py-1 text-left font-bold uppercase">Cliente 2</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line/70">
             {filas.map((f, i) => {
               const v = valida(f);
               const detectado = f.jugada.trim() ? detectarModalidad(f.jugada) : null;
+              const ejemplar = ejemplarResuelto(f.caballo);
               return (
                 <tr key={i} className="align-middle">
-                  <td className="px-1 py-0.5 text-xs text-slate-400">{i + 1}</td>
-                  <td className="px-1 py-0.5 text-center">
+                  <td className="relative h-12 px-1 py-0 align-middle text-xs text-slate-400">
+                    <span className="block truncate">{i + 1}</span>
+                  </td>
+                  <td className="relative h-12 px-1 py-0 align-middle text-center">
                     <button
                       type="button"
                       onClick={() => setFilas((fs) => fs.filter((_, j) => j !== i))}
@@ -347,7 +430,7 @@ export function GestionJugadasModule() {
                       ✕
                     </button>
                   </td>
-                  <td className="px-1 py-0.5">
+                  <td className="relative h-12 px-1 py-0 align-middle">
                     <input
                       value={f.jugada}
                       onChange={(e) => setFila(i, { jugada: e.target.value })}
@@ -361,23 +444,34 @@ export function GestionJugadasModule() {
                       className="w-full rounded-md border border-line bg-white px-1 py-1 text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
                     <span
-                      className={`mt-0.5 block truncate text-[9px] font-black uppercase tracking-wide ${
+                      className={`pointer-events-none absolute bottom-0.5 left-1 right-1 truncate text-[9px] font-black uppercase leading-none tracking-wide ${
                         v.ok ? "text-emerald-600" : "text-slate-300"
                       }`}
                     >
                       {detectado ?? (f.jugada.trim() ? "—" : "")}
                     </span>
                   </td>
-                  <td className="px-1 py-0.5">
+                  <td className="relative h-12 px-1 py-0 align-middle">
                     <input
                       value={f.caballo}
                       onChange={(e) => setFila(i, { caballo: e.target.value })}
                       placeholder="Nº"
                       inputMode="numeric"
+                      title={ejemplar ? `${ejemplar.numero} - ${ejemplar.nombre}` : ""}
                       className="w-full rounded-md border border-line bg-white px-1 py-1 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
+                    {ejemplar && (
+                      <span
+                        className={`pointer-events-none absolute bottom-0.5 left-1 right-1 truncate text-[9px] font-bold leading-none ${
+                          ejemplar.retirado ? "text-red-500 line-through" : "text-gray-500"
+                        }`}
+                      >
+                        {ejemplar.numero} - {ejemplar.nombre}
+                        {ejemplar.retirado ? " (RET)" : ""}
+                      </span>
+                    )}
                   </td>
-                  <td className="px-1 py-0.5">
+                  <td className="relative h-12 px-1 py-0 align-middle">
                     <input
                       value={f.monto}
                       onChange={(e) => setFila(i, { monto: e.target.value })}
@@ -386,49 +480,27 @@ export function GestionJugadasModule() {
                       className="w-full rounded-md border border-line bg-white px-1 py-1 text-right text-xs font-black text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
                   </td>
-                  <td className="px-1 py-0.5">
+                  <td className="relative h-12 px-1 py-0 align-middle">
                     <input
                       value={f.cliente1}
                       onChange={(e) => setFila(i, { cliente1: e.target.value })}
                       placeholder="Cliente 1…"
                       className="w-full rounded-md border border-line bg-white px-1 py-1 text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
-                    {v.ok && v.cliente1 && (
-                      <span className="mt-0.5 block truncate text-[9px] font-black text-emerald-600">
-                        Cobra {monedaFmt(v.cliente1.cobroNeto)}
-                      </span>
-                    )}
+                    <span className="pointer-events-none absolute bottom-0.5 left-1 right-1 leading-none">
+                      {infoCliente(f.cliente1, f.monto, v.ok && v.cliente1 ? v.cliente1.cobroNeto : 0)}
+                    </span>
                   </td>
-                  <td className="px-1 py-0.5">
+                  <td className="relative h-12 px-1 py-0 align-middle">
                     <input
                       value={f.cliente2}
                       onChange={(e) => setFila(i, { cliente2: e.target.value })}
                       placeholder="Cliente 2…"
                       className="w-full rounded-md border border-line bg-white px-1 py-1 text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
-                    {v.ok && v.cliente2 && (
-                      <span className="mt-0.5 block truncate text-[9px] font-black text-emerald-600">
-                        Cobra {monedaFmt(v.cliente2.cobroNeto)}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-1 py-0.5">
-                    <input
-                      value={f.disp1}
-                      onChange={(e) => setFila(i, { disp1: e.target.value })}
-                      placeholder="0"
-                      inputMode="numeric"
-                      className="w-full rounded-md border border-line bg-white px-1 py-1 text-right text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                    />
-                  </td>
-                  <td className="px-1 py-0.5">
-                    <input
-                      value={f.disp2}
-                      onChange={(e) => setFila(i, { disp2: e.target.value })}
-                      placeholder="0"
-                      inputMode="numeric"
-                      className="w-full rounded-md border border-line bg-white px-1 py-1 text-right text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                    />
+                    <span className="pointer-events-none absolute bottom-0.5 left-1 right-1 leading-none">
+                      {infoCliente(f.cliente2, f.monto, v.ok && v.cliente2 ? v.cliente2.cobroNeto : 0)}
+                    </span>
                   </td>
                 </tr>
               );
@@ -444,6 +516,47 @@ export function GestionJugadasModule() {
             📥 Cargar jugada(s) en la taquilla
           </Button>
         </div>
+
+        {/* Pre-visualización — jugadas cargadas en sesión con edición inline (✏️) */}
+        {ticketsDeCarrera.length > 0 && (
+          <div className="mt-3 rounded-xl border border-line bg-gray-50 p-2">
+            <p className="px-1 pb-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
+              🧾 Pre-visualización — jugadas cargadas en la taquilla ({ticketsDeCarrera.length}) ·{" "}
+              <span className="normal-case font-semibold text-slate-400">✏️ devuelve la jugada a la tabla para corregirla</span>
+            </p>
+            <ul className="divide-y divide-line/60">
+              {ticketsDeCarrera.map((t) => (
+                <li key={t.id} className="flex items-center gap-2 py-1">
+                  <span className="min-w-0 flex-1 truncate font-mono text-[11px] font-semibold text-slate-700" title={t.comando}>
+                    {t.comando}
+                  </span>
+                  <span className="shrink-0 text-[11px] font-black text-slate-900">{monedaFmt(t.monto)}</span>
+                  <span className="hidden shrink-0 text-[10px] font-semibold text-emerald-600 sm:inline">
+                    +{monedaFmt(t.gananciaProyectada)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => editarTicket(t.id)}
+                    aria-label="Editar jugada"
+                    title="Volver a la tabla como inputs editables"
+                    className="shrink-0 text-slate-400 hover:text-primary-600"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => eliminarTicket(t.id)}
+                    aria-label="Quitar jugada"
+                    title="Quitar de la sesión"
+                    className="shrink-0 text-slate-400 hover:text-red-500"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {aviso && <p className="mt-2 text-xs font-semibold text-slate-600">{aviso}</p>}
       </div>
 
@@ -534,7 +647,7 @@ export function GestionJugadasModule() {
         </div>
       )}
 
-      {/* Carga de Resultados (Ctrl+Y) — 8 posiciones + Dead Heat */}
+      {/* Carga de Resultados (Ctrl+Y) — posiciones dinámicas (5 + añadir hasta 8) + Dead Heat */}
       <CargaResultadosModal
         abierto={modalResultados}
         onCerrar={() => setModalResultados(false)}
@@ -641,7 +754,7 @@ export function GestionJugadasModule() {
             <div className="divide-y divide-line p-2">
               {[
                 ["Ctrl+Q", "📋 Preliminar de Carrera", "Muestra ejemplares inscritos de la carrera activa."],
-                ["Ctrl+Y", "🏁 Carga de Resultados", "Pizarra con 8 posiciones + Empate (Dead Heat) por posición."],
+                ["Ctrl+Y", "🏁 Carga de Resultados", "Pizarra con 5 posiciones por defecto (+ puestos dinámicos hasta 8) + Empate (Dead Heat) por posición."],
                 ["Ctrl+R", "✅ Registrar y Finalizar", "Liquida los tickets con el motor y cierra la carrera (estado= Cerrada)."],
                 ["Ctrl+Shift+K", "⌨️ Comandos", "Este listado de atajos."],
               ].map(([kbd, titulo, desc]) => (

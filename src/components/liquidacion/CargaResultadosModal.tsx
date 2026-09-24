@@ -23,6 +23,10 @@ const ORDENES = [
   { orden: 8, nombre: "octavo" },
 ] as const;
 
+/** Cantidad de puestos por defecto y máximo admitido en la pizarra. */
+export const PUESTOS_MIN = 5;
+export const PUESTOS_MAX = 8;
+
 type Fila = { numero: string; empate: boolean };
 
 type Props = {
@@ -43,10 +47,12 @@ type Props = {
  */
 export function CargaResultadosModal({ abierto, onCerrar, hipodromo, carrera, caballos, onConfirmar }: Props) {
   const [filas, setFilas] = useState<Fila[]>([]);
+  const [puestos, setPuestos] = useState(PUESTOS_MIN);
 
   useEffect(() => {
     if (!abierto) return;
-    const base = Array.from({ length: 8 }, (_, i) => {
+    setPuestos(PUESTOS_MIN);
+    const base = Array.from({ length: PUESTOS_MIN }, (_, i) => {
       const n = (caballos ?? [])[i];
       return { numero: n ? String(n.numero) : "", empate: false };
     });
@@ -123,12 +129,28 @@ export function CargaResultadosModal({ abierto, onCerrar, hipodromo, carrera, ca
               </label>
             </div>
           ))}
+
+          {/* Puestos dinámicos: 5 por defecto, + Añadir puesto hasta 8 */}
+          {puestos < PUESTOS_MAX && (
+            <div className="py-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPuestos((p) => Math.min(p + 1, PUESTOS_MAX));
+                  setFilas((f) => [...f, { numero: String((caballos ?? [])[puestos]?.numero ?? ""), empate: false }]);
+                }}
+                className="w-full rounded-lg border border-dashed border-primary-400 bg-primary-500/5 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-primary-600 transition-colors hover:bg-primary-500/10"
+              >
+                ＋ Añadir puesto {puestos + 1}° ({PUESTOS_MAX - puestos} restante(s))
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="border-t border-line bg-gray-50 px-4 py-3">
           <p className="mb-2 text-[10px] italic text-slate-500">
-            La pizarra se envía al motor con {ORDENES.length} posiciones. Cero fraccionamiento: empate en 1° anula las
-            A Premio (devuelve capital).
+            La pizarra se envía al motor con {puestos} posición(es) cargadas (hasta {PUESTOS_MAX}). Cero fraccionamiento:
+            empate en 1° anula las A Premio (devuelve capital).
           </p>
           <div className="flex items-center justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={onCerrar}>
