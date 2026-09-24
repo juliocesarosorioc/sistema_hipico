@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { detectarModalidad, validarComando } from "@/lib/taquilla/validar";
+import { detectarModalidad, parsearLineaRapida, proyectarFila } from "@/lib/taquilla/validar";
 import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla, type ResLiquidarCarrera } from "@/lib/liquidacion/pagarYCerrar";
@@ -14,20 +14,34 @@ import { fmtMoney } from "@/lib/tablas/tipos";
 
 type FilaCarga = {
   jugada: string;
-  juega: string;
-  consigue: string;
+  caballo: string;
+  monto: string;
+  cliente1: string;
+  cliente2: string;
   disp1: string;
   disp2: string;
 };
 
-const filaVacia = (): FilaCarga => ({ jugada: "", juega: "", consigue: "", disp1: "", disp2: "" });
+const filaVacia = (): FilaCarga => ({
+  jugada: "",
+  caballo: "",
+  monto: "",
+  cliente1: "",
+  cliente2: "",
+  disp1: "",
+  disp2: "",
+});
 
 const MONEDA = "VES";
 
 /**
  * Gestión de Jugadas — Taquilla (clon del legacy):
- *  - Carga Individual con columnas # | X | JUGADA | CABALLO | MONTO | COBRO |
- *    JUEGA (CLIENTE 1) | CONSIGUE (CLIENTE 2) | DISP 1 | DISP 2
+ *  - Carga Individual con columnas # | X | JUGADA | CABALLO | MONTO |
+ *    CLIENTE 1 | CLIENTE 2 | DISP 1 | DISP 2 (sin COBRO, tipografía text-xs)
+ *  - JUGADA solo nomenclatura pura (2x3 10/8 · 1p · 2n) + MONTO numérico aparte;
+ *    el motor cruza la modalidad con el monto y proyecta el cobro por cliente
+ *  - Modal Carga Rápida: textarea con bloque de texto (formato legacy) que el
+ *    motor parsea línea por línea y puebla las filas automáticamente
  *  - Inputs: Retirados · COM % · Modalidad (Con Cruces) · Saldos Pozo/Traslado/Aval
  *  - Hipódromo buscable + Semáforo de carreras (gris/verde/amarillo/rojo)
  *  - Barra de comandos flotante con atajos: Ctrl+Q / Ctrl+Y / Ctrl+R / Ctrl+Shift+K
@@ -54,6 +68,8 @@ export function GestionJugadasModule() {
   const [modalResultados, setModalResultados] = useState(false);
   const [modalFinalizar, setModalFinalizar] = useState(false);
   const [modalComandos, setModalComandos] = useState(false);
+  const [modalCargaRapida, setModalCargaRapida] = useState(false);
+  const [textoCargaRapida, setTextoCargaRapida] = useState("");
   const [ultimaPizarra, setUltimaPizarra] = useState<PizarraResultados | null>(null);
   const [resumen, setResumen] = useState<ResLiquidarCarrera | null>(null);
 
@@ -90,7 +106,7 @@ export function GestionJugadasModule() {
     return Number.isFinite(n) && n >= 0 ? n : 5;
   }, [comision]);
 
-  const valida = (jugada: string) => validarComando(jugada, comisionNum);
+  const valida = (f: FilaCarga) => proyectarFila({ jugada: f.jugada, monto: f.monto, tasaComision: comisionNum });
 
   const tablaDeCarrera = useMemo(
     () =>
@@ -120,21 +136,66 @@ export function GestionJugadasModule() {
 
   const cargarAtaquilla = () => {
     let n = 0;
+    const errores: string[] = [];
     for (const f of filas) {
-      const v = valida(f.jugada);
-      if (!v.ok || !f.jugada.trim()) continue;
+      if (!f.jugada.trim() && !f.monto.trim()) continue;
+      const v = valida(f);
+      if (!v.ok) {
+        errores.push(`Fila ${filas.indexOf(f) + 1}: ${v.motivo}`);
+        continue;
+      }
+      const mejorCobre = Math.max(v.cliente1?.cobroNeto ?? 0, v.cliente2?.cobroNeto ?? 0);
+      const comisionMejor =
+        v.cliente1 && v.cliente2 && (v.cliente2?.cobroNeto ?? 0) > (v.cliente1?.cobroNeto ?? 0)
+          ? v.cliente2.comision
+          : (v.cliente1?.comision ?? 0);
       agregarTicket({
         comando: `${v.monto} ${v.tipo}`,
         monto: v.monto,
-        gananciaProyectada: v.proyeccion.gananciaProyectada,
-        comision: v.proyeccion.comision,
+        gananciaProyectada: round2(mejorCobre - v.monto),
+        comision: comisionMejor,
       });
       n += 1;
     }
-    if (n === 0) return setAviso("Carga al menos una jugada válida (formato: <monto> <jugada>, ej: 100 2n).");
+    if (n === 0) {
+      return setAviso("Carga al menos una jugada válida (JUGADA + MONTO). " + (errores[0] ?? ""));
+    }
     if (!jugadasPorCarrera.includes(carrera)) setJugadasPorCarrera((j) => [...j, carrera]);
     setFilas([filaVacia()]);
-    setAviso(`✅ ${n} jugada(s) enviada(s) a la taquilla (C${carrera}).`);
+    setAviso(`✅ ${n} jugada(s) enviada(s) a la taquilla (C${carrera}).` + (errores.length ? ` ${errores.length} fila(s) con error ignorada(s).` : ""));
+  };
+
+  const poblarCargaRapida = () => {
+    const lineas = textoCargaRapida.split("\n");
+    const filasNuevas: FilaCarga[] = [];
+    const errs: string[] = [];
+    let ok = 0;
+    for (const l of lineas) {
+      const p = parsearLineaRapida(l);
+      if (!p) continue;
+      if (p.ok) {
+        filasNuevas.push({
+          jugada: p.jugada,
+          caballo: p.caballo,
+          monto: p.monto,
+          cliente1: p.cliente1,
+          cliente2: p.cliente2,
+          disp1: "",
+          disp2: "",
+        });
+        ok += 1;
+      } else {
+        errs.push(`${l.trim()} → ${p.motivo}`);
+      }
+    }
+    if (filasNuevas.length > 0) {
+      setFilas(filasNuevas);
+      setTextoCargaRapida("");
+      setModalCargaRapida(false);
+      setAviso(`⚡ ${ok} fila(s) poblada(s) desde el bloque de texto.` + (errs.length ? ` ${errs.length} línea(s) con error ignorada(s).` : ""));
+    } else {
+      setAviso("⚠️ No se pudieron parsear líneas válidas. " + (errs[0] ?? ""));
+    }
   };
 
   const ejecutarFinalizar = async () => {
@@ -254,40 +315,39 @@ export function GestionJugadasModule() {
             {hipodromo} · C{carrera} · Retirados: {retirados.trim() || "—"}
           </span>
         </div>
-        <table className="w-full table-fixed border-collapse text-sm">
+        <table className="w-full table-fixed border-collapse text-xs">
           <thead>
             <tr className="bg-slate-800 text-white">
-              <th className="w-[5%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">#</th>
-              <th className="w-[4%] border-r border-slate-700 px-1 py-1.5 text-center font-bold uppercase">X</th>
-              <th className="w-[20%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">Jugada</th>
-              <th className="w-[13%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">Caballo</th>
-              <th className="w-[15%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase">Monto</th>
-              <th className="w-[12%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase">Cobro</th>
-              <th className="w-[11%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">Juega (Cliente 1)</th>
-              <th className="w-[11%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">Consigue (Cliente 2)</th>
-              <th className="w-[5%] border-r border-slate-700 px-1 py-1.5 text-right font-bold uppercase">Disp 1</th>
-              <th className="w-[4%] px-1 py-1.5 text-right font-bold uppercase">Disp 2</th>
+              <th className="w-[4%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">#</th>
+              <th className="w-[3%] border-r border-slate-700 px-1 py-1 text-center font-bold uppercase">X</th>
+              <th className="w-[22%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Jugada</th>
+              <th className="w-[10%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Caballo</th>
+              <th className="w-[13%] border-r border-slate-700 px-1 py-1 text-right font-bold uppercase">Monto</th>
+              <th className="w-[16%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 1</th>
+              <th className="w-[16%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 2</th>
+              <th className="w-[8%] border-r border-slate-700 px-1 py-1 text-right font-bold uppercase">Disp 1</th>
+              <th className="w-[8%] px-1 py-1 text-right font-bold uppercase">Disp 2</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line/70">
             {filas.map((f, i) => {
-              const v = valida(f.jugada);
+              const v = valida(f);
               const detectado = f.jugada.trim() ? detectarModalidad(f.jugada) : null;
               return (
                 <tr key={i} className="align-middle">
-                  <td className="px-2 py-1 text-slate-400">{i + 1}</td>
-                  <td className="px-1 py-1 text-center">
+                  <td className="px-1 py-0.5 text-xs text-slate-400">{i + 1}</td>
+                  <td className="px-1 py-0.5 text-center">
                     <button
                       type="button"
                       onClick={() => setFilas((fs) => fs.filter((_, j) => j !== i))}
                       disabled={filas.length <= 1}
                       aria-label="Eliminar fila"
-                      className="text-slate-300 hover:text-red-500"
+                      className="text-xs text-slate-300 hover:text-red-500"
                     >
                       ✕
                     </button>
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-1 py-0.5">
                     <input
                       value={f.jugada}
                       onChange={(e) => setFila(i, { jugada: e.target.value })}
@@ -297,8 +357,8 @@ export function GestionJugadasModule() {
                           cargarAtaquilla();
                         }
                       }}
-                      placeholder="100 2n · 1p · 10/7"
-                      className="w-full rounded-md border border-line bg-white px-2 py-1 text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      placeholder="2x3 10/8 · 1p · 2n"
+                      className="w-full rounded-md border border-line bg-white px-1 py-1 text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
                     <span
                       className={`mt-0.5 block truncate text-[9px] font-black uppercase tracking-wide ${
@@ -308,32 +368,51 @@ export function GestionJugadasModule() {
                       {detectado ?? (f.jugada.trim() ? "—" : "")}
                     </span>
                   </td>
-                  <td className="px-2 py-1">
-                    <p className="truncate text-sm font-semibold text-slate-600" title={v.ok ? (tablaDeCarrera?.caballos ?? []).find((c) => String(c.numero) === String(v.tipo.replace(/[a-z]+\s*/gi, "").trim()))?.nombre ?? `Nº ${v.tipo.split(/\s+|\//)[0]}` : undefined}>
-                      {v.ok ? (tablaDeCarrera?.caballos ?? []).find((c) => String(c.numero) === String(v.tipo.replace(/[a-z]+\s*/gi, "").trim()))?.nombre ?? `Nº ${v.tipo.split(/\s+|\//)[0]}` : "—"}
-                    </p>
-                  </td>
-                  <td className="px-2 py-1 text-right text-sm font-black text-slate-900">{v.ok ? v.monto : "—"}</td>
-                  <td className="px-2 py-1 text-right text-sm font-black text-success-600">
-                    {v.ok ? monedaFmt(Math.max(0, v.proyeccion.totalClienteNeto)) : "—"}
-                  </td>
-                  <td className="px-2 py-1">
+                  <td className="px-1 py-0.5">
                     <input
-                      value={f.juega}
-                      onChange={(e) => setFila(i, { juega: e.target.value })}
+                      value={f.caballo}
+                      onChange={(e) => setFila(i, { caballo: e.target.value })}
+                      placeholder="Nº"
+                      inputMode="numeric"
+                      className="w-full rounded-md border border-line bg-white px-1 py-1 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    />
+                  </td>
+                  <td className="px-1 py-0.5">
+                    <input
+                      value={f.monto}
+                      onChange={(e) => setFila(i, { monto: e.target.value })}
+                      placeholder="0"
+                      inputMode="decimal"
+                      className="w-full rounded-md border border-line bg-white px-1 py-1 text-right text-xs font-black text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    />
+                  </td>
+                  <td className="px-1 py-0.5">
+                    <input
+                      value={f.cliente1}
+                      onChange={(e) => setFila(i, { cliente1: e.target.value })}
                       placeholder="Cliente 1…"
-                      className="w-full rounded-md border border-line bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      className="w-full rounded-md border border-line bg-white px-1 py-1 text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
+                    {v.ok && v.cliente1 && (
+                      <span className="mt-0.5 block truncate text-[9px] font-black text-emerald-600">
+                        Cobra {monedaFmt(v.cliente1.cobroNeto)}
+                      </span>
+                    )}
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-1 py-0.5">
                     <input
-                      value={f.consigue}
-                      onChange={(e) => setFila(i, { consigue: e.target.value })}
+                      value={f.cliente2}
+                      onChange={(e) => setFila(i, { cliente2: e.target.value })}
                       placeholder="Cliente 2…"
-                      className="w-full rounded-md border border-line bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      className="w-full rounded-md border border-line bg-white px-1 py-1 text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
+                    {v.ok && v.cliente2 && (
+                      <span className="mt-0.5 block truncate text-[9px] font-black text-emerald-600">
+                        Cobra {monedaFmt(v.cliente2.cobroNeto)}
+                      </span>
+                    )}
                   </td>
-                  <td className="px-1 py-1">
+                  <td className="px-1 py-0.5">
                     <input
                       value={f.disp1}
                       onChange={(e) => setFila(i, { disp1: e.target.value })}
@@ -342,7 +421,7 @@ export function GestionJugadasModule() {
                       className="w-full rounded-md border border-line bg-white px-1 py-1 text-right text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
                   </td>
-                  <td className="px-1 py-1">
+                  <td className="px-1 py-0.5">
                     <input
                       value={f.disp2}
                       onChange={(e) => setFila(i, { disp2: e.target.value })}
@@ -357,6 +436,9 @@ export function GestionJugadasModule() {
           </tbody>
         </table>
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setModalCargaRapida(true)}>
+            ⚡ Carga Rápida <span className="ml-1 rounded bg-warning-500/20 px-1.5 text-[9px] font-black text-warning-700">texto</span>
+          </Button>
           <Button size="sm" onClick={() => setFilas((f) => [...f, filaVacia()])}>＋ Agregar fila</Button>
           <Button variant="success" size="md" className="ml-auto" onClick={cargarAtaquilla}>
             📥 Cargar jugada(s) en la taquilla
@@ -579,10 +661,46 @@ export function GestionJugadasModule() {
         </div>
       )}
 
+      {/* Carga Rápida (texto libre) — pegar bloque y poblar tabla */}
+      {modalCargaRapida && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-line bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
+              <h3 className="text-xs font-black uppercase">⚡ Carga Rápida — {hipodromo} C{carrera}</h3>
+              <button type="button" onClick={() => setModalCargaRapida(false)} className="text-slate-300 hover:text-white">✕</button>
+            </div>
+            <div className="space-y-3 p-4">
+              <textarea
+                value={textoCargaRapida}
+                onChange={(e) => setTextoCargaRapida(e.target.value)}
+                rows={10}
+                spellCheck={false}
+                placeholder={"Pegá el bloque de jugadas (1 por línea):\n\n1/2 4 60 Camacho rucio\n2n 7 25 Eddie Manuel\n1/2 y 2n 7 100 Eddie Manuel\n2x3 10/8 2 100 Juan Pedro"}
+                className="w-full resize-y rounded-xl border border-line bg-white p-3 font-mono text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              />
+              <p className="text-[10px] font-semibold text-slate-500">
+                Formato por línea: <b>JUGADA CABALLO MONTO CLIENTE1 [CLIENTE2]</b> — p. ej. <i>2x3 10/8 2 100 Juan Pedro</i>. El
+                motor parsea el bloque línea por línea y puebla automáticamente las filas de la tabla.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-line bg-gray-50 px-4 py-3">
+              <Button variant="ghost" size="sm" onClick={() => { setTextoCargaRapida(""); setModalCargaRapida(false); }}>
+                Cancelar
+              </Button>
+              <Button variant="success" size="md" onClick={poblarCargaRapida}>📥 Poblar tabla</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Evento Enter en barras superiores no debe recargar */}
       <input type="hidden" />
     </div>
   );
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 /** Color de casaca por número (paleta ligera para el preliminar). */
