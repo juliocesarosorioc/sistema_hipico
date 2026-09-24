@@ -44,6 +44,48 @@ function pesoKB(durls: string[]): number {
   return Math.round(durls.reduce((a, d) => a + ((d.split(",")[1] || "").length * 3) / 4, 0) / 1024);
 }
 
+/** La API REST de Gemini acepta hasta ~20 MB de datos inline por request. */
+const MAX_LOTE_KB = 12000;
+
+/** Error tipado con el estado HTTP de la llamada a Gemini (para traducirlo a UI). */
+class ErrorIA extends Error {
+  status: number | null;
+  detalle: string;
+  constructor(msg: string, status: number | null, detalle: string) {
+    super(msg);
+    this.name = "ErrorIA";
+    this.status = status;
+    this.detalle = detalle;
+  }
+}
+
+/** Traduce errores crudos de Gemini a mensajes claros para el operador. */
+export function traducirErrorIA(status: number | null, detalle: string): string {
+  const t = detalle.toLowerCase();
+  if (status === 413 || status === 400 && /payload|too large|size.*exceed|exceed.*size|too many|large/i.test(t)) {
+    return "Error: el lote de páginas es muy pesado para Gemini (máx. ~20 MB por request). Selecciona menos páginas por vez o usa imágenes más livianas.";
+  }
+  if (status === 429 || /quota|rate.?limit|resource.*exceed|insufficient/i.test(t)) {
+    return "Error: límite de cuota de Gemini free alcanzado (429). Espera unos segundos o prueba con otra clave.";
+  }
+  if (status === 403 || /forbidden|permission|api.?key.*invalid/i.test(t)) {
+    return "Error: la clave fue rechazada por Gemini (403). Verifica la API key en aistudio.google.com/apikey.";
+  }
+  if (status === 401 || /unauthorized|key.*(invalid|missing)/i.test(t)) {
+    return "Error: clave de Gemini inválida o faltante (401). Vuelve a guardar tu clave.";
+  }
+  if (status === 404 || /model.*found|not ?found/i.test(t)) {
+    return "Error: el modelo de IA no está disponible (404). Prueba de nuevo en unos minutos.";
+  }
+  if (status === 500 || status === 503) {
+    return "Error: Gemini está procesando con sobrecarga (500/503). Intenta de nuevo en unos segundos.";
+  }
+  if (status === 0 || /network|fetch|internet|failed to fetch/i.test(t)) {
+    return "Error de red: no se pudo contactar con Gemini. Revisa tu conexión a internet.";
+  }
+  return `Error de la IA (HTTP ${status ?? "?"}): ${detalle.slice(0, 220)}`;
+}
+
 async function listaModelosFlash(clave: string): Promise<string[]> {
   try {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(clave)}`);
@@ -111,7 +153,7 @@ async function generarLote(
   );
   if (!r.ok) {
     const txt = await r.text();
-    throw new Error(`HTTP ${r.status}: ${txt.slice(0, 200)}`);
+    throw new ErrorIA(`HTTP ${r.status}`, r.status, txt.slice(0, 300));
   }
   const datos = (await r.json()) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
@@ -130,20 +172,52 @@ function normalizarNacionalidad(nac?: string, hipodromo?: string): string {
   return /RINCONADA|LA RINCONADA/i.test(hipodromo ?? "") ? "VE" : (hipodromo ? "USA" : "VE");
 }
 
-/** Transforma las páginas (dataURLs) con Gemini por lotes de 3 y fusiona carreras. */
-export async function transformarGaceta(clave: string, imagenes: string[]): Promise<ResultadoGaceta> {
+/** Transforma las páginas (dataURLs) con Gemini por lotes (≤ MAX_LOTE_KB) y fusiona carreras. */
+export async function transformarGaceta(
+  clave: string,
+  imagenes: string[],
+  onLote?: (hecho: number, total: number) => void
+): Promise<ResultadoGaceta> {
   const diag: string[] = [];
   const peso = `${(pesoKB(imagenes) / 1024).toFixed(1)} MB`;
   try {
+    if (!imagenes.length) {
+      return { ok: false, carreras: [], error: "No hay páginas seleccionadas para enviar.", diag: `peso ${peso}` };
+    }
+    if (pesoKB(imagenes) > 18 * 1024) {
+      return {
+        ok: false,
+        carreras: [],
+        error: "Error: el archivo es muy pesado (" + peso + "). Gemini admite máx. ~20 MB por request. Reduce la selección de páginas o la resolución del PDF.",
+        diag: `peso total enviado: ${peso}`,
+      };
+    }
     const descubiertos = await listaModelosFlash(clave);
     const modelos = elegirModelos(descubiertos);
     if (!modelos.length) {
       return { ok: false, carreras: [], error: "Tu clave no devolvió modelos Flash. Verifica la clave en aistudio.google.com/apikey y tu conexión.", diag: `modelos: 0 · peso: ${peso}` };
     }
 
+    // Lotes dinámicos: nunca superar ~12 MB por request (margen bajo el límite real de 20 MB).
+    const lotes: string[][] = [];
+    let actual: string[] = [];
+    let kbs = 0;
+    for (const d of imagenes) {
+      const kb = ((d.split(",")[1] || "").length * 3) / 4;
+      if (actual.length && kbs + kb > MAX_LOTE_KB) {
+        lotes.push(actual);
+        actual = [];
+        kbs = 0;
+      }
+      actual.push(d);
+      kbs += kb;
+    }
+    if (actual.length) lotes.push(actual);
+    if (!lotes.length) return { ok: false, carreras: [], error: "No hay páginas válidas para enviar.", diag: `peso ${peso}` };
+
     const carreras: CarreraExtraida[] = [];
-    for (let i = 0; i < imagenes.length; i += 3) {
-      const lote = imagenes.slice(i, i + 3);
+    let hecho = 0;
+    for (const lote of lotes) {
       let okLote = false;
       let ultimoError = "";
       for (const modelo of modelos) {
@@ -169,18 +243,27 @@ export async function transformarGaceta(clave: string, imagenes: string[]): Prom
             }
           }
           okLote = true;
-          diag.push(`modelo ${modelo} ✔ (${lote.length} págs)`);
+          diag.push(`lote ${hecho + 1}/${lotes.length} · modelo ${modelo} ✔ (${lote.length} págs)`);
           break;
         } catch (e) {
-          ultimoError = e instanceof Error ? e.message : String(e);
-          diag.push(`modelo ${modelo} ✘`);
+          ultimoError = e instanceof ErrorIA ? traducirErrorIA(e.status, e.detalle) : e instanceof Error ? e.message : String(e);
+          diag.push(`lote ${hecho + 1}/${lotes.length} · modelo ${modelo} ✘`);
           await esperar(800);
         }
       }
-      if (!okLote) throw new Error("Fallo en lotes: " + ultimoError);
+      hecho += 1;
+      onLote?.(hecho, lotes.length);
+      if (!okLote) {
+        return {
+          ok: false,
+          carreras: [],
+          error: ultimoError || "Fallo de la IA al procesar el lote.",
+          diag: `${diag.join(" · ")} · peso total enviado ${peso}`,
+        };
+      }
     }
-    return { ok: true, carreras, diag: diag.join(" · ") };
+    return { ok: true, carreras, diag: `${diag.join(" · ")} · peso total ${peso}` };
   } catch (e) {
-    return { ok: false, carreras: [], error: e instanceof Error ? e.message : String(e), diag: `modelos intentados · peso ${peso}` };
+    return { ok: false, carreras: [], error: e instanceof Error ? e.message : String(e), diag: `peso total enviado ${peso}` };
   }
 }

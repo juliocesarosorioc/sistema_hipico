@@ -21,6 +21,40 @@ function leerArchivoComoDataUrl(file: File): Promise<string> {
   });
 }
 
+const MAX_ENVIO_PX = 1600;
+const MAX_ARCHIVO_MB = 25;
+
+/** Re-convierte una imagen (dataURL) a JPEG ≤ MAX_ENVIO_PX para que el payload a Gemini sea liviano. */
+function prepararEnvio(dataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const escala = Math.min(1, MAX_ENVIO_PX / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * escala));
+        const h = Math.max(1, Math.round(img.height * escala));
+        const cv = document.createElement("canvas");
+        cv.width = w;
+        cv.height = h;
+        const ctx = cv.getContext("2d");
+        if (!ctx) return resolve(dataUrl);
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(cv.toDataURL("image/jpeg", 0.82));
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+function pesoMB(dataUrl: string): number {
+  return ((dataUrl.split(",")[1] || "").length * 3) / 4 / 1024 / 1024;
+}
+
 // ---- Renderizado de PDFs a miniaturas (client-side) ----------------------
 // pdfjs renderiza cada página del PDF a un canvas → PNG. Así la vista previa
 // funciona (el <img> no sabe pintar application/pdf) y las páginas seleccionadas
@@ -71,7 +105,7 @@ async function renderPdfAPaginas(file: File, onProgreso: (pagina: number, total:
       const ctx = canvas.getContext("2d");
       if (!ctx) continue;
       await page.render({ canvasContext: ctx, viewport }).promise;
-      paginas.push(canvas.toDataURL("image/png"));
+      paginas.push(await prepararEnvio(canvas.toDataURL("image/png")));
       try {
         page.cleanup();
       } catch {
@@ -93,8 +127,10 @@ export function GacetaIA() {
   const [seleccionadas, setSeleccionadas] = useState<Set<string>>(new Set());
   const [clave, setClave] = useState("");
   const [trabajando, setTrabajando] = useState(false);
+  const [leyendo, setLeyendo] = useState(false);
   const [estado, setEstado] = useState("");
   const [diag, setDiag] = useState("");
+  const [progreso, setProgreso] = useState<{ hecho: number; total: number } | null>(null);
   const [carreras, setCarreras] = useState<CarreraExtraida[]>([]);
   const [densa, setDensa] = useState(true);
   const [registrando, setRegistrando] = useState(false);
@@ -133,32 +169,45 @@ export function GacetaIA() {
       setEstado("Solo se aceptan PDF, JPG, PNG o WEBP.");
       return;
     }
-    setEstado("Leyendo archivos...");
-    const nuevas: PaginaGaceta[] = [];
-    const generar = (dataUrl: string) => ({ id: `${dataUrl.slice(0, 24)}-${nuevas.length}-${Date.now()}`, dataUrl, orden: nuevas.length });
-    for (const f of arr) {
-      try {
-        const esPdf = /\.pdf$/i.test(f.name) || f.type === "application/pdf";
-        if (esPdf) {
-          setEstado(`Renderizando ${f.name}...`);
-          const paginas = await renderPdfAPaginas(f, (pag, total) => setEstado(`Renderizando ${f.name} · página ${pag} de ${total}...`));
-          paginas.forEach((d) => nuevas.push(generar(d)));
-        } else {
-          const dataUrl = await leerArchivoComoDataUrl(f);
-          nuevas.push(generar(dataUrl));
-        }
-      } catch (e) {
-        setEstado("Error leyendo " + f.name + ": " + (e instanceof Error ? e.message : String(e)));
-      }
+    if (arr.some((f) => f.size > MAX_ARCHIVO_MB * 1024 * 1024)) {
+      const msj = `Error: ${arr.find((f) => f.size > MAX_ARCHIVO_MB * 1024 * 1024)?.name ?? "el archivo"} supera ${MAX_ARCHIVO_MB} MB.`;
+      setEstado(msj);
+      window.dispatchEvent(new CustomEvent("toast", { detail: { msg: msj, tipo: "error" } }));
+      return;
     }
-    if (!nuevas.length) return;
-    setPaginas((prev) => [...prev, ...nuevas]);
-    setSeleccionadas((prev) => {
-      const n = new Set(prev);
-      nuevas.forEach((p) => n.add(p.id));
-      return n;
-    });
-    setEstado(`${nuevas.length} página(s) listas.`);
+    setLeyendo(true);
+    setEstado("Leyendo archivos...");
+    setDiag("");
+    try {
+      const nuevas: PaginaGaceta[] = [];
+      const generar = (dataUrl: string) => ({ id: `${dataUrl.slice(0, 24)}-${nuevas.length}-${Date.now()}`, dataUrl, orden: nuevas.length });
+      for (const f of arr) {
+        try {
+          const esPdf = /\.pdf$/i.test(f.name) || f.type === "application/pdf";
+          if (esPdf) {
+            setEstado(`Renderizando ${f.name}...`);
+            const paginas = await renderPdfAPaginas(f, (pag, total) => setEstado(`Renderizando ${f.name} · página ${pag} de ${total}...`));
+            for (const d of paginas) nuevas.push(generar(d));
+          } else {
+            const dataUrl = await prepararEnvio(await leerArchivoComoDataUrl(f));
+            nuevas.push(generar(dataUrl));
+          }
+        } catch (e) {
+          setEstado("Error leyendo " + f.name + ": " + (e instanceof Error ? e.message : String(e)));
+        }
+      }
+      if (nuevas.length) {
+        setPaginas((prev) => [...prev, ...nuevas]);
+        setSeleccionadas((prev) => {
+          const n = new Set(prev);
+          nuevas.forEach((p) => n.add(p.id));
+          return n;
+        });
+        setEstado(`${nuevas.length} página(s) listas.`);
+      }
+    } finally {
+      setLeyendo(false);
+    }
   }, []);
 
   const guardarClave = useCallback(() => {
@@ -187,34 +236,48 @@ export function GacetaIA() {
     }
   }, [clave]);
 
+  const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
+    window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
+  }, []);
+
   const transformar = useCallback(async () => {
     if (!clave.trim()) {
       setEstado("Primero guarda tu clave de Gemini.");
+      window.dispatchEvent(new CustomEvent("toast", { detail: { msg: "Primero guarda tu clave de Gemini.", tipo: "warning" } }));
       return;
     }
     const imgs = paginas.filter((p) => seleccionadas.has(p.id)).map((p) => p.dataUrl);
     if (!imgs.length) {
       setEstado("Selecciona al menos una página.");
+      window.dispatchEvent(new CustomEvent("toast", { detail: { msg: "Selecciona al menos una página.", tipo: "warning" } }));
       return;
     }
+    const pesoSel = `${(imgs.reduce((a, d) => a + pesoMB(d), 0)).toFixed(1)} MB`;
     setTrabajando(true);
-    setEstado(`Transcribiendo ${imgs.length} página(s) con Gemini (gratis)...`);
+    setProgreso({ hecho: 0, total: 1 });
+    setEstado(`Transcribiendo ${imgs.length} página(s) (${pesoSel}) con Gemini (gratis)...`);
     setDiag("");
-    const res = await transformarGaceta(clave.trim(), imgs);
-    setTrabajando(false);
-    setDiag(res.diag ?? "");
-    if (!res.ok) {
-      setEstado(res.error ?? "Error transformando.");
-      setCarreras([]);
-      return;
+    try {
+      const res = await transformarGaceta(clave.trim(), imgs, (hecho, total) => setProgreso({ hecho, total }));
+      setDiag(res.diag ?? "");
+      if (!res.ok) {
+        setEstado(res.error ?? "Error transformando.");
+        setCarreras([]);
+        window.dispatchEvent(new CustomEvent("toast", { detail: { msg: "❌ " + (res.error ?? "Error transformando."), tipo: "error" } }));
+        return;
+      }
+      setCarreras(res.carreras);
+      setEstado(`Extraídas ${res.carreras.length} carrera(s) de ${imgs.length} página(s).`);
+      window.dispatchEvent(new CustomEvent("toast", { detail: { msg: `✅ Extraídas ${res.carreras.length} carreras.`, tipo: "success" } }));
+    } catch (e) {
+      const msj = e instanceof Error ? e.message : String(e);
+      setEstado("Error: " + msj);
+      window.dispatchEvent(new CustomEvent("toast", { detail: { msg: "❌ " + msj, tipo: "error" } }));
+    } finally {
+      setTrabajando(false);
+      setProgreso(null);
     }
-    setCarreras(res.carreras);
-    setEstado(`Extraídas ${res.carreras.length} carrera(s).`);
   }, [clave, paginas, seleccionadas]);
-
-  const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
-    window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
-  }, []);
 
   /** Registra los ejemplares extraídos en `ejemplares` (paridad gaceta_padron.registrar). */
   const registrarEnPadron = useCallback(async () => {
@@ -253,11 +316,27 @@ export function GacetaIA() {
               e.preventDefault();
               if (e.dataTransfer.files.length) void onArchivos(e.dataTransfer.files);
             }}
-            className="cursor-pointer rounded-xl border-2 border-dashed border-line p-8 text-center transition-colors hover:border-primary-500/60 hover:bg-primary-500/5"
+            className={`cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-colors hover:border-primary-500/60 hover:bg-primary-500/5 ${
+              leyendo ? "pointer-events-none border-primary-400 bg-primary-500/5" : "border-line"
+            }`}
           >
-            <p className="mb-1 text-sm font-bold text-slate-600">☁️ Arrastre el PDF o la imagen de la gaceta aquí</p>
-            <p className="text-xs text-slate-500">o haga clic para elegir el archivo (JPG, PNG, WEBP o PDF)</p>
-            <p className="mt-1 text-[10px] text-slate-400">Los PDF se renderizan página por página (vista previa nítida y envío como imagen a la IA).</p>
+            {leyendo ? (
+              <>
+                <p className="mb-1 inline-flex items-center gap-2 text-sm font-bold text-primary-700">
+                  <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-300 border-t-primary-700" />
+                  Cargando la gaceta…
+                </p>
+                <p className="text-xs text-slate-500">{estado}</p>
+              </>
+            ) : (
+              <>
+                <p className="mb-1 text-sm font-bold text-slate-600">☁️ Arrastre el PDF o la imagen de la gaceta aquí</p>
+                <p className="text-xs text-slate-500">o haga clic para elegir el archivo (JPG, PNG, WEBP o PDF)</p>
+                <p className="mt-1 text-[10px] text-slate-400">
+                  Los PDF se renderizan página por página y se optimizan (JPEG ≤ 1600 px) para el envío a la IA.
+                </p>
+              </>
+            )}
             <input
               ref={inputRef}
               type="file"
@@ -266,6 +345,7 @@ export function GacetaIA() {
               className="hidden"
               onChange={(e) => {
                 if (e.target.files?.length) void onArchivos(e.target.files);
+                e.target.value = "";
               }}
             />
           </div>
@@ -277,7 +357,8 @@ export function GacetaIA() {
                   Vista previa — marque/desmarque las páginas que desea enviar a la IA
                 </p>
                 <span className="rounded-full bg-primary-100 px-2 py-0.5 text-[10px] font-black text-primary-700">
-                  {seleccionadas.size} páginas seleccionadas de {paginas.length}
+                  {seleccionadas.size} páginas ·{" "}
+                  {paginas.filter((p) => seleccionadas.has(p.id)).reduce((a, p) => a + pesoMB(p.dataUrl), 0).toFixed(1)} MB
                 </span>
               </div>
               <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
@@ -369,6 +450,27 @@ export function GacetaIA() {
           >
             ✨ Transformar con IA (gratis)
           </Button>
+          {trabajando && (
+            <div className="mt-3 rounded-lg border border-primary-200 bg-primary-500/5 p-3">
+              <div className="mb-1 flex items-center justify-between gap-2 text-[9px] font-black uppercase tracking-wide text-primary-700">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-primary-300 border-t-primary-700" />
+                  Procesando con la IA…
+                </span>
+                {progreso && (
+                  <span>
+                    lote {progreso.hecho} / {progreso.total}
+                  </span>
+                )}
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-primary-100">
+                <div
+                  className="h-full rounded-full bg-primary-600 transition-all duration-300"
+                  style={{ width: `${progreso ? Math.round((progreso.hecho / progreso.total) * 100) : 5}%` }}
+                />
+              </div>
+            </div>
+          )}
           {seleccionadas.size === 0 && paginas.length > 0 && !trabajando && (
             <p className="mt-1 text-center text-[10px] font-bold text-amber-600">
               Marca las páginas que contienen carreras antes de transformar.
@@ -377,7 +479,11 @@ export function GacetaIA() {
           <Button variant="ghost" size="md" className="mt-2 w-full" disabled={trabajando} onClick={() => void probarClave()}>
             🔌 Probar clave de IA
           </Button>
-          {estado && <p className="mt-2 text-center text-[11px] text-slate-500">{estado}</p>}
+          {estado && (
+            <p className={`mt-2 text-center text-[11px] ${/error/i.test(estado) ? "font-bold text-red-500" : "text-slate-500"}`}>
+              {estado}
+            </p>
+          )}
           {diag && (
             <pre className="mt-2 max-h-44 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-slate-950 p-2 text-[10px] font-mono text-success-500">
               {diag}
