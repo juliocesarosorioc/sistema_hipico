@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { validarComando } from "@/lib/taquilla/validar";
+import { detectarModalidad, validarComando } from "@/lib/taquilla/validar";
 import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla, type ResLiquidarCarrera } from "@/lib/liquidacion/pagarYCerrar";
@@ -22,8 +22,6 @@ type FilaCarga = {
 
 const filaVacia = (): FilaCarga => ({ jugada: "", juega: "", consigue: "", disp1: "", disp2: "" });
 
-const MODALIDADES = ["NINI", "PUESTO", "A PREMIO", "COMBINADA", "COMPUESTA"];
-
 const MONEDA = "VES";
 
 /**
@@ -41,7 +39,6 @@ export function GestionJugadasModule() {
   const [carrera, setCarrera] = useState(1);
   const [retirados, setRetirados] = useState("");
   const [comision, setComision] = useState("5");
-  const [modalidad, setModalidad] = useState("NINI");
   const [conCruces, setConCruces] = useState(false);
   const [saldoActivo, setSaldoActivo] = useState<"POZO" | "TRASLADO" | "AVAL">("POZO");
   const [saldos, setSaldos] = useState<Record<"POZO" | "TRASLADO" | "AVAL", string>>({
@@ -207,7 +204,7 @@ export function GestionJugadasModule() {
       </div>
 
       {/* Inputs superiores */}
-      <div className="grid gap-3 rounded-2xl border border-line bg-surface p-4 lg:grid-cols-6">
+      <div className="grid gap-3 rounded-2xl border border-line bg-surface p-4 lg:grid-cols-5">
         <div>
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">Hipódromo</label>
           <SearchableSelect
@@ -235,18 +232,6 @@ export function GestionJugadasModule() {
             className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-black text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           />
         </div>
-        <div>
-          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">Modalidad</label>
-          <select
-            value={modalidad}
-            onChange={(e) => setModalidad(e.target.value)}
-            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-          >
-            {MODALIDADES.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
-        </div>
         <label className="flex cursor-pointer items-end gap-2 pb-2 text-xs font-bold uppercase text-slate-600">
           <input
             type="checkbox"
@@ -273,100 +258,108 @@ export function GestionJugadasModule() {
             {hipodromo} · C{carrera} · Retirados: {retirados.trim() || "—"}
           </span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-800 text-white">
-                <th className="w-8 border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">#</th>
-                <th className="w-8 border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">X</th>
-                <th className="w-28 border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">Jugada</th>
-                <th className="w-28 border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">Caballo</th>
-                <th className="w-20 border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase">Monto</th>
-                <th className="w-24 border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase">Cobro</th>
-                <th className="w-24 border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">Juega (Cliente 1)</th>
-                <th className="w-24 border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">Consigue (Cliente 2)</th>
-                <th className="w-16 border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase">Disp 1</th>
-                <th className="w-16 px-2 py-1.5 text-right font-bold uppercase">Disp 2</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line/70">
-              {filas.map((f, i) => {
-                const v = valida(f.jugada);
-                return (
-                  <tr key={i} className="align-middle">
-                    <td className="px-2 py-1 text-slate-400">{i + 1}</td>
-                    <td className="px-1 py-1 text-center">
-                      <button
-                        type="button"
-                        onClick={() => setFilas((fs) => fs.filter((_, j) => j !== i))}
-                        disabled={filas.length <= 1}
-                        aria-label="Eliminar fila"
-                        className="text-slate-300 hover:text-red-500"
-                      >
-                        ✕
-                      </button>
-                    </td>
-                    <td className="px-1 py-1">
-                      <input
-                        value={f.jugada}
-                        onChange={(e) => setFila(i, { jugada: e.target.value })}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            cargarAtaquilla();
-                          }
-                        }}
-                        placeholder="100 2n"
-                        className="w-full rounded-md border border-line bg-white px-2 py-1.5 text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                      />
-                    </td>
-                    <td className="px-1 py-1 text-sm font-semibold text-slate-600">
+        <table className="w-full table-fixed border-collapse text-sm">
+          <thead>
+            <tr className="bg-slate-800 text-white">
+              <th className="w-[5%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">#</th>
+              <th className="w-[4%] border-r border-slate-700 px-1 py-1.5 text-center font-bold uppercase">X</th>
+              <th className="w-[20%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">Jugada</th>
+              <th className="w-[13%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">Caballo</th>
+              <th className="w-[15%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase">Monto</th>
+              <th className="w-[12%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase">Cobro</th>
+              <th className="w-[11%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">Juega (Cliente 1)</th>
+              <th className="w-[11%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">Consigue (Cliente 2)</th>
+              <th className="w-[5%] border-r border-slate-700 px-1 py-1.5 text-right font-bold uppercase">Disp 1</th>
+              <th className="w-[4%] px-1 py-1.5 text-right font-bold uppercase">Disp 2</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line/70">
+            {filas.map((f, i) => {
+              const v = valida(f.jugada);
+              const detectado = f.jugada.trim() ? detectarModalidad(f.jugada) : null;
+              return (
+                <tr key={i} className="align-middle">
+                  <td className="px-2 py-1 text-slate-400">{i + 1}</td>
+                  <td className="px-1 py-1 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setFilas((fs) => fs.filter((_, j) => j !== i))}
+                      disabled={filas.length <= 1}
+                      aria-label="Eliminar fila"
+                      className="text-slate-300 hover:text-red-500"
+                    >
+                      ✕
+                    </button>
+                  </td>
+                  <td className="px-2 py-1">
+                    <input
+                      value={f.jugada}
+                      onChange={(e) => setFila(i, { jugada: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          cargarAtaquilla();
+                        }
+                      }}
+                      placeholder="100 2n · 1p · 10/7"
+                      className="w-full rounded-md border border-line bg-white px-2 py-1 text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    />
+                    <span
+                      className={`mt-0.5 block truncate text-[9px] font-black uppercase tracking-wide ${
+                        v.ok ? "text-emerald-600" : "text-slate-300"
+                      }`}
+                    >
+                      {detectado ?? (f.jugada.trim() ? "—" : "")}
+                    </span>
+                  </td>
+                  <td className="px-2 py-1">
+                    <p className="truncate text-sm font-semibold text-slate-600" title={v.ok ? (tablaDeCarrera?.caballos ?? []).find((c) => String(c.numero) === String(v.tipo.replace(/[a-z]+\s*/gi, "").trim()))?.nombre ?? `Nº ${v.tipo.split(/\s+|\//)[0]}` : undefined}>
                       {v.ok ? (tablaDeCarrera?.caballos ?? []).find((c) => String(c.numero) === String(v.tipo.replace(/[a-z]+\s*/gi, "").trim()))?.nombre ?? `Nº ${v.tipo.split(/\s+|\//)[0]}` : "—"}
-                    </td>
-                    <td className="px-2 py-1 text-right text-sm font-black text-slate-900">{v.ok ? v.monto : "—"}</td>
-                    <td className="px-2 py-1 text-right text-sm font-black text-success-600">
-                      {v.ok ? monedaFmt(Math.max(0, v.proyeccion.totalClienteNeto)) : "—"}
-                    </td>
-                    <td className="px-1 py-1">
-                      <input
-                        value={f.juega}
-                        onChange={(e) => setFila(i, { juega: e.target.value })}
-                        placeholder="Cliente 1…"
-                        className="w-full rounded-md border border-line bg-white px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                      />
-                    </td>
-                    <td className="px-1 py-1">
-                      <input
-                        value={f.consigue}
-                        onChange={(e) => setFila(i, { consigue: e.target.value })}
-                        placeholder="Cliente 2…"
-                        className="w-full rounded-md border border-line bg-white px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                      />
-                    </td>
-                    <td className="px-1 py-1">
-                      <input
-                        value={f.disp1}
-                        onChange={(e) => setFila(i, { disp1: e.target.value })}
-                        placeholder="0"
-                        inputMode="numeric"
-                        className="w-full rounded-md border border-line bg-white px-2 py-1.5 text-right text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                      />
-                    </td>
-                    <td className="px-1 py-1">
-                      <input
-                        value={f.disp2}
-                        onChange={(e) => setFila(i, { disp2: e.target.value })}
-                        placeholder="0"
-                        inputMode="numeric"
-                        className="w-full rounded-md border border-line bg-white px-2 py-1.5 text-right text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                    </p>
+                  </td>
+                  <td className="px-2 py-1 text-right text-sm font-black text-slate-900">{v.ok ? v.monto : "—"}</td>
+                  <td className="px-2 py-1 text-right text-sm font-black text-success-600">
+                    {v.ok ? monedaFmt(Math.max(0, v.proyeccion.totalClienteNeto)) : "—"}
+                  </td>
+                  <td className="px-2 py-1">
+                    <input
+                      value={f.juega}
+                      onChange={(e) => setFila(i, { juega: e.target.value })}
+                      placeholder="Cliente 1…"
+                      className="w-full rounded-md border border-line bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    />
+                  </td>
+                  <td className="px-2 py-1">
+                    <input
+                      value={f.consigue}
+                      onChange={(e) => setFila(i, { consigue: e.target.value })}
+                      placeholder="Cliente 2…"
+                      className="w-full rounded-md border border-line bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    />
+                  </td>
+                  <td className="px-1 py-1">
+                    <input
+                      value={f.disp1}
+                      onChange={(e) => setFila(i, { disp1: e.target.value })}
+                      placeholder="0"
+                      inputMode="numeric"
+                      className="w-full rounded-md border border-line bg-white px-1 py-1 text-right text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    />
+                  </td>
+                  <td className="px-1 py-1">
+                    <input
+                      value={f.disp2}
+                      onChange={(e) => setFila(i, { disp2: e.target.value })}
+                      placeholder="0"
+                      inputMode="numeric"
+                      className="w-full rounded-md border border-line bg-white px-1 py-1 text-right text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button size="sm" onClick={() => setFilas((f) => [...f, filaVacia()])}>＋ Agregar fila</Button>
           <Button variant="success" size="md" className="ml-auto" onClick={cargarAtaquilla}>

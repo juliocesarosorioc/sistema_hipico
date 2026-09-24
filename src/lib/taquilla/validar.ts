@@ -19,6 +19,38 @@ const REGLA_VIOLADA = /BLOQUEO DE PIZARRA|malformado|inválido|sin motor registr
 
 const POSICIONES = [1, 2, 3, 4, 5, 6, 7, 8];
 
+export type ModalidadAuto = "NINIS" | "EMPAREJAMIENTOS" | "CRUCES" | "COMPUESTAS" | "PUESTOS";
+
+/**
+ * Auto-detección de modalidad por la sintaxis de la jugada (sin motor):
+ *  - "y"/"n" (2n, 1y2n, 1 y 2n, 1y2n y 2n) → Ninis / Emparejamientos
+ *  - "/"     (10/7, 10/PP, PP)              → Cruces
+ *  - "/" + y (1/2n y 2n, 2n y 2/2n)         → Compuestas
+ *  - "p"     (1p, 2p)                       → Puestos
+ * Acepta "100 2n" (monto + jugada) o solo la nomenclatura "2n".
+ */
+export function detectarModalidad(texto: string): ModalidadAuto | null {
+  const bruto = String(texto ?? "").trim().replace(/\s+/g, " ");
+  if (!bruto) return null;
+  const m = /^\d+(?:\.\d+)?\s+(.+)$/.exec(bruto);
+  const jugada = (m ? m[1] : bruto)
+    .toUpperCase()
+    .replace(/(\d)Y(\d)/g, "$1 y $2")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!jugada) return null;
+
+  if (/^PP$/i.test(jugada) || /^\d+\/(?:\d+(?:\.\d+)?|PP)$/i.test(jugada)) return "CRUCES";
+
+  const bloques = jugada.split(/ Y | & /).filter(Boolean);
+  if (bloques.length > 1) {
+    return bloques.some((b) => b.includes("/")) ? "COMPUESTAS" : "EMPAREJAMIENTOS";
+  }
+  if (/\d+N$/.test(jugada)) return "NINIS";
+  if (/\d+P$/.test(jugada)) return "PUESTOS";
+  return null;
+}
+
 /**
  * Conecta el input del Bet Slip con el motor matemático (puestos.ts).
  * "En tiempo real": se simula la jugada en todas las posiciones de llegada
