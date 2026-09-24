@@ -2,16 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  asegurarEjemplar,
   bandera,
   exportarPadronCSV,
   filtrarPadron,
   fmtFecha,
   leerPadron,
+  NACIONALIDADES,
   nombrePais,
   type EjemplarPadron,
 } from "@/lib/gaceta/padron";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { ToastHost } from "@/components/ui/ToastHost";
 
 export function PadronTabla() {
   const [lista, setLista] = useState<EjemplarPadron[]>([]);
@@ -19,6 +22,9 @@ export function PadronTabla() {
   const [error, setError] = useState("");
   const [rls, setRls] = useState(false);
   const [busqueda, setBusqueda] = useState("");
+  const [nombreNuevo, setNombreNuevo] = useState("");
+  const [nacNueva, setNacNueva] = useState("VE");
+  const [registrando, setRegistrando] = useState(false);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -37,6 +43,31 @@ export function PadronTabla() {
   useEffect(() => {
     void cargar();
   }, [cargar]);
+
+  const registrarNuevo = async () => {
+    const nombre = nombreNuevo.trim().toUpperCase();
+    if (!nombre) return;
+    setRegistrando(true);
+    const r = await asegurarEjemplar(nombre, nacNueva);
+    setRegistrando(false);
+    const ya = r.ok && !r.nuevo;
+    window.dispatchEvent(
+      new CustomEvent("toast", {
+        detail: {
+          msg: r.ok
+            ? ya
+              ? `ⓘ "${nombre}" (${nacNueva}) ya estaba en el padrón.`
+              : `✅ "${nombre}" (${nacNueva}) registrado en el padrón.`
+            : `⚠️ ${r.error ?? "Error al registrar."}`,
+          tipo: r.ok ? (ya ? "info" : "success") : "error",
+        },
+      })
+    );
+    if (r.ok) {
+      setNombreNuevo("");
+      void cargar();
+    }
+  };
 
   const filtradas = useMemo(() => filtrarPadron(lista, busqueda), [lista, busqueda]);
 
@@ -113,25 +144,61 @@ export function PadronTabla() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-line bg-surface">
-        <div className="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
-            📖 Registro por Nombre y Nacionalidad
-          </h3>
-          <div className="flex w-full gap-2 sm:w-auto">
-            <div className="flex-1 sm:w-72">
+<div className="overflow-hidden rounded-2xl border border-line bg-surface">
+          <div className="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+              📖 Registro por Nombre y Nacionalidad
+            </h3>
+            <div className="flex w-full gap-2 sm:w-auto">
+              <div className="flex-1 sm:w-72">
+                <Input
+                  placeholder="Buscar nombre o nacionalidad..."
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  className="font-bold uppercase"
+                />
+              </div>
+              <Button variant="success" size="sm" onClick={() => exportarPadronCSV(lista)}>
+                CSV
+              </Button>
+            </div>
+          </div>
+
+          {/* Registro manual de un nuevo ejemplar (INSERT en `ejemplares`) */}
+          <div className="flex flex-col gap-2 border-b border-line bg-surfaceAlt/40 p-4 lg:flex-row lg:items-end">
+            <div className="flex-1">
               <Input
-                placeholder="Buscar nombre o nacionalidad..."
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
+                id="nuevo-ejemplar"
+                label="Registrar nuevo ejemplar"
+                placeholder="Nombre oficial (ej. Titanium Storm)"
+                value={nombreNuevo}
+                onChange={(e) => setNombreNuevo(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void registrarNuevo();
+                }}
                 className="font-bold uppercase"
               />
             </div>
-            <Button variant="success" size="sm" onClick={() => exportarPadronCSV(lista)}>
-              CSV
-            </Button>
+            <div className="flex items-end gap-2">
+              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
+                <span>Nacionalidad</span>
+                <select
+                  value={nacNueva}
+                  onChange={(e) => setNacNueva(e.target.value)}
+                  className="rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                >
+                  {NACIONALIDADES.map((n) => (
+                    <option key={n} value={n}>
+                      {bandera(n)} {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button variant="default" size="md" disabled={registrando || !nombreNuevo.trim()} onClick={() => void registrarNuevo()}>
+                {registrando ? "Registrando…" : "＋ Registrar"}
+              </Button>
+            </div>
           </div>
-        </div>
 
         {error && (
           <div className="border-b border-line bg-danger-500/10 p-4 text-center text-[11px] text-danger-500">
@@ -205,6 +272,8 @@ export function PadronTabla() {
         cada ejemplar se registra una sola vez por nombre + nacionalidad (los homónimos se distinguen por su país
         de origen; los hipódromos de EE.UU. quedan como USA por defecto y los de Venezuela como VE).
       </p>
+
+      <ToastHost />
     </div>
   );
 }

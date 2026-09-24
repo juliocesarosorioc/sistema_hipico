@@ -6,7 +6,9 @@ import {
   transformarGaceta,
   type CarreraExtraida,
 } from "@/lib/gaceta/ia";
+import { guardarHistorialGaceta, registrarEjemplares } from "@/lib/gaceta/padron";
 import { Button } from "@/components/ui/Button";
+import { ToastHost } from "@/components/ui/ToastHost";
 
 type PaginaGaceta = { id: string; dataUrl: string; orden: number };
 
@@ -28,6 +30,8 @@ export function GacetaIA() {
   const [diag, setDiag] = useState("");
   const [carreras, setCarreras] = useState<CarreraExtraida[]>([]);
   const [densa, setDensa] = useState(true);
+  const [registrando, setRegistrando] = useState(false);
+  const [historial, setHistorial] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -131,6 +135,33 @@ export function GacetaIA() {
     setCarreras(res.carreras);
     setEstado(`Extraídas ${res.carreras.length} carrera(s).`);
   }, [clave, paginas, seleccionadas]);
+
+  const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
+    window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
+  }, []);
+
+  /** Registra los ejemplares extraídos en `ejemplares` (paridad gaceta_padron.registrar). */
+  const registrarEnPadron = useCallback(async () => {
+    setRegistrando(true);
+    setEstado("Vinculando ejemplares con el padrón...");
+    const tot = await registrarEjemplares(carreras as unknown as Array<Record<string, unknown>>);
+    setCarreras([...carreras]);
+    setRegistrando(false);
+    toast(
+      `Padrón: ${tot.nuevos} nuevo(s), ${tot.vinculados} vinculado(s)${tot.fallidos ? `, ${tot.fallidos} fallido(s)` : ""}.`,
+      tot.fallidos ? "warning" : "success"
+    );
+    setEstado(`Padrón actualizado: ${tot.nuevos} nuevos, ${tot.vinculados} vinculados${tot.fallidos ? `, ${tot.fallidos} fallidos` : ""}.`);
+  }, [carreras, toast]);
+
+  /** Guarda el historial de la transcripción en `gaceta_procesada`. */
+  const guardarHistorial = useCallback(async () => {
+    setHistorial(true);
+    const fecha = carreras.find((c) => c.fecha)?.fecha ?? null;
+    const r = await guardarHistorialGaceta(carreras, fecha, "operador-admin");
+    setHistorial(false);
+    toast(r.ok ? "🗂️ Historial guardado en gaceta_procesada." : `⚠️ ${r.error ?? "Error al guardar el historial."}`, r.ok ? "success" : "error");
+  }, [carreras, toast]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -272,9 +303,19 @@ export function GacetaIA() {
 
       {carreras.length > 0 && (
         <div className="rounded-2xl border border-line bg-surface p-4">
-          <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-700">
-            📋 Carreras Extraídas ({carreras.length})
-          </h3>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+              📋 Carreras Extraídas ({carreras.length})
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="default" size="sm" disabled={registrando || historial} onClick={() => void registrarEnPadron()}>
+                {registrando ? "Vinculando…" : "✔ Registrar en el padrón"}
+              </Button>
+              <Button variant="outline" size="sm" disabled={historial || registrando} onClick={() => void guardarHistorial()}>
+                {historial ? "Guardando…" : "🗂️ Guardar historial"}
+              </Button>
+            </div>
+          </div>
           <div className={`grid gap-2 ${densa ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1"}`}>
             {carreras.map((c, i) => (
               <div key={i} className="rounded-xl border border-line bg-surfaceAlt/60 p-3">
@@ -298,6 +339,8 @@ export function GacetaIA() {
           </div>
         </div>
       )}
+
+      <ToastHost />
     </div>
   );
 }

@@ -174,3 +174,181 @@ export function exportarPadronCSV(lista: EjemplarPadron[]): void {
   a.click();
   URL.revokeObjectURL(a.href);
 }
+
+/** Nacionalidades soportadas (mismo catálogo del legacy gaceta). */
+export const NACIONALIDADES = ["VE", "USA", "BR", "AR", "CL", "MX", "PA", "PE", "CO", "EC", "UY"];
+
+export type ResAsegurarEjemplar = {
+  ok: boolean;
+  id?: string | number;
+  nuevo?: boolean;
+  error?: string;
+};
+
+/**
+ * Asegura un ejemplar en la tabla `ejemplares` (paridad con legacy gaceta_padron.js).
+ * Primero la RPC segura club_asegurar_ejemplar; si no existe, INSERT directo
+ * completando las columnas NOT NULL que exija la BD. Devuelve el id.
+ */
+export async function asegurarEjemplar(nombre: string, nacionalidad: string): Promise<ResAsegurarEjemplar> {
+  if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
+  const nm = String(nombre || "").trim().toUpperCase().slice(0, 100);
+  const nac = (String(nacionalidad || "VE").trim().toUpperCase() || "VE").slice(0, 3);
+  if (!nm) return { ok: false, error: "Nombre vacío." };
+  try {
+    const r = await supabase.rpc("club_asegurar_ejemplar", { v_nombre: nm, v_nacionalidad: nac });
+    if (!r.error && r.data != null) return { ok: true, id: r.data, nuevo: false };
+  } catch {
+    /* RPC inexistente → INSERT directo */
+  }
+  const extras: Record<string, number | string | boolean> = {};
+  for (let i = 0; i < 5; i++) {
+    const { data, error } = await supabase
+      .from("ejemplares")
+      .insert(Object.assign({ nombre: nm, nacionalidad: nac }, extras))
+      .select("id")
+      .single();
+    if (!error) return { ok: true, id: data?.id, nuevo: true };
+    if (error.code === "23505") {
+      const { data: existente } = await supabase.from("ejemplares").select("id").eq("nombre", nm).eq("nacionalidad", nac).limit(1).single();
+      if (existente) return { ok: true, id: existente.id, nuevo: false };
+      return { ok: false, error: "Registro duplicado y no localizable." };
+    }
+    const msj = String(error.message || "");
+    const nullM = /null value in column "([^"]+)"/.exec(msj);
+    if (nullM) {
+      const col = nullM[1];
+      if (extras[col] !== undefined) return { ok: false, error: msj };
+      extras[col] = 0;
+      continue;
+    }
+    const tipoM = /column "([^"]+)" is of type (?:text|character varying|boolean)/i.exec(msj);
+    if (tipoM) {
+      const col = tipoM[1];
+      if (extras[col] !== undefined) return { ok: false, error: msj };
+      extras[col] = /boolean/i.test(tipoM[2]) ? false : "";
+      continue;
+    }
+    return { ok: false, error: msj, id: undefined };
+  }
+  return { ok: false, error: "Columnas requeridas faltantes en ejemplares" };
+}
+
+export type CaballoRegistrable = {
+  nombre?: string;
+  nacionalidad?: string;
+  ejemplar_id?: string | number | null;
+  nuevo?: boolean;
+};
+
+export type ResRegistrarEjemplares = {
+  nuevos: number;
+  vinculados: number;
+  fallidos: number;
+  errorDb?: string;
+};
+
+/**
+ * Vincula cada caballo/ejemplar con su id del padrón, creando en `ejemplares`
+ * los que no existan (misma lógica de legacy gaceta_padron.js registrar()).
+ * Soporta carreras con `caballos` (shape programa_dia) o con `ejemplares` (IA).
+ */
+export async function registrarEjemplares(carreras: Array<Record<string, unknown>>): Promise<ResRegistrarEjemplares> {
+  const totales: ResRegistrarEjemplares = { nuevos: 0, vinculados: 0, fallidos: 0 };
+  if (!supabase) return totales;
+
+  const mapa = new Map<string, string | number>();
+  try {
+    const rpc = await supabase.rpc("club_listar_ejemplares");
+    let data: Array<{ id: string | number; nombre?: string; nacionalidad?: string | null }> | null = null;
+    if (!rpc.error && Array.isArray(rpc.data)) data = rpc.data as Array<{ id: string | number; nombre?: string; nacionalidad?: string | null }>;
+    else {
+      const directo = await supabase.from("ejemplares").select("id, nombre, nacionalidad");
+      if (!directo.error) data = directo.data;
+      else return { ...totales, errorDb: directo.error.message };
+    }
+    (data || []).forEach((e) => {
+      const clave = `${String(e.nombre || "").trim().toUpperCase()}|${String(e.nacionalidad || "VE").trim().toUpperCase() || "VE"}`;
+      mapa.set(clave, e.id);
+    });
+  } catch (e) {
+    return { ...totales, errorDb: e instanceof Error ? e.message : String(e) };
+  }
+
+  const filas: CaballoRegistrable[] = [];
+  for (const c of carreras) {
+    const lote = ((c.caballos ?? c.ejemplares) as CaballoRegistrable[] | undefined) ?? [];
+    for (const ej of lote) {
+      if (!ej || typeof ej !== "object") continue;
+      const nombre = String(ej.nombre || "").trim().toUpperCase().slice(0, 100);
+      const nac = (String(ej.nacionalidad || "VE").trim().toUpperCase() || "VE").slice(0, 3);
+      ej.nombre = nombre;
+      ej.nacionalidad = nac;
+      if (!nombre) continue;
+      filas.push({ ...ej, nombre, nacionalidad: nac });
+    }
+  }
+
+  for (const ej of filas) {
+    const clave = `${ej.nombre}|${ej.nacionalidad}`;
+    const existente = mapa.get(clave);
+    if (existente != null) {
+      ej.ejemplar_id = existente;
+      ej.nuevo = false;
+      totales.vinculados++;
+      continue;
+    }
+    const r = await asegurarEjemplar(ej.nombre ?? "", ej.nacionalidad ?? "VE");
+    if (!r.ok || r.id == null) {
+      totales.fallidos++;
+      totales.errorDb = totales.errorDb ?? r.error;
+      continue;
+    }
+    ej.ejemplar_id = r.id;
+    ej.nuevo = Boolean(r.nuevo);
+    if (r.nuevo) totales.nuevos++;
+    else totales.vinculados++;
+    mapa.set(clave, r.id);
+  }
+  return totales;
+}
+
+export type ResHistorialGaceta = { ok: boolean; error?: string };
+
+/** Lee el padrón para autocompletados (RPC club_listar_ejemplares → SELECT directo). */
+export async function listarPadronSimple(): Promise<Array<{ id: string | number; nombre: string; nacionalidad: string }>> {
+  if (!supabase) return [];
+  try {
+    const rpc = await supabase.rpc("club_listar_ejemplares");
+    let data: Array<{ id: string | number; nombre?: string; nacionalidad?: string | null }> | null = null;
+    if (!rpc.error && Array.isArray(rpc.data)) data = rpc.data as unknown as Array<NonNullable<typeof data>[number]>;
+    else {
+      const d = await supabase.from("ejemplares").select("id, nombre, nacionalidad").order("nombre");
+      if (!d.error) data = d.data;
+    }
+    return (data ?? []).map((e) => ({
+      id: e.id,
+      nombre: String(e.nombre ?? "").toUpperCase(),
+      nacionalidad: String(e.nacionalidad || "VE").toUpperCase(),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** Inserta el historial de la transcripción en `gaceta_procesada` (paridad legacy). */
+export async function guardarHistorialGaceta(carreras: unknown[], fecha?: string | null, creadoPor?: string): Promise<ResHistorialGaceta> {
+  if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
+  try {
+    const { error } = await supabase.from("gaceta_procesada").insert({
+      fecha_gaceta: fecha || null,
+      num_carreras: Array.isArray(carreras) ? carreras.length : 0,
+      contenido: Array.isArray(carreras) ? carreras : [],
+      creado_por: creadoPor || "desconocido",
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
