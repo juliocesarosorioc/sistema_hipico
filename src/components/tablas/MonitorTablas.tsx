@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { StoredTablaFija } from "@/store/useTablasFijasStore";
 import { colorDeNumero, textoDeNumero, fmtMoney, FLAG, sumaBase, parseNum } from "@/lib/tablas/tipos";
 import { Button } from "@/components/ui/Button";
+import { Guard } from "@/components/ui/Guard";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 
 export type VentaTablaItem = { tablaId: string | number; numero: string; nombre: string; monto: number };
@@ -138,15 +139,21 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar }: Props)
 
             {/* Acciones */}
             <div className="flex items-center gap-1.5 border-t border-slate-100 bg-white px-2 py-1.5 no-print">
-              <Button variant="ghost" size="sm" className="flex-1" onClick={() => { setEditando(t); setPatchEdicion({}); }}>
-                ✏️ Editar
-              </Button>
-              <Button size="sm" className="flex-1" onClick={() => { setVendiendo(t); setEjemplarVenta(""); setMontoVenta(""); }}>
-                🎟️ Vender
-              </Button>
-              <Button variant="danger" size="sm" className="flex-1" onClick={() => setLiquidando(t)}>
-                🏁 Liquidar
-              </Button>
+              <Guard permiso="editar_tabla">
+                <Button variant="ghost" size="sm" className="flex-1" onClick={() => { setEditando(t); setPatchEdicion({}); }}>
+                  ✏️ Editar
+                </Button>
+              </Guard>
+              <Guard permiso="vender_tabla">
+                <Button size="sm" className="flex-1" onClick={() => { setVendiendo(t); setEjemplarVenta(""); setMontoVenta(""); }}>
+                  🎟️ Vender
+                </Button>
+              </Guard>
+              <Guard permiso="liquidar_carrera">
+                <Button variant="danger" size="sm" className="flex-1" onClick={() => setLiquidando(t)}>
+                  🏁 Liquidar
+                </Button>
+              </Guard>
             </div>
           </div>
         ))}

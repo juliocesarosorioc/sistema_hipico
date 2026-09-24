@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAuthStore } from "@/store/useAuthStore";
+import { Guard } from "@/components/ui/Guard";
 
 type Item = { href?: string; emoji: string; txt: string };
 
@@ -51,7 +53,8 @@ const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
     id: "administracion",
     titulo: "Administración",
     items: [
-      { emoji: "🛡️", txt: "Operadores" },
+      { emoji: "🛡️", txt: "Seguridad y Accesos", href: "/seguridad" },
+      { emoji: "👥", txt: "Operadores" },
       { emoji: "🕘", txt: "Auditoría" },
       { emoji: "🩺", txt: "Diagnóstico" },
     ],
@@ -67,6 +70,7 @@ const esActiva = (pathname: string, href?: string) =>
  */
 export function Sidebar() {
   const pathname = usePathname();
+  const perfiles = useAuthStore((s) => s.perfiles);
 
   const cerrarSesion = () => {
     try {
@@ -90,7 +94,7 @@ export function Sidebar() {
         </h1>
         <p className="mt-2 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
           <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          Administrador Principal
+          {perfiles.length ? perfiles.join(" · ") : "Administrador Principal"}
         </p>
       </div>
 
@@ -123,17 +127,33 @@ export function Sidebar() {
                 }
                 return (
                   <li key={it.href}>
-                    <Link
-                      href={it.href}
-                      className={`flex items-center gap-3 border-l-4 px-5 py-3 text-base font-semibold transition-colors ${
-                        activo
-                          ? "border-blue-400 bg-blue-600 text-white"
-                          : "border-transparent text-slate-300 hover:bg-slate-800 hover:text-white"
-                      }`}
-                    >
-                      <span className="w-6 text-center">{it.emoji}</span>
-                      <span>{it.txt}</span>
-                    </Link>
+                    {it.href === "/seguridad" ? (
+                      <Guard permiso="administrar_seguridad">
+                        <Link
+                          href={it.href}
+                          className={`flex items-center gap-3 border-l-4 px-5 py-3 text-base font-semibold transition-colors ${
+                            activo
+                              ? "border-blue-400 bg-blue-600 text-white"
+                              : "border-transparent text-slate-300 hover:bg-slate-800 hover:text-white"
+                          }`}
+                        >
+                          <span className="w-6 text-center">{it.emoji}</span>
+                          <span>{it.txt}</span>
+                        </Link>
+                      </Guard>
+                    ) : (
+                      <Link
+                        href={it.href}
+                        className={`flex items-center gap-3 border-l-4 px-5 py-3 text-base font-semibold transition-colors ${
+                          activo
+                            ? "border-blue-400 bg-blue-600 text-white"
+                            : "border-transparent text-slate-300 hover:bg-slate-800 hover:text-white"
+                        }`}
+                      >
+                        <span className="w-6 text-center">{it.emoji}</span>
+                        <span>{it.txt}</span>
+                      </Link>
+                    )}
                   </li>
                 );
               })}

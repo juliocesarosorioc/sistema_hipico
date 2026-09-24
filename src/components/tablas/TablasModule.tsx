@@ -11,6 +11,7 @@ import { TarjetaEnsamblaje } from "@/components/tablas/TarjetaEnsamblaje";
 import { MonitorTablas, type VentaTablaItem } from "@/components/tablas/MonitorTablas";
 import { CarritoVentas } from "@/components/tablas/CarritoVentas";
 import { ToastHost } from "@/components/ui/ToastHost";
+import { Guard } from "@/components/ui/Guard";
 import type { PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 
 type Props = {
@@ -298,13 +299,15 @@ export function TablasModule(props: Props) {
         onToggle={() => setSecciones((s) => ({ ...s, monitor: !s.monitor }))}
         accion={
           <div className="flex items-center bg-slate-900 pr-2">
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="my-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-4 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-emerald-700"
-            >
-              🖨️ Imprimir Tablas
-            </button>
+            <Guard permiso="imprimir_tablas">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="my-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-4 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-emerald-700"
+              >
+                🖨️ Imprimir Tablas
+              </button>
+            </Guard>
           </div>
         }
       >
