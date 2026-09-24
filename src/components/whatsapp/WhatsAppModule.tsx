@@ -11,7 +11,6 @@ import {
   componerTelefono,
   contarEnviosWsp,
   desglosarTelefono,
-  fechaHoy,
   fmtUSD,
   guardarPlantillas,
   guardarTelefonoCliente,
@@ -27,6 +26,15 @@ import {
   type PlantillaWsp,
   type RegistroWsp,
 } from "@/lib/whatsapp";
+import {
+  cargarJugadasDeCarrera,
+  relacionJugadas,
+  relacionResultados,
+  reporteDisponibilidad,
+  type MetaCarrera,
+} from "@/lib/reportGenerator";
+
+type TipoReporte = "saldos" | "jugadas" | "resultados";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -72,6 +80,11 @@ export function WhatsAppModule() {
   const [fechaHeader, setFechaHeader] = useState("Cargando…");
   const [modalPlantillas, setModalPlantillas] = useState(false);
   const [guardandoTel, setGuardandoTel] = useState(false);
+  const [tipoReporte, setTipoReporte] = useState<TipoReporte>("saldos");
+  const [repHipodromo, setRepHipodromo] = useState("");
+  const [repCarrera, setRepCarrera] = useState("");
+  const [repRetirados, setRepRetirados] = useState("");
+  const [repPizarra, setRepPizarra] = useState("");
 
   const clienteSel = useMemo(
     () => clientes.find((c) => String(c.id) === clienteId) ?? null,
@@ -141,34 +154,45 @@ export function WhatsAppModule() {
   };
 
   // ============================================================
-  // REPORTE GENERAL DE SALDOS
+  // REPORTE DE TEXTO (saldos / relación de jugadas / resultados)
   // ============================================================
-  const generarReporte = () => {
-    const p = plantillas.find((x) => x.id === "reporte_general");
-    if (!p) {
-      setReporte("Sin plantilla de reporte. Edítala en Gestionar Plantillas (⚙️).");
+  const generarReporte = async () => {
+    if (tipoReporte === "saldos") {
+      const texto = reporteDisponibilidad(
+        clientes.map((c) => ({ nombre: c.nombre, saldo: Number(c.saldo_actual) || 0 }))
+      );
+      setReporte(texto);
+      toast("Disponibilidad actualizada.", "success");
       return;
     }
-    let lineas = "";
-    let total = 0;
-    let conSaldo = 0;
-    clientes.forEach((c) => {
-      const s = Number(c.saldo_actual) || 0;
-      if (s !== 0) {
-        lineas += `${s > 0 ? "🟢" : "🔴"} *${c.nombre}:* $${fmtUSD(s)}\n`;
-        total += s;
-        conSaldo += 1;
-      }
+    const hip = repHipodromo.trim().toUpperCase();
+    const car = repCarrera.trim();
+    if (!hip || !car) {
+      setReporte("Indica Hipódromo y N° de Carrera para generar la relación.");
+      return;
+    }
+    const meta: MetaCarrera = {
+      grupo: CLUB_NOMBRE,
+      hipodromo: hip,
+      carrera: car,
+      retirados: repRetirados.trim(),
+      pizarra: repPizarra.trim(),
+    };
+    const jugadas = await cargarJugadasDeCarrera({
+      hipodromo: hip,
+      carrera: car,
+      soloPendientes: tipoReporte === "jugadas",
     });
-    if (conSaldo === 0) lineas += "Sin movimientos pendientes. ✅\n";
+    if (jugadas.length === 0) {
+      setReporte("No hay jugadas registradas para esta carrera (regístralas en Taquilla o la boletería).");
+      return;
+    }
     setReporte(
-      p.txt
-        .replace(/\{fecha\}/g, fechaHoy())
-        .replace(/\{club\}/g, CLUB_NOMBRE)
-        .replace(/\{lineas\}/g, lineas)
-        .replace(/\{balance\}/g, fmtUSD(total))
+      tipoReporte === "jugadas"
+        ? relacionJugadas(meta, jugadas)
+        : relacionResultados(meta, jugadas)
     );
-    toast("Reporte general actualizado.", "success");
+    toast(tipoReporte === "jugadas" ? "Relación de jugadas generada." : "Relación de resultados generada.", "success");
   };
 
   const copiarReporte = async () => {
@@ -283,15 +307,84 @@ export function WhatsAppModule() {
       </section>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* ================= REPORTE GENERAL ================= */}
+        {/* ================= REPORTE DE TEXTO ================= */}
         <section className="self-start overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
           <div className="flex items-center justify-between bg-emerald-700 p-3.5 text-xs font-bold uppercase tracking-wider text-white">
-            <span>📈 Reporte General de Saldos</span>
+            <span>📈 Generador de Reportes</span>
           </div>
           <div className="space-y-3 p-5">
             <p className="text-[11px] font-medium text-slate-500">
-              Genera el balance día a día de todos los clientes. Luego cópialo o ábrelo directamente en tu WhatsApp.
+              Genera la disponibilidad de saldos, la relación de jugadas (pre-carrera) o la relación de
+              resultados (post-liquidación). Luego cópialo o ábrelo directamente en tu WhatsApp.
             </p>
+
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  { id: "saldos", label: "💰 Disponibilidad (Saldos)" },
+                  { id: "jugadas", label: "🏇 Relación de Jugadas" },
+                  { id: "resultados", label: "🏁 Relación de Resultados" },
+                ] as Array<{ id: TipoReporte; label: string }>
+              ).map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTipoReporte(t.id)}
+                  aria-pressed={tipoReporte === t.id}
+                  className={`rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                    tipoReporte === t.id
+                      ? "bg-emerald-600 text-white"
+                      : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {tipoReporte !== "saldos" && (
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex flex-col gap-1 text-[10px] font-bold uppercase text-slate-600">
+                  Hipódromo
+                  <input
+                    value={repHipodromo}
+                    onChange={(e) => setRepHipodromo(e.target.value)}
+                    placeholder="LA RINCONADA"
+                    className="rounded-lg border border-slate-300 bg-slate-50 px-2 py-2 text-xs font-bold uppercase text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-[10px] font-bold uppercase text-slate-600">
+                  Carrera N°
+                  <input
+                    value={repCarrera}
+                    onChange={(e) => setRepCarrera(e.target.value)}
+                    type="number"
+                    min={1}
+                    placeholder="4"
+                    className="rounded-lg border border-slate-300 bg-slate-50 px-2 py-2 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-[10px] font-bold uppercase text-slate-600">
+                  Retirados
+                  <input
+                    value={repRetirados}
+                    onChange={(e) => setRepRetirados(e.target.value)}
+                    placeholder="2, 5 → NO HUBO si vacío"
+                    className="rounded-lg border border-slate-300 bg-slate-50 px-2 py-2 text-[11px] font-semibold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-[10px] font-bold uppercase text-slate-600">
+                  Pizarra {tipoReporte === "jugadas" ? "(opcional)" : "(resultados exactos)"}
+                  <input
+                    value={repPizarra}
+                    onChange={(e) => setRepPizarra(e.target.value)}
+                    placeholder="1-2-3-4-5-6-7-8"
+                    className="rounded-lg border border-slate-300 bg-slate-50 px-2 py-2 text-[11px] font-semibold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </label>
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Button variant="default" size="md" onClick={generarReporte} className="bg-emerald-700 hover:bg-emerald-800">
                 🔄 Generar / Actualizar
