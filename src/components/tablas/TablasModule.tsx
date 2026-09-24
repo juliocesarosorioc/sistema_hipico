@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useTablasFijasStore, type StoredTablaFija } from "@/store/useTablasFijasStore";
 import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { parseNum, sumaBase, fmtMoney, type DraftCarrera, type ItemCarritoVenta } from "@/lib/tablas/tipos";
@@ -41,6 +42,7 @@ type Props = {
  *    suscripción realtime a tablas_fijas, defensiva).
  */
 export function TablasModule(props: Props) {
+  const router = useRouter();
   const { persistirPublicacion, persistirLote, persistirEdicion, persistirVenta, persistirLiquidacion } = props;
 
   const tablas = useTablasFijasStore((s) => s.tablas);
@@ -227,9 +229,7 @@ export function TablasModule(props: Props) {
   };
 
   const pegarDesdeGaceta = () => {
-    const uid = "car-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    setDrafts((ds) => [{ uid, hipodromo: "", carrera: "", distancia: "1100", superficie: "ARENA", premio: "100", caballos: [] }, ...ds]);
-    toast("📋 Tarjeta nueva creada en el ensamblaje.", "info");
+    router.push("/ejemplares?tab=gaceta");
   };
 
   const agregarAlCarrito = (v: VentaTablaItem) => {
@@ -371,7 +371,7 @@ export function TablasModule(props: Props) {
               type="button"
               onClick={pegarDesdeGaceta}
               className="m-1.5 whitespace-nowrap rounded-lg bg-cyan-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-cyan-700"
-              title="Crear una tarjeta nueva en el ensamblaje"
+              title="Ir al módulo de Gacetas IA (las carreras se extraen desde la IA)"
             >
               📋 Pegar desde Gaceta
             </button>

@@ -24,23 +24,38 @@ export type OpcionHipodromo = { value: string; label: string };
 
 /** Lista de hipódromos operativos (Solo Activos — Supabase si responde, si no, fallback local). */
 export async function listarHipodromos(): Promise<OpcionHipodromo[]> {
+  const mapear = (rows: unknown[]): OpcionHipodromo[] =>
+    rows
+      .map((r) => {
+        const h = r as { nombre?: unknown };
+        return { value: String(h.nombre ?? "").toUpperCase(), label: String(h.nombre ?? "") };
+      })
+      .filter((h) => h.label.trim().length)
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+  const sdb = supabase;
+  if (!sdb) return mapear(FALLBACK_HIPODROMOS);
+
+  const orquestar = async () => {
+    // Intento 1 — esquema con borrado lógico explícito (deleted_at).
+    const r1 = await sdb.from("hipodromos").select("id, nombre").is("deleted_at", null).order("nombre");
+    if (!r1.error) return r1.data as unknown[];
+    // Intento 2 — esquema mínimo legacy (estado = 'Activo').
+    const r2 = await sdb.from("hipodromos").select("id, nombre").eq("estado", "Activo").order("nombre");
+    if (!r2.error) return r2.data as unknown[];
+    // Intento 3 — variante "estatus" (algunas BD usan este nombre).
+    const r3 = await sdb.from("hipodromos").select("id, nombre").eq("estatus", "Activo").order("nombre");
+    if (!r3.error) return r3.data as unknown[];
+    throw new Error([r1.error?.message, r2.error?.message, r3.error?.message].filter(Boolean).join("; "));
+  };
+
   try {
-    if (supabase) {
-      const { data } = await supabase
-        .from("hipodromos")
-        .select("id, nombre")
-        .eq("estado", "Activo")
-        .order("nombre");
-      if (data && data.length) {
-        return data
-          .map((h) => ({ value: String(h.nombre).toUpperCase(), label: String(h.nombre) }))
-          .sort((a, b) => a.label.localeCompare(b.label));
-      }
-    }
-  } catch {
-    /* sin conexión → fallback local */
+    const filas = await orquestar();
+    return mapear(filas);
+  } catch (e) {
+    console.warn("listarHipodromos: sin filtro de borrado lógico aplicable, usando respaldo local.", e);
+    return mapear(FALLBACK_HIPODROMOS);
   }
-  return FALLBACK_HIPODROMOS.map((n) => ({ value: n, label: n }));
 }
 
 const nombrarRpc = "club_listar_tablas_fijas_publicadas";
