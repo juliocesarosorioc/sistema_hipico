@@ -94,6 +94,55 @@ export function aNum(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * Normalización ESTRICTA de fecha a ISO 8601 (YYYY-MM-DD).
+ * Acepta "2026-09-24", "2026-9-4", "24/09/2026" y "Domingo, 24 de Septiembre
+ * de 2026" (y variantes con "sep", "septiembre"… SOLO si el mes es escribible).
+ * Devuelve null si no puede resolver el día/mes/año. NUNCA devuelve una fecha
+ * parcial: la persistencia solo recibe ISO válido o null (→ hoyLocal).
+ */
+export function normalizarFechaIso(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  let s = String(v).trim();
+  if (!s) return null;
+  const MESES: Record<string, number> = {
+    enero: 1, ene: 1, febrero: 2, feb: 2, marzo: 3, mar: 3,
+    abril: 4, abr: 4, mayo: 5, may: 5, junio: 6, jun: 6, julio: 7, jul: 7,
+    agosto: 8, ago: 8, septiembre: 9, setiembre: 9, sep: 9, sept: 9,
+    octubre: 10, oct: 10, noviembre: 11, nov: 11, diciembre: 12, dic: 12,
+  };
+  let y: number | null = null;
+  let m: number | null = null;
+  let d: number | null = null;
+  // 1) YYYY-MM-DD / YYYY/M/D / YYYY-MM-DDTHH...
+  let mm = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (mm) {
+    y = parseInt(mm[1], 10);
+    m = parseInt(mm[2], 10);
+    d = parseInt(mm[3], 10);
+  } else {
+    // 2) DD/MM/YYYY o DD-MM-YYYY (orden mexicano-típico para latam).
+    mm = s.match(/^(\d{1,2})[/.](\d{1,2})[/.](\d{4})/);
+    if (mm) {
+      d = parseInt(mm[1], 10);
+      m = parseInt(mm[2], 10);
+      y = parseInt(mm[3], 10);
+    } else {
+      // 3) "Domingo, 24 de Septiembre de 2026" (y variantes).
+      const sep = s.match(/^[\p{L} ]*?(\d{1,2})\s+de\s+([A-Za-z]+)\s+de\s+(\d{4})/u);
+      if (sep) {
+        d = parseInt(sep[1], 10);
+        m = MESES[sep[2].toLowerCase()] ?? null;
+        y = parseInt(sep[3], 10);
+      }
+    }
+  }
+  if (!y || !m || !d) return null;
+  const fecha = new Date(Date.UTC(y, m - 1, d));
+  if (fecha.getUTCFullYear() !== y || fecha.getUTCMonth() !== m - 1 || fecha.getUTCDate() !== d) return null;
+  return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
 export function paisHipodromo(hipo?: string | null): string | null {
   const h = String(hipo || "").trim().toUpperCase();
   if (!h) return null;
@@ -334,5 +383,8 @@ export function aDraftCarrera(pre: CarreraRegistro, sufijo = ""): DraftCarrera {
     superficie: String(pre.superficie || "ARENA").toUpperCase(),
     premio: String(pre.premio ?? 100),
     caballos,
+    /** Fecha del evento leída por la IA (ISO estricto) — se conserva para que
+     *  la publicación de la tabla fija use ESA fecha y no la del sistema. */
+    fecha: pre.fecha ? normalizarFechaIso(pre.fecha) : null,
   };
 }

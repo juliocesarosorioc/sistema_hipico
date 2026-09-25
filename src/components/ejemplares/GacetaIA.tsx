@@ -13,6 +13,7 @@ import {
   limpiarTodoRegistro,
   listaHors,
   marcarEnviadas,
+  normalizarFechaIso,
   parsearRangoPaginas,
   persistirRegistro,
   type CarreraRegistro,
@@ -344,6 +345,9 @@ export function GacetaIA() {
       if (res.cuotaTotal) toast(`Cuota agotada en parte de Gemini: resultado PARCIAL (${res.carreras.length} carrera(s)).`, "warning");
       const lista: CarreraRegistro[] = res.carreras.map((c) => ({
         ...c,
+        // Fecha del evento SIEMPRE en ISO estricto (YYYY-MM-DD) antes de
+        // persistir: la IA puede devolver "24/09/2026" o un texto encabezado.
+        fecha: c.fecha ? normalizarFechaIso(c.fecha) : null,
         premio: 100,
         ejemplares: (c.ejemplares || []).map((e) => ({ ...e, valor: 0, pts: 0 })),
         seleccionada: true,

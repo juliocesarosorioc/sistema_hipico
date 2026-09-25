@@ -140,6 +140,8 @@ export type DraftCarrera = {
   superficie: string;
   premio: string;
   caballos: EjemplarTabla[];
+  /** Fecha del evento (ISO YYYY-MM-DD) heredada de la Gaceta IA. */
+  fecha?: string | null;
 };
 
 export const draftVacio = (): DraftCarrera => ({
@@ -150,6 +152,7 @@ export const draftVacio = (): DraftCarrera => ({
   superficie: "ARENA",
   premio: "100",
   caballos: [],
+  fecha: null,
 });
 
 /** Item del carrito de venta flotante (arriba a la derecha). */

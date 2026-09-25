@@ -9,6 +9,7 @@ import { aDraftCarrera, eliminarDelRegistroGaceta, leerBuzonEnsamblaje, limpiarB
 import { useCarrerasDiaStore } from "@/store/useCarrerasDiaStore";
 import { registrarCarreraProgramada } from "@/lib/carreras-dia";
 import { asegurarHipodromo } from "@/lib/tablas/rpc";
+import { hoyLocal } from "@/lib/gaceta/programa";
 import { SeccionPliegue } from "@/components/tablas/SeccionPliegue";
 import { ParametrosCarrera } from "@/components/tablas/ParametrosCarrera";
 import { TarjetaEnsamblaje } from "@/components/tablas/TarjetaEnsamblaje";
@@ -58,6 +59,9 @@ export function TablasModule(props: Props) {
   const [impresionAbierta, setImpresionAbierta] = useState(false);
   const [drafts, setDrafts] = useState<DraftCarrera[]>([]);
   const [carrito, setCarrito] = useState<ItemCarritoVenta[]>([]);
+  /** Fecha del programa (Filtro Universal): las tarjetas heredadas de la
+   *  Gaceta traen la fecha del evento; las manuales usan este valor (hoy). */
+  const [fechaPrograma, setFechaPrograma] = useState(() => hoyLocal());
 
   const openCount = tablas.filter((t) => !t.cerrada).length;
 
@@ -143,7 +147,9 @@ export function TablasModule(props: Props) {
     hipodromo: d.hipodromo.trim().toUpperCase(),
     hipodromo_id: null,
     carrera: Math.round(parseNum(d.carrera)) || null,
-    fecha: new Date().toISOString().slice(0, 10),
+    // La fecha del evento heredada de la Gaceta SIEMPRE gana; si la tarjeta
+    // es manual, usa la fecha del Filtro Universal (nunca UTC del sistema).
+    fecha: d.fecha || fechaPrograma,
     fecha_creacion: new Date().toISOString(),
     estado: "Abierta",
     premio_original: parseNum(d.premio),
@@ -184,7 +190,7 @@ export function TablasModule(props: Props) {
     if ((d.caballos ?? []).length === 0) {
       await asegurarHipodromo(d.hipodromo.trim()).catch(() => null);
       const r = await registrarCarreraProgramada({
-        fecha: new Date().toISOString().slice(0, 10),
+        fecha: d.fecha || fechaPrograma,
         hipodromo: d.hipodromo.trim(),
         carrera: Math.round(parseNum(d.carrera)) || d.carrera,
       }).catch(() => ({ ok: false as const, error: "sin conexión" }));
@@ -233,7 +239,7 @@ export function TablasModule(props: Props) {
       for (const d of vacias) {
         await asegurarHipodromo(d.hipodromo.trim()).catch(() => null);
         const r = await registrarCarreraProgramada({
-          fecha: new Date().toISOString().slice(0, 10),
+          fecha: d.fecha || fechaPrograma,
           hipodromo: d.hipodromo.trim(),
           carrera: Math.round(parseNum(d.carrera)) || d.carrera,
         }).catch(() => ({ ok: false as const, error: "sin conexión" }));
@@ -425,6 +431,18 @@ export function TablasModule(props: Props) {
         >
           🔄 <span className="hidden sm:inline">Refrescar</span>
         </button>
+        <label
+          className="flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1.5 text-xs font-black uppercase text-slate-600"
+          title="Filtro Universal por fecha: las tarjetas manuales y carreras vacías se publican bajo ESTA fecha (YYYY-MM-DD)"
+        >
+          📅
+          <input
+            type="date"
+            value={fechaPrograma}
+            onChange={(e) => setFechaPrograma(e.target.value || hoyLocal())}
+            className="bg-transparent text-xs font-bold text-slate-700 outline-none"
+          />
+        </label>
       </div>
 
       {/* Bloque 1: Parámetros */}
