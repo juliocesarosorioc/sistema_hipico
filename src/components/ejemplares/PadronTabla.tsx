@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   asegurarEjemplar,
-  bandera,
   exportarPadronCSV,
   filtrarPadron,
   fmtFecha,
@@ -15,6 +14,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ToastHost } from "@/components/ui/ToastHost";
+import { Flag } from "@/components/ui/BanderaPais";
 
 export function PadronTabla() {
   const [lista, setLista] = useState<EjemplarPadron[]>([]);
@@ -134,7 +134,7 @@ export function PadronTabla() {
                   }`}
                   title={`${nombrePais(nac)} — toque para filtrar`}
                 >
-                  <span>{bandera(nac)}</span>
+                  <span><Flag nac={nac} size={13} withName={false} /></span>
                   <span>{nac}</span>
                   <span className="rounded-full bg-white px-1.5 text-[10px] text-slate-700">{n}</span>
                 </button>
@@ -189,7 +189,7 @@ export function PadronTabla() {
                 >
                   {NACIONALIDADES.map((n) => (
                     <option key={n} value={n}>
-                      {bandera(n)} {n}
+                      {n}
                     </option>
                   ))}
                 </select>
@@ -250,7 +250,7 @@ export function PadronTabla() {
                           }`}
                           title={nombrePais(nac)}
                         >
-                          {bandera(nac)} {nac}
+                          <Flag nac={nac} size={12} withName={false} /> {nac}
                         </span>
                       </td>
                       <td className={`p-2 text-center font-bold ${e.totalTablas > 0 ? "text-success-500" : "text-slate-500"}`}>

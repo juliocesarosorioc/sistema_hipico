@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import type { StoredTablaFija } from "@/store/useTablasFijasStore";
-import { colorDeNumero, textoDeNumero, fmtMoney, parseNum, FLAG, type EjemplarTabla } from "@/lib/tablas/tipos";
+import { colorDeNumero, textoDeNumero, fmtMoney, parseNum, type EjemplarTabla } from "@/lib/tablas/tipos";
 import { listarGruposVenta, jugadoresDeGrupo, type GrupoVenta, type ClienteVenta } from "@/lib/grupos";
 import { Button } from "@/components/ui/Button";
+import { Flag } from "@/components/ui/BanderaPais";
 
 export type VentaRapidaItem = {
   numero: string;
@@ -134,7 +135,7 @@ export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, 
             <div className="min-w-0 flex-1">
               <span className="block truncate text-base font-black uppercase text-slate-800">{ejemplar.nombre || "Sin nombre"}</span>
               <span className="block text-xs font-bold text-slate-500">
-                {FLAG(ejemplar.nacionalidad)} N° {num || "‑"}
+                <Flag nac={ejemplar.nacionalidad} size={13} /> N° {num || "‑"}
               </span>
             </div>
             <span

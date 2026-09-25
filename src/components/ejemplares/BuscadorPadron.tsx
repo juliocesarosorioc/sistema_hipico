@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { bandera } from "@/lib/gaceta/padron";
+import { Flag } from "@/components/ui/BanderaPais";
 
 export type OpcionPadron = {
   id: string | number;
@@ -63,44 +63,51 @@ export function BuscadorPadron({ opciones, valor, onChange, vinculado, placehold
     setAbierto(false);
   };
 
+  const valorNac = vinculado
+    ? (opciones.find((o) => o.nombre.toUpperCase() === String(valor || "").toUpperCase())?.nacionalidad ?? "")
+    : "";
+
   return (
     <div ref={ref} className="relative min-w-0">
-      <input
-        value={abierto ? texto : valor}
-        onChange={(e) => {
-          setTexto(e.target.value);
-          setAbierto(true);
-          setActiva(0);
-          resolver(e.target.value);
-        }}
-        onFocus={() => {
-          setTexto(valor);
-          setAbierto(true);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
+      <div className="relative">
+        <input
+          value={abierto ? texto : valor}
+          onChange={(e) => {
+            setTexto(e.target.value);
             setAbierto(true);
-            setActiva((a) => Math.min(a + 1, filtradas.length - 1));
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setActiva((a) => Math.max(a - 1, 0));
-          } else if (e.key === "Enter") {
-            e.preventDefault();
-            if (filtradas[activa]) elegir(filtradas[activa]);
-            else if (texto.trim()) {
-              resolver(texto.trim());
+            setActiva(0);
+            resolver(e.target.value);
+          }}
+          onFocus={() => {
+            setTexto(valor);
+            setAbierto(true);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setAbierto(true);
+              setActiva((a) => Math.min(a + 1, filtradas.length - 1));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setActiva((a) => Math.max(a - 1, 0));
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              if (filtradas[activa]) elegir(filtradas[activa]);
+              else if (texto.trim()) {
+                resolver(texto.trim());
+                setAbierto(false);
+              }
+            } else if (e.key === "Escape") {
               setAbierto(false);
             }
-          } else if (e.key === "Escape") {
-            setAbierto(false);
-          }
-        }}
-        placeholder={placeholder}
-        className={`w-full rounded-lg border bg-surface px-3 py-1.5 text-xs font-bold uppercase text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
-          vinculado ? "border-success-400" : "border-line"
-        }`}
-      />
+          }}
+          placeholder={placeholder}
+          className={`w-full rounded-lg border bg-surface px-3 py-1.5 text-xs font-bold uppercase text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+            vinculado ? "border-success-400" : "border-line"
+          } ${valorNac ? "pl-8" : ""}`}
+        />
+        {valorNac && <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2"><Flag nac={valorNac} size={13} withName={false} /></span>}
+      </div>
       {abierto && filtradas.length > 0 && (
         <ul className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-lg border border-line bg-white py-1 shadow-xl">
           {filtradas.map((o, i) => (
@@ -116,7 +123,7 @@ export function BuscadorPadron({ opciones, valor, onChange, vinculado, placehold
                   i === activa ? "bg-primary-500/10 text-primary-700" : "text-slate-700"
                 }`}
               >
-                <span>{bandera(o.nacionalidad)}</span>
+                <Flag nac={o.nacionalidad} size={15} withName={false} />
                 <span className="flex-1 truncate">{o.nombre}</span>
                 <span className="text-[9px] font-bold text-slate-400">{o.nacionalidad}</span>
               </button>

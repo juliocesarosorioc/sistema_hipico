@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ToastHost } from "@/components/ui/ToastHost";
-import { banderas } from "@/lib/tablas/tipos";
+import { Flag } from "@/components/ui/BanderaPais";
 import {
   listarHipodromos,
   crearHipodromo,
@@ -15,7 +15,6 @@ import {
 import { formatearNombre, levenshteinNorm, PAISES, type Hipodromo } from "@/lib/hipodromos/tipos";
 import { useHipodromosStore } from "@/store/useHipodromosStore";
 
-const BANDERA = (pais: string): string => banderas[(pais || "OTRO").toUpperCase()] ?? "🌐";
 const estActiva = (estado: string) => (estado || "Activo") === "Activo";
 
 type FormModal = { abierta: boolean; editando: Hipodromo | null; nombre: string; pais: string; estado: string };
@@ -214,7 +213,7 @@ export function HipodromosModule() {
                     </td>
                     <td className="px-4 py-2.5">
                       <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase text-slate-600">
-                        <span className="text-base leading-none">{BANDERA(h.pais)}</span>
+                        <span className="text-base leading-none"><Flag nac={h.pais} size={14} withName={false} /></span>
                         {h.pais}
                       </span>
                     </td>
@@ -280,7 +279,7 @@ export function HipodromosModule() {
                 >
                   {PAISES.map((p) => (
                     <option key={p} value={p}>
-                      {BANDERA(p)} {p}
+                      <Flag nac={p} size={13} /> {p}
                     </option>
                   ))}
                 </select>

@@ -1,5 +1,6 @@
 "use client";
 
+import { Flag } from "@/components/ui/BanderaPais";
 import {
   aNum,
   banderaGaceta,
@@ -176,8 +177,8 @@ export function CarreraGacetaCard({ index, carrera, onChange, onEnviar, onElimin
                 className="min-w-0 w-full flex-1 rounded border border-slate-200 px-1 py-px text-[10px] font-bold uppercase text-slate-800 outline-none focus:ring-1 focus:ring-indigo-400"
               />
               {banderaGaceta(nac) && (
-                <span className="inline-flex w-4 shrink-0 justify-center text-sm leading-none" title={nac}>
-                  {banderaGaceta(nac)}
+                <span className="inline-flex w-4 shrink-0 justify-center leading-none" title={nac}>
+                  <Flag nac={nac} size={13} withName={false} />
                 </span>
               )}
               <input

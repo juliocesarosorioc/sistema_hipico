@@ -7,7 +7,7 @@ import { listarTablasPublicadas } from "@/lib/tablas/rpc";
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { listarClientesVenta, type ClienteVenta } from "@/lib/grupos";
 import { colorDeNumeroGac } from "@/lib/gaceta/ui";
-import { bandera } from "@/lib/gaceta/padron";
+import { Flag } from "@/components/ui/BanderaPais";
 import { claveCelda, guardarDupleta, listarDupletasGuardadas, type CaballoDupleta, type DupletaEstado } from "@/lib/dupletas";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
@@ -298,7 +298,7 @@ export function DupletaModule() {
                             {cb.retirado && <span className="text-[10px] font-black">✖</span>}
                           </span>
                           <span className="mt-0.5 block max-w-[64px] truncate">
-                            {bandera(cb.nacionalidad || "VE")} {cb.nombre}
+                            <Flag nac={cb.nacionalidad} size={11} withName={false} /> {cb.nombre}
                           </span>
                         </button>
                       </th>
