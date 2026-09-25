@@ -155,8 +155,8 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                 <span className="rounded-full bg-slate-100 px-1.5 text-[9px] font-black text-slate-600">{(t.caballos ?? []).length}</span>
               </div>
 
-              {/* Ejemplares numerados (clic → modal EJEMPLAR) */}
-              <div className="max-h-40 flex-1 overflow-y-auto px-1 py-0.5">
+              {/* Ejemplares numerados (clic → modal EJEMPLAR) — altura dinámica, sin scroll */}
+              <div className="px-1 py-0.5">
                 {(t.caballos ?? []).length === 0 && (
                   <p className="px-2 py-2 text-sm italic text-slate-400">Sin ejemplares registrados.</p>
                 )}
@@ -354,29 +354,29 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
           <table className="w-full border-collapse text-[9px]">
             <thead>
               <tr>
-                <th className="border-b border-slate-300 px-1 py-0.5 text-left font-bold">Nº</th>
+                <th className="w-7 border-b border-slate-300 px-0 py-0.5 text-center font-bold">Nº</th>
                 <th className="border-b border-slate-300 px-1 py-0.5 text-left font-bold">Ejemplar</th>
-                <th className="w-8 border-b border-slate-300 px-1 py-0.5 text-right font-bold">Valor</th>
+                <th className="w-10 border-b border-slate-300 px-1 py-0.5 text-right font-bold">Valor</th>
               </tr>
             </thead>
             <tbody>
               {(t.caballos ?? []).map((c, i) => (
                 <tr key={i} className={c.retirado ? "text-red-500" : ""}>
                   <td
-                    className="w-7 shrink-0 p-0 text-center align-middle font-bold"
+                    className="w-7 shrink-0 flex-none p-0 align-middle text-center font-bold"
                     style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
                   >
-                    {c.numero}
+                    <span className="flex h-7 w-7 shrink-0 flex-none items-center justify-center">{c.numero}</span>
                   </td>
-                  <td className="px-1 font-semibold uppercase">
+                  <td className="whitespace-nowrap px-1 font-semibold uppercase">
                     {c.nombre}
                     {c.retirado ? " (RET.)" : ""}
                   </td>
-                  <td className="w-8 px-1 text-right font-bold">{fmtMoney(parseNum(c.valor_ejemplar), t.moneda)}</td>
+                  <td className="w-10 whitespace-nowrap px-1 text-right font-bold">{fmtMoney(parseNum(c.valor_ejemplar), t.moneda)}</td>
                 </tr>
               ))}
               <tr>
-                <td className="border-t border-slate-400 px-1 py-px text-[8px] font-black uppercase">Suma</td>
+                <td className="border-t border-slate-400 px-0 py-px text-center text-[8px] font-black uppercase">Suma</td>
                 <td className="border-t border-slate-400 px-1 py-px text-right font-black">
                   {fmtMoney(t.suma_base_tabla ?? sumaBase(t.caballos), t.moneda)}
                 </td>
