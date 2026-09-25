@@ -1,11 +1,13 @@
 /**
  * MarcasEngine — modalidad MARCA (120/100).
  * Registrado en procesarTicket() vía registrarProcesador("marca"/"marcas"/"marcar").
- * REGLA DE RESOLUCIÓN:
- *  - La jugada enfrenta a [Caballos de la Derecha + Cualquier otro caballo
- *    registrado en la carrera que NO esté en la Izquierda] CONTRA [Caballos de
- *    la Izquierda (los "Marcados"/favoritos)].
- *  - Gana la MARCA si el ganador de la carrera NO pertenece a la Izquierda.
+ * REGLA DE RESOLUCIÓN (por caballo jugado, config de la carrera):
+ *  - Se verifica QUÉ caballo jugó el cliente (t.caballo).
+ *  - Si jugó la Izquierda (Marcas = marcados) y gana uno de esos → COBRA.
+ *  - Si jugó un caballo de la Derecha (Contra) o CUALQUIER otro NO listado en
+ *    la izquierda, y ese caballo gana → COBRA.
+ *  - Sin caballo jugado (apuesta histórica contra los marcados): gana la MARCA
+ *    si el ganador NO pertenece a la Izquierda.
  * PROPORCIÓN ASIMÉTRICA: a diferencia del cruce 10/8, la marca opera por
  *  defecto a 120 para 100 (riesgo 120 para ganar 100): el premio bruto se
  *  calcula con bruto = monto × (1 + paga/riesgo) ANTES de descontar la
@@ -73,11 +75,24 @@ export function liquidarMarcas(
       ? Number(tasaComision)
       : COMISION_CASA.rate * 100;
 
-  const gana = !marcados.has(ganador);
+  // Regla por caballo jugado: el cliente apuesta a UN ejemplar concreto.
+  //  - Izquierda (marcados): cobra si juega uno de esos y gana.
+  //  - Derecha (contra) o cualquier no listado en la izquierda: cobra si juega
+  //    ESE caballo y gana.
+  //  - Sin caballo en el ticket: resolución histórica "contra los marcados".
+  const caballoJugado = normalizarNum(t.caballo);
+  const jugoMarcados = !!caballoJugado && marcados.has(caballoJugado);
+  const gana = caballoJugado
+    ? caballoJugado === ganador
+    : !marcados.has(ganador);
+
   if (!gana) {
+    const lado = caballoJugado
+      ? `${jugoMarcados ? "Marcas" : "Contra"} ${caballoJugado}`
+      : `el marcado ${ganador}`;
     return {
       ok: false,
-      motivo: `MARCA pierde: el marcado ${ganador} gana la carrera.`,
+      motivo: `MARCA pierde: gana el ${ganador}, jugada ${lado}.`,
       totalClienteNeto: 0,
       balanceBanca: t.monto,
       gananciaCasa: 0,
@@ -87,9 +102,14 @@ export function liquidarMarcas(
   const gananciaBruta = bruto - t.monto;
   const comision = gananciaBruta > 0 ? round2(gananciaBruta * (tasa / 100)) : 0;
   const motivoMarcados = (cfg.marcados ?? []).length ? ` (marcados: ${(cfg.marcados ?? []).join("/")})` : "";
+  const ladoGanador = caballoJugado
+    ? `${jugoMarcados ? "Izquierda" : "Derecha"} ${caballoJugado}`
+    : `no marcado (${ganador})`;
   return {
     ok: true,
-    motivo: `MARCA gana${motivoMarcados}: gana un NO marcado (${ganador}). Paga ${paga}/${riesgo} → bruto $${bruto}` + (comision > 0 ? ` · comisión casa $${round2(comision)}` : ""),
+    motivo: `MARCA gana${motivoMarcados}: ${
+      caballoJugado ? `jugó ${ladoGanador} y ganó` : `gana ${ladoGanador}`
+    }. Paga ${paga}/${riesgo} → bruto $${bruto}` + (comision > 0 ? ` · comisión casa $${round2(comision)}` : ""),
     totalClienteNeto: round2(bruto - comision),
     balanceBanca: round2(t.monto - bruto + comision),
     gananciaCasa: comision,

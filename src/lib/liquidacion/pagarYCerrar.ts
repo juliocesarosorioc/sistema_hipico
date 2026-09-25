@@ -1,4 +1,5 @@
 import { liquidarOficial } from "@/lib/motores/oficiales";
+import { marcasConfigParaCarrera } from "@/lib/marcas";
 import { cerrarTablaFija } from "@/lib/tablas-fijas";
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import type { TicketMotor, ResultadoMotor } from "@/lib/bettingEngine";
@@ -41,6 +42,10 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   const { hipodromo, carrera, pizarra, tickets, tasaComision } = opts;
   const dividendos = opts.dividendos ?? (await dividendosDe(hipodromo, carrera));
 
+  // Config de Marcas de la carrera (izquierda/derecha) para interceptar
+  // los tickets tipo MARCA según el caballo jugado.
+  const marcasConfig = await marcasConfigParaCarrera(hipodromo, carrera);
+
   const procesados: ResLiquidarCarrera["procesados"] = [];
   let totalInvertido = 0;
   let gananciaCasa = 0;
@@ -77,6 +82,14 @@ export async function liquidarCarreraYCerrarTabla(opts: {
       puesto_final: typeof pizarra.primero === "number" ? pizarra.primero : firstOrdinal(pizarra.primero),
       pizarra,
       dividendos: dividendos ?? null,
+      ...(/^MARCA|MARCAR/.test(tipo) && marcasConfig
+        ? {
+            marcas: {
+              marcados: marcasConfig.marcados,
+              contra: marcasConfig.contra,
+            },
+          }
+        : {}),
     };
 
     const res = liquidarOficial(ticketMotor, tasaComision);

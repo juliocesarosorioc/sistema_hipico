@@ -13,6 +13,7 @@
  */
 import { supabase } from "@/lib/supabase";
 import { liquidarOficial } from "@/lib/motores/oficiales";
+import { marcasConfigParaCarrera } from "@/lib/marcas";
 import { parsearNini } from "@/lib/bettingEngine";
 import type { TicketMotor, ResultadoMotor } from "@/lib/bettingEngine";
 import type { PizarraCarrera } from "@/lib/liquidacion";
@@ -42,9 +43,10 @@ const NUM = (v: unknown): number => {
 };
 
 /** Fabrica TicketMotor desde una fila de tickets_apuestas. */
-function motorDesdeFila(
+export function motorDesdeFila(
   fila: Record<string, unknown>,
-  ctx: LiquidarSaldosInput
+  ctx: LiquidarSaldosInput,
+  marcasConfig?: MarcaConfigLiquidacion | null
 ): TicketMotor {
   const tipo = String(fila.nombre_jugada ?? "JUGADA").trim().toUpperCase();
   const monto = NUM(fila.monto_jugado);
@@ -66,8 +68,13 @@ function motorDesdeFila(
     pizarra: ctx.pizarra,
     dividendos: ctx.dividendos ?? null,
     premio_por_tabla: ctx.premio_por_tabla ?? null,
+    ...(/^MARCA|MARCAR/.test(tipo) && marcasConfig
+      ? { marcas: { marcados: marcasConfig.marcados, contra: marcasConfig.contra } }
+      : {}),
   };
 }
+
+type MarcaConfigLiquidacion = { marcados: string[]; contra: string[] };
 
 /**
  * Liquida TODOS los tickets Pendientes de una carrera y aplica el resultado
@@ -82,6 +89,7 @@ export async function aplicarLiquidacionSaldos(
   }
   const sdb = supabase;
   const f = new Date().toISOString().slice(0, 10);
+  const marcasConfig = await marcasConfigParaCarrera(input.hipodromo, input.carrera, f);
   let filas: unknown[] = [];
   try {
     const { data, error } = await sdb
@@ -120,7 +128,7 @@ export async function aplicarLiquidacionSaldos(
   let abonoTotal = 0;
   for (const fRaw of filas) {
     const fila = fRaw as Record<string, unknown>;
-    const res = liquidarOficial(motorDesdeFila(fila, input), input.tasaComision);
+    const res = liquidarOficial(motorDesdeFila(fila, input, marcasConfig), input.tasaComision);
     decisiones.push({ fila, res });
     if (res.ok) abonoTotal += res.totalClienteNeto;
   }

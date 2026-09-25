@@ -3,11 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ToastHost } from "@/components/ui/ToastHost";
-import { listarHipodromos, type OpcionHipodromo } from "@/lib/tablas/rpc";
-import { hoyLocal, leerProgramaPorFecha } from "@/lib/gaceta/programa";
+import { listarHipodromos, listarCarrerasPorDia, type OpcionHipodromo } from "@/lib/tablas/rpc";
+import { hoyLocal } from "@/lib/gaceta/programa";
 import {
   CONDICIONES_MARCAS_DEFECTO,
-  filasMarcaDefecto,
   guardarMarcas,
   leerMarcas,
   type FilaMarca,
@@ -16,14 +15,15 @@ import { liquidarMarcas, parsearMarcasLista } from "@/lib/motores/marcas";
 import type { TicketMotor } from "@/lib/bettingEngine";
 
 const cellInput =
-  "w-full rounded-md border border-emerald-200 bg-white px-1.5 py-1 text-center text-[11px] font-bold uppercase tracking-wide text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:border-emerald-400";
+  "w-full bg-transparent px-0.5 py-0 text-center text-xs font-bold text-slate-900 focus:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500 placeholder:font-medium placeholder:text-slate-300";
 
 export function MarcasModule() {
   const [hipodromos, setHipodromos] = useState<OpcionHipodromo[]>([]);
   const [hipodromo, setHipodromo] = useState("");
   const [fecha, setFecha] = useState(() => hoyLocal());
 
-  const [filas, setFilas] = useState<FilaMarca[]>(filasMarcaDefecto());
+  const [filas, setFilas] = useState<FilaMarca[]>([]);
+  const [carrerasDia, setCarrerasDia] = useState<number[]>([]);
   const [condiciones, setCondiciones] = useState<string>(CONDICIONES_MARCAS_DEFECTO);
   const [cargando, setCargando] = useState(false);
   const [guardando, setGuardando] = useState(false);
@@ -56,6 +56,10 @@ export function MarcasModule() {
     let v = true;
     setCargando(true);
     void (async () => {
+      // Carreras registradas del día (Programa + Tablas + Resultados): una
+      // fila por carrera real, sin fallback hardcodeado de 14.
+      const carr = await listarCarrerasPorDia(fecha, hipodromo);
+      if (v) setCarrerasDia(carr);
       const r = await leerMarcas(hipodromo, fecha);
       if (!v) return;
       if (r.ok && r.datos && r.datos.filas.length) {
@@ -63,19 +67,13 @@ export function MarcasModule() {
         setCondiciones(r.datos.condiciones || CONDICIONES_MARCAS_DEFECTO);
         setGuardado(true);
       } else {
-        const p = await leerProgramaPorFecha(fecha);
-        const hs = (p.ok && p.data?.carreras || [])
-          .filter((c) => String(c.hipodromo || "").trim().toUpperCase() === String(hipodromo).toUpperCase())
-          .sort((a, b) => (Number(a.carrera) || 0) - (Number(b.carrera) || 0));
-        if (v) {
-          setFilas(
-            hs.length
-              ? hs.map((c) => ({ carrera: String(c.carrera ?? ""), marcadas: "", contra: "" }))
-              : filasMarcaDefecto()
-          );
-          setCondiciones(CONDICIONES_MARCAS_DEFECTO);
-          setGuardado(false);
-        }
+        setFilas(
+          carr.length
+            ? carr.map((n) => ({ carrera: String(n), marcadas: "", contra: "" }))
+            : []
+        );
+        setCondiciones(CONDICIONES_MARCAS_DEFECTO);
+        setGuardado(false);
       }
       if (v) setCargando(false);
     })();
@@ -89,11 +87,14 @@ export function MarcasModule() {
 
   const agregarFila = () =>
     setFilas((fs) => {
+      const usadas = new Set(fs.map((f) => Number(f.carrera) || 0));
+      const prox = carrerasDia.find((n) => !usadas.has(n));
+      if (prox != null) return [...fs, { carrera: String(prox), marcadas: "", contra: "" }];
       const max = fs.reduce((a, f) => Math.max(a, Number(f.carrera) || 0), 0);
       return [...fs, { carrera: String(max + 1), marcadas: "", contra: "" }];
     });
 
-  const quitarFila = (i: number) => setFilas((fs) => (fs.length > 1 ? fs.filter((_, k) => k !== i) : fs));
+  const quitarFila = (i: number) => setFilas((fs) => fs.filter((_, k) => k !== i));
 
   const guardar = async () => {
     if (!hipodromo) return toast("Seleccione el hipódromo.", "warning");
@@ -215,25 +216,25 @@ export function MarcasModule() {
         </div>
       </div>
 
-      {/* Tabla diaria */}
-      <div className="overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-sm">
-        <div className="max-h-[62vh] overflow-auto">
+      {/* Tabla diaria — grilla densa estilo Excel */}
+      <div className="overflow-hidden rounded-lg border border-emerald-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
           <table className="w-full border-collapse table-fixed">
-            <thead className="sticky top-0 z-10">
+            <thead>
               <tr className="bg-emerald-600 text-emerald-50">
-                <th className="w-14 border border-emerald-700 px-1 py-1.5 text-center text-[10px] font-bold uppercase tracking-wider">
+                <th className="w-10 shrink-0 border border-emerald-700 px-1 py-1 text-center text-[10px] font-bold uppercase tracking-wider">
                   Nº
                 </th>
-                <th className="border border-emerald-700 px-1 py-1.5 text-center text-[10px] font-bold uppercase tracking-wider">
+                <th className="border border-emerald-700 px-1 py-1 text-center text-[10px] font-bold uppercase tracking-wider">
                   Marcas <span className="text-emerald-300">( / )</span>
                 </th>
-                <th className="w-24 border border-emerald-700 px-1 py-1.5 text-center text-[10px] font-bold uppercase tracking-wider">
-                  Leyenda
+                <th className="w-9 shrink-0 border border-emerald-700 px-1 py-1 text-center text-[10px] font-bold uppercase tracking-wider">
+                  Ley
                 </th>
-                <th className="border border-emerald-700 px-1 py-1.5 text-center text-[10px] font-bold uppercase tracking-wider">
+                <th className="border border-emerald-700 px-1 py-1 text-center text-[10px] font-bold uppercase tracking-wider">
                   Contra <span className="text-emerald-300">( , )</span>
                 </th>
-                <th className="w-10 border border-emerald-700 px-1 py-1.5 text-center text-[10px] font-bold uppercase tracking-wider">
+                <th className="w-8 shrink-0 border border-emerald-700 px-1 py-1 text-center text-[10px] font-bold uppercase tracking-wider">
                   —
                 </th>
               </tr>
@@ -246,16 +247,27 @@ export function MarcasModule() {
                   </td>
                 </tr>
               )}
+              {!cargando && filas.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-2 py-4 text-center text-xs font-semibold text-amber-600">
+                    ⚠️ No hay carreras registradas para {hipodromo || "este hipódromo"} · {fecha}.{" "}
+                    <span className="block text-slate-500">
+                      Registre primero las carreras del día (Programa / Tablas / Resultados) o pulse
+                      "+ Añadir carrera".
+                    </span>
+                  </td>
+                </tr>
+              )}
               {!cargando &&
                 filas.map((f, i) => (
                   <tr
                     key={i}
                     className={i % 2 ? "bg-emerald-50/60" : "bg-white"}
                   >
-                    <td className="border border-emerald-100 px-1 py-0.5 text-center text-[11px] font-extrabold text-emerald-700">
+                    <td className="shrink-0 border border-emerald-100 px-0.5 py-0 text-center align-middle text-xs font-extrabold text-emerald-700">
                       {Number(f.carrera) || f.carrera}
                     </td>
-                    <td className="border border-emerald-100 px-0.5 py-0.5">
+                    <td className="border border-emerald-100 p-0 align-middle">
                       <input
                         value={f.marcadas}
                         onChange={(e) => {
@@ -266,12 +278,12 @@ export function MarcasModule() {
                         className={cellInput}
                       />
                     </td>
-                    <td className="border border-emerald-100 px-0.5 py-0.5 text-center">
-                      <span className="inline-block rounded-md border border-emerald-300 bg-emerald-100 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">
+                    <td className="shrink-0 border border-emerald-100 p-0 text-center align-middle">
+                      <span className="inline-block leading-none text-[10px] font-extrabold uppercase tracking-wider text-emerald-600">
                         NV
                       </span>
                     </td>
-                    <td className="border border-emerald-100 px-0.5 py-0.5">
+                    <td className="border border-emerald-100 p-0 align-middle">
                       <input
                         value={f.contra}
                         onChange={(e) => {
@@ -282,12 +294,12 @@ export function MarcasModule() {
                         className={cellInput}
                       />
                     </td>
-                    <td className="border border-emerald-100 px-0.5 py-0.5 text-center">
+                    <td className="shrink-0 border border-emerald-100 p-0 text-center align-middle">
                       <button
                         type="button"
                         onClick={() => quitarFila(i)}
                         title="Quitar fila"
-                        className="text-xs text-slate-400 transition-colors hover:text-red-500"
+                        className="px-0.5 text-[10px] text-slate-400 transition-colors hover:text-red-500"
                       >
                         🗑️
                       </button>

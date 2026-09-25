@@ -97,3 +97,34 @@ export async function guardarMarcas(d: MarcasDia): Promise<{ ok: boolean; error?
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
+
+export type MarcasParaLiquidar = {
+  marcados: string[];
+  contra: string[];
+};
+
+/**
+ * Config de Marcas de UNA carrera concreta (insumo del motor de liquidación).
+ * Busca la fila de la carrera en la jornada del hipódromo + fecha y devuelve
+ * la Izquierda (marcadas, separadas por "/") y la Derecha (contra, ",").
+ * La SPA la inyecta en el ticket motor cuando la modalidad es MARCA.
+ */
+export async function marcasConfigParaCarrera(
+  hipodromo: string,
+  carrera: number | string,
+  fecha?: string
+): Promise<MarcasParaLiquidar | null> {
+  const h = String(hipodromo ?? "").toUpperCase().trim();
+  if (!h) return null;
+  const r = await leerMarcas(h, fecha || hoyLocal());
+  if (!r.ok || !r.datos || !r.datos.filas.length) return null;
+  const fila = r.datos.filas.find(
+    (f) => String(f.carrera).trim() === String(carrera).trim() || Number(f.carrera) === Number(carrera)
+  );
+  if (!fila) return null;
+  if (!fila.marcadas.trim() && !fila.contra.trim()) return null;
+  return {
+    marcados: fila.marcadas ? fila.marcadas.split(/[/,;\s]+/).map((s) => s.trim()).filter(Boolean) : [],
+    contra: fila.contra ? fila.contra.split(/[/,;\s]+/).map((s) => s.trim()).filter(Boolean) : [],
+  };
+}
