@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import type { StoredTablaFija } from "@/store/useTablasFijasStore";
-import { colorDeNumero, textoDeNumero, fmtMoney, FLAG, sumaBase, parseNum } from "@/lib/tablas/tipos";
+import { colorDeNumero, textoDeNumero, fmtMoney, sumaBase, parseNum } from "@/lib/tablas/tipos";
 import { hoyLocal } from "@/lib/gaceta/programa";
+import { Flag } from "@/components/ui/BanderaPais";
 import { Button } from "@/components/ui/Button";
 import { Guard } from "@/components/ui/Guard";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
@@ -168,8 +169,8 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                     🏛️ {t.hipodromo || ""}
                   </span>
                   <span className="flex items-center gap-1 whitespace-nowrap">
-                    <span className="text-xs font-black leading-none">
-                      🏁 C{t.carrera ?? ""}
+                    <span className="inline-flex items-center rounded-full border-2 border-indigo-200 bg-white px-3 py-1 text-base font-black uppercase leading-none tracking-widest text-indigo-900 shadow-md md:text-lg">
+                      C{t.carrera ?? ""}
                     </span>
                     {onEliminar && (
                       <Guard permiso="eliminar_tabla">
@@ -225,7 +226,7 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                         {c.numero}
                       </span>
                       <span className="min-w-0 truncate text-[10px] font-bold uppercase text-slate-800">{c.nombre || "Sin nombre"}</span>
-                      <span className="text-center text-[10px] leading-none">{FLAG(c.nacionalidad)}</span>
+                      <span className="flex justify-center text-center leading-none"><Flag nac={c.nacionalidad} size={12} withName={false} /></span>
                       <span className={`whitespace-nowrap text-right text-[11px] font-black ${c.retirado ? "text-red-500 line-through" : "text-blue-700"}`}>
                         {c.retirado ? "RET." : fmtMoney(valor, t.moneda)}
                       </span>

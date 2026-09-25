@@ -552,10 +552,15 @@ export function GestionJugadasModule() {
 
       {/* Tabla de Carga Individual (clon 1:1 del legacy) */}
       <div className="rounded-2xl border border-line bg-surface p-3">
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-xs font-black uppercase tracking-wide text-slate-700">Carga Individual</h3>
-          <span className="text-[10px] font-semibold text-slate-500">
-            {hipodromo} · C{carrera} · Retirados: {retirados.trim() || "—"}
+          <span className="flex items-center gap-2">
+            <span className="inline-flex min-w-[3.5rem] items-center justify-center rounded-full border-2 border-indigo-200 bg-white px-4 py-1.5 text-2xl font-black uppercase leading-none tracking-widest text-indigo-900 shadow-md md:text-3xl">
+              C{carrera}
+            </span>
+            <span className="text-[10px] font-semibold text-slate-500">
+              {hipodromo} · Retirados: {retirados.trim() || "—"}
+            </span>
           </span>
         </div>
 

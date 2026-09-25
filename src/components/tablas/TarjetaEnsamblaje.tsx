@@ -57,15 +57,17 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
             placeholder="Hipódromo"
             className={`${inpHeader} min-w-0 flex-1 text-[11px] uppercase`}
           />
-          <span className="flex items-center gap-0.5 whitespace-nowrap text-xs font-black leading-none">
-            🏁 C
-            <input
-              type="number"
-              value={draft.carrera}
-              onChange={(e) => set({ carrera: e.target.value })}
-              placeholder="N°"
-              className={`${inpHeader} w-7 text-center`}
-            />
+          <span className="flex items-center gap-1 whitespace-nowrap">
+            <span className="flex items-center rounded-full border-2 border-indigo-200 bg-white px-3 py-1 text-base font-black uppercase leading-none tracking-widest text-indigo-900 shadow-md md:text-lg">
+              <span className="mr-1 text-indigo-400">C</span>
+              <input
+                type="number"
+                value={draft.carrera}
+                onChange={(e) => set({ carrera: e.target.value })}
+                placeholder="N°"
+                className="w-8 bg-transparent text-center font-black leading-none outline-none placeholder:text-indigo-300"
+              />
+            </span>
           </span>
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-1 leading-none">

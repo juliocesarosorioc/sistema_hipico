@@ -99,7 +99,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
                 title={existe ? (manual && !carreras.includes(n) ? `C${n} (manual — sin registro en BD)` : c.label) : `C${n} sin registro para ${fecha}`}
                 className={`grid h-9 w-9 place-items-center rounded-lg border-2 text-xs font-black transition-transform ${
                   existe ? `hover:scale-105 ${manual && !carreras.includes(n) ? "border-dashed border-cyan-400 bg-cyan-50 text-cyan-700" : c.chip}` : "cursor-not-allowed border-dashed border-line bg-gray-50 text-slate-300"
-                } ${activaEsta ? "ring-2 ring-primary-500 ring-offset-2" : ""}`}
+                } ${activaEsta ? "ring-4 ring-indigo-500 ring-offset-2" : ""}`}
               >
                 {n}
               </button>
