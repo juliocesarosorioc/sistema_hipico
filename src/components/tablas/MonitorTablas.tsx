@@ -452,42 +452,61 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
             <span className="whitespace-nowrap font-black text-[11px] text-green-400">US $ {fmtMoney(t.premio_recalculado ?? null, "")}</span>
           </div>
           
-          {/* Estructura INDESTRUCTIBLE con anchos en PORCENTAJE estrictos */}
+          {/* Estructura de 4 COLUMNAS (15% - 8% - 52% - 25%) */}
           <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
-            <tbody>
-              {(t.caballos ?? []).map((c, i) => (
-                <tr key={i} style={{ borderBottom: "1px solid #cbd5e1" }} className={c.retirado ? "text-red-500 opacity-60" : "text-black"}>
-                  
-                  {/* 1. Número - Ancho 12% estricto */}
-                  <td style={{ width: "12%", padding: 0, textAlign: "center", backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}>
-                    <div style={{ fontWeight: "900", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", height: "100%", minHeight: "20px" }}>
-                      {c.numero}
-                    </div>
-                  </td>
-
-                  {/* 2. Nombre del ejemplar - Ancho 58% estricto (Evita que las letras caigan verticalmente) */}
-                  <td style={{ width: "58%", padding: "2px 4px", fontWeight: "bold", textTransform: "uppercase" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "100%" }}>
-                      <div style={{ flexShrink: 0 }}>
-                        <Flag nac={c.nacionalidad} size={14} withName={false} />
-                      </div>
-                      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", width: "100%" }}>
-                        {c.nombre} {c.retirado ? " (RET.)" : ""}
-                      </span>
-                    </div>
-                  </td>
-
-                  {/* 3. Valor - Ancho 30% estricto */}
-                  <td style={{ width: "30%", padding: "2px 4px", textAlign: "right", fontWeight: "900", fontSize: "11px" }}>
-                    US $ {fmtMoney(parseNum(c.valor_ejemplar), "")}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot className="bg-slate-100">
+            <thead className="bg-slate-200 border-b-2 border-slate-800">
               <tr>
-                <td style={{ width: "12%", padding: "4px 0", textAlign: "center", fontSize: "9px", color: "#64748b", textTransform: "uppercase", fontWeight: "bold" }}>Suma</td>
-                <td colSpan={2} style={{ width: "88%", padding: "4px 6px", textAlign: "right", fontWeight: "900", color: "#3730a3", fontSize: "11px" }}>
+                <th style={{ width: "15%", padding: "4px 0", textAlign: "center" }}>Nº</th>
+                <th style={{ width: "8%", padding: "4px 0", textAlign: "center" }}>🏳️</th>
+                <th style={{ width: "52%", padding: "4px 2px", textAlign: "left" }}>Ejemplar</th>
+                <th style={{ width: "25%", padding: "4px 4px", textAlign: "right" }}>Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(t.caballos ?? []).map((c, i) => {
+                // Validación de bandera por si la IA no la trajo
+                let nac = c.nacionalidad ? String(c.nacionalidad).toUpperCase() : "";
+                if (!nac) {
+                  const esAmericano = /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN/i.test(t.hipodromo || "");
+                  nac = esAmericano ? "US" : "VE";
+                }
+
+                return (
+                  <tr key={i} style={{ borderBottom: "1px solid #cbd5e1" }} className={c.retirado ? "text-red-500 opacity-60" : "text-black"}>
+                    
+                    {/* 1. Número - Ancho 15% (Más amplio) */}
+                    <td style={{ width: "15%", padding: 0, textAlign: "center", backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}>
+                      <div style={{ fontWeight: "900", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", height: "100%", minHeight: "22px" }}>
+                        {c.numero}
+                      </div>
+                    </td>
+
+                    {/* 2. Bandera - Ancho 8% (Columna independiente) */}
+                    <td style={{ width: "8%", padding: "2px 0", textAlign: "center", verticalAlign: "middle" }}>
+                      <div style={{ display: "flex", justifyContent: "center" }}>
+                        <Flag nac={nac} size={14} withName={false} />
+                      </div>
+                    </td>
+
+                    {/* 3. Nombre del ejemplar - Ancho 52% (Máximo espacio, texto protegido) */}
+                    <td style={{ width: "52%", padding: "2px", fontWeight: "bold", textTransform: "uppercase", verticalAlign: "middle" }}>
+                      <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", width: "100%", fontSize: "10.5px" }}>
+                        {c.nombre} {c.retirado ? " (RET.)" : ""}
+                      </div>
+                    </td>
+
+                    {/* 4. Valor - Ancho 25% */}
+                    <td style={{ width: "25%", padding: "2px 4px", textAlign: "right", fontWeight: "900", fontSize: "11px", verticalAlign: "middle" }}>
+                      US $ {fmtMoney(parseNum(c.valor_ejemplar), "")}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot className="bg-slate-100 border-t-2 border-slate-800">
+              <tr>
+                <td colSpan={2} style={{ padding: "4px 6px", textAlign: "left", fontSize: "9px", color: "#64748b", textTransform: "uppercase", fontWeight: "bold" }}>Suma</td>
+                <td colSpan={2} style={{ padding: "4px 6px", textAlign: "right", fontWeight: "900", color: "#3730a3", fontSize: "11px" }}>
                   US $ {fmtMoney(t.suma_base_tabla ?? sumaBase(t.caballos), "")}
                 </td>
               </tr>
@@ -498,7 +517,7 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
       ))}
     </div>
   );
-} 
+}
 
 function PremioVenta(t: StoredTablaFija, numero: string, monto: string): string {
   const m = parseNum(monto);
