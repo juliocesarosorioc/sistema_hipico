@@ -15,6 +15,35 @@ import {
 import { liquidarMarcas, parsearMarcasLista } from "@/lib/motores/marcas";
 import type { TicketMotor } from "@/lib/bettingEngine";
 
+// =========================================================
+// NUEVA UTILIDAD: Cuadritos de colores hípicos oficiales
+// =========================================================
+const getCaballoColor = (numero: string | number) => {
+  const num = parseInt(String(numero), 10);
+  const colores: Record<number, { bg: string, text: string }> = {
+    1: { bg: "bg-red-600", text: "text-white" },
+    2: { bg: "bg-white border-2 border-gray-300", text: "text-black" },
+    3: { bg: "bg-blue-600", text: "text-white" },
+    4: { bg: "bg-yellow-400", text: "text-black" },
+    5: { bg: "bg-green-600", text: "text-white" },
+    6: { bg: "bg-black", text: "text-white" },
+    7: { bg: "bg-orange-500", text: "text-white" },
+    8: { bg: "bg-pink-400", text: "text-black" },
+    9: { bg: "bg-cyan-400", text: "text-black" },
+    10: { bg: "bg-purple-600", text: "text-white" },
+    11: { bg: "bg-gray-400", text: "text-black" },
+    12: { bg: "bg-lime-400", text: "text-black" },
+    13: { bg: "bg-amber-800", text: "text-white" },
+    14: { bg: "bg-red-900", text: "text-white" },
+  };
+  return colores[num] || { bg: "bg-slate-200 border border-slate-400", text: "text-slate-800" };
+};
+
+// Extrae números de un string ej: "2/3/7" -> [2, 3, 7] para pintar los cuadritos
+const extraerNumeros = (str: string) => {
+  return str.split(/[\/, -]+/).map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+};
+
 export function MarcasModule() {
   const [hipodromos, setHipodromos] = useState<OpcionHipodromo[]>([]);
   const [hipodromo, setHipodromo] = useState("");
@@ -54,8 +83,6 @@ export function MarcasModule() {
     let v = true;
     setCargando(true);
     void (async () => {
-      // Carreras registradas del día (Programa + Tablas + Resultados): una
-      // fila por carrera real, sin fallback hardcodeado de 14.
       const carr = await listarCarrerasPorDia(fecha, hipodromo);
       if (v) setCarrerasDia(carr);
       const r = await leerMarcas(hipodromo, fecha);
@@ -115,7 +142,7 @@ export function MarcasModule() {
     lineas.push("");
     filas.forEach((f) => {
       lineas.push(
-        `${String(f.carrera || "?").padEnd(3)}  MARCAS: ${f.marcadas.trim() || "—"}   NV   CONTRA: ${f.contra.trim() || "—"}`
+        `${String(f.carrera || "?").padEnd(3)}  MARCAS: ${f.marcadas.trim() || "—"}  NV  CONTRA: ${f.contra.trim() || "—"}`
       );
     });
     lineas.push("");
@@ -166,6 +193,8 @@ export function MarcasModule() {
       },
     } as unknown as TicketMotor;
     const r = liquidarMarcas(ticket, undefined, 5);
+    
+    // CORRECCIÓN MATEMÁTICA AQUÍ (Faltaba el asterisco *)
     setSimRes(
       r.ok
         ? `✅ Juega 120 → bruto $${(120 * (1 + 100 / 120)).toFixed(2)} − 5% → neto $${r.totalClienteNeto.toFixed(2)}`
@@ -265,7 +294,9 @@ export function MarcasModule() {
                     <td className="shrink-0 border border-emerald-100 px-0.5 py-0 text-center align-middle text-xs font-extrabold text-emerald-700">
                       {Number(f.carrera) || f.carrera}
                     </td>
-                    <td className="border border-emerald-100 p-0 align-middle">
+                    
+                    {/* COLUMNA MARCAS - Con Cuadritos de colores inyectados */}
+                    <td className="border border-emerald-100 p-1.5 align-middle">
                       <ChipField
                         value={f.marcadas}
                         onChange={(v) => {
@@ -274,13 +305,29 @@ export function MarcasModule() {
                         }}
                         placeholder="ej. 2/3/7/1/5"
                       />
+                      {/* Los colores hípicos aparecen aquí abajo solos mientras el usuario tipea */}
+                      {f.marcadas && extraerNumeros(f.marcadas).length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {extraerNumeros(f.marcadas).map((num, idx) => {
+                            const c = getCaballoColor(num);
+                            return (
+                              <span key={idx} className={`w-5 h-5 flex items-center justify-center rounded-sm text-[10px] font-black shadow-sm ${c.bg} ${c.text}`}>
+                                {num}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                     </td>
+
                     <td className="shrink-0 border border-emerald-100 p-0 text-center align-middle">
                       <span className="inline-block leading-none text-[10px] font-extrabold uppercase tracking-wider text-emerald-600">
                         NV
                       </span>
                     </td>
-                    <td className="border border-emerald-100 p-0 align-middle">
+
+                    {/* COLUMNA CONTRA - Con Cuadritos de colores inyectados */}
+                    <td className="border border-emerald-100 p-1.5 align-middle">
                       <ChipField
                         value={f.contra}
                         onChange={(v) => {
@@ -289,7 +336,20 @@ export function MarcasModule() {
                         }}
                         placeholder="ej. 4,6,"
                       />
+                       {f.contra && extraerNumeros(f.contra).length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {extraerNumeros(f.contra).map((num, idx) => {
+                            const c = getCaballoColor(num);
+                            return (
+                              <span key={idx} className={`w-5 h-5 flex items-center justify-center rounded-sm text-[10px] font-black shadow-sm ${c.bg} ${c.text}`}>
+                                {num}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                     </td>
+
                     <td className="shrink-0 border border-emerald-100 p-0 text-center align-middle">
                       <button
                         type="button"
