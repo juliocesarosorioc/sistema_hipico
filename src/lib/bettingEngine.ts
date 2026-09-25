@@ -291,3 +291,101 @@ export function procesarTicket(t: TicketMotor): ResultadoMotor {
   }
   return fn(t);
 }
+// ============================================================
+// Dominio PAREOS (PP) — Multicaballos (Ej: "4X8" o "4-5X2-3")
+// ============================================================
+/**
+ * Motor de LIQUIDACIÓN de Pareos.
+ * REGLA: Gana el BANDO que logre colocar un caballo en la mejor posición de la pizarra.
+ */
+export function liquidarPareo(
+  t: TicketMotor,
+  tasaComision?: number | null
+): ResultadoMotor {
+  if (!t.caballo || !t.caballo.toUpperCase().includes("X")) {
+    return {
+      ok: false,
+      motivo: "Pareo (PP) requiere sintaxis 'A X B' (ej. 4X8 o 4-5X2-3)",
+      totalClienteNeto: 0,
+      balanceBanca: t.monto,
+      gananciaCasa: 0,
+    };
+  }
+
+  // 1. Separar los bandos por la "X"
+  const [strA, strB] = t.caballo.toUpperCase().split("X");
+  
+  // 2. Extraer los caballos de cada bando (Soporta separadores: guion, coma o slash)
+  // Ej: "4-5" -> ["4", "5"]
+  const bandoA = strA.split(/-|,|\//).map((s) => s.trim()).filter(Boolean);
+  const bandoB = strB.split(/-|,|\//).map((s) => s.trim()).filter(Boolean);
+
+  const fila = numerosPizarra(t.pizarra);
+
+  // 3. Función interna: Buscar la mejor posición (la menor) de un bando entero
+  const obtenerMejorPosicion = (bando: string[]) => {
+    let mejorPos = 999;
+    for (const cab of bando) {
+      const pos = fila.indexOf(cab);
+      if (pos !== -1 && pos < mejorPos) {
+        mejorPos = pos;
+      }
+    }
+    return mejorPos;
+  };
+
+  const posA = obtenerMejorPosicion(bandoA);
+  const posB = obtenerMejorPosicion(bandoB);
+
+  // 4. Determinar qué bando ganó
+  let ganoA = false;
+  if (posA < posB) ganoA = true;
+  else if (posB < posA) ganoA = false;
+  else {
+    // Si ninguno entró en pizarra (ambos 999) o hubo empate técnico
+    return {
+      ok: true,
+      motivo: `Empate técnico o sin figuración en ambos bandos. Devolución.`,
+      totalClienteNeto: t.monto,
+      balanceBanca: 0,
+      gananciaCasa: 0,
+    };
+  }
+
+  // 5. CÁLCULO DE PROPORCIÓN (Ej. 10/8)
+  let multiplicador = 1; 
+  if ((t as any).proporcion && (t as any).proporcion.includes("/")) {
+    const [num1, num2] = (t as any).proporcion.split("/").map(Number);
+    // Asumimos que num2/num1 calcula el multiplicador de premio (ej. 8/10 = 0.8)
+    multiplicador = num2 / num1; 
+  }
+
+  const tasa = Number.isFinite(Number(tasaComision)) && Number(tasaComision) >= 0
+    ? Number(tasaComision)
+    : COMISION_CASA.rate * 100;
+
+  // 6. Liquidación final (Simplificado: Asume que el cliente apostó al Bando A)
+  const acerto = ganoA; 
+
+  if (acerto) {
+    const bruto = t.monto + (t.monto * multiplicador); 
+    const comision = (bruto - t.monto) > 0 ? round2((bruto - t.monto) * (tasa / 100)) : 0;
+    
+    return {
+      ok: true,
+      motivo: `Pareo ganado. Bando [${bandoA.join("-")}] venció a [${bandoB.join("-")}].` + 
+              (comision > 0 ? ` (Comisión $${comision})` : ""),
+      totalClienteNeto: round2(bruto - comision),
+      balanceBanca: round2(t.monto - bruto + comision),
+      gananciaCasa: comision,
+    };
+  } else {
+    return {
+      ok: false,
+      motivo: `Pareo perdido. Bando [${bandoB.join("-")}] venció a [${bandoA.join("-")}].`,
+      totalClienteNeto: 0,
+      balanceBanca: t.monto,
+      gananciaCasa: 0,
+    };
+  }
+}
