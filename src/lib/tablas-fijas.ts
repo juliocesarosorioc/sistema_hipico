@@ -23,6 +23,7 @@ export type TablaFijaRow = {
   retirados_oficiales?: string | null;
   comision_grupo?: number | null;
   grupo_venta?: string | null;
+  monto_tabla?: number | null;
   caballos?: EjemplarTabla[] | null;
   tabla_grupos?: TablaGrupo[] | null;
 };

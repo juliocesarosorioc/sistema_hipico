@@ -7,6 +7,7 @@
  */
 import { supabase } from "@/lib/supabase";
 import { useCarrerasDiaStore, type CarreraDelDia } from "@/store/useCarrerasDiaStore";
+import { leerProgramaPorFecha, guardarPrograma } from "@/lib/gaceta/programa";
 
 export type ResultadoCentralInput = {
   fecha?: string;
@@ -73,6 +74,72 @@ export async function cargarCarrerasDelDia(fecha?: string): Promise<CarreraDelDi
   }
   if (res.length) useCarrerasDiaStore.getState().setCarreras(res);
   return res;
+}
+
+/**
+ * Registra una carrera manual (Modo Manual / bypass Gaceta) contra la BD.
+ * Orden de persistencia (best-effort, nunca rompe el flujo local):
+ *   1) resultados_carreras (upsert fecha+hipódromo+carrera) — si el RLS de
+ *      producción lo permite;
+ *   2) Programa del Día vía RPC club_guardar_programa_dia (security definer,
+ *      grant anon) — merge de la carrera en la jornada existente.
+ * listarCarrerasPorDia cruza ambas fuentes, así el semáforo de la Taquilla
+ * siempre ve la carrera.
+ */
+export async function registrarCarreraProgramada(
+  input: { fecha?: string; hipodromo: string; carrera: number | string }
+): Promise<{ ok: boolean; error?: string }> {
+  const f = input.fecha || hoy();
+  const hip = String(input.hipodromo).trim().toUpperCase();
+  const num = Number(input.carrera) || 0;
+  if (!hip || !num) return { ok: false, error: "Hipódromo y carrera requeridos." };
+  if (!useCarrerasDiaStore.getState().existeCarrera(hip, num, f)) {
+    useCarrerasDiaStore.getState().upsert({
+      fecha: f,
+      hipodromo: hip,
+      carrera: num,
+      estado: "Programada",
+      ventas: [],
+    });
+  }
+  if (!supabase) return { ok: true };
+
+  let errorPersistir: string | undefined;
+  if (supabase) {
+    try {
+      const { error } = await supabase.from("resultados_carreras").upsert(
+        {
+          fecha: f,
+          hipodromo: hip,
+          carrera: num,
+          ganadores: [],
+          aplicado_a_tablas: false,
+        },
+        { onConflict: "fecha,hipodromo,carrera" }
+      );
+      if (error) errorPersistir = error.message;
+      else return { ok: true };
+    } catch (e) {
+      errorPersistir = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  // Fallback: Programa del Día (RPC security definer). Merge en la jornada.
+  try {
+    const leido = await leerProgramaPorFecha(f);
+    const prev = leido.data;
+    const carreras = [...(prev?.carreras ?? [])];
+    const ya = carreras.some(
+      (c) => c.hipodromo.toUpperCase() === hip && Number(c.carrera) === num
+    );
+    if (!ya) carreras.push({ hipodromo: hip, fecha: f, carrera: num, caballos: [] });
+    const hipodromos = [...new Set([...(prev?.hipodromos ?? []).map((h) => h.toUpperCase()), hip])];
+    const r = await guardarPrograma({ fecha: f, hipodromos, carreras, resumen: `${carreras.length} carrera(s)`, creado_por: "modo manual" }, "modo manual");
+    if (r.ok) return { ok: true, error: errorPersistir ? `(resultados_carreras: ${errorPersistir})` : undefined };
+    return { ok: false, error: `${r.error ?? "desconocido"}${errorPersistir ? `; resultados_carreras: ${errorPersistir}` : ""}` };
+  } catch (e) {
+    return { ok: false, error: `${e instanceof Error ? e.message : String(e)}${errorPersistir ? `; resultados_carreras: ${errorPersistir}` : ""}` };
+  }
 }
 
 /**

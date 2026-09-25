@@ -7,6 +7,8 @@ import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { parseNum, sumaBase, fmtMoney, type DraftCarrera, type ItemCarritoVenta } from "@/lib/tablas/tipos";
 import { aDraftCarrera, eliminarDelRegistroGaceta, leerBuzonEnsamblaje, limpiarBuzonEnsamblaje } from "@/lib/gaceta/ui";
 import { useCarrerasDiaStore } from "@/store/useCarrerasDiaStore";
+import { registrarCarreraProgramada } from "@/lib/carreras-dia";
+import { asegurarHipodromo } from "@/lib/tablas/rpc";
 import { SeccionPliegue } from "@/components/tablas/SeccionPliegue";
 import { ParametrosCarrera } from "@/components/tablas/ParametrosCarrera";
 import { TarjetaEnsamblaje } from "@/components/tablas/TarjetaEnsamblaje";
@@ -52,6 +54,7 @@ export function TablasModule(props: Props) {
   const carrerasDia = useCarrerasDiaStore((s) => s.carreras);
 
   const [secciones, setSecciones] = useState({ parametros: false, ensamblaje: false, monitor: true });
+  const [modoManual, setModoManual] = useState(false);
   const [impresionAbierta, setImpresionAbierta] = useState(false);
   const [drafts, setDrafts] = useState<DraftCarrera[]>([]);
   const [carrito, setCarrito] = useState<ItemCarritoVenta[]>([]);
@@ -173,9 +176,32 @@ export function TablasModule(props: Props) {
   const publicarDraft = async (d: DraftCarrera) => {
     if (!d.hipodromo.trim()) return toast("Escriba el hipódromo de la carrera.", "warning");
     if (!d.carrera.trim()) return toast("Indique el número de la carrera.", "warning");
-    if ((d.caballos ?? []).length === 0) return toast("Añada al menos un ejemplar antes de publicar.", "warning");
+    if ((d.caballos ?? []).length === 0 && !modoManual)
+      return toast("Añada al menos un ejemplar (o active ✍️ Modo Manual para registrar la carrera vacía).", "warning");
+
+    // Modo Manual sin ejemplares: registra el hipódromo (crea si es nuevo) y
+    // la carrera vacía en resultados_carreras, sin publicar una tabla sin datos.
+    if ((d.caballos ?? []).length === 0) {
+      await asegurarHipodromo(d.hipodromo.trim()).catch(() => null);
+      const r = await registrarCarreraProgramada({
+        fecha: new Date().toISOString().slice(0, 10),
+        hipodromo: d.hipodromo.trim(),
+        carrera: Math.round(parseNum(d.carrera)) || d.carrera,
+      }).catch(() => ({ ok: false as const, error: "sin conexión" }));
+      eliminarDelRegistroGaceta(d.hipodromo.toUpperCase(), d.carrera);
+      setDrafts((ds) => ds.filter((x) => x.uid !== d.uid));
+      toast(
+        r?.ok
+          ? `✅ Carrera ${d.hipodromo.toUpperCase()} C${d.carrera} registrada (Modo Manual, sin ejemplares).`
+          : `⚠️ Carrera registrada localmente; no se pudo persistir en BD: ${r?.error ?? "desconocido"}`,
+        r?.ok ? "success" : "warning"
+      );
+      return;
+    }
+
     const res = await publicar(draftATabla(d));
     if (res.ok) {
+      await asegurarHipodromo(d.hipodromo.trim()).catch(() => null);
       toast(`✅ Tabla ${d.hipodromo.toUpperCase()} C${d.carrera} publicada con éxito.`, "success");
       eliminarDelRegistroGaceta(d.hipodromo.toUpperCase(), d.carrera);
       setDrafts((ds) => ds.filter((x) => x.uid !== d.uid));
@@ -187,10 +213,52 @@ export function TablasModule(props: Props) {
   const publicarTodas = async () => {
     if (drafts.length === 0) return toast("No hay carreras en el ensamblaje.", "info");
     const validas = drafts.filter(
-      (d) => d.hipodromo.trim() && d.carrera.trim() && (d.caballos ?? []).length > 0
+      (d) => d.hipodromo.trim() && d.carrera.trim() && (modoManual || (d.caballos ?? []).length > 0)
     );
     if (validas.length === 0)
-      return toast("Ninguna carrera válida para publicar (revise hipódromo, carrera y ejemplares).", "warning");
+      return toast(
+        modoManual
+          ? "Revise hipódromo y carrera de las tarjetas del ensamblaje."
+          : "Ninguna carrera válida para publicar (active ✍️ Modo Manual para registrar carreras vacías).",
+        "warning"
+      );
+
+    if (modoManual) {
+      // En modo manual el lote registra TODAS las carreras: vacías → la
+      // carrera programada en resultados_carreras; con caballos → tabla fija.
+      let okVacios = 0;
+      let okTablas = 0;
+      const tablasConCaballos = validas.filter((d) => (d.caballos ?? []).length > 0);
+      const vacias = validas.filter((d) => (d.caballos ?? []).length === 0);
+      for (const d of vacias) {
+        await asegurarHipodromo(d.hipodromo.trim()).catch(() => null);
+        const r = await registrarCarreraProgramada({
+          fecha: new Date().toISOString().slice(0, 10),
+          hipodromo: d.hipodromo.trim(),
+          carrera: Math.round(parseNum(d.carrera)) || d.carrera,
+        }).catch(() => ({ ok: false as const, error: "sin conexión" }));
+        if (r?.ok) okVacios++;
+      }
+      if (tablasConCaballos.length) {
+        const lote = tablasConCaballos.map((d) => draftATabla(d));
+        if (persistirLote) {
+          const r = await persistirLote(lote);
+          okTablas = r.okCount;
+        } else {
+          for (const t of lote) {
+            const r = await publicar(t);
+            if (r.ok) okTablas++;
+          }
+        }
+      }
+      validas.forEach((d) => eliminarDelRegistroGaceta(d.hipodromo.toUpperCase(), d.carrera));
+      setDrafts((ds) => ds.filter((d) => !validas.some((v) => v.uid === d.uid)));
+      return toast(
+        `✅ Modo Manual: ${okVacios} carrera(s) vacía(s) registrada(s) · ${okTablas} tabla(s) publicada(s).`,
+        "success"
+      );
+    }
+
     const lote = validas.map((d) => draftATabla(d));
     const claveDeDraft = (d: DraftCarrera) =>
       `${d.hipodromo.trim().toUpperCase()}|${Math.round(parseNum(d.carrera)) || d.carrera}`;
@@ -367,6 +435,18 @@ export function TablasModule(props: Props) {
         onToggle={() => setSecciones((s) => ({ ...s, ensamblaje: !s.ensamblaje }))}
         accion={
           <div className={als}>
+            <button
+              type="button"
+              onClick={() => setModoManual((m) => !m)}
+              className={`m-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-wide shadow-md transition-colors ${
+                modoManual
+                  ? "bg-cyan-600 text-white hover:bg-cyan-700"
+                  : "border border-cyan-300 bg-cyan-50 text-cyan-700 hover:bg-cyan-100"
+              }`}
+              title="Modo Manual: permite registrar carreras vacías escritas a mano sin depender de la Gaceta IA."
+            >
+              {modoManual ? "✅ Modo Manual ON" : "✍️ Modo Manual"}
+            </button>
             <button
               type="button"
               onClick={pegarDesdeGaceta}

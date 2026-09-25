@@ -51,6 +51,8 @@ export type CarrerasDiaState = {
   pagar: (hipodromo: string, carrera: number | string, premioRecalculado: number, fecha?: string) => void;
   /** Estado derivado para corazones semáforo en la UI. */
   estadoDe: (hipodromo: string, carrera: number | string) => CarreraDelDia | null;
+  /** ¿Existe ya esa carrera en el ledger para [fecha + hipódromo]? */
+  existeCarrera: (hipodromo: string, carrera: number | string, fecha?: string) => boolean;
 };
 
 function clave(h: string, c: number | string): string {
@@ -138,6 +140,12 @@ export const useCarrerasDiaStore = create<CarrerasDiaState>()(
       estadoDe: (hipodromo, carrera) => {
         const k = clave(hipodromo, carrera);
         return get().carreras.find((x) => clave(x.hipodromo, x.carrera) === k) ?? null;
+      },
+
+      existeCarrera: (hipodromo, carrera, fecha) => {
+        const f = fecha || hoy();
+        const k = clave(hipodromo, carrera);
+        return get().carreras.some((x) => clave(x.hipodromo, x.carrera) === k && x.fecha === f);
       },
     }),
     {

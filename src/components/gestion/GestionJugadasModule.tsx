@@ -12,7 +12,8 @@ import { SemaforoCarreras } from "@/components/gestion/SemaforoCarreras";
 import { Button } from "@/components/ui/Button";
 import { fmtMoney } from "@/lib/tablas/tipos";
 import { listarClientesVenta, saldoDeCliente, type ClienteVenta } from "@/lib/grupos";
-import { listarCarrerasPorDia } from "@/lib/tablas/rpc";
+import { listarCarrerasPorDia, asegurarHipodromo } from "@/lib/tablas/rpc";
+import { registrarCarreraProgramada } from "@/lib/carreras-dia";
 import { hoyLocal } from "@/lib/gaceta/programa";
 
 type FilaCarga = {
@@ -68,6 +69,7 @@ export function GestionJugadasModule() {
   const [fecha, setFecha] = useState(() => hoyLocal());
   const [carrerasPorDia, setCarrerasPorDia] = useState<number[]>([]);
   const [carrera, setCarrera] = useState(1);
+  const [modoManual, setModoManual] = useState(false);
   const [retirados, setRetirados] = useState("");
   const [comision, setComision] = useState("5");
   const [conCruces, setConCruces] = useState(false);
@@ -274,6 +276,22 @@ export function GestionJugadasModule() {
   const setFila = (i: number, patch: Partial<FilaCarga>) =>
     setFilas((f) => f.map((r, j) => (j === i ? { ...r, ...patch, error: undefined } : r)));
 
+  /**
+   * Modo Manual (bypass Gaceta IA): al cargar jugadas sobre una carrera vacía,
+   *  · asegura el hipódromo tipeado en la BD (si no existe lo crea),
+   *  · registra el número de carrera en resultados_carreras (Programada),
+   *  · suma el número al semáforo local para que siga visible en la sesión.
+   * Best-effort: un fallo de red no bloquea la carga local.
+   */
+  const consolidarManual = async () => {
+    await asegurarHipodromo(hipodromo).catch(() => null);
+    const r = await registrarCarreraProgramada({ fecha, hipodromo, carrera }).catch(() => null);
+    if (r && !r.ok) {
+      setAviso("⚠️ No se pudo persistir la carrera manual en BD: " + (r.error ?? "desconocido"));
+    }
+    setCarrerasPorDia((c) => (c.includes(carrera) ? c : [...c, carrera].sort((a, b) => a - b)));
+  };
+
   const cargarAtaquilla = () => {
     let n = 0;
     const errores: string[] = [];
@@ -309,6 +327,7 @@ export function GestionJugadasModule() {
       }
       return setAviso("Carga al menos una jugada válida (JUGADA + MONTO). " + (errores[0] ?? ""));
     }
+    if (modoManual) void consolidarManual();
     if (!jugadasPorCarrera.includes(carrera)) setJugadasPorCarrera((j) => [...j, carrera]);
     setFilas((fs) => {
       // Las filas con error NO se pierden: quedan en rojo ⚠️ para corregir y reenviar.
@@ -468,6 +487,15 @@ export function GestionJugadasModule() {
           />
           Con Cruces
         </label>
+        <label className="flex cursor-pointer items-end gap-2 rounded-xl border border-cyan-200 bg-cyan-50/60 px-3 py-2 text-[11px] font-black uppercase text-cyan-700" title="Permite cargar jugadas y registrar carreras aunque la Gaceta IA no haya extraído nada (sin bloquear).">
+          <input
+            type="checkbox"
+            checked={modoManual}
+            onChange={(e) => setModoManual(e.target.checked)}
+            className="h-4 w-4 accent-cyan-600"
+          />
+          ✍️ Modo Manual
+        </label>
         <div className="rounded-xl border border-line bg-gray-50 px-3 py-2 text-right">
           <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">En sesión · {fecha}</p>
           <p className="text-sm font-black text-slate-900">{monedaFmt(totalInvertidoSesion)}</p>
@@ -480,6 +508,7 @@ export function GestionJugadasModule() {
         fecha={fecha}
         carreras={carrerasPorDia}
         activa={carrera}
+        manual={modoManual}
         onSeleccionar={setCarrera}
       />
 

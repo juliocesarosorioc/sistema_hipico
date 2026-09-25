@@ -23,7 +23,12 @@ export const FALLBACK_HIPODROMOS = [
 
 export type OpcionHipodromo = { value: string; label: string };
 
-/** Lista de hipódromos operativos (Solo Activos — Supabase si responde, si no, fallback local). */
+/**
+ * Lista de hipódromos operativos (misma fuente que el legacy: `hipodromos`
+ * con SELECT plano ordenado — sin filtros de columna inventados).
+ * La data sale SIEMPRE de la tabla real cuando hay conexión; el respaldo
+ * local solo aparece si la tabla/RLS impide la lectura.
+ */
 export async function listarHipodromos(): Promise<OpcionHipodromo[]> {
   const mapear = (rows: unknown[]): OpcionHipodromo[] =>
     rows
@@ -38,24 +43,56 @@ export async function listarHipodromos(): Promise<OpcionHipodromo[]> {
   if (!sdb) return mapear(FALLBACK_HIPODROMOS);
 
   const orquestar = async () => {
-    // Intento 1 — esquema con borrado lógico explícito (deleted_at).
-    const r1 = await sdb.from("hipodromos").select("id, nombre").is("deleted_at", null).order("nombre");
+    // Intento 1 — SELECT plano (exactamente como js/hipodromos.js y js/taquilla.js).
+    const r1 = await sdb.from("hipodromos").select("id, nombre").order("nombre", { ascending: true });
     if (!r1.error) return r1.data as unknown[];
-    // Intento 2 — esquema mínimo legacy (estado = 'Activo').
-    const r2 = await sdb.from("hipodromos").select("id, nombre").eq("estado", "Activo").order("nombre");
+    // Intento 2 — esquema con borrado lógico explícito (deleted_at).
+    const r2 = await sdb.from("hipodromos").select("id, nombre").is("deleted_at", null).order("nombre");
     if (!r2.error) return r2.data as unknown[];
-    // Intento 3 — variante "estatus" (algunas BD usan este nombre).
-    const r3 = await sdb.from("hipodromos").select("id, nombre").eq("estatus", "Activo").order("nombre");
+    // Intento 3 — esquema mínimo legacy (estado = 'Activo').
+    const r3 = await sdb.from("hipodromos").select("id, nombre").eq("estado", "Activo").order("nombre");
     if (!r3.error) return r3.data as unknown[];
-    throw new Error([r1.error?.message, r2.error?.message, r3.error?.message].filter(Boolean).join("; "));
+    // Intento 4 — variante "estatus" (algunas BD usan este nombre).
+    const r4 = await sdb.from("hipodromos").select("id, nombre").eq("estatus", "Activo").order("nombre");
+    if (!r4.error) return r4.data as unknown[];
+    throw new Error([r1.error?.message, r2.error?.message, r3.error?.message, r4.error?.message].filter(Boolean).join("; "));
   };
 
   try {
     const filas = await orquestar();
     return mapear(filas);
   } catch (e) {
-    console.warn("listarHipodromos: sin filtro de borrado lógico aplicable, usando respaldo local.", e);
+    console.warn("listarHipodromos: sin acceso a la tabla, usando respaldo local.", e);
     return mapear(FALLBACK_HIPODROMOS);
+  }
+}
+
+/**
+ * Asegura que un hipódromo exista en la tabla `hipodromos` (modo manual).
+ * Si el nombre tipeado no está registrado, lo inserta `{ nombre, pais }`
+ * (mismo shape del legacy js/hipodromos.js). El llamador debe refrescar el
+ * caché de la UI (useHipodromosStore.invalidar) para que el buscador lo
+ * encuentre en sesiones futuras.
+ */
+export async function asegurarHipodromo(nombre: string): Promise<{ ok: boolean; yaExistia: boolean; error?: string }> {
+  const n = String(nombre ?? "").trim().toUpperCase();
+  if (!n) return { ok: false, yaExistia: false, error: "Nombre vacío." };
+  const sdb = supabase;
+  if (!sdb) return { ok: true, yaExistia: false };
+  try {
+    const { data, error } = await sdb
+      .from("hipodromos")
+      .select("id, nombre")
+      .ilike("nombre", n)
+      .limit(1)
+      .maybeSingle();
+    if (error && error.code !== "PGRST116") return { ok: false, yaExistia: false, error: error.message };
+    if (data) return { ok: true, yaExistia: true };
+    const { error: eIns } = await sdb.from("hipodromos").insert([{ nombre: n, pais: "OTRO" }]);
+    if (eIns) return { ok: false, yaExistia: false, error: eIns.message };
+    return { ok: true, yaExistia: false };
+  } catch (e) {
+    return { ok: false, yaExistia: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -68,8 +105,9 @@ function hipoKey(h: unknown): string {
 
 /**
  * Carreras registradas para [fecha + hipódromo] en la BD.
- * Cruza dos fuentes: el Programa del Día (programa_dia) y las Tablas Fijas
- * publicadas (tablas_fijas). Devuelve números únicos ordenados — alimenta el
+ * Cruza tres fuentes: el Programa del Día (programa_dia), las Tablas Fijas
+ * publicadas (tablas_fijas) y las carreras manuales/resultados
+ * (resultados_carreras). Devuelve números únicos ordenados — alimenta el
  * semáforo dinámico de la Taquilla contextualizada por fecha.
  */
 export async function listarCarrerasPorDia(fecha: string, hipodromo: string): Promise<number[]> {
@@ -104,8 +142,28 @@ export async function listarCarrerasPorDia(fecha: string, hipodromo: string): Pr
     }
   };
 
+  // Fuente manual: carreras registradas sin Gaceta en resultados_carreras
+  // (upsert de registrarCarreraProgramada) para la misma fecha + hipódromo.
+  const fuenteManual = async () => {
+    if (!supabase || !fecha) return;
+    try {
+      const { data, error } = await supabase
+        .from("resultados_carreras")
+        .select("carrera, hipodromo, fecha")
+        .eq("fecha", fecha)
+        .ilike("hipodromo", `%${hipodromo}%`);
+      if (error) return;
+      for (const r of (data ?? []) as Array<{ carrera?: unknown }>) {
+        const n = Number(r.carrera);
+        if (Number.isFinite(n) && n > 0) set.add(n);
+      }
+    } catch {
+      /* sin tabla → se ignora */
+    }
+  };
+
   try {
-    await Promise.all([fuentePrograma(), fuenteTablas()]);
+    await Promise.all([fuentePrograma(), fuenteTablas(), fuenteManual()]);
   } catch {
     /* insignificante */
   }
@@ -157,6 +215,7 @@ export function normalizarFilas(data: unknown[]): TablaFijaRow[] {
       premio_original: raw.premio_original != null ? parseNum(raw.premio_original) : null,
       premio_recalculado: raw.premio_recalculado != null ? parseNum(raw.premio_recalculado) : null,
       suma_base_tabla: raw.suma_base_tabla != null ? parseNum(raw.suma_base_tabla) : null,
+      monto_tabla: raw.monto_tabla != null ? parseNum(raw.monto_tabla) : null,
       limite_ventas: raw.limite_ventas != null ? parseNum(raw.limite_ventas) : null,
       cantidad_vendida: raw.cantidad_vendida != null ? parseNum(raw.cantidad_vendida) : null,
       moneda: raw.moneda ? String(raw.moneda) : null,
@@ -169,45 +228,87 @@ export function normalizarFilas(data: unknown[]): TablaFijaRow[] {
   });
 }
 
-/** Payload SQL seguro para tablas_fijas (mismas columnas que js/tablas.js). */
+/** Detecta "column X does not exist" para retirar columnas del esquema real. */
+function columnaInexistente(msj: string): string | null {
+  const m = /column "([^"]+)" does not exist/.exec(msj);
+  return m ? m[1] : null;
+}
+
+/**
+ * Payload SQL seguro para tablas_fijas (mismas columnas que js/tablas.js).
+ * NO incluye hipodromo_id/premio: el esquema productivo real no las tiene y
+ * el upsert por (hipódromo+carrera) se resuelve vía idExistente (id de la BD).
+ */
 function payloadDeTabla(t: TablaFijaRow): Record<string, unknown> {
   return {
     hipodromo: t.hipodromo,
-    hipodromo_id: t.hipodromo_id ?? null,
     carrera: t.carrera,
     fecha: t.fecha,
     fecha_creacion: t.fecha_creacion ?? new Date().toISOString(),
     estado: "Abierta",
-    premio: t.premio_original,
     premio_original: t.premio_original,
     premio_recalculado: t.premio_recalculado,
     suma_base_tabla: t.suma_base_tabla,
-    limite_ventas: t.limite_ventas ?? 0,
+    limite_ventas: t.limite_ventas ?? 300,
     cantidad_vendida: t.cantidad_vendida ?? 0,
     moneda: t.moneda ?? "USD",
     distancia_carrera: t.distancia_carrera,
     superficie: t.superficie,
     retirados_oficiales: t.retirados_oficiales || "NO HUBO RETIROS",
     comision_grupo: t.comision_grupo ?? 0,
-    grupo_venta: t.grupo_venta ?? null,
+    grupo_venta: t.grupo_venta ?? "GRUPOS",
+    monto_tabla: t.monto_tabla ?? 100,
     tasa_cambio: t.tasa_cambio ?? null,
     caballos: t.caballos ?? [],
   };
 }
 
 /** Busca la fila existente por (hipodromo, carrera) para actualizar en vez de duplicar. */
+const ORDENES_ID = ["fecha_creacion", "created_at", "id"] as const;
+
 async function idExistente(hipodromo?: string | null, carrera?: number | null): Promise<number | string | null> {
   if (!supabase || !hipodromo || !carrera) return null;
-  const { data, error } = await supabase
-    .from("tablas_fijas")
-    .select("id")
-    .ilike("hipodromo", hipodromo)
-    .eq("carrera", carrera)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error || !data) return null;
-  return (data as { id: number | string }).id;
+  for (const col of ORDENES_ID) {
+    try {
+      const { data, error } = await supabase
+        .from("tablas_fijas")
+        .select("id")
+        .ilike("hipodromo", hipodromo)
+        .eq("carrera", carrera)
+        .order(col, { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) continue;
+      return data ? (data as { id: number | string }).id : null;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+/** INSERT/UPDATE tolerantes: retiran columnas inexistentes del esquema real y reintentan. */
+async function persistirFila(
+  payload: Record<string, unknown>,
+  modo: "insert" | "update",
+  id?: number | string
+): Promise<{ id?: number | string; error?: string }> {
+  if (!supabase) return { error: "Sin conexión a Supabase" };
+  let actual = { ...payload };
+  for (let i = 0; i < 6; i++) {
+    const op =
+      modo === "insert"
+        ? await supabase.from("tablas_fijas").insert(actual).select("id").maybeSingle()
+        : await supabase.from("tablas_fijas").update(actual).eq("id", id);
+    if (!op.error) {
+      const raw = op.data as { id?: number | string } | null;
+      return { id: modo === "insert" ? raw?.id : id };
+    }
+    const col = columnaInexistente(op.error.message || "");
+    if (!col || !(col in actual)) return { error: op.error.message };
+    delete actual[col];
+  }
+  return { error: "Columnas del esquema sin resolver en tablas_fijas" };
 }
 
 /** Publica una tabla en Supabase (upsert por hipódromo+carrera). RLS off → anon OK. */
@@ -215,14 +316,11 @@ export async function publicarTabla(t: TablaFijaRow): Promise<{ ok: boolean; id?
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
     const existente = await idExistente(t.hipodromo, t.carrera);
-    if (existente != null) {
-      const { error } = await supabase.from("tablas_fijas").update(payloadDeTabla(t)).eq("id", existente);
-      if (error) throw error;
-      return { ok: true, id: existente };
-    }
-    const { data, error } = await supabase.from("tablas_fijas").insert(payloadDeTabla(t)).select("id").single();
-    if (error) throw error;
-    return { ok: true, id: data?.id };
+    const r = existente != null
+      ? await persistirFila(payloadDeTabla(t), "update", existente)
+      : await persistirFila(payloadDeTabla(t), "insert");
+    if (r.error) return { ok: false, error: r.error };
+    return { ok: true, id: r.id };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
@@ -241,42 +339,22 @@ export async function publicarTablasLote(
 ): Promise<{ ok: boolean; okCount: number; errores: ErrorPublicacionLote[] }> {
   if (!supabase) return { ok: false, okCount: 0, errores: tablas.map((t) => ({ hipodromo: t.hipodromo ?? "", carrera: t.carrera ?? null, error: "Sin conexión a Supabase" })) };
   const errores: ErrorPublicacionLote[] = [];
-  const ids: Array<string | number> = [];
-  const nuevos: TablaFijaRow[] = [];
+  let okCount = 0;
 
   for (const t of tablas) {
     try {
-      const id = await idExistente(t.hipodromo, t.carrera);
-      if (id != null) {
-        const { error } = await supabase.from("tablas_fijas").update(payloadDeTabla(t)).eq("id", id);
-        if (error) throw error;
-        ids.push(id);
-      } else {
-        nuevos.push(t);
-      }
+      const existente = await idExistente(t.hipodromo, t.carrera);
+      const r = existente != null
+        ? await persistirFila(payloadDeTabla(t), "update", existente)
+        : await persistirFila(payloadDeTabla(t), "insert");
+      if (r.error) throw new Error(r.error);
+      okCount++;
     } catch (e) {
       errores.push({ hipodromo: t.hipodromo ?? "", carrera: t.carrera ?? null, error: (e as Error).message });
     }
   }
 
-  if (nuevos.length) {
-    try {
-      const { data, error } = await supabase
-        .from("tablas_fijas")
-        .insert(nuevos.map((t) => payloadDeTabla(t)))
-        .select("id");
-      if (error) throw error;
-      (data ?? []).forEach((d) => {
-        const id = (d as { id: string | number }).id;
-        if (id != null) ids.push(id);
-      });
-    } catch (e) {
-      const msg = (e as Error).message;
-      nuevos.forEach((t) => errores.push({ hipodromo: t.hipodromo ?? "", carrera: t.carrera ?? null, error: msg }));
-    }
-  }
-
-  return { ok: errores.length === 0, okCount: ids.length, errores };
+  return { ok: errores.length === 0, okCount, errores };
 }
 
 const COLUMNAS_EDITABLES = [
