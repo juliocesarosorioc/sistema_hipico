@@ -166,15 +166,25 @@ export function TablasModule(props: Props) {
     grupo_venta: null,
     // Saneamiento del payload: `valor_ejemplar` siempre a Number y ceros
     // explícitos, para que Supabase reciba datos limpios (sin NaN/cadenas).
-    caballos: (d.caballos ?? []).map((cb) => ({
-      numero: cb.numero,
-      nombre: String(cb.nombre || "").trim().toUpperCase(),
-      nacionalidad: cb.nacionalidad ? String(cb.nacionalidad).toUpperCase() : "VE",
-      valor_ejemplar: parseNum(cb.valor_ejemplar) || 0,
-      retirado: !!cb.retirado,
-      ganador: !!cb.ganador,
-      ejemplar_id: cb.ejemplar_id ?? null,
-    })),
+    caballos: (d.caballos ?? []).map((cb) => {
+      // Detección automática de nacionalidad americana si no viene definida
+      let nac = cb.nacionalidad ? String(cb.nacionalidad).toUpperCase() : "";
+      if (!nac) {
+        const esAmericano = /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN/i.test(d.hipodromo);
+        nac = esAmericano ? "US" : "VE";
+      }
+      
+      return {
+        numero: cb.numero,
+        nombre: String(cb.nombre || "").trim().toUpperCase(),
+        nacionalidad: nac,
+        valor_ejemplar: parseNum(cb.valor_ejemplar) || 0,
+        retirado: !!cb.retirado,
+        ganador: !!cb.ganador,
+        ejemplar_id: cb.ejemplar_id ?? null,
+      };
+    }),
+    
     tabla_grupos: null,
     cerrada: false,
   });

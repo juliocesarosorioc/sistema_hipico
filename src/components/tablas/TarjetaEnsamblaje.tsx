@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { colorDeNumero, textoDeNumero, parseNum, OPCIONES_NACIONALIDAD, type DraftCarrera, type EjemplarTabla } from "@/lib/tablas/tipos";
+import { Flag } from "@/components/ui/BanderaPais"; // Inyectamos la bandera
 
 type Props = {
   draft: DraftCarrera;
@@ -10,11 +11,6 @@ type Props = {
   onQuitar: (uid: string) => void;
 };
 
-/**
- * Tarjeta de "Carreras en el Ensamblaje" — clon 1:1 de js/tablas.js crearCardCarrera:
- * cabecera de color con hipódromo/carrera/distancia/superficie/monto, ejemplares
- * numerados editables y pie con suma de la tabla + Publicar/Quitar.
- */
 export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Props) {
   const [nuevoNum, setNuevoNum] = useState("");
   const [nuevoNom, setNuevoNom] = useState("");
@@ -42,12 +38,54 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
     setNuevoValor("");
   };
 
+  // =========================================================================
+  // BOTÓN MÁGICO MORNING LINE (ML) - 1.60
+  // =========================================================================
+  const calcularMorningLine = () => {
+    if (draft.caballos.length === 0) return;
+
+    // 1. Asumimos que los caballos vienen con su dividendo gringo (Ej. "5/2" o "3.50") 
+    // en el campo valor_ejemplar desde el OCR. Extraemos ese valor a un array numérico.
+    // Si viene como texto "5/2", tú deberás ajustar parseNum para que divida 5/2 = 2.5
+    // Asumiremos que ya están como números flotantes:
+    const caballosActivos = draft.caballos.filter(c => !c.retirado);
+    
+    // Regla de Negocio: Se estima que la suma de valores a asignar DEBE acercarse a 1.60
+    // Como las tablas se calculan para pagar la suma total, esto distribuye los $1.60 
+    // proporcionalmente (invertido: al que paga menos en gringo se le pone más valor aquí).
+    
+    let sumatoriaInversa = 0;
+    const dividendos = caballosActivos.map(c => {
+      const ml = parseNum(c.valor_ejemplar) || 1; // Previene division por cero
+      const inv = 1 / ml;
+      sumatoriaInversa += inv;
+      return { id: c.numero, ml, inv };
+    });
+
+    const NUEVO_TOPE = 1.60;
+    
+    const nuevosCaballos = draft.caballos.map(c => {
+      if (c.retirado) return c; // Se queda igual
+      const divData = dividendos.find(d => d.id === c.numero);
+      if (!divData) return c;
+
+      // Calculamos el peso ponderado sobre 1.60 y redondeamos a 2 decimales
+      const peso = divData.inv / sumatoriaInversa;
+      const nuevoValorAsignado = (peso * NUEVO_TOPE).toFixed(2);
+
+      return { ...c, valor_ejemplar: nuevoValorAsignado };
+    });
+
+    set({ caballos: nuevosCaballos });
+    window.dispatchEvent(new CustomEvent("toast", { detail: { msg: "✅ Morning Line ajustado a $1.60", tipo: "success" } }));
+  };
+
   const chipCls = "rounded px-1 py-px text-[9px] font-bold leading-none";
   const inpHeader = "rounded px-1 py-px font-bold outline-none bg-white/20 text-white placeholder:text-white/50";
 
   return (
     <div className="flex flex-col overflow-hidden rounded-xl border border-indigo-200 bg-white shadow-sm">
-      {/* Cabecera color (legacy bg-indigo-600 #4f46e5) */}
+      {/* Cabecera color */}
       <div className="bg-indigo-600 px-1.5 py-px text-white">
         <div className="flex items-center justify-between gap-1 leading-none">
           <input
@@ -78,10 +116,10 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
           <select
             value={draft.superficie}
             onChange={(e) => set({ superficie: e.target.value })}
-            className={`${chipCls} bg-white/20 uppercase text-white`}
+            className={`${chipCls} bg-white/20 uppercase text-white outline-none`}
           >
             {["ARENA", "CESPED", "FANGO", "TAPETA", "OTRA"].map((s) => (
-              <option key={s} value={s}>
+              <option key={s} value={s} className="text-black">
                 {s}
               </option>
             ))}
@@ -90,39 +128,58 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
         <div className="mt-0.5 flex items-center justify-between rounded px-1.5 py-px leading-none bg-white/20">
           <span className="text-[8px] font-black uppercase tracking-wider opacity-90">💰 Monto a Pagar / Tabla</span>
           <span className="flex items-center gap-0.5 text-sm font-black leading-none">
-            $<input type="number" step="0.01" value={draft.premio} onChange={(e) => set({ premio: e.target.value })} className="w-14 rounded bg-transparent text-right font-black outline-none text-white placeholder:text-white/40" />
+            US $<input type="number" step="0.01" value={draft.premio} onChange={(e) => set({ premio: e.target.value })} className="w-14 rounded bg-transparent text-right font-black outline-none text-white placeholder:text-white/40" />
           </span>
         </div>
       </div>
 
-      {/* Subetiqueta ejemplares */}
-      <div className="flex items-center justify-between px-1.5 pb-0.5 pt-1 text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none">
+      {/* Subetiqueta ejemplares + BOTON ML */}
+      <div className="flex items-center justify-between px-1.5 pb-0.5 pt-1 text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none bg-slate-50 border-b border-slate-100">
         <span>🐴 Ejemplares</span>
-        <span className="rounded-full bg-slate-100 px-1.5 text-[9px] font-black text-slate-600">{draft.caballos.length}</span>
+        <div className="flex items-center gap-2">
+          {/* BOTÓN ML */}
+          <button 
+            type="button" 
+            onClick={calcularMorningLine}
+            title="Auto-calcular distribución a Tope $1.60"
+            className="bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-sm font-bold shadow-sm hover:bg-yellow-500"
+          >
+            📊 Calc. ML (1.60)
+          </button>
+          <span className="rounded-full bg-slate-200 px-1.5 text-[9px] font-black text-slate-600">{draft.caballos.length}</span>
+        </div>
       </div>
 
-      {/* Lista de ejemplares */}
+      {/* Lista de ejemplares CON BANDERA */}
       <div className="flex-1 space-y-px px-1 py-px">
         {draft.caballos.length === 0 && (
           <p className="px-1 py-1 text-[11px] italic text-slate-400">Sin ejemplares registrados.</p>
         )}
         {draft.caballos.map((c, i) => {
-          const nac = (c.nacionalidad || "VE").trim().toUpperCase();
+          // Detectamos bandera si no la trae
+          let nac = c.nacionalidad ? String(c.nacionalidad).toUpperCase() : "";
+          if (!nac) {
+            const esAmericano = /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN/i.test(draft.hipodromo);
+            nac = esAmericano ? "US" : "VE";
+          }
           return (
-            <div key={i} className="grid items-center rounded border border-slate-200 bg-slate-50 px-1 py-px" style={{ gridTemplateColumns: "1.75rem 1fr 3.25rem auto" }}>
+            <div key={i} className="grid items-center rounded border border-slate-200 bg-slate-50 px-1 py-px" style={{ gridTemplateColumns: "1.75rem 1fr auto 3.25rem auto" }}>
               <span
                 className="flex h-7 w-7 shrink-0 flex-none items-center justify-center text-center text-[10px] font-bold"
                 style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
               >
                 {c.numero}
               </span>
-              <span className="min-w-0 truncate px-1 text-[11px] font-bold uppercase text-slate-800">{c.nombre}</span>
+              <span className="min-w-0 truncate px-1 text-[11px] font-bold uppercase text-slate-800 flex items-center gap-1">
+                {c.nombre}
+              </span>
+              <span className="flex items-center justify-center px-1"><Flag nac={nac} size={10} withName={false} /></span>
               <input
                 type="text"
                 inputMode="decimal"
                 value={String(c.valor_ejemplar ?? "")}
                 onChange={(e) => setCaballo(i, { valor_ejemplar: e.target.value })}
-                placeholder={nac === "VE" ? "valor" : undefined}
+                placeholder={nac === "VE" ? "valor" : "M/L"}
                 className="w-14 rounded border border-slate-300 px-1 py-px text-right text-[11px] font-black text-blue-700 outline-none"
               />
               <button type="button" onClick={() => quitarCaballo(i)} className="px-1 text-red-400 hover:text-red-600" title="Quitar ejemplar">
@@ -152,10 +209,10 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
         </div>
       </div>
 
-      {/* Suma de la tabla */}
+      {/* Suma de la tabla (US $) */}
       <div className="flex items-center justify-between border-t border-slate-200 bg-white px-1.5 py-0.5">
         <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none">🧮 Suma de la Tabla</span>
-        <span className="text-xs font-black text-indigo-700">$ {suma.toLocaleString("es-VE", { maximumFractionDigits: 2 })}</span>
+        <span className="text-xs font-black text-indigo-700">US $ {suma.toLocaleString("es-VE", { maximumFractionDigits: 2 })}</span>
       </div>
 
       {/* Acciones */}

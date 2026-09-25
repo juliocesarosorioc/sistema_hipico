@@ -21,13 +21,6 @@ type Props = {
   onCerrar: () => void;
 };
 
-/**
- * Configuración de Impresión de Tablas — réplica del modal legacy
- * (html/tablas.html #modalConfigImpresion): Hipódromo + Día + Tipo de
- * documento (Tablas Publicadas / Reporte por Jugador) + Formato (PDF/JPG/PNG).
- * Se imprime SIEMPRE lo que está en el store (última versión de valores),
- * sin recargar. La captura es cliente-side (html2canvas + jsPDF).
- */
 export function ConfigImpresionModal({ abierto, onCerrar }: Props) {
   const tablas = useTablasFijasStore((s) => s.tablas);
 
@@ -45,7 +38,15 @@ export function ConfigImpresionModal({ abierto, onCerrar }: Props) {
     }
   }, [abierto]);
 
-  const dias = useMemo(() => diasDisponibles(tablas), [tablas]);
+  // Usamos el hook useMemo para extraer solo los días de EVENTO disponibles
+  const diasEvento = useMemo(() => {
+    const fechasUnicas = new Set<string>();
+    tablas.forEach(t => {
+      if (t.fecha) fechasUnicas.add(t.fecha.slice(0, 10)); // Cortamos a YYYY-MM-DD
+    });
+    return Array.from(fechasUnicas).sort().reverse();
+  }, [tablas]);
+
   const hipodromos = useMemo(() => hipodromosDisponibles(tablas), [tablas]);
 
   const totalAbiertas = tablas.filter((t) => !t.cerrada).length;
@@ -113,7 +114,7 @@ export function ConfigImpresionModal({ abierto, onCerrar }: Props) {
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">
-              Día (fecha del programa):
+              Día <span className="text-slate-400 font-normal text-[10px]">(Día exacto de la carrera)</span>:
             </label>
             <select
               value={dia}
@@ -121,8 +122,8 @@ export function ConfigImpresionModal({ abierto, onCerrar }: Props) {
               disabled={trabajando !== null}
               className="w-full border border-slate-300 rounded-lg p-2.5 text-sm font-black bg-white outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
             >
-              <option value="">Todos los días...</option>
-              {dias.map((d) => (
+              <option value="">Todas las fechas...</option>
+              {diasEvento.map((d) => (
                 <option key={d} value={d}>
                   {d}
                 </option>
@@ -130,7 +131,7 @@ export function ConfigImpresionModal({ abierto, onCerrar }: Props) {
             </select>
             {dia && hipodromo ? (
               <p className="text-[10px] text-emerald-600 font-bold mt-1">
-                Se imprimirán {tipo === "tablas" ? `${tablas.filter((t) => !t.cerrada && t.hipodromo === hipodromo && (t.fecha_creacion || t.fecha)?.slice(0, 10) === dia).length} tabla(s)` : "las entradas"} de {hipodromo} · {dia}
+                Se imprimirán {tipo === "tablas" ? `${tablas.filter((t) => !t.cerrada && t.hipodromo === hipodromo && t.fecha?.slice(0, 10) === dia).length} tabla(s)` : "las entradas"} de {hipodromo} · {dia}
               </p>
             ) : null}
           </div>
@@ -198,9 +199,6 @@ export function ConfigImpresionModal({ abierto, onCerrar }: Props) {
                 </button>
               ))}
             </div>
-            <p className="text-[10px] text-slate-400 mt-2 italic">
-              Los valores se usan tal cual están en pantalla (última versión), sin recargar la base de datos.
-            </p>
           </div>
           <div className="pt-2">
             <Button onClick={onCerrar} variant="outline" className="w-full bg-slate-200 text-slate-700 hover:bg-slate-300" disabled={trabajando !== null}>

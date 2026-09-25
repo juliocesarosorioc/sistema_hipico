@@ -14,6 +14,7 @@ import {
 } from "@/lib/marcas";
 import { liquidarMarcas, parsearMarcasLista } from "@/lib/motores/marcas";
 import type { TicketMotor } from "@/lib/bettingEngine";
+import { VentaMarcasModal } from "./VentaMarcasModal";
 
 // =========================================================
 // NUEVA UTILIDAD: Cuadritos de colores hípicos oficiales
@@ -61,7 +62,8 @@ export function MarcasModule() {
   const [simRow, setSimRow] = useState("1");
   const [simGanador, setSimGanador] = useState("");
   const [simRes, setSimRes] = useState<string | null>(null);
-
+  const [vendiendoMarca, setVendiendoMarca] = useState<FilaMarca | null>(null);
+  
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
   }, []);
@@ -350,15 +352,24 @@ export function MarcasModule() {
                       )}
                     </td>
 
-                    <td className="shrink-0 border border-emerald-100 p-0 text-center align-middle">
-                      <button
-                        type="button"
-                        onClick={() => quitarFila(i)}
-                        title="Quitar fila"
-                        className="px-0.5 text-[10px] text-slate-400 transition-colors hover:text-red-500"
-                      >
-                        🗑️
-                      </button>
+                    <td className="shrink-0 border border-emerald-100 p-1 text-center align-middle">
+                      <div className="flex flex-col gap-1 items-center justify-center">
+                        <button
+                          type="button"
+                          onClick={() => setVendiendoMarca(f)}
+                          className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold px-2 py-1 rounded shadow-sm w-full transition-colors"
+                        >
+                           🎟️ Vender
+                         </button>
+                         <button
+                          type="button"
+                          onClick={() => quitarFila(i)}
+                          title="Quitar fila"
+                          className="text-[10px] text-slate-400 transition-colors hover:text-red-500 uppercase font-bold"
+                        >
+                          🗑️ Quitar
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -472,7 +483,19 @@ export function MarcasModule() {
           </div>
         </div>
       )}
+          {/* MODAL DE VENTA DE MARCAS */}
+      {vendiendoMarca && (
+        <VentaMarcasModal
+          hipodromo={hipodromo}
+          carrera={String(vendiendoMarca.carrera)}
+          fecha={fecha}
+          marcasIniciales={vendiendoMarca.marcadas}
+          contraIniciales={vendiendoMarca.contra}
+          onCerrar={() => setVendiendoMarca(null)}
+        />
+      )}
     </div>
+    
   );
 }
 
