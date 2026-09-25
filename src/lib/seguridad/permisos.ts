@@ -21,6 +21,7 @@ export const PERMISOS_CANONICOS: Permiso[] = [
   { id: 22, clave: "editar_tabla", modulo: "tablas", descripcion: "Editar premio, valores y cupos" },
   { id: 23, clave: "vender_tabla", modulo: "tablas", descripcion: "Vender tablas (carrito/taquilla)" },
   { id: 24, clave: "imprimir_tablas", modulo: "tablas", descripcion: "Imprimir tablas publicadas" },
+  { id: 25, clave: "eliminar_tabla", modulo: "tablas", descripcion: "Eliminar tabla publicada (solo la oferta de venta)" },
   // gestión de jugadas
   { id: 30, clave: "gestionar_jugadas", modulo: "gestion", descripcion: "Ver y operar Gestión de Jugadas" },
   // ejemplares y gaceta

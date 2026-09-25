@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { StoredTablaFija } from "@/store/useTablasFijasStore";
 import { colorDeNumero, textoDeNumero, fmtMoney, FLAG, sumaBase, parseNum } from "@/lib/tablas/tipos";
+import { hoyLocal } from "@/lib/gaceta/programa";
 import { Button } from "@/components/ui/Button";
 import { Guard } from "@/components/ui/Guard";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
@@ -24,7 +25,13 @@ type Props = {
   onLiquidar?: (tabla: StoredTablaFija, r: PizarraResultados) => void;
   onEditar?: (tabla: StoredTablaFija, patch: Record<string, unknown>) => void;
   onRetirar?: (tabla: StoredTablaFija, indice: number, retirado: boolean) => Promise<boolean>;
+  onEliminar?: (tabla: StoredTablaFija) => void;
 };
+
+/** Día del evento de una tabla: el campo "fecha" de la carrera (fallback a fecha_creacion). */
+function diaDeLaTabla(t: StoredTablaFija): string {
+  return String(t.fecha || t.fecha_creacion || "").slice(0, 10);
+}
 
 /**
  * Monitor de Tablas Publicadas — clon 1:1 de js/tablas.js (L823-857):
@@ -37,7 +44,7 @@ type Props = {
  *    8 posiciones + Dead Heat y cierra la tabla; la vista de impresión es una
  *    matriz compacta (cero-scroll) que también se puede previsualizar.
  */
-export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetirar }: Props) {
+export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetirar, onEliminar }: Props) {
   const [vendiendo, setVendiendo] = useState<StoredTablaFija | null>(null);
   const [ejemplarVenta, setEjemplarVenta] = useState("");
   const [montoVenta, setMontoVenta] = useState("");
@@ -45,10 +52,15 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
   const [editando, setEditando] = useState<StoredTablaFija | null>(null);
   const [patchEdicion, setPatchEdicion] = useState<Record<string, unknown>>({});
   const [aviso, setAviso] = useState("");
+  const [confirmarEliminar, setConfirmarEliminar] = useState<StoredTablaFija | null>(null);
   const [ejemplarModal, setEjemplarModal] = useState<{ tabla: StoredTablaFija; indice: number } | null>(null);
   const [vistaImpresion, setVistaImpresion] = useState(false);
+  const [fechaFiltro, setFechaFiltro] = useState<string>(() => hoyLocal());
 
-  const abiertas = tablas.filter((t) => !t.cerrada);
+  const filtradas = fechaFiltro
+    ? tablas.filter((t) => diaDeLaTabla(t) === fechaFiltro)
+    : tablas;
+  const abiertas = filtradas.filter((t) => !t.cerrada);
 
   const lanzarVenta = () => {
     if (!vendiendo || !ejemplarVenta.trim() || !montoVenta.trim()) {
@@ -101,18 +113,39 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
     <div className="space-y-4">
       {aviso && <p className="rounded-lg bg-success-500/10 px-3 py-2 text-xs font-semibold text-success-700 no-print">{aviso}</p>}
 
-      {/* Barra de vista de impresión */}
-      <div className="no-print flex items-center justify-between gap-2">
+      {/* Barra de vista de impresión + filtro por fecha */}
+      <div className="no-print flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-slate-500">
-          {abiertas.length} tabla(s) abierta(s). Haz clic en cualquier ejemplar para venderlo o retirarlo.
+          {abiertas.length} tabla(s) abierta(s){fechaFiltro ? ` el ${fechaFiltro}` : ""}. Haz clic en cualquier ejemplar para venderlo o retirarlo.
         </p>
-        <button
-          type="button"
-          onClick={() => setVistaImpresion((v) => !v)}
-          className="rounded-lg border border-line bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-slate-600 transition-colors hover:bg-surface"
-        >
-          🖨️ {vistaImpresion ? "Salir de vista de impresión" : "Vista de impresión"}
-        </button>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 rounded-lg border border-line bg-white px-2 py-1" title="Filtrar tablas por fecha de la carrera">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">📅 Fecha</span>
+            <input
+              type="date"
+              value={fechaFiltro}
+              onChange={(e) => setFechaFiltro(e.target.value || "")}
+              className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none"
+            />
+            {fechaFiltro && (
+              <button
+                type="button"
+                onClick={() => setFechaFiltro("")}
+                title="Quitar filtro de fecha"
+                className="text-[10px] font-black uppercase text-red-500 hover:text-red-600"
+              >
+                ✕
+              </button>
+            )}
+          </label>
+          <button
+            type="button"
+            onClick={() => setVistaImpresion((v) => !v)}
+            className="rounded-lg border border-line bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-slate-600 transition-colors hover:bg-surface"
+          >
+            🖨️ {vistaImpresion ? "Salir de vista de impresión" : "Vista de impresión"}
+          </button>
+        </div>
       </div>
 
       {/* Vista en pantalla (matriz compacta si vistaImpresion está activa) */}
@@ -134,8 +167,22 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                   <span className="min-w-0 truncate rounded bg-white/20 px-1.5 py-px text-[11px] font-bold uppercase tracking-wider">
                     🏛️ {t.hipodromo || ""}
                   </span>
-                  <span className="whitespace-nowrap text-xs font-black leading-none">
-                    🏁 C{t.carrera ?? ""}
+                  <span className="flex items-center gap-1 whitespace-nowrap">
+                    <span className="text-xs font-black leading-none">
+                      🏁 C{t.carrera ?? ""}
+                    </span>
+                    {onEliminar && (
+                      <Guard permiso="eliminar_tabla">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmarEliminar(t)}
+                          title="Eliminar tabla (solo la oferta de venta; preserva la carrera y el Padrón)"
+                          className="rounded bg-red-600/70 px-1 py-0.5 text-[9px] font-black uppercase leading-none text-white transition-colors hover:bg-red-700"
+                        >
+                          🗑️
+                        </button>
+                      </Guard>
+                    )}
                   </span>
                 </div>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[9px] font-bold leading-none">
@@ -227,6 +274,41 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
         </h1>
         <MatrizImpresion tablas={abiertas} />
       </div>
+
+      {/* Modal Confirmación Eliminar tabla */}
+      {confirmarEliminar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 no-print">
+          <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-line bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-red-200 bg-red-50 px-4 py-3">
+              <h3 className="text-xs font-black uppercase text-red-700">🗑️ Eliminar tabla</h3>
+              <button type="button" onClick={() => setConfirmarEliminar(null)} className="text-red-400 hover:text-red-600">✕</button>
+            </div>
+            <div className="space-y-2 p-4">
+              <p className="text-sm font-bold text-slate-800">
+                ¿Eliminar la oferta de venta de {confirmarEliminar.hipodromo} — Carrera {confirmarEliminar.carrera}?
+              </p>
+              <p className="text-xs leading-relaxed text-slate-500">
+                Se borrará ÚNICAMENTE el registro de la tabla fija (la oferta de venta). La carrera y los ejemplares
+                del Padrón se conservan para que la Taquilla siga operando (resultados, pizarras, cobros y pagos).
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-line bg-gray-50 px-4 py-3">
+              <Button variant="ghost" size="sm" onClick={() => setConfirmarEliminar(null)}>Cancelar</Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  const t = confirmarEliminar;
+                  setConfirmarEliminar(null);
+                  onEliminar?.(t);
+                }}
+              >
+                🗑️ Eliminar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Venta → al carrito */}
       {vendiendo && (

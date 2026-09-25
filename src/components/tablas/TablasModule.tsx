@@ -396,6 +396,17 @@ export function TablasModule(props: Props) {
     return true;
   };
 
+  const eliminar = async (tabla: StoredTablaFija) => {
+    const { eliminarTablaFija } = await import("@/lib/tablas/rpc");
+    const r = await eliminarTablaFija(tabla.id);
+    if (!r.ok) {
+      toast(`No se pudo eliminar la tabla: ${r.error ?? "Error"}.`, "error");
+      return;
+    }
+    setTablas(tablas.filter((t) => String(t.id) !== String(tabla.id)));
+    toast(`🗑️ Tabla ${tabla.hipodromo} C${tabla.carrera} eliminada. La carrera y el Padrón se conservan.`, "success");
+  };
+
   const als = "flex items-stretch";
 
   return (
@@ -539,7 +550,7 @@ export function TablasModule(props: Props) {
               );
             })}
           </div>
-          <MonitorTablas tablas={tablas} onVender={agregarAlCarrito} onLiquidar={liquidar} onEditar={editar} onRetirar={retirar} />
+          <MonitorTablas tablas={tablas} onVender={agregarAlCarrito} onLiquidar={liquidar} onEditar={editar} onRetirar={retirar} onEliminar={eliminar} />
         </div>
       </SeccionPliegue>
 

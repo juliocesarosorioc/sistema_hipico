@@ -311,6 +311,26 @@ async function persistirFila(
   return { error: "Columnas del esquema sin resolver en tablas_fijas" };
 }
 
+/**
+ * Elimina SOLO la oferta de venta (registro de la tabla fija) de `tablas_fijas`.
+ * NO toca `carreras` ni `ejemplares` del Padrón: la carrera sigue disponible
+ * para que la Taquilla opere (resultados, pizarras, cobros y pagos).
+ * RLS está desactivado sobre tablas_fijas → DELETE directo válido.
+ */
+export async function eliminarTablaFija(
+  id: string | number | null | undefined
+): Promise<{ ok: boolean; error?: string }> {
+  if (id == null) return { ok: false, error: "Falta el id de la tabla." };
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  try {
+    const { error } = await supabase.from("tablas_fijas").delete().eq("id", id);
+    if (error) throw error;
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 /** Publica una tabla en Supabase (upsert por hipódromo+carrera). RLS off → anon OK. */
 export async function publicarTabla(t: TablaFijaRow): Promise<{ ok: boolean; id?: string | number; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };

@@ -76,6 +76,7 @@ insert into public.permisos (id, clave, modulo, descripcion) values
   (22,  'editar_tabla',          'tablas',        'Editar premio, valores y cupos'),
   (23,  'vender_tabla',          'tablas',        'Vender tablas (carrito/taquilla)'),
   (24,  'imprimir_tablas',       'tablas',        'Imprimir tablas publicadas'),
+  (25,  'eliminar_tabla',        'tablas',        'Eliminar tabla publicada (solo la oferta de venta)'),
   -- módulo gestión de jugadas
   (30,  'gestionar_jugadas',     'gestion',       'Ver y operar Gestión de Jugadas'),
   -- módulo ejemplares y gaceta

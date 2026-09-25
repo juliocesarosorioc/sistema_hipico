@@ -60,8 +60,13 @@ const ESTILOS = `
 .grilla-ej:last-child { border-bottom:none; }
 .grilla-ej:nth-child(even) { background:#f3f6fb; }
 .grilla-ej.retirado { opacity:.40; }
-.nro-grilla { border-radius:3px; border:1px solid; display:flex; align-items:center; justify-content:center; font-weight:900; flex:none; flex-shrink:0; align-self:center; margin:0; padding:0; line-height:1; }
-.nombre-grilla { font-weight:700; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; align-self:center; line-height:1; }
+/* NÚMEROS: centrado NATIVO, sin flexbox (html2canvas no rasteriza el flex
+   complejo y los números se desbordan hacia abajo). line-height exacto =
+   altura del contenedor + height/width fijos + box-sizing:border-box. */
+.nro-grilla { border-radius:3px; border:1px solid; display:block; text-align:center; font-weight:900; flex:none; flex-shrink:0; align-self:center; margin:0; padding:0; overflow:hidden; }
+/* NOMBRES: white-space normal + ancho fijo (display:block; width:100%) para
+   que html2canvas lea el texto completo; sin ellipsis/overflow oculto. */
+.nombre-grilla { display:block; width:100%; font-weight:700; text-transform:uppercase; white-space:normal; overflow-wrap:anywhere; min-width:0; align-self:center; line-height:1.15; }
 .valor-grilla { font-weight:800; color:#1d4ed8; text-align:right; white-space:nowrap; padding-left:4px; align-self:center; line-height:1; }
 .sin-ej { grid-column:1/-1; font-size:11px; color:#94a3b8; font-style:italic; padding:12px; }
 .notas-hoja { display:flex; justify-content:space-between; gap:14px; font-size:10.5px; color:#78350f; background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:4px 10px; font-weight:700; }
@@ -106,7 +111,7 @@ function cardHTML(t: StoredTablaFija): string {
         const ret = !!c.retirado;
         return `
           <div class="grilla-ej ${ret ? "retirado" : ""}" style="grid-template-columns:${T.box} 1fr auto">
-            <div class="nro-grilla" style="background:${bg};color:${fg};border-color:${bg};width:${T.nroW}px;height:${T.nroH}px;font-size:${T.fsNum}px">${c.numero ?? ""}</div>
+            <div class="nro-grilla" style="background:${bg};color:${fg};border-color:${bg};width:${T.nroW}px;height:${T.nroH}px;line-height:${Math.round(T.nroH * 10) / 10}px;font-size:${T.fsNum}px">${c.numero ?? ""}</div>
             <div class="nombre-grilla" style="font-size:${T.fsNom}px">${String(c.nombre || "").replace(/"/g, "&quot;")}</div>
             <div class="valor-grilla" style="font-size:${T.fsVal}px">${ret ? "RET." : fmtMoney(limpiarValor(c), t.moneda)}</div>
           </div>`;
