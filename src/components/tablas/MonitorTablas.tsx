@@ -29,9 +29,24 @@ type Props = {
   onEliminar?: (tabla: StoredTablaFija) => void;
 };
 
-/** Día del evento de una tabla: el campo "fecha" de la carrera (fallback a fecha_creacion). */
+/** Día del evento de una tabla: Normaliza DD/MM/YYYY o YYYY-MM-DD para que el filtro no falle. */
 function diaDeLaTabla(t: StoredTablaFija): string {
-  return String(t.fecha || t.fecha_creacion || "").slice(0, 10);
+  const raw = String(t.fecha || t.fecha_creacion || "").trim();
+  if (!raw) return "";
+  
+  // Si ya viene en formato correcto (Ej: 2026-09-24)
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    return raw.slice(0, 10);
+  }
+  
+  // Si la IA lo guardó como formato latino (Ej: 24/09/2026 o 24-09-2026)
+  const partes = raw.split(/[-/]/);
+  if (partes.length === 3 && partes[0].length <= 2) {
+    // Lo volteamos a YYYY-MM-DD para que coincida con el input type="date"
+    return `${partes[2]}-${partes[1].padStart(2, '0')}-${partes[0].padStart(2, '0')}`;
+  }
+  
+  return raw.slice(0, 10);
 }
 
 /**
