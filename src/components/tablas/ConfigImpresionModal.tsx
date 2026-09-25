@@ -5,8 +5,6 @@ import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import {
   imprimirTablasPublicadas,
   imprimirReportePorJugador,
-  diasDisponibles,
-  hipodromosDisponibles,
   type FiltrosImpresion,
   type FormatoImpresion,
   type ResultadoImpresion,
@@ -61,19 +59,15 @@ export function ConfigImpresionModal({ abierto, onCerrar }: Props) {
     return Array.from(setHips).sort();
   }, [tablas, dia]);
 
-  const hipodromos = useMemo(() => hipodromosDisponibles(tablas), [tablas]);
-
-  const totalAbiertas = tablas.filter((t) => !t.cerrada).length;
-
   const generar = async (formato: FormatoImpresion) => {
     setTrabajando(formato);
     const filtros: FiltrosImpresion = { hipodromo: hipodromo || undefined, dia: dia || undefined };
     
     // FILTRO ESTRICTO: Cortamos las tablas aquí mismo antes de mandarlas a imprimir
     const tablasFiltradas = tablas.filter((t) => {
-      if (t.cerrada) return false; // Nunca imprimimos cerradas
-      if (hipodromo && t.hipodromo !== hipodromo) return false; // Filtro de hipódromo
-      if (dia && (t.fecha || t.fecha_creacion || "").slice(0, 10) !== dia) return false; // Filtro de fecha
+      if (t.cerrada) return false;
+      if (hipodromo && t.hipodromo !== hipodromo) return false;
+      if (dia && (t.fecha || t.fecha_creacion || "").slice(0, 10) !== dia) return false;
       return true;
     });
 
@@ -81,7 +75,7 @@ export function ConfigImpresionModal({ abierto, onCerrar }: Props) {
     try {
       r =
         tipo === "tablas"
-          ? await imprimirTablasPublicadas(tablasFiltradas, formato, filtros) // Enviamos las filtradas
+          ? await imprimirTablasPublicadas(tablasFiltradas, formato, filtros)
           : await imprimirReportePorJugador(formato, filtros);
       if (r.ok) toast(`Documento generado: ${r.archivo}`);
       else toast(r.error || "No se pudo generar el documento.", "error");
@@ -154,7 +148,7 @@ export function ConfigImpresionModal({ abierto, onCerrar }: Props) {
             </select>
             {dia && hipodromo ? (
               <p className="text-[10px] text-emerald-600 font-bold mt-1">
-                Se imprimirán {tipo === "tablas" ? `${tablas.filter((t) => !t.cerrada && t.hipodromo === hipodromo && t.fecha?.slice(0, 10) === dia).length} tabla(s)` : "las entradas"} de {hipodromo} · {dia}
+                Se imprimirán {tipo === "tablas" ? `${tablas.filter((t) => !t.cerrada && t.hipodromo === hipodromo && (t.fecha || t.fecha_creacion || "").slice(0, 10) === dia).length} tabla(s)` : "las entradas"} de {hipodromo} · {dia}
               </p>
             ) : null}
           </div>
