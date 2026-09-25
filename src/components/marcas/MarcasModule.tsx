@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ToastHost } from "@/components/ui/ToastHost";
+import { ChipField } from "@/components/ui/HorseChips";
 import { listarHipodromos, listarCarrerasPorDia, type OpcionHipodromo } from "@/lib/tablas/rpc";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import {
@@ -13,9 +14,6 @@ import {
 } from "@/lib/marcas";
 import { liquidarMarcas, parsearMarcasLista } from "@/lib/motores/marcas";
 import type { TicketMotor } from "@/lib/bettingEngine";
-
-const cellInput =
-  "w-full bg-transparent px-0.5 py-0 text-center text-xs font-bold text-slate-900 focus:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500 placeholder:font-medium placeholder:text-slate-300";
 
 export function MarcasModule() {
   const [hipodromos, setHipodromos] = useState<OpcionHipodromo[]>([]);
@@ -268,14 +266,13 @@ export function MarcasModule() {
                       {Number(f.carrera) || f.carrera}
                     </td>
                     <td className="border border-emerald-100 p-0 align-middle">
-                      <input
+                      <ChipField
                         value={f.marcadas}
-                        onChange={(e) => {
-                          setFila(i, { marcadas: e.target.value });
+                        onChange={(v) => {
+                          setFila(i, { marcadas: v });
                           setGuardado(false);
                         }}
                         placeholder="ej. 2/3/7/1/5"
-                        className={cellInput}
                       />
                     </td>
                     <td className="shrink-0 border border-emerald-100 p-0 text-center align-middle">
@@ -284,14 +281,13 @@ export function MarcasModule() {
                       </span>
                     </td>
                     <td className="border border-emerald-100 p-0 align-middle">
-                      <input
+                      <ChipField
                         value={f.contra}
-                        onChange={(e) => {
-                          setFila(i, { contra: e.target.value });
+                        onChange={(v) => {
+                          setFila(i, { contra: v });
                           setGuardado(false);
                         }}
                         placeholder="ej. 4,6,"
-                        className={cellInput}
                       />
                     </td>
                     <td className="shrink-0 border border-emerald-100 p-0 text-center align-middle">
