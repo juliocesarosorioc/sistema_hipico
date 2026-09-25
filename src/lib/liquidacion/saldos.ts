@@ -14,6 +14,7 @@
 import { supabase } from "@/lib/supabase";
 import { liquidarOficial } from "@/lib/motores/oficiales";
 import { marcasConfigParaCarrera } from "@/lib/marcas";
+import { hoyLocal } from "@/lib/gaceta/programa";
 import { parsearNini, netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem } from "@/lib/bettingEngine";
 import type { TicketMotor, ResultadoMotor } from "@/lib/bettingEngine";
 import type { PizarraCarrera } from "@/lib/liquidacion";
@@ -88,7 +89,10 @@ export async function aplicarLiquidacionSaldos(
     return { ok: false, motivo: "Sin conexión a Supabase", aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: ["Sin conexión a Supabase."] };
   }
   const sdb = supabase;
-  const f = new Date().toISOString().slice(0, 10);
+  // Fecha LOCAL (no UTC): los tickets se persisten con la fecha de la jornada
+  // que ve el operador (ISO YYYY-MM-DD) → el filtro .eq('fecha', f) debe usar
+  // la MISMA semántica, no el "día anterior" UTC tras las 20:00.
+  const f = hoyLocal();
   const marcasConfig = await marcasConfigParaCarrera(input.hipodromo, input.carrera, f);
   let filas: unknown[] = [];
   try {

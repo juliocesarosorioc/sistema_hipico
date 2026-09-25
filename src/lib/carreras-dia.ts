@@ -7,7 +7,7 @@
  */
 import { supabase } from "@/lib/supabase";
 import { useCarrerasDiaStore, type CarreraDelDia } from "@/store/useCarrerasDiaStore";
-import { leerProgramaPorFecha, guardarPrograma } from "@/lib/gaceta/programa";
+import { leerProgramaPorFecha, guardarPrograma, hoyLocal } from "@/lib/gaceta/programa";
 
 export type ResultadoCentralInput = {
   fecha?: string;
@@ -24,7 +24,10 @@ export type ResultadoCentralInput = {
 };
 
 function hoy(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Fecha LOCAL (no UTC): con toISOString().slice(0,10) entre 20:00 y 24:00
+  // (UTC−4) se escribía el DÍA ANTERIOR → jornadas que "desaparecían" del
+  // filtro por fecha. ISO 8601 estricto con la fecha que ve el operador.
+  return hoyLocal();
 }
 
 function normalizarRenglon(r: Record<string, unknown>): CarreraDelDia {

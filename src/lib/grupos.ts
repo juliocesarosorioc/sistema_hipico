@@ -15,6 +15,9 @@ export type GrupoVenta = {
   activo?: boolean | null;
   /** Jerarquía de cruces: switch general del grupo (default TRUE = permitido). */
   permite_cruces?: boolean | null;
+  /** Ciclo de facturación semanal (1=Lunes … 7=Domingo). Default L→D. */
+  dia_inicio_semana?: number | null;
+  dia_fin_semana?: number | null;
 };
 
 export type ClienteVenta = {
@@ -126,6 +129,9 @@ export type GrupoRow = {
   activo?: boolean | null;
   /** Jerarquía de cruces: switch general del grupo (default TRUE = permitido). */
   permite_cruces?: boolean | null;
+  /** Ciclo de facturación semanal (1=Lunes … 7=Domingo). Default L→D. */
+  dia_inicio_semana?: number | null;
+  dia_fin_semana?: number | null;
   created_at?: string | null;
 };
 
@@ -162,7 +168,7 @@ export async function listarGruposAdmin(force = false): Promise<GrupoRow[]> {
       const { data, error } = await supabase
         .from("grupos_venta")
         .select(
-          "id, nombre, moneda, moneda_cuadre, cupo_tabla, comision_default, responsable, cuenta_bancaria, es_principal, activo, permite_cruces, created_at"
+          "id, nombre, moneda, moneda_cuadre, cupo_tabla, comision_default, responsable, cuenta_bancaria, es_principal, activo, permite_cruces, dia_inicio_semana, dia_fin_semana, created_at"
         )
         .order("es_principal", { ascending: false });
       if (error) throw error;

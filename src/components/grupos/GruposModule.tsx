@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { BANCOS_VZLA, formatearCuenta } from "@/lib/vzla";
+import { DIAS_SEMANA } from "@/lib/liquidacion/semana";
 import {
   actualizarGrupo,
   agregarClientesGrupo,
@@ -107,6 +108,8 @@ export function GruposModule() {
   const [formNumeroCuenta, setFormNumeroCuenta] = useState("");
   const [formPrincipal, setFormPrincipal] = useState(false);
   const [formPermiteCruces, setFormPermiteCruces] = useState(true);
+  const [formDiaInicio, setFormDiaInicio] = useState("1");
+  const [formDiaFin, setFormDiaFin] = useState("7");
 
   const recargar = useCallback(async () => {
     setCargando(true);
@@ -192,6 +195,8 @@ export function GruposModule() {
       cuenta_bancaria: cuenta,
       es_principal: formPrincipal,
       permite_cruces: formPermiteCruces,
+      dia_inicio_semana: parseInt(formDiaInicio) || 1,
+      dia_fin_semana: parseInt(formDiaFin) || 7,
     });
     setGuardando(false);
     if (!r.ok) return toast(r.error ?? "Error al crear el grupo.", "error");
@@ -202,6 +207,8 @@ export function GruposModule() {
     setFormBanco("");
     setFormPrincipal(false);
     setFormPermiteCruces(true);
+    setFormDiaInicio("1");
+    setFormDiaFin("7");
     void recargar();
   };
 
@@ -236,6 +243,8 @@ export function GruposModule() {
       cuenta_bancaria: editando.cuenta_bancaria || null,
       es_principal: editando.es_principal === true,
       permite_cruces: editando.permite_cruces !== false,
+      dia_inicio_semana: editando.dia_inicio_semana ?? 1,
+      dia_fin_semana: editando.dia_fin_semana ?? 7,
     };
     setGuardando(true);
     const r = await actualizarGrupo(id, datos as Record<string, unknown>);
@@ -433,6 +442,39 @@ export function GruposModule() {
                 />
                 Es el grupo Principal (concentra la contabilidad)
               </label>
+              <div className="col-span-1">
+                <label className={etiqueta}>Día de Inicio de Facturación</label>
+                <select
+                  value={formDiaInicio}
+                  onChange={(e) => setFormDiaInicio(e.target.value)}
+                  className={inp + " uppercase"}
+                >
+                  {DIAS_SEMANA.map((d) => (
+                    <option key={d.valor} value={d.valor}>
+                      {d.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-1">
+                <label className={etiqueta}>Día de Corte / Cierre</label>
+                <select
+                  value={formDiaFin}
+                  onChange={(e) => setFormDiaFin(e.target.value)}
+                  className={inp + " uppercase"}
+                >
+                  {DIAS_SEMANA.map((d) => (
+                    <option key={d.valor} value={d.valor}>
+                      {d.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-1 flex items-end">
+                <p className="pb-1 text-[10px] italic leading-relaxed text-slate-400">
+                  Define la semana fiscal (p. ej. Mar–Lun) que usarán los Saldos Consolidados.
+                </p>
+              </div>
               <label className="col-span-3 flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
                 <input
                   type="checkbox"
@@ -852,6 +894,34 @@ export function GruposModule() {
                 />
                 Permite cruces financieros (comisión sobre ganancia neta)
               </label>
+              <div>
+                <label className={etiqueta}>Día de Inicio de Facturación</label>
+                <select
+                  value={editando.dia_inicio_semana ?? 1}
+                  onChange={(e) => setEditando({ ...editando, dia_inicio_semana: parseInt(e.target.value) || 1 })}
+                  className={inp + " uppercase"}
+                >
+                  {DIAS_SEMANA.map((d) => (
+                    <option key={d.valor} value={d.valor}>
+                      {d.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={etiqueta}>Día de Corte / Cierre</label>
+                <select
+                  value={editando.dia_fin_semana ?? 7}
+                  onChange={(e) => setEditando({ ...editando, dia_fin_semana: parseInt(e.target.value) || 7 })}
+                  className={inp + " uppercase"}
+                >
+                  {DIAS_SEMANA.map((d) => (
+                    <option key={d.valor} value={d.valor}>
+                      {d.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="flex justify-end gap-3 border-t border-line bg-slate-50 p-4">
               <Button variant="outline" size="sm" onClick={() => setEditando(null)}>

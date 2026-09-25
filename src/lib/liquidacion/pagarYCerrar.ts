@@ -6,6 +6,7 @@ import { netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem } from "
 import type { TicketMotor, ResultadoMotor } from "@/lib/bettingEngine";
 import type { PizarraCarrera } from "@/lib/liquidacion";
 import { supabase } from "@/lib/supabase";
+import { hoyLocal } from "@/lib/gaceta/programa";
 
 export type TicketPagar = {
   comando: string;
@@ -195,7 +196,10 @@ function firstOrdinal(primero: unknown): number {
 async function dividendosDe(hipodromo: string, carrera: number | string): Promise<Record<string, number> | null> {
   if (!supabase) return null;
   try {
-    const f = new Date().toISOString().slice(0, 10);
+    // Fecha LOCAL (no UTC): el dividendo se persistió con la fecha de la
+    // jornada que ve el operador (ISO YYYY-MM-DD); con UTC se consultaba el
+    // "día anterior" tras las 20:00.
+    const f = hoyLocal();
     const { data } = await supabase
       .from("resultados_carreras")
       .select("dividendos")

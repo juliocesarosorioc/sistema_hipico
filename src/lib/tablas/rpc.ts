@@ -127,13 +127,27 @@ export async function listarCarrerasPorDia(fecha: string, hipodromo: string): Pr
   const fuenteTablas = async () => {
     if (!supabase || !fecha) return;
     try {
+      // Query ESTRICTO por la fecha del evento (ISO YYYY-MM-DD): las tablas
+      // publicadas desde el Ensamblaje siempre llevan `fecha` explícita.
       const { data, error } = await supabase
         .from("tablas_fijas")
         .select("carrera, hipodromo, fecha, fecha_creacion")
         .ilike("hipodromo", `%${hipodromo}%`)
-        .or(`fecha.eq.${fecha},fecha_creacion.like.${fecha}%`);
+        .eq("fecha", fecha);
       if (error) return;
       for (const r of (data ?? []) as Array<{ carrera?: unknown; hipodromo?: unknown }>) {
+        const n = Number(r.carrera);
+        if (Number.isFinite(n) && n > 0) set.add(n);
+      }
+      // Fallback LEGACY: registros antiguos que solo tienen fecha_creacion
+      // (migrados) y ninguna `fecha` — se cruzan por el prefijo del día.
+      if (data && data.length > 0) return;
+      const { data: leg } = await supabase
+        .from("tablas_fijas")
+        .select("carrera")
+        .ilike("hipodromo", `%${hipodromo}%`)
+        .or(`fecha_creacion.like.${fecha}%`);
+      for (const r of (leg ?? []) as Array<{ carrera?: unknown }>) {
         const n = Number(r.carrera);
         if (Number.isFinite(n) && n > 0) set.add(n);
       }
