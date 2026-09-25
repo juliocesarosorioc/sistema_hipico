@@ -169,9 +169,9 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                     🏛️ {t.hipodromo || ""}
                   </span>
                   <span className="flex items-center gap-1 whitespace-nowrap">
-                    <span className="inline-flex items-center rounded-full border-2 border-indigo-200 bg-white px-3 py-1 text-base font-black uppercase leading-none tracking-widest text-indigo-900 shadow-md md:text-lg">
-                      C{t.carrera ?? ""}
-                    </span>
+                    <span className="inline-flex items-center rounded-md border-4 border-white bg-indigo-900 px-4 py-2 text-xl font-black uppercase leading-none tracking-widest text-white shadow-lg md:text-2xl transform scale-110">
+                    C{t.carrera ?? ""}
+                  </span>
                     {onEliminar && (
                       <Guard permiso="eliminar_tabla">
                         <button
@@ -434,39 +434,52 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
             <span className="truncate font-black uppercase">{t.hipodromo} — Carrera {t.carrera}</span>
             <span className="whitespace-nowrap font-black">{fmtMoney(t.premio_recalculado ?? null, t.moneda)}</span>
           </div>
-          <table className="w-full border-collapse text-[9px]">
-            <thead>
-              <tr>
-                <th className="w-7 border-b border-slate-300 px-0 py-0.5 text-center font-bold">Nº</th>
-                <th className="border-b border-slate-300 px-1 py-0.5 text-left font-bold">Ejemplar</th>
-                <th className="w-10 border-b border-slate-300 px-1 py-0.5 text-right font-bold">Valor</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(t.caballos ?? []).map((c, i) => (
-                <tr key={i} className={c.retirado ? "text-red-500" : ""}>
-                  <td
-                    className="w-7 shrink-0 flex-none p-0 align-middle text-center font-bold"
-                    style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
-                  >
-                    <span className="flex h-7 w-7 shrink-0 flex-none items-center justify-center">{c.numero}</span>
-                  </td>
-                  <td className="whitespace-nowrap px-1 font-semibold uppercase">
-                    {c.nombre}
-                    {c.retirado ? " (RET.)" : ""}
-                  </td>
-                  <td className="w-10 whitespace-nowrap px-1 text-right font-bold">{fmtMoney(parseNum(c.valor_ejemplar), t.moneda)}</td>
-                </tr>
-              ))}
-              <tr>
-                <td className="border-t border-slate-400 px-0 py-px text-center text-[8px] font-black uppercase">Suma</td>
-                <td className="border-t border-slate-400 px-1 py-px text-right font-black">
-                  {fmtMoney(t.suma_base_tabla ?? sumaBase(t.caballos), t.moneda)}
-                </td>
-                <td className="border-t border-slate-400" />
-              </tr>
-            </tbody>
-          </table>
+          {/* Estructura DIV a prueba de html2canvas (reemplaza a la tabla) */}
+          <div className="w-full flex flex-col bg-white">
+            {/* Cabecera de columnas */}
+            <div className="flex border-b border-slate-300 font-bold bg-slate-50">
+              <div className="w-8 shrink-0 text-center py-1 border-r border-slate-200">Nº</div>
+              <div className="flex-grow px-2 py-1 text-left border-r border-slate-200">Ejemplar</div>
+              <div className="w-16 shrink-0 text-right px-1 py-1">Valor</div>
+            </div>
+
+            {/* Filas de caballos */}
+            {(t.caballos ?? []).map((c, i) => (
+              <div key={i} className={`flex border-b border-slate-100 last:border-b-0 ${c.retirado ? "text-red-500 opacity-60" : "text-black"}`}>
+                
+                {/* 1. Número del caballo (Ancho y alto fijo, flex centering nativo) */}
+                <div 
+                  className="w-8 h-8 shrink-0 flex items-center justify-center font-bold border-r border-slate-200"
+                  style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero), boxSizing: "border-box" }}
+                >
+                  {c.numero}
+                </div>
+
+                {/* 2. Nombre del ejemplar (White-space normal obliga a leer completo) */}
+                <div 
+                  className="flex-grow px-2 py-1 font-semibold uppercase flex items-center border-r border-slate-200"
+                  style={{ whiteSpace: "normal", wordBreak: "break-word", lineHeight: "1.1" }}
+                >
+                  {c.nombre} {c.retirado ? " (RET.)" : ""}
+                </div>
+
+                {/* 3. Valor */}
+                <div className="w-16 shrink-0 text-right px-1 flex items-center justify-end font-bold text-[10px]">
+                  {fmtMoney(parseNum(c.valor_ejemplar), t.moneda)}
+                </div>
+                
+              </div>
+            ))}
+
+            {/* Fila de Suma Total */}
+            <div className="flex border-t-2 border-slate-800 bg-slate-100 font-black">
+              <div className="w-8 shrink-0 text-center py-1 border-r border-slate-200 uppercase text-[8px]">Suma</div>
+              <div className="flex-grow px-2 py-1 text-right text-indigo-700">
+                {fmtMoney(t.suma_base_tabla ?? sumaBase(t.caballos), t.moneda)}
+              </div>
+              <div className="w-16 shrink-0" />
+            </div>
+          </div>
         </div>
       ))}
     </div>
