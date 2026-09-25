@@ -38,7 +38,6 @@ export function ConfigImpresionModal({ abierto, onCerrar }: Props) {
     }
   }, [abierto]);
 
-  // Usamos el hook useMemo para extraer solo los días de EVENTO disponibles
   // FILTRO EN CASCADA: Extrae solo los días donde corrió el hipódromo seleccionado (si hay uno)
   const diasEvento = useMemo(() => {
     const fechasUnicas = new Set<string>();
