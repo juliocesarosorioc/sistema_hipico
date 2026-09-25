@@ -38,6 +38,8 @@ export type ClienteRow = {
   portal_habilitado?: boolean | null;
   portal_token?: string | null;
   portal_clave?: string | null;
+  /** Jerarquía de cruces: override por cliente (default TRUE = permitido). */
+  permite_cruces?: boolean | null;
 };
 
 export type TicketApuesta = {

@@ -2,6 +2,7 @@ import { liquidarOficial } from "@/lib/motores/oficiales";
 import { marcasConfigParaCarrera } from "@/lib/marcas";
 import { cerrarTablaFija } from "@/lib/tablas-fijas";
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
+import { netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem } from "@/lib/bettingEngine";
 import type { TicketMotor, ResultadoMotor } from "@/lib/bettingEngine";
 import type { PizarraCarrera } from "@/lib/liquidacion";
 import { supabase } from "@/lib/supabase";
@@ -11,6 +12,14 @@ export type TicketPagar = {
   monto: number;
   /** Número del ejemplar apostado (columna CABALLO) — necesario para NINIS. */
   caballo?: string;
+  /** Nombre del CLIENTE 1 (el que "juega") — para el neteo de cruces. */
+  cliente1?: string;
+  /** Nombre del CLIENTE 2 (el que "da") — referencia de la operación. */
+  cliente2?: string;
+  /** Jerarquía de permisos resuelta por el caller (Carrera → Cliente → Grupo).
+   *  false ⇒ el cruce financiero NO recibe descuento de comisión neta
+   *  (factura comisión por ticket). undefined ⇒ se permite el neteo. */
+  permiteCruces?: boolean;
 };
 
 export type ResLiquidarCarrera = {
@@ -21,6 +30,8 @@ export type ResLiquidarCarrera = {
   totalClienteNeto: number;
   balanceBanca: number;
   gananciaCasa: number;
+  /** Cantidad de tickets cuyos montos se ajustaron por comisión neta (cruces). */
+  neteados?: number;
   tablaCerrada?: { ok: boolean; conteo?: number; error?: string };
 };
 
@@ -47,8 +58,8 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   const marcasConfig = await marcasConfigParaCarrera(hipodromo, carrera);
 
   const procesados: ResLiquidarCarrera["procesados"] = [];
+  const metadatos: Array<{ cliente1?: string; caballo: string; monto: number; permiteCruces?: boolean }> = [];
   let totalInvertido = 0;
-  let gananciaCasa = 0;
 
   for (const t of tickets) {
     // Comando con monto al inicio ("100 2N") o sin monto (Tablas: "TABLA ...").
@@ -94,15 +105,60 @@ export async function liquidarCarreraYCerrarTabla(opts: {
 
     const res = liquidarOficial(ticketMotor, tasaComision);
     procesados.push({ comando: t.comando, resultado: res });
+    metadatos.push({ cliente1: t.cliente1, caballo: String(t.caballo ?? "").trim(), monto, permiteCruces: t.permiteCruces });
     totalInvertido += monto;
-    gananciaCasa += res.gananciaCasa;
+  }
+
+  // ── CRUCE FINANCIERO: comisión neta por (cliente1, caballo, carrera) ──
+  // La jerarquía Carrera → Cliente → Grupo llega resuelta en cada ticket
+  // (permiteCruces). Con permiso en NO no se netea (comisión por ticket).
+  // TODO(PLANIFICACIÓN): "INQUIETUDES CON RESPECTO A CRUCES" — pendiente
+  // decidir si el permiso en NO además BLOQUEA la operación.
+  let neteados = 0;
+  const items: NeteoCruceItem[] = procesados.map((p, i) => ({
+    cliente: metadatos[i].cliente1 ?? "",
+    caballo: metadatos[i].caballo,
+    monto: metadatos[i].monto,
+    bruto: p.resultado.ok ? p.resultado.totalClienteNeto + p.resultado.gananciaCasa : 0,
+    ok: p.resultado.ok,
+  }));
+  const gruposNeteo = netearComisionCruce(items, carrera, tasaComision);
+  const gruposIdx = new Map<string, number[]>();
+  for (let i = 0; i < procesados.length; i++) {
+    const t = tickets[i];
+    if (!(t.cliente1 ?? "").trim() || !(t.caballo ?? "").trim() || t.permiteCruces === false) continue;
+    const k = claveCruceFinanciero(carrera, t.cliente1!, t.caballo!);
+    const g = gruposNeteo.get(k);
+    if (!g || g.conteo < 2) continue;
+    const arr = gruposIdx.get(k) ?? [];
+    arr.push(i);
+    gruposIdx.set(k, arr);
+  }
+  for (const [k, idxs] of gruposIdx) {
+    const grupo = gruposNeteo.get(k)!;
+    const oldSum = idxs.reduce((a, i) => a + (procesados[i].resultado.ok ? procesados[i].resultado.gananciaCasa : 0), 0);
+    if (oldSum <= 0 || grupo.comisionNeta === oldSum) continue;
+    for (const i of idxs) {
+      const res = procesados[i].resultado;
+      if (!res.ok) continue;
+      const bruto = res.totalClienteNeto + res.gananciaCasa;
+      const share = res.gananciaCasa / oldSum;
+      const nueva = round2(grupo.comisionNeta * share);
+      res.totalClienteNeto = round2(bruto - nueva);
+      res.balanceBanca = round2(metadatos[i].monto - bruto + nueva);
+      res.gananciaCasa = nueva;
+      res.motivo = (res.motivo ?? "") + " · comisión neta por cruce (sobre $" + grupo.neto + ")";
+      neteados += 1;
+    }
   }
 
   let totalClienteNeto = 0;
   let balanceBanca = 0;
+  let gananciaCasa = 0;
   for (const p of procesados) {
     totalClienteNeto += p.resultado.totalClienteNeto;
     balanceBanca += p.resultado.balanceBanca;
+    gananciaCasa += p.resultado.gananciaCasa;
   }
 
   // AUTO-CIERRE: tras pagar con éxito, cierra la Tabla Fija de la carrera.
@@ -119,8 +175,13 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     totalClienteNeto,
     balanceBanca,
     gananciaCasa,
+    neteados,
     tablaCerrada: cierre,
   };
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 function firstOrdinal(primero: unknown): number {

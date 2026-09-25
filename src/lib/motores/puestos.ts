@@ -88,13 +88,14 @@ function aPremio(t: TicketMotor, tasa: number): ResultadoMotor | null {
   return finalizar(false, "A PREMIO pierde (no llegó 1° en solitario)", 0, t.monto, tasa);
 }
 
-/* ------- CRUCE (ej. 2x3 10/8) ------- */
-/* Apuesta doble a dos caballos con proporciones por cliente:
+/* ------- PAREO (ej. 2x3 10/8) — caballo contra caballo ------- */
+/* Apuesta doble a dos caballos con proporciones por cliente (NUNCA un
+   "cruce financiero": un cliente apuesta contra su propia jugada):
    - Gana caballo A (cliente 1): bruto = monto × (Q/P)
    - Gana caballo B (cliente 2): bruto = monto × (P/P) = monto (a la par)
    - Cualquier otro ganador: pierde
    La comisión se aplica (como en toda la casa) SOLO sobre la ganancia bruta. */
-function cruce(t: TicketMotor, tasa: number): ResultadoMotor | null {
+function pareo(t: TicketMotor, tasa: number): ResultadoMotor | null {
   const m = /^(\d+)\s*X\s*(\d+)(?:\s+(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?))?$/i.exec(String(t.tipo_jugada).trim());
   if (!m) return null;
   const A = parseInt(m[1], 10);
@@ -102,18 +103,18 @@ function cruce(t: TicketMotor, tasa: number): ResultadoMotor | null {
   const P = m[3] ? parseFloat(m[3]) : 10;
   const Q = m[4] ? parseFloat(m[4]) : 10;
   if (!isFinite(P) || P <= 0 || !isFinite(Q) || Q <= 0) {
-    return { ok: false, motivo: "CRUCE malformado (proporción inválida): " + t.tipo_jugada, totalClienteNeto: 0, balanceBanca: t.monto, gananciaCasa: 0 };
+    return { ok: false, motivo: "PAREO malformado (proporción inválida): " + t.tipo_jugada, totalClienteNeto: 0, balanceBanca: t.monto, gananciaCasa: 0 };
   }
   const pos = posicion(t);
   if (pos === A) {
     const bruto = t.monto * (Q / P);
-    return finalizar(true, `CRUCE gana caballo ${A} (cliente 1): paga ${Q}/${P} = ${round2(bruto)}`, bruto, t.monto, tasa);
+    return finalizar(true, `PAREO gana caballo ${A} (cliente 1): paga ${Q}/${P} = ${round2(bruto)}`, bruto, t.monto, tasa);
   }
   if (pos === B) {
     const bruto = t.monto * (P / P);
-    return finalizar(true, `CRUCE gana caballo ${B} (cliente 2): paga ${P}/${P} a la par = ${round2(bruto)}`, bruto, t.monto, tasa);
+    return finalizar(true, `PAREO gana caballo ${B} (cliente 2): paga ${P}/${P} a la par = ${round2(bruto)}`, bruto, t.monto, tasa);
   }
-  return finalizar(false, `CRUCE pierde (ganó el ${pos})`, 0, t.monto, tasa);
+  return finalizar(false, `PAREO pierde (ganó el ${pos})`, 0, t.monto, tasa);
 }
 
 /* ------- COMBINADA CONSECUTIVA (ej. 1 y 2n) ------- */
@@ -195,8 +196,8 @@ export function liquidarPuestos(t: TicketMotor, tasaComision?: number | null): R
   if (parsearNini(t.tipo_jugada)) return liquidarNini(t, tasa);
   const ap = aPremio(t, tasa);
   if (ap) return ap;
-  const cr = cruce(t, tasa);
-  if (cr) return cr;
+  const cn = pareo(t, tasa);
+  if (cn) return cn;
   const cb = combinada(t, tasa);
   if (cb) return cb;
   const cp = compuesta(t, tasa);
@@ -211,6 +212,7 @@ export function procesarPuestos(t: TicketMotor): ResultadoMotor {
 registrarProcesador("puestos-puro", procesarPuestos);
 registrarProcesador("nini", procesarPuestos);
 registrarProcesador("a-premio", procesarPuestos);
+registrarProcesador("pareo", procesarPuestos);
 registrarProcesador("cruce", procesarPuestos);
 registrarProcesador("combinada", procesarPuestos);
 registrarProcesador("compuesta", procesarPuestos);

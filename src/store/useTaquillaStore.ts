@@ -12,6 +12,14 @@ export type TicketTaquilla = {
   gananciaProyectada: number;
   /** Comisión de casa proyectada del mejor escenario. */
   comision: number;
+  /** Nombre del CLIENTE 1 (el que "juega") — para la Pre-visualización. */
+  cliente1?: string;
+  /** Nombre del CLIENTE 2 (el que "da") — para la Pre-visualización. */
+  cliente2?: string;
+  /** Cobro neto proyectado del CLIENTE 1 (PREMIO/SALDO por jugador). */
+  cobro1?: number;
+  /** Cobro neto proyectado del CLIENTE 2 (PREMIO/SALDO por jugador). */
+  cobro2?: number;
   /** Contexto [Fecha + Hipódromo + N° Carrera] — aislamiento de la vista Taquilla. */
   fecha?: string;
   hipodromo?: string;

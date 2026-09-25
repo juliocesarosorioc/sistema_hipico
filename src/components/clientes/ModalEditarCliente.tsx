@@ -56,6 +56,7 @@ export function ModalEditarCliente({ cliente, onClose, onGuardado }: Props) {
   const [modo, setModo] = useState("aval");
   const [socio, setSocio] = useState("");
   const [mostrarS, setMostrarS] = useState(false);
+  const [permiteCruces, setPermiteCruces] = useState(true);
   const [metodo, setMetodo] = useState("");
   const [diaCuadre, setDiaCuadre] = useState("");
   const [formaCuadre, setFormaCuadre] = useState("");
@@ -89,6 +90,7 @@ export function ModalEditarCliente({ cliente, onClose, onGuardado }: Props) {
     setModo(cliente.modo_juego || (cliente.libre ? "libre" : "aval"));
     setSocio(cliente.socio_asignado || "");
     setMostrarS(Boolean(cliente.mostrar_saldo_socio));
+    setPermiteCruces(cliente.permite_cruces !== false);
     setMetodo(cliente.metodo_pago || "");
     setDiaCuadre(cliente.dia_cuadre || "");
     setFormaCuadre(cliente.forma_cuadre || "");
@@ -117,6 +119,7 @@ export function ModalEditarCliente({ cliente, onClose, onGuardado }: Props) {
         devolucion: numValido(devolucion),
         socio_asignado: socio || null,
         mostrar_saldo_socio: mostrarS,
+        permite_cruces: permiteCruces,
         metodo_pago: metodo || null,
         dia_cuadre: diaCuadre || null,
         forma_cuadre: formaCuadre || null,
@@ -240,6 +243,12 @@ export function ModalEditarCliente({ cliente, onClose, onGuardado }: Props) {
               <label className="flex items-center gap-2 pb-1">
                 <input type="checkbox" checked={mostrarS} onChange={(e) => setMostrarS(e.target.checked)} className="h-4 w-4 accent-primary-600" />
                 <span className="text-[10px] font-black uppercase text-slate-600">Mostrar saldo al socio</span>
+              </label>
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 pb-1">
+                <input type="checkbox" checked={permiteCruces} onChange={(e) => setPermiteCruces(e.target.checked)} className="h-4 w-4 accent-primary-600" />
+                <span className="text-[10px] font-black uppercase text-slate-600">Permite cruces (comisión neta)</span>
               </label>
             </div>
           </div>

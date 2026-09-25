@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { detectarModalidad, parsearLineaRapida, proyectarFila } from "@/lib/taquilla/validar";
-import { useTaquillaStore } from "@/store/useTaquillaStore";
+import { useTaquillaStore, type TicketTaquilla } from "@/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla, type ResLiquidarCarrera } from "@/lib/liquidacion/pagarYCerrar";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
@@ -11,7 +11,7 @@ import { CargaResultadosModal, type PizarraResultados } from "@/components/liqui
 import { SemaforoCarreras } from "@/components/gestion/SemaforoCarreras";
 import { Button } from "@/components/ui/Button";
 import { fmtMoney } from "@/lib/tablas/tipos";
-import { listarClientesVenta, saldoDeCliente, type ClienteVenta } from "@/lib/grupos";
+import { listarClientesVenta, listarGruposVenta, saldoDeCliente, type ClienteVenta } from "@/lib/grupos";
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/lib/tablas/rpc";
 import { registrarCarreraProgramada } from "@/lib/carreras-dia";
 import { hoyLocal } from "@/lib/gaceta/programa";
@@ -94,10 +94,17 @@ export function GestionJugadasModule() {
   );
 
   // Registro de clientes con saldos (validación inline CLIENTE 1 / CLIENTE 2)
+  const [gruposMapa, setGruposMapa] = useState<Record<string, boolean>>({});
   useEffect(() => {
     let vivo = true;
     listarClientesVenta().then((c) => {
       if (vivo) setClientes(c);
+    });
+    // Jerarquía de cruces: switch general del GRUPO (default TRUE).
+    listarGruposVenta().then((gs) => {
+      const mapa: Record<string, boolean> = {};
+      for (const g of gs) mapa[String(g.id)] = g.permite_cruces !== false;
+      if (vivo) setGruposMapa(mapa);
     });
     return () => {
       vivo = false;
@@ -235,12 +242,12 @@ export function GestionJugadasModule() {
     [tablaDeCarrera]
   );
 
-  /** Convierte el comando de un ticket de vuelta a una fila editable (jugada + monto). */
-  const desarmarTicket = (comando: string): FilaCarga => {
-    const m = /^(\d+(?:[.,]\d+)?)\s+(.+)$/.exec(String(comando).trim());
+  /** Convierte el comando de un ticket de vuelta a una fila editable (jugada + monto + caballo + clientes). */
+  const desarmarTicket = (t: TicketTaquilla): FilaCarga => {
+    const m = /^(\d+(?:[.,]\d+)?)\s+(.+)$/.exec(String(t.comando).trim());
     const base = filaVacia();
-    if (m) return { ...base, monto: m[1].trim(), jugada: m[2].trim() };
-    return { ...base, jugada: String(comando).trim() };
+    if (m) return { ...base, monto: m[1].trim(), jugada: m[2].trim(), caballo: t.caballo ?? "", cliente1: t.cliente1 ?? "", cliente2: t.cliente2 ?? "" };
+    return { ...base, jugada: String(t.comando).trim(), caballo: t.caballo ?? "", cliente1: t.cliente1 ?? "", cliente2: t.cliente2 ?? "" };
   };
 
   /** ✏️ Devuelve una jugada cargada a la tabla como inputs editables (sin borrarla). */
@@ -248,7 +255,7 @@ export function GestionJugadasModule() {
     const t = tickets.find((x) => x.id === id);
     if (!t) return;
     eliminarTicket(id);
-    const fila = desarmarTicket(t.comando);
+    const fila = desarmarTicket(t);
     setFilas((f) => [fila, ...f]);
     setAviso(`✏️ “${t.comando}” devuelto a la tabla para corregirlo.`);
   };
@@ -271,6 +278,26 @@ export function GestionJugadasModule() {
   const totalInvertidoSesion = useMemo(
     () => ticketsDeCarrera.reduce((a, t) => a + t.monto, 0),
     [ticketsDeCarrera]
+  );
+
+  /**
+   * Jerarquía de cruces (Carrera → Cliente → Grupo):
+   * el operador decide la carrera con el switch "Con Cruces"; aquí se resuelve
+   * el cierre por (cliente, grupo). false ⇒ el cruce financiero SE FACTURA
+   * normal (comisión por ticket, sin neteo) — ver pagarYCerrar.ts.
+   */
+  const permiteCrucesDe = useCallback(
+    (nombre: string): boolean | undefined => {
+      const clave = String(nombre ?? "").trim().toUpperCase();
+      if (!clave) return undefined;
+      const c = clientes.find((x) => String(x.nombre).trim().toUpperCase() === clave);
+      if (c && c.permite_cruces === false) return false;
+      if (c) {
+        for (const gi of c.grupos) if (gruposMapa[String(gi)] === false) return false;
+      }
+      return true;
+    },
+    [clientes, gruposMapa]
   );
 
   const setFila = (i: number, patch: Partial<FilaCarga>) =>
@@ -315,6 +342,10 @@ export function GestionJugadasModule() {
         caballo: f.caballo.trim() || undefined,
         gananciaProyectada: round2(mejorCobre - v.monto),
         comision: comisionMejor,
+        cliente1: f.cliente1.trim() || undefined,
+        cliente2: f.cliente2.trim() || undefined,
+        cobro1: v.cliente1?.cobroNeto,
+        cobro2: v.cliente2?.cobroNeto,
         fecha,
         hipodromo,
         carrera,
@@ -389,7 +420,14 @@ export function GestionJugadasModule() {
       hipodromo,
       carrera,
       pizarra: ultimaPizarra.pizarra,
-      tickets: ticketsDeCarrera.map((t) => ({ comando: t.comando, monto: t.monto, caballo: t.caballo })),
+      tickets: ticketsDeCarrera.map((t) => ({
+        comando: t.comando,
+        monto: t.monto,
+        caballo: t.caballo,
+        cliente1: t.cliente1,
+        cliente2: t.cliente2,
+        permiteCruces: conCruces ? permiteCrucesDe(t.cliente1 ?? "") : false,
+      })),
       tasaComision: comisionNum,
     });
     setResumen(r);
@@ -698,37 +736,68 @@ export function GestionJugadasModule() {
               🧾 Pre-visualización — jugadas cargadas en la taquilla ({ticketsDeCarrera.length}) ·{" "}
               <span className="normal-case font-semibold text-slate-400">✏️ devuelve la jugada a la tabla para corregirla</span>
             </p>
-            <ul className="divide-y divide-line/60">
-              {ticketsDeCarrera.map((t) => (
-                <li key={t.id} className="flex items-center gap-2 py-1">
-                  <span className="min-w-0 flex-1 truncate font-mono text-[11px] font-semibold text-slate-700" title={t.comando}>
-                    {t.comando}
-                  </span>
-                  <span className="shrink-0 text-[11px] font-black text-slate-900">{monedaFmt(t.monto)}</span>
-                  <span className="hidden shrink-0 text-[10px] font-semibold text-emerald-600 sm:inline">
-                    +{monedaFmt(t.gananciaProyectada)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => editarTicket(t.id)}
-                    aria-label="Editar jugada"
-                    title="Volver a la tabla como inputs editables"
-                    className="shrink-0 text-slate-400 hover:text-primary-600"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => eliminarTicket(t.id)}
-                    aria-label="Quitar jugada"
-                    title="Quitar de la sesión"
-                    className="shrink-0 text-slate-400 hover:text-red-500"
-                  >
-                    ✕
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-800 text-white">
+                    <th className="w-[4%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">#</th>
+                    <th className="w-[3%] border-r border-slate-700 px-1 py-1 text-center font-bold uppercase">X</th>
+                    <th className="w-[22%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Jugada</th>
+                    <th className="w-[8%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Caballo</th>
+                    <th className="w-[10%] border-r border-slate-700 px-1 py-1 text-right font-bold uppercase">Monto</th>
+                    <th className="w-[17%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 1</th>
+                    <th className="w-[19%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 2</th>
+                    <th className="w-[17%] px-1 py-1 text-right font-bold uppercase">Premio/Saldo</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line/70">
+                  {ticketsDeCarrera.map((t, i) => {
+                    const jugada = String(t.comando).replace(/^\d+(?:[.,]\d+)?\s+/, "").trim() || String(t.comando).trim();
+                    const mejorCobre = Math.max(t.cobro1 ?? 0, t.cobro2 ?? 0, t.gananciaProyectada + t.monto);
+                    const premio = mejorCobre > t.monto;
+                    return (
+                      <tr key={t.id} className="align-middle bg-white">
+                        <td className="h-10 px-1 py-0 align-middle text-xs text-slate-400">{i + 1}</td>
+                        <td className="h-10 px-1 py-0 align-middle text-center">
+                          <button
+                            type="button"
+                            onClick={() => editarTicket(t.id)}
+                            aria-label="Editar jugada"
+                            title="Volver a la tabla como inputs editables"
+                            className="text-xs text-slate-400 hover:text-primary-600"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => eliminarTicket(t.id)}
+                            aria-label="Quitar jugada"
+                            title="Quitar de la sesión"
+                            className="ml-1 text-xs text-slate-400 hover:text-red-500"
+                          >
+                            ✕
+                          </button>
+                        </td>
+                        <td className="h-10 truncate px-1 py-0 align-middle font-mono text-[11px] font-semibold text-slate-700" title={t.comando}>
+                          {jugada}
+                        </td>
+                        <td className="h-10 px-1 py-0 align-middle font-bold text-slate-800">{t.caballo ? t.caballo.toUpperCase() : "—"}</td>
+                        <td className="h-10 px-1 py-0 align-middle text-right font-black text-slate-900">{monedaFmt(t.monto)}</td>
+                        <td className="h-10 truncate px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={t.cliente1}>
+                          {t.cliente1 || "—"}
+                        </td>
+                        <td className="h-10 truncate px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={t.cliente2}>
+                          {t.cliente2 || "—"}
+                        </td>
+                        <td className={`h-10 px-1 py-0 align-middle text-right text-[11px] font-black ${premio ? "text-emerald-600" : "text-red-600"}`}>
+                          {premio ? `+${monedaFmt(mejorCobre - t.monto)}` : `SALDO −${monedaFmt(t.monto - mejorCobre)}`}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
         {aviso && <p className="mt-2 text-xs font-semibold text-slate-600">{aviso}</p>}

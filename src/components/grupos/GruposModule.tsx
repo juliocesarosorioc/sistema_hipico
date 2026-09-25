@@ -106,6 +106,7 @@ export function GruposModule() {
   const [formBanco, setFormBanco] = useState("");
   const [formNumeroCuenta, setFormNumeroCuenta] = useState("");
   const [formPrincipal, setFormPrincipal] = useState(false);
+  const [formPermiteCruces, setFormPermiteCruces] = useState(true);
 
   const recargar = useCallback(async () => {
     setCargando(true);
@@ -190,6 +191,7 @@ export function GruposModule() {
       responsable: formResponsable.trim().toUpperCase() || null,
       cuenta_bancaria: cuenta,
       es_principal: formPrincipal,
+      permite_cruces: formPermiteCruces,
     });
     setGuardando(false);
     if (!r.ok) return toast(r.error ?? "Error al crear el grupo.", "error");
@@ -199,6 +201,7 @@ export function GruposModule() {
     setFormNumeroCuenta("");
     setFormBanco("");
     setFormPrincipal(false);
+    setFormPermiteCruces(true);
     void recargar();
   };
 
@@ -232,6 +235,7 @@ export function GruposModule() {
       responsable: String(editando.responsable ?? "").trim().toUpperCase() || null,
       cuenta_bancaria: editando.cuenta_bancaria || null,
       es_principal: editando.es_principal === true,
+      permite_cruces: editando.permite_cruces !== false,
     };
     setGuardando(true);
     const r = await actualizarGrupo(id, datos as Record<string, unknown>);
@@ -428,6 +432,15 @@ export function GruposModule() {
                   className="rounded accent-amber-500"
                 />
                 Es el grupo Principal (concentra la contabilidad)
+              </label>
+              <label className="col-span-3 flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formPermiteCruces}
+                  onChange={(e) => setFormPermiteCruces(e.target.checked)}
+                  className="rounded accent-amber-500"
+                />
+                Permite cruces financieros (comisión sobre ganancia neta)
               </label>
               <div className="col-span-3">
                 <Button variant="default" className="w-full" onClick={() => void guardarNuevo()} disabled={guardando}>
@@ -829,6 +842,15 @@ export function GruposModule() {
                   className="rounded accent-amber-500"
                 />
                 Es el grupo Principal
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={editando.permite_cruces !== false}
+                  onChange={(e) => setEditando({ ...editando, permite_cruces: e.target.checked })}
+                  className="rounded accent-amber-500"
+                />
+                Permite cruces financieros (comisión sobre ganancia neta)
               </label>
             </div>
             <div className="flex justify-end gap-3 border-t border-line bg-slate-50 p-4">

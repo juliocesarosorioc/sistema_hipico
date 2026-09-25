@@ -167,6 +167,89 @@ export type ComisionConfig = {
 
 export const COMISION_CASA: ComisionConfig = { rate: 0.05 };
 
+// ============================================================
+// CRUCE FINANCIERO — comisión sobre la GANANCIA NETA
+// ============================================================
+// Condición de mitigación de riesgo donde un cliente apuesta a favor y en
+// contra del mismo ejemplar (ej. juega 2n y da 1y2n). La comisión del 5% y
+// las devoluciones se calculan ÚNICAMENTE sobre la ganancia neta resultante.
+// (Ej: Gana 15 y pierde 10 -> Comisión sobre 5. Gana 15 y pierde 15 ->
+// Comisión cero. Si hay pérdida neta, comisión cero).
+//
+// Agrupación: (cliente, caballo, carrera). Dentro del grupo se suman los
+// resultados netos (bruto − monto de cada ganador y − monto de cada
+// perdedor); la comisión resultante sobre el saldo NETO POSITIVO reemplaza
+// la suma de comisiones por ticket de ese grupo.
+//
+// TODO(PLANIFICACIÓN): "INQUIETUDES CON RESPECTO A CRUCES" — la jerarquía de
+// permisos Carrera → Cliente → Grupo decide si el cruce recibe este descuento
+// de comisión neta (permiso en NO = comisión por ticket, sin neteo). Pendiente
+// definir si además se BLOQUEA la operación.
+
+export type NeteoCruceItem = {
+  /** Identidad del cliente apostador (cliente_juega_id / cliente1). */
+  cliente: string;
+  caballo: string;
+  monto: number;
+  /** Bruto de la jugada ANTES de comisión (0 si el ticket perdió). */
+  bruto: number;
+  /** true = ticket ganador (bruto > 0). */
+  ok: boolean;
+};
+
+export type NeteoCruceGrupo = {
+  /** Resultado neto del cliente sobre ese ejemplar en la carrera. */
+  neto: number;
+  /** Comisión SOLO sobre el neto positivo (0 si pérdida neta). */
+  comisionNeta: number;
+  /** Cantidad de tickets que integran el grupo. */
+  conteo: number;
+};
+
+export function claveCruceFinanciero(carrera: string | number, cliente: string, caballo: string): string {
+  return [
+    String(carrera ?? "").trim().toUpperCase(),
+    String(cliente ?? "").trim().toUpperCase(),
+    String(caballo ?? "").trim().toUpperCase(),
+  ].join("::");
+}
+
+/**
+ * Agrupa los tickets por (cliente, caballo, carrera) y calcula la comisión
+ * neta de cada grupo (cruces financieros). Los tickets sin cliente o sin
+ * caballo no participan del neteo (se mantienen con comisión por ticket).
+ */
+export function netearComisionCruce(
+  items: NeteoCruceItem[],
+  carrera: string | number,
+  tasaComisionPorcentaje?: number | null
+): Map<string, NeteoCruceGrupo> {
+  const tasa =
+    Number.isFinite(Number(tasaComisionPorcentaje)) && Number(tasaComisionPorcentaje) >= 0
+      ? Number(tasaComisionPorcentaje)
+      : COMISION_CASA.rate * 100;
+  const porGrupo = new Map<string, { neto: number; conteo: number }>();
+  for (const it of items) {
+    const cliente = String(it.cliente ?? "").trim();
+    const caballo = String(it.caballo ?? "").trim();
+    if (!cliente || !caballo) continue;
+    const k = claveCruceFinanciero(carrera, cliente, caballo);
+    const g = porGrupo.get(k) ?? { neto: 0, conteo: 0 };
+    g.neto += it.ok ? it.bruto - it.monto : -it.monto;
+    g.conteo += 1;
+    porGrupo.set(k, g);
+  }
+  const out = new Map<string, NeteoCruceGrupo>();
+  for (const [k, g] of porGrupo) {
+    out.set(k, {
+      neto: round2(g.neto),
+      comisionNeta: g.neto > 0 ? round2(g.neto * (tasa / 100)) : 0,
+      conteo: g.conteo,
+    });
+  }
+  return out;
+}
+
 export type TicketMotor = BetSlipEntry & {
   /** Posición exhaustada del ejemplar según la Pagar (orden de llegada). */
   puesto_final: number | "SOC" | "EMP1";

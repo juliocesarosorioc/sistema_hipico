@@ -26,6 +26,8 @@ export type ModalidadAuto = "NINIS" | "EMPAREJAMIENTOS" | "CRUCES" | "COMPUESTAS
  * Auto-detección de modalidad por la sintaxis de la jugada (sin motor):
  *  - "y"/"n" (2n, 1y2n, 1 y 2n, 1y2n y 2n) → Ninis / Emparejamientos
  *  - "/"     (10/7, 10/PP, PP)              → Cruces
+ *  - "x"     (2x3, 1x4, 2x3 10/8)           → Emparejamientos (PAREO: un caballo
+ *                                            contra otro, NUNCA un "cruce")
  *  - "/" + y (1/2n y 2n, 2n y 2/2n)         → Compuestas
  *  - "p"     (1p, 2p)                       → Puestos
  * Acepta "100 2n" (monto + jugada) o solo la nomenclatura "2n".
@@ -42,7 +44,9 @@ export function detectarModalidad(texto: string): ModalidadAuto | null {
   if (!jugada) return null;
 
   if (/^PP$/i.test(jugada) || /^\d+\/(?:\d+(?:\.\d+)?|PP)$/i.test(jugada)) return "CRUCES";
-  if (/^\d+\s*X\s*\d+(?:\s+\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?)?$/i.test(jugada)) return "CRUCES";
+  // "2x3" / "1x4" / "2x3 10/8" = PAREO caballo contra caballo (emparejamiento),
+  // nunca un cruce financiero de un cliente contra su propia jugada.
+  if (/^\d+\s*X\s*\d+(?:\s+\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?)?$/i.test(jugada)) return "EMPAREJAMIENTOS";
 
   const bloques = jugada.split(/ Y | & /).filter(Boolean);
   if (bloques.length > 1) {
@@ -185,12 +189,13 @@ export type FilaProyeccion =
     }
   | { ok: false; motivo: string };
 
-const CRUCE_RE = /^(\d+)\s*X\s*(\d+)(?:\s+(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?))?$/i;
+const PAREO_RE = /^(\d+)\s*X\s*(\d+)(?:\s+(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?))?$/i;
 
 /**
  * Proyección por fila de la Carga Individual (Taquilla): la JUGADA recibe solo
  * nomenclatura pura (ej. "2x3 10/8") y el MONTO es una columna numérica aparte.
- * Para CRUCES se calcula la matemática proporcional ESTRICTA de la casa:
+ * Para PAREO (caballo contra caballo, "2x3 10/8") se calcula la matemática
+ * proporcional ESTRICTA de la casa:
  *   - gana caballo A (cliente 1): bruto = MONTO × (Q/P)
  *   - gana caballo B (cliente 2): bruto = MONTO × (P/P) = MONTO (a la par)
  *   - comisión de la casa SOLO sobre la ganancia bruta (clienteBruto − monto)
@@ -209,15 +214,15 @@ export function proyectarFila(opts: {
   if (!isFinite(monto) || monto <= 0) return { ok: false, motivo: "Ingresá el monto numérico de la jugada." };
 
   const modalidad = detectarModalidad(jugada);
-  const cruce = CRUCE_RE.exec(jugada);
+  const pareo = PAREO_RE.exec(jugada);
 
-  if (cruce) {
-    const A = cruce[1];
-    const B = cruce[2];
-    const P = cruce[3] ? parseFloat(cruce[3]) : 10;
-    const Q = cruce[4] ? parseFloat(cruce[4]) : 10;
+  if (pareo) {
+    const A = pareo[1];
+    const B = pareo[2];
+    const P = pareo[3] ? parseFloat(pareo[3]) : 10;
+    const Q = pareo[4] ? parseFloat(pareo[4]) : 10;
     if (!isFinite(P) || P <= 0 || !isFinite(Q) || Q <= 0) {
-      return { ok: false, motivo: `Proporción del cruce inválida ("${jugada}", ej. 2x3 10/8).` };
+      return { ok: false, motivo: `Proporción del pareo inválida ("${jugada}", ej. 2x3 10/8).` };
     }
     const tasa = tasaComisionValida(opts.tasaComision);
     const bruto1 = monto * (Q / P);
@@ -311,9 +316,9 @@ const RE_PURGADO = /[^\p{L}\p{N}.,/x-]/gu;
 const RE_NUMERICO = /^\d+(?:[.,]\d+)*$/;
 /** Pareo de caballos: "6x7". */
 const RE_PAREO = /^\d+[x]\d+$/;
-/** Cruce con proporción: "2x3" seguido de "10/8" (formato legacy). */
-const RE_CRUCE_A = /^\d+[x]\d+$/;
-const RE_CRUCE_B = /^\d+\/\d+(?:[.,]\d+)?$/;
+/** Pareo con proporción: "2x3" seguido de "10/8" (formato legacy). */
+const RE_PAREO_A = /^\d+[x]\d+$/;
+const RE_PAREO_B = /^\d+\/\d+(?:[.,]\d+)?$/;
 /** Jugada con letra de apuesta + dígito: 2p, 2n, 1y2n, 3y3, pp (nunca un número pelado). */
 const RE_JUGADA_LETRA = /^(?:\d+[y]\d*[pn]?|\d+[pn]|pp)$/;
 const RE_JUGADA_BARRA = /^\d+\/\d+(?![\d.])/;
@@ -379,7 +384,7 @@ export function parsearLineaRapida(linea: string): LineaRapida | null {
 
   // 3) JUGADA — cruce legacy "2x3 10/8" primero (par de tokens contiguos).
   for (let i = 0; i < tokens.length - 1; i++) {
-    if (RE_CRUCE_A.test(tokens[i].limpio) && RE_CRUCE_B.test(tokens[i + 1].limpio)) {
+    if (RE_PAREO_A.test(tokens[i].limpio) && RE_PAREO_B.test(tokens[i + 1].limpio)) {
       marcarJugada([i, i + 1]);
       break;
     }

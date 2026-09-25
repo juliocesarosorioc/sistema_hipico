@@ -13,6 +13,8 @@ export type GrupoVenta = {
   cupo_tabla?: number | null;
   es_principal?: boolean | null;
   activo?: boolean | null;
+  /** Jerarquía de cruces: switch general del grupo (default TRUE = permitido). */
+  permite_cruces?: boolean | null;
 };
 
 export type ClienteVenta = {
@@ -23,6 +25,8 @@ export type ClienteVenta = {
   libre?: boolean | null;
   modo_juego?: string | null;
   grupo_id?: string | number | null;
+  /** Jerarquía de cruces: override por cliente (default TRUE = permitido). */
+  permite_cruces?: boolean | null;
   /** Unión de clientes_grupos + grupo_id por cliente (misma regla del legacy). */
   grupos: (string | number)[];
 };
@@ -64,7 +68,7 @@ export async function listarClientesVenta(): Promise<ClienteVenta[]> {
     try {
       const { data: cli, error: e1 } = await supabase
         .from("clientes")
-        .select("id, nombre, saldo_actual, aval, libre, modo_juego, grupo_id");
+        .select("id, nombre, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces");
       if (e1) throw e1;
       const { data: cg, error: e2 } = await supabase
         .from("clientes_grupos")
@@ -78,6 +82,7 @@ export async function listarClientesVenta(): Promise<ClienteVenta[]> {
         libre: Boolean(c.libre),
         modo_juego: c.modo_juego ? String(c.modo_juego) : null,
         grupo_id: c.grupo_id ?? null,
+        permite_cruces: c.permite_cruces != null ? Boolean(c.permite_cruces) : null,
         grupos: [
           ...new Set([
             ...((cg ?? []).filter((x) => String(x.cliente_id) === String(c.id)).map((x) => String(x.grupo_id))),
@@ -119,6 +124,8 @@ export type GrupoRow = {
   cuenta_bancaria?: string | null;
   es_principal?: boolean | null;
   activo?: boolean | null;
+  /** Jerarquía de cruces: switch general del grupo (default TRUE = permitido). */
+  permite_cruces?: boolean | null;
   created_at?: string | null;
 };
 
@@ -155,7 +162,7 @@ export async function listarGruposAdmin(force = false): Promise<GrupoRow[]> {
       const { data, error } = await supabase
         .from("grupos_venta")
         .select(
-          "id, nombre, moneda, moneda_cuadre, cupo_tabla, comision_default, responsable, cuenta_bancaria, es_principal, activo, created_at"
+          "id, nombre, moneda, moneda_cuadre, cupo_tabla, comision_default, responsable, cuenta_bancaria, es_principal, activo, permite_cruces, created_at"
         )
         .order("es_principal", { ascending: false });
       if (error) throw error;

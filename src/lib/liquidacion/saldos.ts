@@ -14,7 +14,7 @@
 import { supabase } from "@/lib/supabase";
 import { liquidarOficial } from "@/lib/motores/oficiales";
 import { marcasConfigParaCarrera } from "@/lib/marcas";
-import { parsearNini } from "@/lib/bettingEngine";
+import { parsearNini, netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem } from "@/lib/bettingEngine";
 import type { TicketMotor, ResultadoMotor } from "@/lib/bettingEngine";
 import type { PizarraCarrera } from "@/lib/liquidacion";
 
@@ -125,11 +125,55 @@ export async function aplicarLiquidacionSaldos(
   // Decide cada ticket con el motor universal (idempotente por estado).
   const decisiones: Array<{ fila: Record<string, unknown>; res: ResultadoMotor }> = [];
   const errores: string[] = [];
-  let abonoTotal = 0;
   for (const fRaw of filas) {
     const fila = fRaw as Record<string, unknown>;
     const res = liquidarOficial(motorDesdeFila(fila, input, marcasConfig), input.tasaComision);
     decisiones.push({ fila, res });
+  }
+
+  // ── CRUCE FINANCIERO: comisión neta por (cliente_juega_id, caballo, carrera) ──
+  // Mismo neteo que pagarYCerrar: la comisión y las devoluciones se calculan
+  // SOLO sobre la ganancia neta del cliente por ejemplar en la carrera.
+  const items: NeteoCruceItem[] = decisiones.map(({ fila, res }) => ({
+    cliente: String(fila.cliente_juega_id ?? "").trim(),
+    caballo: String(fila.caballo ?? "").trim(),
+    monto: NUM(fila.monto_jugado),
+    bruto: res.ok ? res.totalClienteNeto + res.gananciaCasa : 0,
+    ok: res.ok,
+  }));
+  const gruposNeteo = netearComisionCruce(items, input.carrera, input.tasaComision);
+  if (gruposNeteo.size > 0) {
+    const gruposIdx = new Map<string, number[]>();
+    for (let i = 0; i < decisiones.length; i++) {
+      const cliente = String(decisiones[i].fila.cliente_juega_id ?? "").trim();
+      const caballo = String(decisiones[i].fila.caballo ?? "").trim();
+      if (!cliente || !caballo) continue;
+      const k = claveCruceFinanciero(input.carrera, cliente, caballo);
+      const g = gruposNeteo.get(k);
+      if (!g || g.conteo < 2) continue;
+      const arr = gruposIdx.get(k) ?? [];
+      arr.push(i);
+      gruposIdx.set(k, arr);
+    }
+    for (const [k, idxs] of gruposIdx) {
+      const grupo = gruposNeteo.get(k)!;
+      const oldSum = idxs.reduce((a, i) => a + (decisiones[i].res.ok ? decisiones[i].res.gananciaCasa : 0), 0);
+      if (oldSum <= 0 || grupo.comisionNeta === oldSum) continue;
+      for (const i of idxs) {
+        const res = decisiones[i].res;
+        if (!res.ok) continue;
+        const bruto = res.totalClienteNeto + res.gananciaCasa;
+        const share = res.gananciaCasa / oldSum;
+        const nueva = Math.round(grupo.comisionNeta * share * 100) / 100;
+        res.totalClienteNeto = Math.round((bruto - nueva) * 100) / 100;
+        res.balanceBanca = Math.round((NUM(decisiones[i].fila.monto_jugado) - bruto + nueva) * 100) / 100;
+        res.gananciaCasa = nueva;
+      }
+    }
+  }
+
+  let abonoTotal = 0;
+  for (const { res } of decisiones) {
     if (res.ok) abonoTotal += res.totalClienteNeto;
   }
 
