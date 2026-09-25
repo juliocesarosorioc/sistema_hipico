@@ -39,13 +39,28 @@ export function ConfigImpresionModal({ abierto, onCerrar }: Props) {
   }, [abierto]);
 
   // Usamos el hook useMemo para extraer solo los días de EVENTO disponibles
+  // FILTRO EN CASCADA: Extrae solo los días donde corrió el hipódromo seleccionado (si hay uno)
   const diasEvento = useMemo(() => {
     const fechasUnicas = new Set<string>();
     tablas.forEach(t => {
-      if (t.fecha) fechasUnicas.add(t.fecha.slice(0, 10)); // Cortamos a YYYY-MM-DD
+      if (!t.cerrada && (!hipodromo || t.hipodromo === hipodromo)) {
+        if (t.fecha) fechasUnicas.add(t.fecha.slice(0, 10));
+        else if (t.fecha_creacion) fechasUnicas.add(t.fecha_creacion.slice(0, 10));
+      }
     });
     return Array.from(fechasUnicas).sort().reverse();
-  }, [tablas]);
+  }, [tablas, hipodromo]);
+
+  // FILTRO EN CASCADA: Extrae solo los hipódromos que corrieron en el día seleccionado (si hay uno)
+  const hipodromos = useMemo(() => {
+    const setHips = new Set<string>();
+    tablas.forEach(t => {
+       if (!t.cerrada && (!dia || (t.fecha || t.fecha_creacion || "").slice(0,10) === dia)) {
+           if (t.hipodromo) setHips.add(t.hipodromo);
+       }
+    });
+    return Array.from(setHips).sort();
+  }, [tablas, dia]);
 
   const hipodromos = useMemo(() => hipodromosDisponibles(tablas), [tablas]);
 
