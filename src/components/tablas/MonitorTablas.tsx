@@ -437,7 +437,6 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
 }
 
 /** Matriz compacta cero-scroll: cada tabla ocupa una columna (screen y print). */
-/** Matriz compacta cero-scroll: cada tabla ocupa una columna (screen y print). */
 function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
   if (tablas.length === 0) {
     return <p className="py-6 text-center text-sm italic text-slate-400">No hay tablas abiertas para imprimir.</p>;
@@ -445,7 +444,7 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
   return (
     <div className="grid grid-cols-1 gap-x-6 gap-y-4 p-2 text-black md:grid-cols-2 print:grid-cols-2 lg:grid-cols-3">
       {tablas.map((t) => (
-        <div key={String(t.id)} className="break-inside-avoid overflow-hidden rounded-lg border-2 border-black bg-white text-[10px] leading-tight shadow-sm">
+        <div key={String(t.id)} style={{ pageBreakInside: "avoid", breakInside: "avoid" }} className="overflow-hidden rounded-lg border-2 border-black bg-white text-[10px] leading-tight shadow-sm">
           
           {/* Cabecera Negra */}
           <div className="flex items-center justify-between bg-slate-900 px-2 py-1.5 text-white">
@@ -453,52 +452,54 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
             <span className="whitespace-nowrap font-black text-[11px] text-green-400">US $ {fmtMoney(t.premio_recalculado ?? null, "")}</span>
           </div>
           
-          {/* Estructura DIV a prueba de html2canvas y PDF */}
-          <div className="w-full flex flex-col bg-white">
-            {/* Cabecera de columnas */}
-            <div className="flex border-b-2 border-slate-800 font-bold bg-slate-200">
-              <div className="w-8 shrink-0 text-center py-1 border-r border-slate-300">Nº</div>
-              <div className="flex-grow px-2 py-1 text-left border-r border-slate-300">Ejemplar</div>
-              <div className="w-20 shrink-0 text-right px-2 py-1">Valor</div>
-            </div>
+          {/* Estructura INDESTRUCTIBLE con TABLE FIXED para evitar letras apiladas */}
+          <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
+            <thead className="bg-slate-200 border-b-2 border-slate-800">
+              <tr>
+                <th style={{ width: "30px", padding: "4px 0", textAlign: "center" }}>Nº</th>
+                <th style={{ padding: "4px 6px", textAlign: "left" }}>Ejemplar</th>
+                <th style={{ width: "70px", padding: "4px 6px", textAlign: "right" }}>Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(t.caballos ?? []).map((c, i) => (
+                <tr key={i} className={`border-b border-slate-300 ${c.retirado ? "text-red-500 opacity-60" : "text-black"}`}>
+                  
+                  {/* 1. Número */}
+                  <td style={{ width: "30px", padding: 0, textAlign: "center", backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}>
+                    <div className="font-extrabold text-[11px] flex items-center justify-center w-full h-full py-1">
+                      {c.numero}
+                    </div>
+                  </td>
 
-            {/* Filas de caballos */}
-            {(t.caballos ?? []).map((c, i) => (
-              <div key={i} className={`flex border-b border-slate-300 last:border-b-0 ${c.retirado ? "text-red-500 opacity-60" : "text-black"}`}>
-                
-                {/* 1. Número del caballo (Ancho y alto rígido) */}
-                <div 
-                  className="w-8 shrink-0 flex items-center justify-center font-extrabold border-r border-slate-300 text-[11px]"
-                  style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero), boxSizing: "border-box" }}
-                >
-                  {c.numero}
-                </div>
+                  {/* 2. Nombre del ejemplar y BANDERA (Forzando nowrap y ellipsis) */}
+                  <td style={{ padding: "4px 6px", fontWeight: "bold", textTransform: "uppercase" }}>
+                    <div className="flex items-center gap-1.5" style={{ width: "100%", overflow: "hidden" }}>
+                      <div className="shrink-0 flex items-center">
+                        <Flag nac={c.nacionalidad} size={14} withName={false} />
+                      </div>
+                      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", width: "100%" }}>
+                        {c.nombre} {c.retirado ? " (RET.)" : ""}
+                      </span>
+                    </div>
+                  </td>
 
-                {/* 2. Nombre del ejemplar y BANDERA (Forzando salto de línea normal) */}
-                <div 
-                  className="flex-grow px-2 py-1.5 font-bold uppercase flex items-center gap-1.5 border-r border-slate-300"
-                  style={{ whiteSpace: "normal", wordBreak: "break-word", lineHeight: "1.1" }}
-                >
-                  <Flag nac={c.nacionalidad} size={14} withName={false} />
-                  <span>{c.nombre} {c.retirado ? " (RET.)" : ""}</span>
-                </div>
-
-                {/* 3. Valor (Siempre en US $) */}
-                <div className="w-20 shrink-0 text-right px-2 flex items-center justify-end font-extrabold text-[11px]">
-                  US $ {fmtMoney(parseNum(c.valor_ejemplar), "")}
-                </div>
-              </div>
-            ))}
-
-            {/* Fila de Suma Total */}
-            <div className="flex border-t-2 border-slate-800 bg-slate-100 font-black">
-              <div className="w-8 shrink-0 text-center py-1.5 border-r border-slate-300 uppercase text-[9px] text-slate-500">Suma</div>
-              <div className="flex-grow px-2 py-1.5 text-right text-indigo-800 text-[11px]">
-                US $ {fmtMoney(t.suma_base_tabla ?? sumaBase(t.caballos), "")}
-              </div>
-              <div className="w-20 shrink-0" />
-            </div>
-          </div>
+                  {/* 3. Valor */}
+                  <td style={{ width: "70px", padding: "4px 6px", textAlign: "right", fontWeight: "900", fontSize: "11px" }}>
+                    US $ {fmtMoney(parseNum(c.valor_ejemplar), "")}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="bg-slate-100 border-t-2 border-slate-800">
+              <tr>
+                <td style={{ width: "30px", padding: "6px 0", textAlign: "center", fontSize: "9px", color: "#64748b", textTransform: "uppercase", fontWeight: "bold" }}>Suma</td>
+                <td colSpan={2} style={{ padding: "6px", textAlign: "right", fontWeight: "900", color: "#3730a3", fontSize: "11px" }}>
+                  US $ {fmtMoney(t.suma_base_tabla ?? sumaBase(t.caballos), "")}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
           
         </div>
       ))}

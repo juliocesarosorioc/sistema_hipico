@@ -54,11 +54,20 @@ export function ConfigImpresionModal({ abierto, onCerrar }: Props) {
   const generar = async (formato: FormatoImpresion) => {
     setTrabajando(formato);
     const filtros: FiltrosImpresion = { hipodromo: hipodromo || undefined, dia: dia || undefined };
+    
+    // FILTRO ESTRICTO: Cortamos las tablas aquí mismo antes de mandarlas a imprimir
+    const tablasFiltradas = tablas.filter((t) => {
+      if (t.cerrada) return false; // Nunca imprimimos cerradas
+      if (hipodromo && t.hipodromo !== hipodromo) return false; // Filtro de hipódromo
+      if (dia && (t.fecha || t.fecha_creacion || "").slice(0, 10) !== dia) return false; // Filtro de fecha
+      return true;
+    });
+
     let r: ResultadoImpresion;
     try {
       r =
         tipo === "tablas"
-          ? await imprimirTablasPublicadas(tablas, formato, filtros)
+          ? await imprimirTablasPublicadas(tablasFiltradas, formato, filtros) // Enviamos las filtradas
           : await imprimirReportePorJugador(formato, filtros);
       if (r.ok) toast(`Documento generado: ${r.archivo}`);
       else toast(r.error || "No se pudo generar el documento.", "error");
