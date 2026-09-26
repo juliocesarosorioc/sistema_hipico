@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ToastHost } from "@/components/ui/ToastHost";
-import { listarTablasPublicadas } from "@/lib/tablas/rpc";
+import { listarTablasPublicadas, HIPODROMOS_MOSTRAR } from "@/lib/tablas/rpc";
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { listarClientesVenta, type ClienteVenta } from "@/lib/grupos";
 import { colorDeNumeroGac } from "@/lib/gaceta/ui";
@@ -122,9 +122,9 @@ export function DupletaModule() {
 
   const hipodromos = useMemo(
     () =>
-      [...new Set(carreras.map((c) => String(c.hipodromo || "").trim().toUpperCase()).filter(Boolean))].sort((a, b) =>
-        a.localeCompare(b)
-      ),
+      [...new Set(carreras.map((c) => String(c.hipodromo || "").trim().toUpperCase()).filter(Boolean))]
+        .filter((h) => HIPODROMOS_MOSTRAR.includes(h))
+        .sort((a, b) => a.localeCompare(b)),
     [carreras]
   );
 
@@ -179,9 +179,13 @@ export function DupletaModule() {
   };
 
   // Auto-genera la matriz apenas eligen las dos carreras (sin pisar una matriz
-  // ya generada/guardada con las mismas carreras).
+  // ya generada/guardada con las mismas carreras). Si falta alguna selección,
+  // la matriz (columnas/filas) queda en blanco hasta que se elijan las carreras.
   useEffect(() => {
-    if (!hipodromo || !dia || !carrera1 || !carrera2) return;
+    if (!hipodromo || !dia || !carrera1 || !carrera2) {
+      if (matriz) setMatriz(null);
+      return;
+    }
     if (String(carrera1) === String(carrera2)) return;
     const cab1 = ejemplaresDe(carrera1);
     const cab2 = ejemplaresDe(carrera2);
@@ -303,9 +307,9 @@ export function DupletaModule() {
 
           <label className="block">
             <span className={inputLbl}>Carrera 1 de la Dupleta</span>
-            <select value={carrera1} onChange={(e) => setCarrera1(e.target.value)} disabled={!dia} className={inputSel}>
-              <option value="">— elegir —</option>
-              {carrerasDelDia.map((c) => (
+            <select value={carrera1} onChange={(e) => { setCarrera1(e.target.value); if (e.target.value && e.target.value === carrera2) setCarrera2(""); }} disabled={!dia} className={inputSel}>
+              <option value="" />
+              {carrerasDelDia.filter((c) => String(c.carrera) !== String(carrera2)).map((c) => (
                 <option key={String(c.carrera)} value={String(c.carrera)}>Carrera {c.carrera} ({c.distancia_carrera ? `${c.distancia_carrera} m` : "—"})</option>
               ))}
             </select>
@@ -313,9 +317,9 @@ export function DupletaModule() {
 
           <label className="block">
             <span className={inputLbl}>Carrera 2 de la Dupleta</span>
-            <select value={carrera2} onChange={(e) => setCarrera2(e.target.value)} disabled={!dia} className={inputSel}>
-              <option value="">— elegir —</option>
-              {carrerasDelDia.map((c) => (
+            <select value={carrera2} onChange={(e) => { setCarrera2(e.target.value); if (e.target.value && e.target.value === carrera1) setCarrera1(""); }} disabled={!dia} className={inputSel}>
+              <option value="" />
+              {carrerasDelDia.filter((c) => String(c.carrera) !== String(carrera1)).map((c) => (
                 <option key={String(c.carrera)} value={String(c.carrera)}>Carrera {c.carrera} ({c.distancia_carrera ? `${c.distancia_carrera} m` : "—"})</option>
               ))}
             </select>
@@ -362,37 +366,6 @@ export function DupletaModule() {
             </select>
           </label>
         </div>
-
-        {(hipodromo && dia && (carrera1 || carrera2)) && (
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px]">
-            {carrera1 && (
-              <span className="flex flex-wrap items-center gap-1">
-                <b className="text-slate-500">C{carrera1}:</b>
-                {ejemplaresDe(carrera1).map((c) => {
-                  const col = colorDeNumeroGac(c.numero);
-                  return (
-                    <span key={`prev1-${c.numero}`} className="inline-flex items-center rounded px-1 text-[9px] font-black leading-tight" style={{ backgroundColor: col.bg, color: col.fg }}>
-                      {c.numero} {c.nombre}
-                    </span>
-                  );
-                })}
-              </span>
-            )}
-            {carrera2 && (
-              <span className="flex flex-wrap items-center gap-1">
-                <b className="text-slate-500">C{carrera2}:</b>
-                {ejemplaresDe(carrera2).map((c) => {
-                  const col = colorDeNumeroGac(c.numero);
-                  return (
-                    <span key={`prev2-${c.numero}`} className="inline-flex items-center rounded px-1 text-[9px] font-black leading-tight" style={{ backgroundColor: col.bg, color: col.fg }}>
-                      {c.numero} {c.nombre}
-                    </span>
-                  );
-                })}
-              </span>
-            )}
-          </div>
-        )}
       </div>
 
       {matriz && (
@@ -405,8 +378,8 @@ export function DupletaModule() {
               <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black text-orange-700">
                 🧾 {vendidas.length} cuadro(s) vendido(s) · {totalVentas.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
               </span>
-              <Button variant="outline" size="sm" onClick={() => void exportarMatriz("PNG")}>🖼️ PNG</Button>
-              <Button variant="default" size="sm" onClick={() => void exportarMatriz("PDF")}>📄 PDF</Button>
+              <Button variant="default" size="sm" onClick={() => void exportarMatriz("PNG")} className="!bg-indigo-600 hover:!bg-indigo-500">🖼️ PNG</Button>
+              <Button variant="outline" size="sm" onClick={() => void exportarMatriz("PDF")}>📄 PDF</Button>
             </span>
           </div>
 

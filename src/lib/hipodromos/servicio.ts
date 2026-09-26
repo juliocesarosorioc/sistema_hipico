@@ -5,6 +5,11 @@
  */
 import { supabase } from "@/lib/supabase";
 import { formatearNombre, type Hipodromo, type ResCrud, type ResListar } from "@/lib/hipodromos/tipos";
+import { HIPODROMOS_MOSTRAR } from "@/lib/tablas/rpc";
+
+/** Solo se muestran los hipódromos permitidos (decisión del negocio). */
+const permitidos = (lista: Hipodromo[]): Hipodromo[] =>
+  lista.filter((h) => HIPODROMOS_MOSTRAR.includes(String(h.nombre ?? "").trim().toUpperCase()));
 
 /** Catálogo de respaldo (sin conexión), paridad con el listado de la taquilla. */
 const RESERVA: Array<Pick<Hipodromo, "nombre" | "pais" | "estado">> = [
@@ -51,16 +56,16 @@ export async function listarHipodromos(): Promise<ResListar> {
     try {
       const { data, error } = await supabase.from("hipodromos").select("*").order("nombre", { ascending: true });
       if (!error && Array.isArray(data)) {
-        cacheLocal = (data as unknown[]).map((r) => normalizar(r as Record<string, unknown>));
+        cacheLocal = permitidos((data as unknown[]).map((r) => normalizar(r as Record<string, unknown>)));
         sembrada = true;
         return { ok: true, data: cacheLocal };
       }
-      if (error) return { ok: true, data: sembrarReserva(), local: true };
+      if (error) return { ok: true, data: permitidos(sembrarReserva()), local: true };
     } catch {
       /* sin conexión → respaldo */
     }
   }
-  return { ok: true, data: sembrarReserva(), local: true };
+  return { ok: true, data: permitidos(sembrarReserva()), local: true };
 }
 
 /** INSERT { nombre, pais } (mismo shape del legacy). */
