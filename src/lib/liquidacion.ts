@@ -17,6 +17,11 @@ export type PizarraCarrera = {
   /** Posiciones con empate (Dead Heat): el motor aplica la regla de CERO
       fraccionamiento (A PREMIO con 1° empatado = ANULADA, devuelve capital). */
   empates?: number[];
+  /** Caballo que cruzó la raya primero. Si el ganador oficial fue bajado/
+   *  descalificado después, TABLAS y REMATES siguen pagando a quien cruzó la
+   *  raya primero. Por defecto (ausente) se asume = primero (orden de llegada).
+   */
+  primero_raya?: string;
 };
 
 export type PayloadPagar = {

@@ -67,8 +67,10 @@ export function dividendoDe(t: TicketMotor): number | null {
  * por monto × dividendo (pago por $1) manteniendo la comisión 5% estricta
  * SOLO sobre la ganancia bruta. Config opcional de marcas (t.marcas).
  */
-/** Resuelve una jugada de Tabla Fija: gana si el ejemplar apostado es el 1º
-    (o si es TABLA COMPLETA = cubre todo el lote). Bruto = monto × premio_por_tabla
+/** Resuelve una jugada de Tabla Fija: gana si el ejemplar apostado es quien
+    cruzó la raya primero (o si es TABLA COMPLETA = cubre todo el lote). Como el
+    ganador oficial puede ser bajado/descalificado después, el pago se mantiene
+    en `primero_raya` (por defecto = primero). Bruto = monto × premio_por_tabla
     (o dividendo.tabla si no hay premio). */
 export function liquidarTabla(
   t: TicketMotor,
@@ -80,11 +82,12 @@ export function liquidarTabla(
   const n = /N(\d+)/.exec(tipo);
   const ejemplar = n ? n[1] : null;
   const esCompleta = tipo.includes("TABLA COMPLETA");
-  const gana = esCompleta || (!!ejemplar && String(t.pizarra.primero) === ejemplar);
+  const cruce = t.pizarra.primero_raya ?? t.pizarra.primero;
+  const gana = esCompleta || (!!ejemplar && String(cruce) === ejemplar);
   if (!gana) {
     return {
       ok: false,
-      motivo: `TABLA pierde (ganó el ${t.pizarra.primero ?? "?"}, jugada ${ejemplar ?? "COMPLETA"}).`,
+      motivo: `TABLA pierde (cruzó la raya 1º el ${cruce ?? "?"}, jugada ${ejemplar ?? "COMPLETA"}).`,
       totalClienteNeto: 0,
       balanceBanca: t.monto,
       gananciaCasa: 0,
