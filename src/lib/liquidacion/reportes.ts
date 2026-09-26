@@ -292,6 +292,23 @@ async function hipodromosDelDia(fecha: string): Promise<string[]> {
 
 /* ─────────────────────────── ensamblaje ─────────────────────────── */
 
+/** true si la carrera tiene tablas fijas publicadas (aunque no tenga jugadas). */
+async function carreraExisteEnTablas(fecha: string, hipodromo: string, carrera: string | number): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { data } = await supabase
+      .from("tablas_fijas")
+      .select("id")
+      .eq("carrera", carrera)
+      .eq("fecha", fecha)
+      .ilike("hipodromo", `%${hipodromo}%`)
+      .limit(1);
+    return !!data?.length;
+  } catch {
+    return false;
+  }
+}
+
 async function carreraReporte(
   fecha: string,
   hipodromo: string,
@@ -300,7 +317,10 @@ async function carreraReporte(
 ): Promise<CarreraReporte | null> {
   const puestos = await leerPizarra(fecha, hipodromo, numero);
   const tickets = await leerTickets(fecha, hipodromo, numero);
-  if (!tickets.length) return null;
+  const enTablas = await carreraExisteEnTablas(fecha, hipodromo, numero);
+  // La carrera aparece si tiene jugadas, resultados o siquiera sus tablas
+  // publicadas (cargadas por el operador aunque aún no tengan tickets).
+  if (!tickets.length && !enTablas && !(puestos ?? []).length) return null;
 
   const filas: FilaReporte[] = [];
   const neteoItems: NeteoCruceItem[] = [];
