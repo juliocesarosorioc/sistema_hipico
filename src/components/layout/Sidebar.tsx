@@ -13,7 +13,7 @@ const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
     id: "hipico",
     titulo: "Módulo Hípico",
     items: [
-      { href: "/dashboard", emoji: "🏠", txt: "Inicio / Dashboard" },
+      { href: "/inicio", emoji: "🏠", txt: "Inicio / Dashboard" },
       { href: "/gestion-jugadas", emoji: "🎟️", txt: "Gestión de Jugadas" },
       { href: "/tablas-fijas", emoji: "📋", txt: "Tablas Fijas" },
       { href: "/dupleta", emoji: "🎯", txt: "Dupletas" },
@@ -64,7 +64,7 @@ const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
 ];
 
 const esActiva = (pathname: string, href?: string) =>
-  !!href && (href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(href));
+  !!href && (href === "/inicio" ? pathname === "/inicio" : pathname.startsWith(href));
 
 /**
  * Menú lateral izquierdo de la SPA (clon del legacy).

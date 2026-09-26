@@ -179,6 +179,39 @@ create table if not exists tickets_jugadas (
 
 ---
 
+## MÓDULOS DEL DASHBOARD PENDIENTES DE MIGRACIÓN
+
+> Backlog de la vista principal de Grupos (`/inicio`, migración 1:1 del legacy).
+> Los módulos enumerados **no están migrados/conectados al backend** en la SPA:
+> en el Dashboard sus tarjetas de Acceso Rápido se muestran "Pronto" y los botones
+> de cierre emiten `toast.info` hasta que exista implementación real.
+
+### Pendientes de migración / conexión al backend
+- [ ] **Depósitos** — ingreso de dinero/saldos a clientes (afecta `clientes.saldo_actual`).
+- [ ] **Retiros** — egresos y pagos a socios.
+- [ ] **Transferencias** — movimientos entre clientes/grupos.
+- [ ] **Monedas / Tasas** — tabla de tasas de cambio y monedas de juego.
+- [ ] **Bancos Reales** — cuentas bancarias del club por grupo (ya hay `cuenta_bancaria` en `grupos_venta`).
+- [ ] **Winner / Place / Show (W.P.S.)** — motor americano de dividendos (legacy `html/wps.html`).
+- [ ] **Pollas** — registro y pago de pollas.
+- [ ] **Remates** — toma ejemplares de carreras cargadas (requiere el formato de remates).
+- [ ] **Auditoría** — bitácora de acciones del operador.
+- [ ] **Ingresos / Avales** — abonos y avales por cliente.
+- [ ] **Reglas de Jugadas** — administración de `tipos_jugadas` y dividendos.
+- [ ] **Operadores** — gestión de usuarios del sistema.
+- [ ] **Diagnóstico** — utilidad de sanidad del sistema.
+
+### Lógica de cierre (Caja / Semana)
+- [ ] **Cierre del Día** — consolidación de caja de la jornada (botón visible en `/inicio`).
+- [ ] **Cerrar Semana** — consolida el balance de la semana fiscal del grupo usando
+      `dia_inicio_semana` / `dia_fin_semana` de `grupos_venta` (ver
+      `src/lib/liquidacion/semana.ts` → `rangoSemanaDeGrupo`). Los **Saldos
+      Consolidados** deben evaluar este rango para la "Semana en curso".
+- [ ] **Semanas Anteriores** — consulta de semanas cerradas con su balance.
+- [ ] Marcar días de la semana como **CERRADO (verde)** una vez exista el cierre de caja diario.
+
+---
+
 ## Archivos Clave
 
 | Archivo | Propósito |
