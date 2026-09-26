@@ -181,9 +181,9 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
             nac = esAmericano ? "US" : "VE";
           }
           return (
-            <div key={i} className="grid items-center rounded border border-slate-200 bg-slate-50 px-1 py-px" style={{ gridTemplateColumns: "1.75rem 1fr auto 3.25rem auto" }}>
+            <div key={i} className="grid items-center rounded border border-slate-200 bg-slate-50 px-1 py-px" style={{ gridTemplateColumns: "1.5rem 1fr auto 3.25rem auto" }}>
               <span
-                className="flex h-7 w-7 shrink-0 flex-none items-center justify-center text-center text-[11px] font-bold"
+                className="flex h-6 w-6 shrink-0 flex-none items-center justify-center text-center text-[10px] font-bold leading-none"
                 style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
               >
                 {c.numero}

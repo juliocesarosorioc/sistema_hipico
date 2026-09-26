@@ -34,7 +34,7 @@ function toast(msg: string, tipo: "success" | "warning" | "error" | "info" = "in
 export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Props) {
   const [paso, setPaso] = useState<Paso>("config");
   const [tipo, setTipo] = useState<TipoReporte>("matriz");
-  const [orientacion, setOrientacion] = useState<Orientacion>("vertical");
+  const [orientacion, setOrientacion] = useState<Orientacion>("horizontal");
   const [dia, setDia] = useState<string>("");
   const [hipodromo, setHipodromo] = useState<string>("");
   const [resumen, setResumen] = useState<Array<{ id: string | number; hipodromo: string; carrera: string; fecha: string }>>([]);

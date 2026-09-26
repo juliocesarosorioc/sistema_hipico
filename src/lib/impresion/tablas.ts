@@ -109,14 +109,18 @@ export async function cargarMatrizImpresion(
   let filas: TablaRespaldo[] = [];
   let error: string | undefined;
 
+  // La RPC `club_listar_tablas_fijas_publicadas` es SECURITY DEFINER (pasa por
+  // alto la RLS) y devuelve TODAS las publicadas en 'Abierta'. Se usa SIEMPRE
+  // (también con filtros): el SELECT directo queda LOQUEADO por RLS → vacío sin
+  // error, que era la causa del modal sin datos. El filtrado día/hipódromo se
+  // aplica luego en memoria sobre el resultado real.
   if (supabase) {
-    if (!dia && !hipo) {
-      try {
-        const rpc = await supabase.rpc("club_listar_tablas_fijas_publicadas");
-        if (!rpc.error && Array.isArray(rpc.data)) filas = normalizarFilas(rpc.data);
-      } catch {
-        /* caer al SELECT */
-      }
+    try {
+      const rpc = await supabase.rpc("club_listar_tablas_fijas_publicadas");
+      if (!rpc.error && Array.isArray(rpc.data)) filas = normalizarFilas(rpc.data);
+      else error = rpc.error?.message;
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
     }
     if (filas.length === 0) {
       try {
@@ -124,7 +128,6 @@ export async function cargarMatrizImpresion(
           .from("tablas_fijas")
           .select("id,hipodromo,carrera,fecha,fecha_creacion,estado,premio_recalculado,suma_base_tabla,moneda,distancia_carrera,superficie,caballos")
           .ilike("estado", "abierta");
-        if (dia) sel = sel.eq("fecha", dia);
         if (hipo) sel = sel.ilike("hipodromo", hipo);
         const r = await sel;
         if (!r.error) filas = (r.data ?? []) as TablaRespaldo[];
@@ -158,6 +161,11 @@ export async function cargarMatrizImpresion(
 
   const carreras = filas
     .map((f) => aTablaImpresion(f, montos))
+    .filter((c) => {
+      if (dia && String(c.fecha).slice(0, 10) !== dia) return false;
+      if (hipo && hipoKey(c.hipodromo) !== hipo) return false;
+      return true;
+    })
     .sort(
       (a, b) =>
         String(a.fecha).localeCompare(String(b.fecha)) ||
@@ -188,37 +196,50 @@ export async function cargarResumenImpresion(): Promise<{
   fuente: "reales" | "local";
   error?: string;
 }> {
-  let carreras: ResumenCarrera[] = [];
+  let filas: TablaRespaldo[] = [];
   let error: string | undefined;
+  // Misma regla que la carga pesada: la RPC SECURITY DEFINER pasa la RLS; el
+  // SELECT directo queda LOQUEADO (vacío sin error) por las políticas del club.
   if (supabase) {
     try {
-      const { data, error: e } = await supabase
-        .from("tablas_fijas")
-        .select("id,hipodromo,carrera,fecha,fecha_creacion,hipodromo_id")
-        .ilike("estado", "abierta");
-      if (e) error = e.message;
-      else {
-        carreras = ((data ?? []) as Array<Record<string, unknown>>)
-          .map((r) => ({
-            id: String(r.id ?? ""),
-            hipodromo: String(r.hipodromo ?? "").trim().toUpperCase() || "—",
-            carrera: String(r.carrera ?? ""),
-            fecha: String(r.fecha || r.fecha_creacion || ""),
-            hipoId: r.hipodromo_id != null ? (r.hipodromo_id as string | number) : null,
-          }))
-          .sort(
-            (a, b) =>
-              String(a.fecha).localeCompare(String(b.fecha)) ||
-              a.hipodromo.localeCompare(b.hipodromo, "es") ||
-              (parseInt(a.carrera, 10) || 0) - (parseInt(b.carrera, 10) || 0)
-          );
-      }
+      const rpc = await supabase.rpc("club_listar_tablas_fijas_publicadas");
+      if (!rpc.error && Array.isArray(rpc.data)) filas = normalizarFilas(rpc.data);
+      else error = rpc.error?.message;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
+    }
+    if (filas.length === 0) {
+      try {
+        const { data, error: e } = await supabase
+          .from("tablas_fijas")
+          .select("id,hipodromo,carrera,fecha,fecha_creacion,hipodromo_id")
+          .ilike("estado", "abierta");
+        if (e) error = e.message;
+        else filas = (data ?? []) as unknown as TablaRespaldo[];
+      } catch (e) {
+        error = e instanceof Error ? e.message : String(e);
+      }
     }
   } else {
     error = "Sin conexión a Supabase";
   }
+  const carreras: ResumenCarrera[] = filas
+    .map((r) => {
+      const raw = r as unknown as Record<string, unknown>;
+      return {
+        id: String(r.id ?? ""),
+        hipodromo: String(r.hipodromo ?? "").trim().toUpperCase() || "—",
+        carrera: String(r.carrera ?? ""),
+        fecha: String(r.fecha || r.fecha_creacion || ""),
+        hipoId: raw.hipodromo_id != null ? (raw.hipodromo_id as string | number) : null,
+      };
+    })
+    .sort(
+      (a, b) =>
+        String(a.fecha).localeCompare(String(b.fecha)) ||
+        a.hipodromo.localeCompare(b.hipodromo, "es") ||
+        (parseInt(a.carrera, 10) || 0) - (parseInt(b.carrera, 10) || 0)
+    );
   return { carreras, fuente: carreras.length ? "reales" : "local", error };
 }
 
@@ -275,9 +296,9 @@ export const MATRIZ_CSS = `
 .im-ph{display:flex;align-items:center;justify-content:space-between;gap:8px;
   font-size:13px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.4px;padding:0 4px 8px;}
 .im-ph b{color:#0f172a;font-size:15px;}
-.im-hoja{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(3,1fr);gap:9px;}
+.im-hoja{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(3,1fr);grid-auto-flow:row;grid-auto-rows:1fr;gap:9px;}
 .im-tarjeta{background:#fff;border:1px solid #cbd5e1;border-radius:10px;overflow:hidden;
-  display:flex;flex-direction:column;min-height:0;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.04);}
+  display:flex;flex-direction:column;min-width:0;min-height:0;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.04);}
 .im-enc{background:#0f172a;color:#fff;padding:6px 8px;flex:none;}
 .im-l1{display:flex;align-items:center;gap:6px;justify-content:space-between;}
 .im-hip{font-size:12px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
@@ -326,7 +347,6 @@ export const MATRIZ_CSS = `
 function tarjetaHTML(t: TablaImpresion): string {
   const n = t.ejemplares.length || 1;
   const fs = fsAuto(t.ejemplares.length || 1);
-  const suma = t.ejemplares.reduce((a, e) => a + (e.retirado ? 0 : e.valor_ejemplar), 0);
   const jugadoTotal = t.ejemplares.reduce((a, e) => a + e.jugado, 0);
   const filas = t.ejemplares
     .map((e) => {
@@ -383,9 +403,7 @@ function tarjetaHTML(t: TablaImpresion): string {
         'px">SIN APUESTAS</div>'
       : filas) +
     "</div>" +
-    '<div class="im-pie"><span>&Sigma; SUMA <b>' +
-    monSinSimb(suma) +
-    '</b></span><span>PREMIO/TABLA <b>' +
+    '<div class="im-pie"><span>PREMIO/TABLA <b>' +
     monSinSimb(t.premio) +
     "</b></span></div>" +
     "</div>"

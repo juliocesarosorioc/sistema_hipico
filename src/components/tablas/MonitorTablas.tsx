@@ -308,7 +308,7 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                 <span className="rounded-full bg-slate-100 px-1.5 text-[9px] font-black text-slate-600">{(t.caballos ?? []).length}</span>
               </div>
 
-              <div className="px-1 py-0.5">
+              <div className="px-1 py-0">
                 {(t.caballos ?? []).map((c, i) => {
                   let nac = c.nacionalidad ? String(c.nacionalidad).toUpperCase() : "";
                   if (!nac) {
@@ -321,11 +321,11 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                       key={i}
                       type="button"
                       onClick={() => setEjemplarModal({ tabla: t, indice: i })}
-                      className={`grid w-full items-center rounded px-1 py-px text-left transition-colors hover:bg-indigo-50 ${c.retirado ? "opacity-50" : ""} cursor-pointer`}
-                      style={{ gridTemplateColumns: "2rem 1fr 1.25rem 4rem" }}
+                      className={`grid w-full items-center rounded px-1 py-0 text-left transition-colors hover:bg-indigo-50 ${c.retirado ? "opacity-50" : ""} cursor-pointer`}
+                      style={{ gridTemplateColumns: "1.75rem 1fr 1.25rem 4rem" }}
                     >
                       <span
-                        className="flex h-8 w-8 shrink-0 flex-none items-center justify-center rounded text-center text-[11px] font-bold leading-none"
+                        className="flex h-6 w-6 shrink-0 flex-none items-center justify-center rounded text-center text-[10px] font-bold leading-none"
                         style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
                       >
                         {c.numero}
@@ -356,6 +356,9 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                 </Guard>
                 <Guard permiso="liquidar_carrera">
                   <Button variant="danger" size="sm" className="flex-1" onClick={() => setLiquidando(t)}>🏁 Liquidar</Button>
+                </Guard>
+                <Guard permiso="eliminar_tabla">
+                  <Button variant="ghost" size="sm" className="shrink-0 border border-red-200 text-red-600 hover:bg-red-50" onClick={() => setConfirmarEliminar(t)}>🗑️ Eliminar</Button>
                 </Guard>
               </div>
             </div>
@@ -598,7 +601,6 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
         {tablas.map((t) => {
           const ejemplares = t.caballos ?? [];
           const fs = fsAuto(ejemplares.length || 1);
-          const suma = t.suma_base_tabla ?? sumaBase(t.caballos);
 
           return (
             <div key={String(t.id)} className="tarjeta-legacy">
@@ -646,7 +648,6 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
                 })}
               </div>
               <div className="pie-legacy">
-                <span>Σ SUMA <b>{fmtValor(suma)}</b></span>
                 <span>PREMIO/TABLA <b>{fmtValor(t.premio_recalculado ?? 0)}</b></span>
               </div>
             </div>
