@@ -51,12 +51,17 @@ export function claveDeModalidad(tipoJugada: string): ClaveDividendo | null {
   return null;
 }
 
-/** Multiplicador oficial (por $1) o null si la modalidad no tiene dividendo. */
+/** Multiplicador oficial (por $1) o null si la modalidad no tiene dividendo.
+ *  Primero busca el dividendo POR CABALLO del ticket (clave "win:7", "place:7",
+ *  "show:7") y, si no existe, cae al dividendo global de la modalidad. */
 export function dividendoDe(t: TicketMotor): number | null {
   const div = t.dividendos;
   if (!div || typeof div !== "object") return null;
   const k = claveDeModalidad(t.tipo_jugada);
   if (!k) return null;
+  const numero = t.caballo != null ? String(t.caballo).trim() : "";
+  const porCaballo = numero ? Number(div[`${k}:${numero}`]) : NaN;
+  if (Number.isFinite(porCaballo) && porCaballo >= 1) return porCaballo;
   const mult = Number(div[k]);
   return Number.isFinite(mult) && mult >= 1 ? mult : null;
 }
