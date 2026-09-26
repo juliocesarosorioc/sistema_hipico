@@ -35,6 +35,50 @@ export function DupletaModule() {
 
   const [matriz, setMatriz] = useState<DupletaEstado | null>(null);
   const tablaRef = useRef<HTMLTableElement | null>(null);
+  const areaRef = useRef<HTMLDivElement | null>(null);
+  const [ajuste, setAjuste] = useState<{ w: number; h: number; escala: number } | null>(null);
+
+  // Ancho uniforme de cada columna horizontal: caben el nombre del caballo en UNA línea.
+  const anchoCol = useMemo(() => {
+    if (!matriz || typeof document === "undefined") return 120;
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (!ctx) return 120;
+    ctx.font = "900 10px Inter, ui-sans-serif, system-ui, sans-serif";
+    let w = 72;
+    for (const c of matriz.caballos1) {
+      const txt = ctx.measureText(String(c.nombre || "").trim()).width;
+      const band = banderaNoCasa(c.nacionalidad, matriz.hipodromo) ? 18 : 0;
+      w = Math.max(w, Math.ceil(txt + band + 12));
+    }
+    return w;
+  }, [matriz]);
+
+  // Ajusta la tabla al área visible para nunca tener barras de desplazamiento.
+  useEffect(() => {
+    if (!matriz || !tablaRef.current || !areaRef.current) return;
+    const area = areaRef.current;
+    const tabla = tablaRef.current;
+    let vivos = 0;
+    const medir = () => {
+      const f = ++vivos;
+      const cw = area.clientWidth;
+      const ch = area.clientHeight;
+      const nw = tabla.scrollWidth;
+      const nh = tabla.scrollHeight;
+      if (!cw || !ch || !nw || !nh) return;
+      const escala = Math.min(1, cw / nw, ch / nh);
+      if (f !== vivos) return;
+      setAjuste({ w: nw, h: nh, escala });
+    };
+    const raf = requestAnimationFrame(medir);
+    const ro = new ResizeObserver(medir);
+    ro.observe(area);
+    document.fonts?.ready?.then(medir).catch(() => undefined);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [matriz, anchoCol]);
   const [modal, setModal] = useState<{ c1: string; c2: string } | null>(null);
   const [q, setQ] = useState("");
   const [abiertoCli, setAbiertoCli] = useState(false);
@@ -180,21 +224,6 @@ export function DupletaModule() {
   const vendidas = matriz ? Object.values(matriz.celdas).filter((c) => c.vendida) : [];
   const totalVentas = vendidas.reduce((a, c) => a + (c.precio ?? matriz?.precio ?? 0), 0);
 
-  // Ancho uniforme de cada columna horizontal: caben el nombre del caballo en UNA línea.
-  const anchoCol = useMemo(() => {
-    if (!matriz || typeof document === "undefined") return 120;
-    const ctx = document.createElement("canvas").getContext("2d");
-    if (!ctx) return 120;
-    ctx.font = "900 10px Inter, ui-sans-serif, system-ui, sans-serif";
-    let w = 72;
-    for (const c of matriz.caballos1) {
-      const txt = ctx.measureText(String(c.nombre || "").trim()).width;
-      const band = banderaNoCasa(c.nacionalidad, matriz.hipodromo) ? 18 : 0;
-      w = Math.max(w, Math.ceil(txt + band + 12));
-    }
-    return w;
-  }, [matriz]);
-
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-2xl border border-line bg-surface p-4">
@@ -299,8 +328,10 @@ export function DupletaModule() {
             </span>
           </div>
 
-          <div className="overflow-auto rounded-xl border border-line bg-white shadow-sm" style={{ maxHeight: "calc(100vh - 300px)" }}>
-            <table ref={tablaRef} className="min-w-max border-separate border-spacing-0 text-[10px] leading-tight">
+          <div className="relative overflow-hidden rounded-xl border border-line bg-white shadow-sm" style={{ height: "calc(100vh - 300px)" }}>
+            <div ref={areaRef} className="absolute inset-0 flex items-start justify-start">
+              <div style={ajuste ? { width: Math.round(ajuste.w * ajuste.escala), height: Math.round(ajuste.h * ajuste.escala), transform: `scale(${ajuste.escala})`, transformOrigin: "top left" } : undefined}>
+                <table ref={tablaRef} className="min-w-max border-separate border-spacing-0 text-[10px] leading-tight">
               <thead>
                 <tr>
                   <th className="sticky left-0 top-0 z-40 min-w-[120px] border-b border-r border-slate-300 bg-indigo-600 p-1 text-left align-bottom text-[9px] font-black text-white">
@@ -311,7 +342,7 @@ export function DupletaModule() {
                   {matriz.caballos1.map((cb, i1) => {
                     const col = colorDeNumeroGac(cb.numero);
                     return (
-                      <th key={`h1-${cb.numero}`} className="sticky top-0 z-30 border-b border-r border-slate-300 bg-indigo-600 p-0.5 align-bottom" style={{ width: anchoCol, maxWidth: anchoCol }}>
+                      <th key={`h1-${cb.numero}`} className={`sticky top-0 z-30 border-b border-r border-slate-300 p-0.5 align-bottom ${i1 % 2 ? "bg-indigo-700" : "bg-indigo-600"}`} style={{ width: anchoCol, maxWidth: anchoCol }}>
                         <button
                           type="button"
                           onClick={() => toggleRetirado(1, cb.numero)}
@@ -341,7 +372,7 @@ export function DupletaModule() {
                   const izq = colorDeNumeroGac(cb2.numero);
                   return (
                     <tr key={`f-${cb2.numero}`}>
-                      <th className="sticky left-0 z-20 w-[120px] max-w-[120px] border-b border-r border-slate-300 bg-indigo-50 p-0.5 align-top text-left">
+                      <th className={`sticky left-0 z-20 w-[120px] max-w-[120px] border-b border-r border-slate-300 p-0.5 align-top text-left ${i2 % 2 ? "bg-indigo-100" : "bg-indigo-50"}`}>
                         <button
                           type="button"
                           onClick={() => toggleRetirado(2, cb2.numero)}
@@ -363,9 +394,9 @@ export function DupletaModule() {
                       {matriz.caballos1.map((cb1, i1) => {
                         const bloqueada = cb1.retirado || cb2.retirado;
                         const celda = matriz.celdas[claveCelda(cb1.numero, cb2.numero)];
-                        const zebra = !bloqueada && !celda?.vendida && i2 % 2 === 1;
+                        const mezcla = !bloqueada && !celda?.vendida && (i1 + i2) % 2 === 1;
                         return (
-                          <td key={`c-${cb1.numero}-${cb2.numero}`} className={`w-[72px] min-w-[72px] border-b border-r border-slate-400 p-0.5 ${bloqueada ? "bg-slate-200" : celda?.vendida ? "bg-orange-400" : zebra ? "bg-slate-100" : "bg-white"}`}>
+                          <td key={`c-${cb1.numero}-${cb2.numero}`} className={`w-[72px] min-w-[72px] border-b border-r border-slate-400 p-0.5 ${bloqueada ? "bg-slate-200" : celda?.vendida ? "bg-orange-400" : mezcla ? "bg-slate-100" : "bg-white"}`}>
                             {bloqueada ? (
                               <div className="flex h-11 items-center justify-center text-[6px] font-black tracking-[0.35em] text-slate-500" style={{ writingMode: "vertical-rl" }}>
                                 N O V A L E
@@ -375,7 +406,7 @@ export function DupletaModule() {
                                 type="button"
                                 onClick={() => abrirCelda(cb1.numero, cb2.numero)}
                                 title={`${cb1.nombre} × ${cb2.nombre}`}
-                                className={`block h-11 w-full text-center transition-colors ${zebra ? "hover:bg-indigo-50" : "hover:bg-indigo-100"} ${celda?.vendida ? "text-slate-900" : "text-slate-600"}`}
+                                className={`block h-11 w-full text-center transition-colors ${mezcla ? "hover:bg-indigo-50" : "hover:bg-indigo-100"} ${celda?.vendida ? "text-slate-900" : "text-slate-600"}`}
                               >
                                 <span className="block text-[18px] font-black leading-none">
                                   {celda?.vendida ? (celda.precio ?? matriz.precio).toLocaleString("es-VE", { maximumFractionDigits: 2 }) : matriz.precio.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
@@ -390,7 +421,9 @@ export function DupletaModule() {
                   );
                 })}
               </tbody>
-            </table>
+              </table>
+              </div>
+            </div>
           </div>
 
           <p className="mt-2 text-[10px] italic text-slate-500">
