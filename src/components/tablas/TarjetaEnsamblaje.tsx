@@ -89,7 +89,7 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg: "✅ Morning Line ajustado a $1.60", tipo: "success" } }));
   };
 
-  const chipCls = "rounded px-1 py-px text-[12px] font-bold leading-none";
+  const chipCls = "rounded px-1 py-px text-[11px] font-bold leading-none";
   const inpHeader = "rounded px-1 py-px font-bold outline-none bg-white/20 text-white placeholder:text-white/50";
 
   return (
@@ -146,15 +146,6 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
       <div className="flex items-center justify-between px-1.5 pb-0.5 pt-1 text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none bg-slate-50 border-b border-slate-100">
         <span>🐴 Ejemplares</span>
         <div className="flex items-center gap-2">
-          {/* BOTÓN CORREGIR TABLA */}
-          <button
-            type="button"
-            onClick={() => aplicarCorreccion(draft)}
-            title="Corregir la tabla (ejemplares, montos, distancia, superficie…)"
-            className="bg-indigo-600 text-white px-2 py-0.5 rounded-sm font-black shadow-sm hover:bg-indigo-700"
-          >
-            ✏️ Corregir
-          </button>
           {/* BOTÓN ML */}
           <button 
             type="button" 
@@ -227,20 +218,23 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
         </div>
       </div>
 
-      {/* Suma de la tabla (sin símbolo: la moneda se estipula por el grupo) */}
-      <div className="flex items-center justify-between border-t border-slate-200 bg-white px-1.5 py-0.5">
-        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none">🧮 Suma de la Tabla</span>
-        <span className="text-xs font-black text-indigo-700">{suma.toLocaleString("es-VE", { maximumFractionDigits: 2 })}</span>
-      </div>
-
-      {/* Acciones */}
+      {/* Acciones: editar y eliminar disponibles para TODAS las tablas */}
       <div className="flex gap-2 border-t border-slate-200 bg-white px-3 py-2">
         <button type="button" onClick={() => onPublicar(draft)} className="flex-1 rounded-lg bg-emerald-600 py-2 text-xs font-black uppercase tracking-wide text-white shadow transition-colors hover:bg-emerald-700">
           💾 Publicar
         </button>
-        <button type="button" onClick={() => onQuitar(draft.uid)} className="rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600 transition-colors hover:bg-red-100" title="Quitar esta carrera del ensamblaje">
-          ✕
+        <button type="button" onClick={() => aplicarCorreccion(draft)} className="shrink-0 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-black uppercase text-white shadow transition-colors hover:bg-indigo-700" title="Editar la tabla (ejemplares, montos, distancia, superficie…)">
+          ✏️ Editar
         </button>
+        <button type="button" onClick={() => onQuitar(draft.uid)} className="shrink-0 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold uppercase text-red-600 transition-colors hover:bg-red-100" title="Eliminar esta carrera del ensamblaje">
+          🗑️ Eliminar
+        </button>
+      </div>
+
+      {/* Suma de la tabla (sin símbolo: la moneda se estipula por el grupo), siempre al final */}
+      <div className="flex items-center justify-between border-t border-slate-200 bg-white px-1.5 py-0.5">
+        <span className="text-[15px] font-bold uppercase tracking-wider text-slate-600 leading-none">🧮 Suma de la Tabla</span>
+        <span className="text-[11px] font-semibold leading-none" style={{ color: "#74ACDF" }}>{suma.toLocaleString("es-VE", { maximumFractionDigits: 2 })}</span>
       </div>
 
       {/* MODAL CORREGIR TABLA (borrador) */}

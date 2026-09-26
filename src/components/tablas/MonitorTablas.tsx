@@ -292,7 +292,7 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                     )}
                   </span>
                 </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[12px] font-bold leading-none">
+                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] font-bold leading-none">
                   <span className="rounded bg-white/20 px-1 py-px">📏 {t.distancia_carrera ?? ""} m</span>
                   <span className="rounded bg-white/20 px-1 py-px uppercase">{t.superficie || "ARENA"}</span>
                   <span className="rounded bg-white/20 px-1 py-px">📅 {t.fecha?.slice(0,10) ?? ""}</span>
@@ -342,11 +342,6 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                 })}
               </div>
 
-              <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-white px-1.5 py-0.5">
-                <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none">🧮 Suma</span>
-                <span className="text-xs font-black text-indigo-700">{fmtValor(t.suma_base_tabla ?? sumaBase(t.caballos))}</span>
-              </div>
-
               <div className="flex items-center gap-1.5 border-t border-slate-100 bg-white px-2 py-1.5 no-print">
                 <Guard permiso="editar_tabla">
                   <Button variant="ghost" size="sm" className="flex-1" onClick={() => { setEditando(t); setPatchEdicion({}); setPatchCaballos((t.caballos ?? []).map((c) => ({ ...c }))); void cargarCupos(t); }}>✏️ Editar</Button>
@@ -360,6 +355,11 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                 <Guard permiso="eliminar_tabla">
                   <Button variant="ghost" size="sm" className="shrink-0 border border-red-200 text-red-600 hover:bg-red-50" onClick={() => setConfirmarEliminar(t)}>🗑️ Eliminar</Button>
                 </Guard>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-white px-1.5 py-0.5">
+                <span className="inline-flex items-center gap-1 text-[14px] font-bold uppercase tracking-wider text-slate-600 leading-none">🧮 Suma</span>
+                <span className="text-[11px] font-semibold leading-none" style={{ color: "#74ACDF" }}>{fmtValor(t.suma_base_tabla ?? sumaBase(t.caballos))}</span>
               </div>
             </div>
           ))}
