@@ -368,7 +368,7 @@ export function DupletaModule() {
                           type="button"
                           onClick={() => toggleRetirado(1, cb.numero)}
                           title={cb.retirado ? "Quitar retirado" : "Marcar retirado"}
-                          className={`flex h-full w-full flex-col items-center justify-center rounded px-0.5 py-0.5 ${cb.retirado ? "bg-yellow-400 text-slate-900" : "text-white"}`}
+                          className={`flex h-full w-full flex-col items-center justify-start rounded px-0.5 pt-0.5 pb-1 ${cb.retirado ? "bg-yellow-400 text-slate-900" : "text-white"}`}
                         >
                           <span className="flex items-center justify-center gap-1">
                             <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: col.bg, color: col.fg }}>
