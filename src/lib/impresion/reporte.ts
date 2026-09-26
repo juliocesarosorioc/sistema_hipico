@@ -14,7 +14,7 @@
  */
 import { supabase } from "@/lib/supabase";
 import { parseNum } from "@/lib/tablas/tipos";
-import { esc, fsAuto, col, mon, fmt, fmtFecha, hoy, hipoKey } from "@/lib/impresion/util";
+import { esc, fsAuto, col, mon, fmt, fmtFecha, hoy, hipoKey, type Orientacion, DIM_PAGINA } from "@/lib/impresion/util";
 
 export type EjemplarJugador = {
   numero: string;
@@ -255,7 +255,6 @@ export function estimarAltoCard(p: JugadorReporte): number {
   return h;
 }
 
-const LIMITE_ALTO_PAGINA = 1650;
 const ALTO_TABLA_RESUMEN = 92;
 
 function resumenTableHTML(jugadores: JugadorReporte[]): string {
@@ -410,6 +409,7 @@ export const REPORTE_CSS = `
   .imr-root,.imr-root *{visibility:visible;}
   .imr-root{position:absolute !important;left:0 !important;top:0 !important;width:100% !important;max-width:none !important;}
   .imr-ppagina{width:204mm;height:288mm;padding:2mm;break-after:page;border:none;}
+  .imr-or-h .imr-ppagina{width:288mm;height:204mm;}
   .imr-pcards{grid-template-columns:repeat(2,1fr);}
   .imr-card{break-inside:avoid;}
 }
@@ -422,13 +422,16 @@ export type PaginaReporte = {
 };
 
 /** Reparte tarjetas en páginas A4 (2 columnas, sin cortar tarjetas). */
-export function layoutPaginas(jugadores: JugadorReporte[]): PaginaReporte[] {
+export function layoutPaginas(jugadores: JugadorReporte[], orientacion: Orientacion = "vertical"): PaginaReporte[] {
   if (jugadores.length === 0) return [];
+  const dim = DIM_PAGINA[orientacion];
+  // Portrait legacy: 1754 - 104 (hoja) - 120 (cabecera) - 92 (resumen) = 1438.
+  // La misma regla escalada a la altura de la hoja elegida.
+  const limite = dim.h - 104 - 120 - ALTO_TABLA_RESUMEN;
   const paginas: PaginaReporte[] = [];
   let pagina: PaginaReporte = { cards: [], resumen: true };
   let col = 0;
   let colH = 0;
-  const limite = LIMITE_ALTO_PAGINA - (pagina.resumen ? ALTO_TABLA_RESUMEN : 0) - 120;
 
   const cerrar = () => {
     if (pagina.cards.length || pagina.resumen) paginas.push(pagina);
@@ -462,12 +465,17 @@ export function layoutPaginas(jugadores: JugadorReporte[]): PaginaReporte[] {
 }
 
 /** Construye todas las páginas A4 del reporte (resumen + tarjetas). */
-export function paginasReporteHTML(jugadores: JugadorReporte[]): string {
-  const pags = layoutPaginas(jugadores);
+export function paginasReporteHTML(jugadores: JugadorReporte[], orientacion: Orientacion = "vertical"): string {
+  const dim = DIM_PAGINA[orientacion];
+  const pags = layoutPaginas(jugadores, orientacion);
   let h = "";
   pags.forEach((pg, i) => {
     h +=
-      '<div class="imr-ppagina">' +
+      '<div class="imr-ppagina" style="width:' +
+      dim.w +
+      "px;height:" +
+      dim.h +
+      'px">' +
       '<div class="imr-ph">' +
       '<div class="imr-titulo"><span style="color:#7c3aed;">&#9632;</span> REPORTE DE TABLAS' +
       "<small>Resultado: monto jugado vs pagado, acumulado por jugador - grupo - nivel</small></div>" +

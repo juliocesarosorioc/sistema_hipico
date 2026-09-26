@@ -4,11 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MATRIZ_CSS, paginasMatrizHTML, cargarMatrizImpresion, opcionesFiltro, filtrarMatriz, totalEjemplares, type TablaImpresion, type TablaRespaldo } from "@/lib/impresion/tablas";
 import { REPORTE_CSS, paginasReporteHTML, cargarReporteJugadores, opcionesReporte, filtrarReporteJugadores, resumirReporteJugadores, type JugadorReporte } from "@/lib/impresion/reporte";
 import { exportarPaginas, textoWhatsAppMatriz, textoWhatsAppReporte, type ImgFormato } from "@/lib/impresion/exportar";
+import { DIM_PAGINA, type Orientacion } from "@/lib/impresion/util";
 
 type TipoReporte = "matriz" | "reporte";
-
-const ANCHO_PAGINA = 1240;
-const ALTO_PAGINA = 1754;
 
 type Props = {
   abierto: boolean;
@@ -32,6 +30,7 @@ function toast(msg: string, tipo: "success" | "warning" | "error" | "info" = "in
  */
 export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Props) {
   const [tipo, setTipo] = useState<TipoReporte>("matriz");
+  const [orientacion, setOrientacion] = useState<Orientacion>("vertical");
   const [dia, setDia] = useState<string>("");
   const [hipodromo, setHipodromo] = useState<string>("");
   const [carreras, setCarreras] = useState<TablaImpresion[]>([]);
@@ -41,6 +40,8 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
   const [cargando, setCargando] = useState(false);
   const [exportando, setExportando] = useState("");
   const exportRootRef = useRef<HTMLDivElement>(null);
+
+  const dim = DIM_PAGINA[orientacion];
 
   useEffect(() => {
     if (!abierto) return;
@@ -105,9 +106,9 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
   const html = useMemo(
     () =>
       tipo === "matriz"
-        ? paginasMatrizHTML(filtradasMatriz)
-        : paginasReporteHTML(filtradosJugadores),
-    [tipo, filtradasMatriz, filtradosJugadores]
+        ? paginasMatrizHTML(filtradasMatriz, orientacion)
+        : paginasReporteHTML(filtradosJugadores, orientacion),
+    [tipo, filtradasMatriz, filtradosJugadores, orientacion]
   );
 
   const numPaginas = useMemo(() => {
@@ -118,7 +119,7 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
 
   const vacio = html.length === 0 || (tipo === "matriz" ? filtradasMatriz.length === 0 : filtradosJugadores.length === 0);
 
-  const escala = Math.min(1, (920 - 24) / ANCHO_PAGINA);
+  const escala = Math.min(1, (920 - 24) / dim.w);
   const nTotales =
     tipo === "matriz"
       ? totalEjemplares(filtradasMatriz)
@@ -156,10 +157,16 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
     if (exportando) return;
     setExportando(`Capturando ${formato}…`);
     try {
-      await exportarPaginas(exportRootRef.current, formato, tipo === "matriz" ? "tablas_fijas" : "reporte_tablas", (p) => {
-        setExportando(`Página ${p.actual} de ${p.total}…`);
-      });
-      toast(`${formato} generado (${numPaginas} página(s)).`, "success");
+      await exportarPaginas(
+        exportRootRef.current,
+        formato,
+        tipo === "matriz" ? "tablas_fijas" : "reporte_tablas",
+        { orientacion },
+        (p) => {
+          setExportando(`Página ${p.actual} de ${p.total}…`);
+        }
+      );
+      toast(`${formato} generado (${numPaginas} página(s), ${orientacion === "vertical" ? "vertical" : "horizontal"}).`, "success");
     } catch (e) {
       toast(`Error al exportar ${formato}: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
@@ -223,6 +230,27 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
 
           {/* Filtros y acciones */}
           <div className="flex flex-wrap items-center gap-2 border-b border-line bg-slate-50 px-4 py-2.5">
+            {/* Orientación A4 */}
+            <div className="flex items-center rounded-lg border border-slate-300 bg-white p-0.5 shadow-sm" title="Orientación de la hoja A4">
+              <span className="px-1.5 text-[9px] font-black uppercase tracking-wider text-slate-500">↕ Hoja</span>
+              {(
+                [
+                  ["vertical", "↕ Vertical"],
+                  ["horizontal", "↔ Horizontal"],
+                ] as Array<[Orientacion, string]>
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setOrientacion(k)}
+                  className={`rounded-md px-2 py-1 text-[10px] font-black uppercase transition-colors ${
+                    orientacion === k ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
               <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">🏛️ Hipódromo</span>
               <select value={hipodromo} onChange={(e) => setHipodromo(e.target.value)} className="max-w-[190px] bg-transparent text-xs font-bold uppercase text-slate-900 focus:outline-none">
@@ -258,8 +286,7 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
                 {exportando ? exportando : `${numPaginas} pág.`}
               </span>
               {btn("#25d366", "💬 WhatsApp", whatsapp)}
-              {btn("#059669", "PNG", () => void exportar("PNG"), !!exportando)}
-              {btn("#1d4ed8", "JPG", () => void exportar("JPG"), !!exportando)}
+              {btn("#2563eb", "🖼️ Imagen PNG", () => void exportar("PNG"), !!exportando)}
               {btn("#dc2626", "📄 PDF", () => void exportar("PDF"), !!exportando)}
             </div>
           </div>
@@ -270,9 +297,9 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
           {/* Preview */}
           <div className="min-h-0 flex-1 overflow-auto bg-slate-800 p-3">
             {numPaginas > 0 ? (
-              <div className="mx-auto rounded-lg shadow-xl" style={{ width: ANCHO_PAGINA * escala + 16, height: ALTO_PAGINA * numPaginas * escala + 16 }}>
+              <div className="mx-auto rounded-lg shadow-xl" style={{ width: dim.w * escala + 16, height: dim.h * numPaginas * escala + 16 }}>
                 <div
-                  style={{ transform: `scale(${escala})`, transformOrigin: "top left", width: ANCHO_PAGINA, height: ALTO_PAGINA * numPaginas }}
+                  style={{ transform: `scale(${escala})`, transformOrigin: "top left", width: dim.w, height: dim.h * numPaginas }}
                   dangerouslySetInnerHTML={{ __html: html }}
                 />
               </div>
@@ -292,7 +319,7 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
       <div
         ref={exportRootRef}
         aria-hidden
-        className={tipo === "matriz" ? "impe-root" : "imr-root"}
+        className={`${tipo === "matriz" ? "impe-root" : "imr-root"} ${orientacion === "horizontal" ? (tipo === "matriz" ? "im-or-h" : "imr-or-h") : ""}`}
         style={{ position: "absolute", left: "-99999px", top: 0, pointerEvents: "none" }}
         dangerouslySetInnerHTML={{ __html: html }}
       />

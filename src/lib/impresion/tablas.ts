@@ -16,7 +16,7 @@ import { supabase } from "@/lib/supabase";
 import { normalizarFilas } from "@/lib/tablas/rpc";
 import type { EjemplarTabla } from "@/lib/tablas/tipos";
 import { parseNum } from "@/lib/tablas/tipos";
-import { esc, fsAuto, col, mon, fmt, fmtFecha, hoy, hipoKey, diaDe, MAX_N } from "@/lib/impresion/util";
+import { esc, fsAuto, col, mon, fmt, fmtFecha, hoy, hipoKey, diaDe, MAX_N, type Orientacion, DIM_PAGINA } from "@/lib/impresion/util";
 
 export type EjemplarImpresion = {
   numero: string;
@@ -249,6 +249,7 @@ export const MATRIZ_CSS = `
   .impe-root,.impe-root *{visibility:visible;}
   .impe-root{position:absolute !important;left:0 !important;top:0 !important;width:100% !important;max-width:none !important;}
   .im-pagina{width:204mm;height:288mm;padding:2mm;break-after:page;border:none;border-radius:0;}
+  .im-or-h .im-pagina{width:288mm;height:204mm;}
   .im-hoja{grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(3,1fr);gap:2.2mm;}
   .im-tarjeta{break-inside:avoid;border-radius:4px;}
 }
@@ -322,14 +323,19 @@ function tarjetaHTML(t: TablaImpresion): string {
 }
 
 /** Construye las páginas A4 (15 tarjetas = 3×5 por página). */
-export function paginasMatrizHTML(carreras: TablaImpresion[]): string {
+export function paginasMatrizHTML(carreras: TablaImpresion[], orientacion: Orientacion = "vertical"): string {
   if (carreras.length === 0) return "";
+  const dim = DIM_PAGINA[orientacion];
   const nPaginas = Math.max(1, Math.ceil(carreras.length / 15));
   let h = "";
   for (let p = 0; p < nPaginas; p++) {
     const chunk = carreras.slice(p * 15, p * 15 + 15);
     h +=
-      '<div class="im-pagina">' +
+      '<div class="im-pagina" style="width:' +
+      dim.w +
+      "px;height:" +
+      dim.h +
+      'px">' +
       '<div class="im-ph"><span><b>TABLAS FIJAS PUBLICADAS</b></span><span>Página ' +
       (p + 1) +
       " de " +

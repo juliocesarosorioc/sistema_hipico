@@ -9,6 +9,15 @@ export const FS_BASE = 8.6;
 export const FS_MIN = 7.4;
 export const FS_MAX = 13.5;
 
+/** Orientación de hoja A4: vertical (retrato) u horizontal (paisaje). */
+export type Orientacion = "vertical" | "horizontal";
+
+/** Dimensiones de página A4 @150dpi: vertical 1240×1754, horizontal 1754×1240. */
+export const DIM_PAGINA: Record<Orientacion, { w: number; h: number }> = {
+  vertical: { w: 1240, h: 1754 },
+  horizontal: { w: 1754, h: 1240 },
+};
+
 /** Gualdrapas exactas del legacy (14 colores: [fondo, texto]). */
 export const PALETA14: Array<[string, string]> = [
   ["#e11d48", "#ffffff"],

@@ -5,6 +5,7 @@
  */
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
+import type { Orientacion } from "@/lib/impresion/util";
 
 export type ImgFormato = "PNG" | "JPG" | "PDF";
 
@@ -15,16 +16,23 @@ export type ProgresoExpor = {
   actual: number;
 };
 
+export type OpcionesExportar = {
+  /** Vertical (A4 retrato) u horizontal (A4 paisaje). Por defecto vertical. */
+  orientacion?: Orientacion;
+};
+
 /**
  * Captura cada `.im-pagina` / `.imr-ppagina` dentro de `root` como canvas
- * 2480×3508 (scale 2 = 300dpi reales por página A4) y las serializa:
- *  · PDF → jsPDF A4 portrait, cada página a tamaño completo.
+ * a 300dpi efectivos (scale 2 sobre la hoja @150dpi) y las serializa según
+ * la orientación elegida:
+ *  · PDF → jsPDF A4 en la orientación pedida, cada página a tamaño completo.
  *  · PNG / JPG → un canvas alto por todas las páginas, descargado al instante.
  */
 export async function exportarPaginas(
   root: HTMLElement,
   formato: ImgFormato,
   archivoBase: string,
+  opciones?: OpcionesExportar,
   onProgreso?: (p: ProgresoExpor) => void
 ): Promise<void> {
   const paginas = Array.from(
@@ -46,29 +54,37 @@ export async function exportarPaginas(
 
   const fecha = new Date().toISOString().slice(0, 10);
   const nombre = `${archivoBase}_${fecha}`;
+  const landscape = opciones?.orientacion === "horizontal";
 
   if (formato === "PDF") {
-    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pdf = new jsPDF({
+      orientation: landscape ? "landscape" : "portrait",
+      unit: "mm",
+      format: "a4",
+    });
+    const pw = pdf.internal.pageSize.getWidth();
+    const ph = pdf.internal.pageSize.getHeight();
     canvases.forEach((cv, i) => {
       if (i > 0) pdf.addPage();
       const img = cv.toDataURL("image/jpeg", 0.93);
-      pdf.addImage(img, "JPEG", 0, 0, 210, 297);
+      pdf.addImage(img, "JPEG", 0, 0, pw, ph);
     });
     pdf.save(`${nombre}.pdf`);
     return;
   }
 
-  // PNG / JPG: lienzo alto con todas las páginas apiladas.
-  const ancho = 2480;
-  const alto = 3508 * canvases.length;
+  // PNG / JPG: lienzo alto con todas las páginas apiladas (usa el tamaño real
+  // de cada captura: 2480×3508 en vertical, 3508×2480 en horizontal).
+  const w0 = canvases[0].width;
+  const h0 = canvases[0].height;
   const lienzo = document.createElement("canvas");
-  lienzo.width = ancho;
-  lienzo.height = alto;
+  lienzo.width = w0;
+  lienzo.height = h0 * canvases.length;
   const ctx = lienzo.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D no disponible.");
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, ancho, alto);
-  canvases.forEach((cv, i) => ctx.drawImage(cv, 0, i * 3508));
+  ctx.fillRect(0, 0, w0, lienzo.height);
+  canvases.forEach((cv, i) => ctx.drawImage(cv, 0, i * h0));
 
   const a = document.createElement("a");
   a.href =
