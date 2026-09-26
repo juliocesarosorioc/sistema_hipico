@@ -15,6 +15,7 @@ import { listarClientesVenta, listarGruposVenta, saldoDeCliente, type ClienteVen
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/lib/tablas/rpc";
 import { registrarCarreraProgramada } from "@/lib/carreras-dia";
 import { listarCarrerasCentrales, type CarreraCentral } from "@/lib/carreras/central";
+import { aplicarRetirosCarrera, parsearRetirados } from "@/lib/carreras/retiros";
 import { hoyLocal } from "@/lib/gaceta/programa";
 
 type FilaCarga = {
@@ -223,12 +224,21 @@ export function GestionJugadasModule() {
    * ejemplares registrados (pueden ser solo número, sin nombre).
    */
   const caballosDeCarrera = useMemo<EjemplarTabla[]>(() => {
-    if (tablaDeCarrera?.caballos?.length) return tablaDeCarrera.caballos;
+    // La lista CENTRAL de retiros manda sobre la tabla local: si un retiro se
+    // aplicó en otro módulo, aquí se ve de inmediato sin esperar la recarga.
+    const retiradosCentral = new Set(centralDeCarrera?.retirados ?? []);
+    if (tablaDeCarrera?.caballos?.length) {
+      return tablaDeCarrera.caballos.map((c) => ({
+        ...c,
+        retirado: Boolean(c.retirado) || retiradosCentral.has(String(c.numero)),
+      }));
+    }
     const cs = centralDeCarrera?.caballos ?? [];
     return cs.map((c) => ({
       numero: c.numero,
       nombre: c.nombre ?? "",
       nacionalidad: c.nacionalidad ?? null,
+      retirado: Boolean(c.retirado) || retiradosCentral.has(String(c.numero)),
     }));
   }, [tablaDeCarrera, centralDeCarrera]);
 
@@ -358,6 +368,31 @@ export function GestionJugadasModule() {
       setAviso("⚠️ No se pudo persistir la carrera manual en BD: " + (r.error ?? "desconocido"));
     }
     setCarrerasPorDia((c) => (c.includes(carrera) ? c : [...c, carrera].sort((a, b) => a - b)));
+  };
+
+  /**
+   * RETIROS DE LA CARRERA (data central). El campo "Retirados" ya no es un
+   * texto decorativo: al aplicar, la lista pasa a `resultados_carreras` y desde
+   * ahí el retiro incide en Tablas Fijas, Marcas, Dupletas, Taquilla y el
+   * Carreras del Día, reembolsa tickets pendientes y recalcula premios.
+   */
+  const aplicarRetiros = async () => {
+    const lista = parsearRetirados(retirados);
+    const r = await aplicarRetirosCarrera({ fecha, hipodromo, carrera, numeros: lista });
+    if (!r.ok) {
+      setAviso(`⚠️ No se pudieron centralizar los retiros: ${r.error ?? "sin conexión"}`);
+      return;
+    }
+    setRetirados(lista.join(","));
+    const c = await listarCarrerasCentrales(fecha, hipodromo);
+    if (c.ok) setCarrerasCentrales(c.datos ?? []);
+    setAviso(
+      lista.length
+        ? `⛔ Retirados C${carrera}: ${r.retirados.join(", ")} · ${r.tablasAfectadas} tabla(s) sincronizada(s)` +
+            (r.reembolsos ? ` · ${r.reembolsos} ticket(s) reembolsado(s)` : "") +
+            (r.premios.length ? ` · premios recalculados: ${r.premios.length}` : "")
+        : `✔ C${carrera}: ${r.texto}`
+    );
   };
 
   const cargarAtaquilla = () => {
@@ -509,13 +544,28 @@ export function GestionJugadasModule() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">Retirados</label>
-          <input
-            value={retirados}
-            onChange={(e) => setRetirados(e.target.value)}
-            placeholder='ej. "2,5"'
-            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-          />
+          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">
+            Retirados · C{carrera}
+          </label>
+          <div className="flex items-center gap-1">
+            <input
+              value={retirados}
+              onChange={(e) => setRetirados(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void aplicarRetiros();
+              }}
+              placeholder='ej. "2,5"'
+              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+            />
+            <Button
+              size="sm"
+              className="shrink-0 !bg-gradient-to-r !from-red-500 !to-rose-600 !text-white"
+              onClick={() => void aplicarRetiros()}
+              title="Centraliza los retiros de la carrera y los propaga a todos los módulos"
+            >
+              ⛔ Aplicar
+            </Button>
+          </div>
         </div>
         <div>
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">COM %</label>

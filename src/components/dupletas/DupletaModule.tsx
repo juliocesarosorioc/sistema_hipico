@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/Button";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { listarTablasPublicadas, HIPODROMOS_MOSTRAR } from "@/lib/tablas/rpc";
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
+import { useCarrerasCentrales } from "@/lib/carreras/useCarrerasCentrales";
+import { alternarRetiroCarrera } from "@/lib/carreras/retiros";
 import { listarClientesVenta, type ClienteVenta } from "@/lib/grupos";
 import { colorDeNumeroGac } from "@/lib/gaceta/ui";
 import { Flag, normalizarNacionalidad, NOMBRES_PAIS_BANDERA } from "@/components/ui/BanderaPais";
@@ -120,37 +122,75 @@ export function DupletaModule() {
     };
   }, []);
 
-  const hipodromos = useMemo(
-    () =>
-      [...new Set(carreras.map((c) => String(c.hipodromo || "").trim().toUpperCase()).filter(Boolean))]
-        .filter((h) => HIPODROMOS_MOSTRAR.includes(h))
-        .sort((a, b) => a.localeCompare(b)),
-    [carreras]
-  );
+  // DATA CENTRAL: hipódromos + carreras del día. Las tablas fijas mandan cuando
+  // existen (traen más datos); la central completa lo que no esté publicado.
+  const { centrales: centralCarreras, recargar: recargarCentrales } = useCarrerasCentrales(dia || undefined, hipodromo || undefined);
+  const { centrales: centralTodas } = useCarrerasCentrales();
+
+  const hipodromos = useMemo(() => {
+    const deTablas = carreras.map((c) => String(c.hipodromo || "").trim().toUpperCase());
+    const deCentral = centralTodas.map((c) => c.hipodromo);
+    return [...new Set([...deTablas, ...deCentral].filter(Boolean))]
+      .filter((h) => HIPODROMOS_MOSTRAR.includes(h))
+      .sort((a, b) => a.localeCompare(b));
+  }, [carreras, centralTodas]);
 
   const dias = useMemo(() => {
-    const hs = carreras.filter((c) => String(c.hipodromo || "").trim().toUpperCase() === hipodromo);
-    return [...new Set(hs.map((c) => c.fecha || "").filter(Boolean))].sort().reverse();
-  }, [carreras, hipodromo]);
+    const deTablas = carreras
+      .filter((c) => String(c.hipodromo || "").trim().toUpperCase() === hipodromo)
+      .map((c) => c.fecha || "");
+    const deCentral = centralTodas.filter((c) => c.hipodromo === hipodromo).map((c) => c.fecha);
+    return [...new Set([...deTablas, ...deCentral].filter(Boolean))].sort().reverse();
+  }, [carreras, centralTodas, hipodromo]);
 
-  const carrerasDelDia = useMemo(
-    () =>
-      carreras
-        .filter((c) => String(c.hipodromo || "").trim().toUpperCase() === hipodromo && (c.fecha || "") === dia)
-        .sort((a, b) => (Number(a.carrera) || 0) - (Number(b.carrera) || 0)),
-    [carreras, hipodromo, dia]
-  );
+  /** Carreras del día: unión de la tabla publicada y la carrera central. */
+  const carrerasDelDia = useMemo(() => {
+    const mapa = new Map<string, TablaFijaRow>();
+    for (const c of carreras) {
+      if (String(c.hipodromo || "").trim().toUpperCase() !== hipodromo) continue;
+      if ((c.fecha || "") !== dia) continue;
+      mapa.set(String(c.carrera), c);
+    }
+    for (const c of centralCarreras) {
+      const k = String(c.carrera);
+      if (mapa.has(k)) continue;
+      mapa.set(k, {
+        id: `central-${k}`,
+        hipodromo: c.hipodromo,
+        carrera: c.carrera,
+        fecha: c.fecha,
+        distancia_carrera: c.distancia ?? null,
+        superficie: c.superficie ?? null,
+        premio_original: c.premio ?? null,
+        caballos: (c.caballos ?? []).map((cb) => ({
+          numero: cb.numero,
+          nombre: cb.nombre ?? "",
+          nacionalidad: cb.nacionalidad ?? null,
+          retirado: Boolean(cb.retirado),
+        })),
+      });
+    }
+    return [...mapa.values()].sort((a, b) => (Number(a.carrera) || 0) - (Number(b.carrera) || 0));
+  }, [carreras, centralCarreras, hipodromo, dia]);
 
   const ejemplaresDe = (carrera: string): CaballoDupleta[] => {
     const fila = carrerasDelDia.find((c) => String(c.carrera) === String(carrera));
-    return (fila?.caballos ?? [])
+    const central = centralCarreras.find((c) => String(c.carrera) === String(carrera));
+    const lista = (fila?.caballos ?? []) as Array<{
+      numero: number | string;
+      nombre?: string | null;
+      nacionalidad?: string | null;
+      retirado?: boolean;
+    }>;
+    const retiradosCentral = new Set(central?.retirados ?? []);
+    return lista
       .map((c) => ({
         numero: String(c.numero ?? ""),
         nombre: String(c.nombre || "").trim().toUpperCase(),
         nacionalidad: c.nacionalidad ?? null,
-        retirado: Boolean(c.retirado),
+        retirado: Boolean(c.retirado) || retiradosCentral.has(String(c.numero ?? "")),
       }))
-      .filter((c) => c.nombre);
+      .filter((c) => c.numero);
   };
 
   const generar = () => {
@@ -178,6 +218,16 @@ export function DupletaModule() {
     toast(`✅ Matriz C${carrera1}×C${carrera2} generada: ${cab1.length}×${cab2.length} = ${cab1.length * cab2.length} cuadros.`, "success");
   };
 
+  // Firma de los ejemplares disponibles: si llega la data central (o la tabla
+  // publicada) después de elegir las carreras, la matriz se reconstruye.
+  const firmaEjemplares = useMemo(
+    () =>
+      carrerasDelDia
+        .map((c) => `${c.carrera}:${(c.caballos ?? []).length}:${(c.caballos ?? []).filter((x) => x.retirado).length}`)
+        .join("|"),
+    [carrerasDelDia]
+  );
+
   // Auto-genera la matriz apenas eligen las dos carreras (sin pisar una matriz
   // ya generada/guardada con las mismas carreras). Si falta alguna selección,
   // la matriz (columnas/filas) queda en blanco hasta que se elijan las carreras.
@@ -190,13 +240,15 @@ export function DupletaModule() {
     const cab1 = ejemplaresDe(carrera1);
     const cab2 = ejemplaresDe(carrera2);
     if (!cab1.length || !cab2.length) return;
-    if (
+    const misma =
       matriz &&
       matriz.hipodromo === hipodromo.toUpperCase() &&
+      matriz.fecha === dia &&
       String(matriz.carrera1) === String(carrera1) &&
-      String(matriz.carrera2) === String(carrera2)
-    )
-      return;
+      String(matriz.carrera2) === String(carrera2);
+    // No se pisa una matriz ya generada con las mismas carreras, salvo que la
+    // matriz actual esté vacía (o le falten ejemplares) y ahora haya más data.
+    if (misma && matriz.caballos1.length === cab1.length && matriz.caballos2.length === cab2.length) return;
     setMatriz({
       hipodromo: hipodromo.toUpperCase(),
       fecha: dia,
@@ -210,7 +262,7 @@ export function DupletaModule() {
       updatedAt: new Date().toISOString(),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hipodromo, dia, carrera1, carrera2]);
+  }, [hipodromo, dia, carrera1, carrera2, firmaEjemplares]);
 
   const abrirCelda = (c1: string, c2: string) => {
     if (!matriz) return;
@@ -248,13 +300,39 @@ export function DupletaModule() {
     setQ("");
   };
 
-  const toggleRetirado = (eje: 1 | 2, numero: string) => {
+  /**
+   * Marca/quita el retirado en la matriz. El retiro es de la CARRERA, no de la
+   * dupleta: se registra también en la data central para que incida en todos
+   * los módulos (Tablas Fijas, Marcas, Taquilla, Carreras del Día).
+   */
+  const toggleRetirado = async (eje: 1 | 2, numero: string) => {
     if (!matriz) return;
     const lista = (eje === 1 ? matriz.caballos1 : matriz.caballos2).map((c) => ({ ...c }));
     const i = lista.findIndex((c) => String(c.numero) === String(numero));
     if (i === -1) return;
-    lista[i] = { ...lista[i], retirado: !lista[i].retirado };
+    const ahoraRetirado = !lista[i].retirado;
+    lista[i] = { ...lista[i], retirado: ahoraRetirado };
     setMatriz({ ...matriz, [eje === 1 ? "caballos1" : "caballos2"]: lista });
+
+    const carrera = eje === 1 ? matriz.carrera1 : matriz.carrera2;
+    const r = await alternarRetiroCarrera({
+      fecha: matriz.fecha,
+      hipodromo: matriz.hipodromo,
+      carrera,
+      numero,
+      retirado: ahoraRetirado,
+    });
+    if (!r.ok) {
+      toast(`⚠️ Retiro local aplicado, pero no se centralizó: ${r.error ?? "sin conexión"}`, "warning");
+      return;
+    }
+    toast(
+      ahoraRetirado
+        ? `⛔ ${numero} retirado de C${carrera} — centralizado (${r.tablasAfectadas} tabla(s) sincronizada(s)${r.reembolsos ? `, ${r.reembolsos} ticket(s) reembolsado(s)` : ""}).`
+        : `↩ ${numero} rehabilitado en C${carrera} — centralizado.`,
+      "success"
+    );
+    void recargarCentrales();
   };
 
   const guardar = async () => {
@@ -435,13 +513,15 @@ export function DupletaModule() {
                           type="button"
                           onClick={() => toggleRetirado(2, cb2.numero)}
                           title={cb2.retirado ? "Quitar retirado" : "Marcar retirado"}
-                          className={`flex w-full items-center gap-1 rounded px-0.5 py-0.5 text-left ${cb2.retirado ? "bg-yellow-400 text-slate-900" : "text-slate-800"}`}
+                          className={`flex w-full flex-col items-start justify-start gap-0.5 rounded px-0.5 py-0.5 text-left align-top ${cb2.retirado ? "bg-yellow-400 text-slate-900" : "text-slate-800"}`}
                         >
-                          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: izq.bg, color: izq.fg }}>
-                            {cb2.numero}
+                          <span className="flex items-center gap-1">
+                            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: izq.bg, color: izq.fg }}>
+                              {cb2.numero}
+                            </span>
+                            {cb2.retirado && <span className="text-[13px] font-black">✖</span>}
                           </span>
-                          {cb2.retirado && <span className="text-[13px] font-black">✖</span>}
-                          <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="flex min-w-0 w-full flex-col items-start text-left">
                             <span className="whitespace-nowrap text-[17px] font-black leading-tight">
                               {cb2.nombre}
                             </span>

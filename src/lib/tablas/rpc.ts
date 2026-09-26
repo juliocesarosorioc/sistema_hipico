@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { parseNum } from "@/lib/tablas/tipos";
 import { leerProgramaPorFecha } from "@/lib/gaceta/programa";
+import { alternarRetiroCarrera } from "@/lib/carreras/retiros";
 
 export const FALLBACK_HIPODROMOS = [
   "LA RINCONADA",
@@ -477,96 +478,34 @@ export async function registrarVenta(
 }
 
 /**
- * Retira (o rehabilita) un ejemplar de la tabla publicada y recalcula el premio
- * con baja proporcional (misma fórmula del legacy js/tablas.js retirarEjemplar):
+ * Retira (o rehabilita) un ejemplar. Delega al servicio CENTRAL de retiros
+ * (@/lib/carreras/retiros): la lista se guarda en la carrera (resultados_carreras)
+ * y se propaga a TODAS las tablas fijas de esa misma carrera, recalculando el
+ * premio con baja proporcional (fórmula del legacy js/tablas.js):
  *   nuevoPremio = premio_original * (1 − sumaRetirados / suma_base_tabla)
- * También reembolsa (best-effort) los tickets pendientes de ese ejemplar y
- * actualiza retirados_oficiales. El cambio se propaga con realtime → refresh.
+ * Reembolsa (best-effort) los tickets pendientes del ejemplar. El cambio se
+ * propaga con realtime → refresh.
  */
 export async function retirarEjemplarTabla(
   tabla: TablaFijaRow,
   idx: number,
   retirado: boolean
 ): Promise<{ ok: boolean; error?: string; premio?: number; reembolsos?: number }> {
-  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
-  const caballos = Array.isArray(tabla.caballos) ? [...tabla.caballos] : [];
+  const caballos = Array.isArray(tabla.caballos) ? tabla.caballos : [];
   if (idx < 0 || idx >= caballos.length) return { ok: false, error: "Ejemplar no encontrado." };
   const ejemplar = caballos[idx];
-  const caballosNuevos = caballos.map((x, i) =>
-    i === idx ? { ...x, retirado, ganador: retirado ? false : x.ganador } : x
-  );
-  const base = parseNum(tabla.suma_base_tabla);
-  const sumaRetirados = caballosNuevos
-    .filter((c) => c.retirado)
-    .reduce((a, c) => a + (parseNum(c.valor_ejemplar) || 0), 0);
-  let nuevoPremio = parseNum(tabla.premio_original ?? tabla.premio_recalculado);
-  if (base > 0) nuevoPremio = Math.max(0, nuevoPremio * (1 - sumaRetirados / base));
-  const nums =
-    caballosNuevos.filter((c) => c.retirado).map((c) => c.numero).join(",") || "NO HUBO RETIROS";
-
-  try {
-    const { error } = await supabase
-      .from("tablas_fijas")
-      .update({
-        caballos: caballosNuevos,
-        retirados_oficiales: nums,
-        premio_recalculado: nuevoPremio,
-      })
-      .eq("id", tabla.id);
-    if (error) throw error;
-    const reembolsos = retirado ? await reembolsarTicketsRetirado(tabla, ejemplar) : 0;
-    return { ok: true, premio: nuevoPremio, reembolsos };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
-  }
-}
-
-/** Reembolsa (best-effort) el saldo de tickets Pendientes de un ejemplar retirado. */
-async function reembolsarTicketsRetirado(
-  tabla: TablaFijaRow,
-  ejemplar: { numero: number | string }
-): Promise<number> {
-  if (!supabase) return 0;
-  try {
-    const { data: tickets } = await supabase
-      .from("tickets_apuestas")
-      .select("id, cliente_juega_id, monto_jugado")
-      .eq("hipodromo", tabla.hipodromo)
-      .eq("carrera", tabla.carrera)
-      .eq("ejemplar_numero", parseInt(String(ejemplar.numero), 10) || 0)
-      .eq("estado", "Pendiente");
-    if (!tickets || tickets.length === 0) return 0;
-    let reembolsados = 0;
-    for (const tk of tickets as Array<{ id: string; cliente_juega_id: string | null; monto_jugado: unknown }>) {
-      const monto = parseNum(tk.monto_jugado);
-      await supabase
-        .from("tickets_apuestas")
-        .update({
-          estado: "Retirado",
-          premio_pagar: 0,
-          accion_aplicada: "REEMBOLSO",
-          monto_resuelto: monto,
-        })
-        .eq("id", tk.id);
-      if (monto > 0 && tk.cliente_juega_id) {
-        const { data: cl } = await supabase
-          .from("clientes")
-          .select("saldo_actual")
-          .eq("id", tk.cliente_juega_id)
-          .maybeSingle();
-        if (cl) {
-          await supabase
-            .from("clientes")
-            .update({ saldo_actual: (parseNum(cl.saldo_actual) || 0) + monto })
-            .eq("id", tk.cliente_juega_id);
-        }
-      }
-      reembolsados += 1;
-    }
-    return reembolsados;
-  } catch {
-    return 0;
-  }
+  const fecha = String(tabla.fecha || tabla.fecha_creacion || "").slice(0, 10);
+  if (!fecha) return { ok: false, error: "La tabla no tiene fecha de evento: no se puede centralizar el retiro." };
+  const r = await alternarRetiroCarrera({
+    fecha,
+    hipodromo: String(tabla.hipodromo ?? ""),
+    carrera: tabla.carrera ?? 0,
+    numero: ejemplar.numero,
+    retirado,
+  });
+  if (!r.ok) return { ok: false, error: r.error ?? "No se pudo registrar el retiro." };
+  const premio = r.premios.find((p) => p.tabla === String(tabla.id))?.premio;
+  return { ok: true, premio, reembolsos: r.reembolsos };
 }
 
 /** Guarda la pizarra de resultados (RPC opcional del paquete SQL, si existe). */

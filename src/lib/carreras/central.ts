@@ -11,11 +11,23 @@
  */
 import { supabase } from "@/lib/supabase";
 import { hoyLocal } from "@/lib/gaceta/programa";
+import { parsearRetirados, leerRetirosCarrera } from "@/lib/carreras/retiros";
+
+export {
+  alternarRetiroCarrera,
+  aplicarRetirosCarrera,
+  leerRetirosCarrera,
+  parsearRetirados,
+  textoRetirados,
+} from "@/lib/carreras/retiros";
+export type { ResultadoRetiros } from "@/lib/carreras/retiros";
 
 export type EjemplarCarreraCentral = {
   numero: string;
   nombre?: string | null;
   nacionalidad?: string | null;
+  /** Retirado según la lista CENTRAL de la carrera (resultados_carreras.retirados). */
+  retirado?: boolean;
 };
 
 export type CarreraCentral = {
@@ -25,6 +37,8 @@ export type CarreraCentral = {
   carrera: number;
   /** Ejemplares inscritos — pueden tener solo número (sin nombre). */
   caballos?: EjemplarCarreraCentral[];
+  /** Números retirados de la carrera (lista central, aplica a todos los módulos). */
+  retirados?: string[];
   distancia?: string | null;
   superficie?: string | null;
   premio?: number | null;
@@ -35,15 +49,17 @@ export type CarreraCentral = {
 
 export type ResCarreras = { ok: boolean; datos?: CarreraCentral[]; error?: string };
 
-function normalizarCaballos(raw: unknown): EjemplarCarreraCentral[] {
+function normalizarCaballos(raw: unknown, retirados: Set<string>): EjemplarCarreraCentral[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .map((c) => {
       const x = (c ?? {}) as Record<string, unknown>;
+      const numero = String(x.numero ?? "").trim();
       return {
-        numero: String(x.numero ?? "").trim(),
+        numero,
         nombre: x.nombre != null ? String(x.nombre) : null,
         nacionalidad: x.nacionalidad != null ? String(x.nacionalidad) : null,
+        retirado: x.retirado === true || retirados.has(numero),
       };
     })
     .filter((c) => c.numero);
@@ -68,7 +84,7 @@ export async function listarCarrerasCentrales(
   try {
     let q = supabase
       .from("resultados_carreras")
-      .select("id, fecha, hipodromo, carrera, caballos, distancia, superficie, premio, hora, ganadores, aplicado_a_tablas, updated_at")
+      .select("id, fecha, hipodromo, carrera, caballos, retirados, distancia, superficie, premio, hora, ganadores, aplicado_a_tablas, updated_at")
       .eq("fecha", f);
     if (hip) q = q.eq("hipodromo", hip);
     const { data, error } = await q.order("carrera");
@@ -77,12 +93,14 @@ export async function listarCarrerasCentrales(
       ok: true,
       datos: (data ?? []).map((r) => {
         const raw = r as Record<string, unknown>;
+        const retirados = parsearRetirados(String(raw.retirados ?? ""));
         return {
           id: raw.id != null ? String(raw.id) : undefined,
           fecha: f,
           hipodromo: String(raw.hipodromo ?? "").trim().toUpperCase(),
           carrera: Number(raw.carrera) || 0,
-          caballos: normalizarCaballos(raw.caballos),
+          caballos: normalizarCaballos(raw.caballos, new Set(retirados)),
+          retirados,
           distancia: raw.distancia != null ? String(raw.distancia) : null,
           superficie: raw.superficie != null ? String(raw.superficie) : null,
           premio: raw.premio != null ? Number(raw.premio) : null,
@@ -105,12 +123,25 @@ export async function guardarCarreraCentral(c: CarreraCentral): Promise<{ ok: bo
   if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
   const hip = String(c.hipodromo ?? "").trim().toUpperCase();
   const num = Number(c.carrera) || 0;
+  const fecha = c.fecha || hoyLocal();
   if (!hip || !num) return { ok: false, error: "Hipódromo y Nº de carrera requeridos." };
+  // La lista CENTRAL de retiros manda: se reaplica sobre los ejemplares que se
+  // guardan, para que editar la carrera no borre los retiros ya registrados.
+  const retirados = new Set(await leerRetirosCarrera(fecha, hip, num));
+  const filas = Array.isArray(c.caballos) ? c.caballos : [];
   const fila = {
-    fecha: c.fecha || hoyLocal(),
+    fecha,
     hipodromo: hip,
     carrera: num,
-    caballos: Array.isArray(c.caballos) ? c.caballos.map((x) => ({ numero: String(x.numero).trim(), nombre: x.nombre ?? null, nacionalidad: x.nacionalidad ?? null })) : [],
+    caballos: filas.map((x) => {
+      const numero = String(x.numero).trim();
+      return {
+        numero,
+        nombre: x.nombre ?? null,
+        nacionalidad: x.nacionalidad ?? null,
+        retirado: x.retirado === true || retirados.has(numero),
+      };
+    }),
     distancia: c.distancia ?? null,
     superficie: c.superficie ?? null,
     premio: c.premio != null ? Number(c.premio) : null,

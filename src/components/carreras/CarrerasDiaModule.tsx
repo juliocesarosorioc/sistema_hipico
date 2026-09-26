@@ -13,6 +13,7 @@ import {
   type CarreraCentral,
   type EjemplarCarreraCentral,
 } from "@/lib/carreras/central";
+import { aplicarRetirosCarrera, parsearRetirados } from "@/lib/carreras/retiros";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 
@@ -25,6 +26,7 @@ type ModalForm = {
   superficie: string;
   premio: string;
   hora: string;
+  retirados: string;
 };
 
 const vacioModal = (): ModalForm => ({
@@ -36,6 +38,7 @@ const vacioModal = (): ModalForm => ({
   superficie: "ARENA",
   premio: "",
   hora: "",
+  retirados: "",
 });
 
 /** Parsea un textarea de ejemplares: cada línea "numero nombre" (o solo numero). */
@@ -119,6 +122,7 @@ export function CarrerasDiaModule() {
       superficie: c.superficie ?? "ARENA",
       premio: c.premio != null ? String(c.premio) : "",
       hora: c.hora ?? "",
+      retirados: (c.retirados ?? []).join(","),
     });
   };
 
@@ -148,12 +152,26 @@ export function CarrerasDiaModule() {
     });
     setGuardando(false);
     if (!r.ok) return toast("Error al guardar: " + (r.error ?? "desconocido"), "error");
-    toast(
-      modal.editar
-        ? `✏️ Carrera C${num} actualizada (${caballos.length} ejemplar(es)).`
-        : `✅ Carrera C${num} registrada (${caballos.length} ejemplar(es)).`,
-      "success"
-    );
+
+    // RETIROS: lista canónica de la carrera. Se escribe por el servicio único,
+    // que propaga a Tablas Fijas, Marcas, Dupletas y Taquilla, reembolsa lo
+    // pendiente y recalcula premios.
+    const ret = await aplicarRetirosCarrera({
+      fecha,
+      hipodromo,
+      carrera: num,
+      numeros: parsearRetirados(modal.retirados),
+    });
+    if (!ret.ok) return toast("Carrera guardada, pero los retiros no se propagaron: " + (ret.error ?? "sin conexión"), "warning");
+
+    const base = modal.editar
+      ? `✏️ Carrera C${num} actualizada (${caballos.length} ejemplar(es)).`
+      : `✅ Carrera C${num} registrada (${caballos.length} ejemplar(es)).`;
+    const detalle = ret.retirados.length
+      ? ` ⛔ Retirados ${ret.retirados.join(",")} · ${ret.tablasAfectadas} tabla(s) sincronizada(s)` +
+        (ret.reembolsos ? ` · ${ret.reembolsos} ticket(s) reembolsado(s)` : "")
+      : "";
+    toast(base + detalle, "success");
     setModal(vacioModal());
     void refrescar();
   };
@@ -326,18 +344,27 @@ export function CarrerasDiaModule() {
                           <span className="flex flex-wrap gap-0.5">
                             {(c.caballos ?? []).map((cb) => {
                               const nombre = cb.nombre?.trim();
+                              const ret = Boolean(cb.retirado) || (c.retirados ?? []).includes(String(cb.numero));
                               return (
                                 <span
                                   key={cb.numero}
                                   title={nombre || `Nº ${cb.numero}`}
-                                  className="inline-flex items-center gap-1 rounded bg-slate-100 px-1 py-0.5 text-[10px] font-bold text-slate-700"
+                                  className={`inline-flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-bold ${
+                                    ret ? "bg-red-100 text-red-700 line-through" : "bg-slate-100 text-slate-700"
+                                  }`}
                                 >
                                   {cb.numero}
+                                  {ret && <span className="font-black">⛔</span>}
                                   {nombre && <span className="font-semibold text-slate-500">· {nombre}</span>}
                                 </span>
                               );
                             })}
                           </span>
+                          {(c.retirados?.length ?? 0) > 0 && (
+                            <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-black text-red-700">
+                              RETIRADOS: {(c.retirados ?? []).join(", ")}
+                            </span>
+                          )}
                         </div>
                       )}
                     </td>
@@ -414,6 +441,15 @@ export function CarrerasDiaModule() {
                   <input value={modal.hora} onChange={(e) => setModal((m) => ({ ...m, hora: e.target.value }))} className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500" />
                 </label>
               </div>
+              <label className="block">
+                <span className={inputLbl}>Retirados de la carrera (aplica a TODOS los módulos · vacío = NO HUBO RETIROS)</span>
+                <input
+                  value={modal.retirados}
+                  onChange={(e) => setModal((m) => ({ ...m, retirados: e.target.value }))}
+                  placeholder='ej. "2,5" o "2-5"'
+                  className="w-full rounded-lg border border-red-200 bg-red-50/40 px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                />
+              </label>
               <label className="block">
                 <span className={inputLbl}>Ejemplares (1 NOMBRE por línea · solo número si no se conoce)</span>
                 <textarea

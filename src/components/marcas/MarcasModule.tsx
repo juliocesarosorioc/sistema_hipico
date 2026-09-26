@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { ChipField } from "@/components/ui/HorseChips";
 import { listarHipodromos, listarCarrerasPorDia, listarTablasPublicadas, type OpcionHipodromo } from "@/lib/tablas/rpc";
+import { useCarrerasCentrales } from "@/lib/carreras/useCarrerasCentrales";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import {
   CONDICIONES_MARCAS_DEFECTO,
@@ -21,7 +22,7 @@ const extraerNumeros = (str: string) => {
   return str.split(/[\/, -]+/).map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
 };
 
-export type CabRenglon = { numero: string; nombre: string; debutante: boolean };
+export type CabRenglon = { numero: string; nombre: string; debutante: boolean; retirado?: boolean };
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 const inputSel =
@@ -97,6 +98,9 @@ export function MarcasModule() {
 
   // Detecta debutantes: ejemplares de la jornada SIN apariciones previas en
   // ninguna otra fecha de tablas_fijas. La observación se genera automáticamente.
+  // DATA CENTRAL: si una carrera no tiene tabla publicada, sus ejemplares (y sus
+  // retiros) se toman de Carreras del Día para que la fila también se pueda marcar.
+  const { centrales: centralCarreras } = useCarrerasCentrales(fecha || undefined, hipodromo || undefined);
   useEffect(() => {
     if (!hipodromo) return;
     let v = true;
@@ -123,15 +127,34 @@ export function MarcasModule() {
             const clave = c.ejemplar_id != null ? `id:${c.ejemplar_id}` : null;
             const apariciones = clave ? otras.get(clave) : undefined;
             const debutante = (apariciones ?? otras.get(`n:${norm(c.nombre)}`) ?? 0) === 0;
-            return { numero: String(c.numero).trim(), nombre: String(c.nombre || "").trim(), debutante };
+            return {
+              numero: String(c.numero).trim(),
+              nombre: String(c.nombre || "").trim(),
+              debutante,
+              retirado: Boolean(c.retirado),
+            };
           });
+      }
+      // Completa con las carreras que solo existen en la data central.
+      for (const c of centralCarreras) {
+        const k = String(c.carrera);
+        if (porCarrera[k]?.length) continue;
+        const retirados = new Set(c.retirados ?? []);
+        porCarrera[k] = (c.caballos ?? [])
+          .filter((cb) => cb.numero.trim() !== "")
+          .map((cb) => ({
+            numero: cb.numero.trim(),
+            nombre: String(cb.nombre ?? "").trim(),
+            debutante: true,
+            retirado: Boolean(cb.retirado) || retirados.has(cb.numero),
+          }));
       }
       setCarrerasCab(porCarrera);
     })();
     return () => {
       v = false;
     };
-  }, [hipodromo, fecha]);
+  }, [hipodromo, fecha, centralCarreras]);
 
   const setFila = (i: number, patch: Partial<FilaMarca>) =>
     setFilas((fs) => fs.map((f, k) => (k === i ? { ...f, ...patch } : f)));
@@ -176,6 +199,18 @@ export function MarcasModule() {
     const lista = carrerasCab[String(f.carrera)] ?? [];
     const nums = new Set(extraerNumeros(f[campo]).map((n) => String(n)));
     return lista.filter((c) => c.debutante && nums.has(String(c.numero)));
+  };
+
+  /**
+   * Retirados de la carrera (lista CENTRAL). Si el operador marca un ejemplar
+   * retirado, se avisa en la fila: el retiro hecho en cualquier módulo incide.
+   */
+  const retiradosEnFila = (f: FilaMarca): string[] => {
+    const lista = carrerasCab[String(f.carrera)] ?? [];
+    const nums = new Set(
+      [...extraerNumeros(f.marcadas), ...extraerNumeros(f.contra)].map((n) => String(n))
+    );
+    return lista.filter((c) => c.retirado && nums.has(String(c.numero))).map((c) => c.numero);
   };
 
   const filasConDeb = useMemo(() => filas.map((f) => ({ f, deb: debutantesEnFila(f) })).filter((x) => x.deb.length > 0), [filas, carrerasCab]);
@@ -378,6 +413,7 @@ export function MarcasModule() {
                 filas.map((f, i) => {
                   const marcadasD = debutantesEnCampo(f, "marcadas");
                   const contraD = debutantesEnCampo(f, "contra");
+                  const retFila = retiradosEnFila(f);
                   return (
                     <tr key={i} className={i % 2 ? "bg-emerald-50/60" : "bg-white"}>
                       <td className="shrink-0 border border-emerald-100 p-0.5 text-center align-middle text-xs font-extrabold text-emerald-700">
@@ -424,6 +460,14 @@ export function MarcasModule() {
 
                       <td className="shrink-0 border border-emerald-100 p-1 text-center align-middle">
                         <div className="flex items-center justify-center gap-1">
+                          {retFila.length > 0 && (
+                            <span
+                              title={`Retirado en la carrera: N°${retFila.join(", N°")}`}
+                              className="rounded bg-red-100 px-1 py-0.5 text-[9px] font-black text-red-600"
+                            >
+                              ⛔ N°{retFila.join(",")}
+                            </span>
+                          )}
                           <button
                             type="button"
                             onClick={() => setVendiendoMarca(f)}

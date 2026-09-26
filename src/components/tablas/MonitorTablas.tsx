@@ -11,6 +11,9 @@ import { CargaResultadosModal, type PizarraResultados } from "@/components/liqui
 import { EjemplarModal, type VentaRapidaItem } from "@/components/tablas/EjemplarModal";
 import { EditorCaballos } from "@/components/tablas/EditorCaballos";
 import { listarCuposTabla, guardarCuposTabla, listarGruposVenta, type CupoTablaGrupo } from "@/lib/grupos";
+import { useCarrerasCentrales } from "@/lib/carreras/useCarrerasCentrales";
+import { aplicarRetirosCarrera } from "@/lib/carreras/retiros";
+import { guardarCarreraCentral } from "@/lib/carreras/central";
 
 /** Monedas permitidas al corregir una tabla (el símbolo nunca se muestra). */
 const OPCIONES_MONEDA = ["USD", "VES", "BS", "EUR"];
@@ -143,6 +146,11 @@ export function MonitorTablas({
 
   const abiertas = tablas.filter((t) => !t.cerrada);
 
+  // DATA CENTRAL: días e hipódromos con carreras registradas en Carreras del
+  // Día, aunque todavía no tengan tabla fija publicada, para que el filtro en
+  // cascada ofrezca la jornada completa.
+  const { centrales: centralCarreras } = useCarrerasCentrales();
+
   // FILTROS EN CASCADA BIDIRECCIONALES
   const fechasDisponibles = useMemo(() => {
     const setFechas = new Set<string>();
@@ -152,8 +160,11 @@ export function MonitorTablas({
         if (d) setFechas.add(d);
       }
     });
+    centralCarreras.forEach(c => {
+      if (!hipodromoFiltro || c.hipodromo === hipodromoFiltro) setFechas.add(c.fecha);
+    });
     return Array.from(setFechas).sort().reverse();
-  }, [abiertas, hipodromoFiltro]);
+  }, [abiertas, hipodromoFiltro, centralCarreras]);
 
   const hipodromosDisponibles = useMemo(() => {
     const setHips = new Set<string>();
@@ -162,8 +173,11 @@ export function MonitorTablas({
         if (t.hipodromo) setHips.add(t.hipodromo);
       }
     });
+    centralCarreras.forEach(c => {
+      if (!fechaFiltro || c.fecha === fechaFiltro) setHips.add(c.hipodromo);
+    });
     return Array.from(setHips).sort();
-  }, [abiertas, fechaFiltro]);
+  }, [abiertas, fechaFiltro, centralCarreras]);
 
   // Limpiar filtros si quedan huérfanos por la cascada (solo si el padre
   // no gobierna la fecha: en controlado el valor decide el filtro del día).
@@ -208,6 +222,41 @@ export function MonitorTablas({
         patchCupos.map((g) => ({ grupo_id: g.grupo_id, cupos: g.cupos ?? 0, max: g.max ?? null }))
       );
       if (!rC.ok) setAviso(`⚠️ Cupos: ${rC.error ?? "no guardados (revise la tabla " + String(editando.id) + ")."}`);
+
+      // DATA CENTRAL: la tabla y la carrera son el mismo dato. Al corregir la
+      // tabla se corrige también la carrera central (hipódromo, fecha, carrera,
+      // superficie, distancia y ejemplares), respetando los retiros vigentes.
+      const fecha = String(patchEdicion.fecha ?? editando.fecha ?? "");
+      const dia = fecha ? diaDeLaTabla({ ...editando, fecha } as StoredTablaFija) : "";
+      if (dia) {
+        const hip = String(patchEdicion.hipodromo ?? editando.hipodromo ?? "").trim().toUpperCase();
+        const car = parseNum(patchEdicion.carrera ?? editando.carrera ?? "") || 0;
+        const guardo = await guardarCarreraCentral({
+          fecha: dia,
+          hipodromo: hip,
+          carrera: car,
+          caballos: patchCaballos.map((c) => ({
+            numero: String(c.numero),
+            nombre: String(c.nombre ?? ""),
+            retirado: Boolean(c.retirado),
+          })),
+          distancia: String(patchEdicion.distancia_carrera ?? editando.distancia_carrera ?? ""),
+          superficie: String(patchEdicion.superficie ?? editando.superficie ?? ""),
+        });
+        if (!guardo.ok) {
+          setAviso(`⚠️ Tabla guardada, pero la carrera central no se actualizó: ${guardo.error ?? "sin conexión"}`);
+        } else {
+          // La lista de retirados de la tabla corregida pasa a ser la canónica.
+          const ret = await aplicarRetirosCarrera({
+            fecha: dia,
+            hipodromo: hip,
+            carrera: car,
+            numeros: patchCaballos.filter((c) => c.retirado).map((c) => String(c.numero)),
+          });
+          if (!ret.ok) setAviso(`⚠️ Tabla y carrera guardadas, pero los retiros no se propagaron: ${ret.error ?? "sin conexión"}`);
+        }
+      }
+
       onEditar?.(editando, { ...patchEdicion, caballos: patchCaballos, suma_base_tabla: suma });
     }
     setEditando(null);
@@ -385,7 +434,14 @@ export function MonitorTablas({
 
               <div className="flex items-center gap-1.5 border-t border-slate-100 bg-white px-2 py-1.5 no-print">
                 <Guard permiso="editar_tabla">
-                  <Button variant="ghost" size="sm" className="flex-1" onClick={() => { setEditando(t); setPatchEdicion({}); setPatchCaballos((t.caballos ?? []).map((c) => ({ ...c }))); void cargarCupos(t); }}>✏️ Editar</Button>
+                  <Button
+                    size="md"
+                    className="flex-[2] !bg-gradient-to-r !from-amber-500 !to-orange-600 !text-white shadow-md ring-2 ring-amber-300 hover:!from-amber-600 hover:!to-orange-700"
+                    onClick={() => { setEditando(t); setPatchEdicion({}); setPatchCaballos((t.caballos ?? []).map((c) => ({ ...c }))); void cargarCupos(t); }}
+                    title="Edita la tabla Y la carrera: los datos se sincronizan con la data central"
+                  >
+                    ✏️ EDITAR TABLA Y CARRERA
+                  </Button>
                 </Guard>
                 <Guard permiso="vender_tabla">
                   <Button size="sm" className="flex-1" onClick={() => { setVendiendo(t); setEjemplarVenta(""); setMontoVenta(""); }}>🎟️ Vender</Button>
