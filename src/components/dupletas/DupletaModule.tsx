@@ -178,6 +178,36 @@ export function DupletaModule() {
     toast(`✅ Matriz C${carrera1}×C${carrera2} generada: ${cab1.length}×${cab2.length} = ${cab1.length * cab2.length} cuadros.`, "success");
   };
 
+  // Auto-genera la matriz apenas eligen las dos carreras (sin pisar una matriz
+  // ya generada/guardada con las mismas carreras).
+  useEffect(() => {
+    if (!hipodromo || !dia || !carrera1 || !carrera2) return;
+    if (String(carrera1) === String(carrera2)) return;
+    const cab1 = ejemplaresDe(carrera1);
+    const cab2 = ejemplaresDe(carrera2);
+    if (!cab1.length || !cab2.length) return;
+    if (
+      matriz &&
+      matriz.hipodromo === hipodromo.toUpperCase() &&
+      String(matriz.carrera1) === String(carrera1) &&
+      String(matriz.carrera2) === String(carrera2)
+    )
+      return;
+    setMatriz({
+      hipodromo: hipodromo.toUpperCase(),
+      fecha: dia,
+      carrera1: Number(carrera1) || carrera1,
+      carrera2: Number(carrera2) || carrera2,
+      premio: Number(premio) || 0,
+      precio: Number(precio) || 0,
+      caballos1: cab1,
+      caballos2: cab2,
+      celdas: {},
+      updatedAt: new Date().toISOString(),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hipodromo, dia, carrera1, carrera2]);
+
   const abrirCelda = (c1: string, c2: string) => {
     if (!matriz) return;
     const celda = matriz.celdas[claveCelda(c1, c2)];
@@ -332,6 +362,37 @@ export function DupletaModule() {
             </select>
           </label>
         </div>
+
+        {(hipodromo && dia && (carrera1 || carrera2)) && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px]">
+            {carrera1 && (
+              <span className="flex flex-wrap items-center gap-1">
+                <b className="text-slate-500">C{carrera1}:</b>
+                {ejemplaresDe(carrera1).map((c) => {
+                  const col = colorDeNumeroGac(c.numero);
+                  return (
+                    <span key={`prev1-${c.numero}`} className="inline-flex items-center rounded px-1 text-[9px] font-black leading-tight" style={{ backgroundColor: col.bg, color: col.fg }}>
+                      {c.numero} {c.nombre}
+                    </span>
+                  );
+                })}
+              </span>
+            )}
+            {carrera2 && (
+              <span className="flex flex-wrap items-center gap-1">
+                <b className="text-slate-500">C{carrera2}:</b>
+                {ejemplaresDe(carrera2).map((c) => {
+                  const col = colorDeNumeroGac(c.numero);
+                  return (
+                    <span key={`prev2-${c.numero}`} className="inline-flex items-center rounded px-1 text-[9px] font-black leading-tight" style={{ backgroundColor: col.bg, color: col.fg }}>
+                      {c.numero} {c.nombre}
+                    </span>
+                  );
+                })}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {matriz && (
