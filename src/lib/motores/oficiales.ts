@@ -18,7 +18,7 @@
  * Si el dividendo oficial no existe, el motor conserva el pago a la par de la
  * casa (2× / 120×100), por lo que NUNCA degrada el comportamiento previo.
  */
-import { registrarProcesador, TicketMotor, ResultadoMotor, COMISION_CASA, parsearNini } from "../bettingEngine";
+import { registrarProcesador, TicketMotor, ResultadoMotor, COMISION_CASA, parsearNini, liquidarPareo } from "../bettingEngine";
 import { liquidarMarcas, type MarcasConfig } from "./marcas";
 import { liquidarPuestos } from "./puestos";
 
@@ -117,6 +117,15 @@ export function liquidarOficial(
   // TABLAS FIJAS: resolución explícita (no pasa por el motor de puestos).
   const tabla = liquidarTabla(t, t.premio_por_tabla, tasa);
   if (tabla) return tabla;
+
+  // PAREOS (PP): el bando elegido (sintaxis "A X B") se resuelve por la mejor
+  // posición en la pizarra (liquidarPareo). Con proporción (ej. "10/8") se
+  // ESTIMA el premio; sin proporción se paga PARIDAD. Comisión sobre el neto.
+  const tipoPP = String(t.tipo_jugada ?? "").toUpperCase();
+  const caballoPP = String(t.caballo ?? "").toUpperCase();
+  if (/^PP/.test(tipoPP) || /X/.test(caballoPP)) {
+    return liquidarPareo(t, tasa);
+  }
 
   const cfgMarcas = (t as TicketMotor & { marcas?: MarcasConfig }).marcas;
   const base =

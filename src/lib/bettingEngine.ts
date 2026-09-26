@@ -257,6 +257,8 @@ export type TicketMotor = BetSlipEntry & {
   dividendos: Record<string, number> | null;
   /** Premio por tabla fija (Tablas): bruto = monto × premio_por_tabla. */
   premio_por_tabla?: number | null;
+  /** Proporción de un Pareo (PP), ej. "10/8". Sin proporción = PARIDAD. */
+  proporcion?: string | null;
 };
 
 export type ResultadoMotor = {
@@ -354,8 +356,10 @@ export function liquidarPareo(
 
   // 5. CÁLCULO DE PROPORCIÓN (Ej. 10/8)
   let multiplicador = 1; 
-  if ((t as any).proporcion && (t as any).proporcion.includes("/")) {
-    const [num1, num2] = (t as any).proporcion.split("/").map(Number);
+  // Si el cliente indicó UNA PROPORCIÓN (ej. "10/8") se ESTIMA el premio
+  // multiplicando el monto por num2/num1. Sin proporción = PARIDAD (paga 2:1):
+  if (t.proporcion && t.proporcion.includes("/")) {
+    const [num1, num2] = t.proporcion.split("/").map(Number);
     // Asumimos que num2/num1 calcula el multiplicador de premio (ej. 8/10 = 0.8)
     multiplicador = num2 / num1; 
   }

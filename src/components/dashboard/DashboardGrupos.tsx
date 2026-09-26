@@ -14,7 +14,7 @@ type Acceso = { emoji: string; txt: string; href?: string };
  *  tienen ruta en la SPA se marcan "En desarrollo" (ver PLANIFICACION.md). */
 const ACCESOS: Acceso[] = [
   { emoji: "🎟️", txt: "Apuestas", href: "/gestion-jugadas" },
-  { emoji: "🧾", txt: "Saldos / Reportes" },
+  { emoji: "🧾", txt: "Saldos / Reportes", href: "/saldos-reportes" },
   { emoji: "👥", txt: "Clientes", href: "/clientes" },
   { emoji: "🗺️", txt: "Hipódromos", href: "/hipodromos" },
   { emoji: "📥", txt: "Depósitos" },
