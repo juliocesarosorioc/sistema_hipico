@@ -124,7 +124,14 @@ export function GestionPlantillasModal({ abierto, onCerrar, plantillas, onGuarda
               >
                 {plantillas.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.label} {p.custom ? "(personalizada)" : p.grupo === "reporte" ? "(reporte)" : ""}
+                    {p.label}{" "}
+                    {p.custom
+                      ? "(personalizada)"
+                      : p.grupo === "reporte"
+                        ? "(reporte)"
+                        : p.grupo === "tablas"
+                          ? "(tablas)"
+                          : ""}
                   </option>
                 ))}
               </select>

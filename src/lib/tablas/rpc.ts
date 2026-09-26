@@ -392,6 +392,9 @@ export async function publicarTablasLote(
 }
 
 const COLUMNAS_EDITABLES = [
+  "hipodromo",
+  "carrera",
+  "fecha",
   "premio_original",
   "premio_recalculado",
   "suma_base_tabla",
@@ -400,6 +403,11 @@ const COLUMNAS_EDITABLES = [
   "distancia_carrera",
   "superficie",
   "retirados_oficiales",
+  "moneda",
+  "grupo_venta",
+  "monto_tabla",
+  "comision_grupo",
+  "caballos",
 ] as const;
 
 /** Actualiza solo columnas seguras de una tabla por su id real. */

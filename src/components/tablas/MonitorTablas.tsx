@@ -2,13 +2,18 @@
 
 import { useState, useMemo, useEffect } from "react";
 import type { StoredTablaFija } from "@/store/useTablasFijasStore";
-import { colorDeNumero, textoDeNumero, fmtMoney, sumaBase, parseNum } from "@/lib/tablas/tipos";
+import { colorDeNumero, textoDeNumero, fmtMoney, sumaBase, parseNum, SUPERFICIES, type EjemplarTabla } from "@/lib/tablas/tipos";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import { Flag } from "@/components/ui/BanderaPais";
 import { Button } from "@/components/ui/Button";
 import { Guard } from "@/components/ui/Guard";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { EjemplarModal, type VentaRapidaItem } from "@/components/tablas/EjemplarModal";
+import { EditorCaballos } from "@/components/tablas/EditorCaballos";
+import { listarCuposTabla, guardarCuposTabla, listarGruposVenta, type CupoTablaGrupo } from "@/lib/grupos";
+
+/** Monedas permitidas al corregir una tabla (el símbolo nunca se muestra). */
+const OPCIONES_MONEDA = ["USD", "VES", "BS", "EUR"];
 
 export type VentaTablaItem = {
   tablaId: string | number;
@@ -29,6 +34,12 @@ type Props = {
   onEliminar?: (tabla: StoredTablaFija) => void;
 };
 
+/** Número es-VE SIN símbolo de moneda (la moneda se estipula por el grupo). */
+function fmtValor(n: number | null | undefined): string {
+  const num = typeof n === "number" && isFinite(n) ? n : 0;
+  return num.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 /** Normaliza fechas para el filtro */
 function diaDeLaTabla(t: StoredTablaFija): string {
   const raw = String(t.fecha || t.fecha_creacion || "").trim();
@@ -48,6 +59,41 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
   const [liquidando, setLiquidando] = useState<StoredTablaFija | null>(null);
   const [editando, setEditando] = useState<StoredTablaFija | null>(null);
   const [patchEdicion, setPatchEdicion] = useState<Record<string, unknown>>({});
+  const [patchCaballos, setPatchCaballos] = useState<EjemplarTabla[]>([]);
+  const [patchCupos, setPatchCupos] = useState<CupoTablaGrupo[]>([]);
+
+  /** Carga los cupos por grupo de la tabla (o construye filas desde grupos_venta). */
+  const cargarCupos = async (t: StoredTablaFija) => {
+    if (Array.isArray(t.tabla_grupos) && t.tabla_grupos.length > 0) {
+      setPatchCupos(
+        t.tabla_grupos.map((g) => ({
+          id: g.id,
+          tabla_id: t.id,
+          grupo_id: g.grupo_id ?? "",
+          grupo_nombre: g.grupo_nombre ?? null,
+          cupos: g.cupos ?? null,
+          max: g.max ?? null,
+          cantidad_vendida: g.cantidad_vendida ?? 0,
+        }))
+      );
+      return;
+    }
+    const filas = await listarCuposTabla(t.id).catch(() => []);
+    if (filas.length > 0) {
+      setPatchCupos(filas);
+      return;
+    }
+    const grupos = await listarGruposVenta().catch(() => []);
+    setPatchCupos(
+      grupos.map((g) => ({
+        tabla_id: t.id,
+        grupo_id: g.id,
+        grupo_nombre: g.nombre,
+        cupos: g.cupo_tabla ?? 100,
+        max: null,
+      }))
+    );
+  };
   const [aviso, setAviso] = useState("");
   const [confirmarEliminar, setConfirmarEliminar] = useState<StoredTablaFija | null>(null);
   const [ejemplarModal, setEjemplarModal] = useState<{ tabla: StoredTablaFija; indice: number } | null>(null);
@@ -113,11 +159,21 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
     setAviso("🛒 Agregado al carrito de venta (arriba a la derecha).");
   };
 
-  const guardarEdicion = () => {
-    if (editando) onEditar?.(editando, patchEdicion);
+  const guardarEdicion = async () => {
+    if (editando) {
+      const suma = patchCaballos.reduce((a, c) => a + (parseNum(c.valor_ejemplar) || 0), 0);
+      const rC = await guardarCuposTabla(
+        editando.id,
+        patchCupos.map((g) => ({ grupo_id: g.grupo_id, cupos: g.cupos ?? 0, max: g.max ?? null }))
+      );
+      if (!rC.ok) setAviso(`⚠️ Cupos: ${rC.error ?? "no guardados (revise la tabla " + String(editando.id) + ")."}`);
+      onEditar?.(editando, { ...patchEdicion, caballos: patchCaballos, suma_base_tabla: suma });
+    }
     setEditando(null);
     setPatchEdicion({});
-    setAviso("✅ Tabla actualizada.");
+    setPatchCaballos([]);
+    setPatchCupos([]);
+    setAviso("✅ Tabla corregida y guardada.");
   };
 
   const ventaRapida = (tabla: StoredTablaFija, item: VentaRapidaItem) => {
@@ -243,7 +299,7 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                 </div>
                 <div className="mt-0.5 flex items-center justify-between rounded bg-white/20 px-1.5 py-px leading-none">
                   <span className="text-[8px] font-black uppercase tracking-wider opacity-90">💰 Monto a Pagar / Tabla</span>
-                  <span className="whitespace-nowrap text-sm font-black">US $ {fmtMoney(t.premio_recalculado ?? null, "")}</span>
+                  <span className="whitespace-nowrap text-sm font-black">{fmtValor(t.premio_recalculado ?? null)}</span>
                 </div>
               </div>
 
@@ -265,21 +321,21 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                       key={i}
                       type="button"
                       onClick={() => setEjemplarModal({ tabla: t, indice: i })}
-                      className={`grid w-full items-center gap-1 rounded px-1 py-px text-left transition-colors hover:bg-indigo-50 ${c.retirado ? "opacity-50" : ""} cursor-pointer`}
-                      style={{ gridTemplateColumns: "2rem 1fr 1.25rem 3.5rem" }}
+                      className={`grid w-full items-center rounded px-1 py-px text-left transition-colors hover:bg-indigo-50 ${c.retirado ? "opacity-50" : ""} cursor-pointer`}
+                      style={{ gridTemplateColumns: "2rem 1fr 1.25rem 4rem" }}
                     >
                       <span
-                        className="flex h-7 w-7 shrink-0 flex-none items-center justify-center rounded text-center text-[10px] font-bold"
+                        className="flex h-8 w-8 shrink-0 flex-none items-center justify-center rounded text-center text-[11px] font-bold leading-none"
                         style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
                       >
                         {c.numero}
                       </span>
-                      <span className="min-w-0 truncate text-[10px] font-bold uppercase text-slate-800">{c.nombre || "Sin nombre"}</span>
+                      <span className="min-w-0 truncate px-1 text-[12px] font-bold uppercase leading-none text-slate-800">{c.nombre || "Sin nombre"}</span>
                       <span className="flex justify-center text-center leading-none">
                         {nac !== "VE" && <Flag nac={nac} size={12} withName={false} />}
                       </span>
-                      <span className={`whitespace-nowrap text-right text-[11px] font-black ${c.retirado ? "text-red-500 line-through" : "text-blue-700"}`}>
-                        {c.retirado ? "RET." : `US $ ${fmtMoney(valor, "")}`}
+                      <span className={`whitespace-nowrap text-right text-[14px] font-black leading-none ${c.retirado ? "text-red-500 line-through" : "text-blue-700"}`}>
+                        {c.retirado ? "RET." : `${fmtValor(valor)}`}
                       </span>
                     </button>
                   );
@@ -288,12 +344,12 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
 
               <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-white px-1.5 py-0.5">
                 <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none">🧮 Suma</span>
-                <span className="text-xs font-black text-indigo-700">US $ {fmtMoney(t.suma_base_tabla ?? sumaBase(t.caballos), "")}</span>
+                <span className="text-xs font-black text-indigo-700">{fmtValor(t.suma_base_tabla ?? sumaBase(t.caballos))}</span>
               </div>
 
               <div className="flex items-center gap-1.5 border-t border-slate-100 bg-white px-2 py-1.5 no-print">
                 <Guard permiso="editar_tabla">
-                  <Button variant="ghost" size="sm" className="flex-1" onClick={() => { setEditando(t); setPatchEdicion({}); }}>✏️ Editar</Button>
+                  <Button variant="ghost" size="sm" className="flex-1" onClick={() => { setEditando(t); setPatchEdicion({}); setPatchCaballos((t.caballos ?? []).map((c) => ({ ...c }))); void cargarCupos(t); }}>✏️ Editar</Button>
                 </Guard>
                 <Guard permiso="vender_tabla">
                   <Button size="sm" className="flex-1" onClick={() => { setVendiendo(t); setEjemplarVenta(""); setMontoVenta(""); }}>🎟️ Vender</Button>
@@ -369,23 +425,118 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
       )}
 
       {editando && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 no-print">
-          <div className="w-full max-w-sm rounded-2xl border border-line bg-white shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 no-print">
+          <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
-              <h3 className="text-xs font-black uppercase">✏️ Editar — {editando.hipodromo} C{editando.carrera}</h3>
+              <h3 className="text-xs font-black uppercase">✏️ Corregir — {editando.hipodromo} C{editando.carrera}</h3>
               <button type="button" onClick={() => setEditando(null)} className="text-slate-300 hover:text-white">✕</button>
             </div>
-            <div className="space-y-3 p-4">
-              {([["premio_original", "Premio Original"], ["premio_recalculado", "Premio Recalculado"], ["suma_base_tabla", "Suma Base de la Tabla"], ["limite_ventas", "Límite de Ventas"]] as const).map(([key, label]) => (
-                <div key={key}>
-                  <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">{label}</label>
-                  <input value={String(patchEdicion[key] ?? editando[key] ?? "")} onChange={(e) => setPatchEdicion((p) => ({ ...p, [key]: parseNum(e.target.value) }))} inputMode="decimal" className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-black text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500" />
-                </div>
-              ))}
+            <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
+              {/* Datos de la carrera */}
+              <fieldset className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                <legend className="px-1 text-[9px] font-black uppercase tracking-wider text-slate-400">🏁 Carrera</legend>
+                <label className="block">
+                  <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Hipódromo</span>
+                  <input value={String(patchEdicion.hipodromo ?? editando.hipodromo ?? "")} onChange={(e) => setPatchEdicion((p) => ({ ...p, hipodromo: e.target.value.toUpperCase() }))} className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-bold uppercase text-slate-900 focus:outline-none" />
+                </label>
+                <label className="block">
+                  <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Carrera Nº</span>
+                  <input value={String(patchEdicion.carrera ?? editando.carrera ?? "")} onChange={(e) => setPatchEdicion((p) => ({ ...p, carrera: parseNum(e.target.value) }))} inputMode="numeric" className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-black text-slate-900 focus:outline-none" />
+                </label>
+                <label className="block">
+                  <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Fecha (AAAA-MM-DD)</span>
+                  <input value={String(patchEdicion.fecha ?? editando.fecha ?? "")} onChange={(e) => setPatchEdicion((p) => ({ ...p, fecha: e.target.value }))} placeholder="2026-09-26" className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-bold text-slate-900 focus:outline-none" />
+                </label>
+                <label className="block">
+                  <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Superficie</span>
+                  <select value={String(patchEdicion.superficie ?? editando.superficie ?? "ARENA")} onChange={(e) => setPatchEdicion((p) => ({ ...p, superficie: e.target.value }))} className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-black uppercase text-slate-900 focus:outline-none">
+                    {SUPERFICIES.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Distancia (m)</span>
+                  <input value={String(patchEdicion.distancia_carrera ?? editando.distancia_carrera ?? "")} onChange={(e) => setPatchEdicion((p) => ({ ...p, distancia_carrera: e.target.value }))} className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-bold text-slate-900 focus:outline-none" />
+                </label>
+                <label className="block">
+                  <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Moneda (grupo)</span>
+                  <select value={String(patchEdicion.moneda ?? editando.moneda ?? "USD")} onChange={(e) => setPatchEdicion((p) => ({ ...p, moneda: e.target.value }))} className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-black uppercase text-slate-900 focus:outline-none">
+                    {OPCIONES_MONEDA.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </label>
+              </fieldset>
+
+              {/* Montos (sin símbolo: la moneda la define el grupo) */}
+              <fieldset className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                <legend className="px-1 text-[9px] font-black uppercase tracking-wider text-slate-400">💰 Montos (sin símbolo)</legend>
+                {([
+                  ["premio_original", "Premio Original"],
+                  ["premio_recalculado", "Premio Recalculado"],
+                  ["limite_ventas", "Límite de Ventas"],
+                  ["cantidad_vendida", "Cantidad Vendida"],
+                ] as const).map(([key, label]) => (
+                  <label key={key} className="block">
+                    <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">{label}</span>
+                    <input value={String(patchEdicion[key] ?? editando[key] ?? "")} onChange={(e) => setPatchEdicion((p) => ({ ...p, [key]: parseNum(e.target.value) }))} inputMode="decimal" className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-black text-slate-900 focus:outline-none" />
+                  </label>
+                ))}
+                <p className="col-span-2 text-[9px] font-semibold text-slate-500">
+                  La Suma Base se recalcula automáticamente al guardar (suma de los valores de los ejemplares).
+                </p>
+              </fieldset>
+
+              {/* Ejemplares */}
+              <fieldset className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                <legend className="px-1 text-[9px] font-black uppercase tracking-wider text-slate-400">🐴 Ejemplares (corregir)</legend>
+                <EditorCaballos
+                  caballos={patchCaballos}
+                  onChange={(i, patch) => setPatchCaballos((cs) => cs.map((c, j) => (j === i ? { ...c, ...patch } : c)))}
+                  onQuitar={(i) => setPatchCaballos((cs) => cs.filter((_, j) => j !== i))}
+                  onAgregar={(c) => setPatchCaballos((cs) => [...cs, c])}
+                />
+              </fieldset>
+
+              {/* Cupos por grupo (tabla_grupos) */}
+              <fieldset className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                <legend className="px-1 text-[9px] font-black uppercase tracking-wider text-slate-400">🎟️ Cupos por Grupo (tabla_grupos)</legend>
+                {patchCupos.length === 0 ? (
+                  <p className="rounded border border-dashed border-slate-300 bg-white p-2 text-center text-[10px] font-semibold text-slate-400">
+                    Sin grupos activos. Los cupos se asignan al crear grupos de venta.
+                  </p>
+                ) : (
+                  <div className="space-y-1">
+                    {patchCupos.map((g, i) => (
+                      <div key={String(g.grupo_id)} className="grid grid-cols-[1fr_5rem_5rem] items-center gap-1">
+                        <span className="min-w-0 truncate text-[11px] font-bold uppercase text-slate-700">{g.grupo_nombre || "Grupo"}</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={g.cupos ?? ""}
+                          onChange={(e) => setPatchCupos((gs) => gs.map((x, j) => (j === i ? { ...x, cupos: parseNum(e.target.value) } : x)))}
+                          className="w-full rounded border border-line bg-white px-1.5 py-1 text-right text-[11px] font-black text-slate-900 outline-none"
+                          title="Cupos de tablas asignados a este grupo"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          value={g.max ?? ""}
+                          onChange={(e) => setPatchCupos((gs) => gs.map((x, j) => (j === i ? { ...x, max: parseNum(e.target.value) || null } : x)))}
+                          className="w-full rounded border border-line bg-white px-1.5 py-1 text-right text-[11px] font-black text-slate-900 outline-none"
+                          title="Máximo de tablas por jugador del grupo (vacío = sin tope)"
+                          placeholder="máx"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </fieldset>
             </div>
             <div className="flex justify-end gap-2 border-t border-line bg-gray-50 px-4 py-3">
               <Button variant="ghost" size="sm" onClick={() => setEditando(null)}>Cancelar</Button>
-              <Button size="md" onClick={guardarEdicion}>💾 Guardar</Button>
+              <Button size="md" onClick={guardarEdicion}>💾 Corregir y guardar</Button>
             </div>
           </div>
         </div>
@@ -419,11 +570,9 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
     <div className="legacy-impresion-container p-2">
       <style dangerouslySetInnerHTML={{ __html: `
         .legacy-impresion-container { font-family: system-ui, Arial, sans-serif; color: #0f172a; background: #eef2f7; padding: 14px;}
-        .hoja-legacy { display: grid; grid-template-columns: repeat(1, 1fr); gap: 9px; background: #fff; padding: 10px; border-radius: 12px; }
-        @media (min-width: 700px) { .hoja-legacy { grid-template-columns: repeat(2, 1fr); } }
-        @media (min-width: 1100px) { .hoja-legacy { grid-template-columns: repeat(3, 1fr); } }
+        .hoja-legacy { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; background: #fff; padding: 10px; border-radius: 12px; }
         @media print {
-          .hoja-legacy { display: grid !important; grid-template-columns: repeat(5, 1fr) !important; gap: 2.2mm !important; padding: 2mm !important; box-shadow: none !important; border-radius: 0 !important; }
+          .hoja-legacy { display: grid !important; grid-template-columns: repeat(5, minmax(0, 1fr)) !important; gap: 2.2mm !important; padding: 2mm !important; box-shadow: none !important; border-radius: 0 !important; }
           .tarjeta-legacy { break-inside: avoid; border-radius: 4px; }
         }
         .tarjeta-legacy { background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
@@ -434,14 +583,14 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
         .l2-legacy { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 3px; font-size: 8.5px; font-weight: 700; color: #cbd5e1; }
         .meta-legacy { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .fecha-legacy { margin-left: auto; white-space: nowrap; font-weight: 800; color: #7dd3fc; }
-        .filas-legacy { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; padding: 5px 7px; min-height: 0; }
-        .fila-legacy { display: flex; align-items: center; gap: 6px; line-height: 1.1; min-height: 0; margin: 1.5px 0; }
+        .filas-legacy { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; gap: 3px; padding: 5px 7px; min-height: 0; overflow: hidden; }
+        .fila-legacy { display: flex; align-items: center; gap: 6px; line-height: 1.2; min-height: 0; }
         .num-legacy { width: 1.4em; height: 1.4em; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 0.95em; flex: none; line-height: 1; }
         .cab-legacy { flex: 1; font-weight: 700; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; }
         .cab-legacy.ret-legacy { color: #dc2626; text-decoration: line-through; }
         .mon-legacy { font-weight: 800; color: #475569; white-space: nowrap; font-size: 0.95em; }
         .mon-legacy.cero-legacy { color: #94a3b8; }
-        .pie-legacy { display: flex; justify-content: space-between; align-items: center; gap: 6px; border-top: 1px solid #e2e8f0; background: #f8fafc; padding: 5px 8px; font-size: 8.5px; font-weight: 700; color: #475569; white-space: nowrap; }
+        .pie-legacy { display: flex; justify-content: space-between; align-items: center; gap: 6px; border-top: 1.5px solid #94a3b8; background: #f1f5f9; padding: 5px 8px; font-size: 8.5px; font-weight: 700; color: #475569; white-space: nowrap; position: relative; z-index: 2; }
         .pie-legacy b { color: #047857; font-size: 10px; }
       `}} />
 
@@ -485,20 +634,20 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
                         {nac !== "VE" && (
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
                             <Flag nac={nac} size={12} withName={false} />
-                          </div>
+                        </div>
                         )}
                         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nombre}</span>
                       </span>
                       <span className={`mon-legacy ${valor === 0 ? 'cero-legacy' : ''}`}>
-                        {valor === 0 ? "–" : `US $ ${fmtMoney(valor, "")}`}
+                        {valor === 0 ? "–" : `${fmtValor(valor)}`}
                       </span>
                     </div>
                   );
                 })}
               </div>
               <div className="pie-legacy">
-                <span>Σ SUMA <b>US $ {fmtMoney(suma, "")}</b></span>
-                <span>PREMIO/TABLA <b>US $ {fmtMoney(t.premio_recalculado ?? 0, "")}</b></span>
+                <span>Σ SUMA <b>{fmtValor(suma)}</b></span>
+                <span>PREMIO/TABLA <b>{fmtValor(t.premio_recalculado ?? 0)}</b></span>
               </div>
             </div>
           );

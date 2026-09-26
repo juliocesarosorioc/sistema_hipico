@@ -10,6 +10,9 @@ import {
   agregarClientesGrupo,
   asignarPrincipalUnico,
   crearGrupo,
+  crearTipoJugada,
+  actualizarTipoJugada,
+  toggleTipoJugadaActivo,
   eliminarGrupoRpc,
   guardarConveniosGrupo,
   listarClientesLigeros,
@@ -110,6 +113,8 @@ export function GruposModule() {
   const [formPermiteCruces, setFormPermiteCruces] = useState(true);
   const [formDiaInicio, setFormDiaInicio] = useState("1");
   const [formDiaFin, setFormDiaFin] = useState("7");
+  const [nuevoTipo, setNuevoTipo] = useState("");
+  const [editandoTipo, setEditandoTipo] = useState<TipoJugadaRow | null>(null);
 
   const recargar = useCallback(async () => {
     setCargando(true);
@@ -117,7 +122,7 @@ export function GruposModule() {
       listarGruposAdmin(true),
       listarClientesLigeros(true),
       listarMembresias(true),
-      listarTiposJugadas(),
+      listarTiposJugadas(false),
     ]);
     setGrupos(gs);
     setClientes(cs);
@@ -330,6 +335,35 @@ export function GruposModule() {
     const r = await guardarConveniosGrupo(grupoConvenio, filas);
     if (!r.ok) return toast(r.error ?? "Error al guardar convenios.", "error");
     toast(`Convenios guardados (${filas.length} tipo(s) de jugada).`, "success");
+  };
+
+  const crearTipo = async () => {
+    const nombre = nuevoTipo.trim().toUpperCase();
+    if (!nombre) return toast("Indique el nombre del tipo de jugada.", "warning");
+    const r = await crearTipoJugada(nombre);
+    if (!r.ok) return toast(r.error ?? "Error al crear el tipo de jugada.", "error");
+    toast(`Tipo de jugada "${nombre}" creado.`, "success");
+    setNuevoTipo("");
+    void recargar();
+  };
+
+  const guardarTipo = async () => {
+    if (!editandoTipo) return;
+    const nombre = editandoTipo.nombre.trim().toUpperCase();
+    if (!nombre) return toast("El nombre no puede quedar vacío.", "warning");
+    const r = await actualizarTipoJugada(editandoTipo.id, { nombre });
+    if (!r.ok) return toast(r.error ?? "Error al actualizar.", "error");
+    toast(`Tipo de jugada renombrado a "${nombre}".`, "success");
+    setEditandoTipo(null);
+    void recargar();
+  };
+
+  const toggleTipo = async (t: TipoJugadaRow) => {
+    const activo = t.activo !== true;
+    const r = await toggleTipoJugadaActivo(t.id, activo);
+    if (!r.ok) return toast(r.error ?? "Error al cambiar estado.", "error");
+    toast(`Tipo de jugada "${t.nombre}" ${activo ? "activo" : "inactivo"}.`, activo ? "success" : "warning");
+    void recargar();
   };
 
   const inp =
@@ -584,9 +618,82 @@ export function GruposModule() {
               )}
             </div>
           </div>
-        </div>
 
-        {/* ---------------- Clientes por Grupo ---------------- */}
+          {/* ---------------- Tipos de Jugada (CRUD) ---------------- */}
+          <div className="rounded-2xl border border-line bg-white p-4">
+            <h3 className="mb-2 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">
+              <i className="fas fa-dice mr-1 text-amber-500"></i> Tipos de Jugada
+              <p className="mt-1 text-[10px] font-normal normal-case text-slate-400">
+                Tipos que alimentan los convenios por grupo. Los inactivos no aparecen en la edición de convenios.
+              </p>
+            </h3>
+            <div className="flex items-center gap-2">
+              <input
+                value={nuevoTipo}
+                onChange={(e) => setNuevoTipo(e.target.value.toUpperCase())}
+                onKeyDown={(e) => e.key === "Enter" && void crearTipo()}
+                placeholder="Nuevo tipo (ej: POLLAS)"
+                className={inp + " flex-1 uppercase"}
+              />
+              <Button size="sm" onClick={() => void crearTipo()}>
+                <i className="fas fa-plus mr-1"></i> Crear
+              </Button>
+            </div>
+            <div className="mt-3 flex max-h-56 flex-col gap-1.5 overflow-y-auto pr-1">
+              {tipos.length === 0 ? (
+                <p className="text-xs italic text-slate-400">Sin tipos de jugada.</p>
+              ) : (
+                tipos.map((t) => (
+                  <div key={String(t.id)} className="flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-2 py-1.5">
+                    <div className="min-w-0 flex-1">
+                      {editandoTipo && String(editandoTipo.id) === String(t.id) ? (
+                        <input
+                          value={editandoTipo.nombre}
+                          onChange={(e) => setEditandoTipo({ ...editandoTipo, nombre: e.target.value.toUpperCase() })}
+                          onKeyDown={(e) => e.key === "Enter" && void guardarTipo()}
+                          className={inp + " py-1 uppercase"}
+                          autoFocus
+                        />
+                      ) : (
+                        <>
+                          <span className="text-xs font-bold uppercase text-slate-700">{t.nombre}</span>
+                          {t.activo !== false ? (
+                            <span className="ml-1 rounded bg-emerald-100 px-1 py-0.5 text-[9px] font-black text-emerald-700">ACTIVO</span>
+                          ) : (
+                            <span className="ml-1 rounded bg-red-100 px-1 py-0.5 text-[9px] font-black text-red-600">INACTIVO</span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    {editandoTipo && String(editandoTipo.id) === String(t.id) ? (
+                      <>
+                        <Button size="sm" onClick={() => void guardarTipo()}>
+                          <i className="fas fa-save"></i>
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setEditandoTipo(null)}>
+                          <i className="fas fa-times"></i>
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="rounded px-1.5 py-1 text-xs font-bold text-slate-600 hover:bg-slate-200" onClick={() => setEditandoTipo(t)} title="Renombrar">
+                          <i className="fas fa-edit"></i>
+                        </button>
+                        <button
+                          className={`rounded px-1.5 py-1 text-xs font-bold ${t.activo !== false ? "text-emerald-600 hover:bg-emerald-50" : "text-red-500 hover:bg-red-50"}`}
+                          onClick={() => void toggleTipo(t)}
+                          title={t.activo !== false ? "Desactivar" : "Activar"}
+                        >
+                          <i className={`fas ${t.activo !== false ? "fa-toggle-on" : "fa-toggle-off"}`}></i>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
         <div className="h-fit rounded-2xl border border-line bg-white p-4">
           <h3 className="mb-4 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">
             <i className="fas fa-user-tag mr-1 text-slate-400"></i> Clientes por Grupo (un cliente puede estar en

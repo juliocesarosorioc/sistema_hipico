@@ -12,8 +12,8 @@ export const CLUB_NOMBRE = "Club del Dinero";
 export type PlantillaWsp = {
   id: string;
   label: string;
-  /** Grupo de la plantilla: "envio" (selector individual) o "reporte". */
-  grupo: "envio" | "reporte";
+  /** Grupo de la plantilla: "envio" (selector individual), "reporte" o "tablas". */
+  grupo: "envio" | "reporte" | "tablas";
   variables: string;
   txt: string;
   /** Solo las creadas por el usuario se pueden eliminar. */
@@ -44,7 +44,7 @@ const CLAVE_PLANTILLAS = "sistema-hipico:whatsapp-plantillas";
 /** Compat: el legacy guardaba en esta clave (grupo "Plantillas del Centro WhatsApp"). */
 const CLAVE_MSJ_LEGACY = "club_mensajes_whatsapp";
 
-export const VARIABLES_WSP = ["{nombre}", "{saldo}", "{aval}", "{fecha}", "{club}", "{lineas}", "{balance}"];
+export const VARIABLES_WSP = ["{nombre}", "{saldo}", "{aval}", "{fecha}", "{club}", "{lineas}", "{balance}", "{totales}", "{hipodromos}"];
 
 export const PLANTILLAS_DEFAULT: PlantillaWsp[] = [
   {
@@ -88,6 +88,20 @@ export const PLANTILLAS_DEFAULT: PlantillaWsp[] = [
     grupo: "reporte",
     variables: "{fecha} {club} {lineas} {balance}",
     txt: "📊 *REPORTE DE SALDOS - {club}*\n📅 Fecha: {fecha}\n\n{lineas}💰 *BALANCE GLOBAL (A favor de los clientes):* $ {balance}",
+  },
+  {
+    id: "tablas_matriz",
+    label: "Tablas Fijas (matriz)",
+    grupo: "tablas",
+    variables: "{fecha} {lineas} {totales}",
+    txt: "🏇 *TABLAS FIJAS PUBLICADAS* 📅 {fecha}\n\n{lineas}\n🧮 *TOTAL EJEMPLARES:* {totales}\n\n📌 NORMAS: válida solo para la carrera y el ejemplar indicados. Presente en caja.",
+  },
+  {
+    id: "tablas_reporte",
+    label: "Reporte de Tablas",
+    grupo: "tablas",
+    variables: "{fecha} {lineas}",
+    txt: "📊 *REPORTE DE TABLAS* 📅 {fecha}\n\n{lineas}\n📌 NORMAS: reporte de control interno de tablas fijas.",
   },
 ];
 
@@ -199,6 +213,19 @@ export function reemplazarVars(txt: string, c: ClienteWsp | null): string {
     .replace(/\{aval\}/g, fmtUSD(c?.aval))
     .replace(/\{fecha\}/g, fechaHoy())
     .replace(/\{club\}/g, CLUB_NOMBRE);
+}
+
+/** Reemplazo genérico de variables para plantillas de TABLAS (matriz/reporte). */
+export function reemplazarVarsTablas(txt: string, vars: Record<string, string>): string {
+  return txt.replace(/\{(\w+)\}/g, (_, k: string) =>
+    k in vars ? vars[k] : `{${k}}`
+  );
+}
+
+/** Texto de una plantilla por id (con preferencia a la persistida por el usuario). */
+export function plantillaPorId(id: string): string {
+  const p = cargarPlantillas().find((x) => x.id === id);
+  return p?.txt ?? "";
 }
 
 // ============================================================

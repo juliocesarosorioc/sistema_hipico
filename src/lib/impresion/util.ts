@@ -77,6 +77,21 @@ export function mon(v: number | string, m?: string | null): string {
   return s.indexOf("VES") >= 0 || s === "BS" ? `Bs ${fmt(v)}` : `$ ${fmt(v)}`;
 }
 
+/**
+ * Valor SIN símbolo de moneda ("1,23"). La moneda se estipula según el grupo
+ * que juega el usuario (t.moneda): los montos se imprimen limpios y el dígito
+ * de moneda se muestra en la leyenda del encabezado de cada tarjeta.
+ */
+export function monSinSimb(v: number | string): string {
+  return fmt(v);
+}
+
+/** Código corto de la moneda (USD / BS) para la leyenda del grupo. */
+export function monCode(m?: string | null): string {
+  const s = String(m || "USD").toUpperCase();
+  return s.indexOf("VES") >= 0 || s === "BS" ? "BS" : "USD";
+}
+
 /** dd/mm/aaaa desde ISO (o — si falta). */
 export function fmtFecha(d?: string | null): string {
   if (!d) return "—";

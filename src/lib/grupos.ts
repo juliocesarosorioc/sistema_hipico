@@ -188,10 +188,25 @@ export async function listarGruposAdmin(force = false): Promise<GrupoRow[]> {
 
 export async function crearGrupo(datos: Partial<GrupoRow>): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  const filaOk = { ...datos, activo: true } as Record<string, unknown>;
   try {
-    const { error } = await supabase.from("grupos_venta").insert([{ ...datos, activo: true } as Record<string, unknown>]);
-    if (error) return { ok: false, error: error.message };
+    const { error } = await supabase.from("grupos_venta").insert([filaOk]);
+    if (error) {
+      // Fallback a la RPC del legacy (js/grupos.js): club_guardar_grupo.
+      const rpc = await supabase.rpc("club_guardar_grupo", {
+        p_nombre: String(datos.nombre ?? ""),
+        p_moneda: datos.moneda ?? "USD",
+        p_cupo_tabla: datos.cupo_tabla ?? 100,
+        p_comision: datos.comision_default ?? 2.5,
+        p_responsable: datos.responsable ?? null,
+        p_cuenta: datos.cuenta_bancaria ?? null,
+        p_principal: Boolean(datos.es_principal),
+        p_activo: true,
+      });
+      if (rpc.error) return { ok: false, error: rpc.error.message };
+    }
     cacheGrupos = null;
+    void registrarAuditoria("GRUPO", "CREAR", datos.nombre ? `Grupo creado: ${datos.nombre}` : "Grupo creado");
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -205,11 +220,42 @@ export async function actualizarGrupo(
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
     const { error } = await supabase.from("grupos_venta").update(patch).eq("id", id);
-    if (error) return { ok: false, error: error.message };
+    if (error) {
+      // Fallback a la RPC del legacy (js/grupos.js): club_actualizar_grupo.
+      const rpc = await supabase.rpc("club_actualizar_grupo", {
+        p_id: id,
+        p_nombre: patch.nombre ?? null,
+        p_moneda: patch.moneda ?? null,
+        p_cupo_tabla: patch.cupo_tabla ?? null,
+        p_comision: patch.comision_default ?? null,
+        p_responsable: patch.responsable ?? null,
+        p_cuenta: patch.cuenta_bancaria ?? null,
+        p_principal: patch.es_principal ?? null,
+        p_activo: patch.activo ?? null,
+      });
+      if (rpc.error) return { ok: false, error: rpc.error.message };
+    }
     cacheGrupos = null;
+    void registrarAuditoria("GRUPO", "ACTUALIZAR", `Grupo ${id} actualizado.`);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Registro best-effort de operaciones en `auditoria` (misma tabla del legacy). */
+export async function registrarAuditoria(
+  modulo: string,
+  accion: string,
+  detalle: string
+): Promise<void> {
+  if (!supabase) return;
+  try {
+    await supabase.from("auditoria").insert([
+      { modulo, accion, detalle: String(detalle).slice(0, 500), fecha: new Date().toISOString() },
+    ] as Record<string, unknown>[]);
+  } catch {
+    /* la tabla o el RLS pueden impedirlo; no bloquea la operación */
   }
 }
 
@@ -257,8 +303,13 @@ export async function eliminarGrupoRpc(id: string | number): Promise<{ ok: boole
     const { error: e2 } = await supabase.from("clientes_grupos").delete().eq("grupo_id", id);
     if (e2) return { ok: false, error: e2.message };
     const { error: e3 } = await supabase.from("grupos_venta").delete().eq("id", id);
-    if (e3) return { ok: false, error: e3.message };
+    if (e3) {
+      // Fallback a la RPC del legacy (js/grupos.js): club_eliminar_grupo.
+      const rpc = await supabase.rpc("club_eliminar_grupo", { p_id: id });
+      if (rpc.error) return { ok: false, error: rpc.error.message };
+    }
     cacheGrupos = null;
+    void registrarAuditoria("GRUPO", "ELIMINAR", `Grupo ${id} eliminado.`);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -395,12 +446,13 @@ export type TipoJugadaRow = {
   permite_cruces?: boolean | null;
 };
 
-export async function listarTiposJugadas(): Promise<TipoJugadaRow[]> {
+export async function listarTiposJugadas(soloActivos = true): Promise<TipoJugadaRow[]> {
   if (!supabase) return [];
   try {
-    const { data, error } = await supabase.from("tipos_jugadas").select("*").eq("activo", true).order("nombre");
-    if (error) throw error;
-    return (data ?? []) as TipoJugadaRow[];
+    const q = supabase.from("tipos_jugadas").select("*");
+    const r = soloActivos ? await q.eq("activo", true).order("nombre") : await q.order("nombre");
+    if (r.error) throw r.error;
+    return (r.data ?? []) as TipoJugadaRow[];
   } catch {
     return [];
   }
@@ -441,6 +493,113 @@ export async function guardarConveniosGrupo(
       .from("convenio_tipo_grupo")
       .upsert(payload, { onConflict: "tipo_jugada_id,grupo_id" });
     if (error) return { ok: false, error: error.message };
+    void registrarAuditoria("CONVENIO", "GUARDAR", `Convenios del grupo ${grupoId}: ${filas.length} tipo(s).`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// H1 · Cupos por grupo de una Tabla Fija (tabla_grupos)
+// ---------------------------------------------------------------------------
+
+export type CupoTablaGrupo = {
+  id?: string | number;
+  tabla_id: string | number;
+  grupo_id: string | number;
+  grupo_nombre?: string | null;
+  cupos?: number | null;
+  max?: number | null;
+  cantidad_vendida?: number;
+};
+
+/** Cupos por grupo de una tabla (tabla_grupos, orden alfabético por grupo). */
+export async function listarCuposTabla(tablaId: string | number): Promise<CupoTablaGrupo[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("tabla_grupos")
+      .select("id, tabla_id, grupo_id, grupo_nombre, cupos, max, cantidad_vendida")
+      .eq("tabla_id", String(tablaId));
+    if (error) throw error;
+    return (data ?? []) as CupoTablaGrupo[];
+  } catch {
+    return [];
+  }
+}
+
+/** UPSERT de cupos por grupo de una tabla (clave única tabla_id+grupo_id). */
+export async function guardarCuposTabla(
+  tablaId: string | number,
+  filas: Array<{ grupo_id: string | number; cupos: number | null; max: number | null }>
+): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  const payload = filas.map((f) => ({
+    tabla_id: String(tablaId),
+    grupo_id: f.grupo_id,
+    cupos: f.cupos ?? 0,
+    max: f.max,
+  }));
+  try {
+    const { error } = await supabase
+      .from("tabla_grupos")
+      .upsert(payload, { onConflict: "tabla_id,grupo_id" });
+    if (error) return { ok: false, error: error.message };
+    void registrarAuditoria("TABLA_GRUPOS", "GUARDAR", `Cupos de la tabla ${tablaId}: ${filas.length} grupo(s).`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// H4 · CRUD de Tipos de Jugada (tipos_jugadas)
+// ---------------------------------------------------------------------------
+
+/** Crea un tipo de jugada (con activo=true). */
+export async function crearTipoJugada(nombre: string): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  try {
+    const { error } = await supabase
+      .from("tipos_jugadas")
+      .insert([{ nombre: String(nombre ?? "").trim().toUpperCase(), activo: true, comision_porcentaje: 0 }]);
+    if (error) return { ok: false, error: error.message };
+    void registrarAuditoria("TIPOS_JUGADAS", "CREAR", `Tipo de jugada creado: ${nombre}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Actualiza nombre / % por defecto de un tipo de jugada. */
+export async function actualizarTipoJugada(
+  id: string | number,
+  patch: { nombre?: string; comision_porcentaje?: number | null; permite_cruces?: boolean | null }
+): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  try {
+    const datos: Record<string, unknown> = {};
+    if (patch.nombre != null) datos.nombre = String(patch.nombre).trim().toUpperCase();
+    if (patch.comision_porcentaje != null) datos.comision_porcentaje = patch.comision_porcentaje;
+    if (patch.permite_cruces != null) datos.permite_cruces = patch.permite_cruces;
+    if (!Object.keys(datos).length) return { ok: true };
+    const { error } = await supabase.from("tipos_jugadas").update(datos).eq("id", id);
+    if (error) return { ok: false, error: error.message };
+    void registrarAuditoria("TIPOS_JUGADAS", "ACTUALIZAR", `Tipo de jugada ${id} actualizado.`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Activa/desactiva un tipo de jugada (los inactivos no se listan en convenios). */
+export async function toggleTipoJugadaActivo(id: string | number, activo: boolean): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  try {
+    const { error } = await supabase.from("tipos_jugadas").update({ activo }).eq("id", id);
+    if (error) return { ok: false, error: error.message };
+    void registrarAuditoria("TIPOS_JUGADAS", "TOGGLE", `Tipo de jugada ${id} → ${activo ? "activo" : "inactivo"}.`);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

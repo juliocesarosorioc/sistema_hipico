@@ -479,8 +479,8 @@ export function TablasModule(props: Props) {
               onClick={() => setModoManual((m) => !m)}
               className={`m-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-wide shadow-md transition-colors ${
                 modoManual
-                  ? "bg-cyan-600 text-white hover:bg-cyan-700"
-                  : "border border-cyan-300 bg-cyan-50 text-cyan-700 hover:bg-cyan-100"
+                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                  : "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
               }`}
               title="Modo Manual: permite registrar carreras vacías escritas a mano sin depender de la Gaceta IA."
             >
@@ -489,7 +489,7 @@ export function TablasModule(props: Props) {
             <button
               type="button"
               onClick={pegarDesdeGaceta}
-              className="m-1.5 whitespace-nowrap rounded-lg bg-cyan-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-cyan-700"
+              className="m-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-emerald-700"
               title="Ir al módulo de Gacetas IA (las carreras se extraen desde la IA)"
             >
               📋 Pegar desde Gaceta

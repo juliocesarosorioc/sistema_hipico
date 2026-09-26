@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { colorDeNumero, textoDeNumero, parseNum, OPCIONES_NACIONALIDAD, type DraftCarrera, type EjemplarTabla } from "@/lib/tablas/tipos";
+import { colorDeNumero, textoDeNumero, parseNum, OPCIONES_NACIONALIDAD, SUPERFICIES, type DraftCarrera, type EjemplarTabla } from "@/lib/tablas/tipos";
 import { Flag } from "@/components/ui/BanderaPais"; // Inyectamos la bandera
+import { EditorCaballos } from "@/components/tablas/EditorCaballos";
 
 type Props = {
   draft: DraftCarrera;
@@ -16,6 +17,14 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
   const [nuevoNom, setNuevoNom] = useState("");
   const [nuevaNac, setNuevaNac] = useState("VE");
   const [nuevoValor, setNuevoValor] = useState("");
+  const [corrigiendo, setCorrigiendo] = useState<DraftCarrera | null>(null);
+
+  const aplicarCorreccion = (nd: DraftCarrera) => setCorrigiendo({ ...nd, caballos: nd.caballos.map((c) => ({ ...c })) });
+  const guardarCorreccion = () => {
+    if (corrigiendo) onChange(corrigiendo);
+    setCorrigiendo(null);
+    window.dispatchEvent(new CustomEvent("toast", { detail: { msg: "✅ Borrador corregido.", tipo: "success" } }));
+  };
 
   const suma = draft.caballos.reduce((a, c) => a + (parseNum(c.valor_ejemplar) || 0), 0);
 
@@ -128,7 +137,7 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
         <div className="mt-0.5 flex items-center justify-between rounded px-1.5 py-px leading-none bg-white/20">
           <span className="text-[8px] font-black uppercase tracking-wider opacity-90">💰 Monto a Pagar / Tabla</span>
           <span className="flex items-center gap-0.5 text-sm font-black leading-none">
-            US $<input type="number" step="0.01" value={draft.premio} onChange={(e) => set({ premio: e.target.value })} className="w-14 rounded bg-transparent text-right font-black outline-none text-white placeholder:text-white/40" />
+            <input type="number" step="0.01" value={draft.premio} onChange={(e) => set({ premio: e.target.value })} className="w-14 rounded bg-transparent text-right font-black outline-none text-white placeholder:text-white/40" />
           </span>
         </div>
       </div>
@@ -137,6 +146,15 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
       <div className="flex items-center justify-between px-1.5 pb-0.5 pt-1 text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none bg-slate-50 border-b border-slate-100">
         <span>🐴 Ejemplares</span>
         <div className="flex items-center gap-2">
+          {/* BOTÓN CORREGIR TABLA */}
+          <button
+            type="button"
+            onClick={() => aplicarCorreccion(draft)}
+            title="Corregir la tabla (ejemplares, montos, distancia, superficie…)"
+            className="bg-indigo-600 text-white px-2 py-0.5 rounded-sm font-black shadow-sm hover:bg-indigo-700"
+          >
+            ✏️ Corregir
+          </button>
           {/* BOTÓN ML */}
           <button 
             type="button" 
@@ -165,12 +183,12 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
           return (
             <div key={i} className="grid items-center rounded border border-slate-200 bg-slate-50 px-1 py-px" style={{ gridTemplateColumns: "1.75rem 1fr auto 3.25rem auto" }}>
               <span
-                className="flex h-7 w-7 shrink-0 flex-none items-center justify-center text-center text-[10px] font-bold"
+                className="flex h-7 w-7 shrink-0 flex-none items-center justify-center text-center text-[11px] font-bold"
                 style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
               >
                 {c.numero}
               </span>
-              <span className="min-w-0 truncate px-1 text-[11px] font-bold uppercase text-slate-800 flex items-center gap-1">
+              <span className="min-w-0 truncate px-1 text-[13px] font-bold uppercase leading-none text-slate-800 flex items-center gap-1">
                 {c.nombre}
               </span>
               <span className="flex items-center justify-center px-1"><Flag nac={nac} size={10} withName={false} /></span>
@@ -180,7 +198,7 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
                 value={String(c.valor_ejemplar ?? "")}
                 onChange={(e) => setCaballo(i, { valor_ejemplar: e.target.value })}
                 placeholder={nac === "VE" ? "valor" : "M/L"}
-                className="w-14 rounded border border-slate-300 px-1 py-px text-right text-[11px] font-black text-blue-700 outline-none"
+                className="w-14 rounded border border-slate-300 px-1 py-px text-right text-[14px] font-black text-blue-700 outline-none"
               />
               <button type="button" onClick={() => quitarCaballo(i)} className="px-1 text-red-400 hover:text-red-600" title="Quitar ejemplar">
                 🗑️
@@ -202,17 +220,17 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
               </option>
             ))}
           </select>
-          <input type="text" inputMode="decimal" value={nuevoValor} onChange={(e) => setNuevoValor(e.target.value)} placeholder="$" className="w-14 shrink-0 rounded border border-slate-300 px-1 py-1 text-right text-sm font-black text-blue-700 outline-none" />
+          <input type="text" inputMode="decimal" value={nuevoValor} onChange={(e) => setNuevoValor(e.target.value)} placeholder="—" className="w-14 shrink-0 rounded border border-slate-300 px-1 py-1 text-right text-sm font-black text-blue-700 outline-none" />
           <button type="button" onClick={agregarEjemplar} className="shrink-0 rounded-md bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-700" title="Añadir ejemplar">
             ＋
           </button>
         </div>
       </div>
 
-      {/* Suma de la tabla (US $) */}
+      {/* Suma de la tabla (sin símbolo: la moneda se estipula por el grupo) */}
       <div className="flex items-center justify-between border-t border-slate-200 bg-white px-1.5 py-0.5">
         <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none">🧮 Suma de la Tabla</span>
-        <span className="text-xs font-black text-indigo-700">US $ {suma.toLocaleString("es-VE", { maximumFractionDigits: 2 })}</span>
+        <span className="text-xs font-black text-indigo-700">{suma.toLocaleString("es-VE", { maximumFractionDigits: 2 })}</span>
       </div>
 
       {/* Acciones */}
@@ -224,6 +242,68 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
           ✕
         </button>
       </div>
+
+      {/* MODAL CORREGIR TABLA (borrador) */}
+      {corrigiendo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 no-print">
+          <div className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
+              <h3 className="text-xs font-black uppercase">✏️ Corregir borrador — {corrigiendo.hipodromo || "Sin hipódromo"} C{corrigiendo.carrera}</h3>
+              <button type="button" onClick={() => setCorrigiendo(null)} className="text-slate-300 hover:text-white">✕</button>
+            </div>
+            <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
+              <fieldset className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                <legend className="px-1 text-[9px] font-black uppercase tracking-wider text-slate-400">🏁 Carrera</legend>
+                <label className="block">
+                  <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Hipódromo</span>
+                  <input value={corrigiendo.hipodromo} onChange={(e) => aplicarCorreccion({ ...corrigiendo, hipodromo: e.target.value.toUpperCase() })} className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-bold uppercase text-slate-900 focus:outline-none" />
+                </label>
+                <label className="block">
+                  <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Carrera Nº</span>
+                  <input value={corrigiendo.carrera} onChange={(e) => aplicarCorreccion({ ...corrigiendo, carrera: e.target.value })} className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-black text-slate-900 focus:outline-none" />
+                </label>
+                <label className="block">
+                  <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Fecha (AAAA-MM-DD)</span>
+                  <input value={String(corrigiendo.fecha ?? "")} onChange={(e) => aplicarCorreccion({ ...corrigiendo, fecha: e.target.value })} placeholder="2026-09-26" className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-bold text-slate-900 focus:outline-none" />
+                </label>
+                <label className="block">
+                  <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Superficie</span>
+                  <select value={corrigiendo.superficie} onChange={(e) => aplicarCorreccion({ ...corrigiendo, superficie: e.target.value })} className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-black uppercase text-slate-900 focus:outline-none">
+                    {SUPERFICIES.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Distancia (m)</span>
+                  <input value={corrigiendo.distancia} onChange={(e) => aplicarCorreccion({ ...corrigiendo, distancia: e.target.value })} className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-bold text-slate-900 focus:outline-none" />
+                </label>
+                <label className="block">
+                  <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Monto a Pagar / Tabla</span>
+                  <input value={corrigiendo.premio} onChange={(e) => aplicarCorreccion({ ...corrigiendo, premio: e.target.value })} inputMode="decimal" className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-black text-slate-900 focus:outline-none" />
+                </label>
+              </fieldset>
+              <fieldset className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                <legend className="px-1 text-[9px] font-black uppercase tracking-wider text-slate-400">🐴 Ejemplares</legend>
+                <EditorCaballos
+                  caballos={corrigiendo.caballos}
+                  onChange={(i, patch) => aplicarCorreccion({ ...corrigiendo, caballos: corrigiendo.caballos.map((c, j) => (j === i ? { ...c, ...patch } : c)) })}
+                  onQuitar={(i) => aplicarCorreccion({ ...corrigiendo, caballos: corrigiendo.caballos.filter((_, j) => j !== i) })}
+                  onAgregar={(c) => aplicarCorreccion({ ...corrigiendo, caballos: [...corrigiendo.caballos, c] })}
+                />
+              </fieldset>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-line bg-gray-50 px-4 py-3">
+              <button type="button" onClick={() => setCorrigiendo(null)} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase text-slate-600 hover:bg-slate-100">
+                Cancelar
+              </button>
+              <button type="button" onClick={guardarCorreccion} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[10px] font-black uppercase text-white hover:bg-emerald-700">
+                💾 Guardar corrección
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import type { Orientacion } from "@/lib/impresion/util";
+import { plantillaPorId, reemplazarVarsTablas, fechaHoy } from "@/lib/whatsapp";
 
 export type ImgFormato = "PNG" | "JPG" | "PDF";
 
@@ -105,41 +106,46 @@ function fmtNum(n: number): string {
   }
 }
 
-function simb(m?: string | null): string {
-  const s = String(m ?? "USD").toUpperCase();
-  return s.indexOf("VES") >= 0 || s === "BS" ? "Bs " : "$ ";
-}
-function fechaHoy(): string {
-  const d = new Date();
-  return `${("0" + d.getDate()).slice(-2)}/${("0" + (d.getMonth() + 1)).slice(-2)}/${d.getFullYear()}`;
-}
+/** No muestra símbolo de moneda: la moneda se estipula por el grupo del usuario. */
 
-/** Texto WhatsApp de la MATRIZ (resumen por carrera). */
+/**
+ * Texto WhatsApp de la MATRIZ (resumen por carrera), generado con la plantilla
+ * editable "tablas_matriz" del Centro de WhatsApp ({fecha} {lineas} {totales}).
+ */
 export function textoWhatsAppMatriz(
   carreras: Array<{ hipodromo: string; carrera: string; superficie: string; fecha: string; moneda: string; ejemplares: unknown[]; premio: number }>,
   telefono = "584141234567"
 ): string {
-  let texto = `TABLAS FIJAS PUBLICADAS ${fechaHoy()}\n`;
-  for (const c of carreras) {
-    texto += `${c.hipodromo} C${c.carrera} · ${c.superficie || ""} · ${String(c.fecha).slice(0, 10)} · ${c.ejemplares.length} ej. · PAGO/TABLA ${simb(c.moneda)}${fmtNum(c.premio)}\n`;
+  const lineas = carreras
+    .map((c) => `${c.hipodromo} C${c.carrera} · ${c.superficie || ""} · ${String(c.fecha).slice(0, 10)} · ${c.ejemplares.length} ej. · PAGO/TABLA ${fmtNum(c.premio)}\n`)
+    .join("");
+  const totales = String(carreras.reduce((a, c) => a + (c.ejemplares?.length ?? 0), 0));
+  let plantilla = plantillaPorId("tablas_matriz");
+  if (!plantilla.trim()) {
+    plantilla = "TABLAS FIJAS PUBLICADAS {fecha}\n{lineas}\nTOTAL EJEMPLARES: {totales}\nNORMAS: válida solo para la carrera y el ejemplar indicados. Presente en caja.";
   }
-  texto += "\nNORMAS: válida solo para la carrera y el ejemplar indicados. Presente en caja.";
+  const texto = reemplazarVarsTablas(plantilla, { fecha: fechaHoy(), lineas, totales });
   window.open(`https://wa.me/${telefono}?text=${encodeURIComponent(texto)}`, "_blank");
   return texto;
 }
 
-/** Texto WhatsApp del REPORTE (resumen por jugador). */
+/**
+ * Texto WhatsApp del REPORTE (resumen por jugador), generado con la plantilla
+ * editable "tablas_reporte" del Centro de WhatsApp ({fecha} {lineas} {totales}).
+ */
 export function textoWhatsAppReporte(
   jugadores: Array<{ jugador: string; grupo: string; nivel: string; montoJugado: number; montoPagado: number }>,
   telefono = "584141234567"
 ): string {
-  let texto = `REPORTE DE TABLAS ${fechaHoy()}\n`;
-  for (const p of jugadores) {
-    texto += `${p.jugador} [${p.grupo} - ${p.nivel}] JUGADO ${fmtNum(p.montoJugado)} / PAGADO ${fmtNum(p.montoPagado)}\n`;
+  const lineas = jugadores
+    .map((p) => `${p.jugador} [${p.grupo} - ${p.nivel}] JUGADO ${fmtNum(p.montoJugado)} / PAGADO ${fmtNum(p.montoPagado)}`)
+    .join("\n");
+  const totales = fmtNum(jugadores.reduce((a, p) => a + (p.montoJugado - p.montoPagado), 0));
+  let plantilla = plantillaPorId("tablas_reporte");
+  if (!plantilla.trim()) {
+    plantilla = "REPORTE DE TABLAS {fecha}\n{lineas}\nDiferencia total: {totales}\nNORMAS: reporte de control interno de tablas fijas.";
   }
-  const dj = jugadores.reduce((a, p) => a + (p.montoJugado - p.montoPagado), 0);
-  texto += `\nDiferencia total: ${fmtNum(dj)}`;
-  texto += "\nNORMAS: reporte de control interno de tablas fijas.";
+  const texto = reemplazarVarsTablas(plantilla, { fecha: fechaHoy(), lineas, totales });
   window.open(`https://wa.me/${telefono}?text=${encodeURIComponent(texto)}`, "_blank");
   return texto;
 }

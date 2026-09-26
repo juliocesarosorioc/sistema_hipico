@@ -14,7 +14,7 @@
  */
 import { supabase } from "@/lib/supabase";
 import { parseNum } from "@/lib/tablas/tipos";
-import { esc, fsAuto, col, mon, fmt, fmtFecha, hoy, hipoKey, type Orientacion, DIM_PAGINA } from "@/lib/impresion/util";
+import { esc, fsAuto, col, fmt, monCode, fmtFecha, hoy, hipoKey, type Orientacion, DIM_PAGINA } from "@/lib/impresion/util";
 
 export type EjemplarJugador = {
   numero: string;
@@ -81,17 +81,23 @@ type TablaMetaCruda = {
 const un = (v: unknown): string => String(v ?? "").trim();
 
 /** Carga tickets + metadatos de tablas y arma el árbol jugador→grupo→nivel. */
-export async function cargarReporteJugadores(): Promise<ReporteJugadores> {
+export async function cargarReporteJugadores(filtros?: { dia?: string; hipodromo?: string }): Promise<ReporteJugadores> {
   if (!supabase) return { jugadores: [], fuente: "local", error: "Sin conexión a Supabase" };
+
+  const dia = filtros?.dia || "";
+  const hipo = filtros?.hipodromo ? String(filtros.hipodromo).toUpperCase() : "";
 
   let tickets: TicketCrudo[] = [];
   try {
-    const { data, error } = await supabase
+    let sel = supabase
       .from("tickets_apuestas")
       .select(
         "id,fecha_registro,hipodromo,carrera,ejemplar_numero,caballo,cantidad_tablas,monto_jugado,monto_decidido,cliente_juega_nombre,grupo,moneda,estado"
       )
       .order("fecha_registro");
+    if (dia) sel = sel.like("fecha_registro", `${dia}%`);
+    if (hipo) sel = sel.ilike("hipodromo", hipo);
+    const { data, error } = await sel;
     if (!error) tickets = (data ?? []) as TicketCrudo[];
   } catch {
     tickets = [];
@@ -99,10 +105,13 @@ export async function cargarReporteJugadores(): Promise<ReporteJugadores> {
 
   let tablas: TablaMetaCruda[] = [];
   try {
-    const { data, error } = await supabase
+    let sel = supabase
       .from("tablas_fijas")
       .select("id,hipodromo,carrera,fecha,fecha_creacion,distancia_carrera,superficie,moneda,caballos")
       .ilike("estado", "abierta");
+    if (dia) sel = sel.eq("fecha", dia);
+    if (hipo) sel = sel.ilike("hipodromo", hipo);
+    const { data, error } = await sel;
     if (!error) tablas = (data ?? []) as TablaMetaCruda[];
   } catch {
     tablas = [];
@@ -274,9 +283,9 @@ function resumenTableHTML(jugadores: JugadorReporte[]): string {
       `<td><span class="ir-grp">${esc(p.grupo)}</span></td>` +
       `<td><span class="ir-niv">${esc(p.nivel)}</span></td>` +
       `<td class="ir-derecha">${p.tablas}</td>` +
-      `<td class="ir-derecha">${mon(p.montoJugado, p.moneda)}</td>` +
-      `<td class="ir-derecha ir-verde">${mon(p.montoPagado, p.moneda)}</td>` +
-      `<td class="ir-derecha ${ok ? "ir-verde" : "ir-rojo"}">${mon(Math.abs(d), p.moneda)}</td>` +
+      `<td class="ir-derecha">${fmt(p.montoJugado)}</td>` +
+      `<td class="ir-derecha ir-verde">${fmt(p.montoPagado)}</td>` +
+      `<td class="ir-derecha ${ok ? "ir-verde" : "ir-rojo"}">${fmt(Math.abs(d))}</td>` +
       `<td>${ok ? '<span class="ir-est ir-est-ok">&#10003; EN ORDEN</span>' : '<span class="ir-est ir-est-at">&#9888; ATENCION</span>'}</td>` +
       "</tr>";
     tj += p.montoJugado;
@@ -304,7 +313,9 @@ function cardReporteHTML(p: JugadorReporte): string {
     fmt(p.montoJugado) +
     " &middot; P " +
     fmt(p.montoPagado) +
-    "</span></div>";
+    " &middot; [" +
+    monCode(p.moneda) +
+    "]</span></div>";
   for (const c of p.carreras) {
     const n = c.ejemplares.length || 1;
     const fs = fsAuto(c.ejemplares.length || 1);
@@ -321,9 +332,9 @@ function cardReporteHTML(p: JugadorReporte): string {
           '</span><span class="ir-cab">' +
           esc(e.nombre) +
           '</span><span class="ir-jj">' +
-          mon(e.jugado, c.moneda || p.moneda) +
+          fmt(e.jugado) +
           '</span><span class="ir-pp">' +
-          mon(e.pagado, c.moneda || p.moneda) +
+          fmt(e.pagado) +
           "</span></div>"
         );
       })
@@ -503,7 +514,7 @@ export function paginasReporteHTML(jugadores: JugadorReporte[], orientacion: Ori
       "</div>" +
       "</div>" +
       '<div class="imr-normas">NORMAS: 1) Reporte de resultado por tablas fijas publicado y no reclamado. ' +
-      "2) Los montos se expresan en la moneda de cada jugada (Bs o US$). 3) La diferencia jugado-pagado debe ser cero o positiva al cierre de carrera. " +
+      "2) Los montos no muestran símbolo de moneda: la moneda (BS/USD) se estipula según el grupo que juega el usuario. 3) La diferencia jugado-pagado debe ser cero o positiva al cierre de carrera. " +
       "4) Cualquier atencion debe reportarse al operador de taquilla antes del cobro siguiente. 5) Este reporte es de control interno.</div>" +
       "</div>";
   });

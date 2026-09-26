@@ -16,7 +16,7 @@ import { supabase } from "@/lib/supabase";
 import { normalizarFilas } from "@/lib/tablas/rpc";
 import type { EjemplarTabla } from "@/lib/tablas/tipos";
 import { parseNum } from "@/lib/tablas/tipos";
-import { esc, fsAuto, col, mon, fmt, fmtFecha, hoy, hipoKey, diaDe, MAX_N, type Orientacion, DIM_PAGINA } from "@/lib/impresion/util";
+import { esc, fsAuto, col, monSinSimb, fmt, monCode, fmtFecha, hoy, hipoKey, diaDe, MAX_N, type Orientacion, DIM_PAGINA } from "@/lib/impresion/util";
 
 export type EjemplarImpresion = {
   numero: string;
@@ -97,26 +97,38 @@ function aTablaImpresion(r: TablaRespaldo, montos: Map<string, number>): TablaIm
  *  3) respaldo del store (fuente "local").
  * Cruza además los montos jugados (tickets_apuestas) por
  * hipódromo|carrera|número para el badge ⚠ SIN APUESTAS.
+ * `filtros` restringe el SELECT (y los montos) en la BD para que el modal de
+ * impresión no traiga toda la data sin filtrar (evita el cuelgue).
  */
-export async function cargarMatrizImpresion(respaldo?: TablaRespaldo[]): Promise<MatrizImpresion> {
+export async function cargarMatrizImpresion(
+  respaldo?: TablaRespaldo[],
+  filtros?: { dia?: string; hipodromo?: string }
+): Promise<MatrizImpresion> {
+  const dia = filtros?.dia || "";
+  const hipo = filtros?.hipodromo ? String(filtros.hipodromo).toUpperCase() : "";
   let filas: TablaRespaldo[] = [];
   let error: string | undefined;
 
   if (supabase) {
-    try {
-      const rpc = await supabase.rpc("club_listar_tablas_fijas_publicadas");
-      if (!rpc.error && Array.isArray(rpc.data)) filas = normalizarFilas(rpc.data);
-    } catch {
-      /* caer al SELECT */
+    if (!dia && !hipo) {
+      try {
+        const rpc = await supabase.rpc("club_listar_tablas_fijas_publicadas");
+        if (!rpc.error && Array.isArray(rpc.data)) filas = normalizarFilas(rpc.data);
+      } catch {
+        /* caer al SELECT */
+      }
     }
     if (filas.length === 0) {
       try {
-        const sel = await supabase
+        let sel = supabase
           .from("tablas_fijas")
           .select("id,hipodromo,carrera,fecha,fecha_creacion,estado,premio_recalculado,suma_base_tabla,moneda,distancia_carrera,superficie,caballos")
           .ilike("estado", "abierta");
-        if (!sel.error) filas = (sel.data ?? []) as TablaRespaldo[];
-        else error = sel.error.message;
+        if (dia) sel = sel.eq("fecha", dia);
+        if (hipo) sel = sel.ilike("hipodromo", hipo);
+        const r = await sel;
+        if (!r.error) filas = (r.data ?? []) as TablaRespaldo[];
+        else error = r.error.message;
       } catch (e) {
         error = e instanceof Error ? e.message : String(e);
       }
@@ -130,9 +142,9 @@ export async function cargarMatrizImpresion(respaldo?: TablaRespaldo[]): Promise
   const montos = new Map<string, number>();
   if (supabase) {
     try {
-      const { data, error: eM } = await supabase
-        .from("tickets_apuestas")
-        .select("hipodromo,carrera,ejemplar_numero,monto_jugado");
+      let q = supabase.from("tickets_apuestas").select("hipodromo,carrera,ejemplar_numero,monto_jugado");
+      if (hipo) q = q.ilike("hipodromo", hipo);
+      const { data, error: eM } = await q;
       if (!eM) {
         for (const t of (data ?? []) as Array<{ hipodromo?: unknown; carrera?: unknown; ejemplar_numero?: unknown; monto_jugado?: unknown }>) {
           const k = `${claveHipoCarrera(String(t.hipodromo ?? ""), String(t.carrera ?? ""))}|${String(t.ejemplar_numero ?? "")}`;
@@ -154,6 +166,60 @@ export async function cargarMatrizImpresion(respaldo?: TablaRespaldo[]): Promise
     );
 
   return { carreras, fuente: filas.length ? "reales" : "local", error };
+}
+
+/** Carrera mínima del resumen (sólo metadatos, sin caballos ni montos). */
+export type ResumenCarrera = {
+  id: string | number;
+  hipodromo: string;
+  carrera: string;
+  fecha: string;
+  hipoId?: string | number | null;
+};
+
+/**
+ * Resumen LIGERO para el "modal previo" de impresión: SELECT de sólo
+ * metadatos (id/histódromo/carrera/fecha) sobre tablas_fijas Abierta.
+ * Rápido aunque haya miles de tablas: no arrastra caballos ni tickets.
+ * Al pulsar "Generar / Imprimir" se hace la carga pesada YA filtrada.
+ */
+export async function cargarResumenImpresion(): Promise<{
+  carreras: ResumenCarrera[];
+  fuente: "reales" | "local";
+  error?: string;
+}> {
+  let carreras: ResumenCarrera[] = [];
+  let error: string | undefined;
+  if (supabase) {
+    try {
+      const { data, error: e } = await supabase
+        .from("tablas_fijas")
+        .select("id,hipodromo,carrera,fecha,fecha_creacion,hipodromo_id")
+        .ilike("estado", "abierta");
+      if (e) error = e.message;
+      else {
+        carreras = ((data ?? []) as Array<Record<string, unknown>>)
+          .map((r) => ({
+            id: String(r.id ?? ""),
+            hipodromo: String(r.hipodromo ?? "").trim().toUpperCase() || "—",
+            carrera: String(r.carrera ?? ""),
+            fecha: String(r.fecha || r.fecha_creacion || ""),
+            hipoId: r.hipodromo_id != null ? (r.hipodromo_id as string | number) : null,
+          }))
+          .sort(
+            (a, b) =>
+              String(a.fecha).localeCompare(String(b.fecha)) ||
+              a.hipodromo.localeCompare(b.hipodromo, "es") ||
+              (parseInt(a.carrera, 10) || 0) - (parseInt(b.carrera, 10) || 0)
+          );
+      }
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  } else {
+    error = "Sin conexión a Supabase";
+  }
+  return { carreras, fuente: carreras.length ? "reales" : "local", error };
 }
 
 /* ─────────────────────────── FILTROS BIDIRECCIONALES ─────────────────────────── */
@@ -209,7 +275,7 @@ export const MATRIZ_CSS = `
 .im-ph{display:flex;align-items:center;justify-content:space-between;gap:8px;
   font-size:13px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.4px;padding:0 4px 8px;}
 .im-ph b{color:#0f172a;font-size:15px;}
-.im-hoja{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(3,1fr);gap:8px;}
+.im-hoja{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(3,1fr);gap:9px;}
 .im-tarjeta{background:#fff;border:1px solid #cbd5e1;border-radius:10px;overflow:hidden;
   display:flex;flex-direction:column;min-height:0;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.04);}
 .im-enc{background:#0f172a;color:#fff;padding:6px 8px;flex:none;}
@@ -219,10 +285,11 @@ export const MATRIZ_CSS = `
 .im-cc{background:rgba(255,255,255,.16);border-radius:6px;font-size:12px;font-weight:900;padding:1px 7px;white-space:nowrap;flex:none;}
 .im-l2{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:3px;font-size:10px;font-weight:700;color:#cbd5e1;}
 .im-meta{display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+.im-moneda-leg{flex:none;border-radius:5px;background:rgba(255,255,255,.18);padding:0 5px;font-weight:900;color:#fde68a;letter-spacing:.4px;}
 .im-fecha{margin-left:auto;white-space:nowrap;font-weight:800;color:#7dd3fc;}
-.im-filas{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;gap:1px;
-  padding:4px 7px;min-height:0;overflow:hidden;font-size:10px;}
-.im-fila{display:flex;align-items:center;gap:6px;line-height:1.15;min-height:0;}
+.im-filas{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;gap:2.5px;
+  padding:5px 7px;min-height:0;overflow:hidden;font-size:10px;}
+.im-fila{display:flex;align-items:center;gap:6px;line-height:1.2;min-height:0;}
 .im-num{flex:none;width:1.55em;height:1.55em;border-radius:5px;margin:0;padding:0;
   display:flex;align-items:center;justify-content:center;
   font-weight:900;font-size:0.98em;line-height:1;overflow:hidden;text-align:center;
@@ -238,8 +305,9 @@ export const MATRIZ_CSS = `
   font-size:8px;font-weight:900;letter-spacing:.5px;white-space:nowrap;
   box-shadow:0 1px 2px rgba(0,0,0,.15);}
 .im-pie{display:flex;justify-content:space-between;align-items:center;gap:6px;flex:none;
-  border-top:1px solid #e2e8f0;background:#f8fafc;padding:5px 8px;
-  font-size:10px;font-weight:700;color:#475569;white-space:nowrap;}
+  border-top:1.5px solid #94a3b8;background:#f1f5f9;padding:5px 8px;
+  font-size:10px;font-weight:700;color:#475569;white-space:nowrap;
+  position:relative;z-index:2;}
 .im-pie b{color:#047857;font-size:12px;}
 .im-normas{font-size:9px;color:#64748b;line-height:1.5;text-align:center;
   padding:10px 4px 0;flex:none;font-weight:600;}
@@ -250,7 +318,7 @@ export const MATRIZ_CSS = `
   .impe-root{position:absolute !important;left:0 !important;top:0 !important;width:100% !important;max-width:none !important;}
   .im-pagina{width:204mm;height:288mm;padding:2mm;break-after:page;border:none;border-radius:0;}
   .im-or-h .im-pagina{width:288mm;height:204mm;}
-  .im-hoja{grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(3,1fr);gap:2.2mm;}
+  .im-hoja{grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(3,1fr);gap:2.2mm;}
   .im-tarjeta{break-inside:avoid;border-radius:4px;}
 }
 `;
@@ -280,7 +348,7 @@ function tarjetaHTML(t: TablaImpresion): string {
         '</span><span class="im-mon' +
         (val === 0 ? " cero" : "") +
         '">' +
-        (val === 0 ? "–" : mon(val, t.moneda)) +
+        (val === 0 ? "–" : monSinSimb(val)) +
         "</span></div>"
       );
     })
@@ -299,6 +367,8 @@ function tarjetaHTML(t: TablaImpresion): string {
     esc(t.distancia) +
     " m</b> &middot; " +
     esc(t.superficie) +
+    '</span><span class="im-moneda-leg">' +
+    monCode(t.moneda) +
     '</span><span class="im-fecha">' +
     fmtFecha(t.fecha) +
     "</span></div>" +
@@ -314,9 +384,9 @@ function tarjetaHTML(t: TablaImpresion): string {
       : filas) +
     "</div>" +
     '<div class="im-pie"><span>&Sigma; SUMA <b>' +
-    mon(suma, t.moneda) +
+    monSinSimb(suma) +
     '</b></span><span>PREMIO/TABLA <b>' +
-    mon(t.premio, t.moneda) +
+    monSinSimb(t.premio) +
     "</b></span></div>" +
     "</div>"
   );
