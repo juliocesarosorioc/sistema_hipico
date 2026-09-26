@@ -1,18 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { listarTablasPublicadas } from "@/lib/tablas/rpc";
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { listarClientesVenta, type ClienteVenta } from "@/lib/grupos";
 import { colorDeNumeroGac } from "@/lib/gaceta/ui";
-import { Flag } from "@/components/ui/BanderaPais";
+import { Flag, normalizarNacionalidad } from "@/components/ui/BanderaPais";
 import { claveCelda, guardarDupleta, listarDupletasGuardadas, type CaballoDupleta, type DupletaEstado } from "@/lib/dupletas";
+import { exportarPaginas, type ImgFormato } from "@/lib/impresion/exportar";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 const inputSel =
   "w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-xs font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500";
+
+const esHipoAmericano = (h: string) => /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN/i.test(h);
+const casaDe = (h: string) => (esHipoAmericano(h) ? "USA" : "VE");
+
+/** True si el ejemplar es de otra nacionalidad que el hipódromo (mostrar bandera). */
+const banderaNoCasa = (nac?: string | null, hipo = "") => normalizarNacionalidad(nac) !== casaDe(hipo);
 
 export function DupletaModule() {
   const [carreras, setCarreras] = useState<TablaFijaRow[]>([]);
@@ -27,6 +34,7 @@ export function DupletaModule() {
   const [precio, setPrecio] = useState("10");
 
   const [matriz, setMatriz] = useState<DupletaEstado | null>(null);
+  const tablaRef = useRef<HTMLTableElement | null>(null);
   const [modal, setModal] = useState<{ c1: string; c2: string } | null>(null);
   const [q, setQ] = useState("");
   const [abiertoCli, setAbiertoCli] = useState(false);
@@ -225,7 +233,7 @@ export function DupletaModule() {
             <input type="number" value={premio} onChange={(e) => setPremio(e.target.value)} placeholder="200" className={inputSel} />
           </label>
           <label className="block">
-            <span className={inputLbl}>Precio por cuadro ($)</span>
+            <span className={inputLbl}>Precio por cuadro</span>
             <input type="number" value={precio} onChange={(e) => setPrecio(e.target.value)} placeholder="10" className={inputSel} />
           </label>
           <Button variant="default" size="md" onClick={generar}>🧮 Generar Matriz</Button>
@@ -265,20 +273,24 @@ export function DupletaModule() {
         <div className="rounded-2xl border border-line bg-surface p-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">
-              {matriz.hipodromo} · {matriz.fecha} · Carrera {matriz.carrera1} × Carrera {matriz.carrera2} — PAGA ${matriz.premio.toLocaleString("es-VE")}
+              {matriz.hipodromo} · {matriz.fecha} · Carrera {matriz.carrera1} × Carrera {matriz.carrera2} — PAGA {matriz.premio.toLocaleString("es-VE")}
             </h4>
-            <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black text-orange-700">
-              🧾 {vendidas.length} cuadro(s) vendido(s) · $ {totalVentas.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
+            <span className="flex items-center gap-2">
+              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black text-orange-700">
+                🧾 {vendidas.length} cuadro(s) vendido(s) · {totalVentas.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
+              </span>
+              <Button variant="outline" size="sm" onClick={() => void exportarMatriz("PNG")}>🖼️ PNG</Button>
+              <Button variant="default" size="sm" onClick={() => void exportarMatriz("PDF")}>📄 PDF</Button>
             </span>
           </div>
 
           <div className="overflow-auto rounded-xl border border-line bg-white shadow-sm" style={{ maxHeight: "calc(100vh - 300px)" }}>
-            <table className="min-w-max border-separate border-spacing-0 text-[10px] leading-tight">
+            <table ref={tablaRef} className="min-w-max border-separate border-spacing-0 text-[10px] leading-tight">
               <thead>
                 <tr>
                   <th className="sticky left-0 top-0 z-40 min-w-[120px] border-b border-r border-slate-300 bg-indigo-600 p-1 text-left align-bottom text-[9px] font-black text-white">
                     <span className="block">DUPLETA</span>
-                    <span className="block text-[14px] text-emerald-300">PAGA ${matriz.premio.toLocaleString("es-VE")}</span>
+                    <span className="block text-[14px] text-emerald-300">PAGA {matriz.premio.toLocaleString("es-VE")}</span>
                     <span className="mt-0.5 block text-[7px] font-bold uppercase text-indigo-200">clic en ejemplar = retira</span>
                   </th>
                   {matriz.caballos1.map((cb, i1) => {
@@ -291,14 +303,17 @@ export function DupletaModule() {
                           title={cb.retirado ? "Quitar retirado" : "Marcar retirado"}
                           className={`block w-full rounded px-0.5 py-0.5 text-left ${cb.retirado ? "bg-yellow-400 text-slate-900" : "text-white"}`}
                         >
-                          <span className="flex items-center gap-0.5">
-                            <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded text-[8px] font-black" style={{ backgroundColor: col.bg, color: col.fg }}>
+                          <span className="flex items-center gap-1">
+                            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: col.bg, color: col.fg }}>
                               {cb.numero}
                             </span>
-                            {cb.retirado && <span className="text-[10px] font-black">✖</span>}
+                            {cb.retirado && <span className="text-[13px] font-black">✖</span>}
                           </span>
                           <span className="mt-0.5 block break-words leading-tight">
-                            <Flag nac={cb.nacionalidad} size={11} withName={false} /> {cb.nombre}
+                            {cb.nombre}
+                            {banderaNoCasa(cb.nacionalidad, matriz.hipodromo) && (
+                              <Flag nac={cb.nacionalidad} size={15} withName={false} className="ml-1" />
+                            )}
                           </span>
                         </button>
                       </th>
@@ -316,21 +331,26 @@ export function DupletaModule() {
                           type="button"
                           onClick={() => toggleRetirado(2, cb2.numero)}
                           title={cb2.retirado ? "Quitar retirado" : "Marcar retirado"}
-                          className={`flex w-full items-center gap-1 rounded px-0.5 py-0.5 ${cb2.retirado ? "bg-yellow-400 text-slate-900" : "text-slate-800"}`}
+                          className={`flex w-full items-start justify-start gap-1 rounded px-0.5 py-0.5 text-left ${cb2.retirado ? "bg-yellow-400 text-slate-900" : "text-slate-800"}`}
                         >
-                          <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded text-[8px] font-black" style={{ backgroundColor: izq.bg, color: izq.fg }}>
+                          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: izq.bg, color: izq.fg }}>
                             {cb2.numero}
                           </span>
-                          {cb2.retirado && <span className="text-[10px] font-black">✖</span>}
-                          <span className="min-w-0 flex-1 break-words leading-tight">{cb2.nombre}</span>
+                          {cb2.retirado && <span className="text-[13px] font-black">✖</span>}
+                          <span className="break-words leading-tight">
+                            {cb2.nombre}
+                            {banderaNoCasa(cb2.nacionalidad, matriz.hipodromo) && (
+                              <Flag nac={cb2.nacionalidad} size={15} withName={false} className="ml-1" />
+                            )}
+                          </span>
                         </button>
                       </th>
                       {matriz.caballos1.map((cb1, i1) => {
                         const bloqueada = cb1.retirado || cb2.retirado;
                         const celda = matriz.celdas[claveCelda(cb1.numero, cb2.numero)];
-                        const damero = !bloqueada && !celda?.vendida && (i1 + i2) % 2 === 1;
+                        const zebra = !bloqueada && !celda?.vendida && i2 % 2 === 1;
                         return (
-                          <td key={`c-${cb1.numero}-${cb2.numero}`} className={`w-[72px] min-w-[72px] border-b border-r border-slate-400 p-0.5 ${bloqueada ? "bg-slate-200" : celda?.vendida ? "bg-orange-400" : damero ? "bg-slate-100" : "bg-white"}`}>
+                          <td key={`c-${cb1.numero}-${cb2.numero}`} className={`w-[72px] min-w-[72px] border-b border-r border-slate-400 p-0.5 ${bloqueada ? "bg-slate-200" : celda?.vendida ? "bg-orange-400" : zebra ? "bg-slate-100" : "bg-white"}`}>
                             {bloqueada ? (
                               <div className="flex h-11 items-center justify-center text-[6px] font-black tracking-[0.35em] text-slate-500" style={{ writingMode: "vertical-rl" }}>
                                 N O V A L E
@@ -340,10 +360,10 @@ export function DupletaModule() {
                                 type="button"
                                 onClick={() => abrirCelda(cb1.numero, cb2.numero)}
                                 title={`${cb1.nombre} × ${cb2.nombre}`}
-                                className={`block h-11 w-full text-left transition-colors ${damero ? "hover:bg-indigo-50" : "hover:bg-indigo-100"} ${celda?.vendida ? "text-slate-900" : "text-slate-600"}`}
+                                className={`block h-11 w-full text-center transition-colors ${zebra ? "hover:bg-indigo-50" : "hover:bg-indigo-100"} ${celda?.vendida ? "text-slate-900" : "text-slate-600"}`}
                               >
                                 <span className="block text-[18px] font-black leading-none">
-                                  {celda?.vendida ? `$${(celda.precio ?? matriz.precio).toLocaleString("es-VE", { maximumFractionDigits: 2 })}` : `$${matriz.precio.toLocaleString("es-VE", { maximumFractionDigits: 2 })}`}
+                                  {celda?.vendida ? (celda.precio ?? matriz.precio).toLocaleString("es-VE", { maximumFractionDigits: 2 }) : matriz.precio.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
                                 </span>
                                 <span className="block truncate text-[9px] font-bold leading-tight">{celda?.vendida ? (celda.cliente_nombre || "—") : "clic ▼"}</span>
                               </button>
@@ -405,7 +425,7 @@ export function DupletaModule() {
             </label>
 
             <label className="mb-4 block">
-              <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Precio del cuadro ($)</span>
+              <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Precio del cuadro</span>
               <input
                 type="number"
                 value={precioCelda}
@@ -433,6 +453,66 @@ export function DupletaModule() {
   function saldoDe(c: ClienteVenta): string {
     const s = c.saldo_actual != null ? Number(c.saldo_actual) : 0;
     return s.toLocaleString("es-VE", { maximumFractionDigits: 2 });
+  }
+
+  /** Exporta la matriz en UNA hoja horizontal (A4 paisaje): pdf o png. */
+  async function exportarMatriz(formato: ImgFormato) {
+    if (!matriz || !tablaRef.current) return;
+    const tabla = tablaRef.current;
+    let root: HTMLDivElement | null = null;
+    try {
+      // medidas naturales de la `<table>` (todo el contenido, sin scroll).
+      const natW = tabla.scrollWidth;
+      const natH = tabla.scrollHeight;
+
+      // Hoja A4 paisaje @150dpi (210×148 mm) con cabecera.
+      const PAGE_W = 1240;
+      const PAGE_H = 877;
+      const PAD = 28;
+      const FONDO = 58;
+      const areaW = PAGE_W - PAD * 2;
+      const areaH = PAGE_H - PAD * 2 - FONDO;
+      const escala = Math.min(areaW / natW, areaH / natH, 1);
+
+      root = document.createElement("div");
+      root.style.cssText = "position:absolute;left:-99999px;top:0;z-index:-1;";
+      const page = document.createElement("div");
+      page.className = "im-pagina";
+      page.style.cssText = `width:${PAGE_W}px;height:${PAGE_H}px;overflow:hidden;background:#fff;box-sizing:border-box;padding:${PAD}px;display:flex;flex-direction:column;`;
+
+      const header = document.createElement("div");
+      header.style.cssText = `height:${FONDO}px;display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px;`;
+      const titulo = document.createElement("div");
+      titulo.style.cssText =
+        "width:60px;height:60px;background:#4f46e5;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:15px;letter-spacing:0.06em;";
+      titulo.textContent = "DUPLETA";
+      const info = document.createElement("div");
+      info.style.cssText = "flex:1;min-width:0;font-family:Inter,ui-sans-serif,system-ui,sans-serif;";
+      const infoT = document.createElement("div");
+      infoT.style.cssText = "font-size:16px;font-weight:800;text-transform:uppercase;letter-spacing:0.02em;color:#0f172a;";
+      infoT.textContent = `${matriz.hipodromo} · ${matriz.fecha} · Carrera ${matriz.carrera1} × Carrera ${matriz.carrera2}`;
+      const infoS = document.createElement("div");
+      infoS.style.cssText = "font-size:12px;font-weight:700;color:#64748b;margin-top:3px;";
+      infoS.textContent = `PAGA ${matriz.premio.toLocaleString("es-VE")} · ${vendidas.length} cuadro(s) vendido(s) · ${totalVentas.toLocaleString("es-VE", { maximumFractionDigits: 2 })}`;
+      info.append(infoT, infoS);
+      header.append(titulo, info);
+
+      const wrapper = document.createElement("div");
+      wrapper.style.cssText = `width:${Math.round(natW * escala)}px;height:${Math.round(natH * escala)}px;overflow:hidden;transform:scale(${escala});transform-origin:top left;background:#fff;`;
+      const clon = tabla.cloneNode(true) as HTMLElement;
+      wrapper.appendChild(clon);
+
+      page.append(header, wrapper);
+      root.appendChild(page);
+      document.body.appendChild(root);
+
+      const base = `dupleta_${matriz.hipodromo.replace(/[^a-z0-9]+/gi, "_")}_C${matriz.carrera1}xC${matriz.carrera2}`;
+      await exportarPaginas(root, formato, base, { orientacion: "horizontal" });
+      root.remove();
+    } catch {
+      root?.remove?.();
+      toast("No se pudo exportar la dupleta.", "error");
+    }
   }
 }
 
