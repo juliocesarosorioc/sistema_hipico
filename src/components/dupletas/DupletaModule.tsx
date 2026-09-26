@@ -44,11 +44,11 @@ export function DupletaModule() {
     const ctx = document.createElement("canvas").getContext("2d");
     if (!ctx) return 120;
     ctx.font = "900 13px Inter, ui-sans-serif, system-ui, sans-serif";
-    let w = 72;
+    let w = 88;
     for (const c of matriz.caballos1) {
-      const txt = ctx.measureText(String(c.nombre || "").trim()).width;
-      const band = banderaNoCasa(c.nacionalidad, matriz.hipodromo) ? 20 : 0;
-      w = Math.max(w, Math.ceil(txt + band + 12));
+      const txt = ctx.measureText(String(c.nombre || "").trim()).width * 1.12;
+      const band = banderaNoCasa(c.nacionalidad, matriz.hipodromo) ? 22 : 0;
+      w = Math.max(w, Math.ceil(txt + band + 16));
     }
     return w;
   }, [matriz]);
