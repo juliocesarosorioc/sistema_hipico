@@ -13,7 +13,7 @@ import { exportarPaginas, type ImgFormato } from "@/lib/impresion/exportar";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 const inputSel =
-  "w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-xs font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500";
+  "w-full rounded-lg border border-line bg-surface px-2 py-1 text-xs font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500";
 
 const esHipoAmericano = (h: string) => /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN/i.test(h);
 const casaDe = (h: string) => (esHipoAmericano(h) ? "USA" : "VE");
@@ -247,10 +247,10 @@ export function DupletaModule() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-2xl border border-line bg-surface p-4">
-        <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-600">🎯 Dupleta — Matriz de apuestas cruzadas</h3>
+      <div className="rounded-2xl border border-line bg-surface p-3">
+        <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-600">🎯 Dupleta — Matriz de apuestas cruzadas</h3>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-x-3 gap-y-1.5 md:grid-cols-2 xl:grid-cols-4">
           <label className="block">
             <span className={inputLbl}>Hipódromo</span>
             <select value={hipodromo} onChange={(e) => { setHipodromo(e.target.value); setDia(""); setCarrera1(""); setCarrera2(""); }} className={inputSel}>
@@ -292,7 +292,7 @@ export function DupletaModule() {
           </label>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-end gap-3">
+        <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1.5">
           <label className="block">
             <span className={inputLbl}>💵 Premio (PAGA X)</span>
             <input type="number" value={premio} onChange={(e) => setPremio(e.target.value)} placeholder="200" className={inputSel} />
