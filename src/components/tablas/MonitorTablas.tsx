@@ -583,11 +583,11 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
         .l1-legacy { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
         .hip-legacy { font-size: 13px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
         .cc-legacy { background: rgba(255,255,255,.16); border-radius: 6px; font-size: 14px; font-weight: 900; padding: 1px 7px; white-space: nowrap; flex: none; }
-        .l2-legacy { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 3px; font-size: 10.5px; font-weight: 700; color: #cbd5e1; }
+        .l2-legacy { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 1.5px; font-size: 10.5px; font-weight: 700; color: #cbd5e1; }
         .meta-legacy { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .fecha-legacy { margin-left: auto; white-space: nowrap; font-weight: 800; color: #7dd3fc; }
-        .filas-legacy { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; gap: 3px; padding: 5px 7px; min-height: 0; overflow: hidden; }
-        .fila-legacy { display: flex; align-items: center; gap: 6px; line-height: 1.2; min-height: 0; border-radius: 3px; }
+        .filas-legacy { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; gap: 1px; padding: 3px 6px; min-height: 0; overflow: hidden; }
+        .fila-legacy { display: flex; align-items: center; gap: 4px; line-height: 1; min-height: 0; border-radius: 3px; }
         .fila-legacy:nth-of-type(odd) { background: #eef2f7; }
         .num-legacy { width: 1.4em; height: 1.4em; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 0.95em; flex: none; line-height: 1; }
         .cab-legacy { flex: 1; font-weight: 700; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; }

@@ -220,7 +220,8 @@ export async function cargarMatrizImpresion(
   filtros?: { dia?: string; hipodromo?: string }
 ): Promise<MatrizImpresion> {
   const dia = filtros?.dia || "";
-  const hipo = filtros?.hipodromo ? String(filtros.hipodromo).toUpperCase() : "";
+  const hipoRaw = filtros?.hipodromo ? String(filtros.hipodromo) : "";
+  const hipo = hipoKey(hipoRaw);
   let filas: TablaRespaldo[] = [];
   let error: string | undefined;
 
@@ -243,7 +244,7 @@ export async function cargarMatrizImpresion(
           .from("tablas_fijas")
           .select("id,hipodromo,carrera,fecha,fecha_creacion,estado,premio_recalculado,suma_base_tabla,moneda,distancia_carrera,superficie,caballos")
           .ilike("estado", "abierta");
-        if (hipo) sel = sel.ilike("hipodromo", hipo);
+        if (hipoRaw) sel = sel.ilike("hipodromo", hipoRaw);
         const r = await sel;
         if (!r.error) filas = (r.data ?? []) as TablaRespaldo[];
         else error = r.error.message;
@@ -261,7 +262,7 @@ export async function cargarMatrizImpresion(
   if (supabase) {
     try {
       let q = supabase.from("tickets_apuestas").select("hipodromo,carrera,ejemplar_numero,monto_jugado");
-      if (hipo) q = q.ilike("hipodromo", hipo);
+      if (hipoRaw) q = q.ilike("hipodromo", hipoRaw);
       const { data, error: eM } = await q;
       if (!eM) {
         for (const t of (data ?? []) as Array<{ hipodromo?: unknown; carrera?: unknown; ejemplar_numero?: unknown; monto_jugado?: unknown }>) {
@@ -419,13 +420,13 @@ export const MATRIZ_CSS = `
 .im-hip{font-size:15px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1;}
 .im-cc{background:rgba(255,255,255,.16);border-radius:6px;font-size:16px;font-weight:900;padding:1px 7px;white-space:nowrap;flex:none;}
-.im-l2{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:3px;font-size:12px;font-weight:700;color:#cbd5e1;}
+.im-l2{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:1.5px;font-size:12px;font-weight:700;color:#cbd5e1;}
 .im-meta{display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
 .im-moneda-leg{flex:none;border-radius:5px;background:rgba(255,255,255,.18);padding:0 5px;font-weight:900;color:#fde68a;letter-spacing:.4px;}
 .im-fecha{margin-left:auto;white-space:nowrap;font-weight:800;color:#7dd3fc;}
-.im-filas{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;gap:2.5px;
-  padding:5px 7px;min-height:0;overflow:hidden;font-size:10px;}
-.im-fila{display:flex;align-items:center;gap:6px;line-height:1.2;min-height:0;border-radius:3px;}
+.im-filas{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;gap:1px;
+  padding:3px 6px;min-height:0;overflow:hidden;font-size:10px;}
+.im-fila{display:flex;align-items:center;gap:4px;line-height:1;min-height:0;border-radius:3px;}
 .im-fila:nth-child(odd){background:#eef2f7;}
 .im-num{flex:none;width:1.55em;height:1.55em;border-radius:5px;margin:0;padding:0;
   display:flex;align-items:center;justify-content:center;
