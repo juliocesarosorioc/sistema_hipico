@@ -14,6 +14,7 @@ const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
     titulo: "Módulo Hípico",
     items: [
       { href: "/inicio", emoji: "🏠", txt: "Inicio / Dashboard" },
+      { href: "/carreras", emoji: "🏁", txt: "Carreras del Día" },
       { href: "/gestion-jugadas", emoji: "🎟️", txt: "Gestión de Jugadas" },
       { href: "/tablas-fijas", emoji: "📋", txt: "Tablas Fijas" },
       { href: "/dupleta", emoji: "🎯", txt: "Dupletas" },

@@ -10,10 +10,11 @@ import { useHipodromosActivos } from "@/store/useHipodromosStore";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { SemaforoCarreras } from "@/components/gestion/SemaforoCarreras";
 import { Button } from "@/components/ui/Button";
-import { fmtMoney } from "@/lib/tablas/tipos";
+import { fmtMoney, type EjemplarTabla } from "@/lib/tablas/tipos";
 import { listarClientesVenta, listarGruposVenta, saldoDeCliente, type ClienteVenta } from "@/lib/grupos";
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/lib/tablas/rpc";
 import { registrarCarreraProgramada } from "@/lib/carreras-dia";
+import { listarCarrerasCentrales, type CarreraCentral } from "@/lib/carreras/central";
 import { hoyLocal } from "@/lib/gaceta/programa";
 
 type FilaCarga = {
@@ -68,6 +69,7 @@ export function GestionJugadasModule() {
   const hipodromos = useHipodromosActivos();
   const [fecha, setFecha] = useState(() => hoyLocal());
   const [carrerasPorDia, setCarrerasPorDia] = useState<number[]>([]);
+  const [carrerasCentrales, setCarrerasCentrales] = useState<CarreraCentral[]>([]);
   const [carrera, setCarrera] = useState(1);
   const [modoManual, setModoManual] = useState(false);
   const [retirados, setRetirados] = useState("");
@@ -124,6 +126,23 @@ export function GestionJugadasModule() {
       .catch(() => {
         /* sin red → semáforo vacío */
         if (vivo) setCarrera(1);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [fecha, hipodromo]);
+
+  // Carreras del Día (editor central): ejemplares inscritos de la jornada — la
+  // carrera puede existir SOLO aquí (registrada por número, sin tabla fija ni
+  // gaceta). Alimenta el panel de ejemplares y la auto-resolución del CABALLO.
+  useEffect(() => {
+    let vivo = true;
+    listarCarrerasCentrales(fecha, hipodromo)
+      .then((r) => {
+        if (vivo && r.ok) setCarrerasCentrales(r.datos ?? []);
+      })
+      .catch(() => {
+        /* sin red → se conserva el panel de tabla fija */
       });
     return () => {
       vivo = false;
@@ -192,6 +211,27 @@ export function GestionJugadasModule() {
     [tablas, hipodromo, carrera]
   );
 
+  /** Carrera central (Carreras del Día) que corresponde a la vista actual. */
+  const centralDeCarrera = useMemo(
+    () => carrerasCentrales.find((c) => Number(c.carrera) === Number(carrera)) ?? null,
+    [carrerasCentrales, carrera]
+  );
+
+  /**
+   * Ejemplares inscritos de la carrera en pantalla: prioriza la tabla fija
+   * publicada; si la carrera solo existe en Carreras del Día, usa sus
+   * ejemplares registrados (pueden ser solo número, sin nombre).
+   */
+  const caballosDeCarrera = useMemo<EjemplarTabla[]>(() => {
+    if (tablaDeCarrera?.caballos?.length) return tablaDeCarrera.caballos;
+    const cs = centralDeCarrera?.caballos ?? [];
+    return cs.map((c) => ({
+      numero: c.numero,
+      nombre: c.nombre ?? "",
+      nacionalidad: c.nacionalidad ?? null,
+    }));
+  }, [tablaDeCarrera, centralDeCarrera]);
+
   const monedaFmt = (n: number): string =>
     fmtMoney(Number.isFinite(n) ? n : 0, MONEDA);
 
@@ -231,16 +271,16 @@ export function GestionJugadasModule() {
     return <span className={`truncate text-[9px] font-bold ${cls}`}>Saldo {monedaFmt(saldo)}</span>;
   };
 
-  /** Ejemplar de la tabla publicada que coincide con el número tipeado en CABALLO. */
+  /** Ejemplar que coincide con el número tipeado en CABALLO (tabla fija o central). */
   const ejemplarResuelto = useMemo(
     () => (texto: string) => {
       const t = texto.trim();
-      if (!t || !tablaDeCarrera?.caballos?.length) return null;
+      if (!t || !caballosDeCarrera.length) return null;
       const n = t.replace(/[^0-9]/g, "");
       if (!n) return null;
-      return tablaDeCarrera.caballos.find((c) => String(c.numero) === n) ?? null;
+      return caballosDeCarrera.find((c) => String(c.numero) === n) ?? null;
     },
-    [tablaDeCarrera]
+    [caballosDeCarrera]
   );
 
   /** Convierte el comando de un ticket de vuelta a una fila editable (jugada + monto + caballo + clientes). */
@@ -534,28 +574,28 @@ export function GestionJugadasModule() {
           </span>
         </div>
 
-        {/* Panel lateral de ejemplares (solo si la BD registró caballos) */}
-        <div className={tablaDeCarrera?.caballos?.length ? "flex flex-col gap-3 lg:flex-row" : ""}>
-          {tablaDeCarrera?.caballos?.length && (
-            <aside className="shrink-0 rounded-xl border border-line bg-gray-50 p-2 lg:w-[28%]">
+        {/* Panel lateral de ejemplares (tabla fija publicada o Carreras del Día) */}
+        <div className={caballosDeCarrera.length ? "flex flex-col gap-3 lg:flex-row" : ""}>
+          {caballosDeCarrera.length > 0 && (
+            <aside className="shrink-0 rounded-xl border border-line bg-white p-2 shadow-sm lg:w-[28%]">
               <p className="px-1 pb-1.5 text-[10px] font-black uppercase tracking-wide text-slate-500">
-                🐎 Ejemplares registrados ({tablaDeCarrera.caballos.length})
+                🐎 Ejemplares registrados ({caballosDeCarrera.length})
               </p>
               <ul className="max-h-72 divide-y divide-line/60 overflow-y-auto">
-                {tablaDeCarrera.caballos.map((c, ci) => (
+                {caballosDeCarrera.map((c, ci) => (
                   <li
                     key={ci}
                     className="flex items-center gap-2 px-1 py-1"
                     style={{ backgroundColor: c.retirado ? "rgba(239,68,68,0.06)" : undefined }}
                   >
                     <span
-                      className="flex h-7 w-7 shrink-0 flex-none items-center justify-center text-center text-[10px] font-bold text-white"
-                      style={{ backgroundColor: cardColor(c.numero) }}
+                      className="flex h-7 w-7 shrink-0 flex-none items-center justify-center text-center text-[10px] font-bold"
+                      style={{ backgroundColor: cardColor(c.numero), color: textoColor(c.numero) }}
                     >
                       {c.numero}
                     </span>
                     <span className={`min-w-0 flex-1 truncate text-xs font-bold uppercase ${c.retirado ? "text-red-500 line-through" : "text-slate-700"}`}>
-                      {c.nombre}
+                      {c.nombre || <span className="text-slate-400">Nº {c.numero} (sin nombre)</span>}
                     </span>
                     {c.retirado && (
                       <span className="shrink-0 rounded bg-red-100 px-1 text-[8px] font-black text-red-600">RET</span>
@@ -565,7 +605,7 @@ export function GestionJugadasModule() {
               </ul>
             </aside>
           )}
-          <div className={tablaDeCarrera?.caballos?.length ? "min-w-0 flex-1" : "w-full"}>
+          <div className={caballosDeCarrera.length ? "min-w-0 flex-1" : "w-full"}>
             <table className="w-full table-fixed border-collapse text-xs">
           <thead>
             <tr className="bg-slate-800 text-white">
@@ -833,24 +873,21 @@ export function GestionJugadasModule() {
               </div>
               <div className="rounded-lg border border-line">
                 <p className="border-b border-line bg-gray-50 px-3 py-1.5 text-[10px] font-bold uppercase text-slate-500">
-                  Ejemplares inscritos ({tablaDeCarrera?.caballos?.length ?? 0})
+                  Ejemplares inscritos ({caballosDeCarrera.length})
                 </p>
                 <ul className="max-h-56 divide-y divide-line/60 overflow-y-auto px-3 py-1">
-                  {(tablaDeCarrera?.caballos?.length
-                    ? tablaDeCarrera.caballos
-                    : []
-                  ).map((c, i) => (
+                  {caballosDeCarrera.map((c, i) => (
                     <li key={i} className="flex items-center gap-2 py-1.5 text-sm">
-                      <span className="flex h-7 w-7 shrink-0 flex-none items-center justify-center rounded text-center text-[10px] font-bold text-white"
-                        style={{ backgroundColor: c.retirado ? "#ef4444" : cardColor(c.numero) }}>
+                      <span className="flex h-7 w-7 shrink-0 flex-none items-center justify-center rounded text-center text-[10px] font-bold"
+                        style={{ backgroundColor: c.retirado ? "#ef4444" : cardColor(c.numero), color: c.retirado ? "#ffffff" : textoColor(c.numero) }}>
                         {c.numero}
                       </span>
-                      <span className={`font-bold uppercase text-slate-800 ${c.retirado ? "line-through opacity-50" : ""}`}>{c.nombre}</span>
+                      <span className={`font-bold uppercase text-slate-800 ${c.retirado ? "line-through opacity-50" : ""}`}>{c.nombre || `Nº ${c.numero}`}</span>
                       {c.retirado && <span className="ml-auto rounded bg-red-100 px-1.5 text-[9px] font-black text-red-600">RET.</span>}
                     </li>
                   ))}
-                  {!tablaDeCarrera && (
-                    <li className="py-4 text-center text-xs italic text-slate-400">Sin tabla publicada para esta carrera en el módulo Tablas Fijas.</li>
+                  {!caballosDeCarrera.length && (
+                    <li className="py-4 text-center text-xs italic text-slate-400">Sin ejemplares registrados para esta carrera (ni en Tablas Fijas ni en Carreras del Día).</li>
                   )}
                 </ul>
               </div>
@@ -868,7 +905,7 @@ export function GestionJugadasModule() {
         onCerrar={() => setModalResultados(false)}
         hipodromo={hipodromo}
         carrera={String(carrera)}
-        caballos={tablaDeCarrera?.caballos ?? null}
+        caballos={caballosDeCarrera.length ? caballosDeCarrera : null}
         onConfirmar={(r) => {
           setUltimaPizarra(r);
           setModalResultados(false);
@@ -1037,6 +1074,14 @@ function round2(n: number): number {
 function cardColor(n: string | number): string {
   const i = ((Number(n) || 1) - 1) % 14;
   return ["#dc2626", "#f5f5f4", "#2563eb", "#facc15", "#16a34a", "#111827", "#f97316", "#f9a8d4", "#22d3ee", "#9333ea", "#6b7280", "#4ade80", "#92400e", "#7f1d1d"][i < 0 ? 0 : i];
+}
+
+/** Fondos claros de `cardColor` que necesitan texto oscuro para leerse. */
+const FONDOS_CLAROS = new Set(["#f5f5f4", "#facc15", "#f9a8d4", "#22d3ee", "#4ade80"]);
+
+/** Texto legible según el fondo de `cardColor` (los claros llevan texto oscuro). */
+function textoColor(n: string | number): string {
+  return FONDOS_CLAROS.has(cardColor(n)) ? "#111827" : "#ffffff";
 }
 
 export default GestionJugadasModule;

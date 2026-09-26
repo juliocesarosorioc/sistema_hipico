@@ -822,6 +822,16 @@ alter table public.resultados_carreras
     add column if not exists dividendos    jsonb,   -- { win, place, show, puestos, marcas }: pago por $1
     add column if not exists orden_llegada jsonb;   -- [{numero, puesto}] orden de llegada oficial
 
+-- Carreras del Día (editor central): permite registrar una carrera con
+-- ejemplares SOLO por número (sin nombres) y datos de la prueba (distancia,
+-- superficie, premio, hora). `caballos` = [{numero, nombre?, nacionalidad?}].
+alter table public.resultados_carreras
+    add column if not exists caballos   jsonb not null default '[]'::jsonb,
+    add column if not exists distancia  text,
+    add column if not exists superficie text,
+    add column if not exists premio     numeric,
+    add column if not exists hora       text;
+
 alter table public.resultados_carreras disable row level security;
 grant all privileges on table public.resultados_carreras to anon, authenticated, service_role;
 
