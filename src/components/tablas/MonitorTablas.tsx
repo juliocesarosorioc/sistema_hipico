@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import type { StoredTablaFija } from "@/store/useTablasFijasStore";
 import { colorDeNumero, textoDeNumero, fmtMoney, sumaBase, parseNum, SUPERFICIES, type EjemplarTabla } from "@/lib/tablas/tipos";
 import { hoyLocal } from "@/lib/gaceta/programa";
-import { Flag } from "@/components/ui/BanderaPais";
+import { Flag, normalizarNacionalidad } from "@/components/ui/BanderaPais";
 import { Button } from "@/components/ui/Button";
 import { Guard } from "@/components/ui/Guard";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
@@ -581,20 +581,22 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
         .tarjeta-legacy { background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
         .enc-legacy { background: #0f172a; color: #fff; padding: 6px 8px; }
         .l1-legacy { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
-        .hip-legacy { font-size: 10px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
-        .cc-legacy { background: rgba(255,255,255,.16); border-radius: 6px; font-size: 10px; font-weight: 900; padding: 1px 7px; white-space: nowrap; flex: none; }
-        .l2-legacy { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 3px; font-size: 8.5px; font-weight: 700; color: #cbd5e1; }
+        .hip-legacy { font-size: 13px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+        .cc-legacy { background: rgba(255,255,255,.16); border-radius: 6px; font-size: 14px; font-weight: 900; padding: 1px 7px; white-space: nowrap; flex: none; }
+        .l2-legacy { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 3px; font-size: 10.5px; font-weight: 700; color: #cbd5e1; }
         .meta-legacy { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .fecha-legacy { margin-left: auto; white-space: nowrap; font-weight: 800; color: #7dd3fc; }
         .filas-legacy { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; gap: 3px; padding: 5px 7px; min-height: 0; overflow: hidden; }
-        .fila-legacy { display: flex; align-items: center; gap: 6px; line-height: 1.2; min-height: 0; }
+        .fila-legacy { display: flex; align-items: center; gap: 6px; line-height: 1.2; min-height: 0; border-radius: 3px; }
+        .fila-legacy:nth-of-type(odd) { background: #eef2f7; }
         .num-legacy { width: 1.4em; height: 1.4em; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 0.95em; flex: none; line-height: 1; }
         .cab-legacy { flex: 1; font-weight: 700; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; }
         .cab-legacy.ret-legacy { color: #dc2626; text-decoration: line-through; }
+        .band-legacy { flex: none; display: inline-flex; margin-left: 2px; }
         .mon-legacy { font-weight: 800; color: #475569; white-space: nowrap; font-size: 0.95em; }
         .mon-legacy.cero-legacy { color: #94a3b8; }
         .pie-legacy { display: flex; justify-content: space-between; align-items: center; gap: 6px; border-top: 1.5px solid #94a3b8; background: #f1f5f9; padding: 5px 8px; font-size: 8.5px; font-weight: 700; color: #475569; white-space: nowrap; position: relative; z-index: 2; }
-        .pie-legacy b { color: #047857; font-size: 10px; }
+        .pie-legacy b { color: #047857; font-size: 15px; }
       `}} />
 
       <div className="hoja-legacy">
@@ -620,11 +622,10 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
                   <div style={{ textAlign: "center", color: "#dc2626", fontWeight: "bold", padding: "10px 0" }}>⚠️ SIN APUESTAS</div>
                 )}
                 {ejemplares.map((c, i) => {
-                  let nac = c.nacionalidad ? String(c.nacionalidad).toUpperCase() : "";
-                  if (!nac) {
-                    const esAmericano = /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN/i.test(t.hipodromo || "");
-                    nac = esAmericano ? "US" : "VE";
-                  }
+                  const hipoAmericano = /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN/i.test(t.hipodromo || "");
+                  const casa = hipoAmericano ? "USA" : "VE";
+                  const nacRaw = c.nacionalidad ? String(c.nacionalidad) : "";
+                  const nac = nacRaw.trim() ? normalizarNacionalidad(nacRaw) : casa;
                   const valor = parseNum(c.valor_ejemplar);
 
                   return (
@@ -633,12 +634,12 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
                         {c.numero}
                       </span>
                       <span className={`cab-legacy ${c.retirado ? 'ret-legacy' : ''}`}>
-                        {nac !== "VE" && (
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <Flag nac={nac} size={12} withName={false} />
-                        </div>
-                        )}
                         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nombre}</span>
+                        {nac !== casa && (
+                          <span className="band-legacy">
+                            <Flag nac={nac} size={10} withName={false} />
+                          </span>
+                        )}
                       </span>
                       <span className={`mon-legacy ${valor === 0 ? 'cero-legacy' : ''}`}>
                         {valor === 0 ? "–" : `${fmtValor(valor)}`}
@@ -648,7 +649,7 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
                 })}
               </div>
               <div className="pie-legacy">
-                <span>PREMIO/TABLA <b>{fmtValor(t.premio_recalculado ?? 0)}</b></span>
+                <span>PREMIO/TABLA</span><b>{fmtValor(t.premio_recalculado ?? 0)}</b>
               </div>
             </div>
           );
