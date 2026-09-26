@@ -41,30 +41,29 @@ export function DupletaModule() {
   const areaRef = useRef<HTMLDivElement | null>(null);
   const [ajuste, setAjuste] = useState<{ w: number; h: number; escala: number } | null>(null);
 
-  // Ancho uniforme de cada columna horizontal: nombre (hasta 2 líneas) y, si aplica, bandera+nacionalidad.
+  // Ancho uniforme de cada columna horizontal: nombre distribuido en 2 líneas y, si aplica, bandera+nacionalidad.
   const anchoCol = useMemo(() => {
-    if (!matriz || typeof document === "undefined") return 110;
+    if (!matriz || typeof document === "undefined") return 90;
     const ctx = document.createElement("canvas").getContext("2d");
-    if (!ctx) return 110;
-    ctx.font = "900 13px Inter, ui-sans-serif, system-ui, sans-serif";
-    let w = 88;
+    if (!ctx) return 90;
+    ctx.font = "900 17px Inter, ui-sans-serif, system-ui, sans-serif";
+    let w = 70;
     for (const c of matriz.caballos1) {
       const txt = ctx.measureText(String(c.nombre || "").trim()).width * 1.12;
-      w = Math.max(w, Math.ceil(txt + 16));
+      w = Math.max(w, Math.ceil(txt / 2) + 14);
       if (banderaNoCasa(c.nacionalidad, matriz.hipodromo)) {
-        const nac = paisDe(c.nacionalidad);
-        w = Math.max(w, Math.ceil(ctx.measureText(nac).width + 24));
+        w = Math.max(w, Math.ceil(ctx.measureText(paisDe(c.nacionalidad)).width + 26));
       }
     }
     return w;
   }, [matriz]);
 
-  // Ancho de la columna vertical: número + nombre en UNA línea y, si aplica, bandera+nacionalidad.
+  // Ancho de la columna vertical: número con nombre en UNA línea y, si aplica, bandera+nacionalidad debajo del nombre.
   const anchoIzq = useMemo(() => {
-    if (!matriz || typeof document === "undefined") return 140;
+    if (!matriz || typeof document === "undefined") return 160;
     const ctx = document.createElement("canvas").getContext("2d");
-    if (!ctx) return 140;
-    ctx.font = "900 13px Inter, ui-sans-serif, system-ui, sans-serif";
+    if (!ctx) return 160;
+    ctx.font = "900 17px Inter, ui-sans-serif, system-ui, sans-serif";
     let max = 0;
     for (const c of matriz.caballos2) {
       max = Math.max(max, ctx.measureText(String(c.nombre || "").trim()).width * 1.12);
@@ -72,7 +71,7 @@ export function DupletaModule() {
         max = Math.max(max, ctx.measureText(paisDe(c.nacionalidad)).width + 24);
       }
     }
-    return Math.max(140, Math.ceil(max + 16) + 36);
+    return Math.max(160, Math.ceil(max + 14) + 34);
   }, [matriz]);
 
   // Ajusta la tabla al área visible para nunca tener barras de desplazamiento.
@@ -377,11 +376,11 @@ export function DupletaModule() {
                             </span>
                             {cb.retirado && <span className="text-[13px] font-black">✖</span>}
                           </span>
-                          <span className="block break-words text-[13px] leading-tight" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                          <span className="block break-words text-[17px] font-black leading-tight" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                             {cb.nombre}
                           </span>
                           {banderaNoCasa(cb.nacionalidad, matriz.hipodromo) && (
-                            <span className="mt-0.5 block whitespace-nowrap text-[10px] font-bold text-indigo-100">
+                            <span className="mt-0.5 block whitespace-nowrap text-[11px] font-bold text-indigo-100">
                               <Flag nac={cb.nacionalidad} size={12} withName={false} className="mr-1" />
                               {paisDe(cb.nacionalidad)}
                             </span>
@@ -402,23 +401,23 @@ export function DupletaModule() {
                           type="button"
                           onClick={() => toggleRetirado(2, cb2.numero)}
                           title={cb2.retirado ? "Quitar retirado" : "Marcar retirado"}
-                          className={`flex w-full flex-col rounded px-0.5 py-0.5 text-left ${cb2.retirado ? "bg-yellow-400 text-slate-900" : "text-slate-800"}`}
+                          className={`flex w-full items-center gap-1 rounded px-0.5 py-0.5 text-left ${cb2.retirado ? "bg-yellow-400 text-slate-900" : "text-slate-800"}`}
                         >
-                          <span className="flex w-full items-start justify-start gap-1">
-                            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: izq.bg, color: izq.fg }}>
-                              {cb2.numero}
-                            </span>
-                            {cb2.retirado && <span className="text-[13px] font-black">✖</span>}
-                            <span className="min-w-0 flex-1 whitespace-nowrap text-[13px] leading-tight">
+                          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: izq.bg, color: izq.fg }}>
+                            {cb2.numero}
+                          </span>
+                          {cb2.retirado && <span className="text-[13px] font-black">✖</span>}
+                          <span className="flex min-w-0 flex-1 flex-col">
+                            <span className="whitespace-nowrap text-[17px] font-black leading-tight">
                               {cb2.nombre}
                             </span>
+                            {banderaNoCasa(cb2.nacionalidad, matriz.hipodromo) && (
+                              <span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[11px] font-bold text-slate-500">
+                                <Flag nac={cb2.nacionalidad} size={12} withName={false} />
+                                {paisDe(cb2.nacionalidad)}
+                              </span>
+                            )}
                           </span>
-                          {banderaNoCasa(cb2.nacionalidad, matriz.hipodromo) && (
-                            <span className="mt-0.5 block whitespace-nowrap text-[10px] font-bold text-slate-500">
-                              <Flag nac={cb2.nacionalidad} size={12} withName={false} className="mr-1" />
-                              {paisDe(cb2.nacionalidad)}
-                            </span>
-                          )}
                         </button>
                       </th>
                       {matriz.caballos1.map((cb1, i1) => {
@@ -459,6 +458,11 @@ export function DupletaModule() {
           <p className="mt-2 text-[10px] italic text-slate-500">
             💡 Las filas/columnas amarillas o grises corresponden a ejemplares retirados y no se venden (N O V A L E). Cada cuadro se vende con un clic; la dupleta se guarda en la tabla `dupletas` de Supabase y se recarga en cualquier sesión.
           </p>
+
+          <div className="mt-2 rounded-lg border-l-4 border-amber-400 bg-amber-50 px-3 py-2 text-[10px] font-semibold leading-relaxed text-amber-900">
+            <p>⚠️ Nota marginal — Retiro en la carrera: si un ejemplar se retira, su incidencia sobre el monto a pagar se recalcula porcentualmente.</p>
+            <p>🔁 Retiros y resultados unificados: el retiro/resultado de un ejemplar incide en TODAS las jugadas que lo incluyan: dupletas, remates, tablas y puestos.</p>
+          </div>
         </div>
       )}
 
@@ -543,13 +547,14 @@ export function DupletaModule() {
       const natW = tabla.scrollWidth;
       const natH = tabla.scrollHeight;
 
-      // Hoja A4 paisaje @150dpi (210×148 mm) con cabecera.
+      // Hoja A4 paisaje @150dpi (210×148 mm) con cabecera y nota marginal.
       const PAGE_W = 1240;
       const PAGE_H = 877;
       const PAD = 28;
       const FONDO = 58;
+      const NOTA = 34;
       const areaW = PAGE_W - PAD * 2;
-      const areaH = PAGE_H - PAD * 2 - FONDO;
+      const areaH = PAGE_H - PAD * 2 - FONDO - NOTA;
       const escala = Math.min(areaW / natW, areaH / natH, 1);
 
       root = document.createElement("div");
@@ -580,7 +585,12 @@ export function DupletaModule() {
       const clon = tabla.cloneNode(true) as HTMLElement;
       wrapper.appendChild(clon);
 
-      page.append(header, wrapper);
+      const nota = document.createElement("div");
+      nota.style.cssText = `height:${NOTA}px;margin-top:10px;border-left:3px solid #f59e0b;background:#fffbeb;padding:5px 8px;font-family:Inter,ui-sans-serif,system-ui,sans-serif;font-size:8px;font-weight:700;color:#b45309;line-height:1.35;`;
+      nota.innerHTML =
+        "NOTA MARGINAL — RETIROS: si un ejemplar se retira en la carrera, su incidencia sobre el monto a pagar se recalcula porcentualmente.&nbsp;&nbsp;·&nbsp;&nbsp;El retiro y el resultado de un ejemplar inciden en TODAS las jugadas que lo incluyan: dupletas, remates, tablas y puestos.";
+
+      page.append(header, wrapper, nota);
       root.appendChild(page);
       document.body.appendChild(root);
 
