@@ -92,7 +92,7 @@ const ESTILOS = `
 .grilla-15 { flex:1; min-height:0; display:grid; grid-template-columns:repeat(5,1fr); grid-template-rows:repeat(3,1fr); gap:6px; }
 .tabla-imp { border:1.5px solid #334155; border-radius:7px; overflow:hidden; display:flex; flex-direction:column; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.08); min-height:0; }
 .hd-tabla { background:linear-gradient(135deg,#1e40af,#4338ca); color:#fff; display:flex; justify-content:space-between; align-items:center; padding:3px 8px; }
-.hd-hipo { font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.hd-hipo { font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:.3px; white-space:normal; overflow:visible; overflow-wrap:anywhere; }
 .hd-carrera { font-size:15px; font-weight:900; background:rgba(255,255,255,.18); border-radius:5px; padding:0 7px; }
 .hd-premio { display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:800; color:#b45309; padding:2px 8px; background:#fffbeb; border-bottom:1px solid #f1f5f9; text-transform:uppercase; }
 .hd-premio .premio-val { font-size:13px; font-weight:900; color:#b45309; }
@@ -105,10 +105,11 @@ const ESTILOS = `
    complejo y los números se desbordan hacia abajo). line-height exacto =
    altura del contenedor + height/width fijos + box-sizing:border-box. */
 .nro-grilla { border-radius:3px; border:1px solid; display:block; text-align:center; font-weight:900; flex:none; flex-shrink:0; align-self:center; margin:0; padding:0; overflow:hidden; }
-/* NOMBRES: white-space normal + ancho fijo (display:block; width:100%) para
-   que html2canvas lea el texto completo; sin ellipsis/overflow oculto. */
-.nombre-grilla { display:block; width:100%; font-weight:700; text-transform:uppercase; white-space:normal; overflow-wrap:anywhere; min-width:0; align-self:center; line-height:1.15; }
-.valor-grilla { font-weight:800; color:#1d4ed8; text-align:right; white-space:nowrap; padding-left:4px; align-self:center; line-height:1; }
+.valor-grilla { font-weight:800; color:#1d4ed8; text-align:right; white-space:nowrap; padding-left:4px; align-self:center; line-height:1; min-width:48px; }
+/* NOMBRES: el nombre del ejemplar ocupa TODO el ancho disponible del renglón
+   (minmax(0,1fr)) con white-space normal + overflow visible para que
+   html2canvas renderice el texto completo, sin ellipsis ni recortes. */
+.nombre-grilla { display:block; width:100%; font-weight:700; text-transform:uppercase; white-space:normal; overflow:visible; overflow-wrap:anywhere; word-break:break-word; min-width:0; align-self:center; line-height:1.15; padding-right:4px; }
 .sin-ej { grid-column:1/-1; font-size:11px; color:#94a3b8; font-style:italic; padding:12px; }
 .notas-hoja { display:flex; justify-content:space-between; gap:14px; font-size:10.5px; color:#78350f; background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:4px 10px; font-weight:700; }
 `;
@@ -125,7 +126,7 @@ function tamanoTarjeta(n: number) {
   const altoLista = 280;
   const filaH = altoLista / rows;
   const k = Math.min(1, Math.max(0.5, filaH / 18));
-  const fsNom = Math.round(Math.min(9.5, Math.max(5.5, filaH * 0.5)) * 10) / 10;
+  const fsNom = Math.round(Math.min(11, Math.max(5.5, filaH * 0.55)) * 10) / 10;
   const fsVal = Math.round(fsNom * 1.3 * 10) / 10;
   return {
     rows,
@@ -151,7 +152,7 @@ function cardHTML(t: StoredTablaFija): string {
         const fg = textoDeNumero(c.numero);
         const ret = !!c.retirado;
         return `
-          <div class="grilla-ej ${ret ? "retirado" : ""}" style="grid-template-columns:${T.box} 1fr auto">
+          <div class="grilla-ej ${ret ? "retirado" : ""}" style="grid-template-columns:${T.box} minmax(0,1fr) auto">
             <div class="nro-grilla" style="background:${bg};color:${fg};border-color:${bg};width:${T.nroW}px;height:${T.nroH}px;line-height:${Math.round(T.nroH * 10) / 10}px;font-size:${T.fsNum}px">${c.numero ?? ""}</div>
             <div class="nombre-grilla" style="font-size:${T.fsNom}px">${String(c.nombre || "").replace(/"/g, "&quot;")}</div>
             <div class="valor-grilla" style="font-size:${T.fsVal}px">${ret ? "RET." : fmtMoney(limpiarValor(c), t.moneda)}</div>
