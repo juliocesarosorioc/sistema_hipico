@@ -65,15 +65,6 @@ export default function TablasFijasPage() {
           const cierre = await cerrarTablaFija(t.hipodromo ?? "", t.carrera ?? 0);
           return cierre.ok;
         }}
-        persistirEliminacion={async (t: StoredTablaFija) => {
-          // Aquí llamamos a tu RPC o Supabase directamente para borrar solo la tabla
-          // Asumiendo que tienes una función o podemos crearla luego. Por ahora preparamos el enchufe:
-          if(confirm(`¿Estás seguro de eliminar la tabla fija de ${t.hipodromo} C${t.carrera}?`)) {
-            const { error } = await supabase.from('tablas_fijas').delete().eq('id', t.id);
-            return !error;
-          }
-          return false;
-        }}
       />
     </div>
   );
