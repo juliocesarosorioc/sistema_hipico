@@ -14,7 +14,6 @@ import { SeccionPliegue } from "@/components/tablas/SeccionPliegue";
 import { ParametrosCarrera } from "@/components/tablas/ParametrosCarrera";
 import { TarjetaEnsamblaje } from "@/components/tablas/TarjetaEnsamblaje";
 import { MonitorTablas, type VentaTablaItem } from "@/components/tablas/MonitorTablas";
-import { CarritoVentas } from "@/components/tablas/CarritoVentas";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { Guard } from "@/components/ui/Guard";
 import ConfigImpresionModal from "@/components/tablas/ConfigImpresionModal";
@@ -58,7 +57,6 @@ export function TablasModule(props: Props) {
   const [impresion, setImpresion] = useState(false);
   const [modoManual, setModoManual] = useState(false);
   const [drafts, setDrafts] = useState<DraftCarrera[]>([]);
-  const [carrito, setCarrito] = useState<ItemCarritoVenta[]>([]);
   /** Fecha del programa (Filtro Universal): las tarjetas heredadas de la
    *  Gaceta traen la fecha del evento; las manuales usan este valor (hoy). */
   const [fechaPrograma, setFechaPrograma] = useState(() => hoyLocal());
@@ -350,7 +348,7 @@ export function TablasModule(props: Props) {
     router.push("/ejemplares?tab=gaceta");
   };
 
-  const agregarAlCarrito = (v: VentaTablaItem) => {
+  const venderDirecto = async (v: VentaTablaItem) => {
     const tabla = tablas.find((t) => String(t.id) === String(v.tablaId));
     if (!tabla) return;
     const item: ItemCarritoVenta = {
@@ -367,48 +365,41 @@ export function TablasModule(props: Props) {
       grupo: v.grupo,
       jugador: v.jugador,
     };
-    setCarrito((c) => [...c, item]);
-  };
-
-  const cerrarVenta = async () => {
-    if (carrito.length === 0) return;
-    let vendidos = 0;
-    for (const item of carrito) {
-      const tabla = tablas.find((t) => String(t.id) === String(item.tablaId));
-      if (!tabla) continue;
-      const base = (tabla.premio_recalculado ?? 0) * item.monto;
-      agregarTicket({
-        comando:
-          item.nombre === "TABLA COMPLETA"
-            ? `TABLA ${item.hipodromo} C${item.carrera} TABLA COMPLETA`
-            : `TABLA ${item.hipodromo} C${item.carrera} N${item.numero} ${item.nombre}`,
-        monto: item.monto,
-        gananciaProyectada: base,
-        comision: base * 0.05,
-      });
-      if (persistirVenta) {
-        await persistirVenta(tabla, { tablaId: item.tablaId, numero: item.numero, nombre: item.nombre, monto: item.monto });
-      }
-      // Centralización: registra la venta en el ledger "Carreras del Día".
-      useCarrerasDiaStore.getState().agregarVenta(item.hipodromo, item.carrera ?? 0, {
-        numero: item.numero,
-        nombre: item.nombre,
-        cantidad: item.cantidad ?? item.monto,
-        grupo: item.grupo?.nombre ?? null,
-        jugador: item.jugador?.nombre ?? null,
-        tablaId: item.tablaId,
-      });
-      setTablas(
-        tablas.map((t) =>
-          String(t.id) === String(item.tablaId)
-            ? { ...t, cantidad_vendida: (t.cantidad_vendida ?? 0) + item.monto }
-            : t
-        )
-      );
-      vendidos++;
+    const base = (tabla.premio_recalculado ?? 0) * item.monto;
+    agregarTicket({
+      comando:
+        item.nombre === "TABLA COMPLETA"
+          ? `TABLA ${item.hipodromo} C${item.carrera} TABLA COMPLETA`
+          : `TABLA ${item.hipodromo} C${item.carrera} N${item.numero} ${item.nombre}`,
+      monto: item.monto,
+      gananciaProyectada: base,
+      comision: base * 0.05,
+    });
+    if (persistirVenta) {
+      await persistirVenta(tabla, { tablaId: item.tablaId, numero: item.numero, nombre: item.nombre, monto: item.monto });
     }
-    setCarrito([]);
-    if (vendidos > 0) toast(`✅ Venta cerrada: ${vendidos} tabla(s) enviada(s) a la taquilla.`, "success");
+    // Centralización: registra la venta en el ledger "Carreras del Día".
+    useCarrerasDiaStore.getState().agregarVenta(item.hipodromo, item.carrera ?? 0, {
+      numero: item.numero,
+      nombre: item.nombre,
+      cantidad: item.cantidad ?? item.monto,
+      grupo: item.grupo?.nombre ?? null,
+      jugador: item.jugador?.nombre ?? null,
+      tablaId: item.tablaId,
+    });
+    setTablas(
+      tablas.map((t) =>
+        String(t.id) === String(item.tablaId)
+          ? { ...t, cantidad_vendida: (t.cantidad_vendida ?? 0) + item.monto }
+          : t
+      )
+    );
+    toast(
+      `🛒 Venta enviada a la taquilla: ${item.hipodromo} C${item.carrera}${
+        item.nombre === "TABLA COMPLETA" ? " · Tabla completa" : ` N${item.numero} ${item.nombre}`
+      } por ${fmtMoney(item.monto, item.moneda)}.`,
+      "success"
+    );
   };
 
   const liquidar = async (tabla: StoredTablaFija, r: PizarraResultados) => {
@@ -668,7 +659,7 @@ export function TablasModule(props: Props) {
           </div>
           <MonitorTablas
             tablas={tablas}
-            onVender={agregarAlCarrito}
+            onVender={venderDirecto}
             onLiquidar={liquidar}
             onEditar={editar}
             onRetirar={retirar}
@@ -681,8 +672,6 @@ export function TablasModule(props: Props) {
 
       <ConfigImpresionModal abierto={impresion} onCerrar={() => setImpresion(false)} tablasRespaldo={tablas} />
 
-      {/* Carrito flotante + toasts */}
-      <CarritoVentas items={carrito} onQuitarItem={(id) => setCarrito((c) => c.filter((i) => i.id !== id))} onVaciar={() => setCarrito([])} onCerrarVenta={() => void cerrarVenta()} />
       <ToastHost />
     </div>
   );

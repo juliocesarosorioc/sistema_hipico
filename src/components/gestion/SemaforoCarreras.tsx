@@ -2,6 +2,7 @@
 
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { useTaquillaStore } from "@/store/useTaquillaStore";
+import { useCarrerasDiaStore, type CarreraDelDia } from "@/store/useCarrerasDiaStore";
 
 type Props = {
   hipodromo: string;
@@ -18,9 +19,9 @@ export type EstadoCarrera = "inactiva" | "abierta" | "con_jugadas" | "cerrada";
 
 const COLORES: Record<EstadoCarrera, { chip: string; label: string; txt: string }> = {
   inactiva: { chip: "border-line bg-surface text-slate-400", label: "Sin registro", txt: "text-slate-400" },
-  abierta: { chip: "border-success-500/60 bg-success-500/15 text-success-700", label: "Abierta", txt: "text-success-700" },
+  abierta: { chip: "border-success-500/60 bg-success-500/15 text-success-700", label: "Registrada", txt: "text-success-700" },
   con_jugadas: { chip: "border-warning-500/70 bg-warning-500/20 text-warning-700", label: "Con jugadas", txt: "text-warning-700" },
-  cerrada: { chip: "border-danger-500/70 bg-danger-500/15 text-danger-600", label: "Cerrada", txt: "text-danger-600" },
+  cerrada: { chip: "border-danger-500/70 bg-danger-500/15 text-danger-600", label: "Liquidada", txt: "text-danger-600" },
 };
 
 function hipoKey(h: unknown): string {
@@ -37,27 +38,37 @@ const MANUAL_TOTAL = 12;
  *  - Modo Manual (manual=true): TODAS las carreras quedan habilitadas para
  *    registrar jugadas en una carrera vacía sin depender de la Gaceta IA.
  *  - Sin carreras registradas → semáforo vacío/inactivo con aviso.
- *  - gris = sin registro · verde = Abierta · amarillo = Con jugadas · rojo = Cerrada.
+ *  - gris = sin registro · verde = Registrada (abierta por gacetas) ·
+ *    amarillo = Con jugadas · rojo = Liquidada.
  */
 export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSeleccionar, manual }: Props) {
   const tablas = useTablasFijasStore((s) => s.tablas);
   const tickets = useTaquillaStore((s) => s.tickets);
+  const carrerasDia = useCarrerasDiaStore((s) => s.carreras);
   const hipo = hipoKey(hipodromo);
 
   const porCarrera = (n: number): { estado: EstadoCarrera; tieneVentas: boolean } => {
     const tabla = tablas.find(
       (t) => hipoKey(t.hipodromo) === hipo && t.carrera === n
     );
+    const registro = carrerasDia.find(
+      (c: CarreraDelDia) => hipoKey(c.hipodromo) === hipo && c.carrera === n
+    );
+    const registrada = carreras.includes(n);
+    const liquidada =
+      Boolean(tabla?.cerrada) ||
+      String(tabla?.estado ?? "").toLowerCase() === "cerrada" ||
+      String(registro?.estado ?? "").toLowerCase() === "liquidada";
     const conVentas = tickets.some(
       (tk) =>
         tk.carrera === n &&
         (!tk.hipodromo || hipoKey(tk.hipodromo) === hipo) &&
         (!tk.fecha || tk.fecha === fecha)
     );
-    if (!tabla) return conVentas ? { estado: "abierta", tieneVentas: conVentas } : { estado: "inactiva", tieneVentas: false };
-    if (tabla.cerrada || String(tabla.estado ?? "").toLowerCase() === "cerrada")
-      return { estado: "cerrada", tieneVentas: conVentas };
-    return conVentas ? { estado: "con_jugadas", tieneVentas: true } : { estado: "abierta", tieneVentas: false };
+    if (liquidada) return { estado: "cerrada", tieneVentas: conVentas };
+    if (conVentas) return { estado: "con_jugadas", tieneVentas: true };
+    if (registrada || tabla) return { estado: "abierta", tieneVentas: false };
+    return { estado: "inactiva", tieneVentas: false };
   };
 
   const maxCarrera = carreras.length ? Math.max(...carreras) : 0;
@@ -67,11 +78,11 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
   return (
     <div className="rounded-2xl border border-line bg-surface p-3">
       <div className="mb-2 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-500">
-        <span className="font-black uppercase tracking-wide">Semáforo — {hipodromo.toUpperCase()} · {fecha}</span>
-        <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full border border-line bg-surface" /> Inactiva</span>
-        <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-success-500" /> Abierta</span>
+        <span className="font-black uppercase tracking-wide">{hipodromo.toUpperCase()} · CARRERAS DEL {fecha}</span>
+        <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full border border-line bg-surface" /> Sin registro</span>
+        <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-success-500" /> Registrada</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-warning-500" /> Con jugadas</span>
-        <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-danger-500" /> Cerrada</span>
+        <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-danger-500" /> Liquidada</span>
         {manual && (
           <span className="rounded-full bg-cyan-500/15 px-2 py-0.5 font-black uppercase text-cyan-700">
             ✍️ Modo Manual — carreras sin Gaceta habilitadas

@@ -179,7 +179,7 @@ export function MonitorTablas({
     setVendiendo(null);
     setEjemplarVenta("");
     setMontoVenta("");
-    setAviso("🛒 Agregado al carrito de venta (arriba a la derecha).");
+    setAviso("🛒 Venta enviada a la taquilla (boleto).");
   };
 
   const guardarEdicion = async () => {
@@ -209,7 +209,7 @@ export function MonitorTablas({
       grupo: item.grupo,
       jugador: item.jugador,
     });
-    setAviso("🛒 Venta rápida agregada al carrito.");
+    setAviso("🛒 Venta rápida enviada a la taquilla.");
   };
 
   const cerrarEjemplarRetiro = async (tabla: StoredTablaFija, indice: number, retirado: boolean): Promise<boolean> => {

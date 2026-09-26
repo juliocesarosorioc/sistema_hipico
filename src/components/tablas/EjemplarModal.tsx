@@ -170,7 +170,7 @@ export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, 
           {/* Venta rápida */}
           <div className="border-t border-slate-100 pt-3">
             <span className="mb-2 block text-xs font-black uppercase tracking-wider text-slate-500">
-              💵 Venta rápida (al carrito)
+              💵 Venta rápida
             </span>
             {puedeVender ? (
               <div className="space-y-2">
@@ -242,7 +242,7 @@ export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, 
             Cancelar
           </button>
           <Button variant="success" size="md" disabled={!puedeVender} onClick={enviarCarrito}>
-            🛒 Enviar al carrito
+            🛒 Vender ahora
           </Button>
         </div>
       </div>

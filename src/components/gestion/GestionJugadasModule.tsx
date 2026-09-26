@@ -73,12 +73,6 @@ export function GestionJugadasModule() {
   const [retirados, setRetirados] = useState("");
   const [comision, setComision] = useState("5");
   const [conCruces, setConCruces] = useState(false);
-  const [saldoActivo, setSaldoActivo] = useState<"POZO" | "TRASLADO" | "AVAL">("POZO");
-  const [saldos, setSaldos] = useState<Record<"POZO" | "TRASLADO" | "AVAL", string>>({
-    POZO: "1200,50",
-    TRASLADO: "0,00",
-    AVAL: "0,00",
-  });
   const [filas, setFilas] = useState<FilaCarga[]>([filaVacia()]);
   const [aviso, setAviso] = useState("");
   const [jugadasPorCarrera, setJugadasPorCarrera] = useState<number[]>([]);
@@ -119,10 +113,17 @@ export function GestionJugadasModule() {
     setCarrera(1);
     listarCarrerasPorDia(fecha, hipodromo)
       .then((c) => {
-        if (vivo) setCarrerasPorDia(c);
+        if (!vivo) return;
+        setCarrerasPorDia(c);
+        // Si el hipódromo tiene carreras registradas, se activa su primera
+        // carrera registrada (o la 1 si está entre ellas) para habilitar la
+        // selección en el semáforo.
+        if (c.length > 0) setCarrera(c.includes(1) ? 1 : Math.min(...c));
+        else setCarrera(1);
       })
       .catch(() => {
         /* sin red → semáforo vacío */
+        if (vivo) setCarrera(1);
       });
     return () => {
       vivo = false;
@@ -447,39 +448,8 @@ export function GestionJugadasModule() {
 
   return (
     <div className="space-y-4 pb-24">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-base font-black uppercase text-slate-900">🎟️ Gestión de Jugadas (Taquilla)</h2>
-          <p className="text-xs text-slate-500">Carga individual + liquidación con motor (posiciones dinámicas · Dead Heat).</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {(["POZO", "TRASLADO", "AVAL"] as const).map((nombre) => {
-            const activo = saldoActivo === nombre;
-            return (
-              <button
-                key={nombre}
-                type="button"
-                onClick={() => setSaldoActivo(nombre)}
-                className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-black transition-colors ${
-                  activo ? "border-primary-500 bg-primary-500/10 text-primary-700" : "border-line bg-surface text-slate-500"
-                }`}
-              >
-                <span className="uppercase">{nombre}</span>
-                <input
-                  value={saldos[nombre]}
-                  onChange={(e) => setSaldos((s) => ({ ...s, [nombre]: e.target.value }))}
-                  onClick={(e) => e.stopPropagation()}
-                  inputMode="decimal"
-                  className="w-16 rounded-md border border-line bg-surface px-1.5 py-0.5 text-right font-black text-slate-900"
-                />
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       {/* Inputs superiores */}
-      <div className="grid gap-3 rounded-2xl border border-line bg-surface p-4 lg:grid-cols-6">
+      <div className="grid gap-3 rounded-2xl border border-line bg-surface p-3 lg:grid-cols-6">
         <div>
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">Hipódromo</label>
           <SearchableSelect
@@ -839,9 +809,6 @@ export function GestionJugadasModule() {
           >
             ⌨️ Comandos <kbd className="rounded bg-slate-600 px-1.5 py-0.5 text-[9px] font-black text-white">Ctrl+⇧+K</kbd>
           </button>
-          <span className="ml-auto hidden text-[10px] font-semibold text-slate-500 sm:block">
-            Saldo activo: <b className="text-slate-300">{saldoActivo}</b> · <b className="text-slate-300">{saldos[saldoActivo]}</b> {MONEDA}
-          </span>
         </div>
       </div>
 
