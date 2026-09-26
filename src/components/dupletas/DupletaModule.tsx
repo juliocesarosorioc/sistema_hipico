@@ -43,11 +43,11 @@ export function DupletaModule() {
     if (!matriz || typeof document === "undefined") return 120;
     const ctx = document.createElement("canvas").getContext("2d");
     if (!ctx) return 120;
-    ctx.font = "900 10px Inter, ui-sans-serif, system-ui, sans-serif";
+    ctx.font = "900 13px Inter, ui-sans-serif, system-ui, sans-serif";
     let w = 72;
     for (const c of matriz.caballos1) {
       const txt = ctx.measureText(String(c.nombre || "").trim()).width;
-      const band = banderaNoCasa(c.nacionalidad, matriz.hipodromo) ? 18 : 0;
+      const band = banderaNoCasa(c.nacionalidad, matriz.hipodromo) ? 20 : 0;
       w = Math.max(w, Math.ceil(txt + band + 12));
     }
     return w;
@@ -355,10 +355,10 @@ export function DupletaModule() {
                             </span>
                             {cb.retirado && <span className="text-[13px] font-black">✖</span>}
                           </span>
-                          <span className="block whitespace-nowrap leading-tight">
+                          <span className="block whitespace-nowrap text-[13px] leading-tight">
                             {cb.nombre}
                             {banderaNoCasa(cb.nacionalidad, matriz.hipodromo) && (
-                              <Flag nac={cb.nacionalidad} size={15} withName={false} className="ml-1" />
+                              <Flag nac={cb.nacionalidad} size={17} withName={false} className="ml-1" />
                             )}
                           </span>
                         </button>
@@ -383,10 +383,10 @@ export function DupletaModule() {
                             {cb2.numero}
                           </span>
                           {cb2.retirado && <span className="text-[13px] font-black">✖</span>}
-                          <span className="min-w-0 flex-1 break-words leading-tight">
+                          <span className="min-w-0 flex-1 break-words text-[13px] leading-tight">
                             {cb2.nombre}
                             {banderaNoCasa(cb2.nacionalidad, matriz.hipodromo) && (
-                              <Flag nac={cb2.nacionalidad} size={15} withName={false} className="ml-1" />
+                              <Flag nac={cb2.nacionalidad} size={17} withName={false} className="ml-1" />
                             )}
                           </span>
                         </button>
