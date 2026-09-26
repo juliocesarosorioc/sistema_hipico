@@ -180,6 +180,21 @@ export function DupletaModule() {
   const vendidas = matriz ? Object.values(matriz.celdas).filter((c) => c.vendida) : [];
   const totalVentas = vendidas.reduce((a, c) => a + (c.precio ?? matriz?.precio ?? 0), 0);
 
+  // Ancho uniforme de cada columna horizontal: caben el nombre del caballo en UNA línea.
+  const anchoCol = useMemo(() => {
+    if (!matriz || typeof document === "undefined") return 120;
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (!ctx) return 120;
+    ctx.font = "900 10px Inter, ui-sans-serif, system-ui, sans-serif";
+    let w = 72;
+    for (const c of matriz.caballos1) {
+      const txt = ctx.measureText(String(c.nombre || "").trim()).width;
+      const band = banderaNoCasa(c.nacionalidad, matriz.hipodromo) ? 18 : 0;
+      w = Math.max(w, Math.ceil(txt + band + 12));
+    }
+    return w;
+  }, [matriz]);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-2xl border border-line bg-surface p-4">
@@ -296,7 +311,7 @@ export function DupletaModule() {
                   {matriz.caballos1.map((cb, i1) => {
                     const col = colorDeNumeroGac(cb.numero);
                     return (
-                      <th key={`h1-${cb.numero}`} className="sticky top-0 z-30 w-[72px] max-w-[72px] border-b border-r border-slate-300 bg-indigo-600 p-0.5">
+                      <th key={`h1-${cb.numero}`} className="sticky top-0 z-30 border-b border-r border-slate-300 bg-indigo-600 p-0.5" style={{ width: anchoCol, maxWidth: anchoCol }}>
                         <button
                           type="button"
                           onClick={() => toggleRetirado(1, cb.numero)}
@@ -309,7 +324,7 @@ export function DupletaModule() {
                             </span>
                             {cb.retirado && <span className="text-[13px] font-black">✖</span>}
                           </span>
-                          <span className="mt-0.5 block break-words leading-tight">
+                          <span className="mt-0.5 block whitespace-nowrap leading-tight">
                             {cb.nombre}
                             {banderaNoCasa(cb.nacionalidad, matriz.hipodromo) && (
                               <Flag nac={cb.nacionalidad} size={15} withName={false} className="ml-1" />
@@ -326,18 +341,20 @@ export function DupletaModule() {
                   const izq = colorDeNumeroGac(cb2.numero);
                   return (
                     <tr key={`f-${cb2.numero}`}>
-                      <th className="sticky left-0 z-20 w-[120px] max-w-[120px] border-b border-r border-slate-300 bg-indigo-50 p-0.5 text-left">
+                      <th className="sticky left-0 z-20 w-[120px] max-w-[120px] border-b border-r border-slate-300 bg-indigo-50 p-0.5 align-top text-left">
                         <button
                           type="button"
                           onClick={() => toggleRetirado(2, cb2.numero)}
                           title={cb2.retirado ? "Quitar retirado" : "Marcar retirado"}
-                          className={`flex w-full items-start justify-start gap-1 rounded px-0.5 py-0.5 text-left ${cb2.retirado ? "bg-yellow-400 text-slate-900" : "text-slate-800"}`}
+                          className={`flex w-full flex-col items-center rounded px-0.5 py-0.5 text-left ${cb2.retirado ? "bg-yellow-400 text-slate-900" : "text-slate-800"}`}
                         >
-                          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: izq.bg, color: izq.fg }}>
-                            {cb2.numero}
+                          <span className="flex items-center justify-center gap-1">
+                            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: izq.bg, color: izq.fg }}>
+                              {cb2.numero}
+                            </span>
+                            {cb2.retirado && <span className="text-[13px] font-black">✖</span>}
                           </span>
-                          {cb2.retirado && <span className="text-[13px] font-black">✖</span>}
-                          <span className="break-words leading-tight">
+                          <span className="mt-0.5 block w-full break-words leading-tight">
                             {cb2.nombre}
                             {banderaNoCasa(cb2.nacionalidad, matriz.hipodromo) && (
                               <Flag nac={cb2.nacionalidad} size={15} withName={false} className="ml-1" />
