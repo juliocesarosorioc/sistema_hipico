@@ -32,6 +32,12 @@ type Props = {
   onEditar?: (tabla: StoredTablaFija, patch: Record<string, unknown>) => void;
   onRetirar?: (tabla: StoredTablaFija, indice: number, retirado: boolean) => Promise<boolean>;
   onEliminar?: (tabla: StoredTablaFija) => void;
+  /**
+   * Filtro de hipódromo controlado por el padre (ej. las columnas de
+   * "Hipódromos del Día"). Si se omite, el filtro opera interno.
+   */
+  hipodromoFiltro?: string;
+  onHipodromoFiltro?: (h: string) => void;
 };
 
 /** Número es-VE SIN símbolo de moneda (la moneda se estipula por el grupo). */
@@ -52,7 +58,16 @@ function diaDeLaTabla(t: StoredTablaFija): string {
   return raw.slice(0, 10);
 }
 
-export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetirar, onEliminar }: Props) {
+export function MonitorTablas({
+  tablas,
+  onVender,
+  onLiquidar,
+  onEditar,
+  onRetirar,
+  onEliminar,
+  hipodromoFiltro: hipodromoFiltroProp,
+  onHipodromoFiltro,
+}: Props) {
   const [vendiendo, setVendiendo] = useState<StoredTablaFija | null>(null);
   const [ejemplarVenta, setEjemplarVenta] = useState("");
   const [montoVenta, setMontoVenta] = useState("");
@@ -101,7 +116,14 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
 
   // Estados de los filtros
   const [fechaFiltro, setFechaFiltro] = useState<string>("");
-  const [hipodromoFiltro, setHipodromoFiltro] = useState<string>("");
+  const [hipodromoLocal, setHipodromoLocal] = useState<string>("");
+
+  /** Hipódromo filtrado: si el padre controla el filtro (Hipódromos del Día),
+   *  lo gobierna desde arriba; si no, opera interno. */
+  const hipodromoControlado = onHipodromoFiltro !== undefined;
+  const hipodromoFiltro = hipodromoControlado ? hipodromoFiltroProp ?? "" : hipodromoLocal;
+  const setHipodromoFiltro = (v: string) =>
+    hipodromoControlado ? onHipodromoFiltro?.(v) : setHipodromoLocal(v);
 
   const abiertas = tablas.filter((t) => !t.cerrada);
 
@@ -133,8 +155,9 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
   }, [fechasDisponibles, fechaFiltro]);
 
   useEffect(() => {
-    if (hipodromoFiltro && !hipodromosDisponibles.includes(hipodromoFiltro)) setHipodromoFiltro("");
-  }, [hipodromosDisponibles, hipodromoFiltro]);
+    if (hipodromoControlado) return; // el padre gobierna el filtro de hipódromo
+    if (hipodromoFiltro && !hipodromosDisponibles.includes(hipodromoFiltro)) setHipodromoLocal("");
+  }, [hipodromosDisponibles, hipodromoFiltro, hipodromoControlado]);
 
   // Aplicación del filtro final
   const filtradas = abiertas.filter(t => {

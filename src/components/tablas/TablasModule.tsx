@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTablasFijasStore, type StoredTablaFija } from "@/store/useTablasFijasStore";
 import { useTaquillaStore } from "@/store/useTaquillaStore";
@@ -62,8 +62,42 @@ export function TablasModule(props: Props) {
   /** Fecha del programa (Filtro Universal): las tarjetas heredadas de la
    *  Gaceta traen la fecha del evento; las manuales usan este valor (hoy). */
   const [fechaPrograma, setFechaPrograma] = useState(() => hoyLocal());
+  /** Filtro de hipódromo activado desde las columnas "Hipódromos del Día". */
+  const [filtroHipodromo, setFiltroHipodromo] = useState<string>("");
 
   const openCount = tablas.filter((t) => !t.cerrada).length;
+
+  /** Normaliza la fecha (AAAA-MM-DD) de una tabla para el filtro del día. */
+  const diaDe = (t: StoredTablaFija): string => {
+    const raw = String(t.fecha || t.fecha_creacion || "").trim();
+    if (!raw) return "";
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+    const partes = raw.split(/[-/]/);
+    if (partes.length === 3 && partes[0].length <= 2) {
+      return `${partes[2]}-${partes[1].padStart(2, "0")}-${partes[0].padStart(2, "0")}`;
+    }
+    return raw.slice(0, 10);
+  };
+
+  /** Hipódromos del día (abiertos, de la fecha del programa) ordenados
+   *  alfabéticamente, con sus carreras y estado. Si no hay tablas para la
+   *  fecha del programa, se muestran todos los hipódromos abiertos. */
+  const hipodromosDia = useMemo(() => {
+    const abiertas = tablas.filter((t) => !t.cerrada);
+    const delDia = abiertas.filter((t) => diaDe(t) === fechaPrograma);
+    const fuente = delDia.length > 0 ? delDia : abiertas;
+    const porHip = new Map<string, StoredTablaFija[]>();
+    fuente.forEach((t) => {
+      const h = (t.hipodromo ?? "").trim().toUpperCase();
+      if (!h) return;
+      const arr = porHip.get(h) ?? [];
+      arr.push(t);
+      porHip.set(h, arr);
+    });
+    return Array.from(porHip.entries())
+      .map(([hipodromo, carreras]) => ({ hipodromo, carreras }))
+      .sort((a, b) => a.hipodromo.localeCompare(b.hipodromo));
+  }, [tablas, fechaPrograma]);
 
   const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -538,46 +572,110 @@ export function TablasModule(props: Props) {
         onToggle={() => setSecciones((s) => ({ ...s, monitor: !s.monitor }))}
       >
         <div className="p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 no-print">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">🚦 Carreras del Día</span>
-              {tablas.filter((t) => !t.cerrada).map((t) => {
-              const est = carrerasDia.find(
-                (c) => c.hipodromo === (t.hipodromo ?? "").toUpperCase() && c.carrera === t.carrera
-              );
-              const color =
-                est?.estado === "Liquidada"
-                  ? "border-slate-400 bg-slate-100 text-slate-600"
-                  : est?.estado === "Resultados"
-                    ? "border-amber-400 bg-amber-50 text-amber-700"
-                    : "border-emerald-400 bg-emerald-50 text-emerald-700";
-              return (
-                <span
-                  key={String(t.id)}
-                  className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase ${color}`}
-                  title={
-                    est?.pago
-                      ? `Pago automático de tablas vendidas: ${fmtMoney(est.pago.totalPagado)} (${est.pago.tablasPagadas} tabla(s))`
-                      : `${est?.ventas?.length ?? 0} venta(s) registrada(s)`
-                  }
-                >
-                  {t.hipodromo} C{t.carrera} · {est?.estado ?? "Programada"}
+          <div className="mb-3 no-print">
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                🏛️ Hipódromos del Día
+                <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-black text-slate-500">
+                  {hipodromosDia.length}
                 </span>
-              );
-            })}
+              </span>
+              <div className="flex items-center gap-2">
+                {filtroHipodromo && (
+                  <button
+                    type="button"
+                    onClick={() => setFiltroHipodromo("")}
+                    className="rounded border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-black uppercase text-red-500 transition-colors hover:bg-red-100"
+                  >
+                    ✕ Limpiar filtro: {filtroHipodromo}
+                  </button>
+                )}
+                <Guard permiso="imprimir_tablas">
+                  <button
+                    type="button"
+                    onClick={() => setImpresion(true)}
+                    className="rounded-lg bg-emerald-600 px-4 py-2 text-[11px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-emerald-700"
+                    title="Imprimir / exportar tablas publicadas (matriz 15 por hoja o reporte por jugador)"
+                  >
+                    🖨️ Imprimir Tablas
+                  </button>
+                </Guard>
+              </div>
             </div>
-            <Guard permiso="imprimir_tablas">
-              <button
-                type="button"
-                onClick={() => setImpresion(true)}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-[11px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-emerald-700"
-                title="Imprimir / exportar tablas publicadas (matriz 15 por hoja o reporte por jugador)"
-              >
-                🖨️ Imprimir Tablas
-              </button>
-            </Guard>
+
+            {hipodromosDia.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[11px] italic text-slate-400">
+                Sin hipódromos publicados para la fecha {fechaPrograma}.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                {hipodromosDia.map(({ hipodromo, carreras }) => {
+                  const activo = filtroHipodromo === hipodromo;
+                  return (
+                    <button
+                      key={hipodromo}
+                      type="button"
+                      onClick={() => setFiltroHipodromo(activo ? "" : hipodromo)}
+                      title={
+                        activo
+                          ? `Quitar filtro de ${hipodromo}`
+                          : `Filtrar el monitor por ${hipodromo} (${carreras.length} carrera(s))`
+                      }
+                      className={`min-w-0 rounded-lg border p-1.5 text-left transition-colors ${
+                        activo
+                          ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-300"
+                          : "border-slate-200 bg-white hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className="block truncate text-[11px] font-black uppercase leading-none text-slate-700">
+                        🏛️ {hipodromo}
+                      </span>
+                      <span className="mt-1 block text-[9px] font-bold text-slate-400 leading-none">
+                        {carreras.length} carrera(s) en el día
+                      </span>
+                      <span className="mt-1 flex flex-wrap gap-0.5">
+                        {carreras
+                          .slice()
+                          .sort((a, b) => (a.carrera ?? 0) - (b.carrera ?? 0))
+                          .map((c) => {
+                            const est = carrerasDia.find(
+                              (e) => e.hipodromo === hipodromo && e.carrera === c.carrera
+                            );
+                            const color =
+                              est?.estado === "Liquidada"
+                                ? "bg-slate-200 text-slate-600"
+                                : est?.estado === "Resultados"
+                                  ? "bg-amber-200 text-amber-800"
+                                  : "bg-emerald-100 text-emerald-700";
+                            return (
+                              <span
+                                key={String(c.id)}
+                                className={`rounded px-1 py-0.5 text-[8px] font-black uppercase ${color}`}
+                                title={`${hipodromo} C${c.carrera} · ${est?.estado ?? "Programada"} · ${
+                                  est?.ventas?.length ?? 0
+                                } venta(s)`}
+                              >
+                                C{c.carrera}
+                              </span>
+                            );
+                          })}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          <MonitorTablas tablas={tablas} onVender={agregarAlCarrito} onLiquidar={liquidar} onEditar={editar} onRetirar={retirar} onEliminar={eliminar} />
+          <MonitorTablas
+            tablas={tablas}
+            onVender={agregarAlCarrito}
+            onLiquidar={liquidar}
+            onEditar={editar}
+            onRetirar={retirar}
+            onEliminar={eliminar}
+            hipodromoFiltro={filtroHipodromo}
+            onHipodromoFiltro={setFiltroHipodromo}
+          />
         </div>
       </SeccionPliegue>
 
