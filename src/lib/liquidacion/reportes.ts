@@ -207,10 +207,26 @@ async function leerPizarra(fecha: string, hipodromo: string, carrera: number | s
 async function leerTickets(fecha: string, hipodromo: string, carrera: string | number): Promise<Record<string, unknown>[]> {
   if (!supabase) return [];
   try {
+    const base = { carrera, hipodromo, fecha };
     const { data, error } = await supabase
       .from("tickets_apuestas")
       .select("*")
       .eq("fecha", fecha)
+      .eq("carrera", carrera)
+      .ilike("hipodromo", `%${hipodromo}%`)
+      .order("fecha_creacion");
+    if (!error && data?.length) return (data ?? []) as Record<string, unknown>[];
+  } catch {
+    /* intentar el fallback */
+  }
+  try {
+    // Fallback LEGACY: registros sin columna `fecha` (solo fecha_creacion).
+    const sig = sumarDias(fecha, 1);
+    const { data, error } = await supabase
+      .from("tickets_apuestas")
+      .select("*")
+      .gte("fecha_creacion", `${fecha}T00:00:00`)
+      .lt("fecha_creacion", `${sig}T00:00:00`)
       .eq("carrera", carrera)
       .ilike("hipodromo", `%${hipodromo}%`)
       .order("fecha_creacion");
@@ -221,19 +237,52 @@ async function leerTickets(fecha: string, hipodromo: string, carrera: string | n
   }
 }
 
-/** Hipódromos con actividad del día (Gaceta + resultados_carreras). */
+/** Hipódromos con actividad del día (Gaceta + tablas fijas + tickets + resultados). */
 async function hipodromosDelDia(fecha: string): Promise<string[]> {
   const set = new Set<string>();
   const prog = await leerProgramaPorFecha(fecha);
   for (const h of prog.data?.hipodromos ?? []) if (txt(h)) set.add(txt(h).toUpperCase());
   for (const c of prog.data?.carreras ?? []) if (txt(c.hipodromo)) set.add(txt(c.hipodromo).toUpperCase());
+  const sig = sumarDias(fecha, 1);
   if (supabase) {
     try {
-      const { data, error } = await supabase
+      const { data: res, error } = await supabase
         .from("resultados_carreras")
         .select("hipodromo")
         .eq("fecha", fecha);
-      if (!error) for (const r of (data ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+      if (!error) for (const r of (res ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+    } catch {
+      /* sin tabla */
+    }
+    try {
+      // TABLAS FIJAS: fecha del evento, o creadas durante el día.
+      const { data: tabs, error } = await supabase
+        .from("tablas_fijas")
+        .select("hipodromo")
+        .eq("fecha", fecha);
+      if (!error) for (const r of (tabs ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+      const { data: tabs2 } = await supabase
+        .from("tablas_fijas")
+        .select("hipodromo")
+        .gte("fecha_creacion", `${fecha}T00:00:00`)
+        .lt("fecha_creacion", `${sig}T00:00:00`);
+      for (const r of (tabs2 ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+    } catch {
+      /* sin tabla */
+    }
+    try {
+      // TICKETS: jornadas jugadas por fecha del evento o creados ese día.
+      const { data: tk, error } = await supabase
+        .from("tickets_apuestas")
+        .select("hipodromo")
+        .eq("fecha", fecha);
+      if (!error) for (const r of (tk ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+      const { data: tk2, error: e2 } = await supabase
+        .from("tickets_apuestas")
+        .select("hipodromo")
+        .gte("fecha_creacion", `${fecha}T00:00:00`)
+        .lt("fecha_creacion", `${sig}T00:00:00`);
+      if (!e2) for (const r of (tk2 ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
     } catch {
       /* sin tabla */
     }
