@@ -21,6 +21,27 @@ export const FALLBACK_HIPODROMOS = [
   "WOODBINE",
 ];
 
+/** Hipódromos venezolanos que se muestran operativos. */
+export const HIPODROMOS_VE = ["SANTA RITA", "VALENCIA", "RANCHO ALEGRE", "LA RINCONADA"];
+
+/** Hipódromos de Estados Unidos que se muestran operativos. */
+export const HIPODROMOS_USA = [
+  "GULFSTREAM",
+  "AQUEDUCT",
+  "BELMONT",
+  "SARATOGA",
+  "CHURCHILL DOWNS",
+  "KEENELAND",
+  "SANTA ANITA",
+  "DEL MAR",
+  "MONMOUTH",
+  "LAUREL",
+  "WOODBINE",
+];
+
+/** Únicos hipódromos que se muestran operativos (decisión del negocio). */
+export const HIPODROMOS_MOSTRAR = [...HIPODROMOS_VE, ...HIPODROMOS_USA];
+
 export type OpcionHipodromo = { value: string; label: string };
 
 /**
@@ -37,6 +58,7 @@ export async function listarHipodromos(): Promise<OpcionHipodromo[]> {
         return { value: String(h.nombre ?? "").toUpperCase(), label: String(h.nombre ?? "") };
       })
       .filter((h) => h.label.trim().length)
+      .filter((h) => HIPODROMOS_MOSTRAR.includes(h.value))
       .sort((a, b) => a.label.localeCompare(b.label));
 
   const sdb = supabase;
