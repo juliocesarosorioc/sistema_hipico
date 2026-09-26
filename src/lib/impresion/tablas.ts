@@ -17,6 +17,7 @@
  */
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
+import { supabase } from "@/lib/supabase";
 import { colorDeNumero, textoDeNumero, parseNum, fmtMoney } from "@/lib/tablas/tipos";
 import type { StoredTablaFija } from "@/store/useTablasFijasStore";
 
@@ -34,6 +35,46 @@ export type ResultadoImpresion = {
   paginas?: number;
   tablas?: number;
 };
+
+/** Mensaje de RLS idéntico al modelo legacy (js/components/impresion_tablas.js). */
+const MSG_RLS =
+  "La impresión necesita permiso de lectura (RLS). Ejecute en Supabase el SQL: sql/crear_rpc_club_listar_tablas_fijas_publicadas.sql y vuelva a intentar.";
+
+export type CargaImpresion = {
+  ok: boolean;
+  tablas: StoredTablaFija[];
+  /** true si la lectura quedó bloqueada por RLS (tablas vacías sin error). */
+  rls: boolean;
+  error?: string;
+};
+
+/**
+ * SIEMPRE recarga la última versión de valores desde Supabase (sin caché),
+ * igual que el modelo legacy. Primero la RPC club_listar_tablas_fijas_publicadas
+ * (SECURITY DEFINER: lista blindada ante RLS); si la RPC no existe, cae al
+ * SELECT directo sobre tablas_fijas (estado 'Abierta'); si el SELECT devuelve
+ * vacío sin error, es RLS aplicándose.
+ */
+export async function cargarTablasImpresion(): Promise<CargaImpresion> {
+  if (!supabase) return { ok: false, tablas: [], rls: false, error: "Sin conexión a Supabase." };
+  let bloqueadoRLS = false;
+  try {
+    const rpc = await supabase.rpc("club_listar_tablas_fijas_publicadas");
+    if (!rpc.error && Array.isArray(rpc.data) && rpc.data.length) {
+      return { ok: true, tablas: rpc.data as StoredTablaFija[], rls: false };
+    }
+    if (rpc.error && /rls|row.level|permission denied|42501|PGRST/i.test(String(rpc.error.message ?? rpc.error.code ?? rpc.error))) {
+      bloqueadoRLS = true;
+    }
+    const r = await supabase.from("tablas_fijas").select("*").eq("estado", "Abierta");
+    if (r.error) throw r.error;
+    const tablas = (r.data ?? []) as StoredTablaFija[];
+    if (tablas.length === 0 && !rpc.error) bloqueadoRLS = true;
+    return { ok: true, tablas, rls: bloqueadoRLS };
+  } catch (e) {
+    return { ok: false, tablas: [], rls: bloqueadoRLS, error: e instanceof Error ? e.message : String(e) };
+  }
+}
 
 /* Dimensiones de diseño (px). Proporción carta horizontal 11×8.5in. */
 const ANCHO = 1400;
@@ -233,10 +274,10 @@ export async function generarPDF(canvas: HTMLCanvasElement, nombreArchivo: strin
 }
 
 /**
- * Genera el documento (PDF/JPG/PNG) de las tablas fijas publicadas.
- * Las tablas ya deben venir filtradas por hipódromo/día si se requiere.
+ * Genera el documento (PDF/JPG/PNG) de una lista de tablas YA cargadas.
+ * Ordena hipódromo/carrera y pagina de a 15 por hoja (5×3), como el legacy.
  */
-export async function imprimirTablasPublicadas(
+export async function imprimirTablasDirectas(
   tablas: StoredTablaFija[],
   formato: FormatoImpresion,
   filtros: FiltrosImpresion = {}
@@ -279,6 +320,32 @@ export async function imprimirTablasPublicadas(
   } catch (err) {
     return { ok: false, error: `Error generando el PDF: ${err instanceof Error ? err.message : String(err)}` };
   }
+}
+
+/**
+ * Impresión de Tablas Fijas Publicadas — paridad con el modelo legacy
+ * `js/components/impresion_tablas.js`:
+ *   1) SIEMPRE recarga la última versión de valores desde Supabase (RPC
+ *      club_listar_tablas_fijas_publicadas → SELECT directo con detección RLS).
+ *   2) Aplica los filtros hipódromo/día aquí mismo (última versión real).
+ *   3) Genera PDF (jsPDF) / JPG / PNG (html2canvas) del documento denso.
+ * Los filtros provienen del modal de impresión y NUNCA de un store desactualizado.
+ */
+export async function imprimirTablasPublicadas(
+  formato: FormatoImpresion,
+  filtros: FiltrosImpresion = {}
+): Promise<ResultadoImpresion> {
+  const carga = await cargarTablasImpresion();
+  if (!carga.ok) {
+    return { ok: false, error: carga.error || "No se pudo leer las tablas publicadas." };
+  }
+  const filtradas = filtrarTablas(carga.tablas, filtros);
+  if (filtradas.length === 0) {
+    return carga.rls
+      ? { ok: false, error: MSG_RLS }
+      : { ok: false, error: `No hay tablas fijas publicadas para imprimir (${filtros.hipodromo ? filtros.hipodromo + " · " : ""}${filtros.dia ? filtros.dia : "todas las fechas"}).` };
+  }
+  return imprimirTablasDirectas(filtradas, formato, filtros);
 }
 
 /** Descarga los filtros derivados. Útil para la UI del modal. */

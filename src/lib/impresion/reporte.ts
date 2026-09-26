@@ -380,8 +380,9 @@ export async function imprimirReportePorJugador(
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "letter" });
     const W = 215.9;
     const H = 279.4;
-    const escPx = canvas.height / (canvas.width / W);
-    const hHojaPx = H * (canvas.width / W) / escPx;
+    // px por mm horizontal → altura de la página en px del canvas.
+    const pxPorMm = canvas.width / W;
+    const hHojaPx = Math.round(H * pxPorMm);
     const numHojas = Math.max(1, Math.round(canvas.height / hHojaPx));
     if (numHojas <= 1) {
       pdf.addImage(canvas.toDataURL("image/jpeg", 0.95), "JPEG", 0, 0, W, H);

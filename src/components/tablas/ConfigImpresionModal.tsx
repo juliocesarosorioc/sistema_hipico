@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import {
+  cargarTablasImpresion,
+  filtrarTablas,
   imprimirTablasPublicadas,
   imprimirReportePorJugador,
+  type CargaImpresion,
   type FiltrosImpresion,
   type FormatoImpresion,
   type ResultadoImpresion,
 } from "@/lib/impresion";
+import type { StoredTablaFija } from "@/store/useTablasFijasStore";
 import { Button } from "@/components/ui/Button";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
@@ -20,62 +23,63 @@ type Props = {
 };
 
 export function ConfigImpresionModal({ abierto, onCerrar }: Props) {
-  const tablas = useTablasFijasStore((s) => s.tablas);
-
+  const [tablas, setTablas] = useState<StoredTablaFija[]>([]);
+  const [bloqueadoRLS, setBloqueadoRLS] = useState(false);
   const [hipodromo, setHipodromo] = useState("");
   const [dia, setDia] = useState("");
   const [tipo, setTipo] = useState<"tablas" | "reporte">("tablas");
   const [trabajando, setTrabajando] = useState<"PDF" | "JPG" | "PNG" | null>(null);
 
   useEffect(() => {
-    if (abierto) {
-      setHipodromo("");
-      setDia("");
-      setTipo("tablas");
-      setTrabajando(null);
-    }
+    if (!abierto) return;
+    setHipodromo("");
+    setDia("");
+    setTipo("tablas");
+    setTrabajando(null);
+    let vivo = true;
+    cargarTablasImpresion().then((c: CargaImpresion) => {
+      if (!vivo) return;
+      setTablas(c.tablas);
+      setBloqueadoRLS(c.rls);
+    });
+    return () => {
+      vivo = false;
+    };
   }, [abierto]);
 
-  // FILTRO EN CASCADA: Extrae solo los días donde corrió el hipódromo seleccionado (si hay uno)
+  // FILTRO EN CASCADA (datos frescos de Supabase, NO del store desactualizado).
+  const filtradas = useMemo(() => filtrarTablas(tablas, { hipodromo: hipodromo || undefined, dia: dia || undefined }), [tablas, hipodromo, dia]);
+
   const diasEvento = useMemo(() => {
-    const fechasUnicas = new Set<string>();
-    tablas.forEach(t => {
-      if (!t.cerrada && (!hipodromo || t.hipodromo === hipodromo)) {
-        if (t.fecha) fechasUnicas.add(t.fecha.slice(0, 10));
-        else if (t.fecha_creacion) fechasUnicas.add(t.fecha_creacion.slice(0, 10));
-      }
+    const set = new Set<string>();
+    tablas.forEach((t) => {
+      if (hipodromo && t.hipodromo !== hipodromo) return;
+      const d = String(t.fecha_creacion || t.fecha || "").slice(0, 10);
+      if (d) set.add(d);
     });
-    return Array.from(fechasUnicas).sort().reverse();
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
   }, [tablas, hipodromo]);
 
-  // FILTRO EN CASCADA: Extrae solo los hipódromos que corrieron en el día seleccionado (si hay uno)
   const hipodromos = useMemo(() => {
-    const setHips = new Set<string>();
-    tablas.forEach(t => {
-       if (!t.cerrada && (!dia || (t.fecha || t.fecha_creacion || "").slice(0,10) === dia)) {
-           if (t.hipodromo) setHips.add(t.hipodromo);
-       }
+    const set = new Set<string>();
+    tablas.forEach((t) => {
+      if (dia && String(t.fecha_creacion || t.fecha || "").slice(0, 10) !== dia) return;
+      if (t.hipodromo) set.add(t.hipodromo);
     });
-    return Array.from(setHips).sort();
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
   }, [tablas, dia]);
 
   const generar = async (formato: FormatoImpresion) => {
     setTrabajando(formato);
     const filtros: FiltrosImpresion = { hipodromo: hipodromo || undefined, dia: dia || undefined };
-    
-    // FILTRO ESTRICTO: Cortamos las tablas aquí mismo antes de mandarlas a imprimir
-    const tablasFiltradas = tablas.filter((t) => {
-      if (t.cerrada) return false;
-      if (hipodromo && t.hipodromo !== hipodromo) return false;
-      if (dia && (t.fecha || t.fecha_creacion || "").slice(0, 10) !== dia) return false;
-      return true;
-    });
 
     let r: ResultadoImpresion;
     try {
+      // Tablas: SIEMPRE recarga la última versión de valores desde Supabase
+      // (modelo legacy) y aplica los filtros aquí mismo. Reporte: lee tickets.
       r =
         tipo === "tablas"
-          ? await imprimirTablasPublicadas(tablasFiltradas, formato, filtros)
+          ? await imprimirTablasPublicadas(formato, filtros)
           : await imprimirReportePorJugador(formato, filtros);
       if (r.ok) toast(`Documento generado: ${r.archivo}`);
       else toast(r.error || "No se pudo generar el documento.", "error");
@@ -148,9 +152,18 @@ export function ConfigImpresionModal({ abierto, onCerrar }: Props) {
             </select>
             {dia && hipodromo ? (
               <p className="text-[10px] text-emerald-600 font-bold mt-1">
-                Se imprimirán {tipo === "tablas" ? `${tablas.filter((t) => !t.cerrada && t.hipodromo === hipodromo && (t.fecha || t.fecha_creacion || "").slice(0, 10) === dia).length} tabla(s)` : "las entradas"} de {hipodromo} · {dia}
+                Se imprimirán {tipo === "tablas" ? `${filtradas.length} tabla(s)` : "las entradas"} de {hipodromo} · {dia}
               </p>
-            ) : null}
+            ) : (
+              <p className="text-[10px] text-slate-400 mt-1">
+                {tipo === "tablas" ? `${filtradas.length} tabla(s) en estado "Abierta" con los filtros actuales.` : "El reporte procesa tickets_apuestas."}
+              </p>
+            )}
+            {bloqueadoRLS && (
+              <p className="mt-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] font-bold text-red-600">
+                ⚠ La impresión necesita permiso de lectura (RLS). Ejecute en Supabase: sql/crear_rpc_club_listar_tablas_fijas_publicadas.sql
+              </p>
+            )}
           </div>
           <div className="pt-3 border-t border-slate-200">
             <label className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wider">

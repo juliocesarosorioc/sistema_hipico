@@ -4,10 +4,13 @@
  */
 export {
   imprimirTablasPublicadas,
+  imprimirTablasDirectas,
+  cargarTablasImpresion,
   generarPDF,
   diasDisponibles,
   hipodromosDisponibles,
   filtrarTablas,
+  type CargaImpresion,
   type FormatoImpresion,
   type FiltrosImpresion,
   type ResultadoImpresion,
