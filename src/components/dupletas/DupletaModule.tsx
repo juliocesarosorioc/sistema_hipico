@@ -278,13 +278,13 @@ export function DupletaModule() {
                 <tr>
                   <th className="sticky left-0 top-0 z-40 min-w-[120px] border-b border-r border-slate-300 bg-indigo-600 p-1 text-left align-bottom text-[9px] font-black text-white">
                     <span className="block">DUPLETA</span>
-                    <span className="block text-emerald-200">PAGA ${matriz.premio.toLocaleString("es-VE")}</span>
+                    <span className="block text-[14px] text-emerald-300">PAGA ${matriz.premio.toLocaleString("es-VE")}</span>
                     <span className="mt-0.5 block text-[7px] font-bold uppercase text-indigo-200">clic en ejemplar = retira</span>
                   </th>
-                  {matriz.caballos1.map((cb) => {
+                  {matriz.caballos1.map((cb, i1) => {
                     const col = colorDeNumeroGac(cb.numero);
                     return (
-                      <th key={`h1-${cb.numero}`} className="sticky top-0 z-30 min-w-[72px] border-b border-r border-slate-300 bg-indigo-600 p-0.5">
+                      <th key={`h1-${cb.numero}`} className="sticky top-0 z-30 w-[72px] max-w-[72px] border-b border-r border-slate-300 bg-indigo-600 p-0.5">
                         <button
                           type="button"
                           onClick={() => toggleRetirado(1, cb.numero)}
@@ -297,7 +297,7 @@ export function DupletaModule() {
                             </span>
                             {cb.retirado && <span className="text-[10px] font-black">✖</span>}
                           </span>
-                          <span className="mt-0.5 block max-w-[64px] truncate">
+                          <span className="mt-0.5 block break-words leading-tight">
                             <Flag nac={cb.nacionalidad} size={11} withName={false} /> {cb.nombre}
                           </span>
                         </button>
@@ -307,11 +307,11 @@ export function DupletaModule() {
                 </tr>
               </thead>
               <tbody>
-                {matriz.caballos2.map((cb2) => {
+                {matriz.caballos2.map((cb2, i2) => {
                   const izq = colorDeNumeroGac(cb2.numero);
                   return (
                     <tr key={`f-${cb2.numero}`}>
-                      <th className="sticky left-0 z-20 min-w-[120px] border-b border-r border-slate-300 bg-indigo-50 p-0.5 text-left">
+                      <th className="sticky left-0 z-20 w-[120px] max-w-[120px] border-b border-r border-slate-300 bg-indigo-50 p-0.5 text-left">
                         <button
                           type="button"
                           onClick={() => toggleRetirado(2, cb2.numero)}
@@ -322,14 +322,15 @@ export function DupletaModule() {
                             {cb2.numero}
                           </span>
                           {cb2.retirado && <span className="text-[10px] font-black">✖</span>}
-                          <span className="block max-w-[86px] truncate">{cb2.nombre}</span>
+                          <span className="min-w-0 flex-1 break-words leading-tight">{cb2.nombre}</span>
                         </button>
                       </th>
-                      {matriz.caballos1.map((cb1) => {
+                      {matriz.caballos1.map((cb1, i1) => {
                         const bloqueada = cb1.retirado || cb2.retirado;
                         const celda = matriz.celdas[claveCelda(cb1.numero, cb2.numero)];
+                        const damero = !bloqueada && !celda?.vendida && (i1 + i2) % 2 === 1;
                         return (
-                          <td key={`c-${cb1.numero}-${cb2.numero}`} className={`min-w-[72px] border-b border-r border-slate-200 p-0.5 ${bloqueada ? "bg-slate-200" : celda?.vendida ? "bg-orange-400" : "bg-white"}`}>
+                          <td key={`c-${cb1.numero}-${cb2.numero}`} className={`w-[72px] min-w-[72px] border-b border-r border-slate-400 p-0.5 ${bloqueada ? "bg-slate-200" : celda?.vendida ? "bg-orange-400" : damero ? "bg-slate-100" : "bg-white"}`}>
                             {bloqueada ? (
                               <div className="flex h-11 items-center justify-center text-[6px] font-black tracking-[0.35em] text-slate-500" style={{ writingMode: "vertical-rl" }}>
                                 N O V A L E
@@ -339,10 +340,10 @@ export function DupletaModule() {
                                 type="button"
                                 onClick={() => abrirCelda(cb1.numero, cb2.numero)}
                                 title={`${cb1.nombre} × ${cb2.nombre}`}
-                                className={`block h-11 w-full text-left transition-colors ${celda?.vendida ? "text-slate-900" : "text-slate-400 hover:bg-indigo-50"}`}
+                                className={`block h-11 w-full text-left transition-colors ${damero ? "hover:bg-indigo-50" : "hover:bg-indigo-100"} ${celda?.vendida ? "text-slate-900" : "text-slate-600"}`}
                               >
-                                <span className="block text-[9px] font-black">
-                                  {celda?.vendida ? `$${(celda.precio ?? matriz.precio).toLocaleString("es-VE", { maximumFractionDigits: 2 })}` : `$ ${matriz.precio.toLocaleString("es-VE", { maximumFractionDigits: 2 })}`}
+                                <span className="block text-[18px] font-black leading-none">
+                                  {celda?.vendida ? `$${(celda.precio ?? matriz.precio).toLocaleString("es-VE", { maximumFractionDigits: 2 })}` : `$${matriz.precio.toLocaleString("es-VE", { maximumFractionDigits: 2 })}`}
                                 </span>
                                 <span className="block truncate text-[9px] font-bold leading-tight">{celda?.vendida ? (celda.cliente_nombre || "—") : "clic ▼"}</span>
                               </button>
