@@ -7,7 +7,7 @@ import { listarTablasPublicadas } from "@/lib/tablas/rpc";
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { listarClientesVenta, type ClienteVenta } from "@/lib/grupos";
 import { colorDeNumeroGac } from "@/lib/gaceta/ui";
-import { Flag, normalizarNacionalidad } from "@/components/ui/BanderaPais";
+import { Flag, normalizarNacionalidad, NOMBRES_PAIS_BANDERA } from "@/components/ui/BanderaPais";
 import { claveCelda, guardarDupleta, listarDupletasGuardadas, type CaballoDupleta, type DupletaEstado } from "@/lib/dupletas";
 import { exportarPaginas, type ImgFormato } from "@/lib/impresion/exportar";
 
@@ -20,6 +20,9 @@ const casaDe = (h: string) => (esHipoAmericano(h) ? "USA" : "VE");
 
 /** True si el ejemplar es de otra nacionalidad que el hipódromo (mostrar bandera). */
 const banderaNoCasa = (nac?: string | null, hipo = "") => normalizarNacionalidad(nac) !== casaDe(hipo);
+
+/** Nombre del país (paridad con el padrón). */
+const paisDe = (nac?: string | null) => NOMBRES_PAIS_BANDERA[normalizarNacionalidad(nac)] ?? "…";
 
 export function DupletaModule() {
   const [carreras, setCarreras] = useState<TablaFijaRow[]>([]);
@@ -38,19 +41,38 @@ export function DupletaModule() {
   const areaRef = useRef<HTMLDivElement | null>(null);
   const [ajuste, setAjuste] = useState<{ w: number; h: number; escala: number } | null>(null);
 
-  // Ancho uniforme de cada columna horizontal: caben el nombre del caballo en UNA línea.
+  // Ancho uniforme de cada columna horizontal: nombre (hasta 2 líneas) y, si aplica, bandera+nacionalidad.
   const anchoCol = useMemo(() => {
-    if (!matriz || typeof document === "undefined") return 120;
+    if (!matriz || typeof document === "undefined") return 110;
     const ctx = document.createElement("canvas").getContext("2d");
-    if (!ctx) return 120;
+    if (!ctx) return 110;
     ctx.font = "900 13px Inter, ui-sans-serif, system-ui, sans-serif";
     let w = 88;
     for (const c of matriz.caballos1) {
       const txt = ctx.measureText(String(c.nombre || "").trim()).width * 1.12;
-      const band = banderaNoCasa(c.nacionalidad, matriz.hipodromo) ? 22 : 0;
-      w = Math.max(w, Math.ceil(txt + band + 16));
+      w = Math.max(w, Math.ceil(txt + 16));
+      if (banderaNoCasa(c.nacionalidad, matriz.hipodromo)) {
+        const nac = paisDe(c.nacionalidad);
+        w = Math.max(w, Math.ceil(ctx.measureText(nac).width + 24));
+      }
     }
     return w;
+  }, [matriz]);
+
+  // Ancho de la columna vertical: número + nombre en UNA línea y, si aplica, bandera+nacionalidad.
+  const anchoIzq = useMemo(() => {
+    if (!matriz || typeof document === "undefined") return 140;
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (!ctx) return 140;
+    ctx.font = "900 13px Inter, ui-sans-serif, system-ui, sans-serif";
+    let max = 0;
+    for (const c of matriz.caballos2) {
+      max = Math.max(max, ctx.measureText(String(c.nombre || "").trim()).width * 1.12);
+      if (banderaNoCasa(c.nacionalidad, matriz.hipodromo)) {
+        max = Math.max(max, ctx.measureText(paisDe(c.nacionalidad)).width + 24);
+      }
+    }
+    return Math.max(140, Math.ceil(max + 16) + 36);
   }, [matriz]);
 
   // Ajusta la tabla al área visible para nunca tener barras de desplazamiento.
@@ -78,7 +100,7 @@ export function DupletaModule() {
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [matriz, anchoCol]);
+  }, [matriz, anchoCol, anchoIzq]);
   const [modal, setModal] = useState<{ c1: string; c2: string } | null>(null);
   const [q, setQ] = useState("");
   const [abiertoCli, setAbiertoCli] = useState(false);
@@ -355,12 +377,15 @@ export function DupletaModule() {
                             </span>
                             {cb.retirado && <span className="text-[13px] font-black">✖</span>}
                           </span>
-                          <span className="block whitespace-nowrap text-[13px] leading-tight">
+                          <span className="block break-words text-[13px] leading-tight" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                             {cb.nombre}
-                            {banderaNoCasa(cb.nacionalidad, matriz.hipodromo) && (
-                              <Flag nac={cb.nacionalidad} size={17} withName={false} className="ml-1" />
-                            )}
                           </span>
+                          {banderaNoCasa(cb.nacionalidad, matriz.hipodromo) && (
+                            <span className="mt-0.5 block whitespace-nowrap text-[10px] font-bold text-indigo-100">
+                              <Flag nac={cb.nacionalidad} size={12} withName={false} className="mr-1" />
+                              {paisDe(cb.nacionalidad)}
+                            </span>
+                          )}
                         </button>
                       </th>
                     );
@@ -372,23 +397,28 @@ export function DupletaModule() {
                   const izq = colorDeNumeroGac(cb2.numero);
                   return (
                     <tr key={`f-${cb2.numero}`}>
-                      <th className={`sticky left-0 z-20 w-[120px] max-w-[120px] border-b border-r border-slate-300 p-0.5 align-top text-left ${i2 % 2 ? "bg-indigo-100" : "bg-indigo-50"}`}>
+                      <th className={`sticky left-0 z-20 border-b border-r border-slate-300 p-0.5 align-top text-left ${i2 % 2 ? "bg-indigo-100" : "bg-indigo-50"}`} style={{ width: anchoIzq, maxWidth: anchoIzq }}>
                         <button
                           type="button"
                           onClick={() => toggleRetirado(2, cb2.numero)}
                           title={cb2.retirado ? "Quitar retirado" : "Marcar retirado"}
-                          className={`flex w-full items-start justify-start gap-1 rounded px-0.5 py-0.5 text-left ${cb2.retirado ? "bg-yellow-400 text-slate-900" : "text-slate-800"}`}
+                          className={`flex w-full flex-col rounded px-0.5 py-0.5 text-left ${cb2.retirado ? "bg-yellow-400 text-slate-900" : "text-slate-800"}`}
                         >
-                          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: izq.bg, color: izq.fg }}>
-                            {cb2.numero}
+                          <span className="flex w-full items-start justify-start gap-1">
+                            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: izq.bg, color: izq.fg }}>
+                              {cb2.numero}
+                            </span>
+                            {cb2.retirado && <span className="text-[13px] font-black">✖</span>}
+                            <span className="min-w-0 flex-1 whitespace-nowrap text-[13px] leading-tight">
+                              {cb2.nombre}
+                            </span>
                           </span>
-                          {cb2.retirado && <span className="text-[13px] font-black">✖</span>}
-                          <span className="min-w-0 flex-1 break-words text-[13px] leading-tight">
-                            {cb2.nombre}
-                            {banderaNoCasa(cb2.nacionalidad, matriz.hipodromo) && (
-                              <Flag nac={cb2.nacionalidad} size={17} withName={false} className="ml-1" />
-                            )}
-                          </span>
+                          {banderaNoCasa(cb2.nacionalidad, matriz.hipodromo) && (
+                            <span className="mt-0.5 block whitespace-nowrap text-[10px] font-bold text-slate-500">
+                              <Flag nac={cb2.nacionalidad} size={12} withName={false} className="mr-1" />
+                              {paisDe(cb2.nacionalidad)}
+                            </span>
+                          )}
                         </button>
                       </th>
                       {matriz.caballos1.map((cb1, i1) => {
