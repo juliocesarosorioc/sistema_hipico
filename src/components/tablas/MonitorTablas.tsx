@@ -271,11 +271,11 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
             <div key={String(t.id)} className="flex flex-col overflow-hidden rounded-xl border border-indigo-200 bg-white shadow-sm">
               <div className="px-1.5 py-px text-white" style={{ background: "linear-gradient(135deg,#4f46e5 0%,#7c3aed 60%,#9333ea 100%)" }}>
                 <div className="flex items-center justify-between gap-1 leading-none">
-                  <span className="min-w-0 truncate rounded bg-white/20 px-1.5 py-px text-[11px] font-bold uppercase tracking-wider">
+                  <span className="min-w-0 truncate rounded bg-white/20 px-1.5 py-px text-[16px] font-bold uppercase tracking-wider">
                     🏛️ {t.hipodromo || ""}
                   </span>
                   <span className="flex items-center gap-1 whitespace-nowrap">
-                    <span className="inline-flex items-center rounded-md border-4 border-white bg-indigo-900 px-4 py-2 text-xl font-black uppercase leading-none tracking-widest text-white shadow-lg md:text-2xl transform scale-110">
+                    <span className="inline-flex items-center rounded-md border-4 border-white bg-indigo-900 px-4 py-1 text-[15px] font-black uppercase leading-none tracking-widest text-white shadow-lg md:text-[19px]">
                     C{t.carrera ?? ""}
                   </span>
                     {onEliminar && (
@@ -292,13 +292,13 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                     )}
                   </span>
                 </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[9px] font-bold leading-none">
+                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[12px] font-bold leading-none">
                   <span className="rounded bg-white/20 px-1 py-px">📏 {t.distancia_carrera ?? ""} m</span>
                   <span className="rounded bg-white/20 px-1 py-px uppercase">{t.superficie || "ARENA"}</span>
                   <span className="rounded bg-white/20 px-1 py-px">📅 {t.fecha?.slice(0,10) ?? ""}</span>
                 </div>
                 <div className="mt-0.5 flex items-center justify-between rounded bg-white/20 px-1.5 py-px leading-none">
-                  <span className="text-[8px] font-black uppercase tracking-wider opacity-90">💰 Monto a Pagar / Tabla</span>
+                  <span className="text-[11px] font-black uppercase tracking-wider opacity-90">💰 MONTO A PAGAR TABLA</span>
                   <span className="whitespace-nowrap text-sm font-black">{fmtValor(t.premio_recalculado ?? null)}</span>
                 </div>
               </div>
@@ -321,7 +321,7 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                       key={i}
                       type="button"
                       onClick={() => setEjemplarModal({ tabla: t, indice: i })}
-                      className={`grid w-full items-center rounded px-1 py-0 text-left transition-colors hover:bg-indigo-50 ${c.retirado ? "opacity-50" : ""} cursor-pointer`}
+                      className={`grid w-full items-center rounded px-1 py-0 text-left transition-colors ${i % 2 === 1 ? "bg-slate-100" : "bg-white"} hover:bg-indigo-200 ${c.retirado ? "opacity-50" : ""} cursor-pointer`}
                       style={{ gridTemplateColumns: "1.75rem 1fr 1.25rem 4rem" }}
                     >
                       <span
@@ -330,11 +330,11 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
                       >
                         {c.numero}
                       </span>
-                      <span className="min-w-0 truncate px-1 text-[12px] font-bold uppercase leading-none text-slate-800">{c.nombre || "Sin nombre"}</span>
+                      <span className="min-w-0 truncate px-1 text-[14px] font-bold uppercase leading-none text-slate-800">{c.nombre || "Sin nombre"}</span>
                       <span className="flex justify-center text-center leading-none">
                         {nac !== "VE" && <Flag nac={nac} size={12} withName={false} />}
                       </span>
-                      <span className={`whitespace-nowrap text-right text-[14px] font-black leading-none ${c.retirado ? "text-red-500 line-through" : "text-blue-700"}`}>
+                      <span className={`whitespace-nowrap text-right text-[17px] font-black leading-none ${c.retirado ? "text-red-500 line-through" : "text-blue-700"}`}>
                         {c.retirado ? "RET." : `${fmtValor(valor)}`}
                       </span>
                     </button>

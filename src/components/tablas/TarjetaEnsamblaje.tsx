@@ -89,7 +89,7 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg: "✅ Morning Line ajustado a $1.60", tipo: "success" } }));
   };
 
-  const chipCls = "rounded px-1 py-px text-[9px] font-bold leading-none";
+  const chipCls = "rounded px-1 py-px text-[12px] font-bold leading-none";
   const inpHeader = "rounded px-1 py-px font-bold outline-none bg-white/20 text-white placeholder:text-white/50";
 
   return (
@@ -102,10 +102,10 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
             value={draft.hipodromo}
             onChange={(e) => set({ hipodromo: e.target.value.toUpperCase() })}
             placeholder="Hipódromo"
-            className={`${inpHeader} min-w-0 flex-1 text-[11px] uppercase`}
+            className={`${inpHeader} min-w-0 flex-1 text-[16px] uppercase`}
           />
           <span className="flex items-center gap-1 whitespace-nowrap">
-            <span className="flex items-center rounded-full border-2 border-indigo-200 bg-white px-3 py-1 text-base font-black uppercase leading-none tracking-widest text-indigo-900 shadow-md md:text-lg">
+            <span className="flex items-center rounded-full border-2 border-indigo-200 bg-white px-2 py-px text-[11px] font-black uppercase leading-none tracking-widest text-indigo-900 shadow-md md:text-[13px]">
               <span className="mr-1 text-indigo-400">C</span>
               <input
                 type="number"
@@ -135,7 +135,7 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
           </select>
         </div>
         <div className="mt-0.5 flex items-center justify-between rounded px-1.5 py-px leading-none bg-white/20">
-          <span className="text-[8px] font-black uppercase tracking-wider opacity-90">💰 Monto a Pagar / Tabla</span>
+          <span className="text-[11px] font-black uppercase tracking-wider opacity-90">💰 MONTO A PAGAR TABLA</span>
           <span className="flex items-center gap-0.5 text-sm font-black leading-none">
             <input type="number" step="0.01" value={draft.premio} onChange={(e) => set({ premio: e.target.value })} className="w-14 rounded bg-transparent text-right font-black outline-none text-white placeholder:text-white/40" />
           </span>
@@ -181,14 +181,14 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
             nac = esAmericano ? "US" : "VE";
           }
           return (
-            <div key={i} className="grid items-center rounded border border-slate-200 bg-slate-50 px-1 py-px" style={{ gridTemplateColumns: "1.5rem 1fr auto 3.25rem auto" }}>
+            <div key={i} className={`grid items-center rounded border border-slate-200 px-1 py-px transition-colors ${i % 2 === 1 ? "bg-slate-100" : "bg-white"} hover:bg-indigo-200`} style={{ gridTemplateColumns: "1.5rem 1fr auto 3.25rem auto" }}>
               <span
                 className="flex h-6 w-6 shrink-0 flex-none items-center justify-center text-center text-[10px] font-bold leading-none"
                 style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
               >
                 {c.numero}
               </span>
-              <span className="min-w-0 truncate px-1 text-[13px] font-bold uppercase leading-none text-slate-800 flex items-center gap-1">
+              <span className="min-w-0 truncate px-1 text-[15px] font-bold uppercase leading-none text-slate-800 flex items-center gap-1">
                 {c.nombre}
               </span>
               <span className="flex items-center justify-center px-1"><Flag nac={nac} size={10} withName={false} /></span>
@@ -198,7 +198,7 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
                 value={String(c.valor_ejemplar ?? "")}
                 onChange={(e) => setCaballo(i, { valor_ejemplar: e.target.value })}
                 placeholder={nac === "VE" ? "valor" : "M/L"}
-                className="w-14 rounded border border-slate-300 px-1 py-px text-right text-[14px] font-black text-blue-700 outline-none"
+                className="w-14 rounded border border-slate-300 px-1 py-px text-right text-[17px] font-black text-blue-700 outline-none"
               />
               <button type="button" onClick={() => quitarCaballo(i)} className="px-1 text-red-400 hover:text-red-600" title="Quitar ejemplar">
                 🗑️
