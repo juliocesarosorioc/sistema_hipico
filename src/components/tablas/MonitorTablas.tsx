@@ -436,85 +436,132 @@ export function MonitorTablas({ tablas, onVender, onLiquidar, onEditar, onRetira
   );
 }
 
-/** Matriz compacta cero-scroll: cada tabla ocupa una columna (screen y print). */
+// ============================================================================
+// LÓGICA LEGACY RESTAURADA: Auto-ajuste de fuente para evitar desconfiguración
+// ============================================================================
+const MAX_N = 20, FS_BASE = 8.6, FS_MIN = 7.4, FS_MAX = 13.5;
+
+function fsAuto(n: number) {
+  const num = Math.min(Math.max(n || 1, 1), MAX_N);
+  const p = (FS_BASE * MAX_N) / num;
+  return Math.round(Math.min(FS_MAX, Math.max(FS_MIN, p)) * 10) / 10;
+}
+
+// ============================================================================
+// LÓGICA LEGACY ESTRICTA: Motor original de Auto-ajuste de fuente y CSS nativo
+// ============================================================================
+const MAX_N = 20, FS_BASE = 8.6, FS_MIN = 7.4, FS_MAX = 13.5;
+
+function fsAuto(n: number) {
+  const num = Math.min(Math.max(n || 1, 1), MAX_N);
+  const p = (FS_BASE * MAX_N) / num;
+  return Math.floor(Math.min(FS_MAX, Math.max(FS_MIN, p)) * 10) / 10;
+}
+
+/** Matriz compacta: Replica exacta del HTML legacy para html2canvas */
 function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
   if (tablas.length === 0) {
     return <p className="py-6 text-center text-sm italic text-slate-400">No hay tablas abiertas para imprimir.</p>;
   }
+
   return (
-    <div className="grid grid-cols-1 gap-x-6 gap-y-4 p-2 text-black md:grid-cols-2 print:grid-cols-2 lg:grid-cols-3">
-      {tablas.map((t) => (
-        <div key={String(t.id)} style={{ pageBreakInside: "avoid", breakInside: "avoid" }} className="overflow-hidden rounded-lg border-2 border-black bg-white text-[10px] leading-tight shadow-sm">
-          
-          {/* Cabecera Negra */}
-          <div className="flex items-center justify-between bg-slate-900 px-2 py-1.5 text-white">
-            <span className="truncate font-black uppercase text-[11px]">{t.hipodromo} — C{t.carrera}</span>
-            <span className="whitespace-nowrap font-black text-[11px] text-green-400">US $ {fmtMoney(t.premio_recalculado ?? null, "")}</span>
-          </div>
-          
-          {/* Estructura de 4 COLUMNAS (15% - 8% - 52% - 25%) */}
-          <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
-            <thead className="bg-slate-200 border-b-2 border-slate-800">
-              <tr>
-                <th style={{ width: "15%", padding: "4px 0", textAlign: "center" }}>Nº</th>
-                <th style={{ width: "8%", padding: "4px 0", textAlign: "center" }}>🏳️</th>
-                <th style={{ width: "52%", padding: "4px 2px", textAlign: "left" }}>Ejemplar</th>
-                <th style={{ width: "25%", padding: "4px 4px", textAlign: "right" }}>Valor</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(t.caballos ?? []).map((c, i) => {
-                // Validación de bandera por si la IA no la trajo
-                let nac = c.nacionalidad ? String(c.nacionalidad).toUpperCase() : "";
-                if (!nac) {
-                  const esAmericano = /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN/i.test(t.hipodromo || "");
-                  nac = esAmericano ? "US" : "VE";
-                }
+    <div className="legacy-impresion-container p-2">
+      {/* INYECTAMOS TU CSS ORIGINAL PARA EVITAR INTERFERENCIA DE TAILWIND */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        .legacy-impresion-container { font-family: system-ui, Arial, sans-serif; color: #0f172a; }
+        .hoja-legacy { display: grid; grid-template-columns: repeat(1, 1fr); gap: 9px; }
+        @media (min-width: 700px) { .hoja-legacy { grid-template-columns: repeat(2, 1fr); } }
+        @media (min-width: 1100px) { .hoja-legacy { grid-template-columns: repeat(3, 1fr); } }
+        @media print {
+          .hoja-legacy { display: grid !important; grid-template-columns: repeat(5, 1fr) !important; gap: 2.2mm !important; }
+          .tarjeta-legacy { break-inside: avoid; border-radius: 4px; }
+        }
+        .tarjeta-legacy { background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+        .enc-legacy { background: #0f172a; color: #fff; padding: 6px 8px; }
+        .l1-legacy { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+        .hip-legacy { font-size: 10px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+        .cc-legacy { background: rgba(255,255,255,.16); border-radius: 6px; font-size: 10px; font-weight: 900; padding: 1px 7px; white-space: nowrap; flex: none; }
+        .l2-legacy { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 3px; font-size: 8.5px; font-weight: 700; color: #cbd5e1; }
+        .meta-legacy { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .fecha-legacy { margin-left: auto; white-space: nowrap; font-weight: 800; color: #7dd3fc; }
+        .filas-legacy { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; padding: 5px 7px; min-height: 0; }
+        .fila-legacy { display: flex; align-items: center; gap: 6px; line-height: 1.1; min-height: 0; margin: 1.5px 0; }
+        .num-legacy { width: 1.4em; height: 1.4em; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 0.95em; flex: none; line-height: 1; }
+        .cab-legacy { flex: 1; font-weight: 700; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; }
+        .cab-legacy.ret-legacy { color: #dc2626; text-decoration: line-through; }
+        .mon-legacy { font-weight: 800; color: #475569; white-space: nowrap; font-size: 0.95em; }
+        .mon-legacy.cero-legacy { color: #94a3b8; }
+        .pie-legacy { display: flex; justify-content: space-between; align-items: center; gap: 6px; border-top: 1px solid #e2e8f0; background: #f8fafc; padding: 5px 8px; font-size: 8.5px; font-weight: 700; color: #475569; white-space: nowrap; }
+        .pie-legacy b { color: #047857; font-size: 10px; }
+      `}} />
 
-                return (
-                  <tr key={i} style={{ borderBottom: "1px solid #cbd5e1" }} className={c.retirado ? "text-red-500 opacity-60" : "text-black"}>
-                    
-                    {/* 1. Número - Ancho 15% (Más amplio) */}
-                    <td style={{ width: "15%", padding: 0, textAlign: "center", backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}>
-                      <div style={{ fontWeight: "900", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", height: "100%", minHeight: "22px" }}>
+      <div className="hoja-legacy">
+        {tablas.map((t) => {
+          const ejemplares = t.caballos ?? [];
+          const numEjemplares = ejemplares.length || 1;
+          const fs = fsAuto(numEjemplares);
+          const suma = t.suma_base_tabla ?? sumaBase(t.caballos);
+
+          return (
+            <div key={String(t.id)} className="tarjeta-legacy">
+              
+              <div className="enc-legacy">
+                <div className="l1-legacy">
+                  <span className="hip-legacy" title={t.hipodromo}>{t.hipodromo}</span>
+                  <span className="cc-legacy">C{t.carrera}</span>
+                </div>
+                <div className="l2-legacy">
+                  <span className="meta-legacy"><b>DIST {t.distancia_carrera ?? ""} m</b> &middot; {t.superficie || "ARENA"}</span>
+                  <span className="fecha-legacy">{t.fecha?.slice(0, 10) ?? ""}</span>
+                </div>
+              </div>
+
+              <div className="filas-legacy" style={{ fontSize: `${fs}px` }}>
+                {ejemplares.length === 0 && (
+                  <div style={{ textAlign: "center", color: "#dc2626", fontWeight: "bold", padding: "10px 0" }}>⚠️ SIN APUESTAS</div>
+                )}
+                
+                {ejemplares.map((c, i) => {
+                  let nac = c.nacionalidad ? String(c.nacionalidad).toUpperCase() : "";
+                  if (!nac) {
+                    const esAmericano = /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN/i.test(t.hipodromo || "");
+                    nac = esAmericano ? "US" : "VE";
+                  }
+                  const valor = parseNum(c.valor_ejemplar);
+
+                  return (
+                    <div key={i} className="fila-legacy">
+                      <span 
+                        className="num-legacy" 
+                        style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
+                      >
                         {c.numero}
-                      </div>
-                    </td>
+                      </span>
+                      <span className={`cab-legacy ${c.retirado ? 'ret-legacy' : ''}`} title={c.nombre}>
+                        {nac !== "VE" && (
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <Flag nac={nac} size={12} withName={false} />
+                          </div>
+                        )}
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nombre}</span>
+                      </span>
+                      <span className={`mon-legacy ${valor === 0 ? 'cero-legacy' : ''}`}>
+                        {valor === 0 ? "–" : `US $ ${fmtMoney(valor, "")}`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
 
-                    {/* 2. Bandera - Ancho 8% (Columna independiente) */}
-                    <td style={{ width: "8%", padding: "2px 0", textAlign: "center", verticalAlign: "middle" }}>
-                      <div style={{ display: "flex", justifyContent: "center" }}>
-                        <Flag nac={nac} size={14} withName={false} />
-                      </div>
-                    </td>
+              <div className="pie-legacy">
+                <span>Σ SUMA <b>US $ {fmtMoney(suma, "")}</b></span>
+                <span>PREMIO/TABLA <b>US $ {fmtMoney(t.premio_recalculado ?? 0, "")}</b></span>
+              </div>
 
-                    {/* 3. Nombre del ejemplar - Ancho 52% (Máximo espacio, texto protegido) */}
-                    <td style={{ width: "52%", padding: "2px", fontWeight: "bold", textTransform: "uppercase", verticalAlign: "middle" }}>
-                      <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", width: "100%", fontSize: "10.5px" }}>
-                        {c.nombre} {c.retirado ? " (RET.)" : ""}
-                      </div>
-                    </td>
-
-                    {/* 4. Valor - Ancho 25% */}
-                    <td style={{ width: "25%", padding: "2px 4px", textAlign: "right", fontWeight: "900", fontSize: "11px", verticalAlign: "middle" }}>
-                      US $ {fmtMoney(parseNum(c.valor_ejemplar), "")}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot className="bg-slate-100 border-t-2 border-slate-800">
-              <tr>
-                <td colSpan={2} style={{ padding: "4px 6px", textAlign: "left", fontSize: "9px", color: "#64748b", textTransform: "uppercase", fontWeight: "bold" }}>Suma</td>
-                <td colSpan={2} style={{ padding: "4px 6px", textAlign: "right", fontWeight: "900", color: "#3730a3", fontSize: "11px" }}>
-                  US $ {fmtMoney(t.suma_base_tabla ?? sumaBase(t.caballos), "")}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-          
-        </div>
-      ))}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
