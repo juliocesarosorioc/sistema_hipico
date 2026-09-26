@@ -16,6 +16,8 @@ import { TarjetaEnsamblaje } from "@/components/tablas/TarjetaEnsamblaje";
 import { MonitorTablas, type VentaTablaItem } from "@/components/tablas/MonitorTablas";
 import { CarritoVentas } from "@/components/tablas/CarritoVentas";
 import { ToastHost } from "@/components/ui/ToastHost";
+import { Guard } from "@/components/ui/Guard";
+import ConfigImpresionModal from "@/components/tablas/ConfigImpresionModal";
 import type { PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 
 export type ErrorPublicacion = { hipodromo: string; carrera: number | null; error: string };
@@ -53,6 +55,7 @@ export function TablasModule(props: Props) {
   const carrerasDia = useCarrerasDiaStore((s) => s.carreras);
 
   const [secciones, setSecciones] = useState({ parametros: false, ensamblaje: false, monitor: true });
+  const [impresion, setImpresion] = useState(false);
   const [modoManual, setModoManual] = useState(false);
   const [drafts, setDrafts] = useState<DraftCarrera[]>([]);
   const [carrito, setCarrito] = useState<ItemCarritoVenta[]>([]);
@@ -535,9 +538,10 @@ export function TablasModule(props: Props) {
         onToggle={() => setSecciones((s) => ({ ...s, monitor: !s.monitor }))}
       >
         <div className="p-4">
-          <div className="mb-3 flex flex-wrap items-center gap-1.5 no-print">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">🚦 Carreras del Día</span>
-            {tablas.filter((t) => !t.cerrada).map((t) => {
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 no-print">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">🚦 Carreras del Día</span>
+              {tablas.filter((t) => !t.cerrada).map((t) => {
               const est = carrerasDia.find(
                 (c) => c.hipodromo === (t.hipodromo ?? "").toUpperCase() && c.carrera === t.carrera
               );
@@ -561,10 +565,23 @@ export function TablasModule(props: Props) {
                 </span>
               );
             })}
+            </div>
+            <Guard permiso="imprimir_tablas">
+              <button
+                type="button"
+                onClick={() => setImpresion(true)}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-[11px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-emerald-700"
+                title="Imprimir / exportar tablas publicadas (matriz 15 por hoja o reporte por jugador)"
+              >
+                🖨️ Imprimir Tablas
+              </button>
+            </Guard>
           </div>
           <MonitorTablas tablas={tablas} onVender={agregarAlCarrito} onLiquidar={liquidar} onEditar={editar} onRetirar={retirar} onEliminar={eliminar} />
         </div>
       </SeccionPliegue>
+
+      <ConfigImpresionModal abierto={impresion} onCerrar={() => setImpresion(false)} tablasRespaldo={tablas} />
 
       {/* Carrito flotante + toasts */}
       <CarritoVentas items={carrito} onQuitarItem={(id) => setCarrito((c) => c.filter((i) => i.id !== id))} onVaciar={() => setCarrito([])} onCerrarVenta={() => void cerrarVenta()} />
