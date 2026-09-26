@@ -56,6 +56,7 @@ export function TablasModule(props: Props) {
   const [secciones, setSecciones] = useState({ parametros: false, ensamblaje: false, monitor: true });
   const [impresion, setImpresion] = useState(false);
   const [modoManual, setModoManual] = useState(false);
+  const [menuEnsamblaje, setMenuEnsamblaje] = useState(false);
   const [drafts, setDrafts] = useState<DraftCarrera[]>([]);
   /** Fecha del programa (Filtro Universal): las tarjetas heredadas de la
    *  Gaceta traen la fecha del evento; las manuales usan este valor (hoy). */
@@ -499,34 +500,56 @@ export function TablasModule(props: Props) {
         onToggle={() => setSecciones((s) => ({ ...s, ensamblaje: !s.ensamblaje }))}
         accion={
           <div className={als}>
-            <button
-              type="button"
-              onClick={() => setModoManual((m) => !m)}
-              className={`m-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-wide shadow-md transition-colors ${
-                modoManual
-                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                  : "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-              }`}
-              title="Modo Manual: permite registrar carreras vacías escritas a mano sin depender de la Gaceta IA."
-            >
-              {modoManual ? "✅ Modo Manual ON" : "✍️ Modo Manual"}
-            </button>
-            <button
-              type="button"
-              onClick={pegarDesdeGaceta}
-              className="m-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-emerald-700"
-              title="Ir al módulo de Gacetas IA (las carreras se extraen desde la IA)"
-            >
-              📋 Pegar desde Gaceta
-            </button>
-            <button
-              type="button"
-              onClick={() => void publicarTodas()}
-              disabled={drafts.length === 0}
-              className="m-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              🚀 Publicar todas
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMenuEnsamblaje((m) => !m)}
+                className="m-1.5 flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-800 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-slate-700"
+              >
+                ⚙️ Acciones Carreras <span className="text-[9px] opacity-70">▾</span>
+              </button>
+              {menuEnsamblaje && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenuEnsamblaje(false)} />
+                  <div className="absolute right-0 top-full z-20 mt-1.5 w-64 overflow-hidden rounded-xl border border-line bg-white shadow-2xl">
+                    <button
+                      type="button"
+                      onClick={() => setModoManual((m) => !m)}
+                      className={`flex w-full items-center gap-2 border-b border-line px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wide transition-colors ${
+                        modoManual ? "bg-emerald-50 text-emerald-700" : "text-slate-600 hover:bg-slate-50"
+                      }`}
+                      title="Permite registrar carreras vacías escritas a mano sin depender de la Gaceta IA."
+                    >
+                      {modoManual ? "✅ Modo Manual ON" : "✍️ Modo Manual"}
+                      <span className="ml-auto text-[9px] font-bold text-slate-400">{modoManual ? "activado" : "desactivado"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        pegarDesdeGaceta();
+                        setMenuEnsamblaje(false);
+                      }}
+                      className="flex w-full items-center gap-2 border-b border-line px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wide text-slate-600 transition-colors hover:bg-slate-50"
+                      title="Ir al módulo de Gacetas IA (las carreras se extraen desde la IA)"
+                    >
+                      📋 Pegar desde Gaceta
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void publicarTodas();
+                        setMenuEnsamblaje(false);
+                      }}
+                      disabled={drafts.length === 0}
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wide text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      title="Publicar en lote todas las carreras del ensamblaje"
+                    >
+                      🚀 Publicar todas
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         }
       >
