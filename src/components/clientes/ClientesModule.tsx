@@ -35,13 +35,19 @@ const num = (v: number | string | null | undefined): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+/** Afiliados de un socio/agencia (clientes cuyo socio_asignado coincide con este nombre). */
+const afiliadosDe = (c: ClienteRow, lista: ClienteRow[]): number =>
+  lista.filter((s) => String(s.socio_asignado || "").toUpperCase() === String(c.nombre || c.seudonimo || "").toUpperCase()).length;
+
 const modoOpts = [
   { value: "aval", label: "Con Aval" },
   { value: "libre", label: "Libre" },
   { value: "pozo", label: "Pozo" },
 ];
 
-type Tab = "cartera" | "estado" | "notificaciones";
+const DIAS = ["LUNES", "MARTES", "MIÉRCOLES", "JUEVES", "VIERNES", "SÁBADO", "DOMINGO"];
+
+type Tab = "cartera" | "estado" | "cuadre" | "notificaciones";
 
 /**
  * ClientesModule — Gestión de Clientes (clon de js/clientes.js, tarea 5).
@@ -169,6 +175,7 @@ export function ClientesModule() {
           [
             ["cartera", "Cartera"],
             ["estado", "Estado de Cuenta"],
+            ["cuadre", "Cuadre Semanal"],
             ["notificaciones", "Notificaciones del Portal"],
           ] as [Tab, string][]
         ).map(([k, lbl]) => (
@@ -204,6 +211,9 @@ export function ClientesModule() {
               <input type="checkbox" checked={soloSocios} onChange={(e) => setSoloSocios(e.target.checked)} className="h-4 w-4 accent-primary-600" />
               Solo socios
             </label>
+            <Button variant="outline" size="sm" title="Recargar cartera" onClick={() => void recargar()}>
+              <i className="fas fa-sync-alt"></i>
+            </Button>
             <div className="ml-auto flex gap-2 items-center">
               <input
                 value={socioConvertir}
@@ -305,7 +315,11 @@ export function ClientesModule() {
                       <span className="font-bold text-slate-700 truncate block">{c.socio_asignado || "—"}</span>
                     </td>
                     <td className={td}>
-                      <span className="text-amber-600 font-bold truncate block">{c.es_socio ? "SÍ" : "—"}</span>
+                      {c.es_socio ? (
+                        <span className="text-amber-600 font-bold truncate block">Agencia ({afiliadosDe(c, clientes)})</span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                     <td className={td}>
                       {c.dia_cuadre ? (
@@ -389,6 +403,8 @@ export function ClientesModule() {
           onCargarTickets={cargarTicketsCliente}
           onActivo={(c) => setClienteEstado(c)}
         />
+      ) : tab === "cuadre" ? (
+        <CuadreSemanal clientes={clientes} />
       ) : (
         <NotificacionesPortal />
       )}
@@ -515,6 +531,8 @@ function ModalNuevoCliente({
 
   const guardar = async () => {
     if (!seudonimo.trim()) return toast("El seudónimo es obligatorio.", "warning");
+    if (clientes.some((c) => String(c.seudonimo || c.nombre || "").toUpperCase() === seudonimo.trim().toUpperCase()))
+      return toast("Ya existe un cliente con ese seudónimo.", "error");
     const nombre = [nombres, apellido].filter(Boolean).join(" ").toUpperCase() || seudonimo.toUpperCase();
     setGuardando(true);
     const r = await crearCliente({
@@ -546,7 +564,6 @@ function ModalNuevoCliente({
   };
 
   const inpTxt = "w-full border border-line rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary-500 bg-surface";
-  const dias = ["LUNES", "MARTES", "MIÉRCOLES", "JUEVES", "VIERNES", "SÁBADO", "DOMINGO"];
   const formas = ["SALDO EN CONTADO", "EFECTIVO DIRECTO", "COMPENSACIÓN AVAL", "MIXTO"];
 
   return (
@@ -668,7 +685,7 @@ function ModalNuevoCliente({
                 <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Día de la semana que se cuadra</label>
                 <select value={diaCuadre} onChange={(e) => setDiaCuadre(e.target.value)} className={inpTxt + " font-bold"}>
                   <option value="">— Seleccione —</option>
-                  {dias.map((d) => (
+                  {DIAS.map((d) => (
                     <option key={d}>{d}</option>
                   ))}
                 </select>
@@ -711,6 +728,114 @@ function ModalNuevoCliente({
             {guardando ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-save mr-1"></i>} Crear
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Reporte de Cuadre Semanal por Cliente (clon del legacy §7)
+// ---------------------------------------------------------------------------
+
+function CuadreSemanal({ clientes }: { clientes: ClienteRow[] }) {
+  const [diaFiltro, setDiaFiltro] = useState("");
+  const [generado, setGenerado] = useState(false);
+
+  const lista = useMemo(
+    () => clientes.filter((c) => !diaFiltro || String(c.dia_cuadre) === diaFiltro),
+    [clientes, diaFiltro]
+  );
+
+  const totalDebeTasa = lista.reduce(
+    (acc, c) => acc + (num(c.tasa_cuadre) > 0 ? num(c.saldo_actual) * num(c.tasa_cuadre) : 0),
+    0
+  );
+
+  const th = "px-3 py-2 text-left text-[9px] font-black uppercase tracking-wider text-slate-500";
+  const td = "px-3 py-2 align-middle";
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Día de cuadre</label>
+          <select
+            value={diaFiltro}
+            onChange={(e) => {
+              setDiaFiltro(e.target.value);
+              setGenerado(false);
+            }}
+            className="border border-line rounded-xl px-3 py-2 text-xs font-bold bg-white outline-none focus:ring-1 focus:ring-primary-500"
+          >
+            <option value="">TODOS LOS DÍAS</option>
+            {DIAS.map((d) => (
+              <option key={d}>{d}</option>
+            ))}
+          </select>
+        </div>
+        <Button variant="default" size="sm" onClick={() => setGenerado(true)}>
+          <i className="fas fa-file-invoice-dollar mr-1"></i> Generar Reporte
+        </Button>
+        {generado ? (
+          <span className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600">
+            {lista.length} cliente(s) · Debe total: {formatoMoneda("BS", totalDebeTasa)}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl border border-line bg-white shadow-sm">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 border-b border-line">
+            <tr>
+              <th className={th}>Cliente</th>
+              <th className={th}>Día</th>
+              <th className={th}>Método de Pago</th>
+              <th className={th}>Forma de Cuadre</th>
+              <th className={th + " text-right"}>Tasa Cuadre</th>
+              <th className={th + " text-right"}>Saldo USD</th>
+              <th className={th + " text-right text-amber-600"}>Debe a la Tasa</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lista.map((c) => {
+              const tasa = num(c.tasa_cuadre);
+              const saldo = num(c.saldo_actual);
+              const debeTasa = tasa > 0 ? saldo * tasa : 0;
+              return (
+                <tr key={String(c.id)} className="border-b border-line last:border-0 hover:bg-emerald-50/40">
+                  <td className={td + " font-bold text-slate-800"}>
+                    {c.nombre || c.seudonimo}
+                    {c.es_socio ? <span className="ml-1 text-[9px] font-black text-amber-600">★Socio</span> : null}
+                  </td>
+                  <td className={td + " font-bold text-emerald-700"}>{c.dia_cuadre || "—"}</td>
+                  <td className={td}>{c.metodo_pago || <span className="text-slate-300">—</span>}</td>
+                  <td className={td}>{c.forma_cuadre || <span className="text-slate-300">—</span>}</td>
+                  <td className={td + " text-right font-mono font-bold"}>{tasa > 0 ? String(tasa) : "—"}</td>
+                  <td className={td + " text-right font-mono font-black " + (saldo < 0 ? "text-danger-600" : "text-emerald-700")}>
+                    {formatoMoneda("USD", saldo)}
+                  </td>
+                  <td className={td + " text-right font-mono font-black text-amber-600"}>
+                    {tasa > 0 ? formatoMoneda("BS", debeTasa) : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+            {lista.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-3 py-10 text-center text-slate-400">
+                  {generado ? (
+                    <>
+                      <i className="fas fa-inbox mr-2"></i>Ningún cliente cuadra ese día.
+                    </>
+                  ) : (
+                    <i className="fas fa-calendar-week mr-2"></i>
+                  )}
+                  {generado ? "" : "Seleccione un día (o todos) y pulse Generar Reporte."}
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
       </div>
     </div>
   );
