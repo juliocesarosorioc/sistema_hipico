@@ -26,8 +26,14 @@ export type OpcionesExportar = {
  * Captura cada `.im-pagina` / `.imr-ppagina` dentro de `root` como canvas
  * a 300dpi efectivos (scale 2 sobre la hoja @150dpi) y las serializa según
  * la orientación elegida:
- *  · PDF → jsPDF A4 en la orientación pedida, cada página a tamaño completo.
+ *  · PDF → jsPDF A4 en la orientación pedida, cada página a tamaño completo
+ *    e incrustada como PNG SIN pérdida (texto nítido, sin artefactos JPEG).
  *  · PNG / JPG → un canvas alto por todas las páginas, descargado al instante.
+ *
+ * Rendimiento: se hace UNA sola captura del contenedor (las hojas están
+ * apiladas) y cada página se recorta del mismo canvas — N accesos a
+ * html2canvas menos que antes. Si hay muchas páginas (área enorme) se
+ * conserva el recorte por hoja para no agotar memoria.
  */
 export async function exportarPaginas(
   root: HTMLElement,
@@ -41,17 +47,44 @@ export async function exportarPaginas(
   );
   if (paginas.length === 0) throw new Error("No hay páginas para exportar.");
 
-  const canvases: HTMLCanvasElement[] = [];
-  for (let i = 0; i < paginas.length; i++) {
-    onProgreso?.({ total: paginas.length, actual: i + 1 });
-    const canvas = await html2canvas(paginas[i], {
-      scale: 2,
-      backgroundColor: "#ffffff",
-      logging: false,
-      useCORS: true,
-    });
-    canvases.push(canvas);
-  }
+  const escala = 2; // 300dpi efectivos sobre la hoja @150dpi
+  onProgreso?.({ total: paginas.length, actual: 0 });
+
+  const rootRect = root.getBoundingClientRect();
+  const rects = paginas.map((p) => p.getBoundingClientRect());
+  const totalW = rootRect.width * escala;
+  const totalH = rootRect.height * escala;
+  // Máximo razonable de píxeles para un lienzo único (~40 Mpx ≈ 160 MB).
+  const cabeUnido = paginas.length > 0 && totalW * totalH <= 40_000_000;
+
+  // Recote de la i-ésima hoja desde un canvas maestro (coordenadas relativas al root).
+  const sliceDe = (master: HTMLCanvasElement, i: number) => {
+    const r = rects[i];
+    const x = Math.round((r.left - rootRect.left) * escala);
+    const y = Math.round((r.top - rootRect.top) * escala);
+    const w = Math.round(r.width * escala);
+    const h = Math.round(r.height * escala);
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    if (!ctx) throw new Error("Canvas 2D no disponible.");
+    ctx.drawImage(master, x, y, w, h, 0, 0, w, h);
+    return c;
+  };
+
+  const maestras: HTMLCanvasElement[] = cabeUnido
+    ? [await html2canvas(root, { scale: escala, backgroundColor: "#ffffff", logging: false, useCORS: true })]
+    : await Promise.all(
+        paginas.map((p, i) => {
+          onProgreso?.({ total: paginas.length, actual: i + 1 });
+          return html2canvas(p, { scale: escala, backgroundColor: "#ffffff", logging: false, useCORS: true });
+        })
+      );
+
+  const canvases: HTMLCanvasElement[] = paginas.map((_, i) =>
+    cabeUnido ? sliceDe(maestras[0], i) : (maestras[i] as HTMLCanvasElement)
+  );
 
   const fecha = new Date().toISOString().slice(0, 10);
   const nombre = `${archivoBase}_${fecha}`;
@@ -66,9 +99,10 @@ export async function exportarPaginas(
     const pw = pdf.internal.pageSize.getWidth();
     const ph = pdf.internal.pageSize.getHeight();
     canvases.forEach((cv, i) => {
+      onProgreso?.({ total: canvases.length, actual: i + 1 });
       if (i > 0) pdf.addPage();
-      const img = cv.toDataURL("image/jpeg", 0.93);
-      pdf.addImage(img, "JPEG", 0, 0, pw, ph);
+      const img = cv.toDataURL("image/png");
+      pdf.addImage(img, "PNG", 0, 0, pw, ph);
     });
     pdf.save(`${nombre}.pdf`);
     return;
@@ -91,7 +125,7 @@ export async function exportarPaginas(
   a.href =
     formato === "PNG"
       ? lienzo.toDataURL("image/png")
-      : lienzo.toDataURL("image/jpeg", 0.93);
+      : lienzo.toDataURL("image/jpeg", 0.95);
   a.download = `${nombre}.${formato.toLowerCase()}`;
   document.body.appendChild(a);
   a.click();

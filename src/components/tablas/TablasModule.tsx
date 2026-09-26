@@ -572,6 +572,16 @@ export function TablasModule(props: Props) {
                 </span>
               </span>
               <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  📅 Día
+                  <input
+                    type="date"
+                    value={fechaPrograma}
+                    onChange={(e) => setFechaPrograma(e.target.value)}
+                    title="Selecciona el día para los Hipódromos del Día (por defecto: hoy)"
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-700"
+                  />
+                </label>
                 {filtroHipodromo && (
                   <button
                     type="button"
