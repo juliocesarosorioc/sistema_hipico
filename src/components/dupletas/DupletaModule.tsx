@@ -311,20 +311,20 @@ export function DupletaModule() {
                   {matriz.caballos1.map((cb, i1) => {
                     const col = colorDeNumeroGac(cb.numero);
                     return (
-                      <th key={`h1-${cb.numero}`} className="sticky top-0 z-30 border-b border-r border-slate-300 bg-indigo-600 p-0.5" style={{ width: anchoCol, maxWidth: anchoCol }}>
+                      <th key={`h1-${cb.numero}`} className="sticky top-0 z-30 border-b border-r border-slate-300 bg-indigo-600 p-0.5 align-bottom" style={{ width: anchoCol, maxWidth: anchoCol }}>
                         <button
                           type="button"
                           onClick={() => toggleRetirado(1, cb.numero)}
                           title={cb.retirado ? "Quitar retirado" : "Marcar retirado"}
-                          className={`block w-full rounded px-0.5 py-0.5 text-left ${cb.retirado ? "bg-yellow-400 text-slate-900" : "text-white"}`}
+                          className={`flex h-full w-full flex-col items-center justify-between rounded px-0.5 py-0.5 ${cb.retirado ? "bg-yellow-400 text-slate-900" : "text-white"}`}
                         >
-                          <span className="flex items-center gap-1">
+                          <span className="flex items-center justify-center gap-1">
                             <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: col.bg, color: col.fg }}>
                               {cb.numero}
                             </span>
                             {cb.retirado && <span className="text-[13px] font-black">✖</span>}
                           </span>
-                          <span className="mt-0.5 block whitespace-nowrap leading-tight">
+                          <span className="block whitespace-nowrap leading-tight">
                             {cb.nombre}
                             {banderaNoCasa(cb.nacionalidad, matriz.hipodromo) && (
                               <Flag nac={cb.nacionalidad} size={15} withName={false} className="ml-1" />
@@ -346,15 +346,13 @@ export function DupletaModule() {
                           type="button"
                           onClick={() => toggleRetirado(2, cb2.numero)}
                           title={cb2.retirado ? "Quitar retirado" : "Marcar retirado"}
-                          className={`flex w-full flex-col items-center rounded px-0.5 py-0.5 text-left ${cb2.retirado ? "bg-yellow-400 text-slate-900" : "text-slate-800"}`}
+                          className={`flex w-full items-start justify-start gap-1 rounded px-0.5 py-0.5 text-left ${cb2.retirado ? "bg-yellow-400 text-slate-900" : "text-slate-800"}`}
                         >
-                          <span className="flex items-center justify-center gap-1">
-                            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: izq.bg, color: izq.fg }}>
-                              {cb2.numero}
-                            </span>
-                            {cb2.retirado && <span className="text-[13px] font-black">✖</span>}
+                          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: izq.bg, color: izq.fg }}>
+                            {cb2.numero}
                           </span>
-                          <span className="mt-0.5 block w-full break-words leading-tight">
+                          {cb2.retirado && <span className="text-[13px] font-black">✖</span>}
+                          <span className="min-w-0 flex-1 break-words leading-tight">
                             {cb2.nombre}
                             {banderaNoCasa(cb2.nacionalidad, matriz.hipodromo) && (
                               <Flag nac={cb2.nacionalidad} size={15} withName={false} className="ml-1" />
@@ -382,7 +380,7 @@ export function DupletaModule() {
                                 <span className="block text-[18px] font-black leading-none">
                                   {celda?.vendida ? (celda.precio ?? matriz.precio).toLocaleString("es-VE", { maximumFractionDigits: 2 }) : matriz.precio.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
                                 </span>
-                                <span className="block truncate text-[9px] font-bold leading-tight">{celda?.vendida ? (celda.cliente_nombre || "—") : "clic ▼"}</span>
+                                <span className="block truncate text-[11px] font-bold leading-tight">{celda?.vendida ? (celda.cliente_nombre || "—") : "clic ▼"}</span>
                               </button>
                             )}
                           </td>
