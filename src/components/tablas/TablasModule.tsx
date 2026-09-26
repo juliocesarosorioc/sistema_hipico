@@ -78,15 +78,14 @@ export function TablasModule(props: Props) {
     return raw.slice(0, 10);
   };
 
-  /** Hipódromos del día (abiertos, de la fecha del programa) ordenados
-   *  alfabéticamente, con sus carreras y estado. Si no hay tablas para la
-   *  fecha del programa, se muestran todos los hipódromos abiertos. */
+  /** Hipódromos del día (abiertos, de la fecha seleccionada) ordenados
+   *  alfabéticamente, con sus carreras y estado. Solo la fecha indicada por
+   *  el filtro de día (por defecto hoy). */
   const hipodromosDia = useMemo(() => {
     const abiertas = tablas.filter((t) => !t.cerrada);
     const delDia = abiertas.filter((t) => diaDe(t) === fechaPrograma);
-    const fuente = delDia.length > 0 ? delDia : abiertas;
     const porHip = new Map<string, StoredTablaFija[]>();
-    fuente.forEach((t) => {
+    delDia.forEach((t) => {
       const h = (t.hipodromo ?? "").trim().toUpperCase();
       if (!h) return;
       const arr = porHip.get(h) ?? [];
@@ -449,8 +448,6 @@ export function TablasModule(props: Props) {
     toast(`🗑️ Tabla ${tabla.hipodromo} C${tabla.carrera} eliminada. La carrera y el Padrón se conservan.`, "success");
   };
 
-  const als = "flex items-stretch";
-
   return (
     <div className="space-y-4">
       {/* Cabecera blanca del módulo */}
@@ -498,82 +495,92 @@ export function TablasModule(props: Props) {
         contador={drafts.length}
         abierto={secciones.ensamblaje}
         onToggle={() => setSecciones((s) => ({ ...s, ensamblaje: !s.ensamblaje }))}
-        accion={
-          <div className={als}>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setMenuEnsamblaje((m) => !m)}
-                className="m-1.5 flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-800 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-slate-700"
-              >
-                ⚙️ Acciones Carreras <span className="text-[9px] opacity-70">▾</span>
-              </button>
-              {menuEnsamblaje && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setMenuEnsamblaje(false)} />
-                  <div className="absolute right-0 top-full z-20 mt-1.5 w-64 overflow-hidden rounded-xl border border-line bg-white shadow-2xl">
-                    <button
-                      type="button"
-                      onClick={() => setModoManual((m) => !m)}
-                      className={`flex w-full items-center gap-2 border-b border-line px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wide transition-colors ${
-                        modoManual ? "bg-emerald-50 text-emerald-700" : "text-slate-600 hover:bg-slate-50"
-                      }`}
-                      title="Permite registrar carreras vacías escritas a mano sin depender de la Gaceta IA."
-                    >
-                      {modoManual ? "✅ Modo Manual ON" : "✍️ Modo Manual"}
-                      <span className="ml-auto text-[9px] font-bold text-slate-400">{modoManual ? "activado" : "desactivado"}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        pegarDesdeGaceta();
-                        setMenuEnsamblaje(false);
-                      }}
-                      className="flex w-full items-center gap-2 border-b border-line px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wide text-slate-600 transition-colors hover:bg-slate-50"
-                      title="Ir al módulo de Gacetas IA (las carreras se extraen desde la IA)"
-                    >
-                      📋 Pegar desde Gaceta
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void publicarTodas();
-                        setMenuEnsamblaje(false);
-                      }}
-                      disabled={drafts.length === 0}
-                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wide text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                      title="Publicar en lote todas las carreras del ensamblaje"
-                    >
-                      🚀 Publicar todas
-                    </button>
-                  </div>
-                </>
-              )}
+      >
+        <div className="p-4">
+          <div className="mb-3 no-print">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                🗂️ Carreras en espera de publicación
+                <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-black text-slate-500">
+                  {drafts.length}
+                </span>
+              </span>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setMenuEnsamblaje((m) => !m)}
+                  className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-800 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-slate-700"
+                  title="Acciones del ensamblaje: Modo Manual, Pegar desde Gaceta y Publicar todas"
+                >
+                  ⚙️ Acciones Carreras <span className="text-[9px] opacity-70">▾</span>
+                </button>
+                {menuEnsamblaje && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setMenuEnsamblaje(false)} />
+                    <div className="absolute right-0 top-full z-20 mt-1.5 w-64 overflow-hidden rounded-xl border border-line bg-white shadow-2xl">
+                      <button
+                        type="button"
+                        onClick={() => setModoManual((m) => !m)}
+                        className={`flex w-full items-center gap-2 border-b border-line px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wide transition-colors ${
+                          modoManual ? "bg-emerald-50 text-emerald-700" : "text-slate-600 hover:bg-slate-50"
+                        }`}
+                        title="Permite registrar carreras vacías escritas a mano sin depender de la Gaceta IA."
+                      >
+                        {modoManual ? "✅ Modo Manual ON" : "✍️ Modo Manual"}
+                        <span className="ml-auto text-[9px] font-bold text-slate-400">{modoManual ? "activado" : "desactivado"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          pegarDesdeGaceta();
+                          setMenuEnsamblaje(false);
+                        }}
+                        className="flex w-full items-center gap-2 border-b border-line px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wide text-slate-600 transition-colors hover:bg-slate-50"
+                        title="Ir al módulo de Gacetas IA (las carreras se extraen desde la IA)"
+                      >
+                        📋 Pegar desde Gaceta
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void publicarTodas();
+                          setMenuEnsamblaje(false);
+                        }}
+                        disabled={drafts.length === 0}
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wide text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        title="Publicar en lote todas las carreras del ensamblaje"
+                      >
+                        🚀 Publicar todas
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
-        }
-      >
-        <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
-          {drafts.length === 0 ? (
-            <div className="col-span-full rounded-2xl border border-dashed border-line bg-surface p-8 text-center">
-              <p className="text-sm font-semibold text-slate-500">El ensamblaje está vacío.</p>
-              <p className="mt-1 text-xs text-slate-400">Añade una carrera desde “Parámetros de la próxima carrera”.</p>
-            </div>
-          ) : (
-            drafts.map((d) => (
-              <TarjetaEnsamblaje
-                key={d.uid}
-                draft={d}
-                onChange={(nd) => setDrafts((ds) => ds.map((x) => (x.uid === d.uid ? nd : x)))}
-                onPublicar={publicarDraft}
-                onQuitar={(uid) => {
-                  const quitable = drafts.find((x) => x.uid === uid);
-                  if (quitable) eliminarDelRegistroGaceta(quitable.hipodromo.toUpperCase(), quitable.carrera);
-                  setDrafts((ds) => ds.filter((x) => x.uid !== uid));
-                }}
-              />
-            ))
-          )}
+
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {drafts.length === 0 ? (
+              <div className="col-span-full rounded-2xl border border-dashed border-line bg-surface p-8 text-center">
+                <p className="text-sm font-semibold text-slate-500">El ensamblaje está vacío.</p>
+                <p className="mt-1 text-xs text-slate-400">Añade una carrera desde “Parámetros de la próxima carrera”.</p>
+              </div>
+            ) : (
+              drafts.map((d) => (
+                <TarjetaEnsamblaje
+                  key={d.uid}
+                  draft={d}
+                  onChange={(nd) => setDrafts((ds) => ds.map((x) => (x.uid === d.uid ? nd : x)))}
+                  onPublicar={publicarDraft}
+                  onQuitar={(uid) => {
+                    const quitable = drafts.find((x) => x.uid === uid);
+                    if (quitable) eliminarDelRegistroGaceta(quitable.hipodromo.toUpperCase(), quitable.carrera);
+                    setDrafts((ds) => ds.filter((x) => x.uid !== uid));
+                  }}
+                />
+              ))
+            )}
+          </div>
         </div>
       </SeccionPliegue>
 
@@ -699,6 +706,8 @@ export function TablasModule(props: Props) {
             onEliminar={eliminar}
             hipodromoFiltro={filtroHipodromo}
             onHipodromoFiltro={setFiltroHipodromo}
+            fechaDia={fechaPrograma}
+            onFechaDia={setFechaPrograma}
           />
         </div>
       </SeccionPliegue>

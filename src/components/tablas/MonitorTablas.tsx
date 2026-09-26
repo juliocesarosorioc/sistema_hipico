@@ -38,6 +38,13 @@ type Props = {
    */
   hipodromoFiltro?: string;
   onHipodromoFiltro?: (h: string) => void;
+  /**
+   * Filtro de día controlado por el padre ("Hipódromos del Día"). Por defecto
+   * el Monitor muestra SOLO las tablas del día indicado; si se omite, la fecha
+   * opera interna (TODAS a menos que el usuario filtre).
+   */
+  fechaDia?: string;
+  onFechaDia?: (d: string) => void;
 };
 
 /** Número es-VE SIN símbolo de moneda (la moneda se estipula por el grupo). */
@@ -67,6 +74,8 @@ export function MonitorTablas({
   onEliminar,
   hipodromoFiltro: hipodromoFiltroProp,
   onHipodromoFiltro,
+  fechaDia: fechaDiaProp,
+  onFechaDia,
 }: Props) {
   const [vendiendo, setVendiendo] = useState<StoredTablaFija | null>(null);
   const [ejemplarVenta, setEjemplarVenta] = useState("");
@@ -115,7 +124,7 @@ export function MonitorTablas({
   const [vistaImpresion, setVistaImpresion] = useState(false);
 
   // Estados de los filtros
-  const [fechaFiltro, setFechaFiltro] = useState<string>("");
+  const [fechaInterna, setFechaInterna] = useState<string>("");
   const [hipodromoLocal, setHipodromoLocal] = useState<string>("");
 
   /** Hipódromo filtrado: si el padre controla el filtro (Hipódromos del Día),
@@ -124,6 +133,13 @@ export function MonitorTablas({
   const hipodromoFiltro = hipodromoControlado ? hipodromoFiltroProp ?? "" : hipodromoLocal;
   const setHipodromoFiltro = (v: string) =>
     hipodromoControlado ? onHipodromoFiltro?.(v) : setHipodromoLocal(v);
+
+  /** Día filtrado: si el padre controla la fecha (Hipódromos del Día) lo
+   *  gobierna desde arriba (hoy por defecto); si no, opera interno (TODAS). */
+  const fechaControlada = onFechaDia !== undefined;
+  const fechaFiltro = fechaControlada ? fechaDiaProp ?? "" : fechaInterna;
+  const setFechaFiltro = (v: string) =>
+    fechaControlada ? onFechaDia?.(v) : setFechaInterna(v);
 
   const abiertas = tablas.filter((t) => !t.cerrada);
 
@@ -149,10 +165,12 @@ export function MonitorTablas({
     return Array.from(setHips).sort();
   }, [abiertas, fechaFiltro]);
 
-  // Limpiar filtros si quedan huérfanos por la cascada
+  // Limpiar filtros si quedan huérfanos por la cascada (solo si el padre
+  // no gobierna la fecha: en controlado el valor decide el filtro del día).
   useEffect(() => {
+    if (fechaControlada) return;
     if (fechaFiltro && !fechasDisponibles.includes(fechaFiltro)) setFechaFiltro("");
-  }, [fechasDisponibles, fechaFiltro]);
+  }, [fechasDisponibles, fechaFiltro, fechaControlada]);
 
   useEffect(() => {
     if (hipodromoControlado) return; // el padre gobierna el filtro de hipódromo
