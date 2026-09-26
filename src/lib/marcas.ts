@@ -24,6 +24,8 @@ export type MarcasDia = {
   fecha: string;
   filas: FilaMarca[];
   condiciones: string;
+  /** Condición "VALEN O NO VALEN DEBUTANTES". Por defecto NO VALEN (false). */
+  valen_debutantes?: boolean;
   updated_at?: string | null;
 };
 
@@ -55,7 +57,7 @@ export async function leerMarcas(hipodromo: string, fecha: string): Promise<{ ok
   try {
     const { data, error } = await supabase
       .from("marcas_dia")
-      .select("hipodromo, fecha, filas, condiciones, updated_at")
+      .select("hipodromo, fecha, filas, condiciones, valen_debutantes, updated_at")
       .eq("hipodromo", h)
       .eq("fecha", f)
       .maybeSingle();
@@ -68,6 +70,7 @@ export async function leerMarcas(hipodromo: string, fecha: string): Promise<{ ok
         fecha: f,
         filas: Array.isArray(data.filas) ? (data.filas as unknown[]).map(normalizarFilaMarca) : [],
         condiciones: String(data.condiciones ?? CONDICIONES_MARCAS_DEFECTO),
+        valen_debutantes: Boolean(data.valen_debutantes),
         updated_at: data.updated_at ? String(data.updated_at) : null,
       },
     };
@@ -87,6 +90,7 @@ export async function guardarMarcas(d: MarcasDia): Promise<{ ok: boolean; error?
     fecha: d.fecha || hoyLocal(),
     filas,
     condiciones: String(d.condiciones || CONDICIONES_MARCAS_DEFECTO),
+    valen_debutantes: d.valen_debutantes === undefined ? false : Boolean(d.valen_debutantes),
   };
   if (!fila.hipodromo) return { ok: false, error: "Falta el hipódromo." };
   try {

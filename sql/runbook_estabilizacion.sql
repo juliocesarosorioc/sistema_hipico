@@ -55,6 +55,9 @@ CREATE TABLE IF NOT EXISTS public.marcas_dia (
     CONSTRAINT marcas_dia_unico UNIQUE (hipodromo, fecha)
 );
 
+-- Condición "VALEN O NO VALEN DEBUTANTES" (por defecto NO VALEN → false).
+ALTER TABLE public.marcas_dia ADD COLUMN IF NOT EXISTS valen_debutantes BOOLEAN NOT NULL DEFAULT false;
+
 ALTER TABLE public.marcas_dia ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS marcas_dia_publico ON public.marcas_dia;
