@@ -14,10 +14,8 @@ import { SeccionPliegue } from "@/components/tablas/SeccionPliegue";
 import { ParametrosCarrera } from "@/components/tablas/ParametrosCarrera";
 import { TarjetaEnsamblaje } from "@/components/tablas/TarjetaEnsamblaje";
 import { MonitorTablas, type VentaTablaItem } from "@/components/tablas/MonitorTablas";
-import { ConfigImpresionModal } from "@/components/tablas/ConfigImpresionModal";
 import { CarritoVentas } from "@/components/tablas/CarritoVentas";
 import { ToastHost } from "@/components/ui/ToastHost";
-import { Guard } from "@/components/ui/Guard";
 import type { PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 
 export type ErrorPublicacion = { hipodromo: string; carrera: number | null; error: string };
@@ -56,7 +54,6 @@ export function TablasModule(props: Props) {
 
   const [secciones, setSecciones] = useState({ parametros: false, ensamblaje: false, monitor: true });
   const [modoManual, setModoManual] = useState(false);
-  const [impresionAbierta, setImpresionAbierta] = useState(false);
   const [drafts, setDrafts] = useState<DraftCarrera[]>([]);
   const [carrito, setCarrito] = useState<ItemCarritoVenta[]>([]);
   /** Fecha del programa (Filtro Universal): las tarjetas heredadas de la
@@ -536,19 +533,6 @@ export function TablasModule(props: Props) {
         contador={openCount}
         abierto={secciones.monitor}
         onToggle={() => setSecciones((s) => ({ ...s, monitor: !s.monitor }))}
-        accion={
-          <div className="flex items-center bg-slate-900 pr-2">
-            <Guard permiso="imprimir_tablas">
-              <button
-                type="button"
-                onClick={() => setImpresionAbierta(true)}
-                className="my-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-4 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-emerald-700"
-              >
-                🖨️ Imprimir Tablas
-              </button>
-            </Guard>
-          </div>
-        }
       >
         <div className="p-4">
           <div className="mb-3 flex flex-wrap items-center gap-1.5 no-print">
@@ -584,7 +568,6 @@ export function TablasModule(props: Props) {
 
       {/* Carrito flotante + toasts */}
       <CarritoVentas items={carrito} onQuitarItem={(id) => setCarrito((c) => c.filter((i) => i.id !== id))} onVaciar={() => setCarrito([])} onCerrarVenta={() => void cerrarVenta()} />
-      <ConfigImpresionModal abierto={impresionAbierta} onCerrar={() => setImpresionAbierta(false)} />
       <ToastHost />
     </div>
   );
