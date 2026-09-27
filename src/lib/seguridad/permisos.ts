@@ -32,7 +32,8 @@ export const PERMISOS_CANONICOS: Permiso[] = [
   { id: 51, clave: "registrar_ingresos", modulo: "contabilidad", descripcion: "Registrar ingresos / avales" },
   { id: 52, clave: "autorizar_pagos", modulo: "contabilidad", descripcion: "Autorizar pagos y cierres" },
   // clientes / portal
-  { id: 45, clave: "gestionar_clientes", modulo: "clientes", descripcion: "Ver y operar Gestión de Clientes (cartera, portal y reclamos)" },
+  { id: 44, clave: "ver_clientes", modulo: "clientes", descripcion: "Ver la cartera de clientes (solo lectura). Necesario para vender jugadas" },
+  { id: 45, clave: "gestionar_clientes", modulo: "clientes", descripcion: "Crear, editar y borrar clientes, portal y reclamos (incluye devoluciones masivas)" },
   // seguridad
   { id: 60, clave: "administrar_seguridad", modulo: "seguridad", descripcion: "Administrar perfiles y accesos" },
   { id: 61, clave: "ver_auditoria", modulo: "seguridad", descripcion: "Ver trazabilidad / auditoría" },
@@ -44,6 +45,11 @@ export const MODULOS = [...new Set(PERMISOS_CANONICOS.map((p) => p.modulo))];
 
 export const todasLasClaves = (): Set<string> => new Set(PERMISOS_CANONICOS.map((p) => p.clave));
 
+/**
+ * Taquillero: opera taquilla y tablas. Incluye `ver_clientes` (solo lectura)
+ * porque para vender una jugada hay que poder elegir a quien se le vende; la
+ * escritura de la cartera (`gestionar_clientes`) sigue siendo del Admin.
+ */
 const CLAVES_TAQUILLERO = [
   "acceso_dashboard",
   "ver_taquilla",
@@ -54,6 +60,7 @@ const CLAVES_TAQUILLERO = [
   "imprimir_tablas",
   "gestionar_jugadas",
   "ver_ejemplares",
+  "ver_clientes",
 ];
 
 const CLAVES_AUDITOR = [
@@ -65,6 +72,7 @@ const CLAVES_AUDITOR = [
   "ver_ejemplares",
   "ver_contabilidad",
   "ver_auditoria",
+  "ver_clientes",
 ];
 
 export const PERFILES_DEFECTO: Perfil[] = [

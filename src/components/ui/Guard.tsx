@@ -5,7 +5,14 @@ import { hasPermission } from "@/store/useAuthStore";
 
 type Props = {
   /** Permiso requerido. Lista = se exigen TODOS. */
-  permiso: string | string[];
+  permiso?: string | string[];
+  /**
+   * Basta con poseer UNO de estos. Se usa cuando hay un permiso de lectura y
+   * otro de escritura sobre el mismo módulo (ej. `ver_clientes` habilita el
+   * botón del menú y `gestionar_clientes` habilita crear/editar/borrar).
+   * Si se pasa, `permiso` se ignora.
+   */
+  algunaDe?: string | string[];
   /**
    * Comportamiento cuando NO se tiene el permiso:
    *  - "ocultar"      → renderiza `fallback` (null por defecto): el botón desaparece.
@@ -33,7 +40,7 @@ type Props = {
  * Si el usuario no posee el permiso: renderiza null (o el fallback), o el
  * contenido en estado deshabilitado según cómo se le pase por prop.
  */
-export function Guard({ permiso, modo: _modo = "ocultar", disabled, fallback = null, children }: Props) {
+export function Guard({ permiso, algunaDe, modo: _modo = "ocultar", disabled, fallback = null, children }: Props) {
   const [montado, setMontado] = useState(false);
 
   // Hidratación: el HTML del servidor se genera con los permisos por defecto
@@ -47,12 +54,19 @@ export function Guard({ permiso, modo: _modo = "ocultar", disabled, fallback = n
   }, []);
   if (!montado) return <>{children}</>;
 
-  const permite = hasPermission(permiso);
+  let permite: boolean;
+  if (algunaDe) {
+    // OR: alcanza conUno de los indicados.
+    permite = (Array.isArray(algunaDe) ? algunaDe : [algunaDe]).some((p) => hasPermission(p));
+  } else {
+    // `permiso` como lista conserva la semántica AND.
+    permite = hasPermission(permiso!);
+  }
   if (permite) return <>{children}</>;
 
   const modo = disabled ? "deshabilitar" : _modo;
   if (modo === "deshabilitar") {
-    const etiqueta = Array.isArray(permiso) ? permiso.join(", ") : permiso;
+    const etiqueta = (algunaDe ?? permiso ?? []).toString().split(",").join(" / ");
     return (
       <span
         aria-disabled="true"

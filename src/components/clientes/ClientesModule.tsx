@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { Guard } from "@/components/ui/Guard";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { ModalEditarCliente } from "@/components/clientes/ModalEditarCliente";
 import { ModalPortalCliente } from "@/components/clientes/ModalPortalCliente";
@@ -162,12 +163,16 @@ export function ClientesModule() {
           <i className="fas fa-users mr-2 text-primary-600"></i> Gestión de Clientes
         </h1>
         <div className="flex gap-2">
-          <Button variant="default" size="sm" onClick={() => setAbrirNuevo(true)}>
-            <i className="fas fa-plus"></i> Nuevo Cliente
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => (seleccion.size ? setAbrirDev(true) : toast("Seleccione clientes en la tabla.", "warning"))}>
-            <i className="fas fa-percent"></i> Devoluciones Masivas
-          </Button>
+          <Guard permiso="gestionar_clientes" disabled>
+            <Button variant="default" size="sm" onClick={() => setAbrirNuevo(true)}>
+              <i className="fas fa-plus"></i> Nuevo Cliente
+            </Button>
+          </Guard>
+          <Guard permiso="gestionar_clientes" disabled>
+            <Button variant="outline" size="sm" onClick={() => (seleccion.size ? setAbrirDev(true) : toast("Seleccione clientes en la tabla.", "warning"))}>
+              <i className="fas fa-percent"></i> Devoluciones Masivas
+            </Button>
+          </Guard>
         </div>
       </div>
 
@@ -216,15 +221,17 @@ export function ClientesModule() {
               <i className="fas fa-sync-alt"></i>
             </Button>
             <div className="ml-auto flex gap-2 items-center">
-              <input
-                value={socioConvertir}
-                onChange={(e) => setSocioConvertir(e.target.value.toUpperCase())}
-                placeholder="Convertir en socio…"
-                className="w-48 border border-line rounded-lg px-3 py-2 text-xs uppercase outline-none focus:ring-1 focus:ring-primary-500 bg-surface"
-              />
-              <Button variant="success" size="sm" onClick={socioAplicar}>
-                <i className="fas fa-crown"></i> Socio
-              </Button>
+              <Guard permiso="gestionar_clientes" disabled>
+                <input
+                  value={socioConvertir}
+                  onChange={(e) => setSocioConvertir(e.target.value.toUpperCase())}
+                  placeholder="Convertir en socio…"
+                  className="w-48 border border-line rounded-lg px-3 py-2 text-xs uppercase outline-none focus:ring-1 focus:ring-primary-500 bg-surface"
+                />
+                <Button variant="success" size="sm" onClick={socioAplicar}>
+                  <i className="fas fa-crown"></i> Socio
+                </Button>
+              </Guard>
             </div>
           </div>
 
@@ -343,9 +350,11 @@ export function ClientesModule() {
                     </td>
                     <td className={td}>
                       <div className="flex flex-wrap gap-1">
-                        <Button variant="ghost" size="sm" title="Editar" onClick={() => setEditando(c)}>
-                          <i className="fas fa-user-edit"></i>
-                        </Button>
+                        <Guard permiso="gestionar_clientes" disabled>
+                          <Button variant="ghost" size="sm" title="Editar" onClick={() => setEditando(c)}>
+                            <i className="fas fa-user-edit"></i>
+                          </Button>
+                        </Guard>
                         <Button variant="outline" size="sm" title="Portal de consulta" onClick={() => setPortalDe(c)}>
                           <i className="fas fa-link text-cyan-600"></i>
                         </Button>
@@ -360,9 +369,11 @@ export function ClientesModule() {
                         >
                           <i className="fas fa-list-alt text-indigo-600"></i>
                         </Button>
-                        <Button variant="ghost" size="sm" title="Eliminar" onClick={() => setBorrando(c)}>
-                          <i className="fas fa-trash text-danger-600"></i>
-                        </Button>
+                        <Guard permiso="gestionar_clientes" disabled>
+                          <Button variant="ghost" size="sm" title="Eliminar" onClick={() => setBorrando(c)}>
+                            <i className="fas fa-trash text-danger-600"></i>
+                          </Button>
+                        </Guard>
                       </div>
                     </td>
                   </tr>

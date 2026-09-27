@@ -6,7 +6,14 @@ import { useAuthStore } from "@/store/useAuthStore";
 
 type Props = {
   /** Permiso requerido para ver la ruta. Lista = se exigen TODOS. */
-  permiso: string | string[];
+  permiso?: string | string[];
+  /**
+   * Basta con poseer UNO de estos. Hace falta porque hay rutas con lectura y
+   * escritura sobre el mismo módulo: `/clientes` se abre con `ver_clientes`
+   * (para ver la cartera y vender) o con `gestionar_clientes` (además de poder
+   * crear/editar/borrar). Si se pasa, `permiso` se ignora.
+   */
+  algunaDe?: string | string[];
   children: ReactNode;
 };
 
@@ -15,7 +22,7 @@ type Props = {
  * Si el usuario actual no tiene el permiso, redirige a /dashboard sin
  * renderizar el contenido (evita el parpadeo de la página desautorizada).
  */
-export function RutaProtegida({ permiso, children }: Props) {
+export function RutaProtegida({ permiso, algunaDe, children }: Props) {
   const router = useRouter();
   const inicializada = useAuthStore((s) => s.inicializada);
   const permisos = useAuthStore((s) => s.permisos);
@@ -24,9 +31,13 @@ export function RutaProtegida({ permiso, children }: Props) {
   useEffect(() => {
     if (!inicializada) return;
     const set = new Set(permisos);
-    const ok = Array.isArray(permiso) ? permiso.every((p) => set.has(p)) : set.has(permiso);
+    const ok = algunaDe
+      ? (Array.isArray(algunaDe) ? algunaDe : [algunaDe]).some((p) => set.has(p))
+      : Array.isArray(permiso)
+        ? permiso.every((p) => set.has(p))
+        : set.has(permiso!);
     setPermitido(ok);
-  }, [inicializada, permisos, permiso]);
+  }, [inicializada, permisos, permiso, algunaDe]);
 
   useEffect(() => {
     if (permitido === false) router.replace("/dashboard");

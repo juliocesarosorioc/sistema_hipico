@@ -144,7 +144,7 @@ export function Sidebar() {
                         </Link>
                       </Guard>
                     ) : it.href === "/clientes" || it.href === "/grupos" ? (
-                      <Guard permiso="gestionar_clientes">
+                      <Guard algunaDe={["gestionar_clientes", "ver_clientes"]}>
                         <Link
                           href={it.href}
                           className={`flex items-center gap-3 border-l-4 px-5 py-3 text-base font-semibold transition-colors ${

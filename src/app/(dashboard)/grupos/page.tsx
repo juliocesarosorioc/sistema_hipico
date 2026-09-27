@@ -11,7 +11,7 @@ import { GruposModule } from "@/components/grupos/GruposModule";
  */
 export default function GruposPage() {
   return (
-    <RutaProtegida permiso="gestionar_clientes">
+    <RutaProtegida algunaDe={["gestionar_clientes", "ver_clientes"]}>
       <div className="p-4 lg:p-6">
         <GruposModule />
       </div>

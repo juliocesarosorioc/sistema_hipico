@@ -15,9 +15,16 @@ import { NextResponse, type NextRequest } from "next/server";
  *  3) Si el usuario NO tiene la cookie (RBAC aún no sembrado) se deja pasar
  *     (modo demo) para no romper el flujo actual sin pantalla de login.
  */
-const RUTAS_PERMISOS: Array<{ ruta: string; permiso: string }> = [
+/**
+ * Rutas con permiso específico. `algunaDe` = basta con UNO de ellos
+ * (lectura o escritura). `permiso` = se exige ese permiso.
+ */
+const RUTAS_PERMISOS: Array<{ ruta: string; permiso?: string; algunaDe?: string[] }> = [
   { ruta: "/seguridad", permiso: "administrar_seguridad" },
-  { ruta: "/clientes", permiso: "gestionar_clientes" },
+  // Clientes y Grupos se abren con solo lectura: un taquillero tiene que poder
+  // elegir cliente para vender, aunque no pueda crear ni borrar clientes.
+  { ruta: "/clientes", algunaDe: ["gestionar_clientes", "ver_clientes"] },
+  { ruta: "/grupos", algunaDe: ["gestionar_clientes", "ver_clientes"] },
   // Módulos futuros (ej. cuando se migre contabilidad):
   // { ruta: "/contabilidad", permiso: "ver_contabilidad" },
   // { ruta: "/auditoria", permiso: "ver_auditoria" },
@@ -59,11 +66,16 @@ export function middleware(req: NextRequest) {
 
   // 2) Rutas con permiso específico.
   const exigido = RUTAS_PERMISOS.find((g) => pathname === g.ruta || pathname.startsWith(`${g.ruta}/`));
-  if (exigido && !permisos.has(exigido.permiso)) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/dashboard";
-    url.search = "";
-    return NextResponse.redirect(url);
+  if (exigido) {
+    const cumple = exigido.algunaDe
+      ? exigido.algunaDe.some((p) => permisos.has(p))
+      : !!exigido.permiso && permisos.has(exigido.permiso);
+    if (!cumple) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/dashboard";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
   }
 
   return NextResponse.next();
@@ -74,6 +86,7 @@ export const config = {
   matcher: [
     "/seguridad/:path*",
     "/clientes/:path*",
+    "/grupos/:path*",
     "/portal/:path*",
     "/dashboard/:path*",
     "/gestion-jugadas/:path*",

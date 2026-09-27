@@ -83,7 +83,8 @@ insert into public.permisos (id, clave, modulo, descripcion) values
   (40,  'ver_ejemplares',        'ejemplares',    'Ver ejemplares y gaceta'),
   (41,  'administrar_ejemplares','ejemplares',    'Editar padrón de ejemplares'),
   -- módulo clientes
-  (45,  'gestionar_clientes',    'clientes',      'Ver y operar Gestión de Clientes (cartera, portal y reclamos)'),
+  (44,  'ver_clientes',          'clientes',      'Ver la cartera de clientes (solo lectura). Necesario para vender jugadas'),
+  (45,  'gestionar_clientes',    'clientes',      'Crear, editar y borrar clientes, portal y reclamos (incluye devoluciones masivas)'),
   -- módulo contabilidad
   (50,  'ver_contabilidad',      'contabilidad',  'Ver módulo de contabilidad'),
   (51,  'registrar_ingresos',    'contabilidad',  'Registrar ingresos / avales'),
@@ -100,15 +101,16 @@ insert into public.perfil_permisos (perfil_id, permiso_id, activo) values
   -- Admin: TODO
   (1, 1, true), (1, 10, true), (1, 11, true), (1, 12, true), (1, 13, true),
   (1, 20, true), (1, 21, true), (1, 22, true), (1, 23, true), (1, 24, true),
-  (1, 30, true), (1, 40, true), (1, 41, true), (1, 45, true),
+  (1, 30, true), (1, 40, true), (1, 41, true), (1, 44, true), (1, 45, true),
   (1, 50, true), (1, 51, true), (1, 52, true),
   (1, 60, true), (1, 61, true), (1, 70, true),
-  -- Taquillero: operar taquilla y tablas
+  -- Taquillero: operar taquilla y tablas + ver la cartera (solo lectura)
   (2, 1, true), (2, 10, true), (2, 11, true), (2, 13, true),
   (2, 20, true), (2, 23, true), (2, 24, true), (2, 30, true), (2, 40, true),
+  (2, 44, true),
   -- Auditor: solo lectura
   (3, 1, true), (3, 10, true), (3, 20, true), (3, 30, true),
-  (3, 40, true), (3, 50, true), (3, 61, true),
+  (3, 40, true), (3, 44, true), (3, 50, true), (3, 61, true),
   -- Cliente: SOLO el portal (no debe tocar el Dashboard administrativo)
   (4, 70, true)
 on conflict (perfil_id, permiso_id) do update set activo = excluded.activo;

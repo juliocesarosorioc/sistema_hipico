@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { Guard } from "@/components/ui/Guard";
 import {
   aplicarNotificacion,
   fmtFechaHora,
@@ -137,14 +138,16 @@ export function NotificacionesPortal() {
                   </td>
                   <td className={td}>
                     {!n.estado || n.estado === "Pendiente" ? (
-                      <div className="flex gap-1">
-                        <Button variant="success" size="sm" onClick={() => void aplicar(n)}>
-                          <i className="fas fa-check"></i> Aplicar
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => void ignorar(n)}>
-                          Ignorar
-                        </Button>
-                      </div>
+                      <Guard permiso="gestionar_clientes" disabled>
+                        <div className="flex gap-1">
+                          <Button variant="success" size="sm" onClick={() => void aplicar(n)}>
+                            <i className="fas fa-check"></i> Aplicar
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => void ignorar(n)}>
+                            Ignorar
+                          </Button>
+                        </div>
+                      </Guard>
                     ) : (
                       <span className="text-[10px] text-slate-400">
                         {n.atendida_por ? `por ${n.atendida_por}` : ""} · {fmtFechaHora(n.atendida_at)}
@@ -222,12 +225,14 @@ export function NotificacionesPortal() {
                     placeholder="Respuesta de la casa (WhatsApp/correo)…"
                     className="min-w-0 flex-1 border border-line rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary-500 bg-surface"
                   />
-                  <Button variant="success" size="sm" onClick={() => void resolver(r, "SOLUCIONADO")}>
-                    <i className="fas fa-check mr-1"></i> Solucionar
-                  </Button>
-                  <Button variant="danger" size="sm" onClick={() => void resolver(r, "RECHAZADO")}>
-                    <i className="fas fa-ban mr-1"></i> Rechazar
-                  </Button>
+                  <Guard permiso="gestionar_clientes" disabled>
+                    <Button variant="success" size="sm" onClick={() => void resolver(r, "SOLUCIONADO")}>
+                      <i className="fas fa-check mr-1"></i> Solucionar
+                    </Button>
+                    <Button variant="danger" size="sm" onClick={() => void resolver(r, "RECHAZADO")}>
+                      <i className="fas fa-ban mr-1"></i> Rechazar
+                    </Button>
+                  </Guard>
                 </div>
               ) : null}
             </div>

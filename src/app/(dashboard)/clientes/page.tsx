@@ -12,7 +12,7 @@ import { ClientesModule } from "@/components/clientes/ClientesModule";
  */
 export default function ClientesPage() {
   return (
-    <RutaProtegida permiso="gestionar_clientes">
+    <RutaProtegida algunaDe={["gestionar_clientes", "ver_clientes"]}>
       <div className="p-4 lg:p-6">
         <ClientesModule />
       </div>

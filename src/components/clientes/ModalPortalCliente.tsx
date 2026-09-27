@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { Guard } from "@/components/ui/Guard";
 import { ToastHost } from "@/components/ui/ToastHost";
 import {
   acortarEnlace,
@@ -176,9 +177,11 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
           <Button variant="outline" size="sm" onClick={onClose}>
             Cancelar
           </Button>
-          <Button variant="default" size="sm" onClick={guardar} disabled={guardando}>
-            {guardando ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-save mr-1"></i>} Guardar
-          </Button>
+          <Guard permiso="gestionar_clientes" disabled>
+            <Button variant="default" size="sm" onClick={guardar} disabled={guardando}>
+              {guardando ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-save mr-1"></i>} Guardar
+            </Button>
+          </Guard>
         </div>
         <ToastHost />
       </div>
