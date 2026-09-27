@@ -78,87 +78,26 @@ export function numerosPizarra(p: PizarraCarrera): string[] {
   return out;
 }
 
-/** ¿El caballo de la jugada figura dentro de los primeros `N` puestos? */
-export function figuraEnPizarra(
-  caballo: string | number,
-  pizarra: PizarraCarrera,
-  N: number
-): boolean {
-  const c = String(caballo ?? "").trim();
-  if (!c) return false;
-  const cNum = parseInt(c.replace(/[^0-9]/g, ""), 10);
-  const fila = numerosPizarra(pizarra).slice(0, N);
-  if (Number.isFinite(cNum)) {
-    return fila.some((x) => {
-      const n = parseInt(String(x).replace(/[^0-9]/g, ""), 10);
-      return Number.isFinite(n) && n === cNum;
-    });
-  }
-  return fila.some((x) => String(x).trim().toLowerCase() === c.toLowerCase());
-}
+/**
+ * AVISO — se eliminaron de este archivo `figuraEnPizarra` y el motor de
+ * liquidacion del NINI que lo usaba.
+ *
+ * Aquella version pagaba cuando el caballo NO figuraba entre los N primeros
+ * puestos, al reves de la regla de la casa (nini = llegar < N, o sea que
+ * Figurar en el top N es lo que GANA). Los dos caminos de liquidacion del repo
+ * se contradecian: este pagaba al reves y el de src/lib/motores/puestos.ts
+ * hacia lo correcto.
+ *
+ * Toda la liquidacion por posicion de llegada vive ahora en el PuestosEngine
+ * (src/lib/motores/puestos.ts), que cubre 1p, PP, A Premio, enfrentamientos,
+ * ninis y puestos multi-ejemplar con una sola gramatica. No reintroducir aqui
+ * reglas de llegada.
+ */
 
 /**
- * Motor de LIQUIDACIÓN del NINI (cruce contra la Pizarra oficial, hasta 8 puestos).
- *
- * REGLA DE NEGOCIO:
- *  - El Cliente que JUEGA el nini apuesta a que el caballo NO entra en las
- *    posiciones especificadas (top N). Si el caballo NO figura en la pizarra
- *    requerida → el Cliente 1 GANA (pago a la par 2× monto, menos comisión) y
- *    el Cliente 2 ("da") pierde.
- *  - Si el caballo gana/figura en la pizarra requerida → el Cliente 1 PIERDE
- *    su monto y el Cliente 2 ganaría (menos comisión).
- * La comisión se cobra SOLO sobre la ganancia bruta (igual que el resto del motor).
+ * AVISO — se elimino tambien `liquidarNini`. Quien necesite liquidar una jugada
+ * de puestos debe importar `liquidarPuestos` de src/lib/motores/puestos.
  */
-export function liquidarNini(
-  t: TicketMotor,
-  tasaComision?: number | null
-): ResultadoMotor {
-  const info = parsearNini(t.tipo_jugada);
-  if (!info) {
-    return {
-      ok: false,
-      motivo: "NINI malformado: " + t.tipo_jugada,
-      totalClienteNeto: 0,
-      balanceBanca: t.monto,
-      gananciaCasa: 0,
-    };
-  }
-  const caballoNum = parseInt(String(t.caballo ?? "").replace(/[^0-9]/g, ""), 10);
-  if (!Number.isFinite(caballoNum)) {
-    return {
-      ok: false,
-      motivo: "NINI requiere el número del caballo (columna CABALLO)",
-      totalClienteNeto: 0,
-      balanceBanca: t.monto,
-      gananciaCasa: 0,
-    };
-  }
-  const tasa = Number.isFinite(Number(tasaComision)) && Number(tasaComision) >= 0
-    ? Number(tasaComision)
-    : COMISION_CASA.rate * 100;
-
-  const figura = figuraEnPizarra(caballoNum, t.pizarra, info.N);
-  if (!figura) {
-    const bruto = t.monto * 2;
-    const comision = bruto - t.monto > 0 ? round2((bruto - t.monto) * (tasa / 100)) : 0;
-    return {
-      ok: true,
-      motivo:
-        `NINI gana: caballo ${caballoNum} no figura en ${info.N === 1 ? "el 1er puesto" : `los ${info.N} primeros puestos`}` +
-        (comision > 0 ? " · comisión casa $" + round2(comision) : ""),
-      totalClienteNeto: round2(bruto - comision),
-      balanceBanca: round2(t.monto - bruto + comision),
-      gananciaCasa: comision,
-    };
-  }
-  return {
-    ok: false,
-    motivo: `NINI pierde: caballo ${caballoNum} figura en ${info.N === 1 ? "el 1er puesto" : `el top ${info.N}`}`,
-    totalClienteNeto: 0,
-    balanceBanca: t.monto,
-    gananciaCasa: 0,
-  };
-}
 
 export type ComisionConfig = {
   /** Solo se descuenta sobre la GANANCIA NETA del jugador, nunca sobre el capital. */
@@ -270,6 +209,12 @@ export type ResultadoMotor = {
   balanceBanca: number;
   /** Comisión efectiva cobrada por la casa. */
   gananciaCasa: number;
+  /**
+   * Lo que recibe el RIVAL (el segundo cliente o el banquero) en las modalidades
+   * de enfrentamiento, donde el dinero se mueve entre dos clientes y no contra
+   * la casa. 0 en las modalidades jugadas contra la pizarra.
+   */
+  totalRival?: number;
 };
 
 export type ProcesarTicket = (t: TicketMotor) => ResultadoMotor;

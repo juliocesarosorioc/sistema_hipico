@@ -13,7 +13,8 @@
  * Formato de montos local (es-VE): 40,00 / 2.951.
  */
 import { supabase } from "@/lib/supabase";
-import { COMISION_CASA, parsearNini, normalizarNini, liquidarNini } from "@/lib/bettingEngine";
+import { COMISION_CASA, parsearNini, normalizarNini } from "@/lib/bettingEngine";
+import { liquidarPuestos } from "@/lib/motores/puestos";
 import type { TicketMotor } from "@/lib/bettingEngine";
 import type { PizarraCarrera } from "@/lib/liquidacion";
 
@@ -225,6 +226,11 @@ export function pizarraDesdeNums(nums?: string[]): PizarraCarrera {
 /** Resuelve el balance de un NINI con el motor matemático (pizarra oficial). */
 function niniDesdePizarra(j: JugadaRelacion, puestos: string[]): BalanceJugada | null {
   if (j.modalidad !== "NINI" || !puestos.length || !j.caballo) return null;
+  const pizarra = pizarraDesdeNums(puestos);
+  // El motor resuelve la posicion desde la pizarra. `puesto_final` se deja
+  // coherente con ella y no inventado: antes iba fijo en 1, lo que hacia que
+  // cualquier lectura del ticketDijera que el caballo salio primero.
+  const idx = puestos.findIndex((p) => String(p).trim() === String(j.caballo).trim());
   const ticket: TicketMotor = {
     hipodromo: "",
     carrera: "",
@@ -237,11 +243,11 @@ function niniDesdePizarra(j: JugadaRelacion, puestos: string[]): BalanceJugada |
     addedAt: 0,
     tipo_jugada: normNini(j.jugada),
     monto: num(j.monto),
-    puesto_final: 1 as TicketMotor["puesto_final"],
-    pizarra: pizarraDesdeNums(puestos),
+    puesto_final: (idx >= 0 ? idx + 1 : "SOC") as TicketMotor["puesto_final"],
+    pizarra,
     dividendos: null,
   };
-  const r = liquidarNini(ticket, num(j.comisionPct));
+  const r = liquidarPuestos(ticket, num(j.comisionPct));
   const premio = r.ok ? num(j.monto) * 2 : 0;
   return {
     jugada: j,

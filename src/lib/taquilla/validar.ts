@@ -1,6 +1,7 @@
-import { liquidarPuestos } from "@/lib/motores/puestos";
 import type { TicketMotor, ResultadoMotor } from "@/lib/bettingEngine";
-import { parsearNini, liquidarNini } from "@/lib/bettingEngine";
+import { parsearNini } from "@/lib/bettingEngine";
+import { liquidarPuestos } from "@/lib/motores/puestos";
+import type { PizarraCarrera } from "@/lib/liquidacion";
 import {
   calcularReparto,
   extraerProporcion,
@@ -67,6 +68,19 @@ export function detectarModalidad(texto: string): ModalidadAuto | null {
 }
 
 /**
+ * Arma una pizarra de 8 posiciones con un unico ejemplar en el puesto pedido y
+ * el resto completado con fillers, para simular escenarios de llegada.
+ */
+function pizarraCon(caballo: string, puesto: number): PizarraCarrera {
+  const claves = ["primero", "segundo", "tercero", "cuarto", "quinto", "sexto", "septimo", "octavo"] as const;
+  const base = {} as Record<string, string>;
+  claves.forEach((k, i) => {
+    base[k] = i + 1 === puesto ? caballo : String(90 + i);
+  });
+  return base as unknown as PizarraCarrera;
+}
+
+/**
  * Conecta el input del Bet Slip con el motor matemático (puestos.ts).
  * "En tiempo real": se simula la jugada en todas las posiciones de llegada
  * (1..8). Si el motor reporta BLOQUEO/malformado/inválido → regla rota.
@@ -111,8 +125,21 @@ export function validarComando(
       pizarra: { primero: "1" },
       dividendos: null,
     };
-    const rGana = liquidarNini({ ...base, pizarra: { primero: "" } }, tasaComision);
-    const rPierde = liquidarNini({ ...base, pizarra: { primero: caballoTicket } }, tasaComision);
+    /* Se proyectan los DOS escenarios reales de un nini, colocando al caballo
+       en posiciones concretas de la pizarra:
+         - GANA: 1er lugar (todo nini con N>=2 se cumple con llegar 1º).
+         - PIERDE: un puesto que NO cumple "llegar < N", es decir N+1.
+       Antes se apoyaba en la liquidacion invertida del nini para simular la
+       perdida; ahora el escenario se arma en la pizarra. */
+    const N = infoNini.N;
+    const puestoPerdedor = N + 1;
+    const pierde =
+      puestoPerdedor <= 8
+        ? { ...base, puesto_final: puestoPerdedor as TicketMotor["puesto_final"], pizarra: pizarraCon(caballoTicket, puestoPerdedor) }
+        : { ...base, puesto_final: "SOC" as TicketMotor["puesto_final"], pizarra: { primero: "" } };
+
+    const rGana = liquidarPuestos({ ...base, pizarra: { primero: caballoTicket } }, tasaComision);
+    const rPierde = liquidarPuestos(pierde, tasaComision);
     const brutoGana = rGana.totalClienteNeto + rGana.gananciaCasa;
     const brutoPierde = rPierde.totalClienteNeto + rPierde.gananciaCasa;
     const mejor = brutoGana >= brutoPierde ? rGana : rPierde;

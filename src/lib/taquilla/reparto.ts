@@ -43,6 +43,8 @@
  *  saldo y no actúa como tope.
  */
 
+import { parsearNomenclatura } from "./nomenclatura";
+
 /** Datos de cliente mínimos para calcular riesgo (compatible con ClienteVenta). */
 export type ClienteRiesgo = {
   nombre?: string | null;
@@ -212,33 +214,25 @@ export function extraerProporcion(jugada: string): { p: number; q: number; base:
   const t = String(jugada ?? "").trim();
   if (!t) return null;
 
+  // "PP" es la paridad: 10:10, y no deja nomenclatura de puestos detrás.
   if (/^pp$/i.test(t)) return { p: 10, q: 10, base: "" };
 
-  // "10a8" / "10A8" (la 'a' es la conjunción "a" de la casa)
-  const ma = /^(\d+(?:\.\d+)?)\s*A\s*(\d+(?:\.\d+)?)$/i.exec(t);
-  if (ma) {
-    const p = parseFloat(ma[1]);
-    const q = parseFloat(ma[2]);
-    if (p > 0 && q > 0) return { p, q, base: "" };
-    return null;
-  }
-
-  // "10/8" (notación histórica)
-  const ms = /^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/i.exec(t);
-  if (ms) {
-    const p = parseFloat(ms[1]);
-    const q = parseFloat(ms[2]);
-    if (p > 0 && q > 0) return { p, q, base: "" };
-    return null;
-  }
-
-  // "10a8 1p" / "10/8 1p": proporción adelante y nomenclatura de puestos después
+  // "10a8 1p" / "10/8 1p": proporción adelante y nomenclatura de puestos después.
   const mix = /^(\d+(?:\.\d+)?)\s*(?:a|\/)\s*(\d+(?:\.\d+)?)\s+(.+)$/i.exec(t);
   if (mix) {
     const p = parseFloat(mix[1]);
     const q = parseFloat(mix[2]);
     const base = mix[3].trim();
     if (p > 0 && q > 0 && base) return { p, q, base };
+    return null;
+  }
+
+  /* Proporción sola ("10a8", "10/8", "10/6.5"). Se delega en la nomenclatura
+     para que la gramática de proporciones exista en un solo lugar: el motor de
+     puestos y la autorización de riesgo tienen que leer EXACTAMENTE lo mismo. */
+  const nom = parsearNomenclatura(t);
+  if (nom && nom.proporcion) {
+    return { p: nom.proporcion.jugador, q: nom.proporcion.rival, base: "" };
   }
 
   return null;
