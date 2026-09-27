@@ -750,7 +750,7 @@ export function GestionJugadasModule() {
               const ejemplar = ejemplarResuelto(f.caballo);
               return (
                 <tr key={i} className={`align-middle ${f.error ? "bg-red-50" : ""}`} title={f.error ?? undefined}>
-                  <td className="relative h-7 px-1 py-0 align-middle text-xs text-slate-400">
+                  <td className="gj-celda relative h-7 px-1 py-0 text-xs text-slate-400">
                     <span className="block truncate">
                       {f.error ? (
                         <span className="inline-flex items-center gap-1 text-red-500">
@@ -761,7 +761,7 @@ export function GestionJugadasModule() {
                       )}
                     </span>
                   </td>
-                  <td className="relative h-7 px-1 py-0 align-middle text-center">
+                  <td className="gj-celda relative h-7 px-1 py-0 text-center">
                     <button
                       type="button"
                       onClick={() => setFilas((fs) => fs.filter((_, j) => j !== i))}
@@ -772,7 +772,7 @@ export function GestionJugadasModule() {
                       ✕
                     </button>
                   </td>
-                  <td className="relative h-7 px-1 py-0 align-middle">
+                  <td className="gj-celda relative h-7 px-1 py-0">
                     <input
                       value={f.jugada}
                       onChange={(e) => setFila(i, { jugada: e.target.value })}
@@ -793,7 +793,7 @@ export function GestionJugadasModule() {
                       {detectado ?? (f.jugada.trim() ? "—" : "")}
                     </span>
                   </td>
-                  <td className="relative h-7 px-1 py-0 align-middle">
+                  <td className="gj-celda relative h-7 px-1 py-0">
                     <input
                       value={f.caballo}
                       onChange={(e) => setFila(i, { caballo: e.target.value })}
@@ -813,7 +813,7 @@ export function GestionJugadasModule() {
                       </span>
                     )}
                   </td>
-                  <td className="relative h-7 px-1 py-0 align-middle">
+                  <td className="gj-celda relative h-7 px-1 py-0">
                     <input
                       value={f.monto}
                       onChange={(e) => setFila(i, { monto: e.target.value })}
@@ -822,7 +822,7 @@ export function GestionJugadasModule() {
                       className="w-full rounded border border-line bg-white px-1 py-0.5 text-right text-[11px] font-black leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
                   </td>
-                  <td className="relative h-8 px-1 py-0 align-middle">
+                  <td className="gj-celda relative h-8 px-1 py-0">
                     <SearchableSelect
                       options={opcionesClientes}
                       value={f.cliente1}
@@ -837,7 +837,7 @@ export function GestionJugadasModule() {
                       {infoCliente(f.cliente1, f.monto, v.ok && v.cliente1 ? v.cliente1.cobroNeto : 0)}
                     </span>
                   </td>
-                  <td className="relative h-8 px-1 py-0 align-middle">
+                  <td className="gj-celda relative h-8 px-1 py-0">
                     <SearchableSelect
                       options={opcionesClientes}
                       value={f.cliente2}
