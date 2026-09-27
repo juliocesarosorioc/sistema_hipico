@@ -32,11 +32,11 @@ const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
     id: "contabilidad",
     titulo: "Contabilidad",
     items: [
-      { emoji: "📥", txt: "Ingresos / Avales" },
-      { emoji: "💵", txt: "Caja Unificada" },
-      { emoji: "🏦", txt: "Bancos Reales" },
-      { emoji: "🧾", txt: "Liquidación" },
-      { emoji: "💱", txt: "Monedas y Tasas" },
+      { href: "/contabilidad/ingresos", emoji: "📥", txt: "Ingresos / Avales" },
+      { href: "/contabilidad/caja", emoji: "💵", txt: "Caja Unificada" },
+      { href: "/contabilidad/bancos", emoji: "🏦", txt: "Bancos Reales" },
+      { href: "/saldos-reportes", emoji: "📊", txt: "Liquidación" },
+      { href: "/contabilidad/monedas", emoji: "💱", txt: "Monedas y Tasas" },
     ],
   },
   {
