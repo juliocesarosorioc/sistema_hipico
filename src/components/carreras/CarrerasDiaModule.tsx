@@ -14,6 +14,8 @@ import {
   type EjemplarCarreraCentral,
 } from "@/lib/carreras/central";
 import { aplicarRetirosCarrera, parsearRetirados } from "@/lib/carreras/retiros";
+import { MonitorHipodromos } from "@/components/ui/MonitorHipodromos";
+import { agruparPorHipodromo } from "@/lib/carreras/agruparHipodromos";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 
@@ -111,6 +113,36 @@ export function CarrerasDiaModule() {
   useEffect(() => {
     if (hipodromo) void refrescar();
   }, [fecha, hipodromo, refrescar]);
+
+  /**
+   * Monitor de Hipódromos del Día: el mismo panel de Tablas Fijas, alimentado
+   * con TODAS las carreras de la fecha (sin filtrar por hipódromo). Clic en una
+   * tarjeta filtra y mueve el selector del editor a ese hipódromo.
+   */
+  const [todas, setTodas] = useState<CarreraCentral[]>([]);
+
+  const refrescarMonitor = useCallback(async () => {
+    const r = await listarCarrerasCentrales(fecha, "");
+    if (r.ok) setTodas(r.datos ?? []);
+  }, [fecha]);
+
+  useEffect(() => {
+    void refrescarMonitor();
+  }, [fecha, refrescarMonitor]);
+
+  const gruposMonitor = useMemo(
+    () =>
+      agruparPorHipodromo(
+        todas.map((c) => ({
+          id: c.id,
+          hipodromo: c.hipodromo,
+          carrera: c.carrera,
+          estado: c.estado,
+        })),
+        fecha
+      ),
+    [todas, fecha]
+  );
 
   const abrirEditar = (c: CarreraCentral) => {
     setModal({
@@ -228,6 +260,18 @@ export function CarrerasDiaModule() {
         📌 Registre hoy las carreras que se van a jugar. Puede cargar una carrera <b>solo con el Nº de ejemplares</b>{" "}
         (ej. <b>15</b>) cuando no se tiene la información completa (caso carrera extranjera): se generan los números 1..15
         sin nombres y la pizarra decide el ganador. Si ya tiene nombres, escríbalos como <b>1 NOMBRE DEL CABALLO</b> (uno por línea).
+      </div>
+
+      {/* Monitor de Hipódromos del Día — mismo panel y mismo CSS que Tablas Fijas */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <MonitorHipodromos
+          grupos={gruposMonitor}
+          filtro={hipodromo}
+          onFiltro={(h) => setHipodromo(h)}
+          fecha={fecha}
+          onFecha={(f) => setFecha(f || hoyLocal())}
+          vacio={`Sin carreras registradas en la fecha ${fecha}. Regístralas con el formulario de abajo o desde Ejemplares y Gaceta.`}
+        />
       </div>
 
       {/* Registro rápido */}

@@ -8,6 +8,8 @@ import { parseNum, sumaBase, fmtMoney, type DraftCarrera, type ItemCarritoVenta 
 import { aDraftCarrera, eliminarDelRegistroGaceta, leerBuzonEnsamblaje, limpiarBuzonEnsamblaje } from "@/lib/gaceta/ui";
 import { useCarrerasDiaStore } from "@/store/useCarrerasDiaStore";
 import { registrarCarreraProgramada } from "@/lib/carreras-dia";
+import { MonitorHipodromos } from "@/components/ui/MonitorHipodromos";
+import { agruparPorHipodromo } from "@/lib/carreras/agruparHipodromos";
 import { asegurarHipodromo } from "@/lib/tablas/rpc";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import { SeccionPliegue } from "@/components/tablas/SeccionPliegue";
@@ -66,36 +68,32 @@ export function TablasModule(props: Props) {
 
   const openCount = tablas.filter((t) => !t.cerrada).length;
 
-  /** Normaliza la fecha (AAAA-MM-DD) de una tabla para el filtro del día. */
-  const diaDe = (t: StoredTablaFija): string => {
-    const raw = String(t.fecha || t.fecha_creacion || "").trim();
-    if (!raw) return "";
-    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
-    const partes = raw.split(/[-/]/);
-    if (partes.length === 3 && partes[0].length <= 2) {
-      return `${partes[2]}-${partes[1].padStart(2, "0")}-${partes[0].padStart(2, "0")}`;
-    }
-    return raw.slice(0, 10);
-  };
-
   /** Hipódromos del día (abiertos, de la fecha seleccionada) ordenados
    *  alfabéticamente, con sus carreras y estado. Solo la fecha indicada por
-   *  el filtro de día (por defecto hoy). */
+   *  el filtro de día (por defecto hoy). La normalización de fecha y el
+   *  agrupado viven en lib/carreras/agruparHipodromos (compartidos con
+   *  Carreras del Día). */
   const hipodromosDia = useMemo(() => {
     const abiertas = tablas.filter((t) => !t.cerrada);
-    const delDia = abiertas.filter((t) => diaDe(t) === fechaPrograma);
-    const porHip = new Map<string, StoredTablaFija[]>();
-    delDia.forEach((t) => {
-      const h = (t.hipodromo ?? "").trim().toUpperCase();
-      if (!h) return;
-      const arr = porHip.get(h) ?? [];
-      arr.push(t);
-      porHip.set(h, arr);
-    });
-    return Array.from(porHip.entries())
-      .map(([hipodromo, carreras]) => ({ hipodromo, carreras }))
-      .sort((a, b) => a.hipodromo.localeCompare(b.hipodromo));
-  }, [tablas, fechaPrograma]);
+    // Agrupación compartida con Carreras del Día: mismos grupos, misma
+    // normalización de fecha y mismos colores de estado.
+    return agruparPorHipodromo(
+      abiertas.map((t) => {
+        const hipo = (t.hipodromo ?? "").trim().toUpperCase();
+        const est = carrerasDia.find((e) => e.hipodromo === hipo && e.carrera === t.carrera);
+        return {
+          id: t.id,
+          hipodromo: hipo,
+          carrera: t.carrera,
+          fecha: t.fecha,
+          fecha_creacion: t.fecha_creacion,
+          estado: est?.estado ?? "Programada",
+          ventas: est?.ventas?.length ?? 0,
+        };
+      }),
+      fechaPrograma
+    );
+  }, [tablas, fechaPrograma, carrerasDia]);
 
   const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -593,34 +591,15 @@ export function TablasModule(props: Props) {
         onToggle={() => setSecciones((s) => ({ ...s, monitor: !s.monitor }))}
       >
         <div className="p-4">
-          <div className="mb-3 no-print">
-            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                🏛️ Hipódromos del Día
-                <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-black text-slate-500">
-                  {hipodromosDia.length}
-                </span>
-              </span>
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  📅 Día
-                  <input
-                    type="date"
-                    value={fechaPrograma}
-                    onChange={(e) => setFechaPrograma(e.target.value)}
-                    title="Selecciona el día para los Hipódromos del Día (por defecto: hoy)"
-                    className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-700"
-                  />
-                </label>
-                {filtroHipodromo && (
-                  <button
-                    type="button"
-                    onClick={() => setFiltroHipodromo("")}
-                    className="rounded border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-black uppercase text-red-500 transition-colors hover:bg-red-100"
-                  >
-                    ✕ Limpiar filtro: {filtroHipodromo}
-                  </button>
-                )}
+            <MonitorHipodromos
+              grupos={hipodromosDia}
+              filtro={filtroHipodromo}
+              onFiltro={setFiltroHipodromo}
+              fecha={fechaPrograma}
+              onFecha={setFechaPrograma}
+              vacio={`Sin hipódromos publicados para la fecha ${fechaPrograma}.`}
+              className="mb-3"
+              acciones={
                 <Guard permiso="imprimir_tablas">
                   <button
                     type="button"
@@ -631,72 +610,8 @@ export function TablasModule(props: Props) {
                     🖨️ Imprimir Tablas
                   </button>
                 </Guard>
-              </div>
-            </div>
-
-            {hipodromosDia.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[11px] italic text-slate-400">
-                Sin hipódromos publicados para la fecha {fechaPrograma}.
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-                {hipodromosDia.map(({ hipodromo, carreras }) => {
-                  const activo = filtroHipodromo === hipodromo;
-                  return (
-                    <button
-                      key={hipodromo}
-                      type="button"
-                      onClick={() => setFiltroHipodromo(activo ? "" : hipodromo)}
-                      title={
-                        activo
-                          ? `Quitar filtro de ${hipodromo}`
-                          : `Filtrar el monitor por ${hipodromo} (${carreras.length} carrera(s))`
-                      }
-                      className={`min-w-0 rounded-lg border p-1.5 text-left transition-colors ${
-                        activo
-                          ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-300"
-                          : "border-slate-200 bg-white hover:bg-slate-50"
-                      }`}
-                    >
-                      <span className="block truncate text-[11px] font-black uppercase leading-none text-slate-700">
-                        🏛️ {hipodromo}
-                      </span>
-                      <span className="mt-1 block text-[9px] font-bold text-slate-400 leading-none">
-                        {carreras.length} carrera(s) en el día
-                      </span>
-                      <span className="mt-1 flex flex-wrap gap-0.5">
-                        {carreras
-                          .slice()
-                          .sort((a, b) => (a.carrera ?? 0) - (b.carrera ?? 0))
-                          .map((c) => {
-                            const est = carrerasDia.find(
-                              (e) => e.hipodromo === hipodromo && e.carrera === c.carrera
-                            );
-                            const color =
-                              est?.estado === "Liquidada"
-                                ? "bg-slate-200 text-slate-600"
-                                : est?.estado === "Resultados"
-                                  ? "bg-amber-200 text-amber-800"
-                                  : "bg-emerald-100 text-emerald-700";
-                            return (
-                              <span
-                                key={String(c.id)}
-                                className={`rounded px-1 py-0.5 text-[8px] font-black uppercase ${color}`}
-                                title={`${hipodromo} C${c.carrera} · ${est?.estado ?? "Programada"} · ${
-                                  est?.ventas?.length ?? 0
-                                } venta(s)`}
-                              >
-                                C{c.carrera}
-                              </span>
-                            );
-                          })}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+              }
+            />
           <MonitorTablas
             tablas={tablas}
             onVender={venderDirecto}

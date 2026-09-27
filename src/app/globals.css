@@ -39,6 +39,80 @@ body {
   background: transparent;
 }
 
+/* =============================================================================
+   Monitor de Hipódromos del Día — CSS CENTRALIZADO
+   -----------------------------------------------------------------------------
+   Rejilla de hipódromos con las carreras registradas de cada uno, usada hoy por
+   Tablas Fijas (Monitor de Tablas Publicadas) y Carreras del Día. Todo lo que
+   necesite el mismo panel en el futuro debe usar estas clases, no repetir
+   utilities sueltos: el estilo vive aquí una sola vez.
+   Componente: src/components/ui/MonitorHipodromos.tsx
+   ========================================================================== */
+@layer components {
+  /* --- Cabecera: título + contador --- */
+  .mon-titulo {
+    @apply text-[10px] font-black uppercase tracking-wider text-slate-400;
+  }
+  .mon-contador {
+    @apply ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-black text-slate-500;
+  }
+
+  /* --- Controles del filtro --- */
+  .mon-control {
+    @apply flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400;
+  }
+  .mon-input {
+    @apply rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-700;
+  }
+  .mon-limpiar {
+    @apply rounded border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-black uppercase text-red-500 transition-colors hover:bg-red-100;
+  }
+
+  /* --- Estado vacío --- */
+  .mon-vacio {
+    @apply rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[11px] italic text-slate-400;
+  }
+
+  /* --- Rejilla de hipódromos --- */
+  .mon-grid {
+    @apply grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6;
+  }
+  .mon-tarjeta {
+    @apply min-w-0 rounded-lg border border-slate-200 bg-white p-1.5 text-left transition-colors hover:bg-slate-50;
+  }
+  /* La tarjeta filtraada se invierte para que se vea cuál está activa. */
+  .mon-tarjeta-activa {
+    @apply border-indigo-500 bg-indigo-50 ring-1 ring-indigo-300 hover:bg-indigo-50;
+  }
+  .mon-hipo {
+    @apply block truncate text-[11px] font-black uppercase leading-none text-slate-700;
+  }
+  .mon-hipo-sub {
+    @apply mt-1 block text-[9px] font-bold leading-none text-slate-400;
+  }
+
+  /* --- Chips de carrera --- */
+  .mon-chips {
+    @apply mt-1 flex flex-wrap gap-0.5;
+  }
+  .mon-chip {
+    @apply rounded px-1 py-0.5 text-[8px] font-black uppercase;
+  }
+  /* Un color por estado de la carrera. */
+  .mon-chip-programada {
+    @apply bg-emerald-100 text-emerald-700;
+  }
+  .mon-chip-resultados {
+    @apply bg-amber-200 text-amber-800;
+  }
+  .mon-chip-liquidada {
+    @apply bg-slate-200 text-slate-600;
+  }
+  .mon-chip-retirada {
+    @apply bg-yellow-400 text-slate-900;
+  }
+}
+
 /* Impresión: oculta el shell (sidebars/topbar), modales y carrito; libera el
    scroll del main y conserva los colores de gualdrapas/tarjetas (cero-scroll). */
 @media print {
