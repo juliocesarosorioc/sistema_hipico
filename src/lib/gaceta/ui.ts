@@ -8,6 +8,7 @@
  *     + 'gaceta_prellenado' (js/gaceta.js acumularEnEnsamblaje y
  *     js/tablas.js migrarLegacy / listaHors / eliminarDelRegistroGaceta).
  */
+import { getHorseColor } from "@/lib/horseColors";
 import type { DraftCarrera } from "@/lib/tablas/tipos";
 
 export const SUPERFICIES = ["ARENA", "CESPED", "FANGO", "TAPETA", "OTRA"] as const;
@@ -159,26 +160,15 @@ export function nacEjemplar(ej?: { nacionalidad?: string } | null, hipo?: string
 }
 
 /** Paleta oficial de 14 colores de gualdrapa (idéntica a la del Ensamblaje). */
+/**
+ * @deprecated Usa `getHorseColor` / `horseBgHex` de "@/lib/horseColors".
+ * Se conserva por compatibilidad (Dupletas, Gaceta) y ahora delega en la
+ * paleta canónica: antes este archivo, horseColors.ts y el `cardColor` local
+ * de Gestión de Jugadas tenían paletas DIFERENTES para el mismo número.
+ */
 export function colorDeNumeroGac(n: unknown): { bg: string; fg: string } {
-  const x = parseInt(String(n), 10);
-  const PALETA: Array<{ bg: string; fg: string }> = [
-    { bg: "#FF0000", fg: "#FFFFFF" },
-    { bg: "#FFFFFF", fg: "#000000" },
-    { bg: "#0000FF", fg: "#FFFFFF" },
-    { bg: "#FFFF00", fg: "#000000" },
-    { bg: "#008000", fg: "#FFFFFF" },
-    { bg: "#000000", fg: "#FFFF00" },
-    { bg: "#FFA500", fg: "#000000" },
-    { bg: "#FFC0CB", fg: "#000000" },
-    { bg: "#40E0D0", fg: "#000000" },
-    { bg: "#800080", fg: "#FFFFFF" },
-    { bg: "#808080", fg: "#FF0000" },
-    { bg: "#32CD32", fg: "#000000" },
-    { bg: "#8B4513", fg: "#FFFFFF" },
-    { bg: "#800000", fg: "#FFFFFF" },
-  ];
-  if (!x) return { bg: "#94a3b8", fg: "#FFFFFF" };
-  return PALETA[((x - 1) % 14 + 14) % 14];
+  const c = getHorseColor(typeof n === "number" ? n : parseInt(String(n), 10));
+  return { bg: c.hex, fg: c.hexText };
 }
 
 export function parsearRangoPaginas(txt: string): Set<number> {

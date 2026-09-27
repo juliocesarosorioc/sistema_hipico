@@ -1,3 +1,5 @@
+import { getHorseColor } from "@/lib/horseColors";
+
 /**
  * Tipos del módulo Tablas Fijas (clon legacy) + constantes OK.
  * Paleta de gualdrapas, nacionalidades y superficies idénticas a js/tablas.js.
@@ -66,34 +68,19 @@ export const OPCIONES_NACIONALIDAD = [
 
 export const NO_RETIROS = "NO HUBO RETIROS";
 
-/** Paleta de 14 gualdrapas (js/tablas.js L29-44): [fondo, texto]. */
-const PALETA_COLORES: Array<[string, string]> = [
-  ["#FF0000", "#FFF"],
-  ["#FFFFFF", "#000"],
-  ["#0000FF", "#FFF"],
-  ["#FFFF00", "#000"],
-  ["#008000", "#FFF"],
-  ["#000000", "#FFFF00"],
-  ["#FFA500", "#000"],
-  ["#FFC0CB", "#000"],
-  ["#40E0D0", "#000"],
-  ["#800080", "#FFF"],
-  ["#808080", "#FF0000"],
-  ["#32CD32", "#000"],
-  ["#8B4513", "#FFF"],
-  ["#800000", "#FFF"],
-];
-
+/**
+ * @deprecated La paleta vive en "@/lib/horseColors" (canónica, compartida por
+ * TODOS los módulos). Este shim se mantiene para no romper las llamadas
+ * existentes con estilos inline; antes maintainía una 4ª copia de la paleta
+ * que difiere de la canónica (6 con texto amarillo, 11 con texto rojo, y los
+ * >=14 con módulo 14 en vez del maroon de respaldo).
+ */
 export function colorDeNumero(n: number | string): string {
-  const i = ((Number(n) || 1) - 1) % 14;
-  const v = PALETA_COLORES[i < 0 ? 0 : i];
-  return v ? v[0] : "#94a3b8";
+  return getHorseColor(n).hex;
 }
 
 export function textoDeNumero(n: number | string): string {
-  const i = ((Number(n) || 1) - 1) % 14;
-  const v = PALETA_COLORES[i < 0 ? 0 : i];
-  return v ? v[1] : "#000";
+  return getHorseColor(n).hexText;
 }
 
 export const banderas: Record<string, string> = {
