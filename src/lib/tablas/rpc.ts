@@ -50,8 +50,13 @@ export type OpcionHipodromo = { value: string; label: string };
  * con SELECT plano ordenado — sin filtros de columna inventados).
  * La data sale SIEMPRE de la tabla real cuando hay conexión; el respaldo
  * local solo aparece si la tabla/RLS impide la lectura.
+ *
+ * `incluirTodos: true` omite la whitelist VE+USA y devuelve TODOS los
+ * hipódromos registrados (lo necesita Dupletas); por defecto se mantiene la
+ * whitelist para no alterar el resto de módulos.
  */
-export async function listarHipodromos(): Promise<OpcionHipodromo[]> {
+export async function listarHipodromos(opciones?: { incluirTodos?: boolean }): Promise<OpcionHipodromo[]> {
+  const todos = Boolean(opciones?.incluirTodos);
   const mapear = (rows: unknown[]): OpcionHipodromo[] =>
     rows
       .map((r) => {
@@ -59,7 +64,7 @@ export async function listarHipodromos(): Promise<OpcionHipodromo[]> {
         return { value: String(h.nombre ?? "").toUpperCase(), label: String(h.nombre ?? "") };
       })
       .filter((h) => h.label.trim().length)
-      .filter((h) => HIPODROMOS_MOSTRAR.includes(h.value))
+      .filter((h) => todos || HIPODROMOS_MOSTRAR.includes(h.value))
       .sort((a, b) => a.label.localeCompare(b.label));
 
   const sdb = supabase;

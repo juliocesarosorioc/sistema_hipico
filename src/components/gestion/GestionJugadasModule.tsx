@@ -15,7 +15,8 @@ import { listarClientesVenta, listarGruposVenta, saldoDeCliente, type ClienteVen
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/lib/tablas/rpc";
 import { registrarCarreraProgramada } from "@/lib/carreras-dia";
 import { listarCarrerasCentrales, type CarreraCentral } from "@/lib/carreras/central";
-import { aplicarRetirosCarrera, parsearRetirados } from "@/lib/carreras/retiros";
+import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados } from "@/lib/carreras/retiros";
+import { useCarrerasCentrales } from "@/lib/carreras/useCarrerasCentrales";
 import { hoyLocal } from "@/lib/gaceta/programa";
 
 type FilaCarga = {
@@ -170,6 +171,33 @@ export function GestionJugadasModule() {
   const eliminarTicket = useTaquillaStore((s) => s.eliminarTicket);
   const agregarTicket = useTaquillaStore((s) => s.agregarTicket);
   const tablas = useTablasFijasStore((s) => s.tablas);
+
+  /**
+   * Hipódromos con carreras CARGADAS en el día elegido (se elige el día
+   * primero): los que tienen tabla publicada o carrera en la data central.
+   * El catálogo completo queda disponible si el día aún no tiene nada.
+   */
+  const { centrales: centralCarrerasDia } = useCarrerasCentrales(fecha || undefined);
+  const hipodromosDelDia = useMemo(() => {
+    const conCarreras = new Set<string>();
+    for (const t of tablas) {
+      const h = String(t.hipodromo ?? "").trim().toUpperCase();
+      if (h && String(t.fecha || t.fecha_creacion || "").slice(0, 10) === fecha) conCarreras.add(h);
+    }
+    for (const c of centralCarrerasDia) {
+      if (c.hipodromo) conCarreras.add(c.hipodromo);
+    }
+    if (!conCarreras.size) return hipodromos;
+    const normalizado = new Map(
+      hipodromos.map((h) => [String(h.value ?? "").trim().toUpperCase(), h] as const)
+    );
+    const dentro = [...conCarreras]
+      .map((k) => normalizado.get(k) ?? { value: k, label: k })
+      .sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    const dentroKeys = new Set(dentro.map((h) => String(h.value).trim().toUpperCase()));
+    const fuera = hipodromos.filter((h) => !dentroKeys.has(String(h.value ?? "").trim().toUpperCase()));
+    return [...dentro, ...fuera];
+  }, [tablas, hipodromos, centralCarrerasDia, fecha]);
 
   // Atajos de la Barra de Comandos (real keyboard events)
   useEffect(() => {
@@ -395,6 +423,35 @@ export function GestionJugadasModule() {
     );
   };
 
+  /**
+   * Presionar un ejemplar lo RETIRA (o lo rehabilita). El retiro pertenece a la
+   * CARRERA: se escribe en la data central y desde ahí incide en Tablas Fijas,
+   * Marcas, Dupletas, Taquilla y Carreras del Día, reembolsa lo pendiente y
+   * recalcula el premio de la tabla.
+   */
+  const alternarRetiroEjemplar = async (c: EjemplarTabla) => {
+    const retirado = !c.retirado;
+    const r = await alternarRetiroCarrera({
+      fecha,
+      hipodromo,
+      carrera,
+      numero: c.numero,
+      retirado,
+    });
+    if (!r.ok) {
+      setAviso(`⚠️ No se pudo centralizar el retiro de N°${c.numero}: ${r.error ?? "sin conexión"}`);
+      return;
+    }
+    const cc = await listarCarrerasCentrales(fecha, hipodromo);
+    if (cc.ok) setCarrerasCentrales(cc.datos ?? []);
+    setAviso(
+      retirado
+        ? `⛔ N°${c.numero} RETIRADO de C${carrera} · ${r.tablasAfectadas} tabla(s) sincronizada(s)` +
+            (r.reembolsos ? ` · ${r.reembolsos} ticket(s) reembolsado(s)` : "")
+        : `↩ N°${c.numero} rehabilitado en C${carrera}.`
+    );
+  };
+
   const cargarAtaquilla = () => {
     let n = 0;
     const errores: string[] = [];
@@ -526,21 +583,21 @@ export function GestionJugadasModule() {
       {/* Inputs superiores */}
       <div className="grid gap-3 rounded-2xl border border-line bg-surface p-3 lg:grid-cols-6">
         <div>
-          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">Hipódromo</label>
-          <SearchableSelect
-            options={hipodromos}
-            value={hipodromo}
-            onChange={setHipodromo}
-            placeholder="Buscar hipódromo…"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">Fecha 📅</label>
+          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">1 · Fecha 📅</label>
           <input
             type="date"
             value={fecha}
             onChange={(e) => setFecha(e.target.value || hoyLocal())}
             className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">2 · Hipódromo</label>
+          <SearchableSelect
+            options={hipodromosDelDia}
+            value={hipodromo}
+            onChange={setHipodromo}
+            placeholder="Buscar hipódromo…"
           />
         </div>
         <div>
@@ -633,23 +690,40 @@ export function GestionJugadasModule() {
               </p>
               <ul className="max-h-72 divide-y divide-line/60 overflow-y-auto">
                 {caballosDeCarrera.map((c, ci) => (
-                  <li
-                    key={ci}
-                    className="flex items-center gap-2 px-1 py-1"
-                    style={{ backgroundColor: c.retirado ? "rgba(239,68,68,0.06)" : undefined }}
-                  >
-                    <span
-                      className="flex h-7 w-7 shrink-0 flex-none items-center justify-center text-center text-[10px] font-bold"
-                      style={{ backgroundColor: cardColor(c.numero), color: textoColor(c.numero) }}
+                  <li key={ci}>
+                    <button
+                      type="button"
+                      onClick={() => void alternarRetiroEjemplar(c)}
+                      title={
+                        c.retirado
+                          ? `Quitar el retiro de N°${c.numero} (se propaga a todos los módulos)`
+                          : `Retirar N°${c.numero} (se propaga a todos los módulos)`
+                      }
+                      className={`flex w-full cursor-pointer items-center gap-2 px-1 py-0.5 text-left hover:bg-amber-50 ${
+                        c.retirado ? "bg-red-50/60" : ""
+                      }`}
                     >
-                      {c.numero}
-                    </span>
-                    <span className={`min-w-0 flex-1 truncate text-xs font-bold uppercase ${c.retirado ? "text-red-500 line-through" : "text-slate-700"}`}>
-                      {c.nombre || <span className="text-slate-400">Nº {c.numero} (sin nombre)</span>}
-                    </span>
-                    {c.retirado && (
-                      <span className="shrink-0 rounded bg-red-100 px-1 text-[8px] font-black text-red-600">RET</span>
-                    )}
+                      <span
+                        className="flex h-6 w-6 shrink-0 flex-none items-center justify-center text-center text-[10px] font-bold"
+                        style={{ backgroundColor: cardColor(c.numero) }}
+                      >
+                        {c.numero}
+                      </span>
+                      <span
+                        className={`min-w-0 flex-1 truncate text-[11px] font-bold uppercase leading-tight ${
+                          c.retirado ? "text-red-500 line-through" : "text-slate-700"
+                        }`}
+                      >
+                        {c.nombre || <span className="text-slate-400">Nº {c.numero} (sin nombre)</span>}
+                      </span>
+                      {c.retirado ? (
+                        <span className="shrink-0 rounded bg-red-100 px-1 text-[8px] font-black text-red-600">RET</span>
+                      ) : (
+                        <span className="shrink-0 text-[9px] font-black uppercase text-amber-600 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-100">
+                          ⛔
+                        </span>
+                      )}
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -659,13 +733,13 @@ export function GestionJugadasModule() {
             <table className="w-full table-fixed border-collapse text-xs">
           <thead>
             <tr className="bg-slate-800 text-white">
-              <th className="w-[4%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">#</th>
+              <th className="w-[3%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">#</th>
               <th className="w-[3%] border-r border-slate-700 px-1 py-1 text-center font-bold uppercase">X</th>
-              <th className="w-[22%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Jugada</th>
-              <th className="w-[12%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Caballo</th>
-              <th className="w-[12%] border-r border-slate-700 px-1 py-1 text-right font-bold uppercase">Monto</th>
-              <th className="w-[23.5%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 1</th>
-              <th className="w-[23.5%] px-1 py-1 text-left font-bold uppercase">Cliente 2</th>
+              <th className="w-[20%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Jugada</th>
+              <th className="w-[11%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Caballo</th>
+              <th className="w-[11%] border-r border-slate-700 px-1 py-1 text-right font-bold uppercase">Monto</th>
+              <th className="w-[26%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 1</th>
+              <th className="w-[26%] px-1 py-1 text-left font-bold uppercase">Cliente 2</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line/70">
@@ -675,7 +749,7 @@ export function GestionJugadasModule() {
               const ejemplar = ejemplarResuelto(f.caballo);
               return (
                 <tr key={i} className={`align-middle ${f.error ? "bg-red-50" : ""}`} title={f.error ?? undefined}>
-                  <td className="relative h-12 px-1 py-0 align-middle text-xs text-slate-400">
+                  <td className="relative h-9 px-1 py-0 align-middle text-xs text-slate-400">
                     <span className="block truncate">
                       {f.error ? (
                         <span className="inline-flex items-center gap-1 text-red-500">
@@ -686,7 +760,7 @@ export function GestionJugadasModule() {
                       )}
                     </span>
                   </td>
-                  <td className="relative h-12 px-1 py-0 align-middle text-center">
+                  <td className="relative h-9 px-1 py-0 align-middle text-center">
                     <button
                       type="button"
                       onClick={() => setFilas((fs) => fs.filter((_, j) => j !== i))}
@@ -697,7 +771,7 @@ export function GestionJugadasModule() {
                       ✕
                     </button>
                   </td>
-                  <td className="relative h-12 px-1 py-0 align-middle">
+                  <td className="relative h-9 px-1 py-0 align-middle">
                     <input
                       value={f.jugada}
                       onChange={(e) => setFila(i, { jugada: e.target.value })}
@@ -707,7 +781,7 @@ export function GestionJugadasModule() {
                           cargarAtaquilla();
                         }
                       }}
-                      placeholder="2x3 10/8 · 1p · 2n"
+                      placeholder="10/8 · pp · 1p · 2n"
                       className="w-full rounded-md border border-line bg-white px-1 py-1 text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
                     <span
@@ -718,11 +792,11 @@ export function GestionJugadasModule() {
                       {detectado ?? (f.jugada.trim() ? "—" : "")}
                     </span>
                   </td>
-                  <td className="relative h-12 px-1 py-0 align-middle">
+                  <td className="relative h-9 px-1 py-0 align-middle">
                     <input
                       value={f.caballo}
                       onChange={(e) => setFila(i, { caballo: e.target.value })}
-                      placeholder="Nº"
+                      placeholder="1 · 1x2"
                       inputMode="numeric"
                       title={ejemplar ? `${ejemplar.numero} - ${ejemplar.nombre}` : ""}
                       className="w-full rounded-md border border-line bg-white px-1 py-1 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
@@ -738,7 +812,7 @@ export function GestionJugadasModule() {
                       </span>
                     )}
                   </td>
-                  <td className="relative h-12 px-1 py-0 align-middle">
+                  <td className="relative h-9 px-1 py-0 align-middle">
                     <input
                       value={f.monto}
                       onChange={(e) => setFila(i, { monto: e.target.value })}
@@ -747,7 +821,7 @@ export function GestionJugadasModule() {
                       className="w-full rounded-md border border-line bg-white px-1 py-1 text-right text-xs font-black text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
                   </td>
-                  <td className="relative h-12 px-1 py-0 align-middle">
+                  <td className="relative h-11 px-1 py-0.5 align-middle">
                     <SearchableSelect
                       options={opcionesClientes}
                       value={f.cliente1}
@@ -758,11 +832,11 @@ export function GestionJugadasModule() {
                       className=""
                       inputClassName="w-full rounded-md border border-line bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
-                    <span className="pointer-events-none absolute bottom-0 left-1 right-1 leading-none">
+                    <span className="pointer-events-none absolute bottom-0.5 left-1 right-1 block leading-none">
                       {infoCliente(f.cliente1, f.monto, v.ok && v.cliente1 ? v.cliente1.cobroNeto : 0)}
                     </span>
                   </td>
-                  <td className="relative h-12 px-1 py-0 align-middle">
+                  <td className="relative h-11 px-1 py-0.5 align-middle">
                     <SearchableSelect
                       options={opcionesClientes}
                       value={f.cliente2}
@@ -773,7 +847,7 @@ export function GestionJugadasModule() {
                       className=""
                       inputClassName="w-full rounded-md border border-line bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
-                    <span className="pointer-events-none absolute bottom-0 left-1 right-1 leading-none">
+                    <span className="pointer-events-none absolute bottom-0.5 left-1 right-1 block leading-none">
                       {infoCliente(f.cliente2, f.monto, v.ok && v.cliente2 ? v.cliente2.cobroNeto : 0)}
                     </span>
                   </td>
@@ -929,7 +1003,7 @@ export function GestionJugadasModule() {
                   {caballosDeCarrera.map((c, i) => (
                     <li key={i} className="flex items-center gap-2 py-1.5 text-sm">
                       <span className="flex h-7 w-7 shrink-0 flex-none items-center justify-center rounded text-center text-[10px] font-bold"
-                        style={{ backgroundColor: c.retirado ? "#ef4444" : cardColor(c.numero), color: c.retirado ? "#ffffff" : textoColor(c.numero) }}>
+                        style={{ backgroundColor: c.retirado ? "#ef4444" : cardColor(c.numero) }}>
                         {c.numero}
                       </span>
                       <span className={`font-bold uppercase text-slate-800 ${c.retirado ? "line-through opacity-50" : ""}`}>{c.nombre || `Nº ${c.numero}`}</span>
@@ -1124,14 +1198,6 @@ function round2(n: number): number {
 function cardColor(n: string | number): string {
   const i = ((Number(n) || 1) - 1) % 14;
   return ["#dc2626", "#f5f5f4", "#2563eb", "#facc15", "#16a34a", "#111827", "#f97316", "#f9a8d4", "#22d3ee", "#9333ea", "#6b7280", "#4ade80", "#92400e", "#7f1d1d"][i < 0 ? 0 : i];
-}
-
-/** Fondos claros de `cardColor` que necesitan texto oscuro para leerse. */
-const FONDOS_CLAROS = new Set(["#f5f5f4", "#facc15", "#f9a8d4", "#22d3ee", "#4ade80"]);
-
-/** Texto legible según el fondo de `cardColor` (los claros llevan texto oscuro). */
-function textoColor(n: string | number): string {
-  return FONDOS_CLAROS.has(cardColor(n)) ? "#111827" : "#ffffff";
 }
 
 export default GestionJugadasModule;

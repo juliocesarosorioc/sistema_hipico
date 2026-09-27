@@ -7,6 +7,7 @@ import { ChipField } from "@/components/ui/HorseChips";
 import { listarHipodromos, listarCarrerasPorDia, listarTablasPublicadas, type OpcionHipodromo } from "@/lib/tablas/rpc";
 import { useCarrerasCentrales } from "@/lib/carreras/useCarrerasCentrales";
 import { hoyLocal } from "@/lib/gaceta/programa";
+import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import {
   CONDICIONES_MARCAS_DEFECTO,
   guardarMarcas,
@@ -101,6 +102,40 @@ export function MarcasModule() {
   // DATA CENTRAL: si una carrera no tiene tabla publicada, sus ejemplares (y sus
   // retiros) se toman de Carreras del Día para que la fila también se pueda marcar.
   const { centrales: centralCarreras } = useCarrerasCentrales(fecha || undefined, hipodromo || undefined);
+  const { centrales: centralTodasCarreras } = useCarrerasCentrales();
+
+  /**
+   * Hipódromos con carreras CARGADAS en el día elegido: primero los que ya
+   * tienen carreras (tabla publicada o data central) y luego el resto del
+   * catálogo. El día se elige primero y el hipódromo se acota a ese día.
+   */
+  const [tablasDia, setTablasDia] = useState<TablaFijaRow[]>([]);
+  useEffect(() => {
+    if (!fecha) return;
+    let v = true;
+    void listarTablasPublicadas().then((t) => {
+      if (v) setTablasDia(t);
+    });
+    return () => {
+      v = false;
+    };
+  }, [fecha]);
+
+  const hipodromosDelDia = useMemo(() => {
+    const conCarreras = new Map<string, string>();
+    for (const t of tablasDia) {
+      const h = String(t.hipodromo ?? "").trim().toUpperCase();
+      if (h && (t.fecha || "") === fecha) conCarreras.set(h, h);
+    }
+    for (const c of centralTodasCarreras) {
+      if (c.fecha === fecha && c.hipodromo) conCarreras.set(c.hipodromo, c.hipodromo);
+    }
+    for (const h of hipodromos) conCarreras.set(h.value, h.label);
+    return [...new Set([...conCarreras.keys()])]
+      .sort((a, b) => a.localeCompare(b))
+      .map((value) => ({ value, label: conCarreras.get(value) ?? value }));
+  }, [tablasDia, centralTodasCarreras, hipodromos, fecha]);
+
   useEffect(() => {
     if (!hipodromo) return;
     let v = true;
@@ -307,30 +342,38 @@ export function MarcasModule() {
           <p className="text-xs font-medium text-emerald-100">Retos y proporciones diarias — orden oficial.</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <select
-            value={hipodromo}
-            onChange={(e) => {
-              setHipodromo(e.target.value);
-              setGuardado(false);
-            }}
-            className="rounded-lg border border-emerald-400/60 bg-white px-2 py-1 text-xs font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
-          >
-            <option value="">Hipódromo…</option>
-            {hipodromos.map((h) => (
-              <option key={h.value} value={h.value}>
-                {h.label}
-              </option>
-            ))}
-          </select>
-          <input
-            type="date"
-            value={fecha}
-            onChange={(e) => {
-              setFecha(e.target.value || hoyLocal());
-              setGuardado(false);
-            }}
-            className="rounded-lg border border-emerald-400/60 bg-white px-2 py-1 text-xs font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
-          />
+          <label className="flex items-center gap-1 text-[10px] font-black uppercase">
+            1 · Día
+            <input
+              type="date"
+              value={fecha}
+              onChange={(e) => {
+                setFecha(e.target.value || hoyLocal());
+                setHipodromo("");
+                setGuardado(false);
+              }}
+              className="rounded-lg border border-emerald-400/60 bg-white px-2 py-1 text-xs font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+            />
+          </label>
+          <label className="flex items-center gap-1 text-[10px] font-black uppercase">
+            2 · Hipódromo
+            <select
+              value={hipodromo}
+              onChange={(e) => {
+                setHipodromo(e.target.value);
+                setGuardado(false);
+              }}
+              disabled={!fecha}
+              className="rounded-lg border border-emerald-400/60 bg-white px-2 py-1 text-xs font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:opacity-50"
+            >
+              <option value="">Hipódromo…</option>
+              {hipodromosDelDia.map((h) => (
+                <option key={h.value} value={h.value}>
+                  {h.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       </div>
 

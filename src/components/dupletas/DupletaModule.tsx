@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ToastHost } from "@/components/ui/ToastHost";
-import { listarTablasPublicadas, HIPODROMOS_MOSTRAR } from "@/lib/tablas/rpc";
+import { listarTablasPublicadas, listarHipodromos, type OpcionHipodromo } from "@/lib/tablas/rpc";
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { useCarrerasCentrales } from "@/lib/carreras/useCarrerasCentrales";
 import { alternarRetiroCarrera } from "@/lib/carreras/retiros";
@@ -124,26 +124,49 @@ export function DupletaModule() {
 
   // DATA CENTRAL: hipódromos + carreras del día. Las tablas fijas mandan cuando
   // existen (traen más datos); la central completa lo que no esté publicado.
+  // Sin whitelist: se listan TODOS los hipódromos registrados (BD + data central).
   const { centrales: centralCarreras, recargar: recargarCentrales } = useCarrerasCentrales(dia || undefined, hipodromo || undefined);
   const { centrales: centralTodas } = useCarrerasCentrales();
+  const [hipodromosCentrales, setHipodromosCentrales] = useState<OpcionHipodromo[]>([]);
 
+  useEffect(() => {
+    let v = true;
+    void listarHipodromos({ incluirTodos: true }).then((hs) => {
+      if (v) setHipodromosCentrales(hs);
+    });
+    return () => {
+      v = false;
+    };
+  }, []);
+
+  /** Días registrados (tablas publicadas + data central), de más nuevo a más viejo. */
+  const dias = useMemo(() => {
+    const deTablas = carreras.map((c) => c.fecha || "").filter(Boolean);
+    const deCentral = centralTodas.map((c) => c.fecha).filter(Boolean);
+    return [...new Set([...deTablas, ...deCentral])].sort().reverse();
+  }, [carreras, centralTodas]);
+
+  /**
+   * Hipódromos REGISTRADOS. Se eligen DESPUÉS del día: la lista se acota a los
+   * hipódromos que realmente tienen carreras cargadas en ese día.
+   */
   const hipodromos = useMemo(() => {
     const deTablas = carreras.map((c) => String(c.hipodromo || "").trim().toUpperCase());
     const deCentral = centralTodas.map((c) => c.hipodromo);
-    return [...new Set([...deTablas, ...deCentral].filter(Boolean))]
-      .filter((h) => HIPODROMOS_MOSTRAR.includes(h))
-      .sort((a, b) => a.localeCompare(b));
-  }, [carreras, centralTodas]);
+    const deCatalogo = hipodromosCentrales.map((h) => h.value);
+    const todos = [...new Set([...deTablas, ...deCatalogo].filter(Boolean))];
+    if (!dia) return todos.sort((a, b) => a.localeCompare(b));
+    const delDia = new Set<string>();
+    for (const c of carreras) {
+      if ((c.fecha || "") === dia && String(c.hipodromo || "").trim()) delDia.add(String(c.hipodromo).trim().toUpperCase());
+    }
+    for (const c of centralTodas) {
+      if (c.fecha === dia && c.hipodromo) delDia.add(c.hipodromo);
+    }
+    return [...new Set([...delDia, ...todos])].sort((a, b) => a.localeCompare(b));
+  }, [carreras, centralTodas, hipodromosCentrales, dia]);
 
-  const dias = useMemo(() => {
-    const deTablas = carreras
-      .filter((c) => String(c.hipodromo || "").trim().toUpperCase() === hipodromo)
-      .map((c) => c.fecha || "");
-    const deCentral = centralTodas.filter((c) => c.hipodromo === hipodromo).map((c) => c.fecha);
-    return [...new Set([...deTablas, ...deCentral].filter(Boolean))].sort().reverse();
-  }, [carreras, centralTodas, hipodromo]);
-
-  /** Carreras del día: unión de la tabla publicada y la carrera central. */
+  /** Carreras de ese día/hipódromo: unión de tabla publicada y carrera central. */
   const carrerasDelDia = useMemo(() => {
     const mapa = new Map<string, TablaFijaRow>();
     for (const c of carreras) {
@@ -364,8 +387,27 @@ export function DupletaModule() {
 
         <div className="grid grid-cols-1 gap-x-3 gap-y-1.5 md:grid-cols-2 xl:grid-cols-4">
           <label className="block">
-            <span className={inputLbl}>Hipódromo</span>
-            <select value={hipodromo} onChange={(e) => { setHipodromo(e.target.value); setDia(""); setCarrera1(""); setCarrera2(""); }} className={inputSel}>
+            <span className={inputLbl}>1 · Día</span>
+            <select
+              value={dia}
+              onChange={(e) => { setDia(e.target.value); setHipodromo(""); setCarrera1(""); setCarrera2(""); }}
+              className={inputSel}
+            >
+              <option value="">— elegir el día —</option>
+              {dias.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className={inputLbl}>2 · Hipódromo</span>
+            <select
+              value={hipodromo}
+              onChange={(e) => { setHipodromo(e.target.value); setCarrera1(""); setCarrera2(""); }}
+              disabled={!dia}
+              className={inputSel}
+            >
               <option value="">— elegir —</option>
               {hipodromos.map((h) => (
                 <option key={h} value={h}>{h}</option>
@@ -374,18 +416,8 @@ export function DupletaModule() {
           </label>
 
           <label className="block">
-            <span className={inputLbl}>Día</span>
-            <select value={dia} onChange={(e) => { setDia(e.target.value); setCarrera1(""); setCarrera2(""); }} disabled={!hipodromo} className={inputSel}>
-              <option value="">— elegir —</option>
-              {dias.map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block">
-            <span className={inputLbl}>Carrera 1 de la Dupleta</span>
-            <select value={carrera1} onChange={(e) => { setCarrera1(e.target.value); if (e.target.value && e.target.value === carrera2) setCarrera2(""); }} disabled={!dia} className={inputSel}>
+            <span className={inputLbl}>3 · Carrera 1 de la Dupleta</span>
+            <select value={carrera1} onChange={(e) => { setCarrera1(e.target.value); if (e.target.value && e.target.value === carrera2) setCarrera2(""); }} disabled={!hipodromo} className={inputSel}>
               <option value="" />
               {carrerasDelDia.filter((c) => String(c.carrera) !== String(carrera2)).map((c) => (
                 <option key={String(c.carrera)} value={String(c.carrera)}>Carrera {c.carrera} ({c.distancia_carrera ? `${c.distancia_carrera} m` : "—"})</option>
@@ -394,8 +426,8 @@ export function DupletaModule() {
           </label>
 
           <label className="block">
-            <span className={inputLbl}>Carrera 2 de la Dupleta</span>
-            <select value={carrera2} onChange={(e) => { setCarrera2(e.target.value); if (e.target.value && e.target.value === carrera1) setCarrera1(""); }} disabled={!dia} className={inputSel}>
+            <span className={inputLbl}>4 · Carrera 2 de la Dupleta</span>
+            <select value={carrera2} onChange={(e) => { setCarrera2(e.target.value); if (e.target.value && e.target.value === carrera1) setCarrera1(""); }} disabled={!hipodromo} className={inputSel}>
               <option value="" />
               {carrerasDelDia.filter((c) => String(c.carrera) !== String(carrera1)).map((c) => (
                 <option key={String(c.carrera)} value={String(c.carrera)}>Carrera {c.carrera} ({c.distancia_carrera ? `${c.distancia_carrera} m` : "—"})</option>
@@ -467,7 +499,7 @@ export function DupletaModule() {
                 <table ref={tablaRef} className="min-w-max border-separate border-spacing-0 text-[10px] leading-tight">
               <thead>
                 <tr>
-                  <th className="sticky left-0 top-0 z-40 min-w-[120px] border-b border-r border-slate-300 bg-indigo-600 p-1 text-left align-bottom text-[9px] font-black text-white">
+                  <th className="sticky left-0 top-0 z-40 min-w-[120px] border-b border-r border-slate-300 bg-indigo-600 p-1 text-left align-top text-[9px] font-black text-white" style={{ verticalAlign: "top" }}>
                     <span className="block">DUPLETA</span>
                     <span className="block text-[14px] text-emerald-300">PAGA {matriz.premio.toLocaleString("es-VE")}</span>
                     <span className="mt-0.5 block text-[7px] font-bold uppercase text-indigo-200">clic en ejemplar = retira</span>
@@ -475,12 +507,12 @@ export function DupletaModule() {
                   {matriz.caballos1.map((cb, i1) => {
                     const col = colorDeNumeroGac(cb.numero);
                     return (
-                      <th key={`h1-${cb.numero}`} className={`sticky top-0 z-30 border-b border-r border-slate-300 p-0.5 align-bottom ${i1 % 2 ? "bg-indigo-700" : "bg-indigo-600"}`} style={{ width: anchoCol, maxWidth: anchoCol }}>
+                      <th key={`h1-${cb.numero}`} className={`sticky top-0 z-30 border-b border-r border-slate-300 p-0.5 align-top ${i1 % 2 ? "bg-indigo-700" : "bg-indigo-600"}`} style={{ width: anchoCol, maxWidth: anchoCol, verticalAlign: "top" }}>
                         <button
                           type="button"
                           onClick={() => toggleRetirado(1, cb.numero)}
                           title={cb.retirado ? "Quitar retirado" : "Marcar retirado"}
-                          className={`flex h-full w-full flex-col items-center justify-start rounded px-0.5 pt-0.5 pb-1 ${cb.retirado ? "bg-yellow-400 text-slate-900" : "text-white"}`}
+                          className={`flex w-full flex-col items-center justify-start self-start rounded px-0.5 pt-0.5 pb-1 ${cb.retirado ? "bg-yellow-400 text-slate-900" : "text-white"}`}
                         >
                           <span className="flex items-center justify-center gap-1">
                             <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: col.bg, color: col.fg }}>
@@ -508,12 +540,12 @@ export function DupletaModule() {
                   const izq = colorDeNumeroGac(cb2.numero);
                   return (
                     <tr key={`f-${cb2.numero}`}>
-                      <th className={`sticky left-0 z-20 border-b border-r border-slate-300 p-0.5 align-top text-left ${i2 % 2 ? "bg-indigo-100" : "bg-indigo-50"}`} style={{ width: anchoIzq, maxWidth: anchoIzq }}>
+                      <th className={`sticky left-0 z-20 border-b border-r border-slate-300 p-0.5 align-top text-left ${i2 % 2 ? "bg-indigo-100" : "bg-indigo-50"}`} style={{ width: anchoIzq, maxWidth: anchoIzq, verticalAlign: "top" }}>
                         <button
                           type="button"
                           onClick={() => toggleRetirado(2, cb2.numero)}
                           title={cb2.retirado ? "Quitar retirado" : "Marcar retirado"}
-                          className={`flex w-full flex-col items-start justify-start gap-0.5 rounded px-0.5 py-0.5 text-left align-top ${cb2.retirado ? "bg-yellow-400 text-slate-900" : "text-slate-800"}`}
+                          className={`flex w-full flex-col items-start justify-start self-start gap-0.5 rounded px-0.5 py-0.5 text-left align-top ${cb2.retirado ? "bg-yellow-400 text-slate-900" : "text-slate-800"}`}
                         >
                           <span className="flex items-center gap-1">
                             <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[14px] font-black" style={{ backgroundColor: izq.bg, color: izq.fg }}>

@@ -5,6 +5,11 @@ import { Button } from "@/components/ui/Button";
 import { ChipField } from "@/components/ui/HorseChips";
 import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { listarClientesVenta, listarGruposVenta, type ClienteVenta, type GrupoVenta } from "@/lib/grupos";
+import { MARCA_PAGA, MARCA_RIESGO } from "@/lib/motores/marcas";
+
+/** Comisión de la casa sobre la ganancia bruta de la marca. */
+const COMISION_MARCAS = 5;
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // Extrae números de un string ej: "2/3/7" -> [2, 3, 7]
 const extraerNumeros = (str: string) => {
@@ -63,6 +68,19 @@ export function VentaMarcasModal({
   const [abiertoCliente, setAbiertoCliente] = useState(false);
 
   const agregarTicket = useTaquillaStore((s) => s.agregarTicket);
+
+  /**
+   * Pago de la marca con la MISMA proporción del motor (riesgo 120 → paga 100):
+   * bruto = monto × (1 + 100/120); la casa cobra 5% de la ganancia bruta.
+   */
+  const pago = useMemo(() => {
+    const m = parseFloat(String(monto).replace(",", "."));
+    const montoValido = Number.isFinite(m) && m > 0;
+    const bruto = montoValido ? round2(m * (1 + MARCA_PAGA / MARCA_RIESGO)) : 0;
+    const ganancia = montoValido ? round2(bruto - m) : 0;
+    const comision = ganancia > 0 ? round2(ganancia * (COMISION_MARCAS / 100)) : 0;
+    return { montoValido, monto: montoValido ? m : 0, bruto, neto: round2(bruto - comision), comision };
+  }, [monto]);
 
   useEffect(() => {
     let v = true;
@@ -232,6 +250,38 @@ export function VentaMarcasModal({
           {/* Validación dinámica */}
           <div className={`flex items-center justify-center rounded-lg px-2 py-1.5 text-xs font-bold ${estadoJugada ? estadoJugada.color : "bg-slate-100 text-slate-400"}`}>
             {estadoJugada ? estadoJugada.mensaje : "Ingresa un caballo para validar…"}
+          </div>
+
+          {/* PAGA 120/100 — la misma proporción del motor de Marcas */}
+          <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-900">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="uppercase tracking-wider text-emerald-700">
+                Pago {MARCA_RIESGO} → {MARCA_PAGA} (100/120)
+              </span>
+              <span className="text-[10px] font-semibold text-emerald-600">
+                riesgo {MARCA_RIESGO} · paga {MARCA_PAGA}
+              </span>
+            </div>
+            {pago.montoValido ? (
+              <div className="grid grid-cols-3 gap-1 text-center">
+                <div className="rounded bg-white/70 py-1">
+                  <div className="text-[9px] uppercase text-emerald-700">Juega</div>
+                  <div className="font-black">${pago.monto.toFixed(2)}</div>
+                </div>
+                <div className="rounded bg-white/70 py-1">
+                  <div className="text-[9px] uppercase text-emerald-700">Bruto 1.8333×</div>
+                  <div className="font-black">${pago.bruto.toFixed(2)}</div>
+                </div>
+                <div className="rounded bg-white/70 py-1">
+                  <div className="text-[9px] uppercase text-emerald-700">Neto −5%</div>
+                  <div className="font-black text-emerald-700">${pago.neto.toFixed(2)}</div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-center text-[10px] font-semibold text-emerald-600">
+                Ingresa el monto para ver cuánto paga la marca.
+              </p>
+            )}
           </div>
 
           {debutantes.length > 0 && (
