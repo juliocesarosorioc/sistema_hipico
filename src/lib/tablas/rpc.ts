@@ -478,29 +478,87 @@ export async function actualizarTabla(
   }
 }
 
-/** Incrementa las ventas de una tabla (+ monto) para el contador del Monitor. */
-export async function registrarVenta(
-  id: string | number,
-  monto: number
-): Promise<{ ok: boolean; error?: string }> {
-  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
-  try {
-    const { data } = await supabase
-      .from("tablas_fijas")
-      .select("cantidad_vendida")
-      .eq("id", id)
-      .maybeSingle();
-    const actual = data && data.cantidad_vendida != null ? Number(data.cantidad_vendida) : 0;
-    const { error } = await supabase
-      .from("tablas_fijas")
-      .update({ cantidad_vendida: actual + monto })
-      .eq("id", id);
-    if (error) throw error;
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
-  }
+const MENSAJE_SIN_RPC =
+  "Falta instalar sql/tablas_venta.sql en Supabase. La venta de tabla fija exige la RPC transaccional (ticket + saldo + contador); no se hacen escrituras parciales.";
+
+/** Detecta si la RPC no existe (lo normal si el SQL aun no se aplico). */
+function esRpcAusente(error: { message: string } | null): boolean {
+  if (!error) return false;
+  const m = error.message.toLowerCase();
+  return m.includes("does not exist") || m.includes("no existe") || m.includes("not found") || m.includes("404");
 }
+
+export type VentaTablaFijaResultado = {
+  ok: boolean;
+  error?: string;
+  /** Tickets creados: uno por ejemplar vendido. */
+  tickets?: number;
+  cantidad?: number;
+  saldoNuevo?: number;
+  premioPorTabla?: number;
+  comisionGrupoPorcentaje?: number;
+  moneda?: string;
+};
+
+/**
+ * Venta de tabla fija por RPC (sql/tablas_venta.sql).
+ *
+ * Hace las tres cosas que no pueden quedar a medias: crea un ticket por cada
+ * ejemplar (con `premio_por_tabla` y `pts_ejemplar` congelados), debita el
+ * saldo del cliente y suma al contador de tablas vendidas.
+ *
+ * El congelado es lo que hace segura la edicion de tablas: si manana se corrige
+ * la tabla o entra un retiro, lo ya vendido sigue liquidando contra los valores
+ * con los que se compro.
+ *
+ * COMISION: la tabla fija no le cobra nada al jugador, asi que el debito es
+ * `p_monto` exacto. Lo que se congela en el ticket es la tasa del GRUPO, que
+ * el liquidador aplicara despues sobre el monto decidido.
+ */
+export async function venderTablaFija(params: {
+  tablaId: string | number;
+  clienteId: string;
+  grupoId: string;
+  monto: number;
+  cantidad?: number;
+  /** null/vacio = TABLA COMPLETA (un ticket por cada ejemplar). */
+  ejemplarNumero?: string | null;
+  comisionPorcentaje?: number | null;
+  tasa?: number | null;
+  usuario?: string | null;
+}): Promise<VentaTablaFijaResultado> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  const { data, error } = await supabase.rpc("club_vender_tabla_fija", {
+    p_tabla_id: params.tablaId,
+    p_cliente_id: params.clienteId,
+    p_grupo_id: params.grupoId,
+    p_monto: params.monto,
+    p_cantidad: params.cantidad ?? 1,
+    p_ejemplar_numero: params.ejemplarNumero ?? null,
+    p_comision_porcentaje: params.comisionPorcentaje ?? null,
+    p_tasa: params.tasa ?? null,
+    p_usuario: params.usuario ?? null,
+  });
+  if (error) {
+    return { ok: false, error: esRpcAusente(error) ? MENSAJE_SIN_RPC : error.message };
+  }
+  const d = (data ?? {}) as Record<string, unknown>;
+  return {
+    ok: true,
+    tickets: Number(d.tickets ?? 0),
+    cantidad: Number(d.cantidad ?? 0),
+    saldoNuevo: d.saldo_nuevo != null ? Number(d.saldo_nuevo) : undefined,
+    premioPorTabla: d.premio_por_tabla != null ? Number(d.premio_por_tabla) : undefined,
+    comisionGrupoPorcentaje: d.comision_grupo_porcentaje != null ? Number(d.comision_grupo_porcentaje) : undefined,
+    moneda: d.moneda != null ? String(d.moneda) : undefined,
+  };
+}
+
+// NOTA: el contador de tablas vendidas ya no se toca desde aqui. Antes esta
+// funcion hacia un leer-modificar-escribir que sumando el MONTO en vez de la
+// CANTIDAD de tablas, y dos cajas vendiendo a la vez se pisaban. Ahora lo
+// hace club_vender_tabla_fija, que ademas toma un lock for update sobre la
+// tabla. No reponer un update suelto del contador: rompe las dos cosas.
 
 /**
  * Retira (o rehabilita) un ejemplar. Delega al servicio CENTRAL de retiros

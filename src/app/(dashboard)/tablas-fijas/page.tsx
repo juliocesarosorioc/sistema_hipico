@@ -4,7 +4,7 @@ import { TablasModule } from "@/components/tablas/TablasModule";
 import type { StoredTablaFija } from "@/store/useTablasFijasStore";
 import type { VentaTablaItem } from "@/components/tablas/MonitorTablas";
 import type { PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
-import { publicarTabla, publicarTablasLote, actualizarTabla, registrarVenta, guardarPizarraCarrera } from "@/lib/tablas/rpc";
+import { publicarTabla, publicarTablasLote, actualizarTabla, venderTablaFija, guardarPizarraCarrera } from "@/lib/tablas/rpc";
 import { cerrarTablaFija } from "@/lib/tablas-fijas";
 import { upsertResultadoCentral } from "@/lib/carreras-dia";
 
@@ -33,7 +33,18 @@ export default function TablasFijasPage() {
           return r.ok;
         }}
         persistirVenta={async (t: StoredTablaFija, v: VentaTablaItem) => {
-          const r = await registrarVenta(t.id, v.monto);
+          // Sin jugador o sin grupo no hay venta: el ticket necesita ambos para
+          // el estado de cuenta y el convenio de comision.
+          if (!v.jugador?.id) return false;
+          if (!v.grupo?.id) return false;
+          const r = await venderTablaFija({
+            tablaId: t.id,
+            clienteId: String(v.jugador.id),
+            grupoId: String(v.grupo.id),
+            monto: v.monto,
+            // "TABLA" es la opcion de tabla completa; la RPC espera null.
+            ejemplarNumero: v.numero === "TABLA" ? null : v.numero,
+          });
           return r.ok;
         }}
         persistirLiquidacion={async (t: StoredTablaFija, r: PizarraResultados) => {

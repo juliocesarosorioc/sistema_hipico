@@ -382,7 +382,7 @@ export async function cargarJugadasDeCarrera(
       )
       .eq("hipodromo", String(filtro.hipodromo).trim().toUpperCase())
       .eq("carrera", num(filtro.carrera))
-      .order("created_at", { ascending: true });
+      .order("fecha_registro", { ascending: true });
     if (filtro.soloPendientes) {
       q = q.eq("estado", "Pendiente");
     }

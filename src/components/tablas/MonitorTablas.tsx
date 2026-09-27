@@ -10,7 +10,7 @@ import { Guard } from "@/components/ui/Guard";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { EjemplarModal, type VentaRapidaItem } from "@/components/tablas/EjemplarModal";
 import { EditorCaballos } from "@/components/tablas/EditorCaballos";
-import { listarCuposTabla, guardarCuposTabla, listarGruposVenta, type CupoTablaGrupo } from "@/lib/grupos";
+import { listarCuposTabla, guardarCuposTabla, listarGruposVenta, listarClientesVenta, type CupoTablaGrupo, type GrupoVenta, type ClienteVenta } from "@/lib/grupos";
 import { useCarrerasCentrales } from "@/lib/carreras/useCarrerasCentrales";
 import { aplicarRetirosCarrera } from "@/lib/carreras/retiros";
 import { guardarCarreraCentral } from "@/lib/carreras/central";
@@ -56,6 +56,11 @@ function fmtValor(n: number | null | undefined): string {
   return num.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** Saldo en 2 decimales, para el previsualizado del descuento en la venta. */
+function fmtSaldo(n: number | null | undefined): string {
+  return fmtValor(n);
+}
+
 /** Normaliza fechas para el filtro */
 function diaDeLaTabla(t: StoredTablaFija): string {
   const raw = String(t.fecha || t.fecha_creacion || "").trim();
@@ -83,6 +88,9 @@ export function MonitorTablas({
   const [vendiendo, setVendiendo] = useState<StoredTablaFija | null>(null);
   const [ejemplarVenta, setEjemplarVenta] = useState("");
   const [montoVenta, setMontoVenta] = useState("");
+  const [clienteVenta, setClienteVenta] = useState("");
+  const [grupoVenta, setGrupoVenta] = useState("");
+  const [vendiendoCargando, setVendiendoCargando] = useState(false);
   const [liquidando, setLiquidando] = useState<StoredTablaFija | null>(null);
   const [editando, setEditando] = useState<StoredTablaFija | null>(null);
   const [patchEdicion, setPatchEdicion] = useState<Record<string, unknown>>({});
@@ -124,6 +132,42 @@ export function MonitorTablas({
   const [aviso, setAviso] = useState("");
   const [confirmarEliminar, setConfirmarEliminar] = useState<StoredTablaFija | null>(null);
   const [ejemplarModal, setEjemplarModal] = useState<{ tabla: StoredTablaFija; indice: number } | null>(null);
+  const [opcionesVenta, setOpcionesVenta] = useState<{ grupos: GrupoVenta[]; clientes: ClienteVenta[] }>({
+    grupos: [],
+    clientes: [],
+  });
+
+  /**
+   * Abre el modal de venta trayendo los grupos y clientes de lectura.
+   *
+   * El grupo se deduce del cliente: `clientes.grupo_id` mas la lista
+   * `grupos` (clientes_grupos), que es la misma regla del legacy. Asi el
+   * convenio y la moneda que se aplican son los del grupo del jugador y no
+   * una eleccion suelta de la caja.
+   */
+  const abrirVenta = async (t: StoredTablaFija) => {
+    setVendiendo(t);
+    setEjemplarVenta("");
+    setMontoVenta("");
+    setClienteVenta("");
+    setGrupoVenta("");
+    setVendiendoCargando(true);
+    const [grupos, clientes] = await Promise.all([
+      listarGruposVenta().catch(() => [] as GrupoVenta[]),
+      listarClientesVenta().catch(() => [] as ClienteVenta[]),
+    ]);
+    setOpcionesVenta({ grupos, clientes });
+    setVendiendoCargando(false);
+  };
+
+  /** Al elegir cliente, propone su grupo; el usuario puede cambiarlo. */
+  const elegirClienteVenta = (clienteId: string) => {
+    setClienteVenta(clienteId);
+    const c = opcionesVenta.clientes.find((x) => String(x.id) === clienteId);
+    const g = c?.grupo_id ?? c?.grupos?.[0] ?? "";
+    setGrupoVenta(g != null && g !== "" ? String(g) : "");
+  };
+
   const [vistaImpresion, setVistaImpresion] = useState(false);
 
   // Estados de los filtros
@@ -216,16 +260,34 @@ export function MonitorTablas({
     if (!vendiendo || !ejemplarVenta.trim() || !montoVenta.trim()) {
       return setAviso("Selecciona un ejemplar e indica el monto jugado.");
     }
+    if (!clienteVenta) {
+      return setAviso("Selecciona el jugador: la venta se descuenta de su saldo.");
+    }
+    if (!grupoVenta) {
+      return setAviso("Selecciona el grupo: define la moneda y el convenio de comisión.");
+    }
+    const monto = parseNum(montoVenta);
+    if (!(monto > 0)) {
+      return setAviso("El monto debe ser un número mayor a cero.");
+    }
+    const cliente = opcionesVenta.clientes.find((x) => String(x.id) === clienteVenta);
+    const grupo = opcionesVenta.grupos.find((x) => String(x.id) === grupoVenta);
     onVender?.({
       tablaId: vendiendo.id,
       numero: ejemplarVenta,
       nombre: (vendiendo.caballos ?? []).find((c) => String(c.numero) === ejemplarVenta)?.nombre ?? "TABLA COMPLETA",
-      monto: parseNum(montoVenta),
+      monto,
+      grupo: grupo ? { id: grupo.id, nombre: grupo.nombre } : null,
+      jugador: cliente
+        ? { id: cliente.id, nombre: cliente.nombre, saldo_actual: Number(cliente.saldo_actual ?? 0) }
+        : null,
     });
     setVendiendo(null);
     setEjemplarVenta("");
     setMontoVenta("");
-    setAviso("🛒 Venta enviada a la taquilla (boleto).");
+    setClienteVenta("");
+    setGrupoVenta("");
+    setAviso("🛒 Venta enviada. Se descuenta del saldo y se crea un ticket por ejemplar.");
   };
 
   const guardarEdicion = async () => {
@@ -458,7 +520,7 @@ export function MonitorTablas({
                   </Button>
                 </Guard>
                 <Guard permiso="vender_tabla">
-                  <Button size="sm" className="flex-1" onClick={() => { setVendiendo(t); setEjemplarVenta(""); setMontoVenta(""); }}>🎟️ Vender</Button>
+                  <Button size="sm" className="flex-1" onClick={() => void abrirVenta(t)}>🎟️ Vender</Button>
                 </Guard>
                 <Guard permiso="liquidar_carrera">
                   <Button variant="danger" size="sm" className="flex-1" onClick={() => setLiquidando(t)}>🏁 Liquidar</Button>
@@ -505,13 +567,51 @@ export function MonitorTablas({
             </div>
             <div className="space-y-3 p-4">
               <div>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Jugador</label>
+                <select
+                  value={clienteVenta}
+                  onChange={(e) => elegirClienteVenta(e.target.value)}
+                  disabled={vendiendoCargando}
+                  className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                >
+                  <option value="">{vendiendoCargando ? "Cargando…" : "— Seleccionar jugador —"}</option>
+                  {opcionesVenta.clientes.map((c) => (
+                    <option key={String(c.id)} value={String(c.id)}>
+                      {c.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">
+                  Grupo (moneda y convenio)
+                </label>
+                <select
+                  value={grupoVenta}
+                  onChange={(e) => setGrupoVenta(e.target.value)}
+                  disabled={vendiendoCargando}
+                  className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                >
+                  <option value="">— Seleccionar grupo —</option>
+                  {opcionesVenta.grupos.map((g) => (
+                    <option key={String(g.id)} value={String(g.id)}>
+                      {g.nombre} · {g.moneda ?? "USD"}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[10px] leading-tight text-slate-500">
+                  La tabla fija no cobra comisión al jugador. La del grupo se calcula sobre el monto
+                  decidido.
+                </p>
+              </div>
+              <div>
                 <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Ejemplar</label>
                 <select value={ejemplarVenta} onChange={(e) => setEjemplarVenta(e.target.value)} className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
                   <option value="">— Seleccionar —</option>
                   {(vendiendo.caballos ?? []).map((c, i) => (
                     <option key={i} value={String(c.numero)}>Nº {c.numero} · {c.nombre}</option>
                   ))}
-                  <option value="TABLA">Tabla completa</option>
+                  <option value="TABLA">Tabla completa (un ticket por ejemplar)</option>
                 </select>
               </div>
               <div>
@@ -521,10 +621,27 @@ export function MonitorTablas({
               <div className="flex items-center justify-between rounded-lg bg-success-500/10 px-3 py-2 text-xs font-semibold text-slate-700">
                 <span>Pago potencial +{PremioVenta(vendiendo, ejemplarVenta, montoVenta)}</span>
               </div>
+              {(() => {
+                const c = opcionesVenta.clientes.find((x) => String(x.id) === clienteVenta);
+                if (!c) return null;
+                const saldo = Number(c.saldo_actual ?? 0);
+                const monto = parseNum(montoVenta);
+                const queda = saldo - monto;
+                return (
+                  <div className={"flex items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold " + (queda < 0 ? "bg-danger-500/10 text-danger-700" : "bg-slate-100 text-slate-700")}>
+                    <span>Saldo {c.nombre}</span>
+                    <span className="font-black">
+                      {fmtSaldo(saldo)} → {fmtSaldo(queda)}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
             <div className="flex justify-end gap-2 border-t border-line bg-gray-50 px-4 py-3">
               <Button variant="ghost" size="sm" onClick={() => setVendiendo(null)}>Cancelar</Button>
-              <Button variant="success" size="md" onClick={lanzarVenta}>Agregar al carrito</Button>
+              <Button variant="success" size="md" onClick={lanzarVenta} disabled={vendiendoCargando}>
+                Vender
+              </Button>
             </div>
           </div>
         </div>

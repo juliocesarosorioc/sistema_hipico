@@ -107,7 +107,12 @@ export function resolverSocio(
 
 export type TicketApuesta = {
   id: string | number;
-  created_at?: string | null;
+  /**
+   * Timestamp real del ticket. La tabla `tickets_apuestas` no tiene
+   * `created_at`, asi que el agrupamiento por semana/dia del estado de cuenta
+   * debe leer esta columna.
+   */
+  fecha_registro?: string | null;
   hipodromo?: string | null;
   carrera?: number | string | null;
   nombre_jugada?: string | null;
@@ -557,15 +562,15 @@ export function construirEstadoCuenta(tickets: TicketApuesta[], devolucionPct: n
     const dec = base * (devolucionPct / 100);
     const moneda = (t.moneda ?? "USD").toUpperCase();
     const grupo = t.grupo_cobro_nombre || "Directo";
-    const semana = claveSemana(t.created_at);
-    const dia = t.created_at ? new Date(t.created_at).toLocaleDateString("es-VE", { dateStyle: "short" }) : "—";
+    const semana = claveSemana(t.fecha_registro);
+    const dia = t.fecha_registro ? new Date(t.fecha_registro).toLocaleDateString("es-VE", { dateStyle: "short" }) : "—";
     const hipodromo = String(t.hipodromo ?? "—").toUpperCase();
     const carrera = num(t.carrera) || 0;
 
     const jugada: JugadaItem = {
       id: String(t.id),
-      fecha: t.created_at ?? null,
-      fechaTexto: fmtFechaHora(t.created_at),
+      fecha: t.fecha_registro ?? null,
+      fechaTexto: fmtFechaHora(t.fecha_registro),
       hipodromo,
       carrera,
       grupo,
@@ -621,13 +626,17 @@ export function construirEstadoCuenta(tickets: TicketApuesta[], devolucionPct: n
 export async function cargarTicketsCliente(clienteId: string | number): Promise<TicketApuesta[]> {
   if (!supabase) return [];
   try {
+    // OJO: se ordena por fecha_registro, no por created_at. La tabla
+    // tickets_apuestas NO tiene created_at (verificado en vivo), asi que pedirla
+    // hacia fallar la consulta entera y el catch devolvia [] en silencio: el
+    // estado de cuenta salia vacio sin avisar nada.
     const { data, error } = await supabase
       .from("tickets_apuestas")
       .select(
-        "id, created_at, hipodromo, carrera, nombre_jugada, caballo, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, grupo_cobro_nombre, grupo_cobro_id"
+        "id, fecha_registro, hipodromo, carrera, nombre_jugada, caballo, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, grupo_cobro_nombre, grupo_cobro_id"
       )
       .eq("cliente_juega_id", clienteId)
-      .order("created_at", { ascending: false })
+      .order("fecha_registro", { ascending: false })
       .limit(500);
     if (error) throw error;
     return (data ?? []) as TicketApuesta[];

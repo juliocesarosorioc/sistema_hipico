@@ -371,7 +371,11 @@ export function TablasModule(props: Props) {
           : `TABLA ${item.hipodromo} C${item.carrera} N${item.numero} ${item.nombre}`,
       monto: item.monto,
       gananciaProyectada: base,
-      comision: base * 0.05,
+      // La tabla fija NO cobra comision al jugador: lo que juega es lo que se
+      // le descuenta. La comision es del grupo y se calcula sobre el monto
+      // decidido, al liquidar. Antes aqui se ponia 5% fijo, que cobraba de
+      // mas al jugador y no coincidia con ningun convenio.
+      comision: 0,
     });
     if (persistirVenta) {
       await persistirVenta(tabla, { tablaId: item.tablaId, numero: item.numero, nombre: item.nombre, monto: item.monto });

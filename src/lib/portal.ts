@@ -118,13 +118,16 @@ async function construirSesion(cliente: ClienteRow): Promise<SesionPortal> {
 export async function listarTicketsCliente(clienteId: string | number): Promise<TicketApuesta[]> {
   if (!supabase) return [];
   try {
+    // fecha_registro, no created_at: la tabla tickets_apuestas no tiene
+    // created_at (verificado en vivo). Pedirla rompia la consulta y el catch
+    // devolvia [], dejando el portal del cliente sin apuestas.
     const { data, error } = await supabase
       .from("tickets_apuestas")
       .select(
-        "id, created_at, hipodromo, carrera, nombre_jugada, caballo, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, grupo_cobro_nombre, grupo_cobro_id"
+        "id, fecha_registro, hipodromo, carrera, nombre_jugada, caballo, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, grupo_cobro_nombre, grupo_cobro_id"
       )
       .eq("cliente_juega_id", clienteId)
-      .order("created_at", { ascending: false })
+      .order("fecha_registro", { ascending: false })
       .limit(500);
     if (error) throw error;
     return (data ?? []) as TicketApuesta[];
