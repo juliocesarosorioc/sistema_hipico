@@ -16,7 +16,7 @@ import { supabase } from "@/lib/supabase";
 import { normalizarFilas } from "@/lib/tablas/rpc";
 import type { EjemplarTabla } from "@/lib/tablas/tipos";
 import { parseNum } from "@/lib/tablas/tipos";
-import { esc, fsAuto, col, monSinSimb, fmt, monCode, fmtFecha, hoy, hipoKey, diaDe, MAX_N, type Orientacion, DIM_PAGINA } from "@/lib/impresion/util";
+import { esc, fsAuto, col, monSinSimb, fmtPts, fmt, monCode, fmtFecha, hoy, hipoKey, diaDe, MAX_N, type Orientacion, DIM_PAGINA } from "@/lib/impresion/util";
 import { normalizarNacionalidad } from "@/components/ui/BanderaPais";
 
 export type EjemplarImpresion = {
@@ -408,29 +408,29 @@ export function filtrarMatriz(
 export const MATRIZ_CSS = `
 .impe-root{font-family:system-ui,Arial,sans-serif;color:#0f172a;}
 .im-pagina{box-sizing:border-box;width:1240px;height:1754px;display:flex;flex-direction:column;
-  background:#fff;padding:10px 10px 14px;overflow:hidden;}
+  background:#fff;padding:7px 7px 10px;overflow:hidden;}
 .im-ph{display:flex;align-items:center;justify-content:space-between;gap:8px;
-  font-size:13px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.4px;padding:0 4px 8px;}
+  font-size:13px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.4px;padding:0 3px 6px;}
 .im-ph b{color:#0f172a;font-size:15px;}
-.im-hoja{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(3,1fr);grid-auto-flow:row;grid-auto-rows:1fr;gap:9px;}
-.im-tarjeta{background:#fff;border:1px solid #cbd5e1;border-radius:10px;overflow:hidden;
+.im-hoja{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(3,1fr);grid-auto-flow:row;grid-auto-rows:1fr;gap:4px;}
+.im-tarjeta{background:#fff;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;
   display:flex;flex-direction:column;min-width:0;min-height:0;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.04);}
-.im-enc{background:#0f172a;color:#fff;padding:6px 8px;flex:none;}
-.im-l1{display:flex;align-items:center;gap:6px;justify-content:space-between;}
-.im-hip{font-size:15px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
+.im-enc{background:#0f172a;color:#fff;padding:4px 5px;flex:none;}
+.im-l1{display:flex;align-items:center;gap:4px;justify-content:space-between;}
+.im-hip{font-size:15px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1;}
-.im-cc{background:rgba(255,255,255,.16);border-radius:6px;font-size:16px;font-weight:900;padding:1px 7px;white-space:nowrap;flex:none;}
-.im-l2{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:1.5px;font-size:12px;font-weight:700;color:#cbd5e1;}
-.im-meta{display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
-.im-moneda-leg{flex:none;border-radius:5px;background:rgba(255,255,255,.18);padding:0 5px;font-weight:900;color:#fde68a;letter-spacing:.4px;}
+.im-cc{background:rgba(255,255,255,.16);border-radius:5px;font-size:16px;font-weight:900;padding:0 5px;white-space:nowrap;flex:none;}
+.im-l2{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:1px;font-size:12px;font-weight:700;color:#cbd5e1;}
+.im-meta{display:flex;align-items:center;gap:3px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+.im-moneda-leg{flex:none;border-radius:4px;background:rgba(255,255,255,.18);padding:0 4px;font-weight:900;color:#fde68a;letter-spacing:.3px;}
 .im-fecha{margin-left:auto;white-space:nowrap;font-weight:800;color:#7dd3fc;}
-.im-filas{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;gap:1px;
-  padding:3px 6px;min-height:0;overflow:hidden;font-size:10px;}
-.im-fila{display:flex;align-items:center;gap:4px;line-height:1;min-height:0;border-radius:3px;}
+.im-filas{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;gap:0;
+  padding:1px 3px;min-height:0;overflow:hidden;font-size:10px;}
+.im-fila{display:flex;align-items:center;gap:2px;line-height:1;min-height:0;border-radius:3px;}
 .im-fila:nth-child(odd){background:#eef2f7;}
-.im-num{flex:none;width:1.55em;height:1.55em;border-radius:5px;margin:0;padding:0;
+.im-num{flex:none;width:1.4em;height:1.4em;border-radius:4px;margin:0;padding:0;
   display:flex;align-items:center;justify-content:center;
-  font-weight:900;font-size:0.98em;line-height:1;overflow:hidden;text-align:center;
+  font-weight:900;font-size:0.95em;line-height:1;overflow:hidden;text-align:center;
   box-sizing:border-box;}
 .im-nom{flex:1;min-width:0;font-weight:700;color:#334155;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:5px;}
@@ -492,7 +492,7 @@ function tarjetaHTML(t: TablaImpresion): string {
         '</span><span class="im-mon' +
         (val === 0 ? " cero" : "") +
         '">' +
-        (val === 0 ? "–" : monSinSimb(val)) +
+        (val === 0 ? "–" : fmtPts(val)) +
         "</span></div>"
       );
     })

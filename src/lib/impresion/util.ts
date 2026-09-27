@@ -86,6 +86,20 @@ export function monSinSimb(v: number | string): string {
   return fmt(v);
 }
 
+/**
+ * Valor de ejemplar para imprimir: sin decimales cuando el número es entero.
+ * Los puntos de una tabla casi siempre son redondos (10, 20, 25) y el ",00" solo
+ * consume ancho en la fila. Pero si el valor SÍ tiene parte decimal se
+ * respetan 2 decimales en vez de redondear, porque ese valor entra en la
+ * `suma_base_tabla` que proportionally descuenta el premio ante un retiro
+ * (premio * (1 - valor/suma_base)): truncarlo ahi moveria el premio.
+ */
+export function fmtPts(v: number | string): string {
+  const n = parseFloat(String(v));
+  if (!Number.isFinite(n)) return "0";
+  return Number.isInteger(n) ? String(n) : fmt(n);
+}
+
 /** Código corto de la moneda (USD / BS) para la leyenda del grupo. */
 export function monCode(m?: string | null): string {
   const s = String(m || "USD").toUpperCase();
