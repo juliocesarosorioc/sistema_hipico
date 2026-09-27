@@ -55,13 +55,46 @@ function ChipNum({ num, color, dim }: { num: number; color: HorseColor; dim: str
   );
 }
 
-/** Badge ReadOnly: renderiza un solo número como chip (útil en listas impresas/lectura). */
-export function HorseBadge({ num }: { num: number | string }) {
+const BADGE_SIZE = {
+  xs: "h-4 w-4 text-[10px] rounded-sm",
+  sm: "h-5 w-5 text-[11px] rounded",
+  md: "h-7 w-7 text-sm rounded",
+} as const;
+
+export type HorseBadgeSize = keyof typeof BADGE_SIZE;
+
+/**
+ * Badge ReadOnly: renderiza un solo número como chip (útil en listas impresas/lectura).
+ *
+ * Aplica la paleta canónica completa (fondo + texto + borde). El borde no es
+ * cosmético: sin él los números de gualdrapa clara (2 blanco, 4 amarillo,
+ * 8 rosado, 9 celeste, 11 gris, 12 lima) se pierden sobre un panel blanco.
+ * Usar siempre este componente en vez de pintar `backgroundColor` a mano.
+ */
+export function HorseBadge({
+  num,
+  size = "xs",
+  retirado = false,
+}: {
+  num: number | string;
+  size?: HorseBadgeSize;
+  retirado?: boolean;
+}) {
   const c = getHorseColor(num);
+  if (retirado) {
+    return (
+      <span
+        title="Retirado"
+        className={`inline-flex ${BADGE_SIZE[size]} flex-none items-center justify-center border border-red-300 bg-red-200 font-bold leading-none text-red-700 line-through`}
+      >
+        {num}
+      </span>
+    );
+  }
   return (
     <span
       title={c.label}
-      className={`inline-flex h-4 w-4 items-center justify-center rounded-sm border text-[10px] font-bold leading-none ${c.bg} ${c.text} ${c.border}`}
+      className={`inline-flex ${BADGE_SIZE[size]} flex-none items-center justify-center border font-bold leading-none ${c.bg} ${c.text} ${c.border}`}
     >
       {num}
     </span>

@@ -191,12 +191,26 @@ export function MonitorTablas({
     if (hipodromoFiltro && !hipodromosDisponibles.includes(hipodromoFiltro)) setHipodromoLocal("");
   }, [hipodromosDisponibles, hipodromoFiltro, hipodromoControlado]);
 
-  // Aplicación del filtro final
-  const filtradas = abiertas.filter(t => {
-    if (fechaFiltro && diaDeLaTabla(t) !== fechaFiltro) return false;
-    if (hipodromoFiltro && t.hipodromo !== hipodromoFiltro) return false;
-    return true;
-  });
+  // Aplicación del filtro final. Se ordena por hipódromo y luego por número de
+  // carrera ASCENDENTE (comparación numérica: C2 va antes que C10). El store
+  // también se muta en local (publicar/cerrar), así que el orden se reaplica
+  // aquí y no se confía solo en el de la carga inicial.
+  const filtradas = abiertas
+    .filter(t => {
+      if (fechaFiltro && diaDeLaTabla(t) !== fechaFiltro) return false;
+      if (hipodromoFiltro && t.hipodromo !== hipodromoFiltro) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const hipo = (a.hipodromo ?? "").localeCompare(b.hipodromo ?? "", "es");
+      if (hipo !== 0) return hipo;
+      const ca = Number(a.carrera);
+      const cb = Number(b.carrera);
+      const va = Number.isFinite(ca) && ca > 0 ? ca : Number.POSITIVE_INFINITY;
+      const vb = Number.isFinite(cb) && cb > 0 ? cb : Number.POSITIVE_INFINITY;
+      if (va !== vb) return va - vb;
+      return diaDeLaTabla(a).localeCompare(diaDeLaTabla(b));
+    });
 
   const lanzarVenta = () => {
     if (!vendiendo || !ejemplarVenta.trim() || !montoVenta.trim()) {

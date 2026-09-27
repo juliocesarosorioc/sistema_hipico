@@ -227,9 +227,28 @@ export async function listarTablasPublicadas(): Promise<TablaFijaRow[]> {
   return [];
 }
 
+/**
+ * Orden de presentación: primero por hipódromo (A-Z) y dentro de cada uno por
+ * número de carrera ASCENDENTE. Sin esto el orden es el que devuelva la
+ * consulta (arbitrario) y las carreras se ven desordenadas: 3, 11, 2, 1.
+ * Se compara numéricamente, no como texto, para que C2 vaya antes que C10.
+ */
+function compararParaMostrar(a: TablaFijaRow, b: TablaFijaRow): number {
+  const hipo = (a.hipodromo ?? "").localeCompare(b.hipodromo ?? "", "es");
+  if (hipo !== 0) return hipo;
+  const ca = Number(a.carrera);
+  const cb = Number(b.carrera);
+  // Las carreras sin número válido se van al final, no al principio.
+  const va = Number.isFinite(ca) && ca > 0 ? ca : Number.POSITIVE_INFINITY;
+  const vb = Number.isFinite(cb) && cb > 0 ? cb : Number.POSITIVE_INFINITY;
+  if (va !== vb) return va - vb;
+  return (a.fecha ?? "").localeCompare(b.fecha ?? "");
+}
+
 /** Normaliza filas crudas (número/string) al contrato de la SPA. */
 export function normalizarFilas(data: unknown[]): TablaFijaRow[] {
-  return data.map((r) => {
+  return data
+    .map((r) => {
     const raw = r as Record<string, unknown>;
     const caballos = Array.isArray(raw.caballos)
       ? raw.caballos.map((c) => {
@@ -267,7 +286,8 @@ export function normalizarFilas(data: unknown[]): TablaFijaRow[] {
       caballos,
       tabla_grupos: grupos as TablaFijaRow["tabla_grupos"],
     };
-  });
+  })
+    .sort(compararParaMostrar);
 }
 
 /** Detecta "column X does not exist" para retirar columnas del esquema real. */

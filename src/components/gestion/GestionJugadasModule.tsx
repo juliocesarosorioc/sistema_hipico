@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { detectarModalidad, parsearLineaRapida, proyectarFila } from "@/lib/taquilla/validar";
-import { horseBgHex } from "@/lib/horseColors";
+import { HorseBadge } from "@/components/ui/HorseChips";
 import { useTaquillaStore, type TicketTaquilla } from "@/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla, type ResLiquidarCarrera } from "@/lib/liquidacion/pagarYCerrar";
@@ -704,12 +704,7 @@ export function GestionJugadasModule() {
                         c.retirado ? "bg-red-50/60" : ""
                       }`}
                     >
-                      <span
-                        className="flex h-5 w-5 shrink-0 flex-none items-center justify-center text-center text-[9px] font-bold leading-none"
-                        style={{ backgroundColor: horseBgHex(c.numero) }}
-                      >
-                        {c.numero}
-                      </span>
+                      <HorseBadge num={c.numero} size="sm" retirado={c.retirado} />
                       <span
                         className={`min-w-0 flex-1 truncate text-[10px] font-bold uppercase leading-none ${
                           c.retirado ? "text-red-500 line-through" : "text-slate-700"
@@ -1003,10 +998,7 @@ export function GestionJugadasModule() {
                 <ul className="max-h-56 divide-y divide-line/60 overflow-y-auto px-3 py-1">
                   {caballosDeCarrera.map((c, i) => (
                     <li key={i} className="flex items-center gap-2 py-1.5 text-sm">
-                      <span className="flex h-7 w-7 shrink-0 flex-none items-center justify-center rounded text-center text-[10px] font-bold"
-                        style={{ backgroundColor: c.retirado ? "#ef4444" : horseBgHex(c.numero) }}>
-                        {c.numero}
-                      </span>
+                    <HorseBadge num={c.numero} size="md" retirado={c.retirado} />
                       <span className={`font-bold uppercase text-slate-800 ${c.retirado ? "line-through opacity-50" : ""}`}>{c.nombre || `Nº ${c.numero}`}</span>
                       {c.retirado && <span className="ml-auto rounded bg-red-100 px-1.5 text-[9px] font-black text-red-600">RET.</span>}
                     </li>
