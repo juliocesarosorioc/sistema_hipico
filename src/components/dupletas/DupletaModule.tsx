@@ -29,8 +29,8 @@ const siglaDe = (nac?: string | null) => normalizarNacionalidad(nac);
 /** Tamaño base de la bandera en la matriz, antes del recargo (px). */
 const TAM_BANDERA_BASE = 12;
 
-/** La bandera se muestra un 30% más grande que el tamaño base. */
-const TAM_BANDERA = Math.round(TAM_BANDERA_BASE * 1.3);
+/** La bandera se muestra un 80% más grande que el tamaño base. */
+const TAM_BANDERA = Math.round(TAM_BANDERA_BASE * 1.8);
 
 /**
  * La dupleta paga 30% más que el premio cargado. Regla de negocio pedida por
