@@ -995,6 +995,11 @@ begin
             'cuenta_bancaria', g.cuenta_bancaria,
             'moneda_cuadre', g.moneda_cuadre,
             'comision_default', g.comision_default,
+            -- Sin estos campos el fallback perdía el ciclo de facturación y la
+            -- jerarquía de cruces (GruposModule los necesita para operar).
+            'permite_cruces', g.permite_cruces,
+            'dia_inicio_semana', g.dia_inicio_semana,
+            'dia_fin_semana', g.dia_fin_semana,
             'created_at', g.created_at
         )
         order by g.es_principal desc, g.nombre asc

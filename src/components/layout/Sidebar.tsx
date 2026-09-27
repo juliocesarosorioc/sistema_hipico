@@ -144,7 +144,7 @@ export function Sidebar() {
                           <span>{it.txt}</span>
                         </Link>
                       </Guard>
-                    ) : it.href === "/clientes" ? (
+                    ) : it.href === "/clientes" || it.href === "/grupos" ? (
                       <Guard permiso="gestionar_clientes">
                         <Link
                           href={it.href}

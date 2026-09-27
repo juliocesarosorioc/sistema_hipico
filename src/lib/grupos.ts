@@ -192,16 +192,19 @@ export async function crearGrupo(datos: Partial<GrupoRow>): Promise<{ ok: boolea
   try {
     const { error } = await supabase.from("grupos_venta").insert([filaOk]);
     if (error) {
-      // Fallback a la RPC del legacy (js/grupos.js): club_guardar_grupo.
+      // Fallback a la RPC del legacy (js/grupos.js:200): club_guardar_grupo
+      // recibe UN parámetro jsonb `p_datos` (no parámetros escalares).
       const rpc = await supabase.rpc("club_guardar_grupo", {
-        p_nombre: String(datos.nombre ?? ""),
-        p_moneda: datos.moneda ?? "USD",
-        p_cupo_tabla: datos.cupo_tabla ?? 100,
-        p_comision: datos.comision_default ?? 2.5,
-        p_responsable: datos.responsable ?? null,
-        p_cuenta: datos.cuenta_bancaria ?? null,
-        p_principal: Boolean(datos.es_principal),
-        p_activo: true,
+        p_datos: {
+          nombre: String(datos.nombre ?? ""),
+          moneda: datos.moneda ?? "USD",
+          cupo_tabla: datos.cupo_tabla ?? 100,
+          comision_default: datos.comision_default ?? 2.5,
+          responsable: datos.responsable ?? null,
+          cuenta_bancaria: datos.cuenta_bancaria ?? null,
+          es_principal: Boolean(datos.es_principal),
+          activo: true,
+        },
       });
       if (rpc.error) return { ok: false, error: rpc.error.message };
     }
@@ -221,18 +224,13 @@ export async function actualizarGrupo(
   try {
     const { error } = await supabase.from("grupos_venta").update(patch).eq("id", id);
     if (error) {
-      // Fallback a la RPC del legacy (js/grupos.js): club_actualizar_grupo.
-      const rpc = await supabase.rpc("club_actualizar_grupo", {
-        p_id: id,
-        p_nombre: patch.nombre ?? null,
-        p_moneda: patch.moneda ?? null,
-        p_cupo_tabla: patch.cupo_tabla ?? null,
-        p_comision: patch.comision_default ?? null,
-        p_responsable: patch.responsable ?? null,
-        p_cuenta: patch.cuenta_bancaria ?? null,
-        p_principal: patch.es_principal ?? null,
-        p_activo: patch.activo ?? null,
-      });
+      // Fallback a la RPC del legacy (js/grupos.js:366): club_actualizar_grupo
+      // recibe (p_id, p_datos jsonb) — solo se envían los campos presentes.
+      const datos: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(patch)) {
+        if (v !== undefined) datos[k] = v;
+      }
+      const rpc = await supabase.rpc("club_actualizar_grupo", { p_id: id, p_datos: datos });
       if (rpc.error) return { ok: false, error: rpc.error.message };
     }
     cacheGrupos = null;
@@ -280,7 +278,12 @@ export async function asignarPrincipalUnico(id: string | number): Promise<{ ok: 
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
     const { error } = await supabase.from("grupos_venta").update({ es_principal: false }).neq("id", id).eq("es_principal", true);
-    if (error) return { ok: false, error: error.message };
+    if (error) {
+      // Fallback: la RPC del legacy (paquete_pendientes.sql:624) reasigna el
+      // principal en una sola transacción, sin depender de permisos de tabla.
+      const rpc = await supabase.rpc("club_garantizar_grupo_principal");
+      if (rpc.error) return { ok: false, error: rpc.error.message };
+    }
     cacheGrupos = null;
     return { ok: true };
   } catch (e) {
@@ -295,6 +298,18 @@ export async function asignarPrincipalUnico(id: string | number): Promise<{ ok: 
 export async function eliminarGrupoRpc(id: string | number): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
+    // La RPC (js/grupos.js → club_eliminar_grupo) hace TODO el re-movimiento a
+    // clientes/clientes_grupos en una transacción. Se usa como fallback cuando
+    // el borrado directo está bloqueado por RLS/permisos.
+    const { error: e3 } = await supabase.from("grupos_venta").delete().eq("id", id);
+    if (e3) {
+      const rpc = await supabase.rpc("club_eliminar_grupo", { p_id: id });
+      if (rpc.error) return { ok: false, error: rpc.error.message };
+      cacheGrupos = null;
+      void registrarAuditoria("GRUPO", "ELIMINAR", `Grupo ${id} eliminado.`);
+      return { ok: true };
+    }
+    // Borrado directo OK: se replican los pasos de reasignación del legacy.
     const principal = (await listarGruposAdmin(true)).find((g) => g.es_principal);
     if (principal && String(principal.id) !== String(id)) {
       const { error: e1 } = await supabase.from("clientes").update({ grupo_id: principal.id }).eq("grupo_id", id);
@@ -302,12 +317,6 @@ export async function eliminarGrupoRpc(id: string | number): Promise<{ ok: boole
     }
     const { error: e2 } = await supabase.from("clientes_grupos").delete().eq("grupo_id", id);
     if (e2) return { ok: false, error: e2.message };
-    const { error: e3 } = await supabase.from("grupos_venta").delete().eq("id", id);
-    if (e3) {
-      // Fallback a la RPC del legacy (js/grupos.js): club_eliminar_grupo.
-      const rpc = await supabase.rpc("club_eliminar_grupo", { p_id: id });
-      if (rpc.error) return { ok: false, error: rpc.error.message };
-    }
     cacheGrupos = null;
     void registrarAuditoria("GRUPO", "ELIMINAR", `Grupo ${id} eliminado.`);
     return { ok: true };
