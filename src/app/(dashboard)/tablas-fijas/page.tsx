@@ -4,7 +4,7 @@ import { TablasModule } from "@/components/tablas/TablasModule";
 import type { StoredTablaFija } from "@/store/useTablasFijasStore";
 import type { VentaTablaItem } from "@/components/tablas/MonitorTablas";
 import type { PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
-import { publicarTabla, publicarTablasLote, actualizarTabla, venderTablaFija, guardarPizarraCarrera } from "@/lib/tablas/rpc";
+import { publicarTabla, publicarTablasLote, actualizarTabla, venderTablaFija, liquidarTablaFija, guardarPizarraCarrera } from "@/lib/tablas/rpc";
 import { cerrarTablaFija } from "@/lib/tablas-fijas";
 import { upsertResultadoCentral } from "@/lib/carreras-dia";
 
@@ -48,12 +48,22 @@ export default function TablasFijasPage() {
           return r.ok;
         }}
         persistirLiquidacion={async (t: StoredTablaFija, r: PizarraResultados) => {
+          // 1) Resolver los tickets ANTES de cerrar. Si esto falla, la tabla
+          //    queda abierta y se puede reintentar; cerrarla primero dejaria
+          //    ventas sin pagar sin forma de retomarlas.
+          const ganador = String(r.pizarra.primero ?? "").trim();
+          if (!ganador) return false;
+          const liq = await liquidarTablaFija({ tablaId: t.id, ganadores: ganador });
+          if (!liq.ok) return false;
+
+          // 2) Pizarra y resultados centrales. Aqui van las 8 posiciones, que
+          //    es lo que necesitan las demas jugadas de la carrera.
           await guardarPizarraCarrera({
             hipodromo: t.hipodromo,
             carrera: t.carrera,
-            pizarra: r.pizarra as unknown as Record<string, unknown>,
+            pizarra: r.pizarra as unknown as Record<string, number>,
           });
-          const ganadores = [
+          const posiciones = [
             r.pizarra.primero,
             r.pizarra.segundo,
             r.pizarra.tercero,
@@ -66,13 +76,15 @@ export default function TablasFijasPage() {
           await upsertResultadoCentral({
             hipodromo: t.hipodromo ?? "",
             carrera: t.carrera ?? 0,
-            ganadores,
+            ganadores: posiciones,
             retirados: t.retirados_oficiales ?? "NO HUBO RETIROS",
             premio_oficial: t.premio_original ?? undefined,
             premio_recalculado: t.premio_recalculado ?? undefined,
             detalle: { caballos: t.caballos },
             cargado_por: "TABLAS-FIJAS",
           });
+
+          // 3) Cerrar la tabla para que salga del Monitor.
           const cierre = await cerrarTablaFija(t.hipodromo ?? "", t.carrera ?? 0);
           return cierre.ok;
         }}

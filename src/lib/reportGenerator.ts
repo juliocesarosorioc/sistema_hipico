@@ -344,7 +344,7 @@ export type TicketApuestaJugada = {
   caballo?: string | null;
   cantidad_tablas?: number | string | null;
   monto_jugado?: number | string | null;
-  premio_potencial?: number | string | null;
+  premio_pagar?: number | string | null;
   premio_por_tabla?: number | string | null;
   comision_porcentaje?: number | string | null;
   estado?: string | null;
@@ -364,9 +364,9 @@ function mapearJugada(r: TicketApuestaJugada): JugadaRelacion {
     modalidad: esNini ? "NINI" : "GENERICA",
     cantidadTablas: num(r.cantidad_tablas),
     premioPorTabla: num(r.premio_por_tabla),
-    premioPotencial: num(r.premio_potencial),
+    premioPotencial: num(r.premio_pagar),
     comisionPct: num(r.comision_porcentaje) || undefined,
-    ganador: num(r.premio_potencial) > 0,
+    ganador: num(r.premio_pagar) > 0,
   };
 }
 
@@ -378,7 +378,7 @@ export async function cargarJugadasDeCarrera(
     let q = supabase
       .from("tickets_apuestas")
       .select(
-        "id, nombre_jugada, caballo, cantidad_tablas, monto_jugado, premio_potencial, premio_por_tabla, comision_porcentaje, estado, cliente_juega_nombre, cliente_consigue_nombre"
+        "id, nombre_jugada, caballo, cantidad_tablas, monto_jugado, premio_pagar, premio_por_tabla, comision_porcentaje, estado, cliente_juega_nombre, cliente_consigue_nombre"
       )
       .eq("hipodromo", String(filtro.hipodromo).trim().toUpperCase())
       .eq("carrera", num(filtro.carrera))

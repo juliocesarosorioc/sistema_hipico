@@ -325,11 +325,26 @@ function payloadDeTabla(t: TablaFijaRow): Record<string, unknown> {
   };
 }
 
-/** Busca la fila existente por (hipodromo, carrera) para actualizar en vez de duplicar. */
-const ORDENES_ID = ["fecha_creacion", "created_at", "id"] as const;
+/**
+ * Busca la fila existente para actualizar en vez de duplicar.
+ *
+ * La clave real de una tabla es (fecha, hipodromo, carrera). Buscar solo por
+ * hipodromo+carrera hacia que la C4 de hoy pisara la C4 de ayer del mismo
+ * hipodromo: se perdia la tabla del dia anterior y sus ventas quedaban
+ * apuntando a una tabla cambiada. Por eso la fecha va incluida.
+ */
+const ORDENES_ID = ["fecha_creacion", "id"] as const;
 
-async function idExistente(hipodromo?: string | null, carrera?: number | null): Promise<number | string | null> {
+async function idExistente(
+  hipodromo?: string | null,
+  carrera?: number | null,
+  fecha?: string | null
+): Promise<number | string | null> {
   if (!supabase || !hipodromo || !carrera) return null;
+  // Sin fecha no se puede desambiguar: la misma carrera se disputa en dias
+  // distintos, asi que en ese caso no se reusa ninguna fila.
+  if (!fecha) return null;
+  const dia = fecha.slice(0, 10);
   for (const col of ORDENES_ID) {
     try {
       const { data, error } = await supabase
@@ -337,6 +352,7 @@ async function idExistente(hipodromo?: string | null, carrera?: number | null): 
         .select("id")
         .ilike("hipodromo", hipodromo)
         .eq("carrera", carrera)
+        .eq("fecha", dia)
         .order(col, { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -397,7 +413,7 @@ export async function eliminarTablaFija(
 export async function publicarTabla(t: TablaFijaRow): Promise<{ ok: boolean; id?: string | number; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
-    const existente = await idExistente(t.hipodromo, t.carrera);
+    const existente = await idExistente(t.hipodromo, t.carrera, t.fecha ?? t.fecha_creacion);
     const r = existente != null
       ? await persistirFila(payloadDeTabla(t), "update", existente)
       : await persistirFila(payloadDeTabla(t), "insert");
@@ -425,8 +441,9 @@ export async function publicarTablasLote(
 
   for (const t of tablas) {
     try {
-      const existente = await idExistente(t.hipodromo, t.carrera);
-      const r = existente != null
+    const existente = await idExistente(t.hipodromo, t.carrera, t.fecha ?? t.fecha_creacion);
+    const r = existente != null
+
         ? await persistirFila(payloadDeTabla(t), "update", existente)
         : await persistirFila(payloadDeTabla(t), "insert");
       if (r.error) throw new Error(r.error);
@@ -551,6 +568,44 @@ export async function venderTablaFija(params: {
     premioPorTabla: d.premio_por_tabla != null ? Number(d.premio_por_tabla) : undefined,
     comisionGrupoPorcentaje: d.comision_grupo_porcentaje != null ? Number(d.comision_grupo_porcentaje) : undefined,
     moneda: d.moneda != null ? String(d.moneda) : undefined,
+  };
+}
+
+/**
+ * Cierra la tabla y resuelve sus tickets (sql/tablas_venta.sql).
+ *
+ * El pago sale del `premio_por_tabla` y `pts_ejemplar` CONGELADOS en el ticket,
+ * no de los valores actuales de la tabla: por eso editar la tabla o un retiro
+ * posterior no alteran lo ya vendido.
+ *
+ * Comisión (regla de js/saldos.js:144-165): sobre la ganancia y solo si gana.
+ * El jugador recibe el premio entero; lo que se lleva el grupo sale de la
+ * ganancia, nunca de su pago. Pierde → comisión 0.
+ *
+ * Sin ganadores no liquida: con dead heat la tabla queda pendiente a decisión
+ * manual, en vez de pagar a un ganador arbitrario.
+ */
+export async function liquidarTablaFija(params: {
+  tablaId: string | number;
+  /** Ejemplares ganadores separados por coma: '1,3,4'. */
+  ganadores: string;
+  usuario?: string | null;
+}): Promise<{ ok: boolean; error?: string; ticketsResueltos?: number; pagos?: number }> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  const { data, error } = await supabase.rpc("club_liquidar_tabla_fija", {
+    p_tabla_id: params.tablaId,
+    p_ganadores: params.ganadores,
+    p_usuario: params.usuario ?? null,
+  });
+  if (error) {
+    return { ok: false, error: esRpcAusente(error) ? MENSAJE_SIN_RPC : error.message };
+  }
+  const d = (data ?? {}) as Record<string, unknown>;
+  if (d.ok === false) return { ok: false, error: String(d.error ?? "No se pudo liquidar.") };
+  return {
+    ok: true,
+    ticketsResueltos: Number(d.tickets_resueltos ?? 0),
+    pagos: Number(d.pagos ?? 0),
   };
 }
 

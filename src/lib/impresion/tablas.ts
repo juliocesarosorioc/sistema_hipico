@@ -328,7 +328,7 @@ export async function cargarResumenImpresion(): Promise<{
       try {
         const { data, error: e } = await supabase
           .from("tablas_fijas")
-          .select("id,hipodromo,carrera,fecha,fecha_creacion,hipodromo_id")
+          .select("id,hipodromo,carrera,fecha,fecha_creacion")
           .ilike("estado", "abierta");
         if (e) error = e.message;
         else filas = (data ?? []) as unknown as TablaRespaldo[];

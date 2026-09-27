@@ -293,6 +293,152 @@ $$;
 revoke all on function public.club_vender_tabla_fija(bigint, uuid, uuid, numeric, int, text, numeric, numeric, text) from anon;
 grant execute on function public.club_vender_tabla_fija(bigint, uuid, uuid, numeric, int, text, numeric, numeric, text) to anon, authenticated;
 
+-- =============================================================================
+--  LIQUIDACION DE TABLA FIJA
+-- =============================================================================
+--  Al cerrar la tabla se resuelve cada ticket pendiente de sus ejemplares y se
+--  escribe monto_decidido (lo que recibe el jugador) y comision_pagada (lo que
+--  se lleva el grupo).
+--
+--  REGLA DE COMISION, tomada de js/saldos.js:144-165:
+--
+--      TABLA FIJA, gana  -> comision = max(0, premio - monto_jugado) * pct/100
+--      TABLA FIJA, pierde -> comision = 0
+--      OTRAS JUGADAS     -> gana: premio * pct/100   |   pierde: monto_jugado * pct/100
+--
+--  O sea: la comision de tabla fija se cobra sobre la GANANCIA y solo si gana.
+--  El jugador no pierde nada de su premio: monto_decidido es el premio entero.
+--  Lo que se descuenta es la comision del grupo, que sale de la ganancia.
+--
+--  PAGO: el premio sale del PTS CONGELADO del ejemplar, no del valor actual de
+--  la tabla. Si la tabla se edito o entro un retiro despues de la venta, el
+--  ticket ya vendido sigue liquidando con el premio con el que se compro. Esa
+--  es toda la razon de congelar en la venta.
+--
+--  Los caballeros con heat muerto no pagan (no hay un unico ganador claro).
+-- =============================================================================
+
+create or replace function public.club_liquidar_tabla_fija(
+  p_tabla_id bigint,
+  p_ganadores text default null,   -- '1,3,4' o null si hay dead heat
+  p_usuario   text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tabla    public.tablas_fijas%rowtype;
+  v_tk       record;
+  v_gan      text[];
+  v_num      text;
+  v_pts      numeric;
+  v_premio   numeric;
+  v_jugado   numeric;
+  v_base     numeric;
+  v_pago     numeric;
+  v_gana     boolean;
+  v_com      numeric;
+  v_pct      numeric;
+  v_saldo    numeric;
+  v_resueltos int := 0;
+  v_ganadores int := 0;
+  v_deudores  int := 0;
+begin
+  select * into v_tabla from public.tablas_fijas where id = p_tabla_id for update;
+  if not found then
+    raise exception 'La tabla fija % no existe.', p_tabla_id;
+  end if;
+
+  -- Sin ganadores no se decide nada: los tickets quedan pendientes.
+  if p_ganadores is null or btrim(p_ganadores) = '' then
+    return jsonb_build_object(
+      'ok', false,
+      'error', 'Indique los ganadores. Con dead heat la tabla no se liquida sola.'
+    );
+  end if;
+
+  v_gan := string_to_array(btrim(p_ganadores), ',');
+  select count(*) into v_ganadores from unnest(v_gan) g where btrim(g) <> '';
+  if v_ganadores = 0 then
+    raise exception 'No se indico ningun ganador.';
+  end if;
+
+  v_base := greatest(coalesce(v_tabla.suma_base_tabla, 0), 0);
+
+  for v_tk in
+    select * from public.tickets_apuestas
+     where estado = 'Pendiente'
+       and (nota_auditoria ->> 'tabla_id') = p_tabla_id::text
+     for update
+  loop
+    v_num    := btrim(coalesce(v_tk.ejemplar_numero, ''));
+    v_pts    := coalesce(v_tk.pts_ejemplar, 0);
+    v_premio := coalesce(v_tk.premio_por_tabla, v_tabla.premio_recalculado, v_tabla.premio_original, 0);
+    v_jugado := coalesce(v_tk.monto_jugado, 0);
+    v_pct    := coalesce(v_tk.comision_porcentaje, 0);
+
+    v_gana := v_num <> '' and v_num = any (v_gan);
+
+    -- El premio sale del PTS congelado. Si la tabla no trae base (puntos sin
+    -- asignar) se cae al premio completo, que es el caso de la tabla simple.
+    if v_pts > 0 and v_base > 0 then
+      v_pago := round((v_premio * v_pts / v_base)::numeric, 2);
+    else
+      v_pago := v_premio;
+    end if;
+
+    if not v_gana then
+      v_pago := 0;
+      v_com  := 0;
+    else
+      -- Sobre la ganancia, y solo si gana. Nunca por debajo de cero.
+      v_com := greatest(0, v_pago - v_jugado) * v_pct / 100;
+    end if;
+
+    update public.tickets_apuestas
+       set estado            = case when v_gana then 'GANADOR' else 'PERDEDOR' end,
+           premio_pagar      = v_pago,
+           monto_decidido    = v_pago,      -- el jugador recibe el premio entero
+           comision_pagada   = round(v_com::numeric, 2)
+     where id = v_tk.id;
+
+    v_resueltos := v_resueltos + 1;
+
+    -- El premio entra al saldo del jugador.
+    if v_pago > 0 and v_tk.cliente_juega_id is not null then
+      select saldo_actual into v_saldo from public.clientes where id = v_tk.cliente_juega_id;
+      update public.clientes
+         set saldo_actual = coalesce(v_saldo, 0) + v_pago
+       where id = v_tk.cliente_juega_id;
+      v_deudores := v_deudores + 1;
+    end if;
+  end loop;
+
+  if exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = 'club_log_accion'
+  ) then
+    perform public.club_log_accion(
+      coalesce(p_usuario, 'anon'), 'TABLAS_FIJAS',
+      format('LIQUIDAR tabla %s: ganadores [%s], %s ticket(s) resueltos.',
+             p_tabla_id, p_ganadores, v_resueltos)
+    );
+  end if;
+
+  return jsonb_build_object(
+    'ok', true,
+    'tickets_resueltos', v_resueltos,
+    'pagos', v_deudores,
+    'ganadores', v_ganadores
+  );
+end;
+$$;
+
+revoke all on function public.club_liquidar_tabla_fija(bigint, text, text) from anon;
+grant execute on function public.club_liquidar_tabla_fija(bigint, text, text) to anon, authenticated;
+
 -- -----------------------------------------------------------------------------
 --  Ajuste de compatibility: dos consultas del Next order-by created_at, columna
 --  que esta tabla NO tiene. El timestamp real es fecha_registro.
