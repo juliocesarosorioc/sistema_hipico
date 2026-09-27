@@ -61,7 +61,7 @@ export default function DashboardHome() {
         </a>
 
         <a
-          href="/carreras"
+          href="/ejemplares?tab=carreras"
           className="rounded-2xl border border-line bg-surface p-4 text-center transition-colors hover:border-primary-500/60 hover:bg-surfaceAlt/80"
         >
           <span className="block text-3xl">🏇</span>
