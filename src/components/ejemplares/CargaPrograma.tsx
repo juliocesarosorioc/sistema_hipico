@@ -1,5 +1,6 @@
 "use client";
 
+import { getHorseColor } from "@/lib/horseColors";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -436,16 +437,21 @@ export function CargaPrograma() {
                         <p className="py-6 text-center text-[11px] italic text-slate-400">Pegue las líneas para previsualizar…</p>
                       ) : (
                         <ul className="flex flex-col gap-0.5">
-                          {previewRapida.slice(0, 6).map((cb, i) => (
-                            <li key={i} className="flex items-center gap-2 text-[11px] font-bold text-slate-700">
-                              <span className="grid h-5 w-6 shrink-0 place-items-center rounded bg-indigo-600 text-[9px] font-black text-white">
-                                {cb.numero}
-                              </span>
-                              <span className="min-w-0 flex-1 truncate uppercase">{cb.nombre}</span>
-                              <span className="shrink-0 rounded bg-slate-200 px-1 text-[9px] font-black text-slate-600">{cb.nacionalidad}</span>
-                              {cb.valor ? <span className="shrink-0 text-[10px] font-black text-blue-700">${cb.valor}</span> : null}
-                            </li>
-                          ))}
+                          {previewRapida.slice(0, 6).map((cb, i) => {
+                            const guald = getHorseColor(cb.numero);
+                            return (
+                              <li key={i} className="flex items-center gap-2 text-[11px] font-bold text-slate-700">
+                                <span
+                                  className={`grid h-5 w-6 shrink-0 place-items-center rounded border text-[9px] font-black leading-none ${guald.bg} ${guald.text} ${guald.border}`}
+                                >
+                                  {cb.numero}
+                                </span>
+                                <span className="min-w-0 flex-1 truncate uppercase">{cb.nombre}</span>
+                                <span className="shrink-0 rounded bg-slate-200 px-1 text-[9px] font-black text-slate-600">{cb.nacionalidad}</span>
+                                {cb.valor ? <span className="shrink-0 text-[10px] font-black text-blue-700">${cb.valor}</span> : null}
+                              </li>
+                            );
+                          })}
                         </ul>
                       )}
                       {previewRapida.length > 6 && (

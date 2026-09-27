@@ -1,5 +1,6 @@
 "use client";
 
+import { getHorseColor } from "@/lib/horseColors";
 import { useEffect, useMemo, useState } from "react";
 import type { PizarraCarrera } from "@/lib/liquidacion";
 import type { EjemplarTabla } from "@/lib/tablas/tipos";
@@ -238,7 +239,8 @@ export function CargaResultadosModal({
                   onChange={(e) => setRayaNumero(e.target.value.replace(/[^0-9]/g, ""))}
                   inputMode="numeric"
                   placeholder={primerNumero || "Nº"}
-                  className="w-20 rounded-lg border border-cyan-300 bg-white px-1.5 py-1 font-mono text-xs font-black text-slate-900 placeholder:text-slate-300 outline-none focus:ring-1 focus:ring-cyan-500"
+                  style={rayaNumero ? { borderColor: getHorseColor(rayaNumero).hex } : undefined}
+                  className="w-20 rounded-lg border-2 bg-white px-1.5 py-1 font-mono text-xs font-black text-slate-900 placeholder:text-slate-300 outline-none focus:ring-1 focus:ring-cyan-500"
                 />
               </label>
               <p className="max-w-[220px] text-[9px] italic text-slate-500">
@@ -274,7 +276,8 @@ export function CargaResultadosModal({
                     onChange={(e) => setNumero(i, e.target.value)}
                     inputMode="numeric"
                     placeholder={caballos?.[i] ? String(caballos[i].numero) : "Nº"}
-                    className="w-16 rounded-lg border border-line bg-surface px-1.5 py-1 text-center text-xs font-black text-slate-900 placeholder:text-slate-400 outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    style={r.numero.trim() ? { borderColor: getHorseColor(r.numero).hex } : undefined}
+                    className="w-16 rounded-lg border-2 bg-surface px-1.5 py-1 text-center text-xs font-black text-slate-900 placeholder:text-slate-400 outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                   />
                   <span className="flex flex-wrap gap-0.5">
                     {r.numero.trim() && pools.win && (

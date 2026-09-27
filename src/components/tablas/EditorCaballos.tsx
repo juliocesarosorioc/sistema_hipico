@@ -1,5 +1,6 @@
 "use client";
 
+import { getHorseColor } from "@/lib/horseColors";
 import { useState } from "react";
 import { OPCIONES_NACIONALIDAD, type EjemplarTabla } from "@/lib/tablas/tipos";
 import { colorDeNumero, textoDeNumero } from "@/lib/tablas/tipos";
@@ -84,7 +85,15 @@ export function EditorCaballos({ caballos, onChange, onQuitar, onAgregar }: Prop
       ))}
       {onAgregar && (
         <div className="grid grid-cols-[2.5rem_1fr_4.5rem_4.5rem_1.75rem] gap-1 pt-1.5">
-          <input type="text" inputMode="numeric" value={nuevoNum} onChange={(e) => setNuevoNum(e.target.value)} placeholder="Nº" className={`${inp} text-center font-black`} />
+          <input
+            type="text"
+            inputMode="numeric"
+            value={nuevoNum}
+            onChange={(e) => setNuevoNum(e.target.value)}
+            placeholder="Nº"
+            style={nuevoNum.trim() ? { borderColor: getHorseColor(nuevoNum).hex } : undefined}
+            className={`${inp} border-2 text-center font-black`}
+          />
           <input type="text" value={nuevoNom} onChange={(e) => setNuevoNom(e.target.value)} onKeyDown={(e) => e.key === "Enter" && agregar()} placeholder="Nuevo ejemplar…" className={inp} />
           <select value={nuevaNac} onChange={(e) => setNuevaNac(e.target.value)} className={inp}>
             {OPCIONES_NACIONALIDAD.map((n) => (

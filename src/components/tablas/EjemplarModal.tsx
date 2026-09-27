@@ -1,5 +1,6 @@
 "use client";
 
+import { HorseBadge } from "@/components/ui/HorseChips";
 import { useEffect, useState } from "react";
 import type { StoredTablaFija } from "@/store/useTablasFijasStore";
 import { colorDeNumero, textoDeNumero, fmtMoney, parseNum, type EjemplarTabla } from "@/lib/tablas/tipos";
@@ -135,7 +136,8 @@ export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, 
             <div className="min-w-0 flex-1">
               <span className="block truncate text-base font-black uppercase text-slate-800">{ejemplar.nombre || "Sin nombre"}</span>
               <span className="block text-xs font-bold text-slate-500">
-                <Flag nac={ejemplar.nacionalidad} size={13} /> N° {num || "‑"}
+                <Flag nac={ejemplar.nacionalidad} size={13} /> N°
+                {num ? <HorseBadge num={num} /> : "‑"}
               </span>
             </div>
             <span

@@ -1,5 +1,6 @@
 "use client";
 
+import { getHorseColor } from "@/lib/horseColors";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ToastHost } from "@/components/ui/ToastHost";
@@ -389,24 +390,45 @@ export function CarrerasDiaModule() {
                             {(c.caballos ?? []).map((cb) => {
                               const nombre = cb.nombre?.trim();
                               const ret = Boolean(cb.retirado) || (c.retirados ?? []).includes(String(cb.numero));
+                              const guald = getHorseColor(cb.numero);
                               return (
                                 <span
                                   key={cb.numero}
                                   title={nombre || `Nº ${cb.numero}`}
-                                  className={`inline-flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-bold ${
-                                    ret ? "bg-red-100 text-red-700 line-through" : "bg-slate-100 text-slate-700"
+                                  className={`inline-flex items-center gap-1 rounded border px-1 py-0.5 text-[10px] font-bold leading-none ${
+                                    ret ? "border-red-300 bg-red-50" : `${guald.border} ${guald.bg} ${guald.text}`
                                   }`}
                                 >
-                                  {cb.numero}
-                                  {ret && <span className="font-black">⛔</span>}
-                                  {nombre && <span className="font-semibold text-slate-500">· {nombre}</span>}
+                                  <span
+                                    className={`inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm text-[9px] font-black leading-none ${
+                                      ret ? "bg-red-200 text-red-700 line-through" : ""
+                                    }`}
+                                  >
+                                    {cb.numero}
+                                  </span>
+                                  {ret && <span className="font-black text-red-600">⛔</span>}
+                                  {nombre && (
+                                    <span className={`font-semibold ${ret ? "text-red-600" : "opacity-80"}`}>
+                                      · {nombre}
+                                    </span>
+                                  )}
                                 </span>
                               );
                             })}
                           </span>
                           {(c.retirados?.length ?? 0) > 0 && (
-                            <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-black text-red-700">
-                              RETIRADOS: {(c.retirados ?? []).join(", ")}
+                            <span className="inline-flex items-center gap-0.5 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-black leading-none text-red-700">
+                              RETIRADOS:
+                              <span className="flex gap-0.5">
+                                {(c.retirados ?? []).map((rn) => (
+                                  <span
+                                    key={rn}
+                                    className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm bg-red-200 text-[9px] font-black leading-none text-red-700 line-through"
+                                  >
+                                    {rn}
+                                  </span>
+                                ))}
+                              </span>
                             </span>
                           )}
                         </div>

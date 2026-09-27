@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { detectarModalidad, parsearLineaRapida, proyectarFila } from "@/lib/taquilla/validar";
+import { horseBgHex } from "@/lib/horseColors";
 import { useTaquillaStore, type TicketTaquilla } from "@/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla, type ResLiquidarCarrera } from "@/lib/liquidacion/pagarYCerrar";
@@ -579,20 +580,20 @@ export function GestionJugadasModule() {
   };
 
   return (
-    <div className="space-y-4 pb-24">
+    <div className="space-y-2 pb-14">
       {/* Inputs superiores */}
-      <div className="grid gap-3 rounded-2xl border border-line bg-surface p-3 lg:grid-cols-6">
+      <div className="grid gap-1.5 rounded-xl border border-line bg-surface p-2 lg:grid-cols-6">
         <div>
-          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">1 · Fecha 📅</label>
+          <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">1 · Fecha 📅</label>
           <input
             type="date"
             value={fecha}
             onChange={(e) => setFecha(e.target.value || hoyLocal())}
-            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+            className="w-full rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           />
         </div>
         <div>
-          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">2 · Hipódromo</label>
+          <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">2 · Hipódromo</label>
           <SearchableSelect
             options={hipodromosDelDia}
             value={hipodromo}
@@ -601,7 +602,7 @@ export function GestionJugadasModule() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">
+          <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">
             Retirados · C{carrera}
           </label>
           <div className="flex items-center gap-1">
@@ -612,7 +613,7 @@ export function GestionJugadasModule() {
                 if (e.key === "Enter") void aplicarRetiros();
               }}
               placeholder='ej. "2,5"'
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              className="w-full rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
             />
             <Button
               size="sm"
@@ -625,12 +626,12 @@ export function GestionJugadasModule() {
           </div>
         </div>
         <div>
-          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">COM %</label>
+          <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">COM %</label>
           <input
             value={comision}
             onChange={(e) => setComision(e.target.value.replace(/[^0-9.,]/g, ""))}
             inputMode="decimal"
-            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-black text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+            className="w-full rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           />
         </div>
         <label className="flex cursor-pointer items-end gap-2 pb-2 text-xs font-bold uppercase text-slate-600">
@@ -682,13 +683,13 @@ export function GestionJugadasModule() {
         </div>
 
         {/* Panel lateral de ejemplares (tabla fija publicada o Carreras del Día) */}
-        <div className={caballosDeCarrera.length ? "flex flex-col gap-3 lg:flex-row" : ""}>
+        <div className={caballosDeCarrera.length ? "flex flex-col gap-2 lg:flex-row" : ""}>
           {caballosDeCarrera.length > 0 && (
-            <aside className="shrink-0 rounded-xl border border-line bg-white p-2 shadow-sm lg:w-[28%]">
-              <p className="px-1 pb-1.5 text-[10px] font-black uppercase tracking-wide text-slate-500">
+            <aside className="shrink-0 rounded-xl border border-line bg-white p-1.5 shadow-sm lg:w-[28%]">
+              <p className="px-1 pb-1 text-[9px] font-black uppercase leading-none tracking-wide text-slate-500">
                 🐎 Ejemplares registrados ({caballosDeCarrera.length})
               </p>
-              <ul className="max-h-72 divide-y divide-line/60 overflow-y-auto">
+              <ul className="max-h-60 divide-y divide-line/60 overflow-y-auto">
                 {caballosDeCarrera.map((c, ci) => (
                   <li key={ci}>
                     <button
@@ -699,18 +700,18 @@ export function GestionJugadasModule() {
                           ? `Quitar el retiro de N°${c.numero} (se propaga a todos los módulos)`
                           : `Retirar N°${c.numero} (se propaga a todos los módulos)`
                       }
-                      className={`flex w-full cursor-pointer items-center gap-2 px-1 py-0.5 text-left hover:bg-amber-50 ${
+                      className={`flex w-full cursor-pointer items-center gap-1.5 px-1 py-0 text-left leading-none hover:bg-amber-50 ${
                         c.retirado ? "bg-red-50/60" : ""
                       }`}
                     >
                       <span
-                        className="flex h-6 w-6 shrink-0 flex-none items-center justify-center text-center text-[10px] font-bold"
-                        style={{ backgroundColor: cardColor(c.numero) }}
+                        className="flex h-5 w-5 shrink-0 flex-none items-center justify-center text-center text-[9px] font-bold leading-none"
+                        style={{ backgroundColor: horseBgHex(c.numero) }}
                       >
                         {c.numero}
                       </span>
                       <span
-                        className={`min-w-0 flex-1 truncate text-[11px] font-bold uppercase leading-tight ${
+                        className={`min-w-0 flex-1 truncate text-[10px] font-bold uppercase leading-none ${
                           c.retirado ? "text-red-500 line-through" : "text-slate-700"
                         }`}
                       >
@@ -732,14 +733,14 @@ export function GestionJugadasModule() {
           <div className={caballosDeCarrera.length ? "min-w-0 flex-1" : "w-full"}>
             <table className="w-full table-fixed border-collapse text-xs">
           <thead>
-            <tr className="bg-slate-800 text-white">
-              <th className="w-[3%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">#</th>
-              <th className="w-[3%] border-r border-slate-700 px-1 py-1 text-center font-bold uppercase">X</th>
-              <th className="w-[20%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Jugada</th>
-              <th className="w-[11%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Caballo</th>
-              <th className="w-[11%] border-r border-slate-700 px-1 py-1 text-right font-bold uppercase">Monto</th>
-              <th className="w-[26%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 1</th>
-              <th className="w-[26%] px-1 py-1 text-left font-bold uppercase">Cliente 2</th>
+            <tr className="gj-cabecera text-white">
+              <th className="w-[3%] border-r border-slate-700 px-1 py-0.5 text-left text-[10px] font-bold uppercase leading-none">#</th>
+              <th className="w-[3%] border-r border-slate-700 px-1 py-0.5 text-center text-[10px] font-bold uppercase leading-none">X</th>
+              <th className="w-[20%] border-r border-slate-700 px-1 py-0.5 text-left text-[10px] font-bold uppercase leading-none">Jugada</th>
+              <th className="w-[11%] border-r border-slate-700 px-1 py-0.5 text-left text-[10px] font-bold uppercase leading-none">Caballo</th>
+              <th className="w-[11%] border-r border-slate-700 px-1 py-0.5 text-right text-[10px] font-bold uppercase leading-none">Monto</th>
+              <th className="w-[26%] border-r border-slate-700 px-1 py-0.5 text-left text-[10px] font-bold uppercase leading-none">Cliente 1</th>
+              <th className="w-[26%] px-1 py-0.5 text-left text-[10px] font-bold uppercase leading-none">Cliente 2</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line/70">
@@ -749,7 +750,7 @@ export function GestionJugadasModule() {
               const ejemplar = ejemplarResuelto(f.caballo);
               return (
                 <tr key={i} className={`align-middle ${f.error ? "bg-red-50" : ""}`} title={f.error ?? undefined}>
-                  <td className="relative h-9 px-1 py-0 align-middle text-xs text-slate-400">
+                  <td className="relative h-7 px-1 py-0 align-middle text-xs text-slate-400">
                     <span className="block truncate">
                       {f.error ? (
                         <span className="inline-flex items-center gap-1 text-red-500">
@@ -760,7 +761,7 @@ export function GestionJugadasModule() {
                       )}
                     </span>
                   </td>
-                  <td className="relative h-9 px-1 py-0 align-middle text-center">
+                  <td className="relative h-7 px-1 py-0 align-middle text-center">
                     <button
                       type="button"
                       onClick={() => setFilas((fs) => fs.filter((_, j) => j !== i))}
@@ -771,7 +772,7 @@ export function GestionJugadasModule() {
                       ✕
                     </button>
                   </td>
-                  <td className="relative h-9 px-1 py-0 align-middle">
+                  <td className="relative h-7 px-1 py-0 align-middle">
                     <input
                       value={f.jugada}
                       onChange={(e) => setFila(i, { jugada: e.target.value })}
@@ -782,7 +783,7 @@ export function GestionJugadasModule() {
                         }
                       }}
                       placeholder="10/8 · pp · 1p · 2n"
-                      className="w-full rounded-md border border-line bg-white px-1 py-1 text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      className="w-full rounded border border-line bg-white px-1 py-0.5 text-[11px] font-bold leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
                     <span
                       className={`pointer-events-none absolute bottom-0.5 left-1 right-1 truncate text-[9px] font-black uppercase leading-none tracking-wide ${
@@ -792,14 +793,14 @@ export function GestionJugadasModule() {
                       {detectado ?? (f.jugada.trim() ? "—" : "")}
                     </span>
                   </td>
-                  <td className="relative h-9 px-1 py-0 align-middle">
+                  <td className="relative h-7 px-1 py-0 align-middle">
                     <input
                       value={f.caballo}
                       onChange={(e) => setFila(i, { caballo: e.target.value })}
                       placeholder="1 · 1x2"
                       inputMode="numeric"
                       title={ejemplar ? `${ejemplar.numero} - ${ejemplar.nombre}` : ""}
-                      className="w-full rounded-md border border-line bg-white px-1 py-1 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      className="w-full rounded border border-line bg-white px-1 py-0.5 text-[11px] font-semibold leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
                     {ejemplar && (
                       <span
@@ -812,16 +813,16 @@ export function GestionJugadasModule() {
                       </span>
                     )}
                   </td>
-                  <td className="relative h-9 px-1 py-0 align-middle">
+                  <td className="relative h-7 px-1 py-0 align-middle">
                     <input
                       value={f.monto}
                       onChange={(e) => setFila(i, { monto: e.target.value })}
                       placeholder="0"
                       inputMode="decimal"
-                      className="w-full rounded-md border border-line bg-white px-1 py-1 text-right text-xs font-black text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      className="w-full rounded border border-line bg-white px-1 py-0.5 text-right text-[11px] font-black leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
                   </td>
-                  <td className="relative h-11 px-1 py-0.5 align-middle">
+                  <td className="relative h-8 px-1 py-0 align-middle">
                     <SearchableSelect
                       options={opcionesClientes}
                       value={f.cliente1}
@@ -836,7 +837,7 @@ export function GestionJugadasModule() {
                       {infoCliente(f.cliente1, f.monto, v.ok && v.cliente1 ? v.cliente1.cobroNeto : 0)}
                     </span>
                   </td>
-                  <td className="relative h-11 px-1 py-0.5 align-middle">
+                  <td className="relative h-8 px-1 py-0 align-middle">
                     <SearchableSelect
                       options={opcionesClientes}
                       value={f.cliente2}
@@ -1003,7 +1004,7 @@ export function GestionJugadasModule() {
                   {caballosDeCarrera.map((c, i) => (
                     <li key={i} className="flex items-center gap-2 py-1.5 text-sm">
                       <span className="flex h-7 w-7 shrink-0 flex-none items-center justify-center rounded text-center text-[10px] font-bold"
-                        style={{ backgroundColor: c.retirado ? "#ef4444" : cardColor(c.numero) }}>
+                        style={{ backgroundColor: c.retirado ? "#ef4444" : horseBgHex(c.numero) }}>
                         {c.numero}
                       </span>
                       <span className={`font-bold uppercase text-slate-800 ${c.retirado ? "line-through opacity-50" : ""}`}>{c.nombre || `Nº ${c.numero}`}</span>
@@ -1195,9 +1196,6 @@ function round2(n: number): number {
 }
 
 /** Color de casaca por número (paleta ligera para el preliminar). */
-function cardColor(n: string | number): string {
-  const i = ((Number(n) || 1) - 1) % 14;
-  return ["#dc2626", "#f5f5f4", "#2563eb", "#facc15", "#16a34a", "#111827", "#f97316", "#f9a8d4", "#22d3ee", "#9333ea", "#6b7280", "#4ade80", "#92400e", "#7f1d1d"][i < 0 ? 0 : i];
-}
+
 
 export default GestionJugadasModule;
