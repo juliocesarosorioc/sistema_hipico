@@ -77,7 +77,8 @@ export function CarrerasDiaModule() {
   const [hipodromo, setHipodromo] = useState("");
   const [fecha, setFecha] = useState(() => hoyLocal());
 
-  const [carreras, setCarreras] = useState<CarreraCentral[]>([]);
+  /** Todas las carreras de `fecha`, sin filtro de hipódromo. */
+  const [todas, setTodas] = useState<CarreraCentral[]>([]);
   const [cargando, setCargando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [modal, setModal] = useState<ModalForm>(() => vacioModal());
@@ -87,48 +88,44 @@ export function CarrerasDiaModule() {
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
   }, []);
 
+  // El día arranca en hoy y el filtro en "todos los hipódromos": no se
+  // preselecciona ningún hipódromo, así la jornada completa se ve de entrada.
   useEffect(() => {
     let v = true;
     void listarHipodromos().then((hs) => {
       if (!v) return;
       setHipodromos(hs);
-      if (hs.length && !hipodromo) setHipodromo(hs[0].value);
     });
     return () => {
       v = false;
     };
-  }, [hipodromo]);
+  }, []);
 
+  /**
+   * Una sola carga por día: TODAS las carreras de la fecha, sin filtrar. El
+   * editor y el monitor beben del mismo array, así el filtro por hipódromo es
+   * instantáneo y ambos paneles siempre muestran la misma data.
+   */
   const refrescar = useCallback(async () => {
     setCargando(true);
-    const r = await listarCarrerasCentrales(fecha, hipodromo);
+    const r = await listarCarrerasCentrales(fecha, "");
     setCargando(false);
     if (!r.ok) {
       toast(r.error ?? "No se pudo leer las carreras del día.", "error");
       return;
     }
-    setCarreras(r.datos ?? []);
-  }, [fecha, hipodromo, toast]);
+    setTodas(r.datos ?? []);
+  }, [fecha, toast]);
 
   useEffect(() => {
-    if (hipodromo) void refrescar();
-  }, [fecha, hipodromo, refrescar]);
+    void refrescar();
+  }, [fecha, refrescar]);
 
-  /**
-   * Monitor de Hipódromos del Día: el mismo panel de Tablas Fijas, alimentado
-   * con TODAS las carreras de la fecha (sin filtrar por hipódromo). Clic en una
-   * tarjeta filtra y mueve el selector del editor a ese hipódromo.
-   */
-  const [todas, setTodas] = useState<CarreraCentral[]>([]);
-
-  const refrescarMonitor = useCallback(async () => {
-    const r = await listarCarrerasCentrales(fecha, "");
-    if (r.ok) setTodas(r.datos ?? []);
-  }, [fecha]);
-
-  useEffect(() => {
-    void refrescarMonitor();
-  }, [fecha, refrescarMonitor]);
+  /** Vista del editor: sin hipódromo seleccionado, todas las de la fecha. */
+  const carreras = useMemo(
+    () => (hipodromo ? todas.filter((c) => c.hipodromo === hipodromo) : todas),
+    [todas, hipodromo]
+  );
 
   const gruposMonitor = useMemo(
     () =>
@@ -160,7 +157,10 @@ export function CarrerasDiaModule() {
 
   const guardar = async () => {
     const num = Number(modal.carrera) || 0;
-    if (!hipodromo || !num) return toast("Hipódromo y Nº de carrera requeridos.", "warning");
+    // El filtro arranca en "todos", pero para guardar hay que elegir uno.
+    if (!hipodromo)
+      return toast("Elija un hipódromo para registrar la carrera (arriba, en el filtro).", "warning");
+    if (!num) return toast("Nº de carrera requerido.", "warning");
     const ejemplares = modal.editar ? parsearEjemplares(modal.ejemplares) : [];
     // Registro rápido: si solo escribió un número en el campo ejemplares, se
     // interpreta como CANTIDAD de ejemplares (genera 1..n).
@@ -239,7 +239,7 @@ export function CarrerasDiaModule() {
             onChange={(e) => setHipodromo(e.target.value)}
             className="rounded-lg border border-cyan-400/60 bg-white px-2 py-1 text-xs font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
           >
-            <option value="">Hipódromo…</option>
+            <option value="">Todos los hipódromos</option>
             {hipodromos.map((h) => (
               <option key={h.value} value={h.value}>
                 {h.label}
