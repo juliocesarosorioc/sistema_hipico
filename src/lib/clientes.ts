@@ -40,7 +40,70 @@ export type ClienteRow = {
   portal_clave?: string | null;
   /** Jerarquía de cruces: override por cliente (default TRUE = permitido). */
   permite_cruces?: boolean | null;
+  /** Comisión propia del cliente; si es null/absente usa la del grupo. */
+  comision?: number | string | null;
+  comision_personalizada?: boolean | null;
 };
+
+/** Socio que puede asignarse a un cliente. */
+export type SocioRef = {
+  id: string | number;
+  nombre?: string | null;
+  seudonimo?: string | null;
+};
+
+/**
+ * Modos de juego. `cuadre` lo escribe la RPC `club_registrar_cliente_grupo`
+ * (paquete_pendientes.sql:1191) y el legacy; si no está en esta lista, esos
+ * clientes se muestran como "Aval" y guardar desde el modal les cambia el modo.
+ */
+export const MODO_JUEGO_OPCIONES = [
+  { value: "aval", label: "Con Aval" },
+  { value: "libre", label: "Libre" },
+  { value: "pozo", label: "Pozo" },
+  { value: "cuadre", label: "Cuadre" },
+] as const;
+
+/** Etiqueta legible de un modo de juego, con fallback al valor guardado. */
+export function etiquetaModoJuego(modo: string | null | undefined): string {
+  const v = String(modo ?? "").trim();
+  return MODO_JUEGO_OPCIONES.find((m) => m.value === v)?.label ?? (v || "Aval");
+}
+
+/**
+ * Valor canónico a guardar en `clientes.socio_asignado`: el ID del socio.
+ *
+ * Históricamente este campo guardaba el NOMBRE (modal de edición) o el
+ * PSEUDÓNIMO (alta), según el formulario. Ese descuadre hacía que el `<select>`
+ * no mostrara el valor ya guardado y que, al guardar, se persistiera `null`
+ * borrando la relación en silencio. Ahora se guarda siempre el id, y
+ * `resolverSocio` sigue aceptando los valores legacy para no perderlos.
+ */
+export function valorSocioAsignado(socio: SocioRef | null | undefined): string | null {
+  if (!socio) return null;
+  return String(socio.id);
+}
+
+/**
+ * Resuelve el valor guardado en `socio_asignado` al socio correspondiente.
+ * Acepta el id canónico y los valores legacy (nombre o seudónimo, con o sin
+ * tildes y sin distinguir mayúsculas) para que editar no desasigne al socio.
+ */
+export function resolverSocio(
+  valor: string | null | undefined,
+  socios: SocioRef[]
+): SocioRef | null {
+  const v = String(valor ?? "").trim();
+  if (!v) return null;
+  const igual = (a: string | null | undefined) =>
+    String(a ?? "").trim().toUpperCase() === v.toUpperCase();
+  return (
+    socios.find((s) => String(s.id) === v) ??
+    socios.find((s) => igual(s.nombre)) ??
+    socios.find((s) => igual(s.seudonimo)) ??
+    null
+  );
+}
 
 export type TicketApuesta = {
   id: string | number;
@@ -138,18 +201,30 @@ export function fmtFecha(fecha?: string | null): string {
 // ---------------------------------------------------------------------------
 
 let cacheClientes: ClienteRow[] | null = null;
+let ultimoErrorClientes: string | null = null;
+
+/** Último error al leer la cartera, para distinguir "vacío" de "sin permisos". */
+export function errorClientes(): string | null {
+  return ultimoErrorClientes;
+}
 
 export async function listarClientes(force = false): Promise<ClienteRow[]> {
   if (cacheClientes && !force) return cacheClientes;
   let lista: ClienteRow[] = [];
+  ultimoErrorClientes = null;
   if (supabase) {
     try {
       const { data, error } = await supabase.from("clientes").select("*").order("nombre");
       if (error) throw error;
       lista = (data ?? []) as ClienteRow[];
-    } catch {
+    } catch (e) {
+      // Antes se devolvía [] en silencio y la cartera aparentaba estar vacía
+      // cuando en realidad era un fallo de permisos o de red.
+      ultimoErrorClientes = e instanceof Error ? e.message : String(e);
       lista = [];
     }
+  } else {
+    ultimoErrorClientes = "Sin conexión a Supabase";
   }
   cacheClientes = lista;
   return lista;
@@ -222,7 +297,11 @@ export async function convertirSocio(nombre: string): Promise<{ ok: boolean; err
       const { error } = await supabase.from("clientes").update({ es_socio: true }).eq("id", ya.id);
       if (error) return { ok: false, error: error.message };
     } else {
-      const { error } = await supabase.from("clientes").insert([{ nombre, es_socio: true }]);
+      // Sin seudónimo el socio quedaba con "—" y no aparecía en la venta de
+      // tablas, que identifica al jugador por seudónimo.
+      const { error } = await supabase
+        .from("clientes")
+        .insert([{ nombre, seudonimo: nombre, es_socio: true, modo_juego: "aval" }]);
       if (error) return { ok: false, error: error.message };
     }
     limpiarCacheClientes();

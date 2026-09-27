@@ -191,16 +191,24 @@ export async function aplicarLiquidacionSaldos(
       ? (async () => {
           const fid = fila.cliente_juega_id;
           if (fid == null) return;
-          const { data: c } = await sdb
+          const { data: c, error: eSel } = await sdb
             .from("clientes")
             .select("saldo_actual")
             .eq("id", fid)
             .maybeSingle();
+          if (eSel) {
+            // Sin lectura no se puede acumular sobre el saldo real: abortar solo el
+            // abono. Antes el error se ignoraba, `actual` caía en 0 y el UPDATE
+            // sobrescribía el saldo del cliente con el premio del ticket.
+            errores.push(`Saldo cliente ${String(fid)}: no se pudo leer (${eSel.message})`);
+            return;
+          }
           const actual = NUM(((c ?? {}) as Record<string, unknown>).saldo_actual);
-          await sdb
+          const { error: eUpd } = await sdb
             .from("clientes")
             .update({ saldo_actual: actual + res.totalClienteNeto })
             .eq("id", fid as never);
+          if (eUpd) errores.push(`Saldo cliente ${String(fid)}: no se pudo acreditar (${eUpd.message})`);
         })()
       : Promise.resolve();
 

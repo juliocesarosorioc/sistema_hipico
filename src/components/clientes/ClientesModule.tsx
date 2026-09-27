@@ -14,7 +14,10 @@ import {
   convertirSocio,
   crearCliente,
   eliminarCliente,
+  errorClientes,
+  etiquetaModoJuego,
   listarClientes,
+  MODO_JUEGO_OPCIONES,
   type ClienteRow,
 } from "@/lib/clientes";
 import {
@@ -39,11 +42,7 @@ const num = (v: number | string | null | undefined): number => {
 const afiliadosDe = (c: ClienteRow, lista: ClienteRow[]): number =>
   lista.filter((s) => String(s.socio_asignado || "").toUpperCase() === String(c.nombre || c.seudonimo || "").toUpperCase()).length;
 
-const modoOpts = [
-  { value: "aval", label: "Con Aval" },
-  { value: "libre", label: "Libre" },
-  { value: "pozo", label: "Pozo" },
-];
+const modoOpts = MODO_JUEGO_OPCIONES;
 
 const DIAS = ["LUNES", "MARTES", "MIÉRCOLES", "JUEVES", "VIERNES", "SÁBADO", "DOMINGO"];
 
@@ -60,6 +59,7 @@ export function ClientesModule() {
   const [tab, setTab] = useState<Tab>("cartera");
   const [clientes, setClientes] = useState<ClienteRow[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
 
   const [filtro, setFiltro] = useState("");
   const [soloSocios, setSoloSocios] = useState(false);
@@ -83,6 +83,7 @@ export function ClientesModule() {
     setCargando(true);
     const cs = await listarClientes(true);
     setClientes(cs);
+    setErrorCarga(errorClientes());
     setCargando(false);
   };
 
@@ -285,7 +286,7 @@ export function ClientesModule() {
                       {c.cedula_rif ? <div className="text-[10px] text-slate-500">{c.cedula_rif}</div> : null}
                     </td>
                     <td className={td + " text-center"}>
-                      <span className="font-bold text-slate-700">{c.modo_juego === "libre" ? "Libre" : c.modo_juego === "pozo" ? "Pozo" : "Aval"}</span>
+                      <span className="font-bold text-slate-700">{etiquetaModoJuego(c.modo_juego)}</span>
                     </td>
                     <td className={td + " text-right"}>
                       <span className={`font-mono font-black ${
@@ -369,8 +370,20 @@ export function ClientesModule() {
                 {paginado.length === 0 ? (
                   <tr>
                     <td colSpan={12} className="px-3 py-10 text-center text-slate-400">
-                      {cargando ? <i className="fas fa-spinner fa-spin mr-2"></i> : <i className="fas fa-inbox mr-2"></i>}
-                      {cargando ? "Cargando cartera…" : "Sin clientes que coincidan."}
+                      {cargando ? (
+                        <>
+                          <i className="fas fa-spinner fa-spin mr-2"></i>Cargando cartera…
+                        </>
+                      ) : errorCarga ? (
+                        <span className="text-danger-600">
+                          <i className="fas fa-triangle-exclamation mr-2"></i>
+                          No se pudo leer la cartera: {errorCarga}
+                        </span>
+                      ) : (
+                        <>
+                          <i className="fas fa-inbox mr-2"></i>Sin clientes que coincidan.
+                        </>
+                      )}
                     </td>
                   </tr>
                 ) : null}
@@ -511,6 +524,9 @@ function ModalNuevoCliente({
   const [telefono, setTelefono] = useState("");
   const [email, setEmail] = useState("");
   const [cedulaRif, setCedulaRif] = useState("");
+  const [direccion, setDireccion] = useState("");
+  const [comision, setComision] = useState("");
+  const [permiteCruces, setPermiteCruces] = useState(true);
   const [modo, setModo] = useState("aval");
   const [aval, setAval] = useState("");
   const [devolucion, setDevolucion] = useState("");
@@ -547,6 +563,9 @@ function ModalNuevoCliente({
       codigo_pais: codigoPais,
       email: email.trim() || null,
       cedula_rif: cedulaRif.trim().toUpperCase() || null,
+      direccion: direccion.trim() || null,
+      comision: num(comision) || null,
+      permite_cruces: permiteCruces,
       devolucion: num(devolucion),
       socio_asignado: socioAsignado || null,
       metodo_pago: metodo || null,
@@ -624,6 +643,10 @@ function ModalNuevoCliente({
                 <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Cédula / RIF</label>
                 <input value={cedulaRif} onChange={(e) => setCedulaRif(e.target.value.toUpperCase())} className={inpTxt + " font-mono uppercase"} placeholder="V-12.345.678" />
               </div>
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Dirección</label>
+                <input value={direccion} onChange={(e) => setDireccion(e.target.value)} className={inpTxt + " uppercase"} placeholder="Calle, número, ciudad" />
+              </div>
             </div>
 
             <div className="mb-2 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-line pb-1">
@@ -653,11 +676,21 @@ function ModalNuevoCliente({
                 <select value={socioAsignado} onChange={(e) => setSocioAsignado(e.target.value)} className={inpTxt + " font-bold"}>
                   <option value="">— Ninguno (Directo) —</option>
                   {socios.map((s) => (
-                    <option key={String(s.id)} value={String(s.seudonimo || s.nombre || "")}>
+                    <option key={String(s.id)} value={String(s.id)}>
                       {s.seudonimo || s.nombre}
                     </option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Comisión propia %</label>
+                <input value={comision} onChange={(e) => setComision(e.target.value)} className={inpTxt + " font-mono font-bold text-right text-emerald-700"} inputMode="decimal" placeholder="usa la del grupo" />
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 pb-1">
+                  <input type="checkbox" checked={permiteCruces} onChange={(e) => setPermiteCruces(e.target.checked)} className="h-4 w-4 accent-primary-600" />
+                  <span className="text-[10px] font-black uppercase text-slate-600">Permite cruces</span>
+                </label>
               </div>
               <div className="flex items-end">
                 <label className="flex items-center gap-2 pb-1">

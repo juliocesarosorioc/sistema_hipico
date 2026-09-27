@@ -192,6 +192,23 @@ async function reembolsarTickets(
       if (!tickets || !tickets.length) continue;
       for (const tk of tickets as Array<{ id: string; cliente_juega_id: string | null; monto_jugado: unknown }>) {
         const monto = num(tk.monto_jugado);
+        // El abono va ANTES de marcar el ticket: si se marcara primero y el
+        // crédito fallara, el ticket quedaría como reembolsado y el reintento lo
+        // saltaría, perdiendo el dinero del cliente.
+        if (monto > 0 && tk.cliente_juega_id) {
+          const { data: cl, error: eSel } = await supabase
+            .from("clientes")
+            .select("saldo_actual")
+            .eq("id", tk.cliente_juega_id)
+            .maybeSingle();
+          if (eSel) throw new Error(`saldo del cliente ${tk.cliente_juega_id}: ${eSel.message}`);
+          if (!cl) throw new Error(`cliente ${tk.cliente_juega_id} no encontrado`);
+          const { error: eUpd } = await supabase
+            .from("clientes")
+            .update({ saldo_actual: num(cl.saldo_actual) + monto })
+            .eq("id", tk.cliente_juega_id);
+          if (eUpd) throw new Error(`abono al cliente ${tk.cliente_juega_id}: ${eUpd.message}`);
+        }
         const { error } = await supabase
           .from("tickets_apuestas")
           .update({
@@ -202,19 +219,6 @@ async function reembolsarTickets(
           })
           .eq("id", tk.id);
         if (error) throw error;
-        if (monto > 0 && tk.cliente_juega_id) {
-          const { data: cl } = await supabase
-            .from("clientes")
-            .select("saldo_actual")
-            .eq("id", tk.cliente_juega_id)
-            .maybeSingle();
-          if (cl) {
-            await supabase
-              .from("clientes")
-              .update({ saldo_actual: num(cl.saldo_actual) + monto })
-              .eq("id", tk.cliente_juega_id);
-          }
-        }
         reembolsados += 1;
       }
     } catch (e) {

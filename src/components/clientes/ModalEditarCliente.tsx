@@ -7,6 +7,9 @@ import { DatosPagoForm } from "@/components/clientes/DatosPagoForm";
 import {
   actualizarCliente,
   listarClientes,
+  resolverSocio,
+  valorSocioAsignado,
+  MODO_JUEGO_OPCIONES,
   type ClienteRow,
 } from "@/lib/clientes";
 import {
@@ -25,11 +28,7 @@ const numValido = (v: string): number => {
   return Number.isNaN(n) ? 0 : n;
 };
 
-const modoOpts = [
-  { value: "aval", label: "Con Aval" },
-  { value: "libre", label: "Libre" },
-  { value: "pozo", label: "Pozo" },
-];
+const modoOpts = MODO_JUEGO_OPCIONES;
 
 type Props = {
   cliente: ClienteRow | null;
@@ -51,6 +50,9 @@ export function ModalEditarCliente({ cliente, onClose, onGuardado }: Props) {
   const [telefono, setTelefono] = useState("");
   const [email, setEmail] = useState("");
   const [cedulaRif, setCedulaRif] = useState("");
+  const [direccion, setDireccion] = useState("");
+  const [comision, setComision] = useState("");
+  const [esSocio, setEsSocio] = useState(false);
   const [aval, setAval] = useState("");
   const [devolucion, setDevolucion] = useState("");
   const [modo, setModo] = useState("aval");
@@ -73,11 +75,21 @@ export function ModalEditarCliente({ cliente, onClose, onGuardado }: Props) {
     const tel = desglosarTelefono(cliente.telefono);
     setSeudonimo(cliente.seudonimo || cliente.nombre || "");
     const apellidoC = cliente.apellido || "";
+    // Se separa el apellido del nombre completo tolerando tildes, mayúsculas y
+    // espacios extra. Antes, si la comparación fallaba se vaciaba `nombres` y al
+    // guardar se sobrescribía `nombre` con el apellido, perdiendo el nombre real.
     let nombresC = cliente.nombre || "";
-    if (apellidoC && String(nombresC).toUpperCase().endsWith(String(apellidoC).toUpperCase())) {
-      nombresC = String(nombresC).slice(0, String(nombresC).length - apellidoC.length).trim();
-    } else if (apellidoC) {
-      nombresC = "";
+    if (apellidoC) {
+      const sinTilde = (s: string) =>
+        s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
+      const nombreNorm = sinTilde(nombresC);
+      const apellidoNorm = sinTilde(apellidoC);
+      if (nombreNorm.endsWith(" " + apellidoNorm) || nombreNorm === apellidoNorm) {
+        nombresC = nombresC.slice(0, nombresC.length - apellidoC.length).trim();
+      } else {
+        // No coincide: se conserva el nombre completo para no perderlo al guardar.
+        nombresC = nombresC.trim();
+      }
     }
     setNombres(nombresC);
     setApellido(apellidoC);
@@ -85,6 +97,9 @@ export function ModalEditarCliente({ cliente, onClose, onGuardado }: Props) {
     setTelefono(tel.numero);
     setEmail(cliente.email || "");
     setCedulaRif(cliente.cedula_rif || "");
+    setDireccion(cliente.direccion || "");
+    setComision(cliente.comision != null ? String(cliente.comision) : "");
+    setEsSocio(cliente.es_socio === true);
     setAval(cliente.aval != null ? String(cliente.aval) : "");
     setDevolucion(cliente.devolucion != null ? String(cliente.devolucion) : "");
     setModo(cliente.modo_juego || (cliente.libre ? "libre" : "aval"));
@@ -97,6 +112,15 @@ export function ModalEditarCliente({ cliente, onClose, onGuardado }: Props) {
     setTasaCuadre(cliente.tasa_cuadre != null ? String(cliente.tasa_cuadre) : "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cliente?.id]);
+
+  // `socio_asignado` puede venir como id (canónico) o como nombre/pseudónimo
+  // (legacy). Se resuelve aparte porque `socios` llega después del cliente: si se
+  // resolviera en el efecto anterior, la lista vacía devolvería null y el select
+  // quedaría en "Ninguno", borrando la relación al guardar.
+  useEffect(() => {
+    if (!cliente) return;
+    setSocio(valorSocioAsignado(resolverSocio(cliente.socio_asignado, socios)) ?? "");
+  }, [cliente?.id, socios]);
 
   if (!cliente) return null;
 
@@ -115,6 +139,9 @@ export function ModalEditarCliente({ cliente, onClose, onGuardado }: Props) {
         codigo_pais: codigoPais,
         email: email.trim() || null,
         cedula_rif: cedulaRif.trim().toUpperCase() || null,
+        direccion: direccion.trim() || null,
+        comision: numValido(comision),
+        es_socio: esSocio,
         aval: numValido(aval),
         devolucion: numValido(devolucion),
         socio_asignado: socio || null,
@@ -191,6 +218,10 @@ export function ModalEditarCliente({ cliente, onClose, onGuardado }: Props) {
               <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Cédula / RIF</label>
               <input value={cedulaRif} onChange={(e) => setCedulaRif(e.target.value.toUpperCase())} className={inpTxt + " font-mono uppercase"} placeholder="V-12.345.678" />
             </div>
+            <div className="md:col-span-2">
+              <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Dirección</label>
+              <input value={direccion} onChange={(e) => setDireccion(e.target.value)} className={inpTxt + " uppercase"} placeholder="Calle, número, ciudad" />
+            </div>
             <div>
               <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Modo de juego</label>
               <select value={modo} onChange={(e) => setModo(e.target.value)} className={inpTxt + " font-bold"}>
@@ -206,8 +237,8 @@ export function ModalEditarCliente({ cliente, onClose, onGuardado }: Props) {
               <select value={socio} onChange={(e) => setSocio(e.target.value)} className={inpTxt + " font-bold"}>
                 <option value="">— Ninguno (Directo) —</option>
                 {socios.map((s) => (
-                  <option key={String(s.id)} value={s.nombre ?? ""}>
-                    {s.nombre}
+                  <option key={String(s.id)} value={String(s.id)}>
+                    {s.seudonimo || s.nombre}
                   </option>
                 ))}
               </select>
@@ -219,6 +250,16 @@ export function ModalEditarCliente({ cliente, onClose, onGuardado }: Props) {
             <div>
               <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Devolución / Incentivo %</label>
               <input value={devolucion} onChange={(e) => setDevolucion(e.target.value)} className={inpTxt + " font-mono font-bold text-right text-purple-700"} inputMode="decimal" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Comisión propia %</label>
+              <input value={comision} onChange={(e) => setComision(e.target.value)} className={inpTxt + " font-mono font-bold text-right text-emerald-700"} inputMode="decimal" placeholder="usa la del grupo" />
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 pb-1">
+                <input type="checkbox" checked={esSocio} onChange={(e) => setEsSocio(e.target.checked)} className="h-4 w-4 accent-amber-500" />
+                <span className="text-[10px] font-black uppercase text-amber-600">Es socio</span>
+              </label>
             </div>
             <div>
               <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Día de cuadre</label>
