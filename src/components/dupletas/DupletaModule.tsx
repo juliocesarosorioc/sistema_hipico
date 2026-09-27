@@ -9,7 +9,7 @@ import { useCarrerasCentrales } from "@/lib/carreras/useCarrerasCentrales";
 import { alternarRetiroCarrera } from "@/lib/carreras/retiros";
 import { listarClientesVenta, type ClienteVenta } from "@/lib/grupos";
 import { colorDeNumeroGac } from "@/lib/gaceta/ui";
-import { Flag, normalizarNacionalidad, NOMBRES_PAIS_BANDERA } from "@/components/ui/BanderaPais";
+import { Flag, normalizarNacionalidad } from "@/components/ui/BanderaPais";
 import { claveCelda, guardarDupleta, listarDupletasGuardadas, type CaballoDupleta, type DupletaEstado } from "@/lib/dupletas";
 import { exportarPaginas, type ImgFormato } from "@/lib/impresion/exportar";
 
@@ -23,8 +23,30 @@ const casaDe = (h: string) => (esHipoAmericano(h) ? "USA" : "VE");
 /** True si el ejemplar es de otra nacionalidad que el hipódromo (mostrar bandera). */
 const banderaNoCasa = (nac?: string | null, hipo = "") => normalizarNacionalidad(nac) !== casaDe(hipo);
 
-/** Nombre del país (paridad con el padrón). */
-const paisDe = (nac?: string | null) => NOMBRES_PAIS_BANDERA[normalizarNacionalidad(nac)] ?? "…";
+/** Sigla abreviada del país entre paréntesis: (VE), (USA), (OTRA). */
+const siglaDe = (nac?: string | null) => normalizarNacionalidad(nac);
+
+/** Tamaño base de la bandera en la matriz, antes del recargo (px). */
+const TAM_BANDERA_BASE = 12;
+
+/** La bandera se muestra un 30% más grande que el tamaño base. */
+const TAM_BANDERA = Math.round(TAM_BANDERA_BASE * 1.3);
+
+/**
+ * La dupleta paga 30% más que el premio cargado. Regla de negocio pedida por
+ * el operador: se aplica al generar la matriz, no al campo de entrada, para que
+ * el PAGA que se muestra y el que se liquida sean siempre el mismo número.
+ */
+const RECARGO_DUPLA = 1.3;
+
+/** Aplica el recargo y redondea a 2 decimales. */
+const premioConRecargo = (p: number) => Math.round(Number(p || 0) * RECARGO_DUPLA * 100) / 100;
+
+/**
+ * Fondo de la celda de la primera columna por posición: 1 blanco, 2 azul
+ * clarito, 3 blanco, 4 azul clarito... y así hasta el último ejemplar.
+ */
+const FONDO_FILA_DUPLA = ["bg-white", "bg-indigo-50"] as const;
 
 export function DupletaModule() {
   const [carreras, setCarreras] = useState<TablaFijaRow[]>([]);
@@ -54,7 +76,10 @@ export function DupletaModule() {
       const txt = ctx.measureText(String(c.nombre || "").trim()).width * 1.12;
       w = Math.max(w, Math.ceil(txt / 2) + 14);
       if (banderaNoCasa(c.nacionalidad, matriz.hipodromo)) {
-        w = Math.max(w, Math.ceil(ctx.measureText(paisDe(c.nacionalidad)).width + 26));
+        // Debajo del ejemplar va "(SIGLA)" y la bandera al lado.
+        ctx.font = "700 11px Inter, ui-sans-serif, system-ui, sans-serif";
+        w = Math.max(w, Math.ceil(ctx.measureText(`(${siglaDe(c.nacionalidad)})`).width + TAM_BANDERA + 14));
+        ctx.font = "900 17px Inter, ui-sans-serif, system-ui, sans-serif";
       }
     }
     return w;
@@ -73,9 +98,9 @@ export function DupletaModule() {
       // Número (24) + hueco + nombre
       let w = 24 + 6 + ctx.measureText(String(c.nombre || "").trim()).width * 1.04;
       if (banderaNoCasa(c.nacionalidad, matriz.hipodromo)) {
-        // + hueco + bandera (12) + hueco + país (va en 11px)
-        ctx.font = "700 11px Inter, ui-sans-serif, system-ui, sans-serif";
-        w += 8 + 12 + 4 + ctx.measureText(paisDe(c.nacionalidad)).width;
+        // En una línea, solo la bandera al final (la abreviatura quedó solo en
+        // la primera fila): hueco + bandera.
+        w += 6 + TAM_BANDERA;
         ctx.font = "900 17px Inter, ui-sans-serif, system-ui, sans-serif";
       }
       max = Math.max(max, w);
@@ -231,7 +256,7 @@ export function DupletaModule() {
     const cab1 = ejemplaresDe(carrera1);
     const cab2 = ejemplaresDe(carrera2);
     if (!cab1.length || !cab2.length) return toast("Una de las carreras no tiene ejemplares publicados.", "warning");
-    const p = Number(premio) || 0;
+    const p = premioConRecargo(Number(premio) || 0);
     const pr = Number(precio) || 0;
     setMatriz({
       hipodromo: hipodromo.toUpperCase(),
@@ -284,7 +309,7 @@ export function DupletaModule() {
       fecha: dia,
       carrera1: Number(carrera1) || carrera1,
       carrera2: Number(carrera2) || carrera2,
-      premio: Number(premio) || 0,
+      premio: premioConRecargo(Number(premio) || 0),
       precio: Number(precio) || 0,
       caballos1: cab1,
       caballos2: cab2,
@@ -531,9 +556,9 @@ export function DupletaModule() {
                             {cb.nombre}
                           </span>
                           {banderaNoCasa(cb.nacionalidad, matriz.hipodromo) && (
-                            <span className="mt-0.5 block whitespace-nowrap text-[11px] font-bold text-indigo-100">
-                              <Flag nac={cb.nacionalidad} size={12} withName={false} className="mr-1" />
-                              {paisDe(cb.nacionalidad)}
+                            <span className="mt-0.5 flex items-center justify-center gap-1 whitespace-nowrap text-[11px] font-bold leading-none text-indigo-100">
+                              <span>({siglaDe(cb.nacionalidad)})</span>
+                              <Flag nac={cb.nacionalidad} size={TAM_BANDERA} withName={false} />
                             </span>
                           )}
                         </button>
@@ -547,7 +572,10 @@ export function DupletaModule() {
                   const izq = colorDeNumeroGac(cb2.numero);
                   return (
                     <tr key={`f-${cb2.numero}`}>
-                      <th className={`sticky left-0 z-20 border-b border-r border-slate-300 p-0.5 align-middle text-left ${i2 % 2 ? "bg-indigo-100" : "bg-indigo-50"}`} style={{ width: anchoIzq, maxWidth: anchoIzq, verticalAlign: "middle" }}>
+                      <th
+                        className={`sticky left-0 z-20 border-b border-r border-slate-300 p-0.5 align-middle text-left ${FONDO_FILA_DUPLA[i2 % FONDO_FILA_DUPLA.length]}`}
+                        style={{ width: anchoIzq, maxWidth: anchoIzq, verticalAlign: "middle" }}
+                      >
                         <button
                           type="button"
                           onClick={() => toggleRetirado(2, cb2.numero)}
@@ -564,10 +592,7 @@ export function DupletaModule() {
                             {cb2.nombre}
                           </span>
                           {banderaNoCasa(cb2.nacionalidad, matriz.hipodromo) && (
-                            <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-bold leading-none text-slate-500">
-                              <Flag nac={cb2.nacionalidad} size={12} withName={false} />
-                              {paisDe(cb2.nacionalidad)}
-                            </span>
+                            <Flag nac={cb2.nacionalidad} size={TAM_BANDERA} withName={false} />
                           )}
                         </button>
                       </th>
