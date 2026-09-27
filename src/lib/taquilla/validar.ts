@@ -1,6 +1,13 @@
 import { liquidarPuestos } from "@/lib/motores/puestos";
 import type { TicketMotor, ResultadoMotor } from "@/lib/bettingEngine";
 import { parsearNini, liquidarNini } from "@/lib/bettingEngine";
+import {
+  calcularReparto,
+  extraerProporcion,
+  buscarExpresionEjemplares,
+  type ClienteRiesgo,
+  type Reparto,
+} from "@/lib/taquilla/reparto";
 
 export type Proyeccion = {
   monto: number;
@@ -44,6 +51,8 @@ export function detectarModalidad(texto: string): ModalidadAuto | null {
   if (!jugada) return null;
 
   if (/^PP$/i.test(jugada) || /^\d+\/(?:\d+(?:\.\d+)?|PP)$/i.test(jugada)) return "CRUCES";
+  // "10a8" / "10A7": A Premio con la 'a' de la casa. Misma categoría que "10/8".
+  if (extraerProporcion(jugada) && !/^PP$/i.test(jugada)) return "CRUCES";
   // "2x3" / "1x4" / "2x3 10/8" = PAREO caballo contra caballo (emparejamiento),
   // nunca un cruce financiero de un cliente contra su propia jugada.
   if (/^\d+\s*X\s*\d+(?:\s+\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?)?$/i.test(jugada)) return "EMPAREJAMIENTOS";
@@ -182,14 +191,35 @@ export type FilaProyeccion =
       ok: true;
       tipo: string;
       modalidad: ModalidadAuto | null;
+      /** Monto EFECTIVO que se autoriza (ya recortado por el saldo disponible). */
       monto: number;
+      /** Monto tal como lo escribió el operador, antes del recorte. */
+      montoPedido: number;
       cliente1: CobroCliente | null;
       cliente2: CobroCliente | null;
       cobroTotal: number;
+      /** Reparto de riesgo por cliente (null si la fila no trae clientes). */
+      reparto: Reparto | null;
     }
   | { ok: false; motivo: string };
 
 const PAREO_RE = /^(\d+)\s*X\s*(\d+)(?:\s+(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?))?$/i;
+
+/**
+ * Normaliza la nomenclatura para que la entienda lib/motores/puestos.ts.
+ * El motor solo reconoce la proporción con barra ("10/8"); la casa también
+ * escribe "10a8" / "10A8". Además "10a8 1p" equivale a "10/8" porque el motor
+ * de A Premio ya exige el 1º lugar en solitario.
+ */
+function normalizarJugadaParaMotor(jugada: string): string {
+  const t = String(jugada ?? "").trim();
+  const prop = extraerProporcion(t);
+  if (!prop) return t;
+  const conBarra = prop.base ? `${prop.base} ${prop.p}/${prop.q}` : `${prop.p}/${prop.q}`;
+  // "1p 10/8" no lo resuelve ningún motor: el A Premio manda (ya pide 1º).
+  if (prop.base && /^1p$/i.test(prop.base)) return `${prop.p}/${prop.q}`;
+  return conBarra;
+}
 
 /**
  * Proyección por fila de la Carga Individual (Taquilla): la JUGADA recibe solo
@@ -207,14 +237,30 @@ export function proyectarFila(opts: {
   caballo?: string;
   monto: string;
   tasaComision?: number | null;
+  cliente1?: ClienteRiesgo | null;
+  cliente2?: ClienteRiesgo | null;
 }): FilaProyeccion {
   const jugada = String(opts.jugada ?? "").trim().toUpperCase();
-  const monto = parseFloat(String(opts.monto ?? "").replace(",", "."));
+  const montoPedido = parseFloat(String(opts.monto ?? "").replace(",", "."));
   if (!jugada) return { ok: false, motivo: "Ingresá la nomenclatura de la jugada (ej. 2x3 10/8, 2n, 1p)." };
-  if (!isFinite(monto) || monto <= 0) return { ok: false, motivo: "Ingresá el monto numérico de la jugada." };
+  if (!isFinite(montoPedido) || montoPedido <= 0) return { ok: false, motivo: "Ingresá el monto numérico de la jugada." };
 
   const modalidad = detectarModalidad(jugada);
   const pareo = PAREO_RE.exec(jugada);
+
+  /* ── Reparto de riesgo: el monto se TOPA por el saldo disponible ──
+     Se calcula siempre (aunque no haya clientes) para que la fila muestre
+     siempre el monto que realmente se autoriza. */
+  const reparto = calcularReparto({
+    jugada,
+    ejemplares: opts.caballo ?? "",
+    monto: montoPedido,
+    cliente1: opts.cliente1 ?? null,
+    cliente2: opts.cliente2 ?? null,
+  });
+  // El monto efectivo es el autorizado: es lo que queda en riesgo de verdad.
+  const monto = reparto.montoAutorizado > 0 ? reparto.montoAutorizado : montoPedido;
+  const nom = normalizarJugadaParaMotor(jugada);
 
   if (pareo) {
     const A = pareo[1];
@@ -236,13 +282,15 @@ export function proyectarFila(opts: {
       tipo: jugada,
       modalidad,
       monto,
+      montoPedido,
       cliente1: c1,
       cliente2: c2,
       cobroTotal: round2(c1.cobroNeto + c2.cobroNeto),
+      reparto,
     };
   }
 
-  const v = validarComando(`${monto} ${jugada}`, opts.tasaComision, opts.caballo);
+  const v = validarComando(`${monto} ${nom}`, opts.tasaComision, opts.caballo);
   if (!v.ok) return { ok: false, motivo: v.motivo };
   const bruto = v.simulada.totalClienteNeto + v.simulada.gananciaCasa;
   const caballo =
@@ -260,9 +308,11 @@ export function proyectarFila(opts: {
     tipo: v.tipo,
     modalidad,
     monto,
+    montoPedido,
     cliente1: c1,
     cliente2: null,
     cobroTotal: v.proyeccion.totalClienteNeto,
+    reparto,
   };
 }
 
@@ -350,6 +400,11 @@ function esJugadaLetra(tok: string): boolean {
   return RE_JUGADA_LETRA.test(tok);
 }
 
+/* Expresión de ejemplares DIVIDIDA entre los dos clientes, tal como la acepta
+   lib/taquilla/reparto.ts:  "1-2x3-4" · "1,2 x 3,4" · "12 13 x 14 15" ·
+   "12-13x14-15" · "1,2 por 3-4" · "1-2*3-4". La gramática vive en reparto.ts
+   para que Carga Rápida y la tabla usen exactamente la misma. */
+
 /**
  * Clasifica la línea en las 5 columnas de la taquilla. Devuelve null para
  * líneas en blanco / comentarios, { ok:false } para ilegibles.
@@ -358,7 +413,16 @@ export function parsearLineaRapida(linea: string): LineaRapida | null {
   const t = String(linea ?? "").trim();
   if (!t || t.startsWith("#")) return null;
 
-  const crudos = t.split(/[ \t]+/);
+  /* 0) Se aparta la expresión de ejemplares dividida ANTES de tokenizar: si no,
+     "12 13 x 14 15" se desarmaría en números sueltos y el 15 se tomaría como
+     monto. La expresión se guarda tal cual para la columna CABALLO. */
+  const mEj = buscarExpresionEjemplares(t);
+  const caballoDividido = mEj ? mEj.texto : "";
+  const cuerpo = mEj
+    ? (t.slice(0, mEj.inicio) + " " + t.slice(mEj.inicio + mEj.largo)).replace(/\s+/g, " ").trim()
+    : t;
+
+  const crudos = cuerpo.split(/[ \t]+/);
   if (crudos.length === 0) return null;
 
   // 1) Limpieza + 2) stop-words. Se conserva el flag de "(n)" para el caballo.
@@ -374,7 +438,7 @@ export function parsearLineaRapida(linea: string): LineaRapida | null {
 
   const usados = new Set<number>();
   let jugada = "";
-  let caballo = "";
+  let caballo = caballoDividido;
   let monto = "";
 
   const marcarJugada = (rango: [number, number]) => {
@@ -423,19 +487,22 @@ export function parsearLineaRapida(linea: string): LineaRapida | null {
   usados.add(montoSel.i);
 
   // 5) CABALLO — el que iba entre paréntesis, un número pequeño restante,
-  //    o un pareo NxM restante.
-  const paren = tokens.findIndex((k, i) => k.enParentesis && !usados.has(i) && RE_NUMERICO.test(k.limpio));
-  let cabIdx = -1;
-  if (paren !== -1) cabIdx = paren;
-  else {
-    cabIdx = (numericos.find((x) => !usados.has(x.i) && /^\d+$/.test(x.k.limpio) && x.n < 20) ?? numericos.find((x) => !usados.has(x.i)))?.i ?? -1;
-  }
-  if (cabIdx === -1) {
-    cabIdx = tokens.findIndex((k, i) => !usados.has(i) && RE_PAREO.test(k.limpio));
-  }
-  if (cabIdx !== -1) {
-    caballo = tokens[cabIdx].limpio;
-    usados.add(cabIdx);
+  //    o un pareo NxM restante. Si ya se apartó una expresión dividida
+  //    ("1,2x3") se respeta esa y no se pisa con un número suelto.
+  if (!caballoDividido) {
+    const paren = tokens.findIndex((k, i) => k.enParentesis && !usados.has(i) && RE_NUMERICO.test(k.limpio));
+    let cabIdx = -1;
+    if (paren !== -1) cabIdx = paren;
+    else {
+      cabIdx = (numericos.find((x) => !usados.has(x.i) && /^\d+$/.test(x.k.limpio) && x.n < 20) ?? numericos.find((x) => !usados.has(x.i)))?.i ?? -1;
+    }
+    if (cabIdx === -1) {
+      cabIdx = tokens.findIndex((k, i) => !usados.has(i) && RE_PAREO.test(k.limpio));
+    }
+    if (cabIdx !== -1) {
+      caballo = tokens[cabIdx].limpio;
+      usados.add(cabIdx);
+    }
   }
 
   // 6) CLIENTES — lo sobrante: 1° → CLIENTE 1, el resto → CLIENTE 2.

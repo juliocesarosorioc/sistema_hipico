@@ -19,6 +19,27 @@ import { listarCarrerasCentrales, type CarreraCentral } from "@/lib/carreras/cen
 import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados } from "@/lib/carreras/retiros";
 import { useCarrerasCentrales } from "@/lib/carreras/useCarrerasCentrales";
 import { hoyLocal } from "@/lib/gaceta/programa";
+import type { Reparto } from "@/lib/taquilla/reparto";
+
+/** Resumen compacto del reparto para la celda de ejemplares (una línea, 9px). */
+function resumenReparto(rep: Reparto | null, moneda: string): { txt: string; clase: string } | null {
+  if (!rep || rep.montoAutorizado <= 0) return null;
+  const m = (n: number) => fmtMoney(Number.isFinite(n) ? n : 0, moneda);
+  const n1 = rep.lado1.caballos.length;
+  if (rep.estructura === "A_PREMIO" && rep.proporcion) {
+    const { p, q } = rep.proporcion;
+    return {
+      txt: `${p}:${q} · ${m(rep.lado1.riesgo)}/${m(rep.lado2.riesgo)}`,
+      clase: "text-indigo-600",
+    };
+  }
+  const unidad = n1 > 1 ? ` ${m(rep.lado1.porCaballo)} c/u` : "";
+  const etiqueta = rep.estructura === "DADOR" ? "DADOR" : "PP";
+  return {
+    txt: `${etiqueta}${unidad}`,
+    clase: rep.estructura === "DADOR" ? "text-purple-600" : "text-sky-600",
+  };
+}
 
 type FilaCarga = {
   jugada: string;
@@ -228,8 +249,19 @@ export function GestionJugadasModule() {
     return Number.isFinite(n) && n >= 0 ? n : 5;
   }, [comision]);
 
-  const valida = (f: FilaCarga) =>
-    proyectarFila({ jugada: f.jugada, caballo: f.caballo.trim(), monto: f.monto, tasaComision: comisionNum });
+  /** Proyecta la fila. Si los clientes no están en el registro todavía, se
+      calculan por prefijo para poder topar el monto igual (mismo criterio que
+      `saldoCliente`, que corre un turno más tarde en el render). */
+  const valida = (f: FilaCarga) => {
+    return proyectarFila({
+      jugada: f.jugada,
+      caballo: f.caballo.trim(),
+      monto: f.monto,
+      tasaComision: comisionNum,
+      cliente1: saldoCliente(f.cliente1),
+      cliente2: saldoCliente(f.cliente2),
+    });
+  };
 
   const tablaDeCarrera = useMemo(
     () =>
@@ -457,6 +489,7 @@ export function GestionJugadasModule() {
     let n = 0;
     const errores: string[] = [];
     const indicesError: number[] = [];
+    const recortes: string[] = [];
     for (const f of filas) {
       if (!f.jugada.trim() && !f.monto.trim()) continue;
       const v = valida(f);
@@ -464,6 +497,13 @@ export function GestionJugadasModule() {
         errores.push(`Fila ${filas.indexOf(f) + 1}: ${v.motivo}`);
         indicesError.push(filas.indexOf(f));
         continue;
+      }
+      /* El monto que se registra es el AUTORIZADO (topado por el saldo del
+         cliente con menos disponible), no el tipeado. Si se recortó, se avisa. */
+      if (v.reparto?.recortado) {
+        recortes.push(
+          `Fila ${filas.indexOf(f) + 1}: ${v.reparto.avisos[0] ?? `Se autoriza ${v.monto} de ${v.montoPedido}.`}`
+        );
       }
       const mejorCobre = Math.max(v.cliente1?.cobroNeto ?? 0, v.cliente2?.cobroNeto ?? 0);
       const comisionMejor =
@@ -502,7 +542,11 @@ export function GestionJugadasModule() {
         .map(({ r, i }) => ({ ...r, error: r.error ?? errores.find((e) => e.startsWith(`Fila ${i + 1}`)) }));
       return [...conservar, filaVacia()];
     });
-    setAviso(`✅ ${n} jugada(s) enviada(s) a la taquilla (C${carrera}).` + (errores.length ? ` ${errores.length} fila(s) con error quedaron en rojo para corregir.` : ""));
+    setAviso(
+      `✅ ${n} jugada(s) enviada(s) a la taquilla (C${carrera}).` +
+        (errores.length ? ` ${errores.length} fila(s) con error quedaron en rojo para corregir.` : "") +
+        (recortes.length ? ` ⚠️ ${recortes.length} recortada(s) por saldo: ${recortes.join(" · ")}` : "")
+    );
   };
 
   const poblarCargaRapida = () => {
@@ -743,6 +787,9 @@ export function GestionJugadasModule() {
               const v = valida(f);
               const detectado = f.jugada.trim() ? detectarModalidad(f.jugada) : null;
               const ejemplar = ejemplarResuelto(f.caballo);
+              const rep = v.ok ? v.reparto : null;
+              const recortado = !!rep?.recortado;
+              const resumen = resumenReparto(rep, MONEDA);
               return (
                 <tr key={i} className={`align-middle ${f.error ? "bg-red-50" : ""}`} title={f.error ?? undefined}>
                   <td className="gj-celda relative h-7 px-1 py-0 text-xs text-slate-400">
@@ -792,20 +839,36 @@ export function GestionJugadasModule() {
                     <input
                       value={f.caballo}
                       onChange={(e) => setFila(i, { caballo: e.target.value })}
-                      placeholder="1 · 1x2"
+                      placeholder="1 · 1,2x3"
                       inputMode="numeric"
-                      title={ejemplar ? `${ejemplar.numero} - ${ejemplar.nombre}` : ""}
+                      title={
+                        rep
+                          ? `${rep.estructura} · C1 ${monedaFmt(rep.lado1.riesgo)}` +
+                            (rep.lado2.riesgo > 0 ? ` · C2 ${monedaFmt(rep.lado2.riesgo)}` : " · C2 da") +
+                            (rep.avisos.length ? `\n${rep.avisos.join("\n")}` : "")
+                          : ejemplar
+                            ? `${ejemplar.numero} - ${ejemplar.nombre}`
+                            : ""
+                      }
                       className="w-full rounded border border-line bg-white px-1 py-0.5 text-[11px] font-semibold leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
-                    {ejemplar && (
+                    {resumen ? (
                       <span
-                        className={`pointer-events-none absolute bottom-0.5 left-1 right-1 truncate text-[9px] font-bold leading-none ${
-                          ejemplar.retirado ? "text-red-500 line-through" : "text-gray-500"
-                        }`}
+                        className={`pointer-events-none absolute bottom-0.5 left-1 right-1 truncate text-[9px] font-black uppercase leading-none tracking-wide ${resumen.clase}`}
                       >
-                        {ejemplar.numero} - {ejemplar.nombre}
-                        {ejemplar.retirado ? " (RET)" : ""}
+                        {resumen.txt}
                       </span>
+                    ) : (
+                      ejemplar && (
+                        <span
+                          className={`pointer-events-none absolute bottom-0.5 left-1 right-1 truncate text-[9px] font-bold leading-none ${
+                            ejemplar.retirado ? "text-red-500 line-through" : "text-gray-500"
+                          }`}
+                        >
+                          {ejemplar.numero} - {ejemplar.nombre}
+                          {ejemplar.retirado ? " (RET)" : ""}
+                        </span>
+                      )
                     )}
                   </td>
                   <td className="gj-celda relative h-7 px-1 py-0">
@@ -814,8 +877,18 @@ export function GestionJugadasModule() {
                       onChange={(e) => setFila(i, { monto: e.target.value })}
                       placeholder="0"
                       inputMode="decimal"
-                      className="w-full rounded border border-line bg-white px-1 py-0.5 text-right text-[11px] font-black leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      title={recortado ? `Se autoriza ${monedaFmt(v.ok ? v.monto : 0)} por saldo disponible` : undefined}
+                      className={`w-full rounded border bg-white px-1 py-0.5 text-right text-[11px] font-black leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                        recortado ? "border-amber-400 bg-amber-50" : "border-line"
+                      }`}
                     />
+                    {recortado && (
+                      <span
+                        className="pointer-events-none absolute bottom-0.5 left-1 block truncate text-[9px] font-black leading-none text-amber-700"
+                      >
+                        → {monedaFmt(v.ok ? v.monto : 0)}
+                      </span>
+                    )}
                   </td>
                   <td className="gj-celda relative h-8 px-1 py-0">
                     <SearchableSelect
