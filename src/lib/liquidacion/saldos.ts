@@ -15,6 +15,7 @@ import { supabase } from "@/lib/supabase";
 import { liquidarOficial } from "@/lib/motores/oficiales";
 import { marcasConfigParaCarrera } from "@/lib/marcas";
 import { hoyLocal } from "@/lib/gaceta/programa";
+import { ventanaDiaLocal } from "@/lib/liquidacion/fecha";
 import { parsearNini, netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem } from "@/lib/bettingEngine";
 import type { TicketMotor, ResultadoMotor } from "@/lib/bettingEngine";
 import type { PizarraCarrera } from "@/lib/liquidacion";
@@ -89,17 +90,21 @@ export async function aplicarLiquidacionSaldos(
     return { ok: false, motivo: "Sin conexión a Supabase", aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: ["Sin conexión a Supabase."] };
   }
   const sdb = supabase;
-  // Fecha LOCAL (no UTC): los tickets se persisten con la fecha de la jornada
-  // que ve el operador (ISO YYYY-MM-DD) → el filtro .eq('fecha', f) debe usar
-  // la MISMA semántica, no el "día anterior" UTC tras las 20:00.
+  // Ventana UTC que cubre el día local. La columna real es fecha_registro
+  // (timestamptz del momento de la venta). Antes se filtraba con
+  // .eq("fecha", f), y `fecha` NO existe en tickets_apuestas: la consulta
+  // moría en el catch y esta pantalla devolvía "No se pudieron leer los
+  // tickets pendientes", sin liquidar nunca nada.
   const f = hoyLocal();
+  const { desde, hasta } = ventanaDiaLocal(f);
   const marcasConfig = await marcasConfigParaCarrera(input.hipodromo, input.carrera, f);
   let filas: unknown[] = [];
   try {
     const { data, error } = await sdb
       .from("tickets_apuestas")
       .select("*")
-      .eq("fecha", f)
+      .gte("fecha_registro", desde)
+      .lt("fecha_registro", hasta)
       .eq("hipodromo", input.hipodromo.trim().toUpperCase())
       .eq("carrera", Number(input.carrera))
       .eq("estado", "Pendiente")
@@ -114,7 +119,8 @@ export async function aplicarLiquidacionSaldos(
   const { data: decididos } = await sdb
     .from("tickets_apuestas")
     .select("id")
-    .eq("fecha", f)
+    .gte("fecha_registro", desde)
+    .lt("fecha_registro", hasta)
     .eq("hipodromo", input.hipodromo.trim().toUpperCase())
     .eq("carrera", Number(input.carrera))
     .in("estado", ["Ganador", "Perdedor", "Retirado"])

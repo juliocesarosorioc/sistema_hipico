@@ -15,6 +15,7 @@
 import { supabase } from "@/lib/supabase";
 import { hoyLocal, leerProgramaPorFecha } from "@/lib/gaceta/programa";
 import { rangoSemanaDeGrupo, cicloSemanalDe } from "@/lib/liquidacion/semana";
+import { ventanaDiaLocal } from "@/lib/liquidacion/fecha";
 import { listarCarrerasPorDia } from "@/lib/tablas/rpc";
 import { pizarraDesdeNums } from "@/lib/reportGenerator";
 import { liquidarOficial } from "@/lib/motores/oficiales";
@@ -206,30 +207,21 @@ async function leerPizarra(fecha: string, hipodromo: string, carrera: number | s
 
 async function leerTickets(fecha: string, hipodromo: string, carrera: string | number): Promise<Record<string, unknown>[]> {
   if (!supabase) return [];
+  // La columna real es `fecha_registro` (timestamptz UTC del momento de la
+  // venta). Antes habia dos intentos: uno con .eq("fecha") y otro de "fallback"
+  // con .gte("fecha_creacion"). Ninguna de las dos columnas existe en
+  // tickets_apuestas, así que los dos intentos fallaban y esta función
+  // devolvía [] siempre: los reportes de liquidación salían vacíos.
+  const { desde, hasta } = ventanaDiaLocal(fecha);
   try {
-    const base = { carrera, hipodromo, fecha };
     const { data, error } = await supabase
       .from("tickets_apuestas")
       .select("*")
-      .eq("fecha", fecha)
+      .gte("fecha_registro", desde)
+      .lt("fecha_registro", hasta)
       .eq("carrera", carrera)
       .ilike("hipodromo", `%${hipodromo}%`)
-      .order("fecha_creacion");
-    if (!error && data?.length) return (data ?? []) as Record<string, unknown>[];
-  } catch {
-    /* intentar el fallback */
-  }
-  try {
-    // Fallback LEGACY: registros sin columna `fecha` (solo fecha_creacion).
-    const sig = sumarDias(fecha, 1);
-    const { data, error } = await supabase
-      .from("tickets_apuestas")
-      .select("*")
-      .gte("fecha_creacion", `${fecha}T00:00:00`)
-      .lt("fecha_creacion", `${sig}T00:00:00`)
-      .eq("carrera", carrera)
-      .ilike("hipodromo", `%${hipodromo}%`)
-      .order("fecha_creacion");
+      .order("fecha_registro");
     if (error) return [];
     return (data ?? []) as Record<string, unknown>[];
   } catch {
@@ -271,17 +263,17 @@ async function hipodromosDelDia(fecha: string): Promise<string[]> {
       /* sin tabla */
     }
     try {
-      // TICKETS: jornadas jugadas por fecha del evento o creados ese día.
-      const { data: tk, error } = await supabase
-        .from("tickets_apuestas")
-        .select("hipodromo")
-        .eq("fecha", fecha);
-      if (!error) for (const r of (tk ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+      // TICKETS: por el día local de la venta. `fecha` y `fecha_creacion` no
+      // existen en tickets_apuestas; el timestamp real es fecha_registro. Con
+      // esas dos columnas este bloque nunca encontraba nada, así que un
+      // hipódromo con apuestas pero sin resultados ni tablas no aparecía en la
+      // lista del día.
+      const v = ventanaDiaLocal(fecha);
       const { data: tk2, error: e2 } = await supabase
         .from("tickets_apuestas")
         .select("hipodromo")
-        .gte("fecha_creacion", `${fecha}T00:00:00`)
-        .lt("fecha_creacion", `${sig}T00:00:00`);
+        .gte("fecha_registro", v.desde)
+        .lt("fecha_registro", v.hasta);
       if (!e2) for (const r of (tk2 ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
     } catch {
       /* sin tabla */

@@ -315,7 +315,11 @@ grant execute on function public.club_vender_tabla_fija(bigint, uuid, uuid, nume
 --  ticket ya vendido sigue liquidando con el premio con el que se compro. Esa
 --  es toda la razon de congelar en la venta.
 --
---  Los caballeros con heat muerto no pagan (no hay un unico ganador claro).
+--  Se usan las MISMAS etiquetas de estado que ya consulta el resto del codigo:
+--  'Pendiente', 'Ganador', 'Perdedor' y 'Retirado', en mixed case. Postgres
+--  compara texteualmente, asi que escribir 'GANADOR' en mayusculas haria que el
+--  chequeo idempotente de src/lib/liquidacion/saldos.ts no los encontrara, y
+--  la pantalla de liquidacion no veria los tickets ya pagados.
 -- =============================================================================
 
 create or replace function public.club_liquidar_tabla_fija(
@@ -398,7 +402,7 @@ begin
     end if;
 
     update public.tickets_apuestas
-       set estado            = case when v_gana then 'GANADOR' else 'PERDEDOR' end,
+       set estado            = case when v_gana then 'Ganador' else 'Perdedor' end,
            premio_pagar      = v_pago,
            monto_decidido    = v_pago,      -- el jugador recibe el premio entero
            comision_pagada   = round(v_com::numeric, 2)
@@ -438,6 +442,121 @@ $$;
 
 revoke all on function public.club_liquidar_tabla_fija(bigint, text, text) from anon;
 grant execute on function public.club_liquidar_tabla_fija(bigint, text, text) to anon, authenticated;
+
+-- =============================================================================
+--  REEMBOLSO POR EJEMPLAR RETIRADO
+-- =============================================================================
+--  El legacy (js/tablas.js:1301) hacia esto a mano y estaba roto por dos cosas:
+--
+--    1) Filtraba por `.eq("fecha", ...)`. tickets_apuestas no tiene columna
+--       `fecha`; se llama fecha_registro. El filtro no aplicaba y el reembolso
+--       salia en cero.
+--    2) Escribia `accion_aplicada` y `monto_resuelto`, que tampoco existen. El
+--       UPDATE fallaba, pero el abono al cliente ya se habia hecho antes. Al
+--       reintentar, el ticket seguia Pendiente y el cliente cobraba dos veces.
+--
+--  Ademas el read-modify-write de saldo_actual se pisa si dos cajas reembolsan
+--  a la vez. Aqui va en una sola transaccion, y el filtro por fecha_registro
+--  usa el dia de la carrera, no el del ticket.
+--
+--  REGLA: se reembolsa el monto_jugado INTEGRO al cliente. En tabla fija no hay
+--  comision para el jugador, asi que no hay nada que descontar del reembolso.
+-- =============================================================================
+
+create or replace function public.club_reembolsar_retirados(
+  p_fecha     date,
+  p_hipodromo text,
+  p_carrera   int,
+  p_numeros   text,      -- '3,7' lista de ejemplares retirados
+  p_usuario   text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_num      text;
+  v_tk       record;
+  v_saldo    numeric;
+  v_monto    numeric;
+  v_reemb    int := 0;
+  v_dinero   numeric := 0;
+  v_avisos   text[] := '{}';
+begin
+  if p_fecha is null or p_hipodromo is null or p_carrera is null then
+    raise exception 'Falta fecha, hipodromo o carrera.';
+  end if;
+  if p_numeros is null or btrim(p_numeros) = '' then
+    return jsonb_build_object('ok', true, 'reembolsados', 0, 'dinero', 0);
+  end if;
+
+  for v_num in select btrim(g) from unnest(string_to_array(p_numeros, ',')) g loop
+    if v_num = '' then
+      continue;
+    end if;
+
+    -- La fecha de carrera va en la nota del ticket (fecha_registro es el
+    -- momento de la venta, que puede ser otro dia).
+    for v_tk in
+      select * from public.tickets_apuestas
+       where estado = 'Pendiente'
+         and upper(hipodromo) = upper(btrim(p_hipodromo))
+         and carrera = p_carrera
+         and ejemplar_numero = nullif(v_num, '')::int
+         and coalesce(nota_auditoria ->> 'fecha_carrera', fecha_registro::date::text) = p_fecha::text
+       for update
+    loop
+      v_monto := coalesce(v_tk.monto_jugado, 0);
+
+      if v_monto > 0 and v_tk.cliente_juega_id is not null then
+        select coalesce(saldo_actual, 0) into v_saldo
+          from public.clientes where id = v_tk.cliente_juega_id for update;
+        if v_saldo is null then
+          v_avisos := array_append(v_avisos, format('cliente %s no encontrado', v_tk.cliente_juega_id));
+          continue;
+        end if;
+        update public.clientes
+           set saldo_actual = v_saldo + v_monto
+         where id = v_tk.cliente_juega_id;
+        v_dinero := v_dinero + v_monto;
+      end if;
+
+      -- Solo se marca despues de acreditado, y en la misma transaccion: si
+      -- algo falla arriba, el UPDATE tampoco corre y el reintento no duplica.
+      update public.tickets_apuestas
+         set estado         = 'Retirado',
+             premio_pagar   = 0,
+             monto_decidido = 0,
+             comision_pagada = 0
+       where id = v_tk.id;
+
+      v_reemb := v_reemb + 1;
+    end loop;
+  end loop;
+
+  if exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = 'club_log_accion'
+  ) then
+    perform public.club_log_accion(
+      coalesce(p_usuario, 'anon'), 'TABLAS_FIJAS',
+      format('REEMBOLSO retiro %s C%s [%s]: %s ticket(s), %s devuelto.',
+             upper(p_hipodromo), p_carrera, p_numeros, v_reemb, v_dinero)
+    );
+  end if;
+
+  return jsonb_build_object(
+    'ok', true,
+    'reembolsados', v_reemb,
+    'dinero', v_dinero,
+    'avisos', to_jsonb(v_avisos)
+  );
+end;
+$$;
+
+revoke all on function public.club_reembolsar_retirados(date, text, int, text, text) from anon;
+grant execute on function public.club_reembolsar_retirados(date, text, int, text, text) to anon, authenticated;
 
 -- -----------------------------------------------------------------------------
 --  Ajuste de compatibility: dos consultas del Next order-by created_at, columna

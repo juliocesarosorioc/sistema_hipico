@@ -167,7 +167,23 @@ async function propagarATablas(
   return { tablas: filas.length, premios, reembolsos, errores };
 }
 
-/** Reembolsa tickets Pendientes de ejemplares retirados y suma al saldo del cliente. */
+/**
+ * Reembolsa los tickets PENDIENTES de ejemplares retirados y acredita el saldo.
+ *
+ * Va por RPC (sql/tablas_venta.sql) porque la versión anterior lo hacía a mano
+ * y estaba rota por dos motivos:
+ *
+ *  1) Filtraba con `.eq("fecha", fecha)`. `tickets_apuestas` no tiene columna
+ *     `fecha`, se llama `fecha_registro`. El filtro no aplicaba y el reembolso
+ *     salía en cero: nadie recuperaba lo del caballo retirado.
+ *  2) Escribía `accion_aplicada` y `monto_resuelto`, que tampoco existen. Como
+ *     el abono ya se había hecho antes, el UPDATE fallaba dejando el saldo
+ *     acreditado y el ticket en Pendiente. El reintento abonaba OTRA VEZ: dinero
+ *     duplicado. Por eso el marcado va dentro de la misma transaccion.
+ *
+ * El monto devuelto es el `monto_jugado` íntegro: en tabla fija el jugador no
+ * tiene comisión, así que no hay nada que restar.
+ */
 async function reembolsarTickets(
   fecha: string,
   hipodromo: string,
@@ -176,56 +192,20 @@ async function reembolsarTickets(
 ): Promise<{ reembolsados: number; avisos: string[] }> {
   const avisos: string[] = [];
   if (!supabase) return { reembolsados: 0, avisos };
-  let reembolsados = 0;
-  for (const n of numeros) {
-    try {
-      // La fecha es parte de la clave: sin ella se reembolsarían tickets
-      // PENDIENTES de jornadas anteriores del mismo hipódromo/carrera.
-      const { data: tickets } = await supabase
-        .from("tickets_apuestas")
-        .select("id, cliente_juega_id, monto_jugado")
-        .eq("fecha", fecha)
-        .eq("hipodromo", hipodromo)
-        .eq("carrera", carrera)
-        .eq("ejemplar_numero", num(n) || 0)
-        .eq("estado", "Pendiente");
-      if (!tickets || !tickets.length) continue;
-      for (const tk of tickets as Array<{ id: string; cliente_juega_id: string | null; monto_jugado: unknown }>) {
-        const monto = num(tk.monto_jugado);
-        // El abono va ANTES de marcar el ticket: si se marcara primero y el
-        // crédito fallara, el ticket quedaría como reembolsado y el reintento lo
-        // saltaría, perdiendo el dinero del cliente.
-        if (monto > 0 && tk.cliente_juega_id) {
-          const { data: cl, error: eSel } = await supabase
-            .from("clientes")
-            .select("saldo_actual")
-            .eq("id", tk.cliente_juega_id)
-            .maybeSingle();
-          if (eSel) throw new Error(`saldo del cliente ${tk.cliente_juega_id}: ${eSel.message}`);
-          if (!cl) throw new Error(`cliente ${tk.cliente_juega_id} no encontrado`);
-          const { error: eUpd } = await supabase
-            .from("clientes")
-            .update({ saldo_actual: num(cl.saldo_actual) + monto })
-            .eq("id", tk.cliente_juega_id);
-          if (eUpd) throw new Error(`abono al cliente ${tk.cliente_juega_id}: ${eUpd.message}`);
-        }
-        const { error } = await supabase
-          .from("tickets_apuestas")
-          .update({
-            estado: "Retirado",
-            premio_pagar: 0,
-            accion_aplicada: "REEMBOLSO",
-            monto_resuelto: monto,
-          })
-          .eq("id", tk.id);
-        if (error) throw error;
-        reembolsados += 1;
-      }
-    } catch (e) {
-      avisos.push(`reembolso ${n}: ${e instanceof Error ? e.message : String(e)}`);
-    }
+  if (!numeros.length) return { reembolsados: 0, avisos };
+  const { data, error } = await supabase.rpc("club_reembolsar_retirados", {
+    p_fecha: fecha,
+    p_hipodromo: hipodromo,
+    p_carrera: carrera,
+    p_numeros: numeros.join(","),
+    p_usuario: null,
+  });
+  if (error) {
+    return { reembolsados: 0, avisos: [`RPC: ${error.message}`] };
   }
-  return { reembolsados, avisos };
+  const d = (data ?? {}) as { reembolsados?: number; avisos?: string[] };
+  for (const a of d.avisos ?? []) avisos.push(a);
+  return { reembolsados: Number(d.reembolsados ?? 0), avisos };
 }
 
 /**
