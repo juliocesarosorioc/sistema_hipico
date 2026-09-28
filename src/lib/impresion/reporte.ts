@@ -14,7 +14,7 @@
  */
 import { supabase } from "@/lib/supabase";
 import { parseNum } from "@/lib/tablas/tipos";
-import { esc, fsAuto, col, fmt, fmtPts, monCode, fmtFecha, hoy, hipoKey, type Orientacion, DIM_PAGINA } from "@/lib/impresion/util";
+import { esc, fsAuto, col, fmt, monCode, fmtFecha, hoy, hipoKey, type Orientacion, DIM_PAGINA } from "@/lib/impresion/util";
 
 export type EjemplarJugador = {
   numero: string;
@@ -332,9 +332,9 @@ function cardReporteHTML(p: JugadorReporte): string {
           '</span><span class="ir-cab">' +
           esc(e.nombre) +
           '</span><span class="ir-jj">' +
-          fmtPts(e.jugado) +
+          fmt(e.jugado) +
           '</span><span class="ir-pp">' +
-          fmtPts(e.pagado) +
+          fmt(e.pagado) +
           "</span></div>"
         );
       })

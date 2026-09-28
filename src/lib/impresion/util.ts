@@ -87,17 +87,23 @@ export function monSinSimb(v: number | string): string {
 }
 
 /**
- * Valor de ejemplar para imprimir: sin decimales cuando el número es entero.
- * Los puntos de una tabla casi siempre son redondos (10, 20, 25) y el ",00" solo
- * consume ancho en la fila. Pero si el valor SÍ tiene parte decimal se
- * respetan 2 decimales en vez de redondear, porque ese valor entra en la
- * `suma_base_tabla` que proportionally descuenta el premio ante un retiro
- * (premio * (1 - valor/suma_base)): truncarlo ahi moveria el premio.
+ * PUNTOS de un ejemplar para imprimir: SIEMPRE sin decimales.
+ *
+ * Replica el legacy, que imprimia el valor de la grilla con `fmt(v, 0)`
+ * (js/components/impresion_tablas.js:118) mientras el premio usaba `fmt(premio)`
+ * con 2 (linea 130). La distincion es a proposito: los puntos son un divisor
+ * (premio * valor / suma_base_tabla), y el separador de miles ayuda a leerlos
+ * de un vistazo; el premio es dinero y se mantiene con centimos.
+ *
+ * Solo afecta la CAPA DE VISTA. El valor sigue entero y con decimales en el
+ * dato (`valor_ejemplar`, `suma_base_tabla`), que es de donde salen la suma y
+ * el prorrateo del premio ante un retiro. Acá se redondea, nunca se trunca:
+ * truncar 24.7 a 24 bajaria la base y moveria el premio del resto.
  */
 export function fmtPts(v: number | string): string {
   const n = parseFloat(String(v));
   if (!Number.isFinite(n)) return "0";
-  return Number.isInteger(n) ? String(n) : fmt(n);
+  return new Intl.NumberFormat("es-VE", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 }
 
 /** Código corto de la moneda (USD / BS) para la leyenda del grupo. */

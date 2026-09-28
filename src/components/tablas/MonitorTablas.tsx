@@ -50,11 +50,25 @@ type Props = {
   onFechaDia?: (d: string) => void;
 };
 
-/** Número es-VE SIN símbolo de moneda (la moneda se estipula por el grupo). */
-function fmtValor(n: number | null | undefined): string {
-  const num = typeof n === "number" && isFinite(n) ? n : 0;
-  return num.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+  /** Número es-VE SIN símbolo de moneda (la moneda se estipula por el grupo). */
+  function fmtValor(n: number | null | undefined): string {
+    const num = typeof n === "number" && isFinite(n) ? n : 0;
+    return num.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  /**
+   * PUNTOS de un ejemplar: sin decimales, igual que la impresion.
+   *
+   * El valor de cada caballo y la SUMA son los dos lados de la division
+     * `premio * (valor / suma_base_tabla)`, asi que mostrarlos con decimales
+     * solo ensucia la grilla. Se redondea unicamente para mostrar: el valor de
+   * `suma_base_tabla` se siguen guardando y sumando con todos sus decimales,
+   * porque el formateo es una capa de vista y no toca el dato.
+   */
+  function fmtPts(n: number | null | undefined): string {
+    const num = typeof n === "number" && isFinite(n) ? n : 0;
+    return num.toLocaleString("es-VE", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
 
 /** Saldo en 2 decimales, para el previsualizado del descuento en la venta. */
 function fmtSaldo(n: number | null | undefined): string {
@@ -501,7 +515,7 @@ export function MonitorTablas({
                         {nac !== "VE" && <Flag nac={nac} size={12} withName={false} />}
                       </span>
                       <span className={`whitespace-nowrap text-right text-[17px] font-black leading-none ${c.retirado ? "text-red-500 line-through" : "text-blue-700"}`}>
-                        {c.retirado ? "RET." : `${fmtValor(valor)}`}
+                          {c.retirado ? "RET." : `${fmtPts(valor)}`}
                       </span>
                     </button>
                   );
@@ -532,7 +546,7 @@ export function MonitorTablas({
 
               <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-white px-1.5 py-0.5">
                 <span className="inline-flex items-center gap-1 text-[14px] font-bold uppercase tracking-wider text-slate-600 leading-none">🧮 Suma</span>
-                <span className="text-[11px] font-semibold leading-none" style={{ color: "#74ACDF" }}>{fmtValor(t.suma_base_tabla ?? sumaBase(t.caballos))}</span>
+                  <span className="text-[11px] font-semibold leading-none" style={{ color: "#74ACDF" }}>{fmtPts(t.suma_base_tabla ?? sumaBase(t.caballos))}</span>
               </div>
             </div>
           ))}
@@ -880,7 +894,7 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
                         )}
                       </span>
                       <span className={`mon-legacy ${valor === 0 ? 'cero-legacy' : ''}`}>
-                        {valor === 0 ? "–" : `${fmtValor(valor)}`}
+                        {valor === 0 ? "–" : `${fmtPts(valor)}`}
                       </span>
                     </div>
                   );
