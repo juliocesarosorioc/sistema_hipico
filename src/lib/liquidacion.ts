@@ -1,6 +1,6 @@
-/**
+﻿/**
  * Motor de pago inmediato: en esta Fase 2 solo se liquidan NINI y REMATE
- * (con el 1er lugar de la pizarra). TABLA, GANADOR, PUESTOS, MARCAS quedan
+ * (con el 1er lugar de la pizarra). TABLA, GANADOR y PUESTOS quedan
  * pendientes — exigen dividendos oficiales (Fase siguiente del plan).
  */
 import type { BetSlipEntry } from "@/store/bet-slip";

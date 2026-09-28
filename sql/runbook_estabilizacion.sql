@@ -1,14 +1,14 @@
--- ============================================================================
--- RUNBOOK DE ESTABILIZACIÓN — MÓDULOS DUPLETA, MARCAS Y TICKETS (RECLAMOS)
+﻿-- ============================================================================
+-- RUNBOOK DE ESTABILIZACIÓN — MÓDULOS DUPLETA Y TICKETS (RECLAMOS)
 -- ----------------------------------------------------------------------------
 -- PEGAR COMPLETO EN EL SQL EDITOR DE LA CONSOLA DE SUPABASE Y EJECUTAR.
---  · Crea (si no existen) las tablas dupletas, marcas_dia y tickets_jugadas.
+--  · Crea (si no existen) las tablas dupletas y tickets_jugadas.
 --  · Idempotente: se puede ejecutar cuantas veces se quiera sin errores.
 --  · Habilita RLS permisiva + GRANTs para anon/authenticated/service_role
 --    (mismo patrón que el resto del módulo hípico).
 --  · Añade las tablas a la publicación `supabase_realtime` para la
 --    reactividad multi-sesión (tablas_fijas, resultados_carreras, dupletas,
---    marcas_dia, tickets_jugadas).
+--    tickets_jugadas).
 --  · Todo corre dentro de una transacción: o se aplica completo o nada.
 -- ============================================================================
 
@@ -41,34 +41,6 @@ CREATE POLICY dupletas_publico ON public.dupletas
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.dupletas TO anon;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.dupletas TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.dupletas TO service_role;
-
--- ----------------------------------------------------------------------------
--- 2) TABLA marcas_dia — jornada de Marcas 120/100 (hipódromo + fecha únicos)
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.marcas_dia (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    hipodromo TEXT NOT NULL,
-    fecha DATE NOT NULL,
-    filas JSONB NOT NULL DEFAULT '[]'::jsonb,
-    condiciones TEXT NOT NULL DEFAULT '',
-    updated_at TIMESTAMPTZ DEFAULT now(),
-    CONSTRAINT marcas_dia_unico UNIQUE (hipodromo, fecha)
-);
-
--- Condición "VALEN O NO VALEN DEBUTANTES" (por defecto NO VALEN → false).
-ALTER TABLE public.marcas_dia ADD COLUMN IF NOT EXISTS valen_debutantes BOOLEAN NOT NULL DEFAULT false;
-
-ALTER TABLE public.marcas_dia ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS marcas_dia_publico ON public.marcas_dia;
-CREATE POLICY marcas_dia_publico ON public.marcas_dia
-    FOR ALL
-    USING (true)
-    WITH CHECK (true);
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.marcas_dia TO anon;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.marcas_dia TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.marcas_dia TO service_role;
 
 -- ----------------------------------------------------------------------------
 -- 3) TABLA tickets_jugadas — reclamos/disputas del cliente (Tickets por
@@ -142,7 +114,6 @@ BEGIN
             'public.tablas_fijas',
             'public.resultados_carreras',
             'public.dupletas',
-            'public.marcas_dia',
             'public.tickets_jugadas'
         ]
         LOOP

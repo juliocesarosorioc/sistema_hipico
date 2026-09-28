@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { getHorseColor } from "@/lib/horseColors";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -71,7 +71,7 @@ function ejemplaresATexto(caballos: EjemplarCarreraCentral[] | undefined): strin
  * Registra las carreras que se van a jugar — incluso con ejemplares SOLO por
  * número (sin nombres) para apostar por número y resolver con la pizarra.
  * `resultados_carreras` es la fuente de verdad que ya alimenta el semáforo de
- * Gestión de Jugadas, Marcas, Tablas Fijas y Dupletas.
+ * Gestión de Jugadas, Tablas Fijas y Dupletas.
  */
 export function CarrerasDiaModule() {
   const [hipodromos, setHipodromos] = useState<OpcionHipodromo[]>([]);
@@ -187,7 +187,7 @@ export function CarrerasDiaModule() {
     if (!r.ok) return toast("Error al guardar: " + (r.error ?? "desconocido"), "error");
 
     // RETIROS: lista canónica de la carrera. Se escribe por el servicio único,
-    // que propaga a Tablas Fijas, Marcas, Dupletas y Taquilla, reembolsa lo
+    // que propaga a Tablas Fijas, Dupletas y Taquilla, reembolsa lo
     // pendiente y recalcula premios.
     const ret = await aplicarRetirosCarrera({
       fecha,
@@ -232,7 +232,7 @@ export function CarrerasDiaModule() {
         <span className="text-2xl">🏁</span>
         <div>
           <h2 className="text-lg font-extrabold uppercase tracking-wide">Carreras del Día</h2>
-          <p className="text-xs font-medium text-cyan-100">Data central de la jornada — alimenta Gestión, Tablas, Marcas y Dupletas.</p>
+          <p className="text-xs font-medium text-cyan-100">Data central de la jornada — alimenta Gestión, Tablas y Dupletas.</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <select

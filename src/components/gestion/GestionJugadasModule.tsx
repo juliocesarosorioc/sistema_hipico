@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { detectarModalidad, parsearLineaRapida, proyectarFila } from "@/lib/taquilla/validar";
@@ -434,7 +434,7 @@ export function GestionJugadasModule() {
   /**
    * RETIROS DE LA CARRERA (data central). El campo "Retirados" ya no es un
    * texto decorativo: al aplicar, la lista pasa a `resultados_carreras` y desde
-   * ahí el retiro incide en Tablas Fijas, Marcas, Dupletas, Taquilla y el
+   * ahí el retiro incide en Tablas Fijas, Dupletas, Taquilla y el
    * Carreras del Día, reembolsa tickets pendientes y recalcula premios.
    */
   const aplicarRetiros = async () => {
@@ -459,7 +459,7 @@ export function GestionJugadasModule() {
   /**
    * Presionar un ejemplar lo RETIRA (o lo rehabilita). El retiro pertenece a la
    * CARRERA: se escribe en la data central y desde ahí incide en Tablas Fijas,
-   * Marcas, Dupletas, Taquilla y Carreras del Día, reembolsa lo pendiente y
+   * Dupletas, Taquilla y Carreras del Día, reembolsa lo pendiente y
    * recalcula el premio de la tabla.
    */
   const alternarRetiroEjemplar = async (c: EjemplarTabla) => {

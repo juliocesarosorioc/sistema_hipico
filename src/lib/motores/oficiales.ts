@@ -1,8 +1,8 @@
-/**
+﻿/**
  * MotoresOficiales — Liquidación UNIVERSAL con dividendos oficiales.
  *
  * Requisito de la casa (Bloque 3): el motor debe liquidar MATEMÁTICAMENTE
- * TABLAS FIJAS, PUESTOS (1P/2P), GANADOR y MARCAS (además de NINI/REMATE),
+ * TABLAS FIJAS, PUESTOS (1P/2P), GANADOR (además de NINI/REMATE),
  * cruzando cada jugada con `resultados_carreras.dividendos` (pago por $1) y
  * la orden de llegada oficial, aplicando la comisión del 5% SIEMPRE sobre el
  * premio BRUTO de la modalidad ganadora.
@@ -11,7 +11,6 @@
  *   - GANADOR ("5G", "GANADOR")          → dividendos.win
  *   - PUESTOS puros ("2P")               → dividendos.puestos
  *   - TABLABAS ("TABLA …")               → dividendos.tabla (premio por tabla)
- *   - MARCAS ("MARCA …")                 → dividendos.marcas
  *   - NINI ("2N" …)                      → dividendos.nini
  *   - REMATE / resto                     → dividendos.remate o laz 2× de la casa
  *
@@ -19,7 +18,6 @@
  * casa (2× / 120×100), por lo que NUNCA degrada el comportamiento previo.
  */
 import { registrarProcesador, TicketMotor, ResultadoMotor, COMISION_CASA, parsearNini, liquidarPareo } from "../bettingEngine";
-import { liquidarMarcas, type MarcasConfig } from "./marcas";
 import { liquidarPuestos } from "./puestos";
 
 function round2(n: number): number {
@@ -33,7 +31,6 @@ export type ClaveDividendo =
   | "place"
   | "show"
   | "puestos"
-  | "marcas"
   | "tabla"
   | "nini"
   | "remate";
@@ -43,7 +40,6 @@ export function claveDeModalidad(tipoJugada: string): ClaveDividendo | null {
   const t = String(tipoJugada ?? "").trim().toUpperCase();
   if (!t) return null;
   if (/^TABLA/.test(t)) return "tabla";
-  if (/^MARCA/.test(t)) return "marcas";
   if (parsearNini(t)) return "nini";
   if (/^\d*G$/i.test(t) || /^GANADOR/.test(t)) return "win";
   if (/^(\d+)P$/i.test(t)) return "puestos";
@@ -70,7 +66,7 @@ export function dividendoDe(t: TicketMotor): number | null {
  * Motor UNIFICADO: ejecuta la lógica de decisión del submódulo de la modalidad
  * y, si el ticket GANA y existe dividendo oficial, sustituye el premio bruto
  * por monto × dividendo (pago por $1) manteniendo la comisión 5% estricta
- * SOLO sobre la ganancia bruta. Config opcional de marcas (t.marcas).
+ * SOLO sobre la ganancia bruta.
  */
 /** Resuelve una jugada de Tabla Fija: gana si el ejemplar apostado es quien
     cruzó la raya primero (o si es TABLA COMPLETA = cubre todo el lote). Como el
@@ -135,11 +131,7 @@ export function liquidarOficial(
     return liquidarPareo(t, tasa);
   }
 
-  const cfgMarcas = (t as TicketMotor & { marcas?: MarcasConfig }).marcas;
-  const base =
-    claveDeModalidad(t.tipo_jugada) === "marcas"
-      ? liquidarMarcas(t, cfgMarcas, tasa)
-      : liquidarPuestos(t, tasa);
+  const base = liquidarPuestos(t, tasa);
 
   const mult = dividendoDe(t);
   if (!base.ok || mult == null) return base;

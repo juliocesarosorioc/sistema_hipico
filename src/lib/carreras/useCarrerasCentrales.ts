@@ -1,11 +1,11 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import { listarCarrerasCentrales, type CarreraCentral } from "@/lib/carreras/central";
 
 /**
  * Data central de carreras del día (hipódromo + fecha) compartida por los
- * módulos (Gestión, Tablas Fijas, Marcas, Dupletas, Carreras del Día).
+ * módulos (Gestión, Tablas Fijas, Dupletas, Carreras del Día).
  * Con `fecha`/`hipodromo` vacíos devuelve TODAS las carreras centrales, que es
  * lo que necesitan los selectores en cascada (primero hipódromo, luego día).
  */

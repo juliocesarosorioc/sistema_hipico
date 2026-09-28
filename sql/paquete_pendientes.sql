@@ -1,4 +1,4 @@
--- ============================================================
+﻿-- ============================================================
 --  PAQUETE FINAL: PENDIENTES DE INFRAESTRUCTURA
 -- ============================================================
 --  Combina (en orden seguro) los scripts que faltaban:
@@ -819,7 +819,7 @@ create table if not exists public.resultados_carreras (
 );
 
 alter table public.resultados_carreras
-    add column if not exists dividendos    jsonb,   -- { win, place, show, puestos, marcas }: pago por $1
+    add column if not exists dividendos    jsonb,   -- { win, place, show, puestos, tabla, nini, remate }: pago por $1
     add column if not exists orden_llegada jsonb;   -- [{numero, puesto}] orden de llegada oficial
 
 -- Carreras del Día (editor central): permite registrar una carrera con

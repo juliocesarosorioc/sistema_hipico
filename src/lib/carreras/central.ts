@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Carreras del Día — servicio CENTRAL de la jornada.
  * Fuente de verdad: tabla `resultados_carreras` (unique fecha+hipódromo+carrera,
  * RLS off). Desde este editor se registran las carreras que se van a jugar,
@@ -6,7 +6,7 @@
  * poder apostar por número y resolver al cargar la pizarra.
  *
  * `listarCarrerasPorDia` (lib/tablas/rpc) ya cruza esta tabla + programa_dia +
- * tablas_fijas, así que el semáforo de Gestión/taquilla y Marcas ven cualquier
+ * tablas_fijas, así que el semáforo de Gestión/taquilla y Tablas ven cualquier
  * carrera registrada aquí de inmediato.
  */
 import { supabase } from "@/lib/supabase";

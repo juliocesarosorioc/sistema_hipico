@@ -11,6 +11,14 @@ export type CeldaDupleta = {
   vendida: boolean;
   cliente_id?: string | number | null;
   cliente_nombre?: string;
+  /**
+   * Grupo del jugador. Se deduce del cliente al vender (grupo_id + la lista
+   * `grupos` de clientes_grupos), igual que en Tablas Fijas. Es lo que define
+   * la moneda y el convenio de comisión de la venta, asi que se guarda con la
+   * celda y no se vuelve a pedir al liquidar.
+   */
+  grupo_id?: string | number | null;
+  grupo_nombre?: string | null;
   precio?: number | null;
 };
 

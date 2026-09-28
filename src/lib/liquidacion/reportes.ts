@@ -1,4 +1,4 @@
-/**
+﻿/**
  * REPORTE DE SALDOS CONSOLIDADOS POR SEMANA FISCAL (SERVER DATOS REALES)
  * ---------------------------------------------------------------------
  * Árbol anidado  Semana → Día → Hipódromo → Carrera  alimentado por los
@@ -6,7 +6,7 @@
  *   - Cada carrera muestra las filas Juega / Consigue por ticket.
  *   - Las jugadas pendientes se evalúan con el motor oficial (líquida
  *     NINI, PUESTO, A PREMIO/PP, PAREO, COMBINADA, COMPUESTA, TABLAS,
- *     MARCAS y Pareos "A X B") contra la pizarra de resultados_carreras.
+ *     Pareos "A X B") contra la pizarra de resultados_carreras.
  *   - Se inyectan filas 🔀 CRUCE por (cliente, caballo) con la comisión
  *     NETA (netearComisionCruce) cuando el grupo tiene ≥2 tickets.
  * Todo usa la fecha emitida por `rangoSemanaDeGrupo()` (ciclo fiscal del

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
@@ -7,7 +7,7 @@ import { listarTablasPublicadas, listarHipodromos, type OpcionHipodromo } from "
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { useCarrerasCentrales } from "@/lib/carreras/useCarrerasCentrales";
 import { alternarRetiroCarrera } from "@/lib/carreras/retiros";
-import { listarClientesVenta, type ClienteVenta } from "@/lib/grupos";
+import { listarClientesVenta, listarGruposVenta, type ClienteVenta, type GrupoVenta } from "@/lib/grupos";
 import { colorDeNumeroGac } from "@/lib/gaceta/ui";
 import { Flag, normalizarNacionalidad } from "@/components/ui/BanderaPais";
 import { claveCelda, guardarDupleta, listarDupletasGuardadas, type CaballoDupleta, type DupletaEstado } from "@/lib/dupletas";
@@ -52,6 +52,7 @@ export function DupletaModule() {
   const [carreras, setCarreras] = useState<TablaFijaRow[]>([]);
   const [guardadas, setGuardadas] = useState<DupletaEstado[]>([]);
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
+  const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
 
   const [hipodromo, setHipodromo] = useState("");
   const [dia, setDia] = useState("");
@@ -149,6 +150,7 @@ export function DupletaModule() {
     void listarTablasPublicadas().then((cs) => v && setCarreras(cs));
     void listarDupletasGuardadas().then((gs) => v && setGuardadas(gs));
     void listarClientesVenta().then((cl) => v && setClientes(cl));
+    void listarGruposVenta().then((gr) => v && setGrupos(gr));
     return () => {
       v = false;
     };
@@ -333,14 +335,30 @@ export function DupletaModule() {
     const nombre = q.trim().toUpperCase();
     if (!nombre) return toast("Escriba o busque el nombre del cliente.", "warning");
     const cliente = clientes.find((cl) => cl.nombre.toUpperCase() === nombre);
+    // El grupo se deduce del cliente, no se elige suelto: es lo que fija la
+    // moneda y el convenio de comision de la venta.
+    const gid = cliente?.grupo_id ?? cliente?.grupos?.[0] ?? null;
+    const grupo = grupos.find((g) => String(g.id) === String(gid));
     setMatriz({
       ...matriz,
       celdas: {
         ...matriz.celdas,
-        [claveCelda(modal.c1, modal.c2)]: { vendida: true, cliente_id: cliente?.id ?? null, cliente_nombre: nombre, precio: precioFinal },
+        [claveCelda(modal.c1, modal.c2)]: {
+          vendida: true,
+          cliente_id: cliente?.id ?? null,
+          cliente_nombre: nombre,
+          grupo_id: grupo?.id ?? null,
+          grupo_nombre: grupo?.nombre ?? null,
+          precio: precioFinal,
+        },
       },
     });
-    toast(`✅ Vendido ${nombre} · $${precioFinal.toLocaleString("es-VE", { maximumFractionDigits: 2 })}.`, "success");
+    toast(
+      grupo
+        ? `Vendido ${nombre} · ${grupo.nombre} · $${precioFinal.toLocaleString("es-VE", { maximumFractionDigits: 2 })}.`
+        : `Vendido ${nombre} · $${precioFinal.toLocaleString("es-VE", { maximumFractionDigits: 2 })}. Sin grupo: no habra convenio de comision.`,
+      grupo ? "success" : "warning"
+    );
     setModal(null);
     setQ("");
   };
@@ -358,7 +376,7 @@ export function DupletaModule() {
   /**
    * Marca/quita el retirado en la matriz. El retiro es de la CARRERA, no de la
    * dupleta: se registra también en la data central para que incida en todos
-   * los módulos (Tablas Fijas, Marcas, Taquilla, Carreras del Día).
+   * los módulos (Tablas Fijas, Taquilla, Carreras del Día).
    */
   const toggleRetirado = async (eje: 1 | 2, numero: string) => {
     if (!matriz) return;
@@ -617,6 +635,11 @@ export function DupletaModule() {
                                   {celda?.vendida ? (celda.precio ?? matriz.precio).toLocaleString("es-VE", { maximumFractionDigits: 2 }) : matriz.precio.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
                                 </span>
                                 <span className="block truncate text-[11px] font-bold leading-tight">{celda?.vendida ? (celda.cliente_nombre || "—") : "clic ▼"}</span>
+                                {celda?.vendida && celda.grupo_nombre ? (
+                                  <span className="block truncate text-[9px] font-bold uppercase leading-tight text-violet-600">
+                                    {celda.grupo_nombre}
+                                  </span>
+                                ) : null}
                               </button>
                             )}
                           </td>

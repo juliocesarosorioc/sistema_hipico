@@ -13,7 +13,6 @@
  */
 import { supabase } from "@/lib/supabase";
 import { liquidarOficial } from "@/lib/motores/oficiales";
-import { marcasConfigParaCarrera } from "@/lib/marcas";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import { ventanaDiaLocal } from "@/lib/liquidacion/fecha";
 import { parsearNini, netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem } from "@/lib/bettingEngine";
@@ -47,8 +46,7 @@ const NUM = (v: unknown): number => {
 /** Fabrica TicketMotor desde una fila de tickets_apuestas. */
 export function motorDesdeFila(
   fila: Record<string, unknown>,
-  ctx: LiquidarSaldosInput,
-  marcasConfig?: MarcaConfigLiquidacion | null
+  ctx: LiquidarSaldosInput
 ): TicketMotor {
   const tipo = String(fila.nombre_jugada ?? "JUGADA").trim().toUpperCase();
   const monto = NUM(fila.monto_jugado);
@@ -70,13 +68,8 @@ export function motorDesdeFila(
     pizarra: ctx.pizarra,
     dividendos: ctx.dividendos ?? null,
     premio_por_tabla: ctx.premio_por_tabla ?? null,
-    ...(/^MARCA|MARCAR/.test(tipo) && marcasConfig
-      ? { marcas: { marcados: marcasConfig.marcados, contra: marcasConfig.contra } }
-      : {}),
   };
 }
-
-type MarcaConfigLiquidacion = { marcados: string[]; contra: string[] };
 
 /**
  * Liquida TODOS los tickets Pendientes de una carrera y aplica el resultado
@@ -97,7 +90,6 @@ export async function aplicarLiquidacionSaldos(
   // tickets pendientes", sin liquidar nunca nada.
   const f = hoyLocal();
   const { desde, hasta } = ventanaDiaLocal(f);
-  const marcasConfig = await marcasConfigParaCarrera(input.hipodromo, input.carrera, f);
   let filas: unknown[] = [];
   try {
     const { data, error } = await sdb
@@ -137,7 +129,7 @@ export async function aplicarLiquidacionSaldos(
   const errores: string[] = [];
   for (const fRaw of filas) {
     const fila = fRaw as Record<string, unknown>;
-    const res = liquidarOficial(motorDesdeFila(fila, input, marcasConfig), input.tasaComision);
+    const res = liquidarOficial(motorDesdeFila(fila, input), input.tasaComision);
     decisiones.push({ fila, res });
   }
 

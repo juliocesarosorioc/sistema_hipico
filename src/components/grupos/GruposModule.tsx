@@ -66,7 +66,7 @@ const DETALLE_TIPO = (nombre: string): string => {
   if (/PLACE|LUGAR/.test(n)) return "place · 1.º/2.º";
   if (/SHOW|MOSTRAR/.test(n)) return "show · 1.º/2.º/3.º";
   if (/PUESTOS|EXACTA|PERFECTA/.test(n)) return "puestos · exacta";
-  if (/MARCAS|TRIFECTA/.test(n)) return "marcas · trifecta";
+  if (/TRIFECTA/.test(n)) return "trifecta";
   return "comisión por ticket";
 };
 

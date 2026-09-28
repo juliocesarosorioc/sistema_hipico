@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { getHorseColor } from "@/lib/horseColors";
 import { useEffect, useMemo, useState } from "react";
@@ -69,7 +69,7 @@ type Props = {
  * según su lugar (1°→W+P+S, 2°→P+S, 3°→S) y los caballos empatados comparten
  * su pool. Solo se cargan dividendos por caballo (opcional).
  *
- * MARCAS se pagan por el orden final de la pizarra (sin casilla). TABLAS y
+ * Los puestos se pagan por el orden final de la pizarra. TABLAS y
  * REMATES pagan al caballo que CRUZÓ LA RAYA primero (por defecto el 1º
  * oficial); si un ganador es bajado/descalificado se puede estipular su número.
  * El premio por tabla se calcula automáticamente (valor que paga × cantidad).
@@ -244,7 +244,7 @@ export function CargaResultadosModal({
                 />
               </label>
               <p className="max-w-[220px] text-[9px] italic text-slate-500">
-                Este caballo cobra TABLAS y REMATES; los puestos (WIN/PLACE/SHOW) y MARCAS pagan por el orden de llegada oficial.
+                Este caballo cobra TABLAS y REMATES; los puestos (WIN/PLACE/SHOW) pagan por el orden de llegada oficial.
               </p>
             </div>
           )}
@@ -348,7 +348,7 @@ export function CargaResultadosModal({
 
         <div className="border-t border-line bg-gray-50 px-3 py-2">
           <p className="mb-1.5 text-[9px] italic text-slate-500">
-            Puestos (WIN/PLACE/SHOW) y MARCAS pagan por el orden de llegada oficial. TABLAS y REMATES pagan al que cruzó la
+            Puestos (WIN/PLACE/SHOW) pagan por el orden de llegada oficial. TABLAS y REMATES pagan al que cruzó la
             raya primero; el premio de la tabla se calcula automáticamente (lo que paga × cantidad, con ajuste proporcional por
             retiros).
           </p>

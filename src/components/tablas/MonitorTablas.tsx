@@ -586,23 +586,33 @@ export function MonitorTablas({
                 <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">
                   Grupo (moneda y convenio)
                 </label>
-                <select
-                  value={grupoVenta}
-                  onChange={(e) => setGrupoVenta(e.target.value)}
-                  disabled={vendiendoCargando}
-                  className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                >
-                  <option value="">— Seleccionar grupo —</option>
-                  {opcionesVenta.grupos.map((g) => (
-                    <option key={String(g.id)} value={String(g.id)}>
-                      {g.nombre} · {g.moneda ?? "USD"}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-[10px] leading-tight text-slate-500">
-                  La tabla fija no cobra comisión al jugador. La del grupo se calcula sobre el monto
-                  decidido.
-                </p>
+                {opcionesVenta.grupos.length === 0 && !vendiendoCargando ? (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-900">
+                    No hay grupos de venta activos, y sin grupo la venta no puede registrarse
+                    (el ticket necesita el grupo para la moneda y el convenio de comisión).
+                    Crea al menos un grupo en <strong>Grupos</strong> antes de vender.
+                  </p>
+                ) : (
+                  <>
+                    <select
+                      value={grupoVenta}
+                      onChange={(e) => setGrupoVenta(e.target.value)}
+                      disabled={vendiendoCargando}
+                      className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    >
+                      <option value="">— Seleccionar grupo —</option>
+                      {opcionesVenta.grupos.map((g) => (
+                        <option key={String(g.id)} value={String(g.id)}>
+                          {g.nombre} · {g.moneda ?? "USD"}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-[10px] leading-tight text-slate-500">
+                      La tabla fija no cobra comisión al jugador. La del grupo se calcula sobre el
+                      monto decidido.
+                    </p>
+                  </>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Ejemplar</label>

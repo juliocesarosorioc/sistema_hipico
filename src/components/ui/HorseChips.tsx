@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { chipsHorseColor, getHorseColor, type HorseColor } from "@/lib/horseColors";
 
@@ -7,7 +7,7 @@ import { chipsHorseColor, getHorseColor, type HorseColor } from "@/lib/horseColo
  * El <input> conserva el caret y la edición completa (texto transparente),
  * mientras un overlay de chips <badges> refleja la interpretación del parser
  * tolerante (separadores / , ; - espacios). Sin bordes ni padding: pensado
- * para incrustarse en la grilla densa estilo Excel de Marcas (y reutilizable
+ * para incrustarse en la grilla densa estilo Excel de Carreras (y reutilizable
  * en Taquilla).
  */
 export function ChipField({

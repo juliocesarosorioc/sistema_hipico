@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import { listarGruposAdmin, type GrupoRow } from "@/lib/grupos";
@@ -284,7 +284,7 @@ export function ReporteModule() {
         )}
 
         <div className="bg-gray-50 p-3 border-t border-gray-300 text-center text-[10px] text-gray-500">
-          ✨ Reporte de saldos consolidados · motor oficial (NINI, PP, PAREO, TABLAS, MARCAS, CRUCE NETO) · rango = ciclo fiscal del grupo
+          ✨ Reporte de saldos consolidados · motor oficial (NINI, PP, PAREO, TABLAS, CRUCE NETO) · rango = ciclo fiscal del grupo
         </div>
       </div>
 

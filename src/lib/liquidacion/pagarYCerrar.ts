@@ -1,5 +1,4 @@
-import { liquidarOficial } from "@/lib/motores/oficiales";
-import { marcasConfigParaCarrera } from "@/lib/marcas";
+﻿import { liquidarOficial } from "@/lib/motores/oficiales";
 import { cerrarTablaFija } from "@/lib/tablas-fijas";
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem } from "@/lib/bettingEngine";
@@ -38,7 +37,7 @@ export type ResLiquidarCarrera = {
 
 /**
  * Flujo "Pagar Carrera": liquida cada ticket del operador contra el motor
- * UNIVERSAL (líquida NINI, REMATE, PUESTOS, GANADOR, Tablas Fijas y Marcas con
+ * UNIVERSAL (líquida NINI, REMATE, PUESTOS, GANADOR, Tablas Fijas con
  * dividendos oficiales de resultados_carreras cuando existen) y, tras procesar
  * con éxito, Cierra automáticamente la Tabla Fija de esa carrera (status →
  * 'Cerrada'). La caché UI se sincroniza marcarCerrada() (sin recargar página).
@@ -53,10 +52,6 @@ export async function liquidarCarreraYCerrarTabla(opts: {
 }): Promise<ResLiquidarCarrera> {
   const { hipodromo, carrera, pizarra, tickets, tasaComision } = opts;
   const dividendos = opts.dividendos ?? (await dividendosDe(hipodromo, carrera));
-
-  // Config de Marcas de la carrera (izquierda/derecha) para interceptar
-  // los tickets tipo MARCA según el caballo jugado.
-  const marcasConfig = await marcasConfigParaCarrera(hipodromo, carrera);
 
   const procesados: ResLiquidarCarrera["procesados"] = [];
   const metadatos: Array<{ cliente1?: string; caballo: string; monto: number; permiteCruces?: boolean }> = [];
@@ -94,14 +89,6 @@ export async function liquidarCarreraYCerrarTabla(opts: {
       puesto_final: typeof pizarra.primero === "number" ? pizarra.primero : firstOrdinal(pizarra.primero),
       pizarra,
       dividendos: dividendos ?? null,
-      ...(/^MARCA|MARCAR/.test(tipo) && marcasConfig
-        ? {
-            marcas: {
-              marcados: marcasConfig.marcados,
-              contra: marcasConfig.contra,
-            },
-          }
-        : {}),
     };
 
     const res = liquidarOficial(ticketMotor, tasaComision);

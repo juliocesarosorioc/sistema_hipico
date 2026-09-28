@@ -11,6 +11,13 @@ export type GrupoVenta = {
   nombre: string;
   moneda?: string | null;
   cupo_tabla?: number | null;
+  /**
+   * Tasa de comision del grupo, en PORCENTAJE (2.5 = 2,5%). La columna existe
+   * y GrupoRow la expone, pero faltaba aqui, y sin ella las pantallas de venta
+   * no tenian de donde sacar la comision y usaban un 5% fijo a pelo. Con eso
+   * un grupo al 2,5 (el default al crear) pagaba el doble de lo pactado.
+   */
+  comision_default?: number | null;
   es_principal?: boolean | null;
   activo?: boolean | null;
   /** Jerarquía de cruces: switch general del grupo (default TRUE = permitido). */
