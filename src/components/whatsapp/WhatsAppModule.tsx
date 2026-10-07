@@ -26,6 +26,7 @@ import {
   type PlantillaWsp,
   type RegistroWsp,
 } from "@/lib/whatsapp";
+import { leerResultadoOficial } from "@/lib/carreras-dia";
 import {
   cargarJugadasDeCarrera,
   relacionJugadas,
@@ -79,6 +80,7 @@ export function WhatsAppModule() {
   const [conEnvios, setConEnvios] = useState(0);
   const [fechaHeader, setFechaHeader] = useState("Cargando…");
   const [modalPlantillas, setModalPlantillas] = useState(false);
+  const [plantillaInicial, setPlantillaInicial] = useState("");
   const [guardandoTel, setGuardandoTel] = useState(false);
   const [tipoReporte, setTipoReporte] = useState<TipoReporte>("saldos");
   const [repHipodromo, setRepHipodromo] = useState("");
@@ -171,12 +173,23 @@ export function WhatsAppModule() {
       setReporte("Indica Hipódromo y N° de Carrera para generar la relación.");
       return;
     }
+    const oficial = await leerResultadoOficial(hip, car);
+    // La pizarra escrita a mano manda si el operador la escribió; si no, se usa
+    // la oficial cargada. Los dividendos SIEMPRE salen de resultados_carreras:
+    // antes se guardaban y ningún reporte los leía.
+    const puestosManual = repPizarra
+      .split(/[^0-9A-Za-z]+/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+    const pizarraTexto = repPizarra.trim() || (oficial?.puestos.length ? oficial.puestos.join(" · ") : "");
     const meta: MetaCarrera = {
       grupo: CLUB_NOMBRE,
       hipodromo: hip,
       carrera: car,
       retirados: repRetirados.trim(),
-      pizarra: repPizarra.trim(),
+      pizarra: pizarraTexto,
+      pizarraPuestos: oficial?.puestos.length ? oficial.puestos : puestosManual,
+      dividendos: oficial?.dividendos ?? null,
     };
     const jugadas = await cargarJugadasDeCarrera({
       hipodromo: hip,
@@ -361,7 +374,7 @@ export function WhatsAppModule() {
                     type="number"
                     min={1}
                     placeholder="4"
-                    className="rounded-lg border border-slate-300 bg-slate-50 px-2 py-2 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="rounded-lg border border-slate-300 bg-slate-50 px-2 py-2 text-right text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-[10px] font-bold uppercase text-slate-600">
@@ -532,6 +545,54 @@ export function WhatsAppModule() {
         </section>
       </div>
 
+      {/* ============ PLANTILLAS DE REPORTES, TABLAS Y REMATES ============ */}
+      <section className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+        <div className="flex items-center justify-between bg-indigo-700 p-3.5 text-xs font-bold uppercase tracking-wider text-white">
+          <span>🗂️ Plantillas de Reportes, Tablas y Remates</span>
+          <button
+            type="button"
+            onClick={() => {
+              setPlantillaInicial("");
+              setModalPlantillas(true);
+            }}
+            className="rounded bg-indigo-800 px-3 py-1 text-[10px] transition-colors hover:bg-indigo-900"
+          >
+            ⚙️ Gestionar
+          </button>
+        </div>
+        <p className="px-4 pt-3 text-[11px] font-medium text-slate-500">
+          Aquí vive el diseño de los mensajes de Remates y Tablas. Edita la plantilla y el módulo de Remates
+          arma su mensaje con ese formato y contenido.
+        </p>
+        <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
+          {plantillas
+            .filter((p) => p.grupo !== "envio")
+            .map((p) => (
+              <div key={p.id} className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-black uppercase tracking-wide text-slate-800">{p.label}</p>
+                  <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[9px] font-black uppercase text-indigo-700">
+                    {p.grupo}
+                  </span>
+                </div>
+                <p className="max-h-28 overflow-hidden whitespace-pre-wrap rounded-lg border border-line bg-white p-2 font-mono text-[10px] leading-relaxed text-slate-600">
+                  {p.txt}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPlantillaInicial(p.id);
+                    setModalPlantillas(true);
+                  }}
+                  className="mt-auto self-start rounded-lg bg-indigo-600 px-3 py-1 text-[10px] font-black uppercase text-white transition-colors hover:bg-indigo-700"
+                >
+                  ✏️ Editar diseño
+                </button>
+              </div>
+            ))}
+        </div>
+      </section>
+
       {/* ================= HISTORIAL ================= */}
       <section className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
         <div className="flex items-center justify-between bg-slate-800 p-3.5 text-xs font-bold uppercase tracking-wider text-white">
@@ -604,6 +665,7 @@ export function WhatsAppModule() {
         onCerrar={() => setModalPlantillas(false)}
         plantillas={plantillas}
         onGuardar={onGuardarPlantillas}
+        plantillaInicial={plantillaInicial}
       />
     </div>
   );

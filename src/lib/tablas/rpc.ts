@@ -1,8 +1,13 @@
 import { supabase } from "@/lib/supabase";
+import { exigirCapacidad } from "@/lib/seguridad/vigente";
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { parseNum } from "@/lib/tablas/tipos";
-import { leerProgramaPorFecha } from "@/lib/gaceta/programa";
 import { alternarRetiroCarrera } from "@/lib/carreras/retiros";
+import { sincronizarCentralDesdeTabla } from "@/lib/carreras-dia";
+import { normalizarFilas } from "@/lib/tablas/normalizar";
+
+// Se reexporta para no romper a quien ya importaba la normalizacion desde aca.
+export { normalizarFilas };
 
 export const FALLBACK_HIPODROMOS = [
   "LA RINCONADA",
@@ -22,6 +27,8 @@ export const FALLBACK_HIPODROMOS = [
   "WOODBINE",
 ];
 
+import { normalizarEstado } from "@/lib/hipodromos/tipos";
+
 /** Hipódromos venezolanos que se muestran operativos. */
 export const HIPODROMOS_VE = ["SANTA RITA", "VALENCIA", "RANCHO ALEGRE", "LA RINCONADA"];
 
@@ -40,42 +47,59 @@ export const HIPODROMOS_USA = [
   "WOODBINE",
 ];
 
-/** Únicos hipódromos que se muestran operativos (decisión del negocio). */
+/**
+ * Lista de hipódromos que el legacy daba por operativos.
+ *
+ * @deprecated NO la usa la app. Antes `listarHipodromos` filtraba por esta lista
+ * y por eso cualquier hipódromo registrado fuera de VE+USA era INVISIBLE aunque
+ * estuviera en la base. Hoy manda el `estado` de la fila (editable desde el CRUD
+ * de Hipódromos) y la baja lógica `eliminado_en`. Se conserva el export por
+ * compatibilidad con los scripts legacy.
+ */
 export const HIPODROMOS_MOSTRAR = [...HIPODROMOS_VE, ...HIPODROMOS_USA];
 
 export type OpcionHipodromo = { value: string; label: string };
 
 /**
- * Lista de hipódromos operativos (misma fuente que el legacy: `hipodromos`
- * con SELECT plano ordenado — sin filtros de columna inventados).
- * La data sale SIEMPRE de la tabla real cuando hay conexión; el respaldo
- * local solo aparece si la tabla/RLS impide la lectura.
+ * Catálogo para los selectores de la plataforma.
  *
- * `incluirTodos: true` omite la whitelist VE+USA y devuelve TODOS los
- * hipódromos registrados (lo necesita Dupletas); por defecto se mantiene la
- * whitelist para no alterar el resto de módulos.
+ * SIN WHITELIST: antes se filtraba por `HIPODROMOS_MOSTRAR` (VE + USA), así que
+ * cualquier hipódromo registrado fuera de esa lista era invisible aunque
+ * estuviera en la base. Ahora sale todo lo registrado y lo que se decide es el
+ * ESTADO de la fila, que es un dato del negocio editable desde el CRUD:
+ *
+ *   - archivado (`eliminado_en`) → nunca se ofrece. Su historial queda.
+ *   - 'Inactivo' / 'Suspendido' → tampoco se ofrece (eso es lo que significa),
+ *     pero sigue en el catálogo del CRUD y se reactiva desde ahí.
+ *   - 'Activo' → se ofrece.
+ *
+ * `incluirTodos: true` trae también los suspendidos/inactivos (lo necesita
+ * Dupletas, que arma la matriz de todas las sedes conocidas).
  */
 export async function listarHipodromos(opciones?: { incluirTodos?: boolean }): Promise<OpcionHipodromo[]> {
   const todos = Boolean(opciones?.incluirTodos);
   const mapear = (rows: unknown[]): OpcionHipodromo[] =>
     rows
       .map((r) => {
-        const h = r as { nombre?: unknown };
+        const h = r as { nombre?: unknown; estado?: unknown; eliminado_en?: unknown };
+        // Archivado: fuera de todo selector. Sin la columna (SQL sin aplicar)
+        // `undefined` no es un valor de fecha, así que la fila pasa.
+        if (String(h.eliminado_en ?? "").trim()) return null;
+        if (!todos && normalizarEstado(h.estado) !== "Activo") return null;
         return { value: String(h.nombre ?? "").toUpperCase(), label: String(h.nombre ?? "") };
       })
-      .filter((h) => h.label.trim().length)
-      .filter((h) => todos || HIPODROMOS_MOSTRAR.includes(h.value))
+      .filter((h): h is OpcionHipodromo => Boolean(h) && h!.label.trim().length > 0)
       .sort((a, b) => a.label.localeCompare(b.label));
 
   const sdb = supabase;
   if (!sdb) return mapear(FALLBACK_HIPODROMOS);
 
   const orquestar = async () => {
-    // Intento 1 — SELECT plano (exactamente como js/hipodromos.js y js/taquilla.js).
-    const r1 = await sdb.from("hipodromos").select("id, nombre").order("nombre", { ascending: true });
+    // Intento 1 — SELECT plano con estado (mismo origen que js/hipodromos.js).
+    const r1 = await sdb.from("hipodromos").select("id, nombre, estado, eliminado_en").order("nombre", { ascending: true });
     if (!r1.error) return r1.data as unknown[];
-    // Intento 2 — esquema con borrado lógico explícito (deleted_at).
-    const r2 = await sdb.from("hipodromos").select("id, nombre").is("deleted_at", null).order("nombre");
+    // Intento 2 — el SQL de hipódromos todavía sin aplicar (sin la columna).
+    const r2 = await sdb.from("hipodromos").select("id, nombre, estado").order("nombre", { ascending: true });
     if (!r2.error) return r2.data as unknown[];
     // Intento 3 — esquema mínimo legacy (estado = 'Activo').
     const r3 = await sdb.from("hipodromos").select("id, nombre").eq("estado", "Activo").order("nombre");
@@ -133,83 +157,24 @@ function hipoKey(h: unknown): string {
 
 /**
  * Carreras registradas para [fecha + hipódromo] en la BD.
- * Cruza tres fuentes: el Programa del Día (programa_dia), las Tablas Fijas
- * publicadas (tablas_fijas) y las carreras manuales/resultados
- * (resultados_carreras). Devuelve números únicos ordenados — alimenta el
- * semáforo dinámico de la Taquilla contextualizada por fecha.
+ * Lee SOLO la MATRIZ MAESTRA `carreras` (sql/carreras.sql): la carrera existe
+ * desde que se guarda el programa, sin depender de Publicar ni de correr
+ * resultados. Devuelve números únicos ordenados — alimenta el semáforo dinámico
+ * de la Taquilla contextualizada por fecha.
  */
 export async function listarCarrerasPorDia(fecha: string, hipodromo: string): Promise<number[]> {
-  const set = new Set<number>();
+  if (!fecha) return [];
   const clave = hipoKey(hipodromo);
-
-  const fuentePrograma = async () => {
-    if (!fecha) return;
-    const r = await leerProgramaPorFecha(fecha);
-    for (const c of r.data?.carreras ?? []) {
-      if (!c.carrera) continue;
-      if (clave && hipoKey(c.hipodromo) !== clave) continue;
-      set.add(Number(c.carrera));
-    }
-  };
-
-  const fuenteTablas = async () => {
-    if (!supabase || !fecha) return;
-    try {
-      // Query ESTRICTO por la fecha del evento (ISO YYYY-MM-DD): las tablas
-      // publicadas desde el Ensamblaje siempre llevan `fecha` explícita.
-      const { data, error } = await supabase
-        .from("tablas_fijas")
-        .select("carrera, hipodromo, fecha, fecha_creacion")
-        .ilike("hipodromo", `%${hipodromo}%`)
-        .eq("fecha", fecha);
-      if (error) return;
-      for (const r of (data ?? []) as Array<{ carrera?: unknown; hipodromo?: unknown }>) {
-        const n = Number(r.carrera);
-        if (Number.isFinite(n) && n > 0) set.add(n);
-      }
-      // Fallback LEGACY: registros antiguos que solo tienen fecha_creacion
-      // (migrados) y ninguna `fecha` — se cruzan por el prefijo del día.
-      if (data && data.length > 0) return;
-      const { data: leg } = await supabase
-        .from("tablas_fijas")
-        .select("carrera")
-        .ilike("hipodromo", `%${hipodromo}%`)
-        .or(`fecha_creacion.like.${fecha}%`);
-      for (const r of (leg ?? []) as Array<{ carrera?: unknown }>) {
-        const n = Number(r.carrera);
-        if (Number.isFinite(n) && n > 0) set.add(n);
-      }
-    } catch {
-      /* RLS o esquema distinto → se ignora */
-    }
-  };
-
-  // Fuente manual: carreras registradas sin Gaceta en resultados_carreras
-  // (upsert de registrarCarreraProgramada) para la misma fecha + hipódromo.
-  const fuenteManual = async () => {
-    if (!supabase || !fecha) return;
-    try {
-      const { data, error } = await supabase
-        .from("resultados_carreras")
-        .select("carrera, hipodromo, fecha")
-        .eq("fecha", fecha)
-        .ilike("hipodromo", `%${hipodromo}%`);
-      if (error) return;
-      for (const r of (data ?? []) as Array<{ carrera?: unknown }>) {
-        const n = Number(r.carrera);
-        if (Number.isFinite(n) && n > 0) set.add(n);
-      }
-    } catch {
-      /* sin tabla → se ignora */
-    }
-  };
-
-  try {
-    await Promise.all([fuentePrograma(), fuenteTablas(), fuenteManual()]);
-  } catch {
-    /* insignificante */
+  const { leerCarrerasMaestro } = await import("@/lib/carreras/maestro");
+  const m = await leerCarrerasMaestro(fecha, "");
+  if (!m.ok) return [];
+  const set = new Set<number>();
+  for (const fila of m.filas) {
+    const n = Number(fila.carrera);
+    if (!Number.isFinite(n) || n <= 0) continue;
+    if (clave && hipoKey(fila.hipodromo) !== clave) continue;
+    set.add(n);
   }
-
   return [...set].sort((a, b) => a - b);
 }
 
@@ -227,70 +192,7 @@ export async function listarTablasPublicadas(): Promise<TablaFijaRow[]> {
   return [];
 }
 
-/**
- * Orden de presentación: primero por hipódromo (A-Z) y dentro de cada uno por
- * número de carrera ASCENDENTE. Sin esto el orden es el que devuelva la
- * consulta (arbitrario) y las carreras se ven desordenadas: 3, 11, 2, 1.
- * Se compara numéricamente, no como texto, para que C2 vaya antes que C10.
- */
-function compararParaMostrar(a: TablaFijaRow, b: TablaFijaRow): number {
-  const hipo = (a.hipodromo ?? "").localeCompare(b.hipodromo ?? "", "es");
-  if (hipo !== 0) return hipo;
-  const ca = Number(a.carrera);
-  const cb = Number(b.carrera);
-  // Las carreras sin número válido se van al final, no al principio.
-  const va = Number.isFinite(ca) && ca > 0 ? ca : Number.POSITIVE_INFINITY;
-  const vb = Number.isFinite(cb) && cb > 0 ? cb : Number.POSITIVE_INFINITY;
-  if (va !== vb) return va - vb;
-  return (a.fecha ?? "").localeCompare(b.fecha ?? "");
-}
-
-/** Normaliza filas crudas (número/string) al contrato de la SPA. */
-export function normalizarFilas(data: unknown[]): TablaFijaRow[] {
-  return data
-    .map((r) => {
-    const raw = r as Record<string, unknown>;
-    const caballos = Array.isArray(raw.caballos)
-      ? raw.caballos.map((c) => {
-          const cc = c as Record<string, unknown>;
-          return {
-            numero: String(cc.numero ?? ""),
-            nombre: String(cc.nombre ?? ""),
-            nacionalidad: cc.nacionalidad ? String(cc.nacionalidad) : null,
-            valor_ejemplar: cc.valor_ejemplar != null ? parseNum(cc.valor_ejemplar) : null,
-            retirado: Boolean(cc.retirado),
-          };
-        })
-      : null;
-    const grupos = Array.isArray(raw.tabla_grupos)
-      ? raw.tabla_grupos.map((g) => g as Record<string, unknown>)
-      : null;
-    return {
-      id: String(raw.id ?? ""),
-      hipodromo: raw.hipodromo ? String(raw.hipodromo) : null,
-      hipodromo_id: raw.hipodromo_id != null ? (raw.hipodromo_id as string | number) : null,
-      carrera: parseNum(raw.carrera) || null,
-      fecha: raw.fecha ? String(raw.fecha) : null,
-      fecha_creacion: raw.fecha_creacion ? String(raw.fecha_creacion) : null,
-      estado: raw.estado ? String(raw.estado) : null,
-      premio_original: raw.premio_original != null ? parseNum(raw.premio_original) : null,
-      premio_recalculado: raw.premio_recalculado != null ? parseNum(raw.premio_recalculado) : null,
-      suma_base_tabla: raw.suma_base_tabla != null ? parseNum(raw.suma_base_tabla) : null,
-      monto_tabla: raw.monto_tabla != null ? parseNum(raw.monto_tabla) : null,
-      limite_ventas: raw.limite_ventas != null ? parseNum(raw.limite_ventas) : null,
-      cantidad_vendida: raw.cantidad_vendida != null ? parseNum(raw.cantidad_vendida) : null,
-      moneda: raw.moneda ? String(raw.moneda) : null,
-      distancia_carrera: raw.distancia_carrera ? String(raw.distancia_carrera) : null,
-      superficie: raw.superficie ? String(raw.superficie) : null,
-      retirados_oficiales: raw.retirados_oficiales ? String(raw.retirados_oficiales) : null,
-      caballos,
-      tabla_grupos: grupos as TablaFijaRow["tabla_grupos"],
-    };
-  })
-    .sort(compararParaMostrar);
-}
-
-/** Detecta "column X does not exist" para retirar columnas del esquema real. */
+/** Saca el nombre de la columna que la BD reports como inexistente. */
 function columnaInexistente(msj: string): string | null {
   const m = /column "([^"]+)" does not exist/.exec(msj);
   return m ? m[1] : null;
@@ -401,6 +303,7 @@ export async function eliminarTablaFija(
   if (id == null) return { ok: false, error: "Falta el id de la tabla." };
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
+    exigirCapacidad("tablas:btn_eliminar");
     const { error } = await supabase.from("tablas_fijas").delete().eq("id", id);
     if (error) throw error;
     return { ok: true };
@@ -413,18 +316,35 @@ export async function eliminarTablaFija(
 export async function publicarTabla(t: TablaFijaRow): Promise<{ ok: boolean; id?: string | number; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
+    exigirCapacidad("tablas:fn_publicar");
     const existente = await idExistente(t.hipodromo, t.carrera, t.fecha ?? t.fecha_creacion);
     const r = existente != null
       ? await persistirFila(payloadDeTabla(t), "update", existente)
       : await persistirFila(payloadDeTabla(t), "insert");
     if (r.error) return { ok: false, error: r.error };
-    return { ok: true, id: r.id };
+    // La tabla ya está publicada (eso no falla), pero sin esto la carrera no
+    // existe en el central y Marcas/Gestión/Dupletas no la ven. Se avisa, pero
+    // no se tira la publicación abajo.
+    const sync = await sincronizarCentralDesdeTabla(t).catch((e) => ({ ok: false, error: String(e) }));
+    return { ok: true, id: r.id, error: sync.ok ? undefined : `publicada, pero no se registró en el central: ${sync.error}` };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
 }
 
-export type ErrorPublicacionLote = { hipodromo: string; carrera: number | null; error: string };
+export type ErrorPublicacionLote = {
+  hipodromo: string;
+  carrera: number | null;
+  error: string;
+  /**
+   * `true` cuando la tabla SÍ se publicó pero el central no se pudo sincronizar.
+   * Sin esto, el llamador no puede distinguir "no se publicó" (se reintenta, la
+   * tarjeta queda en el Ensamblaje) de "se publicó y no se ve en Marcas" (ya está
+   * vendiéndose; solo hay que avisar). Confundirlos deja carreras vendidas pero
+   * invisibles, que es justo el incidente del 04-10-2026.
+   */
+  publicada?: boolean;
+};
 
 /**
  * Publicación en LOTE ("Publicar todas"): resuelve los ids existentes (upsert
@@ -441,19 +361,31 @@ export async function publicarTablasLote(
 
   for (const t of tablas) {
     try {
-    const existente = await idExistente(t.hipodromo, t.carrera, t.fecha ?? t.fecha_creacion);
-    const r = existente != null
-
+      exigirCapacidad("tablas:fn_publicar");
+      const existente = await idExistente(t.hipodromo, t.carrera, t.fecha ?? t.fecha_creacion);
+      const r = existente != null
         ? await persistirFila(payloadDeTabla(t), "update", existente)
         : await persistirFila(payloadDeTabla(t), "insert");
       if (r.error) throw new Error(r.error);
       okCount++;
+      // Igual que en `publicarTabla`: la publicación no queda incompleta por
+      // fallar el central, pero se avisa para que el operador sepa que esa
+      // carrera aún no es visible en Marcas/Gestión/Dupletas.
+      const sync = await sincronizarCentralDesdeTabla(t).catch((e) => ({ ok: false, error: String(e) }));
+      if (!sync.ok) {
+        // `publicada: true` porque la tabla ya quedó publicada; esto es un AVISO
+        // (no se ve en Marcas/Gestión/Dupletas), no un fallo de publicación.
+        errores.push({ hipodromo: t.hipodromo ?? "", carrera: t.carrera ?? null, error: `publicada, pero sin central: ${sync.error}`, publicada: true });
+      }
     } catch (e) {
       errores.push({ hipodromo: t.hipodromo ?? "", carrera: t.carrera ?? null, error: (e as Error).message });
     }
   }
 
-  return { ok: errores.length === 0, okCount, errores };
+  // `ok` refleja la PUBLICACIÓN, no la sincronización: una tabla publicada con
+  // el central caído sigue siendo `ok`. Los avisos de central van en `errores`
+  // con `publicada: true` para que el llamador no los trate como fallos.
+  return { ok: errores.every((e) => e.publicada === true), okCount, errores };
 }
 
 const COLUMNAS_EDITABLES = [
@@ -481,18 +413,23 @@ export async function actualizarTabla(
   patch: Record<string, unknown>
 ): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  try {
+    exigirCapacidad("tablas:btn_editar");
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
   const limpio: Record<string, unknown> = {};
   for (const key of COLUMNAS_EDITABLES) {
     if (key in patch) limpio[key] = patch[key];
   }
-  if (!Object.keys(limpio).length) return { ok: true };
-  try {
-    const { error } = await supabase.from("tablas_fijas").update(limpio).eq("id", id);
-    if (error) throw error;
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
-  }
+    if (!Object.keys(limpio).length) return { ok: true };
+    try {
+      const { error } = await supabase.from("tablas_fijas").update(limpio).eq("id", id);
+      if (error) throw error;
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
 }
 
 const MENSAJE_SIN_RPC =
@@ -590,9 +527,14 @@ export async function liquidarTablaFija(params: {
   /** Ejemplares ganadores separados por coma: '1,3,4'. */
   ganadores: string;
   usuario?: string | null;
-}): Promise<{ ok: boolean; error?: string; ticketsResueltos?: number; pagos?: number }> {
-  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
-  const { data, error } = await supabase.rpc("club_liquidar_tabla_fija", {
+  }): Promise<{ ok: boolean; error?: string; ticketsResueltos?: number; pagos?: number }> {
+    if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+    try {
+      exigirCapacidad("tablas:btn_liquidar");
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+    const { data, error } = await supabase.rpc("club_liquidar_tabla_fija", {
     p_tabla_id: params.tablaId,
     p_ganadores: params.ganadores,
     p_usuario: params.usuario ?? null,
@@ -631,6 +573,11 @@ export async function retirarEjemplarTabla(
 ): Promise<{ ok: boolean; error?: string; premio?: number; reembolsos?: number }> {
   const caballos = Array.isArray(tabla.caballos) ? tabla.caballos : [];
   if (idx < 0 || idx >= caballos.length) return { ok: false, error: "Ejemplar no encontrado." };
+  try {
+    exigirCapacidad("gestion_jugadas:btn_retirar_ejemplar");
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
   const ejemplar = caballos[idx];
   const fecha = String(tabla.fecha || tabla.fecha_creacion || "").slice(0, 10);
   if (!fecha) return { ok: false, error: "La tabla no tiene fecha de evento: no se puede centralizar el retiro." };
@@ -644,23 +591,4 @@ export async function retirarEjemplarTabla(
   if (!r.ok) return { ok: false, error: r.error ?? "No se pudo registrar el retiro." };
   const premio = r.premios.find((p) => p.tabla === String(tabla.id))?.premio;
   return { ok: true, premio, reembolsos: r.reembolsos };
-}
-
-/** Guarda la pizarra de resultados (RPC opcional del paquete SQL, si existe). */
-export async function guardarPizarraCarrera(opts: {
-  hipodromo?: string | null;
-  carrera?: number | null;
-  pizarra: Record<string, unknown>;
-}): Promise<boolean> {
-  if (!supabase) return false;
-  try {
-    const { error } = await supabase.rpc("club_guardar_pizarra_carrera", {
-      p_hipodromo: opts.hipodromo,
-      p_carrera: opts.carrera,
-      p_pizarra: opts.pizarra,
-    });
-    return !error;
-  } catch {
-    return false;
-  }
 }

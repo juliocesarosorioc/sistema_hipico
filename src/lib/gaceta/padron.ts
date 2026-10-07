@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { exigirCapacidad } from "@/lib/seguridad/vigente";
 
 export type EjemplarPadron = {
   nombre: string;
@@ -254,8 +255,14 @@ export type ResRegistrarEjemplares = {
  * Soporta carreras con `caballos` (shape programa_dia) o con `ejemplares` (IA).
  */
 export async function registrarEjemplares(carreras: Array<Record<string, unknown>>): Promise<ResRegistrarEjemplares> {
-  const totales: ResRegistrarEjemplares = { nuevos: 0, vinculados: 0, fallidos: 0 };
-  if (!supabase) return totales;
+    const totales: ResRegistrarEjemplares = { nuevos: 0, vinculados: 0, fallidos: 0 };
+    if (!supabase) return totales;
+    try {
+      exigirCapacidad("ejemplares:fn_guardar_ejemplar");
+    } catch (e) {
+      return { ...totales, fallidos: carreras.length, errorDb: (e as Error).message };
+    }
+
 
   const mapa = new Map<string, string | number>();
   try {

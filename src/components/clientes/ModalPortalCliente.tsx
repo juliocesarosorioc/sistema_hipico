@@ -88,16 +88,16 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
       <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden">
         <div className="bg-cyan-700 px-5 py-4 text-xs font-black uppercase tracking-wider text-white flex items-center justify-between">
           <span>
-            <i className="fas fa-link mr-2"></i> Portal de Consulta del Cliente
+            <span className="mr-2">🔗</span> Portal de Consulta del Cliente
           </span>
           <button className="text-cyan-200 hover:text-white" onClick={onClose} aria-label="Cerrar">
-            <i className="fas fa-times"></i>
+            <span >✕</span>
           </button>
         </div>
 
         <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
           <p className="font-bold text-slate-800">
-            <i className="fas fa-user mr-1 text-cyan-600"></i>
+            <span className="mr-1 text-cyan-600">👤</span>
             {cliente.nombre}
           </p>
 
@@ -122,7 +122,7 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
                   className="px-2 rounded-lg bg-slate-200 hover:bg-cyan-100 text-slate-600"
                   onClick={() => setToken(generarCodigo(6))}
                 >
-                  <i className="fas fa-sync-alt"></i>
+                  <span >🔄</span>
                 </button>
               </div>
             </div>
@@ -140,7 +140,7 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
                   className="px-2 rounded-lg bg-slate-200 hover:bg-cyan-100 text-slate-600"
                   onClick={() => setClavePortal(generarCodigo(4))}
                 >
-                  <i className="fas fa-sync-alt"></i>
+                  <span >🔄</span>
                 </button>
               </div>
             </div>
@@ -151,7 +151,7 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
             <div className="flex gap-1">
               <input readOnly value={linkLargo} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[11px] font-mono text-slate-600 bg-slate-50" />
               <button type="button" className="px-2 rounded-lg bg-slate-200 hover:bg-cyan-100 text-slate-600" onClick={() => copiar(linkLargo)} title="Copiar">
-                <i className="fas fa-copy"></i>
+                <span >🗐️</span>
               </button>
             </div>
           </div>
@@ -161,7 +161,7 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
             <div className="flex gap-1">
               <input readOnly value={linkCorto} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[11px] font-mono text-cyan-700 font-bold bg-cyan-50" />
               <button type="button" className="px-2 rounded-lg bg-slate-200 hover:bg-cyan-100 text-slate-600" onClick={() => copiar(linkCorto)} title="Copiar">
-                <i className="fas fa-copy"></i>
+                <span >🗐️</span>
               </button>
             </div>
           </div>
@@ -177,9 +177,9 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
           <Button variant="outline" size="sm" onClick={onClose}>
             Cancelar
           </Button>
-          <Guard permiso="gestionar_clientes" disabled>
+          <Guard permiso="clientes:btn_editar" disabled>
             <Button variant="default" size="sm" onClick={guardar} disabled={guardando}>
-              {guardando ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-save mr-1"></i>} Guardar
+              {guardando ? <span className="mr-1">⏳</span> : <span className="mr-1">💾</span>} Guardar
             </Button>
           </Guard>
         </div>

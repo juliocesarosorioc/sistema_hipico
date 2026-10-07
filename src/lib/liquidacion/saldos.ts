@@ -100,6 +100,10 @@ export async function aplicarLiquidacionSaldos(
       .eq("hipodromo", input.hipodromo.trim().toUpperCase())
       .eq("carrera", Number(input.carrera))
       .eq("estado", "Pendiente")
+      // Las MARCAS se liquidan con `club_liquidar_marca`, que lee el snapshot de
+      // rivales del ticket. Si el motor universal las agarrara, decidiría "quien
+      // salga primero" y pagaría a un rival que en la marca iba perdiendo.
+      .not("nombre_jugada", "like", "MARCA %")
       .limit(2000);
     if (error) throw error;
     filas = data ?? [];
@@ -116,6 +120,7 @@ export async function aplicarLiquidacionSaldos(
     .eq("hipodromo", input.hipodromo.trim().toUpperCase())
     .eq("carrera", Number(input.carrera))
     .in("estado", ["Ganador", "Perdedor", "Retirado"])
+    .not("nombre_jugada", "like", "MARCA %")
     .limit(1);
   if (filas.length === 0 && ((decididos ?? []).length > 0 || filas.length === 0)) {
     if ((decididos ?? []).length > 0) {
@@ -180,7 +185,21 @@ export async function aplicarLiquidacionSaldos(
   }
 
   // Aplica los updates (ticket + saldo del cliente) en un viaje consistente.
-  const updates: Promise<unknown>[] = decisiones.map(({ fila, res }) => {
+  //
+  // Los tickets INDETERMINADOS (el motor sabe que ganan por posición pero falta
+  // el dividendo que cuantifica el premio, p. ej. la matriz W/P/S sin cargar) NO
+  // se tocan: quedan PENDIENTES. Escribirlos como "Perdedor" con premio 0
+  // cobraría $0 a una jugada ganadora y, como el estado queda persistido,
+  // liquidar de nuevo ya no los revierte: el operador ni vería el error.
+  const pendientes = decisiones.filter((d) => d.res.indeterminado);
+  for (const { fila, res } of pendientes) {
+    errores.push(
+      `Ticket ${String(fila.id)} (${String(fila.nombre_jugada ?? "")}): sin dividendo para decidirlo, se deja PENDIENTE. ${res.motivo ?? ""}`.trim()
+    );
+  }
+
+  const decidibles = decisiones.filter((d) => !d.res.indeterminado);
+  const updates: Promise<unknown>[] = decidibles.map(({ fila, res }) => {
     const estado = res.ok ? "Ganador" : "Perdedor";
     const premioPagar = res.ok ? res.totalClienteNeto : 0;
     const montDecidido = res.ok ? res.totalClienteNeto : 0;
@@ -223,10 +242,22 @@ export async function aplicarLiquidacionSaldos(
 
   await Promise.all(updates);
 
+  const ganadores = decidibles.filter((d) => d.res.ok).length;
+  const base =
+    `Liquidación aplicada: ${decidibles.length} ticket(s) decidido(s) (${ganadores} ganadores). ` +
+    `Abono total $${abonoTotal.toFixed(2)}.`;
+  let motivo = base;
+  if (pendientes.length) {
+    motivo =
+      base +
+      ` ${pendientes.length} ticket(s) quedaron PENDIENTES porque falta el dividendo ` +
+      `que los cuantifica (cargue los dividendos de la carrera y liquide de nuevo).`;
+  }
+
   return {
     ok: errores.length === 0,
-    motivo: `Liquidación aplicada: ${decisiones.length} ticket(s) decidido(s) (${decisiones.filter((d) => d.res.ok).length} ganadores). Abono total $${abonoTotal.toFixed(2)}.`,
-    aplicados: decisiones.length,
+    motivo,
+    aplicados: decidibles.length,
     yaAplicado: false,
     reembolsos: 0,
     abonoTotal,

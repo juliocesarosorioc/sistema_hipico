@@ -1,6 +1,7 @@
 import type { TicketMotor, ResultadoMotor } from "@/lib/bettingEngine";
 import { parsearNini } from "@/lib/bettingEngine";
 import { liquidarPuestos } from "@/lib/motores/puestos";
+import { liquidarWps, tipoWps } from "@/lib/motores/wps";
 import type { PizarraCarrera } from "@/lib/liquidacion";
 import {
   calcularReparto,
@@ -28,7 +29,7 @@ const REGLA_VIOLADA = /BLOQUEO DE PIZARRA|malformado|inválido|sin motor registr
 
 const POSICIONES = [1, 2, 3, 4, 5, 6, 7, 8];
 
-export type ModalidadAuto = "NINIS" | "EMPAREJAMIENTOS" | "CRUCES" | "COMPUESTAS" | "PUESTOS";
+export type ModalidadAuto = "NINIS" | "EMPAREJAMIENTOS" | "CRUCES" | "COMPUESTAS" | "PUESTOS" | "AMERICANAS";
 
 /**
  * Auto-detección de modalidad por la sintaxis de la jugada (sin motor):
@@ -63,6 +64,9 @@ export function detectarModalidad(texto: string): ModalidadAuto | null {
     return bloques.some((b) => b.includes("/")) ? "COMPUESTAS" : "EMPAREJAMIENTOS";
   }
   if (/\d+N$/.test(jugada)) return "NINIS";
+  // Americanas W/P/S. Va DESPUES de los cruces y del pareo porque "PP" es cruce
+  // en esta casa, y `tipoWps` solo acepta coincidencia exacta.
+  if (tipoWps(jugada)) return "AMERICANAS";
   if (/\d+P$/.test(jugada)) return "PUESTOS";
   return null;
 }
@@ -158,6 +162,52 @@ export function validarComando(
 
   let mejor: ResultadoMotor | null = null;
   let brutoMejor = -Infinity;
+
+  /* AMERICANAS W/P/S — "100 W", "100 P", "100 S".
+     No se proyectan contra un dividendo porque en el momento de la venta TODAS
+     las carreras están sin `dividendos` cargados: inventar un premio de tablero
+     acá mostraría al operador un número que después no es el que paga. La
+     jugada es válida y se registra; lo que se liquida es el stake, y el premio
+     se define al cargar el resultado con la matriz. */
+  if (tipoWps(tipo)) {
+    const caballete = String(caballo ?? "").trim().replace(/[^0-9]/g, "") || "1";
+    const simulada = liquidarWps(
+      {
+        hipodromo: "",
+        carrera: "",
+        caballo: caballete,
+        fechas: [],
+        id: "preview-wps",
+        cruces: 1,
+        cuota: null,
+        total: monto,
+        addedAt: 0,
+        tipo_jugada: tipo,
+        monto,
+        puesto_final: 1 as TicketMotor["puesto_final"],
+        pizarra: { primero: caballete },
+        dividendos: null,
+      },
+      tasaComision
+    );
+    return {
+      ok: true,
+      tipo,
+      monto,
+      simulada: simulada ?? { ok: false, motivo: "sin motor", totalClienteNeto: 0, balanceBanca: 0, gananciaCasa: 0 },
+      proyeccion: {
+        monto,
+        mejorBruto: 0,
+        totalClienteNeto: 0,
+        gananciaProyectada: 0,
+        comision: 0,
+        balanceBanca: 0,
+        escenario:
+          `${tipoWps(tipo)} sobre el ejemplar ${caballete}. El premio se define con la matriz ` +
+          `de dividendos W/P/S que cargue la casa al cerrar la carrera.`,
+      },
+    };
+  }
 
   for (const pos of POSICIONES) {
     const ticket: TicketMotor = {

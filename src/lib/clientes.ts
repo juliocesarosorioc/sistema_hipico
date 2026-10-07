@@ -10,6 +10,7 @@
  */
 import { supabase } from "@/lib/supabase";
 import { resumenDatosPago, type DatosPago } from "@/lib/vzla";
+import { exigirCapacidad, esPrincipalVigente } from "@/lib/seguridad/vigente";
 
 export type ClienteRow = {
   id: string | number;
@@ -242,13 +243,36 @@ export function limpiarCacheClientes(): void {
 export async function crearCliente(payload: Partial<ClienteRow>): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
-    const { error } = await supabase.from("clientes").insert([payload as Record<string, unknown>]);
+    exigirCapacidad("clientes:fn_guardar_cliente");
+    // Mismo filtro que en la edición: sin ser principal no se crea a nadie
+    // dentro de un grupo de venta, aunque el parche lo pida.
+    const { error } = await supabase
+      .from("clientes")
+      .insert([sinCamposDelPrincipal(payload as Record<string, unknown>) as Partial<ClienteRow>]);
     if (error) return { ok: false, error: error.message };
     limpiarCacheClientes();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
+}
+
+/**
+ * Saca del parche los campos que solo puede mover el usuario principal.
+ *
+ * `grupo_id` es la excepción: no es una capacidad del RBAC sino una atribución
+ * del dueño. El filtro va AQUÍ, no solo en el formulario, porque estas funciones
+ * se llaman con la llave del navegador y cualquiera puede armar el parche a mano
+ * desde la consola. Un operador que no puede ver el selector igual podría
+ * mandar `grupo_id: null` y sacar al cliente del grupo de un tercero.
+ */
+export function sinCamposDelPrincipal(
+  patch: Record<string, unknown>,
+  esPrincipal = esPrincipalVigente()
+): Record<string, unknown> {
+  if (esPrincipal) return patch;
+  const { grupo_id: _omitido, ...resto } = patch;
+  return resto;
 }
 
 export async function actualizarCliente(
@@ -258,7 +282,9 @@ export async function actualizarCliente(
 ): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
-    const { error } = await supabase.from("clientes").update(soloColumnasExistentes(patch, fila)).eq("id", id);
+    exigirCapacidad("clientes:fn_guardar_cliente");
+    const seguro = soloColumnasExistentes(sinCamposDelPrincipal(patch), fila);
+    const { error } = await supabase.from("clientes").update(seguro).eq("id", id);
     if (error) return { ok: false, error: error.message };
     limpiarCacheClientes();
     return { ok: true };
@@ -270,6 +296,7 @@ export async function actualizarCliente(
 export async function eliminarCliente(id: string | number): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
+    exigirCapacidad("clientes:fn_eliminar_cliente");
     const { error } = await supabase.from("clientes").delete().eq("id", id);
     if (error) return { ok: false, error: error.message };
     limpiarCacheClientes();
@@ -283,6 +310,7 @@ export async function eliminarCliente(id: string | number): Promise<{ ok: boolea
 export async function aplicarDevolucionMasiva(ids: (string | number)[], pct: number): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
+    exigirCapacidad("clientes:modal_reclamos");
     const { error } = await supabase.from("clientes").update({ devolucion: pct }).in("id", ids);
     if (error) return { ok: false, error: error.message };
     limpiarCacheClientes();
@@ -356,6 +384,7 @@ export async function guardarPortal(
     return { ok: false, error: `Faltan columnas del portal (${faltan.join(", ")}). Ejecute sql/portal_cuadre.sql.` };
   }
   try {
+      exigirCapacidad("clientes:fn_guardar_cliente");
     const { error } = await supabase.from("clientes").update(payload).eq("id", id);
     if (error) return { ok: false, error: error.message };
     limpiarCacheClientes();
@@ -403,6 +432,11 @@ export function resumenNotificacion(n: NotificacionRow): string {
 /** Aplica los datos de la notificación al cliente y la marca como Aplicada. */
 export async function aplicarNotificacion(n: NotificacionRow, atendidaPor: string): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  try {
+    exigirCapacidad("clientes:modal_reclamos");
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
   const d = (n.datos ?? {}) as Record<string, unknown>;
   const payload: Record<string, unknown> = {};
   if (d.telefono) payload.telefono = d.telefono;

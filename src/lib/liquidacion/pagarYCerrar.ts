@@ -1,11 +1,30 @@
 ﻿import { liquidarOficial } from "@/lib/motores/oficiales";
+import { exigirPermiso } from "@/lib/seguridad/vigente";
 import { cerrarTablaFija } from "@/lib/tablas-fijas";
+import { upsertResultadoCentral } from "@/lib/carreras-dia";
+import { leerRetirosCarrera } from "@/lib/carreras/retiros";
+import { ordenLlegadaDePizarra, posicionesDePizarra } from "@/lib/liquidacion/posiciones";
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem } from "@/lib/bettingEngine";
 import type { TicketMotor, ResultadoMotor } from "@/lib/bettingEngine";
 import type { PizarraCarrera } from "@/lib/liquidacion";
 import { supabase } from "@/lib/supabase";
 import { hoyLocal } from "@/lib/gaceta/programa";
+
+/**
+ * Suma de todos los tickets de la carrera. El comando puede traer el monto al
+ * principio ("100 2N"), así que se lee del comando cuando aparece ahí y del
+ * campo `monto` cuando no.
+ */
+function totalDeTickets(tickets: TicketPagar[]): number {
+  let total = 0;
+  for (const t of tickets) {
+    const m = /^(\d+(?:\.\d+)?)\s+/i.exec(String(t.comando ?? "").trim());
+    const monto = m ? Number(m[1]) : Number(t.monto);
+    if (Number.isFinite(monto)) total += monto;
+  }
+  return total;
+}
 
 export type TicketPagar = {
   comando: string;
@@ -33,7 +52,24 @@ export type ResLiquidarCarrera = {
   /** Cantidad de tickets cuyos montos se ajustaron por comisión neta (cruces). */
   neteados?: number;
   tablaCerrada?: { ok: boolean; conteo?: number; error?: string };
+  /** Escritura del resultado en `resultados_carreras` (fuente de verdad de
+   *  Carreras del Día). Va aparte porque un fallo acá NO puede invalidar una
+   *  liquidación cuyos tickets ya se pagaron. */
+  resultadoCentral?: { ok: boolean; error?: string };
 };
+
+/** Respuesta vacía con ceros, para cuando la operación ni siquiera arranca. */
+function liquidacionVacia(e: Error): ResLiquidarCarrera {
+  return {
+    ok: false,
+    procesados: [],
+    motivo: `SIN PERMISO: ${e.message}`,
+    totalInvertido: 0,
+    totalClienteNeto: 0,
+    balanceBanca: 0,
+    gananciaCasa: 0,
+  };
+}
 
 /**
  * Flujo "Pagar Carrera": liquida cada ticket del operador contra el motor
@@ -50,7 +86,19 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   tasaComision?: number | null;
   dividendos?: Record<string, number> | null;
 }): Promise<ResLiquidarCarrera> {
-  const { hipodromo, carrera, pizarra, tickets, tasaComision } = opts;
+    try {
+      // Con contexto, no solo con permiso: el ABAC exige que el operador
+      // liquide un hipódromo que sea del SUYO, y que el total de la carrera no
+      // pase del tope que él puede firmar. Se evalúa por ticket, porque el tope
+      // es por operación y liquidar 20 tickets de a uno esquivaría el control.
+      exigirPermiso("gestion_jugadas:fn_liquidar_carrera", {
+        hipodromo: opts.hipodromo,
+        monto: totalDeTickets(opts.tickets),
+      });
+    } catch (e) {
+      return liquidacionVacia(e as Error);
+    }
+    const { hipodromo, carrera, pizarra, tickets, tasaComision } = opts;
   const dividendos = opts.dividendos ?? (await dividendosDe(hipodromo, carrera));
 
   const procesados: ResLiquidarCarrera["procesados"] = [];
@@ -149,6 +197,34 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     gananciaCasa += p.resultado.gananciaCasa;
   }
 
+  // Resultado CENTRAL. Sin esto, liquidar desde /gestion-jugadas pagaba los
+  // tickets y cerraba la tabla, pero la carrera NO llegaba a `resultados_carreras`
+  // (la fuente de verdad de Carreras del Día, los semáforos y los saldos): el
+  // resultado quedaba solo en memoria y se perdía al recargar. Se escribe antes
+  // del cierre y sin abortar si falla, porque los tickets ya están pagados y
+  // volver atrás sería peor que un resultado sin centralizar.
+  const posiciones = posicionesDePizarra(pizarra);
+
+  // `retirados` es obligatorio en el upsert y se escribe TAL CUAL, asi que hay
+  // que releer el actual: mandar un "NO HUBO RETIROS" fijo borraria los retiros
+  // ya registrados por la via de retiros al central.
+  const fecha = hoyLocal();
+  const retiradosActuales = await leerRetirosCarrera(fecha, hipodromo, carrera);
+  const central = await upsertResultadoCentral({
+    fecha,
+    hipodromo,
+    carrera,
+    ganadores: posiciones,
+    retirados: retiradosActuales.length ? retiradosActuales.join(" ") : "NO HUBO RETIROS",
+    cargado_por: "GESTION-JUGADAS",
+    // El orden estructurado y los dividendos NO se pueden quedar en el camino:
+    // sin ellos la fila central queda con `orden_llegada`/`dividendos` en NULL
+    // (era el caso de las 131 filas de producción) y la liquidación de puestos
+    // no tiene con qué pagar. Taquilla ya los guardaba; esto lo alinea.
+    orden_llegada: ordenLlegadaDePizarra(pizarra),
+    dividendos: dividendos ?? null,
+  });
+
   // AUTO-CIERRE: tras pagar con éxito, cierra la Tabla Fija de la carrera.
   const cierre = await cerrarTablaFija(hipodromo, carrera);
   if (cierre.ok) {
@@ -165,6 +241,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     gananciaCasa,
     neteados,
     tablaCerrada: cierre,
+    resultadoCentral: central,
   };
 }
 

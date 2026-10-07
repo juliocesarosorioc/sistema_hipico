@@ -12,8 +12,11 @@ export const CLUB_NOMBRE = "Club del Dinero";
 export type PlantillaWsp = {
   id: string;
   label: string;
-  /** Grupo de la plantilla: "envio" (selector individual), "reporte" o "tablas". */
-  grupo: "envio" | "reporte" | "tablas";
+  /**
+ * Grupo de la plantilla: "envio" (selector individual), "reporte", "tablas"
+ * (pizarras de tablas/remates), "marcas" o "dupleta".
+ */
+  grupo: "envio" | "reporte" | "tablas" | "marcas" | "dupleta";
   variables: string;
   txt: string;
   /** Solo las creadas por el usuario se pueden eliminar. */
@@ -44,15 +47,29 @@ const CLAVE_PLANTILLAS = "sistema-hipico:whatsapp-plantillas";
 /** Compat: el legacy guardaba en esta clave (grupo "Plantillas del Centro WhatsApp"). */
 const CLAVE_MSJ_LEGACY = "club_mensajes_whatsapp";
 
-export const VARIABLES_WSP = ["{nombre}", "{saldo}", "{aval}", "{fecha}", "{club}", "{lineas}", "{balance}", "{totales}", "{hipodromos}"];
+export const VARIABLES_WSP = [
+  "{nombre}",
+  "{saldo}",
+  "{aval}",
+  "{disponible}",
+  "{fecha}",
+  "{club}",
+  "{lineas}",
+  "{balance}",
+  "{totales}",
+  "{hipodromos}",
+  "{remate}",
+  "{hipodromo}",
+  "{carrera}",
+];
 
 export const PLANTILLAS_DEFAULT: PlantillaWsp[] = [
   {
     id: "saldo",
     label: "Saldo actual",
     grupo: "envio",
-    variables: "{nombre} {saldo} {aval} {club}",
-    txt: "Hola {nombre} 👋\n\n*{club}*\n\nTu saldo actual es:\n💰 *$ {saldo} USD*\n\nAval vigente: $ {aval}\n\n¡Gracias por tu confianza!",
+    variables: "{nombre} {saldo} {aval} {disponible} {club}",
+    txt: "Hola {nombre} 👋\n\n*{club}*\n\nTu saldo actual es:\n💰 *$ {saldo} USD*\n\nAval vigente: $ {aval}\n\nPuedes jugar hasta: *$ {disponible} USD*\n\n¡Gracias por tu confianza!",
   },
   {
     id: "aval",
@@ -102,6 +119,38 @@ export const PLANTILLAS_DEFAULT: PlantillaWsp[] = [
     grupo: "tablas",
     variables: "{fecha} {lineas}",
     txt: "📊 *REPORTE DE TABLAS* 📅 {fecha}\n\n{lineas}\n📌 NORMAS: reporte de control interno de tablas fijas.",
+  },
+  {
+    id: "remates_pizarra",
+    label: "Pizarra de Remates",
+    grupo: "tablas",
+    variables: "{remate} {hipodromo} {carrera} {fecha} {lineas} {incentivo} {total}",
+    // El cierre va con el formato EXACTO que pide el grupo: dos espacios antes
+    // del monto de incentivo, línea en blanco y el total en negrita. Está en la
+    // plantilla y no solo en el código para que, si el operador edita la
+    // plantilla desde el Centro de WhatsApp, vea el cierre como se está usando.
+    txt: "*{remate}*\n🏇 {hipodromo} · C{carrera} · {fecha}\n\n{lineas}\n\nIncentivo de la casa  {incentivo}\n\n*Total a pagar {total}*",
+  },
+  {
+    id: "marcas_resultados",
+    label: "Marcas de la|Programa",
+    grupo: "marcas",
+    variables: "{nombre} {club} {fecha} {hipodromo} {carrera} {lineas} {premio}",
+    txt: "Hola {nombre} 👋\n\n🎯 *MARCAS — {club}*\n📅 {fecha} · {hipodromo} · C{carrera}\n\n{lineas}\n\n💰 *Premio de la carrera:* $ {premio}\n\n📌 Las marcas son Junction, se cobran como la Carrera con premio y se pagan si la pista da 3 o más aciertos. Juega con criterio.",
+  },
+  {
+    id: "marcas_duplicados",
+    label: "Marcas repetidas",
+    grupo: "marcas",
+    variables: "{nombre} {club} {fecha} {lineas}",
+    txt: "Hola {nombre} ⚠️\n\n*{club} — MARCAS REPETIDAS*\n📅 {fecha}\n\n{lineas}\n\nRevisá tu Ticket antes de cobrar.",
+  },
+  {
+    id: "dupleta_pizarra",
+    label: "Pizarra de Dupleta",
+    grupo: "dupleta",
+    variables: "{club} {fecha} {hipodromo} {lineas} {premio}",
+    txt: "🎰 *DUPLETA — {club}*\n📅 {fecha} · {hipodromo}\n\n{lineas}\n\n💰 *Premio:* $ {premio}\n\n📌 Válida sólo el día indicado. Presente en caja.",
   },
 ];
 
@@ -207,10 +256,15 @@ export function restaurarPlantillas(): PlantillaWsp[] {
 }
 
 export function reemplazarVars(txt: string, c: ClienteWsp | null): string {
+  /* `{disponible}` = saldo + aval: lo que el cliente REALMENTE puede jugar.
+     Sin esta variable el mensaje de un cliente en mora dice "saldo -$300" y
+     el cliente cree que no puede jugar, cuando en realidad tiene su aval. */
+  const disponible = (c?.saldo_actual ?? 0) + (c?.aval ?? 0);
   return txt
     .replace(/\{nombre\}/g, c?.nombre ? String(c.nombre) : "—")
     .replace(/\{saldo\}/g, fmtUSD(c?.saldo_actual))
     .replace(/\{aval\}/g, fmtUSD(c?.aval))
+    .replace(/\{disponible\}/g, fmtUSD(disponible))
     .replace(/\{fecha\}/g, fechaHoy())
     .replace(/\{club\}/g, CLUB_NOMBRE);
 }

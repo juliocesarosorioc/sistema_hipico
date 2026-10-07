@@ -6,6 +6,7 @@
  * clave es la unificacion (hipodromo en mayusculas + dia del evento).
  */
 import type { CarreraMonitor, GrupoHipodromo } from "@/components/ui/MonitorHipodromos";
+import { claveHipodromo, numeroCarrera } from "@/lib/carreras/claves";
 
 export type CarreraAgrupable = {
   hipodromo?: string | null;
@@ -51,9 +52,12 @@ export function agruparPorHipodromo(
   const porHip = new Map<string, CarreraMonitor[]>();
   for (const t of filas) {
     if (diaDeCarrera(t, dia) !== dia) continue;
-    const hipo = (t.hipodromo ?? "").trim().toUpperCase();
-    const numero = Number(t.carrera);
-    if (!hipo || !Number.isFinite(numero) || numero <= 0) continue;
+    // `claveHipodromo` y no un `.trim().toUpperCase()` propio: el Monitor y el
+    // registro central tienen que producir EXACTAMENTE la misma clave, o un
+    // "LA urel" agruparía en un módulo y en otro sería otro hipódromo.
+    const hipo = claveHipodromo(t.hipodromo);
+    const numero = numeroCarrera(t.carrera);
+    if (!hipo || !numero) continue;
     const arr = porHip.get(hipo) ?? [];
     arr.push({ id: t.id, carrera: numero, estado: t.estado, ventas: t.ventas });
     porHip.set(hipo, arr);

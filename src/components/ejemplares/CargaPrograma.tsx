@@ -11,6 +11,7 @@ import { BuscadorPadron, type OpcionPadron } from "@/components/ejemplares/Busca
 import { useAuthStore } from "@/store/useAuthStore";
 import { useHipodromosActivos } from "@/store/useHipodromosStore";
 import { registrarEjemplares, listarPadronSimple } from "@/lib/gaceta/padron";
+import { useRegistroCentral } from "@/store/useRegistroCentral";
 import {
   guardarPrograma,
   hoyLocal,
@@ -278,9 +279,13 @@ export function CargaPrograma() {
 
     if (!res.ok) return toast(res.error ?? "Error al guardar el programa.", "error");
     if (res.data) setPrograma(res.data);
+    // `guardarPrograma` ya dio de alta las carreras en la matriz maestra
+    // `carreras`; se invalida la caché para que Tablas, Marcas, Gestión,
+    // Dupletas y Remates las vean de inmediato sin recargar.
+    useRegistroCentral.getState().invalidarCarreras();
     setGuardado(`Programa guardado · ${pref.length} carrera(s) · ${totalEjemplares} ejemplar(es) · ${new Date().toLocaleTimeString("es-VE")}`);
     toast(
-      `✅ Programa guardado: ${pref.length} carrera(s), ${totalEjemplares} ejemplar(es). Padrón: ${tot.nuevos} nuevo(s), ${tot.vinculados} vinculado(s)${tot.fallidos ? `, ${tot.fallidos} fallido(s)` : ""}.`,
+      `✅ Programa guardado: ${pref.length} carrera(s) en la matriz de carreras, ${totalEjemplares} ejemplar(es). Padrón: ${tot.nuevos} nuevo(s), ${tot.vinculados} vinculado(s)${tot.fallidos ? `, ${tot.fallidos} fallido(s)` : ""}.`,
       "success"
     );
     if (pref.some((c) => c.caballos.length)) setCarreras(pref);
@@ -495,7 +500,7 @@ export function CargaPrograma() {
                       <Input label="" hint="" aria-label="Distancia"
                         type="number" placeholder="Dist. m" value={c.distancia || ""}
                         onChange={(e) => setCarrera(i, { distancia: Number(e.target.value) || 0 })}
-                        className="!py-1.5 !text-xs w-24" />
+                        className="!py-1.5 !text-xs text-right w-24" />
                       <select
                         aria-label="Superficie"
                         value={c.superficie || "ARENA"}
@@ -509,7 +514,7 @@ export function CargaPrograma() {
                       <Input label="" hint="" aria-label="Premio"
                         type="number" placeholder="Premio $" value={c.premio || ""}
                         onChange={(e) => setCarrera(i, { premio: Number(e.target.value) || 0 })}
-                        className="!py-1.5 !text-xs w-28" />
+                        className="!py-1.5 !text-xs text-right w-28" />
                       <Button variant="danger" size="sm" onClick={() => setCarreras((prev) => prev.filter((_, idx) => idx !== i))}>
                         🗑
                       </Button>

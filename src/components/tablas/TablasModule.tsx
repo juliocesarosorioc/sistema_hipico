@@ -7,10 +7,16 @@ import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { parseNum, sumaBase, fmtMoney, type DraftCarrera, type ItemCarritoVenta } from "@/lib/tablas/tipos";
 import { aDraftCarrera, eliminarDelRegistroGaceta, leerBuzonEnsamblaje, limpiarBuzonEnsamblaje } from "@/lib/gaceta/ui";
 import { useCarrerasDiaStore } from "@/store/useCarrerasDiaStore";
-import { registrarCarreraProgramada } from "@/lib/carreras-dia";
+import { registrarCarreraProgramada, cargarCarrerasDelDia } from "@/lib/carreras-dia";
+import {
+  numeroCarrera,
+  sembrarCarreraCentral,
+  useRegistroCentralOpts,
+} from "@/store/useRegistroCentral";
 import { MonitorHipodromos } from "@/components/ui/MonitorHipodromos";
 import { agruparPorHipodromo } from "@/lib/carreras/agruparHipodromos";
 import { asegurarHipodromo } from "@/lib/tablas/rpc";
+import { resumenProblemasCarga, validarFechasDeCarga } from "@/lib/tablas/validar-carga";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import { SeccionPliegue } from "@/components/tablas/SeccionPliegue";
 import { ParametrosCarrera } from "@/components/tablas/ParametrosCarrera";
@@ -21,7 +27,7 @@ import { Guard } from "@/components/ui/Guard";
 import ConfigImpresionModal from "@/components/tablas/ConfigImpresionModal";
 import type { PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 
-export type ErrorPublicacion = { hipodromo: string; carrera: number | null; error: string };
+export type ErrorPublicacion = { hipodromo: string; carrera: number | null; error: string; publicada?: boolean };
 
 type Props = {
   /** Devuelve el id real de Supabase + error legible. El contenedor reemplaza el id del store. */
@@ -31,7 +37,10 @@ type Props = {
     lote: StoredTablaFija[]
   ) => Promise<{ ok: boolean; okCount: number; errores: ErrorPublicacion[] }>;
   persistirEdicion?: (t: StoredTablaFija, patch: Record<string, unknown>) => Promise<boolean>;
-  persistirVenta?: (t: StoredTablaFija, v: VentaTablaItem) => Promise<boolean>;
+  persistirVenta?: (
+    t: StoredTablaFija,
+    v: VentaTablaItem
+  ) => Promise<{ ok: boolean; error?: string }>;
   persistirLiquidacion?: (t: StoredTablaFija, r: PizarraResultados) => Promise<boolean>;
 };
 
@@ -63,6 +72,8 @@ export function TablasModule(props: Props) {
   /** Fecha del programa (Filtro Universal): las tarjetas heredadas de la
    *  Gaceta traen la fecha del evento; las manuales usan este valor (hoy). */
   const [fechaPrograma, setFechaPrograma] = useState(() => hoyLocal());
+  /** Registro central: la misma lectura de carreras del día que Marcas y Gestión. */
+  const registroCentral = useRegistroCentralOpts(fechaPrograma);
   /** Filtro de hipódromo activado desde las columnas "Hipódromos del Día". */
   const [filtroHipodromo, setFiltroHipodromo] = useState<string>("");
 
@@ -111,9 +122,13 @@ export function TablasModule(props: Props) {
     // gaceta_prellenado), igual que el legacy js/tablas.js migrarLegacy, y luego
     // CONSUME el buzón para que no se dupliquen al recargar.
     const buzon = leerBuzonEnsamblaje();
-    const hidratadas = buzon
-      .map((c) => aDraftCarrera(c))
-      .filter((d) => d.caballos.length > 0);
+    const todas = buzon.map((c) => aDraftCarrera(c));
+    // Las tarjetas SIN ejemplares se hidratan también: el filtro las botaba en
+    // silencio, y como `limpiarBuzonEnsamblaje()` corre igual, esas carreras se
+    // perdían para siempre — se registraban en la Gaceta, no aparecían como
+    // cards, y nunca llegaban al Monitor ni a ningún módulo. Publicar una vacía
+    // es lo que hace `publicarDraft` (registra la carrera programada).
+    const hidratadas = todas;
     if (hidratadas.length > 0) {
       setDrafts((ds) => [...hidratadas, ...ds]);
       window.dispatchEvent(
@@ -128,6 +143,38 @@ export function TablasModule(props: Props) {
     limpiarBuzonEnsamblaje();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * HIDRATA EL SEMÁFORO AL ABRIR EL MÓDULO.
+   *
+   * `useCarrerasDiaStore` solo se llenaba desde el evento realtime de la línea
+   * 150, así que entrando directo a Tablas (F5, otra pestaña, o cualquier ruta
+   * sin realtime porque `tablas_fijas` no está en la publicación) los chips de
+   * "Carreras del Día" salían VACÍOS aunque las carreras existieran. Se hidrata
+   * al montar y además desde el registro central, que ya viene de la misma
+   * consulta que usan Marcas, Gestión y Dupletas.
+   */
+  useEffect(() => {
+    let vivo = true;
+    void (async () => {
+      await cargarCarrerasDelDia().catch(() => {});
+      if (!vivo) return;
+      const hoy = fechaPrograma || hoyLocal();
+      for (const c of registroCentral.carreras) {
+        useCarrerasDiaStore.getState().upsert({
+          fecha: c.fecha || hoy,
+          hipodromo: c.hipodromo,
+          carrera: numeroCarrera(c.carrera),
+          estado: c.estado === "Liquidada" ? "Liquidada" : c.estado === "Resultados" ? "Resultados" : "Programada",
+          ventas: [],
+        });
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fechaPrograma]);
 
   // Realtime defensivo: si tablas_fijas está en la publicación supabase_realtime,
   // cualquier UPDATE/INSERT/DELETE (otra sesión, liquidación…) refresca el Monitor
@@ -169,17 +216,27 @@ export function TablasModule(props: Props) {
     const r = await persistirPublicacion(tabla);
     if (!r.ok) return { ok: false, error: r.error || "desconocido" };
     setTablas([...tablas.filter((t) => String(t.id) !== String(tabla.id)), { ...tabla, id: r.id ?? tabla.id } as StoredTablaFija]);
-    return { ok: true };
+    // `ok` puede venir con `error`: la tabla quedó publicada, pero el central no
+    // se pudo sincronizar (carrera invisible en Marcas/Gestión/Dupletas). Se
+    // propaga para no perder el aviso; antes se descartaba y el operador veía
+    // "publicada con éxito".
+    return { ok: true, error: r.error };
   };
 
-  const draftATabla = (d: DraftCarrera): StoredTablaFija => ({
+  /**
+   * @param fechaIso Fecha YA validada por `validarFechasDeCarga`. Se pasa
+   *   explícitamente y no se vuelve a leer `d.fecha` aquí a propósito: si este
+   *   objeto se armara con el texto crudo de la tarjeta, la fecha sin validar
+   *   volvería a llegar al INSERT y el servidor la interpretaría como MM-DD
+   *   (que es como se partió la jornada del 04-10-2026). Quien llama tiene que
+   *   haber pasado la barrera; si no la pasó, no hay fecha válida que pasar.
+   */
+  const draftATabla = (d: DraftCarrera, fechaIso: string): StoredTablaFija => ({
     id: d.uid,
     hipodromo: d.hipodromo.trim().toUpperCase(),
     hipodromo_id: null,
     carrera: Math.round(parseNum(d.carrera)) || null,
-    // La fecha del evento heredada de la Gaceta SIEMPRE gana; si la tarjeta
-    // es manual, usa la fecha del Filtro Universal (nunca UTC del sistema).
-    fecha: d.fecha || fechaPrograma,
+    fecha: fechaIso,
     fecha_creacion: new Date().toISOString(),
     estado: "Abierta",
     premio_original: parseNum(d.premio),
@@ -225,15 +282,30 @@ export function TablasModule(props: Props) {
     if ((d.caballos ?? []).length === 0 && !modoManual)
       return toast("Añada al menos un ejemplar (o active ✍️ Modo Manual para registrar la carrera vacía).", "warning");
 
+    // BARRERA DE FECHA (individual). Misma regla que en el lote: la fecha de la
+    // tarjeta tiene que ser inequívoca y de la jornada abierta. El 04-10-2026 se
+    // partió justamente por publicar sin esta comprobación.
+    const chequeo = validarFechasDeCarga([d], fechaPrograma);
+    if (!chequeo.ok) {
+      toast(resumenProblemasCarga(chequeo.problemas), "error");
+      return;
+    }
+    // A partir de aquí la fecha es SIEMPRE ISO de la jornada.
+    const fechaCarrera = chequeo.fechaIso;
+
     // Modo Manual sin ejemplares: registra el hipódromo (crea si es nuevo) y
     // la carrera vacía en resultados_carreras, sin publicar una tabla sin datos.
     if ((d.caballos ?? []).length === 0) {
       await asegurarHipodromo(d.hipodromo.trim()).catch(() => null);
       const r = await registrarCarreraProgramada({
-        fecha: d.fecha || fechaPrograma,
+        fecha: fechaCarrera,
         hipodromo: d.hipodromo.trim(),
         carrera: Math.round(parseNum(d.carrera)) || d.carrera,
       }).catch(() => ({ ok: false as const, error: "sin conexión" }));
+      // Se siembra DESPUÉS de la escritura: sembrar antes haría que el refetch
+      // (que dispara el bump de versión) volviera a leer la fila antes de que
+      // existiera y la borrara de la lista.
+      sembrarCarreraCentral(d.hipodromo, d.carrera, fechaCarrera);
       eliminarDelRegistroGaceta(d.hipodromo.toUpperCase(), d.carrera);
       setDrafts((ds) => ds.filter((x) => x.uid !== d.uid));
       toast(
@@ -245,10 +317,19 @@ export function TablasModule(props: Props) {
       return;
     }
 
-    const res = await publicar(draftATabla(d));
+    const res = await publicar(draftATabla(d, fechaCarrera));
     if (res.ok) {
       await asegurarHipodromo(d.hipodromo.trim()).catch(() => null);
-      toast(`✅ Tabla ${d.hipodromo.toUpperCase()} C${d.carrera} publicada con éxito.`, "success");
+      // Solo se siembra en el registro central si el upsert del central funcionó.
+      // Sembrar cuando falló mostraría la carrera en Marcas/Gestión hasta el
+      // próximo refetch, aunque en la base no exista.
+      if (!res.error) sembrarCarreraCentral(d.hipodromo, d.carrera, fechaCarrera);
+      toast(
+        res.error
+          ? `⚠️ Tabla ${d.hipodromo.toUpperCase()} C${d.carrera}: ${res.error}`
+          : `✅ Tabla ${d.hipodromo.toUpperCase()} C${d.carrera} publicada con éxito.`,
+        res.error ? "warning" : "success"
+      );
       eliminarDelRegistroGaceta(d.hipodromo.toUpperCase(), d.carrera);
       setDrafts((ds) => ds.filter((x) => x.uid !== d.uid));
     } else {
@@ -269,58 +350,113 @@ export function TablasModule(props: Props) {
         "warning"
       );
 
+    // BARRERA DE FECHA. Sin esto, una tarjeta con "04-10-2026" se publicaba en
+    // crudo y Postgres lo leía como MM-DD: el 04-10-2026 terminó con tres
+    // carreras (C10-C12) fechadas 2026-04-10, y no aparecían en Tablas Fijas ni
+    // en Gestión de Jugadas. Se valida ANTES de tocar la base, y se reportan
+    // TODOS los problemas juntos para no corregirlos de uno en uno.
+    const chequeo = validarFechasDeCarga(validas, fechaPrograma);
+    if (!chequeo.ok) {
+      toast(resumenProblemasCarga(chequeo.problemas), "error");
+      for (const p of chequeo.problemas) {
+        console.warn(`[carga] ${p.hipodromo} C${p.carrera} (${p.fechaEnPantalla}): ${p.motivo} -> ${p.como}`);
+      }
+      return;
+    }
+
     if (modoManual) {
       // En modo manual el lote registra TODAS las carreras: vacías → la
       // carrera programada en resultados_carreras; con caballos → tabla fija.
       let okVacios = 0;
       let okTablas = 0;
+      const avisos: string[] = [];
+      const sinCentralIds = new Set<string | number>();
       const tablasConCaballos = validas.filter((d) => (d.caballos ?? []).length > 0);
       const vacias = validas.filter((d) => (d.caballos ?? []).length === 0);
       for (const d of vacias) {
         await asegurarHipodromo(d.hipodromo.trim()).catch(() => null);
         const r = await registrarCarreraProgramada({
-          fecha: d.fecha || fechaPrograma,
+          fecha: chequeo.fechaIso,
           hipodromo: d.hipodromo.trim(),
           carrera: Math.round(parseNum(d.carrera)) || d.carrera,
         }).catch(() => ({ ok: false as const, error: "sin conexión" }));
-        if (r?.ok) okVacios++;
+        // `registrarCarreraProgramada` escribe la matriz directo: si falla, NO
+        // se siembra (mostraría una carrera que en la base no existe).
+        if (r?.ok) {
+          sembrarCarreraCentral(d.hipodromo, d.carrera, chequeo.fechaIso);
+          okVacios++;
+        }
       }
       if (tablasConCaballos.length) {
-        const lote = tablasConCaballos.map((d) => draftATabla(d));
+        const lote = tablasConCaballos.map((d) => draftATabla(d, chequeo.fechaIso));
         if (persistirLote) {
           const r = await persistirLote(lote);
           okTablas = r.okCount;
+          for (const e of r.errores ?? []) {
+            if (!e.publicada) continue;
+            avisos.push(`${e.hipodromo} C${e.carrera}: ${e.error}`);
+            for (const t of lote) {
+              if (
+                String(t.hipodromo ?? "").toUpperCase() === String(e.hipodromo ?? "").toUpperCase() &&
+                String(t.carrera) === String(e.carrera)
+              ) {
+                sinCentralIds.add(t.id);
+              }
+            }
+          }
         } else {
           for (const t of lote) {
             const r = await publicar(t);
-            if (r.ok) okTablas++;
+            if (r.ok) {
+              okTablas++;
+              if (r.error) {
+                avisos.push(`${t.hipodromo} C${t.carrera}: ${r.error}`);
+                sinCentralIds.add(t.id);
+              }
+            }
           }
+        }
+        for (const d of tablasConCaballos) {
+          if (sinCentralIds.has(d.uid)) continue;
+          sembrarCarreraCentral(d.hipodromo, d.carrera, chequeo.fechaIso);
         }
       }
       validas.forEach((d) => eliminarDelRegistroGaceta(d.hipodromo.toUpperCase(), d.carrera));
       setDrafts((ds) => ds.filter((d) => !validas.some((v) => v.uid === d.uid)));
+      const base = `Modo Manual: ${okVacios} carrera(s) vacía(s) registrada(s) · ${okTablas} tabla(s) publicada(s).`;
       return toast(
-        `✅ Modo Manual: ${okVacios} carrera(s) vacía(s) registrada(s) · ${okTablas} tabla(s) publicada(s).`,
-        "success"
+        avisos.length ? `⚠️ ${base} Sin central (no se verán en Marcas/Gestión): ${avisos.join("; ")}.` : `✅ ${base}`,
+        avisos.length ? "warning" : "success"
       );
     }
 
-    const lote = validas.map((d) => draftATabla(d));
+    const lote = validas.map((d) => draftATabla(d, chequeo.fechaIso));
     const claveDeDraft = (d: DraftCarrera) =>
       `${d.hipodromo.trim().toUpperCase()}|${Math.round(parseNum(d.carrera)) || d.carrera}`;
     const draftPorClave = new Map(validas.map((d) => [claveDeDraft(d), d]));
 
     let okCount = 0;
+    // `errores`: la tabla NO se publicó -> la tarjeta vuelve al Ensamblaje.
+    // `avisos`: la tabla SÍ se publicó, pero el central no se sincronizó; queda
+    // vendiéndose pero invisible en Marcas/Gestión/Dupletas. NO vuelve al
+    // Ensamblaje (ya está en la base): solo se avisa. Confundir ambos es lo que
+    // dejaba 13 tablas publicadas con 1 sola carrera en el central.
     let errores: ErrorPublicacion[] = [];
+    const avisos: ErrorPublicacion[] = [];
     if (persistirLote) {
       const r = await persistirLote(lote);
       okCount = r.okCount;
-      errores = r.errores ?? [];
+      for (const e of r.errores ?? []) (e.publicada ? avisos : errores).push(e);
     } else {
       for (const t of lote) {
         const r = await publicar(t);
-        if (r.ok) okCount++;
-        else errores.push({ hipodromo: t.hipodromo ?? "", carrera: t.carrera ?? null, error: r.error || "desconocido" });
+        const fila: ErrorPublicacion = { hipodromo: t.hipodromo ?? "", carrera: t.carrera ?? null, error: r.error || "desconocido" };
+        if (!r.ok) {
+          errores.push(fila);
+        } else {
+          okCount++;
+          if (r.error) avisos.push({ ...fila, publicada: true });
+        }
       }
     }
 
@@ -332,11 +468,26 @@ export function TablasModule(props: Props) {
     });
     setDrafts(restantes);
     validas.forEach((d) => eliminarDelRegistroGaceta(d.hipodromo.toUpperCase(), d.carrera));
+    // Solo entran al registro central las que se publicaron Y sincronizaron. Si
+    // el central falló, sembrarla mostraría una carrera que en la base no está.
+    const noSembrar = new Set(
+      [...errores, ...avisos].map((e) => `${String(e.hipodromo).toUpperCase()}|${e.carrera}`)
+    );
+    for (const t of lote) {
+      if (noSembrar.has(`${String(t.hipodromo ?? "").toUpperCase()}|${t.carrera}`)) continue;
+      sembrarCarreraCentral(t.hipodromo ?? "", t.carrera ?? 0, t.fecha || fechaPrograma);
+    }
 
-    if (okCount === lote.length) {
+    if (okCount === lote.length && avisos.length === 0) {
       toast(`✅ ${okCount} tabla(s) publicada(s) con éxito.`, "success");
+    } else if (okCount > 0 && errores.length === 0) {
+      toast(
+        `⚠️ ${okCount} tabla(s) publicada(s); ${avisos.length} sin central (no se verán en Marcas/Gestión): ${avisos.map((e) => e.error).join("; ")}.`,
+        "warning"
+      );
     } else if (okCount > 0) {
-      toast(`⚠️ ${okCount} tabla(s) publicada(s), ${errores.length} con error: ${errores.map((e) => e.error).join("; ")}.`, "warning");
+      const extra = avisos.length ? ` · ${avisos.length} publicada(s) sin central` : "";
+      toast(`⚠️ ${okCount} tabla(s) publicada(s), ${errores.length} con error: ${errores.map((e) => e.error).join("; ")}${extra}.`, "warning");
     } else {
       toast(`Error al publicar: ${errores.map((e) => e.error).join("; ") || "desconocido"}`, "error");
     }
@@ -346,9 +497,13 @@ export function TablasModule(props: Props) {
     router.push("/ejemplares?tab=gaceta");
   };
 
-  const venderDirecto = async (v: VentaTablaItem) => {
+  const venderDirecto = async (v: VentaTablaItem): Promise<{ ok: boolean; error?: string }> => {
     const tabla = tablas.find((t) => String(t.id) === String(v.tablaId));
-    if (!tabla) return;
+    if (!tabla) return { ok: false, error: "No se encontro la tabla en el monitor." };
+    if (persistirVenta) {
+      const r = await persistirVenta(tabla, v);
+      if (!r.ok) return { ok: false, error: r.error ?? "No se pudo registrar la venta." };
+    }
     const item: ItemCarritoVenta = {
       id: "it-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       tablaId: v.tablaId,
@@ -359,7 +514,7 @@ export function TablasModule(props: Props) {
       numero: v.numero,
       nombre: v.nombre,
       monto: v.monto,
-      cantidad: v.cantidad ?? v.monto,
+      cantidad: v.cantidad ?? 1,
       grupo: v.grupo,
       jugador: v.jugador,
     };
@@ -377,14 +532,11 @@ export function TablasModule(props: Props) {
       // mas al jugador y no coincidia con ningun convenio.
       comision: 0,
     });
-    if (persistirVenta) {
-      await persistirVenta(tabla, { tablaId: item.tablaId, numero: item.numero, nombre: item.nombre, monto: item.monto });
-    }
     // Centralización: registra la venta en el ledger "Carreras del Día".
     useCarrerasDiaStore.getState().agregarVenta(item.hipodromo, item.carrera ?? 0, {
       numero: item.numero,
       nombre: item.nombre,
-      cantidad: item.cantidad ?? item.monto,
+      cantidad: item.cantidad ?? 1,
       grupo: item.grupo?.nombre ?? null,
       jugador: item.jugador?.nombre ?? null,
       tablaId: item.tablaId,
@@ -392,7 +544,7 @@ export function TablasModule(props: Props) {
     setTablas(
       tablas.map((t) =>
         String(t.id) === String(item.tablaId)
-          ? { ...t, cantidad_vendida: (t.cantidad_vendida ?? 0) + item.monto }
+          ? { ...t, cantidad_vendida: (t.cantidad_vendida ?? 0) + (item.cantidad ?? 1) }
           : t
       )
     );
@@ -402,6 +554,7 @@ export function TablasModule(props: Props) {
       } por ${fmtMoney(item.monto, item.moneda)}.`,
       "success"
     );
+    return { ok: true };
   };
 
   const liquidar = async (tabla: StoredTablaFija, r: PizarraResultados) => {
@@ -604,7 +757,7 @@ export function TablasModule(props: Props) {
               vacio={`Sin hipódromos publicados para la fecha ${fechaPrograma}.`}
               className="mb-3"
               acciones={
-                <Guard permiso="imprimir_tablas">
+                <Guard permiso="tablas:btn_imprimir">
                   <button
                     type="button"
                     onClick={() => setImpresion(true)}

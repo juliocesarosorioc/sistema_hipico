@@ -168,7 +168,7 @@ export function DatosPagoForm({
 
   return (
     <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-3">
-      <i className="fas fa-info-circle mr-1"></i>Para <b>{metodo}</b> no se requieren datos bancarios adicionales.
+      <span className="mr-1">ℹ️</span>Para <b>{metodo}</b> no se requieren datos bancarios adicionales.
     </div>
   );
 }

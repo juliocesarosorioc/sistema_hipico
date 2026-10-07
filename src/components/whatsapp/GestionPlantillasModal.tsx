@@ -9,6 +9,8 @@ type Props = {
   onCerrar: () => void;
   plantillas: PlantillaWsp[];
   onGuardar: (lista: PlantillaWsp[]) => void;
+  /** Plantilla que debe quedar seleccionada al abrir el modal. */
+  plantillaInicial?: string;
 };
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
@@ -19,13 +21,13 @@ const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "in
  * Crear / editar / guardar / restaurar (por plantilla o todos) y eliminar las
  * plantillas personalizadas. Persistencia en localStorage (lib/whatsapp.ts).
  */
-export function GestionPlantillasModal({ abierto, onCerrar, plantillas, onGuardar }: Props) {
+export function GestionPlantillasModal({ abierto, onCerrar, plantillas, onGuardar, plantillaInicial }: Props) {
   const [selId, setSelId] = useState("");
   const [txt, setTxt] = useState("");
   const [nuevo, setNuevo] = useState(false);
   const [label, setLabel] = useState("");
   const [variables, setVariables] = useState("{nombre}");
-  const [grupo, setGrupo] = useState<"envio" | "reporte">("envio");
+  const [grupo, setGrupo] = useState<"envio" | "reporte" | "tablas" | "marcas" | "dupleta">("envio");
 
   useEffect(() => {
     if (!abierto) return;
@@ -33,11 +35,14 @@ export function GestionPlantillasModal({ abierto, onCerrar, plantillas, onGuarda
     setLabel("");
     setVariables("{nombre}");
     setGrupo("envio");
-    if (plantillas.length > 0) {
-      setSelId(plantillas[0].id);
-      setTxt(plantillas[0].txt);
+    const inicial = plantillaInicial ? plantillas.find((p) => p.id === plantillaInicial) : undefined;
+    const base = inicial ?? plantillas[0];
+    if (base) {
+      setSelId(base.id);
+      setTxt(base.txt);
     }
-  }, [abierto]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abierto, plantillaInicial]);
 
   const sel = plantillas.find((p) => p.id === selId);
 
@@ -131,7 +136,11 @@ export function GestionPlantillasModal({ abierto, onCerrar, plantillas, onGuarda
                         ? "(reporte)"
                         : p.grupo === "tablas"
                           ? "(tablas)"
-                          : ""}
+                          : p.grupo === "marcas"
+                            ? "(marcas)"
+                            : p.grupo === "dupleta"
+                              ? "(dupleta)"
+                              : ""}
                   </option>
                 ))}
               </select>
@@ -165,11 +174,14 @@ export function GestionPlantillasModal({ abierto, onCerrar, plantillas, onGuarda
                 <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">Grupo</label>
                 <select
                   value={grupo}
-                  onChange={(e) => setGrupo(e.target.value as "envio" | "reporte")}
+                  onChange={(e) => setGrupo(e.target.value as "envio" | "reporte" | "tablas" | "marcas" | "dupleta")}
                   className="w-full rounded-lg border border-line bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                 >
                   <option value="envio">Envío individual</option>
                   <option value="reporte">Reporte general</option>
+                  <option value="tablas">Tablas / Remates (pizarra)</option>
+                  <option value="marcas">Marcas</option>
+                  <option value="dupleta">Dupleta</option>
                 </select>
               </div>
             </div>

@@ -66,32 +66,36 @@ revoke all on public.auditoria from anon;
 grant execute on function public.club_log_accion(text, text, text, text, text, text) to anon;
 
 -- -------------------------------------------------------------------
--- PARTE 3 (OPCIONAL): LECTURA DEL LOG PARA ADMIN.
--- La nueva app se conecta con anon key (no usa Supabase Auth aún), así
--- que el SELECT del módulo Auditoría necesita permiso anon para LEER.
--- Si deseas que solo el equipo pueda leer, móntate sobre Supabase Auth:
+-- PARTE 3: LECTURA DEL LOG SOLO CON CAPACIDAD
+--
+-- Este archivo creaba aquí una política `anon_read_temporal` con
+-- `using (true)` y un comentario que decía "la app todavía no usa Supabase
+-- Auth". Ese día ya pasó: la app autentica con Supabase Auth y resuelve
+-- permisos con `public.tiene_capacidad`.
+--
+-- Con `using (true)` cualquier persona con la anon key leia el registro
+-- completo: IP, navegador, ubicacion y accion de cada operacion.
+--
+-- Por eso la lectura publica ya no se crea mas aca. Si aun la tenias en la
+-- base, este mismo archivo la elimina:
 -- -------------------------------------------------------------------
 drop policy if exists "anon_read_temporal" on public.auditoria;
-create policy "anon_read_temporal" on public.auditoria
-    for select to anon using (true);
--- ⚠️ ESTA POLÍTICA HABILITA LECTURA PÚBLICA TEMPORAL. Cuando migres a
--- Supabase Auth, REEMPLÁZALA por:
---   create policy "solo_admin_read" on public.auditoria for select
---     to authenticated using (auth.jwt() ->> 'role' = 'admin');
--- y elimina la política "anon_read_temporal".
+
+-- La politica buena va en su propio archivo, para que quede claro que
+-- este no es el lugar de administrar accesos: despues de correr este
+-- script, correr sql/auditoria_rls.sql. Define una politica
+-- `for select to authenticated` condicionada a
+-- `tiene_capacidad(auth.uid(), 'seguridad:celda_auditoria')`, que es la
+-- misma capacidad que exige el boton del modulo en la UI.
 
 -- ===================================================================
--- PARTE 4: RLS DE TABLAS DE NEGOCIO (PENDIENTE DE AUTENTICACIÓN REAL)
--- Antes de endurecer el RLS de tablas como `operadores`, `banco`,
--- `tablas`, `depositos`, etc., el sistema debe migrar a Supabase Auth.
--- MÚSICA DE FONDO: con la anon key en el frontend y sin sesión de
--- Supabase, activar RLS restrictivo ROMPE el funcionamiento de la app.
--- Plan recomendado:
---   1. Crear un usuario real en Supabase Auth por cada operador.
---   2. En las tablas: ALTER TABLE <x> ENABLE ROW LEVEL SECURITY;
---   3. Añadir policies por rol (auth.jwt() ->> 'role' = '...').
---   4. Configurar triggers para sincronizar operadores <-> auth.users.
--- Si aún no estás listo para ese paso, mantén el RLS deshabilitado en
--- las tablas de negocio y centra la defensa en: no exponer la service
--- role key + password hasheada + login con bcrypt (o Supabase Auth).
+-- PARTE 4: RLS DE TABLAS DE NEGOCIO
+-- Estado actual: este archivo ya NO es la guia. El orden vigente de
+-- scripts y que tabla se cierra con que RPC esta en sql/RUNBOOK_SQL.md.
+--
+-- Lo que si sigue en pie: endurecer el RLS de las tablas de negocio
+-- (operadores, banco, tablas, depositos...) se hace por RPC
+-- `security definer` con `tiene_capacidad`, igual que
+-- resultados_carreras y tickets_apuestas. No con policies abiertas al rol
+-- anon.
 -- ===================================================================

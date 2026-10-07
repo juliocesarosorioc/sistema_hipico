@@ -101,10 +101,10 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-black text-slate-800">
-          <i className="fas fa-coins mr-2 text-primary-600"></i> Contabilidad
+          <span className="mr-2 text-primary-600">🪙</span> Contabilidad
         </h1>
         <Button variant="outline" size="sm" onClick={() => void cargar()}>
-          <i className="fas fa-sync-alt"></i> Actualizar
+          <span >🔄</span> Actualizar
         </Button>
       </div>
 
@@ -131,7 +131,7 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
 
       {cargando ? (
         <div className="py-16 text-center text-sm text-slate-400">
-          <i className="fas fa-spinner fa-spin mr-2"></i> Cargando contabilidad…
+          <span className="mr-2">⏳</span> Cargando contabilidad…
         </div>
       ) : tab === "ingresos" ? (
         <TabIngresos

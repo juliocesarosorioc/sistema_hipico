@@ -408,11 +408,11 @@ export function filtrarMatriz(
 export const MATRIZ_CSS = `
 .impe-root{font-family:system-ui,Arial,sans-serif;color:#0f172a;}
 .im-pagina{box-sizing:border-box;width:1240px;height:1754px;display:flex;flex-direction:column;
-  background:#fff;padding:7px 7px 10px;overflow:hidden;}
+  background:#fff;padding:0;overflow:hidden;}
 .im-ph{display:flex;align-items:center;justify-content:space-between;gap:8px;
   font-size:13px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.4px;padding:0 3px 6px;}
 .im-ph b{color:#0f172a;font-size:15px;}
-.im-hoja{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(3,1fr);grid-auto-flow:row;grid-auto-rows:1fr;gap:4px;}
+.im-hoja{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(3,1fr);grid-auto-flow:row;grid-auto-rows:1fr;column-gap:4px;row-gap:1.5px;}
 .im-tarjeta{background:#fff;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;
   display:flex;flex-direction:column;min-width:0;min-height:0;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.04);}
 .im-enc{background:#0f172a;color:#fff;padding:4px 5px;flex:none;}
@@ -426,11 +426,15 @@ export const MATRIZ_CSS = `
 .im-fecha{margin-left:auto;white-space:nowrap;font-weight:800;color:#7dd3fc;}
 .im-filas{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;gap:0;
   padding:1px 3px;min-height:0;overflow:hidden;font-size:10px;}
-.im-fila{display:flex;align-items:center;gap:2px;line-height:1;min-height:0;border-radius:3px;}
+.im-fila{display:flex;align-items:center;gap:2px;line-height:1.25em;min-height:0;border-radius:3px;}
 .im-fila:nth-child(odd){background:#eef2f7;}
+/* line-height en UNIDAD (em), nunca en número: html2canvas calcula la línea
+   base como parseFloat(getComputedStyle().lineHeight)*0.8 y con un número
+   suelto ("1") el texto se dibuja pegado al borde superior. Y sin
+   overflow:hidden el recorte no puede comerse la mitad de la letra. */
 .im-num{flex:none;width:1.4em;height:1.4em;border-radius:4px;margin:0;padding:0;
   display:flex;align-items:center;justify-content:center;
-  font-weight:900;font-size:0.95em;line-height:1;overflow:hidden;text-align:center;
+  font-weight:900;font-size:0.95em;line-height:1.4em;overflow:visible;text-align:center;
   box-sizing:border-box;}
 .im-nom{flex:1;min-width:0;font-weight:700;color:#334155;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:5px;}
@@ -448,16 +452,16 @@ export const MATRIZ_CSS = `
   font-size:10px;font-weight:700;color:#475569;white-space:nowrap;
   position:relative;z-index:2;}
 .im-pie b{color:#047857;font-size:17px;}
-.im-normas{font-size:9px;color:#64748b;line-height:1.5;text-align:center;
+.im-normas{font-size:9px;color:#64748b;line-height:1.5em;text-align:center;
   padding:10px 4px 0;flex:none;font-weight:600;}
 @media print{
-  @page{size:A4 portrait;margin:3mm;}
+  @page{size:A4 portrait;margin:1mm;}
   body *{visibility:hidden;}
   .impe-root,.impe-root *{visibility:visible;}
   .impe-root{position:absolute !important;left:0 !important;top:0 !important;width:100% !important;max-width:none !important;}
-  .im-pagina{width:204mm;height:288mm;padding:2mm;break-after:page;border:none;border-radius:0;}
+  .im-pagina{width:204mm;height:288mm;padding:0;break-after:page;border:none;border-radius:0;}
   .im-or-h .im-pagina{width:288mm;height:204mm;}
-  .im-hoja{grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(3,1fr);gap:2.2mm;}
+  .im-hoja{grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(3,1fr);column-gap:2.2mm;row-gap:0.9mm;}
   .im-tarjeta{break-inside:avoid;border-radius:4px;}
 }
 `;

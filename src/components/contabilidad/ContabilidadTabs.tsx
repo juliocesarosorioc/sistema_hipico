@@ -134,7 +134,7 @@ export function TabIngresos({
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
         <h2 className="mb-3 text-sm font-black uppercase text-slate-700">
-          <i className="fas fa-plus-circle mr-1 text-emerald-600"></i> Registrar ingreso
+          <span className="mr-1 text-emerald-600">➕</span> Registrar ingreso
         </h2>
         <div className="space-y-2">
           <div>
@@ -246,7 +246,7 @@ export function TabIngresos({
           </div>
 
           <Button variant="success" size="sm" className="w-full" disabled={guardando} onClick={guardar}>
-            <i className="fas fa-check"></i> {guardando ? "Guardando…" : "Registrar"}
+            <span >✅</span> {guardando ? "Guardando…" : "Registrar"}
           </Button>
         </div>
       </div>
@@ -254,7 +254,7 @@ export function TabIngresos({
       <div className="space-y-4 lg:col-span-2">
         <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
           <div className="border-b border-line px-4 py-2 text-sm font-black uppercase text-slate-700">
-            <i className="fas fa-users mr-1 text-primary-600"></i> Saldos y deudas
+            <span className="mr-1 text-primary-600">👥</span> Saldos y deudas
           </div>
           <div className="max-h-64 overflow-y-auto">
             <table className="w-full text-xs">
@@ -291,7 +291,7 @@ export function TabIngresos({
 
         <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
           <div className="border-b border-line px-4 py-2 text-sm font-black uppercase text-slate-700">
-            <i className="fas fa-clock-rotate-left mr-1 text-primary-600"></i> Historial de ingresos
+            <span className="mr-1 text-primary-600">🕙</span> Historial de ingresos
           </div>
           <div className="max-h-80 overflow-y-auto">
             <table className="w-full text-xs">
@@ -444,8 +444,20 @@ export function TabCaja({
         <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Deben (saldo negativo)</p>
           <p className="text-2xl font-black text-danger-600">{deudores.length}</p>
+          {/* Con aval, un saldo negativo NO es mora: es deuda garantizada, y el
+              banco respalda hasta donde llega el aval. Mostrar solo el saldo
+              bruto hacía creer que la banca estaba exponida a clientes que en
+              realidad no le deben nada. */}
           <p className="text-[10px] text-slate-400">
-            Total ${round2(deudores.reduce((a, c) => a + c.saldo_actual, 0)).toFixed(2)}
+            Bruto ${round2(deudores.reduce((a, c) => a + c.saldo_actual, 0)).toFixed(2)}
+            {deudores.some((c) => (c.aval ?? 0) > 0) ? (
+              <>
+                {" · "}
+                <span className="font-bold text-amber-700">
+                  neto ${round2(deudores.reduce((a, c) => a + Math.min(0, c.saldo_actual + (c.aval ?? 0)), 0)).toFixed(2)}
+                </span>
+              </>
+            ) : null}
           </p>
         </div>
       </div>
@@ -453,7 +465,7 @@ export function TabCaja({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
           <h2 className="mb-3 text-sm font-black uppercase text-slate-700">
-            <i className="fas fa-right-left mr-1 text-primary-600"></i> Movimiento de caja
+            <span className="mr-1 text-primary-600">↔️</span> Movimiento de caja
           </h2>
           <div className="mb-3 flex gap-1 rounded-lg bg-slate-100 p-1">
             {(["traslado", "retiro"] as const).map((m) => (
@@ -603,7 +615,7 @@ export function TabCaja({
               )}
             </div>
             <Button variant="danger" size="sm" className="w-full" disabled={guardando} onClick={guardar}>
-              <i className="fas fa-check"></i>{" "}
+              <span >✅</span>{" "}
               {guardando ? "Guardando…" : modo === "traslado" ? "Registrar traslado" : "Registrar retiro"}
             </Button>
           </div>
@@ -611,7 +623,7 @@ export function TabCaja({
 
         <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm lg:col-span-2">
           <div className="border-b border-line px-4 py-2 text-sm font-black uppercase text-slate-700">
-            <i className="fas fa-book mr-1 text-primary-600"></i> Libro mayor
+            <span className="mr-1 text-primary-600">📕</span> Libro mayor
           </div>
           <div className="max-h-[32rem] overflow-y-auto">
             <table className="w-full text-xs">
@@ -759,7 +771,7 @@ export function TabBancos({
             Total en USD: <span className="text-emerald-700">${granTotal.toFixed(2)}</span>
           </span>
           <Button variant="default" size="sm" onClick={abrirNuevo}>
-            <i className="fas fa-plus"></i> Nueva cuenta
+            <span >➕</span> Nueva cuenta
           </Button>
         </div>
       </div>
@@ -791,10 +803,10 @@ export function TabBancos({
                   </td>
                   <td className={td + " text-right whitespace-nowrap"}>
                     <Button variant="outline" size="sm" onClick={() => abrir(b)}>
-                      <i className="fas fa-pen"></i>
+                      <span >✏️</span>
                     </Button>{" "}
                     <Button variant="danger" size="sm" onClick={() => void borrar(b)}>
-                      <i className="fas fa-trash"></i>
+                      <span >🗑️</span>
                     </Button>
                   </td>
                 </tr>
@@ -844,7 +856,7 @@ export function TabBancos({
                 Cancelar
               </Button>
               <Button variant="success" size="sm" onClick={guardar}>
-                <i className="fas fa-check"></i> Guardar
+                <span >✅</span> Guardar
               </Button>
             </div>
           </div>
@@ -922,7 +934,7 @@ export function TabMonedas({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
           <h2 className="mb-3 text-sm font-black uppercase text-slate-700">
-            <i className="fas fa-exchange-alt mr-1 text-primary-600"></i> Tasa de cambio
+            <span className="mr-1 text-primary-600">🔄</span> Tasa de cambio
           </h2>
           <div className="space-y-2">
             <div>
@@ -941,7 +953,7 @@ export function TabMonedas({
               <input value={nuevaTasa} onChange={(e) => setNuevaTasa(e.target.value)} inputMode="decimal" className={`${inp} text-right font-mono font-black`} />
             </div>
             <Button variant="success" size="sm" className="w-full" onClick={guardarTasa}>
-              <i className="fas fa-check"></i> Registrar tasa
+              <span >✅</span> Registrar tasa
             </Button>
             <p className="text-[10px] leading-relaxed text-slate-400">
               El historial es <b>append-only</b>: cada cambio guarda una fila nueva y la vigente es la más
@@ -952,7 +964,7 @@ export function TabMonedas({
 
         <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
           <h2 className="mb-3 text-sm font-black uppercase text-slate-700">
-            <i className="fas fa-plus-circle mr-1 text-primary-600"></i> Nueva moneda
+            <span className="mr-1 text-primary-600">➕</span> Nueva moneda
           </h2>
           <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2">
@@ -976,14 +988,14 @@ export function TabMonedas({
               </div>
             </div>
             <Button variant="default" size="sm" className="w-full" onClick={guardarMoneda}>
-              <i className="fas fa-check"></i> Crear moneda
+              <span >✅</span> Crear moneda
             </Button>
           </div>
         </div>
 
         <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
           <h2 className="mb-3 text-sm font-black uppercase text-slate-700">
-            <i className="fas fa-chart-line mr-1 text-primary-600"></i> Tasa de referencia
+            <span className="mr-1 text-primary-600">📈</span> Tasa de referencia
           </h2>
           <div className="space-y-2">
             <div>
@@ -1005,7 +1017,7 @@ export function TabMonedas({
               </div>
             </div>
             <Button variant="default" size="sm" className="w-full" onClick={guardarReferencia}>
-              <i className="fas fa-check"></i> Registrar referencia
+              <span >✅</span> Registrar referencia
             </Button>
             <p className="text-[10px] leading-relaxed text-slate-400">
               La tasa vigente es la última cuyo campo <b>«A partir de»</b> ya haya llegado, así que se puede
@@ -1018,7 +1030,7 @@ export function TabMonedas({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
           <div className="border-b border-line px-4 py-2 text-sm font-black uppercase text-slate-700">
-            <i className="fas fa-history mr-1 text-primary-600"></i> Histórico de tasas
+            <span className="mr-1 text-primary-600">🕙</span> Histórico de tasas
           </div>
           <div className="max-h-80 overflow-y-auto">
             <table className="w-full text-xs">
@@ -1051,7 +1063,7 @@ export function TabMonedas({
 
         <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
           <div className="border-b border-line px-4 py-2 text-sm font-black uppercase text-slate-700">
-            <i className="fas fa-satellite mr-1 text-primary-600"></i> Tasas de referencia
+            <span className="mr-1 text-primary-600">📡</span> Tasas de referencia
           </div>
           <div className="max-h-80 overflow-y-auto">
             <table className="w-full text-xs">

@@ -369,7 +369,7 @@ export const REPORTE_CSS = `
 .imr-titulo{font-size:22px;font-weight:900;color:#0f172a;display:flex;align-items:center;gap:8px;}
 .imr-titulo small{display:block;font-size:11px;font-weight:600;color:#64748b;}
 .imr-hoy{font-size:15px;font-weight:800;color:#2563eb;white-space:nowrap;padding-top:6px;}
-.imr-normas{font-size:9px;color:#64748b;line-height:1.4;text-align:justify;flex:none;
+.imr-normas{font-size:9px;color:#64748b;line-height:1.4em;text-align:justify;flex:none;
   border-top:1px solid #cbd5e1;padding-top:5px;margin-top:6px;font-weight:500;}
 .imr-tabla{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;}
 .imr-tabla th{background:#0f172a;color:#fff;font-size:10px;font-weight:700;text-transform:uppercase;
@@ -407,10 +407,14 @@ export const REPORTE_CSS = `
 .imr-fecha{margin-left:auto;white-space:nowrap;font-weight:800;color:#2563eb;}
 .imr-filas{display:flex;flex-direction:column;justify-content:space-evenly;padding:2px 0 3px;min-height:0;
   font-size:10px;gap:0;}
-.imr-frac{display:flex;align-items:center;gap:2px;line-height:1.15;min-height:0;}
+.imr-frac{display:flex;align-items:center;gap:2px;line-height:1.25em;min-height:0;}
+/* line-height en UNIDAD (em), nunca en número: html2canvas calcula la línea
+   base como parseFloat(getComputedStyle().lineHeight)*0.8 y con un número
+   suelto ("1") el texto se dibuja pegado al borde superior. Y sin
+   overflow:hidden el recorte no puede comerse la mitad de la letra. */
 .imr-num{flex:none;width:1.4em;height:1.4em;border-radius:4px;margin:0;padding:0;
   display:flex;align-items:center;justify-content:center;font-weight:900;font-size:0.95em;
-  line-height:1;overflow:hidden;text-align:center;box-sizing:border-box;}
+  line-height:1.4em;overflow:visible;text-align:center;box-sizing:border-box;}
 .imr-cab{flex:1;min-width:0;font-weight:700;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .imr-jj{white-space:nowrap;font-weight:700;color:#475569;text-align:right;}
 .imr-pp{white-space:nowrap;font-weight:800;color:#047857;min-width:96px;text-align:right;}

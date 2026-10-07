@@ -674,7 +674,7 @@ export function GacetaIA() {
               onChange={(e) => setTopePaginas(e.target.value)}
               placeholder="Todas"
               title="Limita las páginas que se renderizan del PDF (vacío = todas)"
-              className="w-20 rounded-lg border border-line bg-surface px-2 py-1.5 text-center text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
+              className="w-20 rounded-lg border border-line bg-surface px-2 py-1.5 text-right text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
             />
           </div>
         </div>

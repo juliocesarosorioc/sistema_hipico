@@ -15,6 +15,7 @@
  * lugar de simular el movimiento con escrituras parciales.
  */
 import { supabase } from "@/lib/supabase";
+import { exigirCapacidad, exigirPermiso } from "@/lib/seguridad/vigente";
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -178,6 +179,7 @@ export async function guardarTasaReferencia(
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   if (!fechaAplicar) return { ok: false, error: "Indique la fecha de aplicación." };
   if (!(tasa > 0)) return { ok: false, error: "La tasa debe ser un número mayor a cero." };
+  exigirCapacidad("contabilidad:fn_registrar_tasa");
   const { error } = await supabase
     .from("tasas_referencia")
     .insert({ tipo, tasa, fecha_aplicar: fechaAplicar });
@@ -245,6 +247,7 @@ export async function registrarTasaCambio(
 ): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   if (!(tasa > 0)) return { ok: false, error: "La tasa debe ser un número mayor a cero." };
+  exigirCapacidad("contabilidad:fn_registrar_tasa");
   const { data, error } = await rpcContable("club_registrar_tasa", {
     p_moneda_id: monedaId,
     p_tasa: tasa,
@@ -272,8 +275,9 @@ export async function crearMoneda(datos: {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   if (!datos.nombre.trim() || !datos.codigo.trim() || !datos.simbolo.trim())
     return { ok: false, error: "Nombre, código y símbolo son obligatorios." };
-  if (!(datos.tasa > 0)) return { ok: false, error: "La tasa inicial debe ser mayor a cero." };
-  const { error } = await supabase.from("monedas").insert({
+    if (!(datos.tasa > 0)) return { ok: false, error: "La tasa inicial debe ser mayor a cero." };
+    exigirCapacidad("contabilidad:btn_crear_moneda");
+    const { error } = await supabase.from("monedas").insert({
     nombre: datos.nombre.trim(),
     codigo: datos.codigo.trim().toUpperCase(),
     simbolo: datos.simbolo.trim(),
@@ -312,6 +316,7 @@ export async function guardarBanco(
   if (!datos.nombre.trim()) return { ok: false, error: "El nombre del banco es obligatorio." };
   if (!datos.moneda_codigo) return { ok: false, error: "La moneda del banco es obligatoria." };
   if (!Number.isFinite(datos.saldo_local)) return { ok: false, error: "El saldo es obligatorio." };
+  exigirCapacidad(datos.id ? "contabilidad:btn_editar_banco" : "contabilidad:btn_crear_banco");
   const { error } = await rpcContable("club_guardar_banco", {
     p_id: datos.id ?? null,
     p_nombre: datos.nombre,
@@ -345,9 +350,14 @@ export async function guardarBanco(
 
 export async function eliminarBanco(id: string): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
-  const { error } = await supabase.from("bancos").delete().eq("id", id);
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
+  try {
+    exigirCapacidad("contabilidad:fn_eliminar_banco");
+    const { error } = await supabase.from("bancos").delete().eq("id", id);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -409,8 +419,9 @@ export async function listarTransacciones(limite = 50): Promise<TransaccionRow[]
  *
  * Reglas, idénticas a las de la RPC:
  *  - Normal        → saldo + monto, banco + monto
- *  - Otorgar Aval  → saldo + monto, aval + monto (no toca el banco: es garantía)
- *  - Pagar Aval    → saldo + monto, aval − monto topado en 0, banco + monto
+ *  - Otorgar Aval  → solo aval + monto (no suma saldo, no toca el banco: es garantía)
+ *  - Pagar Aval    → cancela deuda, luego reduce aval y el excedente entra al
+ *                    saldo; banco + monto
  */
 export async function registrarDeposito(p: {
   cliente_id: string;
@@ -430,10 +441,16 @@ export async function registrarDeposito(p: {
     return { ok: false, error: "Indique la tasa aplicada al ingreso en Bs." };
   if (p.tipo_operacion !== "Otorgar Aval") {
     if (!p.modalidad) return { ok: false, error: "Debe indicar la modalidad del ingreso." };
-    if (!p.banco_id) return { ok: false, error: "Debe seleccionar el banco receptor." };
-  }
-
-  const { data, error } = await rpcContable("club_registrar_deposito", {
+      if (!p.banco_id) return { ok: false, error: "Debe seleccionar el banco receptor." };
+    }
+  exigirPermiso("contabilidad:fn_registrar_movimiento", {
+    monto: p.monto,
+    // "Otorgar Aval" no tiene modalidad de pago externa (es una garantía
+    // interna): sin este respaldo, `metodo_pago: ""` no está en METODOS_PAGO y
+    // la regla ABAC rechaza un aval legítimo como "no reconocido".
+    metodo_pago: normMetodo(p.modalidad) || "otro",
+  });
+    const { data, error } = await rpcContable("club_registrar_deposito", {
     p_cliente_id: p.cliente_id,
     p_tipo: p.tipo_operacion,
     p_monto: p.monto,
@@ -469,8 +486,16 @@ export async function registrarTraslado(p: {
   if (!p.origen_id) return { ok: false, error: "Debe seleccionar un cliente origen." };
   if (!p.destino_id) return { ok: false, error: "Debe seleccionar un cliente destino." };
   if (p.origen_id === p.destino_id) return { ok: false, error: "No puede transferir a sí mismo." };
-  if (!(p.monto > 0)) return { ok: false, error: "El monto debe ser un número mayor a cero." };
+    if (!(p.monto > 0)) return { ok: false, error: "El monto debe ser un número mayor a cero." };
 
+  exigirPermiso("contabilidad:fn_registrar_movimiento", {
+    monto: p.monto,
+    // El traslado no sale de la casa: el saldo viaja de un cliente a otro sin
+    // pasar por una modalidad externa. Para la regla es una transferencia
+    // interna, y por eso se pasa fija en vez de leerse de la entrada (que no
+    // tiene el campo). El tope de monto sí aplica igual.
+    metodo_pago: "transferencia",
+  });
   const { data, error } = await rpcContable("club_registrar_traslado", {
     p_origen_id: p.origen_id,
     p_destino_id: p.destino_id,
@@ -505,8 +530,12 @@ export async function registrarRetiro(p: {
   if (!(p.monto > 0)) return { ok: false, error: "El monto debe ser un número mayor a cero." };
   if (!p.modalidad) return { ok: false, error: "Debe indicar la modalidad del retiro." };
   if (esVes(p.moneda) && !(p.tasa_cambio > 0))
-    return { ok: false, error: "Indique la tasa aplicada al egreso en Bs." };
+      return { ok: false, error: "Indique la tasa aplicada al egreso en Bs." };
 
+  exigirPermiso("contabilidad:fn_registrar_movimiento", {
+    monto: p.monto,
+    metodo_pago: normMetodo(p.modalidad),
+  });
   const { data, error } = await rpcContable("club_registrar_retiro", {
     p_origen_id: p.origen_id,
     p_monto: p.monto,
@@ -532,6 +561,17 @@ export async function registrarRetiro(p: {
 // ---------------------------------------------------------------------------
 // Catálogos de la UI
 // ---------------------------------------------------------------------------
+
+/**
+ * El metodo de pago tal como lo espera la regla ABAC: minúsculas y sin
+ * mayúsculas ni espacios raros. "PAGO MOVIL" y "pago movil" tienen que ser la
+ * misma modalidad, o un movimiento legitimo se rechaza como "no reconocido".
+ */
+function normMetodo(modalidad: string | null | undefined): string {
+  return String(modalidad ?? "")
+    .trim()
+    .toLowerCase();
+}
 
 /** Modalidades de egreso (js/caja.js:113). */
 export const MODALIDADES_EGRESO = [

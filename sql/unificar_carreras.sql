@@ -93,18 +93,18 @@ SELECT
   COALESCE(tf.premio_recalculado, tf.premio_original) AS premio,
   tf.premio_original                                AS premio_oficial,
   tf.premio_recalculado                             AS premio_recalculado,
-  CASE
-    WHEN EXISTS (
-      SELECT 1 FROM jsonb_array_elements(COALESCE(tf.caballos, '[]'::jsonb)) e
-      WHERE COALESCE((e ->> 'ganador')::boolean, false)
-    )
-    THEN (
-      SELECT jsonb_agg(e ->> 'numero' ORDER BY (e ->> 'orden')::int NULLS LAST, e ->> 'numero')
-      FROM jsonb_array_elements(COALESCE(tf.caballos, '[]'::jsonb)) e
-      WHERE COALESCE((e ->> 'ganador')::boolean, false)
-    )
-    ELSE NULL
-  END                                               AS ganadores
+  -- `ganadores` es text[] en `resultados_carreras`, asi que se agrega con
+  -- array_agg (text[]). Antes se usaba jsonb_agg, que devuelve jsonb, y el
+  -- INSERT reventaba con:
+  --   ERROR 42804: column "ganadores" is of type text[] but expression is of
+  --   type jsonb
+  -- El CASE que envolvia esto tambien sobra: un agregado sobre cero filas
+  -- devuelve NULL, que es justo lo que se pedia con el ELSE NULL.
+  (
+    SELECT array_agg(e ->> 'numero' ORDER BY (e ->> 'orden')::int NULLS LAST, e ->> 'numero')
+    FROM jsonb_array_elements(COALESCE(tf.caballos, '[]'::jsonb)) e
+    WHERE COALESCE((e ->> 'ganador')::boolean, false)
+  )                                               AS ganadores
 FROM tablas_fijas tf
 WHERE tf.fecha IS NOT NULL
   AND tf.carrera IS NOT NULL
@@ -127,8 +127,13 @@ WHERE rc.id IS NULL
 ORDER BY 1,2,3;
 
 -- 3.2) No deben quedar años fuera de 2026.  Esperado: 0 filas.
+--      `fecha` es date: no admite LIKE (reventaba con
+--      `operator does not exist: date !~~ unknown`). Un rango es exacto y
+--      además deja el indice de fecha usable.
 SELECT fecha, count(*) FROM tablas_fijas
-WHERE fecha NOT LIKE '2026-%' GROUP BY 1;
+WHERE fecha <  DATE '2026-01-01'
+   OR fecha >= DATE '2027-01-01'
+GROUP BY 1;
 
 -- 3.3) Conteo por fecha: el registro único debe cuadrar con las 130 carreras.
 SELECT fecha, count(*) AS carreras

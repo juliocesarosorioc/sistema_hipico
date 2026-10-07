@@ -115,6 +115,10 @@ declare
   v_monto_usd numeric;
   v_saldo     numeric;
   v_aval      numeric;
+  v_deuda     numeric;
+  v_a_deuda   numeric;
+  v_a_aval    numeric;
+  v_exceso    numeric;
   v_credito   numeric;
   v_es_ves    boolean;
   v_es_banco_ves boolean;
@@ -150,13 +154,45 @@ begin
   v_saldo := coalesce(v_cliente.saldo_actual, 0);
   v_aval  := coalesce(v_cliente.aval, 0);
 
+  -- ------------------------------------------------------------------
+  -- AVAL = CREDITO NEGADO, NO EFECTIVO.
+  --
+  -- El aval NO entra a la cuenta y NO se retira: por eso el retiro de abajo
+  -- prohibe dejar el saldo en negativo aunque tenga aval, y por eso el banco
+  -- no se acredita en 'Otorgar Aval'.
+  --
+  -- Jugar con aval deja el saldo en negativo hasta -aval: esa deuda es real y se
+  -- cobra con un deposito normal.
+  --
+  -- ANTES (mal): 'Otorgar Aval' sumaba a `saldo_actual` Y a `aval`, y 'Pagar
+  -- Aval' tambien abonaba el saldo. Eso hacia tres cosas malas: el aval
+  -- contaba DOS veces como poder de compra, dar $500 de aval concedia $1000 de
+  -- poder, y el cliente podia RETIRAR esos $500 como si fueran efectivo
+  -- (justo lo que el propio retiro de mas abajo impide). 'Pagar Aval', que se
+  -- supone que el cliente devuelve la plata, le CREABA saldo.
+  -- ------------------------------------------------------------------
+  v_saldo := coalesce(v_cliente.saldo_actual, 0);
+  v_aval  := coalesce(v_cliente.aval, 0);
+
   if p_tipo = 'Otorgar Aval' then
-    -- El aval no es dinero: se suma al limite, no entra a la cuenta.
-    v_saldo := v_saldo + p_monto;
-    v_aval  := v_aval + p_monto;
+    v_aval := v_aval + p_monto;            -- solo la linea de credito
   elsif p_tipo = 'Pagar Aval' then
-    v_saldo := v_saldo + p_monto;
-    v_aval  := greatest(0, v_aval - p_monto);
+    -- El cliente devuelve la plata del credito. Cascada en tres tramos:
+    --   1) cancela la deuda que dejo al jugar (saldo en negativo),
+    --   2) reduce la linea de aval,
+    --   3) lo que sobrepase deuda+aval entra al saldo: es plata real que YA
+    --      se acredito al banco, asi que no puede desaparecer (antes el
+    --      excedente se perdia: el banco cobraba y el cliente no lo veia).
+    -- Ej: saldo -300, aval 300, paga 200 -> saldo -100, aval 300 (aun debe 100).
+    -- Ej: saldo -300, aval 300, paga 450 -> saldo 0, aval 150.
+    -- Ej: saldo    0, aval 300, paga 450 -> saldo 150, aval 0.
+    v_deuda   := greatest(-v_saldo, 0);
+    v_a_deuda := least(p_monto, v_deuda);
+    v_saldo   := v_saldo + v_a_deuda;          -- tramo 1
+    v_exceso  := p_monto - v_a_deuda;
+    v_a_aval  := least(v_exceso, v_aval);
+    v_aval    := v_aval - v_a_aval;            -- tramo 2
+    v_saldo   := v_saldo + (v_exceso - v_a_aval); -- tramo 3 (excedente real)
   else
     v_saldo := v_saldo + p_monto;
   end if;

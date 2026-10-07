@@ -4,32 +4,21 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Guard } from "@/components/ui/Guard";
 import { ToastHost } from "@/components/ui/ToastHost";
-import { ModalEditarCliente } from "@/components/clientes/ModalEditarCliente";
+import { ModalCliente } from "@/components/clientes/ModalCliente";
 import { ModalPortalCliente } from "@/components/clientes/ModalPortalCliente";
-import { DatosPagoForm } from "@/components/clientes/DatosPagoForm";
 import { EstadoCuentaAcordeon } from "@/components/clientes/EstadoCuentaAcordeon";
 import { NotificacionesPortal } from "@/components/clientes/NotificacionesPortal";
 import {
   aplicarDevolucionMasiva,
   cargarTicketsCliente,
   convertirSocio,
-  crearCliente,
   eliminarCliente,
   errorClientes,
   etiquetaModoJuego,
   listarClientes,
-  MODO_JUEGO_OPCIONES,
   type ClienteRow,
 } from "@/lib/clientes";
-import {
-  codigosPaisUnicos,
-  componerTelefono,
-  desglosarTelefono,
-  esBancoVzla,
-  formatoMoneda,
-  listMetodosPago,
-  type DatosPago,
-} from "@/lib/vzla";
+import { formatoMoneda } from "@/lib/vzla";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -42,8 +31,6 @@ const num = (v: number | string | null | undefined): number => {
 /** Afiliados de un socio/agencia (clientes cuyo socio_asignado coincide con este nombre). */
 const afiliadosDe = (c: ClienteRow, lista: ClienteRow[]): number =>
   lista.filter((s) => String(s.socio_asignado || "").toUpperCase() === String(c.nombre || c.seudonimo || "").toUpperCase()).length;
-
-const modoOpts = MODO_JUEGO_OPCIONES;
 
 const DIAS = ["LUNES", "MARTES", "MIÉRCOLES", "JUEVES", "VIERNES", "SÁBADO", "DOMINGO"];
 
@@ -65,7 +52,9 @@ export function ClientesModule() {
   const [filtro, setFiltro] = useState("");
   const [soloSocios, setSoloSocios] = useState(false);
   const [pagina, setPagina] = useState(1);
-  const [porPagina] = useState(10);
+  // Filas compactas: 25 entran de una vez en pantalla y el bloque scrollea solo,
+  // así se revisa la cartera completa sin paginar cada dos rencuentros.
+  const [porPagina, setPorPagina] = useState(25);
 
   const [abrirNuevo, setAbrirNuevo] = useState(false);
   const [editando, setEditando] = useState<ClienteRow | null>(null);
@@ -152,25 +141,29 @@ export function ClientesModule() {
     void recargar();
   };
 
-  const td = "px-3 py-2 align-middle";
-  const th = "px-3 py-2 text-left text-[9px] font-black uppercase tracking-wider text-slate-500";
+  // Fila compacta: una sola línea de alto (py-1) para que entren muchos
+  // jugadores a la vista. Antes cada celda era un bloque de hasta tres líneas
+  // (nombre + sub-info, teléfono + email + cédula) y la cartera se "?:" larga.
+  const td = "px-2 py-1 align-middle leading-tight";
+  const th =
+    "sticky top-0 z-10 bg-slate-50 px-2 py-1.5 text-left text-[9px] font-black uppercase leading-tight tracking-wider text-slate-500";
 
   return (
     <div className="space-y-4">
       {/* Encabezado + pestañas */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-black text-slate-800">
-          <i className="fas fa-users mr-2 text-primary-600"></i> Gestión de Clientes
+          <span className="mr-2 text-primary-600">👥</span> Gestión de Clientes
         </h1>
         <div className="flex gap-2">
-          <Guard permiso="gestionar_clientes" disabled>
+          <Guard permiso="clientes:btn_crear" disabled>
             <Button variant="default" size="sm" onClick={() => setAbrirNuevo(true)}>
-              <i className="fas fa-plus"></i> Nuevo Cliente
+              <span >➕</span> Nuevo Cliente
             </Button>
           </Guard>
-          <Guard permiso="gestionar_clientes" disabled>
+          <Guard permiso="clientes:modal_reclamos" disabled>
             <Button variant="outline" size="sm" onClick={() => (seleccion.size ? setAbrirDev(true) : toast("Seleccione clientes en la tabla.", "warning"))}>
-              <i className="fas fa-percent"></i> Devoluciones Masivas
+              <span >％</span> Devoluciones Masivas
             </Button>
           </Guard>
         </div>
@@ -202,7 +195,7 @@ export function ClientesModule() {
           {/* Barra de búsqueda / filtros */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
-              <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
               <input
                 value={filtro}
                 onChange={(e) => {
@@ -218,10 +211,10 @@ export function ClientesModule() {
               Solo socios
             </label>
             <Button variant="outline" size="sm" title="Recargar cartera" onClick={() => void recargar()}>
-              <i className="fas fa-sync-alt"></i>
+              <span >🔄</span>
             </Button>
             <div className="ml-auto flex gap-2 items-center">
-              <Guard permiso="gestionar_clientes" disabled>
+              <Guard permiso="clientes:btn_editar" disabled>
                 <input
                   value={socioConvertir}
                   onChange={(e) => setSocioConvertir(e.target.value.toUpperCase())}
@@ -229,150 +222,193 @@ export function ClientesModule() {
                   className="w-48 border border-line rounded-lg px-3 py-2 text-xs uppercase outline-none focus:ring-1 focus:ring-primary-500 bg-surface"
                 />
                 <Button variant="success" size="sm" onClick={socioAplicar}>
-                  <i className="fas fa-crown"></i> Socio
+                  <span >👑</span> Socio
                 </Button>
               </Guard>
             </div>
           </div>
 
-          {/* Tabla */}
-          <div className="overflow-x-auto rounded-2xl border border-line bg-white shadow-sm">
-            <table className="w-full text-xs table-fixed">
-              <thead className="bg-slate-50 border-b border-line">
+          {/* Tabla compacta: una línea por jugador, scrollear dentro del bloque */}
+          <div className="max-h-[calc(100vh-19rem)] min-h-64 overflow-auto rounded-2xl border border-line bg-white shadow-sm">
+            <table className="w-full table-fixed text-[11px]">
+              <thead className="border-b border-line">
                 <tr>
-                  <th className={th + " w-8"}>
+                  <th className={th + " w-7"}>
                     <input
                       type="checkbox"
-                      className="accent-primary-600"
+                      className="h-3.5 w-3.5 accent-primary-600"
                       onChange={(e) => {
                         const n = new Set<string>();
                         if (e.target.checked) paginado.forEach((c) => n.add(String(c.id)));
                         setSeleccion(n);
                       }}
                       checked={paginado.length > 0 && paginado.every((c) => seleccion.has(String(c.id)))}
+                      aria-label="Seleccionar la página"
                     />
                   </th>
-                  <th className={th}>Seudónimo</th>
-                  <th className={th}>Teléfono</th>
-                  <th className={th + " text-center"}>Modo</th>
-                  <th className={th + " text-right bg-emerald-50/50"}>Saldo USD</th>
-                  <th className={th + " text-right text-amber-600"}>Aval USD</th>
-                  <th className={th + " text-right text-purple-600"}>Devolución</th>
-                  <th className={th + " text-center"} title="Mostrar Saldo al Socio">M.S.</th>
-                  <th className={th}>Socio</th>
-                  <th className={th + " text-amber-600"}>Agencia</th>
-                  <th className={th + " text-emerald-600"} title="Día / Tasa de cuadre">Cuadre</th>
-                  <th className={th + " text-center text-cyan-600"}>Portal</th>
-                  <th className={th + " w-52"}>Acciones</th>
+                  <th className={th}>Jugador</th>
+                  <th className={th}>Contacto</th>
+                  <th className={th + " text-center"} title="Modo de juego">Modo</th>
+                  <th className={th + " text-right"} title="Saldo actual en USD">Saldo</th>
+                  <th className={th + " text-right text-amber-600"} title="Aval / límite de pérdida en USD">Aval</th>
+                  <th className={th + " text-right text-purple-600"} title="Devolución / incentivo %">Dev.</th>
+                  <th className={th + " text-emerald-600"} title="Día y tasa de cuadre">Cuadre</th>
+                  <th className={th + " text-amber-600"} title="Socio asignado">Socio</th>
+                  <th className={th + " text-center"} title="Puerto y saldo visible al socio">Flags</th>
+                  <th className={th + " w-[7.5rem] text-center"}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {paginado.map((c) => (
-                  <tr key={String(c.id)} className="border-b border-line last:border-0 hover:bg-slate-50">
+                  <tr key={String(c.id)} className="border-b border-line/70 last:border-0 hover:bg-primary-50/40">
                     <td className={td}>
                       <input
                         type="checkbox"
-                        className="accent-primary-600"
+                        className="h-3.5 w-3.5 accent-primary-600"
                         checked={seleccion.has(String(c.id))}
                         onChange={() => toggleSel(c.id)}
+                        aria-label={`Seleccionar ${c.seudonimo || c.nombre}`}
                       />
                     </td>
                     <td className={td}>
-                      <div className="font-bold text-slate-800 truncate">{c.seudonimo || c.nombre || "—"}</div>
-                      <div className="text-[10px] text-slate-400 flex items-center gap-1 flex-wrap">
-                        {c.nombre && c.nombre !== c.seudonimo ? <span>{c.nombre}</span> : null}
-                        {c.es_socio ? <span className="text-amber-600">
-                          <i className="fas fa-crown"></i> Socio
-                        </span> : null}
-                        {c.grupo_id ? <span className="text-indigo-500">· Grupo</span> : null}
+                      <div className="flex items-center gap-1">
+                        {c.es_socio ? (
+                          <span className="shrink-0 text-[9px] text-amber-500" title="Es socio">👑</span>
+                        ) : null}
+                        <span className="truncate font-bold text-slate-800">{c.seudonimo || c.nombre || "—"}</span>
+                        {c.grupo_id ? (
+                          <span className="shrink-0 text-[9px] text-indigo-400" title="Pertenece a un grupo">🗃️</span>
+                        ) : null}
                       </div>
                     </td>
                     <td className={td}>
-                      {c.telefono ? <div className="font-mono">{c.telefono}</div> : null}
-                      {c.email ? <div className="text-[10px] text-slate-500 truncate">{c.email}</div> : null}
-                      {c.cedula_rif ? <div className="text-[10px] text-slate-500">{c.cedula_rif}</div> : null}
+                      <div className="truncate font-mono text-[10px] text-slate-700">{c.telefono || "—"}</div>
+                      <div className="truncate text-[10px] leading-tight text-slate-400">
+                        {c.email || c.cedula_rif || ""}
+                      </div>
                     </td>
                     <td className={td + " text-center"}>
-                      <span className="font-bold text-slate-700">{etiquetaModoJuego(c.modo_juego)}</span>
+                      <span
+                        className={`inline-block rounded px-1 py-0.5 text-[9px] font-black uppercase leading-none ${
+                          c.modo_juego === "libre"
+                            ? "bg-slate-200 text-slate-600"
+                            : c.modo_juego === "pozo"
+                              ? "bg-cyan-100 text-cyan-700"
+                              : c.modo_juego === "cuadre"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {etiquetaModoJuego(c.modo_juego)}
+                      </span>
                     </td>
                     <td className={td + " text-right"}>
-                      <span className={`font-mono font-black ${
+                      <span className={`font-mono font-black tabular-nums ${
                         num(c.saldo_actual) > 0
                           ? "text-emerald-700"
                           : num(c.saldo_actual) < 0
                             ? "text-danger-600"
-                            : "text-slate-700"
+                            : "text-slate-400"
                       }`}>
                         {formatoMoneda("USD", num(c.saldo_actual))}
                       </span>
                     </td>
                     <td className={td + " text-right"}>
-                      <span className="font-mono font-black text-amber-700">{formatoMoneda("USD", num(c.aval))}</span>
+                      <span className="font-mono font-black tabular-nums text-amber-700">
+                        {formatoMoneda("USD", num(c.aval))}
+                      </span>
                     </td>
                     <td className={td + " text-right"}>
-                      <span className="font-mono font-black text-purple-700">{num(c.devolucion) ? `${num(c.devolucion)}%` : "—"}</span>
-                    </td>
-                    <td className={td + " text-center"}>
-                      {c.mostrar_saldo_socio ? (
-                        <i className="fas fa-eye text-emerald-600" title="Visible al socio"></i>
-                      ) : (
-                        <i className="fas fa-eye-slash text-slate-300" title="Oculto al socio"></i>
-                      )}
-                    </td>
-                    <td className={td}>
-                      <span className="font-bold text-slate-700 truncate block">{c.socio_asignado || "—"}</span>
-                    </td>
-                    <td className={td}>
-                      {c.es_socio ? (
-                        <span className="text-amber-600 font-bold truncate block">Agencia ({afiliadosDe(c, clientes)})</span>
-                      ) : (
-                        <span className="text-slate-300">—</span>
-                      )}
+                      <span className="font-mono font-black tabular-nums text-purple-700">
+                        {num(c.devolucion) ? `${num(c.devolucion)}%` : "—"}
+                      </span>
                     </td>
                     <td className={td}>
                       {c.dia_cuadre ? (
-                        <>
+                        <div className="truncate leading-tight">
                           <span className="font-bold text-slate-700">{c.dia_cuadre}</span>
-                          <span className="block text-[10px] font-mono text-slate-500">
-                            {c.forma_cuadre || ""} {num(c.tasa_cuadre) ? `· Bs ${String(c.tasa_cuadre)}` : ""}
-                          </span>
-                        </>
+                          {num(c.tasa_cuadre) ? (
+                            <span className="ml-1 font-mono text-[10px] text-slate-500">· Bs{num(c.tasa_cuadre)}</span>
+                          ) : null}
+                          {c.forma_cuadre ? (
+                            <span className="ml-1 text-[9px] text-emerald-500" title={`Cuadra por ${c.forma_cuadre}`}>🤝</span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className={td}>
+                      {c.socio_asignado ? (
+                        <span className="truncate block font-bold text-amber-700">{c.socio_asignado}</span>
+                      ) : c.es_socio ? (
+                        <span className="text-[10px] text-slate-400">
+                          Agencia <span className="text-[9px]">👥</span> {afiliadosDe(c, clientes)}
+                        </span>
                       ) : (
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
                     <td className={td + " text-center"}>
-                      {c.portal_habilitado ? (
-                        <i className="fas fa-link text-cyan-600" title="Portal habilitado"></i>
-                      ) : (
-                        <i className="fas fa-unlink text-slate-300" title="Portal deshabilitado"></i>
-                      )}
+                      <span className="inline-flex items-center gap-2">
+                        <span
+                          className={c.portal_habilitado ? "text-cyan-600" : "text-slate-300"}
+                          title={c.portal_habilitado ? "Portal habilitado" : "Portal deshabilitado"}
+                        >
+                          {c.portal_habilitado ? "🔗" : "🔒"}
+                        </span>
+                        <span
+                          className={c.mostrar_saldo_socio ? "text-emerald-600" : "text-slate-300"}
+                          title={c.mostrar_saldo_socio ? "Muestra saldo al socio" : "Oculto al socio"}
+                        >
+                          {c.mostrar_saldo_socio ? "\u{1F441}\uFE0F" : "\u{1F648}"}
+                        </span>
+                      </span>
                     </td>
-                    <td className={td}>
-                      <div className="flex flex-wrap gap-1">
-                        <Guard permiso="gestionar_clientes" disabled>
-                          <Button variant="ghost" size="sm" title="Editar" onClick={() => setEditando(c)}>
-                            <i className="fas fa-user-edit"></i>
-                          </Button>
+                    <td className={td + " text-center"}>
+                      <div className="flex items-center justify-center gap-0.5">
+                        <Guard permiso="clientes:btn_editar" disabled>
+                          <button
+                            type="button"
+                            title="Editar cliente"
+                            aria-label="Editar cliente"
+                            onClick={() => setEditando(c)}
+                            className="flex h-6 w-6 items-center justify-center rounded text-[13px] leading-none transition hover:bg-primary-100"
+                          >
+                            ✏️
+                          </button>
                         </Guard>
-                        <Button variant="outline" size="sm" title="Portal de consulta" onClick={() => setPortalDe(c)}>
-                          <i className="fas fa-link text-cyan-600"></i>
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
+                        <button
+                          type="button"
+                          title="Portal de consulta"
+                          aria-label="Portal de consulta"
+                          onClick={() => setPortalDe(c)}
+                          className="flex h-6 w-6 items-center justify-center rounded text-[13px] leading-none transition hover:bg-cyan-100"
+                        >
+                          📛
+                        </button>
+                        <button
+                          type="button"
                           title="Estado de cuenta"
+                          aria-label="Estado de cuenta"
                           onClick={() => {
                             setClienteEstado(c);
                             setTab("estado");
                           }}
+                          className="flex h-6 w-6 items-center justify-center rounded text-[13px] leading-none transition hover:bg-indigo-100"
                         >
-                          <i className="fas fa-list-alt text-indigo-600"></i>
-                        </Button>
-                        <Guard permiso="gestionar_clientes" disabled>
-                          <Button variant="ghost" size="sm" title="Eliminar" onClick={() => setBorrando(c)}>
-                            <i className="fas fa-trash text-danger-600"></i>
-                          </Button>
+                          📋
+                        </button>
+                        <Guard permiso="clientes:btn_eliminar" disabled>
+                          <button
+                            type="button"
+                            title="Eliminar cliente"
+                            aria-label="Eliminar cliente"
+                            onClick={() => setBorrando(c)}
+                            className="flex h-6 w-6 items-center justify-center rounded text-[13px] leading-none transition hover:bg-danger-100"
+                          >
+                            🗑️
+                          </button>
                         </Guard>
                       </div>
                     </td>
@@ -380,19 +416,19 @@ export function ClientesModule() {
                 ))}
                 {paginado.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="px-3 py-10 text-center text-slate-400">
+                    <td colSpan={11} className="px-3 py-10 text-center text-slate-400">
                       {cargando ? (
                         <>
-                          <i className="fas fa-spinner fa-spin mr-2"></i>Cargando cartera…
+                          <span className="mr-2">⏳</span>Cargando cartera…
                         </>
                       ) : errorCarga ? (
                         <span className="text-danger-600">
-                          <i className="fas fa-triangle-exclamation mr-2"></i>
+                          <span className="mr-2">⚠️</span>
                           No se pudo leer la cartera: {errorCarga}
                         </span>
                       ) : (
                         <>
-                          <i className="fas fa-inbox mr-2"></i>Sin clientes que coincidan.
+                          <span className="mr-2">📥</span>Sin clientes que coincidan.
                         </>
                       )}
                     </td>
@@ -403,19 +439,38 @@ export function ClientesModule() {
           </div>
 
           {/* Paginación */}
-          <div className="flex items-center justify-between text-xs text-slate-500">
-            <span>
-              {visibles.length} cliente(s) · {seleccion.size} seleccionado(s)
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+            <span className="flex items-center gap-2">
+              <span>
+                {visibles.length} cliente(s) · {seleccion.size} seleccionado(s)
+              </span>
+              <label className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider">
+                <span>Filas</span>
+                <select
+                  value={porPagina}
+                  onChange={(e) => {
+                    setPorPagina(Number(e.target.value));
+                    setPagina(1);
+                  }}
+                  className="rounded border border-line bg-surface px-1.5 py-1 text-[11px] font-bold text-slate-700 outline-none focus:ring-1 focus:ring-primary-500"
+                >
+                  {[25, 50, 100, 200].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </span>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" disabled={pagina <= 1} onClick={() => setPagina((p) => p - 1)}>
-                <i className="fas fa-chevron-left"></i>
+                <span >◀</span>
               </Button>
               <span className="font-bold text-slate-700">
                 {pagina} / {totalPaginas}
               </span>
               <Button variant="outline" size="sm" disabled={pagina >= totalPaginas} onClick={() => setPagina((p) => p + 1)}>
-                <i className="fas fa-chevron-right"></i>
+                <span >▶</span>
               </Button>
             </div>
           </div>
@@ -434,8 +489,8 @@ export function ClientesModule() {
       )}
 
       {/* Modales */}
-      {abrirNuevo ? <ModalNuevoCliente clientes={clientes} onClose={() => setAbrirNuevo(false)} onGuardado={() => void recargar()} /> : null}
-      {editando ? <ModalEditarCliente cliente={editando} onClose={() => setEditando(null)} onGuardado={() => void recargar()} /> : null}
+      {abrirNuevo ? <ModalCliente onClose={() => setAbrirNuevo(false)} onGuardado={() => void recargar()} /> : null}
+      {editando ? <ModalCliente cliente={editando} onClose={() => setEditando(null)} onGuardado={() => void recargar()} /> : null}
       {portalDe ? <ModalPortalCliente cliente={portalDe} onClose={() => setPortalDe(null)} onGuardado={() => void recargar()} /> : null}
 
       {/* Confirmar eliminación */}
@@ -450,7 +505,7 @@ export function ClientesModule() {
         >
           <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl p-5 space-y-4">
             <h3 className="text-sm font-black text-slate-800">
-              <i className="fas fa-triangle-exclamation mr-2 text-danger-600"></i> Eliminar cliente
+              <span className="mr-2 text-danger-600">⚠️</span> Eliminar cliente
             </h3>
             <p className="text-xs text-slate-600">
               ¿Seguro que deseas eliminar a <b>{borrando.nombre}</b>? Esta acción no puede deshacerse.
@@ -460,7 +515,7 @@ export function ClientesModule() {
                 Cancelar
               </Button>
               <Button variant="danger" size="sm" onClick={() => void confirmarEliminar(borrando)}>
-                <i className="fas fa-trash mr-1"></i> Eliminar
+                <span className="mr-1">🗑️</span> Eliminar
               </Button>
             </div>
           </div>
@@ -479,7 +534,7 @@ export function ClientesModule() {
         >
           <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl p-5 space-y-4">
             <h3 className="text-sm font-black text-slate-800">
-              <i className="fas fa-percent mr-2 text-primary-600"></i> Devoluciones masivas
+              <span className="mr-2 text-primary-600">％</span> Devoluciones masivas
             </h3>
             <p className="text-xs text-slate-600">
               Aplicar el mismo porcentaje de <b>Devolución / Incentivo</b> a los <b>{seleccion.size}</b> cliente(s) seleccionados.
@@ -503,7 +558,7 @@ export function ClientesModule() {
                 Cancelar
               </Button>
               <Button variant="default" size="sm" onClick={() => void aplicarMasiva()}>
-                <i className="fas fa-check mr-1"></i> Aplicar {num(pctDev)}%
+                <span className="mr-1">✅</span> Aplicar {num(pctDev)}%
               </Button>
             </div>
           </div>
@@ -515,267 +570,6 @@ export function ClientesModule() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Modal "Nuevo Cliente" (registro rápido, clon del legacy)
-// ---------------------------------------------------------------------------
-
-function ModalNuevoCliente({
-  clientes,
-  onClose,
-  onGuardado,
-}: {
-  clientes: ClienteRow[];
-  onClose: () => void;
-  onGuardado: () => void;
-}) {
-  const [seudonimo, setSeudonimo] = useState("");
-  const [nombres, setNombres] = useState("");
-  const [apellido, setApellido] = useState("");
-  const [codigoPais, setCodigoPais] = useState("+58");
-  const [telefono, setTelefono] = useState("");
-  const [email, setEmail] = useState("");
-  const [cedulaRif, setCedulaRif] = useState("");
-  const [direccion, setDireccion] = useState("");
-  const [comision, setComision] = useState("");
-  const [permiteCruces, setPermiteCruces] = useState(true);
-  const [modo, setModo] = useState("aval");
-  const [aval, setAval] = useState("");
-  const [devolucion, setDevolucion] = useState("");
-  const [socioAsignado, setSocioAsignado] = useState("");
-  const [metodo, setMetodo] = useState("");
-  const [datosPago, setDatosPago] = useState<Record<string, unknown>>({});
-  const [diaCuadre, setDiaCuadre] = useState("");
-  const [formaCuadre, setFormaCuadre] = useState("");
-  const [tasaCuadre, setTasaCuadre] = useState("");
-  const [mostrarSaldo, setMostrarSaldo] = useState(false);
-  const [esSocio, setEsSocio] = useState(false);
-  const [guardando, setGuardando] = useState(false);
-
-  const socios = useMemo(
-    () => clientes.filter((c) => c.es_socio === true && String(c.id) !== String(0)),
-    [clientes]
-  );
-
-  const guardar = async () => {
-    if (!seudonimo.trim()) return toast("El seudónimo es obligatorio.", "warning");
-    if (clientes.some((c) => String(c.seudonimo || c.nombre || "").toUpperCase() === seudonimo.trim().toUpperCase()))
-      return toast("Ya existe un cliente con ese seudónimo.", "error");
-    const nombre = [nombres, apellido].filter(Boolean).join(" ").toUpperCase() || seudonimo.toUpperCase();
-    setGuardando(true);
-    const r = await crearCliente({
-      nombre,
-      seudonimo: seudonimo.toUpperCase(),
-      apellido: apellido || null,
-      modo_juego: modo,
-      libre: modo === "libre",
-      es_socio: esSocio || null,
-      aval: num(aval) || null,
-      telefono: componerTelefono(codigoPais, telefono) || null,
-      codigo_pais: codigoPais,
-      email: email.trim() || null,
-      cedula_rif: cedulaRif.trim().toUpperCase() || null,
-      direccion: direccion.trim() || null,
-      comision: num(comision) || null,
-      permite_cruces: permiteCruces,
-      devolucion: num(devolucion),
-      socio_asignado: socioAsignado || null,
-      metodo_pago: metodo || null,
-      datos_pago: !metodo || !Object.keys(datosPago).length ? null : (datosPago as unknown as DatosPago),
-      dia_cuadre: diaCuadre || null,
-      forma_cuadre: formaCuadre || null,
-      tasa_cuadre: num(tasaCuadre) || null,
-      mostrar_saldo_socio: mostrarSaldo || null,
-    });
-    setGuardando(false);
-    if (!r.ok) return toast(r.error ?? "Error al crear.", "error");
-    toast(`Cliente "${nombre}" creado.`, "success");
-    onGuardado();
-    onClose();
-  };
-
-  const inpTxt = "w-full border border-line rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary-500 bg-surface";
-  const formas = ["SALDO EN CONTADO", "EFECTIVO DIRECTO", "COMPENSACIÓN AVAL", "MIXTO"];
-
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
-      role="dialog"
-      aria-modal="true"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden">
-        <div className="bg-slate-800 px-5 py-4 text-xs font-black uppercase tracking-wider text-white flex items-center justify-between">
-          <span>
-            <i className="fas fa-user-plus mr-2"></i> Nuevo Cliente
-          </span>
-          <button className="text-slate-300 hover:text-white" onClick={onClose} aria-label="Cerrar">
-            <i className="fas fa-times"></i>
-          </button>
-        </div>
-
-        <div className="p-5 max-h-[75vh] overflow-y-auto space-y-4">
-          <div className="mb-2 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-line pb-1">
-              <i className="fas fa-id-badge text-primary-500 mr-1"></i> Identidad
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Seudónimo *</label>
-                <input value={seudonimo} onChange={(e) => setSeudonimo(e.target.value.toUpperCase())} className={inpTxt + " font-black uppercase"} autoFocus />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Nombre(s)</label>
-                <input value={nombres} onChange={(e) => setNombres(e.target.value.toUpperCase())} className={inpTxt + " uppercase"} />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Apellido</label>
-                <input value={apellido} onChange={(e) => setApellido(e.target.value.toUpperCase())} className={inpTxt + " uppercase"} />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Código de país</label>
-                <select value={codigoPais} onChange={(e) => setCodigoPais(e.target.value)} className={inpTxt + " font-bold"}>
-                  {codigosPaisUnicos().map((p) => (
-                    <option key={p.codigo} value={p.codigo}>
-                      {p.codigo} {p.pais}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Teléfono (WhatsApp)</label>
-                <input value={telefono} onChange={(e) => setTelefono(e.target.value)} className={inpTxt + " font-mono"} placeholder="412 123 4567" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Email</label>
-                <input value={email} onChange={(e) => setEmail(e.target.value)} className={inpTxt} type="email" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Cédula / RIF</label>
-                <input value={cedulaRif} onChange={(e) => setCedulaRif(e.target.value.toUpperCase())} className={inpTxt + " font-mono uppercase"} placeholder="V-12.345.678" />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Dirección</label>
-                <input value={direccion} onChange={(e) => setDireccion(e.target.value)} className={inpTxt + " uppercase"} placeholder="Calle, número, ciudad" />
-              </div>
-            </div>
-
-            <div className="mb-2 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-line pb-1">
-              <i className="fas fa-dice text-amber-500 mr-1"></i> Reglas de Juego y Cuenta
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Modo de juego</label>
-                <select value={modo} onChange={(e) => setModo(e.target.value)} className={inpTxt + " font-bold"}>
-                  {modoOpts.map((m) => (
-                    <option key={m.value} value={m.value}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-amber-600 mb-1 uppercase tracking-wider">Aval / Límite de Pérdida (USD)</label>
-                <input value={aval} onChange={(e) => setAval(e.target.value)} className={inpTxt + " font-mono font-bold text-right text-amber-700"} inputMode="decimal" placeholder="0.00" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-purple-600 mb-1 uppercase tracking-wider">Devolución / Incentivo %</label>
-                <input value={devolucion} onChange={(e) => setDevolucion(e.target.value)} className={inpTxt + " font-mono font-bold text-right text-purple-700"} inputMode="decimal" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Socio / Agencia</label>
-                <select value={socioAsignado} onChange={(e) => setSocioAsignado(e.target.value)} className={inpTxt + " font-bold"}>
-                  <option value="">— Ninguno (Directo) —</option>
-                  {socios.map((s) => (
-                    <option key={String(s.id)} value={String(s.id)}>
-                      {s.seudonimo || s.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Comisión propia %</label>
-                <input value={comision} onChange={(e) => setComision(e.target.value)} className={inpTxt + " font-mono font-bold text-right text-emerald-700"} inputMode="decimal" placeholder="usa la del grupo" />
-              </div>
-              <div className="flex items-end">
-                <label className="flex items-center gap-2 pb-1">
-                  <input type="checkbox" checked={permiteCruces} onChange={(e) => setPermiteCruces(e.target.checked)} className="h-4 w-4 accent-primary-600" />
-                  <span className="text-[10px] font-black uppercase text-slate-600">Permite cruces</span>
-                </label>
-              </div>
-              <div className="flex items-end">
-                <label className="flex items-center gap-2 pb-1">
-                  <input type="checkbox" checked={esSocio} onChange={(e) => setEsSocio(e.target.checked)} className="h-4 w-4 accent-amber-500" />
-                  <span className="text-[10px] font-black uppercase text-amber-600">
-                    <i className="fas fa-crown mr-1"></i>Es socio
-                  </span>
-                </label>
-              </div>
-              <div className="flex items-end">
-                <label className="flex items-center gap-2 pb-1">
-                  <input type="checkbox" checked={mostrarSaldo} onChange={(e) => setMostrarSaldo(e.target.checked)} className="h-4 w-4 accent-emerald-500" />
-                  <span className="text-[10px] font-black uppercase text-emerald-600">
-                    <i className="fas fa-eye mr-1"></i>Mostrar saldo al socio
-                  </span>
-                </label>
-              </div>
-            </div>
-
-            <div className="mb-2 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-line pb-1">
-              <i className="fas fa-calendar-week text-emerald-600 mr-1"></i> Cuadre Semanal
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Día de la semana que se cuadra</label>
-                <select value={diaCuadre} onChange={(e) => setDiaCuadre(e.target.value)} className={inpTxt + " font-bold"}>
-                  <option value="">— Seleccione —</option>
-                  {DIAS.map((d) => (
-                    <option key={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Forma en que se cuadra</label>
-                <select value={formaCuadre} onChange={(e) => setFormaCuadre(e.target.value)} className={inpTxt + " font-bold"}>
-                  <option value="">— Seleccione —</option>
-                  {formas.map((f) => (
-                    <option key={f}>{f}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Tasa de cuadre semanal (Bs/$)</label>
-                <input value={tasaCuadre} onChange={(e) => setTasaCuadre(e.target.value)} className={inpTxt + " font-mono font-bold text-right"} inputMode="decimal" placeholder="0" />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Método de pago</label>
-              <select value={metodo} onChange={(e) => setMetodo(e.target.value)} className={inpTxt + " font-bold"}>
-                <option value="">— Seleccione —</option>
-                {listMetodosPago(true).map((m) => (
-                  <option key={m} value={m}>
-                    {esBancoVzla(m) ? m : m}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {metodo ? <DatosPagoForm prefijo="nuevo" metodo={metodo} onChange={(dp) => setDatosPago(dp as unknown as Record<string, unknown>)} /> : null}
-          </div>
-
-        <div className="px-5 py-4 bg-slate-50 border-t border-line flex justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button variant="default" size="sm" onClick={guardar} disabled={guardando}>
-            {guardando ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-save mr-1"></i>} Crear
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Reporte de Cuadre Semanal por Cliente (clon del legacy §7)
@@ -818,7 +612,7 @@ function CuadreSemanal({ clientes }: { clientes: ClienteRow[] }) {
           </select>
         </div>
         <Button variant="default" size="sm" onClick={() => setGenerado(true)}>
-          <i className="fas fa-file-invoice-dollar mr-1"></i> Generar Reporte
+          <span className="mr-1">🧾</span> Generar Reporte
         </Button>
         {generado ? (
           <span className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600">
@@ -849,7 +643,7 @@ function CuadreSemanal({ clientes }: { clientes: ClienteRow[] }) {
                 <tr key={String(c.id)} className="border-b border-line last:border-0 hover:bg-emerald-50/40">
                   <td className={td + " font-bold text-slate-800"}>
                     {c.nombre || c.seudonimo}
-                    {c.es_socio ? <span className="ml-1 text-[9px] font-black text-amber-600">★Socio</span> : null}
+                    {c.es_socio ? <span className="ml-1 text-[9px] font-black text-amber-600">…Socio</span> : null}
                   </td>
                   <td className={td + " font-bold text-emerald-700"}>{c.dia_cuadre || "—"}</td>
                   <td className={td}>{c.metodo_pago || <span className="text-slate-300">—</span>}</td>
@@ -869,10 +663,10 @@ function CuadreSemanal({ clientes }: { clientes: ClienteRow[] }) {
                 <td colSpan={7} className="px-3 py-10 text-center text-slate-400">
                   {generado ? (
                     <>
-                      <i className="fas fa-inbox mr-2"></i>Ningún cliente cuadra ese día.
+                      <span className="mr-2">📥</span>Ningún cliente cuadra ese día.
                     </>
                   ) : (
-                    <i className="fas fa-calendar-week mr-2"></i>
+                    <span className="mr-2">🗓️</span>
                   )}
                   {generado ? "" : "Seleccione un día (o todos) y pulse Generar Reporte."}
                 </td>

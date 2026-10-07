@@ -11,9 +11,10 @@ import {
   disputarJugada,
   entrarPortal,
   reanudarSesion,
-  reportarJugadaFaltante,
-  reclamarJugada,
-  solicitarCompraTabla,
+     reportarJugadaFaltante,
+     reclamarJugada,
+     resolverImagenReclamo,
+     solicitarCompraTabla,
   type SesionPortal,
 } from "@/lib/portal";
 import { codigosPaisUnicos, desglosarTelefono, formatoMoneda, listMetodosPago } from "@/lib/vzla";
@@ -125,7 +126,7 @@ export function PortalModule() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="text-center text-slate-500">
-          <i className="fas fa-spinner fa-spin text-2xl"></i>
+          <span className="text-2xl">⏳</span>
           <p className="mt-2 text-xs font-bold uppercase tracking-wider">Cargando portal…</p>
         </div>
       </div>
@@ -160,7 +161,7 @@ function LoginScreen(props: {
       <div className="w-full max-w-md">
         <div className="mb-6 text-center text-white">
           <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-500/20 text-3xl">
-            <i className="fas fa-user-tie text-indigo-300"></i>
+            <span className="text-indigo-300">👔</span>
           </div>
           <h1 className="text-2xl font-black tracking-tight">Portal del Cliente</h1>
           <p className="mt-1 text-xs text-indigo-200/80">Consulta tu estado de cuenta, devoluciones y reclamos.</p>
@@ -178,12 +179,12 @@ function LoginScreen(props: {
 
           {props.error ? (
             <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs font-bold text-red-600">
-              <i className="fas fa-triangle-exclamation mr-1"></i> {props.error}
+              <span className="mr-1">⚠️</span> {props.error}
             </p>
           ) : null}
 
           <Button variant="default" size="lg" className="w-full bg-indigo-600 hover:bg-indigo-500" onClick={props.onEntrar}>
-            <i className="fas fa-sign-in-alt mr-1"></i> Entrar al Portal
+            <span className="mr-1">🔑</span> Entrar al Portal
           </Button>
 
           <p className="text-center text-[10px] text-slate-400">
@@ -209,7 +210,7 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/30 text-lg">
-              <i className="fas fa-user-tie text-indigo-200"></i>
+              <span className="text-indigo-200">👔</span>
             </div>
             <div>
               <div className="text-sm font-black">{sesion.cliente.nombre || sesion.cliente.seudonimo}</div>
@@ -217,15 +218,15 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
             </div>
           </div>
           <Button variant="ghost" size="sm" className="text-indigo-200 hover:bg-indigo-900" onClick={onSalir}>
-            <i className="fas fa-sign-out-alt mr-1"></i> Salir
+            <span className="mr-1">🚪</span> Salir
           </Button>
         </div>
 
         <div className="mx-auto max-w-5xl px-4 pb-5">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Kpi icon="fa-coins" lbl="Saldo / Total decidido" val={formatoMoneda("USD", sesion.resumen.saldo)} color="text-white" bg="bg-indigo-900/40" />
-            <Kpi icon="fa-percent" lbl={`Incentivo (${num(sesion.cliente.devolucion)}%)`} val={formatoMoneda("USD", sesion.resumen.incentivo)} color="text-purple-200" bg="bg-purple-900/40" />
-            <Kpi icon="fa-hand-holding-dollar" lbl="Disponible" val={formatoMoneda("USD", sesion.resumen.disponible)} color="text-emerald-200" bg="bg-emerald-900/40" />
+            <Kpi icon="🪙" lbl="Saldo / Total decidido" val={formatoMoneda("USD", sesion.resumen.saldo)} color="text-white" bg="bg-indigo-900/40" />
+            <Kpi icon="％" lbl={`Incentivo (${num(sesion.cliente.devolucion)}%)`} val={formatoMoneda("USD", sesion.resumen.incentivo)} color="text-purple-200" bg="bg-purple-900/40" />
+            <Kpi icon="🤲" lbl="Disponible" val={formatoMoneda("USD", sesion.resumen.disponible)} color="text-emerald-200" bg="bg-emerald-900/40" />
           </div>
         </div>
       </header>
@@ -271,7 +272,7 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
 function Kpi({ icon, lbl, val, color, bg }: { icon: string; lbl: string; val: string; color: string; bg: string }) {
   return (
     <div className={`rounded-2xl ${bg} border border-white/10 px-4 py-3 flex items-center gap-3`}>
-      <i className={`fas ${icon} text-lg ${color}`}></i>
+      <span className={`text-lg leading-none ${color}`}>{icon}</span>
       <div>
         <div className="text-[9px] uppercase tracking-wider font-black text-indigo-200/70">{lbl}</div>
         <div className={`text-lg font-black ${color}`}>{val}</div>
@@ -323,7 +324,7 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
     <div className="space-y-3">
       <div className="rounded-2xl border border-line bg-white overflow-hidden shadow-sm">
         <div className="bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-wider text-slate-500 border-b border-line">
-          <i className="fas fa-list-alt mr-1 text-indigo-600"></i> Últimos movimientos
+          <span className="mr-1 text-indigo-600">🗒️</span> Últimos movimientos
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -361,15 +362,15 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
                     {j.estado === "Pendiente" ? (
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="outline" size="sm" onClick={() => setDisputa(j)} title="Disputar esta jugada">
-                          <i className="fas fa-scale-balanced text-amber-600"></i> Disputar
+                          <span className="text-amber-600">⚖️</span> Disputar
                         </Button>
                         <Button variant="outline" size="sm" onClick={() => void reclamar(j.id)} title="Reclamar esta jugada">
-                          <i className="fas fa-flag text-red-500"></i> Reclamar
+                          <span className="text-red-500">🚩</span> Reclamar
                         </Button>
                       </div>
                     ) : (
                       <Button variant="ghost" size="sm" onClick={() => setDisputa(j)} title="Disputar esta jugada">
-                        <i className="fas fa-scale-balanced text-slate-400"></i> Disputar
+                        <span className="text-slate-400">⚖️</span> Disputar
                       </Button>
                     )}
                   </td>
@@ -378,7 +379,7 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
               {jugadas.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-3 py-10 text-center text-slate-400">
-                    <i className="fas fa-inbox mr-2"></i> Sin movimientos registrados.
+                    <span className="mr-2">📥</span> Sin movimientos registrados.
                   </td>
                 </tr>
               ) : null}
@@ -439,7 +440,7 @@ function DisputarModal({
       <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-black text-slate-800">
-            <i className="fas fa-scale-balanced mr-1 text-amber-600"></i> Disputar jugada
+            <span className="mr-1 text-amber-600">⚖️</span> Disputar jugada
           </h3>
           <button onClick={onCerrar} className="text-slate-400 hover:text-slate-600" aria-label="Cerrar">
             ✕
@@ -469,7 +470,7 @@ function DisputarModal({
           className="rounded-xl border-2 border-dashed border-amber-300 bg-amber-50/40 p-4 text-center outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
         >
           <div className="text-[11px] font-black uppercase tracking-wide text-amber-700">
-            {imagen ? <i className="fas fa-image mr-1"></i> : <i className="fas fa-paste mr-1"></i>}
+            {imagen ? <span className="mr-1">🖼️</span> : <span className="mr-1">📋</span>}
             {imagen ? "Imagen adjunta" : "Pegá el comprobante (Ctrl+V)"}
           </div>
           <p className="mx-auto mt-1 max-w-[24ch] text-[10px] text-amber-600/80">
@@ -492,7 +493,7 @@ function DisputarModal({
             disabled={!motivo.trim()}
             onClick={() => onEnviar({ motivo, image: imagen })}
           >
-            <i className="fas fa-paper-plane mr-1"></i> Enviar disputa
+            <span className="mr-1">📤</span> Enviar disputa
           </Button>
         </div>
       </div>
@@ -539,7 +540,7 @@ function ReportarView({ cliente }: { cliente: SesionPortal["cliente"] }) {
   return (
     <div className="rounded-2xl border border-line bg-white p-5 shadow-sm space-y-3">
       <h2 className="text-sm font-black text-slate-800">
-        <i className="fas fa-flag mr-2 text-red-500"></i> Reportar jugada faltante
+        <span className="mr-2 text-red-500">🚩</span> Reportar jugada faltante
       </h2>
       <p className="text-[11px] text-slate-500">Si tu jugada no aparece en los movimientos, repórtala con el comprobante (si aplica).</p>
 
@@ -554,7 +555,7 @@ function ReportarView({ cliente }: { cliente: SesionPortal["cliente"] }) {
         </div>
         <div>
           <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Monto (USD)</label>
-          <input value={monto} onChange={(e) => setMonto(e.target.value)} className={inp + " font-mono"} placeholder="ej. 5" inputMode="decimal" />
+          <input value={monto} onChange={(e) => setMonto(e.target.value)} className={inp + " text-right font-mono"} placeholder="ej. 5" inputMode="decimal" />
         </div>
         <div>
           <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Tipo de jugada</label>
@@ -580,7 +581,7 @@ function ReportarView({ cliente }: { cliente: SesionPortal["cliente"] }) {
         </div>
         <div className="flex items-end">
           <Button variant="danger" size="sm" className="w-full" disabled={enviando} onClick={() => void enviar()}>
-            {enviando ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-paper-plane mr-1"></i>} Enviar reporte
+            {enviando ? <span className="mr-1">⏳</span> : <span className="mr-1">📤</span>} Enviar reporte
           </Button>
         </div>
       </div>
@@ -618,7 +619,7 @@ function MisTicketsView({ cliente }: { cliente: SesionPortal["cliente"] }) {
     <div className="space-y-3">
       <div className="rounded-2xl border border-line bg-white p-5 shadow-sm">
         <h2 className="text-sm font-black text-slate-800">
-          <i className="fas fa-life-ring mr-2 text-sky-600"></i> Mis tickets y reclamos
+          <span className="mr-2 text-sky-600">🛟</span> Mis tickets y reclamos
         </h2>
         <p className="mt-1 text-[11px] text-slate-500">
           Estado de tus reportes de jugada faltante y disputas. Cuando la casa responda, podrás valorar la atención con 1 a 5 estrellas.
@@ -627,11 +628,11 @@ function MisTicketsView({ cliente }: { cliente: SesionPortal["cliente"] }) {
 
       {cargando ? (
         <div className="rounded-2xl bg-white p-8 text-center text-slate-400">
-          <i className="fas fa-spinner fa-spin text-xl"></i>
+          <span className="text-xl">⏳</span>
         </div>
       ) : tickets.length === 0 ? (
         <div className="rounded-2xl bg-white p-8 text-center text-slate-400">
-          <i className="fas fa-inbox mr-2"></i> No tienes tickets abiertos.
+          <span className="mr-2">📥</span> No tienes tickets abiertos.
         </div>
       ) : (
         tickets.map((t) => <MtCard key={String(t.id)} t={t} onEncuesta={(p, c) => void encuestar(t, p, c)} />)
@@ -658,7 +659,7 @@ function MtCard({ t, onEncuesta }: { t: TicketDisputa; onEncuesta: (puntuacion: 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-50 text-sky-600">
-            <i className={`fas ${t.tipo_jugada === "REPORTE_FALTANTE" ? "fa-flag" : "fa-scale-balanced"} text-xs`}></i>
+            <span className="text-xs leading-none">{t.tipo_jugada === "REPORTE_FALTANTE" ? "\u{1F6A9}" : "\u2696\uFE0F"}</span>
           </span>
           <div>
             <div className="text-xs font-black text-slate-800">
@@ -675,11 +676,18 @@ function MtCard({ t, onEncuesta }: { t: TicketDisputa; onEncuesta: (puntuacion: 
         </span>
       </div>
 
-      {t.imagen_soporte ? (
-        <a href={t.imagen_soporte} target="_blank" rel="noreferrer" className="block text-[11px] font-bold text-sky-600 underline">
-          <i className="fas fa-image mr-1"></i> Ver comprobante adjunto
-        </a>
-      ) : null}
+        {t.imagen_soporte ? (
+          <button
+            type="button"
+            onClick={async () => {
+              const url = await resolverImagenReclamo(t.imagen_soporte as string);
+              if (url) window.open(url, "_blank", "noreferrer");
+            }}
+            className="block text-left text-[11px] font-bold text-sky-600 underline"
+          >
+            <span className="mr-1">🖼️</span> Ver comprobante adjunto
+          </button>
+        ) : null}
 
       {t.estado === "SOLUCIONADO" ? (
         <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs">
@@ -690,7 +698,7 @@ function MtCard({ t, onEncuesta }: { t: TicketDisputa; onEncuesta: (puntuacion: 
 
           {t.encuesta_satisfaccion != null ? (
             <div className="mt-1.5 text-slate-600">
-              <span className="text-amber-500">{Array.from({ length: t.encuesta_satisfaccion }).map((_, i) => <i key={i} className="fas fa-star text-xs"></i>)}</span>
+              <span className="text-amber-500">{Array.from({ length: t.encuesta_satisfaccion }).map((_, i) => <span key={i} className="text-xs">⭐</span>)}</span>
               {t.encuesta_comentario ? <span className="ml-1">· “{t.encuesta_comentario}”</span> : null}
             </div>
           ) : (
@@ -707,7 +715,7 @@ function MtCard({ t, onEncuesta }: { t: TicketDisputa; onEncuesta: (puntuacion: 
                     className={n <= (hover || estrella) ? "text-amber-400" : "text-slate-300"}
                     aria-label={`${n} estrellas`}
                   >
-                    <i className="fas fa-star"></i>
+                    <span >⭐</span>
                   </button>
                 ))}
               </div>
@@ -726,14 +734,14 @@ function MtCard({ t, onEncuesta }: { t: TicketDisputa; onEncuesta: (puntuacion: 
                 }}
                 className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
               >
-                {enviando ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-star"></i>} Enviar valoración
+                {enviando ? <span >⏳</span> : <span >⭐</span>} Enviar valoración
               </button>
             </div>
           )}
         </div>
       ) : (
         <p className="text-[11px] text-slate-500">
-          <i className="fas fa-hourglass-half mr-1 text-amber-500"></i> La casa está revisando este ticket. Te avisaremos con la respuesta.
+          <span className="mr-1 text-amber-500">⏳</span> La casa está revisando este ticket. Te avisaremos con la respuesta.
         </p>
       )}
     </div>
@@ -788,7 +796,7 @@ function ComprarView({ cliente }: { cliente: SesionPortal["cliente"] }) {
   return (
     <div className="rounded-2xl border border-line bg-white p-5 shadow-sm space-y-3">
       <h2 className="text-sm font-black text-slate-800">
-        <i className="fas fa-shopping-cart mr-2 text-indigo-600"></i> Comprar tablas fijas
+        <span className="mr-2 text-indigo-600">🛒</span> Comprar tablas fijas
       </h2>
       <p className="text-[11px] text-slate-500">Solicita tu tabla; la casa la valida y confirma por los canales de pago registrados.</p>
 
@@ -806,7 +814,7 @@ function ComprarView({ cliente }: { cliente: SesionPortal["cliente"] }) {
         </div>
         <div>
           <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Cantidad de tablas</label>
-          <input value={cantidad} onChange={(e) => setCantidad(e.target.value.replace(/\D/g, ""))} className="w-full border border-line rounded-xl bg-surface px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-200 font-mono" inputMode="numeric" />
+          <input value={cantidad} onChange={(e) => setCantidad(e.target.value.replace(/\D/g, ""))} className="w-full border border-line rounded-xl bg-surface px-3 py-2.5 text-right text-sm outline-none focus:ring-2 focus:ring-indigo-200 font-mono" inputMode="numeric" />
         </div>
         <div className="flex items-end">
           <div className="w-full rounded-xl bg-indigo-50 border border-indigo-100 px-3 py-2.5">
@@ -845,7 +853,7 @@ function ComprarView({ cliente }: { cliente: SesionPortal["cliente"] }) {
 
       <div className="flex justify-end">
         <Button variant="default" size="sm" disabled={enviando || !tabla} onClick={() => void pedir()}>
-          {enviando ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-paper-plane mr-1"></i>} Solicitar compra
+          {enviando ? <span className="mr-1">⏳</span> : <span className="mr-1">📤</span>} Solicitar compra
         </Button>
       </div>
     </div>
@@ -892,7 +900,7 @@ function DatosView({ cliente }: { cliente: SesionPortal["cliente"] }) {
   return (
     <div className="rounded-2xl border border-line bg-white p-5 shadow-sm space-y-3">
       <h2 className="text-sm font-black text-slate-800">
-        <i className="fas fa-id-card mr-2 text-indigo-600"></i> Actualizar mis datos
+        <span className="mr-2 text-indigo-600">🧪</span> Actualizar mis datos
       </h2>
       <p className="text-[11px] text-slate-500">Los cambios se envían al administrador para validación antes de aplicarse.</p>
 
@@ -938,7 +946,7 @@ function DatosView({ cliente }: { cliente: SesionPortal["cliente"] }) {
 
       <div className="flex justify-end">
         <Button variant="default" size="sm" disabled={enviando} onClick={() => void enviar()}>
-          {enviando ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-save mr-1"></i>} Enviar solicitud
+          {enviando ? <span className="mr-1">⏳</span> : <span className="mr-1">💾</span>} Enviar solicitud
         </Button>
       </div>
     </div>

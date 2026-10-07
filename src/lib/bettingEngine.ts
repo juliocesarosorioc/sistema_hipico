@@ -203,6 +203,18 @@ export type TicketMotor = BetSlipEntry & {
 export type ResultadoMotor = {
   ok: boolean;
   motivo?: string;
+  /**
+   * La jugada NO se puede decidir todavía: el resultado dice que el ejemplar
+   * PODIA ganar pero falta el dato que cuantifica el premio (p. ej. la
+   * matriz de dividendos de Win/Place/Show sin cargar).
+   *
+   * Existe porque `ok: false` significa "PERDEDOR" para todos los consumidores
+   * (`saldos.ts` escribe estado Perdedor y premio 0). Confundir "no sabemos
+   * cuánto paga" con "perdió" cobra $0 a una jugada ganadora, y como el estado
+   * queda escrito en la base ya no se corrige solo. Quien llama debe dejar el
+   * ticket PENDIENTE y avisar, nunca marcarlo perdido.
+   */
+  indeterminado?: boolean;
   /** Lo que recibe el jugador en mano (capital + ganancia neta − comisión). */
   totalClienteNeto: number;
   /** +/- del balance de la casa (jugada a favor = negativo, uno de sus rubros). */

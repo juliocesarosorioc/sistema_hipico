@@ -12,8 +12,15 @@ export type VentaRapidaItem = {
   numero: string;
   nombre: string;
   cantidad: number;
+  monto: number;
   grupo?: { id: string | number; nombre: string } | null;
-  jugador?: { id: string | number; nombre: string; saldo_actual?: number } | null;
+  jugador?: {
+    id: string | number;
+    nombre: string;
+    saldo_actual?: number;
+    aval?: number;
+    libre?: boolean;
+  } | null;
 };
 
 type Props = {
@@ -100,8 +107,15 @@ export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, 
       numero: num,
       nombre: String(ejemplar.nombre ?? "TABLA COMPLETA"),
       cantidad: cant,
+      monto: valor * cant,
       grupo: grupo ? { id: grupo.id, nombre: grupo.nombre } : null,
-      jugador: { id: jugador.id, nombre: jugador.nombre, saldo_actual: jugador.saldo_actual ?? undefined },
+      jugador: {
+        id: jugador.id,
+        nombre: jugador.nombre,
+        saldo_actual: jugador.saldo_actual ?? undefined,
+        aval: jugador.aval ?? undefined,
+        libre: jugador.libre ?? undefined,
+      },
     });
     setAviso("");
     onCerrar();
@@ -202,9 +216,16 @@ export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, 
                     <option value="">{grupoId ? "Seleccione el jugador…" : "Primero el grupo"}</option>
                     {jugadores.map((j) => {
                       const saldo = j.saldo_actual ?? 0;
+                      const aval = j.aval ?? 0;
+                      /* Con aval, el saldo solo no dice si el jugador puede
+                         comprar: se muestra el disponible real. */
+                      const libre = Boolean(j.libre);
+                      const detalle = libre
+                        ? "libre"
+                        : `Disp. $${(saldo + aval).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${aval > 0 ? ` (aval ${aval})` : ""}`;
                       return (
                         <option key={String(j.id)} value={String(j.id)}>
-                          {j.nombre} · Saldo ${saldo.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {j.nombre} · {detalle}
                         </option>
                       );
                     })}
@@ -217,7 +238,7 @@ export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, 
                     min={1}
                     value={cantidad}
                     onChange={(e) => setCantidad(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-right text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
                 <p className="text-[10px] font-semibold text-slate-500">

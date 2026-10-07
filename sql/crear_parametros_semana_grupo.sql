@@ -5,8 +5,8 @@
 --  desde->hasta / mas el dA-a de inicio de semana que la define):
 --     - dias_carreras  : da-as/carreras habilitadas de la gaceta
 --     - meta_semanal   : meta de ventas (en la moneda del grupo)
---     - comision_pct   : comisiA3n / porcentaje de la semana
---     - nota           : parA�metro libre por semana (texto libre)
+--     - comision_pct   : comisión / porcentaje de la semana
+--     - nota           : parámetro libre por semana (texto libre)
 --     - rango vigente  : fecha_desde / fecha_hasta sobre el que se
 --                        calculan los saldos por grupo.
 --
@@ -53,6 +53,6 @@ create trigger trg_parametros_semana_grupo_updated
     for each row execute function public.pk_actualizar_updated_at();
 
 -- ============================================================
---  VERIFICACI�N (deseleccionar para correr como script)
+--  VERIFICACIÓN (deseleccionar para correr como script)
 --  select count(*) as parametros from public.parametros_semana_grupo;
 -- ============================================================

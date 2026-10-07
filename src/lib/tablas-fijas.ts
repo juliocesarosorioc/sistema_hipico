@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { exigirCapacidad } from "@/lib/seguridad/vigente";
 import type { EjemplarTabla, TablaGrupo } from "@/lib/tablas/tipos";
 
 /** Fila de tablas_fijas (mínima para cierre + completa para el Monitor). */
@@ -43,11 +44,16 @@ export type ResultadoCerrar = {
 export async function cerrarTablaFija(
   hipodromo: string,
   carrera: number | string
-): Promise<ResultadoCerrar> {
-  if (!supabase) {
-    return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
-  }
-  try {
+  ): Promise<ResultadoCerrar> {
+    if (!supabase) {
+      return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
+    }
+    try {
+      exigirCapacidad("tablas:fn_cerrar_tabla");
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+    try {
     let query = supabase
       .from("tablas_fijas")
       .update({ estado: "Cerrada" })

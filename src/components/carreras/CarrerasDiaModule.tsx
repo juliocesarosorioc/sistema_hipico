@@ -15,8 +15,11 @@ import {
   type EjemplarCarreraCentral,
 } from "@/lib/carreras/central";
 import { aplicarRetirosCarrera, parsearRetirados } from "@/lib/carreras/retiros";
+import { claveCarrera, claveHipodromo } from "@/lib/carreras/claves";
+import { marcarCarreraVerificada, guardarInvalidadosRemate } from "@/lib/carreras/maestro";
 import { MonitorHipodromos } from "@/components/ui/MonitorHipodromos";
 import { agruparPorHipodromo } from "@/lib/carreras/agruparHipodromos";
+import { ModalMarcasEditor } from "@/components/marcas/ModalMarcasEditor";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 
@@ -84,6 +87,11 @@ export function CarrerasDiaModule() {
   const [guardando, setGuardando] = useState(false);
   const [modal, setModal] = useState<ModalForm>(() => vacioModal());
   const [confirmarEliminar, setConfirmarEliminar] = useState<CarreraCentral | null>(null);
+  // El módulo de Marcas vive dentro del módulo hípico: se abre sobre la carrera
+  // que se está mirando, sin salir de la tabla de carreras del día.
+  const [editorMarcas, setEditorMarcas] = useState<{ hipodromo: string; carrera: number } | null>(null);
+  /** Muestra las carreras del filtro que llegaron sin ejemplares (ocultas por defecto). */
+  const [verSinEjemplares, setVerSinEjemplares] = useState(false);
 
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -123,10 +131,26 @@ export function CarrerasDiaModule() {
   }, [fecha, refrescar]);
 
   /** Vista del editor: sin hipódromo seleccionado, todas las de la fecha. */
-  const carreras = useMemo(
-    () => (hipodromo ? todas.filter((c) => c.hipodromo === hipodromo) : todas),
-    [todas, hipodromo]
-  );
+  const carreras = useMemo(() => {
+    // Comparación por clave normalizada, no por texto: el hipódromo llega del
+    // selector en una forma ("LARINCONADA") y la fila lo trae como lo escribió
+    // el operador ("LA RINCONADA"). Con `===` el editor se quedaba vacío
+    // mientras el monitor, que normaliza, sí mostraba la jornada.
+    const h = claveHipodromo(hipodromo);
+    return h ? todas.filter((c) => claveHipodromo(c.hipodromo) === h) : todas;
+  }, [todas, hipodromo]);
+
+  /**
+   * Una carrera sin ejemplares no se puede jugar ni rematar: la fila solo
+   * mostraba "Sin ejemplares registrados" y ocupaba el mismo lugar que una
+   * carrera real (con 13 del día, varias filas eran puro ruido). Se ocultan,
+   * pero NO se borran ni se pierden: el contador de arriba las deja a un clic,
+   * porque a la carrera que quedó sin ejemplares hay que poder abrirla y
+   * cargárselos.
+   */
+  const conEjemplares = useMemo(() => carreras.filter((c) => (c.caballos?.length ?? 0) > 0), [carreras]);
+  const sinEjemplares = useMemo(() => carreras.filter((c) => (c.caballos?.length ?? 0) === 0), [carreras]);
+  const carrerasVisibles = verSinEjemplares ? carreras : conEjemplares;
 
   const gruposMonitor = useMemo(
     () =>
@@ -206,6 +230,34 @@ export function CarrerasDiaModule() {
       : "";
     toast(base + detalle, "success");
     setModal(vacioModal());
+    void refrescar();
+  };
+
+  const alternarVerificada = async (c: CarreraCentral) => {
+    const r = await marcarCarreraVerificada(fecha, c.hipodromo, c.carrera, !c.verificado);
+    if (!r.ok) return toast("No se pudo marcar: " + (r.error ?? "sin conexión"), "error");
+    toast(
+      c.verificado
+        ? `C${c.carrera} vuelve a estado sin verificar.`
+        : `✔️ C${c.carrera} verificada. Queda registrado quién y cuándo.`,
+      "success"
+    );
+    void refrescar();
+  };
+
+  const alternarInvalitado = async (c: CarreraCentral, numero: string) => {
+    const lista = new Set(c.invalidados ?? []);
+    const estaba = lista.has(numero);
+    if (estaba) lista.delete(numero);
+    else lista.add(numero);
+    const r = await guardarInvalidadosRemate(fecha, c.hipodromo, c.carrera, [...lista]);
+    if (!r.ok) return toast("No se pudo invalidar: " + (r.error ?? "sin conexión"), "error");
+    toast(
+      estaba
+        ? `Nº ${numero} vuelve a ser pujable en Remates.`
+        : `Nº ${numero} invalidado para Remates: no puja y no requiere valor. No se retira de los demás módulos.`,
+      "success"
+    );
     void refrescar();
   };
 
@@ -345,6 +397,21 @@ export function CarrerasDiaModule() {
 
       {/* Listado del día */}
       <div className="overflow-hidden rounded-lg border border-cyan-200 bg-white shadow-sm">
+        {sinEjemplares.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-semibold text-amber-800">
+            <span>
+              ⚠️ {sinEjemplares.length} carrera(s) del filtro sin ejemplares
+              {verSinEjemplares ? "" : " (ocultas del listado)"}.
+            </span>
+            <button
+              type="button"
+              onClick={() => setVerSinEjemplares((v) => !v)}
+              className="rounded border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-800 transition-colors hover:bg-amber-100"
+            >
+              {verSinEjemplares ? "Ocultarlas" : "Mostrarlas"}
+            </button>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-xs">
             <thead>
@@ -366,17 +433,24 @@ export function CarrerasDiaModule() {
                   </td>
                 </tr>
               )}
-              {!cargando && carreras.length === 0 && (
+              {!cargando && carrerasVisibles.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-2 py-4 text-center text-xs font-semibold text-amber-600">
-                    ⚠️ No hay carreras registradas para {hipodromo || "este hipódromo"} · {fecha}.
+                    {sinEjemplares.length > 0 && !verSinEjemplares ? (
+                      <>⚠️ Las {carreras.length} carreras del filtro no tienen ejemplares: mostralas para cargárselos.</>
+                    ) : (
+                      <>⚠️ No hay carreras registradas para {hipodromo || "este hipódromo"} · {fecha}.</>
+                    )}
                   </td>
                 </tr>
               )}
-              {carreras.map((c, i) => {
+              {carrerasVisibles.map((c, i) => {
                 const n = c.caballos?.length ?? 0;
                 return (
-                  <tr key={`${c.hipodromo}-${c.carrera}`} className={i % 2 ? "bg-cyan-50/50" : "bg-white"}>
+                  <tr
+                    key={claveCarrera(c.hipodromo, c.carrera, fecha)}
+                    className={i % 2 ? "bg-cyan-50/50" : "bg-white"}
+                  >
                     <td className="border border-cyan-100 px-1 py-1 text-center text-sm font-extrabold text-cyan-700">
                       C{c.carrera}
                     </td>
@@ -386,18 +460,49 @@ export function CarrerasDiaModule() {
                       ) : (
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
                           <span className="text-[10px] font-bold text-slate-500">{n} ejemplar(es)</span>
+                          <span className="text-[9px] font-semibold text-slate-400">
+                            clic en un ejemplar = invalidar solo en Remates (INV)
+                          </span>
                           <span className="flex flex-wrap gap-0.5">
                             {(c.caballos ?? []).map((cb) => {
                               const nombre = cb.nombre?.trim();
                               const ret = Boolean(cb.retirado) || (c.retirados ?? []).includes(String(cb.numero));
                               const guald = getHorseColor(cb.numero);
+                              const inv = (c.invalidados ?? []).includes(String(cb.numero));
+                              // El chip entero alterna INV: si el badge solo aparecia
+                              // cuando ya estaba invalidado, no habia forma de
+                              // invalidar desde aca. Retirado manda sobre INV (un
+                              // ejemplar fuera no puja igual), asi que ahi no aplica.
+                              const alternaInv = !ret;
+                              const etiqueta = ret
+                                ? `${nombre || `Nº ${cb.numero}`} — retirado en esta carrera`
+                                : inv
+                                  ? `${nombre || `Nº ${cb.numero}`} — invalidado para Remates. Clic para revertir.`
+                                  : `${nombre || `Nº ${cb.numero}`} — clic para invalidar solo en Remates`;
                               return (
                                 <span
                                   key={cb.numero}
-                                  title={nombre || `Nº ${cb.numero}`}
+                                  title={etiqueta}
+                                  role={alternaInv ? "button" : undefined}
+                                  tabIndex={alternaInv ? 0 : undefined}
+                                  onClick={alternaInv ? () => void alternarInvalitado(c, String(cb.numero)) : undefined}
+                                  onKeyDown={
+                                    alternaInv
+                                      ? (e) => {
+                                          if (e.key === "Enter" || e.key === " ") {
+                                            e.preventDefault();
+                                            void alternarInvalitado(c, String(cb.numero));
+                                          }
+                                        }
+                                      : undefined
+                                  }
                                   className={`inline-flex items-center gap-1 rounded border px-1 py-0.5 text-[10px] font-bold leading-none ${
-                                    ret ? "border-red-300 bg-red-50" : `${guald.border} ${guald.bg} ${guald.text}`
-                                  }`}
+                                    ret
+                                      ? "border-red-300 bg-red-50"
+                                      : inv
+                                        ? "border-amber-400 bg-amber-50"
+                                        : `${guald.border} ${guald.bg} ${guald.text}`
+                                  } ${alternaInv ? "cursor-pointer hover:ring-1 hover:ring-amber-400" : ""}`}
                                 >
                                   <span
                                     className={`inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm text-[9px] font-black leading-none ${
@@ -410,6 +515,11 @@ export function CarrerasDiaModule() {
                                   {nombre && (
                                     <span className={`font-semibold ${ret ? "text-red-600" : "opacity-80"}`}>
                                       · {nombre}
+                                    </span>
+                                  )}
+                                  {inv && !ret && (
+                                    <span className="rounded bg-amber-200 px-1 text-[9px] font-black leading-none text-amber-900">
+                                      INV
                                     </span>
                                   )}
                                 </span>
@@ -440,8 +550,25 @@ export function CarrerasDiaModule() {
                       {c.premio != null ? Number(c.premio).toLocaleString("es-VE", { maximumFractionDigits: 2 }) : "—"}
                     </td>
                     <td className="border border-cyan-100 px-1 py-1 text-center font-bold text-slate-700">{c.hora ?? "—"}</td>
-                    <td className="border border-cyan-100 px-1 py-1 text-center">
-                      <div className="flex items-center justify-center gap-1">
+                    <td className="border border-cyan-100 px-1 py-1 align-middle">
+                      <div className="flex flex-col items-start gap-1">
+                        <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => alternarVerificada(c)}
+                          title={
+                            c.verificado
+                              ? `Verificada por ${c.verificado_por ?? "—"} · volver a marcar como pendiente`
+                              : "Marcar esta carrera como verificada"
+                          }
+                          className={`rounded px-1.5 py-0.5 text-[11px] transition-colors ${
+                            c.verificado
+                              ? "bg-emerald-600 text-white hover:bg-emerald-500"
+                              : "bg-slate-200 text-slate-500 hover:bg-emerald-100 hover:text-emerald-700"
+                          }`}
+                        >
+                          ✓
+                        </button>
                         <button
                           type="button"
                           onClick={() => abrirEditar(c)}
@@ -452,12 +579,35 @@ export function CarrerasDiaModule() {
                         </button>
                         <button
                           type="button"
+                          onClick={() => setEditorMarcas({ hipodromo: c.hipodromo, carrera: c.carrera })}
+                          title="Marcas: configurar NV y debutantes de esta carrera"
+                          className="rounded bg-cyan-600 px-1.5 py-0.5 text-[11px] text-white transition-colors hover:bg-cyan-500"
+                        >
+                          🏷️
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setConfirmarEliminar(c)}
                           title="Quitar del día (no borra tablas ni jugadas)"
                           className="rounded px-1 py-0.5 text-[11px] text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
                         >
                           🗑️
                         </button>
+                        </div>
+                        <div className="max-w-[16rem] text-[9px] leading-tight text-slate-500">
+                          {c.verificado ? (
+                            <>
+                              <span className="font-bold text-emerald-700">Verificada</span>
+                              {c.verificado_por ? ` por ${c.verificado_por}` : ""}
+                              {c.verificado_at ? ` · ${c.verificado_at.slice(0, 16).replace("T", " ")}` : ""}
+                            </>
+                          ) : (
+                            <>
+                              <span className="font-bold text-amber-700">Sin verificar</span>
+                              {c.actualizado_por ? ` · última edición: ${c.actualizado_por}` : ""}
+                            </>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -561,6 +711,19 @@ export function CarrerasDiaModule() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Editor de marcas (NV + debutantes) de la carrera elegida. La ventana de
+          ventas y resultados vive en el panel de Marcas, que es donde se lleva
+          el seguimiento de la jornada. */}
+      {editorMarcas && (
+        <ModalMarcasEditor
+          hipodromoInicial={editorMarcas.hipodromo}
+          carreraInicial={editorMarcas.carrera}
+          onCerrar={() => setEditorMarcas(null)}
+          onToast={toast}
+          onCambio={() => void refrescar()}
+        />
       )}
     </div>
   );

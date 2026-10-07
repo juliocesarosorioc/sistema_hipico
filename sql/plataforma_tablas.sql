@@ -45,7 +45,7 @@ create table if not exists public.tabla_grupos (
 
 -- 3.5) VALORES CONGELADOS EN EL TICKET DE VENTA -----------------------
 -- El premio y el PTS del ejemplar se guardan al momento de vender, para que
--- modificar la tabla despu�s NO cambie lo que se vendi� antes.
+-- modificar la tabla después NO cambie lo que se vendió antes.
 alter table public.tickets_apuestas
     add column if not exists premio_por_tabla numeric,   -- premio pactado en la compra
     add column if not exists pts_ejemplar numeric;       -- PTS del ejemplar vendido

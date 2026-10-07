@@ -12,19 +12,91 @@
  *   - PUESTOS puros ("2P")               → dividendos.puestos
  *   - TABLABAS ("TABLA …")               → dividendos.tabla (premio por tabla)
  *   - NINI ("2N" …)                      → dividendos.nini
+ *   - AMERICANAS ("W","P","S")           → matriz wps_WW / wps_WP / wps_WS /
+ *                                            wps_PP / wps_PS / wps_SS
  *   - REMATE / resto                     → dividendos.remate o laz 2× de la casa
+ *
+ * Las americanas se resuelven ANTES que los puestos porque su pago depende de
+ * dos cosas a la vez (qué se apostó × en qué puesto llegó) y no de una sola
+ * clave de dividendo. Ver `motores/wps.ts`.
  *
  * Si el dividendo oficial no existe, el motor conserva el pago a la par de la
  * casa (2× / 120×100), por lo que NUNCA degrada el comportamiento previo.
+ *
+ * EXCEPCIÓN (W/P/S): si la matriz de una jugada que GANÓ por posición todavía
+ * no está cargada, el motor devuelve `indeterminado` en vez de perderla. La
+ * par de la casa no aplica: un W que llegó 1º no se puede pagar "a 2×" solo
+ * porque falte el dividendo, y cobrar $0 a una jugada ganadora por un dato no
+ * cargado sería un error que ni el estado "Perdedor" ya escrito revierte.
  */
 import { registrarProcesador, TicketMotor, ResultadoMotor, COMISION_CASA, parsearNini, liquidarPareo } from "../bettingEngine";
 import { liquidarPuestos } from "./puestos";
+import { liquidarWps } from "./wps";
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
 const TASA_DEFECTO = COMISION_CASA.rate * 100;
+
+const ORDEN_PIZARRA = ["primero", "segundo", "tercero", "cuarto", "quinto", "sexto", "septimo", "octavo"] as const;
+
+/**
+ * Normaliza CUALQUIER forma en que se haya guardado el orden de llegada a la
+ * lista de ejemplares del 1º al 8º, que es lo que entiende la pizarra.
+ *
+ * Se encontraron cuatro formatos conviviendo en el proyecto (y en la base):
+ *   - `[{ numero, puesto }]`  ← forma canónica (club_registrar_orden_llegada,
+ *                               PagarCarreraModal.ordenLlegadaDePizarra)
+ *   - `["7", "9"]`            ← lista suelta de ejemplares
+ *   - `{ 1: "7", 2: "9" }`    ← mapa puesto → ejemplar
+ *   - `{ primero, segundo… }` ← PizarraCarrera tal cual
+ * Sin esto, leer `[{numero,puesto}]` con un `map(String)` devolvía
+ * "[object Object]" y la liquidación daba cualquier cosa.
+ */
+export function puestosDesdeOrdenLlegada(v: unknown): string[] {
+  if (v == null) return [];
+  const limpio = (x: unknown): string => {
+    if (x == null) return "";
+    if (typeof x === "number" || typeof x === "string") return String(x).trim();
+    if (typeof x === "object") {
+      const o = x as { numero?: unknown; ejemplar?: unknown; caballo?: unknown };
+      return limpio(o.numero ?? o.ejemplar ?? o.caballo ?? "");
+    }
+    return "";
+  };
+
+  // 1) Arreglo de objetos {numero, puesto}: se ordena por el puesto.
+  if (Array.isArray(v)) {
+    if (!v.length) return [];
+    if (v.some((e) => typeof e === "object" && e !== null)) {
+      return [...(v as Array<Record<string, unknown>>)]
+        .map((e, i) => ({
+          numero: limpio(e),
+          puesto: Number(e.puesto) || i + 1,
+        }))
+        .filter((e) => e.numero !== "")
+        .sort((a, b) => a.puesto - b.puesto)
+        .map((e) => e.numero);
+    }
+    return (v as unknown[]).map(limpio).filter(Boolean);
+  }
+
+  if (typeof v !== "object") return [];
+
+  // 2) PizarraCarrera {primero, segundo, …}
+  const como = v as Record<string, unknown>;
+  if (ORDEN_PIZARRA.some((k) => k in como)) {
+    return ORDEN_PIZARRA.map((k) => limpio(como[k])).filter(Boolean);
+  }
+
+  // 3) Mapa { puesto: ejemplar } → se ordena por la clave del puesto.
+  return Object.keys(como)
+    .map((k) => ({ puesto: Number(k) || 0, numero: limpio(como[k]) }))
+    .filter((e) => e.numero !== "")
+    .sort((a, b) => a.puesto - b.puesto)
+    .map((e) => e.numero);
+}
 
 export type ClaveDividendo =
   | "win"
@@ -130,6 +202,12 @@ export function liquidarOficial(
   if (/^PP/.test(tipoPP) || /X/.test(caballoPP)) {
     return liquidarPareo(t, tasa);
   }
+
+  // AMERICANAS W/P/S: el pago depende de la matriz (que se aposto x en que
+  // puesto llego), asi que se resuelven antes de los puestos y NO reusan
+  // `dividendoDe`, que solo conoce una clave por modalidad.
+  const wps = liquidarWps(t, tasa);
+  if (wps) return wps;
 
   const base = liquidarPuestos(t, tasa);
 

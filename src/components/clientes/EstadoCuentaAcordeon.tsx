@@ -26,7 +26,7 @@ function Nodo({ nivel, devPct, nivelProf }: { nivel: NivelAcordeon; devPct: numb
         style={{ marginLeft: nivelProf * 12 }}
       >
         {tieneHijos ? (
-          <i className={`fas fa-chevron-right text-[10px] text-slate-400 transition-transform ${abierto ? "rotate-90" : ""}`}></i>
+          <span className={`text-[10px] text-slate-400 transition-transform ${abierto ? "rotate-90" : ""}`}>▶</span>
         ) : (
           <span className="inline-block w-3"></span>
         )}
@@ -64,7 +64,7 @@ function JugadasDesplegables({ nivel, devPct, nivelProf }: { nivel: NivelAcordeo
         <div key={`${nivelProf}-${i}-${c.titulo}`} className="rounded-xl border border-line px-3 py-2 bg-slate-50" style={{ marginLeft: (nivelProf + 1) * 12 }}>
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold text-slate-700">
-              <i className="fas fa-flag-checkered mr-1 text-indigo-500"></i>
+              <span className="mr-1 text-indigo-500">🏁</span>
               {c.titulo} <span className="font-medium text-slate-400">· {c.subtitulo}</span>
             </span>
             <span className="text-[10px] font-mono font-black text-slate-700">{formatoMoneda("USD", c.monto)}</span>
@@ -124,12 +124,12 @@ function ResumenNivel({ nivel, devPct }: { nivel: NivelAcordeon; devPct: number 
   return (
     <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2" style={{ marginLeft: 12 }}>
       {[
-        { lbl: "Total decidido", val: nivel.monto, icon: "fa-coins", color: "text-slate-800" },
-        { lbl: `Devolución / Incentivo (${devPct}%)`, val: nivel.dec, icon: "fa-percent", color: "text-purple-600" },
-        { lbl: "Disponible (mínimo a cubrir)", val: nivel.monto - nivel.dec, icon: "fa-hand-holding-dollar", color: "text-emerald-600" },
+        { lbl: "Total decidido", val: nivel.monto, icon: "🪙", color: "text-slate-800" },
+        { lbl: `Devolución / Incentivo (${devPct}%)`, val: nivel.dec, icon: "％", color: "text-purple-600" },
+        { lbl: "Disponible (mínimo a cubrir)", val: nivel.monto - nivel.dec, icon: "🤲", color: "text-emerald-600" },
       ].map((k) => (
         <div key={k.lbl} className="rounded-xl border border-line bg-white px-4 py-3 flex items-center gap-3">
-          <i className={`fas ${k.icon} ${k.color} text-lg`}></i>
+          <span className={`${k.color} text-lg`}>{k.icon}</span>
           <div>
             <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">{k.lbl}</div>
             <div className={`text-sm font-black ${k.color}`}>{formatoMoneda("USD", k.val)}</div>
@@ -201,12 +201,12 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
 
       {!clienteEstado ? (
         <div className="rounded-2xl border border-dashed border-line bg-white/60 p-10 text-center text-slate-400">
-          <i className="fas fa-list-alt text-3xl mb-2"></i>
+          <span className="text-3xl mb-2">🗒️</span>
           <p className="text-xs font-bold">Seleccione un cliente para construir su estado de cuenta.</p>
         </div>
       ) : cargando ? (
         <div className="rounded-2xl border border-line bg-white p-10 text-center text-slate-500">
-          <i className="fas fa-spinner fa-spin mr-2"></i> Construyendo estado de cuenta…
+          <span className="mr-2">⏳</span> Construyendo estado de cuenta…
         </div>
       ) : raiz ? (
         <div className="space-y-2">
@@ -230,7 +230,7 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
             ))}
             {raiz.hijos.length === 0 ? (
               <div className="rounded-xl border border-dashed border-line bg-white p-8 text-center text-slate-400">
-                <i className="fas fa-inbox text-2xl mb-2"></i>
+                <span className="text-2xl mb-2">📥</span>
                 <p className="text-xs font-bold">Sin movimientos registrados.</p>
               </div>
             ) : null}
@@ -241,7 +241,7 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
       {clienteEstado ? (
         <div className="flex justify-end">
           <Button variant="outline" size="sm" onClick={() => void seleccionar(null)}>
-            <i className="fas fa-times mr-1"></i> Limpiar
+            <span className="mr-1">✕</span> Limpiar
           </Button>
         </div>
       ) : null}

@@ -36,6 +36,10 @@ export function ParametrosCarrera({ onAgregar }: Props) {
 
   const inputCls =
     "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500";
+  /** Los campos numéricos se alinean a la derecha: es la convención que hace
+   *  comparables dos cifras de largo distinto sin contar dígitos. El select de
+   *  superficie sigue con `inputCls`, porque un texto no se alinea a la derecha. */
+  const inputNumCls = `${inputCls} text-right`;
 
   return (
     <div className="space-y-3 p-4">
@@ -56,7 +60,7 @@ export function ParametrosCarrera({ onAgregar }: Props) {
             value={f.carrera}
             onChange={(e) => setF((p) => ({ ...p, carrera: e.target.value }))}
             placeholder="1"
-            className={inputCls}
+            className={inputNumCls}
           />
         </div>
         <div>
@@ -66,7 +70,7 @@ export function ParametrosCarrera({ onAgregar }: Props) {
             value={f.distancia}
             onChange={(e) => setF((p) => ({ ...p, distancia: e.target.value }))}
             placeholder="1100"
-            className={inputCls}
+            className={inputNumCls}
           />
         </div>
         <div>
@@ -91,7 +95,7 @@ export function ParametrosCarrera({ onAgregar }: Props) {
             value={f.premio}
             onChange={(e) => setF((p) => ({ ...p, premio: e.target.value }))}
             placeholder="100"
-            className={inputCls}
+            className={inputNumCls}
           />
         </div>
       </div>

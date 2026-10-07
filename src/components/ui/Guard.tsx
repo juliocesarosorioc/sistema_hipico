@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { hasPermission } from "@/store/useAuthStore";
+import type { ReactNode } from "react";
+import { useAuthStore } from "@/store/useAuthStore";
 
 type Props = {
   /** Permiso requerido. Lista = se exigen TODOS. */
   permiso?: string | string[];
   /**
    * Basta con poseer UNO de estos. Se usa cuando hay un permiso de lectura y
-   * otro de escritura sobre el mismo módulo (ej. `ver_clientes` habilita el
-   * botón del menú y `gestionar_clientes` habilita crear/editar/borrar).
+   * otro de escritura sobre el mismo módulo (ej. `clientes:ruta_clientes`
+   * habilita el botón del menú y `clientes:btn_eliminar` habilita borrar).
    * Si se pasa, `permiso` se ignora.
    */
   algunaDe?: string | string[];
@@ -29,11 +29,11 @@ type Props = {
 /**
  * Componente Guardia atómico de RBAC sobre la UI. Uso:
  *
- *   <Guard permiso="liquidar_carrera">
+ *   <Guard permiso="gestion_jugadas:btn_liquidar">
  *     <Button>Liquidar carrera</Button>
  *   </Guard>
  *
- *   <Guard permiso="anular_ticket" disabled>
+ *   <Guard permiso="taquilla:btn_anular_ticket" disabled>
  *     <Button>Anular ticket</Button>
  *   </Guard>
  *
@@ -41,26 +41,35 @@ type Props = {
  * contenido en estado deshabilitado según cómo se le pase por prop.
  */
 export function Guard({ permiso, algunaDe, modo: _modo = "ocultar", disabled, fallback = null, children }: Props) {
-  const [montado, setMontado] = useState(false);
+  // Se suscribe a `permisos`, `esPrincipal` e `inicializada` para que el botón
+  // aparezca o desaparezca en el momento en que cambian los accesos.
+  const permisos = useAuthStore((s) => s.permisos);
+  const esPrincipal = useAuthStore((s) => s.esPrincipal);
+  const inicializada = useAuthStore((s) => s.inicializada);
 
-  // Hidratación: el HTML del servidor se genera con los permisos por defecto
-  // (Admin → todos), mientras que el estado persistido (zustand) puede diferir.
-  // Si evaluáramos aquí `hasPermission`, el primer render del cliente no
-  // coincidiría con el servidor (ej. el enlace /clientes oculto) → hydration
-  // mismatch. Se devuelven los hijos en la primera pasada (espejo del SSR) y
-  // recién se aplica el RBAC real al montar el componente.
-  useEffect(() => {
-    setMontado(true);
-  }, []);
-  if (!montado) return <>{children}</>;
+  // Antes soltaba los hijos en el primer render para no romper la
+  // hidratación, y eso dejaba botones y enlaces prohibitedores dibujados
+  // hasta que el store terminaba de resolver la sesión. Ahora, mientras la
+  // sesión no esté verificada, no se muestra NADA: el acceso va antes de la
+  // visualización, que es el orden pedido. AppShell ya impide que se monte el
+  // contenido en ese estado; esta segunda barrera cubre los guards sueltos.
+  if (!inicializada) return null;
 
   let permite: boolean;
-  if (algunaDe) {
-    // OR: alcanza conUno de los indicados.
-    permite = (Array.isArray(algunaDe) ? algunaDe : [algunaDe]).some((p) => hasPermission(p));
+  if (esPrincipal) {
+    // El usuario principal pasa siempre: el maestro nunca le cierra un control.
+    permite = true;
   } else {
-    // `permiso` como lista conserva la semántica AND.
-    permite = hasPermission(permiso!);
+    const set = new Set(permisos);
+    if (algunaDe) {
+      // OR: alcanza con uno de los indicados.
+      permite = (Array.isArray(algunaDe) ? algunaDe : [algunaDe]).some((p) => set.has(p));
+    } else if (Array.isArray(permiso)) {
+      // AND: se exigen todas.
+      permite = permiso.every((p) => set.has(p));
+    } else {
+      permite = permiso ? set.has(permiso) : true;
+    }
   }
   if (permite) return <>{children}</>;
 

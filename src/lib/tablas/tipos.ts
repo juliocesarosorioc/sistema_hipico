@@ -1,4 +1,7 @@
-import { getHorseColor } from "@/lib/horseColors";
+// Relativa a proposito: este modulo se compila a CommonJS para las pruebas en
+// node (pruebas/tsconfig.json) y node no resuelve el alias `@/`. `horseColors`
+// es logica pura, asi que sigue siendo seguro importarlo desde un test.
+import { getHorseColor } from "../horseColors";
 
 /**
  * Tipos del módulo Tablas Fijas (clon legacy) + constantes OK.

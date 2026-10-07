@@ -1,18 +1,23 @@
 "use client";
 
 import { RutaProtegida } from "@/components/ui/RutaProtegida";
-import { SeguridadModule } from "@/components/seguridad/SeguridadModule";
+import SeguridadModule from "@/components/seguridad/SeguridadModule";
 
 /**
- * Ruta /seguridad — solo visible para quien tenga `administrar_seguridad`.
- * Protección doble: middleware (src/middleware.ts) + guardia de cliente.
+ * Ruta /seguridad — el MÓDULO MAESTRO. Solo entra quien tenga la capacidad
+ * `seguridad:ruta_seguridad` del registro maestro, que es CRÍTICA: desde ahí
+ * se concede o se quita el acceso de todos.
+ *
+ * Protección doble: el middleware (src/middleware.ts, que lee la misma lista del
+ * esquema) y el guardia de cliente (RutaProtegida). El primero evita la
+ * descarga de la página; el segundo evita el parpadeo del contenido.
  */
 export default function SeguridadPage() {
   return (
-    <div className="p-4 lg:p-6">
-      <RutaProtegida permiso="administrar_seguridad">
+    <RutaProtegida>
+      <div className="p-4 lg:p-6">
         <SeguridadModule />
-      </RutaProtegida>
-    </div>
+      </div>
+    </RutaProtegida>
   );
 }

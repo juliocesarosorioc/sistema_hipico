@@ -6,6 +6,9 @@
  * escritura de un retiro, sin importar desde qué módulo se haga:
  *
  *   1. Escribe `retirados` en la carrera central (resultados_carreras).
+ *   1b. Refleja esa lista en la matriz `carreras.retirados`, que es la columna
+ *       de la que leen Dupletas, Gestión, Marcas y Carreras del Día (best-effort:
+ *       si la matriz no está aplicada, se hidrata desde resultados).
  *   2. Propaga a TODAS las tablas fijas de esa misma carrera
  *      (`caballos[].retirado`, `retirados_oficiales`) y recalcula el premio
  *      con baja proporcional (misma fórmula del legacy js/tablas.js):
@@ -18,9 +21,18 @@
  * tengan que escribir nada.
  */
 import { supabase } from "@/lib/supabase";
+import { exigirPermiso } from "@/lib/seguridad/vigente";
 import { hoyLocal } from "@/lib/gaceta/programa";
+import { num, normalizarRetirados, parsearRetirados, textoRetirados } from "@/lib/carreras/retiros-nucleo";
+import { claveHipodromo } from "@/lib/carreras/claves";
+import { reflejarRetiradosMatriz } from "@/lib/carreras/maestro";
 
 export type NumeroRetirado = string | number;
+
+// El parseo/normalización de la lista de retirados es lógica pura y la consultan
+// la matriz de carreras (carreras/maestro-nucleo) y la liquidación, así que vive
+// en `retiros-nucleo.ts`, sin Supabase, para poder testearla en node.
+export { SIN_RETIRADOS, normalizarRetirados, textoRetirados, parsearRetirados, num } from "@/lib/carreras/retiros-nucleo";
 
 export type EntradaRetiros = {
   fecha?: string;
@@ -48,44 +60,16 @@ export type ResultadoRetiros = {
 
 const SIN_RETIRADOS = "NO HUBO RETIROS";
 
-const num = (n: unknown): number => {
-  const v = parseFloat(String(n ?? "").replace(",", "."));
-  return Number.isFinite(v) ? v : 0;
-};
-
-/** Normaliza a strings únicas ordenadas numéricamente ("2", "5", "10"). */
-export function normalizarRetirados(numeros: NumeroRetirado[] | null | undefined): string[] {
-  const limpio = (numeros ?? [])
-    .map((n) => String(n ?? "").trim())
-    .filter((n) => n.length > 0);
-  return [...new Set(limpio)].sort((a, b) => (num(a) - num(b)) || a.localeCompare(b));
-}
-
-/** Texto canónico que se guarda en `retirados` / `retirados_oficiales`. */
-export function textoRetirados(numeros: NumeroRetirado[] | null | undefined): string {
-  const lista = normalizarRetirados(numeros);
-  return lista.length ? lista.join(",") : SIN_RETIRADOS;
-}
-
 /**
- * Parsea tolerantemente lo que escribe el operador ("2,5" · "2 5" · "2, 5" ·
- * "2-5" · "#2 #5") y devuelve la lista de números. El rango "a-b" se expande.
+ * Texto con el que `resultados_carreras` guarda el hipódromo (con espacios).
+ *
+ * OJO con la diferencia con `claveHipodromo` de `claves.ts`: esta función
+ * conserva los espacios porque acá se usa como `.eq` sobre una columna que ya
+ * está guardada así, y cambiar la forma escribiría una fila NUEVA en vez de
+ * actualizar la existente (el `onConflict` es por texto). Para COMPARAR datos
+ * que pueden venir escritos de cualquier forma hay que usar `claveHipodromo`.
  */
-export function parsearRetirados(texto: string): string[] {
-  const salida = new Set<string>();
-  const limpio = String(texto ?? "").trim();
-  if (!limpio || limpio.toUpperCase() === SIN_RETIRADOS) return [];
-  // Rangos "2-5" primero (evita leer el guion como separador).
-  for (const m of limpio.matchAll(/(\d+)\s*[-–—a]{1,2}\s*(\d+)/gi)) {
-    const a = num(m[1]);
-    const b = num(m[2]);
-    if (a > 0 && b >= a && b - a <= 99) for (let i = a; i <= b; i++) salida.add(String(i));
-  }
-  for (const m of limpio.matchAll(/\d+/g)) salida.add(String(num(m[0])));
-  return normalizarRetirados([...salida]);
-}
-
-const claveHipodromo = (h: unknown) => String(h ?? "").trim().toUpperCase();
+const textoHipodromo = (h: unknown) => String(h ?? "").trim().toUpperCase();
 
 /**
  * Aplica la lista COMPLETA de retirados de una carrera a TODAS sus tablas
@@ -108,23 +92,24 @@ async function propagarATablas(
   if (!supabase) return { tablas: 0, premios, reembolsos: 0, errores };
   let filas: Array<Record<string, unknown>> = [];
   try {
+    // Filtro por clave canónica, no por texto: `.ilike('%LA RINCONADA%')` no
+    // encuentra la tabla si el tablista la guardó como "LARINCONADA", y
+    // `ilike('%RINCONADA%')` sí trae las de otro hipódromo. El día son pocas
+    // filas, así que la comparación se hace acá con `claveHipodromo`, que es la
+    // misma clave que usan matrices, marcas y dupletas.
     const r = await supabase
       .from("tablas_fijas")
       .select("id, hipodromo, carrera, fecha, caballos, premio_original, premio_recalculado, suma_base_tabla")
       .eq("fecha", fecha)
-      .ilike("hipodromo", `%${hipodromo}%`)
       .eq("carrera", carrera);
     if (r.error) throw r.error;
-    // `ilike` es parcial: se descarta cualquier tabla de otro hipódromo cuyo
-    // nombre contenga el nuestro (p. ej. "RINCONADA" vs "LA RINCONADA").
+    const clave = claveHipodromo(hipodromo);
     filas = ((r.data ?? []) as Array<Record<string, unknown>>).filter(
-      (f) => claveHipodromo(f.hipodromo as string) === claveHipodromo(hipodromo)
+      (f) => claveHipodromo(f.hipodromo as string) === clave
     );
   } catch (e) {
-    return { tablas: 0, premios, reembolsos: 0, errores: [e instanceof Error ? e.message : String(e)] };
+    errores.push(`tablas fijas: ${e instanceof Error ? e.message : String(e)}`);
   }
-
-  let reembolsos = 0;
 
   for (const fila of filas) {
     const caballos = Array.isArray(fila.caballos) ? (fila.caballos as Array<Record<string, unknown>>) : [];
@@ -134,9 +119,6 @@ async function propagarATablas(
       const retirado = retirados.has(n);
       return retirado ? { ...c, retirado: true, ganador: false } : { ...c, retirado: false };
     });
-    const yaRetiradosAntes = new Set(
-      caballos.filter((c) => c.retirado).map((c) => String(c.numero ?? "").trim())
-    );
     const base = num(fila.suma_base_tabla);
     const sumaRetirados = nuevos
       .filter((c) => c.retirado)
@@ -155,14 +137,17 @@ async function propagarATablas(
     } catch (e) {
       errores.push(`tabla ${String(fila.id)}: ${e instanceof Error ? e.message : String(e)}`);
     }
+  }
 
-    // Reembolso best-effort SOLO de los que se acaban de retirar.
-    const nuevosRetirados = [...retirados].filter((n) => !yaRetiradosAntes.has(n));
-    if (nuevosRetirados.length) {
-      const r = await reembolsarTickets(fecha, hipodromo, carrera, nuevosRetirados);
-      reembolsos += r.reembolsados;
-      errores.push(...r.avisos);
-    }
+  // El reembolso va FUERA del loop de tablas fijas: si la carrera no tiene
+  // ninguna tabla publicada el loop no corre y los tickets pendientes de los
+  // retirados (tablas, dupletas, marcas, remates) quedaban sin devolver. La RPC
+  // solo toca tickets en 'Pendiente', asi que repetirla es idempotente.
+  let reembolsos = 0;
+  if (retirados.size) {
+    const r = await reembolsarTickets(fecha, hipodromo, carrera, [...retirados]);
+    reembolsos += r.reembolsados;
+    errores.push(...r.avisos);
   }
   return { tablas: filas.length, premios, reembolsos, errores };
 }
@@ -213,9 +198,29 @@ async function reembolsarTickets(
  * y la propaga a todas las tablas fijas de esa carrera.
  */
 export async function aplicarRetirosCarrera(entrada: EntradaRetiros): Promise<ResultadoRetiros> {
-  const texto = textoRetirados(entrada.numeros);
+    try {
+      // Con contexto, no solo con permiso. Además del hipódromo propio, el
+      // `monto` se pone en 0 a propósito: esta operación no mueve dinero, así
+      // que el único número que tiene sentido acá es el invariante de que el
+      // monto nunca sea negativo (que la regla valida como un tope bajo).
+      exigirPermiso("gestion_jugadas:fn_aplicar_retiros", {
+        hipodromo: entrada.hipodromo,
+        monto: 0,
+      });
+    } catch (e) {
+      return {
+        ok: false,
+        retirados: [],
+        texto: textoRetirados(entrada.numeros),
+        tablasAfectadas: 0,
+        reembolsos: 0,
+        premios: [],
+        error: (e as Error).message,
+      };
+    }
+    const texto = textoRetirados(entrada.numeros);
   const retirados = normalizarRetirados(entrada.numeros);
-  const hipodromo = claveHipodromo(entrada.hipodromo);
+  const hipodromo = textoHipodromo(entrada.hipodromo);
   const fecha = entrada.fecha || hoyLocal();
   const carrera = num(entrada.carrera) || 0;
   const vacio: ResultadoRetiros = {
@@ -232,11 +237,44 @@ export async function aplicarRetirosCarrera(entrada: EntradaRetiros): Promise<Re
   const errores: string[] = [];
   try {
     // 1) CARRERA CENTRAL — fuente de verdad de la lista de retiros.
-    const { error } = await supabase.from("resultados_carreras").upsert(
-      { fecha, hipodromo, carrera, retirados: texto },
-      { onConflict: "fecha,hipodromo,carrera" }
+    //
+    // Se actualiza la fila que YA existe en vez de hacer `upsert` a ciegas: la
+    // clave única es (fecha, hipodromo, carrera) sobre TEXTO, así que un upsert
+    // con otra forma de escribir el hipódromo no actualizaba la fila previa,
+    // creaba una segunda y la carrera quedaba con dos listas de retiros
+    // disputándose cuál manda. Con la fila locateda se actualiza siempre la
+    // misma, sin importar cómo la escribió el módulo que la creó.
+    const clave = claveHipodromo(hipodromo);
+    const { data: existentes, error: errorLectura } = await supabase
+      .from("resultados_carreras")
+      .select("id, hipodromo")
+      .eq("fecha", fecha)
+      .eq("carrera", carrera);
+    if (errorLectura) return { ...vacio, error: `Carrera central: ${errorLectura.message}` };
+    const fila = ((existentes ?? []) as Array<{ id?: unknown; hipodromo?: string | null }>).find(
+      (f) => claveHipodromo(f.hipodromo) === clave
     );
-    if (error) return { ...vacio, error: `Carrera central: ${error.message}` };
+    if (fila?.id) {
+      const { error } = await supabase
+        .from("resultados_carreras")
+        .update({ retirados: texto })
+        .eq("id", fila.id as string);
+      if (error) return { ...vacio, error: `Carrera central: ${error.message}` };
+    } else {
+      const { error } = await supabase
+        .from("resultados_carreras")
+        .upsert({ fecha, hipodromo, carrera, retirados: texto }, { onConflict: "fecha,hipodromo,carrera" });
+      if (error) return { ...vacio, error: `Carrera central: ${error.message}` };
+    }
+
+    // 1b) MATRIZ `carreras` — los módulos leen los retiros de acá, no de
+    // resultados. Sin este reflejo un retiro aplicado desde un módulo no se ve
+    // en Dupletas, Gestión, Marcas ni Carreras del Día.
+    //
+    // Best-effort a propósito: si la matriz todavía no está aplicada, el retiro
+    // igual quedó guardado arriba y se hidrata cuando se corra sql/carreras.sql.
+    const mat = await reflejarRetiradosMatriz(fecha, hipodromo, carrera, texto);
+    if (!mat.ok) errores.push(`Matriz de carreras: ${mat.error}`);
 
     // 2) TABLAS FIJAS de esa misma carrera + 3) REEMBOLSO.
     const set = new Set(retirados);
@@ -269,7 +307,7 @@ export async function alternarRetiroCarrera(opts: {
   retirado: boolean;
 }): Promise<ResultadoRetiros> {
   const fecha = opts.fecha || hoyLocal();
-  const hipodromo = claveHipodromo(opts.hipodromo);
+  const hipodromo = textoHipodromo(opts.hipodromo);
   const carrera = num(opts.carrera) || 0;
   const n = String(opts.numero ?? "").trim();
   const actuales = await leerRetirosCarrera(fecha, hipodromo, carrera);
@@ -280,23 +318,36 @@ export async function alternarRetiroCarrera(opts: {
   return { ...r, reembolsos: r.reembolsos };
 }
 
-/** Lee la lista central de retirados de la carrera ("2,5" → ["2","5"]). */
+/**
+ * Lee la lista central de retirados de la carrera ("2,5" → ["2","5"]).
+ *
+ * Tolera cualquiera de las dos formas en que el hipódromo quedó escrito en
+ * `resultados_carreras` ("LA RINCONADA" o "LARINCONADA"): filtra por clave
+ * canónica en vez de por texto. Importa porque `alternarRetiroCarrera` lee,
+ * suma o quita UN número y vuelve a guardar la lista COMPLETA — si la lectura
+ * fallaba, un solo clic borraba los retiros que ya había.
+ */
 export async function leerRetirosCarrera(
   fecha: string,
   hipodromo: string,
   carrera: number | string
 ): Promise<string[]> {
   if (!supabase) return [];
+  const clave = claveHipodromo(hipodromo);
+  const n = num(carrera) || 0;
+  if (!clave || !n) return [];
   try {
     const { data, error } = await supabase
       .from("resultados_carreras")
-      .select("retirados")
+      .select("hipodromo, retirados")
       .eq("fecha", fecha)
-      .eq("hipodromo", claveHipodromo(hipodromo))
-      .eq("carrera", num(carrera) || 0)
-      .maybeSingle();
-    if (error || !data) return [];
-    return parsearRetirados(String((data as { retirados?: unknown }).retirados ?? ""));
+      .eq("carrera", n);
+    if (error) return [];
+    const fila = ((data ?? []) as Array<{ hipodromo?: string | null; retirados?: unknown }>).find(
+      (f) => claveHipodromo(f.hipodromo) === clave
+    );
+    if (!fila) return [];
+    return parsearRetirados(String(fila.retirados ?? ""));
   } catch {
     return [];
   }

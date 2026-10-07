@@ -5,8 +5,8 @@ import { ReporteModule } from "@/components/saldos/ReporteModule";
 
 export default function SaldosReportesPage() {
   return (
-    <RutaProtegida permiso="acceso_dashboard">
+    <RutaProtegida>
       <ReporteModule />
     </RutaProtegida>
-  );
+);
 }

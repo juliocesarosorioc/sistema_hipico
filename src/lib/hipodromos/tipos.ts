@@ -6,13 +6,55 @@ export type Hipodromo = {
   pais: string;
   estado: string;
   fecha_creacion?: string | null;
+  /**
+   * Fecha de BAJA LÓGICA. Con valor, el hipódromo está archivado: no se ofrece
+   * en ningún selector, pero la fila y todo su historial (carreras, tablas,
+   * tickets, liquidaciones) siguen ahí. `null` = vigente.
+   */
+  eliminado_en?: string | null;
+  eliminado_por?: string | null;
 };
+
+/** Los tres estados que el catálogo maneja. */
+export const ESTADOS_HIPODROMO = ["Activo", "Inactivo", "Suspendido"] as const;
+export type EstadoHipodromo = (typeof ESTADOS_HIPODROMO)[number];
+
+/** Normaliza lo que venga de la base (puede ir en minúsculas o vacío). */
+export function normalizarEstado(estado: unknown): EstadoHipodromo {
+  const e = String(estado ?? "").trim();
+  const porIndice = ESTADOS_HIPODROMO.find((x) => x.toLowerCase() === e.toLowerCase());
+  return porIndice ?? "Activo";
+}
+
+/** ¿Está dado de baja (archivado)? */
+export function estaBorrado(h: Pick<Hipodromo, "eliminado_en"> | null | undefined): boolean {
+  return Boolean(String(h?.eliminado_en ?? "").trim());
+}
+
+/** ¿Se ofrece en los módulos de jugadas? Solo los activos y no archivados. */
+export function esOperativo(h: Hipodromo | null | undefined): boolean {
+  if (!h) return false;
+  return !estaBorrado(h) && normalizarEstado(h.estado) === "Activo";
+}
+
+/** Etiqueta + clase de color del chip de estado. */
+export function etiquetaEstado(h: Hipodromo): { texto: string; clase: string } {
+  if (estaBorrado(h)) return { texto: "Archivado", clase: "bg-slate-200 text-slate-600" };
+  switch (normalizarEstado(h.estado)) {
+    case "Activo":
+      return { texto: "Activo", clase: "bg-emerald-100 text-emerald-700" };
+    case "Suspendido":
+      return { texto: "Suspendido", clase: "bg-amber-100 text-amber-800" };
+    default:
+      return { texto: "Inactivo", clase: "bg-slate-200 text-slate-600" };
+  }
+}
 
 /** País con bandera (reutiliza la paleta de banderas de la SPA). */
 export const PAISES = ["VE", "USA", "PA", "MX", "AR", "BR", "CL", "PE", "CO", "EC", "UY", "OTRO"] as const;
 
 export type ResListar = { ok: boolean; data: Hipodromo[]; error?: string; local?: boolean };
-export type ResCrud = { ok: boolean; error?: string; code?: string };
+export type ResCrud = { ok: boolean; error?: string; code?: string; reactivado?: boolean };
 
 /** Título formateado (misma regla de toTitleCase del legacy). */
 export function formatearNombre(t: string): string {

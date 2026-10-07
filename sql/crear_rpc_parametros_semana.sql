@@ -122,7 +122,7 @@ grant execute on function public.club_borrar_parametros_semana(uuid) to anon;
 grant execute on function public.club_borrar_parametros_semana(uuid) to authenticated;
 
 -- ============================================================
---  VERIFICACI�N (deseleccionar para correr como script):
+--  VERIFICACIÓN (deseleccionar para correr como script):
 --  select rolname from pg_roles
 --  where rolname in ('anon','authenticated');
 -- ============================================================

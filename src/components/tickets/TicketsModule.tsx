@@ -4,15 +4,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { useAuthStore } from "@/store/useAuthStore";
-import {
-  listarTicketsAdmin,
-  pasarARevision,
-  resolverTicket,
-  enlaceWhatsAppTicket,
-  type AccionTicket,
-  type EstadoTicket,
-  type TicketDisputa,
-} from "@/lib/tickets";
+  import {
+    listarTicketsAdmin,
+    pasarARevision,
+    resolverTicket,
+    enlaceWhatsAppTicket,
+    abrirImagenTicket,
+    type AccionTicket,
+    type EstadoTicket,
+    type TicketDisputa,
+  } from "@/lib/tickets";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -40,8 +41,8 @@ const ACCIONES: Record<AccionTicket, string> = {
 };
 
 const ICON_TIPO: Record<string, string> = {
-  REPORTE_FALTANTE: "fa-flag",
-  DISPUTA: "fa-scale-balanced",
+  REPORTE_FALTANTE: "🚩",
+  DISPUTA: "⚖️",
 };
 
 /**
@@ -106,14 +107,14 @@ export function TicketsModule() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-black text-slate-800">
-            <i className="fas fa-life-ring mr-2 text-sky-600"></i> Tickets / Reclamos
+            <span className="mr-2 text-sky-600">🛟</span> Tickets / Reclamos
           </h1>
           <p className="text-xs text-slate-500">
             Disputas del portal y reclamos de jugadas. Flujo: <b>CREADO</b> → <b>EN REVISIÓN</b> → <b>SOLUCIONADO</b>.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void cargar()}>
-          <i className="fas fa-rotate mr-1"></i> Recargar
+          <span className="mr-1">🔄</span> Recargar
         </Button>
       </div>
 
@@ -142,12 +143,12 @@ export function TicketsModule() {
 
       {cargando ? (
         <div className="rounded-2xl bg-white p-10 text-center text-slate-400">
-          <i className="fas fa-spinner fa-spin text-2xl"></i>
+          <span className="text-2xl">⏳</span>
           <p className="mt-2 text-xs font-bold uppercase tracking-wider">Cargando tickets…</p>
         </div>
       ) : filtradas.length === 0 ? (
         <div className="rounded-2xl bg-white p-10 text-center text-slate-400">
-          <i className="fas fa-inbox text-2xl"></i>
+          <span className="text-2xl">📥</span>
           <p className="mt-2 text-xs font-bold uppercase tracking-wider">Sin tickets en este estado.</p>
         </div>
       ) : (
@@ -206,7 +207,7 @@ function TicketCard({ t, onRevision, onResolver }: { t: TicketDisputa; onRevisio
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
-            <i className={`fas ${ICON_TIPO[tipo] ?? "fa-life-ring"}`}></i>
+            <span>{ICON_TIPO[tipo] ?? "\u{1F6DF}"}</span>
           </span>
           <div>
             <div className="flex items-center gap-2">
@@ -240,9 +241,17 @@ function TicketCard({ t, onRevision, onResolver }: { t: TicketDisputa; onRevisio
         <div className="rounded-xl bg-slate-50 px-3 py-2">
           <div className="text-[9px] font-black uppercase text-slate-400">Soporte</div>
           {t.imagen_soporte ? (
-            <a href={t.imagen_soporte} target="_blank" rel="noreferrer" className="font-bold text-sky-600 underline">
-              <i className="fas fa-image mr-1"></i> Ver comprobante
-            </a>
+            <button
+              type="button"
+              onClick={async () => {
+                const url = await abrirImagenTicket(t.imagen_soporte as string);
+                if (url) window.open(url, "_blank", "noreferrer");
+                else toast("No se pudo abrir la imagen.", "error");
+              }}
+              className="font-bold text-sky-600 underline"
+            >
+              <span className="mr-1">🖼️</span> Ver comprobante
+            </button>
           ) : (
             <span className="text-slate-400">Sin imagen</span>
           )}
@@ -259,7 +268,7 @@ function TicketCard({ t, onRevision, onResolver }: { t: TicketDisputa; onRevisio
           </div>
           {t.encuesta_satisfaccion != null ? (
             <div className="mt-1 text-emerald-600">
-              <i className="fas fa-star mr-1 text-amber-400"></i> Encuesta: {t.encuesta_satisfaccion}/5
+              <span className="mr-1 text-amber-400">⭐</span> Encuesta: {t.encuesta_satisfaccion}/5
               {t.encuesta_comentario ? ` · “${t.encuesta_comentario}”` : ""}
             </div>
           ) : null}
@@ -269,17 +278,17 @@ function TicketCard({ t, onRevision, onResolver }: { t: TicketDisputa; onRevisio
       <div className="flex justify-end gap-2">
         {t.estado === "SOLUCIONADO" && wa ? (
           <Button variant="outline" size="sm" onClick={abrirWa} title="Copia el enlace y abre WhatsApp con el cliente">
-            <i className="fab fa-whatsapp mr-1 text-green-600"></i> Enviar por WhatsApp
+            <span className="mr-1 text-green-600">💬</span> Enviar por WhatsApp
           </Button>
         ) : null}
         {t.estado === "CREADO" ? (
           <Button variant="outline" size="sm" onClick={onRevision}>
-            <i className="fas fa-magnifying-glass mr-1"></i> Marcar en revisión
+            <span className="mr-1">🔍</span> Marcar en revisión
           </Button>
         ) : null}
         {t.estado === "EN_REVISION" ? (
           <Button variant="success" size="sm" onClick={onResolver}>
-            <i className="fas fa-check-double mr-1"></i> Resolver
+            <span className="mr-1">✅</span> Resolver
           </Button>
         ) : null}
       </div>
@@ -308,10 +317,10 @@ function ResolverModal({
       <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-black text-slate-800">
-            <i className="fas fa-check-double mr-1 text-emerald-600"></i> Resolver T-{t.numero_ticket ?? String(t.id).slice(0, 6)}
+            <span className="mr-1 text-emerald-600">✅</span> Resolver T-{t.numero_ticket ?? String(t.id).slice(0, 6)}
           </h3>
           <button onClick={onCerrar} className="text-slate-400 hover:text-slate-600" aria-label="Cerrar">
-            <i className="fas fa-xmark"></i>
+            <span >✕</span>
           </button>
         </div>
 
@@ -372,7 +381,7 @@ function ResolverModal({
             disabled={!respuesta.trim() || (conMonto && num(monto) <= 0)}
             onClick={() => onResolver({ respuesta, accion, monto: conMonto ? num(monto) : null })}
           >
-            <i className="fas fa-check-double mr-1"></i> Confirmar resolución
+            <span className="mr-1">✅</span> Confirmar resolución
           </Button>
         </div>
       </div>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { colorDeNumero, textoDeNumero, parseNum, OPCIONES_NACIONALIDAD, SUPERFICIES, type DraftCarrera, type EjemplarTabla } from "@/lib/tablas/tipos";
 import { Flag } from "@/components/ui/BanderaPais"; // Inyectamos la bandera
 import { EditorCaballos } from "@/components/tablas/EditorCaballos";
+import { esFechaIso } from "@/lib/fechas";
 
 type Props = {
   draft: DraftCarrera;
@@ -119,7 +120,7 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-1 leading-none">
           <span className={`${chipCls} inline-flex items-center bg-white/20`}>
-            📏 <input type="number" value={draft.distancia} onChange={(e) => set({ distancia: e.target.value })} placeholder="m" className="ml-1 w-10 rounded bg-transparent text-center font-black outline-none text-white placeholder:text-white/40" />
+            📏 <input type="number" value={draft.distancia} onChange={(e) => set({ distancia: e.target.value })} placeholder="m" className="ml-1 w-10 rounded bg-transparent text-right font-black outline-none text-white placeholder:text-white/40" />
             m
           </span>
           <select
@@ -258,7 +259,19 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
                 </label>
                 <label className="block">
                   <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Fecha (AAAA-MM-DD)</span>
-                  <input value={String(corrigiendo.fecha ?? "")} onChange={(e) => aplicarCorreccion({ ...corrigiendo, fecha: e.target.value })} placeholder="2026-09-26" className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-bold text-slate-900 focus:outline-none" />
+                  {/* `type="date"` y no un input de texto: el calendario del
+                      navegador SOLO emite ISO, así que "04-10-2026" es
+                      imposible de escribir. Con texto libre, el operador escribía
+                      la fecha como "04-10-2026" y al publicar llegaba en crudo a
+                      Postgres, que la leía como MM-DD y la guardaba en
+                      2026-04-10: eso partió la jornada del 04-10-2026 (C10-C12
+                      desaparecieron de Tablas Fijas y Gestión de Jugadas). */}
+                  <input
+                    type="date"
+                    value={esFechaIso(corrigiendo.fecha) ? String(corrigiendo.fecha).slice(0, 10) : ""}
+                    onChange={(e) => aplicarCorreccion({ ...corrigiendo, fecha: e.target.value || null })}
+                    className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-bold text-slate-900 focus:outline-none"
+                  />
                 </label>
                 <label className="block">
                   <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Superficie</span>

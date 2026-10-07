@@ -34,6 +34,9 @@ export type MetaCarrera = {
   /** Números de los ejemplares (hasta 8 puestos) en orden de llegada, para
    *  resolver NINIS contra la pizarra oficial con el motor matemático. */
   pizarraPuestos?: string[];
+  /** Pagos por $1 que cargo la casa en `resultados_carreras.dividendos`.
+   *  Si falta la clave de la modalidad se conserva la paridad de la casa. */
+  dividendos?: Record<string, number> | null;
 };
 
 export type JugadaRelacion = {
@@ -224,7 +227,11 @@ export function pizarraDesdeNums(nums?: string[]): PizarraCarrera {
 }
 
 /** Resuelve el balance de un NINI con el motor matemático (pizarra oficial). */
-function niniDesdePizarra(j: JugadaRelacion, puestos: string[]): BalanceJugada | null {
+function niniDesdePizarra(
+  j: JugadaRelacion,
+  puestos: string[],
+  dividendos: Record<string, number> | null
+): BalanceJugada | null {
   if (j.modalidad !== "NINI" || !puestos.length || !j.caballo) return null;
   const pizarra = pizarraDesdeNums(puestos);
   // El motor resuelve la posicion desde la pizarra. `puesto_final` se deja
@@ -245,10 +252,14 @@ function niniDesdePizarra(j: JugadaRelacion, puestos: string[]): BalanceJugada |
     monto: num(j.monto),
     puesto_final: (idx >= 0 ? idx + 1 : "SOC") as TicketMotor["puesto_final"],
     pizarra,
-    dividendos: null,
+    dividendos,
   };
   const r = liquidarPuestos(ticket, num(j.comisionPct));
-  const premio = r.ok ? num(j.monto) * 2 : 0;
+  // El premio NINI usa el dividendo oficial de la casa (pago por $1) cuando la
+  // carrera lo tiene cargado; sin ese dato se conserva la paridad de 2×.
+  const porUno = Number(dividendos?.nini);
+  const mult = Number.isFinite(porUno) && porUno >= 1 ? porUno : 2;
+  const premio = r.ok ? num(j.monto) * mult : 0;
   return {
     jugada: j,
     premioPotencial: premio,
@@ -273,7 +284,7 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
   };
 
   jugadas.forEach((j, i) => {
-    const b = niniDesdePizarra(j, meta.pizarraPuestos ?? []) ?? balanceJugada(j);
+    const b = niniDesdePizarra(j, meta.pizarraPuestos ?? [], meta.dividendos ?? null) ?? balanceJugada(j);
     // Leg "Juega": en jugadas clásicas pierde lo financiado; en NINI gana si NO figura.
     const perdida = num(j.monto);
     // Leg "Consigue": cobra la ganancia neta (si no hay consigue, la cobra el propio jugador).
@@ -288,7 +299,9 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
       cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
       acumular(j.clienteJuega, -perdida);
       if (beneficiario) {
-        const premioNini = num(j.monto) * 2;
+        const porUno = Number(meta.dividendos?.nini);
+        const mult = Number.isFinite(porUno) && porUno >= 1 ? porUno : 2;
+        const premioNini = num(j.monto) * mult;
         const tasa = num(j.comisionPct) > 0 ? num(j.comisionPct) : COMISION_CASA.rate * 100;
         const com2 = round2((premioNini - num(j.monto)) * (tasa / 100));
         const netoC2 = round2(premioNini - com2 - num(j.monto));
@@ -389,6 +402,14 @@ export async function cargarJugadasDeCarrera(
     const { data, error } = await q;
     if (error) throw error;
     return (data ?? [])
+      // Las VENTAS DE REMATE caen en `tickets_apuestas` con el mismo hipodromo y
+      // carrera que la carrera del dia, pero NO son apuestas de esa carrera: son
+      // ventas de caballos. Si no se excluyen, la relacion de la carrera muestra
+      // cada caballo vendido como una jugada mas. Se marcan por el prefijo de
+      // `nombre_jugada` (REMATE ...) porque `origen` solo vive en `nota_auditoria`.
+      .filter(
+        (r) => !String((r as { nombre_jugada?: unknown }).nombre_jugada ?? "").trim().toUpperCase().startsWith("REMATE ")
+      )
       .map((r) => mapearJugada(r as unknown as TicketApuestaJugada))
       .filter((j) => j.clienteJuega !== "—" && (j.jugada || j.caballo) && j.monto > 0);
   } catch {

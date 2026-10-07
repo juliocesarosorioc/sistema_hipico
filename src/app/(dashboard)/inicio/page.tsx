@@ -13,8 +13,8 @@ import { DashboardGrupos } from "@/components/dashboard/DashboardGrupos";
  */
 export default function InicioPage() {
   return (
-    <RutaProtegida permiso="acceso_dashboard">
+    <RutaProtegida>
       <DashboardGrupos />
     </RutaProtegida>
-  );
+);
 }

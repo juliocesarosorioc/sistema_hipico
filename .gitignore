@@ -8,3 +8,13 @@ npm-debug.log*
 .DS_Store_backup_apuestas_y_carreras_*
 
 _backup_*
+
+# Salida de compilar las pruebas. El harness oficial (pruebas/run-marcas.ps1)
+# emite en %TEMP%, pero `npx tsc -p pruebas/tsconfig.json` a pelo usa este
+# directorio: es lo que evita que el .js compilado caiga dentro de src/ y rompa
+# `next build`.
+.tsbuild-pruebas/
+*.tsbuildinfo
+
+# .js de pruebas (artefactos de compilación; la fuente es el .ts)
+pruebas/*.js

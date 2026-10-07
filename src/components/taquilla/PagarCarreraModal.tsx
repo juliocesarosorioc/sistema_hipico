@@ -6,6 +6,7 @@ import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla } from "@/lib/liquidacion/pagarYCerrar";
 import { aplicarLiquidacionSaldos } from "@/lib/liquidacion/saldos";
 import { upsertResultadoCentral } from "@/lib/carreras-dia";
+import { dividendosDePizarra as dividendosDe, ordenLlegadaDePizarra, posicionesDePizarra } from "@/lib/liquidacion/posiciones";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { Button } from "@/components/ui/Button";
 
@@ -71,12 +72,18 @@ export function PagarCarreraModal() {
     setTrabajando(true);
     setResultado("");
     setTablaMensaje("");
+    // Los pools por caballo y la matriz W/P/S salen al motor en el mismo objeto.
+    const divs = dividendosDe(r);
     const res = await liquidarCarreraYCerrarTabla({
       hipodromo: hipodromo.trim().toUpperCase(),
       carrera: Number(carrera),
       pizarra: r.pizarra,
-      dividendos: r.dividendos ?? null,
-      tickets: tickets.map((t) => ({ comando: t.comando, monto: t.monto })),
+      dividendos: divs,
+      // `caballo` tiene que viajar: el motor resuelve el puesto del ejemplar
+      // con ese campo, no parseándolo del comando (en las W/P/S el comando es
+      // solo "100 W"). Sin esto, `pagarYCerrar` liquidaba contra "" y la
+      // jugada se guardaba como Perdedor aunque hubiera ganado.
+      tickets: tickets.map((t) => ({ comando: t.comando, monto: t.monto, caballo: t.caballo })),
     });
     if (res.ok) {
       // Centraliza el resultado en resultados_carreras (fuente de verdad) y
@@ -86,17 +93,21 @@ export function PagarCarreraModal() {
           t.hipodromo === hipodromo.trim().toUpperCase() &&
           t.carrera === Number(carrera)
       );
+      // Todas las posiciones cargadas, no solo el ganador: `ganadores` es la
+      // lista de llegadas que consumen las jugadas de puestos (WIN/PLACE/SHOW)
+      // y los reportes. Con `[r.pizarra.primero]` se perdian del 2º al 8º.
+      const posiciones = posicionesDePizarra(r.pizarra);
       await upsertResultadoCentral({
         hipodromo: hipodromo.trim().toUpperCase(),
         carrera: Number(carrera),
-        ganadores: [r.pizarra.primero],
+        ganadores: posiciones,
         retirados: tabla?.retirados_oficiales ?? "NO HUBO RETIROS",
         premio_oficial: tabla?.premio_original ?? undefined,
         premio_recalculado: tabla?.premio_recalculado ?? undefined,
         detalle: { caballos: tabla?.caballos },
         cargado_por: "TAQUILLA",
         orden_llegada: ordenLlegadaDePizarra(r.pizarra),
-        dividendos: r.dividendos ?? null,
+        dividendos: divs,
       });
       // Bloque 3 · Saldos: aplica la liquidación universal al saldo real de
       // los clientes (transaccional, idempotente sobre tickets Pendientes).
@@ -104,11 +115,14 @@ export function PagarCarreraModal() {
         hipodromo: hipodromo.trim().toUpperCase(),
         carrera: Number(carrera),
         pizarra: r.pizarra,
-        dividendos: r.dividendos ?? null,
+        dividendos: divs,
         premio_por_tabla: r.premio_por_tabla ?? tabla?.premio_recalculado ?? tabla?.premio_original ?? null,
       });
       if (!s.ok && s.errores.length) {
         toast("Aviso de saldos: " + s.errores[0], "warning");
+      }
+      if (s.motivo.includes("PENDIENTES")) {
+        setTablaMensaje("Aviso: " + s.motivo);
       }
     }
     setTrabajando(false);
@@ -161,7 +175,7 @@ export function PagarCarreraModal() {
             type="number"
             min={1}
             placeholder="4"
-            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold text-slate-900"
+            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-right text-xs font-bold text-slate-900"
           />
         </label>
         <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">
@@ -258,17 +272,6 @@ export function PagarCarreraModal() {
       )}
     </div>
   );
-}
-
-/** Orden de llegada oficial [{numero, puesto}] derivada de la pizarra. */
-function ordenLlegadaDePizarra(p: PizarraResultados["pizarra"]): Array<{ numero: string; puesto: number }> {
-  const orden = ["primero", "segundo", "tercero", "cuarto", "quinto", "sexto", "septimo", "octavo"] as const;
-  const out: Array<{ numero: string; puesto: number }> = [];
-  orden.forEach((k, i) => {
-    const v = p[k];
-    if (typeof v === "string" && v.trim() !== "") out.push({ numero: v.trim(), puesto: i + 1 });
-  });
-  return out;
 }
 
 export default PagarCarreraModal;

@@ -2,20 +2,39 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { ToastHost } from "@/components/ui/ToastHost";
-import { listarTablasPublicadas, listarHipodromos, type OpcionHipodromo } from "@/lib/tablas/rpc";
+import { listarTablasPublicadas } from "@/lib/tablas/rpc";
+import { useRegistroCentralOpts, claveHipodromo } from "@/store/useRegistroCentral";
+import { normalizarDia } from "@/lib/carreras/agruparHipodromos";
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
-import { useCarrerasCentrales } from "@/lib/carreras/useCarrerasCentrales";
 import { alternarRetiroCarrera } from "@/lib/carreras/retiros";
-import { listarClientesVenta, listarGruposVenta, type ClienteVenta, type GrupoVenta } from "@/lib/grupos";
+import { listarClientesVenta, listarGruposVenta, esClienteLibre, type ClienteVenta, type GrupoVenta } from "@/lib/grupos";
 import { colorDeNumeroGac } from "@/lib/gaceta/ui";
 import { Flag, normalizarNacionalidad } from "@/components/ui/BanderaPais";
 import { claveCelda, guardarDupleta, listarDupletasGuardadas, type CaballoDupleta, type DupletaEstado } from "@/lib/dupletas";
-import { exportarPaginas, type ImgFormato } from "@/lib/impresion/exportar";
+import {
+  venderDupleta,
+  liquidarDupleta,
+  reasignarJugadorDupleta,
+  anularDupleta,
+  claveIdempotenciaDupleta,
+  eliminarDupleta,
+  type VentaDupleta,
+} from "@/lib/dupletas";
+import { listarBanquerosGrupo } from "@/lib/banqueros";
+import { hoyLocal } from "@/lib/gaceta/programa";
+import { TicketVentaPreview, type TicketVentaModel } from "@/components/tickets/TicketVentaPreview";
+import { capturarNodo, componerA4Paisaje, guardarLienzos, A4_PAISAGE, type ImgFormato } from "@/lib/impresion/exportar";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 const inputSel =
   "w-full rounded-lg border border-line bg-surface px-2 py-1 text-xs font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500";
+/** Igual que `inputSel`, pero para MONTOS: se alinean a la derecha, que es la
+ *  convención que hace comparables dos cifras de largo distinto sin contar
+ *  dígitos. */
+const inputMonto =
+  "w-full rounded-lg border border-line bg-surface px-2 py-1 text-right text-xs font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500";
 
 const esHipoAmericano = (h: string) => /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN/i.test(h);
 const casaDe = (h: string) => (esHipoAmericano(h) ? "USA" : "VE");
@@ -33,20 +52,21 @@ const TAM_BANDERA_BASE = 12;
 const TAM_BANDERA = Math.round(TAM_BANDERA_BASE * 1.8);
 
 /**
- * La dupleta paga 30% más que el premio cargado. Regla de negocio pedida por
- * el operador: se aplica al generar la matriz, no al campo de entrada, para que
- * el PAGA que se muestra y el que se liquida sean siempre el mismo número.
- */
-const RECARGO_DUPLA = 1.3;
-
-/** Aplica el recargo y redondea a 2 decimales. */
-const premioConRecargo = (p: number) => Math.round(Number(p || 0) * RECARGO_DUPLA * 100) / 100;
-
-/**
  * Fondo de la celda de la primera columna por posición: 1 blanco, 2 azul
  * clarito, 3 blanco, 4 azul clarito... y así hasta el último ejemplar.
  */
 const FONDO_FILA_DUPLA = ["bg-white", "bg-indigo-50"] as const;
+
+/**
+ * Clave con la que se identifica una dupleta guardada.
+ *
+ * Las filas viejas VINIERON sin `clave`, y se armaba la clave al vuelo en el JSX
+ * con el mismo criterio. Queda en una función para que el desplegable, la
+ * búsqueda y el borrado no puedan discrepar: si se armaran distinto, cargar una
+ * dupleta y borrarla apuntarían a registros distintos.
+ */
+const claveDeDupleta = (g: DupletaEstado): string =>
+  g.clave ?? `${claveCelda(String(g.carrera1), String(g.carrera2))}${g.hipodromo}${g.fecha}`;
 
 export function DupletaModule() {
   const [carreras, setCarreras] = useState<TablaFijaRow[]>([]);
@@ -54,8 +74,12 @@ export function DupletaModule() {
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
   const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
 
+  // El día arranca en HOY, no vacío. El módulo se usa para vender en el momento
+  // y con el campo en blanco la pantalla abría sin hipódromo ni carreras: había
+  // que elegir la fecha a mano antes de poder hacer nada. La jornada sigue
+  // siendo editable para vender o liquidar un día anterior.
   const [hipodromo, setHipodromo] = useState("");
-  const [dia, setDia] = useState("");
+  const [dia, setDia] = useState(hoyLocal());
   const [carrera1, setCarrera1] = useState("");
   const [carrera2, setCarrera2] = useState("");
   const [premio, setPremio] = useState("200");
@@ -140,6 +164,10 @@ export function DupletaModule() {
   const [abiertoCli, setAbiertoCli] = useState(false);
   const [precioCelda, setPrecioCelda] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [liquidando, setLiquidando] = useState(false);
+  const [selGuardada, setSelGuardada] = useState<string>("");
+  const [previewDupleta, setPreviewDupleta] = useState<{ ticket: TicketVentaModel; venta: VentaDupleta } | null>(null);
+  const [vendiendoDupleta, setVendiendoDupleta] = useState(false);
 
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -156,49 +184,99 @@ export function DupletaModule() {
     };
   }, []);
 
-  // DATA CENTRAL: hipódromos + carreras del día. Las tablas fijas mandan cuando
-  // existen (traen más datos); la central completa lo que no esté publicado.
-  // Sin whitelist: se listan TODOS los hipódromos registrados (BD + data central).
-  const { centrales: centralCarreras, recargar: recargarCentrales } = useCarrerasCentrales(dia || undefined, hipodromo || undefined);
-  const { centrales: centralTodas } = useCarrerasCentrales();
-  const [hipodromosCentrales, setHipodromosCentrales] = useState<OpcionHipodromo[]>([]);
-
-  useEffect(() => {
-    let v = true;
-    void listarHipodromos({ incluirTodos: true }).then((hs) => {
-      if (v) setHipodromosCentrales(hs);
-    });
-    return () => {
-      v = false;
-    };
-  }, []);
-
-  /** Días registrados (tablas publicadas + data central), de más nuevo a más viejo. */
-  const dias = useMemo(() => {
-    const deTablas = carreras.map((c) => c.fecha || "").filter(Boolean);
-    const deCentral = centralTodas.map((c) => c.fecha).filter(Boolean);
-    return [...new Set([...deTablas, ...deCentral])].sort().reverse();
-  }, [carreras, centralTodas]);
+  // DATA CENTRAL: hipódromos + carreras del día, desde el REGISTRO CENTRAL
+  // compartido con Marcas, Gestión y Tablas. Antes Dupletas tenía su propia
+  // carga (`listarHipodromos({incluirTodos:true})` + dos `useCarrerasCentrales`),
+  // de modo que podía ver hipódromos y carreras distintos de los demás módulos
+  // con la misma fecha abierta. Las tablas fijas mandan cuando existen (traen
+  // más datos); la central completa lo que no esté publicado.
+  const registro = useRegistroCentralOpts(dia);
+  const centralTodas = registro.carreras;
+  const centralCarreras = registro.carrerasDe(hipodromo);
+  const recargarCentrales = registro.recargar;
 
   /**
-   * Hipódromos REGISTRADOS. Se eligen DESPUÉS del día: la lista se acota a los
-   * hipódromos que realmente tienen carreras cargadas en ese día.
+   * Hipódromos REGISTRADOS, y solo esos.
+   *
+   * Antes se armaba la lista con la UNION de las tablas publicadas y el
+   * catálogo, así que cualquier hipódromo que hubiera quedado escrito en
+   * `tablas_fijas` entraba a la matriz aunque NO estuviera registrado en la
+   * tabla `hipodromos` (nombres viejos, con espacios, abreviaturas o erratas).
+   *
+   * Ahora: los candidatos son los hipódromos que tienen datos (tablas publicadas
+   * + carreras centrales) y se intersecan con el catálogo REGISTRADO. Si la
+   * intersección queda vacía (catálogo no cargado, o nada del día está
+   * registrado) se cae al catálogo completo en vez de inventar nombres.
+   *
+   * Todo el cruce usa `claveHipodromo`, la misma clave que el Monitor y el
+   * registro central. El `norm()` local de antes solo hacía trim+uppercase y
+   * dejaba pasar "LA urel" como un hipódromo distinto de "LAUREL".
    */
   const hipodromos = useMemo(() => {
-    const deTablas = carreras.map((c) => String(c.hipodromo || "").trim().toUpperCase());
-    const deCentral = centralTodas.map((c) => c.hipodromo);
-    const deCatalogo = hipodromosCentrales.map((h) => h.value);
-    const todos = [...new Set([...deTablas, ...deCatalogo].filter(Boolean))];
-    if (!dia) return todos.sort((a, b) => a.localeCompare(b));
-    const delDia = new Set<string>();
+    const catalogo = [...registro.registrados].filter(Boolean).sort((a, b) => a.localeCompare(b));
+    if (!dia) return catalogo;
+    const conCarreras = new Set<string>();
     for (const c of carreras) {
-      if ((c.fecha || "") === dia && String(c.hipodromo || "").trim()) delDia.add(String(c.hipodromo).trim().toUpperCase());
+      if (normalizarDia(c.fecha) === dia) {
+        const h = claveHipodromo(c.hipodromo);
+        if (h) conCarreras.add(h);
+      }
     }
     for (const c of centralTodas) {
-      if (c.fecha === dia && c.hipodromo) delDia.add(c.hipodromo);
+      if (normalizarDia(c.fecha) === dia) {
+        const h = claveHipodromo(c.hipodromo);
+        if (h) conCarreras.add(h);
+      }
     }
-    return [...new Set([...delDia, ...todos])].sort((a, b) => a.localeCompare(b));
-  }, [carreras, centralTodas, hipodromosCentrales, dia]);
+    // Primero los que tienen carreras del día, después el resto del catálogo.
+    const delDia = [...conCarreras].filter((h) => registro.registrados.has(h)).sort((a, b) => a.localeCompare(b));
+    const resto = catalogo.filter((h) => !conCarreras.has(h));
+    return delDia.length ? [...delDia, ...resto] : catalogo;
+  }, [carreras, centralTodas, registro.registrados, dia]);
+
+  // La selección no puede quedar en un hipódromo que ya no está en la lista
+  // (por ejemplo, tras cambiar de día o de catálogo).
+  useEffect(() => {
+    if (!hipodromo || !hipodromos.length) return;
+    if (!hipodromos.includes(hipodromo)) setHipodromo(hipodromos[0]);
+  }, [hipodromo, hipodromos]);
+
+  // Opciones del buscador: los hipódromos del día (al enfocar se ven todos).
+  const hipodromoOpts = useMemo(
+    () => (dia ? hipodromos : []).map((h) => ({ value: h, label: h })),
+    [hipodromos, dia]
+  );
+
+  // Las dupletas guardadas se ofrecen con la misma regla: solo las de
+  // hipódromos registrados, para no cargar en la matriz una que no existe.
+  const guardadasVisibles = useMemo(() => {
+    if (!registro.registrados.size) return guardadas;
+    return guardadas.filter((g) => registro.registrados.has(claveHipodromo(g.hipodromo)));
+  }, [guardadas, registro.registrados]);
+
+  /** La dupleta guardada elegida en el desplegable, o null si no hay ninguna. */
+  const dupletaSeleccionada = useMemo(
+    () => (selGuardada ? (guardadasVisibles.find((x) => claveDeDupleta(x) === selGuardada) ?? null) : null),
+    [selGuardada, guardadasVisibles]
+  );
+
+  /** Elimina la dupleta guardada elegida y limpia la matriz si estaba cargada. */
+  const borrarGuardada = async () => {
+    const g = dupletaSeleccionada;
+    if (!g) return;
+    if (!window.confirm(`¿Eliminar la dupleta ${g.hipodromo} C${g.carrera1}×C${g.carrera2} del ${g.fecha}?`)) {
+      return;
+    }
+    const r = await eliminarDupleta(claveDeDupleta(g));
+    if (!r.ok) {
+      toast(`No se pudo eliminar: ${r.error ?? "sin conexión"}`, "error");
+      return;
+    }
+    toast("🗑️ Dupleta eliminada.", "success");
+    setSelGuardada("");
+    setGuardadas(await listarDupletasGuardadas());
+    if (matriz && claveDeDupleta(matriz) === claveDeDupleta(g)) setMatriz(null);
+  };
 
   /** Carreras de ese día/hipódromo: unión de tabla publicada y carrera central. */
   const carrerasDelDia = useMemo(() => {
@@ -258,7 +336,7 @@ export function DupletaModule() {
     const cab1 = ejemplaresDe(carrera1);
     const cab2 = ejemplaresDe(carrera2);
     if (!cab1.length || !cab2.length) return toast("Una de las carreras no tiene ejemplares publicados.", "warning");
-    const p = premioConRecargo(Number(premio) || 0);
+    const p = Number(premio) || 0;
     const pr = Number(precio) || 0;
     setMatriz({
       hipodromo: hipodromo.toUpperCase(),
@@ -311,7 +389,7 @@ export function DupletaModule() {
       fecha: dia,
       carrera1: Number(carrera1) || carrera1,
       carrera2: Number(carrera2) || carrera2,
-      premio: premioConRecargo(Number(premio) || 0),
+      premio: Number(premio) || 0,
       precio: Number(precio) || 0,
       caballos1: cab1,
       caballos2: cab2,
@@ -329,46 +407,162 @@ export function DupletaModule() {
     setModal({ c1, c2 });
   };
 
-  const venderCelda = () => {
+  const venderCelda = async () => {
     if (!matriz || !modal) return;
     const precioFinal = Number(precioCelda) || matriz.precio || 0;
+    if (!(precioFinal > 0)) return toast("El precio del cuadro debe ser mayor a cero.", "warning");
     const nombre = q.trim().toUpperCase();
     if (!nombre) return toast("Escriba o busque el nombre del cliente.", "warning");
     const cliente = clientes.find((cl) => cl.nombre.toUpperCase() === nombre);
+    if (!cliente) return toast("Seleccione un cliente de la lista.", "warning");
     // El grupo se deduce del cliente, no se elige suelto: es lo que fija la
     // moneda y el convenio de comision de la venta.
-    const gid = cliente?.grupo_id ?? cliente?.grupos?.[0] ?? null;
+    const gid = cliente.grupo_id ?? cliente.grupos?.[0] ?? null;
     const grupo = grupos.find((g) => String(g.id) === String(gid));
-    setMatriz({
-      ...matriz,
-      celdas: {
-        ...matriz.celdas,
-        [claveCelda(modal.c1, modal.c2)]: {
-          vendida: true,
-          cliente_id: cliente?.id ?? null,
-          cliente_nombre: nombre,
-          grupo_id: grupo?.id ?? null,
-          grupo_nombre: grupo?.nombre ?? null,
-          precio: precioFinal,
-        },
+    if (!grupo) return toast(`El cliente ${cliente.nombre} no tiene grupo de venta asignado.`, "warning");
+
+    const cb1 = matriz.caballos1.find((c) => String(c.numero) === modal.c1);
+    const cb2 = matriz.caballos2.find((c) => String(c.numero) === modal.c2);
+    const saldo = Number(cliente.saldo_actual ?? 0);
+    const bq = (await listarBanquerosGrupo(grupo.id)).find(
+      (b) => b.modalidad === "DUPLETA" && b.activo !== false && b.banquero_cliente_id
+    );
+    setAbiertoCli(false);
+    setPreviewDupleta({
+      venta: {
+        hipodromo: matriz.hipodromo,
+        fecha: matriz.fecha,
+        carrera1: matriz.carrera1,
+        carrera2: matriz.carrera2,
+        numero1: modal.c1,
+        numero2: modal.c2,
+        monto: precioFinal,
+        clienteId: String(cliente.id),
+        grupoId: String(grupo.id),
+        premio: matriz.premio,
+        idempotencia: claveIdempotenciaDupleta(),
+      },
+      ticket: {
+        modalidad: "DUPLETA",
+        hipodromo: matriz.hipodromo,
+        fecha: matriz.fecha,
+        carrera: matriz.carrera1,
+        titulo: `DUPLETA ${modal.c1} × ${modal.c2} · C${matriz.carrera1} × C${matriz.carrera2}`,
+        detalle: `${cb1?.nombre ?? ""} × ${cb2?.nombre ?? ""}`,
+        jugador: cliente.nombre,
+        grupo: grupo.nombre,
+        monto: precioFinal,
+        moneda: grupo.moneda ?? "USD",
+        pago: matriz.premio,
+        saldoAntes: saldo,
+        saldoDespues: saldo - precioFinal,
+        banquero: bq?.banquero_nombre ?? null,
+        banqueroCobra: bq?.cobra_comision ?? false,
+        banqueroComision: bq?.comision_porcentaje ?? null,
+        banqueroBase: bq?.comision_base ?? null,
       },
     });
+  };
+
+  const confirmarVentaDupleta = async () => {
+    if (!previewDupleta || !matriz) return;
+    setVendiendoDupleta(true);
+    const r = await venderDupleta(previewDupleta.venta);
+    setVendiendoDupleta(false);
+    if (!r.ok) return toast(r.error ?? "No se pudo registrar la jugada.", "error");
+
+    const { numero1, numero2, monto, clienteId, grupoId } = previewDupleta.venta;
+    const cliente = clientes.find((c) => String(c.id) === String(clienteId));
+    const grupo = grupos.find((g) => String(g.id) === String(grupoId));
+    const nuevo: DupletaEstado = {
+      ...matriz,
+      updatedAt: new Date().toISOString(),
+      celdas: {
+        ...matriz.celdas,
+        [claveCelda(numero1, numero2)]: {
+          vendida: true,
+          cliente_id: clienteId,
+          cliente_nombre: cliente?.nombre ?? previewDupleta.ticket.jugador,
+          grupo_id: grupoId,
+          grupo_nombre: grupo?.nombre ?? null,
+          precio: monto,
+          ticket_id: r.ticketId ?? null,
+        },
+      },
+    };
+    setMatriz(nuevo);
+    // La combinación queda CERRADA con su ticket y se persiste sola: al
+    // recargar, la venta SIEMPRE aparece (no hay que acordarse de "Guardar").
+    const g = await guardarDupleta(nuevo);
     toast(
-      grupo
-        ? `Vendido ${nombre} · ${grupo.nombre} · $${precioFinal.toLocaleString("es-VE", { maximumFractionDigits: 2 })}.`
-        : `Vendido ${nombre} · $${precioFinal.toLocaleString("es-VE", { maximumFractionDigits: 2 })}. Sin grupo: no habra convenio de comision.`,
-      grupo ? "success" : "warning"
+      `Vendido ${cliente?.nombre ?? ""} · ${grupo?.nombre ?? ""} · $${monto.toLocaleString("es-VE", { maximumFractionDigits: 2 })} · ticket #${r.ticketId ?? "?"} creado.`,
+      "success"
     );
+    if (!g.ok) toast(`⚠️ La venta quedó, pero no se pudo persistir la matriz: ${g.error ?? "sin conexión"}`, "warning");
+    else setGuardadas(await listarDupletasGuardadas());
+    setPreviewDupleta(null);
     setModal(null);
     setQ("");
   };
 
-  const quitarVenta = () => {
+  /**
+   * Reasigna el JUGADOR de una combinación ya vendida. No se revende: se cambia
+   * de dueño. La RPC devuelve el monto al anterior, cobra al nuevo y transfiere
+   * el ticket. El nuevo debe pertenecer al mismo grupo de la venta.
+   */
+  const editarJugador = async () => {
     if (!matriz || !modal) return;
+    const clave = claveCelda(modal.c1, modal.c2);
+    const celda = matriz.celdas[clave];
+    if (!celda?.vendida) return toast("Esa combinación no está vendida.", "warning");
+    const nombre = q.trim().toUpperCase();
+    if (!nombre) return toast("Escriba o busque el nombre del cliente.", "warning");
+    const cliente = clientes.find((cl) => cl.nombre.toUpperCase() === nombre);
+    if (!cliente) return toast("Seleccione un cliente de la lista.", "warning");
+    if (String(cliente.id) === String(celda.cliente_id)) return toast("Ese ya es el jugador de la combinación.", "info");
+    if (!celda.ticket_id)
+      return toast("Esta venta no tiene ticket asociado: no se puede reasignar. Anulala y vendé de nuevo.", "error");
+    setVendiendoDupleta(true);
+    const r = await reasignarJugadorDupleta({ ticketId: celda.ticket_id, clienteId: String(cliente.id) });
+    setVendiendoDupleta(false);
+    if (!r.ok) return toast(r.error ?? "No se pudo cambiar el jugador.", "error");
+    const nuevo: DupletaEstado = {
+      ...matriz,
+      updatedAt: new Date().toISOString(),
+      celdas: {
+        ...matriz.celdas,
+        [clave]: { ...celda, cliente_id: cliente.id, cliente_nombre: cliente.nombre },
+      },
+    };
+    setMatriz(nuevo);
+    const g = await guardarDupleta(nuevo);
+    toast(`👤 Jugador actualizado: ${cliente.nombre}.`, "success");
+    if (!g.ok) toast(`⚠️ Cambió el jugador, pero no se pudo persistir: ${g.error ?? "sin conexión"}`, "warning");
+    else setGuardadas(await listarDupletasGuardadas());
+    setModal(null);
+    setQ("");
+  };
+
+  /** Anula una combinación vendida: devuelve el monto y libera el cuadro. */
+  const quitarVenta = async () => {
+    if (!matriz || !modal) return;
+    const clave = claveCelda(modal.c1, modal.c2);
+    const celda = matriz.celdas[clave];
+    if (!celda?.vendida) return;
+    if (celda.ticket_id) {
+      setVendiendoDupleta(true);
+      const r = await anularDupleta({ ticketId: celda.ticket_id, motivo: "Anulada desde Dupleta" });
+      setVendiendoDupleta(false);
+      if (!r.ok) return toast(r.error ?? "No se pudo anular la venta.", "error");
+    }
     const celdas = { ...matriz.celdas };
-    delete celdas[claveCelda(modal.c1, modal.c2)];
-    setMatriz({ ...matriz, celdas });
-    toast("Venta anulada de la combinación.", "info");
+    delete celdas[clave];
+    const nuevo: DupletaEstado = { ...matriz, updatedAt: new Date().toISOString(), celdas };
+    setMatriz(nuevo);
+    const g = await guardarDupleta(nuevo);
+    toast("Venta anulada y monto devuelto.", "info");
+    if (!g.ok) toast(`⚠️ Se anuló, pero no se pudo persistir: ${g.error ?? "sin conexión"}`, "warning");
+    else setGuardadas(await listarDupletasGuardadas());
     setModal(null);
     setQ("");
   };
@@ -421,11 +615,38 @@ export function DupletaModule() {
     }
   };
 
+  const liquidar = async () => {
+    if (!matriz) return toast("Genere la matriz antes de liquidar.", "warning");
+    setLiquidando(true);
+    const r = await liquidarDupleta({
+      hipodromo: matriz.hipodromo,
+      fecha: matriz.fecha,
+      carrera1: matriz.carrera1,
+      carrera2: matriz.carrera2,
+    });
+    setLiquidando(false);
+    if (!r.ok) return toast(r.error ?? "No se pudo liquidar la dupleta.", "error");
+    toast(
+      `Liquidada ${matriz.hipodromo} C${matriz.carrera1}×C${matriz.carrera2}: ${r.ganadores ?? 0} ganadores, ${r.perdedores ?? 0} perdedores, ${r.anulados ?? 0} anulados · pagado $${(r.pagado ?? 0).toLocaleString("es-VE", { maximumFractionDigits: 2 })}.`,
+      "success"
+    );
+  };
+
+  const celdaModal = matriz && modal ? matriz.celdas[claveCelda(modal.c1, modal.c2)] : undefined;
+  const editandoCelda = Boolean(celdaModal?.vendida);
   const clienteFiltrados = useMemo(() => {
     const t = q.trim().toUpperCase();
-    if (!t) return clientes;
-    return clientes.filter((c) => c.nombre.toUpperCase().includes(t));
-  }, [clientes, q]);
+    let base = clientes;
+    // Al reasignar solo se ofrecen clientes del MISMO grupo de la venta: el
+    // convenio (moneda/comisión/banquero) queda congelado en el ticket.
+    if (celdaModal?.vendida && celdaModal.grupo_id != null) {
+      base = base.filter(
+        (c) => String(c.grupo_id ?? c.grupos?.[0] ?? "") === String(celdaModal.grupo_id)
+      );
+    }
+    if (!t) return base;
+    return base.filter((c) => c.nombre.toUpperCase().includes(t));
+  }, [clientes, q, celdaModal?.vendida, celdaModal?.grupo_id]);
 
   const vendidas = matriz ? Object.values(matriz.celdas).filter((c) => c.vendida) : [];
   const totalVentas = vendidas.reduce((a, c) => a + (c.precio ?? matriz?.precio ?? 0), 0);
@@ -435,96 +656,162 @@ export function DupletaModule() {
       <div className="rounded-2xl border border-line bg-surface p-3">
         <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-600">🎯 Dupleta — Matriz de apuestas cruzadas</h3>
 
-        <div className="grid grid-cols-1 gap-x-3 gap-y-1.5 md:grid-cols-2 xl:grid-cols-4">
-          <label className="block">
-            <span className={inputLbl}>1 · Día</span>
-            <select
+        <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+          <label
+            className="flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1.5 text-xs font-black uppercase text-slate-600"
+            title="Jornada: filtra los hipódromos registrados ese día (formato ISO)."
+          >
+            📅
+            <input
+              type="date"
+              autoFocus
               value={dia}
               onChange={(e) => { setDia(e.target.value); setHipodromo(""); setCarrera1(""); setCarrera2(""); }}
-              className={inputSel}
-            >
-              <option value="">— elegir el día —</option>
-              {dias.map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
+              className="bg-transparent text-xs font-bold text-slate-700 outline-none"
+            />
           </label>
 
-          <label className="block">
+          <div className="block min-w-[220px]">
             <span className={inputLbl}>2 · Hipódromo</span>
-            <select
+            <SearchableSelect
+              options={hipodromoOpts}
               value={hipodromo}
-              onChange={(e) => { setHipodromo(e.target.value); setCarrera1(""); setCarrera2(""); }}
-              disabled={!dia}
-              className={inputSel}
-            >
-              <option value="">— elegir —</option>
-              {hipodromos.map((h) => (
-                <option key={h} value={h}>{h}</option>
-              ))}
-            </select>
-          </label>
+              onChange={(v) => { setHipodromo(v); setCarrera1(""); setCarrera2(""); }}
+              placeholder={dia ? "Buscar hipódromo…" : "Elija el día primero"}
+              allowCustom={false}
+              inputClassName={inputSel}
+            />
+          </div>
+        </div>
 
-          <label className="block">
-            <span className={inputLbl}>3 · Carrera 1 de la Dupleta</span>
-            <select value={carrera1} onChange={(e) => { setCarrera1(e.target.value); if (e.target.value && e.target.value === carrera2) setCarrera2(""); }} disabled={!hipodromo} className={inputSel}>
-              <option value="" />
-              {carrerasDelDia.filter((c) => String(c.carrera) !== String(carrera2)).map((c) => (
-                <option key={String(c.carrera)} value={String(c.carrera)}>Carrera {c.carrera} ({c.distancia_carrera ? `${c.distancia_carrera} m` : "—"})</option>
-              ))}
-            </select>
-          </label>
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50/40 p-2">
+            <span className="mb-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-700">
+              <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-indigo-600 text-[10px] leading-none text-white">→</span>
+              3 · Carrera 1 · horizontal
+            </span>
+            {!hipodromo ? (
+              <p className="text-[10px] font-bold uppercase text-slate-400">Elija el hipódromo</p>
+            ) : carrerasDelDia.length === 0 ? (
+              <p className="text-[10px] font-bold uppercase text-slate-400">Sin carreras del día</p>
+            ) : (
+              <div className="grid gap-1" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(2.75rem, 1fr))" }}>
+                {carrerasDelDia.filter((c) => String(c.carrera) !== String(carrera2)).map((c) => {
+                  const num = String(c.carrera);
+                  const activa = carrera1 === num;
+                  return (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setCarrera1(num)}
+                      title={`Carrera ${num}`}
+                      className={`inline-flex h-7 w-full items-center justify-center rounded-lg border text-[11px] font-black tabular-nums tracking-wide transition-all ${activa ? "border-indigo-600 bg-indigo-600 text-white shadow-sm" : "border-indigo-200 bg-white text-indigo-700 hover:border-indigo-400 hover:bg-indigo-100"}`}
+                    >
+                      C{num}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
-          <label className="block">
-            <span className={inputLbl}>4 · Carrera 2 de la Dupleta</span>
-            <select value={carrera2} onChange={(e) => { setCarrera2(e.target.value); if (e.target.value && e.target.value === carrera1) setCarrera1(""); }} disabled={!hipodromo} className={inputSel}>
-              <option value="" />
-              {carrerasDelDia.filter((c) => String(c.carrera) !== String(carrera1)).map((c) => (
-                <option key={String(c.carrera)} value={String(c.carrera)}>Carrera {c.carrera} ({c.distancia_carrera ? `${c.distancia_carrera} m` : "—"})</option>
-              ))}
-            </select>
-          </label>
+          <div className="rounded-xl border-2 border-violet-200 bg-violet-50/40 p-2">
+            <span className="mb-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-violet-700">
+              <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-violet-600 text-[10px] leading-none text-white">↓</span>
+              4 · Carrera 2 · vertical
+            </span>
+            {!hipodromo ? (
+              <p className="text-[10px] font-bold uppercase text-slate-400">Elija el hipódromo</p>
+            ) : carrerasDelDia.length === 0 ? (
+              <p className="text-[10px] font-bold uppercase text-slate-400">Sin carreras del día</p>
+            ) : (
+              <div className="grid gap-1" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(2.75rem, 1fr))" }}>
+                {carrerasDelDia.filter((c) => String(c.carrera) !== String(carrera1)).map((c) => {
+                  const num = String(c.carrera);
+                  const activa = carrera2 === num;
+                  return (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setCarrera2(num)}
+                      title={`Carrera ${num}`}
+                      className={`inline-flex h-7 w-full items-center justify-center rounded-lg border text-[11px] font-black tabular-nums tracking-wide transition-all ${activa ? "border-violet-600 bg-violet-600 text-white shadow-sm" : "border-violet-200 bg-white text-violet-700 hover:border-violet-400 hover:bg-violet-100"}`}
+                    >
+                      C{num}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1.5">
           <label className="block">
             <span className={inputLbl}>💵 Premio (PAGA X)</span>
-            <input type="number" value={premio} onChange={(e) => setPremio(e.target.value)} placeholder="200" className={inputSel} />
+            <input type="number" value={premio} onChange={(e) => setPremio(e.target.value)} placeholder="200" className={inputMonto} />
           </label>
           <label className="block">
             <span className={inputLbl}>Precio por cuadro</span>
-            <input type="number" value={precio} onChange={(e) => setPrecio(e.target.value)} placeholder="10" className={inputSel} />
+            <input type="number" value={precio} onChange={(e) => setPrecio(e.target.value)} placeholder="10" className={inputMonto} />
           </label>
           <Button variant="default" size="md" onClick={generar}>🧮 Generar Matriz</Button>
           <Button variant="success" size="md" onClick={() => void guardar()} disabled={guardando || !matriz}>
             {guardando ? "Guardando…" : "💾 Guardar en Supabase"}
           </Button>
+          <Button
+            variant="danger"
+            size="md"
+            onClick={() => void liquidar()}
+            disabled={liquidando || !matriz || vendidas.length === 0}
+            title={vendidas.length === 0 ? "No hay celdas vendidas para liquidar." : "Paga ganadores y anula retiros según las dos carreras."}
+          >
+            {liquidando ? "Liquidando…" : "🧮 Liquidar dupleta"}
+          </Button>
           <label className="block min-w-[220px]">
             <span className={inputLbl}>Dupletas guardadas</span>
             <select
               className={inputSel}
-              disabled={!guardadas.length}
+              value={selGuardada}
               onChange={(e) => {
-                const g = guardadas.find((x) => claveCelda(String(x.carrera1), String(x.carrera2)) + x.hipodromo + x.fecha === e.target.value);
+                const val = e.target.value;
+                setSelGuardada(val);
+                const g = guardadasVisibles.find((x) => claveDeDupleta(x) === val);
                 if (g) {
                   setMatriz(g);
                   setHipodromo(g.hipodromo);
                   setDia(g.fecha);
                   setCarrera1(String(g.carrera1));
                   setCarrera2(String(g.carrera2));
+                  setPremio(String(g.premio ?? ""));
+                  setPrecio(String(g.precio ?? ""));
                   toast(`📂 Cargada ${g.hipodromo} C${g.carrera1}×C${g.carrera2}.`, "info");
                 }
-                e.target.value = "";
               }}
             >
               <option value="">— cargar —</option>
-              {guardadas.map((g) => (
-                <option key={claveCelda(String(g.carrera1), String(g.carrera2)) + g.hipodromo + g.fecha} value={claveCelda(String(g.carrera1), String(g.carrera2)) + g.hipodromo + g.fecha}>
-                  {g.hipodromo} · {g.fecha} · C{g.carrera1}×C{g.carrera2} · {Object.values(g.celdas).filter((c) => c.vendida).length} ventas
+              {guardadasVisibles.map((g) => (
+                <option key={claveDeDupleta(g)} value={claveDeDupleta(g)}>
+                  {g.hipodromo} · {g.fecha} · C{g.carrera1}×C{g.carrera2} ·{" "}
+                  {Object.values(g.celdas).filter((c) => c.vendida).length} ventas
                 </option>
               ))}
             </select>
           </label>
+          {/* Borrar va en un botón propio, no en opciones del mismo desplegable:
+              antes "🗑️ Eliminar ..." vivía dentro de la lista y el `onChange`
+              tenía que adivinar por el prefijo "DEL:" si estaba cargando o
+              borrando. Con la lista cargada, un clic en la opción de borrar
+              salía como una dupleta más y no pasaba nada. */}
+          <Button
+            variant="danger"
+            size="md"
+            disabled={!dupletaSeleccionada}
+            title={dupletaSeleccionada ? `Eliminar ${dupletaSeleccionada.hipodromo} C${dupletaSeleccionada.carrera1}×C${dupletaSeleccionada.carrera2}` : "Elegí una dupleta guardada"}
+            onClick={() => void borrarGuardada()}
+          >
+            🗑️ Eliminar
+          </Button>
         </div>
       </div>
 
@@ -552,6 +839,10 @@ export function DupletaModule() {
                   <th className="sticky left-0 top-0 z-40 min-w-[120px] border-b border-r border-slate-300 bg-indigo-600 p-1 text-left align-top text-[9px] font-black text-white" style={{ verticalAlign: "top" }}>
                     <span className="block">DUPLETA</span>
                     <span className="block text-[14px] text-emerald-300">PAGA {matriz.premio.toLocaleString("es-VE")}</span>
+                    <span className="mt-0.5 block text-[7px] font-bold uppercase leading-tight text-indigo-200">
+                      <span className="block">→ Carrera {matriz.carrera1} (horizontal)</span>
+                      <span className="block">↓ Carrera {matriz.carrera2} (vertical)</span>
+                    </span>
                     <span className="mt-0.5 block text-[7px] font-bold uppercase text-indigo-200">clic en ejemplar = retira</span>
                   </th>
                   {matriz.caballos1.map((cb, i1) => {
@@ -621,15 +912,15 @@ export function DupletaModule() {
                         return (
                           <td key={`c-${cb1.numero}-${cb2.numero}`} className={`w-[72px] min-w-[72px] border-b border-r border-slate-400 p-0.5 ${bloqueada ? "bg-slate-200" : celda?.vendida ? "bg-orange-400" : mezcla ? "bg-slate-100" : "bg-white"}`}>
                             {bloqueada ? (
-                              <div className="flex h-11 items-center justify-center text-[6px] font-black tracking-[0.35em] text-slate-500" style={{ writingMode: "vertical-rl" }}>
-                                N O V A L E
+                              <div className="flex h-12 items-center justify-center px-0.5 text-center text-[11px] font-black leading-none tracking-tight text-slate-600">
+                                RETIRADO
                               </div>
                             ) : (
                               <button
                                 type="button"
                                 onClick={() => abrirCelda(cb1.numero, cb2.numero)}
                                 title={`${cb1.nombre} × ${cb2.nombre}`}
-                                className={`block h-11 w-full text-center transition-colors ${mezcla ? "hover:bg-indigo-50" : "hover:bg-indigo-100"} ${celda?.vendida ? "text-slate-900" : "text-slate-600"}`}
+                                className={`block h-12 w-full text-center transition-colors ${mezcla ? "hover:bg-indigo-50" : "hover:bg-indigo-100"} ${celda?.vendida ? "text-slate-900" : "text-slate-600"}`}
                               >
                                 <span className="block text-[18px] font-black leading-none">
                                   {celda?.vendida ? (celda.precio ?? matriz.precio).toLocaleString("es-VE", { maximumFractionDigits: 2 }) : matriz.precio.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
@@ -655,7 +946,7 @@ export function DupletaModule() {
           </div>
 
           <p className="mt-2 text-[10px] italic text-slate-500">
-            💡 Las filas/columnas amarillas o grises corresponden a ejemplares retirados y no se venden (N O V A L E). Cada cuadro se vende con un clic; la dupleta se guarda en la tabla `dupletas` de Supabase y se recarga en cualquier sesión.
+            💡 Las filas/columnas amarillas o grises corresponden a ejemplares retirados y no se venden (RETIRADO). Cada cuadro se vende con un clic; la dupleta se guarda en la tabla `dupletas` de Supabase y se recarga en cualquier sesión.
           </p>
 
           <div className="mt-2 rounded-lg border-l-4 border-amber-400 bg-amber-50 px-3 py-2 text-[10px] font-semibold leading-relaxed text-amber-900">
@@ -668,10 +959,18 @@ export function DupletaModule() {
       {modal && matriz && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" onClick={() => setModal(null)}>
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h4 className="mb-1 text-sm font-black uppercase text-slate-800">Venta de Combinación</h4>
-            <p className="mb-3 text-xs font-bold text-slate-500">
+            <h4 className="mb-1 text-sm font-black uppercase text-slate-800">
+              {editandoCelda ? "Editar jugador de la combinación" : "Venta de Combinación"}
+            </h4>
+            <p className="mb-2 text-xs font-bold text-slate-500">
               {matriz.caballos1.find((c) => String(c.numero) === modal.c1)?.nombre} × {matriz.caballos2.find((c) => String(c.numero) === modal.c2)?.nombre}
             </p>
+            {editandoCelda && (
+              <p className="mb-3 rounded-lg border border-orange-300 bg-orange-50 px-2 py-1.5 text-[10px] font-semibold leading-snug text-orange-900">
+                🔒 Combinación ya vendida. No se revende: cambiá el jugador (se devuelve el monto al anterior y se
+                cobra al nuevo) o anulá la venta.
+              </p>
+            )}
 
             <label className="mb-2 block">
               <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Cliente</span>
@@ -710,16 +1009,38 @@ export function DupletaModule() {
               <input
                 type="number"
                 value={precioCelda}
+                disabled={editandoCelda}
                 onChange={(e) => setPrecioCelda(e.target.value)}
                 placeholder={`${matriz.precio}`}
-                className="w-full rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-black text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                className="w-full rounded-lg border border-line bg-surface px-3 py-1.5 text-right text-xs font-black text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:opacity-50"
               />
+              {editandoCelda && (
+                <span className="mt-1 block text-[10px] font-semibold text-slate-400">
+                  El monto no cambia al reasignar el jugador.
+                </span>
+              )}
             </label>
 
             <div className="flex flex-wrap gap-2">
-              <Button variant="success" size="md" className="flex-1" onClick={venderCelda}>💸 Vender</Button>
-              {matriz.celdas[claveCelda(modal.c1, modal.c2)]?.vendida && (
-                <Button variant="danger" size="md" onClick={quitarVenta}>✖ Quitar venta</Button>
+              {editandoCelda ? (
+                <>
+                  <Button
+                    variant="success"
+                    size="md"
+                    className="flex-1"
+                    disabled={vendiendoDupleta}
+                    onClick={() => void editarJugador()}
+                  >
+                    {vendiendoDupleta ? "Guardando…" : "👤 Guardar jugador"}
+                  </Button>
+                  <Button variant="danger" size="md" disabled={vendiendoDupleta} onClick={() => void quitarVenta()}>
+                    ✖ Anular venta
+                  </Button>
+                </>
+              ) : (
+                <Button variant="success" size="md" className="flex-1" onClick={() => void venderCelda()}>
+                  💸 Vender
+                </Button>
               )}
               <Button variant="ghost" size="md" onClick={() => { setModal(null); setQ(""); }}>Cerrar</Button>
             </div>
@@ -727,13 +1048,33 @@ export function DupletaModule() {
         </div>
       )}
 
+      <TicketVentaPreview
+        abierto={previewDupleta !== null}
+        ticket={previewDupleta?.ticket ?? null}
+        confirmando={vendiendoDupleta}
+        onCorregir={() => setPreviewDupleta(null)}
+        onConfirmar={() => void confirmarVentaDupleta()}
+      />
+
       <ToastHost />
     </div>
   );
 
+  /**
+   * Saldo del cliente en el selector de la matriz.
+   *
+   * Muestra el saldo EN MANO, que es lo que se le debe al banco, pero añade el
+   * disponible cuando hay aval: un cliente en mora con aval no está tan
+   * bloqueado como parece, y si el caja solo ve "-300" topsa toda jugada sin
+   * ver que tiene $300 de crédito autorizado.
+   */
   function saldoDe(c: ClienteVenta): string {
     const s = c.saldo_actual != null ? Number(c.saldo_actual) : 0;
-    return s.toLocaleString("es-VE", { maximumFractionDigits: 2 });
+    const aval = c.aval != null ? Number(c.aval) : 0;
+    const fmt = (n: number) => n.toLocaleString("es-VE", { maximumFractionDigits: 2 });
+    if (esClienteLibre(c)) return `libre`;
+    if (aval > 0) return `${fmt(s)} · disp ${fmt(s + aval)}`;
+    return fmt(s);
   }
 
   /** Exporta la matriz en UNA hoja horizontal (A4 paisaje): pdf o png. */
@@ -747,54 +1088,70 @@ export function DupletaModule() {
       const natH = tabla.scrollHeight;
 
       // Hoja A4 paisaje @150dpi (210×148 mm) con cabecera y nota marginal.
-      const PAGE_W = 1240;
-      const PAGE_H = 877;
+      const PAGE_W = A4_PAISAGE.w;
+      const PAGE_H = A4_PAISAGE.h;
       const PAD = 28;
       const FONDO = 58;
       const NOTA = 34;
       const areaW = PAGE_W - PAD * 2;
       const areaH = PAGE_H - PAD * 2 - FONDO - NOTA;
+      // La tabla NO se reduce con `transform:scale()` (html2canvas no escala el
+      // texto de forma coherente con el ancestro escalado y lo deja cortado).
+      // Se captura a tamaño natural y se reduce al componer el lienzo A4.
       const escala = Math.min(areaW / natW, areaH / natH, 1);
 
       root = document.createElement("div");
       root.style.cssText = "position:absolute;left:-99999px;top:0;z-index:-1;";
-      const page = document.createElement("div");
-      page.className = "im-pagina";
-      page.style.cssText = `width:${PAGE_W}px;height:${PAGE_H}px;overflow:hidden;background:#fff;box-sizing:border-box;padding:${PAD}px;display:flex;flex-direction:column;`;
 
       const header = document.createElement("div");
-      header.style.cssText = `height:${FONDO}px;display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px;`;
+      header.style.cssText = `width:${areaW}px;height:${FONDO}px;display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px;`;
       const titulo = document.createElement("div");
       titulo.style.cssText =
-        "width:60px;height:60px;background:#4f46e5;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:15px;letter-spacing:0.06em;";
+        "width:60px;height:60px;background:#4f46e5;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:15px;line-height:1.4em;letter-spacing:0.06em;";
       titulo.textContent = "DUPLETA";
       const info = document.createElement("div");
       info.style.cssText = "flex:1;min-width:0;font-family:Inter,ui-sans-serif,system-ui,sans-serif;";
       const infoT = document.createElement("div");
-      infoT.style.cssText = "font-size:16px;font-weight:800;text-transform:uppercase;letter-spacing:0.02em;color:#0f172a;";
+      infoT.style.cssText = "font-size:16px;font-weight:800;text-transform:uppercase;letter-spacing:0.02em;color:#0f172a;line-height:1.4em;";
       infoT.textContent = `${matriz.hipodromo} · ${matriz.fecha} · Carrera ${matriz.carrera1} × Carrera ${matriz.carrera2}`;
       const infoS = document.createElement("div");
-      infoS.style.cssText = "font-size:12px;font-weight:700;color:#64748b;margin-top:3px;";
+      infoS.style.cssText = "font-size:12px;font-weight:700;color:#64748b;margin-top:3px;line-height:1.4em;";
       infoS.textContent = `PAGA ${matriz.premio.toLocaleString("es-VE")} · ${vendidas.length} cuadro(s) vendido(s) · ${totalVentas.toLocaleString("es-VE", { maximumFractionDigits: 2 })}`;
       info.append(infoT, infoS);
       header.append(titulo, info);
 
-      const wrapper = document.createElement("div");
-      wrapper.style.cssText = `width:${Math.round(natW * escala)}px;height:${Math.round(natH * escala)}px;overflow:hidden;transform:scale(${escala});transform-origin:top left;background:#fff;`;
+      // Caja de la tabla a TAMAÑO NATURAL: sin transform, sin overflow:hidden.
+      const tablaBox = document.createElement("div");
+      tablaBox.style.cssText = `width:${natW}px;height:${natH}px;overflow:visible;background:#fff;line-height:1.4em;`;
       const clon = tabla.cloneNode(true) as HTMLElement;
-      wrapper.appendChild(clon);
+      clon.style.width = `${natW}px`;
+      tablaBox.appendChild(clon);
 
       const nota = document.createElement("div");
-      nota.style.cssText = `height:${NOTA}px;margin-top:10px;border-left:3px solid #f59e0b;background:#fffbeb;padding:5px 8px;font-family:Inter,ui-sans-serif,system-ui,sans-serif;font-size:8px;font-weight:700;color:#b45309;line-height:1.35;`;
+      nota.style.cssText = `width:${areaW}px;min-height:${NOTA}px;border-left:3px solid #f59e0b;background:#fffbeb;padding:5px 8px;font-family:Inter,ui-sans-serif,system-ui,sans-serif;font-size:8px;font-weight:700;color:#b45309;line-height:1.5em;`;
       nota.innerHTML =
         "NOTA MARGINAL — RETIROS: si un ejemplar se retira en la carrera, su incidencia sobre el monto a pagar se recalcula porcentualmente.&nbsp;&nbsp;·&nbsp;&nbsp;El retiro y el resultado de un ejemplar inciden en TODAS las jugadas que lo incluyan: dupletas, remates, tablas y puestos.";
 
-      page.append(header, wrapper, nota);
-      root.appendChild(page);
+      root.append(header, tablaBox, nota);
       document.body.appendChild(root);
 
+      // Cada pieza se captura sola a tamaño natural (300dpi efectivo).
+      const S = 2;
+      const cvHeader = await capturarNodo(header, S);
+      const cvTabla = await capturarNodo(tablaBox, S);
+      const cvNota = await capturarNodo(nota, S);
+
+      const hoja = componerA4Paisaje(
+        [
+          { canvas: cvHeader, x: PAD, y: PAD, w: areaW, h: FONDO },
+          { canvas: cvTabla, x: PAD, y: PAD + FONDO + 12, w: natW * escala, h: natH * escala },
+          { canvas: cvNota, x: PAD, y: PAGE_H - PAD - NOTA, w: areaW, h: NOTA },
+        ],
+        S
+      );
+
       const base = `dupleta_${matriz.hipodromo.replace(/[^a-z0-9]+/gi, "_")}_C${matriz.carrera1}xC${matriz.carrera2}`;
-      await exportarPaginas(root, formato, base, { orientacion: "horizontal" });
+      await guardarLienzos([hoja], formato, base, true);
       root.remove();
     } catch {
       root?.remove?.();

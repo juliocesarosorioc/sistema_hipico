@@ -4,9 +4,10 @@ import { TablasModule } from "@/components/tablas/TablasModule";
 import type { StoredTablaFija } from "@/store/useTablasFijasStore";
 import type { VentaTablaItem } from "@/components/tablas/MonitorTablas";
 import type { PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
-import { publicarTabla, publicarTablasLote, actualizarTabla, venderTablaFija, liquidarTablaFija, guardarPizarraCarrera } from "@/lib/tablas/rpc";
+import { publicarTabla, publicarTablasLote, actualizarTabla, venderTablaFija, liquidarTablaFija } from "@/lib/tablas/rpc";
 import { cerrarTablaFija } from "@/lib/tablas-fijas";
 import { upsertResultadoCentral } from "@/lib/carreras-dia";
+import { posicionesDePizarra } from "@/lib/liquidacion/posiciones";
 
 /**
  * Ruta Tablas Fijas — integración con Supabase y Zustand:
@@ -35,17 +36,18 @@ export default function TablasFijasPage() {
         persistirVenta={async (t: StoredTablaFija, v: VentaTablaItem) => {
           // Sin jugador o sin grupo no hay venta: el ticket necesita ambos para
           // el estado de cuenta y el convenio de comision.
-          if (!v.jugador?.id) return false;
-          if (!v.grupo?.id) return false;
+          if (!v.jugador?.id) return { ok: false, error: "Seleccione el jugador que compra." };
+          if (!v.grupo?.id) return { ok: false, error: "Seleccione el grupo de venta." };
           const r = await venderTablaFija({
             tablaId: t.id,
             clienteId: String(v.jugador.id),
             grupoId: String(v.grupo.id),
             monto: v.monto,
+            cantidad: v.cantidad ?? 1,
             // "TABLA" es la opcion de tabla completa; la RPC espera null.
             ejemplarNumero: v.numero === "TABLA" ? null : v.numero,
           });
-          return r.ok;
+          return { ok: r.ok, error: r.error };
         }}
         persistirLiquidacion={async (t: StoredTablaFija, r: PizarraResultados) => {
           // 1) Resolver los tickets ANTES de cerrar. Si esto falla, la tabla
@@ -56,23 +58,14 @@ export default function TablasFijasPage() {
           const liq = await liquidarTablaFija({ tablaId: t.id, ganadores: ganador });
           if (!liq.ok) return false;
 
-          // 2) Pizarra y resultados centrales. Aqui van las 8 posiciones, que
-          //    es lo que necesitan las demas jugadas de la carrera.
-          await guardarPizarraCarrera({
-            hipodromo: t.hipodromo,
-            carrera: t.carrera,
-            pizarra: r.pizarra as unknown as Record<string, number>,
-          });
-          const posiciones = [
-            r.pizarra.primero,
-            r.pizarra.segundo,
-            r.pizarra.tercero,
-            r.pizarra.cuarto,
-            r.pizarra.quinto,
-            r.pizarra.sexto,
-            r.pizarra.septimo,
-            r.pizarra.octavo,
-          ].filter((v): v is string => Boolean(v && String(v).trim()));
+          // 2) Resultados centrales. Aqui van las 8 posiciones, que es lo que
+          //    necesitan las demas jugadas de la carrera.
+          //    Antes se llamaba ademas a `guardarPizarraCarrera`, que escribia
+          //    en la RPC `club_guardar_pizarra_carrera`: esa RPC no existe en
+          //    ningun .sql del repo y la funcion devolvia `false` tragandose el
+          //    error, asi que la pizarra NUNCA se guardo por ahi. Todo lo que
+          //    hace falta lo escribe el upsert de abajo.
+          const posiciones = posicionesDePizarra(r.pizarra);
           await upsertResultadoCentral({
             hipodromo: t.hipodromo ?? "",
             carrera: t.carrera ?? 0,

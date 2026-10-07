@@ -55,6 +55,8 @@ declare
   v_moneda     text;
   v_tasa       numeric;
   v_saldo      numeric;
+  v_aval       numeric;
+  v_limite     numeric;
   v_cant       int;
   v_vendidos   int;
   v_cupos      int;
@@ -87,9 +89,16 @@ begin
     raise exception 'La tabla fija no esta abierta para venta (estado: %).', v_tabla.estado;
   end if;
 
-  select * into v_cliente from public.clientes where id = p_cliente_id;
+  -- for update: dos cajas vendiendo al MISMO cliente a la vez se serializan.
+  -- Sin esto las dos leen el mismo saldo, ambas lo ven suficiente y la segunda
+  -- UPDATE se lo pisa a la primera: el cliente juega el doble de lo autorizado.
+  -- (club_vender_marca ya lo hacia; esta RPC se quedaba sin el cerrojo.)
+  select * into v_cliente from public.clientes where id = p_cliente_id for update;
   if not found then
     raise exception 'Cliente no encontrado.';
+  end if;
+  if v_cliente.estado is not null and v_cliente.estado <> 'Activo' then
+    raise exception 'El cliente % esta % y no puede jugar.', v_cliente.nombre, v_cliente.estado;
   end if;
 
   select * into v_grupo from public.grupos_venta where id = p_grupo_id;
@@ -176,7 +185,7 @@ begin
     values (
       now(), upper(v_tabla.hipodromo), v_tabla.carrera,
       format('TABLA FIJA (%s C%s)', upper(v_tabla.hipodromo), v_tabla.carrera),
-      v_caballo, v_num,
+      v_caballo, nullif(v_num, '')::int,
       v_cant, p_monto, 0, 0,
       v_premio, v_pts,
       v_cliente.id, v_cliente.nombre,
@@ -216,7 +225,7 @@ begin
       values (
         now(), upper(v_tabla.hipodromo), v_tabla.carrera,
         format('TABLA FIJA (%s C%s)', upper(v_tabla.hipodromo), v_tabla.carrera),
-        v_caballo, v_num,
+        v_caballo, nullif(v_num, '')::int,
         v_cant, p_monto, 0, 0,
         v_premio, v_pts,
         v_cliente.id, v_cliente.nombre,
@@ -243,7 +252,29 @@ begin
   -- ------------------------------------------------------------------
   -- Saldo del cliente: se debita el monto EXACTO. Sin comision encima,
   -- porque la tabla fija no le cobra comision al jugador.
+  --
+  -- TOPE = saldo + aval (misma regla que club_vender_marca): el aval es
+  -- credito negado, no efectivo, asi que autoriza a jugar por encima del
+  -- saldo pero el saldo queda debitado en negativo y esa deuda se cobra. Un
+  -- cliente "libre" juega sin tope.
+  --
+  -- Antes esta RPC NO validaba nada: cualquier monto, y el cliente podia
+  -- quedar en negativo sin limite. El navegador recortaba por saldo, pero la
+  -- RPC es la que cobra y se puede llamar sin pasar por el navegador.
   -- ------------------------------------------------------------------
+  v_aval   := coalesce(v_cliente.aval, 0);
+  v_limite := coalesce(v_cliente.saldo_actual, 0) + v_aval;
+
+  if lower(btrim(coalesce(v_cliente.modo_juego, 'aval'))) <> 'libre' and v_limite < p_monto then
+    raise exception
+      'Saldo insuficiente. % tiene % de saldo mas % de aval (disponible %) y la tabla es de %.',
+      v_cliente.nombre,
+      to_char(coalesce(v_cliente.saldo_actual, 0), 'FM999999999990.00'),
+      to_char(v_aval, 'FM999999999990.00'),
+      to_char(v_limite, 'FM999999999990.00'),
+      to_char(p_monto, 'FM999999999990.00');
+  end if;
+
   v_saldo := coalesce(v_cliente.saldo_actual, 0) - p_monto;
 
   update public.clientes
@@ -374,7 +405,14 @@ begin
   for v_tk in
     select * from public.tickets_apuestas
      where estado = 'Pendiente'
-       and (nota_auditoria ->> 'tabla_id') = p_tabla_id::text
+       -- `nota_auditoria` es TEXT: sin el cast, `->>` reventaba con
+       --   ERROR 42883: operator does not exist: text ->> unknown
+       -- El CASE evita además que una nota que no sea JSON (texto libre de otro
+       -- modulo) tumbe la liquidacion entera; Postgres si garantiza que un CASE
+       -- no evalua la rama que no toca.
+       and case
+             when nota_auditoria ~ '^\s*[\{\[]' then nota_auditoria::jsonb ->> 'tabla_id'
+           end = p_tabla_id::text
      for update
   loop
     v_num    := btrim(coalesce(v_tk.ejemplar_numero, ''));
@@ -504,7 +542,12 @@ begin
          and upper(hipodromo) = upper(btrim(p_hipodromo))
          and carrera = p_carrera
          and ejemplar_numero = nullif(v_num, '')::int
-         and coalesce(nota_auditoria ->> 'fecha_carrera', fecha_registro::date::text) = p_fecha::text
+         and coalesce(
+          case
+            when nota_auditoria ~ '^\s*[\{\[]' then nota_auditoria::jsonb ->> 'fecha_carrera'
+          end,
+          fecha_registro::date::text
+        ) = p_fecha::text
        for update
     loop
       v_monto := coalesce(v_tk.monto_jugado, 0);

@@ -5,6 +5,8 @@
  * club_listar_grupos cuando el RLS bloquea el acceso (misma cadena del legacy).
  */
 import { supabase } from "@/lib/supabase";
+import { exigirCapacidad } from "@/lib/seguridad/vigente";
+import { disponibleParaJugar, esSinTope, explicarDisponible } from "@/lib/taquilla/reparto";
 
 export type GrupoVenta = {
   id: string | number;
@@ -41,71 +43,102 @@ export type ClienteVenta = {
   grupos: (string | number)[];
 };
 
-let cacheGrupos: GrupoVenta[] | null = null;
+// La lista de VENTA (solo activos) y la de GESTION (todos) son distintas y
+// comparten estructura: si se guardaran en la misma variable, cargar la vista
+// de gestion metia los inactivos en la venta y cargar la venta escondia los
+// inactivos de la gestion. Se cachean por separado.
+let cacheGruposVenta: GrupoVenta[] | null = null;
+let cacheGruposAdmin: GrupoRow[] | null = null;
 let cacheClientes: ClienteVenta[] | null = null;
+let ultimoErrorGrupos: string | null = null;
+
+/** Ultimo error de carga de grupos (null si el ultimo intento tuvo exito).
+ *  Permite que las pantallas avisen cuando la lista llega vacia por RLS/red
+ *  en vez de mostrar "0 grupos" como si no hubiera ninguno. */
+export function errorCargaGrupos(): string | null {
+  return ultimoErrorGrupos;
+}
+
+function invalidarCacheGrupos(): void {
+  cacheGruposVenta = null;
+  cacheGruposAdmin = null;
+}
 
 /** Lista los grupos de venta ACTIVOS (SELECT directo + fallback RPC). */
 export async function listarGruposVenta(): Promise<GrupoVenta[]> {
-  if (cacheGrupos) return cacheGrupos;
-  let grupos: GrupoVenta[] = [];
-  if (supabase) {
+  if (cacheGruposVenta) return cacheGruposVenta;
+  if (!supabase) return [];
+  let grupos: GrupoVenta[] | null = null;
+  // 1) SELECT directo. Se pide `*` (y no columnas nombradas) para tolerar
+  //    migraciones incompletas: una columna que falte no tumba el listado.
+  try {
+    const { data, error } = await supabase
+      .from("grupos_venta")
+      .select("*")
+      .order("es_principal", { ascending: false });
+    if (error) throw error;
+    // RLS no da error: filtra filas y responde 200 con []. Una lista vacia NO
+    // significa "no hay grupos", asi que si llega vacio se prueba el RPC.
+    if (data && data.length) grupos = data as GrupoVenta[];
+  } catch {
+    /* se intenta el RPC */
+  }
+  // 2) RPC security definer (salta el RLS).
+  if (grupos === null) {
     try {
-      const { data, error } = await supabase
-        .from("grupos_venta")
-        .select("*")
-        .order("es_principal", { ascending: false });
-      if (error) throw error;
-      grupos = (data ?? []) as GrupoVenta[];
+      const { data, error } = await supabase.rpc("club_listar_grupos");
+      if (!error && Array.isArray(data)) grupos = data as GrupoVenta[];
     } catch {
-      try {
-        const { data, error } = await supabase.rpc("club_listar_grupos");
-        if (!error && Array.isArray(data)) grupos = data as GrupoVenta[];
-      } catch {
-        /* sin RPC ni SELECT → vacío */
-      }
+      /* sin RPC ni SELECT */
     }
   }
-  grupos = grupos.filter((g) => g.activo !== false);
-  cacheGrupos = grupos;
-  return grupos;
+  // Si AMBOS caminos fallan no se cachea: un fallo transitorio de RLS/red no
+  // debe dejar la lista vacia para siempre; el proximo llamado reintenta.
+  if (grupos === null) {
+    ultimoErrorGrupos = "No se pudieron cargar los grupos de venta (permisos o conexión).";
+    return [];
+  }
+  ultimoErrorGrupos = null;
+  const activos = grupos.filter((g) => g.activo !== false);
+  cacheGruposVenta = activos;
+  return activos;
 }
 
 /** Lista clientes con sus saldos y grupos (clientes + clientes_grupos). */
 export async function listarClientesVenta(): Promise<ClienteVenta[]> {
   if (cacheClientes) return cacheClientes;
-  let clientes: ClienteVenta[] = [];
-  if (supabase) {
-    try {
-      const { data: cli, error: e1 } = await supabase
-        .from("clientes")
-        .select("id, nombre, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces");
-      if (e1) throw e1;
-      const { data: cg, error: e2 } = await supabase
-        .from("clientes_grupos")
-        .select("grupo_id, cliente_id");
-      if (e2) throw e2;
-      clientes = (cli ?? []).map((c) => ({
-        id: String(c.id),
-        nombre: String(c.nombre ?? ""),
-        saldo_actual: c.saldo_actual != null ? Number(c.saldo_actual) : null,
-        aval: c.aval != null ? Number(c.aval) : null,
-        libre: Boolean(c.libre),
-        modo_juego: c.modo_juego ? String(c.modo_juego) : null,
-        grupo_id: c.grupo_id ?? null,
-        permite_cruces: c.permite_cruces != null ? Boolean(c.permite_cruces) : null,
-        grupos: [
-          ...new Set([
-            ...((cg ?? []).filter((x) => String(x.cliente_id) === String(c.id)).map((x) => String(x.grupo_id))),
-            ...(c.grupo_id ? [String(c.grupo_id)] : []),
-          ].filter(Boolean)),
-        ],
-      }));
-    } catch {
-      clientes = [];
-    }
+  if (!supabase) return [];
+  try {
+    const { data: cli, error: e1 } = await supabase
+      .from("clientes")
+      .select("id, nombre, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces");
+    if (e1) throw e1;
+    const { data: cg, error: e2 } = await supabase
+      .from("clientes_grupos")
+      .select("grupo_id, cliente_id");
+    if (e2) throw e2;
+    const clientes = (cli ?? []).map((c) => ({
+      id: String(c.id),
+      nombre: String(c.nombre ?? ""),
+      saldo_actual: c.saldo_actual != null ? Number(c.saldo_actual) : null,
+      aval: c.aval != null ? Number(c.aval) : null,
+      libre: Boolean(c.libre),
+      modo_juego: c.modo_juego ? String(c.modo_juego) : null,
+      grupo_id: c.grupo_id ?? null,
+      permite_cruces: c.permite_cruces != null ? Boolean(c.permite_cruces) : null,
+      grupos: [
+        ...new Set([
+          ...((cg ?? []).filter((x) => String(x.cliente_id) === String(c.id)).map((x) => String(x.grupo_id))),
+          ...(c.grupo_id ? [String(c.grupo_id)] : []),
+        ].filter(Boolean)),
+      ],
+    }));
+    cacheClientes = clientes;
+    return clientes;
+  } catch {
+    // No se cachea un fallo (RLS/red): devolver vacio y permitir reintento.
+    return [];
   }
-  cacheClientes = clientes;
-  return clientes;
 }
 
 /** Jugadores de un grupo (misma regla que poblarJugadoresDelGrupo del legacy). */
@@ -114,9 +147,50 @@ export async function jugadoresDeGrupo(grupoId: string | number): Promise<Client
   return clientes.filter((c) => (c.grupos || []).map(String).includes(String(grupoId)));
 }
 
-/** Saldo disponible del jugador (saldo_actual), 0 si no se encontró. */
+/** Saldo en mano del jugador (`clientes.saldo_actual`), 0 si no se encontró. */
 export function saldoDeCliente(c: ClienteVenta | null | undefined): number {
-  return c && c.saldo_actual != null ? c.saldo_actual : 0;
+  return c && c.saldo_actual != null ? Number(c.saldo_actual) : 0;
+}
+
+/** Aval Guarantee del jugador (`clientes.aval`), 0 si no tiene o no se encontró. */
+export function avalDeCliente(c: ClienteVenta | null | undefined): number {
+  const n = c && c.aval != null ? Number(c.aval) : 0;
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
+ * Modo "libre": el cliente juega por encima de su saldo y sin tope.
+ *
+ * Delega en el modulo PURO de la taquilla porque la regla tiene que ser UNA
+ * sola: si aqui se reimplementa, un dia cambia en un lado y el navegador topa
+ * con un numero distinto al de la RPC, y el caja autoriza de mas (la RPC lo
+ * rechaza y se pierde la venta) o topa donde si habia credito (no se vende).
+ */
+export function esClienteLibre(c: ClienteVenta | null | undefined): boolean {
+  return esSinTope(c);
+}
+
+/**
+ * CUANTO PUEDE JUGAR el cliente = saldo en mano + aval.
+ *
+ * El aval es crédito negado, no efectivo: le permite jugar por encima de su
+ * saldo, pero el saldo queda debitado en negativo y esa deuda se cobra. Un
+ * cliente con saldo -200 y aval 300 tiene $100 disponibles, no $0.
+ *
+ * Misma regla que aplican `club_vender_marca` y `club_vender_tabla`.
+ * Un cliente "libre" no tiene tope, asi que devuelve Infinity.
+ */
+export function limiteDeJugar(c: ClienteVenta | null | undefined): number {
+  return esSinTope(c) ? Number.POSITIVE_INFINITY : disponibleParaJugar(c);
+}
+
+/**
+ * Como leemos el disponible al operador. Cuando sale del aval (y mas aun si el
+ * saldo esta en mora) tiene que quedar explicito: si solo se muestra el total,
+ * el caja cree que hay efectivo y se sorprende cuando el cliente no aparece.
+ */
+export function textoDisponible(c: ClienteVenta | null | undefined): string {
+  return esSinTope(c) ? "libre" : explicarDisponible(c);
 }
 
 // ===========================================================================
@@ -139,6 +213,14 @@ export type GrupoRow = {
   /** Ciclo de facturación semanal (1=Lunes … 7=Domingo). Default L→D. */
   dia_inicio_semana?: number | null;
   dia_fin_semana?: number | null;
+  /**
+   * Inicio de la semana que se está operando. NULL = se deduce de hoy.
+   *
+   * Solo el usuario principal la escribe (RPC `club_fijar_semana_vigente`, ver
+   * sql/semana_vigente.sql). Si la columna todavía no está aplicada, la lectura
+   * sigue funcionando: la app deduce la semana del ciclo como antes.
+   */
+  semana_vigente_inicio?: string | null;
   created_at?: string | null;
 };
 
@@ -168,28 +250,39 @@ export type ConvenioRow = {
 
 /** Lista TODOS los grupos (gestión); a diferencia de listarGruposVenta no filtra activos. */
 export async function listarGruposAdmin(force = false): Promise<GrupoRow[]> {
-  if (cacheGrupos && !force) return cacheGrupos as unknown as GrupoRow[];
-  let grupos: GrupoRow[] = [];
-  if (supabase) {
+  if (cacheGruposAdmin && !force) return cacheGruposAdmin;
+  if (!supabase) return [];
+  let grupos: GrupoRow[] | null = null;
+  // `select *` (y no la lista de columnas) para tolerar migraciones
+  // incompletas: si falta una columna, antes tumbaba TODO el listado.
+  try {
+    const { data, error } = await supabase
+      .from("grupos_venta")
+      .select("*")
+      .order("es_principal", { ascending: false });
+    if (error) throw error;
+    // RLS no da error: filtra filas y responde 200 con []. Una lista vacia NO
+    // significa "no hay grupos": si llega vacia se prueba el RPC (misma regla
+    // que `listarGruposVenta`). Antes `if (data)` aceptaba `[]` y nunca caia al
+    // RPC, asi que con la policy equivocada la gestion veia "0 grupos".
+    if (data && data.length) grupos = data as GrupoRow[];
+  } catch {
+    /* se intenta el RPC */
+  }
+  if (grupos === null) {
     try {
-      const { data, error } = await supabase
-        .from("grupos_venta")
-        .select(
-          "id, nombre, moneda, moneda_cuadre, cupo_tabla, comision_default, responsable, cuenta_bancaria, es_principal, activo, permite_cruces, dia_inicio_semana, dia_fin_semana, created_at"
-        )
-        .order("es_principal", { ascending: false });
-      if (error) throw error;
-      grupos = (data ?? []) as GrupoRow[];
+      const { data, error } = await supabase.rpc("club_listar_grupos");
+      if (!error && Array.isArray(data)) grupos = data as unknown as GrupoRow[];
     } catch {
-      try {
-        const { data, error } = await supabase.rpc("club_listar_grupos");
-        if (!error && Array.isArray(data)) grupos = data as unknown as GrupoRow[];
-      } catch {
-        /* sin acceso → vacío */
-      }
+      /* sin acceso */
     }
   }
-  cacheGrupos = grupos;
+  if (grupos === null) {
+    ultimoErrorGrupos = "No se pudieron cargar los grupos (permisos o conexión).";
+    return [];
+  }
+  ultimoErrorGrupos = null;
+  cacheGruposAdmin = grupos;
   return grupos;
 }
 
@@ -197,6 +290,7 @@ export async function crearGrupo(datos: Partial<GrupoRow>): Promise<{ ok: boolea
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   const filaOk = { ...datos, activo: true } as Record<string, unknown>;
   try {
+    exigirCapacidad("grupos:fn_guardar_grupo");
     const { error } = await supabase.from("grupos_venta").insert([filaOk]);
     if (error) {
       // Fallback a la RPC del legacy (js/grupos.js:200): club_guardar_grupo
@@ -215,7 +309,7 @@ export async function crearGrupo(datos: Partial<GrupoRow>): Promise<{ ok: boolea
       });
       if (rpc.error) return { ok: false, error: rpc.error.message };
     }
-    cacheGrupos = null;
+    invalidarCacheGrupos();
     void registrarAuditoria("GRUPO", "CREAR", datos.nombre ? `Grupo creado: ${datos.nombre}` : "Grupo creado");
     return { ok: true };
   } catch (e) {
@@ -228,7 +322,8 @@ export async function actualizarGrupo(
   patch: Record<string, unknown>
 ): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
-  try {
+    try {
+    exigirCapacidad("grupos:fn_guardar_grupo");
     const { error } = await supabase.from("grupos_venta").update(patch).eq("id", id);
     if (error) {
       // Fallback a la RPC del legacy (js/grupos.js:366): club_actualizar_grupo
@@ -240,7 +335,7 @@ export async function actualizarGrupo(
       const rpc = await supabase.rpc("club_actualizar_grupo", { p_id: id, p_datos: datos });
       if (rpc.error) return { ok: false, error: rpc.error.message };
     }
-    cacheGrupos = null;
+    invalidarCacheGrupos();
     void registrarAuditoria("GRUPO", "ACTUALIZAR", `Grupo ${id} actualizado.`);
     return { ok: true };
   } catch (e) {
@@ -273,7 +368,7 @@ export async function toggleGrupoActivo(id: string | number, activo: boolean): P
       const rpc = await supabase.rpc("club_toggle_grupo", { p_id: id, p_activo: activo });
       if (rpc.error) return { ok: false, error: rpc.error.message };
     }
-    cacheGrupos = null;
+    invalidarCacheGrupos();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -291,7 +386,7 @@ export async function asignarPrincipalUnico(id: string | number): Promise<{ ok: 
       const rpc = await supabase.rpc("club_garantizar_grupo_principal");
       if (rpc.error) return { ok: false, error: rpc.error.message };
     }
-    cacheGrupos = null;
+    invalidarCacheGrupos();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -305,6 +400,7 @@ export async function asignarPrincipalUnico(id: string | number): Promise<{ ok: 
 export async function eliminarGrupoRpc(id: string | number): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
+    exigirCapacidad("grupos:btn_eliminar");
     // La RPC (js/grupos.js → club_eliminar_grupo) hace TODO el re-movimiento a
     // clientes/clientes_grupos en una transacción. Se usa como fallback cuando
     // el borrado directo está bloqueado por RLS/permisos.
@@ -312,7 +408,7 @@ export async function eliminarGrupoRpc(id: string | number): Promise<{ ok: boole
     if (e3) {
       const rpc = await supabase.rpc("club_eliminar_grupo", { p_id: id });
       if (rpc.error) return { ok: false, error: rpc.error.message };
-      cacheGrupos = null;
+      invalidarCacheGrupos();
       void registrarAuditoria("GRUPO", "ELIMINAR", `Grupo ${id} eliminado.`);
       return { ok: true };
     }
@@ -324,7 +420,7 @@ export async function eliminarGrupoRpc(id: string | number): Promise<{ ok: boole
     }
     const { error: e2 } = await supabase.from("clientes_grupos").delete().eq("grupo_id", id);
     if (e2) return { ok: false, error: e2.message };
-    cacheGrupos = null;
+    invalidarCacheGrupos();
     void registrarAuditoria("GRUPO", "ELIMINAR", `Grupo ${id} eliminado.`);
     return { ok: true };
   } catch (e) {
@@ -368,10 +464,15 @@ export async function agregarClientesGrupo(
   grupoId: string | number
 ): Promise<{ ok: boolean; agregados: number; error?: string; sinTabla?: boolean }> {
   if (!supabase) return { ok: false, agregados: 0, error: "Sin conexión a Supabase" };
-  const idsSet = new Set(clienteIds.map((x) => String(x)));
-  idsSet.delete(String(grupoId));
-  if (!idsSet.size) return { ok: true, agregados: 0 };
   try {
+    // La pagina /grupos solo exige grupos:ruta_grupos (LECTURA): sin esta
+    // comprobacion, un usuario de solo lectura podria alterar las
+    // pertenencias. Las RPC son security definer, asi que la base no frena
+    // el abuso: el control va aqui (mismo criterio que moverClientesGrupo).
+    exigirCapacidad("grupos:modal_miembros");
+    const idsSet = new Set(clienteIds.map((x) => String(x)));
+    idsSet.delete(String(grupoId));
+    if (!idsSet.size) return { ok: true, agregados: 0 };
     const filas = [...idsSet].map((cliente_id) => ({
       cliente_id,
       grupo_id: grupoId,
@@ -405,7 +506,16 @@ export async function agregarClientesGrupo(
         cacheClientes = null;
         return { ok: true, agregados: nuevas.length, sinTabla: true };
       }
-      return { ok: false, agregados: 0, error: error.message };
+      // Fallback a la RPC security definer (sql/grupos_asignacion_rpc.sql):
+      // el RLS bloquea el insert directo, la RPC corre como duena de la tabla.
+      const rpc = await supabase.rpc("club_agregar_clientes_grupo", {
+        p_cliente_ids: [...idsSet],
+        p_grupo_id: grupoId,
+      });
+      if (rpc.error) return { ok: false, agregados: 0, error: rpc.error.message };
+      cacheClientes = null;
+      const dato = (rpc.data ?? {}) as Record<string, unknown>;
+      return { ok: true, agregados: Number(dato.agregados ?? nuevas.length) };
     }
     cacheClientes = null;
     return { ok: true, agregados: nuevas.length };
@@ -421,12 +531,26 @@ export async function quitarClientesGrupo(
 ): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
+    // Misma capacidad que agregarClientesGrupo: escribir en clientes_grupos
+    // es "grupos:modal_miembros", no basta con poder VER la pagina.
+    exigirCapacidad("grupos:modal_miembros");
     const { error } = await supabase
       .from("clientes_grupos")
       .delete()
       .eq("grupo_id", grupoId)
       .in("cliente_id", clienteIds);
-    if (error) return { ok: false, error: error.message };
+    if (error) {
+      // Fallback a la RPC security definer (sql/grupos_asignacion_rpc.sql):
+      // la RPC NUNCA borra la pertenencia de un cliente que tenga ese grupo
+      // como grupo_id PRINCIPAL, misma garantia que el comentario de arriba.
+      const rpc = await supabase.rpc("club_quitar_clientes_grupo", {
+        p_cliente_ids: clienteIds,
+        p_grupo_id: grupoId,
+      });
+      if (rpc.error) return { ok: false, error: rpc.error.message };
+      cacheClientes = null;
+      return { ok: true };
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -440,8 +564,18 @@ export async function moverClientesGrupo(
 ): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
+    exigirCapacidad("grupos:modal_miembros");
     const { error } = await supabase.from("clientes").update({ grupo_id: grupoId }).in("id", clienteIds);
-    if (error) return { ok: false, error: error.message };
+    if (error) {
+      // Fallback a la RPC security definer (sql/grupos_asignacion_rpc.sql).
+      const rpc = await supabase.rpc("club_mover_clientes_grupo", {
+        p_cliente_ids: clienteIds,
+        p_grupo_id: grupoId,
+      });
+      if (rpc.error) return { ok: false, error: rpc.error.message };
+      cacheClientes = null;
+      return { ok: true };
+    }
     cacheClientes = null;
     return { ok: true };
   } catch (e) {

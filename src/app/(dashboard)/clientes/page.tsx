@@ -9,10 +9,12 @@ import { ClientesModule } from "@/components/clientes/ClientesModule";
  *  - Modal "Portal de Consulta del Cliente" (token + clave + enlace corto)
  *  - Estado de cuenta dinámico (acordeón Grupo > Semana > Día > Hipódromo > Carrera > Jugada)
  *  - Notificaciones del Portal (solicitudes de datos + reclamos como alertas)
+ *
+ * La capacidad la deduce RutaProtegida del registro maestro: clientes:ruta_clientes.
  */
 export default function ClientesPage() {
   return (
-    <RutaProtegida algunaDe={["gestionar_clientes", "ver_clientes"]}>
+    <RutaProtegida>
       <div className="p-4 lg:p-6">
         <ClientesModule />
       </div>

@@ -8,13 +8,23 @@
 --    4) limpieza_auditoria  -> RPC club_limpiar_auditoria (borra >N dias)
 --    5) grupos_venta        -> permisos del rol anon (0 errores 401/403)
 --    6) gaceta_procesada    -> historial de transcripciones de la gaceta IA
---    7) permisos globales   -> RLS apagado + grants al rol anon (TODAS las tablas)
+--    7) permisos globales   -> ⚠️ DESHABILITADO (ver la sección 7)
 --    8) hipodromos/jugadas  -> columnas de calculo + siembra de hipodromos VE/USA
 --
 --  IMPORTANTE: ejecute SIEMPRE el archivo COMPLETO (no solo un fragmento).
---  TODO es idempotente (if not exists / create or replace / DO con fallos
---  aislados), así que puede pegarlo y ejecutarlo nuevamente las veces que
---  quiera sin romper nada: completa columnas, permisos y siembra que falten.
+--  Es idempotente en sus cambios de esquema (if not exists / create or replace).
+--
+--  ⚠️  CORRECCIÓN IMPORTANTE: este archivo ya NO es seguro de re-ejecutar
+--     "sin romper nada". Las secciones 7 y 15 apagaban el RLS de TODAS las
+--     tablas y le abrían INSERT/UPDATE/DELETE al rol anon, lo que reabría
+--     `resultados_carreras` (dividendos que mueven la liquidación de dinero)
+--     y `tickets_apuestas` (saldos de clientes) por encima de los RPC que hoy
+--     los validan en el servidor. Ambas están ahora desactivadas y solo
+--     corren si activás el flag de la sección 7.
+--
+--     Para una base ya montada: corré este archivo y después, OBLIGATORIAMENTE,
+--     sql/resultados_rpc.sql + sql/reclamos_storage.sql + sql/auditoria_rls.sql.
+--     Ver sql/RUNBOOK_SQL.md para el orden completo.
 -- ============================================================
 
 -- ============================================================
@@ -115,9 +125,11 @@ drop policy if exists "anon_insert_bloqueado" on public.auditoria;
 create policy "anon_insert_bloqueado" on public.auditoria
     for insert to anon with check (false);
 
+-- La lectura de auditoria NO se abre a anon: expone IP, navegador y accion.
+-- La deja si el usuario esta autenticado y tiene la capacidad
+-- 'seguridad:celda_auditoria' (ver sql/auditoria_rls.sql).
 drop policy if exists "anon_read_temporal" on public.auditoria;
-create policy "anon_read_temporal" on public.auditoria
-    for select to anon using (true);
+drop policy if exists "anon_read_bloqueado" on public.auditoria;
 
 revoke all on public.auditoria from anon;
 grant execute on function public.club_log_accion(text, text, text, text, text, text) to anon;
@@ -210,17 +222,42 @@ comment on column public.gaceta_procesada.contenido is
     'JSON con las carreras y ejemplares extraidos de la gaceta por la IA';
 
 -- ============================================================
--- (7) PERMISOS DE LA APP CON EL ROL ANON (evita errores 401/403)
---     La app funciona 100% con la anon key (sin autenticación).
---     Si alguna tabla quedó con RLS activado desde el dashboard
---     (p.ej. grupos_venta), el anon no puede insertar/leer y
---     Supabase responde 401. Aquí se normaliza TODO el esquema:
---     RLS desactivado + privilegios concedidos al rol anon.
+-- (7) PERMISOS DE LA APP CON EL ROL ANON
+--     ⚠️  ESTA SECCIÓN ESTÁ DESHABILITADA A PROPÓSITO.
+--
+--     Lo que hacía antes era normalizar TODO el esquema con
+--     `alter table ... disable row level security` + grants al rol anon.
+--     Eso era aceptable cuando la app no validaba nada, pero ya no lo es:
+--     `resultados_carreras` y `tickets_apuestas` hoy se escriben por RPC
+--     `security definer` que valida la capacidad EN EL SERVIDOR, y su
+--     escritura directa por anon está vedada a propósito
+--     (ver sql/resultados_rpc.sql y sql/reclamos_storage.sql).
+--
+--     Si este archivo se corría DESPUÉS de esos scripts, los reabria:
+--     cualquiera con la anon key volvería a poder cambiar los dividendos que
+--     mueven dinero y los saldos de los clientes.
+--
+--     Para una base NUEVA donde sí necesites el esquema plano, habilítala
+--     explícitamente en la MISMA sesión antes de correr el archivo:
+--
+--         set app.permisos_globales_anon = 'SI';
+--
+--     En una base ya montada NO la actives: los grants de la corrida
+--     original siguen vigentes, y reactivarlos solo reabre lo cerrado.
 -- ============================================================
 do $$
 declare
     t text;
+    habilitado constant boolean :=
+        coalesce(current_setting('app.permisos_globales_anon', true), 'NO') = 'SI';
 begin
+    if not habilitado then
+        raise notice
+            'paquete_pendientes.sql: se OMITE la normalización de permisos (RLS apagado + '
+            'grants al rol anon en todas las tablas). Reabriría resultados_carreras y '
+            'tickets_apuestas. Si la necesitás: set app.permisos_globales_anon = ''SI'';';
+        return;
+    end if;
     for t in
         select tablename from pg_tables
         where schemaname = 'public'
@@ -237,16 +274,15 @@ $$;
 
 grant usage on schema public to anon;
 
--- auditoría: el anon SOLO lee (el insert queda vedado; las escrituras van por club_log_accion)
+-- auditoría: anon no lee ni escribe directo. La escritura va por
+-- club_log_accion (security definer) y la lectura por capacidad, que se
+-- instala en sql/auditoria_rls.sql.
 alter table public.auditoria enable row level security;
 drop policy if exists "anon_read_temporal" on public.auditoria;
-create policy "anon_read_temporal" on public.auditoria
-    for select to anon using (true);
 revoke all on public.auditoria from anon;
-grant select on table public.auditoria to anon;
 
--- VERIFICACIÓN (debe devolver filas):
---   select * from public.auditoria order by fecha desc limit 5;
+-- VERIFICACIÓN: con la anon key esto debe devolver 0 filas.
+--   select count(*) from public.auditoria;
 
 -- ============================================================
 -- (8) HIPÓDROMOS Y JUGADAS: ESQUEMA + SIEMBRA AUTOMÁTICA
@@ -1210,18 +1246,30 @@ revoke all on function public.club_registrar_cliente_grupo(uuid, text, numeric) 
 grant execute on function public.club_registrar_cliente_grupo(uuid, text, numeric) to anon;
 
 -- ============================================================
--- (15) REFUERZO FINAL DE PERMISOS (RLS apagado + grants anon)
---      La app trabaja 100% con la anon key. Si algún script anterior
---      corrió a medias, o el dashboard re-activó el RLS, el anon
---      recibe 401/403 ("Permisos bloqueados (RLS)"). Esta sección
---      vuelve a normalizar TODAS las tablas y secuencias, y solo deja
---      auditoria con RLS (escritura solo vía club_log_accion).
---      Es idempotente y se ejecuta al FINAL para no dejar esquinas.
+-- (15) REFUERZO FINAL DE PERMISOS
+--      ⚠️  DESHABILITADO A PROPÓSITO, por lo mismo que la sección (7).
+--
+--      Este bloque iba AL FINAL del archivo y "normalizaba" TODAS las
+--      tablas otra vez. Al ejecutarse al final, ganaba contra cualquier
+--      script de seguridadApplied antes en la MISMA corrida: dejaría
+--      `resultados_carreras` y `tickets_apuestas` abiertas por anon
+--      aunque `resultados_rpc.sql` las hubiera cerrado.
+--
+--      Para habilitarlo:  set app.permisos_globales_anon = 'SI';
 -- ============================================================
 do $$
 declare
     t text;
+    habilitado constant boolean :=
+        coalesce(current_setting('app.permisos_globales_anon', true), 'NO') = 'SI';
 begin
+    if not habilitado then
+        raise notice
+            'paquete_pendientes.sql: se OMITE el refuerzo final de permisos. '
+            'Dejaría abiertas por anon las tablas que el RPC de resultados y el de reclamos '
+            'cierran con validación de capacidad.';
+        return;
+    end if;
     for t in
         select tablename from pg_tables
         where schemaname = 'public'
@@ -1239,17 +1287,17 @@ $$;
 grant usage on schema public to anon;
 grant usage, select on all sequences in schema public to anon;
 
--- auditoría: el anon SOLO lee (escrituras vía RPC segura club_log_accion)
+-- auditoría: la escritura sigue yendo por la RPC security definer
+-- club_log_accion. La LECTURA se cierra por capacidad real en
+-- sql/auditoria_rls.sql: acá solo se garantiza que anon no escriba.
 alter table public.auditoria enable row level security;
-drop policy if exists "anon_read_temporal" on public.auditoria;
-create policy "anon_read_temporal" on public.auditoria
-    for select to anon using (true);
-revoke insert, update, delete on table public.auditoria from anon;
-grant select on table public.auditoria to anon;
+revoke insert, update, delete on public.auditoria from anon;
 
 -- -------------------- FIN DEL PAQUETE --------------------
--- RECUERDE: ejecute SIEMPRE este archivo COMPLETO en el SQL Editor
--- de Supabase. Es idempotente: puede re-ejecutarse sin romper nada.
+-- Es idempotente en esquema, pero YA NO es inocuo en permisos: las secciones
+-- 7 y 15 están desactivadas justamente para que no reabra por anon las tablas
+-- de dinero. Después de correrlo, cerrá con sql/resultados_rpc.sql,
+-- sql/reclamos_storage.sql y sql/auditoria_rls.sql. Ver sql/RUNBOOK_SQL.md.
 -- Verificación:
 --   select id, nombre, cuenta_bancaria,
 --          public.club_cuenta_bancaria_valida(cuenta_bancaria) as ok

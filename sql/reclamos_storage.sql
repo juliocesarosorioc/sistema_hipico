@@ -1,39 +1,73 @@
 -- ============================================================
---  RECLAMOS DEL PORTAL: IMÁGENES (Supabase Storage) + ESTADOS
+--  RECLAMOS DEL PORTAL: IMÁGENES (Storage privado) + ESTADOS
 -- ============================================================
---  Ejecutar en Supabase -> SQL Editor (una sola vez).
---  1) Crea el bucket público `reclamos` (fotos que adjunta el cliente).
---  2) Amplía el check de tickets_jugadas.estado para admitir RECHAZADO.
---  3) Políticas del bucket (RLS de Storage: rutas/cliente/*).
+--  Ejecutar en Supabase -> SQL Editor (una sola vez, es idempotente).
+--
+--  ⚠️ ESTA ES LA VERSIÓN CORRECTA. La anterior creaba el bucket `reclamos`
+--  como PÚBLICO, le ponía políticas para `anon` y además hacía
+--  `disable row level security` sobre `clientes` y `tickets_apuestas`
+--  (dejando la cartera y las apuestas de todo el club legibles y
+--  editables por cualquiera). NO EJECUTES LA VERSIÓN VIEJA.
+--
+--  Lo que se hace acá:
+--   1) Bucket `reclamos` PRIVADO (sin policies para anon/authenticated).
+--   2) Se borra cualquier policy de lectura/escritura que haya quedado sobre
+--      ese bucket, y se fuerza a privado.
+--   3) Se amplía el check de tickets_jugadas.estado para admitir RECHAZADO.
+--   4) Se deja RLS ACTIVO en clientes/tickets_apuestas (nunca desactivar).
+--
+--  El flujo de subida y de lectura ya no usa este SQL desde el navegador:
+--  la Edge Function `portal-auth` valida el token y firma una URL de subida
+--  de un solo uso y una URL de lectura de 10 minutos. El navegador PUTea /
+--  abre contra esas URLs. Por eso el bucket puede y DEBE ser privado.
 -- ============================================================
 
--- 1) BUCKET DE ALMACENAMIENTO -------------------------------------
-insert into storage.buckets (id, name, public)
-values ('reclamos', 'reclamos', true)
-on conflict (id) do update set public = true;
+-- 1) BUCKET PRIVADO -------------------------------------------------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+    'reclamos',
+    'reclamos',
+    false,
+    8388608, -- 8 MB, mismo tope que valida el portal antes de subir
+    array['image/png', 'image/jpeg', 'image/webp']
+)
+on conflict (id) do update
+    set public             = false,
+        file_size_limit    = excluded.file_size_limit,
+        allowed_mime_types = excluded.allowed_mime_types;
 
-comment on table storage.objects is '';
--- aviso: Storage usa RLS propio; las políticas se crean abajo.
+-- 2) QUITAR POLÍTICAS DE ESE BUCKET --------------------------------
+-- Una imagen de reclamo muestra la apuesta del cliente: nada de lectura
+-- abierta. Si quedó una policy vieja (p. ej. `reclamos_publico_lectura`),
+-- se elimina; el acceso pasa solo por la URL firmada de la Edge Function.
+do $$
+declare
+    pol record;
+begin
+    for pol in
+        select schemaname, tablename, policyname
+        from pg_policies
+        where schemaname = 'storage'
+          and tablename = 'objects'
+          and policyname like '%reclamos%'
+    loop
+        execute format(
+            'drop policy if exists %I on %I.%I',
+            pol.policyname, pol.schemaname, pol.tablename
+        );
+        raise notice 'policy eliminada: %', pol.policyname;
+    end loop;
+end $$;
 
-create policy "reclamos_publico_lectura"
-on storage.objects for select
-using (bucket_id = 'reclamos');
-
-create policy "reclamos_cliente_subida"
-on storage.objects for insert
-with check (
-    bucket_id = 'reclamos'
-    and (storage.foldername(name))[1] is not null
-);
-
--- 2) AMPLIAR ESTADOS DE RECLAMO ------------------------------------
--- (el check original del paquete_pendientes permite solo CREADO | EN_REVISION | SOLUCIONADO)
+-- 3) AMPLIAR ESTADOS DE RECLAMO ------------------------------------
+-- (el check original del paquete_pendientes permite solo
+--  CREADO | EN_REVISION | SOLUCIONADO)
 do $$
 begin
     if exists (
         select 1 from pg_constraint
-        where conname = 'tickets_jugadas_estado_check'
-          and conrelid = 'public.tickets_jugadas'::regclass
+        where conrelid = 'public.tickets_jugadas'::regclass
+          and conname = 'tickets_jugadas_estado_check'
     ) then
         alter table public.tickets_jugadas drop constraint tickets_jugadas_estado_check;
         alter table public.tickets_jugadas
@@ -42,10 +76,22 @@ begin
     end if;
 end $$;
 
--- 3) GARANTIZAR RLS/POLÍTICAS DEL PORTAL ---------------------------
-alter table public.tickets_apuestas disable row level security;
-alter table public.clientes disable row level security;
+-- 4) RLS ACTIVO EN LA CARTERA Y LAS APUESTAS -----------------------
+-- La app escribe con RPC `security definer` (club_*), que salta RLS con
+-- derecho. Desactivar el RLS aquí era lo que dejaba la base abierta.
+alter table public.tickets_apuestas enable row level security;
+alter table public.clientes        enable row level security;
 
 -- VERIFICACION ------------------------------------------------------
--- select id, name, public from storage.buckets where id = 'reclamos';
--- select estado, count(*) from public.tickets_jugadas group by estado;
+-- Debe salir: reclamos | false | 8388608 | {image/png,...}
+--   select id, public, file_size_limit, allowed_mime_types
+--     from storage.buckets where id = 'reclamos';
+--
+-- Debe salir: 0 filas (el bucket no tiene policies para el público)
+--   select policyname, roles from pg_policies
+--    where schemaname = 'storage' and tablename = 'objects'
+--      and policyname like '%reclamos%';
+--
+-- Debe salir: relrowsecurity = true en las dos
+--   select relname, relrowsecurity from pg_class
+--    where relname in ('clientes', 'tickets_apuestas');

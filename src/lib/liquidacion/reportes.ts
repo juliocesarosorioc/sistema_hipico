@@ -18,7 +18,7 @@ import { rangoSemanaDeGrupo, cicloSemanalDe } from "@/lib/liquidacion/semana";
 import { ventanaDiaLocal } from "@/lib/liquidacion/fecha";
 import { listarCarrerasPorDia } from "@/lib/tablas/rpc";
 import { pizarraDesdeNums } from "@/lib/reportGenerator";
-import { liquidarOficial } from "@/lib/motores/oficiales";
+import { liquidarOficial, puestosDesdeOrdenLlegada } from "@/lib/motores/oficiales";
 import {
   numerosPizarra,
   netearComisionCruce,
@@ -81,6 +81,11 @@ export type GrupoReporte = {
   nombre?: string;
   dia_inicio_semana?: number | null;
   dia_fin_semana?: number | null;
+  /**
+   * Inicio de la semana vigente del grupo. NULL = se deduce de hoy.
+   * Ver `src/lib/liquidacion/semana.ts` y sql/semana_vigente.sql.
+   */
+  semana_vigente_inicio?: string | null;
 };
 
 /* ─────────────────────────── utilidades ─────────────────────────── */
@@ -129,7 +134,8 @@ function ticketMotorDe(
   f: Record<string, unknown>,
   hipodromo: string,
   carrera: string | number,
-  puestos: string[]
+  puestos: string[],
+  dividendos: Record<string, number> | null
 ): TicketMotor {
   const pizarra = pizarraDesdeNums(puestos);
   const tipo = txt(f.nombre_jugada).toUpperCase();
@@ -148,7 +154,9 @@ function ticketMotorDe(
     monto,
     puesto_final: puestoFinalDe(txt(f.caballo), puestos),
     pizarra,
-    dividendos: null,
+    // Sin esto el motor oficial liquidaba siempre a la par de la casa (2x/120x):
+    // los dividendos que carga la casa se guardaban y NADIE los leia.
+    dividendos,
     proporcion: proporcionDe(tipo),
     premio_por_tabla: /^TABLA\s+(\d+)/i.test(tipo) ? parseInt(tipo.match(/^TABLA\s+(\d+)/i)?.[1] ?? "2", 10) : null,
   };
@@ -159,7 +167,7 @@ function evaluar(
   f: Record<string, unknown>,
   hipodromo: string,
   carrera: string | number,
-  puestos: string[] | null
+  pizarra: PizarraCarrera | null
 ): { ok: boolean | null; bruto: number } {
   const estado = txt(f.estado).toUpperCase();
   const monto = cifra(f.monto_jugado);
@@ -174,9 +182,14 @@ function evaluar(
   if (estado === "PERDEDOR" || estado === "PERDIO" || estado === "RETIRADO" || estado === "RECHAZADO" || estado === "ANULADO") {
     return { ok: false, bruto: 0 };
   }
-  if ((puestos ?? []).length && monto > 0) {
+  const puestos = pizarra?.puestos ?? [];
+  if (puestos.length && monto > 0) {
     try {
-      const r = liquidarOficial(ticketMotorDe(f, hipodromo, carrera, puestos ?? []));
+      const r = liquidarOficial(ticketMotorDe(f, hipodromo, carrera, puestos, pizarra?.dividendos ?? null));
+      // El motor ganó por posición pero no hay dividendo con el que cuantificar
+      // el premio: es PENDIENTE, no una derrota. Contarlo como `ok: false`
+      // reportaba $0 pagado sobre una jugada que la casa tiene que pagar.
+      if (r.indeterminado) return { ok: null, bruto: 0 };
       return { ok: r.ok, bruto: r.totalClienteNeto };
     } catch {
       return { ok: null, bruto: 0 };
@@ -187,19 +200,37 @@ function evaluar(
 
 /* ─────────────────────────── consultas ─────────────────────────── */
 
-async function leerPizarra(fecha: string, hipodromo: string, carrera: number | string): Promise<string[] | null> {
+/** Pizarra oficial de una carrera tal como la cargo la casa. */
+type PizarraCarrera = {
+  /** Orden de llegada (1º, 2º, 3º…): `orden_llegada` si existe, si no `ganadores`. */
+  puestos: string[];
+  /** Pagos por $1 (`dividendos`): los usa el motor oficial de liquidacion. */
+  dividendos: Record<string, number> | null;
+};
+
+async function leerPizarra(fecha: string, hipodromo: string, carrera: number | string): Promise<PizarraCarrera | null> {
   if (!supabase) return null;
   try {
     const { data, error } = await supabase
       .from("resultados_carreras")
-      .select("ganadores")
+      .select("ganadores, orden_llegada, dividendos")
       .eq("fecha", fecha)
       .eq("carrera", carrera)
       .ilike("hipodromo", `%${hipodromo}%`)
       .maybeSingle();
     if (error || !data) return null;
-    const g = (data as { ganadores?: unknown }).ganadores;
-    return Array.isArray(g) ? (g as unknown[]).map(txt) : null;
+    const r = data as { ganadores?: unknown; orden_llegada?: unknown; dividendos?: unknown };
+    // `orden_llegada` es [{numero,puesto}] y `ganadores` es text[]; el
+    // normalizador entiende ambas formas además del mapa {puesto: ejemplar}.
+    // Se prefiere el orden oficial y se cae a ganadores para no perder las
+    // carreras cargadas antes de que existiera la columna.
+    const oficial = puestosDesdeOrdenLlegada(r.orden_llegada);
+    const puestos = oficial.length ? oficial : puestosDesdeOrdenLlegada(r.ganadores);
+    const div = r.dividendos;
+    const dividendos =
+      div && typeof div === "object" && !Array.isArray(div) ? (div as Record<string, number>) : null;
+    if (!puestos.length && !dividendos) return null;
+    return { puestos, dividendos };
   } catch {
     return null;
   }
@@ -307,12 +338,12 @@ async function carreraReporte(
   numero: number,
   tasaComision?: number | null
 ): Promise<CarreraReporte | null> {
-  const puestos = await leerPizarra(fecha, hipodromo, numero);
+  const pizarra = await leerPizarra(fecha, hipodromo, numero);
   const tickets = await leerTickets(fecha, hipodromo, numero);
   const enTablas = await carreraExisteEnTablas(fecha, hipodromo, numero);
   // La carrera aparece si tiene jugadas, resultados o siquiera sus tablas
   // publicadas (cargadas por el operador aunque aún no tengan tickets).
-  if (!tickets.length && !enTablas && !(puestos ?? []).length) return null;
+  if (!tickets.length && !enTablas && !pizarra?.puestos.length) return null;
 
   const filas: FilaReporte[] = [];
   const neteoItems: NeteoCruceItem[] = [];
@@ -322,7 +353,7 @@ async function carreraReporte(
     const monto = cifra(f.monto_jugado);
     const caballo = txt(f.caballo);
     const esPareo = caballo.toUpperCase().includes("X") || /^PP/i.test(txt(f.nombre_jugada));
-    const ev = evaluar(f, hipodromo, numero, puestos);
+    const ev = evaluar(f, hipodromo, numero, pizarra);
     const clienteJuega = txt(f.cliente_juega);
     const clienteJuegaNombre = txt(f.cliente_juega_nombre) || clienteJuega;
     const clienteConsigue = txt(f.cliente_consigue);
@@ -390,11 +421,12 @@ async function carreraReporte(
   }
 
   const subtotal = Math.round(filas.reduce((a, f) => a + (f.resultado ?? 0), 0) * 100) / 100;
+  const puestos = pizarra?.puestos ?? [];
   return {
     numero,
     hipodromo,
     fecha,
-    pizarra: puestos?.length ? puestos.join(" · ") : null,
+    pizarra: puestos.length ? puestos.join(" · ") : null,
     filas,
     subtotal,
   };

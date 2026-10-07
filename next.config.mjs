@@ -2,14 +2,25 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * SPA Next.js que convive con el sistema legacy (html/ + css/ + js/).
+ * Configuración de Next.js que convive con el sistema legacy (html/ + css/ + js/).
  *
- * `output: "export"` → build 100% ESTÁTICO (HTML/JS/CSS puro). Esto:
- *   1) se sirve junto a los archivos legacy sin necesitar un servidor Node,
- *   2) elimina TODOS los módulos virtuales de runtime que rompen el build
- *      en este Windows (`private-next-instrumentation-*`, statically collected
- *      page data), y
- *   3) es el modelo de despliegue del sistema hípico (estático por diseño).
+ * Hay DOS modos de build, y la diferencia no es cosmética: decide si existe o
+ * no una capa de autenticación en el SERVIDOR.
+ *
+ * 1) MODO SERVIDOR (por defecto) — `npm run build` + `npm start`
+ *      NO define `output`, así que Next produce un build de servidor y
+ *      `src/middleware.ts` SE EJECUTA. Cada ruta protegida se valida antes de
+ *      entregar una sola línea de HTML. Es el modo recomendado para una
+ *      herramienta con datos de clientes y saldos.
+ *
+ * 2) MODO ESTÁTICO — `npm run build:export`
+ *      Define `NEXT_OUTPUT=export` y produce HTML/JS/CSS puro, para servirse
+ *      junto a los archivos legacy sin depender de Node.
+ *      OJO: Next elimina el middleware en el build estático (por eso el error
+ *      "Middleware cannot be used with output: export"). En este modo la
+ *      frontera de seguridad es la sesión de Supabase + las políticas RLS de
+ *      `src/db/seguridad_maestro.sql` (que deben validar por auth.uid()), y los
+ *      guardas del cliente son solo de experiencia de usuario.
  *
  * El alias "@" se fuerza DIRECTAMENTE en webpack (no se confía en tsconfig
  * paths, que webpack a veces no aplica a layout/server components):
@@ -17,9 +28,11 @@ import { fileURLToPath } from "node:url";
 const root = path.dirname(fileURLToPath(import.meta.url));
 const src = path.join(root, "src");
 
+const esExportEstatico = process.env.NEXT_OUTPUT === "export";
+
 const nextConfig = {
   reactStrictMode: true,
-  output: "export",
+  ...(esExportEstatico ? { output: "export" } : {}),
   images: { unoptimized: true },
   webpack: (config) => {
     config.resolve.alias = {

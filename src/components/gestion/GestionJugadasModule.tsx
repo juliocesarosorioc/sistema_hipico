@@ -6,19 +6,21 @@ import { HorseBadge } from "@/components/ui/HorseChips";
 import { useTaquillaStore, type TicketTaquilla } from "@/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla, type ResLiquidarCarrera } from "@/lib/liquidacion/pagarYCerrar";
+import { dividendosDePizarra } from "@/lib/liquidacion/posiciones";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { useHipodromosActivos } from "@/store/useHipodromosStore";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { SemaforoCarreras } from "@/components/gestion/SemaforoCarreras";
 import { Button } from "@/components/ui/Button";
 import { fmtMoney, type EjemplarTabla } from "@/lib/tablas/tipos";
-import { listarClientesVenta, listarGruposVenta, saldoDeCliente, type ClienteVenta } from "@/lib/grupos";
+import { listarClientesVenta, listarGruposVenta, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, type ClienteVenta } from "@/lib/grupos";
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/lib/tablas/rpc";
 import { registrarCarreraProgramada } from "@/lib/carreras-dia";
-import { listarCarrerasCentrales, type CarreraCentral } from "@/lib/carreras/central";
 import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados } from "@/lib/carreras/retiros";
-import { useCarrerasCentrales } from "@/lib/carreras/useCarrerasCentrales";
+import { claveHipodromo } from "@/lib/carreras/claves";
+import { useRegistroCentralOpts } from "@/store/useRegistroCentral";
 import { hoyLocal } from "@/lib/gaceta/programa";
+import { revisarCaballo, maximoDeLaCarrera, type RevisionCaballo } from "@/lib/taquilla/caballos";
 import type { Reparto } from "@/lib/taquilla/reparto";
 
 /** Resumen compacto del reparto para la celda de ejemplares (una línea, 9px). */
@@ -93,16 +95,47 @@ export function GestionJugadasModule() {
   const hipodromos = useHipodromosActivos();
   const [fecha, setFecha] = useState(() => hoyLocal());
   const [carrerasPorDia, setCarrerasPorDia] = useState<number[]>([]);
-  const [carrerasCentrales, setCarrerasCentrales] = useState<CarreraCentral[]>([]);
   const [carrera, setCarrera] = useState(1);
   const [modoManual, setModoManual] = useState(false);
   const [retirados, setRetirados] = useState("");
   const [comision, setComision] = useState("5");
   const [conCruces, setConCruces] = useState(false);
   const [filas, setFilas] = useState<FilaCarga[]>([filaVacia()]);
-  const [aviso, setAviso] = useState("");
   const [jugadasPorCarrera, setJugadasPorCarrera] = useState<number[]>([]);
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
+  const [aviso, setAviso] = useState("");
+
+  const { carreras: centralCarrerasDiaAllBase, carrerasDe, recargar: recargarRegistroCentral } =
+    useRegistroCentralOpts(fecha);
+  /**
+   * LOS SEMÁFOROS Y LOS EJEMPLARES SALEN DE LA MISMA LISTA.
+   *
+   * Antes este módulo mantenía DOS copias del catálogo: `carrerasCentrales`
+   * (una consulta propia filtrada por hipódromo) para los ejemplares, y el
+   * registro central (`carrerasDe`) para los números del semáforo. Dos lecturas
+   * del mismo catálogo con dos criterios distintos, así que una podía traer los
+   * 8 ejemplares de la C1 y la otra ninguna, o traer los de otra jornada. El
+   * síntoma era "en Carreras del Día salen estos 8 y en Gestión estos otros 8".
+   *
+   * Ahora hay una sola: `carrerasDelDia`, recortada del registro central con la
+   * MISMA clave canónica `hipodromo|carrera` para ambos consumidores.
+   */
+  const carrerasDelDia = useMemo(
+    () =>
+      claveHipodromo(hipodromo)
+        ? carrerasDe(hipodromo)
+        : centralCarrerasDiaAllBase,
+    [carrerasDe, hipodromo, centralCarrerasDiaAllBase]
+  );
+  const centralCarrerasDiaAll = centralCarrerasDiaAllBase;
+  const carrerasConEjemplares = useMemo(
+    () =>
+      carrerasDelDia
+        .filter((c) => (c.caballos?.length ?? 0) > 0)
+        .map((c) => Number(c.carrera))
+        .sort((a, b) => a - b),
+    [carrerasDelDia]
+  );
 
   /** Opciones del Autocomplete CLIENTE 1/CLIENTE 2 (value = nombre real en BD). */
   const opcionesClientes = useMemo(
@@ -131,54 +164,59 @@ export function GestionJugadasModule() {
     };
   }, []);
 
-  // Semáforo dinámico: carreras registradas en la BD para [fecha + hipódromo].
-  // Al cambiar cualquiera de los dos, se re-consulta y la vista vuelve a C1.
+  /**
+   * Semáforo: los números de carrera del día.
+   *
+   * La fuente es la MISMA que alimenta el padrón de ejemplares (el registro
+   * central). Antes este efecto iba a `listarCarrerasPorDia` —una consulta
+   * distinta— y solo usaba su respuesta cuando el registro central venía
+   * vacío, así que el semáforo y los ejemplares podían señalar carreras
+   * diferentes. Ahora la lista sale de `carrerasDelDia`, ya deduplicada por
+   * clave canónica; `listarCarrerasPorDia` queda como respaldo para el caso en
+   * que la matriz aún no responde (carreras con resultados pero sin catálogo).
+   */
   useEffect(() => {
     let vivo = true;
     setCarrerasPorDia([]);
     setCarrera(1);
+    if (carrerasDelDia.length > 0) {
+      const base = [...new Set(carrerasDelDia.map((c) => Number(c.carrera)).filter((n) => n > 0))].sort(
+        (a, b) => a - b
+      );
+      setCarrerasPorDia(base);
+      if (base.length > 0) setCarrera(base.includes(carrera) ? carrera : Math.min(...base));
+      return () => {
+        vivo = false;
+      };
+    }
     listarCarrerasPorDia(fecha, hipodromo)
       .then((c) => {
         if (!vivo) return;
-        setCarrerasPorDia(c);
-        // Si el hipódromo tiene carreras registradas, se activa su primera
-        // carrera registrada (o la 1 si está entre ellas) para habilitar la
-        // selección en el semáforo.
-        if (c.length > 0) setCarrera(c.includes(1) ? 1 : Math.min(...c));
-        else setCarrera(1);
+        const base = [...new Set(c.map((n) => Number(n)).filter((n) => n > 0))].sort((a, b) => a - b);
+        setCarrerasPorDia(base);
+        if (base.length > 0) setCarrera(base.includes(carrera) ? carrera : Math.min(...base));
       })
       .catch(() => {
-        /* sin red → semáforo vacío */
         if (vivo) setCarrera(1);
       });
     return () => {
       vivo = false;
     };
-  }, [fecha, hipodromo]);
+  }, [fecha, hipodromo, carrerasDelDia, carrera]);
 
-  // Carreras del Día (editor central): ejemplares inscritos de la jornada — la
-  // carrera puede existir SOLO aquí (registrada por número, sin tabla fija ni
-  // gaceta). Alimenta el panel de ejemplares y la auto-resolución del CABALLO.
-  useEffect(() => {
-    let vivo = true;
-    listarCarrerasCentrales(fecha, hipodromo)
-      .then((r) => {
-        if (vivo && r.ok) setCarrerasCentrales(r.datos ?? []);
-      })
-      .catch(() => {
-        /* sin red → se conserva el panel de tabla fija */
-      });
-    return () => {
-      vivo = false;
-    };
-  }, [fecha, hipodromo]);
+  // El catálogo y sus ejemplares los aporta el REGISTRO CENTRAL (arriba). Este
+  // módulo ya no mantiene una segunda consulta: dos copias del mismo catálogo
+  // divergen y producían padrones distintos entre módulos.
 
-  // Aislamiento por carrera: al cambiar de carrera se limpia la pizarra de la
-  // vista anterior y se refresca el indicador de jugadas cargadas.
   useEffect(() => {
-    setUltimaPizarra(null);
-    setResumen(null);
-  }, [carrera]);
+    const conEj = carrerasConEjemplares;
+    if (conEj.length !== carrerasPorDia.length || conEj.some((n: number, i: number) => n !== carrerasPorDia[i])) {
+      setCarrerasPorDia(conEj);
+    }
+    if (conEj.length > 0 && !conEj.includes(carrera)) {
+      setCarrera(Math.min(...conEj));
+    }
+  }, [carrerasConEjemplares, carrerasPorDia, carrera]);
 
   const [modalPreliminar, setModalPreliminar] = useState(false);
   const [modalResultados, setModalResultados] = useState(false);
@@ -196,30 +234,38 @@ export function GestionJugadasModule() {
 
   /**
    * Hipódromos con carreras CARGADAS en el día elegido (se elige el día
-   * primero): los que tienen tabla publicada o carrera en la data central.
+   * primero): los que tienen tabla publicada o carrera en el registro central.
    * El catálogo completo queda disponible si el día aún no tiene nada.
+   *
+   * La data central viene del REGISTRO CENTRAL compartido con Marcas, Tablas y
+   * Dupletas, no de un `useCarrerasCentrales` propio: con copias separadas, una
+   * carrera recién registrada aparecía en Tablas y en Marcas pero el selector de
+   * Gestión no la ofrecía, y era imposible venderla sin recargar a mano.
    */
-  const { centrales: centralCarrerasDia } = useCarrerasCentrales(fecha || undefined);
-  const hipodromosDelDia = useMemo(() => {
+
+
+const hipodromosDelDia = useMemo(() => {
+    // `claveHipodromo` en los dos lados: con un `.toUpperCase()` propio que
+    // dejaba el espacio ("LA RINCONADA" vs "LARINCONADA"), un hipódromo con
+    // carrera no entraba en la lista y el usuario tenía que recargar a mano.
     const conCarreras = new Set<string>();
     for (const t of tablas) {
-      const h = String(t.hipodromo ?? "").trim().toUpperCase();
+      const h = claveHipodromo(t.hipodromo);
       if (h && String(t.fecha || t.fecha_creacion || "").slice(0, 10) === fecha) conCarreras.add(h);
     }
-    for (const c of centralCarrerasDia) {
-      if (c.hipodromo) conCarreras.add(c.hipodromo);
+    for (const c of centralCarrerasDiaAll) {
+      const h = claveHipodromo(c.hipodromo);
+      if (h) conCarreras.add(h);
     }
     if (!conCarreras.size) return hipodromos;
-    const normalizado = new Map(
-      hipodromos.map((h) => [String(h.value ?? "").trim().toUpperCase(), h] as const)
-    );
+    const normalizado = new Map(hipodromos.map((h) => [claveHipodromo(h.value), h] as const));
     const dentro = [...conCarreras]
       .map((k) => normalizado.get(k) ?? { value: k, label: k })
       .sort((a, b) => String(a.label).localeCompare(String(b.label)));
-    const dentroKeys = new Set(dentro.map((h) => String(h.value).trim().toUpperCase()));
-    const fuera = hipodromos.filter((h) => !dentroKeys.has(String(h.value ?? "").trim().toUpperCase()));
+    const dentroKeys = new Set(dentro.map((h) => claveHipodromo(h.value)));
+    const fuera = hipodromos.filter((h) => !dentroKeys.has(claveHipodromo(h.value)));
     return [...dentro, ...fuera];
-  }, [tablas, hipodromos, centralCarrerasDia, fecha]);
+  }, [tablas, hipodromos, centralCarrerasDiaAll, fecha]);
 
   // Atajos de la Barra de Comandos (real keyboard events)
   useEffect(() => {
@@ -267,44 +313,73 @@ export function GestionJugadasModule() {
     () =>
       tablas.find(
         (t) =>
-          (t.hipodromo ?? "").toUpperCase().replace(/\s+/g, "") === hipodromo.toUpperCase().replace(/\s+/g, "") &&
-          t.carrera === carrera
+          claveHipodromo(t.hipodromo) === claveHipodromo(hipodromo) &&
+          Number(t.carrera) === Number(carrera)
       ),
     [tablas, hipodromo, carrera]
   );
 
-  /** Carrera central (Carreras del Día) que corresponde a la vista actual. */
+  /**
+   * Carrera central (registro único) que corresponde a la vista actual. Se
+   * busca por la clave canónica, no solo por número: con la copia anterior el
+   * móduloonoraba la primera fila que coincidía en número, que podía ser de
+   * otra jornada.
+   */
   const centralDeCarrera = useMemo(
-    () => carrerasCentrales.find((c) => Number(c.carrera) === Number(carrera)) ?? null,
-    [carrerasCentrales, carrera]
+    () => carrerasDelDia.find((c) => Number(c.carrera) === Number(carrera)) ?? null,
+    [carrerasDelDia, carrera]
   );
 
   /**
-   * Ejemplares inscritos de la carrera en pantalla: prioriza la tabla fija
-   * publicada; si la carrera solo existe en Carreras del Día, usa sus
-   * ejemplares registrados (pueden ser solo número, sin nombre).
+   * Ejemplares inscritos de la carrera en pantalla.
+   *
+   * ORDEN DE PREFERENCIA (importante): la matriz `carreras` —el registro único—
+   * MANDA. La tabla fija publicada es el libro de VENTAS, no el padrón de
+   * inscripción: su lista de caballos es la que había una venta, que puede venir
+   * de otra jornada o de otra carga. Por eso antes se veían ocho NOMBRES
+   * COMPLETAMENTE DISTINTOS a los de Carreras del Día: este módulo priorizaba
+   * `tablaDeCarrera.caballos` y solo caía al catálogo central si la tabla no
+   * tenía caballos.
+   *
+   * La tabla fija solo entra como respaldo cuando el catálogo central no tiene
+   * ejemplares para esa carrera, y la lista CENTRAL de retiros se aplica sobre
+   * las dos: un retiro registrado en cualquier módulo se ve al instante.
    */
   const caballosDeCarrera = useMemo<EjemplarTabla[]>(() => {
-    // La lista CENTRAL de retiros manda sobre la tabla local: si un retiro se
-    // aplicó en otro módulo, aquí se ve de inmediato sin esperar la recarga.
     const retiradosCentral = new Set(centralDeCarrera?.retirados ?? []);
-    if (tablaDeCarrera?.caballos?.length) {
-      return tablaDeCarrera.caballos.map((c) => ({
-        ...c,
-        retirado: Boolean(c.retirado) || retiradosCentral.has(String(c.numero)),
-      }));
-    }
-    const cs = centralDeCarrera?.caballos ?? [];
-    return cs.map((c) => ({
-      numero: c.numero,
-      nombre: c.nombre ?? "",
+    const marcar = (
+      c: { numero: string | number; nombre?: string | null; nacionalidad?: string | null; retirado?: boolean },
+      porDefecto: string
+    ): EjemplarTabla => ({
+      numero: String(c.numero),
+      nombre: c.nombre ?? porDefecto,
       nacionalidad: c.nacionalidad ?? null,
       retirado: Boolean(c.retirado) || retiradosCentral.has(String(c.numero)),
-    }));
+    });
+    const central = centralDeCarrera?.caballos ?? [];
+    if (central.length > 0) return central.map((c) => marcar(c, ""));
+    if (tablaDeCarrera?.caballos?.length) return tablaDeCarrera.caballos.map((c) => marcar(c, ""));
+    return [];
   }, [tablaDeCarrera, centralDeCarrera]);
 
   const monedaFmt = (n: number): string =>
     fmtMoney(Number.isFinite(n) ? n : 0, MONEDA);
+
+  /**
+   * Revision de la columna CABALLO contra los caballos de la carrera en
+   * pantalla. Se recalcula una vez por carrera (no por fila): el topete de
+   * apuntar un caballo que no corre es del modulo PURO `taquilla/caballos`.
+   *
+   * `maximoDeLaCarrera(caballosDeCarrera)` es 0 cuando la carrera no trae
+   * ejemplares, y en ese caso manda el tope de 16 del modulo puro. Cuando si
+   * trae, el conjunto de participantes es lo que manda (y una carrera de 18
+   * caballos acepta el 18 sin tocar el tope).
+   */
+  const revisionCaballo = useMemo(
+    () => (texto: string): RevisionCaballo =>
+      revisarCaballo(texto, caballosDeCarrera, maximoDeLaCarrera(caballosDeCarrera)),
+    [caballosDeCarrera]
+  );
 
   /** Cliente del registro que coincide con el texto tipeado (exacto o único por prefijo). */
   const saldoCliente = (texto: string): ClienteVenta | null => {
@@ -317,9 +392,14 @@ export function GestionJugadasModule() {
   };
 
   /**
-   * Indicador inline de la celda del cliente: ✅ si el saldo alcanza el MONTO,
-   * ⚠️ "Max: X" si no alcanza, o "Saldo X" en azul/rojo según el signo.
+   * Indicador inline de la celda del cliente: ✅ si el disponible alcanza el
+   * MONTO, ⚠️ "Max: X" si no, o "Saldo X" en azul/rojo según el signo.
    * Fallback: cobro proyectado cuando el cliente no está en el registro.
+   *
+   * "Disponible" = saldo + aval (misma regla que la RPC). Cuando el aval es lo
+   * que topsa, se dice: si el caja ve "Max: 0" en un cliente con aval 500 y le
+   * autoriza la jugada igual, la RPC la rechaza y pierde la venta; y al revés,
+   * si le tapa el botón donde sí había aval, no se vende.
    */
   const infoCliente = (texto: string, montoStr: string, cobroNeto: number): ReactNode => {
     const c = saldoCliente(texto);
@@ -330,16 +410,43 @@ export function GestionJugadasModule() {
       return null;
     }
     const saldo = saldoDeCliente(c);
+    const aval = avalDeCliente(c);
+    const libre = esClienteLibre(c);
+    const disponible = limiteDeJugar(c);
     const monto = parseFloat(String(montoStr).replace(",", "."));
     const montoValido = Number.isFinite(monto) && monto > 0;
+    const conAval = !libre && aval > 0;
     if (montoValido) {
-      if (saldo >= monto) {
-        return <span className="truncate text-[9px] font-black text-emerald-600">✅ Saldo {monedaFmt(saldo)}</span>;
+      if (libre) {
+        return <span className="truncate text-[9px] font-black text-emerald-600">✅ Libre · saldo {monedaFmt(saldo)}</span>;
       }
-      return <span className="truncate text-[9px] font-black text-red-500">⚠️ Max: {monedaFmt(saldo)}</span>;
+      if (disponible >= monto) {
+        return conAval ? (
+          <span className="truncate text-[9px] font-black text-emerald-600">
+            ✅ Disp {monedaFmt(disponible)} · aval {monedaFmt(aval)}
+          </span>
+        ) : (
+          <span className="truncate text-[9px] font-black text-emerald-600">✅ Saldo {monedaFmt(saldo)}</span>
+        );
+      }
+      return (
+        <span className="truncate text-[9px] font-black text-red-500">
+          ⚠️ Max: {monedaFmt(disponible)}
+          {conAval ? ` (${monedaFmt(saldo)} + ${monedaFmt(aval)})` : ""}
+        </span>
+      );
+    }
+    if (libre) {
+      return <span className="truncate text-[9px] font-bold text-blue-600">Libre · saldo {monedaFmt(saldo)}</span>;
     }
     const cls = saldo < 0 ? "text-red-600" : "text-blue-600";
-    return <span className={`truncate text-[9px] font-bold ${cls}`}>Saldo {monedaFmt(saldo)}</span>;
+    return conAval ? (
+      <span className={`truncate text-[9px] font-bold ${cls}`}>
+        Saldo {monedaFmt(saldo)} · aval {monedaFmt(aval)}
+      </span>
+    ) : (
+      <span className={`truncate text-[9px] font-bold ${cls}`}>Saldo {monedaFmt(saldo)}</span>
+    );
   };
 
   /** Ejemplar que coincide con el número tipeado en CABALLO (tabla fija o central). */
@@ -445,8 +552,10 @@ export function GestionJugadasModule() {
       return;
     }
     setRetirados(lista.join(","));
-    const c = await listarCarrerasCentrales(fecha, hipodromo);
-    if (c.ok) setCarrerasCentrales(c.datos ?? []);
+    // La lista de retiros se centralizó: se invalida el registro central para
+    // que chipset, semáforo y padrón de ejemplares se re lean de la matriz. No
+    // hay una segunda copia local que refrescar.
+    recargarRegistroCentral();
     setAviso(
       lista.length
         ? `⛔ Retirados C${carrera}: ${r.retirados.join(", ")} · ${r.tablasAfectadas} tabla(s) sincronizada(s)` +
@@ -475,8 +584,7 @@ export function GestionJugadasModule() {
       setAviso(`⚠️ No se pudo centralizar el retiro de N°${c.numero}: ${r.error ?? "sin conexión"}`);
       return;
     }
-    const cc = await listarCarrerasCentrales(fecha, hipodromo);
-    if (cc.ok) setCarrerasCentrales(cc.datos ?? []);
+    recargarRegistroCentral();
     setAviso(
       retirado
         ? `⛔ N°${c.numero} RETIRADO de C${carrera} · ${r.tablasAfectadas} tabla(s) sincronizada(s)` +
@@ -492,6 +600,16 @@ export function GestionJugadasModule() {
     const recortes: string[] = [];
     for (const f of filas) {
       if (!f.jugada.trim() && !f.monto.trim()) continue;
+      /* Antes de la nomenclatura: un caballo que no corre no se puede cobrar
+         liquidar. Se revisa igual con el campo vacio (no molesta: ahi la
+         revision devuelve ok) para que un numero mal escrito con la jugada
+         todavia vacia no se cuele al autocomplete. */
+      const rc = revisionCaballo(f.caballo);
+      if (!rc.ok) {
+        errores.push(`Fila ${filas.indexOf(f) + 1}: ${rc.motivo}`);
+        indicesError.push(filas.indexOf(f));
+        continue;
+      }
       const v = valida(f);
       if (!v.ok) {
         errores.push(`Fila ${filas.indexOf(f) + 1}: ${v.motivo}`);
@@ -572,6 +690,10 @@ export function GestionJugadasModule() {
       }
     }
     const ilegibles = filasNuevas.filter((f) => f.error).length;
+    /* Un caballo que no corre no se descarta como la linea ilegible (esa si es
+       irrecuperable sin releerla): la fila se conserva y se marca en rojo, como
+       el parser hace con las suyas, para que el operador corrija el numero. */
+    const conCaballoMalo = filasNuevas.filter((f) => !f.error && !revisionCaballo(f.caballo).ok);
     if (filasNuevas.length > 0) {
       setFilas(filasNuevas);
       setTextoCargaRapida("");
@@ -579,7 +701,10 @@ export function GestionJugadasModule() {
       setAviso(
         ok > 0
           ? `⚡ ${ok} fila(s) poblada(s) desde el bloque de texto.` +
-              (ilegibles ? ` ⚠️ ${ilegibles} línea(s) ilegible(s) quedaron en rojo para corregir.` : "")
+              (ilegibles ? ` ⚠️ ${ilegibles} línea(s) ilegible(s) quedaron en rojo para corregir.` : "") +
+              (conCaballoMalo.length
+                ? ` 🐴 ${conCaballoMalo.length} con caballo que no corre en esta carrera.`
+                : "")
           : `⚠️ Ninguna línea fue legible. ${ilegibles} fila(s) quedaron en rojo — corregí jugada y monto, o escribí el bloque con "JUGADA CABALLO MONTO CLIENTE1 [CLIENTE2]".`
       );
     } else {
@@ -598,6 +723,10 @@ export function GestionJugadasModule() {
       hipodromo,
       carrera,
       pizarra: ultimaPizarra.pizarra,
+      // Los dividendos cargados en Ctrl+Y viajan al motor y al central: sin
+      // esto la liquidación de puestos quedaba PENDIENTE por dividendo
+      // faltante y `resultados_carreras.dividendos` se guardaba en NULL.
+      dividendos: dividendosDePizarra(ultimaPizarra),
       tickets: ticketsDeCarrera.map((t) => ({
         comando: t.comando,
         monto: t.monto,
@@ -612,7 +741,7 @@ export function GestionJugadasModule() {
     if (r.ok) {
       for (const t of ticketsDeCarrera) eliminarTicket(t.id);
       setUltimaPizarra(null);
-      setJugadasPorCarrera((j) => j.filter((c) => c !== carrera));
+      setJugadasPorCarrera((j: number[]) => j.filter((c) => c !== carrera));
       setResumen(r);
     }
     setAviso(r.ok ? `✅ ${r.motivo}` : `❌ ${r.motivo}`);
@@ -787,6 +916,8 @@ export function GestionJugadasModule() {
               const v = valida(f);
               const detectado = f.jugada.trim() ? detectarModalidad(f.jugada) : null;
               const ejemplar = ejemplarResuelto(f.caballo);
+              const rc = revisionCaballo(f.caballo);
+              const caballoInvalido = !rc.ok;
               const rep = v.ok ? v.reparto : null;
               const recortado = !!rep?.recortado;
               const resumen = resumenReparto(rep, MONEDA);
@@ -835,24 +966,33 @@ export function GestionJugadasModule() {
                       {detectado ?? (f.jugada.trim() ? "—" : "")}
                     </span>
                   </td>
-                  <td className="gj-celda relative h-7 px-1 py-0">
+                  <td className={`gj-celda relative h-7 px-1 py-0 ${caballoInvalido ? "bg-red-50" : ""}`}>
                     <input
                       value={f.caballo}
                       onChange={(e) => setFila(i, { caballo: e.target.value })}
                       placeholder="1 · 1,2x3"
                       inputMode="numeric"
+                      aria-invalid={caballoInvalido}
                       title={
-                        rep
-                          ? `${rep.estructura} · C1 ${monedaFmt(rep.lado1.riesgo)}` +
-                            (rep.lado2.riesgo > 0 ? ` · C2 ${monedaFmt(rep.lado2.riesgo)}` : " · C2 da") +
-                            (rep.avisos.length ? `\n${rep.avisos.join("\n")}` : "")
-                          : ejemplar
-                            ? `${ejemplar.numero} - ${ejemplar.nombre}`
-                            : ""
+                        caballoInvalido
+                          ? rc.motivo
+                          : rep
+                            ? `${rep.estructura} · C1 ${monedaFmt(rep.lado1.riesgo)}` +
+                              (rep.lado2.riesgo > 0 ? ` · C2 ${monedaFmt(rep.lado2.riesgo)}` : " · C2 da") +
+                              (rep.avisos.length ? `\n${rep.avisos.join("\n")}` : "")
+                            : ejemplar
+                              ? `${ejemplar.numero} - ${ejemplar.nombre}`
+                              : ""
                       }
-                      className="w-full rounded border border-line bg-white px-1 py-0.5 text-[11px] font-semibold leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      className={`w-full rounded border bg-white px-1 py-0.5 text-[11px] font-semibold leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                        caballoInvalido ? "border-red-400" : "border-line"
+                      }`}
                     />
-                    {resumen ? (
+                    {caballoInvalido ? (
+                      <span className="pointer-events-none absolute bottom-0.5 left-1 right-1 truncate text-[9px] font-black uppercase leading-none text-red-600">
+                        No corre
+                      </span>
+                    ) : resumen ? (
                       <span
                         className={`pointer-events-none absolute bottom-0.5 left-1 right-1 truncate text-[9px] font-black uppercase leading-none tracking-wide ${resumen.clase}`}
                       >

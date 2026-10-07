@@ -1,9 +1,42 @@
 -- ============================================================================
--- RBAC — Control de Acceso Basado en Roles (esquema relacional)
+-- RBAC LEGADO — Control de Acceso Basado en Roles (esquema relacional)
 -- SPA "Club del Dinero" (Next.js). NO modifica archivos legacy.
 --
--- Ejecutar en el SQL Editor de Supabase. Las tablas usan RLS por defecto OFF
--- (igual que el resto del esquema existente); la SPA lee/escribe con anon.
+-- !! ESTE ARCHIVO ESTÁ RETIRADO. NO ES LA FUENTE DE VERDAD DEL ACCESO. !!
+--
+-- La fuente de verdad del control de acceso es:
+--     src/lib/seguridad/capacidades.ts   (registro maestro, en el codigo)
+--     src/db/seguridad_maestro.sql       (esquema y RLS de ese maestro)
+--     src/db/maestro_seed.sql            (generado desde el maestro)
+--
+-- Este script crea un SEGUNDO sistema en tablas distintas (public.perfiles,
+-- public.permisos, public.perfil_permisos, public.usuario_permisos). La app ya
+-- no lee ni escribe esas tablas: capacidades.ts, accesos.ts y el store nunca
+-- las mencionan. Por eso conviven sin chocar, y por eso aplicadas no cambia
+-- nada del comportamiento real.
+--
+-- Se conserva por dos razones: (1) las tablas pueden tener datos de una
+-- instalacion anterior y borrarlas seria una decision destructiva que no
+-- corresponde tomar aqui; (2) este archivo tiene validacion propia en
+-- pruebas/validar-rbac.mjs seccion [10].
+--
+-- Si alguna vez se decide eliminarlo, hay que borrar tambien las cuatro tablas
+-- y revisar antes que nada ningun reporte o exportacion las use.
+--
+-- Ejecutar en el SQL Editor de Supabase. Idempotente: se puede correr las
+-- veces que haga falta.
+--
+-- Sobre el RLS: el encabezado anterior de este archivo decia "RLS por defecto
+-- OFF" y las policies se llamaban "RLS off legado", pero el cuerpo SI hace
+-- `enable row level security`. O sea, RLS esta ENCENDIDO y las policies son
+-- permisivas: el efectoPractico es el mismo que dejarlo apagado (cualquiera con
+-- la llave anon entra), pero el nombre mentia. Se corrigio el nombre.
+--
+-- Este esquema no es una frontera de seguridad: la SPA corre con la llave anon
+-- publica, asi que cualquiera con esa llave puede editar la matriz. Es una
+-- herramienta de organizacion interna (que pantalla ve cada perfil), no un
+-- candado. El legado funciona exactamente igual.
+--
 -- Si las tablas NO existen, el front usa la matriz por defecto en memoria
 -- (src/lib/seguridad/permisos.ts) y todo sigue funcionando sin errores.
 -- ============================================================================
@@ -48,10 +81,19 @@ alter table public.permisos          enable row level security;
 alter table public.perfil_permisos   enable row level security;
 alter table public.usuario_permisos  enable row level security;
 
-create policy "anon todo (RLS off legado)" on public.perfiles         for all using (true) with check (true);
-create policy "anon todo (RLS off legado)" on public.permisos         for all using (true) with check (true);
-create policy "anon todo (RLS off legado)" on public.perfil_permisos  for all using (true) with check (true);
-create policy "anon todo (RLS off legado)" on public.usuario_permisos for all using (true) with check (true);
+-- RLS encendido + policies permisivas. El `drop policy if exists` antes de
+-- cada `create policy` es lo que hace el archivo idempotente: sin el, la
+-- segunda ejecucion aborta con "policy already exists" y, al estar todo el
+-- archivo en una transaccion implicita, se cae TAMBIEN el seed de las tablas
+-- de arriba.
+drop policy if exists "anon todo (permisivo)" on public.perfiles;
+drop policy if exists "anon todo (permisivo)" on public.permisos;
+drop policy if exists "anon todo (permisivo)" on public.perfil_permisos;
+drop policy if exists "anon todo (permisivo)" on public.usuario_permisos;
+create policy "anon todo (permisivo)" on public.perfiles         for all using (true) with check (true);
+create policy "anon todo (permisivo)" on public.permisos         for all using (true) with check (true);
+create policy "anon todo (permisivo)" on public.perfil_permisos  for all using (true) with check (true);
+create policy "anon todo (permisivo)" on public.usuario_permisos for all using (true) with check (true);
 
 -- ------------------------------------------------------------- seed perfiles
 insert into public.perfiles (id, nombre, descripcion) values

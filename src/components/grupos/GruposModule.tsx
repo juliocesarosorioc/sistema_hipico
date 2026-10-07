@@ -14,6 +14,7 @@ import {
   actualizarTipoJugada,
   toggleTipoJugadaActivo,
   eliminarGrupoRpc,
+  errorCargaGrupos,
   guardarConveniosGrupo,
   listarClientesLigeros,
   listarConveniosGrupo,
@@ -28,6 +29,17 @@ import {
   type MembresiaClienteGrupo,
   type TipoJugadaRow,
 } from "@/lib/grupos";
+import {
+  ETIQUETA_BASE,
+  ETIQUETA_MODALIDAD,
+  MODALIDADES_BANQUERO,
+  eliminarBanquero,
+  guardarBanquero,
+  listarBanquerosGrupo,
+  type BanqueroBase,
+  type BanqueroConvenio,
+  type ModalidadBanquero,
+} from "@/lib/banqueros";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -77,6 +89,15 @@ type FilasConvenioEditable = {
   permite_cruces: boolean;
 };
 
+type FilaBanquero = {
+  modalidad: ModalidadBanquero;
+  banquero_cliente_id: string;
+  cobra_comision: boolean;
+  comision_porcentaje: string;
+  comision_base: BanqueroBase;
+  activo: boolean;
+};
+
 /**
  * GruposModule — Grupos de Venta y Convenios (clon 1:1 de js/grupos.js).
  *  - Crear / listar / editar / activar / eliminar grupos (grupos_venta).
@@ -96,6 +117,7 @@ export function GruposModule() {
   const [destino, setDestino] = useState("");
   const [grupoConvenio, setGrupoConvenio] = useState("");
   const [convenios, setConvenios] = useState<FilasConvenioEditable[]>([]);
+  const [banqueros, setBanqueros] = useState<FilaBanquero[]>([]);
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
 
   const [editando, setEditando] = useState<GrupoRow | null>(null);
@@ -129,6 +151,8 @@ export function GruposModule() {
     setMembresias(ms);
     setTipos(ts);
     setCargando(false);
+    const err = errorCargaGrupos();
+    if (err && !gs.length) toast(err, "error");
   }, []);
 
   useEffect(() => {
@@ -184,6 +208,11 @@ export function GruposModule() {
   }, [grupos, filtro]);
 
   const gruposActivos = useMemo(() => grupos.filter((g) => g.activo !== false), [grupos]);
+
+  const jugadoresGrupoConvenio = useMemo(
+    () => (grupoConvenio ? miembrosDe(grupoConvenio) : []),
+    [grupoConvenio, miembrosDe]
+  );
 
   const guardarNuevo = async () => {
     const nombre = formNombre.trim().toUpperCase();
@@ -306,6 +335,7 @@ export function GruposModule() {
     setGrupoConvenio(grupoId);
     if (!grupoId) {
       setConvenios([]);
+      setBanqueros([]);
       return;
     }
     const cs = await listarConveniosGrupo(grupoId);
@@ -321,6 +351,49 @@ export function GruposModule() {
       };
     });
     setConvenios(filas);
+
+    const bs = await listarBanquerosGrupo(grupoId);
+    const mapaB = new Map<string, BanqueroConvenio>();
+    bs.forEach((b) => mapaB.set(String(b.modalidad), b));
+    setBanqueros(
+      MODALIDADES_BANQUERO.map((m) => {
+        const b = mapaB.get(m);
+        return {
+          modalidad: m,
+          banquero_cliente_id: b?.banquero_cliente_id ? String(b.banquero_cliente_id) : "",
+          cobra_comision: b?.cobra_comision ?? false,
+          comision_porcentaje: b != null ? String(b.comision_porcentaje ?? 0) : "2.5",
+          comision_base: (b?.comision_base as BanqueroBase) ?? "MONTO_DECIDIDO",
+          activo: b?.activo ?? true,
+        };
+      })
+    );
+  };
+
+  const guardarBanqueroFila = async (f: FilaBanquero) => {
+    if (!grupoConvenio) return toast("Seleccione el grupo para configurar su banquero.", "warning");
+    if (!f.banquero_cliente_id) {
+      const r = await eliminarBanquero(grupoConvenio, f.modalidad);
+      if (!r.ok) return toast(r.error ?? "Error al quitar el banquero.", "error");
+      toast(`Banquero de ${ETIQUETA_MODALIDAD[f.modalidad]} quitado.`, "success");
+      return;
+    }
+    const nombre = clientes.find((c) => String(c.id) === String(f.banquero_cliente_id))?.nombre ?? null;
+    const r = await guardarBanquero({
+      grupo_id: grupoConvenio,
+      modalidad: f.modalidad,
+      banquero_cliente_id: f.banquero_cliente_id,
+      banquero_nombre: nombre,
+      cobra_comision: f.cobra_comision,
+      comision_porcentaje: num(f.comision_porcentaje),
+      comision_base: f.comision_base,
+      activo: f.activo,
+    });
+    if (!r.ok) return toast(r.error ?? "Error al guardar el banquero.", "error");
+    toast(
+      `Banquero de ${ETIQUETA_MODALIDAD[f.modalidad]}: ${nombre ?? "—"} · ${f.cobra_comision ? num(f.comision_porcentaje) + "%" : "sin comisión"}.`,
+      "success"
+    );
   };
 
   const guardarConvenios = async () => {
@@ -374,10 +447,10 @@ export function GruposModule() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-black text-slate-800">
-          <i className="fas fa-layer-group mr-2 text-amber-500"></i> Grupos de Venta y Convenios
+          <span className="mr-2 text-amber-500">🗃️</span> Grupos de Venta y Convenios
         </h1>
         <Button variant="outline" size="sm" onClick={() => void recargar()}>
-          <i className="fas fa-sync-alt mr-1"></i> Recargar
+          <span className="mr-1">🔄</span> Recargar
         </Button>
       </div>
 
@@ -386,7 +459,7 @@ export function GruposModule() {
         <div className="space-y-5">
           <div className="rounded-2xl border border-line bg-white p-4">
             <h3 className="mb-3 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">
-              <i className="fas fa-plus-circle mr-1 text-amber-500"></i> Crear Grupo de Venta
+              <span className="mr-1 text-amber-500">➕</span> Crear Grupo de Venta
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <div className="col-span-3">
@@ -419,7 +492,7 @@ export function GruposModule() {
                   onChange={(e) => setFormCupo(e.target.value)}
                   type="number"
                   min={1}
-                  className={inp + " font-bold text-center"}
+                  className={inp + " font-bold text-right"}
                 />
               </div>
               <div className="col-span-3">
@@ -432,7 +505,7 @@ export function GruposModule() {
                   type="number"
                   step="0.01"
                   min={0}
-                  className={inp + " font-bold text-center"}
+                  className={inp + " font-bold text-right"}
                 />
               </div>
               <div className="col-span-3">
@@ -520,7 +593,7 @@ export function GruposModule() {
               </label>
               <div className="col-span-3">
                 <Button variant="default" className="w-full" onClick={() => void guardarNuevo()} disabled={guardando}>
-                  {guardando ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-plus-circle mr-1"></i>}
+                  {guardando ? <span className="mr-1">⏳</span> : <span className="mr-1">➕</span>}
                   Crear Grupo y su Convenio
                 </Button>
               </div>
@@ -529,7 +602,7 @@ export function GruposModule() {
 
           <div className="rounded-2xl border border-line bg-white p-4">
             <h3 className="mb-2 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">
-              <i className="fas fa-list mr-1 text-slate-400"></i> Grupos Registrados
+              <span className="mr-1 text-slate-400">📋</span> Grupos Registrados
             </h3>
             <div className="mb-2 flex items-center gap-2">
               <input
@@ -569,7 +642,7 @@ export function GruposModule() {
                         <div className="mt-0.5 truncate text-[10px] text-slate-500">
                           {g.responsable ? (
                             <>
-                              <i className="fas fa-user-tie mr-0.5 text-slate-400"></i>
+                              <span className="mr-0.5 text-slate-400">👔</span>
                               <b>{g.responsable}</b>
                             </>
                           ) : (
@@ -578,7 +651,7 @@ export function GruposModule() {
                           {cuentas.numero ? (
                             <>
                               {" "}
-                              · <i className="fas fa-university mr-0.5 text-slate-400"></i>
+                              · <span className="mr-0.5 text-slate-400">🏦</span>
                               {cuentas.numero}
                             </>
                           ) : null}
@@ -594,14 +667,14 @@ export function GruposModule() {
                         onClick={() => setEditando(g)}
                         title="Editar grupo"
                       >
-                        <i className="fas fa-edit"></i>
+                        <span >✏️</span>
                       </button>
                       <button
                         className={`rounded px-2 py-1 text-xs font-bold ${g.activo !== false ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-red-100 text-red-600 hover:bg-red-200"}`}
                         onClick={() => void toggleGrupo(g)}
                         title={g.activo !== false ? "Desactivar" : "Activar"}
                       >
-                        <i className={`fas ${g.activo !== false ? "fa-toggle-on" : "fa-toggle-off"}`}></i>
+                        <span>{g.activo !== false ? "\u{1F7E2}" : "\u26AA"}</span>
                       </button>
                       {g.es_principal ? null : (
                         <button
@@ -609,7 +682,7 @@ export function GruposModule() {
                           onClick={() => void eliminarGrupo(g)}
                           title="Eliminar"
                         >
-                          <i className="fas fa-trash-alt"></i>
+                          <span >🗑️</span>
                         </button>
                       )}
                     </div>
@@ -622,7 +695,7 @@ export function GruposModule() {
           {/* ---------------- Tipos de Jugada (CRUD) ---------------- */}
           <div className="rounded-2xl border border-line bg-white p-4">
             <h3 className="mb-2 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">
-              <i className="fas fa-dice mr-1 text-amber-500"></i> Tipos de Jugada
+              <span className="mr-1 text-amber-500">🎲</span> Tipos de Jugada
               <p className="mt-1 text-[10px] font-normal normal-case text-slate-400">
                 Tipos que alimentan los convenios por grupo. Los inactivos no aparecen en la edición de convenios.
               </p>
@@ -636,7 +709,7 @@ export function GruposModule() {
                 className={inp + " flex-1 uppercase"}
               />
               <Button size="sm" onClick={() => void crearTipo()}>
-                <i className="fas fa-plus mr-1"></i> Crear
+                <span className="mr-1">➕</span> Crear
               </Button>
             </div>
             <div className="mt-3 flex max-h-56 flex-col gap-1.5 overflow-y-auto pr-1">
@@ -668,23 +741,23 @@ export function GruposModule() {
                     {editandoTipo && String(editandoTipo.id) === String(t.id) ? (
                       <>
                         <Button size="sm" onClick={() => void guardarTipo()}>
-                          <i className="fas fa-save"></i>
+                          <span >💾</span>
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => setEditandoTipo(null)}>
-                          <i className="fas fa-times"></i>
+                          <span >✕</span>
                         </Button>
                       </>
                     ) : (
                       <>
                         <button className="rounded px-1.5 py-1 text-xs font-bold text-slate-600 hover:bg-slate-200" onClick={() => setEditandoTipo(t)} title="Renombrar">
-                          <i className="fas fa-edit"></i>
+                          <span >✏️</span>
                         </button>
                         <button
                           className={`rounded px-1.5 py-1 text-xs font-bold ${t.activo !== false ? "text-emerald-600 hover:bg-emerald-50" : "text-red-500 hover:bg-red-50"}`}
                           onClick={() => void toggleTipo(t)}
                           title={t.activo !== false ? "Desactivar" : "Activar"}
                         >
-                          <i className={`fas ${t.activo !== false ? "fa-toggle-on" : "fa-toggle-off"}`}></i>
+                          <span>{t.activo !== false ? "\u{1F7E2}" : "\u26AA"}</span>
                         </button>
                       </>
                     )}
@@ -696,7 +769,7 @@ export function GruposModule() {
         </div>
         <div className="h-fit rounded-2xl border border-line bg-white p-4">
           <h3 className="mb-4 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">
-            <i className="fas fa-user-tag mr-1 text-slate-400"></i> Clientes por Grupo (un cliente puede estar en
+            <span className="mr-1 text-slate-400">🏷️</span> Clientes por Grupo (un cliente puede estar en
             VARIOS grupos)
             <p className="mt-1 text-[10px] font-normal normal-case text-slate-400">
               El <b>Grupo Origen</b> muestra los miembros actuales del grupo. Marque clientes y use{" "}
@@ -767,13 +840,13 @@ export function GruposModule() {
 
           <div className="mt-3 flex gap-2">
             <Button variant="default" size="sm" className="flex-1" onClick={() => void agregarSeleccionados()}>
-              <i className="fas fa-arrow-right mr-1"></i> Agregar al destino
+              <span className="mr-1">➡️</span> Agregar al destino
             </Button>
             <Button variant="outline" size="sm" className="flex-1" onClick={() => void agregarTodos()}>
-              <i className="fas fa-forward mr-1"></i> Agregar todos
+              <span className="mr-1">⏩</span> Agregar todos
             </Button>
             <Button variant="danger" size="sm" className="flex-1" onClick={() => void quitarSeleccionados()}>
-              <i className="fas fa-user-minus mr-1"></i> Quitar del origen
+              <span className="mr-1">➖</span> Quitar del origen
             </Button>
           </div>
         </div>
@@ -781,7 +854,7 @@ export function GruposModule() {
         {/* ---------------- Convenios por Tipo de Jugada y Grupo ---------------- */}
         <div className="h-fit rounded-2xl border border-line bg-white p-4">
           <h3 className="mb-2 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">
-            <i className="fas fa-handshake mr-1 text-amber-500"></i> Convenios por Tipo de Jugada y Grupo
+            <span className="mr-1 text-amber-500">🤝</span> Convenios por Tipo de Jugada y Grupo
             <p className="mt-1 text-[10px] font-normal normal-case text-slate-400">
               Comisión y condiciones particulares que recibe el grupo según el tipo de jugada. El % de{" "}
               <b>Tablas Fijas</b> usa el valor del grupo; los demás tipos definen su propio convenio.
@@ -858,8 +931,110 @@ export function GruposModule() {
             )}
           </div>
           <Button variant="success" className="mt-2 w-full" onClick={() => void guardarConvenios()}>
-            <i className="fas fa-save mr-1"></i> Guardar Convenios del Grupo
+            <span className="mr-1">💾</span> Guardar Convenios del Grupo
           </Button>
+        </div>
+
+        {/* ---------------- Banquero por Modalidad ---------------- */}
+        <div className="h-fit rounded-2xl border border-line bg-white p-4">
+          <h3 className="mb-2 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">
+            <span className="mr-1 text-amber-500">👔</span> Banquero por Modalidad
+            <p className="mt-1 text-[10px] font-normal normal-case text-slate-400">
+              Cliente del grupo que toma el lado contrario de las jugadas. Al liquidar, su saldo se mueve en espejo
+              (si pierde el jugador gana el banquero y viceversa) y paga la comisión sobre el monto decidido, que
+              recibe el grupo. Sin banquero o con comisión en 0% no se le cobra nada.
+            </p>
+          </h3>
+          {!grupoConvenio ? (
+            <p className="text-xs italic text-slate-400">Seleccione un grupo para configurar su banquero.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {banqueros.map((f) => (
+                <div key={f.modalidad} className="rounded-lg border border-line bg-white px-2 py-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-24 shrink-0 text-[10px] font-black uppercase text-slate-600">
+                      {ETIQUETA_MODALIDAD[f.modalidad]}
+                    </span>
+                    <select
+                      value={f.banquero_cliente_id}
+                      onChange={(e) =>
+                        setBanqueros((bs) =>
+                          bs.map((x) => (x.modalidad === f.modalidad ? { ...x, banquero_cliente_id: e.target.value } : x))
+                        )
+                      }
+                      className={inp + " flex-1 text-[11px] font-bold"}
+                    >
+                      <option value="">— Sin banquero —</option>
+                      {jugadoresGrupoConvenio.map((c) => (
+                        <option key={String(c.id)} value={String(c.id)}>
+                          {c.nombre}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setBanqueros((bs) => bs.map((x) => (x.modalidad === f.modalidad ? { ...x, activo: !x.activo } : x)))
+                      }
+                    >
+                      {f.activo ? "Activo" : "Inactivo"}
+                    </Button>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <label className="flex cursor-pointer items-center gap-1 text-[10px] font-bold text-slate-500">
+                      <input
+                        type="checkbox"
+                        className="rounded accent-primary-600"
+                        checked={f.cobra_comision}
+                        onChange={(e) =>
+                          setBanqueros((bs) =>
+                            bs.map((x) => (x.modalidad === f.modalidad ? { ...x, cobra_comision: e.target.checked } : x))
+                          )
+                        }
+                      />
+                      Cobrar comisión
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      value={f.comision_porcentaje}
+                      disabled={!f.cobra_comision}
+                      onChange={(e) =>
+                        setBanqueros((bs) =>
+                          bs.map((x) => (x.modalidad === f.modalidad ? { ...x, comision_porcentaje: e.target.value } : x))
+                        )
+                      }
+                      className="w-16 rounded border border-line px-1 py-0.5 text-right text-[11px] font-bold text-amber-700 outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-40"
+                    />
+                    <span className="text-[10px] font-black text-slate-400">%</span>
+                    <select
+                      value={f.comision_base}
+                      disabled={!f.cobra_comision}
+                      onChange={(e) =>
+                        setBanqueros((bs) =>
+                          bs.map((x) =>
+                            x.modalidad === f.modalidad ? { ...x, comision_base: e.target.value as BanqueroBase } : x
+                          )
+                        )
+                      }
+                      className="flex-1 rounded border border-line px-1 py-0.5 text-[10px] text-slate-600 outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-40"
+                    >
+                      {(Object.keys(ETIQUETA_BASE) as BanqueroBase[]).map((b) => (
+                        <option key={b} value={b}>
+                          {ETIQUETA_BASE[b]}
+                        </option>
+                      ))}
+                    </select>
+                    <Button variant="success" size="sm" onClick={() => void guardarBanqueroFila(f)}>
+                      <span className="mr-1">💾</span> Guardar
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -876,10 +1051,10 @@ export function GruposModule() {
           <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
             <div className="bg-slate-800 px-5 py-4 text-xs font-black uppercase tracking-wider text-white flex items-center justify-between">
               <span>
-                <i className="fas fa-edit mr-2"></i> Editar Grupo y Convenio
+                <span className="mr-2">✏️</span> Editar Grupo y Convenio
               </span>
               <button className="text-slate-300 hover:text-white" onClick={() => setEditando(null)} aria-label="Cerrar">
-                <i className="fas fa-times"></i>
+                <span >✕</span>
               </button>
             </div>
             <div className="space-y-4 p-5">
@@ -921,7 +1096,7 @@ export function GruposModule() {
                     min={1}
                     value={editando.cupo_tabla ?? 100}
                     onChange={(e) => setEditando({ ...editando, cupo_tabla: parseInt(e.target.value) || 100 })}
-                    className={inp + " font-bold text-center"}
+                    className={inp + " font-bold text-right"}
                   />
                 </div>
               </div>
@@ -933,7 +1108,7 @@ export function GruposModule() {
                   min={0}
                   value={strNum(editando.comision_default)}
                   onChange={(e) => setEditando({ ...editando, comision_default: num(e.target.value) })}
-                  className={inp + " font-bold text-center"}
+                  className={inp + " font-bold text-right"}
                 />
               </div>
               <div>
@@ -1035,7 +1210,7 @@ export function GruposModule() {
                 Cancelar
               </Button>
               <Button size="sm" onClick={() => void guardarEdicion()} disabled={guardando}>
-                {guardando ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-save mr-1"></i>} Guardar
+                {guardando ? <span className="mr-1">⏳</span> : <span className="mr-1">💾</span>} Guardar
                 Grupo
               </Button>
             </div>

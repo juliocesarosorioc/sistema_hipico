@@ -35,9 +35,14 @@
  *  Se autoriza SIEMPRE hasta el monto que puede arriesgar el cliente con MENOR
  *  saldo disponible, y ambos lados se escalan a ese mínimo.
  *
- *  El "disponible" es `saldo_actual`, que YA incluye el aval: al Otorgar Aval
- *  se suman saldo y aval juntos, y al Pagar Aval se restan de ambos
- *  (ver lib/contabilidad.ts). Por eso NO se suma el aval otra vez.
+ *  El "disponible" es `saldo_actual + aval`: el aval es crédito propio del
+ *  cliente que amplía su poder de compra, así que un cliente con saldo NEGATIVO
+ *  igual puede jugar, hasta donde se lo da el aval. Comprado $100 de saldo y
+ *  con $300 de aval → disponible $400; al jugarlos los $400 queda en -$300, que
+ *  es exactamente su aval, y ahí vuelve a topar.
+ *
+ *  El aval NO se descuenta al jugar: se topa contra `saldo + aval`, y es el
+ *  saldo el que baja. Por eso no hace falta rebajar `aval` en cada ticket.
  *
  *  Excepción: modo de juego "libre" → el cliente puede jugar por encima de su
  *  saldo y no actúa como tope.
@@ -89,13 +94,47 @@ function round2(n: number): number {
 }
 
 /**
- * Saldo disponible para jugar. `saldo_actual` ya incluye el aval, así que se
- * usa tal cual. Un cliente inexistente o sin saldo informed devuelve 0.
+ * Saldo disponible para jugar: el saldo EN MANO más el aval que el banco le
+ * garantizó. Un cliente con saldo negativo no está en mora mientras su aval
+ * cubra lo que debe: puede seguir jugando hasta agotarlo.
+ *
+ * `saldo_actual` y `aval` son columnas independientes. Al "Otorgar Aval" solo
+ * sube `aval` (ver sql/contabilidad.sql): si además se sumara al saldo, el aval
+ * contaría dos veces y el cliente compraría el doble de lo que se le garantizó.
+ *
+ * Un cliente inexistente o sin saldo informado devuelve 0.
  */
 export function disponibleParaJugar(c: ClienteRiesgo | null | undefined): number {
-  const n = c && c.saldo_actual != null ? Number(c.saldo_actual) : 0;
-  return Number.isFinite(n) ? n : 0;
+  const saldo = c && c.saldo_actual != null ? Number(c.saldo_actual) : 0;
+  const aval = c && c.aval != null ? Number(c.aval) : 0;
+  const total = (Number.isFinite(saldo) ? saldo : 0) + (Number.isFinite(aval) ? aval : 0);
+  return total;
 }
+
+/** Porción del disponible que sale del AVAL (0 si no tiene aval). */
+export function respaldoAval(c: ClienteRiesgo | null | undefined): number {
+  const aval = c && c.aval != null ? Number(c.aval) : 0;
+  const n = Number.isFinite(aval) ? aval : 0;
+  return n > 0 ? n : 0;
+}
+
+/**
+ * Como explicarle al operador de dónde sale el dinero. Cuando el cliente tiene
+ * saldo NEGATIVO y aun así alcanza, tiene que quedar claro que se está jugando
+ * con el aval: si solo se muestra el total, el caja cree que hay efectivo y se
+ * lleva la sorpresa cuando el cliente no aparece a recoger.
+ */
+export function explicarDisponible(c: ClienteRiesgo | null | undefined): string {
+  if (esSinTope(c)) return "disponible libre (sin tope)";
+  const disponible = disponibleParaJugar(c);
+  const saldo = c && c.saldo_actual != null ? Number(c.saldo_actual) : 0;
+  const aval = respaldoAval(c);
+  const base = `${round2(disponible)}`;
+  if (aval <= 0) return `${base} de saldo`;
+  if (saldo < 0) return `${base} (saldo ${round2(saldo)} + aval ${round2(aval)})`;
+  return `${base} (saldo ${round2(saldo)} + aval ${round2(aval)})`;
+}
+
 
 /** Modo "libre": el cliente puede jugar por encima de su saldo. */
 export function esSinTope(c: ClienteRiesgo | null | undefined): boolean {
@@ -349,14 +388,14 @@ export function calcularReparto(o: OpcionesReparto): Reparto {
       riesgo1 = Math.max(0, d1);
       riesgo2 = riesgo1 * (q / p);
       avisos.push(
-        `${o.cliente1?.nombre ?? "Cliente 1"} tiene ${round2(d1)}: se autoriza ${round2(riesgo1)} en razón ${p}:${q}.`
+        `${o.cliente1?.nombre ?? "Cliente 1"} tiene ${explicarDisponible(o.cliente1)}: se autoriza ${round2(riesgo1)} en razón ${p}:${q}.`
       );
     } else if (!l2 && d2 < riesgo2 - 0.005) {
-      // Cliente 2 no cubre: se baja hasta que su parte quepa en su saldo.
+      // Cliente 2 no cubre: se baja hasta que su parte quepa en su disponible.
       riesgo2 = Math.max(0, d2);
       riesgo1 = riesgo2 * (p / q);
       avisos.push(
-        `${o.cliente2?.nombre ?? "Cliente 2"} tiene ${round2(d2)}: se autoriza ${round2(riesgo1)} en razón ${p}:${q}.`
+        `${o.cliente2?.nombre ?? "Cliente 2"} tiene ${explicarDisponible(o.cliente2)}: se autoriza ${round2(riesgo1)} en razón ${p}:${q}.`
       );
     }
 
@@ -387,10 +426,16 @@ export function calcularReparto(o: OpcionesReparto): Reparto {
 
   if (round2(autorizado) < round2(montoPedido)) {
     const corto = !l1 && !l2
-      ? `el menor saldo (${round2(Math.min(d1, d2))})`
-      : `el saldo del cliente con tope`;
-    avisos.push(`Se autoriza ${round2(autorizado)} de ${round2(montoPedido)} pedido: ${corto}.`);
+      ? `el menor disponible (${round2(Math.min(d1, d2))})`
+      : `el disponible del cliente con tope`;
+    const quien = !l1 && !l2
+      ? ""
+      : l1
+        ? ` de ${o.cliente2?.nombre ?? "Cliente 2"}`
+        : ` de ${o.cliente1?.nombre ?? "Cliente 1"}`;
+    avisos.push(`Se autoriza ${round2(autorizado)} de ${round2(montoPedido)} pedido: ${corto}${quien}.`);
   }
+
 
   return {
     estructura: esDador ? "DADOR" : "PP",

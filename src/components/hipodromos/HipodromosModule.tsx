@@ -11,11 +11,20 @@ import {
   crearHipodromo,
   actualizarHipodromo,
   eliminarHipodromo,
+  reactivarHipodromo,
+  activarTodosHipodromos,
 } from "@/lib/hipodromos/servicio";
-import { formatearNombre, levenshteinNorm, PAISES, type Hipodromo } from "@/lib/hipodromos/tipos";
+import {
+  estaBorrado,
+  etiquetaEstado,
+  formatearNombre,
+  levenshteinNorm,
+  normalizarEstado,
+  PAISES,
+  type Hipodromo,
+} from "@/lib/hipodromos/tipos";
 import { useHipodromosStore } from "@/store/useHipodromosStore";
-
-const estActiva = (estado: string) => (estado || "Activo") === "Activo";
+import { useRegistroCentral } from "@/store/useRegistroCentral";
 
 type FormModal = { abierta: boolean; editando: Hipodromo | null; nombre: string; pais: string; estado: string };
 
@@ -24,7 +33,7 @@ const inicialModal = (editando: Hipodromo | null): FormModal => ({
   editando,
   nombre: editando?.nombre ?? "",
   pais: (editando?.pais || "VE").toUpperCase(),
-  estado: editando?.estado || "Activo",
+  estado: normalizarEstado(editando?.estado),
 });
 
 /**
@@ -36,6 +45,8 @@ const inicialModal = (editando: Hipodromo | null): FormModal => ({
  */
 export function HipodromosModule() {
   const [hipodromos, setHipodromos] = useState<Hipodromo[]>([]);
+  const [archivados, setArchivados] = useState<Hipodromo[]>([]);
+  const [verArchivados, setVerArchivados] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [local, setLocal] = useState(false);
   const [busqueda, setBusqueda] = useState("");
@@ -48,11 +59,22 @@ export function HipodromosModule() {
 
   const invalidarSelectores = useCallback(() => {
     useHipodromosStore.getState().invalidar();
+    // También el registro central: Marcas, Gestión, Tablas y Dupletas leen el
+    // catálogo de ahí. Sin esto, un alta o baja se reflejaba en unos módulos y
+    // en otros seguía el hipódromo fantasma. Se invalida SOLO el catálogo
+    // (`invalidarHipodromos`, no `invalidar`): renombrar o dar de baja un
+    // hipódromo no cambia ninguna carrera, y `invalidar` dispararía una ráfaga
+    // de consultas a la matriz `carreras` en todos los módulos abiertos.
+    useRegistroCentral.getState().invalidarHipodromos();
   }, []);
 
   const refrescar = useCallback(async () => {
-    const res = await listarHipodromos();
-    setHipodromos(res.data);
+    // Los archivados se piden con `incluirBorrados`: vienen de la misma tabla
+    // (baja lógica) pero fuera de los selectores, para poder reactivarlos.
+    const res = await listarHipodromos({ incluirBorrados: true });
+    const todos = res.data;
+    setHipodromos(todos.filter((h) => !estaBorrado(h)));
+    setArchivados(todos.filter(estaBorrado));
     setLocal(Boolean(res.local));
     setCargando(false);
   }, []);
@@ -100,6 +122,16 @@ export function HipodromosModule() {
 
   const abrirEditar = (h: Hipodromo) => setModal(inicialModal(h));
 
+  /**
+   * Suspender no es un borrado disfrazado: abre el MISMO modal de edición con el
+   * estado en 'Suspendido', para que el operador vea exactamente qué va a pasar
+   * (deja de ofrecerse, pero el historial sigue) y pueda cancelar.
+   */
+  const abrirSuspender = (h: Hipodromo) => {
+    setModal({ ...inicialModal(h), estado: "Suspendido" });
+    toast(`Suspendiendo "${h.nombre}": dejará de ofrecerse en los selectores. Nada se borra.`, "info");
+  };
+
   const cerrarModal = () => setModal(inicialModal(null));
 
   const guardar = async () => {
@@ -107,6 +139,8 @@ export function HipodromosModule() {
     if (!nombre) return toast("Escriba el nombre del hipódromo.", "warning");
 
     // Validación fuzzy (misma del legacy): evita cuasi-duplicados por país.
+    // Los archivados NO cuentan como duplicado: si el nombre coincide con uno
+    // dado de baja, el alta lo REACTIVA en vez de bloquearse.
     const duplicado = hipodromos.find(
       (h) =>
         h.pais.toUpperCase() === modal.pais.toUpperCase() &&
@@ -127,20 +161,68 @@ export function HipodromosModule() {
       if (res.code === "23505") return toast(`El hipódromo "${nombre}" ya existe en el catálogo.`, "warning");
       return toast(res.error ?? "Error al guardar el hipódromo.", "error");
     }
-    toast(modal.editando ? `✅ Hipódromo "${nombre}" actualizado.` : `✅ Hipódromo "${nombre}" creado.`, "success");
+    toast(
+      res.reactivado
+        ? `♻️ Hipódromo "${nombre}" reactivado: conserva todo su historial.`
+        : modal.editando
+          ? `✅ Hipódromo "${nombre}" actualizado.`
+          : `✅ Hipódromo "${nombre}" creado.`,
+      "success"
+    );
     cerrarModal();
     invalidarSelectores();
     void refrescar();
   };
 
+  /**
+   * Baja LÓGICA: la fila queda archivada, no se borra. Todo lo ya registrado con
+   * ese nombre (carreras, marcas, tablas, tickets, liquidaciones) sigue ahí, y
+   * `reactivarHipodromo` la devuelve.
+   */
   const eliminar = async (h: Hipodromo) => {
-    if (!window.confirm(`¿Eliminar el hipódromo "${h.nombre}"?\nEsta acción no se puede deshacer.`)) return;
-    const res = await eliminarHipodromo(h.id);
-    if (!res.ok) {
-      toast("Error al eliminar. Puede haber tablas o tickets asociados.", "error");
+    if (
+      !window.confirm(
+        `¿Archivar el hipódromo "${h.nombre}"?\n\n` +
+          `Deja de ofrecerse en Marcas, Tablas, Gestión, Dupletas y Taquilla, pero ` +
+          `NO se borra nada: las carreras, tablas y tickets con ese nombre quedan ` +
+          `registrados. Podés reactivarlo cuando quieras desde "Archivados".`
+      )
+    )
       return;
-    }
-    toast(`🗑️ Hipódromo "${h.nombre}" eliminado.`, "success");
+    const res = await eliminarHipodromo(h.id);
+    if (!res.ok) return toast(res.error ?? "Error al archivar.", "error");
+    toast(`🗄️ Hipódromo "${h.nombre}" archivado. Su historial quedó registrado.`, "success");
+    invalidarSelectores();
+    void refrescar();
+  };
+
+  const reactivar = async (h: Hipodromo) => {
+    const res = await reactivarHipodromo(h.id);
+    if (!res.ok) return toast(res.error ?? "Error al reactivar.", "error");
+    toast(`♻️ Hipódromo "${h.nombre}" reactivado.`, "success");
+    invalidarSelectores();
+    void refrescar();
+  };
+
+  /**
+   * Reactiva una fila vigente que estaba Inactiva/Suspendida (no archivada):
+   * basta con volver a 'Activo'. No toca `eliminado_en`, que ya está en NULL.
+   */
+  const activarUno = async (h: Hipodromo) => {
+    const res = await actualizarHipodromo(h.id, { estado: "Activo" });
+    if (!res.ok) return toast(res.error ?? "Error al activar.", "error");
+    toast(`✅ Hipódromo "${h.nombre}" activo.`, "success");
+    invalidarSelectores();
+    void refrescar();
+  };
+
+  const activarTodos = async () => {
+    const inactivos = hipodromos.filter((h) => normalizarEstado(h.estado) !== "Activo").length;
+    if (inactivos === 0) return toast("Todos los hipódromos vigentes ya están activos.", "info");
+    if (!window.confirm(`¿Activar ${inactivos} hipódromo(s) inactivos o suspendidos?\n\nLos archivados NO se tocan.`)) return;
+    const res = await activarTodosHipodromos();
+    if (!res.ok) return toast(res.error ?? "Error al activar.", "error");
+    toast(`✅ ${res.activados ?? 0} hipódromo(s) activados.`, "success");
     invalidarSelectores();
     void refrescar();
   };
@@ -155,12 +237,17 @@ export function HipodromosModule() {
         <div>
           <h1 className="text-base font-black uppercase tracking-wide text-slate-900">🏇 Hipódromos</h1>
           <p className="text-xs text-slate-500">
-            {hipodromos.length} registrados{local ? " · modo respaldo (sin conexión)" : " · sincronizado con Supabase"}.
+            {hipodromos.length} vigentes · {archivados.length} archivados{local ? " · modo respaldo (sin conexión)" : " · sincronizado con Supabase"}.
           </p>
         </div>
-        <Button variant="success" size="md" onClick={abrirNuevo}>
-          ＋ Nuevo Hipódromo
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="md" onClick={() => void activarTodos()} title="Poner en Activo todos los hipódromos vigentes">
+            ⚡ Activar todos
+          </Button>
+          <Button variant="success" size="md" onClick={abrirNuevo}>
+            ＋ Nuevo Hipódromo
+          </Button>
+        </div>
       </div>
 
       {/* Buscador */}
@@ -205,7 +292,8 @@ export function HipodromosModule() {
                 </tr>
               )}
               {filtrados.map((h) => {
-                const activo = estActiva(h.estado);
+                const estado = normalizarEstado(h.estado);
+                const activo = estado === "Activo";
                 return (
                   <tr key={String(h.id)} className="transition-colors hover:bg-surfaceAlt">
                     <td className="px-4 py-2.5">
@@ -218,13 +306,7 @@ export function HipodromosModule() {
                       </span>
                     </td>
                     <td className="px-4 py-2.5">
-                      <span
-                        className={`inline-block rounded-full px-2 py-0.5 text-[9px] font-black uppercase leading-none ${
-                          activo ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
-                        }`}
-                      >
-                        {activo ? "Activo" : "Inactivo"}
-                      </span>
+                      <span className={etiquetaEstado(h).clase}>{etiquetaEstado(h).texto}</span>
                     </td>
                     <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">
                       {h.fecha_creacion ? new Date(h.fecha_creacion).toLocaleDateString("es-ES") : "—"}
@@ -234,8 +316,27 @@ export function HipodromosModule() {
                         <Button variant="outline" size="sm" onClick={() => abrirEditar(h)}>
                           ✏️ Editar
                         </Button>
-                        <Button variant="danger" size="sm" onClick={() => void eliminar(h)} title="Eliminar hipódromo">
-                          🗑️
+                        {activo ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void abrirSuspender(h)}
+                            title="Dejar de ofrecer este hipódromo sin borrarlo"
+                          >
+                            ⏸️ Suspender
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="success"
+                            size="sm"
+                            onClick={() => void activarUno(h)}
+                            title="Reactivar este hipódromo"
+                          >
+                            ♻️ Reactivar
+                          </Button>
+                        )}
+                        <Button variant="danger" size="sm" onClick={() => void eliminar(h)} title="Archivar hipódromo (su historial queda registrado)">
+                          🗄️
                         </Button>
                       </div>
                     </td>
@@ -246,6 +347,42 @@ export function HipodromosModule() {
           </table>
         </div>
       </Card>
+
+      {/* Archivados: bajas lógicas. Fuera de todos los selectores, con todo su
+          historial enlazado al mismo id. Solo se van de aquí con "Reactivar"
+          (o al volver a escribir el nombre en "Nuevo Hipódromo"). */}
+      {archivados.length > 0 && (
+        <Card className="overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setVerArchivados((v) => !v)}
+            className="flex w-full items-center justify-between gap-3 bg-slate-50 px-4 py-2.5 text-left"
+          >
+            <span className="text-[11px] font-black uppercase tracking-widest text-slate-600">
+              🗄️ Archivados ({archivados.length}) — no se ofrecen en el juego
+            </span>
+            <span className="text-[11px] font-black text-slate-400">{verArchivados ? "▲" : "▼"}</span>
+          </button>
+          {verArchivados && (
+            <div className="divide-y divide-line/70">
+              {archivados.map((h) => (
+                <div key={String(h.id)} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+                  <div className="min-w-0">
+                    <p className="font-black uppercase tracking-wide text-slate-500 line-through">{h.nombre}</p>
+                    <p className="text-[10px] font-semibold text-slate-400">
+                      {h.pais} · archivado {h.eliminado_en ? new Date(h.eliminado_en).toLocaleDateString("es-ES") : "—"} · su historial de
+                      carreras, tablas y tickets sigue registrado
+                    </p>
+                  </div>
+                  <Button variant="success" size="sm" onClick={() => void reactivar(h)} title="Reactivar con el mismo id y todo su historial">
+                    ♻️ Reactivar
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Modal crear / editar */}
       {modal.abierta && (
@@ -293,9 +430,14 @@ export function HipodromosModule() {
                     onChange={(e) => setModal((m) => ({ ...m, estado: e.target.value }))}
                     className={selectCls}
                   >
-                    <option value="Activo">🟢 Activo</option>
-                    <option value="Inactivo">⚪ Inactivo</option>
+                    <option value="Activo">🟢 Activo — se ofrece en Marcas, Tablas, Gestión y Taquilla</option>
+                    <option value="Inactivo">⚪ Inactivo — fuera de los selectores, sin archivarlo</option>
+                    <option value="Suspendido">🟠 Suspendido — temporalmente fuera de los selectores</option>
                   </select>
+                  <span className="text-[10px] font-semibold text-slate-400">
+                    Inactivo y Suspendido no se ofrecen en los selectores de juego, pero siguen en el catálogo y su historial queda
+                    intacto. "Archivar" es la baja lógica: no aparece en ningún selector hasta reactivarlo.
+                  </span>
                 </label>
               )}
 

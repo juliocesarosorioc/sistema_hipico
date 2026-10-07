@@ -5,8 +5,8 @@ import { ContabilidadModule } from "@/components/contabilidad/ContabilidadModule
 
 export default function ContabilidadIngresosPage() {
   return (
-    <RutaProtegida permiso="acceso_dashboard">
+    <RutaProtegida>
       <ContabilidadModule tabInicial="ingresos" />
     </RutaProtegida>
-  );
+);
 }

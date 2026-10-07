@@ -99,7 +99,7 @@ export function CarreraGacetaCard({ index, carrera, onChange, onEnviar, onElimin
               onChange={(e) => set({ distancia: e.target.value })}
               placeholder="m"
               title="Distancia"
-              className="w-11 bg-transparent text-center font-black text-white outline-none placeholder:text-white/40"
+              className="w-11 bg-transparent text-right font-black text-white outline-none placeholder:text-white/40"
             />
             m
           </span>

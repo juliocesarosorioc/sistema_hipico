@@ -95,7 +95,7 @@ export function RelacionCarrera() {
             type="number"
             min={1}
             placeholder="4"
-            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold text-slate-900"
+            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-right text-xs font-bold text-slate-900"
           />
         </label>
         <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">

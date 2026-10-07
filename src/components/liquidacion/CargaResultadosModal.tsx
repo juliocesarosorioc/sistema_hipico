@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { PizarraCarrera } from "@/lib/liquidacion";
 import type { EjemplarTabla } from "@/lib/tablas/tipos";
 import { colorDeNumero, textoDeNumero } from "@/lib/tablas/tipos";
+import { CLAVES_WPS, ETIQUETAS_WPS, PREFIJO_WPS, pagoPorUno } from "@/lib/motores/wps";
 import { Button } from "@/components/ui/Button";
 
 export type PizarraResultados = {
@@ -15,6 +16,13 @@ export type PizarraResultados = {
    *  "show:7"), solo para los pools que paga cada caballo según su lugar
    *  (1°→W+P+S · 2°→P+S · 3°→S). */
   dividendos?: Record<string, number> | null;
+  /** Matriz de las jugadas AMERICANAS W/P/S, también por $1, en las claves
+   *  "wps_WW", "wps_WP", "wps_WS", "wps_PP", "wps_PS" y "wps_SS". Va aparte de
+   *  los dividendos por caballo porque el pago depende de las DOS cosas a la
+   *  vez (qué se apostó × en qué puesto llegó): un mismo caballo 1º paga
+   *  distinto según si la jugada era W, P o S, y eso las claves por posición no
+   *  lo pueden expresar. Ver `src/lib/motores/wps.ts`. */
+  matrizWps?: Record<string, number> | null;
   /** Premio por tabla: NO se carga aquí — se calcula automáticamente con lo que
    *  paga la tabla × la cantidad jugada (los retiros ajustan en el motor). */
   premio_por_tabla?: number | null;
@@ -86,6 +94,10 @@ export function CargaResultadosModal({
   const [filas, setFilas] = useState<Fila[]>([]);
   const [usoDividendos, setUsoDividendos] = useState(false);
   const [dividendos, setDividendos] = useState<Record<string, string>>({});
+  const [usoMatrizWps, setUsoMatrizWps] = useState(false);
+  // Se captura TAL COMO lo imprime el tablero ("paga $12 por $2") y se convierte
+  // a pago por $1 al guardar, para no pedirle a la casa una cuenta que no hace.
+  const [matrizWps, setMatrizWps] = useState<Record<string, string>>({});
   const [mismoRaya, setMismoRaya] = useState(true);
   const [rayaNumero, setRayaNumero] = useState("");
 
@@ -93,6 +105,8 @@ export function CargaResultadosModal({
     if (!abierto) return;
     setUsoDividendos(false);
     setDividendos({});
+    setUsoMatrizWps(false);
+    setMatrizWps({});
     setMismoRaya(true);
     setRayaNumero("");
     const base = Array.from({ length: minLugares }, (_, i) => {
@@ -140,6 +154,7 @@ export function CargaResultadosModal({
   const toggleEmpate = (i: number) =>
     setFilas((f) => f.map((r, j) => (j === i ? { ...r, empate: !r.empate } : r)));
   const setDiv = (k: string, v: string) => setDividendos((d) => ({ ...d, [k]: v.replace(/[^\d.]/g, "") }));
+  const setMatriz = (k: string, v: string) => setMatrizWps((m) => ({ ...m, [k]: v.replace(/[^\d.]/g, "") }));
 
   const confirmar = () => {
     const ordenNombres = new Map<number, string>(ORDENES.map((o) => [o.orden, o.nombre]));
@@ -172,11 +187,23 @@ export function CargaResultadosModal({
         if (pools.show) write("show", n);
       });
     }
+    // Matriz de las AMERICANAS W/P/S: el tablero cotiza "paga $X por $2" y el
+    // motor trabaja por $1, así que se convierte UNA vez al guardar. Solo se
+    // escriben las celdas informadas: una celda vacía queda sin clave y el
+    // motor deja esa jugada PENDIENTE en vez de inventarle un pago.
+    const matrizFinal: Record<string, number> = {};
+    if (usoMatrizWps) {
+      CLAVES_WPS.forEach((clave) => {
+        const porUno = pagoPorUno(parseFloat(matrizWps[clave] ?? ""));
+        if (porUno > 0) matrizFinal[PREFIJO_WPS + clave] = porUno;
+      });
+    }
     onConfirmar({
       pizarra: { ...pizarra, empates: empates.length ? empates : undefined } as PizarraCarrera,
       empates,
       llenas: nLlenas,
       dividendos: usoDividendos && Object.keys(divFinal).length ? divFinal : null,
+      matrizWps: usoMatrizWps && Object.keys(matrizFinal).length ? matrizFinal : null,
     });
   };
 
@@ -343,6 +370,59 @@ export function CargaResultadosModal({
               Cada caballo carga solo el dividendo de los pools que paga según su lugar: 1°→W+P+S · 2°→P+S · 3°→S. Los
               empatados del 1º comparten todo el pool WPS.
             </p>
+          )}
+
+          {/* MATRIZ AMERICANA W/P/S — distinta de los pools por caballo: acá el
+              pago depende de qué se apostó (fila) y del puesto alcanzado
+              (columna), no solo del puesto. */}
+          <label className="mt-2.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-700">
+            <input
+              type="checkbox"
+              checked={usoMatrizWps}
+              onChange={(e) => setUsoMatrizWps(e.target.checked)}
+              className="h-3.5 w-3.5 accent-indigo-600"
+            />
+            Cargar matriz americana W / P / S (opcional)
+          </label>
+          {usoMatrizWps && (
+            <>
+              <p className="mt-1 text-[9px] italic text-slate-500">
+                Se ingresa como lo publica el tablero (<b>paga $ por $2</b>) y se guarda el equivalente por $1. Dejarla
+                en blanco no la inventa: esa jugada queda <b>pendiente</b> hasta que la casa la cargue, nunca perdida.
+              </p>
+              <div className="mt-1.5 grid grid-cols-2 gap-1">
+                {CLAVES_WPS.map((clave) => {
+                  const porDos = matrizWps[clave] ?? "";
+                  const porUno = pagoPorUno(parseFloat(porDos || ""));
+                  return (
+                    <label
+                      key={clave}
+                      title={`${ETIQUETAS_WPS[clave]} · se guarda como ${PREFIJO_WPS}${clave} = ${porUno || "?"} por $1`}
+                      className="flex items-center justify-between gap-1 rounded border border-indigo-100 bg-white px-1.5 py-1"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-[9px] font-black uppercase leading-none text-indigo-600">
+                          {clave}
+                        </span>
+                        <span className="block truncate text-[8px] leading-none text-slate-400">
+                          {ETIQUETAS_WPS[clave]}
+                        </span>
+                      </span>
+                      <input
+                        value={porDos}
+                        onChange={(e) => setMatriz(clave, e.target.value)}
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        className="w-12 shrink-0 rounded bg-indigo-50/60 px-1 py-0.5 text-center font-mono text-[11px] font-black text-slate-900 placeholder:text-slate-300 outline-none focus:ring-1 focus:ring-indigo-400"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="mt-1 text-[8px] italic text-slate-400">
+                WW/WP/WS = playbook de W/P/S que llega 1º · PP/PS = que llega 2º · SS = que llega 3º.
+              </p>
+            </>
           )}
         </div>
 

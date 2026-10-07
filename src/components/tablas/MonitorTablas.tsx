@@ -7,16 +7,29 @@ import { hoyLocal } from "@/lib/gaceta/programa";
 import { Flag, normalizarNacionalidad } from "@/components/ui/BanderaPais";
 import { Button } from "@/components/ui/Button";
 import { Guard } from "@/components/ui/Guard";
+import { TicketVentaPreview, type TicketVentaModel } from "@/components/tickets/TicketVentaPreview";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { EjemplarModal, type VentaRapidaItem } from "@/components/tablas/EjemplarModal";
 import { EditorCaballos } from "@/components/tablas/EditorCaballos";
-import { listarCuposTabla, guardarCuposTabla, listarGruposVenta, listarClientesVenta, type CupoTablaGrupo, type GrupoVenta, type ClienteVenta } from "@/lib/grupos";
+import { CuadroModal } from "@/components/tablas/CuadroModal";
+import { listarCuposTabla, guardarCuposTabla, listarGruposVenta, listarClientesVenta, esClienteLibre, type CupoTablaGrupo, type GrupoVenta, type ClienteVenta } from "@/lib/grupos";
+import { listarBanquerosGrupo } from "@/lib/banqueros";
 import { useCarrerasCentrales } from "@/lib/carreras/useCarrerasCentrales";
 import { aplicarRetirosCarrera } from "@/lib/carreras/retiros";
 import { guardarCarreraCentral } from "@/lib/carreras/central";
+import { esFechaIso } from "@/lib/fechas";
 
 /** Monedas permitidas al corregir una tabla (el símbolo nunca se muestra). */
 const OPCIONES_MONEDA = ["USD", "VES", "BS", "EUR"];
+
+/**
+ * Forma ÚNICA de los botones de acción de la cabecera: cuadrado, sin texto, del
+ * mismo tamaño para las cuatro acciones. El color lo pone quien lo usa
+ * (`bg-amber-500`, `bg-indigo-600`, `bg-emerald-600`, `bg-rose-600`).
+ * Un solo lugar para la forma = si mañana se agrandan, se agrandan las cuatro.
+ */
+const BTN_CRUDA =
+  "inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[13px] leading-none shadow-sm ring-1 ring-white/30 transition hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-white";
 
 export type VentaTablaItem = {
   tablaId: string | number;
@@ -25,12 +38,18 @@ export type VentaTablaItem = {
   monto: number;
   cantidad?: number;
   grupo?: { id: string | number; nombre: string } | null;
-  jugador?: { id: string | number; nombre: string; saldo_actual?: number } | null;
+  jugador?: {
+    id: string | number;
+    nombre: string;
+    saldo_actual?: number;
+    aval?: number;
+    libre?: boolean;
+  } | null;
 };
 
 type Props = {
   tablas: StoredTablaFija[];
-  onVender?: (item: VentaTablaItem) => void;
+  onVender?: (item: VentaTablaItem) => Promise<{ ok: boolean; error?: string }>;
   onLiquidar?: (tabla: StoredTablaFija, r: PizarraResultados) => void;
   onEditar?: (tabla: StoredTablaFija, patch: Record<string, unknown>) => void;
   onRetirar?: (tabla: StoredTablaFija, indice: number, retirado: boolean) => Promise<boolean>;
@@ -53,7 +72,8 @@ type Props = {
   /** Número es-VE SIN símbolo de moneda (la moneda se estipula por el grupo). */
   function fmtValor(n: number | null | undefined): string {
     const num = typeof n === "number" && isFinite(n) ? n : 0;
-    return num.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // El premio de la tabla no lleva decimales para que sea más legible.
+    return num.toLocaleString("es-VE", { maximumFractionDigits: 0 });
   }
 
   /**
@@ -105,11 +125,28 @@ export function MonitorTablas({
   const [clienteVenta, setClienteVenta] = useState("");
   const [grupoVenta, setGrupoVenta] = useState("");
   const [vendiendoCargando, setVendiendoCargando] = useState(false);
+  const [previewVenta, setPreviewVenta] = useState<{ item: VentaTablaItem; ticket: TicketVentaModel } | null>(null);
+  const [previewConfirmando, setPreviewConfirmando] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [liquidando, setLiquidando] = useState<StoredTablaFija | null>(null);
   const [editando, setEditando] = useState<StoredTablaFija | null>(null);
   const [patchEdicion, setPatchEdicion] = useState<Record<string, unknown>>({});
   const [patchCaballos, setPatchCaballos] = useState<EjemplarTabla[]>([]);
   const [patchCupos, setPatchCupos] = useState<CupoTablaGrupo[]>([]);
+  /**
+   * Cuadro en edicion sobre la tarjeta. `indice === null` significa ALTA (no
+   * existe todavia el cuadro), y es lo que distingue "crear" de "editar" sin
+   * needing un segundo modal.
+   */
+  const [cuadroEnEdicion, setCuadroEnEdicion] = useState<{
+    tabla: StoredTablaFija;
+    indice: number | null;
+  } | null>(null);
+  const [cuadroBorrando, setCuadroBorrando] = useState<{
+    tabla: StoredTablaFija;
+    indice: number;
+  } | null>(null);
+  const [cuadroGuardando, setCuadroGuardando] = useState(false);
 
   /** Carga los cupos por grupo de la tabla (o construye filas desde grupos_venta). */
   const cargarCupos = async (t: StoredTablaFija) => {
@@ -270,7 +307,7 @@ export function MonitorTablas({
       return diaDeLaTabla(a).localeCompare(diaDeLaTabla(b));
     });
 
-  const lanzarVenta = () => {
+  const lanzarVenta = async () => {
     if (!vendiendo || !ejemplarVenta.trim() || !montoVenta.trim()) {
       return setAviso("Selecciona un ejemplar e indica el monto jugado.");
     }
@@ -286,68 +323,139 @@ export function MonitorTablas({
     }
     const cliente = opcionesVenta.clientes.find((x) => String(x.id) === clienteVenta);
     const grupo = opcionesVenta.grupos.find((x) => String(x.id) === grupoVenta);
-    onVender?.({
+    const nombreCab =
+      (vendiendo.caballos ?? []).find((c) => String(c.numero) === ejemplarVenta)?.nombre ?? "TABLA COMPLETA";
+    const item: VentaTablaItem = {
       tablaId: vendiendo.id,
       numero: ejemplarVenta,
-      nombre: (vendiendo.caballos ?? []).find((c) => String(c.numero) === ejemplarVenta)?.nombre ?? "TABLA COMPLETA",
+      nombre: nombreCab,
       monto,
       grupo: grupo ? { id: grupo.id, nombre: grupo.nombre } : null,
       jugador: cliente
-        ? { id: cliente.id, nombre: cliente.nombre, saldo_actual: Number(cliente.saldo_actual ?? 0) }
+        ? {
+            id: cliente.id,
+            nombre: cliente.nombre,
+            saldo_actual: Number(cliente.saldo_actual ?? 0),
+            aval: Number(cliente.aval ?? 0) || 0,
+            libre: esClienteLibre(cliente),
+          }
         : null,
+    };
+    const saldo = Number(cliente?.saldo_actual ?? 0);
+    const bq = (await listarBanquerosGrupo(grupoVenta)).find(
+      (b) => b.modalidad === "TABLAS" && b.activo !== false && b.banquero_cliente_id
+    );
+    setAviso("");
+    setPreviewError(null);
+    setPreviewVenta({
+      item,
+      ticket: {
+        modalidad: "TABLA FIJA",
+        hipodromo: vendiendo.hipodromo ?? "",
+        fecha: diaDeLaTabla(vendiendo),
+        carrera: vendiendo.carrera ?? "",
+        titulo: `TABLA ${vendiendo.hipodromo} C${vendiendo.carrera} · ${ejemplarVenta === "TABLA" ? "COMPLETA" : `Nº ${ejemplarVenta}`}`,
+        detalle: nombreCab,
+        jugador: cliente?.nombre ?? "",
+        grupo: grupo?.nombre ?? null,
+        monto,
+        moneda: grupo?.moneda ?? vendiendo.moneda,
+        pago: pagoPotencialNumerico(vendiendo, ejemplarVenta, monto),
+        saldoAntes: saldo,
+        saldoDespues: saldo - monto,
+        banquero: bq?.banquero_nombre ?? null,
+        banqueroCobra: bq?.cobra_comision ?? false,
+        banqueroComision: bq?.comision_porcentaje ?? null,
+        banqueroBase: bq?.comision_base ?? null,
+      },
     });
+  };
+
+  const confirmarVentaPreview = async () => {
+    if (!previewVenta || !onVender) return;
+    setPreviewConfirmando(true);
+    setPreviewError(null);
+    const r = await onVender(previewVenta.item);
+    setPreviewConfirmando(false);
+    if (!r.ok) {
+      setPreviewError(r.error ?? "No se pudo registrar la venta.");
+      return;
+    }
+    setPreviewVenta(null);
     setVendiendo(null);
     setEjemplarVenta("");
     setMontoVenta("");
     setClienteVenta("");
     setGrupoVenta("");
-    setAviso("🛒 Venta enviada. Se descuenta del saldo y se crea un ticket por ejemplar.");
+    setAviso("🛒 Venta registrada: se descontó del saldo y se creó el ticket.");
+  };
+
+  /**
+   * Persiste la lista de cuadros de una tabla y la propaga a la data central.
+   *
+   * Los cuadros viven en el array JSONB `caballos` y no tienen columna propia,
+   * asi que cualquier cambio (alta, edicion o baja de un cuadro suelto) se
+   * guarda reescribiendo el array entero mas el recalculo de
+   * `suma_base_tabla`. La suma se toma de `sumaBase`, que EXCLUYE los retirados:
+   * es la misma funcion con la que se siembra la tabla al publicarla, y la que
+   * usa el pie "Suma" de la tarjeta. Antes `guardarEdicion` hacia la suma a mano
+   * sumando tambien los retirados, y por eso el pie podia no cuadrar con lo que
+   * acababa de guardar el mismo operador.
+   */
+  const persistirCaballos = async (
+    tabla: StoredTablaFija,
+    caballos: EjemplarTabla[],
+    patchAdicional?: Record<string, unknown>
+  ): Promise<boolean> => {
+    const suma = sumaBase(caballos);
+
+    // La tabla y la carrera son el mismo dato. Se corrigen juntas, respetando
+    // los retiros vigentes.
+    const fecha = String(patchAdicional?.fecha ?? tabla.fecha ?? "");
+    const dia = fecha ? diaDeLaTabla({ ...tabla, fecha } as StoredTablaFija) : "";
+    if (dia) {
+      const hip = String(patchAdicional?.hipodromo ?? tabla.hipodromo ?? "").trim().toUpperCase();
+      const car = parseNum(patchAdicional?.carrera ?? tabla.carrera ?? "") || 0;
+      const guardo = await guardarCarreraCentral({
+        fecha: dia,
+        hipodromo: hip,
+        carrera: car,
+        caballos: caballos.map((c) => ({
+          numero: String(c.numero),
+          nombre: String(c.nombre ?? ""),
+          retirado: Boolean(c.retirado),
+        })),
+        distancia: String(patchAdicional?.distancia_carrera ?? tabla.distancia_carrera ?? ""),
+        superficie: String(patchAdicional?.superficie ?? tabla.superficie ?? ""),
+      });
+      if (!guardo.ok) {
+        setAviso(`⚠️ Tabla guardada, pero la carrera central no se actualizó: ${guardo.error ?? "sin conexión"}`);
+      } else {
+        const ret = await aplicarRetirosCarrera({
+          fecha: dia,
+          hipodromo: hip,
+          carrera: car,
+          numeros: caballos.filter((c) => c.retirado).map((c) => String(c.numero)),
+        });
+        if (!ret.ok) {
+          setAviso(`⚠️ Tabla y carrera guardadas, pero los retiros no se propagaron: ${ret.error ?? "sin conexión"}`);
+        }
+      }
+    }
+
+    onEditar?.(tabla, { ...(patchAdicional ?? {}), caballos, suma_base_tabla: suma });
+    return true;
   };
 
   const guardarEdicion = async () => {
     if (editando) {
-      const suma = patchCaballos.reduce((a, c) => a + (parseNum(c.valor_ejemplar) || 0), 0);
       const rC = await guardarCuposTabla(
         editando.id,
         patchCupos.map((g) => ({ grupo_id: g.grupo_id, cupos: g.cupos ?? 0, max: g.max ?? null }))
       );
       if (!rC.ok) setAviso(`⚠️ Cupos: ${rC.error ?? "no guardados (revise la tabla " + String(editando.id) + ")."}`);
 
-      // DATA CENTRAL: la tabla y la carrera son el mismo dato. Al corregir la
-      // tabla se corrige también la carrera central (hipódromo, fecha, carrera,
-      // superficie, distancia y ejemplares), respetando los retiros vigentes.
-      const fecha = String(patchEdicion.fecha ?? editando.fecha ?? "");
-      const dia = fecha ? diaDeLaTabla({ ...editando, fecha } as StoredTablaFija) : "";
-      if (dia) {
-        const hip = String(patchEdicion.hipodromo ?? editando.hipodromo ?? "").trim().toUpperCase();
-        const car = parseNum(patchEdicion.carrera ?? editando.carrera ?? "") || 0;
-        const guardo = await guardarCarreraCentral({
-          fecha: dia,
-          hipodromo: hip,
-          carrera: car,
-          caballos: patchCaballos.map((c) => ({
-            numero: String(c.numero),
-            nombre: String(c.nombre ?? ""),
-            retirado: Boolean(c.retirado),
-          })),
-          distancia: String(patchEdicion.distancia_carrera ?? editando.distancia_carrera ?? ""),
-          superficie: String(patchEdicion.superficie ?? editando.superficie ?? ""),
-        });
-        if (!guardo.ok) {
-          setAviso(`⚠️ Tabla guardada, pero la carrera central no se actualizó: ${guardo.error ?? "sin conexión"}`);
-        } else {
-          // La lista de retirados de la tabla corregida pasa a ser la canónica.
-          const ret = await aplicarRetirosCarrera({
-            fecha: dia,
-            hipodromo: hip,
-            carrera: car,
-            numeros: patchCaballos.filter((c) => c.retirado).map((c) => String(c.numero)),
-          });
-          if (!ret.ok) setAviso(`⚠️ Tabla y carrera guardadas, pero los retiros no se propagaron: ${ret.error ?? "sin conexión"}`);
-        }
-      }
-
-      onEditar?.(editando, { ...patchEdicion, caballos: patchCaballos, suma_base_tabla: suma });
+      await persistirCaballos(editando, patchCaballos, patchEdicion);
     }
     setEditando(null);
     setPatchEdicion({});
@@ -356,17 +464,99 @@ export function MonitorTablas({
     setAviso("✅ Tabla corregida y guardada.");
   };
 
-  const ventaRapida = (tabla: StoredTablaFija, item: VentaRapidaItem) => {
-    onVender?.({
+  /**
+   * Aplica el resultado del CRUD de un cuadro sobre el array `caballos` de la
+   * tabla y lo persiste. Centraliza el alta, la edicion y la baja para que las
+   * tres rutas hagan exactamente lo mismo (misma suma, misma sincronizacion con
+   * la carrera central, mismo aviso).
+   */
+  const aplicarCuadro = async (
+    tabla: StoredTablaFija,
+    indice: number | null,
+    cuadro: EjemplarTabla | null
+  ) => {
+    const actuales = (tabla.caballos ?? []).map((c) => ({ ...c }));
+    const nuevos =
+      cuadro === null
+        ? actuales.filter((_, i) => i !== indice)
+        : indice === null
+          ? [...actuales, cuadro]
+          : actuales.map((c, i) => (i === indice ? { ...c, ...cuadro } : c));
+    await persistirCaballos(tabla, nuevos);
+  };
+
+  const guardarCuadro = async (cuadro: EjemplarTabla) => {
+    if (!cuadroEnEdicion) return;
+    setCuadroGuardando(true);
+    try {
+      await aplicarCuadro(cuadroEnEdicion.tabla, cuadroEnEdicion.indice, cuadro);
+      setAviso(
+        cuadroEnEdicion.indice === null
+          ? "✅ Cuadro añadido a la tabla."
+          : "✅ Cuadro actualizado."
+      );
+      setCuadroEnEdicion(null);
+    } finally {
+      setCuadroGuardando(false);
+    }
+  };
+
+  const borrarCuadro = async () => {
+    if (!cuadroBorrando) return;
+    setCuadroGuardando(true);
+    try {
+      const t = cuadroBorrando.tabla;
+      const i = cuadroBorrando.indice;
+      const nombre = String(t.caballos?.[i]?.nombre ?? "");
+      await aplicarCuadro(t, i, null);
+      setCuadroBorrando(null);
+      setCuadroEnEdicion(null);
+      setAviso(`🗑️ Cuadro ${nombre || i + 1} quitado de la tabla.`);
+    } finally {
+      setCuadroGuardando(false);
+    }
+  };
+
+  const ventaRapida = async (tabla: StoredTablaFija, item: VentaRapidaItem) => {
+    const venta: VentaTablaItem = {
       tablaId: tabla.id,
       numero: item.numero,
       nombre: item.nombre,
-      monto: item.cantidad,
+      monto: item.monto,
       cantidad: item.cantidad,
       grupo: item.grupo,
       jugador: item.jugador,
+    };
+    const saldo = Number(item.jugador?.saldo_actual ?? 0);
+    const bq = item.grupo?.id
+      ? (await listarBanquerosGrupo(item.grupo.id)).find(
+          (b) => b.modalidad === "TABLAS" && b.activo !== false && b.banquero_cliente_id
+        )
+      : undefined;
+    setAviso("");
+    setPreviewError(null);
+    setPreviewVenta({
+      item: venta,
+      ticket: {
+        modalidad: "TABLA FIJA",
+        hipodromo: tabla.hipodromo ?? "",
+        fecha: diaDeLaTabla(tabla),
+        carrera: tabla.carrera ?? "",
+        titulo: `TABLA ${tabla.hipodromo} C${tabla.carrera} · Nº ${item.numero}`,
+        detalle: `${item.nombre}${item.cantidad > 1 ? ` × ${item.cantidad} tablas` : ""}`,
+        jugador: item.jugador?.nombre ?? "",
+        grupo: item.grupo?.nombre ?? null,
+        monto: item.monto,
+        moneda: tabla.moneda,
+        pago: pagoPotencialNumerico(tabla, item.numero, item.monto),
+        saldoAntes: saldo,
+        saldoDespues: saldo - item.monto,
+        banquero: bq?.banquero_nombre ?? null,
+        banqueroCobra: bq?.cobra_comision ?? false,
+        banqueroComision: bq?.comision_porcentaje ?? null,
+        banqueroBase: bq?.comision_base ?? null,
+      },
     });
-    setAviso("🛒 Venta rápida enviada a la taquilla.");
   };
 
   const cerrarEjemplarRetiro = async (tabla: StoredTablaFija, indice: number, retirado: boolean): Promise<boolean> => {
@@ -456,20 +646,70 @@ export function MonitorTablas({
                   </span>
                   <span className="flex items-center gap-1 whitespace-nowrap">
                     <span className="inline-flex items-center rounded-md border-4 border-white bg-indigo-900 px-4 py-1 text-[15px] font-black uppercase leading-none tracking-widest text-white shadow-lg md:text-[19px]">
-                    C{t.carrera ?? ""}
-                  </span>
-                    {onEliminar && (
-                      <Guard permiso="eliminar_tabla">
+                      C{t.carrera ?? ""}
+                    </span>
+                    {/*
+                      Acciones CRUD de la tabla, en la cabecera y al lado de la
+                      carrera. Antes vivían en una fila al pie de la tarjeta, con
+                      cuatro botones de texto de ancho elástico: ocupaban una
+                      banda entera, se veían distintos entre sí (el de eliminar
+                      era más chico que los otros) y competían con la información
+                      del cuadro. Arriba, cuadrados y del mismo tamaño, la
+                      lectura es "esta tabla, estas acciones" de un vistazo y la
+                      tarjeta recupera el pie para la Suma.
+
+                      El color sí codifica la acción (editar=ámbar, vender=índigo,
+                      liquidar=esmeralda, eliminar=rojo), pero la FORMA es idéntica
+                      en las cuatro: sin texto, con `title` para el emergente.
+                    */}
+                    <span className="no-print ml-1 flex items-center gap-1">
+                      <Guard permiso="tablas:btn_editar">
                         <button
                           type="button"
-                          onClick={() => setConfirmarEliminar(t)}
-                          title="Eliminar tabla"
-                          className="rounded bg-red-600/70 px-1 py-0.5 text-[9px] font-black uppercase leading-none text-white transition-colors hover:bg-red-700 ml-2"
+                          onClick={() => { setEditando(t); setPatchEdicion({}); setPatchCaballos((t.caballos ?? []).map((c) => ({ ...c }))); void cargarCupos(t); }}
+                          title="Editar la tabla y la carrera"
+                          aria-label="Editar la tabla y la carrera"
+                          className={BTN_CRUDA + " bg-amber-500 hover:bg-amber-400"}
                         >
-                          🗑️
+                          ✏️
                         </button>
                       </Guard>
-                    )}
+                      <Guard permiso="tablas:btn_vender">
+                        <button
+                          type="button"
+                          onClick={() => void abrirVenta(t)}
+                          title="Vender esta tabla"
+                          aria-label="Vender esta tabla"
+                          className={BTN_CRUDA + " bg-indigo-500 hover:bg-indigo-400"}
+                        >
+                          🎟️
+                        </button>
+                      </Guard>
+                      <Guard permiso="tablas:btn_liquidar">
+                        <button
+                          type="button"
+                          onClick={() => setLiquidando(t)}
+                          title="Liquidar: cobrar los premios de la carrera"
+                          aria-label="Liquidar la tabla"
+                          className={BTN_CRUDA + " bg-emerald-600 hover:bg-emerald-500"}
+                        >
+                          🏁
+                        </button>
+                      </Guard>
+                      {onEliminar && (
+                        <Guard permiso="tablas:btn_eliminar">
+                          <button
+                            type="button"
+                            onClick={() => setConfirmarEliminar(t)}
+                            title="Eliminar la tabla"
+                            aria-label="Eliminar la tabla"
+                            className={BTN_CRUDA + " bg-rose-600 hover:bg-rose-500"}
+                          >
+                            🗑️
+                          </button>
+                        </Guard>
+                      )}
+                    </span>
                   </span>
                 </div>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] font-bold leading-none">
@@ -488,7 +728,7 @@ export function MonitorTablas({
                 <span className="rounded-full bg-slate-100 px-1.5 text-[9px] font-black text-slate-600">{(t.caballos ?? []).length}</span>
               </div>
 
-              <div className="px-1 py-0">
+              <div className="flex-1 px-1 py-0">
                 {(t.caballos ?? []).map((c, i) => {
                   let nac = c.nacionalidad ? String(c.nacionalidad).toUpperCase() : "";
                   if (!nac) {
@@ -497,56 +737,104 @@ export function MonitorTablas({
                   }
                   const valor = parseNum(c.valor_ejemplar);
                   return (
-                    <button
+                    <div
                       key={i}
-                      type="button"
-                      onClick={() => setEjemplarModal({ tabla: t, indice: i })}
-                      className={`grid w-full items-center rounded px-1 py-0 text-left transition-colors ${i % 2 === 1 ? "bg-slate-100" : "bg-white"} hover:bg-indigo-200 ${c.retirado ? "opacity-50" : ""} cursor-pointer`}
-                      style={{ gridTemplateColumns: "1.75rem 1fr 1.25rem 4rem" }}
+                      className={`group grid w-full items-center rounded px-1 py-0 text-left transition-colors ${i % 2 === 1 ? "bg-slate-100" : "bg-white"} hover:bg-indigo-200 ${c.retirado ? "opacity-50" : ""}`}
+                      style={{ gridTemplateColumns: "1.75rem 1fr 1.25rem 4rem 3.25rem" }}
                     >
-                      <span
-                        className="flex h-6 w-6 shrink-0 flex-none items-center justify-center rounded text-center text-[10px] font-bold leading-none"
-                        style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
+                      <button
+                        type="button"
+                        onClick={() => setEjemplarModal({ tabla: t, indice: i })}
+                        title="Retirar, rehabilitar o vender este ejemplar"
+                        className={`col-span-4 grid w-full items-center text-left ${c.retirado ? "cursor-pointer" : "cursor-pointer"}`}
+                        style={{ gridTemplateColumns: "1.75rem 1fr 1.25rem 4rem" }}
                       >
-                        {c.numero}
+                        <span
+                          className="flex h-6 w-6 shrink-0 flex-none items-center justify-center rounded text-center text-[10px] font-bold leading-none"
+                          style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
+                        >
+                          {c.numero}
+                        </span>
+                        <span className="min-w-0 truncate px-1 text-[14px] font-bold uppercase leading-none text-slate-800">{c.nombre || "Sin nombre"}</span>
+                        <span className="flex justify-center text-center leading-none">
+                          {nac !== "VE" && <Flag nac={nac} size={12} withName={false} />}
+                        </span>
+                        <span className={`whitespace-nowrap text-right text-[17px] font-black leading-none ${c.retirado ? "text-red-500 line-through" : "text-blue-700"}`}>
+                            {c.retirado ? "RET." : `${fmtPts(valor)}`}
+                        </span>
+                      </button>
+                      {/*
+                        Columna de acciones del cuadro. Solo aparece al pasar el
+                        mouse y va en `no-print`: en la hoja impresa no puede
+                        quedar un boton. El click sigue corriendo por el boton
+                        de la izquierda, que cubre las 4 columnas del dato.
+                      */}
+                      <span className="no-print col-start-5 flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                        <Guard permiso="tablas:btn_editar_cuadro">
+                          <button
+                            type="button"
+                            onClick={() => setCuadroEnEdicion({ tabla: t, indice: i })}
+                            title={`Editar ${c.nombre || `cuadro ${i + 1}`}`}
+                            className="rounded px-1 text-[11px] text-indigo-500 transition-colors hover:bg-indigo-100 hover:text-indigo-700"
+                          >
+                            ✏️
+                          </button>
+                        </Guard>
+                        <Guard permiso="tablas:btn_quitar_cuadro">
+                          <button
+                            type="button"
+                            onClick={() => setCuadroBorrando({ tabla: t, indice: i })}
+                            title={`Quitar ${c.nombre || `cuadro ${i + 1}`}`}
+                            className="rounded px-1 text-[11px] text-red-400 transition-colors hover:bg-red-100 hover:text-red-600"
+                          >
+                            🗑️
+                          </button>
+                        </Guard>
                       </span>
-                      <span className="min-w-0 truncate px-1 text-[14px] font-bold uppercase leading-none text-slate-800">{c.nombre || "Sin nombre"}</span>
-                      <span className="flex justify-center text-center leading-none">
-                        {nac !== "VE" && <Flag nac={nac} size={12} withName={false} />}
-                      </span>
-                      <span className={`whitespace-nowrap text-right text-[17px] font-black leading-none ${c.retirado ? "text-red-500 line-through" : "text-blue-700"}`}>
-                          {c.retirado ? "RET." : `${fmtPts(valor)}`}
-                      </span>
-                    </button>
+                    </div>
                   );
                 })}
-              </div>
-
-              <div className="flex items-center gap-1.5 border-t border-slate-100 bg-white px-2 py-1.5 no-print">
-                <Guard permiso="editar_tabla">
-                  <Button
-                    size="md"
-                    className="flex-[2] !bg-gradient-to-r !from-amber-500 !to-orange-600 !text-white shadow-md ring-2 ring-amber-300 hover:!from-amber-600 hover:!to-orange-700"
-                    onClick={() => { setEditando(t); setPatchEdicion({}); setPatchCaballos((t.caballos ?? []).map((c) => ({ ...c }))); void cargarCupos(t); }}
-                    title="Edita la tabla Y la carrera: los datos se sincronizan con la data central"
+                <Guard permiso="tablas:btn_agregar_cuadro">
+                  <button
+                    type="button"
+                    onClick={() => setCuadroEnEdicion({ tabla: t, indice: null })}
+                    className="no-print mt-0.5 flex w-full items-center justify-center gap-1 rounded border border-dashed border-indigo-300 py-0.5 text-[10px] font-black uppercase tracking-wider text-indigo-500 transition-colors hover:border-indigo-500 hover:bg-indigo-50"
                   >
-                    ✏️ EDITAR TABLA Y CARRERA
-                  </Button>
-                </Guard>
-                <Guard permiso="vender_tabla">
-                  <Button size="sm" className="flex-1" onClick={() => void abrirVenta(t)}>🎟️ Vender</Button>
-                </Guard>
-                <Guard permiso="liquidar_carrera">
-                  <Button variant="danger" size="sm" className="flex-1" onClick={() => setLiquidando(t)}>🏁 Liquidar</Button>
-                </Guard>
-                <Guard permiso="eliminar_tabla">
-                  <Button variant="ghost" size="sm" className="shrink-0 border border-red-200 text-red-600 hover:bg-red-50" onClick={() => setConfirmarEliminar(t)}>🗑️ Eliminar</Button>
+                    ＋ Añadir cuadro
+                  </button>
                 </Guard>
               </div>
 
-              <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-white px-1.5 py-0.5">
-                <span className="inline-flex items-center gap-1 text-[14px] font-bold uppercase tracking-wider text-slate-600 leading-none">🧮 Suma</span>
-                  <span className="text-[11px] font-semibold leading-none" style={{ color: "#74ACDF" }}>{fmtPts(t.suma_base_tabla ?? sumaBase(t.caballos))}</span>
+              {/*
+                Pie de la tarjeta. Usa el mismo `gridTemplateColumns` que cada
+                cuadro para que el total caiga exactamente bajo la columna del
+                valor y no flotando a la derecha. Antes era un
+                `flex justify-between`, que dejaba el numero desalineado
+                respecto de la columna de 4rem.
+                `flex-1` en el bloque de cuadros (arriba) es lo que empuja este
+                pie hacia abajo cuando la tabla tiene pocos ejemplares: sin
+                eso el pie queda pegado a los cuadros y no al fondo de la caja.
+                Se mantiene `py-0.5` para no alargar la tarjeta: aquí ya no queda
+                la fila de acciones, que viven en la cabecera.
+              */}
+              <div
+                className="grid items-center border-t border-slate-100 bg-white px-1 py-0.5"
+                style={{ gridTemplateColumns: "1.75rem 1fr 1.25rem 4rem" }}
+              >
+                <span />
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 leading-none">
+                  🧮 Suma
+                  <span className="font-semibold normal-case tracking-normal text-slate-400">
+                    ({(t.caballos ?? []).filter((c) => !c.retirado).length} activos)
+                  </span>
+                </span>
+                <span />
+                <span
+                  className="whitespace-nowrap text-right text-[17px] font-black leading-none"
+                  style={{ color: "#74ACDF" }}
+                >
+                  {fmtPts(t.suma_base_tabla ?? sumaBase(t.caballos))}
+                </span>
               </div>
             </div>
           ))}
@@ -649,15 +937,47 @@ export function MonitorTablas({
                 const c = opcionesVenta.clientes.find((x) => String(x.id) === clienteVenta);
                 if (!c) return null;
                 const saldo = Number(c.saldo_actual ?? 0);
+                const aval = Number(c.aval ?? 0) || 0;
+                const libre = esClienteLibre(c);
                 const monto = parseNum(montoVenta);
                 const queda = saldo - monto;
+                const disponible = libre ? Number.POSITIVE_INFINITY : saldo + aval;
+                /* El rojo aqui es "el saldo queda en negativo", no "no alcanza":
+                   con aval eso es LEGAL y es justo lo que el banco garantizo. Lo
+                   que no debe pasar es quedarse sin disponible, y ahi se avisa. */
+                const insuficiente = !libre && disponible < monto;
+                const usaAval = !libre && aval > 0 && queda < 0;
                 return (
-                  <div className={"flex items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold " + (queda < 0 ? "bg-danger-500/10 text-danger-700" : "bg-slate-100 text-slate-700")}>
-                    <span>Saldo {c.nombre}</span>
-                    <span className="font-black">
-                      {fmtSaldo(saldo)} → {fmtSaldo(queda)}
-                    </span>
-                  </div>
+                  <>
+                    <div
+                      className={
+                        "flex items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold " +
+                        (insuficiente
+                          ? "bg-danger-500/10 text-danger-700"
+                          : usaAval
+                            ? "bg-warning-500/10 text-warning-700"
+                            : "bg-slate-100 text-slate-700")
+                      }
+                    >
+                      <span>Saldo {c.nombre}</span>
+                      <span className="font-black">
+                        {fmtSaldo(saldo)} → {fmtSaldo(queda)}
+                      </span>
+                    </div>
+                    {!libre && (usaAval || insuficiente) ? (
+                      <div
+                        className={
+                          "flex items-center justify-between rounded-lg px-3 py-2 text-[11px] font-bold " +
+                          (insuficiente ? "bg-danger-500/10 text-danger-700" : "bg-warning-500/10 text-warning-700")
+                        }
+                      >
+                        <span>{insuficiente ? "No alcanza" : "Usa aval"}</span>
+                        <span className="font-black">
+                          {saldo} + aval {aval} = {fmtSaldo(disponible)}
+                        </span>
+                      </div>
+                    ) : null}
+                  </>
                 );
               })()}
             </div>
@@ -671,8 +991,95 @@ export function MonitorTablas({
         </div>
       )}
 
+      <TicketVentaPreview
+        abierto={previewVenta !== null}
+        ticket={previewVenta?.ticket ?? null}
+        confirmando={previewConfirmando}
+        error={previewError}
+        onCorregir={() => {
+          setPreviewVenta(null);
+          setPreviewError(null);
+        }}
+        onConfirmar={() => void confirmarVentaPreview()}
+      />
+
       {ejemplarModal && ejemplarActual && (
         <EjemplarModal abierto tabla={ejemplarActual.tabla} ejemplar={ejemplarActual.ejemplar} indice={ejemplarModal.indice} onCerrar={() => setEjemplarModal(null)} onRetirar={cerrarEjemplarRetiro} onVentaRapida={ventaRapida} />
+      )}
+
+      {/*
+        CRUD de cuadro suelto. El modal de edicion tiene prioridad sobre el de
+        borrado: cuando se confirma "Quitar" desde el propio modal de edicion se
+        pasa `indice` a null, asi que no pueden quedar los dos abiertos a la vez.
+      */}
+      {cuadroEnEdicion && (
+        <CuadroModal
+          cuadro={
+            cuadroEnEdicion.indice === null
+              ? null
+              : (cuadroEnEdicion.tabla.caballos?.[cuadroEnEdicion.indice] ?? null)
+          }
+          indice={cuadroEnEdicion.indice}
+          numerosUsados={(cuadroEnEdicion.tabla.caballos ?? []).map((c) => String(c.numero ?? ""))}
+          guardando={cuadroGuardando}
+          onCancelar={() => setCuadroEnEdicion(null)}
+          onGuardar={(c) => void guardarCuadro(c)}
+          onBorrar={
+            cuadroEnEdicion.indice === null
+              ? undefined
+              : () => {
+                  // El borrado pide confirmacion propia. Se cierra el modal de
+                  // edicion y se abre el de confirmar, con el mismo indice.
+                  setCuadroBorrando({
+                    tabla: cuadroEnEdicion.tabla,
+                    indice: cuadroEnEdicion.indice as number,
+                  });
+                  setCuadroEnEdicion(null);
+                }
+          }
+        />
+      )}
+
+      {cuadroBorrando && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/50 p-4 no-print" onClick={() => setCuadroBorrando(null)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-xs overflow-hidden rounded-xl border border-red-200 bg-white shadow-2xl"
+          >
+            <div className="bg-red-600 px-3 py-2 text-white">
+              <h3 className="text-sm font-black uppercase tracking-wider">🗑️ Quitar cuadro</h3>
+            </div>
+            <div className="space-y-2 p-3">
+              <p className="text-sm font-bold text-slate-800">
+                {String(cuadroBorrando.tabla.caballos?.[cuadroBorrando.indice]?.nombre ?? "Este ejemplar")} ·{" "}
+                {cuadroBorrando.tabla.hipodromo} C{cuadroBorrando.tabla.carrera}
+              </p>
+              <p className="text-[11px] leading-relaxed text-slate-600">
+                Se quita de la lista de ejemplares de la tabla y se actualiza la base.{" "}
+                {(() => {
+                  const vendidos = parseNum(cuadroBorrando.tabla.cantidad_vendida) || 0;
+                  const i = cuadroBorrando.indice;
+                  // Se estima si el ejemplar tiene tickets emitidos. Es una
+                  // advertencia, no un bloqueo: la venta no se borra sola, pero
+                  // el operador tiene que saber que esta tocando datos ya
+                  // usados antes de confirmar.
+                    return vendidos > 0 && i < vendidos
+                      ? "⚠️ La tabla ya tiene ventas registradas y este ejemplar puede tener tickets emitidos. Revisa la liquidación antes de continuar."
+                      : "La suma de la tabla se recalcula al guardar.";
+                })()}
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 border-t border-slate-100 px-3 py-2">
+              <span className="flex-1" />
+              <Button variant="ghost" size="sm" onClick={() => setCuadroBorrando(null)} disabled={cuadroGuardando}>
+                Cancelar
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => void borrarCuadro()} disabled={cuadroGuardando}>
+                {cuadroGuardando ? "Quitando…" : "🗑️ Quitar"}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {liquidando && (
@@ -700,7 +1107,17 @@ export function MonitorTablas({
                 </label>
                 <label className="block">
                   <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Fecha (AAAA-MM-DD)</span>
-                  <input value={String(patchEdicion.fecha ?? editando.fecha ?? "")} onChange={(e) => setPatchEdicion((p) => ({ ...p, fecha: e.target.value }))} placeholder="2026-09-26" className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-bold text-slate-900 focus:outline-none" />
+                  {/* Calendario, no texto: aquí se cambia el DÍA de una tabla ya
+                      publicada, y escribir "04-10-2026" en un campo libre hacía
+                      que Postgres lo guardara como 2026-04-10 (lo leía MM-DD).
+                      Mover una tabla de día parte la jornada: la carrera queda
+                      con ventas en un día y la oferta en otro. */}
+                  <input
+                    type="date"
+                    value={esFechaIso(String(patchEdicion.fecha ?? editando.fecha ?? "").slice(0, 10)) ? String(patchEdicion.fecha ?? editando.fecha ?? "").slice(0, 10) : ""}
+                    onChange={(e) => setPatchEdicion((p) => ({ ...p, fecha: e.target.value }))}
+                    className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-bold text-slate-900 focus:outline-none"
+                  />
                 </label>
                 <label className="block">
                   <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Superficie</span>
@@ -809,7 +1226,7 @@ export function MonitorTablas({
 // ============================================================================
 // LÓGICA LEGACY ESTRICTA: Motor original de Auto-ajuste de fuente y CSS nativo
 // ============================================================================
-const MAX_N = 20, FS_BASE = 8.6, FS_MIN = 7.4, FS_MAX = 13.5;
+const MAX_N = 20, FS_BASE = 6.9, FS_MIN = 5.9, FS_MAX = 10.8;
 
 function fsAuto(n: number) {
   const num = Math.min(Math.max(n || 1, 1), MAX_N);
@@ -825,30 +1242,33 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
     <div className="legacy-impresion-container p-2">
       <style dangerouslySetInnerHTML={{ __html: `
         .legacy-impresion-container { font-family: system-ui, Arial, sans-serif; color: #0f172a; background: #eef2f7; padding: 14px;}
-        .hoja-legacy { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; background: #fff; padding: 10px; border-radius: 12px; }
+        .hoja-legacy { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; background: #fff; padding: 8px; border-radius: 10px; }
         @media print {
-          .hoja-legacy { display: grid !important; grid-template-columns: repeat(5, minmax(0, 1fr)) !important; gap: 2.2mm !important; padding: 2mm !important; box-shadow: none !important; border-radius: 0 !important; }
+          .hoja-legacy { display: grid !important; grid-template-columns: repeat(5, minmax(0, 1fr)) !important; gap: 1.8mm !important; padding: 1.6mm !important; box-shadow: none !important; border-radius: 0 !important; }
           .tarjeta-legacy { break-inside: avoid; border-radius: 4px; }
         }
-        .tarjeta-legacy { background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
-        .enc-legacy { background: #0f172a; color: #fff; padding: 6px 8px; }
-        .l1-legacy { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
-        .hip-legacy { font-size: 13px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
-        .cc-legacy { background: rgba(255,255,255,.16); border-radius: 6px; font-size: 14px; font-weight: 900; padding: 1px 7px; white-space: nowrap; flex: none; }
-        .l2-legacy { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 1.5px; font-size: 10.5px; font-weight: 700; color: #cbd5e1; }
-        .meta-legacy { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .tarjeta-legacy { background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+        .enc-legacy { background: #0f172a; color: #fff; padding: 4px 6px; }
+        .l1-legacy { display: flex; align-items: center; gap: 5px; justify-content: space-between; }
+        .hip-legacy { font-size: 10.4px; font-weight: 800; letter-spacing: .32px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+        .cc-legacy { background: rgba(255,255,255,.16); border-radius: 5px; font-size: 11.2px; font-weight: 900; padding: 1px 5px; white-space: nowrap; flex: none; }
+        .l2-legacy { display: flex; align-items: center; justify-content: space-between; gap: 5px; margin-top: 1.5px; font-size: 8.4px; font-weight: 700; color: #cbd5e1; }
+        .meta-legacy { display: flex; align-items: center; gap: 3px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .fecha-legacy { margin-left: auto; white-space: nowrap; font-weight: 800; color: #7dd3fc; }
-        .filas-legacy { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; gap: 1px; padding: 3px 6px; min-height: 0; overflow: hidden; }
-        .fila-legacy { display: flex; align-items: center; gap: 4px; line-height: 1; min-height: 0; border-radius: 3px; }
+        .filas-legacy { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; gap: 1px; padding: 2px 4px; min-height: 0; overflow: hidden; }
+        .fila-legacy { display: flex; align-items: center; gap: 3px; line-height: 1.25em; min-height: 0; border-radius: 3px; }
         .fila-legacy:nth-of-type(odd) { background: #eef2f7; }
-        .num-legacy { width: 1.4em; height: 1.4em; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 0.95em; flex: none; line-height: 1; }
-        .cab-legacy { flex: 1; font-weight: 700; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; }
+        /* line-height en UNIDAD, nunca en número: html2canvas calcula la línea
+           base como parseFloat(getComputedStyle().lineHeight)*0.8 y con "1" el
+           texto se dibuja pegado al borde superior (se ve cortado en el PDF). */
+        .num-legacy { width: 1.4em; height: 1.4em; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 0.95em; flex: none; line-height: 1.4em; overflow: visible; }
+        .cab-legacy { flex: 1; font-weight: 700; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 3px; }
         .cab-legacy.ret-legacy { color: #dc2626; text-decoration: line-through; }
         .band-legacy { flex: none; display: inline-flex; margin-left: 2px; }
         .mon-legacy { font-weight: 800; color: #475569; white-space: nowrap; font-size: 0.95em; }
         .mon-legacy.cero-legacy { color: #94a3b8; }
-        .pie-legacy { display: flex; justify-content: space-between; align-items: center; gap: 6px; border-top: 1.5px solid #94a3b8; background: #f1f5f9; padding: 5px 8px; font-size: 8.5px; font-weight: 700; color: #475569; white-space: nowrap; position: relative; z-index: 2; }
-        .pie-legacy b { color: #047857; font-size: 15px; }
+        .pie-legacy { display: flex; justify-content: space-between; align-items: center; gap: 5px; border-top: 1.5px solid #94a3b8; background: #f1f5f9; padding: 3px 6px; font-size: 6.8px; font-weight: 700; color: #475569; white-space: nowrap; position: relative; z-index: 2; }
+        .pie-legacy b { color: #047857; font-size: 12px; }
       `}} />
 
       <div className="hoja-legacy">
@@ -909,6 +1329,12 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
       </div>
     </div>
   );
+}
+
+function pagoPotencialNumerico(t: StoredTablaFija, numero: string, monto: number): number {
+  if (!monto || !numero) return 0;
+  const premio = t.premio_recalculado ?? 0;
+  return numero === "TABLA" ? premio * monto : (premio / (t.suma_base_tabla ?? 1)) * monto;
 }
 
 function PremioVenta(t: StoredTablaFija, numero: string, monto: string): string {
