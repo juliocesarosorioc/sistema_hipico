@@ -7,8 +7,10 @@ import { useTaquillaStore, type TicketTaquilla } from "@/store/useTaquillaStore"
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla, type ResLiquidarCarrera } from "@/lib/liquidacion/pagarYCerrar";
 import { dividendosDePizarra } from "@/lib/liquidacion/posiciones";
+import { guardarPizarraCentral } from "@/lib/liquidacion/pizarraCentral";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { useHipodromosActivos } from "@/store/useHipodromosStore";
+import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { SemaforoCarreras } from "@/components/gestion/SemaforoCarreras";
 import { Button } from "@/components/ui/Button";
@@ -93,6 +95,7 @@ function hipoKey(h: unknown): string {
 export function GestionJugadasModule() {
   const [hipodromo, setHipodromo] = useState("LA RINCONADA");
   const hipodromos = useHipodromosActivos();
+  const nombreHipodromo = nombrePropioHipodromo(hipodromo, hipodromos);
   const [fecha, setFecha] = useState(() => hoyLocal());
   const [carrerasPorDia, setCarrerasPorDia] = useState<number[]>([]);
   const [carrera, setCarrera] = useState(1);
@@ -314,9 +317,14 @@ const hipodromosDelDia = useMemo(() => {
       tablas.find(
         (t) =>
           claveHipodromo(t.hipodromo) === claveHipodromo(hipodromo) &&
-          Number(t.carrera) === Number(carrera)
+          Number(t.carrera) === Number(carrera) &&
+          // La fecha es imprescindible: el store persiste tablas de jornadas
+          // anteriores y sin este filtro el respaldo mostraba los ejemplares de
+          // otro día cuando la carrera actual no tenía padrón en el registro
+          // central ("trae ejemplares de días diferentes al seleccionado").
+          String(t.fecha || t.fecha_creacion || "").slice(0, 10) === fecha
       ),
-    [tablas, hipodromo, carrera]
+    [tablas, hipodromo, carrera, fecha]
   );
 
   /**
@@ -826,9 +834,9 @@ const hipodromosDelDia = useMemo(() => {
           ✍️ Modo Manual
         </label>
         <div className="rounded-xl border border-line bg-gray-50 px-3 py-2 text-right">
-          <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">En sesión · {fecha}</p>
-          <p className="text-sm font-black text-slate-900">{monedaFmt(totalInvertidoSesion)}</p>
-          <p className="text-[9px] text-slate-400">{ticketsDeCarrera.length} ticket(s) · <span className="font-semibold text-slate-600">{hipodromo.toUpperCase()} C{carrera}</span></p>
+          <p className="text-[9px] font-black uppercase tracking-wide text-slate-600">
+            {nombreHipodromo} C{carrera} · {ticketsDeCarrera.length} ticket(s) · {monedaFmt(totalInvertidoSesion)}
+          </p>
         </div>
       </div>
 
@@ -850,7 +858,7 @@ const hipodromosDelDia = useMemo(() => {
               C{carrera}
             </span>
             <span className="text-[10px] font-semibold text-slate-500">
-              {hipodromo} · Retirados: {retirados.trim() || "—"}
+              {nombreHipodromo} · Retirados: {retirados.trim() || "—"}
             </span>
           </span>
         </div>
@@ -1190,7 +1198,7 @@ const hipodromosDelDia = useMemo(() => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
           <div className="w-full max-w-md rounded-2xl border border-line bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
-              <h3 className="text-xs font-black uppercase">📋 Preliminar de Carrera — {hipodromo} C{carrera}</h3>
+              <h3 className="text-xs font-black uppercase">📋 Preliminar de Carrera — {nombreHipodromo} C{carrera}</h3>
               <button type="button" onClick={() => setModalPreliminar(false)} className="text-slate-300 hover:text-white">✕</button>
             </div>
             <div className="space-y-3 p-4">
@@ -1240,6 +1248,17 @@ const hipodromosDelDia = useMemo(() => {
           setUltimaPizarra(r);
           setModalResultados(false);
           setAviso(`🏁 Resultados C${carrera} cargados (${r.llenas} posiciones${r.empates.length ? ` · ${r.empates.length} empate(s)` : ""}).`);
+          // Centraliza en resultados_carreras con la MISMA pizarra: así lo que
+          // se carga acá aplica también a Tablas Fijas, Carreras del Día y
+          // cualquier módulo que lea el resultado central.
+          void guardarPizarraCentral({
+            hipodromo,
+            carrera,
+            cargado_por: "GESTION-JUGADAS",
+            r,
+          }).then((res) => {
+            if (!res.ok) setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó: ${res.error ?? "sin conexión"}`);
+          });
         }}
       />
 
@@ -1248,7 +1267,7 @@ const hipodromosDelDia = useMemo(() => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
           <div className="w-full max-w-lg rounded-2xl border border-line bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
-              <h3 className="text-xs font-black uppercase">✅ Registrar y Finalizar — {hipodromo} C{carrera}</h3>
+              <h3 className="text-xs font-black uppercase">✅ Registrar y Finalizar — {nombreHipodromo} C{carrera}</h3>
               <button type="button" onClick={cerrarFinalizar} className="text-slate-300 hover:text-white">✕</button>
             </div>
             <div className="max-h-[60vh] space-y-3 overflow-y-auto p-4">
@@ -1361,7 +1380,7 @@ const hipodromosDelDia = useMemo(() => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
           <div className="w-full max-w-lg rounded-2xl border border-line bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
-              <h3 className="text-xs font-black uppercase">⚡ Carga Rápida — {hipodromo} C{carrera}</h3>
+              <h3 className="text-xs font-black uppercase">⚡ Carga Rápida — {nombreHipodromo} C{carrera}</h3>
               <button type="button" onClick={() => setModalCargaRapida(false)} className="text-slate-300 hover:text-white">✕</button>
             </div>
             <div className="space-y-3 p-4">

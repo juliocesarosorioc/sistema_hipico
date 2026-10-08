@@ -136,14 +136,21 @@ export const PLANTILLAS_DEFAULT: PlantillaWsp[] = [
     label: "Marcas de la|Programa",
     grupo: "marcas",
     variables: "{nombre} {club} {fecha} {hipodromo} {carrera} {lineas} {premio}",
-    txt: "Hola {nombre} 👋\n\n🎯 *MARCAS — {club}*\n📅 {fecha} · {hipodromo} · C{carrera}\n\n{lineas}\n\n💰 *Premio de la carrera:* $ {premio}\n\n📌 Las marcas son Junction, se cobran como la Carrera con premio y se pagan si la pista da 3 o más aciertos. Juega con criterio.",
+    txt: "Hola {nombre} 👋\n\n🎯 *{club}*\n📅 {fecha} / {hipodromo} / C{carrera}\n\n{lineas}\n\n💰 *Premio de la carrera:* $ {premio}\n\n📌 La jugada es Junction: se cobra como la Carrera con premio y se paga si la pista da 3 o más aciertos. Juega con criterio.",
   },
   {
     id: "marcas_duplicados",
     label: "Marcas repetidas",
     grupo: "marcas",
     variables: "{nombre} {club} {fecha} {lineas}",
-    txt: "Hola {nombre} ⚠️\n\n*{club} — MARCAS REPETIDAS*\n📅 {fecha}\n\n{lineas}\n\nRevisá tu Ticket antes de cobrar.",
+    txt: "Hola {nombre} ⚠️\n\n*{club} — REPETIDAS*\n📅 {fecha}\n\n{lineas}\n\nRevisá tu Ticket antes de cobrar.",
+  },
+  {
+    id: "marcas_hoja",
+    label: "Hoja de Marcas del día",
+    grupo: "marcas",
+    variables: "{fecha} {hipodromo} {lineas} {totales} {marcas}",
+    txt: "🏇 *PROGRAMA DEL DÍA* 📅 {fecha}\n\n{lineas}\n\n🧮 *CARRERAS:* {totales} / CON JUGADAS: {marcas}\n\n📌 Válidas solo para el día indicado. Presente en caja.",
   },
   {
     id: "dupleta_pizarra",

@@ -9,6 +9,8 @@ import { Guard } from "@/components/ui/Guard";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { listarClientes, type ClienteRow } from "@/lib/clientes";
 import { listarGruposVenta, type GrupoVenta } from "@/lib/grupos";
+import { listarHipodromos } from "@/lib/hipodromos/servicio";
+import { esOperativo } from "@/lib/hipodromos/tipos";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import {
   listarPollas,
@@ -39,6 +41,20 @@ import {
 } from "@/lib/pollas";
 import { ModalVentaPolla } from "@/components/pollas/ModalVentaPolla";
 import { ModalConfiguracionPolla } from "@/components/pollas/ModalConfiguracionPolla";
+import { CargaResultadosRapida } from "@/components/liquidacion/CargaResultadosRapida";
+
+/**
+ * Chip de hipódromo. El elegido se ve relleno; el resto, con borde. No es un
+ * `<select>`: el operador tiene que saber sin abrir nada qué hipódromo está
+ * filtrando la lista.
+ */
+function chipCls(activo: boolean): string {
+  return `rounded-full border px-3 py-1 text-sm font-semibold transition-colors ${
+    activo
+      ? "border-primary-600 bg-primary-600 text-white"
+      : "border-line bg-white text-slate-700 hover:bg-surfaceAlt"
+  }`;
+}
 
 /**
  * ============================================================================
@@ -64,6 +80,8 @@ import { ModalConfiguracionPolla } from "@/components/pollas/ModalConfiguracionP
  */
 export function PollasModule() {
   const [fecha, setFecha] = useState(hoyLocal());
+  const [hipodromos, setHipodromos] = useState<{ id: string; nombre: string }[]>([]);
+  const [hipodromoId, setHipodromoId] = useState("");
   const [pollas, setPollas] = useState<Polla[]>([]);
   const [carrerasHoy, setCarrerasHoy] = useState<CarreraPolla[]>([]);
   const [resultados, setResultados] = useState<ResultadoCarrera[]>([]);
@@ -111,6 +129,37 @@ export function PollasModule() {
     void cargar();
   }, [cargar]);
 
+  /**
+   * El catálogo de hipódromos no depende de la fecha, así que se trae una sola
+   * vez: recargarlo en cada cambio de día no aportaría nada y re-renderizaría
+   * los chips mientras el operador elige.
+   */
+  useEffect(() => {
+    void (async () => {
+      const h = await listarHipodromos();
+      if (!h.ok) return;
+      setHipodromos(
+        (h.data ?? [])
+          .filter(esOperativo)
+          .map((x) => ({ id: String(x.id), nombre: String(x.nombre) }))
+      );
+    })();
+  }, []);
+
+  const nombreHipodromo = useMemo(
+    () => hipodromos.find((h) => h.id === hipodromoId)?.nombre ?? "",
+    [hipodromos, hipodromoId]
+  );
+
+  /** Las Pollas del día. Con hipódromo elegido, solo las de ese hipódromo. */
+  const pollasFiltradas = useMemo(
+    () =>
+      hipodromoId
+        ? pollas.filter((p) => String(p.hipodromo_id ?? "") === hipodromoId)
+        : pollas,
+    [pollas, hipodromoId]
+  );
+
   return (
     <div className="space-y-4">
       <Card>
@@ -127,7 +176,20 @@ export function PollasModule() {
               label="Fecha"
               type="date"
               value={fecha}
-              onChange={(e) => setFecha(e.target.value)}
+              onChange={(e) => setFecha(e.target.value || hoyLocal())}
+            />
+            <CargaResultadosRapida
+              cargadoPor="POLLAS"
+              fecha={fecha}
+              hipodromo={nombreHipodromo || undefined}
+              carreras={carrerasHoy.map((c2) => ({
+                carrera: c2.carrera,
+                caballos: c2.ejemplares.map((e) => ({
+                  numero: e.numero,
+                  nombre: e.nombre ?? "",
+                })),
+              }))}
+              onGuardado={() => void cargar()}
             />
             <Guard permiso="pollas:btn_crear_polla">
               <Button onClick={() => setModalConfig({ abierto: true, polla: null })}>
@@ -136,6 +198,41 @@ export function PollasModule() {
             </Guard>
           </div>
         </div>
+
+        {/* ------------------------------------------------------------
+            HIPÓDROMO. No había selector: `hipodromo_id` quedaba en null y no
+            se podía acotar la lista a un hipódromo del día. Son chips y no un
+            `<select>` porque con el elegido siempre a la vista no hace falta
+            abrirlo para acordarse qué se estaba filtrando.
+         * ---------------------------------------------------------- */}
+        <div className="mt-3">
+          <span className="mb-1.5 block text-sm font-semibold text-slate-800">Hipódromo</span>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setHipodromoId("")}
+              className={chipCls(hipodromoId === "")}
+            >
+              Todos
+            </button>
+            {hipodromos.map((h) => (
+              <button
+                key={h.id}
+                type="button"
+                onClick={() => setHipodromoId(h.id)}
+                className={chipCls(hipodromoId === h.id)}
+              >
+                {h.nombre}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-slate-500">
+            {hipodromoId
+              ? `${pollasFiltradas.length} polla(s) en ${nombreHipodromo} · ${fecha}`
+              : `${pollasFiltradas.length} polla(s) el ${fecha}`}
+          </p>
+        </div>
+
         {error && (
           <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm font-semibold text-danger-700">
             {error}
@@ -147,14 +244,15 @@ export function PollasModule() {
         <Card>
           <p className="text-sm text-slate-500">Cargando…</p>
         </Card>
-      ) : pollas.length === 0 ? (
+      ) : pollasFiltradas.length === 0 ? (
         <Card>
           <p className="text-sm text-slate-600">
-            No hay Pollas para el {fecha}. Creá una para empezar a vender.
+            No hay Pollas para el {fecha}
+            {hipodromoId ? ` en ${nombreHipodromo}` : ""}. Creá una para empezar a vender.
           </p>
         </Card>
       ) : (
-        pollas.map((p) => (
+        pollasFiltradas.map((p) => (
           <TarjetaPolla
             key={p.id}
             polla={p}
@@ -168,24 +266,33 @@ export function PollasModule() {
         ))
       )}
 
-      <ModalConfiguracionPolla
-        abierto={modalConfig.abierto}
-        polla={modalConfig.polla}
-        disponibles={carrerasHoy}
-        grupos={grupos}
-        fecha={fecha}
-        onCerrar={() => setModalConfig({ abierto: false, polla: null })}
-        onConfirmar={async (datos) => {
-          const r = await guardarPolla(modalConfig.polla?.id ?? null, datos);
-          if (!r.ok) {
-            toast(r.error ?? "No pude guardar la Polla.", "error");
-            return false;
-          }
-          toast(modalConfig.polla ? "Polla actualizada." : "Polla creada.", "success");
-          await cargar();
-          return true;
-        }}
-      />
+      {/* Se monta solo abierto: el modal guarda su estado en `useState` con el
+          valor inicial de las props, así que si quedaba colgado entre aperturas,
+          "Editar" abría un formulario en blanco y una nueva Polla arrancaba con
+          la selección de la anterior. */}
+      {modalConfig.abierto && (
+        <ModalConfiguracionPolla
+          key={modalConfig.polla?.id ?? "nueva"}
+          abierto
+          polla={modalConfig.polla}
+          disponibles={carrerasHoy}
+          grupos={grupos}
+          hipodromos={hipodromos}
+          hipodromoInicial={hipodromoId}
+          fecha={fecha}
+          onCerrar={() => setModalConfig({ abierto: false, polla: null })}
+          onConfirmar={async (datos) => {
+            const r = await guardarPolla(modalConfig.polla?.id ?? null, datos);
+            if (!r.ok) {
+              toast(r.error ?? "No pude guardar la Polla.", "error");
+              return false;
+            }
+            toast(modalConfig.polla ? "Polla actualizada." : "Polla creada.", "success");
+            await cargar();
+            return true;
+          }}
+        />
+      )}
 
       {ventaPara && (
         <ModalVentaPolla

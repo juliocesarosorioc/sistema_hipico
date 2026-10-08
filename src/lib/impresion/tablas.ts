@@ -153,7 +153,7 @@ function banderaHtml(nac?: string | null, size = 12): string {
 }
 
 /** Hipódromo de pista americana (misma detección que el resto de la app). */
-function esHipoAmericano(hipodromo: string): boolean {
+export function esHipoAmericano(hipodromo: string): boolean {
   return /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN/i.test(
     hipodromo
   );
@@ -217,11 +217,10 @@ function aTablaImpresion(r: TablaRespaldo, montos: Map<string, number>): TablaIm
  */
 export async function cargarMatrizImpresion(
   respaldo?: TablaRespaldo[],
-  filtros?: { dia?: string; hipodromo?: string }
+  filtros?: { dia?: string; hipodromo?: string; carrera?: string }
 ): Promise<MatrizImpresion> {
   const dia = filtros?.dia || "";
   const hipoRaw = filtros?.hipodromo ? String(filtros.hipodromo) : "";
-  const hipo = hipoKey(hipoRaw);
   let filas: TablaRespaldo[] = [];
   let error: string | undefined;
 
@@ -257,29 +256,53 @@ export async function cargarMatrizImpresion(
   }
 
   if (filas.length === 0 && respaldo && respaldo.length > 0) filas = respaldo;
+  const montos = await montosJugados(hipoRaw);
+  const carreras = filtrarOrdenar(
+    filas.map((f) => aTablaImpresion(f, montos)),
+    { dia, hipodromo: hipoRaw, carrera: filtros?.carrera }
+  );
+  return { carreras, fuente: filas.length ? "reales" : "local", error };
+}
 
+/**
+ * Montos jugados (tickets_apuestas) por clave `hipo|carrera|número`.
+ */
+async function montosJugados(hipoRaw: string): Promise<Map<string, number>> {
   const montos = new Map<string, number>();
-  if (supabase) {
-    try {
-      let q = supabase.from("tickets_apuestas").select("hipodromo,carrera,ejemplar_numero,monto_jugado");
-      if (hipoRaw) q = q.ilike("hipodromo", hipoRaw);
-      const { data, error: eM } = await q;
-      if (!eM) {
-        for (const t of (data ?? []) as Array<{ hipodromo?: unknown; carrera?: unknown; ejemplar_numero?: unknown; monto_jugado?: unknown }>) {
-          const k = `${claveHipoCarrera(String(t.hipodromo ?? ""), String(t.carrera ?? ""))}|${String(t.ejemplar_numero ?? "")}`;
-          montos.set(k, (montos.get(k) || 0) + parseNum(t.monto_jugado));
-        }
+  if (!supabase) return montos;
+  try {
+    let q = supabase.from("tickets_apuestas").select("hipodromo,carrera,ejemplar_numero,monto_jugado");
+    if (hipoRaw) q = q.ilike("hipodromo", hipoRaw);
+    const { data, error: eM } = await q;
+    if (!eM) {
+      for (const t of (data ?? []) as Array<{ hipodromo?: unknown; carrera?: unknown; ejemplar_numero?: unknown; monto_jugado?: unknown }>) {
+        const k = `${claveHipoCarrera(String(t.hipodromo ?? ""), String(t.carrera ?? ""))}|${String(t.ejemplar_numero ?? "")}`;
+        montos.set(k, (montos.get(k) || 0) + parseNum(t.monto_jugado));
       }
-    } catch {
-      /* sin montos → badge solo por negativos */
     }
+  } catch {
+    /* sin montos → badge solo por negativos */
   }
+  return montos;
+}
 
-  const carreras = filas
-    .map((f) => aTablaImpresion(f, montos))
+/**
+ * Filtra (día + hipódromo + carrera) y ordena las carreras ya convertidas.
+ * Es el mismo criterio que usa la UI del Monitor, así el Excel de la pantalla
+ * sale idéntico a lo que el operador está mirando.
+ */
+function filtrarOrdenar(
+  carreras: TablaImpresion[],
+  f: { dia?: string; hipodromo?: string; carrera?: string }
+): TablaImpresion[] {
+  const dia = f.dia || "";
+  const hipo = f.hipodromo ? hipoKey(f.hipodromo) : "";
+  const carrera = f.carrera ? String(f.carrera).trim() : "";
+  return carreras
     .filter((c) => {
       if (dia && String(c.fecha).slice(0, 10) !== dia) return false;
       if (hipo && hipoKey(c.hipodromo) !== hipo) return false;
+      if (carrera && String(c.carrera).trim() !== carrera) return false;
       return true;
     })
     .sort(
@@ -288,8 +311,25 @@ export async function cargarMatrizImpresion(
         a.hipodromo.localeCompare(b.hipodromo, "es") ||
         (parseInt(a.carrera, 10) || 0) - (parseInt(b.carrera, 10) || 0)
     );
+}
 
-  return { carreras, fuente: filas.length ? "reales" : "local", error };
+/**
+ * Arma la matriz de impresión a partir de filas que YA están en pantalla
+ * (lo que el Monitor de Tablas está listando), sin volver a leer la tabla:
+ * solo trae los montos jugados. Sirve para exportar EXACTAMENTE lo filtrado
+ * (día + hipódromo + carrera) a Excel.
+ */
+export async function matrizDesdeFilas(
+  filas: TablaRespaldo[],
+  filtros?: { dia?: string; hipodromo?: string; carrera?: string }
+): Promise<MatrizImpresion> {
+  const hipoRaw = filtros?.hipodromo ? String(filtros.hipodromo) : "";
+  const montos = await montosJugados(hipoRaw);
+  const carreras = filtrarOrdenar(
+    filas.map((f) => aTablaImpresion(f, montos)),
+    { dia: filtros?.dia, hipodromo: hipoRaw, carrera: filtros?.carrera }
+  );
+  return { carreras, fuente: carreras.length ? "reales" : "local" };
 }
 
 /** Carrera mínima del resumen (sólo metadatos, sin caballos ni montos). */

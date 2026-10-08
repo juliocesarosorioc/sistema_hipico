@@ -50,7 +50,7 @@ export type CarrerasDiaState = {
   /** Pagos automáticos: totalPagado = premio_recalculado × tablas ganadoras. */
   pagar: (hipodromo: string, carrera: number | string, premioRecalculado: number, fecha?: string) => void;
   /** Estado derivado para corazones semáforo en la UI. */
-  estadoDe: (hipodromo: string, carrera: number | string) => CarreraDelDia | null;
+  estadoDe: (hipodromo: string, carrera: number | string, fecha?: string) => CarreraDelDia | null;
   /** ¿Existe ya esa carrera en el ledger para [fecha + hipódromo]? */
   existeCarrera: (hipodromo: string, carrera: number | string, fecha?: string) => boolean;
 };
@@ -60,7 +60,11 @@ function clave(h: string, c: number | string): string {
 }
 
 function hoy(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Día LOCAL (igual que `hoyLocal()`): con `toISOString()` se usa la zona UTC,
+  // y desde las 20:00 (VET) el ledger empezaría a registrar "mañana" mientras
+  // todos los filtros de la UI muestran hoy → carreras de un día en otro.
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export const useCarrerasDiaStore = create<CarrerasDiaState>()(
@@ -137,9 +141,12 @@ export const useCarrerasDiaStore = create<CarrerasDiaState>()(
           };
         }),
 
-      estadoDe: (hipodromo, carrera) => {
+      estadoDe: (hipodromo, carrera, fecha) => {
+        // SIEMPRE acotado al día: sin fecha se asume hoy. Una carrera de ayer
+        // jamás puede pintar el semáforo de hoy (y viceversa).
+        const f = fecha || hoy();
         const k = clave(hipodromo, carrera);
-        return get().carreras.find((x) => clave(x.hipodromo, x.carrera) === k) ?? null;
+        return get().carreras.find((x) => clave(x.hipodromo, x.carrera) === k && x.fecha === f) ?? null;
       },
 
       existeCarrera: (hipodromo, carrera, fecha) => {

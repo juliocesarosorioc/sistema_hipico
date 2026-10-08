@@ -125,13 +125,13 @@ ok("el principal tiene acceso total", resolverAccesos({ identificador: "josorioc
 ok("otro usuario NO es el principal", !esUsuarioPrincipal("alguien.otro"));
 ok(
   "un operador, aunque cree y edite clientes, no es el principal",
-  !resolverAccesos({ tipo: { capacidades: baseDeTipo("operador") } }).total
+  !resolverAccesos({ tipo: { id: 2, nombre: "operador", capacidades: baseDeTipo("operador") } }).total
 );
 ok(
   "ni una excepcion individual convierte a alguien en principal",
   !resolverAccesos({
     identificador: "otro",
-    tipo: { capacidades: baseDeTipo("admin") },
+    tipo: { id: 1, nombre: "admin", capacidades: baseDeTipo("admin") },
     excepciones: { "clientes:fn_guardar_cliente": "permitido" },
   }).total
 );

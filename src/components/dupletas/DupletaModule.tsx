@@ -506,9 +506,15 @@ export function DupletaModule() {
   };
 
   /**
-   * Reasigna el JUGADOR de una combinación ya vendida. No se revende: se cambia
-   * de dueño. La RPC devuelve el monto al anterior, cobra al nuevo y transfiere
-   * el ticket. El nuevo debe pertenecer al mismo grupo de la venta.
+   * Guarda la edición de una combinación ya vendida: cambia el JUGADOR y/o el
+   * PRECIO de la celda.
+   *
+   * - Si cambia solo el jugador, se usa la RPC atómica de reasignación
+   *   (devuelve el monto al anterior, cobra al nuevo y mueve el ticket).
+   * - Si cambia el PRECIO no hay RPC de ajuste, así que se ANULA la venta
+   *   (el dinero vuelve al jugador anterior) y se emite una venta NUEVA con el
+   *   monto corregido. Si la segunda operación falla, el cuadro queda libre y
+   *   con el dinero devuelto: se avisa para volver a vender.
    */
   const editarJugador = async () => {
     if (!matriz || !modal) return;
@@ -519,9 +525,92 @@ export function DupletaModule() {
     if (!nombre) return toast("Escriba o busque el nombre del cliente.", "warning");
     const cliente = clientes.find((cl) => cl.nombre.toUpperCase() === nombre);
     if (!cliente) return toast("Seleccione un cliente de la lista.", "warning");
-    if (String(cliente.id) === String(celda.cliente_id)) return toast("Ese ya es el jugador de la combinación.", "info");
+    const precioViejo = Number(celda.precio ?? matriz.precio ?? 0);
+    const precioNuevo = Number(precioCelda) || precioViejo;
+    if (!(precioNuevo > 0)) return toast("El precio del cuadro debe ser mayor a cero.", "warning");
+    const mismoCliente = String(cliente.id) === String(celda.cliente_id);
+    const mismoPrecio = precioNuevo === precioViejo;
+    if (mismoCliente && mismoPrecio) return toast("No hay cambios para guardar.", "info");
     if (!celda.ticket_id)
-      return toast("Esta venta no tiene ticket asociado: no se puede reasignar. Anulala y vendé de nuevo.", "error");
+      return toast("Esta venta no tiene ticket asociado: no se puede editar. Anulala y vendé de nuevo.", "error");
+
+    // ── PRECIO NUEVO: anular + volver a vender con el monto corregido ──
+    if (!mismoPrecio) {
+      setVendiendoDupleta(true);
+      const ra = await anularDupleta({ ticketId: celda.ticket_id, motivo: "Ajuste de precio desde Dupleta" });
+      if (!ra.ok) {
+        setVendiendoDupleta(false);
+        return toast(ra.error ?? "No se pudo anular la venta anterior para ajustar el precio.", "error");
+      }
+      const gid = cliente.grupo_id ?? cliente.grupos?.[0] ?? null;
+      const grupo = grupos.find((g) => String(g.id) === String(gid));
+      if (!grupo) {
+        setVendiendoDupleta(false);
+        return toast(
+          `Se anuló la venta anterior, pero ${cliente.nombre} no tiene grupo de venta: asignale uno y volvé a vender el cuadro.`,
+          "error"
+        );
+      }
+      const r = await venderDupleta({
+        hipodromo: matriz.hipodromo,
+        fecha: matriz.fecha,
+        carrera1: matriz.carrera1,
+        carrera2: matriz.carrera2,
+        numero1: modal.c1,
+        numero2: modal.c2,
+        monto: precioNuevo,
+        clienteId: String(cliente.id),
+        grupoId: String(grupo.id),
+        premio: matriz.premio,
+        idempotencia: claveIdempotenciaDupleta(),
+      });
+      setVendiendoDupleta(false);
+      if (!r.ok) {
+        // La venta anterior ya no existe: el estado local debe reflejar el de
+        // la BD, donde el cuadro quedó libre con el dinero devuelto.
+        const celdasLibres = { ...matriz.celdas };
+        delete celdasLibres[clave];
+        const libre: DupletaEstado = { ...matriz, updatedAt: new Date().toISOString(), celdas: celdasLibres };
+        setMatriz(libre);
+        const gl = await guardarDupleta(libre);
+        if (gl.ok) setGuardadas(await listarDupletasGuardadas());
+        setModal(null);
+        setQ("");
+        return toast(
+          `Se anuló la venta anterior y se devolvió el dinero, pero no se pudo revender: ${r.error ?? "error"}. El cuadro quedó libre; volvé a venderlo con el precio nuevo.`,
+          "error"
+        );
+      }
+      const nuevoPrecio: DupletaEstado = {
+        ...matriz,
+        updatedAt: new Date().toISOString(),
+        celdas: {
+          ...matriz.celdas,
+          [clave]: {
+            ...celda,
+            cliente_id: cliente.id,
+            cliente_nombre: cliente.nombre,
+            grupo_id: String(grupo.id),
+            grupo_nombre: grupo.nombre,
+            precio: precioNuevo,
+            ticket_id: r.ticketId ?? celda.ticket_id,
+          },
+        },
+      };
+      setMatriz(nuevoPrecio);
+      const gp = await guardarDupleta(nuevoPrecio);
+      toast(
+        `💵 Precio ajustado a $${precioNuevo.toLocaleString("es-VE", { maximumFractionDigits: 2 })} · ${cliente.nombre}${mismoCliente ? "" : " (jugador cambiado)"}.`,
+        "success"
+      );
+      if (!gp.ok) toast(`⚠️ Quedó cobrado, pero no se pudo persistir: ${gp.error ?? "sin conexión"}`, "warning");
+      else setGuardadas(await listarDupletasGuardadas());
+      setModal(null);
+      setQ("");
+      return;
+    }
+
+    // ── SOLO CAMBIA EL JUGADOR: RPC atómica existente ──
     setVendiendoDupleta(true);
     const r = await reasignarJugadorDupleta({ ticketId: celda.ticket_id, clienteId: String(cliente.id) });
     setVendiendoDupleta(false);
@@ -634,6 +723,12 @@ export function DupletaModule() {
 
   const celdaModal = matriz && modal ? matriz.celdas[claveCelda(modal.c1, modal.c2)] : undefined;
   const editandoCelda = Boolean(celdaModal?.vendida);
+  /** True si el precio escrito en el modal difiere del cobrado en la celda. */
+  const cambioPrecio = (() => {
+    if (!matriz || !modal) return false;
+    const cobrado = Number(celdaModal?.precio ?? matriz.precio ?? 0);
+    return (Number(precioCelda) || 0) > 0 && (Number(precioCelda) || 0) !== cobrado;
+  })();
   const clienteFiltrados = useMemo(() => {
     const t = q.trim().toUpperCase();
     let base = clientes;
@@ -666,7 +761,7 @@ export function DupletaModule() {
               type="date"
               autoFocus
               value={dia}
-              onChange={(e) => { setDia(e.target.value); setHipodromo(""); setCarrera1(""); setCarrera2(""); }}
+              onChange={(e) => { setDia(e.target.value || hoyLocal()); setHipodromo(""); setCarrera1(""); setCarrera2(""); }}
               className="bg-transparent text-xs font-bold text-slate-700 outline-none"
             />
           </label>
@@ -960,7 +1055,7 @@ export function DupletaModule() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" onClick={() => setModal(null)}>
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h4 className="mb-1 text-sm font-black uppercase text-slate-800">
-              {editandoCelda ? "Editar jugador de la combinación" : "Venta de Combinación"}
+              {editandoCelda ? "Editar combinación (jugador y/o precio)" : "Venta de Combinación"}
             </h4>
             <p className="mb-2 text-xs font-bold text-slate-500">
               {matriz.caballos1.find((c) => String(c.numero) === modal.c1)?.nombre} × {matriz.caballos2.find((c) => String(c.numero) === modal.c2)?.nombre}
@@ -968,7 +1063,7 @@ export function DupletaModule() {
             {editandoCelda && (
               <p className="mb-3 rounded-lg border border-orange-300 bg-orange-50 px-2 py-1.5 text-[10px] font-semibold leading-snug text-orange-900">
                 🔒 Combinación ya vendida. No se revende: cambiá el jugador (se devuelve el monto al anterior y se
-                cobra al nuevo) o anulá la venta.
+                cobra al nuevo) y/o el precio (se anula y se emite de nuevo con el monto corregido), o anulá la venta.
               </p>
             )}
 
@@ -1009,16 +1104,15 @@ export function DupletaModule() {
               <input
                 type="number"
                 value={precioCelda}
-                disabled={editandoCelda}
                 onChange={(e) => setPrecioCelda(e.target.value)}
                 placeholder={`${matriz.precio}`}
-                className="w-full rounded-lg border border-line bg-surface px-3 py-1.5 text-right text-xs font-black text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:opacity-50"
+                className="w-full rounded-lg border border-line bg-surface px-3 py-1.5 text-right text-xs font-black text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
               />
-              {editandoCelda && (
-                <span className="mt-1 block text-[10px] font-semibold text-slate-400">
-                  El monto no cambia al reasignar el jugador.
-                </span>
-              )}
+              <span className="mt-1 block text-[10px] font-semibold text-slate-400">
+                {editandoCelda
+                  ? "Al guardar con otro precio se anula la venta anterior (devuelve el monto) y se emite una nueva con el monto corregido."
+                  : "Vacío = precio del cuadro de la matriz."}
+              </span>
             </label>
 
             <div className="flex flex-wrap gap-2">
@@ -1031,7 +1125,11 @@ export function DupletaModule() {
                     disabled={vendiendoDupleta}
                     onClick={() => void editarJugador()}
                   >
-                    {vendiendoDupleta ? "Guardando…" : "👤 Guardar jugador"}
+                    {vendiendoDupleta
+                      ? "Guardando…"
+                      : cambioPrecio
+                        ? "💵 Guardar precio y jugador"
+                        : "👤 Guardar jugador"}
                   </Button>
                   <Button variant="danger" size="md" disabled={vendiendoDupleta} onClick={() => void quitarVenta()}>
                     ✖ Anular venta

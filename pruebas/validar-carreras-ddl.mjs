@@ -5,7 +5,7 @@
 // SQL se aplica A MANO en el SQL Editor y nunca pasa por PostgreSQL antes de que
 // estea en produccion. Lo que mas se paga aqui:
 //
-//   1) 42804 â€” TIPOS INCOMPATIBLES en una FK. Ya ocurrio: `carreras.hipodromo_id`
+//   1) 42804 — TIPOS INCOMPATIBLES en una FK. Ya ocurrio: `carreras.hipodromo_id`
 //      se declaro `bigint` cuando `hipodromos.id` es `uuid`, y PostgreSQL tiro
 //      "foreign key constraint cannot be implemented". Como todo el script va
 //      en una transaccion, el error tiro ABAJO la tabla, el respaldo y los

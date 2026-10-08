@@ -10,6 +10,7 @@ import { ToastHost } from "@/components/ui/ToastHost";
 import { BuscadorPadron, type OpcionPadron } from "@/components/ejemplares/BuscadorPadron";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useHipodromosActivos } from "@/store/useHipodromosStore";
+import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
 import { registrarEjemplares, listarPadronSimple } from "@/lib/gaceta/padron";
 import { useRegistroCentral } from "@/store/useRegistroCentral";
 import {
@@ -479,7 +480,7 @@ export function CargaPrograma() {
             <>
               {carreras.length === 0 && (
                 <Card className="p-6 text-center">
-                  <p className="text-xs text-slate-500 italic">Sin carreras para {hipodromo.toUpperCase()} en {fecha}.</p>
+                  <p className="text-xs text-slate-500 italic">Sin carreras para {nombrePropioHipodromo(hipodromo, hipodromosActivos)} en {fecha}.</p>
                   <Button variant="default" size="md" className="mt-3" onClick={agregarCarrera}>
                     ＋ Crear primera carrera
                   </Button>

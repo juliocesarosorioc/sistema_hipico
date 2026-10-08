@@ -91,7 +91,7 @@ function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"
 function fmt(n){try{return new Intl.NumberFormat("es-VE",{minimumFractionDigits:2,maximumFractionDigits:2}).format(parseFloat(n)||0);}catch(e){return (parseFloat(n)||0).toFixed(2);}}
 function mon(v,m){var s=String(m||"").toUpperCase();return (s.indexOf("VES")>=0||s==="BS")?"Bs "+fmt(v):"$ "+fmt(v);}
 function fsAuto(n){n=Math.min(Math.max(parseInt(n,10)||1,1),MAX_N);var p=FS_BASE*MAX_N/n;return (Math.min(FS_MAX,Math.max(FS_MIN,p))*10|0)/10;}
-function fmtFecha(d){if(!d)return "â€”";var p=String(d).slice(0,10).split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:String(d);}
+function fmtFecha(d){if(!d)return "—";var p=String(d).slice(0,10).split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:String(d);}
 function hoy(){var d=new Date();return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear();}
 function toast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("mostrar");clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove("mostrar");},2400);}
 
@@ -119,7 +119,7 @@ async function cargarReales(){
         return {numero:String(c.numero),nombre:String(c.nombre||""),retirado:!!c.retirado,valor_ejemplar:parseFloat(c.valor_ejemplar)||parseFloat(c.valor)||0,jugado:jugado[k]||0};
       }).sort(function(a,b){return (parseInt(a.numero,10)||0)-(parseInt(b.numero,10)||0);});
       return {
-        hipodromo:String(t.hipodromo||"").trim().toUpperCase()||"â€”",
+        hipodromo:String(t.hipodromo||"").trim().toUpperCase()||"—",
         carrera:String(t.carrera)||"",        fecha:t.fecha||t.fecha_creacion||"",distancia:t.distancia_carrera||"",
         superficie:String(t.superficie||"").toUpperCase()||"ARENA",premio:parseFloat(t.premio_recalculado)||0,
         moneda:t.moneda||"USD",ejemplares:ej
@@ -143,7 +143,7 @@ function paramsURL(){
 }
 function finalizar(){
   var q=paramsURL(), f=String(q.auto||"").toUpperCase();
-  document.getElementById("fuente").textContent=carreras.length+" carreras Â· "+(carreras.some(function(c){return c.dem;})?"modo DEMO":"datos reales");
+  document.getElementById("fuente").textContent=carreras.length+" carreras · "+(carreras.some(function(c){return c.dem;})?"modo DEMO":"datos reales");
   if(q.hipo)carreras=carreras.filter(function(c){return String(c.hipodromo||"").toUpperCase()===String(q.hipo).toUpperCase();});
   if(q.dia)carreras=carreras.filter(function(c){return String(c.fecha||"").slice(0,10)===String(q.dia).slice(0,10);});
   renderPaginado();
@@ -278,7 +278,7 @@ function waReporte(){
     var simb=(String(c.moneda||"").toUpperCase().indexOf("VES")>=0)?"Bs ":"$ ";
     texto+=c.hipodromo+" C"+c.carrera+" \u00b7 "+ (c.superficie||"") +" \u00b7 "+fmtFecha(c.fecha)+" \u00b7 "+c.ejemplares.length+" ej. \u00b7 PAGO/TABLA "+simb+fmt(c.premio)+"\n";
   });
-  texto=texto+"\nNORMAS: vÃ¡lida solo para la carrera y el ejemplar indicados. Presente en caja.";
+  texto=texto+"\nNORMAS: válida solo para la carrera y el ejemplar indicados. Presente en caja.";
   window.open("https://wa.me/"+tel+"?text="+encodeURIComponent(texto),"_blank");
 }
 

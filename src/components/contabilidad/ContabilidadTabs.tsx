@@ -1013,7 +1013,7 @@ export function TabMonedas({
               </div>
               <div>
                 <label className={lbl}>A partir de *</label>
-                <input type="date" value={refFecha} onChange={(e) => setRefFecha(e.target.value)} className={inp} />
+                <input type="date" value={refFecha} onChange={(e) => setRefFecha(e.target.value || new Date().toISOString().slice(0, 10))} className={inp} />
               </div>
             </div>
             <Button variant="default" size="sm" className="w-full" onClick={guardarReferencia}>

@@ -3,6 +3,9 @@
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { useCarrerasDiaStore, type CarreraDelDia } from "@/store/useCarrerasDiaStore";
+import { diaDeLaTabla } from "@/components/tablas/MonitorTablas";
+import { useHipodromosActivos } from "@/store/useHipodromosStore";
+import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
 
 type Props = {
   hipodromo: string;
@@ -45,14 +48,18 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
   const tablas = useTablasFijasStore((s) => s.tablas);
   const tickets = useTaquillaStore((s) => s.tickets);
   const carrerasDia = useCarrerasDiaStore((s) => s.carreras);
+  const activos = useHipodromosActivos();
   const hipo = hipoKey(hipodromo);
+  const nombreMostrar = nombrePropioHipodromo(hipodromo, activos);
 
   const porCarrera = (n: number): { estado: EstadoCarrera; tieneVentas: boolean } => {
+    // TODO el cruce va acotado a `fecha`: una tabla o un registro del día
+    // anterior con el mismo (hipódromo, carrera) jamás puede pintar el chip de HOY.
     const tabla = tablas.find(
-      (t) => hipoKey(t.hipodromo) === hipo && t.carrera === n
+      (t) => hipoKey(t.hipodromo) === hipo && t.carrera === n && (diaDeLaTabla(t) || fecha) === fecha
     );
     const registro = carrerasDia.find(
-      (c: CarreraDelDia) => hipoKey(c.hipodromo) === hipo && c.carrera === n
+      (c: CarreraDelDia) => hipoKey(c.hipodromo) === hipo && c.carrera === n && c.fecha === fecha
     );
     const registrada = carreras.includes(n);
     const liquidada =
@@ -78,7 +85,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
   return (
     <div className="rounded-2xl border border-line bg-surface p-3">
       <div className="mb-2 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-500">
-        <span className="font-black uppercase tracking-wide">{hipodromo.toUpperCase()} · CARRERAS DEL {fecha}</span>
+        <span className="font-black uppercase tracking-wide">{nombreMostrar} · CARRERAS DEL {fecha}</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full border border-line bg-surface" /> Sin registro</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-success-500" /> Registrada</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-warning-500" /> Con jugadas</span>
@@ -91,7 +98,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
       </div>
       {vacio ? (
         <p className="rounded-xl border border-dashed border-line bg-gray-50 px-3 py-2 text-center text-[11px] font-semibold text-slate-400">
-          Sin carreras registradas para {fecha} · {hipodromo.toUpperCase()} — el semáforo queda inactivo.
+          Sin carreras registradas para {fecha} · {nombreMostrar} — el semáforo queda inactivo.
           {manual && " En Modo Manual la carrera activa queda habilitada para cargar jugadas."}
         </p>
       ) : (

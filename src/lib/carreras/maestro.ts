@@ -1,20 +1,20 @@
 ﻿/**
- * MATRIZ MAESTRA DE CARRERAS â€” la Ãºnica fuente del catÃ¡logo.
+ * MATRIZ MAESTRA DE CARRERAS — la única fuente del catálogo.
  *
- * POR QUÃ‰ ESTE MÃ“DULO
+ * POR QUÉ ESTE MÓDULO
  * -------------------
- * Antes no habÃ­a tabla maestra: cada mÃ³dulo preguntaba "quÃ© carreras hay" por su
- * cuenta y el Ãºnico grano de "una fila por carrera" era `resultados_carreras`,
+ * Antes no había tabla maestra: cada módulo preguntaba "qué carreras hay" por su
+ * cuenta y el único grano de "una fila por carrera" era `resultados_carreras`,
  * que es el LIBRO DE RESULTADOS. Eso obligaba a que una carrera solo existiera
- * para el resto de la plataforma cuando alguien corrÃ­a resultados o pulsaba
- * Publicar â€” al revÃ©s, porque para apostar hay que tener la carrera ANTES de
+ * para el resto de la plataforma cuando alguien corría resultados o pulsaba
+ * Publicar — al revés, porque para apostar hay que tener la carrera ANTES de
  * que exista resultado.
  *
- * `carreras` (sql/carreras.sql) es la matriz: una fila por (fecha, hipÃ³dromo,
- * carrera). Desde acÃ¡ se lee el catÃ¡logo con UN query â€”el resultado viene
- * embebido por `resultados_carreras.carrera_id`â€” y se escribe desde la IA.
+ * `carreras` (sql/carreras.sql) es la matriz: una fila por (fecha, hipódromo,
+ * carrera). Desde acá se lee el catálogo con UN query —el resultado viene
+ * embebido por `resultados_carreras.carrera_id`— y se escribe desde la IA.
  *
- * La lÃ³gica pura (normalizadores, estado, mapeo a `CarreraCatalogo`) vive en
+ * La lógica pura (normalizadores, estado, mapeo a `CarreraCatalogo`) vive en
  * `maestro-nucleo.ts`, testeable en node. Este archivo es solo la puerta a
  * Supabase.
  *
@@ -37,6 +37,7 @@ import {
   ESTADOS_MAESTRO,
   aCarreraCentral,
   dedupFilasMaestro,
+  ordenarPorNumero,
 } from "@/lib/carreras/maestro-nucleo";
 import type {
   EjemplarMatriz,
@@ -47,17 +48,17 @@ import type {
 export * from "@/lib/carreras/maestro-nucleo";
 
 // ---------------------------------------------------------------------------
-// Estado de la migraciÃ³n
+// Estado de la migración
 // ---------------------------------------------------------------------------
 
 /**
- * `null` = todavÃ­a no se mirÃ³. Una vez que la tabla responde "no existe", no se
+ * `null` = todavía no se miró. Una vez que la tabla responde "no existe", no se
  * vuelve a preguntar en cada render: el fallback a `resultados_carreras` queda
  * cacheado y se reintenta solo si el operador invalida.
  */
 let maestroDisponible: boolean | null = null;
 
-/** Lo llama el resto de la app cuando una escritura revela que el SQL no corriÃ³. */
+/** Lo llama el resto de la app cuando una escritura revela que el SQL no corrió. */
 export function marcarMaestroAusente(): void {
   maestroDisponible = false;
 }
@@ -68,12 +69,12 @@ export function reintentarMaestro(): void {
   idsHipodromos.clear();
 }
 
-/** Â¿EstÃ¡ aplicada la matriz maestra? */
+/** ¿Está aplicada la matriz maestra? */
 export function maestroActivo(): boolean {
   return maestroDisponible === true;
 }
 
-/** `true` cuando el error dice "esta tabla/relaciÃ³n no existe" â†’ falta el SQL. */
+/** `true` cuando el error dice "esta tabla/relación no existe" → falta el SQL. */
 function esAusente(msg: string): boolean {
   return /does not exist|not found|PGRST202|PGRST204|schema cache/i.test(msg);
 }
@@ -85,12 +86,12 @@ function esAusente(msg: string): boolean {
 export type ResMaestro = { ok: boolean; filas: FilaCarreraMaestro[]; error?: string };
 
 /**
- * Lee la matriz para `fecha` (+ hipÃ³dromo opcional). El resultado va EMBEBIDO
- * para que el catÃ¡logo y el resultado salgan en un solo viaje: antes cada mÃ³dulo
- * hacÃ­a su consulta extra de ganadores.
+ * Lee la matriz para `fecha` (+ hipódromo opcional). El resultado va EMBEBIDO
+ * para que el catálogo y el resultado salgan en un solo viaje: antes cada módulo
+ * hacía su consulta extra de ganadores.
  *
- * Si el embed falla (la FK `carrera_id` se acaba de aplicar y PostgREST aÃºn no
- * recacheÃ³ el esquema) reintenta sin embed antes de rendirse.
+ * Si el embed falla (la FK `carrera_id` se acaba de aplicar y PostgREST aún no
+ * recacheó el esquema) reintenta sin embed antes de rendirse.
  */
 export async function leerCarrerasMaestro(
   fecha?: string,
@@ -138,8 +139,8 @@ export async function leerCarrerasMaestro(
       maestroDisponible = true;
       return cerrar(conResultado.data);
     }
-    // El embed no resuelve (FK reciÃ©n aplicada y PostgREST sin recachear):
-    // reintento sin embed; la fila igual trae todo el catÃ¡logo.
+    // El embed no resuelve (FK recién aplicada y PostgREST sin recachear):
+    // reintento sin embed; la fila igual trae todo el catálogo.
     if (/relationship|embed|foreign key|PGRST/i.test(conResultado.error.message)) {
       const reintento = await consulta(false);
       if (!reintento.error) {
@@ -161,13 +162,13 @@ export async function leerCarrerasMaestro(
 // Escritura en la matriz
 // ---------------------------------------------------------------------------
 
-/** Nombre normalizado (MAYÃšSCULAS) â†’ id de `hipodromos`. Se llena una vez. */
+/** Nombre normalizado (MAYÚSCULAS) → id de `hipodromos`. Se llena una vez. */
 const idsHipodromos = new Map<string, number>();
 
 /**
- * `OpcionHipodromo` (lib/tablas/rpc) solo trae value/label, asÃ­ que el id se
+ * `OpcionHipodromo` (lib/tablas/rpc) solo trae value/label, así que el id se
  * pide directo a la tabla: es un select de 2 columnas y se cachea para toda la
- * sesiÃ³n. Si falla, las carreras se guardan sin `hipodromo_id` â€” no bloquea.
+ * sesión. Si falla, las carreras se guardan sin `hipodromo_id` — no bloquea.
  */
 async function resolverIdsHipodromos(): Promise<Map<string, number>> {
   if (idsHipodromos.size > 0) return idsHipodromos;
@@ -181,25 +182,25 @@ async function resolverIdsHipodromos(): Promise<Map<string, number>> {
       }
     }
   } catch {
-    /* sin catÃ¡logo: se guarda sin hipodromo_id, no es bloqueante */
+    /* sin catálogo: se guarda sin hipodromo_id, no es bloqueante */
   }
   return idsHipodromos;
 }
 
 /**
- * Deja intacta una columna de las filas cuyo llamador no la informÃ³.
+ * Deja intacta una columna de las filas cuyo llamador no la informó.
  *
- * Sin esto, guardar el programa desde la IA mandarÃ­a `retirados: null` a cada
- * carrera y borrarÃ­a los retiros que un operador acaba de aplicar: la matriz
+ * Sin esto, guardar el programa desde la IA mandaría `retirados: null` a cada
+ * carrera y borraría los retiros que un operador acaba de aplicar: la matriz
  * tiene que poder seguir guardando caballos, estados y horario sin pisar las
- * listas que los mÃ³dulos leen.
+ * listas que los módulos leen.
  *
  * Sirve igual para `invalidado_remate`, que es el otro caso: la IA no lo
- * controla, y mandarlo en NULL dejarÃ­a pujables ejemplares que el operador del
- * remate invalidÃ³ a propÃ³sito.
+ * controla, y mandarlo en NULL dejaría pujables ejemplares que el operador del
+ * remate invalidó a propósito.
  *
  * Si la lectura falla no se inventa nada: se saca la columna del payload, que
- * es lo Ãºnico que evita mandarla en NULL a ciegas.
+ * es lo único que evita mandarla en NULL a ciegas.
  */
 async function preservarColumna(
   filas: Record<string, unknown>[],
@@ -238,9 +239,9 @@ const preservarInvalidados = (filas: Record<string, unknown>[], claves: string[]
   preservarColumna(filas, claves, "invalidado_remate");
 
 /**
- * Da de alta / actualiza carreras en la matriz (una fila por hipÃ³dromo+carrera).
- * Es la vÃ­a que usa la IA al guardar el programa: la carrera existe para TODOS
- * los mÃ³dulos apenas se guarda, sin esperar resultados ni Publicar.
+ * Da de alta / actualiza carreras en la matriz (una fila por hipódromo+carrera).
+ * Es la vía que usa la IA al guardar el programa: la carrera existe para TODOS
+ * los módulos apenas se guarda, sin esperar resultados ni Publicar.
  *
  * Deduplica por (fecha, hipodromo, carrera) ANTES de escribir: un solo upsert
  * con N filas en vez de N idas a la red.
@@ -272,7 +273,7 @@ export async function escribirCarrerasMaestro(
     if (vistas.has(clave)) continue;
     vistas.add(clave);
     // Una entrada que no informa `retirados` significa "no tocar los retiros",
-    // no "borrar los retiros". Se resuelven mÃ¡s abajo contra lo que ya estÃ¡
+    // no "borrar los retiros". Se resuelven más abajo contra lo que ya está
     // guardado, porque el editor de programa de la IA no tiene control de ellos.
 if (e.retirados === undefined) sinRetirados.push(clave);
     if (e.invalidado_remate === undefined) sinInvalidados.push(clave);
@@ -282,7 +283,7 @@ if (e.retirados === undefined) sinRetirados.push(clave);
       hipodromo_id: ids.get(hip) ?? null,
       carrera: num,
       estado: ESTADOS_MAESTRO.has(String(e.estado ?? "")) ? String(e.estado) : "Programada",
-      caballos: (Array.isArray(e.caballos) ? e.caballos : []) as EjemplarMatriz[],
+      caballos: ordenarPorNumero(Array.isArray(e.caballos) ? e.caballos : []) as EjemplarMatriz[],
       retirados: e.retirados ?? null,
       invalidado_remate: e.invalidado_remate ?? null,
       distancia: e.distancia ?? null,
@@ -317,7 +318,7 @@ if (e.retirados === undefined) sinRetirados.push(clave);
 
 /**
  * Da de baja una carrera de la matriz. NO borra resultados, tablas fijas ni
- * jugadas ya registradas: la carrera deja de ofrecerse, el histÃ³rico queda.
+ * jugadas ya registradas: la carrera deja de ofrecerse, el histórico queda.
  */
 /**
  * Texto EXACTO con el que el hipódromo está guardado en la matriz.
@@ -393,9 +394,9 @@ export async function eliminarCarreraMaestro(
  * Marca una carrera como verificada (o la desmarca).
  *
  * Verificar es un acto administrativo, no un dato del resultado: deja rastro de
- * QUIÃ‰N revisÃ³ la fila y CUÃNDO. Es lo que permite auditar el catÃ¡logo: una
+ * QUIÉN revisó la fila y CUÁNDO. Es lo que permite auditar el catálogo: una
  * carrera cargada por la IA y nunca revisada se ve distinta de una que alguien
- * mirÃ³ y dio por buena.
+ * miró y dio por buena.
  */
 export async function marcarCarreraVerificada(
   fecha: string,
@@ -447,11 +448,11 @@ const num = numeroCarrera(carrera);
  * Guarda la lista de ejemplares INVALIDADOS para Remates.
  *
  * Deliberadamente aparte de `retirados`: invalidar solo impide pujar y deja la
- * participaciÃ³n intacta, mientras que retirar saca el ejemplar de todos los
- * mÃ³dulos. Mezclarlos harÃ­a que un INV de Remates desapareciera de Tablas,
+ * participación intacta, mientras que retirar saca el ejemplar de todos los
+ * módulos. Mezclarlos haría que un INV de Remates desapareciera de Tablas,
  * Marcas y Taquilla.
  *
- * Misma semÃ¡ntica que los retiros: la lista es COMPLETA, nunca un delta.
+ * Misma semántica que los retiros: la lista es COMPLETA, nunca un delta.
  */
 export async function guardarInvalidadosRemate(
   fecha: string,
@@ -478,13 +479,13 @@ exigirCapacidad("carreras:btn_invalidate_remate");
 /**
  * Espeja UNA columna de la carrera en la matriz, sin tocar el resto de la fila.
  *
- * Es el patrÃ³n que usan los reflejos de retiros e invalidados: el dato se
- * guarda donde vive (resultados_carreras / el mÃ³dulo que lo administra) y acÃ¡
- * solo se copia a `carreras`, que es lo que leen Dupletas, GestiÃ³n, Marcas y
- * Carreras del DÃ­a.
+ * Es el patrón que usan los reflejos de retiros e invalidados: el dato se
+ * guarda donde vive (resultados_carreras / el módulo que lo administra) y acá
+ * solo se copia a `carreras`, que es lo que leen Dupletas, Gestión, Marcas y
+ * Carreras del Día.
  *
- * No inventa fila: si la carrera todavÃ­a no estÃ¡ en la matriz no hace nada,
- * porque darla de alta acÃ¡ escribirÃ­a estado y caballos vacÃ­os.
+ * No inventa fila: si la carrera todavía no está en la matriz no hace nada,
+ * porque darla de alta acá escribiría estado y caballos vacíos.
  */
 async function reflejarColumnaMatriz(
   fecha: string,
@@ -513,9 +514,9 @@ if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local
       return { ok: false, error: error.message };
     }
     maestroDisponible = true;
-    // Si la carrera no estÃ¡ en la matriz el update no toca nada y no es un
-    // fallo: la lista ya quedÃ³ guardada en resultados_carreras y la corrida se
-    // hidrata desde ahÃ­ cuando se cree la fila.
+    // Si la carrera no está en la matriz el update no toca nada y no es un
+    // fallo: la lista ya quedó guardada en resultados_carreras y la corrida se
+    // hidrata desde ahí cuando se cree la fila.
     return { ok: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -574,7 +575,7 @@ export { aCarreraCentral };
 
 /**
  * Registra en la matriz una carrera suelta (alta manual, pizarra, arranque de una
- * apuesta). Si la tabla no estÃ¡ aplicada no rompe: devuelve el error para que el
+ * apuesta). Si la tabla no está aplicada no rompe: devuelve el error para que el
  * operador sepa que falta correr sql/carreras.sql.
  */
 export async function registrarCarreraMaestro(

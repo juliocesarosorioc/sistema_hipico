@@ -5,6 +5,7 @@ import { MATRIZ_CSS, paginasMatrizHTML, cargarMatrizImpresion, cargarResumenImpr
 import { REPORTE_CSS, paginasReporteHTML, cargarReporteJugadores, resumirReporteJugadores, type JugadorReporte } from "@/lib/impresion/reporte";
 import { exportarPaginas, textoWhatsAppMatriz, textoWhatsAppReporte, type ImgFormato } from "@/lib/impresion/exportar";
 import { DIM_PAGINA, type Orientacion } from "@/lib/impresion/util";
+import { hoyLocal } from "@/lib/gaceta/programa";
 
 type TipoReporte = "matriz" | "reporte";
 type Paso = "config" | "generar";
@@ -35,7 +36,8 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
   const [paso, setPaso] = useState<Paso>("config");
   const [tipo, setTipo] = useState<TipoReporte>("matriz");
   const [orientacion, setOrientacion] = useState<Orientacion>("horizontal");
-  const [dia, setDia] = useState<string>("");
+  /** Día del filtro: SIEMPRE el actual por defecto (nunca "todas las fechas"). */
+  const [dia, setDia] = useState<string>(() => hoyLocal());
   const [hipodromo, setHipodromo] = useState<string>("");
   const [resumen, setResumen] = useState<Array<{ id: string | number; hipodromo: string; carrera: string; fecha: string }>>([]);
   const [carreras, setCarreras] = useState<TablaImpresion[]>([]);
@@ -82,27 +84,30 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
     };
   }, [resumen]);
 
-  const diasDisponibles = useMemo(
-    () => (hipodromo ? opciones.diasDelHipodromo(hipodromo) : opciones.dias),
-    [hipodromo, opciones]
-  );
+  const diasDisponibles = useMemo(() => {
+    const base = hipodromo ? opciones.diasDelHipodromo(hipodromo) : opciones.dias;
+    // El día elegido (por defecto HOY) siempre se ofrece, aunque ese día no
+    // tenga carreras publicadas: el filtro arranca en el día actual y solo el
+    // usuario puede moverlo a fechas previas.
+    return dia && !base.includes(dia) ? [dia, ...base] : base;
+  }, [hipodromo, opciones, dia]);
   const hiposDisponibles = useMemo(
     () => (dia ? opciones.hipodromosDelDia(dia) : opciones.hipos),
     [dia, opciones]
   );
 
   // Cascada bidireccional: limpia el filtro huérfano si el otro lo invalida.
+  // `dia` NUNCA se resetea a "": el requisito es que quede en el día actual.
   useEffect(() => {
-    if (dia && !diasDisponibles.includes(dia)) setDia("");
     if (hipodromo && !hiposDisponibles.includes(hipodromo)) setHipodromo("");
-  }, [diasDisponibles, hiposDisponibles, dia, hipodromo]);
+  }, [hiposDisponibles, hipodromo]);
 
   /** Carga inicial: SOLO el resumen ligero de tablas (metadatos) para el paso Config. */
   useEffect(() => {
     if (!abierto) return;
     let vivo = true;
     setPaso("config");
-    setDia("");
+    setDia(hoyLocal());
     setHipodromo("");
     setErrorBd("");
     setCarreras([]);
@@ -315,8 +320,9 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
             </label>
             <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
               <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">📅 Día</span>
-              <select value={dia} onChange={(e) => setDia(e.target.value)} className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none">
-                <option value="">TODOS</option>
+              <select value={dia} onChange={(e) => e.target.value && setDia(e.target.value)} className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none">
+                {/* Sin "TODOS": por defecto el DÍA ACTUAL y solo se mueve si el
+                    usuario elige otra fecha (la vista nunca mezcla días). */}
                 {diasDisponibles.map((f) => (
                   <option key={f} value={f}>{f}</option>
                 ))}
@@ -326,7 +332,7 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
               <button
                 type="button"
                 onClick={() => {
-                  setDia("");
+                  setDia(hoyLocal());
                   setHipodromo("");
                 }}
                 className="rounded border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-black uppercase text-red-500 hover:bg-red-100"

@@ -14,7 +14,7 @@ import {
   useRegistroCentralOpts,
 } from "@/store/useRegistroCentral";
 import { MonitorHipodromos } from "@/components/ui/MonitorHipodromos";
-import { agruparPorHipodromo } from "@/lib/carreras/agruparHipodromos";
+import { agruparPorHipodromo, diaDeCarrera } from "@/lib/carreras/agruparHipodromos";
 import { asegurarHipodromo } from "@/lib/tablas/rpc";
 import { resumenProblemasCarga, validarFechasDeCarga } from "@/lib/tablas/validar-carga";
 import { hoyLocal } from "@/lib/gaceta/programa";
@@ -91,7 +91,13 @@ export function TablasModule(props: Props) {
     return agruparPorHipodromo(
       abiertas.map((t) => {
         const hipo = (t.hipodromo ?? "").trim().toUpperCase();
-        const est = carrerasDia.find((e) => e.hipodromo === hipo && e.carrera === t.carrera);
+        // Cruce acotado al día: el ledger guarda varias fechas con el mismo
+        // (hipódromo, carrera) y sin comparar `e.fecha` el chip heredaba el
+        // estado de otro día.
+        const dia = diaDeCarrera(t, fechaPrograma);
+        const est = carrerasDia.find(
+          (e) => e.hipodromo === hipo && e.carrera === t.carrera && e.fecha === dia
+        );
         return {
           id: t.id,
           hipodromo: hipo,
@@ -109,6 +115,27 @@ export function TablasModule(props: Props) {
   const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
 
+  /** Descarga la Matriz de Tablas Fijas (la misma vista de impresión) como `.xls`. */
+  const exportarExcel = async () => {
+    setMenuEnsamblaje(false);
+    try {
+      const [{ cargarMatrizImpresion }, { exportarExcelTablas }] = await Promise.all([
+        import("@/lib/impresion/tablas"),
+        import("@/lib/impresion/excel"),
+      ]);
+      const m = await cargarMatrizImpresion(tablas, { dia: fechaPrograma, hipodromo: filtroHipodromo });
+      if (m.carreras.length === 0) {
+        toast("No hay tablas publicadas para exportar.", "warning");
+        return;
+      }
+      const ok = exportarExcelTablas(m.carreras, `TABLAS-FIJAS-${fechaPrograma}`);
+      if (ok) toast(`Excel generado con ${m.carreras.length} carreras.`, "success");
+      else toast("No se pudo generar el archivo Excel.", "error");
+    } catch (e) {
+      toast(`No se pudo generar el Excel: ${(e as Error)?.message ?? e}`, "error");
+    }
+  };
+
   const refresh = async () => {
     const { listarTablasPublicadas } = await import("@/lib/tablas/rpc");
     const filas = await listarTablasPublicadas();
@@ -123,12 +150,16 @@ export function TablasModule(props: Props) {
     // CONSUME el buzón para que no se dupliquen al recargar.
     const buzon = leerBuzonEnsamblaje();
     const todas = buzon.map((c) => aDraftCarrera(c));
+    // Solo las carreras DEL DÍA: la plataforma tiene un registro único y
+    // central, y una gaceta leída para otra fecha no puede aparecer en este
+    // programa (se conserva en el buzón para cuando cambie la fecha).
+    const hoy = hoyLocal();
+    const hidratadas = todas.filter((d) => !d.fecha || String(d.fecha).slice(0, 10) === hoy);
     // Las tarjetas SIN ejemplares se hidratan también: el filtro las botaba en
     // silencio, y como `limpiarBuzonEnsamblaje()` corre igual, esas carreras se
     // perdían para siempre — se registraban en la Gaceta, no aparecían como
     // cards, y nunca llegaban al Monitor ni a ningún módulo. Publicar una vacía
     // es lo que hace `publicarDraft` (registra la carrera programada).
-    const hidratadas = todas;
     if (hidratadas.length > 0) {
       setDrafts((ds) => [...hidratadas, ...ds]);
       window.dispatchEvent(
@@ -140,7 +171,7 @@ export function TablasModule(props: Props) {
         })
       );
     }
-    limpiarBuzonEnsamblaje();
+    limpiarBuzonEnsamblaje(hoy);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -665,7 +696,7 @@ export function TablasModule(props: Props) {
                   type="button"
                   onClick={() => setMenuEnsamblaje((m) => !m)}
                   className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-800 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-slate-700"
-                  title="Acciones del ensamblaje: Modo Manual, Pegar desde Gaceta y Publicar todas"
+                  title="Acciones del ensamblaje: Modo Manual, Pegar desde Gaceta, Publicar todas y Exportar a Excel"
                 >
                   ⚙️ Acciones Carreras <span className="text-[9px] opacity-70">▾</span>
                 </button>
@@ -702,11 +733,25 @@ export function TablasModule(props: Props) {
                           setMenuEnsamblaje(false);
                         }}
                         disabled={drafts.length === 0}
-                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wide text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="flex w-full items-center gap-2 border-b border-line px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wide text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                         title="Publicar en lote todas las carreras del ensamblaje"
                       >
                         🚀 Publicar todas
                       </button>
+                      <Guard permiso="tablas:btn_imprimir">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMenuEnsamblaje(false);
+                            void exportarExcel();
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wide text-emerald-700 transition-colors hover:bg-emerald-50"
+                          title="Descarga la vista de impresión de las Tablas Fijas como archivo Excel (.xls), con la misma estructura, colores y tamaño"
+                        >
+                          📊 Exportar a Excel
+                          <span className="ml-auto text-[9px] font-bold text-slate-400">.xls</span>
+                        </button>
+                      </Guard>
                     </div>
                   </>
                 )}

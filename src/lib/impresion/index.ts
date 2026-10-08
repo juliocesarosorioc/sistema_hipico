@@ -10,3 +10,4 @@ export * from "@/lib/impresion/util";
 export * from "@/lib/impresion/tablas";
 export * from "@/lib/impresion/reporte";
 export * from "@/lib/impresion/exportar";
+export * from "@/lib/impresion/excel";

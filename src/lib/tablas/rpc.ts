@@ -5,6 +5,7 @@ import { parseNum } from "@/lib/tablas/tipos";
 import { alternarRetiroCarrera } from "@/lib/carreras/retiros";
 import { sincronizarCentralDesdeTabla } from "@/lib/carreras-dia";
 import { normalizarFilas } from "@/lib/tablas/normalizar";
+import { ordenarPorNumero } from "@/lib/carreras/maestro-nucleo";
 
 // Se reexporta para no romper a quien ya importaba la normalizacion desde aca.
 export { normalizarFilas };
@@ -223,7 +224,7 @@ function payloadDeTabla(t: TablaFijaRow): Record<string, unknown> {
     grupo_venta: t.grupo_venta ?? "GRUPOS",
     monto_tabla: t.monto_tabla ?? 100,
     tasa_cambio: t.tasa_cambio ?? null,
-    caballos: t.caballos ?? [],
+    caballos: ordenarPorNumero(t.caballos ?? []),
   };
 }
 

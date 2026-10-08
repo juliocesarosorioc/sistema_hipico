@@ -18,6 +18,7 @@
 // modulos de Marcas usan el mismo truco por la misma razon.
 import type { TablaFijaRow } from "../tablas-fijas";
 import { parseNum } from "./tipos";
+import { ordenarPorNumero } from "../carreras/maestro-nucleo";
 
 /**
  * Orden de presentación: primero por hipódromo (A-Z) y dentro de cada uno por
@@ -43,22 +44,24 @@ export function normalizarFilas(data: unknown[]): TablaFijaRow[] {
     .map((r) => {
       const raw = r as Record<string, unknown>;
       const caballos = Array.isArray(raw.caballos)
-        ? raw.caballos.map((c) => {
-            const cc = c as Record<string, unknown>;
-            return {
-              numero: String(cc.numero ?? ""),
-              nombre: String(cc.nombre ?? ""),
-              nacionalidad: cc.nacionalidad ? String(cc.nacionalidad) : null,
-              valor_ejemplar: cc.valor_ejemplar != null ? parseNum(cc.valor_ejemplar) : null,
-              retirado: Boolean(cc.retirado),
-              // `ganador` y `ejemplar_id` tambien se conservan. Antes se caian al
-              // map y cualquier edicion que reescribiera el array `caballos`
-              // completo (el CRUD de cuadros) dejaba a todos los ejemplares sin
-              // ganador y sin su vinculo al padron.
-              ganador: Boolean(cc.ganador),
-              ejemplar_id: cc.ejemplar_id != null ? String(cc.ejemplar_id) : null,
-            };
-          })
+        ? ordenarPorNumero(
+            raw.caballos.map((c) => {
+              const cc = c as Record<string, unknown>;
+              return {
+                numero: String(cc.numero ?? ""),
+                nombre: String(cc.nombre ?? ""),
+                nacionalidad: cc.nacionalidad ? String(cc.nacionalidad) : null,
+                valor_ejemplar: cc.valor_ejemplar != null ? parseNum(cc.valor_ejemplar) : null,
+                retirado: Boolean(cc.retirado),
+                // `ganador` y `ejemplar_id` tambien se conservan. Antes se caian al
+                // map y cualquier edicion que reescribiera el array `caballos`
+                // completo (el CRUD de cuadros) dejaba a todos los ejemplares sin
+                // ganador y sin su vinculo al padron.
+                ganador: Boolean(cc.ganador),
+                ejemplar_id: cc.ejemplar_id != null ? String(cc.ejemplar_id) : null,
+              };
+            })
+          )
         : null;
       const grupos = Array.isArray(raw.tabla_grupos)
         ? raw.tabla_grupos.map((g) => g as Record<string, unknown>)

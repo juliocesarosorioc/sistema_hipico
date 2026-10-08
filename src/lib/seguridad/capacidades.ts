@@ -516,6 +516,10 @@ export const MODULOS_ESQUEMA: ModuloEsquema[] = [
       c("remates", "funcion", "fn_eliminar_remate", "Eliminar un remate", "critico", "src/lib/remates.ts"),
       c("remates", "funcion", "fn_asignar_caballos", "Asignar ejemplares al remate", "escritura", "src/lib/remates.ts"),
       c("remates", "funcion", "fn_eliminar_caballo", "Quitar un ejemplar del remate", "escritura", "src/lib/remates.ts"),
+      c("remates", "funcion", "fn_pujar", "Pujar con el botón Subir", "escritura", "src/lib/remates.ts", {
+        descripcion:
+          "Sube la puja de un ejemplar con el botón Subir. Es la ÚNICA escritura que puede hacer un usuario de solo consulta: no crea, no edita, no cierra y no puede comprar a nombre de otro (puja siempre con el cliente vinculado a su usuario).",
+      }),
     ],
   },
 

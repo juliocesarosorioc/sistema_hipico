@@ -6,6 +6,7 @@
  *   { hipodromo, fecha, carrera, distancia, superficie, premio, caballos:[...] }
  */
 import { supabase } from "@/lib/supabase";
+import { ordenarPorNumero } from "@/lib/carreras/maestro-nucleo";
 
 export type CaballoPrograma = {
   numero: string | number;
@@ -48,17 +49,19 @@ export function hoyLocal(): string {
 
 function norm(c: unknown): CarreraPrograma {
   const x = (c ?? {}) as Record<string, unknown>;
-  const caballos = Array.isArray(x.caballos)
-    ? (x.caballos as Array<Record<string, unknown>>).map((cb) => ({
-        numero: (cb.numero ?? "") as string | number,
-        nombre: String(cb.nombre ?? "").toUpperCase(),
-        nacionalidad: String(cb.nacionalidad ?? "VE").toUpperCase() || "VE",
-        valor: Number(cb.valor ?? cb.pts ?? 0) || 0,
-        ejemplar_id: (cb.ejemplar_id as string | number | null | undefined) ?? null,
-        jockey: cb.jockey ? String(cb.jockey) : undefined,
-        peso: cb.peso !== undefined ? (cb.peso as string | number) : undefined,
-      }))
-    : [];
+  const caballos = ordenarPorNumero(
+    Array.isArray(x.caballos)
+      ? (x.caballos as Array<Record<string, unknown>>).map((cb) => ({
+          numero: (cb.numero ?? "") as string | number,
+          nombre: String(cb.nombre ?? "").toUpperCase(),
+          nacionalidad: String(cb.nacionalidad ?? "VE").toUpperCase() || "VE",
+          valor: Number(cb.valor ?? cb.pts ?? 0) || 0,
+          ejemplar_id: (cb.ejemplar_id as string | number | null | undefined) ?? null,
+          jockey: cb.jockey ? String(cb.jockey) : undefined,
+          peso: cb.peso !== undefined ? (cb.peso as string | number) : undefined,
+        }))
+      : []
+  );
   return {
     hipodromo: String(x.hipodromo ?? "").toUpperCase(),
     fecha: x.fecha ? String(x.fecha) : null,

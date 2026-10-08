@@ -17,7 +17,7 @@
  */
 
 import { supabase } from "@/lib/supabase";
-import { exigirCapacidad } from "@/lib/seguridad/vigente";
+import { exigirCapacidad, usuarioVigente } from "@/lib/seguridad/vigente";
 import { CAPACIDADES } from "@/lib/seguridad/capacidades";
 import { baseDeTipo, expandirConRequisitos, esUsuarioPrincipal, TIPOS_USUARIO_SISTEMA, USUARIO_PRINCIPAL } from "@/lib/seguridad/resolver";
 import type { Decision, ExcepcionUsuario, ResGuardarAccesos, TipoUsuario } from "@/lib/seguridad/tipos";
@@ -207,7 +207,32 @@ export type UsuarioAlta = {
   activo?: boolean;
   /** Solo el usuario principal lleva esa marca, y no se puede asignar a otro. */
   esPrincipal?: boolean;
+  /** Cliente de `clientes` al que representa este usuario (puja en Remates). */
+  clienteId?: string | null;
 };
+
+/**
+ * Cliente vinculado a un usuario del sistema (`usuario_sistema.cliente_id`).
+ *
+ * Es la identidad del pujador en Remates: un usuario habilitado solo para
+ * ver/PUJAR no elige comprador en la pizarra, puja siempre con ESTE cliente.
+ * Devuelve null si el usuario no tiene cliente asociado o si la columna todavía
+ * no existe en la base (migración `sql/remates_solo_pujar.sql` pendiente).
+ */
+export async function clienteDelUsuario(usuarioId?: string | null): Promise<string | null> {
+  if (!supabase) return null;
+  const id = claveDeUsuario(usuarioId || usuarioVigente());
+  if (!id) return null;
+  try {
+    const { data, error } = await supabase.from("usuario_sistema").select("cliente_id").eq("id", id).maybeSingle();
+    if (error || !data) return null;
+    const cli = (data as { cliente_id?: string | null }).cliente_id;
+    const limpio = String(cli ?? "").trim();
+    return limpio || null;
+  } catch {
+    return null;
+  }
+}
 
 /** Usuarios dados de alta en el sistema, agrupables por tipo. */
 export async function leerUsuariosDelSistema(): Promise<UsuarioAlta[]> {
@@ -216,12 +241,8 @@ export async function leerUsuariosDelSistema(): Promise<UsuarioAlta[]> {
       // `tipo` NO es una columna de `usuario_sistema`: la relación se hace por
       // `tipo_usuario_id`. Se trae el nombre del tipo desde la tabla `tipo_usuario`
       // y se proyecta a `tipo`, que es lo que espera la interfaz.
-      const { data, error } = await supabase
-        .from("usuario_sistema")
-        .select("id, nombre, tipo_usuario_id, activo, es_principal, tipo_usuario (nombre)")
-        .order("nombre");
-      if (!error && Array.isArray(data)) {
-        return (data as Array<Record<string, unknown>>).map((u) => {
+      const mapear = (filas: Array<Record<string, unknown>>) =>
+        filas.map((u) => {
           const rel = u.tipo_usuario as { nombre?: string } | null;
           return {
             id: String(u.id ?? ""),
@@ -229,9 +250,24 @@ export async function leerUsuariosDelSistema(): Promise<UsuarioAlta[]> {
             tipo: rel?.nombre ?? "",
             activo: u.activo !== false,
             esPrincipal: u.es_principal === true,
+            clienteId: (u.cliente_id as string | null) ?? null,
           };
         });
+
+      type LecturaUsuarios = { data: Array<Record<string, unknown>> | null; error: { message?: string } | null };
+      let lectura = (await supabase
+        .from("usuario_sistema")
+        .select("id, nombre, tipo_usuario_id, activo, es_principal, cliente_id, tipo_usuario (nombre)")
+        .order("nombre")) as LecturaUsuarios;
+      // Columna `cliente_id` sin migrar todavía (`sql/remates_solo_pujar.sql`):
+      // se relee SIN el vínculo para que la lista de usuarios no se caiga.
+      if (lectura.error && /cliente_id/i.test(lectura.error.message ?? "")) {
+        lectura = (await supabase
+          .from("usuario_sistema")
+          .select("id, nombre, tipo_usuario_id, activo, es_principal, tipo_usuario (nombre)")
+          .order("nombre")) as LecturaUsuarios;
       }
+      if (!lectura.error && Array.isArray(lectura.data)) return mapear(lectura.data);
     } catch {
       /* cae al default */
     }
@@ -395,16 +431,34 @@ export async function guardarUsuarioSistema(u: UsuarioAlta): Promise<ResGuardarA
     const tipoId = (tipo as { id?: number } | null)?.id;
     if (tipoId == null) return { ok: false, error: `El tipo "${u.tipo}" no existe.` };
 
-    const { error } = await supabase.from("usuario_sistema").upsert(
+    let { error } = await supabase.from("usuario_sistema").upsert(
       {
         id: clave,
         nombre: u.nombre ?? null,
         tipo_usuario_id: tipoId,
         activo: u.activo !== false,
         es_principal: esUsuarioPrincipal(clave),
+        // Vínculo con el cliente que representa (puja en Remates). `null` deja
+        // el vínculo limpio.
+        cliente_id: u.clienteId ? String(u.clienteId) : null,
       },
       { onConflict: "id" }
     );
+    // Columna `cliente_id` todavía sin migrar (`sql/remates_solo_pujar.sql`):
+    // se reintenta SIN el vínculo para que el alta del usuario no se rompa.
+    if (error && /cliente_id/i.test(error.message ?? "")) {
+      const r2 = await supabase.from("usuario_sistema").upsert(
+        {
+          id: clave,
+          nombre: u.nombre ?? null,
+          tipo_usuario_id: tipoId,
+          activo: u.activo !== false,
+          es_principal: esUsuarioPrincipal(clave),
+        },
+        { onConflict: "id" }
+      );
+      error = r2.error;
+    }
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (e) {

@@ -96,7 +96,7 @@ function fmtSaldo(n: number | null | undefined): string {
 }
 
 /** Normaliza fechas para el filtro */
-function diaDeLaTabla(t: StoredTablaFija): string {
+export function diaDeLaTabla(t: StoredTablaFija): string {
   const raw = String(t.fecha || t.fecha_creacion || "").trim();
   if (!raw) return "";
   if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
@@ -222,8 +222,13 @@ export function MonitorTablas({
   const [vistaImpresion, setVistaImpresion] = useState(false);
 
   // Estados de los filtros
-  const [fechaInterna, setFechaInterna] = useState<string>("");
+  /** Día por defecto: SIEMPRE el actual (el padre suele controlarlo, pero si
+   *  queda interno nunca debe arrancar en "todas las fechas"). */
+  const [fechaInterna, setFechaInterna] = useState<string>(() => hoyLocal());
   const [hipodromoLocal, setHipodromoLocal] = useState<string>("");
+  /** Carrera filtrada (vacío = todas) y progreso del Excel de la pantalla. */
+  const [carreraFiltro, setCarreraFiltro] = useState<string>("");
+  const [exportandoExcel, setExportandoExcel] = useState(false);
 
   /** Hipódromo filtrado: si el padre controla el filtro (Hipódromos del Día),
    *  lo gobierna desde arriba; si no, opera interno. */
@@ -258,8 +263,11 @@ export function MonitorTablas({
     centralCarreras.forEach(c => {
       if (!hipodromoFiltro || c.hipodromo === hipodromoFiltro) setFechas.add(c.fecha);
     });
+    // El día elegido (por defecto HOY) se ofrece siempre, aunque no haya
+    // carreras: el filtro nunca se resetea a "todas las fechas".
+    if (fechaFiltro) setFechas.add(fechaFiltro);
     return Array.from(setFechas).sort().reverse();
-  }, [abiertas, hipodromoFiltro, centralCarreras]);
+  }, [abiertas, hipodromoFiltro, centralCarreras, fechaFiltro]);
 
   const hipodromosDisponibles = useMemo(() => {
     const setHips = new Set<string>();
@@ -274,12 +282,32 @@ export function MonitorTablas({
     return Array.from(setHips).sort();
   }, [abiertas, fechaFiltro, centralCarreras]);
 
-  // Limpiar filtros si quedan huérfanos por la cascada (solo si el padre
-  // no gobierna la fecha: en controlado el valor decide el filtro del día).
+  /** Números de carrera disponibles dentro del día + hipódromo filtrados. */
+  const carrerasDisponibles = useMemo(() => {
+    const nums = new Set<string>();
+    abiertas.forEach(t => {
+      if (fechaFiltro && diaDeLaTabla(t) !== fechaFiltro) return;
+      if (hipodromoFiltro && t.hipodromo !== hipodromoFiltro) return;
+      const c = String(t.carrera ?? "").trim();
+      if (c) nums.add(c);
+    });
+    centralCarreras.forEach(c => {
+      if (fechaFiltro && c.fecha !== fechaFiltro) return;
+      if (hipodromoFiltro && c.hipodromo !== hipodromoFiltro) return;
+      const n = String(c.carrera ?? "").trim();
+      if (n) nums.add(n);
+    });
+    return Array.from(nums).sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0));
+  }, [abiertas, centralCarreras, fechaFiltro, hipodromoFiltro]);
+
+  // La carrera elegida se descarta sola si cambia el día o el hipódromo, para
+  // que el filtro nunca quede huérfano (mostrando "0 tablas" sin motivo).
   useEffect(() => {
-    if (fechaControlada) return;
-    if (fechaFiltro && !fechasDisponibles.includes(fechaFiltro)) setFechaFiltro("");
-  }, [fechasDisponibles, fechaFiltro, fechaControlada]);
+    if (carreraFiltro && !carrerasDisponibles.includes(carreraFiltro)) setCarreraFiltro("");
+  }, [carrerasDisponibles, carreraFiltro]);
+
+  // El día filtrado SIEMPRE está en `fechasDisponibles` (se agrega arriba), así
+  // que el filtro jamás queda huérfano ni se resetea a "todas las fechas".
 
   useEffect(() => {
     if (hipodromoControlado) return; // el padre gobierna el filtro de hipódromo
@@ -294,6 +322,7 @@ export function MonitorTablas({
     .filter(t => {
       if (fechaFiltro && diaDeLaTabla(t) !== fechaFiltro) return false;
       if (hipodromoFiltro && t.hipodromo !== hipodromoFiltro) return false;
+      if (carreraFiltro && String(t.carrera ?? "").trim() !== carreraFiltro) return false;
       return true;
     })
     .sort((a, b) => {
@@ -306,6 +335,46 @@ export function MonitorTablas({
       if (va !== vb) return va - vb;
       return diaDeLaTabla(a).localeCompare(diaDeLaTabla(b));
     });
+
+  /**
+   * Excel de lo que se está mirando: se arma la matriz con las MISMAS filas
+   * del Monitor y los MISMOS tres filtros (día + hipódromo + carrera), así el
+   * `.xls` nunca trae más carreras que la pantalla.
+   */
+  const exportarExcel = async () => {
+    if (exportandoExcel) return;
+    if (filtradas.length === 0) {
+      setAviso("No hay tablas publicadas con los filtros actuales para exportar.");
+      return;
+    }
+    setExportandoExcel(true);
+    setAviso("");
+    try {
+      const [{ matrizDesdeFilas }, { exportarExcelTablas }] = await Promise.all([
+        import("@/lib/impresion/tablas"),
+        import("@/lib/impresion/excel"),
+      ]);
+      const m = await matrizDesdeFilas(filtradas, {
+        dia: fechaFiltro,
+        hipodromo: hipodromoFiltro,
+        carrera: carreraFiltro,
+      });
+      if (m.carreras.length === 0) {
+        setAviso("No se pudieron armar las filas del Excel con los filtros actuales.");
+        return;
+      }
+      const sufijo = [fechaFiltro, hipodromoFiltro, carreraFiltro ? `C${carreraFiltro}` : ""]
+        .filter(Boolean)
+        .join("_");
+      const ok = exportarExcelTablas(m.carreras, `TABLAS-PUBLICADAS-${sufijo || "jornada"}`);
+      if (ok) setAviso(`Excel generado con ${m.carreras.length} carrera(s).`);
+      else setAviso("No se pudo generar el archivo Excel.");
+    } catch (e) {
+      setAviso(`No se pudo generar el Excel: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setExportandoExcel(false);
+    }
+  };
 
   const lanzarVenta = async () => {
     if (!vendiendo || !ejemplarVenta.trim() || !montoVenta.trim()) {
@@ -599,18 +668,34 @@ export function MonitorTablas({
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">📅 Fecha</span>
             <select
               value={fechaFiltro}
-              onChange={(e) => setFechaFiltro(e.target.value)}
+              onChange={(e) => e.target.value && setFechaFiltro(e.target.value)}
               className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none"
             >
-              <option value="">TODAS</option>
+              {/* Sin "TODAS": la plataforma tiene un registro único de carreras
+                  y cada módulo debe mostrar SOLO el día elegido (hoy por
+                  defecto). Otros días se ven cambiando la fecha, nunca mezclando. */}
               {fechasDisponibles.map(f => <option key={f} value={f}>{f}</option>)}
             </select>
           </label>
 
-          {(fechaFiltro || hipodromoFiltro) && (
+          {/* Filtro Carrera */}
+          <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">🏇 Carrera</span>
+            <select
+              value={carreraFiltro}
+              onChange={(e) => setCarreraFiltro(e.target.value)}
+              disabled={carrerasDisponibles.length === 0}
+              className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none"
+            >
+              <option value="">TODAS</option>
+              {carrerasDisponibles.map(c => <option key={c} value={c}>C{c}</option>)}
+            </select>
+          </label>
+
+          {(fechaFiltro !== hoyLocal() || hipodromoFiltro || carreraFiltro) && (
             <button
               type="button"
-              onClick={() => { setFechaFiltro(""); setHipodromoFiltro(""); }}
+              onClick={() => { setFechaFiltro(hoyLocal()); setHipodromoFiltro(""); setCarreraFiltro(""); }}
               className="text-[10px] font-black uppercase text-red-500 hover:text-red-600 border border-red-200 bg-red-50 px-2 py-1 rounded"
             >
               ✕ Limpiar
@@ -623,6 +708,17 @@ export function MonitorTablas({
             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-indigo-700 shadow-sm transition-colors hover:bg-indigo-50 ml-2"
           >
             🖨️ {vistaImpresion ? "Volver a Edición" : "Vista de impresión"}
+          </button>
+
+          {/* Excel de lo filtrado: mismos filtros que la pantalla. */}
+          <button
+            type="button"
+            onClick={() => void exportarExcel()}
+            disabled={exportandoExcel || filtradas.length === 0}
+            title="Descargar como Excel (.xls) lo que muestran los filtros actuales"
+            className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {exportandoExcel ? "⏳ Generando…" : "📊 Excel"}
           </button>
         </div>
       </div>

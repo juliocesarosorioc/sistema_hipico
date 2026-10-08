@@ -1,16 +1,16 @@
 ﻿// ============================================================================
-// Pruebas del NÃšCLEO de la matriz de carreras (src/lib/carreras/maestro-nucleo.ts).
+// Pruebas del NÚCLEO de la matriz de carreras (src/lib/carreras/maestro-nucleo.ts).
 //
-// Es la pieza que decide quÃ© ve la plataforma: cÃ³mo se lee una fila de la matriz,
-// de dÃ³nde sale el estado de la carrera y cÃ³mo se mezclan catÃ¡logo + resultado.
-// Si esto falla, un mÃ³dulo muestra "Programada" una carrera ya liquidada, o no
-// muestra una carrera que la IA acaba de cargar â€” los dos sÃ­ntomas que motivaron
+// Es la pieza que decide qué ve la plataforma: cómo se lee una fila de la matriz,
+// de dónde sale el estado de la carrera y cómo se mezclan catálogo + resultado.
+// Si esto falla, un módulo muestra "Programada" una carrera ya liquidada, o no
+// muestra una carrera que la IA acaba de cargar — los dos síntomas que motivaron
 // crear la matriz maestra.
 //
-//   - normalizarGanadores: las DOS formas histÃ³ricas ("1/2/3" y [{numero}])
-//   - normalizarCaballos: nÃºmero numÃ©rico, retiros por nÃºmero, filas sin NÂº
+//   - normalizarGanadores: las DOS formas históricas ("1/2/3" y [{numero}])
+//   - normalizarCaballos: número numérico, retiros por número, filas sin Nº
 //   - estadoDeCarrera: el resultado manda sobre la propia fila del maestro
-//   - aCarreraCentral: catÃ¡logo + resultado embebido en un solo objeto
+//   - aCarreraCentral: catálogo + resultado embebido en un solo objeto
 // ============================================================================
 import {
   aCarreraCentral,
@@ -18,6 +18,7 @@ import {
   estadoDeCarrera,
   normalizarCaballos,
   normalizarGanadores,
+  ordenarPorNumero,
   primerResultado,
   type FilaCarreraMaestro,
 } from "../src/lib/carreras/maestro-nucleo";
@@ -47,7 +48,7 @@ function ok(nombre: string, condicion: boolean) {
   }
 }
 
-console.log("\n[1] normalizarGanadores: las dos formas en que se guardÃ³");
+console.log("\n[1] normalizarGanadores: las dos formas en que se guardó");
 // ---------------------------------------------------------------------------
 eq("nada", normalizarGanadores(null), []);
 eq("texto con barras", normalizarGanadores("1/2/3"), ["1", "2", "3"]);
@@ -79,8 +80,8 @@ eq("estado propio Abierta", estadoDeCarrera({ ...base, estado: "Abierta" }, null
 eq("estado propio Cerrada", estadoDeCarrera({ ...base, estado: "Cerrada" }, null), "Cerrada");
 eq("hay ganador -> Resultados aunque el maestro diga Programada", estadoDeCarrera({ ...base, estado: "Programada" }, { ganadores: ["3"] }), "Resultados");
 eq("aplicado a tablas -> Liquidada", estadoDeCarrera({ ...base, estado: "Programada" }, { ganadores: ["3"], aplicado_a_tablas: true }), "Liquidada");
-// El sÃ­ntoma que motivÃ³ derivarlo: `claseEstadoCarrera` caÃ­a siempre en
-// "programada" y el semÃ¡foro daba por pendiente una carrera ya liquidada.
+// El síntoma que motivó derivarlo: `claseEstadoCarrera` caía siempre en
+// "programada" y el semáforo daba por pendiente una carrera ya liquidada.
 eq("estado desconocido cae en Programada", estadoDeCarrera({ ...base, estado: "inventado" }, null), "Programada");
 eq("estado ausente cae en Programada", estadoDeCarrera({ ...base, estado: null }, null), "Programada");
 
@@ -91,7 +92,7 @@ eq("array de uno", primerResultado({ ...base, resultados_carreras: [{ ganadores:
 eq("array vacio", primerResultado({ ...base, resultados_carreras: [] }), null);
 eq("sin embed", primerResultado(base), null);
 
-console.log("\n[5] aCarreraCentral: catÃ¡logo + resultado en un objeto");
+console.log("\n[5] aCarreraCentral: catálogo + resultado en un objeto");
 // ---------------------------------------------------------------------------
 eq(
   "carrera solo en la matriz (la IA la acaba de cargar)",
@@ -205,7 +206,6 @@ eq(
     hipodromo: "LA RINCONADA",
     carrera: 5,
     caballos: [{ numero: "2", nombre: null, nacionalidad: null, retirado: false }],
-    invalidados: undefined,
     invalidado_remate: "5",
     invalidado_polla: "2",
   }).invalidadosPolla,
@@ -234,7 +234,7 @@ eq(
   false
 );
 eq(
-  "auditorÃ­a: sale verificada con quiÃ©n y cuÃ¡ndo",
+  "auditoría: sale verificada con quién y cuándo",
   aCarreraCentral({
     fecha: "2026-09-25",
     hipodromo: "LA RINCONADA",
@@ -281,19 +281,48 @@ eq(
   ["2", "5"]
 );
 ok(
-  "una carrera sin nÃºmero no se inventa en 0 con estado liquidada",
+  "una carrera sin número no se inventa en 0 con estado liquidada",
   aCarreraCentral({ fecha: "2026-09-25", hipodromo: "X", carrera: 0 }).estado === "Programada"
 );
 
+console.log("\n[6] ordenarPorNumero: ejemplares 1..n aunque la fuente llegue desordenada");
+// ---------------------------------------------------------------------------
+eq(
+  "normalizarCaballos ordena numérico (10 después de 2, no como texto)",
+  normalizarCaballos([{ numero: 10, nombre: "DIEZ" }, { numero: 2, nombre: "DOS" }, { numero: 1, nombre: "UNO" }], new Set()).map((c) => c.numero),
+  ["1", "2", "10"]
+);
+eq(
+  "mezcla de texto y números se ordena por el número",
+  ordenarPorNumero([{ numero: "12" }, { numero: 3 }, { numero: "2" }]).map((c) => c.numero),
+  ["2", 3, "12"]
+);
+eq(
+  "los que no traen número válido van al final",
+  ordenarPorNumero([{ numero: "" }, { numero: 7 }, { numero: "S/N" }]).map((c) => c.numero),
+  [7, "", "S/N"]
+);
+eq(
+  "una carrera con datos de copias desordenadas fusiona ordenada",
+  (() => {
+    const f = dedupFilasMaestro([
+      { fecha: "2026-10-04", hipodromo: "LA RINCONADA", carrera: 6, caballos: [{ numero: "10", nombre: "DIEZ" }] },
+      { fecha: "2026-10-04", hipodromo: "LA RINCONADA", carrera: 6, caballos: [{ numero: "3", nombre: "TRES" }] },
+    ])[0];
+    return (f.caballos as { numero: string }[]).map((c) => c.numero);
+  })(),
+  ["3", "10"]
+);
+
 // ============================================================================
-// DEDUPLICACIÃ“N POR CLAVE CANÃ“NICA
+// DEDUPLICACIÓN POR CLAVE CANÓNICA
 //
 // El caso real: LA RINCONADA 2026-10-04 tiene 18 filas para 13 carreras porque
-// la matriz guardÃ³ cada Ejemplar como fila propia con `carrera: ""`. C1, C2, C4,
-// C10 y C13 salÃ­an dos veces, y la copia vacÃ­a hacÃ­a que el mÃ³dulo la marcara
+// la matriz guardó cada Ejemplar como fila propia con `carrera: ""`. C1, C2, C4,
+// C10 y C13 salían dos veces, y la copia vacía hacía que el módulo la marcara
 // "sin ejemplares registrados" teniendo 8.
 //
-// La fila buena es la que trae NÃº de carrera y life; la basura, la que no.
+// La fila buena es la que trae Nú de carrera y life; la basura, la que no.
 // ============================================================================
 const EJEMPLARES_C1 = [
   "BENDECIDA",
@@ -306,7 +335,7 @@ const EJEMPLARES_C1 = [
   "ACANELADA",
 ];
 
-/** La fila basura: la escribiÃ³ la IA al crear cada ejemplar sin nÃº de carrera. */
+/** La fila basura: la escribió la IA al crear cada ejemplar sin nú de carrera. */
 const filaEjemplarSinCarrera = (nombre: string) => ({
   fecha: "2026-10-04",
   hipodromo: "LA RINCONADA",
@@ -323,6 +352,15 @@ const filaCarreraBuena = (carrera: number, caballos: { numero: string; nombre: s
   caballos,
 });
 
+/** Ejemplar tal como sale de la fila (el módulo lo tipa como `unknown`). */
+type EjTest = { numero: string; nombre: string };
+const ejemplaresDe = (f: FilaCarreraMaestro | undefined): EjTest[] =>
+  (f?.caballos as EjTest[] | undefined) ?? [];
+
+/** Pasa filas CRUDAS de la matriz: la IA escribe `carrera: ""` en las suyas. */
+const dedup = (filas: unknown[]): FilaCarreraMaestro[] =>
+  dedupFilasMaestro(filas as FilaCarreraMaestro[]);
+
 const matrizDelCaso = [
   filaCarreraBuena(1, EJEMPLARES_C1.map((n, i) => ({ numero: String(i + 1), nombre: n }))),
   ...EJEMPLARES_C1.map((n) => filaEjemplarSinCarrera(n)),
@@ -331,94 +369,100 @@ const matrizDelCaso = [
   filaCarreraBuena(3, []),
 ];
 
-const dedupCaso = dedupFilasMaestro(matrizDelCaso);
+const dedupCaso = dedup(matrizDelCaso);
 
-eq("13 filas del caso colapsan a las carreras que tienen nÃºmero real", dedupCaso.length, 3);
-eq("C1 conserva los 8 ejemplares", dedupCaso[0].caballos.length, EJEMPLARES_C1.length);
+eq("13 filas del caso colapsan a las carreras que tienen número real", dedupCaso.length, 3);
+eq("C1 conserva los 8 ejemplares", ejemplaresDe(dedupCaso[0]).length, EJEMPLARES_C1.length);
 eq(
   "C1 conserva los nombres en orden",
-  dedupCaso[0].caballos.map((c) => c.nombre),
+  ejemplaresDe(dedupCaso[0]).map((c) => c.nombre),
   EJEMPLARES_C1
 );
 eq(
-  "el ejemplar suelto no crea una carrera 0 (no hay nÃº que agrupar)",
+  "el ejemplar suelto no crea una carrera 0 (no hay nú que agrupar)",
   dedupCaso.some((f) => f.carrera === 0),
   false
 );
 ok(
-  "una carrera con lista vacÃ­a NO se marca como duplicada de la buena",
+  "una carrera con lista vacía NO se marca como duplicada de la buena",
   (() => {
-    const soloBuena = dedupFilasMaestro([
+    const soloBuena = dedup([
       filaCarreraBuena(1, [{ numero: "1", nombre: "A" }]),
       filaCarreraBuena(1, []),
     ]);
-    return soloBuena.length === 1 && soloBuena[0].caballos.length === 1;
+    return soloBuena.length === 1 && ejemplaresDe(soloBuena[0]).length === 1;
   })()
 );
 eq(
-  "el hipÃ³dromo se compara por clave normalizada (espacios y mayÃºsculas)",
-  dedupFilasMaestro([
+  "el hipódromo se compara por clave normalizada (espacios y mayúsculas)",
+  dedup([
     filaCarreraBuena(1, [{ numero: "1", nombre: "A" }]),
     { ...filaCarreraBuena(1, [{ numero: "1", nombre: "A" }]), hipodromo: "La Rinconada" },
   ]).length,
   1
 );
 eq(
-  "carreras distintas del mismo hipÃ³dromo NO se fusionan",
-  dedupFilasMaestro([
+  "carreras distintas del mismo hipódromo NO se fusionan",
+  dedup([
     filaCarreraBuena(1, [{ numero: "1", nombre: "A" }]),
     filaCarreraBuena(2, [{ numero: "1", nombre: "B" }]),
   ]).length,
   2
 );
 eq(
-  "hipÃ³dromos distintos con el mismo nÃºmero NO se fusionan",
-  dedupFilasMaestro([
+  "hipódromos distintos con el mismo número NO se fusionan",
+  dedup([
     filaCarreraBuena(1, [{ numero: "1", nombre: "A" }]),
     { ...filaCarreraBuena(1, [{ numero: "1", nombre: "A" }]), hipodromo: "LAS PIEDRAS" },
   ]).length,
   2
 );
 eq(
-  "las copias de un mismo nÃºmero con ejemplares distintos se FUSIONAN",
-  dedupFilasMaestro([
-    filaCarreraBuena(4, [{ numero: "1", nombre: "A" }]),
-    filaCarreraBuena(4, [{ numero: "2", nombre: "B" }]),
-  ])[0].caballos.map((c) => c.nombre),
+  "las copias de un mismo número con ejemplares distintos se FUSIONAN",
+  ejemplaresDe(
+    dedup([
+      filaCarreraBuena(4, [{ numero: "1", nombre: "A" }]),
+      filaCarreraBuena(4, [{ numero: "2", nombre: "B" }]),
+    ])[0]
+  ).map((c) => c.nombre),
   ["A", "B"]
 );
 ok(
   "los retiros de las dos copias se juntan (no se pierde el retiro de la copia pobre)",
   (() => {
-    const f = dedupFilasMaestro([
+    const f = dedup([
       { ...filaCarreraBuena(5, [{ numero: "1", nombre: "A" }]), retirados: "3" },
       { ...filaCarreraBuena(5, [{ numero: "2", nombre: "B" }]), retirados: "4, 3" },
     ])[0];
-    const lista = f.retirados as string[];
+    const lista = String(f.retirados ?? "")
+      .split(/[^0-9]+/)
+      .filter(Boolean);
     return lista.includes("3") && lista.includes("4");
   })()
 );
 ok(
-  "una fila sin hipÃ³dromo se descarta y no contamina la carrera vÃ¡lida",
-  dedupFilasMaestro([
+  "una fila sin hipódromo se descarta y no contamina la carrera válida",
+  dedup([
     filaCarreraBuena(1, [{ numero: "1", nombre: "A" }]),
     { fecha: "2026-10-04", hipodromo: "", carrera: 1, caballos: [{ numero: "9", nombre: "X" }] },
   ]).every((f) => (f.caballos as { nombre: string }[]).every((c) => c.nombre !== "X"))
 );
 eq(
-  "una fila sin fecha queda aparte: no se mezcla con la carrera del dÃ­a",
-  dedupFilasMaestro([
+  "una fila sin fecha queda aparte: no se mezcla con la carrera del día",
+  dedup([
     filaCarreraBuena(1, [{ numero: "1", nombre: "A" }]),
     { fecha: "", hipodromo: "LA RINCONADA", carrera: 1, caballos: [{ numero: "9", nombre: "Y" }] },
   ]).length,
   2
 );
 eq(
-  "copias idÃ©nticas (mismo arancel) no aÃ±aden ejemplares repetidos",
-  dedupFilasMaestro([
-    filaCarreraBuena(1, [{ numero: "1", nombre: "A" }]),
-    filaCarreraBuena(1, [{ numero: "1", nombre: "A" }]),
-  ])[0].caballos.length,
+  "copias idénticas (mismo arancel) no añaden ejemplares repetidos",
+  ejemplaresDe(
+    dedup([
+      filaCarreraBuena(1, [{ numero: "1", nombre: "A" }]),
+      filaCarreraBuena(1, [{ numero: "1", nombre: "A" }]),
+    ])[0]
+  ).length,
   1
 );
 

@@ -15,6 +15,33 @@
 import { parsearRetirados, textoRetirados, normalizarRetirados } from "./retiros-nucleo";
 import { claveHipodromo, numeroCarrera } from "./claves";
 
+/**
+ * Ordena una lista de ejemplares por `numero` ASCENDENTE (comparando numérico,
+ * no texto, para que C2 vaya antes que C10). Los números inválidos o vacíos van
+ * al final, conservando entre sí su orden relativo (sort estable).
+ *
+ * Se aplica TANTO al escribir como al leer: así la pizarra y todas las carreras
+ * de todos los módulos se muestran 1..n aunque la fuente (texto de la Gaceta,
+ * Excel o extracción de la IA) haya llegado desordenada.
+ */
+export function ordenarPorNumero<E extends { numero?: string | number | null }>(lista: E[]): E[] {
+  return [...lista].sort((a, b) => {
+    const na = posicionNumerica(a.numero);
+    const nb = posicionNumerica(b.numero);
+    if (na !== nb) return na - nb;
+    return String(a.numero ?? "").localeCompare(String(b.numero ?? ""));
+  });
+}
+
+function posicionNumerica(numero: unknown): number {
+  if (numero == null) return Number.MAX_SAFE_INTEGER;
+  const s = String(numero).trim();
+  const m = /^\s*(\d+)/.exec(s);
+  if (!m) return Number.MAX_SAFE_INTEGER;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n > 0 ? n : Number.MAX_SAFE_INTEGER;
+}
+
 // ---------------------------------------------------------------------------
 // Tipos
 // ---------------------------------------------------------------------------
@@ -135,18 +162,20 @@ verificado_at?: string | null;
 
 export function normalizarCaballos(raw: unknown, retirados: Set<string>): EjemplarCarreraCentral[] {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .map((c) => {
-      const x = (c ?? {}) as Record<string, unknown>;
-      const numero = String(x.numero ?? "").trim();
-      return {
-        numero,
-        nombre: x.nombre != null ? String(x.nombre) : null,
-        nacionalidad: x.nacionalidad != null ? String(x.nacionalidad) : null,
-        retirado: x.retirado === true || retirados.has(numero),
-      };
-    })
-    .filter((c) => c.numero);
+  return ordenarPorNumero(
+    raw
+      .map((c) => {
+        const x = (c ?? {}) as Record<string, unknown>;
+        const numero = String(x.numero ?? "").trim();
+        return {
+          numero,
+          nombre: x.nombre != null ? String(x.nombre) : null,
+          nacionalidad: x.nacionalidad != null ? String(x.nacionalidad) : null,
+          retirado: x.retirado === true || retirados.has(numero),
+        };
+      })
+      .filter((c) => c.numero)
+  );
 }
 
 /**
@@ -273,7 +302,7 @@ function unirEjemplares(a: unknown, b: unknown): EjemplarMatriz[] {
       });
     }
   }
-  return salida;
+  return ordenarPorNumero(salida);
 }
 
 /** Fusiona dos filas del MISMO (hipodromo, carrera) sin perder datos. */
@@ -340,7 +369,7 @@ export function dedupFilasMaestro(filas: FilaCarreraMaestro[]): FilaCarreraMaest
     if (!hipo || !num) continue;
     // La fecha entra en la clave aunque la consulta ya venga filtrada por ella:
     // si alguien pasa filas de dos jornadas, la C1 de una no se fusiona con la
-    // C1 de la otra (son carreras distintas aunque compartan nÃºmero).
+    // C1 de la otra (son carreras distintas aunque compartan número).
     const dia = String(f.fecha ?? "").trim().slice(0, 10);
     const k = `${dia}|${hipo}|${num}`;
     const actual = porClave.get(k);

@@ -268,11 +268,75 @@ export function marcarEnviadas(estado: CarreraRegistro[], enviadas: CarreraRegis
 
 // ---------- Buzón hacia el Ensamblaje ----------
 
-/** Acumula carreras en el Ensamblaje (ensamblaje_carreras + gaceta_prellenado),
- *  igual que el legacy js/gaceta.js acumularEnEnsamblaje(). Retorna el total. */
+/**
+ * Clave única de una carrera: día + hipódromo + número. Dos carreras con la
+ * misma clave son LA MISMA carrera, vengan de la gaceta o de un re-envío.
+ * Con clave vacía ("||") no se puede comparar nada, y ahí se permite repetir.
+ */
+export function claveCarrera(c: CarreraRegistro | null | undefined): string {
+  const hipo = String(c?.hipodromo || "").trim().toUpperCase();
+  const car = String(c?.carrera ?? "").trim();
+  const dia = c?.fecha ? (normalizarFechaIso(c.fecha) || "").slice(0, 10) : "";
+  return `${dia}|${hipo}|${car}`;
+}
+
+/** ¿La clave identifica una carrera de verdad (trae hipódromo o número)? */
+function claveValida(k: string): boolean {
+  const [, hipo, car] = k.split("|");
+  return Boolean(hipo || car);
+}
+
+/**
+ * Quita las carreras REPETIDAS de una lista recién transcripta (misma clave),
+ * conservando la primera aparición. Devuelve cuántas se descartaron.
+ */
+export function deduplicarCarreras(carreras: CarreraRegistro[]): { lista: CarreraRegistro[]; quitadas: number } {
+  const vistas = new Set<string>();
+  const lista: CarreraRegistro[] = [];
+  let quitadas = 0;
+  for (const c of carreras) {
+    const k = claveCarrera(c);
+    if (claveValida(k) && vistas.has(k)) {
+      quitadas += 1;
+      continue;
+    }
+    if (claveValida(k)) vistas.add(k);
+    lista.push(c);
+  }
+  return { lista, quitadas };
+}
+
+/** Cuántas de las carreras dadas YA están en el buzón del Ensamblaje.
+ *  El envío las REEMPLAZA en vez de sumar una copia más. */
+export function duplicadasEnEnsamblaje(carreras: CarreraRegistro[]): number {
+  const arr = leerArr<CarreraRegistro>(ENSAMBLAJE_CARRERAS_KEY) ?? [];
+  const claves = new Set(arr.map(claveCarrera).filter(claveValida));
+  return carreras.filter((c) => claves.has(claveCarrera(c))).length;
+}
+
+/** Conteo de carreras ya cargadas en el buzón (claves únicas). */
+export function cargadasEnEnsamblaje(): number {
+  const arr = leerArr<CarreraRegistro>(ENSAMBLAJE_CARRERAS_KEY) ?? [];
+  return new Set(arr.map(claveCarrera).filter(claveValida)).size;
+}
+
+/**
+ * Acumula carreras en el Ensamblaje (ensamblaje_carreras + gaceta_prellenado),
+ * igual que el legacy js/gaceta.js acumularEnEnsamblaje(). Retorna el total.
+ *
+ * CONTROL DE DUPLICADOS: si el buzón ya tiene una carrera con el mismo
+ * día+hipódromo+número, se REEMPLAZA (queda la versión nueva con los valores
+ * corregidos) en lugar de apilar una copia. Reenviar la misma gaceta —o
+ * transformar dos veces el mismo PDF— ya no duplica carreras.
+ */
 export function acumularEnEnsamblaje(carreras: CarreraRegistro[]): number {
   const arr = leerArr<CarreraRegistro>(ENSAMBLAJE_CARRERAS_KEY) ?? [];
-  carreras.forEach((c) => arr.push(Object.assign({}, c)));
+  carreras.forEach((c) => {
+    const k = claveCarrera(c);
+    const i = claveValida(k) ? arr.findIndex((x) => claveCarrera(x) === k) : -1;
+    if (i >= 0) arr[i] = Object.assign({}, c);
+    else arr.push(Object.assign({}, c));
+  });
   escribirArr(ENSAMBLAJE_CARRERAS_KEY, arr);
   const ultima = carreras[carreras.length - 1];
   if (ultima) escribirArr(GACETA_PRELLENADO_KEY, [ultima]);
@@ -297,11 +361,46 @@ export function leerBuzonEnsamblaje(): CarreraRegistro[] {
   return out.map((c) => Object.assign({}, c, { enviada: false }));
 }
 
-/** Consume el buzón (al levantar el Ensamblaje los pega en cards, igual que el
- *  legacy js/tablas.js escribirGacetaRegistro que limpia las claves de envío). */
-export function limpiarBuzonEnsamblaje(): void {
-  quitarClave(ENSAMBLAJE_CARRERAS_KEY);
-  quitarClave(GACETA_PRELLENADO_KEY);
+/** Día ISO de una carrera del buzón (vacío si la Gaceta no trajo fecha). */
+function diaDeBuzon(c: CarreraRegistro): string {
+  return (c?.fecha ? normalizarFechaIso(c.fecha) : null)?.slice(0, 10) || "";
+}
+
+/**
+ * Consume el buzón (al levantar el Ensamblaje los pega en cards, igual que el
+ * legacy js/tablas.js escribirGacetaRegistro que limpia las claves de envío).
+ *
+ * Si se pasa `dia`, solo se consumen las carreras de ESE día: las de otro día
+ * se conservan en el buzón para que aparezcan cuando el usuario cambie la
+ * fecha. La plataforma tiene un registro único y central de carreras, así que
+ * una gaceta de mañana no puede aparecer ni desaparecer dentro de la de hoy.
+ */
+export function limpiarBuzonEnsamblaje(dia?: string): void {
+  if (!dia) {
+    quitarClave(ENSAMBLAJE_CARRERAS_KEY);
+    quitarClave(GACETA_PRELLENADO_KEY);
+    return;
+  }
+  const arr = leerArr<CarreraRegistro>(ENSAMBLAJE_CARRERAS_KEY);
+  if (arr) {
+    const resto = arr.filter((c) => {
+      const d = diaDeBuzon(c);
+      return d !== "" && d !== dia;
+    });
+    if (resto.length) escribirArr(ENSAMBLAJE_CARRERAS_KEY, resto);
+    else quitarClave(ENSAMBLAJE_CARRERAS_KEY);
+  }
+  const solo = localStorage.getItem(GACETA_PRELLENADO_KEY) || sessionStorage.getItem(GACETA_PRELLENADO_KEY);
+  if (!solo) return;
+  let conservar = false;
+  try {
+    const p = JSON.parse(solo) as CarreraRegistro;
+    const d = p && p.hipodromo ? diaDeBuzon(p) : "";
+    conservar = !!d && d !== dia;
+  } catch {
+    conservar = false;
+  }
+  if (!conservar) quitarClave(GACETA_PRELLENADO_KEY);
 }
 
 /** Quita UNA carrera del registro persistente (paridad eliminarDelRegistroGaceta). */

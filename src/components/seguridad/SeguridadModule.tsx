@@ -24,6 +24,7 @@ import {
 import type { Decision, ExcepcionUsuario, TipoCapacidad, TipoUsuario } from "@/lib/seguridad/tipos";
 import { Guard } from "@/components/ui/Guard";
 import { AuditoriaPanel } from "@/components/seguridad/AuditoriaPanel";
+import { listarClientes, type ClienteRow } from "@/lib/clientes";
 import { useAuthStore } from "@/store/useAuthStore";
 
 type Pestana = "esquema" | "reglas" | "tipos" | "usuarios" | "auditoria";
@@ -132,6 +133,9 @@ export default function SeguridadModule() {
   const [tipoSel, setTipoSel] = useState<string>("");
   const [borrador, setBorrador] = useState<Set<string>>(new Set());
   const [usuarioSel, setUsuarioSel] = useState<string>("");
+  /** Cliente de `clientes` vinculado al usuario seleccionado (puja en Remates). */
+  const [clienteSel, setClienteSel] = useState<string>("");
+  const [clientes, setClientes] = useState<ClienteRow[]>([]);
   const [excepciones, setExcepciones] = useState<ExcepcionUsuario>({});
   const [nuevoTipo, setNuevoTipo] = useState("");
   const [ocupado, setOcupado] = useState(false);
@@ -198,6 +202,33 @@ export default function SeguridadModule() {
       if (t[0]) setTipoSel(t[0].nombre);
     })();
   }, []);
+
+  // El catálogo de clientes hace falta solo para vincular usuario ↔ cliente
+  // (Remates): se carga cuando se entra a la pestaña, no en el arranque.
+  useEffect(() => {
+    if (pestana !== "usuarios" || clientes.length) return;
+    void listarClientes().then(setClientes);
+  }, [pestana, clientes.length]);
+
+  // El vínculo del usuario recién elegido es el que trae la lista.
+  useEffect(() => {
+    setClienteSel(usuarios.find((u) => u.id === usuarioSel)?.clienteId ?? "");
+  }, [usuarioSel, usuarios]);
+
+  /** Guarda el cliente que representa al usuario (identidad del pujador). */
+  const guardarClienteVinculado = async () => {
+    const u = usuarios.find((x) => x.id === usuarioSel);
+    if (!u) return;
+    setOcupado(true);
+    const r = await guardarUsuarioSistema({ ...u, clienteId: clienteSel || null });
+    setOcupado(false);
+    if (r.ok) {
+      setUsuarios(await leerUsuariosDelSistema());
+      avisar(clienteSel ? "Cliente vinculado al usuario." : "Vínculo de cliente quitado.", true);
+    } else {
+      avisar(r.error ?? "No se pudo guardar el vínculo.", false);
+    }
+  };
 
   // Al cambiar de tipo, se carga su matriz en el borrador.
   useEffect(() => {
@@ -739,6 +770,36 @@ export default function SeguridadModule() {
               </h2>
               <p className="text-[10px] text-slate-400">
                 Elegí el tipo base y después marcá las excepciones. Lo que no toques queda como lo define el tipo.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-2 border-b border-slate-100 px-3 py-2">
+              <label className="flex min-w-0 flex-col gap-1 text-[10px] font-semibold text-slate-500">
+                <span>Cliente vinculado (Remates)</span>
+                <select
+                  value={clienteSel}
+                  onChange={(e) => setClienteSel(e.target.value)}
+                  disabled={ocupado || !usuarioSel}
+                  className="min-w-[14rem] rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-800 disabled:opacity-50"
+                >
+                  <option value="">— Sin cliente —</option>
+                  {clientes.map((c) => (
+                    <option key={String(c.id)} value={String(c.id)}>
+                      {String(c.nombre ?? "").trim() || String(c.id)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                onClick={() => void guardarClienteVinculado()}
+                disabled={ocupado || !usuarioSel}
+                className="rounded-lg bg-slate-700 px-3 py-1.5 text-[10px] font-black uppercase text-white disabled:opacity-40"
+              >
+                Guardar vínculo
+              </button>
+              <p className="min-w-[16rem] flex-1 text-[10px] leading-snug text-slate-400">
+                Es el cliente con el que puja este usuario en Remates si solo tiene habilitado{" "}
+                <b>ver / pujar con Subir</b>. Un usuario de solo consulta no elige comprador: siempre usa este.
               </p>
             </div>
 

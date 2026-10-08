@@ -1,9 +1,9 @@
 // Archivo: js/hipodromos.js
-// GestiÃ³n de hipÃ³dromos: CREATE/READ/UPDATE/DELETE ordenados alfabÃ©ticamente,
-// con paÃ­s y estado. Los hipÃ³dromos de VE y USA vienen sembrados por el SQL (secciÃ³n 8).
-// Incluye validaciÃ³n fuzzy (Levenshtein) para evitar cuasi-duplicados.
+// Gestión de hipódromos: CREATE/READ/UPDATE/DELETE ordenados alfabéticamente,
+// con país y estado. Los hipódromos de VE y USA vienen sembrados por el SQL (sección 8).
+// Incluye validación fuzzy (Levenshtein) para evitar cuasi-duplicados.
 
-function toTitleCase(t){return String(t||"").trim().replace(/\s+/g," ").toLowerCase().replace(/\b[a-zÃ¡Ã©Ã­Ã³ÃºÃ±]|\b\d+\b/g,function(m){return m.toUpperCase();}).replace(/\b(al|del|de|la|los|las|y|en|a|o|u|por|para)\b/gi,function(w){return w.toLowerCase();});}
+function toTitleCase(t){return String(t||"").trim().replace(/\s+/g," ").toLowerCase().replace(/\b[a-záéíóúñ]|\b\d+\b/g,function(m){return m.toUpperCase();}).replace(/\b(al|del|de|la|los|las|y|en|a|o|u|por|para)\b/gi,function(w){return w.toLowerCase();});}
 
 // Distancia de Levenshtein normalizada (0 = igual, 1 = totalmente distinto)
 function levenshteinNorm(a, b) {
@@ -41,13 +41,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let hipodromosData = [];
 
     const PAIS_LABEL = {
-        VE: 'ðŸ‡»ðŸ‡ª VE', USA: 'ðŸ‡ºðŸ‡¸ USA', PA: 'ðŸ‡µðŸ‡¦ PA', MX: 'ðŸ‡²ðŸ‡½ MX', AR: 'ðŸ‡¦ðŸ‡· AR',
-        BR: 'ðŸ‡§ðŸ‡· BR', CL: 'ðŸ‡¨ðŸ‡± CL', PE: 'ðŸ‡µðŸ‡ª PE', CO: 'ðŸ‡¨ðŸ‡´ CO', EC: 'ðŸ‡ªðŸ‡¨ EC',
-        UY: 'ðŸ‡ºðŸ‡¾ UY', OTRO: 'ðŸŒŽ OTRO'
+        VE: '🇻🇪 VE', USA: '🇺🇸 USA', PA: '🇵🇦 PA', MX: '🇲🇽 MX', AR: '🇦🇷 AR',
+        BR: '🇧🇷 BR', CL: '🇨🇱 CL', PE: '🇵🇪 PE', CO: '🇨🇴 CO', EC: '🇪🇨 EC',
+        UY: '🇺🇾 UY', OTRO: '🌎 OTRO'
     };
 
     async function cargarHipodromos() {
-        cuerpoTabla.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">Cargando catÃ¡logo...</td></tr>';
+        cuerpoTabla.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">Cargando catálogo...</td></tr>';
 
         const { data, error } = await window.supabase
             .from('hipodromos')
@@ -55,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .order('nombre', { ascending: true });
 
         if (error) {
-            cuerpoTabla.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-red-500">Error al cargar el catÃ¡logo: ' + error.message + '</td></tr>';
+            cuerpoTabla.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-red-500">Error al cargar el catálogo: ' + error.message + '</td></tr>';
             return;
         }
 
@@ -108,12 +108,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!nombre) return;
             const pais = selectPais.value;
 
-            // ValidaciÃ³n fuzzy: busca coincidencias cercanas en la lista local
+            // Validación fuzzy: busca coincidencias cercanas en la lista local
             const dup = hipodromosData.find(h => 
                 h.pais === pais && levenshteinNorm(h.nombre, nombre) < 0.15
             );
             if (dup) {
-                clubUI.toast(`Ya existe un hipÃ³dromo muy similar: "${dup.nombre}" (${dup.pais}). No se permite duplicados.`, 'warning');
+                clubUI.toast(`Ya existe un hipódromo muy similar: "${dup.nombre}" (${dup.pais}). No se permite duplicados.`, 'warning');
                 return;
             }
 
@@ -125,8 +125,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const { error } = await window.supabase.from('hipodromos').insert([{ nombre, pais }]);
 
             if (error) {
-                if (error.code === '23505') clubUI.toast(`El hipÃ³dromo "${nombre}" ya existe en el catÃ¡logo.`, 'warning');
-                else clubUI.toast('OcurriÃ³ un error al registrar el hipÃ³dromo.', 'error');
+                if (error.code === '23505') clubUI.toast(`El hipódromo "${nombre}" ya existe en el catálogo.`, 'warning');
+                else clubUI.toast('Ocurrió un error al registrar el hipódromo.', 'error');
             } else {
                 this.reset();
                 cargarHipodromos();
@@ -169,7 +169,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btnGuardarModal.disabled = false;
 
         if (error) {
-            clubUI.toast(error.code === '23505' ? 'Ya existe un hipÃ³dromo con ese nombre.' : 'Error al editar.', 'error');
+            clubUI.toast(error.code === '23505' ? 'Ya existe un hipódromo con ese nombre.' : 'Error al editar.', 'error');
             return;
         }
         cargarHipodromos();
@@ -196,7 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const id = btnEliminar.getAttribute('data-id');
                 const nombre = btnEliminar.getAttribute('data-nombre');
 
-                if (confirm(`Â¿Eliminar el hipÃ³dromo "${nombre}"?\nEsta acciÃ³n no se puede deshacer.`)) {
+                if (confirm(`¿Eliminar el hipódromo "${nombre}"?\nEsta acción no se puede deshacer.`)) {
                     btnEliminar.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
                     btnEliminar.disabled = true;
 

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { listarHipodromos, type OpcionHipodromo } from "@/lib/tablas/rpc";
+import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import {
   eliminarCarreraCentral,
@@ -80,6 +81,7 @@ export function CarrerasDiaModule() {
   const [hipodromos, setHipodromos] = useState<OpcionHipodromo[]>([]);
   const [hipodromo, setHipodromo] = useState("");
   const [fecha, setFecha] = useState(() => hoyLocal());
+  const nombreHipoFiltro = nombrePropioHipodromo(hipodromo, hipodromos);
 
   /** Todas las carreras de `fecha`, sin filtro de hipódromo. */
   const [todas, setTodas] = useState<CarreraCentral[]>([]);
@@ -699,7 +701,7 @@ export function CarrerasDiaModule() {
             </div>
             <div className="space-y-2 p-4">
               <p className="text-sm font-bold text-slate-800">
-                ¿Quitar la carrera C{confirmarEliminar.carrera} de la jornada de {hipodromo} · {fecha}?
+                ¿Quitar la carrera C{confirmarEliminar.carrera} de la jornada de {nombreHipoFiltro} · {fecha}?
               </p>
               <p className="text-[11px] font-semibold text-slate-500">
                 No se borran las tablas fijas publicadas ni las jugadas ya registradas: solo sale de la lista central del día.

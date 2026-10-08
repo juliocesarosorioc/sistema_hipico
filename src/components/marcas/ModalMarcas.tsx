@@ -9,6 +9,9 @@ import type { CarreraCentral, EjemplarCarreraCentral } from "@/lib/carreras/cent
 import { aplicarRetirosCarrera, parsearRetirados } from "@/lib/carreras/retiros";
 import { listarClientesVenta, listarGruposVenta, esClienteLibre, type ClienteVenta, type GrupoVenta } from "@/lib/grupos";
 import { listarBanquerosGrupo } from "@/lib/banqueros";
+import { CargaResultadosModal } from "@/components/liquidacion/CargaResultadosModal";
+import { posicionesDePizarra } from "@/lib/liquidacion/posiciones";
+import { guardarPizarraCentral } from "@/lib/liquidacion/pizarraCentral";
 import {
   buscarEjemplar,
   calcularMonto,
@@ -104,6 +107,7 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
   const [ordenTexto, setOrdenTexto] = useState("");
   const [retiradosTexto, setRetiradosTexto] = useState("");
   const [liquidando, setLiquidando] = useState(false);
+  const [pizarraAbierta, setPizarraAbierta] = useState(false);
 
   const caballos: EjemplarCarreraCentral[] = useMemo(() => carrera.caballos ?? [], [carrera.caballos]);
   const etiqueta = `${carrera.hipodromo} N${carrera.carrera}`;
@@ -624,6 +628,15 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
                 informativo y el wager vuelve al saldo.
               </div>
 
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setPizarraAbierta(true)}
+                disabled={liquidando}
+              >
+                🏁 Cargar pizarra (mismo modal de Gestión de Jugadas)
+              </Button>
+
               <label className="block">
                 <span className={inputLbl}>Orden de llegada (de mayor a menor) — Ej.: 5, 1, 3, 2, 4</span>
                 <input
@@ -712,6 +725,32 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
         setErrorPreview(null);
       }}
       onConfirmar={() => void confirmarVenta()}
+    />
+    <CargaResultadosModal
+      abierto={pizarraAbierta}
+      onCerrar={() => setPizarraAbierta(false)}
+      hipodromo={carrera.hipodromo}
+      carrera={String(carrera.carrera)}
+      caballos={
+        caballos.length
+          ? caballos.map((e) => ({ numero: String(e.numero), nombre: String(e.nombre ?? "") }))
+          : null
+      }
+      onConfirmar={(r) => {
+        setOrdenTexto(posicionesDePizarra(r.pizarra).join(", "));
+        setPizarraAbierta(false);
+        void guardarPizarraCentral({
+          hipodromo: carrera.hipodromo,
+          carrera: carrera.carrera,
+          fecha,
+          cargado_por: "MARCAS",
+          r,
+        }).then((res) => {
+          if (!res.ok) {
+            onToast(`⚠️ Pizarra local cargada, pero no se centralizó: ${res.error ?? "sin conexión"}`, "warning");
+          }
+        });
+      }}
     />
     </>
   );

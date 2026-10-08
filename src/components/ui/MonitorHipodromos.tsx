@@ -12,6 +12,9 @@
  * Lo usan hoy Tablas Fijas (Monitor de Tablas Publicadas) y Carreras del Día.
  */
 import type { ReactNode } from "react";
+import { hoyLocal } from "@/lib/gaceta/programa";
+import { useHipodromosActivos } from "@/store/useHipodromosStore";
+import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
 
 export type CarreraMonitor = {
   id?: string | number;
@@ -60,11 +63,13 @@ export function MonitorHipodromos({
   acciones,
   className,
 }: Props) {
+  const activos = useHipodromosActivos();
+  const nombre = (h: string) => nombrePropioHipodromo(h, activos);
   return (
     <div className={`no-print ${className ?? ""}`}>
       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
         <span className="mon-titulo">
-          🏛️ Hipódromos del Día
+          🏇 Hipódromos del Día
           <span className="mon-contador">{grupos.length}</span>
         </span>
         <div className="flex items-center gap-2">
@@ -73,14 +78,14 @@ export function MonitorHipodromos({
             <input
               type="date"
               value={fecha}
-              onChange={(e) => onFecha(e.target.value)}
+              onChange={(e) => onFecha(e.target.value || hoyLocal())}
               title="Selecciona el día de los Hipódromos"
               className="mon-input"
             />
           </label>
           {filtro && (
             <button type="button" onClick={() => onFiltro("")} className="mon-limpiar">
-              ✕ Limpiar filtro: {filtro}
+              ✕ Limpiar filtro: {nombre(filtro)}
             </button>
           )}
           {acciones}
@@ -91,8 +96,9 @@ export function MonitorHipodromos({
         <p className="mon-vacio">{vacio ?? `Sin hipódromos registrados para la fecha ${fecha}.`}</p>
       ) : (
         <div className="mon-grid">
-          {grupos.map(({ hipodromo, carreras }) => {
+{grupos.map(({ hipodromo, carreras }) => {
             const activo = filtro === hipodromo;
+            const nombreHipo = nombre(hipodromo);
             return (
               <button
                 key={hipodromo}
@@ -100,12 +106,12 @@ export function MonitorHipodromos({
                 onClick={() => onFiltro(activo ? "" : hipodromo)}
                 title={
                   activo
-                    ? `Quitar filtro de ${hipodromo}`
-                    : `Filtrar el monitor por ${hipodromo} (${carreras.length} carrera(s))`
+                    ? `Quitar filtro de ${nombreHipo}`
+                    : `Filtrar el monitor por ${nombreHipo} (${carreras.length} carrera(s))`
                 }
                 className={`mon-tarjeta ${activo ? "mon-tarjeta-activa" : ""}`}
               >
-                <span className="mon-hipo">🏛️ {hipodromo}</span>
+                <span className="mon-hipo">🏛️ {nombreHipo}</span>
                 <span className="mon-hipo-sub">{carreras.length} carrera(s) en el día</span>
                 <span className="mon-chips">
                   {carreras
@@ -115,7 +121,7 @@ export function MonitorHipodromos({
                       <span
                         key={String(c.id ?? c.carrera)}
                         className={`mon-chip ${claseEstadoCarrera(c.estado)}`}
-                        title={`${hipodromo} C${c.carrera} · ${c.estado ?? "Programada"} · ${c.ventas ?? 0} venta(s)`}
+                        title={`${nombreHipo} C${c.carrera} · ${c.estado ?? "Programada"} · ${c.ventas ?? 0} venta(s)`}
                       >
                         C{c.carrera}
                       </span>

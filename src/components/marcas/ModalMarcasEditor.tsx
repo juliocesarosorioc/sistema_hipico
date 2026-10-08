@@ -7,6 +7,7 @@ import { HorseBadge } from "@/components/ui/HorseChips";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import { SemaforoCarreras } from "@/components/gestion/SemaforoCarreras";
 import { listarCarrerasPorDia, listarHipodromos, type OpcionHipodromo } from "@/lib/tablas/rpc";
+import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
 import {
   buscarEjemplar,
   calcularRivales,
@@ -440,7 +441,7 @@ export function ModalMarcasEditor({
             <p className="px-3 py-6 text-center text-xs font-bold text-slate-500">Cargando pizarra…</p>
           ) : !carrerasDeHipo.length ? (
             <p className="rounded-lg bg-amber-50 px-3 py-3 text-xs font-bold text-amber-700">
-              ⚠️ No hay carreras registradas en la pizarra central para {hipodromo} · {dia}. Regístrelas en
+              ⚠️ No hay carreras registradas en la pizarra central para {nombrePropioHipodromo(hipodromo, catalogoHipodromos)} · {dia}. Regístrelas en
               Carreras del Día.
             </p>
           ) : !fila ? (

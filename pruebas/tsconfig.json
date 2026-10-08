@@ -45,6 +45,11 @@
     "./hipodromos.test.ts",
     "./fechas.test.ts",
     "./validar-carga.test.ts",
-    "./remates.test.ts"
+    "./remates.test.ts",
+    "./sql-pollas.test.ts",
+    "./pollas.test.ts",
+    "./puertas-login.test.ts",
+    "./semana-vigente.test.ts",
+    "./searchable-select.test.ts"
   ]
 }

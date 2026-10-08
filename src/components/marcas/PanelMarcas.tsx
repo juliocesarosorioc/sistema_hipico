@@ -1,11 +1,18 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { getHorseColor } from "@/lib/horseColors";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import { type CarreraCentral, type EjemplarCarreraCentral } from "@/lib/carreras/central";
 import { useRegistroCentralOpts } from "@/store/useRegistroCentral";
+import { exportarPaginas, type ImgFormato } from "@/lib/impresion/exportar";
+import {
+  paginasMarcasHTML,
+  resumenMarcas,
+  textoWhatsAppMarcas,
+  type BloqueMarcas,
+} from "@/lib/impresion/marcas";
 import {
   buscarEjemplar,
   cambiarEstadoMarcas,
@@ -119,6 +126,10 @@ export function PanelMarcas() {
    * el operador entra a arreglar la jornada completa desde el boton general.
    */
   const [editor, setEditor] = useState<{ hipodromo: string; carrera: number | null } | null>(null);
+  /** Raíz de exportación (fuera de pantalla) con las hojas A4 de marcas. */
+  const exportRootRef = useRef<HTMLDivElement>(null);
+  /** Etiqueta de progreso mientras se captura PNG / JPG / PDF. */
+  const [exportando, setExportando] = useState("");
 
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -274,6 +285,76 @@ export function PanelMarcas() {
   }, [refrescar]);
 
   /**
+   * HOJA DE MARCAS (WhatsApp + PNG / JPG / PDF).
+   *
+   * Es la MISMA tabla resumen que se ve en pantalla, aplanada a las cinco
+   * columnas: nada se recalcula acá. Si el filtro de hipódromo está puesto, la
+   * hoja sale solo de ese hipódromo, igual que lo que el operador está mirando.
+   */
+  const bloquesEnvio = useMemo<BloqueMarcas[]>(
+    () =>
+      bloques.map((b) => ({
+        hipodromo: nombreDe(b.hipodromo),
+        carreras: b.carreras.map((f) => {
+          const cfg = configDe(f);
+          const cab = f.central.caballos ?? f.caballos ?? [];
+          const rev = cfg ? revisar(cfg, cab) : null;
+          return {
+            carrera: f.carrera,
+            marcas: cfg ? separarNumeros(cfg.marcas) : [],
+            nv: cfg ? separarNumeros(cfg.nv) : [],
+            deb: cfg ? separarNumeros(cfg.debutantes) : [],
+            debValen: cfg?.debutantes_valen !== false,
+            estado: cfg?.estado ?? "Sin configurar",
+            problema: cfg && rev && !rev.valida ? rev.mensaje ?? "Configuración con problemas" : "",
+          };
+        }),
+      })),
+    [bloques, nombreDe, configDe, revisar]
+  );
+
+  const htmlMarcas = useMemo(
+    () =>
+      paginasMarcasHTML(bloquesEnvio, {
+        fecha,
+        filtro: hipodromo ? nombreDe(hipodromo) : "",
+      }),
+    [bloquesEnvio, fecha, hipodromo, nombreDe]
+  );
+
+  const conDatos = bloquesEnvio.some((b) => b.carreras.length > 0);
+
+  /** PNG / JPG / PDF de la hoja de marcas (misma captura que Tablas Fijas). */
+  const exportar = async (formato: ImgFormato) => {
+    if (!conDatos || !htmlMarcas) return toast("No hay carreras con marcas para exportar.", "warning");
+    if (!exportRootRef.current) return;
+    if (exportando) return;
+    setExportando(`Capturando ${formato}…`);
+    try {
+      await exportarPaginas(
+        exportRootRef.current,
+        formato,
+        `marcas_${hipodromo || "jornada"}`,
+        { orientacion: "vertical" },
+        (p) => setExportando(`${formato} · página ${p.actual} de ${p.total}…`)
+      );
+      const r = resumenMarcas(bloquesEnvio);
+      toast(`${formato} generado: ${r.conMarcas} carrera(s) con marcas de ${r.carreras}.`, "success");
+    } catch (e) {
+      toast(`Error al exportar ${formato}: ${e instanceof Error ? e.message : String(e)}`, "error");
+    } finally {
+      setExportando("");
+    }
+  };
+
+  /** Texto de WhatsApp con la hoja de marcas del día (plantilla editable). */
+  const enviarWsp = () => {
+    if (!conDatos) return toast("No hay carreras con marcas para enviar.", "warning");
+    textoWhatsAppMarcas(bloquesEnvio, fecha);
+    toast("WhatsApp abierto con la hoja de marcas (plantilla editable en el Centro de WhatsApp).", "success");
+  };
+
+  /**
    * Borrar la configuración NO toca los tickets ya vendidos: la jerarquía de cada
    * jugada quedó congelada en el snapshot del ticket (`nota_auditoria`) y
    * `club_liquidar_marca` lee ese snapshot, no `marcas_carrera`. Lo que sí se
@@ -317,7 +398,7 @@ export function PanelMarcas() {
           <input
             type="date"
             value={fecha}
-            onChange={(e) => setFecha(e.target.value)}
+            onChange={(e) => setFecha(e.target.value || hoyLocal())}
             className="rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900"
           />
         </label>
@@ -348,6 +429,35 @@ export function PanelMarcas() {
         >
           🏷️ Configurar jornada
         </Button>
+
+        {/* ENVÍO DE LA HOJA: el mismo resumen que se ve acá, por WhatsApp o
+            como archivo PNG / JPG / PDF (captura A4 como Tablas Fijas). */}
+        <div className="flex flex-wrap items-center gap-1.5 border-l border-line pl-3">
+          <Button
+            variant="success"
+            size="md"
+            onClick={enviarWsp}
+            disabled={!conDatos || Boolean(exportando)}
+            title="Enviar la hoja de marcas del día por WhatsApp"
+          >
+            📤 WhatsApp
+          </Button>
+          {(["PNG", "JPG", "PDF"] as ImgFormato[]).map((f) => (
+            <Button
+              key={f}
+              variant="outline"
+              size="md"
+              onClick={() => void exportar(f)}
+              disabled={!conDatos || Boolean(exportando)}
+              title={`Descargar la hoja de marcas en ${f}`}
+            >
+              {f}
+            </Button>
+          ))}
+          {exportando && (
+            <span className="text-[10px] font-black uppercase text-primary-600">{exportando}</span>
+          )}
+        </div>
         <div className="ml-auto text-xs text-slate-500">
           {visibles.length} carrera{visibles.length === 1 ? "" : "s"} ·{" "}
           {visibles.filter((c) => configDe(c)).length} con marcas ·{" "}
@@ -768,6 +878,15 @@ export function PanelMarcas() {
           </div>
         </div>
       )}
+
+      {/* Raíz de exportación: hoja A4 de marcas FUERA de pantalla, sin escala,
+          para que html2canvas la capture igual que las tablas fijas. */}
+      <div
+        ref={exportRootRef}
+        aria-hidden
+        style={{ position: "absolute", left: "-99999px", top: 0, pointerEvents: "none" }}
+        dangerouslySetInnerHTML={{ __html: htmlMarcas }}
+      />
     </div>
   );
 }

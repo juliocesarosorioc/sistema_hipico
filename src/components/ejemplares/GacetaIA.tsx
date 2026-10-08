@@ -9,6 +9,9 @@ import { ToastHost } from "@/components/ui/ToastHost";
 import { CarreraGacetaCard } from "@/components/ejemplares/CarreraGacetaCard";
 import {
   acumularEnEnsamblaje,
+  cargadasEnEnsamblaje,
+  deduplicarCarreras,
+  duplicadasEnEnsamblaje,
   leerRegistro,
   limpiarTodoRegistro,
   listaHors,
@@ -134,6 +137,9 @@ export function GacetaIA() {
   const [registrando, setRegistrando] = useState(false);
   const [historial, setHistorial] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  /** INDICADOR: carreras ya cargadas en el Ensamblaje vs. las del día. */
+  const [cargadas, setCargadas] = useState(0);
+  const [enviadasHoy, setEnviadasHoy] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -141,6 +147,20 @@ export function GacetaIA() {
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
   }, []);
+
+  /**
+   * Indicador "cargadas vs pendientes": refresca cuántas carreras hay ya en el
+   * buzón del Ensamblaje y cuántas del día se mandaron desde la Gaceta.
+   */
+  const refrescarContadores = useCallback(() => {
+    setCargadas(cargadasEnEnsamblaje());
+    const reg = leerRegistro();
+    setEnviadasHoy(reg && reg.length ? reg.filter((c) => c.enviada).length : 0);
+  }, []);
+
+  useEffect(() => {
+    refrescarContadores();
+  }, [refrescarContadores]);
 
   // Clave guardada solo en este navegador.
   useEffect(() => {
@@ -154,8 +174,13 @@ export function GacetaIA() {
 
   // Recupera las carreras pendientes del registro (sin re-transformar).
   useEffect(() => {
-    const arr = leerRegistro();
-    if (!arr || !arr.length) return;
+    const guardadas = leerRegistro();
+    if (!guardadas || !guardadas.length) return;
+    // Un registro guardado con versiones viejas puede traer repetidas: se
+    // normaliza una sola vez al abrir y se vuelve a persistir sin duplicados.
+    const arr = deduplicarCarreras(guardadas).lista;
+    if (arr.length !== guardadas.length) persistirRegistro(arr);
+    if (!arr.length) return;
     const pendientes = arr.filter((c) => !c.enviada);
     const enviadas = arr.length - pendientes.length;
     if (!pendientes.length) {
@@ -343,7 +368,10 @@ export function GacetaIA() {
       // Entrega inmediata: el resultado SIEMPRE se muestra; el padrón se
       // vincula por detrás y NO bloquea las cards.
       if (res.cuotaTotal) toast(`Cuota agotada en parte de Gemini: resultado PARCIAL (${res.carreras.length} carrera(s)).`, "warning");
-      const lista: CarreraRegistro[] = res.carreras.map((c) => ({
+      // CONTROL DE DUPLICADOS: el mismo PDF (o dos páginas con la misma carrera)
+      // no debe generar dos cards idénticas.
+      const dedupe = deduplicarCarreras(res.carreras);
+      const lista: CarreraRegistro[] = dedupe.lista.map((c) => ({
         ...c,
         // Fecha del evento SIEMPRE en ISO estricto (YYYY-MM-DD) antes de
         // persistir: la IA puede devolver "24/09/2026" o un texto encabezado.
@@ -359,6 +387,13 @@ export function GacetaIA() {
       persistirRegistro(lista);
       setEstado(`Listo: ${lista.length} carrera(s) transcritas, σ Vinculando padrón…`);
       toast(`✅ Extraídas ${lista.length} carreras.`, "success");
+      if (dedupe.quitadas > 0) {
+        toast(
+          `🔁 ${dedupe.quitadas} carrera(s) repetida(s) en el documento: no se cargaron dos veces.`,
+          "warning"
+        );
+      }
+      refrescarContadores();
 
       // Historlae (gaceta_procesada) en segundo plano, sin bloquear.
       const fecha = lista.find((c) => c.fecha)?.fecha ?? null;
@@ -435,7 +470,10 @@ export function GacetaIA() {
       setEnviando(true);
       const prev = carreras.map((c) => ({ ...c }));
       marcarEnviadas(prev, conNombre);
-      const total = acumularEnEnsamblaje(conNombre);
+      // CONTROL DE DUPLICADOS: lo que ya estaba en el Ensamblaje se REEMPLAZA
+      // (mismo día + hipódromo + carrera), no se apila otra copia.
+      const yaEstaban = duplicadasEnEnsamblaje(conNombre);
+      acumularEnEnsamblaje(conNombre);
       // Registro automático en el Padrón (UPSERT por nombre + nacionalidad).
       const tot = await registrarEjemplares(conNombre as unknown as Array<Record<string, unknown>>);
       // Limpieza del estado local: solo quedan las carreras NO enviadas, para
@@ -445,9 +483,12 @@ export function GacetaIA() {
         .map((c) => ({ ...c, ejemplares: (c.ejemplares || []).map((e) => ({ ...e })) }));
       persistirRegistro(restantes.map((c) => ({ ...c, enviada: !!c.enviada, aplicada: !!c.aplicada })));
       setCarreras(restantes);
+      refrescarContadores();
       const nEjemplares = (tot?.nuevos ?? 0) + (tot?.vinculados ?? 0);
       toast(
-        `${conNombre.length} carrera(s) enviadas al ensamblaje y ${nEjemplares} ejemplares registrados en el padrón.${
+        `${conNombre.length} carrera(s) enviadas al ensamblaje${
+          yaEstaban ? ` · ${yaEstaban} ya estaban y se actualizaron (sin duplicar)` : ""
+        } y ${nEjemplares} ejemplares registrados en el padrón.${
           tot?.fallidos ? ` (${tot.fallidos} ejemplar(es) fallido(s))` : ""
         }`,
         tot?.fallidos ? "warning" : "success"
@@ -455,7 +496,7 @@ export function GacetaIA() {
       setEnviando(false);
       setTimeout(() => router.push("/tablas-fijas"), 700);
     },
-    [carreras, enviando, router, toast]
+    [carreras, enviando, router, refrescarContadores, toast]
   );
 
   const enviarSeleccionadas = useCallback(() => {
@@ -474,9 +515,10 @@ export function GacetaIA() {
     limpiarTodoRegistro();
     setCarreras([]);
     setResumen({ nuevos: 0, vinculados: 0 });
+    refrescarContadores();
     setEstado("Registro limpiado. Cargue un nuevo documento para empezar.");
     toast("Registro del día limpiado.", "success");
-  }, [carreras, toast]);
+  }, [carreras, refrescarContadores, toast]);
 
   const eliminarCarrera = useCallback(
     (i: number) => {
@@ -520,6 +562,10 @@ export function GacetaIA() {
       : carrerasSeleccionadas === carreras.length
         ? `Enviar TODAS al Ensamblaje (${carrerasSeleccionadas})`
         : `Enviar seleccionadas (${carrerasSeleccionadas})`;
+  // INDICADOR cargadas vs pendientes: lo que ya está en el Ensamblaje y lo que
+  // falta mandar de este registro. Las marcadas que ya están se REEMPLAZAN.
+  const pendientes = carreras.filter((c) => !c.enviada).length;
+  const duplicadasSel = duplicadasEnEnsamblaje(carreras.filter((c) => c.seleccionada));
 
   return (
     <div className="flex flex-col gap-4">
@@ -764,6 +810,34 @@ export function GacetaIA() {
             </pre>
           )}
         </div>
+      </div>
+
+      {/* INDICADOR: carreras CARGADAS en el Ensamblaje vs PENDIENTES en este
+          registro. Vive arriba de todo para que se vea también con la lista
+          vacía (después de limpiar o de haber enviado todo). */}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surfaceAlt px-3 py-2">
+        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-700">
+          📫 En el Ensamblaje: {cargadas} cargada{cargadas === 1 ? "" : "s"}
+        </span>
+        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-blue-700">
+          ✅ Enviadas de este registro: {enviadasHoy}
+        </span>
+        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-700">
+          ⏳ Pendientes de ensamblar: {pendientes}
+        </span>
+        {duplicadasSel > 0 && (
+          <span
+            className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-orange-700"
+            title="Esas carreras ya están en el Ensamblaje: al enviar se actualizan con lo nuevo en vez de sumar una copia."
+          >
+            🔁 {duplicadasSel} ya cargadas → se reemplazan (no se duplican)
+          </span>
+        )}
+        {cargadas > 0 && (
+          <span className="text-[10px] font-semibold text-slate-500">
+            Las repetidas (mismo día + hipódromo + carrera) se reemplazan, nunca se apilan.
+          </span>
+        )}
       </div>
 
       {carreras.length > 0 && (

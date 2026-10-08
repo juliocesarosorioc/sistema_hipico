@@ -15,7 +15,8 @@
  * un solo módulo.
  */
 import { supabase } from "@/lib/supabase";
-import { exigirCapacidad } from "@/lib/seguridad/vigente";
+import { exigirCapacidad, tieneCapacidad } from "@/lib/seguridad/vigente";
+import { clienteDelUsuario } from "@/lib/seguridad/accesos";
 import {
   calcularFinanzasRemate,
   candidatosDelPrograma,
@@ -417,10 +418,28 @@ export async function pujarCaballoRemate(
   patch: { monto_usd: number; cliente_id?: string | null }
 ): Promise<ResSimple> {
   if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
+  // Dos permisos distintos: `fn_pujar` basta para subir una puja con el botón
+  // Subir (es lo que se le habilita a un usuario de solo consulta); quien
+  // administra el remate tiene además `fn_guardar_remate` y puede pujar con
+  // cualquier comprador. Sin `fn_guardar_remate` la puja TIENE que ser con el
+  // cliente vinculado al usuario, que es lo mismo que exige la RPC en el
+  // servidor: acá solo se adelanta el mensaje para que no llegue crudo.
   try {
-    exigirCapacidad("remates:fn_asignar_caballos");
+    exigirCapacidad("remates:fn_pujar");
   } catch (e) {
     return { ok: false, error: (e as Error).message };
+  }
+  if (!tieneCapacidad("remates:fn_guardar_remate")) {
+    const mio = await clienteDelUsuario();
+    if (!mio) {
+      return {
+        ok: false,
+        error: "Tu usuario todavía no tiene un cliente vinculado: pedile al administrador que lo asocie en Seguridad.",
+      };
+    }
+    if (String(patch.cliente_id ?? "").trim() !== mio) {
+      return { ok: false, error: "Solo podés pujar con tu propio cliente." };
+    }
   }
   const estado = await leerEstadoRemate(remateId);
   if (!estado.ok) return { ok: false, error: estado.error };
@@ -578,6 +597,27 @@ const MENSAJE_SIN_RPC_CIERRE =
   "No se encontro la funcion club_cerrar_remate. Aplicala con sql/remate_cierre.sql.";
 
 /**
+ * Versión vieja de `sql/remate_cierre.sql` todavía aplicada en la base.
+ *
+ * Declaraba `v_ticket_id uuid` y el `returning id into` del ticket revienta
+ * porque `tickets_apuestas.id` es un serial INTEGER (el 204, el 205...). Como
+ * el cierre corre en UNA transacción, eso aborta el cierre entero: no se emite
+ * ningún ticket, no se descuenta saldo y el remate sigue Abierto. El archivo ya
+ * trae el fix (`%type`), así que reaplicarlo lo resuelve.
+ */
+const MENSAJE_CIERRE_UUID =
+  `El cierre falló por una versión vieja de la base ("invalid input syntax for type uuid"): ` +
+  `tickets_apuestas.id es INTEGER y la función sigue declarándola como uuid, así que la transacción se aborta ` +
+  `y no se descuenta nada. Aplicá sql/remate_cierre.sql en el SQL Editor de Supabase y volvé a cerrar.`;
+
+/** Traduce el error del cierre/vender a algo accionable; deja pasar el resto. */
+function mensajeErrorCierre(texto: string | undefined, fallback: string): string {
+  const t = texto ?? "";
+  if (/invalid input syntax for type uuid/i.test(t)) return MENSAJE_CIERRE_UUID;
+  return /club_(cerrar|vender_caballo)_remate|not found|404|PGRST202|schema cache/i.test(t) ? fallback : t || fallback;
+}
+
+/**
  * Cierra la subasta Y la liquida: por cada ejemplar con comprador descuenta el
  * monto de `clientes.saldo_actual` y emite el ticket de venta. Todo pasa por
  * `club_cerrar_remate` en una sola transaccion, asi que no puede quedar medio
@@ -599,7 +639,7 @@ export async function cerrarRemateLiquidando(remateId: string): Promise<Resultad
     });
     if (error) {
       const texto = error.message ?? String(error);
-      return { ok: false, error: /club_cerrar_remate|not found|404/i.test(texto) ? MENSAJE_SIN_RPC_CIERRE : texto };
+      return { ok: false, error: mensajeErrorCierre(texto, MENSAJE_SIN_RPC_CIERRE) };
     }
     const r = (data ?? {}) as Record<string, unknown>;
     return {
@@ -673,9 +713,10 @@ export async function venderCaballoRemate(
       const texto = error.message ?? String(error);
       return {
         ok: false,
-        error: /club_vender_caballo_remate|not found|404/i.test(texto)
-          ? "No se encontro la funcion club_vender_caballo_remate. Aplicala con sql/remate_cierre.sql."
-          : texto,
+        error: mensajeErrorCierre(
+          texto,
+          "No se encontro la funcion club_vender_caballo_remate. Aplicala con sql/remate_cierre.sql."
+        ),
       };
     }
     const r = (data ?? {}) as Record<string, unknown>;

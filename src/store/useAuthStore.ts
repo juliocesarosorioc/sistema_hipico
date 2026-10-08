@@ -11,6 +11,7 @@ import {
 } from "@/lib/auth/sesion";
 import { esUsuarioPrincipal, resolverAccesos, USUARIO_PRINCIPAL } from "@/lib/seguridad/resolver";
 import { atributosDeUsuario, claveDeUsuario, leerTipoDeUsuario, permisosIndividuales } from "@/lib/seguridad/accesos";
+import { CAPACIDADES_POR_CLAVE } from "@/lib/seguridad/capacidades";
 import { limpiarAccesosVigentes, setAccesosVigentes } from "@/lib/seguridad/vigente";
 import type { ExcepcionUsuario, TipoUsuario } from "@/lib/seguridad/tipos";
 
@@ -55,9 +56,19 @@ export function publicarPermisosEnCookies(
   const estado: "ok" | "sin" = perfiles.length > 0 || permisos.length > 0 ? "ok" : "sin";
   if (typeof document === "undefined") return estado;
   const exp = "; path=/; max-age=86400; SameSite=Lax";
+  // El middleware SOLO decide por ruta (`rutaPermitida`) y por el perfil de
+  // cliente puro (`esRolCliente`), y para lo primero consulta una capacidad de
+  // tipo "ruta" por pantalla. Publicar las 150+ capacidades del maestro
+  // desbordaba el límite de ~4 KB por cookie del navegador: el login se caía
+  // con un 431 y no se podía entrar. Se publican SOLO las capacidades de tipo
+  // "ruta"; el gate por botón/celda vive en el cliente, que lee el set completo
+  // del store (en memoria), no de la cookie.
+  const capsRuta = [...new Set(permisos)].filter(
+    (p) => CAPACIDADES_POR_CLAVE.get(p)?.tipo === "ruta"
+  );
   try {
     document.cookie = `${CLAVE_PERFIL}=${encodeURIComponent(perfiles.join(","))}${exp}`;
-    document.cookie = `${CLAVE_PERMISOS}=${encodeURIComponent([...permisos].join(","))}${exp}`;
+    document.cookie = `${CLAVE_PERMISOS}=${encodeURIComponent(capsRuta.join(","))}${exp}`;
     document.cookie = `${CLAVE_USUARIO}=${encodeURIComponent(usuario)}${exp}`;
     document.cookie = `${CLAVE_ACCESO}=${estado}${exp}`;
   } catch {

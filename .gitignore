@@ -9,6 +9,12 @@ npm-debug.log*
 
 _backup_*
 
+# Residuos de desarrollo (salida de comandos, borradores scratch)
+.dev-*.txt
+x.txt
+tmp.tsx
+.opencode/work-state.md
+
 # Salida de compilar las pruebas. El harness oficial (pruebas/run-marcas.ps1)
 # emite en %TEMP%, pero `npx tsc -p pruebas/tsconfig.json` a pelo usa este
 # directorio: es lo que evita que el .js compilado caiga dentro de src/ y rompa

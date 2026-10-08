@@ -27,6 +27,8 @@ import {
   type RegistroWsp,
 } from "@/lib/whatsapp";
 import { leerResultadoOficial } from "@/lib/carreras-dia";
+import { posicionesDePizarra } from "@/lib/liquidacion/posiciones";
+import { CargaResultadosRapida } from "@/components/liquidacion/CargaResultadosRapida";
 import {
   cargarJugadasDeCarrera,
   relacionJugadas,
@@ -399,6 +401,16 @@ export function WhatsAppModule() {
             )}
 
             <div className="flex flex-wrap items-center justify-between gap-2">
+              <CargaResultadosRapida
+                cargadoPor="WPS-WHATSAPP"
+                hipodromo={repHipodromo || undefined}
+                carrera={repCarrera || undefined}
+                etiqueta="🏁 Cargar pizarra oficial"
+                onGuardado={(r) => {
+                  setRepPizarra(posicionesDePizarra(r.pizarra).join("-"));
+                  setRepRetirados("");
+                }}
+              />
               <Button variant="default" size="md" onClick={generarReporte} className="bg-emerald-700 hover:bg-emerald-800">
                 🔄 Generar / Actualizar
               </Button>

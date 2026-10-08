@@ -21,10 +21,23 @@ type Props = {
   /** Carreras que el módulo ofrece hoy, en el orden en que se configure(n). */
   disponibles: CarreraPolla[];
   grupos: GrupoVenta[];
+  /** Catálogo de hipódromos activos, para resolver `hipodromo_id` al guardar. */
+  hipodromos: { id: string; nombre: string }[];
+  /** Hipódromo elegido en el módulo: arranca filtrado en la misma sesión. */
+  hipodromoInicial?: string;
   fecha: string;
   onCerrar: () => void;
   onConfirmar: (datos: DatosPolla) => Promise<boolean>;
 };
+
+/** Chip de hipódromo. El elegido va relleno para que se note sin abrir nada. */
+function chipCls(activo: boolean): string {
+  return `rounded-full border px-3 py-1 text-sm font-semibold transition-colors ${
+    activo
+      ? "border-primary-600 bg-primary-600 text-white"
+      : "border-line bg-white text-slate-700 hover:bg-surfaceAlt"
+  }`;
+}
 
 /**
  * ============================================================================
@@ -48,11 +61,16 @@ export function ModalConfiguracionPolla({
   polla,
   disponibles,
   grupos,
+  hipodromos,
+  hipodromoInicial,
   fecha,
   onCerrar,
   onConfirmar,
 }: Props) {
   const [nombre, setNombre] = useState(polla?.nombre ?? "");
+  const [hipSelId, setHipSelId] = useState<string>(
+    polla?.hipodromo_id ?? hipodromoInicial ?? ""
+  );
   const [elegidas, setElegidas] = useState<string[]>(
     polla?.carreras.map((c) => c.clave) ?? []
   );
@@ -94,6 +112,69 @@ export function ModalConfiguracionPolla({
     );
   };
 
+  /**
+   * Hipódromos con carreras hoy, en el orden en que aparecen en el programa.
+   *
+   * El `id` sale del catálogo; si un hipódromo del programa no está en la tabla
+   * se arma un id sintético `#NOMBRE` para poder filtrar igual, y al guardar
+   * queda en null en vez de apuntar a un id inventado.
+   *
+   * El hipódromo de la Polla que se está editando se agrega aunque no tenga
+   * carreras hoy: si no, la fila quedaría sin chip elegido y el filtro vacío
+   * mostraba el programa entero como si nada hubiera pasado.
+   */
+  const chips = useMemo(() => {
+    const porNombre = new Map(hipodromos.map((h) => [h.nombre.trim().toUpperCase(), String(h.id)]));
+    const lista: { id: string; nombre: string }[] = [];
+    const vistos = new Set<string>();
+    for (const c of disponibles) {
+      const nombreHipo = String(c.hipodromo ?? "").trim();
+      const clave = nombreHipo.toUpperCase();
+      if (!clave || vistos.has(clave)) continue;
+      vistos.add(clave);
+      lista.push({ id: porNombre.get(clave) ?? `#${clave}`, nombre: nombreHipo });
+    }
+    if (hipSelId && !lista.some((c) => c.id === hipSelId)) {
+      const delCatalogo = hipodromos.find((h) => String(h.id) === hipSelId);
+      lista.push({
+        id: hipSelId,
+        nombre: delCatalogo?.nombre ?? hipSelId.replace(/^#/, ""),
+      });
+    }
+    // Sin carreras cargadas igual se muestra la sección: que el operador vea
+    // los hipódromos del día y el motivo vacío, no un formulario que cambió
+    // de forma sin explicación.
+    if (lista.length === 0) {
+      for (const h of hipodromos) lista.push({ id: String(h.id), nombre: h.nombre });
+    }
+    return lista;
+  }, [disponibles, hipodromos, hipSelId]);
+
+  /** Nombre del hipódromo filtrado, resuelto desde el id elegido. */
+  const nombreSel =
+    chips.find((c) => c.id === hipSelId)?.nombre ??
+    hipodromos.find((h) => String(h.id) === hipSelId)?.nombre ??
+    "";
+
+  /** Solo las carreras del hipódromo elegido; sin elegir, todas. */
+  const disponiblesFiltradas = useMemo(() => {
+    if (!nombreSel) return disponibles;
+    const clave = nombreSel.trim().toUpperCase();
+    return disponibles.filter((c) => String(c.hipodromo ?? "").trim().toUpperCase() === clave);
+  }, [disponibles, nombreSel]);
+
+  /** Las ofrecidas, agrupadas por hipódromo, para mostrarlas en tarjetas. */
+  const agrupadas = useMemo(() => {
+    const por = new Map<string, CarreraPolla[]>();
+    for (const c of disponiblesFiltradas) {
+      const k = String(c.hipodromo ?? "").trim();
+      const arr = por.get(k) ?? [];
+      arr.push(c);
+      por.set(k, arr);
+    }
+    return [...por.entries()];
+  }, [disponiblesFiltradas]);
+
   const mover = (indice: number, delta: number) => {
     setElegidas((prev) => {
       const destino = indice + delta;
@@ -132,6 +213,7 @@ export function ModalConfiguracionPolla({
     const ok = await onConfirmar({
       nombre: nombre.trim().toUpperCase(),
       fecha,
+      hipodromo_id: hipSelId && !hipSelId.startsWith("#") ? hipSelId : null,
       grupo_id: grupoId || null,
       carreras,
       puntos: { primero: numero(p1, PUNTOS_POR_DEFECTO.primero), segundo: numero(p2, PUNTOS_POR_DEFECTO.segundo), tercero: numero(p3, PUNTOS_POR_DEFECTO.tercero) },
@@ -187,6 +269,37 @@ export function ModalConfiguracionPolla({
           </div>
 
           {/* ------------------------------------------------------------
+              HIPÓDROMO. Chips y no desplegable: el programa de un día suele
+              traer dos o tres hipódromos y con un `<select>` no se ve cuál
+              quedó elegido hasta abrirlo. Además el elegido se guarda en
+              `hipodromo_id`, que antes quedaba siempre en null.
+           * ---------------------------------------------------------- */}
+          {chips.length > 0 && (
+            <div>
+              <p className="mb-1 text-sm font-semibold text-slate-800">Hipódromo</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setHipSelId("")}
+                  className={chipCls(!hipSelId)}
+                >
+                  Todos
+                </button>
+                {chips.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setHipSelId(c.id)}
+                    className={chipCls(hipSelId === c.id)}
+                  >
+                    {c.nombre}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ------------------------------------------------------------
               CARRERAS. El orden se elige acá y es parte de la Polla.
            * ---------------------------------------------------------- */}
           <div>
@@ -195,62 +308,112 @@ export function ModalConfiguracionPolla({
             </p>
             <p className="mb-2 text-xs text-slate-500">
               El jugador responde en este orden: el primer grupo de sus números es la primera
-              carrera. Usá las flechas para reordenar antes de cobrar.
+              carrera. Tocá una tarjeta para sumarla y reordená con ↑ ↓.
             </p>
 
-            <div className="max-h-44 overflow-y-auto rounded-lg border border-line">
-              {disponibles.length === 0 ? (
-                <p className="px-3 py-2 text-sm text-slate-500">
-                  No hay carreras cargadas para esta fecha.
+            {/* El orden elegido, siempre a la vista: es lo que después el
+                jugador tiene que leer como "primer grupo". */}
+            {carreras.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5 rounded-lg border border-line bg-surfaceAlt p-2">
+                {carreras.map((c, i) => (
+                  <span
+                    key={c.clave}
+                    className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-bold text-slate-700 shadow-sm"
+                  >
+                    <span className="text-primary-600">{i + 1}.</span>
+                    {c.hipodromo} {c.carrera}ª
+                    <button
+                      type="button"
+                      onClick={() => mover(i, -1)}
+                      disabled={i === 0}
+                      aria-label={`Subir ${c.hipodromo} ${c.carrera}ª`}
+                      className="px-0.5 text-slate-400 transition-colors hover:text-primary-600 disabled:opacity-30"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => mover(i, 1)}
+                      disabled={i === carreras.length - 1}
+                      aria-label={`Bajar ${c.hipodromo} ${c.carrera}ª`}
+                      className="px-0.5 text-slate-400 transition-colors hover:text-primary-600 disabled:opacity-30"
+                    >
+                      ↓
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="max-h-56 overflow-y-auto rounded-lg border border-line p-2">
+              {agrupadas.length === 0 ? (
+                <p className="px-1 py-2 text-sm text-slate-500">
+                  No hay carreras cargadas para{" "}
+                  {nombreSel ? `el hipódromo ${nombreSel}` : "esta fecha"}.
                 </p>
               ) : (
-                disponibles.map((c) => {
-                  const n = elegidas.indexOf(c.clave);
-                  const marcada = n >= 0;
-                  return (
-                    <div
-                      key={c.clave}
-                      className={`flex items-center gap-2 border-b border-line px-3 py-1.5 last:border-b-0 ${
-                        marcada ? "bg-primary-50" : ""
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={marcada}
-                        onChange={() => alternar(c.clave)}
-                        className="h-4 w-4"
-                        aria-label={`Usar ${c.hipodromo} ${c.carrera}`}
-                      />
-                      <span className="w-6 shrink-0 text-center font-bold text-slate-500">
-                        {marcada ? n + 1 : ""}
-                      </span>
-                      <span className="flex-1 text-sm text-slate-800">
-                        {c.hipodromo} {c.carrera}ª
-                      </span>
-                      <span className="font-mono text-xs text-slate-500">
-                        {c.ejemplares.map((e) => e.numero).join(",")}
-                      </span>
-                      {c.invalidados && c.invalidados.length > 0 && (
-                        <span
-                          className="text-xs text-danger-600"
-                          title="Inválidos para Pollas: no se pueden colocar"
-                        >
-                          INV {c.invalidados.join(",")}
+                <div className="space-y-2">
+                  {agrupadas.map(([nom, cs]) => (
+                    <div key={nom} className="overflow-hidden rounded-lg border border-line">
+                      <div className="flex items-center justify-between border-b border-line bg-surfaceAlt px-3 py-1.5">
+                        <span className="text-xs font-bold uppercase tracking-wide text-slate-600">
+                          {nom}
                         </span>
-                      )}
-                      {marcada && (
-                        <span className="flex gap-0.5">
-                          <Button size="sm" variant="ghost" onClick={() => mover(n, -1)} aria-label="Subir">
-                            ↑
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => mover(n, 1)} aria-label="Bajar">
-                            ↓
-                          </Button>
+                        <span className="text-xs text-slate-500">
+                          {cs.filter((c) => elegidas.includes(c.clave)).length} de {cs.length}{" "}
+                          elegidas
                         </span>
-                      )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 p-2 sm:grid-cols-3">
+                        {cs.map((c) => {
+                          const n = elegidas.indexOf(c.clave);
+                          const marcada = n >= 0;
+                          const inv = (c.invalidados ?? []).filter(Boolean);
+                          return (
+                            <button
+                              key={c.clave}
+                              type="button"
+                              onClick={() => alternar(c.clave)}
+                              aria-pressed={marcada}
+                              title={`${c.hipodromo} ${c.carrera}ª`}
+                              className={`rounded-lg border px-2 py-2 text-left transition-colors ${
+                                marcada
+                                  ? "border-primary-600 bg-primary-50 ring-1 ring-primary-600"
+                                  : "border-line bg-white hover:bg-surfaceAlt"
+                              }`}
+                            >
+                              <span className="flex items-center justify-between gap-1">
+                                <span className="text-lg font-bold leading-none text-slate-900">
+                                  {c.carrera}ª
+                                </span>
+                                <span
+                                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                                    marcada
+                                      ? "bg-primary-600 text-white"
+                                      : "bg-slate-100 text-slate-500"
+                                  }`}
+                                >
+                                  {marcada ? `#${n + 1}` : "—"}
+                                </span>
+                              </span>
+                              <span className="mt-1 block truncate font-mono text-[11px] text-slate-500">
+                                {c.ejemplares.map((e) => e.numero).join(" ")}
+                              </span>
+                              {inv.length > 0 && (
+                                <span
+                                  className="mt-0.5 block text-[10px] font-semibold text-danger-600"
+                                  title="Inválidos para Pollas: no se pueden colocar"
+                                >
+                                  INV {inv.join(",")}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  );
-                })
+                  ))}
+                </div>
               )}
             </div>
           </div>

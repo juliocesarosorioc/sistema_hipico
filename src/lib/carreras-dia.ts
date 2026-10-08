@@ -10,7 +10,7 @@ import { exigirCapacidad, tieneCapacidad } from "@/lib/seguridad/vigente";
 import { puestosDesdeOrdenLlegada } from "@/lib/motores/oficiales";
 import { useCarrerasDiaStore, type CarreraDelDia } from "@/store/useCarrerasDiaStore";
 import { claveCarrera } from "@/lib/carreras/claves";
-import { registrarCarreraMaestro } from "@/lib/carreras/maestro";
+import { registrarCarreraMaestro, ordenarPorNumero } from "@/lib/carreras/maestro";
 import { hoyLocal, type CaballoPrograma } from "@/lib/gaceta/programa";
 
 export type ResultadoCentralInput = {
@@ -327,7 +327,7 @@ function aCaballosPrograma(bruto: unknown[] | null | undefined): CaballoPrograma
       jockey: (r.jockey ?? undefined) as string | undefined,
     } as CaballoPrograma);
   }
-  return out;
+  return ordenarPorNumero(out);
 }
 
 /**
@@ -380,7 +380,7 @@ export async function upsertResultadoCentral(
     return { ok: false, error: (e as Error).message };
   }
   const f = input.fecha || hoy();
-  const estado = useCarrerasDiaStore.getState().estadoDe(input.hipodromo, input.carrera);
+  const estado = useCarrerasDiaStore.getState().estadoDe(input.hipodromo, input.carrera, f);
   const ventas = estado?.ventas ?? [];
   const pago = estado?.pago ?? null;
 
@@ -404,8 +404,8 @@ export async function upsertResultadoCentral(
   if (!supabase) return { ok: true };
   try {
     const detalle = {
-      ventas: useCarrerasDiaStore.getState().estadoDe(input.hipodromo, input.carrera)?.ventas ?? ventas,
-      pago: useCarrerasDiaStore.getState().estadoDe(input.hipodromo, input.carrera)?.pago ?? pago,
+      ventas: useCarrerasDiaStore.getState().estadoDe(input.hipodromo, input.carrera, f)?.ventas ?? ventas,
+      pago: useCarrerasDiaStore.getState().estadoDe(input.hipodromo, input.carrera, f)?.pago ?? pago,
     };
     const err = await guardarResultado(
       f,

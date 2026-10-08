@@ -111,7 +111,14 @@ declare
   v_remate   public.remates%rowtype;
   v_grupo_id uuid;
   v_grupo_nombre text;
-  v_ticket_id uuid;
+  -- %type, NO `uuid`: `tickets_apuestas.id` es un serial INTEGER en la base
+  -- (el id 204, 205...). Con `uuid`, el `returning id into` de abajo convierte
+  -- 204 a texto y `uuid_in('204')` revienta con
+  --   invalid input syntax for type uuid: "204"
+  -- y la transaccion entera del cierre aborta: no se emite ningun ticket, no se
+  -- descuenta saldo y el remate sigue Abierto. El `%type` se adapta solo si un
+  -- dia la columna pasa a bigint o a uuid.
+  v_ticket_id public.tickets_apuestas.id%type;
   v_fila     record;
   v_cliente  public.clientes%rowtype;
   v_monto    numeric;
@@ -399,7 +406,8 @@ declare
   v_grupo_nombre text;
   v_cliente  public.clientes%rowtype;
   v_monto    numeric;
-  v_ticket_id uuid;
+  -- Mismo caso que en `club_cerrar_remate`: el id del ticket es INTEGER, no uuid.
+  v_ticket_id public.tickets_apuestas.id%type;
 begin
   if p_caballo_id is null or p_cliente_id is null then
     raise exception 'Falta el ejemplar o el comprador.';

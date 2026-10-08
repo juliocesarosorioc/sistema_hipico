@@ -15,9 +15,13 @@ type Props = {
 
 /** Bloque desplegable idéntico a las <section> del legacy (header bg-slate-900 + chevron). */
 export function SeccionPliegue({ titulo, icono, contador, abierto, onToggle, children, accion }: Props) {
+  // SIN `overflow-hidden` en la <section>: los menús desplegables que viven
+  // dentro del contenido (ej. "⚙️ Acciones Carreras") se abren hacia abajo y
+  // `overflow-hidden` los recortaba al borde del bloque. El redondeo de la
+  // cabecera ahora lo hace el propio contenedor de la cabecera.
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-stretch">
+    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-stretch overflow-hidden rounded-t-2xl">
         <button
           type="button"
           onClick={onToggle}

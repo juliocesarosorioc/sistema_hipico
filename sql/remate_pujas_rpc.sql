@@ -184,11 +184,34 @@ declare
   v_id     uuid;
   v_monto  numeric;
   v_cli    uuid;
+  v_mio    uuid;
   v_count  integer := 0;
   v_tope   record;
 begin
   if not coalesce(public.tiene_capacidad(auth.uid(), 'remates:fn_asignar_caballos'), false) then
     raise exception 'Sin permiso para asignar pujas' using errcode = '42501';
+  end if;
+
+  -- SOLO PUJAR: quien tiene `fn_asignar_caballos` pero NO administra el remate
+  -- no puede abrir una puja a nombre de otro jugador. El lote entero se fuerza
+  -- (y se exige) al cliente vinculado a su usuario, que es la misma regla que
+  -- ya aplica `club_pujar_caballo_remate`. Sin cliente vinculado no se puja.
+  if not coalesce(public.tiene_capacidad(auth.uid(), 'remates:fn_guardar_remate'), false) then
+    select u.cliente_id into v_mio
+      from public.usuario_sistema u
+     where u.auth_id = auth.uid()
+     limit 1;
+    if v_mio is null then
+      raise exception 'Tu usuario no tiene un cliente vinculado: no se puede pujar.'
+        using errcode = '42501';
+    end if;
+    if exists (
+      select 1
+        from jsonb_array_elements(p_pujas) v
+       where (nullif(v ->> 'cliente_id', '')::uuid) is distinct from v_mio
+    ) then
+      raise exception 'Solo podes pujar con tu propio cliente.' using errcode = '42501';
+    end if;
   end if;
 
   if p_remate_id is null then
@@ -273,8 +296,25 @@ declare
   v_previo_cli uuid;
   v_previo_monto numeric := 0;
 begin
-  if not coalesce(public.tiene_capacidad(auth.uid(), 'remates:fn_asignar_caballos'), false) then
+  -- `fn_pujar` es el permiso MINIMO de la pizarra: alcanza para subir una puja
+  -- con el boton Subir. `fn_asignar_caballos` (crear/asignar ejemplares) sigue
+  -- siendo el de los operadores; un usuario de solo consulta se le habilita
+  -- `fn_pujar` por usuario en Seguridad > Personalizar.
+  if not coalesce(public.tiene_capacidad(auth.uid(), 'remates:fn_pujar'), false) then
     raise exception 'Sin permiso para subir pujas' using errcode = '42501';
+  end if;
+
+  -- Quien SOLO puja (no tiene `fn_guardar_remate`, o sea que no administra el
+  -- remate) tiene que pujar con el cliente VINCULADO a su usuario: no puede
+  -- comprar a nombre de otro jugador. `usuario_sistema.cliente_id` lo liga con
+  -- la fila de `clientes` que le corresponde.
+  if not coalesce(public.tiene_capacidad(auth.uid(), 'remates:fn_guardar_remate'), false) then
+    if p_cliente_id is null
+       or p_cliente_id is distinct from (
+         select u.cliente_id from public.usuario_sistema u where u.auth_id = auth.uid()
+       ) then
+      raise exception 'Tu usuario no tiene vinculado el cliente con el que queres pujar.' using errcode = '42501';
+    end if;
   end if;
 
   select remate_id into v_remate_id

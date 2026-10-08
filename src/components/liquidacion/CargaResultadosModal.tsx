@@ -6,6 +6,8 @@ import type { PizarraCarrera } from "@/lib/liquidacion";
 import type { EjemplarTabla } from "@/lib/tablas/tipos";
 import { colorDeNumero, textoDeNumero } from "@/lib/tablas/tipos";
 import { CLAVES_WPS, ETIQUETAS_WPS, PREFIJO_WPS, pagoPorUno } from "@/lib/motores/wps";
+import { useHipodromosActivos } from "@/store/useHipodromosStore";
+import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
 import { Button } from "@/components/ui/Button";
 
 export type PizarraResultados = {
@@ -100,6 +102,8 @@ export function CargaResultadosModal({
   const [matrizWps, setMatrizWps] = useState<Record<string, string>>({});
   const [mismoRaya, setMismoRaya] = useState(true);
   const [rayaNumero, setRayaNumero] = useState("");
+  const hipodromosActivos = useHipodromosActivos();
+  const nombreHipo = nombrePropioHipodromo(hipodromo, hipodromosActivos);
 
   useEffect(() => {
     if (!abierto) return;
@@ -230,7 +234,7 @@ export function CargaResultadosModal({
       <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-line bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-line bg-slate-800 px-3 py-2.5 text-white">
           <h3 className="text-[11px] font-black uppercase tracking-wider">
-            🏁 Carga de Resultados — {hipodromo} C{carrera}
+            🏁 Carga de Resultados — {nombreHipo} C{carrera}
           </h3>
           <button type="button" onClick={onCerrar} aria-label="Cerrar" className="text-slate-300 hover:text-white">
             ✕

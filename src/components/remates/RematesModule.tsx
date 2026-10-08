@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -8,11 +8,15 @@ import { ToastHost } from "@/components/ui/ToastHost";
 import { getHorseColor } from "@/lib/horseColors";
 import { listarHipodromos } from "@/lib/hipodromos/servicio";
 import { listarClientes, type ClienteRow } from "@/lib/clientes";
-import { listarGruposVenta, type GrupoVenta } from "@/lib/grupos";
+import { jugadoresDeGrupo, listarGruposVenta, type GrupoVenta } from "@/lib/grupos";
 import { listarCarrerasCentrales, type CarreraCentral } from "@/lib/carreras/central";
 import { alternarRetiroCarrera } from "@/lib/carreras/retiros";
 import { SearchableSelect, type OpcionSelect } from "@/components/ui/SearchableSelect";
+import { Guard } from "@/components/ui/Guard";
+import { useAuthStore } from "@/store/useAuthStore";
+import { clienteDelUsuario } from "@/lib/seguridad/accesos";
 import { plantillaPorId, reemplazarVarsTablas } from "@/lib/whatsapp";
+import { CargaResultadosRapida } from "@/components/liquidacion/CargaResultadosRapida";
 import {
   listarRemates,
   crearRemate,
@@ -145,9 +149,24 @@ function opcionesDeConComprador(
 }
 
 
+/**
+ * ¿Este usuario administra el remate?
+ *
+ * El permiso mínimo de escritura es `remates:fn_guardar_remate` (crear,
+ * asignar ejemplares, tocar incentivo/escalera y CERRAR). Quien no lo tiene
+ * entra en modo SOLO PUJAR: mira la pizarra y sube con su propio cliente, y
+ * nada más. `remates:fn_pujar` es el permiso que habilita el botón Subir.
+ */
+function useAdministraRemates(): boolean {
+  const permisos = useAuthStore((s) => s.permisos);
+  const esPrincipal = useAuthStore((s) => s.esPrincipal);
+  const inicializada = useAuthStore((s) => s.inicializada);
+  if (!inicializada) return false;
+  return esPrincipal || permisos.includes("remates:fn_guardar_remate");
+}
+
 /** Chip del número de ejemplar con el color hípico canónico. */
-function NumChip({ numero, size = "md" }: { numero: string | number; size?: "sm" | "md" }) {
-  const color = getHorseColor(numero);
+function NumChip({ numero, size = "md" }: { numero: string | number; size?: "sm" | "md" }) {  const color = getHorseColor(numero);
   const cls = size === "sm" ? "h-5 w-5 text-[10px]" : "h-7 w-7 text-[13px]";
   return (
     <span
@@ -240,18 +259,38 @@ export function RematesModule() {
             Ejemplares tomados del programa del día · {remates.length} remate(s).
           </p>
         </div>
-        {seleccionado && (
-          <Button
-            variant="outline"
-            size="md"
-            onClick={() => {
-              setSeleccionado(null);
-              setCaballos([]);
-            }}
-          >
-            ← Volver a la lista
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <CargaResultadosRapida
+            cargadoPor="REMATES"
+            fecha={seleccionado?.fecha ?? undefined}
+            hipodromo={seleccionado?.hipodromo ?? undefined}
+            carrera={seleccionado?.carrera ?? undefined}
+            carreras={
+              seleccionado?.carrera
+                ? [
+                    {
+                      carrera: seleccionado.carrera,
+                      caballos: caballos.length
+                        ? caballos.map((c) => ({ numero: c.numero, nombre: c.nombre }))
+                        : null,
+                    },
+                  ]
+                : undefined
+            }
+          />
+          {seleccionado && (
+            <Button
+              variant="outline"
+              size="md"
+              onClick={() => {
+                setSeleccionado(null);
+                setCaballos([]);
+              }}
+            >
+              ← Volver a la lista
+            </Button>
+          )}
+        </div>
       </div>
 
       {seleccionado ? (
@@ -363,10 +402,24 @@ function ListaRemates({
   const carreraSel = useMemo(() => carreras.find((c) => String(c.carrera) === carrera) ?? null, [carreras, carrera]);
   const candidatos = useMemo(() => candidatosJugables(candidatosDelPrograma(carreraSel?.caballos)), [carreraSel]);
 
+  /**
+   * Nombre SUGERIDO del remate: `AAAA-MM-DD / HIPÓDROMO / CARRERA - DESCRIPCIÓN`.
+   * El campo queda con este valor mientras no se escriba otro, así el operador
+   * solo tiene que completar la descripción (o dejarlo como está). Se puede
+   * sobrescribir a mano en cualquier momento.
+   */
+  const nombreSugerido = useMemo(() => {
+    const base = [fecha.trim(), hipodromoNombre.trim().toUpperCase(), carrera ? `CARRERA ${carrera}` : ""]
+      .filter(Boolean)
+      .join(" / ");
+    const desc = notas.trim();
+    return desc ? `${base} - ${desc.toUpperCase()}` : base;
+  }, [fecha, hipodromoNombre, carrera, notas]);
+
   const crear = async () => {
     setGuardando(true);
     const res = await crearRemate({
-      nombre,
+      nombre: nombre.trim() || nombreSugerido,
       hipodromo_id: hipodromoId || null,
       hipodromo: hipodromoNombre || null,
       carrera: carrera || null,
@@ -390,9 +443,11 @@ function ListaRemates({
   return (
     <>
       <div className="flex justify-end">
-        <Button variant="success" size="md" onClick={() => setAbierto(true)}>
-          ＋ Nuevo Remate
-        </Button>
+        <Guard permiso="remates:fn_guardar_remate">
+          <Button variant="success" size="md" onClick={() => setAbierto(true)}>
+            ＋ Nuevo Remate
+          </Button>
+        </Guard>
       </div>
 
       <Card className="overflow-hidden">
@@ -439,9 +494,11 @@ function ListaRemates({
                       <Button variant="outline" size="sm" onClick={() => onVer(r)}>
                         📊 Ver
                       </Button>
-                      <Button variant="danger" size="sm" onClick={() => onEliminar(r)} title="Eliminar remate">
-                        🗑️
-                      </Button>
+                      <Guard permiso="remates:fn_guardar_remate">
+                        <Button variant="danger" size="sm" onClick={() => onEliminar(r)} title="Eliminar remate">
+                          🗑️
+                        </Button>
+                      </Guard>
                     </div>
                   </td>
                 </tr>
@@ -462,7 +519,15 @@ function ListaRemates({
             </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Input id="remate-nombre" label="Nombre" placeholder="Ej. REMATE C1" value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus />
+              <Input
+                id="remate-nombre"
+                label="Nombre"
+                hint="Se arma solo con fecha / hipódromo / carrera y las notas; podés cambiarlo."
+                placeholder={nombreSugerido || "2026-10-07 / LA RINCONADA / CARRERA 3 - MONTERIA"}
+                value={nombre || nombreSugerido}
+                onChange={(e) => setNombre(e.target.value)}
+                autoFocus
+              />
 
               <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
                 <span>Hipódromo</span>
@@ -478,7 +543,7 @@ function ListaRemates({
 
               <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
                 <span>Fecha / Día del programa</span>
-                <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className={selectCls} />
+                <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value || hoy())} className={selectCls} />
               </label>
 
               <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
@@ -570,6 +635,8 @@ function DetalleRemate({
   const [cargandoProg, setCargandoProg] = useState(false);
   const [asignando, setAsignando] = useState(false);
   const [guardandoInc, setGuardandoInc] = useState(false);
+  /** Marca de "✓ guardado" que queda a la derecha del incentivo tras escribir. */
+  const [guardadoInc, setGuardadoInc] = useState(false);
   /** Ejemplar cuyas opciones están abiertas (se abren al PRESIONAR el caballo). */
   const [acciones, setAcciones] = useState<CaballoRemate | null>(null);
   /** Confirmación del cierre (muestra cuántos tickets y cuántos saldos toca). */
@@ -583,6 +650,26 @@ function DetalleRemate({
    * bloqueados, porque su saldo ya se descontó.
    */
   const liquidado = Boolean(remate.liquidado_at);
+  /**
+   * Modo de la pantalla. Sin `remates:fn_guardar_remate` no se crea, no se
+   * asigna comprador, no se toca incentivo/escalera y no se cierra: solo se
+   * puede pujar con el botón Subir, y siempre con el cliente propio.
+   */
+  const administra = useAdministraRemates();
+  const [miCliente, setMiCliente] = useState<string>("");
+  useEffect(() => {
+    if (administra) {
+      setMiCliente("");
+      return;
+    }
+    let vivo = true;
+    void clienteDelUsuario().then((id) => {
+      if (vivo) setMiCliente(id ?? "");
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [administra]);
   // Números INVALIDADOS solo para Remates (columna `carreras.invalidado_remate`).
   // No es lo mismo que retirado: el retirado saca el ejemplar de todos los
   // módulos; el INV solo le impide pujar acá, y sigue corriendo en la carrera.
@@ -607,6 +694,47 @@ function DetalleRemate({
   const [montos, setMontos] = useState<Record<string, string>>({});
   /** `cliente_id → plata comprometida en remates ABIERTOS` (se deriva solo). */
   const [bloqueos, setBloqueos] = useState<Record<string, number>>({});
+
+  /**
+   * El incentivo ya NO tiene botón: se guarda SOLO, con un pequeño rebote para
+   * no escribir en la base en cada tecla. `incRef` guarda lo último que quedó
+   * persistido (o lo que ya traía el remate) para que el efecto no se dispare
+   * otra vez cuando `onCambio()` devuelve el remate actualizado: sin esa
+   * referencia, guardar → refrescar → releer el mismo valor volvería a
+   * "parecer distinto" y entraría en bucle.
+   */
+  const incRef = useRef({ id: "", monto: -1, pct: -1 });
+  if (incRef.current.id !== remate.id) {
+    incRef.current = {
+      id: remate.id,
+      monto: Number(remate.incentivo) || 0,
+      pct: Number(remate.incentivo_pct) || 0,
+    };
+  }
+  useEffect(() => {
+    if (cerrado) return;
+    const monto = Number(incentivo) || 0;
+    const pct = Number(incPct) || 0;
+    if (monto === incRef.current.monto && pct === incRef.current.pct) return;
+    let vivo = true;
+    setGuardadoInc(false);
+    const t = setTimeout(async () => {
+      setGuardandoInc(true);
+      const res = await guardarIncentivoRemate(remate.id, monto, pct);
+      if (!vivo) return;
+      setGuardandoInc(false);
+      if (!res.ok) return toast(res.error ?? "No pude guardar el incentivo.", "error");
+      incRef.current = { id: remate.id, monto, pct };
+      setGuardadoInc(true);
+      await onCambio();
+    }, 700);
+    return () => {
+      vivo = false;
+      clearTimeout(t);
+      setGuardandoInc(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incentivo, incPct, modoInc, cerrado, remate.id]);
 
   const hipodromoNombre =
     hipodromos.find((h) => h.id === String(remate.hipodromo_id))?.nombre ?? remate.hipodromo ?? "";
@@ -732,10 +860,34 @@ function DetalleRemate({
     [clientes]
   );
 
+  /**
+   * Jugadores del GRUPO del remate: en el campo Comprador solo se buscan ellos,
+   * porque el remate se cobra al banquero del grupo. Sin grupo (o si el grupo
+   * todavía no tiene miembros cargados) no se filtra nada.
+   */
+  const [miembros, setMiembros] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    const gid = String(remate.grupo_id ?? "").trim();
+    if (!gid) {
+      setMiembros(null);
+      return;
+    }
+    void (async () => {
+      const jugadores = await jugadoresDeGrupo(gid);
+      if (!vivo) return;
+      const ids = new Set(jugadores.map((j) => String(j.id)));
+      setMiembros(ids.size ? ids : null);
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [remate.grupo_id]);
+
   /** Compradores que SÍ pueden comprar: ni Libre, ni sin saldo+aval, ni topped. */
   const opcionesComprador = useMemo(
-    () => opcionesDe(clientes, bloqueosOtros),
-    [clientes, bloqueosOtros]
+    () => opcionesDe(clientes, bloqueosOtros, miembros),
+    [clientes, bloqueosOtros, miembros]
   );
 
   // Historial de pujas: se recarga junto con los ejemplares.
@@ -898,7 +1050,12 @@ function DetalleRemate({
       cliente_id: clienteId || null,
     });
     if (!res.ok) return toast(res.error ?? "No pude cambiar el comprador.", "error");
-    toast(`👤 ${c.nombre} pasa a nombre de ${clientePorId.get(clienteId)?.nombre ?? "—"}.`, "success");
+    toast(
+      String(clienteId).trim()
+        ? `👤 ${c.nombre} pasa a nombre de ${clientePorId.get(clienteId)?.nombre ?? "—"}.`
+        : `⌂ ${c.nombre} vuelve a CASA: sin comprador no se genera ticket ni se descuenta saldo.`,
+      "success",
+    );
     await onCambio();
     await recargarBloqueos();
   };
@@ -918,10 +1075,19 @@ function DetalleRemate({
     const f = filaDe(c.ejemplar_numero);
     const monto = Number(f.monto) || 0;
     if (monto <= 0) return toast("Cargá el valor de la puja.", "warning");
+    // Modo solo pujar: el comprador NUNCA lo elige el operador, es siempre el
+    // cliente vinculado a su usuario (lo mismo que exige la RPC en el servidor).
+    const clienteAbrir = administra ? f.clienteId : miCliente;
+    if (!clienteAbrir) {
+      return toast(
+        "Tu usuario no tiene un cliente vinculado: no se puede pujar. Pedile al administrador que te asigne uno en Seguridad → Usuarios.",
+        "warning",
+      );
+    }
     // Mismo corte que el servidor: un Libre, o un cliente sin saldo ni aval,
     // no compra por mucho que el formulario se lo permita.
     const compra = autorizarPujaRemate(
-      f.clienteId ? clientePorId.get(f.clienteId) : null,
+      clientePorId.get(clienteAbrir) || null,
       monto,
       bloqueosOtros
     );
@@ -932,7 +1098,7 @@ function DetalleRemate({
         numero: c.numero,
         nombre: c.nombre || `EJEMPLAR ${c.ejemplar_numero}`,
         monto_usd: monto,
-        cliente_id: f.clienteId || null,
+        cliente_id: clienteAbrir || null,
         ejemplar_numero: c.ejemplar_numero,
       },
     ]);
@@ -1011,6 +1177,7 @@ return (
             >
               {cerrado ? "🔒 Cerrado" : (remate.estado ?? "Abierto")}
             </span>
+            <Guard permiso="remates:fn_guardar_remate">
             {cerrado ? (
               <button
                 type="button"
@@ -1044,6 +1211,7 @@ return (
                 Cerrar
               </button>
             )}
+            </Guard>
           </div>
         </div>
         {cerrado && (
@@ -1132,6 +1300,8 @@ return (
                       onValor={(v) => setMontoFila(c, v)}
                       opciones={opcionesDeConComprador(clientes, c.cliente_id, bloqueosOtros, opcionesComprador)}
                       clienteId={c.cliente_id ?? ""}
+                      soloPujar={!administra}
+                      clientePropio={miCliente}
                       cerrado={cerrado}
                       escalera={remate.escalera}
                       toast={toast}
@@ -1212,15 +1382,26 @@ return (
                       </span>
                     </span>
                     <div className="min-w-0">
-                      <SearchableSelect
-                        options={opcionesDeConComprador(clientes, f.clienteId, bloqueosOtros, opcionesComprador)}
-                        value={f.clienteId}
-                        onChange={(v) => setFila(c.ejemplar_numero, { clienteId: v, on: true })}
-                        allowCustom={false}
-                        placeholder="CASA"
-                        className="w-full min-w-0"
-                        inputClassName="h-7 w-full min-w-0 rounded border border-line bg-surface px-1.5 py-0.5 text-left text-[11px] font-bold normal-case text-slate-900 placeholder:font-black placeholder:text-slate-400"
-                      />
+                      {administra ? (
+                        <SearchableSelect
+                          options={opcionesDeConComprador(clientes, f.clienteId, bloqueosOtros, opcionesComprador)}
+                          value={f.clienteId}
+                          onChange={(v) => setFila(c.ejemplar_numero, { clienteId: v, on: true })}
+                          allowCustom={false}
+                          placeholder="CASA"
+                          className="w-full min-w-0"
+                          inputClassName="h-7 w-full min-w-0 rounded border border-line bg-surface px-1.5 py-0.5 text-left text-[11px] font-bold normal-case text-slate-900 placeholder:font-black placeholder:text-slate-400"
+                        />
+                      ) : (
+                        <span className="flex min-w-0">
+                          <span
+                            className="truncate rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-blue-700"
+                            title="Al abrir la puja queda a nombre del cliente vinculado a tu usuario: no se elige comprador."
+                          >
+                            Tu cliente
+                          </span>
+                        </span>
+                      )}
                     </div>
                     <span className="flex min-w-0 items-center gap-1">
                       <span className="text-[11px] font-black text-slate-400">$</span>
@@ -1240,15 +1421,17 @@ return (
                     </span>
                     <span className="min-w-0 truncate text-center text-xs font-bold text-slate-400">—</span>
                     <span className="flex items-center justify-end">
-                      <Button
-                        variant="success"
-                        size="sm"
-                        onClick={() => void abrirPuja(c)}
-                        disabled={asignando || montoFila <= 0}
-                        title="Abrir la puja de este ejemplar"
-                      >
-                        {asignando ? "…" : "＋ Abrir"}
-                      </Button>
+                      <Guard permiso="remates:fn_asignar_caballos">
+                        <Button
+                          variant="success"
+                          size="sm"
+                          onClick={() => void abrirPuja(c)}
+                          disabled={asignando || montoFila <= 0}
+                          title="Abrir la puja de este ejemplar"
+                        >
+                          {asignando ? "…" : "＋ Abrir"}
+                        </Button>
+                      </Guard>
                     </span>
                   </div>
                 );
@@ -1259,6 +1442,7 @@ return (
                 Su propia línea completa en la pizarra: título a la izquierda y
                 el campo para escribirlo en la columna de los valores. Antes
                 estaba escondido arriba y había que abrir "Finanzas" para tocarlo. */}
+            <Guard permiso="remates:fn_guardar_remate">
             <div
               className={`${GRILLA_PIZARRA} mt-2 w-full min-w-0 border-t-2 border-dashed border-slate-300 pt-2`}
             >
@@ -1305,8 +1489,8 @@ return (
               )}
 
               {modoInc === "pct" ? (
-                <span className="min-w-0 truncate text-left text-sm font-black text-emerald-700">
-                  {usd(finanzas.incentivo)}
+                <span className="min-w-0 truncate text-right text-sm font-black tabular-nums text-emerald-700">
+                  {usdSinDecimales(finanzas.incentivo)}
                 </span>
               ) : (
                 <div className="flex min-w-0 items-center gap-1">
@@ -1324,27 +1508,14 @@ return (
                 </div>
               )}
 
-              <span />
-              <button
-                type="button"
-                disabled={guardandoInc || cerrado}
-                onClick={async () => {
-                  setGuardandoInc(true);
-                  const res = await guardarIncentivoRemate(
-                    remate.id,
-                    Number(incentivo) || 0,
-                    Number(incPct) || 0
-                  );
-                  setGuardandoInc(false);
-                  if (!res.ok) return toast(res.error ?? "No pude guardar el incentivo.", "error");
-                  toast("💾 Incentivo guardado.", "success");
-                }}
-                title="Guardar el incentivo en la base"
-                className="rounded px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-500 transition-colors hover:bg-surfaceAlt hover:text-slate-800 disabled:opacity-40"
+              <span
+                className="flex items-center justify-end pr-1 text-[10px] font-black text-emerald-600"
+                title="El incentivo se guarda solo, no hay botón"
               >
-                {guardandoInc ? "…" : "💾"}
-              </button>
+                {guardandoInc ? "…" : guardadoInc ? "✓" : ""}
+              </span>
             </div>
+            </Guard>
 
             {/* ------------------------- TOTAL A PAGAR ------------------------- */}
             <div className={`${GRILLA_PIZARRA} mt-1 w-full min-w-0 border-t border-line pt-1.5`}>
@@ -1370,6 +1541,7 @@ return (
 
           <div className="flex flex-col gap-4">
           {/* Escalera — EDITABLE, con la nota que la explica */}
+          <Guard permiso="remates:fn_guardar_remate">
           <Card className="p-4">
             <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-500">🪜 Escalera de pujas</p>
             <EscaleraEditable
@@ -1380,6 +1552,7 @@ return (
               onGuardado={onCambio}
             />
           </Card>
+          </Guard>
           </div>
 
           <div className="flex flex-col gap-4">
@@ -1393,8 +1566,7 @@ return (
               <Fila k="Total bruto" v={usd(finanzas.totalBruto)} />
               <Fila k={`Comisión (${finanzas.comisionPct}% s/ pujas)`} v={`- ${usd(finanzas.descuentoComision)}`} />
               <div className="mt-2 border-t border-line pt-2">
-                <Fila k="Total a pagar" v=                {modoInc === "pct" ? `${Math.round(Number(incPct) || 0)}%` : usdSinDecimales(Number(incentivo) || 0)}
- fuerte />
+                <Fila k="Total a pagar" v={usdSinDecimales(finanzas.premioGanador)} fuerte />
               </div>
             </dl>
             <p className="mt-2 text-[10px] leading-snug text-slate-400">
@@ -1449,7 +1621,7 @@ return (
           cambia comprador, valor y se quita la puja; el retiro del ejemplar de la
           carrera también se puede hacer acá, centralizado (se refleja en todos
           los módulos) sin quitarlo de la pizarra. */}
-      {acciones && (
+      {acciones && administra && (
         <ModalOpcionesEjemplar
           c={acciones}
           retiro={retiroSet.has(String(acciones.ejemplar_numero ?? acciones.numero))}
@@ -1754,6 +1926,19 @@ function ModalOpcionesEjemplar({
           </label>
 
           <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-3">
+            {!cerrado && !vendido && !soloAsignar && !retiro && !inv && String(c.cliente_id ?? "").trim() !== "" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  onCliente("");
+                  onCerrar();
+                }}
+                title="Devuelve el ejemplar a CASA: solo mientras el remate no esté cerrado"
+              >
+                ⌂ Dejar en CASA
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={() => void onRetirar()}>
               {retiro ? "↩️ Reactivar en la carrera" : "⛔ Retirar de la carrera"}
             </Button>
@@ -1927,6 +2112,8 @@ function FilaPujaCaballo({
   onValor,
   opciones,
   clienteId,
+  soloPujar,
+  clientePropio,
   cerrado,
   escalera,
   toast,
@@ -1951,6 +2138,13 @@ function FilaPujaCaballo({
   onValor: (v: string) => void;
   opciones: OpcionSelect[];
   clienteId: string;
+  /**
+   * Modo solo pujar: el operador NO elige comprador. La puja siempre se
+   * registra con el cliente vinculado a su usuario.
+   */
+  soloPujar?: boolean;
+  /** Cliente del usuario (solo se usa cuando `soloPujar`). */
+  clientePropio?: string;
   cerrado: boolean;
   escalera?: EscalonPuja[];
   toast: (m: string, t?: "success" | "warning" | "error" | "info") => void;
@@ -1964,7 +2158,9 @@ function FilaPujaCaballo({
   const numero = String(c.ejemplar_numero ?? c.numero);
   const guardado = Number(c.monto_usd) || 0;
   const editando = valor.trim() !== "" && (Number(valor) || 0) !== guardado;
-  const cambiaCliente = String(clienteId) !== String(c.cliente_id ?? "");
+  // En modo solo pujar no se cambia el comprador: la puja se registra SIEMPRE
+  // con el cliente del propio usuario.
+  const cambiaCliente = !soloPujar && String(clienteId) !== String(c.cliente_id ?? "");
   const sinComprador = !String(clienteId).trim();
   // Cerrado, retirado, invalidado o ya vendido: no se toca nada. Si el remate ya
   // se liquidó y se reabrió, en una fila en CASA solo se asigna el comprador.
@@ -1990,9 +2186,16 @@ function FilaPujaCaballo({
         ? guardado
         : pujaMinimaSiguiente(guardado, escalera);
     if (n <= 0) return toast("Cargá el valor de la puja.", "warning");
+    const mios = String(clientePropio ?? "").trim();
+    if (soloPujar && !mios) {
+      return toast(
+        "Tu usuario no tiene un cliente vinculado: no se puede pujar. Pedile al administrador que te asigne uno en Seguridad → Usuarios.",
+        "warning",
+      );
+    }
     setGuardando(true);
     try {
-      await onSubir(n, clienteId);
+      await onSubir(n, soloPujar ? mios : clienteId);
     } finally {
       setGuardando(false);
     }
@@ -2007,8 +2210,13 @@ function FilaPujaCaballo({
       {/* EJEMPLAR — es el botón de las opciones */}
       <button
         type="button"
-        onClick={onOpciones}
-        title="Opciones del ejemplar"
+        onClick={() => {
+          // Las opciones del ejemplar son de administración (asignar comprador,
+          // valor a mano, quitar la puja): en modo solo pujar no se abren.
+          if (soloPujar) return;
+          onOpciones();
+        }}
+        title={soloPujar ? "Opciones solo para administración" : "Opciones del ejemplar"}
         className="flex min-w-0 items-center gap-1.5 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
       >
         <NumChip numero={numero} size="sm" />
@@ -2036,12 +2244,21 @@ function FilaPujaCaballo({
         </span>
       </button>
 
-      {/* COMPRADOR — sin comprador dice CASA */}
-      {bloqueado ? (
+      {/* COMPRADOR — sin comprador dice "CASA". En modo solo pujar no hay
+          selector: la fila muestra quién es dueño y la puja se hace con el
+          cliente del propio usuario. */}
+      {bloqueado || soloPujar ? (
         sinComprador ? (
           <span className="flex min-w-0">
-            <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-600">
-              Casa
+            <span
+              className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-600"
+              title={
+                soloPujar
+                  ? "Al subir, la puja se registra con el cliente vinculado a tu usuario."
+                  : undefined
+              }
+            >
+              CASA
             </span>
           </span>
         ) : (
@@ -2109,6 +2326,19 @@ function FilaPujaCaballo({
             title="Descartar el cambio de comprador"
           >
             ↺
+          </button>
+        )}
+        {/* Volver a CASA: solo mientras el remate NO esté cerrado (si ya se
+            cerró, el ticket existe y haría falta anular la venta). */}
+        {!bloqueado && !soloPujar && String(c.cliente_id ?? "").trim() !== "" && (
+          <button
+            type="button"
+            onClick={() => void onCliente("")}
+            disabled={guardando}
+            className="rounded px-1 py-0.5 text-[10px] font-black uppercase text-slate-500 transition-colors hover:bg-slate-200"
+            title="Devolver el ejemplar a CASA (solo mientras el remate no esté cerrado)"
+          >
+            ⌂ CASA
           </button>
         )}
         <button
