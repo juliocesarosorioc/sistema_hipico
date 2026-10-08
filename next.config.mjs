@@ -30,9 +30,21 @@ const src = path.join(root, "src");
 
 const esExportEstatico = process.env.NEXT_OUTPUT === "export";
 
+/**
+ * Subpath del despliegue. GitHub Pages sirve el sitio en
+ * `https://<usuario>.github.io/sistema_hipico/`, así que en ese modo la app se
+ * construye con `basePath=/sistema_hipico` (Next prefija los enlaces y los
+ * assets). Con la variable vacía (dev, `next start`, o el export que convive
+ * con el legacy en la raíz) todo queda relativo a `/`.
+ */
+const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || "")
+  .replace(/\/+$/, "")
+  .replace(/\/+/g, "/");
+
 const nextConfig = {
   reactStrictMode: true,
   ...(esExportEstatico ? { output: "export" } : {}),
+  ...(basePath ? { basePath, assetPrefix: basePath } : {}),
   images: { unoptimized: true },
   webpack: (config) => {
     config.resolve.alias = {
