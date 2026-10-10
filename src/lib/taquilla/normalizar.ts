@@ -576,8 +576,15 @@ export function normalizarLineaRapida(
   linea: string,
   contexto: ContextoNormalizacion
 ): ResultadoNormalizado | null {
-  const t = String(linea ?? "").trim();
-  if (!t || t.startsWith("#")) return null;
+  const bruto = String(linea ?? "").trim();
+  if (!bruto || bruto.startsWith("#")) return null;
+
+  /* El plano de jugadas (WhatsApp) numera cada línea "1) …": es un índice de
+     LISTA, no parte de la jugada. Si no se quita, el "1" se pega al primer
+     cliente y la coincidencia difusa cae por debajo del umbral (cliente2 queda
+     vacío y la fila salta a "revisar"). Se quita SOLO "N)" al inicio: el monto
+     usa punto decimal ("10.000,00") y las jugadas "1-2x3-4" no se tocan. */
+  const t = bruto.replace(/^\s*\d+\s*\)\s*/, "");
 
   const exp = expandirLineaHablada(t);
   const clas = clasificarLineaRapida(exp.texto);
