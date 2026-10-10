@@ -415,10 +415,10 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
 
   const cierre: string[] = ["🟢 POSITIVOS (+)"];
   if (positivos.length === 0) cierre.push("—");
-  else positivos.forEach(([nombre, valor], i) => cierre.push(`${i + 1}) ${nombre} ${fmtMonto(valor)}`));
+  else positivos.forEach(([nombre, valor], i) => cierre.push(`${i + 1}) ${nombre} +${fmtMonto(valor)}`));
   cierre.push("🔴 NEGATIVOS (-)");
   if (negativos.length === 0) cierre.push("—");
-  else negativos.forEach(([nombre, valor], i) => cierre.push(`${i + 1}) ${nombre} ${fmtMonto(Math.abs(valor))}`));
+  else negativos.forEach(([nombre, valor], i) => cierre.push(`${i + 1}) ${nombre} -${fmtMonto(Math.abs(valor))}`));
 
   return [cabeceraCarrera(meta), "", ...cuerpo, "", ...cierre, "", pieEstricto(jugadas.length)].join("\n");
 }
