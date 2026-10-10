@@ -188,13 +188,14 @@ export function GestionJugadasModule() {
   useEffect(() => {
     let vivo = true;
     setCarrerasPorDia([]);
-    setCarrera(1);
     if (carrerasDelDia.length > 0) {
       const base = [...new Set(carrerasDelDia.map((c) => Number(c.carrera)).filter((n) => n > 0))].sort(
         (a, b) => a - b
       );
       setCarrerasPorDia(base);
-      if (base.length > 0) setCarrera(base.includes(carrera) ? carrera : Math.min(...base));
+      if (base.length > 0 && !modoManual) {
+        setCarrera((prev) => (base.includes(prev) ? prev : Math.min(...base)));
+      }
       return () => {
         vivo = false;
       };
@@ -204,15 +205,17 @@ export function GestionJugadasModule() {
         if (!vivo) return;
         const base = [...new Set(c.map((n) => Number(n)).filter((n) => n > 0))].sort((a, b) => a - b);
         setCarrerasPorDia(base);
-        if (base.length > 0) setCarrera(base.includes(carrera) ? carrera : Math.min(...base));
+        if (base.length > 0 && !modoManual) {
+          setCarrera((prev) => (base.includes(prev) ? prev : Math.min(...base)));
+        }
       })
       .catch(() => {
-        if (vivo) setCarrera(1);
+        if (vivo && !modoManual) setCarrera(1);
       });
     return () => {
       vivo = false;
     };
-  }, [fecha, hipodromo, carrerasDelDia, carrera]);
+  }, [fecha, hipodromo, carrerasDelDia, modoManual]);
 
   // El catálogo y sus ejemplares los aporta el REGISTRO CENTRAL (arriba). Este
   // módulo ya no mantiene una segunda consulta: dos copias del mismo catálogo
@@ -223,10 +226,10 @@ export function GestionJugadasModule() {
     if (conEj.length !== carrerasPorDia.length || conEj.some((n: number, i: number) => n !== carrerasPorDia[i])) {
       setCarrerasPorDia(conEj);
     }
-    if (conEj.length > 0 && !conEj.includes(carrera)) {
+    if (conEj.length > 0 && !conEj.includes(carrera) && !modoManual) {
       setCarrera(Math.min(...conEj));
     }
-  }, [carrerasConEjemplares, carrerasPorDia, carrera]);
+  }, [carrerasConEjemplares, carrerasPorDia, carrera, modoManual]);
 
   const [modalPreliminar, setModalPreliminar] = useState(false);
   const [mostrarPlanoPreliminar, setMostrarPlanoPreliminar] = useState(false);
@@ -1029,7 +1032,12 @@ const hipodromosDelDia = useMemo(() => {
         carreras={carrerasPorDia}
         activa={carrera}
         manual={modoManual}
-        onSeleccionar={setCarrera}
+        onSeleccionar={(n) => {
+          setCarrera(n);
+          if (!carrerasPorDia.includes(n)) {
+            setCarrerasPorDia((prev) => [...new Set([...prev, n])].sort((a, b) => a - b));
+          }
+        }}
       />
 
       {/* Tabla de Carga Individual (clon 1:1 del legacy) */}
