@@ -372,12 +372,14 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
     // "1Y2N Y 2N", que el motor clasifica GENERICA, también acredita y debita
     // bien cuando acierta (antes se liquidaba al revés, como si hubiera fallado).
     if (b.gananciaNeta > 0) {
-      // Acertó el que JUEGA → cobra la ganancia neta; el "da" entrega el monto.
+      // Acertó el que JUEGA → cobra la ganancia neta; el "da" entrega SU riesgo,
+      // que es el BRUTO de la jugada: el monto a la par, y 8/10·monto en "10a8".
       cuerpo.push(`Juega ${j.clienteJuega} $ +${fmtMonto(b.gananciaNeta)}`);
-      acumular(j.clienteJuega, b.gananciaNeta);
+      acumular(j.clienteJuega, round2(b.gananciaNeta));
       if (beneficiario) {
-        cuerpo.push(`Consigue ${beneficiario} $ -${fmtMonto(perdida)}`);
-        acumular(beneficiario, -perdida);
+        const perdidaDa = round2(b.gananciaBruta);
+        cuerpo.push(`Consigue ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
+        acumular(beneficiario, -perdidaDa);
       }
     } else if (j.modalidad === "NINI") {
       // Falló el NINI (el caballo figuró) → pierde el que JUEGA; el "da" cobra la paridad neta.
@@ -394,14 +396,16 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
         acumular(beneficiario, netoC2);
       }
     } else {
-      // Jugada genérica fallida → pierde el que JUEGA; el "da" cobra lo liquidado.
+      // Jugada genérica fallida → pierde el que JUEGA; el "da" (banquero) cobra
+      // la PARIDAD NETA, igual que un NINI fallido, sin importar la modalidad
+      // (suma cero: lo que pierde el que JUEGA menos la comisión de la casa).
       cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
       acumular(j.clienteJuega, -perdida);
       if (beneficiario) {
-        cuerpo.push(`Consigue ${beneficiario} $ +${fmtMonto(b.gananciaNeta)}`);
-        acumular(beneficiario, b.gananciaNeta);
-      } else {
-        acumular(j.clienteJuega, b.gananciaNeta);
+        const tasa = num(j.comisionPct) > 0 ? num(j.comisionPct) : COMISION_CASA.rate * 100;
+        const netoDa = round2(perdida - perdida * (tasa / 100));
+        cuerpo.push(`Consigue ${beneficiario} $ +${fmtMonto(netoDa)}`);
+        acumular(beneficiario, netoDa);
       }
     }
   });

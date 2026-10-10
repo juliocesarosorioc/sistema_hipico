@@ -261,7 +261,10 @@ export function liquidarPareo(
   t: TicketMotor,
   tasaComision?: number | null
 ): ResultadoMotor {
-  if (!t.caballo || !t.caballo.toUpperCase().includes("X")) {
+  // La casa escribe el pareo con "X" ("4X8") o con "*" ("1*6"): ambos separan
+  // los dos bandos. Sin divisor no hay pareo que resolver.
+  const cabPareo = String(t.caballo ?? "").toUpperCase();
+  if (!cabPareo || (!cabPareo.includes("X") && !cabPareo.includes("*"))) {
     return {
       ok: false,
       motivo: "Pareo (PP) requiere sintaxis 'A X B' (ej. 4X8 o 4-5X2-3)",
@@ -271,8 +274,8 @@ export function liquidarPareo(
     };
   }
 
-  // 1. Separar los bandos por la "X"
-  const [strA, strB] = t.caballo.toUpperCase().split("X");
+  // 1. Separar los bandos por la "X" (o el "*" de la casa)
+  const [strA, strB] = cabPareo.split(/\s*[X*]\s*/);
   
   // 2. Extraer los caballos de cada bando (Soporta separadores: guion, coma o slash)
   // Ej: "4-5" -> ["4", "5"]

@@ -157,13 +157,18 @@ const SEPARADORES_INTRA = /[\s,\-]+/;
 
    Cada ejemplar se limita a 1-19, igual que el heurístico de CABALLO de la
    carga rápida, así que un monto de 2 o 3 dígitos nunca se interpreta como
-   ejemplar aunque quede pegado ("pp 1-2*3-4 75 Ana" -> "1-2*3-4"). */
+   ejemplar aunque quede pegado ("pp 1-2*3-4 75 Ana" -> "1-2*3-4").
+
+   El lookbehind impide que el lado izquierdo empiece DENTRO de un token: en
+   "10a8 1*6" el "8" va pegado a la "a" y NO es un ejemplar; sin el lookbehind
+   el match arrancaba en ese "8" ("8 1*6"), dejaba "10a" como basura y la jugada
+   se perdía. Con el lookbehind el motor salta al "1" precedido de espacio. */
 const RE_NUM_CABALLO = String.raw`(?:[1-9]|1[0-9])(?!\d)`;
 const RE_SEP_CABALLO = String.raw`(?:\s*[,,-]\s*|\s+)`;
 const RE_LADO_EJEMPLARES = RE_NUM_CABALLO + `(?:` + RE_SEP_CABALLO + RE_NUM_CABALLO + `)*`;
 const RE_EJEMPLARES_DIVIDIDOS = new RegExp(
-  `(${RE_LADO_EJEMPLARES})\\s*(?:x|\\*|por)\\s*(${RE_LADO_EJEMPLARES})`,
-  "i"
+  `(?<![\\p{L}\\p{N}])(${RE_LADO_EJEMPLARES})\\s*(?:x|\\*|por)\\s*(${RE_LADO_EJEMPLARES})`,
+  "iu"
 );
 
 export type LadosEjemplares = {
