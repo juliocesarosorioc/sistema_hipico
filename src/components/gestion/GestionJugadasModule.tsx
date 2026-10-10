@@ -31,7 +31,7 @@ import { mensajeResultadoDeCarrera } from "@/lib/taquilla/mensajeResultado";
 import { enviarAlGrupoWsp, listarGruposWsp } from "@/lib/whatsapp";
 import PlanoPreliminar from "./PlanoPreliminar";
 import HistorialReporte from "./HistorialReporte";
-import { expandirLineasDobleSplit } from "@/lib/taquilla/expandirDobleSplit";
+import { expandirLineasDobleSplit, revisarCoherenciaLineas } from "@/lib/taquilla/expandirDobleSplit";
 
 /** Resumen compacto del reparto para la celda de ejemplares (una línea, 9px). */
 function resumenReparto(rep: Reparto | null, moneda: string): { txt: string; clase: string } | null {
@@ -434,14 +434,14 @@ const hipodromosDelDia = useMemo(() => {
     for (const l of lineas) {
       const t = l.trim();
       if (!t) { expandidas.push(l); continue; }
-      if (/\d+[ypn]?\/\d+[ypn]?-\d+[ypn]?\b/i.test(t) || /\d+[ypn]+-\d+[ypn]+\b/i.test(t)) {
-        try {
-          const res = expandirLineasDobleSplit([t]);
-          if (res.length > 0) {
-            for (const r of res) expandidas.push(r.linea);
-            continue;
-          }
-        } catch {}
+      /* Jugada compuesta con guion (1p-1y2, 2y3-3n): se parte en dos líneas
+         con el monto repartido 50/50. La utilidad solo devuelve resultado
+         cuando AMBAS piezas son jugadas coherentes; si no, la línea original
+         se conserva y `revisarCoherenciaLineas` pide la corrección. */
+      const res = expandirLineasDobleSplit([t]);
+      if (res.length === 2) {
+        for (const r of res) expandidas.push(r.linea);
+        continue;
       }
       expandidas.push(l);
     }
@@ -449,6 +449,12 @@ const hipodromosDelDia = useMemo(() => {
       .map((linea) => ({ linea, normalizada: normalizarLineaRapida(linea, contextoNormalizacion) }))
       .filter((x) => x.normalizada !== null);
   }, [textoCargaRapida, contextoNormalizacion]);
+
+  /** Líneas cuya jugada quedó incoherente (sola sin número, guion no partible). */
+  const incoherenciasCargaRapida = useMemo(
+    () => revisarCoherenciaLineas(textoCargaRapida.split("\n")),
+    [textoCargaRapida]
+  );
 
   /**
    * Revision de la columna CABALLO contra los caballos de la carrera en
@@ -1614,6 +1620,26 @@ const hipodromosDelDia = useMemo(() => {
                 placeholder={"Pegá el bloque de jugadas (1 por línea, CUALQUIER orden):\n\n3y3 9 40 emy mar\n2p 1 100 Perrito molinas\nJuega Lolo 2p (1) con 300 da Mar\n1/2 y 2n 7 100 Eddie Manuel\n2x3 10/8 2 100 Juan Pedro\nWalcot 2y3-3n 4 astronauta 400"}
                 className="w-full resize-y rounded-xl border border-line bg-white p-3 font-mono text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
               />
+              {incoherenciasCargaRapida.length > 0 && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-2">
+                  <p className="pb-1 text-[9px] font-black uppercase tracking-wide text-red-500">
+                    ✋ Jugadas sin coherencia → corregí antes de poblar
+                  </p>
+                  <div className="space-y-1">
+                    {incoherenciasCargaRapida.map(({ linea, motivos }, i) => (
+                      <div key={i} className="flex items-start gap-1.5 text-[10px] leading-tight">
+                        <span className="mt-px font-black text-red-500">⚠️</span>
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-red-600">{linea}</p>
+                          {motivos.map((mv, j) => (
+                            <p key={j} className="text-red-400">· {mv}</p>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {previewCargaRapida.length > 0 && (
                 <div className="max-h-40 overflow-y-auto rounded-xl border border-line bg-slate-50 p-2">
                   <p className="pb-1 text-[9px] font-black uppercase tracking-wide text-slate-400">
