@@ -1,8 +1,12 @@
 -- Restaurar cartera de clientes (grupo ARGENTINA)
 BEGIN;
 
--- Borrar todos los clientes (CUIDADO: RLS requiere permisos / usar service_role)
-DELETE FROM clientes;
+-- Borrar SOLO los clientes del grupo ARGENTINA (no toda la tabla: no toca MVP
+-- ni otros grupos). Requiere haber corrido antes `limpiar_fks_argentina.sql`
+-- para que no queden tickets/registros que referencien a estos clientes (FK
+-- 23503).
+DELETE FROM clientes
+ WHERE grupo_id = (SELECT id FROM grupos_venta WHERE UPPER(nombre)=UPPER('ARGENTINA') LIMIT 1);
 
 INSERT INTO clientes (
   nombre,
