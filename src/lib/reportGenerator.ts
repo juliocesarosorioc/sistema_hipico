@@ -361,17 +361,26 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
       return;
     }
     const b = niniDesdePizarra(j, meta.pizarraPuestos ?? [], meta.dividendos ?? null) ?? balanceJugada(j);
-    // Leg "Juega": en jugadas clásicas pierde lo financiado; en NINI gana si NO figura.
+    // Leg "Juega": arriesga lo financiado. Leg "Consigue" (el "da"): cobra la
+    // ganancia neta cuando el que juega NO acierta.
     const perdida = num(j.monto);
-    // Leg "Consigue": cobra la ganancia neta (si no hay consigue, la cobra el propio jugador).
     const beneficiario = j.clienteConsigue || "";
     cuerpo.push(`${i + 1}) ${j.jugada} (${j.caballo}) con ${fmtMonto(j.monto)}`);
-    if (j.modalidad === "NINI" && b.gananciaNeta > 0) {
-      // El nini ganó: el caballo NO figuró → cobra el que JUEGA.
+    // La jugada es de SUMA CERO entre el que JUEGA y el "da" (Consigue): el que
+    // acierta cobra la ganancia neta y el otro entrega el monto financiado. La
+    // decisión se toma por el RESULTADO (no por la modalidad): así la compuesta
+    // "1Y2N Y 2N", que el motor clasifica GENERICA, también acredita y debita
+    // bien cuando acierta (antes se liquidaba al revés, como si hubiera fallado).
+    if (b.gananciaNeta > 0) {
+      // Acertó el que JUEGA → cobra la ganancia neta; el "da" entrega el monto.
       cuerpo.push(`Juega ${j.clienteJuega} $ +${fmtMonto(b.gananciaNeta)}`);
       acumular(j.clienteJuega, b.gananciaNeta);
+      if (beneficiario) {
+        cuerpo.push(`Consigue ${beneficiario} $ -${fmtMonto(perdida)}`);
+        acumular(beneficiario, -perdida);
+      }
     } else if (j.modalidad === "NINI") {
-      // El nini perdió: el caballo figuró → pierde el que JUEGA; el "da" cobra.
+      // Falló el NINI (el caballo figuró) → pierde el que JUEGA; el "da" cobra la paridad neta.
       cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
       acumular(j.clienteJuega, -perdida);
       if (beneficiario) {
@@ -385,6 +394,7 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
         acumular(beneficiario, netoC2);
       }
     } else {
+      // Jugada genérica fallida → pierde el que JUEGA; el "da" cobra lo liquidado.
       cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
       acumular(j.clienteJuega, -perdida);
       if (beneficiario) {
@@ -405,10 +415,10 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
 
   const cierre: string[] = ["🟢 POSITIVOS (+)"];
   if (positivos.length === 0) cierre.push("—");
-  else positivos.forEach(([nombre, valor], i) => cierre.push(`${i + 1}) ${nombre} ${fmtMiles(valor)}`));
+  else positivos.forEach(([nombre, valor], i) => cierre.push(`${i + 1}) ${nombre} ${fmtMonto(valor)}`));
   cierre.push("🔴 NEGATIVOS (-)");
   if (negativos.length === 0) cierre.push("—");
-  else negativos.forEach(([nombre, valor], i) => cierre.push(`${i + 1}) ${nombre} ${fmtMiles(Math.abs(valor))}`));
+  else negativos.forEach(([nombre, valor], i) => cierre.push(`${i + 1}) ${nombre} ${fmtMonto(Math.abs(valor))}`));
 
   return [cabeceraCarrera(meta), "", ...cuerpo, "", ...cierre, "", pieEstricto(jugadas.length)].join("\n");
 }
