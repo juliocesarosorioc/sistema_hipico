@@ -167,7 +167,7 @@ const RE_NUM_CABALLO = String.raw`(?:[1-9]|1[0-9])(?!\d)`;
 const RE_SEP_CABALLO = String.raw`(?:\s*[,,-]\s*|\s+)`;
 const RE_LADO_EJEMPLARES = RE_NUM_CABALLO + `(?:` + RE_SEP_CABALLO + RE_NUM_CABALLO + `)*`;
 const RE_EJEMPLARES_DIVIDIDOS = new RegExp(
-  `(?<![\\p{L}\\p{N}])(${RE_LADO_EJEMPLARES})\\s*(?:x|\\*|por)\\s*(${RE_LADO_EJEMPLARES})`,
+  `(?<![\\p{L}\\p{N}.,/\\-])(${RE_LADO_EJEMPLARES})\\s*(?:x|\\*|por)\\s*(${RE_LADO_EJEMPLARES})`,
   "iu"
 );
 
@@ -245,14 +245,19 @@ export function buscarExpresionEjemplares(
 
   /* Evitar falsos positivos dentro de "N/M KxL" (proporción seguida de matchup).
      Si justo antes del match hay "/" (viene de "10/8 3x2"), no lo tratamos como
-     división de caballos entre clientes, sino como parte de la jugada. */
-  const prev = t[m.index - 1] ?? "";
-  if (prev === "/") return null;
-  // También chequear patrón "NN/MM " inmediatamente antes
-  const antes = t.slice(0, m.index);
-  if (/\d+(?:[.,]\d+)?\s*\/\s*$/.test(antes)) return null;
-  // También evitar si justo antes hay patrón "N/M" seguido de espacio y luego el match empieza con número que forma "8 3x2" mal detectado
-  if (/\/\d+\s*$/.test(antes)) return null;
+     división de caballos entre clientes, sino como parte de la jugada.
+     EXCEPCIÓN: la casa escribe el divisor de clientes con "*" ("10/8 1*6"), y ese
+     SÍ es un caballo dividido aunque venga detrás de una proporción con "/",
+     igual que su alias "10a8 1*6". */
+  if (!m[0].includes("*")) {
+    const prev = t[m.index - 1] ?? "";
+    if (prev === "/") return null;
+    // También chequear patrón "NN/MM " inmediatamente antes
+    const antes = t.slice(0, m.index);
+    if (/\d+(?:[.,]\d+)?\s*\/\s*$/.test(antes)) return null;
+    // También evitar si justo antes hay patrón "N/M" seguido de espacio y luego el match empieza con número que forma "8 3x2" mal detectado
+    if (/\/\d+\s*$/.test(antes)) return null;
+  }
 
   return { texto, inicio: m.index, largo };
 }

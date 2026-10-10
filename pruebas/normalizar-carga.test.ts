@@ -77,6 +77,26 @@ console.log("\n== Regresión del parser legacy (parsearLineaRapida) ==");
   const p = parsearLineaRapida("# comentario");
   si(p === null, "las líneas comentario (#) se ignoran → null", String(p));
 }
+{
+  // AMBOS CÓDIGOS SON VÁLIDOS: "10a8" (con 'a') y "10/8" (con barra) rinden el
+  // MISMO caballo dividido cuando la casa usa "*" ("1*6"); antes "10/8 1*6"
+  // dejaba el caballo en "16" porque el guard de proporción abortaba el divisor.
+  const a = clasificarLineaRapida("Alberto 10a8 1*6 invicto 120");
+  const b = clasificarLineaRapida("Alberto 10/8 1*6 invicto 120");
+  si(a?.ok === true && a.ok && a.jugada === "10A8" && a.caballo === "1*6" && a.monto === "120",
+    '"10a8 1*6" → jugada 10A8 · caballo dividido 1*6', JSON.stringify(a));
+  si(b?.ok === true && b.ok && b.jugada === "10/8" && b.caballo === "1*6" && b.monto === "120",
+    '"10/8 1*6" (alias con barra) → jugada 10/8 · caballo dividido 1*6', JSON.stringify(b));
+}
+{
+  // La forma compuesta "3/3" (barra) y "3y3" (ye) rinden la misma jugada.
+  const a = clasificarLineaRapida("Capricornio 3y3 1 Walcot 400");
+  const b = clasificarLineaRapida("Capricornio 3/3 1 Walcot 400");
+  si(a?.ok === true && a.ok && a.jugada === "3Y3" && a.caballo === "1",
+    '"3y3" → jugada 3Y3 · caballo 1', JSON.stringify(a));
+  si(b?.ok === true && b.ok && b.jugada === "3/3" && b.caballo === "1",
+    '"3/3" (alias con barra) → misma jugada · caballo 1', JSON.stringify(b));
+}
 
 // ---------------------------------------------------------------------------
 // 2. NÚMEROS HABLADOS → DÍGITOS

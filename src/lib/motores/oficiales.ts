@@ -32,6 +32,7 @@
 import { registrarProcesador, TicketMotor, ResultadoMotor, COMISION_CASA, parsearNini, liquidarPareo } from "../bettingEngine";
 import { liquidarPuestos } from "./puestos";
 import { liquidarWps } from "./wps";
+import { parsearNomenclatura } from "../taquilla/nomenclatura";
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -194,12 +195,18 @@ export function liquidarOficial(
   const tabla = liquidarTabla(t, t.premio_por_tabla, tasa);
   if (tabla) return tabla;
 
-  // PAREOS (PP): el bando elegido (sintaxis "A X B") se resuelve por la mejor
-  // posición en la pizarra (liquidarPareo). Con proporción (ej. "10/8") se
-  // ESTIMA el premio; sin proporción se paga PARIDAD. Comisión sobre el neto.
+  // PAREOS (PP) y ENFRENTAMIENTOS a paridad: el bando elegido (sintaxis "A X B"
+  // o "A * B" — "1*6" = caballo 1 CONTRA 6) se resuelve por la mejor posición en
+  // la pizarra (liquidarPareo). El divisor NO distingue motores: "x" y "*" son
+  // el mismo "contra".
+  //
+  // PERO si la columna JUGADA trae proporción ("10a8", "10/8"), la resuelve el
+  // motor de Puestos como MATCHUP_PROPORCION, que SÍ respeta el 10:8 pactado;
+  // liquidarPareo solo conoce la paridad y pagaría de menos al ganador.
   const tipoPP = String(t.tipo_jugada ?? "").toUpperCase();
   const caballoPP = String(t.caballo ?? "").toUpperCase();
-  if (/^PP/.test(tipoPP) || /X/.test(caballoPP)) {
+  const traeProporcion = !!parsearNomenclatura(tipoPP)?.proporcion;
+  if (/^PP/.test(tipoPP) || (/[X*]/.test(caballoPP) && !traeProporcion)) {
     return liquidarPareo(t, tasa);
   }
 
