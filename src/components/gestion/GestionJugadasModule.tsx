@@ -1267,7 +1267,7 @@ const hipodromosDelDia = useMemo(() => {
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setModalCargaRapida(true)}>
+          <Button size="sm" variant="ghost" onClick={() => setModalCargaRapida(true)} className="z-10">
             ⚡ Carga Rápida <span className="ml-1 rounded bg-warning-500/20 px-1.5 text-[9px] font-black text-warning-700">texto</span>
           </Button>
           <Button size="sm" onClick={() => setFilas((f) => [...f, filaVacia()])}>＋ Agregar fila</Button>
@@ -1585,8 +1585,8 @@ const hipodromosDelDia = useMemo(() => {
 
       {/* Carga Rápida (texto libre) — pegar bloque y poblar tabla */}
       {modalCargaRapida && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-line bg-white shadow-2xl">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-line bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
               <h3 className="text-xs font-black uppercase">⚡ Carga Rápida — {nombreHipodromo} C{carrera}</h3>
               <button type="button" onClick={() => setModalCargaRapida(false)} className="text-slate-300 hover:text-white">✕</button>
@@ -1595,9 +1595,9 @@ const hipodromosDelDia = useMemo(() => {
               <textarea
                 value={textoCargaRapida}
                 onChange={(e) => setTextoCargaRapida(e.target.value)}
-                rows={10}
+                rows={14}
                 spellCheck={false}
-                placeholder={"Pegá el bloque de jugadas (1 por línea, CUALQUIER orden):\n\n3y3 9 40 emy mar\n2p 1 100 Perrito molinas\nJuega Lolo 2p (1) con 300 da Mar\n1/2 y 2n 7 100 Eddie Manuel\n2x3 10/8 2 100 Juan Pedro"}
+                placeholder={"Pegá el bloque de jugadas (1 por línea, CUALQUIER orden):\n\n3y3 9 40 emy mar\n2p 1 100 Perrito molinas\nJuega Lolo 2p (1) con 300 da Mar\n1/2 y 2n 7 100 Eddie Manuel\n2x3 10/8 2 100 Juan Pedro\nWalcot 2y3-3n 4 astronauta 400"}
                 className="w-full resize-y rounded-xl border border-line bg-white p-3 font-mono text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
               />
               {previewCargaRapida.length > 0 && (
