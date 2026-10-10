@@ -165,7 +165,11 @@ export function DupletaModule() {
   const [precioCelda, setPrecioCelda] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [liquidando, setLiquidando] = useState(false);
-  const [selGuardada, setSelGuardada] = useState<string>("");
+  // Panel de "dupletas guardadas": antes era un desplegable plano; ahora un
+  // listado con filtros que se abre en un modal.
+  const [modalGuardadas, setModalGuardadas] = useState(false);
+  const [fgDia, setFgDia] = useState("");
+  const [fgTexto, setFgTexto] = useState("");
   const [previewDupleta, setPreviewDupleta] = useState<{ ticket: TicketVentaModel; venta: VentaDupleta } | null>(null);
   const [vendiendoDupleta, setVendiendoDupleta] = useState(false);
 
@@ -254,17 +258,51 @@ export function DupletaModule() {
     return guardadas.filter((g) => registro.registrados.has(claveHipodromo(g.hipodromo)));
   }, [guardadas, registro.registrados]);
 
-  /** La dupleta guardada elegida en el desplegable, o null si no hay ninguna. */
-  const dupletaSeleccionada = useMemo(
-    () => (selGuardada ? (guardadasVisibles.find((x) => claveDeDupleta(x) === selGuardada) ?? null) : null),
-    [selGuardada, guardadasVisibles]
-  );
+  /**
+   * Dupletas guardadas filtradas (día + texto libre sobre hipódromo/carreras),
+   * ordenadas de la más reciente a la más vieja. Es la lista que alimenta el
+   * modal de "ver todas", en lugar del antiguo `<select>` con una opción por
+   * dupleta.
+   */
+  const guardadasFiltradas = useMemo(() => {
+    const t = fgTexto.trim().toUpperCase();
+    return guardadasVisibles
+      .filter((g) => !fgDia || normalizarDia(g.fecha) === normalizarDia(fgDia))
+      .filter(
+        (g) =>
+          !t ||
+          `${g.hipodromo} ${g.fecha} c${g.carrera1} c${g.carrera2} ${g.carrera1}x${g.carrera2}`
+            .toUpperCase()
+            .includes(t)
+      )
+      .sort(
+        (a, b) =>
+          (b.fecha || "").localeCompare(a.fecha || "") ||
+          a.hipodromo.localeCompare(b.hipodromo) ||
+          (Number(a.carrera1) || 0) - (Number(b.carrera1) || 0)
+      );
+  }, [guardadasVisibles, fgDia, fgTexto]);
 
-  /** Elimina la dupleta guardada elegida y limpia la matriz si estaba cargada. */
-  const borrarGuardada = async () => {
-    const g = dupletaSeleccionada;
-    if (!g) return;
-    if (!window.confirm(`¿Eliminar la dupleta ${g.hipodromo} C${g.carrera1}×C${g.carrera2} del ${g.fecha}?`)) {
+  /** Carga una dupleta guardada en la matriz y reconstruye día/hipódromo/carreras. */
+  const cargarGuardada = (g: DupletaEstado) => {
+    setMatriz(g);
+    setHipodromo(g.hipodromo);
+    setDia(g.fecha);
+    setCarrera1(String(g.carrera1));
+    setCarrera2(String(g.carrera2));
+    setPremio(String(g.premio ?? ""));
+    setPrecio(String(g.precio ?? ""));
+    setModalGuardadas(false);
+    toast(`📂 Cargada ${g.hipodromo} C${g.carrera1}×C${g.carrera2}.`, "info");
+  };
+
+  /** Elimina una dupleta guardada, avisando cuántas ventas contiene. */
+  const eliminarGuardada = async (g: DupletaEstado) => {
+    const ventas = Object.values(g.celdas).filter((c) => c.vendida).length;
+    const detalle = ventas
+      ? `\n\n⚠️ Contiene ${ventas} venta(s) registrada(s). Los tickets NO se anulan: la dupleta solo se retira de la lista.`
+      : "";
+    if (!window.confirm(`¿Eliminar la dupleta ${g.hipodromo} C${g.carrera1}×C${g.carrera2} del ${g.fecha}?${detalle}`)) {
       return;
     }
     const r = await eliminarDupleta(claveDeDupleta(g));
@@ -273,7 +311,6 @@ export function DupletaModule() {
       return;
     }
     toast("🗑️ Dupleta eliminada.", "success");
-    setSelGuardada("");
     setGuardadas(await listarDupletasGuardadas());
     if (matriz && claveDeDupleta(matriz) === claveDeDupleta(g)) setMatriz(null);
   };
@@ -704,6 +741,39 @@ export function DupletaModule() {
     }
   };
 
+  /**
+   * Aplica el "Precio por cuadro" del formulario a TODOS los cuadros LIBRES de
+   * la matriz ya generada/cargada y lo persiste en Supabase.
+   *
+   * Los cuadros ya vendidos CONSERVAN su precio cobrado (guardado por celda):
+   * cambiar el precio global no reescribe una venta hecha. Solo se actualiza el
+   * precio por defecto de los cuadros sin vender, que es lo que se cobra al
+   * abrirlos. Así se puede fijar/corregir el precio de todas las combinaciones
+   * ANTES de vender, y también bajarlo/subirlo después sin tocar lo vendido.
+   */
+  const aplicarPrecioGlobal = async () => {
+    if (!matriz) return toast("Genere o cargue una matriz antes de aplicar el precio.", "warning");
+    const pr = Number(precio) || 0;
+    if (!(pr > 0)) return toast("El precio del cuadro debe ser mayor a cero.", "warning");
+    if (pr === (Number(matriz.precio) || 0)) return toast("El precio por cuadro ya es ese.", "info");
+    const vendidas = Object.values(matriz.celdas).filter((c) => c.vendida).length;
+    if (
+      vendidas &&
+      !window.confirm(
+        `Hay ${vendidas} cuadro(s) ya vendido(s): conservan el precio cobrado. ` +
+          `Se aplicará $${pr.toLocaleString("es-VE")} a los cuadros libres. ¿Continuar?`
+      )
+    ) {
+      return;
+    }
+    const nuevo: DupletaEstado = { ...matriz, precio: pr, updatedAt: new Date().toISOString() };
+    setMatriz(nuevo);
+    const g = await guardarDupleta(nuevo);
+    toast(`💵 Precio por cuadro actualizado a $${pr.toLocaleString("es-VE")} en todos los cuadros libres.`, "success");
+    if (!g.ok) toast(`⚠️ Quedó aplicado en pantalla, pero no se pudo persistir: ${g.error ?? "sin conexión"}`, "warning");
+    else setGuardadas(await listarDupletasGuardadas());
+  };
+
   const liquidar = async () => {
     if (!matriz) return toast("Genere la matriz antes de liquidar.", "warning");
     setLiquidando(true);
@@ -843,14 +913,27 @@ export function DupletaModule() {
 
         <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1.5">
           <label className="block">
-            <span className={inputLbl}>💵 Premio (PAGA X)</span>
+            <span className={inputLbl}>💰 Monto a pagar (PAGA X)</span>
             <input type="number" value={premio} onChange={(e) => setPremio(e.target.value)} placeholder="200" className={inputMonto} />
           </label>
           <label className="block">
-            <span className={inputLbl}>Precio por cuadro</span>
+            <span className={inputLbl}>💵 Precio por cuadro</span>
             <input type="number" value={precio} onChange={(e) => setPrecio(e.target.value)} placeholder="10" className={inputMonto} />
           </label>
           <Button variant="default" size="md" onClick={generar}>🧮 Generar Matriz</Button>
+          <Button
+            variant="default"
+            size="md"
+            disabled={!matriz}
+            onClick={() => void aplicarPrecioGlobal()}
+            title={
+              matriz
+                ? "Aplica este precio a todos los cuadros libres de la matriz y lo guarda."
+                : "Genere o cargue una matriz primero."
+            }
+          >
+            💵 Aplicar precio a todos
+          </Button>
           <Button variant="success" size="md" onClick={() => void guardar()} disabled={guardando || !matriz}>
             {guardando ? "Guardando…" : "💾 Guardar en Supabase"}
           </Button>
@@ -863,49 +946,13 @@ export function DupletaModule() {
           >
             {liquidando ? "Liquidando…" : "🧮 Liquidar dupleta"}
           </Button>
-          <label className="block min-w-[220px]">
-            <span className={inputLbl}>Dupletas guardadas</span>
-            <select
-              className={inputSel}
-              value={selGuardada}
-              onChange={(e) => {
-                const val = e.target.value;
-                setSelGuardada(val);
-                const g = guardadasVisibles.find((x) => claveDeDupleta(x) === val);
-                if (g) {
-                  setMatriz(g);
-                  setHipodromo(g.hipodromo);
-                  setDia(g.fecha);
-                  setCarrera1(String(g.carrera1));
-                  setCarrera2(String(g.carrera2));
-                  setPremio(String(g.premio ?? ""));
-                  setPrecio(String(g.precio ?? ""));
-                  toast(`📂 Cargada ${g.hipodromo} C${g.carrera1}×C${g.carrera2}.`, "info");
-                }
-              }}
-            >
-              <option value="">— cargar —</option>
-              {guardadasVisibles.map((g) => (
-                <option key={claveDeDupleta(g)} value={claveDeDupleta(g)}>
-                  {g.hipodromo} · {g.fecha} · C{g.carrera1}×C{g.carrera2} ·{" "}
-                  {Object.values(g.celdas).filter((c) => c.vendida).length} ventas
-                </option>
-              ))}
-            </select>
-          </label>
-          {/* Borrar va en un botón propio, no en opciones del mismo desplegable:
-              antes "🗑️ Eliminar ..." vivía dentro de la lista y el `onChange`
-              tenía que adivinar por el prefijo "DEL:" si estaba cargando o
-              borrando. Con la lista cargada, un clic en la opción de borrar
-              salía como una dupleta más y no pasaba nada. */}
           <Button
-            variant="danger"
+            variant="outline"
             size="md"
-            disabled={!dupletaSeleccionada}
-            title={dupletaSeleccionada ? `Eliminar ${dupletaSeleccionada.hipodromo} C${dupletaSeleccionada.carrera1}×C${dupletaSeleccionada.carrera2}` : "Elegí una dupleta guardada"}
-            onClick={() => void borrarGuardada()}
+            onClick={() => { setFgDia(""); setFgTexto(""); setModalGuardadas(true); }}
+            title="Ver, filtrar, cargar y eliminar todas las dupletas guardadas."
           >
-            🗑️ Eliminar
+            📂 Dupletas guardadas ({guardadasVisibles.length})
           </Button>
         </div>
       </div>
@@ -914,11 +961,17 @@ export function DupletaModule() {
         <div className="rounded-2xl border border-line bg-surface p-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">
-              {matriz.hipodromo} · {matriz.fecha} · Carrera {matriz.carrera1} × Carrera {matriz.carrera2} — PAGA {matriz.premio.toLocaleString("es-VE")}
+              {matriz.hipodromo} · {matriz.fecha} · Carrera {matriz.carrera1} × Carrera {matriz.carrera2}
             </h4>
             <span className="flex items-center gap-2">
+              <span
+                className="rounded-full bg-emerald-600 px-3 py-1 text-sm font-black uppercase tracking-wide text-white shadow-sm"
+                title="Monto a pagar configurado en la dupleta. Es un dato fijo: no se suma ni se resta con las ventas."
+              >
+                💰 Monto a pagar: ${matriz.premio.toLocaleString("es-VE")}
+              </span>
               <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black text-orange-700">
-                🧾 {vendidas.length} cuadro(s) vendido(s) · {totalVentas.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
+                🧾 {vendidas.length} cuadro(s) vendido(s) · ${totalVentas.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
               </span>
               <Button variant="default" size="sm" onClick={() => void exportarMatriz("PNG")} className="!bg-indigo-600 hover:!bg-indigo-500">🖼️ PNG</Button>
               <Button variant="outline" size="sm" onClick={() => void exportarMatriz("PDF")}>📄 PDF</Button>
@@ -933,7 +986,9 @@ export function DupletaModule() {
                 <tr>
                   <th className="sticky left-0 top-0 z-40 min-w-[120px] border-b border-r border-slate-300 bg-indigo-600 p-1 text-left align-top text-[9px] font-black text-white" style={{ verticalAlign: "top" }}>
                     <span className="block">DUPLETA</span>
-                    <span className="block text-[14px] text-emerald-300">PAGA {matriz.premio.toLocaleString("es-VE")}</span>
+                    <span className="mt-0.5 block text-[16px] font-black leading-tight text-emerald-300">
+                      MONTO A PAGAR ${matriz.premio.toLocaleString("es-VE")}
+                    </span>
                     <span className="mt-0.5 block text-[7px] font-bold uppercase leading-tight text-indigo-200">
                       <span className="block">→ Carrera {matriz.carrera1} (horizontal)</span>
                       <span className="block">↓ Carrera {matriz.carrera2} (vertical)</span>
@@ -1142,6 +1197,104 @@ export function DupletaModule() {
               )}
               <Button variant="ghost" size="md" onClick={() => { setModal(null); setQ(""); }}>Cerrar</Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {modalGuardadas && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" onClick={() => setModalGuardadas(false)}>
+          <div
+            className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-2xl bg-white p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h4 className="text-sm font-black uppercase text-slate-800">
+                📂 Dupletas guardadas ({guardadasFiltradas.length})
+              </h4>
+              <Button variant="ghost" size="sm" onClick={() => setModalGuardadas(false)}>Cerrar</Button>
+            </div>
+
+            <div className="mb-3 flex flex-wrap items-end gap-3">
+              <label className="block">
+                <span className={inputLbl}>Filtrar por día</span>
+                <input type="date" value={fgDia} onChange={(e) => setFgDia(e.target.value)} className={inputSel} />
+              </label>
+              <label className="block min-w-[220px] flex-1">
+                <span className={inputLbl}>Buscar hipódromo / carrera</span>
+                <input
+                  value={fgTexto}
+                  onChange={(e) => setFgTexto(e.target.value)}
+                  placeholder="Ej. LA RINCONADA o C3"
+                  className={inputSel}
+                />
+              </label>
+              {(fgDia || fgTexto) && (
+                <Button variant="ghost" size="md" onClick={() => { setFgDia(""); setFgTexto(""); }}>
+                  Limpiar
+                </Button>
+              )}
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-line">
+              {guardadasFiltradas.length === 0 ? (
+                <p className="p-6 text-center text-xs font-bold uppercase text-slate-400">
+                  No hay dupletas que coincidan.
+                </p>
+              ) : (
+                <table className="w-full border-collapse text-[11px]">
+                  <thead className="sticky top-0 z-10 bg-slate-100 text-left text-[10px] font-black uppercase text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">Hipódromo</th>
+                      <th className="px-3 py-2">Fecha</th>
+                      <th className="px-3 py-2">Carreras</th>
+                      <th className="px-3 py-2 text-right">Monto a pagar</th>
+                      <th className="px-3 py-2 text-right">Precio</th>
+                      <th className="px-3 py-2 text-right">Ventas</th>
+                      <th className="px-3 py-2 text-right">Recaudado</th>
+                      <th className="px-3 py-2 text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {guardadasFiltradas.map((g) => {
+                      const ventasG = Object.values(g.celdas).filter((c) => c.vendida);
+                      const recaudado = ventasG.reduce((a, c) => a + (c.precio ?? g.precio ?? 0), 0);
+                      const activa = Boolean(matriz && claveDeDupleta(matriz) === claveDeDupleta(g));
+                      return (
+                        <tr key={claveDeDupleta(g)} className={`border-t border-line ${activa ? "bg-indigo-50" : "hover:bg-slate-50"}`}>
+                          <td className="px-3 py-2 font-bold uppercase text-slate-700">{g.hipodromo}</td>
+                          <td className="px-3 py-2 tabular-nums text-slate-600">{g.fecha}</td>
+                          <td className="px-3 py-2 font-bold text-slate-700">C{g.carrera1} × C{g.carrera2}</td>
+                          <td className="px-3 py-2 text-right font-black tabular-nums text-emerald-700">
+                            ${(g.premio ?? 0).toLocaleString("es-VE")}
+                          </td>
+                          <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-600">
+                            ${(g.precio ?? 0).toLocaleString("es-VE")}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-600">{ventasG.length}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                            ${recaudado.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex justify-end gap-1.5">
+                              <Button variant="default" size="sm" onClick={() => cargarGuardada(g)} title="Cargar en la matriz">
+                                {activa ? "✔ Cargada" : "📂 Cargar"}
+                              </Button>
+                              <Button variant="danger" size="sm" onClick={() => void eliminarGuardada(g)} title="Eliminar de la lista (no anula tickets)">
+                                🗑️
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <p className="mt-2 text-[10px] italic text-slate-500">
+              Solo se listan dupletas de hipódromos REGISTRADOS. Eliminar una dupleta NO anula los tickets ya vendidos.
+            </p>
           </div>
         </div>
       )}

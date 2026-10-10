@@ -12,11 +12,11 @@
  *
  * Formato de montos local (es-VE): 40,00 / 2.951.
  */
-import { supabase } from "@/lib/supabase";
-import { COMISION_CASA, parsearNini, normalizarNini } from "@/lib/bettingEngine";
-import { liquidarPuestos } from "@/lib/motores/puestos";
-import type { TicketMotor } from "@/lib/bettingEngine";
-import type { PizarraCarrera } from "@/lib/liquidacion";
+import { supabase } from "./supabase";
+import { COMISION_CASA, parsearNini, normalizarNini } from "./bettingEngine";
+import { liquidarPuestos } from "./motores/puestos";
+import type { TicketMotor } from "./bettingEngine";
+import type { PizarraCarrera } from "./liquidacion";
 
 // ============================================================
 // Tipos
@@ -58,8 +58,15 @@ export type JugadaRelacion = {
   premioPotencial?: number;
   /** Comisión en porcentaje (por defecto COMISION_CASA.rate → 5%). */
   comisionPct?: number;
-  /** Si la jugada acertó (aplica a la Relación de Resultados). */
-  ganador?: boolean;
+  /**
+   * Si la jugada acertó (aplica a la Relación de Resultados).
+   *
+   * "pendiente": el motor SABE que la jugada podía ganar pero falta el dato que
+   * cuantifica el premio (p. ej. la matriz W/P/S sin cargar). Se imprime la
+   * jugada con un aviso y NO se la acumula en el cierre de clientes: marcarla
+   * como ganada o perdida cobraría $ a una jugada aún no decidida.
+   */
+  ganador?: boolean | "pendiente";
 };
 
 export type SaldoCliente = {
@@ -181,11 +188,12 @@ export type BalanceJugada = {
  *   pérdida         = monto financiado          → lo que arriesgó el "Juega".
  */
 export function balanceJugada(j: JugadaRelacion): BalanceJugada {
-  let premioPotencial = j.ganador
+  const esGanador = j.ganador === true;
+  let premioPotencial = esGanador
     ? num(j.premioPotencial) || num(j.cantidadTablas) * num(j.premioPorTabla)
     : 0;
   // NINI a la par: si no vino premio de la base, el premio bruto es 2× monto.
-  if (j.modalidad === "NINI" && j.ganador && premioPotencial <= 0) {
+  if (j.modalidad === "NINI" && esGanador && premioPotencial <= 0) {
     premioPotencial = num(j.monto) * 2;
   }
   const gananciaBruta = Math.max(0, premioPotencial - num(j.monto));
@@ -284,6 +292,13 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
   };
 
   jugadas.forEach((j, i) => {
+    // Jugada aún no decidible (falta el dato que cuantifica el premio): se
+    // lista con aviso y NO se acumula en el cierre de clientes.
+    if (j.ganador === "pendiente") {
+      cuerpo.push(`${i + 1}) ${j.jugada} (${j.caballo}) con ${fmtMonto(j.monto)}`);
+      cuerpo.push("  ⚠️ PENDIENTE — falta el dividendo que cuantifica el premio.");
+      return;
+    }
     const b = niniDesdePizarra(j, meta.pizarraPuestos ?? [], meta.dividendos ?? null) ?? balanceJugada(j);
     // Leg "Juega": en jugadas clásicas pierde lo financiado; en NINI gana si NO figura.
     const perdida = num(j.monto);

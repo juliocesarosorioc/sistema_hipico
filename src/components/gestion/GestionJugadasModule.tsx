@@ -27,6 +27,8 @@ import { useRegistroCentralOpts } from "@/store/useRegistroCentral";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import { revisarCaballo, maximoDeLaCarrera, type RevisionCaballo } from "@/lib/taquilla/caballos";
 import type { Reparto } from "@/lib/taquilla/reparto";
+import { mensajeResultadoDeCarrera } from "@/lib/taquilla/mensajeResultado";
+import { enviarAlGrupoWsp, listarGruposWsp } from "@/lib/whatsapp";
 
 /** Resumen compacto del reparto para la celda de ejemplares (una línea, 9px). */
 function resumenReparto(rep: Reparto | null, moneda: string): { txt: string; clase: string } | null {
@@ -233,6 +235,14 @@ export function GestionJugadasModule() {
   const [ultimaPizarra, setUltimaPizarra] = useState<PizarraResultados | null>(null);
   const [resumen, setResumen] = useState<ResLiquidarCarrera | null>(null);
 
+  // Mensaje de WhatsApp de RESULTADOS: se genera al instante al cargar la
+  // pizarra (Ctrl+Y) con la misma plantilla y el mismo motor de la liquidación.
+  const [mensajeWhatsapp, setMensajeWhatsapp] = useState<string | null>(null);
+  const [modalWhatsapp, setModalWhatsapp] = useState(false);
+  const [enviandoWhatsapp, setEnviandoWhatsapp] = useState(false);
+  const [copiadoWhatsapp, setCopiadoWhatsapp] = useState(false);
+  const [grupoDestinoWhatsapp, setGrupoDestinoWhatsapp] = useState<string | null>(null);
+
   const tickets = useTaquillaStore((s) => s.tickets);
   const eliminarTicket = useTaquillaStore((s) => s.eliminarTicket);
   const agregarTicket = useTaquillaStore((s) => s.agregarTicket);
@@ -272,6 +282,25 @@ const hipodromosDelDia = useMemo(() => {
     const fuera = hipodromos.filter((h) => !dentroKeys.has(claveHipodromo(h.value)));
     return [...dentro, ...fuera];
   }, [tablas, hipodromos, centralCarrerasDiaAll, fecha]);
+
+  // Grupo vinculado para mostrar como "Grupo" en el modal WhatsApp
+  useEffect(() => {
+    void (async () => {
+      try {
+        const gs = await listarGruposWsp();
+        if (gs && gs.length > 0) {
+          const vinculado = gs.find((g) => g.vinculado);
+          if (vinculado && vinculado.nombre) {
+            setGrupoDestinoWhatsapp(vinculado.nombre);
+            return;
+          }
+          if (gs[0].nombre) setGrupoDestinoWhatsapp(gs[0].nombre);
+        }
+      } catch {
+        /* sinop */
+      }
+    })();
+  }, []);
 
   // Atajos de la Barra de Comandos (real keyboard events)
   useEffect(() => {
@@ -539,15 +568,35 @@ const hipodromosDelDia = useMemo(() => {
     () =>
       tickets.filter((t) => {
         if (/^TABLA /i.test(t.comando)) return false;
-        // Aislamiento por [Fecha + Hipódromo + N° Carrera]: los tickets con
-        // contexto solo cuentan si coinciden; los legacy (sin contexto) se
-        // conservan en la vista para no perder la sesión anterior.
         if (t.carrera !== undefined && t.carrera !== carrera) return false;
         if (t.fecha !== undefined && t.fecha !== fecha) return false;
         if (t.hipodromo !== undefined && hipoKey(t.hipodromo) !== hipoKey(hipodromo)) return false;
         return true;
       }),
     [tickets, carrera, fecha, hipodromo]
+  );
+
+  // Nombre de grupo "cabecera" para la relación (por defecto, hipódromo). En el
+  // modal se muestra además el grupo WhatsApp vinculado como "Grupo destino".
+  const grupoCabecera = useMemo(() => nombreHipodromo, [nombreHipodromo]);
+
+  const generarMensajeResultados = useCallback(
+    (pizarra: PizarraResultados) => {
+      const msg = mensajeResultadoDeCarrera({
+        hipodromo,
+        carrera,
+        fecha,
+        grupo: grupoCabecera,
+        retirados: retirados.trim() || undefined,
+        pizarra: pizarra.pizarra,
+        dividendos: pizarra.dividendos ?? null,
+        tickets: ticketsDeCarrera,
+        tasaComision: comisionNum,
+      });
+      setMensajeWhatsapp(msg);
+      return msg;
+    },
+    [carrera, comisionNum, fecha, grupoCabecera, hipodromo, retirados, ticketsDeCarrera]
   );
 
   const totalInvertidoSesion = useMemo(
@@ -1375,6 +1424,12 @@ const hipodromosDelDia = useMemo(() => {
           setUltimaPizarra(r);
           setModalResultados(false);
           setAviso(`🏁 Resultados C${carrera} cargados (${r.llenas} posiciones${r.empates.length ? ` · ${r.empates.length} empate(s)` : ""}).`);
+          try {
+            void generarMensajeResultados(r);
+            setModalWhatsapp(true);
+          } catch {
+            /* noop */
+          }
           // Centraliza en resultados_carreras con la MISMA pizarra: así lo que
           // se carga acá aplica también a Tablas Fijas, Carreras del Día y
           // cualquier módulo que lea el resultado central.
@@ -1405,19 +1460,32 @@ const hipodromosDelDia = useMemo(() => {
               ) : (
                 <div className="rounded-lg border border-line bg-gray-50 p-3">
                   <p className="mb-1 text-[10px] font-bold uppercase text-slate-400">Pizarra cargada ({ultimaPizarra.llenas} posiciones)</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {Object.entries(ultimaPizarra.pizarra)
-                      .filter(([k, v]) => k !== "empates" && typeof v === "string" && v.trim() !== "")
-                      .map(([k, v]) => (
-                        <span key={k} className="rounded-md bg-slate-800 px-2 py-1 text-[10px] font-black uppercase text-white">
-                          {k}: <b>{v}</b>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(ultimaPizarra.pizarra)
+                        .filter(([k, v]) => k !== "empates" && typeof v === "string" && v.trim() !== "")
+                        .map(([k, v]) => (
+                          <span key={k} className="rounded-md bg-slate-800 px-2 py-1 text-[10px] font-black uppercase text-white">
+                            {k}: <b>{v}</b>
+                          </span>
+                        ))}
+                      {ultimaPizarra.empates.length > 0 && (
+                        <span className="rounded-md bg-warning-500 px-2 py-1 text-[10px] font-black uppercase text-white">
+                          ⚡ Empates: {ultimaPizarra.empates.join(", ")} (cero fraccionamiento)
                         </span>
-                      ))}
-                    {ultimaPizarra.empates.length > 0 && (
-                      <span className="rounded-md bg-warning-500 px-2 py-1 text-[10px] font-black uppercase text-white">
-                        ⚡ Empates: {ultimaPizarra.empates.join(", ")} (cero fraccionamiento)
-                      </span>
-                    )}
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        generarMensajeResultados(ultimaPizarra);
+                        setModalWhatsapp(true);
+                      }}
+                      className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-slate-800 px-2 py-1 text-[10px] font-black uppercase text-white hover:bg-slate-700"
+                      title="Genera el mensaje de resultados listo para pegar por WhatsApp"
+                    >
+                      🪄 WhatsApp
+                    </button>
                   </div>
                 </div>
               )}

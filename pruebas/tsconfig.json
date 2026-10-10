@@ -53,8 +53,15 @@
     "./semana-vigente.test.ts",
     "./searchable-select.test.ts",
     "./whatsapp-jugadas.test.ts",
+    "./sql-pollas.test.ts",
+    "./pollas.test.ts",
+    "./puertas-login.test.ts",
+    "./semana-vigente.test.ts",
+    "./searchable-select.test.ts",
+    "./whatsapp-jugadas.test.ts",
     "./taquilla-venta.test.ts",
     "./normalizar-carga.test.ts",
+    "./mensaje-resultado.test.ts",
 
     "../bot/src/parser.js",
     "../bot/src/ganador.js"
