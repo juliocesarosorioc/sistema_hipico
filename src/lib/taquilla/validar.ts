@@ -110,6 +110,13 @@ export function validarComando(
   }
   const tipo = m[2].trim().toUpperCase();
 
+  /* Columna CABALLO tal cual (puede traer divisor "1,2x3"): es la que alimenta
+     al motor cuando la nomenclatura NO trae sus propios ejemplares ("2n",
+     "10/8", "1y2n y 2n"). Sin esto, una COMPUESTA como "1y2n y 2n" llegaba al
+     motor sin ejemplares y se cotizaba en 0 (la fila parecía válida pero sin
+     premio). */
+  const caballoCol = String(caballo ?? "").trim();
+
   const infoNini = parsearNini(tipo);
   if (infoNini) {
     const caballoTicket = String(caballo ?? "1").trim().replace(/[^0-9]/g, "") || "1";
@@ -213,7 +220,7 @@ export function validarComando(
     const ticket: TicketMotor = {
       hipodromo: "",
       carrera: "",
-      caballo: "",
+      caballo: caballoCol,
       fechas: [],
       id: "preview-" + pos,
       cruces: 1,
