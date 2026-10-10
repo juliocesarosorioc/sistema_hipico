@@ -30,6 +30,7 @@ import type { Reparto } from "@/lib/taquilla/reparto";
 import { mensajeResultadoDeCarrera } from "@/lib/taquilla/mensajeResultado";
 import { enviarAlGrupoWsp, listarGruposWsp } from "@/lib/whatsapp";
 import PlanoPreliminar from "./PlanoPreliminar";
+import HistorialReporte from "./HistorialReporte";
 
 /** Resumen compacto del reparto para la celda de ejemplares (una línea, 9px). */
 function resumenReparto(rep: Reparto | null, moneda: string): { txt: string; clase: string } | null {
@@ -229,6 +230,7 @@ export function GestionJugadasModule() {
 
   const [modalPreliminar, setModalPreliminar] = useState(false);
   const [mostrarPlanoPreliminar, setMostrarPlanoPreliminar] = useState(false);
+  const [mostrarHistorial, setMostrarHistorial] = useState(false);
   const [modalResultados, setModalResultados] = useState(false);
   const [modalFinalizar, setModalFinalizar] = useState(false);
   const [modalComandos, setModalComandos] = useState(false);
@@ -318,6 +320,9 @@ const hipodromosDelDia = useMemo(() => {
       } else if (k === "r") {
         e.preventDefault();
         setModalFinalizar(true);
+      } else if (k === "h") {
+        e.preventDefault();
+        setMostrarHistorial((v) => !v);
       } else if (k === "k" && e.shiftKey) {
         e.preventDefault();
         setModalComandos(true);
@@ -1356,6 +1361,13 @@ const hipodromosDelDia = useMemo(() => {
           </button>
           <button
             type="button"
+            onClick={() => setMostrarHistorial(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700"
+          >
+            📊 Historial <kbd className="rounded bg-slate-600 px-1.5 py-0.5 text-[9px] font-black text-white">Ctrl+H</kbd>
+          </button>
+          <button
+            type="button"
             onClick={() => setModalFinalizar(true)}
             className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-success-600 to-emerald-500 px-3 py-2 text-xs font-black text-white hover:brightness-110"
           >
@@ -1385,6 +1397,23 @@ const hipodromosDelDia = useMemo(() => {
               </button>
             </div>
             <PlanoPreliminar />
+          </div>
+        </div>
+      )}
+
+      {mostrarHistorial && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-[#eef2f7]">
+          <div className="min-h-screen">
+            <div className="flex justify-end bg-[#eef2f7] p-2">
+              <button
+                type="button"
+                onClick={() => setMostrarHistorial(false)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-bold text-red-500 border border-red-300 hover:bg-red-50 shadow-sm"
+              >
+                <span className="text-red-400 text-sm leading-none">✕</span> Cerrar Historial
+              </button>
+            </div>
+            <HistorialReporte />
           </div>
         </div>
       )}
