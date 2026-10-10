@@ -155,16 +155,77 @@ export function cabeceraCarrera(meta: MetaCarrera): string {
 
 // ============================================================
 // Plantilla 1 · Relación de Jugadas (pre-carrera)
+// Formato TERCIOS del club (mensaje del plano de jugadas):
+//
+//   🐎 NOMBRE DEL GRUPO 🐎
+//   FECHA: Sábado, 10 de octubre de 2026
+//   HIPÓDROMO Y CARRERA: Gulfstream Park, 9na Carrera
+//   Ret:
+//   Pizarra: .....
+//
+//   TERCIOS
+//   1) Juega Yaiber 2Y2N (3) con 6.000,00 da Newyork
+//   ...
+//   ------------------------------
+//   Total jugadas: 15
+//   [pie del plano referencial]
 // ============================================================
 
+const LINEA_SEPARADOR = "------------------------------";
+
+/** Cabecera del plano de jugadas: 🐎 … 🐎 con etiquetas FECHA / HIPÓDROMO Y CARRERA. */
+export function cabeceraPlanoJugadas(meta: MetaCarrera): string {
+  const fecha = meta.fecha ?? new Date();
+  const weekday = cap(fecha.toLocaleDateString("es-VE", { weekday: "long" }));
+  const dia = fecha.toLocaleDateString("es-VE", { day: "numeric" });
+  const mes = cap(fecha.toLocaleDateString("es-VE", { month: "long" }));
+  const anio = fecha.toLocaleDateString("es-VE", { year: "numeric" });
+  const retirados = String(meta.retirados ?? "").trim();
+  const pizarra = String(meta.pizarra ?? "").trim() || ".....";
+  return [
+    `🐎 ${String(meta.grupo ?? meta.hipodromo).trim()} 🐎`,
+    `FECHA: ${weekday}, ${dia} de ${mes} de ${anio}`,
+    `HIPÓDROMO Y CARRERA: ${meta.hipodromo}, ${meta.carrera} Carrera`,
+    `Ret: ${retirados}`,
+    `Pizarra: ${pizarra}`,
+  ].join("\n");
+}
+
+/** Pie del plano referencial que acompaña a la relación de jugadas (pre-carrera). */
+export function piePlanoJugadas(): string {
+  return [
+    LINEA_SEPARADOR,
+    "PLANO REFERENCIAL",
+    "La guía es el chat",
+    "(se gana y se cobra con el chat)",
+    "SEÑORES REVISAR SU POZO Y JUEGUEN SU DISPONIBLE ✅🚨",
+    "Se pasan planos de jugadas y de pozo antes y después de la carrera POR FAVOR REVISAR Y VERIFICAR si nota algún error avisar de una vez para poder corregir al instante 🔴⚠️",
+  ].join("\n");
+}
+
 export function relacionJugadas(meta: MetaCarrera, jugadas: JugadaRelacion[]): string {
-  const lineas = jugadas.map(
-    (j) =>
-      `Juega ${j.clienteJuega} ${j.jugada} (${j.caballo}) con ${fmtMonto(j.monto)}${
-        j.clienteConsigue ? ` da ${j.clienteConsigue}` : ""
-      }.`
-  );
-  return [cabeceraCarrera(meta), "", ...lineas, "", pieEstricto(jugadas.length)].join("\n");
+  /* Línea del TERCIOS: "Juega {cliente} {jugada} ({caballo}) con {monto} da {consigue}".
+     Se omiten los campos vacíos ("Juega Fabio (9x2) con …") para que la línea nunca
+     quede con dobles espacios. El orden es el mismo de `fecha_registro` (cómo se
+     cargaron las jugadas en la mesa). */
+  const lineas = jugadas.map((j, i) => {
+    const partes = [j.clienteJuega];
+    if (String(j.jugada ?? "").trim()) partes.push(String(j.jugada).trim());
+    if (String(j.caballo ?? "").trim()) partes.push(`(${String(j.caballo).trim()})`);
+    partes.push(`con ${fmtMonto(j.monto)}`);
+    if (String(j.clienteConsigue ?? "").trim()) partes.push(`da ${String(j.clienteConsigue).trim()}`);
+    return `${i + 1}) Juega ${partes.join(" ")}`;
+  });
+  return [
+    cabeceraPlanoJugadas(meta),
+    "",
+    "TERCIOS",
+    ...lineas,
+    LINEA_SEPARADOR,
+    `Total jugadas: ${jugadas.length}`,
+    "",
+    piePlanoJugadas(),
+  ].join("\n");
 }
 
 // ============================================================

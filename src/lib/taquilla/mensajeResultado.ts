@@ -17,6 +17,7 @@
  * se lista con aviso y NO se la acumula en el cierre.
  */
 import {
+  relacionJugadas,
   relacionResultados,
   type JugadaRelacion,
   type MetaCarrera,
@@ -179,4 +180,55 @@ export function mensajeResultadoDeCarrera(opts: OpcionesMensajeResultado): strin
   );
 
   return relacionResultados(meta, jugadas);
+}
+
+// ============================================================
+// PLANO DE JUGADAS (pre-carrera) — plantilla 1, formato TERCIOS
+// ============================================================
+
+/** Jugada de la plantilla 1 (plano de jugadas) desde un ticket de sesión. */
+export function jugadaRelacionDeTicket(t: TicketMensaje): JugadaRelacion {
+  const { tipo, monto } = dividirComando(t.comando);
+  const montoFinal = monto != null && monto > 0 ? monto : t.monto;
+  return {
+    clienteJuega: String(t.cliente1 ?? "—"),
+    jugada: String(tipo ?? "").trim().toUpperCase(),
+    caballo: String(t.caballo ?? "").trim(),
+    monto: montoFinal,
+    clienteConsigue: t.cliente2 ? String(t.cliente2) : undefined,
+  };
+}
+
+export type OpcionesMensajePlano = {
+  hipodromo: string;
+  carrera: number | string;
+  /** Fecha de la carrera ("YYYY-MM-DD" o Date). Si falta, se usa hoy. */
+  fecha?: string | Date;
+  /** Nombre del grupo que encabeza el plano (por defecto el hipódromo). */
+  grupo?: string;
+  retirados?: string;
+  tickets: TicketMensaje[];
+};
+
+/**
+ * Mensaje TERCIOS del PLANO DE JUGADAS (pre-carrera) para pegar/enviar al
+ * grupo: 🐎 … 🐎 + FECHA/HIPÓDROMO en la cabecera, jugadas numeradas y el pie
+ * del plano referencial. Usa la MISMA plantilla 1 que "Copiar Relación"; el
+ * orden es el de la sesión (cómo se cargaron los tickets).
+ */
+export function mensajePlanoDeCarrera(opts: OpcionesMensajePlano): string {
+  const fecha =
+    opts.fecha instanceof Date
+      ? opts.fecha
+      : opts.fecha
+        ? new Date(`${String(opts.fecha).slice(0, 10)}T12:00:00`)
+        : new Date();
+  const meta: MetaCarrera = {
+    grupo: opts.grupo?.trim() || opts.hipodromo,
+    fecha,
+    hipodromo: opts.hipodromo,
+    carrera: opts.carrera,
+    retirados: opts.retirados?.trim() || undefined,
+  };
+  return relacionJugadas(meta, opts.tickets.map(jugadaRelacionDeTicket));
 }

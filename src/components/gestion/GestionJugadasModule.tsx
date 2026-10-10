@@ -32,6 +32,7 @@ import { enviarAlGrupoWsp, listarGruposWsp } from "@/lib/whatsapp";
 import PlanoPreliminar from "./PlanoPreliminar";
 import HistorialReporte from "./HistorialReporte";
 import { expandirLineasDobleSplit, revisarCoherenciaLineas } from "@/lib/taquilla/expandirDobleSplit";
+import { mensajePlanoDeCarrera } from "@/lib/taquilla/mensajeResultado";
 
 /** Resumen compacto del reparto para la celda de ejemplares (una línea, 9px). */
 function resumenReparto(rep: Reparto | null, moneda: string): { txt: string; clase: string } | null {
@@ -609,6 +610,20 @@ const hipodromosDelDia = useMemo(() => {
   // Nombre de grupo "cabecera" para la relación (por defecto, hipódromo). En el
   // modal se muestra además el grupo WhatsApp vinculado como "Grupo destino".
   const grupoCabecera = useMemo(() => nombreHipodromo, [nombreHipodromo]);
+
+  /** Plano de Jugadas (Ctrl+Q): formato TERCIOS con las jugadas en sesión. */
+  const planoPreliminarTexto = useMemo(
+    () =>
+      mensajePlanoDeCarrera({
+        hipodromo,
+        carrera,
+        fecha,
+        grupo: grupoCabecera,
+        retirados: retirados.trim() || undefined,
+        tickets: ticketsDeCarrera,
+      }),
+    [carrera, fecha, grupoCabecera, hipodromo, retirados, ticketsDeCarrera]
+  );
 
   const generarMensajeResultados = useCallback(
     (pizarra: PizarraResultados) => {
@@ -1424,7 +1439,7 @@ const hipodromosDelDia = useMemo(() => {
                 <span className="text-red-400 text-sm leading-none">✕</span> Cerrar Plano
               </button>
             </div>
-            <PlanoPreliminar />
+            <PlanoPreliminar texto={planoPreliminarTexto} />
           </div>
         </div>
       )}
