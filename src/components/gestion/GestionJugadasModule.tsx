@@ -527,8 +527,8 @@ const hipodromosDelDia = useMemo(() => {
   /**
    * Aviso para copiar y enviar al jugador cuando su disponible NO alcanza el
    * monto pedido. Devuelve null si todos alcanzan (o falta monto/cliente).
-   * Nombra la jugada, los jugadores con su disponible y cierra con
-   * "Por saldo de <el de MENOR saldo>".
+   * Nombra la jugada y, por cada jugador, "a <nombre> le queda <disponible>
+   * en esta su jugada con <monto>".
    */
   const avisoSaldo = (f: FilaCarga): string | null => {
     const montoPedido = parseFloat(String(f.monto).replace(",", "."));
@@ -545,7 +545,6 @@ const hipodromosDelDia = useMemo(() => {
     if (!jugadores.length) return null;
     const topados = jugadores.filter((j) => !j.libre && j.disponible < montoPedido);
     if (!topados.length) return null;
-    const menor = [...topados].sort((a, b) => a.disponible - b.disponible)[0];
     const lineaJugador = (j: { nombre: string; libre: boolean; disponible: number }) =>
       j.libre
         ? `a ${j.nombre} le queda libre en esta su jugada con ${monedaFmt(montoPedido)}`
@@ -554,7 +553,7 @@ const hipodromosDelDia = useMemo(() => {
     const jugada = [f.jugada.trim().toUpperCase(), f.caballo.trim() ? `(${f.caballo.trim()})` : ""]
       .filter(Boolean)
       .join(" ");
-    return `${jugada} con ${monedaFmt(montoPedido)}\n${detalle}\nPor saldo de ${menor.nombre}`;
+    return `${jugada} con ${monedaFmt(montoPedido)}\n${detalle}`;
   };
 
   const copiarAvisoSaldo = async (i: number, texto: string) => {
