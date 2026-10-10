@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { detectarModalidad, proyectarFila } from "@/lib/taquilla/validar";
+import { proyectarFila } from "@/lib/taquilla/validar";
 import { normalizarLineaRapida, type ConfianzaCampo } from "@/lib/taquilla/normalizar";
 import { HorseBadge } from "@/components/ui/HorseChips";
 import { useTaquillaStore, type TicketTaquilla } from "@/store/useTaquillaStore";
@@ -26,33 +26,12 @@ import { claveHipodromo } from "@/lib/carreras/claves";
 import { useRegistroCentralOpts } from "@/store/useRegistroCentral";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import { revisarCaballo, maximoDeLaCarrera, type RevisionCaballo } from "@/lib/taquilla/caballos";
-import type { Reparto } from "@/lib/taquilla/reparto";
 import { mensajeResultadoDeCarrera } from "@/lib/taquilla/mensajeResultado";
 import { enviarAlGrupoWsp, listarGruposWsp } from "@/lib/whatsapp";
 import PlanoPreliminar from "./PlanoPreliminar";
 import HistorialReporte from "./HistorialReporte";
 import { expandirLineasDobleSplit, revisarCoherenciaLineas } from "@/lib/taquilla/expandirDobleSplit";
 import { mensajePlanoDeCarrera } from "@/lib/taquilla/mensajeResultado";
-
-/** Resumen compacto del reparto para la celda de ejemplares (una línea, 9px). */
-function resumenReparto(rep: Reparto | null, moneda: string): { txt: string; clase: string } | null {
-  if (!rep || rep.montoAutorizado <= 0) return null;
-  const m = (n: number) => fmtMoney(Number.isFinite(n) ? n : 0, moneda);
-  const n1 = rep.lado1.caballos.length;
-  if (rep.estructura === "A_PREMIO" && rep.proporcion) {
-    const { p, q } = rep.proporcion;
-    return {
-      txt: `${p}:${q} · ${m(rep.lado1.riesgo)}/${m(rep.lado2.riesgo)}`,
-      clase: "text-indigo-600",
-    };
-  }
-  const unidad = n1 > 1 ? ` ${m(rep.lado1.porCaballo)} c/u` : "";
-  const etiqueta = rep.estructura === "DADOR" ? "DADOR" : "PP";
-  return {
-    txt: `${etiqueta}${unidad}`,
-    clase: rep.estructura === "DADOR" ? "text-purple-600" : "text-sky-600",
-  };
-}
 
 type FilaCarga = {
   jugada: string;
@@ -116,6 +95,8 @@ export function GestionJugadasModule() {
   const [jugadasPorCarrera, setJugadasPorCarrera] = useState<number[]>([]);
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
   const [aviso, setAviso] = useState("");
+  /** Índice de la fila cuyo aviso de saldo se acaba de copiar (feedback ✅). */
+  const [copiadoFila, setCopiadoFila] = useState<number | null>(null);
 
   const { carreras: centralCarrerasDiaAllBase, carrerasDe, recargar: recargarRegistroCentral } =
     useRegistroCentralOpts(fecha);
@@ -539,6 +520,50 @@ const hipodromosDelDia = useMemo(() => {
     ) : (
       <span className={`truncate text-[9px] font-bold ${cls}`}>Saldo {monedaFmt(saldo)}</span>
     );
+  };
+
+  /**
+   * Aviso para copiar y enviar al jugador cuando su disponible NO alcanza el
+   * monto pedido. Devuelve null si todos alcanzan (o falta monto/cliente).
+   * Nombra la jugada, los jugadores con su disponible y cierra con
+   * "Por saldo de <el de MENOR saldo>".
+   */
+  const avisoSaldo = (f: FilaCarga): string | null => {
+    const montoPedido = parseFloat(String(f.monto).replace(",", "."));
+    if (!Number.isFinite(montoPedido) || montoPedido <= 0) return null;
+    const jugadores = [f.cliente1, f.cliente2]
+      .map((n) => {
+        const c = saldoCliente(n);
+        if (!c) return null;
+        return { nombre: c.nombre, libre: esClienteLibre(c), disponible: limiteDeJugar(c) };
+      })
+      .filter(
+        (x): x is { nombre: string; libre: boolean; disponible: number } => x !== null
+      );
+    if (!jugadores.length) return null;
+    const topados = jugadores.filter((j) => !j.libre && j.disponible < montoPedido);
+    if (!topados.length) return null;
+    const menor = [...topados].sort((a, b) => a.disponible - b.disponible)[0];
+    const describir = (j: { nombre: string; libre: boolean; disponible: number }) =>
+      `${j.nombre}${j.libre ? " (libre)" : ` disp ${monedaFmt(j.disponible)}`}`;
+    const linea =
+      jugadores.length > 1
+        ? `Juega ${describir(jugadores[0])} da ${describir(jugadores[1])}`
+        : `Juega ${describir(jugadores[0])}`;
+    const jugada = [f.jugada.trim().toUpperCase(), f.caballo.trim() ? `(${f.caballo.trim()})` : ""]
+      .filter(Boolean)
+      .join(" ");
+    return `${jugada} con ${monedaFmt(montoPedido)}\n${linea}\nPor saldo de ${menor.nombre}`;
+  };
+
+  const copiarAvisoSaldo = async (i: number, texto: string) => {
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopiadoFila(i);
+      setTimeout(() => setCopiadoFila((v) => (v === i ? null : v)), 1500);
+    } catch {
+      setAviso("⚠️ No se pudo copiar el aviso (permiso de portapapeles).");
+    }
   };
 
   /** Ejemplar que coincide con el número tipeado en CABALLO (tabla fija o central). */
@@ -1148,16 +1173,15 @@ const hipodromosDelDia = useMemo(() => {
           <tbody className="divide-y divide-line/70">
             {filas.map((f, i) => {
               const v = valida(f);
-              const detectado = f.jugada.trim() ? detectarModalidad(f.jugada) : null;
               const ejemplar = ejemplarResuelto(f.caballo);
               const rc = revisionCaballo(f.caballo);
               const caballoInvalido = !rc.ok;
               const rep = v.ok ? v.reparto : null;
               const recortado = !!rep?.recortado;
-              const resumen = resumenReparto(rep, MONEDA);
+              const aviso = avisoSaldo(f);
               return (
                 <tr key={i} className={`align-middle ${f.error ? "bg-red-50" : ""}`} title={f.error ?? undefined}>
-                  <td className="gj-celda relative h-7 px-1 py-0 text-xs text-slate-400">
+                  <td className="gj-celda px-1 py-1 text-xs text-slate-400">
                     <span className="block truncate">
                       {f.error ? (
                         <span className="inline-flex items-center gap-1 text-red-500">
@@ -1168,18 +1192,31 @@ const hipodromosDelDia = useMemo(() => {
                       )}
                     </span>
                   </td>
-                  <td className="gj-celda relative h-7 px-1 py-0 text-center">
-                    <button
-                      type="button"
-                      onClick={() => setFilas((fs) => fs.filter((_, j) => j !== i))}
-                      disabled={filas.length <= 1}
-                      aria-label="Eliminar fila"
-                      className="text-xs text-slate-300 hover:text-red-500"
-                    >
-                      ✕
-                    </button>
+                  <td className="gj-celda px-1 py-1 text-center">
+                    <div className="flex flex-col items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setFilas((fs) => fs.filter((_, j) => j !== i))}
+                        disabled={filas.length <= 1}
+                        aria-label="Eliminar fila"
+                        className="text-xs text-slate-300 hover:text-red-500"
+                      >
+                        ✕
+                      </button>
+                      {aviso && (
+                        <button
+                          type="button"
+                          onClick={() => void copiarAvisoSaldo(i, aviso)}
+                          aria-label="Copiar aviso de saldo"
+                          title={`Copiar aviso para informar al jugador («Por saldo de …»):\n\n${aviso}`}
+                          className="text-xs text-amber-500 hover:text-amber-700"
+                        >
+                          {copiadoFila === i ? "✅" : "📋"}
+                        </button>
+                      )}
+                    </div>
                   </td>
-                  <td className="gj-celda relative h-7 px-1 py-0">
+                  <td className="gj-celda px-1 py-1">
                     <input
                       value={f.jugada}
                       onChange={(e) => setFila(i, { jugada: e.target.value })}
@@ -1189,18 +1226,11 @@ const hipodromosDelDia = useMemo(() => {
                           void cargarAtaquilla();
                         }
                       }}
-                      placeholder="10/8 · pp · 1p · 2n"
+                      placeholder="10/8 · 1p · 2n"
                       className="w-full rounded border border-line bg-white px-1 py-0.5 text-[11px] font-bold leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
-                    <span
-                      className={`pointer-events-none absolute bottom-0.5 left-1 right-1 truncate text-[9px] font-black uppercase leading-none tracking-wide ${
-                        v.ok ? "text-emerald-600" : "text-slate-300"
-                      }`}
-                    >
-                      {detectado ?? (f.jugada.trim() ? "—" : "")}
-                    </span>
                   </td>
-                  <td className={`gj-celda relative h-7 px-1 py-0 ${caballoInvalido ? "bg-red-50" : ""}`}>
+                  <td className={`gj-celda px-1 py-1 ${caballoInvalido ? "bg-red-50" : ""}`}>
                     <input
                       value={f.caballo}
                       onChange={(e) => setFila(i, { caballo: e.target.value })}
@@ -1211,7 +1241,7 @@ const hipodromosDelDia = useMemo(() => {
                         caballoInvalido
                           ? rc.motivo
                           : rep
-                            ? `${rep.estructura} · C1 ${monedaFmt(rep.lado1.riesgo)}` +
+                            ? `C1 ${monedaFmt(rep.lado1.riesgo)}` +
                               (rep.lado2.riesgo > 0 ? ` · C2 ${monedaFmt(rep.lado2.riesgo)}` : " · C2 da") +
                               (rep.avisos.length ? `\n${rep.avisos.join("\n")}` : "")
                             : ejemplar
@@ -1223,19 +1253,13 @@ const hipodromosDelDia = useMemo(() => {
                       }`}
                     />
                     {caballoInvalido ? (
-                      <span className="pointer-events-none absolute bottom-0.5 left-1 right-1 truncate text-[9px] font-black uppercase leading-none text-red-600">
+                      <span className="mt-0.5 block truncate text-[9px] font-black uppercase leading-none text-red-600">
                         No corre
-                      </span>
-                    ) : resumen ? (
-                      <span
-                        className={`pointer-events-none absolute bottom-0.5 left-1 right-1 truncate text-[9px] font-black uppercase leading-none tracking-wide ${resumen.clase}`}
-                      >
-                        {resumen.txt}
                       </span>
                     ) : (
                       ejemplar && (
                         <span
-                          className={`pointer-events-none absolute bottom-0.5 left-1 right-1 truncate text-[9px] font-bold leading-none ${
+                          className={`mt-0.5 block truncate text-[9px] font-bold leading-none ${
                             ejemplar.retirado ? "text-red-500 line-through" : "text-gray-500"
                           }`}
                         >
@@ -1245,7 +1269,7 @@ const hipodromosDelDia = useMemo(() => {
                       )
                     )}
                   </td>
-                  <td className="gj-celda relative h-7 px-1 py-0">
+                  <td className="gj-celda px-1 py-1">
                     <input
                       value={f.monto}
                       onChange={(e) => setFila(i, { monto: e.target.value })}
@@ -1257,42 +1281,44 @@ const hipodromosDelDia = useMemo(() => {
                       }`}
                     />
                     {recortado && (
-                      <span
-                        className="pointer-events-none absolute bottom-0.5 left-1 block truncate text-[9px] font-black leading-none text-amber-700"
-                      >
+                      <span className="mt-0.5 block truncate text-[9px] font-black leading-none text-amber-700">
                         → {monedaFmt(v.ok ? v.monto : 0)}
                       </span>
                     )}
                   </td>
-                  <td className="gj-celda relative h-8 px-1 py-0">
-                    <SearchableSelect
-                      options={opcionesClientes}
-                      value={f.cliente1}
-                      onChange={(v) => setFila(i, { cliente1: v })}
-                      placeholder="Cliente 1…"
-                      allowCustom={false}
-                      displayValue={f.cliente1}
-                      className=""
-                      inputClassName="w-full rounded-md border border-line bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                    />
-                    <span className="pointer-events-none absolute bottom-0.5 left-1 right-1 block leading-none">
-                      {infoCliente(f.cliente1, f.monto, v.ok && v.cliente1 ? v.cliente1.cobroNeto : 0)}
-                    </span>
+                  <td className="gj-celda px-1 py-1 align-middle">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="block truncate leading-none">
+                        {infoCliente(f.cliente1, f.monto, v.ok && v.cliente1 ? v.cliente1.cobroNeto : 0)}
+                      </span>
+                      <SearchableSelect
+                        options={opcionesClientes}
+                        value={f.cliente1}
+                        onChange={(v) => setFila(i, { cliente1: v })}
+                        placeholder="Cliente 1…"
+                        allowCustom={false}
+                        displayValue={f.cliente1}
+                        className=""
+                        inputClassName="w-full rounded-md border border-line bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      />
+                    </div>
                   </td>
-                  <td className="gj-celda relative h-8 px-1 py-0">
-                    <SearchableSelect
-                      options={opcionesClientes}
-                      value={f.cliente2}
-                      onChange={(v) => setFila(i, { cliente2: v })}
-                      placeholder="Cliente 2…"
-                      allowCustom={false}
-                      displayValue={f.cliente2}
-                      className=""
-                      inputClassName="w-full rounded-md border border-line bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                    />
-                    <span className="pointer-events-none absolute bottom-0.5 left-1 right-1 block leading-none">
-                      {infoCliente(f.cliente2, f.monto, v.ok && v.cliente2 ? v.cliente2.cobroNeto : 0)}
-                    </span>
+                  <td className="gj-celda px-1 py-1 align-middle">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="block truncate leading-none">
+                        {infoCliente(f.cliente2, f.monto, v.ok && v.cliente2 ? v.cliente2.cobroNeto : 0)}
+                      </span>
+                      <SearchableSelect
+                        options={opcionesClientes}
+                        value={f.cliente2}
+                        onChange={(v) => setFila(i, { cliente2: v })}
+                        placeholder="Cliente 2…"
+                        allowCustom={false}
+                        displayValue={f.cliente2}
+                        className=""
+                        inputClassName="w-full rounded-md border border-line bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      />
+                    </div>
                   </td>
                 </tr>
               );
