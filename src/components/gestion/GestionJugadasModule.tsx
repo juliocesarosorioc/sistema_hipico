@@ -31,6 +31,7 @@ import { mensajeResultadoDeCarrera } from "@/lib/taquilla/mensajeResultado";
 import { enviarAlGrupoWsp, listarGruposWsp } from "@/lib/whatsapp";
 import PlanoPreliminar from "./PlanoPreliminar";
 import HistorialReporte from "./HistorialReporte";
+import { expandirLineasDobleSplit } from "@/lib/taquilla/expandirDobleSplit";
 
 /** Resumen compacto del reparto para la celda de ejemplares (una línea, 9px). */
 function resumenReparto(rep: Reparto | null, moneda: string): { txt: string; clase: string } | null {
@@ -427,14 +428,27 @@ const hipodromosDelDia = useMemo(() => {
     [clientes, caballosDeCarrera]
   );
 
-  const previewCargaRapida = useMemo(
-    () =>
-      textoCargaRapida
-        .split("\n")
-        .map((linea) => ({ linea, normalizada: normalizarLineaRapida(linea, contextoNormalizacion) }))
-        .filter((x) => x.normalizada !== null),
-    [textoCargaRapida, contextoNormalizacion]
-  );
+  const previewCargaRapida = useMemo(() => {
+    const lineas = textoCargaRapida.split("\n");
+    const expandidas: string[] = [];
+    for (const l of lineas) {
+      const t = l.trim();
+      if (!t) { expandidas.push(l); continue; }
+      if (/\d+[ypn]?\/\d+[ypn]?-\d+[ypn]?\b/i.test(t) || /\d+[ypn]+-\d+[ypn]+\b/i.test(t)) {
+        try {
+          const res = expandirLineasDobleSplit([t]);
+          if (res.length > 0) {
+            for (const r of res) expandidas.push(r.linea);
+            continue;
+          }
+        } catch {}
+      }
+      expandidas.push(l);
+    }
+    return expandidas
+      .map((linea) => ({ linea, normalizada: normalizarLineaRapida(linea, contextoNormalizacion) }))
+      .filter((x) => x.normalizada !== null);
+  }, [textoCargaRapida, contextoNormalizacion]);
 
   /**
    * Revision de la columna CABALLO contra los caballos de la carrera en
