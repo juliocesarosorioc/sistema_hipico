@@ -143,6 +143,7 @@ insertadas as (
     -- el INSERT entero aborta y se pierde la migracion.
     jsonb_build_object(
       'origen', 'WPS_LEGACY',
+      'fecha_carrera', k.fecha_registro::date,
       'wps_ticket_id', k.wps_id::text,
       'migrado_en', now(),
       'nota', 'Saldo ya descontado por el legacy: NO se debito de nuevo. El premio se liquida con la matriz wps_* de resultados_carreras.'

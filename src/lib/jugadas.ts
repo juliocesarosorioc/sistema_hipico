@@ -132,7 +132,10 @@ export function origenDeJugada(j: JugadaAdmin): string {
 
 export function fechaCarreraDeJugada(j: JugadaAdmin): string | null {
   const f = texto(leerNotaAuditoria(j.nota_auditoria).fecha_carrera).slice(0, 10);
-  return f || null;
+  if (f) return f;
+  // Respaldo duro: una jugada nunca debe quedar sin fecha. Si el JSON no trae
+  // fecha de carrera (filas heredadas), se usa la fecha en que se registró.
+  return texto(j.fecha_registro).slice(0, 10) || null;
 }
 
 // ---------------------------------------------------------------------------

@@ -62,6 +62,8 @@
     "./taquilla-venta.test.ts",
     "./normalizar-carga.test.ts",
     "./mensaje-resultado.test.ts",
+    "./jugadas-fecha.test.ts",
+    "./dupleta-clave.test.ts",
 
     "../bot/src/parser.js",
     "../bot/src/ganador.js"

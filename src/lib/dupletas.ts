@@ -51,6 +51,24 @@ export function claveDupleta(e: {
   return `${String(e.hipodromo).trim().toUpperCase()}|${e.fecha ?? ""}|${e.carrera1}|${e.carrera2}`;
 }
 
+/**
+ * Clave que identifica una dupleta para GUARDAR, CARGAR y BORRAR.
+ * Si el estado viene del listado (`listarDupletasGuardadas`), ya trae la `clave`
+ * real de la fila; si es una matriz recién generada, se calcula con la misma
+ * fórmula canónica de `claveDupleta`. Es el ÚNICO lugar donde se decide la
+ * clave: antes el componente armaba una propia y el BORRADO apuntaba a una clave
+ * distinta de la guardada (decía "eliminada" sin borrar nada).
+ */
+export function claveDeDupleta(g: {
+  clave?: string;
+  hipodromo: string;
+  fecha: string;
+  carrera1: number | string;
+  carrera2: number | string;
+}): string {
+  return g.clave ?? claveDupleta(g);
+}
+
 export function claveCelda(n1: string | number, n2: string | number): string {
   return `${n1}|${n2}`;
 }
@@ -280,7 +298,13 @@ export async function listarDupletasGuardadas(): Promise<DupletaEstado[]> {
     for (const r of data as Array<Record<string, unknown>>) {
       try {
         const e = JSON.parse(String(r.estado)) as DupletaEstado;
-        if (e && Array.isArray(e.caballos1)) out.push(e);
+        if (e && Array.isArray(e.caballos1)) {
+          // La clave que se escribe al GUARDAR es la que se usa para BORRAR
+          // (.eq("clave", ...)): si el estado no la trae, se la pegamos desde la
+          // fila. Antes el componente armaba una propia y el delete no matcheaba
+          // ninguna fila: devolvía ok pero no borraba nada.
+          out.push({ ...e, ...(r.clave ? { clave: String(r.clave) } : {}) });
+        }
       } catch {
         /* fila inválida */
       }

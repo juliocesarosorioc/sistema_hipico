@@ -12,7 +12,7 @@ import { alternarRetiroCarrera } from "@/lib/carreras/retiros";
 import { listarClientesVenta, listarGruposVenta, esClienteLibre, type ClienteVenta, type GrupoVenta } from "@/lib/grupos";
 import { colorDeNumeroGac } from "@/lib/gaceta/ui";
 import { Flag, normalizarNacionalidad } from "@/components/ui/BanderaPais";
-import { claveCelda, guardarDupleta, listarDupletasGuardadas, type CaballoDupleta, type DupletaEstado } from "@/lib/dupletas";
+import { claveCelda, claveDeDupleta, guardarDupleta, listarDupletasGuardadas, type CaballoDupleta, type DupletaEstado } from "@/lib/dupletas";
 import {
   venderDupleta,
   liquidarDupleta,
@@ -56,17 +56,6 @@ const TAM_BANDERA = Math.round(TAM_BANDERA_BASE * 1.8);
  * clarito, 3 blanco, 4 azul clarito... y así hasta el último ejemplar.
  */
 const FONDO_FILA_DUPLA = ["bg-white", "bg-indigo-50"] as const;
-
-/**
- * Clave con la que se identifica una dupleta guardada.
- *
- * Las filas viejas VINIERON sin `clave`, y se armaba la clave al vuelo en el JSX
- * con el mismo criterio. Queda en una función para que el desplegable, la
- * búsqueda y el borrado no puedan discrepar: si se armaran distinto, cargar una
- * dupleta y borrarla apuntarían a registros distintos.
- */
-const claveDeDupleta = (g: DupletaEstado): string =>
-  g.clave ?? `${claveCelda(String(g.carrera1), String(g.carrera2))}${g.hipodromo}${g.fecha}`;
 
 export function DupletaModule() {
   const [carreras, setCarreras] = useState<TablaFijaRow[]>([]);
