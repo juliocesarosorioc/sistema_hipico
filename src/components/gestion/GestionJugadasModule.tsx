@@ -29,6 +29,7 @@ import { revisarCaballo, maximoDeLaCarrera, type RevisionCaballo } from "@/lib/t
 import type { Reparto } from "@/lib/taquilla/reparto";
 import { mensajeResultadoDeCarrera } from "@/lib/taquilla/mensajeResultado";
 import { enviarAlGrupoWsp, listarGruposWsp } from "@/lib/whatsapp";
+import PlanoPreliminar from "./PlanoPreliminar";
 
 /** Resumen compacto del reparto para la celda de ejemplares (una línea, 9px). */
 function resumenReparto(rep: Reparto | null, moneda: string): { txt: string; clase: string } | null {
@@ -227,6 +228,7 @@ export function GestionJugadasModule() {
   }, [carrerasConEjemplares, carrerasPorDia, carrera]);
 
   const [modalPreliminar, setModalPreliminar] = useState(false);
+  const [mostrarPlanoPreliminar, setMostrarPlanoPreliminar] = useState(false);
   const [modalResultados, setModalResultados] = useState(false);
   const [modalFinalizar, setModalFinalizar] = useState(false);
   const [modalComandos, setModalComandos] = useState(false);
@@ -309,7 +311,7 @@ const hipodromosDelDia = useMemo(() => {
       const k = e.key.toLowerCase();
       if (k === "q") {
         e.preventDefault();
-        setModalPreliminar(true);
+        setMostrarPlanoPreliminar(true);
       } else if (k === "y") {
         e.preventDefault();
         setModalResultados(true);
@@ -1340,10 +1342,10 @@ const hipodromosDelDia = useMemo(() => {
         <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
-            onClick={() => setModalPreliminar(true)}
+            onClick={() => setMostrarPlanoPreliminar(true)}
             className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700"
           >
-            📋 Preliminar <kbd className="rounded bg-slate-600 px-1.5 py-0.5 text-[9px] font-black text-white">Ctrl+Q</kbd>
+            📋 Generar Preliminar <kbd className="rounded bg-slate-600 px-1.5 py-0.5 text-[9px] font-black text-white">Ctrl+Q</kbd>
           </button>
           <button
             type="button"
@@ -1370,45 +1372,19 @@ const hipodromosDelDia = useMemo(() => {
       </div>
 
       {/* Modal Preliminar de Carrera (Ctrl+Q) */}
-      {modalPreliminar && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-line bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
-              <h3 className="text-xs font-black uppercase">📋 Preliminar de Carrera — {nombreHipodromo} C{carrera}</h3>
-              <button type="button" onClick={() => setModalPreliminar(false)} className="text-slate-300 hover:text-white">✕</button>
+      {mostrarPlanoPreliminar && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-[#f8fafc]">
+          <div className="min-h-screen">
+            <div className="flex justify-end bg-[#f8fafc] p-2">
+              <button
+                type="button"
+                onClick={() => setMostrarPlanoPreliminar(false)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-bold text-red-500 border border-red-300 hover:bg-red-50 shadow-sm"
+              >
+                <span className="text-red-400 text-sm leading-none">✕</span> Cerrar Plano
+              </button>
             </div>
-            <div className="space-y-3 p-4">
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="rounded-lg bg-gray-50 px-3 py-2">
-                  <p className="text-[9px] font-bold uppercase text-slate-400">Retirados</p>
-                  <p className="font-bold text-slate-800">{retirados.trim() || "NO HUBO RETIROS"}</p>
-                </div>
-                <div className="rounded-lg bg-gray-50 px-3 py-2">
-                  <p className="text-[9px] font-bold uppercase text-slate-400">Comisión</p>
-                  <p className="font-bold text-slate-800">{comisionNum}%</p>
-                </div>
-              </div>
-              <div className="rounded-lg border border-line">
-                <p className="border-b border-line bg-gray-50 px-3 py-1.5 text-[10px] font-bold uppercase text-slate-500">
-                  Ejemplares inscritos ({caballosDeCarrera.length})
-                </p>
-                <ul className="max-h-56 divide-y divide-line/60 overflow-y-auto px-3 py-1">
-                  {caballosDeCarrera.map((c, i) => (
-                    <li key={i} className="flex items-center gap-2 py-1.5 text-sm">
-                    <HorseBadge num={c.numero} size="md" retirado={c.retirado} />
-                      <span className={`font-bold uppercase text-slate-800 ${c.retirado ? "line-through opacity-50" : ""}`}>{c.nombre || `Nº ${c.numero}`}</span>
-                      {c.retirado && <span className="ml-auto rounded bg-red-100 px-1.5 text-[9px] font-black text-red-600">RET.</span>}
-                    </li>
-                  ))}
-                  {!caballosDeCarrera.length && (
-                    <li className="py-4 text-center text-xs italic text-slate-400">Sin ejemplares registrados para esta carrera (ni en Tablas Fijas ni en Carreras del Día).</li>
-                  )}
-                </ul>
-              </div>
-            </div>
-            <div className="flex justify-end border-t border-line bg-gray-50 px-4 py-3">
-              <Button size="sm" onClick={() => setModalPreliminar(false)}>Cerrar</Button>
-            </div>
+            <PlanoPreliminar />
           </div>
         </div>
       )}
