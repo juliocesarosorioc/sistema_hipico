@@ -6,6 +6,7 @@ import { alternarRetiroCarrera } from "@/lib/carreras/retiros";
 import { sincronizarCentralDesdeTabla } from "@/lib/carreras-dia";
 import { normalizarFilas } from "@/lib/tablas/normalizar";
 import { ordenarPorNumero } from "@/lib/carreras/maestro-nucleo";
+import { claveHipodromo } from "@/lib/carreras/claves";
 
 // Se reexporta para no romper a quien ya importaba la normalizacion desde aca.
 export { normalizarFilas };
@@ -248,19 +249,25 @@ async function idExistente(
   // distintos, asi que en ese caso no se reusa ninguna fila.
   if (!fecha) return null;
   const dia = fecha.slice(0, 10);
+  const clave = claveHipodromo(hipodromo);
   for (const col of ORDENES_ID) {
     try {
+      // Se buscan TODAS las filas de (fecha, carrera) y se elige por la clave
+      // CANÓNICA del hipódromo (mayúsculas sin espacios). Antes se filtraba con
+      // `.ilike("hipodromo", hipodromo)`, que exige la misma grafía: una carrera
+      // publicada como "La Rinconada" y re-enviada como "LA RINCONADA" creaba
+      // dos tablas en vez de actualizar la misma.
       const { data, error } = await supabase
         .from("tablas_fijas")
-        .select("id")
-        .ilike("hipodromo", hipodromo)
+        .select("id, hipodromo")
         .eq("carrera", carrera)
         .eq("fecha", dia)
         .order(col, { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(50);
       if (error) continue;
-      return data ? (data as { id: number | string }).id : null;
+      const fila = (data ?? []).find((x) => claveHipodromo((x as { hipodromo?: unknown }).hipodromo) === clave);
+      if (fila) return (fila as { id: number | string }).id;
+      return null;
     } catch {
       continue;
     }

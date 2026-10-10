@@ -132,6 +132,19 @@ begin
     end;
 
     v_modalidad := public.club_modalidad_ticket(v_origen);
+
+    -- Taquilla: el `origen` es siempre 'TAQUILLA' (idempotencia + monitor); la
+    -- modalidad que negocia el banquero viaja aparte en `nota_auditoria.modalidad`
+    -- ('WPS' para las americanas W/P/S). Asi el banquero del grupo se congela
+    -- igual que en Marcas/Tablas/Dupleta.
+    if v_modalidad is null then
+        begin
+            v_modalidad := public.club_modalidad_ticket(new.nota_auditoria::jsonb ->> 'modalidad');
+        exception when others then
+            v_modalidad := null;
+        end;
+    end if;
+
     if v_modalidad is null then
         return new;
     end if;

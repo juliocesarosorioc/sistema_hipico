@@ -16,6 +16,7 @@ import {
   aCarreraCentral,
   dedupFilasMaestro,
   estadoDeCarrera,
+  hipodromosAEscribir,
   normalizarCaballos,
   normalizarGanadores,
   ordenarPorNumero,
@@ -464,6 +465,52 @@ eq(
     ])[0]
   ).length,
   1
+);
+
+// ============================================================================
+// HIPODROMOS A ESCRIBIR (hipodromosAEscribir)
+//
+// El upsert de la matriz dedupa por (fecha, hipodromo, carrera) con TEXTO, así
+// que escribir "LA RINCONADA" cuando la BD guarda "La Rinconada" crearía una
+// SEGUNDA fila (duplicada). El escritor debe reusar el texto que ya está
+// guardado para esa clave canónica y actualizar en vez de insertar.
+// ============================================================================
+const textosEscribir = (
+  entradas: { fecha?: string | null; hipodromo: unknown; carrera: unknown }[],
+  existentes: { fecha?: unknown; hipodromo?: unknown; carrera?: unknown }[]
+) => hipodromosAEscribir(entradas, existentes);
+
+eq(
+  "reusa el TEXTO guardado cuando la misma clave ya existe con otra grafía",
+  textosEscribir(
+    [{ fecha: "2026-10-06", hipodromo: "LA RINCONADA", carrera: 3 }],
+    [{ fecha: "2026-10-06", hipodromo: "La Rinconada", carrera: 3 }]
+  ).get("2026-10-06|LARINCONADA|3"),
+  "La Rinconada"
+);
+eq(
+  "carrera nueva: usa la forma canónica en mayúsculas",
+  textosEscribir(
+    [{ fecha: "2026-10-06", hipodromo: "la rinconada", carrera: 4 }],
+    [{ fecha: "2026-10-06", hipodromo: "La Rinconada", carrera: 3 }]
+  ).get("2026-10-06|LARINCONADA|4"),
+  "LA RINCONADA"
+);
+eq(
+  "mismo hipódromo con número distinto no se mezcla",
+  textosEscribir(
+    [{ fecha: "2026-10-06", hipodromo: "LA RINCONADA", carrera: 5 }],
+    [{ fecha: "2026-10-06", hipodromo: "La Rinconada", carrera: 3 }]
+  ).get("2026-10-06|LARINCONADA|5"),
+  "LA RINCONADA"
+);
+eq(
+  "entrada sin hipódromo ni número queda fuera del mapa",
+  textosEscribir(
+    [{ fecha: "2026-10-06", hipodromo: "  ", carrera: 0 }],
+    []
+  ).size,
+  0
 );
 
 console.log(`\nTODO OK: ${pasan} pasaron, ${fallan} fallaron`);

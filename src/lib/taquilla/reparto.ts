@@ -237,6 +237,18 @@ export function buscarExpresionEjemplares(
   }
   const texto = m[0].slice(0, largo).trim();
   if (!texto) return null;
+
+  /* Evitar falsos positivos dentro de "N/M KxL" (proporción seguida de matchup).
+     Si justo antes del match hay "/" (viene de "10/8 3x2"), no lo tratamos como
+     división de caballos entre clientes, sino como parte de la jugada. */
+  const prev = t[m.index - 1] ?? "";
+  if (prev === "/") return null;
+  // También chequear patrón "NN/MM " inmediatamente antes
+  const antes = t.slice(0, m.index);
+  if (/\d+(?:[.,]\d+)?\s*\/\s*$/.test(antes)) return null;
+  // También evitar si justo antes hay patrón "N/M" seguido de espacio y luego el match empieza con número que forma "8 3x2" mal detectado
+  if (/\/\d+\s*$/.test(antes)) return null;
+
   return { texto, inicio: m.index, largo };
 }
 

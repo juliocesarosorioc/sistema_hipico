@@ -165,8 +165,10 @@ pantalla muestra "0 filas" como si no hubiera datos.
       `club_crear_remate` acepta `p_grupo_id`) y `remate_cierre.sql` (paso 9: los
       tickets de remate salen con `grupo_cobro_id` y, al cerrar el remate, si hay
       banquero configurado para REMATES se liquidan contra él en la misma
-      transacción). Luego se elige el grupo al **crear** el remate. WPS queda
-      pendiente (no tiene venta persistida).
+      transacción). Luego se elige el grupo al **crear** el remate. Para el
+      banquero de **WPS de Taquilla**, volver a correr `banqueros.sql` después
+      del paso 23: el trigger ahora también lee `nota_auditoria.modalidad`
+      cuando el `origen` es `'TAQUILLA'`.
 16. `dupleta_venta.sql` — venta de Dupleta. Crea la RPC `club_vender_dupleta`
     (descuenta el saldo del jugador y crea el ticket `'Pendiente'` con
     `origen = 'DUPLETA'` y `grupo_cobro_id` en una transacción, idempotente) y su
@@ -218,6 +220,31 @@ pantalla muestra "0 filas" como si no hubiera datos.
     principal). La RPC valida que el inicio caiga en un día de apertura del ciclo
     y usa `soy_principal()`; a `anon` no se le da `execute`. Requiere el paso 20
     (`grupos_venta` con `dia_inicio_semana`, que trae `ciclos_facturacion_semanal.sql`).
+22. `whatsapp_integracion.sql` — tablas del **Centro WhatsApp conectado a la
+    Cloud API de Meta**: `whatsapp_grupos` (grupos detectados por webhook, con
+    índice único sobre `(vinculado) where vinculado` para que **solo uno** sea
+    destino de envíos), `whatsapp_envios` (bitácora técnica de cada llamada a
+    la API) y `whatsapp_automatizaciones` (toggles de envío automático, seed
+    con los 4 módulos en `false`). RLS: lectura/escritura solo vía
+    `soy_principal()` o `tiene_capacidad('whatsapp:...')`, grants solo a
+    `authenticated`. Requiere `seguridad_maestro.sql` + re-aplicar
+    `maestro_seed.sql` (agrega `whatsapp:vincular_grupo` y
+    `whatsapp:enviar_grupo`). La app funciona igual sin aplicarlo: el Centro
+    WhatsApp muestra el aviso "Integración no configurada" y los botones
+    wa.me siguen operando.
+23. `taquilla_venta.sql` — **venta individual de Taquilla (BetSlip / Gestión de
+    Jugadas) persistida.** Crea `club_vender_jugada` (valida tope `saldo+aval`,
+    pertenencia al grupo y cliente activo; descuenta el saldo y crea el ticket
+    `'Pendiente'` con `origen='TAQUILLA'`, `nombre_jugada`, `caballo`,
+    `cliente_juega_id`, `cliente_consigue_nombre` y `grupo_cobro_id` en UNA
+    transacción, idempotente por `nota_auditoria.idempotencia`) y
+    `club_anular_jugada` (devuelve el saldo exacto y deja el ticket
+    `'Anulado'` + `anulada=true`, idempotente). Agrega las columnas
+    `anulada*` y `cliente_consigue_nombre` si faltan. **Sin este script**, la
+    Taquilla vuelve al modo memoria: no produce filas, W/P/S no congelan
+    banquero y la liquidación explica tickets que nadie escribió. **Requiere
+    volver a correr `banqueros.sql`** (paso 15) para que el trigger congele el
+    banquero de WPS leyendo `nota_auditoria.modalidad`. Idempotente.
 
 
 ### La fuente de carreras pasó a ser una sola

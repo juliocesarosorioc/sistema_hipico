@@ -23,6 +23,7 @@
     "../src/lib/taquilla/nomenclatura.ts",
     "../src/lib/taquilla/reparto.ts",
     "../src/lib/taquilla/caballos.ts",
+    "../src/lib/taquilla/normalizar.ts",
     "../src/lib/carreras/claves.ts",
     "../src/lib/carreras/retiros-nucleo.ts",
     "../src/lib/carreras/maestro-nucleo.ts",
@@ -50,6 +51,12 @@
     "./pollas.test.ts",
     "./puertas-login.test.ts",
     "./semana-vigente.test.ts",
-    "./searchable-select.test.ts"
+    "./searchable-select.test.ts",
+    "./whatsapp-jugadas.test.ts",
+    "./taquilla-venta.test.ts",
+    "./normalizar-carga.test.ts",
+
+    "../bot/src/parser.js",
+    "../bot/src/ganador.js"
   ]
 }

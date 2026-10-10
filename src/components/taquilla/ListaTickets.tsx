@@ -2,6 +2,10 @@
 
 import { useTaquillaStore } from "@/store/useTaquillaStore";
 import { Button } from "@/components/ui/Button";
+import { anularJugada } from "@/lib/taquilla/venta";
+
+const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
+  window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
 
 const COP = new Intl.NumberFormat("es-CO", {
   style: "currency",
@@ -13,7 +17,37 @@ const COP = new Intl.NumberFormat("es-CO", {
 export function ListaTickets() {
   const tickets = useTaquillaStore((s) => s.tickets);
   const eliminarTicket = useTaquillaStore((s) => s.eliminarTicket);
-  const limpiarTickets = useTaquillaStore((s) => s.limpiarTickets);
+
+  /**
+   * Quita un ticket del historial. Si ya estaba VENDIDO (`ticketId`), primero
+   * lo anula en la BD para devolver el saldo del cliente; si la anulación falla,
+   * no se quita (para no perder el rastro de un cobro sin devolver).
+   */
+  const borrar = async (id: string) => {
+    const t = tickets.find((x) => x.id === id);
+    if (t?.ticketId !== undefined) {
+      const r = await anularJugada(t.ticketId, "Quitado por el operador");
+      if (!r.ok) {
+        toast(`No se pudo anular el ticket #${t.ticketId}: ${r.error ?? "sin conexión"}`, "error");
+        return;
+      }
+    }
+    eliminarTicket(id);
+  };
+
+  /** Vacía el historial devolviendo el saldo de cada ticket vendido. */
+  const vaciar = async () => {
+    for (const t of tickets) {
+      if (t.ticketId !== undefined) {
+        const r = await anularJugada(t.ticketId, "Sesión vaciada por el operador");
+        if (!r.ok) {
+          toast(`No se pudo anular el ticket #${t.ticketId}: ${r.error ?? "sin conexión"}`, "error");
+          return;
+        }
+      }
+      eliminarTicket(t.id);
+    }
+  };
 
   const totalInvertido = tickets.reduce((a, t) => a + t.monto, 0);
 
@@ -24,7 +58,7 @@ export function ListaTickets() {
           🧾 Tickets de la Sesión ({tickets.length})
         </h3>
         {tickets.length > 0 && (
-          <Button variant="ghost" size="sm" onClick={limpiarTickets}>
+          <Button variant="ghost" size="sm" onClick={() => void vaciar()}>
             Vaciar
           </Button>
         )}
@@ -56,10 +90,10 @@ export function ListaTickets() {
                   <span className="text-sm font-extrabold text-success-500">{COP.format(t.monto)}</span>
                   <button
                     type="button"
-                    onClick={() => eliminarTicket(t.id)}
+                    onClick={() => void borrar(t.id)}
                     aria-label={`Eliminar ticket ${t.comando}`}
                     className="grid h-7 w-7 place-items-center rounded-lg border border-danger-500/40 bg-danger-500/10 text-[11px] font-bold text-danger-500 transition-colors hover:bg-danger-500 hover:text-white"
-                    title="Eliminar ticket (por si te equivocaste al tipear)"
+                    title="Eliminar ticket (devuelve el saldo si ya estaba vendido)"
                   >
                     ✕
                   </button>

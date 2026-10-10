@@ -434,8 +434,67 @@ export type LineaRapida =
  *      devuelve { ok:false } (el caller pinta la fila en rojo ⚠️, no rompe).
  *
  *  Acepta "#" al inicio como comentario (se ignora → null).
+ *
+ *  La asignación de clientes NO vive acá: este módulo devuelve el sobrante
+ *  (`clasificarLineaRapida`) y cada cliente decide cómo repartirlo. El parser
+ *  legacy (`parsearLineaRapida`) usa la regla "1° → CLIENTE 1, resto → CLIENTE 2";
+ *  el normalizador difuso (taquilla/normalizar.ts) lo matchea contra el
+ *  catálogo real de clientes antes de pegar en la Carga Individual.
  */
-const STOP_WORDS = new Set(["juega", "con", "da", "por", "en", "$", "bs", "el", "la"]);
+/* Relleno típico del locutor/transcriptor: se amplía con las muletillas del
+   dictado ("señores…", "el número…") para que no caigan al "sobrante" de
+   clientes. "y"/"con" NO van acá: el parser las conserva como conectores de
+   jugadas ("1/2 y 2n") y el normalizador difuso las usa como separadores. */
+const STOP_WORDS = new Set([
+  "juega",
+  "con",
+  "da",
+  "por",
+  "en",
+  "$",
+  "bs",
+  "el",
+  "la",
+  "a",
+  "al",
+  "del",
+  "de",
+  "que",
+  "los",
+  "las",
+  "les",
+  "señores",
+  "señor",
+  "señora",
+  "sigue",
+  "siga",
+  "siguiente",
+  "jugada",
+  "numero",
+  "número",
+  "nro",
+  "num",
+  "caballo",
+  "es",
+  "eh",
+  "um",
+  "ah",
+  "muy",
+  "vamos",
+  "listo",
+  "ok",
+  "claro",
+  "aqui",
+  "aquí",
+  "este",
+  "esta",
+  "buenas",
+  "buenos",
+  "hola",
+  "saludos",
+  "para",
+  "favor",
+]);
 
 const RE_PURGADO = /[^\p{L}\p{N}.,/x-]/gu;
 
@@ -449,6 +508,8 @@ const RE_PAREO_B = /^\d+\/\d+(?:[.,]\d+)?$/;
 /** Jugada con letra de apuesta + dígito: 2p, 2n, 1y2n, 3y3, pp (nunca un número pelado). */
 const RE_JUGADA_LETRA = /^(?:\d+[y]\d*[pn]?|\d+[pn]|pp)$/;
 const RE_JUGADA_BARRA = /^\d+\/\d+(?![\d.])/;
+/** A Premio de la casa: "10a8" / "10a6.5" (misma gramática que "10/8"). */
+const RE_A_PREMIO = /^\d+(?:[.,]\d+)?[aA]\d+(?:[.,]\d+)?$/;
 
 function limpiarToken(tok: string): string {
   return tok.replace(RE_PURGADO, "");
@@ -474,7 +535,7 @@ type TokenAnalizado = {
 };
 
 function esJugadaLetra(tok: string): boolean {
-  return RE_JUGADA_LETRA.test(tok);
+  return RE_JUGADA_LETRA.test(tok) || RE_A_PREMIO.test(tok);
 }
 
 /* Expresión de ejemplares DIVIDIDA entre los dos clientes, tal como la acepta
@@ -482,22 +543,45 @@ function esJugadaLetra(tok: string): boolean {
    "12-13x14-15" · "1,2 por 3-4" · "1-2*3-4". La gramática vive en reparto.ts
    para que Carga Rápida y la tabla usen exactamente la misma. */
 
+export type ClasificacionLinea =
+  | { ok: true; jugada: string; caballo: string; monto: string; restantes: string[] }
+  | { ok: false; motivo: string };
+
 /**
- * Clasifica la línea en las 5 columnas de la taquilla. Devuelve null para
- * líneas en blanco / comentarios, { ok:false } para ilegibles.
+ * Clasifica la línea en JUGADA · CABALLO · MONTO y devuelve el SOBRANTE (los
+ * tokens que no entraron en esos tres campos). La asignación de clientes queda
+ * FUERA deliberadamente: `parsearLineaRapida` la hace con la regla legacy
+ * (1° → CL1, resto → CL2) y el normalizador difuso (taquilla/normalizar.ts) la
+ * hace matcheando el catálogo real de clientes. Un solo motor, dos decisiones.
+ *
+ * Devuelve null para líneas en blanco / comentarios, { ok:false } para
+ * ilegibles.
  */
-export function parsearLineaRapida(linea: string): LineaRapida | null {
+export function clasificarLineaRapida(linea: string): ClasificacionLinea | null {
   const t = String(linea ?? "").trim();
   if (!t || t.startsWith("#")) return null;
+
+  /* -1) Cruce legacy "2x3 10/8" (pareo + proporción). El extractor de
+     expresiones divididas usa el MISMO divisor "x" y se comería el pareo
+     (via "2x3 10" y dejaría "/8" como basura): el "2x3" de este par es la
+     JUGADA, no un caballo dividido. Se aparta primero y la expresión de
+     ejemplares se busca en el resto de la línea. */
+  const mCruce = /^(\d+[x]\d+)\s+(\d+\/\d+(?:[.,]\d+)?)\b/i.exec(t);
+  const cruceInicial = mCruce ? `${mCruce[1]} ${mCruce[2]}` : "";
+  const resto = mCruce
+    ? (t.slice(0, mCruce.index) + " " + t.slice(mCruce.index + mCruce[0].length)).replace(/\s+/g, " ").trim()
+    : t;
 
   /* 0) Se aparta la expresión de ejemplares dividida ANTES de tokenizar: si no,
      "12 13 x 14 15" se desarmaría en números sueltos y el 15 se tomaría como
      monto. La expresión se guarda tal cual para la columna CABALLO. */
-  const mEj = buscarExpresionEjemplares(t);
+  const mEj = buscarExpresionEjemplares(resto);
   const caballoDividido = mEj ? mEj.texto : "";
-  const cuerpo = mEj
-    ? (t.slice(0, mEj.inicio) + " " + t.slice(mEj.inicio + mEj.largo)).replace(/\s+/g, " ").trim()
-    : t;
+  const cuerpo = (
+    mEj
+      ? (resto.slice(0, mEj.inicio) + " " + resto.slice(mEj.inicio + mEj.largo)).replace(/\s+/g, " ").trim()
+      : resto
+  ).trim() || t;
 
   const crudos = cuerpo.split(/[ \t]+/);
   if (crudos.length === 0) return null;
@@ -514,7 +598,9 @@ export function parsearLineaRapida(linea: string): LineaRapida | null {
   if (tokens.length === 0) return null;
 
   const usados = new Set<number>();
-  let jugada = "";
+  // El cruce legacy detectado en el paso -1 ya es la JUGADA (no se vuelve a
+  // buscar otro par ni un tramo con letra de apuesta que lo pise).
+  let jugada = cruceInicial;
   let caballo = caballoDividido;
   let monto = "";
 
@@ -523,11 +609,14 @@ export function parsearLineaRapida(linea: string): LineaRapida | null {
     for (let i = rango[0]; i <= rango[1]; i++) usados.add(i);
   };
 
-  // 3) JUGADA — cruce legacy "2x3 10/8" primero (par de tokens contiguos).
-  for (let i = 0; i < tokens.length - 1; i++) {
-    if (RE_PAREO_A.test(tokens[i].limpio) && RE_PAREO_B.test(tokens[i + 1].limpio)) {
-      marcarJugada([i, i + 1]);
-      break;
+  // 3) JUGADA — cruce legacy "2x3 10/8" primero (par de tokens contiguos) en
+  //    el caso de que no fuera el cruce inicial de la línea.
+  if (!jugada) {
+    for (let i = 0; i < tokens.length - 1; i++) {
+      if (RE_PAREO_A.test(tokens[i].limpio) && RE_PAREO_B.test(tokens[i + 1].limpio)) {
+        marcarJugada([i, i + 1]);
+        break;
+      }
     }
   }
 
@@ -582,21 +671,33 @@ export function parsearLineaRapida(linea: string): LineaRapida | null {
     }
   }
 
-  // 6) CLIENTES — lo sobrante: 1° → CLIENTE 1, el resto → CLIENTE 2.
+  // 6) SOBRANTES — lo que no entró en JUGADA/CABALLO/MONTO. NO se asignan
+  //    clientes acá: eso lo decide el caller (legacy o normalizador difuso).
   const restantes = tokens
     .filter((_, i) => !usados.has(i))
     .map((k) => k.raw.trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""));
-  const cliente1 = restantes[0] ?? "";
-  const cliente2 = restantes.slice(1).join(" ");
 
   return {
     ok: true,
     jugada: jugada.toUpperCase(),
     caballo: caballo.toUpperCase(),
     monto,
-    cliente1,
-    cliente2,
+    restantes,
   };
+}
+
+/**
+ * Parser legacy de Carga Rápida: el sobrante va 1° → CLIENTE 1 y el resto →
+ * CLIENTE 2. Conserva el comportamiento histórico (parte nombres compuestos);
+ * el flujo nuevo pasa por `normalizarLineaRapida` para no partir el catálogo.
+ */
+export function parsearLineaRapida(linea: string): LineaRapida | null {
+  const c = clasificarLineaRapida(linea);
+  if (!c) return null;
+  if (!c.ok) return c;
+  const cliente1 = c.restantes[0] ?? "";
+  const cliente2 = c.restantes.slice(1).join(" ");
+  return { ok: true, jugada: c.jugada, caballo: c.caballo, monto: c.monto, cliente1, cliente2 };
 }
 
 function round2(n: number): number {

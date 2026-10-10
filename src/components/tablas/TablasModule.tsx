@@ -148,30 +148,26 @@ export function TablasModule(props: Props) {
     // Hidrata las tarjetas desde el buzón de la Gaceta (ensamblaje_carreras +
     // gaceta_prellenado), igual que el legacy js/tablas.js migrarLegacy, y luego
     // CONSUME el buzón para que no se dupliquen al recargar.
+    //
+    // Se hidratan TODAS las carreras del buzón, tengan o no fecha (y sea la hoy
+    // u otra): un filtro por fecha descartaba en silencio las extraídas con
+    // fecha ≠ día (o sin fecha), que ni aparecían como tarjeta ni se publicaban
+    // nunca — "las carreras se ven en la Gaceta pero no pasan a la data". Cada
+    // tarjeta conserva su fecha; al publicar se escribe con la suya.
     const buzon = leerBuzonEnsamblaje();
-    const todas = buzon.map((c) => aDraftCarrera(c));
-    // Solo las carreras DEL DÍA: la plataforma tiene un registro único y
-    // central, y una gaceta leída para otra fecha no puede aparecer en este
-    // programa (se conserva en el buzón para cuando cambie la fecha).
-    const hoy = hoyLocal();
-    const hidratadas = todas.filter((d) => !d.fecha || String(d.fecha).slice(0, 10) === hoy);
-    // Las tarjetas SIN ejemplares se hidratan también: el filtro las botaba en
-    // silencio, y como `limpiarBuzonEnsamblaje()` corre igual, esas carreras se
-    // perdían para siempre — se registraban en la Gaceta, no aparecían como
-    // cards, y nunca llegaban al Monitor ni a ningún módulo. Publicar una vacía
-    // es lo que hace `publicarDraft` (registra la carrera programada).
-    if (hidratadas.length > 0) {
-      setDrafts((ds) => [...hidratadas, ...ds]);
+    const todas = buzon.map((c) => aDraftCarrera(c)).filter((d) => d.hipodromo.trim());
+    if (todas.length > 0) {
+      setDrafts((ds) => [...todas, ...ds]);
       window.dispatchEvent(
         new CustomEvent("toast", {
           detail: {
-            msg: `🗂️ ${hidratadas.length} carrera(s) llegaron de la Gaceta. Revise y publique.`,
+            msg: `🗂️ ${todas.length} carrera(s) llegaron de la Gaceta. Revise y publique.`,
             tipo: "info",
           },
         })
       );
     }
-    limpiarBuzonEnsamblaje(hoy);
+    limpiarBuzonEnsamblaje();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

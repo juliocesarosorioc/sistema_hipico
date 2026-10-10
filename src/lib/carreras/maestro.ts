@@ -37,6 +37,7 @@ import {
   ESTADOS_MAESTRO,
   aCarreraCentral,
   dedupFilasMaestro,
+  hipodromosAEscribir,
   ordenarPorNumero,
 } from "@/lib/carreras/maestro-nucleo";
 import type {
@@ -177,7 +178,7 @@ async function resolverIdsHipodromos(): Promise<Map<string, number>> {
     const { data, error } = await supabase.from("hipodromos").select("id, nombre");
     if (!error) {
       for (const r of (data ?? []) as Array<{ id?: unknown; nombre?: unknown }>) {
-        const k = String(r.nombre ?? "").trim().toUpperCase();
+        const k = claveHipodromo(r.nombre);
         if (k && r.id != null) idsHipodromos.set(k, Number(r.id));
       }
     }
@@ -185,6 +186,26 @@ async function resolverIdsHipodromos(): Promise<Map<string, number>> {
     /* sin catálogo: se guarda sin hipodromo_id, no es bloqueante */
   }
   return idsHipodromos;
+}
+
+/**
+ * Estado ACTUAL (fecha/hipodromo/carrera) de la matriz para las fechas que se
+ * van a tocar. Con eso `hipodromosAEscribir` sabe qué TEXTO de hipódromo ya está
+ * guardado por clave canónica, para que el upsert actualice la fila existente y
+ * no siembre una segunda por una grafía distinta.
+ */
+async function cargarHipodromosExistentes(fechas: string[]): Promise<Record<string, unknown>[]> {
+  if (!supabase || !fechas.length) return [];
+  try {
+    const { data, error } = await supabase
+      .from("carreras")
+      .select("fecha,hipodromo,carrera")
+      .in("fecha", fechas);
+    if (error) return [];
+    return (data ?? []) as Record<string, unknown>[];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -218,12 +239,15 @@ async function preservarColumna(
       .in("fecha", fechas);
     if (error) return quitar();
     const guardados = new Map<string, unknown>();
+    // La clave es la CANÓNICA (fecha | hipódromo sin espacios | número), la misma
+    // de `claveHipodromo`: así dar igual que la BD guarde "LA RINCONADA" o
+    // "La Rinconada" — el retiro se conserva, no se pisotea con null.
     for (const r of (data ?? []) as Record<string, unknown>[]) {
-      const clave = `${r.fecha}|${String(r.hipodromo ?? "").toUpperCase()}|${Number(r.carrera) || 0}`;
+      const clave = `${String(r.fecha ?? "").slice(0, 10)}|${claveHipodromo(String(r.hipodromo ?? ""))}|${Number(r.carrera) || 0}`;
       if (pedidas.has(clave)) guardados.set(clave, r[columna] ?? null);
     }
     for (const f of filas) {
-      const clave = `${f.fecha}|${f.hipodromo}|${f.carrera}`;
+      const clave = `${String(f.fecha ?? "").slice(0, 10)}|${claveHipodromo(String(f.hipodromo ?? ""))}|${Number(f.carrera) || 0}`;
       if (!pedidas.has(clave)) continue;
       if (guardados.has(clave)) f[columna] = guardados.get(clave);
       else delete f[columna];
@@ -264,23 +288,33 @@ export async function escribirCarrerasMaestro(
   const sinRetirados: string[] = [];
   const sinInvalidados: string[] = [];
 
+  // Texto de hipódromo a escribir por clave canónica: reusa el que ya está
+  // guardado (si la carrera existe con otra grafía) para que el `onConflict`
+  // (fecha,hipodromo,carrera) actualice en vez de crear una fila duplicada.
+  const fechasUnicas = [...new Set(entradas.map((e) => String(e.fecha || fechaDef).slice(0, 10)))];
+  const existentes = await cargarHipodromosExistentes(fechasUnicas);
+  const textosAEscribir = hipodromosAEscribir(entradas, existentes);
+
   for (const e of entradas) {
     const hip = String(e.hipodromo ?? "").trim().toUpperCase();
     const num = Number(e.carrera) || 0;
     if (!hip || !num) continue;
     const fecha = e.fecha || fechaDef;
-    const clave = `${fecha}|${hip}|${num}`;
+    const hipoEscrito = textosAEscribir.get(`${String(fecha).slice(0, 10)}|${claveHipodromo(hip)}|${num}`) || hip;
+    // Clave canónica (fecha | hipódromo sin espacios | número): es la que usan
+    // también `vistas`, `preservarColumna` y el dedup de la matriz.
+    const clave = `${String(fecha).slice(0, 10)}|${claveHipodromo(hipoEscrito)}|${num}`;
     if (vistas.has(clave)) continue;
     vistas.add(clave);
     // Una entrada que no informa `retirados` significa "no tocar los retiros",
     // no "borrar los retiros". Se resuelven más abajo contra lo que ya está
     // guardado, porque el editor de programa de la IA no tiene control de ellos.
-if (e.retirados === undefined) sinRetirados.push(clave);
+    if (e.retirados === undefined) sinRetirados.push(clave);
     if (e.invalidado_remate === undefined) sinInvalidados.push(clave);
     filas.push({
       fecha,
-      hipodromo: hip,
-      hipodromo_id: ids.get(hip) ?? null,
+      hipodromo: hipoEscrito,
+      hipodromo_id: ids.get(claveHipodromo(hipoEscrito)) ?? null,
       carrera: num,
       estado: ESTADOS_MAESTRO.has(String(e.estado ?? "")) ? String(e.estado) : "Programada",
       caballos: ordenarPorNumero(Array.isArray(e.caballos) ? e.caballos : []) as EjemplarMatriz[],

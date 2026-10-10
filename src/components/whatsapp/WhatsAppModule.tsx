@@ -22,6 +22,17 @@ import {
   restaurarPlantillas,
   telefonoInt,
   waLink,
+  desvincularGrupoWsp,
+  enviarAlGrupoWsp,
+  estadoWhatsappApi,
+  guardarAutomatizacionWsp,
+  leerAutomatizacionesWsp,
+  listarGruposWsp,
+  renombrarGrupoWsp,
+  vincularGrupoWsp,
+  type AutomatizacionWsp,
+  type EstadoWhatsappApi,
+  type GrupoWsp,
   type ClienteWsp,
   type PlantillaWsp,
   type RegistroWsp,
@@ -38,6 +49,14 @@ import {
 } from "@/lib/reportGenerator";
 
 type TipoReporte = "saldos" | "jugadas" | "resultados";
+
+/** Módulos que pueden mandar su mensaje solo al grupo vinculado. */
+const MODULOS_AUTO: Array<{ clave: string; label: string }> = [
+  { clave: "remate_cierre", label: "Cierre / pizarra de remate" },
+  { clave: "tablas_publicar", label: "Publicación de tablas" },
+  { clave: "marcas_cierre", label: "Marcas del día" },
+  { clave: "jornada_cierre", label: "Cierre de jornada" },
+];
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -89,6 +108,14 @@ export function WhatsAppModule() {
   const [repCarrera, setRepCarrera] = useState("");
   const [repRetirados, setRepRetirados] = useState("");
   const [repPizarra, setRepPizarra] = useState("");
+  // Conexión al grupo (WhatsApp Cloud API)
+  const [estadoApi, setEstadoApi] = useState<EstadoWhatsappApi | null>(null);
+  const [grupos, setGrupos] = useState<GrupoWsp[]>([]);
+  const [auto, setAuto] = useState<Record<string, boolean>>({});
+  const [cargandoGrupos, setCargandoGrupos] = useState(false);
+  const [renombrando, setRenombrando] = useState<string | null>(null);
+  const [nombreNuevo, setNombreNuevo] = useState("");
+  const [enviandoGrupo, setEnviandoGrupo] = useState(false);
 
   const clienteSel = useMemo(
     () => clientes.find((c) => String(c.id) === clienteId) ?? null,
@@ -98,6 +125,7 @@ export function WhatsAppModule() {
     () => plantillas.find((p) => p.id === plantillaId) ?? null,
     [plantillas, plantillaId]
   );
+  const grupoVinculado = useMemo(() => grupos.find((g) => g.vinculado) ?? null, [grupos]);
 
   const resumen = useMemo(() => {
     const conTel = clientes.filter((c) => Boolean(c.telefono && limpiarNumero(c.telefono))).length;
@@ -122,6 +150,32 @@ export function WhatsAppModule() {
     setConEnvios(envios);
     setHistorial(his);
   }, []);
+
+  /** Estado de la API + grupos detectados + toggles de automatización. */
+  const refrescarGrupos = useCallback(async () => {
+    const [estado, gs, autos] = await Promise.all([
+      estadoWhatsappApi(),
+      listarGruposWsp(),
+      leerAutomatizacionesWsp(),
+    ]);
+    setEstadoApi(estado);
+    setGrupos(gs ?? []);
+    const mapa: Record<string, boolean> = {};
+    (autos ?? []).forEach((a) => {
+      mapa[a.modulo] = Boolean(a.activo);
+    });
+    setAuto(mapa);
+  }, []);
+
+  useEffect(() => {
+    let vivo = true;
+    refrescarGrupos().then(() => {
+      if (!vivo) return;
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [refrescarGrupos]);
 
   useEffect(() => {
     let vivo = true;
@@ -155,6 +209,76 @@ export function WhatsAppModule() {
     setCodigo(c?.codigo_pais || dg.codigo || "+58");
     setTelefono(dg.numero);
     if (c) forzarPlantilla(plantillaId, c);
+  };
+
+  // ============================================================
+  // CONEXIÓN AL GRUPO — vincular, renombrar, automatizar, enviar
+  // ============================================================
+  const vincularGrupo = async (g: GrupoWsp) => {
+    setCargandoGrupos(true);
+    const res = await vincularGrupoWsp(g.group_id);
+    setCargandoGrupos(false);
+    if (res?.ok) {
+      toast("Grupo vinculado. Los envíos van a ese grupo.", "success");
+      void refrescarGrupos();
+    } else {
+      toast(res?.error || "No se pudo vincular.", "error");
+    }
+  };
+
+  const desvincularGrupo = async () => {
+    const res = await desvincularGrupoWsp();
+    if (res?.ok) {
+      toast("Grupo desvinculado.", "success");
+      void refrescarGrupos();
+    } else {
+      toast(res?.error || "No se pudo desvincular.", "error");
+    }
+  };
+
+  const renombrarGrupo = async (g: GrupoWsp) => {
+    if (renombrando === g.group_id) {
+      const nombre = nombreNuevo.trim();
+      if (!nombre) return toast("Escribí un nombre.", "warning");
+      const res = await renombrarGrupoWsp(g.group_id, nombre);
+      setRenombrando(null);
+      setNombreNuevo("");
+      if (res?.ok) {
+        toast("Nombre guardado.", "success");
+        void refrescarGrupos();
+      } else {
+        toast(res?.error || "No se pudo guardar.", "error");
+      }
+    } else {
+      setRenombrando(g.group_id);
+      setNombreNuevo(g.nombre ?? "");
+    }
+  };
+
+  const toggleAuto = async (modulo: string, activo: boolean) => {
+    const previo = auto[modulo] === true;
+    setAuto((m) => ({ ...m, [modulo]: activo }));
+    const res = await guardarAutomatizacionWsp(modulo, activo);
+    if (!res?.ok) {
+      setAuto((m) => ({ ...m, [modulo]: previo }));
+      toast(res?.error || "No se pudo guardar la automatización.", "error");
+      return;
+    }
+    toast(activo ? "Envío automático activado." : "Envío automático desactivado.", "success");
+  };
+
+  const enviarReporteGrupo = async () => {
+    if (!reporte.trim()) return toast("Generá primero el reporte.", "warning");
+    setEnviandoGrupo(true);
+    const res = await enviarAlGrupoWsp(reporte, "reporte");
+    setEnviandoGrupo(false);
+    if (!res) return toast("No se pudo contactar la integración.", "error");
+    if (res.ok) {
+      toast("Reporte enviado al grupo.", "success");
+      void refrescarHistorial();
+    } else {
+      toast(res.error || "No se pudo enviar.", "error");
+    }
   };
 
   // ============================================================
@@ -301,6 +425,155 @@ export function WhatsAppModule() {
         </span>
       </header>
 
+      {/* ============ CONEXIÓN AL GRUPO (WhatsApp Cloud API) ============ */}
+      <section aria-label="Conexión al grupo de WhatsApp" className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+        <div className="flex items-center justify-between bg-emerald-800 p-3.5 text-xs font-bold uppercase tracking-wider text-white">
+          <span className="text-emerald-200">🔗</span> Conexión al grupo de WhatsApp
+          <button
+            type="button"
+            onClick={() => void refrescarGrupos()}
+            disabled={cargandoGrupos}
+            className="rounded bg-emerald-700 px-3 py-1 text-[10px] transition-colors hover:bg-emerald-600 disabled:opacity-60"
+          >
+            {cargandoGrupos ? "…" : "⟳ Verificar"}
+          </button>
+        </div>
+        <div className="space-y-3 p-4">
+          {estadoApi === null ? (
+            <p className="text-[11px] font-medium text-slate-500">Verificando conexión con la API…</p>
+          ) : !estadoApi.configurado ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-800">
+              <p className="font-black uppercase tracking-wider">⚠️ Integración no configurada</p>
+              <p className="mt-1">
+                Para mandar reportes y pizarras al grupo se necesita la API oficial de WhatsApp Business (Cloud API).
+                Seguí la guía <code className="rounded bg-amber-100 px-1">GUIA_META_WHATSAPP_API.md</code>: cuenta de
+                Meta con número de Cloud API, secretos en Supabase, desplegar las funciones{" "}
+                <code className="rounded bg-amber-100 px-1">whatsapp-webhook</code>,{" "}
+                <code className="rounded bg-amber-100 px-1">whatsapp-grupos</code> y{" "}
+                <code className="rounded bg-amber-100 px-1">whatsapp-enviar</code>, y aplicar{" "}
+                <code className="rounded bg-amber-100 px-1">sql/whatsapp_integracion.sql</code>.
+                Mientras tanto podés seguir abriendo wa.me con los botones de siempre.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Grupo vinculado */}
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Grupo vinculado</p>
+                  <p className="truncate text-sm font-black text-slate-900">
+                    {grupoVinculado ? grupoVinculado.nombre || grupoVinculado.group_id : "Ninguno todavía"}
+                  </p>
+                  {grupoVinculado && !grupoVinculado.nombre && (
+                    <p className="text-[10px] font-medium text-slate-500">ID: {grupoVinculado.group_id}</p>
+                  )}
+                </div>
+                {grupoVinculado && (
+                  <Button size="sm" variant="outline" onClick={() => void desvincularGrupo()} title="Dejar de mandar a este grupo">
+                    Desvincular
+                  </Button>
+                )}
+              </div>
+
+              {/* Grupos detectados por el webhook */}
+              <div>
+                <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-slate-600">
+                  Grupos detectados{grupos.length ? ` · ${grupos.length}` : ""}
+                </p>
+                <p className="mb-2 text-[10px] leading-relaxed text-slate-500">
+                  Agregá el número del negocio a tu grupo de WhatsApp y hacé que alguien escriba ahí: el webhook lo
+                  detecta y aparece abajo para vincularlo. Un grupo solo.
+                </p>
+                {grupos.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-center text-[11px] italic text-slate-400">
+                    Sin grupos detectados todavía.
+                  </p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {grupos.map((g) => (
+                      <li key={g.group_id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <div className="min-w-0 flex-1">
+                          {renombrando === g.group_id ? (
+                            <input
+                              value={nombreNuevo}
+                              onChange={(e) => setNombreNuevo(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") void renombrarGrupo(g);
+                              }}
+                              placeholder="Nombre del grupo"
+                              autoFocus
+                              className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                            />
+                          ) : (
+                            <p className="truncate text-xs font-bold text-slate-800">{g.nombre || g.group_id}</p>
+                          )}
+                          {g.vinculado ? (
+                            <span className="text-[9px] font-black uppercase text-emerald-600">✅ vinculado</span>
+                          ) : (
+                            <span className="text-[9px] font-medium text-slate-400">
+                              {g.primera_deteccion ? `detectado ${fmtFechaHora(g.primera_deteccion)}` : "detectado"}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex gap-1.5">
+                          {g.vinculado ? (
+                            <Button size="sm" variant="outline" onClick={() => void desvincularGrupo()}>Quitar</Button>
+                          ) : (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void renombrarGrupo(g)}
+                                title="Ponerle nombre"
+                              >
+                                {renombrando === g.group_id ? "✔" : "✏️"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="bg-emerald-600 text-white hover:bg-emerald-700"
+                                onClick={() => void vincularGrupo(g)}
+                                disabled={cargandoGrupos}
+                              >
+                                Vincular
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* Envío automático */}
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-slate-600">Envío automático al grupo</p>
+                <p className="mb-2 text-[10px] leading-relaxed text-slate-500">
+                  Activá los eventos que querés que se manden solos al grupo vinculado. Hoy ya responde el cierre de
+                  remate; el resto queda listo en <code className="rounded bg-slate-100 px-1">enviarAutomaticoSiActivo</code>.
+                </p>
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                  {MODULOS_AUTO.map((m) => (
+                    <label
+                      key={m.clave}
+                      className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700"
+                    >
+                      <span>{m.label}</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(auto[m.clave])}
+                        onChange={(e) => void toggleAuto(m.clave, e.target.checked)}
+                        className="h-4 w-4 accent-emerald-600"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+
       {/* Resumen superior: 3 contadores */}
       <section aria-label="Resumen de clientes y envíos" className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="rounded-xl bg-emerald-600 p-4 text-white shadow">
@@ -420,6 +693,19 @@ export function WhatsAppModule() {
                 </Button>
                 <Button size="md" className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={abrirReporte} title="Abrir en WhatsApp">
                   💬 Abrir WhatsApp
+                </Button>
+                <Button
+                  size="md"
+                  className="bg-indigo-600 text-white hover:bg-indigo-700"
+                  onClick={() => void enviarReporteGrupo()}
+                  disabled={!grupoVinculado || enviandoGrupo}
+                  title={
+                    grupoVinculado
+                      ? `Enviar al grupo vinculado (${grupoVinculado.nombre || grupoVinculado.group_id})`
+                      : "Primero vinculá un grupo en el panel de conexión"
+                  }
+                >
+                  {enviandoGrupo ? "…" : "📤 Enviar al grupo"}
                 </Button>
               </div>
             </div>

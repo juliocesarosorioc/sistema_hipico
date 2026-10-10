@@ -10,6 +10,8 @@ import {
   type CarreraRegistro,
   type EjemplarEditable,
 } from "@/lib/gaceta/ui";
+import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
+import type { OpcionHipodromo } from "@/lib/tablas/rpc";
 
 type Props = {
   index: number;
@@ -17,6 +19,8 @@ type Props = {
   onChange: (c: CarreraRegistro) => void;
   onEnviar: (i: number) => void;
   onEliminar?: () => void;
+  /** Catálogo de hipódromos activos: para mostrar el NOMBRE PROPIO del hipódromo. */
+  hipodromos?: OpcionHipodromo[];
 };
 
 /**
@@ -27,7 +31,7 @@ type Props = {
  *  con insignia del padrón (✗ sin padrón, ✓ vinculado, ★ nuevo), pie con la
  *  "Suma de la Tabla" en vivo y el botón "Cargar en el Ensamblaje".
  */
-export function CarreraGacetaCard({ index, carrera, onChange, onEnviar, onEliminar }: Props) {
+export function CarreraGacetaCard({ index, carrera, onChange, onEnviar, onEliminar, hipodromos }: Props) {
   const numCarrera = carrera.carrera || index + 1;
   const ejemplares = Array.isArray(carrera.ejemplares) ? carrera.ejemplares : [];
   const suma = ejemplares.reduce((a, ej) => a + (aNum(ej.valor) ?? aNum(ej.pts) ?? 0), 0);
@@ -38,6 +42,7 @@ export function CarreraGacetaCard({ index, carrera, onChange, onEnviar, onElimin
     set({ ejemplares: ejemplares.map((e, k) => (k === j ? { ...e, ...patch } : e)) });
 
   const hipo = String(carrera.hipodromo || "").trim().toUpperCase();
+  const nombreHipo = nombrePropioHipodromo(hipo, hipodromos ?? []);
   const dist = String(carrera.distancia ?? "");
   const superficie = String(carrera.superficie || "ARENA").toUpperCase();
   const premio = String(carrera.premio ?? 100);
@@ -52,14 +57,21 @@ export function CarreraGacetaCard({ index, carrera, onChange, onEnviar, onElimin
       {/* Cabecera índigo (morada) */}
       <div className="bg-indigo-600 px-2 py-1 text-white">
         <div className="flex items-center justify-between gap-1">
-          <input
-            type="text"
-            value={hipo}
-            onChange={(e) => set({ hipodromo: e.target.value.toUpperCase() })}
-            placeholder="Hipódromo"
-            title="Hipódromo"
-            className={`${inpClaro} min-w-0 flex-1 uppercase`}
-          />
+          <div className="min-w-0 flex-1">
+            <input
+              type="text"
+              value={hipo}
+              onChange={(e) => set({ hipodromo: e.target.value.toUpperCase() })}
+              placeholder="Hipódromo"
+              title="Hipódromo"
+              className={`${inpClaro} w-full uppercase`}
+            />
+            {nombreHipo && nombreHipo !== hipo ? (
+              <span className="block truncate leading-none text-[8px] font-bold uppercase text-indigo-100/90" title={nombreHipo}>
+                {nombreHipo}
+              </span>
+            ) : null}
+          </div>
           <span className="flex items-center gap-0.5 whitespace-nowrap text-[10px] font-black">
             🏁 C
             <input
@@ -68,7 +80,7 @@ export function CarreraGacetaCard({ index, carrera, onChange, onEnviar, onElimin
               onChange={(e) => set({ carrera: e.target.value ? Number(e.target.value) : null })}
               placeholder="N°"
               title="Número de la carrera"
-              className={`${inpClaro} w-7 text-center`}
+              className={`${inpClaro} w-12 text-center`}
             />
           </span>
           <span className="flex shrink-0 items-center gap-1">

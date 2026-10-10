@@ -207,7 +207,7 @@ comment on function public.club_sincronizar_carrera_desde_tabla(
   'retirados, invalidados, auditoria ni resultados.';
 
 -- Solo el trigger y este script la llaman. Sin esto, `security definer` +
-  `execute` por defecto dejarian la funcion ejecutable por `anon`.
+-- `execute` por defecto dejarian la funcion ejecutable por `anon`.
 revoke all on function public.club_sincronizar_carrera_desde_tabla(
   date, text, integer, jsonb, text, text, numeric, text)
   from public, anon, authenticated;

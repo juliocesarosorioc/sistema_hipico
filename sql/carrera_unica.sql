@@ -120,7 +120,8 @@ begin
          e.ord
   from jsonb_array_elements(coalesce(new.caballos, '[]'::jsonb))
     with ordinality as e(elem, ord)
-  where nullif(btrim(coalesce(e.elem ->> 'numero', '')), '') is not null;
+  where nullif(btrim(coalesce(e.elem ->> 'numero', '')), '') is not null
+  on conflict (carrera_id, numero) do nothing;
 
   return new;
 end

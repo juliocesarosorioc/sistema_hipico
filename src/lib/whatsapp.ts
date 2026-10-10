@@ -391,3 +391,149 @@ export async function registrarEnvioWsp(args: {
     /* sinop */
   }
 }
+
+// ============================================================
+// CONEXIÓN AL GRUPO — WhatsApp Business Cloud API
+// (Edge Functions: whatsapp-webhook / whatsapp-grupos / whatsapp-enviar)
+// ============================================================
+export type GrupoWsp = {
+  group_id: string;
+  nombre: string | null;
+  phone_number_id: string | null;
+  vinculado: boolean;
+  primera_deteccion?: string;
+  ultimo_evento?: string;
+  created_at?: string;
+};
+
+export type AutomatizacionWsp = {
+  modulo: string;
+  activo: boolean;
+  updated_at?: string;
+};
+
+export type EstadoWhatsappApi = {
+  configurado: boolean;
+  webhook: boolean;
+};
+
+export type ResWhatsappFn = {
+  ok: boolean;
+  error?: string;
+  [k: string]: unknown;
+};
+
+const URL_FN = process.env.NEXT_PUBLIC_SUPABASE_URL
+  ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1`
+  : "";
+
+/**
+ * Llama a una Edge Function de WhatsApp con la sesión del usuario. La función
+ * valida el JWT contra Supabase Auth y la RPC `tiene_capacidad`; sin sesión de
+ * staff la llamada se rechaza del lado del servidor. Devuelve null si no hay
+ * sesión, no hay red o la respuesta no fue JSON.
+ */
+async function llamarWhatsappFn(nombre: string, body: Record<string, unknown>): Promise<ResWhatsappFn | null> {
+  if (!supabase || !URL_FN) return null;
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token ?? "";
+    let resp: Response;
+    try {
+      resp = await fetch(`${URL_FN}/${nombre}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      return null;
+    }
+    const txt = await resp.text();
+    let datos: ResWhatsappFn;
+    try {
+      datos = JSON.parse(txt);
+    } catch {
+      datos = { ok: false, error: `Respuesta inesperada (${resp.status}).` };
+    }
+    if (!resp.ok && !datos.error) datos.error = `Error ${resp.status}.`;
+    return datos;
+  } catch {
+    return null;
+  }
+}
+
+/** ¿La integración está configurada (token + Phone Number ID)? null = sin red. */
+export async function estadoWhatsappApi(): Promise<EstadoWhatsappApi | null> {
+  const res = await llamarWhatsappFn("whatsapp-grupos", { accion: "estado" });
+  if (!res?.ok) return null;
+  return {
+    configurado: res.configurado === true,
+    webhook: res.webhook === true,
+  };
+}
+
+/** Grupos detectados por el webhook, con el vinculado marcado. */
+export async function listarGruposWsp(): Promise<GrupoWsp[]> {
+  const res = await llamarWhatsappFn("whatsapp-grupos", { accion: "listar" });
+  if (!res?.ok || !Array.isArray(res.grupos)) return [];
+  return res.grupos as GrupoWsp[];
+}
+
+/** Marca un grupo como destino de los envíos. */
+export async function vincularGrupoWsp(groupId: string, nombre?: string): Promise<ResWhatsappFn | null> {
+  return llamarWhatsappFn("whatsapp-grupos", { accion: "vincular", group_id: groupId, nombre });
+}
+
+/** Saca la marca de grupo vinculado. */
+export async function desvincularGrupoWsp(): Promise<ResWhatsappFn | null> {
+  return llamarWhatsappFn("whatsapp-grupos", { accion: "desvincular" });
+}
+
+/** Pone un nombre humano al grupo detectado. */
+export async function renombrarGrupoWsp(groupId: string, nombre: string): Promise<ResWhatsappFn | null> {
+  return llamarWhatsappFn("whatsapp-grupos", { accion: "renombrar", group_id: groupId, nombre });
+}
+
+/** Toggles de envío automático por módulo. */
+export async function leerAutomatizacionesWsp(): Promise<AutomatizacionWsp[]> {
+  const res = await llamarWhatsappFn("whatsapp-grupos", { accion: "automatizaciones" });
+  if (!res?.ok || !Array.isArray(res.automatizaciones)) return [];
+  return res.automatizaciones as AutomatizacionWsp[];
+}
+
+/** Activa/desactiva el envío automático de un módulo. */
+export async function guardarAutomatizacionWsp(modulo: string, activo: boolean): Promise<ResWhatsappFn | null> {
+  return llamarWhatsappFn("whatsapp-grupos", { accion: "automatizacion", modulo, activo });
+}
+
+/**
+ * Envía un texto al grupo vinculado por la Cloud API. Devuelve la respuesta de
+ * la función; null si no hay sesión o no hay red (la UI lo muestra).
+ */
+export async function enviarAlGrupoWsp(
+  mensaje: string,
+  modulo = "whatsapp"
+): Promise<ResWhatsappFn | null> {
+  return llamarWhatsappFn("whatsapp-enviar", { accion: "enviar", mensaje, destino: "grupo", modulo });
+}
+
+/**
+ * Envío automático desde un módulo (remate_cierre, tablas_publicar,
+ * marcas_cierre, jornada_cierre): solo dispara si el toggle está activo y hay
+ * grupo vinculado. Fallos silenciosos a propósito: el evento principal del
+ * módulo no puede quedarse esperando a WhatsApp.
+ */
+export async function enviarAutomaticoSiActivo(modulo: string, mensaje: string): Promise<void> {
+  try {
+    const autos = await leerAutomatizacionesWsp();
+    if (!autos.some((a) => a.modulo === modulo && a.activo)) return;
+    const res = await enviarAlGrupoWsp(mensaje, modulo);
+    if (res?.ok) console.info(`[whatsapp-auto] ${modulo}: enviado al grupo vinculado.`);
+    else console.warn(`[whatsapp-auto] ${modulo}: ${res?.error ?? "sin respuesta"}`);
+  } catch {
+    /* sinop */
+  }
+}

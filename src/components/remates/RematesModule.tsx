@@ -15,7 +15,7 @@ import { SearchableSelect, type OpcionSelect } from "@/components/ui/SearchableS
 import { Guard } from "@/components/ui/Guard";
 import { useAuthStore } from "@/store/useAuthStore";
 import { clienteDelUsuario } from "@/lib/seguridad/accesos";
-import { plantillaPorId, reemplazarVarsTablas } from "@/lib/whatsapp";
+import { enviarAutomaticoSiActivo, plantillaPorId, reemplazarVarsTablas } from "@/lib/whatsapp";
 import { CargaResultadosRapida } from "@/components/liquidacion/CargaResultadosRapida";
 import {
   listarRemates,
@@ -1153,6 +1153,9 @@ function DetalleRemate({
       /* ignore */
     }
     setPreviewWsp({ abrir: true, texto });
+    // Envío automático al grupo vinculado (si el toggle remate_cierre está activo
+    // en el Centro WhatsApp). Fire-and-forget: no bloquea el copiado ni el preview.
+    void enviarAutomaticoSiActivo("remate_cierre", texto);
   };
 
 return (

@@ -361,6 +361,45 @@ function fusionarMaestro(a: FilaCarreraMaestro, b: FilaCarreraMaestro): FilaCarr
  * ninguna copia pierde información. Las filas sin hipódromo o sin número de
  * carrera válido se descartan: no son identificables y solo contaminan.
  */
+/**
+ * Resuelve el TEXTO de hipódromo que se debe ESCRIBIR en cada fila para que el
+ * `onConflict (fecha,hipodromo,carrera)` de la matriz ACTUALICE la fila que ya
+ * existe en lugar de insertar una segunda.
+ *
+ * El problema: la clave única de la matriz compara el TEXTO tal cual quedó
+ * guardado ("LA RINCONADA" y "La Rinconada" son dos filas distintas), mientras
+ * la app cruza los hipódromos por su clave canónica (mayúsculas sin espacios).
+ * Un upsert ciego con "LA RINCONADA" sobre una BD que guarda "La Rinconada"
+ * crea un DUPLICADO que solo `dedupFilasMaestro` vuelve a fusionar al LEER —
+ * la UI se ve bien, pero la fila gemela queda huérfana en la base.
+ *
+ * Devuelve un Map clave → texto a usar: el TEXTO GUARDADO si existe una fila
+ * con la misma clave canónica (fecha + hipódromo + número), o la forma canónica
+ * en mayúsculas para las que son nuevas.
+ */
+export function hipodromosAEscribir(
+  entradas: { fecha?: string | null; hipodromo: unknown; carrera: unknown }[],
+  existentes: { fecha?: unknown; hipodromo?: unknown; carrera?: unknown }[]
+): Map<string, string> {
+  const guardados = new Map<string, string>();
+  for (const f of existentes) {
+    const hipo = String(f.hipodromo ?? "").trim();
+    const num = numeroCarrera(f.carrera);
+    if (!hipo || !num) continue;
+    const clave = `${String(f.fecha ?? "").slice(0, 10)}|${claveHipodromo(hipo)}|${num}`;
+    if (!guardados.has(clave)) guardados.set(clave, hipo);
+  }
+  const salida = new Map<string, string>();
+  for (const e of entradas) {
+    const hipo = String(e.hipodromo ?? "").trim().toUpperCase();
+    const num = numeroCarrera(e.carrera);
+    if (!hipo || !num) continue;
+    const clave = `${String(e.fecha ?? "").slice(0, 10)}|${claveHipodromo(hipo)}|${num}`;
+    salida.set(clave, guardados.get(clave) || hipo);
+  }
+  return salida;
+}
+
 export function dedupFilasMaestro(filas: FilaCarreraMaestro[]): FilaCarreraMaestro[] {
   const porClave = new Map<string, FilaCarreraMaestro>();
   for (const f of filas) {

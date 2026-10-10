@@ -489,16 +489,21 @@ permisos del middleware.
 - Pruebas: 80 casos en `pruebas/wps.test.ts` (8 nuevos cubren ejemplar vacío y ejemplar ausente).
 
 ### Pendiente estructural: el BetSlip no persiste en `tickets_apuestas`
-- [ ] Verificado por búsqueda en todo `src/`: `tickets_apuestas` se **lee** (clientes, reportes,
-      impresión, saldos) pero **nunca se inserta** desde el frontend. Los tickets del BetSlip viven
-      solo en `localStorage` (zustand `persist`).
-- Consecuencia: la venta individual de Taquilla **no genera filas en `tickets_apuestas`**. Al pagar
-  la carrera, `aplicarLiquidacionSaldos` liquida los tickets que otro flujo haya creado
-  (marcas, tablas, portal), no los que el operador acaba de vender. El resultado que sí se persiste
-  es la matriz de dividendos en `resultados_carreras`.
-- Esto es anterior a la migración de W/P/S y excede su alcance, pero conviene decidirlo: si la
-  Taquilla debe producir tickets reales, falta el paso de INSERT (con `nombre_jugada`, `caballo`,
-  `monto_jugado`, cliente y grupo de cobro) antes de liquidar.
+- [x] **RESUELTO (sql/taquilla_venta.sql + src/lib/taquilla/venta.ts).** La venta
+      individual de Taquilla hoy produce filas reales: "Cargar jugada(s)" en Gestión de Jugadas
+      llama a `club_vender_jugada`, que valida tope `saldo+aval`, pertenencia al grupo y cliente
+      activo, descuenta el saldo y crea el ticket `'Pendiente'` en UNA transacción
+      (con `nombre_jugada`, `caballo`, `monto_jugado`, `cliente_juega_id`, dador en
+      `cliente_consigue_nombre` y `grupo_cobro_id`), idempotente por `nota_auditoria.idempotencia`.
+- [x] Quitar (✕/✏️/Vaciar) una jugada ya vendida la **anula** (`club_anular_jugada`) y devuelve
+      el saldo exacto; el ticket queda `'Anulado'` + `anulada=true`. Un ticket decidido no se anula.
+- [x] Al finalizar la carrera, `ejecutarFinalizar` ahora acredita los ganadores vía
+      `aplicarLiquidacionSaldos` (antes la Gestión liquidaba solo en memoria y nunca movía saldo).
+- [x] Banquero: `banqueros.sql` re-leído para que el trigger congele el banquero de un ticket
+      Taquilla usando `nota_auditoria.modalidad` ('WPS' para las americanas W/P/S) cuando el
+      `origen` es `'TAQUILLA'`. **Requiere volver a correr `banqueros.sql` y `taquilla_venta.sql`.**
+- [ ] Queda el BetSlip simple de Taquilla (`BetSlip.tsx`): no tiene selección de cliente, así que
+      sigue siendo solo de sesión. Si la casa lo quiere persistente, hay que agregarle cliente y grupo.
 
 ### Las pruebas rompían `next build` al compilar dentro de `src/`
 - [x] `pruebas/tsconfig.json` tiene `noEmit: false` (node no corre TS), así que **emite**. El harness
@@ -643,8 +648,10 @@ una carrera y otro no. Se centralizó en la **matriz `carreras`**.
   para `REMATES`, el ticket se pasa a decidido y el trigger le mueve el saldo espejo
   (+monto de la venta) y le cobra la comisión que recibe el grupo. Sin grupo, el
   ticket queda como antes (`grupo = 'REMATE'`, `Pendiente`).
-- **WPS sigue sin banquero:** no hay venta WPS persistida (el `BetSlip` vive en un
-  store en memoria), así que no hay ticket al que congelarle el banquero.
+- **WPS con banquero:** la Taquilla ya persiste la venta (`sql/taquilla_venta.sql`,
+  `origen='TAQUILLA'` + `nota_auditoria.modalidad='WPS'` para las americanas). Para que el
+  banquero del grupo se congele hay que **volver a correr `banqueros.sql`** (el trigger ahora
+  también lee `modalidad` cuando el `origen` es `'TAQUILLA'`).
 - **Liquidación de Dupleta** (`sql/dupleta_liquidacion.sql`, RPC `club_liquidar_dupleta`):
   el cuadro `n1 x n2` gana si `n1` gana la carrera1 y `n2` gana la carrera2; acredita el
   `premio` congelado, anula y devuelve el stake si `n1`/`n2` se retiró, y el resto queda
@@ -812,6 +819,196 @@ create table if not exists tickets_jugadas (
 
 ---
 
+## WhatsApp: envíos al grupo por la Cloud API de Meta
+
+> El Centro WhatsApp sigue enviando por `wa.me`, pero ahora puede **detectar un
+> grupo y mandarle los cálculos (reportes y pizarras) por la API oficial**.
+> El detalle operativo completo (cuenta Meta, WABA, número, token, webhook,
+> deploy) está en `GUIA_META_WHATSAPP_API.md`.
+
+### Arquitectura
+- **3 Edge Functions** (`supabase/functions/`), mismo patrón que `portal-auth`
+  (Deno + `jsr:@supabase/supabase-js@2`, validación del JWT con `auth.getUser`
+  y permisos con la RPC `tiene_capacidad`):
+  - `whatsapp-webhook` — público por diseño (lo llama Meta). GET = verificación
+    del `WHATSAPP_VERIFY_TOKEN`; POST = upsert de cada `group_id` detectado en
+    `whatsapp_grupos`. Siempre responde 200 rápido (si no, Meta reintenta).
+  - `whatsapp-grupos` — `estado` (sonda de configuración, sin permiso),
+    `listar`, `vincular` (desmarca el anterior antes de marcar, por el índice
+    único), `desvincular`, `renombrar`, `automatizaciones` y `automatizacion`.
+    Puerta con `whatsapp:vincular_grupo` / `whatsapp:enviar_grupo`.
+  - `whatsapp-enviar` — POST a `graph.facebook.com/v21.0/<PHONE>/messages` con
+    `recipient_type:"group"` y el `group_id` vinculado; registra en
+    `whatsapp_envios` (bitácora técnica) y `notificaciones` (historial del
+    Centro), y devuelve el error crudo de Meta (ej. ventana de 24 h cerrada).
+- **Capacidades nuevas en el maestro** (`maestro_seed.sql`, re-aplicar):
+  `whatsapp:vincular_grupo` (admin) y `whatsapp:enviar_grupo` (admin+consulta).
+- **Tablas** (`sql/whatsapp_integracion.sql`, paso 22 del runbook):
+  `whatsapp_grupos`, `whatsapp_envios`, `whatsapp_automatizaciones` con RLS
+  (`soy_principal` / `tiene_capacidad`), grants solo a `authenticated`.
+
+### Detección del grupo
+Por **webhook**: el número del negocio se agrega al grupo y, cuando alguien
+escribe, Meta manda un mensaje cuyo `group_id` queda guardado. El nombre del
+grupo lo pone el usuario en la UI (el webhook no trae subject).
+
+### Envío automático (toggles)
+`whatsapp_automatizaciones` define 4 módulos (seed en `false`):
+`remate_cierre`, `tablas_publicar`, `marcas_cierre`, `jornada_cierre`. Hoy solo
+`remate_cierre` tiene disparador conectado: `copiarPizarra` en
+`RematesModule.tsx` llama `enviarAutomaticoSiActivo("remate_cierre", texto)`
+(fire-and-forget, no bloquea el copiado). El resto queda listo en la capa
+`src/lib/whatsapp.ts` para cuando los módulos quieran dispararlo.
+
+### Estado
+- [x] Edge Functions escritas (webhook/grupos/enviar) — **deploy manual**:
+      `npx supabase functions deploy <fn>` + `supabase secrets set`.
+- [x] `sql/whatsapp_integracion.sql` escrito — **aplicación manual** en el
+      SQL Editor (paso 22 del runbook).
+- [x] `maestro_seed.sql` con las 2 capacidades + matriz — **re-aplicar** para
+      que tomen efecto.
+- [x] Panel **Conexión al grupo** en `WhatsAppModule.tsx` (estado API, grupo
+      vinculado, detectados, renombrar, toggles) + botón **📤 Enviar al grupo**
+      en el generador de reportes.
+- [x] Capa cliente en `src/lib/whatsapp.ts` (`llamarWhatsappFn` con el JWT de
+      la sesión + helpers por acción).
+- [ ] **Cuenta de Meta / WABA / número / token**: externa, la crea el usuario
+      siguiendo `GUIA_META_WHATSAPP_API.md`. Sin ella la API no responde y el
+      panel muestra "Integración no configurada".
+- [ ] **Plantillas para fuera de la ventana de 24 h** (extensión futura de
+      `whatsapp-enviar` con `type:"template"`).
+- [ ] **Texto libre de Tablas y Marcas al grupo** — hoy esos botones siguen
+      con `waLink()`/placeholder; migrarlos al envío por API queda a elección.
+
+---
+
+## Carga Rápida: que el mensaje transcrito se estructure solo (plan)
+
+> **Objetivo:** cuando se redacta un mensaje (por dictado/transcriptor) y se pega
+> en **⚡ Carga Rápida**, la plataforma debe detectar en cada línea **quién juega
+> (Cliente 1), quién da (Cliente 2), cuánto juega (MONTO), qué juegan (JUGADA) y
+> qué caballo juegan (CABALLO)** — sin importar el orden ni los errores del
+> transcriptor — y dejarla **ordenada en la Carga Individual** (filas editables
+> con `SearchableSelect` de clientes ya resueltos al nombre canónico).
+> Decisión: **Capa 1 implementada** (normalizador difuso local, módulo puro)
+> — la Capa 2 (IA) sigue documentada como refuerzo opcional sin desplegar.
+
+### Por qué hoy no ordena (diagnóstico verificado en el código)
+El flujo actual es `parsearLineaRapida()` (`src/lib/taquilla/validar.ts`) →
+`poblarCargaRapida()` (`GestionJugadasModule.tsx`) → `setFilas`. El parser es
+heurístico por tokens y choca con un texto transcrito por voz en 4 puntos:
+
+1. **Los nombres se parten.** Los clientes son "lo sobrante: 1° token →
+   CLIENTE 1, resto → CLIENTE 2". Para `"2p 1 100 Perrito molinas"` (ejemplo
+   del propio placeholder) hoy sale CLIENTE 1 = `PERRITO`, CLIENTE 2 =
+   `MOLINAS`; "Perrito Molinas" es **un solo cliente**. El parser no conoce el
+   catálogo de clientes.
+2. **Los números en palabras no se leen.** "cien", "cuarenta", "trescientos"
+   no son dígitos → MONTO vacío → fila roja.
+3. **La nomenclatura hablada no se traduce.** "un p", "dos p", "tres y tres",
+   "a la par" no se convierten a `1p`, `2p`, `3y3`, `pp`; el relleno del
+   locutor ("señores", "sigue", "el número") no está en `STOP_WORDS`.
+4. **El caballo solo se acepta como número.** El transcriptor dice "con el
+   siete" o el nombre del ejemplar; solo funcionan los dígitos escritos.
+5. **(Agravante)** Cliente 1/Cliente 2 usan `SearchableSelect` con
+   `allowCustom={false}` y `saldoCliente()` matchea **exacto o por prefijo
+   único**: el texto del transcriptor no matchea el catálogo → la fila queda
+   sin saldo ni tope aunque el parser haya "acertado" a medias.
+
+### Arquitectura propuesta — dos capas
+
+**Capa 1 · Normalizador difuso local (determinista, sin costo, sin credenciales)**
+Nuevo módulo puro `src/lib/taquilla/normalizar.ts`, parado ANTES de
+`parsearLineaRapida`, con contexto de los catálogos que el módulo ya tiene en
+pantalla. Pipeline:
+
+1. **Expansión léxica** — números hablados → dígitos ("cincuenta y cinco" →
+   `55`, "mil doscientos" → `1200`); nomenclatura hablada → canon ("dos p" →
+   `2p`, "un p" → `1p`, "tres y tres" → `3y3`, "dos n" → `2n`, "a la par" /
+   "puesto por puesto" → `pp`, "diez a ocho" → `10/8`, y la forma tipeada
+   "10a8" ahora también se detecta como jugada); slop del locutor →
+   `STOP_WORDS` ampliada ("señores", "sigue", "número", "nro", "eh").
+2. **Parseo** — se reutiliza `clasificarLineaRapida` (extraído de
+   `parsearLineaRapida`): JUGADA · CABALLO · MONTO + el SOBRANTE sin asignar
+   clientes (el legacy sigue intacto como wrapper 1° → CL1, resto → CL2).
+3. **Segmentación de clientes por catálogo** — en vez de partir los tokens
+   sobrantes al azar, probar las subdivisiones contiguas y elegir la que
+   maximice la similitud contra **nombres reales de clientes** (Jaro-Winkler,
+   umbral ~0.85). "Perito molina" → **"Perrito Molinas"** (nombre canónico) y
+   un nombre de 2+ palabras jamás se parte. Dos candidatos distintos →
+   CLIENTE 1 / CLIENTE 2; material para uno solo → CLIENTE 2 = "" (DADOR, lo
+   decide `reparto.ts`).
+4. **Caballo por nombre** — si el texto no es número, matchear contra
+   `caballosDeCarrera` (número + nombre del padrón) y devolver el número;
+   "el siete" → `7`; validar con `revisarCaballo` (`taquilla/caballos.ts`).
+5. **Confianza por campo** — exacto = verde, aproximado = ámbar, sin
+   coincidencia = rojo (reutiliza el mecanismo de fila `error` ya existente;
+   la línea NO se descarta).
+
+**Ajuste al diagnóstico (2026-10-09, al implementar):** además de los 4 puntos,
+se encontró que el cruce legacy `"2x3 10/8 2 100 Juan Pedro"` (el ejemplo del
+propio placeholder) **nunca parseó**: `buscarExpresionEjemplares` se comía el
+pareo "2x3 10" como si fuera caballos divididos (el divisor "x" es el mismo) y
+dejaba `/8` como basura → "No se detectó una JUGADA". Quedó arreglado
+detectando el cruce `NxM N/M` al inicio de la línea antes de extraer la
+expresión de ejemplares (la expresión se busca en el resto).
+
+**Capa 2 · IA opcional (refuerzo, no dependencia)**
+Edge Function `normalizar-jugadas` (mismo patrón de deploy manual que
+`whatsapp-*`): recibe el bloque + contexto (clientes, caballos, hipódromo,
+carrera, fecha) y un LLM devuelve `[{cliente1, cliente2, monto, jugada,
+caballo, confianza}]`. La UI usa la local siempre; **solo cae a la IA si una
+línea quedó en rojo**, y si la función no está configurada o falla queda la
+local. Secrets: `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` (API compatible
+OpenAI).
+
+### Cambios por archivo (cuando se implemente)
+- [x] **Nuevo `src/lib/taquilla/normalizar.ts`** (módulo PURO, sin I/O) —
+      expansor numérico es-ES, diccionario de nomenclatura hablada,
+      segmentador difuso de clientes (Jaro-Winkler, umbral 0.88), resolución
+      de caballos por nombre, salida con `confianza` por campo + `correcciones`.
+- [x] **`src/lib/taquilla/validar.ts`** — stop-words ampliadas con el relleno
+      del locutor; `clasificarLineaRapida` expone el sobrante sin asignar
+      clientes (`parsearLineaRapida` queda como wrapper legacy); se reutilizan
+      los regex existentes (`RE_JUGADA_LETRA`, `RE_PAREO`, `RE_NUMERICO`,
+      `tokenNumerico`) + `RE_A_PREMIO` para "10a8" + arreglo del cruce legacy
+      "2x3 10/8" que el extractor de ejemplares se comía.
+- [x] **`GestionJugadasModule.tsx`** — `poblarCargaRapida` pasa por el
+      normalizador con `clientes` + `caballosDeCarrera`; los `SearchableSelect`
+      de Cliente 1/2 reciben el **nombre canónico** → saldo, tope y DADOR al
+      instante, sin tocar su contrato actual; los campos en "sin" —y el Cliente
+      2 vacío, porque la casa exige **siempre 2 clientes**— marcan la fila en
+      rojo para confirmar.
+- [x] **Modal Carga Rápida** — vista previa en vivo línea por línea (verde/
+      ámbar/rojo con las correcciones legibles) antes de "📥 Poblar tabla".
+- [ ] **Botón "✨ Corregir con IA"** (Capa 2, opcional) — solo cuando haya
+      líneas en rojo y la Edge Function `normalizar-jugadas` esté desplegada.
+- [x] **`pruebas/`** — `normalizar-carga.test.ts`: expansores, Jaro-Winkler,
+      nombres compuestos, caballo por nombre, frases ruidosas de transcriptor
+      y regresión de los casos que ya funcionaban; 57 aserciones verdes.
+
+### Casos de prueba fijos
+| Entrada | Esperado (CL1 · CL2 · MONTO · JUGADA · CABALLO) |
+| --- | --- |
+| `2p 1 100 Perrito molinas` | Perrito Molinas · — · 100 · 2P · 1 |
+| `Juega Lolo 2p (1) con 300 da Mar` | Lolo · Mar · 300 · 2P · 1 |
+| `señores juega perito molinas con el cinco doscientos a la par y da marlene` | Perrito Molinas · Marlene · 200 · PP · 5 |
+| `tres y tres el nueve cuarenta emy y mar` | Emy · Mar · 40 · 3Y3 · 9 |
+
+### Decisiones cerradas con el dueño (2026-10-09)
+- **Apodos/aliases**: NO se agregan. Los nombres van tal cual en el catálogo;
+  Jaro-Winkler corrige los errores de tipeo del transcriptor sin inventar
+  relaciones.
+- **Umbral de confianza**: `UMBRAL_MATCH = 0.88` (constante exportada en
+  `normalizar.ts`) — prioriza precisión: menos correcciones automáticas, más
+  filas rojas pidiendo confirmación.
+- **Dador**: la casa exige **siempre 2 clientes por jugada** (quién juega +
+  quién da). Una línea con un solo cliente detectado deja Cliente 2 vacío y la
+  fila queda **en rojo** para que el operador complete quién da, sin importar
+  la convención de DADOR de `reparto.ts`.
+
+---
+
 | Archivo | Propósito |
 |---------|-----------|
 | `js/components/modal_resultado.js` | Componente reutilizable de modal de resultado/caballos |
@@ -832,6 +1029,12 @@ create table if not exists tickets_jugadas (
 
 ---
 
-*Última actualización: 2026-09-30 (resultados conectados a los reportes; escritura de
+*Última actualización: 2026-10-09 (resultados conectados a los reportes; escritura de
 `resultados_carreras` detrás de RPC; bucket de reclamos privado; visor de auditoría; stubs de
-contabilidad y dupletas rewirenados)*
+contabilidad y dupletas rewirenados; **Centro WhatsApp conectado a la Cloud API: webhook de
+detección de grupo + envío manual/automático**; **CAPA 1 DE CARGA RÁPIDA IMPLEMENTADA: el
+normalizador difuso local ordena el texto transcrito (números y nomenclatura hablados, nombres
+contra el catálogo por Jaro-Winkler, caballo por nombre contra el padrón) y lo deja estructurado
+en la Carga Individual con vista previa en vivo y filas rojas solo para lo dudoso (nombres
+    canónicos, umbral 0.88, sin aliases, siempre 2 clientes)**; la Capa 2 con IA sigue
+    documentada como opcional)*

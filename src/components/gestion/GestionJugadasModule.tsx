@@ -1,11 +1,14 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { detectarModalidad, parsearLineaRapida, proyectarFila } from "@/lib/taquilla/validar";
+import { detectarModalidad, proyectarFila } from "@/lib/taquilla/validar";
+import { normalizarLineaRapida, type ConfianzaCampo } from "@/lib/taquilla/normalizar";
 import { HorseBadge } from "@/components/ui/HorseChips";
 import { useTaquillaStore, type TicketTaquilla } from "@/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla, type ResLiquidarCarrera } from "@/lib/liquidacion/pagarYCerrar";
+import { aplicarLiquidacionSaldos } from "@/lib/liquidacion/saldos";
+import { venderJugada, anularJugada, claveIdempotenciaJugada } from "@/lib/taquilla/venta";
 import { dividendosDePizarra } from "@/lib/liquidacion/posiciones";
 import { guardarPizarraCentral } from "@/lib/liquidacion/pizarraCentral";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
@@ -373,6 +376,27 @@ const hipodromosDelDia = useMemo(() => {
   const monedaFmt = (n: number): string =>
     fmtMoney(Number.isFinite(n) ? n : 0, MONEDA);
 
+  /* ⚡ Normalizador difuso de Carga Rápida: contexto = catálogo de clientes +
+     padrón de la carrera. La vista previa en vivo del modal y el poblar tabla
+     usan exactamente el mismo resultado, para que "lo que se ve" es lo que se
+     pega en la Carga Individual. */
+  const contextoNormalizacion = useMemo(
+    () => ({
+      clientes,
+      caballos: caballosDeCarrera.map((c) => ({ numero: c.numero, nombre: c.nombre })),
+    }),
+    [clientes, caballosDeCarrera]
+  );
+
+  const previewCargaRapida = useMemo(
+    () =>
+      textoCargaRapida
+        .split("\n")
+        .map((linea) => ({ linea, normalizada: normalizarLineaRapida(linea, contextoNormalizacion) }))
+        .filter((x) => x.normalizada !== null),
+    [textoCargaRapida, contextoNormalizacion]
+  );
+
   /**
    * Revision de la columna CABALLO contra los caballos de la carrera en
    * pantalla. Se recalcula una vez por carrera (no por fila): el topete de
@@ -477,10 +501,34 @@ const hipodromosDelDia = useMemo(() => {
     return { ...base, jugada: String(t.comando).trim(), caballo: t.caballo ?? "", cliente1: t.cliente1 ?? "", cliente2: t.cliente2 ?? "" };
   };
 
-  /** ✏️ Devuelve una jugada cargada a la tabla como inputs editables (sin borrarla). */
-  const editarTicket = (id: string) => {
+  /**
+   * Si la jugada ya se vendió (tiene `ticketId`), la anula para devolver el
+   * saldo antes de sacarla de la sesión. Devuelve `false` si la anulación falló
+   * (en ese caso NO se quita de la lista, para no perder el rastro del cobro).
+   */
+  const anularSiPersistido = async (t: TicketTaquilla): Promise<boolean> => {
+    if (t.ticketId === undefined) return true;
+    const r = await anularJugada(t.ticketId, "Quitado por el operador");
+    if (!r.ok) {
+      setAviso(`⚠️ No se pudo anular el ticket #${t.ticketId}: ${r.error ?? "sin conexión"}`);
+      return false;
+    }
+    return true;
+  };
+
+  /** ✕ Quita una jugada de la sesión, devolviendo el saldo si ya estaba vendida. */
+  const quitarTicket = async (id: string) => {
     const t = tickets.find((x) => x.id === id);
     if (!t) return;
+    if (!(await anularSiPersistido(t))) return;
+    eliminarTicket(id);
+  };
+
+  /** ✏️ Devuelve una jugada a la tabla como inputs editables (anula la venta). */
+  const editarTicket = async (id: string) => {
+    const t = tickets.find((x) => x.id === id);
+    if (!t) return;
+    if (!(await anularSiPersistido(t))) return;
     eliminarTicket(id);
     const fila = desarmarTicket(t);
     setFilas((f) => [fila, ...f]);
@@ -601,7 +649,14 @@ const hipodromosDelDia = useMemo(() => {
     );
   };
 
-  const cargarAtaquilla = () => {
+  /**
+   * Carga las filas válidas a la taquilla: cada una se VENDE de verdad contra
+   * `club_vender_jugada` (ticket + descuento de saldo en una transacción). Solo
+   * lo que se cobra queda en la sesión; una fila que no se puede cobrar queda en
+   * rojo para corregir. El monto que se registra es el AUTORIZADO (topado por
+   * saldo+aval), no el tipeado.
+   */
+  const cargarAtaquilla = async () => {
     let n = 0;
     const errores: string[] = [];
     const indicesError: number[] = [];
@@ -624,12 +679,44 @@ const hipodromosDelDia = useMemo(() => {
         indicesError.push(filas.indexOf(f));
         continue;
       }
-      /* El monto que se registra es el AUTORIZADO (topado por el saldo del
-         cliente con menos disponible), no el tipeado. Si se recortó, se avisa. */
+      /* El CLIENTE 1 es a quien se le cobra: tiene que estar en el catálogo para
+         obtener su UUID y su grupo. El CLIENTE 2 (dador) es informativo. */
+      const c1 = saldoCliente(f.cliente1);
+      if (!c1) {
+        errores.push(`Fila ${filas.indexOf(f) + 1}: el CLIENTE 1 no está en el catálogo (no se puede cobrar).`);
+        indicesError.push(filas.indexOf(f));
+        continue;
+      }
+      const c2 = saldoCliente(f.cliente2);
+      const grupoId =
+        c1.grupo_id != null ? String(c1.grupo_id) : c1.grupos[0] != null ? String(c1.grupos[0]) : null;
       if (v.reparto?.recortado) {
         recortes.push(
           `Fila ${filas.indexOf(f) + 1}: ${v.reparto.avisos[0] ?? `Se autoriza ${v.monto} de ${v.montoPedido}.`}`
         );
+      }
+      /* Venta transaccional: si falla (saldo, grupo, red), nada se descuenta y
+         la fila queda en rojo; si gana, el ticket ya está en `tickets_apuestas`. */
+      const venta = await venderJugada({
+        hipodromo,
+        fecha,
+        carrera,
+        jugada: v.tipo,
+        caballo: f.caballo.trim(),
+        monto: v.monto,
+        clienteId: String(c1.id),
+        grupoId,
+        clienteDador: f.cliente2.trim() || c2?.nombre || null,
+        comision: comisionNum,
+        // El banquero se negocia por modalidad: las americanas W/P/S van como
+        // 'WPS' (el `origen` del ticket sigue siendo 'TAQUILLA').
+        modalidad: v.modalidad === "AMERICANAS" ? "WPS" : v.modalidad,
+        idempotencia: claveIdempotenciaJugada(),
+      });
+      if (!venta.ok) {
+        errores.push(`Fila ${filas.indexOf(f) + 1}: ${venta.error ?? "no se pudo registrar la venta"}`);
+        indicesError.push(filas.indexOf(f));
+        continue;
       }
       const mejorCobre = Math.max(v.cliente1?.cobroNeto ?? 0, v.cliente2?.cobroNeto ?? 0);
       const comisionMejor =
@@ -642,13 +729,17 @@ const hipodromosDelDia = useMemo(() => {
         caballo: f.caballo.trim() || undefined,
         gananciaProyectada: round2(mejorCobre - v.monto),
         comision: comisionMejor,
-        cliente1: f.cliente1.trim() || undefined,
-        cliente2: f.cliente2.trim() || undefined,
+        cliente1: c1.nombre,
+        cliente2: f.cliente2.trim() || c2?.nombre || undefined,
         cobro1: v.cliente1?.cobroNeto,
         cobro2: v.cliente2?.cobroNeto,
         fecha,
         hipodromo,
         carrera,
+        ticketId: venta.ticketId,
+        cliente1Id: String(c1.id),
+        cliente2Id: c2 ? String(c2.id) : undefined,
+        grupoId: grupoId ?? undefined,
       });
       n += 1;
     }
@@ -669,32 +760,50 @@ const hipodromosDelDia = useMemo(() => {
       return [...conservar, filaVacia()];
     });
     setAviso(
-      `✅ ${n} jugada(s) enviada(s) a la taquilla (C${carrera}).` +
+      `✅ ${n} jugada(s) registrada(s) y cobrada(s) en la taquilla (C${carrera}).` +
         (errores.length ? ` ${errores.length} fila(s) con error quedaron en rojo para corregir.` : "") +
         (recortes.length ? ` ⚠️ ${recortes.length} recortada(s) por saldo: ${recortes.join(" · ")}` : "")
     );
   };
 
   const poblarCargaRapida = () => {
-    const lineas = textoCargaRapida.split("\n");
     const filasNuevas: FilaCarga[] = [];
     let ok = 0;
-    for (const l of lineas) {
-      const p = parsearLineaRapida(l);
+    let corregidas = 0;
+    let aRevisar = 0;
+    for (const { linea, normalizada: p } of previewCargaRapida) {
       if (!p) continue;
       if (p.ok) {
+        /* Regla de la casa: SIEMPRE hay 2 clientes (quién juega + quién da),
+           así que Cliente 2 vacío también es motivo de revisión. Los campos en
+           "sin" nunca se inventan: la fila queda en rojo para que el operador
+           la confirme o la complete. Cuando el catálogo no está cargado se
+           conserva el comportamiento legacy (no se marca todo en rojo). */
+        const conCatalogo = clientes.length > 0;
+        const necesitaRevision =
+          p.confianza.jugada === "sin" ||
+          p.confianza.monto === "sin" ||
+          p.confianza.caballo === "sin" ||
+          (conCatalogo && p.confianza.cliente1 === "sin") ||
+          (conCatalogo && !p.cliente2.trim());
         filasNuevas.push({
           jugada: p.jugada,
           caballo: p.caballo,
           monto: p.monto,
           cliente1: p.cliente1,
           cliente2: p.cliente2,
+          error: necesitaRevision
+            ? "⚠️ Revisar: algún campo no se reconoció con seguridad." +
+              (p.correcciones.length ? ` (${p.correcciones.join(" · ")})` : "")
+            : undefined,
         });
+        if (p.correcciones.length > 0) corregidas += 1;
+        if (necesitaRevision) aRevisar += 1;
         ok += 1;
       } else {
         // Línea ilegible: NO se descarta — se pinta en rojo ⚠️ para que el
         // operador la corrija manualmente en la tabla antes de enviar a la BD.
-        filasNuevas.push({ ...filaVacia(), jugada: l.trim(), error: p.motivo });
+        filasNuevas.push({ ...filaVacia(), jugada: linea.trim(), error: p.motivo });
       }
     }
     const ilegibles = filasNuevas.filter((f) => f.error).length;
@@ -709,6 +818,8 @@ const hipodromosDelDia = useMemo(() => {
       setAviso(
         ok > 0
           ? `⚡ ${ok} fila(s) poblada(s) desde el bloque de texto.` +
+              (corregidas ? ` 🔧 ${corregidas} con el texto ordenado automáticamente.` : "") +
+              (aRevisar ? ` ⚠️ ${aRevisar} con campos dudosos quedaron en rojo para confirmar.` : "") +
               (ilegibles ? ` ⚠️ ${ilegibles} línea(s) ilegible(s) quedaron en rojo para corregir.` : "") +
               (conCaballoMalo.length
                 ? ` 🐴 ${conCaballoMalo.length} con caballo que no corre en esta carrera.`
@@ -747,10 +858,26 @@ const hipodromosDelDia = useMemo(() => {
     });
     setResumen(r);
     if (r.ok) {
+      // Bloque 3 · Saldos: la venta ya descontó el saldo al cargar la jugada;
+      // aquí se acredita a los ganadores leyendo los tickets REALES de la
+      // carrera (transaccional e idempotente sobre los Pendientes).
+      const s = await aplicarLiquidacionSaldos({
+        hipodromo,
+        carrera,
+        pizarra: ultimaPizarra.pizarra,
+        dividendos: dividendosDePizarra(ultimaPizarra),
+        premio_por_tabla:
+          ultimaPizarra.premio_por_tabla ?? tablaDeCarrera?.premio_recalculado ?? tablaDeCarrera?.premio_original ?? null,
+        tasaComision: comisionNum,
+      });
       for (const t of ticketsDeCarrera) eliminarTicket(t.id);
       setUltimaPizarra(null);
       setJugadasPorCarrera((j: number[]) => j.filter((c) => c !== carrera));
       setResumen(r);
+      if (s.errores.length) {
+        setAviso(`✅ ${r.motivo} · ⚠️ aviso de saldos: ${s.errores[0]}`);
+        return;
+      }
     }
     setAviso(r.ok ? `✅ ${r.motivo}` : `❌ ${r.motivo}`);
   };
@@ -960,7 +1087,7 @@ const hipodromosDelDia = useMemo(() => {
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
-                          cargarAtaquilla();
+                          void cargarAtaquilla();
                         }
                       }}
                       placeholder="10/8 · pp · 1p · 2n"
@@ -1080,7 +1207,7 @@ const hipodromosDelDia = useMemo(() => {
             ⚡ Carga Rápida <span className="ml-1 rounded bg-warning-500/20 px-1.5 text-[9px] font-black text-warning-700">texto</span>
           </Button>
           <Button size="sm" onClick={() => setFilas((f) => [...f, filaVacia()])}>＋ Agregar fila</Button>
-          <Button variant="success" size="md" className="ml-auto" onClick={cargarAtaquilla}>
+          <Button variant="success" size="md" className="ml-auto" onClick={() => void cargarAtaquilla()}>
             📥 Cargar jugada(s) en la taquilla
           </Button>
         </div>
@@ -1117,18 +1244,18 @@ const hipodromosDelDia = useMemo(() => {
                         <td className="h-10 px-1 py-0 align-middle text-center">
                           <button
                             type="button"
-                            onClick={() => editarTicket(t.id)}
+                            onClick={() => void editarTicket(t.id)}
                             aria-label="Editar jugada"
-                            title="Volver a la tabla como inputs editables"
+                            title="Volver a la tabla como inputs editables (anula la venta)"
                             className="text-xs text-slate-400 hover:text-primary-600"
                           >
                             ✏️
                           </button>
                           <button
                             type="button"
-                            onClick={() => eliminarTicket(t.id)}
+                            onClick={() => void quitarTicket(t.id)}
                             aria-label="Quitar jugada"
-                            title="Quitar de la sesión"
+                            title="Quitar de la sesión (devuelve el saldo si estaba vendida)"
                             className="ml-1 text-xs text-slate-400 hover:text-red-500"
                           >
                             ✕
@@ -1392,11 +1519,60 @@ const hipodromosDelDia = useMemo(() => {
                 placeholder={"Pegá el bloque de jugadas (1 por línea, CUALQUIER orden):\n\n3y3 9 40 emy mar\n2p 1 100 Perrito molinas\nJuega Lolo 2p (1) con 300 da Mar\n1/2 y 2n 7 100 Eddie Manuel\n2x3 10/8 2 100 Juan Pedro"}
                 className="w-full resize-y rounded-xl border border-line bg-white p-3 font-mono text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
               />
+              {previewCargaRapida.length > 0 && (
+                <div className="max-h-40 overflow-y-auto rounded-xl border border-line bg-slate-50 p-2">
+                  <p className="pb-1 text-[9px] font-black uppercase tracking-wide text-slate-400">
+                    🔎 Así se va a pegar en la Carga Individual
+                  </p>
+                  <div className="space-y-1">
+                    {previewCargaRapida.map(({ linea, normalizada: p }, i) => {
+                      if (!p) return null;
+                      if (!p.ok) {
+                        return (
+                          <div
+                            key={i}
+                            className="flex items-center gap-1.5 rounded-md bg-red-50 px-2 py-1 text-[10px] leading-tight text-red-600"
+                          >
+                            <span className="font-black">⚠️</span>
+                            <span className="truncate font-semibold">{linea.trim()}</span>
+                            <span className="ml-auto max-w-[45%] truncate text-red-400">{p.motivo}</span>
+                          </div>
+                        );
+                      }
+                      const celdas: Array<[string, string, ConfianzaCampo]> = [
+                        ["Jugada", p.jugada, p.confianza.jugada],
+                        ["Caballo", p.caballo, p.confianza.caballo],
+                        ["Monto", p.monto, p.confianza.monto],
+                        ["Cliente 1", p.cliente1, p.confianza.cliente1],
+                        ["Cliente 2", p.cliente2 || "—", p.confianza.cliente2],
+                      ];
+                      return (
+                        <div
+                          key={i}
+                          className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md bg-white px-2 py-1 text-[10px] leading-tight text-slate-600"
+                        >
+                          {celdas.map(([k, v, conf]) => (
+                            <span key={k} title={`${k}: ${v}`} className={cnConfianza(conf)}>
+                              <b className="mr-0.5 font-black text-slate-400">{k}:</b> {v}
+                            </span>
+                          ))}
+                          {p.correcciones.length > 0 && (
+                            <span className="font-semibold text-amber-600">🔧 {p.correcciones.join(" · ")}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <p className="text-[10px] font-semibold text-slate-500">
-                Motor heurístico por <b>tokens</b>: detecta <b>JUGADA · CABALLO · MONTO · CLIENTE 1 · CLIENTE 2</b>{" "}
-                sin importar el orden (ej. <i>3y3 9 40 emy mar</i> o <i>Juega Lolo 2p (1) con 300 da Mar</i>). Líneas
-                ilegibles quedan en <span className="font-black text-red-600">rojo ⚠️</span> en la tabla para
-                corregirlas manualmente, sin romper el resto del bloque.
+                Motor heurístico por <b>tokens</b> + <b>normalizador difuso</b>: detecta{" "}
+                <b>JUGADA · CABALLO · MONTO · CLIENTE 1 · CLIENTE 2</b> sin importar el orden, interpreta
+                números y nomenclatura hablados (<i>"dos p"→2p · "a la par"→pp · "cien"→100</i>) y matchea
+                los nombres contra el catálogo real de clientes y caballos. Lo que se ve arriba es lo que
+                se pega; lo dudoso queda en <span className="font-black text-amber-600">ámbar</span> o{" "}
+                <span className="font-black text-red-600">rojo ⚠️</span> para confirmar, sin romper el
+                resto del bloque.
               </p>
             </div>
             <div className="flex justify-end gap-2 border-t border-line bg-gray-50 px-4 py-3">
@@ -1413,6 +1589,15 @@ const hipodromosDelDia = useMemo(() => {
       <input type="hidden" />
     </div>
   );
+}
+
+/** Color del campo según la confianza del normalizador (vista previa del modal). */
+function cnConfianza(c: ConfianzaCampo): string {
+  return c === "exacto"
+    ? "font-semibold text-slate-700"
+    : c === "aproximado"
+      ? "font-semibold text-amber-600"
+      : "font-black text-red-500";
 }
 
 function round2(n: number): number {

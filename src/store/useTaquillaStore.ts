@@ -24,6 +24,18 @@ export type TicketTaquilla = {
   fecha?: string;
   hipodromo?: string;
   carrera?: number;
+  /**
+   * id de la fila real en `tickets_apuestas` una vez vendida
+   * (club_vender_jugada). Si está, quitar/corregir la jugada debe ANULAR el
+   * ticket para devolver el saldo; si no, es una jugada solo de sesión.
+   */
+  ticketId?: number;
+  /** UUID del CLIENTE 1 (el que juega) en el catálogo — a quien se le cobra. */
+  cliente1Id?: string;
+  /** UUID del CLIENTE 2 (el que da), si está en el catálogo. */
+  cliente2Id?: string;
+  /** UUID del grupo de cobro congelado en la venta. */
+  grupoId?: string;
   /** Timestamp (ms) de registro en la sesión. */
   addedAt: number;
 };

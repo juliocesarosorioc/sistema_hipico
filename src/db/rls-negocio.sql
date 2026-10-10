@@ -62,7 +62,6 @@ alter table public.notificaciones      enable row level security;
 alter table public.tickets_jugadas     enable row level security;
 alter table public.solicitudes_tablas  enable row level security;
 alter table public.dupletas            enable row level security;
-alter table public.contabilidad_movimientos enable row level security;
 alter table public.transacciones_financieras enable row level security;
 
 -- ------------------------------------------------------------------ personal
@@ -186,13 +185,20 @@ create policy "personal opera dupletas" on public.dupletas
 -- lugares. Los INSERT del personal llegan por RPC (club_registrar_deposito y
 -- familia), asi que esta policy es la red para el INSERT directo por
 -- PostgREST, que es el camino que un atacante escolheria.
--- `contabilidad_movimientos` queda con RLS encendido y sin policy de
--- escritura a proposito: la app no la escribe (los movimientos van por RPC a
--- `transacciones_financieras`) y no hay create table de ella en el repo, asi
--- que no se conocen sus columnas. Una policy con `with check` sobre columnas
--- inventadas revienta al aplicar el DDL. Cuando se documente la tabla, se le
--- agrega la misma policy que tiene la de abajo.
-drop policy if exists "personal escribe movimientos" on public.contabilidad_movimientos;
+-- `contabilidad_movimientos` NO existe en el esquema productivo: ningun script
+-- del repo la crea y la app no la escribe (los movimientos van por RPC a
+-- `transacciones_financieras`). Sin guarda, el `alter table` de arriba revienta
+-- con 42P01 y tumba el archivo entero. Se blinda solo si algun dia existe.
+do $$
+begin
+  if to_regclass('public.contabilidad_movimientos') is not null then
+    alter table public.contabilidad_movimientos enable row level security;
+    drop policy if exists "personal escribe movimientos" on public.contabilidad_movimientos;
+    revoke all on public.contabilidad_movimientos from anon;
+    grant all on public.contabilidad_movimientos to authenticated;
+  end if;
+end
+$$;
 drop policy if exists "personal lee movimientos" on public.transacciones_financieras;
 drop policy if exists "personal escribe movimientos" on public.transacciones_financieras;
 create policy "personal lee movimientos" on public.transacciones_financieras
@@ -221,7 +227,6 @@ revoke all on public.notificaciones      from anon;
 revoke all on public.tickets_jugadas     from anon;
 revoke all on public.solicitudes_tablas  from anon;
 revoke all on public.dupletas            from anon;
-revoke all on public.contabilidad_movimientos from anon;
 revoke all on public.transacciones_financieras  from anon;
 
 -- `authenticated` si los necesita: es el rol del personal. Se concede
@@ -232,7 +237,6 @@ grant all on public.notificaciones      to authenticated;
 grant all on public.tickets_jugadas     to authenticated;
 grant all on public.solicitudes_tablas  to authenticated;
 grant all on public.dupletas            to authenticated;
-grant all on public.contabilidad_movimientos to authenticated;
 grant all on public.transacciones_financieras  to authenticated;
 
 -- El service_role (la Edge Function) no esta sujeto a RLS ni a estos GRANT: es

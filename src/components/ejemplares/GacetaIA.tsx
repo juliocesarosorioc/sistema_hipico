@@ -7,6 +7,7 @@ import { guardarHistorialGaceta, registrarEjemplares } from "@/lib/gaceta/padron
 import { Button } from "@/components/ui/Button";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { CarreraGacetaCard } from "@/components/ejemplares/CarreraGacetaCard";
+import { listarHipodromos, type OpcionHipodromo } from "@/lib/tablas/rpc";
 import {
   acumularEnEnsamblaje,
   cargadasEnEnsamblaje,
@@ -140,9 +141,15 @@ export function GacetaIA() {
   /** INDICADOR: carreras ya cargadas en el Ensamblaje vs. las del día. */
   const [cargadas, setCargadas] = useState(0);
   const [enviadasHoy, setEnviadasHoy] = useState(0);
+  /** Catálogo de hipódromos activos: para mostrar el nombre propio en las cards. */
+  const [hipodromos, setHipodromos] = useState<OpcionHipodromo[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    void listarHipodromos().then((hs) => setHipodromos(hs)).catch(() => setHipodromos([]));
+  }, []);
 
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -870,6 +877,7 @@ export function GacetaIA() {
                 key={`${String(c.hipodromo || "")}-${String(c.carrera ?? "")}-${i}`}
                 index={i}
                 carrera={c}
+                hipodromos={hipodromos}
                 onChange={(nc) => setCarreras((prev) => prev.map((x, k) => (k === i ? nc : x)))}
                 onEnviar={(id) => void enviar([carreras[id]])}
                 onEliminar={() => eliminarCarrera(i)}
