@@ -8,7 +8,7 @@ export type LineaExpandida = {
 };
 
 const MONTO_REGEX = /[\d]+(?:[.,]\d+)?$/;
-const PATRON_DOBLE = /(\d+[ypn]?\/\d+[ypn]?|\d+y\d+)-(\d+[ypn]?|\d+n)\b/i;
+const PATRON_DOBLE = /(\d+[a-z]{0,3}(?:\/\d+[a-z]{0,3})*)-(\d+[a-z]{0,3}(?:\/\d+[a-z]{0,3})*)/i;
 
 /**
  * Expande líneas con patrón tipo "2y3-3n" o "1p-1y2": divide el monto entre ambas jugadas
