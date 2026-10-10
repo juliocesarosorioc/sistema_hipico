@@ -97,6 +97,8 @@ export function GestionJugadasModule() {
   const [aviso, setAviso] = useState("");
   /** Índice de la fila cuyo aviso de saldo se acaba de copiar (feedback ✅). */
   const [copiadoFila, setCopiadoFila] = useState<number | null>(null);
+  /** Feedback del botón que copia TODOS los avisos de saldo. */
+  const [copiadoAvisos, setCopiadoAvisos] = useState(false);
 
   const { carreras: centralCarrerasDiaAllBase, carrerasDe, recargar: recargarRegistroCentral } =
     useRegistroCentralOpts(fecha);
@@ -544,16 +546,15 @@ const hipodromosDelDia = useMemo(() => {
     const topados = jugadores.filter((j) => !j.libre && j.disponible < montoPedido);
     if (!topados.length) return null;
     const menor = [...topados].sort((a, b) => a.disponible - b.disponible)[0];
-    const describir = (j: { nombre: string; libre: boolean; disponible: number }) =>
-      `${j.nombre}${j.libre ? " (libre)" : ` disp ${monedaFmt(j.disponible)}`}`;
-    const linea =
-      jugadores.length > 1
-        ? `Juega ${describir(jugadores[0])} da ${describir(jugadores[1])}`
-        : `Juega ${describir(jugadores[0])}`;
+    const lineaJugador = (j: { nombre: string; libre: boolean; disponible: number }) =>
+      j.libre
+        ? `a ${j.nombre} le queda libre en esta su jugada con ${monedaFmt(montoPedido)}`
+        : `a ${j.nombre} le queda ${monedaFmt(j.disponible)} en esta su jugada con ${monedaFmt(montoPedido)}`;
+    const detalle = jugadores.map(lineaJugador).join("\n");
     const jugada = [f.jugada.trim().toUpperCase(), f.caballo.trim() ? `(${f.caballo.trim()})` : ""]
       .filter(Boolean)
       .join(" ");
-    return `${jugada} con ${monedaFmt(montoPedido)}\n${linea}\nPor saldo de ${menor.nombre}`;
+    return `${jugada} con ${monedaFmt(montoPedido)}\n${detalle}\nPor saldo de ${menor.nombre}`;
   };
 
   const copiarAvisoSaldo = async (i: number, texto: string) => {
@@ -563,6 +564,17 @@ const hipodromosDelDia = useMemo(() => {
       setTimeout(() => setCopiadoFila((v) => (v === i ? null : v)), 1500);
     } catch {
       setAviso("⚠️ No se pudo copiar el aviso (permiso de portapapeles).");
+    }
+  };
+
+  const copiarTodosAvisos = async (textos: string[]) => {
+    if (!textos.length) return;
+    try {
+      await navigator.clipboard.writeText(textos.join("\n\n"));
+      setCopiadoAvisos(true);
+      setTimeout(() => setCopiadoAvisos(false), 1500);
+    } catch {
+      setAviso("⚠️ No se pudieron copiar los avisos (permiso de portapapeles).");
     }
   };
 
@@ -1332,6 +1344,20 @@ const hipodromosDelDia = useMemo(() => {
             ⚡ Carga Rápida <span className="ml-1 rounded bg-warning-500/20 px-1.5 text-[9px] font-black text-warning-700">texto</span>
           </Button>
           <Button size="sm" onClick={() => setFilas((f) => [...f, filaVacia()])}>＋ Agregar fila</Button>
+          {(() => {
+            const avisos = filas.map((f) => avisoSaldo(f)).filter((x): x is string => !!x);
+            if (!avisos.length) return null;
+            return (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => void copiarTodosAvisos(avisos)}
+                title="Copiar todos los avisos de saldo (una línea por jugada afectada)"
+              >
+                {copiadoAvisos ? "✅ Avisos copiados" : `📋 Copiar avisos de saldo (${avisos.length})`}
+              </Button>
+            );
+          })()}
           <Button variant="success" size="md" className="ml-auto" onClick={() => void cargarAtaquilla()}>
             📥 Cargar jugada(s) en la taquilla
           </Button>
