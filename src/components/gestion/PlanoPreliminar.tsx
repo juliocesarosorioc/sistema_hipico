@@ -3,7 +3,7 @@
 import React from "react";
 
 export default function PlanoPreliminar() {
-  const planoTexto = * 🏇 ARGENTINA 🏇 *
+  const planoTexto = `* 🏇 ARGENTINA 🏇 *
 Sabado, 10 de Octubre de 2026
 , 1era Carrera
 Ret:
@@ -20,7 +20,7 @@ Total jugadas: 0
 *USTED ES SU PROPIO CORREDOR*
 *RECLAMOS AL PRIVADO*
 NO DIGA: ❌MALO❌; CASA FALTA...
-*TILDE SU JUGADA Y SE REVISARÁ*;
+*TILDE SU JUGADA Y SE REVISARÁ*`;
 
   return (
     <div className="min-h-screen bg-[#f8fafc] font-sans p-4">
