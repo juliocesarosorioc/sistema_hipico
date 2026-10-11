@@ -14,7 +14,7 @@
  */
 import { supabase } from "./supabase";
 import { COMISION_CASA, parsearNini, normalizarNini } from "./bettingEngine";
-import { liquidarPuestos } from "./motores/puestos";
+import { liquidarOficial } from "./motores/oficiales";
 import type { TicketMotor } from "./bettingEngine";
 import type { PizarraCarrera } from "./liquidacion";
 
@@ -238,6 +238,9 @@ export type BalanceJugada = {
   gananciaBruta: number;
   comision: number;
   gananciaNeta: number;
+  /** La jugada quedó ANULADA (empate oficial / el caballo terminó justo en el
+   *  puesto N del NINI): el motor devuelve el capital y nadie gana ni pierde. */
+  anulada?: boolean;
 };
 
 /**
@@ -323,18 +326,28 @@ function niniDesdePizarra(
     pizarra,
     dividendos,
   };
-  const r = liquidarPuestos(ticket, num(j.comisionPct));
-  // El premio NINI usa el dividendo oficial de la casa (pago por $1) cuando la
-  // carrera lo tiene cargado; sin ese dato se conserva la paridad de 2×.
-  const porUno = Number(dividendos?.nini);
-  const mult = Number.isFinite(porUno) && porUno >= 1 ? porUno : 2;
-  const premio = r.ok ? num(j.monto) * mult : 0;
+  const r = liquidarOficial(ticket, num(j.comisionPct));
+  const monto = num(j.monto);
+  // ANULADA (empate oficial, o NINI que termina JUSTO en el puesto N): el motor
+  // devuelve el capital — `totalClienteNeto` = monto — pero con ok:false. No es
+  // una pérdida: el "Juega" recupera su capital y el "da" no entrega nada (0/0).
+  // Sin este caso, `relacionResultados` la contaba como PERDIDA y le cobraba el
+  // monto completo al que jugaba (y le abonaba la paridad al "da").
+  if (!r.ok && r.totalClienteNeto > 0) {
+    return { jugada: j, premioPotencial: 0, gananciaBruta: 0, comision: 0, gananciaNeta: 0, anulada: true };
+  }
+  // El BRUTO REAL de la jugada sale del motor (no de un ×2 fijo): las jugadas
+  // que el motor resuelve como COMBINADA/COMPUESTA de un solo NINI, como
+  // "2Y2N" (2p + 2n), pagan una fracción. El "da" entrega el BRUTO real
+  // (premio − monto), no el monto entero.
+  const premioPotencial = r.ok ? round2(r.totalClienteNeto + r.gananciaCasa) : 0;
+  const gananciaBruta = r.ok ? round2(premioPotencial - monto) : 0;
   return {
     jugada: j,
-    premioPotencial: premio,
-    gananciaBruta: r.ok ? num(j.monto) : 0,
-    comision: r.gananciaCasa,
-    gananciaNeta: Math.max(0, r.totalClienteNeto - num(j.monto)),
+    premioPotencial,
+    gananciaBruta,
+    comision: r.ok ? r.gananciaCasa : 0,
+    gananciaNeta: r.ok ? round2(r.totalClienteNeto - monto) : 0,
   };
 }
 
@@ -366,6 +379,13 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
     const perdida = num(j.monto);
     const beneficiario = j.clienteConsigue || "";
     cuerpo.push(`${i + 1}) ${j.jugada} (${j.caballo}) con ${fmtMonto(j.monto)}`);
+    // ANULADA: el motor devolvió el capital, así que ni el que JUEGA gana/pierde
+    // ni el "da" entrega nada. Se muestra 0/0 y NO se acumula en el cierre.
+    if (b.anulada) {
+      cuerpo.push(`Juega ${j.clienteJuega} $ +0,00`);
+      if (beneficiario) cuerpo.push(`Consigue ${beneficiario} $ +0,00`);
+      return;
+    }
     // La jugada es de SUMA CERO entre el que JUEGA y el "da" (Consigue): el que
     // acierta cobra la ganancia neta y el otro entrega el monto financiado. La
     // decisión se toma por el RESULTADO (no por la modalidad): así la compuesta

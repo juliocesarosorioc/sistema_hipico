@@ -180,8 +180,16 @@ export async function aplicarLiquidacionSaldos(
   }
 
   let abonoTotal = 0;
+  let reembolsos = 0;
   for (const { res } of decisiones) {
-    if (res.ok) abonoTotal += res.totalClienteNeto;
+    if (res.ok) {
+      abonoTotal += res.totalClienteNeto;
+    } else if (res.totalClienteNeto > 0) {
+      // ANULADA: el motor devolvió el capital (ok:false pero con capital). La
+      // venta ya lo descontó, así que entra en el abono como reembolso.
+      abonoTotal += res.totalClienteNeto;
+      reembolsos += 1;
+    }
   }
 
   // Aplica los updates (ticket + saldo del cliente) en un viaje consistente.
@@ -200,11 +208,17 @@ export async function aplicarLiquidacionSaldos(
 
   const decidibles = decisiones.filter((d) => !d.res.indeterminado);
   const updates: Promise<unknown>[] = decidibles.map(({ fila, res }) => {
-    const estado = res.ok ? "Ganador" : "Perdedor";
+    // ANULADA: el motor devolvió el capital (ok:false con totalClienteNeto > 0
+    // = monto). Se marca "Retirado" (ni ganador ni perdedor) y se le DEVUELVE el
+    // capital al cliente. Antes caía en "Perdedor" con premio 0 y el cliente
+    // perdía su dinero en una jugada que la casa anuló.
+    const esAnulada = !res.ok && res.totalClienteNeto > 0;
+    const estado = esAnulada ? "Retirado" : res.ok ? "Ganador" : "Perdedor";
     const premioPagar = res.ok ? res.totalClienteNeto : 0;
     const montDecidido = res.ok ? res.totalClienteNeto : 0;
+    const credito = res.ok || esAnulada ? res.totalClienteNeto : 0;
 
-    const clientePromise = res.ok
+    const clientePromise = credito > 0
       ? (async () => {
           const fid = fila.cliente_juega_id;
           if (fid == null) return;
@@ -223,7 +237,7 @@ export async function aplicarLiquidacionSaldos(
           const actual = NUM(((c ?? {}) as Record<string, unknown>).saldo_actual);
           const { error: eUpd } = await sdb
             .from("clientes")
-            .update({ saldo_actual: actual + res.totalClienteNeto })
+            .update({ saldo_actual: actual + credito })
             .eq("id", fid as never);
           if (eUpd) errores.push(`Saldo cliente ${String(fid)}: no se pudo acreditar (${eUpd.message})`);
         })()
@@ -244,7 +258,9 @@ export async function aplicarLiquidacionSaldos(
 
   const ganadores = decidibles.filter((d) => d.res.ok).length;
   const base =
-    `Liquidación aplicada: ${decidibles.length} ticket(s) decidido(s) (${ganadores} ganadores). ` +
+    `Liquidación aplicada: ${decidibles.length} ticket(s) decidido(s) (${ganadores} ganadores` +
+    (reembolsos ? `, ${reembolsos} anulados devueltos` : "") +
+    `). ` +
     `Abono total $${abonoTotal.toFixed(2)}.`;
   let motivo = base;
   if (pendientes.length) {
@@ -259,7 +275,7 @@ export async function aplicarLiquidacionSaldos(
     motivo,
     aplicados: decidibles.length,
     yaAplicado: false,
-    reembolsos: 0,
+    reembolsos,
     abonoTotal,
     errores,
   };

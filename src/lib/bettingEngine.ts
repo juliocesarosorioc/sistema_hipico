@@ -58,10 +58,12 @@ export function esNini(tipoJugada: string): boolean {
   return parsearNini(tipoJugada) !== null;
 }
 
-/** Canoniza la nomenclatura de un NINI (ej. "2n" → "2N", "1y 2N" → "1y2N"). */
+/** Canoniza la nomenclatura de un NINI (ej. "2n" → "2N", "1y 2N" → "1Y2N").
+ *  El separador se escribe en MAYÚSCULA porque así lo usa la casa ("2Y2N") en
+ *  los planos y relaciones de WhatsApp. */
 export function normalizarNini(tipoJugada: string): string {
   const info = parsearNini(tipoJugada);
-  return info ? info.modalidad : String(tipoJugada ?? "").trim();
+  return info ? info.modalidad.replace(/y/g, "Y") : String(tipoJugada ?? "").trim();
 }
 
 /**
