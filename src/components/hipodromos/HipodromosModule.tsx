@@ -129,7 +129,7 @@ export function HipodromosModule() {
    */
   const abrirSuspender = (h: Hipodromo) => {
     setModal({ ...inicialModal(h), estado: "Suspendido" });
-    toast(`Suspendiendo "${h.nombre}": dejará de ofrecerse en los selectores. Nada se borra.`, "info");
+    toast(`Suspendiendo "${formatearNombre(h.nombre)}": dejará de ofrecerse en los selectores. Nada se borra.`, "info");
   };
 
   const cerrarModal = () => setModal(inicialModal(null));
@@ -148,7 +148,7 @@ export function HipodromosModule() {
         levenshteinNorm(h.nombre, nombre) < 0.15
     );
     if (duplicado) {
-      return toast(`Ya existe un hipódromo muy similar: "${duplicado.nombre}" (${duplicado.pais}). No se permite duplicados.`, "warning");
+      return toast(`Ya existe un hipódromo muy similar: "${formatearNombre(duplicado.nombre)}" (${duplicado.pais}). No se permite duplicados.`, "warning");
     }
 
     setGuardando(true);
@@ -182,7 +182,7 @@ export function HipodromosModule() {
   const eliminar = async (h: Hipodromo) => {
     if (
       !window.confirm(
-        `¿Archivar el hipódromo "${h.nombre}"?\n\n` +
+        `¿Archivar el hipódromo "${formatearNombre(h.nombre)}"?\n\n` +
           `Deja de ofrecerse en Marcas, Tablas, Gestión, Dupletas y Taquilla, pero ` +
           `NO se borra nada: las carreras, tablas y tickets con ese nombre quedan ` +
           `registrados. Podés reactivarlo cuando quieras desde "Archivados".`
@@ -191,7 +191,7 @@ export function HipodromosModule() {
       return;
     const res = await eliminarHipodromo(h.id);
     if (!res.ok) return toast(res.error ?? "Error al archivar.", "error");
-    toast(`🗄️ Hipódromo "${h.nombre}" archivado. Su historial quedó registrado.`, "success");
+    toast(`🗄️ Hipódromo "${formatearNombre(h.nombre)}" archivado. Su historial quedó registrado.`, "success");
     invalidarSelectores();
     void refrescar();
   };
@@ -199,7 +199,7 @@ export function HipodromosModule() {
   const reactivar = async (h: Hipodromo) => {
     const res = await reactivarHipodromo(h.id);
     if (!res.ok) return toast(res.error ?? "Error al reactivar.", "error");
-    toast(`♻️ Hipódromo "${h.nombre}" reactivado.`, "success");
+    toast(`♻️ Hipódromo "${formatearNombre(h.nombre)}" reactivado.`, "success");
     invalidarSelectores();
     void refrescar();
   };
@@ -211,7 +211,7 @@ export function HipodromosModule() {
   const activarUno = async (h: Hipodromo) => {
     const res = await actualizarHipodromo(h.id, { estado: "Activo" });
     if (!res.ok) return toast(res.error ?? "Error al activar.", "error");
-    toast(`✅ Hipódromo "${h.nombre}" activo.`, "success");
+    toast(`✅ Hipódromo "${formatearNombre(h.nombre)}" activo.`, "success");
     invalidarSelectores();
     void refrescar();
   };
@@ -297,7 +297,7 @@ export function HipodromosModule() {
                 return (
                   <tr key={String(h.id)} className="transition-colors hover:bg-surfaceAlt">
                     <td className="px-4 py-2.5">
-                      <p className="font-black uppercase tracking-wide text-slate-800">{h.nombre}</p>
+                      <p className="font-black normal-case tracking-wide text-slate-800">{formatearNombre(h.nombre)}</p>
                     </td>
                     <td className="px-4 py-2.5">
                       <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase text-slate-600">
@@ -368,7 +368,7 @@ export function HipodromosModule() {
               {archivados.map((h) => (
                 <div key={String(h.id)} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                   <div className="min-w-0">
-                    <p className="font-black uppercase tracking-wide text-slate-500 line-through">{h.nombre}</p>
+                    <p className="font-black normal-case tracking-wide text-slate-500 line-through">{formatearNombre(h.nombre)}</p>
                     <p className="text-[10px] font-semibold text-slate-400">
                       {h.pais} · archivado {h.eliminado_en ? new Date(h.eliminado_en).toLocaleDateString("es-ES") : "—"} · su historial de
                       carreras, tablas y tickets sigue registrado

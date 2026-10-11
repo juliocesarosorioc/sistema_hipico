@@ -85,7 +85,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
   return (
     <div className="rounded-2xl border border-line bg-surface p-3">
       <div className="mb-2 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-500">
-        <span className="font-black uppercase tracking-wide">{nombreMostrar} · CARRERAS DEL {fecha}</span>
+        <span className="font-black uppercase tracking-wide"><span className="normal-case">{nombreMostrar}</span> · CARRERAS DEL {fecha}</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full border border-line bg-surface" /> Sin registro</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-success-500" /> Registrada</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-warning-500" /> Con jugadas</span>

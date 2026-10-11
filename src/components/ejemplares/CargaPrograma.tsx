@@ -10,7 +10,7 @@ import { ToastHost } from "@/components/ui/ToastHost";
 import { BuscadorPadron, type OpcionPadron } from "@/components/ejemplares/BuscadorPadron";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useHipodromosActivos } from "@/store/useHipodromosStore";
-import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
+import { nombreHipodromoParaMostrar, nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
 import { registrarEjemplares, listarPadronSimple } from "@/lib/gaceta/padron";
 import { useRegistroCentral } from "@/store/useRegistroCentral";
 import {
@@ -325,8 +325,10 @@ export function CargaPrograma() {
         </div>
         {programa && (
           <p className="mt-3 rounded-lg border border-primary-200 bg-primary-500/5 px-3 py-2 text-[11px] font-semibold text-primary-700">
-            📌 Programa existente para el <b>{programa.fecha}</b>: {programa.hipodromos.join(", ") || "sin hipódromos"} ·{" "}
-            {programa.carreras.length} carrera(s). Abajo se muestran las de <b>{hipodromo || "…"}</b>.
+            📌 Programa existente para el <b>{programa.fecha}</b>:{" "}
+            {programa.hipodromos.map((h) => nombreHipodromoParaMostrar(h)).join(", ") || "sin hipódromos"} ·{" "}
+            {programa.carreras.length} carrera(s). Abajo se muestran las de{" "}
+            <b>{nombreHipodromoParaMostrar(hipodromo) || "…"}</b>.
           </p>
         )}
         {guardado && <p className="mt-2 text-[11px] font-bold text-success-600">✔ {guardado}</p>}

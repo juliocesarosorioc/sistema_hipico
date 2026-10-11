@@ -16,6 +16,7 @@ import {
 } from "@/lib/clientes";
   import { formatoMoneda } from "@/lib/vzla";
 import { resolverImagenReclamo } from "@/lib/portal";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -180,7 +181,7 @@ export function NotificacionesPortal() {
                       Ticket #{r.numero_ticket} — {r.cliente_nombre || "Cliente"}
                     </div>
                     <div className="text-[10px] text-slate-400">
-                      {fmtFechaHora(r.created_at)} · {r.hipodromo} · Carrera {r.carrera} · {r.jugada_origen || r.tipo_jugada}
+                      {fmtFechaHora(r.created_at)} · {nombreHipodromoParaMostrar(r.hipodromo)} · Carrera {r.carrera} · {r.jugada_origen || r.tipo_jugada}
                     </div>
                   </div>
                 </div>

@@ -1,7 +1,17 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthBootstrap } from "@/components/auth/AuthBootstrap";
 import { AppShell } from "@/components/layout/AppShell";
+
+// Fuente principal de la plataforma: Inter (mejor legibilidad en interfaces
+// densas con números y tablas). Se sirve autoalojada por next/font; si no hay
+// red en el build, cae a la pila de sistema definida en globals.css.
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Club del Dinero — Sistema Hípico",
@@ -20,7 +30,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es">
+    <html lang="es" className={inter.variable}>
       <body>
         <AuthBootstrap />
         <AppShell>{children}</AppShell>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import { GestionPlantillasModal } from "@/components/whatsapp/GestionPlantillasModal";
 import {
   CLUB_NOMBRE,
@@ -310,7 +311,7 @@ export function WhatsAppModule() {
     const pizarraTexto = repPizarra.trim() || (oficial?.puestos.length ? oficial.puestos.join(" · ") : "");
     const meta: MetaCarrera = {
       grupo: CLUB_NOMBRE,
-      hipodromo: hip,
+      hipodromo: nombreHipodromoParaMostrar(hip),
       carrera: car,
       retirados: repRetirados.trim(),
       pizarra: pizarraTexto,
@@ -637,8 +638,8 @@ export function WhatsAppModule() {
                   <input
                     value={repHipodromo}
                     onChange={(e) => setRepHipodromo(e.target.value)}
-                    placeholder="LA RINCONADA"
-                    className="rounded-lg border border-slate-300 bg-slate-50 px-2 py-2 text-xs font-bold uppercase text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder="la Rinconada"
+                    className="rounded-lg border border-slate-300 bg-slate-50 px-2 py-2 text-xs font-bold normal-case text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-[10px] font-bold uppercase text-slate-600">

@@ -18,6 +18,7 @@ import { agruparPorHipodromo, diaDeCarrera } from "@/lib/carreras/agruparHipodro
 import { asegurarHipodromo } from "@/lib/tablas/rpc";
 import { resumenProblemasCarga, validarFechasDeCarga } from "@/lib/tablas/validar-carga";
 import { hoyLocal } from "@/lib/gaceta/programa";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import { SeccionPliegue } from "@/components/tablas/SeccionPliegue";
 import { ParametrosCarrera } from "@/components/tablas/ParametrosCarrera";
 import { TarjetaEnsamblaje } from "@/components/tablas/TarjetaEnsamblaje";
@@ -337,7 +338,7 @@ export function TablasModule(props: Props) {
       setDrafts((ds) => ds.filter((x) => x.uid !== d.uid));
       toast(
         r?.ok
-          ? `✅ Carrera ${d.hipodromo.toUpperCase()} C${d.carrera} registrada (Modo Manual, sin ejemplares).`
+          ? `✅ Carrera ${nombreHipodromoParaMostrar(d.hipodromo)} C${d.carrera} registrada (Modo Manual, sin ejemplares).`
           : `⚠️ Carrera registrada localmente; no se pudo persistir en BD: ${r?.error ?? "desconocido"}`,
         r?.ok ? "success" : "warning"
       );
@@ -353,8 +354,8 @@ export function TablasModule(props: Props) {
       if (!res.error) sembrarCarreraCentral(d.hipodromo, d.carrera, fechaCarrera);
       toast(
         res.error
-          ? `⚠️ Tabla ${d.hipodromo.toUpperCase()} C${d.carrera}: ${res.error}`
-          : `✅ Tabla ${d.hipodromo.toUpperCase()} C${d.carrera} publicada con éxito.`,
+          ? `⚠️ Tabla ${nombreHipodromoParaMostrar(d.hipodromo)} C${d.carrera}: ${res.error}`
+          : `✅ Tabla ${nombreHipodromoParaMostrar(d.hipodromo)} C${d.carrera} publicada con éxito.`,
         res.error ? "warning" : "success"
       );
       eliminarDelRegistroGaceta(d.hipodromo.toUpperCase(), d.carrera);
@@ -421,7 +422,7 @@ export function TablasModule(props: Props) {
           okTablas = r.okCount;
           for (const e of r.errores ?? []) {
             if (!e.publicada) continue;
-            avisos.push(`${e.hipodromo} C${e.carrera}: ${e.error}`);
+            avisos.push(`${nombreHipodromoParaMostrar(e.hipodromo)} C${e.carrera}: ${e.error}`);
             for (const t of lote) {
               if (
                 String(t.hipodromo ?? "").toUpperCase() === String(e.hipodromo ?? "").toUpperCase() &&
@@ -437,7 +438,7 @@ export function TablasModule(props: Props) {
             if (r.ok) {
               okTablas++;
               if (r.error) {
-                avisos.push(`${t.hipodromo} C${t.carrera}: ${r.error}`);
+                avisos.push(`${nombreHipodromoParaMostrar(t.hipodromo)} C${t.carrera}: ${r.error}`);
                 sinCentralIds.add(t.id);
               }
             }
@@ -549,8 +550,8 @@ export function TablasModule(props: Props) {
     agregarTicket({
       comando:
         item.nombre === "TABLA COMPLETA"
-          ? `TABLA ${item.hipodromo} C${item.carrera} TABLA COMPLETA`
-          : `TABLA ${item.hipodromo} C${item.carrera} N${item.numero} ${item.nombre}`,
+          ? `TABLA ${nombreHipodromoParaMostrar(item.hipodromo)} C${item.carrera} TABLA COMPLETA`
+          : `TABLA ${nombreHipodromoParaMostrar(item.hipodromo)} C${item.carrera} N${item.numero} ${item.nombre}`,
       monto: item.monto,
       gananciaProyectada: base,
       // La tabla fija NO cobra comision al jugador: lo que juega es lo que se
@@ -576,7 +577,7 @@ export function TablasModule(props: Props) {
       )
     );
     toast(
-      `🛒 Venta enviada a la taquilla: ${item.hipodromo} C${item.carrera}${
+      `🛒 Venta enviada a la taquilla: ${nombreHipodromoParaMostrar(item.hipodromo)} C${item.carrera}${
         item.nombre === "TABLA COMPLETA" ? " · Tabla completa" : ` N${item.numero} ${item.nombre}`
       } por ${fmtMoney(item.monto, item.moneda)}.`,
       "success"
@@ -627,7 +628,7 @@ export function TablasModule(props: Props) {
       return;
     }
     setTablas(tablas.filter((t) => String(t.id) !== String(tabla.id)));
-    toast(`🗑️ Tabla ${tabla.hipodromo} C${tabla.carrera} eliminada. La carrera y el Padrón se conservan.`, "success");
+    toast(`🗑️ Tabla ${nombreHipodromoParaMostrar(tabla.hipodromo)} C${tabla.carrera} eliminada. La carrera y el Padrón se conservan.`, "success");
   };
 
   return (

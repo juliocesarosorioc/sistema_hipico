@@ -18,6 +18,7 @@ import {
   type SesionPortal,
 } from "@/lib/portal";
 import { codigosPaisUnicos, desglosarTelefono, formatoMoneda, listMetodosPago } from "@/lib/vzla";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import { encuestarTicket, listarMisTickets, type TicketDisputa } from "@/lib/tickets";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
@@ -346,7 +347,7 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
                 <tr key={j.id} className="border-t border-line hover:bg-slate-50">
                   <td className="px-3 py-2 whitespace-nowrap text-slate-500">{j.fechaTexto}</td>
                   <td className="px-3 py-2 font-bold text-slate-700">
-                    {j.hipodromo} <span className="text-slate-400 font-medium">· C{j.carrera}</span>
+                    {nombreHipodromoParaMostrar(j.hipodromo)} <span className="text-slate-400 font-medium">· C{j.carrera}</span>
                   </td>
                   <td className="px-3 py-2">{j.jugada}</td>
                   <td className="px-3 py-2">{j.caballo}</td>
@@ -448,7 +449,7 @@ function DisputarModal({
         </div>
 
         <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
-          <b>{jugada.hipodromo} · Carrera {jugada.carrera}</b> · {jugada.jugada} · {jugada.caballo} ·{" "}
+          <b>{nombreHipodromoParaMostrar(jugada.hipodromo)} · Carrera {jugada.carrera}</b> · {jugada.jugada} · {jugada.caballo} ·{" "}
           <span className="font-mono">{formatoMoneda(jugada.moneda, jugada.montoJugado)}</span>
         </div>
 
@@ -547,7 +548,7 @@ function ReportarView({ cliente }: { cliente: SesionPortal["cliente"] }) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
           <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Hipódromo *</label>
-          <input value={hipodromo} onChange={(e) => setHipodromo(e.target.value.toUpperCase())} className={inp + " uppercase"} placeholder="ej. LA RINCONADA" />
+          <input value={hipodromo} onChange={(e) => setHipodromo(e.target.value.toUpperCase())} className={inp + " uppercase"} placeholder="ej. la Rinconada" />
         </div>
         <div>
           <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Carrera *</label>
@@ -666,7 +667,7 @@ function MtCard({ t, onEncuesta }: { t: TicketDisputa; onEncuesta: (puntuacion: 
               T-{t.numero_ticket ?? String(t.id).slice(0, 6)} · {t.motivo || t.tipo_jugada}
             </div>
             <div className="text-[10px] text-slate-400">
-              {t.hipodromo ? `${t.hipodromo}${t.carrera ? ` · Carrera ${t.carrera}` : ""}` : t.fecha_jugada ? String(t.fecha_jugada).slice(0, 10) : ""}
+              {t.hipodromo ? `${nombreHipodromoParaMostrar(t.hipodromo)}${t.carrera ? ` · Carrera ${t.carrera}` : ""}` : t.fecha_jugada ? String(t.fecha_jugada).slice(0, 10) : ""}
               {t.hipodromo && t.fecha_jugada ? ` · ${String(t.fecha_jugada).slice(0, 10)}` : ""}
             </div>
           </div>
@@ -807,7 +808,7 @@ function ComprarView({ cliente }: { cliente: SesionPortal["cliente"] }) {
             <option value="">— Seleccione —</option>
             {tablas.map((t) => (
               <option key={String(t.id)} value={String(t.id)}>
-                {t.hipodromo} · Carrera {t.carrera} · Premio {formatoMoneda(t.moneda, t.premio_original)} {t.caballos ? `(${t.caballos.length} ejemplares)` : ""}
+                {nombreHipodromoParaMostrar(t.hipodromo)} · Carrera {t.carrera} · Premio {formatoMoneda(t.moneda, t.premio_original)} {t.caballos ? `(${t.caballos.length} ejemplares)` : ""}
               </option>
             ))}
           </select>

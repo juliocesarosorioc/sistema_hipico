@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { listarHipodromos, type OpcionHipodromo } from "@/lib/tablas/rpc";
-import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
+import { nombreHipodromoParaMostrar, nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import {
   eliminarCarreraCentral,
@@ -297,7 +297,7 @@ export function CarrerasDiaModule() {
             <option value="">Todos los hipódromos</option>
             {hipodromos.map((h) => (
               <option key={h.value} value={h.value}>
-                {h.label}
+                {nombreHipodromoParaMostrar(h.label)}
               </option>
             ))}
           </select>
@@ -441,7 +441,7 @@ export function CarrerasDiaModule() {
                     {sinEjemplares.length > 0 && !verSinEjemplares ? (
                       <>⚠️ Las {carreras.length} carreras del filtro no tienen ejemplares: mostralas para cargárselos.</>
                     ) : (
-                      <>⚠️ No hay carreras registradas para {hipodromo || "este hipódromo"} · {fecha}.</>
+                      <>⚠️ No hay carreras registradas para {nombreHipodromoParaMostrar(hipodromo) || "este hipódromo"} · {fecha}.</>
                     )}
                   </td>
                 </tr>

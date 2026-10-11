@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/Button";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 
 export type TicketVentaModalidad = "MARCAS" | "DUPLETA" | "TABLA FIJA";
 
@@ -54,7 +55,7 @@ export function TicketVentaPreview({ abierto, ticket, confirmando, error, onCorr
   if (!abierto || !ticket) return null;
   const e = ESTILO[ticket.modalidad];
   const filas: Array<[string, string]> = [
-    ["Hipódromo", `${ticket.hipodromo} · C${ticket.carrera}`],
+    ["Hipódromo", `${nombreHipodromoParaMostrar(ticket.hipodromo)} · C${ticket.carrera}`],
     ["Fecha", ticket.fecha],
     ["Juega", ticket.grupo ? `${ticket.jugador} · ${ticket.grupo}` : ticket.jugador],
     ["Apuesta", ticket.titulo],

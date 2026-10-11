@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CLUB_NOMBRE, waLink } from "@/lib/whatsapp";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import {
   cargarJugadasDeCarrera,
   relacionJugadas,
@@ -42,7 +43,7 @@ export function RelacionCarrera() {
       }
       const meta: MetaCarrera = {
         grupo: CLUB_NOMBRE,
-        hipodromo: hip,
+        hipodromo: nombreHipodromoParaMostrar(hip),
         carrera: car,
         retirados: retirados.trim(),
       };
@@ -83,8 +84,8 @@ export function RelacionCarrera() {
           <input
             value={hipodromo}
             onChange={(e) => setHipodromo(e.target.value)}
-            placeholder="LA RINCONADA"
-            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold uppercase text-slate-900 placeholder:font-normal"
+            placeholder="La Rinconada"
+            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold normal-case text-slate-900 placeholder:font-normal"
           />
         </label>
         <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">

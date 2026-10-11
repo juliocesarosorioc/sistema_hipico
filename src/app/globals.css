@@ -7,8 +7,11 @@
 }
 
 html {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  /* Inter (autoalojada por next/font) con pila de sistema de respaldo. */
+  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Cifras tabulares: alinean montos en columnas partidas ($ 12.345,67). */
+  font-variant-numeric: tabular-nums;
 }
 
 body {
@@ -85,7 +88,8 @@ body {
     @apply border-indigo-500 bg-indigo-50 ring-1 ring-indigo-300 hover:bg-indigo-50;
   }
   .mon-hipo {
-    @apply block truncate text-[11px] font-black uppercase leading-none text-slate-700;
+    /* El nombre del hipódromo va en formato propio (no mayúsculas forzadas). */
+    @apply block truncate text-[11px] font-black normal-case leading-none text-slate-700;
   }
   .mon-hipo-sub {
     @apply mt-1 block text-[9px] font-bold leading-none text-slate-400;

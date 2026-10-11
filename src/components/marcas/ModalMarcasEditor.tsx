@@ -7,7 +7,7 @@ import { HorseBadge } from "@/components/ui/HorseChips";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import { SemaforoCarreras } from "@/components/gestion/SemaforoCarreras";
 import { listarCarrerasPorDia, listarHipodromos, type OpcionHipodromo } from "@/lib/tablas/rpc";
-import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
+import { nombreHipodromoParaMostrar, nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
 import {
   buscarEjemplar,
   calcularRivales,
@@ -163,7 +163,7 @@ export function ModalMarcasEditor({
   }, [fila]);
 
   const caballos = useMemo(() => fila?.caballos ?? [], [fila]);
-  const etiqueta = fila ? `${fila.hipodromo} N${fila.carrera}` : "—";
+  const etiqueta = fila ? `${nombreHipodromoParaMostrar(fila.hipodromo)} N${fila.carrera}` : "—";
 
   const revision = useMemo(
     () => revisarConfig(caballos, marcas, nv, debutantes),
@@ -410,7 +410,7 @@ export function ModalMarcasEditor({
             <select value={hipodromo} onChange={(e) => setHipodromo(e.target.value)} className={inputCls}>
               {catalogoHipodromos.map((h) => (
                 <option key={h.value} value={h.value}>
-                  {h.label}
+                  {nombreHipodromoParaMostrar(h.label)}
                 </option>
               ))}
             </select>
@@ -494,7 +494,7 @@ export function ModalMarcasEditor({
               <div className="flex flex-col gap-2 lg:flex-row">
                 <aside className="shrink-0 rounded-xl border border-line bg-white p-1.5 shadow-sm lg:w-[24%]">
                   <p className="px-1 pb-1 text-[9px] font-black uppercase leading-none tracking-wide text-slate-500">
-                    🐎 Ejemplares de {etiqueta} · {caballos.length} · clic = agregar · arrastrar = soltar en columna
+                    🐎 Ejemplares de <span className="normal-case">{etiqueta}</span> · {caballos.length} · clic = agregar · arrastrar = soltar en columna
                   </p>
                   <ul className="max-h-56 divide-y divide-line/60 overflow-y-auto">
                     {caballos.map((c) => (

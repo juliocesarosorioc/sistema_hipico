@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { getHorseColor } from "@/lib/horseColors";
 import { listarHipodromos } from "@/lib/hipodromos/servicio";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import { listarClientes, type ClienteRow } from "@/lib/clientes";
 import { jugadoresDeGrupo, listarGruposVenta, type GrupoVenta } from "@/lib/grupos";
 import { listarCarrerasCentrales, type CarreraCentral } from "@/lib/carreras/central";
@@ -481,7 +482,7 @@ function ListaRemates({
               {remates.map((r) => (
                 <tr key={r.id} className="transition-colors hover:bg-surfaceAlt">
                   <td className="px-4 py-2.5 font-black uppercase tracking-wide text-slate-800">{r.nombre}</td>
-                  <td className="px-4 py-2.5 text-xs font-semibold text-slate-600">{r.hipodromo ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-xs font-semibold text-slate-600">{r.hipodromo ? nombreHipodromoParaMostrar(r.hipodromo) : "—"}</td>
                   <td className="px-4 py-2.5 text-center font-bold text-slate-700">{r.carrera ?? "—"}</td>
                   <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">{r.fecha ?? "—"}</td>
                   <td className="px-4 py-2.5">
@@ -523,7 +524,7 @@ function ListaRemates({
                 id="remate-nombre"
                 label="Nombre"
                 hint="Se arma solo con fecha / hipódromo / carrera y las notas; podés cambiarlo."
-                placeholder={nombreSugerido || "2026-10-07 / LA RINCONADA / CARRERA 3 - MONTERIA"}
+                placeholder={nombreSugerido || "2026-10-07 / la Rinconada / CARRERA 3 - MONTERIA"}
                 value={nombre || nombreSugerido}
                 onChange={(e) => setNombre(e.target.value)}
                 autoFocus
@@ -535,7 +536,7 @@ function ListaRemates({
                   <option value="">— Seleccione —</option>
                   {hipodromos.map((h) => (
                     <option key={h.id} value={h.id}>
-                      {h.nombre}
+                      {nombreHipodromoParaMostrar(h.nombre)}
                     </option>
                   ))}
                 </select>

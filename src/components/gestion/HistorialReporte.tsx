@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 
 // Utilidad para pintar los cuadritos de los caballos con la paleta hípica
 const getColorCaballo = (num: string) => {
@@ -199,7 +200,7 @@ export default function HistorialReporte() {
                 {/* Cabecera Azul de la Carrera */}
                 <div className="bg-[#2563eb] text-white px-3 py-2 flex justify-between items-center">
                   <div className="text-[12px] font-bold flex items-center gap-2">
-                    <span>🏇</span> {c.hipodromo} — {c.carrera}
+                    <span>🏇</span> {nombreHipodromoParaMostrar(c.hipodromo)} — {c.carrera}
                   </div>
                   <div className="text-[11px] font-bold">{c.hora}</div>
                 </div>

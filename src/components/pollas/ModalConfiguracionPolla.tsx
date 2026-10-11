@@ -13,6 +13,7 @@ import {
   type Polla,
 } from "@/lib/pollas";
 import type { GrupoVenta } from "@/lib/grupos";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 
 type Props = {
   abierto: boolean;
@@ -292,7 +293,7 @@ export function ModalConfiguracionPolla({
                     onClick={() => setHipSelId(c.id)}
                     className={chipCls(hipSelId === c.id)}
                   >
-                    {c.nombre}
+                    {nombreHipodromoParaMostrar(c.nombre)}
                   </button>
                 ))}
               </div>
@@ -321,12 +322,12 @@ export function ModalConfiguracionPolla({
                     className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-bold text-slate-700 shadow-sm"
                   >
                     <span className="text-primary-600">{i + 1}.</span>
-                    {c.hipodromo} {c.carrera}ª
+                    {nombreHipodromoParaMostrar(c.hipodromo)} {c.carrera}ª
                     <button
                       type="button"
                       onClick={() => mover(i, -1)}
                       disabled={i === 0}
-                      aria-label={`Subir ${c.hipodromo} ${c.carrera}ª`}
+                      aria-label={`Subir ${nombreHipodromoParaMostrar(c.hipodromo)} ${c.carrera}ª`}
                       className="px-0.5 text-slate-400 transition-colors hover:text-primary-600 disabled:opacity-30"
                     >
                       ↑
@@ -335,7 +336,7 @@ export function ModalConfiguracionPolla({
                       type="button"
                       onClick={() => mover(i, 1)}
                       disabled={i === carreras.length - 1}
-                      aria-label={`Bajar ${c.hipodromo} ${c.carrera}ª`}
+                      aria-label={`Bajar ${nombreHipodromoParaMostrar(c.hipodromo)} ${c.carrera}ª`}
                       className="px-0.5 text-slate-400 transition-colors hover:text-primary-600 disabled:opacity-30"
                     >
                       ↓
@@ -356,8 +357,8 @@ export function ModalConfiguracionPolla({
                   {agrupadas.map(([nom, cs]) => (
                     <div key={nom} className="overflow-hidden rounded-lg border border-line">
                       <div className="flex items-center justify-between border-b border-line bg-surfaceAlt px-3 py-1.5">
-                        <span className="text-xs font-bold uppercase tracking-wide text-slate-600">
-                          {nom}
+                        <span className="text-xs font-bold normal-case tracking-wide text-slate-600">
+                          {nombreHipodromoParaMostrar(nom)}
                         </span>
                         <span className="text-xs text-slate-500">
                           {cs.filter((c) => elegidas.includes(c.clave)).length} de {cs.length}{" "}
@@ -375,7 +376,7 @@ export function ModalConfiguracionPolla({
                               type="button"
                               onClick={() => alternar(c.clave)}
                               aria-pressed={marcada}
-                              title={`${c.hipodromo} ${c.carrera}ª`}
+                              title={`${nombreHipodromoParaMostrar(c.hipodromo)} ${c.carrera}ª`}
                               className={`rounded-lg border px-2 py-2 text-left transition-colors ${
                                 marcada
                                   ? "border-primary-600 bg-primary-50 ring-1 ring-primary-600"

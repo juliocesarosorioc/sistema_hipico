@@ -18,6 +18,7 @@ import { useCarrerasCentrales } from "@/lib/carreras/useCarrerasCentrales";
 import { aplicarRetirosCarrera } from "@/lib/carreras/retiros";
 import { guardarCarreraCentral } from "@/lib/carreras/central";
 import { esFechaIso } from "@/lib/fechas";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 
 /** Monedas permitidas al corregir una tabla (el símbolo nunca se muestra). */
 const OPCIONES_MONEDA = ["USD", "VES", "BS", "EUR"];
@@ -423,7 +424,7 @@ export function MonitorTablas({
         hipodromo: vendiendo.hipodromo ?? "",
         fecha: diaDeLaTabla(vendiendo),
         carrera: vendiendo.carrera ?? "",
-        titulo: `TABLA ${vendiendo.hipodromo} C${vendiendo.carrera} · ${ejemplarVenta === "TABLA" ? "COMPLETA" : `Nº ${ejemplarVenta}`}`,
+        titulo: `TABLA ${nombreHipodromoParaMostrar(vendiendo.hipodromo)} C${vendiendo.carrera} · ${ejemplarVenta === "TABLA" ? "COMPLETA" : `Nº ${ejemplarVenta}`}`,
         detalle: nombreCab,
         jugador: cliente?.nombre ?? "",
         grupo: grupo?.nombre ?? null,
@@ -611,7 +612,7 @@ export function MonitorTablas({
         hipodromo: tabla.hipodromo ?? "",
         fecha: diaDeLaTabla(tabla),
         carrera: tabla.carrera ?? "",
-        titulo: `TABLA ${tabla.hipodromo} C${tabla.carrera} · Nº ${item.numero}`,
+        titulo: `TABLA ${nombreHipodromoParaMostrar(tabla.hipodromo)} C${tabla.carrera} · Nº ${item.numero}`,
         detalle: `${item.nombre}${item.cantidad > 1 ? ` × ${item.cantidad} tablas` : ""}`,
         jugador: item.jugador?.nombre ?? "",
         grupo: item.grupo?.nombre ?? null,
@@ -656,10 +657,10 @@ export function MonitorTablas({
             <select
               value={hipodromoFiltro}
               onChange={(e) => setHipodromoFiltro(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none uppercase"
+              className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none normal-case"
             >
               <option value="">TODOS</option>
-              {hipodromosDisponibles.map(h => <option key={h} value={h}>{h}</option>)}
+              {hipodromosDisponibles.map(h => <option key={h} value={h}>{nombreHipodromoParaMostrar(h)}</option>)}
             </select>
           </label>
 
@@ -737,8 +738,8 @@ export function MonitorTablas({
             <div key={String(t.id)} className="flex flex-col overflow-hidden rounded-xl border border-indigo-200 bg-white shadow-sm">
               <div className="px-1.5 py-px text-white" style={{ background: "linear-gradient(135deg,#4f46e5 0%,#7c3aed 60%,#9333ea 100%)" }}>
                 <div className="flex items-center justify-between gap-1 leading-none">
-                  <span className="min-w-0 truncate rounded bg-white/20 px-1.5 py-px text-[16px] font-bold uppercase tracking-wider">
-                    🏛️ {t.hipodromo || ""}
+                  <span className="min-w-0 truncate rounded bg-white/20 px-1.5 py-px text-[16px] font-bold normal-case tracking-wider">
+                    🏛️ {nombreHipodromoParaMostrar(t.hipodromo)}
                   </span>
                   <span className="flex items-center gap-1 whitespace-nowrap">
                     <span className="inline-flex items-center rounded-md border-4 border-white bg-indigo-900 px-4 py-1 text-[15px] font-black uppercase leading-none tracking-widest text-white shadow-lg md:text-[19px]">
@@ -946,7 +947,7 @@ export function MonitorTablas({
               <button type="button" onClick={() => setConfirmarEliminar(null)} className="text-red-400 hover:text-red-600">✕</button>
             </div>
             <div className="space-y-2 p-4">
-              <p className="text-sm font-bold text-slate-800">¿Eliminar la oferta de venta de {confirmarEliminar.hipodromo} — Carrera {confirmarEliminar.carrera}?</p>
+              <p className="text-sm font-bold text-slate-800">¿Eliminar la oferta de venta de {nombreHipodromoParaMostrar(confirmarEliminar.hipodromo)} — Carrera {confirmarEliminar.carrera}?</p>
             </div>
             <div className="flex justify-end gap-2 border-t border-line bg-gray-50 px-4 py-3">
               <Button variant="ghost" size="sm" onClick={() => setConfirmarEliminar(null)}>Cancelar</Button>
@@ -960,7 +961,7 @@ export function MonitorTablas({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 no-print">
           <div className="w-full max-w-sm rounded-2xl border border-line bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
-              <h3 className="text-xs font-black uppercase">🛒 Venta — {vendiendo.hipodromo} C{vendiendo.carrera}</h3>
+              <h3 className="text-xs font-black uppercase">🛒 Venta — <span className="normal-case">{nombreHipodromoParaMostrar(vendiendo.hipodromo)}</span> C{vendiendo.carrera}</h3>
               <button type="button" onClick={() => setVendiendo(null)} className="text-slate-300 hover:text-white">✕</button>
             </div>
             <div className="space-y-3 p-4">
@@ -1148,7 +1149,7 @@ export function MonitorTablas({
             <div className="space-y-2 p-3">
               <p className="text-sm font-bold text-slate-800">
                 {String(cuadroBorrando.tabla.caballos?.[cuadroBorrando.indice]?.nombre ?? "Este ejemplar")} ·{" "}
-                {cuadroBorrando.tabla.hipodromo} C{cuadroBorrando.tabla.carrera}
+                {nombreHipodromoParaMostrar(cuadroBorrando.tabla.hipodromo)} C{cuadroBorrando.tabla.carrera}
               </p>
               <p className="text-[11px] leading-relaxed text-slate-600">
                 Se quita de la lista de ejemplares de la tabla y se actualiza la base.{" "}
@@ -1186,7 +1187,7 @@ export function MonitorTablas({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 no-print">
           <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
-              <h3 className="text-xs font-black uppercase">✏️ Corregir — {editando.hipodromo} C{editando.carrera}</h3>
+              <h3 className="text-xs font-black uppercase">✏️ Corregir — <span className="normal-case">{nombreHipodromoParaMostrar(editando.hipodromo)}</span> C{editando.carrera}</h3>
               <button type="button" onClick={() => setEditando(null)} className="text-slate-300 hover:text-white">✕</button>
             </div>
             <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
@@ -1346,7 +1347,7 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
         .tarjeta-legacy { background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
         .enc-legacy { background: #0f172a; color: #fff; padding: 4px 6px; }
         .l1-legacy { display: flex; align-items: center; gap: 5px; justify-content: space-between; }
-        .hip-legacy { font-size: 10.4px; font-weight: 800; letter-spacing: .32px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+        .hip-legacy { font-size: 10.4px; font-weight: 800; letter-spacing: .32px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
         .cc-legacy { background: rgba(255,255,255,.16); border-radius: 5px; font-size: 11.2px; font-weight: 900; padding: 1px 5px; white-space: nowrap; flex: none; }
         .l2-legacy { display: flex; align-items: center; justify-content: space-between; gap: 5px; margin-top: 1.5px; font-size: 8.4px; font-weight: 700; color: #cbd5e1; }
         .meta-legacy { display: flex; align-items: center; gap: 3px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -1376,7 +1377,7 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
             <div key={String(t.id)} className="tarjeta-legacy">
               <div className="enc-legacy">
                 <div className="l1-legacy">
-                  <span className="hip-legacy">{t.hipodromo}</span>
+                  <span className="hip-legacy">{nombreHipodromoParaMostrar(t.hipodromo)}</span>
                   <span className="cc-legacy">C{t.carrera}</span>
                 </div>
                 <div className="l2-legacy">

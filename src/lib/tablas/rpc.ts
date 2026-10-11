@@ -30,6 +30,7 @@ export const FALLBACK_HIPODROMOS = [
 ];
 
 import { normalizarEstado } from "@/lib/hipodromos/tipos";
+import { formatearNombre } from "@/lib/hipodromos/tipos";
 
 /** Hipódromos venezolanos que se muestran operativos. */
 export const HIPODROMOS_VE = ["SANTA RITA", "VALENCIA", "RANCHO ALEGRE", "LA RINCONADA"];
@@ -88,7 +89,9 @@ export async function listarHipodromos(opciones?: { incluirTodos?: boolean }): P
         // `undefined` no es un valor de fecha, así que la fila pasa.
         if (String(h.eliminado_en ?? "").trim()) return null;
         if (!todos && normalizarEstado(h.estado) !== "Activo") return null;
-        return { value: String(h.nombre ?? "").toUpperCase(), label: String(h.nombre ?? "") };
+        // El VALUE queda canónico (mayúsculas, como la base); el LABEL se
+        // formatea a nombre propio ("La Rinconada") para los selectores.
+        return { value: String(h.nombre ?? "").toUpperCase(), label: formatearNombre(String(h.nombre ?? "")) };
       })
       .filter((h): h is OpcionHipodromo => Boolean(h) && h!.label.trim().length > 0)
       .sort((a, b) => a.label.localeCompare(b.label));

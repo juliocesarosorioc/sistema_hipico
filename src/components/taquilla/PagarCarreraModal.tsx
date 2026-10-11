@@ -7,6 +7,7 @@ import { liquidarCarreraYCerrarTabla } from "@/lib/liquidacion/pagarYCerrar";
 import { aplicarLiquidacionSaldos } from "@/lib/liquidacion/saldos";
 import { upsertResultadoCentral } from "@/lib/carreras-dia";
 import { dividendosDePizarra as dividendosDe, ordenLlegadaDePizarra, posicionesDePizarra } from "@/lib/liquidacion/posiciones";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { Button } from "@/components/ui/Button";
 
@@ -140,7 +141,7 @@ export function PagarCarreraModal() {
     setResultado(res.motivo);
     setTablaMensaje(
       res.tablaCerrada?.ok
-        ? `Tabla Fija ${hipodromo.trim().toUpperCase()} C${carrera} → CERRADA automáticamente (${res.tablaCerrada.conteo ?? 0} fila). Resultado centralizado.`
+        ? `Tabla Fija ${nombreHipodromoParaMostrar(hipodromo)} C${carrera} → CERRADA automáticamente (${res.tablaCerrada.conteo ?? 0} fila). Resultado centralizado.`
         : `Aviso: no se pudo cerrar la tabla (${res.tablaCerrada?.error ?? "RLS o sin credenciales"}).`
     );
     limpiar();
@@ -163,8 +164,8 @@ export function PagarCarreraModal() {
           <input
             value={hipodromo}
             onChange={(e) => setHipodromo(e.target.value)}
-            placeholder="LA RINCONADA"
-            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold uppercase text-slate-900 placeholder:font-normal"
+            placeholder="La Rinconada"
+            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold normal-case text-slate-900 placeholder:font-normal"
           />
         </label>
         <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">
@@ -203,7 +204,7 @@ export function PagarCarreraModal() {
                     : "border-success-500/40 bg-success-500/10 text-success-500"
                 }`}
               >
-                {t.hipodromo} C{t.carrera} · {t.cerrada ? "Cerrada" : t.estado ?? "Abierta"}
+                {nombreHipodromoParaMostrar(t.hipodromo)} C{t.carrera} · {t.cerrada ? "Cerrada" : t.estado ?? "Abierta"}
               </span>
             ))
           ) : (

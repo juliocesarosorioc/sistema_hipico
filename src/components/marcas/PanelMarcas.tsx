@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { Button } from "@/components/ui/Button";
 import { getHorseColor } from "@/lib/horseColors";
 import { hoyLocal } from "@/lib/gaceta/programa";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import { type CarreraCentral, type EjemplarCarreraCentral } from "@/lib/carreras/central";
 import { useRegistroCentralOpts } from "@/store/useRegistroCentral";
 import { exportarPaginas, type ImgFormato } from "@/lib/impresion/exportar";
@@ -294,7 +295,7 @@ export function PanelMarcas() {
   const bloquesEnvio = useMemo<BloqueMarcas[]>(
     () =>
       bloques.map((b) => ({
-        hipodromo: nombreDe(b.hipodromo),
+        hipodromo: nombreHipodromoParaMostrar(nombreDe(b.hipodromo)),
         carreras: b.carreras.map((f) => {
           const cfg = configDe(f);
           const cab = f.central.caballos ?? f.caballos ?? [];
@@ -317,7 +318,7 @@ export function PanelMarcas() {
     () =>
       paginasMarcasHTML(bloquesEnvio, {
         fecha,
-        filtro: hipodromo ? nombreDe(hipodromo) : "",
+        filtro: hipodromo ? nombreHipodromoParaMostrar(nombreDe(hipodromo)) : "",
       }),
     [bloquesEnvio, fecha, hipodromo, nombreDe]
   );
@@ -413,7 +414,7 @@ export function PanelMarcas() {
             <option value="">Todos los activos</option>
             {activos.map((h) => (
               <option key={h.valor} value={h.valor}>
-                {nombreDe(h.valor)} · {h.carreras} carrera{h.carreras === 1 ? "" : "s"}
+                {nombreHipodromoParaMostrar(nombreDe(h.valor))} · {h.carreras} carrera{h.carreras === 1 ? "" : "s"}
               </option>
             ))}
           </select>
@@ -516,8 +517,8 @@ export function PanelMarcas() {
               {/* CABECERA DEL CUADRO: un recuadro por hipodromo, con el nombre
                   arriba de sus carreras y no perdido en una columna mas. */}
               <div className="flex items-center gap-2 bg-amber-500 px-2 py-[3px]">
-                <span className="text-[11px] font-black uppercase tracking-wider text-white">
-                  🏟 {nombreDe(b.hipodromo)}
+                <span className="text-[11px] font-black normal-case tracking-wider text-white">
+                  🏟 {nombreHipodromoParaMostrar(nombreDe(b.hipodromo))}
                 </span>
                 <span className="text-[9px] font-bold text-amber-50">
                   {b.carreras.length} carrera{b.carreras.length === 1 ? "" : "s"} · {b.conMarcas} con
@@ -776,7 +777,7 @@ export function PanelMarcas() {
                 className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px]"
               >
                 <b className="text-slate-800">
-                  {cfg.hipodromo} C{cfg.carrera}
+                  {nombreHipodromoParaMostrar(cfg.hipodromo)} C{cfg.carrera}
                 </b>
                 <span className="text-slate-600">marcas: {cfg.marcas}</span>
                 {cfg.nv ? <span className="text-slate-600">NV: {cfg.nv}</span> : null}
@@ -851,7 +852,7 @@ export function PanelMarcas() {
             <div className="space-y-2 p-4">
               <p className="text-sm font-bold text-slate-800">
                 ¿Borrar las marcas de la carrera {porBorrar.carrera.carrera} de{" "}
-                {porBorrar.carrera.hipodromo} — {fecha}?
+                {nombreHipodromoParaMostrar(porBorrar.carrera.hipodromo)} — {fecha}?
               </p>
               <p className="text-[11px] font-semibold text-slate-500">
                 Se borran las marcas ({porBorrar.cfg.marcas}) y el NV ({porBorrar.cfg.nv || "—"}).

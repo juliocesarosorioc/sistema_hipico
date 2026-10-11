@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { TicketVentaPreview, type TicketVentaModel } from "@/components/tickets/TicketVentaPreview";
 import { getHorseColor } from "@/lib/horseColors";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import { HorseBadge } from "@/components/ui/HorseChips";
 import type { CarreraCentral, EjemplarCarreraCentral } from "@/lib/carreras/central";
 import { aplicarRetirosCarrera, parsearRetirados } from "@/lib/carreras/retiros";
@@ -110,7 +111,7 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
   const [pizarraAbierta, setPizarraAbierta] = useState(false);
 
   const caballos: EjemplarCarreraCentral[] = useMemo(() => carrera.caballos ?? [], [carrera.caballos]);
-  const etiqueta = `${carrera.hipodromo} N${carrera.carrera}`;
+  const etiqueta = `${nombreHipodromoParaMostrar(carrera.hipodromo)} N${carrera.carrera}`;
 
   const cargarConfig = useCallback(async () => {
     setCargando(true);
@@ -366,7 +367,7 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
         {/* Cabecera */}
         <div className="flex items-center justify-between gap-2 bg-cyan-700 px-4 py-2.5 text-white">
           <div>
-            <h3 className="text-sm font-extrabold uppercase tracking-wide">🏷️ Marcas · {etiqueta}</h3>
+            <h3 className="text-sm font-extrabold uppercase tracking-wide">🏷️ Marcas · <span className="normal-case">{etiqueta}</span></h3>
             <p className="text-[10px] font-semibold text-cyan-100">
               {fecha} · {caballos.length} ejemplar(es) registrado(s)
             </p>

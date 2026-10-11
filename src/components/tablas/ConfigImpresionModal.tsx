@@ -6,6 +6,7 @@ import { REPORTE_CSS, paginasReporteHTML, cargarReporteJugadores, resumirReporte
 import { exportarPaginas, textoWhatsAppMatriz, textoWhatsAppReporte, type ImgFormato } from "@/lib/impresion/exportar";
 import { DIM_PAGINA, type Orientacion } from "@/lib/impresion/util";
 import { hoyLocal } from "@/lib/gaceta/programa";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 
 type TipoReporte = "matriz" | "reporte";
 type Paso = "config" | "generar";
@@ -311,10 +312,10 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
             </div>
             <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
               <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">🏛️ Hipódromo</span>
-              <select value={hipodromo} onChange={(e) => setHipodromo(e.target.value)} className="max-w-[190px] bg-transparent text-xs font-bold uppercase text-slate-900 focus:outline-none">
+              <select value={hipodromo} onChange={(e) => setHipodromo(e.target.value)} className="max-w-[190px] bg-transparent text-xs font-bold normal-case text-slate-900 focus:outline-none">
                 <option value="">TODOS</option>
                 {hiposDisponibles.map((h) => (
-                  <option key={h} value={h}>{h}</option>
+                  <option key={h} value={h}>{nombreHipodromoParaMostrar(h)}</option>
                 ))}
               </select>
             </label>
@@ -402,7 +403,7 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
               <div className="grid gap-1.5 sm:grid-cols-2">
                 {resumenFiltrado.slice(0, 40).map((c) => (
                   <div key={String(c.id)} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700">
-                    <span className="truncate uppercase">🏛️ {c.hipodromo}</span>
+                    <span className="truncate normal-case">🏛️ {nombreHipodromoParaMostrar(c.hipodromo)}</span>
                     <span className="ml-2 shrink-0 rounded bg-slate-800 px-2 py-0.5 text-[10px] font-black text-white">C{c.carrera}</span>
                     <span className="ml-2 shrink-0 text-[10px] font-semibold text-slate-400">{c.fecha.slice(0, 10)}</span>
                   </div>

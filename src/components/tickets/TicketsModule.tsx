@@ -14,6 +14,7 @@ import { useAuthStore } from "@/store/useAuthStore";
     type EstadoTicket,
     type TicketDisputa,
   } from "@/lib/tickets";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -218,7 +219,7 @@ function TicketCard({ t, onRevision, onResolver }: { t: TicketDisputa; onRevisio
             </div>
             <div className="text-xs text-slate-500">
               <b className="text-slate-700">{t.cliente_nombre || "Cliente"}</b>
-              {t.hipodromo ? ` · ${t.hipodromo}${t.carrera ? " C" + t.carrera : ""}` : ""}
+              {t.hipodromo ? ` · ${nombreHipodromoParaMostrar(t.hipodromo)}${t.carrera ? " C" + t.carrera : ""}` : ""}
               {t.fecha_jugada ? ` · ${String(t.fecha_jugada).slice(0, 10)}` : ""}
             </div>
           </div>

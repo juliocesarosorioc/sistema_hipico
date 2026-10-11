@@ -11,6 +11,7 @@ import { listarClientes, type ClienteRow } from "@/lib/clientes";
 import { listarGruposVenta, type GrupoVenta } from "@/lib/grupos";
 import { listarHipodromos } from "@/lib/hipodromos/servicio";
 import { esOperativo } from "@/lib/hipodromos/tipos";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import {
   listarPollas,
@@ -222,13 +223,13 @@ export function PollasModule() {
                 onClick={() => setHipodromoId(h.id)}
                 className={chipCls(hipodromoId === h.id)}
               >
-                {h.nombre}
+                {nombreHipodromoParaMostrar(h.nombre)}
               </button>
             ))}
           </div>
           <p className="mt-1.5 text-xs text-slate-500">
             {hipodromoId
-              ? `${pollasFiltradas.length} polla(s) en ${nombreHipodromo} · ${fecha}`
+              ? `${pollasFiltradas.length} polla(s) en ${nombreHipodromoParaMostrar(nombreHipodromo)} · ${fecha}`
               : `${pollasFiltradas.length} polla(s) el ${fecha}`}
           </p>
         </div>
@@ -248,7 +249,7 @@ export function PollasModule() {
         <Card>
           <p className="text-sm text-slate-600">
             No hay Pollas para el {fecha}
-            {hipodromoId ? ` en ${nombreHipodromo}` : ""}. Creá una para empezar a vender.
+            {hipodromoId ? ` en ${nombreHipodromoParaMostrar(nombreHipodromo)}` : ""}. Creá una para empezar a vender.
           </p>
         </Card>
       ) : (

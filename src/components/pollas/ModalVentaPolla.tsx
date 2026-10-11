@@ -13,6 +13,7 @@ import {
   type Polla,
 } from "@/lib/pollas";
 import type { ClienteRow } from "@/lib/clientes";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 
 type Props = {
   abierto: boolean;
@@ -142,7 +143,7 @@ export function ModalVentaPolla({ abierto, polla, clientes, onCerrar, onConfirma
               {carreras.map((c) => (
                 <li key={c.clave}>
                   <span className="font-medium">
-                    {c.hipodromo} {c.carrera}ª
+                    {nombreHipodromoParaMostrar(c.hipodromo)} {c.carrera}ª
                   </span>{" "}
                   <span className="text-slate-500">
                     ({c.ejemplares.map((e) => e.numero).join(", ")})

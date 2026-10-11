@@ -49,7 +49,7 @@ export function SearchableSelect({
   allowCustom = true,
   displayValue,
   className = "",
-  inputClassName = "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold uppercase text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500",
+  inputClassName = "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold normal-case text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500",
   inputRef,
   disabled = false,
 }: Props) {
@@ -179,7 +179,7 @@ export function SearchableSelect({
                   elegir(o.value);
                 }}
                 onMouseEnter={() => setActivo(i)}
-                className={`block w-full px-3 py-2 text-left text-xs font-semibold uppercase transition-colors ${
+                className={`block w-full px-3 py-2 text-left text-xs font-semibold normal-case transition-colors ${
                   i === activo ? "bg-primary-500/10 text-primary-700" : "text-slate-700"
                 }`}
               >

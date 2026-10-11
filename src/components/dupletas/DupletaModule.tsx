@@ -7,6 +7,7 @@ import { ToastHost } from "@/components/ui/ToastHost";
 import { listarTablasPublicadas } from "@/lib/tablas/rpc";
 import { useRegistroCentralOpts, claveHipodromo } from "@/store/useRegistroCentral";
 import { normalizarDia } from "@/lib/carreras/agruparHipodromos";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { alternarRetiroCarrera } from "@/lib/carreras/retiros";
 import { listarClientesVenta, listarGruposVenta, esClienteLibre, type ClienteVenta, type GrupoVenta } from "@/lib/grupos";
@@ -243,8 +244,9 @@ export function DupletaModule() {
   }, [hipodromo, hipodromos]);
 
   // Opciones del buscador: los hipódromos del día (al enfocar se ven todos).
+  // El label se muestra en nombre propio; el value queda en la clave canónica.
   const hipodromoOpts = useMemo(
-    () => (dia ? hipodromos : []).map((h) => ({ value: h, label: h })),
+    () => (dia ? hipodromos : []).map((h) => ({ value: h, label: nombreHipodromoParaMostrar(h) })),
     [hipodromos, dia]
   );
 
@@ -292,7 +294,7 @@ export function DupletaModule() {
     setModoPrecios(false);
     setPreciosDraft({});
     setModalGuardadas(false);
-    toast(`📂 Cargada ${g.hipodromo} C${g.carrera1}×C${g.carrera2}.`, "info");
+    toast(`📂 Cargada ${nombreHipodromoParaMostrar(g.hipodromo)} C${g.carrera1}×C${g.carrera2}.`, "info");
   };
 
   /** Elimina una dupleta guardada, avisando cuántas ventas contiene. */
@@ -301,7 +303,7 @@ export function DupletaModule() {
     const detalle = ventas
       ? `\n\n⚠️ Contiene ${ventas} venta(s) registrada(s). Los tickets NO se anulan: la dupleta solo se retira de la lista.`
       : "";
-    if (!window.confirm(`¿Eliminar la dupleta ${g.hipodromo} C${g.carrera1}×C${g.carrera2} del ${g.fecha}?${detalle}`)) {
+    if (!window.confirm(`¿Eliminar la dupleta ${nombreHipodromoParaMostrar(g.hipodromo)} C${g.carrera1}×C${g.carrera2} del ${g.fecha}?${detalle}`)) {
       return;
     }
     const r = await eliminarDupleta(claveDeDupleta(g));
@@ -737,7 +739,7 @@ export function DupletaModule() {
     const r = await guardarDupleta({ ...matriz, updatedAt: new Date().toISOString() });
     setGuardando(false);
     if (r.ok) {
-      toast(`💾 Dupleta ${matriz.hipodromo} C${matriz.carrera1}×C${matriz.carrera2} guardada en Supabase.`, "success");
+      toast(`💾 Dupleta ${nombreHipodromoParaMostrar(matriz.hipodromo)} C${matriz.carrera1}×C${matriz.carrera2} guardada en Supabase.`, "success");
       setGuardadas(await listarDupletasGuardadas());
     } else {
       toast(`Error al guardar: ${r.error}. Ejecute sql/crear_tabla_dupletas.sql`, "error");
@@ -868,7 +870,7 @@ export function DupletaModule() {
     setLiquidando(false);
     if (!r.ok) return toast(r.error ?? "No se pudo liquidar la dupleta.", "error");
     toast(
-      `Liquidada ${matriz.hipodromo} C${matriz.carrera1}×C${matriz.carrera2}: ${r.ganadores ?? 0} ganadores, ${r.perdedores ?? 0} perdedores, ${r.anulados ?? 0} anulados · pagado $${(r.pagado ?? 0).toLocaleString("es-VE", { maximumFractionDigits: 2 })}.`,
+      `Liquidada ${nombreHipodromoParaMostrar(matriz.hipodromo)} C${matriz.carrera1}×C${matriz.carrera2}: ${r.ganadores ?? 0} ganadores, ${r.perdedores ?? 0} perdedores, ${r.anulados ?? 0} anulados · pagado $${(r.pagado ?? 0).toLocaleString("es-VE", { maximumFractionDigits: 2 })}.`,
       "success"
     );
   };
@@ -1043,7 +1045,7 @@ export function DupletaModule() {
         <div className="rounded-2xl border border-line bg-surface p-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">
-              {matriz.hipodromo} · {matriz.fecha} · Carrera {matriz.carrera1} × Carrera {matriz.carrera2}
+              <span className="normal-case">{nombreHipodromoParaMostrar(matriz.hipodromo)}</span> · {matriz.fecha} · Carrera {matriz.carrera1} × Carrera {matriz.carrera2}
             </h4>
             <span className="flex items-center gap-2">
               <span
@@ -1394,7 +1396,7 @@ export function DupletaModule() {
                       const activa = Boolean(matriz && claveDeDupleta(matriz) === claveDeDupleta(g));
                       return (
                         <tr key={claveDeDupleta(g)} className={`border-t border-line ${activa ? "bg-indigo-50" : "hover:bg-slate-50"}`}>
-                          <td className="px-3 py-2 font-bold uppercase text-slate-700">{g.hipodromo}</td>
+                          <td className="px-3 py-2 font-bold uppercase text-slate-700"><span className="normal-case">{nombreHipodromoParaMostrar(g.hipodromo)}</span></td>
                           <td className="px-3 py-2 tabular-nums text-slate-600">{g.fecha}</td>
                           <td className="px-3 py-2 font-bold text-slate-700">C{g.carrera1} × C{g.carrera2}</td>
                           <td className="px-3 py-2 text-right font-black tabular-nums text-emerald-700">
@@ -1496,8 +1498,8 @@ export function DupletaModule() {
       const info = document.createElement("div");
       info.style.cssText = "flex:1;min-width:0;font-family:Inter,ui-sans-serif,system-ui,sans-serif;";
       const infoT = document.createElement("div");
-      infoT.style.cssText = "font-size:16px;font-weight:800;text-transform:uppercase;letter-spacing:0.02em;color:#0f172a;line-height:1.4em;";
-      infoT.textContent = `${matriz.hipodromo} · ${matriz.fecha} · Carrera ${matriz.carrera1} × Carrera ${matriz.carrera2}`;
+      infoT.style.cssText = "font-size:16px;font-weight:800;letter-spacing:0.02em;color:#0f172a;line-height:1.4em;";
+      infoT.textContent = `${nombreHipodromoParaMostrar(matriz.hipodromo)} · ${matriz.fecha} · Carrera ${matriz.carrera1} × Carrera ${matriz.carrera2}`;
       const infoS = document.createElement("div");
       infoS.style.cssText = "font-size:12px;font-weight:700;color:#64748b;margin-top:3px;line-height:1.4em;";
       infoS.textContent = `PAGA ${matriz.premio.toLocaleString("es-VE")} · ${vendidas.length} cuadro(s) vendido(s) · ${totalVentas.toLocaleString("es-VE", { maximumFractionDigits: 2 })}`;

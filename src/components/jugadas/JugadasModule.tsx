@@ -6,6 +6,7 @@ import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useHipodromosActivos } from "@/store/useHipodromosStore";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import {
   listarMonitorJugadas,
   listarJugadasDeCarrera,
@@ -399,7 +400,7 @@ export function JugadasModule() {
               ) : (
                 filtradas.map((f) => (
                   <tr key={`${f.hipodromo}-${f.carrera}-${f.fecha_carrera ?? ""}`} className="border-t border-line hover:bg-slate-50/60">
-                    <td className="px-3 py-2 font-bold uppercase text-slate-700">{f.hipodromo}</td>
+                    <td className="px-3 py-2 font-bold normal-case text-slate-700">{nombreHipodromoParaMostrar(f.hipodromo)}</td>
                     <td className="px-3 py-2 font-black text-slate-800">C{f.carrera}</td>
                     <td className="px-3 py-2 text-slate-500">{f.fecha_carrera ?? "—"}</td>
                     <td className="px-3 py-2 text-right font-bold text-slate-700">{f.total_jugadas}</td>
@@ -439,7 +440,7 @@ export function JugadasModule() {
             <div className="flex items-center justify-between border-b border-line px-4 py-3">
               <div>
                 <h2 className="text-sm font-black uppercase text-slate-800">
-                  {seleccion.hipodromo} · Carrera {seleccion.carrera}
+                  <span className="normal-case">{nombreHipodromoParaMostrar(seleccion.hipodromo)}</span> · Carrera {seleccion.carrera}
                   {seleccion.fecha_carrera ? ` · ${seleccion.fecha_carrera}` : ""}
                 </h2>
                 <p className="text-[11px] text-slate-500">

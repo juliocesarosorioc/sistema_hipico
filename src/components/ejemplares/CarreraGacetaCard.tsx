@@ -67,7 +67,7 @@ export function CarreraGacetaCard({ index, carrera, onChange, onEnviar, onElimin
               className={`${inpClaro} w-full uppercase`}
             />
             {nombreHipo && nombreHipo !== hipo ? (
-              <span className="block truncate leading-none text-[8px] font-bold uppercase text-indigo-100/90" title={nombreHipo}>
+              <span className="block truncate leading-none text-[8px] font-bold normal-case text-indigo-100/90" title={nombreHipo}>
                 {nombreHipo}
               </span>
             ) : null}

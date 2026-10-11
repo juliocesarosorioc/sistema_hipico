@@ -234,7 +234,7 @@ export function CargaResultadosModal({
       <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-line bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-line bg-slate-800 px-3 py-2.5 text-white">
           <h3 className="text-[11px] font-black uppercase tracking-wider">
-            🏁 Carga de Resultados — {nombreHipo} C{carrera}
+            🏁 Carga de Resultados — <span className="normal-case">{nombreHipo}</span> C{carrera}
           </h3>
           <button type="button" onClick={onCerrar} aria-label="Cerrar" className="text-slate-300 hover:text-white">
             ✕

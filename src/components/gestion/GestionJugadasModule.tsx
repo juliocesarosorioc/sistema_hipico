@@ -13,7 +13,7 @@ import { dividendosDePizarra } from "@/lib/liquidacion/posiciones";
 import { guardarPizarraCentral } from "@/lib/liquidacion/pizarraCentral";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { useHipodromosActivos } from "@/store/useHipodromosStore";
-import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
+import { nombrePropioHipodromo, nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { SemaforoCarreras } from "@/components/gestion/SemaforoCarreras";
 import { Button } from "@/components/ui/Button";
@@ -268,7 +268,7 @@ const hipodromosDelDia = useMemo(() => {
     if (!conCarreras.size) return hipodromos;
     const normalizado = new Map(hipodromos.map((h) => [claveHipodromo(h.value), h] as const));
     const dentro = [...conCarreras]
-      .map((k) => normalizado.get(k) ?? { value: k, label: k })
+      .map((k) => normalizado.get(k) ?? { value: k, label: nombreHipodromoParaMostrar(k) })
       .sort((a, b) => String(a.label).localeCompare(String(b.label)));
     const dentroKeys = new Set(dentro.map((h) => claveHipodromo(h.value)));
     const fuera = hipodromos.filter((h) => !dentroKeys.has(claveHipodromo(h.value)));
@@ -651,7 +651,7 @@ const hipodromosDelDia = useMemo(() => {
   const planoPreliminarTexto = useMemo(
     () =>
       mensajePlanoDeCarrera({
-        hipodromo,
+        hipodromo: nombreHipodromoParaMostrar(hipodromo),
         carrera,
         fecha,
         grupo: grupoCabecera,
@@ -664,7 +664,7 @@ const hipodromosDelDia = useMemo(() => {
   const generarMensajeResultados = useCallback(
     (pizarra: PizarraResultados) => {
       const msg = mensajeResultadoDeCarrera({
-        hipodromo,
+        hipodromo: nombreHipodromoParaMostrar(hipodromo),
         carrera,
         fecha,
         grupo: grupoCabecera,
@@ -1092,7 +1092,7 @@ const hipodromosDelDia = useMemo(() => {
         </label>
         <div className="rounded-xl border border-line bg-gray-50 px-3 py-2 text-right">
           <p className="text-[9px] font-black uppercase tracking-wide text-slate-600">
-            {nombreHipodromo} C{carrera} · {ticketsDeCarrera.length} ticket(s) · {monedaFmt(totalInvertidoSesion)}
+            <span className="normal-case">{nombreHipodromo}</span> C{carrera} · {ticketsDeCarrera.length} ticket(s) · {monedaFmt(totalInvertidoSesion)}
           </p>
         </div>
       </div>
@@ -1120,7 +1120,7 @@ const hipodromosDelDia = useMemo(() => {
               C{carrera}
             </span>
             <span className="text-[10px] font-semibold text-slate-500">
-              {nombreHipodromo} · Retirados: {retirados.trim() || "—"}
+              <span className="normal-case">{nombreHipodromo}</span> · Retirados: {retirados.trim() || "—"}
             </span>
           </span>
         </div>
@@ -1548,7 +1548,7 @@ const hipodromosDelDia = useMemo(() => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
           <div className="w-full max-w-lg rounded-2xl border border-line bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
-              <h3 className="text-xs font-black uppercase">✅ Registrar y Finalizar — {nombreHipodromo} C{carrera}</h3>
+              <h3 className="text-xs font-black uppercase">✅ Registrar y Finalizar — <span className="normal-case">{nombreHipodromo}</span> C{carrera}</h3>
               <button type="button" onClick={cerrarFinalizar} className="text-slate-300 hover:text-white">✕</button>
             </div>
             <div className="max-h-[60vh] space-y-3 overflow-y-auto p-4">
@@ -1674,7 +1674,7 @@ const hipodromosDelDia = useMemo(() => {
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4">
           <div className="w-full max-w-2xl rounded-2xl border border-line bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
-              <h3 className="text-xs font-black uppercase">⚡ Carga Rápida — {nombreHipodromo} C{carrera}</h3>
+              <h3 className="text-xs font-black uppercase">⚡ Carga Rápida — <span className="normal-case">{nombreHipodromo}</span> C{carrera}</h3>
               <button type="button" onClick={() => setModalCargaRapida(false)} className="text-slate-300 hover:text-white">✕</button>
             </div>
             <div className="space-y-3 p-4">

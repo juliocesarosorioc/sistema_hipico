@@ -5,6 +5,7 @@ import { colorDeNumero, textoDeNumero, parseNum, OPCIONES_NACIONALIDAD, SUPERFIC
 import { Flag } from "@/components/ui/BanderaPais"; // Inyectamos la bandera
 import { EditorCaballos } from "@/components/tablas/EditorCaballos";
 import { esFechaIso } from "@/lib/fechas";
+import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 
 type Props = {
   draft: DraftCarrera;
@@ -243,7 +244,7 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 no-print">
           <div className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
-              <h3 className="text-xs font-black uppercase">✏️ Corregir borrador — {corrigiendo.hipodromo || "Sin hipódromo"} C{corrigiendo.carrera}</h3>
+              <h3 className="text-xs font-black uppercase">✏️ Corregir borrador — <span className="normal-case">{corrigiendo.hipodromo ? nombreHipodromoParaMostrar(corrigiendo.hipodromo) : "Sin hipódromo"}</span> C{corrigiendo.carrera}</h3>
               <button type="button" onClick={() => setCorrigiendo(null)} className="text-slate-300 hover:text-white">✕</button>
             </div>
             <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
@@ -251,7 +252,7 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
                 <legend className="px-1 text-[9px] font-black uppercase tracking-wider text-slate-400">🏁 Carrera</legend>
                 <label className="block">
                   <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Hipódromo</span>
-                  <input value={corrigiendo.hipodromo} onChange={(e) => aplicarCorreccion({ ...corrigiendo, hipodromo: e.target.value.toUpperCase() })} className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-bold uppercase text-slate-900 focus:outline-none" />
+                  <input value={corrigiendo.hipodromo} onChange={(e) => aplicarCorreccion({ ...corrigiendo, hipodromo: e.target.value.toUpperCase() })} className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-bold normal-case text-slate-900 focus:outline-none" />
                 </label>
                 <label className="block">
                   <span className="mb-0.5 block text-[9px] font-black uppercase text-slate-500">Carrera Nº</span>
