@@ -1,18 +1,23 @@
 ﻿-- ============================================================================
--- ARGENTINA — REGISTRO / ACTUALIZACION DE CLIENTES, SALDOS Y AVAL
+-- ARGENTINA — REGISTRO DE CLIENTES, SALDOS Y AVALES
 -- ============================================================================
 -- Ejecutar en Supabase -> SQL Editor.
 --
--- Deja la cartera del grupo ARGENTINA con los clientes, saldos y avales de la
--- lista de abajo. Es IDEMPOTENTE y NO destructivo:
---   · a quien YA esta en ARGENTINA (por nombre, sin importar mayusculas) le
---     actualiza `saldo_actual` y `aval`;
---   · a quien NO esta todavia lo da de alta en ARGENTINA en modo "aval".
--- No borra filas ni cambia ids: los tickets, jugadas y liquidaciones que ya
--- apuntan a un cliente siguen enlazados a la misma fila.
+-- OJO: `clientes.nombre` tiene una restriccion UNICA GLOBAL
+-- (`clientes_nombre_key`). Un nombre solo puede existir UNA vez en la tabla,
+-- aunque sea de otro grupo. Por eso este script:
+--   1) actualiza a los que YA estan en el grupo ARGENTINA (idempotente);
+--   2) da de alta SOLO los nombres que no existen en ningun grupo.
+-- A quien ya existe en OTRO grupo NO lo toca (no lo mueve por su cuenta):
+-- para eso esta la seccion 3, descomentable, con la lista explicita.
+--
+-- No borra filas ni cambia ids.
 -- ============================================================================
 
 begin;
+
+-- Lista de referencia (nombre, saldo, aval) del grupo ARGENTINA.
+-- Se repite en cada bloque porque en SQL un CTE no se reutiliza entre sentencias.
 
 -- 1) Actualizar saldo y aval de los clientes que YA estan en ARGENTINA ------
 update public.clientes c
@@ -90,15 +95,17 @@ update public.clientes c
       ('TICO',               0.00,    0.00),
       ('URIEL',            -69.17,    0.00),
       ('VALVERDE',        -166.75,    0.00)
-  ) as l(nombre, saldo, aval),
-  (select id from public.grupos_venta where upper(nombre) = 'ARGENTINA' limit 1) as g(id)
+  ) as l(nombre, saldo, aval)
  where upper(c.nombre) = l.nombre
-   and c.grupo_id = g.id;
+   and c.grupo_id = (select id from public.grupos_venta where upper(nombre) = 'ARGENTINA' limit 1);
 
--- 2) Registrar en ARGENTINA los clientes que todavia no estan ---------------
+-- 2) Dar de alta los nombres que NO existen en ningun grupo -----------------
+--    (evita el error 23505 `clientes_nombre_key` si el nombre ya esta en otro
+--     grupo; esos quedan pendientes de la seccion 3).
 insert into public.clientes
   (nombre, libre, saldo_actual, aval, comision, modo_juego, mostrar_saldo_socio, es_socio, grupo_id)
-select l.nombre, false, l.saldo, l.aval, 0.00, 'aval', false, false, g.id
+select l.nombre, false, l.saldo, l.aval, 0.00, 'aval', false, false,
+       (select id from public.grupos_venta where upper(nombre) = 'ARGENTINA' limit 1)
   from (values
       ('AAA',                0.00,    0.00),
       ('ALBARRAN',           0.00,    0.00),
@@ -171,15 +178,44 @@ select l.nombre, false, l.saldo, l.aval, 0.00, 'aval', false, false, g.id
       ('TICO',               0.00,    0.00),
       ('URIEL',            -69.17,    0.00),
       ('VALVERDE',        -166.75,    0.00)
-  ) as l(nombre, saldo, aval),
-       (select id from public.grupos_venta where upper(nombre) = 'ARGENTINA' limit 1) as g(id)
- where not exists (
-   select 1 from public.clientes c
-    where upper(c.nombre) = l.nombre
-      and c.grupo_id = g.id
- );
+  ) as l(nombre, saldo, aval)
+ where not exists (select 1 from public.clientes c where upper(c.nombre) = l.nombre);
 
 commit;
+
+-- ============================================================================
+-- 3) PENDIENTE / OPCIONAL — clientes que YA existen en OTRO grupo
+-- ============================================================================
+-- Por la restriccion UNICA GLOBAL `clientes_nombre_key`, estos 12 nombres no
+-- pudieron insertarse en ARGENTINA porque ya existen en otro grupo:
+--
+--   En PRINCIPAL (11): ALBARRAN, AYARI, CAMACHO, CHAVIER, CHINO, CLUB,
+--                      EDDIE, FEDERICO, FORTUNA, MANUEL, SAM
+--   En MVP       (1):  THOR
+--
+-- Si esos clientes DEBEN quedar en ARGENTINA, descomenta y corre este bloque
+-- (los MUEVE: cambia su grupo_id y pisa saldo/aval; el nombre sigue siendo
+-- unico). Revisa antes sobre todo THOR, que hoy esta en MVP.
+--
+-- update public.clientes c
+--    set grupo_id     = (select id from public.grupos_venta where upper(nombre) = 'ARGENTINA' limit 1),
+--        saldo_actual = l.saldo,
+--        aval         = l.aval
+--   from (values
+--      ('ALBARRAN', 0.00, 0.00),
+--      ('AYARI',    2047.13, 2000.00),
+--      ('CAMACHO',  260.00, 500.00),
+--      ('CHAVIER',  0.00, 0.00),
+--      ('CHINO',    -36.62, 0.00),
+--      ('CLUB',     0.00, 0.00),
+--      ('EDDIE',    29.70, 0.00),
+--      ('FEDERICO', 0.00, 0.00),
+--      ('FORTUNA', -2563.99, 0.00),
+--      ('MANUEL',   42.75, 0.00),
+--      ('SAM',     -97.47, 0.00),
+--      ('THOR',    254.00, 0.00)
+--   ) as l(nombre, saldo, aval)
+--  where upper(c.nombre) = l.nombre;
 
 -- ============================================================================
 -- VERIFICACION (opcional): clientes y saldo total del grupo ARGENTINA.
