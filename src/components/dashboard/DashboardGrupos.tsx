@@ -6,6 +6,7 @@ import { errorCargaGrupos, listarGruposAdmin, actualizarGrupo, type GrupoRow } f
 import { hoyLocal } from "@/lib/gaceta/programa";
 import { cicloSemanalDe, DIAS_SEMANA, etiquetaDia, rangoSemanaDesde } from "@/lib/liquidacion/semana";
 import { fijarSemanaVigente, semanaVigente } from "@/lib/liquidacion/semana-vigente";
+import { grupoActivoVigente } from "@/lib/seguridad/vigente";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   balanceDeRango,
@@ -101,7 +102,15 @@ export function DashboardGrupos() {
   const recargar = useCallback(async () => {
     const gs = await listarGruposAdmin(true);
     setGrupos(gs);
-    setGrupoId((prev) => prev || (gs.find((g) => g.es_principal)?.id ?? gs[0]?.id)?.toString() || "");
+    // Auto-fija el grupo GLOBAL elegido por el super administrador; si no hay,
+    // cae al principal (o al primero).
+    setGrupoId((prev) => {
+      if (prev) return prev;
+      const activo = grupoActivoVigente();
+      const porActivo = activo ? gs.find((g) => String(g.id) === String(activo)) : undefined;
+      const elegido = porActivo ?? gs.find((g) => g.es_principal) ?? gs[0];
+      return elegido?.id != null ? String(elegido.id) : "";
+    });
     const err = errorCargaGrupos();
     if (err && !gs.length) toast(err, "error");
   }, [toast]);

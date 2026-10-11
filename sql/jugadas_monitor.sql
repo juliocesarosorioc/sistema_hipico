@@ -72,11 +72,19 @@ create index if not exists idx_jugadas_auditoria_ticket
 --    conoce la fecha de carrera, por esa fecha.
 -- ----------------------------------------------------------------------------
 drop view if exists public.v_jugadas_monitor;
-create view public.v_jugadas_monitor as
+-- `security_invoker = true` (PG15+): la vista se ejecuta con los privilegios de
+-- quien consulta, así que RESPETA el RLS de `tickets_apuestas`. Antes corría como
+-- el dueño y ESQUIVABA el RLS: un usuario con grupo veía las jugadas de TODOS los
+-- grupos por el monitor. Con esto, un usuario con grupo solo ve las suyas.
+create view public.v_jugadas_monitor with (security_invoker = true) as
 select
     g.hipodromo,
     g.carrera,
     g.fecha_carrera,
+    -- Dimensión de grupo: la usa el filtro del super administrador ("ver un
+    -- grupo"). Un usuario con grupo ya viene acotado por el RLS, así que la app
+    -- solo filtra por esta columna cuando el admin elige un grupo.
+    g.grupo_cobro_id,
     g.total_jugadas,
     g.total_monto,
     g.total_premio,
@@ -127,6 +135,7 @@ from (
             (case when tk.nota_auditoria ~ '^\s*[\{\[]'
                   then nullif(tk.nota_auditoria::jsonb ->> 'fecha_carrera', '')
              end)::date                              as fecha_carrera,
+            tk.grupo_cobro_id                        as grupo_cobro_id,
             (case when tk.nota_auditoria ~ '^\s*[\{\[]'
                   then nullif(tk.nota_auditoria::jsonb ->> 'origen', '')
              end)                                    as origen,
@@ -140,7 +149,7 @@ from (
             coalesce(tk.premio_pagar, 0)::numeric    as premio
         from public.tickets_apuestas tk
     ) t
-    group by t.hipodromo, t.carrera, t.fecha_carrera
+    group by t.hipodromo, t.carrera, t.fecha_carrera, t.grupo_cobro_id
 ) g;
 
 grant select on public.v_jugadas_monitor to anon, authenticated;
@@ -148,17 +157,22 @@ grant select on public.v_jugadas_monitor to anon, authenticated;
 -- ----------------------------------------------------------------------------
 -- 4b) VISTA `v_jugadas_carrera` (detalle)
 --    Espejo de `tickets_apuestas` con las columnas que necesita el monitor.
---    Se lee por vista a propósito: las vistas corren con los privilegios del
---    dueño y ESQUIVAN el RLS de `tickets_apuestas` (que está activo sin policy
---    de SELECT). Las escrituras sí van directo a la tabla, cubiertas por la
---    policy de UPDATE de más abajo.
+--    Corre con `security_invoker = true`: respeta el RLS de `tickets_apuestas`
+--    (un usuario con grupo solo ve lo suyo). Las escrituras van directo a la
+--    tabla, cubiertas por la policy de UPDATE de más abajo.
 -- ----------------------------------------------------------------------------
 drop view if exists public.v_jugadas_carrera;
-create view public.v_jugadas_carrera as
+-- `security_invoker = true`: igual que el monitor, respeta el RLS de
+-- `tickets_apuestas` (antes lo esquivaba y mostraba todos los grupos).
+create view public.v_jugadas_carrera with (security_invoker = true) as
 select
     tk.id,
     upper(btrim(coalesce(tk.hipodromo, ''))) as hipodromo,
     tk.carrera,
+    -- Grupo de cobro y cliente que juega: el filtro del admin y el aislamiento
+    -- por grupo (RLS) los necesitan.
+    tk.grupo_cobro_id,
+    tk.cliente_juega_id,
     tk.nombre_jugada,
     tk.caballo,
     tk.ejemplar_numero,
@@ -195,20 +209,52 @@ grant select on public.v_jugadas_carrera to anon, authenticated;
 -- 5) RLS: lectura y UPDATE del staff autenticado (la app exige la capacidad).
 --
 --    IMPORTANTE: NO se ejecuta `enable row level security` ni `disable`: se
---    respeta el estado que ya tenga la tabla (hoy, RLS ACTIVO). Solo se agregan
---    policies para el rol `authenticated` (el staff logueado). `anon` sigue sin
---    acceso. El alcance es el mismo que ya exponen las vistas del monitor.
+--    respeta el estado que ya tenga la tabla (hoy, RLS ACTIVO).
+--
+--    OJO: acá NO se crea una policy amplia `using (true)`. Esa policy —al ser
+--    permisiva y sumarse por OR a las demás— ANULABA el aislamiento por grupo de
+--    `tickets_apuestas` (src/db/rls_por_grupo.sql). Ahora la policy del monitor
+--    exige el MISMO filtro de grupo (por `grupo_cobro_id` o por cliente propio),
+--    con respaldo a `true` SOLO si todavía no se corrieron los resolutores
+--    (sql/grupos_usuarios.sql), para que este script siga siendo autónomo.
 -- ----------------------------------------------------------------------------
-drop policy if exists tickets_apuestas_monitor_select on public.tickets_apuestas;
-create policy tickets_apuestas_monitor_select on public.tickets_apuestas
-    for select to authenticated
-    using (true);
+do $$
+begin
+  drop policy if exists tickets_apuestas_monitor_select on public.tickets_apuestas;
+  drop policy if exists tickets_apuestas_monitor_update on public.tickets_apuestas;
 
-drop policy if exists tickets_apuestas_monitor_update on public.tickets_apuestas;
-create policy tickets_apuestas_monitor_update on public.tickets_apuestas
-    for update to authenticated
-    using (true)
-    with check (true);
+  if to_regprocedure('public.usuario_en_grupo(uuid,text)') is not null
+     and to_regprocedure('public.usuario_en_cliente(uuid,text)') is not null then
+    execute $pol$
+      create policy tickets_apuestas_monitor_select on public.tickets_apuestas
+        for select to authenticated
+        using (
+          public.usuario_en_grupo(auth.uid(), grupo_cobro_id::text)
+          or public.usuario_en_cliente(auth.uid(), cliente_juega_id::text)
+        )$pol$;
+    execute $pol$
+      create policy tickets_apuestas_monitor_update on public.tickets_apuestas
+        for update to authenticated
+        using (
+          public.usuario_en_grupo(auth.uid(), grupo_cobro_id::text)
+          or public.usuario_en_cliente(auth.uid(), cliente_juega_id::text)
+        )
+        with check (
+          public.usuario_en_grupo(auth.uid(), grupo_cobro_id::text)
+          or public.usuario_en_cliente(auth.uid(), cliente_juega_id::text)
+        )$pol$;
+  else
+    -- Sin resolutores todavía: se conserva el comportamiento anterior para no
+    -- dejar el monitor sin lectura (se aprieta al correr grupos_usuarios.sql).
+    execute $pol$
+      create policy tickets_apuestas_monitor_select on public.tickets_apuestas
+        for select to authenticated using (true)$pol$;
+    execute $pol$
+      create policy tickets_apuestas_monitor_update on public.tickets_apuestas
+        for update to authenticated using (true) with check (true)$pol$;
+  end if;
+end
+$$;
 
 -- Forzar a PostgREST a recargar el esquema: sin esto, recién creada la vista
 -- sigue respondiendo 404/PGRST205 hasta que Supabase refresque su caché.

@@ -15,7 +15,7 @@
  * un solo módulo.
  */
 import { supabase } from "@/lib/supabase";
-import { exigirCapacidad, tieneCapacidad } from "@/lib/seguridad/vigente";
+import { exigirCapacidad, grupoActivoVigente, tieneCapacidad } from "@/lib/seguridad/vigente";
 import { clienteDelUsuario } from "@/lib/seguridad/accesos";
 import {
   calcularFinanzasRemate,
@@ -132,10 +132,15 @@ export async function listarRemates(): Promise<ResRemates> {
   if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
   try {
     // `select("*")` tolera que falte una columna opcional (migración a medias).
-    const { data, error } = await supabase
+    // Filtro del super administrador ("ver un grupo"): un usuario con grupo no
+    // filtra acá porque su visibilidad ya la impone el RLS de la base.
+    const activo = grupoActivoVigente();
+    let q = supabase
       .from("remates")
       .select("*, hipodromos(nombre)")
       .order("fecha_registro", { ascending: false });
+    if (activo) q = q.eq("grupo_id", activo);
+    const { data, error } = await q;
     if (error) return { ok: false, error: error.message };
     return { ok: true, datos: (data ?? []).map((r) => normalizarRemate(r as Record<string, unknown>)) };
   } catch (e) {

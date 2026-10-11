@@ -123,6 +123,8 @@ create policy "personal opera clientes" on public.clientes
 -- escritura exija la capacidad; el invariante del estado se aplica mas abajo,
 -- sobre la tabla que si lo tiene.
 drop policy if exists "personal opera apuestas" on public.tickets_apuestas;
+drop policy if exists "personal lee apuestas" on public.tickets_apuestas;
+drop policy if exists "personal actualiza apuesta" on public.tickets_apuestas;
 create policy "personal lee apuestas" on public.tickets_apuestas
   for select to authenticated using (true);
 create policy "personal actualiza apuesta" on public.tickets_apuestas
@@ -148,6 +150,9 @@ create policy "personal opera notificaciones" on public.notificaciones
 -- una regla de ABAC solo se vuelve frontera de la base si el dato que necesita
 -- esta en la fila.
 drop policy if exists "personal opera tickets de jugada" on public.tickets_jugadas;
+drop policy if exists "personal lee tickets de jugada" on public.tickets_jugadas;
+drop policy if exists "personal escribe tickets de jugada" on public.tickets_jugadas;
+drop policy if exists "personal actualiza ticket de jugada" on public.tickets_jugadas;
 create policy "personal lee tickets de jugada" on public.tickets_jugadas
   for select to authenticated using (true);
 create policy "personal escribe tickets de jugada" on public.tickets_jugadas

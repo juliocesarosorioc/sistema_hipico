@@ -12,7 +12,7 @@
  * `nota_auditoria::jsonb->>'fecha_carrera'`, que sellan los RPC de venta.
  */
 import { supabase } from "@/lib/supabase";
-import { exigirCapacidad } from "@/lib/seguridad/vigente";
+import { exigirCapacidad, grupoActivoVigente } from "@/lib/seguridad/vigente";
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -142,6 +142,49 @@ export function fechaCarreraDeJugada(j: JugadaAdmin): string | null {
 // Lecturas
 // ---------------------------------------------------------------------------
 
+/**
+ * Une las filas del monitor por (hipódromo, carrera, fecha de carrera).
+ *
+ * `v_jugadas_monitor` ahora trae `grupo_cobro_id` en la clave (para poder filtrar
+ * por grupo), así que una misma carrera puede devolver VARIAS filas —una por
+ * grupo de cobro—. El monitor se muestra por carrera: acá se consolidan sumando
+ * los totales, uniendo los usuarios, juntando los orígenes y marcando el
+ * resultado como cargado si CUALQUIERA de las filas lo tiene.
+ */
+function agruparMonitor(filas: FilaMonitorJugada[]): FilaMonitorJugada[] {
+  const mapa = new Map<string, FilaMonitorJugada>();
+  for (const f of filas) {
+    const k = `${f.hipodromo}|${f.carrera}|${f.fecha_carrera ?? ""}`;
+    const prev = mapa.get(k);
+    if (!prev) {
+      mapa.set(k, { ...f, usuarios: f.usuarios ? [...f.usuarios] : null });
+      continue;
+    }
+    prev.total_jugadas += f.total_jugadas;
+    prev.total_monto += f.total_monto;
+    prev.total_premio += f.total_premio;
+    prev.en_juego += f.en_juego;
+    prev.por_pagar += f.por_pagar;
+    prev.liquidadas += f.liquidadas;
+    prev.anuladas += f.anuladas;
+    prev.monto_vigente += f.monto_vigente;
+    prev.premio_ganador += f.premio_ganador;
+    prev.resultado_cargado = prev.resultado_cargado || f.resultado_cargado;
+    if (!prev.fecha_carrera && f.fecha_carrera) prev.fecha_carrera = f.fecha_carrera;
+    const setUsuarios = new Set([...(prev.usuarios ?? []), ...(f.usuarios ?? [])]);
+    prev.usuarios = setUsuarios.size ? [...setUsuarios] : null;
+    const orig = new Set(
+      [prev.origenes, f.origenes]
+        .filter(Boolean)
+        .flatMap((s) => String(s).split(","))
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+    prev.origenes = orig.size ? [...orig].join(", ") : null;
+  }
+  return [...mapa.values()];
+}
+
 export async function listarMonitorJugadas(): Promise<{
   ok: boolean;
   filas: FilaMonitorJugada[];
@@ -149,11 +192,16 @@ export async function listarMonitorJugadas(): Promise<{
 }> {
   if (!supabase) return { ok: false, filas: [], error: "Sin conexión a Supabase." };
   try {
-    const { data, error } = await supabase
+    // Filtro del super administrador ("ver un grupo"). Un usuario con grupo ya
+    // viene acotado por el RLS de la vista (security_invoker = true).
+    const activo = grupoActivoVigente();
+    let q = supabase
       .from("v_jugadas_monitor")
       .select("*")
       .order("hipodromo")
       .order("carrera");
+    if (activo) q = q.eq("grupo_cobro_id", activo);
+    const { data, error } = await q;
     if (error) throw error;
     const filas: FilaMonitorJugada[] = (data ?? []).map((r) => {
       const x = r as Record<string, unknown>;
@@ -175,7 +223,7 @@ export async function listarMonitorJugadas(): Promise<{
         resultado_cargado: x.resultado_cargado === true,
       };
     });
-    return { ok: true, filas };
+    return { ok: true, filas: agruparMonitor(filas) };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     const aplica = /does not exist|schema cache|PGRST20[45]/i.test(msg)
@@ -192,13 +240,18 @@ export async function listarJugadasDeCarrera(
 ): Promise<{ ok: boolean; jugadas: JugadaAdmin[]; error?: string }> {
   if (!supabase) return { ok: false, jugadas: [], error: "Sin conexión a Supabase." };
   try {
-    const { data, error } = await supabase
+    let q = supabase
       .from("v_jugadas_carrera")
       .select(COLS_DETALLE)
       .eq("hipodromo", texto(hipodromo).toUpperCase())
       .eq("carrera", num(carrera))
       .order("fecha_registro")
       .limit(1000);
+    // Filtro del super administrador ("ver un grupo"). El usuario con grupo ya
+    // viene acotado por el RLS de la vista (security_invoker = true).
+    const activo = grupoActivoVigente();
+    if (activo) q = q.eq("grupo_cobro_id", activo);
+    const { data, error } = await q;
     if (error) throw error;
     let jugadas = (data ?? []) as unknown as JugadaAdmin[];
     if (fecha) jugadas = jugadas.filter((j) => (fechaCarreraDeJugada(j) ?? "") === String(fecha).slice(0, 10));

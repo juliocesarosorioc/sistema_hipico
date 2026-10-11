@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { SelectorGrupo } from "@/components/grupos/SelectorGrupo";
 
 /**
  * Barra superior limpia de la SPA (Organismo del layout raíz).
@@ -181,6 +182,8 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
           </div>
         )}
       </div>
+
+      <SelectorGrupo />
 
       <button
         type="button"

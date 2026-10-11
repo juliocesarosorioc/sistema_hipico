@@ -152,6 +152,14 @@ export function DupletaModule() {
   const [q, setQ] = useState("");
   const [abiertoCli, setAbiertoCli] = useState(false);
   const [precioCelda, setPrecioCelda] = useState("");
+  /**
+   * Modo "Editar precios": convierte cada cuadro LIBRE de la matriz en un campo
+   * de precio para fijar precios POR COMBINACIÓN en una sola pasada. Las
+   * combinaciones ya vendidas conservan el precio cobrado (no se tocan).
+   * `preciosDraft` es el borrador (clave de celda → texto) mientras se edita.
+   */
+  const [modoPrecios, setModoPrecios] = useState(false);
+  const [preciosDraft, setPreciosDraft] = useState<Record<string, string>>({});
   const [guardando, setGuardando] = useState(false);
   const [liquidando, setLiquidando] = useState(false);
   // Panel de "dupletas guardadas": antes era un desplegable plano; ahora un
@@ -281,6 +289,8 @@ export function DupletaModule() {
     setCarrera2(String(g.carrera2));
     setPremio(String(g.premio ?? ""));
     setPrecio(String(g.precio ?? ""));
+    setModoPrecios(false);
+    setPreciosDraft({});
     setModalGuardadas(false);
     toast(`📂 Cargada ${g.hipodromo} C${g.carrera1}×C${g.carrera2}.`, "info");
   };
@@ -376,6 +386,8 @@ export function DupletaModule() {
       celdas: {},
       updatedAt: new Date().toISOString(),
     });
+    setModoPrecios(false);
+    setPreciosDraft({});
     toast(`✅ Matriz C${carrera1}×C${carrera2} generada: ${cab1.length}×${cab2.length} = ${cab1.length * cab2.length} cuadros.`, "success");
   };
 
@@ -422,6 +434,8 @@ export function DupletaModule() {
       celdas: {},
       updatedAt: new Date().toISOString(),
     });
+    setModoPrecios(false);
+    setPreciosDraft({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hipodromo, dia, carrera1, carrera2, firmaEjemplares]);
 
@@ -755,12 +769,91 @@ export function DupletaModule() {
     ) {
       return;
     }
-    const nuevo: DupletaEstado = { ...matriz, precio: pr, updatedAt: new Date().toISOString() };
+    // "Aplicar a todos" implica el precio global para TODOS los cuadros libres:
+    // se descartan los precios por-combinación (overrides) de los cuadros no
+    // vendidos, que solo guardan ese override. Los vendidos conservan lo cobrado.
+    const celdas = { ...matriz.celdas };
+    for (const k of Object.keys(celdas)) {
+      if (!celdas[k].vendida) delete celdas[k];
+    }
+    const nuevo: DupletaEstado = { ...matriz, precio: pr, celdas, updatedAt: new Date().toISOString() };
     setMatriz(nuevo);
     const g = await guardarDupleta(nuevo);
     toast(`💵 Precio por cuadro actualizado a $${pr.toLocaleString("es-VE")} en todos los cuadros libres.`, "success");
     if (!g.ok) toast(`⚠️ Quedó aplicado en pantalla, pero no se pudo persistir: ${g.error ?? "sin conexión"}`, "warning");
     else setGuardadas(await listarDupletasGuardadas());
+  };
+
+  /** Abre el modo "Editar precios", precargando un borrador por cuadro libre. */
+  const entrarModoPrecios = () => {
+    if (!matriz) return toast("Genere o cargue una matriz antes de editar precios.", "warning");
+    const d: Record<string, string> = {};
+    for (const c1 of matriz.caballos1) {
+      for (const c2 of matriz.caballos2) {
+        if (c1.retirado || c2.retirado) continue;
+        const k = claveCelda(c1.numero, c2.numero);
+        const celda = matriz.celdas[k];
+        d[k] = String(celda?.precio ?? matriz.precio ?? "");
+      }
+    }
+    setPreciosDraft(d);
+    setModoPrecios(true);
+  };
+
+  const cancelarModoPrecios = () => {
+    setModoPrecios(false);
+    setPreciosDraft({});
+  };
+
+  /**
+   * Persiste los precios por combinación escritos en el modo "Editar precios".
+   * Solo afecta cuadros LIBRES: los vendidos conservan su precio cobrado. Un
+   * cuadro vaciado vuelve al precio global de la matriz.
+   */
+  const guardarPrecios = async () => {
+    if (!matriz) return;
+    const celdas = { ...matriz.celdas };
+    let cambios = 0;
+    for (const c1 of matriz.caballos1) {
+      for (const c2 of matriz.caballos2) {
+        if (c1.retirado || c2.retirado) continue;
+        const k = claveCelda(c1.numero, c2.numero);
+        const celda = matriz.celdas[k];
+        if (celda?.vendida) continue; // solo cuadros libres
+        const raw = (preciosDraft[k] ?? "").trim();
+        if (raw === "") {
+          if (k in celdas) {
+            delete celdas[k];
+            cambios++;
+          }
+          continue;
+        }
+        const pr = Number(raw);
+        if (!(pr > 0)) return toast(`El precio de ${c1.numero}×${c2.numero} debe ser mayor a cero.`, "warning");
+        const efectivo = Number(celda?.precio ?? matriz.precio ?? 0);
+        if (pr !== efectivo) {
+          celdas[k] = { ...(celda ?? { vendida: false }), vendida: false, precio: pr };
+          cambios++;
+        }
+      }
+    }
+    if (!cambios) {
+      toast("No hay cambios de precio.", "info");
+      cancelarModoPrecios();
+      return;
+    }
+    const nuevo: DupletaEstado = { ...matriz, celdas, updatedAt: new Date().toISOString() };
+    setMatriz(nuevo);
+    setGuardando(true);
+    const g = await guardarDupleta(nuevo);
+    setGuardando(false);
+    if (!g.ok) {
+      toast(`⚠️ Precios aplicados en pantalla, pero no se pudieron persistir: ${g.error ?? "sin conexión"}`, "warning");
+    } else {
+      toast(`💵 Precios guardados en ${cambios} combinación(es).`, "success");
+      setGuardadas(await listarDupletasGuardadas());
+    }
+    cancelarModoPrecios();
   };
 
   const liquidar = async () => {
@@ -962,10 +1055,40 @@ export function DupletaModule() {
               <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black text-orange-700">
                 🧾 {vendidas.length} cuadro(s) vendido(s) · ${totalVentas.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
               </span>
+              {modoPrecios ? (
+                <>
+                  <Button
+                    variant="success"
+                    size="sm"
+                    disabled={guardando}
+                    onClick={() => void guardarPrecios()}
+                    title="Guarda el precio escrito en cada cuadro libre de la matriz."
+                  >
+                    {guardando ? "Guardando…" : "💾 Guardar precios"}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={cancelarModoPrecios}>Cancelar</Button>
+                </>
+              ) : (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={entrarModoPrecios}
+                  title="Fijar el precio de CADA combinación (solo cuadros libres) en una sola pasada."
+                >
+                  ✎ Editar precios
+                </Button>
+              )}
               <Button variant="default" size="sm" onClick={() => void exportarMatriz("PNG")} className="!bg-indigo-600 hover:!bg-indigo-500">🖼️ PNG</Button>
               <Button variant="outline" size="sm" onClick={() => void exportarMatriz("PDF")}>📄 PDF</Button>
             </span>
           </div>
+
+          {modoPrecios && (
+            <p className="mb-2 rounded-lg border-l-4 border-indigo-400 bg-indigo-50 px-3 py-1.5 text-[10px] font-semibold leading-snug text-indigo-900">
+              ✎ Editando precios por combinación: escribí el precio de cada cuadro LIBRE y tocá <b>💾 Guardar precios</b>.
+              Vaciar un cuadro lo devuelve al precio global. Los cuadros ya vendidos conservan el precio cobrado.
+            </p>
+          )}
 
           <div className="relative overflow-hidden rounded-xl border border-line bg-white shadow-sm" style={{ height: "calc(100vh - 300px)" }}>
             <div ref={areaRef} className="absolute inset-0 flex items-start justify-start">
@@ -1054,6 +1177,27 @@ export function DupletaModule() {
                               <div className="flex h-12 items-center justify-center px-0.5 text-center text-[11px] font-black leading-none tracking-tight text-slate-600">
                                 RETIRADO
                               </div>
+                            ) : modoPrecios ? (
+                              <div className="flex h-12 flex-col items-center justify-center px-0.5">
+                                <input
+                                  type="number"
+                                  inputMode="decimal"
+                                  value={preciosDraft[claveCelda(cb1.numero, cb2.numero)] ?? ""}
+                                  disabled={Boolean(celda?.vendida)}
+                                  onChange={(e) =>
+                                    setPreciosDraft((d) => ({ ...d, [claveCelda(cb1.numero, cb2.numero)]: e.target.value }))
+                                  }
+                                  title={
+                                    celda?.vendida
+                                      ? "Vendida: conserva el precio cobrado"
+                                      : `${cb1.nombre} × ${cb2.nombre} — precio de esta combinación`
+                                  }
+                                  className={`h-8 w-full rounded border border-slate-300 px-1 text-right text-[13px] font-black tabular-nums text-slate-900 focus:border-indigo-500 focus:outline-none ${celda?.vendida ? "bg-slate-200 text-slate-500" : "bg-white"}`}
+                                />
+                                <span className="mt-0.5 block h-3 truncate text-[9px] font-bold leading-none text-slate-500">
+                                  {celda?.vendida ? celda.cliente_nombre || "vendida" : "precio"}
+                                </span>
+                              </div>
                             ) : (
                               <button
                                 type="button"
@@ -1062,7 +1206,7 @@ export function DupletaModule() {
                                 className={`block h-12 w-full text-center transition-colors ${mezcla ? "hover:bg-indigo-50" : "hover:bg-indigo-100"} ${celda?.vendida ? "text-slate-900" : "text-slate-600"}`}
                               >
                                 <span className="block text-[18px] font-black leading-none">
-                                  {celda?.vendida ? (celda.precio ?? matriz.precio).toLocaleString("es-VE", { maximumFractionDigits: 2 }) : matriz.precio.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
+                                  {(celda?.precio ?? matriz.precio).toLocaleString("es-VE", { maximumFractionDigits: 2 })}
                                 </span>
                                 <span className="block truncate text-[11px] font-bold leading-tight">{celda?.vendida ? (celda.cliente_nombre || "—") : "clic ▼"}</span>
                                 {celda?.vendida && celda.grupo_nombre ? (

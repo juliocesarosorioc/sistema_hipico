@@ -11,14 +11,40 @@ import {
 } from "@/lib/auth/sesion";
 import { esUsuarioPrincipal, resolverAccesos, USUARIO_PRINCIPAL } from "@/lib/seguridad/resolver";
 import { atributosDeUsuario, claveDeUsuario, leerTipoDeUsuario, permisosIndividuales } from "@/lib/seguridad/accesos";
+import { leerMiGrupo } from "@/lib/seguridad/grupo-usuario";
 import { CAPACIDADES_POR_CLAVE } from "@/lib/seguridad/capacidades";
-import { limpiarAccesosVigentes, setAccesosVigentes } from "@/lib/seguridad/vigente";
+import { limpiarAccesosVigentes, setAccesosVigentes, setGrupoActivoVigente } from "@/lib/seguridad/vigente";
 import type { ExcepcionUsuario, TipoUsuario } from "@/lib/seguridad/tipos";
 
 const CLAVE_PERFIL = "hipico_perfil";
 const CLAVE_PERMISOS = "hipico_permisos";
 const CLAVE_USUARIO = "hipico_usuario";
 const CLAVE_ACCESO = "hipico_acceso";
+/**
+ * Grupo que el super administrador eligió mirar. Se guarda en localStorage —
+ * y no en el store — para que sobreviva a la recarga que dispara el selector
+ * (la forma más simple de que TODAS las pantallas vuelvan a leer con el filtro).
+ * Vacío/ausente = "todos".
+ */
+const CLAVE_GRUPO_ACTIVO = "hipico_grupo_activo";
+
+function leerGrupoActivoGuardado(): string | null {
+  try {
+    const v = localStorage.getItem(CLAVE_GRUPO_ACTIVO);
+    return v ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function guardarGrupoActivo(g: string | null): void {
+  try {
+    if (g) localStorage.setItem(CLAVE_GRUPO_ACTIVO, g);
+    else localStorage.removeItem(CLAVE_GRUPO_ACTIVO);
+  } catch {
+    /* sinop */
+  }
+}
 
 /**
  * Red de seguridad del arranque. De que `inicializada` llegue a `true` depende
@@ -112,6 +138,22 @@ export type EstadoAuth = {
   excepciones: ExcepcionUsuario;
   /** true si la sesión es del usuario principal (acceso total). */
   esPrincipal: boolean;
+  /** Grupo de venta de la sesión ("" si no tiene: ve todo). */
+  grupoId: string;
+  /** Nombre del grupo de la sesión, para mostrar. */
+  grupoNombre: string;
+  /**
+   * true si la sesión puede ver TODOS los grupos (el principal y quien todavía
+   * no tiene grupo asignado). Habilita el filtro "ver todos" de la interfaz.
+   */
+  veTodosLosGrupos: boolean;
+  /**
+   * Grupo que el super administrador eligió mirar (null = todos). Solo afecta a
+   * la INTERFAZ: la frontera real es el RLS de la base.
+   */
+  grupoActivo: string | null;
+  /** Cambia el grupo que se está mirando (solo para `veTodosLosGrupos`). */
+  setGrupoActivo: (grupoId: string | null) => void;
   /** Inicia sesión contra Supabase Auth y siembra los permisos del perfil. */
   iniciarSesion: (identificador: string, clave: string) => Promise<boolean>;
   inicializar: () => Promise<void>;
@@ -131,6 +173,9 @@ const inicioDefault = {
   email: null as string | null,
   perfiles: [] as string[],
   permisos: [] as string[],
+  grupoId: "",
+  grupoNombre: "",
+  veTodosLosGrupos: false,
 };
 
 /**
@@ -154,6 +199,10 @@ type ResolucionAccesos = {
   permisos: string[];
   perfiles: string[];
   falloLectura: boolean;
+  grupoId: string;
+  grupoNombre: string;
+  veTodosLosGrupos: boolean;
+  grupoActivo: string | null;
 };
 
 async function aplicarAccesos(identificador: string): Promise<ResolucionAccesos> {
@@ -167,7 +216,10 @@ async function aplicarAccesos(identificador: string): Promise<ResolucionAccesos>
   // excepciones, sin permisos— que es el fallo seguro: mejor que abrir el
   // sistema de menos que dejarlo colgado.
   let falloLectura = false;
-  const [tipo, excepciones, atributos] = await Promise.all([
+  // El grupo se lee para TODOS (principal incluido): el principal necesita
+  // saber que ve todos para mostrar el filtro. `leerMiGrupo` no rompe si la
+  // migración no está aplicada (devuelve `aplicado: false`, veTodos = true).
+  const [tipo, excepciones, atributos, miGrupo] = await Promise.all([
     principal
       ? Promise.resolve<TipoUsuario | null>(null)
       : conTimeout(leerTipoDeUsuario(id), TIMEOUT_SESION_MS, "La lectura del tipo de usuario").catch(
@@ -190,11 +242,23 @@ async function aplicarAccesos(identificador: string): Promise<ResolucionAccesos>
           falloLectura = true;
           return {} as Record<string, unknown>;
         }),
+    // El grupo NO es crítico: si falla, la sesión sigue (sin aislamiento del
+    // lado del cliente; la base sigue decidiendo).
+    conTimeout(leerMiGrupo(), TIMEOUT_SESION_MS, "La lectura del grupo").catch(() => null),
   ]);
   const resolucion = resolverAccesos({ identificador: id, tipo, excepciones });
   const permisos = [...resolucion.permitidas];
   const perfiles = tipo ? [tipo.nombre] : principal ? ["admin"] : [];
   publicarPermisosEnCookies(perfiles, permisos, id);
+  // Un principal ve todos, tenga o no grupo asignado.
+  const veTodosLosGrupos = resolucion.total || (miGrupo?.veTodos ?? true);
+  const grupoId = miGrupo?.grupoId ?? "";
+  const grupoNombre = miGrupo?.grupoNombre ?? "";
+  // El filtro "ver un grupo / todos" es SOLO para quien ve todos. Un usuario con
+  // grupo no elige: la base ya lo acota a lo suyo, y dejarle un filtro activo
+  // (residual de otra sesión) le escondería datos suyos.
+  const grupoActivo = veTodosLosGrupos ? leerGrupoActivoGuardado() : null;
+  setGrupoActivoVigente(grupoActivo);
   // Espejo para las funciones de escritura de src/lib, que no son componentes y
   // no pueden leer el store (ver src/lib/seguridad/vigente.ts).
   //
@@ -208,6 +272,9 @@ async function aplicarAccesos(identificador: string): Promise<ResolucionAccesos>
     usuario: id,
     tipoUsuario: tipo?.nombre ?? (principal ? "admin" : ""),
     atributos,
+    grupoId,
+    grupoNombre,
+    veTodos: veTodosLosGrupos,
   });
   return {
     tipoUsuario: tipo,
@@ -216,6 +283,10 @@ async function aplicarAccesos(identificador: string): Promise<ResolucionAccesos>
     permisos,
     perfiles,
     falloLectura,
+    grupoId,
+    grupoNombre,
+    veTodosLosGrupos,
+    grupoActivo,
   };
 }
 
@@ -257,6 +328,10 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
       tipoUsuario: null,
       excepciones: {},
       esPrincipal: false,
+      grupoId: inicioDefault.grupoId,
+      grupoNombre: inicioDefault.grupoNombre,
+      veTodosLosGrupos: inicioDefault.veTodosLosGrupos,
+      grupoActivo: null,
     });
     return;
   }
@@ -275,6 +350,10 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
       permisos: [],
       perfiles: [],
       falloLectura: true,
+      grupoId: "",
+      grupoNombre: "",
+      veTodosLosGrupos: false,
+      grupoActivo: null,
     };
   }
   // Sesión abierta sin nada detrás (alta sin tipo, tipo desactivado, maestro
@@ -295,6 +374,10 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
       tipoUsuario: null,
       excepciones: {},
       esPrincipal: false,
+      grupoId: inicioDefault.grupoId,
+      grupoNombre: inicioDefault.grupoNombre,
+      veTodosLosGrupos: inicioDefault.veTodosLosGrupos,
+      grupoActivo: null,
       errorLogin: mensajeSinAcceso(id, a.falloLectura),
     });
     return;
@@ -310,6 +393,10 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
     esPrincipal: a.esPrincipal,
     permisos: a.permisos,
     perfiles: a.perfiles,
+    grupoId: a.grupoId,
+    grupoNombre: a.grupoNombre,
+    veTodosLosGrupos: a.veTodosLosGrupos,
+    grupoActivo: a.grupoActivo,
   });
 }
 
@@ -335,8 +422,18 @@ export const useAuthStore = create<EstadoAuth>()(
       tipoUsuario: null,
       excepciones: {},
       esPrincipal: false,
+      grupoId: inicioDefault.grupoId,
+      grupoNombre: inicioDefault.grupoNombre,
+      veTodosLosGrupos: inicioDefault.veTodosLosGrupos,
+      grupoActivo: null,
       cargando: false,
       errorLogin: null,
+
+      setGrupoActivo: (grupoId) => {
+        guardarGrupoActivo(grupoId);
+        setGrupoActivoVigente(grupoId);
+        set({ grupoActivo: grupoId });
+      },
 
       iniciarSesion: async (identificador, clave) => {
         set({ cargando: true, errorLogin: null });
@@ -365,6 +462,10 @@ export const useAuthStore = create<EstadoAuth>()(
             permisos: [],
             perfiles: [],
             falloLectura: true,
+            grupoId: "",
+            grupoNombre: "",
+            veTodosLosGrupos: false,
+            grupoActivo: null,
           };
         }
         // La contraseña era correcta pero no hay nada detrás del usuario: ni
@@ -385,6 +486,10 @@ export const useAuthStore = create<EstadoAuth>()(
             tipoUsuario: null,
             excepciones: {},
             esPrincipal: false,
+            grupoId: inicioDefault.grupoId,
+            grupoNombre: inicioDefault.grupoNombre,
+            veTodosLosGrupos: inicioDefault.veTodosLosGrupos,
+            grupoActivo: null,
             errorLogin: a.falloLectura
               ? mensajeSinAcceso(identificador, true)
               : mensajeSinAcceso(identificador, false),
@@ -403,6 +508,10 @@ export const useAuthStore = create<EstadoAuth>()(
           esPrincipal: a.esPrincipal,
           permisos: a.permisos,
           perfiles: a.perfiles,
+          grupoId: a.grupoId,
+          grupoNombre: a.grupoNombre,
+          veTodosLosGrupos: a.veTodosLosGrupos,
+          grupoActivo: a.grupoActivo,
         });
         return true;
       },
@@ -442,6 +551,10 @@ export const useAuthStore = create<EstadoAuth>()(
                 email: inicioDefault.email,
                 perfiles: inicioDefault.perfiles,
                 permisos: inicioDefault.permisos,
+                grupoId: inicioDefault.grupoId,
+                grupoNombre: inicioDefault.grupoNombre,
+                veTodosLosGrupos: inicioDefault.veTodosLosGrupos,
+                grupoActivo: null,
               });
             }
           }
@@ -455,6 +568,7 @@ export const useAuthStore = create<EstadoAuth>()(
         await cerrarSesionSupabase();
         borrarCookiesDeAcceso();
         limpiarAccesosVigentes();
+        guardarGrupoActivo(null);
         set({
           // `inicializada: true` a propósito. La sesión ESTÁ verificada: lo que
           // se verificó es que no hay ninguna. Antes se ponía en false, que
@@ -470,6 +584,10 @@ export const useAuthStore = create<EstadoAuth>()(
           tipoUsuario: null,
           excepciones: {},
           esPrincipal: false,
+          grupoId: inicioDefault.grupoId,
+          grupoNombre: inicioDefault.grupoNombre,
+          veTodosLosGrupos: inicioDefault.veTodosLosGrupos,
+          grupoActivo: null,
           errorLogin: null,
         });
       },

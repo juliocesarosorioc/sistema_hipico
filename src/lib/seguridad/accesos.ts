@@ -17,7 +17,7 @@
  */
 
 import { supabase } from "@/lib/supabase";
-import { exigirCapacidad, usuarioVigente } from "@/lib/seguridad/vigente";
+import { exigirCapacidad, grupoVigente, usuarioVigente, veTodosLosGruposVigente } from "@/lib/seguridad/vigente";
 import { CAPACIDADES } from "@/lib/seguridad/capacidades";
 import { baseDeTipo, expandirConRequisitos, esUsuarioPrincipal, TIPOS_USUARIO_SISTEMA, USUARIO_PRINCIPAL } from "@/lib/seguridad/resolver";
 import type { Decision, ExcepcionUsuario, ResGuardarAccesos, TipoUsuario } from "@/lib/seguridad/tipos";
@@ -209,6 +209,12 @@ export type UsuarioAlta = {
   esPrincipal?: boolean;
   /** Cliente de `clientes` al que representa este usuario (puja en Remates). */
   clienteId?: string | null;
+  /**
+   * Grupo de venta al que pertenece el usuario. Un usuario con grupo solo ve la
+   * información de ese grupo (ver sql/grupos_usuarios.sql y sql/rls_por_grupo.sql).
+   * `null` = sin grupo (ve todo, retrocompatible).
+   */
+  grupoId?: string | null;
 };
 
 /**
@@ -251,14 +257,23 @@ export async function leerUsuariosDelSistema(): Promise<UsuarioAlta[]> {
             activo: u.activo !== false,
             esPrincipal: u.es_principal === true,
             clienteId: (u.cliente_id as string | null) ?? null,
+            grupoId: (u.grupo_id as string | null) ?? null,
           };
         });
 
       type LecturaUsuarios = { data: Array<Record<string, unknown>> | null; error: { message?: string } | null };
       let lectura = (await supabase
         .from("usuario_sistema")
-        .select("id, nombre, tipo_usuario_id, activo, es_principal, cliente_id, tipo_usuario (nombre)")
+        .select("id, nombre, tipo_usuario_id, activo, es_principal, cliente_id, grupo_id, tipo_usuario (nombre)")
         .order("nombre")) as LecturaUsuarios;
+      // Columna `grupo_id` sin migrar todavía (`sql/grupos_usuarios.sql`): se
+      // relee SIN el grupo para que la lista de usuarios no se caiga.
+      if (lectura.error && /grupo_id/i.test(lectura.error.message ?? "")) {
+        lectura = (await supabase
+          .from("usuario_sistema")
+          .select("id, nombre, tipo_usuario_id, activo, es_principal, cliente_id, tipo_usuario (nombre)")
+          .order("nombre")) as LecturaUsuarios;
+      }
       // Columna `cliente_id` sin migrar todavía (`sql/remates_solo_pujar.sql`):
       // se relee SIN el vínculo para que la lista de usuarios no se caiga.
       if (lectura.error && /cliente_id/i.test(lectura.error.message ?? "")) {
@@ -441,9 +456,31 @@ export async function guardarUsuarioSistema(u: UsuarioAlta): Promise<ResGuardarA
         // Vínculo con el cliente que representa (puja en Remates). `null` deja
         // el vínculo limpio.
         cliente_id: u.clienteId ? String(u.clienteId) : null,
+        // Grupo del usuario. Un usuario CON grupo (no ve todos) solo puede dar
+        // de alta gente en SU grupo: se ignora lo que mande la pantalla. Quien
+        // ve todos (principal o sin grupo) elige el grupo, o ninguno.
+        grupo_id: veTodosLosGruposVigente()
+          ? (u.grupoId ? String(u.grupoId) : null)
+          : (grupoVigente() || null),
       },
       { onConflict: "id" }
     );
+    // Columna `grupo_id` todavía sin migrar (`sql/grupos_usuarios.sql`): se
+    // reintenta SIN el grupo para que el alta del usuario no se rompa.
+    if (error && /grupo_id/i.test(error.message ?? "")) {
+      const r3 = await supabase.from("usuario_sistema").upsert(
+        {
+          id: clave,
+          nombre: u.nombre ?? null,
+          tipo_usuario_id: tipoId,
+          activo: u.activo !== false,
+          es_principal: esUsuarioPrincipal(clave),
+          cliente_id: u.clienteId ? String(u.clienteId) : null,
+        },
+        { onConflict: "id" }
+      );
+      error = r3.error;
+    }
     // Columna `cliente_id` todavía sin migrar (`sql/remates_solo_pujar.sql`):
     // se reintenta SIN el vínculo para que el alta del usuario no se rompa.
     if (error && /cliente_id/i.test(error.message ?? "")) {

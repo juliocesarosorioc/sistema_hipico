@@ -666,6 +666,15 @@ insert into public.tipo_usuario (id, nombre, descripcion) values
   (4, 'jugador',  'Usuario que juega. Acceso acotado a jugar y a su información.')
 on conflict (id) do update set nombre = excluded.nombre, descripcion = excluded.descripcion;
 
+-- La identidad de `id` NO avanza con los INSERT de arriba (traen el id fijo),
+-- así que queda pidiendo el 1 y el próximo alta —desde acá o desde la app—
+-- choca con "duplicate key ... id 1 ya existe". Se adelanta al máximo sembrado.
+-- Idempotente: correrlo dos veces deja el mismo estado.
+select setval(
+  pg_get_serial_sequence('public.tipo_usuario', 'id'),
+  (select coalesce(max(id), 1) from public.tipo_usuario)
+);
+
 -- =========================================================== FIN DEL SEED ==
 -- A partir de acá NO se siembran capacidades a mano: las carga el propio módulo
 -- de seguridad, una por una, con sus metadatos y su origen

@@ -32,6 +32,15 @@ let usuario = "";
 let tipoUsuario = "";
 /** Atributos del usuario (hipódromos asignados, etc.), para el ABAC. */
 let atributos: Record<string, unknown> = {};
+/**
+ * Grupo de venta de la sesión. Es lo que aísla la información: un usuario con
+ * grupo solo ve su grupo. Vacío = sin grupo asignado (ve todo, retrocompatible).
+ */
+let grupoId = "";
+/** Nombre del grupo, solo para mostrar en la interfaz. */
+let grupoNombre = "";
+/** true si la sesión puede ver TODOS los grupos (principal o sin asignar). */
+let veTodos = false;
 
 /** Se llama cada vez que la sesión se resuelve (login, arranque, recarga). */
 export function setAccesosVigentes(nuevos: {
@@ -40,12 +49,18 @@ export function setAccesosVigentes(nuevos: {
   usuario: string;
   tipoUsuario?: string;
   atributos?: Record<string, unknown>;
+  grupoId?: string | null;
+  grupoNombre?: string | null;
+  veTodos?: boolean;
 }): void {
   permisos = new Set(nuevos.permisos);
   esPrincipal = nuevos.esPrincipal;
   usuario = nuevos.usuario;
   tipoUsuario = nuevos.tipoUsuario ?? "";
   atributos = nuevos.atributos ?? {};
+  grupoId = String(nuevos.grupoId ?? "");
+  grupoNombre = String(nuevos.grupoNombre ?? "");
+  veTodos = Boolean(nuevos.veTodos);
 }
 
 /** Se llama al cerrar sesión: sin sesión no hay ni una capacidad. */
@@ -55,11 +70,53 @@ export function limpiarAccesosVigentes(): void {
   usuario = "";
   tipoUsuario = "";
   atributos = {};
+  grupoId = "";
+  grupoNombre = "";
+  veTodos = false;
+  grupoActivo = null;
 }
 
 /** Identificador de la sesión vigente ("" si no hay). */
 export function usuarioVigente(): string {
   return usuario;
+}
+
+/**
+ * Grupo de venta de la sesión vigente ("" si no hay o no tiene asignado).
+ *
+ * Es la fuente de verdad para aislar: las altas que el usuario hace (un cliente,
+ * un ticket) llevan este grupo, y las lecturas que no dependen del RLS lo usan
+ * para filtrar. Vacío significa "sin grupo": ve todo (retrocompatible).
+ */
+export function grupoVigente(): string {
+  return grupoId;
+}
+
+/** Nombre del grupo de la sesión, para mostrar. */
+export function grupoVigenteNombre(): string {
+  return grupoNombre;
+}
+
+/** true si la sesión ve TODOS los grupos (principal o sin grupo asignado). */
+export function veTodosLosGruposVigente(): boolean {
+  return veTodos;
+}
+
+/**
+ * Grupo que el super administrador eligió mirar (null = todos). Solo tiene
+ * efecto para quien `veTodosLosGruposVigente()`; para el resto es null y el
+ * aislamiento lo hace el RLS de la base.
+ */
+let grupoActivo: string | null = null;
+
+/** Cambia el grupo que se está mirando (lo llama el store). */
+export function setGrupoActivoVigente(id: string | null): void {
+  grupoActivo = id ? String(id) : null;
+}
+
+/** Grupo que se está mirando (null = todos). */
+export function grupoActivoVigente(): string | null {
+  return grupoActivo;
 }
 
 /**

@@ -10,6 +10,7 @@ import {
 } from "@/lib/liquidacion/reportes";
 import { etiquetaDia } from "@/lib/liquidacion/semana";
 import { hoyLocal } from "@/lib/gaceta/programa";
+import { grupoActivoVigente } from "@/lib/seguridad/vigente";
 import { ToastHost } from "@/components/ui/ToastHost";
 
 const fmtMonto = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -56,7 +57,11 @@ export function ReporteModule() {
     listarGruposAdmin(true)
       .then((gs) => {
         setGrupos(gs);
-        const principal = gs.find((g) => g.es_principal) ?? gs[0];
+        // Auto-fija el grupo GLOBAL que el super administrador eligió en el
+        // selector de arriba; si no hay ninguno, cae al principal (o al primero).
+        const activo = grupoActivoVigente();
+        const elegido = (activo && gs.find((g) => String(g.id) === String(activo))) || null;
+        const principal = elegido ?? gs.find((g) => g.es_principal) ?? gs[0];
         if (principal?.id != null) setGrupoId(String(principal.id));
       })
       .catch(() => setGrupos([]));

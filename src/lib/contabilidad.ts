@@ -15,7 +15,8 @@
  * lugar de simular el movimiento con escrituras parciales.
  */
 import { supabase } from "@/lib/supabase";
-import { exigirCapacidad, exigirPermiso } from "@/lib/seguridad/vigente";
+import { exigirCapacidad, exigirPermiso, grupoActivoVigente } from "@/lib/seguridad/vigente";
+import { listarClientes } from "@/lib/clientes";
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -366,10 +367,15 @@ export async function eliminarBanco(id: string): Promise<{ ok: boolean; error?: 
 
 export async function listarClientesSaldos(): Promise<ClienteSaldo[]> {
   if (!supabase) return [];
-  const { data, error } = await supabase
+  // El aislamiento por grupo lo hace el RLS de la base; esto solo implementa el
+  // filtro "ver un grupo / todos" del super administrador.
+  const activo = grupoActivoVigente();
+  let q = supabase
     .from("clientes")
     .select("id, nombre, saldo_actual, aval")
     .order("nombre");
+  if (activo) q = q.eq("grupo_id", activo);
+  const { data, error } = await q;
   if (error) return [];
   return ((data ?? []) as Array<Record<string, unknown>>).map((c) => ({
     id: String(c.id),
@@ -392,24 +398,51 @@ export function totalCaja(clientes: ClienteSaldo[]): number {
 // Movimientos
 // ---------------------------------------------------------------------------
 
+/**
+ * IDs de los clientes del grupo ACTIVO (filtro "ver un grupo" del super
+ * administrador). Devuelve `null` cuando no hay grupo elegido (ver "todos"): en
+ * ese caso NO se filtra acá (un usuario con grupo ya viene acotado por el RLS).
+ * Devuelve `[]` si el grupo no tiene clientes (nada que mostrar).
+ */
+async function idsClientesDelGrupoActivo(): Promise<string[] | null> {
+  if (!grupoActivoVigente()) return null;
+  try {
+    const clientes = await listarClientes();
+    return clientes.map((c) => String(c.id));
+  } catch {
+    return null;
+  }
+}
+
 export async function listarDepositos(limite = 50): Promise<DepositoRow[]> {
   if (!supabase) return [];
-  const { data, error } = await supabase
+  const ids = await idsClientesDelGrupoActivo();
+  if (ids && ids.length === 0) return [];
+  let q = supabase
     .from("depositos")
     .select("*")
     .order("fecha", { ascending: false })
     .limit(limite);
+  if (ids) q = q.in("cliente_id", ids);
+  const { data, error } = await q;
   if (error) return [];
   return (data ?? []) as DepositoRow[];
 }
 
 export async function listarTransacciones(limite = 50): Promise<TransaccionRow[]> {
   if (!supabase) return [];
-  const { data, error } = await supabase
+  const ids = await idsClientesDelGrupoActivo();
+  if (ids && ids.length === 0) return [];
+  let q = supabase
     .from("transacciones_financieras")
     .select("*")
     .order("id", { ascending: false })
     .limit(limite);
+  if (ids) {
+    const lista = ids.join(",");
+    q = q.or(`cliente_origen_id.in.(${lista}),cliente_destino_id.in.(${lista})`);
+  }
+  const { data, error } = await q;
   if (error) return [];
   return (data ?? []) as TransaccionRow[];
 }

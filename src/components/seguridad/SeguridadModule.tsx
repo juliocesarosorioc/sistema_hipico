@@ -25,6 +25,7 @@ import type { Decision, ExcepcionUsuario, TipoCapacidad, TipoUsuario } from "@/l
 import { Guard } from "@/components/ui/Guard";
 import { AuditoriaPanel } from "@/components/seguridad/AuditoriaPanel";
 import { listarClientes, type ClienteRow } from "@/lib/clientes";
+import { listarGruposVenta, type GrupoVenta } from "@/lib/grupos";
 import { useAuthStore } from "@/store/useAuthStore";
 
 type Pestana = "esquema" | "reglas" | "tipos" | "usuarios" | "auditoria";
@@ -115,6 +116,7 @@ function ChipRiesgo({ riesgo }: { riesgo: string }) {
 export default function SeguridadModule() {
   const esPrincipal = useAuthStore((s) => s.esPrincipal);
   const miUsuario = useAuthStore((s) => s.usuario);
+  const veTodosLosGrupos = useAuthStore((s) => s.veTodosLosGrupos);
 
   const [pestana, setPestana] = useState<Pestana>("esquema");
   // Permite abrir una pestaña directa: /seguridad?pestana=auditoria (lo usa el
@@ -136,6 +138,9 @@ export default function SeguridadModule() {
   /** Cliente de `clientes` vinculado al usuario seleccionado (puja en Remates). */
   const [clienteSel, setClienteSel] = useState<string>("");
   const [clientes, setClientes] = useState<ClienteRow[]>([]);
+  /** Grupo de venta del usuario seleccionado (aísla su información). */
+  const [grupoSel, setGrupoSel] = useState<string>("");
+  const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
   const [excepciones, setExcepciones] = useState<ExcepcionUsuario>({});
   const [nuevoTipo, setNuevoTipo] = useState("");
   const [ocupado, setOcupado] = useState(false);
@@ -210,9 +215,22 @@ export default function SeguridadModule() {
     void listarClientes().then(setClientes);
   }, [pestana, clientes.length]);
 
+  // La lista de grupos se usa para mostrar el grupo de cada usuario y para el
+  // selector del alta. Se pide al entrar a la pestaña.
+  useEffect(() => {
+    if (pestana !== "usuarios" || grupos.length) return;
+    void listarGruposVenta()
+      .then(setGrupos)
+      .catch(() => {
+        /* sin grupos: el selector queda vacío y nada se rompe */
+      });
+  }, [pestana, grupos.length]);
+
   // El vínculo del usuario recién elegido es el que trae la lista.
   useEffect(() => {
-    setClienteSel(usuarios.find((u) => u.id === usuarioSel)?.clienteId ?? "");
+    const u = usuarios.find((x) => x.id === usuarioSel);
+    setClienteSel(u?.clienteId ?? "");
+    setGrupoSel(u?.grupoId ?? "");
   }, [usuarioSel, usuarios]);
 
   /** Guarda el cliente que representa al usuario (identidad del pujador). */
@@ -228,6 +246,28 @@ export default function SeguridadModule() {
     } else {
       avisar(r.error ?? "No se pudo guardar el vínculo.", false);
     }
+  };
+
+  /** Cambia el grupo del usuario seleccionado (aísla su información). */
+  const guardarGrupoUsuario = async (nuevoGrupo: string) => {
+    const u = usuarios.find((x) => x.id === usuarioSel);
+    if (!u) return;
+    setGrupoSel(nuevoGrupo);
+    setOcupado(true);
+    const r = await guardarUsuarioSistema({ ...u, grupoId: nuevoGrupo || null });
+    setOcupado(false);
+    if (r.ok) {
+      setUsuarios(await leerUsuariosDelSistema());
+      const nombre = grupos.find((g) => String(g.id) === nuevoGrupo)?.nombre;
+      avisar(nombre ? `Usuario movido al grupo ${nombre}.` : "Usuario sin grupo (ve todo).", true);
+    } else {
+      avisar(r.error ?? "No se pudo cambiar el grupo.", false);
+    }
+  };
+
+  const nombreDeGrupo = (grupoId: string | null | undefined): string => {
+    if (!grupoId) return "";
+    return grupos.find((g) => String(g.id) === String(grupoId))?.nombre ?? "";
   };
 
   // Al cambiar de tipo, se carga su matriz en el borrador.
@@ -740,7 +780,10 @@ export default function SeguridadModule() {
                   <span className="block truncate text-[11px] font-bold text-slate-700">
                     {u.nombre || u.id}
                   </span>
-                  <span className="block truncate text-[9px] text-slate-400">{u.id}</span>
+                  <span className="block truncate text-[9px] text-slate-400">
+                    {u.id}
+                    {nombreDeGrupo(u.grupoId) ? ` · ${nombreDeGrupo(u.grupoId)}` : ""}
+                  </span>
                 </span>
                 {u.esPrincipal ? (
                   <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase text-amber-700">
@@ -755,7 +798,7 @@ export default function SeguridadModule() {
             ))}
 
             <p className="mt-3 mb-1 text-[10px] font-black uppercase text-slate-400">Alta de usuario</p>
-            <AltaUsuario tipos={tipos} onGuardar={async (u) => {
+            <AltaUsuario tipos={tipos} grupos={grupos} puedeElegirGrupo={veTodosLosGrupos} onGuardar={async (u) => {
               const r = await guardarUsuarioSistema(u);
               if (r.ok) setUsuarios(await leerUsuariosDelSistema());
               avisar(r.ok ? `Usuario ${u.id} dado de alta.` : r.error ?? "No se pudo dar de alta.", r.ok);
@@ -774,6 +817,27 @@ export default function SeguridadModule() {
             </div>
 
             <div className="flex flex-wrap items-end gap-2 border-b border-slate-100 px-3 py-2">
+              <label className="flex min-w-0 flex-col gap-1 text-[10px] font-semibold text-slate-500">
+                <span>Grupo de venta</span>
+                <select
+                  value={grupoSel}
+                  onChange={(e) => void guardarGrupoUsuario(e.target.value)}
+                  disabled={ocupado || !usuarioSel || !veTodosLosGrupos}
+                  title={
+                    veTodosLosGrupos
+                      ? "Grupo al que pertenece el usuario. Un usuario con grupo solo ve la información de ese grupo."
+                      : "Solo el super administrador puede cambiar el grupo."
+                  }
+                  className="min-w-[12rem] rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-800 disabled:opacity-50"
+                >
+                  <option value="">— Sin grupo (ve todo) —</option>
+                  {grupos.map((g) => (
+                    <option key={String(g.id)} value={String(g.id)}>
+                      {g.nombre}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="flex min-w-0 flex-col gap-1 text-[10px] font-semibold text-slate-500">
                 <span>Cliente vinculado (Remates)</span>
                 <select
@@ -798,8 +862,9 @@ export default function SeguridadModule() {
                 Guardar vínculo
               </button>
               <p className="min-w-[16rem] flex-1 text-[10px] leading-snug text-slate-400">
-                Es el cliente con el que puja este usuario en Remates si solo tiene habilitado{" "}
-                <b>ver / pujar con Subir</b>. Un usuario de solo consulta no elige comprador: siempre usa este.
+                El <b>grupo</b> aísla los clientes, las jugadas, la contabilidad y los saldos de cada usuario. El{" "}
+                <b>cliente vinculado</b> es con el que puja este usuario en Remates si solo tiene habilitado{" "}
+                <b>ver / pujar con Subir</b>.
               </p>
             </div>
 
@@ -869,14 +934,20 @@ export default function SeguridadModule() {
 /** Formulario de alta de usuario con su tipo. */
 function AltaUsuario({
   tipos,
+  grupos,
+  puedeElegirGrupo,
   onGuardar,
 }: {
   tipos: TipoUsuario[];
+  grupos: GrupoVenta[];
+  /** Solo el super administrador elige el grupo; al resto se le asigna el suyo. */
+  puedeElegirGrupo: boolean;
   onGuardar: (u: UsuarioAlta) => Promise<{ ok: boolean; error?: string }>;
 }) {
   const [id, setId] = useState("");
   const [nombre, setNombre] = useState("");
   const [tipo, setTipo] = useState("operador");
+  const [grupoId, setGrupoId] = useState("");
   const [ocupado, setOcupado] = useState(false);
 
   return (
@@ -904,11 +975,35 @@ function AltaUsuario({
           </option>
         ))}
       </select>
+      {puedeElegirGrupo ? (
+        <select
+          value={grupoId}
+          onChange={(e) => setGrupoId(e.target.value)}
+          title="Grupo al que pertenece el usuario"
+          className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-600"
+        >
+          <option value="">— Sin grupo (ve todo) —</option>
+          {grupos.map((g) => (
+            <option key={String(g.id)} value={String(g.id)}>
+              {g.nombre}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <p className="text-[9px] leading-tight text-slate-400">
+          El usuario quedará en tu grupo.
+        </p>
+      )}
       <button
         onClick={async () => {
           if (!id.trim()) return;
           setOcupado(true);
-          await onGuardar({ id: id.trim().toLowerCase(), nombre: nombre.trim() || null, tipo });
+          await onGuardar({
+            id: id.trim().toLowerCase(),
+            nombre: nombre.trim() || null,
+            tipo,
+            grupoId: puedeElegirGrupo ? grupoId || null : undefined,
+          });
           setOcupado(false);
           setId("");
           setNombre("");
@@ -919,7 +1014,8 @@ function AltaUsuario({
         Dar de alta
       </button>
       <p className="text-[9px] leading-tight text-slate-400">
-        El usuario principal ({USUARIO_PRINCIPAL}) tiene acceso total siempre. A los demás se les asigna un tipo.
+        El usuario principal ({USUARIO_PRINCIPAL}) tiene acceso total siempre. A los demás se les asigna un tipo y un
+        grupo; el grupo aísla sus clientes, jugadas, contabilidad y saldos.
       </p>
     </div>
   );

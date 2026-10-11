@@ -5,7 +5,7 @@
  * club_listar_grupos cuando el RLS bloquea el acceso (misma cadena del legacy).
  */
 import { supabase } from "@/lib/supabase";
-import { exigirCapacidad } from "@/lib/seguridad/vigente";
+import { exigirCapacidad, grupoActivoVigente } from "@/lib/seguridad/vigente";
 import { disponibleParaJugar, esSinTope, explicarDisponible } from "@/lib/taquilla/reparto";
 
 export type GrupoVenta = {
@@ -50,6 +50,8 @@ export type ClienteVenta = {
 let cacheGruposVenta: GrupoVenta[] | null = null;
 let cacheGruposAdmin: GrupoRow[] | null = null;
 let cacheClientes: ClienteVenta[] | null = null;
+/** Grupo con el que se llenó `cacheClientes` (para invalidarla al cambiarlo). */
+let cacheClientesGrupo: string | null | undefined = undefined;
 let ultimoErrorGrupos: string | null = null;
 
 /** Ultimo error de carga de grupos (null si el ultimo intento tuvo exito).
@@ -106,12 +108,16 @@ export async function listarGruposVenta(): Promise<GrupoVenta[]> {
 
 /** Lista clientes con sus saldos y grupos (clientes + clientes_grupos). */
 export async function listarClientesVenta(): Promise<ClienteVenta[]> {
-  if (cacheClientes) return cacheClientes;
+  const activo = grupoActivoVigente();
+  if (cacheClientes && cacheClientesGrupo === activo) return cacheClientes;
   if (!supabase) return [];
   try {
-    const { data: cli, error: e1 } = await supabase
+    let q = supabase
       .from("clientes")
       .select("id, nombre, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces");
+    // Filtro del super administrador (los demás los filtra el RLS de la base).
+    if (activo) q = q.eq("grupo_id", activo);
+    const { data: cli, error: e1 } = await q;
     if (e1) throw e1;
     const { data: cg, error: e2 } = await supabase
       .from("clientes_grupos")
@@ -134,6 +140,7 @@ export async function listarClientesVenta(): Promise<ClienteVenta[]> {
       ],
     }));
     cacheClientes = clientes;
+    cacheClientesGrupo = activo;
     return clientes;
   } catch {
     // No se cachea un fallo (RLS/red): devolver vacio y permitir reintento.

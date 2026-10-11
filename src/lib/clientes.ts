@@ -10,7 +10,7 @@
  */
 import { supabase } from "@/lib/supabase";
 import { resumenDatosPago, type DatosPago } from "@/lib/vzla";
-import { exigirCapacidad, esPrincipalVigente } from "@/lib/seguridad/vigente";
+import { exigirCapacidad, esPrincipalVigente, grupoActivoVigente, grupoVigente } from "@/lib/seguridad/vigente";
 
 export type ClienteRow = {
   id: string | number;
@@ -207,6 +207,7 @@ export function fmtFecha(fecha?: string | null): string {
 // ---------------------------------------------------------------------------
 
 let cacheClientes: ClienteRow[] | null = null;
+let cacheClientesGrupo: string | null | undefined = undefined;
 let ultimoErrorClientes: string | null = null;
 
 /** Último error al leer la cartera, para distinguir "vacío" de "sin permisos". */
@@ -214,13 +215,27 @@ export function errorClientes(): string | null {
   return ultimoErrorClientes;
 }
 
+/**
+ * Grupo que se está mirando para la cartera. Para un usuario normal es null
+ * (el aislamiento lo hace el RLS de la base). Para el super administrador es el
+ * grupo elegido en el selector, o null = "todos".
+ */
+function grupoParaFiltrar(): string | null {
+  return grupoActivoVigente();
+}
+
 export async function listarClientes(force = false): Promise<ClienteRow[]> {
-  if (cacheClientes && !force) return cacheClientes;
+  const activo = grupoParaFiltrar();
+  // La caché se invalida sola cuando cambia el grupo que se está mirando: si no,
+  // elegir "ARGENTINA" después de "todos" mostraría la lista vieja.
+  if (cacheClientes && !force && cacheClientesGrupo === activo) return cacheClientes;
   let lista: ClienteRow[] = [];
   ultimoErrorClientes = null;
   if (supabase) {
     try {
-      const { data, error } = await supabase.from("clientes").select("*").order("nombre");
+      let q = supabase.from("clientes").select("*").order("nombre");
+      if (activo) q = q.eq("grupo_id", activo);
+      const { data, error } = await q;
       if (error) throw error;
       lista = (data ?? []) as ClienteRow[];
     } catch (e) {
@@ -233,11 +248,13 @@ export async function listarClientes(force = false): Promise<ClienteRow[]> {
     ultimoErrorClientes = "Sin conexión a Supabase";
   }
   cacheClientes = lista;
+  cacheClientesGrupo = activo;
   return lista;
 }
 
 export function limpiarCacheClientes(): void {
   cacheClientes = null;
+  cacheClientesGrupo = undefined;
 }
 
 export async function crearCliente(payload: Partial<ClienteRow>): Promise<{ ok: boolean; error?: string }> {
@@ -271,6 +288,13 @@ export function sinCamposDelPrincipal(
   esPrincipal = esPrincipalVigente()
 ): Record<string, unknown> {
   if (esPrincipal) return patch;
+  // Un usuario CON grupo no puede elegir a qué grupo va el cliente: siempre es
+  // el suyo. Esto no es solo cosmético: la policy de `clientes` exige que la
+  // fila quede en el grupo del usuario (sql/rls_por_grupo.sql), así que mandar
+  // otro `grupo_id` (o ninguno) haría rebotar el alta en la base.
+  const yo = grupoVigente();
+  if (yo) return { ...patch, grupo_id: yo };
+  // Sin grupo asignado (ve todo): no se le deja inventar uno.
   const { grupo_id: _omitido, ...resto } = patch;
   return resto;
 }
