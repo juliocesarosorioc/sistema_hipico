@@ -18,6 +18,8 @@ const ICONOS_MODULO: Record<string, string> = {
   ejemplares: "🐴",
   contabilidad: "💵",
   seguridad: "🛡️",
+  reglas_jugadas: "⚙️",
+  operadores: "👥",
 };
 
 /**

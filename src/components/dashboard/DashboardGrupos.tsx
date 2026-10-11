@@ -41,7 +41,7 @@ const ACCESOS: Acceso[] = [
   { emoji: "🔄", txt: "Transferencias", href: "/contabilidad/caja" },
   { emoji: "💱", txt: "Monedas", href: "/contabilidad/monedas" },
   { emoji: "🏦", txt: "Bancos", href: "/contabilidad/bancos" },
-  { emoji: "🏇", txt: "Winner / Place / Show" },
+  { emoji: "🏇", txt: "Winner / Place / Show", href: "/taquilla?modalidad=wps" },
   { emoji: "🏆", txt: "Pollas", href: "/pollas" },
   { emoji: "🔔", txt: "Remates", href: "/remates" },
   { emoji: "🛡️", txt: "Seguridad y Accesos", href: "/seguridad" },

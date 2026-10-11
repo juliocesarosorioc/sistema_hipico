@@ -770,9 +770,21 @@ create table if not exists tickets_jugadas (
       - [ ] ¿Ruleta o animación al generar la matriz o al elegir 1.er y 2.º puesto?
       - [ ] ¿Autocompletar precio/distancia/premio desde la carrera central al elegir el par?
 - [ ] **Ingresos / Avales** — abonos y avales por cliente.
-- [ ] **Reglas de Jugadas** — administración de `tipos_jugadas` y dividendos.
-- [ ] **Operadores** — la pestaña *Usuarios* de `/seguridad` cubre alta y permisos, pero no el
-      modelo legacy de `operadores` (tabla + relación con hipódromos).
+- [x] **Reglas de Jugadas** — administración de `tipos_jugadas` y dividendos. **MIGRADO**:
+      `src/lib/tipos-jugadas.ts` (CRUD sobre `public.tipos_jugadas`: nombre, `comision_porcentaje`,
+      `comision_base`, `tipo_calculo`, `premio_a_pagar`, `permite_cruces`, `activo`; conserva
+      `base_comision` en el alta por compatibilidad con la columna legada) + pantalla
+      `src/components/reglas-jugadas/ReglasJugadasModule.tsx` en `/reglas-jugadas`. Catálogo de
+      respaldo sin conexión y guardas de escritura con `exigirCapacidad`
+      (`reglas_jugadas:fn_guardar_jugada` / `fn_eliminar_jugada`).
+- [x] **Operadores** — la pestaña *Usuarios* de `/seguridad` cubre alta y permisos, pero no el
+      modelo legacy de `operadores` (tabla + relación con hipódromos). **MIGRADO sin revivir la
+      tabla retirada** (contraseñas en claro): `src/lib/operadores.ts` lista el personal real
+      (`usuario_sistema` + `tipo_usuario`) y administra qué hipódromos opera cada uno como el
+      atributo ABAC `usuario_hipodromos` (`public.usuario_atributo`), bajo la capacidad ya
+      existente `seguridad:fn_personalizar_usuario`. Pantalla
+      `src/components/operadores/OperadoresModule.tsx` en `/operadores`, con enlace al alta y
+      permisos de `/seguridad?pestana=usuarios`.
 - [x] **Diagnóstico** — utilidad de sanidad del sistema. Implementado en `/diagnostico`
       (`src/lib/diagnostico.ts` + `src/components/diagnostico/DiagnosticoModule.tsx`), con la
       puerta de `/seguridad` porque es herramienta de administración. Mide lo que dolía: si la
@@ -981,8 +993,14 @@ OpenAI).
       rojo para confirmar.
 - [x] **Modal Carga Rápida** — vista previa en vivo línea por línea (verde/
       ámbar/rojo con las correcciones legibles) antes de "📥 Poblar tabla".
-- [ ] **Botón "✨ Corregir con IA"** (Capa 2, opcional) — solo cuando haya
-      líneas en rojo y la Edge Function `normalizar-jugadas` esté desplegada.
+- [x] **Botón "✨ Corregir con IA"** (Capa 2, opcional) — refuerzo del normalizador local.
+      Edge Function `supabase/functions/normalizar-jugadas/index.ts` (valida JWT +
+      `tiene_capacidad('gestion_jugadas:fn_corregir_ia')`, reescribe el bloque con un modelo
+      compatible-OpenAI configurable por secretos `IA_API_KEY`/`IA_MODELO`/`IA_BASE_URL`) + cliente
+      `src/lib/taquilla/corregirIA.ts`. El botón vive en el modal de Carga Rápida: si la IA no está
+      configurada, no hay red o falla, avisa y **se queda con el resultado local** (nunca bloquea la
+      venta). W.P.S. ya no es un stub: el Sidebar y el acceso del dashboard lo cablean a
+      `/taquilla?modalidad=wps`.
 - [x] **`pruebas/`** — `normalizar-carga.test.ts`: expansores, Jaro-Winkler,
       nombres compuestos, caballo por nombre, frases ruidosas de transcriptor
       y regresión de los casos que ya funcionaban; 57 aserciones verdes.

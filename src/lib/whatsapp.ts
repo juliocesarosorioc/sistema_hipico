@@ -6,6 +6,7 @@
  *  - Números limpios para wa.me (sin espacios ni +).
  */
 import { supabase } from "@/lib/supabase";
+import { exigirCapacidad } from "@/lib/seguridad/vigente";
 
 export const CLUB_NOMBRE = "Club del Dinero";
 
@@ -423,6 +424,21 @@ export type ResWhatsappFn = {
   [k: string]: unknown;
 };
 
+/**
+ * Guardia local del módulo WhatsApp. La Edge Function vuelve a comprobar la
+ * capacidad del lado del servidor (con `tiene_capacidad`), pero acá evitamos que
+ * un usuario sin permiso reciba el rebote recién al final del viaje de red.
+ * Devuelve un error listo para la UI, o null si puede pasar.
+ */
+function sinPermisoWsp(clave: "whatsapp:vincular_grupo" | "whatsapp:enviar_grupo"): ResWhatsappFn | null {
+  try {
+    exigirCapacidad(clave);
+    return null;
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sin permiso para operar el grupo de WhatsApp." };
+  }
+}
+
 const URL_FN = process.env.NEXT_PUBLIC_SUPABASE_URL
   ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1`
   : "";
@@ -484,16 +500,22 @@ export async function listarGruposWsp(): Promise<GrupoWsp[]> {
 
 /** Marca un grupo como destino de los envíos. */
 export async function vincularGrupoWsp(groupId: string, nombre?: string): Promise<ResWhatsappFn | null> {
+  const falta = sinPermisoWsp("whatsapp:vincular_grupo");
+  if (falta) return falta;
   return llamarWhatsappFn("whatsapp-grupos", { accion: "vincular", group_id: groupId, nombre });
 }
 
 /** Saca la marca de grupo vinculado. */
 export async function desvincularGrupoWsp(): Promise<ResWhatsappFn | null> {
+  const falta = sinPermisoWsp("whatsapp:vincular_grupo");
+  if (falta) return falta;
   return llamarWhatsappFn("whatsapp-grupos", { accion: "desvincular" });
 }
 
 /** Pone un nombre humano al grupo detectado. */
 export async function renombrarGrupoWsp(groupId: string, nombre: string): Promise<ResWhatsappFn | null> {
+  const falta = sinPermisoWsp("whatsapp:vincular_grupo");
+  if (falta) return falta;
   return llamarWhatsappFn("whatsapp-grupos", { accion: "renombrar", group_id: groupId, nombre });
 }
 
@@ -517,6 +539,8 @@ export async function enviarAlGrupoWsp(
   mensaje: string,
   modulo = "whatsapp"
 ): Promise<ResWhatsappFn | null> {
+  const falta = sinPermisoWsp("whatsapp:enviar_grupo");
+  if (falta) return falta;
   return llamarWhatsappFn("whatsapp-enviar", { accion: "enviar", mensaje, destino: "grupo", modulo });
 }
 

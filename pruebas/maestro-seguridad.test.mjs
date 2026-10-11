@@ -323,13 +323,19 @@ else mal("el filtro por tipo deja pasar capacidades de otro tipo");
       if (!fnDeModulo.has(c.modulo)) fnDeModulo.set(c.modulo, []);
       fnDeModulo.get(c.modulo).push(c.clave);
     }
+    // Módulos OPERATIVOS del operador: aquellos donde su base tiene al menos
+    // una capacidad. Los de configuración del admin (seguridad, contabilidad,
+    // whatsapp, reglas de jugadas) y el portal (que lo juega el cliente con su
+    // token) quedan afuera solos. Antes esto era una lista fija que se quedaba
+    // corta cada vez que se sumaba un módulo nuevo.
+    const modulosDelOperador = new Set(
+      [...baseOperador].map((k) => CAPACIDADES_POR_CLAVE.get(k)?.modulo).filter(Boolean)
+    );
     const huerfanas = [];
     for (const c of CAPACIDADES) {
       if (c.tipo !== "boton") continue;
       const modulo = c.modulo;
-      // Solo los módulos operativos: seguridad y contabilidad son del admin, y
-      // portal no lo opera el personal (juega el cliente con su token).
-      if (modulo === "seguridad" || modulo === "contabilidad" || modulo === "portal") continue;
+      if (!modulosDelOperador.has(modulo)) continue;
       if (!fnDeModulo.has(modulo)) continue;
       const falta = fnDeModulo.get(modulo).filter((k) => !baseOperador.has(k));
       if (falta.length) huerfanas.push(`${modulo} (boton ${c.clave} sin ${falta.join(", ")})`);

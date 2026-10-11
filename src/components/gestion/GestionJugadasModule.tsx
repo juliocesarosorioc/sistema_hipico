@@ -17,6 +17,7 @@ import { nombrePropioHipodromo, nombreHipodromoParaMostrar } from "@/lib/hipodro
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { SemaforoCarreras } from "@/components/gestion/SemaforoCarreras";
 import { Button } from "@/components/ui/Button";
+import { Guard } from "@/components/ui/Guard";
 import { fmtMoney, type EjemplarTabla } from "@/lib/tablas/tipos";
 import { listarClientesVenta, listarGruposVenta, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, type ClienteVenta } from "@/lib/grupos";
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/lib/tablas/rpc";
@@ -32,6 +33,7 @@ import PlanoPreliminar from "./PlanoPreliminar";
 import HistorialReporte from "./HistorialReporte";
 import { expandirLineasDobleSplit, revisarCoherenciaLineas } from "@/lib/taquilla/expandirDobleSplit";
 import { mensajePlanoDeCarrera } from "@/lib/taquilla/mensajeResultado";
+import { corregirLineasConIA } from "@/lib/taquilla/corregirIA";
 
 type FilaCarga = {
   jugada: string;
@@ -224,6 +226,7 @@ export function GestionJugadasModule() {
   const [modalComandos, setModalComandos] = useState(false);
   const [modalCargaRapida, setModalCargaRapida] = useState(false);
   const [textoCargaRapida, setTextoCargaRapida] = useState("");
+  const [iaCargando, setIaCargando] = useState(false);
   const [ultimaPizarra, setUltimaPizarra] = useState<PizarraResultados | null>(null);
   const [resumen, setResumen] = useState<ResLiquidarCarrera | null>(null);
 
@@ -961,6 +964,37 @@ const hipodromosDelDia = useMemo(() => {
     }
   };
 
+  /**
+   * Capa 2 (OPCIONAL): manda el bloque a la Edge Function `normalizar-jugadas` y
+   * reemplaza el texto con la versión corregida. Si la IA no está configurada,
+   * no hay red o falla, NO se pierde nada: se avisa y queda el resultado del
+   * normalizador difuso local (Capa 1), que es el que ya ordena el bloque.
+   */
+  const corregirConIA = async () => {
+    if (iaCargando) return;
+    const lineas = textoCargaRapida.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lineas.length === 0) {
+      window.dispatchEvent(new CustomEvent("toast", { detail: { msg: "Pegá al menos una línea para corregir con IA.", tipo: "warning" } }));
+      return;
+    }
+    setIaCargando(true);
+    const res = await corregirLineasConIA(lineas, {
+      clientes: clientes.map((c) => c.nombre),
+      caballos: caballosDeCarrera.map((c) => ({ numero: String(c.numero), nombre: c.nombre })),
+    });
+    setIaCargando(false);
+    if (!res.ok || !res.lineas) {
+      window.dispatchEvent(new CustomEvent("toast", {
+        detail: { msg: `✨ IA no disponible: ${res.error ?? "sin respuesta"}. Se mantiene el normalizador local.`, tipo: "warning" },
+      }));
+      return;
+    }
+    setTextoCargaRapida(res.lineas.join("\n"));
+    window.dispatchEvent(new CustomEvent("toast", {
+      detail: { msg: "✨ Texto corregido con IA. Revisá la vista previa antes de poblar.", tipo: "success" },
+    }));
+  };
+
   const ejecutarFinalizar = async () => {
     if (!ultimaPizarra) {
       setModalFinalizar(false);
@@ -1339,9 +1373,11 @@ const hipodromosDelDia = useMemo(() => {
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setModalCargaRapida(true)} className="z-10">
-            ⚡ Carga Rápida <span className="ml-1 rounded bg-warning-500/20 px-1.5 text-[9px] font-black text-warning-700">texto</span>
-          </Button>
+          <Guard permiso="gestion_jugadas:btn_carga_rapida">
+            <Button size="sm" variant="ghost" onClick={() => setModalCargaRapida(true)} className="z-10">
+              ⚡ Carga Rápida <span className="ml-1 rounded bg-warning-500/20 px-1.5 text-[9px] font-black text-warning-700">texto</span>
+            </Button>
+          </Guard>
           <Button size="sm" onClick={() => setFilas((f) => [...f, filaVacia()])}>＋ Agregar fila</Button>
           {(() => {
             const avisos = filas.map((f) => avisoSaldo(f)).filter((x): x is string => !!x);
@@ -1766,6 +1802,17 @@ const hipodromosDelDia = useMemo(() => {
               <Button variant="ghost" size="sm" onClick={() => { setTextoCargaRapida(""); setModalCargaRapida(false); }}>
                 Cancelar
               </Button>
+              <Guard permiso="gestion_jugadas:btn_corregir_ia">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void corregirConIA()}
+                  disabled={iaCargando || textoCargaRapida.trim().length === 0}
+                  title="Refuerzo opcional con IA: reescribe el bloque dictado y lo deja en el formato canónico."
+                >
+                  {iaCargando ? "Corrigiendo…" : "✨ Corregir con IA"}
+                </Button>
+              </Guard>
               <Button variant="success" size="md" onClick={poblarCargaRapida}>📥 Poblar tabla</Button>
             </div>
           </div>

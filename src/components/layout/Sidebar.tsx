@@ -22,7 +22,7 @@ const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
       { href: "/marcas", emoji: "🏷️", txt: "Marcas" },
       { href: "/grupos", emoji: "🗂️", txt: "Grupos y Convenios" },
       { href: "/ejemplares", emoji: "🐴", txt: "Ejemplares, Gaceta y Carreras" },
-      { emoji: "🏇", txt: "W.P.S." },
+      { href: "/taquilla?modalidad=wps", emoji: "🏇", txt: "W.P.S." },
       { href: "/remates", emoji: "🔔", txt: "Remates" },
       { href: "/pollas", emoji: "🏆", txt: "Pollas" },
       { href: "/tickets", emoji: "🛟", txt: "Tickets / Reclamos" },
@@ -50,7 +50,7 @@ const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
     titulo: "Configuración",
     items: [
       { href: "/clientes", emoji: "👥", txt: "Clientes/Socios" },
-      { emoji: "⚙️", txt: "Reglas de Jugadas" },
+      { href: "/reglas-jugadas", emoji: "⚙️", txt: "Reglas de Jugadas" },
     ],
   },
   {
@@ -58,7 +58,7 @@ const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
     titulo: "Administración",
     items: [
       { emoji: "🛡️", txt: "Seguridad y Accesos", href: "/seguridad" },
-      { emoji: "👥", txt: "Operadores" },
+      { emoji: "👥", txt: "Operadores", href: "/operadores" },
       { emoji: "🩺", txt: "Diagnóstico", href: "/diagnostico" },
     ],
   },

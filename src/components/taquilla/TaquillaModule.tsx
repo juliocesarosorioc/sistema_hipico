@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BetSlip } from "@/components/taquilla/BetSlip";
 import { ListaTickets } from "@/components/taquilla/ListaTickets";
 import { PagarCarreraModal } from "@/components/taquilla/PagarCarreraModal";
@@ -53,6 +53,14 @@ function AvisoWps() {
 /** Taquilla — módulo contenedor con selector de modalidades. */
 export function TaquillaModule() {
   const [modalidad, setModalidad] = useState<Modalidad>("puestos");
+
+  // La modalidad se puede preseleccionar por query (?modalidad=wps): es el enlace
+  // que usan el menú lateral y el acceso rápido "Winner / Place / Show". Se lee en
+  // un efecto y no en el estado inicial para no romper la hidratación del HTML.
+  useEffect(() => {
+    const m = new URLSearchParams(window.location.search).get("modalidad");
+    if (m && MODALIDADES.some((x) => x.id === m)) setModalidad(m as Modalidad);
+  }, []);
 
   return (
     <section className="flex flex-col gap-4">

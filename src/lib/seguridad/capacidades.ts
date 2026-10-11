@@ -274,6 +274,15 @@ export const MODULOS_ESQUEMA: ModuloEsquema[] = [
       c("gestion_jugadas", "funcion", "fn_aplicar_retiros", "Aplicar retiros y reembolsos", "critico", "src/lib/carreras/retiros.ts:196", {
         descripcion: "RPC que reembolsa tickets y recalcula premios.",
       }),
+      c("gestion_jugadas", "boton", "btn_carga_rapida", "Abrir la Carga Rápida (texto dictado)", "escritura", "src/components/gestion/GestionJugadasModule.tsx"),
+      c("gestion_jugadas", "boton", "btn_corregir_ia", "Corregir el texto dictado con IA (Capa 2)", "escritura", "src/components/gestion/GestionJugadasModule.tsx", {
+        descripcion:
+          "Refuerzo opcional del normalizador difuso local: manda el bloque dictado a la Edge Function `normalizar-jugadas`. Si la IA no está configurada, la Carga Rápida sigue funcionando con el normalizador local (Capa 1).",
+      }),
+      c("gestion_jugadas", "funcion", "fn_corregir_ia", "Estructurar el texto dictado con IA", "escritura", "src/lib/taquilla/corregirIA.ts", {
+        descripcion:
+          "Invoca la Edge Function `normalizar-jugadas` con la sesión del staff. La función valida el JWT y la capacidad antes de gastar tokens.",
+      }),
     ],
   },
 
@@ -499,6 +508,12 @@ export const MODULOS_ESQUEMA: ModuloEsquema[] = [
     capacidades: [
       c("whatsapp", "ruta", "ruta_whatsapp", "Ver WhatsApp", "lectura", "src/app/(dashboard)/whatsapp/page.tsx:1"),
       c("whatsapp", "boton", "btn_enviar", "Enviar un aviso", "escritura", "src/components/whatsapp/WhatsappModule.tsx"),
+      c("whatsapp", "funcion", "vincular_grupo", "Vincular el grupo de WhatsApp al que se envían los cálculos", "escritura", "src/lib/whatsapp.ts", {
+        requiere: ["whatsapp:ruta_whatsapp"],
+      }),
+      c("whatsapp", "funcion", "enviar_grupo", "Enviar reportes y pizarras al grupo vinculado", "escritura", "src/lib/whatsapp.ts", {
+        requiere: ["whatsapp:ruta_whatsapp"],
+      }),
     ],
   },
 
@@ -546,6 +561,39 @@ export const MODULOS_ESQUEMA: ModuloEsquema[] = [
         descripcion:
           "Mueve el saldo del acumulado y marca a quién se le pagó. La guarda de la RPC impide que el mismo acumulado se pague dos veces.",
       }),
+    ],
+  },
+
+  // --------------------------------------------------------------------------
+  {
+    clave: "reglas_jugadas",
+    nombre: "Reglas de Jugadas",
+    ruta: "/reglas-jugadas",
+    icono: "settings",
+    descripcion:
+      "Administración de los tipos de jugadas y sus comisiones (tabla `tipos_jugadas`): qué se juega, en qué base se cobra la comisión y si permite cruces.",
+    capacidades: [
+      c("reglas_jugadas", "ruta", "ruta_reglas_jugadas", "Ver Reglas de Jugadas", "lectura", "src/app/(dashboard)/reglas-jugadas/page.tsx:1", { ruta: "/reglas-jugadas" }),
+      c("reglas_jugadas", "boton", "btn_guardar", "Crear o editar una regla de jugada", "escritura", "src/components/reglas-jugadas/ReglasJugadasModule.tsx"),
+      c("reglas_jugadas", "boton", "btn_toggle", "Activar o desactivar una regla", "escritura", "src/components/reglas-jugadas/ReglasJugadasModule.tsx"),
+      c("reglas_jugadas", "boton", "btn_eliminar", "Eliminar una regla de jugada", "critico", "src/components/reglas-jugadas/ReglasJugadasModule.tsx"),
+      c("reglas_jugadas", "funcion", "fn_guardar_jugada", "Guardar un tipo de jugada", "escritura", "src/lib/tipos-jugadas.ts"),
+      c("reglas_jugadas", "funcion", "fn_eliminar_jugada", "Eliminar un tipo de jugada", "critico", "src/lib/tipos-jugadas.ts"),
+    ],
+  },
+
+  // --------------------------------------------------------------------------
+  {
+    clave: "operadores",
+    nombre: "Operadores",
+    ruta: "/operadores",
+    icono: "users",
+    descripcion:
+      "Personal del sistema y los hipódromos que cada operador tiene asignados. El alta y los permisos viven en Seguridad y Accesos; acá se administra la relación con los hipódromos (atributo ABAC `usuario_hipodromos`).",
+    capacidades: [
+      c("operadores", "ruta", "ruta_operadores", "Ver Operadores", "lectura", "src/app/(dashboard)/operadores/page.tsx:1", { ruta: "/operadores" }),
+      c("operadores", "celda", "celda_hipodromos", "Ver los hipódromos asignados a un operador", "lectura", "src/components/operadores/OperadoresModule.tsx"),
+      c("operadores", "boton", "btn_asignar_hipodromos", "Asignar hipódromos a un operador", "escritura", "src/components/operadores/OperadoresModule.tsx"),
     ],
   },
 ];
@@ -671,6 +719,8 @@ export const PUERTAS: Array<{
   { ruta: "/remates", capacidad: "remates:ruta_remates" },
   { ruta: "/pollas", capacidad: "pollas:ruta_pollas" },
   { ruta: "/portal", capacidad: "portal:ruta_portal" },
+  { ruta: "/reglas-jugadas", capacidad: "reglas_jugadas:ruta_reglas_jugadas" },
+  { ruta: "/operadores", capacidad: "operadores:ruta_operadores" },
 ];
 
 /** Todas las rutas de la plataforma, para el matcher del middleware. */
