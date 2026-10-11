@@ -31,7 +31,11 @@ type FormModal = { abierta: boolean; editando: Hipodromo | null; nombre: string;
 const inicialModal = (editando: Hipodromo | null): FormModal => ({
   abierta: !!editando,
   editando,
-  nombre: editando?.nombre ?? "",
+  // El campo de edición arranca con el nombre YA en formato propio ("La
+  // Rinconada", no "LA RINCONADA"), para que lo que se ve sea lo que se guarda
+  // al tocar "Guardar". Así el nombre queda escrito con la primera letra en
+  // mayúscula aunque la fila en la base venga en mayúsculas del seed viejo.
+  nombre: editando ? formatearNombre(editando.nombre) : "",
   pais: (editando?.pais || "VE").toUpperCase(),
   estado: normalizarEstado(editando?.estado),
 });

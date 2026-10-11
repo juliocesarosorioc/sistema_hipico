@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { SelectorGrupo } from "@/components/grupos/SelectorGrupo";
+import { useAuthStore } from "@/store/useAuthStore";
 
 /**
  * Barra superior limpia de la SPA (Organismo del layout raíz).
@@ -93,13 +94,30 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
     return () => document.removeEventListener("mousedown", onDoc);
   }, [abierto]);
 
-  const cerrarSesion = () => {
+  const salir = useAuthStore((s) => s.salir);
+
+  /**
+   * Cierre de sesión REAL.
+   *
+   * Antes solo se borraba una clave legacy de localStorage y se recargaba a
+   * "/". La sesión de Supabase seguía VIVA en el navegador, así que al volver a
+   * entrar `AuthBootstrap` la detectaba y la app arrancaba sola: el operador
+   * caía dentro de su módulo sin poder escribir usuario y clave. `salir()` apaga
+   * la sesión de Supabase (`auth.signOut`) y borra las cookies del middleware;
+   * recién ahí se navega al login.
+   */
+  const cerrarSesion = async () => {
     try {
       localStorage.removeItem("club_sesion_activa");
     } catch {
       /* sinop */
     }
-    window.location.assign("/");
+    try {
+      await salir();
+    } catch {
+      /* aunque falle el borrado remoto, se sale igual para no quedar atrapado */
+    }
+    window.location.assign("/login");
   };
 
   const total = novedades.length;
@@ -187,7 +205,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
 
       <button
         type="button"
-        onClick={cerrarSesion}
+        onClick={() => void cerrarSesion()}
         className="inline-flex items-center gap-1.5 rounded-lg border border-danger-500/40 bg-danger-500/10 px-3 py-1.5 text-xs font-bold text-danger-600 transition-colors hover:bg-danger-500 hover:text-white"
       >
         <span aria-hidden="true">⏻</span>

@@ -135,14 +135,15 @@ prueba("el chip de archivado gana aunque el estado diga Activo", () => {
 
 console.log("\n== Hipodromos: normalizacion del nombre (anti duplicados) ==");
 
-prueba("formatearNombre aplica el toTitleCase del legacy (con articulos en minuscula)", () => {
-  // Paridad con el legacy: se capitaliza cada palabra y despues BAJAN los
-  // articulos. "la rinconada" -> "la Rinconada", no "La Rinconada". Es feo, pero
-  // cambiarlo aqui duplicaria el hipodromo con el nombre que ya esta en la base.
-  eq(formatearNombre("la rinconada"), "la Rinconada", "minusculas");
+prueba("formatearNombre deja cada palabra con la inicial en mayuscula (nombre propio)", () => {
+  // El nombre se muestra y se guarda como nombre propio: la primera letra va en
+  // MAYÚSCULA, artículos incluidos ("La Rinconada", "Del Mar"). Antes se bajaban
+  // ("la Rinconada"), que es justo lo que el operador no quería ver ni guardar.
+  eq(formatearNombre("la rinconada"), "La Rinconada", "minusculas");
   eq(formatearNombre("  SANTA   ANITA  "), "Santa Anita", "mayusculas y espacios de mas");
   eq(formatearNombre("valencia"), "Valencia", "palabra simple");
-  eq(formatearNombre("la trinidad"), "la Trinidad", "articulo baja");
+  eq(formatearNombre("la trinidad"), "La Trinidad", "articulo en mayuscula");
+  eq(formatearNombre("del mar"), "Del Mar", "articulo del en mayuscula");
 });
 
 prueba("el nombre se guarda estable: formatear dos veces no lo mueve mas", () => {

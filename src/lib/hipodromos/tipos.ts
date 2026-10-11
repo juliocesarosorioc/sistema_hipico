@@ -56,14 +56,20 @@ export const PAISES = ["VE", "USA", "PA", "MX", "AR", "BR", "CL", "PE", "CO", "E
 export type ResListar = { ok: boolean; data: Hipodromo[]; error?: string; local?: boolean };
 export type ResCrud = { ok: boolean; error?: string; code?: string; reactivado?: boolean };
 
-/** Título formateado (misma regla de toTitleCase del legacy). */
+/** Título formateado: cada palabra con su inicial en MAYÚSCULA ("La Rinconada",
+ *  "Del Mar", "Santa Anita").
+ *
+ *  Antes se bajaban los artículos al estilo del legacy ("la Rinconada"), pero en
+ *  pantalla y al guardar el nombre tiene que verse como nombre propio, con la
+ *  primera letra en mayúscula. Sigue colapsando espacios y siendo idempotente,
+ *  que es de lo que depende la detección de duplicados y la reactivación por
+ *  nombre. */
 export function formatearNombre(t: string): string {
   return String(t || "")
     .trim()
     .replace(/\s+/g, " ")
     .toLowerCase()
-    .replace(/\b[a-záéíóúñ]|\b\d+\b/g, (m) => m.toUpperCase())
-    .replace(/\b(al|del|de|la|los|las|y|en|a|o|u|por|para)\b/gi, (w) => w.toLowerCase());
+    .replace(/\b[a-záéíóúñ]|\b\d+\b/g, (m) => m.toUpperCase());
 }
 
 /** Distancia de Levenshtein normalizada (0 = igual, 1 = totalmente distinto). */
