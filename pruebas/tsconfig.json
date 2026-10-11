@@ -63,6 +63,7 @@
     "./normalizar-carga.test.ts",
     "./mensaje-resultado.test.ts",
     "./mvp-fusion.test.ts",
+    "./demo-mvp-fusion.ts",
     "./jugadas-fecha.test.ts",
     "./dupleta-clave.test.ts",
 

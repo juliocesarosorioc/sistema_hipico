@@ -214,8 +214,21 @@ export async function aplicarLiquidacionSaldos(
     // perdía su dinero en una jugada que la casa anuló.
     const esAnulada = !res.ok && res.totalClienteNeto > 0;
     const estado = esAnulada ? "Retirado" : res.ok ? "Ganador" : "Perdedor";
-    const premioPagar = res.ok ? res.totalClienteNeto : 0;
-    const montDecidido = res.ok ? res.totalClienteNeto : 0;
+    // premio_pagar / monto_decidido = PREMIO BRUTO (capital + ganancia ANTES de
+    // comisión), que es la convención de TODO el sistema:
+    //   · la liquidación legacy (marcas_venta.sql: premio_pagar = v_bruto;
+    //     dupleta_liquidacion.sql: premio_pagar = v_premio),
+    //   · el trigger del banquero (banqueros.sql: "v_mov := -premio_pagar
+    //     (paga capital + ganancia)"),
+    //   · el reporte de liquidación (reportes.ts: lee premio_pagar como bruto),
+    //   · el mensaje de resultados del grupo (reportGenerator.mapearJugada →
+    //     balanceJugada trata premio_pagar como el premio bruto).
+    // Guardar aquí el NETO rompía todo eso: el "Consigue" del mensaje del grupo
+    // (que relee la BD) pagaba de menos toda la comisión y el banquero cobraba/
+    // pagaba de menos. El ABONO al saldo del ganador SÍ es neto
+    // (totalClienteNeto): es el dinero que recibe en mano.
+    const premioPagar = res.ok ? Math.round((res.totalClienteNeto + res.gananciaCasa) * 100) / 100 : 0;
+    const montDecidido = premioPagar;
     const credito = res.ok || esAnulada ? res.totalClienteNeto : 0;
 
     const clientePromise = credito > 0

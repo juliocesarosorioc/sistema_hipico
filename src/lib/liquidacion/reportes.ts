@@ -167,16 +167,35 @@ function evaluar(
   f: Record<string, unknown>,
   hipodromo: string,
   carrera: string | number,
-  pizarra: PizarraCarrera | null
+  pizarra: PizarraCarrera | null,
+  tasaComision?: number | null
 ): { ok: boolean | null; bruto: number } {
   const estado = txt(f.estado).toUpperCase();
   const monto = cifra(f.monto_jugado);
+  // `premio_pagar` / `monto_decidido` se persisten BRUTOS (capital + ganancia,
+  // como los escriben la liquidación legacy y `aplicarLiquidacionSaldos`). Este
+  // reporte trabaja internamente con el NETO del ganador (lo que recibe), así
+  // que descuenta la comisión de la ganancia bruta guardada.
+  const aNeto = (brutoGuardado: number): number => {
+    if (brutoGuardado <= 0) return 0;
+    if (monto <= 0) return brutoGuardado;
+    const gananciaBruta = brutoGuardado - monto;
+    if (gananciaBruta <= 0) return brutoGuardado;
+    const pct = cifra(f.comision_porcentaje);
+    const tasa =
+      pct > 0
+        ? pct
+        : Number.isFinite(Number(tasaComision)) && Number(tasaComision) >= 0
+          ? Number(tasaComision)
+          : 5;
+    return Math.round((brutoGuardado - gananciaBruta * (tasa / 100)) * 100) / 100;
+  };
   if (estado === "SOLUCIONADO") {
-    const p = cifra(f.monto_decidido) || cifra(f.premio_pagar);
+    const p = aNeto(cifra(f.monto_decidido) || cifra(f.premio_pagar));
     return p > 0 ? { ok: true, bruto: p } : { ok: null, bruto: 0 };
   }
   if (estado === "GANADOR" || estado === "GANO") {
-    const p = cifra(f.premio_pagar);
+    const p = aNeto(cifra(f.premio_pagar));
     return p > 0 ? { ok: true, bruto: p } : { ok: null, bruto: 0 };
   }
   if (estado === "PERDEDOR" || estado === "PERDIO" || estado === "RETIRADO" || estado === "RECHAZADO" || estado === "ANULADO") {
@@ -353,7 +372,7 @@ async function carreraReporte(
     const monto = cifra(f.monto_jugado);
     const caballo = txt(f.caballo);
     const esPareo = caballo.toUpperCase().includes("X") || /^PP/i.test(txt(f.nombre_jugada));
-    const ev = evaluar(f, hipodromo, numero, pizarra);
+    const ev = evaluar(f, hipodromo, numero, pizarra, tasaComision);
     const clienteJuega = txt(f.cliente_juega);
     const clienteJuegaNombre = txt(f.cliente_juega_nombre) || clienteJuega;
     const clienteConsigue = txt(f.cliente_consigue);
