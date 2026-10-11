@@ -293,7 +293,17 @@ export async function listarPollas(fecha?: string): Promise<Res<Polla[]>> {
     // viene acotado por el RLS de la base.
     const activo = grupoActivoVigente();
     if (activo) q = q.eq("grupo_id", activo);
-    const { data, error } = await q.order("fecha", { ascending: false });
+    let { data, error } = await q.order("fecha", { ascending: false });
+    // La tabla viva puede no tener `pollas.grupo_id` todavía (migración a
+    // medias): en vez de romper el módulo, se lista sin filtrar y se avisa.
+    // Correr `sql/pollas_grupo_id.sql` agrega la columna y activa el filtro.
+    if (error && activo && /does not exist/i.test(error.message)) {
+      q = supabase.from("pollas").select("*");
+      if (fecha) q = q.eq("fecha", fecha);
+      const r2 = await q.order("fecha", { ascending: false });
+      data = r2.data;
+      error = r2.error;
+    }
     if (error) return { ok: false, error: mensajeErrorRpc(error.message, MENSAJE_SIN_RPC) };
     return { ok: true, datos: (data ?? []).map((r) => normalizarPolla(r as Record<string, unknown>)) };
   } catch (e) {

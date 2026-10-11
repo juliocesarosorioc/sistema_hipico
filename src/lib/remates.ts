@@ -140,7 +140,18 @@ export async function listarRemates(): Promise<ResRemates> {
       .select("*, hipodromos(nombre)")
       .order("fecha_registro", { ascending: false });
     if (activo) q = q.eq("grupo_id", activo);
-    const { data, error } = await q;
+    let { data, error } = await q;
+    // Misma tolerancia que en Pollas: si la tabla viva no tiene `grupo_id`,
+    // se lista sin filtrar en vez de romper el módulo.
+    if (error && activo && /does not exist/i.test(error.message)) {
+      q = supabase
+        .from("remates")
+        .select("*, hipodromos(nombre)")
+        .order("fecha_registro", { ascending: false });
+      const r2 = await q;
+      data = r2.data;
+      error = r2.error;
+    }
     if (error) return { ok: false, error: error.message };
     return { ok: true, datos: (data ?? []).map((r) => normalizarRemate(r as Record<string, unknown>)) };
   } catch (e) {
