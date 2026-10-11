@@ -646,9 +646,14 @@ const hipodromosDelDia = useMemo(() => {
     [tickets, carrera, fecha, hipodromo]
   );
 
-  // Nombre de grupo "cabecera" para la relación (por defecto, hipódromo). En el
-  // modal se muestra además el grupo WhatsApp vinculado como "Grupo destino".
-  const grupoCabecera = useMemo(() => nombreHipodromo, [nombreHipodromo]);
+  // Nombre del grupo "cabecera" de la relación: el grupo de WhatsApp vinculado
+  // (p. ej. "MVP FUSION"), que es lo que la casa pone en el encabezado del
+  // mensaje. Si todavía no hay grupo vinculado, cae al hipódromo. En el modal se
+  // muestra además el grupo WhatsApp vinculado como "Grupo destino".
+  const grupoCabecera = useMemo(
+    () => grupoDestinoWhatsapp?.trim() || nombreHipodromo,
+    [grupoDestinoWhatsapp, nombreHipodromo]
+  );
 
   /** Plano de Jugadas (Ctrl+Q): formato TERCIOS con las jugadas en sesión. */
   const planoPreliminarTexto = useMemo(

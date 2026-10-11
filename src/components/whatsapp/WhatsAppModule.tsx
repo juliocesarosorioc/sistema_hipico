@@ -310,7 +310,7 @@ export function WhatsAppModule() {
       .filter(Boolean);
     const pizarraTexto = repPizarra.trim() || (oficial?.puestos.length ? oficial.puestos.join(" · ") : "");
     const meta: MetaCarrera = {
-      grupo: CLUB_NOMBRE,
+      grupo: grupoVinculado?.nombre?.trim() || CLUB_NOMBRE,
       hipodromo: nombreHipodromoParaMostrar(hip),
       carrera: car,
       retirados: repRetirados.trim(),
