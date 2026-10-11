@@ -82,14 +82,12 @@ declare
     'clientes:ruta_clientes',
     'clientes:btn_crear',
     'clientes:btn_editar',
-    'clientes:btn_eliminar',
     'clientes:btn_ver_ventas',
     'clientes:modal_editar',
-    'clientes:modal_reclamos',
     'clientes:celda_saldo',
     'clientes:celda_acciones',
     'clientes:fn_guardar_cliente',
-    'clientes:fn_eliminar_cliente',
+    -- SIN permisos destructivos: no elimina clientes ni borra reclamos.
 
     -- Registrar usuarios: SOLO dar de alta (asignar tipo).
     -- No incluye fn_editar_matriz / fn_crear_tipo / fn_editar_tipo.
@@ -210,16 +208,19 @@ begin
   end if;
 
   -- -------------------------------------------------------------------------
-  -- 5) usuario_sistema, atado a la cuenta de Auth
+  -- 5) usuario_sistema, atado a la cuenta de Auth Y AL GRUPO de venta.
+  --    Sin grupo_id el usuario queda "sin grupo" y ve TODOS los grupos
+  --    (comportamiento retrocompatible), así que hay que fijarlo.
   -- -------------------------------------------------------------------------
-  insert into public.usuario_sistema (id, nombre, tipo_usuario_id, activo, es_principal, auth_id)
-  values (v_usuario, 'Gun Bold', v_tipo_id, true, false, v_uid)
+  insert into public.usuario_sistema (id, nombre, tipo_usuario_id, activo, es_principal, auth_id, grupo_id)
+  values (v_usuario, 'Gun Bold', v_tipo_id, true, false, v_uid, v_grupo_id)
   on conflict (id) do update
      set nombre          = excluded.nombre,
          tipo_usuario_id = excluded.tipo_usuario_id,
          activo          = true,
          es_principal    = false,
-         auth_id         = excluded.auth_id;
+         auth_id         = excluded.auth_id,
+         grupo_id        = excluded.grupo_id;
 
   raise notice 'OK -> usuario "%" (%) | tipo "banquero" (id %) | grupo de venta "Gun Bold" (id %) | auth_id %',
     v_usuario, v_correo, v_tipo_id, v_grupo_id, v_uid;
