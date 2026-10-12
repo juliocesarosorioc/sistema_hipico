@@ -59,6 +59,9 @@ const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
     items: [
       { emoji: "🛡️", txt: "Seguridad y Accesos", href: "/seguridad" },
       { emoji: "👥", txt: "Operadores", href: "/operadores" },
+      // Solo josorioc (el módulo exige esPrincipal); la entrada se oculta sola
+      // con la puerta de Seguridad para el resto de los administradores.
+      { emoji: "🧩", txt: "Creación de Grupos", href: "/crear-grupo" },
       { emoji: "🩺", txt: "Diagnóstico", href: "/diagnostico" },
     ],
   },

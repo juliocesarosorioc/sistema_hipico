@@ -1045,14 +1045,43 @@ OpenAI).
 | `html/tickets.html` + `js/tickets.js` | (NUEVO) Tickets por solucionar — disputas de jugadas |
 | `js/gaceta_helpers.js` · `js/gaceta_ia.js` · `js/gaceta_padron.js` | (NUEVO) Segmentación del módulo gaceta |
 
+## Profesionalización — Multi-Tenant y Alta de Franquicias (NIVEL 0 → 3)
+
+La jerarquía ya está implementada sobre el esquema real (no se crearon tablas
+paralelas `grupos` / `perfiles_usuarios` / `roles`):
+
+| Nivel | Concepto | Dónde vive |
+|-------|----------|------------|
+| 0 | Super Admin (josorioc) | `usuario_sistema.es_principal = true` + candado por trigger |
+| 1 | Grupo / Franquicia | `public.grupos_venta` |
+| 2 | Admin de grupo | `usuario_sistema` con `tipo_usuario = admin` + `grupo_id` |
+| 3 | Operador / Taquillero | `usuario_sistema` con `tipo_usuario = operador` + `grupo_id` |
+
+Archivos nuevos:
+- `src/components/ui/EmptyState.tsx` — estado vacío reutilizable del Design System.
+- `src/components/saldos/ReporteCarrera.tsx` — plantilla de liquidación SIN mocks
+  (recibe `datos?: ReporteCarreraDatos`; sin datos muestra EmptyState).
+- `supabase/seed_superadmin.sql` — blindaje de josorioc: trigger
+  `proteger_usuario_principal` (no se puede borrar/desmarcar/desactivar/cambiar
+  el id del principal) + verificación de la estructura RLS/grupo_id.
+- `src/components/grupos/CreacionGruposModule.tsx` + ruta `/crear-grupo` —
+  wizard de 3 pasos (grupo → administrador → operadores), exclusivo de
+  josorioc, Keyboard-First (Enter avanza, Escape retrocede, autofocus por paso).
+- `src/lib/grupos.ts::crearEcosistemaGrupo` — orquesta la alta; pasa por la
+  edge function y cae a modo degradado (grupo + `usuario_sistema` sin cuentas
+  de Auth) si la función no está desplegada.
+- `supabase/functions/crear-grupo/index.ts` — edge function con service_role:
+  verifica que quien llama sea el principal (403 si no) y crea grupo + cuentas
+  de Supabase Auth (`email_confirm: true`) + filas `usuario_sistema`.
+- Puerta nueva: `{ ruta: "/crear-grupo", capacidad: "seguridad:ruta_seguridad" }`
+  (mismo criterio que `/diagnostico`; el wizard exige además `esPrincipal`).
+
+Deploy pendiente (a mano): aplicar `supabase/seed_superadmin.sql` en el SQL
+Editor y `npx supabase functions deploy crear-grupo`.
+
 ---
 
-*Última actualización: 2026-10-09 (resultados conectados a los reportes; escritura de
-`resultados_carreras` detrás de RPC; bucket de reclamos privado; visor de auditoría; stubs de
-contabilidad y dupletas rewirenados; **Centro WhatsApp conectado a la Cloud API: webhook de
-detección de grupo + envío manual/automático**; **CAPA 1 DE CARGA RÁPIDA IMPLEMENTADA: el
-normalizador difuso local ordena el texto transcrito (números y nomenclatura hablados, nombres
-contra el catálogo por Jaro-Winkler, caballo por nombre contra el padrón) y lo deja estructurado
-en la Carga Individual con vista previa en vivo y filas rojas solo para lo dudoso (nombres
-    canónicos, umbral 0.88, sin aliases, siempre 2 clientes)**; la Capa 2 con IA sigue
-    documentada como opcional)*
+*Última actualización: 2026-10-12 (fases de profesionalización: mocks limpiados +
+EmptyState, multi-tenant/RBAC confirmado sobre el esquema real, seed de blindaje
+de josorioc con trigger de inmutabilidad, y módulo de Creación de Grupos con
+wizard 3 pasos + edge function `crear-grupo` latas pendientes de desplegar).*

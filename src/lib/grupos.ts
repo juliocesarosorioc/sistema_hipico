@@ -6,6 +6,7 @@
  */
 import { supabase } from "@/lib/supabase";
 import { exigirCapacidad, grupoActivoVigente } from "@/lib/seguridad/vigente";
+import { claveDeUsuario, guardarUsuarioSistema, leerUsuariosDelSistema } from "@/lib/seguridad/accesos";
 import { disponibleParaJugar, esSinTope, explicarDisponible } from "@/lib/taquilla/reparto";
 
 export type GrupoVenta = {
@@ -761,4 +762,200 @@ export async function toggleTipoJugadaActivo(id: string | number, activo: boolea
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+// ===========================================================================
+// ECOSISTEMA DE GRUPO (NIVEL 1 → 3) — alta de una franquicia completa
+// ===========================================================================
+// Crea de una sola vez:
+//   1. El GRUPO de venta (grupos_venta)               → NIVEL 1
+//   2. La cuenta del ADMIN / dueño de la banca        → NIVEL 2
+//   3. Las cuentas de los OPERADORES (taquillas)      → NIVEL 3
+//
+// Por qué pasa por una edge function: crear cuentas de Supabase Auth exige
+// `service_role`, que jamás puede vivir en el bundle del navegador. La función
+// `crear-grupo` (supabase/functions/crear-grupo) valida que quien llama sea el
+// usuario principal y recién ahí usa la llave de servicio. Si todavía no está
+// desplegada, esta función cae a un modo degradado: crea el grupo y las filas
+// de `usuario_sistema` (así la franquicia ya existe) pero avisa que las
+// credenciales de login quedaron pendientes.
+
+export type NuevoUsuarioDeGrupo = {
+  /** Nombre de acceso (sin correo): se normaliza con `claveDeUsuario`. */
+  usuario: string;
+  nombre?: string;
+  /** "admin" (NIVEL 2) u "operador" (NIVEL 3). */
+  tipo: string;
+  /** Clave inicial. La cuenta se crea con `email_confirm: true`. */
+  clave: string;
+  /** Si se omite, se deriva <usuario>@sistemahipico.local. */
+  correo?: string;
+};
+
+export type EcosistemaGrupoEntrada = {
+  grupo: {
+    nombre: string;
+    moneda?: string | null;
+    moneda_cuadre?: string | null;
+    comision_default?: number | null;
+    cupo_tabla?: number | null;
+    responsable?: string | null;
+    cuenta_bancaria?: string | null;
+  };
+  admin: NuevoUsuarioDeGrupo;
+  operadores: NuevoUsuarioDeGrupo[];
+};
+
+export type UsuarioDeGrupoCreado = {
+  usuario: string;
+  correo: string;
+  tipo: string;
+  clave: string;
+};
+
+export type EcosistemaGrupoResultado = {
+  ok: boolean;
+  error?: string;
+  grupoId?: string;
+  grupoNombre?: string;
+  creados?: UsuarioDeGrupoCreado[];
+  /** Presente cuando se creó en modo degradado (sin cuentas de Auth). */
+  aviso?: string;
+};
+
+/** Dominio local con el que se siembran las cuentas de personal (ver crear_usuario_gunbold.sql). */
+const DOMINIO_LOGIN = "sistemahipico.local";
+
+/** Correo de login del usuario: el explícito si lo hay, si no <usuario>@dominio. */
+export function correoDeLogin(usuario: string, correo?: string): string {
+  const limpio = String(correo ?? "").trim();
+  if (limpio) return limpio;
+  return `${claveDeUsuario(usuario)}@${DOMINIO_LOGIN}`;
+}
+
+export async function crearEcosistemaGrupo(
+  entrada: EcosistemaGrupoEntrada
+): Promise<EcosistemaGrupoResultado> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+
+  const nombreGrupo = String(entrada?.grupo?.nombre ?? "").trim().toUpperCase();
+  if (!nombreGrupo) return { ok: false, error: "Indicá el nombre del grupo." };
+
+  const usuarios = [entrada?.admin, ...(entrada?.operadores ?? [])].filter(
+    (u): u is NuevoUsuarioDeGrupo => Boolean(u)
+  );
+  if (!usuarios.length) return { ok: false, error: "Falta el usuario administrador del grupo." };
+  if (usuarios[0]?.tipo !== "admin") {
+    return { ok: false, error: "El primer usuario debe ser el administrador del grupo." };
+  }
+
+  const vistos = new Set<string>();
+  for (const u of usuarios) {
+    const clave = claveDeUsuario(u.usuario);
+    if (!clave) return { ok: false, error: "Cada usuario necesita su nombre de acceso." };
+    if (vistos.has(clave)) return { ok: false, error: `El usuario "${u.usuario}" está repetido.` };
+    vistos.add(clave);
+    if (String(u.clave ?? "").length < 6) {
+      return { ok: false, error: `La clave de "${u.usuario}" debe tener al menos 6 caracteres.` };
+    }
+    if (u.tipo !== "admin" && u.tipo !== "operador") {
+      return { ok: false, error: `Tipo de usuario inválido para "${u.usuario}".` };
+    }
+  }
+
+  // No se pisa una cuenta existente: eso le robaría el acceso (y el grupo) a
+  // otra banca. La colisión se detecta antes de tocar la base.
+  try {
+    const existentes = await leerUsuariosDelSistema();
+    const ocupados = new Set(existentes.map((u) => claveDeUsuario(u.id)));
+    const choque = usuarios.map((u) => u.usuario).find((x) => ocupados.has(claveDeUsuario(x)));
+    if (choque) return { ok: false, error: `El usuario "${choque}" ya existe. Elegí otro.` };
+  } catch {
+    /* si no se pudo leer, lo vuelve a validar la edge function */
+  }
+
+  // 1) Camino principal: edge function con service_role (crea grupo + Auth).
+  try {
+    const inv = await supabase.functions.invoke("crear-grupo", { body: entrada });
+    const data = inv.data as Partial<EcosistemaGrupoResultado> | null;
+    if (data && typeof data === "object" && data.ok === true) {
+      return data as EcosistemaGrupoResultado;
+    }
+    if (data && typeof data === "object" && data.ok === false) {
+      // La función corrió y rechazó: el error es de negocio, no de despliegue.
+      return { ok: false, error: data.error ?? "No se pudo crear el grupo." };
+    }
+    if (!inv.error) return { ok: false, error: "Respuesta inesperada del servicio de creación." };
+  } catch {
+    /* función no desplegada o sin red: se sigue con el modo degradado */
+  }
+
+  // 2) Modo degradado: grupo + filas de usuario_sistema (sin cuentas de Auth).
+  try {
+    exigirCapacidad("seguridad:fn_asignar_tipo");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+
+  let grupoId = "";
+  const rpc = await supabase.rpc("club_guardar_grupo", {
+    p_datos: {
+      nombre: nombreGrupo,
+      moneda: entrada.grupo.moneda ?? "USD",
+      moneda_cuadre: entrada.grupo.moneda_cuadre ?? "USD",
+      cupo_tabla: entrada.grupo.cupo_tabla ?? 100,
+      comision_default: entrada.grupo.comision_default ?? 2.5,
+      responsable: entrada.grupo.responsable ?? null,
+      cuenta_bancaria: entrada.grupo.cuenta_bancaria ?? null,
+      es_principal: false,
+    },
+  });
+  if (!rpc.error && rpc.data) grupoId = String(rpc.data);
+
+  if (!grupoId) {
+    const creado = await crearGrupo({
+      nombre: nombreGrupo,
+      moneda: entrada.grupo.moneda ?? "USD",
+      comision_default: entrada.grupo.comision_default ?? 2.5,
+      cupo_tabla: entrada.grupo.cupo_tabla ?? 100,
+      responsable: entrada.grupo.responsable ?? null,
+    });
+    if (!creado.ok) return { ok: false, error: creado.error ?? "No se pudo crear el grupo." };
+    const lista = await listarGruposAdmin(true);
+    const enc = lista.find((g) => String(g.nombre ?? "").trim().toUpperCase() === nombreGrupo);
+    grupoId = enc ? String(enc.id) : "";
+  }
+  if (!grupoId) return { ok: false, error: "El grupo se creó pero no se pudo leer su identificador." };
+
+  const creados: UsuarioDeGrupoCreado[] = [];
+  for (const u of usuarios) {
+    const clave = claveDeUsuario(u.usuario);
+    const r = await guardarUsuarioSistema({
+      id: clave,
+      nombre: u.nombre ?? clave,
+      tipo: u.tipo,
+      activo: true,
+      grupoId,
+    });
+    if (!r.ok) {
+      return {
+        ok: false,
+        error: `El grupo se creó, pero falló el usuario "${u.usuario}": ${r.error ?? "error desconocido"}`,
+      };
+    }
+    creados.push({ usuario: clave, correo: correoDeLogin(clave, u.correo), tipo: u.tipo, clave: u.clave });
+  }
+
+  invalidarCacheGrupos();
+  void registrarAuditoria("GRUPO", "CREAR", `Grupo ${nombreGrupo} creado con ${creados.length} usuarios (sin Auth).`);
+
+  return {
+    ok: true,
+    grupoId,
+    grupoNombre: nombreGrupo,
+    creados,
+    aviso:
+      "El grupo y sus usuarios quedaron creados, pero las cuentas de login no: " +
+      "desplegá la edge function `crear-grupo` y reintentá para generar las credenciales.",
+  };
 }

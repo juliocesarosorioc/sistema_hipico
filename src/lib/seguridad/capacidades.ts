@@ -698,6 +698,12 @@ export const PUERTAS: Array<{
   { ruta: "/diagnostico", capacidad: "seguridad:ruta_seguridad" },
   { ruta: "/clientes", capacidad: "clientes:ruta_clientes" },
   { ruta: "/grupos", capacidad: "grupos:ruta_grupos" },
+  // Creación de franquicias (NIVEL 0 → 3): exclusivo del super administrador.
+  // Puerta de Seguridad a propósito (solo administradores llegan a la ruta) y
+  // el módulo además exige `esPrincipal` para mostrar el wizard; así no hace
+  // falta inventar una capacidad que nadie tiene en la base (mismo criterio
+  // que /diagnostico).
+  { ruta: "/crear-grupo", capacidad: "seguridad:ruta_seguridad" },
   { ruta: "/hipodromos", capacidad: "hipodromos:ruta_hipodromos" },
   { ruta: "/ejemplares", capacidad: "ejemplares:ruta_ejemplares" },
   { ruta: "/carreras", capacidad: "carreras:ruta_carreras" },
