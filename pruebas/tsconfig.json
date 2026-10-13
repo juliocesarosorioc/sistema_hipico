@@ -64,6 +64,7 @@
     "./reporte-carrera.test.ts",
     "./mensaje-resultado.test.ts",
     "./preliminar-resultado.test.ts",
+    "./puestos-bloques.test.ts",
     "./saldos-en-curso.test.ts",
     "./mvp-fusion.test.ts",
     "./demo-mvp-fusion.ts",

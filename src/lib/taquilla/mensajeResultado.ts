@@ -30,6 +30,7 @@ import {
   normalizarNini,
   type TicketMotor,
   type ResultadoMotor,
+  type BloqueDetalleResultado,
 } from "../bettingEngine";
 import type { PizarraCarrera } from "../liquidacion";
 
@@ -284,18 +285,32 @@ const EMOJI_VEREDICTO: Record<VeredictoJugada, string> = {
   ANULADA: "🔁",
 };
 
+/** "1P→✅" / "1Y2N→❌(1P→❌ · 2N→🔁)": veredicto de UN bloque, con sus sub-bloques. */
+function textoBloque(b: BloqueDetalleResultado): string {
+  const emoji = b.estado === "GANA" ? "✅" : b.estado === "PIERDE" ? "❌" : "🔁";
+  const hijos = b.bloques?.length ? " (" + b.bloques.map(textoBloque).join(" · ") + ")" : "";
+  return String(b.fuente).toUpperCase() + "→" + emoji + hijos;
+}
+
+/** Estimación POR BLOQUE de una COMBINADA/COMPUESTA, si el motor la desglosa. */
+function sufijoBloques(res: ResultadoMotor): string {
+  if (!res.bloquesDetalle || res.bloquesDetalle.length === 0) return "";
+  return " · BLOQUES: " + res.bloquesDetalle.map(textoBloque).join(" · ");
+}
+
 /** Línea TERCIOS de una jugada con su veredicto: "1) Juega X 2Y2N (3) con 6.000,00 da Y → ✅ GANA". */
 function lineaJugadaConVeredicto(
   j: JugadaRelacion,
   i: number,
-  veredicto: VeredictoJugada
+  veredicto: VeredictoJugada,
+  sufijo = ""
 ): string {
   const partes = [j.clienteJuega];
   if (String(j.jugada ?? "").trim()) partes.push(String(j.jugada).trim());
   if (String(j.caballo ?? "").trim()) partes.push(`(${String(j.caballo).trim()})`);
   partes.push(`con ${fmtMonto(j.monto)}`);
   if (String(j.clienteConsigue ?? "").trim()) partes.push(`da ${String(j.clienteConsigue).trim()}`);
-  return `${i + 1}) Juega ${partes.join(" ")} → ${EMOJI_VEREDICTO[veredicto]} ${veredicto}`;
+  return `${i + 1}) Juega ${partes.join(" ")} → ${EMOJI_VEREDICTO[veredicto]} ${veredicto}${sufijo}`;
 }
 
 /**
@@ -322,9 +337,9 @@ export function mensajePreliminarDeCarrera(opts: OpcionesPreliminarResultado): s
   };
 
   const lineas = opts.tickets.map((t, i) => {
-    const { relacion } = resultadoDeJugada(t, opts.pizarra, opts.dividendos ?? null, opts.tasaComision);
+    const { relacion, res } = resultadoDeJugada(t, opts.pizarra, opts.dividendos ?? null, opts.tasaComision);
     const veredicto = veredictoDeJugada(t, opts.pizarra, opts.dividendos ?? null, opts.tasaComision);
-    return lineaJugadaConVeredicto(relacion, i, veredicto);
+    return lineaJugadaConVeredicto(relacion, i, veredicto, sufijoBloques(res));
   });
 
   const pendientes = opts.tickets.filter(

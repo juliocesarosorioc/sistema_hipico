@@ -202,6 +202,30 @@ export type TicketMotor = BetSlipEntry & {
   proporcion?: string | null;
 };
 
+/** Veredicto de UN bloque de una COMBINADA/COMPUESTA (hoja o anidada). */
+export type EstadoBloque = "GANA" | "PIERDE" | "EMPATA" | "ANULADA";
+
+/**
+ * Detalle de un bloque de jugada, para que la UI estime CADA bloque y su
+ * resultado por separado ("1P Y 1Y2N" = bloque 1: 1P · bloque 2: 1Y2N, y ese
+ * segundo bloque son dos jugadas: 1P y 2N).
+ *
+ * · HOJA (1p, 2n, PP…):                    bruto = 2×monto (GANA) | monto (ANULADA/EMPATA) | 0 (PIERDE)
+ * · NODO (COMBINADA/COMPUESTA anidada):    reparte su monto 50/50 entre `bloques` y suma.
+ */
+export type BloqueDetalleResultado = {
+  /** Etiqueta del bloque, p. ej. "1p", "1y2n". */
+  fuente: string;
+  /** Monto repartido a este bloque (mitad del bloque padre). */
+  monto: number;
+  /** Bruto devuelto por este bloque. */
+  bruto: number;
+  estado: EstadoBloque;
+  motivo: string;
+  /** Sub-bloques de una COMBINADA/COMPUESTA anidada (hojas sin `bloques`). */
+  bloques?: BloqueDetalleResultado[];
+};
+
 export type ResultadoMotor = {
   ok: boolean;
   motivo?: string;
@@ -229,6 +253,11 @@ export type ResultadoMotor = {
    * la casa. 0 en las modalidades jugadas contra la pizarra.
    */
   totalRival?: number;
+  /**
+   * Estimación POR BLOQUE de una COMBINADA/COMPUESTA ("1P Y 1Y2N" → bloque 1:
+   * 1P, bloque 2: 1Y2N = 1P y 2N). Ausente en jugadas de un solo bloque.
+   */
+  bloquesDetalle?: BloqueDetalleResultado[];
 };
 
 export type ProcesarTicket = (t: TicketMotor) => ResultadoMotor;

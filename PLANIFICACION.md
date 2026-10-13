@@ -1184,6 +1184,50 @@ Dos arreglos sobre la carga de jugadas, sin tocar el motor:
 
 ---
 
+## 2026-10-12 (noche) - Jugadas compuestas: estimación por BLOQUES ("1P Y 1Y2N")
+
+Reportó el usuario: jugadas `1P Y 1Y2N` con caballo `1 · 1` caían en
+**Retirado** en vez de interpretarse por bloques (bloque 1: `1P`; bloque 2:
+`1Y2N`, que son DOS jugadas: `1P` y `2N`) y estimar ambos bloques y sus
+resultados.
+
+### Causa raíz (verificada en el código)
+- `parsearNomenclatura("1P Y 1Y2N")` ya parseaba la COMPUESTA en sus bloques
+  `[1P, COMBINADA(1y2n)]`, pero `porBloques` (`src/lib/motores/puestos.ts`)
+  trataba el bloque anidado `1Y2N` como si fuera un simple **"2P puro"**
+  (`bloque.esNini=false` → `puestoPuro(puestos, 2)`), ignorando sus
+  sub-jugadas `1P`+`2N`.
+- Con el ejemplar 1 llegando 2º, el bloque 2 "ganaba" el capital justo
+  (`bruto == monto/2`) y el bruto total daba `== monto` → **EMPATA** →
+  `ok:false` con devolución plena → `saldos.ts` escribía **Retirado**.
+
+### Fix
+- `src/lib/motores/puestos.ts`: nuevo `evaluarBloque` **recursivo**. Un bloque
+  anidado (COMBINADA/COMPUESTA) reparte SU monto entre sus tramos y evalúa
+  cada sub-jugada; las hojas se resuelven igual que antes. Bloqueo de pizarra
+  (P2 == P1 | P1+1) también aplica a bloques anidados.
+- `src/lib/bettingEngine.ts`: tipos `EstadoBloque` + `BloqueDetalleResultado`
+  y campo opcional `ResultadoMotor.bloquesDetalle` — la estimación de CADA
+  bloque y sus resultados.
+- `src/lib/taquilla/mensajeResultado.ts`: el **RESULTADO PRELIMINAR** ahora
+  agrega `· BLOQUES: 1P→❌ · 1Y2N→❌ (1P→❌ · 2N→🔁)` cuando el motor desglosa.
+- `pruebas/puestos-bloques.test.ts`: +22 aserciones (caso reportado x3
+  posiciones, regresión de COMBINADA raíz `1Y2N`, regresión `1P Y 2P` EMPATA,
+  y el texto del preliminar).
+
+### Resultado del caso reportado (monto 1.000, ejemplar 1 en 2º)
+- Antes: EMPATA → devolvía los 1.000 completos, estado Retirado.
+- Ahora: `BLOQUES: 1P→❌ · 1Y2N→❌ (1P→❌ · 2N→🔁)` → devuelve solo la parte
+  ANULADA del 2N (250), el resto PIERDE. La interpretación por bloques queda
+  expuesta en el motor (`bloquesDetalle`) y en el preliminar.
+
+Semántica conservada (REGLA CERO): la COMBINADA raíz `1Y2N`, `1P Y 2P` y los
+veredictos agregados (`ok`/`totalClienteNeto`/ANULADA con devolución parcial)
+no cambian de comportamiento; solo se corrige el monto del anidado y se agrega
+el desglose.
+
+---
+
 *Última actualización: 2026-10-12 (fases de profesionalización: mocks limpiados +
 EmptyState, multi-tenant/RBAC confirmado sobre el esquema real, seed de blindaje
 de josorioc con trigger de inmutabilidad, y módulo de Creación de Grupos con

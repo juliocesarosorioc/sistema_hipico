@@ -40,6 +40,7 @@
  * modalidades 2 y 4 el dinero se mueve entre dos clientes, no contra la casa.
  */
 import { registrarProcesador, TicketMotor, ResultadoMotor, COMISION_CASA } from "../bettingEngine";
+import type { BloqueDetalleResultado, EstadoBloque } from "../bettingEngine";
 import type { PizarraCarrera } from "../liquidacion";
 import {
   parsearNomenclatura,
@@ -364,6 +365,72 @@ function aplicar(
 
 /* ============ COMBINADA / COMPUESTA: 50/50 por bloques ============ */
 
+/**
+ * Evalúa UN bloque (hoja o anidado) sobre su parte del monto.
+ *
+ * BUG CORREGIDO: una COMBINADA dentro de una COMPUESTA ("1P Y 1Y2N") se
+ * trataba como un simple "puesto 2" (bloque.esNini=false → puestoPuro(2)) y la
+ * jugada caía en "Retirado"/EMPATA sin desglose. Ahora el bloque anidado
+ * reparte SU monto 50/50 entre sus tramos y se evalúa cada sub-jugada:
+ * "1Y2N" = dos jugadas: 1P y 2N.
+ */
+function evaluarBloque(
+  bloque: Nomenclatura,
+  puestos: number[],
+  empate1: boolean,
+  montoBloque: number,
+  tasa: number
+): BloqueDetalleResultado {
+  // Bloqueo de pizarra de las COMBINADAS, también anidadas: el segundo tramo
+  // debe ser el mismo puesto que el primero o su inmediato superior.
+  if (bloque.tramos) {
+    const [p1, p2] = bloque.tramos;
+    if (p2 !== p1 && p2 !== p1 + 1) {
+      return {
+        fuente: bloque.fuente,
+        monto: montoBloque,
+        bruto: 0,
+        estado: "PIERDE",
+        motivo:
+          "BLOQUEO DE PIZARRA: la parte 2 (" + p2 + ") debe ser igual a la parte 1 (" + p1 +
+          ") o su inmediato superior (P1+1). La jugada no se registra.",
+      };
+    }
+  }
+
+  // COMBINADA / COMPUESTA anidada: reparte su monto entre sus tramos y suma.
+  if (bloque.bloques && bloque.bloques.length > 0) {
+    const share = montoBloque / bloque.bloques.length;
+    const bloques = bloque.bloques.map((b) => evaluarBloque(b, puestos, empate1, share, tasa));
+    const bruto = round2(bloques.reduce((acc, b) => acc + b.bruto, 0));
+    const estado: EstadoBloque = bruto > montoBloque ? "GANA" : bruto === montoBloque ? "EMPATA" : "PIERDE";
+    const partes = bloque.bloques.map((b) => b.fuente).join(" y ");
+    const etiqueta = bloque.modalidad === "COMBINADA" ? "COMBINADA" : "COMPUESTA";
+    const veredicto = estado === "GANA" ? "GANADORA" : estado === "EMPATA" ? "EMPATA" : "PERDIDA";
+    return {
+      fuente: bloque.fuente,
+      monto: montoBloque,
+      bruto,
+      estado,
+      motivo: etiqueta + " (" + partes + ") " + veredicto + ": " + bloques.map((b) => b.motivo).join(" | "),
+      bloques,
+    };
+  }
+
+  // Hoja: puesto puro, nini o pelo a pelo.
+  const d = bloque.esNini
+    ? winningAny(puestos, bloque.puesto as number, true, "NINI " + bloque.fuente)
+    : puestoPuro(puestos, bloque.puesto as number, false, empate1);
+  const bruto = d.anulada ? montoBloque : d.ganador === "jugador" ? montoBloque * 2 : 0;
+  return {
+    fuente: bloque.fuente,
+    monto: montoBloque,
+    bruto: round2(bruto),
+    estado: d.anulada ? "ANULADA" : d.ganador === "jugador" ? "GANA" : "PIERDE",
+    motivo: d.motivo,
+  };
+}
+
 function porBloques(
   r: Resuelta,
   mapa: Map<string, number>,
@@ -391,34 +458,25 @@ function porBloques(
     }
   }
 
-  const mitad = monto / 2;
+  const share = monto / r.bloques.length;
   const puestos = r.ladoA.map((c) => (mapa.has(c) ? (mapa.get(c) as number) : Infinity));
-  let brutoTotal = 0;
-  const motivos: string[] = [];
-
-  for (const bloque of r.bloques) {
-    // Cada tramo hereda los ejemplares del lado del jugador: "1y2n el 3 y 5"
-    // apuesta a 1º y a 2º sobre los mismos dos caballos.
-    const d = bloque.esNini
-      ? winningAny(puestos, bloque.puesto as number, true, "NINI " + bloque.fuente)
-      : puestoPuro(puestos, bloque.puesto as number, false, empate1);
-    const bruto = d.anulada ? mitad : d.ganador === "jugador" ? mitad * 2 : 0;
-    brutoTotal += bruto;
-    motivos.push(d.motivo);
-  }
+  const detalles = r.bloques.map((bloque) => evaluarBloque(bloque, puestos, empate1, share, tasa));
+  const brutoTotal = detalles.reduce((acc, d) => acc + d.bruto, 0);
 
   const estado = brutoTotal > monto ? "GANADORA" : brutoTotal === monto ? "EMPATA" : "PERDIDA";
   // Solo es ganadora si el jugador sale por encima de lo que puso. Recuperar
   // capital en un tramo y perder el otro NO es ganar: el legacy contaba
   // cualquier bruto > 0 y eso inflaba los premios de los reportes.
-  return finalizar(
+  const resultado = finalizar(
     brutoTotal > monto,
-    (r.modalidad === "COMBINADA" ? "COMBINADA" : "COMPUESTA") + " (" + r.bloques.map((b) => b.fuente).join(" y ") + ") " + estado + ": " + motivos.join(" | "),
+    (r.modalidad === "COMBINADA" ? "COMBINADA" : "COMPUESTA") + " (" + r.bloques.map((b) => b.fuente).join(" y ") + ") " + estado + ": " + detalles.map((d) => d.motivo).join(" | "),
     brutoTotal,
     monto,
     tasa,
     0
   );
+  resultado.bloquesDetalle = detalles;
+  return resultado;
 }
 
 /* ============ PuestosEngine ============ */
