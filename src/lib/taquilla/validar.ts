@@ -5,6 +5,7 @@ import { liquidarWps, tipoWps } from "@/lib/motores/wps";
 import type { PizarraCarrera } from "@/lib/liquidacion";
 import {
   calcularReparto,
+  disponibleParaJugar,
   extraerProporcion,
   buscarExpresionEjemplares,
   type ClienteRiesgo,
@@ -342,7 +343,22 @@ export function proyectarFila(opts: {
     cliente1: opts.cliente1 ?? null,
     cliente2: opts.cliente2 ?? null,
   });
-  // El monto efectivo es el autorizado: es lo que queda en riesgo de verdad.
+  /* El monto efectivo es el AUTORIZADO: lo que queda en riesgo de verdad. Solo
+     se cae al monto pedido cuando NO hay datos de cliente (proyección
+     informativa, sin a quién topar). Con un cliente presente un autorizado 0 es
+     un 0 REAL. Cuando ese 0 viene de que el CLIENTE 1 ya no tiene disponible
+     —el caso "en orden" en que sus filas anteriores agotaron el saldo: ver
+     saldosEnCurso.ts— la fila no se puede cobrar: se rechaza con el motivo del
+     reparto en vez de caer al monto pedido. Si no, la vista previa y el cobro
+     creerían que hay saldo y la RPC rechazaría la venta por saldo. */
+  if (
+    reparto.montoAutorizado <= 0 &&
+    montoPedido > 0 &&
+    opts.cliente1 &&
+    disponibleParaJugar(opts.cliente1) <= 0
+  ) {
+    return { ok: false, motivo: reparto.avisos[0] ?? "El CLIENTE 1 no tiene saldo disponible para esta jugada." };
+  }
   const monto = reparto.montoAutorizado > 0 ? reparto.montoAutorizado : montoPedido;
   const nom = normalizarJugadaParaMotor(jugada);
 
@@ -432,6 +448,9 @@ export type LineaRapida =
  *   4. clasificación por eliminación:
  *        JUGADA   → token con clave de apuesta (p, n, y, pp, /, x) + número
  *                   o cruce "NX M/P"; agrupa tramos contiguos (1/2 y 2n).
+ *                   Un emparejamiento pelado "4x7" (o "(4x7)", el "match" del
+ *                   locutor) sin otra nomenclatura usa la MISMA expresión como
+ *                   JUGADA y CABALLO (cada cliente va a su caballo).
  *        CABALLO  → número pequeño (< 20), pareo NxM, o el que iba entre
  *                   paréntesis "(6)".
  *        MONTO    → número "grande" (>= 20) o con separadores (.,); fallback
@@ -509,6 +528,10 @@ const RE_PURGADO = /[^\p{L}\p{N}.,/x-]/gu;
 const RE_NUMERICO = /^\d+(?:[.,]\d+)*$/;
 /** Pareo de caballos: "6x7". */
 const RE_PAREO = /^\d+[x]\d+$/;
+/** Emparejamiento PELADO "4x7" / "(4x7)": un solo ejemplar por lado. El locutor
+ *  lo dicta como "match" (cada cliente va a su caballo), así que la misma
+ *  expresión es JUGADA (enfrentamiento) y CABALLO (quién va a cada lado). */
+const RE_EMPAREJAMIENTO_PELADO = /^\d{1,2}\s*x\s*\d{1,2}$/i;
 /** Pareo con proporción: "2x3" seguido de "10/8" (formato legacy). */
 const RE_PAREO_A = /^\d+[x]\d+$/;
 const RE_PAREO_B = /^\d+\/\d+(?:[.,]\d+)?$/;
@@ -640,6 +663,18 @@ export function clasificarLineaRapida(linea: string): ClasificacionLinea | null 
       // Pareo NxM como jugada única ("6x7 100 Juan").
       const idx = tokens.findIndex((k) => RE_PAREO.test(k.limpio));
       if (idx !== -1) marcarJugada([idx, idx]);
+    }
+  }
+
+  if (!jugada) {
+    /* Emparejamiento PELADO sin nomenclatura de jugada ("4x7" o "(4x7)"): la
+       MISMA expresión dividida es el enfrentamiento. La casa lo escribe como
+       "match" (cada cliente va a su caballo) y sin este paso la línea quedaba
+       ilegible ("No se detectó una JUGADA válida") aunque el operador sí la
+       escribió. Se copia ya compacta ("4X7") para que el motor la lea, y el
+       CABALLO ya quedó con la misma expresión dividida. */
+    if (RE_EMPAREJAMIENTO_PELADO.test(caballoDividido)) {
+      jugada = caballoDividido.replace(/\s+/g, "").toUpperCase();
     }
   }
 

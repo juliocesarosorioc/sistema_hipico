@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { proyectarFila } from "@/lib/taquilla/validar";
+import { clienteConSaldoDescontado, proyectarFilasEnOrden } from "@/lib/taquilla/saldosEnCurso";
 import { normalizarLineaRapida, type ConfianzaCampo } from "@/lib/taquilla/normalizar";
 import { HorseBadge } from "@/components/ui/HorseChips";
 import { useTaquillaStore, type TicketTaquilla } from "@/store/useTaquillaStore";
@@ -27,9 +28,10 @@ import { claveHipodromo } from "@/lib/carreras/claves";
 import { useRegistroCentralOpts } from "@/store/useRegistroCentral";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import { revisarCaballo, maximoDeLaCarrera, type RevisionCaballo } from "@/lib/taquilla/caballos";
-import { mensajeResultadoDeCarrera } from "@/lib/taquilla/mensajeResultado";
+import { mensajeResultadoDeCarrera, mensajePreliminarDeCarrera } from "@/lib/taquilla/mensajeResultado";
 import { enviarAlGrupoWsp, listarGruposWsp } from "@/lib/whatsapp";
 import PlanoPreliminar from "./PlanoPreliminar";
+import PreliminarResultados from "./PreliminarResultados";
 import HistorialReporte from "./HistorialReporte";
 import { expandirLineasDobleSplit, revisarCoherenciaLineas } from "@/lib/taquilla/expandirDobleSplit";
 import { mensajePlanoDeCarrera } from "@/lib/taquilla/mensajeResultado";
@@ -220,6 +222,7 @@ export function GestionJugadasModule() {
 
   const [modalPreliminar, setModalPreliminar] = useState(false);
   const [mostrarPlanoPreliminar, setMostrarPlanoPreliminar] = useState(false);
+  const [mostrarPreliminarResultado, setMostrarPreliminarResultado] = useState(false);
   const [mostrarHistorial, setMostrarHistorial] = useState(false);
   const [modalResultados, setModalResultados] = useState(false);
   const [modalFinalizar, setModalFinalizar] = useState(false);
@@ -330,14 +333,16 @@ const hipodromosDelDia = useMemo(() => {
 
   /** Proyecta la fila. Si los clientes no están en el registro todavía, se
       calculan por prefijo para poder topar el monto igual (mismo criterio que
-      `saldoCliente`, que corre un turno más tarde en el render). */
-  const valida = (f: FilaCarga) => {
+      `saldoCliente`, que corre un turno más tarde en el render). El `descontado`
+      opcional es lo que YA arriesgó el cliente 1 en filas anteriores de esta
+      carga (tope en orden; ver saldosEnCurso.ts). */
+  const valida = (f: FilaCarga, descontado?: Map<string, number>) => {
     return proyectarFila({
       jugada: f.jugada,
       caballo: f.caballo.trim(),
       monto: f.monto,
       tasaComision: comisionNum,
-      cliente1: saldoCliente(f.cliente1),
+      cliente1: clienteConSaldoDescontado(saldoCliente(f.cliente1), descontado ?? new Map()),
       cliente2: saldoCliente(f.cliente2),
     });
   };
@@ -469,6 +474,16 @@ const hipodromosDelDia = useMemo(() => {
     return porPrefijo.length === 1 ? porPrefijo[0] : null;
   };
 
+  /** Proyección de TODA la carga EN ORDEN: la fila 2 ya ve el saldo que dejó la
+      fila 1 del mismo cliente. Alimenta la celda "Saldo/Max", el aviso de saldo
+      y el color de recorte, para que la vista previa diga lo mismo que el cobro
+      (que también descuenta en orden, ver saldosEnCurso.ts). */
+  const proyeccionesCarga = useMemo(
+    () => proyectarFilasEnOrden(filas, saldoCliente, comisionNum),
+    // `saldoCliente` solo depende de `clientes`, que sí está en las deps.
+    [filas, clientes, comisionNum]
+  );
+
   /**
    * Indicador inline de la celda del cliente: ✅ si el disponible alcanza el
    * MONTO, ⚠️ "Max: X" si no, o "Saldo X" en azul/rojo según el signo.
@@ -479,8 +494,7 @@ const hipodromosDelDia = useMemo(() => {
    * autoriza la jugada igual, la RPC la rechaza y pierde la venta; y al revés,
    * si le tapa el botón donde sí había aval, no se vende.
    */
-  const infoCliente = (texto: string, montoStr: string, cobroNeto: number): ReactNode => {
-    const c = saldoCliente(texto);
+  const infoCliente = (c: ClienteVenta | null, montoStr: string, cobroNeto: number): ReactNode => {
     if (!c) {
       if (cobroNeto > 0) {
         return <span className="truncate text-[9px] font-black text-emerald-600">Cobra {monedaFmt(cobroNeto)}</span>;
@@ -533,12 +547,11 @@ const hipodromosDelDia = useMemo(() => {
    * Nombra la jugada y, por cada jugador, "a <nombre> le queda <disponible>
    * en esta su jugada con <monto>".
    */
-  const avisoSaldo = (f: FilaCarga): string | null => {
+  const avisoSaldo = (f: FilaCarga, c1: ClienteVenta | null, c2: ClienteVenta | null): string | null => {
     const montoPedido = parseFloat(String(f.monto).replace(",", "."));
     if (!Number.isFinite(montoPedido) || montoPedido <= 0) return null;
-    const jugadores = [f.cliente1, f.cliente2]
-      .map((n) => {
-        const c = saldoCliente(n);
+    const jugadores = [c1, c2]
+      .map((c) => {
         if (!c) return null;
         return { nombre: c.nombre, libre: esClienteLibre(c), disponible: limiteDeJugar(c) };
       })
@@ -667,6 +680,27 @@ const hipodromosDelDia = useMemo(() => {
         tickets: ticketsDeCarrera,
       }),
     [carrera, fecha, grupoCabecera, hipodromo, retirados, ticketsDeCarrera]
+  );
+
+  /** Preliminar de Resultados: texto con la pizarra cargada + veredicto GANA/
+   *  PIERDE/PENDIENTE por jugada, SIN balance. Si todavía no se cargó la
+   *  pizarra (Ctrl+Y) el texto queda vacío y la vista pide cargarla. */
+  const preliminarResultadoTexto = useMemo(
+    () =>
+      ultimaPizarra
+        ? mensajePreliminarDeCarrera({
+            hipodromo: nombreHipodromoParaMostrar(hipodromo),
+            carrera,
+            fecha,
+            grupo: grupoCabecera,
+            retirados: retirados.trim() || undefined,
+            pizarra: ultimaPizarra.pizarra,
+            dividendos: ultimaPizarra.dividendos ?? null,
+            tickets: ticketsDeCarrera,
+            tasaComision: comisionNum,
+          })
+        : "",
+    [carrera, comisionNum, fecha, grupoCabecera, hipodromo, retirados, ticketsDeCarrera, ultimaPizarra]
   );
 
   const generarMensajeResultados = useCallback(
@@ -799,6 +833,11 @@ const hipodromosDelDia = useMemo(() => {
     const errores: string[] = [];
     const indicesError: number[] = [];
     const recortes: string[] = [];
+    /* Saldo del CLIENTE 1 ya comprometido por filas ANTERIORES de esta misma
+       carga (solo el que juega se debita: ver sql/taquilla_venta.sql). Se suma
+       recién cuando la venta se confirma, para no topar una fila por algo que
+       otra no llegó a cobrar. */
+    const descontado = new Map<string, number>();
     for (const f of filas) {
       if (!f.jugada.trim() && !f.monto.trim()) continue;
       /* Antes de la nomenclatura: un caballo que no corre no se puede cobrar
@@ -811,7 +850,7 @@ const hipodromosDelDia = useMemo(() => {
         indicesError.push(filas.indexOf(f));
         continue;
       }
-      const v = valida(f);
+      const v = valida(f, descontado);
       if (!v.ok) {
         errores.push(`Fila ${filas.indexOf(f) + 1}: ${v.motivo}`);
         indicesError.push(filas.indexOf(f));
@@ -861,6 +900,9 @@ const hipodromosDelDia = useMemo(() => {
         v.cliente1 && v.cliente2 && (v.cliente2?.cobroNeto ?? 0) > (v.cliente1?.cobroNeto ?? 0)
           ? v.cliente2.comision
           : (v.cliente1?.comision ?? 0);
+      /* La venta se cobró: lo autorizado baja el saldo del cliente 1 para topar
+         las próximas filas de esta carga (igual que la RPC, que ya lo debitó). */
+      descontado.set(String(c1.id), (descontado.get(String(c1.id)) ?? 0) + v.monto);
       agregarTicket({
         comando: `${v.monto} ${v.tipo}`,
         monto: v.monto,
@@ -1222,13 +1264,14 @@ const hipodromosDelDia = useMemo(() => {
           </thead>
           <tbody className="divide-y divide-line/70">
             {filas.map((f, i) => {
-              const v = valida(f);
+              const enCurso = proyeccionesCarga[i];
+              const v = enCurso ? enCurso.proyeccion : valida(f);
               const ejemplar = ejemplarResuelto(f.caballo);
               const rc = revisionCaballo(f.caballo);
               const caballoInvalido = !rc.ok;
               const rep = v.ok ? v.reparto : null;
               const recortado = !!rep?.recortado;
-              const aviso = avisoSaldo(f);
+              const aviso = avisoSaldo(f, enCurso?.cliente1 ?? null, enCurso?.cliente2 ?? null);
               return (
                 <tr key={i} className={`align-middle ${f.error ? "bg-red-50" : ""}`} title={f.error ?? undefined}>
                   <td className="gj-celda px-1 py-1 text-xs text-slate-400">
@@ -1339,7 +1382,7 @@ const hipodromosDelDia = useMemo(() => {
                   <td className="gj-celda px-1 py-1 align-middle">
                     <div className="flex flex-col gap-0.5">
                       <span className="block truncate leading-none">
-                        {infoCliente(f.cliente1, f.monto, v.ok && v.cliente1 ? v.cliente1.cobroNeto : 0)}
+                        {infoCliente(enCurso?.cliente1 ?? null, f.monto, v.ok && v.cliente1 ? v.cliente1.cobroNeto : 0)}
                       </span>
                       <SearchableSelect
                         options={opcionesClientes}
@@ -1356,7 +1399,7 @@ const hipodromosDelDia = useMemo(() => {
                   <td className="gj-celda px-1 py-1 align-middle">
                     <div className="flex flex-col gap-0.5">
                       <span className="block truncate leading-none">
-                        {infoCliente(f.cliente2, f.monto, v.ok && v.cliente2 ? v.cliente2.cobroNeto : 0)}
+                        {infoCliente(enCurso?.cliente2 ?? null, f.monto, v.ok && v.cliente2 ? v.cliente2.cobroNeto : 0)}
                       </span>
                       <SearchableSelect
                         options={opcionesClientes}
@@ -1385,7 +1428,9 @@ const hipodromosDelDia = useMemo(() => {
           </Guard>
           <Button size="sm" onClick={() => setFilas((f) => [...f, filaVacia()])}>＋ Agregar fila</Button>
           {(() => {
-            const avisos = filas.map((f) => avisoSaldo(f)).filter((x): x is string => !!x);
+            const avisos = filas
+              .map((f, i) => avisoSaldo(f, proyeccionesCarga[i]?.cliente1 ?? null, proyeccionesCarga[i]?.cliente2 ?? null))
+              .filter((x): x is string => !!x);
             if (!avisos.length) return null;
             return (
               <Button
@@ -1496,6 +1541,13 @@ const hipodromosDelDia = useMemo(() => {
           </button>
           <button
             type="button"
+            onClick={() => setMostrarPreliminarResultado(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-600"
+          >
+            🏁 Resultado Preliminar
+          </button>
+          <button
+            type="button"
             onClick={() => setMostrarHistorial(true)}
             className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700"
           >
@@ -1532,6 +1584,24 @@ const hipodromosDelDia = useMemo(() => {
               </button>
             </div>
             <PlanoPreliminar texto={planoPreliminarTexto} />
+          </div>
+        </div>
+      )}
+
+      {/* Vista separada: Resultado Preliminar (texto para copiar al grupo) */}
+      {mostrarPreliminarResultado && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-[#f8fafc]">
+          <div className="min-h-screen">
+            <div className="flex justify-end bg-[#f8fafc] p-2">
+              <button
+                type="button"
+                onClick={() => setMostrarPreliminarResultado(false)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-bold text-red-500 border border-red-300 hover:bg-red-50 shadow-sm"
+              >
+                <span className="text-red-400 text-sm leading-none">✕</span> Cerrar Resultado
+              </button>
+            </div>
+            <PreliminarResultados texto={preliminarResultadoTexto} />
           </div>
         </div>
       )}

@@ -325,24 +325,102 @@ export async function crearGrupo(datos: Partial<GrupoRow>): Promise<{ ok: boolea
   }
 }
 
+/** Errores típicos de "la función/RPC todavía no está aplicada en la base". */
+const RPC_AUSENTE = /does not exist|not found|PGRST202|PGRST204|schema cache/i;
+
 export async function actualizarGrupo(
   id: string | number,
   patch: Record<string, unknown>
 ): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
-    try {
+  try {
     exigirCapacidad("grupos:fn_guardar_grupo");
-    const { error } = await supabase.from("grupos_venta").update(patch).eq("id", id);
-    if (error) {
-      // Fallback a la RPC del legacy (js/grupos.js:366): club_actualizar_grupo
-      // recibe (p_id, p_datos jsonb) — solo se envían los campos presentes.
-      const datos: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(patch)) {
-        if (v !== undefined) datos[k] = v;
+
+    // Los días del ciclo NO pueden escribirse con un UPDATE suelto: `grupos_venta`
+    // tiene RLS de solo lectura (sql/semana_vigente.sql) y la RPC del legacy
+    // `club_actualizar_grupo` ni siquiera toca esas columnas. Se escriben por su
+    // RPC propia (security definer + valida 1..7, ver sql/actualizar_ciclo_grupo.sql).
+    // Si el SQL todavía no está aplicado (función ausente), los días vuelven al
+    // resto y se respeta el comportamiento anterior.
+    const tieneCiclo = "dia_inicio_semana" in patch || "dia_fin_semana" in patch;
+    const resto: Record<string, unknown> = { ...patch };
+    if (tieneCiclo) {
+      delete resto.dia_inicio_semana;
+      delete resto.dia_fin_semana;
+      const r = await supabase.rpc("club_actualizar_ciclo_grupo", {
+        p_grupo_id: String(id),
+        p_dia_inicio: Number(patch.dia_inicio_semana) || null,
+        p_dia_fin: Number(patch.dia_fin_semana) || null,
+      });
+      if (r.error && !RPC_AUSENTE.test(r.error.message)) {
+        return { ok: false, error: r.error.message };
       }
-      const rpc = await supabase.rpc("club_actualizar_grupo", { p_id: id, p_datos: datos });
-      if (rpc.error) return { ok: false, error: rpc.error.message };
+      if (r.error && RPC_AUSENTE.test(r.error.message)) {
+        resto.dia_inicio_semana = patch.dia_inicio_semana;
+        resto.dia_fin_semana = patch.dia_fin_semana;
+      }
     }
+
+    if (Object.keys(resto).length > 0) {
+      // Intento 1: UPDATE directo. PostgREST NO reporta error cuando el RLS
+      // esconde la fila: responde 200 con 0 filas. Por eso se pide la fila de
+      // vuelta y "0 filas" se trata como fallo (antes cantaba éxito sin guardar
+      // nada y nunca caía a la RPC de respaldo).
+      const { data, error } = await supabase
+        .from("grupos_venta")
+        .update(resto)
+        .eq("id", id)
+        .select("id");
+      const filas = Array.isArray(data) ? data.length : data ? 1 : 0;
+      if (error || filas === 0) {
+        // Intento 2: RPC del legacy (js/grupos.js:366): club_actualizar_grupo
+        // recibe (p_id, p_datos jsonb) — solo se envían los campos presentes.
+        const datos: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(resto)) {
+          if (v !== undefined) datos[k] = v;
+        }
+        const rpc = await supabase.rpc("club_actualizar_grupo", { p_id: id, p_datos: datos });
+        if (rpc.error) return { ok: false, error: rpc.error.message };
+      }
+    }
+
+    // Los días del ciclo solo los escribe la RPC nueva (club_actualizar_ciclo_grupo).
+    // Si no está aplicada (sql/actualizar_ciclo_grupo.sql) o el RLS escondió el
+    // UPDATE, la cadena anterior canta éxito sin guardar nada y el grupo vuelve
+    // a "Lunes" al recargar. Se verifica leyendo la fila de vuelta y, si el día
+    // pedido no quedó, se devuelve un error claro en vez de un falso éxito.
+    if (tieneCiclo) {
+      const pidioInicio = patch.dia_inicio_semana !== undefined && patch.dia_inicio_semana !== null
+        ? Number(patch.dia_inicio_semana)
+        : null;
+      const pidioFin = patch.dia_fin_semana !== undefined && patch.dia_fin_semana !== null
+        ? Number(patch.dia_fin_semana)
+        : null;
+      if (pidioInicio != null || pidioFin != null) {
+        const leidas = await supabase
+          .from("grupos_venta")
+          .select("dia_inicio_semana, dia_fin_semana")
+          .eq("id", id)
+          .maybeSingle();
+        // Si la lectura de vuelta falla (RLS) no se puede verificar: se respeta
+        // el resultado silencioso de la cadena anterior en vez de inventar un
+        // error. Solo se falla cuando YA se pudo leer la fila y el día pedido
+        // no quedó guardado.
+        if (!leidas.error && leidas.data) {
+          const fila = leidas.data as { dia_inicio_semana?: number | null; dia_fin_semana?: number | null };
+          const inicioOk = pidioInicio == null || Number(fila.dia_inicio_semana) === pidioInicio;
+          const finOk = pidioFin == null || Number(fila.dia_fin_semana) === pidioFin;
+          if (!inicioOk || !finOk) {
+            return {
+              ok: false,
+              error:
+                "El día de la semana no se guardó. Falta aplicar sql/actualizar_ciclo_grupo.sql en el SQL Editor de Supabase (crea la RPC club_actualizar_ciclo_grupo).",
+            };
+          }
+        }
+      }
+    }
+
     invalidarCacheGrupos();
     void registrarAuditoria("GRUPO", "ACTUALIZAR", `Grupo ${id} actualizado.`);
     return { ok: true };

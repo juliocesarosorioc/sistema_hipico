@@ -10,6 +10,11 @@ import { dividendosDePizarra as dividendosDe, ordenLlegadaDePizarra, posicionesD
 import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { Button } from "@/components/ui/Button";
+import { carreraReporteDetalle } from "@/lib/liquidacion/reportes";
+import { armarReporteCarrera } from "@/lib/liquidacion/reporte-carrera";
+import { exportarReporteCarreraImagen } from "@/lib/liquidacion/reporte-imagen";
+import { hoyLocal } from "@/lib/gaceta/programa";
+import ReporteCarrera, { type ReporteCarreraDatos } from "@/components/saldos/ReporteCarrera";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -45,6 +50,19 @@ export function PagarCarreraModal() {
     gananciaCasa: number;
   } | null>(null);
   const [tablaMensaje, setTablaMensaje] = useState("");
+  const [reporteCarrera, setReporteCarrera] = useState<ReporteCarreraDatos | null>(null);
+  const [cargandoReporte, setCargandoReporte] = useState(false);
+
+  /** Arma el «Reporte de Liquidación» con los datos REALES que dejó la liquidación. */
+  const verReporte = async () => {
+    setCargandoReporte(true);
+    try {
+      const c = await carreraReporteDetalle(hoyLocal(), hipodromo.trim().toUpperCase(), Number(carrera));
+      setReporteCarrera(c ? armarReporteCarrera(c) : null);
+    } finally {
+      setCargandoReporte(false);
+    }
+  };
 
   const detalle = (hipodromo || carrera || tablas.length)
     ? tablas.filter(
@@ -57,6 +75,7 @@ export function PagarCarreraModal() {
 
   const pagar = async (r: PizarraResultados) => {
     setCargandoResultados(false);
+    setReporteCarrera(null);
     if (!hipodromo.trim() || !carrera.trim()) {
       setResultado("Indica Hipódromo y N° de Carrera.");
       return;
@@ -258,6 +277,72 @@ export function PagarCarreraModal() {
             <p className="text-slate-500">Comisión casa</p>
             <p className="font-bold text-primary-600">{COP.format(resumen.gananciaCasa)}</p>
           </div>
+        </div>
+      )}
+
+      {resumen && !reporteCarrera && (
+        <div className="mt-3">
+          <Button variant="outline" disabled={cargandoReporte} onClick={() => void verReporte()}>
+            {cargandoReporte ? "Armando reporte…" : "🔎 Ver Reporte de Liquidación"}
+          </Button>
+          {cargandoReporte && (
+            <span className="ml-2 text-[10px] font-semibold text-slate-400">
+              Leyendo la carrera recién liquidada…
+            </span>
+          )}
+        </div>
+      )}
+
+      {reporteCarrera && (
+        <div className="mt-4">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[11px] font-semibold text-slate-500">
+              Reporte de liquidación · {hipodromo.trim().toUpperCase()} · Carrera {carrera}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const base = `reporte_liquidacion_${hipodromo
+                    .trim()
+                    .toUpperCase()
+                    .replace(/[^a-z0-9]+/gi, "_")}_C${String(carrera).trim()}`;
+                  void exportarReporteCarreraImagen("PNG", base).then((ok) =>
+                    ok
+                      ? toast("Imagen PNG del reporte generada.", "success")
+                      : toast("No se pudo capturar el reporte como imagen.", "error")
+                  );
+                }}
+              >
+                🖼️ Imagen PNG
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const base = `reporte_liquidacion_${hipodromo
+                    .trim()
+                    .toUpperCase()
+                    .replace(/[^a-z0-9]+/gi, "_")}_C${String(carrera).trim()}`;
+                  void exportarReporteCarreraImagen("JPG", base).then((ok) =>
+                    ok
+                      ? toast("Imagen JPG del reporte generada.", "success")
+                      : toast("No se pudo capturar el reporte como imagen.", "error")
+                  );
+                }}
+              >
+                🖼️ Imagen JPG
+              </Button>
+              <Button size="sm" onClick={() => window.print()}>
+                🖨️ Imprimir a PDF
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setReporteCarrera(null)}>
+                Cerrar reporte
+              </Button>
+            </div>
+          </div>
+          <ReporteCarrera datos={reporteCarrera} />
         </div>
       )}
 

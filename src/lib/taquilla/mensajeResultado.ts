@@ -19,6 +19,8 @@
 import {
   relacionJugadas,
   relacionResultados,
+  cabeceraCarrera,
+  fmtMonto,
   type JugadaRelacion,
   type MetaCarrera,
 } from "../reportGenerator";
@@ -231,4 +233,115 @@ export function mensajePlanoDeCarrera(opts: OpcionesMensajePlano): string {
     retirados: opts.retirados?.trim() || undefined,
   };
   return relacionJugadas(meta, opts.tickets.map(jugadaRelacionDeTicket));
+}
+
+// ============================================================
+// PRELIMINAR DE RESULTADOS (post-carrera, sin balance)
+// ============================================================
+
+export type OpcionesPreliminarResultado = {
+  hipodromo: string;
+  carrera: number | string;
+  /** Fecha de la carrera ("YYYY-MM-DD" o Date). Si falta, se usa hoy. */
+  fecha?: string | Date;
+  /** Nombre del grupo que encabeza la relación (por defecto el hipódromo). */
+  grupo?: string;
+  retirados?: string;
+  pizarra: PizarraCarrera;
+  dividendos?: Record<string, number> | null;
+  tickets: TicketMensaje[];
+  tasaComision?: number | null;
+};
+
+export type VeredictoJugada = "GANA" | "PIERDE" | "PENDIENTE" | "ANULADA";
+
+/**
+ * Veredicto corto de una jugada contra el motor universal (solo pizarra +
+ * dividendos): GANA / PIERDE / PENDIENTE (falta dato que cuantifica el premio)
+ * / ANULADA (el motor devolvió el capital: empate oficial o NINI que termina
+ * justo en el puesto N). Sin balance de dinero.
+ */
+export function veredictoDeJugada(
+  t: TicketMensaje,
+  pizarra: PizarraCarrera,
+  dividendos: Record<string, number> | null,
+  tasaComision?: number | null
+): VeredictoJugada {
+  const { res } = resultadoDeJugada(t, pizarra, dividendos, tasaComision);
+  if (res.indeterminado) return "PENDIENTE";
+  if (res.ok) return "GANA";
+  // El motor devuelve el capital (`totalClienteNeto` = monto) con ok:false en
+  // los empates oficiales y los NINI que caen justo en el puesto N: no es una
+  // pérdida, es una anulación (el "Juega" recupera su dinero).
+  if (res.totalClienteNeto > 0) return "ANULADA";
+  return "PIERDE";
+}
+
+const EMOJI_VEREDICTO: Record<VeredictoJugada, string> = {
+  GANA: "✅",
+  PIERDE: "❌",
+  PENDIENTE: "⏳",
+  ANULADA: "🔁",
+};
+
+/** Línea TERCIOS de una jugada con su veredicto: "1) Juega X 2Y2N (3) con 6.000,00 da Y → ✅ GANA". */
+function lineaJugadaConVeredicto(
+  j: JugadaRelacion,
+  i: number,
+  veredicto: VeredictoJugada
+): string {
+  const partes = [j.clienteJuega];
+  if (String(j.jugada ?? "").trim()) partes.push(String(j.jugada).trim());
+  if (String(j.caballo ?? "").trim()) partes.push(`(${String(j.caballo).trim()})`);
+  partes.push(`con ${fmtMonto(j.monto)}`);
+  if (String(j.clienteConsigue ?? "").trim()) partes.push(`da ${String(j.clienteConsigue).trim()}`);
+  return `${i + 1}) Juega ${partes.join(" ")} → ${EMOJI_VEREDICTO[veredicto]} ${veredicto}`;
+}
+
+/**
+ * PRELIMINAR DE RESULTADOS: el texto que se copia al grupo apenas se confirma
+ * la pizarra, ANTES de liquidar. Cabecera con la pizarra de llegada + cada
+ * jugada con su veredicto rápido GANA / PIERDE / PENDIENTE (según el motor),
+ * SIN el balance de dinero ni el cierre POSITIVOS/NEGATIVOS.
+ */
+export function mensajePreliminarDeCarrera(opts: OpcionesPreliminarResultado): string {
+  const fecha =
+    opts.fecha instanceof Date
+      ? opts.fecha
+      : opts.fecha
+        ? new Date(`${String(opts.fecha).slice(0, 10)}T12:00:00`)
+        : new Date();
+
+  const meta: MetaCarrera = {
+    grupo: opts.grupo?.trim() || opts.hipodromo,
+    fecha,
+    hipodromo: opts.hipodromo,
+    carrera: opts.carrera,
+    retirados: opts.retirados?.trim() || undefined,
+    pizarra: pizarraParaMensaje(opts.pizarra),
+  };
+
+  const lineas = opts.tickets.map((t, i) => {
+    const { relacion } = resultadoDeJugada(t, opts.pizarra, opts.dividendos ?? null, opts.tasaComision);
+    const veredicto = veredictoDeJugada(t, opts.pizarra, opts.dividendos ?? null, opts.tasaComision);
+    return lineaJugadaConVeredicto(relacion, i, veredicto);
+  });
+
+  const pendientes = opts.tickets.filter(
+    (t) => veredictoDeJugada(t, opts.pizarra, opts.dividendos ?? null, opts.tasaComision) === "PENDIENTE"
+  ).length;
+
+  return [
+    "🏁 RESULTADO PRELIMINAR",
+    cabeceraCarrera(meta),
+    "",
+    ...lineas,
+    "",
+    "------------------------------",
+    `Total jugadas: ${opts.tickets.length}`,
+    pendientes > 0
+      ? `⏳ ${pendientes} jugada(s) PENDIENTE(s) — falta el dividendo oficial que cuantifica el premio.`
+      : "PRELIMINAR — veredicto según la pizarra; el pago oficial lo confirma la liquidación.",
+    "La guía es el chat · RECLAMOS AL PRIVADO",
+  ].join("\n");
 }

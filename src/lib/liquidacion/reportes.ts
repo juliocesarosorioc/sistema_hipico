@@ -451,6 +451,21 @@ async function carreraReporte(
   };
 }
 
+/**
+ * Reporte de UNA carrera (hipódromo + fecha + n°): filas liquidadas + pizarra
+ * oficial, con el MISMO motor de neteo que el consolidado. Es la fuente del
+ * «Reporte de Liquidación» (plantilla ReporteCarrera) tanto del selector de
+ * Saldos/Reportes como del «Ver Reporte» de PagarCarreraModal apenas se paga.
+ */
+export async function carreraReporteDetalle(
+  fecha: string,
+  hipodromo: string,
+  numero: number | string,
+  tasaComision?: number | null
+): Promise<CarreraReporte | null> {
+  return carreraReporte(fecha, hipodromo, Number(numero), tasaComision);
+}
+
 async function hipodromoReporte(fecha: string, hipodromo: string, tasaComision?: number | null): Promise<HipodromoReporte> {
   const carreras: CarreraReporte[] = [];
   const numeros = await listarCarrerasPorDia(fecha, hipodromo);

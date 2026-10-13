@@ -1081,7 +1081,115 @@ Editor y `npx supabase functions deploy crear-grupo`.
 
 ---
 
+## 2026-10-12 (tarde) — Reporte de Liquidación conectado + bug de ciclo del grupo
+
+### Reporte de Liquidación por Carrera (antes: plantilla desconectada)
+
+**Hallazgo honesto:** la plantilla `ReporteCarrera` existía pero NADIE le pasaba
+`datos` — la página `/saldos-reportes` la mostraba vacía y pagar una carrera no
+generaba nada. Ahora está conectada al motor oficial (`lib/liquidacion/reportes.ts`):
+
+- `lib/liquidacion/reporte-carrera.ts` (nuevo, PURO) — `armarReporteCarrera(c)`:
+  traduce la `CarreraReporte` liquidada a `ReporteCarreraDatos` (JUEGA ↔ DA
+  pareados por ticket, "Parada Adelantadas" por tipo de jugada Tablas/Marcas/
+  Tercios, resumen Ganan/Pierden por cliente). Sin CRUCE como jugada.
+- `lib/liquidacion/reportes.ts::carreraReporteDetalle(fecha, hipo, n)` (nuevo,
+  exportado) — reporte de UNA carrera sin recalcular el consolidado.
+- `components/saldos/SelectorReporteCarrera.tsx` (nuevo) — grupo → semana fiscal
+  → carrera con movimiento → arma el reporte con datos reales.
+- `app/(dashboard)/saldos-reportes/page.tsx` — usa el selector (tu `ReporteModule`
+  intacto).
+- `components/taquilla/PagarCarreraModal.tsx` — tras liquidar, «Ver Reporte de
+  Liquidación» arma el reporte de esa carrera recién pagada (imprimible).
+- `pruebas/reporte-carrera.test.ts` — 25 aserciones del armado.
+
+Flujo real verificado en código: **cargar jugadas → Pagar Carrera (pizarra) →
+se centraliza en `resultados_carreras` + saldos → el reporte se arma con las
+filas liquidadas del motor oficial.**
+
+### Bug: editar "Fecha Inicio / Fin" del grupo no guardaba (CORREGIDO)
+
+Doble causa: (1) RLS de solo lectura en `grupos_venta` (semana_vigente.sql) hace
+que el `UPDATE` directo resuelva en 0 filas SIN error y el código cantaba éxito;
+(2) la RPC legacy `club_actualizar_grupo` no escribe `dia_inicio_semana` /
+`dia_fin_semana`. Fix:
+
+- `sql/actualizar_ciclo_grupo.sql` (nuevo, **aplicar en el SQL Editor**) —
+  `club_actualizar_ciclo_grupo(p_grupo_id, p_dia_inicio, p_dia_fin)`, `security
+  definer`, valida 1..7, exec solo a `authenticated`.
+- `lib/grupos.ts::actualizarGrupo` — enruta los días del ciclo por esa RPC y
+  ahora detecta el "0 filas sin error" del UPDATE directo para caer a la RPC de
+  respaldo (deja de mentir con éxito).
+- 2026-10-12 (noche): si pese a todo los días no quedaron escritos (RPC aún sin
+  aplicar), `actualizarGrupo` lee la fila de vuelta y devuelve un error que dice
+  exactamente qué falta aplicar — antes el guardado "exitoso" dejaba el grupo en
+  Lunes sin avisar. Para que el cambio de día se vea reflejado hay que ejecutar
+  `sql/actualizar_ciclo_grupo.sql` en el SQL Editor de Supabase.
+
+### Resultado Preliminar (vista separada) + Reporte de Liquidación como imagen
+
+Dos entregables nuevos, sin tocar el motor ni la liquidación:
+
+- **Preliminar de Resultados** (`lib/taquilla/mensajeResultado.ts`) —
+  `mensajePreliminarDeCarrera` + `veredictoDeJugada`: cabecera con la pizarra de
+  llegada + UNA línea por jugada con el veredicto del MOTOR (✅ GANA / ❌ PIERDE /
+  ⏳ PENDIENTE / 🔁 ANULADA), **sin balance de dinero**. El veredicto reusa
+  `resultadoDeJugada`/`liquidarOficial`, así que refleja lo que pagará la
+  liquidación. Se abre como vista full-screen desde Gestión de Jugadas
+  (`components/gestion/PreliminarResultados.tsx`, botón «🏁 Resultado Preliminar»,
+  con botón Copiar para pegar al grupo).
+- **Reporte de Liquidación como imagen** (`lib/liquidacion/reporte-imagen.ts`) —
+  `exportarReporteCarreraImagen("PNG"|"JPG", nombreBase)` captura el
+  `#reporte-imprimible` (plantilla `ReporteCarrera`) con la misma cadena
+  endurecida de `lib/impresion/exportar.ts` (html2canvas). Botones «🖼️ Imagen
+  PNG/JPG» en `SelectorReporteCarrera` (Saldos/Reportes) y en `PagarCarreraModal`
+  (junto a «Imprimir a PDF»).
+- `pruebas/preliminar-resultado.test.ts` — 24 aserciones del armado y los
+  veredictos (incluye ANULADA por NINI que empata en el puesto N y PENDIENTE por
+  dividendo sin cargar).
+
+### Carga Rápida: el "match" `(4x7)` + tope de saldo EN ORDEN
+
+Dos arreglos sobre la carga de jugadas, sin tocar el motor:
+
+- **`(4x7)` ahora se lee** (`lib/taquilla/validar.ts`) — la línea
+  `Juega Alana (4x7) con 7.000,00 da Pajaro` caía en «No se detectó una JUGADA
+  válida». Es una jugada de **encuentro (match)**: Alana va al 4 y Pájaro al 7.
+  La `x` entre UN solo ejemplar de cada lado NO es una expresión de ejemplares
+  dividida: es la MISMA expresión la que sirve de **JUGADA** (enfrentamiento) y
+  **CABALLO** (qué va cada cliente). Vale igual sin paréntesis (`6x7`). Las
+  expresiones con varios ejemplares por lado o separador interno (`1-2x3-4`,
+  `1*6`) siguen siendo CABALLO dividido. Así la fila entra con JUGADA · CABALLO
+  · MONTO · CL1 · CL2 y sin marca de revisión.
+- **Tope de saldo en orden** (nuevo `lib/taquilla/saldosEnCurso.ts`, módulo
+  PURO) — antes, con dos jugadas del MISMO cliente, cada fila veía el saldo
+  entero: la segunda se autorizaba completa y al cobrar la RPC
+  `club_vender_jugada` (que sí descuenta en una transacción) la rechazaba por
+  saldo y la venta se perdía. Ahora se recorre el plano en orden y se descuenta
+  del **cliente 1** lo autorizado en las filas anteriores (el dador NO se
+  debita). La vista previa (celda «Saldo/Max», aviso de saldo y color de
+  recorte) y el cobro usan el mismo tope, así que lo que se ve es lo que pasa.
+  **Borde cubierto:** cuando el disponible se AGOTA (p. ej. 3 jugadas de 600 con
+  saldo 1000 → 600 · 400 · …), la fila sin saldo ya no cae al monto pedido: la
+  proyección la rechaza con el motivo del reparto (`lib/taquilla/validar.ts`), así
+  la vista previa y el cobro coinciden y no se intenta una venta que la RPC
+  rechazaría. Sin datos de cliente y en modo «libre» la proyección sigue
+  autorizando el monto pedido (comportamiento intacto).
+- `pruebas/saldos-en-curso.test.ts` — 24 aserciones (dos jugadas del mismo
+  cliente, clientes distintos, dador sin descuento, fila ilegible que no
+  descuenta, el aval que no baja, el borde del disponible agotado —600 · 400 ·
+  rechazada— y las regresiones de cliente desconocido / modo libre).
+- `pruebas/normalizar-carga.test.ts` — +6 aserciones del match `(4x7)`/`6x7` y
+  de la regresión de `1-2x3-4` (que sigue siendo CABALLO dividido).
+
+---
+
 *Última actualización: 2026-10-12 (fases de profesionalización: mocks limpiados +
 EmptyState, multi-tenant/RBAC confirmado sobre el esquema real, seed de blindaje
 de josorioc con trigger de inmutabilidad, y módulo de Creación de Grupos con
-wizard 3 pasos + edge function `crear-grupo` latas pendientes de desplegar).*
+wizard 3 pasos + edge function `crear-grupo` latas pendientes de desplegar;
+por la tarde: reporte de liquidación conectado a datos reales + fix del ciclo
+del grupo con `sql/actualizar_ciclo_grupo.sql` pendiente de aplicar; al cierre:
+Carga Rápida lee el "match" `(4x7)`, el tope de saldo se descuenta EN ORDEN por
+cliente —incluido el borde en que el disponible se agota— verificados con una
+batería de ejercicios).*

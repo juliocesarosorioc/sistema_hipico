@@ -99,6 +99,61 @@ console.log("\n== Regresión del parser legacy (parsearLineaRapida) ==");
 }
 
 // ---------------------------------------------------------------------------
+// 1b. EMPAREJAMIENTO PELADO "4x7" / "(4x7)" (la jugada "match" del locutor)
+// ---------------------------------------------------------------------------
+console.log("\n== Emparejamiento pelado: match Alana(4) vs Pajaro(7) ==");
+
+{
+  // La línea tal como llegó (bug 2026-10-12): el locutor escribe el "match"
+  // con paréntesis. Antes: "No se detectó una JUGADA válida" y la línea se
+  // perdía; ahora la MISMA expresión es JUGADA (enfrentamiento) y CABALLO
+  // (qué va cada cliente).
+  const p = parsearLineaRapida("Juega Alana (4x7) con 7.000,00 da Pajaro");
+  si(
+    p?.ok === true && p.ok && p.jugada === "4X7" && p.caballo === "4X7" &&
+      p.monto === "7000" && p.cliente1 === "Alana" && p.cliente2 === "Pajaro",
+    '"(4x7)" → JUGADA 4X7 · CABALLO 4X7 · 7000 · Alana·Pajaro', JSON.stringify(p)
+  );
+}
+{
+  const c = clasificarLineaRapida("(4x7) 7000 Alana Pajaro");
+  si(
+    c?.ok === true && c.ok && c.jugada === "4X7" && c.caballo === "4X7" && c.monto === "7000" &&
+      c.restantes.join("|") === "Alana|Pajaro",
+    '"(4x7) 7000 Alana Pajaro" → 4X7·4X7·7000·[Alana|Pajaro]', JSON.stringify(c)
+  );
+}
+{
+  const c = clasificarLineaRapida("6x7 100 Ana");
+  si(c?.ok === true && c.ok && c.jugada === "6X7" && c.caballo === "6X7" && c.monto === "100",
+    '"6x7 100 Ana" (sin paréntesis) → 6X7·6X7·100', JSON.stringify(c));
+}
+{
+  // Regresión: una expresión con VARIOS ejemplares por lado sigue siendo
+  // CABALLO dividido (dos clientes repartidos), NO un emparejamiento.
+  const c = clasificarLineaRapida("1-2x3-4 1p 100 Ana");
+  si(c?.ok === true && c.ok && c.jugada === "1P" && c.caballo === "1-2X3-4",
+    '"1-2x3-4 1p" → JUGADA 1P · CABALLO dividido 1-2X3-4', JSON.stringify(c));
+}
+{
+  // End-to-end: la línea numerada del plano entra con TODO en "exacto" (sin
+  // marca de revisión) y cada cliente queda con su nombre del catálogo.
+  const r = normalizarLineaRapida("9) Juega Alana (4x7) con 7.000,00 da Pajaro", {
+    clientes: [{ nombre: "Alana" }, { nombre: "Pajaro" }],
+  });
+  si(
+    r?.ok === true && r.ok && r.jugada === "4X7" && r.caballo === "4X7" && r.monto === "7000" &&
+      r.cliente1 === "Alana" && r.cliente2 === "Pajaro",
+    "end-to-end: 4X7·4X7·7000·Alana·Pajaro", JSON.stringify(r)
+  );
+  si(
+    r?.ok === true && r.ok && r.confianza.jugada === "exacto" && r.confianza.caballo === "exacto" &&
+      r.confianza.monto === "exacto" && r.confianza.cliente1 === "exacto" && r.confianza.cliente2 === "exacto",
+    "todos los campos en 'exacto' (la fila NO queda en rojo de revisión)", JSON.stringify(r)
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 2. NÚMEROS HABLADOS → DÍGITOS
 // ---------------------------------------------------------------------------
 console.log("\n== Expansión numérica (palabras → dígitos) ==");
