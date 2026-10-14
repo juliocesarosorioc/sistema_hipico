@@ -371,7 +371,7 @@ permisos del middleware.
 - [x] Activar el botón **"Preliminar Resultado (Ctrl+Y)"** (`html/taquilla.html:150`).
 - [x] Conectar el campo `inputRetirados` (`html/taquilla.html:79`) — pre-marca retiros y recibe el resultado.
 - [x] Desarrollar motor de dividendos por tipo de jugada (`js/components/calculo_dividendos.js`) + modal de captura/ajuste.
-- [ ] Aplicar el resultado de `resultados_carreras` en **liquidaciones/Saldos** (vincular dividendos al pago de premios).
+- [x] Aplicar el resultado de `resultados_carreras` en **liquidaciones/Saldos** (vincular dividendos al pago de premios). (`src/lib/liquidacion/pagarYCerrar.ts` usa `dividendosDe()` que lee `resultados_carreras`; `aplicarLiquidacionSaldos` persiste premios).
 
 ### Tablas Fijas
 - [x] Eliminar carga de resultados desde el módulo de Tablas (completado).
