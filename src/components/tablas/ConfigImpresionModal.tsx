@@ -3,10 +3,18 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { MATRIZ_CSS, paginasMatrizHTML, cargarMatrizImpresion, cargarResumenImpresion, totalEjemplares, type TablaImpresion, type TablaRespaldo } from "@/lib/impresion/tablas";
 import { REPORTE_CSS, paginasReporteHTML, cargarReporteJugadores, resumirReporteJugadores, type JugadorReporte } from "@/lib/impresion/reporte";
-import { exportarPaginas, textoWhatsAppMatriz, textoWhatsAppReporte, type ImgFormato } from "@/lib/impresion/exportar";
+import {
+  exportarPaginas,
+  construirTextoWhatsAppMatriz,
+  construirTextoWhatsAppReporte,
+  textoWhatsAppMatriz,
+  textoWhatsAppReporte,
+  type ImgFormato,
+} from "@/lib/impresion/exportar";
 import { DIM_PAGINA, type Orientacion } from "@/lib/impresion/util";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
+import { enviarAlGrupoWsp } from "@/lib/whatsapp";
 
 type TipoReporte = "matriz" | "reporte";
 type Paso = "config" | "generar";
@@ -47,6 +55,7 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
   const [errorBd, setErrorBd] = useState("");
   const [cargando, setCargando] = useState(false);
   const [exportando, setExportando] = useState("");
+  const [enviandoGrupo, setEnviandoGrupo] = useState(false);
   const exportRootRef = useRef<HTMLDivElement>(null);
 
   const dim = DIM_PAGINA[orientacion];
@@ -236,6 +245,27 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
     toast("WhatsApp abierto con el mensaje de tablas (plantilla editable en el Centro de WhatsApp).", "success");
   };
 
+  /**
+   * Envío DIRECTO al grupo vinculado por la WhatsApp Business Cloud API (sin
+   * pasar por wa.me). Usa el mismo texto/plantilla que el botón de WhatsApp,
+   * pero lo entrega la Edge Function `whatsapp-enviar` con la sesión del staff.
+   * Si la integración no está configurada, la función devuelve el motivo y se
+   * muestra en el toast; el botón de wa.me sigue disponible como respaldo.
+   */
+  const enviarGrupo = async () => {
+    if (vacio) {
+      toast("No hay datos para enviar.", "warning");
+      return;
+    }
+    const texto = tipo === "matriz" ? construirTextoWhatsAppMatriz(filtradasMatriz) : construirTextoWhatsAppReporte(filtradosJugadores);
+    setEnviandoGrupo(true);
+    const res = await enviarAlGrupoWsp(texto, "tablas");
+    setEnviandoGrupo(false);
+    if (!res) return toast("No se pudo contactar la integración de WhatsApp.", "error");
+    if (res.ok) toast("Tablas enviadas al grupo vinculado.", "success");
+    else toast(res.error || "No se pudo enviar al grupo.", "error");
+  };
+
   if (!abierto) return null;
 
   const btn = (color: string, label: string, onClick: () => void, disabled = false) => (
@@ -358,6 +388,12 @@ export function ConfigImpresionModal({ abierto, onCerrar, tablasRespaldo }: Prop
                     {exportando ? exportando : `${numPaginas} pág.`}
                   </span>
                   {btn("#25d366", "💬 WhatsApp", whatsapp)}
+                  {btn(
+                    "#0ea5e9",
+                    enviandoGrupo ? "⏳ Enviando…" : "📤 Al grupo",
+                    () => void enviarGrupo(),
+                    Boolean(exportando) || enviandoGrupo
+                  )}
                   {btn("#2563eb", "🖼️ Imagen PNG", () => void exportar("PNG"), !!exportando)}
                   {btn("#dc2626", "📄 PDF", () => void exportar("PDF"), !!exportando)}
                 </>

@@ -889,8 +889,14 @@ grupo lo pone el usuario en la UI (el webhook no trae subject).
       panel muestra "Integración no configurada".
 - [ ] **Plantillas para fuera de la ventana de 24 h** (extensión futura de
       `whatsapp-enviar` con `type:"template"`).
-- [ ] **Texto libre de Tablas y Marcas al grupo** — hoy esos botones siguen
-      con `waLink()`/placeholder; migrarlos al envío por API queda a elección.
+- [x] **Texto libre de Tablas y Marcas al grupo** — los botones **📤 Al grupo**
+      de `ConfigImpresionModal.tsx` (Tablas) y `PanelMarcas.tsx` (Marcas) envían
+      el mismo texto/plantilla al grupo vinculado vía `enviarAlGrupoWsp`
+      (`whatsapp-enviar`), sin abrir `wa.me`. El texto se construye en funciones
+      PURAS (`construirTextoWhatsAppMatriz/Reporte` en `impresion/exportar.ts` y
+      `construirTextoWhatsAppMarcas` en `impresion/marcas.ts`) para reutilizarlo en
+      los dos caminos; el botón de `wa.me` queda como respaldo. Pruebas:
+      `pruebas/tablas-marcas-grupo.test.ts` (24 aserciones).
 
 ---
 

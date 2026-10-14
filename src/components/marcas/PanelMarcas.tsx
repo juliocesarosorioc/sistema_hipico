@@ -8,9 +8,11 @@ import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import { type CarreraCentral, type EjemplarCarreraCentral } from "@/lib/carreras/central";
 import { useRegistroCentralOpts } from "@/store/useRegistroCentral";
 import { exportarPaginas, type ImgFormato } from "@/lib/impresion/exportar";
+import { enviarAlGrupoWsp } from "@/lib/whatsapp";
 import {
   paginasMarcasHTML,
   resumenMarcas,
+  construirTextoWhatsAppMarcas,
   textoWhatsAppMarcas,
   type BloqueMarcas,
 } from "@/lib/impresion/marcas";
@@ -131,6 +133,8 @@ export function PanelMarcas() {
   const exportRootRef = useRef<HTMLDivElement>(null);
   /** Etiqueta de progreso mientras se captura PNG / JPG / PDF. */
   const [exportando, setExportando] = useState("");
+  /** Envío en curso al grupo vinculado por la Cloud API. */
+  const [enviandoGrupo, setEnviandoGrupo] = useState(false);
 
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -356,6 +360,22 @@ export function PanelMarcas() {
   };
 
   /**
+   * Envío DIRECTO de la hoja de marcas al grupo vinculado por la WhatsApp
+   * Business Cloud API (sin wa.me). Mismo texto/plantilla que `enviarWsp`, pero
+   * lo entrega la Edge Function `whatsapp-enviar`. Si la integración no está
+   * configurada, el error de la función se muestra en el toast.
+   */
+  const enviarGrupo = async () => {
+    if (!conDatos) return toast("No hay carreras con marcas para enviar.", "warning");
+    setEnviandoGrupo(true);
+    const res = await enviarAlGrupoWsp(construirTextoWhatsAppMarcas(bloquesEnvio, fecha), "marcas");
+    setEnviandoGrupo(false);
+    if (!res) return toast("No se pudo contactar la integración de WhatsApp.", "error");
+    if (res.ok) toast("Hoja de marcas enviada al grupo vinculado.", "success");
+    else toast(res.error || "No se pudo enviar al grupo.", "error");
+  };
+
+  /**
    * Borrar la configuración NO toca los tickets ya vendidos: la jerarquía de cada
    * jugada quedó congelada en el snapshot del ticket (`nota_auditoria`) y
    * `club_liquidar_marca` lee ese snapshot, no `marcas_carrera`. Lo que sí se
@@ -442,6 +462,16 @@ export function PanelMarcas() {
             title="Enviar la hoja de marcas del día por WhatsApp"
           >
             📤 WhatsApp
+          </Button>
+          <Button
+            variant="default"
+            size="md"
+            onClick={() => void enviarGrupo()}
+            disabled={!conDatos || Boolean(exportando) || enviandoGrupo}
+            className="bg-sky-600 hover:bg-sky-500"
+            title="Enviar la hoja de marcas al grupo vinculado por la API de WhatsApp (sin abrir wa.me)"
+          >
+            {enviandoGrupo ? "⏳ Enviando…" : "📤 Al grupo"}
           </Button>
           {(["PNG", "JPG", "PDF"] as ImgFormato[]).map((f) => (
             <Button

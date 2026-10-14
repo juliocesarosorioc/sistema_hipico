@@ -320,10 +320,14 @@ function fmtNum(n: number): string {
 /**
  * Texto WhatsApp de la MATRIZ (resumen por carrera), generado con la plantilla
  * editable "tablas_matriz" del Centro de WhatsApp ({fecha} {lineas} {totales}).
+ *
+ * PURA: arma y devuelve el texto SIN abrir ninguna ventana. La separación existe
+ * porque el mismo texto se usa en dos caminos: el envío manual por `wa.me`
+ * (`textoWhatsAppMatriz`) y el envío al grupo vinculado por la Cloud API
+ * (`enviarAlGrupoWsp`) desde el modal de impresión.
  */
-export function textoWhatsAppMatriz(
-  carreras: Array<{ hipodromo: string; carrera: string; superficie: string; fecha: string; moneda: string; ejemplares: unknown[]; premio: number }>,
-  telefono = "584141234567"
+export function construirTextoWhatsAppMatriz(
+  carreras: Array<{ hipodromo: string; carrera: string; superficie: string; fecha: string; moneda: string; ejemplares: unknown[]; premio: number }>
 ): string {
   const lineas = carreras
     .map((c) => `${c.hipodromo} C${c.carrera} · ${c.superficie || ""} · ${String(c.fecha).slice(0, 10)} · ${c.ejemplares.length} ej. · PAGO/TABLA ${fmtNum(c.premio)}\n`)
@@ -333,7 +337,18 @@ export function textoWhatsAppMatriz(
   if (!plantilla.trim()) {
     plantilla = "TABLAS FIJAS PUBLICADAS {fecha}\n{lineas}\nTOTAL EJEMPLARES: {totales}\nNORMAS: válida solo para la carrera y el ejemplar indicados. Presente en caja.";
   }
-  const texto = reemplazarVarsTablas(plantilla, { fecha: fechaHoy(), lineas, totales });
+  return reemplazarVarsTablas(plantilla, { fecha: fechaHoy(), lineas, totales });
+}
+
+/**
+ * Texto de la MATRIZ + abre `wa.me` (contrato histórico: devuelve el texto).
+ * Con `telefono=""` abre WhatsApp sin destinatario, para reenviar al grupo a mano.
+ */
+export function textoWhatsAppMatriz(
+  carreras: Array<{ hipodromo: string; carrera: string; superficie: string; fecha: string; moneda: string; ejemplares: unknown[]; premio: number }>,
+  telefono = "584141234567"
+): string {
+  const texto = construirTextoWhatsAppMatriz(carreras);
   window.open(`https://wa.me/${telefono}?text=${encodeURIComponent(texto)}`, "_blank");
   return texto;
 }
@@ -341,10 +356,10 @@ export function textoWhatsAppMatriz(
 /**
  * Texto WhatsApp del REPORTE (resumen por jugador), generado con la plantilla
  * editable "tablas_reporte" del Centro de WhatsApp ({fecha} {lineas} {totales}).
+ * PURA (sin abrir ventana): ver `construirTextoWhatsAppMatriz`.
  */
-export function textoWhatsAppReporte(
-  jugadores: Array<{ jugador: string; grupo: string; nivel: string; montoJugado: number; montoPagado: number }>,
-  telefono = "584141234567"
+export function construirTextoWhatsAppReporte(
+  jugadores: Array<{ jugador: string; grupo: string; nivel: string; montoJugado: number; montoPagado: number }>
 ): string {
   const lineas = jugadores
     .map((p) => `${p.jugador} [${p.grupo} - ${p.nivel}] JUGADO ${fmtNum(p.montoJugado)} / PAGADO ${fmtNum(p.montoPagado)}`)
@@ -354,7 +369,15 @@ export function textoWhatsAppReporte(
   if (!plantilla.trim()) {
     plantilla = "REPORTE DE TABLAS {fecha}\n{lineas}\nDiferencia total: {totales}\nNORMAS: reporte de control interno de tablas fijas.";
   }
-  const texto = reemplazarVarsTablas(plantilla, { fecha: fechaHoy(), lineas, totales });
+  return reemplazarVarsTablas(plantilla, { fecha: fechaHoy(), lineas, totales });
+}
+
+/** Texto del REPORTE + abre `wa.me` (contrato histórico: devuelve el texto). */
+export function textoWhatsAppReporte(
+  jugadores: Array<{ jugador: string; grupo: string; nivel: string; montoJugado: number; montoPagado: number }>,
+  telefono = "584141234567"
+): string {
+  const texto = construirTextoWhatsAppReporte(jugadores);
   window.open(`https://wa.me/${telefono}?text=${encodeURIComponent(texto)}`, "_blank");
   return texto;
 }

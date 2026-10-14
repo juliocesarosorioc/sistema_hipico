@@ -60,6 +60,7 @@
     "./searchable-select.test.ts",
     "./whatsapp-jugadas.test.ts",
     "./taquilla-venta.test.ts",
+    "./tablas-marcas-grupo.test.ts",
     "./normalizar-carga.test.ts",
     "./reporte-carrera.test.ts",
     "./mensaje-resultado.test.ts",

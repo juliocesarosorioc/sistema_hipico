@@ -196,13 +196,12 @@ function lineasWhatsApp(bloques: BloqueMarcas[]): string {
 /**
  * Texto WhatsApp de la hoja de marcas, con la plantilla editable
  * `marcas_hoja` del Centro de WhatsApp ({fecha} {hipodromo} {lineas} {totales}).
- * Abre wa.me y devuelve el texto (mismo contrato que textoWhatsAppMatriz).
+ *
+ * PURA: arma y devuelve el texto SIN abrir wa.me. La separación permite
+ * reutilizar el mismo texto en el envío al grupo vinculado por la Cloud API
+ * (`enviarAlGrupoWsp`) desde el panel, además del envío manual por `wa.me`.
  */
-export function textoWhatsAppMarcas(
-  bloques: BloqueMarcas[],
-  fecha: string,
-  telefono = "584141234567"
-): string {
+export function construirTextoWhatsAppMarcas(bloques: BloqueMarcas[], fecha: string): string {
   const conMarcas = bloques.reduce((a, b) => a + b.carreras.filter((f) => f.marcas.length).length, 0);
   const totales = String(bloques.reduce((a, b) => a + b.carreras.length, 0));
   const lineas = lineasWhatsApp(bloques);
@@ -211,13 +210,25 @@ export function textoWhatsAppMarcas(
     plantilla =
       "🏇 *MARCAS DEL DÍA* 📅 {fecha}\n\n{lineas}\n\n🧮 *CARRERAS:* {totales} · CON MARCAS: {marcas}\n\n📌 Válidas solo para el día indicado. Presente en caja.";
   }
-  const texto = reemplazarVarsTablas(plantilla, {
+  return reemplazarVarsTablas(plantilla, {
     fecha: fecha || fechaHoy(),
     hipodromo: bloques.map((b) => b.hipodromo).filter(Boolean).join(" · "),
     lineas,
     totales,
     marcas: String(conMarcas),
   });
+}
+
+/**
+ * Texto de la hoja de marcas + abre wa.me (contrato histórico: devuelve el
+ * texto). Mismo contrato que textoWhatsAppMatriz.
+ */
+export function textoWhatsAppMarcas(
+  bloques: BloqueMarcas[],
+  fecha: string,
+  telefono = "584141234567"
+): string {
+  const texto = construirTextoWhatsAppMarcas(bloques, fecha);
   window.open(waLink(telefono, texto), "_blank");
   return texto;
 }
