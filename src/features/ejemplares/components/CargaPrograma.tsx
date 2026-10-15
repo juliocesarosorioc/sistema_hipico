@@ -159,20 +159,32 @@ export function CargaPrograma() {
     setPrograma(res.ok ? (res.data ?? null) : null);
   }, []);
 
-  // Inicial: padrón de ejemplares + programa de la fecha (catálogo vía store).
+  // Catálogo de ejemplares (una sola vez).
   useEffect(() => {
     let vivo = true;
-    (async () => {
-      const [pad, prog] = await Promise.all([listarPadronSimple(), leerProgramaPorFecha(hoyLocal())]);
-      if (!vivo) return;
-      setPadron(pad);
-      setPrograma(prog.ok ? (prog.data ?? null) : null);
-      setCargando(false);
-    })();
+    void listarPadronSimple().then((pad) => {
+      if (vivo) setPadron(pad);
+    });
     return () => {
       vivo = false;
     };
   }, []);
+
+  // Programa de la fecha elegida: se RELEE al cambiar de jornada para poder
+  // cargar/editar días distintos de hoy (incluidos los FUTUROS). Antes solo se
+  // leía el de hoy al montar y cambiar la fecha no traía el programa correcto.
+  useEffect(() => {
+    let vivo = true;
+    setCargando(true);
+    void leerProgramaPorFecha(fecha).then((prog) => {
+      if (!vivo) return;
+      setPrograma(prog.ok ? (prog.data ?? null) : null);
+      setCargando(false);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [fecha]);
 
   // Al cambiar el hipódromo seleccionado, mostraremos sus carreras del día.
   useEffect(() => {

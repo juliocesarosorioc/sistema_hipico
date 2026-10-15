@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CLAVE_GEMINI_KEY, transformarGaceta } from "@/features/gaceta/lib/ia";
 import { guardarHistorialGaceta, registrarEjemplares } from "@/features/gaceta/lib/padron";
 import { sincronizarCarrerasAlCentral } from "@/features/carreras/lib/sincronizar";
+import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { CarreraGacetaCard } from "@/features/ejemplares/components/CarreraGacetaCard";
@@ -133,6 +134,16 @@ export function GacetaIA() {
   const [progreso, setProgreso] = useState<{ hecho: number; total: number } | null>(null);
   const [rango, setRango] = useState("");
   const [topePaginas, setTopePaginas] = useState("");
+  /** Fecha de la jornada que se está cargando. Por defecto HOY, pero admite días
+   *  FUTUROS: las carreras del documento que no traigan fecha propia se sellan
+   *  con esta fecha, para poder cargar/registrar/publicar jornadas posteriores. */
+  const [fechaJornada, setFechaJornada] = useState(() => hoyLocal());
+  /** Ref con el valor más reciente: la usan la recuperación del registro y la
+   *  extracción, que corren una sola vez y no deben depender del estado. */
+  const fechaJornadaRef = useRef(fechaJornada);
+  useEffect(() => {
+    fechaJornadaRef.current = fechaJornada;
+  }, [fechaJornada]);
   const [vistaIndice, setVistaIndice] = useState(-1);
   const [carreras, setCarreras] = useState<CarreraRegistro[]>([]);
   const [resumen, setResumen] = useState<ResumenPadron>({ nuevos: 0, vinculados: 0 });
@@ -199,6 +210,8 @@ export function GacetaIA() {
       const copia: CarreraRegistro = Object.assign({}, c);
       delete copia.enviada;
       delete copia.aplicada;
+      // Si el registro guardado no traía fecha, se sella con la jornada elegida.
+      if (!copia.fecha) copia.fecha = fechaJornadaRef.current;
       return copia;
     });
     setCarreras(lista.map((c) => ({ ...c, seleccionada: true })));
@@ -388,7 +401,9 @@ export function GacetaIA() {
         ...c,
         // Fecha del evento SIEMPRE en ISO estricto (YYYY-MM-DD) antes de
         // persistir: la IA puede devolver "24/09/2026" o un texto encabezado.
-        fecha: c.fecha ? normalizarFechaIso(c.fecha) : null,
+        // Si el documento no trae fecha, se usa la FECHA DE LA JORNADA elegida
+        // por el operador (permite cargar días futuros, no solo hoy).
+        fecha: c.fecha ? normalizarFechaIso(c.fecha) : fechaJornadaRef.current,
         premio: 100,
         ejemplares: (c.ejemplares || []).map((e) => ({ ...e, valor: 0, pts: 0 })),
         seleccionada: true,
@@ -496,7 +511,10 @@ export function GacetaIA() {
   const enviar = useCallback(
     async (lista: CarreraRegistro[]) => {
       if (enviando) return;
-      const conNombre = lista.filter((c) => listaHors(c).some((e) => String(e.nombre || "").trim()));
+      const conNombre = lista
+        .filter((c) => listaHors(c).some((e) => String(e.nombre || "").trim()))
+        // Sella con la jornada elegida las carreras que aún no tengan fecha.
+        .map((c) => (c.fecha ? c : { ...c, fecha: fechaJornadaRef.current }));
       if (!conNombre.length) {
         toast("Las carreras marcadas no tienen ejemplares con nombre.", "warning");
         return;
@@ -613,6 +631,21 @@ export function GacetaIA() {
           <h3 className="mb-4 border-b border-line pb-2 text-xs font-bold uppercase tracking-wider text-slate-600">
             📤 Subir la Gaceta (PDF o Imagen)
           </h3>
+          <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-line bg-surfaceAlt p-3">
+            <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
+              <span>📅 Fecha de la jornada</span>
+              <input
+                type="date"
+                value={fechaJornada}
+                onChange={(e) => setFechaJornada(e.target.value || hoyLocal())}
+                className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              />
+            </label>
+            <p className="max-w-md pb-1 text-[10px] leading-snug text-slate-500">
+              Se aplica a las carreras del documento que <b>no traigan fecha</b>. Sirve para cargar, registrar y
+              publicar <b>jornadas de días posteriores</b> (o anteriores) al actual.
+            </p>
+          </div>
           <div
             onClick={() => inputRef.current?.click()}
             onDragOver={(e) => e.preventDefault()}
