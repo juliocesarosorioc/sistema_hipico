@@ -10,6 +10,7 @@
  */
 import { getHorseColor } from "@/shared/lib/horseColors";
 import { interpretarFecha } from "@/core/utils/fechas";
+import { mismaCarreraExtraida } from "@/features/gaceta/lib/numeros";
 import type { DraftCarrera } from "@/features/tablas/lib/tipos";
 
 export const SUPERFICIES = ["ARENA", "CESPED", "FANGO", "TAPETA", "OTRA"] as const;
@@ -291,16 +292,24 @@ function claveValida(k: string): boolean {
  * conservando la primera aparición. Devuelve cuántas se descartaron.
  */
 export function deduplicarCarreras(carreras: CarreraRegistro[]): { lista: CarreraRegistro[]; quitadas: number } {
-  const vistas = new Set<string>();
+  const vistas = new Map<string, CarreraRegistro>();
   const lista: CarreraRegistro[] = [];
   let quitadas = 0;
   for (const c of carreras) {
     const k = claveCarrera(c);
-    if (claveValida(k) && vistas.has(k)) {
+    if (!claveValida(k)) {
+      lista.push(c);
+      continue;
+    }
+    const prev = vistas.get(k);
+    // Solo se descarta si es LA MISMA carrera (comparte ejemplares o no trae
+    // nombres). Si el número coincide pero los ejemplares son DISJUNTOS es una
+    // carrera distinta mal numerada: se conserva (antes se perdía en silencio).
+    if (prev && mismaCarreraExtraida(prev, c)) {
       quitadas += 1;
       continue;
     }
-    if (claveValida(k)) vistas.add(k);
+    if (!prev) vistas.set(k, c);
     lista.push(c);
   }
   return { lista, quitadas };

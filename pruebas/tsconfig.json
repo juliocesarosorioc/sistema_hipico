@@ -13,6 +13,7 @@
     "outDir": "../.tsbuild-pruebas"
   },
   "include": [
+    "../src/features/gaceta/lib/numeros.ts",
     "../src/lib/marcas/jerarquia.ts",
 
     "../src/lib/carreras/central.ts",
@@ -46,6 +47,7 @@
     "./hipodromos.test.ts",
     "./fechas.test.ts",
     "./validar-carga.test.ts",
+    "./numeros-gaceta.test.ts",
     "./remates.test.ts",
     "./sql-pollas.test.ts",
     "./pollas.test.ts",

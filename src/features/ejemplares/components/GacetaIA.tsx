@@ -421,6 +421,9 @@ export function GacetaIA() {
           "warning"
         );
       }
+      if (res.avisoNumeracion) {
+        toast(`🔢 ${res.avisoNumeracion}.`, "warning");
+      }
       refrescarContadores();
 
       // REGISTRO CENTRAL: al darse de alta en la matriz `carreras`, la extracción

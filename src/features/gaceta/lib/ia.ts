@@ -8,6 +8,14 @@
 //  API Routes ni Server Actions que reciban el PDF).
 // ============================================================
 
+import {
+  carrerasFaltantes,
+  fusionarCarrerasSinPerder,
+  numeroDeCarrera,
+  repararNumerosCarreras,
+  type ReporteReparacion,
+} from "@/features/gaceta/lib/numeros";
+
 export type EjemplarExtraido = {
   numero: string | number;
   nombre: string;
@@ -31,6 +39,8 @@ export type ResultadoGaceta = {
   error?: string;
   diag?: string;
   cuotaTotal?: boolean;
+  /** Aviso de la reparación de numeración (números corregidos / faltantes). */
+  avisoNumeracion?: string;
 };
 
 export const CLAVE_GEMINI_KEY = "club_gemini_key";
@@ -57,6 +67,7 @@ const HIPODROMOS_USA = [
 
 const SYS = `Eres el transcriptor de la gaceta hípica venezolana. Recibes páginas/imágenes del programa oficial de carreras.
 Extrae TODAS las carreras visibles y sus ejemplares participantes.
+La gaceta numera las carreras de forma CONSECUTIVA del 1 al total (1, 2, 3, …, 13): devuelve TODAS sin omitir ninguna y SIN repetir ni saltar números. Si el programa trae 13 carreras, la respuesta tiene 13 objetos (la última incluida).
 Para cada carrera devuelve:
   - carrera: número de la carrera (entero)
   - hipodromo: nombre del hipódromo (MAYÚSCULAS; ej: LA RINCONADA, SANTA RITA). Si no se lee usa "".
@@ -66,7 +77,7 @@ Para cada carrera devuelve:
   - premio: número si se lee (ej: 15000), si no 0
   - ejemplares: lista con numero (puesto/orden del ejemplar), nombre (MAYÚSCULAS, EXACTO como aparece), nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si NO se indica: USA si el hipódromo es de Estados Unidos, si no VE), valor (monta del ejemplar: SOLO número si aparece, si no 0)
 REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGISTRA TODOS los ejemplares de cada carrera sin omitir ninguno (todos los números de participante que aparezcan). Si un ejemplar aparece repetido entre páginas, mantenlo tal cual. Si el documento no tiene carreras, devuelve {"carreras":[]}.
-PARA EL CAMPO carrera: lee el número de carrera EXACTAMENTE como aparece impreso (puede ser numérico: 1, 2, ..., 13 o romano: I, II, III, IV, V, VI, VII, VIII, IX, X, XI, XII, XIII, XIV...). Convierte los romanos a entero (XIII → 13). Nunca traduzcas ordinales escritos ("primera", "segunda", "decimotercera", "decimocuarta", ...) a entero. Lee el carácter por carácter: distingue 1/7, 0/O, I/1. Devuelve SIEMPRE el entero correcto (ej.: 13, no 10). Prioriza el número que aparece junto a "CARRERA", "RACE", "CLASE" o en la cabecera de esa carrera.`;
+PARA EL CAMPO carrera: lee el número de carrera EXACTAMENTE como aparece impreso (puede ser numérico: 1, 2, ..., 13 o romano: I, II, III, IV, V, VI, VII, VIII, IX, X, XI, XII, XIII, XIV...). Convierte los romanos a entero (XIII → 13) y también los ordinales escritos en palabras ("primera" → 1, "segunda" → 2, "decimotercera" → 13, "decimocuarta" → 14): devuélvelos SIEMPRE como entero. Lee el carácter por carácter: distingue 1/7, 0/O, I/1. Devuelve SIEMPRE el entero correcto (ej.: 13, no 10). Prioriza el número que aparece junto a "CARRERA", "RACE", "CLASE" o en la cabecera de esa carrera.`;
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -144,30 +155,32 @@ function parsearJSON(texto: string): CarreraExtraida[] {
   return [];
 }
 
-/** Fusiona carreras extraídas (merge por hipódromo|número, igual que el legacy). */
+/** Normaliza una carrera extraída (nacionalidad/nombre/valor + número entero)
+ *  antes de fusionarla. */
+function normalizarExtraida(c: CarreraExtraida): void {
+  c.ejemplares = Array.isArray(c.ejemplares) ? c.ejemplares : [];
+  c.ejemplares.forEach((ej) => {
+    ej.nacionalidad = nacEjemplar(ej, c.hipodromo);
+    ej.nombre = String(ej.nombre || "").trim().toUpperCase();
+    ej.valor = 0;
+  });
+  const n = numeroDeCarrera(c.carrera);
+  if (n != null) c.carrera = n;
+}
+
+/** Fusiona carreras extraídas SIN perder carreras distintas (ver numeros.ts):
+ *  une por hipódromo+número solo cuando es LA MISMA carrera; si el número
+ *  coincide pero los ejemplares son disjuntos, conserva ambas (una está mal
+ *  numerada) y la reparación final corrige el número. Antes esta fusión
+ *  colapsaba las dos y la Gaceta perdía una carrera en silencio. */
 function fusionarCarreras(carreras: CarreraExtraida[], nuevas: CarreraExtraida[]): void {
+  const limpias: CarreraExtraida[] = [];
   for (const c of Array.isArray(nuevas) ? nuevas : []) {
     if (!c || typeof c !== "object") continue;
-    c.ejemplares = Array.isArray(c.ejemplares) ? c.ejemplares : [];
-    c.ejemplares.forEach((ej) => {
-      ej.nacionalidad = nacEjemplar(ej, c.hipodromo);
-      ej.nombre = String(ej.nombre || "").trim().toUpperCase();
-      ej.valor = 0;
-    });
-    const key = `${String(c.hipodromo || "").toUpperCase()}|${c.carrera ?? ""}`;
-    const ex = key === "|" ? null : carreras.find((x) => `${String(x.hipodromo || "").toUpperCase()}|${x.carrera ?? ""}` === key);
-    if (!ex) {
-      carreras.push(c);
-      continue;
-    }
-    const nums = new Set((ex.ejemplares || []).map((e) => String(e.numero)));
-    (c.ejemplares || []).forEach((e) => {
-      if (!nums.has(String(e.numero))) {
-        ex.ejemplares.push(e);
-        nums.add(String(e.numero));
-      }
-    });
+    normalizarExtraida(c);
+    limpias.push(c);
   }
+  fusionarCarrerasSinPerder(carreras, limpias);
 }
 
 // ---------- Modelos ----------
@@ -457,6 +470,7 @@ export async function transformarGaceta(
     for (let i = 0; i < incluidas.length; i += TAM_LOTE) lotes.push(incluidas.slice(i, i + TAM_LOTE));
 
     const carreras: CarreraExtraida[] = [];
+    const paginasFallidas = new Set<number>();
     let loteN = 0;
     let ciclo = 1;
 
@@ -471,12 +485,14 @@ export async function transformarGaceta(
         try {
           const nuevas = await extraerLote(clave, modelos, lote, etiqueta, diag, onEstado);
           fusionarCarreras(carreras, nuevas);
+          lote.forEach((p) => paginasFallidas.delete(p.num));
           onEstado?.(`${etiqueta}: ${nuevas.length} carrera(s). Total acumulado: ${carreras.length}.`);
         } catch (errLote) {
           const msg = errLote instanceof Error ? errLote.message : String(errLote);
           if (/clave|API key/i.test(msg)) {
             return { ok: false, carreras, error: msg, diag: pintarDiag(), cuotaTotal };
           }
+          lote.forEach((p) => paginasFallidas.add(p.num));
           diag.ultimoError = `${etiqueta}: ${msg}`;
           if (/CUOTA DIARIA/i.test(msg)) {
             cuotaTotal = true;
@@ -496,8 +512,43 @@ export async function transformarGaceta(
       loteN = 0;
     }
 
+    // NUMERACIÓN: la IA puede leer mal el número de una carrera (p. ej. la 13.ª
+    // como la 10.ª). Eso dejaba un repetido + un hueco y la fusión perdía una
+    // carrera. Aquí se renumera la mal leída al hueco y se unen los repetidos
+    // que sí eran la misma carrera (continuación entre páginas), de modo que la
+    // Gaceta trae SIEMPRE las N carreras de la secuencia.
+    let avisoNumeracion = "";
+    if (carreras.length > 1) {
+      const rep: ReporteReparacion = repararNumerosCarreras(carreras);
+      const faltan = carrerasFaltantes(carreras);
+      const partes: string[] = [];
+      if (rep.renumeradas.length) {
+        partes.push(`corregí el número mal leído (${rep.renumeradas.map((r) => `${r.de}→${r.a}`).join(", ")})`);
+      }
+      if (rep.consolidadas) partes.push(`uní ${rep.consolidadas} carrera(s) repetida(s)`);
+      if (faltan.length) {
+        partes.push(
+          `faltan: ${faltan.map((f) => `${f.faltan.join("/")}${f.hipodromo ? ` (${f.hipodromo})` : ""}`).join("; ")}`
+        );
+      }
+      if (paginasFallidas.size) {
+        const pgs = [...paginasFallidas].sort((a, b) => a - b);
+        partes.push(`no se pudo leer la página(s) ${pgs.join(", ")}: puede faltar alguna carrera de ahí`);
+      }
+      if (partes.length) {
+        avisoNumeracion = partes.join(" · ");
+        onEstado?.(`Numeración: ${avisoNumeracion}.`);
+      }
+    }
+
     if (carreras.length > 0) {
-      return { ok: true, carreras, diag: pintarDiag(), cuotaTotal };
+      return {
+        ok: true,
+        carreras,
+        diag: pintarDiag(avisoNumeracion ? `numeración: ${avisoNumeracion}` : ""),
+        cuotaTotal,
+        avisoNumeracion: avisoNumeracion || undefined,
+      };
     }
     return {
       ok: false,

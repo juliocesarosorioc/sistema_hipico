@@ -388,6 +388,26 @@ permisos del middleware.
 - [x] Segmentación de `js/gaceta.js` en 4 archivos: `gaceta_helpers.js`, `gaceta_ia.js`, `gaceta_padron.js` y `gaceta.js` (UI).
 - [x] Grilla de resultados en 3 columnas desde ≥640px (`#carrerasGaceta`, `#carrerasEnsamblaje`, `#carrerasVenta`) + cache-busting CSS/JS.
 
+### La 13.ª carrera se perdía en "Carreras Extraídas" (🛠️ corregido)
+- Qué pasaba: la Gaceta IA a veces lee mal el número de la última carrera (la 13.ª como 10.ª). Como
+  la fusión y el deduplicado unían por **hipódromo + número** sin comprobar que fuera la misma
+  carrera, la 13.ª —con ejemplares disjuntos— se colapsaba con la 10.ª y la sección mostraba
+  **12 de 13**. El mismo defecto existía en el legacy (`js/gaceta_ia.js`).
+- [x] Nuevo módulo puro `src/features/gaceta/lib/numeros.ts`:
+  - `numeroDeCarrera()` normaliza el número venga como venga: `13`, `"13ª"`, `"XIII"`,
+    `"decimotercera"`, `"CARRERA 13"` → `13`.
+  - `fusionarCarrerasSinPerder()` une por hipódromo+número solo cuando comparten ejemplares; si los
+    ejemplares son **disjuntos**, conserva ambas (una está mal numerada).
+  - `repararNumerosCarreras()` renumera la mal leída al hueco de la secuencia (10→13) y une solo lo
+    que de verdad es la misma carrera partida entre páginas (puestos de ejemplar complementarios).
+- [x] `ia.ts` usa esas funciones, informa la renumeración (`avisoNumeracion`) y avisa si una página no
+  se pudo leer (antes la entrega parcial era silenciosa). `ui.ts` (`deduplicarCarreras`) solo
+  descarta si es la misma carrera; `GacetaIA.tsx` muestra el aviso.
+- Pruebas: `pruebas/numeros-gaceta.test.ts` (28 casos; el bloque del incidente fija `[1..12, 10] → 1..13`).
+- ⚠️ La suite (`pruebas/correr.cjs` / `pruebas/tsconfig.json`) quedó rota por la reorganización
+  feature-first: ~38 archivos todavía importan `../src/lib/...` (hoy en `src/core|shared|features`).
+  Mientras eso no se migre, esta prueba no corre dentro de la suite.
+
 ### Venta de Tablas Fijas
 - [x] Tarjetas de venta con el mismo visual de Gaceta/Ensamblaje (clic sobre ejemplar abre la venta).
 - [x] Modal de venta con jugador + grupo que COBRA (auto = grupo de venta) + grupo que recibe COMISIÓN (seleccionable).
