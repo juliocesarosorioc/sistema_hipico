@@ -189,7 +189,13 @@ export async function guardarPrograma(p: ProgramaDia, creadoPor?: string): Promi
       p_creado_por: creadoPor || "desconocido",
     });
     if (r.error) {
-      if (!rpcAusente(r.error)) return { ok: false, error: r.error.message };
+      if (!rpcAusente(r.error)) {
+        // El documento del día (`programa_dia`) no se pudo guardar, pero la
+        // MATRIZ —de donde leen TODOS los módulos— se escribe igual: sin esto la
+        // carrera quedaría invisible aunque el operador ya la haya cargado.
+        await registrarCarrerasEnMatriz(fecha, carreras);
+        return { ok: false, error: r.error.message };
+      }
       throw r.error;
     }
     await registrarCarrerasEnMatriz(fecha, carreras);

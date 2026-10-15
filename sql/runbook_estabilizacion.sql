@@ -114,7 +114,10 @@ BEGIN
             'public.tablas_fijas',
             'public.resultados_carreras',
             'public.dupletas',
-            'public.tickets_jugadas'
+            'public.tickets_jugadas',
+            -- La MATRIZ: sin esto una carrera extraida con IA no avisa a los
+            -- modulos/pestanas/usuarios abiertos (ver sql/realtime_carreras.sql).
+            'public.carreras'
         ]
         LOOP
             BEGIN

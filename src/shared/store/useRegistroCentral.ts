@@ -88,6 +88,74 @@ const set = useRegistroCentral.setState;
 const enVueloCarreras = new Map<string, Promise<CarreraCentral[]>>();
 const enVueloHipodromos = new Map<string, Promise<OpcionHipodromo[]>>();
 
+// ---------------------------------------------------------------------------
+// Realtime de la MATRIZ `carreras`
+// ---------------------------------------------------------------------------
+// El registro central refresca por versión (`invalidarCarreras`), que solo vale
+// DENTRO de la pestaña que escribe. Al extraer las carreras con IA, las demás
+// pestañas, los otros módulos ya abiertos y los demás usuarios seguían viendo la
+// lista vieja hasta recargar: la carrera existía en la matriz pero "no cargaba".
+//
+// La cura es escuchar la propia matriz: cualquier alta/edición de una carrera
+// (IA, Ensamblaje, carga manual o reparación) llega por `postgres_changes` y
+// bumpea `versionCarreras`, que es lo que todos los módulos ya observan. Basta
+// con que la tabla `public.carreras` esté en la publicación `supabase_realtime`
+// (sql/realtime_carreras.sql).
+//
+// Una sola suscripción por pestaña, levantada por el PRIMER consumidor y bajada
+// por el último (ref-count): abrir y cerrar módulos no abre canales de más.
+let canalCarreras: { unsubscribe: () => void } | null = null;
+let oyentesCarreras = 0;
+let conectandoCarreras = false;
+
+async function conectarRealtimeCarreras(): Promise<void> {
+  if (canalCarreras || conectandoCarreras) return;
+  conectandoCarreras = true;
+  try {
+    const { supabase } = await import("@/core/supabase");
+    if (!supabase || canalCarreras) return;
+    canalCarreras = supabase
+      .channel("registro-central-carreras")
+      .on("postgres_changes", { event: "*", schema: "public", table: "carreras" }, () => {
+        set((s) => ({ versionCarreras: s.versionCarreras + 1 }));
+      })
+      .subscribe();
+  } catch {
+    // Sin realtime (publicación no aplicada o red): queda el refresco por
+    // versión + el botón de recargar de cada módulo.
+    canalCarreras = null;
+  } finally {
+    conectandoCarreras = false;
+  }
+}
+
+function desconectarRealtimeCarreras(): void {
+  if (!canalCarreras) return;
+  const canal = canalCarreras;
+  canalCarreras = null;
+  try {
+    canal.unsubscribe();
+  } catch {
+    /* noop */
+  }
+}
+
+/**
+ * Mantiene viva UNA suscripción realtime a la matriz `carreras` mientras haya
+ * módulos montados. Es lo que hace que una carrera extraída con IA quede
+ * DISPONIBLE DE INMEDIATO en todos los módulos, pestañas y usuarios.
+ */
+export function useRealtimeCarreras(): void {
+  useEffect(() => {
+    oyentesCarreras += 1;
+    void conectarRealtimeCarreras();
+    return () => {
+      oyentesCarreras = Math.max(0, oyentesCarreras - 1);
+      if (oyentesCarreras === 0) desconectarRealtimeCarreras();
+    };
+  }, []);
+}
+
 /** Carga (o reutiliza) las carreras del día para `fecha`. */
 export async function cargarRegistroCarreras(fecha: string): Promise<CarreraCentral[]> {
   const f = fecha || hoyLocal();
@@ -196,6 +264,10 @@ export type RegistroCentral = {
  */
 export function useRegistroCentralOpts(fecha?: string): RegistroCentral {
   const f = fecha || hoyLocal();
+
+  // Escucha la matriz: las carreras extraídas con IA (o cargadas desde otra
+  // pestaña/usuario) entran a este registro sin recargar la página.
+  useRealtimeCarreras();
 
   const carreras = useRegistroCentral((s) => s.porFecha[f] ?? EMPTY);
   const cargando = useRegistroCentral((s) => Boolean(s.cargando[f]));

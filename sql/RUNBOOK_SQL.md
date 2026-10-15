@@ -245,6 +245,15 @@ pantalla muestra "0 filas" como si no hubiera datos.
     banquero y la liquidación explica tickets que nadie escribió. **Requiere
     volver a correr `banqueros.sql`** (paso 15) para que el trigger congele el
     banquero de WPS leyendo `nota_auditoria.modalidad`. Idempotente.
+24. `realtime_carreras.sql` — **requiere el paso 13.** Agrega la matriz `carreras`
+    a la publicación `supabase_realtime` (y `replica identity full`). Es el
+    arreglo de "las carreras extraídas con IA no cargan en todos los módulos de
+    jugadas de inmediato": la extracción **sí** escribía la matriz, pero como
+    `carreras` no estaba en la publicación, ningún módulo/pestaña/usuario abierto
+    recibía el aviso y seguían viendo la lista vieja hasta recargar. Con esto el
+    `postgres_changes` sobre `carreras` llega a todos (el cliente ya lo escucha en
+    `useRegistroCentral`). Sustituye/complementa el bloque realtime del
+    `runbook_estabilizacion.sql`, que no incluía `carreras`. Idempotente.
 
 
 ### La fuente de carreras pasó a ser una sola
