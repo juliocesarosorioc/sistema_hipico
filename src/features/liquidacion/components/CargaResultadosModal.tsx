@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { getHorseColor } from "@/shared/lib/horseColors";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 import type { EjemplarTabla } from "@/features/tablas/lib/tipos";
 import { colorDeNumero, textoDeNumero } from "@/features/tablas/lib/tipos";
@@ -104,6 +104,9 @@ export function CargaResultadosModal({
   const [rayaNumero, setRayaNumero] = useState("");
   const hipodromosActivos = useHipodromosActivos();
   const nombreHipo = nombrePropioHipodromo(hipodromo, hipodromosActivos);
+  // Casillas de posición en orden (1°, 2°, 3°…): Enter/↓ y ↑ mueven el cursor
+  // entre ejemplares para cargar la llegada de corrido sin tocar el mouse.
+  const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
 
   useEffect(() => {
     if (!abierto) return;
@@ -157,6 +160,33 @@ export function CargaResultadosModal({
     setFilas((f) => f.map((r, j) => (j === i ? { ...r, numero: v.replace(/[^0-9]/g, "") } : r)));
   const toggleEmpate = (i: number) =>
     setFilas((f) => f.map((r, j) => (j === i ? { ...r, empate: !r.empate } : r)));
+
+  /** Lleva el cursor (focus) a la casilla de la posición `i` y selecciona su
+   *  contenido, así lo que se teclee reemplaza el número anterior. */
+  const enfocarPosicion = (i: number) => {
+    const el = inputsRef.current[i];
+    if (!el) return;
+    el.focus();
+    el.select();
+  };
+
+  /** ENTER o ↓ pasan a la posición siguiente; ↑ vuelve a la anterior. En la
+   *  última casilla ENTER agrega un lugar nuevo y se posiciona en él, para
+   *  seguir cargando la llegada de corrido. */
+  const teclaPosicion = (i: number, e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" || e.key === "ArrowDown") {
+      e.preventDefault();
+      if (i + 1 < filas.length) {
+        enfocarPosicion(i + 1);
+      } else {
+        setFilas((f) => [...f, { numero: String((caballos ?? [])[f.length]?.numero ?? ""), empate: false }]);
+        window.setTimeout(() => enfocarPosicion(i + 1), 0);
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (i > 0) enfocarPosicion(i - 1);
+    }
+  };
   const setDiv = (k: string, v: string) => setDividendos((d) => ({ ...d, [k]: v.replace(/[^\d.]/g, "") }));
   const setMatriz = (k: string, v: string) => setMatrizWps((m) => ({ ...m, [k]: v.replace(/[^\d.]/g, "") }));
 
@@ -303,8 +333,12 @@ export function CargaResultadosModal({
                   </span>
                   <span className="w-8 shrink-0 text-[10px] font-bold text-slate-600">{i + 1}°</span>
                   <input
+                    ref={(el) => {
+                      inputsRef.current[i] = el;
+                    }}
                     value={r.numero}
                     onChange={(e) => setNumero(i, e.target.value)}
+                    onKeyDown={(e) => teclaPosicion(i, e)}
                     inputMode="numeric"
                     placeholder={caballos?.[i] ? String(caballos[i].numero) : "Nº"}
                     style={r.numero.trim() ? { borderColor: getHorseColor(r.numero).hex } : undefined}
@@ -356,6 +390,9 @@ export function CargaResultadosModal({
               ＋ Añadir {filas.length + 1}° lugar
             </button>
           </div>
+          <p className="pb-1.5 text-center text-[9px] italic text-slate-400">
+            ⌨️ ENTER o ↓ pasa al ejemplar del puesto siguiente · ↑ vuelve al anterior.
+          </p>
         </div>
 
         {/* Dividendos POR CABALLO (opcional) — WIN/PLACE/SHOW */}

@@ -32,39 +32,63 @@ type Props = {
  * el grupo es idéntico al que produce ese módulo, con el cierre de POSITIVOS /
  * NEGATIVOS y el pie estricto del club.
  */
-export default function WhatsappReporteCarrera({ fecha, hipodromo, carrera, grupo, etiqueta = "💬 WhatsApp" }: Props) {
+export default function WhatsappReporteCarrera({ fecha, hipodromo, carrera, grupo, etiqueta = "💬" }: Props) {
   const [abierto, setAbierto] = useState(false);
   const [cargando, setCargando] = useState(false);
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
 
-  const generar = async () => {
+  /** Arma la RELACIÓN DE RESULTADOS (formato WhatsApp ya establecido). Devuelve
+   *  "" si faltan datos o no hay jugadas para la carrera. */
+  const construir = async (): Promise<string> => {
     const hip = String(hipodromo ?? "").trim().toUpperCase();
     const car = String(carrera ?? "").trim();
-    if (!hip || !car) return toast("Elegí un hipódromo y una carrera primero.", "warning");
+    if (!hip || !car) {
+      toast("Elegí un hipódromo y una carrera primero.", "warning");
+      return "";
+    }
+    const oficial = await leerResultadoOficial(hip, car, fecha);
+    const meta: MetaCarrera = {
+      grupo: grupo?.trim() || CLUB_NOMBRE,
+      hipodromo: nombreHipodromoParaMostrar(hip),
+      carrera: car,
+      fecha: fecha ? new Date(`${fecha}T12:00:00`) : new Date(),
+      pizarra: oficial?.puestos?.length ? oficial.puestos.join(" · ") : "",
+      pizarraPuestos: oficial?.puestos ?? [],
+      dividendos: oficial?.dividendos ?? null,
+    };
+    const jugadas = await cargarJugadasDeCarrera({ hipodromo: hip, carrera: car });
+    if (!jugadas.length) {
+      return "No hay jugadas registradas para esta carrera (registralas en Taquilla o en la carga rápida).";
+    }
+    return relacionResultados(meta, jugadas);
+  };
+
+  const generar = async () => {
     setAbierto(true);
     setCargando(true);
     try {
-      const oficial = await leerResultadoOficial(hip, car, fecha);
-      const meta: MetaCarrera = {
-        grupo: grupo?.trim() || CLUB_NOMBRE,
-        hipodromo: nombreHipodromoParaMostrar(hip),
-        carrera: car,
-        fecha: fecha ? new Date(`${fecha}T12:00:00`) : new Date(),
-        pizarra: oficial?.puestos?.length ? oficial.puestos.join(" · ") : "",
-        pizarraPuestos: oficial?.puestos ?? [],
-        dividendos: oficial?.dividendos ?? null,
-      };
-      const jugadas = await cargarJugadasDeCarrera({ hipodromo: hip, carrera: car });
-      if (!jugadas.length) {
-        setTexto("No hay jugadas registradas para esta carrera (registralas en Taquilla o en la carga rápida).");
-        return;
-      }
-      setTexto(relacionResultados(meta, jugadas));
+      setTexto(await construir());
     } catch {
       setTexto("No se pudo generar la relación de resultados.");
     } finally {
       setCargando(false);
+    }
+  };
+
+  /** Copia la relación al portapapeles en un solo clic (ícono 📋). */
+  const copiarDirecto = async () => {
+    try {
+      const t = await construir();
+      setTexto(t);
+      if (!t.trim() || t.startsWith("No hay jugadas")) {
+        toast(t || "Nada para copiar.", "warning");
+        return;
+      }
+      await navigator.clipboard.writeText(t);
+      toast("Resultado copiado en formato WhatsApp.", "success");
+    } catch {
+      toast("No se pudo copiar el mensaje.", "error");
     }
   };
 
@@ -94,8 +118,16 @@ export default function WhatsappReporteCarrera({ fecha, hipodromo, carrera, grup
 
   return (
     <>
-      <Button size="sm" variant="outline" onClick={generar} title="Arma el mensaje de resultados listo para WhatsApp">
+      <Button size="sm" variant="outline" onClick={generar} title="WhatsApp: arma la relación de resultados de la carrera">
         {etiqueta}
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => void copiarDirecto()}
+        title="Copiar la relación de resultados en formato WhatsApp"
+      >
+        📋
       </Button>
 
       {abierto && (
