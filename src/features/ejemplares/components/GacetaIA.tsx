@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CLAVE_GEMINI_KEY, transformarGaceta } from "@/features/gaceta/lib/ia";
 import { guardarHistorialGaceta, registrarEjemplares } from "@/features/gaceta/lib/padron";
+import { sincronizarCarrerasAlCentral } from "@/features/carreras/lib/sincronizar";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { CarreraGacetaCard } from "@/features/ejemplares/components/CarreraGacetaCard";
@@ -214,6 +215,11 @@ export function GacetaIA() {
         setCarreras((prev) => prev.map((c) => ({ ...c, ejemplares: (c.ejemplares || []).map((e) => ({ ...e })) })));
         setEstado(`${lista.length} carrera(s) guardada(s) pendientes de ensamblar. Puede enviarlas al Ensamblaje sin volver a transformar.`);
       });
+    // Registro CENTRAL: las carreras recuperadas del registro local pueden venir
+    // de una sesión previa a la centralización; se publican igual en la matriz.
+    void sincronizarCarrerasAlCentral(lista, "gaceta-ia").catch((e) =>
+      console.warn("Registro central (recuperación de la gaceta):", e?.message || e)
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -402,6 +408,27 @@ export function GacetaIA() {
       }
       refrescarContadores();
 
+      // REGISTRO CENTRAL: al darse de alta en la matriz `carreras`, la extracción
+      // queda DISPONIBLE EN TODOS LOS MÓDULOS (Pollas, Remates, WPS, Marcas,
+      // Dupletas, Tablas Fijas, Gestión de Jugadas y Taquilla). Sin esto la
+      // carrera solo existía en esta pantalla.
+      void sincronizarCarrerasAlCentral(lista, "gaceta-ia")
+        .then((r) => {
+          if (!r.ok) {
+            console.warn("No se pudo publicar en el registro central:", r.error);
+            toast(
+              `La extracción quedó lista, pero no se pudo publicar en el registro central${r.error ? `: ${r.error}` : ""}.`,
+              "warning"
+            );
+            return;
+          }
+          toast(`🗂️ ${r.guardadas} carrera(s) ya están disponibles en todos los módulos.`, "success");
+        })
+        .catch((e) => {
+          console.warn("Registro central falló:", e?.message || e);
+          toast("La extracción quedó lista, pero no se pudo publicar en el registro central.", "warning");
+        });
+
       // Historlae (gaceta_procesada) en segundo plano, sin bloquear.
       const fecha = lista.find((c) => c.fecha)?.fecha ?? null;
       guardarHistorialGaceta(lista, fecha, "desconocido").catch((e) => {
@@ -481,6 +508,11 @@ export function GacetaIA() {
       // (mismo día + hipódromo + carrera), no se apila otra copia.
       const yaEstaban = duplicadasEnEnsamblaje(conNombre);
       acumularEnEnsamblaje(conNombre);
+      // Re-publica en el registro central por si el operador ajustó el hipódromo,
+      // la distancia o el Nº de la carrera en las cards antes de enviar.
+      void sincronizarCarrerasAlCentral(conNombre, "gaceta-ia").catch((e) =>
+        console.warn("Registro central (envío al ensamblaje):", e?.message || e)
+      );
       // Registro automático en el Padrón (UPSERT por nombre + nacionalidad).
       const tot = await registrarEjemplares(conNombre as unknown as Array<Record<string, unknown>>);
       // Limpieza del estado local: solo quedan las carreras NO enviadas, para
