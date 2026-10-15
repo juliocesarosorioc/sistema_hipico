@@ -8,8 +8,8 @@
 //
 // Corre con:  node pruebas/correr.cjs   (o npx tsx pruebas/reporte-carrera.test.ts)
 // ============================================================================
-import { armarReporteCarrera, colorDiscoNumero } from "../src/lib/liquidacion/reporte-carrera";
-import type { CarreraReporte } from "../src/lib/liquidacion/reportes";
+import { armarReporteCarrera, colorDiscoNumero } from "../src/features/liquidacion/lib/reporte-carrera";
+import type { CarreraReporte } from "../src/features/liquidacion/lib/reportes";
 
 let pasan = 0;
 let fallan = 0;
@@ -55,6 +55,8 @@ si(perrito && perrito.juega === "Perrito Molinas", "fila 1: JUEGA = Perrito Moli
 si(perrito && perrito.da === "Emy", "fila 1: DA = Emy (pareo por índice del ticket)");
 si(perrito && perrito.jugo === "2p" && perrito.aposto === 100, "fila 1: JUGÓ 2p · APOSTÓ 100");
 si(perrito && perrito.resultado === -100, "fila 1: RESULTADO = -100 (perdió)");
+si(perrito && perrito.caballo === "7", "fila 1: lleva el ejemplar (7) para pintar el disco de color");
+si(perrito && !("tipo" in perrito), "fila 1: SIN etiqueta de premio/puestos debajo de la jugada");
 const marleneVivo = d.jugadasVivo[1];
 si(marleneVivo && marleneVivo.juega === "Marlene" && marleneVivo.da === "", "fila 2: Marlene sin pareja (DA vacío)");
 
@@ -70,6 +72,23 @@ const gananMarlene = buscar(d.resumen.ganan, "Marlene");
 si(gananEmy?.monto === 100, "Ganan: Emy +100 (mitad Consigue del ticket 0)");
 si(gananMarlene?.monto === 1200, "Ganan: Marlene +1200 (ganancia de la TABLA)");
 si(d.resumen.pierden.length === 1 && buscar(d.resumen.pierden, "Perrito Molinas")?.monto === -100, "Pierden: Perrito Molinas -100");
+
+// ── 4b. Los PENDIENTES (resultado null) no ensucian el resumen ──
+const conPendiente = armarReporteCarrera({
+  ...CARRERA,
+  filas: [
+    ...CARRERA.filas,
+    { id: "2026-10-12-LA RINCONADA-7-j-9", rol: "Juega", cliente: "Pendiente", jugada: "1p", caballo: "9", monto: 50, resultado: null, esPareo: false },
+  ],
+});
+si(
+  buscar([...conPendiente.resumen.ganan, ...conPendiente.resumen.pierden], "Pendiente") === undefined,
+  "un ticket pendiente (null) NO cae en Ganan 0.00: queda fuera del resumen"
+);
+si(
+  conPendiente.jugadasVivo.find((j) => j.juega === "Pendiente")?.resultado === null,
+  "la fila en vivo del pendiente conserva resultado null (se pinta «—»)"
+);
 
 // ── 5. Carrera sin filas ──
 const vacia = armarReporteCarrera({ ...CARRERA, filas: [], pizarra: null });

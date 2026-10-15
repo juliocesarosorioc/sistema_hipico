@@ -17,26 +17,11 @@
  */
 import type { ReporteCarreraDatos, JugadaVivo, Adelantada } from "@/features/saldos/components/ReporteCarrera";
 import type { CarreraReporte } from "@/features/liquidacion/lib/reportes";
-import { categoriaJugada } from "@/features/taquilla/lib/nomenclatura";
+import { colorDiscoNumero } from "@/features/saldos/lib/discos";
 
-/** Colores de disco por número de ejemplar (mismo espíritu que la pizarra). */
-const COLOR_DISCO: Record<number, string> = {
-  1: "bg-red-600 text-white",
-  2: "bg-blue-600 text-white",
-  3: "bg-amber-500 text-white",
-  4: "bg-green-600 text-white",
-  5: "bg-purple-600 text-white",
-  6: "bg-slate-900 text-white",
-  7: "bg-orange-500 text-white",
-  8: "bg-pink-600 text-white",
-};
-
-/** Clases tailwind del disco de un número de ejemplar (con fallback gris). */
-export function colorDiscoNumero(num: string | number): string {
-  const n = Number(num);
-  if (Number.isInteger(n) && n >= 1 && n <= 8) return COLOR_DISCO[n];
-  return "bg-slate-400 text-white";
-}
+// Los colores del disco de ejemplar viven en `saldos/lib/discos.ts` (los usan
+// el armado y la plantilla). Se re-exportan para no romper importadores viejos.
+export { colorDiscoNumero };
 
 /** "2026-10-12" → «lun 12 oct 2026» (fecha legible para el encabezado). */
 function diaLegible(iso: string): string {
@@ -79,10 +64,14 @@ function seccionAdelantadaDe(jugada: string): "tablas" | "marcas" | "tercios" | 
  *
  * Reglas del armado:
  *   · "En vivo": UNA fila por ticket (la del que JUEGA), con su pareja como
- *     DA cuando la jugada tiene dos clientes. Se saltan las filas 🔀 CRUCE.
+ *     DA cuando la jugada tiene dos clientes (lo que da o va a los otros
+ *     ejemplares) y el/los ejemplar(es) de la jugada para pintarlos con color.
+ *     Se saltan las filas 🔀 CRUCE.
  *   · "Parada Adelantadas": las filas GANADORAS (resultado > 0) según el tipo
  *     de jugada (Tablas Fijas / Marcas / Tercios).
- *   · "Resumen": neto acumulado por cliente (positivo → Ganan, negativo → Pierden).
+ *   · "Resumen": neto acumulado por cliente (positivo → Ganan, negativo →
+ *     Pierden). Los tickets PENDIENTES (resultado null) NO entran al resumen:
+ *     antes caían en «Ganan 0.00» y vaciaban la columna «Pierden».
  */
 export function armarReporteCarrera(c: CarreraReporte, grupo?: string): ReporteCarreraDatos {
   const puestos = (c.pizarra ?? "").split(/\s*·\s*/).filter(Boolean);
@@ -99,19 +88,22 @@ export function armarReporteCarrera(c: CarreraReporte, grupo?: string): ReporteC
 
   for (const f of c.filas) {
     if (f.rol === "CRUCE") continue;
-    const resultado = f.resultado ?? 0;
+    const resultado = f.resultado; // number | null (null = pendiente)
     if (f.rol !== "Consigue") {
       // Solo la fila del que JUEGA va a la tabla "en vivo"; su pareja
       // (Consigue) ya viaja como DA. Las dos mitades igual suman al resumen.
       const i = indiceTicketDe(f.id) ?? `t-${correlativo++}`;
       const da = consigue.get(i)?.cliente ?? "";
-      jugadasVivo.push({ juega: f.cliente, jugo: f.jugada, aposto: f.monto, da, resultado, tipo: categoriaJugada(f.jugada) });
+      jugadasVivo.push({ juega: f.cliente, jugo: f.jugada, caballo: f.caballo, aposto: f.monto, da, resultado });
     }
 
-    netoPorCliente.set(f.cliente, (netoPorCliente.get(f.cliente) ?? 0) + resultado);
+    // Los pendientes (resultado null) no suman a nadie: quedan fuera del resumen.
+    if (resultado !== null) {
+      netoPorCliente.set(f.cliente, (netoPorCliente.get(f.cliente) ?? 0) + resultado);
+    }
 
     // «Parada Adelantadas»: la mitad del JUEGA que ganó, por tipo de jugada.
-    if (resultado > 0 && f.rol !== "Consigue") {
+    if (resultado !== null && resultado > 0 && f.rol !== "Consigue") {
       const seccion = seccionAdelantadaDe(f.jugada);
       if (seccion) {
         adelantadas[seccion].push({ juega: f.cliente, descripcion: f.caballo || undefined, resultado });
@@ -122,9 +114,9 @@ export function armarReporteCarrera(c: CarreraReporte, grupo?: string): ReporteC
   const ganan: ReporteCarreraDatos["resumen"]["ganan"] = [];
   const pierden: ReporteCarreraDatos["resumen"]["pierden"] = [];
   for (const [nombre, neto] of netoPorCliente) {
-    if (neto >= 0) {
+    if (neto > 0) {
       ganan.push({ id: ganan.length + 1, nombre, monto: neto });
-    } else {
+    } else if (neto < 0) {
       pierden.push({ id: pierden.length + 1, nombre, monto: neto });
     }
   }
