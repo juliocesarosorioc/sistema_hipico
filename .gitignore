@@ -5,22 +5,17 @@ dist/
 npm-debug.log*
 *.log
 .env**
-.DS_Store_backup_apuestas_y_carreras_*
 
+# Respaldos locales (datos de negocio; NO se versionan)
+respaldos/
 _backup_*
 
 # Residuos de desarrollo (salida de comandos, borradores scratch)
+.DS_Store
 .dev-*.txt
 x.txt
 tmp.tsx
 .opencode/work-state.md
 
-# Salida de compilar las pruebas. El harness oficial (pruebas/run-marcas.ps1)
-# emite en %TEMP%, pero `npx tsc -p pruebas/tsconfig.json` a pelo usa este
-# directorio: es lo que evita que el .js compilado caiga dentro de src/ y rompa
-# `next build`.
-.tsbuild-pruebas/
+# Salida de compilación TypeScript
 *.tsbuildinfo
-
-# .js de pruebas (artefactos de compilación; la fuente es el .ts)
-pruebas/*.js
