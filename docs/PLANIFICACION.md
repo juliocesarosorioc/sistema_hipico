@@ -1256,6 +1256,34 @@ el desglose.
 
 ---
 
+## 2026-10-15 — Dupleta: hipódromos con nombre propio y buscables
+
+Reportó el usuario que en la **Dupleta los hipódromos se leen mal** y que el
+selector debe tener la configuración de todos los filtros de hipódromos:
+nombre propio y la forma de buscar.
+
+### Causa raíz
+- El selector armaba el label con `nombreHipodromoParaMostrar(claveHipodromo(...))`,
+  y `claveHipodromo` borra los espacios ("LA RINCONADA" → "LARINCONADA"). El
+  formateador no puede reponer el espacio, así que se veía **"Larinconada"** y
+  el buscador (filtra por label) no encontraba nada al escribir el nombre real.
+- `carrerasDelDia` cruzaba con `String(c.hipodromo).trim().toUpperCase()` (deja
+  el espacio) contra el estado, que es la CLAVE sin espacio: para hipódromos de
+  dos palabras nunca matcheaba y la matriz salía sin columnas/filas.
+
+### Fix
+- `src/features/dupletas/components/DupletaModule.tsx`:
+  - nuevo mapa `nombrePropioPorClave` desde `registro.hipodromos` (el catálogo,
+    cruce por `claveHipodromo`) y helper `nombreHip(...)`; las muestras del
+    hipódromo (toasts, guardadas, encabezado de la matriz, impresión) usan el
+    **nombre propio real** ("La Rinconada").
+  - `carrerasDelDia` compara con `claveHipodromo` en los dos lados.
+  - `cargarGuardada` normaliza el hipódromo a la clave al cargar la matriz (el
+    selector muestra el nombre propio y el efecto no pisa las celdas vendidas).
+  - el input del selector de hipódromo deja de forzar `uppercase`.
+
+---
+
 ## 2026-10-15 — Reporte por carrera: muestra al que DA, colores y una sola hoja
 
 Reportó el usuario que el reporte por carrera **no mostraba a los que pierden**

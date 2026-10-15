@@ -31,6 +31,9 @@ import { capturarNodo, componerA4Paisaje, guardarLienzos, A4_PAISAGE, type ImgFo
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 const inputSel =
   "w-full rounded-lg border border-line bg-surface px-2 py-1 text-xs font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500";
+/** Igual que `inputSel` pero SIN `uppercase`: los NOMBRES PROPIOS (hipódromo:
+ *  "La Rinconada") tienen que verse tal cual, como en el resto de los filtros. */
+const inputSelNombre = inputSel.replace(" uppercase", "");
 /** Igual que `inputSel`, pero para MONTOS: se alinean a la derecha, que es la
  *  convención que hace comparables dos cifras de largo distinto sin contar
  *  dígitos. */
@@ -243,11 +246,39 @@ export function DupletaModule() {
     if (!hipodromos.includes(hipodromo)) setHipodromo(hipodromos[0]);
   }, [hipodromo, hipodromos]);
 
+  /**
+   * Clave normalizada → NOMBRE PROPIO del catálogo de hipódromos.
+   *
+   * Sin esto, el label salía de `nombreHipodromoParaMostrar(clave)`, y como la
+   * clave viene SIN espacios ("LARINCONADA") el formateo devolvía "Larinconada"
+   * (le faltaba el espacio de "La Rinconada") y el buscador —que filtra por el
+   * label— no encontraba nada al escribir el nombre real.
+   *
+   * Es la misma configuración que el resto de los filtros de hipódromos
+   * (`listarHipodromos` → `{ value: NOMBRE_EN_MAYÚSCULAS, label: Nombre Propio }`),
+   * cruzada por `claveHipodromo` para tolerar el espacio.
+   */
+  const nombrePropioPorClave = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const h of registro.hipodromos) {
+      const k = claveHipodromo(h.value);
+      if (k && h.label) m.set(k, h.label);
+    }
+    return m;
+  }, [registro.hipodromos]);
+
+  /** Nombre propio de un hipódromo (por clave), con respaldo en el formateador. */
+  const nombreHip = useCallback(
+    (v?: string | null) => nombrePropioPorClave.get(claveHipodromo(v)) ?? nombreHipodromoParaMostrar(v),
+    [nombrePropioPorClave]
+  );
+
   // Opciones del buscador: los hipódromos del día (al enfocar se ven todos).
-  // El label se muestra en nombre propio; el value queda en la clave canónica.
+  // El label se muestra en NOMBRE PROPIO del catálogo; el value queda en la
+  // clave canónica (que es con lo que cruzan matriz, tablas y carreras).
   const hipodromoOpts = useMemo(
-    () => (dia ? hipodromos : []).map((h) => ({ value: h, label: nombreHipodromoParaMostrar(h) })),
-    [hipodromos, dia]
+    () => (dia ? hipodromos : []).map((h) => ({ value: h, label: nombreHip(h) })),
+    [hipodromos, dia, nombreHip]
   );
 
   // Las dupletas guardadas se ofrecen con la misma regla: solo las de
@@ -284,8 +315,12 @@ export function DupletaModule() {
 
   /** Carga una dupleta guardada en la matriz y reconstruye día/hipódromo/carreras. */
   const cargarGuardada = (g: DupletaEstado) => {
-    setMatriz(g);
-    setHipodromo(g.hipodromo);
+    // Normaliza el hipódromo a la clave canónica: así el selector muestra el
+    // nombre propio del catálogo y el efecto que rearma la matriz reconoce la
+    // MISMA dupleta (no la pisa) y conserva las celdas ya vendidas.
+    const hip = claveHipodromo(g.hipodromo) || g.hipodromo;
+    setMatriz({ ...g, hipodromo: hip });
+    setHipodromo(hip);
     setDia(g.fecha);
     setCarrera1(String(g.carrera1));
     setCarrera2(String(g.carrera2));
@@ -294,7 +329,7 @@ export function DupletaModule() {
     setModoPrecios(false);
     setPreciosDraft({});
     setModalGuardadas(false);
-    toast(`📂 Cargada ${nombreHipodromoParaMostrar(g.hipodromo)} C${g.carrera1}×C${g.carrera2}.`, "info");
+    toast(`📂 Cargada ${nombreHip(g.hipodromo)} C${g.carrera1}×C${g.carrera2}.`, "info");
   };
 
   /** Elimina una dupleta guardada, avisando cuántas ventas contiene. */
@@ -303,7 +338,7 @@ export function DupletaModule() {
     const detalle = ventas
       ? `\n\n⚠️ Contiene ${ventas} venta(s) registrada(s). Los tickets NO se anulan: la dupleta solo se retira de la lista.`
       : "";
-    if (!window.confirm(`¿Eliminar la dupleta ${nombreHipodromoParaMostrar(g.hipodromo)} C${g.carrera1}×C${g.carrera2} del ${g.fecha}?${detalle}`)) {
+    if (!window.confirm(`¿Eliminar la dupleta ${nombreHip(g.hipodromo)} C${g.carrera1}×C${g.carrera2} del ${g.fecha}?${detalle}`)) {
       return;
     }
     const r = await eliminarDupleta(claveDeDupleta(g));
@@ -320,7 +355,11 @@ export function DupletaModule() {
   const carrerasDelDia = useMemo(() => {
     const mapa = new Map<string, TablaFijaRow>();
     for (const c of carreras) {
-      if (String(c.hipodromo || "").trim().toUpperCase() !== hipodromo) continue;
+      // Clave normalizada en los dos lados: con un `.trim().toUpperCase()` propio
+      // quedaba el espacio dentro ("LA RINCONADA" vs la clave "LARINCONADA") y la
+      // tabla de un hipódromo de dos palabras no aparecía — la carrera se "leía
+      // mal" y el módulo mostraba la matriz sin columnas/filas.
+      if (claveHipodromo(c.hipodromo) !== claveHipodromo(hipodromo)) continue;
       if ((c.fecha || "") !== dia) continue;
       mapa.set(String(c.carrera), c);
     }
@@ -739,7 +778,7 @@ export function DupletaModule() {
     const r = await guardarDupleta({ ...matriz, updatedAt: new Date().toISOString() });
     setGuardando(false);
     if (r.ok) {
-      toast(`💾 Dupleta ${nombreHipodromoParaMostrar(matriz.hipodromo)} C${matriz.carrera1}×C${matriz.carrera2} guardada en Supabase.`, "success");
+      toast(`💾 Dupleta ${nombreHip(matriz.hipodromo)} C${matriz.carrera1}×C${matriz.carrera2} guardada en Supabase.`, "success");
       setGuardadas(await listarDupletasGuardadas());
     } else {
       toast(`Error al guardar: ${r.error}. Ejecute sql/crear_tabla_dupletas.sql`, "error");
@@ -870,7 +909,7 @@ export function DupletaModule() {
     setLiquidando(false);
     if (!r.ok) return toast(r.error ?? "No se pudo liquidar la dupleta.", "error");
     toast(
-      `Liquidada ${nombreHipodromoParaMostrar(matriz.hipodromo)} C${matriz.carrera1}×C${matriz.carrera2}: ${r.ganadores ?? 0} ganadores, ${r.perdedores ?? 0} perdedores, ${r.anulados ?? 0} anulados · pagado $${(r.pagado ?? 0).toLocaleString("es-VE", { maximumFractionDigits: 2 })}.`,
+      `Liquidada ${nombreHip(matriz.hipodromo)} C${matriz.carrera1}×C${matriz.carrera2}: ${r.ganadores ?? 0} ganadores, ${r.perdedores ?? 0} perdedores, ${r.anulados ?? 0} anulados · pagado $${(r.pagado ?? 0).toLocaleString("es-VE", { maximumFractionDigits: 2 })}.`,
       "success"
     );
   };
@@ -928,7 +967,7 @@ export function DupletaModule() {
               onChange={(v) => { setHipodromo(v); setCarrera1(""); setCarrera2(""); }}
               placeholder={dia ? "Buscar hipódromo…" : "Elija el día primero"}
               allowCustom={false}
-              inputClassName={inputSel}
+              inputClassName={inputSelNombre}
             />
           </div>
         </div>
@@ -1045,7 +1084,7 @@ export function DupletaModule() {
         <div className="rounded-2xl border border-line bg-surface p-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">
-              <span className="normal-case">{nombreHipodromoParaMostrar(matriz.hipodromo)}</span> · {matriz.fecha} · Carrera {matriz.carrera1} × Carrera {matriz.carrera2}
+              <span className="normal-case">{nombreHip(matriz.hipodromo)}</span> · {matriz.fecha} · Carrera {matriz.carrera1} × Carrera {matriz.carrera2}
             </h4>
             <span className="flex items-center gap-2">
               <span
@@ -1396,7 +1435,7 @@ export function DupletaModule() {
                       const activa = Boolean(matriz && claveDeDupleta(matriz) === claveDeDupleta(g));
                       return (
                         <tr key={claveDeDupleta(g)} className={`border-t border-line ${activa ? "bg-indigo-50" : "hover:bg-slate-50"}`}>
-                          <td className="px-3 py-2 font-bold uppercase text-slate-700"><span className="normal-case">{nombreHipodromoParaMostrar(g.hipodromo)}</span></td>
+                          <td className="px-3 py-2 font-bold uppercase text-slate-700"><span className="normal-case">{nombreHip(g.hipodromo)}</span></td>
                           <td className="px-3 py-2 tabular-nums text-slate-600">{g.fecha}</td>
                           <td className="px-3 py-2 font-bold text-slate-700">C{g.carrera1} × C{g.carrera2}</td>
                           <td className="px-3 py-2 text-right font-black tabular-nums text-emerald-700">
@@ -1499,7 +1538,7 @@ export function DupletaModule() {
       info.style.cssText = "flex:1;min-width:0;font-family:Inter,ui-sans-serif,system-ui,sans-serif;";
       const infoT = document.createElement("div");
       infoT.style.cssText = "font-size:16px;font-weight:800;letter-spacing:0.02em;color:#0f172a;line-height:1.4em;";
-      infoT.textContent = `${nombreHipodromoParaMostrar(matriz.hipodromo)} · ${matriz.fecha} · Carrera ${matriz.carrera1} × Carrera ${matriz.carrera2}`;
+      infoT.textContent = `${nombreHip(matriz.hipodromo)} · ${matriz.fecha} · Carrera ${matriz.carrera1} × Carrera ${matriz.carrera2}`;
       const infoS = document.createElement("div");
       infoS.style.cssText = "font-size:12px;font-weight:700;color:#64748b;margin-top:3px;line-height:1.4em;";
       infoS.textContent = `PAGA ${matriz.premio.toLocaleString("es-VE")} · ${vendidas.length} cuadro(s) vendido(s) · ${totalVentas.toLocaleString("es-VE", { maximumFractionDigits: 2 })}`;
