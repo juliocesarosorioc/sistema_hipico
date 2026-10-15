@@ -80,7 +80,7 @@ function hipoKey(h: unknown): string {
  *  - Modal Carga Rápida: textarea con bloque de texto (formato legacy) que el
  *    motor parsea línea por línea y puebla las filas automáticamente
  *  - Inputs: Retirados · COM % · Modalidad (Con Cruces) · Saldos Pozo/Traslado/Aval
- *  - Hipódromo buscable + Semáforo de carreras (gris/verde/amarillo/rojo)
+ *  - Hipódromo buscable + Semáforo de carreras (gris/azul/amarillo/rojo)
  *  - Barra de comandos flotante con atajos: Ctrl+Q / Ctrl+Y / Ctrl+R / Ctrl+Shift+K
  *  - Liquidación con motor + posiciones dinámicas (5 por defecto, hasta 8)
  *    + Dead Heat (cero fraccionamiento)
@@ -1058,6 +1058,9 @@ const hipodromosDelDia = useMemo(() => {
       hipodromo,
       carrera,
       pizarra: ultimaPizarra.pizarra,
+      // La jornada seleccionada, no "hoy": el resultado central se escribe en
+      // esa fecha y el semáforo (que filtra por fecha) pasa a rojo al finalizar.
+      fecha,
       // Los dividendos cargados en Ctrl+Y viajan al motor y al central: sin
       // esto la liquidación de puestos quedaba PENDIENTE por dividendo
       // faltante y `resultados_carreras.dividendos` se guardaba en NULL.
@@ -1669,12 +1672,16 @@ const hipodromosDelDia = useMemo(() => {
             carrera,
             cargado_por: "GESTION-JUGADAS",
             r,
-          }).then((res) => {
-            if (!res.ok) setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó: ${res.error ?? "sin conexión"}`);
-            // Cargado UNA sola vez: al centralizar abrimos el REPORTE directo
-            // (que ya trae su opción de WhatsApp), sin pasos intermedios.
-            setMostrarReporteLiquidacion(true);
-          });
+          })
+            .then((res) => {
+              if (!res.ok) setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó: ${res.error ?? "sin conexión"}`);
+            })
+            .catch(() => setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó.`))
+            .finally(() => {
+              // Cargado UNA sola vez: al centralizar abrimos el REPORTE directo
+              // (que ya trae su opción de WhatsApp), sin pasos intermedios.
+              setMostrarReporteLiquidacion(true);
+            });
         }}
       />
 

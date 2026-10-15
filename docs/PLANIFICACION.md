@@ -1332,7 +1332,189 @@ el rótulo "Jugadas a Premio / de Puestos" debajo de cada jugada.
 
 ---
 
-*Última actualización: 2026-10-15 (reporte por carrera: causa raíz del "da"
+## 2026-10-15 (tarde) — Nuevos requerimientos del dueño
+
+> Registrado tal cual lo pidió el dueño. El **ítem 2** (color de las carreras) es
+> una **condición permanente** que "debe cumplir siempre" y se corrigió en el
+> código; los **ítems 1, 3, 4 y 5** quedan como **plan** a desarrollar.
+
+### 1. Registrar MÁS jugadas a una carrera ya CERRADA / LIQUIDADA (plan)
+
+Hoy, al **Registrar y Finalizar** una carrera, ésta pasa a **"Liquidada"**
+(`liquidarCarreraYCerrarTabla` → `upsertResultadoCentral` con
+`aplicado_a_tablas: true`) y **ya no hay camino para sumar una jugada nueva**:
+la carrera queda cerrada y la carga individual apunta a la carrera activa, pero
+el resultado/liquidación ya se aplicó.
+
+Se requiere:
+- Poder **agregar jugadas después de liquidar** (y también a una carrera
+  "cerrada" por tabla), como una **re-apertura explícita** ("➕ Agregar jugada a
+  carrera liquidada").
+- Que esas jugadas nuevas se puedan **liquidar solas** sin rehacer toda la
+  carrera: pagar solo lo que se agregó (los tickets previos ya están en estado
+  `Ganador`/`Perdedor`/`Retirado` y no se deben tocar — la idempotencia de
+  `aplicarLiquidacionSaldos` ya lo soporta porque sólo toca `Pendiente`).
+- Trazabilidad: quién re-abrió, cuándo y con qué autorización (capacidad nueva).
+
+**Zona a tocar:** `src/features/gestion/components/GestionJugadasModule.tsx`
+(estado "cerrada"/"liquidada" de la carrera activa), `src/features/liquidacion/lib/pagarYCerrar.ts`
+y `src/features/liquidacion/lib/saldos.ts` (liquidar sólo los `Pendiente`),
+`src/features/tablas/lib/tablas-fijas.ts` (no volver a cerrar la tabla).
+
+### 2. Color de las carreras en la carga manual (condición PERMANENTE) — ✅ corregido
+
+Regla pedida por el dueño, **debe cumplirse SIEMPRE**:
+
+| Color | Significado |
+|-------|-------------|
+| **Azul** | Carrera registrada, **sin jugadas** |
+| **Amarillo** | **Con jugadas** |
+| **Rojo** | **Liquidada** |
+
+**Síntoma:** luego de **Registrar y Finalizar**, la carga manual **no** cambiaba
+el color de la carrera (no pasaba a rojo) y el chip "registrada sin jugadas" se
+pintaba **verde**, no azul.
+
+**Causa raíz (fecha):** `liquidarCarreraYCerrarTabla`
+(`src/features/liquidacion/lib/pagarYCerrar.ts`) escribía el resultado central
+con `fecha = hoyLocal()` **fija**, ignorando la **fecha de la jornada
+seleccionada** en el módulo. `SemaforoCarreras` filtra por la fecha elegida
+(`c.fecha === fecha`), así que **en cualquier jornada que no sea hoy el chip
+jamás pasa a "Liquidada"** (y lo mismo rompía "con jugadas" si la venta se
+registró con otra fecha). De paso, el resultado se persistía en el **día
+equivocado**.
+
+**Fix:**
+- `src/features/liquidacion/lib/pagarYCerrar.ts` — `liquidarCarreraYCerrarTabla`
+  acepta `fecha` opcional y la usa para `leerRetirosCarrera`, `dividendosDe` y
+  `upsertResultadoCentral` (por defecto `hoyLocal()` si no se pasa).
+- `src/features/gestion/components/GestionJugadasModule.tsx` — `ejecutarFinalizar`
+  pasa la `fecha` de la jornada (no la de hoy) al finalizar.
+- `src/features/gestion/components/SemaforoCarreras.tsx` — el chip
+  "Registrada (sin jugadas)" pasa de **verde a azul** (`blue`), y se actualiza
+  la leyenda; amarillo = con jugadas y rojo = liquidada se mantienen.
+
+### 3. Monitor de Jugadas: no muestra el PROGRESO DE RESULTADOS por carrera (plan)
+
+Reporta el dueño que el **Monitor de Jugadas** (y el módulo de Jugadas)
+**no muestran el progreso de resultados carrera por carrera** — es decir, el
+avance de **cuántas carreras de la jornada ya tienen resultado**, cuántas están
+pendientes y cuántas liquidadas, por hipódromo.
+
+Se requiere una **barra/tablero de progreso** por jornada:
+`Programadas · con resultado · liquidadas`, por hipódromo y con el total del día,
+enganchado a la MISMA fuente que el semáforo (matriz `carreras` +
+`resultados_carreras`), sin una segunda verdad.
+
+**Zona a tocar:** `src/features/jugadas/components/JugadasModule.tsx`
+(TarjetaResumen), `src/features/gestion/components/MonitorJugadas*` (si aplica) y
+el registro central (`useRegistroCentral`).
+
+### 4. BOLETO: vista de TODO lo pendiente de la plataforma (plan)
+
+Se va a **modificar la sección de Boleto** para que allí se visualice **todo lo
+que está pendiente de la plataforma**:
+- **Carreras jugadas** (con jugadas cargadas).
+- **Carreras liquidadas** (con resultado aplicado).
+
+Será una vista operativa única (estilo *inbox*) que lista las carreras de la
+jornada con su estado y acceso directo a cargar resultado / liquidar / reportar.
+
+**Zona a tocar:** `src/features/taquilla/components/*Boleto*` (BetSlip) y el
+`BetSlipPanel` (`src/features/betting/components/BetSlipPanel.tsx`), sumando el
+`BetSlip` que **todavía no persiste en `tickets_apuestas`** (ver "Pendiente
+estructural: el BetSlip no persiste").
+
+### 5. Grupos de Venta y Convenios: UX/UI (plan)
+
+Se va a **modificar la UX/UI de Grupos de Venta y Convenios** para:
+- Mostrar **primero, en la parte superior, el LISTADO COMPLETO de grupos
+  registrados** en pantalla (siempre visible).
+- **Crear un modal** (botón "➕ Registrar grupo") para dar de alta un grupo,
+  en vez del formulario embebido actual.
+
+**Zona a tocar:** `src/features/grupos/components/*` (listado + modal de alta) y
+la sección de convenios del grupo.
+
+### 6. Carga Rápida: interpretar las JUGADAS A PREMIO con punto decimal y con "A" (plan)
+
+El dueño pasa planos de WhatsApp escritos por el operador/locutor y pide que la
+**Carga Rápida** interprete las **jugadas a premio** cuando se escriben **con la
+letra "A"** (minúscula o mayúscula) en vez de la barra, y **con punto decimal**:
+
+| Escrito | == | Canónico de la casa |
+|---------|----|---------------------|
+| `10A3`  | =  | `10/3` |
+| `10a3`  | =  | `10/3` |
+| `10A4`  | =  | `10/4` |
+| `10A8`  | =  | `10/8` |
+| `10a3.5`| =  | `10/3,5` (decimal con punto **o** coma) |
+
+O sea: la `A`/`a` **entre dígitos** es el separador de proporción *A Premio*,
+igual que `/`; el rival puede ser decimal.
+
+Y los **ejemplares entre paréntesis** deben leerse como la columna CABALLO:
+`(2)` suelto, y los pareos `(1x6)` · `(6x4)` · `(4x6)` · `(1X6)`.
+
+Plano de referencia (19 líneas, tal cual lo pasó el dueño):
+
+```
+1) Juega Wisky 10A4 (2) con 10.000,00 da Gareth
+2) Juega Miguelon 10A4 (2) con 10.000,00 da Paris
+3) Juega Benelli (1x6) con 5.000,00 da Sanchez
+4) Juega Guason 10A3.5 (2) con 30.000,00 da Parcero
+5) Juega Enger 10A3 (2) con 100.000,00 da Parcero
+6) Juega Miguelon 10A3 (2) con 20.000,00 da Yerson
+7) Juega Money 10A3.5 (2) con 2.200,00 da Duran
+8) Juega Alambre 10A3 (2) con 20.000,00 da Yerson
+9) Juega Adolfo 10A8 (1X6) con 15.000,00 da Cheo
+10) Juega Caracazo 10A3 (2) con 20.000,00 da Rh
+11) Juega Alambre 10A3 (2) con 24.512,50 da Rh
+12) Juega Ps 10A3 (2) con 35.000,00 da Rh
+13) Juega Jaime (6x4) con 5.700,00 da Gringo
+14) Juega Money 10A3 (2) con 20.000,00 da Newyork
+15) Juega Money 10A3 (2) con 51.510,00 da Yayaju
+16) Juega Wisky 10A3 (2) con 20.000,00 da Yayaju
+17) Juega Gringo (4x6) con 10.000,00 da Ele
+18) Juega Wisky 10A3 (2) con 10.000,00 da Houston
+19) Juega Paizita 10A3 (2) con 80.000,00 da Wilmer
+```
+
+**Estado actual en el código (a verificar/cerrar):**
+- `src/features/taquilla/lib/validar.ts` ya define
+  `RE_A_PREMIO = /^\d+(?:[.,]\d+)?[aA]\d+(?:[.,]\d+)?$/` (≈ línea 542) y
+  `esJugadaLetra()` la usa, así que `10A4` / `10a3.5` **ya matchean como JUGADA**
+  (token único). El pareo en paréntesis `(1x6)` no entra en `enParentesis`
+  (`/^\((\d+)\)$/`) pero igual se rescata como `1x6` por `RE_PAREO`.
+- `src/features/taquilla/lib/normalizar.ts` (`expandirLineaHablada`, ≈ línea 283)
+  sólo convierte el **hablado** `"10 a 8"` cuando la `a` viene **con espacios**;
+  `10A4` sin espacios no pasa por ahí (lo cubre `RE_A_PREMIO`).
+- GAP real: la forma **barra + punto** `10/3.5` queda rechazada por
+  `RE_JUGADA_BARRA = /^\d+\/\d+(?![\d.])/` (el lookahead no deja el `.`); la de
+  **barra + coma** `10/3,5` sí pasa.
+
+**Tareas:**
+1. Cubrir las 19 líneas con un test (en `pruebas/`) que exija
+   `jugada = 10/4 · 10/3,5 · 10/8 · 6x4 · 1x6 …`, `caballo = 2 / 1x6 / 6x4 …`,
+   `monto` y `cliente` (dador) correctos.
+2. Canonicalizar la forma `A`→`/` en un solo lugar (`10A3` → `10/3`,
+   `10a3.5` → `10/3,5`), de modo que `categoriaJugada()` la etiquete
+   **"Jugadas a Premio"**.
+3. Aceptar el punto decimal también en la forma de barra (`10/3.5`).
+
+**Zona:** `src/features/taquilla/lib/normalizar.ts`, `.../validar.ts`,
+`.../nomenclatura.ts` (`RE_PROPORCION`) y `pruebas/`.
+
+---
+
+*Última actualización: 2026-10-15 (tarde: nuevos requerimientos del dueño
+registrados — registrar más jugadas a carreras cerradas/liquidadas, color de
+carreras azul/amarillo/rojo como condición permanente, Monitor de Jugadas sin
+progreso de resultados por carrera, Boleto como vista de pendientes, rediseño
+UX/UI de Grupos de Venta y Convenios, y Carga Rápida de jugadas a premio con
+punto decimal y con "A" (10A3=10/3 · 10a3.5=10/3,5); corregido el color de la
+carga manual propagando la fecha de la jornada a la liquidación y el chip
+"registrada" en azul. Antes, 2026-10-15 (reporte por carrera: causa raíz del "da"
 ausente = columnas `cliente_consigue`/`cliente_juega` inexistentes en
 `tickets_apuestas`; plantilla compacta en una hoja con discos de color y sin
 rótulo de tipo; pendientes ya no caen en "Ganan"; cargar el resultado abre el

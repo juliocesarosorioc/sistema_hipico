@@ -85,6 +85,8 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   tickets: TicketPagar[];
   tasaComision?: number | null;
   dividendos?: Record<string, number> | null;
+  /** Fecha de la JORNADA que se liquida (no necesariamente hoy). */
+  fecha?: string;
 }): Promise<ResLiquidarCarrera> {
     try {
       // Con contexto, no solo con permiso: el ABAC exige que el operador
@@ -99,7 +101,13 @@ export async function liquidarCarreraYCerrarTabla(opts: {
       return liquidacionVacia(e as Error);
     }
     const { hipodromo, carrera, pizarra, tickets, tasaComision } = opts;
-  const dividendos = opts.dividendos ?? (await dividendosDe(hipodromo, carrera));
+  // La jornada que se liquida, NO necesariamente hoy. Se usa para retiros, para
+  // leer dividendos y para escribir el resultado CENTRAL: con `hoyLocal()` fijo,
+  // liquidar una jornada que no es la de hoy guardaba el resultado en el día
+  // equivocado y el semáforo (que filtra por la fecha elegida) no cambiaba de
+  // color al finalizar.
+  const fecha = opts.fecha || hoyLocal();
+  const dividendos = opts.dividendos ?? (await dividendosDe(hipodromo, carrera, fecha));
 
   const procesados: ResLiquidarCarrera["procesados"] = [];
   const metadatos: Array<{ cliente1?: string; caballo: string; monto: number; permiteCruces?: boolean }> = [];
@@ -208,7 +216,6 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   // `retirados` es obligatorio en el upsert y se escribe TAL CUAL, asi que hay
   // que releer el actual: mandar un "NO HUBO RETIROS" fijo borraria los retiros
   // ya registrados por la via de retiros al central.
-  const fecha = hoyLocal();
   const retiradosActuales = await leerRetirosCarrera(fecha, hipodromo, carrera);
   const central = await upsertResultadoCentral({
     fecha,
@@ -257,13 +264,13 @@ function firstOrdinal(primero: unknown): number {
 
 /** Lee los dividendos oficiales ya persistidos en resultados_carreras
     (fecha + hipódromo + carrera) para cruzar la liquidación universal. */
-async function dividendosDe(hipodromo: string, carrera: number | string): Promise<Record<string, number> | null> {
+async function dividendosDe(hipodromo: string, carrera: number | string, fecha?: string): Promise<Record<string, number> | null> {
   if (!supabase) return null;
   try {
     // Fecha LOCAL (no UTC): el dividendo se persistió con la fecha de la
     // jornada que ve el operador (ISO YYYY-MM-DD); con UTC se consultaba el
     // "día anterior" tras las 20:00.
-    const f = hoyLocal();
+    const f = fecha || hoyLocal();
     const { data } = await supabase
       .from("resultados_carreras")
       .select("dividendos")

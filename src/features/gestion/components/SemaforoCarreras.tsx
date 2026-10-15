@@ -22,7 +22,8 @@ export type EstadoCarrera = "inactiva" | "abierta" | "con_jugadas" | "cerrada";
 
 const COLORES: Record<EstadoCarrera, { chip: string; label: string; txt: string }> = {
   inactiva: { chip: "border-line bg-surface text-slate-400", label: "Sin registro", txt: "text-slate-400" },
-  abierta: { chip: "border-success-500/60 bg-success-500/15 text-success-700", label: "Registrada", txt: "text-success-700" },
+  // Registrada SIN jugadas = AZUL (condición del dueño). Antes iba en verde.
+  abierta: { chip: "border-blue-500/60 bg-blue-500/15 text-blue-700", label: "Registrada", txt: "text-blue-700" },
   con_jugadas: { chip: "border-warning-500/70 bg-warning-500/20 text-warning-700", label: "Con jugadas", txt: "text-warning-700" },
   cerrada: { chip: "border-danger-500/70 bg-danger-500/15 text-danger-600", label: "Liquidada", txt: "text-danger-600" },
 };
@@ -41,7 +42,7 @@ const MANUAL_TOTAL = 12;
  *  - Modo Manual (manual=true): TODAS las carreras quedan habilitadas para
  *    registrar jugadas en una carrera vacía sin depender de la Gaceta IA.
  *  - Sin carreras registradas → semáforo vacío/inactivo con aviso.
- *  - gris = sin registro · verde = Registrada (abierta por gacetas) ·
+ *  - gris = sin registro · azul = Registrada (sin jugadas) ·
  *    amarillo = Con jugadas · rojo = Liquidada.
  */
 export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSeleccionar, manual }: Props) {
@@ -87,7 +88,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
       <div className="mb-2 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-500">
         <span className="font-black uppercase tracking-wide"><span className="normal-case">{nombreMostrar}</span> · CARRERAS DEL {fecha}</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full border border-line bg-surface" /> Sin registro</span>
-        <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-success-500" /> Registrada</span>
+        <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-blue-500" /> Registrada (sin jugadas)</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-warning-500" /> Con jugadas</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-danger-500" /> Liquidada</span>
         {manual && (
