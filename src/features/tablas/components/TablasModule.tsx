@@ -310,16 +310,16 @@ export function TablasModule(props: Props) {
     if ((d.caballos ?? []).length === 0 && !modoManual)
       return toast("Añada al menos un ejemplar (o active ✍️ Modo Manual para registrar la carrera vacía).", "warning");
 
-    // BARRERA DE FECHA (individual). Misma regla que en el lote: la fecha de la
-    // tarjeta tiene que ser inequívoca y de la jornada abierta. El 04-10-2026 se
-    // partió justamente por publicar sin esta comprobación.
+    // BARRERA DE FECHA (individual). La fecha de la tarjeta tiene que ser
+    // inequívoca y quedar en ISO. Se publica en la fecha DE LA TARJETA; solo si
+    // no trae fecha se hereda la jornada abierta.
     const chequeo = validarFechasDeCarga([d], fechaPrograma);
     if (!chequeo.ok) {
       toast(resumenProblemasCarga(chequeo.problemas), "error");
       return;
     }
-    // A partir de aquí la fecha es SIEMPRE ISO de la jornada.
-    const fechaCarrera = chequeo.fechaIso;
+    // Fecha efectiva de ESTA tarjeta (su propia fecha, o la jornada si no trae).
+    const fechaCarrera = chequeo.fechasPorUid[d.uid] ?? chequeo.fechaIso;
 
     // Modo Manual sin ejemplares: registra el hipódromo (crea si es nuevo) y
     // la carrera vacía en resultados_carreras, sin publicar una tabla sin datos.
@@ -382,7 +382,8 @@ export function TablasModule(props: Props) {
     // crudo y Postgres lo leía como MM-DD: el 04-10-2026 terminó con tres
     // carreras (C10-C12) fechadas 2026-04-10, y no aparecían en Tablas Fijas ni
     // en Gestión de Jugadas. Se valida ANTES de tocar la base, y se reportan
-    // TODOS los problemas juntos para no corregirlos de uno en uno.
+    // TODOS los problemas juntos para no corregirlos de uno en uno. Cada carrera
+    // se publica en SU fecha (la de la tarjeta); la jornada es solo el default.
     const chequeo = validarFechasDeCarga(validas, fechaPrograma);
     if (!chequeo.ok) {
       toast(resumenProblemasCarga(chequeo.problemas), "error");
@@ -404,19 +405,19 @@ export function TablasModule(props: Props) {
       for (const d of vacias) {
         await asegurarHipodromo(d.hipodromo.trim()).catch(() => null);
         const r = await registrarCarreraProgramada({
-          fecha: chequeo.fechaIso,
+          fecha: chequeo.fechasPorUid[d.uid] ?? chequeo.fechaIso,
           hipodromo: d.hipodromo.trim(),
           carrera: Math.round(parseNum(d.carrera)) || d.carrera,
         }).catch(() => ({ ok: false as const, error: "sin conexión" }));
         // `registrarCarreraProgramada` escribe la matriz directo: si falla, NO
         // se siembra (mostraría una carrera que en la base no existe).
         if (r?.ok) {
-          sembrarCarreraCentral(d.hipodromo, d.carrera, chequeo.fechaIso);
+          sembrarCarreraCentral(d.hipodromo, d.carrera, chequeo.fechasPorUid[d.uid] ?? chequeo.fechaIso);
           okVacios++;
         }
       }
       if (tablasConCaballos.length) {
-        const lote = tablasConCaballos.map((d) => draftATabla(d, chequeo.fechaIso));
+        const lote = tablasConCaballos.map((d) => draftATabla(d, chequeo.fechasPorUid[d.uid] ?? chequeo.fechaIso));
         if (persistirLote) {
           const r = await persistirLote(lote);
           okTablas = r.okCount;
@@ -446,7 +447,7 @@ export function TablasModule(props: Props) {
         }
         for (const d of tablasConCaballos) {
           if (sinCentralIds.has(d.uid)) continue;
-          sembrarCarreraCentral(d.hipodromo, d.carrera, chequeo.fechaIso);
+          sembrarCarreraCentral(d.hipodromo, d.carrera, chequeo.fechasPorUid[d.uid] ?? chequeo.fechaIso);
         }
       }
       validas.forEach((d) => eliminarDelRegistroGaceta(d.hipodromo.toUpperCase(), d.carrera));
@@ -458,7 +459,7 @@ export function TablasModule(props: Props) {
       );
     }
 
-    const lote = validas.map((d) => draftATabla(d, chequeo.fechaIso));
+    const lote = validas.map((d) => draftATabla(d, chequeo.fechasPorUid[d.uid] ?? chequeo.fechaIso));
     const claveDeDraft = (d: DraftCarrera) =>
       `${d.hipodromo.trim().toUpperCase()}|${Math.round(parseNum(d.carrera)) || d.carrera}`;
     const draftPorClave = new Map(validas.map((d) => [claveDeDraft(d), d]));

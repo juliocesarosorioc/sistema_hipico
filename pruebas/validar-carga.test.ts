@@ -1,12 +1,14 @@
 ﻿// ============================================================================
 // CONTRATO DE LA VALIDACION DE CARGA — el escudo del 04-10-2026.
 //
-// Reproduce el incidente como caso de prueba: si alguien quita la regla, la
-// jornada se vuelve a partir y estas pruebas se ponen rojas.
+// Reproduce el incidente como caso de prueba. Tras quitar la Regla 3 (la fecha
+// ya no es limitante), la defensa que queda es: la fecha debe ser interpretable,
+// NO ambigua y quedar en ISO; cada tarjeta se publica en SU día (la jornada
+// abierta es solo el valor por defecto de las tarjetas sin fecha).
 //
 // Corre con:  npx tsx pruebas/validar-carga.test.ts
 // ============================================================================
-import { resumenProblemasCarga, validarFechasDeCarga } from "../src/lib/tablas/validar-carga";
+import { resumenProblemasCarga, validarFechasDeCarga } from "../src/features/tablas/lib/validar-carga";
 
 let pasan = 0;
 let fallan = 0;
@@ -49,16 +51,29 @@ console.log("\n== El incidente del 04-10-2026 reproducido ==");
 }
 
 {
-  // El caso todavía más peligroso: la fecha es interpretable y válida, pero es
-  // de ABRIL. No es ambigua, no está "mal escrita" — simplemente no es el día
-  // que el operador tiene abierto. Solo la regla 3 lo detiene.
+  // La fecha de la tarjeta manda: una fecha válida de OTRO día ya NO se detiene.
+  // La antigua Regla 3 ("tiene que ser la jornada abierta") se eliminó: cada
+  // tarjeta se publica en SU día y la jornada solo es el valor por defecto.
   const r = validarFechasDeCarga(
     [{ uid: "x", hipodromo: "LA RINCONADA", carrera: "10", fecha: "2026-04-10" }],
     "2026-10-04"
   );
-  si(!r.ok, "una fecha válida de OTRO día también se detiene");
-  si(/2026-04-10/.test(r.problemas[0]?.motivo || "") && /2026-10-04/.test(r.problemas[0]?.motivo || ""),
-     "y el mensaje dice qué tiene y cuál debería ser", r.problemas[0]?.motivo);
+  si(r.ok, "una fecha válida de OTRO día se acepta (la fecha no es limitante)");
+  si(r.fechasPorUid["x"] === "2026-04-10", "y se publica en SU día, no en el de la jornada", r.fechasPorUid["x"]);
+}
+
+{
+  // La jornada abierta solo aplica a las tarjetas SIN fecha.
+  const r = validarFechasDeCarga(
+    [
+      { uid: "a", hipodromo: "X", carrera: "1", fecha: null },
+      { uid: "b", hipodromo: "X", carrera: "2", fecha: "2026-10-15" },
+    ],
+    "2026-10-04"
+  );
+  si(r.ok, "fechas distintas + una sin fecha: todo OK");
+  si(r.fechasPorUid["a"] === "2026-10-04", "la tarjeta sin fecha hereda la jornada", r.fechasPorUid["a"]);
+  si(r.fechasPorUid["b"] === "2026-10-15", "la tarjeta con fecha usa la suya", r.fechasPorUid["b"]);
 }
 
 // ----------------------------------------------------------------------------
@@ -159,7 +174,7 @@ console.log("\n== El mensaje que ve el operador ==");
   const r = validarFechasDeCarga(
     [
       { uid: "1", hipodromo: "LA RINCONADA", carrera: "10", fecha: "04-10-2026" },
-      { uid: "2", hipodromo: "LA RINCONADA", carrera: "11", fecha: "2026-04-10" },
+      { uid: "2", hipodromo: "LA RINCONADA", carrera: "11", fecha: "basura" },
     ],
     "2026-10-04"
   );
