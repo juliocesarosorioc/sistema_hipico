@@ -1256,7 +1256,60 @@ el desglose.
 
 ---
 
-*Última actualización: 2026-10-12 (fases de profesionalización: mocks limpiados +
+## 2026-10-15 — Reporte por carrera: muestra al que DA, colores y una sola hoja
+
+Reportó el usuario que el reporte por carrera **no mostraba a los que pierden**
+y **faltaba el "da"** (el que consigue o va a los otros ejemplares); además pidió
+que todo entre en **una sola hoja**, con los **colores de los ejemplares** y sin
+el rótulo "Jugadas a Premio / de Puestos" debajo de cada jugada.
+
+### Causa raíz (verificada contra el esquema real de `tickets_apuestas`)
+- `tickets_apuestas` NO tiene las columnas `cliente_juega` / `cliente_consigue`
+  (son `cliente_juega_id` / `cliente_juega_nombre` y `cliente_consigue_id` /
+  `cliente_consigue_nombre`). `reportes.ts::carreraReporte` leía
+  `f.cliente_consigue`, que siempre venía vacío: `if (clienteConsigue)` NUNCA
+  creaba la fila del que CONSIGUE → el "DA" salía en blanco y esa mitad no
+  entraba al resumen (Ganan/Pierden).
+- En la misma línea, `f.cliente_juega` (usado como clave del CRUCE) también leía
+  una columna inexistente, así que el CRUCE financiero quedaba deshabilitado.
+  Se dejó IGUAL a propósito: el cruce es un feature **pendiente** (ver
+  PLANIFICACION.md "INQUIETUDES CON RESPECTO A CRUCES").
+
+### Fixes
+- `src/features/liquidacion/lib/reportes.ts` — el que consigue se lee de
+  `cliente_consigue_nombre` (respaldo `cliente_consigue_id`); vuelve a crearse
+  la fila "Consigue" → reaparece el DA y su mitad del resumen.
+- `src/features/liquidacion/lib/reporte-carrera.ts` — se quita la etiqueta de
+  "tipo" de jugada; los tickets **pendientes (`resultado null`)** dejan de
+  contarse como "Ganan 0.00" (que vaciaba "Pierden"); el resumen sólo lista
+  netos `> 0` (Ganan) y `< 0` (Pierden). `JugadaVivo` ahora lleva el/los
+  `caballo`(s) para pintar el disco.
+- `src/features/saldos/lib/discos.ts` (nuevo) — `colorDiscoNumero` +
+  `numerosDeCaballo`, compartidos entre el armado y la plantilla.
+- `src/features/saldos/components/ReporteCarrera.tsx` — plantilla COMPACTA
+  (una hoja/pantalla), discos de color en cada jugada, sin rótulo de
+  premio/puestos y la columna DA siempre visible ("—" si no hay par).
+- `pruebas/reporte-carrera.test.ts` — rutas feature-first + aserciones de
+  `caballo`, ausencia de `tipo` y "el pendiente no cae en Ganan".
+
+### UX: cargar el resultado UNA vez → reporte directo + WhatsApp
+- `src/features/gestion/components/GestionJugadasModule.tsx` — al confirmar la
+  Carga de Resultados (Ctrl+Y) se centraliza y se abre **directo el reporte**
+  (antes saltaba al mensaje de texto).
+- `src/features/liquidacion/components/WhatsappReporteCarrera.tsx` (nuevo) —
+  botón 💬 dentro del reporte que arma la **relación de resultados** (mismo
+  camino que el Centro de WhatsApp: `leerResultadoOficial` +
+  `cargarJugadasDeCarrera` + `relacionResultados`) y permite Copiar / Abrir
+  WhatsApp / Enviar al grupo.
+
+---
+
+*Última actualización: 2026-10-15 (reporte por carrera: causa raíz del "da"
+ausente = columnas `cliente_consigue`/`cliente_juega` inexistentes en
+`tickets_apuestas`; plantilla compacta en una hoja con discos de color y sin
+rótulo de tipo; pendientes ya no caen en "Ganan"; cargar el resultado abre el
+reporte directo con su botón de WhatsApp. Antes, 2026-10-12 (fases de
+profesionalización: mocks limpiados +
 EmptyState, multi-tenant/RBAC confirmado sobre el esquema real, seed de blindaje
 de josorioc con trigger de inmutabilidad, y módulo de Creación de Grupos con
 wizard 3 pasos + edge function `crear-grupo` latas pendientes de desplegar;
