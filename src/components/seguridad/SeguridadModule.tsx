@@ -22,11 +22,11 @@ import {
   type UsuarioAlta,
 } from "@/lib/seguridad/accesos";
 import type { Decision, ExcepcionUsuario, TipoCapacidad, TipoUsuario } from "@/lib/seguridad/tipos";
-import { Guard } from "@/components/ui/Guard";
+import { Guard } from "@/shared/components/ui/Guard";
 import { AuditoriaPanel } from "@/components/seguridad/AuditoriaPanel";
 import { listarClientes, type ClienteRow } from "@/lib/clientes";
 import { listarGruposVenta, type GrupoVenta } from "@/lib/grupos";
-import { useAuthStore } from "@/store/useAuthStore";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 
 type Pestana = "esquema" | "reglas" | "tipos" | "usuarios" | "auditoria";
 
@@ -1022,7 +1022,7 @@ function AltaUsuario({
 }
 
 async function salirDeLaSesion() {
-  const { useAuthStore } = await import("@/store/useAuthStore");
+  const { useAuthStore } = await import("@/shared/store/useAuthStore");
   await useAuthStore.getState().salir();
   if (typeof window !== "undefined") window.location.assign("/login");
 }

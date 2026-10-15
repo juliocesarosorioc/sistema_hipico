@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CLAVE_GEMINI_KEY, transformarGaceta } from "@/lib/gaceta/ia";
 import { guardarHistorialGaceta, registrarEjemplares } from "@/lib/gaceta/padron";
-import { Button } from "@/components/ui/Button";
-import { ToastHost } from "@/components/ui/ToastHost";
+import { Button } from "@/shared/components/ui/Button";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { CarreraGacetaCard } from "@/components/ejemplares/CarreraGacetaCard";
 import { listarHipodromos, type OpcionHipodromo } from "@/lib/tablas/rpc";
 import {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/shared/components/ui/Button";
 import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 
 export type TicketVentaModalidad = "MARCAS" | "DUPLETA" | "TABLA FIJA";

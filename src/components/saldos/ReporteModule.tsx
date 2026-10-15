@@ -11,7 +11,7 @@ import {
 import { etiquetaDia } from "@/lib/liquidacion/semana";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import { grupoActivoVigente } from "@/lib/seguridad/vigente";
-import { ToastHost } from "@/components/ui/ToastHost";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
 
 const fmtMonto = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Flag } from "@/components/ui/BanderaPais";
+import { Flag } from "@/shared/components/ui/BanderaPais";
 
 export type OpcionPadron = {
   id: string | number;

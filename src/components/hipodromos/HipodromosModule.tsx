@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { ToastHost } from "@/components/ui/ToastHost";
-import { Flag } from "@/components/ui/BanderaPais";
+import { Card } from "@/shared/components/ui/Card";
+import { Button } from "@/shared/components/ui/Button";
+import { Input } from "@/shared/components/ui/Input";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { Flag } from "@/shared/components/ui/BanderaPais";
 import {
   listarHipodromos,
   crearHipodromo,
@@ -23,8 +23,8 @@ import {
   PAISES,
   type Hipodromo,
 } from "@/lib/hipodromos/tipos";
-import { useHipodromosStore } from "@/store/useHipodromosStore";
-import { useRegistroCentral } from "@/store/useRegistroCentral";
+import { useHipodromosStore } from "@/shared/store/useHipodromosStore";
+import { useRegistroCentral } from "@/shared/store/useRegistroCentral";
 
 type FormModal = { abierta: boolean; editando: Hipodromo | null; nombre: string; pais: string; estado: string };
 

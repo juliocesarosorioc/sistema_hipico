@@ -1,7 +1,7 @@
 "use client";
 
-import { useTaquillaStore } from "@/store/useTaquillaStore";
-import { Button } from "@/components/ui/Button";
+import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
+import { Button } from "@/shared/components/ui/Button";
 import { anularJugada } from "@/lib/taquilla/venta";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>

@@ -1,12 +1,12 @@
 "use client";
 
-import { HorseBadge } from "@/components/ui/HorseChips";
+import { HorseBadge } from "@/shared/components/ui/HorseChips";
 import { useEffect, useState } from "react";
-import type { StoredTablaFija } from "@/store/useTablasFijasStore";
+import type { StoredTablaFija } from "@/shared/store/useTablasFijasStore";
 import { colorDeNumero, textoDeNumero, fmtMoney, parseNum, type EjemplarTabla } from "@/lib/tablas/tipos";
 import { listarGruposVenta, jugadoresDeGrupo, type GrupoVenta, type ClienteVenta } from "@/lib/grupos";
-import { Button } from "@/components/ui/Button";
-import { Flag } from "@/components/ui/BanderaPais";
+import { Button } from "@/shared/components/ui/Button";
+import { Flag } from "@/shared/components/ui/BanderaPais";
 
 export type VentaRapidaItem = {
   numero: string;

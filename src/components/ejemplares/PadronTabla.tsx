@@ -11,10 +11,10 @@ import {
   nombrePais,
   type EjemplarPadron,
 } from "@/lib/gaceta/padron";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { ToastHost } from "@/components/ui/ToastHost";
-import { Flag } from "@/components/ui/BanderaPais";
+import { Button } from "@/shared/components/ui/Button";
+import { Input } from "@/shared/components/ui/Input";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { Flag } from "@/shared/components/ui/BanderaPais";
 
 export function PadronTabla() {
   const [lista, setLista] = useState<EjemplarPadron[]>([]);

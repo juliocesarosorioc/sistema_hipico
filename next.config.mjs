@@ -50,10 +50,13 @@ const nextConfig = {
     config.resolve.alias = {
       ...(config.resolve.alias || {}),
       "@": src,
-      "@/components": path.join(src, "components"),
       "@/app": path.join(src, "app"),
-      "@/store": path.join(src, "store"),
+      "@/components": path.join(src, "components"),
       "@/lib": path.join(src, "lib"),
+      "@/store": path.join(src, "shared", "store"),
+      "@/shared": path.join(src, "shared"),
+      "@/core": path.join(src, "core"),
+      "@/features": path.join(src, "features"),
     };
     return config;
   },

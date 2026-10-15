@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { SelectorGrupo } from "@/components/grupos/SelectorGrupo";
-import { useAuthStore } from "@/store/useAuthStore";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 
 /**
  * Barra superior limpia de la SPA (Organismo del layout raíz).

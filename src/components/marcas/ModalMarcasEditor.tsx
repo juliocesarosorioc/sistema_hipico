@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/shared/components/ui/Button";
 import { getHorseColor } from "@/lib/horseColors";
-import { HorseBadge } from "@/components/ui/HorseChips";
+import { HorseBadge } from "@/shared/components/ui/HorseChips";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import { SemaforoCarreras } from "@/components/gestion/SemaforoCarreras";
 import { listarCarrerasPorDia, listarHipodromos, type OpcionHipodromo } from "@/lib/tablas/rpc";

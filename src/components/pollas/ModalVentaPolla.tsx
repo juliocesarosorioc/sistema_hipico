@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { SearchableSelect, type OpcionSelect } from "@/components/ui/SearchableSelect";
+import { Button } from "@/shared/components/ui/Button";
+import { Input } from "@/shared/components/ui/Input";
+import { SearchableSelect, type OpcionSelect } from "@/shared/components/ui/SearchableSelect";
 import {
   parsearSeleccion,
   revisarVenta,

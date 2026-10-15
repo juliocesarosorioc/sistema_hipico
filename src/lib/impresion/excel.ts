@@ -19,7 +19,7 @@
  */
 import { esHipoAmericano, type TablaImpresion } from "@/lib/impresion/tablas";
 import { esc, col, fmtPts, monSinSimb, monCode, fmtFecha, hoy } from "@/lib/impresion/util";
-import { normalizarNacionalidad } from "@/components/ui/BanderaPais";
+import { normalizarNacionalidad } from "@/shared/components/ui/BanderaPais";
 
 /* ─────────────────────────── PALETA (espejo de MATRIZ_CSS) ─────────────────────────── */
 const C_FONDO = "#0f172a";

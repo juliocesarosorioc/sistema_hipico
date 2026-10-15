@@ -2,18 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useTablasFijasStore, type StoredTablaFija } from "@/store/useTablasFijasStore";
-import { useTaquillaStore } from "@/store/useTaquillaStore";
+import { useTablasFijasStore, type StoredTablaFija } from "@/shared/store/useTablasFijasStore";
+import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
 import { parseNum, sumaBase, fmtMoney, type DraftCarrera, type ItemCarritoVenta } from "@/lib/tablas/tipos";
 import { aDraftCarrera, eliminarDelRegistroGaceta, leerBuzonEnsamblaje, limpiarBuzonEnsamblaje } from "@/lib/gaceta/ui";
-import { useCarrerasDiaStore } from "@/store/useCarrerasDiaStore";
+import { useCarrerasDiaStore } from "@/shared/store/useCarrerasDiaStore";
 import { registrarCarreraProgramada, cargarCarrerasDelDia } from "@/lib/carreras-dia";
 import {
   numeroCarrera,
   sembrarCarreraCentral,
   useRegistroCentralOpts,
-} from "@/store/useRegistroCentral";
-import { MonitorHipodromos } from "@/components/ui/MonitorHipodromos";
+} from "@/shared/store/useRegistroCentral";
+import { MonitorHipodromos } from "@/shared/components/ui/MonitorHipodromos";
 import { agruparPorHipodromo, diaDeCarrera } from "@/lib/carreras/agruparHipodromos";
 import { asegurarHipodromo } from "@/lib/tablas/rpc";
 import { resumenProblemasCarga, validarFechasDeCarga } from "@/lib/tablas/validar-carga";
@@ -23,8 +23,8 @@ import { SeccionPliegue } from "@/components/tablas/SeccionPliegue";
 import { ParametrosCarrera } from "@/components/tablas/ParametrosCarrera";
 import { TarjetaEnsamblaje } from "@/components/tablas/TarjetaEnsamblaje";
 import { MonitorTablas, type VentaTablaItem } from "@/components/tablas/MonitorTablas";
-import { ToastHost } from "@/components/ui/ToastHost";
-import { Guard } from "@/components/ui/Guard";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { Guard } from "@/shared/components/ui/Guard";
 import ConfigImpresionModal from "@/components/tablas/ConfigImpresionModal";
 import type { PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 

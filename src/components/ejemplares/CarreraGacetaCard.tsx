@@ -1,6 +1,6 @@
 "use client";
 
-import { Flag } from "@/components/ui/BanderaPais";
+import { Flag } from "@/shared/components/ui/BanderaPais";
 import {
   aNum,
   banderaGaceta,

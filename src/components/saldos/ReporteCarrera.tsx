@@ -1,5 +1,5 @@
 ﻿import React from 'react';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { EmptyState } from '@/shared/components/ui/EmptyState';
 
 /**
  * ============================================================================

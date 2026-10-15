@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import type { StoredTablaFija } from "@/store/useTablasFijasStore";
+import type { StoredTablaFija } from "@/shared/store/useTablasFijasStore";
 import { colorDeNumero, textoDeNumero, fmtMoney, sumaBase, parseNum, SUPERFICIES, type EjemplarTabla } from "@/lib/tablas/tipos";
 import { hoyLocal } from "@/lib/gaceta/programa";
-import { Flag, normalizarNacionalidad } from "@/components/ui/BanderaPais";
-import { Button } from "@/components/ui/Button";
-import { Guard } from "@/components/ui/Guard";
+import { Flag, normalizarNacionalidad } from "@/shared/components/ui/BanderaPais";
+import { Button } from "@/shared/components/ui/Button";
+import { Guard } from "@/shared/components/ui/Guard";
 import { TicketVentaPreview, type TicketVentaModel } from "@/components/tickets/TicketVentaPreview";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { EjemplarModal, type VentaRapidaItem } from "@/components/tablas/EjemplarModal";

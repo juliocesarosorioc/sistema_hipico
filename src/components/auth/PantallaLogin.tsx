@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { mensajeSinAcceso, useAuthStore } from "@/store/useAuthStore";
+import { mensajeSinAcceso, useAuthStore } from "@/shared/store/useAuthStore";
 import { pedirRecuperacion, resolverCorreo, sesionActual } from "@/lib/auth/sesion";
 
 /**

@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { ToastHost } from "@/components/ui/ToastHost";
-import { Guard } from "@/components/ui/Guard";
-import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { Card } from "@/shared/components/ui/Card";
+import { Button } from "@/shared/components/ui/Button";
+import { Input } from "@/shared/components/ui/Input";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { Guard } from "@/shared/components/ui/Guard";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { listarClientes, type ClienteRow } from "@/lib/clientes";
 import { listarGruposVenta, type GrupoVenta } from "@/lib/grupos";
 import { listarHipodromos } from "@/lib/hipodromos/servicio";

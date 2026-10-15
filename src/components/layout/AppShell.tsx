@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { Topbar } from "@/components/layout/Topbar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { BetSlipPanel } from "@/components/betting/BetSlipPanel";
-import { useAuthStore } from "@/store/useAuthStore";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 import { esRutaPublica } from "@/lib/seguridad/capacidades";
 
 const ES_PORTAL = (p: string) => p === "/portal" || p.startsWith("/portal/");

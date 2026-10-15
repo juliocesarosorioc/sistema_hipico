@@ -1,12 +1,12 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/shared/components/ui/Button";
 import { getHorseColor } from "@/lib/horseColors";
 import { hoyLocal } from "@/lib/gaceta/programa";
 import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import { type CarreraCentral, type EjemplarCarreraCentral } from "@/lib/carreras/central";
-import { useRegistroCentralOpts } from "@/store/useRegistroCentral";
+import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
 import { exportarPaginas, type ImgFormato } from "@/lib/impresion/exportar";
 import { enviarAlGrupoWsp } from "@/lib/whatsapp";
 import {

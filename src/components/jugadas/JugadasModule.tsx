@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Button } from "@/components/ui/Button";
-import { SearchableSelect } from "@/components/ui/SearchableSelect";
-import { ToastHost } from "@/components/ui/ToastHost";
-import { useAuthStore } from "@/store/useAuthStore";
-import { useHipodromosActivos } from "@/store/useHipodromosStore";
+import { Button } from "@/shared/components/ui/Button";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { useAuthStore } from "@/shared/store/useAuthStore";
+import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import {
   listarMonitorJugadas,

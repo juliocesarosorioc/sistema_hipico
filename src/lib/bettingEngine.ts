@@ -3,7 +3,7 @@
  * procesarTicket(ticket) lee ticket.tipo_jugada y deriva al submódulo correcto.
  * CERO espagueti: cada modalidad vive en su propio submódulo.
  */
-import { BetSlipEntry } from "@/store/bet-slip";
+import { BetSlipEntry } from "@/shared/store/bet-slip";
 import { PizarraCarrera, ResultadoPago, esPagoInmediato } from "./liquidacion";
 
 // ============================================================

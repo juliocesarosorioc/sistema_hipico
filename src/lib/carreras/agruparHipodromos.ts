@@ -5,7 +5,7 @@
  * calculen exactamente los mismos grupos a partir de fuentes distintas: la
  * clave es la unificacion (hipodromo en mayusculas + dia del evento).
  */
-import type { CarreraMonitor, GrupoHipodromo } from "@/components/ui/MonitorHipodromos";
+import type { CarreraMonitor, GrupoHipodromo } from "@/shared/components/ui/MonitorHipodromos";
 import { claveHipodromo, numeroCarrera } from "@/lib/carreras/claves";
 
 export type CarreraAgrupable = {

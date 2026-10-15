@@ -1,6 +1,6 @@
 "use client";
 
-import { RutaProtegida } from "@/components/ui/RutaProtegida";
+import { RutaProtegida } from "@/shared/components/ui/RutaProtegida";
 import { ContabilidadModule } from "@/components/contabilidad/ContabilidadModule";
 
 // La capacidad la deduce el propio RutaProtegida del registro maestro,

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Guard } from "@/components/ui/Guard";
-import { RutaProtegida } from "@/components/ui/RutaProtegida";
+import { Guard } from "@/shared/components/ui/Guard";
+import { RutaProtegida } from "@/shared/components/ui/RutaProtegida";
 import { capacidadesDeRuta } from "@/lib/seguridad/capacidades";
 
 /**

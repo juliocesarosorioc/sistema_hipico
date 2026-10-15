@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAuthStore } from "@/store/useAuthStore";
-import { Guard } from "@/components/ui/Guard";
+import { useAuthStore } from "@/shared/store/useAuthStore";
+import { Guard } from "@/shared/components/ui/Guard";
 import { capacidadesDeRuta } from "@/lib/seguridad/capacidades";
 
 type Item = { href?: string; emoji: string; txt: string };

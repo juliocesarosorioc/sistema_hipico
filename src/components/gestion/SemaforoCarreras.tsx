@@ -1,10 +1,10 @@
 "use client";
 
-import { useTablasFijasStore } from "@/store/useTablasFijasStore";
-import { useTaquillaStore } from "@/store/useTaquillaStore";
-import { useCarrerasDiaStore, type CarreraDelDia } from "@/store/useCarrerasDiaStore";
+import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
+import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
+import { useCarrerasDiaStore, type CarreraDelDia } from "@/shared/store/useCarrerasDiaStore";
 import { diaDeLaTabla } from "@/components/tablas/MonitorTablas";
-import { useHipodromosActivos } from "@/store/useHipodromosStore";
+import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
 
 type Props = {

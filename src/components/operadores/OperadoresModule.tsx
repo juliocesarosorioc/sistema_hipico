@@ -14,10 +14,10 @@
  */
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Guard } from "@/components/ui/Guard";
-import { ToastHost } from "@/components/ui/ToastHost";
+import { Button } from "@/shared/components/ui/Button";
+import { Card } from "@/shared/components/ui/Card";
+import { Guard } from "@/shared/components/ui/Guard";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { listarOperadores, guardarHipodromosDeOperador, type Operador } from "@/lib/operadores";
 import { listarHipodromos } from "@/lib/hipodromos/servicio";
 import { estaBorrado, type Hipodromo } from "@/lib/hipodromos/tipos";

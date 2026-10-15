@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { useAuthStore } from "@/store/useAuthStore";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 import { listarGruposVenta, type GrupoVenta } from "@/lib/grupos";
 import { limpiarCacheClientes } from "@/lib/clientes";
 

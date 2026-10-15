@@ -13,7 +13,7 @@
  */
 import type { ReactNode } from "react";
 import { hoyLocal } from "@/lib/gaceta/programa";
-import { useHipodromosActivos } from "@/store/useHipodromosStore";
+import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
 
 export type CarreraMonitor = {

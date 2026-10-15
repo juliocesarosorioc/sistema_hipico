@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { ToastHost } from "@/components/ui/ToastHost";
+import { Button } from "@/shared/components/ui/Button";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { listarTablasPublicadas } from "@/lib/tablas/rpc";
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import {

@@ -2,8 +2,8 @@
 
 import { getHorseColor } from "@/lib/horseColors";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { ToastHost } from "@/components/ui/ToastHost";
+import { Button } from "@/shared/components/ui/Button";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { listarHipodromos, type OpcionHipodromo } from "@/lib/tablas/rpc";
 import { nombreHipodromoParaMostrar, nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
 import { hoyLocal } from "@/lib/gaceta/programa";
@@ -18,7 +18,7 @@ import {
 import { aplicarRetirosCarrera, parsearRetirados } from "@/lib/carreras/retiros";
 import { claveCarrera, claveHipodromo } from "@/lib/carreras/claves";
 import { marcarCarreraVerificada, guardarInvalidadosRemate } from "@/lib/carreras/maestro";
-import { MonitorHipodromos } from "@/components/ui/MonitorHipodromos";
+import { MonitorHipodromos } from "@/shared/components/ui/MonitorHipodromos";
 import { agruparPorHipodromo } from "@/lib/carreras/agruparHipodromos";
 import { ModalMarcasEditor } from "@/components/marcas/ModalMarcasEditor";
 

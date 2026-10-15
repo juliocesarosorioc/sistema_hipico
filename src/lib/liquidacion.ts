@@ -3,7 +3,7 @@
  * (con el 1er lugar de la pizarra). TABLA, GANADOR y PUESTOS quedan
  * pendientes — exigen dividendos oficiales (Fase siguiente del plan).
  */
-import type { BetSlipEntry } from "@/store/bet-slip";
+import type { BetSlipEntry } from "@/shared/store/bet-slip";
 
 export type PizarraCarrera = {
   primero: string;

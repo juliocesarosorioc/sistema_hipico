@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { colorDeNumero, textoDeNumero, parseNum, OPCIONES_NACIONALIDAD, SUPERFICIES, type DraftCarrera, type EjemplarTabla } from "@/lib/tablas/tipos";
-import { Flag } from "@/components/ui/BanderaPais"; // Inyectamos la bandera
+import { Flag } from "@/shared/components/ui/BanderaPais"; // Inyectamos la bandera
 import { EditorCaballos } from "@/components/tablas/EditorCaballos";
 import { esFechaIso } from "@/lib/fechas";
 import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/shared/components/ui/Button";
 import { getHorseColor } from "@/lib/horseColors";
 import {
   OPCIONES_NACIONALIDAD,

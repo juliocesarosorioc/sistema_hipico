@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/shared/components/ui/Button";
 import { PLANTILLAS_DEFAULT, VARIABLES_WSP, type PlantillaWsp } from "@/lib/whatsapp";
 
 type Props = {

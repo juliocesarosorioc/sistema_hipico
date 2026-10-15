@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/shared/components/ui/Button";
 import { TicketVentaPreview, type TicketVentaModel } from "@/components/tickets/TicketVentaPreview";
 import { getHorseColor } from "@/lib/horseColors";
 import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
-import { HorseBadge } from "@/components/ui/HorseChips";
+import { HorseBadge } from "@/shared/components/ui/HorseChips";
 import type { CarreraCentral, EjemplarCarreraCentral } from "@/lib/carreras/central";
 import { aplicarRetirosCarrera, parsearRetirados } from "@/lib/carreras/retiros";
 import { listarClientesVenta, listarGruposVenta, esClienteLibre, type ClienteVenta, type GrupoVenta } from "@/lib/grupos";

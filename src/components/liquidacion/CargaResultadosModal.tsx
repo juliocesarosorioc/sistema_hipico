@@ -6,9 +6,9 @@ import type { PizarraCarrera } from "@/lib/liquidacion";
 import type { EjemplarTabla } from "@/lib/tablas/tipos";
 import { colorDeNumero, textoDeNumero } from "@/lib/tablas/tipos";
 import { CLAVES_WPS, ETIQUETAS_WPS, PREFIJO_WPS, pagoPorUno } from "@/lib/motores/wps";
-import { useHipodromosActivos } from "@/store/useHipodromosStore";
+import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/shared/components/ui/Button";
 
 export type PizarraResultados = {
   pizarra: PizarraCarrera;

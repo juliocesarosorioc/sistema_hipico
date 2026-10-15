@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuthStore } from "@/store/useAuthStore";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 import { esPantallaDeAcceso, esRutaPublica } from "@/lib/seguridad/capacidades";
 import { sesionActual } from "@/lib/auth/sesion";
 

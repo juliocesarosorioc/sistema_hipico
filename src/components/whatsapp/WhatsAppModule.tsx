@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { Button } from "@/shared/components/ui/Button";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import { GestionPlantillasModal } from "@/components/whatsapp/GestionPlantillasModal";
 import {

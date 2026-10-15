@@ -1,6 +1,6 @@
 "use client";
 
-import { useBetSlipStore } from "@/store/bet-slip";
+import { useBetSlipStore } from "@/shared/store/bet-slip";
 
 const COP = new Intl.NumberFormat("es-CO", {
   style: "currency",

@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useTaquillaStore } from "@/store/useTaquillaStore";
+import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
 import { validarComando } from "@/lib/taquilla/validar";
-import { Input } from "@/components/ui/Input";
-import { Button } from "@/components/ui/Button";
+import { Input } from "@/shared/components/ui/Input";
+import { Button } from "@/shared/components/ui/Button";
 import { DesgloseProyectado } from "@/components/taquilla/DesgloseProyectado";
 
 const EJEMPLOS = ["100 2n", "50 3p", "200 1 y 2n", "100 10/PP", "400 1/2n y 2n"];

@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { ToastHost } from "@/components/ui/ToastHost";
+import { Card } from "@/shared/components/ui/Card";
+import { Button } from "@/shared/components/ui/Button";
+import { Input } from "@/shared/components/ui/Input";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { getHorseColor } from "@/lib/horseColors";
 import { listarHipodromos } from "@/lib/hipodromos/servicio";
 import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
@@ -12,9 +12,9 @@ import { listarClientes, type ClienteRow } from "@/lib/clientes";
 import { jugadoresDeGrupo, listarGruposVenta, type GrupoVenta } from "@/lib/grupos";
 import { listarCarrerasCentrales, type CarreraCentral } from "@/lib/carreras/central";
 import { alternarRetiroCarrera } from "@/lib/carreras/retiros";
-import { SearchableSelect, type OpcionSelect } from "@/components/ui/SearchableSelect";
-import { Guard } from "@/components/ui/Guard";
-import { useAuthStore } from "@/store/useAuthStore";
+import { SearchableSelect, type OpcionSelect } from "@/shared/components/ui/SearchableSelect";
+import { Guard } from "@/shared/components/ui/Guard";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 import { clienteDelUsuario } from "@/lib/seguridad/accesos";
 import { enviarAutomaticoSiActivo, plantillaPorId, reemplazarVarsTablas } from "@/lib/whatsapp";
 import { CargaResultadosRapida } from "@/components/liquidacion/CargaResultadosRapida";

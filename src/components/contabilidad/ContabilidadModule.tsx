@@ -16,8 +16,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/Button";
-import { ToastHost } from "@/components/ui/ToastHost";
+import { Button } from "@/shared/components/ui/Button";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { TabBancos, TabCaja, TabIngresos, TabMonedas } from "@/components/contabilidad/ContabilidadTabs";
 import {
   listarBancos,

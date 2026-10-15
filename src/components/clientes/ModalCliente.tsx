@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { ToastHost } from "@/components/ui/ToastHost";
+import { Button } from "@/shared/components/ui/Button";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { DatosPagoForm } from "@/components/clientes/DatosPagoForm";
 import {
   actualizarCliente,
@@ -23,7 +23,7 @@ import {
   type DatosPago,
 } from "@/lib/vzla";
 import { listarGruposVenta, type GrupoVenta } from "@/lib/grupos";
-import { useAuthStore } from "@/store/useAuthStore";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));

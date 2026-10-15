@@ -7,7 +7,7 @@ import { hoyLocal } from "@/lib/gaceta/programa";
 import { cicloSemanalDe, DIAS_SEMANA, etiquetaDia, rangoSemanaDesde } from "@/lib/liquidacion/semana";
 import { fijarSemanaVigente, semanaVigente } from "@/lib/liquidacion/semana-vigente";
 import { grupoActivoVigente } from "@/lib/seguridad/vigente";
-import { useAuthStore } from "@/store/useAuthStore";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 import {
   balanceDeRango,
   cerrarRango,
@@ -19,8 +19,8 @@ import {
   type DetalleCierre,
   type TipoCierre,
 } from "@/lib/liquidacion/cierres";
-import { Button } from "@/components/ui/Button";
-import { ToastHost } from "@/components/ui/ToastHost";
+import { Button } from "@/shared/components/ui/Button";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
 
 type Acceso = { emoji: string; txt: string; href?: string };
 

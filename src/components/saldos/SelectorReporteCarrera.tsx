@@ -10,7 +10,7 @@ import {
 import { armarReporteCarrera } from "@/lib/liquidacion/reporte-carrera";
 import { exportarReporteCarreraImagen } from "@/lib/liquidacion/reporte-imagen";
 import { grupoActivoVigente } from "@/lib/seguridad/vigente";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { EmptyState } from "@/shared/components/ui/EmptyState";
 import ReporteCarrera, { type ReporteCarreraDatos } from "@/components/saldos/ReporteCarrera";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>

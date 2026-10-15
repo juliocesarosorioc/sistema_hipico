@@ -1,18 +1,18 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { SearchableSelect } from "@/components/ui/SearchableSelect";
-import { ToastHost } from "@/components/ui/ToastHost";
+import { Button } from "@/shared/components/ui/Button";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { listarTablasPublicadas } from "@/lib/tablas/rpc";
-import { useRegistroCentralOpts, claveHipodromo } from "@/store/useRegistroCentral";
+import { useRegistroCentralOpts, claveHipodromo } from "@/shared/store/useRegistroCentral";
 import { normalizarDia } from "@/lib/carreras/agruparHipodromos";
 import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import type { TablaFijaRow } from "@/lib/tablas-fijas";
 import { alternarRetiroCarrera } from "@/lib/carreras/retiros";
 import { listarClientesVenta, listarGruposVenta, esClienteLibre, type ClienteVenta, type GrupoVenta } from "@/lib/grupos";
 import { colorDeNumeroGac } from "@/lib/gaceta/ui";
-import { Flag, normalizarNacionalidad } from "@/components/ui/BanderaPais";
+import { Flag, normalizarNacionalidad } from "@/shared/components/ui/BanderaPais";
 import { claveCelda, claveDeDupleta, guardarDupleta, listarDupletasGuardadas, type CaballoDupleta, type DupletaEstado } from "@/lib/dupletas";
 import {
   venderDupleta,

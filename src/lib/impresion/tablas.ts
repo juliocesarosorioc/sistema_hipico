@@ -17,7 +17,7 @@ import { normalizarFilas } from "@/lib/tablas/rpc";
 import type { EjemplarTabla } from "@/lib/tablas/tipos";
 import { parseNum } from "@/lib/tablas/tipos";
 import { esc, fsAuto, col, monSinSimb, fmtPts, fmt, monCode, fmtFecha, hoy, hipoKey, diaDe, MAX_N, type Orientacion, DIM_PAGINA } from "@/lib/impresion/util";
-import { normalizarNacionalidad } from "@/components/ui/BanderaPais";
+import { normalizarNacionalidad } from "@/shared/components/ui/BanderaPais";
 
 export type EjemplarImpresion = {
   numero: string;

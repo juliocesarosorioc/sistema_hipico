@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/shared/components/ui/Button";
 import type { EjemplarTabla } from "@/lib/tablas/tipos";
 import { guardarPizarraCentral } from "@/lib/liquidacion/pizarraCentral";
 import { CargaResultadosModal, type PizarraResultados } from "./CargaResultadosModal";

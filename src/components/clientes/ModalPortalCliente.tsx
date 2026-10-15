@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { Guard } from "@/components/ui/Guard";
-import { ToastHost } from "@/components/ui/ToastHost";
+import { Button } from "@/shared/components/ui/Button";
+import { Guard } from "@/shared/components/ui/Guard";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
 import {
   acortarEnlace,
   enlacePortalLargo,

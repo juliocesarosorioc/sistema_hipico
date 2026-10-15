@@ -8,7 +8,7 @@
 import { supabase } from "@/lib/supabase";
 import { exigirCapacidad, tieneCapacidad } from "@/lib/seguridad/vigente";
 import { puestosDesdeOrdenLlegada } from "@/lib/motores/oficiales";
-import { useCarrerasDiaStore, type CarreraDelDia } from "@/store/useCarrerasDiaStore";
+import { useCarrerasDiaStore, type CarreraDelDia } from "@/shared/store/useCarrerasDiaStore";
 import { claveCarrera } from "@/lib/carreras/claves";
 import { registrarCarreraMaestro, ordenarPorNumero } from "@/lib/carreras/maestro";
 import { hoyLocal, type CaballoPrograma } from "@/lib/gaceta/programa";

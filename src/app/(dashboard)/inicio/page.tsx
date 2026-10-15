@@ -1,6 +1,6 @@
 "use client";
 
-import { RutaProtegida } from "@/components/ui/RutaProtegida";
+import { RutaProtegida } from "@/shared/components/ui/RutaProtegida";
 import { DashboardGrupos } from "@/components/dashboard/DashboardGrupos";
 
 /**

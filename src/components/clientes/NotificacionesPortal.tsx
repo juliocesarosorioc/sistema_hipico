@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { Guard } from "@/components/ui/Guard";
+import { Button } from "@/shared/components/ui/Button";
+import { Guard } from "@/shared/components/ui/Guard";
 import {
   aplicarNotificacion,
   fmtFechaHora,

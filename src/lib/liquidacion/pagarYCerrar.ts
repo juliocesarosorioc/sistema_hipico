@@ -4,7 +4,7 @@ import { cerrarTablaFija } from "@/lib/tablas-fijas";
 import { upsertResultadoCentral } from "@/lib/carreras-dia";
 import { leerRetirosCarrera } from "@/lib/carreras/retiros";
 import { ordenLlegadaDePizarra, posicionesDePizarra } from "@/lib/liquidacion/posiciones";
-import { useTablasFijasStore } from "@/store/useTablasFijasStore";
+import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem } from "@/lib/bettingEngine";
 import type { TicketMotor, ResultadoMotor } from "@/lib/bettingEngine";
 import type { PizarraCarrera } from "@/lib/liquidacion";

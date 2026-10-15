@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useAuthStore } from "@/store/useAuthStore";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 
 type Props = {
   /** Permiso requerido. Lista = se exigen TODOS. */

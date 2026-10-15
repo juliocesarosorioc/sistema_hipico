@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuthStore } from "@/store/useAuthStore";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 import { capacidadesDeRuta, rutaPermitida, RUTAS_PROTEGIDAS } from "@/lib/seguridad/capacidades";
 
 type Props = {

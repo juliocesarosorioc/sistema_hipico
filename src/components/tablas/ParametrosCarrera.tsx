@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { SearchableSelect } from "@/components/ui/SearchableSelect";
-import { useHipodromosActivos } from "@/store/useHipodromosStore";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
+import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { SUPERFICIES, draftVacio, type DraftCarrera } from "@/lib/tablas/tipos";
 
 type Props = {

@@ -1,7 +1,7 @@
 "use client";
 
 import { TablasModule } from "@/components/tablas/TablasModule";
-import type { StoredTablaFija } from "@/store/useTablasFijasStore";
+import type { StoredTablaFija } from "@/shared/store/useTablasFijasStore";
 import type { VentaTablaItem } from "@/components/tablas/MonitorTablas";
 import type { PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
 import { publicarTabla, publicarTablasLote, actualizarTabla, venderTablaFija, liquidarTablaFija } from "@/lib/tablas/rpc";

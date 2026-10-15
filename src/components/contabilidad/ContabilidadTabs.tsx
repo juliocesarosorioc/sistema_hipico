@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/shared/components/ui/Button";
 import {
   aUsd,
   crearMoneda,

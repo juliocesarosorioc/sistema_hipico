@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { ToastHost } from "@/components/ui/ToastHost";
+import { Button } from "@/shared/components/ui/Button";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { BANCOS_VZLA, formatearCuenta } from "@/lib/vzla";
 import { DIAS_SEMANA } from "@/lib/liquidacion/semana";
 import {

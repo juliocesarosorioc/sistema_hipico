@@ -24,12 +24,12 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAuthStore } from "@/store/useAuthStore";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Input } from "@/components/ui/Input";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { ToastHost } from "@/components/ui/ToastHost";
+import { useAuthStore } from "@/shared/store/useAuthStore";
+import { Button } from "@/shared/components/ui/Button";
+import { Card } from "@/shared/components/ui/Card";
+import { Input } from "@/shared/components/ui/Input";
+import { EmptyState } from "@/shared/components/ui/EmptyState";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
 import {
   correoDeLogin,
   crearEcosistemaGrupo,

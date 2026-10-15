@@ -1,6 +1,6 @@
 "use client";
 
-import { RutaProtegida } from "@/components/ui/RutaProtegida";
+import { RutaProtegida } from "@/shared/components/ui/RutaProtegida";
 import { ReporteModule } from "@/components/saldos/ReporteModule";
 import { SelectorReporteCarrera } from "@/components/saldos/SelectorReporteCarrera";
 

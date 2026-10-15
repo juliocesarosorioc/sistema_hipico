@@ -2,17 +2,17 @@
 
 import { getHorseColor } from "@/lib/horseColors";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { SearchableSelect } from "@/components/ui/SearchableSelect";
-import { ToastHost } from "@/components/ui/ToastHost";
+import { Card } from "@/shared/components/ui/Card";
+import { Button } from "@/shared/components/ui/Button";
+import { Input } from "@/shared/components/ui/Input";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { BuscadorPadron, type OpcionPadron } from "@/components/ejemplares/BuscadorPadron";
-import { useAuthStore } from "@/store/useAuthStore";
-import { useHipodromosActivos } from "@/store/useHipodromosStore";
+import { useAuthStore } from "@/shared/store/useAuthStore";
+import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { nombreHipodromoParaMostrar, nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
 import { registrarEjemplares, listarPadronSimple } from "@/lib/gaceta/padron";
-import { useRegistroCentral } from "@/store/useRegistroCentral";
+import { useRegistroCentral } from "@/shared/store/useRegistroCentral";
 import {
   guardarPrograma,
   hoyLocal,

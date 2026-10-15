@@ -1,15 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { useTaquillaStore } from "@/store/useTaquillaStore";
-import { useTablasFijasStore } from "@/store/useTablasFijasStore";
+import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
+import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla } from "@/lib/liquidacion/pagarYCerrar";
 import { aplicarLiquidacionSaldos } from "@/lib/liquidacion/saldos";
 import { upsertResultadoCentral } from "@/lib/carreras-dia";
 import { dividendosDePizarra as dividendosDe, ordenLlegadaDePizarra, posicionesDePizarra } from "@/lib/liquidacion/posiciones";
 import { nombreHipodromoParaMostrar } from "@/lib/hipodromos/nombre";
 import { CargaResultadosModal, type PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/shared/components/ui/Button";
 import { carreraReporteDetalle } from "@/lib/liquidacion/reportes";
 import { armarReporteCarrera } from "@/lib/liquidacion/reporte-carrera";
 import { exportarReporteCarreraImagen } from "@/lib/liquidacion/reporte-imagen";

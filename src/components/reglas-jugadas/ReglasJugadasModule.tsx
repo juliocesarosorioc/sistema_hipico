@@ -12,11 +12,11 @@
  * ni desde la consola.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Guard } from "@/components/ui/Guard";
-import { Input } from "@/components/ui/Input";
-import { ToastHost } from "@/components/ui/ToastHost";
+import { Button } from "@/shared/components/ui/Button";
+import { Card } from "@/shared/components/ui/Card";
+import { Guard } from "@/shared/components/ui/Guard";
+import { Input } from "@/shared/components/ui/Input";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
 import {
   alternarTipoJugada,
   eliminarTipoJugada,

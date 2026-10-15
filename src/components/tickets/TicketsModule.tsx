@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { ToastHost } from "@/components/ui/ToastHost";
-import { useAuthStore } from "@/store/useAuthStore";
+import { Button } from "@/shared/components/ui/Button";
+import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { useAuthStore } from "@/shared/store/useAuthStore";
   import {
     listarTicketsAdmin,
     pasarARevision,
