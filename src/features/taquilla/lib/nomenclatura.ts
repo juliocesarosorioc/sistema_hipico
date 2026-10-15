@@ -394,24 +394,39 @@ export function parsearNomenclatura(entrada: string): Nomenclatura | null {
   return null;
 }
 
-/** Etiqueta corta para la UI y para los motivos de liquidacion. */
-export function etiquetaModalidad(m: ModalidadPuestos): string {
-  switch (m) {
-    case "PUESTO_PURO":
-      return "Puesto";
-    case "PELO_A_PELO":
-      return "Pelo a pelo";
-    case "NINI":
-      return "Nini";
-    case "COMBINADA":
-      return "Combinada";
-    case "COMPUESTA":
-      return "Compuesta";
-    case "MATCHUP":
-      return "Enfrentamiento";
-    case "A_PREMIO":
-      return "A premio";
-    case "MATCHUP_PROPORCION":
-      return "Enfrentamiento c/prop.";
+/**
+ * ETIQUETA UNIVERSAL de la casa (regla estricta de nomenclatura).
+ *
+ * TODA jugada relacionada con posiciones se denomina, se procesa y se muestra
+ * ÚNICA Y EXCLUSIVAMENTE como "Jugadas de Puestos". La única excepción es la
+ * jugada pactada con una RELACIÓN DE PAGO fija (10a8, 10/8 … x …), que se
+ * muestra como "Jugadas a Premio": es la Modalidad A (caballo ganador) y la
+ * Modalidad B (match de ejemplares) de la casa.
+ *
+ * Está prohibido categorizarlas en los reportes como "fijas", "fraccionadas",
+ * "con nini" o "de bloques": el sistema solo lee el código, hace la matemática
+ * y muestra el resultado bajo estas dos etiquetas.
+ */
+export type CategoriaJugada = "Jugadas de Puestos" | "Jugadas a Premio";
+
+/**
+ * Clasifica el CÓDIGO de una jugada en la etiqueta universal de la casa.
+ * Es la fuente única de la clasificación para reportes y manuales.
+ */
+export function categoriaJugada(codigo: string): CategoriaJugada {
+  const n = parsearNomenclatura(codigo);
+  if (n && (n.modalidad === "A_PREMIO" || n.modalidad === "MATCHUP_PROPORCION")) {
+    return "Jugadas a Premio";
   }
+  return "Jugadas de Puestos";
+}
+
+/**
+ * Etiqueta universal para la UI y los motivos de liquidacion. NO devuelve
+ * jerga de casa ("nini", "combinada", "de bloques"…): solo las dos categorías.
+ */
+export function etiquetaModalidad(m: ModalidadPuestos): string {
+  return m === "A_PREMIO" || m === "MATCHUP_PROPORCION"
+    ? "Jugadas a Premio"
+    : "Jugadas de Puestos";
 }

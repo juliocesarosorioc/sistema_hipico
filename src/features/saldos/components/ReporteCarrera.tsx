@@ -34,12 +34,16 @@ export type JugadaVivo = {
   aposto: string | number;
   da: string;
   resultado: number;
+  /** Etiqueta universal: "Jugadas de Puestos" | "Jugadas a Premio". */
+  tipo?: string;
 };
 
 export type Adelantada = {
   juega: string;
   descripcion?: string;
   resultado: number;
+  /** Etiqueta universal: "Jugadas de Puestos" | "Jugadas a Premio". */
+  tipo?: string;
 };
 
 export type ResumenFila = {
@@ -50,6 +54,8 @@ export type ResumenFila = {
 
 export type ReporteCarreraDatos = {
   encabezado: {
+    /** Grupo hípico dueño del reporte (encabezado). */
+    grupo?: string;
     hipodromo: string;
     carrera: string;
     fecha: string;
@@ -119,7 +125,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
 
       {/* 1. ENCABEZADO */}
       <div className="bg-[#1a3822] text-white p-6 pb-4">
-        <h3 className="text-emerald-500 text-xs font-bold tracking-widest uppercase mb-1">Hipismo Zenyatta</h3>
+        <h3 className="text-emerald-500 text-xs font-bold tracking-widest uppercase mb-1">{encabezado.grupo || "Grupo Hípico"}</h3>
         <h1 className="text-3xl font-extrabold mb-1">
           {encabezado.hipodromo} <span className="font-normal text-emerald-100">•</span> {encabezado.carrera}
         </h1>
@@ -158,7 +164,14 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
             {jugadasCol1.map((j, i) => (
               <tr key={i} className="border-b border-slate-200 bg-white">
                 <td className="py-2 font-bold text-slate-800">{j.juega}</td>
-                <td className="py-2 font-bold text-slate-800">{j.jugo}</td>
+                <td className="py-2 font-bold text-slate-800">
+                  {j.jugo}
+                  {j.tipo && (
+                    <span className="mt-0.5 block text-[8px] font-bold uppercase tracking-wide text-emerald-700">
+                      {j.tipo}
+                    </span>
+                  )}
+                </td>
                 <td className="py-2 text-right text-slate-600">{j.aposto}</td>
                 <td className="py-2 pl-4 text-slate-600">{j.da}</td>
                 <td className="py-2 text-right"><FormatoDinero monto={j.resultado} /></td>
@@ -182,7 +195,14 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
             {jugadasCol2.map((j, i) => (
               <tr key={i} className="border-b border-slate-200 bg-white">
                 <td className="py-2 font-bold text-slate-800">{j.juega}</td>
-                <td className="py-2 font-bold text-slate-800">{j.jugo}</td>
+                <td className="py-2 font-bold text-slate-800">
+                  {j.jugo}
+                  {j.tipo && (
+                    <span className="mt-0.5 block text-[8px] font-bold uppercase tracking-wide text-emerald-700">
+                      {j.tipo}
+                    </span>
+                  )}
+                </td>
                 <td className="py-2 text-right text-slate-600">{j.aposto}</td>
                 <td className="py-2 pl-4 text-slate-600">{j.da}</td>
                 <td className="py-2 text-right"><FormatoDinero monto={j.resultado} /></td>

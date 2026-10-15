@@ -33,6 +33,7 @@ import { enviarAlGrupoWsp, listarGruposWsp } from "@/features/whatsapp/lib/whats
 import PlanoPreliminar from "@/features/gestion/components/PlanoPreliminar";
 import PreliminarResultados from "@/features/gestion/components/PreliminarResultados";
 import HistorialReporte from "@/features/gestion/components/HistorialReporte";
+import ReporteLiquidacionModal from "@/features/gestion/components/ReporteLiquidacionModal";
 import { expandirLineasDobleSplit, revisarCoherenciaLineas } from "@/features/taquilla/lib/expandirDobleSplit";
 import { mensajePlanoDeCarrera } from "@/features/taquilla/lib/mensajeResultado";
 import { corregirLineasConIA } from "@/features/taquilla/lib/corregirIA";
@@ -224,6 +225,7 @@ export function GestionJugadasModule() {
   const [mostrarPlanoPreliminar, setMostrarPlanoPreliminar] = useState(false);
   const [mostrarPreliminarResultado, setMostrarPreliminarResultado] = useState(false);
   const [mostrarHistorial, setMostrarHistorial] = useState(false);
+  const [mostrarReporteLiquidacion, setMostrarReporteLiquidacion] = useState(false);
   const [modalResultados, setModalResultados] = useState(false);
   const [modalFinalizar, setModalFinalizar] = useState(false);
   const [modalComandos, setModalComandos] = useState(false);
@@ -317,6 +319,9 @@ const hipodromosDelDia = useMemo(() => {
       } else if (k === "h") {
         e.preventDefault();
         setMostrarHistorial((v) => !v);
+      } else if (k === "g") {
+        e.preventDefault();
+        setMostrarReporteLiquidacion(true);
       } else if (k === "k" && e.shiftKey) {
         e.preventDefault();
         setModalComandos(true);
@@ -1555,6 +1560,13 @@ const hipodromosDelDia = useMemo(() => {
           </button>
           <button
             type="button"
+            onClick={() => setMostrarReporteLiquidacion(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-800 px-3 py-2 text-xs font-bold text-emerald-50 hover:bg-emerald-700"
+          >
+            🧾 Reporte de Liquidación <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+G</kbd>
+          </button>
+          <button
+            type="button"
             onClick={() => setModalFinalizar(true)}
             className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-success-600 to-emerald-500 px-3 py-2 text-xs font-black text-white hover:brightness-110"
           >
@@ -1622,6 +1634,15 @@ const hipodromosDelDia = useMemo(() => {
           </div>
         </div>
       )}
+
+      {/* Reporte de Liquidación (Ctrl+G) — motor de reporte filtrable + imagen */}
+      <ReporteLiquidacionModal
+        abierto={mostrarReporteLiquidacion}
+        onCerrar={() => setMostrarReporteLiquidacion(false)}
+        hipodromoInicial={hipodromo}
+        carreraInicial={carrera}
+        fechaInicial={fecha}
+      />
 
       {/* Carga de Resultados (Ctrl+Y) — posiciones dinámicas (5 + añadir hasta 8) + Dead Heat */}
       <CargaResultadosModal

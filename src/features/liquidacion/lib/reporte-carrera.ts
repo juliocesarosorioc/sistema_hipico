@@ -17,6 +17,7 @@
  */
 import type { ReporteCarreraDatos, JugadaVivo, Adelantada } from "@/features/saldos/components/ReporteCarrera";
 import type { CarreraReporte } from "@/features/liquidacion/lib/reportes";
+import { categoriaJugada } from "@/features/taquilla/lib/nomenclatura";
 
 /** Colores de disco por número de ejemplar (mismo espíritu que la pizarra). */
 const COLOR_DISCO: Record<number, string> = {
@@ -83,7 +84,7 @@ function seccionAdelantadaDe(jugada: string): "tablas" | "marcas" | "tercios" | 
  *     de jugada (Tablas Fijas / Marcas / Tercios).
  *   · "Resumen": neto acumulado por cliente (positivo → Ganan, negativo → Pierden).
  */
-export function armarReporteCarrera(c: CarreraReporte): ReporteCarreraDatos {
+export function armarReporteCarrera(c: CarreraReporte, grupo?: string): ReporteCarreraDatos {
   const puestos = (c.pizarra ?? "").split(/\s*·\s*/).filter(Boolean);
   const consigue = consiguePorJuega(c);
 
@@ -104,7 +105,7 @@ export function armarReporteCarrera(c: CarreraReporte): ReporteCarreraDatos {
       // (Consigue) ya viaja como DA. Las dos mitades igual suman al resumen.
       const i = indiceTicketDe(f.id) ?? `t-${correlativo++}`;
       const da = consigue.get(i)?.cliente ?? "";
-      jugadasVivo.push({ juega: f.cliente, jugo: f.jugada, aposto: f.monto, da, resultado });
+      jugadasVivo.push({ juega: f.cliente, jugo: f.jugada, aposto: f.monto, da, resultado, tipo: categoriaJugada(f.jugada) });
     }
 
     netoPorCliente.set(f.cliente, (netoPorCliente.get(f.cliente) ?? 0) + resultado);
@@ -130,6 +131,7 @@ export function armarReporteCarrera(c: CarreraReporte): ReporteCarreraDatos {
 
   return {
     encabezado: {
+      grupo,
       hipodromo: c.hipodromo,
       carrera: `Carrera ${c.numero}`,
       fecha: diaLegible(c.fecha),
