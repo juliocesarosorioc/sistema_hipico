@@ -1,6 +1,6 @@
 "use client";
 
-import { TicketsModule } from "@/components/tickets/TicketsModule";
+import { TicketsModule } from "@/features/tickets/components/TicketsModule";
 
 export default function TicketsPage() {
   return (

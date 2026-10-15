@@ -1,4 +1,4 @@
-import PantallaLogin from "@/components/auth/PantallaLogin";
+import PantallaLogin from "@/features/auth/components/PantallaLogin";
 
 /**
  * Acceso directo al login. La pantalla vive en `PantallaLogin` porque la RAÍZ

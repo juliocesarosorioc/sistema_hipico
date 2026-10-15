@@ -1,6 +1,6 @@
 "use client";
 
-import { PortalModule } from "@/components/portal/PortalModule";
+import { PortalModule } from "@/features/portal/components/PortalModule";
 
 /**
  * /portal — Portal de Consulta del Cliente (vista externa standalone).

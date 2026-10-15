@@ -7,10 +7,10 @@ import {
   etiquetaDeValor,
   filtrarOpciones,
   hayTextoLibre,
-} from "./searchable-select-teclado";
-import type { OpcionSelect } from "./searchable-select-teclado";
+} from "@/shared/components/ui/searchable-select-teclado";
+import type { OpcionSelect } from "@/shared/components/ui/searchable-select-teclado";
 
-export type { OpcionSelect } from "./searchable-select-teclado";
+export type { OpcionSelect } from "@/shared/components/ui/searchable-select-teclado";
 
 type Props = {
   options: OpcionSelect[];

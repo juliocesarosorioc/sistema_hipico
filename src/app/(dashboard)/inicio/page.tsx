@@ -1,7 +1,7 @@
 "use client";
 
 import { RutaProtegida } from "@/shared/components/ui/RutaProtegida";
-import { DashboardGrupos } from "@/components/dashboard/DashboardGrupos";
+import { DashboardGrupos } from "@/features/dashboard/components/DashboardGrupos";
 
 /**
  * Vista inicial de los Grupos al iniciar sesión (migración 1:1 del legacy):

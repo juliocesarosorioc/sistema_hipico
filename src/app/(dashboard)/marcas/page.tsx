@@ -1,6 +1,6 @@
 "use client";
 
-import { PanelMarcas } from "@/components/marcas/PanelMarcas";
+import { PanelMarcas } from "@/features/marcas/components/PanelMarcas";
 
 export default function MarcasPage() {
   return (

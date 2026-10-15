@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { AuthBootstrap } from "@/components/auth/AuthBootstrap";
-import { AppShell } from "@/components/layout/AppShell";
+import { AuthBootstrap } from "@/features/auth/components/AuthBootstrap";
+import { AppShell } from "@/shared/components/layout/AppShell";
 
 // Fuente principal de la plataforma: Inter (mejor legibilidad en interfaces
 // densas con números y tablas). Se sirve autoalojada por next/font; si no hay

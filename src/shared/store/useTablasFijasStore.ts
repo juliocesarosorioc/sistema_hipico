@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { TablaFijaRow } from "@/lib/tablas-fijas";
+import type { TablaFijaRow } from "@/features/tablas/lib/tablas-fijas";
 
 export type StoredTablaFija = TablaFijaRow & { cerrada: boolean };
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { cambiarClave } from "@/lib/auth/sesion";
+import { cambiarClave } from "@/features/auth/lib/sesion";
 
 /**
  * Puesta de contraseña nueva (la segunda mitad de "Olvidé mi contraseña").
@@ -34,7 +34,7 @@ export default function PaginaResetPassword() {
     // para que esa lectura ocurra.
     let vivo = true;
     (async () => {
-      const { supabase } = await import("@/lib/supabase");
+      const { supabase } = await import("@/core/supabase");
       if (!vivo) return;
       if (!supabase) {
         setEstado("error");

@@ -1,4 +1,4 @@
-import { GestionJugadasModule } from "@/components/gestion/GestionJugadasModule";
+import { GestionJugadasModule } from "@/features/gestion/components/GestionJugadasModule";
 
 export default function GestionJugadasPage() {
   return (

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { chipsHorseColor, getHorseColor, type HorseColor } from "@/lib/horseColors";
+import { chipsHorseColor, getHorseColor, type HorseColor } from "@/shared/lib/horseColors";
 
 /**
  * ChipField — input "transformado en tiempo real" a chips de colores hípicos.

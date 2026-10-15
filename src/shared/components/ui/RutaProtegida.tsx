@@ -3,7 +3,7 @@
 import { useEffect, useMemo, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore } from "@/shared/store/useAuthStore";
-import { capacidadesDeRuta, rutaPermitida, RUTAS_PROTEGIDAS } from "@/lib/seguridad/capacidades";
+import { capacidadesDeRuta, rutaPermitida, RUTAS_PROTEGIDAS } from "@/features/seguridad/lib/capacidades";
 
 type Props = {
   /**

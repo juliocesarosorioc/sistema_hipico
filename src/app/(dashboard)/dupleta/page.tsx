@@ -1,6 +1,6 @@
 "use client";
 
-import { DupletaModule } from "@/components/dupletas/DupletaModule";
+import { DupletaModule } from "@/features/dupletas/components/DupletaModule";
 
 export default function DupletaPage() {
   return (

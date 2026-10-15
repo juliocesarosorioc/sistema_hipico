@@ -1,4 +1,4 @@
-import { EjemplaresModule } from "@/components/ejemplares/EjemplaresModule";
+import { EjemplaresModule } from "@/features/ejemplares/components/EjemplaresModule";
 
 export default function EjemplaresPage() {
   return <EjemplaresModule />;

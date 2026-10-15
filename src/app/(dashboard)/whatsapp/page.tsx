@@ -1,4 +1,4 @@
-import { WhatsAppModule } from "@/components/whatsapp/WhatsAppModule";
+import { WhatsAppModule } from "@/features/whatsapp/components/WhatsAppModule";
 
 export default function WhatsappPage() {
   return <WhatsAppModule />;

@@ -1,4 +1,4 @@
-import PantallaLogin from "@/components/auth/PantallaLogin";
+import PantallaLogin from "@/features/auth/components/PantallaLogin";
 
 /**
  * RAÍZ = LOGIN.

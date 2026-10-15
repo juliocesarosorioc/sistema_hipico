@@ -1,4 +1,4 @@
-import { JugadasModule } from "@/components/jugadas/JugadasModule";
+import { JugadasModule } from "@/features/jugadas/components/JugadasModule";
 
 export default function JugadasPage() {
   return (

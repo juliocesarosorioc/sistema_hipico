@@ -1,13 +1,13 @@
 "use client";
 
-import { TablasModule } from "@/components/tablas/TablasModule";
+import { TablasModule } from "@/features/tablas/components/TablasModule";
 import type { StoredTablaFija } from "@/shared/store/useTablasFijasStore";
-import type { VentaTablaItem } from "@/components/tablas/MonitorTablas";
-import type { PizarraResultados } from "@/components/liquidacion/CargaResultadosModal";
-import { publicarTabla, publicarTablasLote, actualizarTabla, venderTablaFija, liquidarTablaFija } from "@/lib/tablas/rpc";
-import { cerrarTablaFija } from "@/lib/tablas-fijas";
-import { upsertResultadoCentral } from "@/lib/carreras-dia";
-import { posicionesDePizarra } from "@/lib/liquidacion/posiciones";
+import type { VentaTablaItem } from "@/features/tablas/components/MonitorTablas";
+import type { PizarraResultados } from "@/features/liquidacion/components/CargaResultadosModal";
+import { publicarTabla, publicarTablasLote, actualizarTabla, venderTablaFija, liquidarTablaFija } from "@/features/tablas/lib/rpc";
+import { cerrarTablaFija } from "@/features/tablas/lib/tablas-fijas";
+import { upsertResultadoCentral } from "@/features/carreras/lib/carreras-dia";
+import { posicionesDePizarra } from "@/features/liquidacion/lib/posiciones";
 
 /**
  * Ruta Tablas Fijas — integración con Supabase y Zustand:

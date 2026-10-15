@@ -1,8 +1,8 @@
 "use client";
 
 import { RutaProtegida } from "@/shared/components/ui/RutaProtegida";
-import { ReporteModule } from "@/components/saldos/ReporteModule";
-import { SelectorReporteCarrera } from "@/components/saldos/SelectorReporteCarrera";
+import { ReporteModule } from "@/features/saldos/components/ReporteModule";
+import { SelectorReporteCarrera } from "@/features/saldos/components/SelectorReporteCarrera";
 
 export default function SaldosReportesPage() {
   return (

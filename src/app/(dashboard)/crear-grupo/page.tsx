@@ -1,7 +1,7 @@
 "use client";
 
 import { RutaProtegida } from "@/shared/components/ui/RutaProtegida";
-import { CreacionGruposModule } from "@/components/grupos/CreacionGruposModule";
+import { CreacionGruposModule } from "@/features/grupos/components/CreacionGruposModule";
 
 /**
  * Ruta de Creación de Grupos (NIVEL 0 → 3).

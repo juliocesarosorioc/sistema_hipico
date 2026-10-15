@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { create } from "zustand";
-import { listarHipodromos, type OpcionHipodromo } from "@/lib/tablas/rpc";
+import { listarHipodromos, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
 
 type Estado = {
   /** Catálogo de hipódromos ACTIVOS (estado='Activo') para todos los selectores. */

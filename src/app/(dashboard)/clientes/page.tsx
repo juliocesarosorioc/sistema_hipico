@@ -1,7 +1,7 @@
 "use client";
 
 import { RutaProtegida } from "@/shared/components/ui/RutaProtegida";
-import { ClientesModule } from "@/components/clientes/ClientesModule";
+import { ClientesModule } from "@/features/clientes/components/ClientesModule";
 
 /**
  * Ruta Gestión de Clientes (Admin) — tarea 5:

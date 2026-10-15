@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Guard } from "@/shared/components/ui/Guard";
 import { RutaProtegida } from "@/shared/components/ui/RutaProtegida";
-import { capacidadesDeRuta } from "@/lib/seguridad/capacidades";
+import { capacidadesDeRuta } from "@/features/seguridad/lib/capacidades";
 
 /**
  * Aterrizaje del Dashboard — ruta real `/dashboard` (fuera del grupo `(dashboard)`,

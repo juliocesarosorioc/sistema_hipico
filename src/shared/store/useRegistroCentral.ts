@@ -30,15 +30,15 @@
  */
 import { useEffect, useMemo } from "react";
 import { create } from "zustand";
-import { listarHipodromos, type OpcionHipodromo } from "@/lib/tablas/rpc";
-import { listarCarrerasCentrales, type CarreraCentral } from "@/lib/carreras/central";
-import { claveHipodromo, numeroCarrera, agruparCarreras } from "@/lib/carreras/claves";
-import { hoyLocal } from "@/lib/gaceta/programa";
+import { listarHipodromos, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
+import { listarCarrerasCentrales, type CarreraCentral } from "@/features/carreras/lib/central";
+import { claveHipodromo, numeroCarrera, agruparCarreras } from "@/features/carreras/lib/claves";
+import { hoyLocal } from "@/features/gaceta/lib/programa";
 
 // La clave vive en `lib/carreras/claves` (puro, testeable, compartido con el
 // Monitor y Dupletas). Se reexporta para no obligar a los módulos a conocer el
 // módulo puro.
-export { claveHipodromo, numeroCarrera } from "@/lib/carreras/claves";
+export { claveHipodromo, numeroCarrera } from "@/features/carreras/lib/claves";
 
 // ---------------------------------------------------------------------------
 // Store

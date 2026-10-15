@@ -1,4 +1,4 @@
-import { OperadoresModule } from "@/components/operadores/OperadoresModule";
+import { OperadoresModule } from "@/features/operadores/components/OperadoresModule";
 
 export default function OperadoresPage() {
   return <OperadoresModule />;

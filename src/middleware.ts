@@ -3,8 +3,8 @@ import {
   esRolCliente,
   primeraRutaPermitida,
   rutaPermitida,
-} from "@/lib/seguridad/capacidades";
-import { esUsuarioPrincipal } from "@/lib/seguridad/resolver";
+} from "@/features/seguridad/lib/capacidades";
+import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 
 /**
  * Middleware de protección de rutas. La lista de rutas y las capacidades que

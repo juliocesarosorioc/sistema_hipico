@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
  *      OJO: Next elimina el middleware en el build estático (por eso el error
  *      "Middleware cannot be used with output: export"). En este modo la
  *      frontera de seguridad es la sesión de Supabase + las políticas RLS de
- *      `src/db/seguridad_maestro.sql` (que deben validar por auth.uid()), y los
+ *      `src/core/db/seguridad_maestro.sql` (que deben validar por auth.uid()), y los
  *      guardas del cliente son solo de experiencia de usuario.
  *
  * El alias "@" se fuerza DIRECTAMENTE en webpack (no se confía en tsconfig
@@ -51,9 +51,6 @@ const nextConfig = {
       ...(config.resolve.alias || {}),
       "@": src,
       "@/app": path.join(src, "app"),
-      "@/components": path.join(src, "components"),
-      "@/lib": path.join(src, "lib"),
-      "@/store": path.join(src, "shared", "store"),
       "@/shared": path.join(src, "shared"),
       "@/core": path.join(src, "core"),
       "@/features": path.join(src, "features"),

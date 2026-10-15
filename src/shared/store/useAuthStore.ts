@@ -8,13 +8,13 @@ import {
   iniciarSesion as login,
   sesionActual,
   TIMEOUT_SESION_MS,
-} from "@/lib/auth/sesion";
-import { esUsuarioPrincipal, resolverAccesos, USUARIO_PRINCIPAL } from "@/lib/seguridad/resolver";
-import { atributosDeUsuario, claveDeUsuario, leerTipoDeUsuario, permisosIndividuales } from "@/lib/seguridad/accesos";
-import { leerMiGrupo } from "@/lib/seguridad/grupo-usuario";
-import { CAPACIDADES_POR_CLAVE } from "@/lib/seguridad/capacidades";
-import { limpiarAccesosVigentes, setAccesosVigentes, setGrupoActivoVigente } from "@/lib/seguridad/vigente";
-import type { ExcepcionUsuario, TipoUsuario } from "@/lib/seguridad/tipos";
+} from "@/features/auth/lib/sesion";
+import { esUsuarioPrincipal, resolverAccesos, USUARIO_PRINCIPAL } from "@/features/seguridad/lib/resolver";
+import { atributosDeUsuario, claveDeUsuario, leerTipoDeUsuario, permisosIndividuales } from "@/features/seguridad/lib/accesos";
+import { leerMiGrupo } from "@/features/seguridad/lib/grupo-usuario";
+import { CAPACIDADES_POR_CLAVE } from "@/features/seguridad/lib/capacidades";
+import { limpiarAccesosVigentes, setAccesosVigentes, setGrupoActivoVigente } from "@/features/seguridad/lib/vigente";
+import type { ExcepcionUsuario, TipoUsuario } from "@/features/seguridad/lib/tipos";
 
 const CLAVE_PERFIL = "hipico_perfil";
 const CLAVE_PERMISOS = "hipico_permisos";

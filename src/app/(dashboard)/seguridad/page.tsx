@@ -1,7 +1,7 @@
 "use client";
 
 import { RutaProtegida } from "@/shared/components/ui/RutaProtegida";
-import SeguridadModule from "@/components/seguridad/SeguridadModule";
+import SeguridadModule from "@/features/seguridad/components/SeguridadModule";
 
 /**
  * Ruta /seguridad — el MÓDULO MAESTRO. Solo entra quien tenga la capacidad

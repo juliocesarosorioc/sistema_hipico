@@ -12,9 +12,9 @@
  * Lo usan hoy Tablas Fijas (Monitor de Tablas Publicadas) y Carreras del Día.
  */
 import type { ReactNode } from "react";
-import { hoyLocal } from "@/lib/gaceta/programa";
+import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
-import { nombrePropioHipodromo } from "@/lib/hipodromos/nombre";
+import { nombrePropioHipodromo } from "@/features/hipodromos/lib/nombre";
 
 export type CarreraMonitor = {
   id?: string | number;

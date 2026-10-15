@@ -1,7 +1,7 @@
 "use client";
 
 import { RutaProtegida } from "@/shared/components/ui/RutaProtegida";
-import { GruposModule } from "@/components/grupos/GruposModule";
+import { GruposModule } from "@/features/grupos/components/GruposModule";
 
 /**
  * Ruta Grupos de Venta y Convenios (clon 1:1 del legacy grupos.html / grupos.js):

@@ -1,4 +1,4 @@
-import { HipodromosModule } from "@/components/hipodromos/HipodromosModule";
+import { HipodromosModule } from "@/features/hipodromos/components/HipodromosModule";
 
 export default function HipodromosPage() {
   return <HipodromosModule />;
