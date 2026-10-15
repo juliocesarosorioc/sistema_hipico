@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
-for (const f of fs.readdirSync('html').filter(f => f.endsWith('.html'))) {
-    const c = fs.readFileSync(path.join('html', f), 'utf8');
+for (const f of fs.readdirSync('legacy/html').filter(f => f.endsWith('.html'))) {
+    const c = fs.readFileSync(path.join('legacy/html', f), 'utf8');
     const body = c.match(/<body[^>]*>/);
     const main = c.match(/<(main|div)[^>]*class="[^"]*flex-1[^"]*"/);
     const nested = c.match(/<main[^>]*>/);

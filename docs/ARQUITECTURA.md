@@ -1,6 +1,11 @@
 # SISTEMA HIPICO - ARQUITECTURA Y PLAN DE MIGRACION
 > Fase 1 (auditoria) + Fase 2 (plan de ramas + riesgos reales + receta vida real).
 > Generado por canal verificado (write -> node -> releido byte-exact, ASCII puro).
+>
+> **Nota (estado actual):** las rutas `js/`, `html/` y `css/` de este análisis
+> (documento histórico) hoy viven bajo `legacy/` (`legacy/js`, `legacy/html`,
+> `legacy/css`). El sistema nuevo es la app Next.js en `src/`. Ver
+> `docs/ESTRUCTURA.md`.
 
 ## 1. Monolitos reales (medidos, nada inventado)
 

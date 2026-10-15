@@ -3,8 +3,8 @@ const colors = require("tailwindcss/colors");
 /** Design System centralizado — paleta semántica (área central en tema claro). */
 module.exports = {
   content: [
-    "./html/**/*.html",
-    "./js/**/*.js",
+    "./legacy/html/**/*.html",
+    "./legacy/js/**/*.js",
     "./index.html",
     "./src/**/*.{ts,tsx}",
   ],

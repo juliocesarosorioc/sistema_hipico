@@ -1,3 +1,33 @@
+# Estructura del repositorio
+
+## Raíz
+
+La raíz guarda **solo la estructura** (carpetas) y los archivos de
+configuración; ningún archivo suelto de negocio, documentación o del sistema
+viejo.
+
+```text
+sistema_hipico/
+├── src/          # App Next.js (ver abajo)
+├── docs/         # Documentación (guías, planificación, manuales, arquitectura)
+├── scripts/      # Utilidades de build y auditoría (Node)
+├── sondas/       # Scripts de diagnóstico puntual (TS)
+├── supabase/     # Edge Functions (Deno) + SQL
+├── legacy/       # Sistema estático anterior (html/ + css/ + js/), solo referencia
+├── respaldos/    # Datos locales (ignorado por git)
+├── index.html    # Entrada que redirige a legacy/html/index.html
+├── next.config.mjs · tsconfig.json · tailwind.config.js · postcss.config.js
+├── package.json · package-lock.json · next-env.d.ts · deno.lock · .gitignore
+└── .env.local    # Secretos locales (ignorado por git)
+```
+
+- **`legacy/`** agrupa el sitio estático anterior (`legacy/html`, `legacy/css`,
+  `legacy/js`). Los HTML se enlazan entre sí con rutas relativas (`../css`,
+  `../js`), que siguen resolviendo dentro de `legacy/`. El código nuevo lo cita
+  solo como referencia histórica.
+- `package.json#build:css` compila `src/input.css` → `legacy/css/tailwind.css`
+  (CSS del sitio legacy).
+
 # Estructura del código (`src/`)
 
 Arquitectura **feature-first**: el código de negocio vive agrupado por dominio.

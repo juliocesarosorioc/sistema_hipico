@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = process.cwd();
-const htmlDir = path.join(root, 'html');
+const htmlDir = path.join(root, 'legacy', 'html');
 const files = fs.readdirSync(htmlDir).filter(f => f.endsWith('.html'));
 const CDN_RE = /\s*<script\s+src="https:\/\/cdn\.tailwindcss\.com"><\/script>/g;
 const NEW_LINK = '\n    <link rel="stylesheet" href="../css/tailwind.css">';

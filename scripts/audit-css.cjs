@@ -1,11 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 
-const css = fs.readFileSync('css/tailwind.css', 'utf8');
+const css = fs.readFileSync('legacy/css/tailwind.css', 'utf8');
 const tokens = new Set();
 
-for (const f of fs.readdirSync('html').filter(f => f.endsWith('.html'))) {
-    const src = fs.readFileSync(path.join('html', f), 'utf8');
+for (const f of fs.readdirSync('legacy/html').filter(f => f.endsWith('.html'))) {
+    const src = fs.readFileSync(path.join('legacy/html', f), 'utf8');
     const re = /class="([^"]+)"/g;
     let m;
     while ((m = re.exec(src))) {

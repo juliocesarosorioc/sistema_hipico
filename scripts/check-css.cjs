@@ -1,5 +1,5 @@
 const fs = require('fs');
-const css = fs.readFileSync('css/tailwind.css', 'utf8');
+const css = fs.readFileSync('legacy/css/tailwind.css', 'utf8');
 const checks = [
     'bg-slate-100',
     'text-\\[10px\\]',

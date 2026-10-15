@@ -4,8 +4,7 @@
   "description": "",
   "main": "postcss.config.js",
   "scripts": {
-    "test": "node pruebas/correr.cjs",
-    "build:css": "tailwindcss -i src/input.css -o css/tailwind.css --minify",
+    "build:css": "tailwindcss -i src/input.css -o legacy/css/tailwind.css --minify",
     "dev": "next dev",
     "build": "next build",
     "build:export": "node scripts/build-export.mjs",

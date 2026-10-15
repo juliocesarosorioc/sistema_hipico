@@ -1,9 +1,9 @@
 const fs = require('fs');
 
-const css = fs.readFileSync('css/tailwind.css', 'utf8');
-const source = fs.readdirSync('html')
+const css = fs.readFileSync('legacy/css/tailwind.css', 'utf8');
+const source = fs.readdirSync('legacy/html')
     .filter(f => f.endsWith('.html'))
-    .map(f => fs.readFileSync('html/' + f, 'utf8'))
+    .map(f => fs.readFileSync('legacy/html/' + f, 'utf8'))
     .join('\n');
 
 const cands = [];
