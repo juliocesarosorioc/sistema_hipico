@@ -373,9 +373,16 @@ async function carreraReporte(
     const caballo = txt(f.caballo);
     const esPareo = caballo.toUpperCase().includes("X") || /^PP/i.test(txt(f.nombre_jugada));
     const ev = evaluar(f, hipodromo, numero, pizarra, tasaComision);
+    // `tickets_apuestas` NO tiene `cliente_juega` / `cliente_consigue`: son
+    // `cliente_juega_id|_nombre` y `cliente_consigue_id|_nombre`. Leer las
+    // columnas inexistentes dejaba `clienteConsigue` SIEMPRE vacío, así que
+    // `if (clienteConsigue)` nunca creaba la fila del que CONSIGUE (el "DA"):
+    // el reporte no mostraba a los que dan y esa mitad del resumen (los
+    // ganadores del pareo) desaparecía de Ganan. El id del que JUEGA se deja
+    // como estaba para no activar el CRUCE financiero (feature pendiente).
     const clienteJuega = txt(f.cliente_juega);
-    const clienteJuegaNombre = txt(f.cliente_juega_nombre) || clienteJuega;
-    const clienteConsigue = txt(f.cliente_consigue);
+    const clienteJuegaNombre = txt(f.cliente_juega_nombre) || txt(f.cliente_juega_id) || clienteJuega;
+    const clienteConsigue = txt(f.cliente_consigue_nombre) || txt(f.cliente_consigue_id);
     const clienteConsigueNombre = txt(f.cliente_consigue_nombre) || clienteConsigue;
 
     const resultadoJuega = ev.ok === null ? null : ev.bruto - monto;

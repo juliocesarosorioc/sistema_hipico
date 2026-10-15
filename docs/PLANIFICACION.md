@@ -1535,9 +1535,56 @@ Regla del dueño:
 `src/features/taquilla/lib/nomenclatura.ts`,
 `src/features/gestion/components/GestionJugadasModule.tsx` y los reportes.
 
+### 8. Reporte de Liquidación: vuelve a mostrar al que DA y a los GANADORES (bug reabierto) — ✅ corregido
+
+El dueño volvió a reportar —**Keeneland C4** (2026-10-15, pizarra `8·6·3·4`)— que
+el 🧾 Reporte de Liquidación **solo mostraba perdedores**, decía
+**"Sin movimientos"** en Ganan y **no mostraba a los que "DA"** (jugador 2 = el
+que consigue).
+
+La causa ya estaba documentada más abajo pero **el fix nunca se escribió**:
+`src/features/liquidacion/lib/reportes.ts::carreraReporte` seguía leyendo
+`f.cliente_consigue` y `f.cliente_juega`, columnas que **NO existen** en
+`tickets_apuestas` (son `cliente_consigue_id|_nombre` y
+`cliente_juega_id|_nombre`). Con `clienteConsigue` siempre vacío, el
+`if (clienteConsigue)` **jamás creaba la fila del que CONSIGUE**, así que:
+- el reporte no mostraba el "DA"; y
+- como el "DA" (el que da) es la **contraparte que gana cuando el que juega
+  pierde**, esa mitad del resumen desaparecía → quedaban **solo los perdedores**.
+
+**Fix:** leer las columnas reales `cliente_consigue_nombre` (respaldo
+`cliente_consigue_id`) y `cliente_juega_nombre` (respaldo `cliente_juega_id`). El
+id del que JUEGA se dejó sin tocar **a propósito** para no activar el CRUCE
+financiero (feature pendiente).
+
+### 9. ARGENTINA: avales y modo de juego de 24 jugadores — ✅ script listo
+
+Lista del dueño (los que traen monto = **AVAL**; el resto = **"libre"**):
+
+| Con aval | USD | | Libre |
+|----------|-----|---|-------|
+| ARELY | 2.000 | | ARRAEZ, BERSAREZ, BG, CHINO, EDDIE, EVERY, |
+| AYARI | 2.000 | | FORTUNA, GAETANO, LEYBA, MAKI, PARTNER, ROCA, |
+| CAMACHO | 500 | | RUSSO, SAM, SPEEDY, THOR, URIEL |
+| LAMINE | 500 | | |
+| LARRY | 500 | | |
+| RUCIO | 2.000 | | |
+| SOLDADO | 2.000 | | |
+
+`sql/actualizar_avales_argentina.sql` (idempotente y **no destructivo**: no borra
+filas ni cambia ids, sólo `aval` / `modo_juego` / `libre`) aplica esos valores a
+los 24 en el grupo **ARGENTINA** (`d290daa1-a44b-4ed4-bb8a-03db4ecc32b0`).
+**Pendiente de ejecutar** en Supabase → SQL Editor (la llave anónima de la app no
+puede escribir `public.clientes` por RLS).
+
 ---
 
-*Última actualización: 2026-10-15 (tarde: nuevos requerimientos del dueño
+*Última actualización: 2026-10-15 (reporte de liquidación: corregido (de nuevo)
+el "DA" — `reportes.ts` leía `cliente_consigue`/`cliente_juega`, columnas que no
+existen; ahora lee `cliente_consigue_*`/`cliente_juega_*`, así que vuelven a
+aparecer los que dan y los ganadores. Argentina: `sql/actualizar_avales_argentina.sql`
+fija aval/modo de juego de 24 jugadores, pendiente de ejecutar en Supabase. Antes,
+2026-10-15 (tarde: nuevos requerimientos del dueño
 registrados — registrar más jugadas a carreras cerradas/liquidadas, color de
 carreras azul/amarillo/rojo como condición permanente, Monitor de Jugadas sin
 progreso de resultados por carrera, Boleto como vista de pendientes, rediseño
