@@ -106,9 +106,9 @@ Repartida en los tres lados, porque si el navegador topa distinto que la RPC el
 caja autoriza de más (la RPC lo rechaza y se pierde la venta) o topa donde sí
 había crédito (no se vende):
 
-- `src/lib/taquilla/reparto.ts` — `disponibleParaJugar` = saldo + aval. Es el
+- `src/features/taquilla/lib/reparto.ts` — `disponibleParaJugar` = saldo + aval. Es el
   módulo PURO y la única definición de la regla.
-- `src/lib/grupos.ts` — `limiteDeJugar`, `esClienteLibre` y `textoDisponible`
+- `src/features/grupos/lib/grupos.ts` — `limiteDeJugar`, `esClienteLibre` y `textoDisponible`
   **delegan** en el anterior; no lo reimplementan.
 - Modales: `ModalMarcas`, `MonitorTablas`, `EjemplarModal`, `GestionJugadasModule`
   y el selector de `DupletaModule`.
@@ -191,7 +191,7 @@ Regla implementada:
 
 Dónde va:
 
-- `src/lib/taquilla/caballos.ts` — módulo PURO con la regla. No es lo mismo que
+- `src/features/taquilla/lib/caballos.ts` — módulo PURO con la regla. No es lo mismo que
   `marcas/registradas.ts`: aquel exige que la carrera tenga ejemplares (sin lista
   no se *configuran* Marcas) y este tiene que tolerar la carrera vacía, porque la
   Taquilla carga jugadas sobre carreras que aún no pasaron por Marcas.
@@ -230,7 +230,7 @@ elige cuál, y la norma de derecha a izquierda acota la lista:
   uno de la derecha es un cruce que la norma prohíbe y que el selector ni siquiera
   ofrece; si se fuerza por API, la RPC lo rechaza.
 
-Implementación: `calcularRivales()` en `src/lib/marcas/jerarquia.ts` devuelve
+Implementación: `calcularRivales()` en `src/features/marcas/lib/jerarquia.ts` devuelve
 ahora `candidatos` (la lista legal) y `rival` (el elegido, cayendo al primero si
 el que llega no es legal). La RPC `club_vender_marca` recibió `p_rival` y lo
 revalida contra esa misma lista antes de escribir el ticket.
@@ -252,14 +252,14 @@ Estado: el código ya está completo y verificado; lo que falta es **aplicarlo**
 Ningún punto de esta lista se puede cerrar desde el repo, porque todos tocan la
 base o la consola de Supabase.
 
-- [ ] **Aplicar `src/db/seguridad_maestro.sql` en el SQL Editor de Supabase.** No
+- [ ] **Aplicar `src/core/db/seguridad_maestro.sql` en el SQL Editor de Supabase.** No
       está aplicado: las cinco tablas (`capacidad`, `tipo_usuario`,
       `tipo_usuario_capacidad`, `usuario_sistema`, `usuario_capacidad`) dan
       `404 Could not find the table`. Mientras tanto no hay login funcional, y
       `pruebas/auditar-base-maestro.mjs` lo dice exacto en cada corrida.
-- [ ] **Aplicar `src/db/maestro_seed.sql`** (128 capacidades, 16 módulos, matriz
+- [ ] **Aplicar `src/core/db/maestro_seed.sql`** (128 capacidades, 16 módulos, matriz
       de los 4 tipos y el usuario principal, más las 10 reglas ABAC).
-- [ ] **Aplicar `src/db/rls-negocio.sql`** (después del seed, no antes). Cierra
+- [ ] **Aplicar `src/core/db/rls-negocio.sql`** (después del seed, no antes). Cierra
       `anon` en las tablas de negocio y mueve la decisión a `authenticated`.
 - [ ] **`node pruebas/crear-admin.mjs josorioc "CLAVE"`** con
       `SUPABASE_SERVICE_ROLE_KEY`. Además del alta en Auth, el script ahora ata
@@ -307,7 +307,7 @@ base o la consola de Supabase.
 **Lo que sigue siendo una limitación honesta**, y no un bug pendiente de
 arreglar:
 
-- `src/lib/portal.ts` y los guards del navegador son **comodidad, no
+- `src/features/portal/lib/portal.ts` y los guards del navegador son **comodidad, no
   seguridad**. El build es `output: "export"`, así que no hay servidor donde
   validar nada. La frontera es Postgres.
 - La regla `ticket:anular:accion_valida` **no se puede evaluar en RLS**: la
@@ -329,7 +329,7 @@ arreglar:
 
 ### Módulo de Inicio de Sesión (`/login`)
 Estado: el login con usuario/contraseña contra **Supabase Auth** ya funciona
-(`src/app/login/page.tsx` + `src/lib/auth/sesion.ts`). El operador escribe su
+(`src/app/login/page.tsx` + `src/features/auth/lib/sesion.ts`). El operador escribe su
 usuario corto (`josorioc`) y `resolverCorreo()` lo traduce a
 `<usuario>@<NEXT_PUBLIC_AUTH_DOMAIN>` (por defecto `sistemahipico.local`).
 La contraseña nunca se valida ni se guarda en el navegador: se verifica contra
@@ -371,7 +371,7 @@ permisos del middleware.
 - [x] Activar el botón **"Preliminar Resultado (Ctrl+Y)"** (`html/taquilla.html:150`).
 - [x] Conectar el campo `inputRetirados` (`html/taquilla.html:79`) — pre-marca retiros y recibe el resultado.
 - [x] Desarrollar motor de dividendos por tipo de jugada (`js/components/calculo_dividendos.js`) + modal de captura/ajuste.
-- [x] Aplicar el resultado de `resultados_carreras` en **liquidaciones/Saldos** (vincular dividendos al pago de premios). (`src/lib/liquidacion/pagarYCerrar.ts` usa `dividendosDe()` que lee `resultados_carreras`; `aplicarLiquidacionSaldos` persiste premios).
+- [x] Aplicar el resultado de `resultados_carreras` en **liquidaciones/Saldos** (vincular dividendos al pago de premios). (`src/features/liquidacion/lib/pagarYCerrar.ts` usa `dividendosDe()` que lee `resultados_carreras`; `aplicarLiquidacionSaldos` persiste premios).
 
 ### Tablas Fijas
 - [x] Eliminar carga de resultados desde el módulo de Tablas (completado).
@@ -396,14 +396,14 @@ permisos del middleware.
 
 ### Módulo de Resultados — conectado a los reportes
 - [x] Mostrar `dividendos` y `orden_llegada` en los reportes de liquidación y en el portal.
-  - `leerPizarra()` (`src/lib/liquidacion/reportes.ts`) ya no selectea solo `ganadores`: lee
+  - `leerPizarra()` (`src/features/liquidacion/lib/reportes.ts`) ya no selectea solo `ganadores`: lee
     `orden_llegada` + `dividendos`, prefiere el orden oficial y pasa los dividendos a
     `ticketMotorDe()` — antes iban hardcodeados en `null`, así que **todo se liquidaba a la par de
     la casa (2×/120×)**.
-  - `leerResultadoOficial()` (`src/lib/carreras-dia.ts`) reutilizable para cualquier consumidor.
+  - `leerResultadoOficial()` (`src/features/carreras/lib/carreras-dia.ts`) reutilizable para cualquier consumidor.
   - `MetaCarrera.dividendos`: la Relación de Resultados (`relacionResultados`) y la de WhatsApp
     toman el pago NINI del dividendo oficial en vez del 2× fijo.
-  - `puestosDesdeOrdenLlegada()` (`src/lib/motores/oficiales.ts`) normaliza las **cuatro** formas
+  - `puestosDesdeOrdenLlegada()` (`src/features/motores/lib/oficiales.ts`) normaliza las **cuatro** formas
     en que el orden de llegada se guardó en el proyecto: `[{numero,puesto}]` (la canónica),
     `["7","9"]`, `{1:"7"}` y `{primero,segundo…}`. Sin esto se leía `"[object Object]"`.
   - En producción las 131 filas de `resultados_carreras` tienen `dividendos` y `orden_llegada` en
@@ -436,7 +436,7 @@ permisos del middleware.
 - [x] **La causa raíz del aperture era un bug de la app, no del SQL.** `guardarPrograma()` se
       tragaba *cualquier* fallo de `club_guardar_programa_dia` y caía a un `.upsert()` directo,
       que el RLS rechazaba; como no se podía cerrar la tabla, alguien la abrió con
-      `fix_rls_insercion_manual.sql`. Corregido en `src/lib/gaceta/programa.ts`: el fallback ahora
+      `fix_rls_insercion_manual.sql`. Corregido en `src/features/gaceta/lib/programa.ts`: el fallback ahora
       solo se usa si la RPC **no está instalada** (42883 / PGRST202). Cualquier otro error se le
       propaga al operador, que antes veía "guardado" por un atajo que no pasó por ninguna
       validación.
@@ -489,7 +489,7 @@ permisos del middleware.
 - Pruebas: 80 casos en `pruebas/wps.test.ts` (8 nuevos cubren ejemplar vacío y ejemplar ausente).
 
 ### Pendiente estructural: el BetSlip no persiste en `tickets_apuestas`
-- [x] **RESUELTO (sql/taquilla_venta.sql + src/lib/taquilla/venta.ts).** La venta
+- [x] **RESUELTO (sql/taquilla_venta.sql + src/features/taquilla/lib/venta.ts).** La venta
       individual de Taquilla hoy produce filas reales: "Cargar jugada(s)" en Gestión de Jugadas
       llama a `club_vender_jugada`, que valida tope `saldo+aval`, pertenencia al grupo y cliente
       activo, descuenta el saldo y crea el ticket `'Pendiente'` en UNA transacción
@@ -510,7 +510,7 @@ permisos del middleware.
       oficial (`run-marcas.ps1`) le pasa `--outDir %TEMP%` y todo bien, pero un
       `npx tsc -p pruebas/tsconfig.json` a pelo deja el `.js` de cada módulo **junto al `.ts`**.
 - Se juntaron 23 `.js` dentro de `src/` y `next build` empezó a compilar
-      `src/lib/seguridad/capacidades.js`, que falló con
+      `src/features/seguridad/lib/capacidades.js`, que falló con
       `Module parse failed: Cannot use 'import.meta' outside a module`.
 - Lo que lo hace peligroso: el síntoma es un error de build en una ruta que nadie tocó
       (`/contabilidad/bancos`), y `.gitignore` no ayuda porque esos archivos nunca se commitean.
@@ -558,7 +558,7 @@ permisos del middleware.
       `public.tiene_capacidad` devolvía `NULL` sin fila de usuario (o con
       `auth.uid()` null), y `if not NULL` no dispara: los guards dejaban pasar a
       `anon`. Se envolvió el resultado en `coalesce(..., false)` (fuente:
-      `src/db/seguridad_maestro.sql`) y los guards de `remate_cierre.sql` y
+      `src/core/db/seguridad_maestro.sql`) y los guards de `remate_cierre.sql` y
       `remate_pujas_rpc.sql` usan `coalesce(...)` directo. Las RPC de pujas ahora
       revocan `EXECUTE` de `PUBLIC`/`anon` (Postgres lo da a PUBLIC por defecto).
 - [x] Mover las **escrituras de pujas** a RPC `security definer`
@@ -588,9 +588,9 @@ texto (`upper(trim(hipodromo))` + `carrera` + `fecha`). Eso generaba carreras
 duplicadas o huérfanas (`"LA RINCONADA"` vs `"RINCONADA"`) y que un módulo viera
 una carrera y otro no. Se centralizó en la **matriz `carreras`**.
 
-- [x] `listarCarrerasCentrales` (`src/lib/carreras/central.ts`) lee **solo la
+- [x] `listarCarrerasCentrales` (`src/features/carreras/lib/central.ts`) lee **solo la
       matriz**: se quitó el fallback legacy a `resultados_carreras`.
-- [x] `listarCarrerasPorDia` (`src/lib/tablas/rpc.ts`) lee **solo la matriz**: se
+- [x] `listarCarrerasPorDia` (`src/features/tablas/lib/rpc.ts`) lee **solo la matriz**: se
       quitaron los cruces con `programa_dia`, `tablas_fijas` y `resultados_carreras`
       (incluido el fallback por `fecha_creacion`). Alimenta el semáforo de la
       Taquilla/Gestión, Marcas, Reportes y Dupleta.
@@ -608,7 +608,7 @@ una carrera y otro no. Se centralizó en la **matriz `carreras`**.
 - [x] `sql/RUNBOOK_SQL.md`: `carreras.sql` pasa a ser **paso 13 obligatorio** (sin
       él la app muestra "La matriz de carreras no está disponible") y
       `carrera_unica.sql` el paso 14.
-- [x] **Write-path unificado** (`src/lib/carreras-dia.ts`): `registrarCarreraProgramada`
+- [x] **Write-path unificado** (`src/features/carreras/lib/carreras-dia.ts`): `registrarCarreraProgramada`
       escribe **solo la matriz** (se quitó el upsert a `resultados_carreras` y el
       fallback a `programa_dia`). `cargarCarrerasDelDia` arma la jornada desde la
       matriz y solo adjunta el resultado/ventas del libro por carrera; ya no lista
@@ -623,7 +623,7 @@ una carrera y otro no. Se centralizó en la **matriz `carreras`**.
   `tickets_apuestas` (registro de la jugada en espera del resultado). Antes de escribir,
   las tres modalidades muestran un **preview editable** (`TicketVentaPreview`) con
   Corregir/Confirmar; nada se escribe hasta Confirmar.
-- Componente compartido: `src/components/tickets/TicketVentaPreview.tsx` (`TicketVentaModel`).
+- Componente compartido: `src/features/tickets/components/TicketVentaPreview.tsx` (`TicketVentaModel`).
 - Marcas: `ModalMarcas.tsx` (`solicitarVenta`/`confirmarVenta`) → RPC `club_vender_marca`.
 - Tablas: `MonitorTablas.tsx` (`lanzarVenta`/`confirmarVentaPreview`) → `club_vender_tabla_fija`.
 - Dupleta: `DupletaModule.tsx` (`venderCelda`/`confirmarVentaDupleta`) → RPC nueva
@@ -639,7 +639,7 @@ una carrera y otro no. Se centralizó en la **matriz `carreras`**.
   decidido; configurable: decidido / jugado / ganancia) que recibe el **grupo**. 0% =
   passthrough (no se le cobra nada).
 - Config: `GruposModule.tsx` → sección **Banquero por Modalidad**; datos en
-  `src/lib/banqueros.ts`, tabla `banquero_convenio`.
+  `src/features/liquidacion/lib/banqueros.ts`, tabla `banquero_convenio`.
 - SQL `sql/banqueros.sql`: `trg_fijar_banquero_ticket` (BEFORE INSERT: congela en el
   ticket por `grupo_cobro_id` + `origen`) y `trg_aplicar_banquero_ticket` (BEFORE UPDATE:
   espejo + comisión al liquidar). No edita los RPCs de venta.
@@ -744,7 +744,7 @@ create table if not exists tickets_jugadas (
 
 ### Pendientes de migración / conexión al backend
 - [x] **Winner / Place / Show (W.P.S.)** — motor americano de dividendos (legacy `html/wps.html`).
-      **MIGRADO**: el motor quedó en `src/lib/motores/wps.ts` y la jugada es un ticket normal
+      **MIGRADO**: el motor quedó en `src/features/motores/lib/wps.ts` y la jugada es un ticket normal
       (`tickets_apuestas` con `nombre_jugada` = `W`/`P`/`S`), no una tabla aparte como `wps_tickets`:
       - El pago depende de DOS cosas a la vez (qué se apostó × en qué puesto llegó), así que usa una
         **matriz** de 6 celdas en `resultados_carreras.dividendos`: `wps_WW`, `wps_WP`, `wps_WS`,
@@ -763,7 +763,7 @@ create table if not exists tickets_jugadas (
 - [ ] **Dupletas: "spin"** — pendiente de definición. El módulo `/dupleta` ya está migrado y
       funcional (lee el registro central, centraliza el retiro con `alternarRetiroCarrera` y
       persiste la matriz completa en `public.dupletas`), pero NO existe ninguna implementación de
-      "spin" ni en `src/components/dupletas/DupletaModule.tsx`, ni en `src/lib/dupletas.ts`, ni en
+      "spin" ni en `src/features/dupletas/components/DupletaModule.tsx`, ni en `src/features/dupletas/lib/dupletas.ts`, ni en
       `sql/crear_tabla_dupletas.sql`, ni en el legacy (`js/` y `html/` no tienen módulo de
       dupletas). Queda anotado aquí a falta de que se precise qué debe hacer:
       - [ ] ¿Girar/invertir la matriz (intercambiar `carrera1` ↔ `carrera2` en `claveDupleta`)?
@@ -771,22 +771,22 @@ create table if not exists tickets_jugadas (
       - [ ] ¿Autocompletar precio/distancia/premio desde la carrera central al elegir el par?
 - [ ] **Ingresos / Avales** — abonos y avales por cliente.
 - [x] **Reglas de Jugadas** — administración de `tipos_jugadas` y dividendos. **MIGRADO**:
-      `src/lib/tipos-jugadas.ts` (CRUD sobre `public.tipos_jugadas`: nombre, `comision_porcentaje`,
+      `src/features/reglas-jugadas/lib/tipos-jugadas.ts` (CRUD sobre `public.tipos_jugadas`: nombre, `comision_porcentaje`,
       `comision_base`, `tipo_calculo`, `premio_a_pagar`, `permite_cruces`, `activo`; conserva
       `base_comision` en el alta por compatibilidad con la columna legada) + pantalla
-      `src/components/reglas-jugadas/ReglasJugadasModule.tsx` en `/reglas-jugadas`. Catálogo de
+      `src/features/reglas-jugadas/components/ReglasJugadasModule.tsx` en `/reglas-jugadas`. Catálogo de
       respaldo sin conexión y guardas de escritura con `exigirCapacidad`
       (`reglas_jugadas:fn_guardar_jugada` / `fn_eliminar_jugada`).
 - [x] **Operadores** — la pestaña *Usuarios* de `/seguridad` cubre alta y permisos, pero no el
       modelo legacy de `operadores` (tabla + relación con hipódromos). **MIGRADO sin revivir la
-      tabla retirada** (contraseñas en claro): `src/lib/operadores.ts` lista el personal real
+      tabla retirada** (contraseñas en claro): `src/features/operadores/lib/operadores.ts` lista el personal real
       (`usuario_sistema` + `tipo_usuario`) y administra qué hipódromos opera cada uno como el
       atributo ABAC `usuario_hipodromos` (`public.usuario_atributo`), bajo la capacidad ya
       existente `seguridad:fn_personalizar_usuario`. Pantalla
-      `src/components/operadores/OperadoresModule.tsx` en `/operadores`, con enlace al alta y
+      `src/features/operadores/components/OperadoresModule.tsx` en `/operadores`, con enlace al alta y
       permisos de `/seguridad?pestana=usuarios`.
 - [x] **Diagnóstico** — utilidad de sanidad del sistema. Implementado en `/diagnostico`
-      (`src/lib/diagnostico.ts` + `src/components/diagnostico/DiagnosticoModule.tsx`), con la
+      (`src/features/diagnostico/lib/diagnostico.ts` + `src/features/diagnostico/components/DiagnosticoModule.tsx`), con la
       puerta de `/seguridad` porque es herramienta de administración. Mide lo que dolía: si la
       matriz `carreras` está aplicada, si **toda carrera publicada en Tablas Fijas tiene fila en la
       matriz** (el fallo que hacía hipódromos "no existir"), hipódromos sin `hipodromo_id`,
@@ -797,7 +797,7 @@ create table if not exists tickets_jugadas (
       `carreras:fn_registrar_carrera`.
 
 ### Lógica de cierre (Caja / Semana)
-> Implementado en `src/lib/liquidacion/cierres.ts` + `sql/cierres_jornada.sql` (paso 20 del
+> Implementado en `src/features/liquidacion/lib/cierres.ts` + `sql/cierres_jornada.sql` (paso 20 del
 > runbook). Los tres botones consolidación de verdad: calculan el balance con el MISMO reporte que
 > muestra `/saldos-reportes` (`construirReporteSemana`), piden confirmación con la cifra a la vista
 > y registran la foto del balance en `cierres_jornada`. El cierre NO mueve saldos ni bloquea la
@@ -806,7 +806,7 @@ create table if not exists tickets_jugadas (
 - [x] **Cierre del Día** — consolidación de caja de la jornada (botón visible en `/inicio`).
 - [x] **Cerrar Semana** — consolida el balance de la semana fiscal del grupo usando
       `dia_inicio_semana` / `dia_fin_semana` de `grupos_venta` (ver
-      `src/lib/liquidacion/semana.ts` → `rangoSemanaDeGrupo`). El chip de la semana pasa a
+      `src/features/liquidacion/lib/semana.ts` → `rangoSemanaDeGrupo`). El chip de la semana pasa a
       **CERRADA**.
 - [x] **Semanas Anteriores** — histórico de cierres de día y de semana con su balance, con
       **Reabrir** (borra la foto para poder reconsolidar).
@@ -870,7 +870,7 @@ grupo lo pone el usuario en la UI (el webhook no trae subject).
 `remate_cierre` tiene disparador conectado: `copiarPizarra` en
 `RematesModule.tsx` llama `enviarAutomaticoSiActivo("remate_cierre", texto)`
 (fire-and-forget, no bloquea el copiado). El resto queda listo en la capa
-`src/lib/whatsapp.ts` para cuando los módulos quieran dispararlo.
+`src/features/whatsapp/lib/whatsapp.ts` para cuando los módulos quieran dispararlo.
 
 ### Estado
 - [x] Edge Functions escritas (webhook/grupos/enviar) — **deploy manual**:
@@ -882,7 +882,7 @@ grupo lo pone el usuario en la UI (el webhook no trae subject).
 - [x] Panel **Conexión al grupo** en `WhatsAppModule.tsx` (estado API, grupo
       vinculado, detectados, renombrar, toggles) + botón **📤 Enviar al grupo**
       en el generador de reportes.
-- [x] Capa cliente en `src/lib/whatsapp.ts` (`llamarWhatsappFn` con el JWT de
+- [x] Capa cliente en `src/features/whatsapp/lib/whatsapp.ts` (`llamarWhatsappFn` con el JWT de
       la sesión + helpers por acción).
 - [ ] **Cuenta de Meta / WABA / número / token**: externa, la crea el usuario
       siguiendo `GUIA_META_WHATSAPP_API.md`. Sin ella la API no responde y el
@@ -912,7 +912,7 @@ grupo lo pone el usuario en la UI (el webhook no trae subject).
 > — la Capa 2 (IA) sigue documentada como refuerzo opcional sin desplegar.
 
 ### Por qué hoy no ordena (diagnóstico verificado en el código)
-El flujo actual es `parsearLineaRapida()` (`src/lib/taquilla/validar.ts`) →
+El flujo actual es `parsearLineaRapida()` (`src/features/taquilla/lib/validar.ts`) →
 `poblarCargaRapida()` (`GestionJugadasModule.tsx`) → `setFilas`. El parser es
 heurístico por tokens y choca con un texto transcrito por voz en 4 puntos:
 
@@ -936,7 +936,7 @@ heurístico por tokens y choca con un texto transcrito por voz en 4 puntos:
 ### Arquitectura propuesta — dos capas
 
 **Capa 1 · Normalizador difuso local (determinista, sin costo, sin credenciales)**
-Nuevo módulo puro `src/lib/taquilla/normalizar.ts`, parado ANTES de
+Nuevo módulo puro `src/features/taquilla/lib/normalizar.ts`, parado ANTES de
 `parsearLineaRapida`, con contexto de los catálogos que el módulo ya tiene en
 pantalla. Pipeline:
 
@@ -981,11 +981,11 @@ local. Secrets: `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` (API compatible
 OpenAI).
 
 ### Cambios por archivo (cuando se implemente)
-- [x] **Nuevo `src/lib/taquilla/normalizar.ts`** (módulo PURO, sin I/O) —
+- [x] **Nuevo `src/features/taquilla/lib/normalizar.ts`** (módulo PURO, sin I/O) —
       expansor numérico es-ES, diccionario de nomenclatura hablada,
       segmentador difuso de clientes (Jaro-Winkler, umbral 0.88), resolución
       de caballos por nombre, salida con `confianza` por campo + `correcciones`.
-- [x] **`src/lib/taquilla/validar.ts`** — stop-words ampliadas con el relleno
+- [x] **`src/features/taquilla/lib/validar.ts`** — stop-words ampliadas con el relleno
       del locutor; `clasificarLineaRapida` expone el sobrante sin asignar
       clientes (`parsearLineaRapida` queda como wrapper legacy); se reutilizan
       los regex existentes (`RE_JUGADA_LETRA`, `RE_PAREO`, `RE_NUMERICO`,
@@ -1003,7 +1003,7 @@ OpenAI).
       Edge Function `supabase/functions/normalizar-jugadas/index.ts` (valida JWT +
       `tiene_capacidad('gestion_jugadas:fn_corregir_ia')`, reescribe el bloque con un modelo
       compatible-OpenAI configurable por secretos `IA_API_KEY`/`IA_MODELO`/`IA_BASE_URL`) + cliente
-      `src/lib/taquilla/corregirIA.ts`. El botón vive en el modal de Carga Rápida: si la IA no está
+      `src/features/taquilla/lib/corregirIA.ts`. El botón vive en el modal de Carga Rápida: si la IA no está
       configurada, no hay red o falla, avisa y **se queda con el resultado local** (nunca bloquea la
       venta). W.P.S. ya no es un stub: el Sidebar y el acceso del dashboard lo cablean a
       `/taquilla?modalidad=wps`.
@@ -1043,9 +1043,9 @@ OpenAI).
 | `sql/paquete_pendientes.sql` sec. 10 | Definición SQL de `resultados_carreras` |
 | `sql/resultados_rpc.sql` | RPC `club_guardar_resultado_carrera` + cierre de la policy abierta a `anon` |
 | `sql/reclamos_storage.sql` | Bucket privado `reclamos` (firmas por Edge Function) + estado `RECHAZADO` |
-| `src/lib/motores/oficiales.ts` | `puestosDesdeOrdenLlegada()` — normaliza las 4 formas de orden de llegada |
-| `src/lib/carreras-dia.ts` | `leerResultadoOficial()` + escritura de resultados vía RPC |
-| `src/components/seguridad/AuditoriaPanel.tsx` | Visor de `public.auditoria` (pestana de Seguridad) |
+| `src/features/motores/lib/oficiales.ts` | `puestosDesdeOrdenLlegada()` — normaliza las 4 formas de orden de llegada |
+| `src/features/carreras/lib/carreras-dia.ts` | `leerResultadoOficial()` + escritura de resultados vía RPC |
+| `src/features/seguridad/components/AuditoriaPanel.tsx` | Visor de `public.auditoria` (pestana de Seguridad) |
 | `html/wps.html` + `js/wps.js` | Motor WPS separado (dividendos americanos) |
 | `html/remates.html` + `js/remates.js` | Remates — (pendiente) tomar ejemplares de las carreras cargadas en hipódromos y días |
 | `html/tickets.html` + `js/tickets.js` | (NUEVO) Tickets por solucionar — disputas de jugadas |
@@ -1064,16 +1064,16 @@ paralelas `grupos` / `perfiles_usuarios` / `roles`):
 | 3 | Operador / Taquillero | `usuario_sistema` con `tipo_usuario = operador` + `grupo_id` |
 
 Archivos nuevos:
-- `src/components/ui/EmptyState.tsx` — estado vacío reutilizable del Design System.
-- `src/components/saldos/ReporteCarrera.tsx` — plantilla de liquidación SIN mocks
+- `src/shared/components/ui/EmptyState.tsx` — estado vacío reutilizable del Design System.
+- `src/features/saldos/components/ReporteCarrera.tsx` — plantilla de liquidación SIN mocks
   (recibe `datos?: ReporteCarreraDatos`; sin datos muestra EmptyState).
 - `supabase/seed_superadmin.sql` — blindaje de josorioc: trigger
   `proteger_usuario_principal` (no se puede borrar/desmarcar/desactivar/cambiar
   el id del principal) + verificación de la estructura RLS/grupo_id.
-- `src/components/grupos/CreacionGruposModule.tsx` + ruta `/crear-grupo` —
+- `src/features/grupos/components/CreacionGruposModule.tsx` + ruta `/crear-grupo` —
   wizard de 3 pasos (grupo → administrador → operadores), exclusivo de
   josorioc, Keyboard-First (Enter avanza, Escape retrocede, autofocus por paso).
-- `src/lib/grupos.ts::crearEcosistemaGrupo` — orquesta la alta; pasa por la
+- `src/features/grupos/lib/grupos.ts::crearEcosistemaGrupo` — orquesta la alta; pasa por la
   edge function y cae a modo degradado (grupo + `usuario_sistema` sin cuentas
   de Auth) si la función no está desplegada.
 - `supabase/functions/crear-grupo/index.ts` — edge function con service_role:
@@ -1199,7 +1199,7 @@ resultados.
 
 ### Causa raíz (verificada en el código)
 - `parsearNomenclatura("1P Y 1Y2N")` ya parseaba la COMPUESTA en sus bloques
-  `[1P, COMBINADA(1y2n)]`, pero `porBloques` (`src/lib/motores/puestos.ts`)
+  `[1P, COMBINADA(1y2n)]`, pero `porBloques` (`src/features/motores/lib/puestos.ts`)
   trataba el bloque anidado `1Y2N` como si fuera un simple **"2P puro"**
   (`bloque.esNini=false` → `puestoPuro(puestos, 2)`), ignorando sus
   sub-jugadas `1P`+`2N`.
@@ -1208,14 +1208,14 @@ resultados.
   `ok:false` con devolución plena → `saldos.ts` escribía **Retirado**.
 
 ### Fix
-- `src/lib/motores/puestos.ts`: nuevo `evaluarBloque` **recursivo**. Un bloque
+- `src/features/motores/lib/puestos.ts`: nuevo `evaluarBloque` **recursivo**. Un bloque
   anidado (COMBINADA/COMPUESTA) reparte SU monto entre sus tramos y evalúa
   cada sub-jugada; las hojas se resuelven igual que antes. Bloqueo de pizarra
   (P2 == P1 | P1+1) también aplica a bloques anidados.
-- `src/lib/bettingEngine.ts`: tipos `EstadoBloque` + `BloqueDetalleResultado`
+- `src/features/betting/lib/bettingEngine.ts`: tipos `EstadoBloque` + `BloqueDetalleResultado`
   y campo opcional `ResultadoMotor.bloquesDetalle` — la estimación de CADA
   bloque y sus resultados.
-- `src/lib/taquilla/mensajeResultado.ts`: el **RESULTADO PRELIMINAR** ahora
+- `src/features/taquilla/lib/mensajeResultado.ts`: el **RESULTADO PRELIMINAR** ahora
   agrega `· BLOQUES: 1P→❌ · 1Y2N→❌ (1P→❌ · 2N→🔁)` cuando el motor desglosa.
 - `pruebas/puestos-bloques.test.ts`: +22 aserciones (caso reportado x3
   posiciones, regresión de COMBINADA raíz `1Y2N`, regresión `1P Y 2P` EMPATA,

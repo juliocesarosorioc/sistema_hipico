@@ -41,7 +41,7 @@ No fue un error de tecleo. Fue un **diseño que fallaba abierto**.
 **1.** El operador escribió la fecha como `04-10-2026` — día/mes, que es como se
 escribe y se lee en Venezuela.
 
-**2.** `normalizarFechaIso()` en `src/lib/gaceta/ui.ts` decía en su comentario
+**2.** `normalizarFechaIso()` en `src/features/gaceta/lib/ui.ts` decía en su comentario
 aceptar `DD-MM-YYYY`, pero su expresión regular era:
 
 ```ts
@@ -77,7 +77,7 @@ servidor**: la app normaliza una sola vez y a la base solo sale ISO.
 
 ## 3. Las reglas (las tres capas)
 
-### Capa 1 — Una sola fuente de verdad: `src/lib/fechas.ts`
+### Capa 1 — Una sola fuente de verdad: `src/core/utils/fechas.ts`
 
 | Función | Para qué | Devuelve |
 |---|---|---|
@@ -92,7 +92,7 @@ servidor**: la app normaliza una sola vez y a la base solo sale ISO.
 - **Regla C:** la validación **falla cerrada**. `exigirFechaIso` lanza con un
   mensaje accionable; no existe el camino "devuelve null y sigue".
 
-`normalizarFechaIso` en `src/lib/gaceta/ui.ts` ahora **delega** en este módulo.
+`normalizarFechaIso` en `src/features/gaceta/lib/ui.ts` ahora **delega** en este módulo.
 No escribas un segundo parser de fechas: ese duplicado es exactamente lo que
 rompió la jornada.
 
@@ -109,7 +109,7 @@ escribir. El campo de `MonitorTablas` merece atención aparte: ahí se cambia el
 **día** de una tabla ya publicada, y mover una tabla de día parte la jornada
 (las ventas quedan en un día y la oferta en otro).
 
-### Capa 3 — La barrera de publicación: `src/lib/tablas/validar-carga.ts`
+### Capa 3 — La barrera de publicación: `src/features/tablas/lib/validar-carga.ts`
 
 Antes de tocar la base, `publicarDraft()` y `publicarTodas()` en
 `TablasModule.tsx` revisan **todas** las tarjetas y rechazan el lote si:

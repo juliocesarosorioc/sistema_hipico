@@ -25,7 +25,7 @@ Centro WhatsApp   ──POST─────▶  Edge Function whatsapp-enviar   
 > 1. Aplicar `sql/whatsapp_integracion.sql` en el SQL Editor de Supabase
 >    (crea `whatsapp_grupos`, `whatsapp_envios`, `whatsapp_automatizaciones`
 >    con RLS y el seed de los 4 toggles apagados).
-> 2. Re-aplicar `src/db/maestro_seed.sql` (idempotente) para que existan las
+> 2. Re-aplicar `src/core/db/maestro_seed.sql` (idempotente) para que existan las
 >    capacidades `whatsapp:vincular_grupo` (admin) y `whatsapp:enviar_grupo`
 >    (admin + consulta).
 

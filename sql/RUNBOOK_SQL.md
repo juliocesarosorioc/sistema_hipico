@@ -79,7 +79,7 @@ Consecuencias al aplicar:
 
 ### El rol real es `authenticated` (no `anon`) — dos scripts más
 
-El login es real (`src/lib/auth/sesion.ts` → `signInWithPassword`): una vez que
+El login es real (`src/features/auth/lib/sesion.ts` → `signInWithPassword`): una vez que
 hay sesión, Supabase adjunta el JWT a cada consulta y PostgREST ejecuta el rol
 `authenticated`, **no** `anon`. Una policy `to anon` sola no aplica: la tabla
 responde `200` con `[]` en silencio, el `catch` de la app no se dispara y la
