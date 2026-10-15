@@ -1,0 +1,81 @@
+// ============================================================================
+// REPORTE DE CARRERA — arma la plantilla de liquidación con datos REALES.
+//
+// Protege el contrato del armado: la `CarreraReporte` que produce el motor
+// oficial (filas liquidadas + pizarra) se traduce a `ReporteCarreraDatos` sin
+// duplicar la apuesta en "en vivo", con el DA pareado por ticket, la parada
+// adelantada por tipo de jugada y el resumen Ganan/Pierden por cliente.
+//
+// Corre con:  node pruebas/correr.cjs   (o npx tsx pruebas/reporte-carrera.test.ts)
+// ============================================================================
+import { armarReporteCarrera, colorDiscoNumero } from "../src/lib/liquidacion/reporte-carrera";
+import type { CarreraReporte } from "../src/lib/liquidacion/reportes";
+
+let pasan = 0;
+let fallan = 0;
+const ok = (m: string) => { pasan++; console.log(`  ok   ${m}`); };
+const mal = (m: string, d?: string) => { fallan++; console.log(`  FALLA ${m}${d ? `\n         ${d}` : ""}`); };
+const si = (c: boolean, m: string, d?: string) => (c ? ok(m) : mal(m, d));
+const buscar = <T extends { nombre: string }>(arr: T[], nombre: string) => arr.find((x) => x.nombre === nombre);
+
+const CARRERA: CarreraReporte = {
+  numero: 7,
+  hipodromo: "LA RINCONADA",
+  fecha: "2026-10-12",
+  pizarra: "7 · 2 · 5",
+  subtotal: 0,
+  filas: [
+    // Ticket 0: Perrito juega "2p al 7" y Emy consigue/da. Perrito pierde 100.
+    { id: "2026-10-12-LA RINCONADA-7-j-0", rol: "Juega", cliente: "Perrito Molinas", jugada: "2p", caballo: "7", monto: 100, resultado: -100, esPareo: false },
+    { id: "2026-10-12-LA RINCONADA-7-c-0", rol: "Consigue", cliente: "Emy", jugada: "2p", caballo: "7", monto: 100, resultado: 100, esPareo: false },
+    // Ticket 1: Marlene gana con una TABLA FIJA (adelantada).
+    { id: "2026-10-12-LA RINCONADA-7-j-1", rol: "Juega", cliente: "Marlene", jugada: "TABLA 2", caballo: "2", monto: 500, resultado: 1200, esPareo: false },
+    // CRUCE financiero: NO debe aparecer como jugada.
+    { id: "2026-10-12-LA RINCONADA-7-x-2", rol: "CRUCE", cliente: "Marlene", jugada: "🔀 CRUCE", caballo: "2", monto: 0, resultado: 25 },
+  ],
+};
+
+const d = armarReporteCarrera(CARRERA);
+
+// ── 1. Encabezado y pizarra ──
+si(d.encabezado.hipodromo === "LA RINCONADA", "encabezado lleva el hipódromo de la carrera");
+si(d.encabezado.carrera === "Carrera 7", "encabezado arma «Carrera 7»");
+si(/oct/.test(d.encabezado.fecha), `fecha legible: «${d.encabezado.fecha}»`);
+si(d.encabezado.llegada.length === 3, "la pizarra 7·2·5 se vuelve 3 discos de llegada");
+si(d.encabezado.llegada[0]?.numero === "7" && d.encabezado.llegada[0]?.puesto === "1º", "1er disco es el 7 con puesto 1º");
+si(d.encabezado.llegada[2]?.numero === "5" && d.encabezado.llegada[2]?.puesto === "3º", "3er disco es el 5 con puesto 3º");
+si(colorDiscoNumero(7).includes("bg-orange-500"), "color del disco 7 = naranja");
+si(colorDiscoNumero(3).includes("bg-amber-500"), "color del disco 3 = ámbar");
+si(colorDiscoNumero(99).includes("bg-slate-400"), "número fuera del rango cae a gris de respaldo");
+
+// ── 2. Jugadas "en vivo" ──
+si(d.jugadasVivo.length === 2, "una fila por ticket (el CRUCE no cuenta y el Consigue viaja como DA)");
+const perrito = d.jugadasVivo[0];
+si(perrito && perrito.juega === "Perrito Molinas", "fila 1: JUEGA = Perrito Molinas");
+si(perrito && perrito.da === "Emy", "fila 1: DA = Emy (pareo por índice del ticket)");
+si(perrito && perrito.jugo === "2p" && perrito.aposto === 100, "fila 1: JUGÓ 2p · APOSTÓ 100");
+si(perrito && perrito.resultado === -100, "fila 1: RESULTADO = -100 (perdió)");
+const marleneVivo = d.jugadasVivo[1];
+si(marleneVivo && marleneVivo.juega === "Marlene" && marleneVivo.da === "", "fila 2: Marlene sin pareja (DA vacío)");
+
+// ── 3. Parada Adelantadas por tipo de jugada ──
+si(d.adelantadas.tablas.length === 1, "la TABLA ganadora va a la sección Tablas Fijas");
+si(d.adelantadas.tablas[0]?.juega === "Marlene" && d.adelantadas.tablas[0]?.resultado === 1200, "sección Tablas: Marlene con resultado 1200");
+si(d.adelantadas.marcas.length === 0 && d.adelantadas.tercios.length === 0, "sin Marcas ni Tercios en esta corrida");
+
+// ── 4. Resumen Ganan / Pierden por cliente ──
+si(d.resumen.ganan.length === 2, "Ganan agrupa los dos clientes que ganaron (Emy y Marlene)");
+const gananEmy = buscar(d.resumen.ganan, "Emy");
+const gananMarlene = buscar(d.resumen.ganan, "Marlene");
+si(gananEmy?.monto === 100, "Ganan: Emy +100 (mitad Consigue del ticket 0)");
+si(gananMarlene?.monto === 1200, "Ganan: Marlene +1200 (ganancia de la TABLA)");
+si(d.resumen.pierden.length === 1 && buscar(d.resumen.pierden, "Perrito Molinas")?.monto === -100, "Pierden: Perrito Molinas -100");
+
+// ── 5. Carrera sin filas ──
+const vacia = armarReporteCarrera({ ...CARRERA, filas: [], pizarra: null });
+si(vacia.jugadasVivo.length === 0, "carrera sin filas no inventa jugadas");
+si(vacia.encabezado.llegada.length === 0, "carrera sin pizarra no inventa llegada");
+si(vacia.resumen.ganan.length === 0 && vacia.resumen.pierden.length === 0, "carrera sin filas no inventa resumen");
+
+console.log(`\n${pasan} pasan, ${fallan} fallan.`);
+if (fallan > 0) process.exit(1);
