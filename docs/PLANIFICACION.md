@@ -759,7 +759,9 @@ create table if not exists tickets_jugadas (
       - Pruebas: `pruebas/wps.test.ts` (72 casos, con regresión de `PP`/`1P` para que no entren).
       - SQL a mano: `sql/migrar-wps-tickets.sql` convierte las jugadas que quedaron en `wps_tickets`.
 - [ ] **Pollas** — registro y pago de pollas.
-- [ ] **Remates** — toma ejemplares de carreras cargadas (requiere el formato de remates).
+- [x] **Remates** — implementado: los ejemplares salen de las carreras ya cargadas
+      (matriz `carreras`), por Hipódromo → Fecha/Día → Carrera, sin escribirlos a mano; el
+      refresco sigue el registro central (realtime de la matriz). Ver "Módulo de Remates — Roadmap".
 - [ ] **Dupletas: "spin"** — pendiente de definición. El módulo `/dupleta` ya está migrado y
       funcional (lee el registro central, centraliza el retiro con `alternarRetiroCarrera` y
       persiste la matriz completa en `public.dupletas`), pero NO existe ninguna implementación de
@@ -1047,7 +1049,7 @@ OpenAI).
 | `src/features/carreras/lib/carreras-dia.ts` | `leerResultadoOficial()` + escritura de resultados vía RPC |
 | `src/features/seguridad/components/AuditoriaPanel.tsx` | Visor de `public.auditoria` (pestana de Seguridad) |
 | `html/wps.html` + `js/wps.js` | Motor WPS separado (dividendos americanos) |
-| `html/remates.html` + `js/remates.js` | Remates — (pendiente) tomar ejemplares de las carreras cargadas en hipódromos y días |
+| `html/remates.html` + `js/remates.js` | Remates — (migrado a `src/features/remates/`) toma ejemplares de las carreras cargadas en hipódromos y días |
 | `html/tickets.html` + `js/tickets.js` | (NUEVO) Tickets por solucionar — disputas de jugadas |
 | `js/gaceta_helpers.js` · `js/gaceta_ia.js` · `js/gaceta_padron.js` | (NUEVO) Segmentación del módulo gaceta |
 

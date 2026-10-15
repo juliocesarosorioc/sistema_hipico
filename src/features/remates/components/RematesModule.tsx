@@ -15,6 +15,7 @@ import { alternarRetiroCarrera } from "@/features/carreras/lib/retiros";
 import { SearchableSelect, type OpcionSelect } from "@/shared/components/ui/SearchableSelect";
 import { Guard } from "@/shared/components/ui/Guard";
 import { useAuthStore } from "@/shared/store/useAuthStore";
+import { useRegistroCentral, useRealtimeCarreras } from "@/shared/store/useRegistroCentral";
 import { clienteDelUsuario } from "@/features/seguridad/lib/accesos";
 import { enviarAutomaticoSiActivo, plantillaPorId, reemplazarVarsTablas } from "@/features/whatsapp/lib/whatsapp";
 import { CargaResultadosRapida } from "@/features/liquidacion/components/CargaResultadosRapida";
@@ -367,6 +368,10 @@ function ListaRemates({
   const [carreras, setCarreras] = useState<CarreraCentral[]>([]);
   const [cargandoCarreras, setCargandoCarreras] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  // Las carreras del día se releen cuando cambia el registro central (incluye el
+  // realtime de la matriz): extraer carreras con IA y crear el remate sin recargar.
+  const versionCarreras = useRegistroCentral((s) => s.versionCarreras);
+  useRealtimeCarreras();
 
   const hipodromoNombre = useMemo(
     () => hipodromos.find((h) => h.id === hipodromoId)?.nombre ?? "",
@@ -390,7 +395,7 @@ function ListaRemates({
     return () => {
       vivo = false;
     };
-  }, [hipodromoNombre, fecha, abierto]);
+  }, [hipodromoNombre, fecha, abierto, versionCarreras]);
 
   useEffect(() => {
     if (carreras.length && !carrera) setCarrera(String(carreras[0].carrera));
@@ -695,6 +700,10 @@ function DetalleRemate({
   const [montos, setMontos] = useState<Record<string, string>>({});
   /** `cliente_id → plata comprometida en remates ABIERTOS` (se deriva solo). */
   const [bloqueos, setBloqueos] = useState<Record<string, number>>({});
+  // Mismo refresco que en la lista: si se cargan/extraen carreras con el detalle
+  // abierto, los ejemplares del programa entran sin recargar la página.
+  const versionCarreras = useRegistroCentral((s) => s.versionCarreras);
+  useRealtimeCarreras();
 
   /**
    * El incentivo ya NO tiene botón: se guarda SOLO, con un pequeño rebote para
@@ -753,7 +762,7 @@ function DetalleRemate({
     setRetirados(c?.retirados ?? []);
     setDatosCarrera({ distancia: c?.distancia ?? null, superficie: c?.superficie ?? null });
     setCargandoProg(false);
-  }, [hipodromoNombre, remate.fecha, remate.carrera]);
+  }, [hipodromoNombre, remate.fecha, remate.carrera, versionCarreras]);
 
   useEffect(() => {
     let vivo = true;
