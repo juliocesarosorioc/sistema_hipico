@@ -1505,6 +1505,36 @@ Plano de referencia (19 líneas, tal cual lo pasó el dueño):
 **Zona:** `src/features/taquilla/lib/normalizar.ts`, `.../validar.ts`,
 `.../nomenclatura.ts` (`RE_PROPORCION`) y `pruebas/`.
 
+### 7. Tipos de jugadas: PP = 10/10 y MATCH sin fracción se juega PP (ajuste + plan)
+
+Regla del dueño:
+
+- **PP (pelo a pelo) = proporción 10/10 menos comisión.** Cada lado arriesga lo
+  mismo; el ganador cobra la paridad y la casa retiene su comisión sobre la
+  ganancia.
+- Cuando una jugada **MATCH** (pareo/emparejamiento, ej. `4x7` · `1x6`) **NO
+  indica si es a fracción o no** (no trae `10/8`, `10A8`, `2x3 10/8`…), el
+  sistema **debe colocarla PP**, es decir **10/10**, y tratarla como tal.
+- El ajuste debe hacerse en la **Carga Individual** y quedar asentado en la
+  **planificación de tipos de jugadas** (`pp significa 10/10`).
+
+**Estado actual en el código:**
+- `src/features/taquilla/lib/validar.ts` → `proyectarFila()`: en el pareo, la
+  fracción no declarada **ya** cae a `P = 10, Q = 10` (`const P = pareo[3] ? … : 10`),
+  o sea **ya proyecta 10/10**. Se **nombró explícitamente** `PROPORCION_PP`
+  (10/10) para que la regla PP=10/10 viva en un solo lugar.
+- El motor (`src/features/motores/lib/puestos.ts`, `boteDe(monto, null)` → rival
+  = monto) y `bettingEngine` (PARIDAD, `multiplicador = 1` → bruto = 2×monto)
+  también liquidan sin fracción **a la par (10/10)**.
+- **Pendiente de UI:** cuando la JUGADA es un MATCH sin fracción, **mostrar el
+  rótulo PP (10/10)** en la Carga Individual y en los reportes, sin perder los
+  ejemplares de la columna CABALLO (el `tipo` guardado sigue siendo el pareo
+  `NxM` para que la liquidación resuelva los bandos).
+
+**Zona:** `src/features/taquilla/lib/validar.ts`,
+`src/features/taquilla/lib/nomenclatura.ts`,
+`src/features/gestion/components/GestionJugadasModule.tsx` y los reportes.
+
 ---
 
 *Última actualización: 2026-10-15 (tarde: nuevos requerimientos del dueño
@@ -1512,7 +1542,8 @@ registrados — registrar más jugadas a carreras cerradas/liquidadas, color de
 carreras azul/amarillo/rojo como condición permanente, Monitor de Jugadas sin
 progreso de resultados por carrera, Boleto como vista de pendientes, rediseño
 UX/UI de Grupos de Venta y Convenios, y Carga Rápida de jugadas a premio con
-punto decimal y con "A" (10A3=10/3 · 10a3.5=10/3,5); corregido el color de la
+punto decimal y con "A" (10A3=10/3 · 10a3.5=10/3,5), y tipos de jugadas con
+PP=10/10 (MATCH sin fracción se juega PP); corregido el color de la
 carga manual propagando la fecha de la jornada a la liquidación y el chip
 "registrada" en azul. Antes, 2026-10-15 (reporte por carrera: causa raíz del "da"
 ausente = columnas `cliente_consigue`/`cliente_juega` inexistentes en

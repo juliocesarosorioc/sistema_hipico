@@ -291,6 +291,17 @@ export type FilaProyeccion =
 const PAREO_RE = /^(\d+)\s*X\s*(\d+)(?:\s+(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?))?$/i;
 
 /**
+ * PP (PELO A PELO) = proporción 10/10 menos comisión.
+ *
+ * Un MATCH (pareo/emparejamiento, "4x7" · "1x6") que NO declara fracción se
+ * juega "a la par": cada lado arriesga lo mismo (10/10). El default ya era
+ * `10/10`; se nombra acá para que la regla del dueño ("pp significa 10/10")
+ * viva en un solo lugar, igual que el motor (`boteDe(monto, null)` → rival =
+ * monto) y la PARIDAD del engine (`multiplicador = 1`).
+ */
+const PROPORCION_PP = { p: 10, q: 10 } as const;
+
+/**
  * Normaliza la nomenclatura para que la entienda lib/motores/puestos.ts.
  * El motor solo reconoce la proporción con barra ("10/8"); la casa también
  * escribe "10a8" / "10A8". Además "10a8 1p" equivale a "10/8" porque el motor
@@ -365,8 +376,9 @@ export function proyectarFila(opts: {
   if (pareo) {
     const A = pareo[1];
     const B = pareo[2];
-    const P = pareo[3] ? parseFloat(pareo[3]) : 10;
-    const Q = pareo[4] ? parseFloat(pareo[4]) : 10;
+    // MATCH sin fracción declarada → PP (pelo a pelo) = 10/10.
+    const P = pareo[3] ? parseFloat(pareo[3]) : PROPORCION_PP.p;
+    const Q = pareo[4] ? parseFloat(pareo[4]) : PROPORCION_PP.q;
     if (!isFinite(P) || P <= 0 || !isFinite(Q) || Q <= 0) {
       return { ok: false, motivo: `Proporción del pareo inválida ("${jugada}", ej. 2x3 10/8).` };
     }
