@@ -16,6 +16,7 @@ import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { EmptyState } from "@/shared/components/ui/EmptyState";
 import ReporteCarrera, { type ReporteCarreraDatos } from "@/features/saldos/components/ReporteCarrera";
 import ManualLiquidacion from "@/features/gestion/components/ManualLiquidacion";
+import WhatsappReporteCarrera from "@/features/liquidacion/components/WhatsappReporteCarrera";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -275,6 +276,7 @@ export default function ReporteLiquidacionModal({
               >
                 📖 Manual
               </button>
+              <WhatsappReporteCarrera fecha={fecha} hipodromo={hipodromo} carrera={carrera} grupo={nombreGrupo} />
               <button
                 type="button"
                 onClick={() => descargar("PNG")}

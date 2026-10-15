@@ -1656,8 +1656,8 @@ const hipodromosDelDia = useMemo(() => {
           setModalResultados(false);
           setAviso(`🏁 Resultados C${carrera} cargados (${r.llenas} posiciones${r.empates.length ? ` · ${r.empates.length} empate(s)` : ""}).`);
           try {
+            // Deja el texto de resultados listo por si abren el mensaje del grupo.
             void generarMensajeResultados(r);
-            setModalWhatsapp(true);
           } catch {
             /* noop */
           }
@@ -1671,6 +1671,9 @@ const hipodromosDelDia = useMemo(() => {
             r,
           }).then((res) => {
             if (!res.ok) setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó: ${res.error ?? "sin conexión"}`);
+            // Cargado UNA sola vez: al centralizar abrimos el REPORTE directo
+            // (que ya trae su opción de WhatsApp), sin pasos intermedios.
+            setMostrarReporteLiquidacion(true);
           });
         }}
       />
