@@ -546,9 +546,8 @@ permisos del middleware.
 - [x] Gate en `maestro-seguridad.test.mjs`: falla si hay un `.js` junto a un `.ts` dentro de `src/`,
       y verifica que el tsconfig declare `outDir`.
 - [x] `.gitignore`: `.tsbuild-pruebas/`, `*.tsbuildinfo` y `pruebas/*.js`.
-- [ ] `tsconfig.tsbuildinfo` está **trackeado** en git. Con `*.tsbuildinfo` ignorado, hay que
-      desindexarlo (`git rm --cached tsconfig.tsbuildinfo`) para que el ignore surta efecto: hoy
-      `npx tsc --noEmit` lo reescribe y ensucia el `git status`. No se hizo porque toca el índice.
+- [x] `tsconfig.tsbuildinfo` **ya no está trackeado**: se desindexó y `.gitignore` lo ignora
+      (`*.tsbuildinfo`), así que `npx tsc --noEmit` ya no ensucia el `git status`.
 
 ### El hueco de los dividendos sin cargar (corregido en el motor)
 - [x] **Una jugada que GANA por posición pero no tiene dividendo cargado ya no se cobra $0.**
@@ -784,7 +783,9 @@ create table if not exists tickets_jugadas (
       - Pestaña real en Taquilla que comparte el flujo de Puestos; la nomenclatura es `100 W|P|S`.
       - Pruebas: `pruebas/wps.test.ts` (72 casos, con regresión de `PP`/`1P` para que no entren).
       - SQL a mano: `sql/migrar-wps-tickets.sql` convierte las jugadas que quedaron en `wps_tickets`.
-- [ ] **Pollas** — registro y pago de pollas.
+- [x] **Pollas** — implementado: `src/features/pollas/` (módulo + `ModalVentaPolla` + `ModalConfiguracionPolla`
+      + lib `pollas.ts`/`core.ts`), SQL `sql/pollas.sql` + `sql/pollas_grupo_id.sql`, y
+      `pruebas/sql-pollas.test.ts` (56 aserciones). Ruta `/pollas`.
 - [x] **Remates** — implementado: los ejemplares salen de las carreras ya cargadas
       (matriz `carreras`), por Hipódromo → Fecha/Día → Carrera, sin escribirlos a mano; el
       refresco sigue el registro central (realtime de la matriz). Ver "Módulo de Remates — Roadmap".
@@ -797,7 +798,9 @@ create table if not exists tickets_jugadas (
       - [ ] ¿Girar/invertir la matriz (intercambiar `carrera1` ↔ `carrera2` en `claveDupleta`)?
       - [ ] ¿Ruleta o animación al generar la matriz o al elegir 1.er y 2.º puesto?
       - [ ] ¿Autocompletar precio/distancia/premio desde la carrera central al elegir el par?
-- [ ] **Ingresos / Avales** — abonos y avales por cliente.
+- [x] **Ingresos / Avales** — implementado: ingresos/depósitos en `/contabilidad/ingresos` y
+      `Otorgar Aval`/`Pagar Aval` en `ContabilidadTabs.tsx` (`TipoDeposito` en
+      `src/features/contabilidad/lib/contabilidad.ts`); el aval mueve solo `aval`, no `saldo_actual`.
 - [x] **Reglas de Jugadas** — administración de `tipos_jugadas` y dividendos. **MIGRADO**:
       `src/features/reglas-jugadas/lib/tipos-jugadas.ts` (CRUD sobre `public.tipos_jugadas`: nombre, `comision_porcentaje`,
       `comision_base`, `tipo_calculo`, `premio_a_pagar`, `permite_cruces`, `activo`; conserva
