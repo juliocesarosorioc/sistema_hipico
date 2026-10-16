@@ -77,13 +77,13 @@ export default function ReporteLiquidacionModal({
   // marcar con asterisco a quien arriesgó más de lo que dispone.
   useEffect(() => {
     let vivo = true;
-    listarClientes()
+    listarClientes(true, grupoId || null)
       .then((cs) => vivo && setClientes(cs))
       .catch(() => vivo && setClientes([]));
     return () => {
       vivo = false;
     };
-  }, []);
+  }, [grupoId]);
 
   const disponibleDe = useMemo(() => lookupDisponible(clientes), [clientes]);
 

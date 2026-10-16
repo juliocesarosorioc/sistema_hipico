@@ -62,9 +62,15 @@ export function errorCargaGrupos(): string | null {
   return ultimoErrorGrupos;
 }
 
+export function limpiarCacheClientesVenta(): void {
+  cacheClientes = null;
+  cacheClientesGrupo = undefined;
+}
+
 function invalidarCacheGrupos(): void {
   cacheGruposVenta = null;
   cacheGruposAdmin = null;
+  limpiarCacheClientesVenta();
 }
 
 /** Lista los grupos de venta ACTIVOS (SELECT directo + fallback RPC). */

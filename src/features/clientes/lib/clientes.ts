@@ -224,8 +224,9 @@ function grupoParaFiltrar(): string | null {
   return grupoActivoVigente();
 }
 
-export async function listarClientes(force = false): Promise<ClienteRow[]> {
-  const activo = grupoParaFiltrar();
+export async function listarClientes(force = false, grupoIdOverride?: string | null): Promise<ClienteRow[]> {
+  const activoBase = grupoParaFiltrar();
+  const activo = grupoIdOverride != null && grupoIdOverride !== "" ? grupoIdOverride : activoBase;
   // La caché se invalida sola cuando cambia el grupo que se está mirando: si no,
   // elegir "ARGENTINA" después de "todos" mostraría la lista vieja.
   if (cacheClientes && !force && cacheClientesGrupo === activo) return cacheClientes;
@@ -299,6 +300,13 @@ export function sinCamposDelPrincipal(
   return resto;
 }
 
+import { limpiarCacheClientesVenta } from "@/features/grupos/lib/grupos";
+
+function limpiarCachéClientesTodo(): void {
+  limpiarCacheClientes();
+  try { limpiarCacheClientesVenta(); } catch {}
+}
+
 export async function actualizarCliente(
   id: string | number,
   patch: Record<string, unknown>,
@@ -308,9 +316,15 @@ export async function actualizarCliente(
   try {
     exigirCapacidad("clientes:fn_guardar_cliente");
     const seguro = soloColumnasExistentes(sinCamposDelPrincipal(patch), fila);
-    const { error } = await supabase.from("clientes").update(seguro).eq("id", id);
+    if (seguro && Object.keys(seguro).length === 0) {
+      return { ok: false, error: "No hay campos a guardar (revisa los permisos o el cliente editado)." };
+    }
+    const { data, error } = await supabase.from("clientes").update(seguro).eq("id", id).select("id");
     if (error) return { ok: false, error: error.message };
-    limpiarCacheClientes();
+    if (!data || data.length === 0) {
+      return { ok: false, error: "No se actualizó ninguna fila. Posible: otro grupo, permisos insuficientes o RLS bloqueando." };
+    }
+    limpiarCachéClientesTodo();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
@@ -321,9 +335,12 @@ export async function eliminarCliente(id: string | number): Promise<{ ok: boolea
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
     exigirCapacidad("clientes:fn_eliminar_cliente");
-    const { error } = await supabase.from("clientes").delete().eq("id", id);
+    const { data, error } = await supabase.from("clientes").delete().eq("id", id).select("id");
     if (error) return { ok: false, error: error.message };
-    limpiarCacheClientes();
+    if (!data || data.length === 0) {
+      return { ok: false, error: "No se eliminó ninguna fila. Posible: otro grupo, permisos insuficientes o RLS bloqueando." };
+    }
+    limpiarCachéClientesTodo();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
@@ -331,14 +348,19 @@ export async function eliminarCliente(id: string | number): Promise<{ ok: boolea
 }
 
 /** Devoluciones masivas: aplica un % a la lista dada de ids. */
-export async function aplicarDevolucionMasiva(ids: (string | number)[], pct: number): Promise<{ ok: boolean; error?: string }> {
+export async function aplicarDevolucionMasiva(ids: (string | number)[], pct: number): Promise<{ ok: boolean; error?: string; afectados?: number }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
     exigirCapacidad("clientes:modal_reclamos");
-    const { error } = await supabase.from("clientes").update({ devolucion: pct }).in("id", ids);
+    if (!ids.length) return { ok: false, error: "Sin clientes seleccionados." };
+    if (Number.isNaN(pct) || pct < 0 || pct > 100) return { ok: false, error: "El porcentaje debe estar entre 0 y 100." };
+    const { data, error } = await supabase.from("clientes").update({ devolucion: pct }).in("id", ids).select("id");
     if (error) return { ok: false, error: error.message };
-    limpiarCacheClientes();
-    return { ok: true };
+    if (!data || data.length === 0) {
+      return { ok: false, error: "No se actualizó ninguna fila (ver permisos, grupo o RLS)." };
+    }
+    limpiarCachéClientesTodo();
+    return { ok: true, afectados: data.length };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }

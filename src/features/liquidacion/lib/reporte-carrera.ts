@@ -145,8 +145,6 @@ export function armarReporteCarrera(
     }
   }
 
-  const ganan: ReporteCarreraDatos["resumen"]["ganan"] = [];
-  const pierden: ReporteCarreraDatos["resumen"]["pierden"] = [];
   const notaExcedidos: NotaExcedido[] = [];
 
   /** Arma una fila del resumen con su riesgo y el flag de exceso (ítem 10). */
@@ -159,13 +157,30 @@ export function armarReporteCarrera(
     return { id, nombre, monto, riesgo, excede };
   };
 
+  const gananRaw = [] as Array<{ nombre: string; neto: number; fila: ReporteCarreraDatos["resumen"]["ganan"][number] }>;
+  const pierdenRaw = [] as Array<{ nombre: string; neto: number; fila: ReporteCarreraDatos["resumen"]["pierden"][number] }>;
+
   for (const [nombre, neto] of netoPorCliente) {
     if (neto > 0) {
-      ganan.push(filaResumen(nombre, neto, ganan.length + 1));
+      gananRaw.push({ nombre, neto, fila: filaResumen(nombre, neto, 0) });
     } else if (neto < 0) {
-      pierden.push(filaResumen(nombre, neto, pierden.length + 1));
+      pierdenRaw.push({ nombre, neto, fila: filaResumen(nombre, neto, 0) });
     }
   }
+
+  gananRaw.sort((a, b) => {
+    const rb = b.neto - a.neto;
+    if (Math.abs(rb) > 1e-6) return rb > 0 ? 1 : -1;
+    return a.nombre.localeCompare(b.nombre, "es");
+  });
+  pierdenRaw.sort((a, b) => {
+    const rb = a.neto - b.neto; // más pierde (más negativo) primero
+    if (Math.abs(rb) > 1e-6) return rb > 0 ? 1 : -1;
+    return a.nombre.localeCompare(b.nombre, "es");
+  });
+
+  const ganan = gananRaw.map((x, i) => ({ ...x.fila, id: i + 1 }));
+  const pierden = pierdenRaw.map((x, i) => ({ ...x.fila, id: i + 1 }));
 
   return {
     encabezado: {
