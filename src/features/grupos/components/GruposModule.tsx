@@ -7,7 +7,6 @@ import { BANCOS_VZLA, formatearCuenta } from "@/shared/lib/vzla";
 import { DIAS_SEMANA } from "@/features/liquidacion/lib/semana";
 import {
   actualizarGrupo,
-  agregarClientesGrupo,
   asignarPrincipalUnico,
   crearGrupo,
   crearTipoJugada,
@@ -21,7 +20,6 @@ import {
   listarGruposAdmin,
   listarMembresias,
   listarTiposJugadas,
-  quitarClientesGrupo,
   toggleGrupoActivo,
   type ClienteLigero,
   type ConvenioRow,
@@ -101,9 +99,8 @@ type FilaBanquero = {
 /**
  * GruposModule — Grupos de Venta y Convenios (clon 1:1 de js/grupos.js).
  *  - Crear / listar / editar / activar / eliminar grupos (grupos_venta).
- *  - Clientes por grupo: grupo_id principal + pertenencias adicionales
- *    en clientes_grupos (un cliente puede estar en VARIOS grupos).
  *  - Convenios por tipo de jugada y grupo (convenio_tipo_grupo).
+ *  - Banquero por modalidad (banquero_convenio).
  */
 export function GruposModule() {
   const [grupos, setGrupos] = useState<GrupoRow[]>([]);
@@ -113,12 +110,9 @@ export function GruposModule() {
   const [cargando, setCargando] = useState(true);
 
   const [filtro, setFiltro] = useState("");
-  const [origen, setOrigen] = useState("");
-  const [destino, setDestino] = useState("");
   const [grupoConvenio, setGrupoConvenio] = useState("");
   const [convenios, setConvenios] = useState<FilasConvenioEditable[]>([]);
   const [banqueros, setBanqueros] = useState<FilaBanquero[]>([]);
-  const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
 
   const [editando, setEditando] = useState<GrupoRow | null>(null);
   const [modalGrupo, setModalGrupo] = useState(false);
@@ -185,8 +179,6 @@ export function GruposModule() {
     },
     [clientes, membresias]
   );
-
-  const listaMiembros = useMemo(() => (origen ? miembrosDe(origen) : []), [origen, miembrosDe]);
 
   const conteoPorGrupo = useMemo(() => {
     const mapa = new Map<string, number>();
@@ -291,45 +283,6 @@ export function GruposModule() {
     if (!r.ok) return toast(r.error ?? "Error al guardar.", "error");
     toast(`Grupo "${nombre}" actualizado.`, "success");
     setEditando(null);
-    void recargar();
-  };
-
-  const agregarSeleccionados = async () => {
-    if (!destino) return toast("Seleccione el grupo destino.", "warning");
-    const ids = [...seleccion];
-    if (!ids.length) return toast("Marque al menos un cliente.", "warning");
-    const r = await agregarClientesGrupo(ids, destino);
-    if (!r.ok) return toast(r.error ?? "Error al agregar clientes.", "error");
-    const nombreDestino = grupos.find((g) => String(g.id) === String(destino))?.nombre ?? destino;
-    if (r.agregados === 0) return toast("Los marcados ya pertenecen al grupo destino.", "warning");
-    toast(`Clientes agregados como pertenencia adicional al grupo "${nombreDestino}".`, "success");
-    setSeleccion(new Set());
-    void recargar();
-  };
-
-  const agregarTodos = async () => {
-    if (!destino) return toast("Seleccione el grupo destino.", "warning");
-    if (!listaMiembros.length) return toast("El grupo origen no tiene clientes.", "warning");
-    const ids = listaMiembros.map((c) => c.id);
-    const r = await agregarClientesGrupo(ids, destino);
-    if (!r.ok) return toast(r.error ?? "Error al agregar clientes.", "error");
-    if (r.agregados === 0) return toast("Todos los clientes ya pertenecen al grupo destino.", "warning");
-    toast(`${r.agregados} cliente(s) agregado(s) al grupo destino.`, "success");
-    setSeleccion(new Set());
-    void recargar();
-  };
-
-  const quitarSeleccionados = async () => {
-    if (!origen) return toast("Seleccione el grupo origen.", "warning");
-    const ids = [...seleccion];
-    if (!ids.length) return toast("Marque clientes para quitar.", "warning");
-    const soloAdicionales = listaMiembros.filter((m) => m.adicional && seleccion.has(String(m.id))).map((m) => m.id);
-    if (!soloAdicionales.length)
-      return toast("Los marcados son clientes PRINCIPALES del grupo (no se quitan por aquí).", "warning");
-    const r = await quitarClientesGrupo(soloAdicionales, origen);
-    if (!r.ok) return toast(r.error ?? "Error al quitar.", "error");
-    toast(`${soloAdicionales.length} pertenencia(s) adicional(es) quitada(s).`, "success");
-    setSeleccion(new Set());
     void recargar();
   };
 
@@ -788,90 +741,6 @@ export function GruposModule() {
             </div>
           </div>
         </div>
-        <div className="h-fit rounded-2xl border border-line bg-white p-4">
-          <h3 className="mb-4 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">
-            <span className="mr-1 text-slate-400">🏷️</span> Clientes por Grupo (un cliente puede estar en
-            VARIOS grupos)
-            <p className="mt-1 text-[10px] font-normal normal-case text-slate-400">
-              El <b>Grupo Origen</b> muestra los miembros actuales del grupo. Marque clientes y use{" "}
-              <b>Agregar al destino</b> (pertenencia adicional) o <b>Quitar del origen</b>.
-            </p>
-          </h3>
-          <div className="mb-3 grid grid-cols-2 gap-3">
-            <div>
-              <label className={etiqueta}>Grupo Origen</label>
-              <select value={origen} onChange={(e) => setOrigen(e.target.value)} className={inp + " font-bold"}>
-                <option value="">Seleccione...</option>
-                {gruposActivos.map((g) => (
-                  <option key={String(g.id)} value={String(g.id)}>
-                    {g.nombre} ({g.moneda ?? "USD"})
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={etiqueta}>Grupo Destino</label>
-              <select value={destino} onChange={(e) => setDestino(e.target.value)} className={inp + " font-bold"}>
-                <option value="">Seleccione...</option>
-                {gruposActivos.map((g) => (
-                  <option key={String(g.id)} value={String(g.id)}>
-                    {g.nombre} ({g.moneda ?? "USD"})
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="mb-2 flex items-center justify-between text-xs font-bold text-slate-600">
-            <span>Clientes del grupo origen:</span>
-            <span className="text-amber-600">{listaMiembros.length}</span>
-          </div>
-          <div className="max-h-72 space-y-1.5 overflow-y-auto rounded-lg border border-line bg-slate-50 p-2">
-            {!origen ? (
-              <p className="text-xs italic text-slate-400">Seleccione un grupo origen.</p>
-            ) : listaMiembros.length === 0 ? (
-              <p className="text-xs italic text-slate-400">No hay clientes en este grupo.</p>
-            ) : (
-              listaMiembros.map((m) => (
-                <label key={String(m.id)} className="flex items-center gap-2 rounded border border-line bg-white px-2 py-1.5 text-xs cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="rounded accent-primary-600"
-                    checked={seleccion.has(String(m.id))}
-                    onChange={() =>
-                      setSeleccion((s) => {
-                        const n = new Set(s);
-                        const k = String(m.id);
-                        if (n.has(k)) n.delete(k);
-                        else n.add(k);
-                        return n;
-                      })
-                    }
-                  />
-                  <span className="font-semibold text-slate-700">{m.nombre}</span>
-                  {m.adicional ? (
-                    <span className="rounded bg-cyan-100 px-1 py-0.5 text-[9px] font-black text-cyan-700">adicional</span>
-                  ) : (
-                    <span className="rounded bg-slate-200 px-1 py-0.5 text-[9px] font-black text-slate-700">principal</span>
-                  )}
-                </label>
-              ))
-            )}
-          </div>
-
-          <div className="mt-3 flex gap-2">
-            <Button variant="default" size="sm" className="flex-1" onClick={() => void agregarSeleccionados()}>
-              <span className="mr-1">➡️</span> Agregar al destino
-            </Button>
-            <Button variant="outline" size="sm" className="flex-1" onClick={() => void agregarTodos()}>
-              <span className="mr-1">⏩</span> Agregar todos
-            </Button>
-            <Button variant="danger" size="sm" className="flex-1" onClick={() => void quitarSeleccionados()}>
-              <span className="mr-1">➖</span> Quitar del origen
-            </Button>
-          </div>
-        </div>
-
         {/* ---------------- Convenios por Tipo de Jugada y Grupo ---------------- */}
         <div className="h-fit rounded-2xl border border-line bg-white p-4">
           <h3 className="mb-2 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">

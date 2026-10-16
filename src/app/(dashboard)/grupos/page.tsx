@@ -6,8 +6,8 @@ import { GruposModule } from "@/features/grupos/components/GruposModule";
 /**
  * Ruta Grupos de Venta y Convenios (clon 1:1 del legacy grupos.html / grupos.js):
  *  - Crear / listar / editar / activar / eliminar grupos de venta (grupos_venta)
- *  - Clientes por grupo (grupo_id principal + pertenencias en clientes_grupos)
  *  - Convenios por tipo de jugada y grupo (convenio_tipo_grupo)
+ *  - Banquero por modalidad (banquero_convenio)
  *
  * La capacidad la deduce RutaProtegida del registro maestro: grupos:ruta_grupos.
  */

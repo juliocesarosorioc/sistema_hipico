@@ -62,8 +62,28 @@ alter table public.banquero_convenio
 comment on table public.banquero_convenio is
     'Banquero (cliente) que toma el lado contrario de las jugadas de un grupo, por modalidad. Congela espejo total + comision sobre el monto decidido en cada ticket.';
 
-alter table public.banquero_convenio disable row level security;
-grant all privileges on table public.banquero_convenio to anon, authenticated, service_role;
+-- RLS: el personal (authenticated) opera; anon no ve nada. La ESCRITURA se ata
+-- a la capacidad `grupos:fn_guardar_grupo`, la misma que ya exige el navegador
+-- en guardarBanquero(). Si todavía no existe `public.tiene_capacidad`
+-- (falta seguridad_maestro.sql) se deja RLS apagado para no romper el alta;
+-- sql/fix_rls_banquero_convenio.sql lo re-enciende cuando la matriz exista.
+alter table public.banquero_convenio enable row level security;
+revoke all on table public.banquero_convenio from anon;
+grant all privileges on table public.banquero_convenio to authenticated, service_role;
+
+do $rls_banquero$
+begin
+    if to_regprocedure('public.tiene_capacidad(uuid,text)') is not null then
+        execute 'drop policy if exists "personal opera banquero convenio" on public.banquero_convenio';
+        execute 'create policy "personal opera banquero convenio" on public.banquero_convenio '
+             || 'for all to authenticated using (true) '
+             || 'with check (public.tiene_capacidad(auth.uid(), ''grupos:fn_guardar_grupo''))';
+    else
+        execute 'alter table public.banquero_convenio disable row level security';
+        raise warning 'tiene_capacidad() no existe: banquero_convenio queda con RLS apagado. Aplicá src/core/db/seguridad_maestro.sql y luego sql/fix_rls_banquero_convenio.sql.';
+    end if;
+end
+$rls_banquero$;
 
 
 -- -----------------------------------------------------------------------------
