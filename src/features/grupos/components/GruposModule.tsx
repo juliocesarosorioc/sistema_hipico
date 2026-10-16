@@ -121,6 +121,7 @@ export function GruposModule() {
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
 
   const [editando, setEditando] = useState<GrupoRow | null>(null);
+  const [modalGrupo, setModalGrupo] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
   const [formNombre, setFormNombre] = useState("");
@@ -243,6 +244,7 @@ export function GruposModule() {
     setFormPermiteCruces(true);
     setFormDiaInicio("1");
     setFormDiaFin("7");
+    setModalGrupo(false);
     void recargar();
   };
 
@@ -449,18 +451,34 @@ export function GruposModule() {
         <h1 className="text-xl font-black text-slate-800">
           <span className="mr-2 text-amber-500">🗃️</span> Grupos de Venta y Convenios
         </h1>
-        <Button variant="outline" size="sm" onClick={() => void recargar()}>
-          <span className="mr-1">🔄</span> Recargar
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="default" size="sm" onClick={() => setModalGrupo(true)}>
+            <span className="mr-1">➕</span> Registrar grupo
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void recargar()}>
+            <span className="mr-1">🔄</span> Recargar
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* ---------------- Crear / Listar Grupos ---------------- */}
         <div className="space-y-5">
-          <div className="rounded-2xl border border-line bg-white p-4">
-            <h3 className="mb-3 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">
-              <span className="mr-1 text-amber-500">➕</span> Crear Grupo de Venta
-            </h3>
+          {modalGrupo ? (
+          <div
+            className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/60 p-4"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setModalGrupo(false);
+            }}
+          >
+          <div className="my-8 w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between bg-slate-800 px-5 py-4 text-xs font-black uppercase tracking-wider text-white">
+              <span><span className="mr-2">➕</span> Registrar Grupo de Venta</span>
+              <button className="text-slate-300 hover:text-white" onClick={() => setModalGrupo(false)} aria-label="Cerrar"><span>✕</span></button>
+            </div>
+            <div className="p-4">
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <div className="col-span-3">
                 <label className={etiqueta}>Nombre del Grupo</label>
@@ -598,7 +616,10 @@ export function GruposModule() {
                 </Button>
               </div>
             </div>
+            </div>
           </div>
+          </div>
+          ) : null}
 
           <div className="rounded-2xl border border-line bg-white p-4">
             <h3 className="mb-2 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">
@@ -617,7 +638,7 @@ export function GruposModule() {
                 <span className="text-emerald-600">{grupos.filter((g) => g.activo !== false).length}</span>
               </span>
             </div>
-            <div className="flex max-h-[24rem] flex-col gap-2 overflow-y-auto pr-1">
+            <div className="flex flex-col gap-2">
               {visiblesGrupos.length === 0 ? (
                 <p className="text-xs italic text-slate-400">
                   {grupos.length === 0 ? "Sin grupos. Cree el primero." : "Ningún grupo coincide con la búsqueda."}
