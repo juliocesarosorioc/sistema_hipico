@@ -515,6 +515,14 @@ permisos del middleware.
       activo, descuenta el saldo y crea el ticket `'Pendiente'` en UNA transacción
       (con `nombre_jugada`, `caballo`, `monto_jugado`, `cliente_juega_id`, dador en
       `cliente_consigue_nombre` y `grupo_cobro_id`), idempotente por `nota_auditoria.idempotencia`.
+- [x] **El BetSlip de Taquilla (`BetSlip.tsx`) YA persiste (2026-10-16).** Se le agregó el
+      contexto de la carrera —**fecha · hipódromo · carrera · COM%**— y las **partes** (CLIENTE 1
+      "juega" con su saldo/disponible en pantalla, CLIENTE 2 "da" opcional), y ahora llama a
+      `club_vender_jugada` igual que la Carga Individual: valida el tope `saldo+aval`, cobra y crea
+      el ticket `'Pendiente'`. El ticket real también queda en la sesión con su `ticketId`, así que
+      quitarlo desde `ListaTickets` **anula** la venta y devuelve el saldo. La modalidad se
+      auto-detecta (`detectarModalidad`; las americanas W/P/S → `'WPS'` para el banquero).
+      Test: `pruebas/taquilla-venta.test.ts` (sección "BetSlip (Taquilla) persiste").
 - [x] Quitar (✕/✏️/Vaciar) una jugada ya vendida la **anula** (`club_anular_jugada`) y devuelve
       el saldo exacto; el ticket queda `'Anulado'` + `anulada=true`. Un ticket decidido no se anula.
 - [x] Al finalizar la carrera, `ejecutarFinalizar` ahora acredita los ganadores vía
@@ -522,8 +530,6 @@ permisos del middleware.
 - [x] Banquero: `banqueros.sql` re-leído para que el trigger congele el banquero de un ticket
       Taquilla usando `nota_auditoria.modalidad` ('WPS' para las americanas W/P/S) cuando el
       `origen` es `'TAQUILLA'`. **Requiere volver a correr `banqueros.sql` y `taquilla_venta.sql`.**
-- [ ] Queda el BetSlip simple de Taquilla (`BetSlip.tsx`): no tiene selección de cliente, así que
-      sigue siendo solo de sesión. Si la casa lo quiere persistente, hay que agregarle cliente y grupo.
 
 ### Las pruebas rompían `next build` al compilar dentro de `src/`
 - [x] `pruebas/tsconfig.json` tiene `noEmit: false` (node no corre TS), así que **emite**. El harness
@@ -1448,9 +1454,10 @@ Será una vista operativa única (estilo *inbox*) que lista las carreras de la
 jornada con su estado y acceso directo a cargar resultado / liquidar / reportar.
 
 **Zona a tocar:** `src/features/taquilla/components/*Boleto*` (BetSlip) y el
-`BetSlipPanel` (`src/features/betting/components/BetSlipPanel.tsx`), sumando el
-`BetSlip` que **todavía no persiste en `tickets_apuestas`** (ver "Pendiente
-estructural: el BetSlip no persiste").
+`BetSlipPanel` (`src/features/betting/components/BetSlipPanel.tsx`). El `BetSlip`
+de Taquilla **ya persiste en `tickets_apuestas`** (2026-10-16, ver "Pendiente
+estructural: el BetSlip no persiste"); el `BetSlipPanel` del módulo de betting
+sigue siendo de sesión.
 
 ### 5. Grupos de Venta y Convenios: UX/UI — ✅ hecho
 

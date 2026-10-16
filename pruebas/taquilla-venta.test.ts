@@ -62,5 +62,26 @@ ok("la anulación devuelve el saldo", /saldo_actual\s*=\s*coalesce\(v_saldo, 0\)
 ok("expone la venta a anon/authenticated", /grant execute on function public\.club_vender_jugada[\s\S]*?to anon, authenticated, service_role;/.test(sql));
 ok("expone la anulación a anon/authenticated", /grant execute on function public\.club_anular_jugada[\s\S]*?to anon, authenticated, service_role;/.test(sql));
 
+console.log("\nBetSlip (Taquilla) persiste en tickets_apuestas");
+{
+  const slip = readFileSync(
+    join(process.cwd(), "src", "features", "taquilla", "components", "BetSlip.tsx"),
+    "utf8"
+  );
+  // El BetSlip dejó de ser solo-sesión: pide contexto y llama a la RPC de venta.
+  ok("importa la venta transaccional", /from "@\/features\/taquilla\/lib\/venta"/.test(slip));
+  ok("llama a venderJugada(", /venderJugada\(/.test(slip));
+  ok("envía el cliente que juega (clienteId)", /clienteId:\s*String\(c1\.id\)/.test(slip));
+  ok("manda la modalidad para el banquero", /modalidad:/.test(slip));
+  ok("usa una clave de idempotencia", /claveIdempotenciaJugada\(\)/.test(slip));
+  ok("guarda el ticket real en la sesión (ticketId)", /ticketId:\s*venta\.ticketId/.test(slip));
+  // Contexto de la carrera (fecha · hipódromo · carrera).
+  ok("tiene fecha/hipódromo/carrera", /const \[fecha/.test(slip) && /const \[hipodromo/.test(slip) && /const \[carrera/.test(slip));
+  ok("carga el catálogo de clientes", /listarClientesVenta\(\)/.test(slip));
+  ok("respeta el tope mostrando el disponible", /textoDisponible\(/.test(slip));
+  // Un import roto de la venta no debe quedar silencioso.
+  ok("no usa ya el registro solo-sesión sin contexto", /carrerasDe\(hipodromo\)/.test(slip));
+}
+
 console.log(`\n${pasan} pasaron, ${fallan} fallaron`);
 process.exit(fallan > 0 ? 1 : 0);
