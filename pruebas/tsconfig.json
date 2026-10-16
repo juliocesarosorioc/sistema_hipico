@@ -65,6 +65,7 @@
     "./mvp-fusion.test.ts",
     "./demo-mvp-fusion.ts",
     "./jugadas-fecha.test.ts",
-    "./dupleta-clave.test.ts"
+    "./dupleta-clave.test.ts",
+    "./historial-resultados.test.ts"
   ]
 }

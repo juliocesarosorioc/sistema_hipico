@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { cargarCarrerasDelDia } from "@/features/carreras/lib/carreras-dia";
@@ -15,6 +15,7 @@ import {
   type DepositoRow,
   type TransaccionRow,
 } from "@/features/contabilidad/lib/contabilidad";
+import ReporteLiquidacionModal from "@/features/gestion/components/ReporteLiquidacionModal";
 
 // Utilidad para pintar los cuadritos de los caballos con la paleta hípica
 const getColorCaballo = (num: string) => {
@@ -65,6 +66,9 @@ function horaDe(iso: string | null): string {
   if (Number.isNaN(d.getTime())) return String(iso).slice(11, 19) || "--:--:--";
   return d.toLocaleTimeString("es-VE", { hour12: false });
 }
+
+/** Ítem 11: clave normalizada del hipódromo para agrupar/filtrar. */
+const normHip = (s: unknown): string => String(s ?? "").trim().replace(/\s+/g, " ").toUpperCase();
 
 function dinero(n: number, conSigno = false): string {
   const s = n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -139,6 +143,9 @@ export default function HistorialReporte() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actualizado, setActualizado] = useState<string>("");
+  // Ítem 11: filtro por hipódromo y selección de carrera → reporte de liquidación.
+  const [hipodromoFiltro, setHipodromoFiltro] = useState<string>("");
+  const [reporte, setReporte] = useState<{ hipodromo: string; carrera: number } | null>(null);
 
   const cargar = useCallback(async (f: string) => {
     setCargando(true);
@@ -202,6 +209,18 @@ export default function HistorialReporte() {
     };
   }, [movimientos]);
 
+  // Ítem 11: hipódromos presentes en la jornada y lista filtrada por hipódromo.
+  const hipodromos = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of carreras) if (c.hipodromo) set.add(normHip(c.hipodromo));
+    return [...set].sort((a, b) => a.localeCompare(b, "es"));
+  }, [carreras]);
+
+  const carrerasVisibles = useMemo(
+    () => (hipodromoFiltro ? carreras.filter((c) => normHip(c.hipodromo) === hipodromoFiltro) : carreras),
+    [carreras, hipodromoFiltro]
+  );
+
   return (
     <div className="min-h-screen bg-[#eef2f7] font-sans text-slate-800">
 
@@ -210,7 +229,7 @@ export default function HistorialReporte() {
         <div className="flex items-center gap-2">
           <span className="flex h-2.5 w-2.5 rounded-full bg-green-500"></span>
           <span className="text-lg">🇦🇷</span>
-          <h1 className="text-[15px] font-bold tracking-wide">Historial de Transacciones</h1>
+          <h1 className="text-[15px] font-bold tracking-wide">Historial</h1>
         </div>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-1.5 text-[11px] font-bold text-gray-300">
@@ -334,8 +353,23 @@ export default function HistorialReporte() {
         <div className="lg:w-[68%] flex flex-col gap-4">
 
           <div className="bg-[#1f2937] text-gray-300 text-[11px] font-bold px-4 py-2 flex items-center justify-between gap-2 rounded-sm shadow-sm tracking-widest uppercase">
-            <span className="flex items-center gap-2"><span className="opacity-70 text-[14px]">▦</span> Carreras con resultado · {fecha}</span>
-            <span className="text-[10px] font-bold text-gray-400 normal-case tracking-normal">{carreras.length} encontrada(s)</span>
+            <span className="flex items-center gap-2"><span className="opacity-70 text-[14px]">▦</span> Resultados cargados · {fecha}</span>
+            <span className="flex items-center gap-2 normal-case tracking-normal">
+              <label className="flex items-center gap-1 text-[10px] font-bold text-gray-400 uppercase">
+                Hipódromo
+                <select
+                  value={hipodromoFiltro}
+                  onChange={(e) => setHipodromoFiltro(e.target.value)}
+                  className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-[10px] font-bold text-white"
+                >
+                  <option value="">Todos</option>
+                  {hipodromos.map((h) => (
+                    <option key={h} value={h}>{nombreHipodromoParaMostrar(h)}</option>
+                  ))}
+                </select>
+              </label>
+              <span className="text-[10px] font-bold text-gray-400">{carrerasVisibles.length} encontrada(s)</span>
+            </span>
           </div>
 
           {cargando && (
@@ -344,15 +378,17 @@ export default function HistorialReporte() {
             </div>
           )}
 
-          {!cargando && carreras.length === 0 && (
+          {!cargando && carrerasVisibles.length === 0 && (
             <div className="rounded-sm border border-gray-200 bg-white px-3 py-6 text-center text-[11px] font-bold text-gray-400">
-              No hay carreras con resultado cargado en esta fecha
+              {carreras.length === 0
+                ? "No hay carreras con resultado cargado en esta fecha"
+                : "No hay carreras con resultado para el hipódromo elegido"}
             </div>
           )}
 
           {/* Tarjetas de Carreras */}
           <div className="flex flex-col gap-4">
-            {carreras.map((c, i) => {
+            {carrerasVisibles.map((c, i) => {
               const balances = balancesDe(c.detalle?.filas ?? []);
               const lineas = (c.detalle?.filas ?? []).length;
               const jugadas = (c.detalle?.filas ?? []).filter((f) => f.rol !== "CRUCE");
@@ -365,7 +401,17 @@ export default function HistorialReporte() {
                   <div className="text-[12px] font-bold flex items-center gap-2">
                     <span>🏇</span> {nombreHipodromoParaMostrar(c.hipodromo)} — {c.carrera}ª Carrera
                   </div>
-                  <div className="text-[11px] font-bold">{c.detalle?.fecha ?? fecha}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold">{c.detalle?.fecha ?? fecha}</span>
+                    <button
+                      type="button"
+                      onClick={() => setReporte({ hipodromo: normHip(c.hipodromo), carrera: c.carrera })}
+                      className="rounded bg-black/25 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-black/40"
+                      title="Abrir el Reporte de Liquidación de esta carrera"
+                    >
+                      🧾 Reporte
+                    </button>
+                  </div>
                 </div>
 
                 {/* Sub-cabecera con los cuadros de llegada */}
@@ -440,6 +486,15 @@ export default function HistorialReporte() {
         </div>
 
       </div>
+
+      {/* Ítem 11: al elegir una carrera se abre su Reporte de Liquidación. */}
+      <ReporteLiquidacionModal
+        abierto={!!reporte}
+        onCerrar={() => setReporte(null)}
+        hipodromoInicial={reporte?.hipodromo}
+        carreraInicial={reporte?.carrera}
+        fechaInicial={fecha}
+      />
     </div>
   );
 }
