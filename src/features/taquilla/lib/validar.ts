@@ -549,7 +549,7 @@ const RE_PAREO_A = /^\d+[x]\d+$/;
 const RE_PAREO_B = /^\d+\/\d+(?:[.,]\d+)?$/;
 /** Jugada con letra de apuesta + dígito: 2p, 2n, 1y2n, 3y3, pp (nunca un número pelado). */
 const RE_JUGADA_LETRA = /^(?:\d+[y]\d*[pn]?|\d+[pn]|pp)$/;
-const RE_JUGADA_BARRA = /^\d+\/\d+(?![\d.])/;
+const RE_JUGADA_BARRA = /^\d+\/\d+(?:[.,]\d+)*/;
 /** A Premio de la casa: "10a8" / "10a6.5" (misma gramática que "10/8"). */
 const RE_A_PREMIO = /^\d+(?:[.,]\d+)?[aA]\d+(?:[.,]\d+)?$/;
 

@@ -70,6 +70,7 @@
     "./grupos-ux.test.ts",
     "./reapertura-liquidada.test.ts",
     "./monitor-progreso.test.ts",
-    "./historial-pendientes.test.ts"
+    "./historial-pendientes.test.ts",
+    "./carga-rapida-apremio.test.ts"
   ]
 }

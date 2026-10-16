@@ -1459,7 +1459,17 @@ Se va a **modificar la UX/UI de Grupos de Venta y Convenios** para:
 **Zona a tocar:** `src/features/grupos/components/*` (listado + modal de alta) y
 la sección de convenios del grupo.
 
-### 6. Carga Rápida: interpretar las JUGADAS A PREMIO con punto decimal y con "A" (plan)
+### 6. Carga Rápida: interpretar las JUGADAS A PREMIO con punto decimal y con "A" — ✅ hecho
+
+> **HECHO:** `RE_JUGADA_BARRA` acepta el decimal (`10/3.5`); la proporción de
+> `nomenclatura.ts` (`RE_PROPORCION`/`RE_PROP_C` + `proporcionDe`) acepta punto y
+> coma; se agregó `canonicalizarA_Premio()` (A→/ en UN solo lugar) y
+> `categoriaJugada()` clasifica todas las formas como "Jugadas a Premio". Test
+> `pruebas/carga-rapida-apremio.test.ts` con las 19 líneas del plano (jugada,
+> caballo, monto y clientes) + equivalencias `10A4`=`10a4`=`10/4` y
+> `10A3.5`=`10/3,5`. **Decisión:** NO se reescribe el `nombre_jugada` guardado
+> (el léxico de la casa tipea "10A9" y el MVP lo asume como tal): "A" y "/" son
+> equivalentes al interpretar/clasificar, no al tipear.
 
 El dueño pasa planos de WhatsApp escritos por el operador/locutor y pide que la
 **Carga Rápida** interprete las **jugadas a premio** cuando se escriben **con la
@@ -1600,7 +1610,12 @@ los 24 en el grupo **ARGENTINA** (`d290daa1-a44b-4ed4-bb8a-03db4ecc32b0`).
 **Pendiente de ejecutar** en Supabase → SQL Editor (la llave anónima de la app no
 puede escribir `public.clientes` por RLS).
 
-### 10. Reporte de Liquidación: cuánto arriesgó cada jugador + asterisco por exceder el disponible (plan)
+### 10. Reporte de Liquidación: cuánto arriesgó cada jugador + asterisco por exceder el disponible — ✅ hecho
+
+> **HECHO:** `riesgoDeFila` (`reporte-carrera.ts`) muestra cuánto arriesgó cada
+> jugador (el que JUEGA arriesga el monto; el que CONSIGUE su lado de la
+> proporción; PP/MATCH logan el monto; CRUCE = 0) y `excedeDisponible` compara con
+> `saldo + aval` para marcar el asterisco + nota al pie. Commit `5c46f60`.
 
 El dueño pide que el 🧾 **Reporte de Liquidación** indique, por **cada jugador**:
 - **cuánto arriesgó** (el monto que financió en la carrera), y
@@ -1631,7 +1646,11 @@ sin re-validar la venta.
 `src/features/saldos/components/ReporteCarrera.tsx` (columna "arriesgó" +
 asterisco + nota al pie con el detalle).
 
-### 11. HISTORIAL (antes BOLETO): lista de resultados cargados, por hipódromo y día actual (plan)
+### 11. HISTORIAL (antes BOLETO): lista de resultados cargados, por hipódromo y día actual — ✅ hecho
+
+> **HECHO:** en `HistorialReporte.tsx` la fecha arranca en `hoyLocal()`, hay
+> filtro por hipódromo y cada tarjeta abre el 🧾 Reporte de Liquidación de esa
+> carrera. Encabezado renombrado a "Historial". Commit `b29b4f6`.
 
 El dueño aclara que la sección **antes llamada BOLETO** ahora se llama
 **HISTORIAL**, y que allí debe aparecer la **lista de resultados ya cargados**,

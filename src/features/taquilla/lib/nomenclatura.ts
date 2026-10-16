@@ -77,14 +77,15 @@ const RE_LISTA = RE_NUM + String.raw`(?:\s*(?:,|-|y|\s)\s*` + RE_NUM + String.ra
  * Sin grupos de captura: los de RE_PROP_C son los unicos que se leen.
  */
 const RE_PROPORCION =
-  String.raw`\d+(?:\.\d+)?\s*(?:a|\/)\s*\d+(?:\.\d+)?`;
+  String.raw`\d+(?:[.,]\d+)?\s*(?:a|\/)\s*\d+(?:[.,]\d+)?`;
 
 const RE_CABALLO = "(\\d{1,2})";
 const RE_LISTA_C = "(" + RE_LISTA + ")";
 /** Exactamente 2 grupos: 1 = unidad del jugador, 2 = unidad del rival.
-    Sin parentesis envolventes, o serian un tercer grupo y correrian indices. */
+    Sin parentesis envolventes, o serian un tercer grupo y correrian indices.
+    El rival puede ser decimal con punto O coma ("10/3.5" · "10a9,75"). */
 const RE_PROP_C =
-  String.raw`(\d+(?:\.\d+)?)\s*(?:a|\/)\s*(\d+(?:\.\d+)?)`;
+  String.raw`(\d+(?:[.,]\d+)?)\s*(?:a|\/)\s*(\d+(?:[.,]\d+)?)`;
 
 function norm(entrada: unknown): string {
   return String(entrada ?? "")
@@ -127,8 +128,10 @@ function proporcionDe(
   jugador: unknown,
   rival: unknown
 ): Proporcion | null {
-  const j = parseFloat(String(jugador));
-  const r = parseFloat(String(rival));
+  // El rival puede venir decimal con punto O coma ("10/3.5" · "10a3,5"):
+  // parseFloat solo entiende el punto, así que la coma se normaliza antes.
+  const j = parseFloat(String(jugador).replace(",", "."));
+  const r = parseFloat(String(rival).replace(",", "."));
   if (!isFinite(j) || !isFinite(r) || j <= 0 || r <= 0) return null;
   return { jugador: j, rival: r };
 }
@@ -410,11 +413,32 @@ export function parsearNomenclatura(entrada: string): Nomenclatura | null {
 export type CategoriaJugada = "Jugadas de Puestos" | "Jugadas a Premio";
 
 /**
+ * Canonicaliza la forma "A Premio" a la notación de barra de la casa:
+ *   "10A3" → "10/3" · "10a3.5" → "10/3,5" · "10A9,75" → "10/9,75".
+ * Deja intacto cualquier código que no sea una proporción "A Premio" (PP, 2N,
+ * 4X7, "1/2 Y 2N"…). Es el ÚNICO lugar donde se hace el mapeo A→/ (punto 2 del
+ * requerimiento de Carga Rápida). Ojo: NO reescribe lo que se guarda como
+ * `nombre_jugada` (el léxico de la casa tipea "10A9"); se usa para clasificar y
+ * comparar, donde "A" y "/" son equivalentes.
+ */
+export function canonicalizarA_Premio(codigo: string): string {
+  const t = norm(codigo);
+  if (!t) return String(codigo ?? "");
+  // Proporción pelada: "10a3" / "10a3.5" / "10/3.5" (solo, con punto o coma).
+  const m = /^(\d+(?:[.,]\d+)?)\s*(?:a|\/)\s*(\d+(?:[.,]\d+)?)$/.exec(t);
+  if (!m) return String(codigo ?? "");
+  const limpia = (s: string) => s.replace(",", ".");
+  return `${limpia(m[1])}/${limpia(m[2]).replace(".", ",")}`;
+}
+
+/**
  * Clasifica el CÓDIGO de una jugada en la etiqueta universal de la casa.
  * Es la fuente única de la clasificación para reportes y manuales.
  */
 export function categoriaJugada(codigo: string): CategoriaJugada {
-  const n = parsearNomenclatura(codigo);
+  // Se clasifica sobre la forma canónica: así "10A3", "10/3" y "10a3,5" caen
+  // todos en "Jugadas a Premio" aunque el léxico guardado conserve la "A".
+  const n = parsearNomenclatura(canonicalizarA_Premio(codigo)) ?? parsearNomenclatura(codigo);
   if (n && (n.modalidad === "A_PREMIO" || n.modalidad === "MATCHUP_PROPORCION")) {
     return "Jugadas a Premio";
   }
