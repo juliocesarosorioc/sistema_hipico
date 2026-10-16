@@ -1577,9 +1577,64 @@ los 24 en el grupo **ARGENTINA** (`d290daa1-a44b-4ed4-bb8a-03db4ecc32b0`).
 **Pendiente de ejecutar** en Supabase → SQL Editor (la llave anónima de la app no
 puede escribir `public.clientes` por RLS).
 
+### 10. Reporte de Liquidación: cuánto arriesgó cada jugador + asterisco por exceder el disponible (plan)
+
+El dueño pide que el 🧾 **Reporte de Liquidación** indique, por **cada jugador**:
+- **cuánto arriesgó** (el monto que financió en la carrera), y
+- su **resultado** (ganó / perdió / anulada).
+
+Y que, si un jugador **arriesgó más de lo que dispone** (`monto jugado >
+disponible`, con `disponible = saldo + aval`), se le coloque un **asterisco** y
+se agregue la **observación en una nota al pie** del reporte, "para comunicar a
+todos los jugadores": quien jugó por encima de su disponible queda señalado en
+el propio mensaje.
+
+**Regla ya existente:** `disponibleParaJugar` (`src/features/taquilla/lib/reparto.ts`)
+= `saldo + aval`; el modo `libre` no topa. El reporte debe **mostrar** lo
+arriesgado y compararlo con el disponible del cliente (saldo/aval de `clientes`),
+sin re-validar la venta.
+
+> **Observado (2026-10-15):** hoy `reportes.ts` liquida la fila del que CONSIGUE
+> como `monto − bruto` (el **neto** del que JUEGA), así que la comisión de la
+> casa no aparece en el resumen y el "da" queda con el riesgo **rebajado**: en un
+> `10/6` de `10.000`, el "da" figura perdiendo **5.700** cuando en realidad
+> arriesga **6.000**. La Relación de WhatsApp sí usa el **bruto**
+> (`gananciaBruta`). Al implementar este ítem, el "arriesgó" del "da" debe ser su
+> **riesgo real (el bruto)** para que los dos reportes cuadren.
+
+**Zona a tocar:** `src/features/liquidacion/lib/reporte-carrera.ts` (agregar
+`riesgo` y el flag `excedeDisponible` por fila), el contrato
+`ReporteCarreraDatos`/`JugadaVivo` y la plantilla
+`src/features/saldos/components/ReporteCarrera.tsx` (columna "arriesgó" +
+asterisco + nota al pie con el detalle).
+
+### 11. HISTORIAL (antes BOLETO): lista de resultados cargados, por hipódromo y día actual (plan)
+
+El dueño aclara que la sección **antes llamada BOLETO** ahora se llama
+**HISTORIAL**, y que allí debe aparecer la **lista de resultados ya cargados**,
+con:
+- **filtro por hipódromo** y, **automáticamente, el día actual** (arranca en el día
+  de hoy);
+- **selección de la carrera** desde esa misma lista (para abrir el reporte / la
+  liquidación de esa carrera).
+
+Esto **precisa el ítem 4** ("BOLETO como vista de todo lo pendiente de la
+plataforma"): la lista de resultados cargados vive en **HISTORIAL**, no en un
+módulo aparte, y arranca filtrada al **día de hoy**.
+
+**Zona a tocar:** el componente renombrado **HISTORIAL** (el que antes era
+`*Boleto*` en `src/features/taquilla/components` / `betting`), alimentado por
+`resultados_carreras` (hipódromo + fecha actual) y enganchado al registro
+central, con selección de carrera hacia el reporte de liquidación.
+
 ---
 
-*Última actualización: 2026-10-15 (reporte de liquidación: corregido (de nuevo)
+*Última actualización: 2026-10-15 (nuevos requerimientos del dueño — ítems 10 y
+11: el 🧾 Reporte de Liquidación debe indicar cuánto arriesgó cada jugador y su
+resultado, con asterisco + nota al pie para quien arriesgó más de lo que
+dispone; y la lista de resultados cargados vive en la sección antes llamada
+BOLETO, ahora HISTORIAL, filtrada por hipódromo y con el día actual, con
+selección de carrera hacia el reporte. Antes, 2026-10-15 (reporte de liquidación: corregido (de nuevo)
 el "DA" — `reportes.ts` leía `cliente_consigue`/`cliente_juega`, columnas que no
 existen; ahora lee `cliente_consigue_*`/`cliente_juega_*`, así que vuelven a
 aparecer los que dan y los ganadores. Argentina: `sql/actualizar_avales_argentina.sql`
