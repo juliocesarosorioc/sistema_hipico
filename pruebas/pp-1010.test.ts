@@ -12,7 +12,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { clasificarLineaRapida } from "../src/features/taquilla/lib/validar";
-import { proporcionDeclarada, esPareo, rotuloPareo } from "../src/features/taquilla/lib/nomenclatura";
+import { proporcionDeclarada, esPareo, rotuloPareo, etiquetaJugada, ladosDePareo, caballoPareoLegible } from "../src/features/taquilla/lib/nomenclatura";
 
 let pasan = 0;
 let fallan = 0;
@@ -67,17 +67,39 @@ si(esPareo("2P", "1") === false, 'esPareo("2P", "1") → false');
 console.log("\n== Rótulo del badge (solo cuando aporta) ==");
 si(rotuloPareo("PP") === "", 'rotuloPareo("PP") → "" (la jugada ya dice PP)');
 si(rotuloPareo("PP", "1X6") === "", 'rotuloPareo("PP","1X6") → "" (nada que aclarar)');
-si(rotuloPareo("4X7") === "PP (10/10)", 'rotuloPareo("4X7") → "PP (10/10)" (fila legacy)');
+si(rotuloPareo("4X7") === "", 'rotuloPareo("4X7") → "" (fila legacy: la jugada se rotula PP, nunca 10/10)');
 si(rotuloPareo("2x3 10/8") === "10/8", 'rotuloPareo("2x3 10/8") → "10/8" (fracción declarada)');
 si(rotuloPareo("2P", "1") === "", 'rotuloPareo("2P","1") → "" (no es pareo)');
+
+console.log("\n== Etiqueta de JUGADA para los reportes: MATCH sin fracción → PP (nunca 10/10) ==");
+for (const [jugada, esperado] of [
+  ["PP", "PP"],
+  ["4X7", "PP"],
+  ["1-2x3-4", "PP"],
+  ["2x3 10/8", "2x3 10/8"],
+  ["10/8", "10/8"],
+  ["10A9", "10A9"],
+  ["2Y2N", "2Y2N"],
+  ["1P", "1P"],
+  ["TABLA 2", "TABLA 2"],
+] as Array<[string, string]>) {
+  si(etiquetaJugada(jugada) === esperado, `etiquetaJugada("${jugada}") → "${esperado}"`, etiquetaJugada(jugada));
+}
+
+console.log("\n== Lados del pareo: quién juega uno y quién el otro ==");
+si(JSON.stringify(ladosDePareo("1X8")) === JSON.stringify({ juega: "1", da: "8" }), 'ladosDePareo("1X8") → 1 · X · 8');
+si(JSON.stringify(ladosDePareo("1-2x3-4")) === JSON.stringify({ juega: "1-2", da: "3-4" }), 'ladosDePareo("1-2x3-4") → 1-2 · X · 3-4');
+si(ladosDePareo("5") === null, 'ladosDePareo("5") → null (un solo lado)');
+si(caballoPareoLegible("1X8") === "1 X 8", 'caballoPareoLegible("1X8") → "1 X 8"');
+si(caballoPareoLegible("5") === "5", 'caballoPareoLegible("5") → "5" (sin cambios)');
 
 console.log("\n== La UI usa el rótulo compartido (un solo lugar) ==");
 const gestion = readFileSync(join(process.cwd(), "src", "features", "gestion", "components", "GestionJugadasModule.tsx"), "utf8");
 const reporte = readFileSync(join(process.cwd(), "src", "features", "saldos", "components", "ReporteModule.tsx"), "utf8");
 si(/import \{ rotuloPareo \} from "@\/features\/taquilla\/lib\/nomenclatura"/.test(gestion), "Carga Individual importa rotuloPareo");
 si(gestion.includes("rotuloPareo(p.jugada, p.caballo)"), "Carga Individual muestra el badge para pareos");
-si(/import \{ rotuloPareo \} from "@\/features\/taquilla\/lib\/nomenclatura"/.test(reporte), "el reporte importa el mismo helper");
-si(reporte.includes("rotuloPareo(f.jugada, f.caballo)"), "el reporte usa el mismo helper");
+si(/from "@\/features\/taquilla\/lib\/nomenclatura"/.test(reporte), "el reporte importa el helper compartido");
+si(reporte.includes("etiquetaJugada(f.jugada)"), "el reporte rotula la jugada con el helper compartido (PP, nunca 10/10)");
 si(!/function proporcionDe\(/.test(reporte), "el reporte ya no define su propia copia");
 
 console.log(`\n${pasan} pasaron, ${fallan} fallaron`);

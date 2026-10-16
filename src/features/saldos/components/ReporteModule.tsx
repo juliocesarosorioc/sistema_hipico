@@ -12,7 +12,7 @@ import { etiquetaDia } from "@/features/liquidacion/lib/semana";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
-import { rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
+import { etiquetaJugada, caballoPareoLegible, rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
 
 const fmtMonto = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -247,14 +247,14 @@ export function ReporteModule() {
                                       )}
                                     </td>
                                     <td className="py-1 px-2 font-medium text-gray-800">
-                                      {f.jugada}
+                                      {etiquetaJugada(f.jugada)}
                                       {rotuloPareo(f.jugada, f.caballo) && (
                                         <span className="ml-1 rounded bg-blue-600 text-white text-[9px] font-bold px-1 py-0.5">
                                           {rotuloPareo(f.jugada, f.caballo)}
                                         </span>
                                       )}
                                     </td>
-                                    <td className="py-1 px-2 text-center font-bold text-gray-700">{f.caballo || "—"}</td>
+                                    <td className="py-1 px-2 text-center font-bold text-gray-700">{caballoPareoLegible(f.caballo) || "—"}</td>
                                     <td className="py-1 px-2 text-gray-500 text-xs">{f.cliente}</td>
                                     <td className="py-1 px-2 text-right text-gray-600">{f.monto > 0 ? fmtMonto(f.monto) : ""}</td>
                                     <td className="py-1 px-2 text-right">

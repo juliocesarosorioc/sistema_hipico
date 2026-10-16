@@ -182,7 +182,7 @@ function evaluar(
   carrera: string | number,
   pizarra: PizarraCarrera | null,
   tasaComision?: number | null
-): { ok: boolean | null; bruto: number } {
+): { ok: boolean | null; bruto: number; comision: number; tasa: number } {
   const estado = txt(f.estado).toUpperCase();
   const monto = cifra(f.monto_jugado);
   // Tasa de comisión EFECTIVA del ticket: la propia es la que manda; solo si
@@ -200,25 +200,31 @@ function evaluar(
         : 5;
   // `premio_pagar` / `monto_decidido` se persisten BRUTOS (capital + ganancia,
   // como los escriben la liquidación legacy y `aplicarLiquidacionSaldos`). Este
-  // reporte trabaja internamente con el NETO del ganador (lo que recibe), así
-  // que descuenta la comisión de la ganancia bruta guardada.
-  const aNeto = (brutoGuardado: number): number => {
-    if (brutoGuardado <= 0) return 0;
-    if (monto <= 0) return brutoGuardado;
+  // reporte trabaja internamente con el NETO del ganador (lo que recibe) y con
+  // la COMISIÓN retenida sobre la ganancia bruta, así el "da" (Consigue) y el
+  // resumen Ganan/Pierden cuadran con la relación de WhatsApp.
+  const desglosar = (brutoGuardado: number): { neto: number; comision: number } => {
+    if (brutoGuardado <= 0) return { neto: 0, comision: 0 };
+    if (monto <= 0) return { neto: brutoGuardado, comision: 0 };
     const gananciaBruta = brutoGuardado - monto;
-    if (gananciaBruta <= 0) return brutoGuardado;
-    return Math.round((brutoGuardado - gananciaBruta * (tasaEfectiva / 100)) * 100) / 100;
+    if (gananciaBruta <= 0) return { neto: brutoGuardado, comision: 0 };
+    const comision = Math.round(gananciaBruta * (tasaEfectiva / 100) * 100) / 100;
+    return { neto: Math.round((brutoGuardado - comision) * 100) / 100, comision };
   };
   if (estado === "SOLUCIONADO") {
-    const p = aNeto(cifra(f.monto_decidido) || cifra(f.premio_pagar));
-    return p > 0 ? { ok: true, bruto: p } : { ok: null, bruto: 0 };
+    const d = desglosar(cifra(f.monto_decidido) || cifra(f.premio_pagar));
+    return d.neto > 0
+      ? { ok: true, bruto: d.neto, comision: d.comision, tasa: tasaEfectiva }
+      : { ok: null, bruto: 0, comision: 0, tasa: tasaEfectiva };
   }
   if (estado === "GANADOR" || estado === "GANO") {
-    const p = aNeto(cifra(f.premio_pagar));
-    return p > 0 ? { ok: true, bruto: p } : { ok: null, bruto: 0 };
+    const d = desglosar(cifra(f.premio_pagar));
+    return d.neto > 0
+      ? { ok: true, bruto: d.neto, comision: d.comision, tasa: tasaEfectiva }
+      : { ok: null, bruto: 0, comision: 0, tasa: tasaEfectiva };
   }
   if (estado === "PERDEDOR" || estado === "PERDIO" || estado === "RETIRADO" || estado === "RECHAZADO" || estado === "ANULADO") {
-    return { ok: false, bruto: 0 };
+    return { ok: false, bruto: 0, comision: 0, tasa: tasaEfectiva };
   }
   const puestos = pizarra?.puestos ?? [];
   if (puestos.length && monto > 0) {
@@ -230,13 +236,33 @@ function evaluar(
       // El motor ganó por posición pero no hay dividendo con el que cuantificar
       // el premio: es PENDIENTE, no una derrota. Contarlo como `ok: false`
       // reportaba $0 pagado sobre una jugada que la casa tiene que pagar.
-      if (r.indeterminado) return { ok: null, bruto: 0 };
-      return { ok: r.ok, bruto: r.totalClienteNeto };
+      if (r.indeterminado) return { ok: null, bruto: 0, comision: 0, tasa: tasaEfectiva };
+      return { ok: r.ok, bruto: r.totalClienteNeto, comision: r.gananciaCasa, tasa: tasaEfectiva };
     } catch {
-      return { ok: null, bruto: 0 };
+      return { ok: null, bruto: 0, comision: 0, tasa: tasaEfectiva };
     }
   }
-  return { ok: null, bruto: 0 };
+  return { ok: null, bruto: 0, comision: 0, tasa: tasaEfectiva };
+}
+
+/**
+ * Resultado NETO del "da" (Consigue) de un ticket, en la MISMA convención que la
+ * relación de WhatsApp (`relacionResultados`):
+ *   · Si el que JUEGA acierta, el "da" entrega la ganancia BRUTA (el neto del
+ *     jugador MÁS la comisión de la casa).
+ *   · Si el que JUEGA pierde, el "da" cobra el monto MENOS la comisión.
+ *   · ANULADA (devolución de capital): `bruto` = monto y `comision` = 0 → 0.
+ * Antes se hacía `monto − bruto` (el neto del jugador), así que a los ganadores
+ * del lado "da" NO se les descontaba la comisión y el reporte mostraba un monto
+ * distinto al de WhatsApp.
+ */
+export function resultadoConsigueDe(
+  monto: number,
+  ev: { ok: boolean | null; bruto: number; comision: number; tasa: number }
+): number | null {
+  if (ev.ok === null) return null;
+  if (ev.bruto > 0) return Math.round((monto - ev.bruto - ev.comision) * 100) / 100;
+  return Math.round((monto - monto * (ev.tasa / 100)) * 100) / 100;
 }
 
 /* ─────────────────────────── consultas ─────────────────────────── */
@@ -499,7 +525,7 @@ async function carreraReporte(
     const clienteConsigue = txt(f.cliente_consigue_nombre) || txt(f.cliente_consigue_id);
     const clienteConsigueNombre = txt(f.cliente_consigue_nombre) || clienteConsigue;
 
-    const resultadoJuega = ev.ok === null ? null : ev.bruto - monto;
+    const resultadoJuega = ev.ok === null ? null : Math.round((ev.bruto - monto) * 100) / 100;
     filas.push({
       id: `${fecha}-${hipodromo}-${numero}-j-${i}`,
       rol: "Juega",
@@ -512,7 +538,6 @@ async function carreraReporte(
     });
 
     if (clienteConsigue) {
-      const resultadoConsigue = ev.ok === null ? null : monto - ev.bruto;
       filas.push({
         id: `${fecha}-${hipodromo}-${numero}-c-${i}`,
         rol: "Consigue",
@@ -520,19 +545,17 @@ async function carreraReporte(
         jugada: txt(f.nombre_jugada),
         caballo,
         monto,
-        resultado: resultadoConsigue,
+        resultado: resultadoConsigueDe(monto, ev),
         esPareo,
       });
     }
 
     // Bruto ANTES de comisión (como en pagarYCerrar): neto + comisión casa.
-    const tasaEf = Number.isFinite(Number(tasaComision)) && Number(tasaComision) >= 0 ? Number(tasaComision) : 5;
-    const comisionRec = ev.ok && ev.bruto > monto ? (ev.bruto - monto) * (tasaEf / 100) : 0;
     neteoItems.push({
       cliente: clienteJuega,
       caballo,
       monto,
-      bruto: ev.ok ? Math.round((ev.bruto + comisionRec) * 100) / 100 : 0,
+      bruto: ev.ok ? Math.round((ev.bruto + ev.comision) * 100) / 100 : 0,
       ok: ev.ok === true,
     });
     meta.push({ cliente: clienteJuega, clienteNombre: clienteJuegaNombre, caballo });

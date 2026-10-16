@@ -1,6 +1,7 @@
 ﻿import React from 'react';
 import { EmptyState } from '@/shared/components/ui/EmptyState';
 import { colorDiscoNumero, numerosDeCaballo } from '@/features/saldos/lib/discos';
+import { ladosDePareo } from '@/features/taquilla/lib/nomenclatura';
 
 /**
  * ============================================================================
@@ -102,8 +103,8 @@ const FormatoDinero = ({ monto }: { monto: number | null | undefined }) => {
   );
 };
 
-/** Discos de color de los ejemplares de una jugada ("5" → 1 disco, "3x7" → 2). */
-function Discos({ caballo }: { caballo?: string }) {
+/** Discos de color de una lista de ejemplares ("5" → 1 disco, "3,7" → 2). */
+function DiscosSimples({ caballo }: { caballo?: string }) {
   const nums = numerosDeCaballo(caballo);
   if (!nums.length) return null;
   return (
@@ -118,6 +119,25 @@ function Discos({ caballo }: { caballo?: string }) {
       ))}
     </span>
   );
+}
+
+/**
+ * Discos de los ejemplares de una jugada. En un PAREO ("1X8") se separan con una
+ * «×» los ejemplares de cada lado (el del que JUEGA y el del que DA), para que se
+ * distinga quién juega uno y quién el otro: "1 × 8".
+ */
+function Discos({ caballo }: { caballo?: string }) {
+  const lados = ladosDePareo(String(caballo ?? ""));
+  if (lados) {
+    return (
+      <span className="inline-flex items-center gap-0.5 align-middle">
+        <DiscosSimples caballo={lados.juega} />
+        <span className="px-0.5 text-[9px] font-black text-slate-400">×</span>
+        <DiscosSimples caballo={lados.da} />
+      </span>
+    );
+  }
+  return <DiscosSimples caballo={caballo} />;
 }
 
 /** ¿La estructura tiene algo que mostrar? Evita renderizar tablas vacías. */

@@ -18,6 +18,7 @@
 import type { ReporteCarreraDatos, JugadaVivo, Adelantada, NotaExcedido } from "@/features/saldos/components/ReporteCarrera";
 import type { CarreraReporte, FilaReporte } from "@/features/liquidacion/lib/reportes";
 import { colorDiscoNumero } from "@/features/saldos/lib/discos";
+import { etiquetaJugada } from "@/features/taquilla/lib/nomenclatura";
 
 // Los colores del disco de ejemplar viven en `saldos/lib/discos.ts` (los usan
 // el armado y la plantilla). Se re-exportan para no romper importadores viejos.
@@ -124,7 +125,10 @@ export function armarReporteCarrera(
       // (Consigue) ya viaja como DA. Las dos mitades igual suman al resumen.
       const i = indiceTicketDe(f.id) ?? `t-${correlativo++}`;
       const da = consigue.get(i)?.cliente ?? "";
-      jugadasVivo.push({ juega: f.cliente, jugo: f.jugada, caballo: f.caballo, aposto: f.monto, da, resultado });
+      // `etiquetaJugada` rotula "PP" un MATCH sin fracción (nunca "10/10"); los
+      // ejemplares viajan en `caballo` y la plantilla los pinta "1 × 8" con el
+      // DA al lado, distinguiendo quién juega uno y quién el otro.
+      jugadasVivo.push({ juega: f.cliente, jugo: etiquetaJugada(f.jugada), caballo: f.caballo, aposto: f.monto, da, resultado });
     }
 
     // El riesgo se acumula para TODA fila decidida o no: "cuánto arriesgó" no

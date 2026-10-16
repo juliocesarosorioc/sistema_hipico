@@ -485,8 +485,46 @@ export function rotuloPareo(jugada: string, caballo = ""): string {
   // La jugada nueva ya dice "PP": el rótulo no aportaría nada.
   if (/^\s*pp\b/i.test(t)) return "";
   const prop = proporcionDeclarada(t);
-  // Match con fracción declarada ("2x3 10/8"): se muestra esa fracción.
-  if (prop !== "10/10") return prop;
-  // Pareo LEGACY sin código PP ("4X7"): aclarar que se juega a la par (10/10).
-  return "PP (10/10)";
+  // Match con fracción declarada ("2x3 10/8"): se muestra esa fracción. Sin
+  // fracción (pelo a pelo) el rótulo queda vacío: la jugada se rotula "PP" (ver
+  // `etiquetaJugada`), NUNCA "10/10".
+  return prop === "10/10" ? "" : prop;
+}
+
+/**
+ * Etiqueta de la JUGADA para los reportes. Un MATCH/emparejamiento SIN fracción
+ * declarada se juega pelo a pelo, así que se rotula "PP" (NUNCA "10/10"); si
+ * declara fracción ("2x3 10/8") se conserva tal cual. Cualquier otra jugada se
+ * devuelve sin cambios.
+ *
+ * No mira la columna CABALLO a propósito: un NINI dividido ("2Y2N" con
+ * caballo "3x4") NO es un pareo.
+ */
+export function etiquetaJugada(jugada: string): string {
+  const t = String(jugada ?? "").trim();
+  if (!t) return "";
+  if (/\d+\s*\/\s*\d+/.test(t)) return t; // fracción declarada → se conserva
+  if (/^\s*pp\b/i.test(t)) return "PP"; // ya es PP
+  if (/\d\s*[X*]\s*\d/i.test(t)) return "PP"; // pareo/MATCH sin fracción ("4X7")
+  return t;
+}
+
+/**
+ * Divide los ejemplares de un pareo por su enfrentamiento: "1X8" →
+ * { juega: "1", da: "8" }, "1-2X3-4" → { juega: "1-2", da: "3-4" }. Null si la
+ * columna CABALLO no trae un enfrentamiento (jugada de un solo lado) o si algún
+ * lado queda vacío.
+ */
+export function ladosDePareo(caballo: string): { juega: string; da: string } | null {
+  const m = /^(.+?)\s*[Xx*]\s*(.+)$/.exec(String(caballo ?? "").trim());
+  if (!m) return null;
+  const juega = m[1].trim();
+  const da = m[2].trim();
+  return juega && da ? { juega, da } : null;
+}
+
+/** Caballo(s) de un pareo con el enfrentamiento espaciado: "1X8" → "1 X 8". */
+export function caballoPareoLegible(caballo: string): string {
+  const l = ladosDePareo(caballo);
+  return l ? `${l.juega} X ${l.da}` : String(caballo ?? "").trim();
 }

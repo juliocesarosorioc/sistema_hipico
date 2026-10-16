@@ -14,6 +14,7 @@
  */
 import { supabase } from "@/core/supabase";
 import { COMISION_CASA, parsearNini, normalizarNini } from "@/features/betting/lib/bettingEngine";
+import { etiquetaJugada, caballoPareoLegible } from "@/features/taquilla/lib/nomenclatura";
 import { liquidarOficial } from "@/features/motores/lib/oficiales";
 import { ventanaDiaLocal } from "@/features/liquidacion/lib/fecha";
 import type { TicketMotor } from "@/features/betting/lib/bettingEngine";
@@ -219,8 +220,9 @@ export function relacionJugadas(meta: MetaCarrera, jugadas: JugadaRelacion[]): s
      cargaron las jugadas en la mesa). */
   const lineas = jugadas.map((j, i) => {
     const partes = [j.clienteJuega];
-    if (String(j.jugada ?? "").trim()) partes.push(String(j.jugada).trim());
-    if (String(j.caballo ?? "").trim()) partes.push(`(${String(j.caballo).trim()})`);
+    const jugada = etiquetaJugada(String(j.jugada ?? ""));
+    if (jugada) partes.push(jugada);
+    if (String(j.caballo ?? "").trim()) partes.push(`(${caballoPareoLegible(String(j.caballo))})`);
     partes.push(`con ${fmtMonto(j.monto)}`);
     if (String(j.clienteConsigue ?? "").trim()) partes.push(`da ${String(j.clienteConsigue).trim()}`);
     return `${i + 1}) Juega ${partes.join(" ")}`;
@@ -424,7 +426,7 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
     // Jugada aún no decidible (falta el dato que cuantifica el premio): se
     // lista con aviso y NO se acumula en el cierre de clientes.
     if (j.ganador === "pendiente") {
-      cuerpo.push(`${i + 1}) ${j.jugada} (${j.caballo}) con ${fmtMonto(j.monto)}`);
+      cuerpo.push(`${i + 1}) ${etiquetaJugada(j.jugada)} (${caballoPareoLegible(j.caballo)}) con ${fmtMonto(j.monto)}`);
       cuerpo.push("  ⚠️ PENDIENTE — falta el dividendo que cuantifica el premio.");
       return;
     }
@@ -442,7 +444,7 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
     // ganancia neta cuando el que juega NO acierta.
     const perdida = num(j.monto);
     const beneficiario = j.clienteConsigue || "";
-    cuerpo.push(`${i + 1}) ${j.jugada} (${j.caballo}) con ${fmtMonto(j.monto)}`);
+    cuerpo.push(`${i + 1}) ${etiquetaJugada(j.jugada)} (${caballoPareoLegible(j.caballo)}) con ${fmtMonto(j.monto)}`);
     // ANULADA: el motor devolvió el capital, así que ni el que JUEGA gana/pierde
     // ni el "da" entrega nada. Se muestra 0/0 y NO se acumula en el cierre.
     if (b.anulada) {

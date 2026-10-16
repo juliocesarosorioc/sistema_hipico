@@ -9,7 +9,7 @@
 // Corre con:  node pruebas/correr.cjs   (o npx tsx pruebas/reporte-carrera.test.ts)
 // ============================================================================
 import { armarReporteCarrera, colorDiscoNumero, riesgoDeFila } from "../src/features/liquidacion/lib/reporte-carrera";
-import type { CarreraReporte, FilaReporte } from "../src/features/liquidacion/lib/reportes";
+import { resultadoConsigueDe, type CarreraReporte, type FilaReporte } from "../src/features/liquidacion/lib/reportes";
 
 let pasan = 0;
 let fallan = 0;
@@ -135,6 +135,36 @@ const libre = armarReporteCarrera(
   () => undefined
 );
 si(libre.notaExcedidos?.length === 0, "modo libre (undefined) no marca asterisco");
+
+// ── 7. Pareo: la JUGADA se rotula "PP" y el monto del "da" descuenta la comisión ──
+// Un MATCH legacy guardado como "4X7" debe leerse "PP" (nunca "10/10") y
+// conservar los ejemplares para pintarlos "1 × 8".
+const pareo = armarReporteCarrera({
+  ...CARRERA,
+  filas: [
+    fila({ id: "2026-10-12-LA RINCONADA-7-j-0", rol: "Juega", cliente: "Fabio", jugada: "4X7", caballo: "1X8", monto: 100, resultado: 95, esPareo: true }),
+    fila({ id: "2026-10-12-LA RINCONADA-7-c-0", rol: "Consigue", cliente: "Zorro", jugada: "4X7", caballo: "1X8", monto: 100, resultado: -100, esPareo: true }),
+  ],
+});
+si(pareo.jugadasVivo[0]?.jugo === "PP", "el MATCH legacy «4X7» se rotula «PP» (nunca 10/10)");
+si(pareo.jugadasVivo[0]?.caballo === "1X8" && pareo.jugadasVivo[0]?.da === "Zorro", "conserva los ejemplares (1X8) y el DA (Zorro)");
+
+// Paridad con WhatsApp: cuando el que JUEGA acierta, el "da" entrega la ganancia
+// BRUTA (neto + comisión); cuando pierde, el "da" cobra el monto MENOS comisión.
+// (monto 100, ganancia neta 95, comisión 5 → bruto 100.)
+si(
+  resultadoConsigueDe(100, { ok: true, bruto: 195, comision: 5, tasa: 5 }) === -100,
+  "el «da» que pierde entrega la ganancia BRUTA (−100 = neto 95 + comisión 5)"
+);
+si(
+  resultadoConsigueDe(100, { ok: false, bruto: 0, comision: 0, tasa: 5 }) === 95,
+  "el «da» que gana cobra el monto MENOS comisión (+95)"
+);
+si(
+  resultadoConsigueDe(100, { ok: false, bruto: 100, comision: 0, tasa: 5 }) === 0,
+  "jugada ANULADA (capital devuelto): el «da» queda 0"
+);
+si(resultadoConsigueDe(100, { ok: null, bruto: 0, comision: 0, tasa: 5 }) === null, "ticket pendiente: el «da» queda null");
 
 console.log(`\n${pasan} pasan, ${fallan} fallan.`);
 if (fallan > 0) process.exit(1);

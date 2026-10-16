@@ -17,6 +17,7 @@ import {
 } from "@/features/contabilidad/lib/contabilidad";
 import ReporteLiquidacionModal from "@/features/gestion/components/ReporteLiquidacionModal";
 import { listarMonitorJugadas, type FilaMonitorJugada } from "@/features/jugadas/lib/jugadas";
+import { etiquetaJugada, caballoPareoLegible } from "@/features/taquilla/lib/nomenclatura";
 
 // Utilidad para pintar los cuadritos de los caballos con la paleta hípica
 const getColorCaballo = (num: string) => {
@@ -113,7 +114,7 @@ function aMovimientos(depositos: DepositoRow[], transacciones: TransaccionRow[],
 
 /** Una línea de jugada en formato de recibo: `2Y2N 5 40 VALVERDE`. */
 function lineaDe(f: FilaReporte): string {
-  const partes = [f.jugada.trim(), f.caballo.trim()];
+  const partes = [etiquetaJugada(f.jugada), caballoPareoLegible(f.caballo)];
   if (f.rol !== "CRUCE" && f.monto > 0) partes.push(String(Math.round(f.monto)));
   const cliente = f.rol === "Consigue" ? `DA ${f.cliente}` : f.cliente;
   return partes.filter(Boolean).join(" ") + (cliente ? ` ${cliente}` : "");
