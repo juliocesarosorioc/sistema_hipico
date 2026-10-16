@@ -9,6 +9,8 @@ import {
   type CarreraReporte,
 } from "@/features/liquidacion/lib/reportes";
 import { armarReporteCarrera } from "@/features/liquidacion/lib/reporte-carrera";
+import { lookupDisponible } from "@/features/taquilla/lib/reparto";
+import { listarClientes, type ClienteRow } from "@/features/clientes/lib/clientes";
 import { exportarReporteCarreraImagen } from "@/features/liquidacion/lib/reporte-imagen";
 import { listarGruposAdmin, type GrupoRow } from "@/features/grupos/lib/grupos";
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
@@ -69,6 +71,21 @@ export default function ReporteLiquidacionModal({
   const [cargandoDia, setCargandoDia] = useState(false);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
   const [manualAbierto, setManualAbierto] = useState(false);
+  const [clientes, setClientes] = useState<ClienteRow[]>([]);
+
+  // Ítem 10: cartera de clientes para saber el disponible (saldo + aval) y
+  // marcar con asterisco a quien arriesgó más de lo que dispone.
+  useEffect(() => {
+    let vivo = true;
+    listarClientes()
+      .then((cs) => vivo && setClientes(cs))
+      .catch(() => vivo && setClientes([]));
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  const disponibleDe = useMemo(() => lookupDisponible(clientes), [clientes]);
 
   // Al abrir: arrancar desde la jornada/carrera en curso.
   useEffect(() => {
@@ -166,14 +183,14 @@ export default function ReporteLiquidacionModal({
     carreraReporteDetalle(fecha, hipodromo, carrera)
       .then((c: CarreraReporte | null) => {
         if (!vivo) return;
-        setDatos(c ? armarReporteCarrera(c, nombreGrupo) : null);
+        setDatos(c ? armarReporteCarrera(c, nombreGrupo, disponibleDe) : null);
       })
       .catch(() => vivo && setDatos(null))
       .finally(() => vivo && setCargandoDetalle(false));
     return () => {
       vivo = false;
     };
-  }, [abierto, fecha, hipodromo, carrera, nombreGrupo]);
+  }, [abierto, fecha, hipodromo, carrera, nombreGrupo, disponibleDe]);
 
   if (!abierto) return null;
 

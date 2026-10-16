@@ -8,8 +8,8 @@
 //
 // Corre con:  node pruebas/correr.cjs   (o npx tsx pruebas/reporte-carrera.test.ts)
 // ============================================================================
-import { armarReporteCarrera, colorDiscoNumero } from "../src/features/liquidacion/lib/reporte-carrera";
-import type { CarreraReporte } from "../src/features/liquidacion/lib/reportes";
+import { armarReporteCarrera, colorDiscoNumero, riesgoDeFila } from "../src/features/liquidacion/lib/reporte-carrera";
+import type { CarreraReporte, FilaReporte } from "../src/features/liquidacion/lib/reportes";
 
 let pasan = 0;
 let fallan = 0;
@@ -95,6 +95,46 @@ const vacia = armarReporteCarrera({ ...CARRERA, filas: [], pizarra: null });
 si(vacia.jugadasVivo.length === 0, "carrera sin filas no inventa jugadas");
 si(vacia.encabezado.llegada.length === 0, "carrera sin pizarra no inventa llegada");
 si(vacia.resumen.ganan.length === 0 && vacia.resumen.pierden.length === 0, "carrera sin filas no inventa resumen");
+
+// ── 6. Ítem 10: cuánto arriesgó cada jugador + asterisco por exceder el disponible ──
+const fila = (p: Partial<FilaReporte>): FilaReporte => ({
+  id: "x", rol: "Juega", cliente: "X", jugada: "", caballo: "", monto: 0, resultado: null, ...p,
+});
+si(riesgoDeFila(fila({ rol: "Juega", monto: 1000 })) === 1000, "el que JUEGA arriesga el monto");
+si(riesgoDeFila(fila({ rol: "Consigue", jugada: "2p", monto: 1000 })) === 1000, "PP sin fracción: el DA arriesga lo mismo (10/10)");
+si(riesgoDeFila(fila({ rol: "Consigue", jugada: "10/6", monto: 1000 })) === 600, "a premio 10/6: el DA arriesga su lado (1000·6/10 = 600)");
+si(riesgoDeFila(fila({ rol: "CRUCE", monto: 500 })) === 0, "el CRUCE no arriesga");
+
+// Pareo 10/6: Marlene (juega) arriesga 1000 y dispone 400 → asterisco;
+// Dador (consigue) arriesga 600 y dispone 5000 → sin asterisco.
+const conDisp = armarReporteCarrera(
+  {
+    ...CARRERA,
+    filas: [
+      fila({ id: "2026-10-12-LA RINCONADA-7-j-1", rol: "Juega", cliente: "Marlene", jugada: "10/6", caballo: "2", monto: 1000, resultado: 500, esPareo: true }),
+      fila({ id: "2026-10-12-LA RINCONADA-7-c-1", rol: "Consigue", cliente: "Dador", jugada: "10/6", caballo: "2", monto: 1000, resultado: -600, esPareo: true }),
+    ],
+  },
+  undefined,
+  (n) => (n === "Marlene" ? 400 : 5000)
+);
+const rMarlene = buscar(conDisp.resumen.ganan, "Marlene");
+const rDador = buscar(conDisp.resumen.pierden, "Dador");
+si(rMarlene?.riesgo === 1000, "Marlene arriesgó 1000");
+si(rMarlene?.excede === true, "Marlene EXCEDE su disponible (1000 > 400)");
+si(rDador?.riesgo === 600, "Dador arriesgó 600");
+si(rDador?.excede === false, "Dador NO excede su disponible (600 < 5000)");
+si(conDisp.notaExcedidos?.length === 1 && conDisp.notaExcedidos[0]?.nombre === "Marlene", "la nota al pie lista solo a Marlene");
+si(conDisp.notaExcedidos?.[0]?.disponible === 400, "la nota al pie lleva su disponible (400)");
+// Sin lookup de disponible (o modo libre = undefined) no se marca a nadie.
+const sinDisp = armarReporteCarrera({ ...CARRERA, filas: [fila({ rol: "Juega", cliente: "Libre", monto: 9_999_999, resultado: 1 })] });
+si(sinDisp.notaExcedidos?.length === 0 && sinDisp.resumen.ganan[0]?.excede === false, "sin disponible informado no hay asterisco");
+const libre = armarReporteCarrera(
+  { ...CARRERA, filas: [fila({ rol: "Juega", cliente: "Libre", monto: 9_999_999, resultado: 1 })] },
+  undefined,
+  () => undefined
+);
+si(libre.notaExcedidos?.length === 0, "modo libre (undefined) no marca asterisco");
 
 console.log(`\n${pasan} pasan, ${fallan} fallan.`);
 if (fallan > 0) process.exit(1);

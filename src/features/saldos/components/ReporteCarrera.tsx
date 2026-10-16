@@ -49,6 +49,17 @@ export type ResumenFila = {
   id: number | string;
   nombre: string;
   monto: number;
+  /** Ítem 10: cuánto arriesgó (financió) este jugador en la carrera. */
+  riesgo?: number;
+  /** Ítem 10: true si arriesgó más de lo que dispone (saldo + aval). */
+  excede?: boolean;
+};
+
+/** Ítem 10: jugador que arriesgó más de su disponible — va a la nota al pie. */
+export type NotaExcedido = {
+  nombre: string;
+  riesgo: number;
+  disponible: number;
 };
 
 export type ReporteCarreraDatos = {
@@ -70,6 +81,8 @@ export type ReporteCarreraDatos = {
     ganan: ResumenFila[];
     pierden: ResumenFila[];
   };
+  /** Ítem 10: nota al pie con quienes arriesgaron más de lo que disponen. */
+  notaExcedidos?: NotaExcedido[];
 };
 
 // Componente de Utilidad para formatear moneda y color
@@ -181,14 +194,48 @@ function ListaResumen({ filas }: { filas: ResumenFila[] }) {
   return (
     <div className="grid grid-cols-2 gap-x-3 p-2 text-[10px]">
       {filas.map((g, i) => (
-        <div key={i} className="flex justify-between py-[2px] border-b border-slate-50">
+        <div key={i} className="flex items-center justify-between gap-1 py-[2px] border-b border-slate-50">
           <div className="flex items-center min-w-0">
             <span className="bg-slate-200 text-slate-500 rounded-full w-3.5 h-3.5 flex items-center justify-center text-[8px] mr-1 shrink-0">{g.id}</span>
             <span className="font-bold text-slate-800 truncate">{g.nombre}</span>
+            {g.excede && (
+              <span className="ml-0.5 shrink-0 font-black text-red-600" title="Arriesgó más de lo que dispone">*</span>
+            )}
+            {typeof g.riesgo === "number" && (
+              <span
+                className="ml-1 shrink-0 text-[8px] font-semibold text-slate-400 tabular-nums whitespace-nowrap"
+                title="Arriesgó (monto que financió en la carrera)"
+              >
+                arriesgó {g.riesgo.toLocaleString('es-VE', { maximumFractionDigits: 2 })}
+              </span>
+            )}
           </div>
           <FormatoDinero monto={g.monto} />
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Ítem 10: nota al pie con quienes arriesgaron más de su disponible. */
+function NotaExcedidos({ filas }: { filas: NotaExcedido[] }) {
+  if (!filas.length) return null;
+  const fmt = (n: number) => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (
+    <div className="mx-4 mb-2 rounded border border-amber-400 bg-amber-50 px-2 py-1.5 text-[9px] text-amber-900">
+      <p className="font-black uppercase tracking-wide">
+        * Arriesgó más de lo que dispone — a comunicar a todos los jugadores
+      </p>
+      <ul className="mt-1 space-y-[1px]">
+        {filas.map((n, i) => (
+          <li key={i} className="flex items-center justify-between gap-2">
+            <span className="font-bold text-slate-800">{n.nombre}</span>
+            <span className="tabular-nums">
+              arriesgó {fmt(n.riesgo)} · dispone {fmt(n.disponible)}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -206,7 +253,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
     );
   }
 
-  const { encabezado, jugadasVivo, adelantadas, resumen } = datos;
+  const { encabezado, jugadasVivo, adelantadas, resumen, notaExcedidos } = datos;
 
   // Dividir jugadas en vivo en dos columnas para el layout denso
   const mitadIndex = Math.ceil(jugadasVivo.length / 2);
@@ -277,6 +324,9 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
           <ListaResumen filas={resumen.pierden} />
         </div>
       </div>
+
+      {/* 5b. NOTA AL PIE: QUIENES ARRIESGARON MÁS DE LO QUE DISPONEN (ítem 10) */}
+      <NotaExcedidos filas={notaExcedidos ?? []} />
 
       {/* 6. OBSERVACIONES Y RECOMENDACIONES (FOOTER) */}
       <div className="px-4 py-1.5 bg-slate-50 border-t border-slate-200 flex justify-between text-[9px] text-slate-500">

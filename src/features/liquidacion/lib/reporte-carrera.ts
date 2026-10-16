@@ -15,8 +15,8 @@
  * dos filas con id `${fecha}-${hipodromo}-${numero}-j-${i}` (el que JUEGA) y
  * `…-c-${i}` (el que CONSIGUE/DA). Se parean por el índice `i`.
  */
-import type { ReporteCarreraDatos, JugadaVivo, Adelantada } from "@/features/saldos/components/ReporteCarrera";
-import type { CarreraReporte } from "@/features/liquidacion/lib/reportes";
+import type { ReporteCarreraDatos, JugadaVivo, Adelantada, NotaExcedido } from "@/features/saldos/components/ReporteCarrera";
+import type { CarreraReporte, FilaReporte } from "@/features/liquidacion/lib/reportes";
 import { colorDiscoNumero } from "@/features/saldos/lib/discos";
 
 // Los colores del disco de ejemplar viven en `saldos/lib/discos.ts` (los usan
@@ -59,6 +59,30 @@ function seccionAdelantadaDe(jugada: string): "tablas" | "marcas" | "tercios" | 
   return null;
 }
 
+/** Proporción "a/b" de un tipo de jugada (ej. "10/6"); null si no la trae. */
+function proporcionDe(jugada: string): { a: number; b: number } | null {
+  const m = /(\d+)\s*\/\s*(\d+)/.exec(String(jugada ?? ""));
+  if (!m) return null;
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  return a > 0 && b > 0 ? { a, b } : null;
+}
+
+/**
+ * Ítem 10: riesgo REAL de una fila — el monto que ese jugador FINANCIA en la
+ * carrera. El que JUEGA arriesga `monto`; el que CONSIGUE (el "da") arriesga su
+ * lado de la proporción (`monto · b/a`), que no es el neto del que juega. Sin
+ * proporción (PP 10/10, MATCH sin fracción) los dos arriesgan lo mismo.
+ */
+export function riesgoDeFila(f: FilaReporte): number {
+  if (f.rol === "CRUCE") return 0;
+  if (f.rol === "Consigue") {
+    const p = proporcionDe(f.jugada);
+    if (p) return Math.round(((f.monto * p.b) / p.a) * 100) / 100;
+  }
+  return f.monto;
+}
+
 /**
  * Traduce una carrera liquidada a los datos de la plantilla de reporte.
  *
@@ -73,7 +97,11 @@ function seccionAdelantadaDe(jugada: string): "tablas" | "marcas" | "tercios" | 
  *     Pierden). Los tickets PENDIENTES (resultado null) NO entran al resumen:
  *     antes caían en «Ganan 0.00» y vaciaban la columna «Pierden».
  */
-export function armarReporteCarrera(c: CarreraReporte, grupo?: string): ReporteCarreraDatos {
+export function armarReporteCarrera(
+  c: CarreraReporte,
+  grupo?: string,
+  disponibleDe?: (nombre: string) => number | null | undefined
+): ReporteCarreraDatos {
   const puestos = (c.pizarra ?? "").split(/\s*·\s*/).filter(Boolean);
   const consigue = consiguePorJuega(c);
 
@@ -84,6 +112,8 @@ export function armarReporteCarrera(c: CarreraReporte, grupo?: string): ReporteC
     tercios: [],
   };
   const netoPorCliente = new Map<string, number>();
+  // Ítem 10: total que financia cada jugador en la carrera (bruto de su lado).
+  const riesgoPorCliente = new Map<string, number>();
   let correlativo = 0;
 
   for (const f of c.filas) {
@@ -96,6 +126,10 @@ export function armarReporteCarrera(c: CarreraReporte, grupo?: string): ReporteC
       const da = consigue.get(i)?.cliente ?? "";
       jugadasVivo.push({ juega: f.cliente, jugo: f.jugada, caballo: f.caballo, aposto: f.monto, da, resultado });
     }
+
+    // El riesgo se acumula para TODA fila decidida o no: "cuánto arriesgó" no
+    // depende de si la jugada ya se liquidó.
+    riesgoPorCliente.set(f.cliente, (riesgoPorCliente.get(f.cliente) ?? 0) + riesgoDeFila(f));
 
     // Los pendientes (resultado null) no suman a nadie: quedan fuera del resumen.
     if (resultado !== null) {
@@ -113,11 +147,23 @@ export function armarReporteCarrera(c: CarreraReporte, grupo?: string): ReporteC
 
   const ganan: ReporteCarreraDatos["resumen"]["ganan"] = [];
   const pierden: ReporteCarreraDatos["resumen"]["pierden"] = [];
+  const notaExcedidos: NotaExcedido[] = [];
+
+  /** Arma una fila del resumen con su riesgo y el flag de exceso (ítem 10). */
+  const filaResumen = (nombre: string, monto: number, id: number) => {
+    const riesgo = Math.round((riesgoPorCliente.get(nombre) ?? 0) * 100) / 100;
+    const disp = disponibleDe?.(nombre);
+    const hayTope = typeof disp === "number" && Number.isFinite(disp);
+    const excede = hayTope && riesgo > (disp as number) + 0.001;
+    if (excede) notaExcedidos.push({ nombre, riesgo, disponible: disp as number });
+    return { id, nombre, monto, riesgo, excede };
+  };
+
   for (const [nombre, neto] of netoPorCliente) {
     if (neto > 0) {
-      ganan.push({ id: ganan.length + 1, nombre, monto: neto });
+      ganan.push(filaResumen(nombre, neto, ganan.length + 1));
     } else if (neto < 0) {
-      pierden.push({ id: pierden.length + 1, nombre, monto: neto });
+      pierden.push(filaResumen(nombre, neto, pierden.length + 1));
     }
   }
 
@@ -136,5 +182,6 @@ export function armarReporteCarrera(c: CarreraReporte, grupo?: string): ReporteC
     jugadasVivo,
     adelantadas,
     resumen: { ganan, pierden },
+    notaExcedidos,
   };
 }

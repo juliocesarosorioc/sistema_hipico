@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla } from "@/features/liquidacion/lib/pagarYCerrar";
@@ -12,6 +12,8 @@ import { CargaResultadosModal, type PizarraResultados } from "@/features/liquida
 import { Button } from "@/shared/components/ui/Button";
 import { carreraReporteDetalle } from "@/features/liquidacion/lib/reportes";
 import { armarReporteCarrera } from "@/features/liquidacion/lib/reporte-carrera";
+import { lookupDisponible } from "@/features/taquilla/lib/reparto";
+import { listarClientes, type ClienteRow } from "@/features/clientes/lib/clientes";
 import { exportarReporteCarreraImagen } from "@/features/liquidacion/lib/reporte-imagen";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import ReporteCarrera, { type ReporteCarreraDatos } from "@/features/saldos/components/ReporteCarrera";
@@ -52,13 +54,27 @@ export function PagarCarreraModal() {
   const [tablaMensaje, setTablaMensaje] = useState("");
   const [reporteCarrera, setReporteCarrera] = useState<ReporteCarreraDatos | null>(null);
   const [cargandoReporte, setCargandoReporte] = useState(false);
+  const [clientes, setClientes] = useState<ClienteRow[]>([]);
+
+  // Ítem 10: cartera para el disponible (saldo + aval) del reporte de liquidación.
+  useEffect(() => {
+    let vivo = true;
+    listarClientes()
+      .then((cs) => vivo && setClientes(cs))
+      .catch(() => vivo && setClientes([]));
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  const disponibleDe = lookupDisponible(clientes);
 
   /** Arma el «Reporte de Liquidación» con los datos REALES que dejó la liquidación. */
   const verReporte = async () => {
     setCargandoReporte(true);
     try {
       const c = await carreraReporteDetalle(hoyLocal(), hipodromo.trim().toUpperCase(), Number(carrera));
-      setReporteCarrera(c ? armarReporteCarrera(c) : null);
+      setReporteCarrera(c ? armarReporteCarrera(c, undefined, disponibleDe) : null);
     } finally {
       setCargandoReporte(false);
     }

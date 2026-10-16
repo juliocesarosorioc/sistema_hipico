@@ -141,6 +141,38 @@ export function esSinTope(c: ClienteRiesgo | null | undefined): boolean {
   return String(c?.modo_juego ?? "").trim().toLowerCase() === "libre";
 }
 
+/** Fila mínima de `clientes` para el lookup de disponible del reporte. */
+export type ClienteDisponible = {
+  nombre?: string | null;
+  saldo_actual?: number | string | null;
+  aval?: number | string | null;
+  modo_juego?: string | null;
+};
+
+/**
+ * Ítem 10: lookup "nombre → disponible (saldo + aval)" para el Reporte de
+ * Liquidación. Devuelve `undefined` para quien no está en la cartera o juega en
+ * modo `libre` (sin tope): así el reporte no lo marca con asterisco.
+ *
+ * El nombre se compara normalizado (trim + mayúsculas + espacios colapsados)
+ * porque el ticket guarda el nombre como texto libre.
+ */
+export function lookupDisponible(clientes: ClienteDisponible[]): (nombre: string) => number | undefined {
+  const norm = (s: unknown) => String(s ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+  const num = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const porNombre = new Map<string, ClienteDisponible>();
+  for (const c of clientes) if (c.nombre) porNombre.set(norm(c.nombre), c);
+  return (nombre: string) => {
+    const c = porNombre.get(norm(nombre));
+    if (!c) return undefined;
+    if (String(c.modo_juego ?? "").trim().toLowerCase() === "libre") return undefined;
+    return num(c.saldo_actual) + num(c.aval);
+  };
+}
+
 /* ───────────────────────── 1. PARSER DE EJEMPLARES ───────────────────────── */
 
 /** Divisor entre cliente 1 y cliente 2: x · * · por (como palabra suelta). */
