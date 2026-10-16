@@ -573,7 +573,7 @@ export async function cargarJugadasDeCarrera(
     }
     const { data, error } = await q;
     if (error) throw error;
-    return (data ?? [])
+    const filas = (data ?? [])
       // Las VENTAS DE REMATE caen en `tickets_apuestas` con el mismo hipodromo y
       // carrera que la carrera del dia, pero NO son apuestas de esa carrera: son
       // ventas de caballos. Si no se excluyen, la relacion de la carrera muestra
@@ -581,7 +581,19 @@ export async function cargarJugadasDeCarrera(
       // `nombre_jugada` (REMATE ...) porque `origen` solo vive en `nota_auditoria`.
       .filter(
         (r) => !String((r as { nombre_jugada?: unknown }).nombre_jugada ?? "").trim().toUpperCase().startsWith("REMATE ")
-      )
+      );
+
+    // Evitar duplicados por ID (defensa ante escrituras dobles en tickets_apuestas)
+    const vistos = new Set<string>();
+    const unicas: Array<Record<string, unknown>> = [];
+    for (const r of filas) {
+      const id = String((r as { id?: unknown }).id ?? "").trim();
+      if (id && vistos.has(id)) continue;
+      if (id) vistos.add(id);
+      unicas.push(r as Record<string, unknown>);
+    }
+
+    return unicas
       .map((r) => mapearJugada(r as unknown as TicketApuestaJugada))
       .filter((j) => j.clienteJuega !== "—" && (j.jugada || j.caballo) && j.monto > 0);
   } catch {

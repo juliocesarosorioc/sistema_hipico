@@ -184,6 +184,23 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
   );
 
   /**
+   * Motivo de la lista de "Caballo a jugar": no es un bug que falten caballos.
+   * La jerarquía deja FUERA de la venta a la PRIMERA marca (no tiene rivales a su
+   * izquierda) y a los NV (y a los debutantes cuando el switch está apagado).
+   * Se explicita en pantalla para que el operador no lea la lista como un error
+   * de datos — es la misma regla del servidor (`sql/marcas_venta.sql`).
+   */
+  const marcaBase = marcasGuardadas[0] ?? "";
+  const noJugables = useMemo(() => {
+    const nv = cfg?.debutantes_valen === false
+      ? [...new Set([...nvGuardadas, ...debutantesGuardados])]
+      : nvGuardadas;
+    const set = new Set<string>(nv);
+    if (marcaBase) set.add(marcaBase);
+    return [...set];
+  }, [marcaBase, nvGuardadas, debutantesGuardados, cfg?.debutantes_valen]);
+
+  /**
    * Cambiar de caballo deja el rival viejo apontando a un numero que puede no
    * ser legal para el nuevo, asi que se suelta. `calcularRivales` cae al
    * primero de la lista mientras tanto, para que el modal nunca muestre un
@@ -442,6 +459,20 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
                     </label>
                     <div className="block sm:col-span-2">
                       <span className={inputLbl}>Caballo a jugar</span>
+                      <p className="mt-0.5 text-[10px] leading-snug text-slate-500">
+                        Marcas (orden de jerarquía): <b className="text-slate-700">{marcasGuardadas.join(" / ") || "—"}</b>
+                        {nvGuardadas.length > 0 && (
+                          <>
+                            {" · "}NV: <b className="text-slate-700">{nvGuardadas.join(" / ")}</b>
+                          </>
+                        )}
+                        {noJugables.length > 0 && (
+                          <>
+                            {" · "}No se juegan: <b className="text-slate-700">{noJugables.join(", ")}</b>
+                            {" "}(la 1ª marca no tiene rival a su izquierda y los NV están bloqueados)
+                          </>
+                        )}
+                      </p>
                       <div className="mt-1 flex flex-wrap gap-1.5">
                         {jugables.length === 0 ? (
                           <span className="text-[11px] font-semibold text-slate-400">Sin caballos jugables</span>

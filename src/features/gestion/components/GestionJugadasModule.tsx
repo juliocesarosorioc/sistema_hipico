@@ -1661,10 +1661,10 @@ const hipodromosDelDia = useMemo(() => {
             type="button"
             onClick={() => listoParaCargar && setModalResultados(true)}
             disabled={!listoParaCargar}
-            title={listoParaCargar ? "Cargar el orden de llegada de la carrera" : "Elija hipódromo y carrera para cargar resultados"}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+            title={listoParaCargar ? "Cargar/Editar el orden de llegada de la carrera" : "Elija hipódromo y carrera para cargar resultados"}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            🏁 Carga de Resultados <kbd className="rounded bg-slate-600 px-1.5 py-0.5 text-[9px] font-black text-white">Ctrl+Y</kbd>
+            🏁 Resultados <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+Y</kbd>
           </button>
           <button
             type="button"
