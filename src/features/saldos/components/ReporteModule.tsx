@@ -15,6 +15,15 @@ import { ToastHost } from "@/shared/components/ui/ToastHost";
 
 const fmtMonto = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/**
+ * Proporción declarada de un pareo ("2x3 10/8" → "10/8"). Un MATCH sin fracción
+ * es PELO A PELO = 10/10, así que el rótulo de la UI lo dice explícito.
+ */
+function proporcionDe(jugada: string): string {
+  const m = /(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/.exec(String(jugada ?? ""));
+  return m ? `${m[1]}/${m[2]}` : "10/10";
+}
+
 function Signo({ v, vacio }: { v: number | null; vacio?: boolean }) {
   if (v === null) {
     return <span className="text-gray-400 font-medium">—</span>;
@@ -249,7 +258,7 @@ export function ReporteModule() {
                                       {f.jugada}
                                       {f.esPareo && (
                                         <span className="ml-1 rounded bg-blue-600 text-white text-[9px] font-bold px-1 py-0.5">
-                                          PP
+                                          PP ({proporcionDe(f.jugada)})
                                         </span>
                                       )}
                                     </td>
