@@ -241,6 +241,10 @@ export type BalanceJugada = {
   /** La jugada quedó ANULADA (empate oficial / el caballo terminó justo en el
    *  puesto N del NINI): el motor devuelve el capital y nadie gana ni pierde. */
   anulada?: boolean;
+  /** La jugada GANÓ por posición pero falta el dato que cuantifica el premio
+   *  (matriz W/P/S sin cargar): NO es una derrota. Se lista con aviso y no se
+   *  acumula en el cierre. */
+  indeterminado?: boolean;
 };
 
 /**
@@ -298,13 +302,27 @@ export function pizarraDesdeNums(nums?: string[]): PizarraCarrera {
   return base as unknown as PizarraCarrera;
 }
 
-/** Resuelve el balance de un NINI con el motor matemático (pizarra oficial). */
-function niniDesdePizarra(
+/**
+ * Resuelve el balance de UNA jugada con el MOTOR UNIVERSAL contra la pizarra
+ * oficial (no contra `premio_pagar`, que sólo existe después de liquidar el
+ * ticket).
+ *
+ * Antes esto se hacía SOLO para los NINI; el resto de modalidades (A PREMIO,
+ * PUESTO, PAREOS, TABLAS, W/P/S…) caía a `balanceJugada`, que lee
+ * `premio_pagar`. En una carrera con la pizarra ya cargada pero los tickets
+ * todavía PENDIENTES (`premio_pagar = 0`), TODAS esas jugadas se marcaban como
+ * perdidas y la Relación de WhatsApp salía INVERTIDA: los ganadores aparecían
+ * en NEGATIVOS y los perdedores en POSITIVOS. Ahora, si hay pizarra, decide el
+ * motor para cualquier modalidad (no sólo el NINI).
+ */
+function balanceDesdePizarra(
   j: JugadaRelacion,
   puestos: string[],
   dividendos: Record<string, number> | null
 ): BalanceJugada | null {
-  if (j.modalidad !== "NINI" || !puestos.length || !j.caballo) return null;
+  if (!puestos.length || !j.caballo) return null;
+  const monto = num(j.monto);
+  if (monto <= 0) return null;
   const pizarra = pizarraDesdeNums(puestos);
   // El motor resuelve la posicion desde la pizarra. `puesto_final` se deja
   // coherente con ella y no inventado: antes iba fijo en 1, lo que hacia que
@@ -321,13 +339,26 @@ function niniDesdePizarra(
     total: num(j.monto),
     addedAt: 0,
     tipo_jugada: normNini(j.jugada),
-    monto: num(j.monto),
+    monto,
     puesto_final: (idx >= 0 ? idx + 1 : "SOC") as TicketMotor["puesto_final"],
     pizarra,
     dividendos,
+    proporcion: proporcionDe(j.jugada),
+    premio_por_tabla: premioTablaDe(j.jugada),
   };
-  const r = liquidarOficial(ticket, num(j.comisionPct));
-  const monto = num(j.monto);
+  let r: ReturnType<typeof liquidarOficial>;
+  try {
+    r = liquidarOficial(ticket, num(j.comisionPct));
+  } catch {
+    // Nomenclatura irreconocible: no rompas la relación entera, cae a la vía
+    // persistida (`balanceJugada`) con `null`.
+    return null;
+  }
+  // El motor reconoció la POSICIÓN pero le falta el dato que cuantifica el
+  // premio (p. ej. matriz W/P/S sin cargar): NO es una derrota.
+  if (r.indeterminado) {
+    return { jugada: j, premioPotencial: 0, gananciaBruta: 0, comision: 0, gananciaNeta: 0, indeterminado: true };
+  }
   // ANULADA (empate oficial, o NINI que termina JUSTO en el puesto N): el motor
   // devuelve el capital — `totalClienteNeto` = monto — pero con ok:false. No es
   // una pérdida: el "Juega" recupera su capital y el "da" no entrega nada (0/0).
@@ -349,6 +380,21 @@ function niniDesdePizarra(
     comision: r.ok ? r.gananciaCasa : 0,
     gananciaNeta: r.ok ? round2(r.totalClienteNeto - monto) : 0,
   };
+}
+
+/** Proporción ("10/6") de una jugada a premio; null si no trae (igual que
+ *  `reportes.ts::proporcionDe`: el motor re-parsea el tipo de todos modos). */
+function proporcionDe(tipo: string): string | null {
+  const m = /(\d+)\s*\/\s*(\d+)/.exec(String(tipo ?? ""));
+  return m ? `${m[1]}/${m[2]}` : null;
+}
+
+/** Premio por tabla de una "TABLA N" (bruto = monto × N); null si no es tabla. */
+function premioTablaDe(tipo: string): number | null {
+  const t = String(tipo ?? "").toUpperCase();
+  return /^TABLA\s+(\d+)/i.test(t)
+    ? parseInt(t.match(/^TABLA\s+(\d+)/i)?.[1] ?? "2", 10)
+    : null;
 }
 
 function normNini(tipo: string): string {
@@ -373,7 +419,16 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
       cuerpo.push("  ⚠️ PENDIENTE — falta el dividendo que cuantifica el premio.");
       return;
     }
-    const b = niniDesdePizarra(j, meta.pizarraPuestos ?? [], meta.dividendos ?? null) ?? balanceJugada(j);
+    // Si la jugada YA está decidida como GANADORA (premio pagado), se respeta su
+    // resultado persistido; si no (Pendiente o perdedora), la resuelve el MOTOR
+    // contra la pizarra. Así la Relación de Resultados coincide con el Reporte
+    // de Liquidación en vez de marcar perdedor a todo lo pendiente (la causa de
+    // que saliera INVERTIDA: ganadores en NEGATIVOS y perdedores en POSITIVOS).
+    const b =
+      j.ganador === true
+        ? balanceJugada(j)
+        : balanceDesdePizarra(j, meta.pizarraPuestos ?? [], meta.dividendos ?? null) ??
+          balanceJugada(j);
     // Leg "Juega": arriesga lo financiado. Leg "Consigue" (el "da"): cobra la
     // ganancia neta cuando el que juega NO acierta.
     const perdida = num(j.monto);
@@ -384,6 +439,13 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
     if (b.anulada) {
       cuerpo.push(`Juega ${j.clienteJuega} $ +0,00`);
       if (beneficiario) cuerpo.push(`Consigue ${beneficiario} $ +0,00`);
+      return;
+    }
+    // El motor reconoció la POSICIÓN pero falta el dividendo que cuantifica el
+    // premio (p. ej. matriz W/P/S sin cargar): NO es una derrota. Se avisa y no
+    // se acumula en el cierre (antes caía en el `else` y se cobraba como perdida).
+    if (b.indeterminado) {
+      cuerpo.push("⚠️ PENDIENTE — falta el dividendo que cuantifica el premio.");
       return;
     }
     // La jugada es de SUMA CERO entre el que JUEGA y el "da" (Consigue): el que
