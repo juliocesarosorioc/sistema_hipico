@@ -1138,6 +1138,8 @@ const hipodromosDelDia = useMemo(() => {
         premio_por_tabla:
           ultimaPizarra.premio_por_tabla ?? tablaDeCarrera?.premio_recalculado ?? tablaDeCarrera?.premio_original ?? null,
         tasaComision: comisionNum,
+        // La JORNADA seleccionada, no "hoy": los tickets viven en fecha_registro.
+        fecha,
       });
       for (const t of ticketsDeCarrera) eliminarTicket(t.id);
       setUltimaPizarra(null);

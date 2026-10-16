@@ -72,6 +72,7 @@
     "./monitor-progreso.test.ts",
     "./historial-pendientes.test.ts",
     "./carga-rapida-apremio.test.ts",
-    "./pp-1010.test.ts"
+    "./pp-1010.test.ts",
+    "./saldos-jornada.test.ts"
   ]
 }

@@ -26,6 +26,11 @@ export type LiquidarSaldosInput = {
   dividendos?: Record<string, number> | null;
   premio_por_tabla?: number | null;
   tasaComision?: number | null;
+  /** Jornada (YYYY-MM-DD local) a la que pertenecen los tickets. Si no se pasa,
+   *  se usa el día local. Antes SIEMPRE se usaba `hoyLocal()`: al liquidar una
+   *  carrera de otra jornada (resultado cargado con retraso) la ventana de
+   *  `fecha_registro` no la cubría y la liquidación no encontraba Pendientes. */
+  fecha?: string;
 };
 
 export type ResumenSaldos = {
@@ -83,12 +88,12 @@ export async function aplicarLiquidacionSaldos(
     return { ok: false, motivo: "Sin conexión a Supabase", aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: ["Sin conexión a Supabase."] };
   }
   const sdb = supabase;
-  // Ventana UTC que cubre el día local. La columna real es fecha_registro
-  // (timestamptz del momento de la venta). Antes se filtraba con
-  // .eq("fecha", f), y `fecha` NO existe en tickets_apuestas: la consulta
-  // moría en el catch y esta pantalla devolvía "No se pudieron leer los
-  // tickets pendientes", sin liquidar nunca nada.
-  const f = hoyLocal();
+  // Ventana UTC que cubre el día de la JORNADA (input.fecha) o, si no se pasa,
+  // el día local. La columna real es fecha_registro (timestamptz del momento de
+  // la venta). Antes se filtraba con .eq("fecha", f), y `fecha` NO existe en
+  // tickets_apuestas: la consulta moría en el catch y esta pantalla devolvía
+  // "No se pudieron leer los tickets pendientes", sin liquidar nunca nada.
+  const f = input.fecha || hoyLocal();
   const { desde, hasta } = ventanaDiaLocal(f);
   let filas: unknown[] = [];
   try {

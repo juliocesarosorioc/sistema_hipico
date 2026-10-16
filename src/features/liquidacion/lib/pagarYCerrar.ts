@@ -294,6 +294,9 @@ export async function liquidarPendientesDeCarrera(opts: {
     pizarra: opts.pizarra,
     dividendos,
     tasaComision: opts.tasaComision,
+    // La JORNADA, no "hoy": la ventana de fecha_registro debe cubrir el día de
+    // la carrera que se liquida.
+    fecha,
   });
 }
 
