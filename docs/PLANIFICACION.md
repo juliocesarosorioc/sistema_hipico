@@ -1338,7 +1338,14 @@ el rótulo "Jugadas a Premio / de Puestos" debajo de cada jugada.
 > una **condición permanente** que "debe cumplir siempre" y se corrigió en el
 > código; los **ítems 1, 3, 4 y 5** quedan como **plan** a desarrollar.
 
-### 1. Registrar MÁS jugadas a una carrera ya CERRADA / LIQUIDADA (plan)
+### 1. Registrar MÁS jugadas a una carrera ya CERRADA / LIQUIDADA — ✅ hecho
+
+> **HECHO:** botón «➕ Agregar jugada a carrera liquidada» + capacidad nueva
+> `gestion_jugadas:fn_reabrir_carrera`; `liquidarPendientesDeCarrera`
+> (`pagarYCerrar.ts`) liquida SÓLO los tickets en estado `Pendiente`
+> (idempotente: no toca `Ganador`/`Perdedor`/`Retirado`) sin reescribir el
+> resultado central ni re-cerrar la tabla; la re-apertura queda registrada en
+> `auditoria`. Commit `977ea2a`.
 
 Hoy, al **Registrar y Finalizar** una carrera, ésta pasa a **"Liquidada"**
 (`liquidarCarreraYCerrarTabla` → `upsertResultadoCentral` con
@@ -1394,7 +1401,13 @@ equivocado**.
   "Registrada (sin jugadas)" pasa de **verde a azul** (`blue`), y se actualiza
   la leyenda; amarillo = con jugadas y rojo = liquidada se mantienen.
 
-### 3. Monitor de Jugadas: no muestra el PROGRESO DE RESULTADOS por carrera (plan)
+### 3. Monitor de Jugadas: no muestra el PROGRESO DE RESULTADOS por carrera — ✅ hecho
+
+> **HECHO:** tablero «Progreso de la jornada» en `JugadasModule.tsx`, por
+> hipódromo (`Programadas · con resultado · liquidadas`) y con el total del día,
+> alimentado por el MISMO registro central que el semáforo (matriz `carreras` +
+> `resultados_carreras`). Se eliminó la segunda verdad que solo contaba carreras
+> con jugadas. Commit `8eab7fb`.
 
 Reporta el dueño que el **Monitor de Jugadas** (y el módulo de Jugadas)
 **no muestran el progreso de resultados carrera por carrera** — es decir, el
@@ -1410,7 +1423,13 @@ enganchado a la MISMA fuente que el semáforo (matriz `carreras` +
 (TarjetaResumen), `src/features/gestion/components/MonitorJugadas*` (si aplica) y
 el registro central (`useRegistroCentral`).
 
-### 4. BOLETO: vista de TODO lo pendiente de la plataforma (plan)
+### 4. BOLETO: vista de TODO lo pendiente de la plataforma — ✅ hecho (vía HISTORIAL)
+
+> **HECHO:** la sección renombrada a **HISTORIAL** (`HistorialReporte.tsx`) suma
+> el inbox **«Pendientes de resultado»**: las carreras con jugadas y sin
+> resultado de la jornada (fuente: `v_jugadas_monitor`, la misma del Monitor),
+> con acceso directo al Reporte de Liquidación. Commit `bcfa0a3`. (El `BetSlip`
+> que no persiste queda como pendiente estructural aparte.)
 
 Se va a **modificar la sección de Boleto** para que allí se visualice **todo lo
 que está pendiente de la plataforma**:
@@ -1425,7 +1444,11 @@ jornada con su estado y acceso directo a cargar resultado / liquidar / reportar.
 `BetSlip` que **todavía no persiste en `tickets_apuestas`** (ver "Pendiente
 estructural: el BetSlip no persiste").
 
-### 5. Grupos de Venta y Convenios: UX/UI (plan)
+### 5. Grupos de Venta y Convenios: UX/UI — ✅ hecho
+
+> **HECHO:** en `GruposModule.tsx` el listado completo de grupos va primero (sin
+> tope de alto) y el alta pasó a un **modal** («➕ Registrar grupo»). Commit
+> `d5f329e`.
 
 Se va a **modificar la UX/UI de Grupos de Venta y Convenios** para:
 - Mostrar **primero, en la parte superior, el LISTADO COMPLETO de grupos
