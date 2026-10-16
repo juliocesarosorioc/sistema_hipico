@@ -12,10 +12,30 @@
  * aplicado solo al clon. Para contenidos que no caben a 1:1 en A4 se compone la
  * hoja a mano con `componerA4Paisaje` en vez de confiar en un `transform`.
  */
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
 import type { Orientacion } from "@/features/impresion/lib/util";
 import { plantillaPorId, reemplazarVarsTablas, fechaHoy } from "@/features/whatsapp/lib/whatsapp";
+
+/**
+ * `html2canvas` (~200 kB) y `jspdf` (~120 kB) solo se necesitan al EXPORTAR,
+ * pero con `import` estático entraban en el bundle inicial de las 6 rutas que
+ * usan este módulo (Gestión de Jugadas, Tablas Fijas, Marcas, Taquilla,
+ * Dupleta, Saldos/Reportes). Se cargan de forma diferida la primera vez que
+ * hacen falta y quedan cacheadas; el resto de las funciones (textos de
+ * WhatsApp, etc.) no pagan ese peso.
+ */
+type Html2CanvasFn = typeof import("html2canvas").default;
+let html2canvasCache: Promise<Html2CanvasFn> | null = null;
+function cargarHtml2Canvas(): Promise<Html2CanvasFn> {
+  if (!html2canvasCache) html2canvasCache = import("html2canvas").then((m) => m.default);
+  return html2canvasCache;
+}
+
+type JsPdfCtor = typeof import("jspdf").jsPDF;
+let jsPdfCache: Promise<JsPdfCtor> | null = null;
+function cargarJsPDF(): Promise<JsPdfCtor> {
+  if (!jsPdfCache) jsPdfCache = import("jspdf").then((m) => m.jsPDF);
+  return jsPdfCache;
+}
 
 export type ImgFormato = "PNG" | "JPG" | "PDF";
 
@@ -179,11 +199,11 @@ export async function exportarPaginas(
   };
 
   const maestras: HTMLCanvasElement[] = cabeUnido
-    ? [await html2canvas(root, opcionesCaptura(root, escala))]
+    ? [await (await cargarHtml2Canvas())(root, opcionesCaptura(root, escala))]
     : await Promise.all(
-        paginas.map((p, i) => {
+        paginas.map(async (p, i) => {
           onProgreso?.({ total: paginas.length, actual: i + 1 });
-          return html2canvas(p, opcionesCaptura(p, escala));
+          return (await cargarHtml2Canvas())(p, opcionesCaptura(p, escala));
         })
       );
 
@@ -201,7 +221,7 @@ export async function exportarPaginas(
  */
 export async function capturarNodo(el: HTMLElement, escala = 2): Promise<HTMLCanvasElement> {
   await esperarFuentes();
-  return html2canvas(el, opcionesCaptura(el, escala));
+  return (await cargarHtml2Canvas())(el, opcionesCaptura(el, escala));
 }
 
 export type PiezaA4 = {
@@ -266,6 +286,7 @@ export async function guardarLienzos(
   const nombre = `${archivoBase}_${fecha}`;
 
   if (formato === "PDF") {
+    const jsPDF = await cargarJsPDF();
     const pdf = new jsPDF({
       orientation: landscape ? "landscape" : "portrait",
       unit: "mm",

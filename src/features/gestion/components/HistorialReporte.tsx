@@ -5,7 +5,7 @@ import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { cargarCarrerasDelDia } from "@/features/carreras/lib/carreras-dia";
 import {
-  carreraReporteDetalle,
+  reportesCarrerasLote,
   type CarreraReporte,
   type FilaReporte,
 } from "@/features/liquidacion/lib/reportes";
@@ -167,23 +167,21 @@ export default function HistorialReporte() {
         .filter((c) => c.fecha === f && ((c.ganadores && c.ganadores.length > 0) || c.estado !== "Programada"))
         .slice(0, 40);
 
-      const detalle = await Promise.all(
-        conResultado.map(async (c) => {
-          let rep: CarreraReporte | null = null;
-          try {
-            rep = await carreraReporteDetalle(c.fecha, c.hipodromo, c.carrera);
-          } catch {
-            rep = null;
-          }
-          const pizarra =
-            c.ganadores && c.ganadores.length
-              ? c.ganadores
-              : rep?.pizarra
-                ? rep.pizarra.split(/[·|]/).map((s) => s.trim()).filter(Boolean)
-                : [];
-          return { hipodromo: c.hipodromo, carrera: c.carrera, pizarra, detalle: rep } as CarreraHistorial;
-        })
+      // Un solo lote de consultas para todas las carreras (agrupado por
+      // hipódromo) en vez de 3 consultas por carrera.
+      const reps = await reportesCarrerasLote(
+        conResultado.map((c) => ({ fecha: c.fecha, hipodromo: c.hipodromo, carrera: c.carrera }))
       );
+      const detalle = conResultado.map((c, i) => {
+        const rep = reps[i] ?? null;
+        const pizarra =
+          c.ganadores && c.ganadores.length
+            ? c.ganadores
+            : rep?.pizarra
+              ? rep.pizarra.split(/[·|]/).map((s) => s.trim()).filter(Boolean)
+              : [];
+        return { hipodromo: c.hipodromo, carrera: c.carrera, pizarra, detalle: rep } as CarreraHistorial;
+      });
       setCarreras(detalle);
       // Ítem 4: PENDIENTES de la jornada = carreras con jugadas y sin resultado.
       // Fuente única: la misma vista del Monitor de Jugadas (v_jugadas_monitor).

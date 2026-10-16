@@ -157,8 +157,24 @@ export function useRealtimeCarreras(): void {
 }
 
 /** Carga (o reutiliza) las carreras del día para `fecha`. */
-export async function cargarRegistroCarreras(fecha: string): Promise<CarreraCentral[]> {
+/**
+ * Versión del store con la que se completó la última lectura de cada fecha. Es
+ * la clave de la caché RESUELTA: si la fecha ya está en `porFecha` y nadie
+ * invalidó el registro (misma `versionCarreras`), no se vuelve a consultar.
+ */
+const versionCargadaCarreras = new Map<string, number>();
+
+/** Carga (o reutiliza) las carreras del día para `fecha`. */
+export async function cargarRegistroCarreras(fecha: string, version = 0): Promise<CarreraCentral[]> {
   const f = fecha || hoyLocal();
+
+  // Caché RESUELTA (no solo "en vuelo"): si ya se cargó esta fecha con la
+  // versión vigente del registro, se devuelve sin consultar. Antes, remontar un
+  // módulo o volver a una pestaña repetía la lectura de las mismas carreras
+  // aunque nada hubiera cambiado.
+  const enStore = useRegistroCentral.getState().porFecha[f];
+  if (enStore && versionCargadaCarreras.get(f) === version) return enStore;
+
   const previa = enVueloCarreras.get(f);
   if (previa) return previa;
 
@@ -184,6 +200,9 @@ export async function cargarRegistroCarreras(fecha: string): Promise<CarreraCent
         porFecha: { ...s.porFecha, [f]: datos },
         cargando: { ...s.cargando, [f]: false },
       }));
+      // Solo se marca como "cargada" la lectura exitosa: así un fallo de red
+      // se reintenta en el próximo montaje en vez de quedar cacheado vacío.
+      if (useRegistroCentral.getState().errores[f] == null) versionCargadaCarreras.set(f, version);
       enVueloCarreras.delete(f);
       return datos;
     });
@@ -283,7 +302,7 @@ export function useRegistroCentralOpts(fecha?: string): RegistroCentral {
    * consulta, la que llegue tarde escribe en SU clave y no pisa la visible.
    */
   useEffect(() => {
-    void cargarRegistroCarreras(f);
+    void cargarRegistroCarreras(f, versionCarreras);
   }, [f, versionCarreras]);
 
   /** El catálogo no depende de la fecha: se lee una vez por versión de catálogo. */

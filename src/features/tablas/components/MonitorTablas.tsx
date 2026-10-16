@@ -245,7 +245,10 @@ export function MonitorTablas({
   const setFechaFiltro = (v: string) =>
     fechaControlada ? onFechaDia?.(v) : setFechaInterna(v);
 
-  const abiertas = tablas.filter((t) => !t.cerrada);
+  // `useMemo`: sin esto se recalculaba en cada render (incluidas las veces que
+  // solo cambia un input del filtro) y, como alimenta varios `useMemo` de
+  // filtros en cascada, invalidaba toda la cascada en cada pulsación.
+  const abiertas = useMemo(() => tablas.filter((t) => !t.cerrada), [tablas]);
 
   // DATA CENTRAL: días e hipódromos con carreras registradas en Carreras del
   // Día, aunque todavía no tengan tabla fija publicada, para que el filtro en
@@ -319,7 +322,7 @@ export function MonitorTablas({
   // carrera ASCENDENTE (comparación numérica: C2 va antes que C10). El store
   // también se muta en local (publicar/cerrar), así que el orden se reaplica
   // aquí y no se confía solo en el de la carga inicial.
-  const filtradas = abiertas
+  const filtradas = useMemo(() => abiertas
     .filter(t => {
       if (fechaFiltro && diaDeLaTabla(t) !== fechaFiltro) return false;
       if (hipodromoFiltro && t.hipodromo !== hipodromoFiltro) return false;
@@ -335,7 +338,7 @@ export function MonitorTablas({
       const vb = Number.isFinite(cb) && cb > 0 ? cb : Number.POSITIVE_INFINITY;
       if (va !== vb) return va - vb;
       return diaDeLaTabla(a).localeCompare(diaDeLaTabla(b));
-    });
+    }), [abiertas, fechaFiltro, hipodromoFiltro, carreraFiltro]);
 
   /**
    * Excel de lo que se está mirando: se arma la matriz con las MISMAS filas

@@ -99,6 +99,19 @@ function txt(v: unknown): string {
   return String(v ?? "").trim();
 }
 
+/**
+ * Clave canónica de n° de carrera para agrupar en memoria. `resultados_carreras`
+ * y `tickets_apuestas` pueden guardar la carrera como número o como texto
+ * ("1" / 1 / "01"); el emparejamiento por `.eq("carrera", …)` de la BD los
+ * iguala, así que el agrupado en JS también debe hacerlo.
+ */
+function claveCarrera(v: unknown): string {
+  const s = txt(v);
+  if (s === "") return "";
+  const n = Number(s);
+  return Number.isFinite(n) ? String(n) : s;
+}
+
 function sumarDias(iso: string, dias: number): string {
   const [y, m, d] = iso.split("-").map(Number);
   const base = new Date(y, m - 1, d);
@@ -227,6 +240,21 @@ type PizarraCarrera = {
   dividendos: Record<string, number> | null;
 };
 
+/** Normaliza una fila de `resultados_carreras` a la pizarra que usa el motor. */
+function normalizarPizarra(r: { ganadores?: unknown; orden_llegada?: unknown; dividendos?: unknown }): PizarraCarrera | null {
+  // `orden_llegada` es [{numero,puesto}] y `ganadores` es text[]; el
+  // normalizador entiende ambas formas además del mapa {puesto: ejemplar}.
+  // Se prefiere el orden oficial y se cae a ganadores para no perder las
+  // carreras cargadas antes de que existiera la columna.
+  const oficial = puestosDesdeOrdenLlegada(r.orden_llegada);
+  const puestos = oficial.length ? oficial : puestosDesdeOrdenLlegada(r.ganadores);
+  const div = r.dividendos;
+  const dividendos =
+    div && typeof div === "object" && !Array.isArray(div) ? (div as Record<string, number>) : null;
+  if (!puestos.length && !dividendos) return null;
+  return { puestos, dividendos };
+}
+
 async function leerPizarra(fecha: string, hipodromo: string, carrera: number | string): Promise<PizarraCarrera | null> {
   if (!supabase) return null;
   try {
@@ -238,18 +266,7 @@ async function leerPizarra(fecha: string, hipodromo: string, carrera: number | s
       .ilike("hipodromo", `%${hipodromo}%`)
       .maybeSingle();
     if (error || !data) return null;
-    const r = data as { ganadores?: unknown; orden_llegada?: unknown; dividendos?: unknown };
-    // `orden_llegada` es [{numero,puesto}] y `ganadores` es text[]; el
-    // normalizador entiende ambas formas además del mapa {puesto: ejemplar}.
-    // Se prefiere el orden oficial y se cae a ganadores para no perder las
-    // carreras cargadas antes de que existiera la columna.
-    const oficial = puestosDesdeOrdenLlegada(r.orden_llegada);
-    const puestos = oficial.length ? oficial : puestosDesdeOrdenLlegada(r.ganadores);
-    const div = r.dividendos;
-    const dividendos =
-      div && typeof div === "object" && !Array.isArray(div) ? (div as Record<string, number>) : null;
-    if (!puestos.length && !dividendos) return null;
-    return { puestos, dividendos };
+    return normalizarPizarra(data as { ganadores?: unknown; orden_llegada?: unknown; dividendos?: unknown });
   } catch {
     return null;
   }
@@ -351,15 +368,95 @@ async function carreraExisteEnTablas(fecha: string, hipodromo: string, carrera: 
   }
 }
 
+/** Datos ya leídos para una carrera: permite liquidar sin tocar la BD. */
+type DatosCarrera = {
+  pizarra: PizarraCarrera | null;
+  tickets: Record<string, unknown>[];
+  enTablas: boolean;
+};
+
+/**
+ * Lecturas por HIPÓDROMO (no por carrera). Es el antídoto del N+1 de
+ * `construirReporteSemana`: antes cada carrera disparaba 3 consultas
+ * (`leerPizarra` + `leerTickets` + `carreraExisteEnTablas`); con una jornada de
+ * decenas de carreras eso sumaba cientos de viajes. Ahora se lee TODO el
+ * hipódromo en 3 consultas y se reparte en memoria por n° de carrera.
+ */
+async function leerTicketsHipodromo(fecha: string, hipodromo: string): Promise<Map<string, Record<string, unknown>[]>> {
+  const porCarrera = new Map<string, Record<string, unknown>[]>();
+  if (!supabase) return porCarrera;
+  const { desde, hasta } = ventanaDiaLocal(fecha);
+  try {
+    const { data, error } = await supabase
+      .from("tickets_apuestas")
+      .select("*")
+      .gte("fecha_registro", desde)
+      .lt("fecha_registro", hasta)
+      .ilike("hipodromo", `%${hipodromo}%`)
+      .order("fecha_registro");
+    if (error) return porCarrera;
+    for (const row of (data ?? []) as Record<string, unknown>[]) {
+      const k = claveCarrera(row.carrera);
+      const lista = porCarrera.get(k);
+      if (lista) lista.push(row);
+      else porCarrera.set(k, [row]);
+    }
+    return porCarrera;
+  } catch {
+    return porCarrera;
+  }
+}
+
+async function leerPizarrasHipodromo(fecha: string, hipodromo: string): Promise<Map<string, PizarraCarrera | null>> {
+  const porCarrera = new Map<string, PizarraCarrera | null>();
+  if (!supabase) return porCarrera;
+  try {
+    const { data, error } = await supabase
+      .from("resultados_carreras")
+      .select("carrera, ganadores, orden_llegada, dividendos")
+      .eq("fecha", fecha)
+      .ilike("hipodromo", `%${hipodromo}%`);
+    if (error) return porCarrera;
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const k = claveCarrera(row.carrera);
+      if (!porCarrera.has(k)) porCarrera.set(k, normalizarPizarra(row));
+    }
+    return porCarrera;
+  } catch {
+    return porCarrera;
+  }
+}
+
+async function leerTablasHipodromo(fecha: string, hipodromo: string): Promise<Set<string>> {
+  const numeros = new Set<string>();
+  if (!supabase) return numeros;
+  try {
+    const { data, error } = await supabase
+      .from("tablas_fijas")
+      .select("carrera")
+      .eq("fecha", fecha)
+      .ilike("hipodromo", `%${hipodromo}%`);
+    if (error) return numeros;
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const k = claveCarrera(row.carrera);
+      if (k) numeros.add(k);
+    }
+    return numeros;
+  } catch {
+    return numeros;
+  }
+}
+
 async function carreraReporte(
   fecha: string,
   hipodromo: string,
   numero: number,
-  tasaComision?: number | null
+  tasaComision?: number | null,
+  datos?: DatosCarrera
 ): Promise<CarreraReporte | null> {
-  const pizarra = await leerPizarra(fecha, hipodromo, numero);
-  const tickets = await leerTickets(fecha, hipodromo, numero);
-  const enTablas = await carreraExisteEnTablas(fecha, hipodromo, numero);
+  const pizarra = datos ? datos.pizarra : await leerPizarra(fecha, hipodromo, numero);
+  const tickets = datos ? datos.tickets : await leerTickets(fecha, hipodromo, numero);
+  const enTablas = datos ? datos.enTablas : await carreraExisteEnTablas(fecha, hipodromo, numero);
   // La carrera aparece si tiene jugadas, resultados o siquiera sus tablas
   // publicadas (cargadas por el operador aunque aún no tengan tickets).
   if (!tickets.length && !enTablas && !pizarra?.puestos.length) return null;
@@ -473,11 +570,67 @@ export async function carreraReporteDetalle(
   return carreraReporte(fecha, hipodromo, Number(numero), tasaComision);
 }
 
+/**
+ * Reportes de VARIAS carreras de una misma jornada en un solo lote de consultas.
+ *
+ * El Historial pedía el detalle de hasta 40 carreras y cada una disparaba 3
+ * consultas (~120 por día). Aquí se agrupan por hipódromo y se reutilizan las
+ * lecturas por hipódromo (`leerTicketsHipodromo`, …): ~4 consultas por hipódromo
+ * en vez de 3 por carrera. Devuelve un array en el MISMO orden que `items`.
+ */
+export async function reportesCarrerasLote(
+  items: Array<{ fecha: string; hipodromo: string; carrera: number | string }>,
+  tasaComision?: number | null
+): Promise<Array<CarreraReporte | null>> {
+  const salida = new Array<CarreraReporte | null>(items.length).fill(null);
+  const grupos = new Map<string, number[]>();
+  items.forEach((it, i) => {
+    const k = `${it.fecha}\u0000${txt(it.hipodromo).toUpperCase()}`;
+    const lista = grupos.get(k);
+    if (lista) lista.push(i);
+    else grupos.set(k, [i]);
+  });
+
+  await Promise.all(
+    [...grupos.values()].map(async (indices) => {
+      const primera = items[indices[0]];
+      const [ticketsPorCarrera, pizarrasPorCarrera, tablasPorCarrera] = await Promise.all([
+        leerTicketsHipodromo(primera.fecha, primera.hipodromo),
+        leerPizarrasHipodromo(primera.fecha, primera.hipodromo),
+        leerTablasHipodromo(primera.fecha, primera.hipodromo),
+      ]);
+      for (const i of indices) {
+        const it = items[i];
+        const k = claveCarrera(it.carrera);
+        salida[i] = await carreraReporte(it.fecha, it.hipodromo, Number(it.carrera), tasaComision, {
+          pizarra: pizarrasPorCarrera.get(k) ?? null,
+          tickets: ticketsPorCarrera.get(k) ?? [],
+          enTablas: tablasPorCarrera.has(k),
+        });
+      }
+    })
+  );
+
+  return salida;
+}
+
 async function hipodromoReporte(fecha: string, hipodromo: string, tasaComision?: number | null): Promise<HipodromoReporte> {
   const carreras: CarreraReporte[] = [];
-  const numeros = await listarCarrerasPorDia(fecha, hipodromo);
-  for (const numero of [...new Set(numeros)].sort((a, b) => a - b)) {
-    const c = await carreraReporte(fecha, hipodromo, numero, tasaComision);
+  const numeros = [...new Set(await listarCarrerasPorDia(fecha, hipodromo))].sort((a, b) => a - b);
+  // 3 consultas para TODO el hipódromo (no 3 por carrera): ver
+  // `leerTicketsHipodromo`. Es el fix del N+1 del reporte semanal.
+  const [ticketsPorCarrera, pizarrasPorCarrera, tablasPorCarrera] = await Promise.all([
+    leerTicketsHipodromo(fecha, hipodromo),
+    leerPizarrasHipodromo(fecha, hipodromo),
+    leerTablasHipodromo(fecha, hipodromo),
+  ]);
+  for (const numero of numeros) {
+    const k = claveCarrera(numero);
+    const c = await carreraReporte(fecha, hipodromo, numero, tasaComision, {
+      pizarra: pizarrasPorCarrera.get(k) ?? null,
+      tickets: ticketsPorCarrera.get(k) ?? [],
+      enTablas: tablasPorCarrera.has(k),
+    });
     if (c) carreras.push(c);
   }
   const subtotal = Math.round(carreras.reduce((a, c) => a + c.subtotal, 0) * 100) / 100;
