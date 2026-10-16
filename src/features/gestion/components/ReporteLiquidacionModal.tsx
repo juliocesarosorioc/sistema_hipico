@@ -327,44 +327,57 @@ export default function ReporteLiquidacionModal({
 
           {/* Carreras con resultado cargado (recientes / pasadas) */}
           <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1.5">
-            <span className="mr-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-              {cargandoDia ? "cargando…" : `${carrerasDia.length} resultado(s) cargado(s)`}
-            </span>
-            {carrerasDia
-              .slice()
-              .sort((a, b) => {
-                const ha = String(a.hipodromo || "").trim().toUpperCase();
-                const hb = String(b.hipodromo || "").trim().toUpperCase();
-                const ca = Number(a.carrera) || 0;
-                const cb = Number(b.carrera) || 0;
-                if (ha < hb) return -1;
-                if (ha > hb) return 1;
-                if (ca < cb) return -1;
-                if (ca > cb) return 1;
-                return 0;
-              })
-              .map((c) => {
-                const h = String(c.hipodromo || "").trim().toUpperCase();
-                const activa = h === hipodromo && Number(c.carrera) === carrera;
-                return (
-                  <button
-                    key={`${h}-${c.carrera}`}
-                    type="button"
-                    onClick={() => {
-                      setHipodromo(h);
-                      setCarrera(Number(c.carrera));
-                    }}
-                    title={`${nombreHipodromoParaMostrar(h)} · C${c.carrera} · ${c.estado}`}
-                    className={`rounded-full border px-2 py-0.5 text-[10px] font-bold transition-colors ${
-                      activa
-                        ? "border-emerald-500 bg-emerald-500 text-white"
-                        : "border-slate-300 bg-white text-slate-600 hover:border-emerald-400 hover:text-emerald-600"
-                    }`}
-                  >
-                    🏇 {nombreHipodromoParaMostrar(h)} · C{c.carrera}
-                  </button>
-                );
-              })}
+            {(() => {
+              const lista = carrerasDia
+                .slice()
+                .sort((a, b) => {
+                  const ha = String(a.hipodromo || "").trim().toUpperCase();
+                  const hb = String(b.hipodromo || "").trim().toUpperCase();
+                  const ca = Number(a.carrera) || 0;
+                  const cb = Number(b.carrera) || 0;
+                  if (ha < hb) return -1;
+                  if (ha > hb) return 1;
+                  if (ca < cb) return -1;
+                  if (ca > cb) return 1;
+                  return 0;
+                })
+                .filter((c) => {
+                  const h = String(c.hipodromo || "").trim().toUpperCase();
+                  return !hipodromo || h === hipodromo;
+                });
+              if (!lista.length) return null;
+              return (
+                <div className="flex flex-col items-end gap-1">
+                  <span className="mr-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    {cargandoDia ? "cargando…" : `${lista.length} resultado(s) cargado(s)`}
+                  </span>
+                  <div className="flex flex-wrap justify-end gap-1.5">
+                    {lista.map((c) => {
+                      const h = String(c.hipodromo || "").trim().toUpperCase();
+                      const activa = h === hipodromo && Number(c.carrera) === carrera;
+                      return (
+                        <button
+                          key={`${h}-${c.carrera}`}
+                          type="button"
+                          onClick={() => {
+                            setHipodromo(h);
+                            setCarrera(Number(c.carrera));
+                          }}
+                          title={`${nombreHipodromoParaMostrar(h)} · C${c.carrera} · ${c.estado}`}
+                          className={`rounded-full border px-2 py-0.5 text-[10px] font-bold transition-colors ${
+                            activa
+                              ? "border-emerald-500 bg-emerald-500 text-white"
+                              : "border-slate-300 bg-white text-slate-600 hover:border-emerald-400 hover:text-emerald-600"
+                          }`}
+                        >
+                          🏇 {nombreHipodromoParaMostrar(h)} · C{c.carrera}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
 
