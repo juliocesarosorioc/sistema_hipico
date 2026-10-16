@@ -57,7 +57,14 @@ export default function WhatsappReporteCarrera({ fecha, hipodromo, carrera, grup
       pizarraPuestos: oficial?.puestos ?? [],
       dividendos: oficial?.dividendos ?? null,
     };
-    const jugadas = await cargarJugadasDeCarrera({ hipodromo: hip, carrera: car });
+    // La MISMA fecha que el Reporte de Liquidación: sin acotar por día, la
+    // relación mezclaba tickets de otras fechas con el mismo hipódromo + carrera
+    // y suministraba datos distintos al reporte.
+    const jugadas = await cargarJugadasDeCarrera({
+      hipodromo: hip,
+      carrera: car,
+      fecha: fecha ? String(fecha).slice(0, 10) : undefined,
+    });
     if (!jugadas.length) {
       return "No hay jugadas registradas para esta carrera (registralas en Taquilla o en la carga rápida).";
     }

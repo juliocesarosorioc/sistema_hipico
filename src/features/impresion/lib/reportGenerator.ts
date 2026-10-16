@@ -15,6 +15,7 @@
 import { supabase } from "@/core/supabase";
 import { COMISION_CASA, parsearNini, normalizarNini } from "@/features/betting/lib/bettingEngine";
 import { liquidarOficial } from "@/features/motores/lib/oficiales";
+import { ventanaDiaLocal } from "@/features/liquidacion/lib/fecha";
 import type { TicketMotor } from "@/features/betting/lib/bettingEngine";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 
@@ -77,6 +78,14 @@ export type SaldoCliente = {
 export type FiltroCarrera = {
   hipodromo: string;
   carrera: number | string;
+  /**
+   * Fecha local (YYYY-MM-DD) de la jornada. Si se indica, los tickets se
+   * acotan a la MISMA ventana de `fecha_registro` que usa el Reporte de
+   * Liquidación (`ventanaDiaLocal`). Sin esto, la relación de resultados
+   * mezclaba tickets de otras fechas con el mismo hipódromo + N° de carrera y
+   * suministraba datos distintos al reporte.
+   */
+  fecha?: string;
   /** Si true, solo tickets estado = Pendiente (relación pre-carrera). */
   soloPendientes?: boolean;
 };
@@ -537,6 +546,20 @@ export type TicketApuestaJugada = {
   cliente_consigue_nombre?: string | null;
 };
 
+/**
+ * ¿La fila es una VENTA DE REMATE? Esas ventas caen en `tickets_apuestas` con
+ * el mismo hipódromo y N° de carrera que la carrera del día, pero NO son
+ * apuestas de esa carrera: son ventas de caballos. Se marcan por el prefijo de
+ * `nombre_jugada` ("REMATE …") porque `origen` solo vive en `nota_auditoria`.
+ *
+ * Fuente ÚNICA de la regla: la usan tanto la relación de WhatsApp
+ * (`cargarJugadasDeCarrera`) como el Reporte de Liquidación (`reportes.ts`),
+ * para que ambos suministren la MISMA lista de jugadas.
+ */
+export function esVentaDeRemate(nombreJugada: unknown): boolean {
+  return String(nombreJugada ?? "").trim().toUpperCase().startsWith("REMATE ");
+}
+
 function mapearJugada(r: TicketApuestaJugada): JugadaRelacion {
   const jugadaCruda = String(r.nombre_jugada ?? "").trim();
   const esNini = parsearNini(jugadaCruda) !== null;
@@ -565,23 +588,30 @@ export async function cargarJugadasDeCarrera(
       .select(
         "id, nombre_jugada, caballo, cantidad_tablas, monto_jugado, premio_pagar, premio_por_tabla, comision_porcentaje, estado, cliente_juega_nombre, cliente_consigue_nombre"
       )
-      .eq("hipodromo", String(filtro.hipodromo).trim().toUpperCase())
+      // Mismo emparejamiento de hipódromo que el Reporte de Liquidación
+      // (`reportes.ts` usa `.ilike("%hip%")`): el hipódromo puede venir con
+      // variantes de mayúsculas/espacios y la comparación exacta dejaba la
+      // lista vacía o distinta a la del reporte.
+      .ilike("hipodromo", `%${String(filtro.hipodromo).trim().toUpperCase()}%`)
       .eq("carrera", num(filtro.carrera))
       .order("fecha_registro", { ascending: true });
+    // Acotar a la MISMA ventana de fecha que el Reporte de Liquidación. Sin
+    // esto, la relación de resultados mezclaba tickets de otras fechas con el
+    // mismo hipódromo + N° de carrera (datos distintos al reporte).
+    if (filtro.fecha) {
+      const { desde, hasta } = ventanaDiaLocal(String(filtro.fecha));
+      q = q.gte("fecha_registro", desde).lt("fecha_registro", hasta);
+    }
     if (filtro.soloPendientes) {
       q = q.eq("estado", "Pendiente");
     }
     const { data, error } = await q;
     if (error) throw error;
-    const filas = (data ?? [])
-      // Las VENTAS DE REMATE caen en `tickets_apuestas` con el mismo hipodromo y
-      // carrera que la carrera del dia, pero NO son apuestas de esa carrera: son
-      // ventas de caballos. Si no se excluyen, la relacion de la carrera muestra
-      // cada caballo vendido como una jugada mas. Se marcan por el prefijo de
-      // `nombre_jugada` (REMATE ...) porque `origen` solo vive en `nota_auditoria`.
-      .filter(
-        (r) => !String((r as { nombre_jugada?: unknown }).nombre_jugada ?? "").trim().toUpperCase().startsWith("REMATE ")
-      );
+    // VENTAS DE REMATE fuera: no son apuestas de la carrera (misma regla que el
+    // Reporte de Liquidación vía `esVentaDeRemate`).
+    const filas = (data ?? []).filter(
+      (r) => !esVentaDeRemate((r as { nombre_jugada?: unknown }).nombre_jugada)
+    );
 
     // Evitar duplicados por ID (defensa ante escrituras dobles en tickets_apuestas)
     const vistos = new Set<string>();

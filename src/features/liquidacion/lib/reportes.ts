@@ -17,7 +17,7 @@ import { hoyLocal, leerProgramaPorFecha } from "@/features/gaceta/lib/programa";
 import { rangoSemanaDeGrupo, cicloSemanalDe } from "@/features/liquidacion/lib/semana";
 import { ventanaDiaLocal } from "@/features/liquidacion/lib/fecha";
 import { listarCarrerasPorDia } from "@/features/tablas/lib/rpc";
-import { pizarraDesdeNums } from "@/features/impresion/lib/reportGenerator";
+import { pizarraDesdeNums, esVentaDeRemate } from "@/features/impresion/lib/reportGenerator";
 import { liquidarOficial, puestosDesdeOrdenLlegada } from "@/features/motores/lib/oficiales";
 import {
   numerosPizarra,
@@ -185,6 +185,19 @@ function evaluar(
 ): { ok: boolean | null; bruto: number } {
   const estado = txt(f.estado).toUpperCase();
   const monto = cifra(f.monto_jugado);
+  // Tasa de comisión EFECTIVA del ticket: la propia es la que manda; solo si
+  // falta se usa la del grupo (o 5% por defecto). Es la MISMA prioridad que usa
+  // la relación de WhatsApp (`balanceDesdePizarra` → `j.comisionPct`), que era
+  // justo la que antes NO se le pasaba al motor en la vía de tickets PENDIENTES:
+  // el reporte liquidaba con la tasa por defecto y el mensaje con la del ticket,
+  // y de ahí que suministraran importes distintos.
+  const pct = cifra(f.comision_porcentaje);
+  const tasaEfectiva =
+    pct > 0
+      ? pct
+      : Number.isFinite(Number(tasaComision)) && Number(tasaComision) >= 0
+        ? Number(tasaComision)
+        : 5;
   // `premio_pagar` / `monto_decidido` se persisten BRUTOS (capital + ganancia,
   // como los escriben la liquidación legacy y `aplicarLiquidacionSaldos`). Este
   // reporte trabaja internamente con el NETO del ganador (lo que recibe), así
@@ -194,14 +207,7 @@ function evaluar(
     if (monto <= 0) return brutoGuardado;
     const gananciaBruta = brutoGuardado - monto;
     if (gananciaBruta <= 0) return brutoGuardado;
-    const pct = cifra(f.comision_porcentaje);
-    const tasa =
-      pct > 0
-        ? pct
-        : Number.isFinite(Number(tasaComision)) && Number(tasaComision) >= 0
-          ? Number(tasaComision)
-          : 5;
-    return Math.round((brutoGuardado - gananciaBruta * (tasa / 100)) * 100) / 100;
+    return Math.round((brutoGuardado - gananciaBruta * (tasaEfectiva / 100)) * 100) / 100;
   };
   if (estado === "SOLUCIONADO") {
     const p = aNeto(cifra(f.monto_decidido) || cifra(f.premio_pagar));
@@ -217,7 +223,10 @@ function evaluar(
   const puestos = pizarra?.puestos ?? [];
   if (puestos.length && monto > 0) {
     try {
-      const r = liquidarOficial(ticketMotorDe(f, hipodromo, carrera, puestos, pizarra?.dividendos ?? null));
+      const r = liquidarOficial(
+        ticketMotorDe(f, hipodromo, carrera, puestos, pizarra?.dividendos ?? null),
+        tasaEfectiva
+      );
       // El motor ganó por posición pero no hay dividendo con el que cuantificar
       // el premio: es PENDIENTE, no una derrota. Contarlo como `ok: false`
       // reportaba $0 pagado sobre una jugada que la casa tiene que pagar.
@@ -290,7 +299,13 @@ async function leerTickets(fecha: string, hipodromo: string, carrera: string | n
       .ilike("hipodromo", `%${hipodromo}%`)
       .order("fecha_registro");
     if (error) return [];
-    return (data ?? []) as Record<string, unknown>[];
+    // VENTAS DE REMATE fuera: caen en `tickets_apuestas` con el mismo hipódromo
+    // y carrera, pero son ventas de caballos, no apuestas. Misma regla que la
+    // relación de WhatsApp (`esVentaDeRemate`), para que ambos suministren las
+    // MISMAS jugadas.
+    return (data ?? []).filter(
+      (r) => !esVentaDeRemate((r as { nombre_jugada?: unknown }).nombre_jugada)
+    ) as Record<string, unknown>[];
   } catch {
     return [];
   }
@@ -396,6 +411,8 @@ async function leerTicketsHipodromo(fecha: string, hipodromo: string): Promise<M
       .order("fecha_registro");
     if (error) return porCarrera;
     for (const row of (data ?? []) as Record<string, unknown>[]) {
+      // Misma exclusión de ventas de remate que la lectura por carrera.
+      if (esVentaDeRemate(row.nombre_jugada)) continue;
       const k = claveCarrera(row.carrera);
       const lista = porCarrera.get(k);
       if (lista) lista.push(row);

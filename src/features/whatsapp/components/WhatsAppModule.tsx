@@ -313,14 +313,24 @@ export function WhatsAppModule() {
       grupo: grupoVinculado?.nombre?.trim() || CLUB_NOMBRE,
       hipodromo: nombreHipodromoParaMostrar(hip),
       carrera: car,
+      // La fecha del mensaje debe ser la del RESULTADO (la misma que muestra el
+      // Reporte de Liquidación), no la de hoy: con `new Date()` la cabecera
+      // fechaba el reporte de una carrera de otro día como si fuera de hoy.
+      ...(oficial?.fecha ? { fecha: new Date(`${oficial.fecha}T12:00:00`) } : {}),
       retirados: repRetirados.trim(),
       pizarra: pizarraTexto,
       pizarraPuestos: oficial?.puestos.length ? oficial.puestos : puestosManual,
       dividendos: oficial?.dividendos ?? null,
     };
+    // Para la RELACIÓN DE RESULTADOS se acotan los tickets a la fecha del
+    // resultado oficial: si no, la pizarra era la del último resultado pero la
+    // lista de jugadas mezclaba tickets de otras fechas con el mismo hipódromo +
+    // carrera, y el mensaje no cuadraba con el Reporte de Liquidación. La
+    // relación PRE-CARRERA (pendientes) no tiene fecha de referencia.
     const jugadas = await cargarJugadasDeCarrera({
       hipodromo: hip,
       carrera: car,
+      fecha: tipoReporte === "resultados" ? oficial?.fecha : undefined,
       soloPendientes: tipoReporte === "jugadas",
     });
     if (jugadas.length === 0) {
