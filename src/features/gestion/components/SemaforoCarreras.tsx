@@ -22,8 +22,8 @@ export type EstadoCarrera = "inactiva" | "abierta" | "con_jugadas" | "cerrada";
 
 const COLORES: Record<EstadoCarrera, { chip: string; label: string; txt: string }> = {
   inactiva: { chip: "border-line bg-surface text-slate-400", label: "Sin registro", txt: "text-slate-400" },
-  // Registrada SIN jugadas = AZUL (condición del dueño). Antes iba en verde.
-  abierta: { chip: "border-blue-500/60 bg-blue-500/15 text-blue-700", label: "Registrada", txt: "text-blue-700" },
+  // Registrada SIN jugadas = VERDE (condición del dueño). Antes iba en azul.
+  abierta: { chip: "border-emerald-500/60 bg-emerald-500/15 text-emerald-700", label: "Registrada", txt: "text-emerald-700" },
   con_jugadas: { chip: "border-warning-500/70 bg-warning-500/20 text-warning-700", label: "Con jugadas", txt: "text-warning-700" },
   cerrada: { chip: "border-danger-500/70 bg-danger-500/15 text-danger-600", label: "Liquidada", txt: "text-danger-600" },
 };
@@ -88,7 +88,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
       <div className="mb-2 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-500">
         <span className="font-black uppercase tracking-wide"><span className="normal-case">{nombreMostrar}</span> · CARRERAS DEL {fecha}</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full border border-line bg-surface" /> Sin registro</span>
-        <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-blue-500" /> Registrada (sin jugadas)</span>
+        <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Registrada (sin jugadas)</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-warning-500" /> Con jugadas</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-danger-500" /> Liquidada</span>
         {manual && (

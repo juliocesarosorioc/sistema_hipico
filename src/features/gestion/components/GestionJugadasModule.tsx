@@ -88,9 +88,19 @@ function hipoKey(h: unknown): string {
  *    + Dead Heat (cero fraccionamiento)
  */
 export function GestionJugadasModule() {
-  const [hipodromo, setHipodromo] = useState("LA RINCONADA");
+  const [hipodromo, setHipodromo] = useState("");
   const hipodromos = useHipodromosActivos();
   const nombreHipodromo = nombrePropioHipodromo(hipodromo, hipodromos);
+  /**
+   * El filtro de hipódromo arranca EN BLANCO y la carga queda bloqueada hasta
+   * que el operador elija el hipódromo y confirme la carrera en el semáforo.
+   * Antes el módulo arrancaba en LA RINCONADA/N1 y una caja podía cargar
+   * jugadas en el hipódromo equivocado sin darse cuenta.
+   */
+  const hipodromoElegido = claveHipodromo(hipodromo) !== "";
+  const [carreraConfirmada, setCarreraConfirmada] = useState(false);
+  /** Habilitado para cargar jugadas: hipódromo elegido + carrera confirmada. */
+  const listoParaCargar = hipodromoElegido && carreraConfirmada;
   const [fecha, setFecha] = useState(() => hoyLocal());
   const [carrerasPorDia, setCarrerasPorDia] = useState<number[]>([]);
   const [carrera, setCarrera] = useState(1);
@@ -159,6 +169,15 @@ export function GestionJugadasModule() {
   useEffect(() => {
     setReapertura(false);
   }, [hipodromo, fecha, carrera]);
+
+  /**
+   * Cambiar de jornada o de hipódromo invalida la carrera confirmada: hay que
+   * volver a elegirla en el semáforo antes de poder cargar jugadas. Es la otra
+   * mitad del guard de arriba: el hipódromo no basta, la carrera se confirma.
+   */
+  useEffect(() => {
+    setCarreraConfirmada(false);
+  }, [hipodromo, fecha]);
 
   /** Opciones del Autocomplete CLIENTE 1/CLIENTE 2 (value = nombre real en BD). */
   const opcionesClientes = useMemo(
@@ -335,10 +354,10 @@ const hipodromosDelDia = useMemo(() => {
         setMostrarPlanoPreliminar(true);
       } else if (k === "y") {
         e.preventDefault();
-        setModalResultados(true);
+        if (listoParaCargar) setModalResultados(true);
       } else if (k === "r") {
         e.preventDefault();
-        setModalFinalizar(true);
+        if (listoParaCargar) setModalFinalizar(true);
       } else if (k === "h") {
         e.preventDefault();
         setMostrarHistorial((v) => !v);
@@ -352,7 +371,7 @@ const hipodromosDelDia = useMemo(() => {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [listoParaCargar]);
 
   const comisionNum = useMemo(() => {
     const n = parseFloat(comision.replace(",", "."));
@@ -1207,16 +1226,22 @@ const hipodromosDelDia = useMemo(() => {
               value={retirados}
               onChange={(e) => setRetirados(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") void aplicarRetiros();
+                if (e.key === "Enter" && listoParaCargar) void aplicarRetiros();
               }}
+              disabled={!listoParaCargar}
               placeholder='ej. "2,5"'
-              className="w-full rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              className="w-full rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-slate-400"
             />
             <Button
               size="sm"
               className="shrink-0 !bg-gradient-to-r !from-red-500 !to-rose-600 !text-white"
               onClick={() => void aplicarRetiros()}
-              title="Centraliza los retiros de la carrera y los propaga a todos los módulos"
+              disabled={!listoParaCargar}
+              title={
+                listoParaCargar
+                  ? "Centraliza los retiros de la carrera y los propaga a todos los módulos"
+                  : "Elija hipódromo y carrera para aplicar retiros"
+              }
             >
               ⛔ Aplicar
             </Button>
@@ -1249,28 +1274,49 @@ const hipodromosDelDia = useMemo(() => {
           />
           ✍️ Modo Manual
         </label>
-        <div className="rounded-xl border border-line bg-gray-50 px-3 py-2 text-right">
-          <p className="text-[9px] font-black uppercase tracking-wide text-slate-600">
-            <span className="normal-case">{nombreHipodromo}</span> C{carrera} · {ticketsDeCarrera.length} ticket(s) · {monedaFmt(totalInvertidoSesion)}
-          </p>
-        </div>
       </div>
 
-      <SemaforoCarreras
-        hipodromo={hipodromo}
-        fecha={fecha}
-        carreras={carrerasPorDia}
-        activa={carrera}
-        manual={modoManual}
-        onSeleccionar={(n) => {
-          setCarrera(n);
-          if (!carrerasPorDia.includes(n)) {
-            setCarrerasPorDia((prev) => [...new Set([...prev, n])].sort((a, b) => a - b));
-          }
-        }}
-      />
+      {!hipodromoElegido ? (
+        <div className="rounded-2xl border border-dashed border-cyan-300 bg-cyan-50/60 px-4 py-3 text-center text-xs font-bold text-cyan-800">
+          ① Seleccione el <b>hipódromo</b> (paso 2) para habilitar la carga de jugadas.
+        </div>
+      ) : (
+        <>
+          {!carreraConfirmada && (
+            <div className="rounded-2xl border border-dashed border-emerald-300 bg-emerald-50/60 px-4 py-3 text-center text-xs font-bold text-emerald-800">
+              ② Seleccione la <b>carrera</b> en el semáforo para habilitar la carga de jugadas.
+            </div>
+          )}
+          <SemaforoCarreras
+            hipodromo={hipodromo}
+            fecha={fecha}
+            carreras={carrerasPorDia}
+            activa={carrera}
+            manual={modoManual}
+            onSeleccionar={(n) => {
+              setCarrera(n);
+              setCarreraConfirmada(true);
+              if (!carrerasPorDia.includes(n)) {
+                setCarrerasPorDia((prev) => [...new Set([...prev, n])].sort((a, b) => a - b));
+              }
+            }}
+          />
+        </>
+      )}
 
       {/* Tabla de Carga Individual (clon 1:1 del legacy) */}
+      {!listoParaCargar ? (
+        <div className="rounded-2xl border border-dashed border-line bg-surface px-4 py-6 text-center">
+          <p className="text-sm font-black text-slate-700">
+            {hipodromoElegido ? "② Seleccione la carrera para cargar jugadas" : "① Seleccione el hipódromo para cargar jugadas"}
+          </p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            {hipodromoElegido
+              ? "Elija la carrera en el semáforo de arriba (o active ✍️ Modo Manual para una carrera sin Gaceta)."
+              : "La carga de jugadas queda bloqueada hasta elegir el hipódromo (paso 2)."}
+          </p>
+        </div>
+      ) : (
       <div className="rounded-2xl border border-line bg-surface p-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-xs font-black uppercase tracking-wide text-slate-700">Carga Individual</h3>
@@ -1352,7 +1398,7 @@ const hipodromosDelDia = useMemo(() => {
               const aviso = avisoSaldo(f, enCurso?.cliente1 ?? null, enCurso?.cliente2 ?? null);
               return (
                 <tr key={i} className={`align-middle ${f.error ? "bg-red-50" : ""}`} title={f.error ?? undefined}>
-                  <td className="gj-celda px-1 py-1 text-xs text-slate-400">
+                  <td className="gj-celda px-1 py-0.5 text-xs text-slate-400">
                     <span className="block truncate">
                       {f.error ? (
                         <span className="inline-flex items-center gap-1 text-red-500">
@@ -1363,7 +1409,7 @@ const hipodromosDelDia = useMemo(() => {
                       )}
                     </span>
                   </td>
-                  <td className="gj-celda px-1 py-1 text-center">
+                  <td className="gj-celda px-1 py-0.5 text-center">
                     <div className="flex flex-col items-center gap-0.5">
                       <button
                         type="button"
@@ -1387,7 +1433,7 @@ const hipodromosDelDia = useMemo(() => {
                       )}
                     </div>
                   </td>
-                  <td className="gj-celda px-1 py-1">
+                  <td className="gj-celda px-1 py-0.5">
                     <input
                       value={f.jugada}
                       onChange={(e) => setFila(i, { jugada: e.target.value })}
@@ -1401,7 +1447,7 @@ const hipodromosDelDia = useMemo(() => {
                       className="w-full rounded border border-line bg-white px-1 py-0.5 text-[11px] font-bold leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
                   </td>
-                  <td className={`gj-celda px-1 py-1 ${caballoInvalido ? "bg-red-50" : ""}`}>
+                  <td className={`gj-celda px-1 py-0.5 ${caballoInvalido ? "bg-red-50" : ""}`}>
                     <input
                       value={f.caballo}
                       onChange={(e) => setFila(i, { caballo: e.target.value })}
@@ -1440,7 +1486,7 @@ const hipodromosDelDia = useMemo(() => {
                       )
                     )}
                   </td>
-                  <td className="gj-celda px-1 py-1">
+                  <td className="gj-celda px-1 py-0.5">
                     <input
                       value={f.monto}
                       onChange={(e) => setFila(i, { monto: e.target.value })}
@@ -1457,7 +1503,7 @@ const hipodromosDelDia = useMemo(() => {
                       </span>
                     )}
                   </td>
-                  <td className="gj-celda px-1 py-1 align-middle">
+                  <td className="gj-celda px-1 py-0.5 align-middle">
                     <div className="flex flex-col gap-0.5">
                       <span className="block truncate leading-none">
                         {infoCliente(enCurso?.cliente1 ?? null, f.monto, v.ok && v.cliente1 ? v.cliente1.cobroNeto : 0)}
@@ -1474,7 +1520,7 @@ const hipodromosDelDia = useMemo(() => {
                       />
                     </div>
                   </td>
-                  <td className="gj-celda px-1 py-1 align-middle">
+                  <td className="gj-celda px-1 py-0.5 align-middle">
                     <div className="flex flex-col gap-0.5">
                       <span className="block truncate leading-none">
                         {infoCliente(enCurso?.cliente2 ?? null, f.monto, v.ok && v.cliente2 ? v.cliente2.cobroNeto : 0)}
@@ -1554,8 +1600,8 @@ const hipodromosDelDia = useMemo(() => {
                     const premio = mejorCobre > t.monto;
                     return (
                       <tr key={t.id} className="align-middle bg-white">
-                        <td className="h-10 px-1 py-0 align-middle text-xs text-slate-400">{i + 1}</td>
-                        <td className="h-10 px-1 py-0 align-middle text-center">
+                        <td className="h-8 px-1 py-0 align-middle text-xs text-slate-400">{i + 1}</td>
+                        <td className="h-8 px-1 py-0 align-middle text-center">
                           <button
                             type="button"
                             onClick={() => void editarTicket(t.id)}
@@ -1575,18 +1621,18 @@ const hipodromosDelDia = useMemo(() => {
                             ✕
                           </button>
                         </td>
-                        <td className="h-10 truncate px-1 py-0 align-middle font-mono text-[11px] font-semibold text-slate-700" title={t.comando}>
+                        <td className="h-8 truncate px-1 py-0 align-middle font-mono text-[11px] font-semibold text-slate-700" title={t.comando}>
                           {jugada}
                         </td>
-                        <td className="h-10 px-1 py-0 align-middle font-bold text-slate-800">{t.caballo ? t.caballo.toUpperCase() : "—"}</td>
-                        <td className="h-10 px-1 py-0 align-middle text-right font-black text-slate-900">{monedaFmt(t.monto)}</td>
-                        <td className="h-10 truncate px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={t.cliente1}>
+                        <td className="h-8 px-1 py-0 align-middle font-bold text-slate-800">{t.caballo ? t.caballo.toUpperCase() : "—"}</td>
+                        <td className="h-8 px-1 py-0 align-middle text-right font-black text-slate-900">{monedaFmt(t.monto)}</td>
+                        <td className="h-8 truncate px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={t.cliente1}>
                           {t.cliente1 || "—"}
                         </td>
-                        <td className="h-10 truncate px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={t.cliente2}>
+                        <td className="h-8 truncate px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={t.cliente2}>
                           {t.cliente2 || "—"}
                         </td>
-                        <td className={`h-10 px-1 py-0 align-middle text-right text-[11px] font-black ${premio ? "text-emerald-600" : "text-red-600"}`}>
+                        <td className={`h-8 px-1 py-0 align-middle text-right text-[11px] font-black ${premio ? "text-emerald-600" : "text-red-600"}`}>
                           {premio ? `+${monedaFmt(mejorCobre - t.monto)}` : `SALDO −${monedaFmt(t.monto - mejorCobre)}`}
                         </td>
                       </tr>
@@ -1597,8 +1643,9 @@ const hipodromosDelDia = useMemo(() => {
             </div>
           </div>
         )}
-        {aviso && <p className="mt-2 text-xs font-semibold text-slate-600">{aviso}</p>}
       </div>
+      )}
+      {aviso && <p className="mt-2 text-xs font-semibold text-slate-600">{aviso}</p>}
 
       {/* Barra de comandos flotante (sticky bottom) */}
       <div className="no-print sticky bottom-0 z-30 -mx-4 border-t border-line bg-slate-900 px-4 py-2.5 shadow-[0_-8px_24px_rgba(0,0,0,0.18)] lg:-mx-6">
@@ -1612,8 +1659,10 @@ const hipodromosDelDia = useMemo(() => {
           </button>
           <button
             type="button"
-            onClick={() => setModalResultados(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700"
+            onClick={() => listoParaCargar && setModalResultados(true)}
+            disabled={!listoParaCargar}
+            title={listoParaCargar ? "Cargar el orden de llegada de la carrera" : "Elija hipódromo y carrera para cargar resultados"}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
             🏁 Carga de Resultados <kbd className="rounded bg-slate-600 px-1.5 py-0.5 text-[9px] font-black text-white">Ctrl+Y</kbd>
           </button>
@@ -1668,8 +1717,10 @@ const hipodromosDelDia = useMemo(() => {
           )}
           <button
             type="button"
-            onClick={() => setModalFinalizar(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-success-600 to-emerald-500 px-3 py-2 text-xs font-black text-white hover:brightness-110"
+            onClick={() => listoParaCargar && setModalFinalizar(true)}
+            disabled={!listoParaCargar}
+            title={listoParaCargar ? undefined : "Elija hipódromo y carrera para registrar y finalizar"}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-success-600 to-emerald-500 px-3 py-2 text-xs font-black text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {reapertura ? "💾 Liquidar jugadas agregadas" : "✅ Registrar y Finalizar"}{" "}
             <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+R</kbd>
