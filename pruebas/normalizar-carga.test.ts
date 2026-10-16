@@ -99,38 +99,53 @@ console.log("\n== Regresión del parser legacy (parsearLineaRapida) ==");
 }
 
 // ---------------------------------------------------------------------------
-// 1b. EMPAREJAMIENTO PELADO "4x7" / "(4x7)" (la jugada "match" del locutor)
+// 1b. EMPAREJAMIENTO PELADO "4x7" / "(4x7)" (el "match" del locutor)
+//     Regla del dueño: un emparejamiento SIN fracción se juega PELO A PELO,
+//     así que la JUGADA es "PP" (=10/10) y los ejemplares quedan en CABALLO.
 // ---------------------------------------------------------------------------
-console.log("\n== Emparejamiento pelado: match Alana(4) vs Pajaro(7) ==");
+console.log("\n== Emparejamiento pelado: match Alana(4) vs Pajaro(7) → PP ==");
 
 {
   // La línea tal como llegó (bug 2026-10-12): el locutor escribe el "match"
   // con paréntesis. Antes: "No se detectó una JUGADA válida" y la línea se
-  // perdía; ahora la MISMA expresión es JUGADA (enfrentamiento) y CABALLO
+  // perdía; ahora la JUGADA es "PP" y el CABALLO conserva el enfrentamiento
   // (qué va cada cliente).
   const p = parsearLineaRapida("Juega Alana (4x7) con 7.000,00 da Pajaro");
   si(
-    p?.ok === true && p.ok && p.jugada === "4X7" && p.caballo === "4X7" &&
+    p?.ok === true && p.ok && p.jugada === "PP" && p.caballo === "4X7" &&
       p.monto === "7000" && p.cliente1 === "Alana" && p.cliente2 === "Pajaro",
-    '"(4x7)" → JUGADA 4X7 · CABALLO 4X7 · 7000 · Alana·Pajaro', JSON.stringify(p)
+    '"(4x7)" → JUGADA PP · CABALLO 4X7 · 7000 · Alana·Pajaro', JSON.stringify(p)
   );
 }
 {
   const c = clasificarLineaRapida("(4x7) 7000 Alana Pajaro");
   si(
-    c?.ok === true && c.ok && c.jugada === "4X7" && c.caballo === "4X7" && c.monto === "7000" &&
+    c?.ok === true && c.ok && c.jugada === "PP" && c.caballo === "4X7" && c.monto === "7000" &&
       c.restantes.join("|") === "Alana|Pajaro",
-    '"(4x7) 7000 Alana Pajaro" → 4X7·4X7·7000·[Alana|Pajaro]', JSON.stringify(c)
+    '"(4x7) 7000 Alana Pajaro" → PP·4X7·7000·[Alana|Pajaro]', JSON.stringify(c)
   );
 }
 {
   const c = clasificarLineaRapida("6x7 100 Ana");
-  si(c?.ok === true && c.ok && c.jugada === "6X7" && c.caballo === "6X7" && c.monto === "100",
-    '"6x7 100 Ana" (sin paréntesis) → 6X7·6X7·100', JSON.stringify(c));
+  si(c?.ok === true && c.ok && c.jugada === "PP" && c.caballo === "6X7" && c.monto === "100",
+    '"6x7 100 Ana" (sin paréntesis) → PP·6X7·100', JSON.stringify(c));
 }
 {
-  // Regresión: una expresión con VARIOS ejemplares por lado sigue siendo
-  // CABALLO dividido (dos clientes repartidos), NO un emparejamiento.
+  // Emparejamiento dividido (varios ejemplares por lado) SIN fracción: también
+  // es PELO A PELO ("caballo 1 y 2 x caballo 3 y 4 → PP").
+  const c = clasificarLineaRapida("1-2x3-4 100 Ana");
+  si(c?.ok === true && c.ok && c.jugada === "PP" && c.caballo === "1-2X3-4" && c.monto === "100",
+    '"1-2x3-4 100 Ana" → PP · CABALLO dividido 1-2X3-4', JSON.stringify(c));
+}
+{
+  // CON fracción declarada ("... 10/7") es A PREMIO: la JUGADA es la fracción.
+  const c = clasificarLineaRapida("1-2X3-4 10/7 100 Ana");
+  si(c?.ok === true && c.ok && c.jugada === "10/7" && c.caballo === "1-2X3-4" && c.monto === "100",
+    '"1-2X3-4 10/7 100 Ana" → JUGADA 10/7 · CABALLO dividido 1-2X3-4', JSON.stringify(c));
+}
+{
+  // Regresión: una expresión con VARIOS ejemplares por lado y una JUGADA
+  // explícita de puestos ("1p") conserva esa jugada y el CABALLO dividido.
   const c = clasificarLineaRapida("1-2x3-4 1p 100 Ana");
   si(c?.ok === true && c.ok && c.jugada === "1P" && c.caballo === "1-2X3-4",
     '"1-2x3-4 1p" → JUGADA 1P · CABALLO dividido 1-2X3-4', JSON.stringify(c));
@@ -142,9 +157,9 @@ console.log("\n== Emparejamiento pelado: match Alana(4) vs Pajaro(7) ==");
     clientes: [{ nombre: "Alana" }, { nombre: "Pajaro" }],
   });
   si(
-    r?.ok === true && r.ok && r.jugada === "4X7" && r.caballo === "4X7" && r.monto === "7000" &&
+    r?.ok === true && r.ok && r.jugada === "PP" && r.caballo === "4X7" && r.monto === "7000" &&
       r.cliente1 === "Alana" && r.cliente2 === "Pajaro",
-    "end-to-end: 4X7·4X7·7000·Alana·Pajaro", JSON.stringify(r)
+    "end-to-end: PP·4X7·7000·Alana·Pajaro", JSON.stringify(r)
   );
   si(
     r?.ok === true && r.ok && r.confianza.jugada === "exacto" && r.confianza.caballo === "exacto" &&

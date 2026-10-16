@@ -1528,8 +1528,10 @@ Plano de referencia (19 líneas, tal cual lo pasó el dueño):
 
 **Tareas:**
 1. Cubrir las 19 líneas con un test (en `pruebas/`) que exija
-   `jugada = 10/4 · 10/3,5 · 10/8 · 6x4 · 1x6 …`, `caballo = 2 / 1x6 / 6x4 …`,
-   `monto` y `cliente` (dador) correctos.
+   `jugada = 10/4 · 10/3,5 · 10/8 · PP …`, `caballo = 2 / 1x6 / 6x4 …`,
+   `monto` y `cliente` (dador) correctos. **Nota (2026-10-15):** las 3 líneas de
+   pareo puro (`(1x6)`, `(6x4)`, `(4x6)`) rinden **`PP`** por la regla del ítem 7
+   (no `1x6`/`6x4`); el CABALLO conserva la expresión.
 2. Canonicalizar la forma `A`→`/` en un solo lugar (`10A3` → `10/3`,
    `10a3.5` → `10/3,5`), de modo que `categoriaJugada()` la etiquete
    **"Jugadas a Premio"**.
@@ -1538,35 +1540,61 @@ Plano de referencia (19 líneas, tal cual lo pasó el dueño):
 **Zona:** `src/features/taquilla/lib/normalizar.ts`, `.../validar.ts`,
 `.../nomenclatura.ts` (`RE_PROPORCION`) y `pruebas/`.
 
-### 7. Tipos de jugadas: PP = 10/10 y MATCH sin fracción se juega PP (ajuste + plan)
+### 7. Tipos de jugadas: PP = 10/10 y MATCH sin fracción se guarda como PP — ✅ HECHO
 
 Regla del dueño:
 
 - **PP (pelo a pelo) = proporción 10/10 menos comisión.** Cada lado arriesga lo
   mismo; el ganador cobra la paridad y la casa retiene su comisión sobre la
   ganancia.
-- Cuando una jugada **MATCH** (pareo/emparejamiento, ej. `4x7` · `1x6`) **NO
-  indica si es a fracción o no** (no trae `10/8`, `10A8`, `2x3 10/8`…), el
-  sistema **debe colocarla PP**, es decir **10/10**, y tratarla como tal.
-- El ajuste debe hacerse en la **Carga Individual** y quedar asentado en la
-  **planificación de tipos de jugadas** (`pp significa 10/10`).
+- Un **MATCH/emparejamiento SIN fracción se juega PP**. La JUGADA se guarda como
+  `"PP"` (no como el pareo) y los ejemplares quedan en la columna **CABALLO**.
+  Vale para el pareo simple (`1x6` · `4x7` · `(4x7)` · `6x7`) **y** para el
+  emparejamiento dividido (`1-2x3-4` · `1,2 x 3,4`), tal como lo pidió el dueño:
+  *«cuando es 1x6 la jugada es pp»* · *«caballo 1 y 2 x caballo 3 y 4 la jugada
+  es pelo a pelo»*.
+- Si el match **declara fracción** (`1-2X3-4 10/7` · `10A8 (1x6)` ·
+  `2x3 10/8`), la fracción **prevalece** y la JUGADA queda "A Premio" con esa
+  proporción (la expresión dividida sigue en CABALLO).
 
-**Estado actual en el código:**
-- `src/features/taquilla/lib/validar.ts` → `proyectarFila()`: en el pareo, la
-  fracción no declarada **ya** cae a `P = 10, Q = 10` (`const P = pareo[3] ? … : 10`),
-  o sea **ya proyecta 10/10**. Se **nombró explícitamente** `PROPORCION_PP`
-  (10/10) para que la regla PP=10/10 viva en un solo lugar.
-- El motor (`src/features/motores/lib/puestos.ts`, `boteDe(monto, null)` → rival
-  = monto) y `bettingEngine` (PARIDAD, `multiplicador = 1` → bruto = 2×monto)
-  también liquidan sin fracción **a la par (10/10)**.
-- **Pendiente de UI:** cuando la JUGADA es un MATCH sin fracción, **mostrar el
-  rótulo PP (10/10)** en la Carga Individual y en los reportes, sin perder los
-  ejemplares de la columna CABALLO (el `tipo` guardado sigue siendo el pareo
-  `NxM` para que la liquidación resuelva los bandos).
+**Implementación (orden de la carga rápida):**
+- `src/features/taquilla/lib/validar.ts` → `clasificarLineaRapida()`: la rama del
+  "emparejamiento pelado" ya no copia el pareo como JUGADA; si la expresión
+  apartada es un enfrentamiento de dos lados
+  (`parsearEjemplaresPorCliente(caballoDividido)?.hayDivisor`) y **no** hay jugada
+  declarada, la JUGADA pasa a `"PP"`. Si la línea trae una fracción, el paso de
+  JUGADA ya la tomó (A Premio) y no se llega a esa rama. Se eliminó
+  `RE_EMPAREJAMIENTO_PELADO` (quedó obsoleta).
+- `src/features/taquilla/lib/reparto.ts` → `buscarExpresionEjemplares()`: al
+  recortar la expresión, ahora **no pega el numerador de una fracción** que sigue
+  (`1-2X3-4 10/7` aparta `1-2X3-4`, no `1-2X3-4 10`). Antes, con dos dígitos, el
+  recorte dejaba basura.
+- **Motor verificado (empírico):** `comando:"PP"` + `caballo:"4X7"` (o
+  `1-2X3-4`) resuelve el **enfrentamiento desde el CABALLO**, con el mismo
+  resultado que `comando:"4X7"` — incluso cuando gana un tercero y el lado A
+  sólo llega mejor que el B (semántica MATCHUP, no "el 4 tiene que ser 1º").
+  Por eso guardar la JUGADA como `PP` **no** rompe los bandos.
+- **UI:** `src/features/taquilla/lib/nomenclatura.ts` → `rotuloPareo()`
+  (fuente única). El badge azul se muestra sólo cuando aporta: `"PP (10/10)"`
+  para una fila **legacy** guardada como pareo (`4X7`) y la **fracción** para un
+  match que la declara (`2x3 10/8` → `10/8`); si la JUGADA ya dice `PP`, no
+  agrega nada. `proporcionDeclarada()` y `esPareo()` siguen siendo la base.
+  Usado en `GestionJugadasModule.tsx` (Carga Individual) y `ReporteModule.tsx`.
+
+> **Corrección de la nota previa:** el borrador decía que «el `tipo` guardado
+> sigue siendo el pareo `NxM` para que la liquidación resuelva los bandos». Con
+> la aclaración del dueño (2026-10-15) **el tipo guardado ahora ES `"PP"`**; los
+> bandos se resuelven desde el CABALLO, que el motor ya leía.
+
+**Tests:** `pruebas/pp-1010.test.ts` (clasificación → PP y fracción, helpers y
+rótulo), `pruebas/normalizar-carga.test.ts` (emparejamiento pelado → PP; `1p`
+explícito y dividido con fracción) y `pruebas/carga-rapida-apremio.test.ts`
+(las 3 líneas de pareo del plano —`(1x6)`, `(6x4)`, `(4x6)`— ahora rinden `PP`).
 
 **Zona:** `src/features/taquilla/lib/validar.ts`,
-`src/features/taquilla/lib/nomenclatura.ts`,
-`src/features/gestion/components/GestionJugadasModule.tsx` y los reportes.
+`src/features/taquilla/lib/reparto.ts`, `src/features/taquilla/lib/nomenclatura.ts`,
+`src/features/gestion/components/GestionJugadasModule.tsx`,
+`src/features/saldos/components/ReporteModule.tsx` y `pruebas/`.
 
 ### 8. Reporte de Liquidación: vuelve a mostrar al que DA y a los GANADORES (bug reabierto) — ✅ corregido
 

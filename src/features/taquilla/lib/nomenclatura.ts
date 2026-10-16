@@ -454,3 +454,39 @@ export function etiquetaModalidad(m: ModalidadPuestos): string {
     ? "Jugadas a Premio"
     : "Jugadas de Puestos";
 }
+
+/**
+ * ÍTEM 7 — Proporción de una jugada para el rótulo de la UI. Un pareo/MATCH que
+ * NO declara fracción (o un PP) es PELO A PELO = 10/10; si declara fracción
+ * ("2x3 10/8") se muestra esa. Fuente única del "PP (10/10)".
+ */
+export function proporcionDeclarada(jugada: string): string {
+  const m = /(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)/.exec(String(jugada ?? ""));
+  return m ? `${m[1]}/${m[2]}` : "10/10";
+}
+
+/** ¿Es un pareo/MATCH? (la jugada es "NxM"/"N*M", los ejemplares traen "x", o es un PP). */
+export function esPareo(jugada: string, caballo = ""): boolean {
+  const t = String(jugada ?? "");
+  return /\d\s*[X*]\s*\d/i.test(t) || /[X*]/i.test(String(caballo)) || /^\s*PP/i.test(t);
+}
+
+/**
+ * ÍTEM 7 — Rótulo del "match" para la UI. Desde la regla del dueño ("cuando es
+ * 1x6 la jugada es PP") un match sin fracción YA se guarda con `nombre_jugada`
+ * "PP", así que el rótulo solo aporta cuando:
+ *   · la fila es LEGACY y quedó guardada como pareo ("4X7") → "PP (10/10)";
+ *   · el match declara fracción ("2x3 10/8") → se muestra esa fracción.
+ * Devuelve "" cuando la jugada no es un pareo (no hay nada que aclarar).
+ */
+export function rotuloPareo(jugada: string, caballo = ""): string {
+  if (!esPareo(jugada, caballo)) return "";
+  const t = String(jugada ?? "").trim();
+  // La jugada nueva ya dice "PP": el rótulo no aportaría nada.
+  if (/^\s*pp\b/i.test(t)) return "";
+  const prop = proporcionDeclarada(t);
+  // Match con fracción declarada ("2x3 10/8"): se muestra esa fracción.
+  if (prop !== "10/10") return prop;
+  // Pareo LEGACY sin código PP ("4X7"): aclarar que se juega a la par (10/10).
+  return "PP (10/10)";
+}

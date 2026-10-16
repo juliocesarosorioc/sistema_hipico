@@ -12,17 +12,9 @@ import { etiquetaDia } from "@/features/liquidacion/lib/semana";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
 
 const fmtMonto = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-/**
- * Proporción declarada de un pareo ("2x3 10/8" → "10/8"). Un MATCH sin fracción
- * es PELO A PELO = 10/10, así que el rótulo de la UI lo dice explícito.
- */
-function proporcionDe(jugada: string): string {
-  const m = /(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/.exec(String(jugada ?? ""));
-  return m ? `${m[1]}/${m[2]}` : "10/10";
-}
 
 function Signo({ v, vacio }: { v: number | null; vacio?: boolean }) {
   if (v === null) {
@@ -256,9 +248,9 @@ export function ReporteModule() {
                                     </td>
                                     <td className="py-1 px-2 font-medium text-gray-800">
                                       {f.jugada}
-                                      {f.esPareo && (
+                                      {rotuloPareo(f.jugada, f.caballo) && (
                                         <span className="ml-1 rounded bg-blue-600 text-white text-[9px] font-bold px-1 py-0.5">
-                                          PP ({proporcionDe(f.jugada)})
+                                          {rotuloPareo(f.jugada, f.caballo)}
                                         </span>
                                       )}
                                     </td>

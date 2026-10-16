@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { proyectarFila } from "@/features/taquilla/lib/validar";
 import { clienteConSaldoDescontado, proyectarFilasEnOrden } from "@/features/taquilla/lib/saldosEnCurso";
 import { normalizarLineaRapida, type ConfianzaCampo } from "@/features/taquilla/lib/normalizar";
+import { rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
 import { HorseBadge } from "@/shared/components/ui/HorseChips";
 import { useTaquillaStore, type TicketTaquilla } from "@/shared/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
@@ -1982,6 +1983,14 @@ const hipodromosDelDia = useMemo(() => {
                           key={i}
                           className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md bg-white px-2 py-1 text-[10px] leading-tight text-slate-600"
                         >
+                          {rotuloPareo(p.jugada, p.caballo) && (
+                            <span
+                              className="rounded bg-blue-600 px-1 py-0.5 text-[9px] font-bold text-white"
+                              title="Ítem 7: un MATCH sin fracción se juega PELO A PELO (10/10)"
+                            >
+                              {rotuloPareo(p.jugada, p.caballo)}
+                            </span>
+                          )}
                           {celdas.map(([k, v, conf]) => (
                             <span key={k} title={`${k}: ${v}`} className={cnConfianza(conf)}>
                               <b className="mr-0.5 font-black text-slate-400">{k}:</b> {v}

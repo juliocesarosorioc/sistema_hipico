@@ -32,7 +32,7 @@ const toNum = (s: string): number => {
 const PLANO: Array<{ linea: string; jugada: string; caballo: string; monto: number; juega: string; da: string }> = [
   { linea: "1) Juega Wisky 10A4 (2) con 10.000,00 da Gareth", jugada: "10A4", caballo: "2", monto: 10000, juega: "Wisky", da: "Gareth" },
   { linea: "2) Juega Miguelon 10A4 (2) con 10.000,00 da Paris", jugada: "10A4", caballo: "2", monto: 10000, juega: "Miguelon", da: "Paris" },
-  { linea: "3) Juega Benelli (1x6) con 5.000,00 da Sanchez", jugada: "1X6", caballo: "1X6", monto: 5000, juega: "Benelli", da: "Sanchez" },
+  { linea: "3) Juega Benelli (1x6) con 5.000,00 da Sanchez", jugada: "PP", caballo: "1X6", monto: 5000, juega: "Benelli", da: "Sanchez" },
   { linea: "4) Juega Guason 10A3.5 (2) con 30.000,00 da Parcero", jugada: "10A3.5", caballo: "2", monto: 30000, juega: "Guason", da: "Parcero" },
   { linea: "5) Juega Enger 10A3 (2) con 100.000,00 da Parcero", jugada: "10A3", caballo: "2", monto: 100000, juega: "Enger", da: "Parcero" },
   { linea: "6) Juega Miguelon 10A3 (2) con 20.000,00 da Yerson", jugada: "10A3", caballo: "2", monto: 20000, juega: "Miguelon", da: "Yerson" },
@@ -42,11 +42,11 @@ const PLANO: Array<{ linea: string; jugada: string; caballo: string; monto: numb
   { linea: "10) Juega Caracazo 10A3 (2) con 20.000,00 da Rh", jugada: "10A3", caballo: "2", monto: 20000, juega: "Caracazo", da: "Rh" },
   { linea: "11) Juega Alambre 10A3 (2) con 24.512,50 da Rh", jugada: "10A3", caballo: "2", monto: 24512.5, juega: "Alambre", da: "Rh" },
   { linea: "12) Juega Ps 10A3 (2) con 35.000,00 da Rh", jugada: "10A3", caballo: "2", monto: 35000, juega: "Ps", da: "Rh" },
-  { linea: "13) Juega Jaime (6x4) con 5.700,00 da Gringo", jugada: "6X4", caballo: "6X4", monto: 5700, juega: "Jaime", da: "Gringo" },
+  { linea: "13) Juega Jaime (6x4) con 5.700,00 da Gringo", jugada: "PP", caballo: "6X4", monto: 5700, juega: "Jaime", da: "Gringo" },
   { linea: "14) Juega Money 10A3 (2) con 20.000,00 da Newyork", jugada: "10A3", caballo: "2", monto: 20000, juega: "Money", da: "Newyork" },
   { linea: "15) Juega Money 10A3 (2) con 51.510,00 da Yayaju", jugada: "10A3", caballo: "2", monto: 51510, juega: "Money", da: "Yayaju" },
   { linea: "16) Juega Wisky 10A3 (2) con 20.000,00 da Yayaju", jugada: "10A3", caballo: "2", monto: 20000, juega: "Wisky", da: "Yayaju" },
-  { linea: "17) Juega Gringo (4x6) con 10.000,00 da Ele", jugada: "4X6", caballo: "4X6", monto: 10000, juega: "Gringo", da: "Ele" },
+  { linea: "17) Juega Gringo (4x6) con 10.000,00 da Ele", jugada: "PP", caballo: "4X6", monto: 10000, juega: "Gringo", da: "Ele" },
   { linea: "18) Juega Wisky 10A3 (2) con 10.000,00 da Houston", jugada: "10A3", caballo: "2", monto: 10000, juega: "Wisky", da: "Houston" },
   { linea: "19) Juega Paizita 10A3 (2) con 80.000,00 da Wilmer", jugada: "10A3", caballo: "2", monto: 80000, juega: "Paizita", da: "Wilmer" },
 ];

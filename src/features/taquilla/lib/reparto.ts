@@ -261,15 +261,18 @@ export function buscarExpresionEjemplares(
   const m = RE_EJEMPLARES_DIVIDIDOS.exec(t);
   if (!m) return null;
 
-  /* Si justo después de la expresión hay una letra, el último número se pegó
-     a una jugada — "1,2 x 3,4 1p 100" captura "1,2 x 3,4 1" y el "1" es de
-     "1p", no un ejemplar. Se recorta por el final. No se puede resolver con un
-     lookahead en el regex porque el propio divisor "x" también es una letra. */
+  /* Si justo después de la expresión hay una letra (o el numerador de una
+     fracción, "1-2x3-4 10/7"), el último número se pegó a una jugada — "1,2 x
+     3,4 1p 100" captura "1,2 x 3,4 1" y el "1" es de "1p", no un ejemplar. Se
+     recorta por el final, y se recorta el número ENTERO (no un dígito): si no,
+     "1-2x3-4 10/7" dejaría "...10" o "...1" en vez de "1-2x3-4". No se puede
+     resolver con un lookahead en el regex porque el propio divisor "x" también
+     es una letra. */
   let largo = m[0].length;
   while (largo > 0) {
     const siguiente = t[m.index + largo];
-    if (!siguiente || !/[a-z]/i.test(siguiente) || !/\d$/.test(m[0].slice(0, largo))) break;
-    largo -= 1;
+    if (!siguiente || !/[a-z/]/i.test(siguiente) || !/\d$/.test(m[0].slice(0, largo))) break;
+    while (largo > 0 && /\d/.test(m[0][largo - 1])) largo -= 1;
     while (largo > 0 && /[\s,-]/.test(m[0][largo - 1])) largo -= 1;
   }
   const texto = m[0].slice(0, largo).trim();

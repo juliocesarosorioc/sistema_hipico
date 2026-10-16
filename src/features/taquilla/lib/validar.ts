@@ -8,6 +8,7 @@ import {
   disponibleParaJugar,
   extraerProporcion,
   buscarExpresionEjemplares,
+  parsearEjemplaresPorCliente,
   type ClienteRiesgo,
   type Reparto,
 } from "@/features/taquilla/lib/reparto";
@@ -540,10 +541,6 @@ const RE_PURGADO = /[^\p{L}\p{N}.,/x-]/gu;
 const RE_NUMERICO = /^\d+(?:[.,]\d+)*$/;
 /** Pareo de caballos: "6x7". */
 const RE_PAREO = /^\d+[x]\d+$/;
-/** Emparejamiento PELADO "4x7" / "(4x7)": un solo ejemplar por lado. El locutor
- *  lo dicta como "match" (cada cliente va a su caballo), así que la misma
- *  expresión es JUGADA (enfrentamiento) y CABALLO (quién va a cada lado). */
-const RE_EMPAREJAMIENTO_PELADO = /^\d{1,2}\s*x\s*\d{1,2}$/i;
 /** Pareo con proporción: "2x3" seguido de "10/8" (formato legacy). */
 const RE_PAREO_A = /^\d+[x]\d+$/;
 const RE_PAREO_B = /^\d+\/\d+(?:[.,]\d+)?$/;
@@ -679,14 +676,15 @@ export function clasificarLineaRapida(linea: string): ClasificacionLinea | null 
   }
 
   if (!jugada) {
-    /* Emparejamiento PELADO sin nomenclatura de jugada ("4x7" o "(4x7)"): la
-       MISMA expresión dividida es el enfrentamiento. La casa lo escribe como
-       "match" (cada cliente va a su caballo) y sin este paso la línea quedaba
-       ilegible ("No se detectó una JUGADA válida") aunque el operador sí la
-       escribió. Se copia ya compacta ("4X7") para que el motor la lea, y el
-       CABALLO ya quedó con la misma expresión dividida. */
-    if (RE_EMPAREJAMIENTO_PELADO.test(caballoDividido)) {
-      jugada = caballoDividido.replace(/\s+/g, "").toUpperCase();
+    /* Emparejamiento PELADO sin nomenclatura de jugada ("4x7", "(4x7)",
+       "1-2 x 3-4"): el "match" del locutor, donde cada cliente va a su caballo.
+       La casa lo juega PELO A PELO (regla del dueño: "cuando es 1x6 la jugada
+       es PP"), así que la JUGADA es "PP" (= 10/10) y los ejemplares quedan en
+       CABALLO. Si la línea declarara fracción ("1-2x3-4 10/7") ya se habría
+       apartado antes como JUGADA (A Premio) y no se llegaría acá. El motor
+       resuelve el enfrentamiento desde el CABALLO, igual que con "4X7". */
+    if (parsearEjemplaresPorCliente(caballoDividido)?.hayDivisor) {
+      jugada = "PP";
     }
   }
 
