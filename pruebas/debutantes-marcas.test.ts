@@ -8,9 +8,9 @@
 // La regla es una sola: si el switch dice que los debutantes NO valen, el
 // debutante se mete al NV. Todo lo demas (no jugable, no rival) sale de ahi.
 // ============================================================================
-import { calcularRivales, separarNumeros } from "../src/lib/marcas/jerarquia";
-import { revisarConfig } from "../src/lib/marcas/registradas";
-import type { EjemplarCarreraCentral } from "../src/lib/carreras/central";
+import { calcularRivales, separarNumeros } from "../src/features/marcas/lib/jerarquia";
+import { revisarConfig } from "../src/features/marcas/lib/registradas";
+import type { EjemplarCarreraCentral } from "../src/features/carreras/lib/central";
 
 let pasan = 0;
 let fallan = 0;

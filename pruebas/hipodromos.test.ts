@@ -1,5 +1,5 @@
 // ============================================================================
-// Pruebas de la logica PURA del modulo Hipodromos (src/lib/hipodromos/tipos.ts).
+// Pruebas de la logica PURA del modulo Hipodromos (src/features/hipodromos/lib/tipos.ts).
 //
 // El CRUD de hipodromos no es cosmetico: antes, `listarHipodromos` filtraba por
 // una lista FIJA de nombres (VE + USA) y el "borrado" era un DELETE fisico que
@@ -22,7 +22,7 @@ import {
   levenshteinNorm,
   normalizarEstado,
   type Hipodromo,
-} from "../src/lib/hipodromos/tipos";
+} from "../src/features/hipodromos/lib/tipos";
 
 let pasan = 0;
 let fallan = 0;

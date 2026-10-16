@@ -5,7 +5,7 @@
 //   · que el SQL de la migración exista y declare lo que la venta necesita
 //     (venta + anulación + índice de idempotencia + grants), para que un rename
 //     accidental no deje la Taquilla escribiendo en el aire.
-import { numeroDeCaballo, claveIdempotenciaJugada } from "../src/lib/taquilla/venta";
+import { numeroDeCaballo, claveIdempotenciaJugada } from "../src/features/taquilla/lib/venta";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 

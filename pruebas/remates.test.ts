@@ -1,5 +1,5 @@
 // ============================================================================
-// Pruebas de la lógica PURA de Remates (src/lib/remates/core.ts).
+// Pruebas de la lógica PURA de Remates (src/features/remates/lib/core.ts).
 //
 // Cubre lo que no puede fallar sin plata de por medio:
 //   - La derivación de ejemplares del programa central: que los candidatos
@@ -31,7 +31,7 @@ import {
   planCierreRemate,
   edicionFilaRemate,
   ESCALONES_PUJA,
-} from "../src/lib/remates/core";
+} from "../src/features/remates/lib/core";
 
 let pasan = 0;
 let fallan = 0;

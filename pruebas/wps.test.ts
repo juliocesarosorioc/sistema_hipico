@@ -17,10 +17,10 @@
 //
 // Corre con pruebas/run-marcas.ps1
 // ============================================================================
-import { liquidarWps, tipoWps, claveMatrizWps, dividendoWps, pagoPorUno, PREFIJO_WPS } from "../src/lib/motores/wps";
-import { liquidarOficial } from "../src/lib/motores/oficiales";
-import type { TicketMotor } from "../src/lib/bettingEngine";
-import type { PizarraCarrera } from "../src/lib/liquidacion";
+import { liquidarWps, tipoWps, claveMatrizWps, dividendoWps, pagoPorUno, PREFIJO_WPS } from "../src/features/motores/lib/wps";
+import { liquidarOficial } from "../src/features/motores/lib/oficiales";
+import type { TicketMotor } from "../src/features/betting/lib/bettingEngine";
+import type { PizarraCarrera } from "../src/features/liquidacion/lib/liquidacion";
 
 let pasan = 0;
 let fallan = 0;

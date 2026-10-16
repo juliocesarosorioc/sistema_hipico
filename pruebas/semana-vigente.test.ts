@@ -11,8 +11,8 @@ import {
   rangoSemanaDeGrupo,
   rangoSemanaDesde,
   semanaVigenteDe,
-} from "../src/lib/liquidacion/semana";
-import { rangoACerrar } from "../src/lib/liquidacion/cierres";
+} from "../src/features/liquidacion/lib/semana";
+import { rangoACerrar } from "../src/features/liquidacion/lib/cierres";
 
 /** Días que abarca un rango, ambos extremos incluidos. */
 function diasDe(r: { inicio: string; fin: string }): number {

@@ -1,5 +1,5 @@
-import { mensajeResultadoDeCarrera } from "../src/lib/taquilla/mensajeResultado";
-import type { PizarraCarrera } from "../src/lib/liquidacion";
+import { mensajeResultadoDeCarrera } from "../src/features/taquilla/lib/mensajeResultado";
+import type { PizarraCarrera } from "../src/features/liquidacion/lib/liquidacion";
 
 const pizarra: PizarraCarrera = {
   primero: "7",

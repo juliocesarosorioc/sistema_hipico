@@ -4,7 +4,7 @@
 // `proyectarFila` topa cada jugada contra el saldo del cliente, pero mirando
 // SOLO esa fila: con dos jugadas de 800 y un saldo de 1000, las dos se
 // autorizaban completas y la segunda la rechazaba la RPC al cobrar. Este test
-// protege el tope "en orden" (ver src/lib/taquilla/saldosEnCurso.ts).
+// protege el tope "en orden" (ver src/features/taquilla/lib/saldosEnCurso.ts).
 //
 // Corre con:  node pruebas/correr.cjs   (o npx tsx pruebas/saldos-en-curso.test.ts)
 // ============================================================================
@@ -12,8 +12,8 @@ import {
   clienteConSaldoDescontado,
   proyectarFilasEnOrden,
   type FilaDeCarga,
-} from "../src/lib/taquilla/saldosEnCurso";
-import { proyectarFila } from "../src/lib/taquilla/validar";
+} from "../src/features/taquilla/lib/saldosEnCurso";
+import { proyectarFila } from "../src/features/taquilla/lib/validar";
 
 let pasan = 0;
 let fallan = 0;

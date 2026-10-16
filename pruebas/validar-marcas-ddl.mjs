@@ -678,11 +678,11 @@ console.log("\n[9] sql/grupos_venta_lectura.sql (lectura de grupos para anon)");
   // directo vuelve vacio, porque RLS responde 200 con [] y no un error.
   let libs = "";
   try {
-    libs = readFileSync("src/lib/grupos.ts", "utf8");
+    libs = readFileSync("src/features/grupos/lib/grupos.ts", "utf8");
   } catch {
     libs = "";
   }
-  check("src/lib/grupos.ts existe", libs.length > 0);
+  check("src/features/grupos/lib/grupos.ts existe", libs.length > 0);
   if (libs) {
     // El SELECT solo se da por bueno con filas (o se lanza para caer al RPC);
     // con lista vacia el flujo sigue hasta el RPC security definer.

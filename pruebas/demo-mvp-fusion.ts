@@ -19,22 +19,22 @@
 //   node node_modules/typescript/bin/tsc -p pruebas/tsconfig.json
 //   node -r ./pruebas/_alias.cjs .tsbuild-pruebas/pruebas/demo-mvp-fusion.js
 // ============================================================================
-import { normalizarLineaRapida } from "../src/lib/taquilla/normalizar";
+import { normalizarLineaRapida } from "../src/features/taquilla/lib/normalizar";
 import {
   mensajePlanoDeCarrera,
   mensajeResultadoDeCarrera,
   resultadoDeJugada,
   type TicketMensaje,
-} from "../src/lib/taquilla/mensajeResultado";
+} from "../src/features/taquilla/lib/mensajeResultado";
 import {
   fmtMonto,
   relacionResultados,
   type MetaCarrera,
   type JugadaRelacion,
   type TicketApuestaJugada,
-} from "../src/lib/reportGenerator";
-import { parsearNini, normalizarNini } from "../src/lib/bettingEngine";
-import type { PizarraCarrera } from "../src/lib/liquidacion";
+} from "../src/features/impresion/lib/reportGenerator";
+import { parsearNini, normalizarNini } from "../src/features/betting/lib/bettingEngine";
+import type { PizarraCarrera } from "../src/features/liquidacion/lib/liquidacion";
 
 const GRUPO = "MVP FUSION";
 const HIPODROMO = "La Rinconada";

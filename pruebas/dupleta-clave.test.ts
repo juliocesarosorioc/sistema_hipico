@@ -8,12 +8,12 @@
 //   "LARINCONADA|2026-10-04|13|4".
 // El `delete().eq("clave", ...)` no encontraba ninguna fila y devolvía ok.
 //
-// Ahora hay UN solo criterio (`claveDeDupleta` en src/lib/dupletas.ts) y el
+// Ahora hay UN solo criterio (`claveDeDupleta` en src/features/dupletas/lib/dupletas.ts) y el
 // listado pega la `clave` real de la fila al estado.
 //
 // Corre con:  node pruebas/correr.cjs
 // ============================================================================
-import { claveDupleta, claveDeDupleta } from "../src/lib/dupletas";
+import { claveDupleta, claveDeDupleta } from "../src/features/dupletas/lib/dupletas";
 
 let pasan = 0;
 let fallan = 0;

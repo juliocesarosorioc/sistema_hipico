@@ -2,7 +2,7 @@
 // Genera el seed SQL del MAESTRO de seguridad a partir del registro de
 // capacidades del código, para que la base y el código no puedan divergir.
 //
-//   node pruebas/generar-seed-maestro.mjs > src/db/maestro_seed.sql
+//   node pruebas/generar-seed-maestro.mjs > src/core/db/maestro_seed.sql
 //
 // El registro está en TypeScript: `cargar-maestro.mjs` lo compila con el mismo
 // compilador del proyecto a un temporal y lo importa desde ahí. Determinista:
@@ -10,7 +10,7 @@
 //
 // El archivo que genera es idempotente: se puede aplicar más de una vez.
 //
-//   node pruebas/generar-seed-maestro.mjs src/db/maestro_seed.sql
+//   node pruebas/generar-seed-maestro.mjs src/core/db/maestro_seed.sql
 // ============================================================================
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -43,9 +43,9 @@ const arr = (xs) => `array[${(xs ?? []).map(q).join(", ")}]::text[]`;
 const L = [];
 L.push("-- ============================================================================");
 L.push("-- SEED del maestro de seguridad - GENERADO AUTOMATICAMENTE. NO EDITAR A MANO.");
-L.push("--   Fuente:    src/lib/seguridad/capacidades.ts");
-L.push("--   Regenerar: node pruebas/generar-seed-maestro.mjs > src/db/maestro_seed.sql");
-L.push("--   Aplicar DESPUES de src/db/seguridad_maestro.sql (que crea el esquema).");
+L.push("--   Fuente:    src/features/seguridad/lib/capacidades.ts");
+L.push("--   Regenerar: node pruebas/generar-seed-maestro.mjs > src/core/db/maestro_seed.sql");
+L.push("--   Aplicar DESPUES de src/core/db/seguridad_maestro.sql (que crea el esquema).");
 L.push("-- ============================================================================");
 L.push("");
 L.push(`-- ${CAPACIDADES.length} capacidades en ${MODULOS_ESQUEMA.length} modulos.`);
@@ -75,7 +75,7 @@ L.push("");
 L.push("-- ------------------------- retirar capacidades que el maestro ya no declara");
 L.push("-- Sin esto, una capacidad borrada del código sigue viva en `public.capacidad`");
 L.push("-- y el sidebar sigue authorizing un control que ya no existe. El RBAC viejo");
-L.push("-- (`src/db/rbac.sql`) usa `public.permisos`, otra tabla: no se toca acá.");
+L.push("-- (`src/core/db/rbac.sql`) usa `public.permisos`, otra tabla: no se toca acá.");
 L.push(
   `delete from public.capacidad c\n` +
     `where not exists (select 1 from unnest(${arr(CAPACIDADES.map((c) => c.clave))}) as v(clave) where v.clave = c.clave);`
@@ -106,7 +106,7 @@ L.push("");
 // ============================================================================
 L.push("-- ============================================ ABAC: atributos y reglas");
 L.push("-- Catálogo de atributos y reglas por capacidad. El código que decide está");
-L.push("-- en src/lib/seguridad/abac.ts; la base evalúa lo mismo en");
+L.push("-- en src/features/seguridad/lib/abac.ts; la base evalúa lo mismo en");
 L.push("-- public.puede_contexto(u, clave, ctx), para que la policy y la UI den");
 L.push("-- la misma respuesta. Si se edita una regla, se regenera este archivo.");
 L.push("");

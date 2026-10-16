@@ -200,11 +200,11 @@ console.log("\n[5] El CODIGO ya evita el problema (si no, hay que correr esto a 
 {
   let rpc = "";
   try {
-    rpc = readFileSync("src/lib/tablas/rpc.ts", "utf8");
+    rpc = readFileSync("src/features/tablas/lib/rpc.ts", "utf8");
   } catch {
     /* vacio */
   }
-  check("src/lib/tablas/rpc.ts existe", rpc.length > 0);
+  check("src/features/tablas/lib/rpc.ts existe", rpc.length > 0);
   check(
     "publicarTabla sincroniza el central",
     /publicarTabla[\s\S]{0,900}sincronizarCentralDesdeTabla/.test(rpc),
@@ -215,7 +215,7 @@ console.log("\n[5] El CODIGO ya evita el problema (si no, hay que correr esto a 
     /publicarTablasLote[\s\S]{0,2600}sincronizarCentralDesdeTabla/.test(rpc),
     "el lote ('Publicar todas') es la via por la que se publican las 13 carreras"
   );
-  check("la sincronizacion existe en el modulo", /export async function sincronizarCentralDesdeTabla/.test(readFileSync("src/lib/carreras-dia.ts", "utf8")));
+  check("la sincronizacion existe en el modulo", /export async function sincronizarCentralDesdeTabla/.test(readFileSync("src/features/carreras/lib/carreras-dia.ts", "utf8")));
 
   // Y la publicacion no se cae si el central falla: la tabla ya esta publicada.
   const bloque = /publicarTabla[\s\S]{0,1200}?\n}/.exec(rpc)?.[0] ?? "";
@@ -241,11 +241,11 @@ console.log("\n[5] El CODIGO ya evita el problema (si no, hay que correr esto a 
 
   let modulo = "";
   try {
-    modulo = readFileSync("src/components/tablas/TablasModule.tsx", "utf8");
+    modulo = readFileSync("src/features/tablas/components/TablasModule.tsx", "utf8");
   } catch {
     /* vacio */
   }
-  check("src/components/tablas/TablasModule.tsx existe", modulo.length > 0);
+  check("src/features/tablas/components/TablasModule.tsx existe", modulo.length > 0);
   check(
     "el publicador del modulo propaga el aviso de central",
     /return\s*\{\s*ok:\s*true,\s*error:\s*r\.error\s*\}/.test(modulo),

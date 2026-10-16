@@ -415,7 +415,7 @@ else mal("el filtro por tipo deja pasar capacidades de otro tipo");
     // comparar contra una ruta que PUERTAS declara PÚBLICA: esa lista tiene una
     // sola fuente de verdad y una copia se queda vieja sola.
     const publicas = PUERTAS.filter((p) => p.publica).map((p) => p.ruta);
-    for (const rel of ["src/components/layout/AppShell.tsx", "src/components/auth/AuthBootstrap.tsx"]) {
+    for (const rel of ["src/shared/components/layout/AppShell.tsx", "src/features/auth/components/AuthBootstrap.tsx"]) {
       const sinComentarios = readFileSync(join(RAIZ, rel), "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, " ")
         .split("\n")
@@ -999,7 +999,7 @@ console.log("\n== ABAC: reglas de atributo");
 // `noEmit: false` porque node no corre TS, así que EMITE. Con `--outDir` (que es lo
 // que pasa run-marcas.ps1) el .js cae en una carpeta temporal y no molesta. Pero un
 // `tsc -p pruebas/tsconfig.json` a pelo lo deja junto al .ts: se juntaron 23 .js en
-// src/ y `next build` empezó a compilar src/lib/seguridad/capacidades.js, que reventó
+// src/ y `next build` empezó a compilar src/features/seguridad/lib/capacidades.js, que reventó
 // con "Cannot use 'import.meta' outside a module".
 //
 // El síntoma (un error de build en una ruta que nadie tocó) no señala la causa, y el
@@ -1057,8 +1057,8 @@ console.log("\n== ABAC: reglas de atributo");
 // El login tiene que quedarse quieto esperando usuario y contraseña. Estos checks
 // fijan las dos mitades: no se redirige sin sesión, y no se re-suscribe en bucle.
 {
-  const boot = readFileSync(join(RAIZ, "src/components/auth/AuthBootstrap.tsx"), "utf8");
-  const login = readFileSync(join(RAIZ, "src/components/auth/PantallaLogin.tsx"), "utf8");
+  const boot = readFileSync(join(RAIZ, "src/features/auth/components/AuthBootstrap.tsx"), "utf8");
+  const login = readFileSync(join(RAIZ, "src/features/auth/components/PantallaLogin.tsx"), "utf8");
   const store = readFileSync(join(RAIZ, "src/store/useAuthStore.ts"), "utf8");
 
   // La redirección se tiene que mirar en el store, no en el evento de sesión.

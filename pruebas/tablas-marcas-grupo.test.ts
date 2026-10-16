@@ -10,8 +10,8 @@
 import {
   construirTextoWhatsAppMatriz,
   construirTextoWhatsAppReporte,
-} from "../src/lib/impresion/exportar";
-import { construirTextoWhatsAppMarcas, type BloqueMarcas } from "../src/lib/impresion/marcas";
+} from "../src/features/impresion/lib/exportar";
+import { construirTextoWhatsAppMarcas, type BloqueMarcas } from "../src/features/impresion/lib/marcas";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -94,12 +94,12 @@ ok("cuenta las carreras del día", textoMarcas.includes("*CARRERAS:* 2"));
 // ---------------------------------------------------------------------------
 console.log("\n[4] componentes de Tablas y Marcas → enviarAlGrupoWsp");
 const raiz = process.cwd();
-const modal = readFileSync(join(raiz, "src", "components", "tablas", "ConfigImpresionModal.tsx"), "utf8");
-const panel = readFileSync(join(raiz, "src", "components", "marcas", "PanelMarcas.tsx"), "utf8");
+const modal = readFileSync(join(raiz, "src", "features", "tablas", "components", "ConfigImpresionModal.tsx"), "utf8");
+const panel = readFileSync(join(raiz, "src", "features", "marcas", "components", "PanelMarcas.tsx"), "utf8");
 
 ok(
   "el modal de impresión importa enviarAlGrupoWsp",
-  /import\s*\{[^}]*enviarAlGrupoWsp[^}]*\}\s*from\s*"@\/lib\/whatsapp"/.test(modal)
+  /import\s*\{[^}]*enviarAlGrupoWsp[^}]*\}\s*from\s*"@\/features\/whatsapp\/lib\/whatsapp"/.test(modal)
 );
 ok(
   "el modal envía las Tablas al grupo con módulo \"tablas\"",
@@ -113,7 +113,7 @@ ok("el modal ofrece el botón \"Al grupo\"", modal.includes("📤 Al grupo"));
 
 ok(
   "el panel de marcas importa enviarAlGrupoWsp",
-  /import\s*\{\s*enviarAlGrupoWsp\s*\}\s*from\s*"@\/lib\/whatsapp"/.test(panel)
+  /import\s*\{\s*enviarAlGrupoWsp\s*\}\s*from\s*"@\/features\/whatsapp\/lib\/whatsapp"/.test(panel)
 );
 ok(
   "el panel envía las Marcas al grupo con módulo \"marcas\"",

@@ -9,7 +9,7 @@ import {
   etiquetaDeValor,
   filtrarOpciones,
   hayTextoLibre,
-} from "../src/components/ui/searchable-select-teclado";
+} from "../src/shared/components/ui/searchable-select-teclado";
 
 let ok = 0;
 let fallos = 0;

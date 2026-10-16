@@ -17,7 +17,7 @@ import { pathToFileURL } from "node:url";
 export const RAIZ = process.cwd();
 
 /**
- * Compila `src/lib/seguridad/{capacidades,resolver}.ts` y devuelve sus
+ * Compila `src/features/seguridad/lib/{capacidades,resolver}.ts` y devuelve sus
  * exportaciones combinadas. Lanza con un mensaje claro si tsc falla.
  */
 const MODULOS = ["capacidades", "resolver", "vigente", "abac", "tipos"];
@@ -48,9 +48,9 @@ export async function cargarAbac() {
         lib: ["dom", "es2022"],
       },
       files: [
-        join(RAIZ, "src/lib/seguridad/tipos.ts"),
-        join(RAIZ, "src/lib/seguridad/capacidades.ts"),
-        join(RAIZ, "src/lib/seguridad/abac.ts"),
+        join(RAIZ, "src/features/seguridad/lib/tipos.ts"),
+        join(RAIZ, "src/features/seguridad/lib/capacidades.ts"),
+        join(RAIZ, "src/features/seguridad/lib/abac.ts"),
       ],
     }),
     "utf8"
@@ -103,7 +103,7 @@ export async function cargarRegistro() {
         skipLibCheck: true,
         rootDir: RAIZ,
       },
-      files: MODULOS.map((m) => join(RAIZ, `src/lib/seguridad/${m}.ts`)),
+      files: MODULOS.map((m) => join(RAIZ, `src/features/seguridad/lib/${m}.ts`)),
     }),
     "utf8"
   );

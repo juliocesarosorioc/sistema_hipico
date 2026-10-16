@@ -18,7 +18,7 @@ import {
   primeraRutaPermitida,
   rutaPermitida,
   RUTAS_PROTEGIDAS,
-} from "../src/lib/seguridad/capacidades";
+} from "../src/features/seguridad/lib/capacidades";
 
 let pasan = 0;
 let fallan = 0;
@@ -116,9 +116,9 @@ console.log("\n[4] el campo «Grupo» del cliente es solo del usuario principal"
 // campo no se abre a quien solo pueda crear clientes: el gate es `esPrincipal`,
 // no una capacidad nueva. Se prueba lo que el gate tiene que seguir siendo
 // cierto; la fila del <select> es JSX y no se puede comprobar desde Node.
-import { esUsuarioPrincipal } from "../src/lib/seguridad/resolver";
-import { resolverAccesos } from "../src/lib/seguridad/resolver";
-import { baseDeTipo } from "../src/lib/seguridad/resolver";
+import { esUsuarioPrincipal } from "../src/features/seguridad/lib/resolver";
+import { resolverAccesos } from "../src/features/seguridad/lib/resolver";
+import { baseDeTipo } from "../src/features/seguridad/lib/resolver";
 
 ok("el principal se reconoce con y sin dominio", esUsuarioPrincipal("josorioc@sistemahipico.local"));
 ok("el principal tiene acceso total", resolverAccesos({ identificador: "josorioc" }).total);
@@ -143,7 +143,7 @@ console.log("\n[5] el parche de clientes no deja mover `grupo_id` sin ser princi
 // puede llamar desde la consola con el mismo token. Por eso el filtro vive en la
 // función de escritura. Se prueba con `esPrincipal` explícito para no depender
 // del estado global de la sesión.
-import { sinCamposDelPrincipal } from "../src/lib/clientes";
+import { sinCamposDelPrincipal } from "../src/features/clientes/lib/clientes";
 
 const parche = {
   nombre: "Juan",

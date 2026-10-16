@@ -15,7 +15,7 @@ import {
   revisarCaballo,
   revisarColumnaCaballo,
   topesPermitidos,
-} from "../src/lib/taquilla/caballos";
+} from "../src/features/taquilla/lib/caballos";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -200,10 +200,10 @@ console.log("\n[8] GestionJugadasModule USA el modulo (no reimplementa la regla)
   // El componente importa Supabase al cargarse, asi que se lee como texto.
   // Se resuelve desde `process.cwd()` y NO desde `__dirname`: el runner compila
   // este archivo a `%TEMP%\marcas-testbuild\pruebas\`, fuera del repo.
-  const src = readFileSync(join(process.cwd(), "src", "components", "gestion", "GestionJugadasModule.tsx"), "utf8");
+  const src = readFileSync(join(process.cwd(), "src", "features", "gestion", "components", "GestionJugadasModule.tsx"), "utf8");
   // Si el componente vuelve a calcular el tope por su cuenta, la regla deja de
   // ser una sola y el navegador acepta un caballo que el servidor no.
-  ok("importa revisarCaballo", /from "@\/lib\/taquilla\/caballos"/.test(src));
+  ok("importa revisarCaballo", /from "@\/features\/taquilla\/lib\/caballos"/.test(src));
   ok("lo invoca en revisionCaballo", /revisionCaballo[\s\S]{0,120}revisarCaballo\(/.test(src));
   ok("cargarAtaquilla bloquea la fila", /cargarAtaquilla[\s\S]{0,1400}if \(!rc\.ok\)/.test(src));
   ok("NO reimplementa el tope con un 16 a mano", !/>\s*16\s*<\s*=/.test(src));

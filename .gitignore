@@ -19,3 +19,4 @@ tmp.tsx
 
 # Salida de compilación TypeScript
 *.tsbuildinfo
+.tsbuild-pruebas/

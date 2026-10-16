@@ -3,7 +3,7 @@
 #
 # No hay framework de tests en el repo y no hay tsx/ts-node, asi que se compila
 # con el tsc que ya esta instalado y se ejecuta el JS. La logica de Marcas esta
-# en un modulo PURO (src/lib/marcas/jerarquia.ts, sin Supabase ni React) justo
+# en un modulo PURO (src/features/marcas/lib/jerarquia.ts, sin Supabase ni React) justo
 # para que esto sea posible sin dependencias nuevas.
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path -Parent $PSScriptRoot)

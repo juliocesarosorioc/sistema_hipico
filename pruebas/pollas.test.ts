@@ -41,7 +41,7 @@ import {
   type ResultadoCarrera,
   type SeleccionPolla,
   type VentaPuntuada,
-} from "../src/lib/pollas/core";
+} from "../src/features/pollas/lib/core";
 
 let pasan = 0;
 let fallan = 0;
@@ -456,9 +456,9 @@ console.log("\n[15] PollasModule USA el núcleo (no reimplementa la regla)");
   // casa paga según lo que le digan. Los componentes importan Supabase al
   // cargarse, así que se leen como texto. Se resuelve desde `process.cwd()` y NO
   // desde `__dirname`: el runner compila este archivo a `%TEMP%`, fuera del repo.
-  const mod = readFileSync(join(process.cwd(), "src", "components", "pollas", "PollasModule.tsx"), "utf8");
+  const mod = readFileSync(join(process.cwd(), "src", "features", "pollas", "components", "PollasModule.tsx"), "utf8");
 
-  ok("importa el núcleo de Pollas", /from "@\/lib\/pollas"/.test(mod));
+  ok("importa el núcleo de Pollas", /from "@\/features\/pollas\/lib\/pollas"/.test(mod));
   ok("puntúa con puntuarVentas (agrupa por cliente)", /puntuarVentas\(/.test(mod));
   ok("el ranking sale de ordenarRanking", /ordenarRanking\(/.test(mod));
   ok("el acumulado sale de estadoAcumulado", /estadoAcumulado\(/.test(mod));
@@ -481,7 +481,7 @@ console.log("\n[15] PollasModule USA el núcleo (no reimplementa la regla)");
     "la ruta /pollas existe",
     existsSync(join(process.cwd(), "src", "app", "(dashboard)", "pollas", "page.tsx"))
   );
-  const cap = readFileSync(join(process.cwd(), "src", "lib", "seguridad", "capacidades.ts"), "utf8");
+  const cap = readFileSync(join(process.cwd(), "src", "features", "seguridad", "lib", "capacidades.ts"), "utf8");
   ok("el maestro declara la ruta de Pollas", /clave:\s*"pollas"/.test(cap));
   // El nivel va como argumento posicional de `c()`, no como campo del objeto.
   ok(

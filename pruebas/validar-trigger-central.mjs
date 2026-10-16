@@ -241,7 +241,7 @@ check(
   // El trigger cubre los escritores que no son la UI. La UI, ademas, tiene que
   // seguir normalizando: si la app manda texto crudo, el trigger lo guardaria
   // igual (para la base 2026-04-10 es valida).
-  const rpc = readFileSync("src/lib/tablas/rpc.ts", "utf8");
+  const rpc = readFileSync("src/features/tablas/lib/rpc.ts", "utf8");
   check(
     "el publicador sigue sincronizando el central en codigo",
     /sincronizarCentralDesdeTabla/.test(rpc),

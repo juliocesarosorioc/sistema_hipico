@@ -14,8 +14,8 @@ import {
   expandirLineaHablada,
   jaroWinkler,
   resolverClientes,
-} from "../src/lib/taquilla/normalizar";
-import { parsearLineaRapida, clasificarLineaRapida } from "../src/lib/taquilla/validar";
+} from "../src/features/taquilla/lib/normalizar";
+import { parsearLineaRapida, clasificarLineaRapida } from "../src/features/taquilla/lib/validar";
 
 let pasan = 0;
 let fallan = 0;

@@ -1,18 +1,18 @@
 ﻿// ============================================================================
 // Pruebas de la validacion de Marcas contra la CARRERA REGISTRADA.
-// Espejo de revisarConfig() en src/lib/marcas/registradas.ts y de las
+// Espejo de revisarConfig() en src/features/marcas/lib/registradas.ts y de las
 // validaciones que repite la RPC club_vender_marca.
 // Usa el tipo canonico EjemplarCarreraCentral, el mismo que entrega
 // listarCarrerasCentrales al modal del modulo hípico.
 // ============================================================================
-import type { EjemplarCarreraCentral } from "../src/lib/carreras/central";
+import type { EjemplarCarreraCentral } from "../src/features/carreras/lib/central";
 import {
   revisarConfig,
   candidatosAMarca,
   buscarEjemplar,
   etiquetaCaballo,
   indicePorNumero,
-} from "../src/lib/marcas/registradas";
+} from "../src/features/marcas/lib/registradas";
 
 let pasan = 0;
 let fallan = 0;

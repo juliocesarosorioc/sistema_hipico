@@ -185,7 +185,7 @@ if (hallazgos) {
   console.log("     arregla bloqueando la lectura despues, se arregla rotando.");
   console.log("  2. node pruebas/crear-admin.mjs josorioc \"NUEVA\"   (credencial real)");
   console.log("  3. En Supabase: Authentication > Users, rotar las demas cuentas.");
-  console.log("  4. Aplicar src/db/retirar-legacy-operadores.sql: RLS sin policies");
+  console.log("  4. Aplicar src/core/db/retirar-legacy-operadores.sql: RLS sin policies");
   console.log("     para anon, asi la tabla deja de ser legible de una vez.");
   console.log("  5. Cuando se confirme que nadie la necesita, DROP TABLE public.operadores.");
   console.log("\n  Ojo: hasta que se roten, cualquiera que abra devtools en el sitio puede");

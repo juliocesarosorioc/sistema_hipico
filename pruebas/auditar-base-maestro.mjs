@@ -56,8 +56,8 @@ const { CAPACIDADES, CAPACIDADES_POR_CLAVE, baseDeTipo, expandirConRequisitos, U
 
 console.log("\n[1] Las tablas del maestro existen");
 console.log("=".repeat(70));
-// Estas son exactamente las tablas que crea src/db/seguridad_maestro.sql y que
-// lee src/lib/seguridad/accesos.ts. Ni una más: `modulo` se discutió al
+// Estas son exactamente las tablas que crea src/core/db/seguridad_maestro.sql y que
+// lee src/features/seguridad/lib/accesos.ts. Ni una más: `modulo` se discutió al
 // principio y no existe (el módulo vive en `capacidad.modulo`, como texto), así
 // que pedirla acá reportaba un faltante que no era real.
 const TABLAS_MAESTRO = [
@@ -101,8 +101,8 @@ if (inexistentes.length) {
   );
   console.log("  Esto NO es un problema de permisos del sistema: no hay de dónde leer.");
   console.log("\n  Que hacer: en el SQL Editor de Supabase, en este orden:");
-  console.log("    1. src/db/seguridad_maestro.sql   (crea esquema, funciones y RLS)");
-  console.log("    2. src/db/maestro_seed.sql        (generado desde el registro maestro)");
+  console.log("    1. src/core/db/seguridad_maestro.sql   (crea esquema, funciones y RLS)");
+  console.log("    2. src/core/db/maestro_seed.sql        (generado desde el registro maestro)");
   console.log('    3. $env:SUPABASE_SERVICE_ROLE_KEY="eyJ..."   (solo en esa terminal)');
   console.log('       node pruebas/crear-admin.mjs josorioc "TU_CONTRASENA"');
   console.log("    4. node pruebas/auditar-base-maestro.mjs  (esta auditoría, de nuevo)");
@@ -290,8 +290,8 @@ console.log("\n[5] El ABAC esta sembrado y coincide con el codigo");
 console.log(`\n${fallan ? "HAY FALLAS" : "TODO OK"}: ${pasan} ok, ${fallan} fallas`);
 if (fallan) {
   console.log("\nQue hacer si falla: aplicar el SQL en el SQL Editor de Supabase, en este orden:");
-  console.log("  1. src/db/seguridad_maestro.sql   (crea el esquema y la RLS)");
-  console.log("  2. src/db/maestro_seed.sql        (generado desde el registro maestro)");
+  console.log("  1. src/core/db/seguridad_maestro.sql   (crea el esquema y la RLS)");
+  console.log("  2. src/core/db/maestro_seed.sql        (generado desde el registro maestro)");
   console.log('  3. $env:SUPABASE_SERVICE_ROLE_KEY="eyJ..."');
   console.log('     node pruebas/crear-admin.mjs josorioc "TU_CONTRASENA"');
   console.log("  4. node pruebas/auditar-base-maestro.mjs  (esta auditoria, otra vez)");

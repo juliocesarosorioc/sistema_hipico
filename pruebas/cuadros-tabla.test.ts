@@ -16,8 +16,8 @@
 // `normalizarFilas`. El resto (el modal y el cableado del Monitor) no tiene
 // pruebas unitarias porque depende de React y de Supabase; lo cubre la E2E.
 // ============================================================================
-import { normalizarFilas } from "../src/lib/tablas/normalizar";
-import { sumaBase, parseNum, type EjemplarTabla } from "../src/lib/tablas/tipos";
+import { normalizarFilas } from "../src/features/tablas/lib/normalizar";
+import { sumaBase, parseNum, type EjemplarTabla } from "../src/features/tablas/lib/tipos";
 
 let pasan = 0;
 let fallan = 0;

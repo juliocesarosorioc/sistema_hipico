@@ -13,8 +13,8 @@ import {
   mensajePreliminarDeCarrera,
   veredictoDeJugada,
   type TicketMensaje,
-} from "../src/lib/taquilla/mensajeResultado";
-import type { PizarraCarrera } from "../src/lib/liquidacion";
+} from "../src/features/taquilla/lib/mensajeResultado";
+import type { PizarraCarrera } from "../src/features/liquidacion/lib/liquidacion";
 
 let pasan = 0;
 let fallan = 0;

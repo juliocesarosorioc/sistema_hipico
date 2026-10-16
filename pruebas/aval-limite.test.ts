@@ -15,7 +15,7 @@ import {
   esSinTope,
   explicarDisponible,
   calcularReparto,
-} from "../src/lib/taquilla/reparto";
+} from "../src/features/taquilla/lib/reparto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -25,7 +25,7 @@ import { join } from "node:path";
  * runner compila este archivo a `%TEMP%\marcas-testbuild\pruebas\`, fuera del
  * repo, y desde ahi `__dirname` no alcanza ningun fuente.
  */
-const libGrupos = readFileSync(join(process.cwd(), "src", "lib", "grupos.ts"), "utf8");
+const libGrupos = readFileSync(join(process.cwd(), "src", "features", "grupos", "lib", "grupos.ts"), "utf8");
 
 let pasan = 0;
 let fallan = 0;

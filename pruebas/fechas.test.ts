@@ -1,7 +1,7 @@
 // ============================================================================
 // CONTRATO DE FECHAS — la defensa contra el incidente del 04-10-2026.
 //
-// Estas pruebas fijan las TRES reglas de `src/lib/fechas.ts`:
+// Estas pruebas fijan las TRES reglas de `src/core/utils/fechas.ts`:
 //
 //   A. A la base solo sale ISO. En particular que "04-10-2026" jamas viaje crudo.
 //   B. Una entrada ambigua se DECLARA ambigua, no se resuelve en silencio.
@@ -19,7 +19,7 @@ import {
   fechaOpcional,
   interpretarFecha,
   isoAFechaLocal,
-} from "../src/lib/fechas";
+} from "../src/core/utils/fechas";
 
 let pasan = 0;
 let fallan = 0;

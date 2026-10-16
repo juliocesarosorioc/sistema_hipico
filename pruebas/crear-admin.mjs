@@ -104,13 +104,13 @@ const { data: fila, error: eLectura } = await db
 
 if (eLectura) {
   console.error(`\n  No pude leer public.usuario_sistema: ${eLectura.message}`);
-  console.error("  Si da 404, aplicá antes src/db/seguridad_maestro.sql y src/db/maestro_seed.sql.");
+  console.error("  Si da 404, aplicá antes src/core/db/seguridad_maestro.sql y src/core/db/maestro_seed.sql.");
   process.exit(1);
 }
 
 if (!fila) {
   console.error(`\n  La fila "${usuario}" NO existe en public.usuario_sistema.`);
-  console.error("  Aplicá src/db/maestro_seed.sql (crea al principal) y volvé a correr este script.");
+  console.error("  Aplicá src/core/db/maestro_seed.sql (crea al principal) y volvé a correr este script.");
   process.exit(1);
 }
 

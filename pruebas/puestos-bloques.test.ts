@@ -12,10 +12,10 @@
 //
 // Corre con:  node pruebas/correr.cjs
 // ============================================================================
-import { liquidarPuestos } from "../src/lib/motores/puestos";
-import { mensajePreliminarDeCarrera } from "../src/lib/taquilla/mensajeResultado";
-import type { TicketMotor } from "../src/lib/bettingEngine";
-import type { PizarraCarrera } from "../src/lib/liquidacion";
+import { liquidarPuestos } from "../src/features/motores/lib/puestos";
+import { mensajePreliminarDeCarrera } from "../src/features/taquilla/lib/mensajeResultado";
+import type { TicketMotor } from "../src/features/betting/lib/bettingEngine";
+import type { PizarraCarrera } from "../src/features/liquidacion/lib/liquidacion";
 
 let pasan = 0;
 let fallan = 0;

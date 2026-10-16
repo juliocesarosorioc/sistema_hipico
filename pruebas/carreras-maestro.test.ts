@@ -1,5 +1,5 @@
 ﻿// ============================================================================
-// Pruebas del NÚCLEO de la matriz de carreras (src/lib/carreras/maestro-nucleo.ts).
+// Pruebas del NÚCLEO de la matriz de carreras (src/features/carreras/lib/maestro-nucleo.ts).
 //
 // Es la pieza que decide qué ve la plataforma: cómo se lee una fila de la matriz,
 // de dónde sale el estado de la carrera y cómo se mezclan catálogo + resultado.
@@ -22,7 +22,7 @@ import {
   ordenarPorNumero,
   primerResultado,
   type FilaCarreraMaestro,
-} from "../src/lib/carreras/maestro-nucleo";
+} from "../src/features/carreras/lib/maestro-nucleo";
 
 let pasan = 0;
 let fallan = 0;

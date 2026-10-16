@@ -1,6 +1,6 @@
 // ============================================================================
 // Pruebas de la clave compartida de hipódromo/carrera y del agrupador del
-// registro central (src/lib/carreras/claves.ts).
+// registro central (src/features/carreras/lib/claves.ts).
 //
 // El bug que estas pruebas cubren: cada módulo normalizaba el nombre de
 // hipódromo a su manera (trim+uppercase aquí, sin quitar espacios allá). Basta
@@ -13,7 +13,7 @@ import {
   claveCarrera,
   agruparCarreras,
   numerosDeCarrera,
-} from "../src/lib/carreras/claves";
+} from "../src/features/carreras/lib/claves";
 
 let pasan = 0;
 let fallan = 0;

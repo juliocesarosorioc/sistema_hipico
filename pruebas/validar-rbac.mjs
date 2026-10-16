@@ -3,17 +3,17 @@
 //
 // Comprueba que las piezas del MAESTRO no se separen:
 //
-//   1) src/lib/seguridad/capacidades.ts -> PUERTAS: toda ruta protegida exige
+//   1) src/features/seguridad/lib/capacidades.ts -> PUERTAS: toda ruta protegida exige
 //      una capacidad que existe de verdad en el registro.
 //   2) src/app/**/page.tsx              -> toda página real tiene su puerta
 //      declarada. Una página sin puerta NO es inaccesible: es ABIERTA.
-//   3) src/components/layout/Sidebar.tsx -> el menú no ofrece rutas que no
+//   3) src/shared/components/layout/Sidebar.tsx -> el menú no ofrece rutas que no
 //      existan ni capacidades inventadas.
-//   4) src/db/seguridad_maestro.sql      -> el esquema tiene las 5 tablas del
+//   4) src/core/db/seguridad_maestro.sql      -> el esquema tiene las 5 tablas del
 //      modelo y es idempotente (drop antes de create policy).
-//   5) src/db/maestro_seed.sql          -> el seed generado cubre TODAS las
+//   5) src/core/db/maestro_seed.sql          -> el seed generado cubre TODAS las
 //      capacidades del registro, sin sobras ni faltantes.
-//   6) src/db/rbac.sql                   -> el RBAC viejo, si se conserva, tiene
+//   6) src/core/db/rbac.sql                   -> el RBAC viejo, si se conserva, tiene
 //      que seguir siendo coherente consigo mismo.
 //
 // Por qué existe: nada de esto cruza en tiempo de compilación. Una capacidad mal
@@ -101,19 +101,19 @@ const {
 console.log("\n[1] Archivos del maestro");
 // =============================================================================
 const middleware = leer("src/middleware.ts");
-const esquemaSql = leer("src/db/seguridad_maestro.sql");
-const esquemaSqlRetirado = leer("src/db/rbac.sql");
-const seedSql = leer("src/db/maestro_seed.sql");
-const sidebar = leer("src/components/layout/Sidebar.tsx");
-const rbac = leer("src/db/rbac.sql");
+const esquemaSql = leer("src/core/db/seguridad_maestro.sql");
+const esquemaSqlRetirado = leer("src/core/db/rbac.sql");
+const seedSql = leer("src/core/db/maestro_seed.sql");
+const sidebar = leer("src/shared/components/layout/Sidebar.tsx");
+const rbac = leer("src/core/db/rbac.sql");
 
 for (const [n, c] of Object.entries({
   "src/middleware.ts": middleware,
-  "src/lib/seguridad/capacidades.ts": CAPACIDADES.length ? "ok" : null,
-  "src/db/seguridad_maestro.sql": esquemaSql,
-  "src/db/maestro_seed.sql": seedSql,
-  "src/components/layout/Sidebar.tsx": sidebar,
-  "src/db/rbac.sql": rbac,
+  "src/features/seguridad/lib/capacidades.ts": CAPACIDADES.length ? "ok" : null,
+  "src/core/db/seguridad_maestro.sql": esquemaSql,
+  "src/core/db/maestro_seed.sql": seedSql,
+  "src/shared/components/layout/Sidebar.tsx": sidebar,
+  "src/core/db/rbac.sql": rbac,
 })) {
   check(`${n} existe y se pudo leer`, c !== null, c === null ? "no se encontro el archivo" : "");
 }
@@ -236,7 +236,7 @@ for (const r of paginas) {
   check(
     `la pagina ${r} esta cubierta por una puerta del maestro`,
     cubierta,
-    `existe ${r} pero ninguna puerta la exige: se abre por URL directa sin comprobar nada. Declarala en PUERTAS (src/lib/seguridad/capacidades.ts)`
+    `existe ${r} pero ninguna puerta la exige: se abre por URL directa sin comprobar nada. Declarala en PUERTAS (src/features/seguridad/lib/capacidades.ts)`
   );
 }
 
@@ -365,7 +365,7 @@ console.log("\n[7] La puerta no regala datos sensibles");
   for (const p of listarArchivos(join(RAIZ, "src"), [".ts", ".tsx"])) {
     const rel = rutaRel(p);
     // Estas rutas lo nombran a propósito, no como texto de pantalla.
-    if (rel.startsWith("src/lib/seguridad/") || rel.startsWith("src/db/")) continue;
+    if (rel.startsWith("src/features/seguridad/lib/") || rel.startsWith("src/core/db/")) continue;
     const txt = leerArchivo(p);
     for (const m of txt.matchAll(/(placeholder|title|aria-label)\s*=\s*["']([^"']*)["']/g)) {
       if (m[2].includes(usuarioPrincipal)) vistas.push(`${rel} -> ${m[1]}="${m[2]}"`);
@@ -382,18 +382,18 @@ console.log("\n[7] La puerta no regala datos sensibles");
 console.log("\n[8] No queda un segundo catalogo de permisos en circulacion");
 // =============================================================================
 {
-  // Existía `src/lib/seguridad/permisos.ts` con 11 funciones y su propio
+  // Existía `src/features/seguridad/lib/permisos.ts` con 11 funciones y su propio
   // catálogo de permisos, en CONFLICTO con el maestro. Nadie lo importaba, pero
   // cualquiera podía hacerlo y saltarse el maestro entero. Se eliminó; esta
   // regla impide que reaparezca.
   const huerfanos = [];
   for (const p of listarArchivos(join(RAIZ, "src"), [".ts", ".tsx"])) {
     const rel = rutaRel(p);
-    if (rel === "src/lib/seguridad/permisos.ts") huerfanos.push(`${rel} (el archivo sigue existiendo)`);
+    if (rel === "src/features/seguridad/lib/permisos.ts") huerfanos.push(`${rel} (el archivo sigue existiendo)`);
   }
   for (const p of listarArchivos(join(RAIZ, "src"), [".ts", ".tsx"])) {
     const rel = rutaRel(p);
-    if (rel === "src/lib/seguridad/permisos.ts") continue;
+    if (rel === "src/features/seguridad/lib/permisos.ts") continue;
     if (/from\s+["'][^"']*seguridad\/permisos["']/.test(leerArchivo(p))) {
       huerfanos.push(`${rel} importa el catalogo retirado`);
     }
@@ -495,8 +495,8 @@ console.log("\n[12] La RLS del maestro DECIDE, no deja pasar a anon");
 console.log("\n[13] La recuperacion de clave no filtra quien tiene cuenta");
 // =============================================================================
 {
-  const sesion = leer("src/lib/auth/sesion.ts");
-  const login = leer("src/components/auth/PantallaLogin.tsx");
+  const sesion = leer("src/features/auth/lib/sesion.ts");
+  const login = leer("src/features/auth/components/PantallaLogin.tsx");
   const reset = leer("src/app/reset-password/page.tsx");
 
   check(
@@ -563,7 +563,7 @@ console.log("\n[13] La recuperacion de clave no filtra quien tiene cuenta");
 console.log("\n[14] La tabla de contrasenas del legacy queda cerrada y documentada");
 // =============================================================================
 {
-  const retiro = leer("src/db/retirar-legacy-operadores.sql");
+  const retiro = leer("src/core/db/retirar-legacy-operadores.sql");
   check("existe el script que retira public.operadores", retiro != null, "sin el, la tabla sigue legible con la llave anon");
   if (retiro) {
     check(
@@ -614,11 +614,11 @@ console.log("\n[14] La tabla de contrasenas del legacy queda cerrada y documenta
 console.log("\n[15] Las tablas de negocio con PII no quedan abiertas a anon");
 // =============================================================================
 {
-  const rls = sinComentarios(leer("src/db/rls-negocio.sql") ?? "");
+  const rls = sinComentarios(leer("src/core/db/rls-negocio.sql") ?? "");
   // Se lee una vez y se usa en el bloque de la función: el contrato entre el
   // cliente del portal y la Edge Function son dos archivos distintos, y
   // revisar que hablen el mismo idioma necesita las dos mitades a la vista.
-  const portal = sinComentarios(leer("src/lib/portal.ts") ?? "");
+  const portal = sinComentarios(leer("src/features/portal/lib/portal.ts") ?? "");
   check("existe el archivo de RLS para las tablas de negocio", rls.length > 0, "");
   if (rls) {
     // Se comprobó con la llave anon, sin credenciales: 16 clientes con su
@@ -849,10 +849,10 @@ console.log("\n[15] Las tablas de negocio con PII no quedan abiertas a anon");
 console.log("\n[16] El ABAC esta atado al codigo, al SQL y a la seed");
 // =============================================================================
 {
-  const abacSrc = leer("src/lib/seguridad/abac.ts") ?? "";
-  const sql = sinComentarios(leer("src/db/seguridad_maestro.sql") ?? "");
-  const seed = leer("src/db/maestro_seed.sql") ?? "";
-  const vigente = leer("src/lib/seguridad/vigente.ts") ?? "";
+  const abacSrc = leer("src/features/seguridad/lib/abac.ts") ?? "";
+  const sql = sinComentarios(leer("src/core/db/seguridad_maestro.sql") ?? "");
+  const seed = leer("src/core/db/maestro_seed.sql") ?? "";
+  const vigente = leer("src/features/seguridad/lib/vigente.ts") ?? "";
   const mod = await cargarAbac();
   const REGLAS = mod.REGLAS_ABAC ?? [];
   const ATRIBUTOS = mod.ATRIBUTOS ?? [];
@@ -983,7 +983,7 @@ console.log("\n[16] El ABAC esta atado al codigo, al SQL y a la seed");
   // contabilidad.ts agrega una modalidad y la lista no la sigue, la operacion
   // legitima se rechaza como "metodo no reconocido", y el error aparece en
   // produccion, en un cobro.
-  const conta = leer("src/lib/contabilidad.ts") ?? "";
+  const conta = leer("src/features/contabilidad/lib/contabilidad.ts") ?? "";
   // Se comparan con la MISMA normalizacion que usa el motor, tildes
   // incluidas. Si el check se normalizara distinto que `norm()`, pasaria una
   // regla que en produccion bloquea el cobro.
@@ -1204,18 +1204,18 @@ console.log("\n[11] El RBAC viejo (rbac.sql) sigue coherente consigo mismo");
 // que dice el archivo, y un `with check` corrompido no se lee en la revisión.
 {
   const tocados = [
-    "src/db/rls-negocio.sql",
-    "src/db/seguridad_maestro.sql",
-    "src/db/maestro_seed.sql",
-    "src/lib/hipodromos/servicio.ts",
-    "src/lib/seguridad/abac.ts",
-    "src/lib/contabilidad.ts",
-    "src/lib/portal.ts",
-    "src/lib/tickets.ts",
-    "src/lib/carreras/retiros.ts",
-    "src/lib/liquidacion/pagarYCerrar.ts",
+    "src/core/db/rls-negocio.sql",
+    "src/core/db/seguridad_maestro.sql",
+    "src/core/db/maestro_seed.sql",
+    "src/features/hipodromos/lib/servicio.ts",
+    "src/features/seguridad/lib/abac.ts",
+    "src/features/contabilidad/lib/contabilidad.ts",
+    "src/features/portal/lib/portal.ts",
+    "src/features/tickets/lib/tickets.ts",
+    "src/features/carreras/lib/retiros.ts",
+    "src/features/liquidacion/lib/pagarYCerrar.ts",
     "supabase/functions/portal-auth/index.ts",
-    "src/components/seguridad/SeguridadModule.tsx",
+    "src/features/seguridad/components/SeguridadModule.tsx",
     "pruebas/maestro-seguridad.test.mjs",
     "pruebas/auditar-base-maestro.mjs",
     "pruebas/generar-seed-maestro.mjs",

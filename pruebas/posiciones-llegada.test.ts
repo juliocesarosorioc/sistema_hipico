@@ -14,7 +14,7 @@ import {
   ordenLlegadaDePizarra,
   dividendosDePizarra,
   CAMPOS_POSICION,
-} from "../src/lib/liquidacion/posiciones";
+} from "../src/features/liquidacion/lib/posiciones";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -119,13 +119,13 @@ console.log("\n-- Nadie liquida dejando el central sin orden_llegada/dividendos"
 // Gestion de Jugadas escribia el central sin ellos -> la fila quedaba con
 // `orden_llegada`/`dividendos` en NULL y no habia con que pagar puestos.
 const pagarYCerrar = readFileSync(
-  join(process.cwd(), "src", "lib", "liquidacion", "pagarYCerrar.ts"),
+  join(process.cwd(), "src", "features", "liquidacion", "lib", "pagarYCerrar.ts"),
   "utf8"
 );
 eq("el central guarda orden_llegada", /orden_llegada:\s*ordenLlegadaDePizarra\(/.test(pagarYCerrar), true);
 eq("el central guarda dividendos", /dividendos:\s*dividendos\s*\?\?/.test(pagarYCerrar), true);
 const gestion = readFileSync(
-  join(process.cwd(), "src", "components", "gestion", "GestionJugadasModule.tsx"),
+  join(process.cwd(), "src", "features", "gestion", "components", "GestionJugadasModule.tsx"),
   "utf8"
 );
 eq("Gestion de Jugadas pasa los dividendos", /dividendos:\s*dividendosDePizarra\(/.test(gestion), true);

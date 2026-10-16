@@ -8,7 +8,7 @@ import {
   separarNumeros,
   simularMarca,
   parsearOrden,
-} from "../src/lib/marcas/jerarquia";
+} from "../src/features/marcas/lib/jerarquia";
 
 let pasan = 0;
 let fallan = 0;

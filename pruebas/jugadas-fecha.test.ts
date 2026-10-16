@@ -9,7 +9,7 @@
 //
 // Corre con:  node pruebas/correr.cjs
 // ============================================================================
-import { fechaCarreraDeJugada, type JugadaAdmin } from "../src/lib/jugadas";
+import { fechaCarreraDeJugada, type JugadaAdmin } from "../src/features/jugadas/lib/jugadas";
 
 let pasan = 0;
 let fallan = 0;

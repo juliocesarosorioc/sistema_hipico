@@ -19,10 +19,10 @@
 //
 // Pizarra oficial: 5.3.2.6.7  (1º 5, 2º 3).
 // ============================================================================
-import { normalizarLineaRapida } from "../src/lib/taquilla/normalizar";
-import { mensajeResultadoDeCarrera } from "../src/lib/taquilla/mensajeResultado";
-import { fmtMonto } from "../src/lib/reportGenerator";
-import type { PizarraCarrera } from "../src/lib/liquidacion";
+import { normalizarLineaRapida } from "../src/features/taquilla/lib/normalizar";
+import { mensajeResultadoDeCarrera } from "../src/features/taquilla/lib/mensajeResultado";
+import { fmtMonto } from "../src/features/impresion/lib/reportGenerator";
+import type { PizarraCarrera } from "../src/features/liquidacion/lib/liquidacion";
 
 let pasan = 0;
 let fallan = 0;
