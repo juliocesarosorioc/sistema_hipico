@@ -281,7 +281,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
         <div className="flex gap-3">
           {encabezado.llegada.map((caballo, idx) => (
             <div key={idx} className="flex flex-col items-center">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl font-black shadow-md ${caballo.color}`}>
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl font-black shadow-md ${colorDiscoNumero(caballo.numero)}`}>
                 {caballo.numero}
               </div>
               <span className="text-[9px] text-slate-500 mt-0.5 font-bold">{caballo.puesto}</span>
