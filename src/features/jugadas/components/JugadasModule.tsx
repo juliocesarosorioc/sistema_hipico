@@ -6,6 +6,8 @@ import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
+import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
+import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import {
   listarMonitorJugadas,
@@ -30,6 +32,9 @@ const num = (v: unknown): number => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
+
+/** Porcentaje entero seguro (0 cuando el denominador no existe). */
+const pct = (n: number, d: number): number => (d > 0 ? Math.round((n / d) * 100) : 0);
 
 const money = (v: unknown, moneda = "VES"): string => {
   const n = num(v);
@@ -94,6 +99,11 @@ function chipClase(estado: string): string {
 export function JugadasModule() {
   const usuario = useAuthStore((s) => s.usuario);
   const hipodromos = useHipodromosActivos();
+
+  /** Ítem 3: jornada a mirar en el tablero de progreso (día actual por defecto). */
+  const [fecha, setFecha] = useState(() => hoyLocal());
+  // MISMA fuente que el semáforo: la matriz `carreras` + `resultados_carreras`.
+  const { carreras: centralJornada, recargar: recargarCentral } = useRegistroCentralOpts(fecha);
 
   const [filas, setFilas] = useState<FilaMonitorJugada[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -198,7 +208,33 @@ export function JugadasModule() {
     [filtradas]
   );
 
-  const progreso = totales.carreras ? Math.round((totales.conResultado / totales.carreras) * 100) : 0;
+  /**
+   * ÍTEM 3 — Tablero de progreso de la JORNADA, por hipódromo.
+   *
+   * Sale de la MISMA fuente que el semáforo (registro central = matriz
+   * `carreras` + `resultados_carreras`): Programadas · con resultado · liquidadas.
+   * Antes el avance se calculaba solo con las carreras que TIENEN jugadas (otra
+   * verdad), así que una carrera programada sin jugadas no contaba.
+   */
+  const jornada = useMemo(() => {
+    const porHip = new Map<string, { hipodromo: string; total: number; conResultado: number; liquidadas: number }>();
+    for (const c of centralJornada) {
+      const hip = String(c.hipodromo ?? "").trim().toUpperCase();
+      if (!hip) continue;
+      const g = porHip.get(hip) ?? { hipodromo: hip, total: 0, conResultado: 0, liquidadas: 0 };
+      g.total += 1;
+      if ((c.ganadores?.length ?? 0) > 0) g.conResultado += 1;
+      const est = String(c.estado ?? "").toLowerCase();
+      if (est === "liquidada" || est === "cerrada" || c.aplicado_a_tablas === true) g.liquidadas += 1;
+      porHip.set(hip, g);
+    }
+    const filasHip = [...porHip.values()].sort((a, b) => a.hipodromo.localeCompare(b.hipodromo, "es"));
+    const total = filasHip.reduce(
+      (a, g) => ({ total: a.total + g.total, conResultado: a.conResultado + g.conResultado, liquidadas: a.liquidadas + g.liquidadas }),
+      { total: 0, conResultado: 0, liquidadas: 0 }
+    );
+    return { filasHip, total };
+  }, [centralJornada]);
 
   const guardarEdicion = async (campos: Parameters<typeof editarJugada>[1], motivo: string): Promise<void> => {
     if (!editando) return;
@@ -249,9 +285,27 @@ export function JugadasModule() {
             Progreso de resultados por carrera y estado de las jugadas. Corrección y anulación auditadas.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void refrescar()}>
-          <span className="mr-1">🔄</span> Recargar
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-[10px] font-bold uppercase text-slate-400">
+            Jornada
+            <input
+              type="date"
+              value={fecha}
+              onChange={(e) => setFecha(e.target.value || hoyLocal())}
+              className="mt-0.5 rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none"
+            />
+          </label>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void refrescar();
+              recargarCentral();
+            }}
+          >
+            <span className="mr-1">🔄</span> Recargar
+          </Button>
+        </div>
       </div>
 
       {errorCarga && (
@@ -271,20 +325,54 @@ export function JugadasModule() {
         <TarjetaResumen titulo="Monto vigente" valor={money(totales.monto)} pie="sin anuladas" tono="bg-indigo-50" />
       </div>
 
-      {/* Progreso de resultados */}
+      {/* Progreso de la jornada (MISMA fuente que el semáforo: matriz + resultados) */}
       <div className="rounded-2xl border border-line bg-white p-4">
-        <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wide text-slate-500">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
           <span>
-            Resultados cargados: <b className="text-slate-800">{totales.conResultado}</b> / {totales.carreras}
+            Progreso de la jornada · <b className="text-slate-800">{fecha}</b>
           </span>
-          <span className={progreso === 100 ? "text-emerald-600" : "text-indigo-600"}>{progreso}%</span>
+          <span className="flex flex-wrap items-center gap-3 text-[11px]">
+            <span>
+              Programadas: <b className="text-slate-800">{jornada.total.total}</b>
+            </span>
+            <span className="text-sky-600">
+              Con resultado: <b>{jornada.total.conResultado}</b>
+            </span>
+            <span className="text-emerald-600">
+              Liquidadas: <b>{jornada.total.liquidadas}</b>
+            </span>
+          </span>
         </div>
         <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
           <div
-            className={`h-full rounded-full transition-all ${progreso === 100 ? "bg-emerald-500" : "bg-indigo-500"}`}
-            style={{ width: `${progreso}%` }}
+            className={`h-full rounded-full transition-all ${pct(jornada.total.conResultado, jornada.total.total) === 100 ? "bg-emerald-500" : "bg-sky-500"}`}
+            style={{ width: `${pct(jornada.total.conResultado, jornada.total.total)}%` }}
           />
         </div>
+
+        {jornada.filasHip.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {jornada.filasHip.map((g) => (
+              <div key={g.hipodromo} className="flex items-center gap-2 text-[11px]">
+                <span className="w-40 shrink-0 truncate font-bold normal-case text-slate-600" title={nombreHipodromoParaMostrar(g.hipodromo)}>
+                  {nombreHipodromoParaMostrar(g.hipodromo)}
+                </span>
+                <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-slate-100">
+                  <div className="absolute inset-y-0 left-0 rounded-full bg-sky-400" style={{ width: `${pct(g.conResultado, g.total)}%` }} />
+                  <div className="absolute inset-y-0 left-0 rounded-full bg-emerald-500/70" style={{ width: `${pct(g.liquidadas, g.total)}%` }} />
+                </div>
+                <span className="w-44 shrink-0 text-right font-bold text-slate-500">
+                  {g.total} progr. · <span className="text-sky-600">{g.conResultado} con res.</span> ·{" "}
+                  <span className="text-emerald-600">{g.liquidadas} liq.</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {jornada.filasHip.length === 0 && (
+          <p className="mt-2 text-xs italic text-slate-400">No hay carreras registradas para el {fecha}.</p>
+        )}
+
         {usuarios.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             <span className="text-[10px] font-black uppercase tracking-wide text-slate-400">Operadores:</span>
