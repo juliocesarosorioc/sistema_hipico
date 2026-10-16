@@ -73,6 +73,7 @@
     "./historial-pendientes.test.ts",
     "./carga-rapida-apremio.test.ts",
     "./pp-1010.test.ts",
-    "./saldos-jornada.test.ts"
+    "./saldos-jornada.test.ts",
+    "./reporte-tablas.test.ts"
   ]
 }

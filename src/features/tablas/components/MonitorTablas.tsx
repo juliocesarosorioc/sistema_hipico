@@ -12,6 +12,7 @@ import { CargaResultadosModal, type PizarraResultados } from "@/features/liquida
 import { EjemplarModal, type VentaRapidaItem } from "@/features/tablas/components/EjemplarModal";
 import { EditorCaballos } from "@/features/tablas/components/EditorCaballos";
 import { CuadroModal } from "@/features/tablas/components/CuadroModal";
+import { ReporteTablasFijasModal } from "@/features/tablas/components/ReporteTablasFijasModal";
 import { listarCuposTabla, guardarCuposTabla, listarGruposVenta, listarClientesVenta, esClienteLibre, type CupoTablaGrupo, type GrupoVenta, type ClienteVenta } from "@/features/grupos/lib/grupos";
 import { listarBanquerosGrupo } from "@/features/liquidacion/lib/banqueros";
 import { useCarrerasCentrales } from "@/features/carreras/lib/useCarrerasCentrales";
@@ -221,6 +222,8 @@ export function MonitorTablas({
   };
 
   const [vistaImpresion, setVistaImpresion] = useState(false);
+  /** Reporte de tablas fijas VENDIDAS (ícono en la barra de filtros). */
+  const [reporteAbierto, setReporteAbierto] = useState(false);
 
   // Estados de los filtros
   /** Día por defecto: SIEMPRE el actual (el padre suele controlarlo, pero si
@@ -723,6 +726,19 @@ export function MonitorTablas({
             className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {exportandoExcel ? "⏳ Generando…" : "📊 Excel"}
+          </button>
+
+          {/* REPORTE de lo VENDIDO: tablas dinámicas por grupo/hipódromo/carrera/
+              jugador, monto en riesgo, ganadores/perdedores, comisión por grupo,
+              pagos y retiros. Abre a pantalla completa. */}
+          <button
+            type="button"
+            onClick={() => setReporteAbierto(true)}
+            title="Reporte de tablas fijas vendidas (riesgo, ganadores, comisiones, pagos y retiros)"
+            aria-label="Reporte de tablas fijas vendidas"
+            className="inline-flex items-center gap-1 rounded-lg border border-indigo-300 bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-sm transition-colors hover:from-indigo-500 hover:to-violet-500"
+          >
+            📈 Reporte
           </button>
         </div>
       </div>
@@ -1319,6 +1335,14 @@ export function MonitorTablas({
         <h1 className="mb-3 border-b-2 border-black pb-1 text-center text-base font-black uppercase text-black">Tablas Fijas Publicadas</h1>
         <MatrizImpresion tablas={filtradas} />
       </div>
+
+      <ReporteTablasFijasModal
+        abierto={reporteAbierto}
+        onCerrar={() => setReporteAbierto(false)}
+        fechaInicial={fechaFiltro}
+        hipodromoInicial={hipodromoFiltro}
+        carreraInicial={carreraFiltro}
+      />
     </div>
   );
 }
