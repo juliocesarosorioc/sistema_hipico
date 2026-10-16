@@ -128,7 +128,7 @@ export function PanelMarcas() {
    * Editor de marcas abierto. `carrera: null` significa "sin carrera elegida":
    * el operador entra a arreglar la jornada completa desde el boton general.
    */
-  const [editor, setEditor] = useState<{ hipodromo: string; carrera: number | null } | null>(null);
+  const [editor, setEditor] = useState<{ hipodromo: string; carrera: number | null; fecha: string } | null>(null);
   /** Raíz de exportación (fuera de pantalla) con las hojas A4 de marcas. */
   const exportRootRef = useRef<HTMLDivElement>(null);
   /** Etiqueta de progreso mientras se captura PNG / JPG / PDF. */
@@ -444,7 +444,7 @@ export function PanelMarcas() {
         </Button>
         <Button
           variant="default"
-          onClick={() => setEditor({ hipodromo, carrera: null })}
+          onClick={() => setEditor({ hipodromo, carrera: null, fecha })}
           className="bg-violet-600 hover:bg-violet-500"
           title="Abrir el editor de marcas, NV y debutantes de la jornada"
         >
@@ -728,7 +728,7 @@ export function PanelMarcas() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => setEditor({ hipodromo: c.hipodromo, carrera: c.carrera })}
+                                onClick={() => setEditor({ hipodromo: c.hipodromo, carrera: c.carrera, fecha })}
                                 title={
                                   cfg
                                     ? "Editar marcas, NV y debutantes de esta carrera"
@@ -851,6 +851,7 @@ export function PanelMarcas() {
         <ModalMarcasEditor
           hipodromoInicial={editor.hipodromo}
           carreraInicial={editor.carrera ?? undefined}
+          fechaInicial={editor.fecha}
           onCerrar={() => setEditor(null)}
           onToast={toast}
           onCambio={() => void refrescar()}

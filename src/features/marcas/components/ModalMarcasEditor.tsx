@@ -30,6 +30,14 @@ export type ModalMarcasEditorProps = {
   /** Carrera desde la que se abrio, si se abrio desde una fila. */
   hipodromoInicial?: string;
   carreraInicial?: number;
+  /**
+   * Fecha de la jornada desde la que se abrio el editor. Sin esto el editor
+   * caia siempre en `hoyLocal()`: si el panel estaba parado en otra fecha, el
+   * semaforo traia las carreras de HOY y se terminaba editando la config de
+   * otra carrera (la primera del dia). Se propaga la fecha que el operador ya
+   * tenia seleccionada.
+   */
+  fechaInicial?: string;
   onCerrar: () => void;
   onToast: (msg: string, tipo?: "success" | "warning" | "error" | "info") => void;
   /** Avisa al modulo de que la configuracion cambio, para que refresque. */
@@ -59,11 +67,12 @@ type Columna = "marca" | "nv" | "debutante";
 export function ModalMarcasEditor({
   hipodromoInicial,
   carreraInicial,
+  fechaInicial,
   onCerrar,
   onToast,
   onCambio,
 }: ModalMarcasEditorProps) {
-  const [dia, setDia] = useState(hoyLocal());
+  const [dia, setDia] = useState(() => String(fechaInicial ?? "").trim() || hoyLocal());
   const [hipodromo, setHipodromo] = useState(
     String(hipodromoInicial ?? "").trim().toUpperCase() || "LA RINCONADA"
   );

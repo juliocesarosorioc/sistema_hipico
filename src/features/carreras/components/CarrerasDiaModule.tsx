@@ -91,7 +91,7 @@ export function CarrerasDiaModule() {
   const [confirmarEliminar, setConfirmarEliminar] = useState<CarreraCentral | null>(null);
   // El módulo de Marcas vive dentro del módulo hípico: se abre sobre la carrera
   // que se está mirando, sin salir de la tabla de carreras del día.
-  const [editorMarcas, setEditorMarcas] = useState<{ hipodromo: string; carrera: number } | null>(null);
+  const [editorMarcas, setEditorMarcas] = useState<{ hipodromo: string; carrera: number; fecha: string } | null>(null);
   /** Muestra las carreras del filtro que llegaron sin ejemplares (ocultas por defecto). */
   const [verSinEjemplares, setVerSinEjemplares] = useState(false);
 
@@ -581,7 +581,7 @@ export function CarrerasDiaModule() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setEditorMarcas({ hipodromo: c.hipodromo, carrera: c.carrera })}
+                          onClick={() => setEditorMarcas({ hipodromo: c.hipodromo, carrera: c.carrera, fecha })}
                           title="Marcas: configurar NV y debutantes de esta carrera"
                           className="rounded bg-cyan-600 px-1.5 py-0.5 text-[11px] text-white transition-colors hover:bg-cyan-500"
                         >
@@ -722,6 +722,7 @@ export function CarrerasDiaModule() {
         <ModalMarcasEditor
           hipodromoInicial={editorMarcas.hipodromo}
           carreraInicial={editorMarcas.carrera}
+          fechaInicial={editorMarcas.fecha}
           onCerrar={() => setEditorMarcas(null)}
           onToast={toast}
           onCambio={() => void refrescar()}
