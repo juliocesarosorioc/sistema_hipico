@@ -1400,6 +1400,14 @@ equivocado**.
 - `src/features/gestion/components/SemaforoCarreras.tsx` — el chip
   "Registrada (sin jugadas)" pasa de **verde a azul** (`blue`), y se actualiza
   la leyenda; amarillo = con jugadas y rojo = liquidada se mantienen.
+- **La MISMA fecha de jornada llega a los SALDOS** (`aplicarLiquidacionSaldos`,
+  `src/features/liquidacion/lib/saldos.ts`): armaba la ventana de
+  `fecha_registro` con `hoyLocal()` **fijo**, así que incluso con el color
+  arreglado la carrera de otra jornada quedaba **sin acreditar saldo** (no
+  encontraba los tickets `Pendiente`). Ahora `LiquidarSaldosInput` acepta
+  `fecha` y la pasan `liquidarPendientesDeCarrera` (re-apertura) y
+  `ejecutarFinalizar`; la taquilla "de hoy" (`PagarCarreraModal`) conserva el
+  default. Test: `pruebas/saldos-jornada.test.ts`.
 
 ### 3. Monitor de Jugadas: no muestra el PROGRESO DE RESULTADOS por carrera — ✅ hecho
 
