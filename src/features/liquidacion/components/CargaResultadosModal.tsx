@@ -69,6 +69,13 @@ type Props = {
    * menos; el mínimo real de la pizarra es 1.
    */
   minLugares?: number;
+  /**
+   * Resultados YA cargados para esta carrera: precarga el formulario con la
+   * llegada, empates, dividendos y matriz W/P/S, dejando TODO editable. Es lo
+   * que evita volver a tipear la pizarra completa cuando ya existe (y ya se
+   * pagó): el operador solo ajusta lo que cambió.
+   */
+  inicial?: PizarraResultados | null;
   onConfirmar: (r: PizarraResultados) => void;
 };
 
@@ -91,6 +98,7 @@ export function CargaResultadosModal({
   carrera,
   caballos,
   minLugares = PUESTOS_MIN,
+  inicial,
   onConfirmar,
 }: Props) {
   const [filas, setFilas] = useState<Fila[]>([]);
@@ -116,12 +124,59 @@ export function CargaResultadosModal({
     setMatrizWps({});
     setMismoRaya(true);
     setRayaNumero("");
+
+    // Precarga: si ya hay resultados cargados para esta carrera (aunque sea de
+    // otra sesión, traídos del central), se rellena TODO el formulario en vez
+    // de pedirle que vuelva a tipear la llegada completa. Sigue siendo editable.
+    const p = inicial?.pizarra as Record<string, unknown> | undefined;
+    if (inicial && p && (inicial.llenas ?? 0) > 0) {
+      const nums = ORDENES.map(({ nombre }) => String(p[nombre] ?? "").trim());
+      const ultimaConContenido = nums.reduce((acc, v, i) => (v ? i + 1 : acc), 0);
+      const nFilas = Math.max(ultimaConContenido, minLugares);
+      const empatesIni = inicial.empates ?? [];
+      setFilas(
+        Array.from({ length: nFilas }, (_, i) => ({
+          numero: nums[i] ?? "",
+          empate: empatesIni.includes(i + 1),
+        }))
+      );
+
+      // Raya: solo cambia si el 1º de la pizarra no es el que cruzó la raya.
+      const raya = String(p.primero_raya ?? "").trim();
+      if (raya && raya !== nums[0]) {
+        setMismoRaya(false);
+        setRayaNumero(raya);
+      }
+
+      if (inicial.dividendos && Object.keys(inicial.dividendos).length) {
+        setDividendos(
+          Object.fromEntries(Object.entries(inicial.dividendos).map(([k, v]) => [k, String(v)]))
+        );
+        setUsoDividendos(true);
+      }
+
+      // La matriz viene "wps_WW" (por $1) y en pantalla se captura por $2.
+      if (inicial.matrizWps && Object.keys(inicial.matrizWps).length) {
+        const m: Record<string, string> = {};
+        for (const [k, v] of Object.entries(inicial.matrizWps)) {
+          if (!k.startsWith(PREFIJO_WPS)) continue;
+          const clave = k.slice(PREFIJO_WPS.length);
+          m[clave] = String(Math.round(Number(v) * 100) / 50); // por $1 → por $2
+        }
+        if (Object.keys(m).length) {
+          setMatrizWps(m);
+          setUsoMatrizWps(true);
+        }
+      }
+      return;
+    }
+
     const base = Array.from({ length: minLugares }, (_, i) => {
       const n = (caballos ?? [])[i];
       return { numero: n ? String(n.numero) : "", empate: false };
     });
     setFilas(base);
-  }, [abierto, caballos, minLugares]);
+  }, [abierto, caballos, minLugares, inicial]);
 
   /** Pools que paga cada caballo según su lugar de llegada, uniendo las
    *  posiciones que comparten Empate (Dead Heat): un empate en la posición P
@@ -152,6 +207,9 @@ export function CargaResultadosModal({
   }, [filas]);
 
   if (!abierto) return null;
+
+  /** Hay resultados ya cargados precargados (modo edición). */
+  const precargado = Boolean(inicial && inicial.llenas > 0);
 
   const llenas = filas.filter((r) => r.numero.trim()).length;
   const primerNumero = filas.find((r) => r.numero.trim())?.numero ?? "";
@@ -274,6 +332,12 @@ export function CargaResultadosModal({
         <div className="flex items-center gap-1.5 border-b border-line bg-warning-500/10 px-3 py-1.5 text-[9px] font-semibold text-warning-700">
           ⚠️ Empate (Dead Heat): los caballos empatados comparten su pool (1°→W+P+S · 2°→P+S · 3°→S · CERO fraccionamiento).
         </div>
+
+        {precargado && (
+          <div className="flex items-center gap-1.5 border-b border-line bg-emerald-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-emerald-700">
+            ✏️ Editando resultados ya cargados — solo cambiá lo que haga falta.
+          </div>
+        )}
 
         {/* Cruzó la raya primero — TABLAS y REMATES pagan a ese caballo */}
         <div className="border-b border-line bg-cyan-50/70 px-3 py-2">

@@ -113,6 +113,27 @@ export async function listarGruposVenta(): Promise<GrupoVenta[]> {
   return activos;
 }
 
+/**
+ * Comisión GENERAL de las "Jugadas entre Tercios" de un grupo, en PORCENTAJE
+ * (`comision_default`: 2.5 = 2,5%). Es la ÚNICA comisión de las jugadas de
+ * taquilla; los demás productos (tablas fijas, remates, dupletas, marcas,
+ * pollas) se negocian aparte con cada grupo.
+ *
+ * Centraliza la fuente: las pantallas de venta y la liquidación toman de aquí
+ * el % en vez de un "5" a pelo (con el 5 fijo, un grupo al 2,5 pagaba el doble
+ * de lo pactado). Devuelve `null` si el grupo no está en la lista, para que el
+ * llamador decida el respaldo en vez de inventar una tasa.
+ */
+export function comisionJugadasDeGrupo(
+  grupos: GrupoVenta[],
+  grupoId: string | number | null | undefined
+): number | null {
+  if (grupoId == null) return null;
+  const g = grupos.find((x) => String(x.id) === String(grupoId));
+  const v = g?.comision_default;
+  return v != null && isFinite(Number(v)) ? Number(v) : null;
+}
+
 /** Lista clientes con sus saldos y grupos (clientes + clientes_grupos). */
 export async function listarClientesVenta(): Promise<ClienteVenta[]> {
   const activo = grupoActivoVigente();

@@ -14,9 +14,12 @@ import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { usuarioVigente } from "@/features/seguridad/lib/vigente";
 import {
   listarClientesVenta,
+  listarGruposVenta,
+  comisionJugadasDeGrupo,
   saldoDeCliente,
   textoDisponible,
   type ClienteVenta,
+  type GrupoVenta,
 } from "@/features/grupos/lib/grupos";
 
 const EJEMPLOS = ["100 2n", "50 3p", "200 1 y 2n", "100 10/PP", "400 1/2n y 2n"];
@@ -67,11 +70,16 @@ export function BetSlip() {
   const hipodromos = useHipodromosActivos();
   const { carrerasDe } = useRegistroCentralOpts(fecha);
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
+  const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
 
   useEffect(() => {
     let vivo = true;
     listarClientesVenta().then((c) => {
       if (vivo) setClientes(c);
+    });
+    // La comisión de las jugadas entre tercios sale del grupo (comision_default).
+    listarGruposVenta().then((g) => {
+      if (vivo) setGrupos(g);
     });
     return () => {
       vivo = false;
@@ -105,6 +113,27 @@ export function BetSlip() {
   const c1 = useMemo(() => clientes.find((c) => clave(c.nombre) === clave(cliente1)) ?? null, [clientes, cliente1]);
   const c2 = useMemo(() => clientes.find((c) => clave(c.nombre) === clave(cliente2)) ?? null, [clientes, cliente2]);
 
+  /** Grupo del Cliente 1: dueño de la comisión de las jugadas entre tercios. */
+  const grupoDeC1 = useMemo(
+    () =>
+      c1?.grupo_id != null
+        ? String(c1.grupo_id)
+        : c1?.grupos[0] != null
+          ? String(c1.grupos[0])
+          : null,
+    [c1]
+  );
+
+  /**
+   * Prellena COM % con la comisión del grupo del Cliente 1 y la deja editable.
+   * Es la ÚNICA comisión de las "jugadas entre tercios"; al cambiar de grupo se
+   * refresca el valor pactado (el operador puede ajustarlo puntualmente).
+   */
+  useEffect(() => {
+    const c = comisionJugadasDeGrupo(grupos, grupoDeC1);
+    if (c != null) setComision(String(c));
+  }, [grupoDeC1, grupos]);
+
   const comisionNum = useMemo(() => {
     const n = parseFloat(String(comision).replace(",", "."));
     return Number.isFinite(n) && n >= 0 ? n : 5;
@@ -132,8 +161,7 @@ export function BetSlip() {
     const nCarrera = Number(String(carrera).replace(/[^0-9]/g, "")) || 1;
     setRegistrando(true);
     try {
-      const grupoId =
-        c1.grupo_id != null ? String(c1.grupo_id) : c1.grupos[0] != null ? String(c1.grupos[0]) : null;
+      const grupoId = grupoDeC1;
       const auto = detectarModalidad(comando);
       const venta = await venderJugada({
         hipodromo,

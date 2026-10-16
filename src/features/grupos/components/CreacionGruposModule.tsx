@@ -432,7 +432,7 @@ export function CreacionGruposModule() {
               </select>
             </label>
             <Input
-              label="Comisión estándar (%)"
+              label="Comisión Gral. Jugadas entre Tercios (%)"
               hint="Aplicada al monto decidido de cada ticket. Default 2,5%."
               type="number"
               step="0.1"

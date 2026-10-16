@@ -1122,7 +1122,7 @@ export function GruposModule() {
                 </div>
               </div>
               <div>
-                <label className={etiqueta}>Comisión por Tablas Fijas %</label>
+                <label className={etiqueta}>Comisión Gral. Jugadas entre Tercios %</label>
                 <input
                   type="number"
                   step="0.01"

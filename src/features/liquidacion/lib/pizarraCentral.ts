@@ -1,8 +1,16 @@
 import { supabase } from "@/core/supabase";
 import { tieneCapacidad } from "@/features/seguridad/lib/vigente";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
-import { dividendosDePizarra, ordenLlegadaDePizarra, posicionesDePizarra } from "@/features/liquidacion/lib/posiciones";
+import {
+  CAMPOS_POSICION,
+  dividendosDePizarra,
+  ordenLlegadaDePizarra,
+  posicionesDePizarra,
+} from "@/features/liquidacion/lib/posiciones";
+import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
+import { PREFIJO_WPS } from "@/features/motores/lib/wps";
 import { leerRetirosCarrera } from "@/features/carreras/lib/retiros";
+import type { ResultadoOficial } from "@/features/carreras/lib/carreras-dia";
 import type { PizarraResultados } from "@/features/liquidacion/components/CargaResultadosModal";
 
 /**
@@ -90,4 +98,43 @@ export async function guardarPizarraCentral(opts: {
     return u.error ? { ok: false, error: String(u.error.message) } : { ok: true };
   }
   return { ok: false, error: texto };
+}
+
+/**
+ * Reconstruye una pizarra editable (`PizarraResultados`) a partir del resultado
+ * OFICIAL ya guardado en `resultados_carreras` (`leerResultadoOficial`).
+ *
+ * Sirve para PRECARGAR el `CargaResultadosModal`: si la carrera ya tiene
+ * resultados cargados (y probablemente pagados), el operador no debe volver a
+ * tipear la llegada completa — abre el modal con todo puesto y solo edita lo
+ * que haga falta.
+ *
+ * El central guarda posiciones (`ganadores`/`orden_llegada`) y dividendos
+ * (`dividendos`, con las claves W/P/S ya prefijadas `wps_`). Lo que NO guarda es
+ * la lista de empates, así que se devuelve vacía: el operador puede volver a
+ * marcar los que correspondan. El redondeo a 8 posiciones es por el tope del
+ * formulario (`CAMPOS_POSICION`).
+ */
+export function pizarraDesdeResultadoOficial(of: ResultadoOficial): PizarraResultados {
+  const pizarra: PizarraCarrera = { primero: "" };
+  const puestos = of.puestos ?? [];
+  CAMPOS_POSICION.forEach((campo, i) => {
+    const n = String(puestos[i] ?? "").trim();
+    if (n) pizarra[campo] = n;
+  });
+
+  const dividendos: Record<string, number> = {};
+  const matrizWps: Record<string, number> = {};
+  for (const [k, v] of Object.entries(of.dividendos ?? {})) {
+    if (k.startsWith(PREFIJO_WPS)) matrizWps[k] = v;
+    else dividendos[k] = v;
+  }
+
+  return {
+    pizarra,
+    empates: [],
+    llenas: posicionesDePizarra(pizarra).length,
+    dividendos: Object.keys(dividendos).length ? dividendos : null,
+    matrizWps: Object.keys(matrizWps).length ? matrizWps : null,
+  };
 }

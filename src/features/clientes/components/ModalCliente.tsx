@@ -355,8 +355,11 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
       datos_pago: !metodo || !Object.keys(datosPago).length ? null : (datosPago as unknown as DatosPago),
     };
     setGuardando(true);
-// Se respetan las dos formas que ya usaba cada rama del CRUD: el alta
-    // distingue "vacío" (null) de 0, la edición escribe el número tal cual.
+    // Los números y los booleanos van SIEMPRE con valor concreto en las dos
+    // ramas del CRUD. Columnas como `clientes.comision`, `tasa_cuadre` y
+    // `mostrar_saldo_socio` son NOT NULL: mandar `null` (p. ej. `0 || null` o
+    // `false || null`) rebotaba el alta con
+    // "null value in column ... violates not-null constraint".
     //
     // `grupo_id` NO viaja si quien guarda no puede asignarlo. Ocultar el campo
     // alcanza solo para la pantalla: el estado arrancaba vacío, así que mandar
@@ -387,13 +390,13 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
       : await crearCliente({
           ...comun,
           ...extra,
-          es_socio: esSocio || null,
-          mostrar_saldo_socio: mostrarS || null,
+          es_socio: esSocio,
+          mostrar_saldo_socio: mostrarS,
           permite_cruces: permiteCruces,
-          comision: num(comision) || null,
-          aval: num(aval) || null,
+          comision: num(comision),
+          aval: num(aval),
           devolucion: num(devolucion),
-          tasa_cuadre: num(tasaCuadre) || null,
+          tasa_cuadre: num(tasaCuadre),
         });
     setGuardando(false);
     if (!r.ok) return toast(r.error ?? (esEdicion ? "Error al actualizar." : "Error al crear."), "error");

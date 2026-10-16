@@ -7,12 +7,13 @@ import { normalizarLineaRapida, type ConfianzaCampo } from "@/features/taquilla/
 import { rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
 import { HorseBadge } from "@/shared/components/ui/HorseChips";
 import { useTaquillaStore, type TicketTaquilla } from "@/shared/store/useTaquillaStore";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla, liquidarPendientesDeCarrera, type ResLiquidarCarrera } from "@/features/liquidacion/lib/pagarYCerrar";
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
 import { venderJugada, anularJugada, claveIdempotenciaJugada } from "@/features/taquilla/lib/venta";
 import { dividendosDePizarra } from "@/features/liquidacion/lib/posiciones";
-import { guardarPizarraCentral } from "@/features/liquidacion/lib/pizarraCentral";
+import { guardarPizarraCentral, pizarraDesdeResultadoOficial } from "@/features/liquidacion/lib/pizarraCentral";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { nombrePropioHipodromo, nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
@@ -21,10 +22,10 @@ import { SemaforoCarreras } from "@/features/gestion/components/SemaforoCarreras
 import { Button } from "@/shared/components/ui/Button";
 import { Guard } from "@/shared/components/ui/Guard";
 import { fmtMoney, type EjemplarTabla } from "@/features/tablas/lib/tipos";
-import { listarClientesVenta, listarGruposVenta, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, registrarAuditoria, type ClienteVenta } from "@/features/grupos/lib/grupos";
+import { listarClientesVenta, listarGruposVenta, comisionJugadasDeGrupo, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, registrarAuditoria, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { tieneCapacidad, usuarioVigente } from "@/features/seguridad/lib/vigente";
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/features/tablas/lib/rpc";
-import { registrarCarreraProgramada } from "@/features/carreras/lib/carreras-dia";
+import { registrarCarreraProgramada, leerResultadoOficial } from "@/features/carreras/lib/carreras-dia";
 import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados } from "@/features/carreras/lib/retiros";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
@@ -165,9 +166,13 @@ export function GestionJugadasModule() {
   const puedeReabrir = tieneCapacidad("gestion_jugadas:fn_reabrir_carrera");
 
   // La re-apertura vale SOLO para la carrera en curso: al cambiar de carrera,
-  // fecha o hipódromo se cierra sola, para no liquidar por error.
+  // fecha o hipódromo se cierra sola, para no liquidar por error. Lo mismo la
+  // pizarra cargada: si no se limpia, al cambiar de carrera el flujo unificado
+  // finalizaría la carrera nueva con la llegada de la anterior.
   useEffect(() => {
     setReapertura(false);
+    setUltimaPizarra(null);
+    setPizarraCentral(null);
   }, [hipodromo, fecha, carrera]);
 
   /**
@@ -190,6 +195,9 @@ export function GestionJugadasModule() {
 
   // Registro de clientes con saldos (validación inline CLIENTE 1 / CLIENTE 2)
   const [gruposMapa, setGruposMapa] = useState<Record<string, boolean>>({});
+  /** Grupos de venta completos: fuente de la comisión de las jugadas entre tercios. */
+  const [gruposVenta, setGruposVenta] = useState<GrupoVenta[]>([]);
+  const grupoActivo = useAuthStore((s) => s.grupoActivo);
   useEffect(() => {
     let vivo = true;
     listarClientesVenta().then((c) => {
@@ -199,7 +207,10 @@ export function GestionJugadasModule() {
     listarGruposVenta().then((gs) => {
       const mapa: Record<string, boolean> = {};
       for (const g of gs) mapa[String(g.id)] = g.permite_cruces !== false;
-      if (vivo) setGruposMapa(mapa);
+      if (vivo) {
+        setGruposMapa(mapa);
+        setGruposVenta(gs);
+      }
     });
     return () => {
       vivo = false;
@@ -275,6 +286,13 @@ export function GestionJugadasModule() {
   const [textoCargaRapida, setTextoCargaRapida] = useState("");
   const [iaCargando, setIaCargando] = useState(false);
   const [ultimaPizarra, setUltimaPizarra] = useState<PizarraResultados | null>(null);
+  /**
+   * Pizarra ya guardada en el CENTRAL (`resultados_carreras`) para la carrera
+   * activa, traída al abrir Resultados cuando no hay pizarra en sesión. Es solo
+   * para PRECARGAR el modal (editar sin volver a tipear): no reemplaza a
+   * `ultimaPizarra`, que es la que confirma el operador en esta sesión.
+   */
+  const [pizarraCentral, setPizarraCentral] = useState<PizarraResultados | null>(null);
   const [resumen, setResumen] = useState<ResLiquidarCarrera | null>(null);
 
   // Mensaje de WhatsApp de RESULTADOS: se genera al instante al cargar la
@@ -344,6 +362,42 @@ const hipodromosDelDia = useMemo(() => {
     })();
   }, []);
 
+  /**
+   * FLUJO UNIFICADO de «Resultados» y «Registrar y Finalizar».
+   *
+   * Antes eran dos acciones separadas: «Resultados» (Ctrl+Y) cargaba la pizarra
+   * y «Registrar y Finalizar» (Ctrl+R) liquidaba; el operador tenía que hacer
+   * las dos en secuencia y por eso se sentían redundantes. Ahora AMBOS botones y
+   * AMBOS atajos llaman a este mismo flujo:
+   *
+   *   1. Si ya hay una pizarra confirmada en la sesión → va directo a Registrar
+   *      y Finalizar (no hay nada que volver a cargar).
+   *   2. Si no → abre la Carga de Resultados PRECARGADA: primero intenta traer la
+   *      pizarra ya guardada en el central (`resultados_carreras`), así el
+   *      operador solo edita lo que cambió y nunca la tipea completa de nuevo.
+   */
+  const abrirResultados = useCallback(() => {
+    if (!listoParaCargar) return;
+    // Con la Carga de Resultados ya abierta, no re-abrir: evita que un Ctrl+Y/R
+    // accidental mientras se tipea reinicie el formulario precargado.
+    if (modalResultados) return;
+    if (ultimaPizarra) {
+      setModalFinalizar(true);
+      return;
+    }
+    void (async () => {
+      let inicial: PizarraResultados | null = null;
+      try {
+        const oficial = await leerResultadoOficial(hipodromo, carrera, fecha);
+        inicial = oficial ? pizarraDesdeResultadoOficial(oficial) : null;
+      } catch {
+        inicial = null;
+      }
+      setPizarraCentral(inicial);
+      setModalResultados(true);
+    })();
+  }, [listoParaCargar, modalResultados, ultimaPizarra, hipodromo, carrera, fecha]);
+
   // Atajos de la Barra de Comandos (real keyboard events)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -352,12 +406,11 @@ const hipodromosDelDia = useMemo(() => {
       if (k === "q") {
         e.preventDefault();
         setMostrarPlanoPreliminar(true);
-      } else if (k === "y") {
+      } else if (k === "y" || k === "r") {
+        // Ctrl+Y (Resultados) y Ctrl+R (Registrar y Finalizar) hacen lo MISMO:
+        // el flujo unificado decide internamente si precargar o liquidar.
         e.preventDefault();
-        if (listoParaCargar) setModalResultados(true);
-      } else if (k === "r") {
-        e.preventDefault();
-        if (listoParaCargar) setModalFinalizar(true);
+        abrirResultados();
       } else if (k === "h") {
         e.preventDefault();
         setMostrarHistorial((v) => !v);
@@ -371,12 +424,35 @@ const hipodromosDelDia = useMemo(() => {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [listoParaCargar]);
+  }, [abrirResultados]);
 
   const comisionNum = useMemo(() => {
     const n = parseFloat(comision.replace(",", "."));
     return Number.isFinite(n) && n >= 0 ? n : 5;
   }, [comision]);
+
+  /**
+   * Grupo de la caja: dueño de la comisión de las "jugadas entre tercios". Para
+   * el super administrador es el grupo que está mirando; para el resto, el de
+   * los clientes cargados (el RLS ya los acota a su grupo).
+   */
+  const grupoSesion = useMemo(() => {
+    if (grupoActivo) return String(grupoActivo);
+    const g = clientes.find((c) => c.grupo_id != null || c.grupos.length > 0);
+    if (!g) return null;
+    return g.grupo_id != null ? String(g.grupo_id) : String(g.grupos[0]);
+  }, [grupoActivo, clientes]);
+
+  const comisionGrupoSesion = comisionJugadasDeGrupo(gruposVenta, grupoSesion);
+
+  /**
+   * Prellena COM % con la comisión GENERAL del grupo (comision_default): es la
+   * ÚNICA comisión de las jugadas entre tercios y alimenta venta, liquidación y
+   * reportes/WhatsApp. El operador puede ajustarla puntualmente (queda editable).
+   */
+  useEffect(() => {
+    if (comisionGrupoSesion != null) setComision(String(comisionGrupoSesion));
+  }, [comisionGrupoSesion]);
 
   /** Proyecta la fila. Si los clientes no están en el registro todavía, se
       calculan por prefijo para poder topar el monto igual (mismo criterio que
@@ -1092,8 +1168,8 @@ const hipodromosDelDia = useMemo(() => {
   const ejecutarFinalizar = async () => {
     if (!ultimaPizarra) {
       setModalFinalizar(false);
-      setModalResultados(true);
-      return setAviso("Primero cargá los resultados (Ctrl+Y) para liquidar.");
+      abrirResultados();
+      return setAviso("Primero cargá los resultados (Ctrl+Y o Ctrl+R) para liquidar.");
     }
     // ÍTEM 1 — Re-apertura: liquida SÓLO las jugadas agregadas DESPUÉS de la
     // liquidación original. A propósito NO reescribe el resultado central ni
@@ -1659,9 +1735,9 @@ const hipodromosDelDia = useMemo(() => {
           </button>
           <button
             type="button"
-            onClick={() => listoParaCargar && setModalResultados(true)}
+            onClick={abrirResultados}
             disabled={!listoParaCargar}
-            title={listoParaCargar ? "Cargar/Editar el orden de llegada de la carrera" : "Elija hipódromo y carrera para cargar resultados"}
+            title={listoParaCargar ? "Carga/edita los resultados y luego finaliza (mismo flujo que Registrar y Finalizar)" : "Elija hipódromo y carrera para cargar resultados"}
             className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
             🏁 Resultados <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+Y</kbd>
@@ -1717,9 +1793,9 @@ const hipodromosDelDia = useMemo(() => {
           )}
           <button
             type="button"
-            onClick={() => listoParaCargar && setModalFinalizar(true)}
+            onClick={abrirResultados}
             disabled={!listoParaCargar}
-            title={listoParaCargar ? undefined : "Elija hipódromo y carrera para registrar y finalizar"}
+            title={listoParaCargar ? "Carga/edita los resultados y luego finaliza (mismo flujo que Resultados)" : "Elija hipódromo y carrera para registrar y finalizar"}
             className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-success-600 to-emerald-500 px-3 py-2 text-xs font-black text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {reapertura ? "💾 Liquidar jugadas agregadas" : "✅ Registrar y Finalizar"}{" "}
@@ -1804,6 +1880,7 @@ const hipodromosDelDia = useMemo(() => {
         hipodromo={hipodromo}
         carrera={String(carrera)}
         caballos={caballosDeCarrera.length ? caballosDeCarrera : null}
+        inicial={ultimaPizarra ?? pizarraCentral}
         onConfirmar={(r) => {
           setUltimaPizarra(r);
           setModalResultados(false);
@@ -1852,7 +1929,7 @@ const hipodromosDelDia = useMemo(() => {
               )}
               {!ultimaPizarra ? (
                 <p className="rounded-lg bg-warning-500/10 px-3 py-2 text-xs font-semibold text-warning-700">
-                  ⚠️ Todavía no cargaste los resultados. Usá Ctrl+Y (Carga de Resultados) o confirmá abajo para abrir el modal.
+                  ⚠️ Todavía no cargaste los resultados. Usá Ctrl+Y o Ctrl+R (mismo flujo) para abrir la Carga de Resultados.
                 </p>
               ) : (
                 <div className="rounded-lg border border-line bg-gray-50 p-3">
