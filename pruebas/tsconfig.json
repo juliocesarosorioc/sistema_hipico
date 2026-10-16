@@ -67,6 +67,7 @@
     "./jugadas-fecha.test.ts",
     "./dupleta-clave.test.ts",
     "./historial-resultados.test.ts",
-    "./grupos-ux.test.ts"
+    "./grupos-ux.test.ts",
+    "./reapertura-liquidada.test.ts"
   ]
 }

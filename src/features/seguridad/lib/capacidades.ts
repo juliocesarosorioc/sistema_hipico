@@ -271,6 +271,11 @@ export const MODULOS_ESQUEMA: ModuloEsquema[] = [
       c("gestion_jugadas", "funcion", "fn_liquidar_carrera", "Liquidar carrera y cerrar tabla", "critico", "src/lib/liquidacion/pagarYCerrar.ts:172", {
         descripcion: "Escribe el resultado central y cambia el estado de la tabla.",
       }),
+      c("gestion_jugadas", "funcion", "fn_reabrir_carrera", "Reabrir una carrera ya liquidada para agregar jugadas", "critico", "src/lib/liquidacion/pagarYCerrar.ts", {
+        descripcion:
+          "Ítem 1: vuelve a habilitar la carga de jugadas sobre una carrera YA liquidada y permite liquidar SOLO lo agregado. Los tickets previos (Ganador/Perdedor/Retirado) no se tocan y el resultado central no se reescribe.",
+        requiere: ["gestion_jugadas:ruta_gestion"],
+      }),
       c("gestion_jugadas", "funcion", "fn_aplicar_retiros", "Aplicar retiros y reembolsos", "critico", "src/lib/carreras/retiros.ts:196", {
         descripcion: "RPC que reembolsa tickets y recalcula premios.",
       }),

@@ -10,6 +10,7 @@ import type { TicketMotor, ResultadoMotor } from "@/features/betting/lib/betting
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 import { supabase } from "@/core/supabase";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
+import { aplicarLiquidacionSaldos, type ResumenSaldos } from "@/features/liquidacion/lib/saldos";
 
 /**
  * Suma de todos los tickets de la carrera. El comando puede traer el monto al
@@ -254,6 +255,46 @@ export async function liquidarCarreraYCerrarTabla(opts: {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/**
+ * ÍTEM 1 — Re-apertura de una carrera YA LIQUIDADA.
+ *
+ * Liquida SOLO los tickets nuevos (estado 'Pendiente') que se agregaron DESPUÉS
+ * de la liquidación original. A propósito NO reescribe el resultado central ni
+ * vuelve a cerrar la tabla: lo ya liquidado quedó en estado
+ * Ganador/Perdedor/Retirado y `aplicarLiquidacionSaldos` es idempotente por
+ * estado, así que los tickets previos NO se tocan (no se dobla el abono).
+ *
+ * Se exige la capacidad `gestion_jugadas:fn_reabrir_carrera` (la autorización
+ * que pide el dueño para la re-apertura explícita).
+ */
+export async function liquidarPendientesDeCarrera(opts: {
+  hipodromo: string;
+  carrera: number | string;
+  pizarra: PizarraCarrera;
+  tasaComision?: number | null;
+  dividendos?: Record<string, number> | null;
+  fecha?: string;
+}): Promise<ResumenSaldos> {
+  try {
+    exigirPermiso("gestion_jugadas:fn_reabrir_carrera", {
+      hipodromo: opts.hipodromo,
+      monto: 0,
+    });
+  } catch (e) {
+    const msg = `SIN PERMISO: ${(e as Error).message}`;
+    return { ok: false, motivo: msg, aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [msg] };
+  }
+  const fecha = opts.fecha || hoyLocal();
+  const dividendos = opts.dividendos ?? (await dividendosDe(opts.hipodromo, opts.carrera, fecha));
+  return aplicarLiquidacionSaldos({
+    hipodromo: opts.hipodromo,
+    carrera: opts.carrera,
+    pizarra: opts.pizarra,
+    dividendos,
+    tasaComision: opts.tasaComision,
+  });
 }
 
 function firstOrdinal(primero: unknown): number {

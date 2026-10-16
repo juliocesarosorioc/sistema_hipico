@@ -7,7 +7,7 @@ import { normalizarLineaRapida, type ConfianzaCampo } from "@/features/taquilla/
 import { HorseBadge } from "@/shared/components/ui/HorseChips";
 import { useTaquillaStore, type TicketTaquilla } from "@/shared/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
-import { liquidarCarreraYCerrarTabla, type ResLiquidarCarrera } from "@/features/liquidacion/lib/pagarYCerrar";
+import { liquidarCarreraYCerrarTabla, liquidarPendientesDeCarrera, type ResLiquidarCarrera } from "@/features/liquidacion/lib/pagarYCerrar";
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
 import { venderJugada, anularJugada, claveIdempotenciaJugada } from "@/features/taquilla/lib/venta";
 import { dividendosDePizarra } from "@/features/liquidacion/lib/posiciones";
@@ -20,7 +20,8 @@ import { SemaforoCarreras } from "@/features/gestion/components/SemaforoCarreras
 import { Button } from "@/shared/components/ui/Button";
 import { Guard } from "@/shared/components/ui/Guard";
 import { fmtMoney, type EjemplarTabla } from "@/features/tablas/lib/tipos";
-import { listarClientesVenta, listarGruposVenta, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, type ClienteVenta } from "@/features/grupos/lib/grupos";
+import { listarClientesVenta, listarGruposVenta, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, registrarAuditoria, type ClienteVenta } from "@/features/grupos/lib/grupos";
+import { tieneCapacidad, usuarioVigente } from "@/features/seguridad/lib/vigente";
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/features/tablas/lib/rpc";
 import { registrarCarreraProgramada } from "@/features/carreras/lib/carreras-dia";
 import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados } from "@/features/carreras/lib/retiros";
@@ -96,6 +97,8 @@ export function GestionJugadasModule() {
   const [retirados, setRetirados] = useState("");
   const [comision, setComision] = useState("5");
   const [conCruces, setConCruces] = useState(false);
+  /** Ítem 1: re-apertura explícita de una carrera YA liquidada. */
+  const [reapertura, setReapertura] = useState(false);
   const [filas, setFilas] = useState<FilaCarga[]>([filaVacia()]);
   const [jugadasPorCarrera, setJugadasPorCarrera] = useState<number[]>([]);
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
@@ -136,6 +139,25 @@ export function GestionJugadasModule() {
         .sort((a, b) => a - b),
     [carrerasDelDia]
   );
+
+  /**
+   * Ítem 1: ¿la carrera activa ya está liquidada? El registro central de la
+   * fecha lo dice (`estado` "Liquidada" o el resultado ya aplicado a tablas).
+   */
+  const carreraLiquidada = useMemo(() => {
+    const c = carrerasDelDia.find((x) => Number(x.carrera) === carrera);
+    if (!c) return false;
+    const est = String(c.estado ?? "").toLowerCase();
+    return est === "liquidada" || est === "cerrada" || c.aplicado_a_tablas === true || (c.ganadores?.length ?? 0) > 0;
+  }, [carrerasDelDia, carrera]);
+  /** Ítem 1: sólo quien tenga la capacidad puede reabrir una liquidada. */
+  const puedeReabrir = tieneCapacidad("gestion_jugadas:fn_reabrir_carrera");
+
+  // La re-apertura vale SOLO para la carrera en curso: al cambiar de carrera,
+  // fecha o hipódromo se cierra sola, para no liquidar por error.
+  useEffect(() => {
+    setReapertura(false);
+  }, [hipodromo, fecha, carrera]);
 
   /** Opciones del Autocomplete CLIENTE 1/CLIENTE 2 (value = nombre real en BD). */
   const opcionesClientes = useMemo(
@@ -1053,6 +1075,33 @@ const hipodromosDelDia = useMemo(() => {
       setModalResultados(true);
       return setAviso("Primero cargá los resultados (Ctrl+Y) para liquidar.");
     }
+    // ÍTEM 1 — Re-apertura: liquida SÓLO las jugadas agregadas DESPUÉS de la
+    // liquidación original. A propósito NO reescribe el resultado central ni
+    // vuelve a cerrar la tabla, y los tickets ya decididos no se tocan
+    // (`aplicarLiquidacionSaldos` es idempotente por estado). La re-apertura
+    // queda registrada en la auditoría.
+    if (reapertura) {
+      const s = await liquidarPendientesDeCarrera({
+        hipodromo,
+        carrera,
+        pizarra: ultimaPizarra.pizarra,
+        dividendos: dividendosDePizarra(ultimaPizarra),
+        tasaComision: comisionNum,
+        fecha,
+      });
+      void registrarAuditoria(
+        "GESTION_JUGADAS",
+        "REABRIR_LIQUIDADA",
+        `Re-apertura de ${nombreHipodromo} C${carrera} (${fecha}) por ${usuarioVigente()}: ${s.motivo}`
+      );
+      for (const t of ticketsDeCarrera) eliminarTicket(t.id);
+      setUltimaPizarra(null);
+      setJugadasPorCarrera((j: number[]) => j.filter((c) => c !== carrera));
+      setReapertura(false);
+      setModalFinalizar(false);
+      setAviso(s.ok ? `✅ ${s.motivo}` : `❌ ${s.motivo}`);
+      return;
+    }
     if (ticketsDeCarrera.length === 0) return setAviso("No hay jugadas en sesión para esta carrera.");
     const r = await liquidarCarreraYCerrarTabla({
       hipodromo,
@@ -1104,6 +1153,24 @@ const hipodromosDelDia = useMemo(() => {
   const cerrarFinalizar = () => {
     setModalFinalizar(false);
     setResumen(null);
+  };
+
+  /** Ítem 1: abre la re-apertura de la carrera liquidada (con autorización). */
+  const abrirReapertura = () => {
+    if (!puedeReabrir) {
+      setAviso("No tenés la capacidad para reabrir una carrera liquidada.");
+      return;
+    }
+    setReapertura(true);
+    setAviso("🟠 Re-apertura: cargá las jugadas nuevas y luego «Liquidar jugadas agregadas» (Ctrl+R).");
+    void registrarAuditoria(
+      "GESTION_JUGADAS",
+      "REABRIR_LIQUIDADA_INICIO",
+      `Re-apertura de ${nombreHipodromo} C${carrera} (${fecha}) por ${usuarioVigente()}.`
+    );
+    window.dispatchEvent(
+      new CustomEvent("toast", { detail: { msg: "🟠 Carrera reabierta: se liquidará SÓLO lo agregado.", tipo: "warning" } })
+    );
   };
 
   return (
@@ -1568,12 +1635,41 @@ const hipodromosDelDia = useMemo(() => {
           >
             🧾 Reporte de Liquidación <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+G</kbd>
           </button>
+          {carreraLiquidada && !reapertura && (
+            <button
+              type="button"
+              onClick={abrirReapertura}
+              disabled={!puedeReabrir}
+              title={
+                puedeReabrir
+                  ? "Reabrir esta carrera liquidada para agregar jugadas nuevas"
+                  : "Necesitás la capacidad «Reabrir una carrera ya liquidada»"
+              }
+              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              ➕ Agregar jugada a carrera liquidada
+            </button>
+          )}
+          {reapertura && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
+              🟠 Re-apertura activa · {nombreHipodromo} C{carrera} — se liquidará SÓLO lo agregado
+              <button
+                type="button"
+                onClick={() => setReapertura(false)}
+                className="ml-1 text-amber-600 hover:text-amber-800"
+                title="Cancelar la re-apertura"
+              >
+                ✕
+              </button>
+            </span>
+          )}
           <button
             type="button"
             onClick={() => setModalFinalizar(true)}
             className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-success-600 to-emerald-500 px-3 py-2 text-xs font-black text-white hover:brightness-110"
           >
-            ✅ Registrar y Finalizar <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+R</kbd>
+            {reapertura ? "💾 Liquidar jugadas agregadas" : "✅ Registrar y Finalizar"}{" "}
+            <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+R</kbd>
           </button>
           <button
             type="button"
@@ -1690,10 +1786,16 @@ const hipodromosDelDia = useMemo(() => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
           <div className="w-full max-w-lg rounded-2xl border border-line bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
-              <h3 className="text-xs font-black uppercase">✅ Registrar y Finalizar — <span className="normal-case">{nombreHipodromo}</span> C{carrera}</h3>
+              <h3 className="text-xs font-black uppercase">{reapertura ? "🟠 Liquidar jugadas agregadas" : "✅ Registrar y Finalizar"} — <span className="normal-case">{nombreHipodromo}</span> C{carrera}</h3>
               <button type="button" onClick={cerrarFinalizar} className="text-slate-300 hover:text-white">✕</button>
             </div>
             <div className="max-h-[60vh] space-y-3 overflow-y-auto p-4">
+              {reapertura && (
+                <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700">
+                  🟠 Re-apertura: se liquidará SÓLO lo agregado. Los tickets ya decididos (Ganador/Perdedor/Retirado) no se
+                  tocan y el resultado central no se reescribe.
+                </p>
+              )}
               {!ultimaPizarra ? (
                 <p className="rounded-lg bg-warning-500/10 px-3 py-2 text-xs font-semibold text-warning-700">
                   ⚠️ Todavía no cargaste los resultados. Usá Ctrl+Y (Carga de Resultados) o confirmá abajo para abrir el modal.
@@ -1771,7 +1873,7 @@ const hipodromosDelDia = useMemo(() => {
                     🏁 Cargar resultados
                   </Button>
                   <Button variant="success" size="md" onClick={ejecutarFinalizar}>
-                    💰 Registrar y Finalizar
+                    {reapertura ? "💾 Liquidar jugadas agregadas" : "💰 Registrar y Finalizar"}
                   </Button>
                 </>
               )}
