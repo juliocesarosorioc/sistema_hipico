@@ -13,7 +13,7 @@ import { liquidarCarreraYCerrarTabla, liquidarPendientesDeCarrera, type ResLiqui
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
 import { venderJugada, anularJugada, claveIdempotenciaJugada } from "@/features/taquilla/lib/venta";
 import { dividendosDePizarra } from "@/features/liquidacion/lib/posiciones";
-import { guardarPizarraCentral, pizarraDesdeResultadoOficial } from "@/features/liquidacion/lib/pizarraCentral";
+import { guardarPizarraCentral } from "@/features/liquidacion/lib/pizarraCentral";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { nombrePropioHipodromo, nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
@@ -25,7 +25,7 @@ import { fmtMoney, type EjemplarTabla } from "@/features/tablas/lib/tipos";
 import { listarClientesVenta, listarGruposVenta, comisionJugadasDeGrupo, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, registrarAuditoria, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { tieneCapacidad, usuarioVigente } from "@/features/seguridad/lib/vigente";
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/features/tablas/lib/rpc";
-import { registrarCarreraProgramada, leerResultadoOficial } from "@/features/carreras/lib/carreras-dia";
+import { registrarCarreraProgramada } from "@/features/carreras/lib/carreras-dia";
 import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados } from "@/features/carreras/lib/retiros";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
@@ -291,16 +291,21 @@ export function GestionJugadasModule() {
   const [mostrarReporteLiquidacion, setMostrarReporteLiquidacion] = useState(false);
   const [modalResultados, setModalResultados] = useState(false);
   const [modalFinalizar, setModalFinalizar] = useState(false);
+  /** Abre el Reporte de Liquidación recién al cerrar «Registrar y Finalizar». */
+  const [reporteAlCerrarFinalizar, setReporteAlCerrarFinalizar] = useState(false);
   const [modalComandos, setModalComandos] = useState(false);
   const [modalCargaRapida, setModalCargaRapida] = useState(false);
   const [textoCargaRapida, setTextoCargaRapida] = useState("");
   const [iaCargando, setIaCargando] = useState(false);
   const [ultimaPizarra, setUltimaPizarra] = useState<PizarraResultados | null>(null);
   /**
-   * Pizarra ya guardada en el CENTRAL (`resultados_carreras`) para la carrera
-   * activa, traída al abrir Resultados cuando no hay pizarra en sesión. Es solo
-   * para PRECARGAR el modal (editar sin volver a tipear): no reemplaza a
-   * `ultimaPizarra`, que es la que confirma el operador en esta sesión.
+   * Pizarra PAGADA en esta sesión (se conserva al cerrar) para poder volver a
+   * editarla con el botón «✏️ Editar resultados» del modal de Finalizar.
+   *
+   * NUNCA se rellena desde el central: «Registrar y Finalizar» abre la Carga
+   * de Resultados EN BLANCO aunque la carrera ya tenga resultados guardados
+   * (`resultados_carreras`), porque precargarlos obligaba a borrar a mano una
+   * llegada que el operador quería cargar de nuevo.
    */
   const [pizarraCentral, setPizarraCentral] = useState<PizarraResultados | null>(null);
   const [resumen, setResumen] = useState<ResLiquidarCarrera | null>(null);
@@ -382,31 +387,24 @@ const hipodromosDelDia = useMemo(() => {
    *
    *   1. Si ya hay una pizarra confirmada en la sesión → va directo a Registrar
    *      y Finalizar (no hay nada que volver a cargar).
-   *   2. Si no → abre la Carga de Resultados PRECARGADA: primero intenta traer la
-   *      pizarra ya guardada en el central (`resultados_carreras`), así el
-   *      operador solo edita lo que cambió y nunca la tipea completa de nuevo.
+   *   2. Si no → abre la Carga de Resultados EN BLANCO. A propósito NO se trae
+   *      la pizarra del central: una carrera que ya tenía resultados guardados
+   *      se abría precargada y el operador tenía que borrar la llegada ajena a
+   *      mano antes de cargar la suya.
    */
   const abrirResultados = useCallback(() => {
     if (!listoParaCargar) return;
     // Con la Carga de Resultados ya abierta, no re-abrir: evita que un Ctrl+Y/R
-    // accidental mientras se tipea reinicie el formulario precargado.
+    // accidental mientras se tipea reinicie el formulario.
     if (modalResultados) return;
     if (ultimaPizarra) {
       setModalFinalizar(true);
       return;
     }
-    void (async () => {
-      let inicial: PizarraResultados | null = null;
-      try {
-        const oficial = await leerResultadoOficial(hipodromo, carrera, fecha);
-        inicial = oficial ? pizarraDesdeResultadoOficial(oficial) : null;
-      } catch {
-        inicial = null;
-      }
-      setPizarraCentral(inicial);
-      setModalResultados(true);
-    })();
-  }, [listoParaCargar, modalResultados, ultimaPizarra, hipodromo, carrera, fecha]);
+    // (1) Siempre en blanco: solo vale lo que cargue el operador en ESTA sesión.
+    setPizarraCentral(null);
+    setModalResultados(true);
+  }, [listoParaCargar, modalResultados, ultimaPizarra]);
 
   // Atajos de la Barra de Comandos (real keyboard events)
   useEffect(() => {
@@ -771,6 +769,10 @@ const hipodromosDelDia = useMemo(() => {
   const quitarTicket = async (id: string) => {
     const t = tickets.find((x) => x.id === id);
     if (!t) return;
+    // (3) Modificar jugadas: anular una venta ya registrada pide confirmación.
+    if (!window.confirm(`⚠️ ¿Anular la jugada "${t.comando}" de esta carrera?\n\nSe descuenta de la sesión y de la liquidación.`)) {
+      return;
+    }
     if (!(await anularSiPersistido(t))) return;
     eliminarTicket(id);
   };
@@ -779,6 +781,10 @@ const hipodromosDelDia = useMemo(() => {
   const editarTicket = async (id: string) => {
     const t = tickets.find((x) => x.id === id);
     if (!t) return;
+    // (3) Modificar jugadas: se anula lo vendido para volver a editarlo.
+    if (!window.confirm(`⚠️ ¿Devolver "${t.comando}" a la tabla para modificarla?\n\nSe anula la venta registrada y la jugada vuelve a los campos editables.`)) {
+      return;
+    }
     if (!(await anularSiPersistido(t))) return;
     eliminarTicket(id);
     const fila = desarmarTicket(t);
@@ -980,6 +986,21 @@ const hipodromosDelDia = useMemo(() => {
   };
 
   /**
+   * (3) Jugadas ADICIONALES / modificadas sobre una carrera que ya tiene jugadas
+   * cargadas en la sesión: pide confirmación explícita. Sin este aviso, un Enter
+   * mal tipeado agregaba ventas a una carrera que ya estaba armada.
+   */
+  const confirmarCargaAdicional = (): boolean => {
+    if (ticketsDeCarrera.length === 0 && !jugadasPorCarrera.includes(carrera)) return true;
+    const ok = window.confirm(
+      `⚠️ ${nombreHipodromo} C${carrera} ya tiene jugadas cargadas en esta sesión.\n\n¿Deseás cargar jugadas adicionales o modificar las existentes?`
+    );
+    if (ok) return true;
+    setAviso("Carga cancelada: no se modificó la carrera.");
+    return false;
+  };
+
+  /**
    * Carga las filas válidas a la taquilla: cada una se VENDE de verdad contra
    * `club_vender_jugada` (ticket + descuento de saldo en una transacción). Solo
    * lo que se cobra queda en la sesión; una fila que no se puede cobrar queda en
@@ -987,6 +1008,7 @@ const hipodromosDelDia = useMemo(() => {
    * saldo+aval), no el tipeado.
    */
   const cargarAtaquilla = async () => {
+    if (!confirmarCargaAdicional()) return;
     let n = 0;
     const errores: string[] = [];
     const indicesError: number[] = [];
@@ -1203,9 +1225,20 @@ const hipodromosDelDia = useMemo(() => {
     }));
   };
 
-  const ejecutarFinalizar = async () => {
-    if (!ultimaPizarra) {
+  /**
+   * REGISTRA Y FINALIZA la carrera (escribe el resultado central, liquida y
+   * cierra la tabla).
+   *
+   * Recibe la pizarra como argumento cuando el cierre viene del propio
+   * «Confirmar resultados»: ahí el estado `ultimaPizarra` todavía no se
+   * re-renderizó y llegaría en null. Sin argumento usa la de la sesión (botón
+   * del modal / Ctrl+R).
+   */
+  const ejecutarFinalizar = async (pizarraConfirmada?: PizarraResultados | null) => {
+    const piz = pizarraConfirmada ?? ultimaPizarra;
+    if (!piz) {
       setModalFinalizar(false);
+      setReporteAlCerrarFinalizar(false);
       abrirResultados();
       return setAviso("Primero cargá los resultados (Ctrl+Y o Ctrl+R) para liquidar.");
     }
@@ -1218,8 +1251,8 @@ const hipodromosDelDia = useMemo(() => {
       const s = await liquidarPendientesDeCarrera({
         hipodromo,
         carrera,
-        pizarra: ultimaPizarra.pizarra,
-        dividendos: dividendosDePizarra(ultimaPizarra),
+        pizarra: piz.pizarra,
+        dividendos: dividendosDePizarra(piz),
         tasaComision: comisionNum,
         fecha,
       });
@@ -1233,6 +1266,8 @@ const hipodromosDelDia = useMemo(() => {
       setJugadasPorCarrera((j: number[]) => j.filter((c) => c !== carrera));
       setReapertura(false);
       setModalFinalizar(false);
+      // La re-apertura no paga la carrera completa: no corresponde el Reporte.
+      setReporteAlCerrarFinalizar(false);
       setAviso(s.ok ? `✅ ${s.motivo}` : `❌ ${s.motivo}`);
       // La re-apertura pagó premios: refrescar saldos para cargar más jugadas
       // contra el saldo REAL (si no, la RPC rechaza y la jugada no se toma).
@@ -1243,14 +1278,14 @@ const hipodromosDelDia = useMemo(() => {
     const r = await liquidarCarreraYCerrarTabla({
       hipodromo,
       carrera,
-      pizarra: ultimaPizarra.pizarra,
+      pizarra: piz.pizarra,
       // La jornada seleccionada, no "hoy": el resultado central se escribe en
       // esa fecha y el semáforo (que filtra por fecha) pasa a rojo al finalizar.
       fecha,
       // Los dividendos cargados en Ctrl+Y viajan al motor y al central: sin
       // esto la liquidación de puestos quedaba PENDIENTE por dividendo
       // faltante y `resultados_carreras.dividendos` se guardaba en NULL.
-      dividendos: dividendosDePizarra(ultimaPizarra),
+      dividendos: dividendosDePizarra(piz),
       tickets: ticketsDeCarrera.map((t) => ({
         comando: t.comando,
         monto: t.monto,
@@ -1278,18 +1313,20 @@ const hipodromosDelDia = useMemo(() => {
       const s = await aplicarLiquidacionSaldos({
         hipodromo,
         carrera,
-        pizarra: ultimaPizarra.pizarra,
-        dividendos: dividendosDePizarra(ultimaPizarra),
+        pizarra: piz.pizarra,
+        dividendos: dividendosDePizarra(piz),
         premio_por_tabla:
-          ultimaPizarra.premio_por_tabla ?? tablaDeCarrera?.premio_recalculado ?? tablaDeCarrera?.premio_original ?? null,
+          piz.premio_por_tabla ?? tablaDeCarrera?.premio_recalculado ?? tablaDeCarrera?.premio_original ?? null,
         tasaComision: comisionNum,
         // La JORNADA seleccionada, no "hoy": los tickets viven en fecha_registro.
         fecha,
       });
       for (const t of ticketsDeCarrera) eliminarTicket(t.id);
-      // Deja la pizarra PAGADA precargada para poder EDITAR los resultados
-      // después de pagar (botón «✏️ Editar resultados» del modal de Finalizar).
-      setPizarraCentral(ultimaPizarra);
+      // Deja la pizarra PAGADA para poder EDITAR los resultados después de
+      // pagar (botón «✏️ Editar resultados» del modal de Finalizar). A
+      // diferencia de «Registrar y Finalizar», ahí SÍ se precarga: es la
+      // pizarra que acaba de pagar el operador en ESTA sesión.
+      setPizarraCentral(piz);
       setUltimaPizarra(null);
       setJugadasPorCarrera((j: number[]) => j.filter((c) => c !== carrera));
       setResumen(r);
@@ -1309,6 +1346,13 @@ const hipodromosDelDia = useMemo(() => {
   const cerrarFinalizar = () => {
     setModalFinalizar(false);
     setResumen(null);
+    // El flujo nuevo cierra la carrera al CONFIRMAR los resultados, así que el
+    // Reporte (con su opción de WhatsApp) se abre recién acá: apilarlo con el
+    // modal de cierre dejaba el reporte tapado sin aviso.
+    if (reporteAlCerrarFinalizar) {
+      setReporteAlCerrarFinalizar(false);
+      setMostrarReporteLiquidacion(true);
+    }
   };
 
   /** Ítem 1: abre la re-apertura de la carrera liquidada (con autorización). */
@@ -1975,12 +2019,16 @@ const hipodromosDelDia = useMemo(() => {
             .then((res) => {
               if (!res.ok) setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó: ${res.error ?? "sin conexión"}`);
             })
-            .catch(() => setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó.`))
-            .finally(() => {
-              // Cargado UNA sola vez: al centralizar abrimos el REPORTE directo
-              // (que ya trae su opción de WhatsApp), sin pasos intermedios.
-              setMostrarReporteLiquidacion(true);
-            });
+            .catch(() => setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó.`));
+          // (2) CONFIRMAR RESULTADOS = REGISTRAR Y FINALIZAR: la carrera se
+          // registra y se cierra en ESTE mismo paso. Antes el operador tenía que
+          // volver a apretar Ctrl+R y recién ahí liquidar, así que una carrera
+          // "confirmada" podía quedar abierta sin que nadie lo notara.
+          // `r` viaja como argumento porque `setUltimaPizarra` todavía no se
+          // re-renderizó y `ejecutarFinalizar` la leería en null.
+          setReporteAlCerrarFinalizar(true);
+          setModalFinalizar(true);
+          void ejecutarFinalizar(r);
         }}
       />
 
@@ -2076,7 +2124,7 @@ const hipodromosDelDia = useMemo(() => {
                 </Button>
               )}
               {!resumen && (
-                <Button variant="success" size="md" onClick={ejecutarFinalizar}>
+                <Button variant="success" size="md" onClick={() => void ejecutarFinalizar()}>
                   {reapertura ? "💾 Liquidar jugadas agregadas" : "💰 Registrar y Finalizar"}
                 </Button>
               )}
