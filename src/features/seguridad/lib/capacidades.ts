@@ -726,6 +726,14 @@ export const PUERTAS: Array<{
   { ruta: "/contabilidad/monedas", capacidad: "contabilidad:ruta_monedas" },
   { ruta: "/inicio", capacidad: "general:ruta_inicio" },
   { ruta: "/saldos-reportes", capacidad: "general:ruta_saldos" },
+  // Reporte Diario y por Carrera. Cuelga del área de "Saldos y Reportes" y se
+  // abre con la MISMA capacidad, sin inventar una nueva: es el criterio que ya
+  // usan /diagnostico y /crear-grupo (una capacidad declarada que no está
+  // sembrada en la base se la concede a nadie salvo al principal). El ALCANCE
+  // de los datos no lo decide esta puerta: lo fuerza la RPC
+  // `club_reporte_diario` / el RLS por grupo. Si algún día se quiere conceder
+  // aparte, se declara en el maestro y se cambia acá.
+  { ruta: "/reporte-diario", capacidad: "general:ruta_saldos" },
   { ruta: "/whatsapp", capacidad: "whatsapp:ruta_whatsapp" },
   { ruta: "/remates", capacidad: "remates:ruta_remates" },
   { ruta: "/pollas", capacidad: "pollas:ruta_pollas" },

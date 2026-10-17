@@ -301,7 +301,7 @@ Deno.serve(async (req: Request) => {
       db
         .from("tickets_apuestas")
         .select(
-          "id, fecha_registro, hipodromo, carrera, nombre_jugada, caballo, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, grupo_cobro_nombre, grupo_cobro_id"
+          "id, fecha_registro, fecha_carrera, hipodromo, carrera, nombre_jugada, caballo, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, grupo_cobro_nombre, grupo_cobro_id"
         )
         .eq("cliente_juega_id", cid)
         .order("fecha_registro", { ascending: false })

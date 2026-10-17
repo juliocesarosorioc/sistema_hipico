@@ -114,6 +114,12 @@ export type TicketApuesta = {
    * debe leer esta columna.
    */
   fecha_registro?: string | null;
+  /**
+   * Fecha de la CARRERA (columna `fecha_carrera`). Es la que usan el monitor y
+   * los reportes; `fecha_registro` es el momento de la venta. Puede venir null
+   * en filas heredadas, por eso los reportes caen a `fecha_registro`.
+   */
+  fecha_carrera?: string | null;
   hipodromo?: string | null;
   carrera?: number | string | null;
   nombre_jugada?: string | null;
@@ -582,6 +588,8 @@ export type JugadaItem = {
   id: string;
   fecha: string | null;
   fechaTexto: string;
+  /** Fecha de la carrera (YYYY-MM-DD), para el reporte diario. */
+  fechaCarrera: string | null;
   hipodromo: string;
   carrera: number;
   grupo: string;
@@ -651,6 +659,7 @@ export function construirEstadoCuenta(tickets: TicketApuesta[], devolucionPct: n
       id: String(t.id),
       fecha: t.fecha_registro ?? null,
       fechaTexto: fmtFechaHora(t.fecha_registro),
+      fechaCarrera: t.fecha_carrera ?? null,
       hipodromo,
       carrera,
       grupo,

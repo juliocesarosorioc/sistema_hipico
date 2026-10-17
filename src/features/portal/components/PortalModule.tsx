@@ -20,6 +20,12 @@ import {
 import { codigosPaisUnicos, desglosarTelefono, formatoMoneda, listMetodosPago } from "@/shared/lib/vzla";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { encuestarTicket, listarMisTickets, type TicketDisputa } from "@/features/tickets/lib/tickets";
+import {
+  armarReporteDiario,
+  esJugadaAnulada,
+  type JugadaReporte,
+} from "@/features/reportes/lib/reporte-diario";
+import { ReporteDiarioTabla } from "@/features/reportes/components/ReporteDiarioTabla";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -29,7 +35,13 @@ const num = (v: number | string | null | undefined): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-type TabPortal = "resumen" | "reportar" | "tickets" | "comprar" | "datos";
+/** Fecha local en YYYY-MM-DD (sin desfase por UTC). */
+function isoLocal(d: Date): string {
+  const off = d.getTimezoneOffset();
+  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
+}
+
+type TabPortal = "resumen" | "reporte" | "reportar" | "tickets" | "comprar" | "datos";
 
 const BADGE: Record<string, string> = {
   Ganador: "bg-emerald-100 text-emerald-700",
@@ -237,6 +249,7 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
           {(
             [
               ["resumen", "Resumen y movimientos"],
+              ["reporte", "Reporte del día"],
               ["reportar", "Reportar jugada faltante"],
               ["tickets", "Mis tickets"],
               ["comprar", "Comprar tablas fijas"],
@@ -256,6 +269,7 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
         </div>
 
         {tab === "resumen" ? <ResumenView sesion={sesion} onCambio={onActualizar} /> : null}
+        {tab === "reporte" ? <ReporteDiarioView sesion={sesion} /> : null}
         {tab === "reportar" ? <ReportarView cliente={sesion.cliente} /> : null}
         {tab === "tickets" ? <MisTicketsView cliente={sesion.cliente} /> : null}
         {tab === "comprar" ? <ComprarView cliente={sesion.cliente} /> : null}
@@ -277,6 +291,57 @@ function Kpi({ icon, lbl, val, color, bg }: { icon: string; lbl: string; val: st
       <div>
         <div className="text-[9px] uppercase tracking-wider font-black text-indigo-200/70">{lbl}</div>
         <div className={`text-lg font-black ${color}`}>{val}</div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Reporte del día (por hipódromo + carrera, en formato cliente)
+// ---------------------------------------------------------------------------
+
+/**
+ * Reporte Diario desde la óptica del cliente. Es el mismo cálculo que el módulo
+ * del personal (`armarReporteDiario`), pero con la perspectiva invertida: acá el
+ * "balance a favor" es lo que el cliente GANA (premios + incentivo − jugado).
+ *
+ * La fecha se toma de la carrera (`fechaCarrera`) con respaldo del registro:
+ * si el portal todavía no devuelve `fecha_carrera`, cae a la fecha de venta.
+ */
+function ReporteDiarioView({ sesion }: { sesion: SesionPortal }) {
+  const [fecha, setFecha] = useState(() => isoLocal(new Date()));
+
+  const datos = useMemo(() => {
+    const jugadas: JugadaReporte[] = sesion.arbolTickets.jugadas
+      .filter((j) => (j.fechaCarrera ?? j.fecha ?? "").slice(0, 10) === fecha)
+      .map((j) => ({
+        hipodromo: j.hipodromo,
+        carrera: j.carrera,
+        montoJugado: j.montoJugado,
+        premio: j.premio,
+        devolucion: j.devolucion,
+        anulada: esJugadaAnulada(j.estado, undefined),
+      }));
+    return armarReporteDiario(jugadas);
+  }, [sesion, fecha]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-white px-4 py-3 shadow-sm">
+        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Fecha del reporte</span>
+        <input
+          type="date"
+          value={fecha}
+          onChange={(e) => setFecha(e.target.value)}
+          className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-200"
+        />
+        <span className="text-xs text-slate-400">
+          Jugado, premios, tu incentivo y el balance a tu favor por carrera.
+        </span>
+      </div>
+
+      <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+        <ReporteDiarioTabla datos={datos} perspectiva="cliente" />
       </div>
     </div>
   );

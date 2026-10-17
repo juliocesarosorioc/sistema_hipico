@@ -68,12 +68,12 @@ export async function cargarAbac() {
         `tsc no pudo compilar el ABAC:\n${`${e.stdout ?? ""}${e.stderr ?? ""}`.trim()}`
       );
     }
-    const out = join(tmp, "out", "src", "lib", "seguridad");
+    const out = join(tmp, "out", "src", "features", "seguridad", "lib");
     for (const f of ["tipos.js", "capacidades.js", "abac.js"]) {
       const ruta = join(out, f);
       writeFileSync(
         ruta,
-        readFileSync(ruta, "utf8").replace(/@\/lib\/seguridad\/(\w+)/g, "./$1.js"),
+        readFileSync(ruta, "utf8").replace(/@\/features\/seguridad\/lib\/(\w+)/g, "./$1.js"),
         "utf8"
       );
     }
@@ -122,14 +122,14 @@ export async function cargarRegistro() {
         `tsc no pudo compilar el registro maestro:\n${`${e.stdout ?? ""}${e.stderr ?? ""}`.trim()}`
       );
     }
-    const out = join(tmp, "out", "src", "lib", "seguridad");
+    const out = join(tmp, "out", "src", "features", "seguridad", "lib");
     // tsc resuelve el alias @/ pero no lo reescribe en el JS emitido, así que
     // node no lo entiende. Se traduce a rutas relativas (con extensión) a mano.
     for (const f of MODULOS.map((m) => `${m}.js`)) {
       const ruta = join(out, f);
       writeFileSync(
         ruta,
-        readFileSync(ruta, "utf8").replace(/@\/lib\/seguridad\/(\w+)/g, "./$1.js"),
+        readFileSync(ruta, "utf8").replace(/@\/features\/seguridad\/lib\/(\w+)/g, "./$1.js"),
         "utf8"
       );
     }
