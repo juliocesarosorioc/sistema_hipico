@@ -57,6 +57,10 @@ export type OpcionesMensajeResultado = {
   dividendos?: Record<string, number> | null;
   tickets: TicketMensaje[];
   tasaComision?: number | null;
+  /** Saldo ajustado (disponible) por cliente: se anota en cada jugada en *negrita* o `S/S`. */
+  saldos?: Record<string, number>;
+  /** Observaciones libres que van al pie de la relación. */
+  observaciones?: string;
 };
 
 const CLAVES_ORDEN = [
@@ -182,7 +186,10 @@ export function mensajeResultadoDeCarrera(opts: OpcionesMensajeResultado): strin
     resultadoDeJugada(t, opts.pizarra, meta.dividendos ?? null, opts.tasaComision).relacion
   );
 
-  return relacionResultados(meta, jugadas);
+  return relacionResultados(meta, jugadas, {
+    saldos: opts.saldos,
+    observaciones: opts.observaciones,
+  });
 }
 
 // ============================================================

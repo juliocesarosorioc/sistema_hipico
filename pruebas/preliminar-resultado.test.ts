@@ -190,5 +190,5 @@ si(
 si(!mensaje.includes("Disp *"), "sin `saldos` las líneas NO llevan el sufijo de disponible");
 si(!mensaje.includes("S/S = Sin saldo"), "sin `saldos` NO aparece la leyenda S/S");
 
-console.log(`\n${pasan} pasan, ${fallan} fallan.`);
+console.log(`\n${pasan} ok, ${fallan} fallaron.\n`);
 if (fallan > 0) process.exit(1);

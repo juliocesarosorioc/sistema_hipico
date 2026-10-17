@@ -424,20 +424,68 @@ function normNini(tipo: string): string {
   return info ? info.modalidad : String(tipo ?? "").trim().toUpperCase();
 }
 
-export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[]): string {
+/**
+ * Saldo ajustado (disponible) de un cliente por NOMBRE, sin distinguir
+ * mayúsculas ni espacios. `undefined` = no hay dato (cliente libre o fuera del
+ * mapa), y en ese caso la jugada NO se anota.
+ */
+function saldoAjustadoDe(
+  saldos: Record<string, number> | undefined,
+  nombre: string
+): number | undefined {
+  if (!saldos) return undefined;
+  const clave = String(nombre ?? "").trim().toUpperCase();
+  if (!clave) return undefined;
+  for (const k of Object.keys(saldos)) {
+    if (String(k).trim().toUpperCase() === clave) {
+      const n = Number(saldos[k]);
+      return Number.isFinite(n) ? n : undefined;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Relación de Resultados (mensaje de WhatsApp con el balance de dinero).
+ *
+ * `opts.saldos` (disponible por cliente) anota cada jugada con el saldo de
+ * quien financia en *negrita* de WhatsApp, o `*S/S*` si quedó en 0; `opts.
+ * observaciones` se anexa al pie. Ambos opcionales: sin ellos el texto es
+ * idéntico al de siempre.
+ */
+export function relacionResultados(
+  meta: MetaCarrera,
+  jugadas: JugadaRelacion[],
+  opts?: { saldos?: Record<string, number>; observaciones?: string }
+): string {
   const cuerpo: string[] = [];
   const balances = new Map<string, number>();
+  const sinSaldo: string[] = [];
 
   const acumular = (nombre: string, valor: number) => {
     if (!nombre) return;
     balances.set(nombre, (balances.get(nombre) ?? 0) + valor);
   };
 
+  /** Sufijo de disponible del que financia: ` · Disp *X*` o ` · Disp *S/S*`. */
+  const sufijoSaldoDe = (j: JugadaRelacion): string => {
+    if (!opts?.saldos) return "";
+    const saldo = saldoAjustadoDe(opts.saldos, j.clienteJuega);
+    if (saldo === undefined) return "";
+    if (saldo > 0) return ` · Disp *${fmtMonto(saldo)}*`;
+    const n = String(j.clienteJuega).trim();
+    if (n && !sinSaldo.includes(n)) sinSaldo.push(n);
+    return " · Disp *S/S*";
+  };
+
   jugadas.forEach((j, i) => {
+    const sufijoSaldo = sufijoSaldoDe(j);
     // Jugada aún no decidible (falta el dato que cuantifica el premio): se
     // lista con aviso y NO se acumula en el cierre de clientes.
     if (j.ganador === "pendiente") {
-      cuerpo.push(`${i + 1}) ${etiquetaJugada(j.jugada)} (${caballoPareoLegible(j.caballo)}) con ${fmtMonto(j.monto)}`);
+      cuerpo.push(
+        `${i + 1}) ${etiquetaJugada(j.jugada)} (${caballoPareoLegible(j.caballo)}) con ${fmtMonto(j.monto)}${sufijoSaldo}`
+      );
       cuerpo.push("  ⚠️ PENDIENTE — falta el dividendo que cuantifica el premio.");
       return;
     }
@@ -455,7 +503,9 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
     // ganancia neta cuando el que juega NO acierta.
     const perdida = num(j.monto);
     const beneficiario = j.clienteConsigue || "";
-    cuerpo.push(`${i + 1}) ${etiquetaJugada(j.jugada)} (${caballoPareoLegible(j.caballo)}) con ${fmtMonto(j.monto)}`);
+    cuerpo.push(
+      `${i + 1}) ${etiquetaJugada(j.jugada)} (${caballoPareoLegible(j.caballo)}) con ${fmtMonto(j.monto)}${sufijoSaldo}`
+    );
     // ANULADA: el motor devolvió el capital, así que ni el que JUEGA gana/pierde
     // ni el "da" entrega nada. Se muestra 0/0 y NO se acumula en el cierre.
     if (b.anulada) {
@@ -528,7 +578,26 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
   if (negativos.length === 0) cierre.push("—");
   else negativos.forEach(([nombre, valor], i) => cierre.push(`${i + 1}) ${nombre} -${fmtMonto(Math.abs(valor))}`));
 
-  return [cabeceraCarrera(meta), "", ...cuerpo, "", ...cierre, "", pieEstricto(jugadas.length)].join("\n");
+  // Notas al pie: la leyenda S/S + la lista de jugadores sin saldo disponible,
+  // y por último las observaciones libres del operador.
+  const notas: string[] = [];
+  if (sinSaldo.length) {
+    notas.push("S/S = Sin saldo");
+    notas.push(`⚠️ Sin saldo disponible: ${sinSaldo.join(", ")}`);
+  }
+  const observaciones = opts?.observaciones?.trim();
+
+  return [
+    cabeceraCarrera(meta),
+    "",
+    ...cuerpo,
+    "",
+    ...cierre,
+    "",
+    pieEstricto(jugadas.length),
+    ...notas,
+    ...(observaciones ? ["", "📝 Observaciones:", observaciones] : []),
+  ].join("\n");
 }
 
 // ============================================================

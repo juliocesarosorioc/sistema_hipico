@@ -646,6 +646,9 @@ const hipodromosDelDia = useMemo(() => {
           <span className="truncate text-[9px] font-black text-emerald-600">✅ Saldo {monedaFmt(saldo)}</span>
         );
       }
+      if (!libre && disponible <= 0) {
+        return <span className="truncate text-[9px] font-black text-red-600">🟥 S/S · sin saldo</span>;
+      }
       return (
         <span className="truncate text-[9px] font-black text-red-500">
           ⚠️ Max: {monedaFmt(disponible)}
@@ -655,6 +658,9 @@ const hipodromosDelDia = useMemo(() => {
     }
     if (libre) {
       return <span className="truncate text-[9px] font-bold text-blue-600">Libre · saldo {monedaFmt(saldo)}</span>;
+    }
+    if (disponible <= 0) {
+      return <span className="truncate text-[9px] font-bold text-red-600">🟥 S/S · sin saldo</span>;
     }
     const cls = saldo < 0 ? "text-red-600" : "text-blue-600";
     return conAval ? (
@@ -857,11 +863,13 @@ const hipodromosDelDia = useMemo(() => {
         dividendos: pizarra.dividendos ?? null,
         tickets: ticketsDeCarrera,
         tasaComision: comisionNum,
+        saldos: saldosAjustados,
+        observaciones: observaciones.trim() || undefined,
       });
       setMensajeWhatsapp(msg);
       return msg;
     },
-    [carrera, comisionNum, fecha, grupoCabecera, hipodromo, retirados, ticketsDeCarrera]
+    [carrera, comisionNum, fecha, grupoCabecera, hipodromo, observaciones, retirados, saldosAjustados, ticketsDeCarrera]
   );
 
   const totalInvertidoSesion = useMemo(
@@ -1256,6 +1264,9 @@ const hipodromosDelDia = useMemo(() => {
         fecha,
       });
       for (const t of ticketsDeCarrera) eliminarTicket(t.id);
+      // Deja la pizarra PAGADA precargada para poder EDITAR los resultados
+      // después de pagar (botón «✏️ Editar resultados» del modal de Finalizar).
+      setPizarraCentral(ultimaPizarra);
       setUltimaPizarra(null);
       setJugadasPorCarrera((j: number[]) => j.filter((c) => c !== carrera));
       setResumen(r);
@@ -2019,15 +2030,15 @@ const hipodromosDelDia = useMemo(() => {
             </div>
             <div className="flex justify-end gap-2 border-t border-line bg-gray-50 px-4 py-3">
               <Button variant="ghost" size="sm" onClick={cerrarFinalizar}>Cerrar</Button>
+              {(ultimaPizarra || pizarraCentral) && (
+                <Button size="sm" onClick={() => { setModalFinalizar(false); setModalResultados(true); }}>
+                  ✏️ Editar resultados
+                </Button>
+              )}
               {!resumen && (
-                <>
-                  <Button size="sm" onClick={() => { setModalFinalizar(false); setModalResultados(true); }}>
-                    🏁 Cargar resultados
-                  </Button>
-                  <Button variant="success" size="md" onClick={ejecutarFinalizar}>
-                    {reapertura ? "💾 Liquidar jugadas agregadas" : "💰 Registrar y Finalizar"}
-                  </Button>
-                </>
+                <Button variant="success" size="md" onClick={ejecutarFinalizar}>
+                  {reapertura ? "💾 Liquidar jugadas agregadas" : "💰 Registrar y Finalizar"}
+                </Button>
               )}
             </div>
           </div>

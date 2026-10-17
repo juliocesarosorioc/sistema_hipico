@@ -369,7 +369,10 @@ export function proyectarFila(opts: {
     opts.cliente1 &&
     disponibleParaJugar(opts.cliente1) <= 0
   ) {
-    return { ok: false, motivo: reparto.avisos[0] ?? "El CLIENTE 1 no tiene saldo disponible para esta jugada." };
+    return {
+      ok: false,
+      motivo: `${reparto.avisos[0] ?? "El CLIENTE 1 no tiene saldo disponible para esta jugada."} S/S = Sin saldo.`,
+    };
   }
   const monto = reparto.montoAutorizado > 0 ? reparto.montoAutorizado : montoPedido;
   const nom = normalizarJugadaParaMotor(jugada);
