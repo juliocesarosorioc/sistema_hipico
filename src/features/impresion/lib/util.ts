@@ -1,8 +1,10 @@
 /**
  * Utilidades compartidas del motor de IMPRESIÓN de Tablas Fijas.
  * Replica 1:1 las funciones del legacy `imprimir tablas` / `reporte_tablas`
- * (PALETA14, auto-ajuste de fuente fsAuto, formateo es-VE, fechas dd/mm/aaaa).
+ * (auto-ajuste de fuente fsAuto, formateo es-VE, fechas dd/mm/aaaa).
+ * Las gualdrapas NO se replican: salen de `shared/lib/horseColors`.
  */
+import { getHorseColor } from "@/shared/lib/horseColors";
 
 export const MAX_N = 20;
 export const FS_BASE = 8.6;
@@ -18,29 +20,26 @@ export const DIM_PAGINA: Record<Orientacion, { w: number; h: number }> = {
   horizontal: { w: 1754, h: 1240 },
 };
 
-/** Gualdrapas exactas del legacy (14 colores: [fondo, texto]). */
-export const PALETA14: Array<[string, string]> = [
-  ["#e11d48", "#ffffff"],
-  ["#ffffff", "#111827"],
-  ["#1d4ed8", "#ffffff"],
-  ["#facc15", "#111827"],
-  ["#16a34a", "#ffffff"],
-  ["#111827", "#facc15"],
-  ["#f97316", "#111827"],
-  ["#fbcfe8", "#111827"],
-  ["#22d3ee", "#111827"],
-  ["#7c3aed", "#ffffff"],
-  ["#9caeff", "#111827"],
-  ["#84cc16", "#111827"],
-  ["#92400e", "#ffffff"],
-  ["#7f1d1d", "#ffffff"],
-];
+/**
+ * Gualdrapas oficiales (1..14) de la impresión — derivadas de la fuente única
+ * `shared/lib/horseColors`, no de una lista propia: así el papel pinta el MISMO
+ * color que la pantalla. Se conserva el nombre por compatibilidad con el motor
+ * de Tablas/Reporte/Excel.
+ */
+export const PALETA14: Array<[string, string]> = Array.from({ length: 14 }, (_, i) => {
+  const c = getHorseColor(i + 1);
+  return [c.hex, c.hexText] as [string, string];
+});
 
-/** Color del número (índice sobre PALETA14, cíclico, mismo legacy). */
+/**
+ * Color del número para estilos inline del HTML impreso / Excel.
+ * Delega en `getHorseColor`: 1..12 oficiales, 13/14 configurados, 15..20
+ * repiten el ciclo y fuera de rango cae al gris de respaldo (mismo color en
+ * todas partes).
+ */
 export function col(n: number | string): { bg: string; fg: string } {
-  const i = ((parseInt(String(n), 10) || 1) - 1) % 14;
-  const v = PALETA14[i < 0 ? 0 : i];
-  return { bg: v[0], fg: v[1] };
+  const c = getHorseColor(n);
+  return { bg: c.hex, fg: c.hexText };
 }
 
 /**

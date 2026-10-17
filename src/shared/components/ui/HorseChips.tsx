@@ -67,9 +67,9 @@ export type HorseBadgeSize = keyof typeof BADGE_SIZE;
  * Badge ReadOnly: renderiza un solo número como chip (útil en listas impresas/lectura).
  *
  * Aplica la paleta canónica completa (fondo + texto + borde). El borde no es
- * cosmético: sin él los números de gualdrapa clara (2 blanco, 4 amarillo,
- * 8 rosado, 9 celeste, 11 gris, 12 lima) se pierden sobre un panel blanco.
- * Usar siempre este componente en vez de pintar `backgroundColor` a mano.
+ * cosmético: sin él la gualdrapa clara (2 blanco, 4 amarillo) se pierde sobre
+ * un panel blanco. Usar siempre este componente en vez de pintar
+ * `backgroundColor` a mano.
  */
 export function HorseBadge({
   num,

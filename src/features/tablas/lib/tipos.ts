@@ -5,7 +5,8 @@ import { getHorseColor } from "@/shared/lib/horseColors";
 
 /**
  * Tipos del módulo Tablas Fijas (clon legacy) + constantes OK.
- * Paleta de gualdrapas, nacionalidades y superficies idénticas a js/tablas.js.
+ * Las gualdrapas salen de `shared/lib/horseColors` (fuente única); nacionalidades
+ * y superficies siguen idénticas a js/tablas.js.
  */
 
 export type EjemplarTabla = {

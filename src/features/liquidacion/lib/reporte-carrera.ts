@@ -20,8 +20,9 @@ import type { CarreraReporte, FilaReporte } from "@/features/liquidacion/lib/rep
 import { colorDiscoNumero } from "@/features/saldos/lib/discos";
 import { etiquetaJugada } from "@/features/taquilla/lib/nomenclatura";
 
-// Los colores del disco de ejemplar viven en `saldos/lib/discos.ts` (los usan
-// el armado y la plantilla). Se re-exportan para no romper importadores viejos.
+// Los colores del disco de ejemplar salen de la fuente única
+// `shared/lib/horseColors` (`discos.ts` sólo los re-exporta empaquetados).
+// Se re-exporta acá para no romper importadores viejos.
 export { colorDiscoNumero };
 
 /** "2026-10-12" → «lun 12 oct 2026» (fecha legible para el encabezado). */

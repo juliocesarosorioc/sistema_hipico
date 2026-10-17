@@ -44,9 +44,19 @@ si(/oct/.test(d.encabezado.fecha), `fecha legible: «${d.encabezado.fecha}»`);
 si(d.encabezado.llegada.length === 3, "la pizarra 7·2·5 se vuelve 3 discos de llegada");
 si(d.encabezado.llegada[0]?.numero === "7" && d.encabezado.llegada[0]?.puesto === "1º", "1er disco es el 7 con puesto 1º");
 si(d.encabezado.llegada[2]?.numero === "5" && d.encabezado.llegada[2]?.puesto === "3º", "3er disco es el 5 con puesto 3º");
-si(colorDiscoNumero(7).includes("bg-orange-500"), "color del disco 7 = naranja");
-si(colorDiscoNumero(3).includes("bg-amber-500"), "color del disco 3 = ámbar");
-si(colorDiscoNumero(99).includes("bg-slate-400"), "número fuera del rango cae a gris de respaldo");
+// ── Colores de gualdrapa: tabla OFICIAL, fuente única en shared/lib/horseColors ──
+si(colorDiscoNumero(7).includes("bg-amber-800"), "color del disco 7 = marrón (oficial)");
+si(colorDiscoNumero(3).includes("bg-blue-600"), "color del disco 3 = azul (oficial)");
+si(colorDiscoNumero(9).includes("bg-orange-600"), "color del disco 9 = naranja (oficial)");
+si(colorDiscoNumero(10).includes("bg-teal-500"), "color del disco 10 = turquesa (oficial)");
+si(colorDiscoNumero(11).includes("bg-slate-500"), "color del disco 11 = gris (oficial)");
+si(colorDiscoNumero(12).includes("bg-purple-700"), "color del disco 12 = violeta (oficial)");
+si(
+  colorDiscoNumero(2).includes("bg-white") && colorDiscoNumero(2).includes("border border-slate-300"),
+  "el 2 blanco se pinta con borde para no perderse sobre panel blanco"
+);
+si(colorDiscoNumero(15).includes("bg-red-600"), "15 repite el ciclo → 1 rojo (mismo color que imprimía la tabla)");
+si(colorDiscoNumero(99).includes("bg-slate-700"), "número fuera del rango cae al gris de respaldo (bg-slate-700)");
 
 // ── 2. Jugadas "en vivo" ──
 si(d.jugadasVivo.length === 2, "una fila por ticket (el CRUCE no cuenta y el Consigue viaja como DA)");

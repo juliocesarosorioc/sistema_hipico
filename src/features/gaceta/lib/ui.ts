@@ -132,11 +132,11 @@ export function nacEjemplar(ej?: { nacionalidad?: string } | null, hipo?: string
   return paisHipodromo(hipo) || "VE";
 }
 
-/** Paleta oficial de 14 colores de gualdrapa (idéntica a la del Ensamblaje). */
 /**
- * @deprecated Usa `getHorseColor` / `horseBgHex` de "@/lib/horseColors".
- * Se conserva por compatibilidad (Dupletas, Gaceta) y ahora delega en la
- * paleta canónica: antes este archivo, horseColors.ts y el `cardColor` local
+ * @deprecated Usa `getHorseColor` / `horseBgHex` / `getGualdrapaClasses` de
+ * `@/shared/lib/horseColors` (gualdrapas oficiales 1..12 + extensiones).
+ * Se conserva por compatibilidad (Dupletas, Gaceta) y DELEGA en esa fuente
+ * única: antes este archivo, horseColors.ts, discos.ts y el `cardColor` local
  * de Gestión de Jugadas tenían paletas DIFERENTES para el mismo número.
  */
 export function colorDeNumeroGac(n: unknown): { bg: string; fg: string } {

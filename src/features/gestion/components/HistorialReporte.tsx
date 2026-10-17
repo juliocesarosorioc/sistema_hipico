@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { getHorseColor } from "@/shared/lib/horseColors";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { cargarCarrerasDelDia } from "@/features/carreras/lib/carreras-dia";
@@ -19,20 +20,12 @@ import ReporteLiquidacionModal from "@/features/gestion/components/ReporteLiquid
 import { listarMonitorJugadas, type FilaMonitorJugada } from "@/features/jugadas/lib/jugadas";
 import { etiquetaJugada, caballoPareoLegible } from "@/features/taquilla/lib/nomenclatura";
 
-// Utilidad para pintar los cuadritos de los caballos con la paleta hípica
+// Color de los cuadritos de los caballos: DELEGA en la fuente única
+// (`shared/lib/horseColors`, gualdrapas oficiales) en vez de repetir la paleta.
+// El único fondo que necesita borde propio es el blanco (si no se pierde).
 const getColorCaballo = (num: string) => {
-  const n = parseInt(num, 10);
-  const colores: Record<number, { bg: string; fg: string; border?: string }> = {
-    1: { bg: "#dc2626", fg: "#ffffff" }, // Rojo
-    2: { bg: "#ffffff", fg: "#000000", border: "1px solid #ccc" }, // Blanco
-    3: { bg: "#2563eb", fg: "#ffffff" }, // Azul
-    4: { bg: "#facc15", fg: "#000000" }, // Amarillo
-    5: { bg: "#16a34a", fg: "#ffffff" }, // Verde
-    6: { bg: "#000000", fg: "#ffffff" }, // Negro
-    7: { bg: "#f97316", fg: "#ffffff" }, // Naranja
-    8: { bg: "#fbcfe8", fg: "#000000" }, // Rosado
-  };
-  return colores[n] || { bg: "#94a3b8", fg: "#ffffff" };
+  const c = getHorseColor(num);
+  return { bg: c.hex, fg: c.hexText, border: c.bg === "bg-white" ? "1px solid #cbd5e1" : "none" };
 };
 
 /** Fila ya normalizada para la tabla del historial. */
