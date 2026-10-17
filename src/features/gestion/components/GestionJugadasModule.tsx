@@ -107,6 +107,8 @@ export function GestionJugadasModule() {
   const [carrera, setCarrera] = useState(1);
   const [modoManual, setModoManual] = useState(false);
   const [retirados, setRetirados] = useState("");
+  /** Observaciones libres que se anexan al pie del preliminar de resultados. */
+  const [observaciones, setObservaciones] = useState("");
   const [comision, setComision] = useState("5");
   const [conCruces, setConCruces] = useState(false);
   /** Ítem 1: re-apertura explícita de una carrera YA liquidada. */
@@ -805,6 +807,21 @@ const hipodromosDelDia = useMemo(() => {
     [carrera, fecha, grupoCabecera, hipodromo, retirados, ticketsDeCarrera]
   );
 
+  /**
+   * Saldo ajustado (disponible = saldo + aval) por cliente, para el aviso del
+   * preliminar: el mensaje lo imprime en *negrita* o como `S/S` si quedó en 0.
+   * Se omiten los clientes LIBRES (sin tope): no tiene sentido marcarlos.
+   */
+  const saldosAjustados = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const c of clientes) {
+      if (esClienteLibre(c)) continue;
+      const d = limiteDeJugar(c);
+      if (Number.isFinite(d)) m[c.nombre] = d;
+    }
+    return m;
+  }, [clientes]);
+
   /** Preliminar de Resultados: texto con la pizarra cargada + veredicto GANA/
    *  PIERDE/PENDIENTE por jugada, SIN balance. Si todavía no se cargó la
    *  pizarra (Ctrl+Y) el texto queda vacío y la vista pide cargarla. */
@@ -821,9 +838,11 @@ const hipodromosDelDia = useMemo(() => {
             dividendos: ultimaPizarra.dividendos ?? null,
             tickets: ticketsDeCarrera,
             tasaComision: comisionNum,
+            saldos: saldosAjustados,
+            observaciones: observaciones.trim() || undefined,
           })
         : "",
-    [carrera, comisionNum, fecha, grupoCabecera, hipodromo, retirados, ticketsDeCarrera, ultimaPizarra]
+    [carrera, comisionNum, fecha, grupoCabecera, hipodromo, observaciones, retirados, saldosAjustados, ticketsDeCarrera, ultimaPizarra]
   );
 
   const generarMensajeResultados = useCallback(
@@ -1324,6 +1343,17 @@ const hipodromosDelDia = useMemo(() => {
           </div>
         </div>
         <div>
+          <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">
+            📝 Observaciones (al pie)
+          </label>
+          <input
+            value={observaciones}
+            onChange={(e) => setObservaciones(e.target.value)}
+            placeholder="Nota que se anexa al pie del Resultado Preliminar"
+            className="w-full rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+          />
+        </div>
+        <div>
           <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">COM %</label>
           <input
             value={comision}
@@ -1735,15 +1765,6 @@ const hipodromosDelDia = useMemo(() => {
           </button>
           <button
             type="button"
-            onClick={abrirResultados}
-            disabled={!listoParaCargar}
-            title={listoParaCargar ? "Carga/edita los resultados y luego finaliza (mismo flujo que Registrar y Finalizar)" : "Elija hipódromo y carrera para cargar resultados"}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            🏁 Resultados <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+Y</kbd>
-          </button>
-          <button
-            type="button"
             onClick={() => setMostrarPreliminarResultado(true)}
             className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-600"
           >
@@ -1795,11 +1816,11 @@ const hipodromosDelDia = useMemo(() => {
             type="button"
             onClick={abrirResultados}
             disabled={!listoParaCargar}
-            title={listoParaCargar ? "Carga/edita los resultados y luego finaliza (mismo flujo que Resultados)" : "Elija hipódromo y carrera para registrar y finalizar"}
+            title={listoParaCargar ? "Carga/edita los resultados y luego finaliza (un solo flujo: Ctrl+Y o Ctrl+R)" : "Elija hipódromo y carrera para registrar y finalizar"}
             className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-success-600 to-emerald-500 px-3 py-2 text-xs font-black text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {reapertura ? "💾 Liquidar jugadas agregadas" : "✅ Registrar y Finalizar"}{" "}
-            <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+R</kbd>
+            <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+Y/R</kbd>
           </button>
           <button
             type="button"

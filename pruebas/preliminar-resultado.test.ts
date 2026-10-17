@@ -156,5 +156,39 @@ const conAnulada = mensajePreliminarDeCarrera({
 si(/→ 🔁 ANULADA/.test(conAnulada), "el NINI que empata en el puesto N se lista como 🔁 ANULADA");
 si(!/PENDIENTE\(s\)/.test(conAnulada), "una ANULADA no se cuenta como PENDIENTE");
 
+// ── 7. Saldo ajustado (*negrita* / S/S) + lista de sin saldo + observaciones ──
+const conSaldos = mensajePreliminarDeCarrera({
+  hipodromo: "LA RINCONADA",
+  carrera: 5,
+  fecha: "2026-10-12",
+  grupo: "TERCIOS",
+  pizarra: PIZARRA,
+  dividendos: DIVIDENDOS,
+  tickets: [GANADORA, PUESTO_PERDEDOR],
+  tasaComision: 5,
+  saldos: { LUIS: 1000, MARIO: 0 },
+  observaciones: "Cerrar caja a las 6pm",
+});
+si(
+  conSaldos.includes("→ ✅ GANA · Disp *1.000,00*"),
+  "el disponible positivo se anota entre *asteriscos* (negrita WhatsApp)",
+  conSaldos.split("\n").find((l) => l.startsWith("1)")) ?? "(sin línea 1)"
+);
+si(
+  /Juega MARIO[\s\S]*?→ ❌ PIERDE · Disp \*S\/S\*/.test(conSaldos),
+  "un disponible 0 se anota como *S/S*"
+);
+si(conSaldos.includes("S/S = Sin saldo"), "al pie aparece la leyenda «S/S = Sin saldo»");
+si(
+  conSaldos.includes("⚠️ Sin saldo disponible: MARIO"),
+  "al pie se lista «Sin saldo disponible» con el jugador topado"
+);
+si(
+  conSaldos.includes("📝 Observaciones:") && conSaldos.includes("Cerrar caja a las 6pm"),
+  "las observaciones se anexan al pie"
+);
+si(!mensaje.includes("Disp *"), "sin `saldos` las líneas NO llevan el sufijo de disponible");
+si(!mensaje.includes("S/S = Sin saldo"), "sin `saldos` NO aparece la leyenda S/S");
+
 console.log(`\n${pasan} pasan, ${fallan} fallan.`);
 if (fallan > 0) process.exit(1);

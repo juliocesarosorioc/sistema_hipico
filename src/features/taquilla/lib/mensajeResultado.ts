@@ -252,9 +252,38 @@ export type OpcionesPreliminarResultado = {
   dividendos?: Record<string, number> | null;
   tickets: TicketMensaje[];
   tasaComision?: number | null;
+  /**
+   * Saldo AJUSTADO (disponible = saldo + aval) por cliente. Si se pasa, cada
+   * jugada muestra el disponible de quien JUEGA en *negrita* de WhatsApp; con
+   * disponible 0 se escribe `S/S` y el nombre entra en la lista de "sin saldo".
+   */
+  saldos?: Record<string, number>;
+  /** Observaciones libres que van al pie del mensaje (después del resumen). */
+  observaciones?: string;
 };
 
 export type VeredictoJugada = "GANA" | "PIERDE" | "PENDIENTE" | "ANULADA";
+
+/**
+ * Saldo ajustado de un cliente por NOMBRE (sin distinguir mayúsculas ni
+ * espacios). `undefined` = no hay dato (cliente libre o fuera del mapa), en
+ * cuyo caso la jugada NO se anota.
+ */
+function saldoAjustadoDe(
+  saldos: Record<string, number> | undefined,
+  nombre: string
+): number | undefined {
+  if (!saldos) return undefined;
+  const clave = String(nombre ?? "").trim().toUpperCase();
+  if (!clave) return undefined;
+  for (const k of Object.keys(saldos)) {
+    if (String(k).trim().toUpperCase() === clave) {
+      const n = Number(saldos[k]);
+      return Number.isFinite(n) ? n : undefined;
+    }
+  }
+  return undefined;
+}
 
 /**
  * Veredicto corto de una jugada contra el motor universal (solo pizarra +
@@ -336,15 +365,39 @@ export function mensajePreliminarDeCarrera(opts: OpcionesPreliminarResultado): s
     pizarra: pizarraParaMensaje(opts.pizarra),
   };
 
+  const sinSaldo: string[] = [];
   const lineas = opts.tickets.map((t, i) => {
     const { relacion, res } = resultadoDeJugada(t, opts.pizarra, opts.dividendos ?? null, opts.tasaComision);
     const veredicto = veredictoDeJugada(t, opts.pizarra, opts.dividendos ?? null, opts.tasaComision);
-    return lineaJugadaConVeredicto(relacion, i, veredicto, sufijoBloques(res));
+    // Saldo ajustado del que financia: en *negrita* (WhatsApp) o `S/S` si el
+    // disponible quedó en 0 (el jugador juega sin saldo, se registra en la lista).
+    let sufijo = sufijoBloques(res);
+    if (opts.saldos) {
+      const saldo = saldoAjustadoDe(opts.saldos, relacion.clienteJuega);
+      if (saldo !== undefined) {
+        if (saldo > 0) {
+          sufijo += ` · Disp *${fmtMonto(saldo)}*`;
+        } else {
+          sufijo += ` · Disp *S/S*`;
+          const n = String(relacion.clienteJuega).trim();
+          if (n && !sinSaldo.includes(n)) sinSaldo.push(n);
+        }
+      }
+    }
+    return lineaJugadaConVeredicto(relacion, i, veredicto, sufijo);
   });
 
   const pendientes = opts.tickets.filter(
     (t) => veredictoDeJugada(t, opts.pizarra, opts.dividendos ?? null, opts.tasaComision) === "PENDIENTE"
   ).length;
+
+  // Notas al pie: la leyenda S/S + la lista de jugadores sin saldo disponible.
+  const notas: string[] = [];
+  if (sinSaldo.length) {
+    notas.push("S/S = Sin saldo");
+    notas.push(`⚠️ Sin saldo disponible: ${sinSaldo.join(", ")}`);
+  }
+  const observaciones = opts.observaciones?.trim();
 
   return [
     "🏁 RESULTADO PRELIMINAR",
@@ -357,6 +410,8 @@ export function mensajePreliminarDeCarrera(opts: OpcionesPreliminarResultado): s
     pendientes > 0
       ? `⏳ ${pendientes} jugada(s) PENDIENTE(s) — falta el dividendo oficial que cuantifica el premio.`
       : "PRELIMINAR — veredicto según la pizarra; el pago oficial lo confirma la liquidación.",
+    ...notas,
     "La guía es el chat · RECLAMOS AL PRIVADO",
+    ...(observaciones ? ["", "📝 Observaciones:", observaciones] : []),
   ].join("\n");
 }
