@@ -54,6 +54,8 @@ type Props = {
   vacio?: string;
   /** Botones extra a la derecha de la cabecera (slot). */
   acciones?: ReactNode;
+  /** Eje del día mostrado: rotula el campo de fecha ("🏇 Carrera" / "🧾 Venta"). */
+  ejeFecha?: "carrera" | "venta";
   className?: string;
 };
 
@@ -66,6 +68,7 @@ export function MonitorHipodromos({
   permitirTodos = false,
   vacio,
   acciones,
+  ejeFecha,
   className,
 }: Props) {
   const activos = useHipodromosActivos();
@@ -79,12 +82,16 @@ export function MonitorHipodromos({
         </span>
         <div className="flex items-center gap-2">
           <label className="mon-control">
-            📅 Día
+            {ejeFecha === "venta" ? "🧾 Venta" : ejeFecha === "carrera" ? "🏇 Carrera" : "📅 Día"}
             <input
               type="date"
               value={fecha}
               onChange={(e) => onFecha(permitirTodos ? e.target.value : e.target.value || hoyLocal())}
-              title="Selecciona el día de los Hipódromos"
+              title={
+                ejeFecha === "venta"
+                  ? "Selecciona el día de VENTA de los Hipódromos"
+                  : "Selecciona el día de CARRERA de los Hipódromos"
+              }
               className="mon-input"
             />
           </label>

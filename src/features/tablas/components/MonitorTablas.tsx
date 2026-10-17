@@ -20,6 +20,7 @@ import { aplicarRetirosCarrera } from "@/features/carreras/lib/retiros";
 import { guardarCarreraCentral } from "@/features/carreras/lib/central";
 import { esFechaIso } from "@/core/utils/fechas";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
+import { diaDeCarrera, type EjeFecha } from "@/features/carreras/lib/agruparHipodromos";
 
 /** Monedas permitidas al corregir una tabla (el símbolo nunca se muestra). */
 const OPCIONES_MONEDA = ["USD", "VES", "BS", "EUR"];
@@ -69,6 +70,14 @@ type Props = {
    */
   fechaDia?: string;
   onFechaDia?: (d: string) => void;
+  /**
+   * Eje del día: fecha de CARRERA (default) o de VENTA. Cambia contra cuál
+   * fecha se filtra/agrupa y qué días ofrece el selector. El padre puede
+   * controlarlo (Tablas Fijas lo comparte con su panel de Hipódromos); si no,
+   * opera interno.
+   */
+  ejeFecha?: EjeFecha;
+  onEjeFecha?: (e: EjeFecha) => void;
 };
 
   /** Número es-VE SIN símbolo de moneda (la moneda se estipula por el grupo). */
@@ -97,16 +106,19 @@ function fmtSaldo(n: number | null | undefined): string {
   return fmtValor(n);
 }
 
-/** Normaliza fechas para el filtro */
-export function diaDeLaTabla(t: StoredTablaFija): string {
-  const raw = String(t.fecha || t.fecha_creacion || "").trim();
-  if (!raw) return "";
-  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
-  const partes = raw.split(/[-/]/);
-  if (partes.length === 3 && partes[0].length <= 2) {
-    return `${partes[2]}-${partes[1].padStart(2, '0')}-${partes[0].padStart(2, '0')}`;
-  }
-  return raw.slice(0, 10);
+/**
+ * Día (ISO) de una tabla según el eje pedido.
+ *
+ *   · "carrera" (default): cuándo CORRE (`fecha`), con respaldo en
+ *     `fecha_creacion` para las filas legacy que no traen evento.
+ *   · "venta": cuándo se VENDIÓ/publicó (`fecha_creacion`, en hora local), con
+ *     respaldo en la fecha del evento.
+ *
+ * Delega en `diaDeCarrera` (agruparHipodromos) para que el Monitor y el panel
+ * de Hipódromos NUNCA discrepen sobre el día de una tabla.
+ */
+export function diaDeLaTabla(t: StoredTablaFija, eje: EjeFecha = "carrera"): string {
+  return diaDeCarrera(t, "", eje);
 }
 
 export function MonitorTablas({
@@ -120,6 +132,8 @@ export function MonitorTablas({
   onHipodromoFiltro,
   fechaDia: fechaDiaProp,
   onFechaDia,
+  ejeFecha: ejeFechaProp,
+  onEjeFecha,
 }: Props) {
   const [vendiendo, setVendiendo] = useState<StoredTablaFija | null>(null);
   const [ejemplarVenta, setEjemplarVenta] = useState("");
@@ -248,6 +262,17 @@ export function MonitorTablas({
   const setFechaFiltro = (v: string) =>
     fechaControlada ? onFechaDia?.(v) : setFechaInterna(v);
 
+  /** Eje del día: CARRERA (default) o VENTA. Si el padre lo controla (Tablas
+   *  Fijas lo comparte con su panel), manda su valor; si no, opera interno. */
+  const [ejeInterno, setEjeInterno] = useState<EjeFecha>("carrera");
+  const ejeControlado = onEjeFecha !== undefined;
+  const ejeFecha = ejeControlado ? ejeFechaProp ?? "carrera" : ejeInterno;
+  const setEjeFecha = (v: EjeFecha) =>
+    ejeControlado ? onEjeFecha?.(v) : setEjeInterno(v);
+  /** Las carreras del registro central no tienen fecha de venta: solo
+   *  alimentan los filtros en el eje de CARRERA. */
+  const centralEnFiltro = ejeFecha === "carrera";
+
   // `useMemo`: sin esto se recalculaba en cada render (incluidas las veces que
   // solo cambia un input del filtro) y, como alimenta varios `useMemo` de
   // filtros en cascada, invalidaba toda la cascada en cada pulsación.
@@ -263,49 +288,55 @@ export function MonitorTablas({
     const setFechas = new Set<string>();
     abiertas.forEach(t => {
       if (!hipodromoFiltro || t.hipodromo === hipodromoFiltro) {
-        const d = diaDeLaTabla(t);
+        const d = diaDeLaTabla(t, ejeFecha);
         if (d) setFechas.add(d);
       }
     });
-    centralCarreras.forEach(c => {
-      if (!hipodromoFiltro || c.hipodromo === hipodromoFiltro) setFechas.add(c.fecha);
-    });
+    if (centralEnFiltro) {
+      centralCarreras.forEach(c => {
+        if (!hipodromoFiltro || c.hipodromo === hipodromoFiltro) setFechas.add(c.fecha);
+      });
+    }
     // El día elegido (por defecto HOY) se ofrece siempre, aunque no haya
     // carreras: el filtro nunca se resetea a "todas las fechas".
     if (fechaFiltro) setFechas.add(fechaFiltro);
     return Array.from(setFechas).sort().reverse();
-  }, [abiertas, hipodromoFiltro, centralCarreras, fechaFiltro]);
+  }, [abiertas, hipodromoFiltro, centralCarreras, fechaFiltro, ejeFecha, centralEnFiltro]);
 
   const hipodromosDisponibles = useMemo(() => {
     const setHips = new Set<string>();
     abiertas.forEach(t => {
-      if (!fechaFiltro || diaDeLaTabla(t) === fechaFiltro) {
+      if (!fechaFiltro || diaDeLaTabla(t, ejeFecha) === fechaFiltro) {
         if (t.hipodromo) setHips.add(t.hipodromo);
       }
     });
-    centralCarreras.forEach(c => {
-      if (!fechaFiltro || c.fecha === fechaFiltro) setHips.add(c.hipodromo);
-    });
+    if (centralEnFiltro) {
+      centralCarreras.forEach(c => {
+        if (!fechaFiltro || c.fecha === fechaFiltro) setHips.add(c.hipodromo);
+      });
+    }
     return Array.from(setHips).sort();
-  }, [abiertas, fechaFiltro, centralCarreras]);
+  }, [abiertas, fechaFiltro, centralCarreras, ejeFecha, centralEnFiltro]);
 
   /** Números de carrera disponibles dentro del día + hipódromo filtrados. */
   const carrerasDisponibles = useMemo(() => {
     const nums = new Set<string>();
     abiertas.forEach(t => {
-      if (fechaFiltro && diaDeLaTabla(t) !== fechaFiltro) return;
+      if (fechaFiltro && diaDeLaTabla(t, ejeFecha) !== fechaFiltro) return;
       if (hipodromoFiltro && t.hipodromo !== hipodromoFiltro) return;
       const c = String(t.carrera ?? "").trim();
       if (c) nums.add(c);
     });
-    centralCarreras.forEach(c => {
-      if (fechaFiltro && c.fecha !== fechaFiltro) return;
-      if (hipodromoFiltro && c.hipodromo !== hipodromoFiltro) return;
-      const n = String(c.carrera ?? "").trim();
-      if (n) nums.add(n);
-    });
+    if (centralEnFiltro) {
+      centralCarreras.forEach(c => {
+        if (fechaFiltro && c.fecha !== fechaFiltro) return;
+        if (hipodromoFiltro && c.hipodromo !== hipodromoFiltro) return;
+        const n = String(c.carrera ?? "").trim();
+        if (n) nums.add(n);
+      });
+    }
     return Array.from(nums).sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0));
-  }, [abiertas, centralCarreras, fechaFiltro, hipodromoFiltro]);
+  }, [abiertas, centralCarreras, fechaFiltro, hipodromoFiltro, ejeFecha, centralEnFiltro]);
 
   // La carrera elegida se descarta sola si cambia el día o el hipódromo, para
   // que el filtro nunca quede huérfano (mostrando "0 tablas" sin motivo).
@@ -327,7 +358,7 @@ export function MonitorTablas({
   // aquí y no se confía solo en el de la carga inicial.
   const filtradas = useMemo(() => abiertas
     .filter(t => {
-      if (fechaFiltro && diaDeLaTabla(t) !== fechaFiltro) return false;
+      if (fechaFiltro && diaDeLaTabla(t, ejeFecha) !== fechaFiltro) return false;
       if (hipodromoFiltro && t.hipodromo !== hipodromoFiltro) return false;
       if (carreraFiltro && String(t.carrera ?? "").trim() !== carreraFiltro) return false;
       return true;
@@ -340,8 +371,8 @@ export function MonitorTablas({
       const va = Number.isFinite(ca) && ca > 0 ? ca : Number.POSITIVE_INFINITY;
       const vb = Number.isFinite(cb) && cb > 0 ? cb : Number.POSITIVE_INFINITY;
       if (va !== vb) return va - vb;
-      return diaDeLaTabla(a).localeCompare(diaDeLaTabla(b));
-    }), [abiertas, fechaFiltro, hipodromoFiltro, carreraFiltro]);
+      return diaDeLaTabla(a, ejeFecha).localeCompare(diaDeLaTabla(b, ejeFecha));
+    }), [abiertas, fechaFiltro, hipodromoFiltro, carreraFiltro, ejeFecha]);
 
   /**
    * Excel de lo que se está mirando: se arma la matriz con las MISMAS filas
@@ -362,7 +393,11 @@ export function MonitorTablas({
         import("@/features/impresion/lib/excel"),
       ]);
       const m = await matrizDesdeFilas(filtradas, {
-        dia: fechaFiltro,
+        // `filtradas` YA trae aplicado el día en el eje que el usuario eligió
+        // (carrera o venta). Volver a filtrar aquí por `String(c.fecha)` —que es
+        // SIEMPRE la fecha de carrera— rompería la exportación en modo VENTA.
+        // Se pasa vacío a propósito: la lista en pantalla es la fuente de verdad.
+        dia: "",
         hipodromo: hipodromoFiltro,
         carrera: carreraFiltro,
       });
@@ -370,7 +405,12 @@ export function MonitorTablas({
         setAviso("No se pudieron armar las filas del Excel con los filtros actuales.");
         return;
       }
-      const sufijo = [fechaFiltro, hipodromoFiltro, carreraFiltro ? `C${carreraFiltro}` : ""]
+      const sufijo = [
+        ejeFecha === "venta" ? "VENTA" : "",
+        fechaFiltro,
+        hipodromoFiltro,
+        carreraFiltro ? `C${carreraFiltro}` : "",
+      ]
         .filter(Boolean)
         .join("_");
       const ok = exportarExcelTablas(m.carreras, `TABLAS-PUBLICADAS-${sufijo || "jornada"}`);
@@ -656,7 +696,34 @@ export function MonitorTablas({
           {filtradas.length} tabla(s) filtrada(s)
         </p>
         <div className="flex flex-wrap items-center gap-3">
-          
+
+          {/* Eje del día: la tabla tiene DOS fechas y no siempre coinciden.
+              "Carrera" agrupa/filtra por cuándo CORRE; "Venta" por cuándo se
+              VENDIÓ/publicó. Cambia el selector de Fecha y el panel de arriba. */}
+          <div className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-1.5 py-1 shadow-sm">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">🧭 Eje</span>
+            <button
+              type="button"
+              onClick={() => setEjeFecha("carrera")}
+              title="Agrupar y filtrar por la fecha en que CORRE la carrera"
+              className={`cursor-pointer rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wide transition ${
+                ejeFecha === "carrera" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              🏇 Carrera
+            </button>
+            <button
+              type="button"
+              onClick={() => setEjeFecha("venta")}
+              title="Agrupar y filtrar por la fecha en que se VENDIÓ/publicó la tabla"
+              className={`cursor-pointer rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wide transition ${
+                ejeFecha === "venta" ? "bg-emerald-600 text-white" : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              🧾 Venta
+            </button>
+          </div>
+
           {/* Filtro Hipódromo */}
           <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">🏛️ Hipódromo</span>
@@ -670,9 +737,11 @@ export function MonitorTablas({
             </select>
           </label>
 
-          {/* Filtro Fecha */}
+          {/* Filtro Fecha (según el eje elegido arriba) */}
           <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">📅 Fecha</span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+              {ejeFecha === "venta" ? "🧾 Venta" : "📅 Carrera"}
+            </span>
             <select
               value={fechaFiltro}
               onChange={(e) => setFechaFiltro(e.target.value)}
@@ -832,7 +901,21 @@ export function MonitorTablas({
                 <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] font-bold leading-none">
                   <span className="rounded bg-white/20 px-1 py-px">📏 {t.distancia_carrera ?? ""} m</span>
                   <span className="rounded bg-white/20 px-1 py-px uppercase">{t.superficie || "ARENA"}</span>
-                  <span className="rounded bg-white/20 px-1 py-px">📅 {t.fecha?.slice(0,10) ?? ""}</span>
+                  {/* Las DOS fechas de la tabla: cuándo corre y cuándo se
+                      vendió. Se resalta la del eje activo para que el ojo
+                      sepa contra cuál se está agrupando. */}
+                  <span
+                    className={`rounded px-1 py-px ${ejeFecha === "carrera" ? "bg-white/40 ring-1 ring-white/60" : "bg-white/20"}`}
+                    title="Fecha de carrera (cuándo corre)"
+                  >
+                    🏇 {diaDeLaTabla(t, "carrera") || "—"}
+                  </span>
+                  <span
+                    className={`rounded px-1 py-px ${ejeFecha === "venta" ? "bg-white/40 ring-1 ring-white/60" : "bg-white/20"}`}
+                    title="Fecha de venta (cuándo se publicó)"
+                  >
+                    🧾 {diaDeLaTabla(t, "venta") || "—"}
+                  </span>
                 </div>
                 <div className="mt-0.5 flex items-center justify-between rounded bg-white/20 px-1.5 py-px leading-none">
                   <span className="text-[11px] font-black uppercase tracking-wider opacity-90">💰 MONTO A PAGAR TABLA</span>

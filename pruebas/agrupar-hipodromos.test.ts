@@ -13,6 +13,7 @@
 // ============================================================================
 import {
   agruparPorHipodromo,
+  diaDeAlta,
   diaDeCarrera,
   normalizarDia,
   type CarreraAgrupable,
@@ -44,6 +45,20 @@ igual(normalizarDia(""), "", "vacío queda vacío");
 igual(diaDeCarrera({ fecha_creacion: "2026-10-19" }, "1999-01-01"), "2026-10-19", "cae a fecha_creacion");
 igual(diaDeCarrera({ fecha: "" }, "2026-10-18"), "2026-10-18", "cae al fallback");
 
+console.log("\n== diaDeAlta (fecha de venta en hora LOCAL) ==");
+igual(diaDeAlta("2026-10-18"), "2026-10-18", "sin hora: se corta tal cual");
+igual(diaDeAlta("18-10-2026"), "2026-10-18", "DD-MM-YYYY a ISO");
+igual(diaDeAlta(""), "", "vacío queda vacío");
+igual(diaDeAlta(null), "", "null queda vacío");
+igual(diaDeAlta("2026-10-18T12:00:00"), "2026-10-18", "timestamp sin Z = hora local");
+// Un ISO en UTC se lleva al día LOCAL (no al de Greenwich): comprobamos que un
+// instante de las 23:59 locales cae en el día local correcto sea cual sea el TZ.
+{
+  const d = new Date(2026, 9, 18, 23, 59, 0); // 18-oct-2026 23:59 LOCAL
+  const esperado = "2026-10-18";
+  igual(diaDeAlta(d.toISOString()), esperado, "UTC -> día local, no el de Greenwich");
+}
+
 console.log("\n== TODOS LOS DÍAS (dia vacío) ==");
 const todos = agruparPorHipodromo(filas, "");
 igual(todos.map((g) => g.hipodromo), ["LARINCONADA", "SANTARITA"], "agrupa ambas fechas y normaliza la clave");
@@ -59,6 +74,34 @@ igual(d19[0].carreras.map((c) => c.carrera), [2, 5], "mismo día por fecha o fec
 
 console.log("\n== DESCARTA SIN HIPÓDROMO / SIN CARRERA ==");
 igual(agruparPorHipodromo(filas, "").flatMap((g) => g.carreras).length, 4, "solo quedan las 4 válidas");
+
+// ---------------------------------------------------------------------------
+// EJE DUAL: una tabla tiene DOS fechas. "carrera" = cuándo corre (`fecha`);
+// "venta" = cuándo se vendió/publicó (`fecha_creacion`). Deben poder agruparse
+// por separado y, si falta una, caer en la otra.
+// ---------------------------------------------------------------------------
+console.log("\n== EJE fecha de carrera vs fecha de venta ==");
+const mixtas: CarreraAgrupable[] = [
+  { hipodromo: "La Rinconada", carrera: 1, fecha: "2026-10-18", fecha_creacion: "2026-10-16" },
+  { hipodromo: "Santa Rita", carrera: 2, fecha: "2026-10-18", fecha_creacion: "2026-10-17" },
+];
+igual(diaDeCarrera(mixtas[0], "x", "carrera"), "2026-10-18", "eje carrera lee `fecha`");
+igual(diaDeCarrera(mixtas[0], "x", "venta"), "2026-10-16", "eje venta lee `fecha_creacion`");
+igual(diaDeCarrera({ fecha: "2026-10-18" }, "x", "venta"), "2026-10-18", "venta cae en `fecha` si no hay alta");
+igual(diaDeCarrera({ fecha_creacion: "2026-10-16" }, "x", "carrera"), "2026-10-16", "carrera cae en `fecha_creacion`");
+igual(
+  agruparPorHipodromo(mixtas, "2026-10-18", "carrera").map((g) => g.hipodromo),
+  ["LARINCONADA", "SANTARITA"],
+  "eje carrera: el 18 agrupa las dos (corren ese día)"
+);
+igual(
+  agruparPorHipodromo(mixtas, "2026-10-17", "venta").map((g) => g.hipodromo),
+  ["SANTARITA"],
+  "eje venta: el 17 solo vendió Santa Rita"
+);
+igual(agruparPorHipodromo(mixtas, "2026-10-18", "venta").length, 0, "eje venta: el 18 no se vendió nada");
+igual(agruparPorHipodromo(mixtas, "2026-10-17", "carrera").length, 0, "eje carrera: el 17 no corre nadie");
+igual(agruparPorHipodromo(mixtas, "", "venta").flatMap((g) => g.carreras).length, 2, "eje venta sin día: TODAS");
 
 console.log(`\n  ${pasan} ok, ${fallan} fallaron`);
 if (fallan > 0) process.exit(1);

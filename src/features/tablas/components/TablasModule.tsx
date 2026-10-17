@@ -14,7 +14,7 @@ import {
   useRegistroCentralOpts,
 } from "@/shared/store/useRegistroCentral";
 import { MonitorHipodromos } from "@/shared/components/ui/MonitorHipodromos";
-import { agruparPorHipodromo, diaDeCarrera } from "@/features/carreras/lib/agruparHipodromos";
+import { agruparPorHipodromo, diaDeCarrera, type EjeFecha } from "@/features/carreras/lib/agruparHipodromos";
 import { asegurarHipodromo } from "@/features/tablas/lib/rpc";
 import { resumenProblemasCarga, validarFechasDeCarga } from "@/features/tablas/lib/validar-carga";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
@@ -83,12 +83,17 @@ export function TablasModule(props: Props) {
   const registroCentral = useRegistroCentralOpts(fechaPrograma);
   /** Filtro de hipódromo activado desde las columnas "Hipódromos del Día". */
   const [filtroHipodromo, setFiltroHipodromo] = useState<string>("");
+  /** Eje del día: agrupar y filtrar por fecha de CARRERA (default) o de VENTA.
+   *  Lo comparten el panel de Hipódromos y el Monitor de Tablas para que la
+   *  fecha elegida signifique lo mismo en los dos. */
+  const [ejeFecha, setEjeFecha] = useState<EjeFecha>("carrera");
 
   const openCount = tablas.filter((t) => !t.cerrada).length;
 
   /** Hipódromos del día (abiertos, de la fecha seleccionada) ordenados
-   *  alfabéticamente, con sus carreras y estado. Solo la fecha indicada por
-   *  el filtro de día (por defecto hoy). La normalización de fecha y el
+   *  alfabéticamente, con sus carreras y estado. El eje elegido (carrera o
+   *  venta) decide contra CUÁL fecha se agrupa; el estado de cada carrera, en
+   *  cambio, siempre sale de su día de CARRERA. La normalización de fecha y el
    *  agrupado viven en lib/carreras/agruparHipodromos (compartidos con
    *  Carreras del Día). */
   const hipodromosDia = useMemo(() => {
@@ -98,10 +103,10 @@ export function TablasModule(props: Props) {
     return agruparPorHipodromo(
       abiertas.map((t) => {
         const hipo = (t.hipodromo ?? "").trim().toUpperCase();
-        // Cruce acotado al día: el ledger guarda varias fechas con el mismo
-        // (hipódromo, carrera) y sin comparar `e.fecha` el chip heredaba el
-        // estado de otro día.
-        const dia = diaDeCarrera(t, fechaPrograma);
+        // Cruce acotado al día de CARRERA: el ledger guarda varias fechas con
+        // el mismo (hipódromo, carrera) y sin comparar `e.fecha` el chip
+        // heredaba el estado de otro día. El estado nunca depende del eje.
+        const dia = diaDeCarrera(t, fechaPrograma, "carrera");
         const est = carrerasDia.find(
           (e) => e.hipodromo === hipo && e.carrera === t.carrera && e.fecha === dia
         );
@@ -115,9 +120,10 @@ export function TablasModule(props: Props) {
           ventas: est?.ventas?.length ?? 0,
         };
       }),
-      fechaPrograma
+      fechaPrograma,
+      ejeFecha
     );
-  }, [tablas, fechaPrograma, carrerasDia]);
+  }, [tablas, fechaPrograma, carrerasDia, ejeFecha]);
 
   const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -130,12 +136,22 @@ export function TablasModule(props: Props) {
         import("@/features/impresion/lib/tablas"),
         import("@/features/impresion/lib/excel"),
       ]);
-      const m = await cargarMatrizImpresion(tablas, { dia: fechaPrograma, hipodromo: filtroHipodromo });
+      // El nombre del archivo deja constancia del eje para no confundir un
+      // listado por venta con uno por carrera.
+      const m = await cargarMatrizImpresion(tablas, {
+        // En el eje de VENTA la matriz solo conoce la fecha de carrera, así que
+        // se exporta sin día para no recortar de más.
+        dia: ejeFecha === "carrera" ? fechaPrograma : "",
+        hipodromo: filtroHipodromo,
+      });
       if (m.carreras.length === 0) {
         toast("No hay tablas publicadas para exportar.", "warning");
         return;
       }
-      const ok = exportarExcelTablas(m.carreras, `TABLAS-FIJAS-${fechaPrograma || "TODAS"}`);
+      const ok = exportarExcelTablas(
+        m.carreras,
+        `TABLAS-FIJAS-${ejeFecha === "venta" ? "VENTA-" : ""}${fechaPrograma || "TODAS"}`
+      );
       if (ok) toast(`Excel generado con ${m.carreras.length} carreras.`, "success");
       else toast("No se pudo generar el archivo Excel.", "error");
     } catch (e) {
@@ -822,9 +838,10 @@ export function TablasModule(props: Props) {
               fecha={fechaPrograma}
               onFecha={setFechaPrograma}
               permitirTodos
+              ejeFecha={ejeFecha}
               vacio={
                 fechaPrograma
-                  ? `Sin hipódromos publicados para la fecha ${fechaPrograma}.`
+                  ? `Sin hipódromos publicados para la fecha de ${ejeFecha === "venta" ? "venta" : "carrera"} ${fechaPrograma}.`
                   : "Sin hipódromos publicados."
               }
               className="mb-3"
@@ -852,6 +869,8 @@ export function TablasModule(props: Props) {
             onHipodromoFiltro={setFiltroHipodromo}
             fechaDia={fechaPrograma}
             onFechaDia={setFechaPrograma}
+            ejeFecha={ejeFecha}
+            onEjeFecha={setEjeFecha}
           />
         </div>
       </SeccionPliegue>
