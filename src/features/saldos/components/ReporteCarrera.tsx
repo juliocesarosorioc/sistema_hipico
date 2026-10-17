@@ -29,14 +29,17 @@ export type LlegadaCaballo = {
 export type JugadaVivo = {
   /** Cliente que juega. */
   juega: string;
+  /** APOSTÓ — monto que arriesga el que JUEGA. */
+  aposto: string | number;
   /** Texto de la jugada (ej. "10A9", "2Y2N", "TABLA 2"). */
   jugo: string;
   /** Ejemplar(es) de la jugada, para pintar el disco de color (ej. "5", "3x7"). */
   caballo?: string;
-  aposto: string | number;
   /** DA / el que consigue o va a los otros ejemplares ("" si no tiene par). */
   da: string;
-  /** Neto del cliente; null = pendiente de liquidar. */
+  /** APOSTÓ — monto que arriesga el que DA (null si la jugada no tiene par). */
+  apostoDa: number | null;
+  /** Neto del cliente; null = pendiente de liquidar (no se pinta hasta decidirse). */
   resultado: number | null;
 };
 
@@ -162,9 +165,10 @@ function TablaJugadas({ filas }: { filas: JugadaVivo[] }) {
       <thead>
         <tr className="border-b border-slate-300">
           <th className={TH}>Juega</th>
-          <th className={TH}>Jugó</th>
-          <th className={`${TH} text-right`}>Apostó</th>
+          <th className={`${TH} text-right`} title="Monto que arriesga el que juega">Apostó</th>
+          <th className={`${TH} pl-2`}>Jugó</th>
           <th className={`${TH} pl-2`}>Da</th>
+          <th className={`${TH} text-right`} title="Monto que arriesga el que da">Apostó</th>
           <th className={`${TH} text-right`}>Resultado</th>
         </tr>
       </thead>
@@ -172,12 +176,18 @@ function TablaJugadas({ filas }: { filas: JugadaVivo[] }) {
         {filas.map((j, i) => (
           <tr key={i} className="border-b border-slate-100 bg-white">
             <td className="py-[3px] pr-1 font-bold text-slate-800 whitespace-nowrap">{j.juega}</td>
-            <td className="py-[3px] text-slate-700 whitespace-nowrap">
+            <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap">{j.aposto}</td>
+            <td className="py-[3px] pl-2 text-slate-700 whitespace-nowrap">
               <span className="font-semibold">{j.jugo}</span> <Discos caballo={j.caballo} />
             </td>
-            <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap">{j.aposto}</td>
             <td className="py-[3px] pl-2 text-slate-600 whitespace-nowrap">{j.da || '—'}</td>
-            <td className="py-[3px] text-right whitespace-nowrap"><FormatoDinero monto={j.resultado} /></td>
+            <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap">
+              {j.apostoDa === null || j.apostoDa === undefined ? '—' : j.apostoDa}
+            </td>
+            {/* RESULTADO: solo se pinta cuando la jugada se decide (resultado != null). */}
+            <td className="py-[3px] text-right whitespace-nowrap">
+              {j.resultado !== null && <FormatoDinero monto={j.resultado} />}
+            </td>
           </tr>
         ))}
       </tbody>

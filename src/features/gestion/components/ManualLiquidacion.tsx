@@ -167,9 +167,11 @@ export default function ManualLiquidacion() {
           (orden de llegada 1°…5°).
         </p>
         <p>
-          <b>Cuerpo (tabla de jugadas):</b> Juega · Jugó (código exacto) · Apostó · Ejemplar · Da ·
-          Resultado. El resultado ya incluye el descuento del 5% y se expresa en positivo (verde),
-          negativo (rojo) o nulo (verde claro, <Codigo>+0,00</Codigo> para los ninis).
+          <b>Cuerpo (tabla de jugadas):</b> Juega · Apostó (monto que arriesga el que juega) · Jugó
+          (código exacto) · Da · Apostó (monto que arriesga el que da) · Resultado. El monto de cada
+          lado del pareo se muestra en su propia columna, y el resultado solo aparece cuando la
+          jugada se decide: positivo (verde), negativo (rojo) o nulo (verde claro,{" "}
+          <Codigo>+0,00</Codigo> para los ninis); mientras está pendiente, la celda queda vacía.
         </p>
         <p>
           <b>Jugadas adelantadas / especiales:</b> Parada Adelantadas, Tablas Fijas, Marcas

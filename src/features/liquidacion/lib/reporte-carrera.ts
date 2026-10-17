@@ -40,13 +40,15 @@ function indiceTicketDe(id: string): string | null {
   return m ? m[2] : null;
 }
 
-/** El "DA" (cliente que consigue) de cada índice de ticket. */
-function consiguePorJuega(c: CarreraReporte): Map<string, { cliente: string; resultado: number }> {
-  const mapa = new Map<string, { cliente: string; resultado: number }>();
+/** El "DA" (cliente que consigue) de cada índice de ticket, con lo que arriesga. */
+function consiguePorJuega(c: CarreraReporte): Map<string, { cliente: string; resultado: number; riesgo: number }> {
+  const mapa = new Map<string, { cliente: string; resultado: number; riesgo: number }>();
   for (const f of c.filas) {
     const i = indiceTicketDe(f.id);
     if (!i || !f.id.endsWith(`-c-${i}`)) continue; // solo filas "Consigue"
-    mapa.set(i, { cliente: f.cliente, resultado: f.resultado ?? 0 });
+    // `riesgoDeFila` del lado "da": su parte de la proporción (monto·b/a), no el
+    // neto del que juega. Es el APOSTÓ del DA que pide el reporte.
+    mapa.set(i, { cliente: f.cliente, resultado: f.resultado ?? 0, riesgo: riesgoDeFila(f) });
   }
   return mapa;
 }
@@ -124,11 +126,22 @@ export function armarReporteCarrera(
       // Solo la fila del que JUEGA va a la tabla "en vivo"; su pareja
       // (Consigue) ya viaja como DA. Las dos mitades igual suman al resumen.
       const i = indiceTicketDe(f.id) ?? `t-${correlativo++}`;
-      const da = consigue.get(i)?.cliente ?? "";
+      const cons = consigue.get(i);
+      const da = cons?.cliente ?? "";
       // `etiquetaJugada` rotula "PP" un MATCH sin fracción (nunca "10/10"); los
       // ejemplares viajan en `caballo` y la plantilla los pinta "1 × 8" con el
       // DA al lado, distinguiendo quién juega uno y quién el otro.
-      jugadasVivo.push({ juega: f.cliente, jugo: etiquetaJugada(f.jugada), caballo: f.caballo, aposto: f.monto, da, resultado });
+      // APOSTÓ de cada lado: el que JUEGA arriesga su monto; el que DA arriesga
+      // su parte de la proporción (null cuando la jugada no tiene par).
+      jugadasVivo.push({
+        juega: f.cliente,
+        aposto: riesgoDeFila(f),
+        jugo: etiquetaJugada(f.jugada),
+        caballo: f.caballo,
+        da,
+        apostoDa: cons ? cons.riesgo : null,
+        resultado,
+      });
     }
 
     // El riesgo se acumula para TODA fila decidida o no: "cuánto arriesgó" no

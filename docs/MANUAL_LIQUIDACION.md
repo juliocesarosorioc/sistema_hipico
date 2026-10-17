@@ -106,9 +106,12 @@ comisión = gananciaNeta × 0.05      saldo = gananciaNeta − comisión
 
 - **Encabezado (contexto):** Grupo hípico, hipódromo, carrera, fecha y pizarra
   oficial (orden de llegada 1°…5°).
-- **Cuerpo (tabla de jugadas):** Juega · Jugó (código exacto) · Apostó · Ejemplar
-  · Da · Resultado. El resultado ya incluye el descuento del 5 % y se expresa en
-  positivo (verde), negativo (rojo) o nulo (verde claro, `+0,00` para los ninis).
+- **Cuerpo (tabla de jugadas):** Juega · Apostó (monto que arriesga el que
+  juega) · Jugó (código exacto) · Da · Apostó (monto que arriesga el que da) ·
+  Resultado. Cada lado del pareo muestra lo que arriesga en su propia columna, y
+  el resultado solo aparece cuando la jugada se decide: positivo (verde),
+  negativo (rojo) o nulo (verde claro, `+0,00` para los ninis); mientras está
+  pendiente, la celda queda vacía.
 - **Jugadas adelantadas / especiales:** Parada Adelantadas, Tablas Fijas, Marcas
   Adelantadas y Jugadas Entre Tercios Adelantadas.
 - **Resumen de saldos:** GANAN (verde, nulos al final) y PIERDEN (rojo),

@@ -59,6 +59,8 @@ si(perrito && perrito.caballo === "7", "fila 1: lleva el ejemplar (7) para pinta
 si(perrito && !("tipo" in perrito), "fila 1: SIN etiqueta de premio/puestos debajo de la jugada");
 const marleneVivo = d.jugadasVivo[1];
 si(marleneVivo && marleneVivo.juega === "Marlene" && marleneVivo.da === "", "fila 2: Marlene sin pareja (DA vacío)");
+si(marleneVivo && marleneVivo.apostoDa === null, "fila 2: sin DA no hay APOSTÓ del lado que da (null → «—»)");
+si(perrito && perrito.apostoDa === 100, "fila 1: APOSTÓ del DA = 100 (Emy arriesga el monto: sin fracción)");
 
 // ── 3. Parada Adelantadas por tipo de jugada ──
 si(d.adelantadas.tablas.length === 1, "la TABLA ganadora va a la sección Tablas Fijas");
@@ -87,7 +89,7 @@ si(
 );
 si(
   conPendiente.jugadasVivo.find((j) => j.juega === "Pendiente")?.resultado === null,
-  "la fila en vivo del pendiente conserva resultado null (se pinta «—»)"
+  "la fila en vivo del pendiente conserva resultado null (no se pinta hasta decidirse)"
 );
 
 // ── 5. Carrera sin filas ──
@@ -126,6 +128,8 @@ si(rDador?.riesgo === 600, "Dador arriesgó 600");
 si(rDador?.excede === false, "Dador NO excede su disponible (600 < 5000)");
 si(conDisp.notaExcedidos?.length === 1 && conDisp.notaExcedidos[0]?.nombre === "Marlene", "la nota al pie lista solo a Marlene");
 si(conDisp.notaExcedidos?.[0]?.disponible === 400, "la nota al pie lleva su disponible (400)");
+si(conDisp.jugadasVivo[0]?.apostoDa === 600, "filas en vivo: el APOSTÓ del DA en «10/6» es 600 (1000·6/10)");
+si(conDisp.jugadasVivo[0]?.aposto === 1000, "filas en vivo: el APOSTÓ del que juega en «10/6» es 1000");
 // Sin lookup de disponible (o modo libre = undefined) no se marca a nadie.
 const sinDisp = armarReporteCarrera({ ...CARRERA, filas: [fila({ rol: "Juega", cliente: "Libre", monto: 9_999_999, resultado: 1 })] });
 si(sinDisp.notaExcedidos?.length === 0 && sinDisp.resumen.ganan[0]?.excede === false, "sin disponible informado no hay asterisco");
