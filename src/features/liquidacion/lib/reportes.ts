@@ -191,13 +191,17 @@ function evaluar(
   // justo la que antes NO se le pasaba al motor en la vía de tickets PENDIENTES:
   // el reporte liquidaba con la tasa por defecto y el mensaje con la del ticket,
   // y de ahí que suministraran importes distintos.
+  // Un 0% EXPLÍCITO en el ticket es válido (`pct > 0` lo confundía con "falta
+  // el dato" y lo subía al default). Solo se respalda si el campo viene
+  // ausente/vacío, nunca por valer 0.
+  const tienePct =
+    f.comision_porcentaje != null && String(f.comision_porcentaje).trim() !== "";
   const pct = cifra(f.comision_porcentaje);
-  const tasaEfectiva =
-    pct > 0
-      ? pct
-      : Number.isFinite(Number(tasaComision)) && Number(tasaComision) >= 0
-        ? Number(tasaComision)
-        : 5;
+  const tasaEfectiva = tienePct
+    ? pct
+    : Number.isFinite(Number(tasaComision)) && Number(tasaComision) >= 0
+      ? Number(tasaComision)
+      : 5;
   // `premio_pagar` / `monto_decidido` se persisten BRUTOS (capital + ganancia,
   // como los escriben la liquidación legacy y `aplicarLiquidacionSaldos`). Este
   // reporte trabaja internamente con el NETO del ganador (lo que recibe) y con

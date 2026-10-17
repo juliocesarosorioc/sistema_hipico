@@ -255,7 +255,7 @@ const mapearJugada = (r: TicketApuestaJugada): JugadaRelacion => {
     cantidadTablas: Number(r.cantidad_tablas),
     premioPorTabla: Number(r.premio_por_tabla),
     premioPotencial: Number(r.premio_pagar),
-    comisionPct: Number(r.comision_porcentaje) || undefined,
+    comisionPct: r.comision_porcentaje != null ? Number(r.comision_porcentaje) : undefined,
     ganador: Number(r.premio_pagar) > 0,
   };
 };

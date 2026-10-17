@@ -33,6 +33,7 @@ import { ToastHost } from "@/shared/components/ui/ToastHost";
 import {
   correoDeLogin,
   crearEcosistemaGrupo,
+  porcentajeDeEntrada,
   type EcosistemaGrupoResultado,
   type EcosistemaGrupoEntrada,
   type NuevoUsuarioDeGrupo,
@@ -164,7 +165,7 @@ export function CreacionGruposModule() {
       nombre,
       moneda,
       moneda_cuadre: monedaCuadre,
-      comision_default: parseFloat(comision) || 2.5,
+      comision_default: porcentajeDeEntrada(comision),
       cupo_tabla: parseInt(cupo, 10) || 100,
       responsable: responsable.trim() || null,
     },

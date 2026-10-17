@@ -134,6 +134,22 @@ export function comisionJugadasDeGrupo(
   return v != null && isFinite(Number(v)) ? Number(v) : null;
 }
 
+/**
+ * Porcentaje de comisión escrito en un formulario de texto. El `0` es un valor
+ * VÁLIDO (grupo sin comisión) y NUNCA debe caer al default: el patrón viejo
+ * `parseFloat(v) || 2.5` convertía un 0% pactado en 2,5%. Solo un campo vacío,
+ * no numérico o negativo usa `porDefecto`.
+ */
+export function porcentajeDeEntrada(
+  valor: string | number | null | undefined,
+  porDefecto = 2.5
+): number {
+  const t = String(valor ?? "").trim().replace(",", ".");
+  if (!t) return porDefecto;
+  const n = Number(t);
+  return Number.isFinite(n) && n >= 0 ? n : porDefecto;
+}
+
 /** Lista clientes con sus saldos y grupos (clientes + clientes_grupos). */
 export async function listarClientesVenta(): Promise<ClienteVenta[]> {
   const activo = grupoActivoVigente();

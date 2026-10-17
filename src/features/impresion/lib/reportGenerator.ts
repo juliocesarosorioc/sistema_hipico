@@ -124,6 +124,17 @@ function num(n: unknown): number {
   return Number.isFinite(v) ? v : 0;
 }
 
+/**
+ * Tasa de comisión EFECTIVA de una jugada, en porcentaje. El `0` es un valor
+ * válido (jugada sin comisión) y NO debe caer al default; solo un `comisionPct`
+ * ausente (`undefined`/`null`) usa `COMISION_CASA` (5%).
+ */
+function tasaDeJugada(comisionPct: number | null | undefined): number {
+  if (comisionPct == null) return COMISION_CASA.rate * 100;
+  const n = Number(comisionPct);
+  return Number.isFinite(n) && n >= 0 ? n : COMISION_CASA.rate * 100;
+}
+
 // ============================================================
 // Pie estricto (se mantiene a toda costa en jugadas y resultados)
 // ============================================================
@@ -278,7 +289,7 @@ export function balanceJugada(j: JugadaRelacion): BalanceJugada {
   const gananciaBruta = Math.max(0, premioPotencial - num(j.monto));
   const comision =
     gananciaBruta > 0
-      ? gananciaBruta * (num(j.comisionPct) > 0 ? num(j.comisionPct) : COMISION_CASA.rate * 100) / 100
+      ? gananciaBruta * tasaDeJugada(j.comisionPct) / 100
       : 0;
   return {
     jugada: j,
@@ -482,7 +493,7 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
         const porUno = Number(meta.dividendos?.nini);
         const mult = Number.isFinite(porUno) && porUno >= 1 ? porUno : 2;
         const premioNini = num(j.monto) * mult;
-        const tasa = num(j.comisionPct) > 0 ? num(j.comisionPct) : COMISION_CASA.rate * 100;
+        const tasa = tasaDeJugada(j.comisionPct);
         const com2 = round2((premioNini - num(j.monto)) * (tasa / 100));
         const netoC2 = round2(premioNini - com2 - num(j.monto));
         cuerpo.push(`Consigue ${beneficiario} $ +${fmtMonto(netoC2)}`);
@@ -495,7 +506,7 @@ export function relacionResultados(meta: MetaCarrera, jugadas: JugadaRelacion[])
       cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
       acumular(j.clienteJuega, -perdida);
       if (beneficiario) {
-        const tasa = num(j.comisionPct) > 0 ? num(j.comisionPct) : COMISION_CASA.rate * 100;
+        const tasa = tasaDeJugada(j.comisionPct);
         const netoDa = round2(perdida - perdida * (tasa / 100));
         cuerpo.push(`Consigue ${beneficiario} $ +${fmtMonto(netoDa)}`);
         acumular(beneficiario, netoDa);
@@ -575,7 +586,7 @@ function mapearJugada(r: TicketApuestaJugada): JugadaRelacion {
     cantidadTablas: num(r.cantidad_tablas),
     premioPorTabla: num(r.premio_por_tabla),
     premioPotencial: num(r.premio_pagar),
-    comisionPct: num(r.comision_porcentaje) || undefined,
+    comisionPct: r.comision_porcentaje != null ? num(r.comision_porcentaje) : undefined,
     ganador: num(r.premio_pagar) > 0,
   };
 }

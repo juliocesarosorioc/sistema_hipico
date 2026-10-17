@@ -20,6 +20,7 @@ import {
   listarGruposAdmin,
   listarMembresias,
   listarTiposJugadas,
+  porcentajeDeEntrada,
   toggleGrupoActivo,
   type ClienteLigero,
   type ConvenioRow,
@@ -48,8 +49,11 @@ const num = (v: string | number | null | undefined): number => {
 };
 
 const strNum = (v: string | number | null | undefined): string => {
-  const n = num(v);
-  return n ? String(n) : "";
+  // `0` es un porcentaje válido (0%): solo vacío/no numérico queda en blanco.
+  const t = String(v ?? "").trim();
+  if (!t) return "";
+  const n = Number(t);
+  return Number.isFinite(n) ? String(n) : "";
 };
 
 // "0102 · BANCO DE VENEZUELA / N° 1234" -> { banco, numero }
@@ -217,7 +221,7 @@ export function GruposModule() {
       moneda: formMoneda,
       moneda_cuadre: formMonedaCuadre,
       cupo_tabla: parseInt(formCupo) || 100,
-      comision_default: num(formComision) || 2.5,
+      comision_default: porcentajeDeEntrada(formComision),
       responsable: formResponsable.trim().toUpperCase() || null,
       cuenta_bancaria: cuenta,
       es_principal: formPrincipal,
@@ -266,7 +270,7 @@ export function GruposModule() {
       moneda: editando.moneda ?? "USD",
       moneda_cuadre: editando.moneda_cuadre ?? "USD",
       cupo_tabla: parseInt(editando.cupo_tabla?.toString() ?? "100") || 100,
-      comision_default: num(editando.comision_default),
+      comision_default: porcentajeDeEntrada(editando.comision_default),
       responsable: String(editando.responsable ?? "").trim().toUpperCase() || null,
       cuenta_bancaria: editando.cuenta_bancaria || null,
       es_principal: editando.es_principal === true,
@@ -996,7 +1000,7 @@ export function GruposModule() {
                   type="number"
                   step="0.01"
                   min={0}
-                  value={strNum(editando.comision_default)}
+                  value={strNum(editando.comision_default) || "2.5"}
                   onChange={(e) => setEditando({ ...editando, comision_default: num(e.target.value) })}
                   className={inp + " font-bold text-right"}
                 />
