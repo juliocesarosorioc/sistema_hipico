@@ -51,7 +51,10 @@ export function agruparPorHipodromo(
 ): GrupoHipodromo[] {
   const porHip = new Map<string, CarreraMonitor[]>();
   for (const t of filas) {
-    if (diaDeCarrera(t, dia) !== dia) continue;
+    // `dia` vacío = TODOS LOS DÍAS (sin filtro). El Monitor de Tablas Fijas
+    // arranca sin día elegido para mostrar todo lo publicado, y su panel de
+    // hipódromos tiene que reflejar esa misma vista.
+    if (dia && diaDeCarrera(t, dia) !== dia) continue;
     // `claveHipodromo` y no un `.trim().toUpperCase()` propio: el Monitor y el
     // registro central tienen que producir EXACTAMENTE la misma clave, o un
     // "LA urel" agruparía en un módulo y en otro sería otro hipódromo.

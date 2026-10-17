@@ -70,9 +70,15 @@ export function TablasModule(props: Props) {
   const [modoManual, setModoManual] = useState(false);
   const [menuEnsamblaje, setMenuEnsamblaje] = useState(false);
   const [drafts, setDrafts] = useState<DraftCarrera[]>([]);
-  /** Fecha del programa (Filtro Universal): las tarjetas heredadas de la
-   *  Gaceta traen la fecha del evento; las manuales usan este valor (hoy). */
-  const [fechaPrograma, setFechaPrograma] = useState(() => hoyLocal());
+  /** Fecha del programa (Filtro Universal): por defecto "TODOS LOS DÍAS" para
+   *  mostrar todas las tablas publicadas, independientemente de la fecha de
+   *  venta o de carrera. El usuario puede filtrar por día cuando lo necesite. */
+  const [fechaPrograma, setFechaPrograma] = useState("");
+  /** Fecha concreta (ISO) para operaciones que EXIGEN un día: publicar, validar
+   *  la carga y sembrar el registro central. El monitor puede estar en "Todos
+   *  los días" (`fechaPrograma === ""`), pero una tabla SIEMPRE se publica en un
+   *  día: si no se eligió ninguno, se usa hoy. */
+  const fechaJornada = fechaPrograma || hoyLocal();
   /** Registro central: la misma lectura de carreras del día que Marcas y Gestión. */
   const registroCentral = useRegistroCentralOpts(fechaPrograma);
   /** Filtro de hipódromo activado desde las columnas "Hipódromos del Día". */
@@ -129,7 +135,7 @@ export function TablasModule(props: Props) {
         toast("No hay tablas publicadas para exportar.", "warning");
         return;
       }
-      const ok = exportarExcelTablas(m.carreras, `TABLAS-FIJAS-${fechaPrograma}`);
+      const ok = exportarExcelTablas(m.carreras, `TABLAS-FIJAS-${fechaPrograma || "TODAS"}`);
       if (ok) toast(`Excel generado con ${m.carreras.length} carreras.`, "success");
       else toast("No se pudo generar el archivo Excel.", "error");
     } catch (e) {
@@ -312,8 +318,9 @@ export function TablasModule(props: Props) {
 
     // BARRERA DE FECHA (individual). La fecha de la tarjeta tiene que ser
     // inequívoca y quedar en ISO. Se publica en la fecha DE LA TARJETA; solo si
-    // no trae fecha se hereda la jornada abierta.
-    const chequeo = validarFechasDeCarga([d], fechaPrograma);
+    // no trae fecha se hereda la jornada abierta (o hoy si el monitor está en
+    // "Todos los días").
+    const chequeo = validarFechasDeCarga([d], fechaJornada);
     if (!chequeo.ok) {
       toast(resumenProblemasCarga(chequeo.problemas), "error");
       return;
@@ -384,7 +391,7 @@ export function TablasModule(props: Props) {
     // en Gestión de Jugadas. Se valida ANTES de tocar la base, y se reportan
     // TODOS los problemas juntos para no corregirlos de uno en uno. Cada carrera
     // se publica en SU fecha (la de la tarjeta); la jornada es solo el default.
-    const chequeo = validarFechasDeCarga(validas, fechaPrograma);
+    const chequeo = validarFechasDeCarga(validas, fechaJornada);
     if (!chequeo.ok) {
       toast(resumenProblemasCarga(chequeo.problemas), "error");
       for (const p of chequeo.problemas) {
@@ -504,7 +511,7 @@ export function TablasModule(props: Props) {
     );
     for (const t of lote) {
       if (noSembrar.has(`${String(t.hipodromo ?? "").toUpperCase()}|${t.carrera}`)) continue;
-      sembrarCarreraCentral(t.hipodromo ?? "", t.carrera ?? 0, t.fecha || fechaPrograma);
+      sembrarCarreraCentral(t.hipodromo ?? "", t.carrera ?? 0, t.fecha || fechaJornada);
     }
 
     if (okCount === lote.length && avisos.length === 0) {
@@ -650,16 +657,33 @@ export function TablasModule(props: Props) {
         </button>
         <label
           className="flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1.5 text-xs font-black uppercase text-slate-600"
-          title="Filtro Universal por fecha: las tarjetas manuales y carreras vacías se publican bajo ESTA fecha (YYYY-MM-DD)"
+          title="Filtro Universal por fecha: las tarjetas manuales y carreras vacías se publican bajo ESTA fecha (YYYY-MM-DD). Vacío = todos los días."
         >
           📅
           <input
             type="date"
             value={fechaPrograma}
-            onChange={(e) => setFechaPrograma(e.target.value || hoyLocal())}
+            onChange={(e) => setFechaPrograma(e.target.value)}
             className="bg-transparent text-xs font-bold text-slate-700 outline-none"
           />
         </label>
+        {fechaPrograma ? (
+          <button
+            type="button"
+            onClick={() => setFechaPrograma("")}
+            className="flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-black uppercase text-emerald-700 transition-colors hover:bg-emerald-100"
+            title="Quitar el filtro de fecha y ver TODOS los días"
+          >
+            🗓️ <span className="hidden sm:inline">Todos los días</span>
+          </button>
+        ) : (
+          <span
+            className="flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-black uppercase text-emerald-700"
+            title="Mostrando todas las fechas publicadas"
+          >
+            🗓️ Todos los días
+          </span>
+        )}
       </div>
 
       {/* Bloque 1: Parámetros */}
@@ -797,7 +821,12 @@ export function TablasModule(props: Props) {
               onFiltro={setFiltroHipodromo}
               fecha={fechaPrograma}
               onFecha={setFechaPrograma}
-              vacio={`Sin hipódromos publicados para la fecha ${fechaPrograma}.`}
+              permitirTodos
+              vacio={
+                fechaPrograma
+                  ? `Sin hipódromos publicados para la fecha ${fechaPrograma}.`
+                  : "Sin hipódromos publicados."
+              }
               className="mb-3"
               acciones={
                 <Guard permiso="tablas:btn_imprimir">

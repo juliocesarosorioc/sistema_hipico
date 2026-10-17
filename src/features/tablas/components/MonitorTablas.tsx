@@ -226,8 +226,8 @@ export function MonitorTablas({
   const [reporteAbierto, setReporteAbierto] = useState(false);
 
   // Estados de los filtros
-  /** Día por defecto: SIEMPRE el actual (el padre suele controlarlo, pero si
-   *  queda interno nunca debe arrancar en "todas las fechas"). */
+  /** Día por defecto: si el padre controla la fecha, su valor manda (Tablas
+   *  Fijas arranca en "Todos los días"); si queda interno, arranca en hoy. */
   const [fechaInterna, setFechaInterna] = useState<string>(() => hoyLocal());
   const [hipodromoLocal, setHipodromoLocal] = useState<string>("");
   /** Carrera filtrada (vacío = todas) y progreso del Excel de la pantalla. */
@@ -675,12 +675,13 @@ export function MonitorTablas({
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">📅 Fecha</span>
             <select
               value={fechaFiltro}
-              onChange={(e) => e.target.value && setFechaFiltro(e.target.value)}
+              onChange={(e) => setFechaFiltro(e.target.value)}
               className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none"
             >
-              {/* Sin "TODAS": la plataforma tiene un registro único de carreras
-                  y cada módulo debe mostrar SOLO el día elegido (hoy por
-                  defecto). Otros días se ven cambiando la fecha, nunca mezclando. */}
+              {/* "TODAS" = sin filtro de día: el reporte muestra TODAS las
+                  fechas publicadas (fecha de venta y de carrera), y solo se
+                  acota al elegir un día. Antes arrancaba clavado en hoy. */}
+              <option value="">TODAS</option>
               {fechasDisponibles.map(f => <option key={f} value={f}>{f}</option>)}
             </select>
           </label>
@@ -699,10 +700,10 @@ export function MonitorTablas({
             </select>
           </label>
 
-          {(fechaFiltro !== hoyLocal() || hipodromoFiltro || carreraFiltro) && (
+          {(fechaFiltro !== "" || hipodromoFiltro || carreraFiltro) && (
             <button
               type="button"
-              onClick={() => { setFechaFiltro(hoyLocal()); setHipodromoFiltro(""); setCarreraFiltro(""); }}
+              onClick={() => { setFechaFiltro(""); setHipodromoFiltro(""); setCarreraFiltro(""); }}
               className="text-[10px] font-black uppercase text-red-500 hover:text-red-600 border border-red-200 bg-red-50 px-2 py-1 rounded"
             >
               ✕ Limpiar

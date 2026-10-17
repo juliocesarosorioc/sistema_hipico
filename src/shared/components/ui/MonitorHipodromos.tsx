@@ -46,6 +46,10 @@ type Props = {
   onFiltro: (hipodromo: string) => void;
   fecha: string;
   onFecha: (fecha: string) => void;
+  /** Permite dejar la fecha VACÍA = "todos los días". Tablas Fijas lo usa para
+   *  listar todas las tablas publicadas; Carreras del Día lo deja apagado
+   *  (siempre trabaja sobre un día concreto). */
+  permitirTodos?: boolean;
   /** Texto del estado vacío. Por defecto nombra la fecha. */
   vacio?: string;
   /** Botones extra a la derecha de la cabecera (slot). */
@@ -59,6 +63,7 @@ export function MonitorHipodromos({
   onFiltro,
   fecha,
   onFecha,
+  permitirTodos = false,
   vacio,
   acciones,
   className,
@@ -78,11 +83,27 @@ export function MonitorHipodromos({
             <input
               type="date"
               value={fecha}
-              onChange={(e) => onFecha(e.target.value || hoyLocal())}
+              onChange={(e) => onFecha(permitirTodos ? e.target.value : e.target.value || hoyLocal())}
               title="Selecciona el día de los Hipódromos"
               className="mon-input"
             />
           </label>
+          {permitirTodos && (
+            fecha ? (
+              <button
+                type="button"
+                onClick={() => onFecha("")}
+                className="mon-limpiar"
+                title="Ver todos los días"
+              >
+                🗓️ Todos los días
+              </button>
+            ) : (
+              <span className="mon-contador" title="Mostrando todas las fechas">
+                🗓️ Todos los días
+              </span>
+            )
+          )}
           {filtro && (
             <button type="button" onClick={() => onFiltro("")} className="mon-limpiar">
               ✕ Limpiar filtro: {nombre(filtro)}

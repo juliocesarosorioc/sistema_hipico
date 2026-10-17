@@ -26,6 +26,7 @@
     "../src/features/taquilla/lib/caballos.ts",
     "../src/features/taquilla/lib/normalizar.ts",
     "../src/features/carreras/lib/claves.ts",
+    "../src/features/carreras/lib/agruparHipodromos.ts",
     "../src/features/carreras/lib/retiros-nucleo.ts",
     "../src/features/carreras/lib/maestro-nucleo.ts",
     "../src/features/hipodromos/lib/tipos.ts",
@@ -76,6 +77,7 @@
     "./saldos-jornada.test.ts",
     "./reporte-tablas.test.ts",
     "./comision-cero.test.ts",
-    "./relacion-observaciones.test.ts"
+    "./relacion-observaciones.test.ts",
+    "./agrupar-hipodromos.test.ts"
   ]
 }
