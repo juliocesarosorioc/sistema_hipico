@@ -30,14 +30,20 @@ export const useTablasFijasStore = create<TablasFijasState>()(
           })),
         }),
 
-      marcarCerrada: (hipodromo, carrera) =>
+      marcarCerrada: (hipodromo, carrera) => {
+        const hip = String(hipodromo ?? "").toUpperCase().replace(/\s+/g, "");
         set((s) => ({
-          tablas: s.tablas.map((t) =>
-            t.hipodromo === hipodromo && t.carrera === carrera
-              ? { ...t, estado: "Cerrada", cerrada: true }
-              : t
-          ),
-        })),
+          tablas: s.tablas.map((t) => {
+            const th = String(t.hipodromo ?? "").toUpperCase().replace(/\s+/g, "");
+            const tc = Number(t.carrera) || 0;
+            const nc = Number(carrera) || 0;
+            if (th === hip && tc === nc) {
+              return { ...t, estado: "Cerrada", cerrada: true };
+            }
+            return t;
+          }),
+        }));
+      },
     }),
     {
       name: "sistema-hipico:tablas-fijas",
