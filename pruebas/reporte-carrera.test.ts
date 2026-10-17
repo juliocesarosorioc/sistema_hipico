@@ -57,6 +57,16 @@ si(
 );
 si(colorDiscoNumero(15).includes("bg-red-600"), "15 repite el ciclo → 1 rojo (mismo color que imprimía la tabla)");
 si(colorDiscoNumero(99).includes("bg-slate-700"), "número fuera del rango cae al gris de respaldo (bg-slate-700)");
+// Texto OSCURO en los fondos que con blanco no llegaban a AA (fondo intacto).
+si(
+  colorDiscoNumero(5).includes("bg-emerald-600") && colorDiscoNumero(5).includes("text-slate-900"),
+  "el 5 verde conserva el fondo oficial y lleva texto oscuro"
+);
+si(
+  colorDiscoNumero(10).includes("bg-teal-500") && colorDiscoNumero(10).includes("text-slate-900"),
+  "el 10 turquesa conserva el fondo oficial y lleva texto oscuro"
+);
+si(colorDiscoNumero(6).includes("bg-slate-900") && colorDiscoNumero(6).includes("text-white"), "el 6 negro sigue con texto blanco");
 
 // ── 2. Jugadas "en vivo" ──
 si(d.jugadasVivo.length === 2, "una fila por ticket (el CRUCE no cuenta y el Consigue viaja como DA)");

@@ -7,9 +7,12 @@
  * `colorDeNumeroGac` (Gaceta/Dupletas), `colorDiscoNumero` (Reporte de Carrera)
  * y `PALETA14`/`col` del motor de impresión. Nada debe tener su propia paleta.
  *
- * Tabla oficial (1..12):
+ * Tabla oficial (1..12): fondos EXACTOS; el texto va en blanco salvo en los
+ * fondos claros — 2 Blanco, 4 Amarillo, 5 Verde, 8 Rosado, 9 Naranja y
+ * 10 Turquesa usan `text-slate-900` para que el chip pase AA (el fondo oficial
+ * no se toca, sólo el color del texto):
  *   1 Rojo      bg-red-600      · 2 Blanco    bg-white       (borde slate-300)
- *   3 Azul      bg-blue-600     · 4 Amarillo  bg-yellow-400  (texto slate-900)
+ *   3 Azul      bg-blue-600     · 4 Amarillo  bg-yellow-400
  *   5 Verde     bg-emerald-600  · 6 Negro     bg-slate-900
  *   7 Marrón    bg-amber-800    · 8 Rosado    bg-pink-500
  *   9 Naranja   bg-orange-600   · 10 Turquesa bg-teal-500
@@ -55,12 +58,15 @@ const DICCIONARIO: Record<number, HorseColor> = {
   },
   3: { bg: "bg-blue-600", text: "text-white", border: "border-blue-700", label: "Azul", hex: "#2563eb", hexText: "#ffffff" },
   4: { bg: "bg-yellow-400", text: "text-slate-900", border: "border-yellow-500", label: "Amarillo", hex: "#facc15", hexText: "#0f172a" },
-  5: { bg: "bg-emerald-600", text: "text-white", border: "border-emerald-700", label: "Verde", hex: "#059669", hexText: "#ffffff" },
+  // 5, 8, 9 y 10 llevan TEXTO OSCURO (como el 4 amarillo): fondo oficial
+  // intacto, pero en blanco bajaban de AA en los badges chicos
+  // (emerald-600 3.77 · pink-500 3.53 · orange-600 3.56 · teal-500 2.49).
+  5: { bg: "bg-emerald-600", text: "text-slate-900", border: "border-emerald-700", label: "Verde", hex: "#059669", hexText: "#0f172a" },
   6: { bg: "bg-slate-900", text: "text-white", border: "border-slate-950", label: "Negro", hex: "#0f172a", hexText: "#ffffff" },
   7: { bg: "bg-amber-800", text: "text-white", border: "border-amber-900", label: "Marrón", hex: "#92400e", hexText: "#ffffff" },
-  8: { bg: "bg-pink-500", text: "text-white", border: "border-pink-600", label: "Rosado", hex: "#ec4899", hexText: "#ffffff" },
-  9: { bg: "bg-orange-600", text: "text-white", border: "border-orange-700", label: "Naranja", hex: "#ea580c", hexText: "#ffffff" },
-  10: { bg: "bg-teal-500", text: "text-white", border: "border-teal-600", label: "Turquesa", hex: "#14b8a6", hexText: "#ffffff" },
+  8: { bg: "bg-pink-500", text: "text-slate-900", border: "border-pink-600", label: "Rosado", hex: "#ec4899", hexText: "#0f172a" },
+  9: { bg: "bg-orange-600", text: "text-slate-900", border: "border-orange-700", label: "Naranja", hex: "#ea580c", hexText: "#0f172a" },
+  10: { bg: "bg-teal-500", text: "text-slate-900", border: "border-teal-600", label: "Turquesa", hex: "#14b8a6", hexText: "#0f172a" },
   11: { bg: "bg-slate-500", text: "text-white", border: "border-slate-600", label: "Gris", hex: "#64748b", hexText: "#ffffff" },
   12: { bg: "bg-purple-700", text: "text-white", border: "border-purple-800", label: "Violeta", hex: "#7e22ce", hexText: "#ffffff" },
   // ── Extensiones ya configuradas en la plataforma (valores previos, sin cambios) ──
