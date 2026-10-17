@@ -3,16 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { TicketVentaPreview, type TicketVentaModel } from "@/features/tickets/components/TicketVentaPreview";
-import { getHorseColor } from "@/shared/lib/horseColors";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { HorseBadge } from "@/shared/components/ui/HorseChips";
 import type { CarreraCentral, EjemplarCarreraCentral } from "@/features/carreras/lib/central";
-import { aplicarRetirosCarrera, parsearRetirados } from "@/features/carreras/lib/retiros";
 import { listarClientesVenta, listarGruposVenta, esClienteLibre, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { listarBanquerosGrupo } from "@/features/liquidacion/lib/banqueros";
-import { CargaResultadosModal } from "@/features/liquidacion/components/CargaResultadosModal";
-import { posicionesDePizarra } from "@/features/liquidacion/lib/posiciones";
-import { guardarPizarraCentral } from "@/features/liquidacion/lib/pizarraCentral";
 import {
   buscarEjemplar,
   calcularMonto,
@@ -20,8 +15,6 @@ import {
   clientesDelGrupo,
   leerConfigMarcas,
   venderMarca,
-  liquidarMarcas,
-  registrarOrdenLlegada,
   claveIdempotencia,
   separarNumeros,
   etiquetaCaballo,
@@ -38,8 +31,16 @@ const inputCls =
  * una carrera suelta: abrirla desde la fila de una carrera ataba la
  * configuracion a la pantalla en la que se estaba trabajando.
  */
-type Pestana = "venta" | "resultado";
-
+/**
+ * Solo VENTA. La CONFIGURACION de marcas, NV y debutantes vive en su propia
+ * ventana (`ModalMarcasEditor`), que administra la jornada completa y no una
+ * carrera suelta. El RESULTADO y la liquidación de las marcas YA NO se cargan
+ * acá: se centralizaron en el flujo único de resultados (Gestión de Jugadas /
+ * Taquilla → `liquidarCarreraYCerrarTabla`), que escribe el orden de llegada en
+ * `resultados_carreras` y, acto seguido, liquida las marcas con
+ * `club_liquidar_marca`. Así el resultado se carga UNA vez para todos los
+ * módulos y no queda un cargador por modalidad.
+ */
 export type ModalMarcasProps = {
   carrera: CarreraCentral;
   fecha: string;
@@ -52,26 +53,19 @@ export type ModalMarcasProps = {
 /**
  * MODULO MARCAS — dentro del modal del módulo hípico.
  *
- * Se abre desde la fila de la carrera en "Carreras del Día" y trae las tres
- * partes del módulo en una sola ventana, porque las tres son la misma carrera:
+ * Se abre desde la fila de la carrera en "Carreras del Día". Este modal solo
+ * VENDE: la configuración (MARCAS y NV) vive en `ModalMarcasEditor` y el
+ * resultado se carga en el flujo único de liquidación.
  *
- *   1. CONFIG  — define MARCAS y NV sobre los ejemplares REALES de la carrera
- *                registrada. El orden en que se agregan es la jerarquía: el
- *                último marcado juega contra los que tiene a su izquierda.
- *   2. VENTA   — grupo -> cliente -> caballo -> monto, con la previsualización
- *                del matchup en vivo. El débito y el ticket los hace
- *                `club_vender_marca` en una transacción.
- *   3. RESULTADO — carga el orden de llegada y liquida. Un retiro ANULA la
- *                jugada: el ticket queda solo como registro informativo
- *                (estado 'Retirado', sin monto_decidido ni premio), y el
- *                wager del cliente vuelve a su saldo.
+ *   VENTA — grupo -> cliente -> caballo -> rival del match -> monto, con la
+ *           previsualización del matchup en vivo. El débito y el ticket los
+ *           hace `club_vender_marca` en una transacción.
  *
  * La jerarquía se previsualiza aquí pero la VERDAD la calcula el servidor, que
  * vuelve a derivarla de la configuración: si divergieran, la caja vería un
  * matchup y la banca aceptaría otro.
  */
 export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: ModalMarcasProps) {
-  const [pestana, setPestana] = useState<Pestana>("venta");
   /**
    * La configuracion VIGENTE de la carrera. Este modal no la edita: la lee, para
    * previsualizar el matchup y para saber si la carrera acepta ventas. Se
@@ -103,12 +97,6 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
   const [idem, setIdem] = useState(() => claveIdempotencia());
   const [preview, setPreview] = useState<TicketVentaModel | null>(null);
   const [errorPreview, setErrorPreview] = useState<string | null>(null);
-
-  // Resultado
-  const [ordenTexto, setOrdenTexto] = useState("");
-  const [retiradosTexto, setRetiradosTexto] = useState("");
-  const [liquidando, setLiquidando] = useState(false);
-  const [pizarraAbierta, setPizarraAbierta] = useState(false);
 
   const caballos: EjemplarCarreraCentral[] = useMemo(() => carrera.caballos ?? [], [carrera.caballos]);
   const etiqueta = `${nombreHipodromoParaMostrar(carrera.hipodromo)} N${carrera.carrera}`;
@@ -331,49 +319,6 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
     setIdem(claveIdempotencia());
   }, [clienteId, grupoId, caballo, analisis.rival, monto]);
 
-  // =========================================================================
-  // RESULTADO
-  // =========================================================================
-  const liquidar = async () => {
-    setLiquidando(true);
-    const orden = await registrarOrdenLlegada(
-      carrera.hipodromo,
-      carrera.carrera,
-      fecha,
-      ordenTexto,
-      retiradosTexto
-    );
-    if (!orden.ok) {
-      setLiquidando(false);
-      return onToast(orden.error ?? "No se pudo registrar el orden de llegada.", "error");
-    }
-    // El retiro se centraliza ACÁ: `registrarOrdenLlegada` solo escribe el
-    // resultado de esta carrera, pero un retiro incide en TODOS los módulos
-    // (carreras, tablas fijas, dupletas y reembolsos). Se hace best-effort: si
-    // falla, la liquidación de Marcas igual sigue.
-    const retiradosNum = parsearRetirados(retiradosTexto);
-    if (retiradosNum.length) {
-      const ret = await aplicarRetirosCarrera({
-        fecha,
-        hipodromo: carrera.hipodromo,
-        carrera: carrera.carrera,
-        numeros: retiradosNum,
-      });
-      if (!ret.ok) {
-        onToast(`⚠️ El retiro no se propagó a todos los módulos: ${ret.error ?? "sin conexión"}`, "warning");
-      }
-    }
-    const r = await liquidarMarcas(carrera.hipodromo, carrera.carrera, fecha);
-    setLiquidando(false);
-    if (!r.ok) return onToast(r.error ?? "No se pudo liquidar.", "error");
-    onToast(
-      `🏁 ${etiqueta} liquidada: ${r.liquidados} jugada(s) · ${r.ganadores} ganador(es) · ` +
-        `${r.perdedores} perdedor(es) · ${r.reintegrados} anulada(s) por retiro`,
-      "success"
-    );
-    onCambio?.();
-  };
-
   return (
     <>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3" onClick={onCerrar}>
@@ -394,31 +339,9 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
           </button>
         </div>
 
-        {/* Pestañas */}
-        <div className="flex border-b border-cyan-100 bg-cyan-50">
-          {(
-            [
-              ["venta", "💵 Vender jugada"],
-              ["resultado", "🏁 Resultado"],
-            ] as Array<[Pestana, string]>
-          ).map(([id, txt]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setPestana(id)}
-              className={`flex-1 px-3 py-2 text-[11px] font-bold uppercase tracking-wider transition-colors ${
-                pestana === id ? "bg-cyan-700 text-white" : "text-cyan-800 hover:bg-cyan-100"
-              }`}
-            >
-              {txt}
-            </button>
-          ))}
-        </div>
-
         <div className="flex-1 overflow-y-auto p-4">
           {/* ============================== VENTA ============================== */}
-          {pestana === "venta" && (
-            <div className="space-y-3">
+          <div className="space-y-3">
               {!configurada ? (
                 <p className="rounded-lg bg-amber-50 px-3 py-3 text-xs font-bold text-amber-700">
                   ⚠️ {etiqueta} no tiene marcas publicadas. Configure y abra la carrera en la pestaña “Marcas y NV”.
@@ -647,103 +570,7 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
                   </Button>
                 </>
               )}
-            </div>
-          )}
-
-          {/* ============================= RESULTADO ============================= */}
-          {pestana === "resultado" && (
-            <div className="space-y-3">
-              <div className="rounded-lg border border-cyan-200 bg-cyan-50/60 px-3 py-2 text-[10px] font-semibold leading-relaxed text-cyan-900">
-                📌 Gana el caballo jugado si llega <b>por delante de todos sus rivales</b>; un solo rival por delante ya
-                es perder. El orden se lee del <b>snapshot</b> del ticket, así que editar las marcas después de vender no
-                altera las jugadas viejas. Un retiro <b>anula</b> la jugada: el ticket queda solo como registro
-                informativo y el wager vuelve al saldo.
-              </div>
-
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => setPizarraAbierta(true)}
-                disabled={liquidando}
-              >
-                🏁 Cargar pizarra (mismo modal de Gestión de Jugadas)
-              </Button>
-
-              <label className="block">
-                <span className={inputLbl}>Orden de llegada (de mayor a menor) — Ej.: 5, 1, 3, 2, 4</span>
-                <input
-                  value={ordenTexto}
-                  onChange={(e) => setOrdenTexto(e.target.value)}
-                  placeholder="5, 1, 3, 2, 4"
-                  className={inputCls}
-                />
-              </label>
-              <label className="block">
-                <span className={inputLbl}>Retirados (opcional · ej. 7 o 4, 7 · vacío = NO HUBO RETIROS)</span>
-                <input
-                  value={retiradosTexto}
-                  onChange={(e) => setRetiradosTexto(e.target.value)}
-                  placeholder="4, 7"
-                  className={`${inputCls} border-red-200 bg-red-50/40`}
-                />
-              </label>
-
-              {ordenTexto.trim() && (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-700">
-                  <div className="font-bold uppercase text-slate-500">Así se va a liquidar</div>
-                  {marcasGuardadas.length === 0 ? (
-                    <p className="mt-1 text-amber-700">Configure las marcas para ver la previsualización.</p>
-                  ) : (
-                    <>
-                      <p className="mt-0.5 text-slate-500">
-                        Cada jugada es de a uno, así que el rival lo eligio el operador al vender y
-                        quedo congelado en su ticket. Esto muestra los rivales <b>legales</b> de cada
-                        marca, no el matchup concreto de cada ticket.
-                      </p>
-                      <ul className="mt-1 space-y-0.5">
-                        {marcasGuardadas.map((m) => {
-                          const a = calcularRivales(
-                            m,
-                            marcasGuardadas.join("/"),
-                            nvGuardadas.join("/"),
-                            debutantesGuardados.join("/"),
-                            cfg?.debutantes_valen !== false
-                          );
-                          if (!a.valido) return null;   // el primero no juega: no hay jugada suya
-                          return (
-                            <li key={m}>
-                              <b>MARCA {m}</b> se mide contra {a.candidatos.join(", ")} →{" "}
-                              {a.candidatos.length === 1 ? (
-                                <span className="font-bold text-slate-700">
-                                  rival fijo: {a.candidatos[0]}
-                                </span>
-                              ) : (
-                                <span className="font-semibold text-slate-600">
-                                  el operador elige: {a.candidatos.length} opciones
-                                </span>
-                              )}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </>
-                  )}
-                </div>
-              )}
-
-              <Button
-                variant="success"
-                className="w-full"
-                onClick={() => void liquidar()}
-                disabled={liquidando || !ordenTexto.trim()}
-              >
-                {liquidando ? "Liquidando…" : "🏁 Cargar resultado y liquidar"}
-              </Button>
-              <p className="text-[10px] font-semibold text-slate-500">
-                Sin orden de llegada la liquidación se detiene sin mover saldo de nadie: es preferible a pagar a ciegas.
-              </p>
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
@@ -757,32 +584,6 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
         setErrorPreview(null);
       }}
       onConfirmar={() => void confirmarVenta()}
-    />
-    <CargaResultadosModal
-      abierto={pizarraAbierta}
-      onCerrar={() => setPizarraAbierta(false)}
-      hipodromo={carrera.hipodromo}
-      carrera={String(carrera.carrera)}
-      caballos={
-        caballos.length
-          ? caballos.map((e) => ({ numero: String(e.numero), nombre: String(e.nombre ?? "") }))
-          : null
-      }
-      onConfirmar={(r) => {
-        setOrdenTexto(posicionesDePizarra(r.pizarra).join(", "));
-        setPizarraAbierta(false);
-        void guardarPizarraCentral({
-          hipodromo: carrera.hipodromo,
-          carrera: carrera.carrera,
-          fecha,
-          cargado_por: "MARCAS",
-          r,
-        }).then((res) => {
-          if (!res.ok) {
-            onToast(`⚠️ Pizarra local cargada, pero no se centralizó: ${res.error ?? "sin conexión"}`, "warning");
-          }
-        });
-      }}
     />
     </>
   );

@@ -721,7 +721,7 @@ export function PanelMarcas() {
                               <button
                                 type="button"
                                 onClick={() => setAbierta(c)}
-                                title="Vender jugadas y cargar el resultado"
+                                title="Vender jugadas"
                                 className={`${botonCls} bg-cyan-600 text-white hover:bg-cyan-500`}
                               >
                                 💵

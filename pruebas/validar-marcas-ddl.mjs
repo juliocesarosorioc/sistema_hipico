@@ -193,6 +193,9 @@ console.log("\n[4] Tablas referenciadas");
   for (const f of readdirSync("sql").filter((x) => x.endsWith(".sql"))) {
     const t = readFileSync(`sql/${f}`, "utf8");
     for (const m of t.matchAll(/create table\s+(?:if not exists\s+)?(?:public\.)?(\w+)/gi)) creadas.add(m[1]);
+    // Vistas canónicas (p. ej. `v_carrera`, definida en sql/carrera_unica.sql).
+    // Cuentan como referencias válidas: son la fuente de participantes reales.
+    for (const m of t.matchAll(/create\s+(?:or\s+replace\s+)?view\s+(?:public\.)?(\w+)/gi)) creadas.add(m[1]);
   }
 
   // `from X` / `update X` / `join X`, pero NO si X va seguido de `(` (eso es una

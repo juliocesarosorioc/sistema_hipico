@@ -242,13 +242,30 @@ as $$
         raise exception 'La carrera % % N%s tiene las marcas % (no se aceptan jugadas).', v_hipo, p_fecha, p_carrera, lower(v_cfg.estado);
     end if;
 
-    -- Participantes reales de la carrera registrada: de aqui sale la validacion
-    -- de que marcas y NV correspondan a caballos que corren.
+    -- Participantes reales de la carrera. La fuente CANONICA es la matriz
+    -- (`carreras` + `carrera_ejemplares`), expuesta por `v_carrera.caballos`.
+    -- `resultados_carreras.caballos` queda como RESPALDO para carreras
+    -- historicas que solo tienen fila de resultados (carrera_id NULL).
+    --
+    -- Antes se leia SOLO `resultados_carreras`: una carrera registrada por la
+    -- via nueva (matriz) sin fila de resultados quedaba con `caballos` NULL y la
+    -- venta abortaba con "no tiene caballos registrados" aunque el semaforo y el
+    -- padron de ejemplares SI la mostraran con participantes.
     select coalesce(caballos, '[]'::jsonb) into v_caballos
-      from public.resultados_carreras
+      from public.v_carrera
      where upper(btrim(hipodromo)) = v_hipo
        and fecha = p_fecha
        and carrera = p_carrera;
+
+    if v_caballos is null or jsonb_array_length(v_caballos) = 0 then
+        select coalesce(caballos, '[]'::jsonb) into v_caballos
+          from public.resultados_carreras
+         where upper(btrim(hipodromo)) = v_hipo
+           and fecha = p_fecha
+           and carrera = p_carrera;
+    end if;
+
+    v_caballos := coalesce(v_caballos, '[]'::jsonb);
 
     -- "1/2/3/4/5" -> {1,2,3,4,5}. Se descartan los segmentos vacios ("1//2" no
     -- debe inventar un rival en blanco).

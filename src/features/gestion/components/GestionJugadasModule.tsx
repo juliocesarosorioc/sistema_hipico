@@ -255,9 +255,6 @@ export function GestionJugadasModule() {
         (a, b) => a - b
       );
       setCarrerasPorDia(base);
-      if (base.length > 0 && !modoManual) {
-        setCarrera((prev) => (base.includes(prev) ? prev : Math.min(...base)));
-      }
       return () => {
         vivo = false;
       };
@@ -267,17 +264,14 @@ export function GestionJugadasModule() {
         if (!vivo) return;
         const base = [...new Set(c.map((n) => Number(n)).filter((n) => n > 0))].sort((a, b) => a - b);
         setCarrerasPorDia(base);
-        if (base.length > 0 && !modoManual) {
-          setCarrera((prev) => (base.includes(prev) ? prev : Math.min(...base)));
-        }
       })
       .catch(() => {
-        if (vivo && !modoManual) setCarrera(1);
+        /* sin conexión: el operador elige la carrera en el semáforo */
       });
     return () => {
       vivo = false;
     };
-  }, [fecha, hipodromo, carrerasDelDia, modoManual]);
+  }, [fecha, hipodromo, carrerasDelDia]);
 
   // El catálogo y sus ejemplares los aporta el REGISTRO CENTRAL (arriba). Este
   // módulo ya no mantiene una segunda consulta: dos copias del mismo catálogo
@@ -288,10 +282,7 @@ export function GestionJugadasModule() {
     if (conEj.length !== carrerasPorDia.length || conEj.some((n: number, i: number) => n !== carrerasPorDia[i])) {
       setCarrerasPorDia(conEj);
     }
-    if (conEj.length > 0 && !conEj.includes(carrera) && !modoManual) {
-      setCarrera(Math.min(...conEj));
-    }
-  }, [carrerasConEjemplares, carrerasPorDia, carrera, modoManual]);
+  }, [carrerasConEjemplares, carrerasPorDia]);
 
   const [modalPreliminar, setModalPreliminar] = useState(false);
   const [mostrarPlanoPreliminar, setMostrarPlanoPreliminar] = useState(false);
@@ -1271,6 +1262,15 @@ const hipodromosDelDia = useMemo(() => {
       tasaComision: comisionNum,
     });
     setResumen(r);
+    // Resultado de la liquidación de MARCAS que ahora viaja con la liquidación
+    // centralizada (antes vivía en la pestaña "Resultado" del modal de Marcas).
+    const avisoMarcas = !r.marcas
+      ? ""
+      : r.marcas.ok
+        ? (r.marcas.liquidados ?? 0) > 0
+          ? ` · 🏷️ Marcas: ${r.marcas.liquidados} jugada(s) liquidada(s)`
+          : ""
+        : ` · ⚠️ Marcas: ${r.marcas.error ?? "no se pudo liquidar"}`;
     if (r.ok) {
       // Bloque 3 · Saldos: la venta ya descontó el saldo al cargar la jugada;
       // aquí se acredita a los ganadores leyendo los tickets REALES de la
@@ -1299,11 +1299,11 @@ const hipodromosDelDia = useMemo(() => {
       // saldo viejo).
       void recargarClientes();
       if (s.errores.length) {
-        setAviso(`✅ ${r.motivo} · ⚠️ aviso de saldos: ${s.errores[0]}`);
+        setAviso(`✅ ${r.motivo}${avisoMarcas} · ⚠️ aviso de saldos: ${s.errores[0]}`);
         return;
       }
     }
-    setAviso(r.ok ? `✅ ${r.motivo}` : `❌ ${r.motivo}`);
+    setAviso(r.ok ? `✅ ${r.motivo}${avisoMarcas}` : `❌ ${r.motivo}`);
   };
 
   const cerrarFinalizar = () => {
@@ -1436,7 +1436,7 @@ const hipodromosDelDia = useMemo(() => {
             hipodromo={hipodromo}
             fecha={fecha}
             carreras={carrerasPorDia}
-            activa={carrera}
+            activa={carreraConfirmada ? carrera : null}
             manual={modoManual}
             onSeleccionar={(n) => {
               setCarrera(n);

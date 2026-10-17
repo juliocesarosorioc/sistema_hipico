@@ -11,6 +11,7 @@ import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 import { supabase } from "@/core/supabase";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { aplicarLiquidacionSaldos, type ResumenSaldos } from "@/features/liquidacion/lib/saldos";
+import { liquidarMarcas } from "@/features/marcas/lib/marcas";
 
 /**
  * Suma de todos los tickets de la carrera. El comando puede traer el monto al
@@ -57,6 +58,18 @@ export type ResLiquidarCarrera = {
    *  Carreras del Día). Va aparte porque un fallo acá NO puede invalidar una
    *  liquidación cuyos tickets ya se pagaron. */
   resultadoCentral?: { ok: boolean; error?: string };
+  /** Liquidación de las jugadas de MARCAS de la carrera (best-effort): al quedar
+   *  el resultado oficial se liquidan con `club_liquidar_marca`, que lee el
+   *  snapshot de rivales del ticket. Un fallo acá (sin jugadas, sin permiso o
+   *  sin orden de llegada) NO invalida la liquidación universal. */
+  marcas?: {
+    ok: boolean;
+    liquidados?: number;
+    ganadores?: number;
+    perdedores?: number;
+    reintegrados?: number;
+    error?: string;
+  };
 };
 
 /** Respuesta vacía con ceros, para cuando la operación ni siquiera arranca. */
@@ -239,6 +252,28 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     useTablasFijasStore.getState().marcarCerrada(hipodromo, carrera);
   }
 
+  // MARCAS: con el resultado YA oficial en `resultados_carreras`, se liquidan las
+  // jugadas de Marcas de la carrera. Antes esto vivía en la pestaña "Resultado"
+  // del modal de Marcas; al centralizar el resultado en un único flujo, la
+  // liquidación de Marcas viaja con él para que no quede un cargador por
+  // modalidad. Es best-effort e idempotente (solo toca tickets 'Pendiente'
+  // `MARCA %`): si no hay jugadas, permiso u orden de llegada, se reporta el
+  // motivo SIN abortar una liquidación cuyos tickets ya se pagaron.
+  let marcas: ResLiquidarCarrera["marcas"];
+  try {
+    const rm = await liquidarMarcas(hipodromo, Number(carrera), fecha);
+    marcas = {
+      ok: rm.ok,
+      liquidados: rm.liquidados,
+      ganadores: rm.ganadores,
+      perdedores: rm.perdedores,
+      reintegrados: rm.reintegrados,
+      error: rm.error,
+    };
+  } catch (e) {
+    marcas = { ok: false, error: (e as Error).message };
+  }
+
   return {
     ok: true,
     motivo: `Carrera ${hipodromo} C${carrera} liquidada. ${procesados.length} ticket(s).`,
@@ -250,6 +285,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     neteados,
     tablaCerrada: cierre,
     resultadoCentral: central,
+    marcas,
   };
 }
 

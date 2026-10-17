@@ -12,7 +12,8 @@ type Props = {
   fecha: string;
   /** Números de carrera existentes para [fecha + hipódromo] (fuente: BD). */
   carreras: number[];
-  activa: number;
+  /** Carrera resaltada. `null` = ninguna elegida aún (no se resalta sola). */
+  activa: number | null;
   onSeleccionar: (carrera: number) => void;
   /** Modo Manual (bypass Gaceta): habilita elegir carreras no registradas. */
   manual?: boolean;
@@ -80,7 +81,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
   };
 
   const maxCarrera = carreras.length ? Math.max(...carreras) : 0;
-  const total = manual ? Math.max(MANUAL_TOTAL, maxCarrera, activa) : maxCarrera;
+  const total = manual ? Math.max(MANUAL_TOTAL, maxCarrera, activa ?? 0) : maxCarrera;
   const vacio = !manual && maxCarrera === 0;
 
   return (
@@ -108,16 +109,26 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
             const existe = manual || carreras.includes(n);
             const { estado } = porCarrera(n);
             const c = COLORES[estado];
-            const activaEsta = n === activa;
+            const activaEsta = activa !== null && n === activa;
+            // En Modo Manual una carrera puede NO estar registrada en BD. El
+            // estilo cian "sin registro" es SOLO para ese caso: si la carrera ya
+            // tiene jugadas (amarillo) o ya se liquidó (rojo), manda el estado.
+            // Antes el cian pisaba SIEMPRE, así que una manual con jugadas se
+            // veía igual que una vacía y el operador no sabía dónde ya cargó.
+            const manualSinRegistro = manual && !carreras.includes(n) && estado === "inactiva";
             return (
               <button
                 key={n}
                 type="button"
                 onClick={() => existe && onSeleccionar(n)}
                 disabled={!existe}
-                title={existe ? (manual && !carreras.includes(n) ? `C${n} (manual — sin registro en BD)` : c.label) : `C${n} sin registro para ${fecha}`}
+                title={existe ? (manualSinRegistro ? `C${n} (manual — sin registro en BD)` : c.label) : `C${n} sin registro para ${fecha}`}
                 className={`grid h-9 w-9 place-items-center rounded-lg border-2 text-xs font-black transition-transform ${
-                  existe ? `hover:scale-105 ${manual && !carreras.includes(n) ? "border-dashed border-cyan-400 bg-cyan-50 text-cyan-700" : c.chip}` : "cursor-not-allowed border-dashed border-line bg-gray-50 text-slate-300"
+                  !existe
+                    ? "cursor-not-allowed border-dashed border-line bg-gray-50 text-slate-300"
+                    : manualSinRegistro
+                      ? "hover:scale-105 border-dashed border-cyan-400 bg-cyan-50 text-cyan-700"
+                      : `hover:scale-105 ${c.chip}`
                 } ${activaEsta ? "ring-4 ring-indigo-500 ring-offset-2" : ""}`}
               >
                 {n}
