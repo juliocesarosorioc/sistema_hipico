@@ -92,6 +92,9 @@ export function DashboardGrupos() {
   const [cerrando, setCerrando] = useState(false);
   const [pendiente, setPendiente] = useState<CierrePendiente | null>(null);
   const [verHistorial, setVerHistorial] = useState(false);
+  /** Día de la Semana Activa elegido para cerrar/reabrir SOLO ese día. `null` =
+   *  ninguno: los botones generales siguen cerrando hoy / la semana. */
+  const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(null);
 
   const hoy = hoyLocal();
 
@@ -158,6 +161,12 @@ export function DashboardGrupos() {
     }
     return { ciclo, inicio, fin, fijada: vigente.fijada, dias };
   }, [grupo, hoy, cerrados]);
+
+  // Al cambiar de grupo o de semana mostrada, la selección de día deja de
+  // pertenecer a la grilla: se limpia para no cerrar un día que ya no se ve.
+  useEffect(() => {
+    setDiaSeleccionado(null);
+  }, [grupoId, semana?.inicio]);
 
   /**
    * ¿La semana que muestra la grilla ya fue consolidada?
@@ -256,10 +265,10 @@ export function DashboardGrupos() {
    * Se calcula primero a propósito: consolidar es una foto, pero cerrar sin
    * mostrar la cifra es cómo se termina con un histórico que nadie reconoce.
    */
-  const prepararCierre = async (tipo: TipoCierre) => {
+  const prepararCierre = async (tipo: TipoCierre, fecha?: string) => {
     if (!grupo) return toast("Elegí un grupo de venta.", "warning");
     setCalculando(true);
-    const rango = rangoACerrar(grupo, tipo);
+    const rango = rangoACerrar(grupo, tipo, fecha);
     const b = await balanceDeRango(grupo, rango.inicio, rango.fin);
     setCalculando(false);
     if (!b.ok) return toast(b.error ?? "No se pudo calcular el balance.", "error");
@@ -277,7 +286,14 @@ export function DashboardGrupos() {
   const confirmarCierre = async () => {
     if (!pendiente || !grupo) return;
     setCerrando(true);
-    const r = await cerrarRango({ grupoId: String(grupo.id), grupo, tipo: pendiente.tipo });
+    const r = await cerrarRango({
+      grupoId: String(grupo.id),
+      grupo,
+      tipo: pendiente.tipo,
+      // El cierre del DÍA puede ser de un día anterior elegido en la grilla; la
+      // semana se recalcula sola desde el rango vigente.
+      fecha: pendiente.tipo === "DIA" ? pendiente.inicio : undefined,
+    });
     setCerrando(false);
     if (!r.ok) return toast(r.error ?? "No se pudo registrar el cierre.", "error");
     const { tipo, inicio, fin, balance } = pendiente;
@@ -365,21 +381,71 @@ export function DashboardGrupos() {
               </p>
             ) : null}
 
-            {/* Días de la semana fiscal (código de colores del legacy) */}
+            {/* Días de la semana fiscal (código de colores del legacy).
+                Cada día es CLICKEABLE: selecciona ESE día para cerrarlo o
+                reabrirlo sin tocar el resto de la semana. */}
             <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-7">
-              {semana.dias.map((d) => (
-                <div
-                  key={d.fecha}
-                  title={`${d.fecha} — ${d.estado === "hoy" ? "Hoy" : d.estado === "sin_cerrar" ? "Sin cerrar" : d.estado === "cerrado" ? "Cerrado" : "Pendiente"}`}
-                  className={`rounded-lg border-2 px-2 py-2 text-center ${COLOR_ESTADO[d.estado]}`}
-                >
-                  <p className="text-[10px] font-black uppercase tracking-wide">{d.etiqueta}</p>
-                  <p className="mt-0.5 text-[9px] opacity-80">
-                    {d.estado === "cerrado" ? "CERRADO" : d.estado === "hoy" ? "HOY" : d.estado === "sin_cerrar" ? "SIN CERRAR" : "PENDIENTE"}
-                  </p>
-                </div>
-              ))}
+              {semana.dias.map((d) => {
+                const sel = diaSeleccionado === d.fecha;
+                const etiqueta =
+                  d.estado === "cerrado" ? "CERRADO" : d.estado === "hoy" ? "HOY" : d.estado === "sin_cerrar" ? "SIN CERRAR" : "PENDIENTE";
+                return (
+                  <button
+                    key={d.fecha}
+                    type="button"
+                    onClick={() => setDiaSeleccionado(sel ? null : d.fecha)}
+                    title={`${d.fecha} — ${etiqueta}. Clic para cerrar/reabrir SOLO este día.`}
+                    className={`rounded-lg border-2 px-2 py-2 text-center transition ${COLOR_ESTADO[d.estado]} ${
+                      sel ? "ring-2 ring-indigo-500 ring-offset-1" : "hover:brightness-105"
+                    }`}
+                  >
+                    <p className="text-[10px] font-black uppercase tracking-wide">{d.etiqueta}</p>
+                    <p className="mt-0.5 text-[9px] opacity-80">{etiqueta}</p>
+                  </button>
+                );
+              })}
             </div>
+
+            {/* Acciones del día elegido (cierre/reapertura por día) */}
+            {diaSeleccionado ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/70 px-3 py-2">
+                <span className="text-[11px] font-black uppercase text-indigo-800">
+                  📅 {formatearCab(diaSeleccionado)}
+                  {cerrados.has(diaSeleccionado) ? " · CERRADO" : ""}
+                </span>
+                {cerrados.has(diaSeleccionado) ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const c = cierres.find(
+                        (x) => x.tipo === "DIA" && String(x.fecha_inicio).slice(0, 10) === diaSeleccionado
+                      );
+                      if (c) void reabrir(c);
+                    }}
+                    title="Borra la foto del cierre de ESTE día para poder reconsolidarlo"
+                  >
+                    <span className="mr-1">🔓</span> Reabrir este día
+                  </Button>
+                ) : diaSeleccionado > hoy ? (
+                  <span className="text-[10px] font-semibold text-slate-500">
+                    Día futuro: todavía no se puede consolidar.
+                  </span>
+                ) : (
+                  <Button
+                    size="sm"
+                    disabled={calculando || cerrando}
+                    onClick={() => void prepararCierre("DIA", diaSeleccionado)}
+                    title="Consolida el balance de caja de ESTE día"
+                  >
+                    {calculando ? <span className="mr-1">⏳</span> : <span className="mr-1">🔒</span>} Cerrar este día
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={() => setDiaSeleccionado(null)}>
+                  Quitar selección
+                </Button>
+              </div>
+            ) : null}
 
             {/* Leyenda */}
             <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-500">
@@ -387,6 +453,7 @@ export function DashboardGrupos() {
               <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-blue-500" /> Hoy</span>
               <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-red-500" /> Sin cerrar</span>
               <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-gray-300" /> Pendiente</span>
+              <span className="inline-flex items-center gap-1 text-indigo-600">👆 Clic en un día para cerrarlo o reabrirlo solo</span>
             </div>
 
             {/* Edición del ciclo + acciones de cierre */}
@@ -426,9 +493,9 @@ export function DashboardGrupos() {
                     variant="outline"
                     disabled={calculando || cerrando}
                     onClick={() => void prepararCierre("DIA")}
-                    title="Consolida el balance de caja de hoy y deja el día marcado como CERRADO"
+                    title="Consolida el balance de caja de HOY. Para cerrar otro día de la semana, hacé clic en su recuadro."
                   >
-                    {calculando ? <span className="mr-1">⏳</span> : <span className="mr-1">🔒</span>} Cierre del Día
+                    {calculando ? <span className="mr-1">⏳</span> : <span className="mr-1">🔒</span>} Cierre de Hoy
                   </Button>
                   <Button
                     size="sm"
