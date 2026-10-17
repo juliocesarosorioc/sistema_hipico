@@ -1997,7 +1997,7 @@ const hipodromosDelDia = useMemo(() => {
         carrera={String(carrera)}
         caballos={caballosDeCarrera.length ? caballosDeCarrera : null}
         inicial={ultimaPizarra ?? pizarraCentral}
-        onConfirmar={(r) => {
+        onConfirmar={async (r) => {
           setUltimaPizarra(r);
           setModalResultados(false);
           setAviso(`🏁 Resultados C${carrera} cargados (${r.llenas} posiciones${r.empates.length ? ` · ${r.empates.length} empate(s)` : ""}).`);
@@ -2010,16 +2010,22 @@ const hipodromosDelDia = useMemo(() => {
           // Centraliza en resultados_carreras con la MISMA pizarra: así lo que
           // se carga acá aplica también a Tablas Fijas, Carreras del Día y
           // cualquier módulo que lea el resultado central.
-          void guardarPizarraCentral({
-            hipodromo,
-            carrera,
-            cargado_por: "GESTION-JUGADAS",
-            r,
-          })
-            .then((res) => {
-              if (!res.ok) setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó: ${res.error ?? "sin conexión"}`);
-            })
-            .catch(() => setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó.`));
+          //
+          // Se ESPERA acá y no en paralelo con la finalización: los dos upserts
+          // competían por la MISMA fila y el último en llegar pisaba lo que
+          // acababa de escribir la liquidación (`aplicado_a_tablas`/estado),
+          // dejando la carrera "abierta" pese a tener resultados guardados.
+          try {
+            const cen = await guardarPizarraCentral({
+              hipodromo,
+              carrera,
+              cargado_por: "GESTION-JUGADAS",
+              r,
+            });
+            if (!cen.ok) setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó: ${cen.error ?? "sin conexión"}`);
+          } catch {
+            setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó.`);
+          }
           // (2) CONFIRMAR RESULTADOS = REGISTRAR Y FINALIZAR: la carrera se
           // registra y se cierra en ESTE mismo paso. Antes el operador tenía que
           // volver a apretar Ctrl+R y recién ahí liquidar, así que una carrera
@@ -2028,7 +2034,18 @@ const hipodromosDelDia = useMemo(() => {
           // re-renderizó y `ejecutarFinalizar` la leería en null.
           setReporteAlCerrarFinalizar(true);
           setModalFinalizar(true);
-          void ejecutarFinalizar(r);
+          try {
+            await ejecutarFinalizar(r);
+          } catch (e) {
+            // Un fallo de cierre no puede quedar silenciado en un `void`: se
+            // cierra el modal y se avisa, para no dar por hecha una apertura
+            // que en realidad no se completó.
+            setModalFinalizar(false);
+            setReporteAlCerrarFinalizar(false);
+            setAviso(
+              `❌ No se pudo cerrar la carrera ${nombreHipodromo} C${carrera}: ${e instanceof Error ? e.message : String(e)}`
+            );
+          }
         }}
       />
 
@@ -2047,7 +2064,10 @@ const hipodromosDelDia = useMemo(() => {
                   tocan y el resultado central no se reescribe.
                 </p>
               )}
-              {!ultimaPizarra ? (
+              {/* Con resumen ya no hay nada que precargar: la carrera se cerró
+                  (o falló) y avisar "Todavía no cargaste los resultados" encima
+                  del resumen hacía parecer que guardar no había hecho nada. */}
+              {resumen ? null : !ultimaPizarra ? (
                 <p className="rounded-lg bg-warning-500/10 px-3 py-2 text-xs font-semibold text-warning-700">
                   ⚠️ Todavía no cargaste los resultados. Usá Ctrl+Y o Ctrl+R (mismo flujo) para abrir la Carga de Resultados.
                 </p>
@@ -2086,7 +2106,13 @@ const hipodromosDelDia = useMemo(() => {
 
               {resumen ? (
                 <div className="rounded-2xl border border-line p-3">
-                  <p className="text-xs font-black uppercase text-slate-700">{resumen.ok ? "Resumen de la liquidación" : "Liquidación incompleta"}</p>
+                  <p className="text-xs font-black uppercase text-slate-700">
+                    {resumen.ok
+                      ? resumen.tablaCerrada?.ok
+                        ? "✅ Carrera registrada y CERRADA"
+                        : "⚠️ Liquidada · la tabla no se pudo cerrar en BD"
+                      : "❌ Liquidación incompleta — la carrera NO se cerró"}
+                  </p>
                   <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-lg bg-gray-50 px-3 py-2">
                       <p className="text-[9px] font-bold uppercase text-slate-400">Invertido</p>
@@ -2106,7 +2132,10 @@ const hipodromosDelDia = useMemo(() => {
                     </div>
                   </div>
                   <p className="mt-2 text-[10px] font-semibold text-slate-500">
-                    {resumen.motivo} {resumen.tablaCerrada?.ok ? "· Tabla cerrada en BD ✔" : "· No se pudo cerrar la tabla en BD."}
+                    {resumen.motivo}{" "}
+                    {resumen.tablaCerrada?.ok
+                      ? "· Tabla cerrada en BD ✔"
+                      : `· No se pudo cerrar la tabla en BD${resumen.tablaCerrada?.error ? `: ${resumen.tablaCerrada.error}` : "."}`}
                   </p>
                 </div>
               ) : (
