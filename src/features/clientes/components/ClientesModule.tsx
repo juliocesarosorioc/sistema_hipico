@@ -7,6 +7,7 @@ import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { ModalCliente } from "@/features/clientes/components/ModalCliente";
 import { ModalPortalCliente } from "@/features/clientes/components/ModalPortalCliente";
 import { EstadoCuentaAcordeon } from "@/features/clientes/components/EstadoCuentaAcordeon";
+import { CuadernoCliente } from "@/features/clientes/components/CuadernoCliente";
 import { NotificacionesPortal } from "@/features/clientes/components/NotificacionesPortal";
 import {
   aplicarDevolucionMasiva,
@@ -34,13 +35,14 @@ const afiliadosDe = (c: ClienteRow, lista: ClienteRow[]): number =>
 
 const DIAS = ["LUNES", "MARTES", "MIÉRCOLES", "JUEVES", "VIERNES", "SÁBADO", "DOMINGO"];
 
-type Tab = "cartera" | "estado" | "cuadre" | "notificaciones";
+type Tab = "cartera" | "estado" | "cuaderno" | "cuadre" | "notificaciones";
 
 /**
  * ClientesModule — Gestión de Clientes (clon de js/clientes.js, tarea 5).
  * Pestañas:
  *  - Cartera   : tabla paginada + búsqueda + registro + edición + portal + devoluciones masivas.
  *  - Estado    : estado de cuenta dinámico jerárquico (acordeón).
+ *  - Cuaderno  : libro manual de jugadas del cliente entre varios grupos (ver CuadernoCliente).
  *  - Notificaciones: solicitudes de datos del portal + reclamos de jugadas.
  */
 export function ClientesModule() {
@@ -174,6 +176,7 @@ export function ClientesModule() {
           [
             ["cartera", "Cartera"],
             ["estado", "Estado de Cuenta"],
+            ["cuaderno", "📒 Cuaderno"],
             ["cuadre", "Cuadre Semanal"],
             ["notificaciones", "Notificaciones del Portal"],
           ] as [Tab, string][]
@@ -255,7 +258,7 @@ export function ClientesModule() {
                   <th className={th + " text-emerald-600"} title="Día y tasa de cuadre">Cuadre</th>
                   <th className={th + " text-amber-600"} title="Socio asignado">Socio</th>
                   <th className={th + " text-center"} title="Puerto y saldo visible al socio">Flags</th>
-                  <th className={th + " w-[7.5rem] text-center"}>Acciones</th>
+                  <th className={th + " w-[9.5rem] text-center"}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -399,6 +402,18 @@ export function ClientesModule() {
                         >
                           📋
                         </button>
+                        <button
+                          type="button"
+                          title="Cuaderno de jugadas (libro manual, no toca saldos)"
+                          aria-label="Cuaderno de jugadas"
+                          onClick={() => {
+                            setClienteEstado(c);
+                            setTab("cuaderno");
+                          }}
+                          className="flex h-6 w-6 items-center justify-center rounded text-[13px] leading-none transition hover:bg-amber-100"
+                        >
+                          📒
+                        </button>
                         <Guard permiso="clientes:btn_eliminar" disabled>
                           <button
                             type="button"
@@ -484,6 +499,12 @@ export function ClientesModule() {
         />
       ) : tab === "cuadre" ? (
         <CuadreSemanal clientes={clientes} />
+      ) : tab === "cuaderno" ? (
+        <CuadernoCliente
+          clientes={clientes}
+          clienteEstado={clienteEstado}
+          onActivo={(c) => setClienteEstado(c)}
+        />
       ) : (
         <NotificacionesPortal />
       )}

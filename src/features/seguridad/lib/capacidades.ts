@@ -139,6 +139,16 @@ export const MODULOS_ESQUEMA: ModuloEsquema[] = [
           "Cubre el alta, la edición y la configuración del portal de un cliente: las tres terminan en un UPDATE/INSERT sobre `clientes`.",
       }),
       c("clientes", "funcion", "fn_eliminar_cliente", "Eliminar cliente", "critico", "src/lib/clientes.ts:273"),
+      // El "Cuaderno de jugadas" (pestaña 📒: libro manual de un cliente entre
+      // varios grupos, incluidos grupos NO registrados) NO declara capacidad
+      // propia. Lee y escribe con las de arriba: entra por `ruta_clientes` y el
+      // alta/edición/borrado de apuntes exige `clientes:fn_guardar_cliente`
+      // (es gestión de cartera, no un módulo nuevo). Inventar una capacidad
+      // obligaría a sembrarla en `tipo_usuario_capacidad` y, si faltara, el
+      // cuaderno quedaría muerto para todo el mundo salvo el principal. Mismo
+      // criterio que "Cerrar Semana" y el propio comentario de abajo.
+      // Ver src/features/clientes/components/CuadernoCliente.tsx y
+      // sql/cuaderno_jugadas.sql.
       // Se quitó `fn_mover_saldo`: no existe ninguna función en clientes.ts que
       // mueva saldo o impute pagos. El maestro apuntaba a `guardarPortal`, que
       // solo persiste la configuración del portal. Declarar esa capacidad era
