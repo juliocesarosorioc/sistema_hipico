@@ -18,6 +18,7 @@
 
     "../src/features/carreras/lib/central.ts",
     "../src/features/marcas/lib/registradas.ts",
+    "../src/features/marcas/lib/reporte-marcas-nucleo.ts",
     "../src/features/tablas/lib/tipos.ts",
     "../src/features/tablas/lib/normalizar.ts",
     "../src/features/liquidacion/lib/posiciones.ts",
@@ -60,6 +61,7 @@
     "./tablas-marcas-grupo.test.ts",
     "./normalizar-carga.test.ts",
     "./reporte-carrera.test.ts",
+    "./reporte-marcas.test.ts",
     "./mensaje-resultado.test.ts",
     "./preliminar-resultado.test.ts",
     "./puestos-bloques.test.ts",

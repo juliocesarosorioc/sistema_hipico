@@ -20,6 +20,7 @@ import {
   etiquetaCaballo,
   type ConfigMarcas,
 } from "@/features/marcas/lib/marcas";
+import { ReporteMarcasJugadasModal } from "@/features/marcas/components/ReporteMarcasJugadasModal";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 const inputCls =
@@ -97,6 +98,8 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
   const [idem, setIdem] = useState(() => claveIdempotencia());
   const [preview, setPreview] = useState<TicketVentaModel | null>(null);
   const [errorPreview, setErrorPreview] = useState<string | null>(null);
+  /** Reporte de marcas jugadas (misma vista que el reporte de Tablas Fijas). */
+  const [reporteAbierto, setReporteAbierto] = useState(false);
 
   const caballos: EjemplarCarreraCentral[] = useMemo(() => carrera.caballos ?? [], [carrera.caballos]);
   const etiqueta = `${nombreHipodromoParaMostrar(carrera.hipodromo)} N${carrera.carrera}`;
@@ -334,9 +337,19 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
               {fecha} · {caballos.length} ejemplar(es) registrado(s)
             </p>
           </div>
-          <button type="button" onClick={onCerrar} className="text-lg leading-none hover:text-cyan-200">
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setReporteAbierto(true)}
+              title="Reporte de marcas jugadas"
+              className="rounded-lg border border-white/30 bg-white/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide transition-colors hover:bg-white/20"
+            >
+              📈 Reporte
+            </button>
+            <button type="button" onClick={onCerrar} className="text-lg leading-none hover:text-cyan-200">
+              ✕
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
@@ -584,6 +597,13 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
         setErrorPreview(null);
       }}
       onConfirmar={() => void confirmarVenta()}
+    />
+    <ReporteMarcasJugadasModal
+      abierto={reporteAbierto}
+      onCerrar={() => setReporteAbierto(false)}
+      fechaInicial={fecha}
+      hipodromoInicial={carrera.hipodromo.trim().toUpperCase()}
+      carreraInicial={`${carrera.hipodromo.trim().toUpperCase()}|${carrera.carrera}`}
     />
     </>
   );
