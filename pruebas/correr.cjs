@@ -48,7 +48,10 @@ for (const f of archivos) {
     codigo = typeof e.status === "number" ? e.status : 1;
   }
   const ultima = salida.trim().split(/\r?\n/).pop() ?? "";
-  const m = ultima.match(/(\d+)\s+(?:pasaron|ok),\s*(\d+)\s+fall/);
+  // Acepta los tres formatos de resumen de la suite: «N pasaron, M fallaron»,
+  // «N pasan, M fallan.» y «N ok / M fallan.» — antes los «pasan» se ignoraban
+  // y el TOTAL salía bajo sin que nada fallara (4 archivos sin contar).
+  const m = ultima.match(/(\d+)\s+(?:pasaron|pasan|ok)\b\D{0,8}(\d+)\s+fall/);
   const ok = m ? Number(m[1]) : null;
   const fall = m ? Number(m[2]) : null;
   if (ok !== null) {
