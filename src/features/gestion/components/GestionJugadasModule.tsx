@@ -200,6 +200,23 @@ export function GestionJugadasModule() {
   /** Grupos de venta completos: fuente de la comisión de las jugadas entre tercios. */
   const [gruposVenta, setGruposVenta] = useState<GrupoVenta[]>([]);
   const grupoActivo = useAuthStore((s) => s.grupoActivo);
+
+  /**
+   * Relee los saldos del catálogo. Es CLAVE refrescarlos después de cada venta y
+   * de cada liquidación: la RPC revalida `saldo + aval` contra la base, así que
+   * si el navegador se queda con los saldos viejos "autoriza" jugadas que la RPC
+   * rechaza y la jugada NO se toma (el caso reportado: cargar más jugadas en una
+   * carrera ya pagada, p. ej. Remington Park 7).
+   */
+  const recargarClientes = useCallback(async () => {
+    try {
+      const c = await listarClientesVenta();
+      setClientes(c);
+    } catch {
+      /* sin conexión: se conserva el catálogo actual */
+    }
+  }, []);
+
   useEffect(() => {
     let vivo = true;
     listarClientesVenta().then((c) => {
@@ -1094,6 +1111,9 @@ const hipodromosDelDia = useMemo(() => {
         (errores.length ? ` ${errores.length} fila(s) con error quedaron en rojo para corregir.` : "") +
         (recortes.length ? ` ⚠️ ${recortes.length} recortada(s) por saldo: ${recortes.join(" · ")}` : "")
     );
+    // Las ventas debitaron saldo en la base: refrescar el catálogo local para que
+    // la próxima fila tope contra el saldo REAL (no el viejo).
+    void recargarClientes();
   };
 
   const poblarCargaRapida = () => {
@@ -1223,6 +1243,9 @@ const hipodromosDelDia = useMemo(() => {
       setReapertura(false);
       setModalFinalizar(false);
       setAviso(s.ok ? `✅ ${s.motivo}` : `❌ ${s.motivo}`);
+      // La re-apertura pagó premios: refrescar saldos para cargar más jugadas
+      // contra el saldo REAL (si no, la RPC rechaza y la jugada no se toma).
+      void recargarClientes();
       return;
     }
     if (ticketsDeCarrera.length === 0) return setAviso("No hay jugadas en sesión para esta carrera.");
@@ -1270,6 +1293,11 @@ const hipodromosDelDia = useMemo(() => {
       setUltimaPizarra(null);
       setJugadasPorCarrera((j: number[]) => j.filter((c) => c !== carrera));
       setResumen(r);
+      // La liquidación acreditó/debitó saldos: refrescar el catálogo local para
+      // que las próximas jugadas topen contra el saldo REAL (bug: cargar más
+      // jugadas tras pagar y que la RPC las rechace porque el navegador tenía el
+      // saldo viejo).
+      void recargarClientes();
       if (s.errores.length) {
         setAviso(`✅ ${r.motivo} · ⚠️ aviso de saldos: ${s.errores[0]}`);
         return;
@@ -1773,6 +1801,18 @@ const hipodromosDelDia = useMemo(() => {
             className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700"
           >
             📋 Generar Preliminar <kbd className="rounded bg-slate-600 px-1.5 py-0.5 text-[9px] font-black text-white">Ctrl+Q</kbd>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void recargarClientes().then(() => {
+                setAviso("🔄 Saldos y aval del catálogo recargados contra la base.");
+              });
+            }}
+            title="Relee los saldos y aval de los clientes desde la base (útil si la carga no se toma)"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700"
+          >
+            🔄 Saldos
           </button>
           <button
             type="button"
