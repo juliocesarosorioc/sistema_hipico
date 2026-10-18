@@ -1879,7 +1879,7 @@ const hipodromosDelDia = useMemo(() => {
           >
             🧾 Reporte de Liquidación <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+G</kbd>
           </button>
-          {(carreraLiquidada || pizarraCentral) && !reapertura && (
+          {(!reapertura) && (
             <button
               type="button"
               onClick={() => {
