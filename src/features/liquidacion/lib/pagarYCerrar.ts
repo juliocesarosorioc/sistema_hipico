@@ -12,6 +12,7 @@ import { supabase } from "@/core/supabase";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { aplicarLiquidacionSaldos, type ResumenSaldos } from "@/features/liquidacion/lib/saldos";
 import { liquidarMarcas } from "@/features/marcas/lib/marcas";
+import { liquidarDupleta } from "@/features/dupletas/lib/dupletas";
 import { liquidarTablaFija } from "@/features/tablas/lib/rpc";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
@@ -77,6 +78,10 @@ export type ResLiquidarCarrera = {
     reintegrados?: number;
     error?: string;
   };
+  /** Liquidación de las DUPLETAS de la jornada cuya otra carrera ya tiene
+   *  resultado (best-effort: `club_liquidar_dupleta` es una sola vía por par de
+   *  carreras y solo toca tickets 'Pendiente'). */
+  dupletas?: { ok: boolean; liquidadas: number; pagado: number; error?: string };
 };
 
 /** Respuesta vacía con ceros, para cuando la operación ni siquiera arranca. */
@@ -108,6 +113,11 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   dividendos?: Record<string, number> | null;
   /** Fecha de la JORNADA que se liquida (no necesariamente hoy). */
   fecha?: string;
+  /** Premio oficial / recalculado de la tabla de la carrera. Se escribe en el
+   *  resultado central para que el upsert no lo deje en NULL (viene del objeto
+   *  de la tabla, que esta función no conoce). */
+  premio_oficial?: number | null;
+  premio_recalculado?: number | null;
 }): Promise<ResLiquidarCarrera> {
     try {
       // Con contexto, no solo con permiso: el ABAC exige que el operador
@@ -251,52 +261,38 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     // no tiene con qué pagar. Taquilla ya los guardaba; esto lo alinea.
     orden_llegada: ordenLlegadaDePizarra(pizarra),
     dividendos: dividendos ?? null,
+    // El premio de la tabla NO viaja en el pedido, pero si se omite el upsert lo
+    // deja en NULL. Se propaga desde el objeto de la tabla cuando el caller lo
+    // conoce (taquilla / gestión), para no borrar el premio ya registrado.
+    premio_oficial: opts.premio_oficial ?? undefined,
+    premio_recalculado: opts.premio_recalculado ?? undefined,
   });
 
-  // TABLAS FIJAS: se liquidan por su RPC ANTES de cerrarlas (la RPC solo toca
-  // tickets 'Pendiente' de la tabla). Pago = cantidad × premio_por_tabla, con el
-  // ajuste por retiros que trae el snapshot de la venta. El motor universal NO
-  // sabe resolverlas (el `nombre_jugada` "TABLA FIJA (HIPO Cn)" no trae el Nº de
-  // ejemplar), por eso `aplicarLiquidacionSaldos` las excluye y viven acá.
+  // ── LIQUIDACIÓN ÚNICA DE JUGADAS ──────────────────────────────────────────
+  // Un solo camino paga TODO lo que depende del resultado: tablas fijas
+  // (`cantidad × premio` con ajuste por retiros), marcas (`club_liquidar_marca`)
+  // y dupletas de la jornada (`club_liquidar_dupleta`). Antes eran bloques
+  // separados por acá; centralizarlos garantiza que registrar el resultado una
+  // vez pague todas las jugadas, sin importar desde qué módulo se registre.
   //
   // Los totales de tabla fija van SEPARADOS del resumen de la sesión (que solo
   // cuenta los tickets cargados en esta pantalla): mezclarlos dejaría el
   // "Balance de la banca" sin su contrapartida de inversión. La venta de tabla
   // fija se cobró en el módulo de Tablas, así que su capital no está en
   // `totalInvertido`; el resumen los muestra en su propia línea.
-  let tablasFijas: ResLiquidarCarrera["tablasFijas"];
-  try {
-    tablasFijas = await liquidarTablasFijasDeCarrera(hipodromo, Number(carrera), pizarra, fecha);
-  } catch (e) {
-    tablasFijas = { ok: false, tablas: 0, pagado: 0, comision: 0, error: (e as Error).message };
-  }
+  const jugadas = await liquidarJugadasDeCarrera({
+    hipodromo,
+    carrera,
+    fecha,
+    pizarra,
+  });
+  const tablasFijas = jugadas.tablasFijas;
+  const marcas = jugadas.marcas;
 
   // AUTO-CIERRE: tras pagar con éxito, cierra la Tabla Fija de la carrera.
   const cierre = await cerrarTablaFija(hipodromo, carrera);
   if (cierre.ok) {
     useTablasFijasStore.getState().marcarCerrada(hipodromo, carrera);
-  }
-
-  // MARCAS: con el resultado YA oficial en `resultados_carreras`, se liquidan las
-  // jugadas de Marcas de la carrera. Antes esto vivía en la pestaña "Resultado"
-  // del modal de Marcas; al centralizar el resultado en un único flujo, la
-  // liquidación de Marcas viaja con él para que no quede un cargador por
-  // modalidad. Es best-effort e idempotente (solo toca tickets 'Pendiente'
-  // `MARCA %`): si no hay jugadas, permiso u orden de llegada, se reporta el
-  // motivo SIN abortar una liquidación cuyos tickets ya se pagaron.
-  let marcas: ResLiquidarCarrera["marcas"];
-  try {
-    const rm = await liquidarMarcas(hipodromo, Number(carrera), fecha);
-    marcas = {
-      ok: rm.ok,
-      liquidados: rm.liquidados,
-      ganadores: rm.ganadores,
-      perdedores: rm.perdedores,
-      reintegrados: rm.reintegrados,
-      error: rm.error,
-    };
-  } catch (e) {
-    marcas = { ok: false, error: (e as Error).message };
   }
 
   return {
@@ -312,6 +308,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     tablaCerrada: cierre,
     resultadoCentral: central,
     marcas,
+    dupletas: jugadas.dupletas,
   };
 }
 
@@ -367,16 +364,25 @@ export async function liquidarPendientesDeCarrera(opts: {
 
   // Las TABLAS FIJAS no pasan por `aplicarLiquidacionSaldos` (tienen su propia
   // RPC), así que la re-apertura no las tocaba y, si la liquidación vieja las
-  // dejó mal, quedaban atascadas. Acá se re-deciden con su regla: es el punto
-  // que usa la re-liquidación para reparar una carrera ya liquidada.
+  // dejó mal, quedaban atascadas. Se re-deciden por el MISMO pipeline que usa la
+  // liquidación completa (tablas fijas + marcas + dupletas): es el punto que usa
+  // la re-liquidación para reparar una carrera ya liquidada.
   try {
-    const tf = await liquidarTablasFijasDeCarrera(opts.hipodromo, Number(opts.carrera), opts.pizarra, fecha);
+    const jugadas = await liquidarJugadasDeCarrera({
+      hipodromo: opts.hipodromo,
+      carrera: opts.carrera,
+      pizarra: opts.pizarra,
+      fecha,
+    });
+    const tf = jugadas.tablasFijas;
     if (tf.tablas > 0) {
       resumen.motivo += ` · 🏁 Tablas fijas: ${tf.tablas} liquidada(s), $${tf.pagado} a pagar.`;
     }
     if (!tf.ok && tf.error) resumen.errores.push(`Tablas fijas: ${tf.error}`);
+    if (!jugadas.marcas.ok && jugadas.marcas.error) resumen.errores.push(`Marcas: ${jugadas.marcas.error}`);
+    if (!jugadas.dupletas.ok && jugadas.dupletas.error) resumen.errores.push(`Dupletas: ${jugadas.dupletas.error}`);
   } catch (e) {
-    resumen.errores.push(`Tablas fijas: ${(e as Error).message}`);
+    resumen.errores.push(`Jugadas: ${(e as Error).message}`);
   }
   return resumen;
 }
@@ -399,7 +405,7 @@ function firstOrdinal(primero: unknown): number {
  * Best-effort: si falta permiso, red o no hay tablas, se reporta el motivo sin
  * abortar la liquidación de la carrera (los tickets de sesión ya se pagaron).
  */
-async function liquidarTablasFijasDeCarrera(
+export async function liquidarTablasFijasDeCarrera(
   hipodromo: string,
   carrera: number,
   pizarra: PizarraCarrera,
@@ -539,4 +545,163 @@ async function dividendosDe(hipodromo: string, carrera: number | string, fecha?:
   } catch {
     return null;
   }
+}
+
+/** Resultado de la liquidación unificada de jugadas de una carrera. */
+export type ResumenJugadas = {
+  tablasFijas: { ok: boolean; tablas: number; pagado: number; comision: number; error?: string };
+  marcas: {
+    ok: boolean;
+    liquidados?: number;
+    ganadores?: number;
+    perdedores?: number;
+    reintegrados?: number;
+    error?: string;
+  };
+  dupletas: { ok: boolean; liquidadas: number; pagado: number; error?: string };
+};
+
+/**
+ * LIQUIDACIÓN ÚNICA de las jugadas de una carrera contra el resultado oficial.
+ *
+ * Todas las modalidades que pagan a partir del resultado —TABLAS FIJAS, MARCAS
+ * y DUPLETAS— se liquidan por acá, y todos los módulos que registran un
+ * resultado (Gestión de Jugadas, Taquilla, Tablas Fijas, WhatsApp/Remates/
+ * Pollas/Marcas vía `CargaResultadosRapida`) terminan llamando a esta misma
+ * función. Así no hay dos maneras de pagar: registrar el resultado una vez paga
+ * todas las jugadas.
+ *
+ * Las jugadas de TAQUILLA (GANADOR/PUESTOS/WPS/PAREOS, remates) NO pasan por
+ * acá: las paga `aplicarLiquidacionSaldos` sobre los tickets reales de la BD,
+ * porque dependen de los dividendos y del capital de la sesión.
+ *
+ * Best-effort por modalidad: si una falla (permiso, red, RPC ausente) se
+ * reporta el motivo SIN abortar las demás ni una liquidación cuyos tickets ya se
+ * pagaron.
+ */
+export async function liquidarJugadasDeCarrera(opts: {
+  hipodromo: string;
+  carrera: number | string;
+  fecha?: string;
+  pizarra: PizarraCarrera;
+  usuario?: string | null;
+}): Promise<ResumenJugadas> {
+  const fecha = opts.fecha || hoyLocal();
+  const carrera = Number(opts.carrera) || 0;
+
+  let tablasFijas: ResumenJugadas["tablasFijas"];
+  try {
+    tablasFijas = await liquidarTablasFijasDeCarrera(opts.hipodromo, carrera, opts.pizarra, fecha, opts.usuario);
+  } catch (e) {
+    tablasFijas = { ok: false, tablas: 0, pagado: 0, comision: 0, error: (e as Error).message };
+  }
+
+  let marcas: ResumenJugadas["marcas"];
+  try {
+    const rm = await liquidarMarcas(opts.hipodromo, carrera, fecha);
+    marcas = {
+      ok: rm.ok,
+      liquidados: rm.liquidados,
+      ganadores: rm.ganadores,
+      perdedores: rm.perdedores,
+      reintegrados: rm.reintegrados,
+      error: rm.error,
+    };
+  } catch (e) {
+    marcas = { ok: false, error: (e as Error).message };
+  }
+
+  let dupletas: ResumenJugadas["dupletas"];
+  try {
+    dupletas = await liquidarDupletasDeCarrera(opts.hipodromo, carrera, fecha);
+  } catch (e) {
+    dupletas = { ok: false, liquidadas: 0, pagado: 0, error: (e as Error).message };
+  }
+
+  return { tablasFijas, marcas, dupletas };
+}
+
+/**
+ * Liquida las DUPLETAS de la jornada que incluyen esta carrera y cuyas DOS
+ * carreras ya tienen resultado. La RPC `club_liquidar_dupleta` es una sola vía
+ * por par de carreras y solo toca tickets 'Pendiente', así que reintentar es
+ * idempotente.
+ *
+ * Best-effort: las matrices (`dupletas`) y los resultados (`resultados_carreras`)
+ * se leen con la sesión del operador; si la RLS no los deja ver, se devuelve sin
+ * liquidar y sin romper el flujo.
+ */
+export async function liquidarDupletasDeCarrera(
+  hipodromo: string,
+  carrera: number,
+  fecha: string
+): Promise<{ ok: boolean; liquidadas: number; pagado: number; error?: string }> {
+  if (!supabase) return { ok: false, liquidadas: 0, pagado: 0, error: "Sin conexión a Supabase." };
+  const dia = String(fecha).slice(0, 10);
+  const clave = claveHipodromo(hipodromo);
+
+  let pares: Array<{ carrera1: number; carrera2: number }> = [];
+  try {
+    const { data, error } = await supabase
+      .from("dupletas")
+      .select("hipodromo, fecha, carrera1, carrera2")
+      .eq("fecha", dia)
+      .limit(200);
+    if (error) throw error;
+    pares = ((data ?? []) as Array<Record<string, unknown>>)
+      .filter((d) => claveHipodromo(String(d.hipodromo ?? "")) === clave)
+      .map((d) => ({ carrera1: Number(d.carrera1), carrera2: Number(d.carrera2) }))
+      .filter(
+        (d) =>
+          Number.isFinite(d.carrera1) &&
+          Number.isFinite(d.carrera2) &&
+          d.carrera1 !== d.carrera2 &&
+          (d.carrera1 === carrera || d.carrera2 === carrera)
+      );
+  } catch (e) {
+    return { ok: false, liquidadas: 0, pagado: 0, error: `Dupletas: ${(e as Error).message}` };
+  }
+  if (!pares.length) return { ok: true, liquidadas: 0, pagado: 0 };
+
+  // Solo se liquidan las dupletas cuyas DOS carreras ya tienen resultado.
+  const conResultado = new Set<number>();
+  try {
+    const { data } = await supabase
+      .from("resultados_carreras")
+      .select("carrera")
+      .eq("fecha", dia)
+      .eq("hipodromo", hipodromo.trim().toUpperCase())
+      .limit(500);
+    for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+      const n = Number(r.carrera);
+      if (Number.isFinite(n)) conResultado.add(n);
+    }
+  } catch {
+    // Sin poder leer los resultados no se arriesga un pago a medias.
+    return { ok: true, liquidadas: 0, pagado: 0 };
+  }
+
+  let liquidadas = 0;
+  let pagado = 0;
+  const errores: string[] = [];
+  const vistas = new Set<string>();
+  for (const p of pares) {
+    const k = `${p.carrera1}x${p.carrera2}`;
+    if (vistas.has(k)) continue;
+    vistas.add(k);
+    if (!conResultado.has(p.carrera1) || !conResultado.has(p.carrera2)) continue;
+    const r = await liquidarDupleta({
+      hipodromo: hipodromo.trim().toUpperCase(),
+      fecha: dia,
+      carrera1: p.carrera1,
+      carrera2: p.carrera2,
+    });
+    if (!r.ok) {
+      errores.push(r.error ?? "No se pudo liquidar la dupleta.");
+      continue;
+    }
+    liquidadas += 1;
+    pagado += r.pagado ?? 0;
+  }
+  return { ok: errores.length === 0, liquidadas, pagado: round2(pagado), error: errores[0] };
 }

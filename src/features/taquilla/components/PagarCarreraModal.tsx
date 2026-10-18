@@ -5,8 +5,7 @@ import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla } from "@/features/liquidacion/lib/pagarYCerrar";
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
-import { upsertResultadoCentral } from "@/features/carreras/lib/carreras-dia";
-import { dividendosDePizarra as dividendosDe, ordenLlegadaDePizarra, posicionesDePizarra } from "@/features/liquidacion/lib/posiciones";
+import { dividendosDePizarra as dividendosDe } from "@/features/liquidacion/lib/posiciones";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { CargaResultadosModal, type PizarraResultados } from "@/features/liquidacion/components/CargaResultadosModal";
 import { Button } from "@/shared/components/ui/Button";
@@ -110,11 +109,20 @@ export function PagarCarreraModal() {
     setTablaMensaje("");
     // Los pools por caballo y la matriz W/P/S salen al motor en el mismo objeto.
     const divs = dividendosDe(r);
+    const tabla = tablas.find(
+      (t) =>
+        t.hipodromo === hipodromo.trim().toUpperCase() &&
+        t.carrera === Number(carrera)
+    );
     const res = await liquidarCarreraYCerrarTabla({
       hipodromo: hipodromo.trim().toUpperCase(),
       carrera: Number(carrera),
       pizarra: r.pizarra,
       dividendos: divs,
+      // El premio de la tabla viaja al resultado central para que el upsert no
+      // lo deje en NULL: el objeto de la tabla solo lo conoce este modal.
+      premio_oficial: tabla?.premio_original ?? null,
+      premio_recalculado: tabla?.premio_recalculado ?? null,
       // `caballo` tiene que viajar: el motor resuelve el puesto del ejemplar
       // con ese campo, no parseándolo del comando (en las W/P/S el comando es
       // solo "100 W"). Sin esto, `pagarYCerrar` liquidaba contra "" y la
@@ -122,29 +130,10 @@ export function PagarCarreraModal() {
       tickets: tickets.map((t) => ({ comando: t.comando, monto: t.monto, caballo: t.caballo })),
     });
     if (res.ok) {
-      // Centraliza el resultado en resultados_carreras (fuente de verdad) y
-      // dispara el pago automático de las tablas vendidas (estado Liquidada).
-      const tabla = tablas.find(
-        (t) =>
-          t.hipodromo === hipodromo.trim().toUpperCase() &&
-          t.carrera === Number(carrera)
-      );
-      // Todas las posiciones cargadas, no solo el ganador: `ganadores` es la
-      // lista de llegadas que consumen las jugadas de puestos (WIN/PLACE/SHOW)
-      // y los reportes. Con `[r.pizarra.primero]` se perdian del 2º al 8º.
-      const posiciones = posicionesDePizarra(r.pizarra);
-      await upsertResultadoCentral({
-        hipodromo: hipodromo.trim().toUpperCase(),
-        carrera: Number(carrera),
-        ganadores: posiciones,
-        retirados: tabla?.retirados_oficiales ?? "NO HUBO RETIROS",
-        premio_oficial: tabla?.premio_original ?? undefined,
-        premio_recalculado: tabla?.premio_recalculado ?? undefined,
-        detalle: { caballos: tabla?.caballos },
-        cargado_por: "TAQUILLA",
-        orden_llegada: ordenLlegadaDePizarra(r.pizarra),
-        dividendos: divs,
-      });
+      // El resultado central (fuente de verdad) y el pago de tablas fijas,
+      // marcas y dupletas ya los hizo `liquidarCarreraYCerrarTabla`: un solo
+      // camino. Antes acá se hacía un `upsertResultadoCentral` propio —
+      // la segunda manera de registrar— que competía por la misma fila.
       // Bloque 3 · Saldos: aplica la liquidación universal al saldo real de
       // los clientes (transaccional, idempotente sobre tickets Pendientes).
       const s = await aplicarLiquidacionSaldos({

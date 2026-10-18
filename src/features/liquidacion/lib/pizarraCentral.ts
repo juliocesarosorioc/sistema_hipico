@@ -12,6 +12,8 @@ import { PREFIJO_WPS } from "@/features/motores/lib/wps";
 import { leerRetirosCarrera } from "@/features/carreras/lib/retiros";
 import type { ResultadoOficial } from "@/features/carreras/lib/carreras-dia";
 import type { PizarraResultados } from "@/features/liquidacion/components/CargaResultadosModal";
+import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
+import { liquidarJugadasDeCarrera, type ResumenJugadas } from "@/features/liquidacion/lib/pagarYCerrar";
 
 /**
  * Las mismas claves que acepta `upsertResultadoCentral` / la RPC
@@ -48,6 +50,15 @@ export async function guardarPizarraCentral(opts: {
   fecha?: string;
   cargado_por: string;
   r: PizarraResultados;
+  /** Liquida TODAS las jugadas de la carrera tras guardar el resultado
+   *  (tablas fijas, marcas, dupletas y la liquidación universal de los tickets
+   *  reales de taquilla). Por defecto `true`: registrar el resultado paga.
+   *  Pasar `false` SOLO cuando el caller liquida por su cuenta acto seguido
+   *  (Gestión de Jugadas con sus tickets de sesión), para no pagar dos veces. */
+  liquidar?: boolean;
+  /** Comisión de la carrera para el motor universal (solo si `liquidar`). */
+  tasaComision?: number | null;
+  usuario?: string | null;
 }): Promise<ResultadoPizarraCentral> {
   const hip = String(opts.hipodromo).trim().toUpperCase();
   const n = Number(opts.carrera) || 0;
@@ -79,7 +90,10 @@ export async function guardarPizarraCentral(opts: {
     p_carrera: n,
     p_fila: fila,
   });
-  if (!res.error) return { ok: true };
+  if (!res.error) {
+    await liquidarTrasPizarra({ hipodromo: hip, carrera: n, fecha, r: opts.r, liquidar: opts.liquidar, tasaComision: opts.tasaComision, usuario: opts.usuario });
+    return { ok: true };
+  }
 
   const texto = String(res.error.message ?? res.error);
   // La RPC todavía no existe en Supabase (SQL sin correr): caída al upsert
@@ -95,9 +109,54 @@ export async function guardarPizarraCentral(opts: {
     const u = await supabase
       .from("resultados_carreras")
       .upsert({ fecha, hipodromo: hip, carrera: n, ...prev, ...fila }, { onConflict: "fecha,hipodromo,carrera" });
-    return u.error ? { ok: false, error: String(u.error.message) } : { ok: true };
+    if (u.error) return { ok: false, error: String(u.error.message) };
+    await liquidarTrasPizarra({ hipodromo: hip, carrera: n, fecha, r: opts.r, liquidar: opts.liquidar, tasaComision: opts.tasaComision, usuario: opts.usuario });
+    return { ok: true };
   }
   return { ok: false, error: texto };
+}
+
+/**
+ * Tras escribir el resultado en el central, LIQUIDA todas las jugadas que
+ * dependen de él —por el mismo pipeline que usa la liquidación completa— para
+ * que registrar el resultado UNA vez pague tablas fijas, marcas, dupletas y las
+ * jugadas de taquilla. Best-effort: un fallo acá no revierte el resultado ya
+ * guardado (se podría re-liquidar con el botón de re-apertura).
+ */
+async function liquidarTrasPizarra(opts: {
+  hipodromo: string;
+  carrera: number;
+  fecha: string;
+  r: PizarraResultados;
+  liquidar?: boolean;
+  tasaComision?: number | null;
+  usuario?: string | null;
+}): Promise<ResumenJugadas | null> {
+  if (opts.liquidar === false) return null;
+  try {
+    const dividendos = dividendosDePizarra(opts.r);
+    // 1) Jugadas de taquilla (GANADOR/PUESTOS/WPS/PAREOS, remates) sobre los
+    //    tickets REALES de la carrera, no los de la sesión.
+    await aplicarLiquidacionSaldos({
+      hipodromo: opts.hipodromo,
+      carrera: opts.carrera,
+      pizarra: opts.r.pizarra,
+      dividendos,
+      premio_por_tabla: opts.r.premio_por_tabla ?? null,
+      tasaComision: opts.tasaComision ?? null,
+      fecha: opts.fecha,
+    });
+    // 2) Tablas fijas + marcas + dupletas.
+    return await liquidarJugadasDeCarrera({
+      hipodromo: opts.hipodromo,
+      carrera: opts.carrera,
+      fecha: opts.fecha,
+      pizarra: opts.r.pizarra,
+      usuario: opts.usuario,
+    });
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -152,9 +152,37 @@ ok(
   /\.like\("nombre_jugada", "TABLA FIJA%"\)/.test(pagarY) && /\.eq\("estado", "Perdedor"\)/.test(pagarY),
   "pagarYCerrar: el reproceso toca SOLO los 'Perdedor' de tabla fija (no los ya pagados)"
 );
+// La liquidación de tablas fijas/marcas/dupletas se centralizó en un único
+// pipeline (`liquidarJugadasDeCarrera`): la re-apertura y la liquidación
+// completa lo comparten, así registrar el resultado una vez paga todas las
+// jugadas. Antes la re-apertura llamaba a `liquidarTablasFijasDeCarrera` de
+// forma directa.
 ok(
-  /liquidarTablasFijasDeCarrera\(opts\.hipodromo, Number\(opts\.carrera\), opts\.pizarra, fecha\)/.test(pagarY),
-  "pagarYCerrar: la re-apertura (`liquidarPendientesDeCarrera`) también re-decide las tablas fijas"
+  /liquidarJugadasDeCarrera\(\{\s*hipodromo: opts\.hipodromo,\s*carrera: opts\.carrera,\s*pizarra: opts\.pizarra,/.test(
+    pagarY,
+  ),
+  "pagarYCerrar: la re-apertura (`liquidarPendientesDeCarrera`) re-decide las jugadas por el pipeline único"
+);
+ok(
+  /export async function liquidarJugadasDeCarrera\(/.test(pagarY) &&
+    /liquidarDupletasDeCarrera/.test(pagarY),
+  "pagarYCerrar: el pipeline único liquida tablas fijas + marcas + dupletas"
+);
+// El registro del resultado (compartido por todos los módulos) tiene que pagar:
+// `guardarPizarraCentral` dispara el mismo pipeline tras escribir el central.
+const pizarraCentralSrc = readFileSync(
+  join(process.cwd(), "src", "features", "liquidacion", "lib", "pizarraCentral.ts"),
+  "utf8",
+);
+ok(
+  /liquidarJugadasDeCarrera/.test(pizarraCentralSrc) && /liquidarTrasPizarra/.test(pizarraCentralSrc),
+  "pizarraCentral: registrar el resultado dispara la liquidación unificada"
+);
+// BUG del caso Shaflan: `ejemplar_numero` es INTEGER, así que `coalesce(col, '')`
+// reventaba con 22P02 al planificar y la RPC NUNCA pagaba. Se castea a text.
+ok(
+  /coalesce\(v_tk\.ejemplar_numero::text, ''\)/.test(sql),
+  "SQL: `club_liquidar_tabla_fija` castea `ejemplar_numero` a text (no 22P02)"
 );
 // La jornada tiene que acotarse EN LA CONSULTA: con un `limit` fijo, al pasar los
 // días la tabla del día quedaba fuera y la carrera no se liquidaba.

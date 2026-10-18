@@ -504,7 +504,13 @@ begin
            end = p_tabla_id::text
      for update
   loop
-    v_num    := btrim(coalesce(v_tk.ejemplar_numero, ''));
+    -- `tickets_apuestas.ejemplar_numero` es INTEGER (no text): `coalesce(col, '')`
+    -- obligaba a Postgres a castear el literal '' a INTEGER al planificar la
+    -- sentencia y reventaba con 22P02 ("invalid input syntax for type integer: \"\"")
+    -- en cuanto la tabla tenia UN solo ticket. El error ocurria ANTES de pagar
+    -- nada, asi que la RPC jamas liquidaba una tabla fija (el pago no aparecia en
+    -- el reporte). Se pasa a text ANTES de coalescer.
+    v_num    := btrim(coalesce(v_tk.ejemplar_numero::text, ''));
     v_premio := coalesce(v_tk.premio_por_tabla, v_tabla.premio_recalculado, v_tabla.premio_original, 0);
     v_jugado := coalesce(v_tk.monto_jugado, 0);
     v_pct    := coalesce(v_tk.comision_porcentaje, 0);

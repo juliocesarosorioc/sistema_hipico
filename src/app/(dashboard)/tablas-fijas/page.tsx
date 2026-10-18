@@ -4,10 +4,9 @@ import { TablasModule } from "@/features/tablas/components/TablasModule";
 import type { StoredTablaFija } from "@/shared/store/useTablasFijasStore";
 import type { VentaTablaItem } from "@/features/tablas/components/MonitorTablas";
 import type { PizarraResultados } from "@/features/liquidacion/components/CargaResultadosModal";
-import { publicarTabla, publicarTablasLote, actualizarTabla, venderTablaFija, liquidarTablaFija } from "@/features/tablas/lib/rpc";
+import { publicarTabla, publicarTablasLote, actualizarTabla, venderTablaFija } from "@/features/tablas/lib/rpc";
 import { cerrarTablaFija } from "@/features/tablas/lib/tablas-fijas";
-import { upsertResultadoCentral } from "@/features/carreras/lib/carreras-dia";
-import { posicionesDePizarra } from "@/features/liquidacion/lib/posiciones";
+import { guardarPizarraCentral } from "@/features/liquidacion/lib/pizarraCentral";
 
 /**
  * Ruta Tablas Fijas — integración con Supabase y Zustand:
@@ -50,34 +49,22 @@ export default function TablasFijasPage() {
           return { ok: r.ok, error: r.error };
         }}
         persistirLiquidacion={async (t: StoredTablaFija, r: PizarraResultados) => {
-          // 1) Resolver los tickets ANTES de cerrar. Si esto falla, la tabla
-          //    queda abierta y se puede reintentar; cerrarla primero dejaria
-          //    ventas sin pagar sin forma de retomarlas.
-          const ganador = String(r.pizarra.primero ?? "").trim();
-          if (!ganador) return false;
-          const liq = await liquidarTablaFija({ tablaId: t.id, ganadores: ganador });
-          if (!liq.ok) return false;
-
-          // 2) Resultados centrales. Aqui van las 8 posiciones, que es lo que
-          //    necesitan las demas jugadas de la carrera.
-          //    Antes se llamaba ademas a `guardarPizarraCarrera`, que escribia
-          //    en la RPC `club_guardar_pizarra_carrera`: esa RPC no existe en
-          //    ningun .sql del repo y la funcion devolvia `false` tragandose el
-          //    error, asi que la pizarra NUNCA se guardo por ahi. Todo lo que
-          //    hace falta lo escribe el upsert de abajo.
-          const posiciones = posicionesDePizarra(r.pizarra);
-          await upsertResultadoCentral({
+          // Registro ÚNICO del resultado: pasa por `guardarPizarraCentral`, el
+          // mismo camino que usan Gestión de Jugadas y los demás módulos. Además
+          // de escribir el central, dispara la liquidación de TODAS las jugadas
+          // de la carrera (tablas fijas, marcas, dupletas y taquilla): el pago de
+          // la tabla fija viaja con el resultado y aparece en el reporte. Antes
+          // este flujo liquidaba la tabla por su cuenta y escribía el central con
+          // un `upsertResultadoCentral` propio — una segunda forma de registrar.
+          const cen = await guardarPizarraCentral({
             hipodromo: t.hipodromo ?? "",
             carrera: t.carrera ?? 0,
-            ganadores: posiciones,
-            retirados: t.retirados_oficiales ?? "NO HUBO RETIROS",
-            premio_oficial: t.premio_original ?? undefined,
-            premio_recalculado: t.premio_recalculado ?? undefined,
-            detalle: { caballos: t.caballos },
             cargado_por: "TABLAS-FIJAS",
+            r,
           });
+          if (!cen.ok) return false;
 
-          // 3) Cerrar la tabla para que salga del Monitor.
+          // Cerrar la tabla para que salga del Monitor.
           const cierre = await cerrarTablaFija(t.hipodromo ?? "", t.carrera ?? 0);
           return cierre.ok;
         }}

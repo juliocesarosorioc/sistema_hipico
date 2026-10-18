@@ -1309,7 +1309,12 @@ const hipodromosDelDia = useMemo(() => {
       void recargarClientes();
       return;
     }
-    if (ticketsDeCarrera.length === 0) return setAviso("No hay jugadas en sesión para esta carrera.");
+    // AUNQUE no haya jugadas EN SESIÓN, la carrera se registra y se liquida: las
+    // jugadas vendidas en OTROS módulos (tablas fijas, marcas, dupletas,
+    // taquilla) tienen que pagarse igual al registrar el resultado. Antes este
+    // `return` temprano dejaba la tabla fija SIN liquidar cuando la carrera se
+    // finalizaba desde acá sin tickets en pantalla — el pago no aparecía en el
+    // reporte.
     const r = await liquidarCarreraYCerrarTabla({
       hipodromo,
       carrera,
@@ -1321,6 +1326,8 @@ const hipodromosDelDia = useMemo(() => {
       // esto la liquidación de puestos quedaba PENDIENTE por dividendo
       // faltante y `resultados_carreras.dividendos` se guardaba en NULL.
       dividendos: dividendosDePizarra(piz),
+      premio_oficial: tablaDeCarrera?.premio_original ?? null,
+      premio_recalculado: tablaDeCarrera?.premio_recalculado ?? null,
       tickets: ticketsDeCarrera.map((t) => ({
         comando: t.comando,
         monto: t.monto,
@@ -2076,6 +2083,11 @@ const hipodromosDelDia = useMemo(() => {
               carrera,
               cargado_por: "GESTION-JUGADAS",
               r,
+              // La liquidación (tablas fijas, marcas, dupletas y saldos) la corre
+              // `ejecutarFinalizar` en el mismo paso; acá se evita liquidar dos
+              // veces para que el resumen no muestre el segundo pago en cero.
+              liquidar: false,
+              tasaComision: comisionNum,
             });
             if (!cen.ok) setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó: ${cen.error ?? "sin conexión"}`);
           } catch {
