@@ -173,6 +173,13 @@ comment on column public.carreras.invalidado_polla is
 -- 2) Completar el esquema vivo (por si la tabla ya existe a medias)
 -- ---------------------------------------------------------------------------
 alter table public.pollas
+  -- Estas tres van aparte: una tabla viva creada por una versión anterior no las
+  -- tiene aunque el CREATE TABLE de arriba ya las declare (IF NOT EXISTS no
+  -- agrega columnas a una tabla existente). Sin `hipodromo_id`, guardar una
+  -- Polla falla con: column "hipodromo_id" of relation "pollas" does not exist.
+  add column if not exists hipodromo_id    uuid references public.hipodromos(id),
+  add column if not exists grupo_id        uuid references public.grupos_venta(id),
+  add column if not exists notas           text,
   add column if not exists carreras        jsonb not null default '[]'::jsonb,
   add column if not exists puntos_1o       integer not null default 5,
   add column if not exists puntos_2o       integer not null default 3,
