@@ -4,8 +4,9 @@ import { HorseBadge } from "@/shared/components/ui/HorseChips";
 import { useEffect, useState } from "react";
 import type { StoredTablaFija } from "@/shared/store/useTablasFijasStore";
 import { colorDeNumero, textoDeNumero, fmtMoney, parseNum, type EjemplarTabla } from "@/features/tablas/lib/tipos";
-import { listarGruposVenta, jugadoresDeGrupo, type GrupoVenta, type ClienteVenta } from "@/features/grupos/lib/grupos";
+import { listarGruposVenta, jugadoresDeGrupo, grupoDeVentaVigente, type GrupoVenta, type ClienteVenta } from "@/features/grupos/lib/grupos";
 import { Button } from "@/shared/components/ui/Button";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { Flag } from "@/shared/components/ui/BanderaPais";
 
 export type VentaRapidaItem = {
@@ -50,13 +51,17 @@ export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, 
 
   useEffect(() => {
     if (!abierto) return;
+    const fijo = grupoDeVentaVigente();
     setGrupos([]);
-    setGrupoId("");
+    setGrupoId(fijo);
     setJugadores([]);
     setJugadorId("");
     setCantidad("1");
     setAviso("");
     void listarGruposVenta().then((gs) => setGrupos(gs));
+    // Con el grupo de la sesión ya definido, el jugador se busca directamente en
+    // ese grupo y el <select> de grupo no se muestra (ver `grupoFijo`).
+    if (fijo) void jugadoresDeGrupo(fijo).then((js) => setJugadores(js));
   }, [abierto, tabla, ejemplar]);
 
   if (!abierto || !tabla || !ejemplar) return null;
@@ -64,6 +69,26 @@ export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, 
   const retirado = Boolean(ejemplar.retirado);
   const valor = parseNum(ejemplar.valor_ejemplar);
   const num = String(ejemplar.numero ?? "");
+
+  /**
+   * Grupo con el que REGISTRA la venta: el de la sesión (usuario logueado y, para
+   * el administrador principal, el elegido en el filtro superior "🗂️ Grupo").
+   * Vacío = el principal está mirando "Todos los grupos": ahí se elige a mano.
+   */
+  const grupoFijo = grupoDeVentaVigente();
+  /** Nombre del grupo de sesión, para mostrarlo fijo en vez del <select>. */
+  const nombreGrupoFijo = grupos.find((g) => String(g.id) === String(grupoFijo))?.nombre ?? "";
+  /** Opciones del buscador: se elige por NOMBRE y se ve el disponible real. */
+  const opcionesJugador = jugadores.map((j) => {
+    const saldo = j.saldo_actual ?? 0;
+    const aval = j.aval ?? 0;
+    /* Con aval, el saldo solo no dice si el jugador puede comprar: se muestra
+       el disponible real (saldo + aval). */
+    const detalle = j.libre
+      ? "libre"
+      : `Disp. $${(saldo + aval).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${aval > 0 ? ` (aval ${aval})` : ""}`;
+    return { value: String(j.id), label: `${j.nombre} · ${detalle}` };
+  });
 
   const seleccionarGrupo = (gid: string) => {
     setGrupoId(gid);
@@ -97,10 +122,13 @@ export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, 
 
   const enviarCarrito = () => {
     const cant = Number.parseInt(cantidad, 10) || 1;
-    if (!grupoId) return setAviso("Seleccione el grupo de venta.");
+    /* Grupo efectivo: el de la sesión manda; el <select> solo manda cuando la
+       sesión no lo determina (el principal mirando "Todos los grupos"). */
+    const grupoEfectivo = grupoFijo || grupoId;
+    if (!grupoEfectivo) return setAviso("Seleccione el grupo de venta.");
     if (!jugadorId) return setAviso("Seleccione el jugador que compra.");
     if (cant <= 0) return setAviso("Cantidad inválida.");
-    const grupo = grupos.find((g) => String(g.id) === String(grupoId));
+    const grupo = grupos.find((g) => String(g.id) === String(grupoEfectivo));
     const jugador = jugadores.find((j) => String(j.id) === String(jugadorId));
     if (!jugador) return setAviso("Jugador no encontrado.");
     onVentaRapida?.(tabla, {
@@ -108,7 +136,7 @@ export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, 
       nombre: String(ejemplar.nombre ?? "TABLA COMPLETA"),
       cantidad: cant,
       monto: valor * cant,
-      grupo: grupo ? { id: grupo.id, nombre: grupo.nombre } : null,
+      grupo: grupo ? { id: grupo.id, nombre: grupo.nombre } : { id: grupoEfectivo, nombre: nombreGrupoFijo },
       jugador: {
         id: jugador.id,
         nombre: jugador.nombre,
@@ -192,52 +220,59 @@ export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, 
               <div className="space-y-2">
                 <div>
                   <label className="mb-0.5 block text-[10px] font-bold uppercase text-slate-500">Grupo de venta</label>
-                  <select
-                    value={grupoId}
-                    onChange={(e) => seleccionarGrupo(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    <option value="">Seleccione el grupo…</option>
-                    {grupos.map((g) => (
-                      <option key={String(g.id)} value={String(g.id)}>
-                        {g.nombre} ({g.moneda ?? "USD"})
-                      </option>
-                    ))}
-                  </select>
+                  {grupoFijo ? (
+                    /* El grupo lo trae la sesión: se muestra fijo y no se elige. */
+                    <div
+                      className="flex items-center justify-between rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-900"
+                      title="El grupo lo define la sesión (para el administrador principal, el filtro superior)"
+                    >
+                      <span className="min-w-0 truncate">{nombreGrupoFijo || "Grupo de la sesión"}</span>
+                      <span className="ml-2 shrink-0 text-[10px] font-black uppercase tracking-wide text-slate-400">
+                        de la sesión
+                      </span>
+                    </div>
+                  ) : (
+                    <select
+                      value={grupoId}
+                      onChange={(e) => seleccionarGrupo(e.target.value)}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="">Seleccione el grupo…</option>
+                      {grupos.map((g) => (
+                        <option key={String(g.id)} value={String(g.id)}>
+                          {g.nombre} ({g.moneda ?? "USD"})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="mb-0.5 block text-[10px] font-bold uppercase text-slate-500">Jugador de ese grupo</label>
-                  <select
+                  {/* Buscador por nombre: no es una lista desplegable. */}
+                  <SearchableSelect
+                    options={opcionesJugador}
                     value={jugadorId}
-                    onChange={(e) => setJugadorId(e.target.value)}
-                    disabled={!grupoId}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-50 disabled:text-slate-400"
-                  >
-                    <option value="">{grupoId ? "Seleccione el jugador…" : "Primero el grupo"}</option>
-                    {jugadores.map((j) => {
-                      const saldo = j.saldo_actual ?? 0;
-                      const aval = j.aval ?? 0;
-                      /* Con aval, el saldo solo no dice si el jugador puede
-                         comprar: se muestra el disponible real. */
-                      const libre = Boolean(j.libre);
-                      const detalle = libre
-                        ? "libre"
-                        : `Disp. $${(saldo + aval).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${aval > 0 ? ` (aval ${aval})` : ""}`;
-                      return (
-                        <option key={String(j.id)} value={String(j.id)}>
-                          {j.nombre} · {detalle}
-                        </option>
-                      );
-                    })}
-                  </select>
+                    onChange={setJugadorId}
+                    allowCustom={false}
+                    disabled={!grupoFijo && !grupoId}
+                    placeholder={grupoFijo || grupoId ? "Buscar jugador por nombre…" : "Primero el grupo"}
+                    inputClassName="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-50 disabled:text-slate-400"
+                  />
                 </div>
                 <div>
                   <label className="mb-0.5 block text-[10px] font-bold uppercase text-slate-500">Cantidad de Tablas</label>
+                  {/* Enter en la cantidad = "Vender ahora": genera el ticket y
+                      abre la confirmación de la jugada sin buscar el botón. */}
                   <input
                     type="number"
                     min={1}
                     value={cantidad}
                     onChange={(e) => setCantidad(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      enviarCarrito();
+                    }}
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-right text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>

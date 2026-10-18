@@ -5,7 +5,7 @@
  * club_listar_grupos cuando el RLS bloquea el acceso (misma cadena del legacy).
  */
 import { supabase } from "@/core/supabase";
-import { exigirCapacidad, grupoActivoVigente } from "@/features/seguridad/lib/vigente";
+import { exigirCapacidad, grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
 import { claveDeUsuario, guardarUsuarioSistema, leerUsuariosDelSistema } from "@/features/seguridad/lib/accesos";
 import { disponibleParaJugar, esSinTope, explicarDisponible } from "@/features/taquilla/lib/reparto";
 
@@ -111,6 +111,25 @@ export async function listarGruposVenta(): Promise<GrupoVenta[]> {
   const activos = grupos.filter((g) => g.activo !== false);
   cacheGruposVenta = activos;
   return activos;
+}
+
+/**
+ * Grupo con el que la sesión REGISTRA una venta.
+ *
+ *   · Usuario de un grupo (operador/admin de banca) → SU grupo (`grupoVigente`),
+ *     que además es el único que el RLS le deja tocar. La venta nunca se le
+ *     ofrece elegir otro.
+ *   · Usuario principal (el dueño que ve todos) → el grupo que tenga elegido en
+ *     el filtro superior "🗂️ Grupo" (`grupoActivoVigente`).
+ *
+ * Devuelve "" cuando el principal está mirando "Todos los grupos": ahí no hay un
+ * grupo determinado y la pantalla de venta debe pedirlo explícitamente.
+ */
+export function grupoDeVentaVigente(): string {
+  const propio = grupoVigente();
+  if (propio) return String(propio);
+  const activo = grupoActivoVigente();
+  return activo ? String(activo) : "";
 }
 
 /**

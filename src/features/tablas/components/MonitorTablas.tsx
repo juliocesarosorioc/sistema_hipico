@@ -7,13 +7,14 @@ import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { Flag, normalizarNacionalidad } from "@/shared/components/ui/BanderaPais";
 import { Button } from "@/shared/components/ui/Button";
 import { Guard } from "@/shared/components/ui/Guard";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { TicketVentaPreview, type TicketVentaModel } from "@/features/tickets/components/TicketVentaPreview";
 import { CargaResultadosModal, type PizarraResultados } from "@/features/liquidacion/components/CargaResultadosModal";
 import { EjemplarModal, type VentaRapidaItem } from "@/features/tablas/components/EjemplarModal";
 import { EditorCaballos } from "@/features/tablas/components/EditorCaballos";
 import { CuadroModal } from "@/features/tablas/components/CuadroModal";
 import { ReporteTablasFijasModal } from "@/features/tablas/components/ReporteTablasFijasModal";
-import { listarCuposTabla, guardarCuposTabla, listarGruposVenta, listarClientesVenta, esClienteLibre, type CupoTablaGrupo, type GrupoVenta, type ClienteVenta } from "@/features/grupos/lib/grupos";
+import { listarCuposTabla, guardarCuposTabla, listarGruposVenta, listarClientesVenta, esClienteLibre, grupoDeVentaVigente, type CupoTablaGrupo, type GrupoVenta, type ClienteVenta } from "@/features/grupos/lib/grupos";
 import { listarBanquerosGrupo } from "@/features/liquidacion/lib/banqueros";
 import { useCarrerasCentrales } from "@/features/carreras/lib/useCarrerasCentrales";
 import { aplicarRetirosCarrera } from "@/features/carreras/lib/retiros";
@@ -205,19 +206,38 @@ export function MonitorTablas({
   });
 
   /**
+   * Grupo con el que VENDE esta sesión (ver `grupoDeVentaVigente`):
+   *   · Usuario de un grupo → SU grupo.
+   *   · Administrador principal → el grupo elegido en el filtro superior "🗂️ Grupo".
+   * Vacío = el principal está mirando "Todos los grupos": ahí sí se pide a mano.
+   */
+  const grupoSesion = grupoDeVentaVigente();
+  /** Nombre del grupo de sesión, para mostrarlo fijo en vez de un <select>. */
+  const nombreGrupoSesion =
+    opcionesVenta.grupos.find((g) => String(g.id) === grupoSesion)?.nombre ?? "";
+  /**
+   * Jugadores del buscador: se elige escribiendo el NOMBRE, no recorriendo una
+   * lista desplegable (con grupos grandes el <select> era inmanejable).
+   */
+  const opcionesJugador = useMemo(
+    () => opcionesVenta.clientes.map((c) => ({ value: String(c.id), label: String(c.nombre ?? "") })),
+    [opcionesVenta.clientes]
+  );
+
+  /**
    * Abre el modal de venta trayendo los grupos y clientes de lectura.
    *
-   * El grupo se deduce del cliente: `clientes.grupo_id` mas la lista
-   * `grupos` (clientes_grupos), que es la misma regla del legacy. Asi el
-   * convenio y la moneda que se aplican son los del grupo del jugador y no
-   * una eleccion suelta de la caja.
+   * El GRUPO de la venta ya no se elige "a mano": lo trae la sesión
+   * (`grupoDeVentaVigente`), que es el grupo del usuario logueado o, para el
+   * administrador principal, el del filtro superior "🗂️ Grupo". Solo cuando el
+   * principal mira "Todos los grupos" el `<select>` de grupo queda habilitado.
    */
   const abrirVenta = async (t: StoredTablaFija) => {
     setVendiendo(t);
     setEjemplarVenta("");
     setMontoVenta("");
     setClienteVenta("");
-    setGrupoVenta("");
+    setGrupoVenta(grupoSesion);
     setVendiendoCargando(true);
     const [grupos, clientes] = await Promise.all([
       listarGruposVenta().catch(() => [] as GrupoVenta[]),
@@ -227,9 +247,14 @@ export function MonitorTablas({
     setVendiendoCargando(false);
   };
 
-  /** Al elegir cliente, propone su grupo; el usuario puede cambiarlo. */
+  /**
+   * Al elegir jugador se fija el jugador. El GRUPO ya no lo decide el jugador:
+   * lo trae la sesión (`grupoSesion`). Solo el principal en "Todos los grupos"
+   * no tiene grupo determinado y ahí se propone el del jugador para poder cambiarlo.
+   */
   const elegirClienteVenta = (clienteId: string) => {
     setClienteVenta(clienteId);
+    if (grupoSesion) return;
     const c = opcionesVenta.clientes.find((x) => String(x.id) === clienteId);
     const g = c?.grupo_id ?? c?.grupos?.[0] ?? "";
     setGrupoVenta(g != null && g !== "" ? String(g) : "");
@@ -430,7 +455,10 @@ export function MonitorTablas({
     if (!clienteVenta) {
       return setAviso("Selecciona el jugador: la venta se descuenta de su saldo.");
     }
-    if (!grupoVenta) {
+    /* El grupo de la SESIÓN manda. Solo cuando el principal mira "Todos los
+       grupos" (`grupoSesion === ""`) se usa el que se eligió en el <select>. */
+    const grupoEfectivo = grupoSesion || grupoVenta;
+    if (!grupoEfectivo) {
       return setAviso("Selecciona el grupo: define la moneda y el convenio de comisión.");
     }
     const monto = parseNum(montoVenta);
@@ -438,7 +466,7 @@ export function MonitorTablas({
       return setAviso("El monto debe ser un número mayor a cero.");
     }
     const cliente = opcionesVenta.clientes.find((x) => String(x.id) === clienteVenta);
-    const grupo = opcionesVenta.grupos.find((x) => String(x.id) === grupoVenta);
+    const grupo = opcionesVenta.grupos.find((x) => String(x.id) === grupoEfectivo);
     const nombreCab =
       (vendiendo.caballos ?? []).find((c) => String(c.numero) === ejemplarVenta)?.nombre ?? "TABLA COMPLETA";
     const item: VentaTablaItem = {
@@ -446,7 +474,11 @@ export function MonitorTablas({
       numero: ejemplarVenta,
       nombre: nombreCab,
       monto,
-      grupo: grupo ? { id: grupo.id, nombre: grupo.nombre } : null,
+      grupo: grupo
+        ? { id: grupo.id, nombre: grupo.nombre }
+        : grupoEfectivo
+          ? { id: grupoEfectivo, nombre: nombreGrupoSesion || `Grupo ${grupoEfectivo}` }
+          : null,
       jugador: cliente
         ? {
             id: cliente.id,
@@ -458,7 +490,7 @@ export function MonitorTablas({
         : null,
     };
     const saldo = Number(cliente?.saldo_actual ?? 0);
-    const bq = (await listarBanquerosGrupo(grupoVenta)).find(
+    const bq = (await listarBanquerosGrupo(grupoEfectivo)).find(
       (b) => b.modalidad === "TABLAS" && b.activo !== false && b.banquero_cliente_id
     );
     setAviso("");
@@ -473,7 +505,7 @@ export function MonitorTablas({
         titulo: `TABLA ${nombreHipodromoParaMostrar(vendiendo.hipodromo)} C${vendiendo.carrera} · ${ejemplarVenta === "TABLA" ? "COMPLETA" : `Nº ${ejemplarVenta}`}`,
         detalle: nombreCab,
         jugador: cliente?.nombre ?? "",
-        grupo: grupo?.nombre ?? null,
+        grupo: grupo?.nombre ?? (grupoEfectivo ? nombreGrupoSesion || null : null),
         monto,
         moneda: grupo?.moneda ?? vendiendo.moneda,
         pago: pagoPotencialNumerico(vendiendo, ejemplarVenta, monto),
@@ -1070,25 +1102,32 @@ export function MonitorTablas({
             <div className="space-y-3 p-4">
               <div>
                 <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Jugador</label>
-                <select
+                {/* Buscador por nombre: en grupos grandes el <select> obligaba a
+                    recorrer la lista entera; escribir el nombre es directo. */}
+                <SearchableSelect
+                  options={opcionesJugador}
                   value={clienteVenta}
-                  onChange={(e) => elegirClienteVenta(e.target.value)}
+                  onChange={elegirClienteVenta}
+                  allowCustom={false}
                   disabled={vendiendoCargando}
-                  className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                >
-                  <option value="">{vendiendoCargando ? "Cargando…" : "— Seleccionar jugador —"}</option>
-                  {opcionesVenta.clientes.map((c) => (
-                    <option key={String(c.id)} value={String(c.id)}>
-                      {c.nombre}
-                    </option>
-                  ))}
-                </select>
+                  placeholder={vendiendoCargando ? "Cargando…" : "— Buscar jugador por nombre —"}
+                />
               </div>
               <div>
                 <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">
                   Grupo (moneda y convenio)
                 </label>
-                {opcionesVenta.grupos.length === 0 && !vendiendoCargando ? (
+                {grupoSesion ? (
+                  <div
+                    className="flex items-center justify-between rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900"
+                    title="El grupo lo define la sesión (para el administrador principal, el filtro superior)"
+                  >
+                    <span className="min-w-0 truncate">{nombreGrupoSesion || `Grupo ${grupoSesion}`}</span>
+                    <span className="ml-2 shrink-0 text-[10px] font-black uppercase tracking-wide text-slate-400">
+                      de la sesión
+                    </span>
+                  </div>
+                ) : opcionesVenta.grupos.length === 0 && !vendiendoCargando ? (
                   <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-900">
                     No hay grupos de venta activos, y sin grupo la venta no puede registrarse
                     (el ticket necesita el grupo para la moneda y el convenio de comisión).
