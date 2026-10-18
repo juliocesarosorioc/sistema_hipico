@@ -27,6 +27,7 @@ import {
 } from "@/features/marcas/lib/marcas";
 import { ModalMarcas } from "@/features/marcas/components/ModalMarcas";
 import { ModalMarcasEditor } from "@/features/marcas/components/ModalMarcasEditor";
+import { ReporteMarcasJugadasModal } from "@/features/marcas/components/ReporteMarcasJugadasModal";
 import { usePizarraOficial } from "@/features/marcas/lib/usePizarraOficial";
 import type { PizarraMarca } from "@/features/marcas/lib/marcas";
 
@@ -109,6 +110,8 @@ const mandoCls = "flex items-center justify-start gap-[2px] border-l-2 border-sl
 export function PanelMarcas() {
   const [hipodromo, setHipodromo] = useState("");
   const [fecha, setFecha] = useState(() => hoyLocal());
+  /** Reporte de las marcas jugadas (misma vista que el Reporte de Tablas Fijas). */
+  const [reporteAbierto, setReporteAbierto] = useState(false);
 
   /**
    * Catálogo de hipódromos desde el REGISTRO CENTRAL, no con
@@ -449,6 +452,17 @@ export function PanelMarcas() {
           title="Abrir el editor de marcas, NV y debutantes de la jornada"
         >
           🏷️ Configurar jornada
+        </Button>
+        {/* Reporte de las marcas JUGADAS: al lado de Configurar jornada, sobre la
+            misma barra de filtros, para no tener que entrar carrera por carrera
+            (como en el modal de venta) y leer la jornada completa de un vistazo. */}
+        <Button
+          variant="default"
+          onClick={() => setReporteAbierto(true)}
+          className="bg-cyan-600 hover:bg-cyan-500"
+          title="Ver el reporte de las marcas jugadas del día"
+        >
+          📈 Reporte de marcas
         </Button>
 
         {/* ENVÍO DE LA HOJA: el mismo resumen que se ve acá, por WhatsApp o
@@ -857,6 +871,14 @@ export function PanelMarcas() {
           onCambio={() => void refrescar()}
         />
       )}
+
+      {/* Reporte de marcas jugadas (misma vista que el Reporte de Tablas Fijas). */}
+      <ReporteMarcasJugadasModal
+        abierto={reporteAbierto}
+        onCerrar={() => setReporteAbierto(false)}
+        fechaInicial={fecha}
+        hipodromoInicial={hipodromo.trim().toUpperCase()}
+      />
 
       {/* Borrar la configuración: es destructivo, así que se pregunta. */}
       {porBorrar && (
