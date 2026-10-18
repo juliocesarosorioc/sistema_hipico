@@ -86,6 +86,7 @@
     "./cuaderno.test.ts",
     "./reporte-rango.test.ts",
     "./jornada-dia-jugada.test.ts",
-    "./gestion-saldos-clientes.test.ts"
+    "./gestion-saldos-clientes.test.ts",
+    "./editor-caballos-enter.test.ts"
   ]
 }
