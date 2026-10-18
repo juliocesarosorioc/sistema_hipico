@@ -31,6 +31,25 @@ export function textoRetirados(numeros: NumeroRetirado[] | null | undefined): st
 }
 
 /**
+ * Premio de una tabla fija descontando los ejemplares retirados.
+ *
+ *   premioAjustado = premio × (1 − sumaRetirados / base)
+ *
+ * Es la fórmula del legacy (js/tablas.js) y la que usa la RPC
+ * `club_liquidar_tabla_fija` con el snapshot de la venta. Vive acá (núcleo puro,
+ * sin Supabase) para que la propagación de retiros y su prueba calculen
+ * EXACTAMENTE lo mismo. Base 0 (tabla sin valores) → premio sin tocar.
+ */
+export function premioConRetiros(premio: number, base: number, sumaRetirados: number): number {
+  const p = Number(premio);
+  const b = Number(base);
+  const s = Number(sumaRetirados);
+  if (!Number.isFinite(p)) return 0;
+  if (!Number.isFinite(b) || b <= 0) return p;
+  return Math.max(0, p * (1 - (Number.isFinite(s) ? s : 0) / b));
+}
+
+/**
  * Parsea tolerantemente lo que escribe el operador ("2,5" · "2 5" · "2, 5" ·
  * "2-5" · "#2 #5") y devuelve la lista de números. El rango "a-b" se expande.
  */

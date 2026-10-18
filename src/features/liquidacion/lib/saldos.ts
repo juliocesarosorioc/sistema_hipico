@@ -215,6 +215,13 @@ export async function aplicarLiquidacionSaldos(
       // rivales del ticket. Si el motor universal las agarrara, decidiría "quien
       // salga primero" y pagaría a un rival que en la marca iba perdiendo.
       .not("nombre_jugada", "like", "MARCA %")
+      // Las TABLAS FIJAS se liquidan con `club_liquidar_tabla_fija`, que paga
+      // `cantidad_tablas × premio_por_tabla` y baja el premio por retiros con el
+      // snapshot de la venta. El motor universal NO sabe leer `nombre_jugada`
+      // ("TABLA FIJA (HIPO Cn)" no trae el número del ejemplar), así que las
+      // decidía como PERDEDOR con premio 0 y encima les cobraba la comisión de
+      // "jugada perdedora" (monto × pct) en vez de solo sobre la ganancia.
+      .not("nombre_jugada", "like", "TABLA FIJA%")
       .limit(2000);
     if (error) throw error;
     filas = data ?? [];

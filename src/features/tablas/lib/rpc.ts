@@ -538,7 +538,7 @@ export async function liquidarTablaFija(params: {
   /** Ejemplares ganadores separados por coma: '1,3,4'. */
   ganadores: string;
   usuario?: string | null;
-  }): Promise<{ ok: boolean; error?: string; ticketsResueltos?: number; pagos?: number }> {
+  }): Promise<{ ok: boolean; error?: string; ticketsResueltos?: number; pagos?: number; pagado?: number; comision?: number }> {
     if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
     try {
       exigirCapacidad("tablas:btn_liquidar");
@@ -559,6 +559,9 @@ export async function liquidarTablaFija(params: {
     ok: true,
     ticketsResueltos: Number(d.tickets_resueltos ?? 0),
     pagos: Number(d.pagos ?? 0),
+    // Totales devueltos por la RPC para el resumen de la carrera.
+    pagado: Number(d.pagado ?? 0),
+    comision: Number(d.comision ?? 0),
   };
 }
 

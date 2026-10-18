@@ -23,7 +23,7 @@
 import { supabase } from "@/core/supabase";
 import { exigirPermiso } from "@/features/seguridad/lib/vigente";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
-import { num, normalizarRetirados, parsearRetirados, textoRetirados } from "@/features/carreras/lib/retiros-nucleo";
+import { num, normalizarRetirados, parsearRetirados, premioConRetiros, textoRetirados } from "@/features/carreras/lib/retiros-nucleo";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { reflejarRetiradosMatriz } from "@/features/carreras/lib/maestro";
 
@@ -123,8 +123,7 @@ async function propagarATablas(
     const sumaRetirados = nuevos
       .filter((c) => c.retirado)
       .reduce((a, c) => a + (num(c.valor_ejemplar) || 0), 0);
-    let premio = num(fila.premio_original ?? fila.premio_recalculado);
-    if (base > 0) premio = Math.max(0, premio * (1 - sumaRetirados / base));
+    const premio = premioConRetiros(num(fila.premio_original ?? fila.premio_recalculado), base, sumaRetirados);
     const texto = [...retirados].join(",") || SIN_RETIRADOS;
 
     try {

@@ -12,6 +12,8 @@ import { supabase } from "@/core/supabase";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { aplicarLiquidacionSaldos, type ResumenSaldos } from "@/features/liquidacion/lib/saldos";
 import { liquidarMarcas } from "@/features/marcas/lib/marcas";
+import { liquidarTablaFija } from "@/features/tablas/lib/rpc";
+import { claveHipodromo } from "@/features/carreras/lib/claves";
 
 /**
  * Suma de todos los tickets de la carrera. El comando puede traer el monto al
@@ -53,6 +55,10 @@ export type ResLiquidarCarrera = {
   gananciaCasa: number;
   /** Cantidad de tickets cuyos montos se ajustaron por comisión neta (cruces). */
   neteados?: number;
+  /** Liquidación de las TABLAS FIJAS de la carrera (RPC `club_liquidar_tabla_fija`).
+   *  Va aparte del motor universal: las tablas pagos `cantidad × premio` con su
+   *  propia regla de comisión. `pagado`/`comision` ya vienen sumados al resumen. */
+  tablasFijas?: { ok: boolean; tablas: number; pagado: number; comision: number; error?: string };
   tablaCerrada?: { ok: boolean; conteo?: number; error?: string };
   /** Escritura del resultado en `resultados_carreras` (fuente de verdad de
    *  Carreras del Día). Va aparte porque un fallo acá NO puede invalidar una
@@ -246,6 +252,24 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     dividendos: dividendos ?? null,
   });
 
+  // TABLAS FIJAS: se liquidan por su RPC ANTES de cerrarlas (la RPC solo toca
+  // tickets 'Pendiente' de la tabla). Pago = cantidad × premio_por_tabla, con el
+  // ajuste por retiros que trae el snapshot de la venta. El motor universal NO
+  // sabe resolverlas (el `nombre_jugada` "TABLA FIJA (HIPO Cn)" no trae el Nº de
+  // ejemplar), por eso `aplicarLiquidacionSaldos` las excluye y viven acá.
+  //
+  // Los totales de tabla fija van SEPARADOS del resumen de la sesión (que solo
+  // cuenta los tickets cargados en esta pantalla): mezclarlos dejaría el
+  // "Balance de la banca" sin su contrapartida de inversión. La venta de tabla
+  // fija se cobró en el módulo de Tablas, así que su capital no está en
+  // `totalInvertido`; el resumen los muestra en su propia línea.
+  let tablasFijas: ResLiquidarCarrera["tablasFijas"];
+  try {
+    tablasFijas = await liquidarTablasFijasDeCarrera(hipodromo, Number(carrera), pizarra, fecha);
+  } catch (e) {
+    tablasFijas = { ok: false, tablas: 0, pagado: 0, comision: 0, error: (e as Error).message };
+  }
+
   // AUTO-CIERRE: tras pagar con éxito, cierra la Tabla Fija de la carrera.
   const cierre = await cerrarTablaFija(hipodromo, carrera);
   if (cierre.ok) {
@@ -283,6 +307,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     balanceBanca,
     gananciaCasa,
     neteados,
+    tablasFijas,
     tablaCerrada: cierre,
     resultadoCentral: central,
     marcas,
@@ -340,6 +365,78 @@ function firstOrdinal(primero: unknown): number {
   if (typeof primero === "number") return primero;
   const n = Number.parseInt(String(primero ?? ""), 10);
   return Number.isFinite(n) ? n : 1;
+}
+
+/**
+ * Liquida por RPC las TABLAS FIJAS abiertas de la carrera y devuelve los totales
+ * (lo que se le paga a los jugadores y la comisión del grupo).
+ *
+ * La liquidación de tabla fija tiene su propia regla —`pago = cantidad_tablas ×
+ * premio_por_tabla`, con el premio ajustado por los retiros posteriores a la
+ * venta— y su propia RPC transaccional (`club_liquidar_tabla_fija`), que además
+ * acredita el saldo del jugador. Por eso NO pasa por el motor universal.
+ *
+ * Best-effort: si falta permiso, red o no hay tablas, se reporta el motivo sin
+ * abortar la liquidación de la carrera (los tickets de sesión ya se pagaron).
+ */
+async function liquidarTablasFijasDeCarrera(
+  hipodromo: string,
+  carrera: number,
+  pizarra: PizarraCarrera,
+  fecha: string,
+  usuario?: string | null
+): Promise<{ ok: boolean; tablas: number; pagado: number; comision: number; error?: string }> {
+  const ganador = String(pizarra.primero ?? "").trim();
+  // Dead heat: ganan TODOS los que empataron (la RPC acepta "1,3,4"). Sin
+  // ganadores no se toca nada (la tabla queda pendiente a decisión manual).
+  const empates = Array.isArray(pizarra.empates) ? pizarra.empates.map((e) => String(e).trim()) : [];
+  const ganadores = [ganador, ...empates].filter(Boolean).join(",");
+  if (!ganadores) return { ok: true, tablas: 0, pagado: 0, comision: 0 };
+  if (!supabase) return { ok: false, tablas: 0, pagado: 0, comision: 0, error: "Sin conexión a Supabase." };
+
+  let ids: Array<string | number> = [];
+  try {
+    // El hipódromo se compara por clave canónica (misma que retiros/matrices): la
+    // columna puede venir escrita "LA RINCONADA" o "LA RINCONADA " y un `.eq`
+    // texto dejaría la tabla sin liquidar.
+    const { data, error } = await supabase
+      .from("tablas_fijas")
+      .select("id, hipodromo, carrera, fecha, fecha_creacion, estado")
+      .eq("carrera", carrera)
+      .limit(50);
+    if (error) throw error;
+    const clave = claveHipodromo(hipodromo);
+    const dia = String(fecha).slice(0, 10);
+    ids = ((data ?? []) as Array<Record<string, unknown>>)
+      .filter((t) => claveHipodromo(String(t.hipodromo ?? "")) === clave)
+      .filter((t) => String(t.fecha ?? t.fecha_creacion ?? "").slice(0, 10) === dia)
+      .filter((t) => String(t.estado ?? "").trim().toLowerCase() !== "cerrada")
+      .map((t) => t.id as string | number);
+  } catch (e) {
+    return { ok: false, tablas: 0, pagado: 0, comision: 0, error: `Tablas fijas: ${(e as Error).message}` };
+  }
+
+  let pagado = 0;
+  let comision = 0;
+  let tablas = 0;
+  const errores: string[] = [];
+  for (const id of ids) {
+    const r = await liquidarTablaFija({ tablaId: id, ganadores, usuario });
+    if (!r.ok) {
+      errores.push(r.error ?? "No se pudo liquidar la tabla fija.");
+      continue;
+    }
+    tablas += 1;
+    pagado += r.pagado ?? 0;
+    comision += r.comision ?? 0;
+  }
+  return {
+    ok: errores.length === 0,
+    tablas,
+    pagado: round2(pagado),
+    comision: round2(comision),
+    error: errores.length ? errores[0] : undefined,
+  };
 }
 
 /** Lee los dividendos oficiales ya persistidos en resultados_carreras

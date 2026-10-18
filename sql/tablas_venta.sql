@@ -63,6 +63,11 @@ declare
   v_ins        int := 0;
   v_fecha      date;
   v_caballo    text;
+  -- Foto de TODOS los ejemplares al momento de la venta (requisito 2026-10):
+  -- con esto la liquidacion puede recalcular el monto a pagar si despues
+  -- retiran a un ejemplar, usando el valor que tenia al vender y no el actual.
+  v_valores    jsonb;
+  v_suma_base  numeric;
 begin
   -- ------------------------------------------------------------------
   -- Validaciones de entrada
@@ -150,6 +155,28 @@ begin
 
   v_caballos := coalesce(v_tabla.caballos, '[]'::jsonb);
 
+  -- ------------------------------------------------------------------
+  -- SNAPSHOT DE TODOS LOS EJEMPLARES (precio de cada uno al momento de la
+  -- venta). Se congela en el ticket porque el monto a pagar depende de los
+  -- valores vigentes al comprar: si despues retiran a un ejemplar, su valor
+  -- proporcional (= valor_retirado / suma_base) ajusta el premio del ticket ya
+  -- vendido. Sin este snapshot, una edicion posterior de la tabla (o un retiro
+  -- antiguo) cambiaba el denominador y pagaba un monto distinto al pactado.
+  --
+  -- Solo entran los ejemplares VIGENTES: los ya retirados al vender no forman
+  -- parte del estimado (su cupo ya no esta en juego).
+  -- ------------------------------------------------------------------
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'numero', btrim(coalesce(v_e ->> 'numero', '')),
+      'valor',  coalesce(nullif(v_e ->> 'valor_ejemplar', '')::numeric, 0)
+    )), '[]'::jsonb),
+    coalesce(sum(coalesce(nullif(v_e ->> 'valor_ejemplar', '')::numeric, 0)), 0)
+    into v_valores, v_suma_base
+    from jsonb_array_elements(v_caballos) as v_e
+   where btrim(coalesce(v_e ->> 'numero', '')) <> ''
+     and coalesce(v_e ->> 'retirado', 'false') <> 'true';
+
   -- Un solo ejemplar (N3) o la tabla completa (todos los caballos).
   if p_ejemplar_numero is not null and btrim(p_ejemplar_numero) <> '' then
     v_num := btrim(p_ejemplar_numero);
@@ -198,7 +225,11 @@ begin
         'origen', 'TABLAS_FIJAS',
         'usuario', p_usuario,
         'premio_congelado', v_premio,
-        'pts_congelado', v_pts
+        'pts_congelado', v_pts,
+        -- Snapshot de TODOS los ejemplares al vender (ver arriba): permite
+        -- ajustar el premio si despues retiran a un ejemplar.
+        'valores_congelados', v_valores,
+        'suma_base_congelada', v_suma_base
       )
     );
     v_ins := 1;
@@ -238,7 +269,10 @@ begin
           'origen', 'TABLAS_FIJAS',
           'usuario', p_usuario,
           'premio_congelado', v_premio,
-          'pts_congelado', v_pts
+          'pts_congelado', v_pts,
+          -- Snapshot de TODOS los ejemplares al vender (ver arriba).
+          'valores_congelados', v_valores,
+          'suma_base_congelada', v_suma_base
         )
       );
       v_ins := v_ins + 1;
@@ -341,10 +375,26 @@ grant execute on function public.club_vender_tabla_fija(bigint, uuid, uuid, nume
 --  El jugador no pierde nada de su premio: monto_decidido es el premio entero.
 --  Lo que se descuenta es la comision del grupo, que sale de la ganancia.
 --
---  PAGO: el premio sale del PTS CONGELADO del ejemplar, no del valor actual de
---  la tabla. Si la tabla se edito o entro un retiro despues de la venta, el
---  ticket ya vendido sigue liquidando con el premio con el que se compro. Esa
---  es toda la razon de congelar en la venta.
+--  PAGO (regla del legacy js/saldos.js:123):
+--
+--      pago = cantidad_tablas × premio_por_tabla        (si el ejemplar gana)
+--
+--  El premio por tabla sale del `premio_por_tabla` CONGELADO al vender, no del
+--  valor actual de la tabla. Si la tabla se edito despues, el ticket ya vendido
+--  sigue liquidando con el premio con el que se compro.
+--
+--  RETIROS POSTERIORES A LA VENTA: cada venta guarda en `nota_auditoria` un
+--  snapshot con el PRECIO DE TODOS LOS EJEMPLARES al momento de comprar
+--  (`valores_congelados`) y la suma base (`suma_base_congelada`). Si despues
+--  retiran a un ejemplar, su valor proporcional (= valor_congelado / base
+--  congelada) ajusta el premio del ticket ya vendido:
+--
+--      premio_ajustado = premio_por_tabla × (1 − sumaValoresRetirados / base)
+--
+--  Los ejemplares ya retirados al momento de la venta NO entran en el snapshot
+--  (no se podia vender el ticket ahi), asi que el ajuste aplica SOLO a los
+--  retiros ocurridos despues de comprar: sin este control un ticket viejo se
+--  ajustaria dos veces.
 --
 --  Se usan las MISMAS etiquetas de estado que ya consulta el resto del codigo:
 --  'Pendiente', 'Ganador', 'Perdedor' y 'Retirado', en mixed case. Postgres
@@ -377,9 +427,17 @@ declare
   v_com      numeric;
   v_pct      numeric;
   v_saldo    numeric;
+  v_snap     jsonb;
+  v_elem     jsonb;
+  v_snap_base numeric;
+  v_suma_ret  numeric;
+  v_cant     int;
+  v_retirados_actuales text[];
   v_resueltos int := 0;
   v_ganadores int := 0;
   v_deudores  int := 0;
+  v_pagado_total   numeric := 0;
+  v_comision_total numeric := 0;
 begin
   select * into v_tabla from public.tablas_fijas where id = p_tabla_id for update;
   if not found then
@@ -400,7 +458,22 @@ begin
     raise exception 'No se indico ningun ganador.';
   end if;
 
-  v_base := greatest(coalesce(v_tabla.suma_base_tabla, 0), 0);
+  -- Retirados VIGENTES de la tabla: caballos[].retirado y/o `retirados_oficiales`
+  -- (texto "3,7"/"3 7"/"NO HUBO RETIROS"). El servicio central de retiros
+  -- (@/lib/carreras/retiros) mantiene los dos sincronizados.
+  v_retirados_actuales := array(
+    select distinct n
+      from (
+        select btrim(x) as n
+          from unnest(regexp_split_to_array(coalesce(v_tabla.retirados_oficiales, ''), '[^0-9]+')) as x
+         where btrim(x) <> ''
+        union
+        select btrim(coalesce(c ->> 'numero', '')) as n
+          from jsonb_array_elements(coalesce(v_tabla.caballos, '[]'::jsonb)) c
+         where coalesce(c ->> 'retirado', 'false') = 'true'
+      ) s
+     where n <> ''
+  );
 
   for v_tk in
     select * from public.tickets_apuestas
@@ -416,25 +489,41 @@ begin
      for update
   loop
     v_num    := btrim(coalesce(v_tk.ejemplar_numero, ''));
-    v_pts    := coalesce(v_tk.pts_ejemplar, 0);
     v_premio := coalesce(v_tk.premio_por_tabla, v_tabla.premio_recalculado, v_tabla.premio_original, 0);
     v_jugado := coalesce(v_tk.monto_jugado, 0);
     v_pct    := coalesce(v_tk.comision_porcentaje, 0);
+    v_cant   := greatest(coalesce(v_tk.cantidad_tablas, 1), 1);
+
+    -- Snapshot de la venta (puede no existir en tickets viejos: se deja null y
+    -- el premio congela sin ajuste, que es como se liquidaba antes).
+    v_snap := null;
+    if v_tk.nota_auditoria ~ '^\s*[\{\[]' then
+      v_snap := v_tk.nota_auditoria::jsonb;
+    end if;
+
+    -- Ajuste por retiros POSTERIORES a la venta, con el PRECIO DE LA VENTA
+    -- (snapshot), no con el valor actual de la tabla.
+    if jsonb_typeof(v_snap -> 'valores_congelados') = 'array' then
+      v_snap_base := nullif(v_snap ->> 'suma_base_congelada', '')::numeric;
+      if v_snap_base is not null and v_snap_base > 0 then
+        v_suma_ret := 0;
+        for v_elem in select * from jsonb_array_elements(v_snap -> 'valores_congelados') loop
+          if btrim(coalesce(v_elem ->> 'numero', '')) = any (v_retirados_actuales) then
+            v_suma_ret := v_suma_ret + coalesce(nullif(v_elem ->> 'valor', '')::numeric, 0);
+          end if;
+        end loop;
+        v_premio := round((v_premio * greatest(0, v_snap_base - v_suma_ret) / v_snap_base)::numeric, 2);
+      end if;
+    end if;
 
     v_gana := v_num <> '' and v_num = any (v_gan);
-
-    -- El premio sale del PTS congelado. Si la tabla no trae base (puntos sin
-    -- asignar) se cae al premio completo, que es el caso de la tabla simple.
-    if v_pts > 0 and v_base > 0 then
-      v_pago := round((v_premio * v_pts / v_base)::numeric, 2);
-    else
-      v_pago := v_premio;
-    end if;
 
     if not v_gana then
       v_pago := 0;
       v_com  := 0;
     else
+      -- Regla del legacy js/saldos.js:123: premio_potencial = cantidad × premio.
+      v_pago := round((v_premio * v_cant)::numeric, 2);
       -- Sobre la ganancia, y solo si gana. Nunca por debajo de cero.
       v_com := greatest(0, v_pago - v_jugado) * v_pct / 100;
     end if;
@@ -447,6 +536,8 @@ begin
      where id = v_tk.id;
 
     v_resueltos := v_resueltos + 1;
+    v_pagado_total   := v_pagado_total + v_pago;
+    v_comision_total := v_comision_total + round(v_com::numeric, 2);
 
     -- El premio entra al saldo del jugador.
     if v_pago > 0 and v_tk.cliente_juega_id is not null then
@@ -473,7 +564,11 @@ begin
     'ok', true,
     'tickets_resueltos', v_resueltos,
     'pagos', v_deudores,
-    'ganadores', v_ganadores
+    'ganadores', v_ganadores,
+    -- Totales para el resumen de la carrera (Gestión de Jugadas): lo que se le
+    -- paga a los jugadores y lo que se lleva el grupo por comisión.
+    'pagado',   round(v_pagado_total::numeric, 2),
+    'comision', round(v_comision_total::numeric, 2)
   );
 end;
 $$;

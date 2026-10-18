@@ -2186,6 +2186,19 @@ const hipodromosDelDia = useMemo(() => {
                       <p className="font-black text-primary-700">{monedaFmt(resumen.gananciaCasa)}</p>
                     </div>
                   </div>
+                  {resumen.tablasFijas && (resumen.tablasFijas.tablas > 0 || resumen.tablasFijas.error) ? (
+                    <p className="mt-2 rounded-lg border border-line bg-gray-50 px-3 py-2 text-[11px] font-semibold text-slate-600">
+                      {resumen.tablasFijas.tablas > 0 ? (
+                        <>
+                          🏁 <b>Tablas fijas:</b> {resumen.tablasFijas.tablas} tabla(s) liquidada(s) · a pagar{" "}
+                          <b className="text-success-700">{monedaFmt(resumen.tablasFijas.pagado)}</b> · comisión{" "}
+                          <b className="text-primary-700">{monedaFmt(resumen.tablasFijas.comision)}</b>
+                        </>
+                      ) : (
+                        <>🏁 <b>Tablas fijas:</b> {resumen.tablasFijas.error ?? "no se pudieron liquidar."}</>
+                      )}
+                    </p>
+                  ) : null}
                   <p className="mt-2 text-[10px] font-semibold text-slate-500">
                     {resumen.motivo}{" "}
                     {resumen.tablaCerrada?.ok
