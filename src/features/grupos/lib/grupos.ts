@@ -274,6 +274,18 @@ export type GrupoRow = {
   moneda_cuadre?: string | null;
   cupo_tabla?: number | null;
   comision_default?: number | null;
+  /**
+   * Comisión por convenio de PRODUCTO (% sobre el monto decidido) que el grupo
+   * principal paga al grupo del cliente. `comision_default` sigue siendo la de
+   * "entre tercios"; estas son las de los demás productos y, en NULL, HEREDAN
+   * de `comision_default`. Requieren `sql/grupos_comisiones_convenio.sql`.
+   */
+  comision_marcas?: number | null;
+  comision_tablas?: number | null;
+  comision_remates?: number | null;
+  comision_polla?: number | null;
+  comision_wps?: number | null;
+  comision_dupletas?: number | null;
   responsable?: string | null;
   cuenta_bancaria?: string | null;
   es_principal?: boolean | null;
@@ -371,6 +383,15 @@ export async function crearGrupo(datos: Partial<GrupoRow>): Promise<{ ok: boolea
           moneda: datos.moneda ?? "USD",
           cupo_tabla: datos.cupo_tabla ?? 100,
           comision_default: datos.comision_default ?? 5,
+          // Comisión por convenio de producto: se manda tal cual (null = hereda).
+          // Si el SQL todavía no está aplicado, la RPC vieja ignora estas claves
+          // y el grupo se crea igual (sin perder el alta).
+          comision_marcas: datos.comision_marcas ?? null,
+          comision_tablas: datos.comision_tablas ?? null,
+          comision_remates: datos.comision_remates ?? null,
+          comision_polla: datos.comision_polla ?? null,
+          comision_wps: datos.comision_wps ?? null,
+          comision_dupletas: datos.comision_dupletas ?? null,
           responsable: datos.responsable ?? null,
           cuenta_bancaria: datos.cuenta_bancaria ?? null,
           es_principal: Boolean(datos.es_principal),
@@ -938,6 +959,13 @@ export type EcosistemaGrupoEntrada = {
     moneda?: string | null;
     moneda_cuadre?: string | null;
     comision_default?: number | null;
+    /** Comisión por convenio de cada producto (null = hereda `comision_default`). */
+    comision_marcas?: number | null;
+    comision_tablas?: number | null;
+    comision_remates?: number | null;
+    comision_polla?: number | null;
+    comision_wps?: number | null;
+    comision_dupletas?: number | null;
     cupo_tabla?: number | null;
     responsable?: string | null;
     cuenta_bancaria?: string | null;
@@ -1045,6 +1073,12 @@ export async function crearEcosistemaGrupo(
       moneda_cuadre: entrada.grupo.moneda_cuadre ?? "USD",
       cupo_tabla: entrada.grupo.cupo_tabla ?? 100,
       comision_default: entrada.grupo.comision_default ?? 5,
+      comision_marcas: entrada.grupo.comision_marcas ?? null,
+      comision_tablas: entrada.grupo.comision_tablas ?? null,
+      comision_remates: entrada.grupo.comision_remates ?? null,
+      comision_polla: entrada.grupo.comision_polla ?? null,
+      comision_wps: entrada.grupo.comision_wps ?? null,
+      comision_dupletas: entrada.grupo.comision_dupletas ?? null,
       responsable: entrada.grupo.responsable ?? null,
       cuenta_bancaria: entrada.grupo.cuenta_bancaria ?? null,
       es_principal: false,
@@ -1057,6 +1091,12 @@ export async function crearEcosistemaGrupo(
       nombre: nombreGrupo,
       moneda: entrada.grupo.moneda ?? "USD",
       comision_default: entrada.grupo.comision_default ?? 5,
+      comision_marcas: entrada.grupo.comision_marcas ?? null,
+      comision_tablas: entrada.grupo.comision_tablas ?? null,
+      comision_remates: entrada.grupo.comision_remates ?? null,
+      comision_polla: entrada.grupo.comision_polla ?? null,
+      comision_wps: entrada.grupo.comision_wps ?? null,
+      comision_dupletas: entrada.grupo.comision_dupletas ?? null,
       cupo_tabla: entrada.grupo.cupo_tabla ?? 100,
       responsable: entrada.grupo.responsable ?? null,
     });

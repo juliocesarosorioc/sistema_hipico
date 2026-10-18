@@ -29,6 +29,7 @@
     "../src/features/carreras/lib/claves.ts",
     "../src/features/carreras/lib/agruparHipodromos.ts",
     "../src/features/clientes/lib/cuadernoResumen.ts",
+    "../src/features/grupos/lib/comisiones-convenio.ts",
     "../src/features/carreras/lib/retiros-nucleo.ts",
     "../src/features/carreras/lib/maestro-nucleo.ts",
     "../src/features/hipodromos/lib/tipos.ts",
@@ -87,6 +88,7 @@
     "./reporte-rango.test.ts",
     "./jornada-dia-jugada.test.ts",
     "./gestion-saldos-clientes.test.ts",
+    "./comisiones-convenio.test.ts",
     "./editor-caballos-enter.test.ts"
   ]
 }

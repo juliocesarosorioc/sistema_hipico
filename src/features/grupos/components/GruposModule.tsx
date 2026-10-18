@@ -39,6 +39,17 @@ import {
   type BanqueroConvenio,
   type ModalidadBanquero,
 } from "@/features/liquidacion/lib/banqueros";
+import { CamposComisionesConvenio } from "@/features/grupos/components/CamposComisionesConvenio";
+import { ReporteComisionesConvenioModal } from "@/features/grupos/components/ReporteComisionesConvenioModal";
+import {
+  CONCEPTOS_CONVENIO,
+  columnasConvenioDesde,
+  conceptoDe,
+  valoresConvenioDeGrupo,
+  valoresConvenioInicial,
+  type ProductoConvenio,
+  type ValoresConvenio,
+} from "@/features/grupos/lib/comisiones-convenio";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -126,7 +137,13 @@ export function GruposModule() {
   const [formMoneda, setFormMoneda] = useState("USD");
   const [formMonedaCuadre, setFormMonedaCuadre] = useState("USD");
   const [formCupo, setFormCupo] = useState("100");
-  const [formComision, setFormComision] = useState("2.5");
+  /**
+   * Comisión por convenio de cada producto en el alta. `entre_tercios` es la
+   * comisión general (`comision_default`); el resto son los productos nuevos y
+   * vacío = hereda la de Entre Tercios.
+   */
+  const [formConvenio, setFormConvenio] = useState<ValoresConvenio>(() => valoresConvenioInicial("2.5"));
+  const [reporteAbierto, setReporteAbierto] = useState(false);
   const [formResponsable, setFormResponsable] = useState("");
   const [formBanco, setFormBanco] = useState("");
   const [formNumeroCuenta, setFormNumeroCuenta] = useState("");
@@ -211,17 +228,40 @@ export function GruposModule() {
     [grupoConvenio, miembrosDe]
   );
 
+  /** Cambia un % de convenio en el ALTA (Entre Tercios + los demás productos). */
+  const setConvenioCampo = (clave: ProductoConvenio, valor: string) =>
+    setFormConvenio((prev) => ({ ...prev, [clave]: valor }));
+
+  /**
+   * Cambia un % de convenio en la EDICIÓN: escribe la columna real del grupo
+   * (`comision_marcas`, `comision_tablas`, …). Vacío = `null` = hereda.
+   */
+  const setConvenioEdicion = (clave: ProductoConvenio, valor: string) => {
+    const campo = conceptoDe(clave)?.campo;
+    if (!campo) return;
+    setEditando((prev) =>
+      prev ? ({ ...prev, [campo]: valor.trim() === "" ? null : num(valor) } as GrupoRow) : prev
+    );
+  };
+
   const guardarNuevo = async () => {
     const nombre = formNombre.trim().toUpperCase();
     if (!nombre) return toast("Indique el nombre del grupo.", "warning");
     setGuardando(true);
     const cuenta = componerCuenta(formBanco, formNumeroCuenta);
+    const convenio = columnasConvenioDesde(formConvenio);
     const r = await crearGrupo({
       nombre,
       moneda: formMoneda,
       moneda_cuadre: formMonedaCuadre,
       cupo_tabla: parseInt(formCupo) || 100,
-      comision_default: porcentajeDeEntrada(formComision),
+      comision_default: convenio.comision_default ?? porcentajeDeEntrada(formConvenio.entre_tercios),
+      comision_marcas: convenio.comision_marcas,
+      comision_tablas: convenio.comision_tablas,
+      comision_remates: convenio.comision_remates,
+      comision_polla: convenio.comision_polla,
+      comision_wps: convenio.comision_wps,
+      comision_dupletas: convenio.comision_dupletas,
       responsable: formResponsable.trim().toUpperCase() || null,
       cuenta_bancaria: cuenta,
       es_principal: formPrincipal,
@@ -240,6 +280,7 @@ export function GruposModule() {
     setFormPermiteCruces(true);
     setFormDiaInicio("1");
     setFormDiaFin("7");
+    setFormConvenio(valoresConvenioInicial("2.5"));
     setModalGrupo(false);
     void recargar();
   };
@@ -271,6 +312,13 @@ export function GruposModule() {
       moneda_cuadre: editando.moneda_cuadre ?? "USD",
       cupo_tabla: parseInt(editando.cupo_tabla?.toString() ?? "100") || 100,
       comision_default: porcentajeDeEntrada(editando.comision_default),
+      // Comisión por convenio de producto (null = hereda la de Entre Tercios).
+      comision_marcas: editando.comision_marcas ?? null,
+      comision_tablas: editando.comision_tablas ?? null,
+      comision_remates: editando.comision_remates ?? null,
+      comision_polla: editando.comision_polla ?? null,
+      comision_wps: editando.comision_wps ?? null,
+      comision_dupletas: editando.comision_dupletas ?? null,
       responsable: String(editando.responsable ?? "").trim().toUpperCase() || null,
       cuenta_bancaria: editando.cuenta_bancaria || null,
       es_principal: editando.es_principal === true,
@@ -412,11 +460,18 @@ export function GruposModule() {
           <Button variant="default" size="sm" onClick={() => setModalGrupo(true)}>
             <span className="mr-1">➕</span> Registrar grupo
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setReporteAbierto(true)}>
+            <span className="mr-1">📈</span> Reporte de comisiones
+          </Button>
           <Button variant="outline" size="sm" onClick={() => void recargar()}>
             <span className="mr-1">🔄</span> Recargar
           </Button>
         </div>
       </div>
+
+      {reporteAbierto ? (
+        <ReporteComisionesConvenioModal grupos={grupos} onCerrar={() => setReporteAbierto(false)} />
+      ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* ---------------- Crear / Listar Grupos ---------------- */}
@@ -471,16 +526,11 @@ export function GruposModule() {
                 />
               </div>
               <div className="col-span-3">
-                <label className={etiqueta}>
-                  Comisión por Tablas Fijas % <span className="text-amber-600">(convenio con el grupo)</span>
-                </label>
-                <input
-                  value={formComision}
-                  onChange={(e) => setFormComision(e.target.value)}
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  className={inp + " font-bold text-right"}
+                <CamposComisionesConvenio
+                  valores={formConvenio}
+                  onCambio={setConvenioCampo}
+                  columnas={4}
+                  ayuda="Comisión por convenio con el grupo principal, sobre el MONTO DECIDIDO. Vacío = hereda la de Entre Tercios."
                 />
               </div>
               <div className="col-span-3">
@@ -635,10 +685,32 @@ export function GruposModule() {
                           ) : null}
                         </div>
                         <span className="text-[10px] text-slate-500">
-                          Cupos/tabla: <b>{g.cupo_tabla ?? 100}</b> · Convenio Tablas Fijas:{" "}
+                          Cupos/tabla: <b>{g.cupo_tabla ?? 100}</b> · Comisión Entre Tercios:{" "}
                           <b className="text-amber-600">{strNum(g.comision_default) || "2.5"}%</b> · Clientes:{" "}
                           <b>{conteoPorGrupo.get(String(g.id)) ?? 0}</b>
                         </span>
+                        {/* Comisiones propias del convenio (solo las pactadas: las
+                            vacías heredan la de Entre Tercios y no se listan). */}
+                        {(() => {
+                          const propio = (g as unknown as Record<string, unknown>);
+                          const pactadas = CONCEPTOS_CONVENIO.filter(
+                            (c) => c.propio && propio[c.campo] !== null && propio[c.campo] !== undefined && propio[c.campo] !== ""
+                          );
+                          if (!pactadas.length) return null;
+                          return (
+                            <div className="mt-0.5 flex flex-wrap gap-1">
+                              {pactadas.map((c) => (
+                                <span
+                                  key={c.clave}
+                                  className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700"
+                                  title={`Comisión por convenio de ${c.etiqueta} (sobre el monto decidido)`}
+                                >
+                                  {c.emoji} {c.etiqueta}: {String(propio[c.campo])}%
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </div>
                       <button
                         className="rounded px-2 py-1 text-xs font-bold bg-slate-200 text-slate-700 hover:bg-slate-300"
@@ -994,17 +1066,12 @@ export function GruposModule() {
                   />
                 </div>
               </div>
-              <div>
-                <label className={etiqueta}>Comisión Gral. Jugadas entre Tercios %</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  value={strNum(editando.comision_default) || "2.5"}
-                  onChange={(e) => setEditando({ ...editando, comision_default: num(e.target.value) })}
-                  className={inp + " font-bold text-right"}
-                />
-              </div>
+              <CamposComisionesConvenio
+                valores={valoresConvenioDeGrupo(editando as unknown as Record<string, unknown>)}
+                onCambio={setConvenioEdicion}
+                columnas={4}
+                ayuda="Comisión por convenio de este grupo, sobre el MONTO DECIDIDO. Vacío = hereda la de Entre Tercios."
+              />
               <div>
                 <label className={etiqueta}>Responsable</label>
                 <input

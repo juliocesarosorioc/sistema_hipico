@@ -53,6 +53,12 @@ type Cuerpo = {
     moneda?: string | null;
     moneda_cuadre?: string | null;
     comision_default?: number | null;
+    comision_marcas?: number | null;
+    comision_tablas?: number | null;
+    comision_remates?: number | null;
+    comision_polla?: number | null;
+    comision_wps?: number | null;
+    comision_dupletas?: number | null;
     cupo_tabla?: number | null;
     responsable?: string | null;
     cuenta_bancaria?: string | null;
@@ -191,24 +197,41 @@ Deno.serve(async (req: Request) => {
   }
 
   // --- 4. Grupo (idempotente por nombre) -----------------------------------
-  const { data: grupo, error: eGrupo } = await svc
-    .from("grupos_venta")
-    .upsert(
-      {
-        nombre,
-        moneda: cuerpo.grupo?.moneda ?? "USD",
-        moneda_cuadre: cuerpo.grupo?.moneda_cuadre ?? "USD",
-        es_principal: false,
-        cupo_tabla: cuerpo.grupo?.cupo_tabla ?? 100,
-        comision_default: cuerpo.grupo?.comision_default ?? 2.5,
-        responsable: cuerpo.grupo?.responsable ?? null,
-        cuenta_bancaria: cuerpo.grupo?.cuenta_bancaria ?? null,
-        activo: true,
-      },
-      { onConflict: "nombre" }
-    )
-    .select("id")
-    .single();
+  const filaGrupo: Record<string, unknown> = {
+    nombre,
+    moneda: cuerpo.grupo?.moneda ?? "USD",
+    moneda_cuadre: cuerpo.grupo?.moneda_cuadre ?? "USD",
+    es_principal: false,
+    cupo_tabla: cuerpo.grupo?.cupo_tabla ?? 100,
+    comision_default: cuerpo.grupo?.comision_default ?? 2.5,
+    responsable: cuerpo.grupo?.responsable ?? null,
+    cuenta_bancaria: cuerpo.grupo?.cuenta_bancaria ?? null,
+    activo: true,
+  };
+  // Comisión por convenio de producto: null = hereda comision_default. Requiere
+  // sql/grupos_comisiones_convenio.sql; si la base todavía no tiene las columnas,
+  // se reintenta sin ellas para no perder el alta del grupo.
+  const convenio: Record<string, unknown> = {
+    comision_marcas: cuerpo.grupo?.comision_marcas ?? null,
+    comision_tablas: cuerpo.grupo?.comision_tablas ?? null,
+    comision_remates: cuerpo.grupo?.comision_remates ?? null,
+    comision_polla: cuerpo.grupo?.comision_polla ?? null,
+    comision_wps: cuerpo.grupo?.comision_wps ?? null,
+    comision_dupletas: cuerpo.grupo?.comision_dupletas ?? null,
+  };
+
+  const upsertGrupo = (datos: Record<string, unknown>) =>
+    svc
+      .from("grupos_venta")
+      .upsert(datos, { onConflict: "nombre" })
+      .select("id")
+      .single();
+
+  let { data: grupo, error: eGrupo } = await upsertGrupo({ ...filaGrupo, ...convenio });
+  if (eGrupo && /does not exist|schema cache|PGRST204|column/i.test(eGrupo.message)) {
+    // Base sin el SQL de comisiones: se crea el grupo sin el % por producto.
+    ({ data: grupo, error: eGrupo } = await upsertGrupo(filaGrupo));
+  }
   if (eGrupo || !grupo) {
     return json({ ok: false, error: `No se pudo crear el grupo: ${eGrupo?.message ?? "sin datos"}` }, 500);
   }

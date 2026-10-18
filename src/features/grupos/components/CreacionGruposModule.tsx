@@ -39,6 +39,13 @@ import {
   type NuevoUsuarioDeGrupo,
   type UsuarioDeGrupoCreado,
 } from "@/features/grupos/lib/grupos";
+import { CamposComisionesConvenio } from "@/features/grupos/components/CamposComisionesConvenio";
+import {
+  columnasConvenioDesde,
+  valoresConvenioInicial,
+  type ProductoConvenio,
+  type ValoresConvenio,
+} from "@/features/grupos/lib/comisiones-convenio";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -83,7 +90,7 @@ export function CreacionGruposModule() {
   const [nombre, setNombre] = useState("");
   const [moneda, setMoneda] = useState("USD");
   const [monedaCuadre, setMonedaCuadre] = useState("USD");
-  const [comision, setComision] = useState("2.5");
+  const [convenio, setConvenio] = useState<ValoresConvenio>(() => valoresConvenioInicial("2.5"));
   const [cupo, setCupo] = useState("100");
   const [responsable, setResponsable] = useState("");
 
@@ -160,15 +167,26 @@ export function CreacionGruposModule() {
     if (paso > 1) setPaso((p) => (p - 1) as 1 | 2 | 3);
   };
 
-  const armarEntrada = (): EcosistemaGrupoEntrada => ({
-    grupo: {
-      nombre,
-      moneda,
-      moneda_cuadre: monedaCuadre,
-      comision_default: porcentajeDeEntrada(comision),
-      cupo_tabla: parseInt(cupo, 10) || 100,
-      responsable: responsable.trim() || null,
-    },
+  const setConvenioCampo = (clave: ProductoConvenio, valor: string) =>
+    setConvenio((prev) => ({ ...prev, [clave]: valor }));
+
+  const armarEntrada = (): EcosistemaGrupoEntrada => {
+    const c = columnasConvenioDesde(convenio);
+    return {
+      grupo: {
+        nombre,
+        moneda,
+        moneda_cuadre: monedaCuadre,
+        comision_default: c.comision_default ?? porcentajeDeEntrada(convenio.entre_tercios),
+        comision_marcas: c.comision_marcas,
+        comision_tablas: c.comision_tablas,
+        comision_remates: c.comision_remates,
+        comision_polla: c.comision_polla,
+        comision_wps: c.comision_wps,
+        comision_dupletas: c.comision_dupletas,
+        cupo_tabla: parseInt(cupo, 10) || 100,
+        responsable: responsable.trim() || null,
+      },
     admin: {
       usuario: admin.usuario.trim(),
       nombre: admin.nombre.trim() || admin.usuario.trim(),
@@ -176,16 +194,17 @@ export function CreacionGruposModule() {
       clave: admin.clave,
       correo: admin.correo.trim() || undefined,
     },
-    operadores: operadores
-      .filter((o) => o.usuario.trim())
-      .map<NuevoUsuarioDeGrupo>((o) => ({
-        usuario: o.usuario.trim(),
-        nombre: o.nombre.trim() || o.usuario.trim(),
-        tipo: "operador",
-        clave: o.clave,
-        correo: o.correo.trim() || undefined,
-      })),
-  });
+      operadores: operadores
+        .filter((o) => o.usuario.trim())
+        .map<NuevoUsuarioDeGrupo>((o) => ({
+          usuario: o.usuario.trim(),
+          nombre: o.nombre.trim() || o.usuario.trim(),
+          tipo: "operador",
+          clave: o.clave,
+          correo: o.correo.trim() || undefined,
+        })),
+    };
+  };
 
   const enviar = async () => {
     if (enviando) return;
@@ -213,7 +232,7 @@ export function CreacionGruposModule() {
     setNombre("");
     setMoneda("USD");
     setMonedaCuadre("USD");
-    setComision("2.5");
+    setConvenio(valoresConvenioInicial("2.5"));
     setCupo("100");
     setResponsable("");
     setAdmin(operadorVacio());
@@ -433,21 +452,20 @@ export function CreacionGruposModule() {
               </select>
             </label>
             <Input
-              label="Comisión Gral. Jugadas entre Tercios (%)"
-              hint="Aplicada al monto decidido de cada ticket. Default 2,5%."
-              type="number"
-              step="0.1"
-              min="0"
-              value={comision}
-              onChange={(e) => setComision(e.target.value)}
-            />
-            <Input
               label="Cupos por tabla (inventario)"
               type="number"
               min="1"
               value={cupo}
               onChange={(e) => setCupo(e.target.value)}
             />
+            <div className="sm:col-span-2">
+              <CamposComisionesConvenio
+                valores={convenio}
+                onCambio={setConvenioCampo}
+                columnas={4}
+                ayuda="Comisión por convenio con el grupo principal, sobre el MONTO DECIDIDO. Vacío = hereda la de Entre Tercios (default 2,5%)."
+              />
+            </div>
             <div className="sm:col-span-2">
               <Input
                 label="Responsable (opcional)"
