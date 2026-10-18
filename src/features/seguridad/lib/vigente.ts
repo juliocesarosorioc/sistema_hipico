@@ -131,6 +131,27 @@ export function esPrincipalVigente(): boolean {
   return esPrincipal;
 }
 
+/** Nombre del TIPO de usuario de la sesión vigente ("" si no hay). */
+export function tipoUsuarioVigente(): string {
+  return tipoUsuario;
+}
+
+/**
+ * ¿La sesión tiene el PERFIL "Administrador Principal"?
+ *
+ * Es el dueño (`josorioc`, ver `esPrincipalVigente`) o cualquier usuario cuyo
+ * tipo sea el de administración ("admin" / "Administrador Principal"). Existe
+ * para operaciones reservadas al dueño del negocio POR ENCIMA de las capacidades
+ * del operador (p. ej. corregir, anular o restaurar jugadas desde los reportes
+ * de Marcas y Tablas Fijas): el operador puede tener la capacidad de gestión y
+ * aun así NO debe tocar las ventas desde el reporte.
+ */
+export function esPerfilAdministradorVigente(): boolean {
+  if (esPrincipal) return true;
+  const t = tipoUsuario.trim().toLowerCase();
+  return t === "admin" || t.includes("administrador principal");
+}
+
 /** true si la sesión puede ejecutar la capacidad. Sin sesión, false. */
 export function tieneCapacidad(...claves: string[]): boolean {
   if (esPrincipal) return true;

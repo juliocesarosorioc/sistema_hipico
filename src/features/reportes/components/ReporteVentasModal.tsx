@@ -29,6 +29,11 @@ import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { colorDeNumero, textoDeNumero } from "@/features/tablas/lib/tipos";
+import { puedeEditarDesdeReporte } from "@/features/reportes/lib/edicion-reporte";
+import {
+  ModalAccionJugadaReporte,
+  type ModoAccionJugada,
+} from "@/features/reportes/components/ModalAccionJugadaReporte";
 import {
   agruparPor,
   claveDe,
@@ -271,10 +276,13 @@ function DetalleTabla({
   filas,
   etiquetas,
   tema,
+  acciones,
 }: {
   filas: VentaTablaReporte[];
   etiquetas: EtiquetasReporteVentas;
   tema: TemaReporteVentas;
+  /** Si viene, la tabla trae la columna de acciones (perfil Administrador Principal). */
+  acciones?: { onAccion: (v: VentaTablaReporte, modo: ModoAccionJugada) => void };
 }) {
   if (filas.length === 0) {
     return <p className="px-3 py-4 text-center text-[11px] font-semibold text-slate-400">{etiquetas.sinDatos}</p>;
@@ -303,6 +311,7 @@ function DetalleTabla({
           <th className="px-2 py-1 text-right">Pagado</th>
           <th className="px-2 py-1 text-right">Comisión</th>
           <th className="px-2 py-1 text-center">Mon.</th>
+          {acciones && <th className="px-2 py-1 text-center">Acc.</th>}
         </tr>
       </thead>
       <tbody>
@@ -321,7 +330,13 @@ function DetalleTabla({
             <td className="px-2 py-1 text-slate-500">{v.grupo || "—"}</td>
             <td className="px-2 py-1 text-right font-bold tabular-nums text-slate-800">{fmt(v.monto)}</td>
             <td className="px-2 py-1 text-center">
-              <BadgeEstado estado={v.estado} />
+              {v.anulada ? (
+                <span className="inline-flex items-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-white">
+                  Anulada
+                </span>
+              ) : (
+                <BadgeEstado estado={v.estado} />
+              )}
             </td>
             <td className="px-2 py-1 text-right tabular-nums">
               <Money v={v.pagado} tono="font-bold text-emerald-700" />
@@ -330,6 +345,41 @@ function DetalleTabla({
               <Money v={v.comision} tono="font-bold text-violet-700" />
             </td>
             <td className="px-2 py-1 text-center text-[9px] font-bold text-slate-400">{v.moneda}</td>
+            {acciones && (
+              <td className="px-2 py-1 text-center">
+                <div className="flex items-center justify-center gap-1">
+                  {v.anulada ? (
+                    <button
+                      type="button"
+                      onClick={() => acciones.onAccion(v, "restaurar")}
+                      title="Restaurar jugada"
+                      className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-black text-emerald-700 hover:bg-emerald-100"
+                    >
+                      ♻️
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => acciones.onAccion(v, "editar")}
+                        title="Corregir jugada"
+                        className="rounded border border-sky-200 bg-sky-50 px-1 py-0.5 text-[10px] font-black text-sky-700 hover:bg-sky-100"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => acciones.onAccion(v, "anular")}
+                        title="Anular jugada"
+                        className="rounded border border-rose-200 bg-rose-50 px-1 py-0.5 text-[10px] font-black text-rose-700 hover:bg-rose-100"
+                      >
+                        🚫
+                      </button>
+                    </>
+                  )}
+                </div>
+              </td>
+            )}
           </tr>
         ))}
       </tbody>
@@ -364,6 +414,12 @@ export function ReporteVentasModal({
   const [data, setData] = useState<VentaTablaReporte[]>([]);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
+  /** Perfil Administrador Principal: habilita editar/anular/restaurar desde acá. */
+  const [puedeEditar, setPuedeEditar] = useState(false);
+  const [accion, setAccion] = useState<{ venta: VentaTablaReporte; modo: ModoAccionJugada } | null>(null);
+  const [aviso, setAviso] = useState("");
+  /** Fuerza recargar el día después de editar/anular/restaurar. */
+  const [recarga, setRecarga] = useState(0);
 
   // Al abrir: copia los filtros del Monitor y vuelve al estado limpio.
   useEffect(() => {
@@ -380,11 +436,15 @@ export function ReporteVentasModal({
     setBusqueda("");
     setFilaAbierta(null);
     setOrden({ key: "enRiesgo", dir: "desc" });
+    setAviso("");
+    setAccion(null);
+    // El perfil se resuelve al abrir: el store ya publicó los accesos vigentes.
+    setPuedeEditar(puedeEditarDesdeReporte());
     // Solo al abrir, para no pisar lo que el operador está mirando.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abierto]);
 
-  // Carga del día elegido.
+  // Carga del día elegido (y recarga tras una edición/anulación/restauración).
   useEffect(() => {
     if (!abierto) return;
     let vivo = true;
@@ -403,16 +463,17 @@ export function ReporteVentasModal({
     return () => {
       vivo = false;
     };
-  }, [abierto, fecha, cargar]);
+  }, [abierto, fecha, cargar, recarga]);
 
   useEffect(() => {
     if (!abierto) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCerrar();
+      // Con el modal de acción abierto, Escape cierra ESE modal (lo maneja él).
+      if (e.key === "Escape" && !accion) onCerrar();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [abierto, onCerrar]);
+  }, [abierto, onCerrar, accion]);
 
   const filtradas = useMemo(() => filtrarVentas(data, filtros), [data, filtros]);
   const total = useMemo(() => totalesDe(filtradas), [filtradas]);
@@ -450,6 +511,24 @@ export function ReporteVentasModal({
 
   const hayFiltro = Boolean(filtros.grupo || filtros.hipodromo || filtros.carrera || filtros.jugador);
 
+  /**
+   * Acciones del detalle (corregir/anular/restaurar). Solo existen para el perfil
+   * Administrador Principal: si no, la tabla se pinta sin la columna.
+   */
+  const accionesDetalle = useMemo(
+    () =>
+      puedeEditar
+        ? { onAccion: (v: VentaTablaReporte, m: ModoAccionJugada) => setAccion({ venta: v, modo: m }) }
+        : undefined,
+    [puedeEditar]
+  );
+
+  const alAplicar = (mensaje: string) => {
+    setAviso(mensaje);
+    setAccion(null);
+    setRecarga((n) => n + 1);
+  };
+
   const onOrdenar = (k: keyof TotalesReporte) =>
     setOrden((o) => (o.key === k ? { key: k, dir: o.dir === "desc" ? "asc" : "desc" } : { key: k, dir: "desc" }));
 
@@ -483,6 +562,16 @@ export function ReporteVentasModal({
           `,
         }}
       />
+
+      {accion && (
+        <ModalAccionJugadaReporte
+          key={`${accion.venta.id}-${accion.modo}`}
+          venta={accion.venta}
+          modo={accion.modo}
+          onCancelar={() => setAccion(null)}
+          onHecho={alAplicar}
+        />
+      )}
 
       <div className="rt-imprimible flex max-h-[97vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-2xl">
         {/* Cabecera */}
@@ -625,6 +714,12 @@ export function ReporteVentasModal({
             </p>
           )}
 
+          {aviso && (
+            <p className="rt-no-print mb-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+              ✅ {aviso}
+            </p>
+          )}
+
           {/* Título solo para impresión */}
           <div className="mb-2 hidden print:block">
             <h1 className="text-center text-base font-black uppercase text-black">
@@ -668,7 +763,7 @@ export function ReporteVentasModal({
             </div>
           ) : modo === "detalle" ? (
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-              <DetalleTabla filas={detalle} etiquetas={etiquetas} tema={tema} />
+              <DetalleTabla filas={detalle} etiquetas={etiquetas} tema={tema} acciones={accionesDetalle} />
             </div>
           ) : (
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -710,6 +805,7 @@ export function ReporteVentasModal({
                         tickets={filtradas.filter((v) => claveDe(v, dimension) === f.clave)}
                         etiquetas={etiquetas}
                         tema={tema}
+                        acciones={accionesDetalle}
                       />
                     );
                   })}
@@ -749,6 +845,7 @@ function FragmentFila({
   tickets,
   etiquetas,
   tema,
+  acciones,
 }: {
   fila: FilaReporte;
   abierta: boolean;
@@ -756,6 +853,7 @@ function FragmentFila({
   tickets: VentaTablaReporte[];
   etiquetas: EtiquetasReporteVentas;
   tema: TemaReporteVentas;
+  acciones?: { onAccion: (v: VentaTablaReporte, modo: ModoAccionJugada) => void };
 }) {
   const balanceTono = fila.balance > 0 ? "text-emerald-700" : fila.balance < 0 ? "text-rose-700" : "text-slate-400";
   return (
@@ -796,7 +894,7 @@ function FragmentFila({
         <tr className="bg-white">
           <td colSpan={12} className="p-0">
             <div className={`border-y-2 ${tema.borde} bg-white px-2 py-2`}>
-              <DetalleTabla filas={tickets} etiquetas={etiquetas} tema={tema} />
+              <DetalleTabla filas={tickets} etiquetas={etiquetas} tema={tema} acciones={acciones} />
             </div>
           </td>
         </tr>

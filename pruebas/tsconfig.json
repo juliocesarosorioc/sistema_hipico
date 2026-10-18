@@ -79,6 +79,7 @@
     "./pp-1010.test.ts",
     "./saldos-jornada.test.ts",
     "./reporte-tablas.test.ts",
+    "./reporte-edicion.test.ts",
     "./comision-cero.test.ts",
     "./relacion-observaciones.test.ts",
     "./agrupar-hipodromos.test.ts",

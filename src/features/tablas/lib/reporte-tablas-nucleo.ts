@@ -37,6 +37,8 @@ export type VentaTablaReporte = {
   pagado: number;
   comision: number;
   moneda: string;
+  /** true si la jugada fue ANULADA (auditoría del Monitor de Jugadas). */
+  anulada: boolean;
   /** Día de la carrera (nota `fecha_carrera`) o, si falta, el de la venta. */
   fecha: string;
   /** Día LOCAL de la venta (`fecha_registro`); patrón de consulta adicional. */
@@ -155,6 +157,7 @@ export function normalizarVenta(row: Record<string, unknown>): VentaTablaReporte
     pagado: cifra(row.premio_pagar),
     comision: cifra(row.comision_pagada),
     moneda: texto(row.moneda).toUpperCase() || "USD",
+    anulada: row.anulada === true,
     fecha: fechaDeNota(row.nota_auditoria) || texto(row.fecha_registro).slice(0, 10),
     fechaVenta: diaLocalDeVenta(row.fecha_registro),
   };
