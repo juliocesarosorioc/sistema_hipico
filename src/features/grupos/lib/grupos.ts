@@ -142,7 +142,7 @@ export function comisionJugadasDeGrupo(
  */
 export function porcentajeDeEntrada(
   valor: string | number | null | undefined,
-  porDefecto = 2.5
+  porDefecto = 5
 ): number {
   const t = String(valor ?? "").trim().replace(",", ".");
   if (!t) return porDefecto;
@@ -351,7 +351,7 @@ export async function crearGrupo(datos: Partial<GrupoRow>): Promise<{ ok: boolea
           nombre: String(datos.nombre ?? ""),
           moneda: datos.moneda ?? "USD",
           cupo_tabla: datos.cupo_tabla ?? 100,
-          comision_default: datos.comision_default ?? 2.5,
+          comision_default: datos.comision_default ?? 5,
           responsable: datos.responsable ?? null,
           cuenta_bancaria: datos.cuenta_bancaria ?? null,
           es_principal: Boolean(datos.es_principal),
@@ -1025,7 +1025,7 @@ export async function crearEcosistemaGrupo(
       moneda: entrada.grupo.moneda ?? "USD",
       moneda_cuadre: entrada.grupo.moneda_cuadre ?? "USD",
       cupo_tabla: entrada.grupo.cupo_tabla ?? 100,
-      comision_default: entrada.grupo.comision_default ?? 2.5,
+      comision_default: entrada.grupo.comision_default ?? 5,
       responsable: entrada.grupo.responsable ?? null,
       cuenta_bancaria: entrada.grupo.cuenta_bancaria ?? null,
       es_principal: false,
@@ -1037,7 +1037,7 @@ export async function crearEcosistemaGrupo(
     const creado = await crearGrupo({
       nombre: nombreGrupo,
       moneda: entrada.grupo.moneda ?? "USD",
-      comision_default: entrada.grupo.comision_default ?? 2.5,
+      comision_default: entrada.grupo.comision_default ?? 5,
       cupo_tabla: entrada.grupo.cupo_tabla ?? 100,
       responsable: entrada.grupo.responsable ?? null,
     });
