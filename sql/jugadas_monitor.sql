@@ -113,6 +113,9 @@ from (
         t.hipodromo,
         t.carrera,
         t.fecha_carrera,
+        -- Dimensión de grupo: tiene que salir en el SELECT además del GROUP BY,
+        -- o el alias `g` no expone `grupo_cobro_id` (42703) al usarlo arriba.
+        t.grupo_cobro_id,
         count(*)                                                    as total_jugadas,
         coalesce(sum(t.monto), 0)                                   as total_monto,
         coalesce(sum(t.premio), 0)                                  as total_premio,
