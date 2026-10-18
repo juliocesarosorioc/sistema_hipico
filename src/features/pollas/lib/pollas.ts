@@ -67,6 +67,12 @@ export type Polla = {
     segundo: number | null;
     tercero: number | null;
   };
+  /** % de la bolsa (recaudado − comisión) por puesto. Se combina con `premios`. */
+  premiosPct: {
+    primero: number | null;
+    segundo: number | null;
+    tercero: number | null;
+  };
   /** Texto del premio cuando no es dinero ("una caja de ron"). */
   premiosTexto: { primero: string | null; segundo: string | null; tercero: string | null };
   estado: "Abierta" | "Cerrada" | "Liquidada";
@@ -122,6 +128,7 @@ export type DatosPolla = {
   acumuladoPct?: number;
   metaPuntos?: number;
   premios?: { primero?: number | null; segundo?: number | null; tercero?: number | null };
+  premiosPct?: { primero?: number | null; segundo?: number | null; tercero?: number | null };
   premiosTexto?: { primero?: string | null; segundo?: string | null; tercero?: string | null };
   estado?: string;
   notas?: string | null;
@@ -148,29 +155,34 @@ function mensajeErrorRpc(texto: string | undefined, fallback: string): string {
 // ============================================================================
 
 /**
- * Convierte una fila de la matriz en la carrera que espera el core.
+ * Trae la carrera del maestro al tipo que consume la Polla.
  *
- * Lo bloqueante es la unión de RETIRADOS e INV de Pollas, y son dos listas
- * distintas a propósito: el retiro saca al ejemplar de todos los módulos (Tablas,
- * Marcas, Taquilla, Remates y Polla), y el INV de Pollas solo de acá. Por eso NO
- * se suma `invalidados` (que es el de Remates): un ejemplar invalidado en una
- * subasta sigue siendo jugable en una Polla.
+ * Se ofrecen TODOS los ejemplares, incluidos los que NO valen. La regla cambió:
+ * antes se escondían y el jugador no podía escribirlos; ahora si escribió un
+ * papel con un ejemplar que no vale se COBRA igual y la pantalla lo resalta con
+ * una leyenda para que lo cambie. Al liquidar, ese ejemplar no puntúa.
+ *
+ * Las dos listas de "no valen" se separan: `retirados` saca al ejemplar de todos
+ * los módulos y no se desmarca desde una Polla; `invalidados` es el INV de Pollas
+ * (`invalidado_polla`), que la casa marca solo para este juego. Por eso NO se
+ * suma `invalidados` de Remates: un ejemplar invalidado en una subasta sigue
+ * siendo jugable en una Polla.
  */
 export function aCarreraDePolla(m: FilaCarreraMaestro): CarreraPolla {
   const c = aCarreraCentral(m);
-  const bloqueantes = new Set<string>([
-    ...(c.retirados ?? []).map((x) => String(x).trim()),
-    ...(c.invalidadosPolla ?? []).map((x) => String(x).trim()),
-  ]);
+  const retirados = (c.retirados ?? []).map((x) => String(x).trim()).filter(Boolean);
+  const invPolla = (c.invalidadosPolla ?? []).map((x) => String(x).trim()).filter(Boolean);
   return {
     clave: claveDeCarrera(c.fecha, c.hipodromo, c.carrera),
     fecha: c.fecha,
     hipodromo: c.hipodromo,
     carrera: c.carrera,
-    ejemplares: (c.caballos ?? [])
-      .filter((x) => !bloqueantes.has(String(x.numero).trim()))
-      .map((x) => ({ numero: String(x.numero).trim(), nombre: x.nombre ?? null })),
-    invalidados: [...bloqueantes],
+    ejemplares: (c.caballos ?? []).map((x) => ({
+      numero: String(x.numero).trim(),
+      nombre: x.nombre ?? null,
+    })),
+    invalidados: [...new Set([...retirados, ...invPolla])],
+    retirados,
   };
 }
 
@@ -257,6 +269,11 @@ function normalizarPolla(raw: Record<string, unknown>): Polla {
       segundo: n(raw.premio_2o),
       tercero: n(raw.premio_3o),
     },
+    premiosPct: {
+      primero: n(raw.premio_1o_pct),
+      segundo: n(raw.premio_2o_pct),
+      tercero: n(raw.premio_3o_pct),
+    },
     premiosTexto: {
       primero: raw.premio_1o_txt != null ? String(raw.premio_1o_txt) : null,
       segundo: raw.premio_2o_txt != null ? String(raw.premio_2o_txt) : null,
@@ -277,6 +294,7 @@ export function configDePolla(p: Polla): ConfigPolla {
     acumuladoPct: p.acumuladoPct,
     metaPuntos: p.metaPuntos,
     premios: { ...p.premios },
+    premiosPct: { ...p.premiosPct },
   };
 }
 
@@ -345,6 +363,9 @@ export async function guardarPolla(id: string | null, datos: DatosPolla): Promis
         premio_1o: datos.premios?.primero ?? null,
         premio_2o: datos.premios?.segundo ?? null,
         premio_3o: datos.premios?.tercero ?? null,
+        premio_1o_pct: datos.premiosPct?.primero ?? null,
+        premio_2o_pct: datos.premiosPct?.segundo ?? null,
+        premio_3o_pct: datos.premiosPct?.tercero ?? null,
         premio_1o_txt: datos.premiosTexto?.primero ?? null,
         premio_2o_txt: datos.premiosTexto?.segundo ?? null,
         premio_3o_txt: datos.premiosTexto?.tercero ?? null,

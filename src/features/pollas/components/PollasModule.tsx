@@ -31,7 +31,8 @@ import {
   ordenarRanking,
   estadoAcumulado,
   calcularFinanzasPolla,
-  etiquetaPremio,
+  etiquetaPremioPuesto,
+  leyendasUnicas,
   textoCarreras,
   type CarreraPolla,
   type Polla,
@@ -315,6 +316,11 @@ export function PollasModule() {
               toast(rev.invalidas[0].error, "error");
               return false;
             }
+            // Un ejemplar que no vale NO impide cobrar: se registra y se avisa.
+            const avisos = leyendasUnicas(rev.avisos);
+            if (avisos.length > 0) {
+              toast(avisos[0], "warning");
+            }
             const r = await registrarVentaPolla({
               pollaId: ventaPara.id,
               clienteId,
@@ -487,21 +493,26 @@ function TarjetaPolla({
       <div className="mt-3 flex flex-wrap gap-4 border-y border-line py-2 text-sm">
         {(
           [
-            ["1.º", polla.premios.primero, polla.premiosTexto.primero],
-            ["2.º", polla.premios.segundo, polla.premiosTexto.segundo],
-            ["3.º", polla.premios.tercero, polla.premiosTexto.tercero],
+            ["1.º", polla.premios.primero, polla.premiosPct.primero, polla.premiosTexto.primero],
+            ["2.º", polla.premios.segundo, polla.premiosPct.segundo, polla.premiosTexto.segundo],
+            ["3.º", polla.premios.tercero, polla.premiosPct.tercero, polla.premiosTexto.tercero],
           ] as const
-        ).map(([puesto, monto, txt]) => (
+        ).map(([puesto, monto, pct, txt]) => (
           <span key={puesto} className="text-slate-600">
             {puesto}{" "}
-            <strong className="text-slate-900">{etiquetaPremio(monto, txt)}</strong>
+            <strong className="text-slate-900">{etiquetaPremioPuesto(monto, pct, txt)}</strong>
           </span>
         ))}
       </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+      <div className="mt-3 grid gap-3 sm:grid-cols-4">
         <Dato titulo="Combinaciones vendidas" valor={String(comboTotal)} />
         <Dato titulo="Vendido" valor={formato(fin.ventaBruta)} />
+        <Dato
+          titulo="Bolsa de premios"
+          valor={formato(fin.bolsaPremios)}
+          pie={`Recaudado − ${config.comisionPct}% comisión`}
+        />
         <Dato titulo="Acumulado disponible" valor={formato(saldo)} pie={`Meta ${config.metaPuntos} pts`} />
       </div>
 

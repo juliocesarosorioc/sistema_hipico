@@ -13,14 +13,19 @@ import {
   MAX_COMBINACIONES,
   PUNTOS_POR_DEFECTO,
   aporteAcumulado,
+  bolsaPremios,
   calcularFinanzasPolla,
+  comisionDeVenta,
   configPorDefecto,
   contarCombinaciones,
   esInvalido,
   ejemplaresJugables,
   estadoAcumulado,
   etiquetaPremio,
+  etiquetaPremioPuesto,
+  leyendasUnicas,
   liquidarPolla,
+  noValenDeCombinacion,
   normalizarNumero,
   ordenarRanking,
   partirGrupos,
@@ -198,43 +203,59 @@ ok("el error trae el número real", explotado.ok ? false : /65\.536/.test(explot
 eq("y el tope es 2000", MAX_COMBINACIONES, 2000);
 
 // ===========================================================================
-console.log("\n[6) inválidos y retirados: ninguna combinación puede colocarlos");
+console.log("\n[6) inválidos y retirados: se cobran pero se avisan con una leyenda");
 // ===========================================================================
 ok("el 7 está invalidado en la 3ª", esInvalido(C3, "7"));
 ok("el 4 no está invalidado", !esInvalido(C3, "4"));
 ok("'07' reconoce al '7' invalidado", esInvalido(C3, "07"));
-eq("el 7 no se ofrece en la 3ª", ejemplaresJugables(C3).map((e) => e.numero), ["1", "2", "3", "4", "5", "6", "8"]);
+eq("el 7 no se ofrece para armar combinaciones", ejemplaresJugables(C3).map((e) => e.numero), ["1", "2", "3", "4", "5", "6", "8"]);
 eq("las demás carreras ofrecen los 8", ejemplaresJugables(C1).length, 8);
 ok("un vacío cuenta como inválido", esInvalido(C1, ""));
 ok("un texto no es un número válido", esInvalido(C1, "abc"));
 ok("un número con signo tampoco", esInvalido(C1, "-3"));
 
+// REGLA NUEVA: un ejemplar que no vale NO bloquea el cobro (el jugador ya
+// escribió el papel). Se registra y se devuelve la leyenda para cambiarlo.
 const conInvalido = sel(SEIS, ["1", "2", "7", "4", "5", "6"]);
 const r1 = revisarCombinacion(conInvalido, SEIS);
-ok("no se puede cobrar una combinación con inválido", !r1.ok);
-ok("el error nombra el ejemplar y la carrera", r1.ok ? false : /N° 7 de la 3ª carrera de RINCONADA/.test(r1.error));
+ok("un ejemplar que no vale SE PUEDE cobrar", r1.ok);
+eq("pero deja un aviso", r1.ok ? r1.avisos.length : -1, 1);
+ok(
+  "el aviso nombra el ejemplar y la carrera",
+  r1.ok ? /N° 7 de la 3ª carrera de RINCONADA/.test(r1.avisos[0]) : false
+);
+ok("y pide cambiarlo", r1.ok ? /cambiarlo/.test(r1.avisos[0]) : false);
+
+const noValen = noValenDeCombinacion(conInvalido, SEIS);
+eq("noValenDeCombinacion señala una", noValen.length, 1);
+eq("y es el 7 de la 3ª", [noValen[0].numero, noValen[0].carrera.carrera], ["7", 3]);
 
 const conInexistente = sel(SEIS, ["1", "2", "99", "4", "5", "6"]);
 const r2 = revisarCombinacion(conInexistente, SEIS);
-ok("tampoco un ejemplar que no está en la carrera", !r2.ok);
+ok("un ejemplar que no está en la carrera SÍ se rechaza", !r2.ok);
 
 const buena = sel(SEIS, ["1", "2", "3", "4", "5", "6"]);
-ok("una combinación sin inválidos pasa", revisarCombinacion(buena, SEIS).ok);
+const rBuena = revisarCombinacion(buena, SEIS);
+ok("una combinación sin inválidos pasa", rBuena.ok);
+eq("y sin avisos", rBuena.ok ? rBuena.avisos.length : -1, 0);
 ok("con el Nº repetido en dos grupos distintos NO es la misma carrera", revisarCombinacion(buena, SEIS).ok);
 ok("no puede traer una carrera de más", !revisarCombinacion([...buena, { claveCarrera: "X", numero: "1" }], SEIS).ok);
 ok("no puede traer una carrera de menos", !revisarCombinacion(buena.slice(0, 5), SEIS).ok);
 
-// Una venta de 40 combinaciones donde 2 son imposibles: se aceptan 38.
-// La primera tiene el 7 invalidado en la 3ª; la segunda, un 99 que no existe.
+// Una venta de 40 combinaciones donde una es imposible (un 99 inexistente) y
+// otra tiene el 7 que no vale: se cobran 39 y la del 7 va con leyenda.
 const ventaMixta = [
   ...Array.from({ length: 38 }, () => buena),
   sel(SEIS, ["1", "2", "7", "4", "5", "6"]),
   sel(SEIS, ["99", "2", "3", "4", "5", "6"]),
 ];
 const rev = revisarVenta(ventaMixta, SEIS);
-eq("de 40, se aceptan 38", rev.validas.length, 38);
-eq("y se señalan las 2 malas", rev.invalidas.length, 2);
+eq("de 40, se cobran 39 (la del 7 se avisa, no se rechaza)", rev.validas.length, 39);
+eq("y solo la del 99 que no existe queda afuera", rev.invalidas.length, 1);
+eq("con un aviso por la del 7", rev.avisos.length, 1);
 ok("cada mala trae su motivo", rev.invalidas.every((i) => i.error.length > 10));
+ok("el aviso nombra el ejemplar que no vale", /N° 7/.test(rev.avisos[0].aviso));
+eq("las leyendas únicas no se repiten", leyendasUnicas(rev.avisos).length, 1);
 
 // ===========================================================================
 console.log("\n[7] puntaje: 5 al 1º, 3 al 2º, 1 al 3º, 0 al resto");
@@ -345,6 +366,56 @@ eq("3 partes de 100", tres, [33.34, 33.33, 33.33]);
 eq("no se pierde un centavo", tres.reduce((a, x) => a + x, 0), 100);
 eq("repartir entre 0 no revienta", repartirEntre(0, 100), []);
 eq("repartir un monto negativo da 0", repartirEntre(2, -50), [0, 0]);
+
+// ===========================================================================
+console.log("\n[10b] la bolsa (recaudado − comisión) y el premio por % o mínimo");
+// ===========================================================================
+// La bolsa es lo recaudado menos la comisión: el monto del premio de la Polla.
+eq("comisión del 20% de 100", comisionDeVenta(100, 20), 20);
+eq("bolsa de 100 con 20% de comisión", bolsaPremios(100, 20), 80);
+eq("sin comisión la bolsa es todo", bolsaPremios(100, 0), 100);
+eq("sin venta la bolsa es 0", bolsaPremios(0, 20), 0);
+
+// Solo %: una parte de la bolsa por puesto.
+const cfgPct = configPorDefecto(SEIS, 10);
+cfgPct.comisionPct = 0;
+cfgPct.premiosPct = { primero: 50, segundo: 30, tercero: 20 };
+eq("solo %: 50% de 200", premioDePuesto(1, cfgPct, 200), 100);
+eq("solo %: 30% de 200", premioDePuesto(2, cfgPct, 200), 60);
+eq("solo %: 20% de 200", premioDePuesto(3, cfgPct, 200), 40);
+
+// Con mínimo garantizado: se paga el MAYOR entre el % de la bolsa y el monto.
+const cfgMin = configPorDefecto(SEIS, 10);
+cfgMin.premios = { primero: 500, segundo: null, tercero: null };
+cfgMin.premiosPct = { primero: 50, segundo: null, tercero: null };
+eq("con mínimo: gana el mínimo si la bolsa es chica", premioDePuesto(1, cfgMin, 100), 500);
+eq("con mínimo: gana el % si la bolsa es grande", premioDePuesto(1, cfgMin, 2000), 1000);
+
+// Solo mínimo (sin %): paga el monto fijo aunque la bolsa sea enorme. Es el
+// comportamiento de las Pollas ya creadas, que solo tienen `premio_*`.
+eq("solo mínimo paga el monto", premioDePuesto(1, cfg, 9999), 100);
+eq("un puesto sin configurar no paga", premioDePuesto(2, configPorDefecto(SEIS, 10), 9999), 0);
+
+// El premio de la Polla sale de la plata que REALMENTE entró (`pagado`).
+const dosCien: VentaPuntuada[] = [
+  { cliente_id: "a", cliente: "Ana", combinaciones: [perfecta], puntosTotales: 30, pagado: 100 },
+  { cliente_id: "b", cliente: "Beto", combinaciones: [perfecta], puntosTotales: 30, pagado: 100 },
+];
+const rBolsa = liquidarPolla(dosCien, cfgPct, 0);
+eq("el premio sale de la bolsa (recaudado)", rBolsa.map((f) => f.premio), [50, 50]);
+eq("repartir la bolsa no pierde plata", rBolsa.reduce((a, f) => a + f.premio, 0), 100);
+
+const finBolsa = calcularFinanzasPolla(20, cfgPct, 0, []);
+eq("la bolsa en finanzas", finBolsa.bolsaPremios, 200);
+eq("y se paga por puesto", finBolsa.premiosPagados, 200);
+eq("no descuadra repartiendo toda la bolsa", finBolsa.descuadre, false);
+
+// Etiquetas del premio para la pantalla.
+eq("etiqueta solo %", etiquetaPremioPuesto(null, 30), "30% de la bolsa");
+eq("etiqueta solo mínimo", etiquetaPremioPuesto(100, null), "mín. 100");
+eq("etiqueta combinada", etiquetaPremioPuesto(100, 30), "30% de la bolsa + mín. 100");
+eq("etiqueta en especie", etiquetaPremioPuesto(null, null, "una caja de ron"), "una caja de ron");
+eq("sin nada, no paga", etiquetaPremioPuesto(null, null), "No paga");
 
 // ===========================================================================
 console.log("\n[11] el acumulado de los 30 puntos");

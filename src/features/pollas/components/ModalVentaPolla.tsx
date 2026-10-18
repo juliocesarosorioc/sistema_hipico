@@ -9,7 +9,10 @@ import {
   revisarVenta,
   totalVenta,
   textoCombinacion,
+  esInvalido,
+  leyendasUnicas,
   type CarreraPolla,
+  type ComboAviso,
   type Polla,
 } from "@/features/pollas/lib/pollas";
 import type { ClienteRow } from "@/features/clientes/lib/clientes";
@@ -67,26 +70,42 @@ export function ModalVentaPolla({ abierto, polla, clientes, onCerrar, onConfirma
   /**
    * Previsualización en vivo del texto escrito.
    *
-   * `revisarVenta` devuelve las combinaciones Y las que no se pueden cobrar, así
-   * que acá se puede decir "8 combinaciones, la tercera tiene el 7 que no corre"
-   * en vez de un error genérico cuando se confirma.
+   * `revisarVenta` devuelve las combinaciones, las que no se pueden cobrar y las
+   * que se cobran con AVISO. Un ejemplar que no vale ya no bloquea: se cobra y se
+   * avisa con una leyenda para que el jugador lo cambie. Solo una combinación
+   * imposible (un número que no está en la carrera) queda afuera.
    */
   const vista = useMemo(() => {
     if (!texto.trim()) {
-      return { combinaciones: [], invalidas: [], total: 0, error: null as string | null };
+      return {
+        combinaciones: [],
+        invalidas: [],
+        avisos: [] as ComboAviso[],
+        total: 0,
+        error: null as string | null,
+      };
     }
     const parseo = parsearSeleccion(texto, carreras);
     if (!parseo.ok) {
-      return { combinaciones: [], invalidas: [], total: 0, error: parseo.error };
+      return {
+        combinaciones: [],
+        invalidas: [],
+        avisos: [] as ComboAviso[],
+        total: 0,
+        error: parseo.error,
+      };
     }
     const rev = revisarVenta(parseo.combinaciones, carreras);
     return {
       combinaciones: rev.validas,
       invalidas: rev.invalidas,
+      avisos: rev.avisos,
       total: totalVenta(rev.validas.length, polla.precioUnitario),
       error: null,
     };
   }, [texto, carreras, polla.precioUnitario]);
+
+  const leyendas = useMemo(() => leyendasUnicas(vista.avisos), [vista.avisos]);
 
   const cerrar = () => {
     setTexto("");
@@ -146,11 +165,30 @@ export function ModalVentaPolla({ abierto, polla, clientes, onCerrar, onConfirma
                     {nombreHipodromoParaMostrar(c.hipodromo)} {c.carrera}ª
                   </span>{" "}
                   <span className="text-slate-500">
-                    ({c.ejemplares.map((e) => e.numero).join(", ")})
+                    (
+                    {c.ejemplares.map((e, i) => {
+                      const no = esInvalido(c, e.numero);
+                      return (
+                        <span key={`${e.numero}-${i}`}>
+                          {i > 0 ? ", " : ""}
+                          <span
+                            className={
+                              no ? "font-bold text-danger-600 line-through" : undefined
+                            }
+                          >
+                            {e.numero}
+                          </span>
+                        </span>
+                      );
+                    })}
+                    )
                   </span>
                   {c.invalidados && c.invalidados.length > 0 && (
-                    <span className="ml-1 text-danger-600">
-                      · no corre: {c.invalidados.join(", ")}
+                    <span
+                      className="ml-1 text-danger-600"
+                      title="No valen: se pueden registrar, pero se resaltan con una leyenda"
+                    >
+                      · no valen: {c.invalidados.join(", ")}
                     </span>
                   )}
                 </li>
@@ -214,15 +252,39 @@ export function ModalVentaPolla({ abierto, polla, clientes, onCerrar, onConfirma
               </ul>
             )}
 
+            {leyendas.length > 0 && (
+              <div className="mt-2 space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-2 text-xs text-amber-800">
+                <p className="font-semibold">
+                  Atención: hay ejemplares que no valen. Se cobra igual, pero el jugador debe
+                  cambiarlos.
+                </p>
+                <ul className="space-y-1">
+                  {leyendas.map((a, n) => (
+                    <li key={n}>{a}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {vista.combinaciones.length > 0 && (
               <details className="mt-2 border-t border-line pt-2 text-xs">
                 <summary className="cursor-pointer text-slate-600">
                   Ver las {vista.combinaciones.length} combinaciones
                 </summary>
                 <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto font-mono text-slate-600">
-                  {vista.combinaciones.map((c, n) => (
-                    <li key={n}>{textoCombinacion(c, carreras)}</li>
-                  ))}
+                  {vista.combinaciones.map((c, n) => {
+                    const conAviso = vista.avisos.some((a) => a.combinacion === c);
+                    return (
+                      <li
+                        key={n}
+                        className={conAviso ? "font-bold text-danger-600" : undefined}
+                        title={conAviso ? "Tiene un ejemplar que no vale" : undefined}
+                      >
+                        {textoCombinacion(c, carreras)}
+                        {conAviso ? " ⚠️" : ""}
+                      </li>
+                    );
+                  })}
                 </ul>
               </details>
             )}

@@ -110,10 +110,19 @@ export type CarreraPolla = {
   carrera: number;
   ejemplares: EjemplarPolla[];
   /**
-   * Números que NO se pueden colocar en una combinación: retirados de la carrera
-   * central, o invalidados para Polla.
+   * Ejemplares que NO valen para esta carrera en la Polla: los retirados de la
+   * matriz central más los invalidados para Pollas (`invalidado_polla`). Se
+   * puede REGISTRAR una combinación con ellos —el jugador ya escribió el
+   * papel— pero la pantalla los resalta con una leyenda para que la cambie, y
+   * al liquidar no puntúan.
    */
   invalidados?: string[];
+  /**
+   * Solo los retirados. Se separa de `invalidados` para que la pantalla sepa
+   * cuáles NO se pueden desmarcar: un retiro saca al ejemplar de todos los
+   * módulos y no se revierte desde una Polla.
+   */
+  retirados?: string[];
 };
 
 /** Un ejemplar elegido para una carrera. */
@@ -139,8 +148,18 @@ export type ConfigPolla = {
   acumuladoPct: number;
   /** Puntos necesarios para cobrar el acumulado. */
   metaPuntos: number;
-  /** Premios por puesto. `null` = ese puesto no paga. */
+  /**
+   * Monto fijo por puesto (mínimo garantizado). `null` = ese puesto no paga por
+   * monto fijo.
+   */
   premios: { primero: number | null; segundo: number | null; tercero: number | null };
+  /**
+   * Premio por puesto como % de la BOLSA (recaudado − comisión). Se combina con
+   * `premios`: se paga el MAYOR de los dos. Con los dos en `null`/0, ese puesto
+   * no paga. Es el modo "porcentaje con mínimo garantizado": cargá el % y, si
+   * querés, el piso en dinero.
+   */
+  premiosPct: { primero: number | null; segundo: number | null; tercero: number | null };
 };
 
 /** Configuración con los defaults ya resueltos. */
@@ -153,6 +172,7 @@ export function configPorDefecto(carreras: CarreraPolla[], precioUnitario = 0): 
     acumuladoPct: 0,
     metaPuntos: META_ACUMULADO_POR_DEFECTO,
     premios: { primero: null, segundo: null, tercero: null },
+    premiosPct: { primero: null, segundo: null, tercero: null },
   };
 }
 
@@ -275,12 +295,12 @@ export function parsearSeleccion(texto: string, carreras: CarreraPolla[]): Resul
 // ============================================================================
 
 /**
- * ¿Se puede colocar este Nº en una combinación?
+ * ¿Este Nº NO vale para la carrera?
  *
- * Responde `true` cuando NO se puede, y covers los tres casos: el número está en
- * la lista de inválidos, viene vacío, o no es un número. El último caso importa:
- * preguntar solo "¿está en la lista?" hacía que "abc" pasara como ejemplar
- * colocable, porque un texto no está en ninguna lista.
+ * Responde `true` cuando el número está invalidado (retirado o INV de Pollas),
+ * viene vacío o no es un número. Ahora es la marca que dispara la LEYENDA en
+ * pantalla: ya NO bloquea el cobro. El jugador puede haber escrito el papel
+ * antes del retiro, y la regla es registrarlo para poder avisarle que lo cambie.
  */
 export function esInvalido(carrera: CarreraPolla, numero: unknown): boolean {
   const n = normalizarNumero(numero);
@@ -289,12 +309,36 @@ export function esInvalido(carrera: CarreraPolla, numero: unknown): boolean {
   return (carrera.invalidados ?? []).some((x) => normalizarNumero(x) === n);
 }
 
+/** La leyenda con la que se avisa al jugador que ese ejemplar no vale. */
+export function leyendaNoVale(carrera: CarreraPolla, numero: unknown): string {
+  return (
+    `⚠️ El ejemplar N° ${normalizarNumero(numero)} de la ${carrera.carrera}ª carrera de ` +
+    `${carrera.hipodromo} no vale: hay que cambiarlo por otro.`
+  );
+}
+
+/** Los ejemplares de una combinación que no valen, con la carrera a la que pertenecen. */
+export function noValenDeCombinacion(
+  seleccion: Combinacion,
+  carreras: CarreraPolla[]
+): { carrera: CarreraPolla; numero: string }[] {
+  const porClave = new Map(carreras.map((c) => [c.clave, c]));
+  const fuera: { carrera: CarreraPolla; numero: string }[] = [];
+  for (const sel of seleccion) {
+    const carrera = porClave.get(sel.claveCarrera);
+    if (carrera && esInvalido(carrera, sel.numero)) {
+      fuera.push({ carrera, numero: normalizarNumero(sel.numero) });
+    }
+  }
+  return fuera;
+}
+
 /**
- * Ejemplares que se pueden colocar en una combinación de esa carrera.
+ * Ejemplares que se pueden colocar SIN advertencia en esa carrera.
  *
- * Los inválidos NO se ofrecen: es la regla del juego ("ninguna combinación puede
- * colocarlos") y además evita el reclamo. Si el ejemplar aparece en pantalla y
- * después se invalida, el jugador ya pagó por una combinación imposible.
+ * Los que no valen YA NO se esconden de `carrera.ejemplares` (la lista completa se
+ * usa para mostrarlos y avisar), pero esta vista —para sugerencias y armado de
+ * combinaciones— sigue devolviendo solo los que valen.
  */
 export function ejemplaresJugables(carrera: CarreraPolla): EjemplarPolla[] {
   return (carrera.ejemplares ?? []).filter((e) => !esInvalido(carrera, e.numero));
@@ -303,19 +347,21 @@ export function ejemplaresJugables(carrera: CarreraPolla): EjemplarPolla[] {
 /**
  * Revisa una combinación antes de cobrarla.
  *
- * Se valida en DOS momentos y por razones distintas: al cobrar (el jugador no
- * puede comprar una combinación imposible) y al liquidar (un ejemplar puede
- * invalidarse DESPUÉS de la venta, y esa combinación tiene que quedar sin puntos
- * en vez de puntuar como si fuera válida).
+ * Lo que BLOQUEA es la imposibilidad física: un ejemplar que no está en la
+ * carrera, un grupo vacío o una combinación con largo distinto. Lo que NO
+ * bloquea es un ejemplar que no vale: se cobra igual —el jugador ya escribió el
+ * papel— pero se devuelve el aviso para que la pantalla lo resalte con la
+ * leyenda y la casa le diga que lo cambie. Al liquidar, ese ejemplar no puntúa.
  */
 export function revisarCombinacion(
   seleccion: Combinacion,
   carreras: CarreraPolla[]
-): { ok: true } | { ok: false; error: string } {
+): { ok: true; avisos: string[] } | { ok: false; error: string } {
   const porClave = new Map(carreras.map((c) => [c.clave, c]));
   if (seleccion.length !== carreras.length) {
     return { ok: false, error: "La combinación no tiene un ejemplar por cada carrera." };
   }
+  const avisos: string[] = [];
   for (const sel of seleccion) {
     const carrera = porClave.get(sel.claveCarrera);
     if (!carrera) {
@@ -323,14 +369,6 @@ export function revisarCombinacion(
     }
     const num = normalizarNumero(sel.numero);
     if (!num) return { ok: false, error: "Hay una carrera de la combinación sin caballo." };
-    if (esInvalido(carrera, num)) {
-      return {
-        ok: false,
-        error:
-          `El ejemplar N° ${num} de la ${carrera.carrera}ª carrera de ${carrera.hipodromo} ` +
-          `está invalidado y no se puede colocar.`,
-      };
-    }
     const existe = (carrera.ejemplares ?? []).some((e) => normalizarNumero(e.numero) === num);
     if (!existe) {
       return {
@@ -338,32 +376,47 @@ export function revisarCombinacion(
         error: `El ejemplar N° ${num} no está en la ${carrera.carrera}ª carrera de ${carrera.hipodromo}.`,
       };
     }
+    if (esInvalido(carrera, num)) avisos.push(leyendaNoVale(carrera, num));
   }
-  return { ok: true };
+  return { ok: true, avisos };
 }
 
-/** El resultado del mismo tipo de error, para marcar la fila culpable en pantalla. */
+/** El resultado de una combinación que NO se puede cobrar, para marcar la fila culpable. */
 export type ComboInvalida = { combinacion: Combinacion; error: string };
+
+/** Una combinación que se cobra pero con un ejemplar que no vale: la leyenda. */
+export type ComboAviso = { combinacion: Combinacion; aviso: string };
 
 /**
  * Revisa todas las combinaciones de una venta.
  *
- * Devuelve cuáles están malas y por qué, no un sí/no: cuando un jugador carga 40
- * combinaciones y hay dos con un inválido, la pantalla tiene que señalar esas dos
- * y aceptar las otras 38.
+ * Devuelve tres listas: las cobrables, las imposibles y las que se cobran con
+ * aviso. Cuando un jugador carga 40 combinaciones y hay dos con un ejemplar que
+ * no vale, la pantalla señala esas dos con la leyenda y cobra las 40: solo una
+ * combinación imposible (un número que no está en la carrera) queda afuera.
  */
 export function revisarVenta(
   combinaciones: Combinacion[],
   carreras: CarreraPolla[]
-): { validas: Combinacion[]; invalidas: ComboInvalida[] } {
+): { validas: Combinacion[]; invalidas: ComboInvalida[]; avisos: ComboAviso[] } {
   const validas: Combinacion[] = [];
   const invalidas: ComboInvalida[] = [];
+  const avisos: ComboAviso[] = [];
   for (const c of combinaciones) {
     const r = revisarCombinacion(c, carreras);
-    if (r.ok) validas.push(c);
-    else invalidas.push({ combinacion: c, error: r.error });
+    if (!r.ok) {
+      invalidas.push({ combinacion: c, error: r.error });
+      continue;
+    }
+    validas.push(c);
+    for (const aviso of r.avisos) avisos.push({ combinacion: c, aviso });
   }
-  return { validas, invalidas };
+  return { validas, invalidas, avisos };
+}
+
+/** Las leyendas únicas de una venta, para mostrarlas una sola vez. */
+export function leyendasUnicas(avisos: ComboAviso[]): string[] {
+  return [...new Set(avisos.map((a) => a.aviso))];
 }
 
 // ============================================================================
@@ -531,15 +584,45 @@ export function ordenarRanking(ventas: VentaPuntuada[]): FilaRanking[] {
   });
 }
 
-/** El premio configurado para un puesto. */
-export function premioDePuesto(puesto: number | null, config: ConfigPolla): number {
-  if (puesto === 1) return Number(config.premios.primero) || 0;
-  if (puesto === 2) return Number(config.premios.segundo) || 0;
-  if (puesto === 3) return Number(config.premios.tercero) || 0;
-  return 0;
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** El % de comisión de la casa sobre un monto de venta. */
+export function comisionDeVenta(ventaBruta: number, comisionPct: number): number {
+  return round2((Math.max(0, Number(ventaBruta) || 0) * Math.max(0, Number(comisionPct) || 0)) / 100);
 }
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
+/**
+ * La BOLSA de premios: lo recaudado menos la comisión de la casa.
+ *
+ * Es el "monto del premio de la Polla". Los puestos se reparten un % de esta
+ * bolsa, con un mínimo garantizado en dinero si la casa lo carga.
+ */
+export function bolsaPremios(ventaBruta: number, comisionPct: number): number {
+  return round2(Math.max(0, Math.max(0, Number(ventaBruta) || 0) - comisionDeVenta(ventaBruta, comisionPct)));
+}
+
+/**
+ * El premio de un puesto: el MAYOR entre el % de la bolsa y el monto fijo (mínimo
+ * garantizado).
+ *
+ *   - Solo % (sin fijo):  paga el % de la bolsa.
+ *   - Solo fijo (sin %):  paga ese monto (piso).
+ *   - Ambos:              paga el mayor de los dos.
+ *   - Ninguno:            0 = ese puesto no paga.
+ *
+ * `bolsa` por defecto 0 para que la firma vieja siga dando el monto fijo.
+ */
+export function premioDePuesto(puesto: number | null, config: ConfigPolla, bolsa = 0): number {
+  if (puesto !== 1 && puesto !== 2 && puesto !== 3) return 0;
+  const clave = (puesto === 1 ? "primero" : puesto === 2 ? "segundo" : "tercero") as
+    | "primero"
+    | "segundo"
+    | "tercero";
+  const pct = Number(config.premiosPct?.[clave]) || 0;
+  const fijo = Number(config.premios[clave]) || 0;
+  const porPct = pct > 0 ? round2((Math.max(0, Number(bolsa) || 0) * pct) / 100) : 0;
+  return round2(Math.max(porPct, fijo));
+}
 
 /**
  * Reparte un monto entre n ganadores sin perder centavos.
@@ -577,6 +660,12 @@ export function liquidarPolla(
   const meta = Math.max(0, Number(config.metaPuntos) || 0);
   const disponible = round2(Math.max(0, Number(acumuladoDisponible) || 0));
 
+  // La bolsa sale de la plata que REALMENTE entró (`pagado`), no de "carreras ×
+  // precio": si el precio cambió a mitad de jornada, el premio tiene que salir
+  // de lo cobrado. Bolsa = recaudado − comisión.
+  const ventaBruta = round2(ventas.reduce((a, v) => a + (Number(v.pagado) || 0), 0));
+  const bolsa = bolsaPremios(ventaBruta, config.comisionPct);
+
   // Premios por puesto, agrupando a los empatados para partir lo que les toca.
   const porPuesto = new Map<number, string[]>();
   for (const f of filas) {
@@ -587,7 +676,7 @@ export function liquidarPolla(
   }
   const premioDe = new Map<string, number>();
   for (const [puesto, claves] of porPuesto) {
-    const partes = repartirEntre(claves.length, premioDePuesto(puesto, config));
+    const partes = repartirEntre(claves.length, premioDePuesto(puesto, config, bolsa));
     claves.forEach((c, i) => premioDe.set(c, partes[i] ?? 0));
   }
 
@@ -618,6 +707,8 @@ export type FinanzasPolla = {
   ventaBruta: number;
   /** Ingreso de la casa por comisión. */
   comisionCasa: number;
+  /** La bolsa de premios: recaudado − comisión. */
+  bolsaPremios: number;
   /** Monto apartado al acumulado. */
   aporteAcumulado: number;
   /** Premios por puesto que se pagan (primero + segundo + tercero). */
@@ -649,14 +740,20 @@ export function calcularFinanzasPolla(
   const n = Math.max(0, Number(combinacionesVendidas) || 0);
   const precio = Math.max(0, Number(config.precioUnitario) || 0);
   const ventaBruta = round2(n * precio);
-  const comisionCasa = round2((ventaBruta * Math.max(0, Number(config.comisionPct) || 0)) / 100);
+  const comisionCasa = comisionDeVenta(ventaBruta, config.comisionPct);
+  const bolsa = bolsaPremios(ventaBruta, config.comisionPct);
   const aporteAcumulado = round2((ventaBruta * Math.max(0, Number(config.acumuladoPct) || 0)) / 100);
 
   // Si hay ranking se paga lo que el ranking repartió (respeta empates); si no,
-  // se toma lo configurado, que es lo que se ve antes de cerrar.
+  // se toma lo configurado —% de la bolsa y/o mínimo—, que es lo que se ve antes
+  // de cerrar.
   const premiosPagados = ranking.length
     ? round2(ranking.reduce((a, f) => a + f.premio, 0))
-    : round2(premioDePuesto(1, config) + premioDePuesto(2, config) + premioDePuesto(3, config));
+    : round2(
+        premioDePuesto(1, config, bolsa) +
+          premioDePuesto(2, config, bolsa) +
+          premioDePuesto(3, config, bolsa)
+      );
   const acumuladoPagado = round2(ranking.reduce((a, f) => a + f.acumulado, 0));
   const totalPagado = round2(premiosPagados + acumuladoPagado);
   const netoCasa = round2(ventaBruta - totalPagado);
@@ -674,11 +771,21 @@ export function calcularFinanzasPolla(
   if (comisionCasa + aporteAcumulado > ventaBruta) {
     avisos.push("La comisión más el acumulado se llevan toda la venta: no queda para los premios.");
   }
+  // La bolsa es recaudado − comisión. Si lo configurado en premios la supera, la
+  // casa pone la diferencia (los mínimos garantizados): mejor decirlo que dejar
+  // una caja en rojo sin explicación.
+  if (premiosPagados > bolsa + 0.001) {
+    avisos.push(
+      `Los premios (${premiosPagados.toFixed(2)}) superan la bolsa de la Polla ` +
+        `(recaudado − comisión = ${bolsa.toFixed(2)}): la diferencia la pone la casa.`
+    );
+  }
 
   return {
     combinacionesVendidas: n,
     ventaBruta,
     comisionCasa,
+    bolsaPremios: bolsa,
     aporteAcumulado,
     premiosPagados,
     totalPagado,
@@ -763,4 +870,30 @@ export function etiquetaPremio(monto: number | null | undefined, extra?: string 
   if (!Number.isFinite(n) || n <= 0) return "No paga";
   const base = n.toFixed(2).replace(/\.00$/, "");
   return extra ? `${base} (${extra})` : base;
+}
+
+/**
+ * Etiqueta del premio de un puesto cuando hay DOS formas de pagarlo: el % de la
+ * bolsa (recaudado − comisión) y/o el mínimo en dinero. Se paga el mayor.
+ *
+ *   - Solo %:        "30% de la bolsa"
+ *   - Solo mínimo:   "mín. 100"
+ *   - Ambos:         "30% de la bolsa + mín. 100"
+ *   - Ninguno:       el texto libre (premio en especie) o "No paga"
+ */
+export function etiquetaPremioPuesto(
+  monto: number | null | undefined,
+  pct: number | null | undefined,
+  extra?: string | null
+): string {
+  const fijo = Number(monto) || 0;
+  const p = Number(pct) || 0;
+  const partes: string[] = [];
+  if (p > 0) partes.push(`${p}% de la bolsa`);
+  if (fijo > 0) partes.push(`mín. ${fijo.toFixed(2).replace(/\.00$/, "")}`);
+  if (partes.length === 0) {
+    return extra && extra.trim() ? extra.trim() : "No paga";
+  }
+  const txt = partes.join(" + ");
+  return extra && extra.trim() ? `${txt} (${extra.trim()})` : txt;
 }

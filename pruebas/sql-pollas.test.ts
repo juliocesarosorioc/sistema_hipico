@@ -212,6 +212,9 @@ console.log("\n[5] Los premios se pueden BORRAR (no solo cambiar)");
     "premio_1o",
     "premio_2o",
     "premio_3o",
+    "premio_1o_pct",
+    "premio_2o_pct",
+    "premio_3o_pct",
     "premio_1o_txt",
     "premio_2o_txt",
     "premio_3o_txt",
@@ -228,6 +231,48 @@ console.log("\n[5] Los premios se pueden BORRAR (no solo cambiar)");
     !/premio_1o\s*=\s*coalesce\(/i.test(upd),
     "premio_1o ya NO usa coalesce contra el valor viejo"
   );
+}
+
+// ---------------------------------------------------------------------------
+console.log("\n[5b] Los premios por % de la bolsa estan en CREATE, ALTER y RPC");
+// ---------------------------------------------------------------------------
+// La bolsa es recaudado − comisión. Cada puesto paga el % de la bolsa y/o un
+// monto fijo (el mayor). Las columnas tienen que estar en los tres lugares: en el
+// CREATE (base nueva), en el ALTER idempotente (base viva) y en el RPC (payload).
+{
+  const iCreate = sql.indexOf("create table if not exists public.pollas");
+  const create = sql.slice(iCreate, sql.indexOf(");", iCreate));
+  const iAlter = sql.indexOf("alter table public.pollas");
+  const alter = sql.slice(iAlter, sql.indexOf(";", iAlter));
+  const iFunc = sql.indexOf("create or replace function public.club_guardar_polla");
+  const func = sql.slice(iFunc);
+
+  for (const col of ["premio_1o_pct", "premio_2o_pct", "premio_3o_pct"]) {
+    ok(new RegExp(`\\b${col}\\b`).test(create), `${col}: declarada en el CREATE TABLE`);
+    ok(
+      new RegExp(`add column if not exists\\s+${col}\\b`).test(alter),
+      `${col}: agregada por el ALTER idempotente`
+    );
+    ok(
+      new RegExp(`nullif\\(p_datos->>'${col}', ''\\)::numeric`).test(func),
+      `${col}: el RPC la lee del payload`
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+console.log("\n[5c] El delta de columnas faltantes tambien trae los % de premio");
+// ---------------------------------------------------------------------------
+// El operador puede correr el delta en vez del archivo entero. Tiene que dejar
+// la tabla lista para el RPC (hipodromo_id y los premios por %).
+{
+  const delta = readFileSync(join(process.cwd(), "sql", "pollas_hipodromo_id.sql"), "utf8");
+  for (const col of ["hipodromo_id", "premio_1o_pct", "premio_2o_pct", "premio_3o_pct"]) {
+    ok(
+      new RegExp(`add column if not exists\\s+${col}\\b`).test(delta),
+      `el delta agrega ${col}`
+    );
+  }
 }
 
 console.log(`\nTODO ${fallan === 0 ? "OK" : "FALLA"}: ${pasan} pasaron, ${fallan} fallaron`);

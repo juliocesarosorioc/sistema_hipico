@@ -6,6 +6,7 @@ import { Input } from "@/shared/components/ui/Input";
 import { SearchableSelect, type OpcionSelect } from "@/shared/components/ui/SearchableSelect";
 import {
   etiquetaPremio,
+  esInvalido,
   META_ACUMULADO_POR_DEFECTO,
   PUNTOS_POR_DEFECTO,
   type CarreraPolla,
@@ -85,6 +86,17 @@ export function ModalConfiguracionPolla({
   const [premio1, setPremio1] = useState(polla?.premios.primero?.toString() ?? "");
   const [premio2, setPremio2] = useState(polla?.premios.segundo?.toString() ?? "");
   const [premio3, setPremio3] = useState(polla?.premios.tercero?.toString() ?? "");
+  const [pct1, setPct1] = useState(polla?.premiosPct.primero?.toString() ?? "");
+  const [pct2, setPct2] = useState(polla?.premiosPct.segundo?.toString() ?? "");
+  const [pct3, setPct3] = useState(polla?.premiosPct.tercero?.toString() ?? "");
+  /**
+   * Ejemplares marcados como "no valen" POR ESTA POLLA, por clave de carrera.
+   *
+   * Se guarda en `pollas.carreras` (no toca otros módulos). Los retirados no se
+   * pueden desmarcar: un retiro saca al ejemplar de todos los módulos y no se
+   * revierte desde una Polla.
+   */
+  const [invalidos, setInvalidos] = useState<Record<string, string[]>>({});
   const [txt1, setTxt1] = useState(polla?.premiosTexto.primero ?? "");
   const [txt2, setTxt2] = useState(polla?.premiosTexto.segundo ?? "");
   const [txt3, setTxt3] = useState(polla?.premiosTexto.tercero ?? "");
@@ -111,6 +123,37 @@ export function ModalConfiguracionPolla({
     setElegidas((prev) =>
       prev.includes(clave) ? prev.filter((k) => k !== clave) : [...prev, clave]
     );
+  };
+
+  /** Los retirados de la carrera: no se pueden desmarcar como "no vale". */
+  const retiradosDe = (c: CarreraPolla): string[] =>
+    (c.retirados ?? []).map((x) => String(x).trim()).filter(Boolean);
+
+  /**
+   * Los "no valen" de Polla de una carrera: lo que el operador marcó acá, o lo
+   * que la carrera ya traía (INV de Pollas) sin contar los retirados.
+   */
+  const invalidosDe = (c: CarreraPolla): string[] => {
+    if (invalidos[c.clave]) return invalidos[c.clave];
+    const retirados = new Set(retiradosDe(c));
+    return (c.invalidados ?? [])
+      .map((x) => String(x).trim())
+      .filter((n) => n && !retirados.has(n));
+  };
+
+  const alternarInvalido = (claveCarrera: string, numero: string) => {
+    setInvalidos((prev) => {
+      const c = carreras.find((x) => x.clave === claveCarrera);
+      const base =
+        prev[claveCarrera] ??
+        (c
+          ? invalidosDe(c)
+          : []);
+      const nuevo = base.includes(numero)
+        ? base.filter((n) => n !== numero)
+        : [...base, numero];
+      return { ...prev, [claveCarrera]: nuevo };
+    });
   };
 
   /**
@@ -194,6 +237,11 @@ export function ModalConfiguracionPolla({
       return Number.isFinite(n) && v.trim() !== "" ? n : def;
     };
     const premio = (v: string) => (v.trim() === "" ? null : numero(v, 0));
+    const premioPct = (v: string) => {
+      if (v.trim() === "") return null;
+      const n = numero(v, 0);
+      return Math.min(100, Math.max(0, n));
+    };
     const cant = (v: string, def: number) => {
       const n = numero(v, def);
       if (n < 0) return def;
@@ -210,19 +258,32 @@ export function ModalConfiguracionPolla({
       return;
     }
 
+    // Los "no valen" elegidos quedan congelados en la Polla: la unión de los
+    // retirados (no se desmarcan) y los que el operador marcó. No toca otros
+    // módulos.
+    const carrerasFinales: CarreraPolla[] = carreras.map((c) => {
+      const retirados = retiradosDe(c);
+      return {
+        ...c,
+        invalidados: [...new Set([...retirados, ...invalidosDe(c)])],
+        retirados,
+      };
+    });
+
     setGuardando(true);
     const ok = await onConfirmar({
       nombre: nombre.trim().toUpperCase(),
       fecha,
       hipodromo_id: hipSelId && !hipSelId.startsWith("#") ? hipSelId : null,
       grupo_id: grupoId || null,
-      carreras,
+      carreras: carrerasFinales,
       puntos: { primero: numero(p1, PUNTOS_POR_DEFECTO.primero), segundo: numero(p2, PUNTOS_POR_DEFECTO.segundo), tercero: numero(p3, PUNTOS_POR_DEFECTO.tercero) },
       precioUnitario: numero(precio, 0),
       comisionPct: cant(comision, 0),
       acumuladoPct: cant(acumuladoPct, 0),
       metaPuntos: Math.round(numero(meta, META_ACUMULADO_POR_DEFECTO)),
       premios: { primero: premio(premio1), segundo: premio(premio2), tercero: premio(premio3) },
+      premiosPct: { primero: premioPct(pct1), segundo: premioPct(pct2), tercero: premioPct(pct3) },
       premiosTexto: { primero: txt1.trim() || null, segundo: txt2.trim() || null, tercero: txt3.trim() || null },
       estado: polla?.estado ?? "Abierta",
       notas: notas.trim() || null,
@@ -398,14 +459,28 @@ export function ModalConfiguracionPolla({
                                 </span>
                               </span>
                               <span className="mt-1 block truncate font-mono text-[11px] text-slate-500">
-                                {c.ejemplares.map((e) => e.numero).join(" ")}
+                                {c.ejemplares.map((e, i) => {
+                                  const no = esInvalido(c, e.numero);
+                                  return (
+                                    <span key={`${e.numero}-${i}`}>
+                                      {i > 0 ? " " : ""}
+                                      <span
+                                        className={
+                                          no ? "font-bold text-danger-600 line-through" : undefined
+                                        }
+                                      >
+                                        {e.numero}
+                                      </span>
+                                    </span>
+                                  );
+                                })}
                               </span>
                               {inv.length > 0 && (
                                 <span
                                   className="mt-0.5 block text-[10px] font-semibold text-danger-600"
-                                  title="Inválidos para Pollas: no se pueden colocar"
+                                  title="No valen: se pueden registrar, pero se resaltan con una leyenda"
                                 >
-                                  INV {inv.join(",")}
+                                  no valen: {inv.join(",")}
                                 </span>
                               )}
                             </button>
@@ -459,23 +534,105 @@ export function ModalConfiguracionPolla({
             />
           </div>
 
-          {/* Premios: monto y, si no es dinero, la descripción. */}
+          {/* ------------------------------------------------------------
+              CABALLOS QUE NO VALEN. Se marcan POR POLLA (`pollas.carreras`)
+              y no tocan otros módulos. Un ejemplar que no vale se puede
+              REGISTRAR igual —el jugador ya escribió el papel— pero la lista
+              lo resalta con una leyenda y al liquidar no puntúa.
+           * ---------------------------------------------------------- */}
+          {carreras.length > 0 && (
+            <div>
+              <p className="mb-1 text-sm font-semibold text-slate-800">
+                Caballos que no valen
+              </p>
+              <p className="mb-2 text-xs text-slate-500">
+                Tocá un número para marcarlo como que no vale en esta Polla. Se
+                puede registrar igual, pero la lista lo resalta con una leyenda
+                y no puntúa. Los retirados no se desmarcan.
+              </p>
+              <div className="space-y-2">
+                {carreras.map((c) => {
+                  const retirados = retiradosDe(c);
+                  const marcados = new Set(invalidosDe(c));
+                  return (
+                    <div key={c.clave} className="rounded-lg border border-line p-2">
+                      <div className="mb-1 flex flex-wrap items-baseline gap-x-2 text-xs font-semibold text-slate-700">
+                        <span>
+                          {nombreHipodromoParaMostrar(c.hipodromo)} {c.carrera}ª
+                        </span>
+                        {retirados.length > 0 && (
+                          <span className="font-normal text-danger-600">
+                            retirados (no se desmarcan): {retirados.join(", ")}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {c.ejemplares.map((e, i) => {
+                          const numero = String(e.numero).trim();
+                          const retirado = retirados.includes(numero);
+                          const noVale = retirado || marcados.has(numero);
+                          return (
+                            <button
+                              key={`${numero}-${i}`}
+                              type="button"
+                              disabled={retirado}
+                              onClick={() => alternarInvalido(c.clave, numero)}
+                              aria-pressed={noVale}
+                              title={
+                                retirado
+                                  ? `N° ${numero}: retirado (no se puede desmarcar)`
+                                  : noVale
+                                    ? `N° ${numero}: no vale (tocá para permitirlo)`
+                                    : `N° ${numero}: vale (tocá para marcarlo)`
+                              }
+                              className={`rounded-md border px-2 py-0.5 font-mono text-xs font-bold transition-colors ${
+                                retirado
+                                  ? "cursor-not-allowed border-danger-300 bg-danger-100 text-danger-700 line-through"
+                                  : noVale
+                                    ? "border-danger-300 bg-danger-50 text-danger-700 line-through"
+                                    : "border-line bg-white text-slate-700 hover:bg-surfaceAlt"
+                              }`}
+                            >
+                              {numero}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Premios: % de la bolsa y/o mínimo en dinero, más la descripción si
+              el premio no es dinero. La BOLSA es recaudado − comisión. */}
           <div>
             <p className="mb-1 text-sm font-semibold text-slate-800">Premios</p>
             <div className="space-y-2">
               {[
-                { et: "1.º", val: premio1, set: setPremio1, txt: txt1, setTxt: setTxt1 },
-                { et: "2.º", val: premio2, set: setPremio2, txt: txt2, setTxt: setTxt2 },
-                { et: "3.º", val: premio3, set: setPremio3, txt: txt3, setTxt: setTxt3 },
+                { et: "1.º", pct: pct1, setPct: setPct1, val: premio1, set: setPremio1, txt: txt1, setTxt: setTxt1 },
+                { et: "2.º", pct: pct2, setPct: setPct2, val: premio2, set: setPremio2, txt: txt2, setTxt: setTxt2 },
+                { et: "3.º", pct: pct3, setPct: setPct3, val: premio3, set: setPremio3, txt: txt3, setTxt: setTxt3 },
               ].map((r) => (
-                <div key={r.et} className="grid grid-cols-[2.5rem_8rem_1fr] items-center gap-2">
+                <div
+                  key={r.et}
+                  className="grid grid-cols-[2.5rem_6.5rem_8rem_1fr] items-center gap-2"
+                >
                   <span className="text-sm font-semibold text-slate-700">{r.et}</span>
+                  <Input
+                    value={r.pct}
+                    onChange={(e) => r.setPct(e.target.value)}
+                    placeholder="% bolsa"
+                    inputMode="decimal"
+                    aria-label={`Premio ${r.et} porcentaje de la bolsa`}
+                  />
                   <Input
                     value={r.val}
                     onChange={(e) => r.set(e.target.value)}
-                    placeholder="Monto"
+                    placeholder="Mínimo $"
                     inputMode="decimal"
-                    aria-label={`Premio ${r.et} en dinero`}
+                    aria-label={`Premio ${r.et} monto mínimo`}
                   />
                   <Input
                     value={r.txt}
@@ -487,8 +644,11 @@ export function ModalConfiguracionPolla({
               ))}
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              Vacío = ese puesto no paga. Si el premio es en especie, dejá el monto en 0 y
-              escribí la descripción: el reporte muestra {etiquetaPremio(0, "…")}.
+              La <strong>bolsa</strong> es lo recaudado menos la comisión. Cargá el{" "}
+              <strong>%</strong> de la bolsa, un <strong>mínimo</strong> en dinero, o los
+              dos: se paga el mayor. Vacío/0 = ese puesto no paga. Si el premio es en
+              especie, dejá el monto en 0 y escribí la descripción: el reporte muestra{" "}
+              {etiquetaPremio(0, "…")}.
             </p>
           </div>
 

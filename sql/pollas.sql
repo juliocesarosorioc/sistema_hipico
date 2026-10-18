@@ -68,12 +68,18 @@ create table if not exists public.pollas (
   acumulado_pct   numeric not null default 0,
   meta_puntos     integer not null default 30,
 
-  -- Premios por puesto. NULL = ese puesto no paga. El texto libre `premio_*_txt`
-  -- es para cuando el premio no es dinero ("una caja de ron"), y aparece en el
-  -- reporte tal cual lo escribió la casa.
+  -- Premios por puesto. Hay DOS formas y se combinan: `premio_*` es el monto
+  -- fijo (mínimo garantizado) y `premio_*_pct` es el % de la BOLSA
+  -- (recaudado − comisión). Se paga el MAYOR de los dos. NULL/0 en ambos = ese
+  -- puesto no paga. El texto libre `premio_*_txt` es para cuando el premio no es
+  -- dinero ("una caja de ron") o acompaña al dinero, y aparece en el reporte tal
+  -- cual lo escribió la casa.
   premio_1o       numeric,
   premio_2o       numeric,
   premio_3o       numeric,
+  premio_1o_pct   numeric,
+  premio_2o_pct   numeric,
+  premio_3o_pct   numeric,
   premio_1o_txt   text,
   premio_2o_txt   text,
   premio_3o_txt   text,
@@ -191,6 +197,9 @@ alter table public.pollas
   add column if not exists premio_1o       numeric,
   add column if not exists premio_2o       numeric,
   add column if not exists premio_3o       numeric,
+  add column if not exists premio_1o_pct   numeric,
+  add column if not exists premio_2o_pct   numeric,
+  add column if not exists premio_3o_pct   numeric,
   add column if not exists premio_1o_txt   text,
   add column if not exists premio_2o_txt   text,
   add column if not exists premio_3o_txt   text,
@@ -341,6 +350,7 @@ begin
                                puntos_1o, puntos_2o, puntos_3o, precio_unitario,
                                comision_pct, acumulado_pct, meta_puntos,
                                premio_1o, premio_2o, premio_3o,
+                               premio_1o_pct, premio_2o_pct, premio_3o_pct,
                                premio_1o_txt, premio_2o_txt, premio_3o_txt,
                                estado, notas)
     values (
@@ -359,6 +369,9 @@ begin
       nullif(p_datos->>'premio_1o', '')::numeric,
       nullif(p_datos->>'premio_2o', '')::numeric,
       nullif(p_datos->>'premio_3o', '')::numeric,
+      nullif(p_datos->>'premio_1o_pct', '')::numeric,
+      nullif(p_datos->>'premio_2o_pct', '')::numeric,
+      nullif(p_datos->>'premio_3o_pct', '')::numeric,
       nullif(p_datos->>'premio_1o_txt', ''),
       nullif(p_datos->>'premio_2o_txt', ''),
       nullif(p_datos->>'premio_3o_txt', ''),
@@ -409,6 +422,15 @@ begin
       premio_3o         = case when p_datos ? 'premio_3o'
                                then nullif(p_datos->>'premio_3o', '')::numeric
                                else premio_3o end,
+      premio_1o_pct     = case when p_datos ? 'premio_1o_pct'
+                               then nullif(p_datos->>'premio_1o_pct', '')::numeric
+                               else premio_1o_pct end,
+      premio_2o_pct     = case when p_datos ? 'premio_2o_pct'
+                               then nullif(p_datos->>'premio_2o_pct', '')::numeric
+                               else premio_2o_pct end,
+      premio_3o_pct     = case when p_datos ? 'premio_3o_pct'
+                               then nullif(p_datos->>'premio_3o_pct', '')::numeric
+                               else premio_3o_pct end,
       premio_1o_txt     = case when p_datos ? 'premio_1o_txt'
                                then nullif(p_datos->>'premio_1o_txt', '')
                                else premio_1o_txt end,

@@ -1,5 +1,6 @@
 -- ============================================================================
--- POLLAS: columnas que faltan en la tabla viva (`hipodromo_id`, `grupo_id`, `notas`)
+-- POLLAS: columnas que faltan en la tabla viva
+--   (`hipodromo_id`, `grupo_id`, `notas` y los premios por % `premio_*_pct`)
 -- ============================================================================
 -- ERROR QUE ARREGLA
 -- ---------------
@@ -10,7 +11,8 @@
 -- `sql/pollas.sql` declara la tabla con `CREATE TABLE IF NOT EXISTS`: si la tabla
 -- `pollas` YA existía (creada por una versión anterior, sin `hipodromo_id`),
 -- Postgres no agrega la columna y el INSERT de `club_guardar_polla` falla al
--- guardar/crear una Polla.
+-- guardar/crear una Polla. Lo mismo pasa con las columnas nuevas de premios por
+-- porcentaje (`premio_1o_pct`, `premio_2o_pct`, `premio_3o_pct`).
 --
 -- QUE HACE
 --   · Agrega las columnas que falten (idempotente).
@@ -28,14 +30,16 @@ begin;
 -- 1) Columnas que faltan
 -- ---------------------------------------------------------------------------
 alter table public.pollas
-  add column if not exists hipodromo_id uuid references public.hipodromos(id),
-  add column if not exists grupo_id     uuid references public.grupos_venta(id),
-  add column if not exists notas        text;
+  add column if not exists hipodromo_id   uuid references public.hipodromos(id),
+  add column if not exists grupo_id       uuid references public.grupos_venta(id),
+  add column if not exists notas          text,
+  add column if not exists premio_1o_pct  numeric,
+  add column if not exists premio_2o_pct  numeric,
+  add column if not exists premio_3o_pct  numeric;
 
 -- ---------------------------------------------------------------------------
 -- 2) Backfill del hipódromo desde la primera carrera guardada (si falta)
--- ---------------------------------------------------------------------------
-update public.pollas p
+-- ---------------------------------------------------------------------------update public.pollas p
    set hipodromo_id = h.id
   from public.hipodromos h
  where p.hipodromo_id is null
@@ -58,7 +62,10 @@ select column_name
   from information_schema.columns
  where table_schema = 'public'
    and table_name   = 'pollas'
-   and column_name in ('hipodromo_id', 'grupo_id', 'notas')
+   and column_name in (
+     'hipodromo_id', 'grupo_id', 'notas',
+     'premio_1o_pct', 'premio_2o_pct', 'premio_3o_pct'
+   )
  order by column_name;
 
 -- Cuántas Pollas siguen sin hipódromo (el nombre guardado no matcheó el catálogo):
