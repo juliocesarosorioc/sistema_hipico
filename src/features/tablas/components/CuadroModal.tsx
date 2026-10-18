@@ -3,12 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { getHorseColor } from "@/shared/lib/horseColors";
-import {
-  OPCIONES_NACIONALIDAD,
-  colorDeNumero,
-  textoDeNumero,
-  type EjemplarTabla,
-} from "@/features/tablas/lib/tipos";
+import { OPCIONES_NACIONALIDAD, type EjemplarTabla } from "@/features/tablas/lib/tipos";
 
 /**
  * CRUD de UN cuadro suelto de una tabla fija publicada, abierto desde la
@@ -110,6 +105,16 @@ export function CuadroModal({
     });
   };
 
+  /**
+   * Color de la ficha del número con la paleta hípica CANÓNICA de la plataforma
+   * (`getHorseColor`, la misma fuente de los badges/chips del Monitor, la Gaceta
+   * y la impresión). Antes solo se pintaba el FONDO: con los números oscuros
+   * (6, 14, 17…) el texto quedaba ilegible y con el 2 (blanco) el campo y su
+   * borde se perdían sobre el modal blanco. Ahora se aplica fondo + texto.
+   */
+  const ficha = getHorseColor(numero);
+  const tieneFicha = numero.trim() !== "";
+
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={onCancelar}>
       <div
@@ -135,10 +140,17 @@ export function CuadroModal({
                 value={numero}
                 onChange={(e) => setNumero(e.target.value)}
                 placeholder="—"
+                title={tieneFicha ? `Ficha ${ficha.label}` : undefined}
                 className={`${inp} text-center font-black`}
                 style={
-                  numero.trim()
-                    ? { backgroundColor: getHorseColor(numero).hex, borderColor: getHorseColor(numero).hex }
+                  tieneFicha
+                    ? {
+                        backgroundColor: ficha.hex,
+                        color: ficha.hexText,
+                        // Los fondos claros (2 blanco, 15 caqui) traen borde gris
+                        // en la paleta; con el borde del mismo color se perdían.
+                        borderColor: ficha.extra ? "#cbd5e1" : ficha.hex,
+                      }
                     : undefined
                 }
               />
