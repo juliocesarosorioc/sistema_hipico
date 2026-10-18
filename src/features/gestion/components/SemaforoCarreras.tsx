@@ -1,8 +1,10 @@
 "use client";
 
+import { useMemo } from "react";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
 import { useCarrerasDiaStore, type CarreraDelDia } from "@/shared/store/useCarrerasDiaStore";
+import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
 import { diaDeLaTabla } from "@/features/tablas/components/MonitorTablas";
 import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { nombrePropioHipodromo } from "@/features/hipodromos/lib/nombre";
@@ -43,8 +45,14 @@ const MANUAL_TOTAL = 12;
  *  - Modo Manual (manual=true): TODAS las carreras quedan habilitadas para
  *    registrar jugadas en una carrera vacía sin depender de la Gaceta IA.
  *  - Sin carreras registradas → semáforo vacío/inactivo con aviso.
- *  - gris = sin registro · azul = Registrada (sin jugadas) ·
+ *  - gris = sin registro · verde = Registrada (sin jugadas) ·
  *    amarillo = Con jugadas · rojo = Liquidada.
+ *
+ * El estado de LIQUIDACIÓN se lee del registro CENTRAL
+ * (`useRegistroCentralOpts` → `resultados_carreras`), la fuente compartida: el
+ * ledger local (`useCarrerasDiaStore`) solo lo escribe quien finaliza en ESA
+ * pestaña, así que una carrera liquidada desde otra sesión/dispositivo se veía
+ * verde. El central también aporta `aplicado_a_tablas` y los ganadores.
  */
 export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSeleccionar, manual }: Props) {
   const tablas = useTablasFijasStore((s) => s.tablas);
@@ -53,6 +61,10 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
   const activos = useHipodromosActivos();
   const hipo = hipoKey(hipodromo);
   const nombreMostrar = nombrePropioHipodromo(hipodromo, activos);
+  // Registro central (matriz `carreras` + resultados embebidos): la fuente de la
+  // liquidación compartida. El hook deduplica la consulta con el módulo padre.
+  const { carrerasDe } = useRegistroCentralOpts(fecha);
+  const centrales = useMemo(() => carrerasDe(hipodromo), [carrerasDe, hipodromo]);
 
   const porCarrera = (n: number): { estado: EstadoCarrera; tieneVentas: boolean } => {
     // TODO el cruce va acotado a `fecha`: una tabla o un registro del día
@@ -64,10 +76,19 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
       (c: CarreraDelDia) => hipoKey(c.hipodromo) === hipo && c.carrera === n && c.fecha === fecha
     );
     const registrada = carreras.includes(n);
+    // El estado CENTRAL manda: `aplicado_a_tablas`/`ganadores` los escribe la
+    // liquidación en `resultados_carreras`, compartida por todos. El ledger
+    // local (`registro`) solo aporta si esta pestaña fue la que finalizó.
+    const central = centrales.find((c) => Number(c.carrera) === n);
+    const estCentral = String(central?.estado ?? "").toLowerCase();
     const liquidada =
       Boolean(tabla?.cerrada) ||
       String(tabla?.estado ?? "").toLowerCase() === "cerrada" ||
-      String(registro?.estado ?? "").toLowerCase() === "liquidada";
+      String(registro?.estado ?? "").toLowerCase() === "liquidada" ||
+      estCentral === "liquidada" ||
+      estCentral === "cerrada" ||
+      central?.aplicado_a_tablas === true ||
+      (central?.ganadores?.length ?? 0) > 0;
     const conVentas = tickets.some(
       (tk) =>
         tk.carrera === n &&
