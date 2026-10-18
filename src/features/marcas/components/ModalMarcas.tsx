@@ -6,7 +6,7 @@ import { TicketVentaPreview, type TicketVentaModel } from "@/features/tickets/co
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { HorseBadge } from "@/shared/components/ui/HorseChips";
 import type { CarreraCentral, EjemplarCarreraCentral } from "@/features/carreras/lib/central";
-import { listarClientesVenta, listarGruposVenta, esClienteLibre, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
+import { listarClientesVenta, listarGruposVenta, grupoDeVentaVigente, esClienteLibre, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { listarBanquerosGrupo } from "@/features/liquidacion/lib/banqueros";
 import {
   buscarEjemplar,
@@ -121,6 +121,15 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
       const [g, c] = await Promise.all([listarGruposVenta(), listarClientesVenta()]);
       setGrupos(g);
       setClientes(c);
+      /* Grupo por defecto: el del usuario logueado; si es super administrador
+         (que ve varios), el elegido en el filtro «🗂️ Grupo» de la barra
+         superior. Solo se autoselecciona si el operador no eligió uno todavía
+         y el grupo existe en la lista cargada. */
+      setGrupoId((actual) => {
+        if (actual) return actual;
+        const porDefecto = grupoDeVentaVigente();
+        return porDefecto && g.some((x) => String(x.id) === String(porDefecto)) ? porDefecto : actual;
+      });
     })();
   }, []);
 

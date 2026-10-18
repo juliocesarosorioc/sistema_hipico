@@ -85,6 +85,7 @@
     "./agrupar-hipodromos.test.ts",
     "./cuaderno.test.ts",
     "./reporte-rango.test.ts",
-    "./jornada-dia-jugada.test.ts"
+    "./jornada-dia-jugada.test.ts",
+    "./gestion-saldos-clientes.test.ts"
   ]
 }

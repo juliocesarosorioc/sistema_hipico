@@ -22,7 +22,7 @@ import { SemaforoCarreras } from "@/features/gestion/components/SemaforoCarreras
 import { Button } from "@/shared/components/ui/Button";
 import { Guard } from "@/shared/components/ui/Guard";
 import { fmtMoney, type EjemplarTabla } from "@/features/tablas/lib/tipos";
-import { listarClientesVenta, listarGruposVenta, comisionJugadasDeGrupo, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, registrarAuditoria, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
+import { listarClientesVenta, listarGruposVenta, limpiarCacheClientesVenta, comisionJugadasDeGrupo, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, registrarAuditoria, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { tieneCapacidad, usuarioVigente } from "@/features/seguridad/lib/vigente";
 import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/features/tablas/lib/rpc";
@@ -228,6 +228,12 @@ export function GestionJugadasModule() {
    */
   const recargarClientes = useCallback(async () => {
     try {
+      /* BUG reportado («el botón de actualizar saldo no funciona»): el catálogo
+         de clientes se cacheaba en el módulo y `listarClientesVenta()` devolvía
+         la copia vieja sin tocar la base, así que este refresco (y el que corre
+         tras cada venta/liquidación) no traía los saldos reales. Hay que
+         invalidar el caché ANTES de releer. */
+      limpiarCacheClientesVenta();
       const c = await listarClientesVenta();
       setClientes(c);
     } catch {
@@ -1054,15 +1060,26 @@ const hipodromosDelDia = useMemo(() => {
         indicesError.push(filas.indexOf(f));
         continue;
       }
-      /* El CLIENTE 1 es a quien se le cobra: tiene que estar en el catálogo para
-         obtener su UUID y su grupo. El CLIENTE 2 (dador) es informativo. */
       const c1 = saldoCliente(f.cliente1);
       if (!c1) {
         errores.push(`Fila ${filas.indexOf(f) + 1}: el CLIENTE 1 no está en el catálogo (no se puede cobrar).`);
         indicesError.push(filas.indexOf(f));
         continue;
       }
+      /* Regla de la casa: SIEMPRE hay 2 clientes (quién juega + quién da). El
+         CLIENTE 2 dejó de ser informativo: sin un segundo cliente en el catálogo
+         la jugada NO se carga (antes se vendía solo con el CLIENTE 1). */
+      if (!f.cliente2.trim()) {
+        errores.push(`Fila ${filas.indexOf(f) + 1}: falta el CLIENTE 2 (dador). Las jugadas se cargan con DOS clientes.`);
+        indicesError.push(filas.indexOf(f));
+        continue;
+      }
       const c2 = saldoCliente(f.cliente2);
+      if (!c2) {
+        errores.push(`Fila ${filas.indexOf(f) + 1}: el CLIENTE 2 no está en el catálogo (se exigen dos clientes).`);
+        indicesError.push(filas.indexOf(f));
+        continue;
+      }
       const grupoId =
         c1.grupo_id != null ? String(c1.grupo_id) : c1.grupos[0] != null ? String(c1.grupos[0]) : null;
       if (v.reparto?.recortado) {
@@ -1736,11 +1753,15 @@ const hipodromosDelDia = useMemo(() => {
                         options={opcionesClientes}
                         value={f.cliente2}
                         onChange={(v) => setFila(i, { cliente2: v })}
-                        placeholder="Cliente 2…"
+                        placeholder="Cliente 2 (obligatorio)…"
                         allowCustom={false}
                         displayValue={f.cliente2}
                         className=""
-                        inputClassName="w-full rounded-md border border-line bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                        inputClassName={`w-full rounded-md border bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                          (f.jugada.trim() || f.monto.trim()) && !f.cliente2.trim()
+                            ? "border-red-400 bg-red-50"
+                            : "border-line"
+                        }`}
                       />
                     </div>
                   </td>
