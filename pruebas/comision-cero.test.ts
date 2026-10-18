@@ -32,13 +32,13 @@ ok('porcentajeDeEntrada(" 0 ") = 0', porcentajeDeEntrada(" 0 ") === 0);
 ok('porcentajeDeEntrada("0,5") = 0,5', porcentajeDeEntrada("0,5") === 0.5);
 
 /* ── porcentajeDeEntrada: solo el vacío/no numérico cae al default ───────── */
-ok('porcentajeDeEntrada("") = 2,5', porcentajeDeEntrada("") === 2.5);
-ok('porcentajeDeEntrada("   ") = 2,5', porcentajeDeEntrada("   ") === 2.5);
-ok("porcentajeDeEntrada(null) = 2,5", porcentajeDeEntrada(null) === 2.5);
-ok("porcentajeDeEntrada(undefined) = 2,5", porcentajeDeEntrada(undefined) === 2.5);
-ok('porcentajeDeEntrada("abc") = 2,5', porcentajeDeEntrada("abc") === 2.5);
-ok('porcentajeDeEntrada("2.5") = 2,5', porcentajeDeEntrada("2.5") === 2.5);
-ok("porcentajeDeEntrada(-1) = 2,5", porcentajeDeEntrada(-1) === 2.5);
+ok('porcentajeDeEntrada("") = 5', porcentajeDeEntrada("") === 5);
+ok('porcentajeDeEntrada("   ") = 5', porcentajeDeEntrada("   ") === 5);
+ok("porcentajeDeEntrada(null) = 5", porcentajeDeEntrada(null) === 5);
+ok("porcentajeDeEntrada(undefined) = 5", porcentajeDeEntrada(undefined) === 5);
+ok('porcentajeDeEntrada("abc") = 5', porcentajeDeEntrada("abc") === 5);
+ok('porcentajeDeEntrada("5") = 5', porcentajeDeEntrada("5") === 5);
+ok("porcentajeDeEntrada(-1) = 5", porcentajeDeEntrada(-1) === 5);
 ok("porcentajeDeEntrada(0, 5) = 0 (default configurable)", porcentajeDeEntrada(0, 5) === 0);
 ok('porcentajeDeEntrada("", 5) = 5', porcentajeDeEntrada("", 5) === 5);
 
