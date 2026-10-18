@@ -73,12 +73,26 @@ console.log("\n[4] Editar jugadas guardadas de una carrera (aunque esté cerrada
 const modal = leer("src", "features", "gestion", "components", "ModalEditarJugadasCarrera.tsx");
 ok("el módulo monta el modal de edición", /<ModalEditarJugadasCarrera/.test(gestion));
 ok("lee las jugadas reales de la carrera", /listarJugadasDeCarrera\(/.test(modal));
-ok("corrige con editarJugada", /editarJugada\(/.test(modal));
-ok("anula con anularJugada", /anularJugada\(/.test(modal));
+ok("corrige con editarJugada", /corregirJugadaYRecalcular\(/.test(modal));
+ok("anula con anularJugada", /anularJugadaYRecalcular\(/.test(modal));
 ok("exige motivo para corregir", /Indicá el motivo de la corrección/.test(modal));
 ok("exige motivo para anular", /Indicá el motivo de la anulación/.test(modal));
 ok("deja traza en la auditoría al corregir", /EDITAR_JUGADA_CARRERA/.test(modal));
 ok("deja traza en la auditoría al anular", /ANULAR_JUGADA_CARRERA/.test(modal));
+
+console.log("\n[5] Recalcular TODA la carrera al corregir/anular una jugada liquidada");
+const recalcular = leer("src", "features", "liquidacion", "lib", "recalcular.ts");
+const saldos = leer("src", "features", "liquidacion", "lib", "saldos.ts");
+ok("existe la reversión de la liquidación", /export async function revertirLiquidacionCarrera/.test(recalcular));
+ok("revertir reusa el MISMO decisor que la liquidación", /decidirTickets\(/.test(recalcular) && /export function decidirTickets/.test(saldos));
+ok("corrige y recalcula (revertir → editar → re-liquidar)", /export async function corregirJugadaYRecalcular/.test(recalcular) && /editarJugada\(/.test(recalcular) && /revertirLiquidacionCarrera\(/.test(recalcular));
+ok("anula y recalcula", /export async function anularJugadaYRecalcular/.test(recalcular) && /anularJugada\(/.test(recalcular));
+ok("recalcula la carrera completa (restaurar)", /export async function recalcularCarrera/.test(recalcular));
+ok("la re-liquidación reusa aplicarLiquidacionSaldos", /aplicarLiquidacionSaldos\(/.test(recalcular));
+ok("la liquidación excluye jugadas anuladas del motor", /\.or\("anulada\.is\.null,anulada\.eq\.false"\)/.test(saldos));
+ok("TABLA usa el premio congelado del ticket como respaldo", /ctx\.premio_por_tabla != null[\s\S]*?fila\.premio_por_tabla/.test(saldos));
+ok("el modal pide la comisión de la carrera", /tasaComision\?: number \| null/.test(modal));
+ok("el módulo pasa la comisión al modal", /tasaComision=\{comisionNum\}/.test(gestion));
 
 console.log(`\n${pasan} pasaron, ${fallan} fallaron`);
 process.exit(fallan > 0 ? 1 : 0);

@@ -16,13 +16,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import {
-  anularJugada,
-  editarJugada,
   listarJugadasDeCarrera,
   MOTIVOS_ANULACION,
   restaurarJugada,
   type JugadaAdmin,
 } from "@/features/jugadas/lib/jugadas";
+import {
+  anularJugadaYRecalcular,
+  corregirJugadaYRecalcular,
+  recalcularCarrera,
+  type ResRecalcular,
+} from "@/features/liquidacion/lib/recalcular";
 import { registrarAuditoria } from "@/features/grupos/lib/grupos";
 import { usuarioVigente } from "@/features/seguridad/lib/vigente";
 
@@ -31,11 +35,29 @@ type Props = {
   nombreHipodromo: string;
   carrera: number;
   fecha: string;
+  /** Comisión de la carrera (la misma con la que se liquidó). Se usa al
+   *  recalcular para que la comisión neta por cruces cuadre con la original. */
+  tasaComision?: number | null;
   onCerrar: () => void;
 };
 
 const money = (v: number | null | undefined, moneda: string): string =>
   `${moneda === "USD" ? "$" : "Bs"} ${Number(v ?? 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Resume el resultado de un recálculo de carrera para el aviso del operador. */
+function textoRecalculo(r: ResRecalcular, accion: string): string {
+  const partes = [accion];
+  if (r.revertidos > 0) {
+    partes.push(`se revirtieron ${r.revertidos} jugada(s) ya liquidada(s) ($${r.revertidoTotal.toFixed(2)} devuelto a los clientes)`);
+  }
+  if (r.reliquidados > 0) {
+    partes.push(`se re-liquidaron ${r.reliquidados} jugada(s) ($${r.abonoTotal.toFixed(2)} abonado)`);
+  }
+  if (r.errores.length) {
+    partes.push(`⚠️ ${r.errores.length} aviso(s): ${r.errores[0]}`);
+  }
+  return partes.join(" · ");
+}
 
 /** Motivos como string[] para poder usar `.includes` con texto libre. */
 const MOTIVOS: readonly string[] = MOTIVOS_ANULACION;
@@ -47,7 +69,7 @@ type Edicion = {
   ejemplar: string;
 };
 
-export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, carrera, fecha, onCerrar }: Props) {
+export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, carrera, fecha, tasaComision, onCerrar }: Props) {
   const [jugadas, setJugadas] = useState<JugadaAdmin[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
@@ -104,27 +126,31 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
       return;
     }
     setOcupado(true);
-    const r = await editarJugada(
-      edicion.id,
-      {
+    const r = await corregirJugadaYRecalcular({
+      id: edicion.id,
+      campos: {
         monto_jugado: edicion.monto.trim() === "" ? null : monto,
         caballo: edicion.caballo.trim() === "" ? null : edicion.caballo.trim().toUpperCase(),
         ejemplar_numero: edicion.ejemplar.trim() === "" ? null : Number(edicion.ejemplar),
       },
-      motivo.trim(),
-      usuario
-    );
+      motivo: motivo.trim(),
+      usuario,
+      hipodromo,
+      carrera,
+      fecha,
+      tasaComision,
+    });
     setOcupado(false);
     if (!r.ok) {
-      setAviso(`❌ ${r.error ?? "No se pudo guardar la corrección."}`);
+      setAviso(`❌ ${r.motivo}${r.errores.length ? ` · ${r.errores[0]}` : ""}`);
       return;
     }
     void registrarAuditoria(
       "GESTION_JUGADAS",
       "EDITAR_JUGADA_CARRERA",
-      `Jugada #${edicion.id} corregida en ${nombreHipodromo} C${carrera} (${fecha}) por ${usuario}. Motivo: ${motivo.trim()}`
+      `Jugada #${edicion.id} corregida y carrera recalculada en ${nombreHipodromo} C${carrera} (${fecha}) por ${usuario}. Motivo: ${motivo.trim()}`
     );
-    setAviso("✅ Correción guardada y auditada.");
+    setAviso(`✅ ${textoRecalculo(r, "Corrección guardada.")} · Auditada.`);
     setEdicion(null);
     await cargar();
   };
@@ -138,18 +164,27 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
     // Si el motivo es uno de la lista, se prefija para dejar la traza legible.
     const texto = motivoAnular.trim();
     setOcupado(true);
-    const r = await anularJugada(anulando.id, texto, null, usuario);
+    const r = await anularJugadaYRecalcular({
+      id: anulando.id,
+      motivo: texto,
+      imagen: null,
+      usuario,
+      hipodromo,
+      carrera,
+      fecha,
+      tasaComision,
+    });
     setOcupado(false);
     if (!r.ok) {
-      setAviso(`❌ ${r.error ?? "No se pudo anular la jugada."}`);
+      setAviso(`❌ ${r.motivo}${r.errores.length ? ` · ${r.errores[0]}` : ""}`);
       return;
     }
     void registrarAuditoria(
       "GESTION_JUGADAS",
       "ANULAR_JUGADA_CARRERA",
-      `Jugada #${anulando.id} anulada en ${nombreHipodromo} C${carrera} (${fecha}) por ${usuario}. Motivo: ${texto}`
+      `Jugada #${anulando.id} anulada y carrera recalculada en ${nombreHipodromo} C${carrera} (${fecha}) por ${usuario}. Motivo: ${texto}`
     );
-    setAviso("✅ Jugada anulada y auditada.");
+    setAviso(`✅ ${textoRecalculo(r, "Jugada anulada.")} · Auditada.`);
     setAnulando(null);
     setMotivoAnular("");
     await cargar();
@@ -158,17 +193,21 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
   const restaurar = async (j: JugadaAdmin) => {
     setOcupado(true);
     const r = await restaurarJugada(j.id, "Restauración desde edición de jugadas", usuario);
-    setOcupado(false);
     if (!r.ok) {
+      setOcupado(false);
       setAviso(`❌ ${r.error ?? "No se pudo restaurar."}`);
       return;
     }
+    // Al volver al motor, la carrera se rehace para que premios y comisión
+    // cuadren con el nuevo conjunto de jugadas.
+    const rec = await recalcularCarrera({ hipodromo, carrera, fecha, tasaComision });
+    setOcupado(false);
     void registrarAuditoria(
       "GESTION_JUGADAS",
       "RESTAURAR_JUGADA_CARRERA",
-      `Jugada #${j.id} restaurada en ${nombreHipodromo} C${carrera} (${fecha}) por ${usuario}.`
+      `Jugada #${j.id} restaurada y carrera recalculada en ${nombreHipodromo} C${carrera} (${fecha}) por ${usuario}.`
     );
-    setAviso("✅ Jugada restaurada.");
+    setAviso(`✅ ${textoRecalculo(rec, "Jugada restaurada.")} · Auditada.`);
     await cargar();
   };
 

@@ -72,71 +72,30 @@ export function motorDesdeFila(
     puesto_final: typeof ctx.pizarra.primero === "number" ? ctx.pizarra.primero : parseInt(String(ctx.pizarra.primero ?? ""), 10) || 1,
     pizarra: ctx.pizarra,
     dividendos: ctx.dividendos ?? null,
-    premio_por_tabla: ctx.premio_por_tabla ?? null,
+    // El premio de TABLA viaja con el ticket (se congeló al vender, columna
+    // `premio_por_tabla`). Si el caller no lo pasa —re-apertura y, sobre todo,
+    // RE-LIQUIDACIÓN de una carrera ya pagada—, se usa el del propio ticket en
+    // vez de caer al dividendo genérico o al 2 por defecto: sin esto, recalcular
+    // una TABLA pagaría un premio distinto al que se pagó la primera vez.
+    premio_por_tabla: ctx.premio_por_tabla != null
+      ? ctx.premio_por_tabla
+      : fila.premio_por_tabla != null
+        ? NUM(fila.premio_por_tabla)
+        : null,
   };
 }
 
 /**
- * Liquida TODOS los tickets Pendientes de una carrera y aplica el resultado
- * en la BD: estado Ganador/Perdedor + premio_pagar + incremento de
- * clientes.saldo_actual del ganador (abono). Return resumen + errores.
+ * Decide cada fila con el motor universal y aplica el neteo de comisión por
+ * cruce financiero. Es el corazón de la liquidación: se expone para que la
+ * reversión (`revertirLiquidacionCarrera`) calcule EXACTAMENTE igual que la
+ * aplicación y no haya deriva entre lo que se abona y lo que se descuenta.
  */
-export async function aplicarLiquidacionSaldos(
+export function decidirTickets(
+  filas: unknown[],
   input: LiquidarSaldosInput
-): Promise<ResumenSaldos> {
-  if (!supabase) {
-    return { ok: false, motivo: "Sin conexión a Supabase", aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: ["Sin conexión a Supabase."] };
-  }
-  const sdb = supabase;
-  // Ventana UTC que cubre el día de la JORNADA (input.fecha) o, si no se pasa,
-  // el día local. La columna real es fecha_registro (timestamptz del momento de
-  // la venta). Antes se filtraba con .eq("fecha", f), y `fecha` NO existe en
-  // tickets_apuestas: la consulta moría en el catch y esta pantalla devolvía
-  // "No se pudieron leer los tickets pendientes", sin liquidar nunca nada.
-  const f = input.fecha || hoyLocal();
-  const { desde, hasta } = ventanaDiaLocal(f);
-  let filas: unknown[] = [];
-  try {
-    const { data, error } = await sdb
-      .from("tickets_apuestas")
-      .select("*")
-      .gte("fecha_registro", desde)
-      .lt("fecha_registro", hasta)
-      .eq("hipodromo", input.hipodromo.trim().toUpperCase())
-      .eq("carrera", Number(input.carrera))
-      .eq("estado", "Pendiente")
-      // Las MARCAS se liquidan con `club_liquidar_marca`, que lee el snapshot de
-      // rivales del ticket. Si el motor universal las agarrara, decidiría "quien
-      // salga primero" y pagaría a un rival que en la marca iba perdiendo.
-      .not("nombre_jugada", "like", "MARCA %")
-      .limit(2000);
-    if (error) throw error;
-    filas = data ?? [];
-  } catch (e) {
-    return { ok: false, motivo: "No se pudieron leer los tickets pendientes.", aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [(e as Error).message] };
-  }
-
-  // Seguridad idempotente: si no hay Pendiente pero sí decididos → ya aplicado.
-  const { data: decididos } = await sdb
-    .from("tickets_apuestas")
-    .select("id")
-    .gte("fecha_registro", desde)
-    .lt("fecha_registro", hasta)
-    .eq("hipodromo", input.hipodromo.trim().toUpperCase())
-    .eq("carrera", Number(input.carrera))
-    .in("estado", ["Ganador", "Perdedor", "Retirado"])
-    .not("nombre_jugada", "like", "MARCA %")
-    .limit(1);
-  if (filas.length === 0 && ((decididos ?? []).length > 0 || filas.length === 0)) {
-    if ((decididos ?? []).length > 0) {
-      return { ok: true, motivo: "Carrera ya liquidada (tickets decididos). Sin cambios.", aplicados: 0, yaAplicado: true, reembolsos: 0, abonoTotal: 0, errores: [] };
-    }
-    return { ok: true, motivo: "Sin tickets pendientes para esta carrera.", aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [] };
-  }
-
-  // Decide cada ticket con el motor universal (idempotente por estado).
+): Array<{ fila: Record<string, unknown>; res: ResultadoMotor }> {
   const decisiones: Array<{ fila: Record<string, unknown>; res: ResultadoMotor }> = [];
-  const errores: string[] = [];
   for (const fRaw of filas) {
     const fila = fRaw as Record<string, unknown>;
     const res = liquidarOficial(motorDesdeFila(fila, input), input.tasaComision);
@@ -183,6 +142,85 @@ export async function aplicarLiquidacionSaldos(
       }
     }
   }
+  return decisiones;
+}
+
+/** Crédito que la liquidación acredita al cliente por un ticket decidido
+ *  (0 si perdió; el capital si quedó 'Retirado'/anulado). */
+export function creditoDeTicket(res: ResultadoMotor): number {
+  if (res.ok) return res.totalClienteNeto;
+  return res.totalClienteNeto > 0 ? res.totalClienteNeto : 0;
+}
+
+/**
+ * Liquida TODOS los tickets Pendientes de una carrera y aplica el resultado
+ * en la BD: estado Ganador/Perdedor + premio_pagar + incremento de
+ * clientes.saldo_actual del ganador (abono). Return resumen + errores.
+ */
+export async function aplicarLiquidacionSaldos(
+  input: LiquidarSaldosInput
+): Promise<ResumenSaldos> {
+  if (!supabase) {
+    return { ok: false, motivo: "Sin conexión a Supabase", aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: ["Sin conexión a Supabase."] };
+  }
+  const sdb = supabase;
+  // Ventana UTC que cubre el día de la JORNADA (input.fecha) o, si no se pasa,
+  // el día local. La columna real es fecha_registro (timestamptz del momento de
+  // la venta). Antes se filtraba con .eq("fecha", f), y `fecha` NO existe en
+  // tickets_apuestas: la consulta moría en el catch y esta pantalla devolvía
+  // "No se pudieron leer los tickets pendientes", sin liquidar nunca nada.
+  const f = input.fecha || hoyLocal();
+  const { desde, hasta } = ventanaDiaLocal(f);
+  let filas: unknown[] = [];
+  try {
+    const { data, error } = await sdb
+      .from("tickets_apuestas")
+      .select("*")
+      .gte("fecha_registro", desde)
+      .lt("fecha_registro", hasta)
+      .eq("hipodromo", input.hipodromo.trim().toUpperCase())
+      .eq("carrera", Number(input.carrera))
+      .eq("estado", "Pendiente")
+      // Una jugada ANULADA no se liquida: se excluye del motor. Sin este filtro,
+      // anular una jugada dejaba el ticket 'Pendiente' y la re-liquidación lo
+      // volvía a decidir/acreditar (la anulación no surtía efecto en el dinero).
+      .or("anulada.is.null,anulada.eq.false")
+      // Las MARCAS se liquidan con `club_liquidar_marca`, que lee el snapshot de
+      // rivales del ticket. Si el motor universal las agarrara, decidiría "quien
+      // salga primero" y pagaría a un rival que en la marca iba perdiendo.
+      .not("nombre_jugada", "like", "MARCA %")
+      .limit(2000);
+    if (error) throw error;
+    filas = data ?? [];
+  } catch (e) {
+    return { ok: false, motivo: "No se pudieron leer los tickets pendientes.", aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [(e as Error).message] };
+  }
+
+  // Seguridad idempotente: si no hay Pendiente pero sí decididos → ya aplicado.
+  const { data: decididos } = await sdb
+    .from("tickets_apuestas")
+    .select("id")
+    .gte("fecha_registro", desde)
+    .lt("fecha_registro", hasta)
+    .eq("hipodromo", input.hipodromo.trim().toUpperCase())
+    .eq("carrera", Number(input.carrera))
+    .in("estado", ["Ganador", "Perdedor", "Retirado"])
+    .not("nombre_jugada", "like", "MARCA %")
+    .limit(1);
+  if (filas.length === 0 && ((decididos ?? []).length > 0 || filas.length === 0)) {
+    if ((decididos ?? []).length > 0) {
+      return { ok: true, motivo: "Carrera ya liquidada (tickets decididos). Sin cambios.", aplicados: 0, yaAplicado: true, reembolsos: 0, abonoTotal: 0, errores: [] };
+    }
+    return { ok: true, motivo: "Sin tickets pendientes para esta carrera.", aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [] };
+  }
+
+  // Decide cada ticket con el motor universal (idempotente por estado) y aplica
+  // el neteo de comisión por cruce. La MISMA función la usa
+  // `revertirLiquidacionCarrera` para que el cálculo de reversión y el de
+  // re-liquidación empleen exactamente la misma fórmula.
+  const decisiones = decidirTickets(filas, input);
+  const errores: string[] = [];
+
 
   let abonoTotal = 0;
   let reembolsos = 0;

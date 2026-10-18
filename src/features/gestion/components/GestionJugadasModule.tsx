@@ -2188,6 +2188,7 @@ const hipodromosDelDia = useMemo(() => {
           nombreHipodromo={nombreHipodromo}
           carrera={carrera}
           fecha={fecha}
+          tasaComision={comisionNum}
           onCerrar={() => setModalEditarJugadas(false)}
         />
       )}
