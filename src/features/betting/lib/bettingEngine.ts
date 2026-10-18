@@ -136,6 +136,12 @@ export type NeteoCruceItem = {
   bruto: number;
   /** true = ticket ganador (bruto > 0). */
   ok: boolean;
+  /**
+   * Comisión (%) DEL GRUPO de este ticket — `comision_porcentaje` congelado al
+   * vender. Cuando viene, manda sobre la tasa general: cada grupo cobra la suya.
+   * Si ningún ticket del grupo la trae, se usa `tasaComisionPorcentaje`.
+   */
+  tasa?: number | null;
 };
 
 export type NeteoCruceGrupo = {
@@ -169,22 +175,29 @@ export function netearComisionCruce(
     Number.isFinite(Number(tasaComisionPorcentaje)) && Number(tasaComisionPorcentaje) >= 0
       ? Number(tasaComisionPorcentaje)
       : COMISION_CASA.rate * 100;
-  const porGrupo = new Map<string, { neto: number; conteo: number }>();
+  const porGrupo = new Map<string, { neto: number; conteo: number; tasa: number | null }>();
   for (const it of items) {
     const cliente = String(it.cliente ?? "").trim();
     const caballo = String(it.caballo ?? "").trim();
     if (!cliente || !caballo) continue;
     const k = claveCruceFinanciero(carrera, cliente, caballo);
-    const g = porGrupo.get(k) ?? { neto: 0, conteo: 0 };
+    const g = porGrupo.get(k) ?? { neto: 0, conteo: 0, tasa: null };
     g.neto += it.ok ? it.bruto - it.monto : -it.monto;
     g.conteo += 1;
+    // La tasa del GRUPO manda: se toma la primera del grupo que venga definida
+    // (numerica y >= 0). Si no hay, cae a la general en el loop de salida.
+    if (g.tasa == null && it.tasa != null) {
+      const t = Number(it.tasa);
+      if (Number.isFinite(t) && t >= 0) g.tasa = t;
+    }
     porGrupo.set(k, g);
   }
   const out = new Map<string, NeteoCruceGrupo>();
   for (const [k, g] of porGrupo) {
+    const tasaGrupo = g.tasa != null ? g.tasa : tasa;
     out.set(k, {
       neto: round2(g.neto),
-      comisionNeta: g.neto > 0 ? round2(g.neto * (tasa / 100)) : 0,
+      comisionNeta: g.neto > 0 ? round2(g.neto * (tasaGrupo / 100)) : 0,
       conteo: g.conteo,
     });
   }

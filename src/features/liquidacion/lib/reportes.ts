@@ -26,6 +26,7 @@ import {
   type NeteoCruceItem,
   type TicketMotor,
 } from "@/features/betting/lib/bettingEngine";
+import { esPrincipalVigente, grupoActivoVigente, veTodosLosGruposVigente } from "@/features/seguridad/lib/vigente";
 
 export type FilaReporte = {
   id: string;
@@ -313,14 +314,9 @@ async function leerPizarra(fecha: string, hipodromo: string, carrera: number | s
 
 async function leerTickets(fecha: string, hipodromo: string, carrera: string | number): Promise<Record<string, unknown>[]> {
   if (!supabase) return [];
-  // La columna real es `fecha_registro` (timestamptz UTC del momento de la
-  // venta). Antes habia dos intentos: uno con .eq("fecha") y otro de "fallback"
-  // con .gte("fecha_creacion"). Ninguna de las dos columnas existe en
-  // tickets_apuestas, así que los dos intentos fallaban y esta función
-  // devolvía [] siempre: los reportes de liquidación salían vacíos.
   const { desde, hasta } = ventanaDiaLocal(fecha);
   try {
-    const { data, error } = await supabase
+    let q = supabase
       .from("tickets_apuestas")
       .select("*")
       .gte("fecha_registro", desde)
@@ -328,11 +324,15 @@ async function leerTickets(fecha: string, hipodromo: string, carrera: string | n
       .eq("carrera", carrera)
       .ilike("hipodromo", `%${hipodromo}%`)
       .order("fecha_registro");
+    const activo = grupoActivoVigente();
+    if (esPrincipalVigente() && activo) {
+      q = q.eq("grupo_cobro_id", activo);
+    } else if (!esPrincipalVigente()) {
+      if (activo) q = q.eq("grupo_cobro_id", activo);
+      // if no active group, RLS applies
+    }
+    const { data, error } = await q;
     if (error) return [];
-    // VENTAS DE REMATE fuera: caen en `tickets_apuestas` con el mismo hipódromo
-    // y carrera, pero son ventas de caballos, no apuestas. Misma regla que la
-    // relación de WhatsApp (`esVentaDeRemate`), para que ambos suministren las
-    // MISMAS jugadas.
     return (data ?? []).filter(
       (r) => !esVentaDeRemate((r as { nombre_jugada?: unknown }).nombre_jugada)
     ) as Record<string, unknown>[];
@@ -432,16 +432,22 @@ async function leerTicketsHipodromo(fecha: string, hipodromo: string): Promise<M
   if (!supabase) return porCarrera;
   const { desde, hasta } = ventanaDiaLocal(fecha);
   try {
-    const { data, error } = await supabase
+    let q = supabase
       .from("tickets_apuestas")
       .select("*")
       .gte("fecha_registro", desde)
       .lt("fecha_registro", hasta)
       .ilike("hipodromo", `%${hipodromo}%`)
       .order("fecha_registro");
+    const activo = grupoActivoVigente();
+    if (esPrincipalVigente() && activo) {
+      q = q.eq("grupo_cobro_id", activo);
+    } else if (!esPrincipalVigente()) {
+      if (activo) q = q.eq("grupo_cobro_id", activo);
+    }
+    const { data, error } = await q;
     if (error) return porCarrera;
     for (const row of (data ?? []) as Record<string, unknown>[]) {
-      // Misma exclusión de ventas de remate que la lectura por carrera.
       if (esVentaDeRemate(row.nombre_jugada)) continue;
       const k = claveCarrera(row.carrera);
       const lista = porCarrera.get(k);

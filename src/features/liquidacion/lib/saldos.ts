@@ -86,6 +86,25 @@ export function motorDesdeFila(
 }
 
 /**
+ * Comisión (%) que corresponde a un ticket: la DEL GRUPO, congelada en
+ * `comision_porcentaje` al vender. Si la fila no la trae (tickets viejos o
+ * cargas sin grupo), se respalda con la tasa general que pasa el caller. Un 0%
+ * EXPLÍCITO es válido (no se confunde con "falta el dato").
+ */
+export function tasaComisionDeFila(
+  fila: Record<string, unknown>,
+  respaldo?: number | null
+): number {
+  const raw = fila.comision_porcentaje;
+  if (raw != null && String(raw).trim() !== "") {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  const f = Number(respaldo);
+  return Number.isFinite(f) && f >= 0 ? f : 5;
+}
+
+/**
  * Decide cada fila con el motor universal y aplica el neteo de comisión por
  * cruce financiero. Es el corazón de la liquidación: se expone para que la
  * reversión (`revertirLiquidacionCarrera`) calcule EXACTAMENTE igual que la
@@ -98,7 +117,11 @@ export function decidirTickets(
   const decisiones: Array<{ fila: Record<string, unknown>; res: ResultadoMotor }> = [];
   for (const fRaw of filas) {
     const fila = fRaw as Record<string, unknown>;
-    const res = liquidarOficial(motorDesdeFila(fila, input), input.tasaComision);
+    // Comisión POR TICKET desde su grupo (`comision_porcentaje` congelado): si
+    // se usara una tasa única, los grupos con comisión distinta quedarían mal
+    // cobrados. El caller sigue siendo el respaldo para tickets sin el dato.
+    const tasa = tasaComisionDeFila(fila, input.tasaComision);
+    const res = liquidarOficial(motorDesdeFila(fila, input), tasa);
     decisiones.push({ fila, res });
   }
 
@@ -111,6 +134,7 @@ export function decidirTickets(
     monto: NUM(fila.monto_jugado),
     bruto: res.ok ? res.totalClienteNeto + res.gananciaCasa : 0,
     ok: res.ok,
+    tasa: tasaComisionDeFila(fila, input.tasaComision),
   }));
   const gruposNeteo = netearComisionCruce(items, input.carrera, input.tasaComision);
   if (gruposNeteo.size > 0) {

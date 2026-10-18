@@ -64,10 +64,22 @@ const MOTIVOS: readonly string[] = MOTIVOS_ANULACION;
 
 type Edicion = {
   id: string;
-  monto: string;
+  /** Nomenclatura de la jugada (nombre_jugada: "GANADOR", "2P", "TABLA 2"…). */
+  nombre: string;
+  /** El ÚNICO ejemplar/caballo que se juega (texto: "7", "1-2"…). */
   caballo: string;
-  ejemplar: string;
+  monto: string;
 };
+
+/**
+ * Deriva `ejemplar_numero` del texto de `caballo`, replicando EXACTAMENTE la
+ * regla de venta (`taquilla_venta.sql`): sólo si es un número suelto. Así los
+ * dos campos que describen al MISMO caballo nunca se desincronizan al corregir.
+ */
+function ejemplarDeCaballo(caballo: string): number | null {
+  const t = caballo.trim();
+  return /^[0-9]+$/.test(t) ? Number(t) : null;
+}
 
 export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, carrera, fecha, tasaComision, onCerrar }: Props) {
   const [jugadas, setJugadas] = useState<JugadaAdmin[]>([]);
@@ -106,9 +118,9 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
   const empezarEdicion = (j: JugadaAdmin) => {
     setEdicion({
       id: String(j.id),
-      monto: j.monto_jugado != null ? String(j.monto_jugado) : "",
+      nombre: j.nombre_jugada ?? "",
       caballo: j.caballo ?? "",
-      ejemplar: j.ejemplar_numero != null ? String(j.ejemplar_numero) : "",
+      monto: j.monto_jugado != null ? String(j.monto_jugado) : "",
     });
     setMotivo("");
     setAviso("");
@@ -120,18 +132,28 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
       setAviso("⚠️ Indicá el motivo de la corrección (queda auditado).");
       return;
     }
+    if (!edicion.nombre.trim()) {
+      setAviso("⚠️ La jugada (nomenclatura) no puede quedar vacía.");
+      return;
+    }
     const monto = Number(String(edicion.monto).replace(",", "."));
     if (edicion.monto.trim() !== "" && (!Number.isFinite(monto) || monto < 0)) {
       setAviso("⚠️ El monto no es válido.");
       return;
     }
+    const caballo = edicion.caballo.trim().toUpperCase();
     setOcupado(true);
     const r = await corregirJugadaYRecalcular({
       id: edicion.id,
       campos: {
         monto_jugado: edicion.monto.trim() === "" ? null : monto,
-        caballo: edicion.caballo.trim() === "" ? null : edicion.caballo.trim().toUpperCase(),
-        ejemplar_numero: edicion.ejemplar.trim() === "" ? null : Number(edicion.ejemplar),
+        // Un solo caballo: `caballo` (texto) y `ejemplar_numero` (entero) se
+        // derivan del MISMO valor, igual que en la venta. Antes se editaba solo
+        // `caballo` y `ejemplar_numero` quedaba viejo → el renglón mostraba dos
+        // caballos distintos.
+        nombre_jugada: edicion.nombre.trim().toUpperCase(),
+        caballo: caballo === "" ? null : caballo,
+        ejemplar_numero: ejemplarDeCaballo(caballo),
       },
       motivo: motivo.trim(),
       usuario,
@@ -274,10 +296,10 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
                     <td className="px-2 py-1.5 text-slate-600">
                       {enEdicion ? (
                         <input
-                          value={edicion.caballo}
-                          onChange={(e) => setEdicion({ ...edicion, caballo: e.target.value })}
-                          placeholder="ejemplar/caballo"
-                          className="w-28 rounded border border-line px-1 py-0.5 text-xs"
+                          value={edicion.nombre}
+                          onChange={(e) => setEdicion({ ...edicion, nombre: e.target.value })}
+                          placeholder="jugada (ej. 2P)"
+                          className="w-24 rounded border border-line px-1 py-0.5 text-xs"
                         />
                       ) : (
                         j.nombre_jugada ?? "—"
@@ -285,14 +307,14 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
                     </td>
                     <td className="px-2 py-1.5 text-slate-600">
                       {enEdicion ? (
-                        <>
-                          <span>{edicion.caballo || "—"}</span>
-                        </>
+                        <input
+                          value={edicion.caballo}
+                          onChange={(e) => setEdicion({ ...edicion, caballo: e.target.value })}
+                          placeholder="Nº / caballo"
+                          className="w-24 rounded border border-line px-1 py-0.5 text-xs"
+                        />
                       ) : (
-                        <>
-                          {j.ejemplar_numero != null ? `${j.ejemplar_numero} · ` : ""}
-                          {j.caballo ?? "—"}
-                        </>
+                        <>{j.caballo?.trim() || (j.ejemplar_numero != null ? String(j.ejemplar_numero) : "—")}</>
                       )}
                     </td>
                     <td className="px-2 py-1.5 text-right font-bold text-slate-700">
