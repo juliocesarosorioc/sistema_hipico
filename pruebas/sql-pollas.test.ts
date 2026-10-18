@@ -275,5 +275,41 @@ console.log("\n[5c] El delta de columnas faltantes tambien trae los % de premio"
   }
 }
 
+// ---------------------------------------------------------------------------
+console.log("\n[6] La columna vieja `hipodromo` (texto) no bloquea el INSERT");
+// ---------------------------------------------------------------------------
+// Una base creada por una version anterior tiene `pollas.hipodromo` (TEXTO) con
+// NOT NULL. El RPC escribe `hipodromo_id`, no el texto, asi que crear una Polla
+// moria con: null value in column "hipodromo" ... violates not-null constraint.
+// La causa agravante: `pollas_hipodromo_id.sql` tenia el `update` PEGADO a la
+// linea de comentario (el comentario se comia la sentencia), asi que el script
+// entero reventaba con un syntax error y nunca aplicaba NADA.
+{
+  const hip = readFileSync(join(process.cwd(), "sql", "pollas_hipodromo_id.sql"), "utf8");
+
+  const pegados = hip.split(/\r?\n/).filter((l) => /-{5,}\s*update\b/.test(l));
+  ok(pegados.length === 0, "pollas_hipodromo_id.sql: ningun `update` pegado al comentario");
+  for (const l of pegados) console.log(`        ${l.trim()}`);
+
+  ok(
+    /if\s+exists\s*\(\s*select 1\s+from information_schema\.columns[\s\S]{0,220}'hipodromo'/i.test(hip),
+    "pollas_hipodromo_id.sql: comprueba si `hipodromo` existe antes de tocarla"
+  );
+  ok(
+    /alter column hipodromo drop not null/i.test(hip),
+    "pollas_hipodromo_id.sql: le quita el NOT NULL a `hipodromo`"
+  );
+  ok(/\$relleno\$/.test(hip), "pollas_hipodromo_id.sql: rellena el texto con SQL dinamico");
+
+  ok(
+    /alter column hipodromo drop not null/i.test(sql),
+    "pollas.sql: tambien protege una base vieja con `hipodromo` NOT NULL"
+  );
+  ok(
+    /information_schema\.columns[\s\S]*?'hipodromo'/i.test(sql),
+    "pollas.sql: la proteccion es dinamica (no rompe bases nuevas)"
+  );
+}
+
 console.log(`\nTODO ${fallan === 0 ? "OK" : "FALLA"}: ${pasan} pasaron, ${fallan} fallaron`);
 if (fallan > 0) process.exit(1);

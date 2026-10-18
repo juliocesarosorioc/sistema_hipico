@@ -206,6 +206,40 @@ alter table public.pollas
   add column if not exists estado          text not null default 'Abierta',
   add column if not exists fecha_registro  timestamptz default now();
 
+-- ---------------------------------------------------------------------------
+-- 2bis) Columna vieja `hipodromo` (TEXTO, NOT NULL) de la tabla viva
+--
+-- Una versión anterior de `pollas` guardaba el hipódromo como TEXTO y con
+-- NOT NULL. El RPC escribe `hipodromo_id` (uuid) y no el texto, así que crear una
+-- Polla en una base vieja moría con:
+--   null value in column "hipodromo" of relation "pollas" violates not-null
+-- La app ya no lee ese texto (usa `hipodromo_id`), pero la columna seguía
+-- obligando. Se le quita el NOT NULL y se rellena. Con SQL dinámico porque en las
+-- bases nuevas la columna NO existe y un `alter`/`update` estático rompería el
+-- script (que además es idempotente y se corre entero cada vez).
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if exists (
+    select 1
+      from information_schema.columns
+     where table_schema = 'public'
+       and table_name   = 'pollas'
+       and column_name  = 'hipodromo'
+  ) then
+    execute 'alter table public.pollas alter column hipodromo drop not null';
+    execute $relleno$
+      update public.pollas p
+         set hipodromo = coalesce(
+               (select h.nombre from public.hipodromos h where h.id = p.hipodromo_id),
+               nullif(btrim(p.carreras->0->>'hipodromo'), ''),
+               'SIN HIPODROMO'
+             )
+       where p.hipodromo is null
+    $relleno$;
+  end if;
+end $$;
+
 alter table public.polla_ventas
   add column if not exists combinaciones   integer not null default 0,
   add column if not exists precio_unitario numeric not null default 0,
