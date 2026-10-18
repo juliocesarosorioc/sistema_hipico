@@ -420,11 +420,18 @@ async function liquidarTablasFijasDeCarrera(
     // El hipódromo se compara por clave canónica (misma que retiros/matrices): la
     // columna puede venir escrita "LA RINCONADA" o "LA RINCONADA " y un `.eq`
     // texto dejaría la tabla sin liquidar.
+    //
+    // La JORNADA se acota EN LA CONSULTA (no con un tope en memoria): sin esto,
+    // con el correr de los días el `limit` fijo dejaba afuera la tabla del día
+    // (hay muchas tablas con el mismo Nº de carrera en toda la historia) y la
+    // carrera no se liquidaba. Se conservan las filas sin `fecha` para el fallback
+    // por `fecha_creacion`.
     const { data, error } = await supabase
       .from("tablas_fijas")
       .select("id, hipodromo, carrera, fecha, fecha_creacion, estado")
       .eq("carrera", carrera)
-      .limit(50);
+      .or(`fecha.eq.${dia},fecha.is.null`)
+      .limit(200);
     if (error) throw error;
     const clave = claveHipodromo(hipodromo);
     ids = ((data ?? []) as Array<Record<string, unknown>>)

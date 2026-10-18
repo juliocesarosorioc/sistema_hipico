@@ -156,11 +156,28 @@ ok(
   /liquidarTablasFijasDeCarrera\(opts\.hipodromo, Number\(opts\.carrera\), opts\.pizarra, fecha\)/.test(pagarY),
   "pagarYCerrar: la re-apertura (`liquidarPendientesDeCarrera`) también re-decide las tablas fijas"
 );
+// La jornada tiene que acotarse EN LA CONSULTA: con un `limit` fijo, al pasar los
+// días la tabla del día quedaba fuera y la carrera no se liquidaba.
+ok(
+  /\.or\(`fecha\.eq\.\$\{dia\},fecha\.is\.null`\)/.test(pagarY),
+  "pagarYCerrar: acota la JORNADA en la consulta a `tablas_fijas` (no con un tope fijo)"
+);
 
 // --- club_liquidar_tabla_fija también reprocesa los 'Perdedor' mal decididos ---
 ok(
   /where estado in \('Pendiente', 'Perdedor'\)/.test(sql),
   "liquidar: la RPC reprocesa 'Pendiente' y 'Perdedor' (repara la decisión vieja del motor)"
+);
+
+// --- la venta sella `fecha_carrera`: el reporte la encuentra por jornada aunque
+//     el trigger `trg_tickets_fecha_carrera` no esté instalado ---
+ok(
+  /add column if not exists fecha_carrera date/.test(sql),
+  "venta: asegura la columna `fecha_carrera` (defensivo, idempotente)"
+);
+ok(
+  /carrera, fecha_carrera, nombre_jugada/.test(sql),
+  "venta: el INSERT graba `fecha_carrera` además del JSON de `nota_auditoria`"
 );
 
 const rpc = readFileSync(

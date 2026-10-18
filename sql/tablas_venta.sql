@@ -26,6 +26,16 @@
 --    select proname from pg_proc where proname = 'club_vender_tabla_fija';
 -- =============================================================================
 
+--    select proname from pg_proc where proname = 'club_vender_tabla_fija';
+-- =============================================================================
+
+-- Defensivo: `fecha_carrera` la crea `sql/fecha_carrera_tickets.sql`, pero la
+-- venta de tabla fija ahora la sella EXPLÍCITAMENTE (no solo en `nota_auditoria`)
+-- para que el reporte de la carrera la encuentre por la jornada aunque el trigger
+-- `trg_tickets_fecha_carrera` no esté instalado. Idempotente, no toca datos.
+alter table public.tickets_apuestas
+  add column if not exists fecha_carrera date;
+
 create or replace function public.club_vender_tabla_fija(
   p_tabla_id            bigint,
   p_cliente_id          uuid,
@@ -201,7 +211,7 @@ begin
   -- ------------------------------------------------------------------
   if p_ejemplar_numero is not null and btrim(p_ejemplar_numero) <> '' then
     insert into public.tickets_apuestas (
-      fecha_registro, hipodromo, carrera, nombre_jugada, caballo, ejemplar_numero,
+      fecha_registro, hipodromo, carrera, fecha_carrera, nombre_jugada, caballo, ejemplar_numero,
       cantidad_tablas, monto_jugado, monto_decidido, premio_pagar,
       premio_por_tabla, pts_ejemplar,
       cliente_juega_id, cliente_juega_nombre,
@@ -210,7 +220,7 @@ begin
       estado, moneda, tasa_cambio, nota_auditoria
     )
     values (
-      now(), upper(v_tabla.hipodromo), v_tabla.carrera,
+      now(), upper(v_tabla.hipodromo), v_tabla.carrera, v_fecha,
       format('TABLA FIJA (%s C%s)', upper(v_tabla.hipodromo), v_tabla.carrera),
       v_caballo, nullif(v_num, '')::int,
       v_cant, p_monto, 0, 0,
@@ -245,7 +255,7 @@ begin
       v_pts     := nullif(v_uno ->> 'valor_ejemplar', '')::numeric;
 
       insert into public.tickets_apuestas (
-        fecha_registro, hipodromo, carrera, nombre_jugada, caballo, ejemplar_numero,
+        fecha_registro, hipodromo, carrera, fecha_carrera, nombre_jugada, caballo, ejemplar_numero,
         cantidad_tablas, monto_jugado, monto_decidido, premio_pagar,
         premio_por_tabla, pts_ejemplar,
         cliente_juega_id, cliente_juega_nombre,
@@ -254,7 +264,7 @@ begin
         estado, moneda, tasa_cambio, nota_auditoria
       )
       values (
-        now(), upper(v_tabla.hipodromo), v_tabla.carrera,
+        now(), upper(v_tabla.hipodromo), v_tabla.carrera, v_fecha,
         format('TABLA FIJA (%s C%s)', upper(v_tabla.hipodromo), v_tabla.carrera),
         v_caballo, nullif(v_num, '')::int,
         v_cant, p_monto, 0, 0,
