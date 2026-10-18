@@ -111,8 +111,9 @@ export function GestionJugadasModule() {
   const [observaciones, setObservaciones] = useState("");
   const [comision, setComision] = useState("5");
   const [conCruces, setConCruces] = useState(false);
-  /** Ítem 1: re-apertura explícita de una carrera YA liquidada. */
+  /** Ítem 1: modo para editar una carrera YA LIQUIDADA, sin reabrir solo para agregar (reescribe resultado). */
   const [reapertura, setReapertura] = useState(false);
+  const [editarCerrada, setEditarCerrada] = useState(false);
   const [filas, setFilas] = useState<FilaCarga[]>([filaVacia()]);
   const [jugadasPorCarrera, setJugadasPorCarrera] = useState<number[]>([]);
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
@@ -167,12 +168,11 @@ export function GestionJugadasModule() {
   /** Ítem 1: sólo quien tenga la capacidad puede reabrir una liquidada. */
   const puedeReabrir = tieneCapacidad("gestion_jugadas:fn_reabrir_carrera");
 
-  // La re-apertura vale SOLO para la carrera en curso: al cambiar de carrera,
-  // fecha o hipódromo se cierra sola, para no liquidar por error. Lo mismo la
-  // pizarra cargada: si no se limpia, al cambiar de carrera el flujo unificado
-  // finalizaría la carrera nueva con la llegada de la anterior.
+  // La re-apertura/edición de cerrada valen SOLO para la carrera en curso: al cambiar de carrera,
+  // fecha o hipódromo se cierra sola, para no liquidar por error. Lo mismo la pizarra cargada.
   useEffect(() => {
     setReapertura(false);
+    setEditarCerrada(false);
     setUltimaPizarra(null);
     setPizarraCentral(null);
   }, [hipodromo, fecha, carrera]);
@@ -1879,29 +1879,62 @@ const hipodromosDelDia = useMemo(() => {
           >
             🧾 Reporte de Liquidación <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+G</kbd>
           </button>
-          {carreraLiquidada && !reapertura && (
-            <button
-              type="button"
-              onClick={abrirReapertura}
-              disabled={!puedeReabrir}
-              title={
-                puedeReabrir
-                  ? "Reabrir esta carrera liquidada para agregar jugadas nuevas"
-                  : "Necesitás la capacidad «Reabrir una carrera ya liquidada»"
-              }
-              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              ➕ Agregar jugada a carrera liquidada
-            </button>
-          )}
-          {reapertura && (
-            <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
-              🟠 Re-apertura activa · {nombreHipodromo} C{carrera} — se liquidará SÓLO lo agregado
+          {(carreraLiquidada || pizarraCentral) && !reapertura && (
+            <>
               <button
                 type="button"
-                onClick={() => setReapertura(false)}
-                className="ml-1 text-amber-600 hover:text-amber-800"
-                title="Cancelar la re-apertura"
+                onClick={abrirReapertura}
+                disabled={!puedeReabrir}
+                title={
+                  puedeReabrir
+                    ? "Reabrir esta carrera liquidada para agregar jugadas nuevas"
+                    : "Necesitás la capacidad «Reabrir una carrera ya liquidada»"
+                }
+                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                ➕ Agregar jugada a carrera liquidada
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!puedeReabrir) {
+                    setAviso("No tenés la capacidad para editar una carrera ya liquidada.");
+                    return;
+                  }
+                  setReapertura(true);
+                  setEditarCerrada(true);
+                  setUltimaPizarra(null);
+                  setPizarraCentral(null);
+                  setModalResultados(true);
+                  void registrarAuditoria(
+                    "GESTION_JUGADAS",
+                    "EDITAR_RESULTADO_CERRADA_INICIO",
+                    `Edición de resultado cerrado: ${nombreHipodromo} C${carrera} (${fecha}) por ${usuarioVigente()}.`
+                  );
+                }}
+                disabled={!puedeReabrir}
+                title={
+                  puedeReabrir
+                    ? "Corregir el resultado de una carrera ya cerrada (reescribe resultado y vuelve a liquidar)"
+                    : "Necesitás la capacidad «Reabrir una carrera ya liquidada»"
+                }
+                className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                ✏️ Editar resultado (cerrada)
+              </button>
+            </>
+          )}
+          {reapertura && editarCerrada && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-500 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700">
+              ✏️ Corrección de resultado cerrado · {nombreHipodromo} C{carrera} — se liquidará con el NUEVO resultado
+              <button
+                type="button"
+                onClick={() => {
+                  setReapertura(false);
+                  setEditarCerrada(false);
+                }}
+                className="ml-1 text-slate-600 hover:text-slate-800"
+                title="Cancelar la edición"
               >
                 ✕
               </button>
@@ -1914,7 +1947,7 @@ const hipodromosDelDia = useMemo(() => {
             title={listoParaCargar ? "Carga/edita los resultados y luego finaliza (un solo flujo: Ctrl+Y o Ctrl+R)" : "Elija hipódromo y carrera para registrar y finalizar"}
             className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-success-600 to-emerald-500 px-3 py-2 text-xs font-black text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {reapertura ? "💾 Liquidar jugadas agregadas" : "✅ Registrar y Finalizar"}{" "}
+            {reapertura ? (editarCerrada ? "💾 Guardar y liquidar (reescribe resultado)" : "💾 Liquidar jugadas agregadas") : "✅ Registrar y Finalizar"}{" "}
             <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+Y/R</kbd>
           </button>
           <button
@@ -2154,7 +2187,11 @@ const hipodromosDelDia = useMemo(() => {
               )}
               {!resumen && (
                 <Button variant="success" size="md" onClick={() => void ejecutarFinalizar()}>
-                  {reapertura ? "💾 Liquidar jugadas agregadas" : "💰 Registrar y Finalizar"}
+                  {reapertura && editarCerrada
+                    ? "💾 Guardar y liquidar (reescribe resultado)"
+                    : reapertura
+                      ? "💾 Liquidar jugadas agregadas"
+                      : "💰 Registrar y Finalizar"}
                 </Button>
               )}
             </div>
