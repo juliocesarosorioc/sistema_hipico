@@ -44,29 +44,29 @@ si(/oct/.test(d.encabezado.fecha), `fecha legible: «${d.encabezado.fecha}»`);
 si(d.encabezado.llegada.length === 3, "la pizarra 7·2·5 se vuelve 3 discos de llegada");
 si(d.encabezado.llegada[0]?.numero === "7" && d.encabezado.llegada[0]?.puesto === "1º", "1er disco es el 7 con puesto 1º");
 si(d.encabezado.llegada[2]?.numero === "5" && d.encabezado.llegada[2]?.puesto === "3º", "3er disco es el 5 con puesto 3º");
-// ── Colores de gualdrapa: tabla OFICIAL, fuente única en shared/lib/horseColors ──
-si(colorDiscoNumero(7).includes("bg-amber-800"), "color del disco 7 = marrón (oficial)");
-si(colorDiscoNumero(3).includes("bg-blue-600"), "color del disco 3 = azul (oficial)");
-si(colorDiscoNumero(9).includes("bg-orange-600"), "color del disco 9 = naranja (oficial)");
-si(colorDiscoNumero(10).includes("bg-teal-500"), "color del disco 10 = turquesa (oficial)");
-si(colorDiscoNumero(11).includes("bg-slate-500"), "color del disco 11 = gris (oficial)");
-si(colorDiscoNumero(12).includes("bg-purple-700"), "color del disco 12 = violeta (oficial)");
+// ── Colores de gualdrapa: codificación 1–20, fuente única en shared/lib/horseColors ──
+si(colorDiscoNumero(7).includes("bg-orange-500"), "color del disco 7 = naranja (codificación)");
+si(colorDiscoNumero(3).includes("bg-sky-700"), "color del disco 3 = azul (codificación)");
+si(colorDiscoNumero(9).includes("bg-teal-500"), "color del disco 9 = turquesa (codificación)");
+si(colorDiscoNumero(10).includes("bg-purple-700"), "color del disco 10 = morado (codificación)");
+si(colorDiscoNumero(11).includes("bg-slate-400"), "color del disco 11 = gris (codificación)");
+si(colorDiscoNumero(12).includes("bg-emerald-400"), "color del disco 12 = verde claro (codificación)");
 si(
   colorDiscoNumero(2).includes("bg-white") && colorDiscoNumero(2).includes("border border-slate-300"),
   "el 2 blanco se pinta con borde para no perderse sobre panel blanco"
 );
-si(colorDiscoNumero(15).includes("bg-red-600"), "15 repite el ciclo → 1 rojo (mismo color que imprimía la tabla)");
+si(colorDiscoNumero(15).includes("bg-lime-100"), "el 15 caqui usa su propio color (ya no repite el ciclo)");
 si(colorDiscoNumero(99).includes("bg-slate-700"), "número fuera del rango cae al gris de respaldo (bg-slate-700)");
-// Texto OSCURO en los fondos que con blanco no llegaban a AA (fondo intacto).
+// Color del NÚMERO según la codificación (fondo intacto).
 si(
-  colorDiscoNumero(5).includes("bg-emerald-600") && colorDiscoNumero(5).includes("text-slate-900"),
-  "el 5 verde conserva el fondo oficial y lleva texto oscuro"
+  colorDiscoNumero(5).includes("bg-emerald-600") && colorDiscoNumero(5).includes("text-white"),
+  "el 5 verde lleva su fondo y número BLANCO"
 );
 si(
-  colorDiscoNumero(10).includes("bg-teal-500") && colorDiscoNumero(10).includes("text-slate-900"),
-  "el 10 turquesa conserva el fondo oficial y lleva texto oscuro"
+  colorDiscoNumero(10).includes("bg-purple-700") && colorDiscoNumero(10).includes("text-white"),
+  "el 10 morado lleva su fondo y número BLANCO"
 );
-si(colorDiscoNumero(6).includes("bg-slate-900") && colorDiscoNumero(6).includes("text-white"), "el 6 negro sigue con texto blanco");
+si(colorDiscoNumero(6).includes("bg-slate-800") && colorDiscoNumero(6).includes("text-yellow-400"), "el 6 negro lleva número AMARILLO");
 
 // ── 2. Jugadas "en vivo" ──
 si(d.jugadasVivo.length === 2, "una fila por ticket (el CRUCE no cuenta y el Consigue viaja como DA)");

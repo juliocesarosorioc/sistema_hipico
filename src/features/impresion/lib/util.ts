@@ -21,7 +21,7 @@ export const DIM_PAGINA: Record<Orientacion, { w: number; h: number }> = {
 };
 
 /**
- * Gualdrapas oficiales (1..14) de la impresión — derivadas de la fuente única
+ * Gualdrapas (1..14) de la impresión — derivadas de la fuente única
  * `shared/lib/horseColors`, no de una lista propia: así el papel pinta el MISMO
  * color que la pantalla. Se conserva el nombre por compatibilidad con el motor
  * de Tablas/Reporte/Excel.
@@ -33,9 +33,8 @@ export const PALETA14: Array<[string, string]> = Array.from({ length: 14 }, (_, 
 
 /**
  * Color del número para estilos inline del HTML impreso / Excel.
- * Delega en `getHorseColor`: 1..12 oficiales, 13/14 configurados, 15..20
- * repiten el ciclo y fuera de rango cae al gris de respaldo (mismo color en
- * todas partes).
+ * Delega en `getHorseColor`: codificación 1..20 y fuera de rango cae al gris de
+ * respaldo (mismo color en todas partes).
  */
 export function col(n: number | string): { bg: string; fg: string } {
   const c = getHorseColor(n);

@@ -56,16 +56,29 @@ console.log("\n[2] La capacidad nueva está declarada en el catálogo");
 ok("capacidad fn_reabrir_carrera declarada", /"fn_reabrir_carrera"/.test(capacidades));
 ok("documentada como crítico", /"fn_reabrir_carrera"[^\n]*"critico"/.test(capacidades));
 
-console.log("\n[3] El módulo de Gestión cablea la re-apertura explícita");
+console.log("\n[3] El módulo de Gestión cablea la re-apertura + edición de jugadas guardadas");
 ok("tiene el estado reapertura", /const \[reapertura, setReapertura\] = useState\(false\)/.test(gestion));
+ok("tiene el modal de jugadas guardadas", /const \[modalEditarJugadas, setModalEditarJugadas\] = useState\(false\)/.test(gestion));
 ok("detecta la carrera liquidada", /const carreraLiquidada = useMemo\(/.test(gestion));
 ok("respeta la capacidad (tieneCapacidad)", /tieneCapacidad\("gestion_jugadas:fn_reabrir_carrera"\)/.test(gestion));
 ok("ofrece el botón de re-apertura", gestion.includes("Agregar jugada a carrera liquidada"));
+ok("ofrece el botón para editar jugadas guardadas", gestion.includes("Editar jugadas guardadas"));
 ok("la re-apertura se cierra al cambiar de carrera", /setReapertura\(false\);[\s\S]*?\}, \[hipodromo, fecha, carrera\]\)/.test(gestion));
 ok("al reabrir deja rastro en la auditoría", /REABRIR_LIQUIDADA_INICIO/.test(gestion));
 ok("al liquidar lo agregado deja rastro en la auditoría", /"REABRIR_LIQUIDADA"/.test(gestion));
 ok("en modo re-apertura usa liquidarPendientesDeCarrera", /liquidarPendientesDeCarrera\(/.test(gestion));
 ok("el modal cambia a «Liquidar jugadas agregadas»", gestion.includes("Liquidar jugadas agregadas"));
+
+console.log("\n[4] Editar jugadas guardadas de una carrera (aunque esté cerrada)");
+const modal = leer("src", "features", "gestion", "components", "ModalEditarJugadasCarrera.tsx");
+ok("el módulo monta el modal de edición", /<ModalEditarJugadasCarrera/.test(gestion));
+ok("lee las jugadas reales de la carrera", /listarJugadasDeCarrera\(/.test(modal));
+ok("corrige con editarJugada", /editarJugada\(/.test(modal));
+ok("anula con anularJugada", /anularJugada\(/.test(modal));
+ok("exige motivo para corregir", /Indicá el motivo de la corrección/.test(modal));
+ok("exige motivo para anular", /Indicá el motivo de la anulación/.test(modal));
+ok("deja traza en la auditoría al corregir", /EDITAR_JUGADA_CARRERA/.test(modal));
+ok("deja traza en la auditoría al anular", /ANULAR_JUGADA_CARRERA/.test(modal));
 
 console.log(`\n${pasan} pasaron, ${fallan} fallaron`);
 process.exit(fallan > 0 ? 1 : 0);
