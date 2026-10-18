@@ -189,6 +189,15 @@ export function CuadroModal({
                 inputMode="decimal"
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
+                // Enter con el foco en el VALOR guarda el cuadro sin tener que
+                // soltar el teclado e ir al botón: es la corrección típica
+                // (arreglar el valor de un ejemplar) y el flujo dominante del modal.
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !guardando) {
+                    e.preventDefault();
+                    guardar();
+                  }
+                }}
                 placeholder="—"
                 className={`${inp} text-right font-black`}
               />
