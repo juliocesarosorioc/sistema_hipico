@@ -292,6 +292,7 @@ function DetalleTabla({
       <thead>
         <tr className="bg-slate-100 text-[9px] font-black uppercase tracking-wide text-slate-500">
           <th className="px-2 py-1 text-left">Fecha</th>
+          <th className="px-2 py-1 text-left">Venta</th>
           <th className="px-2 py-1 text-left">Hipódromo</th>
           <th className="px-2 py-1 text-right">C</th>
           <th className="px-2 py-1 text-left">Ejemplar</th>
@@ -308,6 +309,7 @@ function DetalleTabla({
         {ordenadas.map((v, i) => (
           <tr key={v.id || `${v.hipodromo}-${v.carrera}-${v.numero}-${i}`} className={`border-b border-slate-100 ${tema.hover}`}>
             <td className="whitespace-nowrap px-2 py-1 text-slate-500">{v.fecha || "—"}</td>
+            <td className="whitespace-nowrap px-2 py-1 text-slate-400">{v.fechaVenta || "—"}</td>
             <td className="whitespace-nowrap px-2 py-1 font-semibold text-slate-700">
               {nombreHipodromoParaMostrar(v.hipodromo)}
             </td>
@@ -440,7 +442,7 @@ export function ReporteVentasModal({
     const q = busqueda.trim().toLowerCase();
     if (!q) return filtradas;
     return filtradas.filter((v) =>
-      [v.caballo, v.jugador, v.grupo, v.hipodromo, String(v.carrera), v.numero].some((s) =>
+      [v.caballo, v.jugador, v.grupo, v.hipodromo, String(v.carrera), v.numero, v.fecha, v.fechaVenta].some((s) =>
         s.toLowerCase().includes(q)
       )
     );
@@ -516,7 +518,7 @@ export function ReporteVentasModal({
         {/* Filtros */}
         <div className="rt-no-print flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
           <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">📅 Fecha</span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">📅 Día carrera</span>
             <input
               type="date"
               value={fecha}

@@ -8,8 +8,11 @@
  * jugador se aplican en memoria (ver reporte-tablas-nucleo.ts), así cambiar un
  * filtro no vuelve a la base.
  *
- * El día es el de la VENTA (`fecha_registro`, timestamptz) con la misma ventana
- * local que usa el resto de la liquidación (`ventanaDiaLocal`).
+ * El día es el de la CARRERA, no el de la venta: el reporte agrupa por la
+ * jornada que corre (igual que el récord de Marcas y el Reporte Diario). La
+ * columna `fecha_carrera` la mantiene el trigger `trg_tickets_fecha_carrera`
+ * (sql/fecha_carrera_tickets.sql); para las filas heredadas sin columna se cae a
+ * la ventana local de `fecha_registro` (`ventanaDiaLocal`).
  */
 import { supabase } from "@/core/supabase";
 import { ventanaDiaLocal } from "@/features/liquidacion/lib/fecha";
@@ -33,8 +36,9 @@ export async function cargarVentasTablasFijas(fecha: string): Promise<ResultadoC
     const { data, error } = await supabase
       .from("tickets_apuestas")
       .select("*")
-      .gte("fecha_registro", desde)
-      .lt("fecha_registro", hasta)
+      // Día de la carrera; si la fila es heredada y la columna viene nula, cae al
+      // día de la venta (misma ventana local que usa la liquidación).
+      .or(`fecha_carrera.eq.${dia},and(fecha_carrera.is.null,fecha_registro.gte.${desde},fecha_registro.lt.${hasta})`)
       .ilike("nombre_jugada", "TABLA FIJA%")
       .order("fecha_registro");
     if (error) return { ok: false, ventas: [], error: error.message };

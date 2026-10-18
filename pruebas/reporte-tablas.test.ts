@@ -73,6 +73,15 @@ igual(v.fecha, "2026-10-16", "fecha de carrera desde la nota de auditoría");
 const sinNota = normalizarVenta(fila({ nota_auditoria: null }));
 igual(sinNota.fecha, "2026-10-16", "fecha cae a fecha_registro sin nota");
 
+// El reporte filtra/agrupa por el DÍA DE LA CARRERA, pero conserva el día de la
+// venta como dato aparte (patrón de consulta adicional).
+igual(v.fechaVenta, "2026-10-16", "día de la venta (fecha_registro) en fechaVenta");
+const otraFecha = normalizarVenta(
+  fila({ nota_auditoria: JSON.stringify({ tabla_id: 33, fecha_carrera: "2026-10-18", origen: "TABLAS_FIJAS" }) })
+);
+igual(otraFecha.fecha, "2026-10-18", "fecha = día de la CARRERA (nota), no el de la venta");
+igual(otraFecha.fechaVenta, "2026-10-16", "fechaVenta sigue siendo el día de la venta");
+
 console.log("\nREPORTE DE TABLAS FIJAS — estados");
 
 igual(estadoNormalizado("Ganador"), "Ganador", "'Ganador'");

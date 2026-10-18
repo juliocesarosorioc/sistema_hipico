@@ -39,6 +39,8 @@ export type VentaTablaReporte = {
   moneda: string;
   /** Día de la carrera (nota `fecha_carrera`) o, si falta, el de la venta. */
   fecha: string;
+  /** Día LOCAL de la venta (`fecha_registro`); patrón de consulta adicional. */
+  fechaVenta: string;
 };
 
 /** Dimensiones por las que se puede estructurar (pivotar) el reporte. */
@@ -114,6 +116,22 @@ function fechaDeNota(raw: unknown): string {
   return "";
 }
 
+/**
+ * Día LOCAL (navegador/operador) de la venta a partir de `fecha_registro`
+ * (timestamptz). Se alinea con `ventanaDiaLocal`: medianoche del operador, no el
+ * prefijo UTC (que en Venezuela pasa al día siguiente después de las 20:00).
+ */
+function diaLocalDeVenta(raw: unknown): string {
+  const s = texto(raw);
+  if (!s) return "";
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s.slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dia}`;
+}
+
 /** Mapea una fila cruda de `tickets_apuestas` al modelo del reporte. */
 export function normalizarVenta(row: Record<string, unknown>): VentaTablaReporte {
   const grupo = texto(row.grupo_cobro_nombre) || texto(row.grupo_comision_nombre) || texto(row.grupo);
@@ -138,6 +156,7 @@ export function normalizarVenta(row: Record<string, unknown>): VentaTablaReporte
     comision: cifra(row.comision_pagada),
     moneda: texto(row.moneda).toUpperCase() || "USD",
     fecha: fechaDeNota(row.nota_auditoria) || texto(row.fecha_registro).slice(0, 10),
+    fechaVenta: diaLocalDeVenta(row.fecha_registro),
   };
 }
 
