@@ -108,6 +108,8 @@ export function JugadasModule() {
   const [filas, setFilas] = useState<FilaMonitorJugada[]>([]);
   const [cargando, setCargando] = useState(true);
   const [errorCarga, setErrorCarga] = useState("");
+  /** Aviso no bloqueante: la base del Monitor quedó desactualizada (vista vieja). */
+  const [avisoCarga, setAvisoCarga] = useState("");
 
   const [fHipodromo, setFHipodromo] = useState("");
   const [fCarrera, setFCarrera] = useState("");
@@ -129,6 +131,7 @@ export function JugadasModule() {
     const r = await listarMonitorJugadas();
     setFilas(r.filas);
     setErrorCarga(r.ok ? "" : r.error ?? "No se pudo cargar el monitor.");
+    setAvisoCarga(r.ok ? (r.aviso ?? "") : "");
     setCargando(false);
   }, []);
 
@@ -146,6 +149,7 @@ export function JugadasModule() {
     } else {
       setErrorDetalle("");
       setDetalle(r.jugadas);
+      if (r.aviso) setAvisoCarga(r.aviso);
     }
     setCargandoDetalle(false);
   }, []);
@@ -312,6 +316,13 @@ export function JugadasModule() {
         <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
           <span className="mr-2">⚠️</span>
           {errorCarga}
+        </div>
+      )}
+
+      {avisoCarga && (
+        <div className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-xs font-semibold text-sky-800">
+          <span className="mr-2">ℹ️</span>
+          {avisoCarga}
         </div>
       )}
 

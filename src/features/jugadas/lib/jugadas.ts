@@ -185,23 +185,55 @@ function agruparMonitor(filas: FilaMonitorJugada[]): FilaMonitorJugada[] {
   return [...mapa.values()];
 }
 
+/**
+ * ¿El error de PostgREST es "esa columna no existe" porque la vista es VIEJA?
+ *
+ * `grupo_cobro_id` se agregó a `v_jugadas_monitor` / `v_jugadas_carrera` en
+ * `sql/jugadas_monitor.sql`, que se ejecuta A MANO en Supabase. Si la base aún
+ * conserva la vista anterior, el filtro por grupo del administrador falla con un
+ * 400 (PostgREST 42703 o "schema cache"). Detectarlo permite degradar al listado
+ * completo en vez de romper la pantalla.
+ */
+function esColumnaFaltanteGrupo(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  const txt = `${error.code ?? ""} ${error.message ?? ""}`;
+  return /grupo_cobro_id/i.test(txt) && /(does not exist|schema cache|42703|PGRST20)/i.test(txt);
+}
+
+/** Aviso único cuando la vista de la base todavía no trae `grupo_cobro_id`. */
+const AVISO_VISTA_VIEJA =
+  "La base del Monitor está desactualizada: le falta la columna grupo_cobro_id. " +
+  "Ejecutá sql/jugadas_monitor.sql en el SQL Editor de Supabase para habilitar el filtro por grupo. " +
+  "Mientras tanto se muestran TODOS los grupos.";
+
 export async function listarMonitorJugadas(): Promise<{
   ok: boolean;
   filas: FilaMonitorJugada[];
   error?: string;
+  aviso?: string;
 }> {
   if (!supabase) return { ok: false, filas: [], error: "Sin conexión a Supabase." };
+  const sb = supabase;
   try {
     // Filtro del super administrador ("ver un grupo"). Un usuario con grupo ya
     // viene acotado por el RLS de la vista (security_invoker = true).
     const activo = grupoActivoVigente();
-    let q = supabase
-      .from("v_jugadas_monitor")
-      .select("*")
-      .order("hipodromo")
-      .order("carrera");
-    if (activo) q = q.eq("grupo_cobro_id", activo);
-    const { data, error } = await q;
+    const consultar = (porGrupo: boolean) => {
+      let q = sb.from("v_jugadas_monitor").select("*").order("hipodromo").order("carrera");
+      if (porGrupo && activo) q = q.eq("grupo_cobro_id", activo);
+      return q;
+    };
+    let { data, error } = await consultar(Boolean(activo));
+    let aviso: string | undefined;
+    if (error && activo && esColumnaFaltanteGrupo(error)) {
+      // La vista de la base no fue recreada con `sql/jugadas_monitor.sql`: se
+      // reintenta SIN el filtro del administrador para no romper el monitor con
+      // un 400, y se avisa que hay que actualizar la base.
+      const r2 = await consultar(false);
+      data = r2.data;
+      error = r2.error;
+      aviso = AVISO_VISTA_VIEJA;
+    }
     if (error) throw error;
     const filas: FilaMonitorJugada[] = (data ?? []).map((r) => {
       const x = r as Record<string, unknown>;
@@ -223,7 +255,7 @@ export async function listarMonitorJugadas(): Promise<{
         resultado_cargado: x.resultado_cargado === true,
       };
     });
-    return { ok: true, filas: agruparMonitor(filas) };
+    return { ok: true, filas: agruparMonitor(filas), aviso };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     const aplica = /does not exist|schema cache|PGRST20[45]/i.test(msg)
@@ -237,25 +269,38 @@ export async function listarJugadasDeCarrera(
   hipodromo: string,
   carrera: number | string,
   fecha?: string | null
-): Promise<{ ok: boolean; jugadas: JugadaAdmin[]; error?: string }> {
+): Promise<{ ok: boolean; jugadas: JugadaAdmin[]; error?: string; aviso?: string }> {
   if (!supabase) return { ok: false, jugadas: [], error: "Sin conexión a Supabase." };
+  const sb = supabase;
   try {
-    let q = supabase
-      .from("v_jugadas_carrera")
-      .select(COLS_DETALLE)
-      .eq("hipodromo", texto(hipodromo).toUpperCase())
-      .eq("carrera", num(carrera))
-      .order("fecha_registro")
-      .limit(1000);
-    // Filtro del super administrador ("ver un grupo"). El usuario con grupo ya
+    // Filtro del super administrador ("ver un grupo"). Un usuario con grupo ya
     // viene acotado por el RLS de la vista (security_invoker = true).
     const activo = grupoActivoVigente();
-    if (activo) q = q.eq("grupo_cobro_id", activo);
-    const { data, error } = await q;
+    const consultar = (porGrupo: boolean) => {
+      let q = sb
+        .from("v_jugadas_carrera")
+        .select(COLS_DETALLE)
+        .eq("hipodromo", texto(hipodromo).toUpperCase())
+        .eq("carrera", num(carrera))
+        .order("fecha_registro")
+        .limit(1000);
+      if (porGrupo && activo) q = q.eq("grupo_cobro_id", activo);
+      return q;
+    };
+    let { data, error } = await consultar(Boolean(activo));
+    let aviso: string | undefined;
+    if (error && activo && esColumnaFaltanteGrupo(error)) {
+      // Vista vieja en la base (sin `grupo_cobro_id`): se reintenta sin el filtro
+      // del administrador para no romper el detalle con un 400.
+      const r2 = await consultar(false);
+      data = r2.data;
+      error = r2.error;
+      aviso = AVISO_VISTA_VIEJA;
+    }
     if (error) throw error;
     let jugadas = (data ?? []) as unknown as JugadaAdmin[];
     if (fecha) jugadas = jugadas.filter((j) => (fechaCarreraDeJugada(j) ?? "") === String(fecha).slice(0, 10));
-    return { ok: true, jugadas };
+    return { ok: true, jugadas, aviso };
   } catch (e) {
     return { ok: false, jugadas: [], error: e instanceof Error ? e.message : String(e) };
   }
