@@ -10,6 +10,7 @@ import { useTaquillaStore, type TicketTaquilla } from "@/shared/store/useTaquill
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla, liquidarPendientesDeCarrera, type ResLiquidarCarrera } from "@/features/liquidacion/lib/pagarYCerrar";
+import { recalcularCarreraCompleta } from "@/features/liquidacion/lib/recalcular";
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
 import { venderJugada, anularJugada, claveIdempotenciaJugada } from "@/features/taquilla/lib/venta";
 import { dividendosDePizarra } from "@/features/liquidacion/lib/posiciones";
@@ -1269,6 +1270,35 @@ const hipodromosDelDia = useMemo(() => {
    * re-renderizó y llegaría en null. Sin argumento usa la de la sesión (botón
    * del modal / Ctrl+R).
    */
+  /**
+   * 🔄 RECALCULAR / RELIQUIDAR CARRERA (manual, para auditar/cuadrar).
+   *
+   * Fuerza una corrida COMPLETA del motor maestro `recalcularCarreraCompleta`:
+   * revierte la liquidación universal, la re-aplica contra el resultado vigente
+   * y re-liquidas las RPCs de tablas fijas, marcas, dupletas y remates. Sirve
+   * para cuadrar cualquier diferencia pendiente de una carrera ya LIQUIDADA sin
+   * tener que cargar una jugada nueva.
+   */
+  const recalcularCompleta = async () => {
+    if (!listoParaCargar) return setAviso("Elija hipódromo y carrera para recalcular.");
+    const r = await recalcularCarreraCompleta({
+      hipodromo,
+      carrera,
+      fecha,
+      tasaComision: comisionNum,
+      usuario: usuarioVigente(),
+    });
+    void registrarAuditoria(
+      "GESTION_JUGADAS",
+      "RECALCULAR_CARRERA",
+      `Recálculo completo de ${nombreHipodromo} C${carrera} (${fecha}) por ${usuarioVigente()}: ${r.motivo}`
+    );
+    setAviso(r.ok ? `🔄 ${r.motivo}` : `❌ ${r.motivo}${r.errores.length ? ` · ${r.errores.join(" | ")}` : ""}`);
+    // Los saldos y el cuaderno del cliente cambian: refrescar para que el
+    // estado de cuenta refleje al instante los cobros/pagos del recálculo.
+    void recargarClientes();
+  };
+
   const ejecutarFinalizar = async (pizarraConfirmada?: PizarraResultados | null) => {
     const piz = pizarraConfirmada ?? ultimaPizarra;
     if (!piz) {
@@ -1977,6 +2007,15 @@ const hipodromosDelDia = useMemo(() => {
             className={`${BTN_BARRA} bg-gradient-to-r from-success-600 to-emerald-500 text-white hover:brightness-110`}
           >
             ✅ Liquidar
+          </button>
+          <button
+            type="button"
+            onClick={() => void recalcularCompleta()}
+            disabled={!listoParaCargar}
+            title={listoParaCargar ? "🔄 Rehace toda la carrera contra el resultado vigente (revertir + re-liquidar tablas fijas, marcas, dupletas, remates y taquilla). Idempotente: no duplica cobros ni premios." : "Elija hipódromo y carrera para recalcular"}
+            className={`${BTN_BARRA} bg-warning-600 text-white hover:bg-warning-500`}
+          >
+            🔄 Recalcular
           </button>
           <button
             type="button"

@@ -94,5 +94,36 @@ ok("TABLA usa el premio congelado del ticket como respaldo", /ctx\.premio_por_ta
 ok("el modal pide la comisión de la carrera", /tasaComision\?: number \| null/.test(modal));
 ok("el módulo pasa la comisión al modal", /tasaComision=\{comisionNum\}/.test(gestion));
 
+console.log("\n[6] MOTOR MAESTRO: recalcularCarreraCompleta + auto-trigger post-mutación");
+// El revertir y el aplicar deben excluir las MISMAS modalidades: si el revertir
+// agarrara una TABLA FIJA (que la paga su RPC), le devolvería un crédito ajeno
+// y no se la volvería a pagar → doble/incorrecto reembolso.
+const cuerpoRevertir = (() => {
+  const i = recalcular.indexOf("export async function revertirLiquidacionCarrera");
+  if (i < 0) return "";
+  const j = recalcular.indexOf("\n}\n", i);
+  return recalcular.slice(i, j < 0 ? undefined : j + 3);
+})();
+ok("existe el motor maestro recalcularCarreraCompleta", /export async function recalcularCarreraCompleta/.test(recalcular));
+ok("revertir excluye MARCA (snapshot de rivales)", /\.not\("nombre_jugada", "like", "MARCA %"\)/.test(cuerpoRevertir));
+ok("revertir excluye TABLA FIJA (paga su RPC) — SIMÉTRICO al aplicar", /\.not\("nombre_jugada", "like", "TABLA FIJA%"\)/.test(cuerpoRevertir));
+ok("el aplicar también excluye TABLA FIJA (simetría)", /\.not\("nombre_jugada", "like", "TABLA FIJA%"\)/.test(saldos));
+ok("exige resultado oficial antes de recalcular", /leerResultadoOficial\(/.test(recalcular));
+ok("reliquida con el motor universal", /reliquidar\(opts\)/.test(recalcular) || /aplicarLiquidacionSaldos\(/.test(recalcular));
+ok("liquida las jugadas especiales (tablas/marcas/dupletas)", /liquidarJugadasDeCarrera\(/.test(recalcular));
+ok("re-cobra los remates abiertos de la carrera", /reCerrarRematesDeCarrera\(/.test(recalcular) && /cerrarRemateLiquidando\(/.test(recalcular));
+ok("omite remates ya cerrados (idempotente)", /omitidosCerrados/.test(recalcular));
+ok("existe el auto-trigger autoReliquidarSiLiquidada", /export async function autoReliquidarSiLiquidada/.test(recalcular));
+ok("el auto-trigger solo actúa si hay resultado oficial", /if \(!oficial\?\.puestos\?\.length\) return \{ reliquidada: false/.test(recalcular));
+ok("corregir/anular también reliquidan las especiales (tablas/marcas/dupletas)", /reliquidarEspecialesDeCarrera\(opts\)/.test(recalcular));
+ok("el helper de especiales usa las RPCs idempotentes", /liquidarJugadasDeCarrera\(/.test(recalcular) && /reCerrarRematesDeCarrera\(/.test(recalcular));
+
+console.log("\n[7] El módulo de Gestión expone el botón 🔄 Recalcular");
+ok("importa el motor maestro", /from "@\/features\/liquidacion\/lib\/recalcular"/.test(gestion));
+ok("define el handler recalcularCompleta", /const recalcularCompleta = async \(\)/.test(gestion));
+ok("ofrece el botón de recálculo", gestion.includes("🔄 Recalcular"));
+ok("el recálculo deja rastro en la auditoría", /"RECALCULAR_CARRERA"/.test(gestion));
+ok("refresca los saldos tras recalcular", /void recargarClientes\(\)/.test(gestion));
+
 console.log(`\n${pasan} pasaron, ${fallan} fallaron`);
 process.exit(fallan > 0 ? 1 : 0);
