@@ -276,8 +276,8 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
                         <input
                           value={edicion.caballo}
                           onChange={(e) => setEdicion({ ...edicion, caballo: e.target.value })}
-                          placeholder="caballo"
-                          className="w-40 rounded border border-line px-1 py-0.5 text-xs"
+                          placeholder="ejemplar/caballo"
+                          className="w-28 rounded border border-line px-1 py-0.5 text-xs"
                         />
                       ) : (
                         j.nombre_jugada ?? "—"
@@ -285,15 +285,9 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
                     </td>
                     <td className="px-2 py-1.5 text-slate-600">
                       {enEdicion ? (
-                        <div className="flex items-center gap-1">
-                          <input
-                            value={edicion.ejemplar}
-                            onChange={(e) => setEdicion({ ...edicion, ejemplar: e.target.value })}
-                            placeholder="#"
-                            className="w-10 rounded border border-line px-1 py-0.5 text-xs"
-                          />
+                        <>
                           <span>{edicion.caballo || "—"}</span>
-                        </div>
+                        </>
                       ) : (
                         <>
                           {j.ejemplar_numero != null ? `${j.ejemplar_numero} · ` : ""}
