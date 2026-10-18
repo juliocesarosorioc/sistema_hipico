@@ -477,7 +477,13 @@ begin
 
   for v_tk in
     select * from public.tickets_apuestas
-     where estado = 'Pendiente'
+     -- 'Perdedor' incluido A PROPÓSITO: la liquidación vieja resolvía los tickets
+     -- de tabla fija con el motor universal y los dejaba 'Perdedor' con premio 0
+     -- (no lee "TABLA FIJA (HIPO Cn)"). Re-decidirlos con la regla correcta los
+     -- repara; un perdedor legítimo se vuelve a marcar 'Perdedor' (pago 0), así
+     -- que es idempotente. Un 'Ganador' NO entra: ya está pagado y no se duplica
+     -- el abono.
+     where estado in ('Pendiente', 'Perdedor')
        -- `nota_auditoria` es TEXT: sin el cast, `->>` reventaba con
        --   ERROR 42883: operator does not exist: text ->> unknown
        -- El CASE evita además que una nota que no sea JSON (texto libre de otro

@@ -14,6 +14,7 @@ import { aplicarLiquidacionSaldos, type ResumenSaldos } from "@/features/liquida
 import { liquidarMarcas } from "@/features/marcas/lib/marcas";
 import { liquidarTablaFija } from "@/features/tablas/lib/rpc";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
+import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 
 /**
  * Suma de todos los tickets de la carrera. El comando puede traer el monto al
@@ -329,6 +330,10 @@ function round2(n: number): number {
  *
  * Se exige la capacidad `gestion_jugadas:fn_reabrir_carrera` (la autorización
  * que pide el dueño para la re-apertura explícita).
+ *
+ * Además de las jugadas nuevas, re-decide las TABLAS FIJAS de la carrera con su
+ * RPC (ver `liquidarTablasFijasDeCarrera`): es el mismo camino que repara una
+ * tabla que la liquidación vieja dejó mal.
  */
 export async function liquidarPendientesDeCarrera(opts: {
   hipodromo: string;
@@ -349,7 +354,7 @@ export async function liquidarPendientesDeCarrera(opts: {
   }
   const fecha = opts.fecha || hoyLocal();
   const dividendos = opts.dividendos ?? (await dividendosDe(opts.hipodromo, opts.carrera, fecha));
-  return aplicarLiquidacionSaldos({
+  const resumen = await aplicarLiquidacionSaldos({
     hipodromo: opts.hipodromo,
     carrera: opts.carrera,
     pizarra: opts.pizarra,
@@ -359,6 +364,21 @@ export async function liquidarPendientesDeCarrera(opts: {
     // la carrera que se liquida.
     fecha,
   });
+
+  // Las TABLAS FIJAS no pasan por `aplicarLiquidacionSaldos` (tienen su propia
+  // RPC), así que la re-apertura no las tocaba y, si la liquidación vieja las
+  // dejó mal, quedaban atascadas. Acá se re-deciden con su regla: es el punto
+  // que usa la re-liquidación para reparar una carrera ya liquidada.
+  try {
+    const tf = await liquidarTablasFijasDeCarrera(opts.hipodromo, Number(opts.carrera), opts.pizarra, fecha);
+    if (tf.tablas > 0) {
+      resumen.motivo += ` · 🏁 Tablas fijas: ${tf.tablas} liquidada(s), $${tf.pagado} a pagar.`;
+    }
+    if (!tf.ok && tf.error) resumen.errores.push(`Tablas fijas: ${tf.error}`);
+  } catch (e) {
+    resumen.errores.push(`Tablas fijas: ${(e as Error).message}`);
+  }
+  return resumen;
 }
 
 function firstOrdinal(primero: unknown): number {
@@ -395,6 +415,7 @@ async function liquidarTablasFijasDeCarrera(
   if (!supabase) return { ok: false, tablas: 0, pagado: 0, comision: 0, error: "Sin conexión a Supabase." };
 
   let ids: Array<string | number> = [];
+  const dia = String(fecha).slice(0, 10);
   try {
     // El hipódromo se compara por clave canónica (misma que retiros/matrices): la
     // columna puede venir escrita "LA RINCONADA" o "LA RINCONADA " y un `.eq`
@@ -406,15 +427,25 @@ async function liquidarTablasFijasDeCarrera(
       .limit(50);
     if (error) throw error;
     const clave = claveHipodromo(hipodromo);
-    const dia = String(fecha).slice(0, 10);
     ids = ((data ?? []) as Array<Record<string, unknown>>)
       .filter((t) => claveHipodromo(String(t.hipodromo ?? "")) === clave)
       .filter((t) => String(t.fecha ?? t.fecha_creacion ?? "").slice(0, 10) === dia)
-      .filter((t) => String(t.estado ?? "").trim().toLowerCase() !== "cerrada")
+      // La tabla 'Cerrada' NO se descarta: cerrarla sin liquidar (el flujo viejo
+      // cerraba la tabla con el motor universal y dejaba los tickets mal) la
+      // dejaba fuera para siempre. La RPC solo toca tickets SIN pagar, así que
+      // re-liquidar una tabla cerrada es idempotente y repara lo que quedó mal.
       .map((t) => t.id as string | number);
   } catch (e) {
     return { ok: false, tablas: 0, pagado: 0, comision: 0, error: `Tablas fijas: ${(e as Error).message}` };
   }
+
+  // REPARACIÓN antes de liquidar: los tickets de tabla fija que quedaron
+  // 'Perdedor' (la liquidación vieja los decidía con el motor universal, que no
+  // lee "TABLA FIJA (HIPO Cn)" y los marcaba perdedores con premio 0) vuelven a
+  // 'Pendiente' para que la RPC los re-decida con su regla. Un 'Ganador' NO se
+  // toca: ya está pagado (no se duplica el abono). Un perdedor legítimo se vuelve
+  // a marcar 'Perdedor' (pago 0), así que el reproceso es idempotente.
+  await reabrirTablasFijasMalDecididas(hipodromo, carrera, dia);
 
   let pagado = 0;
   let comision = 0;
@@ -437,6 +468,41 @@ async function liquidarTablasFijasDeCarrera(
     comision: round2(comision),
     error: errores.length ? errores[0] : undefined,
   };
+}
+
+/**
+ * Devuelve a 'Pendiente' los tickets de TABLA FIJA de la jornada que quedaron
+ * mal decididos como 'Perdedor'.
+ *
+ * Por qué existe: antes, la liquidación de la carrera resolvía los tickets de
+ * tabla fija con el motor universal. Ese motor lee `nombre_jugada`
+ * ("TABLA FIJA (HIPO Cn)"), que NO trae el Nº de ejemplar, así que marcaba al
+ * ganador como 'Perdedor' con premio 0. La RPC de tablas solo toca 'Pendiente',
+ * de modo que esos tickets quedaban atascados y el pago no aparecía en ningún
+ * reporte. Resetearlos deja que la RPC los re-decida bien.
+ *
+ * Seguro por diseño:
+ *   · Solo 'Perdedor': un 'Ganador' ya está pagado y no se toca.
+ *   · Un perdedor legítimo se vuelve a marcar 'Perdedor' con pago 0 → sin
+ *     cambio de saldo.
+ *   · Sin ganadores no se llama (la tabla quedaría para decisión manual).
+ *
+ * Best-effort: si falla, la RPC igual liquida los que estén 'Pendiente'.
+ */
+async function reabrirTablasFijasMalDecididas(hipodromo: string, carrera: number, dia: string): Promise<void> {
+  if (!supabase) return;
+  try {
+    await supabase
+      .from("tickets_apuestas")
+      .update({ estado: "Pendiente", premio_pagar: 0, monto_decidido: 0, comision_pagada: 0 })
+      .eq("carrera", carrera)
+      .ilike("hipodromo", `%${hipodromo.trim()}%`)
+      .like("nombre_jugada", "TABLA FIJA%")
+      .eq("estado", "Perdedor")
+      .or(filtroDiaJornada(dia));
+  } catch {
+    // Best-effort: la liquidación sigue con lo que ya esté 'Pendiente'.
+  }
 }
 
 /** Lee los dividendos oficiales ya persistidos en resultados_carreras

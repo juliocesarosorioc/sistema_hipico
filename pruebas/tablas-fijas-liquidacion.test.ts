@@ -138,6 +138,30 @@ ok(
   /claveHipodromo\(String\(t\.hipodromo/.test(pagarY),
   "pagarYCerrar: compara hipódromo por clave canónica (no por texto exacto)"
 );
+// El flujo viejo cerraba la tabla sin liquidar y descartaba las 'Cerrada', así
+// que la tabla fija quedaba sin pagar para siempre. Ahora se re-liquida.
+ok(
+  !/!== "cerrada"/.test(pagarY),
+  "pagarYCerrar: ya NO descarta la tabla 'Cerrada' (se re-liquida y repara)"
+);
+ok(
+  /reabrirTablasFijasMalDecididas\(hipodromo, carrera, dia\)/.test(pagarY),
+  "pagarYCerrar: reabre los tickets de tabla fija mal decididos antes de liquidar"
+);
+ok(
+  /\.like\("nombre_jugada", "TABLA FIJA%"\)/.test(pagarY) && /\.eq\("estado", "Perdedor"\)/.test(pagarY),
+  "pagarYCerrar: el reproceso toca SOLO los 'Perdedor' de tabla fija (no los ya pagados)"
+);
+ok(
+  /liquidarTablasFijasDeCarrera\(opts\.hipodromo, Number\(opts\.carrera\), opts\.pizarra, fecha\)/.test(pagarY),
+  "pagarYCerrar: la re-apertura (`liquidarPendientesDeCarrera`) también re-decide las tablas fijas"
+);
+
+// --- club_liquidar_tabla_fija también reprocesa los 'Perdedor' mal decididos ---
+ok(
+  /where estado in \('Pendiente', 'Perdedor'\)/.test(sql),
+  "liquidar: la RPC reprocesa 'Pendiente' y 'Perdedor' (repara la decisión vieja del motor)"
+);
 
 const rpc = readFileSync(
   join(process.cwd(), "src", "features", "tablas", "lib", "rpc.ts"),
