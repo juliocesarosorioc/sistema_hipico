@@ -186,6 +186,8 @@ function evaluar(
 ): { ok: boolean | null; bruto: number; comision: number; tasa: number } {
   const estado = txt(f.estado).toUpperCase();
   const monto = cifra(f.monto_jugado);
+  const nombreJugada = txt(f.nombre_jugada).toUpperCase();
+  const esTablaFija = nombreJugada.startsWith("TABLA FIJA");
   // Tasa de comisión EFECTIVA del ticket: la propia es la que manda; solo si
   // falta se usa la del grupo (o 5% por defecto). Es la MISMA prioridad que usa
   // la relación de WhatsApp (`balanceDesdePizarra` → `j.comisionPct`), que era
@@ -228,8 +230,20 @@ function evaluar(
       ? { ok: true, bruto: d.neto, comision: d.comision, tasa: tasaEfectiva }
       : { ok: null, bruto: 0, comision: 0, tasa: tasaEfectiva };
   }
+  if (esTablaFija && (estado === "PERDEDOR" || estado === "PERDIO")) {
+    // Tablas fijas: el fallo del legacy NO marcaba el Nº de ejemplar ("TABLA FIJA (HIPO Cn)")
+    // y los dejaba 'Perdedor' con premio 0 cuando sí podían ser ganadoras. La decisión
+    // correcta la toma `club_liquidar_tabla_fija` (ejemplar exacto). En el reporte
+    // NO forzamos false: los tickets PERDEDOR de tabla fija deben seguir evaluándose
+    // contra la pizarra con el ejemplar, para que "9" aparezca como ganador.
+    // No hacer nada aquí: cae al motor oficial si hay pizarra.
+  }
   if (estado === "PERDEDOR" || estado === "PERDIO" || estado === "RETIRADO" || estado === "RECHAZADO" || estado === "ANULADO") {
-    return { ok: false, bruto: 0, comision: 0, tasa: tasaEfectiva };
+    if (esTablaFija && (estado === "PERDEDOR" || estado === "PERDIO")) {
+      // ya tratamos: no retornar false automático
+    } else {
+      return { ok: false, bruto: 0, comision: 0, tasa: tasaEfectiva };
+    }
   }
   const puestos = pizarra?.puestos ?? [];
   if (puestos.length && monto > 0) {
