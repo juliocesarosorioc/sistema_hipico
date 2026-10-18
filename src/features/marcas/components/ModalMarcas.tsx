@@ -21,6 +21,7 @@ import {
   type ConfigMarcas,
 } from "@/features/marcas/lib/marcas";
 import { ReporteMarcasJugadasModal } from "@/features/marcas/components/ReporteMarcasJugadasModal";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 const inputCls =
@@ -133,6 +134,21 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
   const cliente = useMemo(
     () => clientes.find((c) => String(c.id) === String(clienteId)) ?? null,
     [clientes, clienteId]
+  );
+
+  /** Opciones del BUSCADOR de grupo (por nombre): en grupos con muchos no se recorre lista. */
+  const opcionesGrupo = useMemo(
+    () => grupos.map((g) => ({ value: String(g.id), label: g.nombre })),
+    [grupos]
+  );
+  /** Opciones del BUSCADOR de cliente del grupo (por nombre, con su saldo a la vista). */
+  const opcionesCliente = useMemo(
+    () =>
+      clientesFiltrados.map((c) => ({
+        value: String(c.id),
+        label: `${c.nombre} · $${Number(c.saldo_actual ?? 0).toFixed(2)}`,
+      })),
+    [clientesFiltrados]
   );
 
   /**
@@ -368,30 +384,26 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <label className="block">
                       <span className={inputLbl}>Grupo</span>
-                      <select value={grupoId} onChange={(e) => setGrupoId(e.target.value)} className={inputCls}>
-                        <option value="">Seleccione…</option>
-                        {grupos.map((g) => (
-                          <option key={String(g.id)} value={String(g.id)}>
-                            {g.nombre}
-                          </option>
-                        ))}
-                      </select>
+                      <SearchableSelect
+                        options={opcionesGrupo}
+                        value={grupoId}
+                        onChange={setGrupoId}
+                        allowCustom={false}
+                        placeholder="Buscar grupo…"
+                        inputClassName={inputCls}
+                      />
                     </label>
                     <label className="block">
                       <span className={inputLbl}>Cliente</span>
-                      <select
+                      <SearchableSelect
+                        options={opcionesCliente}
                         value={clienteId}
-                        onChange={(e) => setClienteId(e.target.value)}
+                        onChange={setClienteId}
+                        allowCustom={false}
                         disabled={!grupoId}
-                        className={inputCls}
-                      >
-                        <option value="">{grupoId ? "Seleccione…" : "Elija grupo primero"}</option>
-                        {clientesFiltrados.map((c) => (
-                          <option key={String(c.id)} value={String(c.id)}>
-                            {c.nombre} · $${Number(c.saldo_actual ?? 0).toFixed(2)}
-                          </option>
-                        ))}
-                      </select>
+                        placeholder={grupoId ? "Buscar cliente…" : "Elija grupo primero"}
+                        inputClassName={inputCls}
+                      />
                     </label>
                     <div className="block sm:col-span-2">
                       <span className={inputLbl}>Caballo a jugar</span>
