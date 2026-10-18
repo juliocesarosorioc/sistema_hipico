@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listarGruposAdmin, type GrupoRow } from "@/features/grupos/lib/grupos";
 import {
   construirReporteSemana,
@@ -39,11 +39,17 @@ function TotalBadge({ v, small }: { v: number; small?: boolean }) {
 export function ReporteModule() {
   const [grupos, setGrupos] = useState<GrupoRow[]>([]);
   const [grupoId, setGrupoId] = useState<string>("");
-  const [desde, setDesde] = useState("");
-  const [hasta, setHasta] = useState("");
+  // Por defecto SIEMPRE el día de hoy (rango de un solo día), no la semana
+  // fiscal completa: al abrir el monitor lo que interesa es la jornada en curso.
+  const [desde, setDesde] = useState<string>(() => hoyLocal());
+  const [hasta, setHasta] = useState<string>(() => hoyLocal());
   const [planilla, setPlanilla] = useState<PlanillaReporte | null>(null);
   const [cargando, setCargando] = useState(false);
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
+  // Id de la última consulta: descarta respuestas viejas que llegan tarde (al
+  // cambiar fechas rápido, la anterior podía resolver después y repintar la
+  // planilla equivocada — parecía que el filtro se perdía).
+  const solicitud = useRef(0);
 
   const alternar = useCallback((k: string) => {
     setAbiertos((prev) => {
@@ -71,11 +77,13 @@ export function ReporteModule() {
   const cargar = useCallback(async () => {
     const g = grupos.find((x) => String(x.id) === grupoId);
     if (!g) return;
+    const id = ++solicitud.current;
     setCargando(true);
     const r = await construirReporteSemana(g, {
       desde: desde || undefined,
       hasta: hasta || undefined,
     });
+    if (id !== solicitud.current) return; // llegó tarde: ya hay una consulta nueva
     setPlanilla(r);
     setCargando(false);
   }, [grupos, grupoId, desde, hasta]);
@@ -221,12 +229,12 @@ export function ReporteModule() {
                             <table className="w-full text-left border-collapse">
                               <thead>
                                 <tr className="border-b border-gray-200 bg-gray-50 text-gray-600 text-[11px] uppercase">
-                                  <th className="py-1 px-2 w-24">Rol</th>
-                                  <th className="py-1 px-2">Jugada</th>
-                                  <th className="py-1 px-2 w-20 text-center">Caballo</th>
-                                  <th className="py-1 px-2">Cliente</th>
-                                  <th className="py-1 px-2 w-24 text-right">Monto</th>
-                                  <th className="py-1 px-2 w-28 text-right">Resultado</th>
+                                  <th className="py-0.5 px-2 w-24">Rol</th>
+                                  <th className="py-0.5 px-2">Jugada</th>
+                                  <th className="py-0.5 px-2 w-20 text-center">Caballo</th>
+                                  <th className="py-0.5 px-2">Cliente</th>
+                                  <th className="py-0.5 px-2 w-24 text-right">Monto</th>
+                                  <th className="py-0.5 px-2 w-28 text-right">Resultado</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -235,7 +243,7 @@ export function ReporteModule() {
                                     key={f.id}
                                     className={`border-b border-gray-100 last:border-0 hover:bg-gray-50 ${f.rol === "CRUCE" ? "bg-amber-50" : ""}`}
                                   >
-                                    <td className="py-1 px-2">
+                                    <td className="py-0.5 px-2">
                                       {f.rol === "CRUCE" ? (
                                         <span className="bg-amber-500 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded-full">
                                           🔀 {f.rol}
@@ -246,7 +254,7 @@ export function ReporteModule() {
                                         </span>
                                       )}
                                     </td>
-                                    <td className="py-1 px-2 font-medium text-gray-800">
+                                    <td className="py-0.5 px-2 font-medium text-gray-800">
                                       {etiquetaJugada(f.jugada)}
                                       {rotuloPareo(f.jugada, f.caballo) && (
                                         <span className="ml-1 rounded bg-blue-600 text-white text-[9px] font-bold px-1 py-0.5">
@@ -254,10 +262,10 @@ export function ReporteModule() {
                                         </span>
                                       )}
                                     </td>
-                                    <td className="py-1 px-2 text-center font-bold text-gray-700">{caballoPareoLegible(f.caballo) || "—"}</td>
-                                    <td className="py-1 px-2 text-gray-500 text-xs">{f.cliente}</td>
-                                    <td className="py-1 px-2 text-right text-gray-600">{f.monto > 0 ? fmtMonto(f.monto) : ""}</td>
-                                    <td className="py-1 px-2 text-right">
+                                    <td className="py-0.5 px-2 text-center font-bold text-gray-700">{caballoPareoLegible(f.caballo) || "—"}</td>
+                                    <td className="py-0.5 px-2 text-gray-500 text-xs">{f.cliente}</td>
+                                    <td className="py-0.5 px-2 text-right text-gray-600">{f.monto > 0 ? fmtMonto(f.monto) : ""}</td>
+                                    <td className="py-0.5 px-2 text-right">
                                       <Signo v={f.resultado} vacio={f.rol === "CRUCE"} />
                                     </td>
                                   </tr>

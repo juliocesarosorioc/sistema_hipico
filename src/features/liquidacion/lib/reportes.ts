@@ -688,6 +688,24 @@ async function hipodromoReporte(fecha: string, hipodromo: string, tasaComision?:
 }
 
 /**
+ * Resuelve el rango [desde, hasta] de un reporte mezclando los extremos que
+ * fijó el usuario con el ciclo fiscal del grupo (`base`).
+ *
+ * Regla: cada extremo es INDEPENDIENTE. Si falta `desde`, se usa `base.inicio`;
+ * si falta `hasta`, `base.fin`. Un rango invertido se ordena para no devolver
+ * nunca una planilla vacía por accidente. Es puro (sin BD) para poder testearlo.
+ */
+export function rangoReporteDe(
+  base: { inicio: string; fin: string },
+  opts?: { desde?: string; hasta?: string }
+): { desde: string; hasta: string } {
+  let desde = opts?.desde || base.inicio;
+  let hasta = opts?.hasta || base.fin;
+  if (desde > hasta) [desde, hasta] = [hasta, desde];
+  return { desde, hasta };
+}
+
+/**
  * Construye el reporte de la semana fiscal [desde, hasta] (grupo). Cada día:
  * hipódromos con actividad → sus carreras. Devuelve null si no hay actividad.
  */
@@ -696,9 +714,12 @@ export async function construirReporteSemana(
   opts?: { desde?: string; hasta?: string; tasaComision?: number | null }
 ): Promise<PlanillaReporte> {
   const ciclo = cicloSemanalDe(grupo);
-  const rango = opts?.desde && opts?.hasta ? { inicio: opts.desde, fin: opts.hasta } : rangoSemanaDeGrupo(hoyLocal(), ciclo);
-  const desde = rango.inicio;
-  const hasta = rango.fin;
+  // Cada extremo del rango es INDEPENDIENTE: si el usuario fija solo el "desde"
+  // (o solo el "hasta"), el extremo vacío cae al ciclo fiscal del grupo. Antes
+  // el rango exigía AMBOS; con uno solo se ignoraba TODO y el reporte volvía a
+  // la semana completa — por eso parecía que el filtro se "borraba".
+  const base = rangoSemanaDeGrupo(hoyLocal(), ciclo);
+  const { desde, hasta } = rangoReporteDe(base, opts);
   const tasaComision = opts?.tasaComision ?? null;
 
   try {

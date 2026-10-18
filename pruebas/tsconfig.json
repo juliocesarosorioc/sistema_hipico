@@ -82,6 +82,7 @@
     "./comision-cero.test.ts",
     "./relacion-observaciones.test.ts",
     "./agrupar-hipodromos.test.ts",
-    "./cuaderno.test.ts"
+    "./cuaderno.test.ts",
+    "./reporte-rango.test.ts"
   ]
 }
