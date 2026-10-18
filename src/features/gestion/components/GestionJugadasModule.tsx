@@ -1880,17 +1880,33 @@ const hipodromosDelDia = useMemo(() => {
             🧾 Reporte de Liquidación <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+G</kbd>
           </button>
           {(carreraLiquidada || pizarraCentral) && !reapertura && (
+            <button
+              type="button"
+              onClick={() => {
+                setReapertura(true);
+                setEditarCerrada(true);
+                setUltimaPizarra(null);
+                setPizarraCentral(null);
+                setModalResultados(true);
+                void registrarAuditoria(
+                  "GESTION_JUGADAS",
+                  "EDITAR_RESULTADO_CERRADA_INICIO",
+                  `Edición de resultado cerrado: ${nombreHipodromo} C${carrera} (${fecha}) por ${usuarioVigente()}.`
+                );
+              }}
+              title="Corregir el resultado de una carrera ya cerrada (reescribe resultado y vuelve a liquidar)"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700"
+            >
+              ✏️ Editar resultado (cerrada)
+            </button>
+          )}
+          {(carreraLiquidada || pizarraCentral) && !reapertura && (
             <>
               <button
                 type="button"
                 onClick={abrirReapertura}
-                disabled={!puedeReabrir}
-                title={
-                  puedeReabrir
-                    ? "Reabrir esta carrera liquidada para agregar jugadas nuevas"
-                    : "Necesitás la capacidad «Reabrir una carrera ya liquidada»"
-                }
-                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Reabrir esta carrera liquidada para agregar jugadas nuevas"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-500"
               >
                 ➕ Agregar jugada a carrera liquidada
               </button>
