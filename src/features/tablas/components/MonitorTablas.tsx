@@ -241,7 +241,7 @@ export function MonitorTablas({
 
   // Estados de los filtros
   /** Día por defecto: si el padre controla la fecha, su valor manda (Tablas
-   *  Fijas arranca en "Todos los días"); si queda interno, arranca en hoy. */
+   *  Fijas arranca en HOY); si queda interno, también arranca en hoy. */
   const [fechaInterna, setFechaInterna] = useState<string>(() => hoyLocal());
   const [hipodromoLocal, setHipodromoLocal] = useState<string>("");
   /** Carrera filtrada (vacío = todas) y progreso del Excel de la pantalla. */

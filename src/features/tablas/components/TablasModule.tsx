@@ -70,10 +70,11 @@ export function TablasModule(props: Props) {
   const [modoManual, setModoManual] = useState(false);
   const [menuEnsamblaje, setMenuEnsamblaje] = useState(false);
   const [drafts, setDrafts] = useState<DraftCarrera[]>([]);
-  /** Fecha del programa (Filtro Universal): por defecto "TODOS LOS DÍAS" para
-   *  mostrar todas las tablas publicadas, independientemente de la fecha de
-   *  venta o de carrera. El usuario puede filtrar por día cuando lo necesite. */
-  const [fechaPrograma, setFechaPrograma] = useState("");
+  /** Fecha del programa (Filtro Universal): por defecto el DÍA DE HOY, para que
+   *  el Monitor de Tablas Publicadas abra en la jornada en curso. El usuario
+   *  puede cambiar de día, o pasar a "TODOS LOS DÍAS" con el botón de la
+   *  cabecera (que limpia esta fecha). */
+  const [fechaPrograma, setFechaPrograma] = useState<string>(() => hoyLocal());
   /** Fecha concreta (ISO) para operaciones que EXIGEN un día: publicar, validar
    *  la carga y sembrar el registro central. El monitor puede estar en "Todos
    *  los días" (`fechaPrograma === ""`), pero una tabla SIEMPRE se publica en un
