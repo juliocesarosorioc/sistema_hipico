@@ -64,6 +64,15 @@ const filaVacia = (): FilaCarga => ({
 
 const MONEDA = "VES";
 
+/**
+ * Botón de la barra flotante de Gestión de Jugadas. TODOS comparten alto,
+ * padding, tipografía y `flex-1`: así la fila reparte el ancho en partes
+ * iguales y se lee como un bloque, no como una escalera de botones de distinto
+ * tamaño. `whitespace-nowrap` mantiene cada rótulo en UNA línea.
+ */
+const BTN_BARRA =
+  "inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-lg px-1.5 text-[11px] font-bold disabled:cursor-not-allowed disabled:opacity-40";
+
 function hipoKey(h: unknown): string {
   return String(h ?? "").toUpperCase().replace(/\s+/g, "");
 }
@@ -1847,13 +1856,29 @@ const hipodromosDelDia = useMemo(() => {
 
       {/* Barra de comandos flotante (sticky bottom) */}
       <div className="no-print sticky bottom-0 z-30 -mx-4 border-t border-line bg-slate-900 px-4 py-2.5 shadow-[0_-8px_24px_rgba(0,0,0,0.18)] lg:-mx-6">
-        <div className="flex flex-wrap items-center gap-1.5">
+        {/* La re-apertura es un ESTADO, no un botón más: va en su propia franja
+            para que la fila de acciones quede pareja y en una sola línea. */}
+        {reapertura && (
+          <div className="mb-1.5 flex items-center gap-2 rounded-lg border border-amber-500 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700">
+            🟠 Re-apertura activa · {nombreHipodromo} C{carrera} — se liquidará SÓLO lo agregado
+            <button
+              type="button"
+              onClick={() => setReapertura(false)}
+              className="ml-1 text-amber-600 hover:text-amber-800"
+              title="Cancelar la re-apertura"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+        <div className="flex flex-nowrap items-center gap-1.5">
           <button
             type="button"
             onClick={() => setMostrarPlanoPreliminar(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700"
+            title="Generar el plano preliminar de la carrera (Ctrl+Q)"
+            className={`${BTN_BARRA} bg-slate-800 text-slate-200 hover:bg-slate-700`}
           >
-            📋 Generar Preliminar <kbd className="rounded bg-slate-600 px-1.5 py-0.5 text-[9px] font-black text-white">Ctrl+Q</kbd>
+            📋 Preliminar
           </button>
           <button
             type="button"
@@ -1863,39 +1888,42 @@ const hipodromosDelDia = useMemo(() => {
               });
             }}
             title="Relee los saldos y aval de los clientes desde la base (útil si la carga no se toma)"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700"
+            className={`${BTN_BARRA} bg-slate-800 text-slate-200 hover:bg-slate-700`}
           >
             🔄 Saldos
           </button>
           <button
             type="button"
             onClick={() => setMostrarPreliminarResultado(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-600"
+            title="Resultado preliminar de la carrera (texto para el grupo)"
+            className={`${BTN_BARRA} bg-emerald-700 text-white hover:bg-emerald-600`}
           >
-            🏁 Resultado Preliminar
+            🏁 Pre-Resultado
           </button>
           <button
             type="button"
             onClick={() => setMostrarHistorial(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700"
+            title="Historial de resultados y liquidaciones (Ctrl+H)"
+            className={`${BTN_BARRA} bg-slate-800 text-slate-200 hover:bg-slate-700`}
           >
-            📊 Historial <kbd className="rounded bg-slate-600 px-1.5 py-0.5 text-[9px] font-black text-white">Ctrl+H</kbd>
+            📊 Historial
           </button>
           <button
             type="button"
             onClick={() => setMostrarReporteLiquidacion(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-800 px-3 py-2 text-xs font-bold text-emerald-50 hover:bg-emerald-700"
+            title="Reporte final de la carrera liquidada (Ctrl+G)"
+            className={`${BTN_BARRA} bg-emerald-800 text-emerald-50 hover:bg-emerald-700`}
           >
-            🧾 Reporte de Liquidación <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+G</kbd>
+            🧾 Reporte Final
           </button>
           {(carreraLiquidada || pizarraCentral) && !reapertura && (
             <button
               type="button"
               onClick={abrirReapertura}
               title="Reabrir esta carrera liquidada para agregar jugadas nuevas"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-500"
+              className={`${BTN_BARRA} bg-amber-600 text-white hover:bg-amber-500`}
             >
-              ➕ Agregar jugada a carrera liquidada
+              ➕ Agregar jugada
             </button>
           )}
           {puedeEditarJugadas && (
@@ -1908,40 +1936,27 @@ const hipodromosDelDia = useMemo(() => {
                   ? "Corregir o anular las jugadas ya guardadas de esta carrera (aunque esté cerrada)"
                   : "Elija hipódromo y carrera para editar sus jugadas"
               }
-              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-3 py-2 text-xs font-bold text-white hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+              className={`${BTN_BARRA} bg-slate-700 text-white hover:bg-slate-600`}
             >
-              ✏️ Editar jugadas guardadas
+              ✏️ Editar jugadas
             </button>
-          )}
-          {reapertura && (
-            <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
-              🟠 Re-apertura activa · {nombreHipodromo} C{carrera} — se liquidará SÓLO lo agregado
-              <button
-                type="button"
-                onClick={() => setReapertura(false)}
-                className="ml-1 text-amber-600 hover:text-amber-800"
-                title="Cancelar la re-apertura"
-              >
-                ✕
-              </button>
-            </span>
           )}
           <button
             type="button"
             onClick={abrirResultados}
             disabled={!listoParaCargar}
-            title={listoParaCargar ? "Carga/edita los resultados y luego finaliza (un solo flujo: Ctrl+Y o Ctrl+R)" : "Elija hipódromo y carrera para registrar y finalizar"}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-success-600 to-emerald-500 px-3 py-2 text-xs font-black text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+            title={listoParaCargar ? "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)" : "Elija hipódromo y carrera para liquidar"}
+            className={`${BTN_BARRA} bg-gradient-to-r from-success-600 to-emerald-500 text-white hover:brightness-110`}
           >
-            {reapertura ? "💾 Liquidar jugadas agregadas" : "✅ Registrar y Finalizar"}{" "}
-            <kbd className="rounded bg-black/25 px-1.5 py-0.5 text-[9px] font-black">Ctrl+Y/R</kbd>
+            ✅ Liquidar
           </button>
           <button
             type="button"
             onClick={() => setModalComandos(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700"
+            title="Ver los atajos de teclado de la taquilla (Ctrl+Shift+K)"
+            className={`${BTN_BARRA} bg-slate-800 text-slate-200 hover:bg-slate-700`}
           >
-            ⌨️ Comandos <kbd className="rounded bg-slate-600 px-1.5 py-0.5 text-[9px] font-black text-white">Ctrl+⇧+K</kbd>
+            ❓ Comando
           </button>
         </div>
       </div>
@@ -2073,7 +2088,7 @@ const hipodromosDelDia = useMemo(() => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
           <div className="w-full max-w-lg rounded-2xl border border-line bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
-              <h3 className="text-xs font-black uppercase">{reapertura ? "🟠 Liquidar jugadas agregadas" : "✅ Registrar y Finalizar"} — <span className="normal-case">{nombreHipodromo}</span> C{carrera}</h3>
+              <h3 className="text-xs font-black uppercase">{reapertura ? "🟠 Liquidar jugadas agregadas" : "✅ Liquidar"} — <span className="normal-case">{nombreHipodromo}</span> C{carrera}</h3>
               <button type="button" onClick={cerrarFinalizar} className="text-slate-300 hover:text-white">✕</button>
             </div>
             <div className="max-h-[60vh] space-y-3 overflow-y-auto p-4">
@@ -2173,7 +2188,7 @@ const hipodromosDelDia = useMemo(() => {
               )}
               {!resumen && (
                 <Button variant="success" size="md" onClick={() => void ejecutarFinalizar()}>
-                  {reapertura ? "💾 Liquidar jugadas agregadas" : "💰 Registrar y Finalizar"}
+                  {reapertura ? "💾 Liquidar jugadas agregadas" : "💰 Liquidar"}
                 </Button>
               )}
             </div>
@@ -2198,15 +2213,17 @@ const hipodromosDelDia = useMemo(() => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
           <div className="w-full max-w-md rounded-2xl border border-line bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
-              <h3 className="text-xs font-black uppercase">⌨️ Comandos de la Taquilla</h3>
+              <h3 className="text-xs font-black uppercase">❓ Comandos de la Taquilla</h3>
               <button type="button" onClick={() => setModalComandos(false)} className="text-slate-300 hover:text-white">✕</button>
             </div>
             <div className="divide-y divide-line p-2">
               {[
-                ["Ctrl+Q", "📋 Preliminar de Carrera", "Muestra ejemplares inscritos de la carrera activa."],
+                ["Ctrl+Q", "📋 Preliminar", "Muestra los ejemplares inscritos de la carrera activa."],
                 ["Ctrl+Y", "🏁 Carga de Resultados", "Pizarra con 5 posiciones por defecto (+ puestos dinámicos hasta 8) + Empate (Dead Heat) por posición."],
-                ["Ctrl+R", "✅ Registrar y Finalizar", "Liquida los tickets con el motor y cierra la carrera (estado= Cerrada)."],
-                ["Ctrl+Shift+K", "⌨️ Comandos", "Este listado de atajos."],
+                ["Ctrl+R", "✅ Liquidar", "Liquida los tickets con el motor y cierra la carrera (estado= Cerrada)."],
+                ["Ctrl+H", "📊 Historial", "Historial de resultados y liquidaciones de la jornada."],
+                ["Ctrl+G", "🧾 Reporte Final", "Reporte final de la carrera liquidada."],
+                ["Ctrl+Shift+K", "❓ Comando", "Este listado de atajos."],
               ].map(([kbd, titulo, desc]) => (
                 <div key={kbd} className="flex items-start gap-3 px-2 py-2.5">
                   <kbd className="mt-0.5 shrink-0 rounded-md bg-slate-800 px-2 py-1 text-[10px] font-black text-white">{kbd}</kbd>

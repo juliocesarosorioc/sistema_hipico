@@ -61,8 +61,8 @@ ok("tiene el estado reapertura", /const \[reapertura, setReapertura\] = useState
 ok("tiene el modal de jugadas guardadas", /const \[modalEditarJugadas, setModalEditarJugadas\] = useState\(false\)/.test(gestion));
 ok("detecta la carrera liquidada", /const carreraLiquidada = useMemo\(/.test(gestion));
 ok("respeta la capacidad (tieneCapacidad)", /tieneCapacidad\("gestion_jugadas:fn_reabrir_carrera"\)/.test(gestion));
-ok("ofrece el botón de re-apertura", gestion.includes("Agregar jugada a carrera liquidada"));
-ok("ofrece el botón para editar jugadas guardadas", gestion.includes("Editar jugadas guardadas"));
+ok("ofrece el botón de re-apertura", gestion.includes("Agregar jugada"));
+ok("ofrece el botón para editar jugadas guardadas", gestion.includes("Editar jugadas"));
 ok("la re-apertura se cierra al cambiar de carrera", /setReapertura\(false\);[\s\S]*?\}, \[hipodromo, fecha, carrera\]\)/.test(gestion));
 ok("al reabrir deja rastro en la auditoría", /REABRIR_LIQUIDADA_INICIO/.test(gestion));
 ok("al liquidar lo agregado deja rastro en la auditoría", /"REABRIR_LIQUIDADA"/.test(gestion));
