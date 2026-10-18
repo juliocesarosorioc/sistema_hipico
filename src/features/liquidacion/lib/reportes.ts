@@ -15,7 +15,7 @@
 import { supabase } from "@/core/supabase";
 import { hoyLocal, leerProgramaPorFecha } from "@/features/gaceta/lib/programa";
 import { rangoSemanaDeGrupo, cicloSemanalDe } from "@/features/liquidacion/lib/semana";
-import { ventanaDiaLocal } from "@/features/liquidacion/lib/fecha";
+import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { listarCarrerasPorDia } from "@/features/tablas/lib/rpc";
 import { pizarraDesdeNums, esVentaDeRemate } from "@/features/impresion/lib/reportGenerator";
 import { liquidarOficial, puestosDesdeOrdenLlegada } from "@/features/motores/lib/oficiales";
@@ -314,13 +314,14 @@ async function leerPizarra(fecha: string, hipodromo: string, carrera: number | s
 
 async function leerTickets(fecha: string, hipodromo: string, carrera: string | number): Promise<Record<string, unknown>[]> {
   if (!supabase) return [];
-  const { desde, hasta } = ventanaDiaLocal(fecha);
+  const dia = String(fecha ?? "").slice(0, 10);
   try {
     let q = supabase
       .from("tickets_apuestas")
       .select("*")
-      .gte("fecha_registro", desde)
-      .lt("fecha_registro", hasta)
+      // El día de la jugada es el de la CARRERA, no el de la venta (ver
+      // `filtroDiaJornada`).
+      .or(filtroDiaJornada(dia))
       .eq("carrera", carrera)
       .ilike("hipodromo", `%${hipodromo}%`)
       .order("fecha_registro");
@@ -375,17 +376,14 @@ async function hipodromosDelDia(fecha: string): Promise<string[]> {
       /* sin tabla */
     }
     try {
-      // TICKETS: por el día local de la venta. `fecha` y `fecha_creacion` no
-      // existen en tickets_apuestas; el timestamp real es fecha_registro. Con
-      // esas dos columnas este bloque nunca encontraba nada, así que un
-      // hipódromo con apuestas pero sin resultados ni tablas no aparecía en la
-      // lista del día.
-      const v = ventanaDiaLocal(fecha);
+      // TICKETS: por el día de la CARRERA (`fecha_carrera`); las filas heredadas
+      // sin la columna caen al día local de la venta (`fecha_registro`). `fecha`
+      // y `fecha_creacion` no existen en `tickets_apuestas`.
+      const dia = String(fecha ?? "").slice(0, 10);
       const { data: tk2, error: e2 } = await supabase
         .from("tickets_apuestas")
         .select("hipodromo")
-        .gte("fecha_registro", v.desde)
-        .lt("fecha_registro", v.hasta);
+        .or(filtroDiaJornada(dia));
       if (!e2) for (const r of (tk2 ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
     } catch {
       /* sin tabla */
@@ -430,13 +428,14 @@ type DatosCarrera = {
 async function leerTicketsHipodromo(fecha: string, hipodromo: string): Promise<Map<string, Record<string, unknown>[]>> {
   const porCarrera = new Map<string, Record<string, unknown>[]>();
   if (!supabase) return porCarrera;
-  const { desde, hasta } = ventanaDiaLocal(fecha);
+  const dia = String(fecha ?? "").slice(0, 10);
   try {
     let q = supabase
       .from("tickets_apuestas")
       .select("*")
-      .gte("fecha_registro", desde)
-      .lt("fecha_registro", hasta)
+      // Día de la CARRERA (`fecha_carrera`); heredadas sin la columna caen a la
+      // ventana local de la venta. Ver `filtroDiaJornada`.
+      .or(filtroDiaJornada(dia))
       .ilike("hipodromo", `%${hipodromo}%`)
       .order("fecha_registro");
     const activo = grupoActivoVigente();

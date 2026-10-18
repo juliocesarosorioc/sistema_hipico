@@ -16,7 +16,7 @@ import { supabase } from "@/core/supabase";
 import { COMISION_CASA, parsearNini, normalizarNini } from "@/features/betting/lib/bettingEngine";
 import { etiquetaJugada, caballoPareoLegible } from "@/features/taquilla/lib/nomenclatura";
 import { liquidarOficial } from "@/features/motores/lib/oficiales";
-import { ventanaDiaLocal } from "@/features/liquidacion/lib/fecha";
+import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import type { TicketMotor } from "@/features/betting/lib/bettingEngine";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 
@@ -81,10 +81,10 @@ export type FiltroCarrera = {
   carrera: number | string;
   /**
    * Fecha local (YYYY-MM-DD) de la jornada. Si se indica, los tickets se
-   * acotan a la MISMA ventana de `fecha_registro` que usa el Reporte de
-   * Liquidación (`ventanaDiaLocal`). Sin esto, la relación de resultados
-   * mezclaba tickets de otras fechas con el mismo hipódromo + N° de carrera y
-   * suministraba datos distintos al reporte.
+   * acotan al MISMO día de la CARRERA (`filtroDiaJornada`) que usa el Reporte
+   * de Liquidación. Sin esto, la relación de resultados mezclaba tickets de
+   * otras fechas con el mismo hipódromo + N° de carrera y suministraba datos
+   * distintos al reporte.
    */
   fecha?: string;
   /** Si true, solo tickets estado = Pendiente (relación pre-carrera). */
@@ -681,8 +681,7 @@ export async function cargarJugadasDeCarrera(
     // esto, la relación de resultados mezclaba tickets de otras fechas con el
     // mismo hipódromo + N° de carrera (datos distintos al reporte).
     if (filtro.fecha) {
-      const { desde, hasta } = ventanaDiaLocal(String(filtro.fecha));
-      q = q.gte("fecha_registro", desde).lt("fecha_registro", hasta);
+      q = q.or(filtroDiaJornada(String(filtro.fecha)));
     }
     if (filtro.soloPendientes) {
       q = q.eq("estado", "Pendiente");

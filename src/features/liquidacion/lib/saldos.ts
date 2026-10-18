@@ -14,7 +14,7 @@
 import { supabase } from "@/core/supabase";
 import { liquidarOficial } from "@/features/motores/lib/oficiales";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
-import { ventanaDiaLocal } from "@/features/liquidacion/lib/fecha";
+import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { parsearNini, netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem } from "@/features/betting/lib/bettingEngine";
 import type { TicketMotor, ResultadoMotor } from "@/features/betting/lib/bettingEngine";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
@@ -188,20 +188,22 @@ export async function aplicarLiquidacionSaldos(
     return { ok: false, motivo: "Sin conexión a Supabase", aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: ["Sin conexión a Supabase."] };
   }
   const sdb = supabase;
-  // Ventana UTC que cubre el día de la JORNADA (input.fecha) o, si no se pasa,
-  // el día local. La columna real es fecha_registro (timestamptz del momento de
-  // la venta). Antes se filtraba con .eq("fecha", f), y `fecha` NO existe en
-  // tickets_apuestas: la consulta moría en el catch y esta pantalla devolvía
-  // "No se pudieron leer los tickets pendientes", sin liquidar nunca nada.
+  // Día de la JORNADA: `input.fecha` o, si no se pasa, el día local. El eje es
+  // la fecha de la CARRERA (`filtroDiaJornada`), no la de la venta: una jugada
+  // cargada hoy para una carrera de otra jornada quedaba 'Pendiente' y la
+  // carrera nunca se acreditaba. (Antes se filtraba con `.eq("fecha", f)`, pero
+  // `fecha` NO existe en tickets_apuestas: la consulta moría en el catch.)
   const f = input.fecha || hoyLocal();
-  const { desde, hasta } = ventanaDiaLocal(f);
+  const dia = String(f).slice(0, 10);
   let filas: unknown[] = [];
   try {
     const { data, error } = await sdb
       .from("tickets_apuestas")
       .select("*")
-      .gte("fecha_registro", desde)
-      .lt("fecha_registro", hasta)
+      // El día de la JORNADA es el de la CARRERA, no el de la venta (ver
+      // `filtroDiaJornada`): una jugada cargada hoy para una carrera de ayer
+      // quedaba PENDIENTE y la carrera nunca se acreditaba.
+      .or(filtroDiaJornada(dia))
       .eq("hipodromo", input.hipodromo.trim().toUpperCase())
       .eq("carrera", Number(input.carrera))
       .eq("estado", "Pendiente")
@@ -224,8 +226,7 @@ export async function aplicarLiquidacionSaldos(
   const { data: decididos } = await sdb
     .from("tickets_apuestas")
     .select("id")
-    .gte("fecha_registro", desde)
-    .lt("fecha_registro", hasta)
+    .or(filtroDiaJornada(dia))
     .eq("hipodromo", input.hipodromo.trim().toUpperCase())
     .eq("carrera", Number(input.carrera))
     .in("estado", ["Ganador", "Perdedor", "Retirado"])

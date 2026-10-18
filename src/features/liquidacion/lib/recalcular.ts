@@ -26,7 +26,7 @@
 
 import { supabase } from "@/core/supabase";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
-import { ventanaDiaLocal } from "@/features/liquidacion/lib/fecha";
+import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { CAMPOS_POSICION, dividendosDePizarra } from "@/features/liquidacion/lib/posiciones";
 import { aplicarLiquidacionSaldos, creditoDeTicket, decidirTickets } from "@/features/liquidacion/lib/saldos";
 import { leerResultadoOficial } from "@/features/carreras/lib/carreras-dia";
@@ -87,14 +87,13 @@ export async function revertirLiquidacionCarrera(opts: {
     return { ...vacio, motivo: "La carrera no tiene resultado oficial: no hay nada que revertir." };
   }
 
-  const { desde, hasta } = ventanaDiaLocal(fecha);
   let filas: unknown[] = [];
   try {
     const { data, error } = await sdb
       .from("tickets_apuestas")
       .select("*")
-      .gte("fecha_registro", desde)
-      .lt("fecha_registro", hasta)
+      // Día de la CARRERA, no de la venta (ver `filtroDiaJornada`).
+      .or(filtroDiaJornada(fecha))
       .eq("hipodromo", opts.hipodromo.trim().toUpperCase())
       .eq("carrera", Number(opts.carrera))
       .in("estado", ["Ganador", "Perdedor", "Retirado"])
