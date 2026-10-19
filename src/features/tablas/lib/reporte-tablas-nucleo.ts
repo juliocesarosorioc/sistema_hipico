@@ -59,6 +59,7 @@ export type TotalesReporte = {
   pagado: number;
   reembolsado: number;
   comision: number;
+  cobrado: number;
   /** A favor del grupo: enRiesgo − reembolsado − pagado. */
   balance: number;
 };
@@ -176,7 +177,8 @@ export function totalesDe(ventas: VentaTablaReporte[]): TotalesReporte {
     pagado: 0,
     reembolsado: 0,
     comision: 0,
-    balance: 0,
+      cobrado: 0,
+      balance: 0,
   };
   const jugadores = new Set<string>();
   for (const v of ventas) {

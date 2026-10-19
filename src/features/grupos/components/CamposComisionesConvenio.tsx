@@ -41,7 +41,7 @@ export function CamposComisionesConvenio({ valores, onCambio, ayuda, columnas = 
       <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-slate-600">
         <span className="mr-1 text-amber-500">💰</span> Comisión por convenio (paga el grupo principal)
       </p>
-      <div className={`grid grid-cols-2 ${cols} gap-2`}>
+      <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 ${cols} gap-2`}>
         {CONCEPTOS_CONVENIO.map((c) => (
           <label key={c.clave} className="block">
             <span className="mb-1 block truncate text-[10px] font-bold uppercase tracking-wider text-slate-600">

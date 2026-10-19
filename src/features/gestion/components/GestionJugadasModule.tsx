@@ -168,18 +168,7 @@ export function GestionJugadasModule() {
     [carrerasDelDia]
   );
 
-  /**
-   * Ítem 1: ¿la carrera activa ya está liquidada? El registro central de la
-   * fecha lo dice (`estado` "Liquidada" o el resultado ya aplicado a tablas).
-   */
   const carreraLiquidada = useMemo(() => {
-    const c = carrerasDelDia.find((x) => Number(x.carrera) === carrera);
-    if (!c) return false;
-    const est = String(c.estado ?? "").toLowerCase();
-    return est === "liquidada" || est === "cerrada" || c.aplicado_a_tablas === true || (c.ganadores?.length ?? 0) > 0;
-  }, [carrerasDelDia, carrera]);
-  /** Ítem 1: sólo quien tenga la capacidad puede reabrir una liquidada. */
-  const puedeReabrir = tieneCapacidad("gestion_jugadas:fn_reabrir_carrera");
   /** Editar jugadas guardadas: la capacidad de corregir/anular jugadas (principal = todo). */
   const puedeEditarJugadas =
     esUsuarioPrincipal(usuarioVigente()) ||
@@ -333,6 +322,15 @@ export function GestionJugadasModule() {
    * llegada que el operador quería cargar de nuevo.
    */
   const [pizarraCentral, setPizarraCentral] = useState<PizarraResultados | null>(null);
+    const c = carrerasDelDia.find((x) => Number(x.carrera) === carrera);
+    if (!c) return false;
+    const est = String(c.estado ?? "").toLowerCase();
+    return est === "liquidada" || est === "cerrada" || c.aplicado_a_tablas === true || (c.ganadores?.length ?? 0) > 0;
+  }, [carrerasDelDia, carrera]);
+
+  const tieneResultadoCargado = carreraLiquidada || Boolean(pizarraCentral);
+  /** Ítem 1: sólo quien tenga la capacidad puede reabrir una liquidada. */
+  const puedeReabrir = tieneCapacidad("gestion_jugadas:fn_reabrir_carrera");
   const [resumen, setResumen] = useState<ResLiquidarCarrera | null>(null);
 
   // Mensaje de WhatsApp de RESULTADOS: se genera al instante al cargar la
@@ -1932,14 +1930,6 @@ const hipodromosDelDia = useMemo(() => {
         <div className="flex flex-nowrap items-center gap-1.5">
           <button
             type="button"
-            onClick={() => setMostrarPlanoPreliminar(true)}
-            title="Generar el plano preliminar de la carrera (Ctrl+Q)"
-            className={`${BTN_BARRA} bg-slate-800 text-slate-200 hover:bg-slate-700`}
-          >
-            📋 Preliminar
-          </button>
-          <button
-            type="button"
             onClick={() => {
               void recargarClientes().then(() => {
                 setAviso("🔄 Saldos y aval del catálogo recargados contra la base.");
@@ -1952,14 +1942,6 @@ const hipodromosDelDia = useMemo(() => {
           </button>
           <button
             type="button"
-            onClick={() => setMostrarPreliminarResultado(true)}
-            title="Resultado preliminar de la carrera (texto para el grupo)"
-            className={`${BTN_BARRA} bg-emerald-700 text-white hover:bg-emerald-600`}
-          >
-            🏁 Pre-Resultado
-          </button>
-          <button
-            type="button"
             onClick={() => setMostrarHistorial(true)}
             title="Historial de resultados y liquidaciones (Ctrl+H)"
             className={`${BTN_BARRA} bg-slate-800 text-slate-200 hover:bg-slate-700`}
@@ -1968,7 +1950,13 @@ const hipodromosDelDia = useMemo(() => {
           </button>
           <button
             type="button"
-            onClick={() => setMostrarReporteLiquidacion(true)}
+            onClick={() => {
+              if (!tieneResultadoCargado) {
+                setAviso("⚠️ No hay resultados cargados para esta carrera. Debe cargar el resultado oficial antes de abrir el Reporte Final.");
+                return;
+              }
+              setMostrarReporteLiquidacion(true);
+            }}
             title="Reporte final de la carrera liquidada (Ctrl+G)"
             className={`${BTN_BARRA} bg-emerald-800 text-emerald-50 hover:bg-emerald-700`}
           >

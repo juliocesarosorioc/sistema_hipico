@@ -2030,7 +2030,7 @@ export function GruposModule() {
 
         >
 
-          <div className="w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
 
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-slate-800 px-4 py-3 text-xs font-black uppercase tracking-wider text-white backdrop-blur sm:px-5">
 

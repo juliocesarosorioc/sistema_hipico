@@ -1749,3 +1749,11 @@ del grupo con `sql/actualizar_ciclo_grupo.sql` pendiente de aplicar; al cierre:
 Carga Rápida lee el "match" `(4x7)`, el tope de saldo se descuenta EN ORDEN por
 cliente —incluido el borde en que el disponible se agota— verificados con una
 batería de ejercicios).*
+
+
+### 12. INTEGRACIÓN POLLAS EN RE-LIQUIDACIÓN POST-CARRERA (PENDIENTE)
+
+- Estado: Pendiente de integración.
+- Motivo: Las Pollas se liquidan por acumulado vía RPC manual club_pagar_acumulado_polla, no por carrera.
+- Acción requerida: Al editar participantes o al ejecutar recalcularCarreraCompleta, determinar si las pollas vinculadas a la carrera deben recalcular posiciones/pote financiero y/o llamar a la RPC correspondiente.
+- Riesgo: Evitar doble cobro/pago; requiere confirmar modelo de datos (ganador de polla, carreras involucradas, estado Pagado/Pendiente).
