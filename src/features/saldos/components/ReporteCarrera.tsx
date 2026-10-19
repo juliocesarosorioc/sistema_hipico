@@ -70,11 +70,22 @@ export type ReporteCarreraDatos = {
   encabezado: {
     /** Grupo hípico dueño del reporte (encabezado). */
     grupo?: string;
+    /** Logo del grupo en PNG (Data URL) para la cabecera. */
+    logoGrupo?: string | null;
     hipodromo: string;
+    /** Logo del hipódromo en PNG (Data URL) para la cabecera. */
+    logoHipodromo?: string | null;
     carrera: string;
     fecha: string;
     llegada: LlegadaCaballo[];
   };
+  /**
+   * ¿La carrera ya se pagó/liquidó? Cuando es `false` el reporte muestra SOLO
+   * las jugadas: se ocultan la pizarra oficial, las ganadoras adelantadas y el
+   * resumen Ganan/Pierden (y la columna Resultado). Por defecto `true` para no
+   * cambiar a los consumidores que siempre muestran carreras liquidadas.
+   */
+  liquidada?: boolean;
   jugadasVivo: JugadaVivo[];
   adelantadas: {
     tablas: Adelantada[];
@@ -115,7 +126,7 @@ function DiscosSimples({ caballo }: { caballo?: string }) {
       {nums.map((n, i) => (
         <span
           key={i}
-          className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold leading-none ${colorDiscoNumero(n)}`}
+          className={`inline-flex items-center justify-center w-4 h-4 rounded-md text-[9px] font-bold leading-none ${colorDiscoNumero(n)}`}
         >
           {n}
         </span>
@@ -159,17 +170,17 @@ function tieneDatos(d: ReporteCarreraDatos | null | undefined): d is ReporteCarr
 const TH = "text-left pb-1 font-semibold text-[9px] uppercase tracking-wide text-slate-400";
 
 /** Cabecera + filas de la tabla "en vivo" para una mitad de las jugadas. */
-function TablaJugadas({ filas }: { filas: JugadaVivo[] }) {
+function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostrarResultado: boolean }) {
   return (
     <table className="w-full text-[10px] leading-tight">
       <thead>
         <tr className="border-b border-slate-300">
           <th className={TH}>Juega</th>
           <th className={`${TH} text-right`} title="Monto que arriesga el que juega">Apostó</th>
-          <th className={`${TH} pl-2`}>Jugó</th>
+          <th className={`${TH} pl-2`}>Jugada</th>
           <th className={`${TH} pl-2`}>Da</th>
           <th className={`${TH} text-right`} title="Monto que arriesga el que da">Apostó</th>
-          <th className={`${TH} text-right`}>Resultado</th>
+          {mostrarResultado ? <th className={`${TH} text-right`}>Resultado</th> : null}
         </tr>
       </thead>
       <tbody>
@@ -184,10 +195,12 @@ function TablaJugadas({ filas }: { filas: JugadaVivo[] }) {
             <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap">
               {j.apostoDa === null || j.apostoDa === undefined ? '—' : j.apostoDa}
             </td>
-            {/* RESULTADO: solo se pinta cuando la jugada se decide (resultado != null). */}
-            <td className="py-[3px] text-right whitespace-nowrap">
-              {j.resultado !== null && <FormatoDinero monto={j.resultado} />}
-            </td>
+            {/* RESULTADO: solo con la carrera liquidada y la jugada decidida. */}
+            {mostrarResultado ? (
+              <td className="py-[3px] text-right whitespace-nowrap">
+                {j.resultado !== null && <FormatoDinero monto={j.resultado} />}
+              </td>
+            ) : null}
           </tr>
         ))}
       </tbody>
@@ -226,7 +239,7 @@ function ListaResumen({ filas }: { filas: ResumenFila[] }) {
       {filas.map((g, i) => (
         <div key={i} className="flex items-center justify-between gap-1 py-[2px] border-b border-slate-50">
           <div className="flex items-center min-w-0">
-            <span className="bg-slate-200 text-slate-500 rounded-full w-3.5 h-3.5 flex items-center justify-center text-[8px] mr-1 shrink-0">{g.id}</span>
+            <span className="bg-slate-200 text-slate-500 rounded w-3.5 h-3.5 flex items-center justify-center text-[8px] mr-1 shrink-0">{g.id}</span>
             <span className="font-bold text-slate-800 truncate">{g.nombre}</span>
             {g.excede && (
               <span className="ml-0.5 shrink-0 font-black text-red-600" title="Arriesgó más de lo que dispone">*</span>
@@ -284,6 +297,8 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
   }
 
   const { encabezado, jugadasVivo, adelantadas, resumen, notaExcedidos } = datos;
+  /** Solo con la carrera pagada/liquidada se muestran pizarra y resultados. */
+  const liquidada = datos.liquidada !== false;
 
   // Dividir jugadas en vivo en dos columnas para el layout denso
   const mitadIndex = Math.ceil(jugadasVivo.length / 2);
@@ -294,42 +309,80 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
   return (
     <div className="max-w-5xl mx-auto bg-white shadow-lg overflow-hidden text-[11px] leading-tight font-sans" id="reporte-imprimible">
 
-      {/* 1. ENCABEZADO */}
-      <div className="bg-[#1a3822] text-white px-4 py-2 flex items-end justify-between">
-        <div>
-          <h3 className="text-emerald-500 text-[9px] font-bold tracking-widest uppercase">{encabezado.grupo || "Grupo Hípico"}</h3>
-          <h1 className="text-lg font-extrabold leading-tight">
-            {encabezado.hipodromo} <span className="font-normal text-emerald-100">•</span> {encabezado.carrera}
-          </h1>
+      {/* 1. ENCABEZADO — franja azul ejecutiva con logos de hipódromo y grupo */}
+      <div className="bg-gradient-to-r from-blue-900 via-blue-700 to-blue-600 text-white border-b border-blue-500/30 shadow-md px-4 py-2.5 flex items-center gap-3">
+        <div className="w-14 h-14 shrink-0 rounded-xl bg-white/95 p-1.5 shadow-inner flex items-center justify-center overflow-hidden">
+          {encabezado.logoHipodromo ? (
+            <img
+              src={encabezado.logoHipodromo}
+              alt={`Logo de ${encabezado.hipodromo}`}
+              crossOrigin="anonymous"
+              referrerPolicy="no-referrer"
+              className="h-full w-full object-contain"
+            />
+          ) : (
+            <span className="text-2xl leading-none" aria-hidden="true">🏇</span>
+          )}
         </div>
-        <p className="text-slate-300 text-[10px] pb-0.5">{encabezado.fecha}</p>
+
+        <div className="min-w-0 flex-1">
+          <h3 className="text-blue-200 text-[9px] font-bold tracking-widest uppercase">Reporte de Liquidación</h3>
+          <h1 className="text-lg font-extrabold leading-tight truncate">
+            {encabezado.hipodromo} <span className="font-normal text-blue-200">•</span> {encabezado.carrera}
+          </h1>
+          <p className="text-blue-100 text-[10px]">{encabezado.fecha}</p>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="text-right">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-blue-100 leading-tight">
+              {encabezado.grupo || "Grupo Hípico"}
+            </p>
+            <p className="text-[8px] font-semibold uppercase tracking-widest text-blue-300">Grupo</p>
+          </div>
+          <div className="w-14 h-14 shrink-0 rounded-xl bg-white/95 p-1.5 shadow-inner flex items-center justify-center overflow-hidden">
+            {encabezado.logoGrupo ? (
+              <img
+                src={encabezado.logoGrupo}
+                alt={`Logo de ${encabezado.grupo || "Grupo Hípico"}`}
+                crossOrigin="anonymous"
+                referrerPolicy="no-referrer"
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <span className="text-2xl leading-none" aria-hidden="true">🏇</span>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* 2. PIZARRA DE LLEGADA */}
-      <div className="flex items-center px-4 py-2 border-b-2 border-[#8B4513]">
-        <span className="text-[9px] font-bold tracking-widest text-slate-500 mr-4 uppercase">Llegada</span>
-        <div className="flex gap-3">
-          {encabezado.llegada.map((caballo, idx) => (
-            <div key={idx} className="flex flex-col items-center">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl font-black shadow-md ${colorDiscoNumero(caballo.numero)}`}>
-                {caballo.numero}
+      {/* 2. PIZARRA DE LLEGADA — solo si la carrera ya se liquidó */}
+      {liquidada ? (
+        <div className="flex items-center px-4 py-2 border-b-2 border-blue-800/40">
+          <span className="text-[9px] font-bold tracking-widest text-slate-500 mr-4 uppercase">Llegada</span>
+          <div className="flex gap-3">
+            {encabezado.llegada.map((caballo, idx) => (
+              <div key={idx} className="flex flex-col items-center">
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg font-black shadow-sm border ${colorDiscoNumero(caballo.numero)}`}>
+                  {caballo.numero}
+                </div>
+                <span className="text-[9px] text-slate-500 mt-0.5 font-bold">{caballo.puesto}</span>
               </div>
-              <span className="text-[9px] text-slate-500 mt-0.5 font-bold">{caballo.puesto}</span>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {/* 3. JUGADAS EN VIVO (Grid a 2 columnas) */}
       <div className="bg-slate-50 px-4 py-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
-        <TablaJugadas filas={jugadasCol1} />
-        <TablaJugadas filas={jugadasCol2} />
+        <TablaJugadas filas={jugadasCol1} mostrarResultado={liquidada} />
+        <TablaJugadas filas={jugadasCol2} mostrarResultado={liquidada} />
       </div>
 
-      {/* 4. PARADAS ADELANTADAS */}
-      {totalAdelantadas > 0 && (
+      {/* 4. PARADAS ADELANTADAS — solo con la carrera liquidada */}
+      {liquidada && totalAdelantadas > 0 && (
         <div className="px-4 pb-2">
-          <div className="bg-[#1a3822] text-white text-[9px] font-bold tracking-widest px-2 py-1 uppercase rounded-t">
+          <div className="bg-blue-800 text-white text-[9px] font-bold tracking-widest px-2 py-1 uppercase rounded-t">
             Parada Adelantadas
           </div>
           <SubSeccion titulo="Tablas Fijas" filas={adelantadas.tablas} />
@@ -338,22 +391,24 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
         </div>
       )}
 
-      {/* 5. RESUMEN: GANAN / PIERDEN */}
-      <div className="px-4 pb-2 grid grid-cols-2 gap-3">
-        <div className="border border-green-200 rounded-lg overflow-hidden bg-white">
-          <div className="bg-green-600 text-white text-[10px] font-bold px-2 py-1 tracking-wide uppercase flex items-center">
-            <span className="mr-1.5">✅</span> Ganan
+      {/* 5. RESUMEN: GANAN / PIERDEN — solo con la carrera liquidada */}
+      {liquidada ? (
+        <div className="px-4 pb-2 grid grid-cols-2 gap-3">
+          <div className="border border-green-200 rounded-lg overflow-hidden bg-white">
+            <div className="bg-green-600 text-white text-[10px] font-bold px-2 py-1 tracking-wide uppercase flex items-center">
+              <span className="mr-1.5">✅</span> Ganan
+            </div>
+            <ListaResumen filas={resumen.ganan} />
           </div>
-          <ListaResumen filas={resumen.ganan} />
-        </div>
 
-        <div className="border border-red-200 rounded-lg overflow-hidden bg-white">
-          <div className="bg-red-700 text-white text-[10px] font-bold px-2 py-1 tracking-wide uppercase flex items-center">
-            <span className="mr-1.5">❌</span> Pierden
+          <div className="border border-red-200 rounded-lg overflow-hidden bg-white">
+            <div className="bg-red-700 text-white text-[10px] font-bold px-2 py-1 tracking-wide uppercase flex items-center">
+              <span className="mr-1.5">❌</span> Pierden
+            </div>
+            <ListaResumen filas={resumen.pierden} />
           </div>
-          <ListaResumen filas={resumen.pierden} />
         </div>
-      </div>
+      ) : null}
 
       {/* 5b. NOTA AL PIE: QUIENES ARRIESGARON MÁS DE LO QUE DISPONEN (ítem 10) */}
       <NotaExcedidos filas={notaExcedidos ?? []} />

@@ -22,6 +22,7 @@
     "../src/features/tablas/lib/tipos.ts",
     "../src/features/tablas/lib/normalizar.ts",
     "../src/features/liquidacion/lib/posiciones.ts",
+    "../src/features/liquidacion/lib/etiquetas-reporte.ts",
     "../src/features/taquilla/lib/nomenclatura.ts",
     "../src/features/taquilla/lib/reparto.ts",
     "../src/features/taquilla/lib/caballos.ts",
@@ -33,6 +34,7 @@
     "../src/features/carreras/lib/retiros-nucleo.ts",
     "../src/features/carreras/lib/maestro-nucleo.ts",
     "../src/features/hipodromos/lib/tipos.ts",
+    "../src/shared/lib/logos.ts",
     "../src/core/utils/fechas.ts",
     "../src/features/tablas/lib/validar-carga.ts",
     "../src/features/remates/lib/core.ts",
@@ -90,6 +92,8 @@
     "./gestion-saldos-clientes.test.ts",
     "./comisiones-convenio.test.ts",
     "./editor-caballos-enter.test.ts",
-    "./tablas-fijas-liquidacion.test.ts"
+    "./tablas-fijas-liquidacion.test.ts",
+    "./desglose-reporte.test.ts",
+    "./logos-reporte.test.ts"
   ]
 }

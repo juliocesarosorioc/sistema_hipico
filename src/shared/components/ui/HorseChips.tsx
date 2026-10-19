@@ -48,7 +48,7 @@ function ChipNum({ num, color, dim }: { num: number; color: HorseColor; dim: str
   return (
     <span
       title={color.label}
-      className={`inline-flex ${dim} shrink-0 items-center justify-center rounded-sm border font-bold leading-none ${color.bg} ${color.text} ${color.border}`}
+      className={`inline-flex ${dim} shrink-0 items-center justify-center rounded-md border font-bold leading-none ${color.bg} ${color.text} ${color.border}`}
     >
       {num}
     </span>
@@ -56,9 +56,9 @@ function ChipNum({ num, color, dim }: { num: number; color: HorseColor; dim: str
 }
 
 const BADGE_SIZE = {
-  xs: "h-4 w-4 text-[10px] rounded-sm",
-  sm: "h-5 w-5 text-[11px] rounded",
-  md: "h-7 w-7 text-sm rounded",
+  xs: "h-4 w-4 text-[10px] rounded-md",
+  sm: "h-5 w-5 text-[11px] rounded-md",
+  md: "h-7 w-7 text-sm rounded-lg",
 } as const;
 
 export type HorseBadgeSize = keyof typeof BADGE_SIZE;

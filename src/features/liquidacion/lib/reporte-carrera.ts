@@ -101,10 +101,20 @@ export function riesgoDeFila(f: FilaReporte): number {
  *     Pierden). Los tickets PENDIENTES (resultado null) NO entran al resumen:
  *     antes caían en «Ganan 0.00» y vaciaban la columna «Pierden».
  */
+export type OpcionesReporteCarrera = {
+  /** `false` = carrera aún sin pagar: oculta pizarra, resultados y resumen. */
+  liquidada?: boolean;
+  /** Logo del hipódromo (Data URL PNG). */
+  logoHipodromo?: string | null;
+  /** Logo del grupo hípico (Data URL PNG). */
+  logoGrupo?: string | null;
+};
+
 export function armarReporteCarrera(
   c: CarreraReporte,
   grupo?: string,
-  disponibleDe?: (nombre: string) => number | null | undefined
+  disponibleDe?: (nombre: string) => number | null | undefined,
+  opciones?: OpcionesReporteCarrera
 ): ReporteCarreraDatos {
   const puestos = (c.pizarra ?? "").split(/\s*·\s*/).filter(Boolean);
   const consigue = consiguePorJuega(c);
@@ -158,7 +168,14 @@ export function armarReporteCarrera(
     if (resultado !== null && resultado > 0 && f.rol !== "Consigue") {
       const seccion = seccionAdelantadaDe(f.jugada);
       if (seccion) {
-        adelantadas[seccion].push({ juega: f.cliente, descripcion: f.caballo || undefined, resultado });
+        // BLOQUE 5: la descripción lleva SIEMPRE los ejemplares desglosados
+        // ("#8 vs #3" en Marcas, "#7 (Golfo)" en Tablas Fijas); las filas
+        // viejas sin `ejemplar` caen a `caballo`.
+        adelantadas[seccion].push({
+          juega: f.cliente,
+          descripcion: (f.ejemplar ?? f.caballo) || undefined,
+          resultado,
+        });
       }
     }
   }
@@ -203,7 +220,9 @@ export function armarReporteCarrera(
   return {
     encabezado: {
       grupo,
+      logoGrupo: opciones?.logoGrupo ?? null,
       hipodromo: c.hipodromo,
+      logoHipodromo: opciones?.logoHipodromo ?? null,
       carrera: `Carrera ${c.numero}`,
       fecha: diaLegible(c.fecha),
       llegada: puestos.map((puesto, idx) => ({
@@ -212,6 +231,7 @@ export function armarReporteCarrera(
         color: colorDiscoNumero(puesto),
       })),
     },
+    liquidada: opciones?.liquidada !== false,
     jugadasVivo,
     adelantadas,
     resumen: { ganan, pierden },

@@ -167,7 +167,7 @@ export default function ManualLiquidacion() {
           (orden de llegada 1°…5°).
         </p>
         <p>
-          <b>Cuerpo (tabla de jugadas):</b> Juega · Apostó (monto que arriesga el que juega) · Jugó
+          <b>Cuerpo (tabla de jugadas):</b> Juega · Apostó (monto que arriesga el que juega) · Jugada
           (código exacto) · Da · Apostó (monto que arriesga el que da) · Resultado. El monto de cada
           lado del pareo se muestra en su propia columna, y el resultado solo aparece cuando la
           jugada se decide: positivo (verde), negativo (rojo) o nulo (verde claro,{" "}

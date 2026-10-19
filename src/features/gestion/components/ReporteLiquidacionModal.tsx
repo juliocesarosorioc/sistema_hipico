@@ -15,6 +15,8 @@ import { exportarReporteCarreraImagen } from "@/features/liquidacion/lib/reporte
 import { listarGruposAdmin, type GrupoRow } from "@/features/grupos/lib/grupos";
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
+import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
+import type { Hipodromo } from "@/features/hipodromos/lib/tipos";
 import { EmptyState } from "@/shared/components/ui/EmptyState";
 import ReporteCarrera, { type ReporteCarreraDatos } from "@/features/saldos/components/ReporteCarrera";
 import ManualLiquidacion from "@/features/gestion/components/ManualLiquidacion";
@@ -72,6 +74,19 @@ export default function ReporteLiquidacionModal({
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
   const [manualAbierto, setManualAbierto] = useState(false);
   const [clientes, setClientes] = useState<ClienteRow[]>([]);
+  /** Catálogo con `logo_url` para la cabecera del reporte. */
+  const [catalogoHipodromos, setCatalogoHipodromos] = useState<Hipodromo[]>([]);
+
+  // Logos de los hipódromos: la cabecera azul los pinta desde acá.
+  useEffect(() => {
+    let vivo = true;
+    listarHipodromos()
+      .then((r) => vivo && setCatalogoHipodromos(r.data))
+      .catch(() => vivo && setCatalogoHipodromos([]));
+    return () => {
+      vivo = false;
+    };
+  }, []);
 
   // Ítem 10: cartera de clientes para saber el disponible (saldo + aval) y
   // marcar con asterisco a quien arriesgó más de lo que dispone.
@@ -172,6 +187,29 @@ export default function ReporteLiquidacionModal({
     [grupos, grupoId]
   );
 
+  const logoGrupo = useMemo(
+    () => grupos.find((g) => String(g.id) === grupoId)?.logo_url ?? null,
+    [grupos, grupoId]
+  );
+
+  const logoHipodromo = useMemo(() => {
+    const buscado = hipodromo.trim().toUpperCase();
+    if (!buscado) return null;
+    return catalogoHipodromos.find((h) => h.nombre.trim().toUpperCase() === buscado)?.logo_url ?? null;
+  }, [catalogoHipodromos, hipodromo]);
+
+  /**
+   * Solo una carrera pagada/liquidada muestra pizarra, resultados y resumen.
+   * En `carrerasDia` el estado central (`aplicado_a_tablas`) es la verdad.
+   */
+  const liquidada = useMemo(() => {
+    const c = carrerasDia.find(
+      (x) => String(x.hipodromo || "").trim().toUpperCase() === hipodromo && Number(x.carrera) === Number(carrera)
+    );
+    if (!c) return false;
+    return c.aplicado_a_tablas === true || String(c.estado ?? "").toLowerCase() === "liquidada";
+  }, [carrerasDia, hipodromo, carrera]);
+
   // Motor: trae la carrera liquidada y arma la plantilla.
   useEffect(() => {
     if (!abierto || !hipodromo || !carrera) {
@@ -183,14 +221,14 @@ export default function ReporteLiquidacionModal({
     carreraReporteDetalle(fecha, hipodromo, carrera)
       .then((c: CarreraReporte | null) => {
         if (!vivo) return;
-        setDatos(c ? armarReporteCarrera(c, nombreGrupo, disponibleDe) : null);
+        setDatos(c ? armarReporteCarrera(c, nombreGrupo, disponibleDe, { liquidada, logoHipodromo, logoGrupo }) : null);
       })
       .catch(() => vivo && setDatos(null))
       .finally(() => vivo && setCargandoDetalle(false));
     return () => {
       vivo = false;
     };
-  }, [abierto, fecha, hipodromo, carrera, nombreGrupo, disponibleDe]);
+  }, [abierto, fecha, hipodromo, carrera, nombreGrupo, disponibleDe, liquidada, logoHipodromo, logoGrupo]);
 
   if (!abierto) return null;
 

@@ -18,6 +18,7 @@ import { rangoSemanaDeGrupo, cicloSemanalDe } from "@/features/liquidacion/lib/s
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { listarCarrerasPorDia } from "@/features/tablas/lib/rpc";
 import { pizarraDesdeNums, esVentaDeRemate } from "@/features/impresion/lib/reportGenerator";
+import { desgloseJugada } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { liquidarOficial, puestosDesdeOrdenLlegada } from "@/features/motores/lib/oficiales";
 import {
   numerosPizarra,
@@ -38,6 +39,12 @@ export type FilaReporte = {
   /** Resultado NETO de la casa sobre esa fila; null = pendiente de liquidar. */
   resultado: number | null;
   esPareo?: boolean;
+  /**
+   * Desglose breve del/los ejemplar(es) SIN el tipo de jugada (Bloque 5):
+   * "#8 vs #3" en Marcas, "#7 (Golfo)" en Tablas Fijas. Lo usa la sección
+   * «Parada Adelantadas» del Reporte de Carrera; si falta se cae a `caballo`.
+   */
+  ejemplar?: string;
 };
 
 export type CarreraReporte = {
@@ -533,8 +540,13 @@ async function carreraReporte(
 
   tickets.forEach((f, i) => {
     const monto = cifra(f.monto_jugado);
+    // El cruce financiero agrupa por (cliente, caballo): ese agrupamiento y el
+    // neteo usan el número TAL COMO está en el ticket, nunca el rotulado.
     const caballo = txt(f.caballo);
     const esPareo = caballo.toUpperCase().includes("X") || /^PP/i.test(txt(f.nombre_jugada));
+    // BLOQUE 5: lo que se MUESTRA siempre lleva los ejemplares involucrados
+    // (Marcas: "#8 vs #3"; Tablas Fijas: "#7 (Golfo)").
+    const desglose = desgloseJugada(f);
     const ev = evaluar(f, hipodromo, numero, pizarra, tasaComision);
     // `tickets_apuestas` NO tiene `cliente_juega` / `cliente_consigue`: son
     // `cliente_juega_id|_nombre` y `cliente_consigue_id|_nombre`. Leer las
@@ -553,11 +565,12 @@ async function carreraReporte(
       id: `${fecha}-${hipodromo}-${numero}-j-${i}`,
       rol: "Juega",
       cliente: clienteJuegaNombre || "—",
-      jugada: txt(f.nombre_jugada),
-      caballo,
+      jugada: desglose.jugada,
+      caballo: desglose.caballo,
       monto,
       resultado: resultadoJuega,
       esPareo,
+      ejemplar: desglose.ejemplar,
     });
 
     if (clienteConsigue) {
@@ -565,11 +578,12 @@ async function carreraReporte(
         id: `${fecha}-${hipodromo}-${numero}-c-${i}`,
         rol: "Consigue",
         cliente: clienteConsigueNombre || clienteConsigue,
-        jugada: txt(f.nombre_jugada),
-        caballo,
+        jugada: desglose.jugada,
+        caballo: desglose.caballo,
         monto,
         resultado: resultadoConsigueDe(monto, ev),
         esPareo,
+        ejemplar: desglose.ejemplar,
       });
     }
 
