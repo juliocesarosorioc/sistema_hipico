@@ -560,6 +560,73 @@ export function liquidarPuestos(t: TicketMotor, tasaComision?: number | null): R
   }
 }
 
+export type EntradaCrucePuestos = {
+  /** Identidad del cliente (cliente_juega_id / cliente1). Sin cliente no cruza. */
+  cliente: string;
+  /** true = la jugada ganó (bruto > monto). */
+  ok: boolean;
+  /** Bruto devuelto por la jugada ANTES de comisión (incluye el monto de vuelta). */
+  bruto: number;
+  /** Monto arriesgado en la jugada. */
+  monto: number;
+  /** Jugada anulada/retirada: NO participa del cruce. */
+  anulada?: boolean;
+};
+
+export type LiquidacionCrucePuestosCliente = {
+  cliente: string;
+  ganadoBruto: number; // suma de (bruto − monto) de tickets ganadores
+  perdidoBruto: number; // suma de montos de tickets perdedores
+  neto: number; // ganadoBruto − perdidoBruto
+  baseComision: number; // max(0, neto) si permiteCruces, else ganadoBruto
+  comision: number; // baseComision * pct / 100
+  netoCliente: number; // (ganado − perdido) − comision
+  permiteCruces: boolean;
+  participantes: number; // cantidad de tickets que participan
+};
+
+export function calcularLiquidacionPuestosCarrera(
+  entradas: EntradaCrucePuestos[],
+  opts: { permiteCruces: boolean; pctComision: number }
+): LiquidacionCrucePuestosCliente[] {
+  const participantes: EntradaCrucePuestos[] = (entradas ?? []).filter((e) => !e.anulada);
+  const porCliente = new Map<string, EntradaCrucePuestos[]>();
+  for (const e of participantes) {
+    const c = String(e.cliente ?? "").trim();
+    if (!c) continue;
+    const arr = porCliente.get(c) ?? [];
+    arr.push(e);
+    porCliente.set(c, arr);
+  }
+  const pct = Number(opts.pctComision);
+  const permite = opts.permiteCruces === true;
+  const result: LiquidacionCrucePuestosCliente[] = [];
+  for (const [cliente, arr] of porCliente) {
+    let ganadoBruto = 0;
+    let perdidoBruto = 0;
+    for (const e of arr) {
+      if (e.ok) ganadoBruto += e.bruto - e.monto;
+      else perdidoBruto += e.monto;
+    }
+    const neto = ganadoBruto - perdidoBruto;
+    const baseComision = permite ? (neto > 0 ? neto : 0) : ganadoBruto;
+    const comision = baseComision > 0 ? round2(baseComision * (pct / 100)) : 0;
+    const netoCliente = round2(neto - comision);
+    result.push({
+      cliente,
+      ganadoBruto: round2(ganadoBruto),
+      perdidoBruto: round2(perdidoBruto),
+      neto: round2(neto),
+      baseComision: round2(baseComision),
+      comision: round2(comision),
+      netoCliente,
+      permiteCruces: permite,
+      participantes: arr.length,
+    });
+  }
+  return result;
+}
+
 export function procesarPuestos(t: TicketMotor): ResultadoMotor {
   return liquidarPuestos(t);
 }

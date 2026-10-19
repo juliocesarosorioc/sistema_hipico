@@ -5,6 +5,9 @@
  */
 import { BetSlipEntry } from "@/shared/store/bet-slip";
 import { PizarraCarrera, ResultadoPago, esPagoInmediato } from "@/features/liquidacion/lib/liquidacion";
+// Detección de JUGADAS DE PUESTOS (las únicas que pueden cruzar): el mismo
+// parser que usa liquidarOficial para despachar al motor de puestos.
+import { parsearNomenclatura } from "@/features/taquilla/lib/nomenclatura";
 
 // ============================================================
 // Dominio NINI (sintaxis con "N": 2N · 1N · 1y2N)
@@ -145,9 +148,21 @@ export type NeteoCruceItem = {
 };
 
 export type NeteoCruceGrupo = {
-  /** Resultado neto del cliente sobre ese ejemplar en la carrera. */
+  /** Resultado neto del cliente (ganado − perdido) en la carrera. */
   neto: number;
-  /** Comisión SOLO sobre el neto positivo (0 si pérdida neta). */
+  /**
+   * BRUTO ganado en la carrera (suma de `bruto − monto` de los tickets
+   * ganadores) — la "Ganancia Bruta" de la regla de negocio de la casa.
+   */
+  ganadoBruto: number;
+  /**
+   * Base sobre la que se cobra la comisión:
+   *   CON cruces → el neto positivo (ganado − perdido, mínimo 0).
+   *   SIN cruces → el BRUTO ganado (cada jugada ganadora paga comisión por el
+   *                total, sin compensarse con las perdedoras de la carrera).
+   */
+  baseComision: number;
+  /** Comisión SOBRE `baseComision` (0 si la base no es positiva). */
   comisionNeta: number;
   /** Cantidad de tickets que integran el grupo. */
   conteo: number;
@@ -162,27 +177,81 @@ export function claveCruceFinanciero(carrera: string | number, cliente: string, 
 }
 
 /**
- * Agrupa los tickets por (cliente, caballo, carrera) y calcula la comisión
- * neta de cada grupo (cruces financieros). Los tickets sin cliente o sin
- * caballo no participan del neteo (se mantienen con comisión por ticket).
+ * ¿Este ticket es una JUGADA DE PUESTOS (la única que puede cruzar)?
+ *
+ * El cruce financiero es EXCLUSIVO de Puestos: el cliente arriesga contra la
+ * casa (o contra otro apostador) sobre la LLEGADA de un ejemplar, así que sus
+ * ganancias y sus pérdidas dentro de la misma carrera se compensan.
+ *
+ * Todas las demás modalidades (Tablas Fijas, Marcas, Dupletas, Remates, WPS,
+ * Pollas…) NO se cruzan: se cobran y se pagan completas, cada una con su
+ * comisión sobre su propia ganancia.
+ *
+ * La detección es por SINTAXIS (parsearNomenclatura), que es la misma que usa
+ * `liquidarOficial` para despachar al motor de puestos. Cualquier jugada que
+ * ese parser no entiende NO es de puestos.
+ */
+export function esJugadaDePuestos(tipoJugada: string | null | undefined): boolean {
+  return parsearNomenclatura(String(tipoJugada ?? "")) != null;
+}
+
+/**
+ * Agrupa los tickets por (cliente, caballo, carrera) — o por (cliente, carrera)
+ * cuando `agruparPorCliente` está activo, como pide la regla de PUESTOS — y
+ * calcula la comisión neta de cada grupo (cruces financieros).
+ *
+ * REGLA DE NEGOCIO (ver docs y pruebas/cruces-puestos.test.ts):
+ *   · CON cruces  → base de comisión = el NETO positivo (ganado − perdido).
+ *   · SIN cruces  → base de comisión = el BRUTO GANADO (cada jugada ganadora
+ *                   paga comisión sobre lo que ganó, sin compensarse).
+ *   · En AMBOS casos el cliente recibe `neto − comisión`; lo único que cambia
+ *     es la base gravable de la casa.
+ *
+ * Los tickets sin cliente (o sin caballo, si no se agrupa por cliente) no
+ * participan del neteo: se mantienen con comisión por ticket.
  */
 export function netearComisionCruce(
   items: NeteoCruceItem[],
   carrera: string | number,
-  tasaComisionPorcentaje?: number | null
+  tasaComisionPorcentaje?: number | null,
+  opts?: {
+    /**
+     * true ⇒ todas las jugadas de PUESTOS del cliente en la carrera se cruzan
+     * en UN solo grupo (clave = cliente::carrera). false ⇒ el neteo histórico
+     * por (cliente, caballo).
+     */
+    agruparPorCliente?: boolean;
+    /**
+     * false ⇒ SIN cruces: la comisión se cobra sobre el BRUTO ganado, no sobre
+     * el neto. Default true (con cruces), que era el comportamiento previo.
+     */
+    permiteCruces?: boolean;
+  }
 ): Map<string, NeteoCruceGrupo> {
   const tasa =
     Number.isFinite(Number(tasaComisionPorcentaje)) && Number(tasaComisionPorcentaje) >= 0
       ? Number(tasaComisionPorcentaje)
       : COMISION_CASA.rate * 100;
-  const porGrupo = new Map<string, { neto: number; conteo: number; tasa: number | null }>();
+  const permiteCruces = opts?.permiteCruces !== false;
+  const porCliente = opts?.agruparPorCliente === true;
+  const porGrupo = new Map<
+    string,
+    { neto: number; ganadoBruto: number; conteo: number; tasa: number | null }
+  >();
   for (const it of items) {
     const cliente = String(it.cliente ?? "").trim();
     const caballo = String(it.caballo ?? "").trim();
-    if (!cliente || !caballo) continue;
-    const k = claveCruceFinanciero(carrera, cliente, caballo);
-    const g = porGrupo.get(k) ?? { neto: 0, conteo: 0, tasa: null };
+    // Sin cliente no hay a quién netear; sin caballo solo se puede agrupar por
+    // cliente (el cruce de PUESTOS no necesita el ejemplar).
+    if (!cliente || (!caballo && !porCliente)) continue;
+    const k = porCliente
+      ? [String(carrera ?? "").trim().toUpperCase(), cliente].join("::")
+      : claveCruceFinanciero(carrera, cliente, caballo);
+    const g = porGrupo.get(k) ?? { neto: 0, ganadoBruto: 0, conteo: 0, tasa: null };
+    // Bruto = capital de vuelta + ganancia; bruto − monto = GANANCIA BRUTA.
+    // Perdedor: −monto (la pérdida bruta).
     g.neto += it.ok ? it.bruto - it.monto : -it.monto;
+    if (it.ok && it.bruto - it.monto > 0) g.ganadoBruto += it.bruto - it.monto;
     g.conteo += 1;
     // La tasa del GRUPO manda: se toma la primera del grupo que venga definida
     // (numerica y >= 0). Si no hay, cae a la general en el loop de salida.
@@ -195,9 +264,13 @@ export function netearComisionCruce(
   const out = new Map<string, NeteoCruceGrupo>();
   for (const [k, g] of porGrupo) {
     const tasaGrupo = g.tasa != null ? g.tasa : tasa;
+    // CON cruces → base = neto positivo · SIN cruces → base = bruto ganado.
+    const base = permiteCruces ? (g.neto > 0 ? g.neto : 0) : g.ganadoBruto;
     out.set(k, {
       neto: round2(g.neto),
-      comisionNeta: g.neto > 0 ? round2(g.neto * (tasaGrupo / 100)) : 0,
+      ganadoBruto: round2(g.ganadoBruto),
+      baseComision: round2(base),
+      comisionNeta: base > 0 ? round2(base * (tasaGrupo / 100)) : 0,
       conteo: g.conteo,
     });
   }

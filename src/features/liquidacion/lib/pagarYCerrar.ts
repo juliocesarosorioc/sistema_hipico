@@ -5,7 +5,7 @@ import { upsertResultadoCentral } from "@/features/carreras/lib/carreras-dia";
 import { leerRetirosCarrera } from "@/features/carreras/lib/retiros";
 import { ordenLlegadaDePizarra, posicionesDePizarra } from "@/features/liquidacion/lib/posiciones";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
-import { netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem } from "@/features/betting/lib/bettingEngine";
+import { netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem, esJugadaDePuestos } from "@/features/betting/lib/bettingEngine";
 import type { TicketMotor, ResultadoMotor } from "@/features/betting/lib/bettingEngine";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 import { supabase } from "@/core/supabase";
@@ -118,6 +118,8 @@ export async function liquidarCarreraYCerrarTabla(opts: {
    *  de la tabla, que esta función no conoce). */
   premio_oficial?: number | null;
   premio_recalculado?: number | null;
+  /** true = agrupar cruces de PUESTOS por cliente en la carrera. */
+  permiteCruces?: boolean;
 }): Promise<ResLiquidarCarrera> {
     try {
       // Con contexto, no solo con permiso: el ABAC exige que el operador
@@ -180,6 +182,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
 
     const res = liquidarOficial(ticketMotor, tasaComision);
     procesados.push({ comando: t.comando, resultado: res });
+    t.permiteCruces = opts.permiteCruces !== false;
     metadatos.push({ cliente1: t.cliente1, caballo: String(t.caballo ?? "").trim(), monto, permiteCruces: t.permiteCruces });
     totalInvertido += monto;
   }
@@ -187,8 +190,9 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   // ── CRUCE FINANCIERO: comisión neta por (cliente1, caballo, carrera) ──
   // La jerarquía Carrera → Cliente → Grupo llega resuelta en cada ticket
   // (permiteCruces). Con permiso en NO no se netea (comisión por ticket).
-  // TODO(PLANIFICACIÓN): "INQUIETUDES CON RESPECTO A CRUCES" — pendiente
-  // decidir si el permiso en NO además BLOQUEA la operación.
+  // El cruce de PUESTOS se agrupa por cliente en la carrera cuando corresponde.
+  const agruparPorCliente =
+    typeof opts.permiteCruces === "boolean" ? opts.permiteCruces : true;
   let neteados = 0;
   const items: NeteoCruceItem[] = procesados.map((p, i) => ({
     cliente: metadatos[i].cliente1 ?? "",
@@ -197,12 +201,18 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     bruto: p.resultado.ok ? p.resultado.totalClienteNeto + p.resultado.gananciaCasa : 0,
     ok: p.resultado.ok,
   }));
-  const gruposNeteo = netearComisionCruce(items, carrera, tasaComision);
+  const gruposNeteo = netearComisionCruce(items, carrera, tasaComision, {
+    agruparPorCliente: agruparPorCliente !== false,
+    permiteCruces: agruparPorCliente !== false,
+  });
   const gruposIdx = new Map<string, number[]>();
   for (let i = 0; i < procesados.length; i++) {
     const t = tickets[i];
-    if (!(t.cliente1 ?? "").trim() || !(t.caballo ?? "").trim() || t.permiteCruces === false) continue;
-    const k = claveCruceFinanciero(carrera, t.cliente1!, t.caballo!);
+    if (!(t.cliente1 ?? "").trim() || (!(t.caballo ?? "").trim() && !(agruparPorCliente !== false))) continue;
+    const k =
+      agruparPorCliente !== false
+        ? [String(carrera ?? "").trim().toUpperCase(), String(t.cliente1!).trim().toUpperCase()].join("::")
+        : claveCruceFinanciero(carrera, t.cliente1!, t.caballo!);
     const g = gruposNeteo.get(k);
     if (!g || g.conteo < 2) continue;
     const arr = gruposIdx.get(k) ?? [];

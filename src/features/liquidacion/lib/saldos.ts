@@ -15,7 +15,7 @@ import { supabase } from "@/core/supabase";
 import { liquidarOficial } from "@/features/motores/lib/oficiales";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
-import { parsearNini, netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem } from "@/features/betting/lib/bettingEngine";
+import { parsearNini, netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem, esJugadaDePuestos } from "@/features/betting/lib/bettingEngine";
 import type { TicketMotor, ResultadoMotor } from "@/features/betting/lib/bettingEngine";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 
@@ -31,6 +31,16 @@ export type LiquidarSaldosInput = {
    *  carrera de otra jornada (resultado cargado con retraso) la ventana de
    *  `fecha_registro` no la cubría y la liquidación no encontraba Pendientes. */
   fecha?: string;
+  /**
+   * Para el cruce de PUESTOS agrupado por cliente (requisito: grupo decide).
+   * `true` ⇒ cruce consolidado (compensa todas las jugadas de puestos del
+   * cliente en la carrera). `false` ⇒ sin cruces (comisión sobre bruto ganado).
+   * Si no se pasa, queda por defecto TRUE para mantener el comportamiento previo
+   * cuando se liquida sin pasar este flag (aunque el requisito exige que venga
+   * del GRUPO). Esta firma es flexible para las distintas rutas.
+   */
+  agruparPorClientePuestos?: boolean;
+  permiteCruces?: boolean;
 };
 
 export type ResumenSaldos = {
@@ -136,14 +146,23 @@ export function decidirTickets(
     ok: res.ok,
     tasa: tasaComisionDeFila(fila, input.tasaComision),
   }));
-  const gruposNeteo = netearComisionCruce(items, input.carrera, input.tasaComision);
+  const gruposNeteo = netearComisionCruce(items, input.carrera, input.tasaComision, {
+    agruparPorCliente: input.agruparPorClientePuestos === true || input.permiteCruces !== false,
+    permiteCruces: input.permiteCruces !== false,
+  });
   if (gruposNeteo.size > 0) {
     const gruposIdx = new Map<string, number[]>();
     for (let i = 0; i < decisiones.length; i++) {
       const cliente = String(decisiones[i].fila.cliente_juega_id ?? "").trim();
       const caballo = String(decisiones[i].fila.caballo ?? "").trim();
-      if (!cliente || !caballo) continue;
-      const k = claveCruceFinanciero(input.carrera, cliente, caballo);
+      if (!cliente || (!caballo && (input.agruparPorClientePuestos === true || input.permiteCruces !== false))) {
+        // permite agrupar por cliente sin caballo: se construirá clave cliente::carrera
+      }
+      const k =
+        input.agruparPorClientePuestos === true || input.permiteCruces !== false
+          ? [String(input.carrera ?? "").trim().toUpperCase(), cliente].join("::")
+          : claveCruceFinanciero(input.carrera, cliente, caballo);
+      if (!k || !cliente) continue;
       const g = gruposNeteo.get(k);
       if (!g || g.conteo < 2) continue;
       const arr = gruposIdx.get(k) ?? [];

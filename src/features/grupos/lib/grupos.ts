@@ -396,6 +396,7 @@ export async function crearGrupo(datos: Partial<GrupoRow>): Promise<{ ok: boolea
           cuenta_bancaria: datos.cuenta_bancaria ?? null,
           es_principal: Boolean(datos.es_principal),
           activo: true,
+          permite_cruces: datos.permite_cruces !== false,
         },
       });
       if (rpc.error) return { ok: false, error: rpc.error.message };

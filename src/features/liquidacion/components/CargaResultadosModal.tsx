@@ -171,6 +171,7 @@ export function CargaResultadosModal({
       return;
     }
 
+    // Carrera sin resultados previos: inicia limpio en blanco
     const base = Array.from({ length: minLugares }, (_, i) => {
       const n = (caballos ?? [])[i];
       return { numero: n ? String(n.numero) : "", empate: false };

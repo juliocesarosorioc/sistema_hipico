@@ -26,12 +26,16 @@ type Props = {
   onCambio: (clave: ProductoConvenio, valor: string) => void;
   ayuda?: string;
   /** Columnas del sub-grid en pantallas anchas. */
-  columnas?: 2 | 3 | 4;
+  columnas?: 2 | 3 | 4 | 5 | 6;
 };
 
 export function CamposComisionesConvenio({ valores, onCambio, ayuda, columnas = 4 }: Props) {
   const cols =
-    columnas === 2 ? "sm:grid-cols-2" : columnas === 3 ? "sm:grid-cols-3" : "sm:grid-cols-4";
+    columnas === 2 ? "sm:grid-cols-2" :
+    columnas === 3 ? "sm:grid-cols-3" :
+    columnas === 5 ? "sm:grid-cols-5" :
+    columnas === 6 ? "sm:grid-cols-6" :
+    "sm:grid-cols-4";
   return (
     <div className="rounded-xl border border-line bg-slate-50 p-3">
       <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-slate-600">
@@ -48,6 +52,7 @@ export function CamposComisionesConvenio({ valores, onCambio, ayuda, columnas = 
               step="0.01"
               min={0}
               inputMode="decimal"
+              max={100}
               value={valores[c.clave] ?? ""}
               onChange={(e) => onCambio(c.clave, e.target.value)}
               placeholder={c.propio ? "hereda" : "2.5"}
