@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/shared/components/ui/Button";
 
+import { LogoUploader } from "@/shared/components/ui/LogoUploader";
+
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 
 import { BANCOS_VZLA, formatearCuenta } from "@/shared/lib/vzla";
@@ -270,6 +272,8 @@ export function GruposModule() {
 
   const [formNombre, setFormNombre] = useState("");
 
+  const [formLogo, setFormLogo] = useState<string | null>(null);
+
   const [formMoneda, setFormMoneda] = useState("USD");
 
   const [formMonedaCuadre, setFormMonedaCuadre] = useState("USD");
@@ -506,6 +510,8 @@ export function GruposModule() {
 
       nombre,
 
+      logo_url: formLogo,
+
       moneda: formMoneda,
 
       moneda_cuadre: formMonedaCuadre,
@@ -547,6 +553,8 @@ export function GruposModule() {
     toast(`Grupo "${nombre}" creado.`, "success");
 
     setFormNombre("");
+
+    setFormLogo(null);
 
     setFormResponsable("");
 
@@ -617,6 +625,8 @@ export function GruposModule() {
     const datos = {
 
       nombre,
+
+      logo_url: editando.logo_url ?? null,
 
       moneda: editando.moneda ?? "USD",
 
@@ -1004,6 +1014,17 @@ export function GruposModule() {
 
               </div>
 
+              <div className="col-span-3">
+
+                <LogoUploader
+                  label="Logo del Grupo (PNG)"
+                  value={formLogo}
+                  onChange={setFormLogo}
+                  hint="Se mostrará junto al nombre del grupo en el Reporte de Liquidación."
+                />
+
+              </div>
+
               <div>
 
                 <label className={etiqueta}>Moneda de Venta</label>
@@ -1313,6 +1334,16 @@ export function GruposModule() {
                   return (
 
                     <div key={String(g.id)} className="flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-3 py-2">
+
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white p-0.5 shadow-inner">
+
+                        {g.logo_url ? (
+                          <img src={g.logo_url} alt={`Logo de ${g.nombre}`} className="h-full w-full object-contain" />
+                        ) : (
+                          <span className="text-sm leading-none text-slate-400" aria-hidden="true">🏇</span>
+                        )}
+
+                      </div>
 
                       <div className="min-w-0 flex-1">
 
@@ -2065,6 +2096,13 @@ export function GruposModule() {
                 />
 
               </div>
+
+              <LogoUploader
+                label="Logo del Grupo (PNG)"
+                value={editando.logo_url ?? null}
+                onChange={(logo_url) => setEditando({ ...editando, logo_url })}
+                hint="Se mostrará junto al nombre del grupo en el Reporte de Liquidación."
+              />
 
               <div className="grid grid-cols-3 gap-3">
 

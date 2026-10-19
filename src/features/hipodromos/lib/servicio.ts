@@ -70,6 +70,7 @@ const normalizar = (r: Record<string, unknown>): Hipodromo => ({
   nombre: String(r.nombre ?? ""),
   pais: String(r.pais ?? "OTRO").toUpperCase(),
   estado: normalizarEstado(r.estado),
+  logo_url: r.logo_url ? String(r.logo_url) : null,
   fecha_creacion: r.fecha_creacion ? String(r.fecha_creacion) : null,
   eliminado_en: r.eliminado_en ? String(r.eliminado_en) : null,
   eliminado_por: r.eliminado_por ? String(r.eliminado_por) : null,
@@ -119,7 +120,7 @@ export async function listarHipodromos(opciones?: { incluirBorrados?: boolean })
  * fallar (el nombre tiene índice único) REACTIVA esa fila: mismo id, mismo
  * historial de carreras, tablas y tickets.
  */
-export async function crearHipodromo(datos: { nombre: string; pais: string }): Promise<ResCrud> {
+export async function crearHipodromo(datos: { nombre: string; pais: string; logo_url?: string | null }): Promise<ResCrud> {
   try {
     // El operador solo puede crear hipódromos de los suyos. El principal
     // (dueño) no está atado a esa lista y puede crear cualquiera.
@@ -134,10 +135,11 @@ export async function crearHipodromo(datos: { nombre: string; pais: string }): P
   }
   const nombre = formatearNombre(datos.nombre);
   const pais = String(datos.pais || "OTRO").toUpperCase();
+  const logo = datos.logo_url ? String(datos.logo_url) : null;
   if (!supabase) {
     const previa = cacheLocal.find((h) => h.nombre.trim().toUpperCase() === nombre.toUpperCase());
     if (previa && estaBorrado(previa)) {
-      const reactivado: Hipodromo = { ...previa, estado: "Activo", eliminado_en: null, eliminado_por: null };
+      const reactivado: Hipodromo = { ...previa, estado: "Activo", eliminado_en: null, eliminado_por: null, ...(logo ? { logo_url: logo } : {}) };
       cacheLocal = cacheLocal.map((h) => (String(h.id) === String(previa.id) ? reactivado : h));
       return { ok: true, reactivado: true };
     }
@@ -149,7 +151,7 @@ export async function crearHipodromo(datos: { nombre: string; pais: string }): P
       };
     }
     const id = `local-${Date.now().toString(36)}`;
-    cacheLocal = [...cacheLocal, { id, nombre, pais, estado: "Activo", fecha_creacion: null, eliminado_en: null }].sort((a, b) =>
+    cacheLocal = [...cacheLocal, { id, nombre, pais, estado: "Activo", logo_url: logo, fecha_creacion: null, eliminado_en: null }].sort((a, b) =>
       a.nombre.localeCompare(b.nombre)
     );
     return { ok: true };
@@ -176,12 +178,12 @@ export async function crearHipodromo(datos: { nombre: string; pais: string }): P
       }
       const { error } = await supabase
         .from("hipodromos")
-        .update({ estado: "Activo", eliminado_en: null, eliminado_por: null, pais })
+        .update({ estado: "Activo", eliminado_en: null, eliminado_por: null, pais, ...(logo ? { logo_url: logo } : {}) })
         .eq("id", previa.id);
       if (error) return { ok: false, error: error.message, code: error.code ?? undefined };
       return { ok: true, reactivado: true };
     }
-    const { error } = await supabase.from("hipodromos").insert([{ nombre, pais }]);
+    const { error } = await supabase.from("hipodromos").insert([{ nombre, pais, ...(logo ? { logo_url: logo } : {}) }]);
     if (error) return { ok: false, error: error.message, code: error.code ?? undefined };
     return { ok: true };
   } catch (e) {
@@ -190,7 +192,7 @@ export async function crearHipodromo(datos: { nombre: string; pais: string }): P
 }
 
 /** UPDATE { nombre, pais, estado } por id. */
-export async function actualizarHipodromo(id: string | number, patch: Partial<Pick<Hipodromo, "nombre" | "pais" | "estado">>): Promise<ResCrud> {
+export async function actualizarHipodromo(id: string | number, patch: Partial<Pick<Hipodromo, "nombre" | "pais" | "estado" | "logo_url">>): Promise<ResCrud> {
   try {
     // Se validan DOS nombres, no uno: el que TIENE la fila y el que QUEDA.
     //
@@ -214,17 +216,26 @@ export async function actualizarHipodromo(id: string | number, patch: Partial<Pi
   if (!supabase) {
     cacheLocal = cacheLocal.map((h) =>
       String(h.id) === String(id)
-        ? { ...h, nombre: patch.nombre != null ? formatearNombre(patch.nombre) : h.nombre, pais: patch.pais != null ? patch.pais.toUpperCase() : h.pais, estado: patch.estado != null ? normalizarEstado(patch.estado) : h.estado }
+        ? { ...h, nombre: patch.nombre != null ? formatearNombre(patch.nombre) : h.nombre, pais: patch.pais != null ? patch.pais.toUpperCase() : h.pais, estado: patch.estado != null ? normalizarEstado(patch.estado) : h.estado, logo_url: patch.logo_url !== undefined ? patch.logo_url : h.logo_url }
         : h
     );
     return { ok: true };
   }
   try {
-    const datos: Record<string, string> = {};
+    const datos: Record<string, string | null> = {};
     if (patch.nombre != null) datos.nombre = formatearNombre(patch.nombre);
     if (patch.pais != null) datos.pais = patch.pais.toUpperCase();
     if (patch.estado != null) datos.estado = normalizarEstado(patch.estado);
+    if (patch.logo_url !== undefined) datos.logo_url = patch.logo_url ? String(patch.logo_url) : null;
     const { error } = await supabase.from("hipodromos").update(datos).eq("id", id);
+    if (error && esColumnaAusente(error.message) && "logo_url" in datos) {
+      // Todavía no se aplicó sql/logos_hipodromos_grupos.sql: se guarda el resto
+      // de la ficha (nombre/país/estado) en vez de perder la edición entera.
+      const { logo_url: _logo, ...sinLogo } = datos;
+      const reintento = await supabase.from("hipodromos").update(sinLogo).eq("id", id);
+      if (reintento.error) return { ok: false, error: reintento.error.message, code: reintento.error.code ?? undefined };
+      return { ok: true };
+    }
     if (error) return { ok: false, error: error.message, code: error.code ?? undefined };
     return { ok: true };
   } catch (e) {

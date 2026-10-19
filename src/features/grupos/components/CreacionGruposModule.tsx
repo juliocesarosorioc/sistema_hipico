@@ -30,9 +30,11 @@ import { Card } from "@/shared/components/ui/Card";
 import { Input } from "@/shared/components/ui/Input";
 import { EmptyState } from "@/shared/components/ui/EmptyState";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { LogoUploader } from "@/shared/components/ui/LogoUploader";
 import {
   correoDeLogin,
   crearEcosistemaGrupo,
+  actualizarGrupo,
   porcentajeDeEntrada,
   type EcosistemaGrupoResultado,
   type EcosistemaGrupoEntrada,
@@ -88,6 +90,7 @@ export function CreacionGruposModule() {
 
   // Paso 1 — datos del grupo
   const [nombre, setNombre] = useState("");
+  const [logo, setLogo] = useState<string | null>(null);
   const [moneda, setMoneda] = useState("USD");
   const [monedaCuadre, setMonedaCuadre] = useState("USD");
   const [convenio, setConvenio] = useState<ValoresConvenio>(() => valoresConvenioInicial("2.5"));
@@ -186,6 +189,7 @@ export function CreacionGruposModule() {
         comision_dupletas: c.comision_dupletas,
         cupo_tabla: parseInt(cupo, 10) || 100,
         responsable: responsable.trim() || null,
+        logo_url: logo,
       },
     admin: {
       usuario: admin.usuario.trim(),
@@ -212,6 +216,12 @@ export function CreacionGruposModule() {
     setResultado(null);
     try {
       const r = await crearEcosistemaGrupo(armarEntrada());
+      // El logo se confirma sobre el grupo ya creado: la edge function puede
+      // ignorar `logo_url`, así que se escribe por la vía normal de edición.
+      if (r.ok && r.grupoId && logo) {
+        const guardado = await actualizarGrupo(r.grupoId, { logo_url: logo });
+        if (!guardado.ok) toast(`El grupo se creó, pero el logo no se guardó: ${guardado.error ?? "error desconocido"}.`, "warning");
+      }
       setResultado(r);
       if (r.ok) {
         toast(`Grupo "${r.grupoNombre ?? ""}" creado.`, "success");
@@ -427,6 +437,14 @@ export function CreacionGruposModule() {
                 placeholder="Banca Los Vencedores"
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <LogoUploader
+                label="Logo del Grupo (PNG)"
+                value={logo}
+                onChange={setLogo}
+                hint="Se mostrará junto al nombre del grupo en el Reporte de Liquidación."
               />
             </div>
             <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">

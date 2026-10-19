@@ -6,6 +6,7 @@ import { Button } from "@/shared/components/ui/Button";
 import { Input } from "@/shared/components/ui/Input";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { Flag } from "@/shared/components/ui/BanderaPais";
+import { LogoUploader } from "@/shared/components/ui/LogoUploader";
 import {
   listarHipodromos,
   crearHipodromo,
@@ -26,7 +27,7 @@ import {
 import { useHipodromosStore } from "@/shared/store/useHipodromosStore";
 import { useRegistroCentral } from "@/shared/store/useRegistroCentral";
 
-type FormModal = { abierta: boolean; editando: Hipodromo | null; nombre: string; pais: string; estado: string };
+type FormModal = { abierta: boolean; editando: Hipodromo | null; nombre: string; pais: string; estado: string; logo_url: string | null };
 
 const inicialModal = (editando: Hipodromo | null): FormModal => ({
   abierta: !!editando,
@@ -38,6 +39,7 @@ const inicialModal = (editando: Hipodromo | null): FormModal => ({
   nombre: editando ? formatearNombre(editando.nombre) : "",
   pais: (editando?.pais || "VE").toUpperCase(),
   estado: normalizarEstado(editando?.estado),
+  logo_url: editando?.logo_url ?? null,
 });
 
 /**
@@ -157,8 +159,8 @@ export function HipodromosModule() {
 
     setGuardando(true);
     const res = modal.editando
-      ? await actualizarHipodromo(modal.editando.id, { nombre, pais: modal.pais, estado: modal.estado })
-      : await crearHipodromo({ nombre, pais: modal.pais });
+      ? await actualizarHipodromo(modal.editando.id, { nombre, pais: modal.pais, estado: modal.estado, logo_url: modal.logo_url })
+      : await crearHipodromo({ nombre, pais: modal.pais, logo_url: modal.logo_url });
     setGuardando(false);
 
     if (!res.ok) {
@@ -301,7 +303,16 @@ export function HipodromosModule() {
                 return (
                   <tr key={String(h.id)} className="transition-colors hover:bg-surfaceAlt">
                     <td className="px-4 py-2.5">
-                      <p className="font-black normal-case tracking-wide text-slate-800">{formatearNombre(h.nombre)}</p>
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white p-0.5 shadow-inner">
+                          {h.logo_url ? (
+                            <img src={h.logo_url} alt={`Logo de ${formatearNombre(h.nombre)}`} className="h-full w-full object-contain" />
+                          ) : (
+                            <span className="text-sm leading-none text-slate-400" aria-hidden="true">🏇</span>
+                          )}
+                        </div>
+                        <p className="font-black normal-case tracking-wide text-slate-800">{formatearNombre(h.nombre)}</p>
+                      </div>
                     </td>
                     <td className="px-4 py-2.5">
                       <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase text-slate-600">
@@ -409,6 +420,13 @@ export function HipodromosModule() {
                 value={modal.nombre}
                 onChange={(e) => setModal((m) => ({ ...m, nombre: e.target.value }))}
                 autoFocus
+              />
+
+              <LogoUploader
+                label="Logo del Hipódromo (PNG)"
+                value={modal.logo_url}
+                onChange={(logo_url) => setModal((m) => ({ ...m, logo_url }))}
+                hint="Se muestra en la cabecera azul del Reporte de Liquidación y en la lista."
               />
 
               <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">

@@ -5,6 +5,11 @@ export type Hipodromo = {
   nombre: string;
   pais: string;
   estado: string;
+  /**
+   * Logo del hipódromo (Data URL PNG base64, optimizado en el cliente).
+   * Se muestra en el Reporte de Liquidación y en la lista del módulo.
+   */
+  logo_url?: string | null;
   fecha_creacion?: string | null;
   /**
    * Fecha de BAJA LÓGICA. Con valor, el hipódromo está archivado: no se ofrece

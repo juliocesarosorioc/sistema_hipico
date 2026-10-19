@@ -270,6 +270,11 @@ export function textoDisponible(c: ClienteVenta | null | undefined): string {
 export type GrupoRow = {
   id: string | number;
   nombre: string;
+  /**
+   * Logo del grupo (Data URL PNG base64, optimizado en el cliente). Se muestra
+   * junto al nombre del grupo en la cabecera del Reporte de Liquidación.
+   */
+  logo_url?: string | null;
   moneda?: string | null;
   moneda_cuadre?: string | null;
   cupo_tabla?: number | null;
@@ -394,6 +399,7 @@ export async function crearGrupo(datos: Partial<GrupoRow>): Promise<{ ok: boolea
           comision_dupletas: datos.comision_dupletas ?? null,
           responsable: datos.responsable ?? null,
           cuenta_bancaria: datos.cuenta_bancaria ?? null,
+          logo_url: datos.logo_url ?? null,
           es_principal: Boolean(datos.es_principal),
           activo: true,
           permite_cruces: datos.permite_cruces !== false,
@@ -970,6 +976,8 @@ export type EcosistemaGrupoEntrada = {
     cupo_tabla?: number | null;
     responsable?: string | null;
     cuenta_bancaria?: string | null;
+    /** Logo del grupo en PNG (Data URL base64). */
+    logo_url?: string | null;
   };
   admin: NuevoUsuarioDeGrupo;
   operadores: NuevoUsuarioDeGrupo[];
@@ -1082,6 +1090,7 @@ export async function crearEcosistemaGrupo(
       comision_dupletas: entrada.grupo.comision_dupletas ?? null,
       responsable: entrada.grupo.responsable ?? null,
       cuenta_bancaria: entrada.grupo.cuenta_bancaria ?? null,
+      logo_url: entrada.grupo.logo_url ?? null,
       es_principal: false,
     },
   });
@@ -1100,6 +1109,8 @@ export async function crearEcosistemaGrupo(
       comision_dupletas: entrada.grupo.comision_dupletas ?? null,
       cupo_tabla: entrada.grupo.cupo_tabla ?? 100,
       responsable: entrada.grupo.responsable ?? null,
+      cuenta_bancaria: entrada.grupo.cuenta_bancaria ?? null,
+      logo_url: entrada.grupo.logo_url ?? null,
     });
     if (!creado.ok) return { ok: false, error: creado.error ?? "No se pudo crear el grupo." };
     const lista = await listarGruposAdmin(true);
