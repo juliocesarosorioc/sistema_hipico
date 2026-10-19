@@ -168,7 +168,6 @@ export function GestionJugadasModule() {
     [carrerasDelDia]
   );
 
-  const carreraLiquidada = useMemo(() => {
   /** Editar jugadas guardadas: la capacidad de corregir/anular jugadas (principal = todo). */
   const puedeEditarJugadas =
     esUsuarioPrincipal(usuarioVigente()) ||
@@ -322,6 +321,12 @@ export function GestionJugadasModule() {
    * llegada que el operador quería cargar de nuevo.
    */
   const [pizarraCentral, setPizarraCentral] = useState<PizarraResultados | null>(null);
+
+  /**
+   * Item 1: la carrera activa ya esta liquidada? El registro central de la
+   * fecha lo dice (`estado` "Liquidada" o el resultado ya aplicado a tablas).
+   */
+  const carreraLiquidada = useMemo(() => {
     const c = carrerasDelDia.find((x) => Number(x.carrera) === carrera);
     if (!c) return false;
     const est = String(c.estado ?? "").toLowerCase();
