@@ -17,6 +17,7 @@
  */
 import type { ReporteCarreraDatos, JugadaVivo, Adelantada, NotaExcedido } from "@/features/saldos/components/ReporteCarrera";
 import type { CarreraReporte, FilaReporte } from "@/features/liquidacion/lib/reportes";
+import { pasaFiltroModalidad, type FiltroModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
 import { colorDiscoNumero } from "@/features/saldos/lib/discos";
 import { etiquetaJugada } from "@/features/taquilla/lib/nomenclatura";
 
@@ -117,6 +118,16 @@ export type OpcionesReporteCarrera = {
   logoHipodromo?: string | null;
   /** Logo del grupo hípico (Data URL PNG). */
   logoGrupo?: string | null;
+  /**
+   * Filtro segmentado de modalidad de tiempo (PROMPT #4):
+   *   · `TODAS` (o ausente) → el reporte completo, como siempre;
+   *   · `EN_VIVO`           → solo las jugadas ⚡ en vivo;
+   *   · `ADELANTADA`        → solo las jugadas ⏳ adelantadas.
+   * El filtro se aplica ANTES de acumular filas, riesgo y neto, así que los
+   * subtotales (Ganan/Pierden, riesgo total, Parada Adelantadas) se recalculan
+   * con lo que queda visible.
+   */
+  filtroModalidad?: FiltroModalidadTiempo;
 };
 
 export function armarReporteCarrera(
@@ -138,9 +149,15 @@ export function armarReporteCarrera(
   // Ítem 10: total que financia cada jugador en la carrera (bruto de su lado).
   const riesgoPorCliente = new Map<string, number>();
   let correlativo = 0;
+  const filtro: FiltroModalidadTiempo = opciones?.filtroModalidad ?? "TODAS";
 
   for (const f of c.filas) {
     if (f.rol === "CRUCE") continue;
+    // Filtro segmentado de modalidad de tiempo (⏳ adelantadas vs ⚡ en vivo):
+    // una fila filtrada NO entra a nada — ni a la tabla «en vivo», ni al riesgo,
+    // ni al neto del resumen, ni a «Parada Adelantadas» — así que todos los
+    // subtotales quedan recalculados con lo que realmente se ve.
+    if (!pasaFiltroModalidad({ es_adelantada: f.esAdelantada }, filtro)) continue;
     const resultado = f.resultado; // number | null (null = pendiente)
     if (f.rol !== "Consigue") {
       // Solo la fila del que JUEGA va a la tabla "en vivo"; su pareja
@@ -166,6 +183,7 @@ export function armarReporteCarrera(
         da,
         apostoDa: cons ? cons.riesgo : null,
         resultado,
+        esAdelantada: f.esAdelantada === true,
       });
     }
 
@@ -246,6 +264,7 @@ export function armarReporteCarrera(
       })),
     },
     liquidada: opciones?.liquidada !== false,
+    filtroModalidad: filtro,
     jugadasVivo,
     adelantadas,
     resumen: { ganan, pierden },

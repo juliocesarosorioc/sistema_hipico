@@ -22,6 +22,9 @@ import {
 } from "@/features/marcas/lib/marcas";
 import { ReporteMarcasJugadasModal } from "@/features/marcas/components/ReporteMarcasJugadasModal";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
+import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
+import { MODALIDAD_POR_DEFECTO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
+import { marcarTicketsAdelantados } from "@/features/jugadas/lib/marcar-adelantadas";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 const inputCls =
@@ -101,6 +104,12 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
   const [errorPreview, setErrorPreview] = useState<string | null>(null);
   /** Reporte de marcas jugadas (misma vista que el reporte de Tablas Fijas). */
   const [reporteAbierto, setReporteAbierto] = useState(false);
+  /**
+   * Modalidad de TIEMPO de la marca que se está cargando (PROMPT #4): `EN_VIVO`
+   * (comportamiento de siempre) o `ADELANTADA` (cargada antes de correr la
+   * carrera). Estado del modal, no del store: cada apertura arranca ⚡ En Vivo.
+   */
+  const [modalidadTiempo, setModalidadTiempo] = useState<ModalidadTiempo>(MODALIDAD_POR_DEFECTO);
 
   const caballos: EjemplarCarreraCentral[] = useMemo(() => carrera.caballos ?? [], [carrera.caballos]);
   const etiqueta = `${nombreHipodromoParaMostrar(carrera.hipodromo)} N${carrera.carrera}`;
@@ -315,6 +324,18 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
       setErrorPreview(r.error ?? "No se pudo registrar la jugada.");
       return;
     }
+    // Modalidad de TIEMPO: si la marca se cargó ADELANTADA se marca el ticket
+    // recién creado. La venta ya quedó registrada por la RPC, así que esto es
+    // mejor esfuerzo: si el UPDATE no pasa se avisa y no se revierte nada.
+    if (modalidadTiempo === "ADELANTADA" && r.ticketId) {
+      const marca = await marcarTicketsAdelantados([r.ticketId]);
+      if (!marca.ok) {
+        onToast(
+          `⚠️ Marca vendida, pero sin marcar ⏳ adelantada: ${marca.error ?? "revisá sql/jugadas_adelantadas.sql"}`,
+          "warning"
+        );
+      }
+    }
     onToast(
       `✅ MARCA ${caballo} contra ${analisis.rival} por $${Number(monto)} · paga $${r.pagoBruto ?? numeros.pagoBruto} · saldo $${r.saldoRestante ?? 0}`,
       "success"
@@ -363,6 +384,8 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* Modalidad de TIEMPO de la marca que se va a vender (PROMPT #4). */}
+            <ToggleModalidadTiempo valor={modalidadTiempo} onChange={setModalidadTiempo} />
             <button
               type="button"
               onClick={() => setReporteAbierto(true)}

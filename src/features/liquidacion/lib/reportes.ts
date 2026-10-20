@@ -28,6 +28,7 @@ import {
   type TicketMotor,
 } from "@/features/betting/lib/bettingEngine";
 import { esPrincipalVigente, grupoActivoVigente, veTodosLosGruposVigente } from "@/features/seguridad/lib/vigente";
+import { esAdelantadaDe } from "@/features/jugadas/lib/modalidad-tiempo";
 
 export type FilaReporte = {
   id: string;
@@ -51,6 +52,13 @@ export type FilaReporte = {
    * ya no se puede deducir la modalidad por el prefijo del texto.
    */
   tipoJugada?: "TABLA" | "MARCA" | null;
+  /**
+   * Modalidad de TIEMPO de la jugada (PROMPT #4): `true` = ⏳ ADELANTADA, o sea
+   * cargada ANTES de que corra la carrera; `false`/ausente = ⚡ EN VIVO (la
+   * regla histórica). Sale de `tickets_apuestas.es_adelantada` y alimenta el
+   * filtro segmentado del Reporte de Liquidación.
+   */
+  esAdelantada?: boolean;
 };
 
 export type CarreraReporte = {
@@ -567,6 +575,9 @@ async function carreraReporte(
     const clienteConsigueNombre = txt(f.cliente_consigue_nombre) || clienteConsigue;
 
     const resultadoJuega = ev.ok === null ? null : Math.round((ev.bruto - monto) * 100) / 100;
+    // Modalidad de TIEMPO: misma lectura para el que JUEGA y el que CONSIGUE
+    // (es el mismo ticket, las dos filas se parean por índice).
+    const adelantada = esAdelantadaDe(f);
     filas.push({
       id: `${fecha}-${hipodromo}-${numero}-j-${i}`,
       rol: "Juega",
@@ -578,6 +589,7 @@ async function carreraReporte(
       esPareo,
       ejemplar: desglose.ejemplar,
       tipoJugada: desglose.tipo,
+      esAdelantada: adelantada,
     });
 
     if (clienteConsigue) {
@@ -592,6 +604,7 @@ async function carreraReporte(
         esPareo,
         ejemplar: desglose.ejemplar,
         tipoJugada: desglose.tipo,
+        esAdelantada: adelantada,
       });
     }
 

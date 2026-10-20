@@ -105,6 +105,7 @@
     "./estados-jugada.test.ts",
     "./resolver-ejemplar.test.ts",
     "./mensajeria-logos.test.ts",
-    "./bitacora-externa.test.ts"
+    "./bitacora-externa.test.ts",
+    "./modalidad-tiempo.test.ts"
   ]
 }

@@ -22,6 +22,9 @@ import { clienteDelUsuario } from "@/features/seguridad/lib/accesos";
 import { enviarAutomaticoSiActivo, plantillaPorId, reemplazarVarsTablas } from "@/features/whatsapp/lib/whatsapp";
 import { CargaResultadosRapida } from "@/features/liquidacion/components/CargaResultadosRapida";
 import { ReporteRematesModal } from "@/features/remates/components/ReporteRematesModal";
+import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
+import { MODALIDAD_POR_DEFECTO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
+import { marcarTicketsRecientesDe, ultimoTicketId } from "@/features/jugadas/lib/marcar-adelantadas";
 import {
   listarRemates,
   crearRemate,
@@ -681,6 +684,13 @@ function DetalleRemate({
   /** Confirmación del cierre (muestra cuántos tickets y cuántos saldos toca). */
   const [confirmandoCierre, setConfirmandoCierre] = useState(false);
   const [liquidando, setLiquidando] = useState(false);
+  /**
+   * Modalidad de TIEMPO del remate (PROMPT #4): `EN_VIVO` (como siempre) o
+   * `ADELANTADA` (el remate se cerró/vendió antes de que corra la carrera).
+   * Aplica al cierre que liquida y a la venta de un ejemplar que quedó en CASA
+   * después de reabrir: las dos emiten tickets.
+   */
+  const [modalidadTiempo, setModalidadTiempo] = useState<ModalidadTiempo>(MODALIDAD_POR_DEFECTO);
   const cerrado = estaCerrado(remate);
   /**
    * El remate ya se liquidó (tickets emitidos y saldos descontados). Al reabrir,
@@ -1087,8 +1097,26 @@ function DetalleRemate({
     // (mismo camino que el cierre, fila por fila).
     if (liquidado) {
       if (!clienteId) return toast("Este ejemplar ya se vendió: no se le puede quitar el comprador.", "warning");
+      const desdeId = modalidadTiempo === "ADELANTADA" ? await ultimoTicketId() : 0;
       const res = await venderCaballoRemate(String(c.id), clienteId);
       if (!res.ok) return toast(res.error ?? "No pude registrar la venta.", "error");
+      if (desdeId) {
+        // El ticket de una venta suelta guarda `remate_caballo_id`; el del
+        // cierre guarda además `remate_id`. `nota_auditoria` es TEXT, así que el
+        // filtro por clave se hace en JS dentro del helper.
+        const marca = await marcarTicketsRecientesDe({
+          desdeId,
+          hipodromo: remate.hipodromo ?? "",
+          remateId: remate.id,
+          remateCaballoId: c.id,
+        });
+        if (!marca.ok) {
+          toast(
+            `⚠️ Venta registrada, pero sin marcar ⏳ adelantada: ${marca.error ?? "revisá sql/jugadas_adelantadas.sql"}`,
+            "warning"
+          );
+        }
+      }
       toast(`🎟️ ${c.nombre} vendido a ${clientePorId.get(clienteId)?.nombre ?? "—"}: ticket emitido y saldo descontado.`, "success");
       await onCambioEstado();
       return;
@@ -1221,6 +1249,8 @@ return (
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* Modalidad de TIEMPO del remate que se está operando (PROMPT #4). */}
+            <ToggleModalidadTiempo valor={modalidadTiempo} onChange={setModalidadTiempo} />
             <span
               className={`rounded-full border-2 px-2 py-0.5 text-[10px] font-black uppercase leading-none tracking-widest ${
                 cerrado ? "border-red-200 bg-red-500 text-white" : "border-indigo-200 bg-white text-indigo-900"
@@ -1707,9 +1737,26 @@ return (
           onCerrar={() => (liquidando ? undefined : setConfirmandoCierre(false))}
           onConfirmar={async () => {
             setLiquidando(true);
+            // Modalidad de TIEMPO: el cierre emite UN ticket por ejemplar y la
+            // RPC no devuelve sus ids, así que se toma el id máximo ANTES y se
+            // marcan los tickets emitidos con el contexto de ESTE remate.
+            const desdeId = modalidadTiempo === "ADELANTADA" ? await ultimoTicketId() : 0;
             const res = await cerrarRemateLiquidando(remate.id);
             setLiquidando(false);
             if (!res.ok) return toast(res.error ?? "No pude cerrar el remate.", "error");
+            if (desdeId) {
+              const marca = await marcarTicketsRecientesDe({
+                desdeId,
+                hipodromo: remate.hipodromo ?? "",
+                remateId: remate.id,
+              });
+              if (!marca.ok) {
+                toast(
+                  `⚠️ Remate cerrado, pero sin marcar ⏳ adelantadas: ${marca.error ?? "revisá sql/jugadas_adelantadas.sql"}`,
+                  "warning"
+                );
+              }
+            }
             setConfirmandoCierre(false);
             const partes = [`${res.tickets ?? 0} ticket(s) emitido(s)`, `${usd(res.total ?? 0)} descontados del saldo`];
             if ((res.casa ?? 0) > 0) partes.push(`${res.casa} ejemplar(es) quedan en CASA`);

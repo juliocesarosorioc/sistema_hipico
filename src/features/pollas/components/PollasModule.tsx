@@ -47,6 +47,9 @@ import { ModalConfiguracionPolla } from "@/features/pollas/components/ModalConfi
 import { CargaResultadosRapida } from "@/features/liquidacion/components/CargaResultadosRapida";
 import { cobradoNeto, comisionPctDeGrupo } from "@/features/grupos/lib/comisiones-convenio";
 import { useReporteEnVivo } from "@/features/reportes/lib/useReporteEnVivo";
+import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
+import { MODALIDAD_POR_DEFECTO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
+import { marcarVentaPollaAdelantada } from "@/features/jugadas/lib/marcar-adelantadas";
 
 /** Tablas que cambian cuando se vende, se paga o se liquida una Polla. */
 const TABLAS_VIVO_POLLA = [
@@ -110,6 +113,12 @@ export function PollasModule() {
     polla: null,
   });
   const [ventaPara, setVentaPara] = useState<Polla | null>(null);
+  /**
+   * Modalidad de TIEMPO de la venta de Polla (PROMPT #4): `EN_VIVO` (como
+   * siempre) o `ADELANTADA` (se cargó antes de que corran las carreras). El
+   * marcado va por RPC porque `polla_ventas` es de solo lectura para el cliente.
+   */
+  const [modalidadTiempo, setModalidadTiempo] = useState<ModalidadTiempo>(MODALIDAD_POR_DEFECTO);
 
   const toast = useCallback(
     (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
@@ -227,6 +236,8 @@ export function PollasModule() {
             </p>
           </div>
           <div className="flex items-end gap-2">
+            {/* Modalidad de TIEMPO de la venta de Polla (PROMPT #4). */}
+            <ToggleModalidadTiempo valor={modalidadTiempo} onChange={setModalidadTiempo} />
             <Input
               label="Fecha"
               type="date"
@@ -386,6 +397,18 @@ export function PollasModule() {
             if (!r.ok) {
               toast(r.error ?? "No pude registrar la venta.", "error");
               return false;
+            }
+            // Modalidad de TIEMPO (PROMPT #4): si la venta se cargó ⏳ adelantada
+            // se marca por la RPC de `polla_ventas` (la tabla es de solo lectura
+            // para authenticated). Mejor esfuerzo: la venta YA está registrada.
+            if (modalidadTiempo === "ADELANTADA") {
+              const marca = await marcarVentaPollaAdelantada(r.id);
+              if (!marca.ok) {
+                toast(
+                  `⚠️ Venta registrada, pero sin marcar ⏳ adelantada: ${marca.error ?? "revisá sql/jugadas_adelantadas.sql"}`,
+                  "warning"
+                );
+              }
             }
             toast(`Venta de ${rev.validas.length} combinaciones registrada.`, "success");
             await cargar();
@@ -667,7 +690,23 @@ function TarjetaPolla({
                             </span>
                           )}
                         </td>
-                        <td className="py-1">{f.cliente ?? "Sin cliente"}</td>
+                        <td className="py-1">
+                          {f.cliente ?? "Sin cliente"}
+                          {/* Badge de modalidad de TIEMPO (PROMPT #4): la venta
+                              se cargó ⏳ adelantada (antes de las carreras). */}
+                          {ventas.some(
+                            (v) =>
+                              v.cliente_id === f.clave &&
+                              String((v as { es_adelantada?: unknown }).es_adelantada ?? "").toLowerCase() === "true"
+                          ) ? (
+                            <span
+                              title="Jugada adelantada: se cargó antes de que corran las carreras."
+                              className="ml-1 rounded bg-amber-100 px-1 py-px text-[9px] font-black uppercase text-amber-700"
+                            >
+                              ⏳ ADELANTADA
+                            </span>
+                          ) : null}
+                        </td>
                         <td className="py-1 text-right">
                           {original?.combinaciones.length ?? 0}
                         </td>

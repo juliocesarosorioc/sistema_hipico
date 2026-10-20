@@ -5,8 +5,20 @@ import { usePathname } from "next/navigation";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { Guard } from "@/shared/components/ui/Guard";
 import { capacidadesDeRuta } from "@/features/seguridad/lib/capacidades";
+import { WPS_PLANIFICACION, WPS_PLANIFICACION_CORTO } from "@/features/motores/lib/wps-planificacion";
 
-type Item = { href?: string; emoji: string; txt: string };
+type Item = {
+  href?: string;
+  emoji: string;
+  txt: string;
+  /**
+   * Texto del chip que reemplaza al enlace cuando la entrada NO tiene `href`
+   * (módulo todavía no habilitado). Si no viene se usa "pronto".
+   */
+  badge?: string;
+  /** Tooltip de la entrada deshabilitada. */
+  titulo?: string;
+};
 
 /** Menú lateral clonado del legacy (js/components/layout.js → GRUPOS). */
 const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
@@ -22,7 +34,10 @@ const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
       { href: "/marcas", emoji: "🏷️", txt: "Marcas" },
       { href: "/grupos", emoji: "🗂️", txt: "Grupos y Convenios" },
       { href: "/ejemplares", emoji: "🐴", txt: "Ejemplares, Gaceta y Carreras" },
-      { href: "/taquilla?modalidad=wps", emoji: "🏇", txt: "W.P.S." },
+      // W.P.S. INACTIVA para todos los usuarios: sin `href` entra a la rama
+      // deshabilitada (chip 🚧 + pointer-events-none/opacity-50) y no se ofrece
+      // como pantalla operativa. El motor no se toca (features/motores/wps.ts).
+      { emoji: "🏇", txt: "W.P.S.", badge: WPS_PLANIFICACION_CORTO, titulo: WPS_PLANIFICACION },
       { href: "/remates", emoji: "🔔", txt: "Remates" },
       { href: "/pollas", emoji: "🏆", txt: "Pollas" },
       { href: "/tickets", emoji: "🛟", txt: "Tickets / Reclamos" },
@@ -178,23 +193,25 @@ export function Sidebar({
                 const rotulo = <span className={compacto ? "lg:hidden" : ""}>{it.txt}</span>;
 
                 if (!it.href) {
+                  // Módulo no habilitado (W.P.S. 🚧): entrada bloqueada, sin
+                  // enlace y sin foco, con el badge que explica por qué.
                   return (
                     <li key={it.txt}>
                       <span
                         aria-disabled
-                        title={compacto ? it.txt : "Próximamente"}
+                        title={compacto ? it.txt : it.titulo ?? "Próximamente"}
                         className={`flex select-none items-center gap-3 px-5 py-2.5 text-base font-medium text-slate-600 ${
                           compacto ? "lg:justify-center lg:px-0" : ""
                         }`}
                       >
                         {icono}
-                        <span className={`flex-1 ${compacto ? "lg:hidden" : ""}`}>{it.txt}</span>
+                        <span className={`min-w-0 flex-1 truncate ${compacto ? "lg:hidden" : ""}`}>{it.txt}</span>
                         <span
-                          className={`rounded-full bg-slate-800/80 px-1.5 py-0.5 text-[9px] font-bold uppercase text-slate-500 ${
-                            compacto ? "lg:hidden" : ""
-                          }`}
+                          className={`pointer-events-none shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase opacity-50 ${
+                            it.badge ? "bg-amber-500/20 text-amber-400" : "bg-slate-800/80 text-slate-500"
+                          } ${compacto ? "lg:hidden" : ""}`}
                         >
-                          pronto
+                          {it.badge ?? "pronto"}
                         </span>
                       </span>
                     </li>

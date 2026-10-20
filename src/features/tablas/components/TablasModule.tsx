@@ -25,6 +25,9 @@ import { TarjetaEnsamblaje } from "@/features/tablas/components/TarjetaEnsamblaj
 import { MonitorTablas, type VentaTablaItem } from "@/features/tablas/components/MonitorTablas";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { Guard } from "@/shared/components/ui/Guard";
+import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
+import { MODALIDAD_POR_DEFECTO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
+import { marcarTicketsRecientesDe, ultimoTicketId } from "@/features/jugadas/lib/marcar-adelantadas";
 import ConfigImpresionModal from "@/features/tablas/components/ConfigImpresionModal";
 import type { PizarraResultados } from "@/features/liquidacion/components/CargaResultadosModal";
 
@@ -88,6 +91,13 @@ export function TablasModule(props: Props) {
    *  Lo comparten el panel de Hipódromos y el Monitor de Tablas para que la
    *  fecha elegida signifique lo mismo en los dos. */
   const [ejeFecha, setEjeFecha] = useState<EjeFecha>("carrera");
+  /**
+   * Modalidad de TIEMPO de la próxima venta (PROMPT #4): `EN_VIVO` (como
+   * siempre) o `ADELANTADA` (la tabla se vendió ANTES de que corra la carrera).
+   * Solo aplica a la VENTA a la taquilla: el ensamblaje y la liquidación no
+   * llevan modalidad de tiempo.
+   */
+  const [modalidadTiempo, setModalidadTiempo] = useState<ModalidadTiempo>(MODALIDAD_POR_DEFECTO);
 
   const openCount = tablas.filter((t) => !t.cerrada).length;
 
@@ -553,9 +563,28 @@ export function TablasModule(props: Props) {
   const venderDirecto = async (v: VentaTablaItem): Promise<{ ok: boolean; error?: string }> => {
     const tabla = tablas.find((t) => String(t.id) === String(v.tablaId));
     if (!tabla) return { ok: false, error: "No se encontro la tabla en el monitor." };
+    // Modalidad de TIEMPO: la venta de tablas guarda UN ticket por ejemplar y la
+    // RPC no devuelve sus ids, así que se toma el id máximo ANTES de vender y
+    // después se marcan los tickets emitidos con ESTE contexto (cliente + tabla).
+    const desdeId = modalidadTiempo === "ADELANTADA" && persistirVenta ? await ultimoTicketId() : 0;
     if (persistirVenta) {
       const r = await persistirVenta(tabla, v);
       if (!r.ok) return { ok: false, error: r.error ?? "No se pudo registrar la venta." };
+      if (desdeId) {
+        const marca = await marcarTicketsRecientesDe({
+          desdeId,
+          clienteId: v.jugador?.id != null ? String(v.jugador.id) : null,
+          hipodromo: tabla.hipodromo ?? "",
+          carrera: tabla.carrera ?? null,
+          tablaId: v.tablaId,
+        });
+        if (!marca.ok) {
+          toast(
+            `⚠️ Venta registrada, pero sin marcar ⏳ adelantada: ${marca.error ?? "revisá sql/jugadas_adelantadas.sql"}`,
+            "warning"
+          );
+        }
+      }
     }
     const item: ItemCarritoVenta = {
       id: "it-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
@@ -664,6 +693,13 @@ export function TablasModule(props: Props) {
           <h1 className="text-lg font-black uppercase text-slate-900">🏇 Tablas Fijas</h1>
           <p className="text-xs text-slate-500">Ensambla, publica, vende e imprime — sincronizado con Supabase.</p>
         </div>
+        {/* Modalidad de TIEMPO de la venta (PROMPT #4): la tabla que se venda
+            con ⏳ ADELANTADA queda marcada en su ticket. */}
+        <ToggleModalidadTiempo
+          valor={modalidadTiempo}
+          onChange={setModalidadTiempo}
+          className="ml-auto"
+        />
         <button
           type="button"
           onClick={() => void refresh()}

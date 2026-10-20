@@ -19,6 +19,7 @@ import { Input } from "@/shared/components/ui/Input";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { emitirToast } from "@/shared/lib/mensajeria";
 import { useConfirmar } from "@/shared/store/useConfirmStore";
+import { WPS_PLANIFICACION, CLASE_WPS_BLOQUEADA, CLASE_FILA_WPS_BLOQUEADA, esJugadaWps } from "@/features/motores/lib/wps-planificacion";
 import {
   alternarTipoJugada,
   eliminarTipoJugada,
@@ -279,6 +280,12 @@ export function ReglasJugadasModule() {
             />
           </div>
           <div className="overflow-x-auto">
+            {/* Aviso de la modalidad 🚧: las filas W.P.S. quedan con sus
+                acciones deshabilitadas mientras termina de planificarse. */}
+            <p className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+              🚧 W.P.S. (Win / Place / Show) — en planificación: sus reglas están bloqueadas y no se
+              pueden editar por ahora.
+            </p>
             <table className="w-full text-left text-xs">
               <thead className="border-b border-line bg-surfaceAlt text-slate-700">
                 <tr>
@@ -305,9 +312,25 @@ export function ReglasJugadasModule() {
                     </td>
                   </tr>
                 ) : (
-                  filtradas.map((j) => (
-                    <tr key={j.id} className="hover:bg-surfaceAlt/60">
-                      <td className="p-3 font-bold uppercase text-slate-900">{j.nombre}</td>
+                  filtradas.map((j) => {
+                    // W.P.S. (WIN/PLACE/SHOW) está 🚧 en planificación: la fila
+                    // se muestra con su badge y sus acciones quedan inertes
+                    // (disabled + pointer-events-none + opacity-50), sin tocar
+                    // la regla en la base ni el motor `motores/wps.ts`.
+                    const wps = esJugadaWps(j.nombre);
+                    return (
+                    <tr key={j.id} className={`hover:bg-surfaceAlt/60 ${wps ? CLASE_FILA_WPS_BLOQUEADA : ""}`}>
+                      <td className="p-3 font-bold uppercase text-slate-900">
+                        {j.nombre}
+                        {wps ? (
+                          <span
+                            title={WPS_PLANIFICACION}
+                            className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-700"
+                          >
+                            {WPS_PLANIFICACION}
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="p-3 text-center font-bold text-purple-700">{etiquetaComision(j)}</td>
                       <td className="p-3 text-center text-slate-600">{etiquetaCalculo(j)}</td>
                       <td className="p-3 text-center font-bold text-emerald-600">{j.premio_a_pagar}×</td>
@@ -325,9 +348,10 @@ export function ReglasJugadasModule() {
                         <Guard permiso="reglas_jugadas:btn_guardar">
                           <button
                             type="button"
-                            title="Editar"
+                            title={wps ? WPS_PLANIFICACION : "Editar"}
+                            disabled={wps}
                             onClick={() => editar(j)}
-                            className="px-2 py-1 text-blue-500 transition-colors hover:text-blue-700"
+                            className={`px-2 py-1 text-blue-500 transition-colors hover:text-blue-700 ${wps ? CLASE_WPS_BLOQUEADA : ""}`}
                           >
                             ✏️
                           </button>
@@ -335,9 +359,10 @@ export function ReglasJugadasModule() {
                         <Guard permiso="reglas_jugadas:btn_toggle">
                           <button
                             type="button"
-                            title="Activar / Desactivar"
+                            title={wps ? WPS_PLANIFICACION : "Activar / Desactivar"}
+                            disabled={wps}
                             onClick={() => void alternar(j)}
-                            className="px-2 py-1 text-slate-400 transition-colors hover:text-emerald-500"
+                            className={`px-2 py-1 text-slate-400 transition-colors hover:text-emerald-500 ${wps ? CLASE_WPS_BLOQUEADA : ""}`}
                           >
                             ⏻
                           </button>
@@ -345,16 +370,18 @@ export function ReglasJugadasModule() {
                         <Guard permiso="reglas_jugadas:btn_eliminar">
                           <button
                             type="button"
-                            title="Eliminar"
+                            title={wps ? WPS_PLANIFICACION : "Eliminar"}
+                            disabled={wps}
                             onClick={() => void eliminar(j)}
-                            className="px-2 py-1 text-red-400 transition-colors hover:text-red-600"
+                            className={`px-2 py-1 text-red-400 transition-colors hover:text-red-600 ${wps ? CLASE_WPS_BLOQUEADA : ""}`}
                           >
                             🗑️
                           </button>
                         </Guard>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>

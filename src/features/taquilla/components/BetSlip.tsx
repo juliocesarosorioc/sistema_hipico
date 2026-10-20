@@ -12,6 +12,9 @@ import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { usuarioVigente } from "@/features/seguridad/lib/vigente";
+import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
+import { marcarAdelantadaTrasVenta } from "@/features/jugadas/lib/marcar-adelantadas";
+import { WPS_PLANIFICACION } from "@/features/motores/lib/wps-planificacion";
 import {
   listarClientesVenta,
   listarGruposVenta,
@@ -22,6 +25,11 @@ import {
   type GrupoVenta,
 } from "@/features/grupos/lib/grupos";
 
+/**
+ * Ejemplos de comando. Los "100 W / 100 P / 100 S" NO se ofrecen: W.P.S. está
+ * 🚧 en planificación y no se promociona una jugada inactiva (el motor sigue
+ * reconociendo el comando por atrás, intacto en motores/wps.ts).
+ */
 const EJEMPLOS = ["100 2n", "50 3p", "200 1 y 2n", "100 10/PP", "400 1/2n y 2n"];
 
 /** Ejemplares válidos: la pizarra va de 1 a 8. */
@@ -67,6 +75,9 @@ export function BetSlip() {
   const [registrando, setRegistrando] = useState(false);
 
   const agregarTicket = useTaquillaStore((s) => s.agregarTicket);
+  // Modalidad de TIEMPO (PROMPT #4): misma que pinta TaquillaModule en su barra.
+  const modalidadTiempo = useTaquillaStore((s) => s.modalidadTiempo);
+  const setModalidadTiempo = useTaquillaStore((s) => s.setModalidadTiempo);
   const hipodromos = useHipodromosActivos();
   const { carrerasDe } = useRegistroCentralOpts(fecha);
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
@@ -199,10 +210,20 @@ export function BetSlip() {
         cliente2Id: c2 ? String(c2.id) : undefined,
         grupoId: grupoId ?? undefined,
       });
+      // Modalidad de TIEMPO: si la jugada se cargó ADELANTADA, se marca el
+      // ticket recién creado (`tickets_apuestas.es_adelantada`). La venta YA está
+      // registrada por la RPC, así que esto es mejor esfuerzo: si el UPDATE no
+      // pasa (columna sin migrar, RLS) se avisa y NO se revierte nada.
+      let marca = "";
+      if (modalidadTiempo === "ADELANTADA" && venta.ticketId) {
+        const r = await marcarAdelantadaTrasVenta({ ids: [venta.ticketId] });
+        marca = r.ok ? " · ⏳ adelantada" : ` · ⚠️ sin marcar: ${r.error ?? "revisá sql/jugadas_adelantadas.sql"}`;
+      }
       setComando("");
       setMensaje(
         `✅ Jugada #${venta.ticketId ?? "?"} registrada: $${validacion.monto} ${validacion.tipo} · ${c1.nombre}` +
-          (venta.yaExistia ? " (ya existía)" : "")
+          (venta.yaExistia ? " (ya existía)" : "") +
+          marca
       );
       setTimeout(() => setMensaje(""), 3500);
     } finally {
@@ -214,9 +235,13 @@ export function BetSlip() {
     <div className="flex flex-col gap-4">
       {/* ── Contexto: fecha · hipódromo · carrera · partes ─────────────────── */}
       <div className="rounded-2xl border border-line bg-surface p-4">
-        <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-600">
-          🧭 Carrera
-        </h3>
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-xs font-bold uppercase tracking-wide text-slate-600">🧭 Carrera</h3>
+          {/* Modalidad de TIEMPO (PROMPT #4): decide si la jugada que se acaba
+              de cargar queda registrada como ⚡ EN VIVO (comportamiento
+              histórico) o como ⏳ ADELANTADA (cargada antes de la carrera). */}
+          <ToggleModalidadTiempo valor={modalidadTiempo} onChange={setModalidadTiempo} />
+        </div>
         <p className="mb-3 text-[11px] text-slate-500">
           La venta se guarda en <b>tickets_apuestas</b> (descuenta el saldo del CLIENTE 1).
         </p>
@@ -300,7 +325,7 @@ export function BetSlip() {
         </h3>
         <p className="mb-3 text-[11px] text-slate-500">
           Escriba el monto y la jugada (Ej: <b>100 1 y 2n</b>). El motor valida en tiempo real:
-          NINI, Puesto, A Premio (PP o 10/X), Combinada, Compuesta y las Americanas <b>W</b>, <b>P</b> y <b>S</b>.
+          NINI, Puesto, A Premio (PP o 10/X), Combinada y Compuesta.
         </p>
 
         <Input
@@ -337,8 +362,10 @@ export function BetSlip() {
           ) : null}
         </div>
 
+        {/* Los ejemplos NO incluyen "100 W / P / S": W.P.S. está 🚧 en
+            planificación y no se promociona en la barra de carga. */}
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {[...EJEMPLOS, "100 W", "100 P", "100 S"].map((ej) => (
+          {EJEMPLOS.map((ej) => (
             <button
               key={ej}
               type="button"
@@ -349,6 +376,10 @@ export function BetSlip() {
             </button>
           ))}
         </div>
+        <p className="mt-2 text-[10px] text-slate-400">
+          🚧 Las americanas <b>W / P / S (W.P.S.)</b> están en planificación y no están habilitadas
+          para la carga ({WPS_PLANIFICACION}).
+        </p>
       </div>
 
       <DesgloseProyectado validacion={comando.trim() ? validacion : null} />

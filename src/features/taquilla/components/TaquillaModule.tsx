@@ -6,6 +6,9 @@ import { BetSlip } from "@/features/taquilla/components/BetSlip";
 import { ListaTickets } from "@/features/taquilla/components/ListaTickets";
 import { PagarCarreraModal } from "@/features/taquilla/components/PagarCarreraModal";
 import { RelacionCarrera } from "@/features/taquilla/components/RelacionCarrera";
+import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
+import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
+import { WPS_PLANIFICACION, CLASE_WPS_BLOQUEADA } from "@/features/motores/lib/wps-planificacion";
 
 type Modalidad = "puestos" | "wps" | "remates" | "dupletas";
 
@@ -16,47 +19,39 @@ const MODALIDADES: Array<{ id: Modalidad; label: string }> = [
   { id: "dupletas", label: "Dupletas" },
 ];
 
-/** Modalidades que todavía no tienen motor. `dupletas` NO va aquí: el módulo
- *  real ya está migrado en /dupleta y esta pestaña era un resto del legacy. */
-const PENDIENTE: Record<Exclude<Modalidad, "puestos" | "dupletas" | "wps">, { titulo: string; texto: string }> = {
+/**
+ * Modalidades que todavía no tienen motor. `dupletas` NO va aquí: el módulo
+ * real ya está migrado en /dupleta y esta pestaña era un resto del legacy.
+ *
+ * `wps` ENTRA acá (PROMPT #4): W.P.S. está 🚧 en planificación y se inactiva
+ * para todos los usuarios. La pestaña queda bloqueada abajo; y si igual alguien
+ * llega con el enlace viejo `?modalidad=wps`, este panel explica el estado en
+ * vez de dejar la carga de jugadas americana operando.
+ */
+const PENDIENTE: Record<Exclude<Modalidad, "puestos" | "dupletas">, { titulo: string; texto: string }> = {
   remates: {
     titulo: "Remates",
     texto: "RematesEngine en construcción: pote neto recirculante (Paso 4 del plan de migración).",
   },
+  wps: {
+    titulo: "W.P.S. — Win / Place / Show",
+    texto: `${WPS_PLANIFICACION}. Esta modalidad todavía no está habilitada para los usuarios: usá Puestos para tus jugadas de la carrera.`,
+  },
 };
-
-/**
- * Ayuda de la pestaña W/P/S. Lo que el operador tiene que saber antes de vender:
- * cómo se escribe la jugada y de dónde sale el premio.
- */
-function AvisoWps() {
-  return (
-    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 text-[11px] leading-relaxed text-slate-600">
-      <p className="text-sm font-bold uppercase tracking-wide text-indigo-700">Americana W / P / S</p>
-      <p className="mt-1.5">
-        Registra la jugada con la nomenclatura <b>monto + tipo</b>: <code className="font-mono font-bold">100 W</code>{" "}
-        (gana), <code className="font-mono font-bold">100 P</code> (place) o{" "}
-        <code className="font-mono font-bold">100 S</code> (show), con el ejemplar en la columna CABALLO.
-      </p>
-      <p className="mt-1.5">
-        El pago depende de <b>las dos cosas a la vez</b> —qué se apostó y en qué puesto llegó— así que se liquida con la{" "}
-        <b>matriz de dividendos</b> que la casa carga en «Cargar Resultados». Si esa matriz no está cargada, la jugada
-        queda <b>pendiente</b>: nunca se cobra $0 ni se marca como perdida por un dato que falta.
-      </p>
-      <p className="mt-1.5 italic text-slate-500">
-        Comisión de la casa 5% sobre el premio bruto, igual que en el resto de modalidades.
-      </p>
-    </div>
-  );
-}
 
 /** Taquilla — módulo contenedor con selector de modalidades. */
 export function TaquillaModule() {
   const [modalidad, setModalidad] = useState<Modalidad>("puestos");
+  // Modalidad de TIEMPO (⚡ En Vivo / ⏳ Adelantada) compartida con BetSlip, que
+  // es el que realmente registra la jugada: ambos pintan el mismo control y
+  // ven el mismo estado.
+  const modalidadTiempo = useTaquillaStore((s) => s.modalidadTiempo);
+  const setModalidadTiempo = useTaquillaStore((s) => s.setModalidadTiempo);
 
-  // La modalidad se puede preseleccionar por query (?modalidad=wps): es el enlace
-  // que usan el menú lateral y el acceso rápido "Winner / Place / Show". Se lee en
-  // un efecto y no en el estado inicial para no romper la hidratación del HTML.
+  // La modalidad se puede preseleccionar por query (?modalidad=wps): era el
+  // enlace del menú lateral. Con W.P.S. en planificación, ese enlace ya no
+  // existe en el menú y, si alguien igual llega con el link viejo, cae al panel
+  // 🚧 de PENDIENTE en vez de a la carga de jugadas.
   useEffect(() => {
     const m = new URLSearchParams(window.location.search).get("modalidad");
     if (m && MODALIDADES.some((x) => x.id === m)) setModalidad(m as Modalidad);
@@ -65,44 +60,45 @@ export function TaquillaModule() {
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-4">
-        <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-700">
+        <div className="flex flex-wrap items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-700">
           🎟️ Taquilla
+          {/* Modalidad de TIEMPO de la barra de carga: refleja y cambia lo que
+              BetSlip va a registrar (⚡ en vivo = comportamiento habitual). */}
+          <span className="ml-auto normal-case">
+            <ToggleModalidadTiempo valor={modalidadTiempo} onChange={setModalidadTiempo} />
+          </span>
         </div>
 
         <div className="flex flex-wrap gap-1.5 border-b border-line pb-3">
-          {MODALIDADES.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => setModalidad(m.id)}
-              aria-pressed={modalidad === m.id}
-              className={`rounded-lg px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide transition-colors ${
-                modalidad === m.id
-                  ? "bg-primary-600 text-white"
-                  : "bg-surfaceAlt text-slate-500 hover:bg-surfaceAlt/80 hover:text-slate-700"
-              }`}
-            >
-              {m.label}
-            </button>
-          ))}
+          {MODALIDADES.map((m) => {
+            const esWps = m.id === "wps";
+            const activa = modalidad === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                // W.P.S. inactiva para TODOS: sin `disabled` + clases de bloqueo
+                // la pestaña seguiría siendo un selector operativo.
+                disabled={esWps}
+                onClick={() => setModalidad(m.id)}
+                aria-pressed={activa}
+                title={esWps ? WPS_PLANIFICACION : undefined}
+                className={`rounded-lg px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide transition-colors ${
+                  activa
+                    ? "bg-primary-600 text-white"
+                    : "bg-surfaceAlt text-slate-500 hover:bg-surfaceAlt/80 hover:text-slate-700"
+                } ${esWps ? CLASE_WPS_BLOQUEADA : ""}`}
+              >
+                {m.label}
+                {esWps ? <span className="ml-1">🚧</span> : null}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {modalidad === "puestos" ? (
         <>
-          <BetSlip />
-          <ListaTickets />
-          <RelacionCarrera />
-          <PagarCarreraModal />
-        </>
-      ) : modalidad === "wps" ? (
-        <>
-          {/* W/P/S comparte TODO el flujo de la taquilla: se registra con la
-              nomenclatura "100 W" / "100 P" / "100 S", entra a los mismos
-              tickets y se liquida con el mismo Pagar Carrera. Lo único propio
-              de la modalidad es la matriz de dividendos, que se carga en el
-              paso de resultados. */}
-          <AvisoWps />
           <BetSlip />
           <ListaTickets />
           <RelacionCarrera />

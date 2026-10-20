@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { MODALIDAD_POR_DEFECTO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
 
 export type TicketTaquilla = {
   id: string;
@@ -42,6 +43,18 @@ export type TicketTaquilla = {
 
 export type TaquillaState = {
   tickets: TicketTaquilla[];
+  /**
+   * Modalidad de TIEMPO de la próxima jugada (PROMPT #4): `EN_VIVO` (por
+   * defecto, el comportamiento de siempre) o `ADELANTADA` (cargada antes de que
+   * corra la carrera). Es estado de SESIÓN: NO se persiste (el `partialize` de
+   * abajo solo guarda `tickets`), así que cada recarga arranca siempre ⚡ En
+   * Vivo y nadie queda colgado en "adelantada" sin querer.
+   *
+   * Compartida por TaquillaModule (barra superior) y BetSlip (junto al comando):
+   * los dos pintan el mismo control y reflejan el mismo estado.
+   */
+  modalidadTiempo: ModalidadTiempo;
+  setModalidadTiempo: (m: ModalidadTiempo) => void;
   agregarTicket: (t: Omit<TicketTaquilla, "id" | "addedAt">) => void;
   eliminarTicket: (id: string) => void;
   limpiarTickets: () => void;
@@ -62,6 +75,9 @@ export const useTaquillaStore = create<TaquillaState>()(
   persist(
     (set) => ({
       tickets: [],
+      modalidadTiempo: MODALIDAD_POR_DEFECTO,
+
+      setModalidadTiempo: (m) => set({ modalidadTiempo: m }),
 
       agregarTicket: (t) =>
         set((s) => ({

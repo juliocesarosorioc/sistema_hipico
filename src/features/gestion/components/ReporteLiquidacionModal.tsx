@@ -24,6 +24,10 @@ import { EmptyState } from "@/shared/components/ui/EmptyState";
 import ReporteCarrera, { type ReporteCarreraDatos } from "@/features/saldos/components/ReporteCarrera";
 import ManualLiquidacion from "@/features/gestion/components/ManualLiquidacion";
 import WhatsappReporteCarrera from "@/features/liquidacion/components/WhatsappReporteCarrera";
+import {
+  OPCIONES_FILTRO,
+  type FiltroModalidadTiempo,
+} from "@/features/jugadas/lib/modalidad-tiempo";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -73,6 +77,14 @@ export default function ReporteLiquidacionModal({
   const [hipodromo, setHipodromo] = useState(hipodromoInicial || "");
   const [carrera, setCarrera] = useState<number>(carreraInicial ?? 0);
   const [datos, setDatos] = useState<ReporteCarreraDatos | null>(null);
+  /**
+   * Filtro segmentado de MODALIDAD DE TIEMPO del reporte (PROMPT #4):
+   * `TODAS` = el reporte completo como siempre; `EN_VIVO` / `ADELANTADA` dejan
+   * solo una porción de las jugadas y RECALCULAN filas y subtotales (va al
+   * motor en `armarReporteCarrera`, no se filtra en el render). Se resetea al
+   * abrir para que cada apertura arranque con el reporte completo.
+   */
+  const [filtroModalidad, setFiltroModalidad] = useState<FiltroModalidadTiempo>("TODAS");
   const [cargandoDia, setCargandoDia] = useState(false);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
   const [manualAbierto, setManualAbierto] = useState(false);
@@ -116,6 +128,7 @@ export default function ReporteLiquidacionModal({
     setFecha(fechaInicial || hoyLocal());
     setHipodromo(hipodromoInicial || "");
     setCarrera(carreraInicial ?? 0);
+    setFiltroModalidad("TODAS");
     setDatos(null);
   }, [abierto, fechaInicial, hipodromoInicial, carreraInicial]);
 
@@ -222,10 +235,18 @@ export default function ReporteLiquidacionModal({
     return c.aplicado_a_tablas === true || String(c.estado ?? "").toLowerCase() === "liquidada";
   }, [carrerasDia, hipodromo, carrera]);
 
-  // Motor: trae la carrera liquidada y arma la plantilla.
+  // Motor: trae la carrera liquidada y los logos FRESCOS en paralelo con el
+  // detalle. Se hace UNA sola vez por carrera elegida: el filtro de modalidad de
+  // tiempo (⏳ adelantadas / ⚡ en vivo) recalcula la plantilla EN MEMORIA y no
+  // vuelve a tocar la base, así el cambio de filtro es instantáneo.
+  const [detalle, setDetalle] = useState<{
+    reporte: CarreraReporte;
+    frescos: { logoHipodromo: string | null; logoGrupo: string | null };
+  } | null>(null);
+
   useEffect(() => {
     if (!abierto || !hipodromo || !carrera) {
-      setDatos(null);
+      setDetalle(null);
       return;
     }
     let vivo = true;
@@ -237,24 +258,35 @@ export default function ReporteLiquidacionModal({
     carreraReporteDetalle(fecha, hipodromo, carrera)
       .then(async (c: CarreraReporte | null) => {
         if (!vivo) return;
-        if (!c) return setDatos(null);
+        if (!c) return setDetalle(null);
         const frescos = await logosFrescosDeCarrera({ hipodromo, grupoId: logoGrupoId });
         if (!vivo) return;
-        setDatos(
-          armarReporteCarrera(c, nombreGrupo, disponibleDe, {
-            liquidada,
-            // El fresco manda; si no se pudo leer, cae al catálogo en memoria.
-            logoHipodromo: frescos.logoHipodromo ?? logoHipodromo,
-            logoGrupo: frescos.logoGrupo ?? logoGrupo,
-          })
-        );
+        setDetalle({ reporte: c, frescos });
       })
-      .catch(() => vivo && setDatos(null))
+      .catch(() => vivo && setDetalle(null))
       .finally(() => vivo && setCargandoDetalle(false));
     return () => {
       vivo = false;
     };
-  }, [abierto, fecha, hipodromo, carrera, nombreGrupo, disponibleDe, liquidada, logoHipodromo, logoGrupo, grupoId]);
+  }, [abierto, fecha, hipodromo, carrera, grupoId]);
+
+  // Armado de la plantilla: corre por cada detalle nuevo Y por cada cambio del
+  // filtro segmentado de modalidad de tiempo (recalcula filas y subtotales).
+  useEffect(() => {
+    if (!detalle) {
+      setDatos(null);
+      return;
+    }
+    setDatos(
+      armarReporteCarrera(detalle.reporte, nombreGrupo, disponibleDe, {
+        liquidada,
+        // El fresco manda; si no se pudo leer, cae al catálogo en memoria.
+        logoHipodromo: detalle.frescos.logoHipodromo ?? logoHipodromo,
+        logoGrupo: detalle.frescos.logoGrupo ?? logoGrupo,
+        filtroModalidad,
+      })
+    );
+  }, [detalle, nombreGrupo, disponibleDe, liquidada, logoHipodromo, logoGrupo, filtroModalidad]);
 
   if (!abierto) return null;
 
@@ -348,6 +380,40 @@ export default function ReporteLiquidacionModal({
                 ))}
               </select>
             </label>
+
+            {/* FILTRO SEGMENTADO DE MODALIDAD DE TIEMPO (PROMPT #4)
+                Toca el MOTOR (armarReporteCarrera), no el render: al elegir una
+                opción se rearma la plantilla con las filas visibles y los
+                subtotales (Ganan/Pierden, riesgo, Parada Adelantadas) ya
+                recalculados. `Todas` es el reporte completo, como siempre. */}            <div
+              role="group"
+              aria-label="Filtro de modalidad de tiempo de las jugadas"
+              className="flex items-center overflow-hidden rounded-md border border-slate-600 bg-slate-800"
+            >
+              {OPCIONES_FILTRO.map((op) => {
+                const activo = filtroModalidad === op.id;
+                return (
+                  <button
+                    key={op.id}
+                    type="button"
+                    aria-pressed={activo}
+                    onClick={() => setFiltroModalidad(op.id)}
+                    title={
+                      op.id === "TODAS"
+                        ? "Ver todas las jugadas de la carrera"
+                        : op.id === "EN_VIVO"
+                          ? "Ver solo las jugadas ⚡ en vivo (cargadas durante la carrera)"
+                          : "Ver solo las jugadas ⏳ adelantadas (cargadas antes de la carrera)"
+                    }
+                    className={`px-2 py-1 text-[11px] font-bold transition ${
+                      activo ? "bg-amber-400 text-slate-950" : "text-slate-300 hover:bg-slate-700"
+                    }`}
+                  >
+                    {op.etiqueta}
+                  </button>
+                );
+              })}
+            </div>
 
             <div className="ml-auto flex items-center gap-1.5">
               <button

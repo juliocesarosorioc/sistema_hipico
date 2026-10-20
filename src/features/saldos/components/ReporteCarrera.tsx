@@ -2,6 +2,7 @@
 import { EmptyState } from '@/shared/components/ui/EmptyState';
 import { colorDiscoNumero, numerosDeCaballo } from '@/features/saldos/lib/discos';
 import { ladosDePareo } from '@/features/taquilla/lib/nomenclatura';
+import type { FiltroModalidadTiempo } from '@/features/jugadas/lib/modalidad-tiempo';
 
 /**
  * ============================================================================
@@ -41,6 +42,11 @@ export type JugadaVivo = {
   apostoDa: number | null;
   /** Neto del cliente; null = pendiente de liquidar (no se pinta hasta decidirse). */
   resultado: number | null;
+  /**
+   * Modalidad de TIEMPO: `true` = ⏳ ADELANTADA (cargada antes de que corra la
+   * carrera) y la fila lleva su badge distintivo; `false`/ausente = ⚡ en vivo.
+   */
+  esAdelantada?: boolean;
 };
 
 export type Adelantada = {
@@ -98,6 +104,14 @@ export type ReporteCarreraDatos = {
   };
   /** Ítem 10: nota al pie con quienes arriesgaron más de lo que disponen. */
   notaExcedidos?: NotaExcedido[];
+  /**
+   * Filtro segmentado de modalidad de tiempo con el que se armó este reporte
+   * (`TODAS` = sin filtro). No es responsabilidad de este componente filtrar:
+   * los datos ya vienen filtrados de `armarReporteCarrera`; acá solo se ROTULA
+   * qué filtro está activo para que quien mira/entienda la hoja sepa que está
+   * viendo una porción de las jugadas de la carrera.
+   */
+  filtroModalidad?: FiltroModalidadTiempo;
 };
 
 // Componente de Utilidad para formatear moneda y color
@@ -190,6 +204,16 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
             <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap">{j.aposto}</td>
             <td className="py-[3px] pl-2 text-slate-700 whitespace-nowrap">
               <span className="font-semibold">{j.jugo}</span> <Discos caballo={j.caballo} />
+              {/* Badge distintivo de la modalidad de TIEMPO (⏳ adelantada).
+                  Se pinta junto a la jugada, como en los previews de venta. */}
+              {j.esAdelantada ? (
+                <span
+                  title="Jugada adelantada: se cargó ANTES de que corra la carrera."
+                  className="ml-1 rounded bg-amber-400/20 px-1 py-px text-[8px] font-black uppercase leading-none tracking-wide text-amber-700 ring-1 ring-amber-500/40"
+                >
+                  ⏳ ADELANTADA
+                </span>
+              ) : null}
             </td>
             <td className="py-[3px] pl-2 text-slate-600 whitespace-nowrap">{j.da || '—'}</td>
             <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap">
@@ -334,6 +358,20 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
             {encabezado.hipodromo} <span className="font-normal text-blue-200">•</span> {encabezado.carrera}
           </h1>
           <p className="text-blue-100 text-[10px]">{encabezado.fecha}</p>
+          {/* Rótulo del filtro segmentado de modalidad de tiempo activo en la
+              cabecera del Reporte de Liquidación: aclara que la hoja muestra
+              solo una porción de las jugadas de la carrera. */}
+          {datos.filtroModalidad && datos.filtroModalidad !== "TODAS" ? (
+            <p
+              className="mt-0.5 inline-flex w-fit items-center gap-1 rounded bg-white/15 px-1.5 py-px text-[9px] font-black uppercase tracking-wide text-amber-200 ring-1 ring-amber-300/40"
+              title="Filtro de modalidad de tiempo aplicado al reporte"
+            >
+              {datos.filtroModalidad === "ADELANTADA"
+                ? "⏳ Solo jugadas adelantadas"
+                : "⚡ Solo jugadas en vivo"}{" "}
+              · {jugadasVivo.length} visibles
+            </p>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2 shrink-0">

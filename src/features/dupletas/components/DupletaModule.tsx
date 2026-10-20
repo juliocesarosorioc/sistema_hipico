@@ -30,6 +30,9 @@ import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { TicketVentaPreview, type TicketVentaModel } from "@/features/tickets/components/TicketVentaPreview";
 import { capturarNodo, componerA4Paisaje, guardarLienzos, A4_PAISAGE, type ImgFormato } from "@/features/impresion/lib/exportar";
 import { ReporteDupletasModal } from "@/features/dupletas/components/ReporteDupletasModal";
+import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
+import { MODALIDAD_POR_DEFECTO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
+import { marcarTicketsAdelantados } from "@/features/jugadas/lib/marcar-adelantadas";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 const inputSel =
@@ -179,6 +182,12 @@ export function DupletaModule() {
   const [fgTexto, setFgTexto] = useState("");
   const [previewDupleta, setPreviewDupleta] = useState<{ ticket: TicketVentaModel; venta: VentaDupleta } | null>(null);
   const [vendiendoDupleta, setVendiendoDupleta] = useState(false);
+  /**
+   * Modalidad de TIEMPO de la dupleta (PROMPT #4): `EN_VIVO` (como siempre) o
+   * `ADELANTADA` (se cargó antes de que corran las dos carreras). Aplica a toda
+   * venta que salga de esta pantalla, incluida la reventa por ajuste de precio.
+   */
+  const [modalidadTiempo, setModalidadTiempo] = useState<ModalidadTiempo>(MODALIDAD_POR_DEFECTO);
 
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
     emitirToast(msg, tipo);
@@ -558,6 +567,19 @@ export function DupletaModule() {
     });
   };
 
+  /**
+   * Marca el ticket recién creado como ⏳ ADELANTADA cuando la modalidad de
+   * tiempo lo pide. Mejor esfuerzo: la venta ya está registrada por la RPC, así
+   * que un fallo de la marca solo avisa (nunca revierte ni corta el flujo).
+   */
+  const marcarDupletaAdelantada = async (ticketId: number | undefined) => {
+    if (modalidadTiempo !== "ADELANTADA" || !ticketId) return;
+    const r = await marcarTicketsAdelantados([ticketId]);
+    if (!r.ok) {
+      toast(`⚠️ Dupleta vendida, pero sin marcar ⏳ adelantada: ${r.error ?? "revisá sql/jugadas_adelantadas.sql"}`, "warning");
+    }
+  };
+
   const confirmarVentaDupleta = async () => {
     if (!previewDupleta || !matriz) return;
     setVendiendoDupleta(true);
@@ -592,6 +614,7 @@ export function DupletaModule() {
       `Vendido ${cliente?.nombre ?? ""} · ${grupo?.nombre ?? ""} · $${monto.toLocaleString("es-VE", { maximumFractionDigits: 2 })} · ticket #${r.ticketId ?? "?"} creado.`,
       "success"
     );
+    await marcarDupletaAdelantada(r.ticketId);
     if (!g.ok) toast(`⚠️ La venta quedó, pero no se pudo persistir la matriz: ${g.error ?? "sin conexión"}`, "warning");
     else setGuardadas(await listarDupletasGuardadas());
     setPreviewDupleta(null);
@@ -699,6 +722,8 @@ export function DupletaModule() {
       );
       if (!gp.ok) toast(`⚠️ Quedó cobrado, pero no se pudo persistir: ${gp.error ?? "sin conexión"}`, "warning");
       else setGuardadas(await listarDupletasGuardadas());
+      // La reventa es un ticket NUEVO: hereda la modalidad de tiempo elegida.
+      await marcarDupletaAdelantada(r.ticketId);
       setModal(null);
       setQ("");
       return;
@@ -958,6 +983,11 @@ export function DupletaModule() {
     <div className="flex flex-col gap-4">
       <div className="rounded-2xl border border-line bg-surface p-3">
         <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-600">🎯 Dupleta — Matriz de apuestas cruzadas</h3>
+
+        <div className="mb-2 flex flex-wrap items-center justify-end">
+          {/* Modalidad de TIEMPO de la dupleta que se venda (PROMPT #4). */}
+          <ToggleModalidadTiempo valor={modalidadTiempo} onChange={setModalidadTiempo} />
+        </div>
 
         <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
           <label
