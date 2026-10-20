@@ -168,7 +168,7 @@ export function LogoUploader({
         ].join(" ")}
       >
         <div
-          className="flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-inner"
+          className="flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-1 shadow-inner"
           style={{ width: preview, height: preview }}
         >
           {value ? (
@@ -177,7 +177,7 @@ export function LogoUploader({
               alt="Vista previa del logo"
               crossOrigin="anonymous"
               referrerPolicy="no-referrer"
-              className="h-full w-full object-contain"
+              className="h-full w-full object-contain p-1"
             />
           ) : (
             <span className="text-2xl leading-none" aria-hidden="true">

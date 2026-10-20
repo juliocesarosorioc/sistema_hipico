@@ -21,6 +21,8 @@ import { venderJugada, claveIdempotenciaJugada } from "@/features/taquilla/lib/v
 import { dividendosDePizarra } from "@/features/liquidacion/lib/posiciones";
 import { guardarPizarraCentral } from "@/features/liquidacion/lib/pizarraCentral";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
+import { emitirToast } from "@/shared/lib/mensajeria";
+import { useConfirmar } from "@/shared/store/useConfirmStore";
 import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { nombrePropioHipodromo, nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { CargaResultadosModal, type PizarraResultados } from "@/features/liquidacion/components/CargaResultadosModal";
@@ -89,7 +91,7 @@ type EdicionPreview = {
 
 /** Aviso visual (ToastHost global) para las acciones del panel. */
 const toastPreview = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
-  window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
+  emitirToast(msg, tipo);
 
 const MONEDA = "VES";
 
@@ -129,6 +131,7 @@ function hipoKey(h: unknown): string {
  *    + Dead Heat (cero fraccionamiento)
  */
 export function GestionJugadasModule() {
+  const confirmar = useConfirmar();
   const [hipodromo, setHipodromo] = useState("");
   const hipodromos = useHipodromosActivos();
   const nombreHipodromo = nombrePropioHipodromo(hipodromo, hipodromos);
@@ -1190,11 +1193,14 @@ const hipodromosDelDia = useMemo(() => {
    * cargadas en la sesión: pide confirmación explícita. Sin este aviso, un Enter
    * mal tipeado agregaba ventas a una carrera que ya estaba armada.
    */
-  const confirmarCargaAdicional = (): boolean => {
+  const confirmarCargaAdicional = async (): Promise<boolean> => {
     if (ticketsDeCarrera.length === 0 && !jugadasPorCarrera.includes(carrera)) return true;
-    const ok = window.confirm(
-      `⚠️ ${nombreHipodromo} C${carrera} ya tiene jugadas cargadas en esta sesión.\n\n¿Deseás cargar jugadas adicionales o modificar las existentes?`
-    );
+    const ok = await confirmar({
+      titulo: "Carga adicional",
+      mensaje: `⚠️ ${nombreHipodromo} C${carrera} ya tiene jugadas cargadas en esta sesión.\n\n¿Deseás cargar jugadas adicionales o modificar las existentes?`,
+      tipo: "warning",
+      textoConfirmar: "Cargar igual",
+    });
     if (ok) return true;
     setAviso("Carga cancelada: no se modificó la carrera.");
     return false;
@@ -1208,7 +1214,7 @@ const hipodromosDelDia = useMemo(() => {
    * saldo+aval), no el tipeado.
    */
   const cargarAtaquilla = async () => {
-    if (!confirmarCargaAdicional()) return;
+    if (!(await confirmarCargaAdicional())) return;
     let n = 0;
     const errores: string[] = [];
     const indicesError: number[] = [];
@@ -1418,7 +1424,7 @@ const hipodromosDelDia = useMemo(() => {
     if (iaCargando) return;
     const lineas = textoCargaRapida.split("\n").map((l) => l.trim()).filter(Boolean);
     if (lineas.length === 0) {
-      window.dispatchEvent(new CustomEvent("toast", { detail: { msg: "Pegá al menos una línea para corregir con IA.", tipo: "warning" } }));
+      emitirToast("Pegá al menos una línea para corregir con IA.", "warning");
       return;
     }
     setIaCargando(true);
@@ -1428,15 +1434,11 @@ const hipodromosDelDia = useMemo(() => {
     });
     setIaCargando(false);
     if (!res.ok || !res.lineas) {
-      window.dispatchEvent(new CustomEvent("toast", {
-        detail: { msg: `✨ IA no disponible: ${res.error ?? "sin respuesta"}. Se mantiene el normalizador local.`, tipo: "warning" },
-      }));
+      emitirToast(`✨ IA no disponible: ${res.error ?? "sin respuesta"}. Se mantiene el normalizador local.`, "warning");
       return;
     }
     setTextoCargaRapida(res.lineas.join("\n"));
-    window.dispatchEvent(new CustomEvent("toast", {
-      detail: { msg: "✨ Texto corregido con IA. Revisá la vista previa antes de poblar.", tipo: "success" },
-    }));
+    emitirToast("✨ Texto corregido con IA. Revisá la vista previa antes de poblar.", "success");
   };
 
   /**
@@ -1658,9 +1660,7 @@ const hipodromosDelDia = useMemo(() => {
       "REABRIR_LIQUIDADA_INICIO",
       `Re-apertura de ${nombreHipodromo} C${carrera} (${fecha}) por ${usuarioVigente()}.`
     );
-    window.dispatchEvent(
-      new CustomEvent("toast", { detail: { msg: "🟠 Carrera reabierta: se liquidará SÓLO lo agregado.", tipo: "warning" } })
-    );
+    emitirToast("🟠 Carrera reabierta: se liquidará SÓLO lo agregado.", "warning");
   };
 
   return (

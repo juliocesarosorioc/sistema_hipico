@@ -36,3 +36,54 @@ export function nombreArchivoLogo(nombre: string): string {
     .replace(/^_+|_+$/g, "");
   return `${base || "logo"}_logo.png`;
 }
+
+/**
+ * ============================================================================
+ * LOGOS EN CALIENTE — cache-busting y evento de propagación
+ * ============================================================================
+ *
+ * Un logo es un Data URL (`data:image/png;base64,...`). El navegador NO lo
+ * vuelve a pedir si la cadena no cambió, y aunque cambie, React reutiliza el
+ * `<img>` si el `src` difiere. Para que TODAS las ventanas, cabeceras, reportes
+ * y tarjetas abiertas muestren el logo nuevo al instante (zero-reload) se
+ * combinan dos cosas:
+ *
+ *   · `conCacheBust` le agrega un parámetro efímero (`#v=<marca>`) al Data URL
+ *     para forzar el repintado del `<img>` sin tocar el contenido guardado.
+ *   · El evento global `logos-updated` avisa a los componentes montados que
+ *     relean/re-rendericen. Lo emite `emitirLogosActualizados` (mensajería).
+ *
+ * Estas funciones son PURAS (testeables en node), salvo el `Date.now()` del
+ * parámetro por defecto, que solo se usa para tener una marca distinta.
+ */
+
+/** Marca de versión de la sesión: cambia en cada carga/actualización de logo. */
+let versionLogos = 0;
+
+/** Avanza la marca global de logos y la devuelve. */
+export function marcarLogosActualizados(): number {
+  versionLogos += 1;
+  return versionLogos;
+}
+
+/** Marca actual (para tests / renders deterministas). */
+export function versionLogosActual(): number {
+  return versionLogos;
+}
+
+/**
+ * Agrega un fragmento de cache-busting a un Data URL/URL de logo. No altera el
+ * contenido guardado en la base: solo la cadena que ve el `<img>`, así el
+ * navegador repinta el logo recién cambiado. Devuelve el valor tal cual cuando
+ * es vacío.
+ */
+export function conCacheBust(url: string | null | undefined, marca: number | string = versionLogos): string | null {
+  const u = String(url ?? "");
+  if (!u) return null;
+  // Se separa el `#` viejo si lo hubiera para no apilar fragmentos.
+  const limpio = u.split("#")[0];
+  const separador = limpio.includes("?") ? "&" : "#";
+  // Un fragmento (`#v=`) no viaja al servidor, así que un Data URL sigue siendo
+  // decodificable por el navegador y `html2canvas` lo captura igual.
+  return `${limpio}${separador}v=${marca}`;
+}

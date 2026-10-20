@@ -8,6 +8,8 @@ import { sincronizarCarrerasAlCentral } from "@/features/carreras/lib/sincroniza
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { emitirToast } from "@/shared/lib/mensajeria";
+import { useConfirmar } from "@/shared/store/useConfirmStore";
 import { CarreraGacetaCard } from "@/features/ejemplares/components/CarreraGacetaCard";
 import { listarHipodromos, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
 import {
@@ -158,13 +160,14 @@ export function GacetaIA() {
   const inputRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const confirmar = useConfirmar();
 
   useEffect(() => {
     void listarHipodromos().then((hs) => setHipodromos(hs)).catch(() => setHipodromos([]));
   }, []);
 
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
-    window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
+    emitirToast(msg, tipo);
   }, []);
 
   /**
@@ -571,14 +574,22 @@ export function GacetaIA() {
   const limpiar = useCallback(() => {
     const pendientes = carreras.filter((c) => !c.enviada).length;
     const msj = pendientes > 0 ? `Hay ${pendientes} carrera(s) pendientes de ensamblar. ` : "El registro no tiene carreras pendientes. ";
-    if (!window.confirm(`¿Limpiar el registro del día?\n\n${msj}Esta acción borra el registro guardado (no afecta las tablas ya publicadas).`)) return;
-    limpiarTodoRegistro();
-    setCarreras([]);
-    setResumen({ nuevos: 0, vinculados: 0 });
-    refrescarContadores();
-    setEstado("Registro limpiado. Cargue un nuevo documento para empezar.");
-    toast("Registro del día limpiado.", "success");
-  }, [carreras, refrescarContadores, toast]);
+    void confirmar({
+      titulo: "Limpiar registro del día",
+      mensaje: `${msj}Esta acción borra el registro guardado (no afecta las tablas ya publicadas).`,
+      tipo: "warning",
+      textoConfirmar: "Limpiar",
+      destructivo: true,
+    }).then((ok) => {
+      if (!ok) return;
+      limpiarTodoRegistro();
+      setCarreras([]);
+      setResumen({ nuevos: 0, vinculados: 0 });
+      refrescarContadores();
+      setEstado("Registro limpiado. Cargue un nuevo documento para empezar.");
+      toast("Registro del día limpiado.", "success");
+    });
+  }, [carreras, refrescarContadores, toast, confirmar]);
 
   const eliminarCarrera = useCallback(
     (i: number) => {

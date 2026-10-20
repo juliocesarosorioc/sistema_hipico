@@ -1,22 +1,43 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { listarHipodromos, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
+import { marcarLogosActualizados } from "@/shared/lib/logos";
 
 type Estado = {
   /** Catálogo de hipódromos ACTIVOS (estado='Activo') para todos los selectores. */
   activos: OpcionHipodromo[];
   /** Contador de invalidación: cada bump obliga a los selectores a recargar. */
   version: number;
+  /**
+   * Versión de LOGOS: cambia cuando se carga/actualiza el logo de un hipódromo
+   * (o de un grupo). Los componentes que pintan logos la miran para volver a
+   * renderizar con el logo nuevo al instante, sin recargar la página.
+   */
+  versionLogos: number;
   setActivos: (lista: OpcionHipodromo[]) => void;
   /** Invalida el caché → los selectores montados recargan (borrado/desactivado al instante). */
   invalidar: () => void;
+  /**
+   * Marca los logos como actualizados: bumpea `versionLogos` y avanza la marca
+   * global de cache-busting. Lo llama el guardado/limpieza de un logo.
+   */
+  bumpLogos: () => void;
 };
 
 export const useHipodromosStore = create<Estado>((set) => ({
   activos: [],
   version: 0,
+  versionLogos: 0,
   setActivos: (lista) => set({ activos: lista }),
   invalidar: () => set((s) => ({ version: s.version + 1 })),
+  bumpLogos: () =>
+    set(() => {
+      // Avanza la marca global (para `conCacheBust` en los `<img>`) y sube la
+      // versión de logos que leen los componentes. NO toca `version` (esa es la
+      // invalidación de selectores del CRUD, otra cosa).
+      const marca = marcarLogosActualizados();
+      return { versionLogos: marca };
+    }),
 }));
 
 /**
@@ -26,7 +47,9 @@ export const useHipodromosStore = create<Estado>((set) => ({
  * Ya no hay lista fija de nombres: entra todo lo registrado en la base cuyo
  * `estado` sea Activo, y un hipódromo suspendido, inactivo o archivado sale de
  * aquí al instante en que el módulo Hipódromos lo cambia. La lista se recarga
- * al montar y en cada invalidación del CRUD.
+ * al montar, en cada invalidación del CRUD y cuando se actualiza un logo
+ * (evento global `logos-updated`), para que el logo recién cargado aparezca sin
+ * recargar la página.
  */
 export function useHipodromosActivos(): OpcionHipodromo[] {
   const activos = useHipodromosStore((s) => s.activos);
@@ -42,5 +65,46 @@ export function useHipodromosActivos(): OpcionHipodromo[] {
     };
   }, [version]);
 
+  // Propagación reactiva: cualquier ventana que cargue un logo emite
+  // `logos-updated`; acá se relee el catálogo para tener los `logo_url` frescos.
+  useEffect(() => {
+    const onLogos = () => {
+      listarHipodromos().then((lista) => useHipodromosStore.getState().setActivos(lista));
+    };
+    window.addEventListener("logos-updated", onLogos);
+    return () => window.removeEventListener("logos-updated", onLogos);
+  }, []);
+
   return activos;
 }
+
+/**
+ * Hook de propagación de logos para componentes que NO usan el catálogo pero
+ * pintan el logo de un hipódromo o de un grupo (cabeceras, reportes, tarjetas).
+ * Devuelve un contador que cambia cuando alguien actualiza un logo; usalo como
+ * dependencia de tu relectura (o del `src` con `conCacheBust`).
+ *
+ * La suscripción al evento global vive UNA sola vez (ver `conectarLogos`), así
+ * que varios componentes leyendo la versión no multiplican los renders.
+ */
+export function useVersionLogos(): number {
+  useEffect(() => {
+    conectarLogos();
+  }, []);
+  return useHipodromosStore((s) => s.versionLogos);
+}
+
+/**
+ * Conecta (una sola vez) el evento global `logos-updated` con el store:
+ * cuando cualquier ventana carga o quita un logo, la versión sube y todos los
+ * componentes que la leen se vuelven a pintar. Idempotente.
+ */
+let logosConectados = false;
+export function conectarLogos(): void {
+  if (logosConectados || typeof window === "undefined") return;
+  logosConectados = true;
+  window.addEventListener("logos-updated", () => {
+    useHipodromosStore.getState().bumpLogos();
+  });
+}
+

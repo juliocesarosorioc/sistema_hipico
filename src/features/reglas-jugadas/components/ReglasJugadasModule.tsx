@@ -17,6 +17,8 @@ import { Card } from "@/shared/components/ui/Card";
 import { Guard } from "@/shared/components/ui/Guard";
 import { Input } from "@/shared/components/ui/Input";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { emitirToast } from "@/shared/lib/mensajeria";
+import { useConfirmar } from "@/shared/store/useConfirmStore";
 import {
   alternarTipoJugada,
   eliminarTipoJugada,
@@ -71,8 +73,10 @@ export function ReglasJugadasModule() {
   const [form, setForm] = useState<Formulario>(FORM_VACIO);
   const [busqueda, setBusqueda] = useState("");
 
+  const confirmar = useConfirmar();
+
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
-    window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
+    emitirToast(msg, tipo);
   }, []);
 
   const refrescar = useCallback(async () => {
@@ -126,13 +130,16 @@ export function ReglasJugadasModule() {
   };
 
   const eliminar = async (j: TipoJugada) => {
-    if (
-      !window.confirm(
+    const ok = await confirmar({
+      titulo: "Eliminar jugada",
+      mensaje:
         `¿Eliminar la jugada "${j.nombre}"?\n\nSi hay tickets usándola, la eliminación puede fallar. ` +
-          `Si solo querés dejar de ofrecerla, desactivala.`
-      )
-    )
-      return;
+        `Si solo querés dejar de ofrecerla, desactivala.`,
+      tipo: "error",
+      textoConfirmar: "Eliminar",
+      destructivo: true,
+    });
+    if (!ok) return;
     const res = await eliminarTipoJugada(j.id);
     if (!res.ok) return toast(res.error ?? "No se pudo eliminar.", "error");
     toast(`Regla "${j.nombre}" eliminada.`, "success");

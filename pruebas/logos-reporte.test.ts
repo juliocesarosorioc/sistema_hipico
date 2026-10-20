@@ -181,7 +181,8 @@ si(/listarGruposAdmin\(true\)/.test(logosLib), "fuerza el salto del caché de gr
 // Los tres puntos que arman el reporte usan el helper y pasan los logos.
 const modal2 = leer("src", "features", "gestion", "components", "ReporteLiquidacionModal.tsx");
 si(/logosFrescosDeCarrera/.test(modal2), "ReporteLiquidacionModal resuelve logos frescos");
-si(/\[abierto\]/.test(modal2), "ReporteLiquidacionModal relee catálogos al abrir");
+si(/\[abierto(, versionLogos)?\]/.test(modal2), "ReporteLiquidacionModal relee catálogos al abrir (y al actualizar un logo)");
+si(/useVersionLogos\(\)/.test(modal2), "ReporteLiquidacionModal reacciona al evento global de logos");
 
 const pagar = leer("src", "features", "taquilla", "components", "PagarCarreraModal.tsx");
 si(/logosFrescosDeCarrera/.test(pagar), "PagarCarreraModal resuelve logos frescos");

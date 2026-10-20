@@ -21,6 +21,7 @@ import {
   type PizarraMarca,
 } from "@/features/marcas/lib/marcas";
 import { FACTOR_BRUTO, FACTOR_GANANCIA, PROPORCION } from "@/features/marcas/lib/jerarquia";
+import { useConfirmar } from "@/shared/store/useConfirmStore";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 const inputCls =
@@ -72,6 +73,7 @@ export function ModalMarcasEditor({
   onToast,
   onCambio,
 }: ModalMarcasEditorProps) {
+  const confirmar = useConfirmar();
   const [dia, setDia] = useState(() => String(fechaInicial ?? "").trim() || hoyLocal());
   const [hipodromo, setHipodromo] = useState(
     String(hipodromoInicial ?? "").trim().toUpperCase() || "LA RINCONADA"
@@ -300,14 +302,17 @@ export function ModalMarcasEditor({
 
   const borrar = async () => {
     if (!fila?.config?.id) return;
-    if (
-      !window.confirm(
+    const ok = await confirmar({
+      titulo: "Borrar configuración",
+      mensaje:
         `¿Borrar la configuración de ${etiqueta}?\n\n` +
-          `Esto NO toca los tickets ya vendidos: cada ticket guarda su propio snapshot ` +
-          `de marcas, NV y rivales, y se liquida con ese.`
-      )
-    )
-      return;
+        `Esto NO toca los tickets ya vendidos: cada ticket guarda su propio snapshot ` +
+        `de marcas, NV y rivales, y se liquida con ese.`,
+      tipo: "warning",
+      textoConfirmar: "Borrar",
+      destructivo: true,
+    });
+    if (!ok) return;
     const r = await eliminarConfigMarcas(fila.config.id);
     if (!r.ok) return onToast(r.error ?? "No se pudo borrar la configuración.", "error");
     onToast(`🗑️ Configuración de ${etiqueta} borrada.`, "success");

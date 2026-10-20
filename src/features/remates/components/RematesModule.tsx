@@ -5,6 +5,8 @@ import { Card } from "@/shared/components/ui/Card";
 import { Button } from "@/shared/components/ui/Button";
 import { Input } from "@/shared/components/ui/Input";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { emitirToast } from "@/shared/lib/mensajeria";
+import { useConfirmar } from "@/shared/store/useConfirmStore";
 import { getHorseColor } from "@/shared/lib/horseColors";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
@@ -201,8 +203,10 @@ export function RematesModule() {
   const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
   const [clientes, setClientes] = useState<ClienteRow[]>([]);
 
+  const confirmar = useConfirmar();
+
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
-    window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
+    emitirToast(msg, tipo);
   }, []);
 
   const refrescar = useCallback(async () => {
@@ -332,7 +336,14 @@ export function RematesModule() {
             await abrirDetalle(nuevo);
           }}
           onEliminar={async (r) => {
-            if (!window.confirm(`¿Eliminar el remate "${r.nombre}" y sus ejemplares?`)) return;
+            const ok = await confirmar({
+              titulo: "Eliminar remate",
+              mensaje: `¿Eliminar el remate "${r.nombre}" y sus ejemplares?`,
+              tipo: "error",
+              textoConfirmar: "Eliminar",
+              destructivo: true,
+            });
+            if (!ok) return;
             const res = await eliminarRemate(r.id);
             if (!res.ok) return toast(res.error ?? "No pude eliminar el remate.", "error");
             toast(`🗑️ Remate "${r.nombre}" eliminado.`, "success");
@@ -653,6 +664,7 @@ function DetalleRemate({
   toast: (m: string, t?: "success" | "warning" | "error" | "info") => void;
   onCambio: () => void | Promise<void>;
 }) {
+  const confirmar = useConfirmar();
   const [incentivo, setIncentivo] = useState(String(remate.incentivo ?? 0));
   const [incPct, setIncPct] = useState(String(remate.incentivo_pct ?? 0));
   /** Modo del incentivo. El % se guarda en `incentivo_pct` (0 = monto fijo). */
@@ -956,11 +968,16 @@ function DetalleRemate({
   // poder reintentar desde el mismo lugar.
   const quitarEjemplar = async (c: CaballoRemate): Promise<boolean> => {
     const n = c.ejemplar_numero ?? c.numero;
-    const ok = window.confirm(
-      `¿Quitar el ejemplar ${n} (${c.nombre}) del remate?\n\nSe elimina la puja y el saldo de ${
-        c.cliente ?? "su comprador"
-      } queda libre. El ejemplar NO se borra de la carrera: sigue corriendo y se puede volver a pujar.`
-    );
+    const ok = await confirmar({
+      titulo: "Quitar ejemplar del remate",
+      mensaje:
+        `¿Quitar el ejemplar ${n} (${c.nombre}) del remate?\n\nSe elimina la puja y el saldo de ${
+          c.cliente ?? "su comprador"
+        } queda libre. El ejemplar NO se borra de la carrera: sigue corriendo y se puede volver a pujar.`,
+      tipo: "warning",
+      textoConfirmar: "Quitar",
+      destructivo: true,
+    });
     if (!ok) return false;
     // Sin id no hay fila que borrar. Antes salía en silencio, después de haber
     // hecho perder al operador la confirmación: parecía que el sistema no

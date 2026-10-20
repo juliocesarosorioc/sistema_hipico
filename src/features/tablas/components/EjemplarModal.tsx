@@ -8,6 +8,7 @@ import { listarGruposVenta, jugadoresDeGrupo, grupoDeVentaVigente, type GrupoVen
 import { Button } from "@/shared/components/ui/Button";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { Flag } from "@/shared/components/ui/BanderaPais";
+import { useConfirmar } from "@/shared/store/useConfirmStore";
 
 export type VentaRapidaItem = {
   numero: string;
@@ -41,6 +42,7 @@ type Props = {
  * (GRUPO DE VENTA → JUGADOR DE ESE GRUPO → CANTIDAD DE TABLAS).
  */
 export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, onRetirar, onVentaRapida }: Props) {
+  const confirmar = useConfirmar();
   const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
   const [grupoId, setGrupoId] = useState("");
   const [jugadores, setJugadores] = useState<ClienteVenta[]>([]);
@@ -100,13 +102,18 @@ export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, 
   const retirar = async () => {
     if (trabajando) return;
     const accion = retirado ? "Rehabilitar" : "Retirar";
-    const okConfirm = window.confirm(
-      `${accion} el ejemplar N°${num} ${ejemplar.nombre ?? ""}?\n\n${
-        retirado
+    const okConfirm = await confirmar({
+      titulo: `${accion} ejemplar`,
+      mensaje:
+        `¿${accion} el ejemplar N°${num} ${ejemplar.nombre ?? ""}?\n\n` +
+        (retirado
           ? "Se restaurará como activo y se recalculará el premio."
-          : "Se marcará como RETIRADO:\n - No podrá venderse\n - Se recalculará el premio (baja proporcional)\n - Se reembolsará el saldo de los tickets pendientes"
-      }\n\n¿Continuar?`
-    );
+          : "Se marcará como RETIRADO:\n - No podrá venderse\n - Se recalculará el premio (baja proporcional)\n - Se reembolsará el saldo de los tickets pendientes") +
+        `\n\n¿Continuar?`,
+      tipo: retirado ? "success" : "warning",
+      textoConfirmar: accion,
+      destructivo: !retirado,
+    });
     if (!okConfirm) return;
     setTrabajando(true);
     setAviso("");

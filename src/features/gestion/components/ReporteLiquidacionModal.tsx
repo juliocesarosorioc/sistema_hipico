@@ -14,6 +14,8 @@ import { listarClientes, type ClienteRow } from "@/features/clientes/lib/cliente
 import { exportarReporteCarreraImagen } from "@/features/liquidacion/lib/reporte-imagen";
 import { listarGruposAdmin, type GrupoRow } from "@/features/grupos/lib/grupos";
 import { logosFrescosDeCarrera } from "@/features/liquidacion/lib/logos-reporte";
+import { conCacheBust } from "@/shared/lib/logos";
+import { useVersionLogos } from "@/shared/store/useHipodromosStore";
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
@@ -77,10 +79,12 @@ export default function ReporteLiquidacionModal({
   const [clientes, setClientes] = useState<ClienteRow[]>([]);
   /** Catálogo con `logo_url` para la cabecera del reporte. */
   const [catalogoHipodromos, setCatalogoHipodromos] = useState<Hipodromo[]>([]);
+  // Versión global de logos: cambia cuando alguien carga/actualiza un logo.
+  const versionLogos = useVersionLogos();
 
   // Logos de los hipódromos: la cabecera azul los pinta desde acá. Se relee
-  // CADA VEZ que se abre el modal, para que un logo incorporado mientras tanto
-  // aparezca sin recargar la página.
+  // CADA VEZ que se abre el modal Y cada vez que se actualiza un logo, para que
+  // un logo incorporado mientras el reporte está abierto aparezca sin recargar.
   useEffect(() => {
     if (!abierto) return;
     let vivo = true;
@@ -90,7 +94,7 @@ export default function ReporteLiquidacionModal({
     return () => {
       vivo = false;
     };
-  }, [abierto]);
+  }, [abierto, versionLogos]);
 
   // Ítem 10: cartera de clientes para saber el disponible (saldo + aval) y
   // marcar con asterisco a quien arriesgó más de lo que dispone.
@@ -134,7 +138,7 @@ export default function ReporteLiquidacionModal({
     return () => {
       vivo = false;
     };
-  }, [abierto]);
+  }, [abierto, versionLogos]);
 
   // Carreras con resultado cargado de la fecha (recientes o pasadas).
   useEffect(() => {
@@ -195,15 +199,16 @@ export default function ReporteLiquidacionModal({
   );
 
   const logoGrupo = useMemo(
-    () => grupos.find((g) => String(g.id) === grupoId)?.logo_url ?? null,
-    [grupos, grupoId]
+    () => conCacheBust(grupos.find((g) => String(g.id) === grupoId)?.logo_url ?? null, versionLogos),
+    [grupos, grupoId, versionLogos]
   );
 
   const logoHipodromo = useMemo(() => {
     const buscado = hipodromo.trim().toUpperCase();
     if (!buscado) return null;
-    return catalogoHipodromos.find((h) => h.nombre.trim().toUpperCase() === buscado)?.logo_url ?? null;
-  }, [catalogoHipodromos, hipodromo]);
+    const url = catalogoHipodromos.find((h) => h.nombre.trim().toUpperCase() === buscado)?.logo_url ?? null;
+    return conCacheBust(url, versionLogos);
+  }, [catalogoHipodromos, hipodromo, versionLogos]);
 
   /**
    * Solo una carrera pagada/liquidada muestra pizarra, resultados y resumen.

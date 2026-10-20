@@ -31,6 +31,7 @@ import { Input } from "@/shared/components/ui/Input";
 import { EmptyState } from "@/shared/components/ui/EmptyState";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { LogoUploader } from "@/shared/components/ui/LogoUploader";
+import { emitirLogosActualizados, emitirToast } from "@/shared/lib/mensajeria";
 import {
   correoDeLogin,
   crearEcosistemaGrupo,
@@ -50,7 +51,7 @@ import {
 } from "@/features/grupos/lib/comisiones-convenio";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
-  window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
+  emitirToast(msg, tipo);
 
 const PASOS = [
   { n: 1, titulo: "El grupo", descripcion: "Nombre, moneda y comisión" },
@@ -226,6 +227,8 @@ export function CreacionGruposModule() {
       if (r.ok) {
         toast(`Grupo "${r.grupoNombre ?? ""}" creado.`, "success");
         if (r.aviso) toast(r.aviso, "warning");
+        // Propagación reactiva: el logo del grupo recién creado aparece ya.
+        emitirLogosActualizados({ grupoId: r.grupoId ? String(r.grupoId) : "" });
       } else {
         toast(r.error ?? "No se pudo crear el grupo.", "error");
       }

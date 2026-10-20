@@ -311,14 +311,14 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
 
       {/* 1. ENCABEZADO — franja azul ejecutiva con logos de hipódromo y grupo */}
       <div className="bg-gradient-to-r from-blue-900 via-blue-700 to-blue-600 text-white border-b border-blue-500/30 shadow-md px-4 py-2.5 flex items-center gap-3">
-        <div className="w-14 h-14 shrink-0 rounded-xl bg-white/95 p-1.5 shadow-inner flex items-center justify-center overflow-hidden">
+        <div className="w-14 h-14 shrink-0 rounded-xl bg-white/95 p-1 shadow-inner flex items-center justify-center overflow-hidden">
           {encabezado.logoHipodromo ? (
             <img
               src={encabezado.logoHipodromo}
               alt={`Logo de ${encabezado.hipodromo}`}
               crossOrigin="anonymous"
               referrerPolicy="no-referrer"
-              className="h-full w-full object-contain"
+              className="h-full w-full object-contain p-1"
             />
           ) : (
             <span className="text-2xl leading-none" aria-hidden="true">🏇</span>
@@ -340,14 +340,14 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
             </p>
             <p className="text-[8px] font-semibold uppercase tracking-widest text-blue-300">Grupo</p>
           </div>
-          <div className="w-14 h-14 shrink-0 rounded-xl bg-white/95 p-1.5 shadow-inner flex items-center justify-center overflow-hidden">
+          <div className="w-14 h-14 shrink-0 rounded-xl bg-white/95 p-1 shadow-inner flex items-center justify-center overflow-hidden">
             {encabezado.logoGrupo ? (
               <img
                 src={encabezado.logoGrupo}
                 alt={`Logo de ${encabezado.grupo || "Grupo Hípico"}`}
                 crossOrigin="anonymous"
                 referrerPolicy="no-referrer"
-                className="h-full w-full object-contain"
+                className="h-full w-full object-contain p-1"
               />
             ) : (
               <span className="text-2xl leading-none" aria-hidden="true">🏇</span>

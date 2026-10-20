@@ -117,6 +117,76 @@ body {
   }
 }
 
+/* =============================================================================
+   MENSAJERÍA GLOBAL — CSS CENTRALIZADO (una sola fuente de verdad)
+   -----------------------------------------------------------------------------
+   Toda la plataforma (toasts, avisos inline, modales de confirmación) pinta sus
+   mensajes con estas clases, para que un ÉXITO se vea igual en Tablas, en
+   Gestión, en Hipódromos o en cualquier modal. No se improvisan colores por
+   pantalla: se usa la clase del tipo.
+
+   4 tipos: SUCCESS · WARNING · ERROR · INFO
+   Cada tipo define: fondo oscuro translúcido, borde del mismo color, texto
+   claro y un ícono dentro de un badge.
+
+   Clases base:
+     .msg            → marco común (borde, texto, sombra, layout)
+     .msg-icono      → badge circular del ícono
+     .msg-success / .msg-warning / .msg-error / .msg-info → el color del tipo
+   Componentes: ToastHost.tsx, ConfirmModal.tsx, AvisoMensaje (InlineMensaje.tsx)
+   ========================================================================== */
+@layer components {
+  .msg {
+    @apply flex items-start gap-2.5 rounded-xl border px-4 py-2.5 text-xs font-bold shadow-lg backdrop-blur-sm;
+  }
+  .msg-icono {
+    @apply mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-sm leading-none;
+  }
+  .msg-texto {
+    @apply min-w-0 flex-1 leading-snug;
+  }
+  .msg-titulo {
+    @apply block text-[11px] font-black uppercase tracking-wide;
+  }
+  .msg-detalle {
+    @apply mt-0.5 block text-[11px] font-semibold opacity-90;
+  }
+
+  /* SUCCESS — Éxito / Liquidado / Guardado */
+  .msg-success {
+    @apply border-emerald-500/40 bg-emerald-950/95 text-emerald-50;
+  }
+  .msg-success .msg-icono {
+    @apply bg-emerald-500/20 text-emerald-300;
+  }
+  /* WARNING — Advertencia / Pendiente / Rezagada */
+  .msg-warning {
+    @apply border-amber-500/40 bg-amber-950/95 text-amber-50;
+  }
+  .msg-warning .msg-icono {
+    @apply bg-amber-500/20 text-amber-300;
+  }
+  /* ERROR — Error / Anulada / Rechazo */
+  .msg-error {
+    @apply border-rose-500/40 bg-rose-950/95 text-rose-50;
+  }
+  .msg-error .msg-icono {
+    @apply bg-rose-500/20 text-rose-300;
+  }
+  /* INFO — Información / Proceso / Edición */
+  .msg-info {
+    @apply border-indigo-500/40 bg-indigo-950/95 text-indigo-50;
+  }
+  .msg-info .msg-icono {
+    @apply bg-indigo-500/20 text-indigo-300;
+  }
+
+  /* --- Mensaje INLINE (dentro de un formulario/panel): sin sombra flotante --- */
+  .msg-inline {
+    @apply shadow-none;
+  }
+}
+
 /* Impresión: oculta el shell (sidebars/topbar), modales y carrito; libera el
    scroll del main y conserva los colores de gualdrapas/tarjetas (cero-scroll). */
 @media print {

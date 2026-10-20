@@ -7,6 +7,9 @@ import { Input } from "@/shared/components/ui/Input";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { Flag } from "@/shared/components/ui/BanderaPais";
 import { LogoUploader } from "@/shared/components/ui/LogoUploader";
+import { LogoDisplay } from "@/shared/components/ui/LogoDisplay";
+import { emitirLogosActualizados, emitirToast } from "@/shared/lib/mensajeria";
+import { useConfirmar } from "@/shared/store/useConfirmStore";
 import {
   listarHipodromos,
   crearHipodromo,
@@ -59,8 +62,10 @@ export function HipodromosModule() {
   const [modal, setModal] = useState<FormModal>(() => inicialModal(null));
   const [guardando, setGuardando] = useState(false);
 
+  const confirmar = useConfirmar();
+
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
-    window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
+    emitirToast(msg, tipo);
   }, []);
 
   const invalidarSelectores = useCallback(() => {
@@ -177,6 +182,9 @@ export function HipodromosModule() {
     );
     cerrarModal();
     invalidarSelectores();
+    // Propagación reactiva del logo: TODAS las ventanas/cabeceras/reportes que
+    // pintan este hipódromo se repintan al instante, sin recargar la página.
+    emitirLogosActualizados({ hipodromoId: String(modal.editando?.id ?? "") });
     void refrescar();
   };
 
@@ -186,15 +194,18 @@ export function HipodromosModule() {
    * `reactivarHipodromo` la devuelve.
    */
   const eliminar = async (h: Hipodromo) => {
-    if (
-      !window.confirm(
+    const ok = await confirmar({
+      titulo: "Archivar hipódromo",
+      mensaje:
         `¿Archivar el hipódromo "${formatearNombre(h.nombre)}"?\n\n` +
-          `Deja de ofrecerse en Marcas, Tablas, Gestión, Dupletas y Taquilla, pero ` +
-          `NO se borra nada: las carreras, tablas y tickets con ese nombre quedan ` +
-          `registrados. Podés reactivarlo cuando quieras desde "Archivados".`
-      )
-    )
-      return;
+        `Deja de ofrecerse en Marcas, Tablas, Gestión, Dupletas y Taquilla, pero ` +
+        `NO se borra nada: las carreras, tablas y tickets con ese nombre quedan ` +
+        `registrados. Podés reactivarlo cuando quieras desde "Archivados".`,
+      tipo: "warning",
+      textoConfirmar: "Archivar",
+      destructivo: true,
+    });
+    if (!ok) return;
     const res = await eliminarHipodromo(h.id);
     if (!res.ok) return toast(res.error ?? "Error al archivar.", "error");
     toast(`🗄️ Hipódromo "${formatearNombre(h.nombre)}" archivado. Su historial quedó registrado.`, "success");
@@ -225,7 +236,13 @@ export function HipodromosModule() {
   const activarTodos = async () => {
     const inactivos = hipodromos.filter((h) => normalizarEstado(h.estado) !== "Activo").length;
     if (inactivos === 0) return toast("Todos los hipódromos vigentes ya están activos.", "info");
-    if (!window.confirm(`¿Activar ${inactivos} hipódromo(s) inactivos o suspendidos?\n\nLos archivados NO se tocan.`)) return;
+    const okActivar = await confirmar({
+      titulo: "Activar hipódromos",
+      mensaje: `¿Activar ${inactivos} hipódromo(s) inactivos o suspendidos?\n\nLos archivados NO se tocan.`,
+      tipo: "info",
+      textoConfirmar: "Activar",
+    });
+    if (!okActivar) return;
     const res = await activarTodosHipodromos();
     if (!res.ok) return toast(res.error ?? "Error al activar.", "error");
     toast(`✅ ${res.activados ?? 0} hipódromo(s) activados.`, "success");
@@ -304,13 +321,7 @@ export function HipodromosModule() {
                   <tr key={String(h.id)} className="transition-colors hover:bg-surfaceAlt">
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2.5">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white p-0.5 shadow-inner">
-                          {h.logo_url ? (
-                            <img src={h.logo_url} alt={`Logo de ${formatearNombre(h.nombre)}`} className="h-full w-full object-contain" />
-                          ) : (
-                            <span className="text-sm leading-none text-slate-400" aria-hidden="true">🏇</span>
-                          )}
-                        </div>
+                        <LogoDisplay src={h.logo_url} alt={`Logo de ${formatearNombre(h.nombre)}`} tamano={36} />
                         <p className="font-black normal-case tracking-wide text-slate-800">{formatearNombre(h.nombre)}</p>
                       </div>
                     </td>

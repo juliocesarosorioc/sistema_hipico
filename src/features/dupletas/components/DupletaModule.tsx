@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { emitirToast } from "@/shared/lib/mensajeria";
+import { useConfirmar } from "@/shared/store/useConfirmStore";
 import { listarTablasPublicadas } from "@/features/tablas/lib/rpc";
 import { useRegistroCentralOpts, claveHipodromo } from "@/shared/store/useRegistroCentral";
 import { normalizarDia } from "@/features/carreras/lib/agruparHipodromos";
@@ -63,6 +65,7 @@ const TAM_BANDERA = Math.round(TAM_BANDERA_BASE * 1.8);
 const FONDO_FILA_DUPLA = ["bg-white", "bg-indigo-50"] as const;
 
 export function DupletaModule() {
+  const confirmar = useConfirmar();
   const [carreras, setCarreras] = useState<TablaFijaRow[]>([]);
   const [guardadas, setGuardadas] = useState<DupletaEstado[]>([]);
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
@@ -178,7 +181,7 @@ export function DupletaModule() {
   const [vendiendoDupleta, setVendiendoDupleta] = useState(false);
 
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
-    window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
+    emitirToast(msg, tipo);
   }, []);
 
   useEffect(() => {
@@ -341,7 +344,14 @@ export function DupletaModule() {
     const detalle = ventas
       ? `\n\n⚠️ Contiene ${ventas} venta(s) registrada(s). Los tickets NO se anulan: la dupleta solo se retira de la lista.`
       : "";
-    if (!window.confirm(`¿Eliminar la dupleta ${nombreHip(g.hipodromo)} C${g.carrera1}×C${g.carrera2} del ${g.fecha}?${detalle}`)) {
+    const ok = await confirmar({
+      titulo: "Eliminar dupleta",
+      mensaje: `¿Eliminar la dupleta ${nombreHip(g.hipodromo)} C${g.carrera1}×C${g.carrera2} del ${g.fecha}?${detalle}`,
+      tipo: "error",
+      textoConfirmar: "Eliminar",
+      destructivo: true,
+    });
+    if (!ok) {
       return;
     }
     const r = await eliminarDupleta(claveDeDupleta(g));
@@ -804,14 +814,16 @@ export function DupletaModule() {
     if (!(pr > 0)) return toast("El precio del cuadro debe ser mayor a cero.", "warning");
     if (pr === (Number(matriz.precio) || 0)) return toast("El precio por cuadro ya es ese.", "info");
     const vendidas = Object.values(matriz.celdas).filter((c) => c.vendida).length;
-    if (
-      vendidas &&
-      !window.confirm(
-        `Hay ${vendidas} cuadro(s) ya vendido(s): conservan el precio cobrado. ` +
-          `Se aplicará $${pr.toLocaleString("es-VE")} a los cuadros libres. ¿Continuar?`
-      )
-    ) {
-      return;
+    if (vendidas) {
+      const ok = await confirmar({
+        titulo: "Aplicar precio global",
+        mensaje:
+          `Hay ${vendidas} cuadro(s) ya vendido(s): conservan el precio cobrado. ` +
+          `Se aplicará $${pr.toLocaleString("es-VE")} a los cuadros libres. ¿Continuar?`,
+        tipo: "warning",
+        textoConfirmar: "Aplicar",
+      });
+      if (!ok) return;
     }
     // "Aplicar a todos" implica el precio global para TODOS los cuadros libres:
     // se descartan los precios por-combinación (overrides) de los cuadros no

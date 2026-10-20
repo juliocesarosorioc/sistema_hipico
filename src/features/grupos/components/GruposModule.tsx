@@ -8,7 +8,13 @@ import { Button } from "@/shared/components/ui/Button";
 
 import { LogoUploader } from "@/shared/components/ui/LogoUploader";
 
+import { LogoDisplay } from "@/shared/components/ui/LogoDisplay";
+
 import { ToastHost } from "@/shared/components/ui/ToastHost";
+
+import { emitirLogosActualizados, emitirToast } from "@/shared/lib/mensajeria";
+
+import { useConfirmar } from "@/shared/store/useConfirmStore";
 
 import { BANCOS_VZLA, formatearCuenta } from "@/shared/lib/vzla";
 
@@ -110,7 +116,7 @@ import {
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
 
-  window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
+  emitirToast(msg, tipo);
 
 
 
@@ -269,6 +275,8 @@ export function GruposModule() {
   const [modalGrupo, setModalGrupo] = useState(false);
 
   const [guardando, setGuardando] = useState(false);
+
+  const confirmar = useConfirmar();
 
 
 
@@ -554,6 +562,9 @@ export function GruposModule() {
 
     toast(`Grupo "${nombre}" creado.`, "success");
 
+    // Propagación reactiva del logo del grupo: cabeceras/reportes al instante.
+    emitirLogosActualizados({ grupoId: "" });
+
     setFormNombre("");
 
     setFormLogo(null);
@@ -600,7 +611,21 @@ export function GruposModule() {
 
   const eliminarGrupo = async (g: GrupoRow) => {
 
-    if (!confirm(`Eliminar el grupo "${g.nombre}"?\nSus clientes pasarán al grupo PRINCIPAL.`)) return;
+    const ok = await confirmar({
+
+      titulo: "Eliminar grupo",
+
+      mensaje: `¿Eliminar el grupo "${g.nombre}"?\nSus clientes pasarán al grupo PRINCIPAL.`,
+
+      tipo: "error",
+
+      textoConfirmar: "Eliminar",
+
+      destructivo: true,
+
+    });
+
+    if (!ok) return;
 
     const r = await eliminarGrupoRpc(g.id);
 
@@ -705,6 +730,9 @@ export function GruposModule() {
     setEditando(null);
 
     toast(`Grupo "${nombre}" actualizado. Comisiones por convenio guardadas.`, "success");
+
+    // Propagación reactiva del logo del grupo: cabeceras/reportes al instante.
+    emitirLogosActualizados({ grupoId: String(id) });
 
   };
 
@@ -1373,15 +1401,7 @@ export function GruposModule() {
 
                     <div key={String(g.id)} className="flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-3 py-2">
 
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white p-0.5 shadow-inner">
-
-                        {g.logo_url ? (
-                          <img src={g.logo_url} alt={`Logo de ${g.nombre}`} className="h-full w-full object-contain" />
-                        ) : (
-                          <span className="text-sm leading-none text-slate-400" aria-hidden="true">🏇</span>
-                        )}
-
-                      </div>
+                      <LogoDisplay src={g.logo_url} alt={`Logo de ${g.nombre}`} tamano={36} />
 
                       <div className="min-w-0 flex-1">
 

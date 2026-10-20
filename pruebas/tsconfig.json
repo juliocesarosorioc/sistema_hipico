@@ -39,6 +39,7 @@
     "../src/features/carreras/lib/maestro-nucleo.ts",
     "../src/features/hipodromos/lib/tipos.ts",
     "../src/shared/lib/logos.ts",
+    "../src/shared/lib/mensajeria.ts",
     "../src/core/utils/fechas.ts",
     "../src/features/tablas/lib/validar-carga.ts",
     "../src/features/remates/lib/core.ts",
@@ -102,6 +103,7 @@
     "./reversion-liquidacion.test.ts",
     "./preview-carrera.test.ts",
     "./estados-jugada.test.ts",
-    "./resolver-ejemplar.test.ts"
+    "./resolver-ejemplar.test.ts",
+    "./mensajeria-logos.test.ts"
   ]
 }

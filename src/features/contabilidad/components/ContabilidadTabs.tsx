@@ -38,6 +38,8 @@ import {
   type TipoDeposito,
   type TransaccionRow,
 } from "@/features/contabilidad/lib/contabilidad";
+import { emitirToast } from "@/shared/lib/mensajeria";
+import { useConfirmar } from "@/shared/store/useConfirmStore";
 
 const inp =
   "w-full border border-line rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary-500 bg-surface";
@@ -50,7 +52,7 @@ const fechaCorta = (f: string | null) =>
   f ? new Date(f).toLocaleString("es-VE", { dateStyle: "short", timeStyle: "short" }) : "—";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
-  window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
+  emitirToast(msg, tipo);
 
 // ===========================================================================
 //  📥  INGRESOS / AVALES   (js/depositos.js)
@@ -691,6 +693,7 @@ export function TabBancos({
   monedas: MonedaRow[];
   onHecho: () => Promise<void>;
 }) {
+  const confirmar = useConfirmar();
   const [filtro, setFiltro] = useState("");
   const [editando, setEditando] = useState<BancoRow | null>(null);
   const [nombre, setNombre] = useState("");
@@ -728,7 +731,14 @@ export function TabBancos({
   };
 
   const borrar = async (b: BancoRow) => {
-    if (!confirm(`¿Eliminar la cuenta "${b.nombre}"?`)) return;
+    const ok = await confirmar({
+      titulo: "Eliminar cuenta",
+      mensaje: `¿Eliminar la cuenta "${b.nombre}"?`,
+      tipo: "error",
+      textoConfirmar: "Eliminar",
+      destructivo: true,
+    });
+    if (!ok) return;
     const r = await eliminarBanco(b.id);
     if (!r.ok) return toast(r.error ?? "Error al eliminar.", "error");
     toast("Banco eliminado.", "success");
@@ -881,6 +891,7 @@ export function TabMonedas({
   referencias: TasaReferenciaRow[];
   onHecho: () => Promise<void>;
 }) {
+  const confirmar = useConfirmar();
   const [monedaId, setMonedaId] = useState("");
   const [nuevaTasa, setNuevaTasa] = useState("");
   const [nuevaMoneda, setNuevaMoneda] = useState({ nombre: "", codigo: "", simbolo: "", tasa: "" });
@@ -892,12 +903,13 @@ export function TabMonedas({
     if (!monedaId) return toast("Seleccione la moneda.", "warning");
     const t = numDe(nuevaTasa);
     if (!(t > 0)) return toast("La tasa debe ser un número mayor a cero.", "warning");
-    if (
-      !confirm(
-        `Registrar la tasa ${t}?\n\nLa vigente es la más reciente por fecha; la anterior se conserva como histórico.`
-      )
-    )
-      return;
+    const ok = await confirmar({
+      titulo: "Registrar tasa",
+      mensaje: `Registrar la tasa ${t}?\n\nLa vigente es la más reciente por fecha; la anterior se conserva como histórico.`,
+      tipo: "info",
+      textoConfirmar: "Registrar",
+    });
+    if (!ok) return;
     const r = await registrarTasaCambio(monedaId, t);
     if (!r.ok) return toast(r.error ?? "Error al registrar.", "error");
     toast("Tasa registrada.", "success");
