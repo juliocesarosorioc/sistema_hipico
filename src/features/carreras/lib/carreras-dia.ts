@@ -114,6 +114,95 @@ export async function leerResultadoOficial(
 }
 
 /**
+ * JORNADA REAL de una carrera: el día al que pertenece, resuelto por su
+ * identidad (hipódromo + número), no por el reloj.
+ *
+ * POR QUÉ EXISTE
+ * --------------
+ * La Taquilla liquidaba con `hoyLocal()` fijo. Si el operador cargaba el
+ * resultado al día siguiente (o de una carrera de otra jornada), el motor
+ * buscaba los tickets en el día de HOY, no los encontraba y devolvía
+ * «Sin tickets pendientes»: nadie cobraba ni pagaba (VALENCIA C9, LA RINCONADA
+ * C9). Acá se resuelve el día correcto antes de liquidar.
+ *
+ * ORDEN DE CONFIANZA (la primera que responda gana):
+ *   1. `carreras` (la MATRIZ MAESTRA): una fila por carrera, es la definición
+ *      de a qué jornada pertenece.
+ *   2. `resultados_carreras`: la carrera que ya tiene resultado cargado.
+ *   3. `tickets_apuestas.fecha_carrera`: la jornada con la que se vendieron.
+ * Si ninguna responde, devuelve `null` y el llamador decide el fallback.
+ */
+export async function jornadaDeCarrera(
+  hipodromo: string,
+  carrera: number | string
+): Promise<string | null> {
+  if (!supabase) return null;
+  const hip = String(hipodromo ?? "").trim().toUpperCase();
+  const n = Number(carrera) || 0;
+  if (!hip || n < 1) return null;
+  const sdb = supabase;
+
+  const masReciente = (valor: unknown): string | null => {
+    const iso = String(valor ?? "").slice(0, 10);
+    return iso ? iso : null;
+  };
+
+  // 1) Matriz maestra (`carreras`): fuente de verdad de la jornada.
+  try {
+    const { data, error } = await sdb
+      .from("carreras")
+      .select("fecha")
+      .ilike("hipodromo", `%${hip}%`)
+      .eq("carrera", n)
+      .order("fecha", { ascending: false })
+      .limit(1);
+    if (!error && data?.length) {
+      const f = masReciente((data[0] as { fecha?: unknown }).fecha);
+      if (f) return f;
+    }
+  } catch {
+    /* best-effort: se intenta con la siguiente fuente */
+  }
+
+  // 2) La carrera que ya tiene resultado cargado.
+  try {
+    const { data, error } = await sdb
+      .from("resultados_carreras")
+      .select("fecha")
+      .ilike("hipodromo", `%${hip}%`)
+      .eq("carrera", n)
+      .order("fecha", { ascending: false })
+      .limit(1);
+    if (!error && data?.length) {
+      const f = masReciente((data[0] as { fecha?: unknown }).fecha);
+      if (f) return f;
+    }
+  } catch {
+    /* best-effort */
+  }
+
+  // 3) La jornada con la que se vendieron los tickets.
+  try {
+    const { data, error } = await sdb
+      .from("tickets_apuestas")
+      .select("fecha_carrera")
+      .eq("hipodromo", hip)
+      .eq("carrera", n)
+      .not("fecha_carrera", "is", null)
+      .order("fecha_carrera", { ascending: false })
+      .limit(1);
+    if (!error && data?.length) {
+      const f = masReciente((data[0] as { fecha_carrera?: unknown }).fecha_carrera);
+      if (f) return f;
+    }
+  } catch {
+    /* best-effort */
+  }
+
+  return null;
+}
+
+/**
  * Permisos que habilitan a GUARDAR el resultado de una carrera. Cada botón
  * legítimo (Carga de Resultados, Liquidar, Pagar carrera, Registrar carrera)
  * entra por uno distinto, así que se acepta cualquiera de ellos. La lista

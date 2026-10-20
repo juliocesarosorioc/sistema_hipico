@@ -44,3 +44,30 @@ export function filtroDiaJornada(dia: string): string {
   const { desde, hasta } = ventanaDiaLocal(d);
   return `fecha_carrera.eq.${d},and(fecha_carrera.is.null,fecha_registro.gte.${desde},fecha_registro.lt.${hasta})`;
 }
+
+/**
+ * Días de jornada DISTINTOS de `dia` en los que también hay jugadas de la misma
+ * carrera (mismo hipódromo y número). Se usa para detectar el caso que dejaba a
+ * una carrera sin cobrar ni pagar:
+ *
+ *   Una jugada quedó archivada bajo OTRA jornada (`fecha_carrera` corrida un
+ *   día, o sellada con la fecha de venta equivocada), así que `filtroDiaJornada`
+ *   no la encuentra al liquidar: el motor devolvía «Sin tickets pendientes» en
+ *   verde y nadie cobraba ni pagaba (VALENCIA C9, LA RINCONADA C9).
+ *
+ * Recibe las `fecha_carrera` crudas de los tickets de esa carrera y devuelve,
+ * ordenados, los días que NO son `dia` (los que quedaron mal archivados). Es una
+ * función PURA: la lectura la hace el llamador.
+ */
+export function jornadasDesalineadas(
+  dia: string,
+  fechasDeTickets: Array<string | null | undefined>
+): string[] {
+  const d = String(dia ?? "").slice(0, 10);
+  const otros = new Set<string>();
+  for (const f of fechasDeTickets) {
+    const iso = String(f ?? "").slice(0, 10);
+    if (iso && iso !== d) otros.add(iso);
+  }
+  return [...otros].sort();
+}

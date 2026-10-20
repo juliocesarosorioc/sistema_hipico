@@ -14,7 +14,7 @@
 import { supabase } from "@/core/supabase";
 import { liquidarOficial } from "@/features/motores/lib/oficiales";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
-import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
+import { filtroDiaJornada, jornadasDesalineadas } from "@/features/liquidacion/lib/fecha";
 import { parsearNini, netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem, esJugadaDePuestos } from "@/features/betting/lib/bettingEngine";
 import type { TicketMotor, ResultadoMotor } from "@/features/betting/lib/bettingEngine";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
@@ -196,6 +196,39 @@ export function creditoDeTicket(res: ResultadoMotor): number {
 }
 
 /**
+ * Días de jornada (`fecha_carrera`) en los que existen jugadas de la MISMA
+ * carrera (hipódromo + número), excluyendo el día esperado.
+ *
+ * Es la red de seguridad contra el fallo que dejaba a una carrera sin cobrar ni
+ * pagar: si las jugadas quedaron archivadas bajo otra jornada, la liquidación de
+ * `dia` no las encuentra y —antes— devolvía un OK en verde. Con esto, el motor
+ * distingue «esta carrera no tiene jugadas» (OK legítimo) de «las jugadas están
+ * en otro día» (ERROR que hay que corregir).
+ *
+ * La lectura es best-effort: si la consulta falla, devuelve [] para no romper el
+ * camino normal (una liquidación sin jugadas sigue siendo válida).
+ */
+async function jornadasConJugadasDeOtraFecha(
+  sdb: NonNullable<typeof supabase>,
+  input: LiquidarSaldosInput,
+  dia: string
+): Promise<string[]> {
+  try {
+    const { data, error } = await sdb
+      .from("tickets_apuestas")
+      .select("fecha_carrera")
+      .eq("hipodromo", input.hipodromo.trim().toUpperCase())
+      .eq("carrera", Number(input.carrera))
+      .limit(2000);
+    if (error) return [];
+    const fechas = (data ?? []) as Array<{ fecha_carrera: string | null }>;
+    return jornadasDesalineadas(dia, fechas.map((r) => r.fecha_carrera));
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Liquida TODOS los tickets Pendientes de una carrera y aplica el resultado
  * en la BD: estado Ganador/Perdedor + premio_pagar + incremento de
  * clientes.saldo_actual del ganador (abono). Return resumen + errores.
@@ -258,10 +291,34 @@ export async function aplicarLiquidacionSaldos(
     .in("estado", ["Ganador", "Perdedor", "Retirado"])
     .not("nombre_jugada", "like", "MARCA %")
     .limit(1);
-  if (filas.length === 0 && ((decididos ?? []).length > 0 || filas.length === 0)) {
+  if (filas.length === 0) {
     if ((decididos ?? []).length > 0) {
       return { ok: true, motivo: "Carrera ya liquidada (tickets decididos). Sin cambios.", aplicados: 0, yaAplicado: true, reembolsos: 0, abonoTotal: 0, errores: [] };
     }
+
+    // No hay pendientes HOY. Antes esto se devolvía como un OK en verde
+    // («Sin tickets pendientes») y la carrera quedaba sin cobrar ni pagar para
+    // siempre. Ahora se comprueba si la MISMA carrera tiene jugadas archivadas
+    // bajo otra jornada: si las hay, la liquidación no es un éxito, es un ERROR
+    // que nombra hasta dónde se movieron los tickets.
+    const desalineadas = await jornadasConJugadasDeOtraFecha(sdb, input, dia);
+    if (desalineadas.length > 0) {
+      const dias = desalineadas.join(", ");
+      return {
+        ok: false,
+        motivo:
+          `La carrera tiene jugadas archivadas en OTRA jornada (${dias}), no en el ${dia}. ` +
+          `No se cobró ni se pagó a nadie. Corregí la fecha de esas jugadas (o recalcular la carrera) y volvé a liquidar.`,
+        aplicados: 0,
+        yaAplicado: false,
+        reembolsos: 0,
+        abonoTotal: 0,
+        errores: [
+          `Jugadas de ${input.hipodromo.trim().toUpperCase()} C${Number(input.carrera)} encontradas en: ${dias}. Esperado: ${dia}.`,
+        ],
+      };
+    }
+
     return { ok: true, motivo: "Sin tickets pendientes para esta carrera.", aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [] };
   }
 

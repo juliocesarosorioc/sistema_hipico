@@ -5,7 +5,7 @@ import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla } from "@/features/liquidacion/lib/pagarYCerrar";
 import { reversarLiquidacionCarrera } from "@/features/liquidacion/lib/reversar";
-import { leerResultadoOficial } from "@/features/carreras/lib/carreras-dia";
+import { leerResultadoOficial, jornadaDeCarrera } from "@/features/carreras/lib/carreras-dia";
 import { tieneCapacidad, usuarioVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
 import { dividendosDePizarra as dividendosDe } from "@/features/liquidacion/lib/posiciones";
@@ -55,6 +55,15 @@ export function PagarCarreraModal() {
    * ABIERTA de nuevo (devuelve premios, reabre tablas/remates/pollas).
    */
   const [liquidada, setLiquidada] = useState(false);
+  /**
+   * JORNADA REAL de la carrera elegida (hipódromo + número), resuelta por su
+   * identidad —no por el reloj—. Antes este modal usaba `hoyLocal()` fijo: al
+   * cargar el resultado de una carrera de otra jornada, el motor buscaba los
+   * tickets en el día de HOY, no los encontraba y devolvía «Sin tickets
+   * pendientes» → nadie cobraba ni pagaba (VALENCIA C9, LA RINCONADA C9).
+   * `null` = todavía no se resolvió (se cae a `hoyLocal()`).
+   */
+  const [jornada, setJornada] = useState<string | null>(null);
   const [modalReversar, setModalReversar] = useState(false);
   const [reversando, setReversando] = useState(false);
   const [resumen, setResumen] = useState<{
@@ -91,11 +100,20 @@ export function PagarCarreraModal() {
     const n = Number(carrera);
     if (!hip || !Number.isFinite(n) || n < 1) {
       setLiquidada(false);
+      setJornada(null);
       return;
     }
     try {
-      const r = await leerResultadoOficial(hip, n, hoyLocal());
-      setLiquidada(!!r && r.puestos.length > 0);
+      // La jornada REAL de la carrera (no `hoyLocal()`): así la detección de
+      // "ya liquidada" (y todo lo que sigue) mira el día correcto aunque el
+      // resultado se cargue con retraso o sea de otra jornada.
+      const dia = (await jornadaDeCarrera(hip, n)) ?? hoyLocal();
+      setJornada(dia);
+      const r = await leerResultadoOficial(hip, n, dia);
+      // Fallback: si en esa jornada no hay resultado, se prueba sin fecha (la
+      // más reciente) para no perder el botón «Reversar» por un desfase.
+      const rr = r ?? (await leerResultadoOficial(hip, n));
+      setLiquidada(!!rr && rr.puestos.length > 0);
     } catch {
       setLiquidada(false);
     }
@@ -124,7 +142,7 @@ export function PagarCarreraModal() {
       const r = await reversarLiquidacionCarrera({
         hipodromo: hipodromo.trim().toUpperCase(),
         carrera: Number(carrera),
-        fecha: hoyLocal(),
+        fecha: jornada ?? hoyLocal(),
         usuario: usuarioVigente(),
       });
       setResultado(r.ok ? `🔄 ${r.motivo}` : `❌ ${r.motivo}${r.errores.length ? ` · ${r.errores.join(" | ")}` : ""}`);
@@ -150,7 +168,7 @@ export function PagarCarreraModal() {
     setCargandoReporte(true);
     try {
       const hip = hipodromo.trim().toUpperCase();
-      const c = await carreraReporteDetalle(hoyLocal(), hip, Number(carrera));
+      const c = await carreraReporteDetalle(jornada ?? hoyLocal(), hip, Number(carrera));
       if (!c) return setReporteCarrera(null);
       // Logos FRESCOS de la cabecera (hipódromo + grupo): se leen en el momento,
       // así un logo incorporado después sale igual sin recargar la página. Los
@@ -198,6 +216,10 @@ export function PagarCarreraModal() {
     setTrabajando(true);
     setResultado("");
     setTablaMensaje("");
+    // La jornada REAL de la carrera (resuelta al elegirla); si por lo que sea no
+    // se resolvió, se cae a hoy. Es la que usan la liquidación, los saldos y el
+    // reporte para no mirar el día equivocado.
+    const dia = jornada ?? (await jornadaDeCarrera(hipodromo.trim().toUpperCase(), Number(carrera))) ?? hoyLocal();
     // Los pools por caballo y la matriz W/P/S salen al motor en el mismo objeto.
     const divs = dividendosDe(r);
     const tabla = tablas.find(
@@ -208,6 +230,7 @@ export function PagarCarreraModal() {
     const res = await liquidarCarreraYCerrarTabla({
       hipodromo: hipodromo.trim().toUpperCase(),
       carrera: Number(carrera),
+      fecha: dia,
       pizarra: r.pizarra,
       dividendos: divs,
       // El premio de la tabla viaja al resultado central para que el upsert no
@@ -230,12 +253,16 @@ export function PagarCarreraModal() {
       const s = await aplicarLiquidacionSaldos({
         hipodromo: hipodromo.trim().toUpperCase(),
         carrera: Number(carrera),
+        fecha: dia,
         pizarra: r.pizarra,
         dividendos: divs,
         premio_por_tabla: r.premio_por_tabla ?? tabla?.premio_recalculado ?? tabla?.premio_original ?? null,
       });
       if (!s.ok && s.errores.length) {
-        toast("Aviso de saldos: " + s.errores[0], "warning");
+        // Un fallo de saldos ya no puede pasar como simple «aviso»: si la
+        // carrera tenía jugadas archivadas en otra jornada, hay que verlo.
+        toast("⚠️ Saldos: " + s.errores[0], "error");
+        setTablaMensaje("⚠️ " + s.motivo);
       }
       if (s.motivo.includes("PENDIENTES")) {
         setTablaMensaje("Aviso: " + s.motivo);
