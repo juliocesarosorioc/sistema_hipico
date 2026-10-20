@@ -31,6 +31,8 @@
     "../src/features/carreras/lib/agruparHipodromos.ts",
     "../src/features/clientes/lib/cuadernoResumen.ts",
     "../src/features/grupos/lib/comisiones-convenio.ts",
+    "../src/features/grupos/lib/visibilidad-principal.ts",
+    "../src/features/grupos/lib/atribucion-grupo.ts",
     "../src/features/liquidacion/lib/reversar-nucleo.ts",
     "../src/features/liquidacion/lib/estados-jugada.ts",
     "../src/features/liquidacion/lib/resolver-ejemplar-nucleo.ts",
@@ -106,6 +108,8 @@
     "./resolver-ejemplar.test.ts",
     "./mensajeria-logos.test.ts",
     "./bitacora-externa.test.ts",
-    "./modalidad-tiempo.test.ts"
+    "./modalidad-tiempo.test.ts",
+    "./visibilidad-principal.test.ts",
+    "./atribucion-grupo.test.ts"
   ]
 }
