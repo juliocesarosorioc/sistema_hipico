@@ -49,9 +49,11 @@ comment on column public.polla_ventas.es_adelantada is
 -- ---------------------------------------------------------------------------
 -- Índice parcial: los reportes filtran `es_adelantada = true` sobre pocas filas
 -- de una jornada; el índice parcial lo mantiene minúsculo.
+-- OJO: `tickets_apuestas` NO tiene columna `fecha` (usa `fecha_registro` /
+-- `fecha_carrera`). Los reportes ordenan/filtran por `fecha_registro`.
 -- ---------------------------------------------------------------------------
 create index if not exists tickets_apuestas_adelantadas_idx
-  on public.tickets_apuestas (fecha, hipodromo, carrera)
+  on public.tickets_apuestas (fecha_registro)
   where es_adelantada;
 
 -- ---------------------------------------------------------------------------
