@@ -54,8 +54,17 @@ function consiguePorJuega(c: CarreraReporte): Map<string, { cliente: string; res
   return mapa;
 }
 
-/** Tipo de jugada → sección de «Parada Adelantadas» para las que ganaron. */
-function seccionAdelantadaDe(jugada: string): "tablas" | "marcas" | "tercios" | null {
+/**
+ * Tipo de jugada → sección de «Parada Adelantadas» para las que ganaron.
+ * Se prefiere el `tipo` explícito de la fila (la columna "Jugada" va compacta y
+ * ya no lleva el prefijo de la modalidad); si no viene, se cae al rótulo.
+ */
+function seccionAdelantadaDe(
+  jugada: string,
+  tipo?: "TABLA" | "MARCA" | null
+): "tablas" | "marcas" | "tercios" | null {
+  if (tipo === "TABLA") return "tablas";
+  if (tipo === "MARCA") return "marcas";
   const t = String(jugada ?? "").toUpperCase();
   if (/^TABLA/.test(t)) return "tablas";
   if (/^MARCAS?/.test(t)) return "marcas";
@@ -142,12 +151,17 @@ export function armarReporteCarrera(
       // `etiquetaJugada` rotula "PP" un MATCH sin fracción (nunca "10/10"); los
       // ejemplares viajan en `caballo` y la plantilla los pinta "1 × 8" con el
       // DA al lado, distinguiendo quién juega uno y quién el otro.
-      // APOSTÓ de cada lado: el que JUEGA arriesga su monto; el que DA arriesga
-      // su parte de la proporción (null cuando la jugada no tiene par).
+      // Las MARCAS y TABLAS FIJAS ya vienen rotuladas compactas ("2 x 8",
+      // "TABLA FIJA 6"): NO pasan por `etiquetaJugada`, que convertiría el
+      // "2 x 8" de una marca en "PP" al ver el patrón "N x N".
+      const jugo =
+        f.tipoJugada === "MARCA" || f.tipoJugada === "TABLA"
+          ? f.jugada
+          : etiquetaJugada(f.jugada);
       jugadasVivo.push({
         juega: f.cliente,
         aposto: riesgoDeFila(f),
-        jugo: etiquetaJugada(f.jugada),
+        jugo,
         caballo: f.caballo,
         da,
         apostoDa: cons ? cons.riesgo : null,
@@ -166,11 +180,11 @@ export function armarReporteCarrera(
 
     // «Parada Adelantadas»: la mitad del JUEGA que ganó, por tipo de jugada.
     if (resultado !== null && resultado > 0 && f.rol !== "Consigue") {
-      const seccion = seccionAdelantadaDe(f.jugada);
+      const seccion = seccionAdelantadaDe(f.jugada, f.tipoJugada);
       if (seccion) {
         // BLOQUE 5: la descripción lleva SIEMPRE los ejemplares desglosados
-        // ("#8 vs #3" en Marcas, "#7 (Golfo)" en Tablas Fijas); las filas
-        // viejas sin `ejemplar` caen a `caballo`.
+        // ("2 x 8" en Marcas, "6" en Tablas Fijas); las filas viejas sin
+        // `ejemplar` caen a `caballo`.
         adelantadas[seccion].push({
           juega: f.cliente,
           descripcion: (f.ejemplar ?? f.caballo) || undefined,

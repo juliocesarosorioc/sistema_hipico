@@ -41,10 +41,16 @@ export type FilaReporte = {
   esPareo?: boolean;
   /**
    * Desglose breve del/los ejemplar(es) SIN el tipo de jugada (Bloque 5):
-   * "#8 vs #3" en Marcas, "#7 (Golfo)" en Tablas Fijas. Lo usa la sección
-   * «Parada Adelantadas» del Reporte de Carrera; si falta se cae a `caballo`.
+   * "2 x 8" en Marcas, "6" en Tablas Fijas. Lo usa la sección «Parada
+   * Adelantadas» del Reporte de Carrera; si falta se cae a `caballo`.
    */
   ejemplar?: string;
+  /**
+   * Tipo de jugada para clasificar en «Parada Adelantadas». Se guarda aparte
+   * porque la columna "Jugada" ahora va compacta ("2 x 8", "TABLA FIJA 6") y
+   * ya no se puede deducir la modalidad por el prefijo del texto.
+   */
+  tipoJugada?: "TABLA" | "MARCA" | null;
 };
 
 export type CarreraReporte = {
@@ -571,6 +577,7 @@ async function carreraReporte(
       resultado: resultadoJuega,
       esPareo,
       ejemplar: desglose.ejemplar,
+      tipoJugada: desglose.tipo,
     });
 
     if (clienteConsigue) {
@@ -584,6 +591,7 @@ async function carreraReporte(
         resultado: resultadoConsigueDe(monto, ev),
         esPareo,
         ejemplar: desglose.ejemplar,
+        tipoJugada: desglose.tipo,
       });
     }
 
