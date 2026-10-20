@@ -6,7 +6,7 @@ import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla } from "@/features/liquidacion/lib/pagarYCerrar";
 import { reversarLiquidacionCarrera } from "@/features/liquidacion/lib/reversar";
 import { leerResultadoOficial } from "@/features/carreras/lib/carreras-dia";
-import { tieneCapacidad, usuarioVigente } from "@/features/seguridad/lib/vigente";
+import { tieneCapacidad, usuarioVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
 import { dividendosDePizarra as dividendosDe } from "@/features/liquidacion/lib/posiciones";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
@@ -14,6 +14,8 @@ import { CargaResultadosModal, type PizarraResultados } from "@/features/liquida
 import { Button } from "@/shared/components/ui/Button";
 import { carreraReporteDetalle } from "@/features/liquidacion/lib/reportes";
 import { armarReporteCarrera } from "@/features/liquidacion/lib/reporte-carrera";
+import { logosFrescosDeCarrera } from "@/features/liquidacion/lib/logos-reporte";
+import { listarGruposAdmin } from "@/features/grupos/lib/grupos";
 import { lookupDisponible } from "@/features/taquilla/lib/reparto";
 import { listarClientes, type ClienteRow } from "@/features/clientes/lib/clientes";
 import { exportarReporteCarreraImagen } from "@/features/liquidacion/lib/reporte-imagen";
@@ -147,8 +149,22 @@ export function PagarCarreraModal() {
   const verReporte = async () => {
     setCargandoReporte(true);
     try {
-      const c = await carreraReporteDetalle(hoyLocal(), hipodromo.trim().toUpperCase(), Number(carrera));
-      setReporteCarrera(c ? armarReporteCarrera(c, undefined, disponibleDe) : null);
+      const hip = hipodromo.trim().toUpperCase();
+      const c = await carreraReporteDetalle(hoyLocal(), hip, Number(carrera));
+      if (!c) return setReporteCarrera(null);
+      // Logos FRESCOS de la cabecera (hipódromo + grupo): se leen en el momento,
+      // así un logo incorporado después sale igual sin recargar la página. Los
+      // grupos se leen una sola vez y se comparten para el nombre y el logo.
+      const grupoId = grupoVigente() || undefined;
+      const gs = await listarGruposAdmin(true).catch(() => []);
+      const frescos = await logosFrescosDeCarrera({ hipodromo: hip, grupoId, gruposYaLeidos: gs });
+      const nombreGrupo = grupoId ? gs.find((g) => String(g.id) === grupoId)?.nombre : undefined;
+      setReporteCarrera(
+        armarReporteCarrera(c, nombreGrupo, disponibleDe, {
+          logoHipodromo: frescos.logoHipodromo,
+          logoGrupo: frescos.logoGrupo,
+        })
+      );
     } finally {
       setCargandoReporte(false);
     }

@@ -13,6 +13,7 @@ import { lookupDisponible } from "@/features/taquilla/lib/reparto";
 import { listarClientes, type ClienteRow } from "@/features/clientes/lib/clientes";
 import { exportarReporteCarreraImagen } from "@/features/liquidacion/lib/reporte-imagen";
 import { listarGruposAdmin, type GrupoRow } from "@/features/grupos/lib/grupos";
+import { logosFrescosDeCarrera } from "@/features/liquidacion/lib/logos-reporte";
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
@@ -77,8 +78,11 @@ export default function ReporteLiquidacionModal({
   /** Catálogo con `logo_url` para la cabecera del reporte. */
   const [catalogoHipodromos, setCatalogoHipodromos] = useState<Hipodromo[]>([]);
 
-  // Logos de los hipódromos: la cabecera azul los pinta desde acá.
+  // Logos de los hipódromos: la cabecera azul los pinta desde acá. Se relee
+  // CADA VEZ que se abre el modal, para que un logo incorporado mientras tanto
+  // aparezca sin recargar la página.
   useEffect(() => {
+    if (!abierto) return;
     let vivo = true;
     listarHipodromos()
       .then((r) => vivo && setCatalogoHipodromos(r.data))
@@ -86,7 +90,7 @@ export default function ReporteLiquidacionModal({
     return () => {
       vivo = false;
     };
-  }, []);
+  }, [abierto]);
 
   // Ítem 10: cartera de clientes para saber el disponible (saldo + aval) y
   // marcar con asterisco a quien arriesgó más de lo que dispone.
@@ -111,8 +115,11 @@ export default function ReporteLiquidacionModal({
     setDatos(null);
   }, [abierto, fechaInicial, hipodromoInicial, carreraInicial]);
 
-  // Grupos hípicos (para el encabezado del reporte).
+  // Grupos hípicos (para el encabezado del reporte). Se releen al ABRIR y se
+  // fuerza el salto del caché (`true`), porque el caché de grupos quedaba viejo
+  // tras incorporar/editar el logo del grupo.
   useEffect(() => {
+    if (!abierto) return;
     let vivo = true;
     listarGruposAdmin(true)
       .then((gs) => {
@@ -127,7 +134,7 @@ export default function ReporteLiquidacionModal({
     return () => {
       vivo = false;
     };
-  }, []);
+  }, [abierto]);
 
   // Carreras con resultado cargado de la fecha (recientes o pasadas).
   useEffect(() => {
@@ -218,17 +225,31 @@ export default function ReporteLiquidacionModal({
     }
     let vivo = true;
     setCargandoDetalle(true);
+    // Logos FRESCOS en el momento de armar el reporte: no dependemos de que el
+    // catálogo cargado al abrir ya tenga el logo recién incorporado. Se
+    // resuelven contra la base en paralelo con el detalle de la carrera.
+    const logoGrupoId = grupoId || grupoActivoVigente() || undefined;
     carreraReporteDetalle(fecha, hipodromo, carrera)
-      .then((c: CarreraReporte | null) => {
+      .then(async (c: CarreraReporte | null) => {
         if (!vivo) return;
-        setDatos(c ? armarReporteCarrera(c, nombreGrupo, disponibleDe, { liquidada, logoHipodromo, logoGrupo }) : null);
+        if (!c) return setDatos(null);
+        const frescos = await logosFrescosDeCarrera({ hipodromo, grupoId: logoGrupoId });
+        if (!vivo) return;
+        setDatos(
+          armarReporteCarrera(c, nombreGrupo, disponibleDe, {
+            liquidada,
+            // El fresco manda; si no se pudo leer, cae al catálogo en memoria.
+            logoHipodromo: frescos.logoHipodromo ?? logoHipodromo,
+            logoGrupo: frescos.logoGrupo ?? logoGrupo,
+          })
+        );
       })
       .catch(() => vivo && setDatos(null))
       .finally(() => vivo && setCargandoDetalle(false));
     return () => {
       vivo = false;
     };
-  }, [abierto, fecha, hipodromo, carrera, nombreGrupo, disponibleDe, liquidada, logoHipodromo, logoGrupo]);
+  }, [abierto, fecha, hipodromo, carrera, nombreGrupo, disponibleDe, liquidada, logoHipodromo, logoGrupo, grupoId]);
 
   if (!abierto) return null;
 

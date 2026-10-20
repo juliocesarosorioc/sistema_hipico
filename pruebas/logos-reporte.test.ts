@@ -16,6 +16,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { nombreArchivoLogo, validarArchivoLogo, LOGO_MAX_BYTES } from "../src/shared/lib/logos";
 import { armarReporteCarrera } from "../src/features/liquidacion/lib/reporte-carrera";
+import { logoDeHipodromo, logoDeGrupo } from "../src/features/liquidacion/lib/logos-reporte";
 import type { CarreraReporte } from "../src/features/liquidacion/lib/reportes";
 
 let pasan = 0;
@@ -145,6 +146,50 @@ const sql = leer("sql", "logos_hipodromos_grupos.sql");
 si(/alter table public\.hipodromos[\s\S]*logo_url/.test(sql), "SQL: hipodromos.logo_url");
 si(/alter table public\.grupos_venta[\s\S]*logo_url/.test(sql), "SQL: grupos_venta.logo_url");
 si(/club_actualizar_grupo/.test(sql) && /p_datos \? 'logo_url'/.test(sql), "SQL: la RPC de edición guarda logo_url");
+
+// ---------------------------------------------------------------------------
+// LOGO SIEMPRE FRESCO: resolución en el momento de armar el reporte
+// ---------------------------------------------------------------------------
+// El logo se resolvía desde catálogos cargados una sola vez al montar la
+// pantalla: si el operador incorporaba el logo después, el reporte seguía
+// mostrando el viejo (o ninguno) hasta recargar la página. Estas pruebas
+// protegen el núcleo puro y el cableado de los TRES puntos que arman el
+// reporte, para que el logo viaje fresco sin importar cuándo se cargó.
+console.log("\nLOGOS FRESCOS — transporte y cableado de los reportes");
+
+si(logoDeHipodromo([{ nombre: "SANTA ANITA", logo_url: "AAA" }], "santa anita") === "AAA", "logoDeHipodromo ignora mayúsculas/espacios");
+si(logoDeHipodromo([{ nombre: "OTRO", logo_url: "AAA" }], "SANTA ANITA") === null, "logoDeHipodromo sin match → null");
+si(logoDeHipodromo([{ nombre: "SANTA ANITA", logo_url: null }], "SANTA ANITA") === null, "hipódromo sin logo → null");
+si(logoDeHipodromo([], "") === null, "lista vacía / nombre vacío → null");
+
+const gruposLogo = [
+  { id: 1, nombre: "PRINCIPAL", es_principal: true, logo_url: "PRIN" },
+  { id: 2, nombre: "CLIENTE", es_principal: false, logo_url: "CLI" },
+];
+si(logoDeGrupo(gruposLogo, 2) === "CLI", "logoDeGrupo resuelve por id");
+si(logoDeGrupo(gruposLogo, null) === "PRIN", "sin id cae al grupo principal");
+si(logoDeGrupo(gruposLogo, 99) === null, "id inexistente → null");
+si(logoDeGrupo([], 1) === null, "sin grupos → null");
+
+// El helper `logosFrescosDeCarrera` lee la base en el momento (fuerza el salto
+// del caché de grupos) y nunca lanza.
+const logosLib = leer("src", "features", "liquidacion", "lib", "logos-reporte.ts");
+si(/export async function logosFrescosDeCarrera/.test(logosLib), "existe logosFrescosDeCarrera");
+si(/listarHipodromos\(\)/.test(logosLib), "lee el catálogo de hipódromos fresco");
+si(/listarGruposAdmin\(true\)/.test(logosLib), "fuerza el salto del caché de grupos");
+
+// Los tres puntos que arman el reporte usan el helper y pasan los logos.
+const modal2 = leer("src", "features", "gestion", "components", "ReporteLiquidacionModal.tsx");
+si(/logosFrescosDeCarrera/.test(modal2), "ReporteLiquidacionModal resuelve logos frescos");
+si(/\[abierto\]/.test(modal2), "ReporteLiquidacionModal relee catálogos al abrir");
+
+const pagar = leer("src", "features", "taquilla", "components", "PagarCarreraModal.tsx");
+si(/logosFrescosDeCarrera/.test(pagar), "PagarCarreraModal resuelve logos frescos");
+si(/logoHipodromo: frescos\.logoHipodromo/.test(pagar), "PagarCarreraModal pasa el logo del hipódromo");
+
+const selector = leer("src", "features", "saldos", "components", "SelectorReporteCarrera.tsx");
+si(/logosFrescosDeCarrera/.test(selector), "SelectorReporteCarrera resuelve logos frescos");
+si(/logoGrupo: frescos\.logoGrupo/.test(selector), "SelectorReporteCarrera pasa el logo del grupo");
 
 console.log(`\n${pasan} ok / ${fallan} fallaron`);
 if (fallan > 0) process.exit(1);

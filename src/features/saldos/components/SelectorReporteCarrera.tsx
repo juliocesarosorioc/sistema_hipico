@@ -8,6 +8,7 @@ import {
   type PlanillaReporte,
 } from "@/features/liquidacion/lib/reportes";
 import { armarReporteCarrera } from "@/features/liquidacion/lib/reporte-carrera";
+import { logosFrescosDeCarrera } from "@/features/liquidacion/lib/logos-reporte";
 import { exportarReporteCarreraImagen } from "@/features/liquidacion/lib/reporte-imagen";
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import { EmptyState } from "@/shared/components/ui/EmptyState";
@@ -68,9 +69,19 @@ export function SelectorReporteCarrera() {
     return lista;
   }, [planilla]);
 
-  const elegir = (c: CarreraElegible) => {
+  const elegir = async (c: CarreraElegible) => {
     setSeleccion(c);
-    setDatos(armarReporteCarrera(c));
+    // Logos FRESCOS de la cabecera (hipódromo + grupo) resueltos en el momento de
+    // armar el reporte: si se incorporó un logo hace un segundo, sale igual sin
+    // recargar la página.
+    const frescos = await logosFrescosDeCarrera({ hipodromo: c.hipodromo, grupoId, gruposYaLeidos: grupos });
+    const g = grupos.find((x) => String(x.id) === grupoId);
+    setDatos(
+      armarReporteCarrera(c, g?.nombre, undefined, {
+        logoHipodromo: frescos.logoHipodromo,
+        logoGrupo: frescos.logoGrupo,
+      })
+    );
   };
 
   const grupoVigente = grupos.find((g) => String(g.id) === grupoId);
