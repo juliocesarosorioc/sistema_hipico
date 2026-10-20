@@ -63,8 +63,11 @@ update public.tickets_apuestas
    and grupo_cobro_id is not null;
 
 -- Índice parcial para los reportes de cruce (pocas filas de una jornada).
+-- OJO: `tickets_apuestas` NO tiene columna `fecha` (usa `fecha_registro` /
+-- `fecha_carrera`). El reporte de comisiones filtra por `fecha_registro`, así
+-- que el índice se apoya en esa.
 create index if not exists tickets_apuestas_cruce_grupos_idx
-  on public.tickets_apuestas (fecha, hipodromo, carrera)
+  on public.tickets_apuestas (fecha_registro)
   where grupo_publicador_id is not null;
 
 -- ---------------------------------------------------------------------------
