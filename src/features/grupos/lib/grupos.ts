@@ -307,6 +307,16 @@ export type GrupoRow = {
   cuenta_bancaria?: string | null;
   es_principal?: boolean | null;
   activo?: boolean | null;
+  /**
+   * VISIBILIDAD COMPARTIDA del grupo PRINCIPAL (PROMPT #5):
+   *   · `visibilidad_global_principal` → Toggle 1: TODOS los grupos ven las
+   *     jugadas del principal. Si está ON, la lista de autorizados se ignora.
+   *   · `grupos_autorizados_ver_principal` → Toggle 2 (solo si el global está
+   *     OFF): ids de los grupos autorizados a ver las jugadas del principal.
+   * Requieren `sql/grupos_visibilidad_principal.sql`.
+   */
+  visibilidad_global_principal?: boolean | null;
+  grupos_autorizados_ver_principal?: Array<string | number> | null;
   /** Jerarquía de cruces: switch general del grupo (default TRUE = permitido). */
   permite_cruces?: boolean | null;
   /** Ciclo de facturación semanal (1=Lunes … 7=Domingo). Default L→D. */
@@ -628,6 +638,75 @@ export async function toggleGrupoActivo(id: string | number, activo: boolean): P
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * Configura la VISIBILIDAD COMPARTIDA del grupo PRINCIPAL (PROMPT #5):
+ *   · `global` → Toggle 1: todos los grupos ven sus jugadas;
+ *   · `autorizados` → Toggle 2 (solo si `global` es false): ids autorizados.
+ *
+ * `grupos_venta` tiene RLS de solo lectura, así que la vía normal es la RPC
+ * `club_visibilidad_principal` (sql/grupos_visibilidad_principal.sql). Se intenta
+ * primero el UPDATE directo por si el RLS lo permite y, como respaldo, la RPC.
+ * Si la migración no está aplicada, la RPC no existe y se devuelve un error claro
+ * (sin romper el resto del guardado del grupo).
+ */
+export async function actualizarVisibilidadPrincipal(
+  id: string | number,
+  global: boolean,
+  autorizados: ReadonlyArray<string | number>
+): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  const lista = global ? [] : autorizados.map((v) => String(v)).filter(Boolean);
+  try {
+    // Intento 1: RPC (vía oficial, valida que sea el principal).
+    const rpc = await supabase.rpc("club_visibilidad_principal", {
+      p_grupo_id: id,
+      p_global: global,
+      p_grupos: lista,
+    });
+    if (!rpc.error) {
+      invalidarCacheGrupos();
+      return { ok: true };
+    }
+    // Intento 2 (respaldo): UPDATE directo con verificación de filas.
+    const { data, error } = await supabase
+      .from("grupos_venta")
+      .update({ visibilidad_global_principal: global, grupos_autorizados_ver_principal: lista })
+      .eq("id", id)
+      .select("id");
+    const filas = Array.isArray(data) ? data.length : data ? 1 : 0;
+    if (error || filas === 0) {
+      return {
+        ok: false,
+        error: rpc.error.message || error?.message || "No se pudo guardar la visibilidad.",
+      };
+    }
+    invalidarCacheGrupos();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Lee la configuración de visibilidad del grupo principal desde la lista de
+ * grupos ya cargada (sin red). Devuelve valores por defecto si no hay principal.
+ */
+export function visibilidadDelPrincipal(grupos: ReadonlyArray<GrupoRow>): {
+  principalId: string;
+  global: boolean;
+  autorizados: string[];
+} {
+  const principal = grupos.find((g) => g.es_principal === true);
+  if (!principal) return { principalId: "", global: false, autorizados: [] };
+  const crudo = principal.grupos_autorizados_ver_principal;
+  const autorizados = Array.isArray(crudo) ? crudo.map((v) => String(v)).filter(Boolean) : [];
+  return {
+    principalId: String(principal.id),
+    global: principal.visibilidad_global_principal === true,
+    autorizados,
+  };
 }
 
 /** Garantiza UN solo grupo principal: desmarca los demás. */

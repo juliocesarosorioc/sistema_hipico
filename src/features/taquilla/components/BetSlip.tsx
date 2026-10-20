@@ -14,6 +14,9 @@ import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { usuarioVigente } from "@/features/seguridad/lib/vigente";
 import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
 import { marcarAdelantadaTrasVenta } from "@/features/jugadas/lib/marcar-adelantadas";
+import { atribuirTrasVenta } from "@/features/grupos/lib/marcar-atribucion";
+import { atribuirDesdePrincipal } from "@/features/grupos/lib/atribucion-grupo";
+import { principalDe } from "@/features/grupos/lib/visibilidad-principal";
 import { WPS_PLANIFICACION } from "@/features/motores/lib/wps-planificacion";
 import {
   listarClientesVenta,
@@ -219,11 +222,29 @@ export function BetSlip() {
         const r = await marcarAdelantadaTrasVenta({ ids: [venta.ticketId] });
         marca = r.ok ? " · ⏳ adelantada" : ` · ⚠️ sin marcar: ${r.error ?? "revisá sql/jugadas_adelantadas.sql"}`;
       }
+      // REGLA DE ORO CONTABLE: si el cliente pertenece a un Grupo Secundario y
+      // la jugada salió de la cartelera del PRINCIPAL (Taquilla la publica el
+      // principal para todos), se congela a quién se le DA CUENTA (su grupo) y
+      // quién la PUBLICÓ (el principal). Mejor esfuerzo: la venta ya está hecha.
+      let enrutado = "";
+      const principal = principalDe(grupos);
+      if (venta.ticketId && principal) {
+        const atr = atribuirDesdePrincipal(grupoId, principal.id, principal.id);
+        if (atr && atr.cruzada) {
+          const ra = await atribuirTrasVenta({ ids: [venta.ticketId] }, atr);
+          if (!ra.ok) enrutado = ` · ⚠️ sin atribuir cuenta: ${ra.error ?? "revisá sql/grupos_visibilidad_principal.sql"}`;
+          else {
+            const nombreCuenta = grupos.find((g) => String(g.id) === String(grupoId))?.nombre;
+            enrutado = ` · 🧾 cuenta a ${nombreCuenta ?? "su grupo"}`;
+          }
+        }
+      }
       setComando("");
       setMensaje(
         `✅ Jugada #${venta.ticketId ?? "?"} registrada: $${validacion.monto} ${validacion.tipo} · ${c1.nombre}` +
           (venta.yaExistia ? " (ya existía)" : "") +
-          marca
+          marca +
+          enrutado
       );
       setTimeout(() => setMensaje(""), 3500);
     } finally {

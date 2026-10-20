@@ -21,6 +21,7 @@
  */
 import { supabase } from "@/core/supabase";
 import { desgloseJugada } from "@/features/liquidacion/lib/etiquetas-reporte";
+import { grupoDeCuenta } from "./atribucion-grupo";
 import {
   comisionEnDinero,
   comisionPctDeGrupo,
@@ -47,6 +48,13 @@ type FilaTicket = {
   id?: string | number | null;
   grupo_cobro_id?: string | null;
   grupo_cobro_nombre?: string | null;
+  /**
+   * Atribución entre grupos (PROMPT #5): `grupo_cuenta_id` es a QUIÉN le da
+   * cuenta el jugador (su grupo) y `grupo_publicador_id` quién PUBLICÓ la jugada.
+   * Pueden faltar (migración sin aplicar) → se cae a `grupo_cobro_id`.
+   */
+  grupo_cuenta_id?: string | null;
+  grupo_publicador_id?: string | null;
   moneda?: string | null;
   monto_decidido?: number | string | null;
   monto_jugado?: number | string | null;
@@ -130,7 +138,10 @@ function detalleDeTicket(
 function acumularTicket(t: FilaTicket, out: VentaConvenio[]): void {
   const producto = productoDeNota(t.nota_auditoria);
   if (!producto) return;
-  const grupoId = t.grupo_cobro_id ? String(t.grupo_cobro_id) : "";
+  // REGLA DE ORO CONTABLE: la comisión por convenio se le debe al grupo al que
+  // el jugador le DA CUENTA (grupo_cuenta_id = su grupo). Si la migración no está
+  // aplicada, cae al `grupo_cobro_id` histórico (mismo comportamiento previo).
+  const grupoId = grupoDeCuenta(t.grupo_cuenta_id, t.grupo_publicador_id, t.grupo_cobro_id);
   if (!grupoId) return;
   const monto = montoDeTicket(t);
   if (!monto) return;
@@ -216,7 +227,7 @@ export async function cargarReporteComisiones(
       acumularTicket(t, ventas);
       // Detalle: solo las jugadas clasificables y con grupo de cobro.
       const producto = productoDeNota(t.nota_auditoria);
-      const grupoId = t.grupo_cobro_id ? String(t.grupo_cobro_id) : "";
+      const grupoId = grupoDeCuenta(t.grupo_cuenta_id, t.grupo_publicador_id, t.grupo_cobro_id);
       if (!producto || !grupoId) continue;
       const monto = montoDeTicket(t);
       if (!monto) continue;

@@ -24,6 +24,8 @@ import {
 
   actualizarGrupo,
 
+  actualizarVisibilidadPrincipal,
+
   asignarPrincipalUnico,
 
   crearGrupo,
@@ -83,6 +85,8 @@ import {
 } from "@/features/liquidacion/lib/banqueros";
 
 import { CamposComisionesConvenio } from "@/features/grupos/components/CamposComisionesConvenio";
+
+import { PanelVisibilidadPrincipal } from "@/features/grupos/components/PanelVisibilidadPrincipal";
 
 import { ReporteComisionesConvenioModal } from "@/features/grupos/components/ReporteComisionesConvenioModal";
 
@@ -679,6 +683,23 @@ export function GruposModule() {
     if (r.ok && datos.es_principal) {
 
       await asignarPrincipalUnico(id);
+
+      // Visibilidad compartida del principal (PROMPT #5): se guarda DESPUÉS de
+      // marcar el principal (la RPC lo exige). Es mejor esfuerzo: si la migración
+      // `sql/grupos_visibilidad_principal.sql` no está aplicada, el grupo y sus
+      // comisiones igual quedan guardados y se avisa con un toast.
+
+      const visGlobal = editando.visibilidad_global_principal === true;
+
+      const visAutorizados = visGlobal ? [] : (editando.grupos_autorizados_ver_principal ?? []);
+
+      const rv = await actualizarVisibilidadPrincipal(id, visGlobal, visAutorizados);
+
+      if (!rv.ok) {
+
+        toast(rv.error ?? "No se pudo guardar la visibilidad del principal.", "warning");
+
+      }
 
     }
 
@@ -2226,6 +2247,49 @@ export function GruposModule() {
                 Es el grupo Principal
 
               </label>
+
+              {editando.es_principal === true ? (
+
+                <PanelVisibilidadPrincipal
+
+                  principal={editando}
+
+                  grupos={grupos}
+
+                  global={editando.visibilidad_global_principal === true}
+
+                  autorizados={editando.grupos_autorizados_ver_principal ?? []}
+
+                  onGlobal={(v) =>
+
+                    setEditando({
+
+                      ...editando,
+
+                      visibilidad_global_principal: v,
+
+                      // Con el global ON la lista no aporta: se limpia en memoria.
+
+                      grupos_autorizados_ver_principal: v
+
+                        ? []
+
+                        : editando.grupos_autorizados_ver_principal ?? [],
+
+                    })
+
+                  }
+
+                  onAutorizados={(ids) =>
+
+                    setEditando({ ...editando, grupos_autorizados_ver_principal: ids })
+
+                  }
+
+                />
+
+              ) : null}
+
 
               <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-700">
 
