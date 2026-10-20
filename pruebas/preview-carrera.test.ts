@@ -142,5 +142,58 @@ igual(resumen.validadas, 2, "el resumen cuenta las validadas");
 igual(resumen.soloSesion, 1, "el resumen cuenta las que solo están en sesión");
 igual(resumen.monto, 175, "el resumen suma los montos");
 
+// ── 7. Símbolo ✅/✖ y saldo por CADA jugador ───────────────────────────────
+// El dueño pidió que, a la derecha de cada nombre, se vea si ese jugador ganó
+// (✅) o perdió (✖) y su saldo: lo que ARRIESGA si la carrera no está liquidada,
+// o lo que GANÓ/PERDIÓ si ya lo está.
+{
+  // Carrera PENDIENTE sin proyección: ambos arriesgan el monto, sin símbolo.
+  const pend = armarFilasPreview([persistida()], []);
+  igual(pend[0].lado1.estado, "ARRIESGA", "pendiente: el que juega arriesga");
+  igual(pend[0].lado2.estado, "ARRIESGA", "pendiente: el que da arriesga");
+  igual(pend[0].lado1.monto, 100, "pendiente: arriesga el monto");
+  si(!pend[0].lado1.liquidada, "pendiente: el resultado no es definitivo");
+
+  // GANADOR: el que juega gana el NETO (premio bruto − comisión − monto).
+  const gan = armarFilasPreview(
+    [persistida({ estado: "Ganador", premio_pagar: 320, comision_porcentaje: 10 })],
+    []
+  );
+  igual(gan[0].lado1.estado, "GANO", "ganador: el que juega GANÓ");
+  // ganancia bruta = 220 · comisión 10% = 22 · neto = 220 − 22 = 198
+  igual(gan[0].lado1.monto, 198, "ganador: gana el neto (bruto − comisión)");
+  igual(gan[0].lado1.signo, 1, "ganador: saldo positivo");
+  si(gan[0].lado1.liquidada, "ganador: resultado definitivo");
+  igual(gan[0].lado2.estado, "PERDIO", "ganador: el que da PERDIÓ");
+  igual(gan[0].lado2.monto, 220, "ganador: el que da entrega la ganancia bruta");
+
+  // PERDEDOR: el que juega pierde el monto; el que da cobra el monto menos comisión.
+  const per = armarFilasPreview(
+    [persistida({ estado: "Perdedor", premio_pagar: 0, comision_porcentaje: 10 })],
+    []
+  );
+  igual(per[0].lado1.estado, "PERDIO", "perdedor: el que juega PERDIÓ");
+  igual(per[0].lado1.monto, 100, "perdedor: pierde el monto");
+  igual(per[0].lado1.signo, -1, "perdedor: saldo en contra");
+  igual(per[0].lado2.estado, "GANO", "perdedor: el que da GANÓ");
+  igual(per[0].lado2.monto, 90, "perdedor: el que da cobra el monto menos la comisión");
+
+  // ANULADA / RETIRADO: sin símbolo ni saldo.
+  const anu = armarFilasPreview([persistida({ anulada: true, estado: "Pendiente" })], []);
+  igual(anu[0].lado1.estado, "ANULADA", "anulada: el que juega queda anulado");
+  igual(anu[0].lado1.monto, 0, "anulada: no proyecta dinero");
+  igual(anu[0].lado2.estado, "ANULADA", "anulada: el que da queda anulado");
+
+  const ret = armarFilasPreview([persistida({ estado: "Retirado" })], []);
+  igual(ret[0].lado1.estado, "RETIRADO", "retirado: el que juega queda retirado");
+
+  // Proyección de la sesión en una pendiente: se anticipa quién va ganando.
+  const proy = armarFilasPreview([persistida({ comision_porcentaje: 10 })], [ticketSesion({ cobro1: 250 })]);
+  igual(proy[0].lado1.estado, "GANO", "pendiente con proyección: el que juega va ganando");
+  // ganancia bruta = 150 · comisión 10% = 15 · neto = 135
+  igual(proy[0].lado1.monto, 135, "pendiente con proyección: gana el neto proyectado");
+  si(!proy[0].lado1.liquidada, "pendiente con proyección: todavía no es definitivo");
+}
+
 console.log(`\n${pasan} ok / ${fallan} fallaron`);
 if (fallan > 0) process.exitCode = 1;

@@ -33,10 +33,30 @@ export type JugadaPersistida = {
   ejemplar_numero?: number | null;
   monto_jugado?: number | null;
   premio_pagar?: number | null;
+  /** Tasa de comisión del ticket (%), la que retiene la casa sobre la ganancia. */
+  comision_porcentaje?: number | null;
   estado?: string | null;
   cliente_juega_nombre?: string | null;
   cliente_consigue_nombre?: string | null;
   anulada?: boolean | null;
+};
+
+/**
+ * Resultado de UN lado de la jugada (el que JUEGA o el que DA/CONSIGUE).
+ *
+ * El panel muestra, a la derecha de cada jugador, si GANÓ o PERDIÓ (✅ / ✖) y el
+ * saldo: mientras la carrera NO esté liquidada, el dinero que ARRIESGA; una vez
+ * liquidada, la ganancia o la pérdida definitiva.
+ */
+export type LadoResultado = {
+  /** Cómo se pinta el lado. */
+  estado: "GANO" | "PERDIO" | "ARRIESGA" | "ANULADA" | "RETIRADO" | "SIN_DATO";
+  /** true si la carrera YA está liquidada (el saldo es definitivo). */
+  liquidada: boolean;
+  /** Signo del saldo: 1 gana · -1 pierde · 0 neutro/arriesga. */
+  signo: -1 | 0 | 1;
+  /** Importe a mostrar, SIEMPRE en positivo (el signo lo aporta `signo`). */
+  monto: number;
 };
 
 /** Ticket del store de la taquilla (solo lo que usa la proyección). */
@@ -78,6 +98,10 @@ export type FilaPreviewCarrera = {
   esPremio: boolean;
   /** false si no hay proyección disponible (se pinta «—»). */
   tieneProyeccion: boolean;
+  /** Resultado del que JUEGA (Cliente 1): ✅/✖ y su saldo. */
+  lado1: LadoResultado;
+  /** Resultado del que DA/CONSIGUE (Cliente 2): ✅/✖ y su saldo. */
+  lado2: LadoResultado;
 };
 
 const NUM = (v: unknown): number => {
@@ -126,6 +150,81 @@ function estadoDeFila(estado: unknown, anulada: boolean): string {
   return "Pendiente";
 }
 
+/**
+ * Resultados por LADO de la jugada.
+ *
+ * Reproduce la MISMA convención que el reporte de liquidación y la relación de
+ * WhatsApp:
+ *   · `premio_pagar` se guarda BRUTO (capital + ganancia).
+ *   · la casa retiene `comisionPct` sobre la ganancia bruta.
+ *   · el que JUEGA gana el NETO (`premio_pagar − comisión`); si pierde, arriesga
+ *     el monto.
+ *   · el que DA/CONSIGUE juega en espejo: si el que juega acierta, el que da
+ *     entrega el neto del jugador más la comisión; si el que juega falla, el que
+ *     da cobra el monto menos la comisión.
+ *
+ * Mientras la carrera NO esté liquidada (Pendiente) se muestra el saldo que
+ * ARRIESGA cada uno (el monto), sin ✅ ni ✖.
+ */
+function ladosDeLaJugada(
+  monto: number,
+  estadoFila: string,
+  premioPagar: number,
+  comisionPct: number,
+  proyectado: { hay: boolean; mejor: number }
+): { lado1: LadoResultado; lado2: LadoResultado } {
+  const arriesga = (): LadoResultado => ({ estado: "ARRIESGA", liquidada: false, signo: 0, monto });
+
+  if (estadoFila === "Anulada") {
+    const lado: LadoResultado = { estado: "ANULADA", liquidada: true, signo: 0, monto: 0 };
+    return { lado1: lado, lado2: lado };
+  }
+  if (estadoFila === "Retirado") {
+    const lado: LadoResultado = { estado: "RETIRADO", liquidada: true, signo: 0, monto: 0 };
+    return { lado1: lado, lado2: lado };
+  }
+
+  // Carrera YA liquidada: el estado dice Ganador/Perdedor.
+  if (estadoFila === "Ganador" || estadoFila === "Perdedor") {
+    const gano = estadoFila === "Ganador" && premioPagar > monto;
+    // Ganancia bruta sobre la que se cobra la comisión.
+    const gananciaBruta = gano ? Math.round((premioPagar - monto) * 100) / 100 : 0;
+    const comision = Math.round(gananciaBruta * (comisionPct / 100) * 100) / 100;
+    const netoJuega = Math.round((gananciaBruta - comision) * 100) / 100; // ganancia NETA del que juega
+    // El que da, en espejo: entrega el neto del jugador + la comisión si perdió
+    // el jugador; cobra el monto menos la comisión si el jugador falló.
+    const ladoJuegaGano: LadoResultado = { estado: "GANO", liquidada: true, signo: 1, monto: Math.max(0, netoJuega) };
+    const ladoJuegaPerdio: LadoResultado = { estado: "PERDIO", liquidada: true, signo: -1, monto };
+    const ladoDaGano: LadoResultado = {
+      estado: "GANO",
+      liquidada: true,
+      signo: 1,
+      monto: Math.round(Math.max(0, monto - monto * (comisionPct / 100)) * 100) / 100,
+    };
+    const ladoDaPerdio: LadoResultado = {
+      estado: "PERDIO",
+      liquidada: true,
+      signo: -1,
+      monto: Math.round(Math.max(0, premioPagar - monto) * 100) / 100,
+    };
+    return gano
+      ? { lado1: ladoJuegaGano, lado2: ladoDaPerdio }
+      : { lado1: ladoJuegaPerdio, lado2: ladoDaGano };
+  }
+
+  // Pendiente: si hay proyección de la sesión, se anticipa si va ganando; si no,
+  // solo se muestra lo que arriesga.
+  if (proyectado.hay && proyectado.mejor > monto) {
+    const gananciaBruta = Math.round((proyectado.mejor - monto) * 100) / 100;
+    const comision = Math.round(gananciaBruta * (comisionPct / 100) * 100) / 100;
+    return {
+      lado1: { estado: "GANO", liquidada: false, signo: 1, monto: Math.max(0, Math.round((gananciaBruta - comision) * 100) / 100) },
+      lado2: { estado: "PERDIO", liquidada: false, signo: -1, monto: Math.max(0, gananciaBruta) },
+    };
+  }
+  return { lado1: arriesga(), lado2: arriesga() };
+}
+
 function filaDesdePersistida(j: JugadaPersistida, sesion?: TicketSesion): FilaPreviewCarrera {
   const monto = NUM(j.monto_jugado);
   const anulada = Boolean(j.anulada);
@@ -154,6 +253,10 @@ function filaDesdePersistida(j: JugadaPersistida, sesion?: TicketSesion): FilaPr
     }
   }
 
+  const comisionPct = NUM(j.comision_porcentaje);
+  const proyectado = { hay: Boolean(sesion), mejor: sesion ? mejorCobreDe(sesion) : 0 };
+  const { lado1, lado2 } = ladosDeLaJugada(monto, estado, NUM(j.premio_pagar), comisionPct, proyectado);
+
   return {
     clave: `db-${ticketId ?? TXT(j.nombre_jugada)}-${TXT(j.caballo)}`,
     ticketId,
@@ -169,6 +272,8 @@ function filaDesdePersistida(j: JugadaPersistida, sesion?: TicketSesion): FilaPr
     premioSaldo,
     esPremio,
     tieneProyeccion,
+    lado1,
+    lado2,
   };
 }
 
@@ -177,6 +282,7 @@ function filaDesdeSesion(t: TicketSesion): FilaPreviewCarrera {
   const mejor = mejorCobreDe(t);
   const esPremio = mejor > monto;
   const ticketId = t.ticketId != null && String(t.ticketId).trim() !== "" ? String(t.ticketId) : null;
+  const { lado1, lado2 } = ladosDeLaJugada(monto, "Pendiente", 0, 0, { hay: true, mejor });
   return {
     clave: `ses-${t.id ?? ticketId ?? jugadaSinMonto(t.comando)}`,
     ticketId,
@@ -192,6 +298,8 @@ function filaDesdeSesion(t: TicketSesion): FilaPreviewCarrera {
     premioSaldo: esPremio ? mejor - monto : -monto,
     esPremio,
     tieneProyeccion: true,
+    lado1,
+    lado2,
   };
 }
 
