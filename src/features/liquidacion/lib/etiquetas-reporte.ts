@@ -2,18 +2,19 @@
  * BLOQUE 5 — DESGLOSE EXPLÍCITO DE EJEMPLARES EN EL REPORTE DE LIQUIDACIÓN.
  *
  * Regla de la casa: el reporte NUNCA puede mostrar una jugada sin los
- * ejemplares involucrados, y la columna "Jugada" va COMPACTA (sin rótulos
- * largos):
+ * ejemplares involucrados. La columna "Jugada" muestra SOLO el rótulo de la
+ * modalidad; los ejemplares van como DISCOS de color que la plantilla pinta
+ * desde `caballo` (un disco por número):
  *
- *  · Marcas → "2 x 8" (o "(3, 5) x (8, 9)" con varios por lado). El ticket
- *    solo guarda el número ELEGIDO (`caballo` / `ejemplar_numero`); los
- *    rivales viven en `nota_auditoria.rivales_snapshot` —los mismos que lee
- *    `club_liquidar_marca`—, así que sin componerlo acá el reporte mostraba
- *    la marca a medias.
+ *  · Marcas → rótulo "MARCA" + discos "2 × 8" (o "(3, 5) × (8, 9)" con varios
+ *    por lado). El ticket solo guarda el número ELEGIDO (`caballo` /
+ *    `ejemplar_numero`); los rivales viven en `nota_auditoria.rivales_snapshot`
+ *    —los mismos que lee `club_liquidar_marca`—, así que sin componerlo acá el
+ *    reporte mostraba la marca a medias.
  *
- *  · Tablas Fijas → "TABLA FIJA 6" (modalidad + Nº de ejemplar). El ticket
- *    congela el NÚMERO en `ejemplar_numero`; contra la pizarra lo que decide
- *    es el número, así que no se muestra el nombre ni el rótulo del hipódromo.
+ *  · Tablas Fijas → rótulo "TABLA FIJA" + disco del Nº de ejemplar (que el
+ *    ticket congela en `ejemplar_numero`). Contra la pizarra lo que decide es
+ *    el número, así que no se muestra el nombre ni el rótulo del hipódromo.
  *
  *  · Cualquier otra jugada se devuelve TAL CUAL (sin tocar la nomenclatura).
  *
@@ -67,26 +68,26 @@ function desgloseMarca(f: Record<string, unknown>): DesgloseJugada {
   if (!elegidos.length) elegidos = numerosDe(nombre.replace(/^MARCAS?\s*#?/i, ""));
   if (!elegidos.length) {
     // Fila legacy sin número recuperable: no se inventa matchup.
-    return { jugada: nombre || "MARCA", caballo: txt(f.caballo), ejemplar: txt(f.caballo), tipo: "MARCA" };
+    return { jugada: "MARCA", caballo: txt(f.caballo), ejemplar: "MARCA", tipo: "MARCA" };
   }
   const rivales = rivalesDeNota(f.nota_auditoria);
-  // La columna "Jugada" muestra SOLO el enfrentamiento, sin la palabra "MARCA"
-  // ni los "#": "2 x 8" (o "(3, 5) x (8, 9)" con varios por lado).
-  const elegido = elegidos.join(", ");
-  const rival = rivales.join(", ");
-  const enfrentamiento = !rival
-    ? elegido
-    : rivales.length > 1 || elegidos.length > 1
-      ? `${elegidos.length > 1 ? `(${elegido})` : elegido} x ${rivales.length > 1 ? `(${rival})` : rival}`
-      : `${elegido} x ${rival}`;
+  // La columna "Jugada" muestra SOLO el rótulo "MARCA": los ejemplares van como
+  // discos de color ("2 × 8") que la plantilla arma desde `caballo`.
   return {
-    jugada: enfrentamiento,
+    jugada: "MARCA",
     // Pareo estilo "8x3" / "3,5x8,9": la plantilla separa los lados y pinta
     // un disco por ejemplar de cada uno.
     caballo: rivales.length ? `${elegidos.join(",")}x${rivales.join(",")}` : elegidos.join(","),
-    ejemplar: enfrentamiento,
+    ejemplar: enfrentamientoDe(elegidos, rivales),
     tipo: "MARCA",
   };
+}
+
+/** "2 × 8" (o "(3, 5) × (8, 9)" con varios por lado); sin rivales, solo el elegido. */
+function enfrentamientoDe(elegidos: string[], rivales: string[]): string {
+  if (!rivales.length) return elegidos.join(", ");
+  const lado = (ns: string[]) => (ns.length > 1 ? `(${ns.join(", ")})` : ns[0]);
+  return `${lado(elegidos)} × ${lado(rivales)}`;
 }
 
 /** Tabla Fija: número del ticket + nombre congelado en `caballo`. */
@@ -96,9 +97,10 @@ function desgloseTablaFija(f: Record<string, unknown>): DesgloseJugada {
   const nombreEjemplar = txt(f.caballo);
   // TABLA COMPLETA (todos los caballos): sin número no hay qué desglosar.
   if (!numero) return { jugada: nombre, caballo: nombreEjemplar, ejemplar: nombreEjemplar, tipo: "TABLA" };
-  // La columna "Jugada" muestra SOLO la modalidad y el ejemplar: "TABLA FIJA 6".
+  // La columna "Jugada" muestra SOLO el rótulo "TABLA FIJA": el ejemplar va como
+  // disco de color que la plantilla arma desde `caballo`.
   return {
-    jugada: `TABLA FIJA ${numero}`,
+    jugada: "TABLA FIJA",
     caballo: numero,
     ejemplar: numero,
     tipo: "TABLA",

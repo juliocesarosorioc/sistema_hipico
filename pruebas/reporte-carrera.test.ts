@@ -173,6 +173,15 @@ const pareo = armarReporteCarrera({
 si(pareo.jugadasVivo[0]?.jugo === "PP", "el MATCH legacy «4X7» se rotula «PP» (nunca 10/10)");
 si(pareo.jugadasVivo[0]?.caballo === "1X8" && pareo.jugadasVivo[0]?.da === "Zorro", "conserva los ejemplares (1X8) y el DA (Zorro)");
 
+// Una jugada declarada como "10/10" (pelo a pelo) también se rotula "PP".
+const peloAPelo = armarReporteCarrera({
+  ...CARRERA,
+  filas: [
+    fila({ id: "2026-10-12-LA RINCONADA-7-j-1", rol: "Juega", cliente: "Fabio", jugada: "10/10", caballo: "1X8", monto: 100, resultado: 95, esPareo: true }),
+  ],
+});
+si(peloAPelo.jugadasVivo[0]?.jugo === "PP", "la jugada «10/10» se rotula «PP» en el reporte");
+
 // Paridad con WhatsApp: cuando el que JUEGA acierta, el "da" entrega la ganancia
 // BRUTA (neto + comisión); cuando pierde, el "da" cobra el monto MENOS comisión.
 // (monto 100, ganancia neta 95, comisión 5 → bruto 100.)

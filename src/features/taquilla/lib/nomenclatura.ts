@@ -492,10 +492,10 @@ export function rotuloPareo(jugada: string, caballo = ""): string {
 }
 
 /**
- * Etiqueta de la JUGADA para los reportes. Un MATCH/emparejamiento SIN fracción
- * declarada se juega pelo a pelo, así que se rotula "PP" (NUNCA "10/10"); si
- * declara fracción ("2x3 10/8") se conserva tal cual. Cualquier otra jugada se
- * devuelve sin cambios.
+ * Etiqueta de la JUGADA para los reportes y la UI. Regla del dueño: una jugada
+ * PELO A PELO (fracción 10/10, o un MATCH/pareo SIN fracción declarada) se
+ * rotula "PP" —NUNCA "10/10"—; si declara una fracción distinta ("2x3 10/8",
+ * "10/6") se conserva tal cual. Cualquier otra jugada se devuelve sin cambios.
  *
  * No mira la columna CABALLO a propósito: un NINI dividido ("2Y2N" con
  * caballo "3x4") NO es un pareo.
@@ -503,7 +503,9 @@ export function rotuloPareo(jugada: string, caballo = ""): string {
 export function etiquetaJugada(jugada: string): string {
   const t = String(jugada ?? "").trim();
   if (!t) return "";
-  if (/\d+\s*\/\s*\d+/.test(t)) return t; // fracción declarada → se conserva
+  // Fracción declarada: si es 10/10 (pelo a pelo) se rotula "PP"; cualquier
+  // otra proporción ("10/8", "10/6") se conserva.
+  if (/\d+\s*\/\s*\d+/.test(t)) return proporcionDeclarada(t) === "10/10" ? "PP" : t;
   if (/^\s*pp\b/i.test(t)) return "PP"; // ya es PP
   if (/\d\s*[X*]\s*\d/i.test(t)) return "PP"; // pareo/MATCH sin fracción ("4X7")
   return t;
