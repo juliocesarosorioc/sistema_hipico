@@ -13,6 +13,7 @@
 import {
   armarFilasPreview,
   esJugadaDeTaquilla,
+  estadoLiquidacionDe,
   jugadaSinMonto,
   resumenPreview,
   type JugadaPersistida,
@@ -147,7 +148,7 @@ igual(resumen.monto, 175, "el resumen suma los montos");
 // (✅) o perdió (✖) y su saldo: lo que ARRIESGA si la carrera no está liquidada,
 // o lo que GANÓ/PERDIÓ si ya lo está.
 {
-  // Carrera PENDIENTE sin proyección: ambos arriesgan el monto, sin símbolo.
+  // Carrera PENDIENTE: ambos arriesgan el monto, sin símbolo.
   const pend = armarFilasPreview([persistida()], []);
   igual(pend[0].lado1.estado, "ARRIESGA", "pendiente: el que juega arriesga");
   igual(pend[0].lado2.estado, "ARRIESGA", "pendiente: el que da arriesga");
@@ -166,6 +167,12 @@ igual(resumen.monto, 175, "el resumen suma los montos");
   si(gan[0].lado1.liquidada, "ganador: resultado definitivo");
   igual(gan[0].lado2.estado, "PERDIO", "ganador: el que da PERDIÓ");
   igual(gan[0].lado2.monto, 220, "ganador: el que da entrega la ganancia bruta");
+
+  // GANADOR sin premio cargado (break-even): sigue siendo ✅ — antes se pintaba
+  // como perdedor "y no se le pagaba al ganador".
+  const ganSinPremio = armarFilasPreview([persistida({ estado: "Ganador", premio_pagar: 0 })], []);
+  igual(ganSinPremio[0].lado1.estado, "GANO", "ganador sin premio: sigue siendo ganador");
+  igual(ganSinPremio[0].lado1.monto, 0, "ganador sin premio: gana 0 (no pierde)");
 
   // PERDEDOR: el que juega pierde el monto; el que da cobra el monto menos comisión.
   const per = armarFilasPreview(
@@ -187,12 +194,36 @@ igual(resumen.monto, 175, "el resumen suma los montos");
   const ret = armarFilasPreview([persistida({ estado: "Retirado" })], []);
   igual(ret[0].lado1.estado, "RETIRADO", "retirado: el que juega queda retirado");
 
-  // Proyección de la sesión en una pendiente: se anticipa quién va ganando.
+  // Una pendiente con proyección de la sesión NO anticipa ganador/perdedor: la
+  // carrera todavía no se liquidó, así que se sigue mostrando el monto en riesgo.
   const proy = armarFilasPreview([persistida({ comision_porcentaje: 10 })], [ticketSesion({ cobro1: 250 })]);
-  igual(proy[0].lado1.estado, "GANO", "pendiente con proyección: el que juega va ganando");
-  // ganancia bruta = 150 · comisión 10% = 15 · neto = 135
-  igual(proy[0].lado1.monto, 135, "pendiente con proyección: gana el neto proyectado");
-  si(!proy[0].lado1.liquidada, "pendiente con proyección: todavía no es definitivo");
+  igual(proy[0].lado1.estado, "ARRIESGA", "pendiente con proyección: NO se anticipa ganador");
+  igual(proy[0].lado1.monto, 100, "pendiente con proyección: muestra el monto en riesgo");
+  si(!proy[0].lado1.liquidada, "pendiente con proyección: no es definitivo");
+}
+
+// ── 8. Columna «Estado»: SOLO Liquidada / Pendiente / Anulada ──────────────
+// El panel no debe mostrar Ganador ni Perdedor en la columna de estado: eso se
+// refleja en las columnas de cliente (✅/✖ + saldo).
+{
+  igual(estadoLiquidacionDe("Ganador"), "Liquidada", "un Ganador ya está Liquidada");
+  igual(estadoLiquidacionDe("Perdedor"), "Liquidada", "un Perdedor ya está Liquidada");
+  igual(estadoLiquidacionDe("Retirado"), "Liquidada", "un Retirado se resolvió: Liquidada");
+  igual(estadoLiquidacionDe("Pendiente"), "Pendiente", "una jugada sin decidir está Pendiente");
+  igual(estadoLiquidacionDe("Anulada"), "Anulada", "una jugada anulada se muestra Anulada");
+
+  const filas = armarFilasPreview(
+    [
+      persistida({ id: "1", estado: "Ganador", premio_pagar: 300 }),
+      persistida({ id: "2", estado: "Perdedor" }),
+      persistida({ id: "3", estado: "Pendiente" }),
+      persistida({ id: "4", anulada: true }),
+    ],
+    []
+  );
+  igual(filas.map((f) => f.estadoLiquidacion), ["Liquidada", "Liquidada", "Pendiente", "Anulada"],
+    "la columna Estado resume el ciclo de vida, nunca ganó/perdió");
+  si(!filas.some((f) => /Ganador|Perdedor/.test(f.estadoLiquidacion)), "nunca aparece Ganador/Perdedor en el estado");
 }
 
 console.log(`\n${pasan} ok / ${fallan} fallaron`);

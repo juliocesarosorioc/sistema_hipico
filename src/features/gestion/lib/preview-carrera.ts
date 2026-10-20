@@ -87,6 +87,14 @@ export type FilaPreviewCarrera = {
   cliente2: string;
   /** Pendiente | Ganador | Perdedor | Retirado | Anulada. */
   estado: string;
+  /**
+   * Estado que muestra la COLUMNA «Estado» del panel: SOLO refleja el ciclo de
+   * vida de la jugada, nunca si ganó o perdió.
+   *   · `Liquidada` — la carrera ya se liquidó (antes decía Ganador/Perdedor).
+   *   · `Pendiente` — todavía falta liquidar la carrera.
+   *   · `Anulada`   — la jugada se anuló.
+   */
+  estadoLiquidacion: "Liquidada" | "Pendiente" | "Anulada";
   /** true si ya está guardada en la base (✅ Validada / Cargada). */
   validada: boolean;
   anulada: boolean;
@@ -151,6 +159,20 @@ function estadoDeFila(estado: unknown, anulada: boolean): string {
 }
 
 /**
+ * Traduce el estado fino (Ganador/Perdedor/Retirado/…) al estado que muestra la
+ * columna «Estado» del panel: solo Liquidada / Pendiente / Anulada.
+ *
+ * Una jugada Ganador o Perdedor YA se liquidó; una Retirada también se resolvió
+ * (se devuelve el capital), así que ambas cuentan como `Liquidada`. La Anulada
+ * se conserva aparte para distinguirla de una liquidación normal.
+ */
+export function estadoLiquidacionDe(estadoFino: string): "Liquidada" | "Pendiente" | "Anulada" {
+  if (estadoFino === "Anulada") return "Anulada";
+  if (estadoFino === "Ganador" || estadoFino === "Perdedor" || estadoFino === "Retirado") return "Liquidada";
+  return "Pendiente";
+}
+
+/**
  * Resultados por LADO de la jugada.
  *
  * Reproduce la MISMA convención que el reporte de liquidación y la relación de
@@ -170,8 +192,7 @@ function ladosDeLaJugada(
   monto: number,
   estadoFila: string,
   premioPagar: number,
-  comisionPct: number,
-  proyectado: { hay: boolean; mejor: number }
+  comisionPct: number
 ): { lado1: LadoResultado; lado2: LadoResultado } {
   const arriesga = (): LadoResultado => ({ estado: "ARRIESGA", liquidada: false, signo: 0, monto });
 
@@ -184,11 +205,15 @@ function ladosDeLaJugada(
     return { lado1: lado, lado2: lado };
   }
 
-  // Carrera YA liquidada: el estado dice Ganador/Perdedor.
+  // Carrera YA liquidada: el estado manda. Un ticket 'Ganador' SIEMPRE es ✅ y
+  // un 'Perdedor' SIEMPRE es ✖, aunque el premio quede por debajo del monto
+  // (break-even o premio incompleto): antes se exigía `premio_pagar > monto`, así
+  // que un ganador sin premio —o con el dividendo aún sin cargar— se pintaba como
+  // perdedor y "no se le pagaba al ganador".
   if (estadoFila === "Ganador" || estadoFila === "Perdedor") {
-    const gano = estadoFila === "Ganador" && premioPagar > monto;
-    // Ganancia bruta sobre la que se cobra la comisión.
-    const gananciaBruta = gano ? Math.round((premioPagar - monto) * 100) / 100 : 0;
+    const gano = estadoFila === "Ganador";
+    // Ganancia bruta sobre la que se cobra la comisión (nunca negativa).
+    const gananciaBruta = gano ? Math.max(0, Math.round((premioPagar - monto) * 100) / 100) : 0;
     const comision = Math.round(gananciaBruta * (comisionPct / 100) * 100) / 100;
     const netoJuega = Math.round((gananciaBruta - comision) * 100) / 100; // ganancia NETA del que juega
     // El que da, en espejo: entrega el neto del jugador + la comisión si perdió
@@ -212,16 +237,9 @@ function ladosDeLaJugada(
       : { lado1: ladoJuegaPerdio, lado2: ladoDaGano };
   }
 
-  // Pendiente: si hay proyección de la sesión, se anticipa si va ganando; si no,
-  // solo se muestra lo que arriesga.
-  if (proyectado.hay && proyectado.mejor > monto) {
-    const gananciaBruta = Math.round((proyectado.mejor - monto) * 100) / 100;
-    const comision = Math.round(gananciaBruta * (comisionPct / 100) * 100) / 100;
-    return {
-      lado1: { estado: "GANO", liquidada: false, signo: 1, monto: Math.max(0, Math.round((gananciaBruta - comision) * 100) / 100) },
-      lado2: { estado: "PERDIO", liquidada: false, signo: -1, monto: Math.max(0, gananciaBruta) },
-    };
-  }
+  // Pendiente: SIEMPRE el monto en riesgo (gris), en ambos lados. Aunque la
+  // sesión tenga una proyección, la carrera todavía NO se liquidó, así que no
+  // corresponde pintar ✅/✖: eso es exclusivo de una carrera liquidada.
   return { lado1: arriesga(), lado2: arriesga() };
 }
 
@@ -254,8 +272,7 @@ function filaDesdePersistida(j: JugadaPersistida, sesion?: TicketSesion): FilaPr
   }
 
   const comisionPct = NUM(j.comision_porcentaje);
-  const proyectado = { hay: Boolean(sesion), mejor: sesion ? mejorCobreDe(sesion) : 0 };
-  const { lado1, lado2 } = ladosDeLaJugada(monto, estado, NUM(j.premio_pagar), comisionPct, proyectado);
+  const { lado1, lado2 } = ladosDeLaJugada(monto, estado, NUM(j.premio_pagar), comisionPct);
 
   return {
     clave: `db-${ticketId ?? TXT(j.nombre_jugada)}-${TXT(j.caballo)}`,
@@ -266,6 +283,7 @@ function filaDesdePersistida(j: JugadaPersistida, sesion?: TicketSesion): FilaPr
     cliente1: TXT(j.cliente_juega_nombre),
     cliente2: TXT(j.cliente_consigue_nombre),
     estado,
+    estadoLiquidacion: estadoLiquidacionDe(estado),
     validada: true,
     anulada: estado === "Anulada",
     soloSesion: false,
@@ -282,7 +300,7 @@ function filaDesdeSesion(t: TicketSesion): FilaPreviewCarrera {
   const mejor = mejorCobreDe(t);
   const esPremio = mejor > monto;
   const ticketId = t.ticketId != null && String(t.ticketId).trim() !== "" ? String(t.ticketId) : null;
-  const { lado1, lado2 } = ladosDeLaJugada(monto, "Pendiente", 0, 0, { hay: true, mejor });
+  const { lado1, lado2 } = ladosDeLaJugada(monto, "Pendiente", 0, 0);
   return {
     clave: `ses-${t.id ?? ticketId ?? jugadaSinMonto(t.comando)}`,
     ticketId,
@@ -292,6 +310,7 @@ function filaDesdeSesion(t: TicketSesion): FilaPreviewCarrera {
     cliente1: TXT(t.cliente1),
     cliente2: TXT(t.cliente2),
     estado: "Pendiente",
+    estadoLiquidacion: "Pendiente",
     validada: ticketId !== null,
     anulada: false,
     soloSesion: true,

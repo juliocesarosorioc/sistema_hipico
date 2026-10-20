@@ -2077,30 +2077,32 @@ const hipodromosDelDia = useMemo(() => {
                     <th className="w-[4%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">#</th>
                     <th className="w-[5%] border-r border-slate-700 px-1 py-1 text-center font-bold uppercase">Acc.</th>
                     <th className="w-[13%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Estado</th>
-                    <th className="w-[17%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Jugada</th>
+                    <th className="w-[18%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Jugada</th>
                     <th className="w-[7%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Caballo</th>
-                    <th className="w-[9%] border-r border-slate-700 px-1 py-1 text-right font-bold uppercase">Monto</th>
-                    <th className="w-[15%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 1 (Juega)</th>
-                    <th className="w-[15%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 2 (Da)</th>
-                    <th className="w-[15%] px-1 py-1 text-right font-bold uppercase">Premio/Saldo</th>
+                    <th className="w-[26%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 1 (Juega)</th>
+                    <th className="w-[27%] px-1 py-1 text-left font-bold uppercase">Cliente 2 (Da)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line/70">
                   {filasPreview.map((f, i) => {
-                    const badge = f.anulada
-                      ? "Anulada"
-                      : f.soloSesion && !f.validada
-                        ? "⏳ Sesión"
-                        : f.estado === "Pendiente"
-                          ? "✅ Cargada"
-                          : `✅ ${f.estado}`;
-                    const badgeClass = f.anulada
-                      ? "bg-amber-100 text-amber-700"
-                      : f.validada
-                        ? f.estado === "Perdedor"
-                          ? "bg-red-100 text-red-700"
-                          : "bg-emerald-100 text-emerald-700"
-                        : "bg-slate-100 text-slate-500";
+                    /**
+                     * La columna «Estado» refleja SOLO el ciclo de vida de la
+                     * jugada —nunca si ganó o perdió—: Liquidada, Pendiente o
+                     * Anulada. El detalle de si ganó/perdió cada lado vive en las
+                     * columnas de cliente (✅/✖ + saldo).
+                     */
+                    const badge =
+                      f.estadoLiquidacion === "Anulada"
+                        ? "🚫 Anulada"
+                        : f.estadoLiquidacion === "Liquidada"
+                          ? "✅ Liquidada"
+                          : "⏳ Pendiente";
+                    const badgeClass =
+                      f.estadoLiquidacion === "Anulada"
+                        ? "bg-amber-100 text-amber-700"
+                        : f.estadoLiquidacion === "Liquidada"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-slate-100 text-slate-500";
                     return (
                       <tr key={f.clave} className={`align-middle ${f.anulada ? "bg-amber-50/60" : "bg-white"}`}>
                         <td className="h-8 px-1 py-0 align-middle text-xs text-slate-400">{i + 1}</td>
@@ -2133,7 +2135,6 @@ const hipodromosDelDia = useMemo(() => {
                           {f.jugada}
                         </td>
                         <td className="h-8 px-1 py-0 align-middle font-bold text-slate-800">{f.caballo ? f.caballo.toUpperCase() : "—"}</td>
-                        <td className="h-8 px-1 py-0 align-middle text-right font-black text-slate-900">{monedaFmt(f.monto)}</td>
                         <td className="h-8 px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={f.cliente1}>
                           <span className="flex items-center gap-1 truncate">
                             <span className="truncate">{f.cliente1 || "—"}</span>
@@ -2145,21 +2146,6 @@ const hipodromosDelDia = useMemo(() => {
                             <span className="truncate">{f.cliente2 || "—"}</span>
                             {f.cliente2 ? <SimboloLado lado={f.lado2} money={monedaFmt} /> : null}
                           </span>
-                        </td>
-                        <td
-                          className={`h-8 px-1 py-0 align-middle text-right text-[11px] font-black ${
-                            !f.tieneProyeccion || f.anulada
-                              ? "text-slate-400"
-                              : f.esPremio
-                                ? "text-emerald-600"
-                                : "text-red-600"
-                          }`}
-                        >
-                          {!f.tieneProyeccion || f.anulada
-                            ? "—"
-                            : f.esPremio
-                              ? `+${monedaFmt(f.premioSaldo)}`
-                              : `SALDO −${monedaFmt(Math.abs(f.premioSaldo))}`}
                         </td>
                       </tr>
                     );
@@ -2857,10 +2843,9 @@ function round2(n: number): number {
 /**
  * Símbolo y saldo de UN lado de la jugada (a la derecha del nombre del jugador).
  *
- *   · ✅  jugador que GANÓ, seguido de lo que gana (+) — o, si la carrera aún no
- *     se liquidó, de lo que arriesga.
+ *   · ✅  jugador que GANÓ, seguido de lo que gana (+).
  *   · ✖  jugador que PERDIÓ, seguido del saldo en contra (−).
- *   · ⏳  carrera pendiente: solo el saldo que arriesga, sin check ni equis.
+ *   · 🩶  carrera NO liquidada: solo el MONTO EN RIESGO, en GRIS, sin símbolo.
  */
 function SimboloLado({
   lado,
@@ -2878,26 +2863,24 @@ function SimboloLado({
   const perdio = lado.estado === "PERDIO";
   const arriesga = lado.estado === "ARRIESGA";
 
-  const simbolo = gano ? "✅" : perdio ? "✖" : "⏳";
-  const color = gano ? "text-emerald-600" : perdio ? "text-red-600" : "text-slate-500";
-  const texto = gano
-    ? `+${money(lado.monto)}`
-    : perdio
-      ? `−${money(lado.monto)}`
-      : money(lado.monto);
+  // Pendiente: solo el monto en riesgo, en GRIS y sin símbolo.
+  if (arriesga) {
+    return (
+      <span
+        className="shrink-0 whitespace-nowrap text-[10px] font-bold text-slate-400"
+        title={`Monto en riesgo: ${money(lado.monto)} (la carrera aún no se liquida)`}
+      >
+        {money(lado.monto)}
+      </span>
+    );
+  }
 
   return (
     <span
-      className={`shrink-0 whitespace-nowrap text-[10px] font-black ${color}`}
-      title={
-        arriesga
-          ? `Arriesga ${money(lado.monto)} hasta que se liquide la carrera`
-          : gano
-            ? `Ganó ${money(lado.monto)}`
-            : `Perdió ${money(lado.monto)}`
-      }
+      className={`shrink-0 whitespace-nowrap text-[10px] font-black ${gano ? "text-emerald-600" : "text-red-600"}`}
+      title={gano ? `Ganó ${money(lado.monto)}` : `Perdió ${money(lado.monto)}`}
     >
-      {simbolo} {texto}
+      {gano ? "✅" : "✖"} {gano ? `+${money(lado.monto)}` : `−${money(lado.monto)}`}
     </span>
   );
 }
