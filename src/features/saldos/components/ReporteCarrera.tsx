@@ -220,7 +220,10 @@ function SubSeccion({ titulo, filas }: { titulo: string; filas: Adelantada[] }) 
         <div key={i} className="flex justify-between items-center px-2 py-[3px] border-b border-slate-100 text-[10px] font-bold bg-white">
           <span className="w-2/5 text-slate-800 truncate">{t.juega}</span>
           <span className="w-2/5 flex items-center gap-1 text-slate-500 font-normal truncate">
-            <Discos caballo={t.descripcion} />{t.descripcion}
+            {/* Solo los DISCOS: ya dibujan los ejemplares y la «×» del enfrentamiento
+                ("4 × 1"). Antes se pintaba además la descripción como texto, que
+                traía su propia «×» y duplicaba los números. */}
+            <Discos caballo={t.descripcion} />
           </span>
           <span className="text-right"><FormatoDinero monto={t.resultado} /></span>
         </div>

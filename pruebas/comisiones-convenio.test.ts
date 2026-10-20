@@ -17,21 +17,33 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  COLUMNAS_DETALLE,
   CONCEPTOS_CONVENIO,
   agruparPorGrupo,
   columnasConvenioCompletas,
   columnasConvenioDesde,
+  comisionDeDetalle,
   comisionEnDinero,
   comisionPctDeGrupo,
   consolidarReporte,
+  csvDetalle,
   esConcepto,
+  fechaEnRango,
+  fechaLegible,
+  filtrarDetalle,
+  formatearDinero,
+  hoyLocalISO,
+  kpisDeDetalle,
+  matrizDetalle,
   montoDecidido,
   productoDeNota,
   productoDeTicket,
   redondear2,
+  textoReporteWhatsApp,
   totalesPorMoneda,
   valoresConvenioDeGrupo,
   valoresConvenioInicial,
+  type DetalleJugada,
   type GrupoComisiones,
 } from "../src/features/grupos/lib/comisiones-convenio";
 
@@ -298,6 +310,175 @@ console.log("\n[9] El reporte liquida por grupo y producto");
   ok(/consolidarReporte/.test(reporte), "delega la consolidación al núcleo puro");
   ok(/agruparPorGrupo/.test(modal), "el modal agrupa el reporte por grupo");
   ok(/totalesPorMoneda/.test(modal), "el modal totaliza por moneda");
+}
+
+// ===========================================================================
+// PROMPT #3 — REINGENIERÍA DE GRUPOS Y REPORTE DE COMISIONES POR CONVENIO
+// ===========================================================================
+console.log("\n[10] Detalle por jugada, filtros y KPIs (núcleo puro)");
+{
+  const filas: DetalleJugada[] = [
+    {
+      fecha: "2026-03-10", hipodromo: "La Rinconada", carrera: "3", cliente: "Ana",
+      grupoId: "g1", grupo: "Grupo Uno", esPrincipal: false, producto: "marcas",
+      detalle: "4 × 1", estado: "PAGADO", moneda: "USD", monto: 1000, pct: 5, comision: 50,
+    },
+    {
+      fecha: "2026-03-11", hipodromo: "Valencia", carrera: "5", cliente: "Luis",
+      grupoId: "g1", grupo: "Grupo Uno", esPrincipal: false, producto: "tablas",
+      detalle: "7", estado: "PAGADO", moneda: "USD", monto: 2000, pct: 2.5, comision: 50,
+    },
+    {
+      fecha: "2026-03-12", hipodromo: "La Rinconada", carrera: "3", cliente: "Eva",
+      grupoId: "g2", grupo: "Grupo Dos", esPrincipal: false, producto: "marcas",
+      detalle: "2", estado: "ANULADA", moneda: "USD", monto: 500, pct: 5, comision: 25,
+    },
+  ];
+
+  ok(comisionDeDetalle({ monto: 1000, pct: 5 }) === 50, "comisión de detalle = monto × % / 100");
+  ok(comisionDeDetalle({ monto: 1000, pct: 0 }) === 0, "0% no genera comisión");
+
+  ok(fechaEnRango("2026-03-10", "2026-03-01", "2026-03-31") === true, "fecha dentro del rango");
+  ok(fechaEnRango("2026-02-28", "2026-03-01", "2026-03-31") === false, "fecha antes del rango queda fuera");
+  ok(fechaEnRango("2026-03-10") === true, "sin rango no discrimina");
+
+  const porGrupo = filtrarDetalle(filas, { grupoId: "g1" });
+  ok(porGrupo.length === 2 && porGrupo.every((f) => f.grupoId === "g1"), "filtro por grupo");
+
+  const porHipodromo = filtrarDetalle(filas, { hipodromo: "valencia" });
+  ok(porHipodromo.length === 1 && porHipodromo[0].cliente === "Luis", "filtro por hipódromo (sin mayúsculas)");
+
+  const porCarrera = filtrarDetalle(filas, { carrera: "3" });
+  ok(porCarrera.length === 2, "filtro por carrera");
+
+  const porProducto = filtrarDetalle(filas, { producto: "tablas" });
+  ok(porProducto.length === 1 && porProducto[0].producto === "tablas", "filtro por tipo de jugada (producto)");
+
+  const porRango = filtrarDetalle(filas, { desde: "2026-03-11", hasta: "2026-03-11" });
+  ok(porRango.length === 1 && porRango[0].fecha === "2026-03-11", "filtro por rango de fechas");
+
+  const k = kpisDeDetalle(filas);
+  ok(k.moneda === "USD", "KPI: moneda dominante");
+  ok(k.volumen === 3500, "KPI: volumen total jugado");
+  ok(k.decididas === 2, "KPI: jugadas decididas (PAGADO)");
+  ok(k.jugadas === 3, "KPI: total de jugadas incluye no decididas");
+  ok(k.comision === 125, "KPI: comisión total");
+  ok(k.pctAplicado === 3.57, "KPI: % de convenio aplicado = comisión / volumen");
+
+  ok(hoyLocalISO(new Date(2026, 2, 5)) === "2026-03-05", "hoyLocalISO sin desfase de zona horaria");
+}
+
+console.log("\n[11] Exportaciones: texto WhatsApp y matriz CSV (puro)");
+{
+  const k = kpisDeDetalle([
+    {
+      fecha: "2026-03-10", hipodromo: "La Rinconada", carrera: "3", cliente: "Ana",
+      grupoId: "g1", grupo: "Grupo Uno", esPrincipal: false, producto: "marcas",
+      detalle: "4 × 1", estado: "PAGADO", moneda: "USD", monto: 1000, pct: 5, comision: 50,
+    },
+  ]);
+  const texto = textoReporteWhatsApp(k, [
+    {
+      fecha: "2026-03-10", hipodromo: "La Rinconada", carrera: "3", cliente: "Ana",
+      grupoId: "g1", grupo: "Grupo Uno", esPrincipal: false, producto: "marcas",
+      detalle: "4 × 1", estado: "PAGADO", moneda: "USD", monto: 1000, pct: 5, comision: 50,
+    },
+  ], { grupo: "Grupo Uno", desde: "2026-03-01", hasta: "2026-03-31" });
+
+  ok(/REPORTE DE COMISIONES POR CONVENIO/.test(texto), "el texto de WhatsApp lleva el título");
+  ok(/Grupo Uno/.test(texto), "el texto de WhatsApp nombra el grupo");
+  ok(/10\/03\/2026/.test(texto), "el texto usa fecha legible DD/MM/AAAA");
+  ok(/Ana/.test(texto), "el texto lista al cliente de la jugada");
+
+  ok(formatearDinero(1234.5, "USD") === "$1.234,50", "formatea USD");
+  ok(formatearDinero(1234.5, "VES") === "Bs 1.234,50", "formatea VES con Bs");
+  ok(fechaLegible("2026-03-10") === "10/03/2026", "fechaLegible convierte ISO");
+  ok(COLUMNAS_DETALLE[0] === "Fecha" && COLUMNAS_DETALLE.includes("% Convenio"), "columnas del detalle");
+
+  const matriz = matrizDetalle([
+    {
+      fecha: "2026-03-10", hipodromo: "La Rinconada", carrera: "3", cliente: 'Ana, "la jefa"',
+      grupoId: "g1", grupo: "Grupo Uno", esPrincipal: false, producto: "marcas",
+      detalle: "4 × 1", estado: "PAGADO", moneda: "USD", monto: 1000, pct: 5, comision: 50,
+    },
+  ]);
+  ok(matriz.length === 2 && matriz[1].length === COLUMNAS_DETALLE.length, "matriz = encabezado + fila");
+
+  const csv = csvDetalle([
+    {
+      fecha: "2026-03-10", hipodromo: "La Rinconada", carrera: "3", cliente: 'Ana, "la jefa"',
+      grupoId: "g1", grupo: "Grupo Uno", esPrincipal: false, producto: "marcas",
+      detalle: "4 × 1", estado: "PAGADO", moneda: "USD", monto: 1000, pct: 5, comision: 50,
+    },
+  ]);
+  ok(/\"Ana, \"\"la jefa\"\"\"/.test(csv), "el CSV escapa comas y comillas");
+}
+
+console.log("\n[12] Fila de grupo en UNA sola línea (Single-Row Layout)");
+{
+  const mod = readFileSync(
+    join(raiz, "src", "features", "grupos", "components", "GruposModule.tsx"),
+    "utf8"
+  );
+  ok(
+    /flex items-center justify-between gap-3 whitespace-nowrap overflow-x-auto/.test(mod),
+    "la fila del grupo es una sola línea desplazable"
+  );
+  ok(/<LogoDisplay src=\{g\.logo_url\}/.test(mod), "la fila arranca con el logo del grupo");
+  ok(/Puestos: \{strNum\(g\.comision_default\)/.test(mod), "badge del % de Puestos (Entre Tercios)");
+  ok(/CONCEPTOS_CONVENIO\.filter\(\(c\) => c\.propio\)\.map/.test(mod), "badges de % por producto del convenio");
+  ok(/Cruces: \{g\.permite_cruces !== false \? "Sí" : "No"\}/.test(mod), "estado de cruces en la fila");
+  ok(/setReporteGrupo\(String\(g\.id\)\)/.test(mod), "botón de reporte por grupo en la fila");
+  ok(/setEditarComisiones\(true\)/.test(mod), "botón de comisiones del grupo en la fila");
+}
+
+console.log("\n[13] Eliminada la sección «🤝 Convenios por Tipo de Jugada y Grupo»");
+{
+  const mod = readFileSync(
+    join(raiz, "src", "features", "grupos", "components", "GruposModule.tsx"),
+    "utf8"
+  );
+  ok(!/Convenios por Tipo de Jugada y Grupo/.test(mod), "ya no existe la sección duplicada de convenios");
+  ok(!/guardarConveniosGrupo/.test(mod), "el módulo ya no guarda convenios por tipo de jugada");
+  ok(!/listarConveniosGrupo/.test(mod), "el módulo ya no lista convenios por tipo de jugada");
+  ok(!/FilasConvenioEditable/.test(mod), "se retiró el tipo de filas de convenio por tipo de jugada");
+  ok(!/const guardarConvenios =/.test(mod), "se retiró la función de guardado por tipo de jugada");
+  ok(/Banquero por Modalidad/.test(mod), "la sección de banquero por modalidad se conserva");
+  ok(/Seleccione un grupo para configurar su banquero/.test(mod), "el banquero conserva su propio selector de grupo");
+}
+
+console.log("\n[14] Reporte de comisiones: lector con detalle + exportaciones del modal");
+{
+  const lector = readFileSync(
+    join(raiz, "src", "features", "grupos", "lib", "reporte-comisiones.ts"),
+    "utf8"
+  );
+  const modal = readFileSync(
+    join(raiz, "src", "features", "grupos", "components", "ReporteComisionesConvenioModal.tsx"),
+    "utf8"
+  );
+  const exp = readFileSync(
+    join(raiz, "src", "features", "grupos", "lib", "reporte-comisiones-export.ts"),
+    "utf8"
+  );
+
+  ok(/detalle: DetalleJugada\[\]/.test(lector), "el lector devuelve el detalle por jugada");
+  ok(/filtrarDetalle/.test(lector), "el lector aplica los filtros al detalle");
+  ok(/estadoDeTicket/.test(lector), "el lector deduce el estado del ticket");
+
+  ok(/kpisDeDetalle/.test(modal), "el modal calcula los KPIs");
+  ok(/Volumen jugado/.test(modal), "KPI de volumen jugado");
+  ok(/Comisión a favor del grupo/.test(modal), "KPI de comisión a favor del grupo");
+  ok(/% convenio aplicado/.test(modal), "KPI de % de convenio aplicado");
+  ok(/Detalle de jugadas/.test(modal), "tabla detallada de jugadas");
+  ok(/Enviar al grupo por WhatsApp/.test(modal), "botón de envío por WhatsApp");
+  ok(/Copiar imagen PNG/.test(modal), "botón de copiar imagen PNG");
+  ok(/Exportar Excel/.test(modal), "botón de exportar Excel");
+  ok(/grupoFijoId/.test(modal), "el reporte admite el grupo fijo del admin de grupo");
+
+  ok(/descargarExcel/.test(exp), "la capa navegador exporta Excel");
+  ok(/imagenReportePng/.test(exp), "la capa navegador dibuja el PNG con canvas nativo");
+  ok(/ClipboardItem/.test(exp), "copia el PNG al portapapeles con ClipboardItem");
 }
 
 console.log(`\nTODO ${fallan === 0 ? "OK" : "FALLA"}: ${pasan} pasaron, ${fallan} fallaron`);

@@ -20,11 +20,18 @@
  * (las columnas nuevas de `grupos_venta`).
  */
 import { supabase } from "@/core/supabase";
+import { desgloseJugada } from "@/features/liquidacion/lib/etiquetas-reporte";
 import {
+  comisionEnDinero,
+  comisionPctDeGrupo,
   consolidarReporte,
+  filtrarDetalle,
   montoDecidido,
   productoDeNota,
+  type DetalleJugada,
+  type EstadoJugada,
   type FilaReporte,
+  type FiltrosReporte,
   type GrupoComisiones,
   type VentaConvenio,
 } from "./comisiones-convenio";
@@ -37,18 +44,29 @@ const MAX_PAGINAS = 40;
 const LOTE_IDS = 200;
 
 type FilaTicket = {
+  id?: string | number | null;
   grupo_cobro_id?: string | null;
   grupo_cobro_nombre?: string | null;
   moneda?: string | null;
   monto_decidido?: number | string | null;
   monto_jugado?: number | string | null;
   nota_auditoria?: unknown;
+  /** Fecha de la carrera (o de la venta si falta) para el detalle. */
+  fecha_carrera?: string | null;
+  fecha_registro?: string | null;
+  hipodromo?: string | null;
+  carrera?: string | number | null;
+  cliente?: string | null;
+  nombre_jugada?: string | null;
+  estado?: string | null;
 };
 
 export type ResultadoConvenio = {
   ok: boolean;
   error?: string;
   filas: FilaReporte[];
+  /** Detalle por jugada (tabla del reporte). */
+  detalle: DetalleJugada[];
   /** Avisos NO fatales (p. ej. si la tabla de pollas no está aplicada). */
   avisos: string[];
 };
@@ -56,6 +74,56 @@ export type ResultadoConvenio = {
 /** Monto decidido del ticket (con el jugado de respaldo). */
 export function montoDeTicket(t: FilaTicket): number {
   return montoDecidido(t.monto_decidido, t.monto_jugado);
+}
+
+/** Fecha del detalle: la de la carrera; si es heredada/nula, la de la venta. */
+export function fechaDeTicket(t: FilaTicket): string {
+  const fc = String(t.fecha_carrera ?? "").slice(0, 10);
+  if (fc) return fc;
+  return String(t.fecha_registro ?? "").slice(0, 10);
+}
+
+/**
+ * Estado del ticket → estado del detalle. El convenio se paga sobre el monto
+ * DECIDIDO, así que un ticket resuelto (o ganador/perdedor) es "PAGADO"; una
+ * jugada retirada/anulada no genera comisión y un pendiente no está decidido.
+ */
+export function estadoDeTicket(estado: string | null | undefined): EstadoJugada {
+  const e = String(estado ?? "").trim().toUpperCase();
+  if (/ANULAD|RETIRAD|RECHAZAD/.test(e)) return "ANULADA";
+  if (!e || /PENDIENTE/.test(e)) return "PENDIENTE";
+  return "PAGADO";
+}
+
+/** Fila de detalle de un ticket ya clasificado (o null si no suma al reporte). */
+function detalleDeTicket(
+  t: FilaTicket,
+  producto: VentaConvenio["producto"],
+  grupo: GrupoComisiones | undefined,
+  moneda: string,
+  monto: number,
+  grupoId: string
+): DetalleJugada {
+  const d = desgloseJugada(t as unknown as Record<string, unknown>);
+  const pct = comisionPctDeGrupo(grupo, producto) ?? 0;
+  // El ejemplar desglosado ("4 × 1", "7"); si no hay, cae al rótulo de la jugada.
+  const detalle = String(d.ejemplar || d.caballo || d.jugada || "").trim();
+  return {
+    fecha: fechaDeTicket(t),
+    hipodromo: String(t.hipodromo ?? "").trim(),
+    carrera: t.carrera != null ? String(t.carrera) : "",
+    cliente: String(t.cliente ?? "").trim(),
+    grupoId,
+    grupo: String(grupo?.nombre ?? grupoId),
+    esPrincipal: grupo?.es_principal === true,
+    producto,
+    detalle,
+    estado: estadoDeTicket(t.estado),
+    moneda,
+    monto,
+    pct,
+    comision: comisionEnDinero(monto, pct),
+  };
 }
 
 /** Agrega un ticket al acumulador si se puede clasificar por producto. */
@@ -71,35 +139,90 @@ function acumularTicket(t: FilaTicket, out: VentaConvenio[]): void {
 
 const finDeDia = (hasta: string): string => `${hasta}T23:59:59.999`;
 
+/** Índice de grupos por id, para resolver nombre/principal en el detalle. */
+function indiceGrupos(grupos: GrupoComisiones[]): Map<string, GrupoComisiones> {
+  const m = new Map<string, GrupoComisiones>();
+  for (const g of grupos) m.set(String(g.id), g);
+  return m;
+}
+
+/** Detalle de una fila de polla (las pollas no traen cliente/hipódromo propios). */
+function detalleDePolla(
+  grupoId: string,
+  fecha: string,
+  monto: number,
+  grupos: Map<string, GrupoComisiones>
+): DetalleJugada {
+  const grupo = grupos.get(grupoId);
+  const pct = comisionPctDeGrupo(grupo, "polla") ?? 0;
+  return {
+    fecha: String(fecha ?? "").slice(0, 10),
+    hipodromo: "",
+    carrera: "",
+    cliente: "",
+    grupoId,
+    grupo: String(grupo?.nombre ?? grupoId),
+    esPrincipal: grupo?.es_principal === true,
+    producto: "polla",
+    detalle: "POLLA",
+    estado: "PAGADO",
+    moneda: "USD",
+    monto,
+    pct,
+    comision: comisionEnDinero(monto, pct),
+  };
+}
+
 /**
  * Genera el reporte de comisiones por convenio del rango [desde, hasta] (fechas
  * `YYYY-MM-DD`). `grupos` es la lista de grupos (con sus % por producto).
+ *
+ * Devuelve el CONSOLIDADO por grupo+producto (`filas`) y el DETALLE por jugada
+ * (`detalle`). El 4.º argumento `filtros` acota el detalle (grupo, fechas,
+ * hipódromo, carrera y tipo de jugada); el consolidado sigue saliendo del rango
+ * completo para que el total a pagar no cambie por un filtro de vista.
  */
 export async function cargarReporteComisiones(
   desde: string,
   hasta: string,
-  grupos: GrupoComisiones[]
+  grupos: GrupoComisiones[],
+  filtros?: FiltrosReporte
 ): Promise<ResultadoConvenio> {
   if (!supabase) {
-    return { ok: false, error: "Sin conexión a Supabase", filas: [], avisos: [] };
+    return { ok: false, error: "Sin conexión a Supabase", filas: [], detalle: [], avisos: [] };
   }
   const avisos: string[] = [];
   const ventas: VentaConvenio[] = [];
+  const detalle: DetalleJugada[] = [];
+  const idx = indiceGrupos(grupos);
 
   // ---- 1) Tickets (marcas, tablas, remates, wps, dupletas, entre tercios) ----
+  // Se pide `*` (y no columnas nombradas) para tolerar migraciones incompletas:
+  // el detalle necesita fecha_carrera/hipodromo/carrera/cliente/estado, y una
+  // columna que falte no debe tumbar el reporte entero.
   for (let p = 0; p < MAX_PAGINAS; p++) {
     const { data, error } = await supabase
       .from("tickets_apuestas")
-      .select("grupo_cobro_id, grupo_cobro_nombre, moneda, monto_decidido, monto_jugado, nota_auditoria")
+      .select("*")
       .gte("fecha_registro", desde)
       .lte("fecha_registro", finDeDia(hasta))
       .order("fecha_registro", { ascending: true })
       .range(p * PAGINA, p * PAGINA + PAGINA - 1);
     if (error) {
-      return { ok: false, error: error.message, filas: [], avisos };
+      return { ok: false, error: error.message, filas: [], detalle: [], avisos };
     }
     const filas = (data ?? []) as FilaTicket[];
-    for (const t of filas) acumularTicket(t, ventas);
+    for (const t of filas) {
+      acumularTicket(t, ventas);
+      // Detalle: solo las jugadas clasificables y con grupo de cobro.
+      const producto = productoDeNota(t.nota_auditoria);
+      const grupoId = t.grupo_cobro_id ? String(t.grupo_cobro_id) : "";
+      if (!producto || !grupoId) continue;
+      const monto = montoDeTicket(t);
+      if (!monto) continue;
+      const moneda = String(t.moneda || "USD");
+      detalle.push(detalleDeTicket(t, producto, idx.get(grupoId), moneda, monto, grupoId));
+    }
     if (filas.length < PAGINA) break;
     if (p === MAX_PAGINAS - 1) avisos.push("El rango es muy amplio: se leyó hasta el tope de páginas.");
   }
@@ -113,8 +236,10 @@ export async function cargarReporteComisiones(
       .lte("fecha", hasta);
     if (e1) throw e1;
     const grupoPorPolla = new Map<string, string>();
-    for (const p of (pollas ?? []) as Array<{ id: string; grupo_id?: string | null }>) {
+    const fechaPorPolla = new Map<string, string>();
+    for (const p of (pollas ?? []) as Array<{ id: string; grupo_id?: string | null; fecha?: string | null }>) {
       if (p.grupo_id) grupoPorPolla.set(String(p.id), String(p.grupo_id));
+      fechaPorPolla.set(String(p.id), String(p.fecha ?? "").slice(0, 10));
     }
     const ids = [...grupoPorPolla.keys()];
     for (let i = 0; i < ids.length; i += LOTE_IDS) {
@@ -129,6 +254,7 @@ export async function cargarReporteComisiones(
         const monto = Number(v.pagado ?? 0);
         if (grupoId && Number.isFinite(monto) && monto > 0) {
           ventas.push({ grupoId, producto: "polla", moneda: "USD", monto });
+          detalle.push(detalleDePolla(grupoId, fechaPorPolla.get(String(v.polla_id)) ?? "", monto, idx));
         }
       }
     }
@@ -138,5 +264,6 @@ export async function cargarReporteComisiones(
     );
   }
 
-  return { ok: true, filas: consolidarReporte(ventas, grupos), avisos };
+  const detalleFiltrado = filtros ? filtrarDetalle(detalle, filtros) : detalle;
+  return { ok: true, filas: consolidarReporte(ventas, grupos), detalle: detalleFiltrado, avisos };
 }

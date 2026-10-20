@@ -21,6 +21,8 @@ import { etiquetaJugada, rotuloPareo, ladosDePareo, caballoPareoLegible } from "
 import { numerosDeCaballo } from "../src/features/saldos/lib/discos";
 import { armarReporteCarrera } from "../src/features/liquidacion/lib/reporte-carrera";
 import type { CarreraReporte } from "../src/features/liquidacion/lib/reportes";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 let pasan = 0;
 let fallan = 0;
@@ -178,6 +180,24 @@ const vieja = armarReporteCarrera({
   ],
 });
 igual(vieja.adelantadas.tablas[0]?.descripcion, "5", "las filas sin ejemplar conservan el comportamiento anterior");
+
+// ---------------------------------------------------------------------------
+// RENDER — la subsección de «Parada Adelantadas» muestra SOLO los discos.
+// Los discos ya dibujan el enfrentamiento ("4 × 1"); si además se imprimiera
+// `descripcion` como texto, aparecería una segunda «×» y los números
+// duplicados ("4 × 1" al lado de los discos 4 × 1).
+// ---------------------------------------------------------------------------
+console.log("\nBLOQUE 5 — render de «Parada Adelantadas» (fuente del componente)");
+const reporte = readFileSync(
+  join(process.cwd(), "src", "features", "saldos", "components", "ReporteCarrera.tsx"),
+  "utf8"
+);
+// Toma el cuerpo de `SubSeccion` y comprueba que no reimprime la descripción.
+const cuerpoSub = reporte.slice(reporte.indexOf("function SubSeccion"));
+const finSub = cuerpoSub.indexOf("function ListaResumen");
+const subseccion = cuerpoSub.slice(0, finSub > 0 ? finSub : cuerpoSub.length);
+si(/<Discos\s+caballo=\{t\.descripcion\}/.test(subseccion), "la parada pinta los discos del enfrentamiento");
+si(!/\/>\s*\{t\.descripcion\}/.test(subseccion), "la parada NO vuelve a imprimir la descripción como texto (sin × duplicada)");
 
 console.log(`\n  BLOQUE 5 DESGLOSE: ${pasan} ok, ${fallan} fallaron\n`);
 if (fallan > 0) process.exit(1);

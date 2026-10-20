@@ -18,7 +18,7 @@ import { useConfirmar } from "@/shared/store/useConfirmStore";
 
 import { BANCOS_VZLA, formatearCuenta } from "@/shared/lib/vzla";
 
-import { DIAS_SEMANA } from "@/features/liquidacion/lib/semana";
+import { DIAS_SEMANA, etiquetaDia } from "@/features/liquidacion/lib/semana";
 
 import {
 
@@ -38,11 +38,7 @@ import {
 
   errorCargaGrupos,
 
-  guardarConveniosGrupo,
-
   listarClientesLigeros,
-
-  listarConveniosGrupo,
 
   listarGruposAdmin,
 
@@ -55,8 +51,6 @@ import {
   toggleGrupoActivo,
 
   type ClienteLigero,
-
-  type ConvenioRow,
 
   type GrupoRow,
 
@@ -180,42 +174,6 @@ function componerCuenta(banco: string, numero: string): string | null {
 
 
 
-const DETALLE_TIPO = (nombre: string): string => {
-
-  const n = String(nombre || "").toUpperCase();
-
-  if (/TABLA/.test(n)) return "comisión por tablas fijas";
-
-  if (/WIN|GANADOR|GANANCIA/.test(n)) return "win · ganador";
-
-  if (/PLACE|LUGAR/.test(n)) return "place · 1.º/2.º";
-
-  if (/SHOW|MOSTRAR/.test(n)) return "show · 1.º/2.º/3.º";
-
-  if (/PUESTOS|EXACTA|PERFECTA/.test(n)) return "puestos · exacta";
-
-  if (/TRIFECTA/.test(n)) return "trifecta";
-
-  return "comisión por ticket";
-
-};
-
-
-
-type FilasConvenioEditable = {
-
-  tipo_jugada_id: string | number;
-
-  comision: string;
-
-  comision_base: string;
-
-  permite_cruces: boolean;
-
-};
-
-
-
 type FilaBanquero = {
 
   modalidad: ModalidadBanquero;
@@ -264,8 +222,6 @@ export function GruposModule() {
 
   const [grupoConvenio, setGrupoConvenio] = useState("");
 
-  const [convenios, setConvenios] = useState<FilasConvenioEditable[]>([]);
-
   const [banqueros, setBanqueros] = useState<FilaBanquero[]>([]);
 
 
@@ -303,6 +259,12 @@ export function GruposModule() {
   const [formConvenio, setFormConvenio] = useState<ValoresConvenio>(() => valoresConvenioInicial("2.5"));
 
   const [reporteAbierto, setReporteAbierto] = useState(false);
+
+  /** Grupo preseleccionado al abrir el reporte desde la fila de un grupo. */
+  const [reporteGrupo, setReporteGrupo] = useState<string | null>(null);
+
+  /** Grupo al que apunta el botón «Comisiones» (abre la edición en la ficha). */
+  const [editarComisiones, setEditarComisiones] = useState(false);
 
   const [formResponsable, setFormResponsable] = useState("");
 
@@ -729,6 +691,8 @@ export function GruposModule() {
 
     setEditando(null);
 
+    setEditarComisiones(false);
+
     toast(`Grupo "${nombre}" actualizado. Comisiones por convenio guardadas.`, "success");
 
     // Propagación reactiva del logo del grupo: cabeceras/reportes al instante.
@@ -744,41 +708,11 @@ export function GruposModule() {
 
     if (!grupoId) {
 
-      setConvenios([]);
-
       setBanqueros([]);
 
       return;
 
     }
-
-    const cs = await listarConveniosGrupo(grupoId);
-
-    const mapa = new Map<string, ConvenioRow>();
-
-    cs.forEach((c) => mapa.set(String(c.tipo_jugada_id), c));
-
-    const filas = tipos.map((t) => {
-
-      const c = mapa.get(String(t.id));
-
-      return {
-
-        tipo_jugada_id: t.id,
-
-        comision: c != null && c.comision != null ? String(c.comision) : "",
-
-        comision_base: c != null && c.comision_base != null ? String(c.comision_base) : "",
-
-        permite_cruces: c != null ? c.permite_cruces !== false : true,
-
-      };
-
-    });
-
-    setConvenios(filas);
-
-
 
     const bs = await listarBanquerosGrupo(grupoId);
 
@@ -863,48 +797,6 @@ export function GruposModule() {
       "success"
 
     );
-
-  };
-
-
-
-  const guardarConvenios = async () => {
-
-    if (!grupoConvenio) return toast("Seleccione el grupo para guardar sus convenios.", "warning");
-
-    if (!tipos.length) return toast("No hay tipos de jugada activos.", "warning");
-
-    // Payload completo de TODOS los tipos de jugada: el % vacío sigue siendo
-
-    // "sin convenio" (null), pero un 0% pactado es un valor válido y viaja como
-
-    // 0 (antes `num(x) > 0` lo convertía en null y la base quedaba con el
-
-    // default del legacy mientras la UI mostraba 0%).
-
-    const filas = convenios.map((f) => ({
-
-      tipo_jugada_id: f.tipo_jugada_id,
-
-      comision: f.comision.trim() === "" ? null : num(f.comision),
-
-      comision_base: num(f.comision_base) > 0 ? num(f.comision_base) : null,
-
-      permite_cruces: f.permite_cruces,
-
-    }));
-
-    const r = await guardarConveniosGrupo(grupoConvenio, filas);
-
-    if (!r.ok) return toast(r.error ?? "Error al guardar convenios.", "error");
-
-    // Vuelve a leer desde Supabase para que los inputs queden con lo que la
-
-    // base guardó de verdad (y no con lo que creyó guardar el formulario).
-
-    await cargarConvenios(grupoConvenio);
-
-    toast(`Convenios guardados (${filas.length} tipo(s) de jugada).`, "success");
 
   };
 
@@ -1016,7 +908,14 @@ export function GruposModule() {
 
       {reporteAbierto ? (
 
-        <ReporteComisionesConvenioModal grupos={grupos} onCerrar={() => setReporteAbierto(false)} />
+        <ReporteComisionesConvenioModal
+          grupos={grupos}
+          grupoFijoId={reporteGrupo}
+          onCerrar={() => {
+            setReporteAbierto(false);
+            setReporteGrupo(null);
+          }}
+        />
 
       ) : null}
 
@@ -1399,169 +1298,218 @@ export function GruposModule() {
 
                   return (
 
-                    <div key={String(g.id)} className="flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-3 py-2">
+                    <div
 
-                      <LogoDisplay src={g.logo_url} alt={`Logo de ${g.nombre}`} tamano={36} />
+                      key={String(g.id)}
 
-                      <div className="min-w-0 flex-1">
+                      className="flex items-center justify-between gap-3 whitespace-nowrap overflow-x-auto rounded-lg border border-line bg-slate-50 px-3 py-2"
 
-                        <span className="text-xs font-bold text-slate-800"> {g.nombre} </span>
+                    >
 
-                        <span className={`ml-2 rounded px-1.5 py-0.5 text-[9px] font-black ${esVes ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
+                      {/* Identidad: logo + nombre */}
+
+                      <div className="flex shrink-0 items-center gap-2">
+
+                        <LogoDisplay src={g.logo_url} alt={`Logo de ${g.nombre}`} tamano={32} />
+
+                        <span className="text-xs font-bold text-slate-800">{g.nombre}</span>
+
+                        {g.es_principal ? (
+
+                          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] font-black text-white">PRINCIPAL</span>
+
+                        ) : null}
+
+                      </div>
+
+                      {/* Moneda / ciclo */}
+
+                      <div className="flex shrink-0 items-center gap-1">
+
+                        <span className={`rounded px-1.5 py-0.5 text-[9px] font-black ${esVes ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
 
                           {g.moneda ?? "USD"}
 
                         </span>
 
-                        <span className="ml-1 rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-black text-slate-700" title="Moneda de cuadre">
+                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-black text-slate-700" title="Moneda de cuadre">
 
                           Cuadre: {g.moneda_cuadre || g.moneda || "USD"}
 
                         </span>
 
-                        {g.es_principal ? (
+                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-600" title="Ciclo semanal (día inicio → día fin)">
 
-                          <span className="ml-1 rounded bg-slate-800 px-1.5 py-0.5 text-[9px] font-black text-white">PRINCIPAL</span>
-
-                        ) : null}
-
-                        <div className="mt-0.5 truncate text-[10px] text-slate-500">
-
-                          {g.responsable ? (
-
-                            <>
-
-                              <span className="mr-0.5 text-slate-400">👔</span>
-
-                              <b>{g.responsable}</b>
-
-                            </>
-
-                          ) : (
-
-                            <span className="italic">Sin responsable</span>
-
-                          )}
-
-                          {cuentas.numero ? (
-
-                            <>
-
-                              {" "}
-
-                              · <span className="mr-0.5 text-slate-400">🏦</span>
-
-                              {cuentas.numero}
-
-                            </>
-
-                          ) : null}
-
-                        </div>
-
-                        <span className="text-[10px] text-slate-500">
-
-                          Cupos/tabla: <b>{g.cupo_tabla ?? 100}</b> · Comisión Entre Tercios:{" "}
-
-                          <b className="text-amber-600">{strNum(g.comision_default) || "2.5"}%</b> · Clientes:{" "}
-
-                          <b>{conteoPorGrupo.get(String(g.id)) ?? 0}</b>
+                          🗓️ {etiquetaDia(g.dia_inicio_semana ?? 1)}–{etiquetaDia(g.dia_fin_semana ?? 7)}
 
                         </span>
 
-                        {/* Comisiones propias del convenio (solo las pactadas: las
+                      </div>
 
-                            vacías heredan la de Entre Tercios y no se listan). */}
+                      {/* Badges de % Comisiones por producto */}
 
-                        {(() => {
+                      <div className="flex shrink-0 items-center gap-1">
+
+                        <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold text-indigo-700" title="Comisión Entre Tercios (Puestos) sobre el monto decidido">
+
+                          🎯 Puestos: {strNum(g.comision_default) || "2.5"}%
+
+                        </span>
+
+                        {CONCEPTOS_CONVENIO.filter((c) => c.propio).map((c) => {
 
                           const propio = (g as unknown as Record<string, unknown>);
 
-                          const pactadas = CONCEPTOS_CONVENIO.filter(
-
-                            (c) => c.propio && propio[c.campo] !== null && propio[c.campo] !== undefined && propio[c.campo] !== ""
-
-                          );
-
-                          if (!pactadas.length) return null;
+                          const valor = strNum(propio[c.campo] as string | number | null | undefined);
 
                           return (
 
-                            <div className="mt-0.5 flex flex-wrap gap-1">
+                            <span
 
-                              {pactadas.map((c) => (
+                              key={c.clave}
 
-                                <span
+                              className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${valor ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-400"}`}
 
-                                  key={c.clave}
+                              title={valor ? `Comisión por convenio de ${c.etiqueta}` : `${c.etiqueta}: hereda Puestos`}
 
-                                  className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700"
+                            >
 
-                                  title={`Comisión por convenio de ${c.etiqueta} (sobre el monto decidido)`}
+                              {c.emoji} {c.etiqueta}: {valor || "hereda"}
 
-                                >
+                              {valor ? "%" : ""}
 
-                                  {c.emoji} {c.etiqueta}: {String(propio[c.campo])}%
-
-                                </span>
-
-                              ))}
-
-                            </div>
+                            </span>
 
                           );
 
-                        })()}
+                        })}
 
                       </div>
 
-                      <button
+                      {/* Estado: cruces + clientes */}
 
-                        className="rounded px-2 py-1 text-xs font-bold bg-slate-200 text-slate-700 hover:bg-slate-300"
+                      <div className="flex shrink-0 items-center gap-1">
 
-                        onClick={() => setEditando(g)}
+                        <span
 
-                        title="Editar grupo"
+                          className={`rounded px-1.5 py-0.5 text-[9px] font-black ${g.permite_cruces !== false ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}
 
-                      >
-
-                        <span >✏️</span>
-
-                      </button>
-
-                      <button
-
-                        className={`rounded px-2 py-1 text-xs font-bold ${g.activo !== false ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-red-100 text-red-600 hover:bg-red-200"}`}
-
-                        onClick={() => void toggleGrupo(g)}
-
-                        title={g.activo !== false ? "Desactivar" : "Activar"}
-
-                      >
-
-                        <span>{g.activo !== false ? "\u{1F7E2}" : "\u26AA"}</span>
-
-                      </button>
-
-                      {g.es_principal ? null : (
-
-                        <button
-
-                          className="rounded bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"
-
-                          onClick={() => void eliminarGrupo(g)}
-
-                          title="Eliminar"
+                          title="Trabaja con cruces (jugadas de Puestos de una misma carrera)"
 
                         >
 
-                          <span >🗑️</span>
+                          🔀 Cruces: {g.permite_cruces !== false ? "Sí" : "No"}
+
+                        </span>
+
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-600" title="Clientes del grupo">
+
+                          👥 {conteoPorGrupo.get(String(g.id)) ?? 0}
+
+                        </span>
+
+                      </div>
+
+                      {/* Acciones */}
+
+                      <div className="flex shrink-0 items-center gap-1">
+
+                        <button
+
+                          className="rounded px-2 py-1 text-xs font-bold bg-slate-200 text-slate-700 hover:bg-slate-300"
+
+                          onClick={() => {
+
+                            setEditarComisiones(false);
+
+                            setEditando(g);
+
+                          }}
+
+                          title="Editar grupo"
+
+                        >
+
+                          <span>✏️</span>
 
                         </button>
 
-                      )}
+                        <button
+
+                          className="rounded bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
+
+                          onClick={() => {
+
+                            setEditando(g);
+
+                            setEditarComisiones(true);
+
+                          }}
+
+                          title="Comisiones por convenio del grupo"
+
+                        >
+
+                          <span>💰</span>
+
+                        </button>
+
+                        <button
+
+                          className="rounded bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
+
+                          onClick={() => {
+
+                            setReporteGrupo(String(g.id));
+
+                            setReporteAbierto(true);
+
+                          }}
+
+                          title="Reporte de comisiones del grupo"
+
+                        >
+
+                          <span>📈</span>
+
+                        </button>
+
+                        <button
+
+                          className={`rounded px-2 py-1 text-xs font-bold ${g.activo !== false ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-red-100 text-red-600 hover:bg-red-200"}`}
+
+                          onClick={() => void toggleGrupo(g)}
+
+                          title={g.activo !== false ? "Desactivar" : "Activar"}
+
+                        >
+
+                          <span>{g.activo !== false ? "\u{1F7E2}" : "\u26AA"}</span>
+
+                        </button>
+
+                        {g.es_principal ? null : (
+
+                          <button
+
+                            className="rounded bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"
+
+                            onClick={() => void eliminarGrupo(g)}
+
+                            title="Eliminar"
+
+                          >
+
+                            <span>🗑️</span>
+
+                          </button>
+
+                        )}
+
+                      </div>
 
                     </div>
+
 
                   );
 
@@ -1725,19 +1673,23 @@ export function GruposModule() {
 
         </div>
 
-        {/* ---------------- Convenios por Tipo de Jugada y Grupo ---------------- */}
+
+
+        {/* ---------------- Banquero por Modalidad ---------------- */}
 
         <div className="h-fit rounded-2xl border border-line bg-white p-4">
 
           <h3 className="mb-2 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">
 
-            <span className="mr-1 text-amber-500">🤝</span> Convenios por Tipo de Jugada y Grupo
+            <span className="mr-1 text-amber-500">👔</span> Banquero por Modalidad
 
             <p className="mt-1 text-[10px] font-normal normal-case text-slate-400">
 
-              Comisión y condiciones particulares que recibe el grupo según el tipo de jugada. El % de{" "}
+              Cliente del grupo que toma el lado contrario de las jugadas. Al liquidar, su saldo se mueve en espejo
 
-              <b>Tablas Fijas</b> usa el valor del grupo; los demás tipos definen su propio convenio.
+              (si pierde el jugador gana el banquero y viceversa) y paga la comisión sobre el monto decidido, que
+
+              recibe el grupo. Sin banquero o con comisión en 0% no se le cobra nada.
 
             </p>
 
@@ -1772,146 +1724,6 @@ export function GruposModule() {
             </select>
 
           </div>
-
-          <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
-
-            {!grupoConvenio ? (
-
-              <p className="text-xs italic text-slate-400">Seleccione un grupo para ver sus convenios.</p>
-
-            ) : tipos.length === 0 ? (
-
-              <p className="text-xs italic text-slate-400">No hay tipos de jugada activos.</p>
-
-            ) : (
-
-              convenios.map((f) => (
-
-                <div key={String(f.tipo_jugada_id)} className="flex items-center gap-2 rounded-lg border border-line bg-white px-2 py-1.5">
-
-                  <div className="min-w-0 flex-1">
-
-                    <span className="text-xs font-bold uppercase text-slate-700">
-
-                      {tipos.find((t) => String(t.id) === String(f.tipo_jugada_id))?.nombre ?? "—"}
-
-                    </span>
-
-                    <span className="block truncate text-[9px] text-slate-400">
-
-                      {DETALLE_TIPO(tipos.find((t) => String(t.id) === String(f.tipo_jugada_id))?.nombre ?? "")}
-
-                    </span>
-
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-1">
-
-                    <label className="text-[9px] font-black uppercase text-slate-500">%</label>
-
-                    <input
-
-                      type="number"
-
-                      step="0.01"
-
-                      min={0}
-
-                      value={f.comision}
-
-                      onChange={(e) =>
-
-                        setConvenios((cs) => cs.map((x) => (String(x.tipo_jugada_id) === String(f.tipo_jugada_id) ? { ...x, comision: e.target.value } : x)))
-
-                      }
-
-                      className="w-14 rounded border border-line px-1 py-0.5 text-right text-[11px] font-bold text-amber-700 outline-none focus:ring-1 focus:ring-amber-400"
-
-                    />
-
-                    <label className="ml-1 text-[9px] font-black uppercase text-slate-500">Base $</label>
-
-                    <input
-
-                      type="number"
-
-                      step="0.01"
-
-                      min={0}
-
-                      value={f.comision_base}
-
-                      onChange={(e) =>
-
-                        setConvenios((cs) => cs.map((x) => (String(x.tipo_jugada_id) === String(f.tipo_jugada_id) ? { ...x, comision_base: e.target.value } : x)))
-
-                      }
-
-                      className="w-14 rounded border border-line px-1 py-0.5 text-right text-[11px] font-bold text-slate-700 outline-none focus:ring-1 focus:ring-amber-400"
-
-                    />
-
-                    <label className="ml-1 flex cursor-pointer items-center gap-1" title="Permite cruces / combinaciones en este tipo">
-
-                      <input
-
-                        type="checkbox"
-
-                        className="rounded accent-primary-600"
-
-                        checked={f.permite_cruces}
-
-                        onChange={(e) =>
-
-                          setConvenios((cs) => cs.map((x) => (String(x.tipo_jugada_id) === String(f.tipo_jugada_id) ? { ...x, permite_cruces: e.target.checked } : x)))
-
-                        }
-
-                      />
-
-                      <span className="text-[9px] font-black uppercase text-slate-500">Cruces</span>
-
-                    </label>
-
-                  </div>
-
-                </div>
-
-              ))
-
-            )}
-
-          </div>
-
-          <Button variant="success" className="mt-2 w-full" onClick={() => void guardarConvenios()}>
-
-            <span className="mr-1">💾</span> Guardar Convenios del Grupo
-
-          </Button>
-
-        </div>
-
-
-
-        {/* ---------------- Banquero por Modalidad ---------------- */}
-
-        <div className="h-fit rounded-2xl border border-line bg-white p-4">
-
-          <h3 className="mb-2 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">
-
-            <span className="mr-1 text-amber-500">👔</span> Banquero por Modalidad
-
-            <p className="mt-1 text-[10px] font-normal normal-case text-slate-400">
-
-              Cliente del grupo que toma el lado contrario de las jugadas. Al liquidar, su saldo se mueve en espejo
-
-              (si pierde el jugador gana el banquero y viceversa) y paga la comisión sobre el monto decidido, que
-
-              recibe el grupo. Sin banquero o con comisión en 0% no se le cobra nada.
-
-            </p>
-
-          </h3>
 
           {!grupoConvenio ? (
 
@@ -2234,15 +2046,19 @@ export function GruposModule() {
 
               </div>
 
-              <CamposComisionesConvenio
+              <div className={editarComisiones ? "rounded-2xl ring-2 ring-indigo-400 ring-offset-2" : ""}>
 
-                valores={valoresConvenioDeGrupo(editando as unknown as Record<string, unknown>)}
+                <CamposComisionesConvenio
 
-                onCambio={setConvenioEdicion}
+                  valores={valoresConvenioDeGrupo(editando as unknown as Record<string, unknown>)}
 
-                ayuda="Comisión por convenio de este grupo, sobre el MONTO DECIDIDO. Vacío = hereda la de Entre Tercios."
+                  onCambio={setConvenioEdicion}
 
-              />
+                  ayuda="Comisión por convenio de este grupo, sobre el MONTO DECIDIDO. Vacío = hereda la de Entre Tercios."
+
+                />
+
+              </div>
 
               <div>
 

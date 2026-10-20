@@ -241,6 +241,297 @@ export type VentaConvenio = {
   monto: number;
 };
 
+// ===========================================================================
+// DETALLE POR JUGADA (tabla del reporte y exportaciones)
+// ===========================================================================
+
+/**
+ * Estado de una jugada del reporte. El convenio se paga sobre el MONTO DECIDIDO,
+ * que por definición ya está resuelto; "PAGADO" es el estado normal. "PENDIENTE"
+ * queda para completitud (una jugada sin decidir) y "ANULADA" para una jugada
+ * retirada, que no genera comisión.
+ */
+export type EstadoJugada = "PAGADO" | "PENDIENTE" | "ANULADA";
+
+/**
+ * Una JUGADA del reporte: el detalle por ticket que pide la tabla. El rótulo del
+ * producto (`etiqueta`/`emoji`) lo completa el llamador con el catálogo para no
+ * duplicar la tabla de conceptos acá.
+ */
+export type DetalleJugada = {
+  /** Fecha de registro del ticket (YYYY-MM-DD) o "" si no vino. */
+  fecha: string;
+  hipodromo: string;
+  carrera: string;
+  /** Nombre del jugador dueño de la jugada. */
+  cliente: string;
+  grupoId: string;
+  grupo: string;
+  esPrincipal: boolean;
+  producto: ProductoConvenio;
+  /** Ejemplares involucrados ("4 × 1", "7", "TAQUILLA 3X8"). Texto ya legible. */
+  detalle: string;
+  estado: EstadoJugada;
+  moneda: string;
+  /** Monto decidido sobre el que se calcula la comisión. */
+  monto: number;
+  /** % pactado del grupo para ese producto. */
+  pct: number;
+  /** Comisión generada a favor del grupo (monto × pct / 100). */
+  comision: number;
+};
+
+/** Comisión de un detalle con su propio % (0 si el % o el monto no sirven). */
+export function comisionDeDetalle(d: Pick<DetalleJugada, "monto" | "pct">): number {
+  return comisionEnDinero(d.monto, d.pct);
+}
+
+/**
+ * Firma de filtros del reporte. Todos opcionales: un filtro vacío ("") no
+ * discrimina. El filtro de `producto` es el tipo de jugada del catálogo del
+ * convenio.
+ */
+export type FiltrosReporte = {
+  grupoId?: string;
+  /** Rango por fecha del detalle (YYYY-MM-DD). Comparación inclusiva. */
+  desde?: string;
+  hasta?: string;
+  hipodromo?: string;
+  carrera?: string;
+  producto?: ProductoConvenio | "";
+};
+
+/** ¿La fecha (YYYY-MM-DD) cae dentro de [desde, hasta]? Compara texto ISO. */
+export function fechaEnRango(fecha: string, desde?: string, hasta?: string): boolean {
+  const f = String(fecha ?? "").slice(0, 10);
+  if (!f) return !desde && !hasta;
+  if (desde && f < desde) return false;
+  if (hasta && f > hasta) return false;
+  return true;
+}
+
+/** Igualdad laxa de texto para filtros (trim + sin mayúsculas). "" no filtra. */
+function coincide(valor: string, filtro?: string): boolean {
+  const f = String(filtro ?? "").trim().toUpperCase();
+  if (!f) return true;
+  return String(valor ?? "").trim().toUpperCase().includes(f) || f === "TODAS" || f === "TODOS";
+}
+
+/** Aplica los filtros del reporte a las jugadas del detalle. Puro. */
+export function filtrarDetalle(filas: DetalleJugada[], filtros: FiltrosReporte): DetalleJugada[] {
+  const gid = String(filtros.grupoId ?? "").trim();
+  return filas.filter((f) => {
+    if (gid && String(f.grupoId) !== gid) return false;
+    if (!fechaEnRango(f.fecha, filtros.desde, filtros.hasta)) return false;
+    if (!coincide(f.hipodromo, filtros.hipodromo)) return false;
+    if (!coincide(f.carrera, filtros.carrera)) return false;
+    if (filtros.producto && f.producto !== filtros.producto) return false;
+    return true;
+  });
+}
+
+/** KPIs del reporte (resumen de cabecera). */
+export type KpisReporte = {
+  /** Volumen total jugado (suma de montos decididos), por moneda. */
+  volumen: number;
+  /** Total de jugadas DECIDIDAS (estado PAGADO). */
+  decididas: number;
+  /** Total de comisión generada a favor del grupo. */
+  comision: number;
+  /** Moneda dominante del conjunto (la de mayor volumen); "" si no hay filas. */
+  moneda: string;
+  /** % de convenio APLICADO sobre lo jugado (comisión / volumen × 100). */
+  pctAplicado: number;
+  /** Total de jugadas en el conjunto filtrado (incluye no decididas). */
+  jugadas: number;
+};
+
+/**
+ * KPIs de un conjunto de jugadas. `moneda` permite acotar a una sola moneda
+ * (la del grupo); si se omite, se usa la moneda de MAYOR volumen para no mezclar
+ * USD y VES en un mismo total (nunca se convierten).
+ */
+export function kpisDeDetalle(filas: DetalleJugada[], moneda?: string): KpisReporte {
+  const mon = String(moneda ?? "").trim().toUpperCase();
+  // Moneda dominante: la de mayor volumen entre las filas.
+  let dominante = "";
+  if (!mon) {
+    const porMoneda = new Map<string, number>();
+    for (const f of filas) {
+      const m = String(f.moneda || "USD").toUpperCase();
+      porMoneda.set(m, (porMoneda.get(m) ?? 0) + Number(f.monto || 0));
+    }
+    let mejor = -1;
+    for (const [m, v] of porMoneda) {
+      if (v > mejor) {
+        mejor = v;
+        dominante = m;
+      }
+    }
+  }
+  const usar = mon || dominante;
+
+  let volumen = 0;
+  let comision = 0;
+  let decididas = 0;
+  let jugadas = 0;
+  for (const f of filas) {
+    const m = String(f.moneda || "USD").toUpperCase();
+    if (usar && m !== usar) continue;
+    jugadas += 1;
+    if (f.estado === "PAGADO") decididas += 1;
+    volumen += Number(f.monto || 0);
+    comision += Number(f.comision || 0);
+  }
+  volumen = redondear2(volumen);
+  comision = redondear2(comision);
+  return {
+    volumen,
+    decididas,
+    comision,
+    moneda: usar,
+    pctAplicado: volumen > 0 ? redondear2((comision / volumen) * 100) : 0,
+    jugadas,
+  };
+}
+
+/** Fecha de hoy local en formato YYYY-MM-DD (sin desfase por zona horaria). */
+export function hoyLocalISO(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
+// ===========================================================================
+// EXPORTACIONES (texto WhatsApp y CSV) — builders PUROS
+// ===========================================================================
+
+/** Importe con separador de miles y 2 decimales, con su símbolo de moneda. */
+export function formatearDinero(n: number, moneda: string): string {
+  const m = String(moneda || "USD").toUpperCase();
+  const sym = m === "VES" ? "Bs " : "$";
+  return `${sym}${Number(n || 0).toLocaleString("es-VE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+/** Fecha YYYY-MM-DD → DD/MM/AAAA (para el texto de WhatsApp). */
+export function fechaLegible(iso: string): string {
+  const s = String(iso ?? "").slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : s;
+}
+
+/** Encabezado del reporte (lo comparten el texto de WhatsApp y el PNG). */
+export type EncabezadoReporte = {
+  grupo: string;
+  desde: string;
+  hasta: string;
+  /** Monoedas del reporte (normalmente ["USD"], o USD y VES). */
+  moneda?: string;
+};
+
+/**
+ * Texto del reporte listo para enviar/copiar por WhatsApp. Resume los KPIs y
+ * lista las jugadas del detalle (máximo `topeFilas` para no hacer un mensaje
+ * eterno). Puro: no toca el DOM.
+ */
+export function textoReporteWhatsApp(
+  kpis: KpisReporte,
+  detalle: DetalleJugada[],
+  encabezado: EncabezadoReporte,
+  topeFilas = 40
+): string {
+  const L: string[] = [];
+  L.push("📈 *REPORTE DE COMISIONES POR CONVENIO*");
+  L.push(`🏢 Grupo: *${encabezado.grupo || "—"}*`);
+  L.push(`📅 Rango: ${fechaLegible(encabezado.desde)} al ${fechaLegible(encabezado.hasta)}`);
+  L.push("");
+  L.push("━━━━━━━━━━━━━━━━━━━━");
+  L.push(`💵 Volumen jugado: *${formatearDinero(kpis.volumen, kpis.moneda)}*`);
+  L.push(`✅ Jugadas decididas: *${kpis.decididas}* de ${kpis.jugadas}`);
+  L.push(`📊 % de convenio aplicado: *${kpis.pctAplicado}%*`);
+  L.push(`🤝 *Comisión a favor del grupo: ${formatearDinero(kpis.comision, kpis.moneda)}*`);
+  L.push("━━━━━━━━━━━━━━━━━━━━");
+
+  const visibles = detalle.slice(0, topeFilas);
+  if (visibles.length) {
+    L.push("");
+    L.push("*Detalle de jugadas*");
+    for (const d of visibles) {
+      const donde = [d.hipodromo, d.carrera ? `C${d.carrera}` : ""].filter(Boolean).join(" ");
+      const partes = [
+        fechaLegible(d.fecha),
+        donde,
+        d.cliente || "—",
+        d.detalle || "—",
+      ].filter(Boolean);
+      L.push(`• ${partes.join(" · ")} → ${formatearDinero(d.monto, d.moneda)} (${d.pct}% = ${formatearDinero(d.comision, d.moneda)})`);
+    }
+    if (detalle.length > visibles.length) {
+      L.push(`… y ${detalle.length - visibles.length} jugada(s) más.`);
+    }
+  } else {
+    L.push("");
+    L.push("_Sin jugadas en el rango._");
+  }
+  L.push("");
+  L.push("_Generado por el Sistema Hípico._");
+  return L.join("\n");
+}
+
+/** Columnas del CSV/Excel del detalle, en orden. */
+export const COLUMNAS_DETALLE = [
+  "Fecha",
+  "Hipódromo",
+  "Carrera",
+  "Cliente",
+  "Tipo de Jugada",
+  "Detalle de Ejemplares",
+  "Estado",
+  "Monto Base",
+  "% Convenio",
+  "Comisión",
+] as const;
+
+/** Celda segura para CSV/Excel (comillas y comas). */
+function celda(v: unknown): string {
+  const s = String(v ?? "");
+  return /[",;\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * Matriz de celdas del detalle (encabezado + filas) para exportar a CSV/Excel.
+ * Pura: el llamador decide el formato (CSV directo o HTML de Excel).
+ */
+export function matrizDetalle(detalle: DetalleJugada[]): string[][] {
+  const out: string[][] = [[...COLUMNAS_DETALLE]];
+  for (const d of detalle) {
+    out.push([
+      fechaLegible(d.fecha),
+      d.hipodromo,
+      d.carrera,
+      d.cliente,
+      d.producto,
+      d.detalle,
+      d.estado,
+      formatearDinero(d.monto, d.moneda),
+      `${d.pct}%`,
+      formatearDinero(d.comision, d.moneda),
+    ]);
+  }
+  return out;
+}
+
+/** CSV del detalle (con BOM para que Excel respete los acentos). */
+export function csvDetalle(detalle: DetalleJugada[]): string {
+  return matrizDetalle(detalle)
+    .map((fila) => fila.map(celda).join(","))
+    .join("\r\n");
+}
+
 /** Fila del reporte: un grupo + un producto + una moneda. */
 export type FilaReporte = {
   grupoId: string;
