@@ -24,6 +24,13 @@ import {
   type JugadaAdmin,
   type AuditoriaJugada,
 } from "@/features/jugadas/lib/jugadas";
+import {
+  estadoMaestro,
+  ETIQUETA_ESTADO,
+  BADGE_ESTADO,
+  ESTADOS_MAESTROS,
+  type EstadoMaestro,
+} from "@/features/liquidacion/lib/estados-jugada";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -50,14 +57,27 @@ type FiltroEstado =
   | "liquidadas"
   | "anuladas";
 
+/**
+ * Estados INTERNOS que el motor escribe en el ticket (lo que el operador puede
+ * corregir a mano). Se muestran agrupados por su ESTADO MAESTRO (PENDIENTE /
+ * LIQUIDADA / ANULADA) para que el vocabulario de la pantalla sea el del dueño,
+ * pero por debajo se sigue guardando el estado interno que entienden el motor
+ * de liquidación y las RPC.
+ */
 const ESTADOS_JUGADA = ["Pendiente", "Ganador", "Perdedor", "Retirado"] as const;
 
+/** Etiqueta del selector: "Pendiente (PENDIENTE)", "Ganador (LIQUIDADA)"… */
+function etiquetaEstadoInterno(e: string): string {
+  return `${e} (${ETIQUETA_ESTADO[estadoMaestro(e)].toUpperCase()})`;
+}
+
 const ESTADO_BADGE: Record<string, string> = {
-  Pendiente: "bg-sky-100 text-sky-700",
-  Ganador: "bg-emerald-100 text-emerald-700",
-  Perdedor: "bg-rose-100 text-rose-700",
-  Retirado: "bg-slate-200 text-slate-600",
-  Anulado: "bg-amber-200 text-amber-800",
+  ...BADGE_ESTADO,
+  // Alias por estado interno: cualquier variante cae en el color de su maestro.
+  Pendiente: BADGE_ESTADO.PENDIENTE,
+  Ganador: BADGE_ESTADO.LIQUIDADA,
+  Perdedor: BADGE_ESTADO.LIQUIDADA,
+  Retirado: BADGE_ESTADO.LIQUIDADA,
   Pagado: "bg-emerald-200 text-emerald-900",
 };
 
@@ -93,7 +113,7 @@ async function comprimirImagen(file: File, maxLado = 900, calidad = 0.6): Promis
 }
 
 function chipClase(estado: string): string {
-  return ESTADO_BADGE[estado] ?? "bg-slate-100 text-slate-600";
+  return ESTADO_BADGE[estado] ?? BADGE_ESTADO[estadoMaestro(estado)] ?? "bg-slate-100 text-slate-600";
 }
 
 export function JugadasModule() {
@@ -567,7 +587,16 @@ export function JugadasModule() {
               ) : detalle.length === 0 ? (
                 <p className="py-8 text-center text-xs text-slate-400">No hay jugadas cargadas para esta carrera.</p>
               ) : (
-                <table className="min-w-full text-left text-xs">
+                <>
+                  <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase">
+                    <span className="text-slate-400">Resumen:</span>
+                    {ESTADOS_MAESTROS.map((m) => (
+                      <span key={m} className={`rounded-full px-2 py-0.5 ${BADGE_ESTADO[m]}`}>
+                        {ETIQUETA_ESTADO[m]} · {detalle.filter((j) => estadoMaestro(j) === m).length}
+                      </span>
+                    ))}
+                  </div>
+                  <table className="min-w-full text-left text-xs">
                   <thead className="sticky top-0 bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-2 py-2">Cliente</th>
@@ -582,7 +611,8 @@ export function JugadasModule() {
                   </thead>
                   <tbody>
                     {detalle.map((j) => {
-                      const estado = j.anulada ? "Anulado" : j.estado ?? "Pendiente";
+                      const estadoInterno = j.anulada ? "Anulado" : j.estado ?? "Pendiente";
+                      const maestro = estadoMaestro(j);
                       return (
                         <tr key={String(j.id)} className={`border-t border-line ${j.anulada ? "bg-amber-50/50" : ""}`}>
                           <td className="px-2 py-1.5 font-semibold text-slate-700">{j.cliente_juega_nombre ?? "—"}</td>
@@ -595,7 +625,12 @@ export function JugadasModule() {
                           <td className="px-2 py-1.5 text-right font-bold text-slate-700">{num(j.premio_pagar) > 0 ? money(j.premio_pagar, j.moneda ?? "VES") : "—"}</td>
                           <td className="px-2 py-1.5 text-slate-500">{usuarioDeJugada(j) || "—"}</td>
                           <td className="px-2 py-1.5">
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${chipClase(estado)}`}>{estado}</span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${chipClase(estadoInterno)}`}
+                              title={`Estado interno: ${estadoInterno}`}
+                            >
+                              {ETIQUETA_ESTADO[maestro]}
+                            </span>
                             {j.pagado_en && <span className="ml-1 rounded-full bg-emerald-200 px-1.5 py-0.5 text-[9px] font-bold text-emerald-900">pagada</span>}
                             {j.anulada && j.anulada_motivo && (
                               <span className="ml-1 text-[9px] italic text-amber-700" title={j.anulada_motivo}>
@@ -631,6 +666,7 @@ export function JugadasModule() {
                     })}
                   </tbody>
                 </table>
+                </>
               )}
             </div>
           </div>
@@ -726,7 +762,7 @@ function ModalEditar({
           <select value={estado} onChange={(e) => setEstado(e.target.value)} className={inputClase}>
             {ESTADOS_JUGADA.map((e) => (
               <option key={e} value={e}>
-                {e}
+                {etiquetaEstadoInterno(e)}
               </option>
             ))}
           </select>

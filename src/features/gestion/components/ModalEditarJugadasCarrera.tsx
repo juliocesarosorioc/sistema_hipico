@@ -18,6 +18,8 @@ import { Button } from "@/shared/components/ui/Button";
 import {
   listarJugadasDeCarrera,
   MOTIVOS_ANULACION,
+  NOTAS_PREDEFINIDAS_EDICION,
+  componerNota,
   restaurarJugada,
   type JugadaAdmin,
 } from "@/features/jugadas/lib/jugadas";
@@ -27,6 +29,7 @@ import {
   recalcularCarrera,
   type ResRecalcular,
 } from "@/features/liquidacion/lib/recalcular";
+import { nombreOficialDeCaballoSuelto } from "@/features/liquidacion/lib/resolver-ejemplar";
 import { registrarAuditoria } from "@/features/grupos/lib/grupos";
 import { usuarioVigente } from "@/features/seguridad/lib/vigente";
 
@@ -69,6 +72,11 @@ type Edicion = {
   /** El ÚNICO ejemplar/caballo que se juega (texto: "7", "1-2"…). */
   caballo: string;
   monto: string;
+  /** Nota predefinida elegida (una de las 5) + detalle libre, para la auditoría. */
+  nota: string;
+  detalle: string;
+  /** Nombre OFICIAL resuelto del padrón al cambiar el Nº ("" = no se pudo). */
+  nombreOficial: string;
 };
 
 /**
@@ -121,14 +129,37 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
       nombre: j.nombre_jugada ?? "",
       caballo: j.caballo ?? "",
       monto: j.monto_jugado != null ? String(j.monto_jugado) : "",
+      nota: "",
+      detalle: "",
+      nombreOficial: "",
     });
     setMotivo("");
     setAviso("");
   };
 
+  /**
+   * Al cambiar el Nº de ejemplar, busca el nombre OFICIAL en el padrón de la
+   * carrera y lo refleja en el campo `caballo`. Resuelve el bug de que quedaba
+   * el nombre del caballo ANTERIOR (ej. "ETNA'S NAPPER(USA)") con el Nº nuevo.
+   */
+  const cambiarEjemplar = async (valor: string) => {
+    if (!edicion) return;
+    const limpio = valor.replace(/\D/g, "");
+    // Si el campo `caballo` era el número viejo (solo dígitos), se reemplaza por
+    // el número nuevo; si era un nombre, se reemplaza por el nombre oficial.
+    const caballoEraNumero = /^[0-9]*$/.test(edicion.caballo.trim());
+    setEdicion({ ...edicion, caballo: caballoEraNumero ? limpio : edicion.caballo, nombreOficial: "" });
+    if (!/^[0-9]+$/.test(limpio)) return;
+    const nombre = await nombreOficialDeCaballoSuelto({ fecha, hipodromo, carrera, caballo: limpio });
+    if (nombre) {
+      setEdicion((prev) => (prev ? { ...prev, caballo: nombre, nombreOficial: nombre } : prev));
+    }
+  };
+
   const guardarEdicion = async () => {
     if (!edicion) return;
-    if (!motivo.trim()) {
+    const motivoFinal = componerNota(edicion.nota, edicion.detalle) || motivo.trim();
+    if (!motivoFinal) {
       setAviso("⚠️ Indicá el motivo de la corrección (queda auditado).");
       return;
     }
@@ -150,12 +181,13 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
         // Un solo caballo: `caballo` (texto) y `ejemplar_numero` (entero) se
         // derivan del MISMO valor, igual que en la venta. Antes se editaba solo
         // `caballo` y `ejemplar_numero` quedaba viejo → el renglón mostraba dos
-        // caballos distintos.
+        // caballos distintos. Además, si se cambió el Nº, `caballo` ya trae el
+        // NOMBRE OFICIAL resuelto del padrón.
         nombre_jugada: edicion.nombre.trim().toUpperCase(),
         caballo: caballo === "" ? null : caballo,
-        ejemplar_numero: ejemplarDeCaballo(caballo),
+        ejemplar_numero: ejemplarDeCaballo(edicion.caballo),
       },
-      motivo: motivo.trim(),
+      motivo: motivoFinal,
       usuario,
       hipodromo,
       carrera,
@@ -170,7 +202,7 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
     void registrarAuditoria(
       "GESTION_JUGADAS",
       "EDITAR_JUGADA_CARRERA",
-      `Jugada #${edicion.id} corregida y carrera recalculada en ${nombreHipodromo} C${carrera} (${fecha}) por ${usuario}. Motivo: ${motivo.trim()}`
+      `Jugada #${edicion.id} corregida y carrera recalculada en ${nombreHipodromo} C${carrera} (${fecha}) por ${usuario}. Motivo: ${motivoFinal}`
     );
     setAviso(`✅ ${textoRecalculo(r, "Corrección guardada.")} · Auditada.`);
     setEdicion(null);
@@ -307,12 +339,19 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
                     </td>
                     <td className="px-2 py-1.5 text-slate-600">
                       {enEdicion ? (
-                        <input
-                          value={edicion.caballo}
-                          onChange={(e) => setEdicion({ ...edicion, caballo: e.target.value })}
-                          placeholder="Nº / caballo"
-                          className="w-24 rounded border border-line px-1 py-0.5 text-xs"
-                        />
+                        <div>
+                          <input
+                            value={edicion.caballo}
+                            onChange={(e) => void cambiarEjemplar(e.target.value)}
+                            placeholder="Nº / caballo"
+                            className="w-28 rounded border border-line px-1 py-0.5 text-xs"
+                          />
+                          {edicion.nombreOficial && (
+                            <span className="mt-0.5 block text-[9px] font-bold text-emerald-600">
+                              ✓ {edicion.nombreOficial}
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         <>{j.caballo?.trim() || (j.ejemplar_numero != null ? String(j.ejemplar_numero) : "—")}</>
                       )}
@@ -370,15 +409,51 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
 
         {edicion && (
           <div className="border-t border-line bg-slate-50 px-4 py-2">
-            <label className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">
-              Motivo de la corrección (obligatorio, queda auditado)
-            </label>
-            <input
-              value={motivo}
-              onChange={(e) => setMotivo(e.target.value)}
-              placeholder="Ej. error de carga del operador"
-              className="w-full rounded border border-line px-2 py-1 text-xs"
-            />
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">
+                  Nota predefinida
+                </label>
+                <select
+                  value={NOTAS_PREDEFINIDAS_EDICION.includes(edicion.nota as (typeof NOTAS_PREDEFINIDAS_EDICION)[number]) ? edicion.nota : ""}
+                  onChange={(e) => setEdicion({ ...edicion, nota: e.target.value })}
+                  className="w-full rounded border border-line px-2 py-1 text-xs"
+                >
+                  <option value="">— Elegir nota —</option>
+                  {NOTAS_PREDEFINIDAS_EDICION.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">
+                  Detalle adicional (opcional)
+                </label>
+                <input
+                  value={edicion.detalle}
+                  onChange={(e) => setEdicion({ ...edicion, detalle: e.target.value })}
+                  placeholder="Texto adicional para la auditoría"
+                  className="w-full rounded border border-line px-2 py-1 text-xs"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">
+                  Motivo libre (si no elegís nota)
+                </label>
+                <input
+                  value={motivo}
+                  onChange={(e) => setMotivo(e.target.value)}
+                  placeholder="Ej. error de carga del operador"
+                  className="w-full rounded border border-line px-2 py-1 text-xs"
+                />
+              </div>
+            </div>
+            <p className="mt-1 text-[9px] font-semibold text-slate-400">
+              La nota elegida + el detalle se guardan como motivo de la auditoría. Si la carrera está liquidada, al
+              guardar se recalcula completa.
+            </p>
           </div>
         )}
 

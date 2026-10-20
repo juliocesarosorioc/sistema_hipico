@@ -30,6 +30,9 @@
  *
  * Es lógica PURA, testeable en node (pruebas/reversion-liquidacion.test.ts).
  */
+// Relativo a propósito: este archivo se corre en node y las pruebas no resuelven
+// el alias `@/`. Es un hermano en la misma carpeta.
+import { esLiquidada } from "./estados-jugada";
 
 /** Modalidad de un ticket, derivada de `nombre_jugada`. */
 export type ModalidadReversion = "UNIVERSAL" | "TABLA" | "MARCA" | "DUPLETA";
@@ -54,7 +57,13 @@ const TXT = (v: unknown): string => (v == null ? "" : String(v).trim());
 /** ¿El estado del ticket ya fue DECIDIDO por la liquidación? */
 export function esEstadoDecidido(estado: unknown): boolean {
   const s = TXT(estado);
-  return s === "Ganador" || s === "Perdedor" || s === "Retirado";
+  // Los estados INTERNOS de decisión son Ganador/Perdedor/Retirado. Se
+  // reconocen también las variantes legacy del legacy ("GANO", "PERDIO",
+  // "SOLUCIONADO") y —por el ESTADO MAESTRO— cualquier forma que signifique
+  // LIQUIDADA, para no dejar tickets sin revertir. Una jugada ANULADA NO es
+  // decidida: su capital ya se devolvió por otra vía.
+  if (s === "Ganador" || s === "Perdedor" || s === "Retirado") return true;
+  return esLiquidada(estado);
 }
 
 /** Clasifica la modalidad de un ticket por su `nombre_jugada`. */

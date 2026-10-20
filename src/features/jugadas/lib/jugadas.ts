@@ -13,6 +13,7 @@
  */
 import { supabase } from "@/core/supabase";
 import { exigirCapacidad, grupoActivoVigente } from "@/features/seguridad/lib/vigente";
+import { nombreDeEjemplarEnMatriz } from "@/features/liquidacion/lib/resolver-ejemplar";
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -77,6 +78,17 @@ export type AuditoriaJugada = {
 export type EditablesJugada = {
   nombre_jugada?: string | null;
   caballo?: string | null;
+  /**
+   * Nombre OFICIAL del ejemplar. Al cambiar el número, se sincroniza con el
+   * padrón de la carrera (ver `resolver-ejemplar.ts`); el campo existe para
+   * poder guardarlo y dejar la jugada con el nombre real del nuevo número.
+   */
+  nombre_ejemplar?: string | null;
+  /** Jugador 1: quién JUEGA la apuesta (`cliente_juega_nombre`). */
+  cliente_juega_nombre?: string | null;
+  /** Jugador 2: quién PAGA / banquero (`cliente_consigue_nombre` / banquero). */
+  cliente_consigue_nombre?: string | null;
+  banquero_nombre?: string | null;
   ejemplar_numero?: number | null;
   monto_jugado?: number | null;
   monto_decidido?: number | null;
@@ -96,6 +108,32 @@ export const MOTIVOS_ANULACION = [
   "Orden administrativa",
   "Otro (detallar)",
 ] as const;
+
+/**
+ * NOTAS PREDEFINIDAS DE AUDITORÍA para la EDICIÓN de una jugada cargada. Son los
+ * motivos de corrección más frecuentes del mostrador; el operador elige uno de
+ * un toque y, si hace falta, agrega texto adicional. La nota completa se guarda
+ * en el motivo auditado (misma vía que `MOTIVOS_ANULACION`).
+ */
+export const NOTAS_PREDEFINIDAS_EDICION = [
+  "Corrección de monto por error de transcripción",
+  "Cambio de jugador / cliente asignado",
+  "Corrección de número de ejemplar",
+  "Ajuste de condición / puestos acordados",
+  "Anulación solicitada antes de la partida",
+] as const;
+
+/**
+ * Compone el motivo auditado a partir de una nota predefinida y un detalle
+ * opcional: "Nota · detalle". Si no hay nota, devuelve el detalle tal cual (así
+ * el operador puede escribir un motivo libre sin elegir nota).
+ */
+export function componerNota(predefinida: string, detalle: string): string {
+  const p = String(predefinida ?? "").trim();
+  const d = String(detalle ?? "").trim();
+  if (p && d) return `${p} · ${d}`;
+  return p || d;
+}
 
 const COLS_DETALLE =
   "id, hipodromo, carrera, nombre_jugada, caballo, ejemplar_numero, monto_jugado, monto_decidido, premio_pagar, comision_porcentaje, estado, cliente_juega_nombre, cliente_consigue_nombre, moneda, nota_auditoria, fecha_registro, anulada, anulada_motivo, anulada_por, anulada_at, pagado_en, pagado_por";
@@ -382,6 +420,32 @@ export async function editarJugada(
     if (v !== undefined) payload[k] = v === "" ? null : v;
   }
   if (Object.keys(payload).length === 0) return { ok: false, error: "No hay cambios para guardar." };
+
+  // -------------------------------------------------------------------------
+  // SINCRONIZACIÓN nº → nombre del ejemplar (BUG CRÍTICO)
+  // -------------------------------------------------------------------------
+  // Cuando cambia el Nº de ejemplar, el nombre del caballo debe salir del padrón
+  // de la carrera, no quedarse con el ANTERIOR ("ETNA'S NAPPER(USA)" con el Nº5).
+  // Si el editor no mandó ya un `caballo` nuevo (o lo mandó igual al número), acá
+  // se resuelve el nombre OFICIAL por (fecha, hipódromo, nº de carrera) y se
+  // inyecta. Vale para TODOS los editores, porque todos pasan por `editarJugada`.
+  if ("ejemplar_numero" in payload) {
+    const numNuevo = payload.ejemplar_numero == null ? "" : String(payload.ejemplar_numero);
+    const numViejo = antes.ejemplar_numero == null ? "" : String(antes.ejemplar_numero);
+    const cambioNumero = numNuevo !== numViejo;
+    // Solo si el editor NO fijó ya un nombre distinto por su cuenta.
+    const caballoEditor = payload.caballo !== undefined ? String(payload.caballo ?? "") : null;
+    const caballoEsNumeroOVacio = caballoEditor === null || caballoEditor === "" || /^[0-9]+$/.test(caballoEditor);
+    if (cambioNumero && /^[0-9]+$/.test(numNuevo) && caballoEsNumeroOVacio) {
+      const nombre = await nombreDeEjemplarEnMatriz({
+        fecha: fechaCarreraDeJugada(antes) ?? "",
+        hipodromo: texto(antes.hipodromo),
+        carrera: num(antes.carrera),
+        numero: numNuevo,
+      });
+      if (nombre) payload.caballo = nombre;
+    }
+  }
 
   const { error } = await supabase.from("tickets_apuestas").update(payload).eq("id", id);
   if (error) return { ok: false, error: error.message };

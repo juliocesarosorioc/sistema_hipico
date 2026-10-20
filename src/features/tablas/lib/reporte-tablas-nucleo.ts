@@ -73,6 +73,21 @@ export type TotalesReporte = {
   cobrado: number;
   /** A favor del grupo: enRiesgo − reembolsado − pagado. */
   balance: number;
+  /**
+   * Comisión que se lleva el GRUPO (misma cifra que `comision`, expuesta con el
+   * nombre contable del recálculo íntegro: monto_cobrado / monto_pagado /
+   * comision_grupo / balance).
+   */
+  comisionGrupo: number;
+};
+
+/** Las 4 cifras contables que se recalculan de punta a punta en los reportes. */
+export type RecalculoIntegral = {
+  montoCobrado: number;
+  montoPagado: number;
+  comisionGrupo: number;
+  balance: number;
+  reembolsado: number;
 };
 
 export type FilaReporte = TotalesReporte & { clave: string; etiqueta: string };
@@ -204,6 +219,7 @@ export function totalesDe(ventas: VentaTablaReporte[]): TotalesReporte {
     comision: 0,
     cobrado: 0,
     balance: 0,
+    comisionGrupo: 0,
   };
   const jugadores = new Set<string>();
   for (const v of ventas) {
@@ -233,7 +249,29 @@ export function totalesDe(ventas: VentaTablaReporte[]): TotalesReporte {
   }
   t.jugadores = jugadores.size;
   t.balance = t.enRiesgo - t.reembolsado - t.pagado;
+  t.comisionGrupo = t.comision;
   return t;
+}
+
+/**
+ * RECÁLCULO ÍNTEGRO de las 4 cifras contables de un conjunto de ventas. Es la
+ * MISMA matemática de `totalesDe`, expuesta con los nombres del recálculo total
+ * para poder recomputar de punta a punta ante una liquidación, una edición o un
+ * cambio de resultado: `monto_cobrado`, `monto_pagado`, `comision_grupo` y
+ * `balance` neto.
+ *
+ * Las jugadas ANULADAS no entran (su capital se devolvió): `totalesDe` ya las
+ * trata como "Otro" (no suman a ninguna columna).
+ */
+export function recalcularIntegral(ventas: VentaTablaReporte[]): RecalculoIntegral {
+  const t = totalesDe(ventas);
+  return {
+    montoCobrado: t.cobrado,
+    montoPagado: t.pagado,
+    comisionGrupo: t.comisionGrupo,
+    balance: t.balance,
+    reembolsado: t.reembolsado,
+  };
 }
 
 type Formateador = (h: string) => string;

@@ -17,6 +17,7 @@ import {
   normalizarVenta,
   opcionesDe,
   ordenarFilas,
+  recalcularIntegral,
   totalesDe,
   type VentaTablaReporte,
 } from "../src/features/tablas/lib/reporte-tablas-nucleo";
@@ -162,6 +163,31 @@ const orden = ordenarFilas(porGrupo, "enRiesgo", "desc");
 igual(orden[0].etiqueta, "LA BANDA", "orden por en riesgo desc pone primero al grupo de 200");
 const ordenAsc = ordenarFilas(porGrupo, "enRiesgo", "asc");
 igual(ordenAsc[0].etiqueta, "LOS COMPADRES", "orden asc pone primero al grupo de 180");
+
+console.log("\nREPORTE DE TABLAS FIJAS — recálculo íntegro (cobrado/pagado/comisión/balance)");
+
+// El recálculo íntegro expone las 4 cifras contables con los nombres del
+// requerimiento. Se recalcula de punta a punta ante una edición/liquidación.
+const integral = recalcularIntegral(conPct);
+igual(integral.montoCobrado, 90, "monto_cobrado = 90 (perdedor al 10%)");
+igual(integral.montoPagado, 300, "monto_pagado = 300 (premio del ganador)");
+igual(integral.balance, tp.balance, "balance neto igual al de totalesDe");
+igual(integral.comisionGrupo, tp.comision, "comision_grupo = comision de totalesDe");
+igual(integral.reembolsado, 100, "reembolsado = 100 (retirado)");
+
+// comisionGrupo queda expuesto también en los totales por fila.
+igual(tp.comisionGrupo, tp.comision, "totalesDe expone comisionGrupo = comision");
+
+// Coherencia: cobrado − pagado NO es el balance (el balance incluye el capital
+// en riesgo todavía pendiente); el balance es enRiesgo − reembolsado − pagado.
+igual(tp.balance, tp.enRiesgo - tp.reembolsado - tp.pagado, "balance = enRiesgo − reembolsado − pagado");
+
+// Las ANULADAS no entran a ninguna cifra del recálculo.
+const conAnulada = [...conPct, { ...normalizarVenta(fila()), id: "a1", estado: "Anulado", monto: 999 }];
+const integralAnulada = recalcularIntegral(conAnulada);
+igual(integralAnulada.montoCobrado, integral.montoCobrado, "una anulada no suma cobrado");
+igual(integralAnulada.montoPagado, integral.montoPagado, "una anulada no suma pagado");
+igual(integralAnulada.comisionGrupo, integral.comisionGrupo, "una anulada no suma comisión");
 
 console.log(`\n  REPORTE DE TABLAS FIJAS: ${pasan} ok, ${fallan} fallaron\n`);
 if (fallan > 0) process.exit(1);

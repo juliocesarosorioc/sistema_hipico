@@ -32,6 +32,8 @@
     "../src/features/clientes/lib/cuadernoResumen.ts",
     "../src/features/grupos/lib/comisiones-convenio.ts",
     "../src/features/liquidacion/lib/reversar-nucleo.ts",
+    "../src/features/liquidacion/lib/estados-jugada.ts",
+    "../src/features/liquidacion/lib/resolver-ejemplar-nucleo.ts",
     "../src/features/gestion/lib/preview-carrera.ts",
     "../src/features/carreras/lib/retiros-nucleo.ts",
     "../src/features/carreras/lib/maestro-nucleo.ts",
@@ -98,6 +100,8 @@
     "./desglose-reporte.test.ts",
     "./logos-reporte.test.ts",
     "./reversion-liquidacion.test.ts",
-    "./preview-carrera.test.ts"
+    "./preview-carrera.test.ts",
+    "./estados-jugada.test.ts",
+    "./resolver-ejemplar.test.ts"
   ]
 }
