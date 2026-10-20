@@ -201,6 +201,34 @@ export async function pedirRecuperacion(identificador: string): Promise<Resultad
 export type ResultadoCambioClave = { ok: true } | { ok: false; error: string };
 
 /**
+ * Reglas de la contraseña / PIN de acceso, compartidas por cualquier
+ * formulario que las cambie.
+ *
+ * Vive en `sesion.ts` porque es una regla de CREDENCIAL, no de una pantalla:
+ * la usa el "👤 Mi Perfil" del Portal del Cliente (autogestión, PROMPT #7) y
+ * sirve igual para el personal. Si cada formulario tuviera su propia regla, un
+ * PIN podría guardarse desde uno y ser rechazado en el otro.
+ *
+ * Devuelve el mensaje de error, o `null` si la clave sirve.
+ *
+ * @param min largo mínimo (4 para los PIN cortos del portal)
+ * @param max largo máximo (el input del login del portal corta en 8)
+ */
+export function validarClaveAcceso(
+  clave: string,
+  opts?: { min?: number; max?: number }
+): string | null {
+  const c = String(clave ?? "");
+  const min = opts?.min ?? 4;
+  const max = opts?.max ?? 64;
+  if (!c.trim()) return "Escribí la contraseña / PIN de acceso.";
+  if (c.length < min) return `Tiene que tener al menos ${min} caracteres.`;
+  if (c.length > max) return `No puede superar ${max} caracteres.`;
+  if (/\s/.test(c)) return "No puede contener espacios.";
+  return null;
+}
+
+/**
  * Guarda la contraseña nueva.
  *
  * Solo funciona si la página llegó desde el enlace del correo: ese enlace

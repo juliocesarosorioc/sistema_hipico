@@ -16,7 +16,9 @@ import {
   eliminarCliente,
   errorClientes,
   etiquetaModoJuego,
+  formasPagoDe,
   listarClientes,
+  resumenFormaPago,
   type ClienteRow,
 } from "@/features/clientes/lib/clientes";
 import { formatoMoneda } from "@/shared/lib/vzla";
@@ -596,6 +598,40 @@ export function ClientesModule() {
 // Reporte de Cuadre Semanal por Cliente (clon del legacy §7)
 // ---------------------------------------------------------------------------
 
+/**
+ * Celda "Método de Pago" del Cuadre: lista TODAS las formas de pago del
+ * cliente (PROMPT #7), la ⭐ principal primero. Esta es la pantalla con la que
+ * se paga y se cobra cada semana, así que alcanza con verlas acá: el detalle
+ * (banco, teléfono, titular, moneda) está en el `title` de cada chip.
+ */
+function celdaFormasPago(c: ClienteRow): React.ReactNode {
+  const formas = formasPagoDe(c);
+  if (!formas.length) return <span className="text-slate-300">—</span>;
+  const principal = formas.find((f) => f.principal) ?? formas[0];
+  const restantes = formas.filter((f) => f !== principal);
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      <span
+        className="rounded bg-cyan-50 px-1.5 py-0.5 text-[10px] font-black text-cyan-700"
+        title={resumenFormaPago(principal)}
+      >
+        ⭐ {principal.metodo}
+        {principal.moneda ? ` · ${principal.moneda}` : ""}
+      </span>
+      {restantes.map((f, i) => (
+        <span
+          key={String(f.uid ?? i)}
+          className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500"
+          title={resumenFormaPago(f)}
+        >
+          {f.moneda ? `${f.moneda} · ` : ""}
+          {f.metodo}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function CuadreSemanal({ clientes }: { clientes: ClienteRow[] }) {
   const [diaFiltro, setDiaFiltro] = useState("");
   const [generado, setGenerado] = useState(false);
@@ -667,7 +703,7 @@ function CuadreSemanal({ clientes }: { clientes: ClienteRow[] }) {
                     {c.es_socio ? <span className="ml-1 text-[9px] font-black text-amber-600">…Socio</span> : null}
                   </td>
                   <td className={td + " font-bold text-emerald-700"}>{c.dia_cuadre || "—"}</td>
-                  <td className={td}>{c.metodo_pago || <span className="text-slate-300">—</span>}</td>
+                  <td className={td}>{celdaFormasPago(c)}</td>
                   <td className={td}>{c.forma_cuadre || <span className="text-slate-300">—</span>}</td>
                   <td className={td + " text-right font-mono font-bold"}>{tasa > 0 ? String(tasa) : "—"}</td>
                   <td className={td + " text-right font-mono font-black " + (saldo < 0 ? "text-danger-600" : "text-emerald-700")}>

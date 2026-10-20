@@ -11,6 +11,20 @@
 import { supabase } from "@/core/supabase";
 import { resumenDatosPago, type DatosPago } from "@/shared/lib/vzla";
 import { exigirCapacidad, esPrincipalVigente, grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
+import { resumenFormasPago, type FormaPago } from "@/features/clientes/lib/formasPago";
+// Múltiples formas de pago (PROMPT #7). Se re-exportan desde acá para que el
+// CRUD de clientes sea el único punto de entrada de "cómo se paga un cliente";
+// la implementación pura vive en `formasPago.ts` (sin Supabase, testeable).
+export {
+  formasPagoDe,
+  formaPagoPrincipal,
+  normalizarFormasPago,
+  nuevaFormaPago,
+  resumenFormaPago,
+  resumenFormasPago,
+  MONEDAS_PAGO,
+  type FormaPago,
+} from "@/features/clientes/lib/formasPago";
 
 export type ClienteRow = {
   id: string | number;
@@ -35,6 +49,13 @@ export type ClienteRow = {
   forma_cuadre?: string | null;
   tasa_cuadre?: number | string | null;
   datos_pago?: DatosPago | null;
+  /**
+   * UNA o MÁS formas de pago (PROMPT #7). Arreglo jsonb
+   * `[{ metodo, moneda, principal, datos }]` (sql/formas_pago_clientes.sql).
+   * Puede venir null o vacío en clientes previos a la migración: en ese caso
+   * manda el par legacy `metodo_pago` + `datos_pago` (ver `formasPagoDe`).
+   */
+  formas_pago?: unknown;
   grupo_id?: string | number | null;
   portal_habilitado?: boolean | null;
   portal_token?: string | null;
@@ -478,6 +499,12 @@ export function resumenNotificacion(n: NotificacionRow): string {
     const r = resumenDatosPago(d.datos_pago as DatosPago);
     if (r) partes.push(`<b>Detalle pago:</b> ${r}`);
   }
+  // El portal puede mandar varias formas de pago a la vez (PROMPT #7): se
+  // listan completas, con la ⭐ principal primero.
+  if (Array.isArray(d.formas_pago)) {
+    const r = resumenFormasPago(d.formas_pago as FormaPago[]);
+    if (r) partes.push(`<b>Formas de pago:</b> ${r}`);
+  }
   return partes.length ? partes.join(" · ") : n.mensaje || "Solicitud de actualización de datos.";
 }
 
@@ -498,6 +525,10 @@ export async function aplicarNotificacion(n: NotificacionRow, atendidaPor: strin
   if (d.direccion) payload.direccion = d.direccion;
   if (d.metodo_pago) payload.metodo_pago = d.metodo_pago;
   if (d.datos_pago) payload.datos_pago = d.datos_pago;
+  // Arreglo completo de formas de pago (PROMPT #7): al aplicar la solicitud
+  // quedan las que el cliente pidió y la ⭐ principal sigue emparejando el par
+  // legacy `metodo_pago`/`datos_pago` para los lectores de una sola forma.
+  if (Array.isArray(d.formas_pago)) payload.formas_pago = d.formas_pago;
   try {
     const fila = (await listarClientes(true)).find((c) => String(c.id) === String(n.cliente_id)) ?? null;
     const { error } = await supabase

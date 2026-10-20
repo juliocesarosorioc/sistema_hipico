@@ -7,16 +7,32 @@ import { listarTablasPublicadas } from "@/features/tablas/lib/rpc";
 import type { TablaFijaRow } from "@/features/tablas/lib/tablas-fijas";
 import {
   actualizarDatosCliente,
+  actualizarMiPerfil,
   cerrarSesion,
   disputarJugada,
+  eliminarGrupoExterno,
+  eliminarJugadaExterna,
   entrarPortal,
+  ESTADO_POR_DEFECTO,
+  ESTADOS_JUGADA_EXTERNA,
+  guardarGrupoExterno,
+  guardarJugadaExterna,
+  listarGruposExternos,
+  listarJugadasExternas,
+  normalizarEstadoJugada,
   reanudarSesion,
-     reportarJugadaFaltante,
-     reclamarJugada,
-     resolverImagenReclamo,
-     solicitarCompraTabla,
+  reportarJugadaFaltante,
+  reclamarJugada,
+  resolverImagenReclamo,
+  resumenGrupoExterno,
+  solicitarCompraTabla,
+  type GrupoExterno,
+  type JugadaExterna,
   type SesionPortal,
 } from "@/features/portal/lib/portal";
+import { validarClaveAcceso } from "@/features/auth/lib/sesion";
+import { FormasPagoLista } from "@/features/clientes/components/DatosPagoForm";
+import { formasPagoDe, normalizarFormasPago, type FormaPago } from "@/features/clientes/lib/clientes";
 import { codigosPaisUnicos, desglosarTelefono, formatoMoneda, listMetodosPago } from "@/shared/lib/vzla";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { encuestarTicket, listarMisTickets, type TicketDisputa } from "@/features/tickets/lib/tickets";
@@ -41,7 +57,7 @@ function isoLocal(d: Date): string {
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
 }
 
-type TabPortal = "resumen" | "reporte" | "reportar" | "tickets" | "comprar" | "datos";
+type TabPortal = "resumen" | "reporte" | "reportar" | "tickets" | "comprar" | "datos" | "externos";
 
 const BADGE: Record<string, string> = {
   Ganador: "bg-emerald-100 text-emerald-700",
@@ -216,6 +232,8 @@ function LoginScreen(props: {
 
 function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; onActualizar: (s: SesionPortal) => void; onSalir: () => void }) {
   const [tab, setTab] = useState<TabPortal>("resumen");
+  // 👤 Mi Perfil (PROMPT #7): autogestión de datos personales en un modal.
+  const [perfilAbierto, setPerfilAbierto] = useState(false);
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -230,9 +248,14 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
               <div className="text-[10px] text-indigo-200/70 uppercase tracking-wider">Portal del Cliente</div>
             </div>
           </div>
-          <Button variant="ghost" size="sm" className="text-indigo-200 hover:bg-indigo-900" onClick={onSalir}>
-            <span className="mr-1">🚪</span> Salir
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" className="text-indigo-200 hover:bg-indigo-900" onClick={() => setPerfilAbierto(true)}>
+              <span className="mr-1">👤</span> Mi Perfil
+            </Button>
+            <Button variant="ghost" size="sm" className="text-indigo-200 hover:bg-indigo-900" onClick={onSalir}>
+              <span className="mr-1">🚪</span> Salir
+            </Button>
+          </div>
         </div>
 
         <div className="mx-auto max-w-5xl px-4 pb-5">
@@ -245,7 +268,7 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-5 space-y-4">
-        <div className="flex flex-wrap gap-1 rounded-xl bg-white p-1 w-fit shadow-sm border border-line">
+        <div className="flex flex-wrap gap-1 rounded-xl bg-white p-1 w-fit max-w-full shadow-sm border border-line">
           {(
             [
               ["resumen", "Resumen y movimientos"],
@@ -254,6 +277,7 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
               ["tickets", "Mis tickets"],
               ["comprar", "Comprar tablas fijas"],
               ["datos", "Mis datos"],
+              ["externos", "📓 Mi Control en Otros Grupos (Personal)"],
             ] as [TabPortal, string][]
           ).map(([k, lbl]) => (
             <button
@@ -274,7 +298,22 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
         {tab === "tickets" ? <MisTicketsView cliente={sesion.cliente} /> : null}
         {tab === "comprar" ? <ComprarView cliente={sesion.cliente} /> : null}
         {tab === "datos" ? <DatosView cliente={sesion.cliente} /> : null}
+        {tab === "externos" ? <BitacoraExternaView cliente={sesion.cliente} /> : null}
       </main>
+
+      {/* 👤 Mi Perfil — autogestión (PROMPT #7). Al guardar se actualiza la
+          sesión con la fila devuelta por la Edge Function, así el encabezado
+          refleja el nombre nuevo sin recargar. */}
+      {perfilAbierto ? (
+        <MiPerfilModal
+          cliente={sesion.cliente}
+          onCerrar={() => setPerfilAbierto(false)}
+          onGuardado={(c) => {
+            setPerfilAbierto(false);
+            onActualizar({ ...sesion, cliente: c });
+          }}
+        />
+      ) : null}
 
       <footer className="py-6 text-center text-[10px] text-slate-400">
         Sistema Hípico — Portal de Consulta del Cliente · {new Date().getFullYear()}
@@ -1015,6 +1054,816 @@ function DatosView({ cliente }: { cliente: SesionPortal["cliente"] }) {
           {enviando ? <span className="mr-1">⏳</span> : <span className="mr-1">💾</span>} Enviar solicitud
         </Button>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 👤 Mi Perfil — autogestión de datos personales (PROMPT #7)
+// ---------------------------------------------------------------------------
+
+/**
+ * Modal de autogestión: el cliente actualiza su nombre completo, teléfono /
+ * WhatsApp, correo, PIN de acceso y sus formas de cobro/pago PERSONALES.
+ *
+ * A diferencia de `DatosView` (que deja una solicitud para que el admin la
+ * aplique), acá los cambios se guardan directo en Supabase vía la acción
+ * `perfil` de la Edge Function, que aplica una lista blanca de columnas: nada
+ * de saldo, comisión, aval, devolución ni credenciales del portal. Se avisa con
+ * toast de éxito y se devuelve la fila actualizada a la sesión.
+ */
+function MiPerfilModal({
+  cliente,
+  onCerrar,
+  onGuardado,
+}: {
+  cliente: SesionPortal["cliente"];
+  onCerrar: () => void;
+  onGuardado: (c: SesionPortal["cliente"]) => void;
+}) {
+  const tel = desglosarTelefono(cliente.telefono);
+  const [nombre, setNombre] = useState(cliente.nombre || "");
+  const [codigoPais, setCodigoPais] = useState(cliente.codigo_pais || tel.codigo || "+58");
+  const [telefono, setTelefono] = useState(tel.numero);
+  const [email, setEmail] = useState(cliente.email || "");
+  const [formas, setFormas] = useState<FormaPago[]>(() => formasPagoDe(cliente));
+  const [claveActual, setClaveActual] = useState("");
+  const [claveNueva, setClaveNueva] = useState("");
+  const [claveRepetir, setClaveRepetir] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+
+  const inp =
+    "w-full border border-indigo-200 rounded-xl bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200";
+  const lbl = "block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1";
+
+  const telefonoFormateado = () => {
+    const dig = telefono.replace(/[^\d]/g, "");
+    const t = codigoPais + " " + dig;
+    return codigoPais === "+58" && dig.startsWith("0") ? codigoPais + " " + dig.slice(1) : t;
+  };
+
+  const guardar = async () => {
+    setError("");
+    const nombreLimpio = nombre.trim().toUpperCase();
+    if (!nombreLimpio) return setError("El nombre completo es obligatorio.");
+    if (email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()))
+      return setError("El correo no tiene un formato válido (ej. juan@correo.com).");
+    if (formas.some((f) => !String(f.metodo ?? "").trim()))
+      return setError("Cada forma de pago necesita un método seleccionado (o quitela con 🗑️).");
+
+    // PIN: el login del portal escribe la contraseña en MAYÚSCULAS, así que el
+    // PIN se guarda así para que lo que ve el usuario al entrar sea lo mismo.
+    const clave = String(claveNueva).trim().toUpperCase();
+    if (claveNueva || claveRepetir) {
+      const errClave = validarClaveAcceso(clave, { min: 4, max: 8 });
+      if (errClave) return setError(errClave);
+      if (clave !== String(claveRepetir).trim().toUpperCase())
+        return setError("La confirmación no coincide con la contraseña / PIN nuevo.");
+      if (!claveActual.trim()) return setError("Para cambiar el PIN hace falta el PIN actual.");
+    }
+
+    setGuardando(true);
+    const r = await actualizarMiPerfil({
+      nombre: nombreLimpio,
+      codigo_pais: codigoPais,
+      telefono: telefonoFormateado(),
+      email: email.trim(),
+      formas_pago: normalizarFormasPago(formas),
+      clave_actual: claveActual.trim().toUpperCase(),
+      clave_nueva: clave,
+    });
+    setGuardando(false);
+    if (!r.ok) return setError(r.error ?? "No se pudieron guardar los datos.");
+    toast("✅ Datos personales actualizados correctamente.", "success");
+    onGuardado(r.cliente ?? cliente);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 p-4">
+      <div className="mx-auto my-6 w-full max-w-2xl rounded-2xl border border-line bg-white p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-black text-slate-800">
+              <span className="mr-2">👤</span> Mi Perfil — Actualizar Datos Personales
+            </h2>
+            <p className="text-[11px] text-slate-500">
+              Tus datos se guardan directamente en tu ficha. Nada de saldo, comisiones ni grupos: solo identidad,
+              contacto, PIN y formas de cobro/pago.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onCerrar}
+            aria-label="Cerrar"
+            className="rounded-lg border border-line px-2 py-1 text-sm text-slate-500 transition hover:bg-slate-100"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="md:col-span-3">
+              <label className={lbl}>Nombre completo</label>
+              <input
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                className={inp + " uppercase"}
+                placeholder="JUAN PEREZ"
+                data-testid="perfil-nombre"
+              />
+            </div>
+            <div>
+              <label className={lbl}>Código de país</label>
+              <select value={codigoPais} onChange={(e) => setCodigoPais(e.target.value)} className={inp + " font-bold"}>
+                {codigosPaisUnicos().map((p) => (
+                  <option key={p.codigo} value={p.codigo}>
+                    {p.codigo} {p.pais}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={lbl}>Teléfono / WhatsApp</label>
+              <input
+                value={telefono}
+                onChange={(e) => setTelefono(e.target.value)}
+                className={inp + " font-mono"}
+                placeholder="412 123 4567"
+                data-testid="perfil-telefono"
+              />
+            </div>
+            <div>
+              <label className={lbl}>Correo electrónico</label>
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={inp}
+                type="email"
+                placeholder="juan@correo.com"
+                data-testid="perfil-email"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3">
+            <div className="text-[10px] font-black uppercase tracking-wider text-indigo-700">
+              🔑 Contraseña / PIN de acceso (opcional)
+            </div>
+            <p className="mt-0.5 text-[10px] text-slate-500">
+              Déjalo vacío para no cambiarlo. Si lo cambias, escribe el PIN actual. Se guarda en mayúsculas (igual
+              que lo escribe el login) y tiene de 4 a 8 caracteres.
+            </p>
+            <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div>
+                <label className={lbl}>PIN actual</label>
+                <input
+                  value={claveActual}
+                  onChange={(e) => setClaveActual(e.target.value.toUpperCase())}
+                  className={inp + " font-mono uppercase"}
+                  placeholder="XXXX"
+                  maxLength={8}
+                  autoComplete="current-password"
+                  data-testid="perfil-clave-actual"
+                />
+              </div>
+              <div>
+                <label className={lbl}>PIN nuevo</label>
+                <input
+                  value={claveNueva}
+                  onChange={(e) => setClaveNueva(e.target.value.toUpperCase())}
+                  className={inp + " font-mono uppercase"}
+                  placeholder="XXXX"
+                  maxLength={8}
+                  autoComplete="new-password"
+                  data-testid="perfil-clave-nueva"
+                />
+              </div>
+              <div>
+                <label className={lbl}>Repetir PIN nuevo</label>
+                <input
+                  value={claveRepetir}
+                  onChange={(e) => setClaveRepetir(e.target.value.toUpperCase())}
+                  className={inp + " font-mono uppercase"}
+                  placeholder="XXXX"
+                  maxLength={8}
+                  autoComplete="new-password"
+                  data-testid="perfil-clave-repetir"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+            <div className="text-[10px] font-black uppercase tracking-wider text-emerald-700">
+              💳 Formas de cobro / pago personales
+            </div>
+            <p className="mt-0.5 text-[10px] text-slate-500">
+              Una o más: Pago Móvil, Transferencia, Zelle, Binance/USDT, Efectivo… La ⭐ es la que se usa para
+              pagarte / cobrarte.
+            </p>
+            <div className="mt-2">
+              <FormasPagoLista prefijo="perfil" formas={formas} onChange={setFormas} />
+            </div>
+          </div>
+
+          {error ? (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600">
+              <span className="mr-1">⚠️</span>
+              {error}
+            </p>
+          ) : null}
+
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={onCerrar}>
+              Cancelar
+            </Button>
+            <Button variant="default" size="sm" disabled={guardando} onClick={() => void guardar()} data-testid="perfil-guardar">
+              {guardando ? <span className="mr-1">⏳</span> : <span className="mr-1">💾</span>} Guardar cambios
+            </Button>
+          </div>
+        </div>
+      </div>
+      <ToastHost />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 📓 Bitácora personal en otros grupos externos (PROMPT #7)
+// ---------------------------------------------------------------------------
+
+type FormJugadaExterna = {
+  fecha: string;
+  hipodromo: string;
+  carrera: string;
+  tipo_jugada: string;
+  ejemplares: string;
+  monto: string;
+  estado: string;
+};
+
+const formaJugadaVacia = (): FormJugadaExterna => ({
+  fecha: isoLocal(new Date()),
+  hipodromo: "",
+  carrera: "",
+  tipo_jugada: "JUGADA",
+  ejemplares: "",
+  monto: "",
+  estado: ESTADO_POR_DEFECTO,
+});
+
+/**
+ * 📓 Mi Control en Otros Grupos (Personal) — libro privado del usuario para
+ * grupos que NO están en la plataforma.
+ *
+ * El usuario crea sus grupos externos (nombre, moneda, % de comisión), anota
+ * sus jugadas (fecha, hipódromo, carrera, tipo de jugada, ejemplares, monto y
+ * estado PENDIENTE / GANÓ / PERDIÓ / ANULADA) y ve el resumen calculado con la
+ * comisión de ese grupo.
+ *
+ * AISLAMIENTO: todo vive en `portal_grupos_externos` / `portal_jugadas_externas`
+ * (RLS sin políticas, solo la Edge Function con service_role). No hay ninguna
+ * relación con `tickets_apuestas`, `grupos_*`, `cuaderno_jugadas`, las cajas ni
+ * los reportes oficiales: anotar acá no mueve un saldo ni cambia un total.
+ */
+function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) {
+  const [grupos, setGrupos] = useState<GrupoExterno[]>([]);
+  const [cargandoGrupos, setCargandoGrupos] = useState(true);
+  const [grupoId, setGrupoId] = useState("");
+  const [jugadas, setJugadas] = useState<JugadaExterna[]>([]);
+  const [cargandoJugadas, setCargandoJugadas] = useState(false);
+
+  const [panelGrupo, setPanelGrupo] = useState(false);
+  const [editGrupo, setEditGrupo] = useState<GrupoExterno | null>(null);
+  const [gNombre, setGNombre] = useState("");
+  const [gMoneda, setGMoneda] = useState("USD");
+  const [gComision, setGComision] = useState("0");
+  const [guardandoGrupo, setGuardandoGrupo] = useState(false);
+
+  const [form, setForm] = useState<FormJugadaExterna>(formaJugadaVacia);
+  const [editJugadaId, setEditJugadaId] = useState<string | number | null>(null);
+  const [guardandoJugada, setGuardandoJugada] = useState(false);
+
+  const inp =
+    "w-full border border-line rounded-xl bg-surface px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-200";
+  const lbl = "block text-[10px] font-black uppercase text-slate-500 mb-1";
+
+  const grupo = grupos.find((g) => String(g.id) === grupoId) ?? null;
+  const monedaGrupo = String(grupo?.moneda ?? "USD").toUpperCase() || "USD";
+  const resumen = useMemo(() => resumenGrupoExterno(jugadas, grupo?.comision_pct ?? 0), [jugadas, grupo]);
+
+  // Grupos externos del cliente (una sola vez al montar).
+  useEffect(() => {
+    let vivo = true;
+    void (async () => {
+      const r = await listarGruposExternos();
+      if (!vivo) return;
+      setCargandoGrupos(false);
+      if (!r.ok) return toast(r.error ?? "No se pudieron cargar tus grupos externos.", "error");
+      const gs = r.grupos ?? [];
+      setGrupos(gs);
+      if (gs.length) setGrupoId(String(gs[0].id));
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  // Jugadas del grupo seleccionado.
+  useEffect(() => {
+    if (!grupoId) {
+      setJugadas([]);
+      return;
+    }
+    let vivo = true;
+    void (async () => {
+      setCargandoJugadas(true);
+      const r = await listarJugadasExternas(grupoId);
+      if (!vivo) return;
+      setCargandoJugadas(false);
+      if (!r.ok) return toast(r.error ?? "No se pudieron cargar las jugadas.", "error");
+      setJugadas(r.jugadas ?? []);
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [grupoId]);
+
+  const recargarGrupos = async (seleccionar?: string | number) => {
+    const r = await listarGruposExternos();
+    if (!r.ok) return toast(r.error ?? "No se pudieron cargar tus grupos externos.", "error");
+    const gs = r.grupos ?? [];
+    setGrupos(gs);
+    if (seleccionar != null) setGrupoId(String(seleccionar));
+    else if (!gs.length) setGrupoId("");
+    else if (!gs.some((g) => String(g.id) === grupoId)) setGrupoId(String(gs[0].id));
+  };
+
+  const recargarJugadas = async () => {
+    if (!grupoId) return;
+    const r = await listarJugadasExternas(grupoId);
+    if (!r.ok) return toast(r.error ?? "No se pudieron cargar las jugadas.", "error");
+    setJugadas(r.jugadas ?? []);
+  };
+
+  const abrirAltaGrupo = () => {
+    setEditGrupo(null);
+    setGNombre("");
+    setGMoneda(grupo?.moneda ?? "USD");
+    setGComision(grupo?.comision_pct != null ? String(grupo.comision_pct) : "0");
+    setPanelGrupo(true);
+  };
+
+  const abrirEdicionGrupo = (g: GrupoExterno) => {
+    setEditGrupo(g);
+    setGNombre(g.nombre);
+    setGMoneda(g.moneda ?? "USD");
+    setGComision(String(g.comision_pct ?? "0"));
+    setPanelGrupo(true);
+  };
+
+  const guardarGrupo = async () => {
+    setGuardandoGrupo(true);
+    const r = await guardarGrupoExterno({
+      id: editGrupo?.id,
+      nombre: gNombre,
+      moneda: gMoneda,
+      comision_pct: gComision,
+    });
+    setGuardandoGrupo(false);
+    if (!r.ok) return toast(r.error ?? "No se pudo guardar el grupo.", "error");
+    setPanelGrupo(false);
+    setEditGrupo(null);
+    await recargarGrupos(editGrupo ? undefined : r.id);
+    toast(editGrupo ? "Grupo externo actualizado." : "📓 Grupo externo creado.", "success");
+  };
+
+  const borrarGrupo = async () => {
+    if (!grupo) return;
+    const seguro = window.confirm(
+      `¿Eliminar el grupo "${grupo.nombre}" y TODAS sus jugadas? Esta bitácora es personal y privada: no toca ningún grupo oficial.`
+    );
+    if (!seguro) return;
+    const r = await eliminarGrupoExterno(grupo.id);
+    if (!r.ok) return toast(r.error ?? "No se pudo eliminar el grupo.", "error");
+    setGrupoId("");
+    await recargarGrupos();
+    toast("Grupo externo eliminado.", "success");
+  };
+
+  const guardarJugada = async () => {
+    if (!grupo) return toast("Primero seleccioná o creá un grupo externo.", "warning");
+    setGuardandoJugada(true);
+    const r = await guardarJugadaExterna({
+      id: editJugadaId ?? undefined,
+      grupo_externo_id: grupo.id,
+      fecha: form.fecha,
+      hipodromo: form.hipodromo,
+      carrera: form.carrera,
+      tipo_jugada: form.tipo_jugada,
+      ejemplares: form.ejemplares,
+      monto: form.monto,
+      estado: form.estado,
+    });
+    setGuardandoJugada(false);
+    if (!r.ok) return toast(r.error ?? "No se pudo registrar la jugada.", "error");
+    const eraEdicion = editJugadaId != null;
+    setForm(formaJugadaVacia());
+    setEditJugadaId(null);
+    await recargarJugadas();
+    toast(eraEdicion ? "Jugada actualizada." : "📓 Jugada registrada en tu bitácora personal.", "success");
+  };
+
+  const cargarJugada = (j: JugadaExterna) => {
+    setEditJugadaId(j.id);
+    setForm({
+      fecha: String(j.fecha ?? "").slice(0, 10),
+      hipodromo: String(j.hipodromo ?? ""),
+      carrera: j.carrera != null ? String(j.carrera) : "",
+      tipo_jugada: String(j.tipo_jugada ?? "JUGADA"),
+      ejemplares: String(j.ejemplares ?? ""),
+      monto: j.monto != null ? String(num(j.monto)) : "",
+      estado: normalizarEstadoJugada(j.estado),
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const cambiarEstado = async (j: JugadaExterna, estado: string) => {
+    const r = await guardarJugadaExterna({
+      id: j.id,
+      grupo_externo_id: j.grupo_externo_id,
+      fecha: String(j.fecha ?? "").slice(0, 10),
+      hipodromo: String(j.hipodromo ?? ""),
+      carrera: j.carrera ?? undefined,
+      tipo_jugada: String(j.tipo_jugada ?? ""),
+      ejemplares: String(j.ejemplares ?? ""),
+      monto: j.monto ?? undefined,
+      estado,
+    });
+    if (!r.ok) return toast(r.error ?? "No se pudo cambiar el estado.", "error");
+    await recargarJugadas();
+  };
+
+  const borrarJugada = async (j: JugadaExterna) => {
+    if (!window.confirm("¿Eliminar esta jugada de tu bitácora personal?")) return;
+    const r = await eliminarJugadaExterna(j.id);
+    if (!r.ok) return toast(r.error ?? "No se pudo eliminar la jugada.", "error");
+    await recargarJugadas();
+    if (editJugadaId === j.id) {
+      setEditJugadaId(null);
+      setForm(formaJugadaVacia());
+    }
+    toast("Jugada eliminada.", "success");
+  };
+
+  const FILA_JUGADA = "border-t border-line px-3 py-2";
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-line bg-white p-5 shadow-sm space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-black text-slate-800">
+              <span className="mr-2">📓</span> Mi Control en Otros Grupos (Personal)
+            </h2>
+            <p className="text-[11px] text-slate-500">
+              Tu libro privado para jugar en grupos que no están en el sistema. Creá tus grupos (nombre, moneda y %
+              de comisión) y anotá cada jugada con su estado.
+            </p>
+          </div>
+          <Button variant="default" size="sm" onClick={abrirAltaGrupo} data-testid="bitacora-alta-grupo">
+            <span className="mr-1">➕</span> Nuevo grupo externo
+          </Button>
+        </div>
+
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
+          <span className="mr-1">🔒</span>
+          <b>Privado y aislado:</b> esta bitácora vive en tablas propias y <b>NO modifica la caja, los saldos ni
+          los reportes de los grupos oficiales</b>. Solo la ves tú.
+        </div>
+
+        {/* Panel de alta / edición de grupo externo */}
+        {panelGrupo ? (
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3 space-y-3" data-testid="bitacora-panel-grupo">
+            <div className="text-[10px] font-black uppercase tracking-wider text-indigo-700">
+              {editGrupo ? "✏️ Editar grupo externo" : "➕ Nuevo grupo externo"}
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="md:col-span-1">
+                <label className={lbl}>Nombre del grupo</label>
+                <input
+                  value={gNombre}
+                  onChange={(e) => setGNombre(e.target.value.toUpperCase())}
+                  className={inp + " uppercase"}
+                  placeholder="EL CLUB DE JUAN"
+                  maxLength={60}
+                  data-testid="bitacora-grupo-nombre"
+                />
+              </div>
+              <div>
+                <label className={lbl}>Moneda</label>
+                <input
+                  value={gMoneda}
+                  onChange={(e) => setGMoneda(e.target.value.toUpperCase())}
+                  className={inp + " uppercase"}
+                  placeholder="USD / VES"
+                  maxLength={8}
+                  data-testid="bitacora-grupo-moneda"
+                />
+              </div>
+              <div>
+                <label className={lbl}>Comisión del grupo (%)</label>
+                <input
+                  value={gComision}
+                  onChange={(e) => setGComision(e.target.value.replace(/[^\d.]/g, ""))}
+                  className={inp + " text-right font-mono"}
+                  placeholder="10"
+                  inputMode="decimal"
+                  data-testid="bitacora-grupo-comision"
+                />
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-500">
+              La comisión se usa para calcular el premio: <b>premio = monto × (2 − comisión%)</b>. Ej.: con 10% y
+              $10 apostados, el grupo devuelve $19.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setPanelGrupo(false);
+                  setEditGrupo(null);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button variant="default" size="sm" disabled={guardandoGrupo} onClick={() => void guardarGrupo()}>
+                {guardandoGrupo ? <span className="mr-1">⏳</span> : <span className="mr-1">💾</span>} Guardar grupo
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-1 items-end gap-3 md:grid-cols-3">
+          <div className="md:col-span-2">
+            <label className={lbl}>Grupo externo</label>
+            <select
+              value={grupoId}
+              onChange={(e) => setGrupoId(e.target.value)}
+              className={inp + " font-bold"}
+              data-testid="bitacora-grupo-select"
+            >
+              <option value="">
+                {cargandoGrupos ? "Cargando grupos…" : grupos.length ? "— Seleccione —" : "— Todavía no hay grupos —"}
+              </option>
+              {grupos.map((g) => (
+                <option key={String(g.id)} value={String(g.id)}>
+                  {g.nombre} · {String(g.moneda ?? "USD").toUpperCase()} · com. {num(g.comision_pct)}%
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" disabled={!grupo} onClick={() => grupo && abrirEdicionGrupo(grupo)}>
+              <span className="mr-1">✏️</span> Editar
+            </Button>
+            <Button variant="ghost" size="sm" disabled={!grupo} onClick={() => void borrarGrupo()}>
+              <span className="mr-1">🗑️</span> Eliminar
+            </Button>
+          </div>
+        </div>
+
+        {/* Resumen de la bitácora del grupo seleccionado */}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <ResumenBitacora icon="💸" lbl="Apostado (sin anuladas)" val={formatoMoneda(monedaGrupo, resumen.apostado)} color="text-slate-800" />
+          <ResumenBitacora icon="🏆" lbl="Premios (par − comisión)" val={formatoMoneda(monedaGrupo, resumen.premios)} color="text-emerald-700" />
+          <ResumenBitacora
+            icon="⚖️"
+            lbl="Neto"
+            val={formatoMoneda(monedaGrupo, resumen.neto)}
+            color={resumen.neto >= 0 ? "text-emerald-700" : "text-red-600"}
+          />
+          <ResumenBitacora icon="⏳" lbl="Pendiente" val={formatoMoneda(monedaGrupo, resumen.pendiente)} color="text-amber-600" />
+        </div>
+        <div className="text-[10px] text-slate-400">
+          {resumen.jugadas} jugada(s) · {resumen.ganadas} ganada(s) · {resumen.perdidas} perdida(s) ·{" "}
+          {resumen.anuladas} anulada(s) · Neto = premios − apostado.
+        </div>
+      </div>
+
+      {/* Registro de jugadas */}
+      <div className="rounded-2xl border border-line bg-white p-5 shadow-sm space-y-3">
+        <h2 className="text-sm font-black text-slate-800">
+          <span className="mr-2">🧾</span> {editJugadaId ? "Editar jugada" : "Registrar jugada"}
+        </h2>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div>
+            <label className={lbl}>Fecha</label>
+            <input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} className={inp} data-testid="bitacora-fecha" />
+          </div>
+          <div>
+            <label className={lbl}>Hipódromo</label>
+            <input
+              value={form.hipodromo}
+              onChange={(e) => setForm({ ...form, hipodromo: e.target.value.toUpperCase() })}
+              className={inp + " uppercase"}
+              placeholder="LA PARAGUAITA"
+              data-testid="bitacora-hipodromo"
+            />
+          </div>
+          <div>
+            <label className={lbl}>Carrera</label>
+            <input
+              value={form.carrera}
+              onChange={(e) => setForm({ ...form, carrera: e.target.value.replace(/\D/g, "") })}
+              className={inp + " text-right font-mono"}
+              placeholder="5"
+              inputMode="numeric"
+              data-testid="bitacora-carrera"
+            />
+          </div>
+          <div>
+            <label className={lbl}>Tipo de jugada</label>
+            <select value={form.tipo_jugada} onChange={(e) => setForm({ ...form, tipo_jugada: e.target.value })} className={inp + " font-bold"} data-testid="bitacora-tipo">
+              {["JUGADA", "TRIO", "SUPERTRIFECTA", "EXACTA", "QUINIELA", "WIN", "PLACE", "OTRO"].map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="md:col-span-2">
+            <label className={lbl}>Ejemplares</label>
+            <input
+              value={form.ejemplares}
+              onChange={(e) => setForm({ ...form, ejemplares: e.target.value.toUpperCase() })}
+              className={inp + " uppercase"}
+              placeholder="1-5 EL MAGO, 8 REYAZUL"
+              data-testid="bitacora-ejemplares"
+            />
+          </div>
+          <div>
+            <label className={lbl}>Monto</label>
+            <input
+              value={form.monto}
+              onChange={(e) => setForm({ ...form, monto: e.target.value.replace(/[^\d.]/g, "") })}
+              className={inp + " text-right font-mono"}
+              placeholder="10"
+              inputMode="decimal"
+              data-testid="bitacora-monto"
+            />
+          </div>
+          <div>
+            <label className={lbl}>Estado</label>
+            <select
+              value={form.estado}
+              onChange={(e) => setForm({ ...form, estado: e.target.value })}
+              className={inp + " font-bold"}
+              data-testid="bitacora-estado"
+            >
+              {ESTADOS_JUGADA_EXTERNA.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          {editJugadaId ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setEditJugadaId(null);
+                setForm(formaJugadaVacia());
+              }}
+            >
+              Cancelar edición
+            </Button>
+          ) : null}
+          <Button variant="default" size="sm" disabled={guardandoJugada || !grupo} onClick={() => void guardarJugada()} data-testid="bitacora-guardar-jugada">
+            {guardandoJugada ? <span className="mr-1">⏳</span> : <span className="mr-1">📓</span>}{" "}
+            {editJugadaId ? "Guardar cambios" : "Registrar jugada"}
+          </Button>
+        </div>
+        {!grupo ? <p className="text-[10px] text-slate-400">Seleccioná o creá un grupo externo para registrar jugadas.</p> : null}
+      </div>
+
+      {/* Listado de jugadas */}
+      <div className="rounded-2xl border border-line bg-white p-5 shadow-sm space-y-3">
+        <h2 className="text-sm font-black text-slate-800">
+          <span className="mr-2">📒</span> Mis jugadas anotadas
+        </h2>
+
+        {cargandoJugadas ? (
+          <p className="text-[11px] text-slate-400">Cargando jugadas…</p>
+        ) : !jugadas.length ? (
+          <p className="rounded-xl border border-dashed border-line bg-slate-50 px-3 py-4 text-center text-[11px] text-slate-400">
+            {grupoId ? "Todavía no anotaste jugadas en este grupo." : "Elegí un grupo (o creá uno) para empezar tu control."}
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-line">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50">
+                <tr className="text-left text-[9px] font-black uppercase tracking-wider text-slate-400">
+                  <th className="px-3 py-2">Fecha</th>
+                  <th className="px-3 py-2">Hipódromo</th>
+                  <th className="px-3 py-2">Carrera</th>
+                  <th className="px-3 py-2">Tipo de jugada</th>
+                  <th className="px-3 py-2">Ejemplares</th>
+                  <th className="px-3 py-2 text-right">Monto</th>
+                  <th className="px-3 py-2">Estado</th>
+                  <th className="px-3 py-2 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jugadas.map((j, i) => {
+                  const estado = normalizarEstadoJugada(j.estado);
+                  return (
+                    <tr key={String(j.id)} className="hover:bg-slate-50/70" data-testid={`bitacora-fila-${i}`}>
+                      <td className={FILA_JUGADA + " font-mono"}>{String(j.fecha ?? "").slice(0, 10)}</td>
+                      <td className={FILA_JUGADA + " font-bold text-slate-700"}>{String(j.hipodromo ?? "") || "—"}</td>
+                      <td className={FILA_JUGADA + " text-right font-mono"}>{j.carrera != null ? String(j.carrera) : "—"}</td>
+                      <td className={FILA_JUGADA}>{String(j.tipo_jugada ?? "") || "—"}</td>
+                      <td className={FILA_JUGADA + " max-w-[220px] truncate"} title={String(j.ejemplares ?? "")}>
+                        {String(j.ejemplares ?? "") || "—"}
+                      </td>
+                      <td className={FILA_JUGADA + " text-right font-mono font-bold"}>{formatoMoneda(monedaGrupo, num(j.monto))}</td>
+                      <td className={FILA_JUGADA}>
+                        <select
+                          value={estado}
+                          onChange={(e) => void cambiarEstado(j, e.target.value)}
+                          className={`rounded-lg border px-2 py-1 text-[10px] font-black uppercase tracking-wider outline-none ${
+                            estado === "GANÓ"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              : estado === "PERDIÓ"
+                                ? "border-red-200 bg-red-50 text-red-600"
+                                : estado === "ANULADA"
+                                  ? "border-slate-200 bg-slate-100 text-slate-500"
+                                  : "border-amber-200 bg-amber-50 text-amber-700"
+                          }`}
+                          data-testid={`bitacora-${i}-estado`}
+                        >
+                          {ESTADOS_JUGADA_EXTERNA.map((s) => (
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className={FILA_JUGADA + " text-right whitespace-nowrap"}>
+                        <button
+                          type="button"
+                          onClick={() => cargarJugada(j)}
+                          title="Editar jugada"
+                          className="mr-1 rounded border border-line px-1.5 py-1 transition hover:bg-slate-100"
+                          data-testid={`bitacora-${i}-editar`}
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void borrarJugada(j)}
+                          title="Eliminar jugada"
+                          className="rounded border border-red-200 px-1.5 py-1 text-red-500 transition hover:bg-red-50"
+                          data-testid={`bitacora-${i}-borrar`}
+                        >
+                          🗑️
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {jugadas.length ? (
+          <p className="text-[10px] text-slate-400">
+            {resumen.jugadas} anotación(es) · Apostado {formatoMoneda(monedaGrupo, resumen.apostado)} · Neto{" "}
+            {formatoMoneda(monedaGrupo, resumen.neto)} · Pendiente {formatoMoneda(monedaGrupo, resumen.pendiente)}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** Caja de resumen de la bitácora (Apostado / Premios / Neto / Pendiente). */
+function ResumenBitacora({ icon, lbl, val, color }: { icon: string; lbl: string; val: string; color: string }) {
+  return (
+    <div className="rounded-xl border border-line bg-slate-50 px-3 py-2">
+      <div className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-slate-400">
+        <span>{icon}</span> {lbl}
+      </div>
+      <div className={`text-sm font-black ${color}`}>{val}</div>
     </div>
   );
 }

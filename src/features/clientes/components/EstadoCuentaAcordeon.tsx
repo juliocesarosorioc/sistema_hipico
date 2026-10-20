@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import {
   construirEstadoCuenta,
+  formasPagoDe,
+  resumenFormaPago,
   type ClienteRow,
   type NivelAcordeon,
   type TicketApuesta,
@@ -179,6 +181,8 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clienteEstado?.id ?? null]);
 
+  const formasPago = useMemo(() => formasPagoDe(clienteEstado), [clienteEstado]);
+
   return (
     <div className="space-y-3">
       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Cliente</label>
@@ -198,6 +202,32 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
           </option>
         ))}
       </select>
+
+      {/* Cómo se le paga o se le cobra al cliente elegido (PROMPT #7): todas
+          sus formas de pago, la ⭐ principal primero. Va acá y no dentro del
+          acordeón para que esté visible aunque el cliente no tenga movimientos. */}
+      {clienteEstado && formasPago.length ? (
+        <div className="rounded-xl border border-cyan-200 bg-cyan-50/70 px-3 py-2">
+          <div className="text-[9px] font-black uppercase tracking-wider text-cyan-700">
+            💳 Formas de pago para pagar / cobrar
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {formasPago.map((f, i) => (
+              <span
+                key={String(f.uid ?? i)}
+                className={`rounded-lg border px-2 py-1 text-[11px] ${
+                  f.principal
+                    ? "border-amber-300 bg-amber-50 text-amber-800"
+                    : "border-slate-200 bg-white text-slate-600"
+                }`}
+                title={resumenFormaPago(f)}
+              >
+                <b>{f.principal ? "⭐ " : ""}{resumenFormaPago(f)}</b>
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {!clienteEstado ? (
         <div className="rounded-2xl border border-dashed border-line bg-white/60 p-10 text-center text-slate-400">

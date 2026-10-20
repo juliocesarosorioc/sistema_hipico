@@ -9,10 +9,41 @@
  *    Supabase Storage, bucket `reclamos`; se inserta en tickets_jugadas).
  *  - Comprar Tablas Fijas → solicitudes_tablas (valida el admin).
  *  - Actualizar mis datos → notificaciones.tipo='portal_datos' (atendida por admin).
+ *  - 📓 Bitácora personal en grupos EXTERNOS (PROMPT #7): grupos externos y
+ *    jugadas propias en `portal_grupos_externos` / `portal_jugadas_externas`.
+ *    Es un libro privado del usuario: NO toca tickets, caja ni reportes de los
+ *    grupos oficiales (los tipos y los cálculos puros están en
+ *    `bitacoraExterna.ts`, la entrada/salida de datos está acá).
+ *  - 👤 Mi Perfil (PROMPT #7): autogestión de nombre, teléfono, correo, PIN de
+ *    acceso y formas de pago vía acción `perfil` de la Edge Function.
  */
 import { supabase } from "@/core/supabase";
 import { TIMEOUT_SESION_MS } from "@/features/auth/lib/sesion";
 import { construirEstadoCuenta, type ClienteRow, type NivelAcordeon, type NotificacionRow, type TicketApuesta } from "@/features/clientes/lib/clientes";
+import { normalizarFormasPago, type FormaPago } from "@/features/clientes/lib/formasPago";
+import {
+  normalizarEstadoJugada,
+  validarGrupoExterno,
+  validarJugadaExterna,
+  type GrupoExterno,
+  type JugadaExterna,
+} from "@/features/portal/lib/bitacoraExterna";
+// Tipos y cálculos puros de la bitácora personal (PROMPT #7) se re-exportan
+// desde acá: `bitacoraExterna.ts` no habla con la base, este archivo sí.
+export {
+  ESTADOS_JUGADA_EXTERNA,
+  ESTADO_POR_DEFECTO,
+  esEstadoJugadaExterna,
+  normalizarEstadoJugada,
+  premioGrupoExterno,
+  resumenGrupoExterno,
+  validarGrupoExterno,
+  validarJugadaExterna,
+  type EstadoJugadaExterna,
+  type GrupoExterno,
+  type JugadaExterna,
+  type ResumenGrupoExterno,
+} from "@/features/portal/lib/bitacoraExterna";
 // OJO: las funciones de escritura de ESTE archivo NO se pueden proteger con
 // `exigirCapacidad`. El portal no usa la sesión de Supabase del personal: el
 // cliente entra con su propio token/clave (ver `entrarPortal`) y no tiene
@@ -435,5 +466,145 @@ export async function actualizarDatosCliente(
   datos: Partial<Pick<ClienteRow, "telefono" | "codigo_pais" | "email" | "cedula_rif" | "direccion" | "metodo_pago">>
 ): Promise<{ ok: boolean; error?: string }> {
   const r = await accionPortal("datos-cliente", { ...datos });
+  return { ok: r.ok, error: r.error };
+}
+
+// ---------------------------------------------------------------------------
+// 👤 Mi Perfil — autogestión de datos personales (PROMPT #7)
+// ---------------------------------------------------------------------------
+
+export type DatosPerfil = {
+  /** Nombre completo (se guarda tal cual lo escribe el usuario). */
+  nombre?: string;
+  codigo_pais?: string;
+  telefono?: string;
+  email?: string;
+  /** Formas de cobro/pago personales, una o más (⚠️ sin `uid`: no se persiste). */
+  formas_pago?: FormaPago[];
+  /** PIN actual: se exige solo si se cambia la clave (lo valida la función). */
+  clave_actual?: string;
+  /** Clave/PIN nuevo. Vacío = no se cambia. */
+  clave_nueva?: string;
+};
+
+/**
+ * Actualiza los datos personales del cliente del portal DIRECTAMENTE en
+ * Supabase (a diferencia de `actualizarDatosCliente`, que solo deja una
+ * solicitud para que el admin la aplique).
+ *
+ * El alcance lo fija la Edge Function, no acá: la acción `perfil` acepta solo
+ * una lista blanca de columnas de identidad/contacto/cobro (nombre, teléfono,
+ * correo, formas de pago y el propio PIN). Saldo, comisión, aval, devolución,
+ * grupo y las credenciales del portal quedan FUERA de esa lista, así que ni el
+ * navegador ni un token robado pueden moverlos por esta vía.
+ */
+export async function actualizarMiPerfil(datos: DatosPerfil): Promise<{ ok: boolean; error?: string; cliente?: ClienteRow }> {
+  const cuerpo: Record<string, unknown> = {};
+  if (datos.nombre != null) cuerpo.nombre = String(datos.nombre);
+  if (datos.codigo_pais != null) cuerpo.codigo_pais = datos.codigo_pais;
+  if (datos.telefono != null) cuerpo.telefono = datos.telefono;
+  if (datos.email != null) cuerpo.email = datos.email;
+  if (datos.formas_pago) cuerpo.formas_pago = normalizarFormasPago(datos.formas_pago);
+  const claveNueva = String(datos.clave_nueva ?? "").trim();
+  if (claveNueva) {
+    cuerpo.clave_nueva = claveNueva;
+    cuerpo.clave_actual = String(datos.clave_actual ?? "");
+  }
+  if (!Object.keys(cuerpo).length) return { ok: false, error: "No enviaste datos para guardar." };
+
+  const r = await accionPortal("perfil", cuerpo);
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true, cliente: de<ClienteRow>(r.data, "cliente") };
+}
+
+// ---------------------------------------------------------------------------
+// 📓 Bitácora personal en otros grupos externos (PROMPT #7)
+// ---------------------------------------------------------------------------
+//
+// Todo pasa por la Edge Function con el token de la sesión: la función ancla
+// cada lectura y cada escritura al `cliente_id` que salió de la validación, así
+// que ningún usuario puede ver ni tocar la bitácora de otro. Las dos tablas
+// (`portal_grupos_externos`, `portal_jugadas_externas`) son exclusivas de esta
+// bitácora: no hay triggers, FKs ni vistas hacia `tickets_apuestas`, `grupos_*`
+// ni las cajas, por lo que anotar acá NO mueve ningún saldo oficial.
+
+export type GrupoExternoInput = {
+  id?: string | number;
+  nombre: string;
+  moneda?: string;
+  comision_pct?: number | string;
+};
+
+/** Mis grupos externos. `ok:false` = falló la consulta; `grupos: []` = no hay. */
+export async function listarGruposExternos(): Promise<{ ok: boolean; grupos?: GrupoExterno[]; error?: string }> {
+  const r = await accionPortal("grupos-externos", { modo: "listar" });
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true, grupos: de<GrupoExterno[]>(r.data, "grupos") ?? [] };
+}
+
+/** Crea o edita un grupo externo propio. Devuelve el id en la alta. */
+export async function guardarGrupoExterno(g: GrupoExternoInput): Promise<{ ok: boolean; error?: string; id?: string | number }> {
+  const nombre = String(g.nombre ?? "").trim().toUpperCase();
+  const error = validarGrupoExterno({ nombre, comision_pct: g.comision_pct });
+  if (error) return { ok: false, error };
+  const r = await accionPortal("grupos-externos", {
+    modo: g.id ? "editar" : "crear",
+    grupo_id: g.id,
+    nombre,
+    moneda: String(g.moneda ?? "USD").trim().toUpperCase() || "USD",
+    comision_pct: num(g.comision_pct),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true, id: de<string | number>(r.data, "id") };
+}
+
+/** Borra un grupo externo y TODAS sus jugadas (la función usa `on delete cascade`). */
+export async function eliminarGrupoExterno(grupoId: string | number): Promise<{ ok: boolean; error?: string }> {
+  const r = await accionPortal("grupos-externos", { modo: "eliminar", grupo_id: grupoId });
+  return { ok: r.ok, error: r.error };
+}
+
+/** Jugadas de UN grupo externo propio, de la más reciente a la más vieja. */
+export async function listarJugadasExternas(grupoId: string | number): Promise<{ ok: boolean; jugadas?: JugadaExterna[]; error?: string }> {
+  const r = await accionPortal("jugada-externa", { modo: "listar", grupo_externo_id: grupoId });
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true, jugadas: de<JugadaExterna[]>(r.data, "jugadas") ?? [] };
+}
+
+export type JugadaExternaInput = {
+  id?: string | number;
+  grupo_externo_id: string | number;
+  fecha?: string;
+  hipodromo?: string;
+  carrera?: number | string;
+  tipo_jugada?: string;
+  ejemplares?: string;
+  monto?: number | string;
+  estado?: string;
+};
+
+/** Registra (o actualiza) una jugada en un grupo externo propio. */
+export async function guardarJugadaExterna(j: JugadaExternaInput): Promise<{ ok: boolean; error?: string }> {
+  const error = validarJugadaExterna(j);
+  if (error) return { ok: false, error };
+  const r = await accionPortal("jugada-externa", {
+    modo: j.id ? "editar" : "crear",
+    jugada_id: j.id,
+    grupo_externo_id: j.grupo_externo_id,
+    fecha: String(j.fecha ?? "").slice(0, 10),
+    hipodromo: String(j.hipodromo ?? "").trim().toUpperCase(),
+    carrera: parseInt(String(j.carrera ?? ""), 10) || null,
+    tipo_jugada: String(j.tipo_jugada ?? "").trim().toUpperCase() || "JUGADA",
+    ejemplares: String(j.ejemplares ?? "").trim().toUpperCase(),
+    monto: num(j.monto),
+    estado: normalizarEstadoJugada(j.estado),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true };
+}
+
+/** Borra una jugada de la bitácora personal. */
+export async function eliminarJugadaExterna(jugadaId: string | number): Promise<{ ok: boolean; error?: string }> {
+  const r = await accionPortal("jugada-externa", { modo: "eliminar", jugada_id: jugadaId });
   return { ok: r.ok, error: r.error };
 }

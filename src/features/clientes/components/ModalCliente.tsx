@@ -3,24 +3,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
-import { DatosPagoForm } from "@/features/clientes/components/DatosPagoForm";
+import { FormasPagoLista } from "@/features/clientes/components/DatosPagoForm";
 import {
   actualizarCliente,
   crearCliente,
   etiquetaModoJuego,
+  formasPagoDe,
   listarClientes,
   MODO_JUEGO_OPCIONES,
+  normalizarFormasPago,
   resolverSocio,
   valorSocioAsignado,
   type ClienteRow,
+  type FormaPago,
 } from "@/features/clientes/lib/clientes";
 import {
   codigosPaisUnicos,
   componerTelefono,
   desglosarTelefono,
-  esBancoVzla,
-  listMetodosPago,
-  type DatosPago,
 } from "@/shared/lib/vzla";
 import { listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { useAuthStore } from "@/shared/store/useAuthStore";
@@ -218,8 +218,10 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
   const [socio, setSocio] = useState("");
   const [mostrarS, setMostrarS] = useState(false);
   const [esSocio, setEsSocio] = useState(false);
-  const [metodo, setMetodo] = useState("");
-  const [datosPago, setDatosPago] = useState<Record<string, unknown>>({});
+  // UNA o MÁS formas de pago (PROMPT #7): arreglo controlado que se persiste en
+  // `clientes.formas_pago` y se espeja en el par legacy `metodo_pago` +
+  // `datos_pago` con la ⭐ principal (ver `normalizarFormasPago`).
+  const [formas, setFormas] = useState<FormaPago[]>(() => formasPagoDe(cliente));
   const [diaCuadre, setDiaCuadre] = useState("");
   const [formaCuadre, setFormaCuadre] = useState("");
   const [tasaCuadre, setTasaCuadre] = useState("");
@@ -271,7 +273,7 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
     setModo(cliente.modo_juego || (cliente.libre ? "libre" : "aval"));
     setMostrarS(Boolean(cliente.mostrar_saldo_socio));
     setPermiteCruces(cliente.permite_cruces !== false);
-    setMetodo(cliente.metodo_pago || "");
+    setFormas(formasPagoDe(cliente));
     setDiaCuadre(cliente.dia_cuadre || "");
     setFormaCuadre(cliente.forma_cuadre || "");
     setTasaCuadre(cliente.tasa_cuadre != null ? String(cliente.tasa_cuadre) : "");
@@ -327,6 +329,12 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
     if (tasaCuadre.trim() && Number.isNaN(Number(tasaCuadre))) e.tasaCuadre = "Tasa inválida.";
     if (formaCuadre.trim() && !FORMAS_CUADRE.includes(formaCuadre.trim().toUpperCase()))
       e.formaCuadre = "Forma de cuadre no reconocida.";
+    // Múltiples formas de pago: cada fila del listado tiene que tener método.
+    // Una fila sin método no se guarda (la descartaría `normalizarFormasPago`),
+    // y perderla en silencio sería peor que decirlo.
+    if (formas.some((f) => !String(f.metodo ?? "").trim()))
+      e.formas = "Cada forma de pago necesita un método seleccionado (o quitela con 🗑️).";
+    else if (formas.length > 10) e.formas = "Máximo 10 formas de pago por cliente.";
     setErrores(e);
     return Object.keys(e).length === 0;
   };
@@ -337,6 +345,13 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
       return;
     }
     const nombre = [nombres, apellido].filter(Boolean).join(" ").toUpperCase() || seudonimo.trim().toUpperCase();
+    // Múltiples formas de pago (PROMPT #7): se guarda el arreglo completo en
+    // `formas_pago` Y, en la misma tanda, el par legacy `metodo_pago` /
+    // `datos_pago` con la ⭐ principal. Así todo lo que todavía lee una sola
+    // forma (tabla del Cuadre, tickets, notificaciones) sigue funcionando y la
+    // migración es reversible: no se pierde ningún dato al volver atrás.
+    const formasGuardables = normalizarFormasPago(formas);
+    const principal = formasGuardables.find((f) => f.principal) ?? null;
     const comun = {
       nombre,
       seudonimo: seudonimo.trim().toUpperCase(),
@@ -349,11 +364,19 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
       cedula_rif: cedulaRif.trim().toUpperCase() || null,
       direccion: direccion.trim() || null,
       socio_asignado: socio || null,
-      metodo_pago: metodo || null,
+      metodo_pago: principal?.metodo ?? null,
       dia_cuadre: diaCuadre || null,
       forma_cuadre: formaCuadre || null,
-      datos_pago: !metodo || !Object.keys(datosPago).length ? null : (datosPago as unknown as DatosPago),
+      datos_pago: principal?.datos ?? null,
+      formas_pago: formasGuardables,
     };
+    // Si la columna `formas_pago` todavía no existe en la fila (migración sin
+    // correr), `soloColumnasExistentes` la descarta del parche. Se avisa: la ⭐
+    // principal igual viaja en `metodo_pago`/`datos_pago`, pero las demás se
+    // perderían en esta guardada.
+    if (esEdicion && formas.length > 1 && cliente && !("formas_pago" in cliente)) {
+      toast("⚠️ La columna formas_pago no existe todavía: solo se guardará la principal. Ejecute sql/formas_pago_clientes.sql en Supabase.", "warning");
+    }
     setGuardando(true);
     // Los números y los booleanos van SIEMPRE con valor concreto en las dos
     // ramas del CRUD. Columnas como `clientes.comision`, `tasa_cuadre` y
@@ -688,27 +711,17 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
               </Campo>
             </Seccion>
 
-            <Seccion titulo="Cobro y pago" icono="💳" tono={TONO.cyan}>
-              <Campo texto="Método de pago" icono="👛" ancho="col-span-2 sm:col-span-3">
-                <select value={metodo} onChange={(e) => setMetodo(e.target.value)} className={inp + " font-bold"}>
-                  <option value="">— Sin método —</option>
-                  {listMetodosPago(true).map((m) => (
-                    <option key={m} value={m}>
-                      {esBancoVzla(m) ? m : m}
-                    </option>
-                  ))}
-                </select>
-              </Campo>
-              {metodo ? (
-                <div className="col-span-2 sm:col-span-3">
-                  <DatosPagoForm
-                    prefijo={esEdicion ? "editar" : "nuevo"}
-                    metodo={metodo}
-                    inicial={esEdicion ? ((cliente!.datos_pago as Record<string, unknown>) as never) : undefined}
-                    onChange={(dp) => setDatosPago(dp as unknown as Record<string, unknown>)}
-                  />
-                </div>
-              ) : null}
+            <Seccion titulo="Cobro y pago (una o más formas)" icono="💳" tono={TONO.cyan}>
+              <div className="col-span-2 sm:col-span-3">
+                {/* Listado dinámico: ➕ Agregar otra forma de pago, 🗑️ para quitar,
+                    moneda por fila y ⭐ Principal (la que se usa al cobrar/pagar). */}
+                <FormasPagoLista
+                  prefijo={esEdicion ? "editar" : "nuevo"}
+                  formas={formas}
+                  onChange={setFormas}
+                  error={errores.formas}
+                />
+              </div>
             </Seccion>
           </div>
 

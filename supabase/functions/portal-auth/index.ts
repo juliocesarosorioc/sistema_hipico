@@ -128,6 +128,50 @@ const numero = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+/** Los cuatro estados que admite la bitácora personal. */
+const ESTADOS_BITACORA = ["PENDIENTE", "GANÓ", "PERDIÓ", "ANULADA"];
+
+/**
+ * Normaliza el arreglo de formas de pago que llega del navegador (PROMPT #7).
+ *
+ * El navegador NO es la fuente de verdad: cada fila se reduce a
+ * `{ metodo, moneda, principal, datos }` con valores recortados, `datos` se
+ * limpia a string/número/booleano, y se garantiza UNA sola principal. Si el
+ * formato no es el esperado devuelve `null` y la acción se rechaza en vez de
+ * escribir cualquier cosa en el jsonb.
+ */
+function sanitizarFormasPago(v: unknown): Array<Fila> | null {
+  if (!Array.isArray(v)) return null;
+  const out: Array<Fila> = [];
+  for (const item of v) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+    const o = item as Fila;
+    const metodo = texto(o.metodo, 60);
+    if (!metodo) continue;
+    const crudo = o.datos;
+    let datos: Fila | null = null;
+    if (crudo && typeof crudo === "object" && !Array.isArray(crudo)) {
+      datos = {};
+      for (const [k, val] of Object.entries(crudo as Fila)) {
+        if (k.length > 40) continue;
+        if (typeof val === "string") datos[k] = texto(val, 160);
+        else if (typeof val === "number") datos[k] = texto(val, 60);
+        else if (typeof val === "boolean") datos[k] = val;
+      }
+      if (!Object.keys(datos).length) datos = null;
+    }
+    out.push({ metodo, moneda: (texto(o.moneda, 8) || "USD").toUpperCase(), principal: o.principal === true, datos });
+    if (out.length > 10) return null;
+  }
+  // Exactamente una principal, sin importar lo que mande el navegador.
+  if (out.length) {
+    let idx = out.findIndex((f) => f.principal === true);
+    if (idx < 0) idx = 0;
+    out.forEach((f, i) => (f.principal = i === idx));
+  }
+  return out;
+}
+
 /**
  * Lee el rol del JWT de la petición, sin verificar la firma.
  *
@@ -415,6 +459,239 @@ Deno.serve(async (req: Request) => {
     // su propia cédula o su saldo por el portal es exactamente lo que no hay
     // que permitir; el admin atiende la notificación y decide.
     return json({ ok: true });
+  }
+
+  // --- 👤 Mi Perfil: autogestión de datos personales (PROMPT #7) -----------
+  //
+  // Esta acción SÍ escribe en `clientes`, a diferencia de `datos-cliente`: la
+  // autogestión pide guardar en el momento, con confirmación de éxito. La
+  // diferencia de seguridad está en el ALCANCE, no en la confianza: solo se
+  // acepta una lista blanca de columnas de identidad / contacto / cobro
+  // (nombre, código de país, teléfono, correo, formas de pago) y, encima, el
+  // PIN de acceso del propio portal — que exige el PIN actual para cambiarse.
+  //
+  // quedan FUERA de la lista: saldo_actual, comision, devolucion, aval,
+  // grupo_id, monto_total_jugado, portal_token, portal_habilitado y cualquier
+  // otra columna financiera o de permisos. Ni el navegador ni un token robado
+  // pueden moverlas por este camino.
+  if (accion === "perfil") {
+    const pedido: Fila = {};
+    const campos: Array<[string, number]> = [
+      ["nombre", 160],
+      ["codigo_pais", 8],
+      ["telefono", 40],
+      ["email", 160],
+    ];
+    for (const [c, max] of campos) if (e[c] != null) pedido[c] = texto(e[c], max);
+
+    if (e.formas_pago != null) {
+      const formas = sanitizarFormasPago(e.formas_pago);
+      if (!formas) return json({ ok: false, error: "Las formas de pago no tienen un formato válido." }, 400);
+      if (formas.length) {
+        pedido.formas_pago = formas;
+        // Espejo legacy: la principal sigue emparejando metodo_pago + datos_pago
+        // para todo lo que todavía lee UNA sola forma (Cuadre, tickets, etc.).
+        pedido.metodo_pago = formas[0].metodo;
+        pedido.datos_pago = formas[0].datos ?? null;
+      } else {
+        pedido.formas_pago = [];
+        pedido.metodo_pago = null;
+        pedido.datos_pago = null;
+      }
+    }
+
+    const claveNueva = texto(e.clave_nueva, 64);
+    if (claveNueva) {
+      if (claveNueva.length < 4 || claveNueva.length > 8) {
+        return json({ ok: false, error: "El PIN de acceso debe tener entre 4 y 8 caracteres." }, 400);
+      }
+      // El cambio de PIN siempre pide el PIN vigente: un token robado no
+      // debería poder rotar la contraseña y dejar afuera al dueño.
+      if (!igual(texto(cliente?.portal_clave), texto(e.clave_actual))) {
+        return json({ ok: false, error: "El PIN actual no coincide." }, 403);
+      }
+      pedido.portal_clave = claveNueva.toUpperCase();
+    }
+
+    if (!Object.keys(pedido).length) return json({ ok: false, error: "No enviaste datos para actualizar." }, 400);
+
+    const { data, error } = await db.from("clientes").update(pedido).eq("id", cid).select("*").single();
+    if (error || !data) return json({ ok: false, error: "No se pudieron guardar tus datos." }, 502);
+
+    // Rastro para el admin (mejor esfuerzo: si la notificación falla, el
+    // guardado del cliente ya está hecho y no se pierde).
+    const paraAviso: Fila = { ...pedido };
+    if (paraAviso.portal_clave) paraAviso.portal_clave = "****";
+    await db.from("notificaciones").insert([
+      {
+        tipo: "portal_datos",
+        titulo: "El cliente actualizó su perfil (autogestión)",
+        mensaje: `Cambios aplicados el ${new Date().toLocaleString("es-VE")} desde el Portal del Cliente.`,
+        cliente_id: cid,
+        cliente_nombre: texto(cliente?.nombre ?? cliente?.seudonimo, 160) || "Cliente",
+        datos: paraAviso,
+        estado: "Nueva",
+      },
+    ]);
+
+    return json({ ok: true, cliente: clientePublico(data as Fila) });
+  }
+
+  // --- 📓 Grupos externos de la bitácora personal (PROMPT #7) --------------
+  //
+  // Tablas propias (`portal_grupos_externos` / `portal_jugadas_externas`) con
+  // RLS sin políticas: solo service_role las toca, siempre ancladas al
+  // `cliente_id` que salió del token. Nada de esto toca tickets, grupos
+  // oficiales, cajas ni reportes.
+  if (accion === "grupos-externos") {
+    const modo = texto(e.modo, 20);
+
+    if (modo === "listar") {
+      const { data, error } = await db
+        .from("portal_grupos_externos")
+        .select("id, nombre, moneda, comision_pct, creado_at")
+        .eq("cliente_id", cid)
+        .order("nombre", { ascending: true });
+      if (error) return json({ ok: false, error: "No se pudieron leer tus grupos externos." }, 502);
+      return json({ ok: true, grupos: data ?? [] });
+    }
+
+    if (modo === "crear" || modo === "editar") {
+      const nombre = texto(e.nombre, 60).toUpperCase();
+      if (!nombre) return json({ ok: false, error: "Poné un nombre al grupo externo." }, 400);
+      const moneda = (texto(e.moneda, 8) || "USD").toUpperCase();
+      const comision = Math.min(100, Math.max(0, numero(e.comision_pct)));
+
+      if (modo === "crear") {
+        const { data, error } = await db
+          .from("portal_grupos_externos")
+          .insert([{ cliente_id: cid, nombre, moneda, comision_pct: comision }])
+          .select("id")
+          .single();
+        if (error) {
+          const duplicado = (error as { code?: string }).code === "23505";
+          return json(
+            { ok: false, error: duplicado ? "Ya tenés un grupo externo con ese nombre." : "No se pudo crear el grupo externo." },
+            duplicado ? 409 : 502
+          );
+        }
+        return json({ ok: true, id: data.id });
+      }
+
+      // El `.eq("cliente_id", cid)` es lo que impide editar un grupo ajeno con
+      // un id viajero: sin él, cualquier id válido alcanzaría.
+      const { data, error } = await db
+        .from("portal_grupos_externos")
+        .update({ nombre, moneda, comision_pct: comision })
+        .eq("id", texto(e.grupo_id, 64))
+        .eq("cliente_id", cid)
+        .select("id");
+      if (error) return json({ ok: false, error: "No se pudo editar el grupo externo." }, 502);
+      if (!data?.length) return json({ ok: false, error: "Ese grupo externo no es tuyo." }, 403);
+      return json({ ok: true, id: data[0].id });
+    }
+
+    if (modo === "eliminar") {
+      const { data, error } = await db
+        .from("portal_grupos_externos")
+        .delete()
+        .eq("id", texto(e.grupo_id, 64))
+        .eq("cliente_id", cid)
+        .select("id");
+      if (error) return json({ ok: false, error: "No se pudo eliminar el grupo externo." }, 502);
+      if (!data?.length) return json({ ok: false, error: "Ese grupo externo no es tuyo." }, 403);
+      // Las jugadas del grupo se caen con él (FK `on delete cascade`).
+      return json({ ok: true });
+    }
+
+    return json({ ok: false, error: "Modo desconocido para grupos externos." }, 400);
+  }
+
+  // --- 📓 Jugadas de la bitácora personal (PROMPT #7) ----------------------
+  if (accion === "jugada-externa") {
+    const modo = texto(e.modo, 20);
+
+    // Toda operación arranca comprobando que el grupo de la jugada sea del
+    // cliente que validó el token (id viajero → 403).
+    const grupoPropio = async (): Promise<boolean> => {
+      const { data } = await db
+        .from("portal_grupos_externos")
+        .select("id")
+        .eq("id", texto(e.grupo_externo_id, 64))
+        .eq("cliente_id", cid)
+        .maybeSingle();
+      return Boolean(data);
+    };
+
+    if (modo === "listar") {
+      if (!(await grupoPropio())) return json({ ok: false, error: "Ese grupo externo no es tuyo." }, 403);
+      const { data, error } = await db
+        .from("portal_jugadas_externas")
+        .select("id, grupo_externo_id, fecha, hipodromo, carrera, tipo_jugada, ejemplares, monto, estado, creado_at")
+        .eq("cliente_id", cid)
+        .eq("grupo_externo_id", texto(e.grupo_externo_id, 64))
+        .order("fecha", { ascending: false })
+        .order("id", { ascending: false });
+      if (error) return json({ ok: false, error: "No se pudieron leer las jugadas." }, 502);
+      return json({ ok: true, jugadas: data ?? [] });
+    }
+
+    if (modo === "crear" || modo === "editar") {
+      const fecha = texto(e.fecha, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return json({ ok: false, error: "La fecha no es válida." }, 400);
+      const monto = numero(e.monto);
+      if (!(monto > 0)) return json({ ok: false, error: "El monto tiene que ser mayor que cero." }, 400);
+      const estado = texto(e.estado, 12).toUpperCase();
+      if (!ESTADOS_BITACORA.includes(estado)) {
+        return json({ ok: false, error: `Estado inválido: use ${ESTADOS_BITACORA.join(" / ")}.` }, 400);
+      }
+      if (!(await grupoPropio())) return json({ ok: false, error: "Ese grupo externo no es tuyo." }, 403);
+
+      const fila: Fila = {
+        cliente_id: cid,
+        grupo_externo_id: texto(e.grupo_externo_id, 64),
+        fecha,
+        hipodromo: texto(e.hipodromo, 60),
+        carrera:
+          e.carrera != null && String(e.carrera).trim() !== ""
+            ? Math.max(0, Math.floor(numero(e.carrera)))
+            : null,
+        tipo_jugada: texto(e.tipo_jugada, 40) || "JUGADA",
+        ejemplares: texto(e.ejemplares, 300),
+        monto,
+        estado,
+      };
+
+      if (modo === "crear") {
+        const { error } = await db.from("portal_jugadas_externas").insert([fila]);
+        if (error) return json({ ok: false, error: "No se pudo registrar la jugada." }, 502);
+        return json({ ok: true });
+      }
+
+      const { data, error } = await db
+        .from("portal_jugadas_externas")
+        .update(fila)
+        .eq("id", texto(e.jugada_id, 64))
+        .eq("cliente_id", cid)
+        .select("id");
+      if (error) return json({ ok: false, error: "No se pudo editar la jugada." }, 502);
+      if (!data?.length) return json({ ok: false, error: "Esa jugada no es tuya." }, 403);
+      return json({ ok: true });
+    }
+
+    if (modo === "eliminar") {
+      const { data, error } = await db
+        .from("portal_jugadas_externas")
+        .delete()
+        .eq("id", texto(e.jugada_id, 64))
+        .eq("cliente_id", cid)
+        .select("id");
+      if (error) return json({ ok: false, error: "No se pudo eliminar la jugada." }, 502);
+      if (!data?.length) return json({ ok: false, error: "Esa jugada no es tuya." }, 403);
+      return json({ ok: true });
+    }
+
+    return json({ ok: false, error: "Modo desconocido para jugadas externas." }, 400);
   }
 
   // --- imagen de reclamo: URL firmada, bucket privado ----------------------
