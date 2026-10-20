@@ -15,7 +15,12 @@
  *     ganancia). Los retirados pasan a 'Retirado' y se reembolsa el monto.
  *   · "En riesgo" = todo lo vendido; el balance del grupo a favor es
  *     vendido − reembolsado − pagado.
+ *   · "Cobrado neto" = lo que deja una jugada PERDIDA después de pagarle al
+ *     grupo que la publicó su % de convenio (`pctConvenio`):
+ *     monto perdido × (1 − %/100). El ganador va a "Pagado" y el retirado se
+ *     reembolsa, así que ninguno de los dos suma acá.
  */
+import { cobradoNeto } from "@/features/grupos/lib/comisiones-convenio";
 
 /** Una venta (1 ticket = 1 ejemplar jugado) ya normalizada para el reporte. */
 export type VentaTablaReporte = {
@@ -33,6 +38,12 @@ export type VentaTablaReporte = {
   pts: number;
   premioPorTabla: number;
   comisionPct: number;
+  /**
+   * % de convenio del grupo que publicó la jugada, para descontar "Cobrado
+   * neto". Lo completa el reporte al cruzar el ticket con `grupos_venta`
+   * (0 = sin grupo / sin convenio pactado).
+   */
+  pctConvenio?: number;
   estado: string;
   pagado: number;
   comision: number;
@@ -98,6 +109,19 @@ export function estadoNormalizado(e: unknown): EstadoReporte {
 }
 
 /**
+ * Cobrado NETO de una venta: solo las PERDIDAS dejan dinero en la casa. El
+ * ganador cobra premio (columna Pagado), el retirado se reembolsa y el
+ * pendiente todavía no se decidió.
+ *
+ * `monto` es lo jugado y `pctConvenio` el % que se le paga al grupo donde se
+ * publicó: `monto × (1 − %/100)`.
+ */
+export function cobradoDeVenta(v: VentaTablaReporte): number {
+  if (estadoNormalizado(v.estado) !== "Perdedor") return 0;
+  return cobradoNeto(v.monto, v.pctConvenio);
+}
+
+/**
  * Día de la carrera guardado en `nota_auditoria` (JSONB serializado a texto).
  * PostgREST puede entregar la columna como string JSON o como objeto ya
  * parseado; se toleran las dos formas y cualquier nota que no sea JSON.
@@ -154,6 +178,7 @@ export function normalizarVenta(row: Record<string, unknown>): VentaTablaReporte
     pts: cifra(row.pts_ejemplar),
     premioPorTabla: cifra(row.premio_por_tabla),
     comisionPct: cifra(row.comision_porcentaje),
+    pctConvenio: 0,
     estado: texto(row.estado),
     pagado: cifra(row.premio_pagar),
     comision: cifra(row.comision_pagada),
@@ -177,8 +202,8 @@ export function totalesDe(ventas: VentaTablaReporte[]): TotalesReporte {
     pagado: 0,
     reembolsado: 0,
     comision: 0,
-      cobrado: 0,
-      balance: 0,
+    cobrado: 0,
+    balance: 0,
   };
   const jugadores = new Set<string>();
   for (const v of ventas) {
@@ -193,6 +218,7 @@ export function totalesDe(ventas: VentaTablaReporte[]): TotalesReporte {
         break;
       case "Perdedor":
         t.perdidos += 1;
+        t.cobrado += cobradoDeVenta(v);
         break;
       case "Retirado":
         t.retirados += 1;

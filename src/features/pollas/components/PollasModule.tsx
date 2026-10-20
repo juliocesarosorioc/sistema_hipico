@@ -31,6 +31,7 @@ import {
   ordenarRanking,
   estadoAcumulado,
   calcularFinanzasPolla,
+  liquidarPolla,
   etiquetaPremioPuesto,
   leyendasUnicas,
   textoCarreras,
@@ -44,6 +45,16 @@ import {
 import { ModalVentaPolla } from "@/features/pollas/components/ModalVentaPolla";
 import { ModalConfiguracionPolla } from "@/features/pollas/components/ModalConfiguracionPolla";
 import { CargaResultadosRapida } from "@/features/liquidacion/components/CargaResultadosRapida";
+import { cobradoNeto, comisionPctDeGrupo } from "@/features/grupos/lib/comisiones-convenio";
+import { useReporteEnVivo } from "@/features/reportes/lib/useReporteEnVivo";
+
+/** Tablas que cambian cuando se vende, se paga o se liquida una Polla. */
+const TABLAS_VIVO_POLLA = [
+  "pollas",
+  "polla_ventas",
+  "polla_combinaciones",
+  "polla_acumulado",
+] as const;
 
 /**
  * Chip de hipódromo. El elegido se ve relleno; el resto, con borde. No es un
@@ -91,6 +102,8 @@ export function PollasModule() {
   const [clientes, setClientes] = useState<ClienteRow[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Sube con cada evento en vivo: las tarjetas releen sus ventas. */
+  const [recargaVivo, setRecargaVivo] = useState(0);
 
   const [modalConfig, setModalConfig] = useState<{ abierto: boolean; polla: Polla | null }>({
     abierto: false,
@@ -105,8 +118,8 @@ export function PollasModule() {
     []
   );
 
-  const cargar = useCallback(async () => {
-    setCargando(true);
+  const cargar = useCallback(async (silencioso = false) => {
+    if (!silencioso) setCargando(true);
     setError(null);
     const [programa, lista, g, c] = await Promise.all([
       leerProgramaDePolla(fecha),
@@ -124,12 +137,35 @@ export function PollasModule() {
     // envuelto en {ok, datos}) y ya traen caché propia.
     setGrupos(g);
     setClientes(c);
-    setCargando(false);
+    // En una recarga silenciosa (evento en vivo) no se apaga el spinner de la
+    // pantalla: las tarjetas siguen visibles mientras llega la data nueva.
+    if (!silencioso) setCargando(false);
   }, [fecha]);
 
   useEffect(() => {
     void cargar();
   }, [cargar]);
+
+  /**
+   * Resultados oficiales en vivo: al cargar/corregir la pizarra de una carrera,
+   * o al vender/pagar/liquidar, se relee el programa y las tarjetas se
+   * recalculan solas. `cargar(true)` no apaga la pantalla.
+   */
+  const enVivo = useReporteEnVivo({
+    habilitado: true,
+    fecha,
+    tablas: TABLAS_VIVO_POLLA,
+    onCambio: () => {
+      setRecargaVivo((n) => n + 1);
+      void cargar(true);
+    },
+  });
+
+  /** Grupo de cada Polla, para resolver su % de convenio. */
+  const grupoPorId = useMemo(
+    () => new Map(grupos.map((g) => [String(g.id), g])),
+    [grupos]
+  );
 
   /**
    * El catálogo de hipódromos no depende de la fecha, así que se trae una sola
@@ -167,7 +203,24 @@ export function PollasModule() {
       <Card>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-bold text-slate-900">Pollas</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-slate-900">Pollas</h1>
+              <span
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wide ${
+                  enVivo
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-slate-200 bg-slate-50 text-slate-400"
+                }`}
+                title={
+                  enVivo
+                    ? "Conectado: los resultados oficiales y las ventas actualizan el ranking solos."
+                    : "Sin canal en tiempo real: el ranking se actualiza al cambiar la fecha."
+                }
+              >
+                <span className={enVivo ? "animate-pulse" : ""}>●</span>
+                {enVivo ? "En vivo" : "Sin vivo"}
+              </span>
+            </div>
             <p className="text-sm text-slate-600">
               Juego de puntos sobre el programa. El jugador compra combinaciones y gana quien más
               puntos suma.
@@ -261,6 +314,8 @@ export function PollasModule() {
             resultados={resultados}
             clientes={clientes}
             toast={toast}
+            pctConvenio={comisionPctDeGrupo(grupoPorId.get(String(p.grupo_id ?? "")) ?? null, "polla") ?? 0}
+            recarga={recargaVivo}
             onEditar={() => setModalConfig({ abierto: true, polla: p })}
             onVender={() => setVentaPara(p)}
             onRecargar={cargar}
@@ -353,6 +408,8 @@ function TarjetaPolla({
   resultados,
   clientes,
   toast,
+  pctConvenio,
+  recarga = 0,
   onEditar,
   onVender,
   onRecargar,
@@ -361,6 +418,10 @@ function TarjetaPolla({
   resultados: ResultadoCarrera[];
   clientes: ClienteRow[];
   toast: (m: string, t?: "success" | "warning" | "error" | "info") => void;
+  /** % de convenio del grupo de la Polla (0 = sin convenio pactado). */
+  pctConvenio: number;
+  /** Sube con cada evento en vivo del módulo; relee ventas y combinaciones. */
+  recarga?: number;
   onEditar: () => void;
   onVender: () => void;
   onRecargar: () => Promise<void> | void;
@@ -410,6 +471,12 @@ function TarjetaPolla({
     void cargar();
   }, [cargar]);
 
+  // Evento en vivo del módulo (resultado/pago/venta): se releen las ventas de
+  // esta Polla sin desmontar la tarjeta ni perder lo que el operador escribió.
+  useEffect(() => {
+    if (recarga > 0) void cargar();
+  }, [recarga, cargar]);
+
   /**
    * El ranking. Se arma con `puntuarVentas`, que agrupa por cliente y suma los
    * puntos de TODAS sus combinaciones: compite la persona, no la combinación.
@@ -446,6 +513,41 @@ function TarjetaPolla({
     () => calcularFinanzasPolla(comboTotal, config, stAcum.disponible, ranking),
     [comboTotal, config, stAcum.disponible, ranking]
   );
+
+  /**
+   * Columnas contables del ranking.
+   *
+   *   · Pagado      = premio de puesto + acumulado que cobra ese cliente;
+   *   · Cobrado neto = lo que pagó × (1 − % convenio del grupo) si NO ganó.
+   *
+   * Se usa `liquidarPolla` (y no `ranking`, que viene con premio 0) porque acá
+   * interesa el dinero final. Mientras no haya ningún resultado oficial el
+   * ranking todavía no decidió nada y las dos columnas se muestran en "—".
+   */
+  const hayResultados = resultados.length > 0;
+  const rankingPago = useMemo(
+    () => liquidarPolla(puntuadas, config, stAcum.disponible),
+    [puntuadas, config, stAcum.disponible]
+  );
+  const dinero = useMemo(() => {
+    const pagos = new Map<string, number>();
+    const aportes = new Map<string, number>();
+    for (const f of rankingPago) pagos.set(f.clave, f.premio + f.acumulado);
+    for (const p of puntuadas) {
+      const clave = String(p.cliente_id ?? p.cliente ?? p.id ?? "");
+      aportes.set(clave, (aportes.get(clave) ?? 0) + p.pagado);
+    }
+    let totalPagado = 0;
+    let totalCobrado = 0;
+    for (const f of rankingPago) {
+      const pago = f.premio + f.acumulado;
+      totalPagado += pago;
+      if (pago <= 0) {
+        totalCobrado += cobradoNeto(aportes.get(f.clave) ?? 0, pctConvenio);
+      }
+    }
+    return { pagos, aportes, totalPagado, totalCobrado };
+  }, [rankingPago, puntuadas, pctConvenio]);
 
   const cerrada = polla.estado !== "Abierta";
   const cobrarAcumulado = stAcum.alcanzado;
@@ -532,12 +634,24 @@ function TarjetaPolla({
                     <th className="py-1">Cliente</th>
                     <th className="py-1 text-right">Combinaciones</th>
                     <th className="py-1 text-right">Puntos</th>
+                    <th className="py-1 text-right">Pagado</th>
+                    <th
+                      className="py-1 text-right"
+                      title="Monto aportado × (1 − % de convenio del grupo) cuando el cliente no ganó"
+                    >
+                      Cobrado neto
+                    </th>
                     <th className="py-1 text-right">Al acumulado</th>
                   </tr>
                 </thead>
                 <tbody>
                   {ranking.map((f) => {
                     const original = puntuadas.find((p) => p.id === f.clave);
+                    const pago = hayResultados ? (dinero.pagos.get(f.clave) ?? 0) : 0;
+                    const cobrado =
+                      !hayResultados || pago > 0
+                        ? 0
+                        : cobradoNeto(dinero.aportes.get(f.clave) ?? 0, pctConvenio);
                     return (
                       <tr
                         key={f.clave}
@@ -558,6 +672,12 @@ function TarjetaPolla({
                           {original?.combinaciones.length ?? 0}
                         </td>
                         <td className="py-1 text-right font-bold">{f.puntos}</td>
+                        <td className="py-1 text-right tabular-nums text-emerald-700">
+                          {hayResultados && pago > 0 ? formato(pago) : "—"}
+                        </td>
+                        <td className="py-1 text-right tabular-nums text-sky-700">
+                          {hayResultados && cobrado > 0 ? formato(cobrado) : "—"}
+                        </td>
                         <td className="py-1 text-right">
                           {f.acumulado > 0 ? (
                             <span className="text-success-700">
@@ -575,8 +695,32 @@ function TarjetaPolla({
                     );
                   })}
                 </tbody>
+                {hayResultados && (
+                  <tfoot>
+                    <tr className="border-t-2 border-line font-bold">
+                      <td colSpan={4} className="py-1 text-right text-xs uppercase text-slate-500">
+                        Totales
+                      </td>
+                      <td className="py-1 text-right tabular-nums text-emerald-700">
+                        {formato(dinero.totalPagado)}
+                      </td>
+                      <td className="py-1 text-right tabular-nums text-sky-700">
+                        {formato(dinero.totalCobrado)}
+                      </td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             )}
+            <p className="mt-2 text-[10px] font-semibold text-slate-500">
+              💵 <b>Pagado</b> = premio de puesto + acumulado que cobra el cliente.{" "}
+              <b>Cobrado neto</b> = lo que pagó × (1 − {pctConvenio}% de convenio del grupo) cuando no
+              ganó.
+              {!hayResultados && " Se completa cuando haya resultados oficiales cargados."}
+              {hayResultados && polla.estado !== "Liquidada" &&
+                " Provisional: se actualiza con cada resultado y se fija al liquidar la Polla."}
+            </p>
           </div>
 
           {fin.avisos.length > 0 && (

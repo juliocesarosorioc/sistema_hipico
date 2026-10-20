@@ -28,6 +28,7 @@ export function ReporteTablasFijasModal(props: ReporteTablasFijasModalProps) {
       cargar={cargarVentasTablasFijas}
       titulo="Reporte de Tablas Fijas vendidas"
       icono="📈"
+      producto="tablas"
       textoVacio="No hay tablas fijas vendidas con los filtros actuales."
       textoCargando={(fecha) => `Cargando tablas vendidas del ${fecha}…`}
       placeholderResumen="grupo / jugador / hipódromo…"

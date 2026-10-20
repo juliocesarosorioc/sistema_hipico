@@ -90,6 +90,8 @@ import {
 
   CONCEPTOS_CONVENIO,
 
+  columnasConvenioCompletas,
+
   columnasConvenioDesde,
 
   conceptoDe,
@@ -622,6 +624,18 @@ export function GruposModule() {
 
     if (!nombre) return toast("Indique el nombre del grupo.", "warning");
 
+    /**
+
+     * Payload COMPLETO de comisiones: las 7 columnas SIEMPRE presentes (null =
+
+     * hereda) para que Supabase nunca reciba un porcentaje a medias. Se arma
+
+     * desde el núcleo puro (`comisiones-convenio.ts`), igual que en el alta.
+
+     */
+
+    const comisiones = columnasConvenioCompletas(editando as unknown as Record<string, unknown>);
+
     const datos = {
 
       nombre,
@@ -634,21 +648,21 @@ export function GruposModule() {
 
       cupo_tabla: parseInt(editando.cupo_tabla?.toString() ?? "100") || 100,
 
-      comision_default: porcentajeDeEntrada(editando.comision_default),
-
       // Comisión por convenio de producto (null = hereda la de Entre Tercios).
 
-      comision_marcas: editando.comision_marcas ?? null,
+      comision_default: comisiones.comision_default ?? 5,
 
-      comision_tablas: editando.comision_tablas ?? null,
+      comision_marcas: comisiones.comision_marcas,
 
-      comision_remates: editando.comision_remates ?? null,
+      comision_tablas: comisiones.comision_tablas,
 
-      comision_polla: editando.comision_polla ?? null,
+      comision_remates: comisiones.comision_remates,
 
-      comision_wps: editando.comision_wps ?? null,
+      comision_polla: comisiones.comision_polla,
 
-      comision_dupletas: editando.comision_dupletas ?? null,
+      comision_wps: comisiones.comision_wps,
+
+      comision_dupletas: comisiones.comision_dupletas,
 
       responsable: String(editando.responsable ?? "").trim().toUpperCase() || null,
 
@@ -678,11 +692,19 @@ export function GruposModule() {
 
     if (!r.ok) return toast(r.error ?? "Error al guardar.", "error");
 
-    toast(`Grupo "${nombre}" actualizado.`, "success");
+    // Recarga desde Supabase ANTES de cerrar: `actualizarGrupo` ya verificó en
+
+    // base que los % quedaron escritos, y con la lista fresca el modal que se
+
+    // reabra pinta los porcentajes recién guardados (antes se cerraba primero
+
+    // y al reabrir se veían los valores viejos que aún estaban en memoria).
+
+    await recargar();
 
     setEditando(null);
 
-    void recargar();
+    toast(`Grupo "${nombre}" actualizado. Comisiones por convenio guardadas.`, "success");
 
   };
 
@@ -824,11 +846,19 @@ export function GruposModule() {
 
     if (!tipos.length) return toast("No hay tipos de jugada activos.", "warning");
 
+    // Payload completo de TODOS los tipos de jugada: el % vacío sigue siendo
+
+    // "sin convenio" (null), pero un 0% pactado es un valor válido y viaja como
+
+    // 0 (antes `num(x) > 0` lo convertía en null y la base quedaba con el
+
+    // default del legacy mientras la UI mostraba 0%).
+
     const filas = convenios.map((f) => ({
 
       tipo_jugada_id: f.tipo_jugada_id,
 
-      comision: num(f.comision) > 0 ? num(f.comision) : null,
+      comision: f.comision.trim() === "" ? null : num(f.comision),
 
       comision_base: num(f.comision_base) > 0 ? num(f.comision_base) : null,
 
@@ -839,6 +869,12 @@ export function GruposModule() {
     const r = await guardarConveniosGrupo(grupoConvenio, filas);
 
     if (!r.ok) return toast(r.error ?? "Error al guardar convenios.", "error");
+
+    // Vuelve a leer desde Supabase para que los inputs queden con lo que la
+
+    // base guardó de verdad (y no con lo que creyó guardar el formulario).
+
+    await cargarConvenios(grupoConvenio);
 
     toast(`Convenios guardados (${filas.length} tipo(s) de jugada).`, "success");
 
@@ -982,9 +1018,9 @@ export function GruposModule() {
 
           >
 
-          <div className="my-8 w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="my-8 flex w-full max-w-2xl max-h-[85vh] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
 
-            <div className="flex items-center justify-between bg-slate-800 px-5 py-4 text-xs font-black uppercase tracking-wider text-white">
+            <div className="flex shrink-0 items-center justify-between bg-slate-800 px-5 py-4 text-xs font-black uppercase tracking-wider text-white">
 
               <span><span className="mr-2">➕</span> Registrar Grupo de Venta</span>
 
@@ -992,7 +1028,7 @@ export function GruposModule() {
 
             </div>
 
-            <div className="p-4">
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
 
@@ -1080,8 +1116,6 @@ export function GruposModule() {
                   valores={formConvenio}
 
                   onCambio={setConvenioCampo}
-
-                  columnas={4}
 
                   ayuda="Comisión por convenio con el grupo principal, sobre el MONTO DECIDIDO. Vacío = hereda la de Entre Tercios."
 
@@ -1255,19 +1289,23 @@ export function GruposModule() {
 
               </label>
 
-              <div className="col-span-3">
-
-                <Button variant="default" className="w-full" onClick={() => void guardarNuevo()} disabled={guardando}>
-
-                  {guardando ? <span className="mr-1">⏳</span> : <span className="mr-1">➕</span>}
-
-                  Crear Grupo y su Convenio
-
-                </Button>
-
-              </div>
+            </div>
 
             </div>
+
+            {/* Pie fijo del modal: el botón de alta queda SIEMPRE visible aunque
+
+                el cuerpo (con las comisiones por convenio) rueda por dentro. */}
+
+            <div className="shrink-0 border-t border-line bg-slate-50 p-4">
+
+              <Button variant="default" className="w-full" onClick={() => void guardarNuevo()} disabled={guardando}>
+
+                {guardando ? <span className="mr-1">⏳</span> : <span className="mr-1">➕</span>}
+
+                Crear Grupo y su Convenio
+
+              </Button>
 
             </div>
 
@@ -2061,9 +2099,9 @@ export function GruposModule() {
 
         >
 
-          <div className="w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
 
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-slate-800 px-4 py-3 text-xs font-black uppercase tracking-wider text-white backdrop-blur sm:px-5">
+            <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-800 px-4 py-3 text-xs font-black uppercase tracking-wider text-white backdrop-blur sm:px-5">
 
               <span>
 
@@ -2079,7 +2117,11 @@ export function GruposModule() {
 
             </div>
 
-            <div className="space-y-4 p-5">
+            {/* Cuerpo con scroll propio: el pie con "Guardar" queda anclado
+
+                abajo y SIEMPRE visible, por denso que sea el formulario. */}
+
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
 
               <div>
 
@@ -2177,8 +2219,6 @@ export function GruposModule() {
                 valores={valoresConvenioDeGrupo(editando as unknown as Record<string, unknown>)}
 
                 onCambio={setConvenioEdicion}
-
-                columnas={6}
 
                 ayuda="Comisión por convenio de este grupo, sobre el MONTO DECIDIDO. Vacío = hereda la de Entre Tercios."
 
@@ -2372,7 +2412,7 @@ export function GruposModule() {
 
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-line bg-slate-50 p-4">
+            <div className="flex shrink-0 justify-end gap-3 border-t border-line bg-slate-50 p-4">
               <Button variant="outline" size="sm" onClick={() => setEditando(null)}>
 
                 Cancelar

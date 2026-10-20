@@ -212,6 +212,23 @@ export function comisionEnDinero(monto: number, pct: number | null | undefined):
   return redondear2((m * p) / 100);
 }
 
+/**
+ * COBRADO NETO de una jugada PERDIDA: lo que le queda a la casa después de
+ * pagarle al grupo donde se publicó la jugada su % de convenio.
+ *
+ *   cobrado neto = monto perdido × (1 − pct / 100)
+ *
+ * `pct` nulo o fuera de rango se acota a [0, 100]; sin grupo (pct 0) se cobra el
+ * monto completo, que es el comportamiento previo a este cálculo.
+ */
+export function cobradoNeto(montoPerdido: number, pct: number | null | undefined): number {
+  const m = Number(montoPerdido);
+  if (!Number.isFinite(m) || m <= 0) return 0;
+  const p = Number(pct);
+  const limpio = Number.isFinite(p) ? Math.min(100, Math.max(0, p)) : 0;
+  return redondear2(m * (1 - limpio / 100));
+}
+
 // ---------------------------------------------------------------------------
 // Consolidación del reporte
 // ---------------------------------------------------------------------------
@@ -382,6 +399,28 @@ export function columnasConvenioDesde(
       continue;
     }
     out[c.campo] = n;
+  }
+  return out;
+}
+
+/**
+ * Payload COMPLETO de comisiones a partir de la FILA del grupo en edición (o
+ * de cualquier objeto con las columnas de `grupos_venta`).
+ *
+ * Devuelve SIEMPRE las 7 claves (`comision_default` … `comision_dupletas`) para
+ * que el UPDATE nunca vaya a medias: si un campo vino vacío/no numérico queda
+ * en `null` (= hereda), salvo `entre_tercios`, que cae a `porDefecto` porque es
+ * la comisión general y no puede quedar sin tasa. Recorre el catálogo entero,
+ * así que una columna nueva del convenio viaja sola en el payload.
+ */
+export function columnasConvenioCompletas(
+  g: Record<string, unknown> | null | undefined,
+  porDefecto = 5
+): Record<CampoComision, number | null> {
+  const base = columnasConvenioDesde(valoresConvenioDeGrupo(g), porDefecto);
+  const out = {} as Record<CampoComision, number | null>;
+  for (const c of CONCEPTOS_CONVENIO) {
+    out[c.campo as CampoComision] = base[c.campo] ?? null;
   }
   return out;
 }

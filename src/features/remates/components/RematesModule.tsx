@@ -19,6 +19,7 @@ import { useRegistroCentral, useRealtimeCarreras } from "@/shared/store/useRegis
 import { clienteDelUsuario } from "@/features/seguridad/lib/accesos";
 import { enviarAutomaticoSiActivo, plantillaPorId, reemplazarVarsTablas } from "@/features/whatsapp/lib/whatsapp";
 import { CargaResultadosRapida } from "@/features/liquidacion/components/CargaResultadosRapida";
+import { ReporteRematesModal } from "@/features/remates/components/ReporteRematesModal";
 import {
   listarRemates,
   crearRemate,
@@ -193,6 +194,8 @@ export function RematesModule() {
   const [remates, setRemates] = useState<Remate[]>([]);
   const [cargando, setCargando] = useState(true);
   const [seleccionado, setSeleccionado] = useState<Remate | null>(null);
+  /** Reporte contable de los remates vendidos del día. */
+  const [reporteAbierto, setReporteAbierto] = useState(false);
   const [caballos, setCaballos] = useState<CaballoRemate[]>([]);
   const [hipodromos, setHipodromos] = useState<{ id: string; nombre: string }[]>([]);
   const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
@@ -281,16 +284,26 @@ export function RematesModule() {
             }
           />
           {seleccionado && (
-            <Button
-              variant="outline"
-              size="md"
-              onClick={() => {
-                setSeleccionado(null);
-                setCaballos([]);
-              }}
-            >
-              ← Volver a la lista
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                size="md"
+                onClick={() => setReporteAbierto(true)}
+                title="Reporte contable de los remates vendidos: cobrado neto por grupo y detalle de ejemplares."
+              >
+                📈 Reporte
+              </Button>
+              <Button
+                variant="outline"
+                size="md"
+                onClick={() => {
+                  setSeleccionado(null);
+                  setCaballos([]);
+                }}
+              >
+                ← Volver a la lista
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -325,6 +338,14 @@ export function RematesModule() {
             toast(`🗑️ Remate "${r.nombre}" eliminado.`, "success");
             void refrescar();
           }}
+        />
+      )}
+
+      {reporteAbierto && (
+        <ReporteRematesModal
+          abierto
+          onCerrar={() => setReporteAbierto(false)}
+          fechaInicial={seleccionado?.fecha ?? undefined}
         />
       )}
 

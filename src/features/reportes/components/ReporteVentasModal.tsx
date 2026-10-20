@@ -4,21 +4,28 @@
  * REPORTE DE VENTAS — vista reusable de tickets vendidos.
  *
  * Nació como el "Reporte de Tablas Fijas vendidas" del Monitor de Tablas
- * Publicadas y hoy lo comparten Tablas Fijas y Marcas: las dos modalidades
- * escriben en `tickets_apuestas`, y las dos quieren la MISMA vista, tipo tabla
- * dinámica, con:
+ * Publicadas y hoy lo comparten las cuatro modalidades que venden tickets en
+ * `tickets_apuestas` (Tablas Fijas, Marcas, Dupletas y Remates). La Polla tiene
+ * su propio ranking en `PollasModule`, pero usa la misma regla contable. Todas
+ * quieren la MISMA vista, tipo tabla dinámica, con:
  *   · filtros por Grupo, Hipódromo, Carrera y Jugador (misma familia del Monitor);
- *   · KPIs (monto EN RIESGO, ganadores/pagado, comisión del grupo, retiros, balance);
+ *   · KPIs (EN RIESGO, ganadores/pagado, cobrado neto, comisión, retiros, balance);
  *   · pivot configurable por dimensión, con desplegable al detalle por fila;
  *   · "quienes ganaron / quienes perdieron" (badges por ticket) y, si hubo
  *     retiros, el reembolso correspondiente.
  *
+ * Regla contable del dueño:
+ *   · cliente GANÓ  → el monto va a PAGADO (premio);
+ *   · cliente PERDIÓ → el monto va a COBRADO, menos el % de convenio del grupo
+ *     que publicó la jugada (columna "Cobrado neto").
+ *
  * Lo único que cambia entre una modalidad y otra se pasa por props: de dónde
- * salen las filas (`cargar`), los textos (`titulo`, `etiquetas`, `textoVacio`…)
- * y la paleta (`tema`). El modelo de fila (`VentaTablaReporte`) y la agregación
- * viven en `reporte-tablas-nucleo.ts`, que es lógica pura y ya es genérica: una
- * venta es un ticket con grupo, jugador, ejemplar, monto, estado, pagado y
- * comisión, sirva para una tabla fija o para una marca jugada.
+ * salen las filas (`cargar`), los textos (`titulo`, `etiquetas`, `textoVacio`…),
+ * la paleta (`tema`) y el producto de convenio (`producto`). El modelo de fila
+ * (`VentaTablaReporte`) y la agregación viven en `reporte-tablas-nucleo.ts`, que
+ * es lógica pura y ya es genérica: una venta es un ticket con grupo, jugador,
+ * ejemplar, monto, estado, pagado y comisión, sirva para una tabla fija, una
+ * marca, una dupleta o un ejemplar de remate.
  *
  * La data se lee por día (el `cargar` de cada modalidad) y se filtra/agrupa en
  * memoria. Todo el contenido clave entra en una pantalla y, si no entra, se
@@ -37,6 +44,7 @@ import {
 import {
   agruparPor,
   claveDe,
+  cobradoDeVenta,
   estadoNormalizado,
   filtrarVentas,
   opcionesDe,
@@ -49,6 +57,17 @@ import {
   type TotalesReporte,
   type VentaTablaReporte,
 } from "@/features/tablas/lib/reporte-tablas-nucleo";
+import {
+  conConvenio,
+  indiceConvenio,
+  type GrupoComisiones,
+  type ProductoConvenio,
+} from "@/features/reportes/lib/cobrado-convenio-nucleo";
+import { cargarGruposConvenio } from "@/features/reportes/lib/grupos-convenio";
+import { useReporteEnVivo } from "@/features/reportes/lib/useReporteEnVivo";
+
+/** Tablas que, además de resultados/carreras, refrescan este reporte. */
+const TABLAS_VIVO_REPORTE = ["tickets_apuestas"] as const;
 
 /** Carga las ventas de un día ya normalizadas al modelo del reporte. */
 export type CargarVentasReporte = (fecha: string) => Promise<{
@@ -121,6 +140,13 @@ export type ReporteVentasModalProps = {
   fechaInicial?: string;
   hipodromoInicial?: string;
   carreraInicial?: string;
+  /**
+   * Producto de convenio de la modalidad: elige la tasa del grupo que se
+   * descuenta en "Cobrado neto" (`comision_tablas`, `comision_marcas`…).
+   */
+  producto?: ProductoConvenio;
+  /** Tablas extra a escuchar en tiempo real (además de resultados y carreras). */
+  tablasVivo?: readonly string[];
 };
 
 type Orden = { key: keyof TotalesReporte; dir: "asc" | "desc" };
@@ -309,6 +335,9 @@ function DetalleTabla({
           <th className="px-2 py-1 text-right">Monto</th>
           <th className="px-2 py-1 text-center">Estado</th>
           <th className="px-2 py-1 text-right">Pagado</th>
+          <th className="px-2 py-1 text-right" title="Monto perdido × (1 − % convenio del grupo)">
+            Cobrado
+          </th>
           <th className="px-2 py-1 text-right">Comisión</th>
           <th className="px-2 py-1 text-center">Mon.</th>
           {acciones && <th className="px-2 py-1 text-center">Acc.</th>}
@@ -340,6 +369,9 @@ function DetalleTabla({
             </td>
             <td className="px-2 py-1 text-right tabular-nums">
               <Money v={v.pagado} tono="font-bold text-emerald-700" />
+            </td>
+            <td className="px-2 py-1 text-right tabular-nums">
+              <Money v={cobradoDeVenta(v)} tono="font-bold text-sky-700" />
             </td>
             <td className="px-2 py-1 text-right tabular-nums">
               <Money v={v.comision} tono="font-bold text-violet-700" />
@@ -403,6 +435,8 @@ export function ReporteVentasModal({
   fechaInicial,
   hipodromoInicial,
   carreraInicial,
+  producto = "tablas",
+  tablasVivo = TABLAS_VIVO_REPORTE,
 }: ReporteVentasModalProps) {
   const [fecha, setFecha] = useState(() => fechaInicial || hoyLocal());
   const [filtros, setFiltros] = useState<FiltrosVenta>({});
@@ -418,8 +452,10 @@ export function ReporteVentasModal({
   const [puedeEditar, setPuedeEditar] = useState(false);
   const [accion, setAccion] = useState<{ venta: VentaTablaReporte; modo: ModoAccionJugada } | null>(null);
   const [aviso, setAviso] = useState("");
-  /** Fuerza recargar el día después de editar/anular/restaurar. */
+  /** Fuerza recargar el día después de editar/anular/restaurar o por un pago. */
   const [recarga, setRecarga] = useState(0);
+  /** Grupos con su % de convenio, para descontar en "Cobrado neto". */
+  const [gruposConvenio, setGruposConvenio] = useState<GrupoComisiones[]>([]);
 
   // Al abrir: copia los filtros del Monitor y vuelve al estado limpio.
   useEffect(() => {
@@ -465,6 +501,28 @@ export function ReporteVentasModal({
     };
   }, [abierto, fecha, cargar, recarga]);
 
+  // Tasas de convenio del grupo que publica cada jugada (tablas, marcas,
+  // dupletas, remates…). Se leen al abrir y no dependen del día.
+  useEffect(() => {
+    if (!abierto) return;
+    let vivo = true;
+    void cargarGruposConvenio().then((grupos) => {
+      if (vivo) setGruposConvenio(grupos);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [abierto]);
+
+  // Tiempo real: cada resultado oficial cargado/corregido o cada ticket pagado
+  // vuelve a leer el día. El hook agrupa las ráfagas para no recargar de más.
+  const enVivo = useReporteEnVivo({
+    habilitado: abierto,
+    fecha,
+    tablas: tablasVivo,
+    onCambio: () => setRecarga((n) => n + 1),
+  });
+
   useEffect(() => {
     if (!abierto) return;
     const onKey = (e: KeyboardEvent) => {
@@ -475,16 +533,24 @@ export function ReporteVentasModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [abierto, onCerrar, accion]);
 
-  const filtradas = useMemo(() => filtrarVentas(data, filtros), [data, filtros]);
+  // Cada venta se cruza con el % de convenio de su grupo. La data cruda queda
+  // intacta: el enriquecido es una copia que se rehace si cambian los grupos.
+  const indiceGrupos = useMemo(() => indiceConvenio(gruposConvenio), [gruposConvenio]);
+  const conPct = useMemo(
+    () => conConvenio(data, indiceGrupos, producto),
+    [data, indiceGrupos, producto]
+  );
+
+  const filtradas = useMemo(() => filtrarVentas(conPct, filtros), [conPct, filtros]);
   const total = useMemo(() => totalesDe(filtradas), [filtradas]);
 
-  const opcionesGrupo = useMemo(() => opcionesDe(data, "grupo"), [data]);
-  const opcionesHipo = useMemo(() => opcionesDe(data, "hipodromo", nombreHipodromoParaMostrar), [data]);
-  const opcionesJugador = useMemo(() => opcionesDe(data, "jugador"), [data]);
+  const opcionesGrupo = useMemo(() => opcionesDe(conPct, "grupo"), [conPct]);
+  const opcionesHipo = useMemo(() => opcionesDe(conPct, "hipodromo", nombreHipodromoParaMostrar), [conPct]);
+  const opcionesJugador = useMemo(() => opcionesDe(conPct, "jugador"), [conPct]);
   const opcionesCarrera = useMemo(() => {
-    const base = filtros.hipodromo ? filtrarVentas(data, { hipodromo: filtros.hipodromo }) : data;
+    const base = filtros.hipodromo ? filtrarVentas(conPct, { hipodromo: filtros.hipodromo }) : conPct;
     return opcionesDe(base, "carrera", nombreHipodromoParaMostrar);
-  }, [data, filtros.hipodromo]);
+  }, [conPct, filtros.hipodromo]);
 
   const filas = useMemo(() => {
     const base = agruparPor(filtradas, dimension, nombreHipodromoParaMostrar);
@@ -586,6 +652,29 @@ export function ReporteVentasModal({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <span
+              className={`hidden items-center gap-1 rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-wide sm:inline-flex ${
+                enVivo
+                  ? "border-emerald-300 bg-emerald-400/25 text-emerald-50"
+                  : "border-white/25 bg-white/10 text-white/60"
+              }`}
+              title={
+                enVivo
+                  ? "Conectado: los resultados oficiales actualizan el reporte solos."
+                  : "Sin canal en tiempo real. Usá 🔄 para releer los resultados."
+              }
+            >
+              <span className={enVivo ? "animate-pulse" : ""}>●</span>
+              {enVivo ? "En vivo" : "Sin vivo"}
+            </span>
+            <button
+              type="button"
+              onClick={() => setRecarga((n) => n + 1)}
+              title="Volver a leer los resultados oficiales y las ventas del día"
+              className="rounded-lg border border-white/30 bg-white/10 px-2 py-1.5 text-xs font-black leading-none transition-colors hover:bg-white/20"
+            >
+              🔄
+            </button>
             <button
               type="button"
               onClick={() => window.print()}
@@ -732,7 +821,7 @@ export function ReporteVentasModal({
           </div>
 
           {/* KPIs */}
-          <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
+          <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
             <Kpi titulo="🎯 En riesgo" valor={fmt(total.enRiesgo)} sub={`${total.tickets} ${etiquetas.conteo}`} />
             <Kpi titulo="🧑 Jugadores" valor={String(total.jugadores)} sub={`${filas.length} fila(s)`} />
             <Kpi
@@ -742,6 +831,12 @@ export function ReporteVentasModal({
               acento="text-emerald-700"
             />
             <Kpi titulo="❌ Perdidos" valor={String(total.perdidos)} acento="text-rose-700" />
+            <Kpi
+              titulo="🧾 Cobrado neto"
+              valor={fmt(total.cobrado)}
+              sub="perdido − convenio"
+              acento="text-sky-700"
+            />
             <Kpi titulo="💰 Comisión grupo" valor={fmt(total.comision)} acento="text-violet-700" />
             <Kpi
               titulo="🔄 Retiros"
@@ -781,6 +876,7 @@ export function ReporteVentasModal({
                     <ThOrden label="Pend." k="pendientes" orden={orden} onOrdenar={onOrdenar} tema={tema} />
                     <ThOrden label="Retir." k="retirados" orden={orden} onOrdenar={onOrdenar} tema={tema} />
                     <ThOrden label="Pagado" k="pagado" orden={orden} onOrdenar={onOrdenar} tema={tema} />
+                    <ThOrden label="Cobrado" k="cobrado" orden={orden} onOrdenar={onOrdenar} tema={tema} />
                     <ThOrden label="Comisión" k="comision" orden={orden} onOrdenar={onOrdenar} tema={tema} />
                     <ThOrden label="Reemb." k="reembolsado" orden={orden} onOrdenar={onOrdenar} tema={tema} />
                     <ThOrden label="Balance" k="balance" orden={orden} onOrdenar={onOrdenar} tema={tema} />
@@ -789,7 +885,7 @@ export function ReporteVentasModal({
                 <tbody>
                   {filas.length === 0 && (
                     <tr>
-                      <td colSpan={12} className="px-3 py-6 text-center text-[11px] font-semibold text-slate-400">
+                      <td colSpan={13} className="px-3 py-6 text-center text-[11px] font-semibold text-slate-400">
                         Sin coincidencias para la búsqueda.
                       </td>
                     </tr>
@@ -821,6 +917,7 @@ export function ReporteVentasModal({
                     <td className="px-2 py-1.5 text-right tabular-nums">{visible.pendientes}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-amber-700">{visible.retirados}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-emerald-700">{fmt(visible.pagado)}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-sky-700">{fmt(visible.cobrado)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-violet-700">{fmt(visible.comision)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-amber-700">{fmt(visible.reembolsado)}</td>
                     <td className={`px-2 py-1.5 text-right tabular-nums ${balanceTono}`}>{fmt(visible.balance)}</td>
@@ -831,6 +928,10 @@ export function ReporteVentasModal({
           )}
 
           <p className="mt-2 text-[10px] font-semibold text-slate-400">{notaPie}</p>
+          <p className="mt-1 text-[10px] font-semibold text-slate-500">
+            🧾 <b>Cobrado neto</b> = monto perdido × (1 − % de comisión por convenio del grupo que
+            publica la jugada). Si el cliente ganó, el monto va a <b>Pagado</b>.
+          </p>
         </div>
       </div>
     </div>
@@ -881,6 +982,9 @@ function FragmentFila({
           <Money v={fila.pagado} tono="font-bold text-emerald-700" />
         </td>
         <td className="px-2 py-1 text-right tabular-nums">
+          <Money v={fila.cobrado} tono="font-bold text-sky-700" />
+        </td>
+        <td className="px-2 py-1 text-right tabular-nums">
           <Money v={fila.comision} tono="font-bold text-violet-700" />
         </td>
         <td className="px-2 py-1 text-right tabular-nums">
@@ -892,7 +996,7 @@ function FragmentFila({
       </tr>
       {abierta && (
         <tr className="bg-white">
-          <td colSpan={12} className="p-0">
+          <td colSpan={13} className="p-0">
             <div className={`border-y-2 ${tema.borde} bg-white px-2 py-2`}>
               <DetalleTabla filas={tickets} etiquetas={etiquetas} tema={tema} acciones={acciones} />
             </div>

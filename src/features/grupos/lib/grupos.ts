@@ -21,6 +21,18 @@ export type GrupoVenta = {
    * un grupo al 2,5 (el default al crear) pagaba el doble de lo pactado.
    */
   comision_default?: number | null;
+  /**
+   * % de convenio por producto (NULL = hereda `comision_default`). El SELECT de
+   * `listarGruposVenta` ya pide `*`, así que vienen aunque el tipo no las
+   * declarara; se declaran acá para que los reportes puedan tipar el descuento
+   * de "Cobrado neto" sin casts.
+   */
+  comision_marcas?: number | null;
+  comision_tablas?: number | null;
+  comision_remates?: number | null;
+  comision_polla?: number | null;
+  comision_wps?: number | null;
+  comision_dupletas?: number | null;
   es_principal?: boolean | null;
   activo?: boolean | null;
   /** Jerarquía de cruces: switch general del grupo (default TRUE = permitido). */
@@ -418,6 +430,30 @@ export async function crearGrupo(datos: Partial<GrupoRow>): Promise<{ ok: boolea
 /** Errores típicos de "la función/RPC todavía no está aplicada en la base". */
 const RPC_AUSENTE = /does not exist|not found|PGRST202|PGRST204|schema cache/i;
 
+/** Columnas de comisión por convenio que viajan en cada guardado de grupo. */
+const COLUMNAS_COMISION = [
+  "comision_default",
+  "comision_marcas",
+  "comision_tablas",
+  "comision_remates",
+  "comision_polla",
+  "comision_wps",
+  "comision_dupletas",
+] as const;
+
+/**
+ * ¿El % leído de la base es el que se pidió guardar? Las columnas son
+ * `numeric(5,2)`, así que se comparan redondeadas a 2 decimales (una entrada
+ * "2.567" guardada como 2.57 NO es un fallo; un 2.5 que quedó en 5 sí lo es).
+ */
+function mismoPorcentaje(leido: unknown, pedido: unknown): boolean {
+  const a = leido === null || leido === undefined || leido === "" ? null : Number(leido);
+  const b = pedido === null || pedido === undefined || pedido === "" ? null : Number(pedido);
+  if (a === null || b === null) return a === b;
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return String(leido) === String(pedido);
+  return Math.round(a * 100) === Math.round(b * 100);
+}
+
 export async function actualizarGrupo(
   id: string | number,
   patch: Record<string, unknown>
@@ -507,6 +543,49 @@ export async function actualizarGrupo(
                 "El día de la semana no se guardó. Falta aplicar sql/actualizar_ciclo_grupo.sql en el SQL Editor de Supabase (crea la RPC club_actualizar_ciclo_grupo).",
             };
           }
+        }
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Verificación de las comisiones por convenio (BLOQUE 6).
+    // `grupos_venta` es de SOLO lectura (RLS, sql/grupos_venta_lectura.sql), así
+    // que el UPDATE directo casi siempre cae a la RPC del legacy
+    // `club_actualizar_grupo`. Si esa RPC es la VIEJA (sin las columnas por
+    // producto, ver sql/grupos_comisiones_convenio.sql) los % se perdían en
+    // silencio: el formulario cantaba "actualizado" y al reabrir seguían los
+    // valores viejos. Se leen las columnas pedidas y, si no quedaron, se
+    // devuelve un error claro en vez de un falso éxito.
+    const comisionesPedidas = COLUMNAS_COMISION.filter((c) => c in patch && patch[c] !== undefined);
+    if (comisionesPedidas.length > 0) {
+      const leidas = await supabase
+        .from("grupos_venta")
+        .select(comisionesPedidas.join(","))
+        .eq("id", id)
+        .maybeSingle();
+      if (leidas.error) {
+        // Columna inexistente = migración pendiente: nada de esto se guardó.
+        if (/column|PGRST204|42703/i.test(leidas.error.message)) {
+          return {
+            ok: false,
+            error:
+              "No se pudieron guardar los porcentajes: la tabla no tiene las columnas de comisión por convenio. " +
+              "Aplique sql/grupos_comisiones_convenio.sql en el SQL Editor de Supabase y vuelva a intentar.",
+          };
+        }
+        // Otro error (red/RLS transitorio): no se puede verificar, se respeta
+        // el resultado de la cadena anterior en vez de inventar un fallo.
+      } else if (leidas.data) {
+        const fila = leidas.data as unknown as Record<string, unknown>;
+        const noQuedo = comisionesPedidas.find((c) => !mismoPorcentaje(fila[c], patch[c]));
+        if (noQuedo) {
+          return {
+            ok: false,
+            error:
+              `El porcentaje "${noQuedo}" no quedó guardado en la base. ` +
+              "Falta aplicar sql/grupos_comisiones_convenio.sql (redefine la RPC club_actualizar_grupo con las columnas por producto) " +
+              "en el SQL Editor de Supabase.",
+          };
         }
       }
     }

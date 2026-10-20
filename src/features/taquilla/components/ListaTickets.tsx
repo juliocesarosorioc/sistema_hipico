@@ -80,7 +80,24 @@ export function ListaTickets() {
                     #{t.id}
                   </span>
                   <div className="min-w-0">
-                    <p className="truncate font-mono text-[12px] font-bold text-slate-700">{t.comando}</p>
+                    <p className="truncate font-mono text-[12px] font-bold text-slate-700">
+                      {t.comando}{" "}
+                      {t.ticketId !== undefined ? (
+                        <span
+                          className="ml-1 rounded bg-emerald-100 px-1 py-0.5 align-middle text-[9px] font-black uppercase text-emerald-700"
+                          title={`Guardado en la base · ticket #${t.ticketId}`}
+                        >
+                          ✅ Validada
+                        </span>
+                      ) : (
+                        <span
+                          className="ml-1 rounded bg-slate-100 px-1 py-0.5 align-middle text-[9px] font-black uppercase text-slate-500"
+                          title="Todavía no se refleja como ticket en la base"
+                        >
+                          ⏳ Sesión
+                        </span>
+                      )}
+                    </p>
                     <p className="text-[10px] text-slate-500">
                       Gana {COP.format(t.gananciaProyectada)} · casa {COP.format(t.comision)}
                     </p>

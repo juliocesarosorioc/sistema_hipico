@@ -10,9 +10,14 @@ import { useTaquillaStore, type TicketTaquilla } from "@/shared/store/useTaquill
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla, liquidarPendientesDeCarrera, type ResLiquidarCarrera } from "@/features/liquidacion/lib/pagarYCerrar";
-import { recalcularCarreraCompleta } from "@/features/liquidacion/lib/recalcular";
+import {
+  anularJugadaYRecalcular,
+  corregirJugadaYRecalcular,
+  recalcularCarreraCompleta,
+} from "@/features/liquidacion/lib/recalcular";
+import { reversarLiquidacionCarrera } from "@/features/liquidacion/lib/reversar";
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
-import { venderJugada, anularJugada, claveIdempotenciaJugada } from "@/features/taquilla/lib/venta";
+import { venderJugada, claveIdempotenciaJugada } from "@/features/taquilla/lib/venta";
 import { dividendosDePizarra } from "@/features/liquidacion/lib/posiciones";
 import { guardarPizarraCentral } from "@/features/liquidacion/lib/pizarraCentral";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
@@ -43,6 +48,12 @@ import ModalEditarJugadasCarrera from "@/features/gestion/components/ModalEditar
 import { expandirLineasDobleSplit, revisarCoherenciaLineas } from "@/features/taquilla/lib/expandirDobleSplit";
 import { mensajePlanoDeCarrera } from "@/features/taquilla/lib/mensajeResultado";
 import { corregirLineasConIA } from "@/features/taquilla/lib/corregirIA";
+import { listarJugadasDeCarrera, type JugadaAdmin } from "@/features/jugadas/lib/jugadas";
+import {
+  armarFilasPreview,
+  resumenPreview,
+  type FilaPreviewCarrera,
+} from "@/features/gestion/lib/preview-carrera";
 
 type FilaCarga = {
   jugada: string;
@@ -62,6 +73,23 @@ const filaVacia = (): FilaCarga => ({
   cliente1: "",
   cliente2: "",
 });
+
+/** Acción del panel de pre-visualización sobre una jugada ya cargada. */
+type AccionPreview = {
+  fila: FilaPreviewCarrera;
+  modo: "editar" | "eliminar";
+};
+
+/** Campos editables de una jugada guardada (modal ✏️ del panel). */
+type EdicionPreview = {
+  jugada: string;
+  caballo: string;
+  monto: string;
+};
+
+/** Aviso visual (ToastHost global) para las acciones del panel. */
+const toastPreview = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
+  window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
 
 const MONEDA = "VES";
 
@@ -127,6 +155,9 @@ export function GestionJugadasModule() {
   const [reapertura, setReapertura] = useState(false);
   /** Modal para corregir/anular las jugadas YA GUARDADAS de la carrera (aunque esté cerrada). */
   const [modalEditarJugadas, setModalEditarJugadas] = useState(false);
+  /** Ítem 1 (bloque 1): reversión de la liquidación de la carrera en curso. */
+  const [modalReversar, setModalReversar] = useState(false);
+  const [reversando, setReversando] = useState(false);
   const [filas, setFilas] = useState<FilaCarga[]>([filaVacia()]);
   const [jugadasPorCarrera, setJugadasPorCarrera] = useState<number[]>([]);
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
@@ -135,6 +166,18 @@ export function GestionJugadasModule() {
   const [copiadoFila, setCopiadoFila] = useState<number | null>(null);
   /** Feedback del botón que copia TODOS los avisos de saldo. */
   const [copiadoAvisos, setCopiadoAvisos] = useState(false);
+  /**
+   * BLOQUE 2 — Pre-visualización PERMANENTE: jugadas ya guardadas en la base
+   * para la carrera elegida. Se leen aparte del store para que sigan visibles
+   * al recargar la página, cambiar de operador o después de liquidar.
+   */
+  const [jugadasGuardadas, setJugadasGuardadas] = useState<JugadaAdmin[]>([]);
+  const [cargandoGuardadas, setCargandoGuardadas] = useState(false);
+  /** Acción (✏️ editar / 🗑️ eliminar) sobre una fila del panel, con su modal. */
+  const [accionPreview, setAccionPreview] = useState<AccionPreview | null>(null);
+  const [motivoPreview, setMotivoPreview] = useState("");
+  const [edicionPreview, setEdicionPreview] = useState<EdicionPreview | null>(null);
+  const [ocupadoPreview, setOcupadoPreview] = useState(false);
 
   const { carreras: centralCarrerasDiaAllBase, carrerasDe, recargar: recargarRegistroCentral } =
     useRegistroCentralOpts(fecha);
@@ -778,46 +821,143 @@ const hipodromosDelDia = useMemo(() => {
     return { ...base, jugada: String(t.comando).trim(), caballo: t.caballo ?? "", cliente1: t.cliente1 ?? "", cliente2: t.cliente2 ?? "" };
   };
 
+  /** Ticket de la sesión que corresponde a una fila del panel (si existe). */
+  const ticketSesionDeFila = (fila: FilaPreviewCarrera): TicketTaquilla | undefined =>
+    ticketsDeCarrera.find(
+      (t) =>
+        (fila.ticketId != null && t.ticketId != null && String(t.ticketId) === fila.ticketId) ||
+        (fila.soloSesion &&
+          !fila.ticketId &&
+          String(t.monto) === String(fila.monto) &&
+          String(t.caballo ?? "").toUpperCase() === fila.caballo.toUpperCase() &&
+          String(t.comando).replace(/^\d+(?:[.,]\d+)?\s+/, "").trim().toUpperCase() ===
+            fila.jugada.toUpperCase())
+    );
+
+  /** Abre el modal propio de ✏️/🗑️ para una fila del panel (sin window.confirm). */
+  const abrirAccionPreview = (fila: FilaPreviewCarrera, modo: "editar" | "eliminar") => {
+    setAccionPreview({ fila, modo });
+    setMotivoPreview("");
+    setEdicionPreview(
+      modo === "editar"
+        ? { jugada: fila.jugada, caballo: fila.caballo, monto: fila.monto ? String(fila.monto) : "" }
+        : null
+    );
+  };
+
+  const cerrarAccionPreview = () => {
+    if (ocupadoPreview) return;
+    setAccionPreview(null);
+    setEdicionPreview(null);
+    setMotivoPreview("");
+  };
+
   /**
-   * Si la jugada ya se vendió (tiene `ticketId`), la anula para devolver el
-   * saldo antes de sacarla de la sesión. Devuelve `false` si la anulación falló
-   * (en ese caso NO se quita de la lista, para no perder el rastro del cobro).
+   * Confirma la acción del panel. Una jugada YA GUARDADA se corrige/anula con
+   * el motor de recálculo (revierte la liquidación, aplica el cambio y vuelve a
+   * liquidar). Una venta que solo vive en la sesión se saca del store.
    */
-  const anularSiPersistido = async (t: TicketTaquilla): Promise<boolean> => {
-    if (t.ticketId === undefined) return true;
-    const r = await anularJugada(t.ticketId, "Quitado por el operador");
-    if (!r.ok) {
-      setAviso(`⚠️ No se pudo anular el ticket #${t.ticketId}: ${r.error ?? "sin conexión"}`);
-      return false;
-    }
-    return true;
-  };
+  const confirmarAccionPreview = async () => {
+    const accion = accionPreview;
+    if (!accion || ocupadoPreview) return;
+    const fila = accion.fila;
+    const motivo = motivoPreview.trim() || (accion.modo === "editar" ? "Corrección desde pre-visualización" : "Anulación desde pre-visualización");
+    const esPersistida = !!fila.ticketId;
+    const ticketSesion = ticketSesionDeFila(fila);
 
-  /** ✕ Quita una jugada de la sesión, devolviendo el saldo si ya estaba vendida. */
-  const quitarTicket = async (id: string) => {
-    const t = tickets.find((x) => x.id === id);
-    if (!t) return;
-    // (3) Modificar jugadas: anular una venta ya registrada pide confirmación.
-    if (!window.confirm(`⚠️ ¿Anular la jugada "${t.comando}" de esta carrera?\n\nSe descuenta de la sesión y de la liquidación.`)) {
-      return;
+    let campos: { nombre_jugada?: string | null; caballo?: string | null; ejemplar_numero?: number | null; monto_jugado?: number | null } | null = null;
+    if (accion.modo === "editar") {
+      if (!edicionPreview) return;
+      const nombre = edicionPreview.jugada.trim().toUpperCase();
+      if (!nombre) {
+        setAviso("⚠️ La jugada (nomenclatura) no puede quedar vacía.");
+        return;
+      }
+      const monto = Number(edicionPreview.monto.replace(",", "."));
+      if (!Number.isFinite(monto) || monto < 0) {
+        setAviso("⚠️ El monto no es válido.");
+        return;
+      }
+      const caballo = edicionPreview.caballo.trim().toUpperCase();
+      campos = {
+        nombre_jugada: nombre,
+        caballo: caballo || null,
+        ejemplar_numero: /^[0-9]+$/.test(caballo) ? Number(caballo) : null,
+        monto_jugado: monto,
+      };
     }
-    if (!(await anularSiPersistido(t))) return;
-    eliminarTicket(id);
-  };
 
-  /** ✏️ Devuelve una jugada a la tabla como inputs editables (anula la venta). */
-  const editarTicket = async (id: string) => {
-    const t = tickets.find((x) => x.id === id);
-    if (!t) return;
-    // (3) Modificar jugadas: se anula lo vendido para volver a editarlo.
-    if (!window.confirm(`⚠️ ¿Devolver "${t.comando}" a la tabla para modificarla?\n\nSe anula la venta registrada y la jugada vuelve a los campos editables.`)) {
-      return;
+    setOcupadoPreview(true);
+    try {
+      if (!esPersistida) {
+        // Solo sesión: no hay nada que anular en la base.
+        if (ticketSesion) eliminarTicket(ticketSesion.id);
+        if (accion.modo === "editar" && ticketSesion) {
+          setFilas((f) => [desarmarTicket(ticketSesion), ...f]);
+          setAviso(`✏️ “${ticketSesion.comando}” devuelto a la tabla para corregirlo.`);
+        } else {
+          setAviso(`🗑️ “${fila.jugada}” quitada de la sesión.`);
+        }
+        toastPreview(accion.modo === "editar" ? "Jugada devuelta a la tabla." : "Jugada quitada de la sesión.", "success");
+        setAccionPreview(null);
+        setEdicionPreview(null);
+        setMotivoPreview("");
+        return;
+      }
+
+      const usuario = usuarioVigente();
+      const r =
+        accion.modo === "editar"
+          ? await corregirJugadaYRecalcular({
+              id: fila.ticketId!,
+              campos: campos!,
+              motivo,
+              usuario,
+              hipodromo,
+              carrera,
+              fecha,
+              tasaComision: comisionNum,
+            })
+          : await anularJugadaYRecalcular({
+              id: fila.ticketId!,
+              motivo,
+              imagen: null,
+              usuario,
+              hipodromo,
+              carrera,
+              fecha,
+              tasaComision: comisionNum,
+            });
+
+      if (!r.ok) {
+        const texto = `❌ ${r.motivo}${r.errores.length ? ` · ${r.errores[0]}` : ""}`;
+        setAviso(texto);
+        toastPreview(texto, "error");
+        return;
+      }
+
+      // Quita también el ticket de la sesión para que el panel no lo muestre
+      // como pendiente de una venta que ya fue corregida/anulada en la base.
+      if (ticketSesion) eliminarTicket(ticketSesion.id);
+      // Los saldos cambiaron (reversión + re-liquidación): refrescar catálogo.
+      void recargarClientes();
+      recargarRegistroCentral();
+      await recargarJugadasGuardadas();
+      const accionTexto = accion.modo === "editar" ? "Jugada corregida" : "Jugada anulada";
+      const texto = `✅ ${accionTexto} y carrera recalculada · #${fila.ticketId} · Auditada.`;
+      setAviso(texto);
+      toastPreview(texto, "success");
+      void registrarAuditoria(
+        "GESTION_JUGADAS",
+        accion.modo === "editar" ? "EDITAR_JUGADA_PREVIEW" : "ANULAR_JUGADA_PREVIEW",
+        `${accionTexto} #${fila.ticketId} de ${nombreHipodromo} C${carrera} (${fecha}) por ${usuario}. Motivo: ${motivo}`
+      );
+      setAccionPreview(null);
+      setEdicionPreview(null);
+      setMotivoPreview("");
+    } finally {
+      setOcupadoPreview(false);
     }
-    if (!(await anularSiPersistido(t))) return;
-    eliminarTicket(id);
-    const fila = desarmarTicket(t);
-    setFilas((f) => [fila, ...f]);
-    setAviso(`✏️ “${t.comando}” devuelto a la tabla para corregirlo.`);
   };
 
   const ticketsDeCarrera = useMemo(
@@ -831,6 +971,38 @@ const hipodromosDelDia = useMemo(() => {
       }),
     [tickets, carrera, fecha, hipodromo]
   );
+
+  /**
+   * BLOQUE 2 — Lee las jugadas YA guardadas de la carrera (aunque no estén en
+   * la sesión). Es la fuente que mantiene el panel visible después de recargar
+   * o liquidar; el store local solo completa la proyección de las Pendientes.
+   */
+  const recargarJugadasGuardadas = useCallback(async () => {
+    if (!listoParaCargar) {
+      setJugadasGuardadas([]);
+      return;
+    }
+    setCargandoGuardadas(true);
+    try {
+      const r = await listarJugadasDeCarrera(hipodromo, carrera, fecha);
+      setJugadasGuardadas(r.ok ? r.jugadas : []);
+    } catch {
+      setJugadasGuardadas([]);
+    } finally {
+      setCargandoGuardadas(false);
+    }
+  }, [listoParaCargar, hipodromo, carrera, fecha]);
+
+  useEffect(() => {
+    void recargarJugadasGuardadas();
+  }, [recargarJugadasGuardadas]);
+
+  /** Filas del panel: persistidas (✅) + ventas de la sesión sin duplicar. */
+  const filasPreview = useMemo(
+    () => armarFilasPreview(jugadasGuardadas, ticketsDeCarrera),
+    [jugadasGuardadas, ticketsDeCarrera]
+  );
+  const totalesPreview = useMemo(() => resumenPreview(filasPreview), [filasPreview]);
 
   // Nombre del grupo "cabecera" de la relación: el grupo de WhatsApp vinculado
   // (p. ej. "MVP FUSION"), que es lo que la casa pone en el encabezado del
@@ -1166,6 +1338,9 @@ const hipodromosDelDia = useMemo(() => {
     // Las ventas debitaron saldo en la base: refrescar el catálogo local para que
     // la próxima fila tope contra el saldo REAL (no el viejo).
     void recargarClientes();
+    // Bloque 2: las ventas recién cobradas ya están en `tickets_apuestas`, así
+    // que el panel persistente se refresca y las muestra con ✅ Cargada.
+    await recargarJugadasGuardadas();
   };
 
   const poblarCargaRapida = () => {
@@ -1300,6 +1475,41 @@ const hipodromosDelDia = useMemo(() => {
     // Los saldos y el cuaderno del cliente cambian: refrescar para que el
     // estado de cuenta refleje al instante los cobros/pagos del recálculo.
     void recargarClientes();
+    void recargarJugadasGuardadas();
+  };
+
+  /**
+   * BLOQUE 1 — REVERSAR la liquidación de la carrera en curso.
+   *
+   * Deja la carrera ABIERTA de nuevo: devuelve el dinero acreditado (taquilla,
+   * tablas fijas, marcas, dupletas), reabre remates/pollas y borra el resultado
+   * central. Exige `gestion_jugadas:fn_reabrir_carrera`. NUNCA usa
+   * `window.confirm`: pide confirmación con el modal propio.
+   */
+  const ejecutarReversar = async () => {
+    if (reversando) return;
+    setReversando(true);
+    try {
+      const r = await reversarLiquidacionCarrera({
+        hipodromo,
+        carrera,
+        fecha,
+        usuario: usuarioVigente(),
+        tasaComision: comisionNum,
+      });
+      setAviso(r.ok ? `🔄 ${r.motivo}` : `❌ ${r.motivo}${r.errores.length ? ` · ${r.errores.join(" | ")}` : ""}`);
+      // La carrera vuelve a "Programada" y los saldos cambian: refrescar el
+      // registro central (semáforos) y el catálogo de clientes.
+      setReapertura(false);
+      setPizarraCentral(null);
+      setUltimaPizarra(null);
+      recargarRegistroCentral();
+      void recargarClientes();
+      void recargarJugadasGuardadas();
+      setModalReversar(false);
+    } finally {
+      setReversando(false);
+    }
   };
 
   const ejecutarFinalizar = async (pizarraConfirmada?: PizarraResultados | null) => {
@@ -1340,6 +1550,7 @@ const hipodromosDelDia = useMemo(() => {
       // La re-apertura pagó premios: refrescar saldos para cargar más jugadas
       // contra el saldo REAL (si no, la RPC rechaza y la jugada no se toma).
       void recargarClientes();
+      void recargarJugadasGuardadas();
       return;
     }
     // AUNQUE no haya jugadas EN SESIÓN, la carrera se registra y se liquida: las
@@ -1412,9 +1623,13 @@ const hipodromosDelDia = useMemo(() => {
       void recargarClientes();
       if (s.errores.length) {
         setAviso(`✅ ${r.motivo}${avisoMarcas} · ⚠️ aviso de saldos: ${s.errores[0]}`);
+        void recargarJugadasGuardadas();
         return;
       }
     }
+    // La liquidación dejó de decidir los tickets: el panel sigue mostrándolos
+    // (ahora con ✅ Ganador/Perdedor) desde la base, no desde la sesión.
+    void recargarJugadasGuardadas();
     setAviso(r.ok ? `✅ ${r.motivo}${avisoMarcas}` : `❌ ${r.motivo}`);
   };
 
@@ -1840,74 +2055,186 @@ const hipodromosDelDia = useMemo(() => {
           </Button>
         </div>
 
-        {/* Pre-visualización — jugadas cargadas en sesión con edición inline (✏️) */}
-        {ticketsDeCarrera.length > 0 && (
+        {/* Pre-visualización PERMANENTE — persistidas (✅) + ventas de la sesión */}
+        {filasPreview.length > 0 && (
           <div className="mt-3 rounded-xl border border-line bg-gray-50 p-2">
             <p className="px-1 pb-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
-              🧾 Pre-visualización — jugadas cargadas en la taquilla ({ticketsDeCarrera.length}) ·{" "}
-              <span className="normal-case font-semibold text-slate-400">✏️ devuelve la jugada a la tabla para corregirla</span>
+              🧾 Pre-visualización — jugadas cargadas ({totalesPreview.jugadas}) ·{" "}
+              <span className="normal-case font-semibold text-emerald-700">
+                ✅ {totalesPreview.validadas} validada(s)
+              </span>
+              {totalesPreview.soloSesion > 0 && (
+                <span className="normal-case font-semibold text-amber-600"> · ⏳ {totalesPreview.soloSesion} en sesión</span>
+              )}
+              {cargandoGuardadas && <span className="normal-case font-semibold text-slate-400"> · leyendo…</span>}
+              <span className="ml-2 normal-case font-semibold text-slate-400">✏️ editar · 🗑️ eliminar</span>
             </p>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-800 text-white">
                     <th className="w-[4%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">#</th>
-                    <th className="w-[3%] border-r border-slate-700 px-1 py-1 text-center font-bold uppercase">X</th>
-                    <th className="w-[22%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Jugada</th>
-                    <th className="w-[8%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Caballo</th>
-                    <th className="w-[10%] border-r border-slate-700 px-1 py-1 text-right font-bold uppercase">Monto</th>
-                    <th className="w-[17%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 1</th>
-                    <th className="w-[19%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 2</th>
-                    <th className="w-[17%] px-1 py-1 text-right font-bold uppercase">Premio/Saldo</th>
+                    <th className="w-[5%] border-r border-slate-700 px-1 py-1 text-center font-bold uppercase">Acc.</th>
+                    <th className="w-[13%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Estado</th>
+                    <th className="w-[17%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Jugada</th>
+                    <th className="w-[7%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Caballo</th>
+                    <th className="w-[9%] border-r border-slate-700 px-1 py-1 text-right font-bold uppercase">Monto</th>
+                    <th className="w-[15%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 1</th>
+                    <th className="w-[15%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 2</th>
+                    <th className="w-[15%] px-1 py-1 text-right font-bold uppercase">Premio/Saldo</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line/70">
-                  {ticketsDeCarrera.map((t, i) => {
-                    const jugada = String(t.comando).replace(/^\d+(?:[.,]\d+)?\s+/, "").trim() || String(t.comando).trim();
-                    const mejorCobre = Math.max(t.cobro1 ?? 0, t.cobro2 ?? 0, t.gananciaProyectada + t.monto);
-                    const premio = mejorCobre > t.monto;
+                  {filasPreview.map((f, i) => {
+                    const badge = f.anulada
+                      ? "Anulada"
+                      : f.soloSesion && !f.validada
+                        ? "⏳ Sesión"
+                        : f.estado === "Pendiente"
+                          ? "✅ Cargada"
+                          : `✅ ${f.estado}`;
+                    const badgeClass = f.anulada
+                      ? "bg-amber-100 text-amber-700"
+                      : f.validada
+                        ? f.estado === "Perdedor"
+                          ? "bg-red-100 text-red-700"
+                          : "bg-emerald-100 text-emerald-700"
+                        : "bg-slate-100 text-slate-500";
                     return (
-                      <tr key={t.id} className="align-middle bg-white">
+                      <tr key={f.clave} className={`align-middle ${f.anulada ? "bg-amber-50/60" : "bg-white"}`}>
                         <td className="h-8 px-1 py-0 align-middle text-xs text-slate-400">{i + 1}</td>
-                        <td className="h-8 px-1 py-0 align-middle text-center">
+                        <td className="h-8 px-1 py-0 align-middle text-center whitespace-nowrap">
                           <button
                             type="button"
-                            onClick={() => void editarTicket(t.id)}
+                            onClick={() => abrirAccionPreview(f, "editar")}
                             aria-label="Editar jugada"
-                            title="Volver a la tabla como inputs editables (anula la venta)"
+                            title="Editar la jugada (monto, nomenclatura o caballo) y recalcular la carrera"
                             className="text-xs text-slate-400 hover:text-primary-600"
                           >
                             ✏️
                           </button>
                           <button
                             type="button"
-                            onClick={() => void quitarTicket(t.id)}
-                            aria-label="Quitar jugada"
-                            title="Quitar de la sesión (devuelve el saldo si estaba vendida)"
+                            onClick={() => abrirAccionPreview(f, "eliminar")}
+                            aria-label="Eliminar jugada"
+                            title="Anular la jugada y recalcular la carrera"
                             className="ml-1 text-xs text-slate-400 hover:text-red-500"
                           >
-                            ✕
+                            🗑️
                           </button>
                         </td>
-                        <td className="h-8 truncate px-1 py-0 align-middle font-mono text-[11px] font-semibold text-slate-700" title={t.comando}>
-                          {jugada}
+                        <td className="h-8 px-1 py-0 align-middle">
+                          <span className={`inline-block rounded px-1 py-0.5 text-[9px] font-black uppercase ${badgeClass}`}>
+                            {badge}
+                          </span>
                         </td>
-                        <td className="h-8 px-1 py-0 align-middle font-bold text-slate-800">{t.caballo ? t.caballo.toUpperCase() : "—"}</td>
-                        <td className="h-8 px-1 py-0 align-middle text-right font-black text-slate-900">{monedaFmt(t.monto)}</td>
-                        <td className="h-8 truncate px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={t.cliente1}>
-                          {t.cliente1 || "—"}
+                        <td className="h-8 truncate px-1 py-0 align-middle font-mono text-[11px] font-semibold text-slate-700" title={f.jugada}>
+                          {f.jugada}
                         </td>
-                        <td className="h-8 truncate px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={t.cliente2}>
-                          {t.cliente2 || "—"}
+                        <td className="h-8 px-1 py-0 align-middle font-bold text-slate-800">{f.caballo ? f.caballo.toUpperCase() : "—"}</td>
+                        <td className="h-8 px-1 py-0 align-middle text-right font-black text-slate-900">{monedaFmt(f.monto)}</td>
+                        <td className="h-8 truncate px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={f.cliente1}>
+                          {f.cliente1 || "—"}
                         </td>
-                        <td className={`h-8 px-1 py-0 align-middle text-right text-[11px] font-black ${premio ? "text-emerald-600" : "text-red-600"}`}>
-                          {premio ? `+${monedaFmt(mejorCobre - t.monto)}` : `SALDO −${monedaFmt(t.monto - mejorCobre)}`}
+                        <td className="h-8 truncate px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={f.cliente2}>
+                          {f.cliente2 || "—"}
+                        </td>
+                        <td
+                          className={`h-8 px-1 py-0 align-middle text-right text-[11px] font-black ${
+                            !f.tieneProyeccion || f.anulada
+                              ? "text-slate-400"
+                              : f.esPremio
+                                ? "text-emerald-600"
+                                : "text-red-600"
+                          }`}
+                        >
+                          {!f.tieneProyeccion || f.anulada
+                            ? "—"
+                            : f.esPremio
+                              ? `+${monedaFmt(f.premioSaldo)}`
+                              : `SALDO −${monedaFmt(Math.abs(f.premioSaldo))}`}
                         </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* Modal propio ✏️/🗑️ de una jugada del panel (sin window.confirm) */}
+        {accionPreview && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4">
+            <div className="w-full max-w-lg rounded-2xl border border-line bg-white p-4 shadow-2xl">
+              <p className="text-sm font-black text-slate-800">
+                {accionPreview.modo === "editar" ? "✏️ Editar jugada cargada" : "🗑️ Eliminar jugada cargada"}
+              </p>
+              <p className="mt-1 text-xs font-semibold text-slate-500">
+                {nombreHipodromo} C{carrera} · {fecha} · Ticket #{accionPreview.fila.ticketId ?? "sesión"}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                La jugada se {accionPreview.modo === "editar" ? "corrige" : "anula"} en la base y la carrera se recalcula
+                automáticamente (revierte y vuelve a liquidar si estaba pagada).
+              </p>
+
+              {accionPreview.modo === "editar" && edicionPreview && (
+                <div className="mt-3 grid grid-cols-6 gap-2">
+                  <label className="col-span-3 block text-[10px] font-black uppercase text-slate-500">
+                    Jugada
+                    <input
+                      value={edicionPreview.jugada}
+                      onChange={(e) => setEdicionPreview((v) => (v ? { ...v, jugada: e.target.value } : v))}
+                      className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    />
+                  </label>
+                  <label className="col-span-1 block text-[10px] font-black uppercase text-slate-500">
+                    Caballo
+                    <input
+                      value={edicionPreview.caballo}
+                      onChange={(e) => setEdicionPreview((v) => (v ? { ...v, caballo: e.target.value } : v))}
+                      className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    />
+                  </label>
+                  <label className="col-span-2 block text-[10px] font-black uppercase text-slate-500">
+                    Monto
+                    <input
+                      inputMode="decimal"
+                      value={edicionPreview.monto}
+                      onChange={(e) => setEdicionPreview((v) => (v ? { ...v, monto: e.target.value } : v))}
+                      className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    />
+                  </label>
+                </div>
+              )}
+
+              <label className="mt-3 block text-[10px] font-black uppercase text-slate-500">
+                Motivo (queda en auditoría)
+                <input
+                  value={motivoPreview}
+                  onChange={(e) => setMotivoPreview(e.target.value)}
+                  placeholder="Ej.: monto mal tipeado / cliente equivocado"
+                  className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                />
+              </label>
+
+              <div className="mt-4 flex justify-end gap-2">
+                <Button variant="ghost" size="sm" onClick={cerrarAccionPreview} disabled={ocupadoPreview}>
+                  Cancelar
+                </Button>
+                <Button
+                  variant={accionPreview.modo === "editar" ? "success" : "danger"}
+                  size="sm"
+                  onClick={() => void confirmarAccionPreview()}
+                  disabled={ocupadoPreview}
+                >
+                  {ocupadoPreview
+                    ? "Procesando…"
+                    : accionPreview.modo === "editar"
+                      ? "Guardar y recalcular"
+                      : "Anular y recalcular"}
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -1992,15 +2319,27 @@ const hipodromosDelDia = useMemo(() => {
               ✏️ Editar jugadas
             </button>
           )}
-          <button
-            type="button"
-            onClick={abrirResultados}
-            disabled={!listoParaCargar}
-            title={listoParaCargar ? "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)" : "Elija hipódromo y carrera para liquidar"}
-            className={`${BTN_BARRA} bg-gradient-to-r from-success-600 to-emerald-500 text-white hover:brightness-110`}
-          >
-            ✅ Liquidar
-          </button>
+          {carreraLiquidada && puedeReabrir ? (
+            <button
+              type="button"
+              onClick={() => setModalReversar(true)}
+              disabled={!listoParaCargar}
+              title={listoParaCargar ? "🔄 Reversa la liquidación de esta carrera: devuelve a los clientes el dinero acreditado y la deja ABIERTA para volver a cargar y liquidar" : "Elija hipódromo y carrera para reversar su liquidación"}
+              className={`${BTN_BARRA} bg-gradient-to-r from-rose-600 to-red-500 text-white hover:brightness-110`}
+            >
+              🔄 Reversar Liquidación
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={abrirResultados}
+              disabled={!listoParaCargar}
+              title={listoParaCargar ? "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)" : "Elija hipódromo y carrera para liquidar"}
+              className={`${BTN_BARRA} bg-gradient-to-r from-success-600 to-emerald-500 text-white hover:brightness-110`}
+            >
+              🏆 Liquidar Carrera
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void recalcularCompleta()}
@@ -2284,6 +2623,54 @@ const hipodromosDelDia = useMemo(() => {
           tasaComision={comisionNum}
           onCerrar={() => setModalEditarJugadas(false)}
         />
+      )}
+
+      {/* Bloque 1 — Reversar Liquidación (confirmación propia, sin window.confirm) */}
+      {modalReversar && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-line bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-line bg-rose-700 px-4 py-3 text-white">
+              <h3 className="text-xs font-black uppercase">
+                🔄 Reversar Liquidación — <span className="normal-case">{nombreHipodromo}</span> C{carrera}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setModalReversar(false)}
+                disabled={reversando}
+                className="text-rose-100 hover:text-white disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-3 p-4 text-sm text-slate-700">
+              <p className="font-bold text-rose-700">
+                Se va a DESHACER la liquidación de {nombreHipodromo} C{carrera} ({String(fecha).slice(0, 10)}).
+              </p>
+              <ul className="list-disc space-y-1 pl-5 text-xs">
+                <li>Se devuelve a cada cliente el dinero que se le había acreditado.</li>
+                <li>Todos los tickets decididos vuelven a <b>Pendiente</b> (taquilla, tablas fijas, marcas, dupletas).</li>
+                <li>Se reabren los remates cerrados y las pollas liquidadas de la jornada.</li>
+                <li>Se borra el resultado oficial: la carrera queda <b>ABIERTA</b> para volver a cargar y liquidar.</li>
+              </ul>
+              <p className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-[11px] font-semibold text-amber-800">
+                ⚠️ Los saldos de los clientes cambian al instante. Hacelo sólo si necesitás rehacer la carrera completa.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-line bg-gray-50 px-4 py-3">
+              <Button size="sm" variant="ghost" onClick={() => setModalReversar(false)} disabled={reversando}>
+                Cancelar
+              </Button>
+              <button
+                type="button"
+                onClick={() => void ejecutarReversar()}
+                disabled={reversando}
+                className="rounded-lg bg-gradient-to-r from-rose-600 to-red-500 px-3 py-1.5 text-xs font-black text-white hover:brightness-110 disabled:opacity-50"
+              >
+                {reversando ? "Reversando…" : "🔄 Sí, reversar liquidación"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Comandos (Ctrl+Shift+K) */}

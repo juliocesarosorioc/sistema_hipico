@@ -428,3 +428,81 @@ export async function upsertResultadoCentral(
     return { ok: false, error: (e as Error).message };
   }
 }
+
+/** Permisos que habilitan REVERTIR una liquidación (dejar la carrera ABIERTA). */
+const PERMISOS_REVERTIR_RESULTADO = [
+  "gestion_jugadas:fn_reabrir_carrera",
+  ...PERMISOS_GUARDAR_RESULTADO,
+] as const;
+
+/**
+ * REVIERTE el resultado central de una carrera: la deja SIN resultado oficial
+ * (`aplicado_a_tablas=false`, `ganadores`/`orden_llegada`/`dividendos` en
+ * blanco) para que el semáforo y «Carreras del Día» vuelvan a "Programada" —
+ * o sea, la carrera vuelve a estar ABIERTA y se puede cargar y liquidar de
+ * nuevo. Es el paso final de `reversarLiquidacionCarrera`.
+ *
+ * Escribe por la RPC dedicada `club_revertir_resultado_carrera` (valida
+ * `gestion_jugadas:fn_reabrir_carrera` en el servidor). Si esa RPC todavía no
+ * está aplicada, cae al camino de `guardarResultado` con los campos en blanco
+ * (que valida los permisos de carga/liquidación).
+ */
+export async function revertirResultadoCentral(input: {
+  fecha?: string;
+  hipodromo: string;
+  carrera: number | string;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!tieneCapacidad(...PERMISOS_REVERTIR_RESULTADO)) {
+    return { ok: false, error: "Sin permiso para revertir el resultado de la carrera." };
+  }
+  const f = input.fecha || hoy();
+  const hip = String(input.hipodromo ?? "").trim().toUpperCase();
+  const carrera = Number(input.carrera) || 0;
+  const estado = useCarrerasDiaStore.getState().estadoDe(hip, carrera, f);
+  const ventas = estado?.ventas ?? [];
+
+  // Store en vivo: la carrera vuelve a "Programada" (sin ganadores ni pago).
+  useCarrerasDiaStore.getState().upsert({
+    fecha: f,
+    hipodromo: hip,
+    carrera,
+    estado: "Programada",
+    ganadores: [],
+    aplicado_a_tablas: false,
+    ventas,
+    pago: null,
+  });
+
+  if (!supabase) return { ok: true };
+  const sdb = supabase;
+  // 1) RPC dedicada (permiso de reversión validado en el servidor).
+  try {
+    const { error } = await sdb.rpc("club_revertir_resultado_carrera", {
+      p_fecha: f,
+      p_hipodromo: hip,
+      p_carrera: carrera,
+      p_usuario: null,
+    });
+    if (!error) return { ok: true };
+    if (!/club_revertir_resultado_carrera|not found|404|PGRST202/i.test(error.message ?? "")) {
+      return { ok: false, error: error.message };
+    }
+  } catch {
+    /* RPC ausente → se usa el camino de guardarResultado */
+  }
+  // 2) Fallback: deja los campos del resultado en blanco.
+  try {
+    const err = await guardarResultado(f, hip, carrera, {
+      ganadores: [],
+      retirados: "NO HUBO RETIROS",
+      aplicado_a_tablas: false,
+      orden_llegada: null,
+      dividendos: null,
+      premio_oficial: null,
+      premio_recalculado: null,
+    });
+    return err ? { ok: false, error: err } : { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}

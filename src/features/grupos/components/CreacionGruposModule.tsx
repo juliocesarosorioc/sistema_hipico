@@ -480,7 +480,6 @@ export function CreacionGruposModule() {
               <CamposComisionesConvenio
                 valores={convenio}
                 onCambio={setConvenioCampo}
-                columnas={4}
                 ayuda="Comisión por convenio con el grupo principal, sobre el MONTO DECIDIDO. Vacío = hereda la de Entre Tercios (default 2,5%)."
               />
             </div>

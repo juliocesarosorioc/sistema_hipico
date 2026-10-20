@@ -230,6 +230,49 @@ export function parsearOrden(texto: string | null | undefined): Array<{ numero: 
 }
 
 /**
+ * Numero del caballo de un ticket de marcas, tolerante a tickets legacy.
+ *
+ * Los tickets nuevos guardan el numero limpio ("2"). Una version vieja guardo
+ * la descripcion completa en `caballo` ("MARCA 2 vs 6"), asi que si no es un
+ * numero se toma el primer numero de ese texto y, si no hay, `ejemplar_numero`.
+ * Sin esto un ticket viejo queda Pendiente para siempre porque la liquidacion
+ * busca "MARCA 2 vs 6" en el orden de llegada.
+ */
+export function numeroCaballoMarca(caballo: unknown, ejemplarNumero?: unknown): string {
+  const crudo = String(caballo ?? "").trim();
+  if (/^\d+$/.test(crudo)) return crudo;
+  const enTexto = /(\d+)/.exec(crudo);
+  if (enTexto) return enTexto[1];
+  const ejemplar = String(ejemplarNumero ?? "").trim();
+  return /^\d+$/.test(ejemplar) ? ejemplar : crudo;
+}
+
+/**
+ * Caballos requeridos que no figuran en el orden de llegada.
+ *
+ * Sirve para avisar de UNA vez todo lo que falta antes de llamar a la RPC de
+ * liquidacion: la RPC aborta en el primer ausente y el operador se entera de a
+ * uno. Los retirados no se piden: su ticket se anula y se devuelve.
+ */
+export function faltantesEnOrden(
+  ordenLlegada: Array<{ numero: string; puesto: number | string }>,
+  requeridos: Array<string | null | undefined>
+): string[] {
+  const enOrden = new Set(
+    ordenLlegada.map((f) => String(f.numero ?? "").trim()).filter(Boolean)
+  );
+  const vistos = new Set<string>();
+  const faltan: string[] = [];
+  for (const r of requeridos) {
+    const n = String(r ?? "").trim();
+    if (!n || vistos.has(n)) continue;
+    vistos.add(n);
+    if (!enOrden.has(n)) faltan.push(n);
+  }
+  return faltan;
+}
+
+/**
  * Simula la liquidación contra un orden de llegada.
  *
  * La jugada es de a uno, asi que `rivales` trae UN numero: el rival que quedo
@@ -250,6 +293,8 @@ export function simularMarca(
   rivales: string[],
   ordenLlegada: Array<{ numero: string; puesto: number | string }>
 ): { gana: boolean; puesto: number | null; motivo: string } {
+  const sel = numeroCaballoMarca(caballo);
+  const rivalesLimpios = rivales.map((r) => numeroCaballoMarca(r));
   const puestoDe = (n: string): number | null => {
     const fila = ordenLlegada.find((f) => String(f.numero).trim() === String(n).trim());
     if (!fila) return null;
@@ -257,24 +302,23 @@ export function simularMarca(
     return Number.isFinite(p) ? p : null;
   };
 
-  const sel = String(caballo ?? "").trim();
   const pSel = puestoDe(sel);
   if (pSel === null) {
     return { gana: false, puesto: null, motivo: `El caballo ${sel} no aparece en el orden de llegada.` };
   }
 
-  const porDelante = rivales.filter((r) => {
+  const porDelante = rivalesLimpios.filter((r) => {
     const p = puestoDe(r);
     return p !== null && p < pSel;
   });
-  const faltantes = rivales.filter((r) => puestoDe(r) === null);
+  const faltantes = rivalesLimpios.filter((r) => puestoDe(r) === null);
 
   if (porDelante.length > 0) {
     return {
       gana: false,
       puesto: pSel,
       motivo:
-        rivales.length === 1
+        rivalesLimpios.length === 1
           ? `Pierde: su rival ${porDelante[0]} llegó por delante.`
           : `Pierde: ${porDelante.join(", ")} ${porDelante.length === 1 ? "llegó" : "llegaron"} por delante.`,
     };
@@ -290,8 +334,8 @@ export function simularMarca(
     gana: true,
     puesto: pSel,
     motivo:
-      rivales.length === 1
-        ? `Gana a su rival ${rivales[0]} (puesto ${pSel}).`
+      rivalesLimpios.length === 1
+        ? `Gana a su rival ${rivalesLimpios[0]} (puesto ${pSel}).`
         : `Gana a todos sus rivales (puesto ${pSel}).`,
   };
 }

@@ -19,6 +19,7 @@ import { join } from "node:path";
 import {
   CONCEPTOS_CONVENIO,
   agruparPorGrupo,
+  columnasConvenioCompletas,
   columnasConvenioDesde,
   comisionEnDinero,
   comisionPctDeGrupo,
@@ -209,6 +210,38 @@ console.log("\n[7] Conversión formulario ⇄ columnas (pura)");
   ok(columnasConvenioDesde({ marcas: "-1" }).comision_marcas === null, "negativo → null (inválido)");
 }
 
+console.log("\n[7b] Payload COMPLETO de comisiones (guardado y reapertura del modal)");
+{
+  // El bug de guardado: la edición escribía solo las columnas "tocadas" y el
+  // UPDATE/RPC quedaba a medias. `columnasConvenioCompletas` SIEMPRE devuelve
+  // las 7 columnas para que Supabase reciba el payload entero.
+  const completas = columnasConvenioCompletas({
+    comision_default: 2.5,
+    comision_marcas: 1.5,
+    comision_tablas: 0,
+    comision_remates: "",
+    comision_polla: null,
+  });
+  ok(Object.keys(completas).length === 7, "viajan SIEMPRE las 7 columnas de comisión");
+  ok(completas.comision_default === 2.5, "entre tercios conserva su %");
+  ok(completas.comision_marcas === 1.5, "marcas conserva su %");
+  ok(completas.comision_tablas === 0, "un 0% pactado viaja como 0 (no como null)");
+  ok(completas.comision_remates === null, "vacío = null (hereda)");
+  ok(completas.comision_polla === null, "columna ausente = null");
+  ok(completas.comision_dupletas === null, "los no pactados quedan null");
+  ok(
+    columnasConvenioCompletas({ comision_marcas: 3 }).comision_default === 5,
+    "entre tercios vacío no queda sin tasa: cae al default"
+  );
+
+  // Reapertura del modal: lo que la base guardó, leído de vuelta, pinta los
+  // inputs con los mismos porcentajes (antes se veían los valores viejos).
+  const reabierto = valoresConvenioDeGrupo(completas as unknown as Record<string, unknown>);
+  ok(reabierto.entre_tercios === "2.5", "al reabrir, Entre Tercios muestra lo guardado");
+  ok(reabierto.marcas === "1.5" && reabierto.tablas === "0", "al reabrir, los inputs muestran lo guardado");
+  ok(reabierto.remates === "" && reabierto.dupletas === "", "los heredados se muestran vacíos");
+}
+
 console.log("\n[8] El % por producto se GUARDA (SQL, RPC y alta de grupos)");
 {
   const sql = readFileSync(join(raiz, "sql", "grupos_comisiones_convenio.sql"), "utf8");
@@ -243,7 +276,10 @@ console.log("\n[8] El % por producto se GUARDA (SQL, RPC y alta de grupos)");
   ok(/create or replace function public\.club_actualizar_grupo/.test(sql), "redefine club_actualizar_grupo");
   ok(/create or replace function public\.club_listar_grupos/.test(sql), "redefine club_listar_grupos");
   ok(/columnasConvenioDesde\(formConvenio\)/.test(mod), "el alta convierte el formulario a columnas");
-  ok(/comision_marcas: editando\.comision_marcas/.test(mod), "la edición manda el % pactado");
+  ok(/columnasConvenioCompletas\(editando/.test(mod), "la edición arma el payload COMPLETO de comisiones");
+  ok(/comision_marcas:\s*comisiones\.comision_marcas/.test(mod), "la edición manda TODOS los % (marcas incluido)");
+  ok(/await recargar\(\)[\s\S]*setEditando\(null\)/.test(mod), "recarga desde Supabase antes de cerrar el modal");
+  ok(/Comisiones por convenio guardadas/.test(mod), "avisa con toast al guardar las comisiones");
   ok(/<ReporteComisionesConvenioModal/.test(mod), "el módulo abre el reporte de comisiones");
 }
 

@@ -522,7 +522,29 @@ export function puntuarVentas(
   carreras: CarreraPolla[],
   puntos: ConfigPuntos
 ): VentaPuntuada[] {
-  return ventas.map((v) => {
+  // Un cliente puede tener VARIOS tickets en la misma Polla (compró en dos
+  // momentos). El ranking es por persona, así que primero se juntan sus
+  // combinaciones y lo que pagó; recién después se puntúa el total. Sin esto,
+  // el mismo cliente aparecía varias veces en la tabla y su premio se repartía
+  // como si fueran personas distintas.
+  const porCliente = new Map<string, VentaPuntuada>();
+  for (const v of ventas) {
+    const clave = String(v.cliente_id ?? v.cliente ?? v.id ?? "");
+    const previo = porCliente.get(clave);
+    const combinaciones = v.combinaciones ?? [];
+    if (previo) {
+      previo.combinaciones = [...previo.combinaciones, ...combinaciones];
+      previo.pagado = (Number(previo.pagado) || 0) + (Number(v.pagado) || 0);
+    } else {
+      porCliente.set(clave, {
+        ...v,
+        id: clave,
+        combinaciones: [...combinaciones],
+        pagado: Number(v.pagado) || 0,
+      });
+    }
+  }
+  return [...porCliente.values()].map((v) => {
     const detalle = puntuarCombinaciones(v.combinaciones ?? [], resultados, carreras, puntos);
     return {
       ...v,
@@ -571,7 +593,7 @@ export function ordenarRanking(ventas: VentaPuntuada[]): FilaRanking[] {
   return orden.map((v) => {
     const p = mayor(v.puntosTotales);
     return {
-      clave: String(v.cliente_id ?? v.cliente ?? ""),
+      clave: String(v.cliente_id ?? v.cliente ?? v.id ?? ""),
       cliente_id: v.cliente_id,
       cliente: v.cliente,
       puntos: v.puntosTotales,

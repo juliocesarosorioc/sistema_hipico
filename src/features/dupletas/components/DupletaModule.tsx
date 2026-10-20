@@ -27,6 +27,7 @@ import { listarBanquerosGrupo } from "@/features/liquidacion/lib/banqueros";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { TicketVentaPreview, type TicketVentaModel } from "@/features/tickets/components/TicketVentaPreview";
 import { capturarNodo, componerA4Paisaje, guardarLienzos, A4_PAISAGE, type ImgFormato } from "@/features/impresion/lib/exportar";
+import { ReporteDupletasModal } from "@/features/dupletas/components/ReporteDupletasModal";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 const inputSel =
@@ -169,6 +170,8 @@ export function DupletaModule() {
   // Panel de "dupletas guardadas": antes era un desplegable plano; ahora un
   // listado con filtros que se abre en un modal.
   const [modalGuardadas, setModalGuardadas] = useState(false);
+  /** Reporte contable de las dupletas jugadas del día. */
+  const [reporteAbierto, setReporteAbierto] = useState(false);
   const [fgDia, setFgDia] = useState("");
   const [fgTexto, setFgTexto] = useState("");
   const [previewDupleta, setPreviewDupleta] = useState<{ ticket: TicketVentaModel; venta: VentaDupleta } | null>(null);
@@ -1077,6 +1080,14 @@ export function DupletaModule() {
           >
             📂 Dupletas guardadas ({guardadasVisibles.length})
           </Button>
+          <Button
+            variant="outline"
+            size="md"
+            onClick={() => setReporteAbierto(true)}
+            title="Reporte contable de las dupletas jugadas ese día: pagado, cobrado neto y detalle por grupo."
+          >
+            📈 Reporte
+          </Button>
         </div>
       </div>
 
@@ -1480,6 +1491,14 @@ export function DupletaModule() {
         onCorregir={() => setPreviewDupleta(null)}
         onConfirmar={() => void confirmarVentaDupleta()}
       />
+
+      {reporteAbierto && (
+        <ReporteDupletasModal
+          abierto
+          onCerrar={() => setReporteAbierto(false)}
+          fechaInicial={dia}
+        />
+      )}
 
       <ToastHost />
     </div>

@@ -8,6 +8,8 @@ import {
   separarNumeros,
   simularMarca,
   parsearOrden,
+  numeroCaballoMarca,
+  faltantesEnOrden,
 } from "../src/features/marcas/lib/jerarquia";
 
 let pasan = 0;
@@ -302,6 +304,36 @@ eq("solo comas", parsearOrden(" , , "), []);
   // Lo que sale de parsearOrden alimenta simularMarca tal cual.
   const r = simularMarca("1", ["2", "3"], parsearOrden("2, 1, 3"));
   eq("encadena con la simulacion", r.gana, false);
+}
+
+// ---------------------------------------------------------------------------
+console.log("\n[10] tickets legacy y caballos que faltan en el orden");
+// ---------------------------------------------------------------------------
+eq("caballo limpio se conserva", numeroCaballoMarca("2"), "2");
+eq("caballo legacy toma el primer numero", numeroCaballoMarca("MARCA 2 vs 6"), "2");
+eq("caballo legacy con espacios", numeroCaballoMarca("  MARCA 12 vs 8  "), "12");
+eq("sin numero cae a ejemplar_numero", numeroCaballoMarca("MARCA", 7), "7");
+eq("sin nada devuelve el texto", numeroCaballoMarca("", null), "");
+eq("no confunde el 14 con el 1", numeroCaballoMarca("14 vs 1"), "14");
+
+{
+  const orden = parsearOrden("9, 3, 2, 1, 6");
+  eq("no falta nada", faltantesEnOrden(orden, ["9", "3", "2", "1", "6"]), []);
+  eq("detecta el rival ausente", faltantesEnOrden(orden, ["9", "8"]), ["8"]);
+  eq("lista todos los ausentes una sola vez", faltantesEnOrden(orden, ["8", "7", "8", "7"]), ["8", "7"]);
+  eq("ignora vacios y nulos", faltantesEnOrden(orden, ["", null, undefined, "8"]), ["8"]);
+}
+{
+  // El caso real del 18/10/2026: el orden solo trae el top 5 y el ticket
+  // juega contra un caballo que quedo fuera. La lista tiene que nombrarlo.
+  const orden = parsearOrden("9, 3, 2, 1, 6");
+  const requeridos = [numeroCaballoMarca("2"), ...["8"].map((r) => numeroCaballoMarca(r))];
+  eq("el ticket 2 vs 8 pide el 8", faltantesEnOrden(orden, requeridos), ["8"]);
+}
+{
+  // Un caballo retirado no se pide: el ticket se anula y se devuelve.
+  const orden = parsearOrden("9, 3, 2");
+  eq("retirado no se exige", faltantesEnOrden(orden, ["9", "3", "2"]), []);
 }
 
 // ---------------------------------------------------------------------------

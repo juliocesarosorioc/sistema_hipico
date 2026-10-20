@@ -841,6 +841,10 @@ declare
     --   ERROR 42P01: missing FROM-clause entry for table "v_fila"
     v_fila       record;
     v_tick       record;
+    -- Numero del caballo jugado ya normalizado. Los tickets nuevos guardan
+    -- "2"; una version legacy guardo la descripcion completa ("MARCA 2 vs 6")
+    -- en `caballo`, que nunca coincide con el orden de llegada.
+    v_caballo    text;
     v_puesto_sel int;
     v_prival     int;
     v_rival      text;
@@ -922,6 +926,19 @@ begin
     loop
         v_liquidados := v_liquidados + 1;
 
+        -- Normalizar el numero jugado. El ticket legacy guardo la descripcion
+        -- completa en `caballo` ("MARCA 2 vs 6"); buscar ese texto en el orden
+        -- de llegada hacia abortar la liquidacion para siempre. El primer
+        -- numero del texto ES el caballo jugado; si no hay, se usa la columna
+        -- estructurada `ejemplar_numero`.
+        v_caballo := btrim(coalesce(v_tick.caballo, ''));
+        if v_caballo !~ '^[0-9]+$' then
+            v_caballo := coalesce(
+                substring(v_caballo from '[0-9]+'),
+                nullif(btrim(v_tick.ejemplar_numero::text), '')
+            );
+        end if;
+
         -- Snapshot: si no esta, el ticket no es de este modulo (o es viejo).
         -- El filtro de arriba ya lo restringe a MARCA con fecha_carrera.
 
@@ -938,7 +955,7 @@ begin
         -- Se marca DESPUES de acreditado y en la misma transaccion: si algo
         -- falla arriba, el UPDATE tampoco corre y el reintento no duplica.
         -- ------------------------------------------------------------------
-        if btrim(v_tick.caballo) = any(v_retirados) then
+        if v_caballo = any(v_retirados) then
             update public.clientes
                set saldo_actual = coalesce(saldo_actual, 0) + coalesce(v_tick.monto_jugado, 0)
              where id = v_tick.cliente_juega_id;
@@ -958,9 +975,9 @@ begin
         -- ------------------------------------------------------------------
         -- 2) Puesto del caballo jugado.
         -- ------------------------------------------------------------------
-        v_puesto_sel := nullif(v_puestos ->> btrim(v_tick.caballo), '')::int;
+        v_puesto_sel := nullif(v_puestos ->> v_caballo, '')::int;
         if v_puesto_sel is null then
-            raise exception 'El caballo % del ticket % no aparece en el orden de llegada de la carrera % N%s. Revisa el resultado antes de liquidar: no se movio saldo de nadie.', v_tick.caballo, v_tick.id, v_hipo, p_carrera;
+            raise exception 'El caballo % del ticket % no aparece en el orden de llegada de la carrera % N%s. Revisa el resultado antes de liquidar: no se movio saldo de nadie.', v_caballo, v_tick.id, v_hipo, p_carrera;
         end if;
 
         -- ------------------------------------------------------------------
@@ -979,6 +996,11 @@ begin
             select jsonb_array_elements_text(coalesce(v_tick.nota_auditoria::jsonb -> 'rivales_snapshot', '[]'::jsonb))
         loop
             v_rival := btrim(v_rival);
+            -- El snapshot tambien puede venir de un ticket legacy con texto
+            -- ("MARCA 2 vs 6"). Se normaliza igual que el caballo jugado.
+            if v_rival !~ '^[0-9]+$' then
+                v_rival := coalesce(substring(v_rival from '[0-9]+'), v_rival);
+            end if;
 
             -- Un rival retirado deja el matchup sin comparar: se devuelve.
             -- El flag evita que el `continue` de abajo (que es del loop
@@ -1074,3 +1096,23 @@ end;
 $$;
 
 grant execute on function public.club_liquidar_marca(text, int, date) to anon, authenticated, service_role;
+
+-- -----------------------------------------------------------------------------
+-- REPARACION DE TICKETS LEGACY
+-- -----------------------------------------------------------------------------
+-- Una version anterior de la venta guardo la descripcion completa en `caballo`
+-- ("MARCA 2 vs 6"). La liquidacion ya la normaliza al leer, pero el dato
+-- guardado sigue siendo ilegible para reportes y auditorias. Se corrige una
+-- sola vez: el primer numero del texto es el caballo jugado; si no hay numero,
+-- se usa `ejemplar_numero`. Es idempotente.
+update public.tickets_apuestas
+   set caballo = coalesce(
+         substring(caballo from '[0-9]+'),
+         nullif(btrim(ejemplar_numero::text), '')
+       )
+ where nombre_jugada like 'MARCA %'
+   and btrim(coalesce(caballo, '')) !~ '^[0-9]+$'
+   and coalesce(
+         substring(caballo from '[0-9]+'),
+         nullif(btrim(ejemplar_numero::text), '')
+       ) is not null;

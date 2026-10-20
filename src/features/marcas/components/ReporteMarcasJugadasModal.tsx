@@ -45,11 +45,12 @@ export function ReporteMarcasJugadasModal(props: ReporteMarcasJugadasModalProps)
       cargar={cargarMarcasJugadas}
       titulo="Reporte de Marcas jugadas"
       icono="🏷️"
+      producto="marcas"
       tema={TEMA_MARCAS}
       etiquetas={ETIQUETAS_MARCAS}
       textoVacio="No hay marcas jugadas con los filtros actuales."
       textoCargando={(fecha) => `Cargando marcas jugadas del ${fecha}…`}
-      notaPie="Montos sin símbolo: la moneda la define el grupo (columna Mon. en el detalle). Balance = en riesgo − pagado − reembolsado. La comisión es la del banquero del grupo sobre la ganancia de los aciertos."
+      notaPie="Montos sin símbolo: la moneda la define el grupo (columna Mon. en el detalle). Balance = en riesgo − pagado − reembolsado. La marca que acierta paga el premio; la que falla deja el monto en Cobrado neto, descontando la comisión por convenio del grupo."
       placeholderResumen="grupo / jugador / hipódromo…"
       placeholderDetalle="marca / jugador / grupo…"
     />

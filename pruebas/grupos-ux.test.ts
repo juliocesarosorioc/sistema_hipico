@@ -47,5 +47,36 @@ ok(
 );
 ok("el listado de grupos se renderiza (visiblesGrupos)", /visiblesGrupos\.map\(/.test(src));
 
+console.log("\n[3] BLOQUE 6 · modal de comisiones sin desborde de pantalla");
+const campos = readFileSync(
+  join(raiz, "src", "features", "grupos", "components", "CamposComisionesConvenio.tsx"),
+  "utf8"
+);
+ok(
+  "el bloque fija el techo de pantalla (max-h-[85vh])",
+  /max-h-\[85vh\]/.test(campos)
+);
+ok(
+  "el bloque se reparte en columna y recorta (flex flex-col overflow-hidden rounded-2xl)",
+  /flex flex-col overflow-hidden rounded-2xl/.test(campos)
+);
+ok("el cuerpo rueda por dentro (overflow-y-auto p-5)", /overflow-y-auto p-5/.test(campos));
+ok(
+  "los campos van en grid limpio (grid-cols-1 sm:grid-cols-2 gap-4)",
+  /grid-cols-1 sm:grid-cols-2 gap-4/.test(campos)
+);
+ok(
+  "el modal de edición usa el mismo marco (max-w-2xl max-h-[85vh])",
+  /w-full max-w-2xl max-h-\[85vh\] flex flex-col overflow-hidden rounded-2xl/.test(src)
+);
+ok(
+  "el modal de alta usa el mismo marco (max-w-2xl max-h-[85vh])",
+  /w-full max-w-2xl max-h-\[85vh\] flex-col overflow-hidden rounded-2xl/.test(src)
+);
+ok(
+  "el pie con Guardar queda fijo y visible (shrink-0)",
+  /flex shrink-0 justify-end gap-3 border-t/.test(src)
+);
+
 console.log(`\n${pasan} pasaron, ${fallan} fallaron`);
 process.exit(fallan > 0 ? 1 : 0);

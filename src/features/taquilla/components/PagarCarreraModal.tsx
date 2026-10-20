@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla } from "@/features/liquidacion/lib/pagarYCerrar";
+import { reversarLiquidacionCarrera } from "@/features/liquidacion/lib/reversar";
+import { leerResultadoOficial } from "@/features/carreras/lib/carreras-dia";
+import { tieneCapacidad, usuarioVigente } from "@/features/seguridad/lib/vigente";
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
 import { dividendosDePizarra as dividendosDe } from "@/features/liquidacion/lib/posiciones";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
@@ -44,6 +47,14 @@ export function PagarCarreraModal() {
 
   const [trabajando, setTrabajando] = useState(false);
   const [resultado, setResultado] = useState<string>("");
+  /**
+   * BLOQUE 1 — ¿La carrera ya tiene resultado oficial cargado? Si sí, el botón
+   * cambia de «Pagar Carrera» a «🔄 Reversar Liquidación» y deja la carrera
+   * ABIERTA de nuevo (devuelve premios, reabre tablas/remates/pollas).
+   */
+  const [liquidada, setLiquidada] = useState(false);
+  const [modalReversar, setModalReversar] = useState(false);
+  const [reversando, setReversando] = useState(false);
   const [resumen, setResumen] = useState<{
     totalInvertido: number;
     totalClienteNeto: number;
@@ -67,6 +78,70 @@ export function PagarCarreraModal() {
   }, []);
 
   const disponibleDe = lookupDisponible(clientes);
+
+  /**
+   * Detecta si la carrera elegida YA está liquidada (tiene resultado oficial en
+   * `resultados_carreras`). Es lo que decide el botón dinámico: pagar vs.
+   * reversar. Se revalida al cambiar hipódromo/carrera, al pagar y al reversar.
+   */
+  const revisarLiquidada = useCallback(async () => {
+    const hip = hipodromo.trim().toUpperCase();
+    const n = Number(carrera);
+    if (!hip || !Number.isFinite(n) || n < 1) {
+      setLiquidada(false);
+      return;
+    }
+    try {
+      const r = await leerResultadoOficial(hip, n, hoyLocal());
+      setLiquidada(!!r && r.puestos.length > 0);
+    } catch {
+      setLiquidada(false);
+    }
+  }, [hipodromo, carrera]);
+
+  useEffect(() => {
+    void revisarLiquidada();
+  }, [revisarLiquidada]);
+
+  const puedeReversar = tieneCapacidad("gestion_jugadas:fn_reabrir_carrera");
+
+  /**
+   * BLOQUE 1 — Reversa la liquidación de la carrera y la deja ABIERTA: devuelve
+   * a los clientes el dinero acreditado, reabre tablas fijas/marcas/dupletas y
+   * borra el resultado central. Nunca usa `window.confirm`: pide confirmación
+   * con el modal propio.
+   */
+  const reversar = async () => {
+    if (reversando) return;
+    if (!hipodromo.trim() || !carrera.trim()) {
+      setResultado("Indica Hipódromo y N° de Carrera.");
+      return;
+    }
+    setReversando(true);
+    try {
+      const r = await reversarLiquidacionCarrera({
+        hipodromo: hipodromo.trim().toUpperCase(),
+        carrera: Number(carrera),
+        fecha: hoyLocal(),
+        usuario: usuarioVigente(),
+      });
+      setResultado(r.ok ? `🔄 ${r.motivo}` : `❌ ${r.motivo}${r.errores.length ? ` · ${r.errores.join(" | ")}` : ""}`);
+      if (r.ok) {
+        toast("Liquidación reversada: la carrera quedó ABIERTA.", "success");
+        setResumen(null);
+        setTablaMensaje("");
+        setReporteCarrera(null);
+        setLiquidada(false);
+      } else {
+        toast(r.errores[0] ?? r.motivo, "error");
+      }
+    } catch (e) {
+      setResultado(`❌ No se pudo reversar: ${(e as Error).message}`);
+    } finally {
+      setReversando(false);
+      setModalReversar(false);
+    }
+  };
 
   /** Arma el «Reporte de Liquidación» con los datos REALES que dejó la liquidación. */
   const verReporte = async () => {
@@ -169,6 +244,8 @@ export function PagarCarreraModal() {
         : `Aviso: no se pudo cerrar la tabla (${res.tablaCerrada?.error ?? "RLS o sin credenciales"}).`
     );
     limpiar();
+    // La carrera quedó con resultado oficial: el botón pasa a «Reversar».
+    setLiquidada(true);
   };
 
   return (
@@ -235,17 +312,57 @@ export function PagarCarreraModal() {
             <span className="italic">Sin tablas en caché — el cierre igual se aplica en la BD.</span>
           )}
         </div>
-        <Button
-          variant="success"
-          onClick={() => {
-            if (!hipodromo.trim() || !carrera.trim()) return setResultado("Indica Hipódromo y N° de Carrera.");
-            setCargandoResultados(true);
-          }}
-          disabled={trabajando}
-        >
-          {trabajando ? "Liquidando..." : "Pagar Carrera"}
-        </Button>
+        {liquidada ? (
+          <Button
+            variant="danger"
+            onClick={() => {
+              if (!hipodromo.trim() || !carrera.trim()) return setResultado("Indica Hipódromo y N° de Carrera.");
+              setModalReversar(true);
+            }}
+            disabled={trabajando || reversando || !puedeReversar}
+            title={
+              puedeReversar
+                ? "Devuelve los premios y deja la carrera ABIERTA de nuevo"
+                : "Requiere la capacidad «gestion_jugadas:fn_reabrir_carrera»"
+            }
+          >
+            {reversando ? "Reversando..." : "🔄 Reversar Liquidación"}
+          </Button>
+        ) : (
+          <Button
+            variant="success"
+            onClick={() => {
+              if (!hipodromo.trim() || !carrera.trim()) return setResultado("Indica Hipódromo y N° de Carrera.");
+              setCargandoResultados(true);
+            }}
+            disabled={trabajando}
+          >
+            {trabajando ? "Liquidando..." : "🏆 Pagar Carrera"}
+          </Button>
+        )}
       </div>
+
+      {/* Modal propio de confirmación de reversión (sin window.confirm) */}
+      {modalReversar && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-line bg-white p-4 shadow-2xl">
+            <p className="text-sm font-black text-slate-800">🔄 Reversar la liquidación</p>
+            <p className="mt-2 text-xs text-slate-600">
+              Se devolverá a los clientes TODO el dinero acreditado y la carrera{" "}
+              <b>{nombreHipodromoParaMostrar(hipodromo)} C{carrera}</b> quedará <b>ABIERTA</b> de nuevo
+              (tablas fijas, marcas, dupletas, remates y pollas incluidas). El resultado oficial se borra.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setModalReversar(false)} disabled={reversando}>
+                Cancelar
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => void reversar()} disabled={reversando}>
+                {reversando ? "Reversando…" : "Sí, reversar"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {resultado && (
         <p className="mt-3 rounded-xl bg-primary-500/10 p-3 text-[11px] font-semibold text-primary-600">

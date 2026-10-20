@@ -11,6 +11,7 @@
 import {
   agruparPor,
   claveDe,
+  cobradoDeVenta,
   estadoNormalizado,
   filtrarVentas,
   normalizarVenta,
@@ -110,6 +111,26 @@ igual(t.pagado, 1400, "pagado = 500+900");
 igual(t.comision, 55, "comisión = 20+35");
 igual(t.reembolsado, 30, "reembolso = monto del retirado");
 igual(t.balance, 380 - 30 - 1400, "balance = enRiesgo − reembolso − pagado");
+
+console.log("\nREPORTE DE TABLAS FIJAS — cobrado neto por convenio");
+
+// Regla contable: el perdedor deja monto × (1 − % convenio); el ganador y el
+// retirado no suman cobrado (cobran premio o se reembolsan).
+const conPct: VentaTablaReporte[] = [
+  { ...normalizarVenta(fila()), id: "p1", estado: "Perdedor", monto: 100, pctConvenio: 10 },
+  { ...normalizarVenta(fila()), id: "p2", estado: "Ganador", monto: 100, pagado: 300, pctConvenio: 10 },
+  { ...normalizarVenta(fila()), id: "p3", estado: "Retirado", monto: 100, pctConvenio: 10 },
+];
+const tp = totalesDe(conPct);
+igual(tp.cobrado, 90, "perdedor al 10% deja 100 × 0.9 = 90");
+igual(cobradoDeVenta(conPct[1]), 0, "un ganador no suma cobrado");
+igual(cobradoDeVenta(conPct[2]), 0, "un retirado no suma cobrado");
+igual(cobradoDeVenta(conPct[0]), 90, "cobradoDeVenta aplica el % del grupo");
+igual(
+  cobradoDeVenta({ ...conPct[0], pctConvenio: 100 }),
+  0,
+  "convenio 100% no deja nada"
+);
 
 console.log("\nREPORTE DE TABLAS FIJAS — agrupación y filtros");
 

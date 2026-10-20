@@ -14,7 +14,13 @@ import { supabase } from "@/core/supabase";
 import { exigirCapacidad } from "@/features/seguridad/lib/vigente";
 import { listarClientesVenta, listarGruposVenta, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { listarCarrerasCentrales, type CarreraCentral, type EjemplarCarreraCentral } from "@/features/carreras/lib/central";
-import { parsearOrden, separarNumeros } from "@/features/marcas/lib/jerarquia";
+import {
+  faltantesEnOrden,
+  numeroCaballoMarca,
+  parsearOrden,
+  separarNumeros,
+} from "@/features/marcas/lib/jerarquia";
+import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 
 export * from "@/features/marcas/lib/jerarquia";
 export {
@@ -295,6 +301,85 @@ export type ResultadoLiquidacionMarcas = {
     return `marca-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
   }
 
+/**
+ * Caballos que faltan en el orden de llegada para poder liquidar las marcas.
+ *
+ * La RPC aborta en el PRIMER ausente y no mueve saldo. Eso protege la plata,
+ * pero deja al operador adivinando cual caballo falta: este chequeo lee los
+ * tickets Pendientes y el resultado oficial antes de llamar a la RPC, y
+ * devuelve la lista completa. Si la vista `v_jugadas_carrera` no existe o el
+ * usuario no ve los tickets (RLS), se devuelve vacio y la RPC sigue siendo la
+ * que decide.
+ */
+async function faltantesParaLiquidarMarcas(
+  hipodromo: string,
+  carrera: number,
+  fecha: string
+): Promise<string[]> {
+  if (!supabase) return [];
+  const hip = String(hipodromo ?? "").trim().toUpperCase();
+  const dia = String(fecha ?? "").slice(0, 10);
+  const nCarrera = Number(carrera) || 0;
+  if (!hip || !dia || !nCarrera) return [];
+
+  const { data: res, error: er } = await supabase
+    .from("resultados_carreras")
+    .select("orden_llegada,retirados,caballos")
+    .ilike("hipodromo", hip)
+    .eq("fecha", dia)
+    .eq("carrera", nCarrera)
+    .maybeSingle();
+  if (er || !res) return [];
+  const orden = Array.isArray(res.orden_llegada)
+    ? (res.orden_llegada as Array<{ numero: string; puesto: number | string }>)
+    : [];
+  if (!orden.length) return [];
+
+  // Retirados: los flags por caballo y el texto libre, igual que la RPC.
+  const retirados = new Set<string>();
+  for (const c of (Array.isArray(res.caballos) ? res.caballos : []) as Array<Record<string, unknown>>) {
+    if (c.retirado === true) {
+      const n = String(c.numero ?? "").trim();
+      if (n) retirados.add(n);
+    }
+  }
+  for (const m of String(res.retirados ?? "").match(/\d+/g) ?? []) retirados.add(m);
+
+  const { data: tickets, error: et } = await supabase
+    .from("v_jugadas_carrera")
+    .select("caballo,ejemplar_numero,nota_auditoria")
+    .ilike("hipodromo", hip)
+    .eq("carrera", nCarrera)
+    .eq("estado", "Pendiente")
+    .ilike("nombre_jugada", "MARCA %")
+    .or(filtroDiaJornada(dia));
+  if (et || !tickets?.length) return [];
+
+  const requeridos: string[] = [];
+  for (const t of tickets as Array<Record<string, unknown>>) {
+    const cab = numeroCaballoMarca(t.caballo, t.ejemplar_numero);
+    if (cab && !retirados.has(cab)) requeridos.push(cab);
+
+    let nota: unknown = t.nota_auditoria;
+    if (typeof nota === "string") {
+      try {
+        nota = JSON.parse(nota);
+      } catch {
+        nota = null;
+      }
+    }
+    const rivales =
+      nota && typeof nota === "object" && Array.isArray((nota as Record<string, unknown>).rivales_snapshot)
+        ? ((nota as Record<string, unknown>).rivales_snapshot as unknown[])
+        : [];
+    for (const r of rivales) {
+      const n = numeroCaballoMarca(r);
+      if (n && !retirados.has(n)) requeridos.push(n);
+    }
+  }
+  return faltantesEnOrden(orden, requeridos);
+}
+
   /** Liquida las marcas de una carrera contra el orden de llegada oficial. */
 export async function liquidarMarcas(
   hipodromo: string,
@@ -307,13 +392,25 @@ export async function liquidarMarcas(
     } catch (e) {
       return { ok: false, error: (e as Error).message } as ResultadoLiquidacionMarcas;
     }
+
+    const faltan = await faltantesParaLiquidarMarcas(hipodromo, carrera, fecha);
+    if (faltan.length) {
+      return {
+        ok: false,
+        error:
+          `Faltan en el orden de llegada los caballos ${faltan.join(", ")}. ` +
+          "Edita el resultado y agrega sus puestos: la liquidación de marcas " +
+          "necesita saber quién llegó delante de quién.",
+      };
+    }
+
     const { data, error } = await supabase.rpc("club_liquidar_marca", {
-    p_hipodromo: String(hipodromo ?? "").trim().toUpperCase(),
-    p_carrera: Number(carrera) || 0,
-    p_fecha: fecha,
-  });
-  if (error) return { ok: false, error: error.message };
-  const r = (data ?? {}) as Record<string, unknown>;
+      p_hipodromo: String(hipodromo ?? "").trim().toUpperCase(),
+      p_carrera: Number(carrera) || 0,
+      p_fecha: fecha,
+    });
+    if (error) return { ok: false, error: error.message };
+    const r = (data ?? {}) as Record<string, unknown>;
   return {
     ok: true,
     liquidados: r.liquidados as number | undefined,
