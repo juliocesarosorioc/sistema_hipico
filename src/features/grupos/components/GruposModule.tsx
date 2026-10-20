@@ -218,6 +218,13 @@ export function GruposModule() {
 
 
 
+  /**
+   * Pestaña activa del módulo. Antes las tres secciones convivían en dos
+   * columnas (y se apretaban entre sí); ahora cada una vive en su propia
+   * pestaña para que el listado de grupos respire a lo ancho.
+   */
+  const [pestana, setPestana] = useState<"grupos" | "tipos" | "banquero">("grupos");
+
   const [filtro, setFiltro] = useState("");
 
   const [grupoConvenio, setGrupoConvenio] = useState("");
@@ -921,11 +928,51 @@ export function GruposModule() {
 
 
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Pestañas: cada sección en su propia vista para que el listado de
+          grupos ocupe todo el ancho y quepa en una sola línea. */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-line pb-2">
+        {(
+          [
+            { clave: "grupos", emoji: "📋", texto: "Grupos Registrados", n: grupos.length },
+            { clave: "banquero", emoji: "👔", texto: "Banquero por Modalidad", n: null },
+            { clave: "tipos", emoji: "🎲", texto: "Tipos de Jugada", n: tipos.length },
+          ] as const
+        ).map((t) => {
+          const activa = pestana === t.clave;
+          return (
+            <button
+              key={t.clave}
+              type="button"
+              onClick={() => setPestana(t.clave)}
+              aria-selected={activa}
+              role="tab"
+              className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-black uppercase tracking-wide transition ${
+                activa
+                  ? "bg-slate-800 text-white shadow"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              <span>{t.emoji}</span>
+              <span>{t.texto}</span>
+              {t.n != null ? (
+                <span
+                  className={`ml-1 rounded-full px-1.5 py-0.5 text-[9px] ${
+                    activa ? "bg-white/20 text-white" : "bg-white text-slate-500"
+                  }`}
+                >
+                  {t.n}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-1 gap-6">
 
         {/* ---------------- Crear / Listar Grupos ---------------- */}
 
-        <div className="space-y-5">
+        <div className={pestana === "grupos" ? "space-y-5" : "hidden"}>
 
           {modalGrupo ? (
 
@@ -1302,21 +1349,21 @@ export function GruposModule() {
 
                       key={String(g.id)}
 
-                      className="flex items-center justify-between gap-3 whitespace-nowrap overflow-x-auto rounded-lg border border-line bg-slate-50 px-3 py-2"
+                      className="flex items-center justify-between gap-2 whitespace-nowrap rounded-lg border border-line bg-slate-50 px-2 py-1.5"
 
                     >
 
                       {/* Identidad: logo + nombre */}
 
-                      <div className="flex shrink-0 items-center gap-2">
+                      <div className="flex min-w-0 items-center gap-1.5">
 
-                        <LogoDisplay src={g.logo_url} alt={`Logo de ${g.nombre}`} tamano={32} />
+                        <LogoDisplay src={g.logo_url} alt={`Logo de ${g.nombre}`} tamano={24} />
 
-                        <span className="text-xs font-bold text-slate-800">{g.nombre}</span>
+                        <span className="truncate text-[11px] font-bold text-slate-800" title={g.nombre}>{g.nombre}</span>
 
                         {g.es_principal ? (
 
-                          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] font-black text-white">PRINCIPAL</span>
+                          <span className="shrink-0 rounded bg-slate-800 px-1 py-0.5 text-[8px] font-black text-white">PRINCIPAL</span>
 
                         ) : null}
 
@@ -1326,19 +1373,19 @@ export function GruposModule() {
 
                       <div className="flex shrink-0 items-center gap-1">
 
-                        <span className={`rounded px-1.5 py-0.5 text-[9px] font-black ${esVes ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
+                        <span className={`rounded px-1 py-0.5 text-[8px] font-black ${esVes ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
 
                           {g.moneda ?? "USD"}
 
                         </span>
 
-                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-black text-slate-700" title="Moneda de cuadre">
+                        <span className="rounded bg-slate-200 px-1 py-0.5 text-[8px] font-black text-slate-700" title="Moneda de cuadre">
 
                           Cuadre: {g.moneda_cuadre || g.moneda || "USD"}
 
                         </span>
 
-                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-600" title="Ciclo semanal (día inicio → día fin)">
+                        <span className="rounded bg-slate-200 px-1 py-0.5 text-[8px] font-bold text-slate-600" title="Ciclo semanal (día inicio → día fin)">
 
                           🗓️ {etiquetaDia(g.dia_inicio_semana ?? 1)}–{etiquetaDia(g.dia_fin_semana ?? 7)}
 
@@ -1346,13 +1393,13 @@ export function GruposModule() {
 
                       </div>
 
-                      {/* Badges de % Comisiones por producto */}
+                      {/* Badges de % Comisiones por producto (compacto: emoji + valor) */}
 
                       <div className="flex shrink-0 items-center gap-1">
 
-                        <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold text-indigo-700" title="Comisión Entre Tercios (Puestos) sobre el monto decidido">
+                        <span className="rounded bg-indigo-50 px-1 py-0.5 text-[8px] font-bold text-indigo-700" title="Comisión Entre Tercios (Puestos) sobre el monto decidido">
 
-                          🎯 Puestos: {strNum(g.comision_default) || "2.5"}%
+                          🎯 {strNum(g.comision_default) || "2.5"}%
 
                         </span>
 
@@ -1368,15 +1415,13 @@ export function GruposModule() {
 
                               key={c.clave}
 
-                              className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${valor ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-400"}`}
+                              className={`rounded px-1 py-0.5 text-[8px] font-bold ${valor ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-400"}`}
 
-                              title={valor ? `Comisión por convenio de ${c.etiqueta}` : `${c.etiqueta}: hereda Puestos`}
+                              title={valor ? `${c.etiqueta}: ${valor}% por convenio` : `${c.etiqueta}: hereda Puestos (${strNum(g.comision_default) || "2.5"}%)`}
 
                             >
 
-                              {c.emoji} {c.etiqueta}: {valor || "hereda"}
-
-                              {valor ? "%" : ""}
+                              {c.emoji} {valor ? `${valor}%` : "–"}
 
                             </span>
 
@@ -1392,17 +1437,17 @@ export function GruposModule() {
 
                         <span
 
-                          className={`rounded px-1.5 py-0.5 text-[9px] font-black ${g.permite_cruces !== false ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}
+                          className={`rounded px-1 py-0.5 text-[8px] font-black ${g.permite_cruces !== false ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}
 
                           title="Trabaja con cruces (jugadas de Puestos de una misma carrera)"
 
                         >
 
-                          🔀 Cruces: {g.permite_cruces !== false ? "Sí" : "No"}
+                          🔀 {g.permite_cruces !== false ? "Sí" : "No"}
 
                         </span>
 
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-600" title="Clientes del grupo">
+                        <span className="rounded bg-slate-100 px-1 py-0.5 text-[8px] font-bold text-slate-600" title="Clientes del grupo">
 
                           👥 {conteoPorGrupo.get(String(g.id)) ?? 0}
 
@@ -1412,11 +1457,11 @@ export function GruposModule() {
 
                       {/* Acciones */}
 
-                      <div className="flex shrink-0 items-center gap-1">
+                      <div className="flex shrink-0 items-center gap-0.5">
 
                         <button
 
-                          className="rounded px-2 py-1 text-xs font-bold bg-slate-200 text-slate-700 hover:bg-slate-300"
+                          className="rounded px-1 py-0.5 text-[11px] font-bold bg-slate-200 text-slate-700 hover:bg-slate-300"
 
                           onClick={() => {
 
@@ -1436,7 +1481,7 @@ export function GruposModule() {
 
                         <button
 
-                          className="rounded bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
+                          className="rounded bg-indigo-50 px-1 py-0.5 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100"
 
                           onClick={() => {
 
@@ -1456,7 +1501,7 @@ export function GruposModule() {
 
                         <button
 
-                          className="rounded bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
+                          className="rounded bg-emerald-50 px-1 py-0.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
 
                           onClick={() => {
 
@@ -1476,7 +1521,7 @@ export function GruposModule() {
 
                         <button
 
-                          className={`rounded px-2 py-1 text-xs font-bold ${g.activo !== false ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-red-100 text-red-600 hover:bg-red-200"}`}
+                          className={`rounded px-1 py-0.5 text-[11px] font-bold ${g.activo !== false ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-red-100 text-red-600 hover:bg-red-200"}`}
 
                           onClick={() => void toggleGrupo(g)}
 
@@ -1492,7 +1537,7 @@ export function GruposModule() {
 
                           <button
 
-                            className="rounded bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"
+                            className="rounded bg-red-50 px-1 py-0.5 text-[11px] text-red-600 hover:bg-red-100"
 
                             onClick={() => void eliminarGrupo(g)}
 
@@ -1523,7 +1568,13 @@ export function GruposModule() {
 
 
 
-          {/* ---------------- Tipos de Jugada (CRUD) ---------------- */}
+        </div>
+
+
+
+        {/* ---------------- Tipos de Jugada (CRUD) — pestaña propia ---------------- */}
+
+        <div className={pestana === "tipos" ? "space-y-5" : "hidden"}>
 
           <div className="rounded-2xl border border-line bg-white p-4">
 
@@ -1675,7 +1726,9 @@ export function GruposModule() {
 
 
 
-        {/* ---------------- Banquero por Modalidad ---------------- */}
+        {/* ---------------- Banquero por Modalidad — pestaña propia ---------------- */}
+
+        <div className={pestana === "banquero" ? "space-y-5" : "hidden"}>
 
         <div className="h-fit rounded-2xl border border-line bg-white p-4">
 
@@ -1904,6 +1957,8 @@ export function GruposModule() {
             </div>
 
           )}
+
+        </div>
 
         </div>
 

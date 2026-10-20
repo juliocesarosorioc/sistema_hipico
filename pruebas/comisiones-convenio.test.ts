@@ -421,13 +421,14 @@ console.log("\n[12] Fila de grupo en UNA sola línea (Single-Row Layout)");
     "utf8"
   );
   ok(
-    /flex items-center justify-between gap-3 whitespace-nowrap overflow-x-auto/.test(mod),
-    "la fila del grupo es una sola línea desplazable"
+    /flex items-center justify-between gap-2 whitespace-nowrap rounded-lg border border-line bg-slate-50/.test(mod),
+    "la fila del grupo es una sola línea"
   );
+  ok(!/whitespace-nowrap overflow-x-auto/.test(mod), "la fila ya NO tiene barra de desplazamiento horizontal");
   ok(/<LogoDisplay src=\{g\.logo_url\}/.test(mod), "la fila arranca con el logo del grupo");
-  ok(/Puestos: \{strNum\(g\.comision_default\)/.test(mod), "badge del % de Puestos (Entre Tercios)");
+  ok(/🎯 \{strNum\(g\.comision_default\)/.test(mod), "badge del % de Puestos (Entre Tercios)");
   ok(/CONCEPTOS_CONVENIO\.filter\(\(c\) => c\.propio\)\.map/.test(mod), "badges de % por producto del convenio");
-  ok(/Cruces: \{g\.permite_cruces !== false \? "Sí" : "No"\}/.test(mod), "estado de cruces en la fila");
+  ok(/🔀 \{g\.permite_cruces !== false \? "Sí" : "No"\}/.test(mod), "estado de cruces en la fila");
   ok(/setReporteGrupo\(String\(g\.id\)\)/.test(mod), "botón de reporte por grupo en la fila");
   ok(/setEditarComisiones\(true\)/.test(mod), "botón de comisiones del grupo en la fila");
 }
@@ -479,6 +480,22 @@ console.log("\n[14] Reporte de comisiones: lector con detalle + exportaciones de
   ok(/descargarExcel/.test(exp), "la capa navegador exporta Excel");
   ok(/imagenReportePng/.test(exp), "la capa navegador dibuja el PNG con canvas nativo");
   ok(/ClipboardItem/.test(exp), "copia el PNG al portapapeles con ClipboardItem");
+}
+
+console.log("\n[15] Pestañas: Grupos · Banquero · Tipos de Jugada");
+{
+  const mod = readFileSync(
+    join(raiz, "src", "features", "grupos", "components", "GruposModule.tsx"),
+    "utf8"
+  );
+  ok(/useState<"grupos" \| "tipos" \| "banquero">/.test(mod), "el módulo tiene estado de pestaña activa");
+  ok(/setPestana\(t\.clave\)/.test(mod), "los botones de pestaña cambian la vista");
+  ok(/Grupos Registrados/.test(mod) && /Banquero por Modalidad/.test(mod) && /Tipos de Jugada/.test(mod),
+     "las tres secciones conviven como pestañas");
+  ok(/pestana === "grupos"/.test(mod), "el listado de grupos vive en su pestaña");
+  ok(/pestana === "banquero"/.test(mod), "el banquero vive en su pestaña");
+  ok(/pestana === "tipos"/.test(mod), "los tipos de jugada viven en su pestaña");
+  ok(!/lg:grid-cols-2 gap-6/.test(mod), "ya no hay dos columnas apretadas: cada pestaña ocupa el ancho");
 }
 
 console.log(`\nTODO ${fallan === 0 ? "OK" : "FALLA"}: ${pasan} pasaron, ${fallan} fallaron`);
