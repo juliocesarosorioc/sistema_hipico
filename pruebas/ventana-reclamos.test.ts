@@ -139,6 +139,13 @@ si(/function rangoVentana/.test(fn), "la Edge Function define rangoVentana");
 si(/SOLO_DIA_EN_CURSO/.test(fn) && /SEMANA_EN_CURSO/.test(fn), "la Edge Function conoce los dos modos");
 si(/ventana_reclamos/.test(fn), "la Edge Function lee grupos_venta.ventana_reclamos");
 
+// CORS: el portal vive en OTRO origen (GitHub Pages) y sin el preflight OPTIONS
+// el navegador bloquea la llamada con "Response to preflight request doesn't
+// pass access control check". Estas pruebas fijan el manejo de CORS.
+si(/req\.method === "OPTIONS"/.test(fn), "la Edge Function responde el preflight OPTIONS");
+si(/access-control-allow-origin/.test(fn), "la Edge Function devuelve Access-Control-Allow-Origin");
+si(/access-control-allow-headers/.test(fn), "la Edge Function admite los headers del preflight");
+
 const modal = leer("src", "features", "portal", "components", "ModalJugadaNoRelacionada.tsx");
 si(/fechaPisoReclamo/.test(modal) && /fechaTopeReclamo/.test(modal), "el modal usa piso/tope del núcleo");
 si(/normalizarVentana/.test(modal), "el modal normaliza la ventana del grupo");

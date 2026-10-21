@@ -86,12 +86,36 @@ function excedido(ip: string): boolean {
   return false;
 }
 
+/**
+ * CORS.
+ *
+ * El portal del cliente se sirve desde OTRO origen (GitHub Pages, p.ej.
+ * `https://usuario.github.io`) y llama a esta función. El navegador manda
+ * primero un preflight `OPTIONS`: si la función no responde ese OPTIONS con
+ * status OK y los headers `Access-Control-Allow-*`, el navegador bloquea la
+ * llamada real con "Response to preflight request doesn't pass access control
+ * check" — que era justo lo que pasaba y dejaba el portal en
+ * "El servicio del portal no respondió".
+ *
+ * Se admite cualquier origen (`*`) A PROPÓSITO: la protección NO es el origen,
+ * es el `portal_token` que se valida dentro de la función. Cualquiera puede
+ * llamar a la función (igual que con la llave anon), pero sin token/clave
+ * válidos no obtiene ningún dato.
+ */
+const CORS: Record<string, string> = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "POST, OPTIONS",
+  "access-control-allow-headers": "authorization, apikey, content-type, x-client-info",
+  "access-control-max-age": "86400",
+};
+
 function json(d: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(d), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
+      ...CORS,
     },
   });
 }
@@ -312,6 +336,12 @@ async function porToken(db: SupabaseClient, id: unknown, token: string): Promise
 }
 
 Deno.serve(async (req: Request) => {
+  // Preflight CORS: se responde ANTES de exigir POST. Sin esto el navegador
+  // nunca llega a mandar la llamada real (ver CORS arriba).
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS });
+  }
+
   if (req.method !== "POST") return json({ ok: false, error: "Método no permitido" }, 405);
 
   const ip =
