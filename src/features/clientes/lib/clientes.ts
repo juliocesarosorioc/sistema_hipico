@@ -173,6 +173,11 @@ export type NotificacionRow = {
 /** Reclamos del portal (tickets_jugadas) que se muestran como alertas en admin. */
 export type ReclamoRow = {
   id: string | number;
+  /**
+   * Fecha de creación del reclamo. En `tickets_jugadas` la columna se llama
+   * `creado_at` (no `created_at`); se dejan las dos por compatibilidad de lectura.
+   */
+  creado_at?: string | null;
   created_at?: string | null;
   numero_ticket?: number | string | null;
   cliente_id?: string | number | null;
@@ -575,10 +580,13 @@ export async function ignorarNotificacion(n: NotificacionRow, atendidaPor: strin
 export async function listarReclamos(limite = 40): Promise<ReclamoRow[]> {
   if (!supabase) return [];
   try {
+    // OJO: la tabla tickets_jugadas tiene `creado_at`, NO `created_at`
+    // (verificado en sql/paquete_pendientes.sql). Pedir `created_at` hacía
+    // fallar el order y la bandeja salía SIEMPRE vacía, aunque hubiera reclamos.
     const { data, error } = await supabase
       .from("tickets_jugadas")
       .select("*")
-      .order("created_at", { ascending: false })
+      .order("creado_at", { ascending: false })
       .limit(limite);
     if (error) throw error;
     return (data ?? []) as ReclamoRow[];

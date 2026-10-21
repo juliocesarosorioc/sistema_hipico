@@ -218,7 +218,7 @@ export function NotificacionesPortal() {
                       {esSolicitud ? "Solicitud de Jugada No Relacionada" : `Ticket #${r.numero_ticket}`} — {r.cliente_nombre || "Cliente"}
                     </div>
                     <div className="text-[10px] text-slate-400">
-                      {fmtFechaHora(r.created_at)} · {nombreHipodromoParaMostrar(r.hipodromo)} · Carrera {r.carrera} · {r.jugada_origen || r.tipo_jugada}
+                      {fmtFechaHora(r.creado_at ?? r.created_at)} · {nombreHipodromoParaMostrar(r.hipodromo)} · Carrera {r.carrera} · {r.jugada_origen || r.tipo_jugada}
                     </div>
                   </div>
                 </div>

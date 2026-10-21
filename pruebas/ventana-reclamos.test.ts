@@ -153,6 +153,21 @@ const libGrupos = leer("src", "features", "grupos", "lib", "grupos.ts");
 si(/ventana_reclamos/.test(libGrupos), "grupos.ts expone ventana_reclamos (GrupoRow)");
 si(/export async function actualizarVentanaReclamos/.test(libGrupos), "grupos.ts define actualizarVentanaReclamos");
 
+// La bandeja de reclamos (tickets_jugadas) tiene que ordenar por `creado_at`:
+// la tabla NO tiene `created_at`. Pedirla devolvía [] en silencio y la consola
+// salía siempre vacía aunque hubiera reclamos.
+const clientes = leer("src", "features", "clientes", "lib", "clientes.ts");
+si(
+  /from\("tickets_jugadas"\)[\s\S]{0,200}order\("creado_at"/.test(clientes),
+  "listarReclamos ordena por creado_at (tickets_jugadas no tiene created_at)"
+);
+si(
+  !/from\("tickets_jugadas"\)[\s\S]{0,200}order\("created_at"/.test(clientes),
+  "listarReclamos NO pide created_at en tickets_jugadas"
+);
+const noti = leer("src", "features", "clientes", "components", "NotificacionesPortal.tsx");
+si(/creado_at \?\? r\.created_at/.test(noti), "la consola pinta la fecha con creado_at (fallback created_at)");
+
 // ---------------------------------------------------------------------------
 console.log("\nBLOQUE 7 — migración SQL: columna, check y RPC");
 // ---------------------------------------------------------------------------
