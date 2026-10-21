@@ -5,10 +5,14 @@ import { Button } from "@/shared/components/ui/Button";
 import { Guard } from "@/shared/components/ui/Guard";
 import {
   aplicarNotificacion,
+  aprobarSolicitudJugada,
+  esSolicitudJugada,
   fmtFechaHora,
+  grupoDeCliente,
   ignorarNotificacion,
   listarNotificaciones,
   listarReclamos,
+  rechazarSolicitudJugada,
   resumenNotificacion,
   responderReclamo,
   type NotificacionRow,
@@ -17,6 +21,7 @@ import {
   import { formatoMoneda } from "@/shared/lib/vzla";
 import { resolverImagenReclamo } from "@/features/portal/lib/portal";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
+import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -41,6 +46,8 @@ export function NotificacionesPortal() {
   const [reclamos, setReclamos] = useState<ReclamoRow[]>([]);
   const [cargando, setCargando] = useState(true);
   const [respuestas, setRespuestas] = useState<Record<string, string>>({});
+  /** Monto con el que se incluirá la jugada al aprobar (vacío = el pedido). */
+  const [ajustes, setAjustes] = useState<Record<string, string>>({});
 
   const recargar = useCallback(async () => {
     setCargando(true);
@@ -85,6 +92,34 @@ export function NotificacionesPortal() {
     const out = await responderReclamo(r.id, base);
     if (!out.ok) return toast(out.error ?? "Error al responder.", "error");
     toast(estado === "SOLUCIONADO" ? "Reclamo solucionado." : "Reclamo rechazado.", "success");
+    void recargar();
+  };
+
+  /**
+   * Aprueba una "jugada no relacionada": inserta la jugada y marca el reclamo
+   * APROBADO. El grupo sale del cliente; si no tiene, se usa el grupo activo del
+   * administrador (el super admin "ve un grupo" y ahí cae la jugada).
+   */
+  const aprobarJugada = async (r: ReclamoRow) => {
+    const grupoId = (await grupoDeCliente(r.cliente_id)) || grupoActivoVigente() || "";
+    if (!grupoId) {
+      return toast("No se pudo determinar el grupo del cliente. Asignale un grupo primero.", "warning");
+    }
+    const ajuste = ajustes[r.id];
+    const out = await aprobarSolicitudJugada(r, {
+      grupoId,
+      usuario: "Administrador",
+      ajustarMonto: ajuste != null && ajuste !== "" ? parseFloat(ajuste) : null,
+    });
+    if (!out.ok) return toast(out.error ?? "Error al aprobar.", "error");
+    toast("Jugada incluida y reclamo aprobado.", "success");
+    void recargar();
+  };
+
+  const rechazarJugada = async (r: ReclamoRow) => {
+    const out = await rechazarSolicitudJugada(r, respuestas[r.id] ?? "", "Administrador");
+    if (!out.ok) return toast(out.error ?? "Error al rechazar.", "error");
+    toast("Solicitud rechazada.", "success");
     void recargar();
   };
 
@@ -171,14 +206,16 @@ export function NotificacionesPortal() {
         </div>
       ) : (
         <div className="space-y-3">
-          {reclamos.map((r) => (
+          {reclamos.map((r) => {
+            const esSolicitud = esSolicitudJugada(r);
+            return (
             <div key={String(r.id)} className="rounded-2xl border border-line bg-white p-4 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-danger-600">🚩</span>
+                  <span className={esSolicitud ? "text-indigo-600" : "text-danger-600"}>{esSolicitud ? "➕" : "🚩"}</span>
                   <div>
                     <div className="text-xs font-black text-slate-800">
-                      Ticket #{r.numero_ticket} — {r.cliente_nombre || "Cliente"}
+                      {esSolicitud ? "Solicitud de Jugada No Relacionada" : `Ticket #${r.numero_ticket}`} — {r.cliente_nombre || "Cliente"}
                     </div>
                     <div className="text-[10px] text-slate-400">
                       {fmtFechaHora(r.created_at)} · {nombreHipodromoParaMostrar(r.hipodromo)} · Carrera {r.carrera} · {r.jugada_origen || r.tipo_jugada}
@@ -191,14 +228,33 @@ export function NotificacionesPortal() {
               </div>
 
               <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px]">
-                <div className="rounded-lg bg-slate-50 p-2">
-                  <span className="text-slate-400 block text-[9px] uppercase font-black">Motivo</span>
-                  <b>{r.motivo}</b>
-                </div>
-                <div className="rounded-lg bg-slate-50 p-2">
-                  <span className="text-slate-400 block text-[9px] uppercase font-black">Monto</span>
-                  <b className="font-mono">{formatoMoneda("USD", r.monto)}</b>
-                </div>
+                {esSolicitud ? (
+                  <>
+                    <div className="rounded-lg bg-slate-50 p-2">
+                      <span className="text-slate-400 block text-[9px] uppercase font-black">Fecha de la jugada</span>
+                      <b>{r.fecha_jugada || "—"}</b>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-2">
+                      <span className="text-slate-400 block text-[9px] uppercase font-black">Ejemplar(es)</span>
+                      <b>{r.ejemplares || "—"}</b>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-2">
+                      <span className="text-slate-400 block text-[9px] uppercase font-black">Monto jugado</span>
+                      <b className="font-mono">{formatoMoneda("USD", r.monto)}</b>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="rounded-lg bg-slate-50 p-2">
+                      <span className="text-slate-400 block text-[9px] uppercase font-black">Motivo</span>
+                      <b>{r.motivo}</b>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-2">
+                      <span className="text-slate-400 block text-[9px] uppercase font-black">Monto</span>
+                      <b className="font-mono">{formatoMoneda("USD", r.monto)}</b>
+                    </div>
+                  </>
+                )}
                 <div className="rounded-lg bg-slate-50 p-2">
                   <span className="text-slate-400 block text-[9px] uppercase font-black">Soporte</span>
                     {r.imagen_soporte ? (
@@ -218,6 +274,13 @@ export function NotificacionesPortal() {
                 </div>
               </div>
 
+              {esSolicitud && r.explicacion ? (
+                <div className="mt-2 rounded-lg bg-slate-50 p-2 text-[11px]">
+                  <span className="text-slate-400 block text-[9px] uppercase font-black">Explicación del jugador</span>
+                  {r.explicacion}
+                </div>
+              ) : null}
+
               {r.respuesta_casa ? (
                 <div className="mt-2 rounded-lg border border-indigo-100 bg-indigo-50 p-2 text-[11px]">
                   <span className="text-indigo-400 text-[9px] uppercase font-black block">Respuesta de la casa</span>
@@ -228,6 +291,14 @@ export function NotificacionesPortal() {
 
               {r.estado === "EN_REVISION" ? (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {esSolicitud ? (
+                    <input
+                      value={ajustes[r.id] ?? ""}
+                      onChange={(e) => setAjustes((s) => ({ ...s, [String(r.id)]: e.target.value }))}
+                      placeholder={`Monto a incluir (vacío = ${formatoMoneda("USD", r.monto)})`}
+                      className="w-52 border border-line rounded-lg px-3 py-2 text-xs font-mono outline-none focus:ring-1 focus:ring-primary-500 bg-surface"
+                    />
+                  ) : null}
                   <input
                     value={respuestas[r.id] ?? ""}
                     onChange={(e) => setRespuestas((s) => ({ ...s, [String(r.id)]: e.target.value }))}
@@ -235,17 +306,31 @@ export function NotificacionesPortal() {
                     className="min-w-0 flex-1 border border-line rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary-500 bg-surface"
                   />
                   <Guard permiso="clientes:modal_reclamos" disabled>
-                    <Button variant="success" size="sm" onClick={() => void resolver(r, "SOLUCIONADO")}>
-                      <span className="mr-1">✅</span> Solucionar
-                    </Button>
-                    <Button variant="danger" size="sm" onClick={() => void resolver(r, "RECHAZADO")}>
-                      <span className="mr-1">🚫</span> Rechazar
-                    </Button>
+                    {esSolicitud ? (
+                      <>
+                        <Button variant="success" size="sm" onClick={() => void aprobarJugada(r)}>
+                          <span className="mr-1">✅</span> Aprobar e incluir jugada
+                        </Button>
+                        <Button variant="danger" size="sm" onClick={() => void rechazarJugada(r)}>
+                          <span className="mr-1">🚫</span> Rechazar
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button variant="success" size="sm" onClick={() => void resolver(r, "SOLUCIONADO")}>
+                          <span className="mr-1">✅</span> Solucionar
+                        </Button>
+                        <Button variant="danger" size="sm" onClick={() => void resolver(r, "RECHAZADO")}>
+                          <span className="mr-1">🚫</span> Rechazar
+                        </Button>
+                      </>
+                    )}
                   </Guard>
                 </div>
               ) : null}
             </div>
-          ))}
+            );
+          })}
           {reclamos.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-line bg-white/60 p-10 text-center text-slate-400">
               <span className="text-2xl mb-2">🏁</span>

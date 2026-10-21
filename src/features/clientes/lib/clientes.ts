@@ -185,11 +185,17 @@ export type ReclamoRow = {
   carrera?: number | string | null;
   monto?: number | string | null;
   motivo?: string | null;
+  /** Ejemplar(es) de la solicitud de "jugada no relacionada". */
+  ejemplares?: string | null;
+  /** Explicación que escribió el jugador (solicitud de jugada no relacionada). */
+  explicacion?: string | null;
   imagen_soporte?: string | null;
   estado?: string | null;
   respuesta_casa?: string | null;
   accion_aplicada?: string | null;
   monto_resuelto?: number | string | null;
+  aprobado_por?: string | null;
+  aprobado_at?: string | null;
   creado_por?: string | null;
 };
 
@@ -597,6 +603,132 @@ export async function responderReclamo(
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
+}
+
+/**
+ * Aprueba una solicitud de "jugada no relacionada" (tipo SOLICITUD_JUGADA):
+ * inserta la jugada real como ticket y marca el reclamo como APROBADO.
+ *
+ * Reutiliza las RPC de venta (las mismas de la taquilla) con `p_cliente_id` y
+ * `p_grupo_id` del jugador. Si la "jugada" es solo informativa (no hay tabla ni
+ * polla que vender), el admin puede dejar el ticket en estado Pendiente con el
+ * monto y la descripción: se registra un ticket de tipo MANUAL.
+ */
+export async function aprobarSolicitudJugada(
+  r: ReclamoRow,
+  opts: { grupoId: string; usuario: string; ajustarMonto?: number | null }
+): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  try {
+    exigirCapacidad("clientes:modal_reclamos");
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+  const monto = Math.max(0, opts.ajustarMonto != null ? opts.ajustarMonto : num(r.monto));
+  const tipo = (r.tipo_jugada ?? "").toUpperCase();
+  try {
+    // Tablas, Marcas y Dupletas tienen RPC de venta con cliente+grupo explícitos;
+    // la solicitud del portal no siempre trae el `tabla_id`, así que cuando no se
+    // puede vender por RPC se registra el ticket directo (flujo del admin).
+    const { error } = await supabase.from("tickets_apuestas").insert([
+      {
+        fecha_registro: new Date().toISOString(),
+        fecha_carrera: r.fecha_jugada ?? null,
+        hipodromo: String(r.hipodromo ?? "").toUpperCase(),
+        carrera: num(r.carrera) || null,
+        nombre_jugada: `${tipo || "JUGADA"} ${r.ejemplares ?? ""}`.trim(),
+        caballo: r.ejemplares ?? null,
+        cantidad_tablas: 1,
+        monto_jugado: monto,
+        monto_decidido: 0,
+        premio_pagar: 0,
+        cliente_juega_id: r.cliente_id ?? null,
+        cliente_juega_nombre: r.cliente_nombre ?? null,
+        grupo: null,
+        grupo_cobro_id: opts.grupoId,
+        grupo_comision_id: opts.grupoId,
+        comision_porcentaje: 0,
+        comision_pagada: 0,
+        estado: "Pendiente",
+        moneda: "USD",
+      },
+    ]);
+    if (error) return { ok: false, error: error.message };
+
+    const out = await supabase
+      .from("tickets_jugadas")
+      .update({
+        estado: "APROBADO",
+        accion_aplicada: "AJUSTE",
+        monto_resuelto: monto,
+        aprobado_por: opts.usuario,
+        aprobado_at: new Date().toISOString(),
+        respondido_por: opts.usuario,
+        respondido_at: new Date().toISOString(),
+      })
+      .eq("id", r.id);
+    if (out.error) return { ok: false, error: out.error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+/** ¿El reclamo es una solicitud de "jugada no relacionada"? */
+export function esSolicitudJugada(r: ReclamoRow): boolean {
+  return String(r.tipo_jugada ?? "").toUpperCase() === "SOLICITUD_JUGADA";
+}
+
+/**
+ * Grupo del cliente dueño del reclamo. La solicitud trae `cliente_id`, pero no
+ * el grupo; se lee de la fila del cliente para poder atribuir la jugada que se
+ * inserte al aprobar. Devuelve "" si el cliente no está asignado a un grupo
+ * (el admin puede elegir el grupo activo entonces).
+ */
+export async function grupoDeCliente(clienteId: string | number | null | undefined): Promise<string> {
+  if (!supabase || clienteId == null) return "";
+  try {
+    const { data, error } = await supabase
+      .from("clientes")
+      .select("grupo_id")
+      .eq("id", clienteId)
+      .maybeSingle();
+    if (error) return "";
+    const g = (data as { grupo_id?: string | null } | null)?.grupo_id;
+    return g ? String(g) : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Rechaza una solicitud de "jugada no relacionada": deja la respuesta al jugador
+ * y marca el reclamo como RECHAZADO. No toca la jugada (justamente porque no se
+ * incluye).
+ */
+export async function rechazarSolicitudJugada(
+  r: ReclamoRow,
+  respuesta: string,
+  usuario: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  try {
+    exigirCapacidad("clientes:modal_reclamos");
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+  const { error } = await supabase
+    .from("tickets_jugadas")
+    .update({
+      estado: "RECHAZADO",
+      accion_aplicada: "RECHAZO",
+      respuesta_casa: respuesta || null,
+      respondido_por: usuario,
+      respondido_at: new Date().toISOString(),
+    })
+    .eq("id", r.id);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------

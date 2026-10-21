@@ -42,6 +42,9 @@ import {
   type JugadaReporte,
 } from "@/features/reportes/lib/reporte-diario";
 import { ReporteDiarioTabla } from "@/features/reportes/components/ReporteDiarioTabla";
+import { ModalRealizarJugadaUsuario } from "@/features/portal/components/ModalRealizarJugadaUsuario";
+import { ModalJugadaNoRelacionada } from "@/features/portal/components/ModalJugadaNoRelacionada";
+import { dentroDeVentana, type CicloGrupo } from "@/features/portal/lib/ventana-reclamos";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -234,6 +237,20 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
   const [tab, setTab] = useState<TabPortal>("resumen");
   // 👤 Mi Perfil (PROMPT #7): autogestión de datos personales en un modal.
   const [perfilAbierto, setPerfilAbierto] = useState(false);
+  // 🐎 Realizar Jugada + ➕ Jugada No Relacionada (PROMPT #6).
+  const [jugadaAbierta, setJugadaAbierta] = useState(false);
+  const [noRelAbierta, setNoRelAbierta] = useState(false);
+
+  const ciclo: CicloGrupo = {
+    diaInicio: num(sesion.grupo?.dia_inicio_semana) || 1,
+    diaFin: num(sesion.grupo?.dia_fin_semana) || 7,
+  };
+
+  const recargar = () => {
+    void reanudarSesion().then((s) => {
+      if (s) onActualizar(s);
+    });
+  };
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -249,6 +266,14 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="default"
+              size="sm"
+              className="bg-indigo-500 hover:bg-indigo-400"
+              onClick={() => setJugadaAbierta(true)}
+            >
+              <span className="mr-1">🐎</span> Realizar Jugada
+            </Button>
             <Button variant="ghost" size="sm" className="text-indigo-200 hover:bg-indigo-900" onClick={() => setPerfilAbierto(true)}>
               <span className="mr-1">👤</span> Mi Perfil
             </Button>
@@ -312,6 +337,31 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
             setPerfilAbierto(false);
             onActualizar({ ...sesion, cliente: c });
           }}
+        />
+      ) : null}
+
+      {/* 🐎 Realizar Jugada (PROMPT #6): vende directo contra el grupo del
+          jugador; al terminar se recarga la sesión para ver el saldo y las
+          jugadas nuevas. */}
+      {jugadaAbierta ? (
+        <ModalRealizarJugadaUsuario
+          sesion={sesion}
+          onCerrar={() => setJugadaAbierta(false)}
+          onRealizada={recargar}
+          onPedirNoRelacionada={() => {
+            setJugadaAbierta(false);
+            setNoRelAbierta(true);
+          }}
+        />
+      ) : null}
+
+      {/* ➕ Solicitar Incluir Jugada No Relacionada (PROMPT #6). */}
+      {noRelAbierta ? (
+        <ModalJugadaNoRelacionada
+          sesion={sesion}
+          ventana={sesion.grupo?.ventana_reclamos ?? "SOLO_DIA_EN_CURSO"}
+          ciclo={ciclo}
+          onCerrar={() => setNoRelAbierta(false)}
         />
       ) : null}
 
@@ -396,6 +446,14 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
     [sesion.arbolTickets.jugadas]
   );
   const [disputa, setDisputa] = useState<(typeof jugadas)[number] | null>(null);
+  const [noRelAbierta, setNoRelAbierta] = useState(false);
+
+  const ventana = sesion.grupo?.ventana_reclamos ?? "SOLO_DIA_EN_CURSO";
+  const ciclo: CicloGrupo = {
+    diaInicio: num(sesion.grupo?.dia_inicio_semana) || 1,
+    diaFin: num(sesion.grupo?.dia_fin_semana) || 7,
+  };
+  const hoy = isoLocal(new Date());
 
   const reclamar = async (id: string) => {
     const r = await reclamarJugada(id);
@@ -427,6 +485,17 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
 
   return (
     <div className="space-y-3">
+      {/* ➕ Solicitar incluir una jugada que no aparece (PROMPT #6). La fecha
+          está restringida por la ventana del grupo. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 shadow-sm">
+        <div className="text-[11px] text-indigo-700 font-bold">
+          ¿No te aparece una jugada que hiciste? Pedí que la incluyan.
+        </div>
+        <Button variant="default" size="sm" onClick={() => setNoRelAbierta(true)}>
+          <span className="mr-1">➕</span> Solicitar Incluir Jugada No Relacionada
+        </Button>
+      </div>
+
       <div className="rounded-2xl border border-line bg-white overflow-hidden shadow-sm">
         <div className="bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-wider text-slate-500 border-b border-line">
           <span className="mr-1 text-indigo-600">🗒️</span> Últimos movimientos
@@ -447,40 +516,44 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
               </tr>
             </thead>
             <tbody>
-              {jugadas.map((j) => (
-                <tr key={j.id} className="border-t border-line hover:bg-slate-50">
-                  <td className="px-3 py-2 whitespace-nowrap text-slate-500">{j.fechaTexto}</td>
-                  <td className="px-3 py-2 font-bold text-slate-700">
-                    {nombreHipodromoParaMostrar(j.hipodromo)} <span className="text-slate-400 font-medium">· C{j.carrera}</span>
-                  </td>
-                  <td className="px-3 py-2">{j.jugada}</td>
-                  <td className="px-3 py-2">{j.caballo}</td>
-                  <td className="px-3 py-2 text-right font-mono">{formatoMoneda(j.moneda, j.montoJugado)}</td>
-                  <td className="px-3 py-2 text-right font-mono font-bold">{formatoMoneda(j.moneda, j.montoDecidido)}</td>
-                  <td className="px-3 py-2 text-right font-mono font-bold text-purple-600">{formatoMoneda(j.moneda, j.devolucion)}</td>
-                  <td className="px-3 py-2">
-                    <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${BADGE[j.estado] ?? "bg-slate-100 text-slate-600"}`}>
-                      {j.estado}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {j.estado === "Pendiente" ? (
+              {jugadas.map((j) => {
+                const reclamable = dentroDeVentana(j.fechaCarrera ?? j.fecha, hoy, ventana, ciclo);
+                return (
+                  <tr key={j.id} className="border-t border-line hover:bg-slate-50">
+                    <td className="px-3 py-2 whitespace-nowrap text-slate-500">{j.fechaTexto}</td>
+                    <td className="px-3 py-2 font-bold text-slate-700">
+                      {nombreHipodromoParaMostrar(j.hipodromo)} <span className="text-slate-400 font-medium">· C{j.carrera}</span>
+                    </td>
+                    <td className="px-3 py-2">{j.jugada}</td>
+                    <td className="px-3 py-2">{j.caballo}</td>
+                    <td className="px-3 py-2 text-right font-mono">{formatoMoneda(j.moneda, j.montoJugado)}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold">{formatoMoneda(j.moneda, j.montoDecidido)}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold text-purple-600">{formatoMoneda(j.moneda, j.devolucion)}</td>
+                    <td className="px-3 py-2">
+                      <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${BADGE[j.estado] ?? "bg-slate-100 text-slate-600"}`}>
+                        {j.estado}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="outline" size="sm" onClick={() => setDisputa(j)} title="Disputar esta jugada">
                           <span className="text-amber-600">⚖️</span> Disputar
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => void reclamar(j.id)} title="Reclamar esta jugada">
-                          <span className="text-red-500">🚩</span> Reclamar
-                        </Button>
+                        {reclamable ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void reclamar(j.id)}
+                            title="Reclamar esta jugada"
+                          >
+                            <span className="text-red-500">🛡️</span> Reclamar Jugada
+                          </Button>
+                        ) : null}
                       </div>
-                    ) : (
-                      <Button variant="ghost" size="sm" onClick={() => setDisputa(j)} title="Disputar esta jugada">
-                        <span className="text-slate-400">⚖️</span> Disputar
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                );
+              })}
               {jugadas.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-3 py-10 text-center text-slate-400">
@@ -495,6 +568,15 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
 
       {disputa ? (
         <DisputarModal jugada={disputa} onCerrar={() => setDisputa(null)} onEnviar={(d) => void confirmarDisputa(d)} />
+      ) : null}
+
+      {noRelAbierta ? (
+        <ModalJugadaNoRelacionada
+          sesion={sesion}
+          ventana={ventana}
+          ciclo={ciclo}
+          onCerrar={() => setNoRelAbierta(false)}
+        />
       ) : null}
     </div>
   );

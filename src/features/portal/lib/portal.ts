@@ -70,6 +70,19 @@ export type SesionPortal = {
   cliente: ClienteRow;
   resumen: { saldo: number; incentivo: number; disponible: number };
   arbolTickets: NivelAcordeon;
+  /** Config del grupo del jugador (ventana de reclamos + ciclo). Puede faltar. */
+  grupo?: GrupoPortal | null;
+};
+
+/** Config del grupo que el Portal necesita (llega con la acción `datos`). */
+export type GrupoPortal = {
+  id: string | number;
+  nombre?: string | null;
+  /** 'SOLO_DIA_EN_CURSO' | 'SEMANA_EN_CURSO'. */
+  ventana_reclamos?: string | null;
+  dia_inicio_semana?: number | null;
+  dia_fin_semana?: number | null;
+  moneda?: string | null;
 };
 
 const CACHE_KEY = "portal.cliente";
@@ -237,14 +250,16 @@ export async function reanudarSesion(): Promise<SesionPortal | null> {
  * cero y podía pensar que le habían vaciado la cuenta.
  */
 async function construirSesion(cliente: ClienteRow): Promise<SesionPortal | null> {
-  const tickets = await listarTicketsCliente(cliente.id);
-  if (tickets === null) return null;
+  const datos = await datosCliente();
+  if (datos === null) return null;
+  const { tickets, grupo } = datos;
   const pct = num(cliente.devolucion);
   const arbolTickets = construirEstadoCuenta(tickets, pct);
   return {
     cliente,
     resumen: { saldo: arbolTickets.monto, incentivo: arbolTickets.dec, disponible: arbolTickets.monto - arbolTickets.dec },
     arbolTickets,
+    grupo,
   };
 }
 
@@ -276,6 +291,24 @@ export async function listarTicketsCliente(clienteId: string | number): Promise<
   const r = await accionPortal("datos");
   if (!r.ok) return null;
   return de<TicketApuesta[]>(r.data, "tickets") ?? [];
+}
+
+/**
+ * Todos los datos de la acción `datos` en una sola llamada: tickets, reclamos y
+ * la config del grupo. `null` = falló (mismo criterio que listarTicketsCliente).
+ */
+export async function datosCliente(): Promise<{
+  tickets: TicketApuesta[];
+  reclamos: NotificacionRow[];
+  grupo: GrupoPortal | null;
+} | null> {
+  const r = await accionPortal("datos");
+  if (!r.ok) return null;
+  return {
+    tickets: de<TicketApuesta[]>(r.data, "tickets") ?? [],
+    reclamos: de<NotificacionRow[]>(r.data, "reclamos") ?? [],
+    grupo: de<GrupoPortal | null>(r.data, "grupo") ?? null,
+  };
 }
 
 /** Lista los reclamos del cliente (para mostrar sus tickets de reclamo). */
@@ -453,6 +486,63 @@ export async function solicitarCompraTabla(d: CompraTabla): Promise<{ ok: boolea
     premio_por_tabla: d.premioPorTabla,
     moneda: d.moneda,
     costo_usd: d.costoUsd,
+  });
+  return { ok: r.ok, error: r.error };
+}
+
+// ---------------------------------------------------------------------------
+// 🐎 Realizar Jugada directa desde el Portal (PROMPT #6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Registra una jugada directa del jugador. El body se arma en el núcleo puro
+ * `jugada-usuario.ts` (`cuerpoVenta`), que valida y normaliza antes de mandar.
+ *
+ * El `cliente_id` y el `grupo_id` NO viajan: la Edge Function los pone con el
+ * cliente del token y su grupo real. Acá solo van los detalles de la jugada y el
+ * monto, que las RPC de venta vuelven a validar contra saldo + aval.
+ */
+export async function realizarJugada(cuerpo: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+  const r = await accionPortal("vender", cuerpo);
+  return { ok: r.ok, error: r.error };
+}
+
+export type SolicitudJugada = {
+  fecha: string;
+  hipodromo: string;
+  carrera: number | string;
+  tipo_jugada: string;
+  ejemplares: string;
+  monto: number;
+  explicacion: string;
+  image?: File | null;
+};
+
+/**
+ * ➕ Solicita incluir una "jugada no relacionada" (la que el jugador hizo y no le
+ * aparece). Sube el soporte si lo hay y crea el reclamo (tipo SOLICITUD_JUGADA)
+ * que el admin atiende desde NotificacionesPortal. La fecha tiene que caer en la
+ * ventana del grupo; el servidor la vuelve a comprobar.
+ */
+export async function solicitarJugadaNoRelacionada(
+  clienteId: string | number,
+  datos: SolicitudJugada
+): Promise<{ ok: boolean; error?: string }> {
+  let imagen: string | null = null;
+  if (datos.image) {
+    const up = await guardarImagenReclamo(clienteId, datos.image);
+    if (up.error) return { ok: false, error: `Imagen: ${up.error}` };
+    imagen = up.ruta ?? null;
+  }
+  const r = await accionPortal("solicitud-jugada", {
+    fecha: datos.fecha,
+    hipodromo: datos.hipodromo,
+    carrera: datos.carrera,
+    tipo_jugada: datos.tipo_jugada,
+    ejemplares: datos.ejemplares,
+    monto: datos.monto,
+    explicacion: datos.explicacion,
+    imagen,
   });
   return { ok: r.ok, error: r.error };
 }

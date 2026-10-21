@@ -1,0 +1,280 @@
+"use client";
+
+/**
+ * MODAL ➕ SOLICITAR INCLUIR "JUGADA NO RELACIONADA" — PORTAL (PROMPT #6)
+ * =====================================================================
+ * Cuando al jugador no le aparece una jugada que sí hizo, la pide desde acá. La
+ * solicitud queda como un reclamo (tipo SOLICITUD_JUGADA) en la bandeja del
+ * admin, que la aprueba (insertando/ajustando la jugada) o la rechaza con
+ * respuesta.
+ *
+ * La FECHA está restringida por la "Ventana de Revisión y Reclamos" del grupo:
+ *   · SOLO_DIA_EN_CURSO → solo hoy (min = max = hoy).
+ *   · SEMANA_EN_CURSO   → toda la semana fiscal del grupo (min = inicio,
+ *     max = fin del ciclo definido por dia_inicio_semana / dia_fin_semana).
+ *
+ * La ventana vive en `ventana-reclamos.ts` (núcleo puro probado) y el servidor
+ * la vuelve a comprobar: si el navegador manda otra fecha, la Edge Function la
+ * rechaza.
+ *
+ * El soporte fotográfico se sube al bucket privado `reclamos` (mismo camino que
+ * la disputa): pegar con Ctrl+V o elegir un archivo.
+ */
+
+import { useState } from "react";
+import { Button } from "@/shared/components/ui/Button";
+import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
+import { solicitarJugadaNoRelacionada, type SesionPortal } from "@/features/portal/lib/portal";
+import { TIPOS_JUGADA, ETIQUETA_TIPO, type TipoJugada } from "@/features/portal/lib/jugada-usuario";
+import {
+  explicarVentana,
+  fechaPisoReclamo,
+  fechaTopeReclamo,
+  normalizarVentana,
+  type CicloGrupo,
+} from "@/features/portal/lib/ventana-reclamos";
+
+const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
+  window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
+
+const hoyIso = (): string => {
+  const d = new Date();
+  const p = (v: number): string => String(v).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
+const inp =
+  "w-full border border-line rounded-xl bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200";
+const lbl = "block text-[10px] font-black uppercase text-slate-500 mb-1";
+
+/** Hipódromos comunes del sistema, como sugerencia editable (no obliga). */
+const HIPODROMOS = [
+  "LA RINCONADA",
+  "VALENCIA",
+  "SANTA RITA",
+  "POMONA",
+  "GULFSTREAM",
+  "AQUEDUCT",
+  "BELMONT",
+  "SARATOGA",
+  "CHURCHILL DOWNS",
+  "KEENELAND",
+  "SANTA ANITA",
+  "DEL MAR",
+];
+
+export function ModalJugadaNoRelacionada({
+  sesion,
+  ventana,
+  ciclo,
+  onCerrar,
+}: {
+  sesion: SesionPortal;
+  /** Ventana configurada en el grupo del jugador. */
+  ventana: string;
+  /** Ciclo semanal del grupo (para el rango de SEMANA_EN_CURSO). */
+  ciclo?: CicloGrupo | null;
+  onCerrar: () => void;
+}) {
+  const hoy = hoyIso();
+  const modo = normalizarVentana(ventana);
+  const piso = fechaPisoReclamo(hoy, modo, ciclo);
+  const tope = fechaTopeReclamo(hoy, modo, ciclo);
+
+  const [fecha, setFecha] = useState(hoy);
+  const [hipodromo, setHipodromo] = useState("");
+  const [carrera, setCarrera] = useState("");
+  const [tipoJugada, setTipoJugada] = useState<TipoJugada>("TABLA_FIJA");
+  const [ejemplares, setEjemplares] = useState("");
+  const [monto, setMonto] = useState("");
+  const [explicacion, setExplicacion] = useState("");
+  const [imagen, setImagen] = useState<File | null>(null);
+  const [previa, setPrevia] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState("");
+
+  const elegirImagen = (f: File | null) => {
+    setImagen(f);
+    if (f) setPrevia(URL.createObjectURL(f));
+    else setPrevia(null);
+  };
+
+  const onPaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const it of Array.from(items)) {
+      if (it.type.startsWith("image/")) {
+        const f = it.getAsFile();
+        if (f) {
+          elegirImagen(f);
+          e.preventDefault();
+          return;
+        }
+      }
+    }
+  };
+
+  const enviar = async () => {
+    setError("");
+    if (!fecha) return setError("Elegí la fecha de la jugada.");
+    if (fecha < piso || fecha > tope) {
+      return setError(`La fecha tiene que estar entre ${piso} y ${tope} (ventana de tu grupo).`);
+    }
+    if (!hipodromo.trim()) return setError("Indicá el hipódromo.");
+    if (!ejemplares.trim()) return setError("Indicá el ejemplar o los ejemplares.");
+    if (!explicacion.trim()) return setError("Contá qué pasó con la jugada.");
+    const m = parseFloat(monto.replace(",", "."));
+    if (!(m > 0)) return setError("El monto tiene que ser mayor que cero.");
+
+    setEnviando(true);
+    const r = await solicitarJugadaNoRelacionada(sesion.cliente.id, {
+      fecha,
+      hipodromo: hipodromo.trim().toUpperCase(),
+      carrera: carrera.trim(),
+      tipo_jugada: ETIQUETA_TIPO[tipoJugada].etiqueta.toUpperCase(),
+      ejemplares: ejemplares.trim(),
+      monto: m,
+      explicacion: explicacion.trim(),
+      image: imagen,
+    });
+    setEnviando(false);
+    if (!r.ok) {
+      setError(r.error ?? "No se pudo enviar la solicitud.");
+      return toast(r.error ?? "No se pudo enviar la solicitud.", "error");
+    }
+    toast("Solicitud enviada. La casa la revisará y te responderá.", "success");
+    onCerrar();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 p-4" onClick={onCerrar}>
+      <div className="my-6 w-full max-w-xl rounded-2xl border border-line bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-line px-5 py-4">
+          <h2 className="text-sm font-black text-slate-800">
+            <span className="mr-2 text-indigo-600">➕</span> Solicitar Incluir Jugada No Relacionada
+          </h2>
+          <button onClick={onCerrar} className="text-slate-400 hover:text-slate-700" aria-label="Cerrar">
+            ✕
+          </button>
+        </div>
+
+        <div className="space-y-3 px-5 py-4" onPaste={onPaste}>
+          <p className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-[11px] font-bold text-amber-700">
+            ⏱️ {explicarVentana(modo)}
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className={lbl}>Fecha (Día)</label>
+              <input
+                type="date"
+                className={inp}
+                value={fecha}
+                min={piso}
+                max={tope}
+                onChange={(e) => setFecha(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className={lbl}>Hipódromo</label>
+              <input
+                className={inp + " uppercase"}
+                list="hipodromos-no-rel"
+                value={hipodromo}
+                onChange={(e) => setHipodromo(e.target.value)}
+                placeholder="LA RINCONADA"
+              />
+              <datalist id="hipodromos-no-rel">
+                {HIPODROMOS.map((h) => (
+                  <option key={h} value={h}>
+                    {nombreHipodromoParaMostrar(h)}
+                  </option>
+                ))}
+              </datalist>
+            </div>
+            <div>
+              <label className={lbl}>Carrera</label>
+              <input
+                className={inp + " font-mono"}
+                inputMode="numeric"
+                value={carrera}
+                onChange={(e) => setCarrera(e.target.value.replace(/\D/g, ""))}
+                placeholder="1"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className={lbl}>Tipo de jugada</label>
+              <select className={inp} value={tipoJugada} onChange={(e) => setTipoJugada(e.target.value as TipoJugada)}>
+                {TIPOS_JUGADA.map((t) => (
+                  <option key={t} value={t}>
+                    {ETIQUETA_TIPO[t].icono} {ETIQUETA_TIPO[t].etiqueta}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="md:col-span-2">
+              <label className={lbl}>Ejemplar(es)</label>
+              <input
+                className={inp}
+                value={ejemplares}
+                onChange={(e) => setEjemplares(e.target.value)}
+                placeholder="Ej: 3 / 5x7"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className={lbl}>Monto jugado</label>
+            <input
+              className={inp + " text-right font-mono"}
+              inputMode="decimal"
+              value={monto}
+              onChange={(e) => setMonto(e.target.value)}
+              placeholder="0.00"
+            />
+          </div>
+
+          <div>
+            <label className={lbl}>Explicación</label>
+            <textarea
+              className={inp + " min-h-[80px]"}
+              value={explicacion}
+              onChange={(e) => setExplicacion(e.target.value)}
+              placeholder="Contá qué jugaste, dónde y por qué creés que no aparece."
+            />
+          </div>
+
+          <div>
+            <label className={lbl}>Soporte (opcional · pegá con Ctrl+V o elegí un archivo)</label>
+            <input
+              type="file"
+              accept="image/*"
+              className="block w-full text-[11px] text-slate-500"
+              onChange={(e) => elegirImagen(e.target.files?.[0] ?? null)}
+            />
+            {previa ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={previa} alt="Soporte" className="mt-2 max-h-40 rounded-xl border border-line" />
+            ) : null}
+          </div>
+
+          {error ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">{error}</div>
+          ) : null}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-line px-5 py-4">
+          <Button variant="ghost" size="sm" onClick={onCerrar}>
+            Cancelar
+          </Button>
+          <Button variant="default" size="sm" disabled={enviando} onClick={() => void enviar()}>
+            {enviando ? <span className="mr-1">⏳</span> : <span className="mr-1">📤</span>} Enviar solicitud
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -173,6 +173,45 @@ function sanitizarFormasPago(v: unknown): Array<Fila> | null {
 }
 
 /**
+ * Rango de fechas que admite la ventana de reclamos del grupo.
+ *
+ * Reproduce la parte de calendario de `src/features/portal/lib/ventana-reclamos.ts`
+ * (el navegador la usa para el `min`/`max` del selector de fecha). Acá es la
+ * comprobación de servidor: aunque el navegador mande otra fecha, se rechaza.
+ *
+ *   SOLO_DIA_EN_CURSO → [hoy, hoy]
+ *   SEMANA_EN_CURSO   → la semana fiscal del grupo (dia_inicio..dia_fin, 1=Lun)
+ */
+function rangoVentana(
+  hoyIso: string,
+  ventana: string,
+  diaInicio: number | null,
+  diaFin: number | null
+): { piso: string; tope: string } {
+  if (String(ventana).toUpperCase() !== "SEMANA_EN_CURSO") {
+    return { piso: hoyIso, tope: hoyIso };
+  }
+  const ini = diaInicio && diaInicio >= 1 && diaInicio <= 7 ? diaInicio : 1;
+  const fin = diaFin && diaFin >= 1 && diaFin <= 7 ? diaFin : 7;
+  const [y, m, d] = hoyIso.split("-").map(Number);
+  const base = new Date(Date.UTC(y, m - 1, d));
+  const js = base.getUTCDay();
+  const df = js === 0 ? 7 : js;
+  const retro = (df - ini + 7) % 7;
+  const inicio = sumarDiasIso(hoyIso, -retro);
+  const span = fin >= ini ? fin - ini : 7 - ini + fin;
+  return { piso: inicio, tope: sumarDiasIso(inicio, span) };
+}
+
+function sumarDiasIso(iso: string, n: number): string {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d));
+  t.setUTCDate(t.getUTCDate() + n);
+  const p = (v: number): string => String(v).padStart(2, "0");
+  return `${t.getUTCFullYear()}-${p(t.getUTCMonth() + 1)}-${p(t.getUTCDate())}`;
+}
+
+/**
  * Lee el rol del JWT de la petición, sin verificar la firma.
  *
  * Ojo: NO es una autorización. Solo sirve para distinguir "viene el staff" de
@@ -341,7 +380,7 @@ Deno.serve(async (req: Request) => {
   if (accion === "datos") {
     // fecha_registro y no created_at: tickets_apuestas no tiene created_at
     // (verificado en vivo), y pedirlo rompía la consulta.
-    const [apuestas, reclamos] = await Promise.all([
+    const [apuestas, reclamos, grupo] = await Promise.all([
       db
         .from("tickets_apuestas")
         .select(
@@ -351,9 +390,24 @@ Deno.serve(async (req: Request) => {
         .order("fecha_registro", { ascending: false })
         .limit(500),
       db.from("notificaciones").select("*").eq("cliente_id", cid).order("created_at", { ascending: false }).limit(50),
+      // Config del grupo del jugador (ventana de reclamos + ciclo semanal). El
+      // portal la necesita para restringir la fecha de la "jugada no
+      // relacionada"; el navegador no puede leer `grupos_venta` por RLS.
+      cliente?.grupo_id
+        ? db
+            .from("grupos_venta")
+            .select("id, nombre, ventana_reclamos, dia_inicio_semana, dia_fin_semana, moneda")
+            .eq("id", cliente.grupo_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
     ]);
     if (apuestas.error) return json({ ok: false, error: "No se pudieron leer las apuestas." }, 502);
-    return json({ ok: true, tickets: apuestas.data ?? [], reclamos: reclamos.data ?? [] });
+    return json({
+      ok: true,
+      tickets: apuestas.data ?? [],
+      reclamos: reclamos.data ?? [],
+      grupo: grupo.data ?? null,
+    });
   }
 
   // --- reclamo de jugada faltante / disputa -------------------------------
@@ -430,6 +484,180 @@ Deno.serve(async (req: Request) => {
         moneda: texto(e.moneda, 8) || "USD",
         costo_usd: costo || null,
         monto_total: costo ? costo * cantidad : null,
+      },
+    ]);
+    if (error) return json({ ok: false, error: "No se pudo enviar la solicitud." }, 502);
+    return json({ ok: true });
+  }
+
+  // --- 🐎 REALIZAR JUGADA desde el Portal (PROMPT #6) ----------------------
+  //
+  // El jugador vende contra SU grupo, no contra el que diga el navegador. Todos
+  // los ids (cliente/grupo) salen de la fila validada por el token; el monto y
+  // los detalles sí vienen del body, y las RPC de venta los revalidan otra vez
+  // (saldo + aval, cupo, jerarquía de cruces, participantes que corren).
+  //
+  // Se reutilizan las RPC de taquilla —`club_vender_tabla_fija`,
+  // `club_vender_marca`, `club_vender_dupleta`— y la variante de Polla del
+  // portal (`club_portal_vender_polla`). Si la migración aún no está aplicada en
+  // la base, la RPC no existe y esto devuelve un mensaje claro en vez de un
+  // ticket a medias.
+  if (accion === "vender") {
+    const grupoId = texto(cliente?.grupo_id, 64);
+    if (!grupoId) {
+      return json({ ok: false, error: "Tu cuenta todavía no está asignada a un grupo." }, 400);
+    }
+    const tipo = texto(e.tipo, 20).toUpperCase();
+    const monto = numero(e.monto);
+    if (!(monto > 0)) return json({ ok: false, error: "El monto tiene que ser mayor que cero." }, 400);
+
+    let rpc = "";
+    let args: Fila = {};
+    if (tipo === "TABLA_FIJA") {
+      const tablaId = texto(e.tabla_id, 64);
+      if (!tablaId) return json({ ok: false, error: "Falta la tabla fija." }, 400);
+      rpc = "club_vender_tabla_fija";
+      args = {
+        p_tabla_id: tablaId,
+        p_cliente_id: cid,
+        p_grupo_id: grupoId,
+        p_monto: monto,
+        p_cantidad: Math.max(1, Math.floor(numero(e.cantidad) || 1)),
+        p_ejemplar_numero: texto(e.ejemplar, 40) || null,
+        p_usuario: "portal",
+      };
+    } else if (tipo === "MARCA") {
+      const hipo = texto(e.hipodromo, 80).toUpperCase();
+      const caballo = texto(e.caballo, 40);
+      const rival = texto(e.rival, 40);
+      if (!hipo || !caballo || !rival) {
+        return json({ ok: false, error: "Faltan datos de la marca (hipódromo, caballo y rival)." }, 400);
+      }
+      rpc = "club_vender_marca";
+      args = {
+        p_hipodromo: hipo,
+        p_fecha: texto(e.fecha, 10) || null,
+        p_carrera: Math.max(1, Math.floor(numero(e.carrera))),
+        p_caballo: caballo,
+        p_rival: rival,
+        p_monto: monto,
+        p_cliente_id: cid,
+        p_grupo_id: grupoId,
+        p_usuario: "portal",
+      };
+    } else if (tipo === "DUPLETA") {
+      const hipo = texto(e.hipodromo, 80).toUpperCase();
+      const n1 = texto(e.numero1, 20);
+      const n2 = texto(e.numero2, 20);
+      if (!hipo || !n1 || !n2) {
+        return json({ ok: false, error: "Faltan datos de la dupleta (hipódromo y los dos ejemplares)." }, 400);
+      }
+      rpc = "club_vender_dupleta";
+      args = {
+        p_hipodromo: hipo,
+        p_fecha: texto(e.fecha, 10) || null,
+        p_carrera1: Math.max(1, Math.floor(numero(e.carrera1))),
+        p_carrera2: Math.max(1, Math.floor(numero(e.carrera2))),
+        p_numero1: n1,
+        p_numero2: n2,
+        p_monto: monto,
+        p_cliente_id: cid,
+        p_grupo_id: grupoId,
+        p_usuario: "portal",
+      };
+    } else if (tipo === "POLLA") {
+      const pollaId = texto(e.polla_id, 64);
+      const combos = Array.isArray(e.combinaciones) ? e.combinaciones : [];
+      if (!pollaId) return json({ ok: false, error: "Falta la Polla." }, 400);
+      if (!combos.length) return json({ ok: false, error: "Elegí al menos una combinación." }, 400);
+      rpc = "club_portal_vender_polla";
+      args = {
+        p_polla_id: pollaId,
+        p_combinaciones: combos,
+        p_cliente_id: cid,
+        p_grupo_id: grupoId,
+        p_texto_original: texto(e.texto_original, 400) || null,
+      };
+    } else {
+      return json({ ok: false, error: "Ese tipo de jugada no existe." }, 400);
+    }
+
+    const { data, error } = await db.rpc(rpc, args);
+    if (error) {
+      // El mensaje de la RPC (saldo insuficiente, sin permiso de cruce, etc.) es
+      // lo que el jugador necesita leer; se recorta por si trae un stack.
+      return json({ ok: false, error: texto(error.message, 300) || "No se pudo registrar la jugada." }, 400);
+    }
+    return json({ ok: true, venta: data ?? null });
+  }
+
+  // --- ➕ SOLICITUD DE "JUGADA NO RELACIONADA" (PROMPT #6) -----------------
+  //
+  // Cuando al jugador no le aparece una jugada que sí hizo, pide que se la
+  // incluyan. Queda como un reclamo (tickets_jugadas, tipo SOLICITUD_JUGADA) en
+  // la bandeja del admin, que la aprueba (insertando la jugada) o la rechaza.
+  // La fecha tiene que caer dentro de la ventana de reclamos del grupo; el
+  // navegador ya la restringe, y acá se vuelve a comprobar contra la base.
+  if (accion === "solicitud-jugada") {
+    const grupoId = texto(cliente?.grupo_id, 64);
+    const fecha = texto(e.fecha, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      return json({ ok: false, error: "La fecha no es válida." }, 400);
+    }
+    const monto = numero(e.monto);
+    if (!(monto > 0)) return json({ ok: false, error: "El monto tiene que ser mayor que cero." }, 400);
+    const hipodromo = texto(e.hipodromo, 80);
+    const tipoJugada = texto(e.tipo_jugada, 40);
+    const ejemplares = texto(e.ejemplares, 300);
+    const explicacion = texto(e.explicacion, 1000);
+    if (!hipodromo || !tipoJugada || !ejemplares || !explicacion) {
+      return json({ ok: false, error: "Completá hipódromo, tipo, ejemplar(es) y explicación." }, 400);
+    }
+
+    // Ventana del grupo: si la fecha no cae dentro, se rechaza con el rango.
+    let ventana = "SOLO_DIA_EN_CURSO";
+    let diaInicio: number | null = null;
+    let diaFin: number | null = null;
+    if (grupoId) {
+      const { data: g } = await db
+        .from("grupos_venta")
+        .select("ventana_reclamos, dia_inicio_semana, dia_fin_semana")
+        .eq("id", grupoId)
+        .maybeSingle();
+      if (g?.ventana_reclamos) ventana = texto(g.ventana_reclamos, 30).toUpperCase();
+      diaInicio = g?.dia_inicio_semana != null ? Number(g.dia_inicio_semana) : null;
+      diaFin = g?.dia_fin_semana != null ? Number(g.dia_fin_semana) : null;
+    }
+    // El piso/tope se calcula igual que en el navegador (`ventana-reclamos.ts`).
+    const hoy = new Date().toISOString().slice(0, 10);
+    const { piso, tope } = rangoVentana(hoy, ventana, diaInicio, diaFin);
+    if (fecha < piso || fecha > tope) {
+      const etiqueta = ventana === "SEMANA_EN_CURSO" ? "de la semana en curso" : "del día de hoy";
+      return json(
+        { ok: false, error: `Tu grupo sólo admite solicitudes de jugadas ${etiqueta} (${piso} a ${tope}).` },
+        400
+      );
+    }
+
+    let imagen: string | null = null;
+    if (e.imagen) imagen = texto(e.imagen, 500) || null;
+
+    const nombre = texto(cliente?.nombre ?? cliente?.seudonimo, 160) || "Cliente";
+    const { error } = await db.from("tickets_jugadas").insert([
+      {
+        cliente_id: cid,
+        cliente_nombre: nombre,
+        tipo_jugada: "SOLICITUD_JUGADA",
+        fecha_jugada: fecha,
+        hipodromo,
+        carrera: e.carrera != null && String(e.carrera).trim() !== "" ? Math.max(0, Math.floor(numero(e.carrera))) : null,
+        monto,
+        ejemplares,
+        explicacion,
+        motivo: explicacion,
+        imagen_soporte: imagen,
+        estado: "EN_REVISION",
+        creado_por: "portal",
       },
     ]);
     if (error) return json({ ok: false, error: "No se pudo enviar la solicitud." }, 502);
