@@ -25,6 +25,7 @@ import {
   actualizarGrupo,
 
   actualizarVisibilidadPrincipal,
+  actualizarVentanaReclamos,
 
   asignarPrincipalUnico,
 
@@ -679,6 +680,19 @@ export function GruposModule() {
     setGuardando(true);
 
     const r = await actualizarGrupo(id, datos as Record<string, unknown>);
+
+    // ⏱️ Ventana de Revisión y Reclamos (PROMPT #6): va por RPC/update propio y es
+    // mejor esfuerzo, para que la falta de la migración no tumbe el guardado del
+    // grupo. Se guarda siempre (no solo en el principal).
+    if (r.ok) {
+      const rw = await actualizarVentanaReclamos(id, editando.ventana_reclamos ?? "SOLO_DIA_EN_CURSO");
+      if (!rw.ok) {
+        toast(
+          "No se pudo guardar la ⏱️ Ventana de Revisión y Reclamos. Ejecutá sql/portal_jugadas_reclamos.sql en Supabase.",
+          "warning"
+        );
+      }
+    }
 
     if (r.ok && datos.es_principal) {
 
@@ -2362,6 +2376,34 @@ export function GruposModule() {
                   ))}
 
                 </select>
+
+              </div>
+
+              <div>
+
+                <label className={etiqueta}>⏱️ Ventana de Revisión y Reclamos</label>
+
+                <select
+
+                  value={editando.ventana_reclamos ?? "SOLO_DIA_EN_CURSO"}
+
+                  onChange={(e) => setEditando({ ...editando, ventana_reclamos: e.target.value })}
+
+                  className={inp + " uppercase"}
+
+                >
+
+                  <option value="SOLO_DIA_EN_CURSO">Solo el Día en Curso</option>
+
+                  <option value="SEMANA_EN_CURSO">Toda la Semana en Curso</option>
+
+                </select>
+
+                <p className="mt-1 text-[10px] text-slate-400">
+
+                  Hasta cuándo el jugador puede reclamar una jugada o pedir incluir una "no relacionada" desde el Portal.
+
+                </p>
 
               </div>
 

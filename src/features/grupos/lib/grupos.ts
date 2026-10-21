@@ -323,6 +323,14 @@ export type GrupoRow = {
   dia_inicio_semana?: number | null;
   dia_fin_semana?: number | null;
   /**
+   * ⏱️ Ventana de Revisión y Reclamos (PROMPT #6): hasta cuándo el jugador puede
+   * reclamar una jugada o pedir que se le incluya una "no relacionada".
+   *   · 'SOLO_DIA_EN_CURSO' (default) → solo el día de hoy.
+   *   · 'SEMANA_EN_CURSO' → toda la semana fiscal del grupo.
+   * Requiere `sql/portal_jugadas_reclamos.sql`.
+   */
+  ventana_reclamos?: string | null;
+  /**
    * Inicio de la semana que se está operando. NULL = se deduce de hoy.
    *
    * Solo el usuario principal la escribe (RPC `club_fijar_semana_vigente`, ver
@@ -680,6 +688,51 @@ export async function actualizarVisibilidadPrincipal(
       return {
         ok: false,
         error: rpc.error.message || error?.message || "No se pudo guardar la visibilidad.",
+      };
+    }
+    invalidarCacheGrupos();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Guarda la ⏱️ Ventana de Revisión y Reclamos del grupo (PROMPT #6): hasta
+ * cuándo el jugador puede reclamar desde el Portal. `'SOLO_DIA_EN_CURSO'` (hoy)
+ * o `'SEMANA_EN_CURSO'` (la semana fiscal del grupo).
+ *
+ * Va por la RPC `club_actualizar_ventana_reclamos` (valida el rol) con respaldo
+ * de UPDATE directo, igual que la visibilidad del principal: si la migración
+ * `sql/portal_jugadas_reclamos.sql` todavía no está aplicada, el update directo
+ * también falla y el llamador avisa con un toast SIN romper el guardado del
+ * resto del grupo.
+ */
+export async function actualizarVentanaReclamos(
+  id: string | number,
+  ventana: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  const valor = ventana === "SEMANA_EN_CURSO" ? "SEMANA_EN_CURSO" : "SOLO_DIA_EN_CURSO";
+  try {
+    const rpc = await supabase.rpc("club_actualizar_ventana_reclamos", {
+      p_grupo_id: id,
+      p_ventana: valor,
+    });
+    if (!rpc.error) {
+      invalidarCacheGrupos();
+      return { ok: true };
+    }
+    const { data, error } = await supabase
+      .from("grupos_venta")
+      .update({ ventana_reclamos: valor })
+      .eq("id", id)
+      .select("id");
+    const filas = Array.isArray(data) ? data.length : data ? 1 : 0;
+    if (error || filas === 0) {
+      return {
+        ok: false,
+        error: rpc.error.message || error?.message || "No se pudo guardar la ventana de reclamos.",
       };
     }
     invalidarCacheGrupos();

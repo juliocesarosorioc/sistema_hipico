@@ -33,6 +33,8 @@
     "../src/features/grupos/lib/comisiones-convenio.ts",
     "../src/features/grupos/lib/visibilidad-principal.ts",
     "../src/features/grupos/lib/atribucion-grupo.ts",
+    "../src/features/portal/lib/ventana-reclamos.ts",
+    "../src/features/portal/lib/jugada-usuario.ts",
     "../src/features/liquidacion/lib/reversar-nucleo.ts",
     "../src/features/liquidacion/lib/estados-jugada.ts",
     "../src/features/liquidacion/lib/resolver-ejemplar-nucleo.ts",
@@ -110,6 +112,8 @@
     "./bitacora-externa.test.ts",
     "./modalidad-tiempo.test.ts",
     "./visibilidad-principal.test.ts",
-    "./atribucion-grupo.test.ts"
+    "./atribucion-grupo.test.ts",
+    "./ventana-reclamos.test.ts",
+    "./jugada-usuario.test.ts"
   ]
 }
