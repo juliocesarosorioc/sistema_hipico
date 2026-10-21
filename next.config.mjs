@@ -31,6 +31,18 @@ const src = path.join(root, "src");
 const esExportEstatico = process.env.NEXT_OUTPUT === "export";
 
 /**
+ * `trailingSlash` SOLO en el build estático.
+ *
+ * Sin esto, Next exporta cada ruta como `out/portal.html`. GitHub Pages sirve
+ * `/portal` y `/portal.html`, pero NO reescribe la barra final: `/portal/`
+ * responde 404 (y es la forma en la que se comparte un enlace de carpeta).
+ * Con `trailingSlash: true` el export usa carpetas —`out/portal/index.html`—
+ * y entonces `/portal`, `/portal/` y `/portal.html` caen todos en el mismo
+ * archivo. En modo servidor no se toca: ahí las rutas las resuelve Next.
+ */
+const trailingSlash = esExportEstatico;
+
+/**
  * Subpath del despliegue. GitHub Pages sirve el sitio en
  * `https://<usuario>.github.io/sistema_hipico/`, así que en ese modo la app se
  * construye con `basePath=/sistema_hipico` (Next prefija los enlaces y los
@@ -43,7 +55,7 @@ const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || "")
 
 const nextConfig = {
   reactStrictMode: true,
-  ...(esExportEstatico ? { output: "export" } : {}),
+  ...(esExportEstatico ? { output: "export", trailingSlash } : {}),
   ...(basePath ? { basePath, assetPrefix: basePath } : {}),
   images: { unoptimized: true },
   webpack: (config) => {

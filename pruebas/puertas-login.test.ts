@@ -206,6 +206,23 @@ ok(
 );
 
 // ---------------------------------------------------------------------------
+console.log("\n[6b] el build de GitHub Pages publica CARPETAS, no sueltos .html");
+// ---------------------------------------------------------------------------
+// El sitio de Pages sirve `/portal` y `/portal.html`, pero NO reescribe la barra
+// final. Sin `trailingSlash` el export de Next dejaba `out/portal.html`, así que
+// `/portal/` (la forma en que se comparte un enlace de carpeta) respondía 404 y
+// el portal parecía no estar publicado. Con `trailingSlash: true` el export usa
+// `out/portal/index.html` y las tres formas caen en el mismo archivo. Se revisa
+// la forma del config porque el build no se puede ejecutar desde Node aquí.
+const cfg = readFileSync(join(process.cwd(), "next.config.mjs"), "utf8");
+ok("el config define trailingSlash para el export estático", /trailingSlash/.test(cfg));
+ok(
+  "trailingSlash viaja junto a output: export",
+  /esExportEstatico \? \{ output: "export", trailingSlash \}/.test(cfg)
+);
+ok("en modo servidor NO se fuerza trailingSlash", !/^(?!.*esExportEstatico).*trailingSlash: true\s*,\s*$/m.test(cfg));
+
+// ---------------------------------------------------------------------------
 console.log("\n[7] los campos de contraseña del portal NO recortan lo que se escribe");
 // ---------------------------------------------------------------------------
 // El bug: el login del /portal tenía `maxLength={8}` en la contraseña, copiado
