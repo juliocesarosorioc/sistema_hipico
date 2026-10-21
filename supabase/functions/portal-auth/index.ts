@@ -40,14 +40,20 @@
 // intentos y alcance forzado al cliente del token.
 //
 // ---------------------------------------------------------------------------
-// LÍMITE DE INTENTOS
+// LÍMITE DE INTENTOS Y ANTI-BOT
 // ---------------------------------------------------------------------------
-// El login del portal no tiene CAPTCHA todavía. Acá hay un tope por IP para
-// que el token no se pueda recorrer a fuerza bruta desde una sola dirección.
-// Es por memoria del proceso de Deno, no es un rate limit distribuido: se
-// reinicia cuando la función se recicla. Para algo que valga de verdad hay que
-// ponerlo en la base (tabla de intentos) o adelante de la función. Está
-// anotado en PLANIFICACION.md como pendiente, no como hecho.
+// Acá hay un tope por IP para que el token no se pueda recorrer a fuerza bruta
+// desde una sola dirección. Es por memoria del proceso de Deno, no es un rate
+// limit distribuido: se reinicia cuando la función se recicla. Para algo que
+// valga de verdad hay que ponerlo en la base (tabla de intentos) o adelante de
+// la función. Sigue anotado en PLANIFICACION.md como pendiente de ese lado.
+//
+// Encima de eso, si el club configura `TURNSTILE_SECRET` (Cloudflare Turnstile)
+// o `RECAPTCHA_SECRET` (Google reCAPTCHA v3) en los secrets de la función, la
+// acción `entrar` exige un token anti-bot verificado contra el proveedor. Si NO
+// está configurado, la función sigue funcionando por token/clave —el honeypot
+// del navegador y el tope por IP siguen puestos— y nadie confunde "sin captcha
+// configurado" con "captcha verificado".
 // ============================================================================
 
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
@@ -58,32 +64,88 @@ const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const MAX_BODY = 64 * 1024;
 const MAX_INTENTOS = 8;
 const VENTANA_MS = 10 * 60 * 1000;
+/** Intentos de cambio de PIN permitidos por IP (más estricto que el login). */
+const MAX_INTENTOS_PIN = 5;
 const BUCKET = "reclamos";
+
+/**
+ * Verificación anti-bot opcional vía Cloudflare Turnstile o Google reCAPTCHA v3.
+ * Sin secreto configurado, `verificarCaptcha` devuelve "sin-config" y el tope por
+ * IP sigue siendo la única barrera: la función NO se cae por no tener captcha.
+ */
+const TURNSTILE_SECRET = Deno.env.get("TURNSTILE_SECRET") ?? "";
+const RECAPTCHA_SECRET = Deno.env.get("RECAPTCHA_SECRET") ?? "";
 
 type Fila = Record<string, unknown>;
 
 /** Intentos fallidos por IP: [marca de tiempo, ...]. */
 const intentos = new Map<string, number[]>();
+/** Intentos de cambio de PIN por IP: [marca de tiempo, ...]. */
+const intentosPin = new Map<string, number[]>();
 let ultimoRecolecta = 0;
+
+/**
+ * Tope de intentos reutilizable. Login y cambio de PIN comparten la mecánica
+ * pero con cubos SEPARADOS: agotar el login no debe bloquear el alta de PIN ni
+ * al revés.
+ */
+function topeExcedido(cubo: Map<string, number[]>, ip: string, max: number): boolean {
+  const ahora = Date.now();
+  const previos = (cubo.get(ip) ?? []).filter((t) => ahora - t < VENTANA_MS);
+  if (previos.length >= max) {
+    cubo.set(ip, previos);
+    return true;
+  }
+  cubo.set(ip, [...previos, ahora]);
+  return false;
+}
 
 function excedido(ip: string): boolean {
   const ahora = Date.now();
-  // Poda perezosa: cada tanto se limpian las entradas viejas.
+  // Poda perezosa: cada tanto se limpian las entradas viejas de los dos cubos.
   if (ahora - ultimoRecolecta > VENTANA_MS) {
     ultimoRecolecta = ahora;
-    for (const [k, v] of intentos) {
-      const vivos = v.filter((t) => ahora - t < VENTANA_MS);
-      if (vivos.length) intentos.set(k, vivos);
-      else intentos.delete(k);
+    for (const cubo of [intentos, intentosPin]) {
+      for (const [k, v] of cubo) {
+        const vivos = v.filter((t) => ahora - t < VENTANA_MS);
+        if (vivos.length) cubo.set(k, vivos);
+        else cubo.delete(k);
+      }
     }
   }
-  const previos = (intentos.get(ip) ?? []).filter((t) => ahora - t < VENTANA_MS);
-  if (previos.length >= MAX_INTENTOS) {
-    intentos.set(ip, previos);
-    return true;
+  return topeExcedido(intentos, ip, MAX_INTENTOS);
+}
+
+/**
+ * Verifica el token anti-bot contra el proveedor configurado.
+ *
+ *   · "ok"        → hay proveedor y el token pasó.
+ *   · "fallo"     → hay proveedor y el token NO pasó (se rechaza).
+ *   · "sin-config"→ no hay proveedor; no se puede exigir (sigue el tope por IP).
+ *
+ * Nunca lanza: un proveedor caído no puede dejar el portal afuera. Si la
+ * verificación falla por RED y venía token (el navegador lo consiguió), se
+ * devuelve "ok" para no castigar al cliente por un timeout del proveedor; el
+ * tope por IP sigue siendo la red de seguridad.
+ */
+async function verificarCaptcha(token: string, ip: string): Promise<"ok" | "fallo" | "sin-config"> {
+  if (!TURNSTILE_SECRET && !RECAPTCHA_SECRET) return "sin-config";
+  if (!token) return "fallo";
+  try {
+    const url = TURNSTILE_SECRET
+      ? "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+      : "https://www.google.com/recaptcha/api/siteverify";
+    const body = new URLSearchParams({
+      secret: TURNSTILE_SECRET || RECAPTCHA_SECRET,
+      response: token,
+      remoteip: ip,
+    });
+    const r = await fetch(url, { method: "POST", body });
+    const j = (await r.json()) as { success?: boolean };
+    return j.success === true ? "ok" : "fallo";
+  } catch {
+    return "ok";
   }
-  intentos.set(ip, [...previos, ahora]);
-  return false;
 }
 
 /**
@@ -377,6 +439,14 @@ Deno.serve(async (req: Request) => {
 
   // --- login ---------------------------------------------------------------
   if (accion === "entrar") {
+    // Anti-bot: si hay proveedor configurado, el token es obligatorio. El
+    // honeypot del navegador ya descartó a los bots más tontos; esto es la
+    // puerta de verdad para los que sí llenan el campo.
+    const captcha = await verificarCaptcha(texto(e.captcha, 4096), ip);
+    if (captcha === "fallo") {
+      return json({ ok: false, error: "No pudimos verificar que no sos un robot. Probá de nuevo." }, 403);
+    }
+
     const token = texto(e.token, 128);
     let cliente: Fila | null = null;
     if (e.id && token) cliente = await porEnlace(db, e.id, token);
@@ -979,7 +1049,7 @@ Deno.serve(async (req: Request) => {
   // staff llega acá con su JWT de Supabase (rol `authenticated`), el cliente con
   // su token. Se aceptan los dos, pero el cliente solo puede firmar su propia
   // carpeta: el `ruta` se valida contra el `cid` que salió de su token.
-  if (  accion === "leer-imagen") {
+  if (accion === "leer-imagen") {
     const ruta = texto(e.ruta, 300);
     if (!ruta) return json({ ok: false, error: "Falta la imagen." }, 400);
 

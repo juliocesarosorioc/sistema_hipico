@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { mensajeSinAcceso, useAuthStore } from "@/shared/store/useAuthStore";
-import { pedirRecuperacion, resolverCorreo, sesionActual } from "@/features/auth/lib/sesion";
+import { pedirRecuperacion, resolverCorreo } from "@/features/auth/lib/sesion";
+import { RateLimiterCliente, sanitizarIdentificador } from "@/shared/lib/security";
 
 /**
  * Módulo de inicio de sesión.
@@ -18,10 +19,15 @@ import { pedirRecuperacion, resolverCorreo, sesionActual } from "@/features/auth
  * cliente al lado, el nombre del dueño del sistema es información que no
  * debería estar a la vista.
  *
- * Pendiente (queda en PLANIFICACION.md):
- *  - reCAPTCHA / Turnstile en el envío del formulario. No se puede verificar
- *    el token sin un servidor: el build es `output: "export"` y no hay API
- *    routes. Poner el widget sin validación sería security theatre.
+ * Endurecimiento de la puerta (FASE 1):
+ *  - Honeypot oculto: un bot que llena el campo es descartado en silencio.
+ *  - Tope de intentos en el cliente (5 en 5 min → 15 min de bloqueo), con
+ *    mensaje visible. Es una barrera de UX, NO la de seguridad: la de verdad
+ *    vive en la Edge Function `portal-auth` y en las reglas de Supabase Auth.
+ *  - El usuario se sanitiza antes de resolverlo a correo.
+ *  - El captcha (Turnstile/reCAPTCHA) se verifica del lado servidor en
+ *    `supabase/functions/portal-auth/index.ts`; acá no se pone un widget sin
+ *    validación, que sería security theatre.
  */
 export default function PantallaLogin() {
   const router = useRouter();
@@ -36,6 +42,8 @@ export default function PantallaLogin() {
   const [usuario, setUsuario] = useState("");
   const [clave, setClave] = useState("");
   const [verClave, setVerClave] = useState(false);
+  const rateLimiterRef = useRef(new RateLimiterCliente(5, 5 * 60 * 1000, 15 * 60 * 1000));
+  const honeypotRef = useRef<HTMLInputElement>(null);
 
   // Recuperación: dos vistas en la misma pantalla en vez de una página aparte,
   // para no mandar al operador a otra URL solo para pedir un correo.
@@ -102,19 +110,47 @@ export default function PantallaLogin() {
   const enviar = async (e: FormEvent) => {
     e.preventDefault();
     if (cargando) return;
-    // Cualquier excepción que se escape del store se traduce a un mensaje
-    // visible. Antes el `await` era directo: si algo fallaba por dentro, el
-    // `catch` no existía, el formulario no mostraba nada y el botón se quedaba
-    // en "Autenticando..." para siempre.
+
+    // Honeypot anti-bot (oculto)
+    if (honeypotRef.current && honeypotRef.current.value) {
+      // Silencioso para bots
+      return;
+    }
+
+    // Rate limiting cliente
+    const rl = rateLimiterRef.current.puedeIntentar();
+    if (!rl.ok) {
+      useAuthStore.setState({
+        cargando: false,
+        errorLogin: `Demasiados intentos fallidos. Intentá nuevamente en ${rl.segundosRestantes} segundos.`,
+      });
+      return;
+    }
+
+    const usuarioSanitizado = sanitizarIdentificador(usuario);
+    if (!usuarioSanitizado) {
+      useAuthStore.setState({ cargando: false, errorLogin: "Usuario inválido." });
+      return;
+    }
+
     try {
-      const ok = await iniciarSesion(usuario, clave);
+      const ok = await iniciarSesion(usuarioSanitizado, clave);
       if (!ok) {
+        rateLimiterRef.current.registrarFallo();
         setClave("");
+        const r2 = rateLimiterRef.current.puedeIntentar();
+        if (!r2.ok) {
+          useAuthStore.setState({
+            cargando: false,
+            errorLogin: `Demasiados intentos fallidos. Intentá nuevamente en ${r2.segundosRestantes} segundos.`,
+          });
+        }
         return;
       }
-      // El destino normal es el Dashboard, que es donde aterriza el sistema.
+      rateLimiterRef.current.registrarExito();
       router.replace("/dashboard");
     } catch (err) {
+      rateLimiterRef.current.registrarFallo();
       useAuthStore.setState({
         cargando: false,
         errorLogin: `Falló el inicio de sesión por dentro: ${err instanceof Error ? err.message : String(err)}`,
@@ -128,10 +164,17 @@ export default function PantallaLogin() {
     setPidiendo(true);
     setErrorRecovery(null);
     setAvisoRecovery(null);
-    const r = await pedirRecuperacion(usuario);
-    setPidiendo(false);
-    if (r.ok) setAvisoRecovery(r.aviso);
-    else setErrorRecovery(r.error);
+    try {
+      const r = await pedirRecuperacion(sanitizarIdentificador(usuario));
+      if (r.ok) setAvisoRecovery(r.aviso);
+      else setErrorRecovery(r.error);
+    } catch (err) {
+      setErrorRecovery(
+        `Falló el pedido por dentro: ${err instanceof Error ? err.message : String(err)}`
+      );
+    } finally {
+      setPidiendo(false);
+    }
   };
 
   return (
@@ -166,6 +209,16 @@ export default function PantallaLogin() {
         </div>
 
         <form onSubmit={enviar} className="space-y-5" noValidate>
+          {/* Honeypot anti-bot */}
+          <input
+            ref={honeypotRef}
+            type="text"
+            name="website"
+            tabIndex={-1}
+            autoComplete="off"
+            className="absolute -left-[9999px] h-0 w-0 opacity-0"
+            aria-hidden="true"
+          />
           <div>
             <label htmlFor="usuario" className="mb-1 block text-xs font-bold text-slate-700">
               Usuario

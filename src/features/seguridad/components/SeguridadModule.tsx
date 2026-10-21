@@ -9,6 +9,7 @@ import {
   MODULOS_ESQUEMA,
 } from "@/features/seguridad/lib/capacidades";
 import { baseDeTipo, expandirConRequisitos, resolverAccesos, USUARIO_PRINCIPAL } from "@/features/seguridad/lib/resolver";
+import { PRESETS_ROL, capacidadesDePreset, contarPreset, type PresetRol } from "@/features/seguridad/lib/presets";
 import { ATRIBUTOS, ATRIBUTOS_POR_CLAVE, REGLAS_ABAC, reglasDeCapacidad, type ReglaAbac } from "@/features/seguridad/lib/abac";
 import { puedeConContexto } from "@/features/seguridad/lib/vigente";
 import {
@@ -130,6 +131,9 @@ export default function SeguridadModule() {
   }, []);
   const [busqueda, setBusqueda] = useState("");
   const [filtroTipo, setFiltroTipo] = useState<TipoCapacidad | "">("");
+  /** Buscador propio de la matriz (independiente del de la pestaña Esquema). */
+  const [busquedaMatriz, setBusquedaMatriz] = useState("");
+  const [presetAplicado, setPresetAplicado] = useState<string | null>(null);
   const [tipos, setTipos] = useState<TipoUsuario[]>(tiposPorDefecto());
   const [usuarios, setUsuarios] = useState<UsuarioAlta[]>([]);
   const [tipoSel, setTipoSel] = useState<string>("");
@@ -374,6 +378,33 @@ export default function SeguridadModule() {
 
   const cuenta = (t: TipoUsuario) => expandirConRequisitos(t.capacidades).size;
 
+  /** Aplica un preset de rol al borrador del tipo seleccionado (1 clic). */
+  const aplicarPreset = (p: PresetRol) => {
+    setBorrador(new Set(capacidadesDePreset(p)));
+    setPresetAplicado(p.id);
+    setBusquedaMatriz("");
+    avisar(`Preset "${p.nombre}" aplicado (${contarPreset(p)} capacidades). Revisá y guardá.`);
+  };
+
+  /**
+   * Módulos del maestro con su matriz filtrada por buscador. El buscador de la
+   * matriz NO toca el maestro: solo decide qué filas se dibujan, mismo criterio
+   * que la pestaña Esquema pero aplicado a lo que se está editando.
+   */
+  const modulosMatriz = useMemo(() => {
+    const q = busquedaMatriz.trim().toLowerCase();
+    if (!q) return MODULOS_ESQUEMA;
+    return MODULOS_ESQUEMA.map((m) => ({
+      ...m,
+      capacidades: m.capacidades.filter(
+        (c) =>
+          c.clave.toLowerCase().includes(q) ||
+          c.titulo.toLowerCase().includes(q) ||
+          (c.descripcion ?? "").toLowerCase().includes(q)
+      ),
+    })).filter((m) => m.capacidades.length > 0 || m.nombre.toLowerCase().includes(q));
+  }, [busquedaMatriz]);
+
   return (
     <div className="space-y-3">
       <header className="flex flex-wrap items-center justify-between gap-2">
@@ -555,6 +586,12 @@ export default function SeguridadModule() {
                   Todo
                 </button>
                 <button
+                  onClick={() => setBorrador(new Set())}
+                  className="rounded border border-slate-300 px-2 py-1 text-[10px] font-black uppercase text-slate-500 hover:bg-slate-50"
+                >
+                  Nada
+                </button>
+                <button
                   onClick={guardarTipo}
                   disabled={ocupado}
                   className="rounded bg-indigo-600 px-3 py-1 text-[10px] font-black uppercase text-white disabled:opacity-40"
@@ -564,8 +601,65 @@ export default function SeguridadModule() {
               </div>
             </div>
 
+            {/* Presets de rol: 1 clic para partir de un paquete curado. */}
+            <div className="border-b border-slate-100 bg-slate-50/70 px-3 py-2">
+              <div className="mb-1.5 flex items-center gap-2">
+                <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">
+                  Presets de rol · configuración en 1 clic
+                </p>
+                {presetAplicado ? (
+                  <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-black uppercase text-indigo-700">
+                    {PRESETS_ROL.find((p) => p.id === presetAplicado)?.nombre}
+                  </span>
+                ) : null}
+              </div>
+              <div className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
+                {PRESETS_ROL.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => aplicarPreset(p)}
+                    disabled={ocupado || !tipoSel}
+                    className={`flex items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-shadow hover:shadow-sm disabled:opacity-40 ${
+                      presetAplicado === p.id ? p.color : "border-slate-200 bg-white"
+                    }`}
+                  >
+                    <span className="text-base leading-none">{p.icono}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-black uppercase text-slate-700">{p.nombre}</span>
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-500">
+                          {contarPreset(p)}
+                        </span>
+                      </span>
+                      <span className="mt-0.5 block text-[10px] leading-snug text-slate-500">
+                        {p.descripcion}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Buscador de capacidades dentro de la matriz. */}
+            <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2">
+              <input
+                value={busquedaMatriz}
+                onChange={(e) => setBusquedaMatriz(e.target.value)}
+                placeholder="Buscar capacidad por nombre, clave o descripción..."
+                className="min-w-56 flex-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] outline-none focus:border-indigo-500"
+              />
+              {busquedaMatriz ? (
+                <button
+                  onClick={() => setBusquedaMatriz("")}
+                  className="rounded border border-slate-300 px-2 py-1 text-[10px] font-black uppercase text-slate-500 hover:bg-slate-50"
+                >
+                  Limpiar
+                </button>
+              ) : null}
+            </div>
+
             <div className="max-h-[32rem] overflow-y-auto">
-              {MODULOS_ESQUEMA.map((m) => (
+              {modulosMatriz.map((m) => (
                 <section key={m.clave} className="border-b border-slate-100 last:border-0">
                   <h3 className="sticky top-0 bg-slate-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
                     {m.nombre}
@@ -597,6 +691,11 @@ export default function SeguridadModule() {
                   })}
                 </section>
               ))}
+              {modulosMatriz.length === 0 && (
+                <p className="p-4 text-center text-[11px] text-slate-400">
+                  Ninguna capacidad coincide con «{busquedaMatriz}».
+                </p>
+              )}
             </div>
           </div>
         </div>

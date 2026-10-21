@@ -47,6 +47,10 @@
     "../src/core/utils/fechas.ts",
     "../src/features/tablas/lib/validar-carga.ts",
     "../src/features/remates/lib/core.ts",
+    "../src/shared/lib/security.ts",
+    "../src/features/seguridad/lib/capacidades.ts",
+    "../src/features/seguridad/lib/presets.ts",
+    "../src/features/seguridad/lib/abac.ts",
     "./jerarquia-marcas.test.ts",
     "./carreras-registradas.test.ts",
     "./simulador-liquidacion-marcas.ts",
@@ -114,6 +118,7 @@
     "./visibilidad-principal.test.ts",
     "./atribucion-grupo.test.ts",
     "./ventana-reclamos.test.ts",
-    "./jugada-usuario.test.ts"
+    "./jugada-usuario.test.ts",
+    "./fase1-seguridad.test.ts"
   ]
 }

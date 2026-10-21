@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { cambiarClave } from "@/features/auth/lib/sesion";
+import { calcularFortalezaClave } from "@/shared/lib/security";
 
 /**
  * Puesta de contraseña nueva (la segunda mitad de "Olvidé mi contraseña").
@@ -27,6 +28,7 @@ export default function PaginaResetPassword() {
   const [verClave, setVerClave] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+  const fortaleza = useMemo(() => calcularFortalezaClave(nueva), [nueva]);
 
   useEffect(() => {
     // Se importa acá y no arriba a propósito: el cliente de Supabase lee el
@@ -59,6 +61,10 @@ export default function PaginaResetPassword() {
     setError(null);
     if (nueva.length < 8) {
       setError("La contraseña nueva tiene que tener al menos 8 caracteres.");
+      return;
+    }
+    if (!/[A-Z]/.test(nueva) || !/[a-z]/.test(nueva) || !/\d/.test(nueva)) {
+      setError("La contraseña debe incluir mayúsculas, minúsculas y al menos un número.");
       return;
     }
     if (nueva !== repetida) {
@@ -189,7 +195,30 @@ export default function PaginaResetPassword() {
               />
             </div>
 
-            <p className="text-xs text-slate-500">M&iacute;nimo 8 caracteres.</p>
+            {nueva ? (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="flex flex-1 gap-1">
+                    {[0, 1, 2, 3].map((i) => (
+                      <span
+                        key={i}
+                        className={`h-1.5 flex-1 rounded-full transition-colors ${
+                          i <= fortaleza.score - 1 ? fortaleza.color : "bg-slate-200"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-[10px] font-black uppercase text-slate-600">{fortaleza.label}</span>
+                </div>
+                <p className="text-[10px] leading-snug text-slate-500">
+                  {fortaleza.suggestions.length
+                    ? fortaleza.suggestions.join(" · ")
+                    : "Contraseña robusta."}
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">M&iacute;nimo 8 caracteres, con mayúsculas, minúsculas y n&uacute;meros.</p>
+            )}
 
             {error ? (
               <p
