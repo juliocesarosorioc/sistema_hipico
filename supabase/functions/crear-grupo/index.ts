@@ -62,6 +62,8 @@ type Cuerpo = {
     cupo_tabla?: number | null;
     responsable?: string | null;
     cuenta_bancaria?: string | null;
+    /** Logo del grupo en PNG (Data URL base64, optimizado en el cliente). */
+    logo_url?: string | null;
   };
   admin?: UsuarioEntrada;
   operadores?: UsuarioEntrada[];
@@ -197,6 +199,10 @@ Deno.serve(async (req: Request) => {
   }
 
   // --- 4. Grupo (idempotente por nombre) -----------------------------------
+  // El logo viaja en el alta: sin esto, crear un grupo desde "Crear Grupo"
+  // guardaba la ficha pero PERDÍA el logo que el operador acababa de subir (el
+  // camino se resuelve por ESTA función, no por el INSERT del cliente).
+  const logoUrl = String(cuerpo.grupo?.logo_url ?? "").trim();
   const filaGrupo: Record<string, unknown> = {
     nombre,
     moneda: cuerpo.grupo?.moneda ?? "USD",
@@ -208,6 +214,7 @@ Deno.serve(async (req: Request) => {
     cuenta_bancaria: cuerpo.grupo?.cuenta_bancaria ?? null,
     activo: true,
   };
+  if (logoUrl) filaGrupo.logo_url = logoUrl;
   // Comisión por convenio de producto: null = hereda comision_default. Requiere
   // sql/grupos_comisiones_convenio.sql; si la base todavía no tiene las columnas,
   // se reintenta sin ellas para no perder el alta del grupo.
@@ -231,6 +238,12 @@ Deno.serve(async (req: Request) => {
   if (eGrupo && /does not exist|schema cache|PGRST204|column/i.test(eGrupo.message)) {
     // Base sin el SQL de comisiones: se crea el grupo sin el % por producto.
     ({ data: grupo, error: eGrupo } = await upsertGrupo(filaGrupo));
+  }
+  if (eGrupo && /does not exist|schema cache|PGRST204|column/i.test(eGrupo.message) && "logo_url" in filaGrupo) {
+    // Base sin sql/logos_hipodromos_grupos.sql: se crea el grupo igual, sin
+    // logo, en vez de perder el alta entera (el logo se puede cargar después).
+    const { logo_url: _logo, ...sinLogo } = filaGrupo;
+    ({ data: grupo, error: eGrupo } = await upsertGrupo(sinLogo));
   }
   if (eGrupo || !grupo) {
     return json({ ok: false, error: `No se pudo crear el grupo: ${eGrupo?.message ?? "sin datos"}` }, 500);

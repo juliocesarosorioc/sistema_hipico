@@ -608,6 +608,47 @@ export async function actualizarGrupo(
       }
     }
 
+    // ---------------------------------------------------------------------
+    // Verificación del logo (mismo patrón que las comisiones por convenio).
+    // `grupos_venta` es de SOLO lectura (RLS): el UPDATE directo suele caer a la
+    // RPC `club_actualizar_grupo`. Si esa RPC es la VIEJA (sin `logo_url`, ver
+    // sql/logos_hipodromos_grupos.sql) el logo se perdía en SILENCIO: la pantalla
+    // cantaba "actualizado" y al reabrir seguía sin logo. Se lee la columna de
+    // vuelta y, si no quedó, se devuelve un error claro en vez de un falso éxito.
+    if ("logo_url" in patch && patch.logo_url !== undefined) {
+      const pedido = patch.logo_url ? String(patch.logo_url) : null;
+      const leido = await supabase
+        .from("grupos_venta")
+        .select("logo_url")
+        .eq("id", id)
+        .maybeSingle();
+      if (leido.error) {
+        // Columna inexistente = migración pendiente: el logo no se guardó.
+        if (/column|PGRST204|42703/i.test(leido.error.message)) {
+          return {
+            ok: false,
+            error:
+              "No se pudo guardar el logo: la tabla no tiene la columna logo_url. " +
+              "Aplique sql/logos_hipodromos_grupos.sql en el SQL Editor de Supabase y vuelva a intentar.",
+          };
+        }
+        // Otro error (red/RLS transitorio): no se puede verificar; se respeta el
+        // resultado de la cadena anterior en vez de inventar un fallo.
+      } else if (leido.data) {
+        const fila = leido.data as { logo_url?: string | null };
+        const quedo = (fila.logo_url ? String(fila.logo_url) : null) === pedido;
+        if (!quedo) {
+          return {
+            ok: false,
+            error:
+              "El logo no quedó guardado en la base. " +
+              "Falta aplicar sql/logos_hipodromos_grupos.sql (redefine la RPC club_actualizar_grupo con la columna logo_url) " +
+              "en el SQL Editor de Supabase.",
+          };
+        }
+      }
+    }
+
     invalidarCacheGrupos();
     void registrarAuditoria("GRUPO", "ACTUALIZAR", `Grupo ${id} actualizado.`);
     return { ok: true };

@@ -192,5 +192,51 @@ const selector = leer("src", "features", "saldos", "components", "SelectorReport
 si(/logosFrescosDeCarrera/.test(selector), "SelectorReporteCarrera resuelve logos frescos");
 si(/logoGrupo: frescos\.logoGrupo/.test(selector), "SelectorReporteCarrera pasa el logo del grupo");
 
+// ---------------------------------------------------------------------------
+// EL LOGO NO SE PIERDE EN SILENCIO: verificación de lectura de vuelta
+// ---------------------------------------------------------------------------
+// Bug real reportado: el operador subía el logo del hipódromo o del grupo, la
+// pantalla decía "actualizado" y al reabrir NO había logo. Tres causas:
+//   (a) `actualizarGrupo` caía a la RPC `club_actualizar_grupo`, que en su
+//       versión VIEJA ignoraba `logo_url` en silencio;
+//   (b) la Edge Function `crear-grupo` NO incluía `logo_url` en el alta;
+//   (c) `actualizarHipodromo` reintentaba SIN el logo y devolvía `ok: true`
+//       (falso éxito).
+// Ahora los tres caminos leen de vuelta y devuelven un error CLARO si el logo
+// no quedó, en vez de un falso "guardado".
+console.log("\nLOGOS PERSISTENTES — verificación y alta (grupo, hipódromo y edge)");
+
+// (a) El servicio de grupos verifica el logo tras guardar.
+si(
+  /select\("logo_url"\)[\s\S]*El logo no quedó guardado/.test(gruposLib),
+  "actualizarGrupo lee de vuelta logo_url y falla claro si no quedó"
+);
+si(
+  /la tabla no tiene la columna logo_url[\s\S]*logos_hipodromos_grupos\.sql/.test(gruposLib),
+  "actualizarGrupo avisa si falta la columna logo_url"
+);
+
+// (b) La Edge Function de alta de grupo propaga logo_url (antes lo omitía y el
+//     logo del grupo nunca llegaba a la base en el alta desde el asistente).
+const edgeGrupo = leer("supabase", "functions", "crear-grupo", "index.ts");
+si(/logo_url\?:\s*string\s*\|\s*null/.test(edgeGrupo), "la edge function tipa logo_url en el cuerpo");
+si(/cuerpo\.grupo\?\.logo_url/.test(edgeGrupo), "la edge function lee logo_url del cuerpo");
+si(/filaGrupo\.logo_url\s*=\s*logoUrl/.test(edgeGrupo), "la edge function copia logo_url a la fila del grupo");
+
+// (c) El servicio de hipódromos NO canta éxito cuando falta la columna: antes
+//     reintentaba sin logo y devolvía ok:true (el logo se perdía en silencio).
+si(
+  /El resto de la ficha sí se guardó/.test(servicio),
+  "actualizarHipodromo avisa que el logo no se guardó (sin falso éxito)"
+);
+si(
+  /select\("logo_url"\)[\s\S]*El logo no quedó guardado/.test(servicio),
+  "actualizarHipodromo lee de vuelta logo_url y falla claro si no quedó"
+);
+si(
+  /la tabla hipodromos no tiene la columna logo_url/.test(servicio),
+  "actualizarHipodromo avisa si falta la columna logo_url"
+);
+
 console.log(`\n${pasan} ok / ${fallan} fallaron`);
 if (fallan > 0) process.exit(1);

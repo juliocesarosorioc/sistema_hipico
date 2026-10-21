@@ -229,14 +229,60 @@ export async function actualizarHipodromo(id: string | number, patch: Partial<Pi
     if (patch.logo_url !== undefined) datos.logo_url = patch.logo_url ? String(patch.logo_url) : null;
     const { error } = await supabase.from("hipodromos").update(datos).eq("id", id);
     if (error && esColumnaAusente(error.message) && "logo_url" in datos) {
-      // Todavía no se aplicó sql/logos_hipodromos_grupos.sql: se guarda el resto
-      // de la ficha (nombre/país/estado) en vez de perder la edición entera.
+      // Falta la columna (no se aplicó sql/logos_hipodromos_grupos.sql). Antes se
+      // reintentaba SIN el logo y se devolvía `ok: true`: la pantalla cantaba
+      // "actualizado" y el logo se perdía en silencio. Se guarda el resto de la
+      // ficha (nombre/país/estado) para no perder la edición, pero se falla con
+      // un mensaje claro para que el operador sepa que el logo NO se guardó.
       const { logo_url: _logo, ...sinLogo } = datos;
       const reintento = await supabase.from("hipodromos").update(sinLogo).eq("id", id);
       if (reintento.error) return { ok: false, error: reintento.error.message, code: reintento.error.code ?? undefined };
-      return { ok: true };
+      return {
+        ok: false,
+        error:
+          "No se pudo guardar el logo: falta la columna logo_url en la tabla hipodromos. " +
+          "El resto de la ficha sí se guardó. Aplique sql/logos_hipodromos_grupos.sql en el SQL Editor de Supabase.",
+      };
     }
     if (error) return { ok: false, error: error.message, code: error.code ?? undefined };
+
+    // Verificación del logo (mismo patrón que las comisiones/logo de grupos).
+    // Aunque el UPDATE no dé error, la fila puede no haber quedado con el logo
+    // pedido (RLS, triggers del legacy, un UPDATE parcial). Se lee de vuelta y,
+    // si no coincide, se devuelve un error claro en vez de un falso éxito.
+    if ("logo_url" in datos) {
+      const pedido = datos.logo_url;
+      const leido = await supabase
+        .from("hipodromos")
+        .select("logo_url")
+        .eq("id", id)
+        .maybeSingle();
+      if (leido.error) {
+        // Columna inexistente = migración pendiente: el logo no se guardó.
+        if (/column|PGRST204|42703|schema cache/i.test(leido.error.message)) {
+          return {
+            ok: false,
+            error:
+              "No se pudo guardar el logo: la tabla hipodromos no tiene la columna logo_url. " +
+              "Aplique sql/logos_hipodromos_grupos.sql en el SQL Editor de Supabase y vuelva a intentar.",
+          };
+        }
+        // Otro error (red/RLS transitorio): no se puede verificar; se respeta el
+        // resultado del UPDATE en vez de inventar un fallo.
+      } else if (leido.data) {
+        const fila = leido.data as { logo_url?: string | null };
+        const quedo = (fila.logo_url ? String(fila.logo_url) : null) === (pedido ? String(pedido) : null);
+        if (!quedo) {
+          return {
+            ok: false,
+            error:
+              "El logo no quedó guardado en la base. " +
+              "Falta aplicar sql/logos_hipodromos_grupos.sql (agrega la columna logo_url a hipodromos) " +
+              "en el SQL Editor de Supabase.",
+          };
+        }
+      }
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
