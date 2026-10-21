@@ -19,6 +19,8 @@ import {
   rutaPermitida,
   RUTAS_PROTEGIDAS,
 } from "../src/features/seguridad/lib/capacidades";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 let pasan = 0;
 let fallan = 0;
@@ -170,6 +172,38 @@ ok("tampoco en el alta", !("grupo_id" in altaDelOperador));
 
 const otrosCampos = { grupo_id: undefined, ...parche };
 eq("un undefined tampoco cuela", "grupo_id" in sinCamposDelPrincipal(otrosCampos, false), false);
+
+// ---------------------------------------------------------------------------
+console.log("\n[6] el middleware deja pasar /portal sin sesión de Supabase");
+// ---------------------------------------------------------------------------
+// El portal NO se autentica con la sesión del sistema: el jugador entra con su
+// token/clave (o el enlace `?c=&k=`) y la autorización la hace la Edge Function
+// `portal-auth`. Exigirle las cookies `hipico_*` lo mandaba a `/login` y PERDÍA
+// el `?c=&k=`, así que NINGÚN enlace del portal funcionaba en modo servidor.
+// Se comprueba lo que tiene que seguir siendo cierto; la función de middleware
+// no se puede ejecutar desde Node (depende de NextRequest), así que se revisa la
+// forma del archivo fuente: la salida adelantada para /portal va ANTES del
+// chequeo de cookies.
+const middlewareSrc = readFileSync(join(process.cwd(), "src", "middleware.ts"), "utf8");
+
+ok(
+  "el middleware exceptúa /portal y sus subrutas",
+  /const ES_PORTAL = \(p: string\) => p === "\/portal" \|\| p\.startsWith\("\/portal\/"\)/.test(
+    middlewareSrc
+  )
+);
+ok(
+  "la salida de /portal ocurre ANTES del chequeo de cookies",
+  (() => {
+    const iPortal = middlewareSrc.indexOf("if (ES_PORTAL(pathname)) return NextResponse.next();");
+    const iCookies = middlewareSrc.indexOf('req.cookies.get("hipico_usuario")');
+    return iPortal !== -1 && iCookies !== -1 && iPortal < iCookies;
+  })()
+);
+ok(
+  "/portal SIGUE declarada y protegida en la matriz de puertas",
+  RUTAS_PROTEGIDAS.includes("/portal") && rutaPermitida("/portal", ["portal:ruta_portal"])
+);
 
 console.log(`\nTODO OK: ${pasan} pasaron, ${fallan} fallaron`);
 if (fallan > 0) process.exit(1);

@@ -28,7 +28,8 @@ import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
  *  1) El sello `hipico_acceso=sin` manda al login CON motivo: la sesión se
  *     verificó pero el usuario no tiene nada con qué entrar.
  *  2) Sin cookies de sesión: al login, sin motivo. No se entra a nada sin haber
- *     pasado por /login.
+ *     pasado por /login — SALVO /portal, que se autentica con su propio token
+ *     (ver ES_PORTAL) y por eso se resuelve ANTES de este chequeo.
  *  3) El usuario principal pasa siempre: es el dueño del sistema.
  *  4) Un usuario "cliente/jugador" puro se queda en /portal.
  *  5) El resto de las rutas exige la capacidad que el esquema les asigna; una
@@ -51,6 +52,20 @@ import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 
 const ES_PUBLICA = (p: string) => p === "/login" || p === "/";
 
+/**
+ * El Portal del Cliente (`/portal`) NO se autentica con la sesión de Supabase:
+ * el jugador entra con su token/clave (o el enlace `?c=&k=`) y la autorización
+ * real la hace la Edge Function `portal-auth` con service_role. Exigirle las
+ * cookies `hipico_*` (que solo publica el login del staff) lo mandaba a
+ * `/login` y PERDÍA el `?c=&k=` del enlace: ningún enlace del portal funcionaba.
+ *
+ * Por eso se lo exceptúa igual que en `AppShell` (`ES_PORTAL`): se renderiza
+ * standalone y su frontera es el token, no la sesión del sistema. La ruta sigue
+ * declarada y protegida en `PUERTAS` (`portal:ruta_portal`) para el personal;
+ * lo único que se saltea acá es el requisito de sesión de Supabase.
+ */
+const ES_PORTAL = (p: string) => p === "/portal" || p.startsWith("/portal/");
+
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const irA = (destino: string, motivo?: string) => {
@@ -64,6 +79,12 @@ export function middleware(req: NextRequest) {
   };
 
   if (ES_PUBLICA(pathname)) return NextResponse.next();
+
+  // El portal se valida solo (token/clave contra la Edge Function), así que no
+  // se le exige la sesión de Supabase. Va ANTES del chequeo de cookies: si no,
+  // un jugador que llega por el enlace `?c=&k=` caería en `/login` y perdería
+  // el enlace (ver el comentario de ES_PORTAL).
+  if (ES_PORTAL(pathname)) return NextResponse.next();
 
   const usuario = req.cookies.get("hipico_usuario")?.value ?? "";
   const perfil = req.cookies.get("hipico_perfil")?.value;
@@ -123,7 +144,8 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Todo el sitio menos la raíz, /login y los archivos estáticos. El portal NO
-  // queda fuera: también exige sesión.
+  // Todo el sitio menos la raíz, /login y los archivos estáticos. El portal SÍ
+  // pasa por el matcher, pero `middleware()` lo deja pasar sin sesión porque se
+  // autentica con su propio token (ver ES_PORTAL).
   matcher: ["/((?!login|_next|favicon.ico|.*\\..*).*)"],
 };

@@ -112,12 +112,17 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
     } catch {
       /* sinop */
     }
+    // El redirect va en un `finally` con corte propio: aunque el borrado remoto
+    // se demore (o no conteste), el botón SIEMPRE termina en /login en vez de
+    // dejar la pantalla girando. `salir()` ya usa el alcance `local` para no
+    // depender de la red, pero el cinturón va además de los tirantes.
     try {
       await salir();
     } catch {
       /* aunque falle el borrado remoto, se sale igual para no quedar atrapado */
+    } finally {
+      window.location.assign("/login");
     }
-    window.location.assign("/login");
   };
 
   const total = novedades.length;

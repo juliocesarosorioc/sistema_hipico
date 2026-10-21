@@ -46,6 +46,31 @@ export function posicionesDePizarra(pizarra: PizarraConPosiciones | null | undef
 }
 
 /**
+ * Inversa de `posicionesDePizarra`: arma la pizarra (`primero`..`octavo`) desde
+ * la lista ordenada de números de llegada.
+ *
+ * Sirve para PRECARGAR el formulario con el resultado oficial ya guardado de
+ * una carrera liquidada: sin esto, abrir una carrera que ya pagó mostraba la
+ * llegada en blanco y el operador tipeaba de nuevo un resultado que ya existía
+ * (y el sistema lo tomaba como un cambio). `null` si no hay ninguna posición.
+ */
+export function pizarraDePosiciones(
+  posiciones: ReadonlyArray<string | number | null | undefined> | null | undefined
+): PizarraConPosiciones | null {
+  if (!posiciones || !posiciones.length) return null;
+  const p: PizarraConPosiciones = {};
+  let hay = false;
+  CAMPOS_POSICION.forEach((campo, i) => {
+    const v = posiciones[i];
+    const n = v === null || v === undefined ? "" : String(v).trim();
+    if (!n) return;
+    p[campo] = n;
+    hay = true;
+  });
+  return hay ? p : null;
+}
+
+/**
  * Orden de llegada oficial `[{numero,puesto}]` derivado de la pizarra.
  *
  * Es la forma ESTRUCTURADA que guarda `resultados_carreras.orden_llegada` (la

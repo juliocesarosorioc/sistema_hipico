@@ -76,7 +76,15 @@ type Props = {
    * pagó): el operador solo ajusta lo que cambió.
    */
   inicial?: PizarraResultados | null;
-  onConfirmar: (r: PizarraResultados) => void;
+  /**
+   * La carrera activa YA está liquidada. En ese caso, si el operador CAMBIA
+   * algún valor de la llegada cargada, la pantalla exige un motivo y la
+   * plataforma vuelve a recalcular toda la liquidación. Editar el resultado de
+   * una carrera que ya pagó mueve dinero real: sin rastro de por qué se cambió
+   * no hay forma de auditar una diferencia de caja.
+   */
+  editandoLiquidada?: boolean;
+  onConfirmar: (r: PizarraResultados, motivo?: string) => void;
 };
 
 /**
@@ -99,9 +107,11 @@ export function CargaResultadosModal({
   caballos,
   minLugares = PUESTOS_MIN,
   inicial,
+  editandoLiquidada = false,
   onConfirmar,
 }: Props) {
   const [filas, setFilas] = useState<Fila[]>([]);
+  const [motivo, setMotivo] = useState("");
   const [usoDividendos, setUsoDividendos] = useState(false);
   const [dividendos, setDividendos] = useState<Record<string, string>>({});
   const [usoMatrizWps, setUsoMatrizWps] = useState(false);
@@ -124,6 +134,7 @@ export function CargaResultadosModal({
     setMatrizWps({});
     setMismoRaya(true);
     setRayaNumero("");
+    setMotivo("");
 
     // Precarga: si ya hay resultados cargados para esta carrera (aunque sea de
     // otra sesión, traídos del central), se rellena TODO el formulario en vez
@@ -171,12 +182,15 @@ export function CargaResultadosModal({
       return;
     }
 
-    // Carrera sin resultados previos: inicia limpio en blanco
-    const base = Array.from({ length: minLugares }, (_, i) => {
-      const n = (caballos ?? [])[i];
-      return { numero: n ? String(n.numero) : "", empate: false };
-    });
-    setFilas(base);
+    // Carrera sin resultados previos: inicia limpio en blanco.
+    //
+    // A propósito NO se precargan los números de los ejemplares de la tabla. El
+    // operador cargaba la llegada y el formulario ya traía 1, 2, 3, 4, 5… (los
+    // números de los caballos en el orden en que están en la tabla), así que
+    // parecía una llegada real y había que borrarla a mano antes de tipear la
+    // verdadera. Una llegada es un dato que el operador declara, no un valor por
+    // defecto: el formulario abre con las casillas vacías.
+    setFilas(Array.from({ length: minLugares }, () => ({ numero: "", empate: false })));
   }, [abierto, caballos, minLugares, inicial]);
 
   /** Pools que paga cada caballo según su lugar de llegada, uniendo las
@@ -207,10 +221,97 @@ export function CargaResultadosModal({
     });
   }, [filas]);
 
+  /**
+   * Arma la pizarra final con TODO lo cargado en pantalla. Se separa de
+   * `confirmar` porque la detección de cambios (editar una carrera ya
+   * liquidada) necesita exactamente lo mismo que se va a guardar, y dos
+   * versiones distintas terminarían divergiendo: una cosa es "no cambiaste
+   * nada" y otra la pizarra que sale.
+   */
+  const construirResultado = (): PizarraResultados => {
+    const ordenNombres = new Map<number, string>(ORDENES.map((o) => [o.orden, o.nombre]));
+    const pizarra = {} as Record<string, string>;
+    const empates: number[] = [];
+    let nLlenas = 0;
+    filas.forEach((r, i) => {
+      if (!r.numero.trim()) return;
+      nLlenas += 1;
+      const nombre = ordenNombres.get(i + 1);
+      if (nombre) pizarra[nombre] = r.numero.trim();
+      if (r.empate) empates.push(i + 1);
+    });
+    if (!mismoRaya && rayaNumero.trim()) pizarra.primero_raya = rayaNumero.trim();
+
+    const divFinal: Record<string, number> = {};
+    if (usoDividendos) {
+      const write = (pool: Pool, numero: string) => {
+        const v = parseFloat(dividendos[`${pool}:${numero}`] ?? "");
+        if (Number.isFinite(v) && v > 0) divFinal[`${pool}:${numero}`] = v;
+      };
+      filas.forEach((r, i) => {
+        const n = r.numero.trim();
+        if (!n) return;
+        const pools = poolsPorFila[i];
+        if (pools.win) write("win", n);
+        if (pools.place) write("place", n);
+        if (pools.show) write("show", n);
+      });
+    }
+    const matrizFinal: Record<string, number> = {};
+    if (usoMatrizWps) {
+      CLAVES_WPS.forEach((clave) => {
+        const porUno = pagoPorUno(parseFloat(matrizWps[clave] ?? ""));
+        if (porUno > 0) matrizFinal[PREFIJO_WPS + clave] = porUno;
+      });
+    }
+    return {
+      pizarra: { ...pizarra, empates: empates.length ? empates : undefined } as PizarraCarrera,
+      empates,
+      llenas: nLlenas,
+      dividendos: usoDividendos && Object.keys(divFinal).length ? divFinal : null,
+      matrizWps: usoMatrizWps && Object.keys(matrizFinal).length ? matrizFinal : null,
+    };
+  };
+
+  /**
+   * Firma estable de una pizarra para comparar "cambió algo?". Se normaliza a
+   * texto con las posiciones en orden y las listas ordenadas: comparar dos
+   * objetos por identidad siempre daría "cambió" y comparar claves sueltas se
+   * olvidaría de los empates o de la raya.
+   */
+  const firmaDe = (r: PizarraResultados | null | undefined): string => {
+    if (!r) return "";
+    const p = (r.pizarra ?? {}) as Record<string, unknown>;
+    const pos = ORDENES.map(({ nombre }) => String(p[nombre] ?? "").trim()).join(",");
+    const raya = String(p.primero_raya ?? "").trim();
+    const emp = [...(r.empates ?? [])].sort((a, b) => a - b).join(",");
+    const div = Object.entries(r.dividendos ?? {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join(";");
+    const wps = Object.entries(r.matrizWps ?? {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join(";");
+    return `${pos}|raya:${raya}|emp:${emp}|div:${div}|wps:${wps}`;
+  };
+
   if (!abierto) return null;
 
   /** Hay resultados ya cargados precargados (modo edición). */
   const precargado = Boolean(inicial && inicial.llenas > 0);
+
+  /**
+   * ¿Se CAMBIÓ algún valor de una carrera que YA está liquidada? Sólo en ese
+   * caso se pide el motivo y se recalcula: si el operador abre el resultado de
+   * una carrera pagada y no toca nada, confirmar no debe pedirle explicaciones
+   * ni mover un centavo.
+   */
+  const cambioEnLiquidada =
+    editandoLiquidada && precargado && firmaDe(construirResultado()) !== firmaDe(inicial);
+
+  /** Falta el motivo: el cambio no se puede confirmar sin justificación. */
+  const faltaMotivo = cambioEnLiquidada && !motivo.trim();
 
   const llenas = filas.filter((r) => r.numero.trim()).length;
   const primerNumero = filas.find((r) => r.numero.trim())?.numero ?? "";
@@ -250,54 +351,13 @@ export function CargaResultadosModal({
   const setMatriz = (k: string, v: string) => setMatrizWps((m) => ({ ...m, [k]: v.replace(/[^\d.]/g, "") }));
 
   const confirmar = () => {
-    const ordenNombres = new Map<number, string>(ORDENES.map((o) => [o.orden, o.nombre]));
-    const pizarra = {} as Record<string, string>;
-    const empates: number[] = [];
-    let nLlenas = 0;
-    filas.forEach((r, i) => {
-      if (!r.numero.trim()) return;
-      nLlenas += 1;
-      const nombre = ordenNombres.get(i + 1);
-      if (nombre) pizarra[nombre] = r.numero.trim();
-      if (r.empate) empates.push(i + 1);
-    });
-    if (!pizarra.primero) return;
-    if (!mismoRaya && rayaNumero.trim()) pizarra.primero_raya = rayaNumero.trim();
-
-    // Dividendos POR CABALLO, solo de los pools que paga cada lugar.
-    const divFinal: Record<string, number> = {};
-    if (usoDividendos) {
-      const write = (pool: Pool, numero: string) => {
-        const v = parseFloat(dividendos[`${pool}:${numero}`] ?? "");
-        if (Number.isFinite(v) && v > 0) divFinal[`${pool}:${numero}`] = v;
-      };
-      filas.forEach((r, i) => {
-        const n = r.numero.trim();
-        if (!n) return;
-        const pools = poolsPorFila[i];
-        if (pools.win) write("win", n);
-        if (pools.place) write("place", n);
-        if (pools.show) write("show", n);
-      });
-    }
-    // Matriz de las AMERICANAS W/P/S: el tablero cotiza "paga $X por $2" y el
-    // motor trabaja por $1, así que se convierte UNA vez al guardar. Solo se
-    // escriben las celdas informadas: una celda vacía queda sin clave y el
-    // motor deja esa jugada PENDIENTE en vez de inventarle un pago.
-    const matrizFinal: Record<string, number> = {};
-    if (usoMatrizWps) {
-      CLAVES_WPS.forEach((clave) => {
-        const porUno = pagoPorUno(parseFloat(matrizWps[clave] ?? ""));
-        if (porUno > 0) matrizFinal[PREFIJO_WPS + clave] = porUno;
-      });
-    }
-    onConfirmar({
-      pizarra: { ...pizarra, empates: empates.length ? empates : undefined } as PizarraCarrera,
-      empates,
-      llenas: nLlenas,
-      dividendos: usoDividendos && Object.keys(divFinal).length ? divFinal : null,
-      matrizWps: usoMatrizWps && Object.keys(matrizFinal).length ? matrizFinal : null,
-    });
+    const r = construirResultado();
+    if (!r.pizarra.primero) return;
+    // Cambiar el resultado de una carrera YA liquidada mueve plata: se exige el
+    // motivo. Se vuelve a comprobar acá (y no solo en el botón) para que no haya
+    // forma de confirmar un cambio sin justificación.
+    if (cambioEnLiquidada && !motivo.trim()) return;
+    onConfirmar(r, cambioEnLiquidada ? motivo.trim() : undefined);
   };
 
   const PoolInput = ({ pool, numero }: { pool: Pool; numero: string }) => (
@@ -337,6 +397,13 @@ export function CargaResultadosModal({
         {precargado && (
           <div className="flex items-center gap-1.5 border-b border-line bg-emerald-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-emerald-700">
             ✏️ Editando resultados ya cargados — solo cambiá lo que haga falta.
+          </div>
+        )}
+
+        {editandoLiquidada && (
+          <div className="border-b border-line bg-rose-500/10 px-3 py-1.5 text-[9px] font-bold text-rose-700">
+            🔒 Carrera LIQUIDADA. Si cambiás algún valor hay que indicar el porqué y la plataforma vuelve a
+            recalcular TODA la liquidación.
           </div>
         )}
 
@@ -533,6 +600,28 @@ export function CargaResultadosModal({
         </div>
 
         <div className="border-t border-line bg-gray-50 px-3 py-2">
+          {cambioEnLiquidada && (
+            <div className="mb-2 rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-2">
+              <label
+                htmlFor="motivo-cambio-resultado"
+                className="mb-1 block text-[9px] font-black uppercase tracking-wider text-rose-700"
+              >
+                ⚠️ Cambiaste un resultado ya liquidado — ¿por qué?
+              </label>
+              <textarea
+                id="motivo-cambio-resultado"
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                rows={2}
+                placeholder="Ej.: el 1º fue descalificado y pasó a ser el 5º. Orden de la comisión de carreras."
+                className="w-full resize-none rounded-md border border-rose-300 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-900 placeholder:text-slate-400 outline-none focus:ring-1 focus:ring-rose-400"
+              />
+              <p className="mt-1 text-[9px] font-semibold text-rose-700">
+                Al confirmar se REVERSARÁ la liquidación y se recalculará TODA la carrera contra el resultado nuevo. Queda
+                registrado en la auditoría.
+              </p>
+            </div>
+          )}
           <p className="mb-1.5 text-[9px] italic text-slate-500">
             Puestos (WIN/PLACE/SHOW) pagan por el orden de llegada oficial. TABLAS y REMATES pagan al que cruzó la
             raya primero; el premio de la tabla se calcula automáticamente (lo que paga × cantidad, con ajuste proporcional por
@@ -542,8 +631,14 @@ export function CargaResultadosModal({
             <Button variant="ghost" size="sm" onClick={onCerrar}>
               Cancelar
             </Button>
-            <Button variant="success" size="sm" onClick={confirmar}>
-              💾 Confirmar Resultados
+            <Button
+              variant="success"
+              size="sm"
+              onClick={confirmar}
+              disabled={faltaMotivo}
+              title={faltaMotivo ? "Escribí el motivo del cambio para poder recalcular la liquidación" : undefined}
+            >
+              {cambioEnLiquidada ? "💾 Guardar y recalcular" : "💾 Confirmar Resultados"}
             </Button>
           </div>
         </div>

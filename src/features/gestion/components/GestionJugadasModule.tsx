@@ -18,7 +18,8 @@ import {
 import { reversarLiquidacionCarrera } from "@/features/liquidacion/lib/reversar";
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
 import { venderJugada, claveIdempotenciaJugada } from "@/features/taquilla/lib/venta";
-import { dividendosDePizarra } from "@/features/liquidacion/lib/posiciones";
+import { dividendosDePizarra, pizarraDePosiciones } from "@/features/liquidacion/lib/posiciones";
+import { PREFIJO_WPS } from "@/features/motores/lib/wps";
 import { guardarPizarraCentral } from "@/features/liquidacion/lib/pizarraCentral";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { emitirToast } from "@/shared/lib/mensajeria";
@@ -34,7 +35,7 @@ import { listarClientesVenta, listarGruposVenta, limpiarCacheClientesVenta, comi
 import { tieneCapacidad, usuarioVigente } from "@/features/seguridad/lib/vigente";
 import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/features/tablas/lib/rpc";
-import { registrarCarreraProgramada } from "@/features/carreras/lib/carreras-dia";
+import { registrarCarreraProgramada, leerResultadoOficial } from "@/features/carreras/lib/carreras-dia";
 import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados } from "@/features/carreras/lib/retiros";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
@@ -467,7 +468,7 @@ const hipodromosDelDia = useMemo(() => {
    *      se abría precargada y el operador tenía que borrar la llegada ajena a
    *      mano antes de cargar la suya.
    */
-  const abrirResultados = useCallback(() => {
+  const abrirResultados = useCallback(async () => {
     if (!listoParaCargar) return;
     // Con la Carga de Resultados ya abierta, no re-abrir: evita que un Ctrl+Y/R
     // accidental mientras se tipea reinicie el formulario.
@@ -476,10 +477,46 @@ const hipodromosDelDia = useMemo(() => {
       setModalFinalizar(true);
       return;
     }
-    // (1) Siempre en blanco: solo vale lo que cargue el operador en ESTA sesión.
+    // SOLO se muestran llegadas si la carrera YA está LIQUIDADA: en ese caso se
+    // precarga el resultado oficial para editarlo (y, si cambia algo, se pide el
+    // motivo y se recalcula). Una carrera que todavía no liquidó abre EN BLANCO:
+    // traer el resultado del central obligaba a borrar a mano una llegada que el
+    // operador quería cargar de nuevo.
+    if (carreraLiquidada) {
+      try {
+        const oficial = await leerResultadoOficial(hipodromo, carrera, fecha);
+        const p = pizarraDePosiciones(oficial?.puestos ?? []);
+        if (p) {
+          const posiciones = (oficial?.puestos ?? []).map((n) => String(n).trim());
+          // El central guarda los pools por caballo y la matriz W/P/S en un solo
+          // blob (`dividendos`). Se separan acá porque el formulario los edita en
+          // dos lugares distintos: si el `wps_` cayera en los pools, la firma de
+          // comparación lo vería como un cambio y pediría un motivo inexistente.
+          // La matriz conserva su prefijo `wps_` (así la espera `PizarraResultados`).
+          const porCaballo: Record<string, number> = {};
+          const matriz: Record<string, number> = {};
+          for (const [k, v] of Object.entries(oficial?.dividendos ?? {})) {
+            if (k.startsWith(PREFIJO_WPS)) matriz[k] = v;
+            else porCaballo[k] = v;
+          }
+          setPizarraCentral({
+            pizarra: p as PizarraResultados["pizarra"],
+            empates: [],
+            llenas: posiciones.length,
+            dividendos: Object.keys(porCaballo).length ? porCaballo : null,
+            matrizWps: Object.keys(matriz).length ? matriz : null,
+          });
+          setModalResultados(true);
+          return;
+        }
+      } catch {
+        /* sin resultado oficial legible: se abre en blanco */
+      }
+    }
+    // Carrera sin liquidar (o sin resultado oficial): EN BLANCO.
     setPizarraCentral(null);
     setModalResultados(true);
-  }, [listoParaCargar, modalResultados, ultimaPizarra]);
+  }, [listoParaCargar, modalResultados, ultimaPizarra, carreraLiquidada, hipodromo, carrera, fecha]);
 
   // Atajos de la Barra de Comandos (real keyboard events)
   useEffect(() => {
@@ -493,7 +530,7 @@ const hipodromosDelDia = useMemo(() => {
         // Ctrl+Y (Resultados) y Ctrl+R (Registrar y Finalizar) hacen lo MISMO:
         // el flujo unificado decide internamente si precargar o liquidar.
         e.preventDefault();
-        abrirResultados();
+        void abrirResultados();
       } else if (k === "h") {
         e.preventDefault();
         setMostrarHistorial((v) => !v);
@@ -1515,12 +1552,12 @@ const hipodromosDelDia = useMemo(() => {
     }
   };
 
-  const ejecutarFinalizar = async (pizarraConfirmada?: PizarraResultados | null) => {
+  const ejecutarFinalizar = async (pizarraConfirmada?: PizarraResultados | null, abrirReporte = false) => {
     const piz = pizarraConfirmada ?? ultimaPizarra;
     if (!piz) {
       setModalFinalizar(false);
       setReporteAlCerrarFinalizar(false);
-      abrirResultados();
+      void abrirResultados();
       return setAviso("Primero cargá los resultados (Ctrl+Y o Ctrl+R) para liquidar.");
     }
     // ÍTEM 1 — Re-apertura: liquida SÓLO las jugadas agregadas DESPUÉS de la
@@ -1627,6 +1664,7 @@ const hipodromosDelDia = useMemo(() => {
       if (s.errores.length) {
         setAviso(`✅ ${r.motivo}${avisoMarcas} · ⚠️ aviso de saldos: ${s.errores[0]}`);
         void recargarJugadasGuardadas();
+        if (abrirReporte) setMostrarReporteLiquidacion(true);
         return;
       }
     }
@@ -1634,6 +1672,11 @@ const hipodromosDelDia = useMemo(() => {
     // (ahora con ✅ Ganador/Perdedor) desde la base, no desde la sesión.
     void recargarJugadasGuardadas();
     setAviso(r.ok ? `✅ ${r.motivo}${avisoMarcas}` : `❌ ${r.motivo}`);
+    // Flujo unificado (Liquidar Carrera): el operador confirmó la pizarra y la
+    // carrera YA quedó registrada y cerrada acá, así que se salta el modal
+    // intermedio «Registrar y Finalizar» y va directo al Reporte. Antes había
+    // que cerrar ese paso de más para recién ver el reporte.
+    if (abrirReporte) setMostrarReporteLiquidacion(true);
   };
 
   const cerrarFinalizar = () => {
@@ -2325,7 +2368,7 @@ const hipodromosDelDia = useMemo(() => {
           ) : (
             <button
               type="button"
-              onClick={abrirResultados}
+              onClick={() => void abrirResultados()}
               disabled={!listoParaCargar}
               title={listoParaCargar ? "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)" : "Elija hipódromo y carrera para liquidar"}
               className={`${BTN_BARRA} bg-gradient-to-r from-success-600 to-emerald-500 text-white hover:brightness-110`}
@@ -2423,16 +2466,70 @@ const hipodromosDelDia = useMemo(() => {
         carrera={String(carrera)}
         caballos={caballosDeCarrera.length ? caballosDeCarrera : null}
         inicial={ultimaPizarra ?? pizarraCentral}
-        onConfirmar={async (r) => {
-          setUltimaPizarra(r);
+        editandoLiquidada={carreraLiquidada}
+        onConfirmar={async (r, motivo) => {
           setModalResultados(false);
-          setAviso(`🏁 Resultados C${carrera} cargados (${r.llenas} posiciones${r.empates.length ? ` · ${r.empates.length} empate(s)` : ""}).`);
           try {
             // Deja el texto de resultados listo por si abren el mensaje del grupo.
             void generarMensajeResultados(r);
           } catch {
             /* noop */
           }
+
+          // ── CAMBIO DE UN RESULTADO YA LIQUIDADO ────────────────────────────
+          // La carrera ya pagó. Guardar la llegada nueva y correr de nuevo toda
+          // la liquidación (el motor `recalcularCarreraCompleta` revierte y
+          // re-liquida contra el resultado vigente). NUNCA se vuelve a
+          // «liquidar y cerrar»: eso duplicaría el cierre y el pago. El motivo
+          // viaja a la auditoría: sin él no hay forma de explicar una diferencia
+          // de caja.
+          if (motivo) {
+            setAviso(`🔒 Resultado C${carrera} cambiado — recalculando toda la liquidación…`);
+            try {
+              const cen = await guardarPizarraCentral({
+                hipodromo,
+                carrera,
+                cargado_por: "GESTION-JUGADAS",
+                r,
+                // El resultado central se reescribe; la plata la mueve el
+                // recálculo completo de abajo, no este guardado.
+                liquidar: false,
+                tasaComision: comisionNum,
+              });
+              if (!cen.ok) {
+                setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó: ${cen.error ?? "sin conexión"}`);
+              }
+            } catch {
+              setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó.`);
+            }
+            void registrarAuditoria(
+              "GESTION_JUGADAS",
+              "CAMBIAR_RESULTADO_LIQUIDADA",
+              `Cambio de resultado de ${nombreHipodromo} C${carrera} (${fecha}) por ${usuarioVigente()}: ${motivo}`
+            );
+            const rec = await recalcularCarreraCompleta({
+              hipodromo,
+              carrera,
+              fecha,
+              tasaComision: comisionNum,
+              usuario: usuarioVigente(),
+            });
+            setAviso(
+              rec.ok
+                ? `🔄 Resultado cambiado · ${rec.motivo}`
+                : `❌ Resultado guardado, pero el recálculo falló: ${rec.motivo}${rec.errores.length ? ` · ${rec.errores.join(" | ")}` : ""}`
+            );
+            // La pizarra pagada de la sesión queda como la vigente para volver a
+            // editarla, y se refresca el catálogo porque el recálculo movió saldos.
+            setPizarraCentral(r);
+            void recargarClientes();
+            void recargarJugadasGuardadas();
+            return;
+          }
+
+          // ── PRIMERA LIQUIDACIÓN DE LA CARRERA ───────────────────────────────
+          setUltimaPizarra(r);
+          setAviso(`🏁 Resultados C${carrera} cargados (${r.llenas} posiciones${r.empates.length ? ` · ${r.empates.length} empate(s)` : ""}).`);
           // Centraliza en resultados_carreras con la MISMA pizarra: así lo que
           // se carga acá aplica también a Tablas Fijas, Carreras del Día y
           // cualquier módulo que lea el resultado central.
@@ -2463,16 +2560,18 @@ const hipodromosDelDia = useMemo(() => {
           // "confirmada" podía quedar abierta sin que nadie lo notara.
           // `r` viaja como argumento porque `setUltimaPizarra` todavía no se
           // re-renderizó y `ejecutarFinalizar` la leería en null.
-          setReporteAlCerrarFinalizar(true);
-          setModalFinalizar(true);
+          //
+          // NO se abre el modal intermedio «Registrar y Finalizar»: la
+          // liquidación ya corre acá y el resultado se muestra en el Reporte.
+          // Ese paso de más obligaba a cerrar una pantalla que no aportaba nada
+          // antes de llegar al reporte (las "vueltas innecesarias").
+          setReporteAlCerrarFinalizar(false);
           try {
-            await ejecutarFinalizar(r);
+            await ejecutarFinalizar(r, true);
           } catch (e) {
             // Un fallo de cierre no puede quedar silenciado en un `void`: se
-            // cierra el modal y se avisa, para no dar por hecha una apertura
-            // que en realidad no se completó.
-            setModalFinalizar(false);
-            setReporteAlCerrarFinalizar(false);
+            // avisa, para no dar por hecha una apertura que en realidad no se
+            // completó.
             setAviso(
               `❌ No se pudo cerrar la carrera ${nombreHipodromo} C${carrera}: ${e instanceof Error ? e.message : String(e)}`
             );

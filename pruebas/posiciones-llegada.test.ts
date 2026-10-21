@@ -13,6 +13,7 @@ import {
   posicionesDePizarra,
   ordenLlegadaDePizarra,
   dividendosDePizarra,
+  pizarraDePosiciones,
   CAMPOS_POSICION,
 } from "../src/features/liquidacion/lib/posiciones";
 import { readFileSync } from "node:fs";
@@ -129,6 +130,127 @@ const gestion = readFileSync(
   "utf8"
 );
 eq("Gestion de Jugadas pasa los dividendos", /dividendos:\s*dividendosDePizarra\(/.test(gestion), true);
+
+console.log("\n-- La pizarra arranca VACIA (no precarga los numeros de la tabla)");
+// El bug: al abrir Carga de Resultados en blanco, el formulario se rellenaba
+// con los numeros de los ejemplares de la tabla (1, 2, 3, 4, 5...), asi que
+// parecia una llegada real y habia que borrarla a mano antes de tipear la
+// verdadera. Una llegada la declara el operador, no es un valor por defecto.
+const modalResultados = readFileSync(
+  join(process.cwd(), "src", "features", "liquidacion", "components", "CargaResultadosModal.tsx"),
+  "utf8"
+);
+eq(
+  "el estado en blanco son casillas vacias",
+  /setFilas\(Array\.from\(\{\s*length:\s*minLugares\s*\},\s*\(\)\s*=>\s*\(\{\s*numero:\s*"",\s*empate:\s*false\s*\}\)\)\)/.test(
+    modalResultados
+  ),
+  true
+);
+eq(
+  "ya no precarga el numero del ejemplar por posicion",
+  /Array\.from\(\{\s*length:\s*minLugares\s*\},\s*\(_,\s*i\)\s*=>\s*\{\s*const n = \(caballos \?\? \[\]\)\[i\]/.test(
+    modalResultados
+  ),
+  false
+);
+eq(
+  "el placeholder de la tabla se conserva (guia, no valor)",
+  /placeholder=\{caballos\?\.\[i\] \? String\(caballos\[i\]\.numero\) : "Nº"\}/.test(modalResultados),
+  true
+);
+
+console.log("\n-- Liquidar Carrera evita las vueltas: no abre el modal intermedio");
+// El bug: al confirmar los resultados se liquidaba la carrera Y ademas se abria
+// el modal «Registrar y Finalizar», que habia que cerrar a mano para recien ver
+// el reporte. Ahora el flujo unificado va directo al Reporte.
+eq(
+  "el confirmar NO abre el modal finalizar",
+  /setModalFinalizar\(true\);[\s\S]{0,400}ejecutarFinalizar\(r, true\)/.test(gestion),
+  false
+);
+eq(
+  "el confirmar liquida y abre el reporte",
+  /await ejecutarFinalizar\(r,\s*true\)/.test(gestion),
+  true
+);
+eq(
+  "ejecutarFinalizar abre el reporte cuando se lo piden",
+  /if \(abrirReporte\) setMostrarReporteLiquidacion\(true\)/.test(gestion),
+  true
+);
+
+console.log("\n-- pizarraDePosiciones: la inversa que precarga una carrera liquidada");
+eq("lista completa a pizarra", pizarraDePosiciones(["7", "2", "3"]), {
+  primero: "7",
+  segundo: "2",
+  tercero: "3",
+});
+eq("acepta numeros", pizarraDePosiciones([9, 4]), { primero: "9", segundo: "4" });
+eq("salta huecos vacios", pizarraDePosiciones(["1", "", "3"]), { primero: "1", tercero: "3" });
+eq("vacia da null", pizarraDePosiciones([]), null);
+eq("nula da null", pizarraDePosiciones(null), null);
+eq("solo blancos da null", pizarraDePosiciones(["", "  "]), null);
+// El ida y vuelta tiene que ser estable: precargar y volver a leer la llegada no
+// puede inventar ni perder posiciones (es lo que disparaba un "cambio" falso).
+eq(
+  "ida y vuelta conserva la llegada",
+  posicionesDePizarra(pizarraDePosiciones(["5", "1", "8"]) as never),
+  ["5", "1", "8"]
+);
+
+console.log("\n-- Solo aparecen llegadas si la carrera esta LIQUIDADA");
+eq(
+  "abrir resultados precarga solo si esta liquidada",
+  /if \(carreraLiquidada\) \{[\s\S]{0,400}leerResultadoOficial\(hipodromo, carrera, fecha\)/.test(gestion),
+  true
+);
+eq(
+  "una carrera sin liquidar abre en blanco",
+  /setPizarraCentral\(null\);\s*setModalResultados\(true\)/.test(gestion),
+  true
+);
+
+console.log("\n-- Cambiar un resultado liquidado exige motivo y recalcula TODO");
+const modalFirma = readFileSync(
+  join(process.cwd(), "src", "features", "liquidacion", "components", "CargaResultadosModal.tsx"),
+  "utf8"
+);
+eq(
+  "el modal exige el motivo cuando cambia un valor liquidado",
+  /faltaMotivo/.test(modalFirma) && /cambioEnLiquidada/.test(modalFirma),
+  true
+);
+eq(
+  "el boton queda bloqueado sin motivo",
+  /disabled=\{faltaMotivo\}/.test(modalFirma),
+  true
+);
+eq(
+  "la pizarra editada se compara contra la inicial",
+  /firmaDe\(construirResultado\(\)\) !== firmaDe\(inicial\)/.test(modalFirma),
+  true
+);
+eq(
+  "el confirmar devuelve el motivo",
+  /onConfirmar\(r,\s*cambioEnLiquidada \? motivo\.trim\(\) : undefined\)/.test(modalFirma),
+  true
+);
+eq(
+  "cambiar un resultado liquidado recalcula toda la liquidacion",
+  /if \(motivo\) \{[\s\S]{0,1200}recalcularCarreraCompleta\(/.test(gestion),
+  true
+);
+eq(
+  "el motivo queda en la auditoria",
+  /CAMBIAR_RESULTADO_LIQUIDADA/.test(gestion),
+  true
+);
+eq(
+  "el cambio NO re-liquida y cierra de nuevo (no duplica el pago)",
+  /if \(motivo\) \{[\s\S]{0,1400}ejecutarFinalizar\(/.test(gestion),
+  false
+);
 
 console.log(`\nTODAS: ${pasan} pasaron, ${fallan} fallaron`);
 if (fallan) process.exit(1);

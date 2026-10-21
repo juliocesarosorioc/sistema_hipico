@@ -560,6 +560,29 @@ console.log("\n[13] La recuperacion de clave no filtra quien tiene cuenta");
 }
 
 // =============================================================================
+console.log("\n[13b] Cerrar sesion NUNCA se cuelga");
+// =============================================================================
+// El boton "Cerrar Sesion" giraba y no cerraba nada. Causa: `signOut()` sin
+// argumentos usa el alcance `global`, que ademas de borrar la sesion local hace
+// una LLAMADA DE RED para revocar los tokens; con Supabase intermitente esa
+// llamada cuelga y la sesion local no se limpia. Se exige el alcance `local` y
+// que el redirect vaya en un `finally`, para que salir no dependa de la red.
+{
+  const sesion = leer("src/features/auth/lib/sesion.ts");
+  const topbar = leer("src/shared/components/layout/Topbar.tsx");
+  check(
+    "el cierre de sesion usa el alcance local de Supabase",
+    /signOut\(\{\s*scope:\s*"local"\s*\}\)/.test(sesion),
+    "signOut global intenta revocar por red y cuelga el logout; scope local limpia sin red"
+  );
+  check(
+    "el redirect al login va en un finally",
+    /finally\s*\{[\s\S]{0,120}window\.location\.assign\("\/login"\)/.test(topbar),
+    "sin finally, un salir() que no resuelve deja la pantalla girando sin cerrar sesion"
+  );
+}
+
+// =============================================================================
 console.log("\n[14] La tabla de contrasenas del legacy queda cerrada y documentada");
 // =============================================================================
 {

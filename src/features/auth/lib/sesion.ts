@@ -134,11 +134,30 @@ export async function sesionActual(): Promise<{ correo: string; id: string } | n
   }
 }
 
-/** Cierra la sesión en Supabase y borra las cookies de permisos del middleware. */
+/**
+ * Cierra la sesión en Supabase y borra las cookies de permisos del middleware.
+ *
+ * El cierre de sesión NUNCA debe colgarse. `signOut()` sin argumentos usa el
+ * alcance `global`, que además de borrar la sesión local hace una LLAMADA DE RED
+ * para revocar todos los refresh tokens del usuario. Con la base intermitente
+ * esa llamada tarda —o no contesta—, así que el operador apretaba "Cerrar
+ * sesión" y la app se quedaba girando sin cerrar nada. El alcance `local` borra
+ * la sesión del navegador al instante y sin red, que es lo único que hace falta
+ * para salir: los tokens que queden vivos vencen solos y no se pueden usar sin
+ * la contraseña.
+ *
+ * Igual que en el arranque, se limpia el almacenamiento del cliente de forma
+ * directa y SIN esperar a la red: con cualquier respuesta —o sin ninguna— la
+ * sesión local ya no está y el logout termina.
+ */
 export async function cerrarSesion(): Promise<void> {
   if (!supabase) return;
   try {
-    await conTimeout(supabase.auth.signOut(), TIMEOUT_SESION_MS, "El cierre de sesión");
+    await conTimeout(
+      supabase.auth.signOut({ scope: "local" }),
+      TIMEOUT_SESION_MS,
+      "El cierre de sesión"
+    );
   } catch {
     /* la sesión local ya se limpió en el store; no se bloquea el logout */
   }
