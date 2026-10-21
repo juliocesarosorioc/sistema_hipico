@@ -88,31 +88,43 @@ export function PortalModule() {
   useEffect(() => {
     let vivo = true;
     const cargar = async () => {
-      const qs = new URLSearchParams(window.location.search);
-      const c = qs.get("c") ?? "";
-      const k = qs.get("k") ?? "";
       setCargando(true);
-      // 1) Entrada automática vía enlace del admin (?c=&k=)
-      if (c && k) {
-        const r = await entrarPortal({ linkId: c, linkToken: k });
-        if (r.ok && r.sesion) {
+      const limite = setTimeout(() => {
+        if (vivo) {
+          setCargando(false);
+          setErrorLogin("El portal tardó demasiado en cargar. Probá recargar la página.");
+        }
+      }, 10000);
+      try {
+        const qs = new URLSearchParams(window.location.search);
+        const c = qs.get("c") ?? "";
+        const k = qs.get("k") ?? "";
+        // 1) Entrada automática vía enlace del admin (?c=&k=)
+        if (c && k) {
+          const r = await entrarPortal({ linkId: c, linkToken: k });
+          if (r.ok && r.sesion) {
+            if (vivo) {
+              setSesion(r.sesion!);
+              return;
+            }
+          }
           if (vivo) {
-            setSesion(r.sesion!);
-            setCargando(false);
-            return;
+            setAutoId(c);
+            setAutoToken(k);
           }
         }
-        setAutoId(c);
-        setAutoToken(k);
+        // 2) Sesión guardada (recargas)
+        const re = await reanudarSesion();
+        if (re && vivo) {
+          setSesion(re);
+          return;
+        }
+      } catch (e) {
+        if (vivo) setErrorLogin(e instanceof Error ? e.message : "No se pudo cargar el portal.");
+      } finally {
+        clearTimeout(limite);
+        if (vivo) setCargando(false);
       }
-      // 2) Sesión guardada (recargas)
-      const re = await reanudarSesion();
-      if (re && vivo) {
-        setSesion(re);
-        setCargando(false);
-        return;
-      }
-      if (vivo) setCargando(false);
     };
     void cargar();
     return () => {
@@ -122,15 +134,21 @@ export function PortalModule() {
 
   const loguear = async () => {
     setErrorLogin("");
-    if (autoId && autoToken) {
-      const r = await entrarPortal({ linkId: autoId, linkToken: autoToken });
-      return aplicarLogin(r.ok, r.error, r.sesion);
+    try {
+      if (autoId && autoToken) {
+        const r = await entrarPortal({ linkId: autoId, linkToken: autoToken });
+        return aplicarLogin(r.ok, r.error, r.sesion);
+      }
+      if (!usuario.trim() || !token.trim() || !clave.trim()) {
+        return setErrorLogin("Complete los tres campos para entrar.");
+      }
+      const r = await entrarPortal({ usuario, token, clave });
+      aplicarLogin(r.ok, r.error, r.sesion);
+    } catch (e) {
+      setErrorLogin(e instanceof Error ? e.message : "No se pudo iniciar sesión.");
+    } finally {
+      setCargando(false);
     }
-    if (!usuario.trim() || !token.trim() || !clave.trim()) {
-      return setErrorLogin("Complete los tres campos para entrar.");
-    }
-    const r = await entrarPortal({ usuario, token, clave });
-    aplicarLogin(r.ok, r.error, r.sesion);
   };
 
   const aplicarLogin = (ok: boolean, error?: string, s?: SesionPortal) => {

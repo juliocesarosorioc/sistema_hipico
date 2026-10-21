@@ -437,83 +437,92 @@ export const useAuthStore = create<EstadoAuth>()(
 
       iniciarSesion: async (identificador, clave) => {
         set({ cargando: true, errorLogin: null });
-        const r = await login(identificador, clave);
-        if (!r.ok) {
-          set({ cargando: false, errorLogin: r.error });
-          return false;
-        }
-        const id = claveDeUsuario(identificador);
-        // Sin este try, una excepción al resolver el maestro (respuesta con
-        // forma distinta a la esperada, cliente de Supabase caído a mitad de la
-        // consulta) escapaba hacia el formulario y dejaba `cargando` en true
-        // PARA SIEMPRE: el botón se quedaba en "Autenticando..." y no pasaba
-        // absolutamente nada, sin un solo mensaje. Es el peor síntoma posible
-        // de un login, porque no deja distinguir "contraseña mala" de "el
-        // sistema falló por dentro".
-        let a: ResolucionAccesos;
         try {
-          a = await aplicarAccesos(id);
-        } catch {
-          limpiarAccesosVigentes();
-          a = {
-            tipoUsuario: null,
-            excepciones: {},
-            esPrincipal: false,
-            permisos: [],
-            perfiles: [],
-            falloLectura: true,
-            grupoId: "",
-            grupoNombre: "",
-            veTodosLosGrupos: false,
-            grupoActivo: null,
-          };
-        }
-        // La contraseña era correcta pero no hay nada detrás del usuario: ni
-        // tipo asignado, ni tipo desactivado, ni alta dada de baja, ni se pudo
-        // leer el maestro. Antes se lo llevaba al /dashboard y el middleware lo
-        // devolvía al login, y la pantalla lo volvía a mandar al dashboard: un
-        // bucle sin un solo mensaje, que es exactamente "ingresé el usuario y
-        // no me dejó entrar". Ahora se dice qué pasó y por quién se resuelve.
-        if (!a.perfiles.length && !a.permisos.length && !a.esPrincipal) {
+          const r = await login(identificador, clave);
+          if (!r.ok) {
+            set({ cargando: false, errorLogin: r.error });
+            return false;
+          }
+          const id = claveDeUsuario(identificador);
+          // Sin este try, una excepción al resolver el maestro (respuesta con
+          // forma distinta a la esperada, cliente de Supabase caído a mitad de la
+          // consulta) escapaba hacia el formulario y dejaba `cargando` en true
+          // PARA SIEMPRE: el botón se quedaba en "Autenticando..." y no pasaba
+          // absolutamente nada, sin un solo mensaje. Es el peor síntoma posible
+          // de un login, porque no deja distinguir "contraseña mala" de "el
+          // sistema falló por dentro".
+          let a: ResolucionAccesos;
+          try {
+            a = await aplicarAccesos(id);
+          } catch {
+            limpiarAccesosVigentes();
+            a = {
+              tipoUsuario: null,
+              excepciones: {},
+              esPrincipal: false,
+              permisos: [],
+              perfiles: [],
+              falloLectura: true,
+              grupoId: "",
+              grupoNombre: "",
+              veTodosLosGrupos: false,
+              grupoActivo: null,
+            };
+          }
+          // La contraseña era correcta pero no hay nada detrás del usuario: ni
+          // tipo asignado, ni tipo desactivado, ni alta dada de baja, ni se pudo
+          // leer el maestro. Antes se lo llevaba al /dashboard y el middleware lo
+          // devolvía al login, y la pantalla lo volvía a mandar al dashboard: un
+          // bucle sin un solo mensaje, que es exactamente "ingresé el usuario y
+          // no me dejó entrar". Ahora se dice qué pasó y por quién se resuelve.
+          if (!a.perfiles.length && !a.permisos.length && !a.esPrincipal) {
+            set({
+              cargando: false,
+              inicializada: true,
+              sembrada: false,
+              usuario: inicioDefault.usuario,
+              email: r.correo,
+              perfiles: inicioDefault.perfiles,
+              permisos: inicioDefault.permisos,
+              tipoUsuario: null,
+              excepciones: {},
+              esPrincipal: false,
+              grupoId: inicioDefault.grupoId,
+              grupoNombre: inicioDefault.grupoNombre,
+              veTodosLosGrupos: inicioDefault.veTodosLosGrupos,
+              grupoActivo: null,
+              errorLogin: a.falloLectura
+                ? mensajeSinAcceso(identificador, true)
+                : mensajeSinAcceso(identificador, false),
+            });
+            return false;
+          }
           set({
             cargando: false,
+            errorLogin: null,
+            sembrada: true,
             inicializada: true,
-            sembrada: false,
-            usuario: inicioDefault.usuario,
+            usuario: id,
             email: r.correo,
-            perfiles: inicioDefault.perfiles,
-            permisos: inicioDefault.permisos,
-            tipoUsuario: null,
-            excepciones: {},
-            esPrincipal: false,
-            grupoId: inicioDefault.grupoId,
-            grupoNombre: inicioDefault.grupoNombre,
-            veTodosLosGrupos: inicioDefault.veTodosLosGrupos,
-            grupoActivo: null,
-            errorLogin: a.falloLectura
-              ? mensajeSinAcceso(identificador, true)
-              : mensajeSinAcceso(identificador, false),
+            tipoUsuario: a.tipoUsuario,
+            excepciones: a.excepciones,
+            esPrincipal: a.esPrincipal,
+            permisos: a.permisos,
+            perfiles: a.perfiles,
+            grupoId: a.grupoId,
+            grupoNombre: a.grupoNombre,
+            veTodosLosGrupos: a.veTodosLosGrupos,
+            grupoActivo: a.grupoActivo,
+          });
+          return true;
+        } catch (e) {
+          limpiarAccesosVigentes();
+          set({
+            cargando: false,
+            errorLogin: `No se pudo iniciar sesión. Probá de nuevo. ${e instanceof Error ? e.message : ""}`.trim(),
           });
           return false;
         }
-        set({
-          cargando: false,
-          errorLogin: null,
-          sembrada: true,
-          inicializada: true,
-          usuario: id,
-          email: r.correo,
-          tipoUsuario: a.tipoUsuario,
-          excepciones: a.excepciones,
-          esPrincipal: a.esPrincipal,
-          permisos: a.permisos,
-          perfiles: a.perfiles,
-          grupoId: a.grupoId,
-          grupoNombre: a.grupoNombre,
-          veTodosLosGrupos: a.veTodosLosGrupos,
-          grupoActivo: a.grupoActivo,
-        });
-        return true;
       },
 
       inicializar: async () => {
