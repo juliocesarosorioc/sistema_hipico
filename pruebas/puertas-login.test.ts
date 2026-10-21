@@ -291,5 +291,42 @@ ok(
     !/igual\(texto\(c\.portal_clave\)[^)]*\.length/.test(authSrc)
 );
 
+// ---------------------------------------------------------------------------
+console.log("\n[8] el portal no salta a la RAÍZ del dominio (basePath de GitHub Pages)");
+// ---------------------------------------------------------------------------
+// El bug: `PortalModule` montaba con `history.replaceState({}, "", "/portal")`,
+// una ruta ABSOLUTA sin el basePath. En GitHub Pages la app vive bajo
+// `/sistema_hipico`, así que ese literal reescribía la URL a la RAÍZ del dominio
+// (`https://usuario.github.io/portal`), donde no hay nada → el portal quedaba
+// inalcanzable ("me sigue devolviendo a login"). Ahora se conserva la ruta
+// ACTUAL —que ya trae el prefijo— y se descarta solo la query (?c=&k=).
+ok(
+  "el portal NO reescribe la URL a /portal absoluto",
+  !/window\.history\.replaceState\(\{\},\s*"",\s*"\/portal"\)/.test(portalSrc)
+);
+ok(
+  "el portal limpia la query conservando el pathname (con basePath)",
+  /window\.history\.replaceState\(\{\},\s*"",\s*window\.location\.pathname\)/.test(portalSrc)
+);
+
+// El enlace que copia el admin (`urlPortal`) también armaba `origin + "/portal"`
+// sin prefijo: el enlace compartido caía en la raíz del dominio.
+const clientesLib = readFileSync(
+  join(process.cwd(), "src", "features", "clientes", "lib", "clientes.ts"),
+  "utf8"
+);
+ok(
+  "urlPortal NO arma origin+/portal a mano",
+  !/\$\{window\.location\.origin\}\/portal/.test(clientesLib)
+);
+ok(
+  "urlPortal deduce el basePath de la ruta actual",
+  /basePathActual\(\)/.test(clientesLib) && /\/portal`/.test(clientesLib)
+);
+ok(
+  "basePathActual quita el sufijo /portal del pathname",
+  /pathname[\s\S]{0,160}?lastIndexOf\("\/portal"\)/.test(clientesLib)
+);
+
 console.log(`\nTODO OK: ${pasan} pasaron, ${fallan} fallaron`);
 if (fallan > 0) process.exit(1);

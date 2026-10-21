@@ -432,10 +432,26 @@ export async function convertirSocio(nombre: string): Promise<{ ok: boolean; err
 // Portal de consulta del cliente (token + clave + enlace)
 // ---------------------------------------------------------------------------
 
+/**
+ * Prefijo bajo el que está desplegada la app (`/sistema_hipico` en GitHub Pages,
+ * `""` en dev o en la raíz). Next NO expone el `basePath` como variable de
+ * entorno del cliente, así que se DEDUCE de la ruta actual: la página del portal
+ * siempre termina en `/portal`, y todo lo anterior es el prefijo. Si la ruta no
+ * termina en `/portal` (por ejemplo se llama desde otra pantalla), se cae al
+ * `basePath` heredado del documento o, en último caso, a raíz.
+ */
+export function basePathActual(): string {
+  if (typeof window === "undefined") return "";
+  const p = window.location.pathname.replace(/\/+$/, "");
+  const i = p.lastIndexOf("/portal");
+  if (i >= 0) return p.slice(0, i);
+  return "";
+}
+
 /** Ruta del portal en la SPA (se conserva `?c=&k=` para compat con el legacy). */
 export function urlPortal(): string {
   if (typeof window === "undefined") return "/portal";
-  return `${window.location.origin}/portal`;
+  return `${window.location.origin}${basePathActual()}/portal`;
 }
 
 /** Enlace largo del portal para un cliente. */

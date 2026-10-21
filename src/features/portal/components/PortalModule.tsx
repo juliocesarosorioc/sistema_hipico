@@ -151,7 +151,18 @@ export function PortalModule() {
   };
 
   useEffect(() => {
-    window.history.replaceState({}, "", "/portal");
+    // Limpia la barra de direcciones: el enlace del admin trae las credenciales
+    // en la query (`?c=...&k=...`) y no deben quedar visibles ni en el historial
+    // una vez consumidas. Se quita SOLO la query.
+    //
+    // OJO: antes decía `replaceState({}, "", "/portal")`, una ruta ABSOLUTA sin
+    // el basePath. En GitHub Pages la app se sirve bajo `/sistema_hipico`, así
+    // que ese literal saltaba a la RAÍZ del dominio (`/portal`, donde no hay
+    // nada → 404). Peor: el guard de rutas públicas ya había dejado pasar la
+    // página, y el navegador terminaba en una URL inexistente. Se conserva la
+    // ruta ACTUAL —que ya incluye el prefijo— y se descarta únicamente el `?`.
+    // `pathname` preserva el subpath y `search: ""` borra la query.
+    window.history.replaceState({}, "", window.location.pathname);
   }, [sesion]);
 
   if (cargando) {
