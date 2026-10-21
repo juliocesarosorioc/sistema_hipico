@@ -205,5 +205,53 @@ ok(
   RUTAS_PROTEGIDAS.includes("/portal") && rutaPermitida("/portal", ["portal:ruta_portal"])
 );
 
+// ---------------------------------------------------------------------------
+console.log("\n[7] los campos de contraseña del portal NO recortan lo que se escribe");
+// ---------------------------------------------------------------------------
+// El bug: el login del /portal tenía `maxLength={8}` en la contraseña, copiado
+// de la regla 4–8 que solo aplica al PIN NUEVO. Cualquier clave más larga
+// quedaba cortada en silencio —"JUGADOR123" se volvía "JUGADOR1"— y el login
+// fallaba sin explicar por qué. Un tope en la contraseña convierte credenciales
+// válidas en errores indescifrables. Se revisa la forma del fuente porque el
+// campo es JSX y no se puede montar desde Node.
+const portalSrc = readFileSync(
+  join(process.cwd(), "src", "features", "portal", "components", "PortalModule.tsx"),
+  "utf8"
+);
+
+// La contraseña de LOGIN ya no debe tener el tope corto (8) que la truncaba.
+ok(
+  "la contraseña del login ya no se limita a 8 caracteres",
+  /value=\{props\.clave\}[\s\S]{0,220}?maxLength=\{MAX_CLAVE\}/.test(portalSrc)
+);
+ok("MAX_CLAVE permite claves más largas que el PIN (>= 8)", /const MAX_CLAVE = (\d+);/.test(portalSrc) && Number(portalSrc.match(/const MAX_CLAVE = (\d+);/)![1]) > 8);
+ok("el token del login usa MAX_TOKEN", /value=\{props\.token\}[\s\S]{0,200}?maxLength=\{MAX_TOKEN\}/.test(portalSrc));
+
+// El "PIN actual" es el que YA está guardado: puede ser más largo que 8 y no se
+// puede truncar, o el cliente con clave larga no podría cambiarla nunca.
+ok(
+  "el PIN ACTUAL del perfil acepta claves largas (no maxLength={8})",
+  /perfil-clave-actual/.test(portalSrc) &&
+    /maxLength=\{MAX_CLAVE\}/.test(portalSrc) &&
+    !/maxLength=\{8\}[\s\S]{0,80}?perfil-clave-actual/.test(portalSrc)
+);
+
+// El PIN NUEVO sí conserva la política 4–8: es una regla de alta, no un tope de
+// escritura sobre un valor existente.
+ok("el PIN NUEVO sigue con el tope de 8 (política 4–8)", /perfil-clave-nueva/.test(portalSrc));
+
+// El servidor lee la clave con un tope amplio (128): el login no puede rechazar
+// una clave larga por venir recortada.
+const authSrc = readFileSync(
+  join(process.cwd(), "supabase", "functions", "portal-auth", "index.ts"),
+  "utf8"
+);
+ok("el servidor lee la clave de login con margen (clave, 128)", /texto\(e\.clave, 128\)/.test(authSrc));
+ok(
+  "el tope 4–8 del servidor aplica SOLO al PIN nuevo",
+  /claveNueva\.length < 4 \|\| claveNueva\.length > 8/.test(authSrc) &&
+    !/igual\(texto\(c\.portal_clave\)[^)]*\.length/.test(authSrc)
+);
+
 console.log(`\nTODO OK: ${pasan} pasaron, ${fallan} fallaron`);
 if (fallan > 0) process.exit(1);

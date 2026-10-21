@@ -176,6 +176,18 @@ export function PortalModule() {
 // Pantalla de entrada
 // ---------------------------------------------------------------------------
 
+/**
+ * Topes de los campos de acceso.
+ *
+ * `MAX_CLAVE` es la misma cota que ya usa el servidor para LEER la clave
+ * (`texto(e.clave, 128)`): una contraseña de portal puede ser más larga que el
+ * rango 4–8 que se exige al CAMBIARLA, y recortarla en el navegador rompía el
+ * login de cualquier clave larga (era el caso de `JUGADOR123`). Acá el tope
+ * existe solo para no mandar un texto absurdo, no para truncar credenciales.
+ */
+const MAX_TOKEN = 128;
+const MAX_CLAVE = 128;
+
 function LoginScreen(props: {
   usuario: string;
   setUsuario: (v: string) => void;
@@ -204,10 +216,18 @@ function LoginScreen(props: {
           <input value={props.usuario} onChange={(e) => props.setUsuario(e.target.value.toUpperCase())} className={inp} placeholder="ej. EL MAGO" />
 
           <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Código del enlace (te lo dio el administrador)</label>
-          <input value={props.token} onChange={(e) => props.setToken(e.target.value.toUpperCase())} className={inp} placeholder="XXXXXX" maxLength={12} />
+          <input value={props.token} onChange={(e) => props.setToken(e.target.value.toUpperCase())} className={inp} placeholder="XXXXXX" maxLength={MAX_TOKEN} />
 
+          {/*
+            SIN maxLength: el campo de contraseña NO se recorta.
+            Antes tenía maxLength={8}, copiado de la regla del cambio de PIN, y
+            eso cortaba en silencio contraseñas válidas más largas: "JUGADOR123"
+            (10) quedaba en "JUGADOR1" y el login fallaba sin decir por qué.
+            Un tope en la contraseña solo convierte credenciales correctas en
+            errores indescifrables; el largo lo valida la función del servidor.
+          */}
           <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Contraseña</label>
-          <input value={props.clave} onChange={(e) => props.setClave(e.target.value.toUpperCase())} className={inp} placeholder="XXXX" maxLength={8} />
+          <input value={props.clave} onChange={(e) => props.setClave(e.target.value.toUpperCase())} className={inp} placeholder="XXXX" maxLength={MAX_CLAVE} autoComplete="current-password" />
 
           {props.error ? (
             <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs font-bold text-red-600">
@@ -1295,17 +1315,24 @@ function MiPerfilModal({
             </div>
             <p className="mt-0.5 text-[10px] text-slate-500">
               Déjalo vacío para no cambiarlo. Si lo cambias, escribe el PIN actual. Se guarda en mayúsculas (igual
-              que lo escribe el login) y tiene de 4 a 8 caracteres.
+              que lo escribe el login). El PIN nuevo debe tener de 4 a 8 caracteres.
             </p>
             <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
               <div>
                 <label className={lbl}>PIN actual</label>
+                {/*
+                  SIN maxLength: el PIN actual es el que ya está guardado y puede
+                  ser más largo que 8 (p. ej. "JUGADOR123"). Recortarlo acá hacía
+                  imposible cambiar el PIN: la comparación del servidor fallaba
+                  contra el valor truncado. El tope 4–8 aplica al PIN NUEVO, no
+                  al vigente.
+                */}
                 <input
                   value={claveActual}
                   onChange={(e) => setClaveActual(e.target.value.toUpperCase())}
                   className={inp + " font-mono uppercase"}
                   placeholder="XXXX"
-                  maxLength={8}
+                  maxLength={MAX_CLAVE}
                   autoComplete="current-password"
                   data-testid="perfil-clave-actual"
                 />
