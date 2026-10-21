@@ -704,6 +704,15 @@ export const PUERTAS: Array<{
   // de un solo uso y vence. La página sola no cambia ninguna contraseña: sin
   // esa sesión, `updateUser()` no tiene a quién y no hace nada.
   { ruta: "/reset-password", publica: true },
+  // El Portal del Cliente se autentica con SU PROPIO token contra la Edge
+  // Function `portal-auth`, no con la sesión de Supabase del staff. Por eso es
+  // público: sin `publica: true`, `AuthBootstrap` —que corre en todas las
+  // páginas— lo expulsaba a /login y ningún jugador podía entrar (en el build
+  // estático el middleware no existe, así que ese guard del cliente es el
+  // único). NO es de acceso: no es una pantalla de contraseña del sistema, así
+  // que `esPantallaDeAcceso` debe seguir devolviendo false y no mandarlo al
+  // dashboard. Es el mismo caso que /reset-password.
+  { ruta: "/portal", publica: true, capacidad: "portal:ruta_portal" },
   { ruta: "/dashboard", capacidad: "general:ruta_dashboard" },
   { ruta: "/seguridad", capacidad: "seguridad:ruta_seguridad" },
   // Diagnóstico es una utilidad de sanidad del sistema (matriz de carreras,
@@ -747,7 +756,6 @@ export const PUERTAS: Array<{
   { ruta: "/whatsapp", capacidad: "whatsapp:ruta_whatsapp" },
   { ruta: "/remates", capacidad: "remates:ruta_remates" },
   { ruta: "/pollas", capacidad: "pollas:ruta_pollas" },
-  { ruta: "/portal", capacidad: "portal:ruta_portal" },
   { ruta: "/reglas-jugadas", capacidad: "reglas_jugadas:ruta_reglas_jugadas" },
   { ruta: "/operadores", capacidad: "operadores:ruta_operadores" },
 ];

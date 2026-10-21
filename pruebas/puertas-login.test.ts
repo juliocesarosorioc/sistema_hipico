@@ -185,6 +185,10 @@ console.log("\n[6] el middleware deja pasar /portal sin sesión de Supabase");
 // forma del archivo fuente: la salida adelantada para /portal va ANTES del
 // chequeo de cookies.
 const middlewareSrc = readFileSync(join(process.cwd(), "src", "middleware.ts"), "utf8");
+const AuthBootstrapSrc = readFileSync(
+  join(process.cwd(), "src", "features", "auth", "components", "AuthBootstrap.tsx"),
+  "utf8"
+);
 
 ok(
   "el middleware exceptúa /portal y sus subrutas",
@@ -204,6 +208,23 @@ ok(
   "/portal SIGUE declarada y protegida en la matriz de puertas",
   RUTAS_PROTEGIDAS.includes("/portal") && rutaPermitida("/portal", ["portal:ruta_portal"])
 );
+
+// ---------------------------------------------------------------------------
+console.log("\n[6a] /portal es PÚBLICA: sin eso el cliente lo expulsa a /login");
+// ---------------------------------------------------------------------------
+// `AuthBootstrap` corre en TODAS las páginas y hace `if (!s && !esRutaPublica(ruta))
+// router.replace("/login")`. En el build estático el middleware no existe, así que
+// ese guard del cliente es el único, y si /portal no está declarada pública,
+// `esRutaPublica("/portal")` daba false y expulsaba al jugador al /login del
+// sistema: el portal era inalcanzable (el síntoma era "no entra, me lleva a
+// /login"). Pero NO es "de acceso": no es una pantalla de contraseña del sistema,
+// así que esPantallaDeAcceso debe seguir en false y no redirigirla al dashboard.
+ok("esRutaPublica(/portal) es true", esRutaPublica("/portal"));
+ok("esRutaPublica(/portal/...) también", esRutaPublica("/portal/algo"));
+ok("/portal NO es pantalla de acceso", !esPantallaDeAcceso("/portal"));
+ok("un subpath de /portal tampoco es de acceso", !esPantallaDeAcceso("/portal/x"));
+ok("AuthBootstrap consulta esRutaPublica(ruta) y no una lista fija", /esRutaPublica\(ruta\)/.test(AuthBootstrapSrc));
+ok("el guard de AuthBootstrap va por ruta (no por \"/login\" fijo)", !/router\.replace\("\/login"\)[\s\S]{0,200}?if \(ruta !==/.test(AuthBootstrapSrc));
 
 // ---------------------------------------------------------------------------
 console.log("\n[6b] el build de GitHub Pages publica CARPETAS, no sueltos .html");
