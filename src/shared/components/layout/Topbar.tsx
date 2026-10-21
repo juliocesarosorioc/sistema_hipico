@@ -96,6 +96,8 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
 
   const salir = useAuthStore((s) => s.salir);
 
+  const [saliendo, setSaliendo] = useState(false);
+
   /**
    * Cierre de sesión REAL.
    *
@@ -107,6 +109,8 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
    * recién ahí se navega al login.
    */
   const cerrarSesion = async () => {
+    if (saliendo) return;
+    setSaliendo(true);
     try {
       localStorage.removeItem("club_sesion_activa");
     } catch {
@@ -121,7 +125,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
     } catch {
       /* aunque falle el borrado remoto, se sale igual para no quedar atrapado */
     } finally {
-      window.location.assign("/login");
+      window.location.replace("/login");
     }
   };
 

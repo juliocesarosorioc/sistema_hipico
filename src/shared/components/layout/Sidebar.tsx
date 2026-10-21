@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { Guard } from "@/shared/components/ui/Guard";
 import { capacidadesDeRuta } from "@/features/seguridad/lib/capacidades";
@@ -124,13 +125,24 @@ export function Sidebar({
   const pathname = usePathname();
   const perfiles = useAuthStore((s) => s.perfiles);
 
-  const cerrarSesion = () => {
+  const salir = useAuthStore((s) => s.salir);
+  const [saliendo, setSaliendo] = useState(false);
+
+  const cerrarSesion = async () => {
+    if (saliendo) return;
+    setSaliendo(true);
     try {
       localStorage.removeItem("club_sesion_activa");
     } catch {
       /* sinop */
     }
-    window.location.assign("/");
+    try {
+      await salir();
+    } catch {
+      /* aunque falle el borrado remoto, se sale igual para no quedar atrapado */
+    } finally {
+      window.location.replace("/");
+    }
   };
 
   return (
