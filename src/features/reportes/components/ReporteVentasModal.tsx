@@ -355,12 +355,14 @@ function DetalleTabla({
   etiquetas,
   tema,
   acciones,
+  producto = "tablas",
 }: {
   filas: VentaTablaReporte[];
   etiquetas: EtiquetasReporteVentas;
   tema: TemaReporteVentas;
   /** Si viene, la tabla trae la columna de acciones (perfil Administrador Principal). */
   acciones?: { onAccion: (v: VentaTablaReporte, modo: ModoAccionJugada) => void };
+  producto?: string;
 }) {
   if (filas.length === 0) {
     return <p className="px-3 py-4 text-center text-[11px] font-semibold text-slate-400">{etiquetas.sinDatos}</p>;
@@ -399,7 +401,10 @@ function DetalleTabla({
         </tr>
       </thead>
       <tbody>
-        {ordenadas.map((v, i) => (
+        {ordenadas.map((v, i) => {
+          const esTablas = producto === "tablas";
+          const montoUnitario = esTablas && v.cantidad && v.cantidad > 0 ? v.monto / v.cantidad : v.monto;
+          return (
           <tr key={v.id || `${v.hipodromo}-${v.carrera}-${v.numero}-${i}`} className={`border-b border-slate-100 ${tema.hover}`}>
             <td className="whitespace-nowrap px-2 py-1 text-slate-500">{v.fecha || "—"}</td>
             <td className="whitespace-nowrap px-2 py-1 text-slate-400">{v.fechaVenta || "—"}</td>
@@ -415,7 +420,16 @@ function DetalleTabla({
             </td>
             <td className="px-2 py-1 text-slate-700">{v.jugador || "—"}</td>
             <td className="px-2 py-1 text-slate-500">{v.grupo || "—"}</td>
+            {esTablas ? (
+              <td className="px-2 py-1 text-right tabular-nums text-slate-800">
+                <div className="font-bold">{fmt(v.monto)}</div>
+                <div className="text-[9px] text-slate-500">
+                  {v.cantidad || 1} x {fmt(montoUnitario)}{v.premioPorTabla ? ` · paga ${fmt(v.premioPorTabla)}` : ""}
+                </div>
+              </td>
+            ) : (
             <td className="px-2 py-1 text-right font-bold tabular-nums text-slate-800">{fmt(v.monto)}</td>
+            )}
             <td className="px-2 py-1 text-center">
               {v.anulada ? (
                 <span className="inline-flex items-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-white">
@@ -471,7 +485,8 @@ function DetalleTabla({
               </td>
             )}
           </tr>
-        ))}
+          );
+        })}
       </tbody>
     </table>
   );
@@ -934,7 +949,22 @@ export function ReporteVentasModal({
             </div>
           ) : modo === "detalle" ? (
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-              <DetalleTabla filas={detalle} etiquetas={etiquetas} tema={tema} acciones={accionesDetalle} />
+              <div className="overflow-auto">
+                <DetalleTabla filas={detalle} etiquetas={etiquetas} tema={tema} acciones={accionesDetalle} producto={producto} />
+              </div>
+              {producto === "tablas" && filtradas.length > 0 && (() => {
+                const retiros = filtradas.filter((v) => !v.anulada && estadoNormalizado(v.estado) === "Retirado");
+                const reemb = retiros.reduce((a, v) => a + v.monto, 0);
+                if (retiros.length === 0) return null;
+                return (
+                  <div className="border-t border-amber-200 bg-amber-50/60 px-3 py-2 text-[10px] text-amber-800">
+                    <div className="font-black uppercase">Retiros en este filtro</div>
+                    <div className="mt-0.5">
+                      {retiros.length} tabla(s) retirada(s) · Reembolso: {fmt(reemb)} · Cálculo: se reembolsa el monto jugado (v.monto) al retirado.
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
