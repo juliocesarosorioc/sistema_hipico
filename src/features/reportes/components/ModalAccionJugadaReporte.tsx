@@ -239,43 +239,52 @@ export function ModalAccionJugadaReporte({
     }
     setGuardando(true);
     const ctx = { hipodromo: venta.hipodromo, carrera: venta.carrera, fecha: venta.fecha };
-    let r;
-    if (modo === "editar") {
-      // Estado INTERNO derivado del maestro elegido. LIQUIDADA respeta el estado
-      // actual del ticket (no inventa un ganador): solo cambia si venía pendiente.
-      const estadoInterno =
-        estado === "ANULADA" ? "Anulado" : estado === "PENDIENTE" ? "Pendiente" : venta.estado || "Ganador";
-      r = await editarJugadaDeReporte(
-        venta.id,
-        {
-          nombre_jugada: nombreJugada.trim() || null,
-          caballo: caballo.trim() || null,
-          cliente_juega_id: jugador1Id.trim() || null,
-          cliente_juega_nombre: jugador1.trim() || null,
-          cliente_consigue_id: jugador2Id.trim() || null,
-          cliente_consigue_nombre: jugador2.trim() || null,
-          grupo_cobro_id: grupoId.trim() || null,
-          grupo_cobro_nombre: grupoNombre.trim() || null,
-          ejemplar_numero: ejemplar.trim() === "" ? null : Number(ejemplar),
-          monto_jugado: monto.trim() === "" ? null : Number(monto),
-          premio_pagar: premio.trim() === "" ? null : Number(premio),
-          estado: estadoInterno,
-          es_adelantada: modalidad === "ADELANTADA",
-        } as EditablesJugada,
-        motivoEdicion.trim(),
-        ctx
-      );
-    } else if (modo === "anular") {
-      r = await anularJugadaDeReporte(venta.id, detalle.trim() ? `${motivoLibre} · ${detalle.trim()}` : motivoLibre, ctx);
-    } else {
-      r = await restaurarJugadaDeReporte(venta.id, motivoLibre.trim() || "Restauración desde el reporte", ctx);
+    try {
+      let r;
+      if (modo === "editar") {
+        // Estado INTERNO derivado del maestro elegido. LIQUIDADA respeta el estado
+        // actual del ticket (no inventa un ganador): solo cambia si venía pendiente.
+        const estadoInterno =
+          estado === "ANULADA" ? "Anulado" : estado === "PENDIENTE" ? "Pendiente" : venta.estado || "Ganador";
+        r = await editarJugadaDeReporte(
+          venta.id,
+          {
+            nombre_jugada: nombreJugada.trim() || null,
+            caballo: caballo.trim() || null,
+            cliente_juega_id: jugador1Id.trim() || null,
+            cliente_juega_nombre: jugador1.trim() || null,
+            cliente_consigue_id: jugador2Id.trim() || null,
+            cliente_consigue_nombre: jugador2.trim() || null,
+            grupo_cobro_id: grupoId.trim() || null,
+            grupo_cobro_nombre: grupoNombre.trim() || null,
+            ejemplar_numero: ejemplar.trim() === "" ? null : Number(ejemplar),
+            monto_jugado: monto.trim() === "" ? null : Number(monto),
+            premio_pagar: premio.trim() === "" ? null : Number(premio),
+            estado: estadoInterno,
+            es_adelantada: modalidad === "ADELANTADA",
+          } as EditablesJugada,
+          motivoEdicion.trim(),
+          ctx
+        );
+      } else if (modo === "anular") {
+        r = await anularJugadaDeReporte(
+          venta.id,
+          detalle.trim() ? `${motivoLibre} · ${detalle.trim()}` : motivoLibre,
+          ctx
+        );
+      } else {
+        r = await restaurarJugadaDeReporte(venta.id, motivoLibre.trim() || "Restauración desde el reporte", ctx);
+      }
+      setGuardando(false);
+      if (!r.ok) {
+        setError(r.error ?? "No se pudo aplicar el cambio.");
+        return;
+      }
+      onHecho(r.error ?? EXITO[modo]);
+    } catch (e) {
+      setGuardando(false);
+      setError(e instanceof Error ? e.message : String(e));
     }
-    setGuardando(false);
-    if (!r.ok) {
-      setError(r.error ?? "No se pudo aplicar el cambio.");
-      return;
-    }
-    onHecho(r.error ?? EXITO[modo]);
   };
 
   const cabecera = `${venta.hipodromo} · C${venta.carrera} · ${venta.caballo || "—"}`;

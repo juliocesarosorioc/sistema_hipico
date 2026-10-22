@@ -514,6 +514,8 @@ export function ReporteVentasModal({
   const [recarga, setRecarga] = useState(0);
   /** Grupos con su % de convenio, para descontar en "Cobrado neto". */
   const [gruposConvenio, setGruposConvenio] = useState<GrupoComisiones[]>([]);
+  /** Mostrar/ocultar jugadas anuladas en todo el reporte. */
+  const [mostrarAnuladas, setMostrarAnuladas] = useState(true);
 
   // Al abrir: copia los filtros del Monitor y vuelve al estado limpio.
   useEffect(() => {
@@ -599,16 +601,20 @@ export function ReporteVentasModal({
     [data, indiceGrupos, producto]
   );
 
-  const filtradas = useMemo(() => filtrarVentas(conPct, filtros), [conPct, filtros]);
+  const sinAnuladas = useMemo(
+    () => (mostrarAnuladas ? conPct : conPct.filter((v) => !v.anulada)),
+    [conPct, mostrarAnuladas]
+  );
+  const filtradas = useMemo(() => filtrarVentas(sinAnuladas, filtros), [sinAnuladas, filtros]);
   const total = useMemo(() => totalesDe(filtradas), [filtradas]);
 
-  const opcionesGrupo = useMemo(() => opcionesDe(conPct, "grupo"), [conPct]);
-  const opcionesHipo = useMemo(() => opcionesDe(conPct, "hipodromo", nombreHipodromoParaMostrar), [conPct]);
-  const opcionesJugador = useMemo(() => opcionesDe(conPct, "jugador"), [conPct]);
+  const opcionesGrupo = useMemo(() => opcionesDe(sinAnuladas, "grupo"), [sinAnuladas]);
+  const opcionesHipo = useMemo(() => opcionesDe(sinAnuladas, "hipodromo", nombreHipodromoParaMostrar), [sinAnuladas]);
+  const opcionesJugador = useMemo(() => opcionesDe(sinAnuladas, "jugador"), [sinAnuladas]);
   const opcionesCarrera = useMemo(() => {
-    const base = filtros.hipodromo ? filtrarVentas(conPct, { hipodromo: filtros.hipodromo }) : conPct;
+    const base = filtros.hipodromo ? filtrarVentas(sinAnuladas, { hipodromo: filtros.hipodromo }) : sinAnuladas;
     return opcionesDe(base, "carrera", nombreHipodromoParaMostrar);
-  }, [conPct, filtros.hipodromo]);
+  }, [sinAnuladas, filtros.hipodromo]);
 
   const filas = useMemo(() => {
     const base = agruparPor(filtradas, dimension, nombreHipodromoParaMostrar);
@@ -837,6 +843,18 @@ export function ReporteVentasModal({
               </button>
             ))}
           </div>
+          <button
+            type="button"
+            onClick={() => setMostrarAnuladas((v) => !v)}
+            title={mostrarAnuladas ? "Ocultar jugadas anuladas en todos los reportes" : "Mostrar jugadas anuladas en todos los reportes"}
+            className={`rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide transition-colors ${
+              mostrarAnuladas
+                ? "border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100"
+                : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+            }`}
+          >
+            {mostrarAnuladas ? "🚫 Ocultar anuladas" : "✅ Mostrar anuladas"}
+          </button>
           <label className="ml-auto flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">🔎 Buscar</span>
             <input
