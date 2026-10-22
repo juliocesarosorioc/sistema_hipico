@@ -88,10 +88,13 @@ const RE_PROP_C =
   String.raw`(\d+(?:[.,]\d+)?)\s*(?:a|\/)\s*(\d+(?:[.,]\d+)?)`;
 
 function norm(entrada: unknown): string {
-  return String(entrada ?? "")
+  let s = String(entrada ?? "")
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ");
+  // "1p de 2-3", "1p del 2 y 3" -> quitar "de/del"
+  s = s.replace(/\bdel\b/g, " ").replace(/\bde\b/g, " ").replace(/\s+/g, " ").trim();
+  return s;
 }
 
 /** Divide una entrada de exemplares. null si tiene algo que no es un ejemplar. */
@@ -209,9 +212,10 @@ function interno(texto: string): Nomenclatura | null {
     };
   }
 
-  /* --- Condicion + "el/la" + lista: "2n el 3, 4 y 8" · "1p el 5" · "PP el 5" --- */
+  /* --- Condicion + "el/la" + lista: "2n el 3, 4 y 8" · "1p el 5" · "PP el 5" ---
+     También acepta "1p 2-3", "1p 2 y 3" (sin "el/la"). */
   const conLista = new RegExp(
-    String.raw`^(pp|[1-8]\s*[pn])\s*(?:el|la)\s*(` + RE_LISTA + String.raw`)$`,
+    String.raw`^(pp|[1-8]\s*[pn])\s+(?:el|la\s+)?(` + RE_LISTA + String.raw`)$`,
     "i"
   ).exec(t);
   if (conLista) {
@@ -424,11 +428,14 @@ export type CategoriaJugada = "Jugadas de Puestos" | "Jugadas a Premio";
 export function canonicalizarA_Premio(codigo: string): string {
   const t = norm(codigo);
   if (!t) return String(codigo ?? "");
-  // Proporción pelada: "10a3" / "10a3.5" / "10/3.5" (solo, con punto o coma).
+  // Proporción pelada: "10a3" / "10a3,5" / "10/3.5" (solo, con punto o coma).
   const m = /^(\d+(?:[.,]\d+)?)\s*(?:a|\/)\s*(\d+(?:[.,]\d+)?)$/.exec(t);
   if (!m) return String(codigo ?? "");
   const limpia = (s: string) => s.replace(",", ".");
-  return `${limpia(m[1])}/${limpia(m[2]).replace(".", ",")}`;
+  const j = limpia(m[1]);
+  const r = limpia(m[2]);
+  // Normalizar a formato casa con coma decimal: "10/3,5"
+  return `${j}/${r.replace(".", ",")}`;
 }
 
 /**
