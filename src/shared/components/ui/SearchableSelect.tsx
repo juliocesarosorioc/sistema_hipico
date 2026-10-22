@@ -9,6 +9,7 @@ import {
   hayTextoLibre,
 } from "@/shared/components/ui/searchable-select-teclado";
 import type { OpcionSelect } from "@/shared/components/ui/searchable-select-teclado";
+import { Flag } from "@/shared/components/ui/BanderaPais";
 
 export type { OpcionSelect } from "@/shared/components/ui/searchable-select-teclado";
 
@@ -34,6 +35,13 @@ type Props = {
   inputRef?: Ref<HTMLInputElement>;
   /** Deshabilita el campo sin deshabilitar el resto del formulario. */
   disabled?: boolean;
+  /**
+   * Tema OSCURO para modales editoriales (fondo slate-900). Pinta el campo y la
+   * lista en la paleta del modal para que el desplegable no sea un parche
+   * blanco dentro de una tarjeta oscura. Por defecto, claro (compatibilidad con
+   * las pantallas de fondo blanco que ya lo usan).
+   */
+  temaOscuro?: boolean;
 };
 
 /**
@@ -49,9 +57,10 @@ export function SearchableSelect({
   allowCustom = true,
   displayValue,
   className = "",
-  inputClassName = "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold normal-case text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500",
+  inputClassName,
   inputRef,
   disabled = false,
+  temaOscuro = false,
 }: Props) {
   const [abierto, setAbierto] = useState(false);
   const [texto, setTexto] = useState("");
@@ -59,6 +68,17 @@ export function SearchableSelect({
   const ref = useRef<HTMLDivElement>(null);
   const refInterno = useRef<HTMLInputElement>(null);
   const idLista = useId();
+
+  // Paleta del campo y de la lista: una sola decisión por tema, no estilos
+  // sueltos en cada uso. El llamador puede pisar el campo con `inputClassName`.
+  const claseCampo =
+    inputClassName ??
+    (temaOscuro
+      ? "modal-campo font-bold normal-case"
+      : "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold normal-case text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500");
+  const claseLista = temaOscuro
+    ? "absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 shadow-2xl shadow-black/60"
+    : "absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded-lg border border-line bg-white shadow-xl";
 
   /** Combina el ref interno con el del llamador: los dos reciben el <input>. */
   const setInputRef = (el: HTMLInputElement | null) => {
@@ -163,10 +183,10 @@ export function SearchableSelect({
         aria-autocomplete="list"
         aria-controls={idLista}
         aria-activedescendant={abierto ? `${idLista}-${activo}` : undefined}
-        className={inputClassName}
+        className={claseCampo}
       />
       {abierto && (filtradas.length > 0 || textoSinMatch) && (
-        <ul id={idLista} role="listbox" className="absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded-lg border border-line bg-white shadow-xl">
+        <ul id={idLista} role="listbox" className={claseLista}>
           {filtradas.map((o, i) => (
             <li key={o.value}>
               <button
@@ -179,16 +199,35 @@ export function SearchableSelect({
                   elegir(o.value);
                 }}
                 onMouseEnter={() => setActivo(i)}
-                className={`block w-full px-3 py-2 text-left text-xs font-semibold normal-case transition-colors ${
-                  i === activo ? "bg-primary-500/10 text-primary-700" : "text-slate-700"
+                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold normal-case transition-colors ${
+                  i === activo
+                    ? temaOscuro
+                      ? "bg-amber-400/15 text-amber-200"
+                      : "bg-primary-500/10 text-primary-700"
+                    : temaOscuro
+                      ? "text-slate-200"
+                      : "text-slate-700"
                 }`}
               >
-                {o.label}
+                {/* Bandera del país y logo del hipódromo: contexto visual antes
+                    del nombre, para elegir sin leer renglón por renglón. */}
+                {o.pais ? <Flag nac={o.pais} size={14} withName={false} /> : null}
+                {o.logo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={o.logo}
+                    alt=""
+                    className="h-4 w-4 shrink-0 rounded object-contain"
+                  />
+                ) : null}
+                <span className="min-w-0 flex-1 truncate">{o.label}</span>
               </button>
             </li>
           ))}
           {textoSinMatch && !allowCustom && (
-            <li className="px-3 py-2 text-[10px] italic text-slate-400">Sin coincidencias</li>
+            <li className={`px-3 py-2 text-[10px] italic ${temaOscuro ? "text-slate-500" : "text-slate-400"}`}>
+              Sin coincidencias
+            </li>
           )}
         </ul>
       )}

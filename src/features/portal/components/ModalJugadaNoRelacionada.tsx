@@ -21,9 +21,13 @@
  * la disputa): pegar con Ctrl+V o elegir un archivo.
  */
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
-import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
+import { opcionesHipodromo } from "@/features/hipodromos/lib/nombre";
+import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
+import type { Hipodromo } from "@/features/hipodromos/lib/tipos";
+import { useVersionLogos } from "@/shared/store/useHipodromosStore";
 import { solicitarJugadaNoRelacionada, type SesionPortal } from "@/features/portal/lib/portal";
 import { TIPOS_JUGADA, ETIQUETA_TIPO, type TipoJugada } from "@/features/portal/lib/jugada-usuario";
 import {
@@ -43,25 +47,7 @@ const hoyIso = (): string => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
-const inp =
-  "w-full border border-line rounded-xl bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200";
-const lbl = "block text-[10px] font-black uppercase text-slate-500 mb-1";
-
-/** Hipódromos comunes del sistema, como sugerencia editable (no obliga). */
-const HIPODROMOS = [
-  "LA RINCONADA",
-  "VALENCIA",
-  "SANTA RITA",
-  "POMONA",
-  "GULFSTREAM",
-  "AQUEDUCT",
-  "BELMONT",
-  "SARATOGA",
-  "CHURCHILL DOWNS",
-  "KEENELAND",
-  "SANTA ANITA",
-  "DEL MAR",
-];
+const lbl = "modal-campo-label";
 
 export function ModalJugadaNoRelacionada({
   sesion,
@@ -92,6 +78,22 @@ export function ModalJugadaNoRelacionada({
   const [previa, setPrevia] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState("");
+
+  // Catálogo REAL de hipódromos (con país y logo) para el buscador con teclado.
+  // Antes había una lista fija de 12 nombres y un `<datalist>`: si el club tenía
+  // otro hipódromo registrado, el jugador no lo veía ni lo sugería.
+  const [catalogo, setCatalogo] = useState<Hipodromo[]>([]);
+  const versionLogos = useVersionLogos();
+  useEffect(() => {
+    let vivo = true;
+    listarHipodromos()
+      .then((r) => vivo && setCatalogo(r.data))
+      .catch(() => vivo && setCatalogo([]));
+    return () => {
+      vivo = false;
+    };
+  }, [versionLogos]);
+  const opcionesHip = useMemo(() => opcionesHipodromo(catalogo), [catalogo]);
 
   const elegirImagen = (f: File | null) => {
     setImagen(f);
@@ -147,28 +149,29 @@ export function ModalJugadaNoRelacionada({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 p-4" onClick={onCerrar}>
-      <div className="my-6 w-full max-w-xl rounded-2xl border border-line bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-line px-5 py-4">
-          <h2 className="text-sm font-black text-slate-800">
-            <span className="mr-2 text-indigo-600">➕</span> Solicitar Incluir Jugada No Relacionada
-          </h2>
-          <button onClick={onCerrar} className="text-slate-400 hover:text-slate-700" aria-label="Cerrar">
+    <div className="modal-overlay" onClick={onCerrar}>
+      <div className="modal-editorial" onClick={(e) => e.stopPropagation()}>
+        <header className="modal-editorial__cabecera">
+          <div className="modal-editorial__titulos">
+            <h2 className="modal-editorial__titulo">➕ Solicitar Incluir Jugada No Relacionada</h2>
+            <p className="modal-editorial__sub">Pedile a la casa que revise una jugada que no te aparece.</p>
+          </div>
+          <button onClick={onCerrar} className="modal-editorial__cerrar" aria-label="Cerrar">
             ✕
           </button>
-        </div>
+        </header>
 
-        <div className="space-y-3 px-5 py-4" onPaste={onPaste}>
-          <p className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-[11px] font-bold text-amber-700">
+        <div className="modal-editorial__cuerpo space-y-3" onPaste={onPaste}>
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-300">
             ⏱️ {explicarVentana(modo)}
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
               <label className={lbl}>Fecha (Día)</label>
               <input
                 type="date"
-                className={inp}
+                className="modal-campo"
                 value={fecha}
                 min={piso}
                 max={tope}
@@ -177,25 +180,21 @@ export function ModalJugadaNoRelacionada({
             </div>
             <div>
               <label className={lbl}>Hipódromo</label>
-              <input
-                className={inp + " uppercase"}
-                list="hipodromos-no-rel"
+              {/* Buscador con teclado: escribís letras y filtra al instante
+                  (↑↓, Enter, Escape), con bandera del país y logo del hipódromo. */}
+              <SearchableSelect
+                options={opcionesHip}
                 value={hipodromo}
-                onChange={(e) => setHipodromo(e.target.value)}
-                placeholder="LA RINCONADA"
+                onChange={(v) => setHipodromo(v)}
+                placeholder="Escribí el hipódromo…"
+                allowCustom
+                temaOscuro
               />
-              <datalist id="hipodromos-no-rel">
-                {HIPODROMOS.map((h) => (
-                  <option key={h} value={h}>
-                    {nombreHipodromoParaMostrar(h)}
-                  </option>
-                ))}
-              </datalist>
             </div>
             <div>
               <label className={lbl}>Carrera</label>
               <input
-                className={inp + " font-mono"}
+                className="modal-campo font-mono"
                 inputMode="numeric"
                 value={carrera}
                 onChange={(e) => setCarrera(e.target.value.replace(/\D/g, ""))}
@@ -204,10 +203,10 @@ export function ModalJugadaNoRelacionada({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
               <label className={lbl}>Tipo de jugada</label>
-              <select className={inp} value={tipoJugada} onChange={(e) => setTipoJugada(e.target.value as TipoJugada)}>
+              <select className="modal-campo" value={tipoJugada} onChange={(e) => setTipoJugada(e.target.value as TipoJugada)}>
                 {TIPOS_JUGADA.map((t) => (
                   <option key={t} value={t}>
                     {ETIQUETA_TIPO[t].icono} {ETIQUETA_TIPO[t].etiqueta}
@@ -218,7 +217,7 @@ export function ModalJugadaNoRelacionada({
             <div className="md:col-span-2">
               <label className={lbl}>Ejemplar(es)</label>
               <input
-                className={inp}
+                className="modal-campo"
                 value={ejemplares}
                 onChange={(e) => setEjemplares(e.target.value)}
                 placeholder="Ej: 3 / 5x7"
@@ -229,7 +228,7 @@ export function ModalJugadaNoRelacionada({
           <div>
             <label className={lbl}>Monto jugado</label>
             <input
-              className={inp + " text-right font-mono"}
+              className="modal-campo text-right font-mono"
               inputMode="decimal"
               value={monto}
               onChange={(e) => setMonto(e.target.value)}
@@ -240,7 +239,7 @@ export function ModalJugadaNoRelacionada({
           <div>
             <label className={lbl}>Explicación</label>
             <textarea
-              className={inp + " min-h-[80px]"}
+              className="modal-campo min-h-[80px]"
               value={explicacion}
               onChange={(e) => setExplicacion(e.target.value)}
               placeholder="Contá qué jugaste, dónde y por qué creés que no aparece."
@@ -252,28 +251,28 @@ export function ModalJugadaNoRelacionada({
             <input
               type="file"
               accept="image/*"
-              className="block w-full text-[11px] text-slate-500"
+              className="block w-full text-[11px] text-slate-400"
               onChange={(e) => elegirImagen(e.target.files?.[0] ?? null)}
             />
             {previa ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={previa} alt="Soporte" className="mt-2 max-h-40 rounded-xl border border-line" />
+              <img src={previa} alt="Soporte" className="mt-2 max-h-40 rounded-xl border border-slate-700" />
             ) : null}
           </div>
 
           {error ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">{error}</div>
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] font-bold text-rose-300">{error}</div>
           ) : null}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-line px-5 py-4">
+        <footer className="modal-editorial__pie">
           <Button variant="ghost" size="sm" onClick={onCerrar}>
             Cancelar
           </Button>
           <Button variant="default" size="sm" disabled={enviando} onClick={() => void enviar()}>
             {enviando ? <span className="mr-1">⏳</span> : <span className="mr-1">📤</span>} Enviar solicitud
           </Button>
-        </div>
+        </footer>
       </div>
     </div>
   );

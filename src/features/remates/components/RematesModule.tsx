@@ -202,7 +202,9 @@ export function RematesModule() {
   /** Reporte contable de los remates vendidos del día. */
   const [reporteAbierto, setReporteAbierto] = useState(false);
   const [caballos, setCaballos] = useState<CaballoRemate[]>([]);
-  const [hipodromos, setHipodromos] = useState<{ id: string; nombre: string }[]>([]);
+  const [hipodromos, setHipodromos] = useState<
+    { id: string; nombre: string; pais?: string | null; logo_url?: string | null }[]
+  >([]);
   const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
   const [clientes, setClientes] = useState<ClienteRow[]>([]);
 
@@ -223,7 +225,9 @@ export function RematesModule() {
     void refrescar();
     void (async () => {
       const h = await listarHipodromos();
-      setHipodromos((h.data ?? []).map((x) => ({ id: String(x.id), nombre: x.nombre })));
+      setHipodromos(
+        (h.data ?? []).map((x) => ({ id: String(x.id), nombre: x.nombre, pais: x.pais, logo_url: x.logo_url }))
+      );
       const g = await listarGruposVenta();
       setGrupos(g);
       const c = await listarClientes();
@@ -383,7 +387,7 @@ function ListaRemates({
 }: {
   remates: Remate[];
   cargando: boolean;
-  hipodromos: { id: string; nombre: string }[];
+  hipodromos: { id: string; nombre: string; pais?: string | null; logo_url?: string | null }[];
   grupos: GrupoVenta[];
   toast: (m: string, t?: "success" | "warning" | "error" | "info") => void;
   onVer: (r: Remate) => void;
@@ -572,14 +576,22 @@ function ListaRemates({
 
               <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
                 <span>Hipódromo</span>
-                <select value={hipodromoId} onChange={(e) => setHipodromoId(e.target.value)} className={selectCls}>
-                  <option value="">— Seleccione —</option>
-                  {hipodromos.map((h) => (
-                    <option key={h.id} value={h.id}>
-                      {nombreHipodromoParaMostrar(h.nombre)}
-                    </option>
-                  ))}
-                </select>
+                {/* Buscador con teclado (↑↓/Enter/Escape) con bandera y logo:
+                    reemplaza el <select> nativo, que con 60+ sedes obligaba a
+                    scrollear la lista entera. */}
+                <SearchableSelect
+                  options={hipodromos.map<OpcionSelect>((h) => ({
+                    value: h.id,
+                    label: nombreHipodromoParaMostrar(h.nombre),
+                    pais: h.pais ?? null,
+                    logo: h.logo_url ?? null,
+                  }))}
+                  value={hipodromoId}
+                  onChange={(v) => setHipodromoId(v)}
+                  placeholder="Buscar hipódromo…"
+                  allowCustom={false}
+                  inputClassName={selectCls}
+                />
               </label>
 
               <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">

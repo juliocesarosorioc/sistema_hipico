@@ -9,7 +9,20 @@
  * El componente (src/components/ui/SearchableSelect.tsx) tiene su propia copia
  * que se pasa por props; esta función es esa misma lógica, no una simulación.
  */
-export type OpcionSelect = { value: string; label: string };
+export type OpcionSelect = {
+  value: string;
+  label: string;
+  /**
+   * Contexto visual de la opción (se pinta ANTES del texto en la lista).
+   * Opcional: los selectores que ya existían (clientes, grupos, tablas) siguen
+   * funcionando sin esto y solo muestran el rótulo. Los selectores de hipódromos
+   * sí lo aprovechan para que el operador reconozca el destino de un vistazo.
+   */
+  /** Código de país (VE, USA, …): se dibuja la bandera `Flag`. */
+  pais?: string | null;
+  /** URL (o Data URL) del logo; se dibuja como <img> del tamaño de un ícono. */
+  logo?: string | null;
+};
 
 export type EstadoCombo = {
   key: string;

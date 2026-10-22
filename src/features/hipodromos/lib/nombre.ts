@@ -31,3 +31,32 @@ export function nombrePropioHipodromo(valor: string | null | undefined, activos:
 export function nombreHipodromoParaMostrar(valor: string | null | undefined): string {
   return formatearNombre(String(valor ?? ""));
 }
+
+/**
+ * Convierte el catálogo REAL de hipódromos (`Hipodromo[]`, con `pais` y
+ * `logo_url`) en las opciones del `SearchableSelect`, cada una con la bandera
+ * del país y el logo. Es la fuente única para TODOS los modales que eligen un
+ * hipódromo: el operador ve la bandera y el escudo antes de leer el nombre, y no
+ * hay una lista de países/íconos distinta en cada pantalla.
+ *
+ * El `value` queda en mayúsculas (canónico, como se escribe y consulta la base);
+ * el `label` con la capitalización real ("La Rinconada").
+ */
+export function opcionesHipodromo(
+  hipodromos: Array<{ nombre: string; pais?: string | null; logo_url?: string | null }> | null | undefined
+): Array<{ value: string; label: string; pais?: string | null; logo?: string | null }> {
+  const vistos = new Set<string>();
+  const opciones: Array<{ value: string; label: string; pais?: string | null; logo?: string | null }> = [];
+  for (const h of hipodromos ?? []) {
+    const value = String(h?.nombre ?? "").trim().toUpperCase();
+    if (!value || vistos.has(value)) continue;
+    vistos.add(value);
+    opciones.push({
+      value,
+      label: formatearNombre(h?.nombre ?? ""),
+      pais: h?.pais ?? null,
+      logo: h?.logo_url ?? null,
+    });
+  }
+  return opciones.sort((a, b) => a.label.localeCompare(b.label, "es"));
+}

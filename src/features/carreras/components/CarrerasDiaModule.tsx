@@ -4,8 +4,15 @@ import { getHorseColor } from "@/shared/lib/horseColors";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
-import { listarHipodromos, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
-import { nombreHipodromoParaMostrar, nombrePropioHipodromo } from "@/features/hipodromos/lib/nombre";
+import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
+import type { Hipodromo } from "@/features/hipodromos/lib/tipos";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
+import { useVersionLogos } from "@/shared/store/useHipodromosStore";
+import {
+  nombreHipodromoParaMostrar,
+  nombrePropioHipodromo,
+  opcionesHipodromo,
+} from "@/features/hipodromos/lib/nombre";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import {
   eliminarCarreraCentral,
@@ -78,7 +85,11 @@ function ejemplaresATexto(caballos: EjemplarCarreraCentral[] | undefined): strin
  * Gestión de Jugadas, Tablas Fijas y Dupletas.
  */
 export function CarrerasDiaModule() {
-  const [hipodromos, setHipodromos] = useState<OpcionHipodromo[]>([]);
+  const [catalogo, setCatalogo] = useState<Hipodromo[]>([]);
+  // Opciones para el buscador: bandera del país + logo, en la MISMA forma
+  // (`value`/`label`) que ya consumía `nombrePropioHipodromo`.
+  const hipodromos = useMemo(() => opcionesHipodromo(catalogo), [catalogo]);
+  const versionLogos = useVersionLogos();
   const [hipodromo, setHipodromo] = useState("");
   const [fecha, setFecha] = useState(() => hoyLocal());
   const nombreHipoFiltro = nombrePropioHipodromo(hipodromo, hipodromos);
@@ -103,14 +114,15 @@ export function CarrerasDiaModule() {
   // preselecciona ningún hipódromo, así la jornada completa se ve de entrada.
   useEffect(() => {
     let v = true;
-    void listarHipodromos().then((hs) => {
+    void listarHipodromos().then((r) => {
       if (!v) return;
-      setHipodromos(hs);
+      setCatalogo(r.data);
     });
     return () => {
       v = false;
     };
-  }, []);
+    // `versionLogos` fuerza recarga cuando cambia un logo (local o realtime).
+  }, [versionLogos]);
 
   /**
    * Una sola carga por día: TODAS las carreras de la fecha, sin filtrar. El
@@ -289,18 +301,16 @@ export function CarrerasDiaModule() {
           <p className="text-xs font-medium text-cyan-100">Data central de la jornada — alimenta Gestión, Tablas y Dupletas.</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <select
-            value={hipodromo}
-            onChange={(e) => setHipodromo(e.target.value)}
-            className="rounded-lg border border-cyan-400/60 bg-white px-2 py-1 text-xs font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
-          >
-            <option value="">Todos los hipódromos</option>
-            {hipodromos.map((h) => (
-              <option key={h.value} value={h.value}>
-                {nombreHipodromoParaMostrar(h.label)}
-              </option>
-            ))}
-          </select>
+          <div className="w-56">
+            <SearchableSelect
+              options={[{ value: "", label: "Todos los hipódromos" }, ...hipodromos]}
+              value={hipodromo}
+              onChange={(v) => setHipodromo(v)}
+              placeholder="Todos los hipódromos"
+              allowCustom={false}
+              inputClassName="rounded-lg border border-cyan-400/60 bg-white px-2 py-1 text-xs font-bold normal-case text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+            />
+          </div>
           <input
             type="date"
             value={fecha}

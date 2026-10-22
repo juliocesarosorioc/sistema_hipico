@@ -91,6 +91,8 @@ export function useVersionLogos(): number {
   useEffect(() => {
     conectarLogos();
   }, []);
+  // Realtime cross-device: un logo cargado en otra PC/ventana llega por acá.
+  useRealtimeLogos();
   return useHipodromosStore((s) => s.versionLogos);
 }
 
@@ -106,5 +108,75 @@ export function conectarLogos(): void {
   window.addEventListener("logos-updated", () => {
     useHipodromosStore.getState().bumpLogos();
   });
+}
+
+/* ──────────────────────── REALTIME CROSS-DEVICE DE LOGOS ───────────────────
+ * El evento `logos-updated` avisa DENTRO de la pestaña que cargó el logo. Pero
+ * un logo cambiado desde OTRO navegador, otra PC o el celular del dueño no
+ * emitía nada acá: las demás pantallas seguían mostrando el logo viejo hasta
+ * recargar.
+ *
+ * Esta suscripción escucha las DOS tablas que guardan logos (`hipodromos` y
+ * `grupos_venta`) por `postgres_changes` y, ante cualquier alta/edición/baja,
+ * bumpea la versión de logos: es exactamente lo que hace el evento local, así
+ * que todos los `<LogoDisplay>` / cabeceras de reporte se repintan solos.
+ *
+ * Una sola suscripción por pestaña, levantada por el PRIMER consumidor y bajada
+ * por el último (ref-count), igual que `useRealtimeCarreras`. Requiere que las
+ * tablas estén en la publicación `supabase_realtime` (sql/realtime_logos.sql);
+ * sin eso, no pasa nada y queda el refresco local de siempre.
+ */
+let canalLogos: { unsubscribe: () => void } | null = null;
+let oyentesLogos = 0;
+let conectandoLogos = false;
+
+async function conectarRealtimeLogos(): Promise<void> {
+  if (canalLogos || conectandoLogos) return;
+  conectandoLogos = true;
+  try {
+    const { supabase } = await import("@/core/supabase");
+    if (!supabase || canalLogos) return;
+    canalLogos = supabase
+      .channel("logos-hipodromos-grupos")
+      .on("postgres_changes", { event: "*", schema: "public", table: "hipodromos" }, () => {
+        useHipodromosStore.getState().bumpLogos();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "grupos_venta" }, () => {
+        useHipodromosStore.getState().bumpLogos();
+      })
+      .subscribe();
+  } catch {
+    // Sin realtime (publicación no aplicada o red): queda el evento local.
+    canalLogos = null;
+  } finally {
+    conectandoLogos = false;
+  }
+}
+
+function desconectarRealtimeLogos(): void {
+  if (!canalLogos) return;
+  const canal = canalLogos;
+  canalLogos = null;
+  try {
+    canal.unsubscribe();
+  } catch {
+    /* noop */
+  }
+}
+
+/**
+ * Mantiene viva UNA suscripción realtime a los logos mientras haya pantallas que
+ * los pinten. Es lo que hace que un logo cargado en otra PC/ventana aparezca al
+ * instante, sin recargar.
+ */
+export function useRealtimeLogos(): void {
+  useEffect(() => {
+    oyentesLogos += 1;
+    void conectarRealtimeLogos();
+    return () => {
+      oyentesLogos = Math.max(0, oyentesLogos - 1);
+      if (oyentesLogos === 0) desconectarRealtimeLogos();
+    };
+  }, []);
 }
 

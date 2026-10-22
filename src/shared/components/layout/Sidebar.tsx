@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { Guard } from "@/shared/components/ui/Guard";
 import { capacidadesDeRuta } from "@/features/seguridad/lib/capacidades";
@@ -21,64 +21,107 @@ type Item = {
   titulo?: string;
 };
 
-/** Menú lateral clonado del legacy (js/components/layout.js → GRUPOS). */
-const GRUPOS: Array<{ id: string; titulo: string; items: Item[] }> = [
+/**
+ * Navegación por CATEGORÍAS (filtros) y SUBMÓDULOS desplegables (subfiltros).
+ *
+ * Antes el menú era una lista plana de 5 bloques donde todo pesaba igual:
+ * "Tablas Fijas" quedaba al lado de "Hipódromos" y el operador tenía que leer
+ * los 20 renglones para encontrar lo que buscaba. Acá los módulos se agrupan
+ * por la NATURALEZA del trabajo —qué se está haciendo, no de qué tabla sale—
+ * en 6 categorías estables:
+ *
+ *   1. Operaciones en Vivo   · lo que pasa mientras corre la carrera
+ *   2. Mercados y Pizarras   · lo que se vende y se juega
+ *   3. Grupo y Clientes      · la cartera a cargo
+ *   4. Finanzas              · el dinero y su contabilidad
+ *   5. Reportes y Auditoría  · el cierre y el control
+ *   6. Configuración         · el catálogo y los permisos
+ *
+ * Cada categoría se despliega/pliega; el estado se recuerda por sesión en
+ * `localStorage` para que el menú no se reabra entero en cada recarga. La
+ * categoría con la ruta activa se abre SOLA aunque el usuario la haya plegado.
+ */
+type Categoria = {
+  id: string;
+  titulo: string;
+  emoji: string;
+  items: Item[];
+};
+
+const CATEGORIAS: Categoria[] = [
   {
-    id: "hipico",
-    titulo: "Módulo Hípico",
+    id: "vivo",
+    titulo: "Operaciones en Vivo",
+    emoji: "🎥",
     items: [
       { href: "/inicio", emoji: "🏠", txt: "Inicio / Dashboard" },
+      // Monitor de carreras del día: la pantalla que sigue el programa en vivo.
+      { href: "/carreras", emoji: "🏁", txt: "Monitor de Carreras" },
       { href: "/gestion-jugadas", emoji: "🎟️", txt: "Gestión de Jugadas" },
+      { href: "/taquilla", emoji: "🧾", txt: "Taquilla / Compras" },
       { href: "/jugadas", emoji: "📈", txt: "Monitor de Jugadas" },
+    ],
+  },
+  {
+    id: "mercados",
+    titulo: "Mercados y Pizarras",
+    emoji: "📊",
+    items: [
       { href: "/tablas-fijas", emoji: "📋", txt: "Tablas Fijas" },
-      { href: "/dupleta", emoji: "🎯", txt: "Dupletas" },
+      { href: "/remates", emoji: "🔔", txt: "Remates en Vivo" },
       { href: "/marcas", emoji: "🏷️", txt: "Marcas" },
-      { href: "/grupos", emoji: "🗂️", txt: "Grupos y Convenios" },
-      { href: "/ejemplares", emoji: "🐴", txt: "Ejemplares, Gaceta y Carreras" },
+      { href: "/pollas", emoji: "🏆", txt: "Pollas" },
+      { href: "/dupleta", emoji: "🎯", txt: "Dupletas" },
       // W.P.S. INACTIVA para todos los usuarios: sin `href` entra a la rama
       // deshabilitada (chip 🚧 + pointer-events-none/opacity-50) y no se ofrece
       // como pantalla operativa. El motor no se toca (features/motores/wps.ts).
       { emoji: "🏇", txt: "W.P.S.", badge: WPS_PLANIFICACION_CORTO, titulo: WPS_PLANIFICACION },
-      { href: "/remates", emoji: "🔔", txt: "Remates" },
-      { href: "/pollas", emoji: "🏆", txt: "Pollas" },
-      { href: "/tickets", emoji: "🛟", txt: "Tickets / Reclamos" },
-      { href: "/hipodromos", emoji: "🗺️", txt: "Hipódromos" },
     ],
   },
   {
-    id: "contabilidad",
-    titulo: "Contabilidad",
+    id: "grupo",
+    titulo: "Administración de Grupo y Clientes",
+    emoji: "🗂️",
     items: [
-      { href: "/contabilidad/ingresos", emoji: "📥", txt: "Ingresos / Avales" },
+      { href: "/clientes", emoji: "👥", txt: "Clientes y Saldos" },
+      // Jugadas entre tercios: jugadas a futuro que se cobran/pagan por tercios.
+      { href: "/reglas-jugadas", emoji: "⚙️", txt: "Jugadas entre Tercios" },
+      { href: "/grupos", emoji: "🗂️", txt: "Grupos y Convenios" },
+      { href: "/operadores", emoji: "🧑‍💼", txt: "Operadores" },
+      { href: "/crear-grupo", emoji: "🧩", txt: "Creación de Grupos" },
+    ],
+  },
+  {
+    id: "finanzas",
+    titulo: "Finanzas y Contabilidad",
+    emoji: "💰",
+    items: [
       { href: "/contabilidad/caja", emoji: "💵", txt: "Caja Unificada" },
       { href: "/contabilidad/bancos", emoji: "🏦", txt: "Bancos Reales" },
-      { href: "/saldos-reportes", emoji: "📊", txt: "Liquidación" },
+      { href: "/contabilidad/ingresos", emoji: "📥", txt: "Ingresos / Depósitos" },
       { href: "/contabilidad/monedas", emoji: "💱", txt: "Monedas y Tasas" },
     ],
   },
   {
-    id: "comunicacion",
-    titulo: "Comunicación",
-    items: [{ href: "/whatsapp", emoji: "💬", txt: "WhatsApp" }],
-  },
-  {
-    id: "configuracion",
-    titulo: "Configuración",
+    id: "reportes",
+    titulo: "Reportes y Auditoría",
+    emoji: "🧾",
     items: [
-      { href: "/clientes", emoji: "👥", txt: "Clientes/Socios" },
-      { href: "/reglas-jugadas", emoji: "⚙️", txt: "Reglas de Jugadas" },
+      { href: "/reporte-diario", emoji: "📅", txt: "Reporte Diario" },
+      { href: "/saldos-reportes", emoji: "📊", txt: "Liquidación de Carreras" },
+      { href: "/tickets", emoji: "🛟", txt: "Tickets / Reclamos" },
     ],
   },
   {
-    id: "administracion",
-    titulo: "Administración",
+    id: "configuracion",
+    titulo: "Configuración y Seguridad",
+    emoji: "🛡️",
     items: [
-      { emoji: "🛡️", txt: "Seguridad y Accesos", href: "/seguridad" },
-      { emoji: "👥", txt: "Operadores", href: "/operadores" },
-      // Solo josorioc (el módulo exige esPrincipal); la entrada se oculta sola
-      // con la puerta de Seguridad para el resto de los administradores.
-      { emoji: "🧩", txt: "Creación de Grupos", href: "/crear-grupo" },
-      { emoji: "🩺", txt: "Diagnóstico", href: "/diagnostico" },
+      { href: "/hipodromos", emoji: "🗺️", txt: "Hipódromos" },
+      { href: "/ejemplares", emoji: "🐴", txt: "Ejemplares / Gaceta IA" },
+      { href: "/whatsapp", emoji: "💬", txt: "WhatsApp / Notificaciones" },
+      { href: "/seguridad", emoji: "🛡️", txt: "Matriz de Seguridad" },
+      { href: "/diagnostico", emoji: "🩺", txt: "Diagnóstico" },
     ],
   },
 ];
@@ -90,6 +133,9 @@ const esActiva = (pathname: string, href?: string) => {
   const ruta = href.split("?")[0];
   return ruta === "/inicio" ? pathname === "/inicio" : pathname.startsWith(ruta);
 };
+
+/** Clave de `localStorage` donde se recuerdan las categorías plegadas. */
+const CLAVE_PLEGADAS = "club_sidebar_plegadas";
 
 export type SidebarProps = {
   /** Escritorio: colapsado a solo iconos. Persistido por AppShell. */
@@ -107,9 +153,9 @@ export type SidebarProps = {
 };
 
 /**
- * Menú lateral izquierdo de la SPA (clon del legacy).
+ * Menú lateral izquierdo de la SPA, en dos niveles: categoría → submódulos.
  *
- * Dos modos, igual que `js/components/layout.js`:
+ * Dos modos de ancho, igual que `js/components/layout.js`:
  *   - escritorio (lg+): en el flujo, 250px o colapsado a 64px de iconos;
  *   - móvil/tablet: drawer superpuesto que se cierra con overlay o ESC.
  *
@@ -127,6 +173,30 @@ export function Sidebar({
 
   const salir = useAuthStore((s) => s.salir);
   const [saliendo, setSaliendo] = useState(false);
+
+  // Categorías plegadas por el usuario. Arrancan todas abiertas y el estado se
+  // recuerda entre recargas; la categoría activa se ignora al plegar (ver abajo).
+  const [plegadas, setPlegadas] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      const crudo = localStorage.getItem(CLAVE_PLEGADAS);
+      if (crudo) setPlegadas(JSON.parse(crudo) as string[]);
+    } catch {
+      /* sinop */
+    }
+  }, []);
+
+  const alternarCategoria = (id: string) => {
+    setPlegadas((prev) => {
+      const siguiente = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      try {
+        localStorage.setItem(CLAVE_PLEGADAS, JSON.stringify(siguiente));
+      } catch {
+        /* sinop */
+      }
+      return siguiente;
+    });
+  };
 
   const cerrarSesion = async () => {
     if (saliendo) return;
@@ -183,81 +253,106 @@ export function Sidebar({
         </p>
       </div>
 
-      {/* Navegación por grupos (estructura del legacy) */}
+      {/* Navegación por categorías desplegables */}
       <nav className="flex-1 py-2" aria-label="Navegación">
-        {GRUPOS.map((g) => (
-          <div key={g.id} className="mb-1">
-            <p
-              className={`px-5 pb-1 pt-4 text-[10px] font-bold uppercase tracking-widest text-slate-500 ${
-                compacto ? "lg:hidden" : ""
-              }`}
-            >
-              {g.titulo}
-            </p>
-            <ul>
-              {g.items.map((it) => {
-                const activo = esActiva(pathname, it.href);
-                const icono = (
-                  <span className={`w-6 shrink-0 text-center ${compacto ? "lg:mx-auto" : ""}`}>
-                    {it.emoji}
-                  </span>
-                );
-                const rotulo = <span className={compacto ? "lg:hidden" : ""}>{it.txt}</span>;
+        {CATEGORIAS.map((cat) => {
+          // ¿Hay algún submódulo de esta categoría activo? Si sí, se abre sola
+          // aunque el usuario la haya plegado: el menú nunca esconde dónde está
+          // parado. En modo riel (compacto) siempre se ve la lista de iconos.
+          const activa = cat.items.some((it) => esActiva(pathname, it.href));
+          const plegada = plegadas.includes(cat.id) && !activa;
+          const abierta = compacto || !plegada;
 
-                if (!it.href) {
-                  // Módulo no habilitado (W.P.S. 🚧): entrada bloqueada, sin
-                  // enlace y sin foco, con el badge que explica por qué.
-                  return (
-                    <li key={it.txt}>
-                      <span
-                        aria-disabled
-                        title={compacto ? it.txt : it.titulo ?? "Próximamente"}
-                        className={`flex select-none items-center gap-3 px-5 py-2.5 text-base font-medium text-slate-600 ${
-                          compacto ? "lg:justify-center lg:px-0" : ""
-                        }`}
-                      >
-                        {icono}
-                        <span className={`min-w-0 flex-1 truncate ${compacto ? "lg:hidden" : ""}`}>{it.txt}</span>
-                        <span
-                          className={`pointer-events-none shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase opacity-50 ${
-                            it.badge ? "bg-amber-500/20 text-amber-400" : "bg-slate-800/80 text-slate-500"
-                          } ${compacto ? "lg:hidden" : ""}`}
-                        >
-                          {it.badge ?? "pronto"}
-                        </span>
-                      </span>
-                    </li>
+          return (
+            <div key={cat.id} className="mb-1">
+              <button
+                type="button"
+                onClick={() => alternarCategoria(cat.id)}
+                aria-expanded={abierta}
+                aria-controls={`cat-${cat.id}`}
+                title={compacto ? cat.titulo : undefined}
+                className={`flex w-full items-center gap-2 px-5 pb-1 pt-4 text-left text-[10px] font-bold uppercase tracking-widest transition-colors ${
+                  activa ? "text-amber-400" : "text-slate-500 hover:text-slate-300"
+                } ${compacto ? "lg:hidden" : ""}`}
+              >
+                <span className="shrink-0 text-xs">{cat.emoji}</span>
+                <span className="min-w-0 flex-1 truncate">{cat.titulo}</span>
+                <span
+                  aria-hidden="true"
+                  className={`shrink-0 text-slate-500 transition-transform duration-200 ${
+                    abierta ? "rotate-90" : ""
+                  }`}
+                >
+                  ▶
+                </span>
+              </button>
+              {/* Separador visible en modo riel para no perder el agrupamiento. */}
+              <span className={`mx-4 mb-1 block border-t border-slate-700/50 ${compacto ? "lg:block" : "hidden"}`} />
+              <ul id={`cat-${cat.id}`} className={abierta ? "" : "hidden"}>
+                {cat.items.map((it) => {
+                  const itemActivo = esActiva(pathname, it.href);
+                  const icono = (
+                    <span className={`w-6 shrink-0 text-center ${compacto ? "lg:mx-auto" : ""}`}>
+                      {it.emoji}
+                    </span>
                   );
-                }
-                // La capacidad del enlace sale del REGISTRO MAESTRO según la
-                // ruta: el menú no mantiene su propia lista de permisos y no
-                // puede quedar desincronizado del maestro. Se consulta solo la
-                // parte de la ruta, sin el query (?pestana=auditoria).
-                const cap = capacidadesDeRuta(it.href.split("?")[0])[0];
-                const enlace = (
-                  <Link
-                    href={it.href}
-                    title={compacto ? it.txt : undefined}
-                    onClick={onNavegar}
-                    className={`flex items-center gap-3 border-l-4 px-5 py-3 text-base font-semibold transition-colors ${
-                      compacto ? "lg:justify-center lg:px-0" : ""
-                    } ${
-                      activo
-                        ? "border-blue-400 bg-blue-600 text-white"
-                        : "border-transparent text-slate-300 hover:bg-slate-800 hover:text-white"
-                    }`}
-                  >
-                    {icono}
-                    {rotulo}
-                  </Link>
-                );
-                return (
-                  <li key={it.href}>{cap ? <Guard permiso={cap}>{enlace}</Guard> : enlace}</li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
+                  const rotulo = <span className={compacto ? "lg:hidden" : ""}>{it.txt}</span>;
+
+                  if (!it.href) {
+                    // Módulo no habilitado (W.P.S. 🚧): entrada bloqueada, sin
+                    // enlace y sin foco, con el badge que explica por qué.
+                    return (
+                      <li key={it.txt}>
+                        <span
+                          aria-disabled
+                          title={compacto ? it.txt : it.titulo ?? "Próximamente"}
+                          className={`flex select-none items-center gap-3 px-5 py-2.5 text-base font-medium text-slate-600 ${
+                            compacto ? "lg:justify-center lg:px-0" : ""
+                          }`}
+                        >
+                          {icono}
+                          <span className={`min-w-0 flex-1 truncate ${compacto ? "lg:hidden" : ""}`}>{it.txt}</span>
+                          <span
+                            className={`pointer-events-none shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase opacity-50 ${
+                              it.badge ? "bg-amber-500/20 text-amber-400" : "bg-slate-800/80 text-slate-500"
+                            } ${compacto ? "lg:hidden" : ""}`}
+                          >
+                            {it.badge ?? "pronto"}
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  }
+                  // La capacidad del enlace sale del REGISTRO MAESTRO según la
+                  // ruta: el menú no mantiene su propia lista de permisos y no
+                  // puede quedar desincronizado del maestro. Se consulta solo la
+                  // parte de la ruta, sin el query (?pestana=auditoria).
+                  const cap = capacidadesDeRuta(it.href.split("?")[0])[0];
+                  const enlace = (
+                    <Link
+                      href={it.href}
+                      title={compacto ? it.txt : undefined}
+                      onClick={onNavegar}
+                      className={`flex items-center gap-3 border-l-4 px-5 py-2.5 text-sm font-semibold transition-colors ${
+                        compacto ? "lg:justify-center lg:px-0" : ""
+                      } ${
+                        itemActivo
+                          ? "border-amber-400 bg-blue-600 text-white"
+                          : "border-transparent text-slate-300 hover:bg-slate-800 hover:text-white"
+                      }`}
+                    >
+                      {icono}
+                      {rotulo}
+                    </Link>
+                  );
+                  return (
+                    <li key={it.href}>{cap ? <Guard permiso={cap}>{enlace}</Guard> : enlace}</li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
       </nav>
 
       {/* Cerrar sistema (paridad con el legacy) */}

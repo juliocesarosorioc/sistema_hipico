@@ -254,7 +254,30 @@ pantalla muestra "0 filas" como si no hubiera datos.
     `postgres_changes` sobre `carreras` llega a todos (el cliente ya lo escucha en
     `useRegistroCentral`). Sustituye/complementa el bloque realtime del
     `runbook_estabilizacion.sql`, que no incluía `carreras`. Idempotente.
+25. `realtime_logos.sql` — agrega `hipodromos` y `grupos_venta` a la publicación
+    `supabase_realtime` (y `replica identity full`). Es el arreglo de "el logo
+    cambiado en otra PC/celular no aparece hasta recargar": hasta ahora el aviso
+    de logo (`logos-updated`) viajaba SOLO dentro de la pestaña que lo cambió, no
+    entre dispositivos. Con esto el `postgres_changes` sobre las dos tablas que
+    guardan logos llega a todos (el cliente ya lo escucha en
+    `useHipodromosStore` → `useRealtimeLogos`). Sin aplicarlo, la app funciona
+    igual: queda el refresco local de siempre. Idempotente.
 
+
+### Operaciones puntuales sobre datos (no son esquema)
+
+Estos scripts **no** se aplican por orden de dependencia: se corren a pedido, una
+sola vez, cuando el club lo pide. No cambian estructura.
+
+- `reclasificar_jugadas_dia25_adelantadas.sql` — marca como **adelantadas**
+  (`es_adelantada = true`) las jugadas del **día 25** que todavía **no están
+  liquidadas** (`estado = 'Pendiente'`), en `tickets_apuestas` y en `polla_ventas`
+  (si la tabla existe). **No toca saldos y no borra ninguna fila.** Antes de
+  modificar nada guarda un respaldo en `_respaldo_adelantadas_tickets` /
+  `_respaldo_adelantadas_pollas` y trae al pie la REVERSA. Las jugadas ya
+  liquidadas (`estado <> 'Pendiente'`) **no se tocan**: reclasificarlas reabriría
+  cierres y cambiaría comisiones ya emitidas. Requiere haber corrido
+  `jugadas_adelantadas.sql` (columnas `es_adelantada`). Idempotente.
 
 ### La fuente de carreras pasó a ser una sola
 

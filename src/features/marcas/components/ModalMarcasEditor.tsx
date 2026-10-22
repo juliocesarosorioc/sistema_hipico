@@ -6,8 +6,10 @@ import { getHorseColor } from "@/shared/lib/horseColors";
 import { HorseBadge } from "@/shared/components/ui/HorseChips";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { SemaforoCarreras } from "@/features/gestion/components/SemaforoCarreras";
-import { listarCarrerasPorDia, listarHipodromos, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
-import { nombreHipodromoParaMostrar, nombrePropioHipodromo } from "@/features/hipodromos/lib/nombre";
+import { listarCarrerasPorDia } from "@/features/tablas/lib/rpc";
+import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
+import { opcionesHipodromo, nombreHipodromoParaMostrar, nombrePropioHipodromo } from "@/features/hipodromos/lib/nombre";
 import {
   buscarEjemplar,
   calcularRivales,
@@ -81,7 +83,9 @@ export function ModalMarcasEditor({
   const [carreraSel, setCarreraSel] = useState<number>(carreraInicial ?? 0);
 
   /** Catálogo de hipódromos para el selector (mismo origen que Gestión). */
-  const [catalogoHipodromos, setCatalogoHipodromos] = useState<OpcionHipodromo[]>([]);
+  const [catalogoHipodromos, setCatalogoHipodromos] = useState<
+    { value: string; label: string; pais?: string | null; logo?: string | null }[]
+  >([]);
   /** Carreras registradas para [dia + hipodromo] — alimenta el semáforo. */
   const [carrerasPorDia, setCarrerasPorDia] = useState<number[]>([]);
 
@@ -102,8 +106,8 @@ export function ModalMarcasEditor({
 
   useEffect(() => {
     let v = true;
-    void listarHipodromos().then((hs) => {
-      if (v) setCatalogoHipodromos(hs);
+    void listarHipodromos().then((r) => {
+      if (v) setCatalogoHipodromos(opcionesHipodromo(r.data));
     });
     return () => {
       v = false;
@@ -421,13 +425,15 @@ export function ModalMarcasEditor({
           </div>
           <div>
             <span className={inputLbl}>2 · Hipódromo</span>
-            <select value={hipodromo} onChange={(e) => setHipodromo(e.target.value)} className={inputCls}>
-              {catalogoHipodromos.map((h) => (
-                <option key={h.value} value={h.value}>
-                  {nombreHipodromoParaMostrar(h.label)}
-                </option>
-              ))}
-            </select>
+            {/* Buscador con teclado (↑↓/Enter/Escape) con bandera y logo. */}
+            <SearchableSelect
+              options={catalogoHipodromos}
+              value={hipodromo}
+              onChange={(v) => setHipodromo(v)}
+              placeholder="Buscar hipódromo…"
+              allowCustom={false}
+              inputClassName={inputCls}
+            />
           </div>
         </div>
 

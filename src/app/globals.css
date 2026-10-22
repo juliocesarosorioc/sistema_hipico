@@ -187,6 +187,116 @@ body {
   }
 }
 
+/* =============================================================================
+   ADN EDITORIAL DE MODALES — UNA SOLA FAMILIA PARA TODA LA PLATAFORMA
+   -----------------------------------------------------------------------------
+   Admin, Dueño de Grupo y Portal de Jugadores comparten el MISMO marco para que
+   un modal se vea igual en cualquier pantalla y en cualquier rol. El lenguaje
+   es el mismo de los reportes impresos (`.rep-*`): cabecera oscura, filete de
+   acento arriba, cifras tabulares y cuerpo sobre glass oscuro desenfocado.
+
+   Estructura esperada (el orden importa):
+
+     <div class="modal-overlay">                     ← capa oscura desenfocada
+       <div class="modal-editorial modal-editorial--lg">   ← tarjeta
+         <header class="modal-editorial__cabecera">        ← barra oscura + acento
+           <div class="modal-editorial__titulos">
+             <h3 class="modal-editorial__titulo">…</h3>
+             <p  class="modal-editorial__sub">…</p>
+           </div>
+           <div class="modal-editorial__acciones">…botones…</div>
+         </header>
+         <div class="modal-editorial__cuerpo">…</div>
+         <footer class="modal-editorial__pie">…</footer>
+       </div>
+     </div>
+
+   Modificadores:
+     · --sm / --lg / --xl / --full : ancho máximo de la tarjeta.
+     · --acento-dorado / --acento-esmeralda : color del filete superior
+       (por defecto dorado, el de la casa).
+     · --sin-cabecera : para overlays que no son formularios (visores).
+   ========================================================================== */
+@layer components {
+  /* Capa que oscurece y desenfoca el fondo. Cierra al hacer clic fuera. */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/70 p-4 backdrop-blur-md;
+  }
+  .modal-overlay--centrado {
+    @apply items-center;
+  }
+
+  /* Tarjeta editorial. Margen vertical para que respire en pantallas bajas. */
+  .modal-editorial {
+    @apply my-8 flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-900 text-slate-100 shadow-2xl shadow-black/60;
+  }
+  .modal-editorial--sm {
+    @apply max-w-lg;
+  }
+  .modal-editorial--lg {
+    @apply max-w-4xl;
+  }
+  .modal-editorial--xl {
+    @apply max-w-6xl;
+  }
+  .modal-editorial--full {
+    @apply my-4 max-w-[min(96vw,1600px)];
+  }
+
+  /*
+   * Cabecera oscura con filete de acento arriba. El borde superior es el sello
+   * de la casa: dorado para lo operativo, esmeralda para lo que confirma/cierra.
+   * `tabular-nums` ya viene heredado de `html`, así que las cifras alinean solas.
+   */
+  .modal-editorial__cabecera {
+    @apply flex items-start justify-between gap-3 border-b border-slate-800/80 border-t-4 border-t-amber-400/90 bg-slate-950/60 px-5 py-3;
+  }
+  .modal-editorial--acento-esmeralda .modal-editorial__cabecera {
+    @apply border-t-emerald-400/90;
+  }
+  .modal-editorial__titulos {
+    @apply min-w-0 flex-1;
+  }
+  .modal-editorial__titulo {
+    @apply truncate text-sm font-black uppercase tracking-[0.14em] text-white;
+  }
+  .modal-editorial__sub {
+    @apply mt-0.5 text-[11px] font-semibold text-slate-400;
+  }
+  .modal-editorial__acciones {
+    @apply flex shrink-0 flex-wrap items-center justify-end gap-1.5;
+  }
+
+  /* Cuerpo: fondo apenas más claro que la tarjeta, scroll propio si hace falta. */
+  .modal-editorial__cuerpo {
+    @apply flex-1 overflow-y-auto bg-slate-900 px-5 py-4 text-sm text-slate-200;
+  }
+  .modal-editorial__cuerpo--sin-padding {
+    @apply p-0;
+  }
+
+  /* Pie: acciones de cierre/confirmación, separadas por un filete sutil. */
+  .modal-editorial__pie {
+    @apply flex items-center justify-end gap-2 border-t border-slate-800/80 bg-slate-950/50 px-5 py-3;
+  }
+
+  /* Botón de cierre en la cabecera (✕) con hover de acento. */
+  .modal-editorial__cerrar {
+    @apply shrink-0 rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-sm font-bold leading-none text-slate-300 transition-colors hover:border-white/30 hover:bg-white/10 hover:text-white;
+  }
+
+  /*
+   * Campos oscuros dentro del modal editorial: inputs, selects y textareas se
+   * pintan una sola vez acá, así ningún formulario improvisa su propio color.
+   */
+  .modal-campo {
+    @apply w-full rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm font-semibold text-slate-100 placeholder:text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70;
+  }
+  .modal-campo-label {
+    @apply mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-400;
+  }
+}
+
 /* Impresión: oculta el shell (sidebars/topbar), modales y carrito; libera el
    scroll del main y conserva los colores de gualdrapas/tarjetas (cero-scroll). */
 @media print {

@@ -58,9 +58,8 @@ const hoyIso = (): string => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
-const inp =
-  "w-full border border-line rounded-xl bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200";
-const lbl = "block text-[10px] font-black uppercase text-slate-500 mb-1";
+const inp = "modal-campo font-bold";
+const lbl = "modal-campo-label";
 
 const n = (v: unknown): number => {
   const x = parseFloat(String(v ?? ""));
@@ -177,35 +176,36 @@ export function ModalRealizarJugadaUsuario({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 p-4" onClick={onCerrar}>
-      <div className="my-6 w-full max-w-2xl rounded-2xl border border-line bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-line px-5 py-4">
-          <h2 className="text-sm font-black text-slate-800">
-            <span className="mr-2 text-indigo-600">🐎</span> Realizar Jugada
-          </h2>
-          <button onClick={onCerrar} className="text-slate-400 hover:text-slate-700" aria-label="Cerrar">
+    <div className="modal-overlay" onClick={onCerrar}>
+      <div className="modal-editorial modal-editorial--acento-esmeralda" onClick={(e) => e.stopPropagation()}>
+        <header className="modal-editorial__cabecera">
+          <div className="modal-editorial__titulos">
+            <h2 className="modal-editorial__titulo">🐎 Realizar Jugada</h2>
+            <p className="modal-editorial__sub">Registrá tu jugada directo contra tu grupo.</p>
+          </div>
+          <button onClick={onCerrar} className="modal-editorial__cerrar" aria-label="Cerrar">
             ✕
           </button>
-        </div>
+        </header>
 
-        <div className="space-y-4 px-5 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-indigo-50 border border-indigo-100 px-3 py-2">
+        <div className="modal-editorial__cuerpo space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3 py-2">
             <div>
-              <div className="text-[9px] font-black uppercase text-indigo-400">Disponible para jugar</div>
-              <div className="text-sm font-black text-indigo-700">
+              <div className="text-[9px] font-black uppercase text-indigo-300">Disponible para jugar</div>
+              <div className="text-sm font-black text-indigo-200">
                 {disp.monto == null ? "Sin tope" : formatoMoneda("USD", disp.monto)}
               </div>
             </div>
-            <div className="text-[10px] text-indigo-500 font-bold">{disp.etiqueta}</div>
+            <div className="text-[10px] font-bold text-indigo-300">{disp.etiqueta}</div>
           </div>
 
-          <div className="flex flex-wrap gap-1 rounded-xl bg-slate-50 border border-line p-1">
+          <div className="flex flex-wrap gap-1 rounded-xl border border-slate-700 bg-slate-950/50 p-1">
             {TIPOS_JUGADA.map((t) => (
               <button
                 key={t}
                 onClick={() => setTipo(t)}
                 className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
-                  tipo === t ? "bg-indigo-600 text-white shadow" : "text-slate-600 hover:bg-white"
+                  tipo === t ? "bg-indigo-600 text-white shadow" : "text-slate-300 hover:bg-slate-800"
                 }`}
               >
                 {ETIQUETA_TIPO[t].icono} {ETIQUETA_TIPO[t].etiqueta}
@@ -291,7 +291,7 @@ export function ModalRealizarJugadaUsuario({
                   ))}
                 </div>
               ) : (
-                <p className="text-[11px] text-amber-600">No hay pollas abiertas para hoy. Podés usar “Jugada No Relacionada”.</p>
+                <p className="text-[11px] font-bold text-amber-300">No hay pollas abiertas para hoy. Podés usar “Jugada No Relacionada”.</p>
               )}
             </div>
           ) : null}
@@ -339,7 +339,7 @@ export function ModalRealizarJugadaUsuario({
                   </div>
                 </div>
               ) : (
-                <p className="text-[11px] text-amber-600">No hay dupletas guardadas para hoy.</p>
+                <p className="text-[11px] font-bold text-amber-300">No hay dupletas guardadas para hoy.</p>
               )}
             </div>
           ) : null}
@@ -391,11 +391,11 @@ export function ModalRealizarJugadaUsuario({
                     </select>
                   </div>
                   {analisis && !analisis.valido ? (
-                    <p className="col-span-2 text-[11px] font-bold text-red-600">{analisis.mensaje}</p>
+                    <p className="col-span-2 text-[11px] font-bold text-rose-300">{analisis.mensaje}</p>
                   ) : null}
                 </div>
               ) : (
-                <p className="text-[11px] text-amber-600">No hay carreras con marcas configuradas para hoy.</p>
+                <p className="text-[11px] font-bold text-amber-300">No hay carreras con marcas configuradas para hoy.</p>
               )}
             </div>
           ) : null}
@@ -412,34 +412,34 @@ export function ModalRealizarJugadaUsuario({
               />
             </div>
             <div className="flex items-end">
-              <div className="w-full rounded-xl bg-slate-50 border border-line px-3 py-2">
+              <div className="w-full rounded-xl border border-slate-700 bg-slate-950/50 px-3 py-2">
                 <div className="text-[9px] font-black uppercase text-slate-400">Resumen</div>
-                <div className="text-[11px] font-bold text-slate-700">{resumenJugada(b)}</div>
+                <div className="text-[11px] font-bold text-slate-200">{resumenJugada(b)}</div>
               </div>
             </div>
           </div>
 
           {error ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">{error}</div>
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] font-bold text-rose-300">{error}</div>
           ) : null}
 
           <p className="text-[10px] text-slate-400">
             Al registrar, se descuenta de tu saldo como en cualquier taquilla. Si no te aparece una jugada que hiciste, usá{" "}
-            <button className="font-bold text-indigo-600 underline" onClick={onPedirNoRelacionada}>
+            <button className="font-bold text-indigo-400 underline" onClick={onPedirNoRelacionada}>
               ➕ Solicitar Incluir Jugada No Relacionada
             </button>
             .
           </p>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-line px-5 py-4">
+        <footer className="modal-editorial__pie">
           <Button variant="ghost" size="sm" onClick={onCerrar}>
             Cancelar
           </Button>
           <Button variant="default" size="sm" disabled={enviando} onClick={() => void enviar()}>
             {enviando ? <span className="mr-1">⏳</span> : <span className="mr-1">🐎</span>} Registrar jugada
           </Button>
-        </div>
+        </footer>
       </div>
     </div>
   );
