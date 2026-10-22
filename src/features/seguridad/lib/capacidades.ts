@@ -215,6 +215,23 @@ export const MODULOS_ESQUEMA: ModuloEsquema[] = [
     ],
   },
 
+// --------------------------------------------------------------------------
+  {
+    clave: "inteligencia-hipica/proyecciones",
+    nombre: "inteligencia-hipica/proyecciones",
+    ruta: "/inteligencia-hipica/proyecciones",
+    icono: "horse",
+    descripcion: "Análisis de proyecciones de carreras y ejemplares.",
+    capacidades: [
+      c("inteligencia-hipica/proyecciones", "ruta", "inteligencia-hipica/proyecciones", "Ver inteligencia-hipica/proyecciones y gaceta", "lectura", "src/app/(dashboard)/inteligencia-hipica/proyecciones/page.tsx:1"),
+      c("inteligencia-hipica/proyecciones", "boton", "btn_crear", "Alta de proyección", "escritura", "src/components/inteligencia-hipica/proyecciones/ProyeccionesModule.tsx"),
+      c("inteligencia-hipica/proyecciones", "boton", "btn_editar", "Editar proyección", "escritura", "src/components/inteligencia-hipica/proyecciones/ProyeccionesModule.tsx"),
+      c("inteligencia-hipica/proyecciones", "boton", "btn_eliminar", "Eliminar proyección", "critico", "src/components/inteligencia-hipica/proyecciones/ProyeccionesModule.tsx"),
+      c("inteligencia-hipica/proyecciones", "celda", "celda_retirado", "Ver la columna de retirado", "lectura", "src/components/inteligencia-hipica/proyecciones/ProyeccionesModule.tsx"),
+        c("inteligencia-hipica/proyecciones", "funcion", "fn_guardar_proyeccion", "Guardar proyección", "escritura", "src/lib/gaceta/padron.ts:193"),
+    ],
+  },
+
   // --------------------------------------------------------------------------
   {
     clave: "carreras",
