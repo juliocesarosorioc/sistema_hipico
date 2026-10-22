@@ -72,6 +72,19 @@ igual(v.comisionPct, 5, "tasa de comisión del grupo");
 igual(v.moneda, "USD", "moneda a mayúsculas");
 igual(v.fecha, "2026-10-16", "fecha de carrera desde la nota de auditoría");
 
+// ── Modalidad de tiempo (⚡ en vivo / ⏳ adelantada) ──────────────────────────
+// Sin el flag, la venta es EN VIVO (nadie que no marque cambia de comportamiento).
+igual(v.adelantada, false, "sin es_adelantada la venta es EN VIVO");
+igual(normalizarVenta(fila({ es_adelantada: true })).adelantada, true, "es_adelantada=true → adelantada");
+igual(normalizarVenta(fila({ es_adelantada: "true" })).adelantada, true, "es_adelantada como texto 'true' → adelantada");
+igual(normalizarVenta(fila({ es_adelantada: false })).adelantada, false, "es_adelantada=false → en vivo");
+// Respaldo por nota_auditoria cuando la columna no viaja (migración sin correr).
+igual(
+  normalizarVenta(fila({ es_adelantada: undefined, nota_auditoria: JSON.stringify({ es_adelantada: true }) })).adelantada,
+  true,
+  "la nota_auditoria sirve de respaldo para la modalidad"
+);
+
 // Sin nota JSON la fecha cae al día de la venta (fecha_registro).
 const sinNota = normalizarVenta(fila({ nota_auditoria: null }));
 igual(sinNota.fecha, "2026-10-16", "fecha cae a fecha_registro sin nota");

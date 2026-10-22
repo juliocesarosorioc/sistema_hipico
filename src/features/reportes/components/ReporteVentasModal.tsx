@@ -36,6 +36,7 @@ import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { colorDeNumero, textoDeNumero } from "@/features/tablas/lib/tipos";
+import { ETIQUETA_ADELANTADA, ETIQUETA_EN_VIVO } from "@/features/jugadas/lib/modalidad-tiempo";
 import { puedeEditarDesdeReporte } from "@/features/reportes/lib/edicion-reporte";
 import {
   ModalAccionJugadaReporte,
@@ -191,6 +192,23 @@ function BadgeEstado({ estado }: { estado: string }) {
   );
 }
 
+/**
+ * Símbolo COMPACTO de la modalidad de tiempo de la jugada: un punto de color
+ * (verde = ⚡ en vivo, ámbar = ⏳ adelantada). El texto completo va en el
+ * `title` para no ensuciar la tabla. Es una columna de una sola celda angosta.
+ */
+function PuntoModalidad({ adelantada }: { adelantada: boolean }) {
+  const etiqueta = adelantada ? ETIQUETA_ADELANTADA : ETIQUETA_EN_VIVO;
+  const punto = adelantada ? "bg-amber-500" : "bg-emerald-500";
+  return (
+    <span
+      title={etiqueta}
+      aria-label={etiqueta}
+      className={`inline-block h-2 w-2 shrink-0 rounded-full ${punto}`}
+    />
+  );
+}
+
 function Discos({ numero, caballo }: { numero: string; caballo: string }) {
   if (!numero) return <span className="text-slate-400">{caballo || "—"}</span>;
   return (
@@ -327,6 +345,9 @@ function DetalleTabla({
         <tr className="bg-slate-100 text-[9px] font-black uppercase tracking-wide text-slate-500">
           <th className="px-2 py-1 text-left">Fecha</th>
           <th className="px-2 py-1 text-left">Venta</th>
+          <th className="px-1 py-1 text-center" title="Modalidad: verde ⚡ en vivo · ámbar ⏳ adelantada">
+            T
+          </th>
           <th className="px-2 py-1 text-left">Hipódromo</th>
           <th className="px-2 py-1 text-right">C</th>
           <th className="px-2 py-1 text-left">Ejemplar</th>
@@ -348,6 +369,9 @@ function DetalleTabla({
           <tr key={v.id || `${v.hipodromo}-${v.carrera}-${v.numero}-${i}`} className={`border-b border-slate-100 ${tema.hover}`}>
             <td className="whitespace-nowrap px-2 py-1 text-slate-500">{v.fecha || "—"}</td>
             <td className="whitespace-nowrap px-2 py-1 text-slate-400">{v.fechaVenta || "—"}</td>
+            <td className="px-1 py-1 text-center">
+              <PuntoModalidad adelantada={v.adelantada} />
+            </td>
             <td className="whitespace-nowrap px-2 py-1 font-semibold text-slate-700">
               {nombreHipodromoParaMostrar(v.hipodromo)}
             </td>

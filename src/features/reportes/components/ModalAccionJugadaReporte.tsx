@@ -47,6 +47,7 @@ import {
 } from "@/features/reportes/lib/edicion-reporte";
 import { ETIQUETA_ESTADO, ESTADOS_MAESTROS, estadoMaestro, type EstadoMaestro } from "@/features/liquidacion/lib/estados-jugada";
 import { nombreOficialDeCaballoSuelto } from "@/features/liquidacion/lib/resolver-ejemplar";
+import { ETIQUETA_ADELANTADA, ETIQUETA_EN_VIVO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
 
 export type ModoAccionJugada = "editar" | "anular" | "restaurar";
 
@@ -103,6 +104,13 @@ export function ModalAccionJugadaReporte({
   const [monto, setMonto] = useState(venta.monto ? String(venta.monto) : "");
   const [premio, setPremio] = useState(venta.pagado ? String(venta.pagado) : "");
   const [estado, setEstado] = useState<EstadoMaestro>(() => estadoMaestro({ estado: venta.estado, anulada: venta.anulada }));
+  /**
+   * Modalidad de tiempo: ⚡ En Vivo (por defecto) o ⏳ Adelantada. Se muestra el
+   * valor que YA tiene la jugada (`venta.adelantada`) y se puede cambiar acá.
+   */
+  const [modalidad, setModalidad] = useState<ModalidadTiempo>(() =>
+    venta.adelantada ? "ADELANTADA" : "EN_VIVO"
+  );
   const [nota, setNota] = useState<string>("");
   const [detalle, setDetalle] = useState("");
   const [motivoLibre, setMotivoLibre] = useState(modo === "anular" ? MOTIVOS_ANULACION[0] : "");
@@ -170,6 +178,7 @@ export function ModalAccionJugadaReporte({
           monto_jugado: monto.trim() === "" ? null : Number(monto),
           premio_pagar: premio.trim() === "" ? null : Number(premio),
           estado: estadoInterno,
+          es_adelantada: modalidad === "ADELANTADA",
         } as EditablesJugada,
         motivoEdicion.trim(),
         ctx
@@ -277,6 +286,44 @@ export function ModalAccionJugadaReporte({
                     </option>
                   ))}
                 </select>
+              </Campo>
+              <Campo label="Modalidad de tiempo">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    aria-hidden
+                    className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                      modalidad === "ADELANTADA" ? "bg-amber-500" : "bg-emerald-500"
+                    }`}
+                  />
+                  <div className="inline-flex overflow-hidden rounded-lg border border-slate-300">
+                    <button
+                      type="button"
+                      onClick={() => setModalidad("EN_VIVO")}
+                      aria-pressed={modalidad === "EN_VIVO"}
+                      title="En Vivo: la jugada se cargó mientras la carrera corría."
+                      className={`px-2 py-1 text-[10px] font-bold transition ${
+                        modalidad === "EN_VIVO"
+                          ? "bg-emerald-500 text-white"
+                          : "bg-white text-slate-500 hover:bg-slate-50"
+                      }`}
+                    >
+                      {ETIQUETA_EN_VIVO}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModalidad("ADELANTADA")}
+                      aria-pressed={modalidad === "ADELANTADA"}
+                      title="Adelantada: la jugada se cargó ANTES de que corra la carrera."
+                      className={`border-l border-slate-300 px-2 py-1 text-[10px] font-bold transition ${
+                        modalidad === "ADELANTADA"
+                          ? "bg-amber-500 text-white"
+                          : "bg-white text-slate-500 hover:bg-slate-50"
+                      }`}
+                    >
+                      {ETIQUETA_ADELANTADA}
+                    </button>
+                  </div>
+                </div>
               </Campo>
               <Campo label="Nota predefinida">
                 <select value={nota} onChange={(e) => setNota(e.target.value)} className={inputCls}>

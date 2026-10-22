@@ -21,6 +21,7 @@
  *     reembolsa, así que ninguno de los dos suma acá.
  */
 import { cobradoNeto } from "@/features/grupos/lib/comisiones-convenio";
+import { esAdelantadaDe } from "@/features/jugadas/lib/modalidad-tiempo";
 
 /** Una venta (1 ticket = 1 ejemplar jugado) ya normalizada para el reporte. */
 export type VentaTablaReporte = {
@@ -50,6 +51,12 @@ export type VentaTablaReporte = {
   moneda: string;
   /** true si la jugada fue ANULADA (auditoría del Monitor de Jugadas). */
   anulada: boolean;
+  /**
+   * Modalidad de tiempo de la jugada (ver `modalidad-tiempo.ts`): `true` si se
+   * cargó ANTES de la carrera (⏳ adelantada) y `false` si fue DURANTE (⚡ en
+   * vivo). Sale de `tickets_apuestas.es_adelantada` (con respaldo en la nota).
+   */
+  adelantada: boolean;
   /** Día de la carrera (nota `fecha_carrera`) o, si falta, el de la venta. */
   fecha: string;
   /** Día LOCAL de la venta (`fecha_registro`); patrón de consulta adicional. */
@@ -200,6 +207,7 @@ export function normalizarVenta(row: Record<string, unknown>): VentaTablaReporte
     comision: cifra(row.comision_pagada),
     moneda: texto(row.moneda).toUpperCase() || "USD",
     anulada: row.anulada === true,
+    adelantada: esAdelantadaDe(row),
     fecha: fechaDeNota(row.nota_auditoria) || texto(row.fecha_registro).slice(0, 10),
     fechaVenta: diaLocalDeVenta(row.fecha_registro),
   };

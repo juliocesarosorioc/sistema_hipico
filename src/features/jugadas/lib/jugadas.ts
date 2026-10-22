@@ -94,6 +94,12 @@ export type EditablesJugada = {
   monto_decidido?: number | null;
   premio_pagar?: number | null;
   estado?: string | null;
+  /**
+   * Modalidad de tiempo (ver `modalidad-tiempo.ts`): `true` = ⏳ adelantada
+   * (cargada antes de la carrera), `false` = ⚡ en vivo. Se edita desde el
+   * Reporte de Ventas (`ModalAccionJugadaReporte`).
+   */
+  es_adelantada?: boolean | null;
 };
 
 export type Resultado = { ok: boolean; error?: string };

@@ -39,6 +39,7 @@ import {
 } from "../src/features/jugadas/lib/modalidad-tiempo";
 import { esJugadaWps, WPS_PLANIFICACION } from "../src/features/motores/lib/wps-planificacion";
 import { armarReporteCarrera } from "../src/features/liquidacion/lib/reporte-carrera";
+import { normalizarVenta } from "../src/features/tablas/lib/reporte-tablas-nucleo";
 import type { CarreraReporte, FilaReporte } from "../src/features/liquidacion/lib/reportes";
 
 let pasan = 0;
@@ -308,6 +309,46 @@ si(!/rounded-full/.test(reporteCarrera), "el reporte sigue sin discos redondos")
 const modal = leer("src", "features", "gestion", "components", "ReporteLiquidacionModal.tsx");
 si(/OPCIONES_FILTRO/.test(modal), "la cabecera del reporte tiene el filtro segmentado");
 si(/setFiltroModalidad\("TODAS"\)/.test(modal), "el filtro se resetea al abrir el reporte");
+
+// ---------------------------------------------------------------------------
+console.log("\nBLOQUE 7 — el Reporte de Ventas muestra y edita la modalidad");
+// ---------------------------------------------------------------------------
+// (a) El modelo de la fila del Reporte de Ventas lleva la modalidad, leída de
+// `es_adelantada` con el respaldo de la nota. Es la MISMA normalización que
+// comparten Tablas Fijas, Marcas, Dupletas y Remates.
+const filaReporte = (over: Record<string, unknown> = {}) => ({
+  id: "tk-7",
+  monto_jugado: "100",
+  estado: "Pendiente",
+  ...over,
+});
+igual(normalizarVenta(filaReporte()).adelantada, false, "la venta sin flag es ⚡ en vivo");
+igual(normalizarVenta(filaReporte({ es_adelantada: true })).adelantada, true, "es_adelantada → ⏳ adelantada");
+igual(
+  normalizarVenta(filaReporte({ nota_auditoria: JSON.stringify({ es_adelantada: true }) })).adelantada,
+  true,
+  "la nota sirve de respaldo en la fila del reporte"
+);
+
+// (b) La tabla de detalle del Reporte de Ventas tiene la columna-símbolo.
+const reporteVentas = leer("src", "features", "reportes", "components", "ReporteVentasModal.tsx");
+si(/function PuntoModalidad/.test(reporteVentas), "el reporte define el símbolo de modalidad (punto de color)");
+si(/<PuntoModalidad adelantada=\{v\.adelantada\}/.test(reporteVentas), "cada fila pinta su punto según `adelantada`");
+si(
+  /bg-amber-500/.test(reporteVentas) && /bg-emerald-500/.test(reporteVentas),
+  "ámbar = ⏳ adelantada · verde = ⚡ en vivo"
+);
+si(/ETIQUETA_ADELANTADA/.test(reporteVentas) && /ETIQUETA_EN_VIVO/.test(reporteVentas), "los títulos usan las etiquetas compartidas");
+
+// (c) El modal de CORREGIR deja ver y cambiar la modalidad, y la persiste.
+const modalReporte = leer("src", "features", "reportes", "components", "ModalAccionJugadaReporte.tsx");
+si(/venta\.adelantada\s*\?\s*"ADELANTADA"\s*:\s*"EN_VIVO"/.test(modalReporte), "el modal arranca con la modalidad ACTUAL de la jugada");
+si(/es_adelantada:\s*modalidad === "ADELANTADA"/.test(modalReporte), "al guardar persiste la modalidad elegida");
+si(/setModalidad\("EN_VIVO"\)/.test(modalReporte) && /setModalidad\("ADELANTADA"\)/.test(modalReporte), "el operador puede alternar ⚡/⏳");
+
+// (d) `es_adelantada` es un campo editable de la jugada (vía `editarJugada`).
+const libJugadas = leer("src", "features", "jugadas", "lib", "jugadas.ts");
+si(/es_adelantada\?:\s*boolean \| null/.test(libJugadas), "EditablesJugada expone es_adelantada para la edición");
 
 // ---------------------------------------------------------------------------
 console.log(`\nRESULTADO — modalidad de tiempo: ${pasan} ok, ${fallan} fallan\n`);
