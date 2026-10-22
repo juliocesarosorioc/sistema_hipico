@@ -1,0 +1,1350 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sistema Hípico IA v3 — Modal Prospectivo Michel Godet, Actuarial & En Vivo</title>
+  <script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=1YVhY8HTzXEqUfblzgcDX1GHiFJrO1UydIpa31lNuUNEthqorYTYnrkXNX5L1cEso-uE0imi5_3NnS8NHeEHLFm_oawYbtDrnqJLjF-AboNl4M74jPahuu3vtV3tABPfAi4ck7MQ-xP1V5_dtKWB5hc5ivmWgCfPzuPtboddR7OxucSjj7c1FF0EGA-j4HJg2nDbKsbCBbxit9JL7b6SwlnIll5hfT8xtqi-kf8Zx_spPwcliSQkFQEZYm_xeKtCczdB-RGQBrfIGW0LzCQUv4SeGJ-X5Z5Ss4pCKqifp3dofQ1A8c69pNTi-d_bDazbKvdbhUyX11a7AIXD-Jvkfg" charset="UTF-8"></script><script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* CSS Autónomo + Vinculado a src/app/globals.css de sistema_hipico */
+    :root {
+      --sh-bg: #070b14;
+      --sh-card: #0f172a;
+      --sh-border: #334155;
+      --sh-gold: #f59e0b;
+      --sh-emerald: #10b981;
+      --sh-rose: #f43f5e;
+      --sh-sky: #38bdf8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      background-color: var(--sh-bg);
+      color: #f1f5f9;
+      line-height: 1.45;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
+    }
+    .glass {
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid rgba(51, 65, 85, 0.75);
+      border-radius: 14px;
+    }
+    .pizarra-led {
+      background: radial-gradient(circle at 50% 15%, #111c35 0%, #04070e 100%);
+      border: 2px solid #f59e0b;
+      border-radius: 16px;
+      box-shadow: 0 0 28px rgba(245, 158, 11, 0.18), inset 0 0 20px rgba(0, 0, 0, 0.85);
+    }
+    .track-dirt {
+      background: repeating-linear-gradient(
+        90deg,
+        #2c1d11,
+        #2c1d11 45px,
+        #3d2817 45px,
+        #3d2817 90px
+      );
+      border: 2px solid #b45309;
+      border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-action {
+      cursor: pointer;
+      transition: all 0.18s ease;
+      user-select: none;
+    }
+    .btn-action:active {
+      transform: scale(0.97);
+    }
+    .tab-active {
+      border-bottom: 3px solid #f59e0b !important;
+      color: #fbbf24 !important;
+      background: rgba(245, 158, 11, 0.08);
+    }
+    input, select {
+      background-color: #090d16;
+      color: #f8fafc;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: #f59e0b;
+      box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25);
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+
+  <div class="max-w-[1620px] mx-auto glass shadow-2xl overflow-hidden">
+
+    <!-- ENCABEZADO PRINCIPAL -->
+    <header class="bg-slate-900 px-6 py-4 border-b border-slate-700 flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full">
+            Michel Godet (MICMAC · MACTOR · SMIC) + Motor Actuarial
+          </span>
+          <span id="statusModeBadge" class="px-2.5 py-1 text-[11px] font-bold uppercase bg-slate-800 text-slate-300 border border-slate-600 rounded-full mono">
+            ⚪ MODO ACTUAL: PREVIA (SOLO GACETA HÍPICA)
+          </span>
+        </div>
+        <h1 class="text-xl md:text-2xl font-extrabold text-white mt-1">
+          Sistema Hípico IA — Pizarra Prospectiva, Actuario y Pesos En Vivo (La Rinconada Ed. 3.888)
+        </h1>
+      </div>
+
+      <!-- CONTROLES SUPERIORES RAPIDOS -->
+      <div class="flex flex-wrap items-center gap-2">
+        <div>
+          <label class="block text-[10px] uppercase text-slate-400 font-bold mb-1">Seleccionar Carrera (11 Carreras Gaceta)</label>
+          <select id="raceSelect" class="font-bold text-amber-300 text-xs md:text-sm py-2 px-3">
+            <option value="C495">1ª Carrera (495) · 1100m · Handicap Libre Gan. 3, 4 y 5</option>
+            <option value="C496">2ª Carrera (496) · 1100m · Reclamo Yeguas 6+ Gan. 1 y 2</option>
+            <option value="C497">3ª Carrera (497) · 1200m · Yeguas 5+ No Ganadoras</option>
+            <option value="C498">4ª Carrera (498) · 1300m · Ejemplares 5+ Gan. de 1</option>
+            <option value="C499">5ª Carrera (499) · 1300m · Yeguas 4+ Gan. de 2 y 3</option>
+            <option value="C500">6ª Carrera (500) · 1100m · IV Clásico Gaceta Hípica (GIII)</option>
+            <option value="C501">7ª Carrera (501) · 1800m · Ejemplares 4+ Gan. de 3 y 4</option>
+            <option value="C502">8ª Carrera (502) · 1300m · 1ª Válida 5y6 (3a No Ganadores)</option>
+            <option value="C503">9ª Carrera (503) · 1300m · 2ª Válida 5y6 (Yeguas 3a No Gan.)</option>
+            <option value="C504">10ª Carrera (504) · 1100m · 3ª Válida 5y6 (Yeguas 4+ Gan. 1)</option>
+            <option value="C505">11ª Carrera (505) · 1100m · 4ª Válida · Clásico Día del Veterinario</option>
+            <option value="C506">12ª Carrera (506) · 1100m · 5ª Válida 5y6 (Yeguas 6+ Gan. 3,4,5)</option>
+            <option value="C507">13ª Carrera (507) · 1100m · 6ª Válida 5y6 (Reclamo 4 y 5a)</option>
+          </select>
+        </div>
+
+        <button id="btnSimWeights" type="button" class="btn-action mt-4 px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs uppercase tracking-wider shadow-lg">
+          ⚖️ Cargar Pesos En Vivo (Ejemplo)
+        </button>
+
+        <button id="btnResetPrevia" type="button" class="btn-action mt-4 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-600">
+          🔄 Volver a Solo Previa
+        </button>
+
+        <button id="btnOpenFactorModal" type="button" class="btn-action mt-4 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg">
+          ➕ + Factor
+        </button>
+      </div>
+    </header>
+
+    <!-- BARRA DE METADATOS + PANEL CONMUTABLE DE COMPORTAMIENTO DE PISTA HOY Y PARCIALES 400M -->
+    <section class="bg-slate-900/90 px-6 py-3.5 border-b border-slate-800 space-y-3">
+      
+      <!-- Metadatos de la carrera seleccionada -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+        <div class="bg-slate-950 px-3 py-2 rounded-lg border border-slate-800">
+          <span class="text-slate-400 block text-[10px] uppercase">Distancia & Récord Oficial</span>
+          <span id="metaDist" class="font-extrabold text-amber-400 mono text-sm">1100 METROS</span>
+          <span id="metaRec" class="text-slate-400 text-[11px] ml-1 mono"></span>
+        </div>
+        <div class="bg-slate-950 px-3 py-2 rounded-lg border border-slate-800">
+          <span class="text-slate-400 block text-[10px] uppercase">Premiación BCV & Hora</span>
+          <span id="metaPrize" class="font-extrabold text-emerald-400 mono text-sm"></span>
+          <span id="metaTime" class="text-slate-400 text-[11px] ml-1 mono"></span>
+        </div>
+        <div class="bg-slate-950 px-3 py-2 rounded-lg border border-slate-800 md:col-span-2">
+          <span class="text-slate-400 block text-[10px] uppercase">Condición del Llamado en Gaceta</span>
+          <span id="metaCond" class="font-semibold text-slate-200 text-xs"></span>
+        </div>
+      </div>
+
+      <!-- Controles de Escenario Previo + Switch de Pista en Vivo + Parciales cada 400m -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5 pt-2 border-t border-slate-800/80 text-xs">
+        <div class="bg-slate-950 p-2 rounded-lg border border-slate-800">
+          <label class="text-[10px] uppercase text-slate-400 font-bold block mb-1">1. Factor Pista</label>
+          <select id="ctrlPista" class="w-full text-amber-300 font-semibold">
+            <option value="normal">Normal (0.0s)</option>
+            <option value="ligera">Ligera / Rápida (-0.6s)</option>
+            <option value="pesada">Pesada (+1.2s)</option>
+            <option value="fangosa">Fangosa (+2.0s)</option>
+          </select>
+        </div>
+
+        <div class="bg-slate-950 p-2 rounded-lg border border-slate-800">
+          <label class="text-[10px] uppercase text-slate-400 font-bold block mb-1">2. Clima / Humedad</label>
+          <select id="ctrlClima" class="w-full text-sky-300 font-semibold">
+            <option value="soleado">Soleado (28°C)</option>
+            <option value="nublado">Nublado Fresco</option>
+            <option value="lluvia">Lluvia Intermitente</option>
+            <option value="calor">Calor Intenso (33°C)</option>
+          </select>
+        </div>
+
+        <div class="bg-slate-950 p-2 rounded-lg border border-slate-800">
+          <label class="text-[10px] uppercase text-slate-400 font-bold block mb-1">3. Tren MACTOR</label>
+          <select id="ctrlTren" class="w-full text-purple-300 font-semibold">
+            <option value="auto">Automático IA (E1/E2/E3)</option>
+            <option value="violento">Duelo Suicida Punteros</option>
+            <option value="falso">Falso Tren Controlado</option>
+          </select>
+        </div>
+
+        <div class="bg-slate-950 p-2 rounded-lg border border-slate-800">
+          <label class="text-[10px] uppercase text-slate-400 font-bold block mb-1">4. Énfasis MICMAC</label>
+          <select id="ctrlEnfasis" class="w-full text-emerald-300 font-semibold">
+            <option value="balanceado">Estándar Actuario + Godet</option>
+            <option value="yunta">Priorizar Yunta + Cambio Jockey</option>
+            <option value="traqueos">Priorizar Traqueos INH</option>
+            <option value="reaparecida">Priorizar Reaparecida + Pedigree</option>
+          </select>
+        </div>
+
+        <div class="bg-slate-950 p-2 rounded-lg border border-amber-500/40">
+          <label class="text-[10px] uppercase text-amber-300 font-bold block mb-1">5. Pista Hoy (En Vivo Opcional)</label>
+          <select id="ctrlLiveTrackBias" class="w-full text-amber-200 font-semibold">
+            <option value="off">Desactivado (Solo Previa)</option>
+            <option value="riel_interno">Hoy Ganan por Riel Interno (PP 1-3)</option>
+            <option value="riel_externo">Hoy Riel Pesado (Ganan Afuera PP 5+)</option>
+            <option value="velocistas_hoy">Hoy Pista para Velocistas (E1)</option>
+            <option value="rematadores_hoy">Hoy Colapsan Punteros (Ganan E3)</option>
+          </select>
+        </div>
+
+        <div class="bg-slate-950 p-2 rounded-lg border border-slate-800 lg:col-span-2">
+          <label class="text-[10px] uppercase text-emerald-400 font-bold block mb-1">6. Parciales cada 400m (400m / 800m / 1200m) + Remate 200m</label>
+          <div class="grid grid-cols-4 gap-1.5">
+            <input id="inp400" type="number" step="0.1" value="22.2" title="Primeros 400m (seg)" class="text-center mono font-bold text-amber-300" />
+            <input id="inp800" type="number" step="0.1" value="45.3" title="800m acumulados (seg)" class="text-center mono font-bold text-amber-300" />
+            <input id="inp1200" type="number" step="0.1" value="70.2" title="1200m acumulados (seg)" class="text-center mono font-bold text-amber-300" />
+            <input id="inpRemate" type="number" step="0.1" value="12.3" title="Remate últimos 200m (seg)" class="text-center mono font-bold text-emerald-400" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- BARRA DE PESTAÑAS INTERACTIVAS -->
+    <nav class="bg-slate-950 px-6 border-b border-slate-800 flex overflow-x-auto gap-2">
+      <button type="button" data-tab="pizarra" class="tab-trigger tab-active btn-action px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-slate-300 whitespace-nowrap">
+        🏁 1. Pizarra Proyectada, Gualdrapas & Pesos En Vivo
+      </button>
+      <button type="button" data-tab="actuarial" class="tab-trigger btn-action px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-slate-400 whitespace-nowrap">
+        📐 2. Tablero Actuarial (Bühlmann · Cox · Kelly EV · Parciales 400m)
+      </button>
+      <button type="button" data-tab="godet" class="tab-trigger btn-action px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-slate-400 whitespace-nowrap">
+        🧭 3. Prospectiva Michel Godet (Gráficos MICMAC · MACTOR · SMIC)
+      </button>
+      <button type="button" data-tab="gaceta" class="tab-trigger btn-action px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-slate-400 whitespace-nowrap">
+        🐎 4. Base de Datos Gaceta, Pedigree, Traqueos & Factores Ocultos
+      </button>
+      <button type="button" data-tab="ingesta" class="tab-trigger btn-action px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-slate-400 whitespace-nowrap">
+        ⚡ 5. Agregar / Editar Ejemplares, Tiempos o Nueva Gaceta
+      </button>
+    </nav>
+
+    <!-- CONTENIDO DE LAS 5 PESTAÑAS -->
+    <main class="p-6">
+
+      <!-- PESTAÑA 1: PIZARRA PROYECTADA + PESOS EN VIVO + RECTA FINAL -->
+      <div id="panel-pizarra" class="tab-panel space-y-6">
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+          
+          <!-- Pizarra LED -->
+          <div class="xl:col-span-7 pizarra-led p-5">
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-3 mb-4 border-b border-slate-800">
+              <div>
+                <span class="text-[11px] font-bold uppercase tracking-widest text-amber-400 block">
+                  Orden de Llegada Proyectado (Previa + Ajustes En Vivo)
+                </span>
+                <h2 id="pizarraHeaderTitle" class="text-lg font-extrabold text-white">Pizarra Oficial Proyectada</h2>
+              </div>
+              <div class="flex items-center gap-3 bg-slate-900 px-3.5 py-1.5 rounded-lg border border-slate-700">
+                <div class="text-right">
+                  <span class="text-[10px] text-slate-400 uppercase block">Tiempo Proyectado</span>
+                  <span id="ledFinalTime" class="mono text-sm font-extrabold text-amber-400">65.4s</span>
+                </div>
+                <div class="h-6 w-[1px] bg-slate-700"></div>
+                <div class="text-right">
+                  <span class="text-[10px] text-slate-400 uppercase block">400m · 800m · Remate</span>
+                  <span id="ledParciales" class="mono text-xs font-bold text-emerald-400">22.2 · 45.3 · R 12.3</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Barra de Factores Extra Activos -->
+            <div id="activeCustomFactors" class="flex flex-wrap gap-2 mb-3"></div>
+
+            <!-- Filas de Caballos -->
+            <div id="pizarraRowsContainer" class="space-y-2.5 max-h-[560px] overflow-y-auto pr-1"></div>
+          </div>
+
+          <!-- Pista Visual Recta Final + Dictamen IA -->
+          <div class="xl:col-span-5 flex flex-col justify-between space-y-5">
+            <div class="glass p-5">
+              <div class="flex items-center justify-between mb-3">
+                <div>
+                  <span class="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Simulación Espacial en Recta Final (Últimos 200m)</span>
+                  <h3 class="text-sm font-bold text-white">Proyección de Cuerpos con Gualdrapa e Ícono de Caballo</h3>
+                </div>
+                <span class="text-[11px] mono text-amber-300 bg-slate-950 px-2.5 py-1 rounded border border-slate-800">Espejo de Meta 🏁</span>
+              </div>
+
+              <div class="track-dirt p-3 space-y-2 min-h-[280px]">
+                <div class="absolute right-8 top-0 bottom-0 w-2 bg-gradient-to-b from-white via-red-600 to-white opacity-90 z-10"></div>
+                <div id="visualTrackLanes" class="space-y-2 relative z-20 pr-10"></div>
+              </div>
+              <p class="text-[11px] text-slate-400 mt-2 flex items-center justify-between">
+                <span>* Escribe el <strong>Peso Hoy (Kg)</strong> en cualquier caballo de la pizarra para ver cómo se mueve en la pista.</span>
+                <span class="mono text-amber-400 font-bold">1 cpo ≈ 0.20s</span>
+              </p>
+            </div>
+
+            <!-- Dictamen Ejecutivo Actuario + Godet -->
+            <div class="glass p-5 border border-indigo-500/40 bg-slate-900/90 space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-extrabold uppercase tracking-wider text-amber-400">
+                  Dictamen Prospectivo IA, Actuario & Jugadas de Valor (EV+)
+                </span>
+                <span id="paceAlertBadge" class="text-[10px] mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/40"></span>
+              </div>
+              <div id="dictamenText" class="text-xs text-slate-200 leading-relaxed space-y-1.5"></div>
+              <div id="suggestedTicketsGrid" class="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800 text-xs"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- PESTAÑA 2: TABLERO ACTUARIAL Y ANÁLISIS DE PARCIALES CADA 400M -->
+      <div id="panel-actuarial" class="tab-panel hidden space-y-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+          <div class="lg:col-span-8 glass p-5">
+            <h3 class="text-base font-extrabold text-white mb-1">
+              Matriz Actuarial de Decisión: Credibilidad Bühlmann ($Z$), Riesgo de Cox ($h(t)$), Valor Esperado ($EV$) y Criterio de Kelly
+            </h3>
+            <p class="text-xs text-slate-400 mb-4">
+              Cruza la probabilidad prospectiva real contra la cuota Morning Line, corrige muestras pequeñas de yuntas/ratings y penaliza riesgos biométricos de peso o reaparecida.
+            </p>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="border-b border-slate-700 text-slate-400 uppercase text-[10px]">
+                    <th class="py-2.5 px-2"># Ejemplar</th>
+                    <th class="py-2.5 px-2">Rating Ajustado ($Z$)</th>
+                    <th class="py-2.5 px-2">Volatilidad ($\sigma$)</th>
+                    <th class="py-2.5 px-2">Peso Óptimo vs Hoy</th>
+                    <th class="py-2.5 px-2">Riesgo Cox $h(t)$</th>
+                    <th class="py-2.5 px-2">Prob. IA vs ML</th>
+                    <th class="py-2.5 px-2">Valor Esperado ($EV$)</th>
+                    <th class="py-2.5 px-2">Kelly Sugerido</th>
+                  </tr>
+                </thead>
+                <tbody id="actuarialTableBody" class="divide-y divide-slate-800"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="lg:col-span-4 glass p-5 space-y-4">
+            <h3 class="text-base font-extrabold text-white">
+              Descomposición Fraccional cada 400 Metros + Remate
+            </h3>
+            <div id="splits400MetricsCards" class="grid grid-cols-2 gap-2.5 text-xs"></div>
+            <div class="bg-slate-950 p-3 rounded-xl border border-slate-800">
+              <span class="text-[10px] uppercase text-slate-400 font-bold block mb-2">Curva de Velocidad por Tramo de 400m (m/s)</span>
+              <div id="svgSplitsCurveContainer" class="w-full h-[180px]"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- PESTAÑA 3: PROSPECTIVA MICHEL GODET (GRÁFICOS SVG INTERACTIVOS AUTÓNOMOS) -->
+      <div id="panel-godet" class="tab-panel hidden space-y-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div class="lg:col-span-6 glass p-5">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-amber-400">1. Método MICMAC (Michel Godet)</span>
+            <h3 class="text-base font-bold text-white mb-2">Plano Estructural de Motricidad (Influencia) vs. Dependencia</h3>
+            <div id="svgMicmacContainer" class="w-full h-[320px] bg-slate-950 rounded-xl border border-slate-800 p-2"></div>
+          </div>
+
+          <div class="lg:col-span-6 glass p-5">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-sky-400">2. Método MACTOR (Juego de Actores)</span>
+            <h3 class="text-base font-bold text-white mb-2">Comparativa Multimétrica de Fuerzas (Top 4 Ejemplares)</h3>
+            <div id="svgMactorContainer" class="w-full h-[320px] bg-slate-950 rounded-xl border border-slate-800 p-2"></div>
+          </div>
+
+          <div class="lg:col-span-12 glass p-5">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400">3. SMIC-Prob-Expert (Escenarios Cruzados)</span>
+            <h3 class="text-base font-bold text-white mb-3">Árbol de Escenarios Probabilizados según Tren y Pista</h3>
+            <div id="smicCardsContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PESTAÑA 4: BASE DE DATOS GACETA, PEDIGREE, TRAQUEOS Y FACTORES OCULTOS -->
+      <div id="panel-gaceta" class="tab-panel hidden space-y-4">
+        <div id="fullDatabaseCardsContainer" class="space-y-4"></div>
+      </div>
+
+      <!-- PESTAÑA 5: AGREGAR / EDITAR EJEMPLARES O CARGAR TIEMPOS Y NUEVA GACETA -->
+      <div id="panel-ingesta" class="tab-panel hidden space-y-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div class="lg:col-span-6 glass p-5 space-y-4">
+            <h3 class="text-base font-extrabold text-amber-400">
+              Actualizar Ejemplar / Ingresar Nuevos Tiempos, Parciales o Traqueos
+            </h3>
+            <p class="text-xs text-slate-300">
+              Cualquier cambio que guardes aquí actualiza inmediatamente la Pizarra y queda almacenado en la memoria del navegador (<code>localStorage</code>).
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div>
+                <label class="block text-slate-400 uppercase text-[10px] mb-1">Seleccionar Ejemplar</label>
+                <select id="editHorseSelect" class="w-full py-2"></select>
+              </div>
+              <div>
+                <label class="block text-slate-400 uppercase text-[10px] mb-1">Speed Rating Base (TTC)</label>
+                <input id="editSpeedRating" type="number" min="40" max="105" value="76" class="w-full py-2 mono font-bold text-amber-300" />
+              </div>
+              <div>
+                <label class="block text-slate-400 uppercase text-[10px] mb-1">Peso Físico Hoy en Balanza (Kg)</label>
+                <input id="editLiveWeight" type="number" placeholder="Ej: 451" class="w-full py-2 mono font-bold text-emerald-300" />
+              </div>
+              <div>
+                <label class="block text-slate-400 uppercase text-[10px] mb-1">Nota de Traqueo INH (1-10)</label>
+                <input id="editWorkoutScore" type="number" step="0.1" min="1" max="10" value="9.0" class="w-full py-2 mono font-bold text-sky-300" />
+              </div>
+            </div>
+            <button id="btnSaveHorseUpdate" type="button" class="btn-action px-5 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs uppercase tracking-wider">
+              💾 Guardar Cambios y Recalcular Pizarra
+            </button>
+          </div>
+
+          <div class="lg:col-span-6 glass p-5 space-y-3">
+            <h3 class="text-base font-extrabold text-sky-400">JSON Activo Sincronizado con Base de Datos</h3>
+            <pre id="jsonPreviewBox" class="bg-slate-950 p-4 rounded-xl border border-slate-800 text-emerald-300 mono text-[11px] max-h-[300px] overflow-auto"></pre>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- MODAL EMERGENTE: AGREGAR FACTOR PERSONALIZADO -->
+  <div id="modalCustomFactor" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center p-4">
+    <div class="max-w-md w-full glass p-6 border border-indigo-500/50 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+        <h3 class="text-base font-extrabold text-white">Incorporar Factor Adicional al Análisis</h3>
+        <button id="btnCloseFactorModal" type="button" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
+      </div>
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block text-slate-400 uppercase text-[10px] mb-1">Nombre del Factor (Ej: Sudoración en Paddock / Herraje Nuevo)</label>
+          <input id="cfInputName" type="text" placeholder="Ej: Excelente estado en el Paddock" class="w-full py-2" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-400 uppercase text-[10px] mb-1">Ejemplar</label>
+            <select id="cfSelectHorse" class="w-full py-2"></select>
+          </div>
+          <div>
+            <label class="block text-slate-400 uppercase text-[10px] mb-1">Puntos Godet (-5 a +5)</label>
+            <input id="cfInputImpact" type="number" step="0.5" value="2.0" class="w-full py-2 mono font-bold text-amber-400" />
+          </div>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button id="btnCancelFactor" type="button" class="btn-action px-4 py-2 rounded bg-slate-800 text-slate-300 text-xs font-bold">Cancelar</button>
+        <button id="btnConfirmFactor" type="button" class="btn-action px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold uppercase">Aplicar Factor</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // PALETA REGLAMENTARIA DE GUALDRAPAS (LA RINCONADA)
+    const SADDLECLOTH_COLORS = {
+      1:  { bg: '#DC2626', text: '#FFFFFF', border: '#FCA5A5', name: 'Rojo' },
+      2:  { bg: '#F8FAFC', text: '#0F172A', border: '#94A3B8', name: 'Blanco' },
+      3:  { bg: '#1D4ED8', text: '#FFFFFF', border: '#93C5FD', name: 'Azul Rey' },
+      4:  { bg: '#EAB308', text: '#0F172A', border: '#FEF08A', name: 'Amarillo' },
+      5:  { bg: '#15803D', text: '#FFFFFF', border: '#86EFAC', name: 'Verde' },
+      6:  { bg: '#0F172A', text: '#FACC15', border: '#FACC15', name: 'Negro / Oro' },
+      7:  { bg: '#EA580C', text: '#FFFFFF', border: '#FDBA74', name: 'Anaranjado' },
+      8:  { bg: '#EC4899', text: '#FFFFFF', border: '#F9A8D4', name: 'Rosado' },
+      9:  { bg: '#06B6D4', text: '#0F172A', border: '#A5F3FC', name: 'Turquesa' },
+      10: { bg: '#7E22CE', text: '#FFFFFF', border: '#D8B4FE', name: 'Morado' },
+      11: { bg: '#64748B', text: '#FFFFFF', border: '#CBD5E1', name: 'Gris' },
+      12: { bg: '#65A30D', text: '#FFFFFF', border: '#BEF264', name: 'Verde Lima' }
+    };
+
+    // BASE DE DATOS COMPLETA (SIN COMILLAS DOBLES INTERNAS QUE ROMPAN JS)
+    const GACETA_DATA = {
+      "C495": {
+        code: "C495", title: "1ª Carrera (495) — 1100m — Ganadores de 3, 4 y 5", time: "01:00 p.m.", distance: 1100,
+        record: "61.3 - JORGE PRINCE (Ks.54)", prize: "US$ 33.800,00",
+        condition: "HANDICAP LIBRE. Ejemplares 6 y más años, Ganadores de 3, 4 y 5 carreras.",
+        baseTime: 65.4, p400: 22.2, p800: 45.3, p1200: 65.4, remate: 12.3,
+        horses: [
+          { num: 1, name: "TANK ABBOTT", ml: "5/2", sexAge: "C.C. 8a", dob: "14/01/18", sire: "Mr. Pistacho", dam: "Soon Princess", grandsire: "Around The Cape", haras: "Gran Sol", stud: "Waku2", silkColor: "#16A34A", jockey: "D. Acosta", weight: 57, allowance: 3, trainer: "R. Alemán Jr.", implements: "L.V.Gr.BB.M.La. (B-L)", daysOff: 63, starts: 46, wins: 6, yuntaStarts: 14, yuntaEfect: 21, distEfect: 21, ratings: [52, 76, 71, 66], pastWeights: [430, 427, 418, 419], optimalWeight: 418, liveWeight: null, simWeight: 419, paceStyle: "E2", earlySpeed: 84, lateKick: 78, workoutScore: 8.0, workoutText: "63 días sin correr. Galopes largos en silla.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 0.8, morningGlory: 1.0, medical: [] },
+          { num: 2, name: "GOLDEN JE", ml: "10/1", sexAge: "C.C. 9a", dob: "20/01/17", sire: "Golden Spikes", dam: "Clear Cut", grandsire: "Forestry", haras: "La Alhambra", stud: "Vida", silkColor: "#2563EB", jockey: "J. A. Rivero", weight: 55, allowance: 0, trainer: "R. Lanz", implements: "L.P.CC.V.M.La. (B-L)", daysOff: 56, starts: 43, wins: 6, yuntaStarts: 21, yuntaEfect: 14, distEfect: 11, ratings: [65, 78, 64, 60], pastWeights: [419, 419, 415, 411], optimalWeight: 419, liveWeight: null, simWeight: 419, paceStyle: "E3", earlySpeed: 74, lateKick: 85, workoutScore: 9.0, workoutText: "1.000m en 69.4 (remate 12.1), lució bastante. SS.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.1, morningGlory: 1.02, medical: [] },
+          { num: 3, name: "EL PEQUEÑO JOSÉ", ml: "9/2", sexAge: "C.C. 6a", dob: "13/03/20", sire: "Roger Rocket", dam: "Miss Forty Niner", grandsire: "Eskendereya", haras: "Los Caracaros", stud: "Pacific I", silkColor: "#22C55E", jockey: "Y. González", weight: 54.5, allowance: 0, trainer: "A. J. Rojas", implements: "L.CC.V.Gr.M.La. (B-L)", daysOff: 56, starts: 21, wins: 4, yuntaStarts: 12, yuntaEfect: 18, distEfect: 25, ratings: [76, 68, 59], pastWeights: [475, 477, 482, 488], optimalWeight: 476, liveWeight: null, simWeight: 491, paceStyle: "E1", earlySpeed: 91, lateKick: 75, workoutScore: 8.2, workoutText: "600m en 41.4 (remate 13.0), controlado.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 0.6, morningGlory: 0.98, medical: ["Rodó en C370"] },
+          { num: 4, name: "REY VULCANO", ml: "20/1", sexAge: "C.C. 9a", dob: "25/02/17", sire: "Documentary", dam: "Alliance", grandsire: "Mazag", haras: "Monumental", stud: "J. D. L.", silkColor: "#EAB308", jockey: "L. Montilla", weight: 53, allowance: 0, trainer: "Ale. Pérez", implements: "L.V.BB.La. (B-L)", daysOff: 28, starts: 56, wins: 3, yuntaStarts: 8, yuntaEfect: 5, distEfect: 0, ratings: [55, 52], pastWeights: [404, 410, 414], optimalWeight: 410, liveWeight: null, simWeight: 413, paceStyle: "E3", earlySpeed: 62, lateKick: 68, workoutScore: 6.5, workoutText: "Galopes de mantenimiento.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 0.0, morningGlory: 0.9, medical: ["Retirado por Cólico C466"] },
+          { num: 5, name: "MIKETYSON", ml: "4/1", sexAge: "C.C. 8a", dob: "12/03/18", sire: "Keep Thinking", dam: "Auramarina", grandsire: "Voyageur", haras: "La Primavera", stud: "J. Sánchez", silkColor: "#DC2626", jockey: "F. Márquez", weight: 58.5, allowance: 3, trainer: "J. Sánchez", implements: "L.V.Gr.La. (B-L)", daysOff: 7, starts: 48, wins: 6, yuntaStarts: 10, yuntaEfect: 20, distEfect: 17, ratings: [59, 70, 44, 70], pastWeights: [461, 458, 466, 465], optimalWeight: 465, liveWeight: null, simWeight: 465, paceStyle: "E2", earlySpeed: 83, lateKick: 82, workoutScore: 8.3, workoutText: "Ganó hace 7 días (C482) en 75.1 para 1200m.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 0.9, morningGlory: 1.0, medical: [] },
+          { num: 6, name: "APTITUD", ml: "6/1", sexAge: "C.Z. 6a", dob: "01/01/20", sire: "Jupiter Pluvius", dam: "Roca Negra", grandsire: "Water Poet", haras: "Los Samanes", stud: "Aptitud", silkColor: "#F59E0B", jockey: "W. Véliz", weight: 54.5, allowance: 0, trainer: "J. Sánchez", implements: "L.Gr.BB.La. (B-L)", daysOff: 7, starts: 24, wins: 4, yuntaStarts: 12, yuntaEfect: 22, distEfect: 14, ratings: [50, 66, 67], pastWeights: [447, 445, 435, 450], optimalWeight: 438, liveWeight: null, simWeight: 448, paceStyle: "E1", earlySpeed: 86, lateKick: 77, workoutScore: 8.1, workoutText: "5° a 3 cpos de Miketyson hace 7 días. Monta W. Véliz.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 0.7, morningGlory: 1.0, medical: [] },
+          { num: 7, name: "TINTORERO", ml: "3/5", sexAge: "C.C. 6a", dob: "14/01/20", sire: "Deliberately", dam: "Kalahari", grandsire: "Mr. Mistoffelees", haras: "Oropal", stud: "Z.M", silkColor: "#FACC15", jockey: "F. González Jr.", weight: 54.5, allowance: 0, trainer: "F. Parilli Jr.", implements: "L.V.Gr.BB.La. (B-L)", daysOff: 56, starts: 25, wins: 4, yuntaStarts: 17, yuntaEfect: 35, distEfect: 33, ratings: [75, 75, 74], pastWeights: [495, 495, 490], optimalWeight: 495, liveWeight: null, simWeight: 484, paceStyle: "E1", earlySpeed: 93, lateKick: 86, workoutScore: 9.1, workoutText: "2° a Pcz de Invader en 66.4 para 1100m. Yunta 35%.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.5, morningGlory: 1.04, medical: ["Retirado por Cólico C334"] },
+          { num: 8, name: "ZARACEÑO", ml: "3/1", sexAge: "C.C. 6a", dob: "02/02/20", sire: "Jaycito", dam: "Tropicana Field", grandsire: "Gold Dollar", haras: "Vista Hermosa", stud: "Viera Crown", silkColor: "#9333EA", jockey: "J. Lugo Jr.", weight: 54.5, allowance: 0, trainer: "M. Viera", implements: "L.V.La. (B-L)", daysOff: 7, starts: 34, wins: 5, yuntaStarts: 5, yuntaEfect: 60, distEfect: 40, ratings: [69, 68, 68, 59], pastWeights: [451, 451, 451, 456], optimalWeight: 451, liveWeight: null, simWeight: 451, paceStyle: "E2", earlySpeed: 88, lateKick: 87, workoutScore: 9.0, workoutText: "Ganó 3 de sus últimas 4 salidas con J. Lugo Jr.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.7, morningGlory: 1.05, medical: [] }
+        ]
+      },
+      "C496": {
+        code: "C496", title: "2ª Carrera (496) — 1100m — Reclamo Yeguas 6+", time: "01:30 p.m.", distance: 1100,
+        record: "61.3 - JORGE PRINCE (Ks.54)", prize: "US$ 27.040,00",
+        condition: "CONDICIONAL DE RECLAMO. Yeguas 6 y más años, Ganadoras hasta 2 carreras.",
+        baseTime: 68.1, p400: 22.4, p800: 45.8, p1200: 68.1, remate: 12.5,
+        horses: [
+          { num: 1, name: "DECIDIDA", ml: "30/1", sexAge: "Y.A. 8a", dob: "19/05/18", sire: "Utley", dam: "Siren's Assult", grandsire: "War Front", haras: "Los Caracaros", stud: "Los Audaces", silkColor: "#EAB308", jockey: "K. Aray", weight: 54, allowance: 0, trainer: "H. Correia", implements: "L.V.BB.M.La. (B-L)", daysOff: 14, starts: 38, wins: 1, yuntaStarts: 8, yuntaEfect: 18, distEfect: 5, ratings: [57, 56, 63, 56], pastWeights: [388, 388, 386, 390], optimalWeight: 388, liveWeight: null, simWeight: 389, paceStyle: "E3", earlySpeed: 72, lateKick: 81, workoutScore: 7.5, workoutText: "Mantenida en cancha.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 0.2, morningGlory: 0.95, medical: [] },
+          { num: 4, name: "IMPETUOSA", ml: "15/1", sexAge: "Y.C. 7a", dob: "07/02/19", sire: "Grand Adventure", dam: "Campy", grandsire: "Theatrical", haras: "Los Samanes", stud: "Los Audaces", silkColor: "#EF4444", jockey: "F. Márquez", weight: 54, allowance: 0, trainer: "H. Correia", implements: "L.V.BB.M.La. (B-L)", daysOff: 35, starts: 26, wins: 1, yuntaStarts: 1, yuntaEfect: 100, distEfect: 10, ratings: [52, 57, 65, 58], pastWeights: [431, 439, 436, 438], optimalWeight: 436, liveWeight: null, simWeight: 436, paceStyle: "E2", earlySpeed: 80, lateKick: 82, workoutScore: 8.4, workoutText: "600m en 42.1 (13.2), con reservas. EP.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 0.8, morningGlory: 1.0, medical: [] },
+          { num: 5, name: "SALOME", ml: "9/5", sexAge: "Y.C. 6a", dob: "11/03/20", sire: "Can", dam: "Bella Annabella", grandsire: "Chayim", haras: "La Mulera", stud: "Daga Española", silkColor: "#F59E0B", jockey: "H. Medina", weight: 54, allowance: 0, trainer: "W. Sánchez", implements: "L.Bz.Gr.BB.M.La. (B-L)", daysOff: 14, starts: 44, wins: 2, yuntaStarts: 2, yuntaEfect: 50, distEfect: 22, ratings: [60, 67, 68, 65], pastWeights: [397, 394, 390, 396], optimalWeight: 394, liveWeight: null, simWeight: 394, paceStyle: "E1", earlySpeed: 89, lateKick: 85, workoutScore: 8.8, workoutText: "Ganó en 394 Kg y viene de llegar 2° y 3°.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.4, morningGlory: 1.03, medical: [] },
+          { num: 6, name: "PAINT WHITE", ml: "10/1", sexAge: "Y.T. 6a", dob: "18/01/20", sire: "Roger Rocket", dam: "Pinky Del Prado", grandsire: "El Prado", haras: "Los Caracaros", stud: "Play Monster", silkColor: "#9333EA", jockey: "L. Aguilar", weight: 54, allowance: 0, trainer: "L. Rosendo", implements: "L.CC.Gr.BB.La. -M", daysOff: 14, starts: 21, wins: 2, yuntaStarts: 4, yuntaEfect: 10, distEfect: 10, ratings: [59, 55, 53], pastWeights: [364, 484, 477], optimalWeight: 475, liveWeight: null, simWeight: 478, paceStyle: "E1", earlySpeed: 86, lateKick: 76, workoutScore: 7.8, workoutText: "Velocista de cuidado.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 0.3, morningGlory: 0.95, medical: ["Ret. Claudicación C443"] },
+          { num: 7, name: "MOSTAZA", ml: "2/1", sexAge: "Y.C. 6a", dob: "14/04/20", sire: "Rey Del Sol", dam: "La Karakola", grandsire: "Apolo", haras: "Agua Miel", stud: "Play Monster", silkColor: "#A855F7", jockey: "J. Lugo Jr.", weight: 54, allowance: 0, trainer: "H. Trujillo", implements: "L.CC.La. -M (B-L)", daysOff: 14, starts: 27, wins: 2, yuntaStarts: 29, yuntaEfect: 21, distEfect: 17, ratings: [62, 64, 66, 62], pastWeights: [380, 374, 377, 380], optimalWeight: 377, liveWeight: null, simWeight: 377, paceStyle: "E2", earlySpeed: 84, lateKick: 86, workoutScore: 8.6, workoutText: "Sumamente pareja en 1100m.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.1, morningGlory: 1.02, medical: [] }
+        ]
+      },
+      "C497": {
+        code: "C497", title: "3ª Carrera (497) — 1200m — Yeguas 5+ No Ganadoras", time: "02:00 p.m.", distance: 1200,
+        record: "68.0 - ASIALATINA (Ks.53)", prize: "US$ 25.350,00",
+        condition: "HANDICAP LIBRE. Yeguas 5 y más años, Debutantes o No Ganadoras.",
+        baseTime: 75.2, p400: 23.0, p800: 46.4, p1200: 75.2, remate: 12.6,
+        horses: [
+          { num: 1, name: "VALERIA TIME", ml: "1/1", sexAge: "Y.C. 5a", dob: "20/02/21", sire: "Slew's Tizzy", dam: "Princess Valeria", grandsire: "Henny Hughes", haras: "Los Samanes", stud: "Excelso", silkColor: "#3B82F6", jockey: "R. Capriles", weight: 57.5, allowance: 0, trainer: "G. Rojas", implements: "L.M.La. (B-L)", daysOff: 14, starts: 22, wins: 0, yuntaStarts: 18, yuntaEfect: 28, distEfect: 20, ratings: [56, 60, 51, 56], pastWeights: [388, 390, 375, 375], optimalWeight: 388, liveWeight: null, simWeight: 386, paceStyle: "E2", earlySpeed: 84, lateKick: 85, workoutScore: 8.6, workoutText: "Monta R. Capriles, primera favorita.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.2, morningGlory: 1.0, medical: [] },
+          { num: 5, name: "CATIRA MILENA", ml: "12/1", sexAge: "Y.A. 6a", dob: "18/02/20", sire: "Panzer Barcelona", dam: "Frances In Command", grandsire: "Deputy Commander", haras: "La Orlyana", stud: "Cesper", silkColor: "#DC2626", jockey: "A. García P.", weight: 54.5, allowance: 0, trainer: "C. Pérez", implements: "L.P.La. (L)", daysOff: 63, starts: 27, wins: 0, yuntaStarts: 10, yuntaEfect: 12, distEfect: 10, ratings: [32, 44, 36, 48], pastWeights: [390, 391, 384, 377], optimalWeight: 380, liveWeight: null, simWeight: 381, paceStyle: "E2", earlySpeed: 79, lateKick: 78, workoutScore: 7.9, workoutText: "3° en su última en 1200m.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 0.4, morningGlory: 0.98, medical: [] },
+          { num: 6, name: "AMOR PROHIBIDO", ml: "9/5", sexAge: "Y.C. 5a", dob: "16/03/21", sire: "Tie Hand", dam: "Give Me Love", grandsire: "Big Prairie", haras: "La Pradera", stud: "Los De Cumanacoa", silkColor: "#16A34A", jockey: "Y. González", weight: 53.5, allowance: 0, trainer: "H. García Jr.", implements: "L.V.Gr.M.OT.La. +L,Gr", daysOff: 84, starts: 16, wins: 0, yuntaStarts: 8, yuntaEfect: 18, distEfect: 15, ratings: [55, 44, 56, 59], pastWeights: [388, 389, 386, 379], optimalWeight: 382, liveWeight: null, simWeight: 382, paceStyle: "E2", earlySpeed: 83, lateKick: 84, workoutScore: 8.7, workoutText: "800m en 50.3 (12.0), del aparato.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.3, morningGlory: 1.02, medical: [] },
+          { num: 8, name: "GIFT WINNER", ml: "8/1", sexAge: "Y.A. 5a", dob: "03/04/21", sire: "Equine Perfection", dam: "Dream Tour", grandsire: "Express Tour", haras: "Urama", stud: "Jhos & Alfarero", silkColor: "#22C55E", jockey: "W. Véliz", weight: 53, allowance: 0, trainer: "J. Sánchez", implements: "L.Gr.La. +L-BB", daysOff: 224, starts: 10, wins: 0, yuntaStarts: 20, yuntaEfect: 8, distEfect: 10, ratings: [43, 53, 39, 37], pastWeights: [407, 394, 398, 391], optimalWeight: 394, liveWeight: null, simWeight: 395, paceStyle: "E2", earlySpeed: 80, lateKick: 80, workoutScore: 8.1, workoutText: "800m en 55.1 (14.4), estrena cuadra J. Sánchez.", jockeyChange: true, trainerChange: true, hiddenIntentBonus: 1.0, morningGlory: 0.96, medical: [] }
+        ]
+      },
+      "C498": {
+        code: "C498", title: "4ª Carrera (498) — 1300m — Ejemplares 5+ Gan. de 1", time: "02:30 p.m.", distance: 1300,
+        record: "74.3 - REBELLIOUS (Ks.54)", prize: "US$ 27.040,00",
+        condition: "HANDICAP LIBRE. Ejemplares 5 y más años, Ganadores de 1 carrera.",
+        baseTime: 78.2, p400: 22.4, p800: 46.1, p1200: 71.3, remate: 12.4,
+        horses: [
+          { num: 1, name: "PREDADOR", ml: "10/1", sexAge: "C.C. 5a", dob: "06/02/21", sire: "Vacation", dam: "Gran Estefanía", grandsire: "Water Poet", haras: "Paumar", stud: "Los Audaces", silkColor: "#EAB308", jockey: "F. Márquez", weight: 53.5, allowance: 3, trainer: "H. Correia", implements: "L.Gr.M.La. +M", daysOff: 42, starts: 17, wins: 1, yuntaStarts: 1, yuntaEfect: 100, distEfect: 15, ratings: [66, 59, 57, 58], pastWeights: [427, 429, 428, 426], optimalWeight: 427, liveWeight: null, simWeight: 427, paceStyle: "E2", earlySpeed: 82, lateKick: 81, workoutScore: 8.2, workoutText: "Buen descargo de 3 Kg.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 0.9, morningGlory: 1.0, medical: [] },
+          { num: 3, name: "THEO", ml: "5/1", sexAge: "C.C. 5a", dob: "28/04/21", sire: "Legendario", dam: "Green White", grandsire: "Fast As A Cat", haras: "La Celeste", stud: "Gods Plan", silkColor: "#9333EA", jockey: "J. Lugo Jr.", weight: 53.5, allowance: 0, trainer: "H. Trujillo", implements: "L.CC.G.Gr.BB.La. -M", daysOff: 42, starts: 18, wins: 1, yuntaStarts: 29, yuntaEfect: 21, distEfect: 25, ratings: [52, 62, 62, 67], pastWeights: [410, 406, 408, 415], optimalWeight: 410, liveWeight: null, simWeight: 411, paceStyle: "E1", earlySpeed: 88, lateKick: 83, workoutScore: 8.5, workoutText: "3° de Zucchero con Rating 67.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.0, morningGlory: 1.01, medical: [] },
+          { num: 4, name: "GRAN AZABACHE", ml: "9/2", sexAge: "C.C. 5a", dob: "19/05/21", sire: "Roger Rocket", dam: "Pinky del Prado", grandsire: "El Prado", haras: "Los Caracaros", stud: "DCA", silkColor: "#16A34A", jockey: "Y. Caguado", weight: 53, allowance: 3, trainer: "V. Di-Luca", implements: "L.Gr.La. (L)", daysOff: 14, starts: 15, wins: 1, yuntaStarts: 1, yuntaEfect: 100, distEfect: 25, ratings: [60, 51, 64, 63], pastWeights: [473, 460, 464, 428], optimalWeight: 430, liveWeight: null, simWeight: 430, paceStyle: "E1", earlySpeed: 87, lateKick: 82, workoutScore: 8.4, workoutText: "Viene de ganar en 75.4 para 1200m.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 0.9, morningGlory: 1.0, medical: [] },
+          { num: 5, name: "GOLDEN BROS", ml: "7/2", sexAge: "C.A. 6a", dob: "07/04/20", sire: "Deliberately", dam: "Cibeles", grandsire: "Miner's Lamp", haras: "Oropal", stud: "MG & Bros", silkColor: "#38BDF8", jockey: "R. Solano", weight: 53.5, allowance: 0, trainer: "R. Lanz", implements: "L.P.Gr.BB.La. (B-L)", daysOff: 28, starts: 12, wins: 1, yuntaStarts: 12, yuntaEfect: 18, distEfect: 25, ratings: [60, 64, 52, 66], pastWeights: [456, 453, 456, 456], optimalWeight: 456, liveWeight: null, simWeight: 456, paceStyle: "E2", earlySpeed: 85, lateKick: 85, workoutScore: 8.5, workoutText: "600m en 40.3 (13.0), manteniéndose. EP.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.0, morningGlory: 1.0, medical: [] },
+          { num: 6, name: "VINICIUS JR", ml: "4/5", sexAge: "C.C. 5a", dob: "18/02/21", sire: "King Seraf", dam: "Maniflower", grandsire: "King George", haras: "La Orlyana", stud: "El Incómodo", silkColor: "#2563EB", jockey: "I. Pimentel Jr.", weight: 59, allowance: 0, trainer: "Y. Villamizar", implements: "L.BB.La. (B-L)", daysOff: 21, starts: 29, wins: 1, yuntaStarts: 15, yuntaEfect: 30, distEfect: 30, ratings: [66, 45, 70, 60], pastWeights: [525, 519, 525, 519], optimalWeight: 522, liveWeight: null, simWeight: 521, paceStyle: "E2", earlySpeed: 87, lateKick: 89, workoutScore: 9.0, workoutText: "2° de Zucchero con Rating 70.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.5, morningGlory: 1.03, medical: [] }
+        ]
+      },
+      "C499": {
+        code: "C499", title: "5ª Carrera (499) — 1300m — Yeguas 4+ Gan. de 2 y 3", time: "03:00 p.m.", distance: 1300,
+        record: "74.3 - REBELLIOUS (Ks.54)", prize: "US$ 33.800,00",
+        condition: "HANDICAP LIBRE. Yeguas Nacionales de 4 y más años, Ganadoras de 2 y 3 carreras.",
+        baseTime: 78.0, p400: 22.3, p800: 45.4, p1200: 71.1, remate: 12.3,
+        horses: [
+          { num: 2, name: "SRA CHAMP", ml: "4/1", sexAge: "Y.C. 4a", dob: "16/02/22", sire: "Champlain", dam: "Sra. Mabel", grandsire: "Biloxi Palace", haras: "La Primavera", stud: "Da Camara", silkColor: "#EAB308", jockey: "J. Aray", weight: 53, allowance: 0, trainer: "J. Salvador", implements: "L.V.La. (B-L)", daysOff: 56, starts: 12, wins: 2, yuntaStarts: 16, yuntaEfect: 25, distEfect: 20, ratings: [68, 71, 70, 71], pastWeights: [410, 413, 412, 411], optimalWeight: 412, liveWeight: null, simWeight: 412, paceStyle: "E3", earlySpeed: 78, lateKick: 88, workoutScore: 8.7, workoutText: "Mantiene Rating 71 parejo.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.1, morningGlory: 1.02, medical: [] },
+          { num: 4, name: "JENIFER DANIELA", ml: "6/5", sexAge: "Y.C. 4a", dob: "29/03/22", sire: "Manchester", dam: "Lido Di Venezia", grandsire: "Lido Palace", haras: "La Primavera", stud: "San Manuelito", silkColor: "#EC4899", jockey: "Y. González", weight: 53, allowance: 0, trainer: "L. Martínez", implements: "L.G.M.La. +L", daysOff: 364, starts: 3, wins: 2, yuntaStarts: 11, yuntaEfect: 36, distEfect: 50, ratings: [63, 76, 82], pastWeights: [461, 460, 455], optimalWeight: 456, liveWeight: null, simWeight: 465, paceStyle: "E1", earlySpeed: 93, lateKick: 87, workoutScore: 8.8, workoutText: "800m en 55.3 (12.1), reaparece tras 364 días.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.2, morningGlory: 1.0, medical: ["Paro de 364 días"] },
+          { num: 6, name: "ROSE SENSATIONS", ml: "7/5", sexAge: "Y.C. 5a", dob: "21/01/21", sire: "King Seraf", dam: "La De Mercedes", grandsire: "Leroidesanimaux", haras: "La Orlyana", stud: "Soñadores", silkColor: "#DC2626", jockey: "J. Lugo Jr.", weight: 53, allowance: 0, trainer: "R. D'Angelo", implements: "L.La. (B-L)", daysOff: 21, starts: 21, wins: 2, yuntaStarts: 18, yuntaEfect: 28, distEfect: 40, ratings: [76, 72, 64, 65], pastWeights: [443, 440, 439, 448], optimalWeight: 443, liveWeight: null, simWeight: 443, paceStyle: "E2", earlySpeed: 87, lateKick: 88, workoutScore: 8.9, workoutText: "Tres segundos lugares en sus últimas 4.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.5, morningGlory: 1.04, medical: [] },
+          { num: 7, name: "FOUR PALMS QUEEN", ml: "5/2", sexAge: "Y.C. 5a", dob: "19/01/21", sire: "Pashito The Che", dam: "Bahamas Pegasus", grandsire: "Fusaichi Pegasus", haras: "La Alameda", stud: "Los Maiceros", silkColor: "#16A34A", jockey: "H. Medina", weight: 55, allowance: 0, trainer: "R. D'Angelo", implements: "L.BB.La. (B-L)", daysOff: 21, starts: 16, wins: 3, yuntaStarts: 18, yuntaEfect: 28, distEfect: 25, ratings: [60, 56, 68, 75], pastWeights: [427, 427, 426, 438], optimalWeight: 428, liveWeight: null, simWeight: 429, paceStyle: "E2", earlySpeed: 86, lateKick: 89, workoutScore: 9.0, workoutText: "3° a 1¾ de Lady Monique con Rating 75.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.5, morningGlory: 1.04, medical: [] }
+        ]
+      },
+      "C500": {
+        code: "C500", title: "6ª Carrera (500) — 1100m — IV Clásico Gaceta Hípica (GIII)", time: "03:30 p.m.", distance: 1100,
+        record: "61.3 - JORGE PRINCE (Ks.54)", prize: "US$ 130.000,00",
+        condition: "PESOS EFECTIVOS. Yeguas Nacionales (53 Kg) e Importadas (54 Kg) de 2 Años.",
+        baseTime: 64.4, p400: 21.4, p800: 44.3, p1200: 64.4, remate: 12.0,
+        horses: [
+          { num: 1, name: "LA GRAN SABANA", ml: "4/1", sexAge: "Y.C. 2a", dob: "01/01/24", sire: "Pashito The Che", dam: "La Bunkercita", grandsire: "Documentary", haras: "La Alameda", stud: "Pelagic", silkColor: "#38BDF8", jockey: "W. Véliz", weight: 53, allowance: 0, trainer: "C. Doktorczyk", implements: "L.Gr.La. (B-L)", daysOff: 0, starts: 0, wins: 0, yuntaStarts: 5, yuntaEfect: 15, distEfect: 0, ratings: [68], pastWeights: [445], optimalWeight: 445, liveWeight: null, simWeight: 445, paceStyle: "E2", earlySpeed: 82, lateKick: 80, workoutScore: 8.4, workoutText: "Debutante hija de Pashito The Che.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 0.7, morningGlory: 1.0, medical: [] },
+          { num: 2, name: "LATINA FINA", ml: "3/5", sexAge: "Y.C. 2a", dob: "01/02/24", sire: "King Seraf", dam: "Orlyana Queen", grandsire: "Kafwain", haras: "La Orlyana", stud: "Bou Stable", silkColor: "#2DD4BF", jockey: "I. Pimentel Jr.", weight: 53, allowance: 0, trainer: "H. Correia", implements: "L.M.La. (B-L)", daysOff: 42, starts: 1, wins: 0, yuntaStarts: 6, yuntaEfect: 33, distEfect: 33, ratings: [67], pastWeights: [447], optimalWeight: 447, liveWeight: null, simWeight: 448, paceStyle: "E1", earlySpeed: 90, lateKick: 83, workoutScore: 9.4, workoutText: "1.000m en 65.4 (remate 12.2), excelente.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.4, morningGlory: 1.03, medical: [] },
+          { num: 3, name: "COLORADA (USA)", ml: "4/5", sexAge: "Y.C. 2a", dob: "03/04/24", sire: "Tonalist", dam: "Your Eyes Only", grandsire: "Pioneerof the Nile", haras: "Florida (USA)", stud: "Z.M", silkColor: "#FACC15", jockey: "J. A. Rivero", weight: 54, allowance: 0, trainer: "F. Parilli Jr.", implements: "L.V.BB.La. +BB", daysOff: 21, starts: 1, wins: 0, yuntaStarts: 14, yuntaEfect: 26, distEfect: 50, ratings: [73], pastWeights: [462], optimalWeight: 462, liveWeight: null, simWeight: 462, paceStyle: "E2", earlySpeed: 88, lateKick: 89, workoutScore: 9.6, workoutText: "1.000m en 67.1 (remate 12.3), rindió una enormidad.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.6, morningGlory: 1.05, medical: [] },
+          { num: 4, name: "SEÑORA ISABEL (USA)", ml: "9/5", sexAge: "Y.C. 2a", dob: "14/02/24", sire: "Army Mule", dam: "Eleadora", grandsire: "Finality", haras: "Nueva York", stud: "Santo Niño", silkColor: "#F472B6", jockey: "H. Medina", weight: 54, allowance: 0, trainer: "L. Martínez", implements: "L.La. (B-L)", daysOff: 63, starts: 2, wins: 2, yuntaStarts: 23, yuntaEfect: 22, distEfect: 100, ratings: [79, 78], pastWeights: [466, 457], optimalWeight: 460, liveWeight: null, simWeight: 459, paceStyle: "E1", earlySpeed: 96, lateKick: 88, workoutScore: 9.2, workoutText: "Invicta de 2-2 (ganó por 16 cpos en 65.4).", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.8, morningGlory: 1.06, medical: [] },
+          { num: 5, name: "GIULIANA MIA (USA)", ml: "6/5", sexAge: "Y.Z. 2a", dob: "20/04/24", sire: "Mendelssohn", dam: "Hong Kong Helen", grandsire: "Palace Malice", haras: "Kentucky", stud: "Linda Abril", silkColor: "#EF4444", jockey: "F. González Jr.", weight: 54, allowance: 0, trainer: "F. Parilli", implements: "L.Bz.V. (B-L)", daysOff: 0, starts: 0, wins: 0, yuntaStarts: 7, yuntaEfect: 29, distEfect: 0, ratings: [72], pastWeights: [455], optimalWeight: 455, liveWeight: null, simWeight: 455, paceStyle: "E2", earlySpeed: 86, lateKick: 85, workoutScore: 9.1, workoutText: "1.000m en 69.3 (remate 12.0), poniéndole. SS.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.2, morningGlory: 1.02, medical: [] }
+        ]
+      },
+      "C501": {
+        code: "C501", title: "7ª Carrera (501) — 1800m — Ejemplares 4+ Gan. de 3 y 4", time: "04:00 p.m.", distance: 1800,
+        record: "107.0 - CONTINENTAL (Ks.50)", prize: "US$ 33.800,00",
+        condition: "HANDICAP LIBRE. Ejemplares Nacionales 4 y más años, Ganadores de 3 y 4 carreras.",
+        baseTime: 113.4, p400: 24.1, p800: 48.3, p1200: 73.2, remate: 12.7,
+        horses: [
+          { num: 1, name: "FIRST TIME", ml: "20/1", sexAge: "C.C. 5a", dob: "19/05/21", sire: "King Seraf", dam: "Flor De Maní", grandsire: "Shawal", haras: "La Orlyana", stud: "Excelso", silkColor: "#3B82F6", jockey: "J. Aray", weight: 55, allowance: 0, trainer: "J. C. García M.", implements: "L.Bz.La. (B-L)", daysOff: 21, starts: 27, wins: 4, yuntaStarts: 12, yuntaEfect: 18, distEfect: 13, ratings: [54, 71, 78], pastWeights: [452, 449, 458, 462], optimalWeight: 458, liveWeight: null, simWeight: 458, paceStyle: "E2", earlySpeed: 80, lateKick: 79, workoutScore: 8.5, workoutText: "600m en 42.2 (12.2), llegando con energía. SS.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 0.8, morningGlory: 1.0, medical: [] },
+          { num: 3, name: "THE FIELDHER JR", ml: "15/1", sexAge: "C.C. 5a", dob: "10/03/21", sire: "Manchester", dam: "Lady Ashton", grandsire: "Champlain", haras: "La Primavera", stud: "Mireya La Grande", silkColor: "#CA8A04", jockey: "J. C. Rodríguez", weight: 55, allowance: 0, trainer: "J. D. Rivas", implements: "L.Bz.V.BB.La. (B-L)", daysOff: 14, starts: 12, wins: 4, yuntaStarts: 11, yuntaEfect: 19, distEfect: 33, ratings: [70, 81, 81, 52], pastWeights: [424, 431, 439, 434], optimalWeight: 435, liveWeight: null, simWeight: 435, paceStyle: "E1", earlySpeed: 89, lateKick: 78, workoutScore: 8.3, workoutText: "Doble ganador en 1300m con Rating 81.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.0, morningGlory: 1.0, medical: [] },
+          { num: 4, name: "TIO HORACIO", ml: "9/2", sexAge: "C.C. 4a", dob: "09/04/22", sire: "Ercolano", dam: "Enchanted Mesa", grandsire: "Sky Mesa", haras: "Bello Monte", stud: "Inaki", silkColor: "#DC2626", jockey: "F. Quevedo", weight: 55, allowance: 0, trainer: "F. Parilli", implements: "L.Bz.V.Gr.La. (B-L)", daysOff: 14, starts: 16, wins: 4, yuntaStarts: 9, yuntaEfect: 11, distEfect: 25, ratings: [62, 68, 71, 57], pastWeights: [430, 437, 437, 439], optimalWeight: 437, liveWeight: null, simWeight: 437, paceStyle: "E3", earlySpeed: 76, lateKick: 88, workoutScore: 8.6, workoutText: "3° en 1800m de Ekati King.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.2, morningGlory: 1.02, medical: [] },
+          { num: 5, name: "INVADER", ml: "5/1", sexAge: "C.A. 5a", dob: "04/01/21", sire: "Roger Rocket", dam: "Waltz Away", grandsire: "Giant's Causeway", haras: "Los Caracaros", stud: "Excelso", silkColor: "#2563EB", jockey: "W. Véliz", weight: 55, allowance: 0, trainer: "G. Rojas", implements: "L.Bz.La. (B-L)", daysOff: 35, starts: 28, wins: 4, yuntaStarts: 32, yuntaEfect: 16, distEfect: 11, ratings: [74, 83, 74, 77], pastWeights: [472, 486, 469, 476], optimalWeight: 472, liveWeight: null, simWeight: 471, paceStyle: "E3", earlySpeed: 78, lateKick: 91, workoutScore: 9.2, workoutText: "1.000m en 72.2 (remate 12.4), llegando de lo mejor. EP.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.5, morningGlory: 1.04, medical: [] },
+          { num: 7, name: "FORREST GUMP", ml: "6/5", sexAge: "C.A. 4a", dob: "30/01/22", sire: "Champlain", dam: "Dríada del Valle", grandsire: "Congrats", haras: "La Primavera", stud: "Alabama PB", silkColor: "#1D4ED8", jockey: "H. Medina", weight: 53, allowance: 0, trainer: "J. Salvador", implements: "L.La. (B-L)", daysOff: 21, starts: 14, wins: 3, yuntaStarts: 11, yuntaEfect: 28, distEfect: 20, ratings: [69, 68, 72, 63], pastWeights: [423, 424, 426, 428], optimalWeight: 425, liveWeight: null, simWeight: 425, paceStyle: "E1", earlySpeed: 91, lateKick: 87, workoutScore: 8.8, workoutText: "800m en 58.1 (13.2), siempre apoyado. SS.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.4, morningGlory: 1.03, medical: [] },
+          { num: 8, name: "ISOBÁRICO", ml: "2/1", sexAge: "C.C. 4a", dob: "02/02/22", sire: "Roger Rocket", dam: "Silk Degrees", grandsire: "Mutakddim", haras: "Los Caracaros", stud: "Excelso", silkColor: "#38BDF8", jockey: "R. Capriles", weight: 53, allowance: 0, trainer: "J. C. García M.", implements: "L.La. -V (B-L)", daysOff: 63, starts: 8, wins: 2, yuntaStarts: 14, yuntaEfect: 25, distEfect: 20, ratings: [53, 69, 67], pastWeights: [482, 492, 491], optimalWeight: 491, liveWeight: null, simWeight: 490, paceStyle: "E2", earlySpeed: 84, lateKick: 86, workoutScore: 8.9, workoutText: "1.000m en 69.4 (13.0), en condición. (2V).", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.3, morningGlory: 1.02, medical: ["Ret. Traumatismo Casco C460"] }
+        ]
+      },
+      "C502": {
+        code: "C502", title: "8ª Carrera (502) — 1300m — 1ª Válida 5y6 (3a No Gan.)", time: "04:35 p.m.", distance: 1300,
+        record: "74.3 - REBELLIOUS (Ks.54)", prize: "US$ 33.800,00",
+        condition: "HANDICAP LIBRE. Ejemplares 3 Años, Debutantes o No Ganadores.",
+        baseTime: 78.4, p400: 22.4, p800: 46.1, p1200: 71.2, remate: 12.4,
+        horses: [
+          { num: 1, name: "GRAN WARRIOR", ml: "20/1", sexAge: "C.C. 3a", dob: "21/02/23", sire: "Jorge Zeta", dam: "Pentesilia", grandsire: "Documentary", haras: "La Primavera", stud: "El Aventurero", silkColor: "#EA580C", jockey: "F. González Jr.", weight: 53, allowance: 0, trainer: "D. Aquino", implements: "L.V.BB.M.La. (L)", daysOff: 35, starts: 3, wins: 0, yuntaStarts: 6, yuntaEfect: 15, distEfect: 10, ratings: [56, 67, 71], pastWeights: [430, 423, 427], optimalWeight: 427, liveWeight: null, simWeight: 427, paceStyle: "E2", earlySpeed: 83, lateKick: 80, workoutScore: 9.5, workoutText: "1.000m en 65.2 (remate 12.2), fenomenal.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.2, morningGlory: 1.02, medical: [] },
+          { num: 4, name: "EL PROVIDENCIAL", ml: "6/1", sexAge: "C.C. 3a", dob: "02/01/23", sire: "Slew's Tizzy", dam: "Running River", grandsire: "Marital Asset", haras: "Los Samanes", stud: "Marco Antonio", silkColor: "#16A34A", jockey: "W. Véliz", weight: 54.5, allowance: 0, trainer: "F. Parilli", implements: "L.Gr.La. (B-L)", daysOff: 21, starts: 9, wins: 0, yuntaStarts: 12, yuntaEfect: 22, distEfect: 20, ratings: [70, 74, 59, 58], pastWeights: [468, 448, 462, 483], optimalWeight: 455, liveWeight: null, simWeight: 456, paceStyle: "E2", earlySpeed: 85, lateKick: 82, workoutScore: 8.8, workoutText: "1.000m en 67.3 (12.0), respondiendo. (2V).", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.0, morningGlory: 1.0, medical: [] },
+          { num: 5, name: "GIANT'S TRIUMPH (USA)", ml: "6/5", sexAge: "C.Z. 3a", dob: "29/03/23", sire: "Gift Boss", dam: "First Screening", grandsire: "First Samurai", haras: "Kentucky", stud: "San Manuelito II", silkColor: "#DB2777", jockey: "R. Capriles", weight: 58, allowance: 0, trainer: "L. Martínez", implements: "L.Gr.BB.La. (B-L)", daysOff: 28, starts: 4, wins: 0, yuntaStarts: 8, yuntaEfect: 38, distEfect: 25, ratings: [48, 64, 72], pastWeights: [456], optimalWeight: 456, liveWeight: null, simWeight: 456, paceStyle: "E2", earlySpeed: 88, lateKick: 89, workoutScore: 8.7, workoutText: "1.000m en 69.4 (13.1), respondió en los finales.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.4, morningGlory: 1.03, medical: [] },
+          { num: 8, name: "MORE THAN GALILEO (USA)", ml: "7/2", sexAge: "C.C. 3a", dob: "17/03/23", sire: "More Than Ready", dam: "Galileo's Lady", grandsire: "Galileo", haras: "Kentucky", stud: "Don Rafael V", silkColor: "#DC2626", jockey: "F. Márquez", weight: 59, allowance: 3, trainer: "G. Márquez", implements: "L.V.La. -Gr", daysOff: 49, starts: 6, wins: 0, yuntaStarts: 4, yuntaEfect: 50, distEfect: 40, ratings: [50, 71, 63, 68], pastWeights: [452, 456, 465, 462], optimalWeight: 458, liveWeight: null, simWeight: 458, paceStyle: "E2", earlySpeed: 87, lateKick: 88, workoutScore: 8.6, workoutText: "Descargo de 3 Kg (corre con 56 Kg) + Yunta 50%.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.5, morningGlory: 1.04, medical: [] },
+          { num: 9, name: "WADI AL KOUF (USA)", ml: "9/2", sexAge: "C.C. 3a", dob: "18/05/23", sire: "Charlatan", dam: "Mia D'Oro", grandsire: "Medaglia D'Oro", haras: "Kentucky", stud: "Big Valdi", silkColor: "#1D4ED8", jockey: "J. Aray", weight: 58.5, allowance: 0, trainer: "C. L. Uzcátegui", implements: "L.Bz.CC.V.Gr.M.La. +CC", daysOff: 63, starts: 8, wins: 0, yuntaStarts: 43, yuntaEfect: 21, distEfect: 30, ratings: [64, 80, 73, 57], pastWeights: [492, 490, 487], optimalWeight: 490, liveWeight: null, simWeight: 490, paceStyle: "E1", earlySpeed: 94, lateKick: 83, workoutScore: 8.9, workoutText: "Rating 80 en 1100m + Anteojeras (+CC).", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.6, morningGlory: 1.03, medical: [] }
+        ]
+      },
+      "C503": {
+        code: "C503", title: "9ª Carrera (503) — 1300m — 2ª Válida 5y6 (Yeguas 3a)", time: "05:05 p.m.", distance: 1300,
+        record: "74.3 - REBELLIOUS (Ks.54)", prize: "US$ 33.800,00",
+        condition: "HANDICAP LIBRE. Yeguas 3 Años, Debutantes o No Ganadoras.",
+        baseTime: 79.0, p400: 22.3, p800: 46.0, p1200: 71.4, remate: 12.5,
+        horses: [
+          { num: 1, name: "INDISTINCT CHATTER (USA)", ml: "2/1", sexAge: "Y.C. 3a", dob: "21/03/23", sire: "Catholic Boy", dam: "Zia", grandsire: "Munnings", haras: "Kentucky", stud: "Milano", silkColor: "#2563EB", jockey: "Y. González", weight: 56, allowance: 0, trainer: "C. L. Uzcátegui", implements: "L.CC.Gr.BB.M.La.", daysOff: 0, starts: 0, wins: 0, yuntaStarts: 18, yuntaEfect: 22, distEfect: 0, ratings: [68], pastWeights: [450], optimalWeight: 450, liveWeight: null, simWeight: 450, paceStyle: "E2", earlySpeed: 85, lateKick: 85, workoutScore: 8.7, workoutText: "Importada hija de Catholic Boy.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.1, morningGlory: 1.0, medical: [] },
+          { num: 2, name: "CORONADA EN GLORIA (PAN)", ml: "8/5", sexAge: "Y.C. 3a", dob: "02/03/23", sire: "Rum Point", dam: "La Coronada", grandsire: "The Roundhouse", haras: "Panamá", stud: "Luisiana", silkColor: "#16A34A", jockey: "O. Rivas", weight: 58, allowance: 3, trainer: "Ale. Regalado", implements: "L.V.BB.M.La. +BB", daysOff: 14, starts: 6, wins: 0, yuntaStarts: 10, yuntaEfect: 20, distEfect: 20, ratings: [58, 71, 56], pastWeights: [451, 451, 450, 447], optimalWeight: 450, liveWeight: null, simWeight: 450, paceStyle: "E1", earlySpeed: 89, lateKick: 84, workoutScore: 8.6, workoutText: "Dos segundos seguidos + Bozal Blanco (+BB).", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.2, morningGlory: 1.02, medical: [] },
+          { num: 3, name: "BEYONCE CHAMP", ml: "3/1", sexAge: "Y.A. 3a", dob: "19/03/23", sire: "Champlain", dam: "La De Horacio", grandsire: "Big Prairie", haras: "La Primavera", stud: "Alabama PB", silkColor: "#DC2626", jockey: "O. Medina", weight: 54, allowance: 1, trainer: "J. Salvador", implements: "L.V.La. (B-L)", daysOff: 35, starts: 3, wins: 0, yuntaStarts: 14, yuntaEfect: 29, distEfect: 25, ratings: [53, 59, 72], pastWeights: [443, 405, 403], optimalWeight: 404, liveWeight: null, simWeight: 404, paceStyle: "E2", earlySpeed: 87, lateKick: 88, workoutScore: 8.9, workoutText: "2° en 1200m con Rating 72.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.4, morningGlory: 1.03, medical: [] },
+          { num: 4, name: "ANDRELLA ROYALE", ml: "6/5", sexAge: "Y.C. 3a", dob: "10/02/23", sire: "Roger Rocket", dam: "Endrygol", grandsire: "Evolutionist", haras: "Los Caracaros", stud: "Andrea Stable II", silkColor: "#EC4899", jockey: "R. Capriles", weight: 53.5, allowance: 0, trainer: "O. M. González", implements: "L.CC.BB.La.", daysOff: 28, starts: 1, wins: 0, yuntaStarts: 42, yuntaEfect: 24, distEfect: 25, ratings: [64], pastWeights: [451], optimalWeight: 451, liveWeight: null, simWeight: 451, paceStyle: "E2", earlySpeed: 86, lateKick: 87, workoutScore: 9.2, workoutText: "600m en 40.0 (12.0), fácil y rindió. EP. (Hija de Endrygol).", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.5, morningGlory: 1.04, medical: [] }
+        ]
+      },
+      "C504": {
+        code: "C504", title: "10ª Carrera (504) — 1100m — 3ª Válida 5y6 (Yeguas 4+ Gan. 1)", time: "05:35 p.m.", distance: 1100,
+        record: "61.3 - JORGE PRINCE (Ks.54)", prize: "US$ 27.040,00",
+        condition: "HANDICAP LIBRE. Yeguas 4 y más años, Ganadoras de 1 carrera.",
+        baseTime: 66.3, p400: 22.1, p800: 45.1, p1200: 66.3, remate: 12.2,
+        horses: [
+          { num: 1, name: "CELESTIA", ml: "8/1", sexAge: "Y.C. 4a", dob: "20/01/22", sire: "Ercolano", dam: "Mainsail", grandsire: "Mizzen Mast", haras: "Bello Monte", stud: "Bello Monte-Inaki", silkColor: "#DC2626", jockey: "W. Véliz", weight: 53, allowance: 0, trainer: "D. Guevara", implements: "L.CC.V.G.BB.M.La. +L", daysOff: 70, starts: 15, wins: 1, yuntaStarts: 10, yuntaEfect: 20, distEfect: 20, ratings: [76, 69, 63], pastWeights: [437, 419, 428, 425], optimalWeight: 432, liveWeight: null, simWeight: 432, paceStyle: "E1", earlySpeed: 93, lateKick: 82, workoutScore: 9.5, workoutText: "600m en 37.2 (remate 12.1), muy rápida. EP. (Estrena cuadra).", jockeyChange: true, trainerChange: true, hiddenIntentBonus: 1.4, morningGlory: 1.02, medical: [] },
+          { num: 2, name: "SHELOVESTOTRAVEL (USA)", ml: "9/2", sexAge: "Y.C. 4a", dob: "26/01/22", sire: "St Patrick's Day", dam: "Mo Than Happy", grandsire: "Uncle Mo", haras: "Florida", stud: "Tank", silkColor: "#16A34A", jockey: "H. Medina", weight: 56, allowance: 0, trainer: "O. M. González", implements: "L.Bz.CC.Gr.La. +L", daysOff: 308, starts: 5, wins: 1, yuntaStarts: 4, yuntaEfect: 50, distEfect: 25, ratings: [69, 63, 62], pastWeights: [450], optimalWeight: 450, liveWeight: null, simWeight: 452, paceStyle: "E1", earlySpeed: 91, lateKick: 84, workoutScore: 8.7, workoutText: "Importada de Gulfstream Park. Yunta 50%.", jockeyChange: true, trainerChange: true, hiddenIntentBonus: 1.2, morningGlory: 1.0, medical: ["Reaparece 308d"] },
+          { num: 5, name: "MISS MORGAN (USA)", ml: "9/5", sexAge: "Y.Z. 4a", dob: "27/02/22", sire: "Spun to Run", dam: "Great Hot", grandsire: "Orientate", haras: "Kentucky", stud: "Big Valdi", silkColor: "#1D4ED8", jockey: "F. Quevedo", weight: 56, allowance: 0, trainer: "C. L. Uzcátegui", implements: "L.CC.V.M.La.", daysOff: 42, starts: 13, wins: 1, yuntaStarts: 18, yuntaEfect: 24, distEfect: 25, ratings: [63, 62, 72, 63], pastWeights: [437, 439, 436, 428], optimalWeight: 437, liveWeight: null, simWeight: 437, paceStyle: "E2", earlySpeed: 87, lateKick: 87, workoutScore: 8.7, workoutText: "2° de Toda Una Rubia con Rating 72.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.2, morningGlory: 1.02, medical: [] },
+          { num: 6, name: "GALGADOT", ml: "4/1", sexAge: "Y.A. 4a", dob: "09/03/22", sire: "Champlain", dam: "Tropicana Field", grandsire: "Gold Dollar", haras: "Alegría", stud: "Fenix 15.10", silkColor: "#FACC15", jockey: "J. Lugo Jr.", weight: 53, allowance: 0, trainer: "H. Trujillo", implements: "L.CC.La. -M", daysOff: 28, starts: 5, wins: 1, yuntaStarts: 29, yuntaEfect: 21, distEfect: 20, ratings: [65, 64, 68], pastWeights: [450, 438, 447], optimalWeight: 447, liveWeight: null, simWeight: 447, paceStyle: "E1", earlySpeed: 90, lateKick: 85, workoutScore: 9.6, workoutText: "600m en 37.3 (remate 12.0), controlada y se vio fenomenal.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.4, morningGlory: 1.03, medical: ["Ret. Traumatismo C333"] },
+          { num: 7, name: "TODA UNA RUBIA", ml: "8/5", sexAge: "Y.A. 4a", dob: "05/02/22", sire: "Keep Thinking", dam: "La Emigrante", grandsire: "Vacation", haras: "San Remo", stud: "JYC Family", silkColor: "#9333EA", jockey: "J. Aray", weight: 55.5, allowance: 0, trainer: "A. S. Martínez", implements: "L.La. (B-L)", daysOff: 28, starts: 13, wins: 2, yuntaStarts: 5, yuntaEfect: 20, distEfect: 25, ratings: [74, 76, 68, 76], pastWeights: [448, 452, 451, 446], optimalWeight: 449, liveWeight: null, simWeight: 449, paceStyle: "E2", earlySpeed: 88, lateKick: 90, workoutScore: 9.0, workoutText: "Doble Rating 76 en sus últimas 3 actuaciones.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.5, morningGlory: 1.05, medical: [] }
+        ]
+      },
+      "C505": {
+        code: "C505", title: "11ª Carrera (505) — 1100m — 4ª Válida · Clásico Día del Veterinario", time: "06:05 p.m.", distance: 1100,
+        record: "61.3 - JORGE PRINCE (Ks.54)", prize: "US$ 130.000,00",
+        condition: "PESOS EFECTIVOS. Ejemplares Nacionales (53 Kg) e Importados (56 Kg) de 2 Años.",
+        baseTime: 64.3, p400: 21.3, p800: 44.2, p1200: 64.3, remate: 12.0,
+        horses: [
+          { num: 1, name: "AVIADOR MAG (USA)", ml: "6/1", sexAge: "C.C. 2a", dob: "28/03/24", sire: "Adios Charlie", dam: "Danish Princess", grandsire: "Best of the Bests", haras: "Florida", stud: "Ñañaña/AR", silkColor: "#D97706", jockey: "F. Quevedo", weight: 56, allowance: 0, trainer: "Ale. Regalado", implements: "L.Bz.V.M.La.", daysOff: 0, starts: 0, wins: 0, yuntaStarts: 8, yuntaEfect: 18, distEfect: 0, ratings: [72], pastWeights: [460], optimalWeight: 460, liveWeight: null, simWeight: 460, paceStyle: "E1", earlySpeed: 89, lateKick: 84, workoutScore: 9.3, workoutText: "1.000m en 64.0 (remate 12.2), cumpliendo.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.1, morningGlory: 1.01, medical: [] },
+          { num: 4, name: "GRAN TORRENTE (USA)", ml: "8/5", sexAge: "C.C. 2a", dob: "20/04/24", sire: "Silver State", dam: "Kristella", grandsire: "Elusive Quality", haras: "Kentucky", stud: "Santo Niño", silkColor: "#F472B6", jockey: "I. Pimentel Jr.", weight: 56, allowance: 0, trainer: "L. Martínez", implements: "L.BB.M.La.", daysOff: 42, starts: 4, wins: 1, yuntaStarts: 6, yuntaEfect: 67, distEfect: 25, ratings: [56, 63, 59, 78], pastWeights: [424, 417, 442, 441], optimalWeight: 441, liveWeight: null, simWeight: 441, paceStyle: "E1", earlySpeed: 95, lateKick: 89, workoutScore: 9.2, workoutText: "800m en 54.1 (12.2), ganó por 11 cpos en 66.1.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.8, morningGlory: 1.05, medical: [] },
+          { num: 8, name: "ELOHIM (USA)", ml: "7/2", sexAge: "C.C. 2a", dob: "04/04/24", sire: "Midshipman", dam: "Indomable Spirit", grandsire: "Street Sense", haras: "Kentucky", stud: "Gods Plan", silkColor: "#9333EA", jockey: "J. Lugo", weight: 56, allowance: 0, trainer: "C. L. Uzcátegui", implements: "L.CC.V.BB.M.La.", daysOff: 63, starts: 1, wins: 0, yuntaStarts: 20, yuntaEfect: 28, distEfect: 20, ratings: [70], pastWeights: [463], optimalWeight: 463, liveWeight: null, simWeight: 463, paceStyle: "E1", earlySpeed: 92, lateKick: 88, workoutScore: 9.7, workoutText: "800m en 50.4 (remate 11.2), agarrado y voló.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.5, morningGlory: 1.03, medical: ["Ret. Cólico C443"] },
+          { num: 11, name: "LEONO (USA)", ml: "4/1", sexAge: "C.C. 2a", dob: "27/03/24", sire: "Classic Empire", dam: "Lillet", grandsire: "Bullet Train", haras: "Kentucky", stud: "Virgen del Valle", silkColor: "#FACC15", jockey: "J. Aray", weight: 56, allowance: 0, trainer: "G. Márquez", implements: "L.V.La.", daysOff: 0, starts: 0, wins: 0, yuntaStarts: 57, yuntaEfect: 23, distEfect: 0, ratings: [75], pastWeights: [465], optimalWeight: 465, liveWeight: null, simWeight: 465, paceStyle: "E1", earlySpeed: 91, lateKick: 87, workoutScore: 9.4, workoutText: "600m en 39.2 (remate 12.2), rindió bastante. SS.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.4, morningGlory: 1.03, medical: [] }
+        ]
+      },
+      "C506": {
+        code: "C506", title: "12ª Carrera (506) — 1100m — 5ª Válida 5y6 (Yeguas 6+)", time: "06:35 p.m.", distance: 1100,
+        record: "61.3 - JORGE PRINCE (Ks.54)", prize: "US$ 33.800,00",
+        condition: "HANDICAP LIBRE. Yeguas 6 y más años, Ganadoras de 3, 4 y 5 carreras.",
+        baseTime: 66.2, p400: 22.1, p800: 45.2, p1200: 66.2, remate: 12.3,
+        horses: [
+          { num: 1, name: "DRA BEA", ml: "7/2", sexAge: "Y.C. 6a", dob: "07/01/20", sire: "Deliberately", dam: "Banana Splits", grandsire: "Mr. Mistoffelees", haras: "Oropal", stud: "Los Guevara", silkColor: "#2563EB", jockey: "O. Medina", weight: 53, allowance: 1, trainer: "D. Guevara", implements: "L.V.BB.La.", daysOff: 14, starts: 24, wins: 3, yuntaStarts: 12, yuntaEfect: 25, distEfect: 25, ratings: [66, 54, 59, 66], pastWeights: [473, 466, 470, 474], optimalWeight: 473, liveWeight: null, simWeight: 473, paceStyle: "E2", earlySpeed: 84, lateKick: 85, workoutScore: 8.4, workoutText: "2° a 1¾ de Prioritise en 1100m.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.1, morningGlory: 1.01, medical: [] },
+          { num: 5, name: "SPRING TRAINING", ml: "2/1", sexAge: "Y.C. 8a", dob: "04/04/18", sire: "Steinbeck", dam: "Lido Di Venezia", grandsire: "Lido Palace", haras: "La Primavera", stud: "MGM", silkColor: "#EA580C", jockey: "R. Capriles", weight: 54.5, allowance: 0, trainer: "V. Di-Luca", implements: "L.V.La. +L", daysOff: 14, starts: 61, wins: 5, yuntaStarts: 14, yuntaEfect: 35, distEfect: 19, ratings: [67, 66, 66, 68], pastWeights: [410, 419, 415, 425], optimalWeight: 425, liveWeight: null, simWeight: 424, paceStyle: "E1", earlySpeed: 88, lateKick: 84, workoutScore: 8.7, workoutText: "Viene de ganar en 74.4 con R. Capriles.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.3, morningGlory: 1.03, medical: [] },
+          { num: 7, name: "WAYA WAYA", ml: "3/1", sexAge: "Y.C. 7a", dob: "28/03/19", sire: "Clock", dam: "Blazing Shadow", grandsire: "Forestry", haras: "Belén Paradise", stud: "Construcciones HZ", silkColor: "#DC2626", jockey: "F. Márquez", weight: 56, allowance: 3, trainer: "A. Campos", implements: "L.La.", daysOff: 56, starts: 63, wins: 6, yuntaStarts: 2, yuntaEfect: 50, distEfect: 20, ratings: [71, 76, 71, 60], pastWeights: [412, 415, 407, 412], optimalWeight: 409, liveWeight: null, simWeight: 409, paceStyle: "E2", earlySpeed: 87, lateKick: 86, workoutScore: 8.6, workoutText: "Descargo de 3 Kg (53 Kg efectivos).", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.4, morningGlory: 1.02, medical: [] },
+          { num: 8, name: "PRIORITISE", ml: "9/2", sexAge: "Y.C. 6a", dob: "11/05/20", sire: "Messner", dam: "Princess Peace", grandsire: "Uncle Bruce", haras: "Alegría", stud: "G & G", silkColor: "#EAB308", jockey: "S. Yanez", weight: 53, allowance: 3, trainer: "J. Romero R.", implements: "L.G.V.Gr.La.", daysOff: 14, starts: 26, wins: 3, yuntaStarts: 8, yuntaEfect: 25, distEfect: 22, ratings: [69, 74, 60, 67], pastWeights: [439, 448, 448, 449], optimalWeight: 449, liveWeight: null, simWeight: 449, paceStyle: "E1", earlySpeed: 93, lateKick: 82, workoutScore: 8.5, workoutText: "Ganó de punta a punta en 1100m con 50 Kg.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.2, morningGlory: 1.01, medical: [] },
+          { num: 9, name: "PRINCESA SUSEJ", ml: "9/5", sexAge: "Y.C. 6a", dob: "09/03/20", sire: "Keep Thinking", dam: "Zuccarita", grandsire: "Thunder Ridge", haras: "Paumar", stud: "Big Luan", silkColor: "#1E40AF", jockey: "J. Lugo", weight: 56, allowance: 0, trainer: "Jesse Romero", implements: "L.La.", daysOff: 14, starts: 32, wins: 5, yuntaStarts: 2, yuntaEfect: 50, distEfect: 43, ratings: [81, 67, 61, 56], pastWeights: [440, 435, 441, 447], optimalWeight: 437, liveWeight: null, simWeight: 449, paceStyle: "E1", earlySpeed: 92, lateKick: 87, workoutScore: 8.9, workoutText: "Baja de lotes selectivos con monta de J. Lugo.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.6, morningGlory: 1.04, medical: [] }
+        ]
+      },
+      "C507": {
+        code: "C507", title: "13ª Carrera (507) — 1100m — 6ª Válida 5y6 (Reclamo 4 y 5a)", time: "07:05 p.m.", distance: 1100,
+        record: "61.3 - JORGE PRINCE (Ks.54)", prize: "US$ 25.350,00",
+        condition: "CONDICIONAL DE RECLAMO. Caballos de 4 y 5 años, Debutantes o No Ganadores.",
+        baseTime: 67.2, p400: 22.3, p800: 46.0, p1200: 67.2, remate: 12.4,
+        horses: [
+          { num: 1, name: "RIO MANSO", ml: "20/1", sexAge: "C.C. 4a", dob: "16/02/22", sire: "Chenoma", dam: "Señora Pilar", grandsire: "Storm Force", haras: "La Primavera", stud: "Taramundi", silkColor: "#EAB308", jockey: "B. Zapata", weight: 54, allowance: 0, trainer: "L. Peraza", implements: "L.CC.V.M.La.", daysOff: 28, starts: 11, wins: 0, yuntaStarts: 8, yuntaEfect: 12, distEfect: 10, ratings: [31, 47, 53], pastWeights: [417, 412, 415, 415], optimalWeight: 415, liveWeight: null, simWeight: 415, paceStyle: "E3", earlySpeed: 74, lateKick: 83, workoutScore: 7.9, workoutText: "Mejoró mucho llegando 3°.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 0.6, morningGlory: 1.0, medical: [] },
+          { num: 3, name: "ZASCANDIL", ml: "15/1", sexAge: "C.C. 4a", dob: "30/04/22", sire: "Marital Asset", dam: "Linda Venecia", grandsire: "Águila Negra", haras: "Los Samanes", stud: "Amizade", silkColor: "#1E3A8A", jockey: "H. Medina", weight: 54, allowance: 0, trainer: "J. C. De Abreu", implements: "L.Bz.P.M.La.", daysOff: 28, starts: 11, wins: 0, yuntaStarts: 8, yuntaEfect: 25, distEfect: 15, ratings: [45, 48, 55, 45], pastWeights: [463, 450, 447, 460], optimalWeight: 447, liveWeight: null, simWeight: 448, paceStyle: "E3", earlySpeed: 74, lateKick: 82, workoutScore: 8.0, workoutText: "Monta de H. Medina (Yunta 25%).", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 0.9, morningGlory: 1.0, medical: [] },
+          { num: 5, name: "LIGHTNING SPIRIT", ml: "9/2", sexAge: "C.T. 4a", dob: "02/04/22", sire: "King Tesa", dam: "Master Lady", grandsire: "Vacation", haras: "Alegría", stud: "La Vieja II", silkColor: "#F59E0B", jockey: "I. Pimentel Jr.", weight: 54, allowance: 0, trainer: "F. Petit", implements: "L.P.CC.G.V.Gr.M.La.", daysOff: 14, starts: 10, wins: 0, yuntaStarts: 12, yuntaEfect: 22, distEfect: 25, ratings: [61, 52, 61, 59], pastWeights: [434, 429, 439, 442], optimalWeight: 438, liveWeight: null, simWeight: 438, paceStyle: "E2", earlySpeed: 84, lateKick: 85, workoutScore: 8.5, workoutText: "Tres cuartos lugares seguidos, monta I. Pimentel Jr.", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.2, morningGlory: 1.02, medical: [] },
+          { num: 6, name: "TOP ONE", ml: "5/2", sexAge: "C.C. 4a", dob: "18/02/22", sire: "Siete C", dam: "Charming Verse", grandsire: "Mancini", haras: "Urama", stud: "La Pandilla", silkColor: "#64748B", jockey: "W. Véliz", weight: 54, allowance: 0, trainer: "A. J. Rojas", implements: "L.Bz.CC.V.Gr.M.La. +Gr", daysOff: 28, starts: 19, wins: 0, yuntaStarts: 7, yuntaEfect: 43, distEfect: 25, ratings: [41, 45, 54, 53], pastWeights: [412, 410, 418, 415], optimalWeight: 416, liveWeight: null, simWeight: 416, paceStyle: "E1", earlySpeed: 89, lateKick: 83, workoutScore: 8.6, workoutText: "Yunta 43% (W. Véliz / A. J. Rojas) + Gríngolas (+Gr).", jockeyChange: true, trainerChange: false, hiddenIntentBonus: 1.5, morningGlory: 1.02, medical: [] },
+          { num: 11, name: "XTAL", ml: "6/5", sexAge: "C.A. 5a", dob: "14/01/21", sire: "Can", dam: "Miss Pandora", grandsire: "Magnificently", haras: "La Mulera", stud: "Doña Tita", silkColor: "#EC4899", jockey: "J. A. Rivero", weight: 56, allowance: 0, trainer: "H. Flores", implements: "L.CC.V.M.La.", daysOff: 28, starts: 11, wins: 0, yuntaStarts: 10, yuntaEfect: 30, distEfect: 35, ratings: [60, 56, 64, 60], pastWeights: [451, 435, 446, 447], optimalWeight: 446, liveWeight: null, simWeight: 446, paceStyle: "E2", earlySpeed: 87, lateKick: 89, workoutScore: 9.0, workoutText: "Dos segundos y un tercero en sus últimas 3 salidas.", jockeyChange: false, trainerChange: false, hiddenIntentBonus: 1.5, morningGlory: 1.04, medical: [] }
+        ]
+      }
+    };
+
+    let currentRaceCode = "C495";
+    let customFactorsList = [];
+
+    // ICONO VECTORIAL DEL CABALLO CON COLOR DE GUALDRAPA Y CHAQUETILLA
+    function renderHorseSvg(num, silkColor, size = 48) {
+      const cloth = SADDLECLOTH_COLORS[num] || { bg: '#334155', text: '#FFFFFF', border: '#94A3B8' };
+      return `
+        <svg width="${size}" height="${Math.round(size * 0.78)}" viewBox="0 0 80 62" fill="none" class="shrink-0">
+          <path d="M12 42 L6 54 M16 42 L15 56 M54 41 L61 55 M59 39 L69 51" stroke="#D97706" stroke-width="3.2" stroke-linecap="round"/>
+          <path d="M10 35 C10 26, 22 23, 35 23 L55 21 L67 10 L74 14 L67 24 L61 38 C52 42, 24 43, 10 35 Z" fill="#B45309" stroke="#F59E0B" stroke-width="1.2"/>
+          <path d="M11 31 Q2 28 3 38" stroke="#78350F" stroke-width="3.5" stroke-linecap="round"/>
+          <circle cx="46" cy="12" r="4.5" fill="${silkColor}" stroke="#FFFFFF" stroke-width="1"/>
+          <path d="M37 22 C39 14, 47 14, 51 21 Z" fill="${silkColor}" stroke="#FFFFFF" stroke-width="1"/>
+          <rect x="25" y="22" width="24" height="17" rx="3" fill="${cloth.bg}" stroke="${cloth.border}" stroke-width="1.8"/>
+          <text x="37" y="34" text-anchor="middle" fill="${cloth.text}" font-family="monospace" font-weight="800" font-size="11">${num}</text>
+        </svg>
+      `;
+    }
+
+    // PARSEAR MORNING LINE ("5/2", "3/5") A CUOTA DECIMAL E IMPLÍCITA
+    function parseMorningLine(ml) {
+      const parts = String(ml).split('/');
+      if (parts.length === 2) {
+        const n = parseFloat(parts[0]) || 2;
+        const d = parseFloat(parts[1]) || 1;
+        const net = n / d;
+        return { netOdds: net, impliedProb: 1 / (net + 1) };
+      }
+      return { netOdds: 3.0, impliedProb: 0.25 };
+    }
+
+    // CREDIBILIDAD ACTUARIAL DE BÜHLMANN-STRAUB
+    function computeBuhlmann(ratings, lotMean) {
+      const n = ratings.length;
+      if (!n) return { credibleRating: lotMean, zPct: 0, sigma: 4.5 };
+      const mean = ratings.reduce((a, b) => a + b, 0) / n;
+      const variance = n > 1 ? ratings.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / (n - 1) : 14.0;
+      const sigma = Number(Math.sqrt(variance).toFixed(2));
+      const k = 16.0 / 9.0; // Constante de Bühlmann
+      const z = n / (n + k);
+      const credible = Number((z * mean + (1 - z) * lotMean).toFixed(2));
+      return { credibleRating: credible, zPct: Number((z * 100).toFixed(0)), sigma };
+    }
+
+    // EVALUACIÓN BIOMÉTRICA EN VIVO DEL PESO FÍSICO (DUAL: PREVIA VS EN VIVO)
+    function evaluateLiveWeight(h) {
+      if (h.liveWeight === null || h.liveWeight === "" || isNaN(h.liveWeight)) {
+        return {
+          hasLive: false,
+          delta: null,
+          adj: 0,
+          badgeHtml: `<span class="text-[10px] mono text-slate-400">Previa (Óptimo: ${h.optimalWeight} Kg)</span>`
+        };
+      }
+      const delta = Number((h.liveWeight - h.optimalWeight).toFixed(1));
+      const abs = Math.abs(delta);
+      if (abs <= 2.5) {
+        return {
+          hasLive: true,
+          delta,
+          adj: 1.9,
+          badgeHtml: `<span class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold mono">PESO ÓPTIMO (${h.liveWeight} Kg | Δ ${delta >= 0 ? '+' : ''}${delta}) +1.9 pts</span>`
+        };
+      }
+      if (abs <= 6.0) {
+        return {
+          hasLive: true,
+          delta,
+          adj: -0.5,
+          badgeHtml: `<span class="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold mono">PESO HOY ${h.liveWeight} Kg (Δ ${delta >= 0 ? '+' : ''}${delta} Kg)</span>`
+        };
+      }
+      const pen = Number((-Math.min(4.5, (abs - 5) * 0.55)).toFixed(2));
+      return {
+        hasLive: true,
+        delta,
+        adj: pen,
+        badgeHtml: `<span class="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-bold mono">ALERTA PESO ${h.liveWeight} Kg (Δ ${delta >= 0 ? '+' : ''}${delta} Kg | ${pen} pts)</span>`
+      };
+    }
+
+    // MOTOR PRINCIPAL: MICHEL GODET + ACTUARIAL + PARCIALES 400M + PISTA EN VIVO
+    function runModelCalculation(race) {
+      const pista = document.getElementById('ctrlPista').value;
+      const clima = document.getElementById('ctrlClima').value;
+      const tren = document.getElementById('ctrlTren').value;
+      const enfasis = document.getElementById('ctrlEnfasis').value;
+      const liveBias = document.getElementById('ctrlLiveTrackBias').value;
+
+      const s400 = parseFloat(document.getElementById('inp400').value) || race.p400;
+      const s800 = parseFloat(document.getElementById('inp800').value) || race.p800;
+      const s1200 = parseFloat(document.getElementById('inp1200').value) || race.p1200;
+      const sRemate = parseFloat(document.getElementById('inpRemate').value) || race.remate;
+
+      const allR = race.horses.flatMap(h => h.ratings);
+      const lotMean = allR.length ? allR.reduce((a, b) => a + b, 0) / allR.length : 66.0;
+
+      const numE1 = race.horses.filter(h => h.paceStyle === 'E1').length;
+      const isSuicidalSplits = s400 <= 21.8 || (s800 - s400) <= 22.5;
+      const violentPace = tren === 'violento' || isSuicidalSplits || (tren === 'auto' && numE1 >= 3);
+
+      const evaluated = race.horses.map(h => {
+        const effWeight = h.weight - (h.allowance || 0);
+        const buhlmann = computeBuhlmann(h.ratings, lotMean);
+        const wInfo = evaluateLiveWeight(h);
+
+        // Credibilidad de Yunta
+        const yZ = h.yuntaStarts / (h.yuntaStarts + 4);
+        const credYunta = Number((yZ * h.yuntaEfect + (1 - yZ) * 15.0).toFixed(1));
+
+        // Riesgo Proporcional de Cox h(t)
+        let coxLinear = 0;
+        if (wInfo.hasLive && Math.abs(wInfo.delta) > 6) coxLinear += (Math.abs(wInfo.delta) - 6) * 0.06;
+        if (effWeight > 54) coxLinear += (effWeight - 54) * 0.06;
+        if (h.daysOff > 0 && h.daysOff <= 7) coxLinear += 0.16;
+        if (h.daysOff > 180) coxLinear += 0.30;
+        if (h.medical && h.medical.length > 0) coxLinear += 0.22;
+        const coxHazard = Number(Math.exp(coxLinear).toFixed(2));
+
+        // Base Score Godet + Actuarial
+        let score = buhlmann.credibleRating * 0.44;
+
+        if (violentPace) {
+          score += (h.lateKick * 0.26) + (h.earlySpeed * 0.09);
+          if (h.paceStyle === 'E2' || h.paceStyle === 'E3') score += 3.3;
+        } else if (tren === 'falso') {
+          score += (h.earlySpeed * 0.27) + (h.lateKick * 0.10);
+          if (h.paceStyle === 'E1') score += 3.5;
+        } else {
+          score += (h.earlySpeed * 0.18) + (h.lateKick * 0.18);
+        }
+
+        let yComp = credYunta * 0.16;
+        if (enfasis === 'yunta') yComp *= 1.45;
+        if (h.jockeyChange && credYunta >= 20) yComp += 1.5;
+        if (h.trainerChange) yComp += 1.3;
+        score += yComp;
+
+        let wkComp = h.workoutScore * 1.4 * (h.morningGlory || 1.0);
+        if (enfasis === 'traqueos') wkComp *= 1.35;
+        score += wkComp;
+
+        // Pista y Clima
+        if (pista === 'ligera' && h.paceStyle === 'E1') score += 2.0;
+        if ((pista === 'pesada' || pista === 'fangosa') && (h.paceStyle === 'E3' || ['Deliberately', 'King Seraf', 'Jupiter Pluvius', 'Champlain'].includes(h.sire))) {
+          score += 2.4;
+        }
+        if (clima === 'calor' && h.daysOff <= 14 && effWeight >= 55) score -= 1.3;
+
+        // Comportamiento de la Pista Hoy En Vivo (Opcional)
+        if (liveBias === 'riel_interno' && h.num <= 3) score += 2.3;
+        if (liveBias === 'riel_externo') {
+          if (h.num <= 2) score -= 1.6;
+          if (h.num >= 5) score += 2.2;
+        }
+        if (liveBias === 'velocistas_hoy' && h.paceStyle === 'E1') score += 2.5;
+        if (liveBias === 'rematadores_hoy' && (h.paceStyle === 'E2' || h.paceStyle === 'E3')) score += 2.5;
+
+        // Peso Físico Hoy + Riesgo Cox + Patrón Oculto Entrenador
+        score += wInfo.adj;
+        score += (h.hiddenIntentBonus || 0);
+        score -= (coxHazard - 1.0) * 4.2;
+        score -= (effWeight - 53) * 0.45;
+
+        // Factores Personalizados
+        customFactorsList.forEach(cf => {
+          if (cf.raceCode === race.code && cf.horseNum === h.num) {
+            score += cf.impact;
+          }
+        });
+
+        return {
+          ...h,
+          effWeight,
+          buhlmann,
+          credYunta,
+          wInfo,
+          coxHazard,
+          godetScore: Number(score.toFixed(2))
+        };
+      });
+
+      evaluated.sort((a, b) => b.godetScore - a.godetScore);
+
+      const maxS = evaluated[0].godetScore;
+      const exps = evaluated.map(h => Math.exp((h.godetScore - maxS) * 0.35));
+      const sumE = exps.reduce((a, b) => a + b, 0);
+
+      let accLengths = 0;
+      const ranked = evaluated.map((h, i) => {
+        const probDec = exps[i] / sumE;
+        const probPct = Number((probDec * 100).toFixed(1));
+        const mlInfo = parseMorningLine(h.ml);
+        const ev = Number((probDec * (mlInfo.netOdds + 1) - 1).toFixed(2));
+        const rawKelly = (probDec * (mlInfo.netOdds + 1) - 1) / mlInfo.netOdds;
+        const kellyPct = rawKelly > 0 ? Number((rawKelly * 0.35 * 100).toFixed(1)) : 0.0;
+
+        if (i > 0) {
+          accLengths += Math.max(0.25, Number(((evaluated[i - 1].godetScore - h.godetScore) * 0.72).toFixed(2)));
+        }
+        return {
+          ...h,
+          rank: i + 1,
+          probPct,
+          impliedMlPct: Number((mlInfo.impliedProb * 100).toFixed(1)),
+          ev,
+          kellyPct,
+          lengthsText: i === 0 ? "GANADOR" : `${accLengths.toFixed(1)} cpos`,
+          numLengths: accLengths
+        };
+      });
+
+      return {
+        ranked,
+        violentPace,
+        splits: { s400, s800, s1200, sRemate }
+      };
+    }
+
+    // RENDERIZAR TODO EL MODAL
+    function refreshAllViews() {
+      const race = GACETA_DATA[currentRaceCode];
+      const { ranked, violentPace, splits } = runModelCalculation(race);
+
+      // 1. Indicador de Modo Previa vs En Vivo
+      const liveBias = document.getElementById('ctrlLiveTrackBias').value;
+      const anyLiveW = race.horses.some(h => h.liveWeight !== null && h.liveWeight !== "");
+      const statusBadge = document.getElementById('statusModeBadge');
+      if (anyLiveW || liveBias !== 'off') {
+        statusBadge.textContent = "🟢 MODO EN VIVO ACTIVO (PESOS DE HOY / TENDENCIA DE PISTA HOY)";
+        statusBadge.className = "px-2.5 py-1 text-[11px] font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-full mono";
+      } else {
+        statusBadge.textContent = "⚪ MODO ACTUAL: PREVIA (SOLO GACETA HÍPICA)";
+        statusBadge.className = "px-2.5 py-1 text-[11px] font-bold uppercase bg-slate-800 text-slate-300 border border-slate-600 rounded-full mono";
+      }
+
+      // 2. Metadatos de Carrera
+      document.getElementById('metaDist').textContent = `${race.distance} METROS`;
+      document.getElementById('metaRec').textContent = `(${race.record})`;
+      document.getElementById('metaPrize').textContent = race.prize;
+      document.getElementById('metaTime').textContent = `Hora: ${race.time}`;
+      document.getElementById('metaCond').textContent = race.condition;
+      document.getElementById('pizarraHeaderTitle').textContent = race.title;
+
+      const pista = document.getElementById('ctrlPista').value;
+      const deltaT = pista === 'ligera' ? -0.5 : pista === 'pesada' ? 1.1 : pista === 'fangosa' ? 1.9 : 0;
+      document.getElementById('ledFinalTime').textContent = `${(race.baseTime + deltaT).toFixed(1)}s`;
+      document.getElementById('ledParciales').textContent = `${splits.s400.toFixed(1)} · ${splits.s800.toFixed(1)} · R ${splits.sRemate.toFixed(1)}`;
+
+      // 3. Chips de Factores Extra
+      const cfContainer = document.getElementById('activeCustomFactors');
+      cfContainer.innerHTML = customFactorsList
+        .map((cf, index) => cf.raceCode === race.code ? `
+          <span class="px-2.5 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 text-[11px] font-bold flex items-center gap-1.5">
+            <span>⚙️ ${cf.name} (#${cf.horseNum}: ${cf.impact >= 0 ? '+' : ''}${cf.impact})</span>
+            <button type="button" onclick="window.removeFactor(${index})" class="text-rose-400 hover:text-white font-extrabold">&times;</button>
+          </span>
+        ` : '').join('');
+
+      // 4. Renderizar Pizarra LED + Inputs de Peso en Vivo + Pista Visual
+      const rowsEl = document.getElementById('pizarraRowsContainer');
+      const lanesEl = document.getElementById('visualTrackLanes');
+      rowsEl.innerHTML = '';
+      lanesEl.innerHTML = '';
+
+      const posNames = ['1° GANADOR', '2° PLACÉ', '3° SHOW', '4° CUARTO', '5° QUINTO'];
+
+      ranked.forEach((h, i) => {
+        const cloth = SADDLECLOTH_COLORS[h.num] || { bg: '#334155', text: '#FFF', border: '#94A3B8', name: 'Gris' };
+        const evBadge = h.ev > 0
+          ? `<span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] mono font-bold">EV +${(h.ev * 100).toFixed(0)}% (Valor)</span>`
+          : `<span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px] mono">ML ${h.ml}</span>`;
+
+        rowsEl.innerHTML += `
+          <div class="bg-slate-900/95 border ${i === 0 ? 'border-amber-500 shadow-lg' : 'border-slate-800'} rounded-xl p-3 flex flex-wrap md:flex-nowrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-20 text-center shrink-0">
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${i === 0 ? 'bg-amber-400 text-slate-950' : i === 1 ? 'bg-slate-200 text-slate-900' : i === 2 ? 'bg-amber-700 text-white' : 'bg-slate-800 text-slate-300'}">
+                  ${posNames[i] || (i + 1) + '° LUGAR'}
+                </span>
+                <span class="block text-[10px] mono text-slate-400 mt-1">${h.lengthsText}</span>
+              </div>
+
+              ${renderHorseSvg(h.num, h.silkColor, 52)}
+
+              <div class="min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="px-2 py-0.5 rounded text-xs font-extrabold mono" style="background:${cloth.bg}; color:${cloth.text}">
+                    #${h.num} ${cloth.name}
+                  </span>
+                  <h4 class="font-extrabold text-white text-sm md:text-base">${h.name}</h4>
+                  ${evBadge}
+                  ${h.wInfo.badgeHtml}
+                </div>
+                <p class="text-[11px] text-slate-300 mt-0.5">
+                  <strong>Jinete:</strong> ${h.jockey} (${h.effWeight} Kg) · <strong>Ent:</strong> ${h.trainer} · 
+                  <span class="text-emerald-400 font-semibold">Pedigree: ${h.sire} en ${h.dam} (${h.grandsire})</span>
+                </p>
+                <p class="text-[10px] text-sky-300 mt-0.5">
+                  <strong>Traqueo:</strong> ${h.workoutText} · <span class="text-slate-400 mono">Pesos Gaceta: [${h.pastWeights.join(', ')} Kg]</span>
+                </p>
+              </div>
+            </div>
+
+            <!-- CAJA INTERACTIVA DE PESO EN VIVO + SCORE -->
+            <div class="flex items-center gap-3 shrink-0 ml-auto">
+              <div class="bg-slate-950 px-2.5 py-1.5 rounded-lg border border-slate-700">
+                <label class="text-[9px] uppercase text-amber-300 font-bold block">Peso Hoy (Kg)</label>
+                <input
+                  type="number"
+                  placeholder="Previa (${h.optimalWeight})"
+                  value="${h.liveWeight !== null && h.liveWeight !== '' ? h.liveWeight : ''}"
+                  oninput="window.onLiveWeightInput(${h.num}, this.value)"
+                  class="w-24 text-white mono font-bold text-xs"
+                />
+              </div>
+              <div class="text-right w-20 bg-slate-950 px-2.5 py-1.5 rounded-lg border border-slate-800">
+                <span class="text-[9px] text-slate-400 uppercase block">Índice / Prob</span>
+                <span class="mono text-xs font-extrabold text-white">${h.godetScore}</span>
+                <span class="block mono text-sm font-extrabold ${i === 0 ? 'text-amber-400' : 'text-emerald-400'}">${h.probPct}%</span>
+              </div>
+            </div>
+          </div>
+        `;
+
+        if (i < 6) {
+          const offsetRight = Math.min(76, Math.round(h.numLengths * 6.5));
+          lanesEl.innerHTML += `
+            <div class="relative h-9 bg-black/30 rounded-lg border border-amber-900/40 flex items-center px-2">
+              <span class="text-[10px] mono text-amber-200/80 w-28 truncate">#${h.num} ${h.name}</span>
+              <div class="flex-1 relative h-full flex items-center">
+                <div class="absolute transition-all duration-300 flex items-center gap-1" style="right:${offsetRight}%">
+                  <span class="text-[9px] mono bg-slate-950/90 text-amber-300 px-1.5 py-0.5 rounded border border-slate-700">${h.rank}° (${h.probPct}%)</span>
+                  ${renderHorseSvg(h.num, h.silkColor, 36)}
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      });
+
+      // 5. Dictamen Ejecutivo y Jugadas
+      const top1 = ranked[0];
+      const top2 = ranked[1] || top1;
+      const top3 = ranked[2] || top2;
+      const valuePick = ranked.find(h => h.ev > 0.15) || top1;
+
+      document.getElementById('paceAlertBadge').textContent = violentPace ? "🔥 Tren Violento (<22.0s)" : "⚖️ Tren Equilibrado";
+      document.getElementById('dictamenText').innerHTML = `
+        <p>• <strong>Proyección Principal (SMIC-Godet):</strong> <strong class="text-amber-400">#${top1.num} ${top1.name}</strong> lidera con <strong>${top1.probPct}%</strong> de probabilidad real (Rating Bühlmann Ajustado: <strong>${top1.buhlmann.credibleRating}</strong>, Riesgo Cox: <strong>${top1.coxHazard}</strong>).</p>
+        <p>• <strong>Mejor Valor Esperado Actuarial (Overlay EV+):</strong> <strong class="text-emerald-400">#${valuePick.num} ${valuePick.name}</strong> (Cuota ML ${valuePick.ml}, EV: <strong>${valuePick.ev >= 0 ? '+' : ''}${(valuePick.ev * 100).toFixed(0)}%</strong>, Kelly sugerido: <strong>${valuePick.kellyPct}%</strong> de la banca).</p>
+      `;
+
+      document.getElementById('suggestedTicketsGrid').innerHTML = `
+        <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+          <span class="text-[9px] uppercase text-slate-400 block">Ganador / Fijo</span>
+          <span class="mono font-extrabold text-amber-400">#${top1.num} ${top1.name}</span>
+        </div>
+        <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+          <span class="text-[9px] uppercase text-slate-400 block">Exacta Recomendada</span>
+          <span class="mono font-extrabold text-emerald-400">${top1.num} - ${top2.num} / ${top2.num} - ${top1.num}</span>
+        </div>
+        <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+          <span class="text-[9px] uppercase text-slate-400 block">Trifecta Combinada</span>
+          <span class="mono font-extrabold text-sky-400">${top1.num} - ${top2.num} - ${top3.num}</span>
+        </div>
+      `;
+
+      // 6. Renderizar Tablero Actuarial y Parciales 400m (Pestaña 2)
+      renderActuarialAndSplitsTab(ranked, splits);
+
+      // 7. Renderizar Gráficos SVG de Michel Godet (Pestaña 3)
+      renderGodetSvgTab(ranked);
+
+      // 8. Renderizar Fichas Completas Base de Datos Gaceta (Pestaña 4)
+      renderFullDatabaseTab(ranked);
+
+      // 9. Actualizar JSON en Pestaña 5
+      document.getElementById('jsonPreviewBox').textContent = JSON.stringify({
+        raceCode: race.code,
+        mode: anyLiveW || liveBias !== 'off' ? "EN_VIVO_DIA_CARRERA" : "PREVIA_GACETA",
+        splits400m: splits,
+        projectedOrder: ranked.map(h => ({
+          rank: h.rank,
+          num: h.num,
+          saddlecloth: SADDLECLOTH_COLORS[h.num]?.name,
+          name: h.name,
+          liveWeightKg: h.liveWeight,
+          optimalWeightKg: h.optimalWeight,
+          credibleRatingZ: h.buhlmann.credibleRating,
+          coxHazard: h.coxHazard,
+          winProbPct: h.probPct,
+          expectedValueEv: h.ev,
+          kellyStakePct: h.kellyPct
+        }))
+      }, null, 2);
+    }
+
+    // PESTAÑA 2: TABLA ACTUARIAL Y CURVA SVG DE PARCIALES CADA 400M
+    function renderActuarialAndSplitsTab(ranked, splits) {
+      const tbody = document.getElementById('actuarialTableBody');
+      tbody.innerHTML = ranked.map(h => `
+        <tr class="hover:bg-slate-900/60">
+          <td class="py-2.5 px-2 font-extrabold text-white">#${h.num} ${h.name}</td>
+          <td class="py-2.5 px-2 mono text-amber-300 font-bold">${h.buhlmann.credibleRating} <span class="text-slate-400 text-[10px]">(Z=${h.buhlmann.zPct}%)</span></td>
+          <td class="py-2.5 px-2 mono text-slate-300">±${h.buhlmann.sigma}</td>
+          <td class="py-2.5 px-2 mono">${h.optimalWeight} Kg / <strong class="text-emerald-300">${h.liveWeight ?? 'Previa'}</strong></td>
+          <td class="py-2.5 px-2 mono ${h.coxHazard > 1.25 ? 'text-rose-400 font-bold' : 'text-emerald-400'}">${h.coxHazard}x</td>
+          <td class="py-2.5 px-2 mono"><strong class="text-white">${h.probPct}%</strong> vs ${h.impliedMlPct}%</td>
+          <td class="py-2.5 px-2 mono font-bold ${h.ev > 0 ? 'text-emerald-400' : 'text-slate-400'}">${h.ev >= 0 ? '+' : ''}${(h.ev * 100).toFixed(0)}%</td>
+          <td class="py-2.5 px-2 mono font-extrabold text-amber-400">${h.kellyPct}%</td>
+        </tr>
+      `).join('');
+
+      const v1 = Number((400 / splits.s400).toFixed(2));
+      const net2 = Math.max(20, splits.s800 - splits.s400);
+      const v2 = Number((400 / net2).toFixed(2));
+      const vRem = Number((200 / splits.sRemate).toFixed(2));
+      const decel = Number((vRem - v1).toFixed(2));
+
+      document.getElementById('splits400MetricsCards').innerHTML = `
+        <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+          <span class="text-[10px] uppercase text-slate-400 block">Velocidad 0-400m</span>
+          <span class="mono text-sm font-extrabold text-amber-400">${v1} m/s (${splits.s400}s)</span>
+        </div>
+        <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+          <span class="text-[10px] uppercase text-slate-400 block">Velocidad 400-800m</span>
+          <span class="mono text-sm font-extrabold text-sky-400">${v2} m/s (${net2.toFixed(1)}s)</span>
+        </div>
+        <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+          <span class="text-[10px] uppercase text-slate-400 block">Velocidad Remate 200m</span>
+          <span class="mono text-sm font-extrabold text-emerald-400">${vRem} m/s (${splits.sRemate}s)</span>
+        </div>
+        <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+          <span class="text-[10px] uppercase text-slate-400 block">Índice Desaceleración</span>
+          <span class="mono text-sm font-extrabold ${decel >= -1.2 ? 'text-emerald-400' : 'text-rose-400'}">${decel >= 0 ? '+' : ''}${decel} m/s</span>
+        </div>
+      `;
+
+      // Gráfico SVG de la curva de velocidad en cada tramo de 400m
+      const y1 = 150 - (v1 - 14) * 20;
+      const y2 = 150 - (v2 - 14) * 20;
+      const y3 = 150 - (vRem - 14) * 20;
+      document.getElementById('svgSplitsCurveContainer').innerHTML = `
+        <svg viewBox="0 0 360 170" class="w-full h-full">
+          <line x1="40" y1="20" x2="40" y2="145" stroke="#334155" stroke-width="1"/>
+          <line x1="40" y1="145" x2="340" y2="145" stroke="#334155" stroke-width="1"/>
+          <polyline fill="none" stroke="#10B981" stroke-width="3" points="70,${y1} 190,${y2} 310,${y3}"/>
+          <circle cx="70" cy="${y1}" r="5" fill="#F59E0B"/>
+          <circle cx="190" cy="${y2}" r="5" fill="#38BDF8"/>
+          <circle cx="310" cy="${y3}" r="5" fill="#10B981"/>
+          <text x="70" y="${y1 - 10}" text-anchor="middle" fill="#F8FAFC" font-size="10" font-family="monospace">${v1} m/s</text>
+          <text x="190" y="${y2 - 10}" text-anchor="middle" fill="#F8FAFC" font-size="10" font-family="monospace">${v2} m/s</text>
+          <text x="310" y="${y3 - 10}" text-anchor="middle" fill="#F8FAFC" font-size="10" font-family="monospace">${vRem} m/s</text>
+          <text x="70" y="162" text-anchor="middle" fill="#94A3B8" font-size="10">0-400m</text>
+          <text x="190" y="162" text-anchor="middle" fill="#94A3B8" font-size="10">400-800m</text>
+          <text x="310" y="162" text-anchor="middle" fill="#94A3B8" font-size="10">Remate Final</text>
+        </svg>
+      `;
+    }
+
+    // PESTAÑA 3: GRÁFICOS SVG INTERACTIVOS DE MICHEL GODET (SIN DEPENDENCIA DE CDN)
+    function renderGodetSvgTab(ranked) {
+      const vars = [
+        { name: "Pista/Variante", x: 25, y: 88, c: "#10B981" },
+        { name: "Parciales 400m", x: 76, y: 92, c: "#F59E0B" },
+        { name: "Speed Rating Z", x: 82, y: 90, c: "#F59E0B" },
+        { name: "Peso Hoy Balanza", x: 64, y: 84, c: "#F59E0B" },
+        { name: "Sinergia Yunta", x: 70, y: 80, c: "#F59E0B" },
+        { name: "Traqueos INH", x: 58, y: 82, c: "#F59E0B" },
+        { name: "Riesgo Cox Reap.", x: 42, y: 72, c: "#38BDF8" },
+        { name: "Pedigree/Abuelo", x: 24, y: 60, c: "#38BDF8" },
+        { name: "Orden Llegada", x: 94, y: 28, c: "#EC4899" }
+      ];
+
+      const pointsHtml = vars.map(v => {
+        const cx = 45 + (v.x * 3.8);
+        const cy = 275 - (v.y * 2.4);
+        return `
+          <g>
+            <circle cx="${cx}" cy="${cy}" r="6" fill="${v.c}" stroke="#0F172A" stroke-width="1.5"/>
+            <text x="${cx + 8}" y="${cy + 4}" fill="#E2E8F0" font-size="10" font-family="sans-serif">${v.name}</text>
+          </g>
+        `;
+      }).join('');
+
+      document.getElementById('svgMicmacContainer').innerHTML = `
+        <svg viewBox="0 0 460 300" class="w-full h-full">
+          <line x1="45" y1="25" x2="45" y2="275" stroke="#475569" stroke-width="1.5"/>
+          <line x1="45" y1="275" x2="435" y2="275" stroke="#475569" stroke-width="1.5"/>
+          <line x1="240" y1="25" x2="240" y2="275" stroke="#334155" stroke-dasharray="4 4"/>
+          <line x1="45" y1="150" x2="435" y2="150" stroke="#334155" stroke-dasharray="4 4"/>
+          <text x="55" y="42" fill="#10B981" font-size="10" font-weight="bold">ZONA MOTRIZ (INFLUENCIA)</text>
+          <text x="255" y="42" fill="#F59E0B" font-size="10" font-weight="bold">VARIABLES CLAVE / ENLACE</text>
+          <text x="255" y="265" fill="#EC4899" font-size="10" font-weight="bold">VARIABLES RESULTADO</text>
+          ${pointsHtml}
+        </svg>
+      `;
+
+      const top4 = ranked.slice(0, 4);
+      const barsHtml = top4.map((h, idx) => {
+        const y = 35 + idx * 62;
+        const wSr = Math.min(300, h.buhlmann.credibleRating * 3.2);
+        const wKick = Math.min(300, h.lateKick * 3.0);
+        return `
+          <g>
+            <text x="15" y="${y}" fill="#F8FAFC" font-size="11" font-weight="bold">#${h.num} ${h.name} (Índice: ${h.godetScore})</text>
+            <rect x="15" y="${y + 6}" width="${wSr}" height="10" rx="3" fill="#F59E0B"/>
+            <text x="${wSr + 22}" y="${y + 15}" fill="#FBBF24" font-size="10" font-family="monospace">Rating Z: ${h.buhlmann.credibleRating}</text>
+            <rect x="15" y="${y + 20}" width="${wKick}" height="10" rx="3" fill="#38BDF8"/>
+            <text x="${wKick + 22}" y="${y + 29}" fill="#7DD3FC" font-size="10" font-family="monospace">Remate: ${h.lateKick} pts</text>
+          </g>
+        `;
+      }).join('');
+
+      document.getElementById('svgMactorContainer').innerHTML = `
+        <svg viewBox="0 0 460 280" class="w-full h-full">${barsHtml}</svg>
+      `;
+
+      const h1 = ranked[0];
+      const h2 = ranked[1] || h1;
+      const h3 = ranked[2] || h2;
+      document.getElementById('smicCardsContainer').innerHTML = `
+        <div class="bg-slate-950 p-4 rounded-xl border border-amber-500/40">
+          <div class="flex justify-between items-center mb-1">
+            <span class="text-xs font-bold text-amber-400 uppercase">Escenario H1: Tendencial</span>
+            <span class="mono text-xs font-extrabold text-amber-300">Prob: 54.0%</span>
+          </div>
+          <p class="text-xs text-slate-300">Pista normal y parciales regulares. Orden: <strong>#${h1.num} → #${h2.num} → #${h3.num}</strong></p>
+        </div>
+        <div class="bg-slate-950 p-4 rounded-xl border border-sky-500/40">
+          <div class="flex justify-between items-center mb-1">
+            <span class="text-xs font-bold text-sky-400 uppercase">Escenario H2: Duelo de Parciales</span>
+            <span class="mono text-xs font-extrabold text-sky-300">Prob: 29.5%</span>
+          </div>
+          <p class="text-xs text-slate-300">Primeros 400m violentos (&lt;21.8s). Orden: <strong>#${h2.num} → #${h1.num} → #${h3.num}</strong></p>
+        </div>
+        <div class="bg-slate-950 p-4 rounded-xl border border-emerald-500/40">
+          <div class="flex justify-between items-center mb-1">
+            <span class="text-xs font-bold text-emerald-400 uppercase">Escenario H3: Variante Pesada / Biometría</span>
+            <span class="mono text-xs font-extrabold text-emerald-300">Prob: 16.5%</span>
+          </div>
+          <p class="text-xs text-slate-300">Premia estado físico en balanza y descargo. Orden: <strong>#${h3.num} → #${h1.num} → #${h2.num}</strong></p>
+        </div>
+      `;
+    }
+
+    // PESTAÑA 4: FICHAS DE LA BASE DE DATOS HISTÓRICA
+    function renderFullDatabaseTab(ranked) {
+      const container = document.getElementById('fullDatabaseCardsContainer');
+      container.innerHTML = ranked.map(h => {
+        const cloth = SADDLECLOTH_COLORS[h.num] || { bg: '#334155', text: '#FFF', border: '#94A3B8', name: 'Gris' };
+        return `
+          <div class="glass p-4 border border-slate-700 space-y-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-3">
+                ${renderHorseSvg(h.num, h.silkColor, 46)}
+                <div>
+                  <span class="px-2 py-0.5 rounded text-xs font-extrabold mono" style="background:${cloth.bg}; color:${cloth.text}">#${h.num} Gualdrapa ${cloth.name}</span>
+                  <strong class="text-base text-white ml-2">${h.name}</strong>
+                  <span class="text-xs mono text-amber-400 ml-2">Nac: ${h.dob} (${h.sexAge})</span>
+                  <p class="text-xs text-slate-300 mt-0.5">
+                    <strong>Propietario (Stud):</strong> "${h.stud}" · <strong>Haras:</strong> ${h.haras} · <strong>Implementos:</strong> <span class="mono text-amber-300">${h.implements}</span>
+                  </p>
+                </div>
+              </div>
+              <div class="text-right text-xs mono">
+                <div class="text-emerald-400 font-bold">Padre: ${h.sire} | Madre: ${h.dam}</div>
+                <div class="text-slate-400">Abuelo Materno: <strong class="text-white">${h.grandsire}</strong></div>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-2 pt-2 border-t border-slate-800 text-xs">
+              <div class="bg-slate-950 p-2 rounded">
+                <span class="text-[10px] text-slate-400 uppercase block">Historial Ratings TTC & Pesos</span>
+                <span class="mono text-amber-300">Ratings: [${h.ratings.join(', ')}] | Pesos: [${h.pastWeights.join(', ')} Kg]</span>
+              </div>
+              <div class="bg-slate-950 p-2 rounded">
+                <span class="text-[10px] text-slate-400 uppercase block">Factores Ocultos Fuera de Gaceta</span>
+                <span class="mono text-emerald-300">Bono Intención Entrenador: +${h.hiddenIntentBonus} | Conv. Mañana/Tarde: ${h.morningGlory}x</span>
+              </div>
+              <div class="bg-slate-950 p-2 rounded">
+                <span class="text-[10px] text-slate-400 uppercase block">Trabajo Oficial INH</span>
+                <span class="text-sky-300">${h.workoutText} (${h.workoutScore}/10)</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // POPULATE SELECTORS DE EDICIÓN Y FACTORES
+    function populateHorseSelects() {
+      const race = GACETA_DATA[currentRaceCode];
+      const opts = race.horses.map(h => `<option value="${h.num}">#${h.num} ${h.name}</option>`).join('');
+      document.getElementById('editHorseSelect').innerHTML = opts;
+      document.getElementById('cfSelectHorse').innerHTML = opts;
+    }
+
+    // EVENTOS GLOBALES
+    window.onLiveWeightInput = function(horseNum, value) {
+      const race = GACETA_DATA[currentRaceCode];
+      const horse = race.horses.find(h => h.num === horseNum);
+      if (horse) {
+        horse.liveWeight = value === "" ? null : parseFloat(value);
+        refreshAllViews();
+      }
+    };
+
+    window.removeFactor = function(idx) {
+      customFactorsList.splice(idx, 1);
+      refreshAllViews();
+    };
+
+    // INICIALIZACIÓN SEGURA AL CARGAR EL DOM
+    document.addEventListener('DOMContentLoaded', function() {
+      populateHorseSelects();
+      refreshAllViews();
+
+      // Cambio de Carrera
+      document.getElementById('raceSelect').addEventListener('change', function(e) {
+        currentRaceCode = e.target.value;
+        const r = GACETA_DATA[currentRaceCode];
+        document.getElementById('inp400').value = r.p400;
+        document.getElementById('inp800').value = r.p800;
+        document.getElementById('inp1200').value = r.p1200;
+        document.getElementById('inpRemate').value = r.remate;
+        populateHorseSelects();
+        refreshAllViews();
+      });
+
+      // Controles de Pista, Clima, Tren, Énfasis, Pista Hoy y Parciales
+      ['ctrlPista', 'ctrlClima', 'ctrlTren', 'ctrlEnfasis', 'ctrlLiveTrackBias', 'inp400', 'inp800', 'inp1200', 'inpRemate'].forEach(id => {
+        document.getElementById(id).addEventListener('change', refreshAllViews);
+        document.getElementById(id).addEventListener('input', refreshAllViews);
+      });
+
+      // Botón Simular Pesos en Vivo
+      document.getElementById('btnSimWeights').addEventListener('click', function() {
+        const race = GACETA_DATA[currentRaceCode];
+        race.horses.forEach(h => { h.liveWeight = h.simWeight; });
+        refreshAllViews();
+      });
+
+      // Botón Volver a Previa
+      document.getElementById('btnResetPrevia').addEventListener('click', function() {
+        const race = GACETA_DATA[currentRaceCode];
+        race.horses.forEach(h => { h.liveWeight = null; });
+        document.getElementById('ctrlLiveTrackBias').value = 'off';
+        refreshAllViews();
+      });
+
+      // Navegación entre las 5 Pestañas
+      document.querySelectorAll('.tab-trigger').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const target = this.getAttribute('data-tab');
+          document.querySelectorAll('.tab-trigger').forEach(b => b.classList.remove('tab-active'));
+          this.classList.add('tab-active');
+          document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+          document.getElementById('panel-' + target).classList.remove('hidden');
+        });
+      });
+
+      // Modal de Factor Personalizado
+      document.getElementById('btnOpenFactorModal').addEventListener('click', function() {
+        document.getElementById('modalCustomFactor').classList.remove('hidden');
+      });
+      document.getElementById('btnCloseFactorModal').addEventListener('click', function() {
+        document.getElementById('modalCustomFactor').classList.add('hidden');
+      });
+      document.getElementById('btnCancelFactor').addEventListener('click', function() {
+        document.getElementById('modalCustomFactor').classList.add('hidden');
+      });
+      document.getElementById('btnConfirmFactor').addEventListener('click', function() {
+        const name = document.getElementById('cfInputName').value.trim() || 'Factor Experto';
+        const horseNum = parseInt(document.getElementById('cfSelectHorse').value, 10);
+        const impact = parseFloat(document.getElementById('cfInputImpact').value) || 1.5;
+        customFactorsList.push({ raceCode: currentRaceCode, name, horseNum, impact });
+        document.getElementById('modalCustomFactor').classList.add('hidden');
+        refreshAllViews();
+      });
+
+      // Guardar cambios desde la Pestaña 5
+      document.getElementById('btnSaveHorseUpdate').addEventListener('click', function() {
+        const num = parseInt(document.getElementById('editHorseSelect').value, 10);
+        const newSr = parseFloat(document.getElementById('editSpeedRating').value);
+        const newLw = document.getElementById('editLiveWeight').value;
+        const newWk = parseFloat(document.getElementById('editWorkoutScore').value);
+        const race = GACETA_DATA[currentRaceCode];
+        const horse = race.horses.find(h => h.num === num);
+        if (horse) {
+          if (!isNaN(newSr)) horse.ratings.push(newSr);
+          horse.liveWeight = newLw === "" ? null : parseFloat(newLw);
+          if (!isNaN(newWk)) horse.workoutScore = newWk;
+          refreshAllViews();
+          document.querySelector('[data-tab="pizarra"]').click();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

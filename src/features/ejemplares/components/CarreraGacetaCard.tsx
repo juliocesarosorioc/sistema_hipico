@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Flag } from "@/shared/components/ui/BanderaPais";
 import {
   aNum,
@@ -12,6 +13,7 @@ import {
 } from "@/features/gaceta/lib/ui";
 import { nombrePropioHipodromo } from "@/features/hipodromos/lib/nombre";
 import type { OpcionHipodromo } from "@/features/tablas/lib/rpc";
+import { ModalAnalisisActuarialGodet } from "@/features/ejemplares/components/ModalAnalisisActuarialGodet";
 
 type Props = {
   index: number;
@@ -32,6 +34,7 @@ type Props = {
  *  "Suma de la Tabla" en vivo y el botón "Cargar en el Ensamblaje".
  */
 export function CarreraGacetaCard({ index, carrera, onChange, onEnviar, onEliminar, hipodromos }: Props) {
+  const [abrirGodet, setAbrirGodet] = useState(false);
   const numCarrera = carrera.carrera || index + 1;
   const ejemplares = Array.isArray(carrera.ejemplares) ? carrera.ejemplares : [];
   const suma = ejemplares.reduce((a, ej) => a + (aNum(ej.valor) ?? aNum(ej.pts) ?? 0), 0);

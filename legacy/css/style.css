@@ -232,3 +232,146 @@ font-size: 0.9em !important;
 main p, main span, main li, main label, main input, main select, main td, main th, main button, main a {
 font-size: 0.9em !important;
 }
+
+/* ==========================================================================
+   MÓDULO DE ANÁLISIS HÍPICO PROSPECTIVO (MICHEL GODET + MOTOR ACTUARIAL)
+   Vinculado a src/app/globals.css y legacy/css/style.css de sistema_hipico
+   ========================================================================== */
+
+:root {
+  --sh-bg-deep: #070b14;
+  --sh-panel-glass: rgba(15, 23, 42, 0.90);
+  --sh-border-subtle: rgba(51, 65, 85, 0.70);
+  --sh-gold-accent: #f59e0b;
+  --sh-emerald-ev: #10b981;
+  --sh-crimson-risk: #ef4444;
+  --sh-turf-dirt-1: #2c1d11;
+  --sh-turf-dirt-2: #3d2817;
+}
+
+.sh-godet-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(3, 7, 18, 0.85);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.sh-godet-modal-container {
+  width: 100%;
+  max-width: 1620px;
+  max-height: 94vh;
+  background: var(--sh-panel-glass);
+  border: 1px solid var(--sh-border-subtle);
+  border-radius: 1rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #f1f5f9;
+}
+
+.sh-pizarra-led {
+  background: radial-gradient(circle at 50% 15%, #0f172a 0%, #03060c 100%);
+  border: 2px solid var(--sh-gold-accent);
+  border-radius: 0.875rem;
+  box-shadow: 0 0 28px rgba(245, 158, 11, 0.16), inset 0 0 22px rgba(0, 0, 0, 0.85);
+}
+
+.sh-track-surface {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--sh-turf-dirt-1),
+    var(--sh-turf-dirt-1) 48px,
+    var(--sh-turf-dirt-2) 48px,
+    var(--sh-turf-dirt-2) 96px
+  );
+  border: 2px solid rgba(180, 83, 9, 0.65);
+  border-radius: 0.75rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.sh-actuarial-badge-positive {
+  background: rgba(16, 185, 129, 0.16);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+}
+
+.sh-actuarial-badge-warning {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+}
+
+.sh-actuarial-badge-danger {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+}
+
+.sh-godet-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(3, 7, 18, 0.85);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.sh-godet-modal-container {
+  width: 100%;
+  max-width: 1620px;
+  max-height: 94vh;
+  background: rgba(15, 23, 42, 0.90);
+  border: 1px solid rgba(51, 65, 85, 0.70);
+  border-radius: 1rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #f1f5f9;
+}
+
+.sh-pizarra-led {
+  background: radial-gradient(circle at 50% 15%, #0f172a 0%, #03060c 100%);
+  border: 2px solid #f59e0b;
+  border-radius: 0.875rem;
+  box-shadow: 0 0 28px rgba(245, 158, 11, 0.16), inset 0 0 22px rgba(0, 0, 0, 0.85);
+}
+
+.sh-track-surface {
+  background: repeating-linear-gradient(
+    90deg,
+    #2c1d11,
+    #2c1d11 48px,
+    #3d2817 48px,
+    #3d2817 96px
+  );
+  border: 2px solid rgba(180, 83, 9, 0.65);
+  border-radius: 0.75rem;
+  position: relative;
+  overflow: hidden;
+}

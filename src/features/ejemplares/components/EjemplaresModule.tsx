@@ -1,5 +1,8 @@
 "use client";
 
+import { useState } from "react";
+import { ModalAnalisisActuarialGodet } from "@/features/ejemplares/components/ModalAnalisisActuarialGodet";
+
 import { useEffect, useState } from "react";
 import { PadronTabla } from "@/features/ejemplares/components/PadronTabla";
 import { GacetaIA } from "@/features/ejemplares/components/GacetaIA";
@@ -19,6 +22,7 @@ const ES_TAB = (v: string | null): v is TabId =>
   v === "padron" || v === "gaceta" || v === "programa" || v === "carreras";
 
 export function EjemplaresModule() {
+  const [abrirGodet, setAbrirGodet] = useState(false);
   const [tab, setTab] = useState<TabId>("padron");
 
   // El botón "Pegar desde Gaceta" de Tablas Fijas llega con ?tab=gaceta y
@@ -59,7 +63,10 @@ export function EjemplaresModule() {
       ) : (
         <CarrerasDiaModule />
       )}
-    </section>
+    <>
+        <section>...</section>
+      </>
+
   );
 }
 
