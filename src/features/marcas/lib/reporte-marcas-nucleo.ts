@@ -58,7 +58,7 @@ export function etiquetaMarca(row: Record<string, unknown>): string {
   const numero = texto(row.ejemplar_numero) || texto(row.caballo);
   const base = numero ? `MARCA ${numero}` : "MARCA";
   const rivales = rivalesDeNota(row.nota_auditoria);
-  return rivales.length ? `${base} vs ${rivales.join("·")}` : base;
+  return rivales.length ? `${base} x ${rivales.join(" x ")}` : base;
 }
 
 /** Mapea una fila cruda de `tickets_apuestas` (marca) al modelo del reporte. */

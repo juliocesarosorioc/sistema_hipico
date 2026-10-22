@@ -66,7 +66,7 @@ const m = normalizarMarca(filaMarca());
 igual(m.hipodromo, "SANTA ANITA", "hipódromo normalizado a mayúsculas");
 igual(m.carrera, 7, "carrera numérica");
 igual(m.numero, "8", "número de la marca desde ejemplar_numero");
-igual(m.caballo, "MARCA 8 vs 3·5", "ejemplar compuesto con el matchup");
+igual(m.caballo, "MARCA 8 x 3 x 5", "ejemplar compuesto con el matchup");
 igual(m.jugador, "Fabio", "jugador tomado de cliente_juega_nombre");
 igual(m.grupo, "LOS COMPADRES", "grupo tomado de grupo_cobro_nombre");
 igual(m.monto, 120, "monto desde string decimal");
@@ -85,7 +85,7 @@ igual(sinNada.fecha, "2026-10-16", "sin fecha de carrera cae al día de la venta
 
 console.log("\nREPORTE DE MARCAS — matchup");
 
-igual(etiquetaMarca(filaMarca()), "MARCA 8 vs 3·5", "etiqueta con un rival");
+igual(etiquetaMarca(filaMarca()), "MARCA 8 x 3 x 5", "etiqueta con un rival");
 igual(
   etiquetaMarca(filaMarca({ nota_auditoria: JSON.stringify({ origen: "MARCAS", rivales_snapshot: [] }) })),
   "MARCA 8",
@@ -93,7 +93,7 @@ igual(
 );
 igual(
   etiquetaMarca(filaMarca({ nota_auditoria: JSON.stringify({ origen: "MARCAS", rivales_snapshot: ["1"] }) })),
-  "MARCA 8 vs 1",
+  "MARCA 8 x 1",
   "acepta rivales como string"
 );
 igual(etiquetaMarca(filaMarca({ nota_auditoria: null })), "MARCA 8", "sin nota no inventa matchup");

@@ -211,6 +211,40 @@ function PuntoModalidad({ adelantada }: { adelantada: boolean }) {
 
 function Discos({ numero, caballo }: { numero: string; caballo: string }) {
   if (!numero) return <span className="text-slate-400">{caballo || "—"}</span>;
+  // Marcas: "MARCA 3 vs 6" o "MARCA 3 vs 6·7" — mostrar cada número con su círculo, una sola vez, separados por "x".
+  if (caballo && /^MARCA\s+/i.test(caballo)) {
+    const m = caballo.match(/^MARCA\s+(\S+)\s+(?:vs|x)\s+(.+)$/i);
+    if (m) {
+      const marca = m[1];
+      const rivales = m[2]
+        .split(/[·,\s]+/)
+        .map((r) => r.trim())
+        .filter(Boolean);
+      return (
+        <span className="flex items-center gap-1">
+          <span
+            className="inline-flex h-4 min-w-4 items-center justify-center rounded px-0.5 text-[9px] font-black"
+            style={{ background: colorDeNumero(marca), color: textoDeNumero(marca) }}
+            title={marca}
+          >
+            {marca}
+          </span>
+          {rivales.map((r, i) => (
+            <span key={`${r}-${i}`} className="flex items-center gap-1">
+              <span className="text-[9px] font-bold text-slate-400">x</span>
+              <span
+                className="inline-flex h-4 min-w-4 items-center justify-center rounded px-0.5 text-[9px] font-black"
+                style={{ background: colorDeNumero(r), color: textoDeNumero(r) }}
+                title={r}
+              >
+                {r}
+              </span>
+            </span>
+          ))}
+        </span>
+      );
+    }
+  }
   return (
     <span className="flex items-center gap-1">
       <span
