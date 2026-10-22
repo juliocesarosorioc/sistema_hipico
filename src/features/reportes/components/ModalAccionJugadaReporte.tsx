@@ -48,6 +48,8 @@ import {
 import { ETIQUETA_ESTADO, ESTADOS_MAESTROS, estadoMaestro, type EstadoMaestro } from "@/features/liquidacion/lib/estados-jugada";
 import { nombreOficialDeCaballoSuelto } from "@/features/liquidacion/lib/resolver-ejemplar";
 import { ETIQUETA_ADELANTADA, ETIQUETA_EN_VIVO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
+import { leerCarrerasMaestro, aCarreraCentral } from "@/features/carreras/lib/maestro";
+import { listarGruposVenta } from "@/features/grupos/lib/grupos";
 
 export type ModoAccionJugada = "editar" | "anular" | "restaurar";
 
@@ -96,9 +98,15 @@ export function ModalAccionJugadaReporte({
 }) {
   const [nombreJugada, setNombreJugada] = useState(venta.caballo ?? "");
   const [jugador1, setJugador1] = useState(venta.jugador ?? "");
+  const [jugador1Id, setJugador1Id] = useState(venta.jugadorId ?? "");
   const [jugador2, setJugador2] = useState("");
+  const [jugador2Id, setJugador2Id] = useState("");
+  const [grupoId, setGrupoId] = useState(venta.grupoId ?? "");
+  const [grupoNombre, setGrupoNombre] = useState(venta.grupo ?? "");
   const [caballo, setCaballo] = useState(venta.caballo ?? "");
   const [ejemplar, setEjemplar] = useState(venta.numero ?? "");
+  /** Padrón de la carrera: permite elegir el ejemplar y autocompletar etiquetas. */
+  const [ejemplaresCarrera, setEjemplaresCarrera] = useState<Array<{ numero: string; nombre: string }>>([]);
   /** Nombre oficial resuelto del padrón al cambiar el Nº ("" = no se pudo). */
   const [nombreOficial, setNombreOficial] = useState("");
   const [monto, setMonto] = useState(venta.monto ? String(venta.monto) : "");
@@ -111,6 +119,7 @@ export function ModalAccionJugadaReporte({
   const [modalidad, setModalidad] = useState<ModalidadTiempo>(() =>
     venta.adelantada ? "ADELANTADA" : "EN_VIVO"
   );
+  const [grupos, setGrupos] = useState<Array<{ id: string; nombre: string }>>([]);
   const [nota, setNota] = useState<string>("");
   const [detalle, setDetalle] = useState("");
   const [motivoLibre, setMotivoLibre] = useState(modo === "anular" ? MOTIVOS_ANULACION[0] : "");
@@ -125,6 +134,51 @@ export function ModalAccionJugadaReporte({
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancelar]);
 
+  // Carga el padrón de la carrera para poder cambiar el ejemplar con etiqueta automática.
+  useEffect(() => {
+    if (modo !== "editar") return;
+    let cancelado = false;
+    (async () => {
+      try {
+        const m = await leerCarrerasMaestro(venta.fecha, venta.hipodromo);
+        if (cancelado || !m.ok) return;
+        const f = m.filas.find((x) => Number(x.carrera) === Number(venta.carrera));
+        if (!f) return;
+        const c = aCarreraCentral(f);
+        const lista = (c.caballos ?? [])
+          .map((x) => ({ numero: String(x.numero ?? "").trim(), nombre: String(x.nombre ?? "").trim() }))
+          .filter((x) => x.numero);
+        if (!cancelado) setEjemplaresCarrera(lista);
+      } catch {
+        /* best effort */
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [modo, venta.fecha, venta.hipodromo, venta.carrera]);
+
+  // Carga la lista de grupos para reasignar la jugada desde el reporte.
+  useEffect(() => {
+    if (modo !== "editar") return;
+    let cancelado = false;
+    (async () => {
+      try {
+        const gs = await listarGruposVenta();
+        if (cancelado) return;
+        const lista = (gs ?? [])
+          .map((g: any) => ({ id: String(g?.id ?? ""), nombre: String(g?.nombre ?? "").trim() }))
+          .filter((g: any) => g.id && g.nombre);
+        if (!cancelado) setGrupos(lista);
+      } catch {
+        /* best effort */
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [modo]);
+
   /**
    * Al cambiar el Nº de ejemplar, busca el nombre OFICIAL en el padrón de la
    * carrera y lo deja listo para guardar. Esto resuelve el bug de que quedaba el
@@ -134,7 +188,17 @@ export function ModalAccionJugadaReporte({
     const limpio = valor.replace(/\D/g, "");
     setEjemplar(limpio);
     setNombreOficial("");
-    if (!/^[0-9]+$/.test(limpio)) return;
+    if (!/^[0-9]+$/.test(limpio)) {
+      setCaballo(valor.trim());
+      return;
+    }
+    // Primero intenta con el padrón ya cargado (más rápido, etiqueta automática).
+    const delPadron = ejemplaresCarrera.find((x) => x.numero === limpio);
+    if (delPadron?.nombre) {
+      setNombreOficial(delPadron.nombre);
+      setCaballo(delPadron.nombre);
+      return;
+    }
     const nombre = await nombreOficialDeCaballoSuelto({
       fecha: venta.fecha,
       hipodromo: venta.hipodromo,
@@ -146,6 +210,20 @@ export function ModalAccionJugadaReporte({
       // El campo `caballo` (etiqueta) pasa a mostrar el nombre real del Nº nuevo.
       setCaballo(nombre);
     }
+  };
+
+  /** Selección desde el padrón precargado: autocompleta Nº, nombre/etiqueta y oficial. */
+  const seleccionarEjemplar = (numero: string) => {
+    if (!numero) return;
+    setEjemplar(numero);
+    setNombreOficial("");
+    const delPadron = ejemplaresCarrera.find((x) => x.numero === numero);
+    if (delPadron?.nombre) {
+      setNombreOficial(delPadron.nombre);
+      setCaballo(delPadron.nombre);
+      return;
+    }
+    void cambiarEjemplar(numero);
   };
 
   const confirmar = async () => {
@@ -172,8 +250,12 @@ export function ModalAccionJugadaReporte({
         {
           nombre_jugada: nombreJugada.trim() || null,
           caballo: caballo.trim() || null,
+          cliente_juega_id: jugador1Id.trim() || null,
           cliente_juega_nombre: jugador1.trim() || null,
+          cliente_consigue_id: jugador2Id.trim() || null,
           cliente_consigue_nombre: jugador2.trim() || null,
+          grupo_cobro_id: grupoId.trim() || null,
+          grupo_cobro_nombre: grupoNombre.trim() || null,
           ejemplar_numero: ejemplar.trim() === "" ? null : Number(ejemplar),
           monto_jugado: monto.trim() === "" ? null : Number(monto),
           premio_pagar: premio.trim() === "" ? null : Number(premio),
@@ -230,27 +312,71 @@ export function ModalAccionJugadaReporte({
 
           {modo === "editar" ? (
             <div className="grid grid-cols-2 gap-3">
-              <Campo label="Jugador 1 (juega)">
-                <input value={jugador1} onChange={(e) => setJugador1(e.target.value)} className={inputCls} />
+              <Campo label="Jugador 1 (juega / usuario)">
+                <input
+                  value={jugador1}
+                  onChange={(e) => {
+                    setJugador1(e.target.value);
+                    setJugador1Id("");
+                  }}
+                  className={inputCls}
+                />
               </Campo>
               <Campo label="Jugador 2 / paga (banquero)">
                 <input
                   value={jugador2}
-                  onChange={(e) => setJugador2(e.target.value)}
+                  onChange={(e) => {
+                    setJugador2(e.target.value);
+                    setJugador2Id("");
+                  }}
                   placeholder="Cliente que paga / banquero"
                   className={inputCls}
                 />
+              </Campo>
+              <Campo label="Grupo de cobro">
+                <select
+                  value={grupoId}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setGrupoId(v);
+                    const g = grupos.find((x) => x.id === v);
+                    setGrupoNombre(g?.nombre ?? (v === "" ? venta.grupo ?? "" : ""));
+                  }}
+                  className={inputCls}
+                >
+                  <option value="">— Sin cambiar / actual —</option>
+                  {grupos.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.nombre}
+                    </option>
+                  ))}
+                </select>
               </Campo>
               <Campo label="Tipo de jugada (nomenclatura)">
                 <input
                   value={nombreJugada}
                   onChange={(e) => setNombreJugada(e.target.value)}
-                  placeholder="ej. TABLA FIJA, MARCA, 2P…"
+                  placeholder="ej. TABLA FIJA, MARCA, DUPLETA…"
                   className={inputCls}
                 />
               </Campo>
-              <Campo label="Ejemplar (etiqueta / nombre)">
-                <input value={caballo} onChange={(e) => setCaballo(e.target.value)} className={inputCls} />
+              <Campo label="Ejemplar (desde carrera / etiqueta)">
+                {ejemplaresCarrera.length > 0 ? (
+                  <select
+                    value={ejemplar}
+                    onChange={(e) => seleccionarEjemplar(e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="">— Seleccionar ejemplar del padrón —</option>
+                    {ejemplaresCarrera.map((x) => (
+                      <option key={x.numero} value={x.numero}>
+                        {x.numero} · {x.nombre || "Sin nombre"}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input value={caballo} onChange={(e) => setCaballo(e.target.value)} className={inputCls} />
+                )}
               </Campo>
               <Campo label="Nº ejemplar">
                 <input value={ejemplar} onChange={(e) => void cambiarEjemplar(e.target.value)} className={inputCls} />
@@ -259,6 +385,9 @@ export function ModalAccionJugadaReporte({
                     ✓ Nombre oficial: {nombreOficial}
                   </span>
                 )}
+              </Campo>
+              <Campo label="Nombre / etiqueta del ejemplar">
+                <input value={caballo} onChange={(e) => setCaballo(e.target.value)} className={inputCls} />
               </Campo>
               <Campo label="Monto jugado">
                 <input

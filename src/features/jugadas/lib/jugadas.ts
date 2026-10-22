@@ -85,10 +85,15 @@ export type EditablesJugada = {
    */
   nombre_ejemplar?: string | null;
   /** Jugador 1: quién JUEGA la apuesta (`cliente_juega_nombre`). */
+  cliente_juega_id?: string | null;
   cliente_juega_nombre?: string | null;
   /** Jugador 2: quién PAGA / banquero (`cliente_consigue_nombre` / banquero). */
+  cliente_consigue_id?: string | null;
   cliente_consigue_nombre?: string | null;
   banquero_nombre?: string | null;
+  /** Grupo al que pertenece la jugada (se puede reasignar desde el editor). */
+  grupo_cobro_id?: string | null;
+  grupo_cobro_nombre?: string | null;
   ejemplar_numero?: number | null;
   monto_jugado?: number | null;
   monto_decidido?: number | null;
