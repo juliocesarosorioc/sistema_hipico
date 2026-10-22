@@ -119,6 +119,7 @@
     "./atribucion-grupo.test.ts",
     "./ventana-reclamos.test.ts",
     "./jugada-usuario.test.ts",
-    "./fase1-seguridad.test.ts"
+    "./fase1-seguridad.test.ts",
+    "./anuladas-reportes.test.ts"
   ]
 }

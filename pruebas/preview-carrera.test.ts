@@ -143,6 +143,20 @@ igual(resumen.validadas, 2, "el resumen cuenta las validadas");
 igual(resumen.soloSesion, 1, "el resumen cuenta las que solo están en sesión");
 igual(resumen.monto, 175, "el resumen suma los montos");
 
+// Una ANULADA no suma al monto del panel (capital devuelto), pero sí se cuenta
+// como jugada (está en la lista).
+const resumenConAnulada = resumenPreview(
+  armarFilasPreview(
+    [
+      persistida({ id: "1", monto_jugado: 100 }),
+      persistida({ id: "2", monto_jugado: 999, anulada: true }),
+    ],
+    []
+  )
+);
+igual(resumenConAnulada.jugadas, 2, "la anulada cuenta como jugada en el panel");
+igual(resumenConAnulada.monto, 100, "la anulada NO suma al monto del panel");
+
 // ── 7. Símbolo ✅/✖ y saldo por CADA jugador ───────────────────────────────
 // El dueño pidió que, a la derecha de cada nombre, se vea si ese jugador ganó
 // (✅) o perdió (✖) y su saldo: lo que ARRIESGA si la carrera no está liquidada,

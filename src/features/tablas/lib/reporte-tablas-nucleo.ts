@@ -132,6 +132,7 @@ export function estadoNormalizado(e: unknown): EstadoReporte {
  * publicó: `monto × (1 − %/100)`.
  */
 export function cobradoDeVenta(v: VentaTablaReporte): number {
+  if (ventaAnulada(v)) return 0;
   if (estadoNormalizado(v.estado) !== "Perdedor") return 0;
   return cobradoNeto(v.monto, v.pctConvenio);
 }
@@ -204,6 +205,18 @@ export function normalizarVenta(row: Record<string, unknown>): VentaTablaReporte
   };
 }
 
+/**
+ * ¿La venta queda FUERA de las cuentas por estar anulada? Una jugada anulada se
+ * devolvió: no suma ni resta en ninguna cifra. Se mira la BANDERA `anulada`
+ * (que es la que pone el Monitor al anular: NO reescribe `estado`, que sigue en
+ * Ganador/Perdedor/Retirado) y, como respaldo, el propio `estado`.
+ */
+export function ventaAnulada(v: VentaTablaReporte): boolean {
+  if (v.anulada) return true;
+  const e = texto(v.estado).toLowerCase();
+  return e.startsWith("anul") || e.startsWith("rechaz");
+}
+
 /** Totales de un conjunto de ventas (sin agrupar). */
 export function totalesDe(ventas: VentaTablaReporte[]): TotalesReporte {
   const t: TotalesReporte = {
@@ -223,6 +236,11 @@ export function totalesDe(ventas: VentaTablaReporte[]): TotalesReporte {
   };
   const jugadores = new Set<string>();
   for (const v of ventas) {
+    // INVARIANTE FINANCIERA: una jugada ANULADA no entra en NINGUNA cifra (ni
+    // suma ni resta). Antes se clasificaba solo por `estado`, así que una anulada
+    // cuyo estado quedó en 'Ganador'/'Perdedor'/'Retirado' seguía sumando a
+    // enRiesgo/pagado/cobrado/comisión/balance.
+    if (ventaAnulada(v)) continue;
     t.tickets += 1;
     jugadores.add(v.jugadorId || v.jugador || "?");
     t.enRiesgo += v.monto;

@@ -264,6 +264,29 @@ pantalla muestra "0 filas" como si no hubiera datos.
     igual: queda el refresco local de siempre. Idempotente.
 
 
+### Volver a aplicar si ya los corriste (arreglo de ANULADAS)
+
+Estos dos scripts **ya existían** y se corren "a pedido". Si los aplicaste antes
+del arreglo del invariante financiero, hay que **volver a correrlos** para que
+las jugadas anuladas dejen de sumar en sus totales (el `create or replace` es
+idempotente):
+
+- `jugadas_monitor.sql` — la vista `v_jugadas_monitor` calculaba `total_monto` y
+  `total_premio` con `sum(...)` de TODO, sin mirar `anulada`. Ahora ambos usan
+  `filter (where not t.anulada)`, igual que `monto_vigente`/`premio_ganador`, así
+  que una jugada anulada (capital devuelto) **no infla el "Total monto"** del
+  monitor ni sus premios.
+- `reporte_diario.sql` — la RPC `club_reporte_diario` ya excluía el `jugado` y la
+  `devolucion` de las anuladas, pero el **premio** no: un `premio_pagar` heredado
+  de antes de anular la jugada seguía contando en `total_premios`. Ahora devuelve
+  `0` cuando `anulada` (o el estado contiene `ANUL`).
+
+Ninguno de los dos toca datos ni estructura: solo redefinen una vista y una
+función. La app puede desplegarse sin ellos (los cálculos en TypeScript ya están
+corregidos), pero los reportes que leen la vista/RPC mostrarían el monto viejo
+hasta re-aplicarlos.
+
+
 ### Operaciones puntuales sobre datos (no son esquema)
 
 Estos scripts **no** se aplican por orden de dependencia: se corren a pedido, una

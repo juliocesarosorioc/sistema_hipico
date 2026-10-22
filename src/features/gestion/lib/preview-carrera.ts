@@ -368,7 +368,10 @@ export function resumenPreview(filas: FilaPreviewCarrera[]): {
   let validadas = 0;
   let soloSesion = 0;
   for (const f of filas) {
-    monto += f.monto;
+    // Una jugada ANULADA no suma al monto del panel: se devolvió el capital, así
+    // que no es plata en juego. El conteo de jugadas sí la incluye (está en la
+    // lista), pero no aporta al total de dinero.
+    if (!f.anulada) monto += f.monto;
     if (f.validada) validadas += 1;
     if (f.soloSesion) soloSesion += 1;
   }

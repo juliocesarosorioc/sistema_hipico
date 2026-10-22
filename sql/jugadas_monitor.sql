@@ -117,8 +117,12 @@ from (
         -- o el alias `g` no expone `grupo_cobro_id` (42703) al usarlo arriba.
         t.grupo_cobro_id,
         count(*)                                                    as total_jugadas,
-        coalesce(sum(t.monto), 0)                                   as total_monto,
-        coalesce(sum(t.premio), 0)                                  as total_premio,
+        -- `total_monto` / `total_premio` son la plata VIGENTE del monitor: las
+        -- jugadas anuladas (capital devuelto) NO suman acá, igual que en
+        -- `monto_vigente`/`premio_ganador`. Antes sumaban TODO, así que una
+        -- anulada seguía inflando el "Total monto" de la carrera.
+        coalesce(sum(t.monto) filter (where not t.anulada), 0)      as total_monto,
+        coalesce(sum(t.premio) filter (where not t.anulada), 0)     as total_premio,
         count(*) filter (where not t.anulada and t.estado = 'Pendiente')                          as en_juego,
         count(*) filter (where not t.anulada and t.estado = 'Ganador' and t.pagado_en is null)    as por_pagar,
         count(*) filter (

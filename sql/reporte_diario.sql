@@ -62,7 +62,14 @@ as $$
       case when coalesce(t.anulada, false)
                 or upper(coalesce(t.estado, '')) like '%ANUL%'
            then 0 else coalesce(t.monto_jugado, 0) end        as jugado,
-      coalesce(t.premio_pagar, t.premio_por_tabla, 0)         as premio,
+      -- El premio tampoco cuenta en una anulada: su capital se devolvió y no se
+      -- paga. Sin este corte, un `premio_pagar` heredado de antes de anular la
+      -- inflaba en `total_premios` (y en el balance).
+      case when coalesce(t.anulada, false)
+                or upper(coalesce(t.estado, '')) like '%ANUL%'
+           then 0
+           else coalesce(t.premio_pagar, t.premio_por_tabla, 0)
+      end                                                     as premio,
       -- Devolución / Incentivo: % del cliente sobre el monto DECIDIDO
       -- (mismo cálculo que el estado de cuenta: monto_decidido ?? monto_jugado).
       case when coalesce(t.anulada, false)

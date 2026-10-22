@@ -65,6 +65,8 @@ type TicketCrudo = {
   moneda?: unknown;
   grupo?: unknown;
   cliente_juega_nombre?: unknown;
+  /** Bandera de auditoría: `true` si la jugada fue anulada (capital devuelto). */
+  anulada?: unknown;
 };
 
 type TablaMetaCruda = {
@@ -92,7 +94,7 @@ export async function cargarReporteJugadores(filtros?: { dia?: string; hipodromo
     let sel = supabase
       .from("tickets_apuestas")
       .select(
-        "id,fecha_registro,hipodromo,carrera,ejemplar_numero,caballo,cantidad_tablas,monto_jugado,monto_decidido,cliente_juega_nombre,grupo,moneda,estado"
+        "id,fecha_registro,hipodromo,carrera,ejemplar_numero,caballo,cantidad_tablas,monto_jugado,monto_decidido,cliente_juega_nombre,grupo,moneda,estado,anulada"
       )
       .order("fecha_registro");
     if (dia) sel = sel.like("fecha_registro", `${dia}%`);
@@ -214,11 +216,15 @@ function armarJugadores(tickets: TicketCrudo[], idx: Map<string, TablaMetaCruda>
     }
     const jugado = parseNum(t.monto_jugado);
     const cant = parseInt(String(t.cantidad_tablas) || "0", 10) || 0;
-    e.jugado += jugado;
-    e.cantTablas += cant;
-    p.montoJugado += jugado;
-    p.tablas += cant;
-    if (un(t.estado).toUpperCase() === "SOLUCIONADO") {
+    // Una jugada ANULADA no suma dinero (se devolvió el capital). Se sigue
+    // listando el jugador/ejemplar, pero su monto jugado/pagado no cuenta.
+    if (t.anulada !== true) {
+      e.jugado += jugado;
+      e.cantTablas += cant;
+      p.montoJugado += jugado;
+      p.tablas += cant;
+    }
+    if (t.anulada !== true && un(t.estado).toUpperCase() === "SOLUCIONADO") {
       const pagado = parseNum(t.monto_decidido);
       e.pagado += pagado;
       p.montoPagado += pagado;

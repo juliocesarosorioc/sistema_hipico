@@ -19,6 +19,7 @@ import {
   ordenarFilas,
   recalcularIntegral,
   totalesDe,
+  ventaAnulada,
   type VentaTablaReporte,
 } from "../src/features/tablas/lib/reporte-tablas-nucleo";
 
@@ -188,6 +189,30 @@ const integralAnulada = recalcularIntegral(conAnulada);
 igual(integralAnulada.montoCobrado, integral.montoCobrado, "una anulada no suma cobrado");
 igual(integralAnulada.montoPagado, integral.montoPagado, "una anulada no suma pagado");
 igual(integralAnulada.comisionGrupo, integral.comisionGrupo, "una anulada no suma comisión");
+
+// La BANDERA `anulada` manda aunque el `estado` siga en Ganador/Perdedor (así
+// anula el Monitor: NO reescribe el estado). Antes se clasificaba solo por
+// `estado`, así que una anulada "Ganador"/"Perdedor" seguía sumando.
+const anuladaGanadora: VentaTablaReporte[] = [
+  ...conPct,
+  { ...normalizarVenta(fila()), id: "ag", estado: "Ganador", anulada: true, monto: 999, pagado: 5000, comision: 750 },
+];
+const ta = totalesDe(anuladaGanadora);
+igual(ta.tickets, 3, "una anulada (bandera) no cuenta como ticket");
+igual(ta.enRiesgo, tp.enRiesgo, "una anulada (bandera) no suma en riesgo");
+igual(ta.pagado, tp.pagado, "una anulada (bandera) no suma pagado");
+igual(ta.comision, tp.comision, "una anulada (bandera) no suma comisión");
+igual(ta.balance, tp.balance, "una anulada (bandera) no mueve el balance");
+
+const anuladaPerdedora: VentaTablaReporte[] = [
+  ...conPct,
+  { ...normalizarVenta(fila()), id: "ap", estado: "Perdedor", anulada: true, monto: 999, pctConvenio: 10 },
+];
+igual(totalesDe(anuladaPerdedora).cobrado, tp.cobrado, "una anulada perdedora no suma cobrado");
+igual(cobradoDeVenta(anuladaPerdedora[anuladaPerdedora.length - 1]), 0, "cobradoDeVenta: anulada → 0 aunque sea Perdedor");
+si(ventaAnulada(anuladaGanadora[anuladaGanadora.length - 1]), "ventaAnulada detecta la bandera");
+si(ventaAnulada({ ...normalizarVenta(fila()), estado: "Anulado" }), "ventaAnulada detecta el estado Anulado");
+si(!ventaAnulada({ ...normalizarVenta(fila()), estado: "Ganador" }), "ventaAnulada no marca una Ganador normal");
 
 console.log(`\n  REPORTE DE TABLAS FIJAS: ${pasan} ok, ${fallan} fallaron\n`);
 if (fallan > 0) process.exit(1);

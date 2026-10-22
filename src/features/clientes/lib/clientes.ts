@@ -152,6 +152,8 @@ export type TicketApuesta = {
   premio_por_tabla?: number | string | null;
   moneda?: string | null;
   estado?: string | null;
+  /** Bandera de auditoría: `true` si la jugada fue anulada (capital devuelto). */
+  anulada?: boolean | null;
   grupo_cobro_nombre?: string | null;
   grupo_cobro_id?: string | number | null;
 };
@@ -834,7 +836,11 @@ export function construirEstadoCuenta(tickets: TicketApuesta[], devolucionPct: n
 
   for (const t of tickets) {
     const base = t.monto_decidido != null ? num(t.monto_decidido) : num(t.monto_jugado);
-    const dec = base * (devolucionPct / 100);
+    // Una jugada ANULADA se devolvió: no suma ni resta en el estado de cuenta.
+    // Se listan igual (con su estado) pero su base y su devolución van en 0.
+    const anulada = t.anulada === true;
+    const baseVigente = anulada ? 0 : base;
+    const dec = baseVigente * (devolucionPct / 100);
     const moneda = (t.moneda ?? "USD").toUpperCase();
     const grupo = t.grupo_cobro_nombre || "Directo";
     const semana = claveSemana(t.fecha_registro);
@@ -855,7 +861,7 @@ export function construirEstadoCuenta(tickets: TicketApuesta[], devolucionPct: n
       caballo: t.caballo ?? "—",
       jugada: t.nombre_jugada ?? "Jugada",
       montoJugado: num(t.monto_jugado),
-      montoDecidido: base,
+      montoDecidido: baseVigente,
       premio: t.premio_pagar != null ? num(t.premio_pagar) : num(t.premio_por_tabla),
       moneda,
       estado: t.estado ?? "—",
@@ -884,12 +890,12 @@ export function construirEstadoCuenta(tickets: TicketApuesta[], devolucionPct: n
     if (!d.hijos.some((x) => x.titulo === h.titulo && !x.subtitulo)) d.hijos.push(h);
     if (!h.hijos.some((x) => x.titulo === c.titulo)) h.hijos.push(c);
 
-    acumular(g, base, dec, jugada);
-    acumular(s, base, dec, jugada);
-    acumular(d, base, dec, jugada);
-    acumular(h, base, dec, jugada);
-    acumular(c, base, dec, jugada);
-    raiz.monto += base;
+    acumular(g, baseVigente, dec, jugada);
+    acumular(s, baseVigente, dec, jugada);
+    acumular(d, baseVigente, dec, jugada);
+    acumular(h, baseVigente, dec, jugada);
+    acumular(c, baseVigente, dec, jugada);
+    raiz.monto += baseVigente;
     raiz.dec += dec;
     raiz.jugadas.push(jugada);
   }
@@ -909,7 +915,7 @@ export async function cargarTicketsCliente(clienteId: string | number): Promise<
     const { data, error } = await supabase
       .from("tickets_apuestas")
       .select(
-        "id, fecha_registro, hipodromo, carrera, nombre_jugada, caballo, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, grupo_cobro_nombre, grupo_cobro_id"
+        "id, fecha_registro, hipodromo, carrera, nombre_jugada, caballo, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, anulada, grupo_cobro_nombre, grupo_cobro_id"
       )
       .eq("cliente_juega_id", clienteId)
       .order("fecha_registro", { ascending: false })

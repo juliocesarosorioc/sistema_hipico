@@ -67,6 +67,8 @@ type FilaTicket = {
   cliente?: string | null;
   nombre_jugada?: string | null;
   estado?: string | null;
+  /** Bandera de auditoría: `true` si la jugada fue anulada (capital devuelto). */
+  anulada?: boolean | null;
 };
 
 export type ResultadoConvenio = {
@@ -103,6 +105,16 @@ export function estadoDeTicket(estado: string | null | undefined): EstadoJugada 
   return "PAGADO";
 }
 
+/**
+ * ¿El ticket está ANULADO? Se mira la BANDERA `anulada` (la que pone el Monitor
+ * al anular, sin reescribir `estado`) y, como respaldo, el propio `estado`. Una
+ * jugada anulada no genera comisión ni entra al detalle del convenio.
+ */
+export function esTicketAnulado(t: FilaTicket): boolean {
+  if (t.anulada === true) return true;
+  return estadoDeTicket(t.estado) === "ANULADA";
+}
+
 /** Fila de detalle de un ticket ya clasificado (o null si no suma al reporte). */
 function detalleDeTicket(
   t: FilaTicket,
@@ -136,6 +148,9 @@ function detalleDeTicket(
 
 /** Agrega un ticket al acumulador si se puede clasificar por producto. */
 function acumularTicket(t: FilaTicket, out: VentaConvenio[]): void {
+  // Una jugada ANULADA no genera convenio: se devolvió el capital y no mueve
+  // dinero. Sin este corte, la anulada seguía sumando su monto al total.
+  if (esTicketAnulado(t)) return;
   const producto = productoDeNota(t.nota_auditoria);
   if (!producto) return;
   // REGLA DE ORO CONTABLE: la comisión por convenio se le debe al grupo al que
@@ -225,7 +240,9 @@ export async function cargarReporteComisiones(
     const filas = (data ?? []) as FilaTicket[];
     for (const t of filas) {
       acumularTicket(t, ventas);
-      // Detalle: solo las jugadas clasificables y con grupo de cobro.
+      // Detalle: solo las jugadas clasificables y con grupo de cobro. Las
+      // anuladas se excluyen (capital devuelto: no mueven dinero).
+      if (esTicketAnulado(t)) continue;
       const producto = productoDeNota(t.nota_auditoria);
       const grupoId = grupoDeCuenta(t.grupo_cuenta_id, t.grupo_publicador_id, t.grupo_cobro_id);
       if (!producto || !grupoId) continue;

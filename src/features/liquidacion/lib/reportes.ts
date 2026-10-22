@@ -207,6 +207,14 @@ function evaluar(
 ): { ok: boolean | null; bruto: number; comision: number; tasa: number } {
   const estado = txt(f.estado).toUpperCase();
   const monto = cifra(f.monto_jugado);
+  // Una jugada ANULADA es NEUTRA en el reporte: se devolvió el capital, así que
+  // ni gana ni pierde ni paga comisión. Se decide ANTES de mirar el estado,
+  // porque al anular el Monitor NO reescribe `estado` (sigue en
+  // Ganador/Perdedor/Retirado): sin este corte, la anulada se evaluaba como
+  // jugada vigente e inflaba el subtotal y el resumen de la carrera.
+  if (f.anulada === true || estado === "ANULADO" || estado === "ANULADA") {
+    return { ok: false, bruto: 0, comision: 0, tasa: 0 };
+  }
   const nombreJugada = txt(f.nombre_jugada).toUpperCase();
   const esTablaFija = nombreJugada.startsWith("TABLA FIJA");
   // Tasa de comisión EFECTIVA del ticket: la propia es la que manda; solo si
@@ -553,6 +561,10 @@ async function carreraReporte(
   const meta: Array<{ cliente: string; clienteNombre: string; caballo: string }> = [];
 
   tickets.forEach((f, i) => {
+    // Una jugada ANULADA no entra al reporte de liquidación: se devolvió el
+    // capital y no se liquidó. Excluirla evita que reste el monto (como
+    // "perdedora") o que infle el cruce y el resumen de la carrera.
+    if (f.anulada === true) return;
     const monto = cifra(f.monto_jugado);
     // El cruce financiero agrupa por (cliente, caballo): ese agrupamiento y el
     // neteo usan el número TAL COMO está en el ticket, nunca el rotulado.
