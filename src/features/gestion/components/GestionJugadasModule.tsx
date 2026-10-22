@@ -1710,7 +1710,7 @@ const hipodromosDelDia = useMemo(() => {
   return (
     <div className="space-y-2 pb-14">
       {/* Inputs superiores */}
-      <div className="grid gap-1.5 rounded-xl border border-line bg-surface p-2 lg:grid-cols-6">
+      <div className="grid gap-1.5 rounded-xl border border-line bg-surface p-2 lg:grid-cols-7">
         <div>
           <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">1 · Fecha 📅</label>
           <input
@@ -1729,7 +1729,7 @@ const hipodromosDelDia = useMemo(() => {
             placeholder="Buscar hipódromo…"
           />
         </div>
-        <div>
+        <div className="lg:col-span-2">
           <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">
             Retirados · C{carrera}
           </label>
@@ -1776,27 +1776,29 @@ const hipodromosDelDia = useMemo(() => {
             value={comision}
             onChange={(e) => setComision(e.target.value.replace(/[^0-9.,]/g, ""))}
             inputMode="decimal"
-            className="w-full rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+            className="w-20 rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           />
         </div>
-        <label className="flex cursor-pointer items-end gap-2 pb-2 text-xs font-bold uppercase text-slate-600">
-          <input
-            type="checkbox"
-            checked={conCruces}
-            onChange={(e) => setConCruces(e.target.checked)}
-            className="h-4 w-4 accent-primary-500"
-          />
-          Con Cruces
-        </label>
-        <label className="flex cursor-pointer items-end gap-2 rounded-xl border border-cyan-200 bg-cyan-50/60 px-3 py-2 text-[11px] font-black uppercase text-cyan-700" title="Permite cargar jugadas y registrar carreras aunque la Gaceta IA no haya extraído nada (sin bloquear).">
-          <input
-            type="checkbox"
-            checked={modoManual}
-            onChange={(e) => setModoManual(e.target.checked)}
-            className="h-4 w-4 accent-cyan-600"
-          />
-          ✍️ Modo Manual
-        </label>
+        <div className="flex items-end gap-2 pb-1">
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-bold uppercase text-slate-600">
+            <input
+              type="checkbox"
+              checked={conCruces}
+              onChange={(e) => setConCruces(e.target.checked)}
+              className="h-4 w-4 accent-primary-500"
+            />
+            Con Cruces
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50/60 px-2 py-1 text-[10px] font-black uppercase text-cyan-700" title="Permite cargar jugadas y registrar carreras aunque la Gaceta IA no haya extraído nada (sin bloquear).">
+            <input
+              type="checkbox"
+              checked={modoManual}
+              onChange={(e) => setModoManual(e.target.checked)}
+              className="h-4 w-4 accent-cyan-600"
+            />
+            ✍️ Modo Manual
+          </label>
+        </div>
       </div>
 
       {!hipodromoElegido ? (
