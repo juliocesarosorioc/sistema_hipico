@@ -247,9 +247,14 @@ export function JugadasModule() {
       if (!hip) continue;
       const g = porHip.get(hip) ?? { hipodromo: hip, total: 0, conResultado: 0, liquidadas: 0 };
       g.total += 1;
-      if ((c.ganadores?.length ?? 0) > 0) g.conResultado += 1;
+      // "Con resultado" = tiene pizarra (ganadores) O ya se aplicó a las tablas.
+      // El segundo caso importa: una carrera liquidada cuyo array de ganadores no
+      // llegó (embed sin `carrera_id`) igual avanza, y el progreso no se queda
+      // en 0% mientras el semáforo ya la pinta como Liquidada.
       const est = String(c.estado ?? "").toLowerCase();
-      if (est === "liquidada" || est === "cerrada" || c.aplicado_a_tablas === true) g.liquidadas += 1;
+      const aplicada = c.aplicado_a_tablas === true;
+      if ((c.ganadores?.length ?? 0) > 0 || aplicada) g.conResultado += 1;
+      if (est === "liquidada" || est === "cerrada" || aplicada) g.liquidadas += 1;
       porHip.set(hip, g);
     }
     const filasHip = [...porHip.values()].sort((a, b) => a.hipodromo.localeCompare(b.hipodromo, "es"));

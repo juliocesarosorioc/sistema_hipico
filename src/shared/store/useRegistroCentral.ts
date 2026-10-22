@@ -32,6 +32,7 @@ import { useEffect, useMemo } from "react";
 import { create } from "zustand";
 import { listarHipodromos, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
 import { listarCarrerasCentrales, type CarreraCentral } from "@/features/carreras/lib/central";
+import { completarResultadosPorClave } from "@/features/carreras/lib/maestro-nucleo";
 import { claveHipodromo, numeroCarrera, agruparCarreras } from "@/features/carreras/lib/claves";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 
@@ -181,13 +182,13 @@ export async function cargarRegistroCarreras(fecha: string, version = 0): Promis
   set((s) => ({ cargando: { ...s.cargando, [f]: true } }));
 
   const p = listarCarrerasCentrales(f, "")
-    .then((r): CarreraCentral[] => {
+    .then(async (r): Promise<CarreraCentral[]> => {
       if (!r.ok) {
         set((s) => ({ errores: { ...s.errores, [f]: r.error ?? "No se pudieron leer las carreras del día." } }));
         return [];
       }
       set((s) => ({ errores: { ...s.errores, [f]: null } }));
-      return r.datos ?? [];
+      return completarResultadosDelDia(f, r.datos ?? []);
     })
     .catch((e) => {
       set((s) => ({
@@ -209,6 +210,39 @@ export async function cargarRegistroCarreras(fecha: string, version = 0): Promis
 
   enVueloCarreras.set(f, p);
   return p;
+}
+
+/**
+ * Completa el RESULTADO de cada carrera con un respaldo por CLAVE NATURAL.
+ *
+ * El resultado viaja embebido en la matriz (`resultados_carreras(*)`, vía la FK
+ * `carrera_id`). Si esa FK está NULL —la migración la llena con una igualdad
+ * EXACTA de hipódromo, así que una fila con otra grafía("La Rinconada" vs
+ * "LA RINCONADA") nunca se enlaza— el embed devuelve NADA y sin error: el
+ * catálogo entero queda sin ganadores y el «Progreso de la jornada» se queda en
+ * 0% para siempre (el síntoma: "Programadas: N, Con resultado: 0").
+ *
+ * Acá se lee la MISMA tabla `resultados_carreras` del día en UNA consulta y se
+ * completa por `fecha + hipódromo + carrera` solo lo que el embed no trajo. No
+ * es una segunda verdad: es la misma fuente, leída por su clave natural. Si el
+ * embed ya respondió, no se consulta siquiera.
+ */
+async function completarResultadosDelDia(fecha: string, carrera: CarreraCentral[]): Promise<CarreraCentral[]> {
+  // Nada que rescatar: o no hay carreras, o TODAS ya traen su resultado.
+  if (!carrera.length || carrera.every((c) => c.ganadores?.length || c.aplicado_a_tablas)) return carrera;
+  try {
+    const { supabase } = await import("@/core/supabase");
+    if (!supabase) return carrera;
+    const { data, error } = await supabase
+      .from("resultados_carreras")
+      .select("fecha, hipodromo, carrera, ganadores, orden_llegada, aplicado_a_tablas")
+      .eq("fecha", fecha);
+    // Best-effort: si la tabla no está (o falla), el catálogo queda como vino.
+    if (error || !data?.length) return carrera;
+    return completarResultadosPorClave(carrera, data as Parameters<typeof completarResultadosPorClave>[1]);
+  } catch {
+    return carrera;
+  }
 }
 
 /** Carga (o reutiliza) el catálogo de hipódromos registrados. */

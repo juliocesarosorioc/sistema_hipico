@@ -292,6 +292,21 @@ hasta re-aplicarlos.
 Estos scripts **no** se aplican por orden de dependencia: se corren a pedido, una
 sola vez, cuando el club lo pide. No cambian estructura.
 
+- `enlazar_resultados_sueltos.sql` — **arregla la barra de «Progreso de la
+  jornada»** del Monitor de Jugadas cuando queda en 0% para siempre
+  ("Programadas: N, Con resultado: 0"). El catálogo lee el resultado EMBEBIDO
+  (`resultados_carreras(*)` vía la FK `carrera_id`), y la migración
+  (`carreras.sql` §3) llena esa columna con una igualdad EXACTA de hipódromo: una
+  fila guardada como `"La Rinconada"` cuando la matriz dice `"LA RINCONADA"` nunca
+  se enlaza, el embed devuelve NADA (sin error) y el progreso se cae a cero. El
+  script reintenta el enlace por la clave CANÓNICA de la app (mayúsculas sin
+  espacios + fecha + Nº, igual que `claveCarrera`) y desenlaza las FK que apuntan
+  a la carrera equivocada. **No toca ningún otro dato**: solo rellena/limpia
+  `carrera_id`, guarda un respaldo en `_respaldo_resultados_sueltos` y trae la
+  REVERSA al pie. Idempotente. La app también trae un rescate en el cliente
+  (`completarResultadosPorClave`), así que el progreso ya funciona sin correrlo;
+  aplicarlo deja consistente al resto de los módulos que usan el embed.
+
 - `reclasificar_jugadas_dia25_adelantadas.sql` — marca como **adelantadas**
   (`es_adelantada = true`) las jugadas del **día 25** que todavía **no están
   liquidadas** (`estado = 'Pendiente'`), en `tickets_apuestas` y en `polla_ventas`

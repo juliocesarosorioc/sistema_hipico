@@ -14,6 +14,7 @@
 // ============================================================================
 import {
   aCarreraCentral,
+  completarResultadosPorClave,
   dedupFilasMaestro,
   estadoDeCarrera,
   hipodromosAEscribir,
@@ -21,6 +22,7 @@ import {
   normalizarGanadores,
   ordenarPorNumero,
   primerResultado,
+  type CarreraCatalogo,
   type FilaCarreraMaestro,
 } from "../src/features/carreras/lib/maestro-nucleo";
 
@@ -511,6 +513,90 @@ eq(
     []
   ).size,
   0
+);
+
+// ============================================================================
+// RESCATE DEL RESULTADO POR CLAVE NATURAL (completarResultadosPorClave)
+//
+// El embed `resultados_carreras(*)` depende de la FK `carrera_id`, que puede
+// quedar NULL (la migración la llena con igualdad EXACTA de hipódromo). Cuando
+// eso pasa el embed devuelve NADA, sin error, y el «Progreso de la jornada» se
+// queda en 0% para siempre ("Programadas: N, Con resultado: 0").
+//
+// El rescate lee la MISMA tabla por su clave canónica (fecha + hipódromo sin
+// espacios en mayúsculas + Nº) y completa SOLO las carreras que vinieron sin
+// resultado. Es idempotente: nunca pisa un resultado que el embed ya trajo.
+// ============================================================================
+
+/** Carrera de catálogo sin resultado, como la deja el embed cuando falla. */
+const carreraSinResultado = (
+  hipodromo: string,
+  carrera: number,
+  over: Partial<CarreraCatalogo> = {}
+): CarreraCatalogo => ({
+  fecha: "2026-10-20",
+  hipodromo,
+  carrera,
+  estado: "Programada",
+  ganadores: [],
+  aplicado_a_tablas: false,
+  ...over,
+});
+
+eq(
+  "rescata los ganadores por clave cuando el embed no los trajo",
+  completarResultadosPorClave(
+    [carreraSinResultado("LA RINCONADA", 6)],
+    [{ fecha: "2026-10-20", hipodromo: "La Rinconada", carrera: 6, ganadores: ["3", "7"] }]
+  )[0].ganadores,
+  ["3", "7"]
+);
+eq(
+  "una carrera con ganadores ya traídos NO se pisa (idempotente)",
+  completarResultadosPorClave(
+    [carreraSinResultado("LA RINCONADA", 6, { ganadores: ["1"] })],
+    [{ fecha: "2026-10-20", hipodromo: "LA RINCONADA", carrera: 6, ganadores: ["9"] }]
+  )[0].ganadores,
+  ["1"]
+);
+eq(
+  "el rescate también entiende `orden_llegada` con objetos {numero}",
+  completarResultadosPorClave(
+    [carreraSinResultado("SANTA ANITA", 2)],
+    [
+      {
+        fecha: "2026-10-20",
+        hipodromo: "santa anita",
+        carrera: 2,
+        orden_llegada: [{ numero: 5, puesto: 1 }, { numero: 8, puesto: 2 }],
+      },
+    ]
+  )[0].ganadores,
+  ["5", "8"]
+);
+eq(
+  "`aplicado_a_tablas` marca la carrera como Liquidada, no solo con resultados",
+  completarResultadosPorClave(
+    [carreraSinResultado("LA RINCONADA", 9)],
+    [{ fecha: "2026-10-20", hipodromo: "LA RINCONADA", carrera: 9, aplicado_a_tablas: true }]
+  )[0].estado,
+  "Liquidada"
+);
+eq(
+  "una carrera sin fila en el libro de resultados queda como estaba",
+  completarResultadosPorClave(
+    [carreraSinResultado("LAS PIEDRAS", 4)],
+    [{ fecha: "2026-10-20", hipodromo: "LAS PIEDRAS", carrera: 5, ganadores: ["1"] }]
+  )[0].ganadores,
+  []
+);
+eq(
+  "el día tiene que coincidir: el resultado de otra jornada NO se aplica",
+  completarResultadosPorClave(
+    [carreraSinResultado("LA RINCONADA", 6)],
+    [{ fecha: "2026-10-19", hipodromo: "LA RINCONADA", carrera: 6, ganadores: ["3"] }]
+  )[0].ganadores,
+  []
 );
 
 console.log(`\nTODO OK: ${pasan} pasaron, ${fallan} fallaron`);

@@ -13,7 +13,7 @@
 // Relativo a propósito: este archivo se corre en node (tsx) y las pruebas no
 // resuelven el alias `@/`. Es un hermano en la misma carpeta.
 import { parsearRetirados, textoRetirados, normalizarRetirados } from "@/features/carreras/lib/retiros-nucleo";
-import { claveHipodromo, numeroCarrera } from "@/features/carreras/lib/claves";
+import { claveHipodromo, numeroCarrera, claveCarrera } from "@/features/carreras/lib/claves";
 
 /**
  * Ordena una lista de ejemplares por `numero` ASCENDENTE (comparando numérico,
@@ -398,6 +398,51 @@ export function hipodromosAEscribir(
     salida.set(clave, guardados.get(clave) || hipo);
   }
   return salida;
+}
+
+/**
+ * RESCATE del resultado cuando el EMBED no lo trajo.
+ *
+ * POR QUÉ EXISTE
+ * --------------
+ * `leerCarrerasMaestro` pide el resultado embebido (`resultados_carreras(*)`), que
+ * PostgREST resuelve por la FK `resultados_carreras.carrera_id -> carreras.id`.
+ * Esa columna puede quedar NULL: la migración la backfillea con una igualdad
+ * EXACTA de hipódromo (`c.hipodromo = upper(trim(r.hipodromo))`), así que una
+ * fila guardada como "La Rinconada" cuando la matriz dice "LA RINCONADA" nunca
+ * se enlaza (el diagnóstico tiene una pasada que repara "resultados sueltos").
+ * Cuando `carrera_id` es NULL el embed no devuelve NADA y no hay error: el
+ * catálogo queda con `ganadores: []` y cualquier contador que salga de ahí
+ * —el progreso de la jornada— se queda en cero para siempre.
+ *
+ * La cura NO es una segunda verdad: se lee la MISMA tabla `resultados_carreras`
+ * por su clave natural (fecha + hipódromo + carrera, la de `claveCarrera`) y se
+ * completa SOLO lo que el embed no trajo. Es un respaldo idempotente: si el
+ * embed ya trajo el resultado, la fila se deja intacta.
+ *
+ * `resultados` son las filas crudas de `resultados_carreras` del día (se leen
+ * todas en UNA consulta, como `cargarCarrerasDelDia`).
+ */
+export function completarResultadosPorClave(
+  catalogo: CarreraCatalogo[],
+  resultados: { fecha?: unknown; hipodromo?: unknown; carrera?: unknown; ganadores?: unknown; orden_llegada?: unknown; aplicado_a_tablas?: unknown }[]
+): CarreraCatalogo[] {
+  const porClave = new Map<string, (typeof resultados)[number]>();
+  for (const r of resultados) {
+    const k = claveCarrera(r.hipodromo, r.carrera, String(r.fecha ?? "").slice(0, 10));
+    if (!k) continue;
+    porClave.set(k, r);
+  }
+  return catalogo.map((c) => {
+    // El embed ya respondió: no se toca (ni siquiera para "corregir").
+    if (c.ganadores?.length || c.aplicado_a_tablas) return c;
+    const r = porClave.get(claveCarrera(c.hipodromo, c.carrera, c.fecha));
+    if (!r) return c;
+    const ganadores = normalizarGanadores(r.ganadores ?? r.orden_llegada);
+    const aplicado = r.aplicado_a_tablas === true;
+    if (!ganadores.length && !aplicado) return c;
+    return { ...c, ganadores, aplicado_a_tablas: aplicado, estado: aplicado ? "Liquidada" : "Resultados" };
+  });
 }
 
 export function dedupFilasMaestro(filas: FilaCarreraMaestro[]): FilaCarreraMaestro[] {

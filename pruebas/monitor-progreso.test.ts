@@ -46,6 +46,10 @@ ok("rotula el progreso de la jornada", src.includes("Progreso de la jornada"));
 
 console.log("\n[3] Se elimina la segunda verdad (solo carreras con jugadas)");
 ok("ya no calcula `progreso = conResultado / carreras`", !/const progreso = totales\.carreras/.test(src));
+ok("el avance cuenta ganadores o carrera ya aplicada (rescate ante embed sin carrera_id)", /ganadores\?\.\length\s*\?\?\s*0\)\s*>\s*0\s*\|\|\s*aplicada/.test(src));
+const registro = readFileSync(join(raiz, "src", "shared", "store", "useRegistroCentral.ts"), "utf8");
+ok("usa el rescate por clave cuando el embed falla", /completarResultadosPorClave/.test(registro));
+ok("el registro central trae resultados de respaldo por clave natural", /completarResultadosDelDia/.test(registro));
 
 console.log(`\n${pasan} pasaron, ${fallan} fallaron`);
 process.exit(fallan > 0 ? 1 : 0);
