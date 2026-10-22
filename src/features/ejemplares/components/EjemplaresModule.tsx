@@ -1,13 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { ModalAnalisisActuarialGodet } from "@/features/ejemplares/components/ModalAnalisisActuarialGodet";
-
 import { useEffect, useState } from "react";
 import { PadronTabla } from "@/features/ejemplares/components/PadronTabla";
 import { GacetaIA } from "@/features/ejemplares/components/GacetaIA";
 import { CargaPrograma } from "@/features/ejemplares/components/CargaPrograma";
 import { CarrerasDiaModule } from "@/features/carreras/components/CarrerasDiaModule";
+import { ModalAnalisisActuarialGodet } from "@/features/ejemplares/components/ModalAnalisisActuarialGodet";
 
 type TabId = "padron" | "gaceta" | "programa" | "carreras";
 
@@ -63,10 +61,12 @@ export function EjemplaresModule() {
       ) : (
         <CarrerasDiaModule />
       )}
-    <>
-        <section>...</section>
-      </>
 
+      {/* Modal Actuarial Godet vinculado opcionalmente */}
+      {abrirGodet && (
+        <ModalAnalisisActuarialGodet onClose={() => setAbrirGodet(false)} />
+      )}
+    </section>
   );
 }
 
