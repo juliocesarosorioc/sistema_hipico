@@ -266,31 +266,20 @@ export function PollasModule() {
         </div>
 
         {/* ------------------------------------------------------------
-            HIPÓDROMO. No había selector: `hipodromo_id` quedaba en null y no
-            se podía acotar la lista a un hipódromo del día. Son chips y no un
-            `<select>` porque con el elegido siempre a la vista no hace falta
-            abrirlo para acordarse qué se estaba filtrando.
+            HIPÓDROMO. Estandarizado con SearchableSelect igual que Gestión de Jugadas.
          * ---------------------------------------------------------- */}
         <div className="mt-3">
-          <span className="mb-1.5 block text-sm font-semibold text-slate-800">Hipódromo</span>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setHipodromoId("")}
-              className={chipCls(hipodromoId === "")}
-            >
-              Todos
-            </button>
-            {hipodromos.map((h) => (
-              <button
-                key={h.id}
-                type="button"
-                onClick={() => setHipodromoId(h.id)}
-                className={chipCls(hipodromoId === h.id)}
-              >
-                {nombreHipodromoParaMostrar(h.nombre)}
-              </button>
-            ))}
+          <div className="max-w-xs">
+            <label className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">Hipódromo</label>
+            <SearchableSelect
+              options={[
+                { value: "", label: "Todos" },
+                ...hipodromos.map((h) => ({ value: h.id, label: nombreHipodromoParaMostrar(h.nombre) })),
+              ]}
+              value={hipodromoId}
+              onChange={setHipodromoId}
+              placeholder="Buscar hipódromo..."
+            />
           </div>
           <p className="mt-1.5 text-xs text-slate-500">
             {hipodromoId
@@ -314,7 +303,7 @@ export function PollasModule() {
         <Card>
           <p className="text-sm text-slate-600">
             No hay Pollas para el {fecha}
-            {hipodromoId ? ` en ${nombreHipodromoParaMostrar(nombreHipodromo)}` : ""}. Creá una para empezar a vender.
+            . Creá una para empezar a vender.
           </p>
         </Card>
       ) : (
