@@ -1,7 +1,7 @@
 import { supabase } from "@/core/supabase";
 import { exigirCapacidad } from "@/features/seguridad/lib/vigente";
-import type { TablaFijaRow } from "@/features/tablas/lib/tablas-fijas";
-import { parseNum } from "@/features/tablas/lib/tipos";
+import { ganadoresEfectivos, type TablaFijaRow } from "@/features/tablas/lib/tablas-fijas";
+import { parseNum, type EjemplarTabla } from "@/features/tablas/lib/tipos";
 import { alternarRetiroCarrera } from "@/features/carreras/lib/retiros";
 import { sincronizarCentralDesdeTabla } from "@/features/carreras/lib/carreras-dia";
 import { normalizarFilas } from "@/features/tablas/lib/normalizar";
@@ -447,8 +447,13 @@ const MENSAJE_SIN_RPC =
   "Falta instalar sql/tablas_venta.sql en Supabase. La venta de tabla fija exige la RPC transaccional (ticket + saldo + contador); no se hacen escrituras parciales.";
 
 /** Detecta si la RPC no existe (lo normal si el SQL aun no se aplico). */
-function esRpcAusente(error: { message: string } | null): boolean {
+function esRpcAusente(error: { message: string; code?: string } | null): boolean {
   if (!error) return false;
+  // PostgREST responde PGRST202 ("Could not find the function ... in the schema
+  // cache") y Postgres 42883 cuando la función no existe. El CÓDIGO es más
+  // seguro que el texto, que cambia entre versiones de PostgREST.
+  const code = error.code ?? "";
+  if (code === "PGRST202" || code === "42883") return true;
   const m = error.message.toLowerCase();
   return m.includes("does not exist") || m.includes("no existe") || m.includes("not found") || m.includes("404");
 }
@@ -464,6 +469,119 @@ export type VentaTablaFijaResultado = {
   comisionGrupoPorcentaje?: number;
   moneda?: string;
 };
+
+/* ============================================================================
+   CABALLO INVALIDADO EN LA TABLA FIJA
+   ============================================================================
+   Un ejemplar INVALIDADO (descalificado) no puede ganar ni ser pagado como
+   ganador. El estado se guarda por RPC (sql/tablas_caballo_invalidado.sql)
+   porque es la RPC la que valida la capacidad del operador en el servidor: el
+   botón oculto en la UI no es una barrera, la guarda del servidor sí.
+
+   La RPC devuelve la fila YA actualizada y, además, esta función acepta un
+   callback (`alActualizar`) para que quien la llama refresque la fila en su
+   estado local sin tener que releer la tabla entera.
+   ============================================================================ */
+
+/** Fila del ejemplar con su estado de invalidamiento (la que devuelve la RPC). */
+export type FilaCaballoInvalidado = {
+  tabla_id: string | number;
+  numero: string;
+  invalidado: boolean;
+  motivo_invalidacion: string | null;
+};
+
+export type AlternarInvalidadoResultado = {
+  ok: boolean;
+  error?: string;
+  /** Fila ya actualizada (el estado nuevo del ejemplar). */
+  data?: FilaCaballoInvalidado;
+};
+
+const MENSAJE_SIN_RPC_INVALIDADO =
+  "Falta instalar sql/tablas_caballo_invalidado.sql en Supabase. El estado INVALIDADO del ejemplar se registra por la RPC (que valida la capacidad del operador en el servidor); sin ella no se puede marcar.";
+
+/**
+ * Alterna (o fija) el estado INVALIDADO de un ejemplar de la tabla fija.
+ *
+ * - `invalidado` explícito → la RPC deja el ejemplar en ese estado.
+ * - `invalidado` ausente   → la RPC ALTERNA el estado vigente.
+ *
+ * `alActualizar` se llama con la fila ya actualizada: quien la invoca puede
+ * refrescar la fila en su estado local (el Monitor, el editor) sin releer la
+ * tabla completa.
+ */
+export async function alternarCaballoInvalidadoTablaFija(params: {
+  tablaId: string | number;
+  numero: string | number;
+  /** Estado deseado. Si se omite, la RPC alterna el vigente. */
+  invalidado?: boolean;
+  /** Motivo de la invalidación (queda en la fila, para auditoría). */
+  motivo?: string | null;
+  /** Refresca la fila en el estado local de quien llama. */
+  alActualizar?: (fila: FilaCaballoInvalidado) => void;
+}): Promise<AlternarInvalidadoResultado> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  if (params.tablaId == null || String(params.tablaId).trim() === "") {
+    return { ok: false, error: "Falta el id de la tabla." };
+  }
+  const numero = String(params.numero ?? "").trim();
+  if (!numero) return { ok: false, error: "Falta el número del ejemplar." };
+  try {
+    // Misma capacidad que exige el botón de editar la tabla: invalidar un
+    // ejemplar ES corregir la tabla.
+    exigirCapacidad("tablas:btn_editar");
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+  try {
+    const { data, error } = await supabase.rpc("rpc_toggle_caballo_invalidado_tabla_fija", {
+      p_tabla_id: params.tablaId,
+      p_numero: numero,
+      p_invalidado: params.invalidado ?? null,
+      p_motivo: params.motivo ?? null,
+    });
+    if (error) {
+      return { ok: false, error: esRpcAusente(error) ? MENSAJE_SIN_RPC_INVALIDADO : error.message };
+    }
+    const d = (data ?? {}) as Record<string, unknown>;
+    if (d.ok === false) {
+      return { ok: false, error: String(d.error ?? "No se pudo cambiar el estado del ejemplar.") };
+    }
+    const fila: FilaCaballoInvalidado = {
+      tabla_id: d.tabla_id != null ? (d.tabla_id as string | number) : params.tablaId,
+      numero: String(d.numero ?? numero),
+      invalidado: Boolean(d.invalidado),
+      motivo_invalidacion: d.motivo_invalidacion != null ? String(d.motivo_invalidacion) : null,
+    };
+    params.alActualizar?.(fila);
+    return { ok: true, data: fila };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Lee los ejemplares de una tabla (para las reglas del ejemplar).
+ *
+ * Es best-effort: si la lectura falla se devuelve una lista vacía y quien la
+ * usa decide qué hacer (la liquidación no se bloquea por una lectura).
+ */
+async function leerCaballosTabla(tablaId: string | number): Promise<EjemplarTabla[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("tablas_fijas")
+      .select("caballos")
+      .eq("id", tablaId)
+      .maybeSingle();
+    if (error) return [];
+    const filas = (data as { caballos?: unknown } | null)?.caballos;
+    return Array.isArray(filas) ? (filas as EjemplarTabla[]) : [];
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Venta de tabla fija por RPC (sql/tablas_venta.sql).
@@ -532,6 +650,11 @@ export async function venderTablaFija(params: {
  *
  * Sin ganadores no liquida: con dead heat la tabla queda pendiente a decisión
  * manual, en vez de pagar a un ganador arbitrario.
+ *
+ * EJEMPLARES INVALIDADOS: se sacan de la lista de ganadores los que estén
+ * INVALIDADOS en la tabla. Un descalificado no puede ganar, así que su ticket
+ * no puede quedar 'Ganador' ni generar un pago: si los dos quedaran, la casa
+ * pagaría un premio por un ejemplar que la propia tabla declara inválido.
  */
 export async function liquidarTablaFija(params: {
   tablaId: string | number;
@@ -545,9 +668,24 @@ export async function liquidarTablaFija(params: {
     } catch (e) {
       return { ok: false, error: (e as Error).message };
     }
+    // Los EJEMPLARES INVALIDADOS no pueden ganar: se sacan de la lista de
+    // ganadores ANTES de la RPC, para que su ticket no pueda quedar 'Ganador'
+    // ni generar un pago (un descalificado no cobra premio).
+    const caballos = await leerCaballosTabla(params.tablaId);
+    const declarados = String(params.ganadores ?? "").trim();
+    // Sin ganadores declarados no hay nada que filtrar: la RPC responde con su
+    // propio aviso ("indique los ganadores").
+    const habilitados = declarados ? ganadoresEfectivos(caballos, declarados) : [];
+    if (declarados && habilitados.length === 0) {
+      return {
+        ok: false,
+        error:
+          "Todos los ganadores están INVALIDADOS: un ejemplar descalificado no puede cobrar premio. La tabla queda pendiente de decisión manual.",
+      };
+    }
     const { data, error } = await supabase.rpc("club_liquidar_tabla_fija", {
     p_tabla_id: params.tablaId,
-    p_ganadores: params.ganadores,
+    p_ganadores: habilitados.length ? habilitados.join(",") : params.ganadores,
     p_usuario: params.usuario ?? null,
   });
   if (error) {

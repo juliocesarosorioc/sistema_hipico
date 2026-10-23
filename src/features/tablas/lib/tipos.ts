@@ -17,6 +17,22 @@ export type EjemplarTabla = {
   retirado?: boolean;
   ganador?: boolean;
   ejemplar_id?: string | number | null;
+  /**
+   * Ejemplar INVALIDADO: el hipódromo lo descalificó, así que NO puede ganar
+   * ni ser pagado como ganador.
+   *
+   * No es lo mismo que "retirado": el retirado sale de la oferta, se le
+   * reembolsa lo jugado y su valor no reparte; el invalidado SIGUE en la
+   * tabla (la apuesta se pierde, no se devuelve), pero tampoco reparte y no
+   * puede cobrar premio. Por eso el estado va aparte en la fila.
+   */
+  invalidado?: boolean;
+  /**
+   * POR QUÉ se invalidó (auditoría del operador: descalificación, doping,
+   * error de la pizarra…). Viaja con el ejemplar para que el Monitor y los
+   * reportes puedan explicar la decisión.
+   */
+  motivo_invalidacion?: string;
 };
 
 export type TablaGrupo = {
@@ -114,10 +130,21 @@ export function fmtMoney(n: number | null | undefined, moneda?: string | null): 
   );
 }
 
-/** Suma de la tabla SIN retirados (misma regla del legacy). */
+/**
+ * Suma de la tabla SIN retirados NI invalidados.
+ *
+ * Por qué los invalidados también salen: un ejemplar descalificado no puede
+ * ganar, así que su valor NO puede estar repartiendo premio. Si su valor
+ * siguiera en la base, el premio del ganador quedaría corto y el reparto no
+ * cuadraría.
+ *
+ * La SIMETRÍA es la regla: la base que se guarda (`suma_base_tabla`) y la que
+ * se muestra en el pie "Suma" se calculan con ESTA función, así que el pie
+ * nunca puede contradecir lo que el operador acaba de guardar.
+ */
 export function sumaBase(caballos: EjemplarTabla[] | null | undefined): number {
   return (caballos ?? [])
-    .filter((c) => !c.retirado)
+    .filter((c) => !c.retirado && !c.invalidado)
     .reduce((a, c) => a + (parseNum(c.valor_ejemplar) || 0), 0);
 }
 

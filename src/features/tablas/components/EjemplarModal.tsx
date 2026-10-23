@@ -69,6 +69,7 @@ export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, 
   if (!abierto || !tabla || !ejemplar) return null;
 
   const retirado = Boolean(ejemplar.retirado);
+  const invalidado = Boolean(ejemplar.invalidado);
   const valor = parseNum(ejemplar.valor_ejemplar);
   const num = String(ejemplar.numero ?? "");
 
@@ -191,17 +192,21 @@ export function EjemplarModal({ abierto, tabla, ejemplar, indice = 0, onCerrar, 
             </div>
             <span
               className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-black uppercase ${
-                retirado ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-700"
+                retirado
+                  ? "bg-red-100 text-red-600"
+                  : invalidado
+                    ? "bg-purple-100 text-purple-700"
+                    : "bg-emerald-100 text-emerald-700"
               }`}
             >
-              {retirado ? "Retirado" : "Activo"}
+              {retirado ? "Retirado" : invalidado ? "Invalidado" : "Activo"}
             </span>
           </div>
 
           {/* Valor por tabla */}
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
             <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Valor por Tabla</span>
-            <span className={`block text-lg font-black ${retirado ? "text-red-500 line-through" : "text-blue-700"}`}>
+            <span className={`block text-lg font-black ${retirado ? "text-red-500 line-through" : invalidado ? "text-purple-700 line-through" : "text-blue-700"}`}>
               {retirado ? "RET." : fmtMoney(valor, tabla.moneda)}
             </span>
           </div>

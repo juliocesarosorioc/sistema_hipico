@@ -61,6 +61,19 @@ export type VentaTablaReporte = {
   fecha: string;
   /** Día LOCAL de la venta (`fecha_registro`); patrón de consulta adicional. */
   fechaVenta: string;
+  /**
+   * Id de la tabla fija de la que salió la venta (va en `nota_auditoria`).
+   * Se usa para cruzarla con los ejemplares INVALIDADOS de esa tabla.
+   */
+  tablaId?: string;
+  /**
+   * El ejemplar de esta venta quedó INVALIDADO (descalificado) en la tabla
+   * fija. No es lo mismo que RETIRADO: la jugada no se reembolsa, PIERDE.
+   *
+   * Con la bandera en true la venta NO cuenta como ganadora ni entra en el
+   * "Pagado": un ejemplar descalificado no cobra premio.
+   */
+  invalidado?: boolean;
 };
 
 /** Dimensiones por las que se puede estructurar (pivotar) el reporte. */
@@ -74,6 +87,12 @@ export type TotalesReporte = {
   perdidos: number;
   pendientes: number;
   retirados: number;
+  /**
+   * Ventas cuyo ejemplar quedó INVALIDADO (descalificado). Se cuentan APARTE
+   * para que el operador vea cuántos tickets dejaron de cobrar por una
+   * descalificación (y no por una derrota normal).
+   */
+  invalidados: number;
   pagado: number;
   reembolsado: number;
   comision: number;
@@ -108,7 +127,7 @@ export type FiltrosVenta = {
   jugador?: string;
 };
 
-export type EstadoReporte = "Ganador" | "Perdedor" | "Pendiente" | "Retirado" | "Otro";
+export type EstadoReporte = "Ganador" | "Perdedor" | "Pendiente" | "Retirado" | "Invalidado" | "Otro";
 
 const texto = (v: unknown): string => (v == null ? "" : String(v).trim());
 
@@ -126,6 +145,8 @@ export function estadoNormalizado(e: unknown): EstadoReporte {
   if (s.startsWith("gan")) return "Ganador";
   if (s.startsWith("perd")) return "Perdedor";
   if (s.startsWith("retir")) return "Retirado";
+  // Un ejemplar INVALIDADO no es un retirado: no se reembolsa, pierde.
+  if (s.startsWith("inval")) return "Invalidado";
   if (s.startsWith("pend")) return "Pendiente";
   return "Otro";
 }
@@ -140,6 +161,10 @@ export function estadoNormalizado(e: unknown): EstadoReporte {
  */
 export function cobradoDeVenta(v: VentaTablaReporte): number {
   if (ventaAnulada(v)) return 0;
+  // Un ejemplar INVALIDADO también pierde la jugada (no se reembolsa, a
+  // diferencia del retirado): el monto queda en la casa, igual que un
+  // perdedor. Lo que NO puede es ganar, y eso lo decide la liquidación.
+  if (v.invalidado) return cobradoNeto(v.monto, v.pctConvenio);
   if (estadoNormalizado(v.estado) !== "Perdedor") return 0;
   return cobradoNeto(v.monto, v.pctConvenio);
 }
@@ -162,6 +187,29 @@ function fechaDeNota(raw: unknown): string {
   }
   if (obj && typeof obj === "object") {
     return texto((obj as Record<string, unknown>).fecha_carrera).slice(0, 10);
+  }
+  return "";
+}
+
+/**
+ * Id de la TABLA FIJA de la que salio la venta (`nota_auditoria.tabla_id`).
+ *
+ * Es lo que permite cruzar la venta con los ejemplares INVALIDADOS de esa
+ * tabla: el ticket no sabe que su ejemplar quedo descalificado, la tabla si.
+ */
+function tablaIdDeNota(raw: unknown): string {
+  let obj: unknown = raw;
+  if (typeof raw === "string") {
+    const s = raw.trim();
+    if (!s.startsWith("{")) return "";
+    try {
+      obj = JSON.parse(s);
+    } catch {
+      return "";
+    }
+  }
+  if (obj && typeof obj === "object") {
+    return texto((obj as Record<string, unknown>).tabla_id);
   }
   return "";
 }
@@ -210,6 +258,10 @@ export function normalizarVenta(row: Record<string, unknown>): VentaTablaReporte
     adelantada: esAdelantadaDe(row),
     fecha: fechaDeNota(row.nota_auditoria) || texto(row.fecha_registro).slice(0, 10),
     fechaVenta: diaLocalDeVenta(row.fecha_registro),
+    tablaId: tablaIdDeNota(row.nota_auditoria),
+    // Lo marca el cargador de tablas fijas, que cruza la venta con los
+    // ejemplares INVALIDADOS de su tabla (el ticket no lo sabe).
+    invalidado: false,
   };
 }
 
@@ -235,6 +287,7 @@ export function totalesDe(ventas: VentaTablaReporte[]): TotalesReporte {
     perdidos: 0,
     pendientes: 0,
     retirados: 0,
+    invalidados: 0,
     pagado: 0,
     reembolsado: 0,
     comision: 0,
@@ -253,7 +306,11 @@ export function totalesDe(ventas: VentaTablaReporte[]): TotalesReporte {
     jugadores.add(v.jugadorId || v.jugador || "?");
     t.enRiesgo += v.monto;
     t.comision += v.comision;
-    switch (estadoNormalizado(v.estado)) {
+    // El estado REAL de la venta: si su ejemplar quedó INVALIDADO en la tabla
+    // fija, la venta se cuenta aparte (un descalificado no gana ni cobra).
+    const bruto = estadoNormalizado(v.estado);
+    const estado = v.invalidado ? "Invalidado" : bruto;
+    switch (estado) {
       case "Ganador":
         t.ganadores += 1;
         t.pagado += v.pagado;
@@ -265,6 +322,22 @@ export function totalesDe(ventas: VentaTablaReporte[]): TotalesReporte {
       case "Retirado":
         t.retirados += 1;
         t.reembolsado += v.monto;
+        break;
+      case "Invalidado":
+        // El ejemplar fue DESCALIFICADO: no puede ganar y no se le paga. La
+        // jugada PIERDE (no se reembolsa, a diferencia del retirado), asi que
+        // el monto queda en la casa. Se cuenta APARTE para que el operador
+        // vea cuantos tickets dejaron de cobrar por una descalificacion.
+        t.invalidados += 1;
+        t.perdidos += 1;
+        if (bruto === "Ganador") {
+          // Caso anomalo: se liquido ANTES del invalidamiento y el premio ya
+          // salio. Se refleja el dinero pagado (ocultarlo haria creer que la
+          // casa conserva ese monto) pero la jugada NO cuenta como ganadora.
+          t.pagado += v.pagado;
+        } else {
+          t.cobrado += cobradoDeVenta(v);
+        }
         break;
       case "Pendiente":
         t.pendientes += 1;

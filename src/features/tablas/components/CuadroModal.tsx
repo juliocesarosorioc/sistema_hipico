@@ -97,6 +97,10 @@ export function CuadroModal({
       // el padron de ejemplares.
       ganador: Boolean(cuadro?.ganador),
       ejemplar_id: cuadro?.ejemplar_id ?? null,
+      // Se conserva tambien el estado INVALIDADO: corregir el nombre o el
+      // valor de un ejemplar descalificado no lo habilita de nuevo.
+      invalidado: Boolean(cuadro?.invalidado),
+      motivo_invalidacion: cuadro?.motivo_invalidacion ?? undefined,
       numero: num,
       nombre: nom,
       nacionalidad,
