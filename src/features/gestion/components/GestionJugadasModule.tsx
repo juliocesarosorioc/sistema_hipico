@@ -40,7 +40,7 @@ import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/features/tablas/lib/rpc";
 import { registrarCarreraProgramada, leerResultadoOficial } from "@/features/carreras/lib/carreras-dia";
 import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados } from "@/features/carreras/lib/retiros";
-import { claveHipodromo, numerosCarrerasDelDia } from "@/features/carreras/lib/claves";
+import { claveHipodromo, numerosDeCarrera } from "@/features/carreras/lib/claves";
 import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { revisarCaballo, maximoDeLaCarrera, type RevisionCaballo } from "@/features/taquilla/lib/caballos";
@@ -304,14 +304,13 @@ export function GestionJugadasModule() {
   /**
    * Semáforo: los números de carrera del día.
    *
-   * Une el catálogo central y las tablas fijas por fecha e hipódromo. La
-   * existencia de ejemplares no es requisito: hay carreras registradas o con
-   * jugadas cuyo padrón todavía está vacío.
+   * El semáforo usa exclusivamente el catálogo central `carreras`. Que una
+   * carrera no tenga ejemplares todavía no significa que no esté registrada.
    */
   useEffect(() => {
     let vivo = true;
     setCarrerasPorDia([]);
-    const base = numerosCarrerasDelDia(carrerasDelDia, tablas, hipodromo, fecha);
+    const base = numerosDeCarrera(carrerasDelDia, hipodromo);
     if (base.length > 0) {
       setCarrerasPorDia(base);
       return () => {
@@ -330,7 +329,7 @@ export function GestionJugadasModule() {
     return () => {
       vivo = false;
     };
-  }, [fecha, hipodromo, carrerasDelDia, tablas]);
+  }, [fecha, hipodromo, carrerasDelDia]);
 
   // El catálogo y sus ejemplares los aporta el REGISTRO CENTRAL (arriba). Este
   // módulo ya no mantiene una segunda consulta: dos copias del mismo catálogo

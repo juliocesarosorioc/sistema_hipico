@@ -13,7 +13,6 @@ import {
   claveCarrera,
   agruparCarreras,
   numerosDeCarrera,
-  numerosCarrerasDelDia,
 } from "../src/features/carreras/lib/claves";
 
 let pasan = 0;
@@ -134,35 +133,12 @@ console.log("\n[6] numerosDeCarrera: numeros unicos y ordenados");
   eq("otro hipodromo", numerosDeCarrera(carreras, "GAMER"), [5]);
   eq("hipodromo inexistente", numerosDeCarrera(carreras, "NOSE"), []);
   eq("sin hipodromo", numerosDeCarrera(carreras, null), []);
+  eq(
+    "una carrera catalogada no se oculta por tener el padron vacio",
+    numerosDeCarrera([{ fecha: "2026-10-22", hipodromo: "BELMONT PARK", carrera: 3, caballos: [] }], "Belmont Park"),
+    [3]
+  );
 }
-
-console.log("\n[7] numerosCarrerasDelDia: no depende de tener ejemplares");
-eq(
-  "incluye la carrera Belmont 3 del catálogo aunque no tenga padrón y combina tablas",
-  numerosCarrerasDelDia(
-    [
-      { fecha: "2026-10-23", hipodromo: "Belmont Park", carrera: 3 },
-      { fecha: "2026-10-23", hipodromo: "Keeneland", carrera: 5 },
-    ],
-    [
-      { fecha: "2026-10-23", hipodromo: "BELMONT PARK", carrera: 2 },
-      { fecha: "2026-10-22", hipodromo: "BELMONT PARK", carrera: 7 },
-    ],
-    " BELMONT PARK ",
-    "2026-10-23"
-  ),
-  [2, 3]
-);
-eq(
-  "recupera Belmont 3 desde tabla aunque falte en el catálogo",
-  numerosCarrerasDelDia(
-    [],
-    [{ fecha_creacion: "2026-10-23T14:00:00Z", hipodromo: "BELMONT PARK", carrera: "3" }],
-    "Belmont Park",
-    "2026-10-23"
-  ),
-  [3]
-);
 
 console.log(`\n${fallan === 0 ? "TODO OK" : "HAY FALLAS"}: ${pasan} pasaron, ${fallan} fallaron\n`);
 if (fallan > 0) process.exit(1);

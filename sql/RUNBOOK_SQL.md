@@ -145,6 +145,13 @@ pantalla muestra "0 filas" como si no hubiera datos.
     `resultados_carreras` / `programa_dia` / `tablas_fijas`. Sin este script los
     módulos de jugadas muestran el error "La matriz de carreras no está
     disponible". Idempotente y no borra datos.
+    Para reparar carreras que tienen tickets pero nunca se incorporaron al
+    catálogo y evitar que vuelva a ocurrir, ejecuta también
+    `carreras_catalogo_desde_jugadas.sql` después de este paso. Hace un backfill
+    idempotente desde los tickets existentes y crea un trigger para registrar en
+    `carreras` toda carrera al insertarse una jugada nueva. A partir de ahí el
+    semáforo sigue leyendo solo `carreras`; las jugadas no son una segunda fuente
+    de lectura.
 14. `carrera_unica.sql` — **requiere el paso 13**. Deja una sola verdad sobre la
     carrera: crea `carrera_ejemplares` (inscripción 1:N, con trigger que refleja
     `carreras.caballos` para no duplicar), fuerza el resultado 1:1
@@ -355,6 +362,12 @@ Carreras del Día) leían "qué carreras hay" cruzando hasta cuatro fuentes
 (`"LA RINCONADA"` vs `"RINCONADA"`). Ahora **todos leen la matriz `carreras`** y
 `programa_dia` quedó como documento crudo del importador. Por eso el paso 13 no
 es opcional.
+
+`carreras_catalogo_desde_jugadas.sql` es una reparación puntual del catálogo,
+no un fallback del frontend: si una jornada histórica tiene tickets y falta su
+fila en `carreras`, la migra una vez; el trigger conserva esa misma fuente
+canónica para las ventas siguientes. No reconstruye ejemplares que no estén
+guardados en el catálogo.
 
 ## Scripts que NO hay que volver a aplicar
 

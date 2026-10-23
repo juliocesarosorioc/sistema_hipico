@@ -15,7 +15,6 @@
 import {
   aCarreraCentral,
   completarResultadosPorClave,
-  completarCatalogoConJugadas,
   dedupFilasMaestro,
   estadoDeCarrera,
   hipodromosAEscribir,
@@ -599,25 +598,6 @@ eq(
   )[0].ganadores,
   []
 );
-
-console.log("\n[10] completarCatalogoConJugadas: la jugada impide que una carrera desaparezca");
-const catalogoConCarrera = [
-  carreraSinResultado("BELMONT PARK", 2, { fecha: "2026-10-22" }),
-];
-const catalogoRecuperado = completarCatalogoConJugadas(
-  catalogoConCarrera,
-  [
-    { fecha_carrera: "2026-10-22", hipodromo: "BELMONTO PARK", carrera: 3 },
-    { fecha_carrera: "2026-10-21", hipodromo: "OTRO HIPODROMO", carrera: 4 },
-    { fecha_carrera: "2026-10-22", hipodromo: "BELMONT PARK", carrera: 2 },
-  ],
-  "2026-10-22"
-);
-eq("conserva carrera de matriz y rescata la carrera con jugadas", catalogoRecuperado.map((c) => [c.hipodromo, c.carrera]), [
-  ["BELMONTO PARK", 3],
-  ["BELMONT PARK", 2],
-]);
-eq("el respaldo crea una carrera sin inventar ejemplares", catalogoRecuperado[0].caballos, []);
 
 console.log(`\nTODO OK: ${pasan} pasaron, ${fallan} fallaron`);
 if (fallan > 0) process.exit(1);

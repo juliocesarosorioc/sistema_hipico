@@ -174,6 +174,14 @@ create table if not exists public.tablas_fijas (
   premio numeric
 );
 
+create table if not exists public.tickets_apuestas (
+  id bigserial primary key,
+  hipodromo text,
+  carrera integer,
+  nota_auditoria text,
+  fecha_registro timestamptz not null default now()
+);
+
 create table if not exists public.usuario_sistema (
   id text primary key,
   auth_id uuid,
@@ -292,6 +300,59 @@ try {
       fallos++;
       console.log(`  FALLA ${s}\n        ${String(e.message).split("\n")[0]}`);
     }
+  }
+
+  // -------------------------------------------------------------------------
+  console.log("\n[funcional] carreras con jugadas en la unica matriz");
+  // -------------------------------------------------------------------------
+  await ejecutar(`
+    insert into public.tickets_apuestas (hipodromo, carrera, nota_auditoria, fecha_registro)
+    values ('BELMONT PARK', 3, '{"fecha_carrera":"2026-10-22"}', '2026-10-23T12:00:00Z')
+  `);
+  try {
+    const migracionCatalogo = readFileSync(
+      join(RAIZ, "sql/carreras_catalogo_desde_jugadas.sql"),
+      "utf8"
+    );
+    await ejecutar(migracionCatalogo);
+    const historica = await ejecutar(`
+      select fecha::text, hipodromo, carrera, caballos
+        from public.carreras
+       where fecha = date '2026-10-22'
+         and hipodromo = 'BELMONT PARK'
+         and carrera = 3
+    `);
+    comprobar(
+      historica.rows.length === 1 &&
+        historica.rows[0]?.caballos?.length === 0,
+      "backfill incluye carreras historicas con jugadas y sin ejemplares"
+    );
+
+    await ejecutar(`
+      insert into public.tickets_apuestas (hipodromo, carrera, nota_auditoria, fecha_registro)
+      values ('KEENELAND', 5, '{"fecha_carrera":"2026-10-23"}', '2026-10-23T18:00:00Z')
+    `);
+    const futura = await ejecutar(`
+      select count(*)::int as cantidad
+        from public.carreras
+       where fecha = date '2026-10-23'
+         and hipodromo = 'KEENELAND'
+         and carrera = 5
+    `);
+    comprobar(futura.rows[0]?.cantidad === 1, "el trigger cataloga futuras carreras al guardar jugadas");
+
+    await ejecutar(migracionCatalogo);
+    const idempotente = await ejecutar(`
+      select count(*)::int as cantidad
+        from public.carreras
+       where fecha = date '2026-10-22'
+         and hipodromo = 'BELMONT PARK'
+         and carrera = 3
+    `);
+    comprobar(idempotente.rows[0]?.cantidad === 1, "el backfill se puede volver a ejecutar sin duplicar");
+  } catch (e) {
+    fallos++;
+    console.log(`  FALLA sql/carreras_catalogo_desde_jugadas.sql\n        ${String(e.message).split("\n")[0]}`);
   }
 
   // -------------------------------------------------------------------------
