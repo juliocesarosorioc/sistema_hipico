@@ -4,9 +4,9 @@ import { getHorseColor } from "@/shared/lib/horseColors";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { BuscadorJornada } from "@/shared/components/ui/BuscadorJornada";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
 import type { Hipodromo } from "@/features/hipodromos/lib/tipos";
-import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { useVersionLogos } from "@/shared/store/useHipodromosStore";
 import {
   nombreHipodromoParaMostrar,
@@ -179,6 +179,7 @@ export function CarrerasDiaModule() {
       ),
     [todas, fecha]
   );
+  const hipodromosDelDia = useMemo(() => todas.map((c) => c.hipodromo), [todas]);
 
   const abrirEditar = (c: CarreraCentral) => {
     setModal({
@@ -300,25 +301,17 @@ export function CarrerasDiaModule() {
           <h2 className="text-lg font-extrabold uppercase tracking-wide">Carreras del Día</h2>
           <p className="text-xs font-medium text-cyan-100">Data central de la jornada — alimenta Gestión, Tablas y Dupletas.</p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          <div className="w-56">
-            <SearchableSelect
-              options={[{ value: "", label: "Todos los hipódromos" }, ...hipodromos]}
-              value={hipodromo}
-              onChange={(v) => setHipodromo(v)}
-              placeholder="Todos los hipódromos"
-              allowCustom={false}
-              inputClassName="rounded-lg border border-cyan-400/60 bg-white px-2 py-1 text-xs font-bold normal-case text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
-            />
-          </div>
-          <input
-            type="date"
-            value={fecha}
-            onChange={(e) => setFecha(e.target.value || hoyLocal())}
-            className="rounded-lg border border-cyan-400/60 bg-white px-2 py-1 text-xs font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
-          />
-        </div>
       </div>
+      <BuscadorJornada
+        fecha={fecha}
+        onFecha={(valor) => setFecha(valor || hoyLocal())}
+        hipodromo={hipodromo}
+        onHipodromo={setHipodromo}
+        hipodromos={[{ value: "", label: "Todos los hipódromos" }, ...hipodromos]}
+        delDia={hipodromosDelDia}
+        columnas={7}
+        placeholderHipodromo="Todos los hipódromos"
+      />
 
       {/* Ayuda de uso */}
       <div className="rounded-lg border border-cyan-200 bg-cyan-50/60 px-3 py-1.5 text-[10px] font-semibold leading-relaxed text-cyan-900">

@@ -6,7 +6,9 @@ import { Button } from "@/shared/components/ui/Button";
 import { Input } from "@/shared/components/ui/Input";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { Guard } from "@/shared/components/ui/Guard";
-import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
+import { SearchableSelect, type OpcionSelect } from "@/shared/components/ui/SearchableSelect";
+import { BuscadorJornada } from "@/shared/components/ui/BuscadorJornada";
+import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
 import { listarClientes, type ClienteRow } from "@/features/clientes/lib/clientes";
 import { listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
@@ -198,6 +200,27 @@ export function PollasModule() {
     [hipodromos, hipodromoId]
   );
 
+  /**
+   * Hipódromos con carreras cargadas ese día, según el registro central: se
+   * muestran PRIMERO en el buscador (misma lectura que Gestión de Jugadas y el
+   * semáforo). Pollas filtra por `hipodromo_id`, así que el `value` de cada
+   * opción sigue siendo el id y el nombre se resuelve aparte para ordenar.
+   */
+  const { hipodromosDelDia } = useRegistroCentralOpts(fecha);
+
+  const opcionesHipodromo = useMemo<OpcionSelect[]>(
+    () => [
+      { value: "", label: "Todos los hipódromos" },
+      ...hipodromos.map((h) => ({ value: h.id, label: nombreHipodromoParaMostrar(h.nombre) })),
+    ],
+    [hipodromos]
+  );
+
+  const nombreDeOpcion = useCallback(
+    (op: OpcionSelect) => hipodromos.find((h) => h.id === op.value)?.nombre ?? op.label,
+    [hipodromos]
+  );
+
   /** Las Pollas del día. Con hipódromo elegido, solo las de ese hipódromo. */
   const pollasFiltradas = useMemo(
     () =>
@@ -210,7 +233,7 @@ export function PollasModule() {
   return (
     <div className="space-y-4">
       <Card>
-        <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-slate-900">Pollas</h1>
@@ -235,57 +258,50 @@ export function PollasModule() {
               puntos suma.
             </p>
           </div>
-          <div className="flex items-end gap-2">
-            {/* Modalidad de TIEMPO de la venta de Polla (PROMPT #4). */}
-            <ToggleModalidadTiempo valor={modalidadTiempo} onChange={setModalidadTiempo} />
-            <Input
-              label="Fecha"
-              type="date"
-              value={fecha}
-              onChange={(e) => setFecha(e.target.value || hoyLocal())}
-            />
-            <CargaResultadosRapida
-              cargadoPor="POLLAS"
-              fecha={fecha}
-              hipodromo={nombreHipodromo || undefined}
-              carreras={carrerasHoy.map((c2) => ({
-                carrera: c2.carrera,
-                caballos: c2.ejemplares.map((e) => ({
-                  numero: e.numero,
-                  nombre: e.nombre ?? "",
-                })),
-              }))}
-              onGuardado={() => void cargar()}
-            />
-            <Guard permiso="pollas:btn_crear_polla">
-              <Button onClick={() => setModalConfig({ abierto: true, polla: null })}>
-                Nueva Polla
-              </Button>
-            </Guard>
-          </div>
-        </div>
-
-        {/* ------------------------------------------------------------
-            HIPÓDROMO. Estandarizado con SearchableSelect igual que Gestión de Jugadas.
-         * ---------------------------------------------------------- */}
-        <div className="mt-3">
-          <div className="max-w-xs">
-            <label className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">Hipódromo</label>
-            <SearchableSelect
-              options={[
-                { value: "", label: "Todos" },
-                ...hipodromos.map((h) => ({ value: h.id, label: nombreHipodromoParaMostrar(h.nombre) })),
-              ]}
-              value={hipodromoId}
-              onChange={setHipodromoId}
-              placeholder="Buscar hipódromo..."
-            />
-          </div>
-          <p className="mt-1.5 text-xs text-slate-500">
+          <p className="text-xs font-semibold text-slate-500">
             {hipodromoId
               ? `${pollasFiltradas.length} polla(s) en ${nombreHipodromoParaMostrar(nombreHipodromo)} · ${fecha}`
               : `${pollasFiltradas.length} polla(s) el ${fecha}`}
           </p>
+        </div>
+
+        {/* BUSCADOR DE JORNADA — la misma grilla de Gestión de Jugadas. */}
+        <div className="mt-3">
+          <BuscadorJornada
+            fecha={fecha}
+            onFecha={(f) => setFecha(f || hoyLocal())}
+            hipodromo={hipodromoId}
+            onHipodromo={setHipodromoId}
+            hipodromos={opcionesHipodromo}
+            delDia={hipodromosDelDia}
+            nombreDe={nombreDeOpcion}
+            columnas={5}
+            placeholderHipodromo="Buscar hipódromo… (Todos)"
+            acciones={
+              <>
+                {/* Modalidad de TIEMPO de la venta de Polla (PROMPT #4). */}
+                <ToggleModalidadTiempo valor={modalidadTiempo} onChange={setModalidadTiempo} />
+                <CargaResultadosRapida
+                  cargadoPor="POLLAS"
+                  fecha={fecha}
+                  hipodromo={nombreHipodromo || undefined}
+                  carreras={carrerasHoy.map((c2) => ({
+                    carrera: c2.carrera,
+                    caballos: c2.ejemplares.map((e) => ({
+                      numero: e.numero,
+                      nombre: e.nombre ?? "",
+                    })),
+                  }))}
+                  onGuardado={() => void cargar()}
+                />
+                <Guard permiso="pollas:btn_crear_polla">
+                  <Button onClick={() => setModalConfig({ abierto: true, polla: null })}>
+                    Nueva Polla
+                  </Button>
+                </Guard>
+              </>
+            }
+          />
         </div>
 
         {error && (

@@ -7,6 +7,7 @@ import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { type CarreraCentral, type EjemplarCarreraCentral } from "@/features/carreras/lib/central";
 import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
+import { BuscadorJornada } from "@/shared/components/ui/BuscadorJornada";
 import { exportarPaginas, type ImgFormato } from "@/features/impresion/lib/exportar";
 import { enviarAlGrupoWsp } from "@/features/whatsapp/lib/whatsapp";
 import {
@@ -416,58 +417,48 @@ export function PanelMarcas() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1">
-          <span className={inputLbl}>Fecha</span>
-          <input
-            type="date"
-            value={fecha}
-            onChange={(e) => setFecha(e.target.value || hoyLocal())}
-            className="rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900"
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className={inputLbl}>Hipódromo</span>
-          <select
-            value={hipodromo}
-            onChange={(e) => setHipodromo(e.target.value)}
-            disabled={activos.length === 0}
-            className="rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 disabled:opacity-50"
-          >
-            <option value="">Todos los activos</option>
-            {activos.map((h) => (
-              <option key={h.valor} value={h.valor}>
-                {nombreHipodromoParaMostrar(nombreDe(h.valor))} · {h.carreras} carrera{h.carreras === 1 ? "" : "s"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Button onClick={() => void refrescar()} disabled={cargando}>
-          {cargando ? "Cargando…" : "Actualizar"}
-        </Button>
-        <Button
-          variant="default"
-          onClick={() => setEditor({ hipodromo, carrera: null, fecha })}
-          className="bg-violet-600 hover:bg-violet-500"
-          title="Abrir el editor de marcas, NV y debutantes de la jornada"
-        >
-          🏷️ Configurar jornada
-        </Button>
+      <BuscadorJornada
+        fecha={fecha}
+        onFecha={(valor) => setFecha(valor || hoyLocal())}
+        hipodromo={hipodromo}
+        onHipodromo={setHipodromo}
+        hipodromos={[
+          { value: "", label: "Todos los activos" },
+          ...activos.map((h) => ({
+            value: h.valor,
+            label: `${nombreHipodromoParaMostrar(nombreDe(h.valor))} · ${h.carreras} carrera${h.carreras === 1 ? "" : "s"}`,
+          })),
+        ]}
+        columnas={7}
+        placeholderHipodromo="Todos los activos"
+        acciones={
+          <>
+            <Button onClick={() => void refrescar()} disabled={cargando}>
+              {cargando ? "Cargando…" : "Actualizar"}
+            </Button>
+            <Button
+              variant="default"
+              onClick={() => setEditor({ hipodromo, carrera: null, fecha })}
+              className="bg-violet-600 hover:bg-violet-500"
+              title="Abrir el editor de marcas, NV y debutantes de la jornada"
+            >
+              🏷️ Configurar jornada
+            </Button>
         {/* Reporte de las marcas JUGADAS: al lado de Configurar jornada, sobre la
             misma barra de filtros, para no tener que entrar carrera por carrera
             (como en el modal de venta) y leer la jornada completa de un vistazo. */}
-        <Button
-          variant="default"
-          onClick={() => setReporteAbierto(true)}
-          className="bg-cyan-600 hover:bg-cyan-500"
-          title="Ver el reporte de las marcas jugadas del día"
-        >
-          📈 Reporte de marcas
-        </Button>
+            <Button
+              variant="default"
+              onClick={() => setReporteAbierto(true)}
+              className="bg-cyan-600 hover:bg-cyan-500"
+              title="Ver el reporte de las marcas jugadas del día"
+            >
+              📈 Reporte de marcas
+            </Button>
 
         {/* ENVÍO DE LA HOJA: el mismo resumen que se ve acá, por WhatsApp o
             como archivo PNG / JPG / PDF (captura A4 como Tablas Fijas). */}
-        <div className="flex flex-wrap items-center gap-1.5 border-l border-line pl-3">
+            <div className="flex flex-wrap items-center gap-1.5 border-l border-line pl-3">
           <Button
             variant="success"
             size="md"
@@ -503,14 +494,16 @@ export function PanelMarcas() {
             <span className="text-[10px] font-black uppercase text-primary-600">{exportando}</span>
           )}
         </div>
-        <div className="ml-auto text-xs text-slate-500">
+            <div className="text-xs text-slate-500">
           {visibles.length} carrera{visibles.length === 1 ? "" : "s"} ·{" "}
           {visibles.filter((c) => configDe(c)).length} con marcas ·{" "}
           <span className={conAvisos.length ? "font-bold text-amber-600" : ""}>
             {conAvisos.length} por corregir
           </span>
         </div>
-      </div>
+          </>
+        }
+      />
 
       {/* OBSERVACION DE LA CASA.
           `PROPORCION` es la MISMA constante que usan `calcularRivales` y la RPC

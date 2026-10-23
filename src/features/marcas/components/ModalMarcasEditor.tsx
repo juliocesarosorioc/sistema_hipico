@@ -8,7 +8,7 @@ import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { SemaforoCarreras } from "@/features/gestion/components/SemaforoCarreras";
 import { listarCarrerasPorDia } from "@/features/tablas/lib/rpc";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
-import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
+import { BuscadorJornada } from "@/shared/components/ui/BuscadorJornada";
 import { opcionesHipodromo, nombreHipodromoParaMostrar, nombrePropioHipodromo } from "@/features/hipodromos/lib/nombre";
 import {
   buscarEjemplar,
@@ -417,24 +417,15 @@ export function ModalMarcasEditor({
           </button>
         </div>
 
-        {/* Paso 1 y 2: Día y Hipódromo */}
-        <div className="grid gap-2 border-b border-cyan-100 bg-cyan-50/70 p-3 sm:grid-cols-2">
-          <div>
-            <span className={inputLbl}>1 · Día</span>
-            <input type="date" value={dia} onChange={(e) => setDia(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <span className={inputLbl}>2 · Hipódromo</span>
-            {/* Buscador con teclado (↑↓/Enter/Escape) con bandera y logo. */}
-            <SearchableSelect
-              options={catalogoHipodromos}
-              value={hipodromo}
-              onChange={(v) => setHipodromo(v)}
-              placeholder="Buscar hipódromo…"
-              allowCustom={false}
-              inputClassName={inputCls}
-            />
-          </div>
+        <div className="border-b border-cyan-100 bg-cyan-50/70 p-3">
+          <BuscadorJornada
+            fecha={dia}
+            onFecha={setDia}
+            hipodromo={hipodromo}
+            onHipodromo={setHipodromo}
+            hipodromos={catalogoHipodromos}
+            columnas={7}
+          />
         </div>
 
         {/* Paso 3: Semáforo de carreras */}

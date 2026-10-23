@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
-import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
+import { BuscadorJornada } from "@/shared/components/ui/BuscadorJornada";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { emitirToast } from "@/shared/lib/mensajeria";
 import { useConfirmar } from "@/shared/store/useConfirmStore";
@@ -37,9 +37,6 @@ import { marcarTicketsAdelantados } from "@/features/jugadas/lib/marcar-adelanta
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 const inputSel =
   "w-full rounded-lg border border-line bg-surface px-2 py-1 text-xs font-bold uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500";
-/** Igual que `inputSel` pero SIN `uppercase`: los NOMBRES PROPIOS (hipódromo:
- *  "La Rinconada") tienen que verse tal cual, como en el resto de los filtros. */
-const inputSelNombre = inputSel.replace(" uppercase", "");
 /** Igual que `inputSel`, pero para MONTOS: se alinean a la derecha, que es la
  *  convención que hace comparables dos cifras de largo distinto sin contar
  *  dígitos. */
@@ -989,33 +986,24 @@ export function DupletaModule() {
           <ToggleModalidadTiempo valor={modalidadTiempo} onChange={setModalidadTiempo} />
         </div>
 
-        <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
-          <label
-            className="flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1.5 text-xs font-black uppercase text-slate-600"
-            title="Jornada: filtra los hipódromos registrados ese día (formato ISO)."
-          >
-            📅
-            <input
-              type="date"
-              autoFocus
-              value={dia}
-              onChange={(e) => { setDia(e.target.value || hoyLocal()); setHipodromo(""); setCarrera1(""); setCarrera2(""); }}
-              className="bg-transparent text-xs font-bold text-slate-700 outline-none"
-            />
-          </label>
-
-          <div className="block min-w-[220px]">
-            <span className={inputLbl}>2 · Hipódromo</span>
-            <SearchableSelect
-              options={hipodromoOpts}
-              value={hipodromo}
-              onChange={(v) => { setHipodromo(v); setCarrera1(""); setCarrera2(""); }}
-              placeholder={dia ? "Buscar hipódromo…" : "Elija el día primero"}
-              allowCustom={false}
-              inputClassName={inputSelNombre}
-            />
-          </div>
-        </div>
+        <BuscadorJornada
+          fecha={dia}
+          onFecha={(fecha) => {
+            setDia(fecha || hoyLocal());
+            setHipodromo("");
+            setCarrera1("");
+            setCarrera2("");
+          }}
+          hipodromo={hipodromo}
+          onHipodromo={(valor) => {
+            setHipodromo(valor);
+            setCarrera1("");
+            setCarrera2("");
+          }}
+          hipodromos={hipodromoOpts}
+          columnas={7}
+          placeholderHipodromo={dia ? "Buscar hipódromo…" : "Elija el día primero"}
+        />
 
         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
           <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50/40 p-2">

@@ -15,6 +15,7 @@ import { jugadoresDeGrupo, listarGruposVenta, type GrupoVenta } from "@/features
 import { listarCarrerasCentrales, type CarreraCentral } from "@/features/carreras/lib/central";
 import { alternarRetiroCarrera } from "@/features/carreras/lib/retiros";
 import { SearchableSelect, type OpcionSelect } from "@/shared/components/ui/SearchableSelect";
+import { BuscadorJornada } from "@/shared/components/ui/BuscadorJornada";
 import { Guard } from "@/shared/components/ui/Guard";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { useRegistroCentral, useRealtimeCarreras } from "@/shared/store/useRegistroCentral";
@@ -574,42 +575,33 @@ function ListaRemates({
                 autoFocus
               />
 
-              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
-                <span>Hipódromo</span>
-                {/* Buscador con teclado (↑↓/Enter/Escape) con bandera y logo:
-                    reemplaza el <select> nativo, que con 60+ sedes obligaba a
-                    scrollear la lista entera. */}
-                <SearchableSelect
-                  options={hipodromos.map<OpcionSelect>((h) => ({
-                    value: h.id,
-                    label: nombreHipodromoParaMostrar(h.nombre),
-                    pais: h.pais ?? null,
-                    logo: h.logo_url ?? null,
-                  }))}
-                  value={hipodromoId}
-                  onChange={(v) => setHipodromoId(v)}
-                  placeholder="Buscar hipódromo…"
-                  allowCustom={false}
-                  inputClassName={selectCls}
-                />
-              </label>
-
-              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
-                <span>Fecha / Día del programa</span>
-                <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value || hoy())} className={selectCls} />
-              </label>
-
-              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
-                <span>Carrera {cargandoCarreras ? "· cargando…" : `(${carreras.length})`}</span>
-                <select value={carrera} onChange={(e) => setCarrera(e.target.value)} className={selectCls} disabled={!hipodromoId || cargandoCarreras}>
-                  <option value="">— Seleccione —</option>
-                  {carreras.map((c) => (
-                    <option key={String(c.carrera)} value={String(c.carrera)}>
-                      C{c.carrera} · {(c.caballos ?? []).length} ejemplar(es)
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <BuscadorJornada
+                className="md:col-span-2"
+                fecha={fecha}
+                onFecha={(valor) => setFecha(valor || hoy())}
+                hipodromo={hipodromoId}
+                onHipodromo={setHipodromoId}
+                hipodromos={hipodromos.map<OpcionSelect>((h) => ({
+                  value: h.id,
+                  label: nombreHipodromoParaMostrar(h.nombre),
+                  pais: h.pais ?? null,
+                  logo: h.logo_url ?? null,
+                }))}
+                columnas={7}
+                children={
+                  <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
+                    <span>3 · Carrera {cargandoCarreras ? "· cargando…" : `(${carreras.length})`}</span>
+                    <select value={carrera} onChange={(e) => setCarrera(e.target.value)} className={selectCls} disabled={!hipodromoId || cargandoCarreras}>
+                      <option value="">— Seleccione —</option>
+                      {carreras.map((c) => (
+                        <option key={String(c.carrera)} value={String(c.carrera)}>
+                          C{c.carrera} · {(c.caballos ?? []).length} ejemplar(es)
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                }
+              />
 
               <Input id="remate-comision" label="Comisión %" placeholder="20" value={comision} onChange={(e) => setComision(e.target.value)} />
               <Input id="remate-cierre" label="Hora de cierre" placeholder="Ej. 14:30" value={horaCierre} onChange={(e) => setHoraCierre(e.target.value)} />

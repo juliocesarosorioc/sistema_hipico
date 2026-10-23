@@ -15,7 +15,10 @@
   "include": [
     "../src/features/gaceta/lib/numeros.ts",
     "../src/features/gaceta/lib/segmentar.ts",
+    "../src/features/gaceta/lib/actuarialGodetEngine.ts",
     "../src/features/inteligencia/lib/proyecciones.ts",
+    "../src/features/inteligencia/lib/pizarra.ts",
+    "../src/shared/lib/hipodromos-jornada.ts",
     "../src/features/marcas/lib/jerarquia.ts",
 
     "../src/features/carreras/lib/central.ts",
@@ -70,6 +73,8 @@
     "./validar-carga.test.ts",
     "./numeros-gaceta.test.ts",
     "./inteligencia.test.ts",
+    "./inteligencia-pizarra.test.ts",
+    "./hipodromos-jornada.test.ts",
     "./remates.test.ts",
     "./sql-pollas.test.ts",
     "./pollas.test.ts",

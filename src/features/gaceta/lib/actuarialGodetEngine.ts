@@ -144,9 +144,13 @@ export function simularRemateFinal(e: EjemplarGodet, pista: PistaEnVivo) {
   const cred = credibilidadBuhlmannStraub(e);
   const bonoPista = (pista.sesgoRematadores - pista.sesgoVelocistas) * 0.4;
   const deltaKg = e.pesoFisicoHoyKg && e.pesoOptimoGanadorKg ? e.pesoFisicoHoyKg - e.pesoOptimoGanadorKg : 0;
-  const factorKg = deltaKg > 0 ? -deltaKg * 0.08 : deltaKg < 0 ? Math.abs(deltaKg) * 0.06 : 0;
+  // `deltaKg > 0` = lleva MÁS peso que su referencia → el último parcial se
+  // hace más lento (suma tiempo). Antes el signo estaba invertido y el motor
+  // premiaba al que cargaba de más, justo al revés que la pizarra y que el
+  // sentido común del hándicap.
+  const factorKg = deltaKg * (deltaKg > 0 ? 0.08 : 0.06);
   const ultima200 = Number((11.6 - bonoPista + factorKg - (cred.speedAjustado - 70) * 0.01).toFixed(2));
-  return { ultima200Seg: Math.max(10.8, ultima200), cierre: factorKg >= 0 ? "positivo" : "estable", bonoPista: Number(bonoPista.toFixed(3)) };
+  return { ultima200Seg: Math.max(10.8, ultima200), cierre: factorKg <= 0 ? "positivo" : "estable", bonoPista: Number(bonoPista.toFixed(3)) };
 }
 
 export function generarProspectivaGodet(ejemplares: EjemplarGodet[], modo: ModoAnalisis, factores: MichelGodetFactors, pistaEnVivo?: PistaEnVivo) {
