@@ -68,11 +68,12 @@ $$;
 create or replace function public.rpc_guardar_lote_carreras_gaceta(
   p_fecha        date,
   p_hipodromo    text,
-  p_hipodromo_id uuid default null,
   p_carreras     jsonb,
-  p_creado_por   text default 'desconocido'
+  p_creado_por   text default 'desconocido',
+  p_hipodromo_id uuid default null
 )
 returns jsonb
+language plpgsql
 security definer
 set search_path = public
 as $$
@@ -89,6 +90,15 @@ declare
   v_item     jsonb;
   v_es_uevo  boolean;
   v_total    integer := 0;
+
+  -- Texto crudo del documento y su valor ya casteado. En Venezuela el
+  -- separador de miles es el punto ("8.000") y el decimal es la coma
+  -- ("8,50"): Postgres leería "8.000" como 8, así que los dos formatos se
+  -- distinguen por la FORMA del texto antes de castear.
+  v_txt_dist   text;
+  v_txt_premio text;
+  v_distancia  int;
+  v_premio     numeric;
 begin
   ------------------------------------------------------------------
   -- 1) PERMISO EN EL SERVIDOR
@@ -108,6 +118,10 @@ begin
 
   if p_carreras is null or jsonb_typeof(p_carreras) <> 'array' then
     raise exception 'Las carreras del lote deben ser una lista.';
+  end if;
+
+  if jsonb_array_length(p_carreras) = 0 then
+    raise exception 'El lote no trae carreras: no se escribe nada.';
   end if;
 
   if nullif(btrim(coalesce(p_hipodromo, '')), '') is null then
@@ -198,7 +212,38 @@ begin
     --     `on conflict (fecha, hipodromo, carrera) do update`: la fila se
     --     ACTUALIZA, nunca se duplica. Y las carreras del hipodromo que NO
     --     vienen en este lote NO se tocan: el hipodromo sigue completo.
+    --
+    --     DISTANCIA: se quedan los dígitos y se descarta el separador de
+    --     miles: "1.400" son 1400 metros, no 1.4.
+    --
+    --     PREMIO: en Venezuela el separador de miles es el punto ("8.000") y
+    --     el decimal es la coma ("8,50"). Postgres leería "8.000" como 8, así
+    --     que los dos formatos se distinguen por la forma del texto.
     ----------------------------------------------------------------
+    v_txt_dist := btrim(coalesce(v_carrera ->> 'distancia', ''));
+    if v_txt_dist <> '' then
+      begin
+        v_distancia := nullif(regexp_replace(v_txt_dist, '[^0-9]', '', 'g'), '')::int;
+      exception when others then
+        v_distancia := null;
+      end;
+    else
+      v_distancia := null;
+    end if;
+
+    v_txt_premio := btrim(coalesce(v_carrera ->> 'premio', ''));
+    if v_txt_premio = '' then
+      v_premio := null;
+    elsif v_txt_premio ~ '^\d{1,3}(\.\d{3})+$' then
+      v_premio := replace(v_txt_premio, '.', '')::numeric;
+    elsif v_txt_premio ~ '^\d+,\d+$' then
+      v_premio := replace(v_txt_premio, ',', '.')::numeric;
+    elsif v_txt_premio ~ '^\d+(\.\d+)?$' then
+      v_premio := v_txt_premio::numeric;
+    else
+      v_premio := null;
+    end if;
+
     insert into public.carreras (
       fecha, hipodromo, hipodromo_id, carrera, estado, caballos,
       distancia, superficie, premio, origen, actualizado_por, updated_at
@@ -210,9 +255,9 @@ begin
       v_num,
       'Programada',
       v_fusionados,
-      nullif(btrim(coalesce(v_carrera ->> 'distancia', '')), ''),
+      v_distancia,
       nullif(upper(btrim(coalesce(v_carrera ->> 'superficie', ''))), ''),
-      nullif(btrim(coalesce(v_carrera ->> 'premio', '')), '')::numeric,
+      v_premio,
       'ia',
       coalesce(p_creado_por, 'desconocido'),
       now()
@@ -241,7 +286,7 @@ begin
 end;
 $$;
 
-revoke all on function public.rpc_guardar_lote_carreras_gaceta(date, text, uuid, jsonb, text) from public;
-grant execute on function public.rpc_guardar_lote_carreras_gaceta(date, text, uuid, jsonb, text) to authenticated;
+revoke all on function public.rpc_guardar_lote_carreras_gaceta(date, text, jsonb, text, uuid) from public;
+grant execute on function public.rpc_guardar_lote_carreras_gaceta(date, text, jsonb, text, uuid) to authenticated;
 
 commit;

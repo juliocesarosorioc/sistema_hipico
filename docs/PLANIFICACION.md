@@ -1890,10 +1890,51 @@ batería de ejercicios).*
   usa la codificación oficial (`bg-orange-600`, `bg-blue-700`, `bg-cyan-500`):
   el test estaba viejo, no la app.
 
+### Fase 7 bis · El SQL validado contra un Postgres REAL
+
+Los scripts de `sql/` se aplican a mano en el SQL Editor de Supabase. Los
+errores de sintaxis se descubrían EN PRODUCCIÓN, con un mensaje que no
+decía dónde estaba el problema ("syntax error at or near if").
+
+Se agregó **`pruebas/validar-sql.mjs`** (`npm run validar:sql`): levanta un
+Postgres embebido (UTF8), aplica los scripts sobre un esquema mínimo que
+reproduce la forma real (`usuario_sistema.id` es TEXT y el uuid de Auth va en
+`auth_id`) y ejecuta pruebas FUNCIONALES de lo que crean.
+
+Los errores que encontró — y que estaban en los scripts nuevos:
+
+| Error | Síntoma en el Editor | Por qué rompía |
+|---|---|---|
+| `language plpgsql` ausente | `42P13: no language specified` | Postgres exige el lenguaje en `CREATE FUNCTION` |
+| `end if;` cerrando un `begin ... exception ... end;` | `42601: syntax error at or near "if"` | El parser acepta el `end` y se atraganta con el `if` |
+| Variable no declarada en el `DECLARE` | `"v_txt_dist" is not a known variable` | Se usaba sin declarar |
+| Texto en columna `integer` | `column "beyer" is of type integer but expression is of type text` | `nullif(...)` devuelve TEXT |
+| Parámetro con `default` antes de uno obligatorio | `input parameters after one with a default value must also have defaults` | Postgres rechaza la firma |
+| `"8.000"` leído como 8 | (silencioso: dato corrupto) | En Venezuela el punto es el separador de MILES |
+
+La última es la más importante, porque **no daba error**: el premio de una
+carrera se guardaba como 8 en vez de 8000 y el Índice de Consistencia Godet
+salía mal sin que nada se quejara. Ahora `distancia` y `premio` se normalizan
+según la FORMA del texto antes de castear.
+
+**Lo que la prueba funcional comprueba** (12 aserciones):
+
+- La gaceta registra la participación de cada ejemplar con `puesto = 0` (la
+  carrera todavía no corrió) y **no cuenta como actuación** hasta que hay
+  resultado oficial.
+- Al reprocesar la gaceta con el resultado ya cargado, el `puesto` se
+  rellena desde `resultados_carreras.orden_llegada` (y desde `ganadores` si
+  no hay orden de llegada).
+- `"1.400"` → 1400 metros y `"8.000"` → 8000.
+- El **lote acumulativo**: tras un segundo lote parcial, la carrera que no
+  vino en él no se toca y la que sí vino SUMA ejemplares en vez de
+  reemplazarlos.
+
 ### Estado de verificación
 
 - `npx tsc --noEmit` → 0 errores.
 - `node pruebas/correr.cjs` → **3181 aserciones OK, 0 fallaron, 69 archivos**.
   Incluye `pruebas/inteligencia.test.ts` (segmentación, consolidación y
   ranking actuarial).
+- `npm run validar:sql` → **SQL OK · 12 comprobaciones ok** (Postgres real).
 - `npm run build` → **exit 0**, 37 páginas generadas.

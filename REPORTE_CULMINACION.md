@@ -83,8 +83,25 @@
 - `npx tsc --noEmit`: **0 errores**.
 - `node pruebas/correr.cjs`: **3181 aserciones OK, 0 fallaron · 69 archivos ·
   SUITE OK**.
+- `npm run validar:sql`: **SQL OK · 12 comprobaciones ok** (Postgres real
+  embebido).
 - `npm run build`: **exit 0**, 37 páginas generadas (incluye
   `/inteligencia-hipica/proyecciones`).
+
+## Bugs de SQL encontrados por el validador (y corregidos)
+
+Los scripts se aplican a mano en el SQL Editor, así que un error de sintaxis se
+descubría en producción con un mensaje inútil. `pruebas/validar-sql.mjs` los
+corre contra un Postgres real:
+
+| Error | Síntoma | Corrección |
+|---|---|---|
+| `language plpgsql` ausente | `42P13: no language specified` | Añadido a las 3 funciones propias |
+| `end if;` cerrando un `begin ... exception ... end;` | `42601: syntax error at or near "if"` | 4 cierres corregidos |
+| Variable no declarada | `"v_txt_dist" is not a known variable` | Declarada en el `DECLARE` |
+| Texto en columna `integer` | `column "beyer" is of type integer but expression is of type text` | `case` con validación previa |
+| `default` antes de parámetro obligatorio | `input parameters after one with a default value must also have defaults` | Firma reordenada |
+| `"8.000"` leído como 8 | (silencioso: dato corrupto) | Normalización por FORMA del texto |
 
 ## SQL pendiente de aplicar en Supabase (a mano)
 1. `sql/memoria_historica.sql` — memoria histórica + RPC de gaceta e historial.
