@@ -35,8 +35,10 @@ export type GrupoVenta = {
   comision_dupletas?: number | null;
   es_principal?: boolean | null;
   activo?: boolean | null;
-  /** Jerarquía de cruces: switch general del grupo (default TRUE = permitido). */
+  /** Valores permanentes de cruce por modalidad; cada uno usa false por defecto. */
   permite_cruces?: boolean | null;
+  cruce_mismo_ejemplar?: boolean | null;
+  cruce_diferente_ejemplar?: boolean | null;
   /** Ciclo de facturación semanal (1=Lunes … 7=Domingo). Default L→D. */
   dia_inicio_semana?: number | null;
   dia_fin_semana?: number | null;
@@ -50,8 +52,10 @@ export type ClienteVenta = {
   libre?: boolean | null;
   modo_juego?: string | null;
   grupo_id?: string | number | null;
-  /** Jerarquía de cruces: override por cliente (default TRUE = permitido). */
+  /** Valores permanentes por modalidad; null hereda del grupo. */
   permite_cruces?: boolean | null;
+  cruce_mismo_ejemplar?: boolean | null;
+  cruce_diferente_ejemplar?: boolean | null;
   /** Unión de clientes_grupos + grupo_id por cliente (misma regla del legacy). */
   grupos: (string | number)[];
 };
@@ -189,7 +193,7 @@ export async function listarClientesVenta(): Promise<ClienteVenta[]> {
   try {
     let q = supabase
       .from("clientes")
-      .select("id, nombre, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces");
+      .select("id, nombre, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar");
     // Filtro del super administrador (los demás los filtra el RLS de la base).
     if (activo) q = q.eq("grupo_id", activo);
     const { data: cli, error: e1 } = await q;
@@ -207,6 +211,8 @@ export async function listarClientesVenta(): Promise<ClienteVenta[]> {
       modo_juego: c.modo_juego ? String(c.modo_juego) : null,
       grupo_id: c.grupo_id ?? null,
       permite_cruces: c.permite_cruces != null ? Boolean(c.permite_cruces) : null,
+      cruce_mismo_ejemplar: c.cruce_mismo_ejemplar != null ? Boolean(c.cruce_mismo_ejemplar) : null,
+      cruce_diferente_ejemplar: c.cruce_diferente_ejemplar != null ? Boolean(c.cruce_diferente_ejemplar) : null,
       grupos: [
         ...new Set([
           ...((cg ?? []).filter((x) => String(x.cliente_id) === String(c.id)).map((x) => String(x.grupo_id))),
@@ -317,8 +323,10 @@ export type GrupoRow = {
    */
   visibilidad_global_principal?: boolean | null;
   grupos_autorizados_ver_principal?: Array<string | number> | null;
-  /** Jerarquía de cruces: switch general del grupo (default TRUE = permitido). */
+  /** Valores permanentes de cruce por modalidad; cada uno usa false por defecto. */
   permite_cruces?: boolean | null;
+  cruce_mismo_ejemplar?: boolean | null;
+  cruce_diferente_ejemplar?: boolean | null;
   /** Ciclo de facturación semanal (1=Lunes … 7=Domingo). Default L→D. */
   dia_inicio_semana?: number | null;
   dia_fin_semana?: number | null;
@@ -408,7 +416,8 @@ export async function crearGrupo(datos: Partial<GrupoRow>): Promise<{ ok: boolea
   const filaOk = { ...datos, activo: true } as Record<string, unknown>;
   try {
     exigirCapacidad("grupos:fn_guardar_grupo");
-    const { error } = await supabase.from("grupos_venta").insert([filaOk]);
+    const { data: creada, error } = await supabase.from("grupos_venta").insert([filaOk]).select("id").maybeSingle();
+    let grupoId = creada?.id;
     if (error) {
       // Fallback a la RPC del legacy (js/grupos.js:200): club_guardar_grupo
       // recibe UN parámetro jsonb `p_datos` (no parámetros escalares).
@@ -432,10 +441,27 @@ export async function crearGrupo(datos: Partial<GrupoRow>): Promise<{ ok: boolea
           logo_url: datos.logo_url ?? null,
           es_principal: Boolean(datos.es_principal),
           activo: true,
-          permite_cruces: datos.permite_cruces !== false,
+          permite_cruces: datos.permite_cruces ?? Boolean(datos.cruce_mismo_ejemplar || datos.cruce_diferente_ejemplar),
+          cruce_mismo_ejemplar: datos.cruce_mismo_ejemplar === true,
+          cruce_diferente_ejemplar: datos.cruce_diferente_ejemplar === true,
         },
       });
       if (rpc.error) return { ok: false, error: rpc.error.message };
+      grupoId = typeof rpc.data === "string" ? rpc.data : undefined;
+    }
+    if (!grupoId) {
+      return { ok: false, error: "El grupo se creó, pero no se pudo resolver su identificador para guardar las reglas de cruce." };
+    }
+    const reglas = await supabase.rpc("club_actualizar_cruces_grupo", {
+      p_id: String(grupoId),
+      p_mismo_ejemplar: datos.cruce_mismo_ejemplar === true,
+      p_diferente_ejemplar: datos.cruce_diferente_ejemplar === true,
+    });
+    if (reglas.error) {
+      return {
+        ok: false,
+        error: `${reglas.error.message} Aplique sql/permite_cruces_jerarquia.sql para guardar las modalidades de cruce.`,
+      };
     }
     invalidarCacheGrupos();
     void registrarAuditoria("GRUPO", "CREAR", datos.nombre ? `Grupo creado: ${datos.nombre}` : "Grupo creado");
@@ -603,6 +629,43 @@ export async function actualizarGrupo(
               `El porcentaje "${noQuedo}" no quedó guardado en la base. ` +
               "Falta aplicar sql/grupos_comisiones_convenio.sql (redefine la RPC club_actualizar_grupo con las columnas por producto) " +
               "en el SQL Editor de Supabase.",
+          };
+        }
+      }
+    }
+
+    const crucesPedidas = ["cruce_mismo_ejemplar", "cruce_diferente_ejemplar"]
+      .filter((campo) => campo in patch && patch[campo] !== undefined);
+    if (crucesPedidas.length > 0) {
+      const reglas = await supabase.rpc("club_actualizar_cruces_grupo", {
+        p_id: String(id),
+        p_mismo_ejemplar: patch.cruce_mismo_ejemplar === true,
+        p_diferente_ejemplar: patch.cruce_diferente_ejemplar === true,
+      });
+      if (reglas.error) {
+        return {
+          ok: false,
+          error: `${reglas.error.message} Aplique sql/permite_cruces_jerarquia.sql para guardar las modalidades de cruce.`,
+        };
+      }
+      const leidas = await supabase
+        .from("grupos_venta")
+        .select(crucesPedidas.join(","))
+        .eq("id", id)
+        .maybeSingle();
+      if (leidas.error && /column|PGRST204|42703/i.test(leidas.error.message)) {
+        return {
+          ok: false,
+          error: "No se guardaron los cruces por modalidad. Aplique sql/permite_cruces_jerarquia.sql en Supabase y vuelva a intentar.",
+        };
+      }
+      if (!leidas.error && leidas.data) {
+        const fila = leidas.data as unknown as Record<string, unknown>;
+        const noQuedo = crucesPedidas.find((campo) => fila[campo] !== patch[campo]);
+        if (noQuedo) {
+          return {
+            ok: false,
+            error: "La configuración de cruces no quedó guardada. Verifique que la RPC club_actualizar_grupo acepte los nuevos campos y aplique sql/permite_cruces_jerarquia.sql.",
           };
         }
       }

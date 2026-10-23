@@ -428,7 +428,7 @@ console.log("\n[12] Fila de grupo en UNA sola línea (Single-Row Layout)");
   ok(/<LogoDisplay src=\{g\.logo_url\}/.test(mod), "la fila arranca con el logo del grupo");
   ok(/🎯 \{strNum\(g\.comision_default\)/.test(mod), "badge del % de Puestos (Entre Tercios)");
   ok(/CONCEPTOS_CONVENIO\.filter\(\(c\) => c\.propio\)\.map/.test(mod), "badges de % por producto del convenio");
-  ok(/🔀 \{g\.permite_cruces !== false \? "Sí" : "No"\}/.test(mod), "estado de cruces en la fila");
+  ok(/⚡ Mismo \{g\.cruce_mismo_ejemplar \? "Sí" : "No"\} · Dif\. \{g\.cruce_diferente_ejemplar \? "Sí" : "No"\}/.test(mod), "estado de cruces por modalidad en la fila");
   ok(/setReporteGrupo\(String\(g\.id\)\)/.test(mod), "botón de reporte por grupo en la fila");
   ok(/setEditarComisiones\(true\)/.test(mod), "botón de comisiones del grupo en la fila");
 }

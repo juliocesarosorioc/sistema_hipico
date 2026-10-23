@@ -36,6 +36,7 @@ import { listarRemates, cerrarRemateLiquidando } from "@/features/remates/lib/re
 import type { Remate } from "@/features/remates/lib/core";
 import { editarJugada, anularJugada, type EditablesJugada } from "@/features/jugadas/lib/jugadas";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
+import { cargarOpcionesCrucesPuestos } from "@/features/gestion/lib/cruces-carrera";
 
 export type ResRecalcular = {
   ok: boolean;
@@ -124,6 +125,19 @@ export async function revertirLiquidacionCarrera(opts: {
   }
   if (!filas.length) return { ...vacio, motivo: "No había tickets decididos que revertir." };
 
+  const reglasCruce = await cargarOpcionesCrucesPuestos({
+    fecha,
+    hipodromo: opts.hipodromo,
+    carrera: opts.carrera,
+  });
+  if (!reglasCruce.ok) {
+    return {
+      ...vacio,
+      ok: false,
+      motivo: "No se pudieron cargar las reglas de cruces para revertir la liquidación.",
+      errores: [reglasCruce.error ?? "Error desconocido."],
+    };
+  }
   const decisiones = decidirTickets(filas, {
     hipodromo: opts.hipodromo,
     carrera: opts.carrera,
@@ -131,6 +145,7 @@ export async function revertirLiquidacionCarrera(opts: {
     dividendos: dividendosDePizarra({ dividendos: oficial?.dividendos ?? null }),
     tasaComision: opts.tasaComision ?? null,
     fecha,
+    crucesPuestos: reglasCruce.opciones,
   });
 
   const errores: string[] = [];

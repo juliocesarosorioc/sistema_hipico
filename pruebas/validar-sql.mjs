@@ -295,6 +295,73 @@ try {
   }
 
   // -------------------------------------------------------------------------
+  console.log("\n[funcional] jerarquía de cruces por modalidad");
+  // -------------------------------------------------------------------------
+  await ejecutar(`
+    create table if not exists public.grupos_venta (
+      id uuid primary key,
+      nombre text not null,
+      permite_cruces boolean
+    );
+    create table if not exists public.clientes (
+      id uuid primary key,
+      nombre text not null,
+      permite_cruces boolean
+    );
+    alter table public.resultados_carreras add column if not exists detalle jsonb not null default '{}'::jsonb;
+    create or replace function public.usuario_en_grupo(u uuid, g text)
+      returns boolean language sql stable as $$ select true $$;
+    insert into public.grupos_venta (id, nombre, permite_cruces)
+      values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Grupo prueba', true);
+    insert into public.clientes (id, nombre, permite_cruces)
+      values ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Cliente prueba', true);
+  `);
+  try {
+    await ejecutar(readFileSync(join(RAIZ, "sql/permite_cruces_jerarquia.sql"), "utf8"));
+    const flags = await ejecutar(`
+      select g.cruce_mismo_ejemplar as grupo_mismo,
+             g.cruce_diferente_ejemplar as grupo_diferente,
+             c.cruce_mismo_ejemplar as cliente_mismo,
+             c.cruce_diferente_ejemplar as cliente_diferente
+        from public.grupos_venta g cross join public.clientes c
+    `);
+    comprobar(
+      flags.rows[0]?.grupo_mismo === true &&
+        flags.rows[0]?.grupo_diferente === true &&
+        flags.rows[0]?.cliente_mismo === true &&
+        flags.rows[0]?.cliente_diferente === true,
+      "migra la configuración legacy sin cambiar las reglas existentes"
+    );
+    await ejecutar(`
+      insert into public.resultados_carreras (fecha, hipodromo, carrera, detalle)
+      values ('2026-10-23', 'HIPODROMO PRUEBA', 4,
+        '{"cruces_carrera_override":{"todos":{"mismoEjemplar":true}}}'::jsonb)
+    `);
+    const snapshot = await ejecutar(`
+      select cruces_carrera_override
+        from public.resultados_carreras
+       where fecha = '2026-10-23' and hipodromo = 'HIPODROMO PRUEBA' and carrera = 4
+    `);
+    comprobar(
+      snapshot.rows[0]?.cruces_carrera_override?.todos?.mismoEjemplar === true,
+      "conserva el override en el resultado liquidado"
+    );
+    await ejecutar(`
+      insert into public.cruces_carrera_config
+        (grupo_id, fecha, hipodromo, carrera, cruces_carrera_override)
+      values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '2026-10-23', 'HIPODROMO PRUEBA', 4,
+        '{"porJugador":{"JUAN":{"diferenteEjemplar":false}}}'::jsonb)
+    `);
+    const raceOverride = await ejecutar(`
+      select cruces_carrera_override -> 'porJugador' -> 'JUAN' ->> 'diferenteEjemplar' as valor
+        from public.cruces_carrera_config
+    `);
+    comprobar(raceOverride.rows[0]?.valor === "false", "persiste la excepción aislada de carrera por jugador");
+  } catch (e) {
+    comprobar(false, "aplica SQL de jerarquía de cruces", String(e.message).split("\n")[0]);
+  }
+
+  // -------------------------------------------------------------------------
   console.log("\n[funcional] memoria historica");
   // -------------------------------------------------------------------------
   await ejecutar(`

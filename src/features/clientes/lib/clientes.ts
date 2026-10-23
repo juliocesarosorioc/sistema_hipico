@@ -60,7 +60,10 @@ export type ClienteRow = {
   portal_habilitado?: boolean | null;
   portal_token?: string | null;
   portal_clave?: string | null;
-  /** Jerarquía de cruces: override por cliente (default TRUE = permitido). */
+  /** Override tri-estado por modalidad: null = hereda la configuración del grupo. */
+  cruce_mismo_ejemplar?: boolean | null;
+  cruce_diferente_ejemplar?: boolean | null;
+  /** Campo legado; se conserva para leer clientes anteriores a la migración. */
   permite_cruces?: boolean | null;
   /** Comisión propia del cliente; si es null/absente usa la del grupo. */
   comision?: number | string | null;
@@ -307,7 +310,15 @@ export async function crearCliente(payload: Partial<ClienteRow>): Promise<{ ok: 
     const { error } = await supabase
       .from("clientes")
       .insert([sinCamposDelPrincipal(payload as Record<string, unknown>) as Partial<ClienteRow>]);
-    if (error) return { ok: false, error: error.message };
+    if (error) {
+      const pideCruces = "cruce_mismo_ejemplar" in payload || "cruce_diferente_ejemplar" in payload;
+      return {
+        ok: false,
+        error: pideCruces && /column|PGRST204|42703/i.test(error.message)
+          ? `${error.message} Aplique sql/permite_cruces_jerarquia.sql en Supabase.`
+          : error.message,
+      };
+    }
     limpiarCacheClientes();
     return { ok: true };
   } catch (e) {
@@ -355,6 +366,14 @@ export async function actualizarCliente(
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
     exigirCapacidad("clientes:fn_guardar_cliente");
+    const crucesPedidas = ["cruce_mismo_ejemplar", "cruce_diferente_ejemplar"]
+      .filter((campo) => campo in patch);
+    if (fila && crucesPedidas.some((campo) => !(campo in fila))) {
+      return {
+        ok: false,
+        error: "No se pueden guardar reglas de cruce: aplique sql/permite_cruces_jerarquia.sql en Supabase y vuelva a cargar el cliente.",
+      };
+    }
     const seguro = soloColumnasExistentes(sinCamposDelPrincipal(patch), fila);
     if (seguro && Object.keys(seguro).length === 0) {
       return { ok: false, error: "No hay campos a guardar (revisa los permisos o el cliente editado)." };

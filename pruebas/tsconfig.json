@@ -112,6 +112,7 @@
     "./jornada-dia-jugada.test.ts",
     "./gestion-saldos-clientes.test.ts",
     "./comisiones-convenio.test.ts",
+    "./cruces-puestos.test.ts",
     "./editor-caballos-enter.test.ts",
     "./tablas-fijas-liquidacion.test.ts",
     "./desglose-reporte.test.ts",

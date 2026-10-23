@@ -25,6 +25,7 @@ export type ResultadoCentralInput = {
   orden_llegada?: unknown;
   dividendos?: unknown;
   cargado_por?: string;
+  cruces_carrera_override?: unknown;
 };
 
 function hoy(): string {
@@ -35,7 +36,9 @@ function hoy(): string {
 }
 
 function normalizarRenglon(r: Record<string, unknown>): CarreraDelDia {
-  const detalle = (Array.isArray(r.detalle) ? r.detalle : {}) as Record<string, unknown>;
+  const detalle = (r.detalle && typeof r.detalle === "object" && !Array.isArray(r.detalle)
+    ? r.detalle
+    : {}) as Record<string, unknown>;
   const ventas = Array.isArray(detalle.ventas)
     ? (detalle.ventas as CarreraDelDia["ventas"])
     : [];
@@ -55,6 +58,10 @@ function normalizarRenglon(r: Record<string, unknown>): CarreraDelDia {
     premio_recalculado: r.premio_recalculado != null ? Number(r.premio_recalculado) : undefined,
     aplicado_a_tablas: Boolean(r.aplicado_a_tablas),
     cargado_por: r.cargado_por ? String(r.cargado_por) : undefined,
+    cruces_carrera_override: (r.cruces_carrera_override ?? detalle.cruces_carrera_override) &&
+      typeof (r.cruces_carrera_override ?? detalle.cruces_carrera_override) === "object"
+      ? (r.cruces_carrera_override ?? detalle.cruces_carrera_override) as CarreraDelDia["cruces_carrera_override"]
+      : undefined,
     ventas,
     pago: pagado ? (pagado as CarreraDelDia["pago"]) : null,
     updatedAt: r.updated_at ? String(r.updated_at) : undefined,
@@ -489,6 +496,7 @@ export async function upsertResultadoCentral(
     premio_recalculado: input.premio_recalculado,
     aplicado_a_tablas: true,
     cargado_por: input.cargado_por,
+    cruces_carrera_override: input.cruces_carrera_override as CarreraDelDia["cruces_carrera_override"],
     ventas,
     pago,
   });
@@ -499,6 +507,9 @@ export async function upsertResultadoCentral(
     const detalle = {
       ventas: useCarrerasDiaStore.getState().estadoDe(input.hipodromo, input.carrera, f)?.ventas ?? ventas,
       pago: useCarrerasDiaStore.getState().estadoDe(input.hipodromo, input.carrera, f)?.pago ?? pago,
+      ...(input.cruces_carrera_override !== undefined
+        ? { cruces_carrera_override: input.cruces_carrera_override }
+        : {}),
     };
     const err = await guardarResultado(
       f,
@@ -514,6 +525,9 @@ export async function upsertResultadoCentral(
         cargado_por: input.cargado_por ?? null,
         orden_llegada: input.orden_llegada ?? null,
         dividendos: input.dividendos ?? null,
+        ...(input.cruces_carrera_override !== undefined
+          ? { cruces_carrera_override: input.cruces_carrera_override }
+          : {}),
       }
     );
     return err ? { ok: false, error: err } : { ok: true };

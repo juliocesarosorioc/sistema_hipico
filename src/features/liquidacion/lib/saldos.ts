@@ -18,6 +18,12 @@ import { filtroDiaJornada, jornadasDesalineadas } from "@/features/liquidacion/l
 import { parsearNini, netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem, esJugadaDePuestos } from "@/features/betting/lib/bettingEngine";
 import type { TicketMotor, ResultadoMotor } from "@/features/betting/lib/bettingEngine";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
+import {
+  calcularLiquidacionPuestosCarrera,
+  type EntradaCrucePuestos,
+  type OpcionesCrucesPuestos,
+} from "@/features/motores/lib/puestos";
+import { cargarOpcionesCrucesPuestos } from "@/features/gestion/lib/cruces-carrera";
 
 export type LiquidarSaldosInput = {
   hipodromo: string;
@@ -41,6 +47,7 @@ export type LiquidarSaldosInput = {
    */
   agruparPorClientePuestos?: boolean;
   permiteCruces?: boolean;
+  crucesPuestos?: OpcionesCrucesPuestos;
 };
 
 export type ResumenSaldos = {
@@ -138,14 +145,19 @@ export function decidirTickets(
   // ── CRUCE FINANCIERO: comisión neta por (cliente_juega_id, caballo, carrera) ──
   // Mismo neteo que pagarYCerrar: la comisión y las devoluciones se calculan
   // SOLO sobre la ganancia neta del cliente por ejemplar en la carrera.
-  const items: NeteoCruceItem[] = decisiones.map(({ fila, res }) => ({
+  const usaModalidadesPuestos = input.crucesPuestos !== undefined;
+  const esPuestos = (i: number) =>
+    esJugadaDePuestos(String(decisiones[i].fila.nombre_jugada ?? decisiones[i].fila.tipo_jugada ?? ""));
+  const items: NeteoCruceItem[] = decisiones
+    .filter((_, i) => !usaModalidadesPuestos || !esPuestos(i))
+    .map(({ fila, res }) => ({
     cliente: String(fila.cliente_juega_id ?? "").trim(),
     caballo: String(fila.caballo ?? "").trim(),
     monto: NUM(fila.monto_jugado),
     bruto: res.ok ? res.totalClienteNeto + res.gananciaCasa : 0,
     ok: res.ok,
     tasa: tasaComisionDeFila(fila, input.tasaComision),
-  }));
+    }));
   const gruposNeteo = netearComisionCruce(items, input.carrera, input.tasaComision, {
     agruparPorCliente: input.agruparPorClientePuestos === true || input.permiteCruces !== false,
     permiteCruces: input.permiteCruces !== false,
@@ -153,6 +165,7 @@ export function decidirTickets(
   if (gruposNeteo.size > 0) {
     const gruposIdx = new Map<string, number[]>();
     for (let i = 0; i < decisiones.length; i++) {
+      if (usaModalidadesPuestos && esPuestos(i)) continue;
       const cliente = String(decisiones[i].fila.cliente_juega_id ?? "").trim();
       const caballo = String(decisiones[i].fila.caballo ?? "").trim();
       if (!cliente || (!caballo && (input.agruparPorClientePuestos === true || input.permiteCruces !== false))) {
@@ -182,6 +195,65 @@ export function decidirTickets(
         res.totalClienteNeto = Math.round((bruto - nueva) * 100) / 100;
         res.balanceBanca = Math.round((NUM(decisiones[i].fila.monto_jugado) - bruto + nueva) * 100) / 100;
         res.gananciaCasa = nueva;
+      }
+    }
+  }
+  if (usaModalidadesPuestos && input.crucesPuestos) {
+    const porJugador = new Map<string, number[]>();
+    for (let i = 0; i < decisiones.length; i++) {
+      if (!esPuestos(i)) continue;
+      const nombre = String(decisiones[i].fila.cliente_juega_id ?? "").trim().toUpperCase();
+      if (!nombre) continue;
+      const lista = porJugador.get(nombre) ?? [];
+      lista.push(i);
+      porJugador.set(nombre, lista);
+    }
+    for (const [jugador, idxs] of porJugador) {
+      const entradas: EntradaCrucePuestos[] = idxs.map((i) => ({
+        cliente: jugador,
+        caballo: String(decisiones[i].fila.caballo ?? "").trim(),
+        ok: decisiones[i].res.ok,
+        bruto: decisiones[i].res.ok
+          ? decisiones[i].res.totalClienteNeto + decisiones[i].res.gananciaCasa
+          : 0,
+        monto: NUM(decisiones[i].fila.monto_jugado),
+      }));
+      const tasa = tasaComisionDeFila(decisiones[idxs[0]].fila, input.tasaComision);
+      const liquidacion = calcularLiquidacionPuestosCarrera(entradas, {
+        ...input.crucesPuestos,
+        pctComision: tasa,
+      })[0];
+      if (!liquidacion) continue;
+      const ganadores = idxs.filter((i) => decisiones[i].res.ok);
+      const comisionOriginal = ganadores.reduce((suma, i) => suma + decisiones[i].res.gananciaCasa, 0);
+      if (!ganadores.length || Math.abs(comisionOriginal - liquidacion.comision) < 0.005) continue;
+      let asignado = 0;
+      for (const [n, i] of ganadores.entries()) {
+        const res = decisiones[i].res;
+        const bruto = res.totalClienteNeto + res.gananciaCasa;
+        const nueva = n === ganadores.length - 1
+          ? Math.round((liquidacion.comision - asignado) * 100) / 100
+          : Math.round(
+              liquidacion.comision *
+              (comisionOriginal > 0 ? res.gananciaCasa / comisionOriginal : 1 / ganadores.length) *
+              100
+            ) / 100;
+        asignado += nueva;
+        res.totalClienteNeto = Math.round((bruto - nueva) * 100) / 100;
+        res.balanceBanca = Math.round((NUM(decisiones[i].fila.monto_jugado) - bruto + nueva) * 100) / 100;
+        res.gananciaCasa = nueva;
+        if (liquidacion.modalidadesAplicadas.length > 0) {
+          const fuente = liquidacion.modalidadesAplicadas.map(({ modalidad, origen }) => {
+            const tipo = modalidad === "mismoEjemplar" ? "Mismo Ej." : "Dif. Ej.";
+            const regla = origen === "Solo Carrera - Todos"
+              ? `Solo Carrera #${input.carrera} - Todos`
+              : origen === "Solo Carrera - Jugador"
+                ? `Solo Carrera #${input.carrera} - Jugador`
+                : origen;
+            return `⚡ Cruce ${tipo} (${regla})`;
+          }).join(" / ");
+          res.motivo = `${res.motivo ?? ""} · ${fuente} · ${liquidacion.explicacionCruce ?? "comisión neta"}`;
+        }
       }
     }
   }
@@ -326,7 +398,27 @@ export async function aplicarLiquidacionSaldos(
   // el neteo de comisión por cruce. La MISMA función la usa
   // `revertirLiquidacionCarrera` para que el cálculo de reversión y el de
   // re-liquidación empleen exactamente la misma fórmula.
-  const decisiones = decidirTickets(filas, input);
+  let contexto = input;
+  if (!contexto.crucesPuestos) {
+    const reglas = await cargarOpcionesCrucesPuestos({
+      fecha: dia,
+      hipodromo: input.hipodromo,
+      carrera: input.carrera,
+    });
+    if (!reglas.ok) {
+      return {
+        ok: false,
+        motivo: "No se pudieron cargar las reglas de cruces de la carrera.",
+        aplicados: 0,
+        yaAplicado: false,
+        reembolsos: 0,
+        abonoTotal: 0,
+        errores: [reglas.error ?? "Error desconocido al leer la configuración de cruces."],
+      };
+    }
+    contexto = { ...input, crucesPuestos: reglas.opciones };
+  }
+  const decisiones = decidirTickets(filas, contexto);
   const errores: string[] = [];
 
 

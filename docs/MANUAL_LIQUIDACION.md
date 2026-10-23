@@ -100,6 +100,24 @@ pierde o devuelve (nini), no hay comisión.
 comisión = gananciaNeta × 0.05      saldo = gananciaNeta − comisión
 ```
 
+### Cruces de Jugadas entre Tercios
+
+La base de comisión de Puestos se netea por jugador y carrera únicamente cuando
+la modalidad correspondiente está habilitada:
+
+- **Mismo Ejemplar:** compensa ganancias y pérdidas del mismo caballo.
+- **Diferentes Ejemplares:** permite compensar tickets de caballos distintos.
+
+La regla se resuelve por modalidad con esta prioridad: excepción del jugador en
+la carrera, excepción para todos en esa carrera, ficha permanente del jugador y,
+por último, configuración permanente del grupo. En la ficha del jugador,
+**Heredar del Grupo** se guarda como `NULL`; una excepción de carrera se limita a
+la fecha, hipódromo y número de carrera seleccionados. Al liquidar, la excepción
+se conserva también en el registro central de resultados.
+
+Para habilitar la persistencia, ejecutar `sql/permite_cruces_jerarquia.sql` en
+Supabase después de `sql/grupos_usuarios.sql`.
+
 ---
 
 ## 4 · Estructura del reporte

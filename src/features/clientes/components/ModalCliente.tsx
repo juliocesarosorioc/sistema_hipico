@@ -211,7 +211,8 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
   const [cedulaRif, setCedulaRif] = useState("");
   const [direccion, setDireccion] = useState("");
   const [comision, setComision] = useState("");
-  const [permiteCruces, setPermiteCruces] = useState(true);
+  const [cruceMismoEjemplar, setCruceMismoEjemplar] = useState<boolean | null>(null);
+  const [cruceDiferenteEjemplar, setCruceDiferenteEjemplar] = useState<boolean | null>(null);
   const [modo, setModo] = useState("aval");
   const [aval, setAval] = useState("");
   const [devolucion, setDevolucion] = useState("");
@@ -239,7 +240,11 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
   const modoLibre = modo === "libre";
 
   useEffect(() => {
-    if (!cliente) return;
+    if (!cliente) {
+      setCruceMismoEjemplar(null);
+      setCruceDiferenteEjemplar(null);
+      return;
+    }
     const tel = desglosarTelefono(cliente.telefono);
     setSeudonimo(cliente.seudonimo || cliente.nombre || "");
     const apellidoC = cliente.apellido || "";
@@ -272,7 +277,9 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
     setDevolucion(cliente.devolucion != null ? String(cliente.devolucion) : "");
     setModo(cliente.modo_juego || (cliente.libre ? "libre" : "aval"));
     setMostrarS(Boolean(cliente.mostrar_saldo_socio));
-    setPermiteCruces(cliente.permite_cruces !== false);
+    const cruceLegado = cliente.permite_cruces ?? null;
+    setCruceMismoEjemplar(cliente.cruce_mismo_ejemplar !== undefined ? cliente.cruce_mismo_ejemplar : cruceLegado);
+    setCruceDiferenteEjemplar(cliente.cruce_diferente_ejemplar !== undefined ? cliente.cruce_diferente_ejemplar : cruceLegado);
     setFormas(formasPagoDe(cliente));
     setDiaCuadre(cliente.dia_cuadre || "");
     setFormaCuadre(cliente.forma_cuadre || "");
@@ -402,7 +409,8 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
             ...extra,
             es_socio: esSocio,
             mostrar_saldo_socio: mostrarS,
-            permite_cruces: permiteCruces,
+            cruce_mismo_ejemplar: cruceMismoEjemplar,
+            cruce_diferente_ejemplar: cruceDiferenteEjemplar,
             comision: num(comision),
             aval: num(aval),
             devolucion: num(devolucion),
@@ -415,7 +423,8 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
           ...extra,
           es_socio: esSocio,
           mostrar_saldo_socio: mostrarS,
-          permite_cruces: permiteCruces,
+          cruce_mismo_ejemplar: cruceMismoEjemplar,
+          cruce_diferente_ejemplar: cruceDiferenteEjemplar,
           comision: num(comision),
           aval: num(aval),
           devolucion: num(devolucion),
@@ -645,12 +654,28 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
                   texto="Ver saldo en portal"
                   disabled={!esSocio}
                 />
-                <Interruptor
-                  activo={permiteCruces}
-                  onChange={setPermiteCruces}
-                  icono="↪️"
-                  texto="Permite cruces"
-                />
+                <div className="col-span-2 rounded-lg border border-amber-200 bg-amber-50/60 p-2">
+                  <p className="mb-1.5 text-[9px] font-black uppercase tracking-wide text-amber-800">
+                    Reglas de cruce del jugador (prevalece sobre el grupo)
+                  </p>
+                  {([
+                    ["Mismo Ejemplar", cruceMismoEjemplar, setCruceMismoEjemplar],
+                    ["Diferentes Ejemplares", cruceDiferenteEjemplar, setCruceDiferenteEjemplar],
+                  ] as const).map(([label, value, setValue]) => (
+                    <label key={label} className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold text-slate-700 last:mb-0">
+                      <span>Cruzar {label}</span>
+                      <select
+                        value={value === null ? "heredar" : value ? "permitir" : "denegar"}
+                        onChange={(e) => setValue(e.target.value === "heredar" ? null : e.target.value === "permitir")}
+                        className="rounded border border-amber-200 bg-white px-1.5 py-1 text-[10px] font-bold"
+                      >
+                        <option value="heredar">Heredar del grupo</option>
+                        <option value="permitir">Permitir siempre</option>
+                        <option value="denegar">No permitir</option>
+                      </select>
+                    </label>
+                  ))}
+                </div>
               </div>
             </Seccion>
 

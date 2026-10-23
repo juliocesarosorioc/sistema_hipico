@@ -35,6 +35,10 @@ export type CarreraDelDia = {
   premio_recalculado?: number;
   aplicado_a_tablas?: boolean;
   cargado_por?: string;
+  cruces_carrera_override?: {
+    todos?: Record<string, boolean>;
+    porJugador?: Record<string, Record<string, boolean>>;
+  };
   ventas: VentaTablaRegistrada[];
   pago?: PagoTablas | null;
   updatedAt?: string;

@@ -121,6 +121,13 @@ export default function ReporteLiquidacionModal({
   }, [grupoId]);
 
   const disponibleDe = useMemo(() => lookupDisponible(clientes), [clientes]);
+  const crucesSnapshot = useMemo(
+    () => carrerasDia.find((c) =>
+      String(c.hipodromo).trim().toUpperCase() === hipodromo.trim().toUpperCase() &&
+      Number(c.carrera) === Number(carrera)
+    )?.cruces_carrera_override,
+    [carrera, carrerasDia, hipodromo]
+  );
 
   // Al abrir: arrancar desde la jornada/carrera en curso.
   useEffect(() => {
@@ -518,7 +525,26 @@ export default function ReporteLiquidacionModal({
               Generando reporte…
             </div>
           ) : datos ? (
-            <ReporteCarrera datos={datos} />
+            <>
+              {crucesSnapshot && (
+                <div className="mx-auto mb-3 flex max-w-5xl flex-wrap items-center gap-1.5 rounded-lg border border-amber-300/50 bg-slate-900 px-3 py-2">
+                  <span className="mr-1 text-[9px] font-black uppercase text-amber-300">⚡ Excepciones conservadas · C{carrera}</span>
+                  {Object.entries(crucesSnapshot.todos ?? {}).filter(([, activo]) => activo).map(([modalidad]) => (
+                    <span key={`todos-${modalidad}`} className="rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-black text-slate-950">
+                      ⚡ Cruce {modalidad === "mismoEjemplar" ? "Mismo Ej." : "Dif. Ej."} (Solo Carrera #{carrera} - Todos)
+                    </span>
+                  ))}
+                  {Object.entries(crucesSnapshot.porJugador ?? {}).flatMap(([jugador, reglas]) =>
+                    Object.entries(reglas).filter(([, activo]) => activo).map(([modalidad]) => (
+                      <span key={`${jugador}-${modalidad}`} className="rounded-full bg-cyan-400/15 px-2 py-0.5 text-[9px] font-black text-cyan-200">
+                        ⚡ Cruce {modalidad === "mismoEjemplar" ? "Mismo Ej." : "Dif. Ej."} (Solo Carrera #{carrera} - Jugador · {jugador})
+                      </span>
+                    ))
+                  )}
+                </div>
+              )}
+              <ReporteCarrera datos={datos} />
+            </>
           ) : (
             <EmptyState
               icono="🧾"

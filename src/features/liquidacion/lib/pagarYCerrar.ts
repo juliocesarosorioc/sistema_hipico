@@ -16,6 +16,11 @@ import { liquidarDupleta } from "@/features/dupletas/lib/dupletas";
 import { liquidarTablaFija } from "@/features/tablas/lib/rpc";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
+import {
+  calcularLiquidacionPuestosCarrera,
+  type EntradaCrucePuestos,
+  type OpcionesCrucesPuestos,
+} from "@/features/motores/lib/puestos";
 
 /**
  * Suma de todos los tickets de la carrera. El comando puede traer el monto al
@@ -120,6 +125,8 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   premio_recalculado?: number | null;
   /** true = agrupar cruces de PUESTOS por cliente en la carrera. */
   permiteCruces?: boolean;
+  /** Jerarquía de modalidades para las jugadas entre tercios. */
+  crucesPuestos?: OpcionesCrucesPuestos;
 }): Promise<ResLiquidarCarrera> {
     try {
       // Con contexto, no solo con permiso: el ABAC exige que el operador
@@ -143,7 +150,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   const dividendos = opts.dividendos ?? (await dividendosDe(hipodromo, carrera, fecha));
 
   const procesados: ResLiquidarCarrera["procesados"] = [];
-  const metadatos: Array<{ cliente1?: string; caballo: string; monto: number; permiteCruces?: boolean }> = [];
+  const metadatos: Array<{ cliente1?: string; caballo: string; monto: number; tipo: string }> = [];
   let totalInvertido = 0;
 
   for (const t of tickets) {
@@ -183,7 +190,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     const res = liquidarOficial(ticketMotor, tasaComision);
     procesados.push({ comando: t.comando, resultado: res });
     t.permiteCruces = opts.permiteCruces !== false;
-    metadatos.push({ cliente1: t.cliente1, caballo: String(t.caballo ?? "").trim(), monto, permiteCruces: t.permiteCruces });
+    metadatos.push({ cliente1: t.cliente1, caballo: String(t.caballo ?? "").trim(), monto, tipo });
     totalInvertido += monto;
   }
 
@@ -194,12 +201,16 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   const agruparPorCliente =
     typeof opts.permiteCruces === "boolean" ? opts.permiteCruces : true;
   let neteados = 0;
-  const items: NeteoCruceItem[] = procesados.map((p, i) => ({
+  const usaModalidadesPuestos = opts.crucesPuestos !== undefined;
+  const indicesLegados = procesados
+    .map((_, i) => i)
+    .filter((i) => !usaModalidadesPuestos || !esJugadaDePuestos(metadatos[i].tipo));
+  const items: NeteoCruceItem[] = indicesLegados.map((i) => ({
     cliente: metadatos[i].cliente1 ?? "",
     caballo: metadatos[i].caballo,
     monto: metadatos[i].monto,
-    bruto: p.resultado.ok ? p.resultado.totalClienteNeto + p.resultado.gananciaCasa : 0,
-    ok: p.resultado.ok,
+    bruto: procesados[i].resultado.ok ? procesados[i].resultado.totalClienteNeto + procesados[i].resultado.gananciaCasa : 0,
+    ok: procesados[i].resultado.ok,
   }));
   const gruposNeteo = netearComisionCruce(items, carrera, tasaComision, {
     agruparPorCliente: agruparPorCliente !== false,
@@ -207,6 +218,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   });
   const gruposIdx = new Map<string, number[]>();
   for (let i = 0; i < procesados.length; i++) {
+    if (usaModalidadesPuestos && esJugadaDePuestos(metadatos[i].tipo)) continue;
     const t = tickets[i];
     if (!(t.cliente1 ?? "").trim() || (!(t.caballo ?? "").trim() && !(agruparPorCliente !== false))) continue;
     const k =
@@ -234,6 +246,62 @@ export async function liquidarCarreraYCerrarTabla(opts: {
       res.gananciaCasa = nueva;
       res.motivo = (res.motivo ?? "") + " · comisión neta por cruce (sobre $" + grupo.neto + ")";
       neteados += 1;
+    }
+  }
+
+  if (usaModalidadesPuestos && opts.crucesPuestos) {
+    const indicesPorJugador = new Map<string, number[]>();
+    for (let i = 0; i < procesados.length; i++) {
+      if (!esJugadaDePuestos(metadatos[i].tipo)) continue;
+      const nombre = String(metadatos[i].cliente1 ?? "").trim().toUpperCase();
+      if (!nombre) continue;
+      const idxs = indicesPorJugador.get(nombre) ?? [];
+      idxs.push(i);
+      indicesPorJugador.set(nombre, idxs);
+    }
+    for (const [jugador, idxs] of indicesPorJugador) {
+      const entradas: EntradaCrucePuestos[] = idxs.map((i) => ({
+        cliente: jugador,
+        caballo: metadatos[i].caballo,
+        ok: procesados[i].resultado.ok,
+        bruto: procesados[i].resultado.ok
+          ? procesados[i].resultado.totalClienteNeto + procesados[i].resultado.gananciaCasa
+          : 0,
+        monto: metadatos[i].monto,
+      }));
+      const liquidacion = calcularLiquidacionPuestosCarrera(entradas, {
+        ...opts.crucesPuestos,
+        pctComision: Number(tasaComision ?? 5),
+      })[0];
+      if (!liquidacion) continue;
+      const ganadores = idxs.filter((i) => procesados[i].resultado.ok);
+      const comisionOriginal = ganadores.reduce((suma, i) => suma + procesados[i].resultado.gananciaCasa, 0);
+      if (ganadores.length === 0 || Math.abs(comisionOriginal - liquidacion.comision) < 0.005) continue;
+      let asignado = 0;
+      for (const [n, i] of ganadores.entries()) {
+        const res = procesados[i].resultado;
+        const bruto = res.totalClienteNeto + res.gananciaCasa;
+        const nueva = n === ganadores.length - 1
+          ? round2(liquidacion.comision - asignado)
+          : round2(liquidacion.comision * (comisionOriginal > 0 ? res.gananciaCasa / comisionOriginal : 1 / ganadores.length));
+        asignado += nueva;
+        res.totalClienteNeto = round2(bruto - nueva);
+        res.balanceBanca = round2(metadatos[i].monto - bruto + nueva);
+        res.gananciaCasa = nueva;
+        if (liquidacion.modalidadesAplicadas.length > 0) {
+          const etiquetas = liquidacion.modalidadesAplicadas.map(({ modalidad, origen }) => {
+            const tipo = modalidad === "mismoEjemplar" ? "Mismo Ej." : "Dif. Ej.";
+            const fuente = origen === "Solo Carrera - Todos"
+              ? `Solo Carrera #${carrera} - Todos`
+              : origen === "Solo Carrera - Jugador"
+                ? `Solo Carrera #${carrera} - Jugador`
+                : origen;
+            return `⚡ Cruce ${tipo} (${fuente})`;
+          });
+          res.motivo = `${res.motivo ?? ""} · ${etiquetas.join(" / ")} · ${liquidacion.explicacionCruce ?? "comisión neta"}`;
+        }
+        neteados += 1;
+      }
     }
   }
 
@@ -271,6 +339,12 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     // no tiene con qué pagar. Taquilla ya los guardaba; esto lo alinea.
     orden_llegada: ordenLlegadaDePizarra(pizarra),
     dividendos: dividendos ?? null,
+    ...(opts.crucesPuestos ? {
+      cruces_carrera_override: {
+        todos: opts.crucesPuestos.carreraTodosOverride ?? {},
+        porJugador: opts.crucesPuestos.carreraPorJugadorOverride ?? {},
+      },
+    } : {}),
     // El premio de la tabla NO viaja en el pedido, pero si se omite el upsert lo
     // deja en NULL. Se propaga desde el objeto de la tabla cuando el caller lo
     // conoce (taquilla / gestión), para no borrar el premio ya registrado.
