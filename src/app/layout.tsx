@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthBootstrap } from "@/features/auth/components/AuthBootstrap";
 import { AppShell } from "@/shared/components/layout/AppShell";
+import { AvisoSinCredenciales } from "@/shared/components/layout/AvisoSinCredenciales";
 
 // Fuente principal de la plataforma: Inter (mejor legibilidad en interfaces
 // densas con números y tablas). Se sirve autoalojada por next/font; si no hay
@@ -32,6 +33,10 @@ export default function RootLayout({
   return (
     <html lang="es" className={inter.variable}>
       <body>
+        {/* Si faltan las credenciales de Supabase, la app entera entra en
+            "modo local" y parece no abrir. Este banner dice POR QUÉ, en
+            cualquier pantalla. Ver AvisoSinCredenciales. */}
+        <AvisoSinCredenciales />
         <AuthBootstrap />
         <AppShell>{children}</AppShell>
       </body>
