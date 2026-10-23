@@ -15,6 +15,7 @@ import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { leerRetirosCarrera, textoRetirados } from "@/features/carreras/lib/retiros";
 import {
   aCarreraCentral,
+  completarCatalogoConJugadas,
   leerCarrerasMaestro,
   escribirCarrerasMaestro,
   eliminarCarreraMaestro,
@@ -129,7 +130,29 @@ export async function listarCarrerasCentrales(
         "La matriz de carreras no está disponible. Aplicá sql/carreras.sql en Supabase.",
     };
   }
-  return { ok: true, datos: maestro.filas.map(aCarreraCentral) };
+  const carreras = maestro.filas.map(aCarreraCentral);
+  try {
+    const { data: jugadas, error } = await supabase
+      .from("v_jugadas_monitor")
+      .select("fecha_carrera,hipodromo,carrera")
+      .eq("fecha_carrera", f);
+    if (error) {
+      console.warn("No se pudo usar el respaldo de carreras con jugadas:", error.message);
+      return { ok: true, datos: carreras };
+    }
+    const respaldadas = completarCatalogoConJugadas(
+      carreras,
+      (jugadas ?? []) as { fecha_carrera?: unknown; hipodromo?: unknown; carrera?: unknown }[],
+      f
+    );
+    return { ok: true, datos: respaldadas };
+  } catch (e) {
+    console.warn(
+      "No se pudo usar el respaldo de carreras con jugadas:",
+      e instanceof Error ? e.message : String(e)
+    );
+    return { ok: true, datos: carreras };
+  }
 }
 
 /**
