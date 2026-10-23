@@ -145,13 +145,11 @@ pantalla muestra "0 filas" como si no hubiera datos.
     `resultados_carreras` / `programa_dia` / `tablas_fijas`. Sin este script los
     módulos de jugadas muestran el error "La matriz de carreras no está
     disponible". Idempotente y no borra datos.
-    Para reparar carreras que tienen tickets pero nunca se incorporaron al
-    catálogo y evitar que vuelva a ocurrir, ejecuta también
-    `carreras_catalogo_desde_jugadas.sql` después de este paso. Hace un backfill
-    idempotente desde los tickets existentes y crea un trigger para registrar en
-    `carreras` toda carrera al insertarse una jugada nueva. A partir de ahí el
-    semáforo sigue leyendo solo `carreras`; las jugadas no son una segunda fuente
-    de lectura.
+    Para recuperar filas históricas que sí existen en la carga original,
+    ejecuta también `carreras_catalogo_desde_jugadas.sql` después de este paso.
+    Hace un backfill idempotente exclusivamente desde `programa_dia`. No crea
+    carreras desde tickets, resultados ni reportes; si no hay carga original,
+    vuelve a cargar la carrera desde su fuente.
 14. `carrera_unica.sql` — **requiere el paso 13**. Deja una sola verdad sobre la
     carrera: crea `carrera_ejemplares` (inscripción 1:N, con trigger que refleja
     `carreras.caballos` para no duplicar), fuerza el resultado 1:1
@@ -363,11 +361,11 @@ Carreras del Día) leían "qué carreras hay" cruzando hasta cuatro fuentes
 `programa_dia` quedó como documento crudo del importador. Por eso el paso 13 no
 es opcional.
 
-`carreras_catalogo_desde_jugadas.sql` es una reparación puntual del catálogo,
-no un fallback del frontend: si una jornada histórica tiene tickets y falta su
-fila en `carreras`, la migra una vez; el trigger conserva esa misma fuente
-canónica para las ventas siguientes. No reconstruye ejemplares que no estén
-guardados en el catálogo.
+`carreras_catalogo_desde_jugadas.sql` repara filas faltantes únicamente cuando
+la carrera está registrada en `programa_dia`, la carga original. Los tickets,
+resultados y reportes nunca crean entradas del catálogo. La carga nueva escribe
+directamente en `carreras`; si esa escritura falla, se informa el error y debe
+reintentarse la carga antes de usar la carrera.
 
 ## Scripts que NO hay que volver a aplicar
 

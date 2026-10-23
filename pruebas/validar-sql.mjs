@@ -182,6 +182,14 @@ create table if not exists public.tickets_apuestas (
   fecha_registro timestamptz not null default now()
 );
 
+create table if not exists public.programa_dia (
+  fecha date primary key,
+  hipodromos text[] not null default '{}',
+  carreras jsonb not null default '[]'::jsonb,
+  resumen text,
+  creado_por text
+);
+
 create table if not exists public.usuario_sistema (
   id text primary key,
   auth_id uuid,
@@ -303,11 +311,14 @@ try {
   }
 
   // -------------------------------------------------------------------------
-  console.log("\n[funcional] carreras con jugadas en la unica matriz");
+  console.log("\n[funcional] catálogo reparado solo desde la carga de carreras");
   // -------------------------------------------------------------------------
   await ejecutar(`
-    insert into public.tickets_apuestas (hipodromo, carrera, nota_auditoria, fecha_registro)
-    values ('BELMONT PARK', 3, '{"fecha_carrera":"2026-10-22"}', '2026-10-23T12:00:00Z')
+    insert into public.programa_dia (fecha, carreras)
+    values (
+      '2026-10-22',
+      '[{"hipodromo":"BELMONT PARK","carrera":3,"caballos":[]}]'::jsonb
+    )
   `);
   try {
     const migracionCatalogo = readFileSync(
@@ -325,7 +336,7 @@ try {
     comprobar(
       historica.rows.length === 1 &&
         historica.rows[0]?.caballos?.length === 0,
-      "backfill incluye carreras historicas con jugadas y sin ejemplares"
+      "backfill incluye carreras cargadas y sin ejemplares"
     );
 
     await ejecutar(`
@@ -339,7 +350,7 @@ try {
          and hipodromo = 'KEENELAND'
          and carrera = 5
     `);
-    comprobar(futura.rows[0]?.cantidad === 1, "el trigger cataloga futuras carreras al guardar jugadas");
+    comprobar(futura.rows[0]?.cantidad === 0, "una jugada no crea carreras fuera de la carga");
 
     await ejecutar(migracionCatalogo);
     const idempotente = await ejecutar(`
@@ -349,7 +360,7 @@ try {
          and hipodromo = 'BELMONT PARK'
          and carrera = 3
     `);
-    comprobar(idempotente.rows[0]?.cantidad === 1, "el backfill se puede volver a ejecutar sin duplicar");
+    comprobar(idempotente.rows[0]?.cantidad === 1, "el backfill de la carga es idempotente");
   } catch (e) {
     fallos++;
     console.log(`  FALLA sql/carreras_catalogo_desde_jugadas.sql\n        ${String(e.message).split("\n")[0]}`);
