@@ -33,5 +33,18 @@ tmp.tsx
 *.tsbuildinfo
 .tsbuild-pruebas/
 
+<<<<<<< HEAD
 # Supabase temp
 supabase/.temp/
+=======
+# Blindaje de Seguridad y Secretos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.sql.bak
+*.dump
+_archivo_scripts_viejos/
+supabase/.temp/
+>>>>>>> ab6b89d (feat(arquitectura): blindaje seguridad, inteligencia hipica con historial, fix carga gacetas, caballo invalidado y contabilidad NIIF)

@@ -654,6 +654,7 @@ export const MODALIDADES_INGRESO = [
 
 export const TIPOS_CUENTA = ["CORRIENTE", "AHORRO", ""] as const;
 
+<<<<<<< HEAD
 // ===========================================================================
 //  📘  CONTABILIDAD NIIF — PARTIDA DOBLE, NIC 21 Y PRECISIÓN DECIMAL
 // ---------------------------------------------------------------------------
@@ -1164,3 +1165,70 @@ export function calcularComision(montoBruto: number, porcentaje: number): number
   return calcularComisionExacta(montoBruto, porcentaje);
 }
 
+=======
+// Agregar al final de: src/features/contabilidad/lib/contabilidad.ts
+import { supabase } from "@/core/supabase";
+
+export interface LineaAsientoNIIF {
+  cuenta_codigo: string;
+  tercero_id?: string | null;
+  debe: number;
+  haber: number;
+  glosa?: string;
+}
+
+export async function registrarAsientoPartidaDobleNIIF(params: {
+  fechaContable?: string;
+  grupoId?: string | null;
+  moduloOrigen: "TAQUILLA" | "TABLAS_FIJAS" | "REMATES" | "POLLAS" | "DUPLETAS" | "CAJA" | "BANCOS" | "REVERSO";
+  referenciaId?: string;
+  descripcion: string;
+  monedaOrigen?: string;
+  tasaCambio?: number;
+  lineas: LineaAsientoNIIF[];
+}) {
+  // Verificación preventiva en cliente con redondeo bancario a 2 decimales
+  const totalDebe = Math.round(params.lineas.reduce((s, l) => s + Number(l.debe || 0), 0) * 100);
+  const totalHaber = Math.round(params.lineas.reduce((s, l) => s + Number(l.haber || 0), 0) * 100);
+
+  if (totalDebe !== totalHaber) {
+    throw new Error(
+      `Descuadre de Partida Doble: Debe (${(totalDebe / 100).toFixed(2)}) ≠ Haber (${(totalHaber / 100).toFixed(2)})`
+    );
+  }
+
+  const { data, error } = await supabase.rpc("rpc_registrar_asiento_niif", {
+    p_fecha_contable: params.fechaContable ?? new Date().toISOString().slice(0, 10),
+    p_grupo_id: params.grupoId ?? null,
+    p_modulo_origen: params.moduloOrigen,
+    p_referencia_id: params.referenciaId ?? null,
+    p_descripcion: params.descripcion,
+    p_moneda_origen: params.monedaOrigen ?? "USD",
+    p_tasa_cambio: params.tasaCambio ?? 1,
+    p_lineas: params.lineas,
+  });
+
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function obtenerBalanceComprobacionNIIF(filtros: {
+  fechaDesde: string;
+  fechaHasta: string;
+  grupoId?: string | null;
+}) {
+  let query = supabase
+    .from("vw_balance_comprobacion_niif")
+    .select("*")
+    .gte("fecha_contable", filtros.fechaDesde)
+    .lte("fecha_contable", filtros.fechaHasta);
+
+  if (filtros.grupoId) {
+    query = query.eq("grupo_id", filtros.grupoId);
+  }
+
+  const { data, error } = await query.order("cuenta_codigo", { ascending: true });
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+>>>>>>> ab6b89d (feat(arquitectura): blindaje seguridad, inteligencia hipica con historial, fix carga gacetas, caballo invalidado y contabilidad NIIF)

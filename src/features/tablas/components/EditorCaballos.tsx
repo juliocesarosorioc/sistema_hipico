@@ -131,6 +131,43 @@ export function EditorCaballos({ caballos, onChange, onQuitar, onAgregar, onAlte
                 </option>
               ))}
             </select>
+        
+        
+        
+        
+        
+        {/* Botón para Marcar/Desmarcar Caballo Invalidado en Tablas Fijas */}
+        <button
+          type="button"
+          onClick={() =>
+            onChangeCaballo(caballo.numero, {
+              ...caballo,
+              invalidado: !caballo.invalidado,
+              motivo_invalidacion: !caballo.invalidado ? "Invalidado en Tabla Fija" : undefined,
+            })
+          }
+          title={
+            caballo.invalidado
+              ? "Caballo INVALIDADO en esta Tabla Fija (Clic para rehabilitar)"
+              : "Marcar caballo como INVALIDADO en esta Tabla Fija"
+          }
+          className={`rounded px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition-colors ${
+            caballo.invalidado
+              ? "bg-purple-700 text-white shadow-sm hover:bg-purple-600"
+              : "border border-slate-300 bg-slate-100 text-slate-600 hover:bg-purple-50 hover:text-purple-700"
+          }`}
+        >
+          {caballo.invalidado ? "🚫 INVALIDADO" : "✔ VÁLIDO"}
+        </button>
+
+
+
+
+
+
+
+
+            
             <input
               type="text"
               inputMode="decimal"

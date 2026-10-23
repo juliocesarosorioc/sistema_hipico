@@ -228,6 +228,7 @@ export function isoAFechaLocal(iso: string): string {
   return `${mm[3]}/${mm[2]}/${mm[1]}`;
 }
 
+<<<<<<< HEAD
 // ============================================================================
 // ZONA HORARIA DE LA JORNADA — Caracas (UTC-4)
 // ============================================================================
@@ -309,3 +310,21 @@ export function horaJornadaCaracas(fecha: Date = new Date()): string {
     return `${String(desplazado.getUTCHours()).padStart(2, "0")}:${String(desplazado.getUTCMinutes()).padStart(2, "0")}`;
   }
 }
+=======
+/**
+ * Devuelve siempre YYYY-MM-DD en hora oficial de Venezuela/EDT (America/Caracas),
+ * evitando que las carreras nocturnas (después de las 8:00 PM) salten al día siguiente por UTC.
+ */
+export function obtenerFechaJornadaVzla(fechaInput?: Date | string): string {
+  if (typeof fechaInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fechaInput.trim())) {
+    return fechaInput.trim();
+  }
+  const d = fechaInput ? new Date(fechaInput) : new Date();
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Caracas",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+>>>>>>> ab6b89d (feat(arquitectura): blindaje seguridad, inteligencia hipica con historial, fix carga gacetas, caballo invalidado y contabilidad NIIF)
