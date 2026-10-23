@@ -606,3 +606,22 @@ export async function retirarEjemplarTabla(
   const premio = r.premios.find((p) => p.tabla === String(tabla.id))?.premio;
   return { ok: true, premio, reembolsos: r.reembolsos };
 }
+
+import { supabase } from "@/core/supabase";
+
+export async function alternarCaballoInvalidadoTablaFija(params: {
+  tablaId: string;
+  numeroCaballo: number;
+  invalidado: boolean;
+  motivo?: string;
+}) {
+  const { data, error } = await supabase.rpc("rpc_toggle_caballo_invalidado_tabla_fija", {
+    p_tabla_id: params.tablaId,
+    p_numero_caballo: params.numeroCaballo,
+    p_invalidado: params.invalidado,
+    p_motivo: params.motivo ?? "Invalidado en Tabla Fija",
+  });
+
+  if (error) throw new Error(error.message);
+  return data;
+}

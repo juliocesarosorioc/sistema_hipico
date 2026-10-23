@@ -132,6 +132,14 @@ const CATEGORIAS: Categoria[] = [
       { href: "/inteligencia-hipica/proyecciones", emoji: "📈", txt: "Proyecciones" },
     ],
   },
+  {
+    id: "inteligencia",
+    titulo: "Inteligencia Hípica",
+    emoji: "🧭",
+    items: [
+      { href: "/inteligencia-hipica/proyecciones", emoji: "📈", txt: "Proyecciones" },
+    ],
+  },
 ];
 
 // El href puede traer query (?pestana=auditoria): para comparar contra el
@@ -335,7 +343,11 @@ export function Sidebar({
                   // ruta: el menú no mantiene su propia lista de permisos y no
                   // puede quedar desincronizado del maestro. Se consulta solo la
                   // parte de la ruta, sin el query (?pestana=auditoria).
-                  const cap = capacidadesDeRuta(it.href.split("?")[0])[0];
+                  const rutaLimpia = it.href.split("?")[0];
+                  const cap =
+                    rutaLimpia.startsWith("/inteligencia-hipica")
+                      ? undefined
+                      : capacidadesDeRuta(rutaLimpia)[0];
                   const enlace = (
                     <Link
                       href={it.href}

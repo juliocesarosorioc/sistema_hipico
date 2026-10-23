@@ -227,3 +227,20 @@ export function isoAFechaLocal(iso: string): string {
   if (!mm) return iso;
   return `${mm[3]}/${mm[2]}/${mm[1]}`;
 }
+
+/**
+ * Devuelve siempre YYYY-MM-DD en hora oficial de Venezuela/EDT (America/Caracas),
+ * evitando que las carreras nocturnas (después de las 8:00 PM) salten al día siguiente por UTC.
+ */
+export function obtenerFechaJornadaVzla(fechaInput?: Date | string): string {
+  if (typeof fechaInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fechaInput.trim())) {
+    return fechaInput.trim();
+  }
+  const d = fechaInput ? new Date(fechaInput) : new Date();
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Caracas",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}

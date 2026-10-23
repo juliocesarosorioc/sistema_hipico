@@ -63,7 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
             id: 'inteligencia',
             titulo: 'Inteligencia Hípica',
             items: [
-                { href: '../inteligencia-hipica/proyecciones/index.html', icon: 'fa-chart-line', txt: 'Proyecciones', color: 'text-amber-400' }
+                { href: '/inteligencia-hipica/proyecciones', icon: 'fa-chart-line', txt: 'Proyecciones', color: 'text-amber-400' }
             ]
         },
         {

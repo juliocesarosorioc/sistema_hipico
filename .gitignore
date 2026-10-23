@@ -20,3 +20,14 @@ tmp.tsx
 # Salida de compilación TypeScript
 *.tsbuildinfo
 .tsbuild-pruebas/
+
+# Blindaje de Seguridad y Secretos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.sql.bak
+*.dump
+_archivo_scripts_viejos/
+supabase/.temp/
