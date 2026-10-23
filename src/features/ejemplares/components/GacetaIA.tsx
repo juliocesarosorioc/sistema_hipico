@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CLAVE_GEMINI_KEY, transformarGaceta, transformarGacetaTexto } from "@/features/gaceta/lib/ia";
 import { guardarHistorialGaceta, registrarEjemplares, registrarGacetaEHistorial } from "@/features/gaceta/lib/padron";
 import { sincronizarCarrerasAlCentral, type ResultadoCargaCarrera } from "@/features/carreras/lib/sincronizar";
+import { registrarExpedientesDeCarreras } from "@/features/inteligencia/lib/expediente";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
@@ -283,6 +284,22 @@ export function GacetaIA() {
         setReporteCarga(sincronizacion.resultados);
         if (!sincronizacion.ok || sincronizacion.resultados.some((r) => r.estado === "ERROR")) {
           throw new Error(sincronizacion.error || "No se pudieron guardar las carreras en la matriz central.");
+        }
+        try {
+          const expedientes = await registrarExpedientesDeCarreras(lote);
+          if (expedientes.fallidos.length) {
+            console.warn("No se guardaron algunos expedientes de ejemplares:", expedientes.fallidos);
+            toast(
+              `Carreras registradas; expediente histórico guardado para ${expedientes.guardados} ejemplar(es). ${expedientes.fallidos.length} pendiente(s): aplica sql/expediente_inteligencia_ejemplares.sql y revisa permisos.`,
+              "warning"
+            );
+          }
+        } catch (e) {
+          console.warn("No se pudo guardar el expediente histórico de ejemplares:", e);
+          toast(
+            `Las carreras se registraron, pero el expediente de ejemplares no se pudo actualizar: ${e instanceof Error ? e.message : String(e)}`,
+            "warning"
+          );
         }
 
         useCarrerasDiaStore.getState().setFecha(fecha);

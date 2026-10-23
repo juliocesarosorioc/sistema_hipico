@@ -1,9 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { HorseSaddleclothSvg } from "@/shared/components/ui/HorseSaddleclothSvg";
 import { Button } from "@/shared/components/ui/Button";
 import type { ProyeccionCarrera } from "@/features/inteligencia/lib/datos";
+import {
+  guardarDatosExpediente,
+  leerExpedienteEjemplar,
+  type ExpedienteEjemplar,
+} from "@/features/inteligencia/lib/expediente";
 import {
   AJUSTES_POR_DEFECTO,
   construirPizarra,
@@ -44,9 +49,17 @@ const ESTILO_CHIP: Record<EstiloCarrera, { label: string; cls: string; detalle: 
 };
 
 const ETIQUETA_PISTA: Record<FactorPista, string> = {
-  normal: "Normal (0.0 s)",
-  ligera: "Ligera / rápida (−0.6 s)",
-  pesada: "Pesada (+1.2 s)",
+  normal: "Dirt Fast · Normal",
+  ligera: "Ligera / rápida",
+  pesada: "Pesada",
+  good: "Good",
+  cesped: "Turf · Firm",
+  turf_yielding: "Turf · Yielding / Soft",
+  fango: "Fango / barro",
+  muddy: "Muddy",
+  sloppy: "Sloppy",
+  tapeta: "Tapeta / sintética",
+  off_turf_fango: "Off-the-Turf · Fango",
 };
 
 const ETIQUETA_SESGO: Record<SesgoPista, string> = {
@@ -63,6 +76,14 @@ function inicialesPesos(proyeccion: ProyeccionCarrera): Record<number, string> {
     if (prog.pesoHoyKg != null) salida[Number(num)] = String(prog.pesoHoyKg);
   }
   return salida;
+}
+
+function inicialesPesosFisicos(proyeccion: ProyeccionCarrera): Record<number, string> {
+  return Object.fromEntries(
+    proyeccion.insumosPizarra
+      .filter((insumo) => insumo.pesoFisicoHoyKg != null)
+      .map((insumo) => [insumo.numero, String(insumo.pesoFisicoHoyKg)])
+  );
 }
 
 /** Números retirados según la lista CENTRAL de la carrera (los oficiales). */
@@ -82,6 +103,7 @@ export function PizarraProspectiva({ proyeccion, fecha, onAplicarRetiros, aplica
   const oficiales = useMemo(() => retiradosOficiales(proyeccion), [proyeccion]);
   const [retirados, setRetirados] = useState<number[]>(() => oficiales);
   const [pesos, setPesos] = useState<Record<number, string>>(() => inicialesPesos(proyeccion));
+  const [pesosFisicos, setPesosFisicos] = useState<Record<number, string>>(() => inicialesPesosFisicos(proyeccion));
   const [ajustes, setAjustes] = useState<AjustesPizarra>(AJUSTES_POR_DEFECTO);
 
   // Si el módulo recarga la carrera (otra pestaña retiró un ejemplar), la
@@ -92,6 +114,7 @@ export function PizarraProspectiva({ proyeccion, fecha, onAplicarRetiros, aplica
     setHuella(huellaActual);
     setRetirados(oficiales);
     setPesos(inicialesPesos(proyeccion));
+    setPesosFisicos(inicialesPesosFisicos(proyeccion));
   }
 
   const insumos: InsumoPizarra[] = useMemo(
@@ -99,13 +122,18 @@ export function PizarraProspectiva({ proyeccion, fecha, onAplicarRetiros, aplica
       proyeccion.insumosPizarra.map((i) => {
         const pesoTexto = pesos[i.numero];
         const peso = pesoTexto != null && pesoTexto !== "" ? Number(String(pesoTexto).replace(",", ".")) : null;
+        const pesoFisicoTexto = pesosFisicos[i.numero];
+        const pesoFisico = pesoFisicoTexto != null && pesoFisicoTexto !== ""
+          ? Number(String(pesoFisicoTexto).replace(",", "."))
+          : i.pesoFisicoHoyKg;
         return {
           ...i,
           retirado: retirados.includes(i.numero),
           pesoHoyKg: Number.isFinite(peso as number) ? (peso as number) : null,
+          pesoFisicoHoyKg: Number.isFinite(pesoFisico as number) ? (pesoFisico as number) : null,
         };
       }),
-    [proyeccion.insumosPizarra, pesos, retirados]
+    [proyeccion.insumosPizarra, pesos, pesosFisicos, retirados]
   );
 
   const pizarra = useMemo(
@@ -126,6 +154,7 @@ export function PizarraProspectiva({ proyeccion, fecha, onAplicarRetiros, aplica
   const restaurar = () => {
     setRetirados(oficiales);
     setPesos(inicialesPesos(proyeccion));
+    setPesosFisicos(inicialesPesosFisicos(proyeccion));
     setAjustes(AJUSTES_POR_DEFECTO);
   };
 
@@ -244,6 +273,8 @@ export function PizarraProspectiva({ proyeccion, fecha, onAplicarRetiros, aplica
                 lider={idx === 0}
                 pesoValor={pesos[f.numero] ?? ""}
                 onPeso={(v) => setPesos((p) => ({ ...p, [f.numero]: v }))}
+                pesoFisicoValor={pesosFisicos[f.numero] ?? ""}
+                onPesoFisico={(v) => setPesosFisicos((p) => ({ ...p, [f.numero]: v }))}
                 onRetirar={() => alternar(f.numero)}
               />
             ))}
@@ -399,16 +430,113 @@ function FilaPizarraUI({
   lider,
   pesoValor,
   onPeso,
+  pesoFisicoValor,
+  onPesoFisico,
   onRetirar,
 }: {
   fila: FilaPizarra;
   lider: boolean;
   pesoValor: string;
   onPeso: (v: string) => void;
+  pesoFisicoValor: string;
+  onPesoFisico: (v: string) => void;
   onRetirar: () => void;
 }) {
   const estilo = ESTILO_CHIP[fila.estilo];
+  const [abierto, setAbierto] = useState(false);
+  const [cargando, setCargando] = useState(false);
+  const [expediente, setExpediente] = useState<ExpedienteEjemplar | null>(null);
+  const [nota, setNota] = useState("");
+  const [notaOriginal, setNotaOriginal] = useState("");
+  const [notaLista, setNotaLista] = useState(false);
+  const [estadoExpediente, setEstadoExpediente] = useState("");
+  const [fechaTrackeo, setFechaTrackeo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [textoTrackeo, setTextoTrackeo] = useState("");
+
+  useEffect(() => {
+    if (!abierto) return;
+    let vigente = true;
+    setCargando(true);
+    setNotaLista(false);
+    void leerExpedienteEjemplar(fila.nombre, fila.nacionalidad).then((resultado) => {
+      if (!vigente) return;
+      setCargando(false);
+      if (!resultado.ok) {
+        setEstadoExpediente(resultado.error ?? "No se pudo leer el expediente.");
+        setNotaLista(false);
+        return;
+      }
+      setExpediente(resultado.data ?? null);
+      setNota(resultado.data?.notas_analista ?? "");
+      setNotaOriginal(resultado.data?.notas_analista ?? "");
+      setEstadoExpediente(resultado.data ? "Expediente cargado." : "Ficha nueva; aún no hay histórico guardado.");
+      setNotaLista(true);
+    });
+    return () => {
+      vigente = false;
+    };
+  }, [abierto, fila.nombre, fila.nacionalidad]);
+
+  useEffect(() => {
+    if (!abierto || !notaLista || nota === notaOriginal) return;
+    const timer = window.setTimeout(() => {
+      setEstadoExpediente("Guardando nota…");
+      void guardarDatosExpediente({ nombre: fila.nombre, pais: fila.nacionalidad, notas: nota }).then((resultado) => {
+        setEstadoExpediente(resultado.ok ? "Nota guardada." : resultado.error ?? "No se pudo guardar la nota.");
+        if (resultado.ok) setNotaOriginal(nota);
+      });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [abierto, nota, notaOriginal, notaLista, fila.nombre, fila.nacionalidad]);
+
+  const guardarPesoFisico = async () => {
+    const peso = Number(String(pesoFisicoValor).replace(",", "."));
+    if (!Number.isFinite(peso) || peso <= 0) {
+      setEstadoExpediente("Ingresa un peso físico válido en kg.");
+      return;
+    }
+    const resultado = await guardarDatosExpediente({ nombre: fila.nombre, pais: fila.nacionalidad, pesoFisicoKg: peso });
+    setEstadoExpediente(resultado.ok ? "Peso físico guardado." : resultado.error ?? "No se pudo guardar el peso.");
+    if (resultado.ok) setExpediente((actual) => actual ? { ...actual, peso_fisico_kg: peso } : actual);
+  };
+
+  const registrarTrackeo = async () => {
+    const comentario = textoTrackeo.trim();
+    if (!comentario) return;
+    const trackeo = { fecha: fechaTrackeo, comentario };
+    const resultado = await guardarDatosExpediente({ nombre: fila.nombre, pais: fila.nacionalidad, trackeos: [trackeo] });
+    if (!resultado.ok) {
+      setEstadoExpediente(resultado.error ?? "No se pudo vincular el trackeo.");
+      return;
+    }
+    setExpediente((actual) => ({
+      id: actual?.id ?? "",
+      ejemplar_id: actual?.ejemplar_id ?? null,
+      nombre: fila.nombre,
+      nombre_normalizado: actual?.nombre_normalizado ?? fila.nombre.toUpperCase(),
+      pais: fila.nacionalidad,
+      peso_fisico_kg: actual?.peso_fisico_kg ?? null,
+      peso_optimo_kg: actual?.peso_optimo_kg ?? null,
+      historial: actual?.historial ?? [],
+      trackeos: [...(actual?.trackeos ?? []), trackeo],
+      notas_analista: actual?.notas_analista ?? null,
+    }));
+    setTextoTrackeo("");
+    setEstadoExpediente("Trackeo vinculado.");
+  };
+
+  const historial = expediente?.historial.length ? expediente.historial : fila.retrospecto;
+  const trackeos = [
+    ...(expediente?.trackeos ?? []),
+    ...fila.trackeos.filter((actual) =>
+      !(expediente?.trackeos ?? []).some((guardado) => JSON.stringify(guardado) === JSON.stringify(actual))
+    ),
+  ];
+  const pesoOptimo = expediente?.peso_optimo_kg ?? fila.pesoOptimoGanadorKg;
+  const pesoFisico = expediente?.peso_fisico_kg ?? fila.pesoFisicoHoyKg;
+
   return (
+    <>
     <div
       className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-slate-900/95 p-2 md:flex-nowrap ${
         lider ? "border-amber-500" : "border-slate-800"
@@ -435,10 +563,12 @@ function FilaPizarraUI({
             <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] font-bold text-white">
               #{fila.numero}
             </span>
-            <strong className="truncate text-xs font-black text-white md:text-sm">{fila.nombre}</strong>
+            <button type="button" onClick={() => setAbierto((value) => !value)} className="truncate text-left text-xs font-black text-white hover:text-amber-300 md:text-sm">{fila.nombre}</button>
             <span className={`rounded border px-1 py-0.5 font-mono text-[9px] font-bold ${estilo.cls}`} title={estilo.detalle}>
               {estilo.label}
             </span>
+            {fila.morningLine && <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[9px] text-cyan-200">M/L {fila.morningLine}</span>}
+            {fila.overlay && <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-bold text-emerald-300">VALUE</span>}
             {fila.notaPeso && (
               <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-300">
                 {fila.notaPeso}
@@ -447,15 +577,17 @@ function FilaPizarraUI({
           </div>
           <p className="mt-0.5 truncate text-[10px] text-slate-400">
             {fila.jockey ? `${fila.jockey} · ` : ""}
+            {fila.pesoLbs ? `${fila.pesoLbs} lbs${fila.descargoLbs ? ` (-${fila.descargoLbs})` : ""} · ` : ""}
+            {fila.descargoKg ? `Descargo -${fila.descargoKg} kg · ` : ""}
             {fila.entrenador ? `Ent. ${fila.entrenador} · ` : ""}
-            SR {fila.speedRating || "—"} · Consist. {fila.consistencia} · Remate 200 m {fila.remate200Seg.toFixed(2)} s
+            {fila.beyer ? `Beyer ${fila.beyer}` : `SR ${fila.speedRating || "—"}`} · Consist. {fila.consistencia} · Remate 200 m {fila.remate200Seg.toFixed(2)} s
           </p>
         </div>
       </div>
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <label className="block">
-          <span className="block text-[8px] font-bold uppercase tracking-wide text-amber-300">Peso hoy (kg)</span>
+          <span className="block text-[8px] font-bold uppercase tracking-wide text-amber-300">Peso jinete (kg)</span>
           <input
             type="number"
             step="0.5"
@@ -477,6 +609,113 @@ function FilaPizarraUI({
         </Button>
       </div>
     </div>
+    {abierto && (
+      <section className="rounded-xl border border-cyan-700/60 bg-slate-950 p-3 text-slate-100">
+        <header className="mb-2 flex items-center justify-between gap-2">
+          <div>
+            <h4 className="text-xs font-black uppercase tracking-wide text-cyan-300">Expediente · {fila.nombre} ({fila.nacionalidad})</h4>
+            <p className="text-[10px] text-slate-400">Vinculado por nombre normalizado + país</p>
+          </div>
+          <button type="button" onClick={() => setAbierto(false)} className="rounded border border-slate-700 px-2 py-1 text-[10px] text-slate-300">Cerrar</button>
+        </header>
+        {cargando ? <p className="text-xs text-slate-400">Cargando expediente…</p> : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="space-y-2">
+              <div className="rounded-lg border border-slate-800 p-2">
+                <p className="mb-1 text-[9px] font-bold uppercase text-slate-400">Evolución de ratings · Beyer / Speed / km/h</p>
+                <GraficoEvolucion historial={historial} campo="rating" />
+                {!historial.length && <p className="text-[10px] text-slate-500">Sin actuaciones previas vinculadas.</p>}
+                <p className="mb-1 mt-2 text-[9px] font-bold uppercase text-slate-400">Evolución del peso físico</p>
+                <GraficoEvolucion historial={historial} campo="peso" />
+              </div>
+              <div className="rounded-lg border border-slate-800 p-2">
+                <p className="mb-1 text-[9px] font-bold uppercase text-slate-400">Peso físico · liveW vs optW</p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="text-[9px] text-slate-400">Hoy (kg)
+                    <input type="number" step="0.1" value={pesoFisicoValor} onChange={(e) => onPesoFisico(e.target.value)} onBlur={() => void guardarPesoFisico()} className="mt-1 block w-24 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-white" />
+                  </label>
+                  <span className="text-[10px] text-amber-300">Óptimo: {pesoOptimo ? `${pesoOptimo} kg` : "sin registro"}</span>
+                  {pesoFisico && pesoOptimo && <span className="text-[10px] text-slate-300">Δ {Math.abs(pesoFisico - pesoOptimo).toFixed(1)} kg</span>}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-800 p-2">
+                <p className="mb-1 text-[9px] font-bold uppercase text-slate-400">Historial de carreras / superficies</p>
+                <div className="max-h-36 overflow-auto">
+                  {historial.length ? historial.slice(0, 8).map((actuacion, index) => (
+                    <p key={`${String(actuacion.fecha ?? index)}-${index}`} className="border-b border-slate-800 py-1 text-[10px] text-slate-300">
+                      {String(actuacion.fecha ?? "Fecha s/d")} · {String(actuacion.hipodromo ?? "")} · {String(actuacion.superficie ?? actuacion.condicion ?? "Superficie s/d")} · {String(actuacion.distancia ?? "—")} m · SR/Beyer {String(actuacion.beyer ?? actuacion.speed_rating ?? actuacion.km_h ?? "—")}
+                    </p>
+                  )) : <p className="text-[10px] text-slate-500">La extracción aún no aporta retrospecto.</p>}
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="rounded-lg border border-slate-800 p-2">
+                <p className="mb-1 text-[9px] font-bold uppercase text-slate-400">Trackeos ({trackeos.length})</p>
+                <div className="max-h-28 overflow-auto">
+                  {trackeos.map((trabajo, index) => (
+                    <p key={`${String(trabajo.fecha ?? index)}-${index}`} className="border-b border-slate-800 py-1 text-[10px] text-slate-300">
+                      {String(trabajo.fecha ?? "Fecha s/d")} · {String(trabajo.distancia_ejercicio ?? trabajo.distancia ?? "")} · {String(trabajo.fraccionales_texto ?? trabajo.tiempo ?? "")} · {String(trabajo.comentario ?? trabajo.ranking ?? "")}
+                    </p>
+                  ))}
+                  {!trackeos.length && <p className="text-[10px] text-slate-500">Sin trackeos registrados.</p>}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <input aria-label="Fecha del trackeo" type="date" value={fechaTrackeo} onChange={(e) => setFechaTrackeo(e.target.value)} className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] text-white" />
+                  <input aria-label="Comentario del trackeo" value={textoTrackeo} onChange={(e) => setTextoTrackeo(e.target.value)} placeholder="Fraccionales, remate, comentario…" className="min-w-40 flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] text-white" />
+                  <Button size="sm" variant="outline" onClick={() => void registrarTrackeo()} disabled={!textoTrackeo.trim()}>Vincular</Button>
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-800 p-2">
+                <label className="mb-1 block text-[9px] font-bold uppercase text-slate-400">Notas técnicas · guardado automático</label>
+                <textarea value={nota} onChange={(e) => setNota(e.target.value)} rows={4} className="w-full resize-y rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-white" placeholder="Forma, distancia, temperamento, cambios de equipo…" />
+                <p className="mt-1 text-[9px] text-slate-500">{estadoExpediente}</p>
+              </div>
+              <div className="rounded-lg border border-amber-900/60 bg-amber-950/20 p-2">
+                <p className="text-[9px] font-bold uppercase text-amber-300">Termómetro de apuestas</p>
+                <p className="mt-1 text-[10px] text-slate-400">El sistema no muestra importes hasta contar con una consulta agregada autorizada por grupo; no se exponen cifras parciales ni estimadas.</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+    )}
+    </>
+  );
+}
+
+function GraficoEvolucion({
+  historial,
+  campo,
+}: {
+  historial: Array<Record<string, unknown>>;
+  campo: "rating" | "peso";
+}) {
+  const puntos = historial
+    .map((actuacion) =>
+      Number(
+        campo === "peso"
+          ? actuacion.peso_fisico ?? actuacion.liveW
+          : actuacion.beyer ?? actuacion.speed_rating ?? actuacion.km_h
+      )
+    )
+    .filter((valor) => Number.isFinite(valor) && valor > 0)
+    .slice(0, 10)
+    .reverse();
+  if (puntos.length < 2) return <p className="text-[10px] text-slate-500">Se requieren al menos dos datos históricos para mostrar tendencia.</p>;
+  const min = Math.min(...puntos);
+  const rango = Math.max(1, Math.max(...puntos) - min);
+  const coords = puntos.map((punto, index) => `${(index / (puntos.length - 1)) * 280},${54 - ((punto - min) / rango) * 44}`).join(" ");
+  return (
+    <svg viewBox="0 0 280 64" role="img" aria-label={`Evolución ${campo} de ${puntos.length} actuaciones`} className="h-16 w-full overflow-visible">
+      <polyline points={coords} fill="none" stroke="#22d3ee" strokeWidth="2" />
+      {coords.split(" ").map((coord, index) => {
+        const [cx, cy] = coord.split(",");
+        return <circle key={index} cx={cx} cy={cy} r="2.5" fill="#f59e0b" />;
+      })}
+      <text x="0" y="63" fill="#94a3b8" fontSize="8">{min}</text>
+      <text x="250" y="63" fill="#94a3b8" fontSize="8">{Math.max(...puntos)}</text>
+    </svg>
   );
 }
 

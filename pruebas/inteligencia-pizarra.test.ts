@@ -20,6 +20,7 @@
 import {
   ajusteDePeso,
   ajusteDePista,
+  ajustePorTrackeos,
   construirPizarra,
   estadoTrenMactor,
   inferirEstilo,
@@ -114,8 +115,8 @@ igual(
 );
 igual(
   estadoTrenMactor([e1(1), e1(2), e2(3)], 22.4).codigo,
-  "equilibrado",
-  "2 E1 → pelea sin anulación"
+  "violento",
+  "2 E1 activos → duelo en punta"
 );
 igual(
   estadoTrenMactor([e2(1), e2(2), e2(3)], 21.5).codigo,
@@ -279,6 +280,54 @@ igual(todosRetirados.totalActivos, 0, "0 activos");
 igual(todosRetirados.activos.length, 0, "lista vacía (la UI muestra el aviso)");
 igual(todosRetirados.tickets.ganador, null, "sin ganador sugerido");
 igual(rectaFinal(todosRetirados.activos).length, 0, "sin carriles para dibujar");
+
+// ---------------------------------------------------------------------------
+console.log("\n[9] duelo de velocistas, retiro táctico y condición Wet");
+// ---------------------------------------------------------------------------
+
+const paces: InsumoPizarra[] = [
+  insumo(1, { paceEarly: 95, consistencia: 50, speedRating: 75 }),
+  insumo(7, { paceEarly: 93, consistencia: 50, speedRating: 75 }),
+  insumo(8, { paceLate: 94, consistencia: 50, speedRating: 75 }),
+  insumo(3, { paceEarly: 98, consistencia: 50, speedRating: 75, retirado: true }),
+];
+const duelo = construirPizarra(paces, AJUSTES_POR_DEFECTO, 1400);
+igual(duelo.tren.codigo, "violento", "dos E1 con early pace alto activan duelo en punta");
+igual(duelo.activos[0].numero, 8, "el E3 lidera cuando el duelo favorece el remate");
+si(duelo.informe.some((linea) => linea.includes("Planteamiento con todos")), "el dictamen compara inscritos y retiros");
+
+const conRetiro = construirPizarra(
+  paces.map((ejemplar) => ({
+    ...ejemplar,
+    retirado: ejemplar.numero === 1 || ejemplar.retirado === true,
+  })),
+  AJUSTES_POR_DEFECTO,
+  1400
+);
+igual(conRetiro.tren.codigo, "solitario", "al retirar un E1, el otro queda como puntero solitario");
+igual(conRetiro.tren.puntero, 7, "el puntero solitario queda identificado");
+igual(conRetiro.activos[0].numero, 7, "el E1 sobreviviente sube al primer lugar");
+
+const muddy = { ...AJUSTES_POR_DEFECTO, factorPista: "muddy" as const };
+si(
+  ajusteDePista("E2", 4, muddy, { aptitudSuperficie: { Wet: 430 } }) >
+    ajusteDePista("E2", 4, muddy, { aptitudSuperficie: { Turf: 390 } }),
+  "Muddy favorece un rating Wet y penaliza el perfil solo Turf"
+);
+cerca(
+  ajusteDePista("E2", 4, { ...AJUSTES_POR_DEFECTO, factorPista: "off_turf_fango" }, {
+    aptitudSuperficie: { Wet: 430 },
+  }),
+  1.8,
+  "Off-the-Turf a fango incorpora la ventaja Wet"
+);
+igual(ajustePorTrackeos([{ remate_200m: "12.0", comentario: "FENOMENO" }]), 2, "trackeo nacional destacado bonifica");
+
+const value = construirPizarra(
+  [insumo(1, { morningLine: "20-1", paceEarly: 95 })],
+  AJUSTES_POR_DEFECTO
+);
+si(value.activos[0].overlay, "overlay compara la SMIC final con la probabilidad implícita del M/L");
 
 console.log(`\n${pasan} pasaron, ${fallan} fallaron`);
 process.exit(fallan > 0 ? 1 : 0);

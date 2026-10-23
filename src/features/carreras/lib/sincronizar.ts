@@ -45,7 +45,28 @@ export type EjemplarEntrante = {
   ejemplar_id?: string | number | null;
   jockey?: string;
   entrenador?: string;
+  stud?: string;
+  haras?: string;
+  pedigree?: { padre?: string; madre?: string; abueloMaterno?: string };
+  edad?: number | string;
+  sexo?: string;
   peso?: string | number;
+  peso_programado?: string | number;
+  peso_bruto?: string | number;
+  descargo_aprendiz?: string | number;
+  peso_neto?: string | number;
+  peso_lbs?: string | number;
+  descargo_lbs?: string | number;
+  peso_fisico?: string | number;
+  peso_optimo?: string | number;
+  morning_line?: string;
+  claiming_price?: string | number;
+  beyer?: string | number;
+  speed_rating?: string | number;
+  pace_figures?: { early?: number; late?: number; e1?: number; e2?: number; e3?: number };
+  aptitud_superficie?: Record<string, number | string | null>;
+  retrospecto?: Array<Record<string, unknown>>;
+  trackeos?: Array<Record<string, unknown>>;
   medicamento?: string;
   implementos?: string;
 };
@@ -57,8 +78,16 @@ export type CarreraEntrante = {
   carrera?: number | string | null;
   fecha?: string | null;
   distancia?: number | string | null;
+  distancia_texto?: string;
   superficie?: string | null;
+  condicion_pista?: string;
+  condicion_carrera?: string;
+  codigo_carrera?: string;
+  hora?: string;
   premio?: number | string | null;
+  morning_line?: string;
+  beyer_par?: number | string;
+  record_pista?: string;
   caballos?: EjemplarEntrante[] | null;
   ejemplares?: EjemplarEntrante[] | null;
 };
@@ -127,7 +156,28 @@ export function aCarrerasPrograma(carreras: CarreraEntrante[]): CarreraPrograma[
         ejemplar_id: e.ejemplar_id ?? null,
         jockey: e.jockey,
         entrenador: e.entrenador,
+        stud: e.stud,
+        haras: e.haras,
+        pedigree: e.pedigree,
+        edad: e.edad,
+        sexo: e.sexo,
         peso: e.peso,
+        peso_programado: e.peso_programado,
+        peso_bruto: e.peso_bruto,
+        descargo_aprendiz: e.descargo_aprendiz,
+        peso_neto: e.peso_neto,
+        peso_lbs: e.peso_lbs,
+        descargo_lbs: e.descargo_lbs,
+        peso_fisico: e.peso_fisico,
+        peso_optimo: e.peso_optimo,
+        morning_line: e.morning_line,
+        claiming_price: e.claiming_price,
+        beyer: e.beyer,
+        speed_rating: e.speed_rating,
+        pace_figures: e.pace_figures,
+        aptitud_superficie: e.aptitud_superficie,
+        retrospecto: e.retrospecto,
+        trackeos: e.trackeos,
         medicamento: e.medicamento,
         implementos: e.implementos,
       }))
@@ -137,8 +187,16 @@ export function aCarrerasPrograma(carreras: CarreraEntrante[]): CarreraPrograma[
       fecha: c.fecha ? String(c.fecha).slice(0, 10) : null,
       carrera: num,
       distancia: Number(c.distancia) || 0,
+      distancia_texto: c.distancia_texto,
       superficie: String(c.superficie || "ARENA").toUpperCase() || "ARENA",
+      condicion_pista: c.condicion_pista,
+      condicion_carrera: c.condicion_carrera,
+      codigo_carrera: c.codigo_carrera,
+      hora: c.hora,
       premio: Number(c.premio) || 0,
+      morning_line: c.morning_line,
+      beyer_par: c.beyer_par,
+      record_pista: c.record_pista,
       caballos,
     });
   }
@@ -327,7 +385,28 @@ export async function sincronizarCarrerasAlCentral(
           ejemplar_id: e.ejemplar_id,
           jockey: e.jockey,
           entrenador: e.entrenador,
+          stud: e.stud,
+          haras: e.haras,
+          pedigree: e.pedigree,
+          edad: e.edad,
+          sexo: e.sexo,
           peso: e.peso,
+          peso_programado: e.peso_programado,
+          peso_bruto: e.peso_bruto,
+          descargo_aprendiz: e.descargo_aprendiz,
+          peso_neto: e.peso_neto,
+          peso_lbs: e.peso_lbs,
+          descargo_lbs: e.descargo_lbs,
+          peso_fisico: e.peso_fisico,
+          peso_optimo: e.peso_optimo,
+          morning_line: e.morning_line,
+          claiming_price: e.claiming_price,
+          beyer: e.beyer,
+          speed_rating: e.speed_rating,
+          pace_figures: e.pace_figures,
+          aptitud_superficie: e.aptitud_superficie,
+          retrospecto: e.retrospecto,
+          trackeos: e.trackeos,
           medicamento: e.medicamento,
           implementos: e.implementos,
         })),

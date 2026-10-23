@@ -24,6 +24,9 @@ export type EjemplarGodet = {
   speedRatingTTC?: number;
   efectividadYunta?: number;
   tipoCarrera?: "velocista" | "perseguidor" | "rematador";
+  paceEarly?: number;
+  paceLate?: number;
+  retirado?: boolean;
 };
 
 export type Parcial400m = {
@@ -120,6 +123,22 @@ export function valorEsperadoKelly(probModelo: number, dividendo: number) {
   const kelly = b > 0 ? (prob * b - (1 - prob)) / b : 0;
   const kellyFrac = Math.max(0, kelly / 2);
   return { ev: Number(ev.toFixed(4)), kelly: Number(kelly.toFixed(4)), kellyFraccional: Number(kellyFrac.toFixed(4)), overlay: ev > 0 };
+}
+
+/** Convierte momios fraccionales M/L (3-1) a probabilidad implícita sin vig. */
+export function probabilidadImplicitaMorningLine(morningLine: string | number | null | undefined): number | null {
+  const texto = String(morningLine ?? "").trim();
+  if (!texto) return null;
+  const fraccional = /^(\d+(?:\.\d+)?)\s*[-/]\s*(\d+(?:\.\d+)?)$/.exec(texto);
+  if (fraccional) {
+    const numerador = Number(fraccional[1]);
+    const denominador = Number(fraccional[2]);
+    if (denominador <= 0) return null;
+    return Number((denominador / (numerador + denominador)).toFixed(4));
+  }
+  const decimal = Number(texto);
+  if (!Number.isFinite(decimal) || decimal <= 1) return null;
+  return Number((1 / decimal).toFixed(4));
 }
 
 export function parciales400m(e: EjemplarGodet): Parcial400m[] {

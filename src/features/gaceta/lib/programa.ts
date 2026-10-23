@@ -18,7 +18,28 @@ export type CaballoPrograma = {
   nuevo?: boolean;
   jockey?: string;
   entrenador?: string;
+  stud?: string;
+  haras?: string;
+  pedigree?: { padre?: string; madre?: string; abueloMaterno?: string };
+  edad?: number | string;
+  sexo?: string;
   peso?: number | string;
+  peso_programado?: number | string;
+  peso_bruto?: number | string;
+  descargo_aprendiz?: number | string;
+  peso_neto?: number | string;
+  peso_lbs?: number | string;
+  descargo_lbs?: number | string;
+  peso_fisico?: number | string;
+  peso_optimo?: number | string;
+  morning_line?: string;
+  claiming_price?: number | string;
+  beyer?: number | string;
+  speed_rating?: number | string;
+  pace_figures?: { early?: number; late?: number; e1?: number; e2?: number; e3?: number };
+  aptitud_superficie?: Record<string, number | string | null>;
+  retrospecto?: Array<Record<string, unknown>>;
+  trackeos?: Array<Record<string, unknown>>;
   medicamento?: string;
   implementos?: string;
 };
@@ -29,8 +50,16 @@ export type CarreraPrograma = {
   carrera: number | null;
   estado?: string;
   distancia?: number;
+  distancia_texto?: string;
   superficie?: string;
+  condicion_pista?: string;
+  condicion_carrera?: string;
+  codigo_carrera?: string;
+  hora?: string;
   premio?: number;
+  morning_line?: string;
+  beyer_par?: number | string;
+  record_pista?: string;
   caballos: CaballoPrograma[];
 };
 
@@ -72,7 +101,28 @@ function norm(c: unknown): CarreraPrograma {
           ejemplar_id: (cb.ejemplar_id as string | number | null | undefined) ?? null,
           jockey: cb.jockey ? String(cb.jockey) : undefined,
           entrenador: cb.entrenador ? String(cb.entrenador) : undefined,
+          stud: cb.stud ? String(cb.stud) : undefined,
+          haras: cb.haras ? String(cb.haras) : undefined,
+          pedigree: cb.pedigree && typeof cb.pedigree === "object" ? cb.pedigree as CaballoPrograma["pedigree"] : undefined,
+          edad: cb.edad as string | number | undefined,
+          sexo: cb.sexo ? String(cb.sexo) : undefined,
           peso: cb.peso !== undefined ? (cb.peso as string | number) : undefined,
+          peso_programado: cb.peso_programado as string | number | undefined,
+          peso_bruto: cb.peso_bruto as string | number | undefined,
+          descargo_aprendiz: cb.descargo_aprendiz as string | number | undefined,
+          peso_neto: cb.peso_neto as string | number | undefined,
+          peso_lbs: cb.peso_lbs as string | number | undefined,
+          descargo_lbs: cb.descargo_lbs as string | number | undefined,
+          peso_fisico: cb.peso_fisico as string | number | undefined,
+          peso_optimo: cb.peso_optimo as string | number | undefined,
+          morning_line: cb.morning_line ? String(cb.morning_line) : undefined,
+          claiming_price: cb.claiming_price as string | number | undefined,
+          beyer: cb.beyer as string | number | undefined,
+          speed_rating: cb.speed_rating as string | number | undefined,
+          pace_figures: cb.pace_figures && typeof cb.pace_figures === "object" ? cb.pace_figures as CaballoPrograma["pace_figures"] : undefined,
+          aptitud_superficie: cb.aptitud_superficie as CaballoPrograma["aptitud_superficie"],
+          retrospecto: Array.isArray(cb.retrospecto) ? cb.retrospecto as CaballoPrograma["retrospecto"] : undefined,
+          trackeos: Array.isArray(cb.trackeos) ? cb.trackeos as CaballoPrograma["trackeos"] : undefined,
           medicamento: cb.medicamento ? String(cb.medicamento) : undefined,
           implementos: cb.implementos ? String(cb.implementos) : undefined,
         }))
@@ -84,8 +134,16 @@ function norm(c: unknown): CarreraPrograma {
     carrera: x.carrera != null ? Number(x.carrera) || null : null,
     estado: x.estado ? String(x.estado) : undefined,
     distancia: Number(x.distancia) || 0,
+    distancia_texto: x.distancia_texto ? String(x.distancia_texto) : undefined,
     superficie: String(x.superficie ?? "ARENA").toUpperCase() || "ARENA",
+    condicion_pista: x.condicion_pista ? String(x.condicion_pista) : undefined,
+    condicion_carrera: x.condicion_carrera ? String(x.condicion_carrera) : undefined,
+    codigo_carrera: x.codigo_carrera ? String(x.codigo_carrera) : undefined,
+    hora: x.hora ? String(x.hora) : undefined,
     premio: Number(x.premio) || 0,
+    morning_line: x.morning_line ? String(x.morning_line) : undefined,
+    beyer_par: x.beyer_par as number | string | undefined,
+    record_pista: x.record_pista ? String(x.record_pista) : undefined,
     caballos,
   };
 }
@@ -176,6 +234,14 @@ async function registrarCarrerasEnMatriz(
         distancia: c.distancia ? String(c.distancia) : null,
         superficie: c.superficie ?? null,
         premio: c.premio ?? null,
+        distancia_texto: c.distancia_texto ?? null,
+        condicion_pista: c.condicion_pista ?? null,
+        condicion_carrera: c.condicion_carrera ?? null,
+        codigo_carrera: c.codigo_carrera ?? null,
+        hora: c.hora ?? null,
+        morning_line: c.morning_line ?? null,
+        beyer_par: c.beyer_par ?? null,
+        record_pista: c.record_pista ?? null,
         origen: "ia",
         // El programa llega por LOTES: la lista de ejemplares se ACUMULA con la
         // que ya está guardada (por número de gualdrapa). Sin esto, un lote

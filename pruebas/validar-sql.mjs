@@ -34,7 +34,10 @@ import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), "..");
-const PUERTO = 55439;
+const PUERTO = Number(process.env.PG_PORT || 55439);
+if (!Number.isInteger(PUERTO) || PUERTO < 1 || PUERTO > 65535) {
+  throw new Error("PG_PORT debe ser un puerto TCP válido.");
+}
 const DB_DIR = process.env.PG_TMP_DIR || join(process.env.TEMP || process.env.TMPDIR || ".", "hipico-pgdata");
 
 let pgMod;
@@ -277,6 +280,7 @@ $$;
 // ---------------------------------------------------------------------------
 const SCRIPTS = [
   "sql/memoria_historica.sql",
+  "sql/expediente_inteligencia_ejemplares.sql",
   "sql/gaceta_lote_carreras.sql",
   "sql/tablas_caballo_invalidado.sql",
   "sql/contabilidad_niif.sql",
@@ -308,6 +312,60 @@ try {
       fallos++;
       console.log(`  FALLA ${s}\n        ${String(e.message).split("\n")[0]}`);
     }
+  }
+
+  // -------------------------------------------------------------------------
+  console.log("\n[funcional] expediente historico de ejemplares");
+  // -------------------------------------------------------------------------
+  await ejecutar(`
+    insert into public.usuario_sistema (id, auth_id, nombre, es_principal)
+    values ('usuario-prueba', '11111111-1111-1111-1111-111111111111', 'Prueba', true)
+    on conflict (id) do update set es_principal = true
+  `);
+  try {
+    await ejecutar(`
+      select public.rpc_guardar_expediente_inteligencia_ejemplar(
+        'Caballo Ñandú', 'VEN', null, 470, 465,
+        '[{"fecha":"2026-10-22","puesto":2}]'::jsonb,
+        '[{"fecha":"2026-10-23","ranking":"1/21"}]'::jsonb,
+        'Nota inicial'
+      )
+    `);
+    const primero = await ejecutar(`
+      select nombre_normalizado, pais, peso_fisico_kg, historial, trackeos
+        from public.expediente_inteligencia_ejemplares
+    `);
+    comprobar(
+      primero.rows[0]?.nombre_normalizado === "CABALLO NANDU" &&
+        primero.rows[0]?.pais === "VE" &&
+        Number(primero.rows[0]?.peso_fisico_kg) === 470 &&
+        primero.rows[0]?.historial?.length === 1 &&
+        primero.rows[0]?.trackeos?.length === 1,
+      "normaliza la clave y persiste pesos, historial y trackeos"
+    );
+
+    await ejecutar(`
+      select public.rpc_guardar_expediente_inteligencia_ejemplar(
+        'CABALLO NANDU', 'VE', null, null, null,
+        '[{"fecha":"2026-10-29","puesto":1}]'::jsonb,
+        '[]'::jsonb, null
+      )
+    `);
+    const actualizado = await ejecutar(`
+      select count(*)::int as ejemplares, jsonb_array_length(historial) as actuaciones,
+             notas_analista
+        from public.expediente_inteligencia_ejemplares
+       group by historial, notas_analista
+    `);
+    comprobar(
+      actualizado.rows.length === 1 &&
+        actualizado.rows[0]?.ejemplares === 1 &&
+        actualizado.rows[0]?.actuaciones === 2 &&
+        actualizado.rows[0]?.notas_analista === "Nota inicial",
+      "actualiza sin duplicar y conserva historial y notas existentes"
+    );
+  } catch (e) {
+    comprobar(false, "registra el expediente mediante RPC", String(e.message).split("\n")[0]);
   }
 
   // -------------------------------------------------------------------------

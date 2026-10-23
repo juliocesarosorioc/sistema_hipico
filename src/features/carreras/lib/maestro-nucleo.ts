@@ -57,8 +57,29 @@ export type EjemplarMatriz = {
   jockey?: string | null;
   entrenador?: string | null;
   peso?: number | string | null;
+  peso_programado?: number | string | null;
+  peso_bruto?: number | string | null;
+  descargo_aprendiz?: number | string | null;
+  peso_neto?: number | string | null;
+  peso_lbs?: number | string | null;
+  descargo_lbs?: number | string | null;
+  peso_fisico?: number | string | null;
+  peso_optimo?: number | string | null;
+  morning_line?: string | null;
+  claiming_price?: number | string | null;
+  beyer?: number | string | null;
+  speed_rating?: number | string | null;
+  pace_figures?: Record<string, unknown> | null;
+  aptitud_superficie?: Record<string, unknown> | null;
+  retrospecto?: Array<Record<string, unknown>> | null;
+  trackeos?: Array<Record<string, unknown>> | null;
   medicamento?: string | null;
   implementos?: string | null;
+  stud?: string | null;
+  haras?: string | null;
+  pedigree?: Record<string, unknown> | null;
+  edad?: number | string | null;
+  sexo?: string | null;
 };
 
 export type EjemplarCarreraCentral = {
@@ -70,8 +91,29 @@ export type EjemplarCarreraCentral = {
   jockey?: string | null;
   entrenador?: string | null;
   peso?: number | string | null;
+  peso_programado?: number | string | null;
+  peso_bruto?: number | string | null;
+  descargo_aprendiz?: number | string | null;
+  peso_neto?: number | string | null;
+  peso_lbs?: number | string | null;
+  descargo_lbs?: number | string | null;
+  peso_fisico?: number | string | null;
+  peso_optimo?: number | string | null;
+  morning_line?: string | null;
+  claiming_price?: number | string | null;
+  beyer?: number | string | null;
+  speed_rating?: number | string | null;
+  pace_figures?: Record<string, unknown> | null;
+  aptitud_superficie?: Record<string, unknown> | null;
+  retrospecto?: Array<Record<string, unknown>> | null;
+  trackeos?: Array<Record<string, unknown>> | null;
   medicamento?: string | null;
   implementos?: string | null;
+  stud?: string | null;
+  haras?: string | null;
+  pedigree?: Record<string, unknown> | null;
+  edad?: number | string | null;
+  sexo?: string | null;
 };
 
 /** Resultado embebido de la fila maestra (0 o 1 mientras la carrera no corrió). */
@@ -96,9 +138,16 @@ export type FilaCarreraMaestro = {
   caballos?: unknown;
   retirados?: string | null;
   distancia?: string | null;
+  distancia_texto?: string | null;
   superficie?: string | null;
+  condicion_pista?: string | null;
+  condicion_carrera?: string | null;
+  codigo_carrera?: string | null;
   premio?: number | null;
   hora?: string | null;
+  morning_line?: string | null;
+  beyer_par?: number | string | null;
+  record_pista?: string | null;
 origen?: string | null;
 registrado_por?: string | null;
 actualizado_por?: string | null;
@@ -123,9 +172,16 @@ retirados?: string | null;
   invalidado_remate?: string | null;
   invalidado_polla?: string | null;
 distancia?: string | null;
-  superficie?: string | null;
-  premio?: number | null;
-  hora?: string | null;
+distancia_texto?: string | null;
+superficie?: string | null;
+condicion_pista?: string | null;
+condicion_carrera?: string | null;
+codigo_carrera?: string | null;
+premio?: number | null;
+hora?: string | null;
+morning_line?: string | null;
+beyer_par?: number | string | null;
+record_pista?: string | null;
   origen?: string;
   /**
    * FUSIONAR los ejemplares con los que ya están guardados, en vez de
@@ -205,7 +261,26 @@ export function fusionarCargaGaceta(
     completar("nacionalidad", raw.nacionalidad);
     completar("jockey", raw.jockey);
     completar("entrenador", raw.entrenador);
+    completar("stud", raw.stud);
+    completar("haras", raw.haras);
+    completar("pedigree", raw.pedigree);
+    completar("edad", raw.edad);
+    completar("sexo", raw.sexo);
     completar("peso", raw.peso);
+    completar("peso_programado", raw.peso_programado);
+    completar("peso_bruto", raw.peso_bruto);
+    completar("descargo_aprendiz", raw.descargo_aprendiz);
+    completar("peso_neto", raw.peso_neto);
+    completar("peso_lbs", raw.peso_lbs);
+    completar("descargo_lbs", raw.descargo_lbs);
+    completar("morning_line", raw.morning_line);
+    completar("claiming_price", raw.claiming_price);
+    completar("beyer", raw.beyer);
+    completar("speed_rating", raw.speed_rating);
+    completar("pace_figures", raw.pace_figures);
+    completar("aptitud_superficie", raw.aptitud_superficie);
+    completar("retrospecto", raw.retrospecto);
+    completar("trackeos", raw.trackeos);
     completar("medicamento", raw.medicamento);
     completar("implementos", raw.implementos);
     caballo.retirado = previo.retirado === true || raw.retirado === true;
@@ -253,9 +328,16 @@ export type CarreraCatalogo = {
   caballos?: EjemplarCarreraCentral[];
   retirados?: string[];
   distancia?: string | null;
+  distancia_texto?: string | null;
   superficie?: string | null;
+  condicion_pista?: string | null;
+  condicion_carrera?: string | null;
+  codigo_carrera?: string | null;
   premio?: number | null;
   hora?: string | null;
+  morning_line?: string | null;
+  beyer_par?: number | string | null;
+  record_pista?: string | null;
 estado?: string;
 origen?: string | null;
 registrado_por?: string | null;
@@ -299,8 +381,29 @@ export function normalizarCaballos(raw: unknown, retirados: Set<string>): Ejempl
           ...(x.jockey != null ? { jockey: String(x.jockey) } : {}),
           ...(x.entrenador != null ? { entrenador: String(x.entrenador) } : {}),
           ...(x.peso != null ? { peso: x.peso as number | string } : {}),
+          ...(x.peso_programado != null ? { peso_programado: x.peso_programado as number | string } : {}),
+          ...(x.peso_bruto != null ? { peso_bruto: x.peso_bruto as number | string } : {}),
+          ...(x.descargo_aprendiz != null ? { descargo_aprendiz: x.descargo_aprendiz as number | string } : {}),
+          ...(x.peso_neto != null ? { peso_neto: x.peso_neto as number | string } : {}),
+          ...(x.peso_lbs != null ? { peso_lbs: x.peso_lbs as number | string } : {}),
+          ...(x.descargo_lbs != null ? { descargo_lbs: x.descargo_lbs as number | string } : {}),
+          ...(x.peso_fisico != null ? { peso_fisico: x.peso_fisico as number | string } : {}),
+          ...(x.peso_optimo != null ? { peso_optimo: x.peso_optimo as number | string } : {}),
+          ...(x.morning_line != null ? { morning_line: String(x.morning_line) } : {}),
+          ...(x.claiming_price != null ? { claiming_price: x.claiming_price as number | string } : {}),
+          ...(x.beyer != null ? { beyer: x.beyer as number | string } : {}),
+          ...(x.speed_rating != null ? { speed_rating: x.speed_rating as number | string } : {}),
+          ...(x.pace_figures && typeof x.pace_figures === "object" ? { pace_figures: x.pace_figures as Record<string, unknown> } : {}),
+          ...(x.aptitud_superficie && typeof x.aptitud_superficie === "object" ? { aptitud_superficie: x.aptitud_superficie as Record<string, unknown> } : {}),
+          ...(Array.isArray(x.retrospecto) ? { retrospecto: x.retrospecto as Array<Record<string, unknown>> } : {}),
+          ...(Array.isArray(x.trackeos) ? { trackeos: x.trackeos as Array<Record<string, unknown>> } : {}),
           ...(x.medicamento != null ? { medicamento: String(x.medicamento) } : {}),
           ...(x.implementos != null ? { implementos: String(x.implementos) } : {}),
+          ...(x.stud != null ? { stud: String(x.stud) } : {}),
+          ...(x.haras != null ? { haras: String(x.haras) } : {}),
+          ...(x.pedigree && typeof x.pedigree === "object" ? { pedigree: x.pedigree as Record<string, unknown> } : {}),
+          ...(x.edad != null ? { edad: x.edad as number | string } : {}),
+          ...(x.sexo != null ? { sexo: String(x.sexo) } : {}),
           retirado: x.retirado === true || retirados.has(numero),
         };
       })
@@ -374,9 +477,16 @@ export function aCarreraCentral(m: FilaCarreraMaestro): CarreraCatalogo {
     invalidados: parsearRetirados(String(m.invalidado_remate ?? "")),
     invalidadosPolla: parsearRetirados(String(m.invalidado_polla ?? "")),
     distancia: m.distancia != null ? String(m.distancia) : null,
+    ...(m.distancia_texto != null ? { distancia_texto: String(m.distancia_texto) } : {}),
     superficie: m.superficie != null ? String(m.superficie) : null,
+    ...(m.condicion_pista != null ? { condicion_pista: String(m.condicion_pista) } : {}),
+    ...(m.condicion_carrera != null ? { condicion_carrera: String(m.condicion_carrera) } : {}),
+    ...(m.codigo_carrera != null ? { codigo_carrera: String(m.codigo_carrera) } : {}),
     premio: m.premio != null ? Number(m.premio) : null,
     hora: m.hora != null ? String(m.hora) : null,
+    ...(m.morning_line != null ? { morning_line: String(m.morning_line) } : {}),
+    ...(m.beyer_par != null ? { beyer_par: m.beyer_par } : {}),
+    ...(m.record_pista != null ? { record_pista: String(m.record_pista) } : {}),
     estado: estadoDeCarrera(m, res),
     // El orden de las claves importa: los tests comparan con JSON.stringify, así
     // que estos campos tienen que quedar donde los espera el contrato del tipo.
@@ -394,7 +504,7 @@ export function aCarreraCentral(m: FilaCarreraMaestro): CarreraCatalogo {
 
 /** Columnas del maestro, en el orden en que las pide el select. */
 export const COLUMNAS_MAESTRO =
-  "id, fecha, hipodromo, hipodromo_id, carrera, estado, caballos, retirados, distancia, superficie, premio, hora, origen, registrado_por, actualizado_por, verificado, verificado_por, verificado_at, invalidado_remate, invalidado_polla, updated_at";
+  "id, fecha, hipodromo, hipodromo_id, carrera, estado, caballos, retirados, distancia, distancia_texto, superficie, condicion_pista, condicion_carrera, codigo_carrera, premio, hora, morning_line, beyer_par, record_pista, origen, registrado_por, actualizado_por, verificado, verificado_por, verificado_at, invalidado_remate, invalidado_polla, updated_at";
 
 // ---------------------------------------------------------------------------
 // Fusión de filas duplicadas

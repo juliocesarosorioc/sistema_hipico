@@ -34,6 +34,7 @@
  */
 import {
   parciales400m,
+  probabilidadImplicitaMorningLine,
   simularRemateFinal,
   type EjemplarGodet,
   type PistaEnVivo,
@@ -50,7 +51,18 @@ import {
 export type EstiloCarrera = "E1" | "E2" | "E3";
 
 /** Estado del terreno declarado para la jornada. */
-export type FactorPista = "normal" | "ligera" | "pesada";
+export type FactorPista =
+  | "normal"
+  | "ligera"
+  | "pesada"
+  | "good"
+  | "cesped"
+  | "turf_yielding"
+  | "fango"
+  | "muddy"
+  | "sloppy"
+  | "tapeta"
+  | "off_turf_fango";
 
 /** Comportamiento observado de la pista (sesgo en vivo). */
 export type SesgoPista = "off" | "riel_interno" | "riel_externo" | "velocistas" | "rematadores";
@@ -76,6 +88,19 @@ export type InsumoPizarra = {
   pesoHoyKg: number | null;
   jockey?: string;
   entrenador?: string;
+  morningLine?: string;
+  claimingPrice?: number | string;
+  pesoLbs?: number | null;
+  descargoLbs?: number | null;
+  descargoKg?: number | null;
+  paceEarly?: number;
+  paceLate?: number;
+  beyer?: number;
+  aptitudSuperficie?: Record<string, number | string | null>;
+  trackeos?: Array<Record<string, unknown>>;
+  retrospecto?: Array<Record<string, unknown>>;
+  pesoFisicoHoyKg?: number | null;
+  pesoOptimoGanadorKg?: number | null;
   /** Distancias de sus últimas actuaciones (m), de la más reciente a la más vieja. */
   distancias?: number[];
   /** Retirado según la lista central de la carrera. */
@@ -120,6 +145,8 @@ export type FilaPizarra = {
   diasDescanso: number;
   /** Peso declarado hoy, si el programa lo trae. */
   pesoHoyKg: number | null;
+  pesoLbs: number | null;
+  beyer: number | null;
   /** Peso de referencia del lote (mediana de los declarados). */
   pesoReferenciaKg: number;
   /** Peso de hoy menos la referencia. */
@@ -143,6 +170,19 @@ export type FilaPizarra = {
   remate200Seg: number;
   /** Etiqueta legible del ajuste de peso (`null` = sin peso declarado). */
   notaPeso: string | null;
+  morningLine: string;
+  probabilidadImplicita: number | null;
+  overlay: boolean;
+  paceEarly: number | null;
+  paceLate: number | null;
+  ajusteTrackeo: number;
+  trackeos: Array<Record<string, unknown>>;
+  retrospecto: Array<Record<string, unknown>>;
+  aptitudSuperficie: Record<string, number | string | null>;
+  pesoFisicoHoyKg: number | null;
+  pesoOptimoGanadorKg: number | null;
+  descargoKg: number | null;
+  descargoLbs: number | null;
 };
 
 export type CarrilRecta = {
@@ -218,7 +258,7 @@ const numero = (n: unknown): number => {
  * hablen idiomas distintos.
  */
 export function inferirEstilo(
-  insumo: Pick<InsumoPizarra, "speedRating" | "consistencia" | "distancias">,
+  insumo: Pick<InsumoPizarra, "speedRating" | "consistencia" | "distancias" | "paceEarly" | "paceLate">,
   distanciaCarrera: number,
   velocidadReferencia: number
 ): EstiloCarrera {
@@ -227,6 +267,10 @@ export function inferirEstilo(
   const ref = numero(velocidadReferencia) || 70;
 
   let puntos = 0;
+  const early = numero(insumo.paceEarly);
+  const late = numero(insumo.paceLate);
+  if (early >= 90 || (early > 0 && late > 0 && early - late >= 18)) puntos += 3;
+  else if (late >= 90 || (early > 0 && late > 0 && late - early >= 18)) puntos -= 3;
   if (speed >= ref + 4) puntos += 2;
   else if (speed > 0 && speed <= ref - 4) puntos -= 2;
 
@@ -262,6 +306,16 @@ export function estadoTrenMactor(
 ): TrenMactor {
   const velocistas = estilos.filter((e) => e.estilo === "E1").map((e) => e.numero);
 
+  if (parcial400 > 0 && parcial400 <= 22.0 && velocistas.length >= 2) {
+    return {
+      codigo: "violento",
+      titulo: "🔥 Duelo en punta",
+      detalle: `Los E1 #${velocistas.join(" y #")} proyectan un parcial de ${parcial400.toFixed(1)} s: el duelo puede favorecer a los E2/E3 con remate.`,
+      velocistas,
+      puntero: null,
+    };
+  }
+
   if (parcial400 > 0 && parcial400 <= 21.8) {
     return {
       codigo: "violento",
@@ -272,11 +326,11 @@ export function estadoTrenMactor(
     };
   }
 
-  if (velocistas.length >= 3) {
+  if (velocistas.length >= 2) {
     return {
       codigo: "violento",
-      titulo: "🔥 Tren violento",
-      detalle: `${velocistas.length} velocistas E1 activos pelean la punta: se gastan entre ellos y favorecen a E2/E3.`,
+      titulo: "🔥 Duelo en punta",
+      detalle: `${velocistas.length} velocistas E1 activos pelean la punta: el duelo favorece a E2/E3 con mejor remate.`,
       velocistas,
       puntero: null,
     };
@@ -319,7 +373,8 @@ export function estadoTrenMactor(
 export function ajusteDePista(
   estilo: EstiloCarrera,
   numeroGualdrapa: number,
-  ajustes: AjustesPizarra
+  ajustes: AjustesPizarra,
+  insumo?: Pick<InsumoPizarra, "aptitudSuperficie">
 ): number {
   let delta = 0;
 
@@ -329,6 +384,18 @@ export function ajusteDePista(
   } else if (ajustes.factorPista === "pesada") {
     if (estilo === "E3") delta += 2.4;
     if (estilo === "E1") delta -= 0.8;
+  } else if (ajustes.factorPista === "cesped" || ajustes.factorPista === "turf_yielding" || ajustes.factorPista === "tapeta") {
+    const rating = valorAptitud(insumo?.aptitudSuperficie, ajustes.factorPista === "tapeta" ? ["SYNTH", "TAPETA"] : ["TURF", "CESPED"]);
+    if (rating != null) delta += Math.max(-2, Math.min(2, (rating - 300) / 100));
+    if (ajustes.factorPista === "turf_yielding" && rating == null) delta -= 0.5;
+  } else if (["fango", "muddy", "sloppy", "off_turf_fango"].includes(ajustes.factorPista)) {
+    const wet = valorAptitud(insumo?.aptitudSuperficie, ["WET", "MUDDY", "FANGO"]);
+    const turf = valorAptitud(insumo?.aptitudSuperficie, ["TURF", "CESPED"]);
+    if (wet != null) delta += Math.max(-1, Math.min(3, (wet - 300) / 100)) + (ajustes.factorPista === "off_turf_fango" ? 0.5 : 0);
+    else if (turf != null && turf >= 300) delta -= ajustes.factorPista === "off_turf_fango" ? 2.5 : 1.5;
+  } else if (ajustes.factorPista === "good") {
+    const wet = valorAptitud(insumo?.aptitudSuperficie, ["WET", "MUDDY", "FANGO"]);
+    if (wet != null) delta += Math.max(-0.8, Math.min(1.2, (wet - 300) / 150));
   }
 
   switch (ajustes.sesgo) {
@@ -349,6 +416,40 @@ export function ajusteDePista(
   }
 
   return Number(delta.toFixed(2));
+}
+
+function valorAptitud(
+  aptitud: Record<string, number | string | null> | undefined,
+  nombres: string[]
+): number | null {
+  if (!aptitud) return null;
+  for (const [clave, raw] of Object.entries(aptitud)) {
+    if (!nombres.some((nombre) => clave.toUpperCase().includes(nombre))) continue;
+    const match = String(raw ?? "").match(/-?\d+(?:\.\d+)?/);
+    const valor = match ? Number(match[0]) : NaN;
+    if (Number.isFinite(valor)) return valor;
+  }
+  return null;
+}
+
+/** Suma un ajuste acotado si la gaceta/DRF registra un trabajo destacado. */
+export function ajustePorTrackeos(trackeos: Array<Record<string, unknown>> | undefined): number {
+  let mejor = 0;
+  for (const trabajo of trackeos ?? []) {
+    const texto = Object.values(trabajo).map((v) => String(v ?? "")).join(" ").toUpperCase();
+    const ranking = /(?:^|\s)1\s*\/\s*\d+/.test(texto);
+    const destacado = /\b(FENOMENO|FENÓMENO|SHN|TRONANDO|BULLET|BG|HG)\b/.test(texto);
+    const remate = /(?:REM(?:ATE)?\s*[:=]?\s*)(\d{1,2}(?:[.,]\d+)?)/.exec(texto);
+    const segundosDirectos = Number(trabajo.remate_200m ?? trabajo.remate200m);
+    const segundos = remate
+      ? Number(remate[1].replace(",", "."))
+      : Number.isFinite(segundosDirectos) && segundosDirectos > 0
+        ? segundosDirectos
+        : null;
+    if (ranking || destacado) mejor = Math.max(mejor, 1.5);
+    if (segundos != null && segundos <= 12.1) mejor = Math.max(mejor, 2.0);
+  }
+  return mejor;
 }
 
 /**
@@ -442,6 +543,11 @@ export function construirPizarra(
   const pesoReferenciaKg = mediana(activosBrutos.map((i) => numero(i.pesoHoyKg))) || 54;
   const velocidadReferencia = mediana(activosBrutos.map((i) => numero(i.speedRating))) || 70;
 
+  const estilosTodos = lista.map((i) => ({
+    numero: i.numero,
+    estilo: inferirEstilo(i, distanciaCarrera, velocidadReferencia),
+  }));
+  const trenTodos = estadoTrenMactor(estilosTodos, ajustes.parcial400);
   const estilos = activosBrutos.map((i) => ({
     numero: i.numero,
     estilo: inferirEstilo(i, distanciaCarrera, velocidadReferencia),
@@ -466,8 +572,22 @@ export function construirPizarra(
     const peso = ajusteDePeso(i.pesoHoyKg, pesoReferenciaKg);
     const pesoHoyKg = Number.isFinite(Number(i.pesoHoyKg)) && Number(i.pesoHoyKg) > 0 ? Number(i.pesoHoyKg) : null;
 
-    const ajustePista = ajusteDePista(estilo, i.numero, ajustes);
+    const ajustePista = ajusteDePista(estilo, i.numero, ajustes, i);
     const ajusteTren = ajusteDeTren(estilo, i.numero, tren);
+    const ajusteTrackeo = ajustePorTrackeos(i.trackeos);
+    const descargoKg = Number(i.descargoKg);
+    const descargoLbs = Number(i.descargoLbs);
+    const descargoEquivalenteKg = Number.isFinite(descargoKg) && descargoKg > 0
+      ? descargoKg
+      : Number.isFinite(descargoLbs) && descargoLbs > 0
+        ? descargoLbs / 2.20462
+        : 0;
+    const ajusteDescargo = descargoEquivalenteKg > 0 ? Math.min(4, descargoEquivalenteKg) * 0.35 : 0;
+    const pesoFisicoHoyKg = Number(i.pesoFisicoHoyKg) > 0 ? Number(i.pesoFisicoHoyKg) : null;
+    const pesoOptimoGanadorKg = Number(i.pesoOptimoGanadorKg) > 0 ? Number(i.pesoOptimoGanadorKg) : null;
+    const deltaFisico =
+      pesoFisicoHoyKg != null && pesoOptimoGanadorKg != null ? Math.abs(pesoFisicoHoyKg - pesoOptimoGanadorKg) : null;
+    const ajustePesoFisico = deltaFisico == null ? 0 : Math.max(-2.5, 1.5 - deltaFisico * 0.5);
 
     // El motor Godet usa `pesoOptimoGanadorKg` como referencia: le pasamos el
     // peso de referencia del lote para que el remate y la pizarra midan el
@@ -476,17 +596,21 @@ export function construirPizarra(
       id: `${i.numero}-${i.nombre}`,
       numero: i.numero,
       nombre: i.nombre,
-      pesoOptimoGanadorKg: pesoReferenciaKg,
-      pesoFisicoHoyKg: pesoHoyKg ?? undefined,
+      pesoOptimoGanadorKg: pesoOptimoGanadorKg ?? pesoReferenciaKg,
+      pesoFisicoHoyKg: pesoFisicoHoyKg ?? pesoHoyKg ?? undefined,
       tipoCarrera: estilo === "E1" ? "velocista" : estilo === "E3" ? "rematador" : "perseguidor",
       actuaciones: numero(i.actuaciones),
-      speedRatingTTC: numero(i.speedRating) || undefined,
+      speedRatingTTC: numero(i.beyer || i.speedRating) || undefined,
       efectividadYunta: numero(i.efectividadYunta),
       diasDescanso: numero(i.diasDescanso),
+      paceEarly: i.paceEarly,
+      paceLate: i.paceLate,
+      retirado: i.retirado === true,
     };
     const remate = simularRemateFinal(godet, pista);
 
-    const score = Number((scoreBase + ajustePista + ajusteTren + peso.ajuste).toFixed(3));
+    const score = Number((scoreBase + ajustePista + ajusteTren + peso.ajuste + ajusteTrackeo + ajusteDescargo + ajustePesoFisico).toFixed(3));
+    const probabilidadImplicita = probabilidadImplicitaMorningLine(i.morningLine);
 
     return {
       numero: i.numero,
@@ -501,6 +625,7 @@ export function construirPizarra(
       winRate: numero(i.winRate),
       diasDescanso: numero(i.diasDescanso),
       pesoHoyKg,
+      pesoLbs: Number.isFinite(Number(i.pesoLbs)) && Number(i.pesoLbs) > 0 ? Number(i.pesoLbs) : null,
       pesoReferenciaKg,
       deltaPesoKg: peso.delta,
       ajustePeso: peso.ajuste,
@@ -513,6 +638,20 @@ export function construirPizarra(
       cuerpos: 0,
       remate200Seg: remate.ultima200Seg,
       notaPeso: peso.nota,
+      morningLine: i.morningLine ?? "",
+      probabilidadImplicita: probabilidadImplicita == null ? null : Number((probabilidadImplicita * 100).toFixed(2)),
+      overlay: false,
+      paceEarly: Number(i.paceEarly) > 0 ? Number(i.paceEarly) : null,
+      paceLate: Number(i.paceLate) > 0 ? Number(i.paceLate) : null,
+      beyer: Number(i.beyer) > 0 ? Number(i.beyer) : null,
+      ajusteTrackeo,
+      trackeos: i.trackeos ?? [],
+      retrospecto: i.retrospecto ?? [],
+      aptitudSuperficie: i.aptitudSuperficie ?? {},
+      pesoFisicoHoyKg,
+      pesoOptimoGanadorKg,
+      descargoKg: Number.isFinite(descargoKg) && descargoKg > 0 ? descargoKg : null,
+      descargoLbs: Number.isFinite(descargoLbs) && descargoLbs > 0 ? descargoLbs : null,
     };
   });
 
@@ -533,6 +672,7 @@ export function construirPizarra(
       puesto: i + 1,
       probabilidad: Number(((expuestos[i] / totalExp) * 100).toFixed(2)),
       cuerpos: Number(acumulado.toFixed(2)),
+      overlay: f.probabilidadImplicita != null && (expuestos[i] / totalExp) * 100 > f.probabilidadImplicita,
     };
   });
 
@@ -546,7 +686,7 @@ export function construirPizarra(
     totalActivos: conPuesto.length,
     totalRetirados: retirados.length,
     tickets,
-    informe: informeTactico({ filas: conPuesto, tren, retirados, ajustes }),
+    informe: informeTactico({ filas: conPuesto, tren, trenTodos, retirados, ajustes }),
   };
 }
 
@@ -609,10 +749,11 @@ export function parcialesDeCarrera(insumo: InsumoPizarra, estilo: EstiloCarrera)
 export function informeTactico(opts: {
   filas: FilaPizarra[];
   tren: TrenMactor;
+  trenTodos?: TrenMactor;
   retirados: InsumoPizarra[];
   ajustes: AjustesPizarra;
 }): string[] {
-  const { filas, tren, retirados, ajustes } = opts;
+  const { filas, tren, trenTodos = tren, retirados, ajustes } = opts;
   const lineas: string[] = [];
 
   if (retirados.length) {
@@ -625,6 +766,11 @@ export function informeTactico(opts: {
   }
 
   lineas.push(`${tren.titulo}: ${tren.detalle}`);
+  if (retirados.length) {
+    lineas.push(
+      `🏁 Planteamiento con todos: ${trenTodos.titulo}. Con los retiros actuales: ${tren.titulo}.`
+    );
+  }
 
   const [a, b, c] = filas;
   if (a) {
@@ -637,11 +783,28 @@ export function informeTactico(opts: {
   }
 
   if (ajustes.factorPista !== "normal") {
-    lineas.push(
-      ajustes.factorPista === "ligera"
-        ? "🏁 Pista ligera/rápida: los velocistas E1 cobran +2.0 y los rematadores pierden algo de terreno."
-        : "🏁 Pista pesada: los rematadores E3 cobran +2.4 y los velocistas E1 pagan el esfuerzo."
-    );
+    const etiquetas: Record<Exclude<FactorPista, "normal">, string> = {
+      ligera: "Pista ligera/rápida: favorece a los E1.",
+      pesada: "Pista pesada: mejora la opción de cierre de E3.",
+      good: "Pista Good: se ponderó el rating Wet disponible.",
+      cesped: "Turf Firm: el modelo pondera aptitud de césped.",
+      turf_yielding: "Turf blando: se pondera el rating de césped y la falta de experiencia reduce el score.",
+      fango: "Fango: se ponderan ratings Wet/Muddy y se penaliza el perfil exclusivamente gramero.",
+      muddy: "Muddy: se ponderan ratings Wet/Muddy y se penaliza el perfil exclusivamente gramero.",
+      sloppy: "Sloppy: se ponderan ratings Wet/Muddy y se penaliza el perfil exclusivamente gramero.",
+      tapeta: "Tapeta: se pondera la aptitud sintética.",
+      off_turf_fango: "Off-the-Turf a fango: se pondera Wet y se penaliza la falta de experiencia en barro.",
+    };
+    lineas.push(`🏁 ${etiquetas[ajustes.factorPista]}`);
+    if (["fango", "muddy", "sloppy", "off_turf_fango"].includes(ajustes.factorPista)) {
+      const sinDatoWet = filas.filter((f) =>
+        valorAptitud(f.aptitudSuperficie, ["WET", "MUDDY", "FANGO"]) == null &&
+        valorAptitud(f.aptitudSuperficie, ["TURF", "CESPED"]) != null
+      );
+      if (sinDatoWet.length) {
+        lineas.push(`🌧️ Sin rating Wet disponible: ${sinDatoWet.map((f) => `#${f.numero}`).join(", ")} recibe ajuste prudente por falta de dato, no una victoria supuesta.`);
+      }
+    }
   }
 
   if (ajustes.sesgo !== "off") {

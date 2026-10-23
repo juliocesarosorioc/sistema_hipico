@@ -35,6 +35,12 @@ import {
   type EjemplarProyectable,
 } from "@/features/inteligencia/lib/proyecciones";
 import type { MemoriaEjemplar } from "@/features/gaceta/lib/padron";
+import { normalizarCarreraExtraida } from "@/features/gaceta/lib/ia";
+import {
+  claveEjemplarHistorico,
+  indexarMemoria,
+  normalizarPaisEjemplar,
+} from "@/features/inteligencia/lib/datos";
 
 let pasan = 0;
 let fallan = 0;
@@ -215,6 +221,66 @@ igual(etiquetaRiesgo(1), "bajo", "riesgo normal = bajo");
 igual(etiquetaRiesgo(1.3), "alto", "riesgo alto se marca");
 igual(diasDesdeUltima("2026-10-01", "2026-10-04"), 3, "los días se calculan bien");
 igual(diasDesdeUltima(null, "2026-10-04"), 0, "sin última carrera no hay días");
+
+// ---------------------------------------------------------------------------
+console.log("\n[6] extracción normalizada Gaceta VE y DRF");
+// ---------------------------------------------------------------------------
+
+const gaceta = normalizarCarreraExtraida({
+  carrera: "3",
+  hipodromo: "LA RINCONADA",
+  distancia: 1400,
+  ejemplares: [{
+    numero: 1,
+    nombre: "tank abbott",
+    pais_origen: "VEN",
+    peso_programado: "57-3",
+    pace_figures: { e1: 94, early: 92 },
+    retrospecto: [{ fecha: "2026-10-11", tiempo_ganador: "1:24", tiempo_ejemplar: "1:25", km_h: 58 }],
+    trackeos: [{ fecha: "2026-10-17", fraccionales_texto: "14 26,1 38,1", remate_200m: 12, comentario: "FENOMENO" }],
+  }],
+});
+igual(gaceta.ejemplares[0].nacionalidad, "VE", "normaliza VEN a VE");
+igual(gaceta.ejemplares[0].peso_bruto, 57, "Gaceta: obtiene peso bruto");
+igual(gaceta.ejemplares[0].descargo_aprendiz, 3, "Gaceta: extrae descargo");
+igual(gaceta.ejemplares[0].peso_neto, 54, "Gaceta: calcula peso neto");
+igual(gaceta.ejemplares[0].retrospecto?.[0].km_h, 58, "Gaceta: conserva tiempos y km/h");
+igual(gaceta.ejemplares[0].trackeos?.[0].remate_200m, 12, "Gaceta: conserva trackeo y remate");
+
+const drf = normalizarCarreraExtraida({
+  carrera: 5,
+  hipodromo: "KEENELAND",
+  superficie: "TURF",
+  condicion_carrera: "Allowance",
+  beyer_par: 82,
+  ejemplares: [{
+    numero: 7,
+    nombre: "BLUE COMET",
+    country: "US",
+    peso_lbs: 119,
+    descargo_lbs: 5,
+    morning_line: "3-1",
+    pace_figures: { early: 93, late: 72 },
+    aptitud_superficie: { Turf: 390, Wet: 430 },
+    trackeos: [{ fecha: "2026-10-16", distancia: "3f", tiempo: ":35.3", ranking: "1/21", estilo_b_bg_hg: "Bg" }],
+  }],
+});
+igual(drf.ejemplares[0].nacionalidad, "USA", "DRF: normaliza country US");
+igual(drf.ejemplares[0].peso_lbs, 119, "DRF: conserva el peso en libras sin convertirlo");
+igual(drf.ejemplares[0].descargo_lbs, 5, "DRF: conserva el descargo en libras");
+igual(drf.ejemplares[0].morning_line, "3-1", "DRF: conserva Morning Line");
+igual(drf.ejemplares[0].aptitud_superficie?.Wet, 430, "DRF: conserva el rating Wet");
+igual(drf.ejemplares[0].trackeos?.[0].ranking, "1/21", "DRF: conserva el ranking Bullet Work");
+
+const memoriaPorClave = indexarMemoria([
+  memoria(8, 3, 35, 84),
+  { ...memoria(2, 1, 40, 77), nombre: "TÁNK-ABBOTT", nacionalidad: "VE" },
+  { ...memoria(4, 2, 50, 80), nombre: "TANK ABBOTT", nacionalidad: "USA" },
+]);
+igual(normalizarPaisEjemplar("VEN"), "VE", "la clave histórica normaliza aliases de país");
+igual(claveEjemplarHistorico("TÁNK-ABBOTT", "VE"), "TANK ABBOTT|VE", "la identidad histórica normaliza acentos y puntuación");
+igual(memoriaPorClave.get("TANK ABBOTT|VE")?.actuaciones, 2, "la memoria se vincula por nombre normalizado + país");
+igual(memoriaPorClave.get("TANK ABBOTT|USA")?.actuaciones, 4, "mismo nombre con otro país queda separado");
 
 // ---------------------------------------------------------------------------
 console.log(`\n${pasan} pasaron, ${fallan} fallaron.`);

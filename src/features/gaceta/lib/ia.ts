@@ -21,10 +21,36 @@ export type EjemplarExtraido = {
   numero: string | number;
   nombre: string;
   nacionalidad?: string;
+  pais_origen?: string;
+  country?: string;
+  ml?: string;
   valor?: number;
   jockey?: string;
   entrenador?: string;
+  stud?: string;
+  haras?: string;
+  pedigree?: { padre?: string; madre?: string; abueloMaterno?: string };
+  edad?: number | string;
+  sexo?: string;
   peso?: number | string;
+  peso_programado?: number | string;
+  peso_bruto?: number | string;
+  descargo_aprendiz?: number | string;
+  peso_neto?: number | string;
+  peso_lbs?: number | string;
+  descargo_lbs?: number | string;
+  peso_fisico?: number | string;
+  peso_fisico_lbs?: number | string;
+  peso_optimo?: number | string;
+  peso_optimo_lbs?: number | string;
+  morning_line?: string;
+  claiming_price?: number | string;
+  beyer?: number | string;
+  speed_rating?: number | string;
+  pace_figures?: { early?: number; late?: number; e1?: number; e2?: number; e3?: number };
+  aptitud_superficie?: Record<string, number | string | null>;
+  retrospecto?: Array<Record<string, unknown>>;
+  trackeos?: Array<Record<string, unknown>>;
   medicamento?: string;
   implementos?: string;
 };
@@ -34,8 +60,16 @@ export type CarreraExtraida = {
   hipodromo?: string;
   fecha?: string | null;
   distancia?: number;
+  distancia_texto?: string;
   superficie?: string;
+  condicion_pista?: string;
+  condicion_carrera?: string;
+  codigo_carrera?: string;
+  hora?: string;
   premio?: number;
+  morning_line?: string;
+  beyer_par?: number | string;
+  record_pista?: string;
   ejemplares: EjemplarExtraido[];
 };
 
@@ -71,7 +105,7 @@ const HIPODROMOS_USA = [
   "PIMLICO", "SANTA ANITA", "SARATOGA", "TAMPA BAY DOWNS",
 ];
 
-const SYS = `Eres el transcriptor de la gaceta hípica venezolana. Recibes páginas/imágenes del programa oficial de carreras.
+const SYS = `Eres un transcriptor experto de programas hípicos: Gaceta Hípica venezolana / Al Galope y Daily Racing Form (DRF) de Estados Unidos. Recibes páginas, imágenes o texto.
 Extrae TODAS las carreras visibles y sus ejemplares participantes.
 La gaceta numera las carreras de forma CONSECUTIVA del 1 al total (1, 2, 3, …, 13): devuelve TODAS sin omitir ninguna y SIN repetir ni saltar números. Si el programa trae 13 carreras, la respuesta tiene 13 objetos (la última incluida).
 Para cada carrera devuelve:
@@ -81,7 +115,12 @@ Para cada carrera devuelve:
   - distancia: distancia de la carrera en metros (entero) si se lee, si no 0
   - superficie: una de ARENA, CESPED, FANGO, TAPETA u otra si se lee explícita; si no ARENA
   - premio: número si se lee (ej: 15000), si no 0
-  - ejemplares: lista con numero (puesto/orden del ejemplar), nombre (MAYÚSCULAS, EXACTO como aparece), nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si NO se indica: USA si el hipódromo es de Estados Unidos, si no VE), valor (monta del ejemplar: SOLO número si aparece, si no 0), jockey, entrenador, peso, medicamento e implementos solo si son legibles (si no, null)
+  - datos de carrera adicionales cuando aparezcan: codigo_carrera (por ejemplo C495), hora, condicion_carrera (llamado, allowance, claiming), condicion_pista, record_pista, beyer_par, distancia_texto y morning_line
+  - ejemplares: numero, nombre, nacionalidad/pais_origen; jockey, entrenador, stud, haras, pedigree {padre,madre,abueloMaterno}, edad, sexo, implementos, medicamento, morning_line, claiming_price; peso_programado/peso_bruto/descargo_aprendiz/peso_neto en Venezuela y peso_lbs/descargo_lbs en DRF. Si aparece "57-3", conserva los campos como 57, 3 y 54; si aparece peso DRF con descargo (por ejemplo "112^10"), conserva 112 y 10. No conviertas libras a kilos.
+  - pace_figures con early, late, e1, e2, e3 cuando aparezcan; aptitud_superficie como objeto clave/valor para ratings Dirt, Wet, Synth, Turf y Distancia.
+  - retrospecto como lista de actuaciones previas; conserva los campos que se lean, incluyendo fecha, codigo_carrera, hipodromo, condicion, peso_fisico, distancia, pp, parciales_pos, llegada, ks, jinete, dividendo, ganador_o_segundo, cuerpos, serie, tiempo_ganador, tiempo_ejemplar, km_h, fracciones, beyer, llamadas, medicacion y comentario_tactico.
+  - peso_fisico/peso_optimo del ejemplar siempre en kg; si la fuente DRF solo declara lb, devuelve peso_fisico_lbs/peso_optimo_lbs sin convertir ni etiquetarlos como kg.
+  - trackeos como lista de ejercicios/workouts, ligados al ejemplar que aparece en la línea: fecha, hipodromo, distancia_ejercicio, condicion, tiempo/fraccionales_texto, modalidad_ep_es, remate_200m, estilo_b_bg_hg, ranking y comentario. En DRF detecta la sección WORKS y marca ranking tipo 1/21 como ranking.
 REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGISTRA TODOS los ejemplares de cada carrera sin omitir ninguno (todos los números de participante que aparezcan). Si un ejemplar aparece repetido entre páginas, mantenlo tal cual. Si el documento no tiene carreras, devuelve {"carreras":[]}.
 PARA EL CAMPO carrera: lee el número de carrera EXACTAMENTE como aparece impreso (puede ser numérico: 1, 2, ..., 13 o romano: I, II, III, IV, V, VI, VII, VIII, IX, X, XI, XII, XIII, XIV...). Convierte los romanos a entero (XIII → 13) y también los ordinales escritos en palabras ("primera" → 1, "segunda" → 2, "decimotercera" → 13, "decimocuarta" → 14): devuélvelos SIEMPRE como entero. Lee el carácter por carácter: distingue 1/7, 0/O, I/1. Devuelve SIEMPRE el entero correcto (ej.: 13, no 10). Prioriza el número que aparece junto a "CARRERA", "RACE", "CLASE" o en la cabecera de esa carrera.`;
 
@@ -166,12 +205,81 @@ function parsearJSON(texto: string): CarreraExtraida[] {
 function normalizarExtraida(c: CarreraExtraida): void {
   c.ejemplares = Array.isArray(c.ejemplares) ? c.ejemplares : [];
   c.ejemplares.forEach((ej) => {
-    ej.nacionalidad = nacEjemplar(ej, c.hipodromo);
+    const datos = ej as EjemplarExtraido & Record<string, unknown>;
+    ej.nacionalidad = nacEjemplar(
+      { nacionalidad: String(datos.nacionalidad ?? datos.pais_origen ?? datos.country ?? "") },
+      c.hipodromo
+    );
     ej.nombre = String(ej.nombre || "").trim().toUpperCase();
-    ej.valor = 0;
+    if (ej.peso_programado == null && ej.peso != null) ej.peso_programado = ej.peso;
+    if (ej.peso_bruto == null && ej.peso_programado != null) {
+      const match = /^(\d+(?:[.,]\d+)?)(?:\s*-\s*(\d+(?:[.,]\d+)?))?$/.exec(String(ej.peso_programado).trim());
+      if (match) {
+        ej.peso_bruto = Number(match[1].replace(",", "."));
+        if (match[2] != null) {
+          ej.descargo_aprendiz = Number(match[2].replace(",", "."));
+          ej.peso_neto ??= Number((Number(match[1].replace(",", ".")) - Number(match[2].replace(",", "."))).toFixed(1));
+        }
+      }
+    }
+    if (ej.morning_line == null && typeof datos.ml === "string") ej.morning_line = datos.ml;
+    if (ej.peso_fisico == null) {
+      const pesoFisico = datos.pesoFisico ?? datos.liveW ?? datos.live_weight;
+      if (typeof pesoFisico === "number" || typeof pesoFisico === "string") ej.peso_fisico = pesoFisico;
+    }
+    if (ej.peso_fisico == null && ej.peso_fisico_lbs != null) {
+      const libras = Number(ej.peso_fisico_lbs);
+      if (Number.isFinite(libras) && libras > 0) ej.peso_fisico = Number((libras / 2.20462).toFixed(1));
+    }
+    if (ej.peso_optimo == null) {
+      const pesoOptimo = datos.pesoOptimo ?? datos.optW ?? datos.optimal_weight;
+      if (typeof pesoOptimo === "number" || typeof pesoOptimo === "string") ej.peso_optimo = pesoOptimo;
+    }
+    if (ej.peso_optimo == null && ej.peso_optimo_lbs != null) {
+      const libras = Number(ej.peso_optimo_lbs);
+      if (Number.isFinite(libras) && libras > 0) ej.peso_optimo = Number((libras / 2.20462).toFixed(1));
+    }
+    if (paisHipodromo(c.hipodromo) === "USA") {
+      const pesoFisico = Number(ej.peso_fisico);
+      const pesoOptimo = Number(ej.peso_optimo);
+      if (pesoFisico > 650) ej.peso_fisico = Number((pesoFisico / 2.20462).toFixed(1));
+      if (pesoOptimo > 650) ej.peso_optimo = Number((pesoOptimo / 2.20462).toFixed(1));
+    }
+    if (ej.pace_figures == null && datos.paceFigures && typeof datos.paceFigures === "object") {
+      ej.pace_figures = datos.paceFigures as EjemplarExtraido["pace_figures"];
+    }
+    if (ej.aptitud_superficie == null && datos.surface_aptitude && typeof datos.surface_aptitude === "object") {
+      ej.aptitud_superficie = datos.surface_aptitude as EjemplarExtraido["aptitud_superficie"];
+    }
+    if (!ej.retrospecto) {
+      const historial = datos.historial ?? datos.past_performances;
+      if (Array.isArray(historial)) ej.retrospecto = historial as Array<Record<string, unknown>>;
+    }
+    if (!ej.trackeos) {
+      const trackeos = datos.workouts ?? datos.works;
+      if (Array.isArray(trackeos)) ej.trackeos = trackeos as Array<Record<string, unknown>>;
+    }
+    if (ej.retrospecto != null && !Array.isArray(ej.retrospecto)) ej.retrospecto = [];
+    if (ej.trackeos != null && !Array.isArray(ej.trackeos)) ej.trackeos = [];
   });
+  const carreraDatos = c as CarreraExtraida & Record<string, unknown>;
+  if (c.distancia == null && carreraDatos.distancia_metros != null) {
+    const distancia = Number(carreraDatos.distancia_metros);
+    if (Number.isFinite(distancia)) c.distancia = distancia;
+  }
+  if (!c.distancia_texto && carreraDatos.distancia_texto != null) c.distancia_texto = String(carreraDatos.distancia_texto);
+  if (!c.condicion_carrera && carreraDatos.condicion != null) c.condicion_carrera = String(carreraDatos.condicion);
+  if (!c.condicion_pista && carreraDatos.track_condition != null) c.condicion_pista = String(carreraDatos.track_condition);
+  if (c.beyer_par == null && carreraDatos.beyerPar != null) c.beyer_par = String(carreraDatos.beyerPar) as string;
   const n = numeroDeCarrera(c.carrera);
   if (n != null) c.carrera = n;
+}
+
+/** Normaliza metadatos heterogéneos sin descartar campos históricos reconocidos. */
+export function normalizarCarreraExtraida(carrera: CarreraExtraida): CarreraExtraida {
+  const copia = structuredClone(carrera);
+  normalizarExtraida(copia);
+  return copia;
 }
 
 /** Fusiona carreras extraídas SIN perder carreras distintas (ver numeros.ts):
