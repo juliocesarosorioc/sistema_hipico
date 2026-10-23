@@ -262,6 +262,35 @@ pantalla muestra "0 filas" como si no hubiera datos.
     guardan logos llega a todos (el cliente ya lo escucha en
     `useHipodromosStore` → `useRealtimeLogos`). Sin aplicarlo, la app funciona
     igual: queda el refresco local de siempre. Idempotente.
+26. `memoria_historica.sql` — **obligatorio para la Inteligencia Hípica.** Crea
+    `memoria_historica_caballos` (las actuaciones de cada ejemplar), la RPC
+    `rpc_registrar_gaceta_e_historial` (que registra la gaceta procesada Y
+    alimenta el histórico) y la RPC `rpc_obtener_memoria_historica_caballos`
+    (devuelve actuaciones, aciertos, Beyer/Speed Rating, jinete y entrenador
+    habituales y el **Índice de Consistencia Godet**). Sin esto la pantalla de
+    Proyecciones funciona en modo local (lee solo el padrón) y avisa que falta
+    el SQL. Requiere que `public.tiene_capacidad` ya exista (paso 0).
+    Idempotente.
+27. `gaceta_lote_carreras.sql` — **carga de gaceta por lotes.** Crea el índice
+    único `(hipodromo_id, fecha, carrera)` y la RPC
+    `rpc_guardar_lote_carreras_gaceta`, que hace el UPSERT **acumulativo**: los
+    ejemplares del lote se FUSIONAN con los ya guardados por número de gualdrapa
+    y las carreras del hipódromo que no vienen en el lote NO se tocan. Es lo que
+    impide que un lote parcial (Belmont 1-3 y luego Charles Town 4-6) borre lo
+    que ya estaba cargado. Requiere el paso 13 (matriz `carreras`). Idempotente.
+28. `tablas_caballo_invalidado.sql` — estado **INVALIDADO** en Tablas Fijas:
+    columnas `invalidado`/`motivo_invalidacion`, tabla de caballos de la tabla
+    fija sincronizada con el JSONB y la RPC
+    `rpc_toggle_caballo_invalidado_tabla_fija`. Un ejemplar invalidado sigue en
+    la tabla pero no puede ganar ni repartir premio (a diferencia del retirado,
+    que además reembolsa). Idempotente.
+29. `contabilidad_niif.sql` — **Contabilidad NIIF.** Crea `asientos_niif` y
+    `asientos_niif_lineas` (con moneda de operación, moneda de presentación y
+    tasa de cambio histórica según NIC 21), la RPC `rpc_registrar_asiento_niif`
+    (valida `Debe = Haber` EN EL SERVIDOR, es idempotente por clave y NO permite
+    borrar: el reverso es un contra-asiento) y la vista
+    `vw_balance_comprobacion_niif`. Sin esto, la pestaña **📘 Balance NIIF** avisa
+    que falta el SQL y el resto de la contabilidad funciona igual. Idempotente.
 
 
 ### Volver a aplicar si ya los corriste (arreglo de ANULADAS)
