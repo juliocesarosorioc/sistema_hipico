@@ -52,6 +52,16 @@ import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 
 const ES_PUBLICA = (p: string) => p === "/login" || p === "/";
 
+const BLOQUEAR = (p: string) => {
+  return (
+    p.endsWith(".sql") ||
+    p.endsWith(".mjs") ||
+    p.endsWith(".cjs") ||
+    p.startsWith("/pruebas") ||
+    p.startsWith("/sondas")
+  );
+};
+
 /**
  * El Portal del Cliente (`/portal`) NO se autentica con la sesión de Supabase:
  * el jugador entra con su token/clave (o el enlace `?c=&k=`) y la autorización
@@ -77,6 +87,10 @@ export function middleware(req: NextRequest) {
     if (motivo) url.searchParams.set("motivo", motivo);
     return NextResponse.redirect(url);
   };
+
+  if (BLOQUEAR(pathname)) {
+    return new NextResponse("Forbidden", { status: 403 });
+  }
 
   if (ES_PUBLICA(pathname)) return NextResponse.next();
 
@@ -147,5 +161,11 @@ export const config = {
   // Todo el sitio menos la raíz, /login y los archivos estáticos. El portal SÍ
   // pasa por el matcher, pero `middleware()` lo deja pasar sin sesión porque se
   // autentica con su propio token (ver ES_PORTAL).
-  matcher: ["/((?!login|_next|favicon.ico|.*\\..*).*)"],
+  //
+  // El segundo patrón existe PORQUE el primero se salta todo lo que tenga un
+  // punto (`.*\..*`), y los archivos dangerousos del repo (`*.sql`, `*.mjs`,
+  // `*.cjs`) tienen punto en el nombre. Sin esta entrada, un `GET /algo.sql`
+  // se escapaba del middleware por el matcher y lo servía el servidor de
+  // archivos en vez de recibir el 403 de `BLOQUEAR`.
+  matcher: ["/((?!login|_next|favicon.ico|.*\\..*).*)", "/:path*\\.(sql|mjs|cjs)"],
 };
