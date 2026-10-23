@@ -7,6 +7,7 @@
  */
 import { supabase } from "@/core/supabase";
 import { ordenarPorNumero } from "@/features/carreras/lib/maestro-nucleo";
+import { fechaJornadaCaracas } from "@/core/utils/fechas";
 
 export type CaballoPrograma = {
   numero: string | number;
@@ -39,12 +40,20 @@ export type ProgramaDia = {
 
 export type ResPrograma = { ok: boolean; data?: ProgramaDia | null; error?: string };
 
-/** Fecha local YYYY-MM-DD (misma regla que el legacy hoy()). */
+/**
+ * Fecha de la jornada en ISO `YYYY-MM-DD`, bajo la zona de Caracas (UTC-4).
+ *
+ * ANTES usaba `getFullYear()/getMonth()/getDate()` del reloj LOCAL del
+ * navegador: si el operador tenía el celular en Miami, o si la app corría en
+ * un servidor en UTC, el día se partía al revés. Y un `toISOString()` a las
+ * 20:00 devolvía MAÑANA: las carreras nocturnas se guardaban en el día
+ * siguiente y el operador no las veía en el filtro del día en que se jugaron.
+ *
+ * Ahora DELEGA en `fechaJornadaCaracas`, que es la fuente única de la zona
+ * horaria de la jornada (ver `src/core/utils/fechas.ts`).
+ */
 export function hoyLocal(): string {
-  const d = new Date();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${dd}`;
+  return fechaJornadaCaracas();
 }
 
 function norm(c: unknown): CarreraPrograma {
@@ -160,6 +169,11 @@ async function registrarCarrerasEnMatriz(
         superficie: c.superficie ?? null,
         premio: c.premio ?? null,
         origen: "ia",
+        // El programa llega por LOTES: la lista de ejemplares se ACUMULA con la
+        // que ya está guardada (por número de gualdrapa). Sin esto, un lote
+        // parcial borraba los ejemplares del lote anterior y la carrera se
+        // quedaba con la mitad del padrón.
+        fusionar_ejemplares: true,
       }))
     );
     if (!res.ok) {

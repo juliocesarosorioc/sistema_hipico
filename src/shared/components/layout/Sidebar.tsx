@@ -19,6 +19,18 @@ type Item = {
   badge?: string;
   /** Tooltip de la entrada deshabilitada. */
   titulo?: string;
+  /**
+   * La entrada se muestra SIEMPRE, aunque el usuario no tenga la capacidad
+   * de la ruta.
+   *
+   * Por qué hace falta: el `<Guard>` ESCONDE el enlace si falta el permiso.
+   * Eso es correcto para un módulo cerrado, pero para una pantalla que el
+   * dueño acaba de abrir ("Inteligencia Hípica") el operador concluía que
+   * la función no existía. Con esta marca el enlace aparece siempre y quien
+   * no tenga permiso recibe el mensaje de acceso denegado de la propia ruta
+   * — que explica qué falta — en vez de un menú que calla.
+   */
+  visibleSiempre?: boolean;
 };
 
 /**
@@ -129,7 +141,10 @@ const CATEGORIAS: Categoria[] = [
     titulo: "Inteligencia Hípica",
     emoji: "🧭",
     items: [
-      { href: "/inteligencia-hipica/proyecciones", emoji: "📈", txt: "Proyecciones" },
+      // `visibleSiempre`: la pantalla existe y el dueño la abrió. Esconderla
+      // porque el usuario no tiene la capacidad deja al operador pensando que
+      // la función no está; es mejor que entre y lea el motivo del rechazo.
+      { href: "/inteligencia-hipica/proyecciones", emoji: "📈", txt: "Proyecciones", visibleSiempre: true },
     ],
   },
 ];
@@ -354,7 +369,9 @@ export function Sidebar({
                     </Link>
                   );
                   return (
-                    <li key={it.href}>{cap ? <Guard permiso={cap}>{enlace}</Guard> : enlace}</li>
+                    <li key={it.href}>
+                      {cap && !it.visibleSiempre ? <Guard permiso={cap}>{enlace}</Guard> : enlace}
+                    </li>
                   );
                 })}
               </ul>

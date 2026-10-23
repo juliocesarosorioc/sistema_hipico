@@ -117,6 +117,21 @@ distancia?: string | null;
   premio?: number | null;
   hora?: string | null;
   origen?: string;
+  /**
+   * FUSIONAR los ejemplares con los que ya están guardados, en vez de
+   * reemplazarlos.
+   *
+   * Se usa en las cargas PARCIALES de gaceta: cuando se sube un lote que solo
+   * trae algunas carreras (o una carrera leída a medias), la lista de
+   * ejemplares de esa carrera tiene que QUEDAR ACUMULATIVA. Reemplazarla
+   * borraba los ejemplares que el lote anterior sí había leído, y la carrera
+   * se quedaba con la mitad del padrón.
+   *
+   * La fusión es por NÚMERO DE GUALDRAPA: el número identifica al ejemplar
+   * dentro de la carrera, así que un ejemplar que cambia de nombre conserva
+   * su número y se actualiza en vez de duplicarse.
+   */
+  fusionar_ejemplares?: boolean;
 };
 
 /** Carrera ya normalizada: lo que consume toda la plataforma. */
@@ -283,8 +298,69 @@ function masReciente(a: string | null | undefined, b: string | null | undefined)
   return a >= b ? a : b;
 }
 
+/**
+ * FUSIÓN ACUMULATIVA de la lista de ejemplares de una carrera.
+ *
+ * La identidad del ejemplar dentro de la carrera es su NÚMERO DE GUALDRAPA.
+ * Cuando llega un lote nuevo:
+ *   - si el número ya existe, se ACTUALIZA (el dato nuevo pisa al viejo si
+ *     viene informado; los campos que el lote no trae se conservan);
+ *   - si el número es nuevo, se agrega;
+ *   - los números que el lote NO trae se CONSERVAN.
+ *
+ * Esto último es lo que arregla la carga parcial: un lote que solo leyó 6 de
+ * los 10 ejemplares no puede borrar los otros 4.
+ *
+ * Es GENÉRICA a propósito: la misma fusión sirve para los ejemplares de la
+ * matriz (`{numero, nombre, nacionalidad, retirado}`) y para los del programa
+ * (`{numero, nombre, nacionalidad, valor, ejemplar_id}`), y no puede perder
+ * los campos extra (el valor y el id del padrón).
+ */
+export function fusionarEjemplaresAcumulativo<T extends Record<string, unknown>>(
+  guardados: unknown,
+  nuevos: unknown
+): T[] {
+  const salida: T[] = [];
+  const porNumero = new Map<string, T>();
+
+  const absorber = (crudo: unknown, esNuevo: boolean) => {
+    if (!Array.isArray(crudo)) return;
+    for (const item of crudo) {
+      if (!item || typeof item !== "object") continue;
+      const x = { ...(item as Record<string, unknown>) };
+      const numero = String(x.numero ?? "").trim();
+      if (!numero) continue;
+      x.numero = numero;
+      const previo = porNumero.get(numero);
+      if (!previo) {
+        const creado = x as T;
+        porNumero.set(numero, creado);
+        salida.push(creado);
+        continue;
+      }
+      // Ya existe: el dato nuevo pisa al viejo SOLO si trae contenido; los
+      // campos que el lote no menciona se conservan del guardado.
+      for (const [k, v] of Object.entries(x)) {
+        if (k === "numero") continue;
+        const vacio = v === null || v === undefined || String(v).trim() === "";
+        if (esNuevo) {
+          if (!vacio) (previo as Record<string, unknown>)[k] = v;
+        } else if (vacio && (previo as Record<string, unknown>)[k] === undefined) {
+          (previo as Record<string, unknown>)[k] = v;
+        }
+      }
+      // El retiro es acumulativo: si alguno de los dos lo tiene marcado, queda.
+      if (x.retirado === true) (previo as Record<string, unknown>).retirado = true;
+    }
+  };
+
+  absorber(guardados, false);
+  absorber(nuevos, true);
+  return ordenarPorNumero(salida as Array<{ numero?: string | number | null }>) as T[];
+}
+
 /** Une dos listas de ejemplares por número, sin perder ni duplicar. */
-function unirEjemplares(a: unknown, b: unknown): EjemplarMatriz[] {
+export function unirEjemplares(a: unknown, b: unknown): EjemplarMatriz[] {
   const salida: EjemplarMatriz[] = [];
   const vistos = new Set<string>();
   for (const crudo of [a, b]) {

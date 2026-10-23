@@ -318,7 +318,11 @@ export async function cargarCarrerasDelDia(fecha?: string): Promise<CarreraDelDi
   }
 
   res.sort((a, b) => a.hipodromo.localeCompare(b.hipodromo) || a.carrera - b.carrera);
-  if (res.length) useCarrerasDiaStore.getState().setCarreras(res);
+  // ACUMULA, no reemplaza: esta función trae SOLO el día pedido. Con
+  // `setCarreras` (que reemplaza el ledger entero) cargar un día borraba las
+  // carreras ya registradas de los demás días — y un lote PARCIAL de gaceta
+  // (Belmont 1-3, luego Charles Town 4-6) se comía el hipódromo anterior.
+  if (res.length) useCarrerasDiaStore.getState().fusionarLote(res);
   return res;
 }
 

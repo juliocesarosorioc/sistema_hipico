@@ -15,6 +15,7 @@ import {
   repararNumerosCarreras,
   type ReporteReparacion,
 } from "@/features/gaceta/lib/numeros";
+import { armarBloques, consolidarPorNumero, segmentarPorCarreras } from "@/features/gaceta/lib/segmentar";
 
 export type EjemplarExtraido = {
   numero: string | number;
@@ -250,17 +251,44 @@ function elegirModelos(descubiertos: string[]): string[] {
 
 // ---------- Cuerpo de la petición (idéntico al legacy) ----------
 
-function armarBody(durls: string[], estricto: boolean): Record<string, unknown> {
-  const imgs = durls.map((d) => {
-    const [, meta] = d.split(",");
-    const mime = d.split(";")[0].replace("data:", "");
-    return { inline_data: { mime_type: mime, data: meta } };
-  });
-  const parteTexto = estricto
-    ? 'Gaceta adjunta. Extrae las carreras y responde ÚNICAMENTE con JSON válido con el formato {"carreras":[...]}, sin markdown, sin decoraciones ni explicaciones.'
-    : "Gaceta adjunta. Extrae las carreras y sus ejemplares.";
+/**
+ * Contenido de UNA llamada al modelo: páginas como imágenes o un bloque de
+ * TEXTO de gaceta.
+ *
+ * El camino de texto existe porque el de imágenes se trunca: un documento
+ * largo no cabe en la respuesta del modelo y las últimas carreras se pierden
+ * en silencio (Belmont 1-3 OK, Charles Town 4-6 OK, Keeneland 4-6 perdido).
+ * Al mandar 2 o 3 carreras por bloque de texto, cada llamada cierra su JSON
+ * y todas las carreras llegan.
+ */
+export type ContenidoLote = {
+  /** Páginas (dataURLs) a enviar como imágenes. */
+  durls: string[];
+  /** Texto de la gaceta a transcribir (alternativa a las imágenes). */
+  texto?: string;
+};
+
+function armarBody(contenido: ContenidoLote, estricto: boolean): Record<string, unknown> {
+  const partes: Array<Record<string, unknown>> = [];
+  const durls = contenido.durls || [];
+  if (contenido.texto && contenido.texto.trim()) {
+    const instruccion = estricto
+      ? 'Gaceta textual adjunta. Extrae las carreras que aparecen y responde ÚNICAMENTE con JSON válido con el formato {"carreras":[...]}, sin markdown, sin decoraciones ni explicaciones.'
+      : "Gaceta textual adjunta. Extrae las carreras y sus ejemplares.";
+    partes.push({ text: `${instruccion}\n\n${contenido.texto}` });
+  } else {
+    const imgs = durls.map((d) => {
+      const [, meta] = d.split(",");
+      const mime = d.split(";")[0].replace("data:", "");
+      return { inline_data: { mime_type: mime, data: meta } };
+    });
+    const parteTexto = estricto
+      ? 'Gaceta adjunta. Extrae las carreras y responde ÚNICAMENTE con JSON válido con el formato {"carreras":[...]}, sin markdown, sin decoraciones ni explicaciones.'
+      : "Gaceta adjunta. Extrae las carreras y sus ejemplares.";
+    partes.push({ text: parteTexto }, ...imgs);
+  }
   return {
-    contents: [{ parts: [{ text: parteTexto }, ...imgs] }],
+    contents: [{ parts: partes }],
     systemInstruction: { parts: [{ text: SYS }] },
     generationConfig: {
       temperature: estricto ? 0.2 : 0,
@@ -294,12 +322,17 @@ type RespuestaGemini = {
   promptFeedback?: { blockReason?: string };
 };
 
-async function llamarModelo(clave: string, model: string, durls: string[], estricto: boolean): Promise<LlamadaIA> {
+async function llamarModelo(
+  clave: string,
+  model: string,
+  contenido: ContenidoLote,
+  estricto: boolean
+): Promise<LlamadaIA> {
   let resp: Response;
   try {
     resp = await postIA(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      armarBody(durls, estricto),
+      armarBody(contenido, estricto),
       clave
     );
   } catch (errNet) {
@@ -328,7 +361,12 @@ async function llamarModelo(clave: string, model: string, durls: string[], estri
     if (/API_KEY_INVALID|API key not valid|API_KEY_NOT_FOUND|PERMISSION_DENIED/i.test(msg)) {
       return { ok: false, tipo: "clave", msg };
     }
-    if (resp.status === 400 && durls.length > 1 && /large|tokens|size|payload|maximum|invalid argument/i.test(msg)) {
+    const esMultimedia = (contenido.durls?.length ?? 0) > 1;
+    if (resp.status === 400 && esMultimedia && /large|tokens|size|payload|maximum|invalid argument/i.test(msg)) {
+      return { ok: false, tipo: "grande", msg };
+    }
+    // Un bloque de TEXTO que no cabe también se puede partir por la mitad.
+    if (resp.status === 400 && contenido.texto && /large|tokens|size|payload|maximum|invalid argument/i.test(msg)) {
       return { ok: false, tipo: "grande", msg };
     }
     return { ok: false, tipo: "duro", msg };
@@ -349,6 +387,19 @@ async function llamarModelo(clave: string, model: string, durls: string[], estri
 
 // ---------- Extracción por lotes (idéntico al legacy) ----------
 
+/**
+ * Qué se puede partir por la mitad cuando el modelo dice "esto no entra".
+ * Para imágenes son las páginas; para texto, el bloque por su punto medio.
+ */
+type Parte = {
+  /** Contenido del lote. */
+  contenido: ContenidoLote;
+  /** Etiqueta legible del lote (para los mensajes en vivo). */
+  etiqueta: string;
+  /** Parte este lote en dos. Null si ya no se puede partir. */
+  partir: () => [Parte, Parte] | null;
+};
+
 async function extraerLote(
   clave: string,
   modelos: string[],
@@ -357,18 +408,54 @@ async function extraerLote(
   diag: { respondio: string; ultimoError: string },
   onEstado?: (s: string) => void
 ): Promise<CarreraExtraida[]> {
-  const durls = paginas.map((p) => p.durl);
+  const mitad = Math.ceil(paginas.length / 2);
+  const imagenes = (ps: Array<{ num: number; durl: string }>, suf: string): Parte => ({
+    contenido: { durls: ps.map((p) => p.durl) },
+    etiqueta: `${etiqueta}${suf}`,
+    partir: () => null,
+  });
+  return extraerParte(
+    clave,
+    modelos,
+    {
+      contenido: { durls: paginas.map((p) => p.durl) },
+      etiqueta,
+      partir: () =>
+        paginas.length > 1
+          ? [imagenes(paginas.slice(0, mitad), "a"), imagenes(paginas.slice(mitad), "b")]
+          : null,
+    },
+    diag,
+    onEstado
+  );
+}
+
+/**
+ * Núcleo del reintento: prueba los modelos Flash uno a uno, con las mismas
+ * esperas y los mismos saltos del legacy, hasta que uno devuelve carreras.
+ *
+ * Se separó del camino de imágenes para que el camino de TEXTO reutilice EXACTAMENTE
+ * la misma política de reintentos, cuota y saturación: dos copias de esa
+ * lógica acabarían divergiendo, y la que importa es la que se ejecuta.
+ */
+async function extraerParte(
+  clave: string,
+  modelos: string[],
+  parte: Parte,
+  diag: { respondio: string; ultimoError: string },
+  onEstado?: (s: string) => void
+): Promise<CarreraExtraida[]> {
   let reintentos503 = 0;
   let reintentosRpm = 0;
   for (let i = 0; i < modelos.length; i++) {
     const model = modelos[i];
     if (i > 0) await esperar(1200);
-    let r = await llamarModelo(clave, model, durls, false);
+    let r = await llamarModelo(clave, model, parte.contenido, false);
     if (r.ok) {
       let lotesCarreras = parsearJSON(r.texto);
       if (lotesCarreras.length === 0) {
-        if (onEstado) onEstado(`${etiqueta}: sin carreras, segundo intento (JSON estricto)…`);
-        const r2 = await llamarModelo(clave, model, durls, true);
+        if (onEstado) onEstado(`${parte.etiqueta}: sin carreras, segundo intento (JSON estricto)…`);
+        const r2 = await llamarModelo(clave, model, parte.contenido, true);
         if (r2.ok) {
           r = r2;
           lotesCarreras = parsearJSON(r2.texto);
@@ -381,14 +468,14 @@ async function extraerLote(
         return lotesCarreras;
       }
       if (r.ok) {
-        diag.ultimoError = `${etiqueta}: ${model} devolvió 0 carreras.`;
+        diag.ultimoError = `${parte.etiqueta}: ${model} devolvió 0 carreras.`;
         continue;
       }
     }
     if (r.tipo === "clave") throw new Error(r.msg + " Revisa la clave en aistudio.google.com/apikey y guárdala de nuevo.");
     if (r.tipo === "cuotaDia") {
       // Cuota DIARIA de esta familia agotada: NUNCA se espera en vano.
-      diag.ultimoError = `${etiqueta}: ${r.msg}`;
+      diag.ultimoError = `${parte.etiqueta}: ${r.msg}`;
       continue;
     }
     if (r.tipo === "cuotaRpm") {
@@ -396,36 +483,211 @@ async function extraerLote(
       if (reintentosRpm < 2) {
         reintentosRpm++;
         const espera = reintentosRpm === 1 ? 45000 : 90000;
-        if (onEstado) onEstado(`${etiqueta}: límite por minuto de ${model}, esperando ${Math.round(espera / 1000)}s y reintentando…`);
+        if (onEstado) onEstado(`${parte.etiqueta}: límite por minuto de ${model}, esperando ${Math.round(espera / 1000)}s y reintentando…`);
         await esperar(espera);
         i--;
         continue;
       }
-      diag.ultimoError = `${etiqueta}: ${r.msg}`;
+      diag.ultimoError = `${parte.etiqueta}: ${r.msg}`;
       continue;
     }
     if (r.tipo === "salto503" && reintentos503 < 2) {
       // Pico temporal de demanda: se espera y se reintenta el MISMO modelo
       // hasta 2 veces (los 503 son transitorios; el último 3.x responde).
       reintentos503++;
-      if (onEstado) onEstado(`${etiqueta}: ${model} saturado (503), esperando 20s y reintentando… (${reintentos503}/2)`);
+      if (onEstado) onEstado(`${parte.etiqueta}: ${model} saturado (503), esperando 20s y reintentando… (${reintentos503}/2)`);
       await esperar(20000);
       i--;
       continue;
     }
-    if (r.tipo === "grande" && durls.length > 1) {
-      const mitad = Math.ceil(durls.length / 2);
-      if (onEstado) onEstado(`${etiqueta}: lote muy pesado, dividiendo en 2…`);
-      const a = await extraerLote(clave, modelos, paginas.slice(0, mitad), etiqueta + "a", diag, onEstado);
-      const b = await extraerLote(clave, modelos, paginas.slice(mitad), etiqueta + "b", diag, onEstado);
-      return a.concat(b);
+    if (r.tipo === "grande") {
+      const mitad = parte.partir();
+      if (mitad) {
+        if (onEstado) onEstado(`${parte.etiqueta}: lote muy pesado, dividiendo en 2…`);
+        const a = await extraerParte(clave, modelos, mitad[0], diag, onEstado);
+        const b = await extraerParte(clave, modelos, mitad[1], diag, onEstado);
+        return a.concat(b);
+      }
     }
-    diag.ultimoError = `${etiqueta}: ${r.msg}`;
+    diag.ultimoError = `${parte.etiqueta}: ${r.msg}`;
   }
   throw new Error(diag.ultimoError + " Se probaron los modelos Flash disponibles para este lote.");
 }
 
 // ---------- Punto de entrada ----------
+
+/**
+ * Transcribe una gaceta EN TEXTO partiéndola en bloques de 2-3 carreras.
+ *
+ * Es la vía que resuelve la carga incompleta: el documento entero no cabe en
+ * una respuesta del modelo y las últimas carreras se pierden sin aviso. Aquí
+ * cada bloque se manda por separado (así su JSON cierra completo) y al final
+ * TODO se consolida en un `Map<number, Carrera>` indexado por número de
+ * carrera, de modo que una carrera partida entre dos bloques se una con sus
+ * ejemplares y no se duplique.
+ *
+ * Devuelve parcial si algunos bloques fallan: la UI muestra lo que hay y
+ * avisa qué faltó, en vez de quedarse en blanco.
+ */
+export async function transformarGacetaTexto(
+  clave: string,
+  texto: string,
+  onLote?: (hecho: number, total: number) => void,
+  onEstado?: (s: string) => void
+): Promise<ResultadoGaceta> {
+  const diag = { respondio: "", ultimoError: "" };
+  let cuotaTotal = false;
+
+  const segmentos = segmentarPorCarreras(texto);
+  const bloques = armarBloques(segmentos, 3);
+  if (!bloques.length) {
+    return { ok: false, carreras: [], error: "El documento no tiene texto legible para transcribir." };
+  }
+
+  const pintarDiag = (extra?: string): string =>
+    [
+      `clave: ${clave ? clave.slice(0, 4) + "…" + clave.slice(-3) + " (" + clave.length + " car.)" : "AUSENTE"}`,
+      `bloques de texto: ${bloques.length} · caracteres: ${texto.length}`,
+      diag.respondio ? `respondió: ${diag.respondio}` : "",
+      diag.ultimoError ? `último error: ${diag.ultimoError}` : "",
+      extra || "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+  try {
+    if (!clave.trim()) {
+      return { ok: false, carreras: [], error: "Falta la clave de Gemini.", diag: pintarDiag() };
+    }
+    const descubiertos = await listaModelosFlash(clave);
+    const modelos = elegirModelos(descubiertos);
+    if (!modelos.length) {
+      return {
+        ok: false,
+        carreras: [],
+        error: "Tu clave no devolvió modelos Flash. Verifica la clave en aistudio.google.com/apikey y tu conexión.",
+        diag: pintarDiag(),
+      };
+    }
+
+    const acumuladas: CarreraExtraida[] = [];
+    const bloquesFallidos: number[] = [];
+
+    for (const bloque of bloques) {
+      if (!cuotaTotal) {
+        onLote?.(bloque.indice, bloques.length);
+        const cuales = bloque.numeros.length ? `carrera(s) ${bloque.numeros.join(", ")}` : "carreras del bloque";
+        onEstado?.(`Bloque ${bloque.indice}/${bloques.length} (${cuales}): enviando a la IA…`);
+      }
+      try {
+        const nuevas = await extraerParte(
+          clave,
+          modelos,
+          {
+            contenido: { durls: [], texto: bloque.texto },
+            etiqueta: `Bloque ${bloque.indice}/${bloques.length}`,
+            partir: () => {
+              // Si el texto no entra, se parte por la mitad. Se busca el salto
+              // de línea más cercano al medio para no cortar una carrera.
+              const mitad = Math.floor(bloque.texto.length / 2);
+              const corte = bloque.texto.lastIndexOf("\n", mitad);
+              const punto = corte > bloque.texto.length * 0.2 ? corte : mitad;
+              const a = bloque.texto.slice(0, punto);
+              const b = bloque.texto.slice(punto);
+              if (!a.trim() || !b.trim()) return null;
+              const sub = (txt: string, i: number): Parte => ({
+                contenido: { durls: [], texto: txt },
+                etiqueta: `Bloque ${bloque.indice}/${bloques.length}.${i}`,
+                partir: () => null,
+              });
+              return [sub(a, 1), sub(b, 2)];
+            },
+          },
+          diag,
+          onEstado
+        );
+        // Se acumulan TODAS las carreras de todos los bloques; la
+        // consolidación por número se hace AL FINAL (una sola vez), para que
+        // la decisión "misma carrera" o "carrera distinta mal numerada" la
+        // tome la MISMA función que usa el resto del motor
+        // (`consolidarPorNumero`), y no una copia que se pueda desviar.
+        for (const c of nuevas) {
+          normalizarExtraida(c);
+          acumuladas.push(c);
+        }
+        onEstado?.(
+          `Bloque ${bloque.indice}/${bloques.length}: ${nuevas.length} carrera(s). Acumulado: ${acumuladas.length}.`
+        );
+      } catch (errBloque) {
+        const msg = errBloque instanceof Error ? errBloque.message : String(errBloque);
+        if (/clave|API key/i.test(msg)) {
+          return { ok: false, carreras: acumuladas, error: msg, diag: pintarDiag(), cuotaTotal };
+        }
+        bloquesFallidos.push(bloque.indice);
+        diag.ultimoError = `Bloque ${bloque.indice}: ${msg}`;
+        if (/CUOTA DIARIA/i.test(msg)) {
+          cuotaTotal = true;
+          break;
+        }
+      }
+    }
+
+    // CONSOLIDACIÓN: `Map<number, Carrera>` indexado por número de carrera.
+    // La misma carrera partida entre dos bloques se une con sus ejemplares;
+    // dos carreras distintas con el mismo número NO se colapsan (la segunda
+    // sale como colisión y la reparación final la renumera al hueco).
+    const consol = consolidarPorNumero(acumuladas);
+    const carreras = [...consol.porNumero.values(), ...consol.colisiones];
+    if (!carreras.length) {
+      return {
+        ok: false,
+        carreras: [],
+        error:
+          (diag.ultimoError || "No se obtuvieron carreras de la IA.") +
+          " — Probá de nuevo en unos minutos: los 429 (cuota) y 503 (saturación) son transitorios.",
+        diag: pintarDiag(),
+        cuotaTotal,
+      };
+    }
+
+    let avisoNumeracion = "";
+    if (carreras.length > 1) {
+      const rep: ReporteReparacion = repararNumerosCarreras(carreras);
+      const faltan = carrerasFaltantes(carreras);
+      const partes: string[] = [];
+      if (rep.renumeradas.length) {
+        partes.push(`corregí el número mal leído (${rep.renumeradas.map((r) => `${r.de}→${r.a}`).join(", ")})`);
+      }
+      if (rep.consolidadas) partes.push(`uní ${rep.consolidadas} carrera(s) repetida(s)`);
+      if (faltan.length) {
+        partes.push(`faltan: ${faltan.map((f) => `${f.faltan.join("/")}${f.hipodromo ? ` (${f.hipodromo})` : ""}`).join("; ")}`);
+      }
+      if (bloquesFallidos.length) {
+        partes.push(`no se pudo leer el bloque(s) ${bloquesFallidos.join(", ")}: puede faltar alguna carrera de ahí`);
+      }
+      if (partes.length) {
+        avisoNumeracion = partes.join(" · ");
+        onEstado?.(`Numeración: ${avisoNumeracion}.`);
+      }
+    }
+
+    return {
+      ok: true,
+      carreras,
+      diag: pintarDiag(avisoNumeracion ? `numeración: ${avisoNumeracion}` : ""),
+      cuotaTotal,
+      avisoNumeracion: avisoNumeracion || undefined,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      carreras: [],
+      error: e instanceof Error ? e.message : String(e),
+      diag: pintarDiag(),
+      cuotaTotal,
+    };
+  }
+}
 
 /** Transforma las páginas (dataURLs) con Gemini por LOTES de 3 (igual que el
  *  legacy), con reintentos de ciclo (máx 3) y entrega resultados parciales.

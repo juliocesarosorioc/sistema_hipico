@@ -28,6 +28,7 @@ import {
   type CarreraPrograma,
 } from "@/features/gaceta/lib/programa";
 import { escribirCarrerasMaestro } from "@/features/carreras/lib/maestro";
+import { fusionarEjemplaresAcumulativo } from "@/features/carreras/lib/maestro-nucleo";
 import { useRegistroCentral } from "@/shared/store/useRegistroCentral";
 
 /** Ejemplar tal como lo entrega la IA o el Ensamblaje (acepta valor/pts). */
@@ -132,6 +133,22 @@ export async function sincronizarCarrerasAlCentral(
     // Se conservan las carreras del día que NO vienen en esta tanda (otros
     // hipódromos / otras altas): el registro central es acumulativo.
     const otras = previas.filter((c) => !setNuevas.has(claveCarrera(c)));
+    // Y de las que SÍ vienen, se conservan los EJEMPLARES que el lote no
+    // trajo: un lote parcial (Belmont 1-3, luego Belmont 4-6) tiene que SUMAR
+    // ejemplares, nunca reemplazar la lista. La identidad es el número de
+    // gualdrapa, que es lo que identifica al ejemplar dentro de la carrera.
+    const porClavePrevia = new Map(previas.map((c) => [claveCarrera(c), c]));
+    const fusionadas: CarreraPrograma[] = nuevas.map((c) => {
+      const previa = porClavePrevia.get(claveCarrera(c));
+      if (!previa) return c;
+      return {
+        ...c,
+        caballos: fusionarEjemplaresAcumulativo<CaballoPrograma>(
+          previa.caballos ?? [],
+          c.caballos ?? []
+        ),
+      };
+    });
     const hipodromos = [
       ...new Set(
         [...(actual.data?.hipodromos ?? []), ...nuevas.map((c) => c.hipodromo)]
@@ -142,7 +159,7 @@ export async function sincronizarCarrerasAlCentral(
 
     // 1) Vía canónica: guarda el documento del día (`programa_dia`) Y da de alta
     //    las carreras en la matriz `carreras`.
-    const res = await guardarPrograma({ fecha, hipodromos, carreras: [...otras, ...nuevas] }, creadoPor);
+    const res = await guardarPrograma({ fecha, hipodromos, carreras: [...otras, ...fusionadas] }, creadoPor);
     if (res.ok) {
       fechas.push(fecha);
       guardadas += nuevas.length;
@@ -152,6 +169,10 @@ export async function sincronizarCarrerasAlCentral(
     // 2) Si el documento del día no se pudo guardar, la MATRIZ —de donde leen
     //    TODOS los módulos— se escribe igual: sin esto la carrera quedaría
     //    invisible aunque la extracción haya sido correcta.
+    //
+    //    `fusionar_ejemplares: true` porque esta es la vía de la GACETA, que
+    //    carga por LOTES: un lote parcial tiene que SUMAR ejemplares a la
+    //    carrera, nunca borrar los que ya estaban leídos.
     const matriz = await escribirCarrerasMaestro(
       nuevas.map((c) => ({
         fecha,
@@ -167,6 +188,7 @@ export async function sincronizarCarrerasAlCentral(
         superficie: c.superficie ?? null,
         premio: c.premio ?? null,
         origen: "ia",
+        fusionar_ejemplares: true,
       }))
     );
     if (!matriz.ok) return { ok: false, fechas, guardadas, error: matriz.error || res.error };

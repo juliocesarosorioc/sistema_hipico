@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CLAVE_GEMINI_KEY, transformarGaceta } from "@/features/gaceta/lib/ia";
-import { guardarHistorialGaceta, registrarEjemplares } from "@/features/gaceta/lib/padron";
+import { CLAVE_GEMINI_KEY, transformarGaceta, transformarGacetaTexto } from "@/features/gaceta/lib/ia";
+import { guardarHistorialGaceta, registrarEjemplares, registrarGacetaEHistorial } from "@/features/gaceta/lib/padron";
 import { sincronizarCarrerasAlCentral } from "@/features/carreras/lib/sincronizar";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { Button } from "@/shared/components/ui/Button";
@@ -59,6 +59,7 @@ type PdfDoc = {
   numPages: number;
   getPage: (n: number) => Promise<{
     getViewport: (o: { scale: number }) => { width: number; height: number };
+    getTextContent: () => Promise<{ items: Array<{ str?: string; hasEOL?: boolean }> }>;
     render: (p: { canvasContext: CanvasRenderingContext2D; viewport: { width: number; height: number } }) => { promise: Promise<void> };
     cleanup: () => void;
   }>;
@@ -123,8 +124,61 @@ async function renderPdfAPaginas(
   return paginas;
 }
 
-const SQL_AVISO_KEY = "club_gaceta_sql_aviso";
+/**
+ * Extrae el TEXTO de un PDF (capa de texto de pdf.js).
+ *
+ * POR QUÉ EXISTE: la vía de imágenes se trunca. Un PDF de 13 carreras se
+ * manda como imágenes y el modelo entrega las primeras y se queda sin tokens
+ * para las últimas (Belmont 1-3, Charles Town 4-6, Keeneland 4-6: las tres
+ * últimas se perdían). Con el texto se puede PARTIR el documento en bloques
+ * de 2-3 carreras, y cada bloque cierra su respuesta completo.
+ *
+ * Cuando el PDF es una imagen escaneada no tiene capa de texto: ahí se
+ * devuelve cadena vacía y el llamador cae a la vía de imágenes, que es la
+ * única que puede leer un escaneo.
+ *
+ * `tope` limita las páginas leídas (mismo criterio que el render).
+ */
+async function extraerPdfComoTexto(file: File, tope?: number): Promise<string> {
+  const lib = await cargarPdfJs();
+  const buffer = await file.arrayBuffer();
+  let doc: PdfDoc;
+  try {
+    doc = await lib.getDocument({ data: buffer }).promise;
+  } catch (e) {
+    throw new Error(`No se pudo leer el PDF: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  const total = tope && tope > 0 ? Math.min(tope, doc.numPages) : doc.numPages;
+  const paginas: string[] = [];
+  try {
+    for (let i = 1; i <= total; i++) {
+      const page = await doc.getPage(i);
+      try {
+        const contenido = await page.getTextContent();
+        const lineas = (contenido?.items ?? [])
+          .map((it) => `${it.str ?? ""}${it.hasEOL ? "\n" : " "}`)
+          .join("");
+        if (lineas.trim()) paginas.push(lineas);
+      } catch {
+        /* página sin capa de texto: se omite */
+      }
+      try {
+        page.cleanup();
+      } catch {
+        /* noop */
+      }
+    }
+  } finally {
+    try {
+      await doc.destroy();
+    } catch {
+      /* noop */
+    }
+  }
+  return paginas.join("\n\n");
+}
 
+const SQL_AVISO_KEY = "club_gaceta_sql_aviso";
 export function GacetaIA() {
   const [paginas, setPaginas] = useState<PaginaGaceta[]>([]);
   const [seleccionadas, setSeleccionadas] = useState<Set<string>>(new Set());
@@ -136,6 +190,14 @@ export function GacetaIA() {
   const [progreso, setProgreso] = useState<{ hecho: number; total: number } | null>(null);
   const [rango, setRango] = useState("");
   const [topePaginas, setTopePaginas] = useState("");
+  /**
+   * Capa de TEXTO del documento (si el PDF la trae).
+   *
+   * Cuando existe, la transcripción va por bloques de 2-3 carreras: es lo que
+   * evita que las últimas carreras del documento se pierdan por truncamiento.
+   * Cuando no existe (PDF escaneado), se manda la página como imagen.
+   */
+  const [textoDocumento, setTextoDocumento] = useState("");
   /** Fecha de la jornada que se está cargando. Por defecto HOY, pero admite días
    *  FUTUROS: las carreras del documento que no traigan fecha propia se sellan
    *  con esta fecha, para poder cargar/registrar/publicar jornadas posteriores. */
@@ -289,6 +351,7 @@ export function GacetaIA() {
       setDiag("");
       try {
         const nuevas: PaginaGaceta[] = [];
+        const textos: string[] = [];
         const generar = (dataUrl: string) => ({
           id: `${dataUrl.slice(0, 24)}-${nuevas.length}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           dataUrl,
@@ -299,8 +362,18 @@ export function GacetaIA() {
           try {
             const esPdf = /\.pdf$/i.test(f.name) || f.type === "application/pdf";
             if (esPdf) {
-              setEstado(`Renderizando ${f.name}...`);
               const tope = parseInt(topePaginas, 10);
+              // Capa de texto primero: si el PDF la tiene, se transcribe por
+              // BLOQUES (2-3 carreras por llamada) y no se trunca. Si no la
+              // tiene (PDF escaneado), se sigue con las páginas como imágenes.
+              setEstado(`Leyendo el texto de ${f.name}...`);
+              try {
+                const texto = await extraerPdfComoTexto(f, tope > 0 ? tope : undefined);
+                if (texto.trim().length >= 400) textos.push(texto);
+              } catch {
+                /* sin capa de texto: se usa la vía de imágenes */
+              }
+              setEstado(`Renderizando ${f.name}...`);
               const pag = await renderPdfAPaginas(
                 f,
                 (pag, total) => setEstado(`Renderizando ${f.name} · página ${pag} de ${total}...`),
@@ -315,6 +388,14 @@ export function GacetaIA() {
             setEstado("Error leyendo " + f.name + ": " + (e instanceof Error ? e.message : String(e)));
           }
         }
+        if (textos.length) {
+          setTextoDocumento(textos.join("\n\n"));
+          setEstado(
+            `${nuevas.length} página(s) listas · documento con capa de texto: se transcribirá por bloques (2-3 carreras por llamada) para que no se trunque.`
+          );
+        } else if (nuevas.length) {
+          setEstado(`${nuevas.length} página(s) listas (sin capa de texto: se envía como imágenes).`);
+        }
         if (nuevas.length) {
           setPaginas((prev) => [...prev, ...nuevas]);
           setSeleccionadas((prev) => {
@@ -322,7 +403,6 @@ export function GacetaIA() {
             nuevas.forEach((p) => n.add(p.id));
             return n;
           });
-          setEstado(`${nuevas.length} página(s) listas.`);
         }
       } finally {
         setLeyendo(false);
@@ -370,17 +450,32 @@ export function GacetaIA() {
       return;
     }
     const imgs = paginas.filter((p) => seleccionadas.has(p.id)).map((p) => p.dataUrl);
-    if (!imgs.length) {
+    const hayTexto = textoDocumento.trim().length >= 400;
+    if (!imgs.length && !hayTexto) {
       setEstado("Selecciona al menos una página.");
       toast("Selecciona al menos una página.", "warning");
       return;
     }
     const pesoSel = `${imgs.reduce((a, d) => a + pesoMB(d), 0).toFixed(1)} MB`;
     setTrabajando(true);
-    setEstado(`Transcribiendo ${imgs.length} página(s) (${pesoSel}) con Gemini (gratis)...`);
+    setEstado(
+      hayTexto
+        ? `Transcribiendo el documento por bloques (2-3 carreras por llamada) con Gemini (gratis)...`
+        : `Transcribiendo ${imgs.length} página(s) (${pesoSel}) con Gemini (gratis)...`
+    );
     setDiag("");
     try {
-      const res = await transformarGaceta(clave.trim(), imgs, (hecho, total) => setProgreso({ hecho, total }), (s) => setEstado(s));
+      // VÍA DE TEXTO (preferida): el documento se parte en bloques de 2-3
+      // carreras, así ninguna respuesta se trunca. Solo si el PDF no traía
+      // capa de texto se cae a la vía de imágenes.
+      const res = hayTexto
+        ? await transformarGacetaTexto(
+            clave.trim(),
+            textoDocumento,
+            (hecho, total) => setProgreso({ hecho, total }),
+            (s) => setEstado(s)
+          )
+        : await transformarGaceta(clave.trim(), imgs, (hecho, total) => setProgreso({ hecho, total }), (s) => setEstado(s));
       setDiag(res.diag ?? "");
       if (!res.ok) {
         setEstado(res.cuotaTotal ? "Cuota DIARIA gratuita de Gemini agotada. Prueba otra vez mañana o consigue otra clave gratis (aistudio.google.com/apikey)." : res.error ?? "Error transformando.");
@@ -450,15 +545,36 @@ export function GacetaIA() {
           toast("La extracción quedó lista, pero no se pudo publicar en el registro central.", "warning");
         });
 
-      // Historlae (gaceta_procesada) en segundo plano, sin bloquear.
+      // Historial (gaceta_procesada) + MEMORIA HISTÓRICA de cada ejemplar, en
+      // segundo plano y sin bloquear. La RPC `rpc_registrar_gaceta_e_historial`
+      // hace las dos cosas: deja constancia de la gaceta procesada y alimenta
+      // el histórico de cada caballo, que es lo que después usa la
+      // proyección (Inteligencia Hípica) para calcular probabilidades.
       const fecha = lista.find((c) => c.fecha)?.fecha ?? null;
-      guardarHistorialGaceta(lista, fecha, "desconocido").catch((e) => {
-        console.warn("No se guardó el historial (gaceta_procesada):", e?.message || e);
-        if (!sessionStorage.getItem(SQL_AVISO_KEY)) {
-          sessionStorage.setItem(SQL_AVISO_KEY, "1");
-          toast("La gaceta se procesó bien, pero el historial no se pudo guardar (falta la tabla o permisos).", "warning");
-        }
-      });
+      registrarGacetaEHistorial(lista, fecha, "desconocido")
+        .then((r) => {
+          if (r.ok) {
+            setEstado(
+              `${res.cuotaTotal ? "PARCIAL · " : ""}Listo: ${lista.length} carrera(s) transcritas · memoria histórica alimentada.`
+            );
+            return;
+          }
+          console.warn("No se guardó el historial/memoria:", r.error);
+          if (!sessionStorage.getItem(SQL_AVISO_KEY)) {
+            sessionStorage.setItem(SQL_AVISO_KEY, "1");
+            toast(
+              "La gaceta se procesó bien, pero la memoria histórica no se pudo guardar (falta la RPC o permisos).",
+              "warning"
+            );
+          }
+        })
+        .catch((e) => {
+          console.warn("No se guardó el historial (gaceta_procesada):", e?.message || e);
+          if (!sessionStorage.getItem(SQL_AVISO_KEY)) {
+            sessionStorage.setItem(SQL_AVISO_KEY, "1");
+            toast("La gaceta se procesó bien, pero el historial no se pudo guardar (falta la tabla o permisos).", "warning");
+          }
+        });
 
       // Vinculación al padrón en segundo plano (actualiza las insignias ✗/✓/★).
       void registrarEjemplares(lista as unknown as Array<Record<string, unknown>>)
@@ -488,7 +604,7 @@ export function GacetaIA() {
       setTrabajando(false);
       setProgreso(null);
     }
-  }, [clave, paginas, seleccionadas, toast]);
+  }, [clave, paginas, seleccionadas, textoDocumento, toast]);
 
   const registrarEnPadron = useCallback(async () => {
     if (registrando || carreras.length === 0) return;
@@ -846,15 +962,15 @@ export function GacetaIA() {
             variant="default"
             size="lg"
             className="mt-4 w-full"
-            disabled={trabajando || !clave.trim() || seleccionadas.size === 0}
+            disabled={trabajando || !clave.trim() || (seleccionadas.size === 0 && textoDocumento.trim().length < 400)}
             onClick={() => void alTransformar()}
             title={
-              seleccionadas.size === 0
+              seleccionadas.size === 0 && textoDocumento.trim().length < 400
                 ? "Selecciona al menos una página para extraer sus carreras"
-                : `Enviar ${seleccionadas.size} página(s) seleccionada(s) a Gemini`
+                : `Enviar ${textoDocumento.trim().length >= 400 ? "el documento por bloques" : `${seleccionadas.size} página(s) seleccionada(s)`} a Gemini`
             }
           >
-            ✨ Transformar con IA (gratis)
+            {textoDocumento.trim().length >= 400 ? "✨ Transformar por bloques (IA)" : "✨ Transformar con IA (gratis)"}
           </Button>
           {trabajando && (
             <div className="mt-3 rounded-lg border border-primary-200 bg-primary-500/5 p-3">

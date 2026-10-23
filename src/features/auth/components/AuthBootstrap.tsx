@@ -50,7 +50,7 @@ export function AuthBootstrap() {
         // usarse. La redirección se mira el store, no el evento.
         const s = useAuthStore.getState();
         if (!s.inicializada || !s.sembrada) return;
-        if (esPantallaDeAcceso(ruta)) router.replace("/dashboard");
+        if (esPantallaDeAcceso(ruta)) router.replace("/inicio");
       });
     };
 

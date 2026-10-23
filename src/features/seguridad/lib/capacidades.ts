@@ -59,7 +59,7 @@ export const MODULOS_ESQUEMA: ModuloEsquema[] = [
     icono: "home",
     descripcion: "Escritorio, inicio, grupos activos y saldos.",
     capacidades: [
-      c("general", "ruta", "ruta_dashboard", "Ver el Escritorio (/dashboard)", "lectura", "src/app/dashboard/page.tsx:1"),
+      c("general", "ruta", "ruta_dashboard", "Ver el Escritorio (/dashboard, alias de /inicio)", "lectura", "src/app/(dashboard)/dashboard/page.tsx:1"),
       c("general", "ruta", "ruta_inicio", "Ver Inicio", "lectura", "src/app/(dashboard)/inicio/page.tsx:16", { ruta: "/inicio" }),
       c("general", "ruta", "ruta_saldos", "Ver Saldos y Reportes", "lectura", "src/app/(dashboard)/saldos-reportes/page.tsx:8", { ruta: "/saldos-reportes" }),
       c("general", "celda", "celda_saldo_cliente", "Ver saldo de un cliente", "lectura", "src/components/clientes/ClientesModule.tsx", {
@@ -217,18 +217,16 @@ export const MODULOS_ESQUEMA: ModuloEsquema[] = [
 
 // --------------------------------------------------------------------------
   {
-    clave: "inteligencia-hipica/proyecciones",
-    nombre: "inteligencia-hipica/proyecciones",
+    clave: "inteligencia_hipica",
+    nombre: "Inteligencia Hípica",
     ruta: "/inteligencia-hipica/proyecciones",
     icono: "horse",
-    descripcion: "Análisis de proyecciones de carreras y ejemplares.",
+    descripcion: "Proyecciones de carreras y ejemplares: memoria histórica, ranking actuarial y pizarra Godet.",
     capacidades: [
-      c("inteligencia-hipica/proyecciones", "ruta", "inteligencia-hipica/proyecciones", "Ver inteligencia-hipica/proyecciones y gaceta", "lectura", "src/app/(dashboard)/inteligencia-hipica/proyecciones/page.tsx:1"),
-      c("inteligencia-hipica/proyecciones", "boton", "btn_crear", "Alta de proyección", "escritura", "src/components/inteligencia-hipica/proyecciones/ProyeccionesModule.tsx"),
-      c("inteligencia-hipica/proyecciones", "boton", "btn_editar", "Editar proyección", "escritura", "src/components/inteligencia-hipica/proyecciones/ProyeccionesModule.tsx"),
-      c("inteligencia-hipica/proyecciones", "boton", "btn_eliminar", "Eliminar proyección", "critico", "src/components/inteligencia-hipica/proyecciones/ProyeccionesModule.tsx"),
-      c("inteligencia-hipica/proyecciones", "celda", "celda_retirado", "Ver la columna de retirado", "lectura", "src/components/inteligencia-hipica/proyecciones/ProyeccionesModule.tsx"),
-        c("inteligencia-hipica/proyecciones", "funcion", "fn_guardar_proyeccion", "Guardar proyección", "escritura", "src/lib/gaceta/padron.ts:193"),
+      c("inteligencia_hipica", "ruta", "ruta_proyecciones", "Ver Inteligencia Hípica · Proyecciones", "lectura", "src/app/(dashboard)/inteligencia-hipica/proyecciones/page.tsx:1"),
+      c("inteligencia_hipica", "celda", "celda_memoria_historica", "Ver la memoria histórica de los ejemplares", "lectura", "src/app/(dashboard)/inteligencia-hipica/proyecciones/page.tsx:1"),
+      c("inteligencia_hipica", "celda", "celda_ranking_actuarial", "Ver el ranking de probabilidad actuarial", "lectura", "src/app/(dashboard)/inteligencia-hipica/proyecciones/page.tsx:1"),
+      c("inteligencia_hipica", "modal", "modal_analisis_actuarial", "Abrir el simulador actuarial Godet", "lectura", "src/features/ejemplares/components/ModalAnalisisActuarialGodet.tsx"),
     ],
   },
 
@@ -730,7 +728,11 @@ export const PUERTAS: Array<{
   // que `esPantallaDeAcceso` debe seguir devolviendo false y no mandarlo al
   // dashboard. Es el mismo caso que /reset-password.
   { ruta: "/portal", publica: true, capacidad: "portal:ruta_portal" },
-  { ruta: "/dashboard", capacidad: "general:ruta_dashboard" },
+  // `/dashboard` es un ALIAS del escritorio: la pantalla real es `/inicio`
+  // (dentro del grupo `(dashboard)`, la única fuente de verdad del App Router).
+  // Se acepta con cualquiera de las dos capacidades del escritorio para que un
+  // enlace viejo, un marcador o una pestaña guardada nunca quede en un 404.
+  { ruta: "/dashboard", algunas: ["general:ruta_inicio", "general:ruta_dashboard"] },
   { ruta: "/seguridad", capacidad: "seguridad:ruta_seguridad" },
   // Diagnóstico es una utilidad de sanidad del sistema (matriz de carreras,
   // catalogue de hipódromos, SQL pendientes). Se entra con la misma puerta que
@@ -775,6 +777,7 @@ export const PUERTAS: Array<{
   { ruta: "/pollas", capacidad: "pollas:ruta_pollas" },
   { ruta: "/reglas-jugadas", capacidad: "reglas_jugadas:ruta_reglas_jugadas" },
   { ruta: "/operadores", capacidad: "operadores:ruta_operadores" },
+  { ruta: "/inteligencia-hipica/proyecciones", capacidad: "inteligencia_hipica:ruta_proyecciones" },
 ];
 
 /** Todas las rutas de la plataforma, para el matcher del middleware. */
@@ -860,11 +863,21 @@ export function rutaPermitida(pathname: string, permisos: Set<string> | string[]
   // Puerta pública (el login): no exige ninguna capacidad. Solo la pueden
   // abrir rutas declaradas como tales acá; no es un atajo para lo demás.
   if (p.publica) return true;
-  if (!p.capacidad) return false;
+  // Una ruta sin EXIGENCIA no se puede abrir. Se evalúan las DOS formas
+  // antes de negarla: `algunas` (basta con una de las capacidades) es una
+  // puerta válida y no necesita `capacidad` própria.
+  //
+  // BUG QUE ESTO CORRIGE: el chequeo anterior era `if (!p.capacidad) return
+  // false`, que cortocircuitaba ANTES de mirar `algunas`. Toda puerta
+  // declarada con `algunas` quedaba cerrada para todo el mundo, y la
+  // característica documentada ("basta con una de ellas") no existía. La
+  // ruta `/dashboard` —que se declara con `algunas` porque es un alias del
+  // escritorio— quedaba negada incluso con la capacidad en la mano.
+  if (!p.capacidad && !p.algunas?.length) return false;
   const set = permisos instanceof Set ? permisos : new Set(permisos);
   return p.algunas?.length
     ? p.algunas.some((c) => set.has(c))
-    : set.has(p.capacidad);
+    : set.has(p.capacidad as string);
 }
 
 /**

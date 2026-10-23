@@ -359,3 +359,192 @@ export async function guardarHistorialGaceta(carreras: unknown[], fecha?: string
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
+
+// ============================================================================
+// MEMORIA HISTÓRICA DE EJEMPLARES
+// ============================================================================
+
+/** Una actuación pasada de un ejemplar, tal como la devuelve la RPC. */
+export type ActuacionHistorica = {
+  fecha: string;
+  hipodromo: string;
+  carrera: number;
+  /** Puesto obtenido (0 = no llegó al top 3 / no informado). */
+  puesto: number;
+  /** Distancia de esa carrera, en metros. */
+  distancia: number;
+  /** Superficie de esa carrera. */
+  superficie: string;
+  /** Premio de esa carrera. */
+  premio: number;
+};
+
+/**
+ * Memoria histórica de UN ejemplar: lo que el modelo necesita para proyectarlo.
+ *
+ * `indiceConsistenciaGodet` es el número que resume si el caballo cumple: la
+ * proporción de sus actuaciones que lo dejaron arriba, con un peso por la
+ * importancia de la carrera. Es el insumo que la pizarra Godet usa para
+ * separar a un ejemplar constante de uno que lucky.
+ */
+export type MemoriaEjemplar = {
+  nombre: string;
+  nacionalidad: string;
+  /** Cuántas carreras tiene registradas. */
+  actuaciones: number;
+  /** Cuántas veces terminó en el top 3. */
+  placements: number;
+  /** Porcentaje de aciertos (0-100). */
+  winRate: number;
+  /** Índice de Consistencia Godet (0-100). */
+  indiceConsistenciaGodet: number;
+  /** Último Beyer/Speed Rating conocido (0 si no hay). */
+  speedRating: number;
+  /** Historial de los ratings: sirve para ver la tendencia. */
+  serieSpeedRating: number[];
+  /** Jinete que más veces lo montó. */
+  jineteHabitual: string;
+  /** Entrenador que más veces lo tuvo. */
+  entrenadorHabitual: string;
+  /** Historial cronológico (más reciente primero). */
+  historial: ActuacionHistorica[];
+};
+
+export type ResMemoria = {
+  ok: boolean;
+  data: MemoriaEjemplar[];
+  /** Aviso: la RPC no está aplicada y se usó el padrón local. */
+  aviso?: string;
+  error?: string;
+};
+
+/**
+ * Lee la memoria histórica de los ejemplares indicados.
+ *
+ * Usa la RPC `rpc_obtener_memoria_historica_caballos`, que es la única que
+ * puede cruzar las carreras ya jugadas con los actuarios. Si la RPC todavía
+ * no está instalada (o el rol no la puede leer), se cae a un fallback LOCAL
+ * que reconstruye lo básico desde el padrón `ejemplares` y desde las carreras
+ * ya registradas: menos datos, pero la pantalla nunca queda en blanco.
+ */
+export async function leerMemoriaHistorica(
+  nombres: string[],
+  fechaCorte?: string | null
+): Promise<ResMemoria> {
+  if (!supabase) return { ok: false, data: [], error: "Sin credenciales Supabase (.env.local)." };
+  const limpios = [...new Set((nombres || []).map((n) => String(n || "").trim().toUpperCase()).filter(Boolean))];
+  if (!limpios.length) return { ok: true, data: [] };
+
+  const rpcAusente = (e: unknown): boolean => {
+    const code = (e as { code?: string } | null)?.code;
+    const msg = (e as { message?: string } | null)?.message ?? "";
+    return code === "42883" || code === "PGRST202" || /does not exist|not found/i.test(msg);
+  };
+
+  try {
+    const r = await supabase.rpc("rpc_obtener_memoria_historica_caballos", {
+      p_nombres: limpios,
+      p_fecha_corte: fechaCorte || null,
+    });
+    if (!r.error && Array.isArray(r.data)) {
+      return { ok: true, data: (r.data as unknown as MemoriaEjemplar[]) ?? [] };
+    }
+    if (r.error && !rpcAusente(r.error)) {
+      return { ok: false, data: [], error: r.error.message };
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!rpcAusente(e)) return { ok: false, data: [], error: msg };
+  }
+
+  // FALLBACK LOCAL: sin la RPC, la memoria se reconstruye desde `ejemplares`
+  // (padrón) y las carreras de la matriz. Es menos precisa, pero permite
+  // trabajar antes de aplicar el SQL.
+  const aviso = "Memoria histórica en modo local: falta aplicar sql/memoria_historica.sql.";
+  try {
+    const { data: ejemplares, error } = await supabase
+      .from("ejemplares")
+      .select("id, nombre, nacionalidad")
+      .in("nombre", limpios);
+    if (error) return { ok: false, data: [], error: error.message };
+    const porNombre = new Map<string, { id: string | number; nacionalidad: string }>();
+    for (const e of (ejemplares ?? []) as Array<{ id: string | number; nombre: string; nacionalidad?: string }>) {
+      porNombre.set(String(e.nombre || "").trim().toUpperCase(), {
+        id: e.id,
+        nacionalidad: String(e.nacionalidad || "VE").toUpperCase(),
+      });
+    }
+    const data: MemoriaEjemplar[] = [...porNombre.entries()].map(([nombre, info]) => ({
+      nombre,
+      nacionalidad: info.nacionalidad,
+      actuaciones: 0,
+      placements: 0,
+      winRate: 0,
+      indiceConsistenciaGodet: 0,
+      speedRating: 0,
+      serieSpeedRating: [],
+      jineteHabitual: "",
+      entrenadorHabitual: "",
+      historial: [],
+    }));
+    return { ok: true, data, aviso };
+  } catch (e) {
+    return {
+      ok: false,
+      data: [],
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+/**
+ * Registra la gaceta procesada Y alimenta la memoria histórica de cada
+ * ejemplar (RPC `rpc_registrar_gaceta_e_historial`).
+ *
+ * Son dos cosas que antes iban separadas y hoy van juntas: el historial dice
+ * QUÉ gaceta se procesó, y la memoria dice qué hizo cada caballo en ella.
+ * Sin la memoria, el modelo de proyección no tiene con qué trabajar.
+ *
+ * Si la RPC no está instalada, se cae al INSERT directo en `gaceta_procesada`
+ * (que sí puede existir) y se avisa: la gaceta NO se pierde, solo la memoria
+ * histórica queda sin alimentar.
+ */
+export async function registrarGacetaEHistorial(
+  carreras: unknown[],
+  fecha?: string | null,
+  creadoPor?: string
+): Promise<ResHistorialGaceta> {
+  if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
+  const contenido = Array.isArray(carreras) ? carreras : [];
+  const fechaIso = fecha ? String(fecha).slice(0, 10) : null;
+
+  try {
+    const r = await supabase.rpc("rpc_registrar_gaceta_e_historial", {
+      p_fecha: fechaIso,
+      p_carreras: contenido,
+      p_creado_por: creadoPor || "desconocido",
+    });
+    if (!r.error) return { ok: true };
+    const code = (r.error as { code?: string }).code;
+    if (code !== "42883" && code !== "PGRST202") {
+      // La RPC existe pero falló: se avisa, no se oculta.
+      const directo = await guardarHistorialGaceta(contenido, fechaIso, creadoPor);
+      return { ok: directo.ok, error: directo.ok ? r.error.message : directo.error };
+    }
+  } catch (e) {
+    const code = (e as { code?: string } | null)?.code;
+    if (code !== "42883" && code !== "PGRST202") {
+      const directo = await guardarHistorialGaceta(contenido, fechaIso, creadoPor);
+      return { ok: directo.ok, error: directo.ok ? (e as Error).message : directo.error };
+    }
+  }
+
+  // La RPC no está instalada: el historial se guarda igual, por la vía directa.
+  const directo = await guardarHistorialGaceta(contenido, fechaIso, creadoPor);
+  return {
+    ok: directo.ok,
+    error: directo.ok
+      ? "Gaceta registrada, pero la memoria histórica no se alimentó: falta aplicar sql/memoria_historica.sql."
+      : directo.error,
+  };
+}

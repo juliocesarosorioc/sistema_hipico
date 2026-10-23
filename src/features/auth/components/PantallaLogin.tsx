@@ -104,7 +104,7 @@ export default function PantallaLogin() {
   // seleccionar. La puerta no tiene que desloguear a nadie.
   useEffect(() => {
     if (!inicializada) return;
-    if (usuarioActual && (perfiles.length > 0 || esPrincipal)) router.replace("/dashboard");
+    if (usuarioActual && (perfiles.length > 0 || esPrincipal)) router.replace("/inicio");
   }, [inicializada, usuarioActual, perfiles.length, esPrincipal, router]);
 
   const enviar = async (e: FormEvent) => {
@@ -148,7 +148,7 @@ export default function PantallaLogin() {
         return;
       }
       rateLimiterRef.current.registrarExito();
-      router.replace("/dashboard");
+      router.replace("/inicio");
     } catch (err) {
       rateLimiterRef.current.registrarFallo();
       useAuthStore.setState({
