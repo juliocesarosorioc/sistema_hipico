@@ -54,6 +54,11 @@ export type EjemplarMatriz = {
   nombre?: string | null;
   nacionalidad?: string | null;
   retirado?: boolean;
+  jockey?: string | null;
+  entrenador?: string | null;
+  peso?: number | string | null;
+  medicamento?: string | null;
+  implementos?: string | null;
 };
 
 export type EjemplarCarreraCentral = {
@@ -62,6 +67,11 @@ export type EjemplarCarreraCentral = {
   nacionalidad?: string | null;
   /** Retirado según la lista CENTRAL de la carrera. */
   retirado?: boolean;
+  jockey?: string | null;
+  entrenador?: string | null;
+  peso?: number | string | null;
+  medicamento?: string | null;
+  implementos?: string | null;
 };
 
 /** Resultado embebido de la fila maestra (0 o 1 mientras la carrera no corrió). */
@@ -134,6 +144,106 @@ distancia?: string | null;
   fusionar_ejemplares?: boolean;
 };
 
+export type ResultadoMergeCarrera = {
+  carrera: EntradaCarrera;
+  cambio: boolean;
+  ejemplaresCompletados: number;
+  camposCompletados: string[];
+};
+
+const tieneDato = (valor: unknown): boolean =>
+  valor !== null && valor !== undefined && String(valor).trim() !== "";
+
+const nombreGenerico = (valor: unknown): boolean =>
+  !tieneDato(valor) || /^(?:EJEMPLAR|CABALLO)\s*\d*$/i.test(String(valor).trim());
+
+/** Enriquece una fila cargada sin reemplazar datos operativos ya existentes. */
+export function fusionarCargaGaceta(
+  existente: FilaCarreraMaestro,
+  nueva: EntradaCarrera
+): ResultadoMergeCarrera {
+  const camposCompletados: string[] = [];
+  const completarCampo = <T>(campo: string, anterior: T | null | undefined, propuesto: T | null | undefined): T | null | undefined => {
+    if (!tieneDato(anterior) && tieneDato(propuesto)) {
+      camposCompletados.push(campo);
+      return propuesto;
+    }
+    return anterior;
+  };
+
+  const existentesPorNumero = new Map<string, EjemplarMatriz>();
+  for (const raw of Array.isArray(existente.caballos) ? existente.caballos : []) {
+    if (!raw || typeof raw !== "object") continue;
+    const ejemplar = raw as EjemplarMatriz;
+    const numero = String(ejemplar.numero ?? "").trim();
+    if (numero && !existentesPorNumero.has(numero)) existentesPorNumero.set(numero, ejemplar);
+  }
+  let ejemplaresCompletados = 0;
+  const nuevosPorNumero = new Map<string, EjemplarMatriz>();
+  for (const raw of Array.isArray(nueva.caballos) ? nueva.caballos : []) {
+    const numero = String(raw.numero ?? "").trim();
+    if (!numero) continue;
+    const previo = existentesPorNumero.get(numero);
+    if (!previo) {
+      nuevosPorNumero.set(numero, raw);
+      ejemplaresCompletados++;
+      camposCompletados.push(`Ejemplar #${numero}`);
+      continue;
+    }
+    const caballo: EjemplarMatriz = { ...previo, numero };
+    let cambio = false;
+    const completar = <T>(campo: keyof EjemplarMatriz, valor: T | null | undefined, reemplazarGenerico = false) => {
+      const anterior = caballo[campo];
+      const falta = !tieneDato(anterior) || (reemplazarGenerico && nombreGenerico(anterior));
+      if (falta && tieneDato(valor)) {
+        (caballo as Record<string, unknown>)[campo] = valor;
+        cambio = true;
+        camposCompletados.push(`#${numero} ${String(campo)}`);
+      }
+    };
+    completar("nombre", raw.nombre, true);
+    completar("nacionalidad", raw.nacionalidad);
+    completar("jockey", raw.jockey);
+    completar("entrenador", raw.entrenador);
+    completar("peso", raw.peso);
+    completar("medicamento", raw.medicamento);
+    completar("implementos", raw.implementos);
+    caballo.retirado = previo.retirado === true || raw.retirado === true;
+    if (cambio) ejemplaresCompletados++;
+    nuevosPorNumero.set(numero, caballo);
+  }
+  for (const [numero, caballo] of existentesPorNumero) {
+    if (!nuevosPorNumero.has(numero)) nuevosPorNumero.set(numero, caballo);
+  }
+
+  const caballoLista = [...nuevosPorNumero.values()];
+  const distancia = completarCampo("distancia", existente.distancia, nueva.distancia);
+  const hora = completarCampo("hora", existente.hora, nueva.hora);
+  const superficie = completarCampo("superficie", existente.superficie, nueva.superficie);
+  const premio = completarCampo("premio", existente.premio, nueva.premio);
+  return {
+    carrera: {
+      ...nueva,
+      fecha: existente.fecha,
+      hipodromo: existente.hipodromo,
+      carrera: existente.carrera,
+      estado: existente.estado ?? nueva.estado,
+      caballos: caballoLista,
+      distancia: distancia ?? null,
+      hora: hora ?? null,
+      superficie: superficie ?? null,
+      premio: premio ?? null,
+      retirados: existente.retirados,
+      invalidado_remate: existente.invalidado_remate,
+      invalidado_polla: existente.invalidado_polla,
+      origen: existente.origen ?? nueva.origen,
+    },
+    cambio: camposCompletados.length > 0,
+    ejemplaresCompletados,
+    camposCompletados,
+  };
+}
+
 /** Carrera ya normalizada: lo que consume toda la plataforma. */
 export type CarreraCatalogo = {
   id?: string | number;
@@ -186,6 +296,11 @@ export function normalizarCaballos(raw: unknown, retirados: Set<string>): Ejempl
           numero,
           nombre: x.nombre != null ? String(x.nombre) : null,
           nacionalidad: x.nacionalidad != null ? String(x.nacionalidad) : null,
+          ...(x.jockey != null ? { jockey: String(x.jockey) } : {}),
+          ...(x.entrenador != null ? { entrenador: String(x.entrenador) } : {}),
+          ...(x.peso != null ? { peso: x.peso as number | string } : {}),
+          ...(x.medicamento != null ? { medicamento: String(x.medicamento) } : {}),
+          ...(x.implementos != null ? { implementos: String(x.implementos) } : {}),
           retirado: x.retirado === true || retirados.has(numero),
         };
       })

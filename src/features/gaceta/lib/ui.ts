@@ -65,6 +65,11 @@ export type EjemplarEditable = {
   valor?: number | string;
   pts?: number | string;
   ejemplar_id?: string | number | null;
+  jockey?: string;
+  entrenador?: string;
+  peso?: number | string;
+  medicamento?: string;
+  implementos?: string;
   nuevo?: boolean;
 };
 

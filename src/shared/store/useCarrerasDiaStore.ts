@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { fechaJornadaCaracas } from "@/core/utils/fechas";
+import { claveHipodromo } from "@/features/carreras/lib/claves";
 
 /** Venta de tablas de una carrera (snapshot por ejemplar vendido). */
 export type VentaTablaRegistrada = {
@@ -46,6 +47,8 @@ export type CarreraDelDia = {
 
 export type CarrerasDiaState = {
   carreras: CarreraDelDia[];
+  fechaSeleccionada: string;
+  setFecha: (fecha: string) => void;
   /** Reemplaza el ledger (al sincronizar con Supabase). */
   setCarreras: (carreras: CarreraDelDia[]) => void;
   /**
@@ -74,7 +77,7 @@ export type CarrerasDiaState = {
 };
 
 function clave(h: string, c: number | string): string {
-  return `${String(h).trim().toUpperCase()}|${c}`;
+  return `${claveHipodromo(h)}|${c}`;
 }
 
 function hoy(): string {
@@ -90,6 +93,11 @@ export const useCarrerasDiaStore = create<CarrerasDiaState>()(
   persist(
     (set, get) => ({
       carreras: [],
+      fechaSeleccionada: hoy(),
+
+      setFecha: (fecha) => {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(fecha)) set({ fechaSeleccionada: fecha });
+      },
 
       setCarreras: (carreras) => set({ carreras }),
 
@@ -208,7 +216,7 @@ export const useCarrerasDiaStore = create<CarrerasDiaState>()(
     }),
     {
       name: "sistema-hipico:carreras-dia",
-      partialize: (s) => ({ carreras: s.carreras }),
+      partialize: (s) => ({ carreras: s.carreras, fechaSeleccionada: s.fechaSeleccionada }),
     }
   )
 );

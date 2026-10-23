@@ -47,6 +47,11 @@ export type EjemplarCarreraCentral = {
   nacionalidad?: string | null;
   /** Retirado según la lista CENTRAL de la carrera (resultados_carreras.retirados). */
   retirado?: boolean;
+  jockey?: string | null;
+  entrenador?: string | null;
+  peso?: number | string | null;
+  medicamento?: string | null;
+  implementos?: string | null;
 };
 
 export type CarreraCentral = {

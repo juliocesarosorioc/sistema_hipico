@@ -19,6 +19,8 @@ export function claveHipodromo(v: unknown): string {
   return String(v ?? "")
     .trim()
     .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, "");
 }
 

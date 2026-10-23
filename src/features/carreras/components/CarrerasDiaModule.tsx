@@ -8,6 +8,7 @@ import { BuscadorJornada } from "@/shared/components/ui/BuscadorJornada";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
 import type { Hipodromo } from "@/features/hipodromos/lib/tipos";
 import { useVersionLogos } from "@/shared/store/useHipodromosStore";
+import { useCarrerasDiaStore } from "@/shared/store/useCarrerasDiaStore";
 import {
   nombreHipodromoParaMostrar,
   nombrePropioHipodromo,
@@ -91,7 +92,8 @@ export function CarrerasDiaModule() {
   const hipodromos = useMemo(() => opcionesHipodromo(catalogo), [catalogo]);
   const versionLogos = useVersionLogos();
   const [hipodromo, setHipodromo] = useState("");
-  const [fecha, setFecha] = useState(() => hoyLocal());
+  const fecha = useCarrerasDiaStore((s) => s.fechaSeleccionada || hoyLocal());
+  const setFecha = useCarrerasDiaStore((s) => s.setFecha);
   const nombreHipoFiltro = nombrePropioHipodromo(hipodromo, hipodromos);
 
   /** Todas las carreras de `fecha`, sin filtro de hipódromo. */

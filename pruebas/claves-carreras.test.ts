@@ -39,6 +39,8 @@ eq("quita espacios de los bordes", claveHipodromo("  LAUREL  "), "LAUREL");
 eq("quita espacios internos", claveHipodromo("LA urel"), "LAUREL");
 eq("colapsa espacios multiples", claveHipodromo("LA   U   REL"), "LAUREL");
 eq("tolera tabulador", claveHipodromo("LA\tUREL"), "LAUREL");
+eq("normaliza tildes en el nombre", claveHipodromo("Hipódromo del Perú"), "HIPODROMODELPERU");
+eq("normaliza tildes en mayúsculas", claveHipodromo("HIPODROMO DEL PERU"), "HIPODROMODELPERU");
 // Sin hipodromo no hay clave: no debe inventar una fila vacía.
 eq("vacio", claveHipodromo(""), "");
 eq("solo espacios", claveHipodromo("   "), "");

@@ -63,6 +63,8 @@ type Estado = {
   versionHipodromos: number;
   /** Invalida las carreras (registro/publicación de una carrera). */
   invalidarCarreras: () => void;
+  /** Siembra el caché central con una carrera que ya se escribió en la matriz. */
+  registrarCarrera: (carrera: CarreraCentral) => void;
   /** Invalida el catálogo (alta/baja/edición de hipódromo). */
   invalidarHipodromos: () => void;
   /** Invalida todo. */
@@ -77,6 +79,29 @@ export const useRegistroCentral = create<Estado>(() => ({
   versionCarreras: 0,
   versionHipodromos: 0,
   invalidarCarreras: () => set((s) => ({ versionCarreras: s.versionCarreras + 1 })),
+  registrarCarrera: (carrera) =>
+    set((s) => {
+      const fecha = String(carrera.fecha ?? "").slice(0, 10);
+      const hipodromo = claveHipodromo(carrera.hipodromo);
+      const numero = numeroCarrera(carrera.carrera);
+      if (!fecha || !hipodromo || !numero) {
+        return { versionCarreras: s.versionCarreras + 1 };
+      }
+      const lista = s.porFecha[fecha] ?? [];
+      const indice = lista.findIndex(
+        (fila) =>
+          claveHipodromo(fila.hipodromo) === hipodromo &&
+          numeroCarrera(fila.carrera) === numero
+      );
+      const actualizada = [...lista];
+      const fila = { ...carrera, fecha, carrera: numero };
+      if (indice < 0) actualizada.push(fila);
+      else actualizada[indice] = { ...actualizada[indice], ...fila };
+      return {
+        porFecha: { ...s.porFecha, [fecha]: actualizada },
+        versionCarreras: s.versionCarreras + 1,
+      };
+    }),
   invalidarHipodromos: () => set((s) => ({ versionHipodromos: s.versionHipodromos + 1 })),
   invalidar: () =>
     set((s) => ({ versionCarreras: s.versionCarreras + 1, versionHipodromos: s.versionHipodromos + 1 })),

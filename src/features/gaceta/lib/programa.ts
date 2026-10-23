@@ -17,13 +17,17 @@ export type CaballoPrograma = {
   ejemplar_id?: string | number | null;
   nuevo?: boolean;
   jockey?: string;
+  entrenador?: string;
   peso?: number | string;
+  medicamento?: string;
+  implementos?: string;
 };
 
 export type CarreraPrograma = {
   hipodromo: string;
   fecha?: string | null;
   carrera: number | null;
+  estado?: string;
   distancia?: number;
   superficie?: string;
   premio?: number;
@@ -67,7 +71,10 @@ function norm(c: unknown): CarreraPrograma {
           valor: Number(cb.valor ?? cb.pts ?? 0) || 0,
           ejemplar_id: (cb.ejemplar_id as string | number | null | undefined) ?? null,
           jockey: cb.jockey ? String(cb.jockey) : undefined,
+          entrenador: cb.entrenador ? String(cb.entrenador) : undefined,
           peso: cb.peso !== undefined ? (cb.peso as string | number) : undefined,
+          medicamento: cb.medicamento ? String(cb.medicamento) : undefined,
+          implementos: cb.implementos ? String(cb.implementos) : undefined,
         }))
       : []
   );
@@ -75,6 +82,7 @@ function norm(c: unknown): CarreraPrograma {
     hipodromo: String(x.hipodromo ?? "").toUpperCase(),
     fecha: x.fecha ? String(x.fecha) : null,
     carrera: x.carrera != null ? Number(x.carrera) || null : null,
+    estado: x.estado ? String(x.estado) : undefined,
     distancia: Number(x.distancia) || 0,
     superficie: String(x.superficie ?? "ARENA").toUpperCase() || "ARENA",
     premio: Number(x.premio) || 0,
@@ -163,7 +171,7 @@ async function registrarCarrerasEnMatriz(
         fecha,
         hipodromo: String(c.hipodromo).toUpperCase(),
         carrera: Number(c.carrera),
-        estado: "Programada",
+        estado: c.estado ?? "Programada",
         caballos: c.caballos ?? [],
         distancia: c.distancia ? String(c.distancia) : null,
         superficie: c.superficie ?? null,
@@ -207,7 +215,11 @@ async function confirmarCargaEnCatalogo(
   };
 }
 
-export async function guardarPrograma(p: ProgramaDia, creadoPor?: string): Promise<{ ok: boolean; data?: ProgramaDia; error?: string }> {
+export async function guardarPrograma(
+  p: ProgramaDia,
+  creadoPor?: string,
+  opciones: { registrarEnMatriz?: boolean } = {}
+): Promise<{ ok: boolean; data?: ProgramaDia; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
   const fecha = p.fecha || hoyLocal();
   const hipodromos = [...new Set((p.hipodromos || []).map((h) => String(h).toUpperCase().trim()).filter(Boolean))];
@@ -224,6 +236,7 @@ export async function guardarPrograma(p: ProgramaDia, creadoPor?: string): Promi
     });
     if (r.error) {
       if (!rpcAusente(r.error)) {
+        if (opciones.registrarEnMatriz === false) return { ok: false, error: r.error.message };
         // El documento del día (`programa_dia`) no se pudo guardar, pero la
         // MATRIZ —de donde leen TODOS los módulos— se escribe igual: sin esto la
         // carrera quedaría invisible aunque el operador ya la haya cargado.
@@ -233,8 +246,10 @@ export async function guardarPrograma(p: ProgramaDia, creadoPor?: string): Promi
       }
       throw r.error;
     }
-    const matriz = await confirmarCargaEnCatalogo(fecha, carreras);
-    if (!matriz.ok) return { ok: false, error: matriz.error };
+    if (opciones.registrarEnMatriz !== false) {
+      const matriz = await confirmarCargaEnCatalogo(fecha, carreras);
+      if (!matriz.ok) return { ok: false, error: matriz.error };
+    }
     return { ok: true, data: normP };
   } catch (e1) {
     // La RPC no está instalada: caemos al upsert directo para no dejar al
@@ -245,8 +260,10 @@ export async function guardarPrograma(p: ProgramaDia, creadoPor?: string): Promi
     try {
       const { error } = await supabase.from("programa_dia").upsert(normP, { onConflict: "fecha" });
       if (error) return { ok: false, error: error.message };
-      const matriz = await confirmarCargaEnCatalogo(fecha, carreras);
-      if (!matriz.ok) return { ok: false, error: matriz.error };
+      if (opciones.registrarEnMatriz !== false) {
+        const matriz = await confirmarCargaEnCatalogo(fecha, carreras);
+        if (!matriz.ok) return { ok: false, error: matriz.error };
+      }
       return { ok: true, data: normP };
     } catch (e2) {
       return { ok: false, error: e2 instanceof Error ? e2.message : String(e2) };

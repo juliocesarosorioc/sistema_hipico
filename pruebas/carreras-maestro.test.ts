@@ -17,6 +17,7 @@ import {
   completarResultadosPorClave,
   dedupFilasMaestro,
   estadoDeCarrera,
+  fusionarCargaGaceta,
   hipodromosAEscribir,
   normalizarCaballos,
   normalizarGanadores,
@@ -88,6 +89,61 @@ eq("aplicado a tablas -> Liquidada", estadoDeCarrera({ ...base, estado: "Program
 eq("estado desconocido cae en Programada", estadoDeCarrera({ ...base, estado: "inventado" }, null), "Programada");
 eq("estado ausente cae en Programada", estadoDeCarrera({ ...base, estado: null }, null), "Programada");
 
+console.log("\n[3b] fusión inteligente de cargas Gaceta con la matriz existente");
+// ---------------------------------------------------------------------------
+const existenteManual: FilaCarreraMaestro = {
+  ...base,
+  estado: "Abierta",
+  distancia: null,
+  caballos: [
+    { numero: "1", nombre: "EJEMPLAR 1", jockey: "JINETE MANUAL", retirado: true },
+    { numero: "2", nombre: "CABALLO", nacionalidad: "VE" },
+  ],
+};
+const fusionGaceta = fusionarCargaGaceta(existenteManual, {
+  fecha: base.fecha,
+  hipodromo: base.hipodromo,
+  carrera: base.carrera,
+  estado: "Programada",
+  distancia: "1400",
+  caballos: [
+    { numero: "1", nombre: "EJEMPLAR UNO", jockey: "JINETE IA", entrenador: "ENTRENADOR IA" },
+    { numero: "2", nombre: "EJEMPLAR DOS" },
+    { numero: "3", nombre: "NUEVO EJEMPLAR" },
+  ],
+});
+eq("la fusión completa ejemplares faltantes y agrega los nuevos sin duplicar", fusionGaceta.carrera.caballos, [
+  { numero: "1", nombre: "EJEMPLAR UNO", jockey: "JINETE MANUAL", retirado: true, entrenador: "ENTRENADOR IA" },
+  { numero: "2", nombre: "EJEMPLAR DOS", nacionalidad: "VE", retirado: false },
+  { numero: "3", nombre: "NUEVO EJEMPLAR" },
+]);
+eq("la fusión completa metadatos vacíos sin cambiar estado", {
+  distancia: fusionGaceta.carrera.distancia,
+  estado: fusionGaceta.carrera.estado,
+  cambio: fusionGaceta.cambio,
+  nuevos: fusionGaceta.ejemplaresCompletados,
+}, {
+  distancia: "1400",
+  estado: "Abierta",
+  cambio: true,
+  nuevos: 3,
+});
+const fusionRepetida = fusionarCargaGaceta(fusionGaceta.carrera as FilaCarreraMaestro, {
+  fecha: base.fecha,
+  hipodromo: base.hipodromo,
+  carrera: base.carrera,
+  caballos: [
+    { numero: "1", nombre: "NOMBRE NUEVO", jockey: "OTRO JINETE" },
+    { numero: "2", nombre: "EJEMPLAR DOS" },
+    { numero: "3", nombre: "NUEVO EJEMPLAR" },
+  ],
+});
+eq("la repetición es idempotente y no sobrescribe los datos manuales", {
+  cambio: fusionRepetida.cambio,
+  nombre: fusionRepetida.carrera.caballos?.[0]?.nombre,
+  jockey: fusionRepetida.carrera.caballos?.[0]?.jockey,
+}, { cambio: false, nombre: "EJEMPLAR UNO", jockey: "JINETE MANUAL" });
+
 console.log("\n[4] primerResultado: el embed llega como objeto o como array");
 // ---------------------------------------------------------------------------
 eq("objeto", primerResultado({ ...base, resultados_carreras: { ganadores: ["1"] } })?.ganadores, ["1"]);
@@ -139,6 +195,38 @@ eq(
     aplicado_a_tablas: false,
   }
 );
+const carreraGaceta = aCarreraCentral({
+  fecha: "2026-10-23",
+  hipodromo: "LA RINCONADA",
+  carrera: 4,
+  estado: "Programada",
+  caballos: [
+    {
+      numero: 7,
+      nombre: "EJEMPLAR DE PRUEBA",
+      nacionalidad: "VE",
+      jockey: "JINETE PRUEBA",
+      entrenador: "ENTRENADOR PRUEBA",
+      peso: 54,
+      medicamento: "LASIX",
+      implementos: "L",
+    },
+  ],
+});
+eq("la carga de Gaceta se lee desde la matriz sin requerir tablas_fijas", carreraGaceta.estado, "Programada");
+eq("la carga de Gaceta conserva ejemplares y datos extraídos en el maestro", carreraGaceta.caballos, [
+  {
+    numero: "7",
+    nombre: "EJEMPLAR DE PRUEBA",
+    nacionalidad: "VE",
+    jockey: "JINETE PRUEBA",
+    entrenador: "ENTRENADOR PRUEBA",
+    peso: 54,
+    medicamento: "LASIX",
+    implementos: "L",
+    retirado: false,
+  },
+]);
 eq(
   "la lista de retiros del RESULTADO pisa la de la matriz",
   aCarreraCentral({
