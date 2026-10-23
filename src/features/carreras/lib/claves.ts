@@ -76,3 +76,56 @@ export function numerosDeCarrera<T extends { hipodromo?: string | null; carrera?
   const lista = carreras.filter((c) => claveHipodromo(c.hipodromo) === hipo);
   return [...new Set(lista.map((c) => numeroCarrera(c.carrera)).filter((n) => n > 0))].sort((a, b) => a - b);
 }
+
+/**
+ * Une las carreras del catálogo central y las tablas fijas del día.
+ *
+ * La presencia de ejemplares no determina si una carrera existe: una carrera
+ * puede estar registrada y tener jugadas aunque todavía no tenga padrón.
+ */
+export function numerosCarrerasDelDia(
+  carreras: {
+    fecha?: unknown;
+    hipodromo?: unknown;
+    carrera?: unknown;
+  }[],
+  tablas: {
+    fecha?: unknown;
+    fecha_creacion?: unknown;
+    hipodromo?: unknown;
+    carrera?: unknown;
+  }[],
+  hipodromo: unknown,
+  fecha: unknown
+): number[] {
+  const hipo = claveHipodromo(hipodromo);
+  const dia = String(fecha ?? "").slice(0, 10);
+  if (!hipo || !dia) return [];
+
+  const numeros = new Set<number>();
+  for (const carrera of carreras) {
+    const fechaCarrera = String(carrera.fecha ?? dia).slice(0, 10);
+    const numero = numeroCarrera(carrera.carrera);
+    if (
+      claveHipodromo(carrera.hipodromo) === hipo &&
+      fechaCarrera === dia &&
+      numero > 0
+    ) {
+      numeros.add(numero);
+    }
+  }
+
+  for (const tabla of tablas) {
+    const fechaTabla = String(tabla.fecha || tabla.fecha_creacion || "").slice(0, 10);
+    const numero = numeroCarrera(tabla.carrera);
+    if (
+      claveHipodromo(tabla.hipodromo) === hipo &&
+      fechaTabla === dia &&
+      numero > 0
+    ) {
+      numeros.add(numero);
+    }
+  }
+
+  return [...numeros].sort((a, b) => a - b);
+}

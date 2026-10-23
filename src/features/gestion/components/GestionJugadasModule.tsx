@@ -40,7 +40,7 @@ import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/features/tablas/lib/rpc";
 import { registrarCarreraProgramada, leerResultadoOficial } from "@/features/carreras/lib/carreras-dia";
 import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados } from "@/features/carreras/lib/retiros";
-import { claveHipodromo } from "@/features/carreras/lib/claves";
+import { claveHipodromo, numerosCarrerasDelDia } from "@/features/carreras/lib/claves";
 import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { revisarCaballo, maximoDeLaCarrera, type RevisionCaballo } from "@/features/taquilla/lib/caballos";
@@ -210,14 +210,7 @@ export function GestionJugadasModule() {
     [carrerasDe, hipodromo, centralCarrerasDiaAllBase]
   );
   const centralCarrerasDiaAll = centralCarrerasDiaAllBase;
-  const carrerasConEjemplares = useMemo(
-    () =>
-      carrerasDelDia
-        .filter((c) => (c.caballos?.length ?? 0) > 0)
-        .map((c) => Number(c.carrera))
-        .sort((a, b) => a - b),
-    [carrerasDelDia]
-  );
+  const tablas = useTablasFijasStore((s) => s.tablas);
 
   /** Editar jugadas guardadas: la capacidad de corregir/anular jugadas (principal = todo). */
   const puedeEditarJugadas =
@@ -311,21 +304,15 @@ export function GestionJugadasModule() {
   /**
    * Semáforo: los números de carrera del día.
    *
-   * La fuente es la MISMA que alimenta el padrón de ejemplares (el registro
-   * central). Antes este efecto iba a `listarCarrerasPorDia` —una consulta
-   * distinta— y solo usaba su respuesta cuando el registro central venía
-   * vacío, así que el semáforo y los ejemplares podían señalar carreras
-   * diferentes. Ahora la lista sale de `carrerasDelDia`, ya deduplicada por
-   * clave canónica; `listarCarrerasPorDia` queda como respaldo para el caso en
-   * que la matriz aún no responde (carreras con resultados pero sin catálogo).
+   * Une el catálogo central y las tablas fijas por fecha e hipódromo. La
+   * existencia de ejemplares no es requisito: hay carreras registradas o con
+   * jugadas cuyo padrón todavía está vacío.
    */
   useEffect(() => {
     let vivo = true;
     setCarrerasPorDia([]);
-    if (carrerasDelDia.length > 0) {
-      const base = [...new Set(carrerasDelDia.map((c) => Number(c.carrera)).filter((n) => n > 0))].sort(
-        (a, b) => a - b
-      );
+    const base = numerosCarrerasDelDia(carrerasDelDia, tablas, hipodromo, fecha);
+    if (base.length > 0) {
       setCarrerasPorDia(base);
       return () => {
         vivo = false;
@@ -343,18 +330,11 @@ export function GestionJugadasModule() {
     return () => {
       vivo = false;
     };
-  }, [fecha, hipodromo, carrerasDelDia]);
+  }, [fecha, hipodromo, carrerasDelDia, tablas]);
 
   // El catálogo y sus ejemplares los aporta el REGISTRO CENTRAL (arriba). Este
   // módulo ya no mantiene una segunda consulta: dos copias del mismo catálogo
   // divergen y producían padrones distintos entre módulos.
-
-  useEffect(() => {
-    const conEj = carrerasConEjemplares;
-    if (conEj.length !== carrerasPorDia.length || conEj.some((n: number, i: number) => n !== carrerasPorDia[i])) {
-      setCarrerasPorDia(conEj);
-    }
-  }, [carrerasConEjemplares, carrerasPorDia]);
 
   const [modalPreliminar, setModalPreliminar] = useState(false);
   const [mostrarPlanoPreliminar, setMostrarPlanoPreliminar] = useState(false);
@@ -408,7 +388,6 @@ export function GestionJugadasModule() {
   const tickets = useTaquillaStore((s) => s.tickets);
   const eliminarTicket = useTaquillaStore((s) => s.eliminarTicket);
   const agregarTicket = useTaquillaStore((s) => s.agregarTicket);
-  const tablas = useTablasFijasStore((s) => s.tablas);
 
   /**
    * Hipódromos con carreras CARGADAS en el día elegido (se elige el día
