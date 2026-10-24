@@ -62,6 +62,12 @@ si(!filasBase[0].soloSesion, "la jugada persistida no es solo de sesión");
 igual(filasBase[0].cliente1, "ANA", "conserva el cliente que juega");
 igual(filasBase[0].cliente2, "LUIS", "conserva el cliente que da");
 igual(filasBase[0].jugada, "2P", "conserva la nomenclatura");
+const filaConSaldo = armarFilasPreview(
+  [persistida({ nota_auditoria: JSON.stringify({ observacion: "Excedido 100", saldo_restante: 0 }) })],
+  []
+)[0];
+igual(filaConSaldo.observacion, "Excedido 100", "recupera la observación progresiva persistida");
+igual(filaConSaldo.saldoRestante, 0, "recupera el saldo restante cero persistido");
 
 // ── 3. Fusion con la sesión sin duplicar ───────────────────────────────────
 const ticketSesion = (over: Partial<TicketSesion> = {}): TicketSesion => ({

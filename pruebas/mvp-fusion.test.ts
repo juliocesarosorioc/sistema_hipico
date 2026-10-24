@@ -46,9 +46,9 @@ type JugadaMvp = {
   monto: number;
   juega: string;
   consigue: string;
-  /** Ganancia NETA del que juega (lo que muestra "Juega X $ +…"). */
+  /** Ganancia NETA del que juega (lo que muestra "Juega X +…"). */
   gn: number;
-  /** Bruto que entrega el "da" (lo que muestra "Consigue Y $ -…"). */
+  /** Bruto que entrega el "da" (lo que muestra "Consigue Y -…"). */
   gb: number;
   /** Jugada anulada → 0/0 (se devuelve el capital). */
   anulada?: boolean;
@@ -152,8 +152,8 @@ const mensaje = mensajeResultadoDeCarrera({
 for (const j of JUGADAS) {
   const n = JUGADAS.indexOf(j) + 1;
   const bloque = j.anulada
-    ? `${n}) ${j.jugada} (${j.caballo}) con ${fmtMonto(j.monto)}\nJuega ${j.juega} $ +0,00\nConsigue ${j.consigue} $ +0,00`
-    : `${n}) ${j.jugada} (${j.caballo}) con ${fmtMonto(j.monto)}\nJuega ${j.juega} $ +${fmtMonto(j.gn)}\nConsigue ${j.consigue} $ -${fmtMonto(j.gb)}`;
+    ? `${n}) ${j.jugada} (${j.caballo}) con ${fmtMonto(j.monto)}\nJuega ${j.juega} 0,00\nConsigue ${j.consigue} 0,00`
+    : `${n}) ${j.jugada} (${j.caballo}) con ${fmtMonto(j.monto)}\nJuega ${j.juega} +${fmtMonto(j.gn)}\nConsigue ${j.consigue} -${fmtMonto(j.gb)}`;
   ok(`bloque ${n}) ${j.jugada} (${j.caballo})`, mensaje.includes(bloque), `esperado:\n${bloque}`);
 }
 

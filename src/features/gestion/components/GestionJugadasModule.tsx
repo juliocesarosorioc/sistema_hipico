@@ -822,6 +822,28 @@ const hipodromosDelDia = useMemo(() => {
     return porPrefijo.length === 1 ? porPrefijo[0] : null;
   };
 
+  const previewCargaRapidaProgresiva = useMemo(() => {
+    const lineas = previewCargaRapida.flatMap(({ normalizada }, indiceOriginal) =>
+      normalizada?.ok
+        ? [{
+            indiceOriginal,
+            jugada: normalizada.jugada,
+            caballo: normalizada.caballo,
+            monto: normalizada.monto,
+            cliente1: normalizada.cliente1,
+            cliente2: normalizada.cliente2,
+          }]
+        : []
+    );
+    const progresiones = proyectarFilasEnOrden(lineas, saldoCliente, comisionNum);
+    return new Map(
+      progresiones.map((progresion, indice) => [
+        lineas[indice].indiceOriginal,
+        progresion,
+      ])
+    );
+  }, [previewCargaRapida, clientes, comisionNum]);
+
   /** Proyección de TODA la carga EN ORDEN: la fila 2 ya ve el saldo que dejó la
       fila 1 del mismo cliente. Alimenta la celda "Saldo/Max", el aviso de saldo
       y el color de recorte, para que la vista previa diga lo mismo que el cobro
@@ -1367,7 +1389,9 @@ const hipodromosDelDia = useMemo(() => {
        recién cuando la venta se confirma, para no topar una fila por algo que
        otra no llegó a cobrar. */
     const descontado = new Map<string, number>();
-    for (const f of filas) {
+    for (let indiceFila = 0; indiceFila < filas.length; indiceFila++) {
+      const f = filas[indiceFila];
+      const progreso = proyeccionesCarga[indiceFila];
       if (!f.jugada.trim() && !f.monto.trim()) continue;
       /* Antes de la nomenclatura: un caballo que no corre no se puede cobrar
          liquidar. Se revisa igual con el campo vacio (no molesta: ahi la
@@ -1375,41 +1399,41 @@ const hipodromosDelDia = useMemo(() => {
          todavia vacia no se cuele al autocomplete. */
       const rc = revisionCaballo(f.caballo);
       if (!rc.ok) {
-        errores.push(`Fila ${filas.indexOf(f) + 1}: ${rc.motivo}`);
-        indicesError.push(filas.indexOf(f));
+        errores.push(`Fila ${indiceFila + 1}: ${rc.motivo}`);
+        indicesError.push(indiceFila);
         continue;
       }
       const v = valida(f, descontado);
       if (!v.ok) {
-        errores.push(`Fila ${filas.indexOf(f) + 1}: ${v.motivo}`);
-        indicesError.push(filas.indexOf(f));
+        errores.push(`Fila ${indiceFila + 1}: ${v.motivo}`);
+        indicesError.push(indiceFila);
         continue;
       }
       const c1 = saldoCliente(f.cliente1);
       if (!c1) {
-        errores.push(`Fila ${filas.indexOf(f) + 1}: el CLIENTE 1 no está en el catálogo (no se puede cobrar).`);
-        indicesError.push(filas.indexOf(f));
+        errores.push(`Fila ${indiceFila + 1}: el CLIENTE 1 no está en el catálogo (no se puede cobrar).`);
+        indicesError.push(indiceFila);
         continue;
       }
       /* Regla de la casa: SIEMPRE hay 2 clientes (quién juega + quién da). El
          CLIENTE 2 dejó de ser informativo: sin un segundo cliente en el catálogo
          la jugada NO se carga (antes se vendía solo con el CLIENTE 1). */
       if (!f.cliente2.trim()) {
-        errores.push(`Fila ${filas.indexOf(f) + 1}: falta el CLIENTE 2 (dador). Las jugadas se cargan con DOS clientes.`);
-        indicesError.push(filas.indexOf(f));
+        errores.push(`Fila ${indiceFila + 1}: falta el CLIENTE 2 (dador). Las jugadas se cargan con DOS clientes.`);
+        indicesError.push(indiceFila);
         continue;
       }
       const c2 = saldoCliente(f.cliente2);
       if (!c2) {
-        errores.push(`Fila ${filas.indexOf(f) + 1}: el CLIENTE 2 no está en el catálogo (se exigen dos clientes).`);
-        indicesError.push(filas.indexOf(f));
+        errores.push(`Fila ${indiceFila + 1}: el CLIENTE 2 no está en el catálogo (se exigen dos clientes).`);
+        indicesError.push(indiceFila);
         continue;
       }
       const grupoId =
         c1.grupo_id != null ? String(c1.grupo_id) : c1.grupos[0] != null ? String(c1.grupos[0]) : null;
       if (v.reparto?.recortado) {
         recortes.push(
-          `Fila ${filas.indexOf(f) + 1}: ${v.reparto.avisos[0] ?? `Se autoriza ${v.monto} de ${v.montoPedido}.`}`
+          `Fila ${indiceFila + 1}: ${progreso?.observacion ?? v.reparto.avisos[0] ?? `Se autoriza ${v.monto} de ${v.montoPedido}.`}`
         );
       }
       /* Venta transaccional: si falla (saldo, grupo, red), nada se descuenta y
@@ -1429,10 +1453,11 @@ const hipodromosDelDia = useMemo(() => {
         // 'WPS' (el `origen` del ticket sigue siendo 'TAQUILLA').
         modalidad: v.modalidad === "AMERICANAS" ? "WPS" : v.modalidad,
         idempotencia: claveIdempotenciaJugada(),
+        observacion: progreso?.observacion,
       });
       if (!venta.ok) {
-        errores.push(`Fila ${filas.indexOf(f) + 1}: ${venta.error ?? "no se pudo registrar la venta"}`);
-        indicesError.push(filas.indexOf(f));
+        errores.push(`Fila ${indiceFila + 1}: ${venta.error ?? "no se pudo registrar la venta"}`);
+        indicesError.push(indiceFila);
         continue;
       }
       const mejorCobre = Math.max(v.cliente1?.cobroNeto ?? 0, v.cliente2?.cobroNeto ?? 0);
@@ -1453,6 +1478,9 @@ const hipodromosDelDia = useMemo(() => {
         cliente2: f.cliente2.trim() || c2?.nombre || undefined,
         cobro1: v.cliente1?.cobroNeto,
         cobro2: v.cliente2?.cobroNeto,
+        observacion: progreso?.observacion ?? venta.observacion,
+        saldoRestante:
+          venta.saldoRestante !== undefined ? venta.saldoRestante : progreso?.saldoRestante,
         fecha,
         hipodromo,
         carrera,
@@ -2121,7 +2149,8 @@ const hipodromosDelDia = useMemo(() => {
               const rc = revisionCaballo(f.caballo);
               const caballoInvalido = !rc.ok;
               const rep = v.ok ? v.reparto : null;
-              const recortado = !!rep?.recortado;
+              const progreso = enCurso;
+              const recortado = !!rep?.recortado || (progreso?.montoExcedido ?? 0) > 0;
               const aviso = avisoSaldo(f, enCurso?.cliente1 ?? null, enCurso?.cliente2 ?? null);
               return (
                 <tr key={i} className={`align-middle ${f.error ? "bg-red-50" : ""}`} title={f.error ?? undefined}>
@@ -2219,15 +2248,33 @@ const hipodromosDelDia = useMemo(() => {
                       onChange={(e) => setFila(i, { monto: e.target.value })}
                       placeholder="0"
                       inputMode="decimal"
-                      title={recortado ? `Se autoriza ${monedaFmt(v.ok ? v.monto : 0)} por saldo disponible` : undefined}
+                      title={recortado ? `Se autoriza ${monedaFmt(progreso?.montoAceptado ?? (v.ok ? v.monto : 0))} por saldo disponible` : undefined}
                       className={`w-full rounded border bg-white px-1 py-0.5 text-right text-[11px] font-black leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
                         recortado ? "border-amber-400 bg-amber-50" : "border-line"
                       }`}
                     />
                     {recortado && (
                       <span className="mt-0.5 block truncate text-[9px] font-black leading-none text-amber-700">
-                        → {monedaFmt(v.ok ? v.monto : 0)}
+                        → {monedaFmt(progreso?.montoAceptado ?? (v.ok ? v.monto : 0))}
                       </span>
+                    )}
+                    {progreso && (progreso.saldoRestante != null || progreso.observacion) && (
+                      <div className="mt-0.5 flex flex-wrap gap-1">
+                        {progreso.observacion && (
+                          <span className="rounded border border-amber-500/40 bg-amber-500/20 px-1 py-0.5 font-mono text-[8px] font-bold text-amber-700">
+                            {progreso.observacion}
+                          </span>
+                        )}
+                        {progreso.saldoRestante != null && (
+                          <span className={`rounded border px-1 py-0.5 font-mono text-[8px] ${
+                            progreso.montoExcedido > 0
+                              ? "border-amber-500/40 bg-amber-500/20 font-bold text-amber-700"
+                              : "border-emerald-500/30 bg-emerald-500/15 text-emerald-700"
+                          }`}>
+                            {progreso.etiquetaRestante}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td className="gj-celda px-1 py-0.5 align-middle">
@@ -2379,14 +2426,33 @@ const hipodromosDelDia = useMemo(() => {
                           </span>
                         </td>
                         <td className="h-8 truncate px-1 py-0 align-middle font-mono text-[11px] font-semibold text-slate-700" title={f.jugada}>
-                          {f.jugada}
+                          <span className="block truncate">{f.jugada}</span>
+                          <span className="block truncate text-[9px] font-normal text-slate-500">
+                            Monto: {monedaFmt(f.monto)}
+                          </span>
                         </td>
                         <td className="h-8 px-1 py-0 align-middle font-bold text-slate-800">{f.caballo ? f.caballo.toUpperCase() : "—"}</td>
                         <td className="h-8 px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={f.cliente1}>
-                          <span className="flex items-center gap-1 truncate">
-                            <span className="truncate">{f.cliente1 || "—"}</span>
-                            {f.cliente1 ? <SimboloLado lado={f.lado1} money={monedaFmt} /> : null}
-                          </span>
+                          <div className="min-w-0">
+                            <span className="flex items-center gap-1 truncate">
+                              <span className="truncate">{f.cliente1 || "—"}</span>
+                              {f.cliente1 ? <SimboloLado lado={f.lado1} money={monedaFmt} /> : null}
+                            </span>
+                            {(f.observacion || f.saldoRestante != null) && (
+                              <span className="mt-0.5 flex flex-wrap gap-1">
+                                {f.observacion && (
+                                  <span className="rounded border border-amber-500/40 bg-amber-500/20 px-1 py-0.5 font-mono text-[8px] font-bold text-amber-700">
+                                    {f.observacion}
+                                  </span>
+                                )}
+                                {f.saldoRestante != null && (
+                                  <span className="rounded border border-emerald-500/30 bg-emerald-500/15 px-1 py-0.5 font-mono text-[8px] text-emerald-700">
+                                    Queda: {monedaFmt(f.saldoRestante)}
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="h-8 px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={f.cliente2}>
                           <span className="flex items-center gap-1 truncate">
@@ -3076,6 +3142,7 @@ const hipodromosDelDia = useMemo(() => {
                         ["Cliente 1", p.cliente1, p.confianza.cliente1],
                         ["Cliente 2", p.cliente2 || "—", p.confianza.cliente2],
                       ];
+                      const progreso = previewCargaRapidaProgresiva.get(i);
                       return (
                         <div
                           key={i}
@@ -3094,6 +3161,24 @@ const hipodromosDelDia = useMemo(() => {
                               <b className="mr-0.5 font-black text-slate-400">{k}:</b> {v}
                             </span>
                           ))}
+                          {progreso && (
+                            <span className="flex flex-wrap items-center gap-1">
+                              {progreso.montoExcedido > 0 && (
+                                <span className="rounded border border-amber-500/40 bg-amber-500/20 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-700">
+                                  Monto {fmtMoney(progreso.montoAceptado, MONEDA)} · Excedido {fmtMoney(progreso.montoExcedido, MONEDA)}
+                                </span>
+                              )}
+                              <span
+                                className={`rounded border px-1.5 py-0.5 font-mono text-[9px] ${
+                                  progreso.montoExcedido > 0
+                                    ? "border-amber-500/40 bg-amber-500/20 font-bold text-amber-700"
+                                    : "border-emerald-500/30 bg-emerald-500/15 text-emerald-700"
+                                }`}
+                              >
+                                {progreso.etiquetaRestante}
+                              </span>
+                            </span>
+                          )}
                           {p.correcciones.length > 0 && (
                             <span className="font-semibold text-amber-600">🔧 {p.correcciones.join(" · ")}</span>
                           )}

@@ -184,6 +184,8 @@ export function armarReporteCarrera(
         apostoDa: cons ? cons.riesgo : null,
         resultado,
         esAdelantada: f.esAdelantada === true,
+        observacion: f.observacion ?? null,
+        saldoRestante: f.saldoRestante ?? null,
       });
     }
 

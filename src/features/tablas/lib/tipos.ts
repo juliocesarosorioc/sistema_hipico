@@ -121,13 +121,9 @@ export const banderas: Record<string, string> = {
 export const FLAG = (nac?: string | null): string => banderas[(nac || "VE").toUpperCase()] ?? "🌐";
 
 /** Formato de dinero con símbolo por moneda (Bs / $). */
-export function fmtMoney(n: number | null | undefined, moneda?: string | null): string {
+export function fmtMoney(n: number | null | undefined, _moneda?: string | null): string {
   const num = typeof n === "number" && isFinite(n) ? n : 0;
-  const simb = moneda === "VES" ? "Bs " : "$";
-  return (
-    simb +
-    num.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  );
+  return num.toLocaleString("es-VE", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
 /**

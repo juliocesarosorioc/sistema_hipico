@@ -47,6 +47,8 @@ export type JugadaVivo = {
    * carrera) y la fila lleva su badge distintivo; `false`/ausente = ⚡ en vivo.
    */
   esAdelantada?: boolean;
+  observacion?: string | null;
+  saldoRestante?: number | null;
 };
 
 export type Adelantada = {
@@ -213,6 +215,12 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
                 >
                   ⏳ ADELANTADA
                 </span>
+              ) : null}
+              {j.observacion ? (
+                <span className="ml-1 font-bold text-amber-700">— {j.observacion}</span>
+              ) : null}
+              {j.saldoRestante != null ? (
+                <span className="ml-1 text-emerald-700">Queda: {j.saldoRestante}</span>
               ) : null}
             </td>
             <td className="py-[3px] pl-2 text-slate-600 whitespace-nowrap">{j.da || '—'}</td>

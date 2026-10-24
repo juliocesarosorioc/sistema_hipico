@@ -39,6 +39,10 @@ alter table public.tickets_apuestas
 -- ===========================================================================
 --  VENTA
 -- ===========================================================================
+-- `p_observacion` se agrega a la firma para guardar de forma atómica el recorte
+-- progresivo y el disponible restante junto con el débito y el ticket.
+drop function if exists public.club_vender_jugada(text, date, int, text, text, numeric, uuid, uuid, text, text, numeric, text, text, text);
+
 create or replace function public.club_vender_jugada(
     p_hipodromo     text,
     p_fecha         date,
@@ -53,7 +57,8 @@ create or replace function public.club_vender_jugada(
     p_comision      numeric default null,
     p_modalidad     text    default null,
     p_usuario       text    default null,
-    p_idem          text    default null
+    p_idem          text    default null,
+    p_observacion   text    default null
 )
 returns jsonb
 language plpgsql
@@ -94,7 +99,8 @@ begin
                 'ya_existia',     true,
                 'ticket_id',      v_ins.id,
                 'estado',         v_ins.estado,
-                'saldo_restante', (select coalesce(saldo_actual, 0) from public.clientes where id = v_ins.cliente_juega_id)
+                'saldo_restante', nullif(v_ins.nota_auditoria::jsonb ->> 'saldo_restante', '')::numeric,
+                'observacion',    v_ins.nota_auditoria::jsonb ->> 'observacion'
             );
         end if;
     end if;
@@ -224,7 +230,9 @@ begin
             'modalidad',     nullif(upper(btrim(coalesce(p_modalidad, ''))), ''),
             'dador',         nullif(btrim(coalesce(p_cliente_dador, '')), ''),
             'usuario',       p_usuario,
-            'idempotencia',  v_idem
+            'idempotencia',  v_idem,
+            'observacion',   nullif(btrim(coalesce(p_observacion, '')), ''),
+            'saldo_restante', case when v_modo = 'libre' then null else v_limite - p_monto end
         )
     )
     returning * into v_ins;
@@ -241,7 +249,8 @@ begin
     return jsonb_build_object(
         'ok',             true,
         'ticket_id',      v_ins.id,
-        'saldo_restante', v_saldo - p_monto
+        'saldo_restante', case when v_modo = 'libre' then null else v_limite - p_monto end,
+        'observacion',    nullif(btrim(coalesce(p_observacion, '')), '')
     );
 
     exception
@@ -257,7 +266,7 @@ create unique index if not exists tickets_taquilla_idem_unico
  where nota_auditoria::jsonb ->> 'idempotencia' is not null
    and coalesce(nota_auditoria::jsonb ->> 'origen', '') = 'TAQUILLA';
 
-grant execute on function public.club_vender_jugada(text, date, int, text, text, numeric, uuid, uuid, text, text, numeric, text, text, text)
+grant execute on function public.club_vender_jugada(text, date, int, text, text, numeric, uuid, uuid, text, text, numeric, text, text, text, text)
     to anon, authenticated, service_role;
 
 -- ===========================================================================

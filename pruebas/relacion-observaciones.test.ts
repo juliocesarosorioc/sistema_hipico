@@ -90,5 +90,24 @@ ok(
 );
 ok("el cierre POSITIVOS sigue presente con saldos", con.includes("POSITIVOS"));
 
+const progresivo = mensajeResultadoDeCarrera({
+  hipodromo: "LA RINCONADA",
+  carrera: 5,
+  fecha: "2025-10-10",
+  grupo: "TERCIOS",
+  pizarra,
+  dividendos,
+  tickets: [{ ...tickets[0], observacion: "Excedido 100", saldoRestante: 0 }],
+  tasaComision: 5,
+});
+ok(
+  "la relación incluye el exceso y saldo restante persistidos",
+  progresivo.includes("Excedido 100") && progresivo.includes("Queda: 0")
+);
+ok(
+  "la relación no imprime códigos ni símbolos de moneda",
+  !/USD|VES|Bs\.?|\$/.test(progresivo)
+);
+
 console.log(`\n${pasan} ok, ${fallan} fallaron\n`);
 if (fallan > 0) process.exit(1);

@@ -21,6 +21,10 @@ export type TicketTaquilla = {
   cobro1?: number;
   /** Cobro neto proyectado del CLIENTE 2 (PREMIO/SALDO por jugador). */
   cobro2?: number;
+  /** Observación persistida del recorte progresivo de saldo. */
+  observacion?: string | null;
+  /** Disponible del cliente que juega después de esta línea. */
+  saldoRestante?: number | null;
   /** Contexto [Fecha + Hipódromo + N° Carrera] — aislamiento de la vista Taquilla. */
   fecha?: string;
   hipodromo?: string;

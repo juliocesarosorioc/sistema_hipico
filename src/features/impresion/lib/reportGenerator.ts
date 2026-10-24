@@ -50,6 +50,8 @@ export type JugadaRelacion = {
   caballo: string;
   /** Monto financiado, en la moneda del ticket. */
   monto: number;
+  observacion?: string | null;
+  saldoRestante?: number | null;
   /** Cliente que COBRA si acierta ("da [Cliente2]"). Opcional (jugada sola). */
   clienteConsigue?: string;
   /** Modalidad Normalizada del ticket ("NINI" cuando la jugada usa sintaxis N). */
@@ -236,6 +238,10 @@ export function relacionJugadas(meta: MetaCarrera, jugadas: JugadaRelacion[]): s
     if (String(j.caballo ?? "").trim()) partes.push(`(${caballoPareoLegible(String(j.caballo))})`);
     partes.push(`con ${fmtMonto(j.monto)}`);
     if (String(j.clienteConsigue ?? "").trim()) partes.push(`da ${String(j.clienteConsigue).trim()}`);
+    if (j.observacion?.trim()) partes.push(`— ${j.observacion.trim()}`);
+    if (j.saldoRestante != null && Number.isFinite(Number(j.saldoRestante))) {
+      partes.push(`(Queda: ${fmtMonto(j.saldoRestante)})`);
+    }
     return `${i + 1}) Juega ${partes.join(" ")}`;
   });
   return [
@@ -477,6 +483,14 @@ export function relacionResultados(
     if (n && !sinSaldo.includes(n)) sinSaldo.push(n);
     return " · Disp *S/S*";
   };
+  const sufijoProgresivoDe = (j: JugadaRelacion): string => {
+    const partes: string[] = [];
+    if (j.observacion?.trim()) partes.push(`— ${j.observacion.trim()}`);
+    if (j.saldoRestante != null && Number.isFinite(Number(j.saldoRestante))) {
+      partes.push(`(Queda: ${fmtMonto(j.saldoRestante)})`);
+    }
+    return partes.length ? ` ${partes.join(" ")}` : "";
+  };
 
   jugadas.forEach((j, i) => {
     const sufijoSaldo = sufijoSaldoDe(j);
@@ -484,7 +498,7 @@ export function relacionResultados(
     // lista con aviso y NO se acumula en el cierre de clientes.
     if (j.ganador === "pendiente") {
       cuerpo.push(
-        `${i + 1}) ${etiquetaJugada(j.jugada)} (${caballoPareoLegible(j.caballo)}) con ${fmtMonto(j.monto)}${sufijoSaldo}`
+        `${i + 1}) ${etiquetaJugada(j.jugada)} (${caballoPareoLegible(j.caballo)}) con ${fmtMonto(j.monto)}${sufijoSaldo}${sufijoProgresivoDe(j)}`
       );
       cuerpo.push("  ⚠️ PENDIENTE — falta el dividendo que cuantifica el premio.");
       return;
@@ -504,13 +518,13 @@ export function relacionResultados(
     const perdida = num(j.monto);
     const beneficiario = j.clienteConsigue || "";
     cuerpo.push(
-      `${i + 1}) ${etiquetaJugada(j.jugada)} (${caballoPareoLegible(j.caballo)}) con ${fmtMonto(j.monto)}${sufijoSaldo}`
+      `${i + 1}) ${etiquetaJugada(j.jugada)} (${caballoPareoLegible(j.caballo)}) con ${fmtMonto(j.monto)}${sufijoSaldo}${sufijoProgresivoDe(j)}`
     );
     // ANULADA: el motor devolvió el capital, así que ni el que JUEGA gana/pierde
     // ni el "da" entrega nada. Se muestra 0/0 y NO se acumula en el cierre.
     if (b.anulada) {
-      cuerpo.push(`Juega ${j.clienteJuega} $ +0,00`);
-      if (beneficiario) cuerpo.push(`Consigue ${beneficiario} $ +0,00`);
+      cuerpo.push(`Juega ${j.clienteJuega} 0,00`);
+      if (beneficiario) cuerpo.push(`Consigue ${beneficiario} 0,00`);
       return;
     }
     // El motor reconoció la POSICIÓN pero falta el dividendo que cuantifica el
@@ -528,16 +542,16 @@ export function relacionResultados(
     if (b.gananciaNeta > 0) {
       // Acertó el que JUEGA → cobra la ganancia neta; el "da" entrega SU riesgo,
       // que es el BRUTO de la jugada: el monto a la par, y 8/10·monto en "10a8".
-      cuerpo.push(`Juega ${j.clienteJuega} $ +${fmtMonto(b.gananciaNeta)}`);
+      cuerpo.push(`Juega ${j.clienteJuega} +${fmtMonto(b.gananciaNeta)}`);
       acumular(j.clienteJuega, round2(b.gananciaNeta));
       if (beneficiario) {
         const perdidaDa = round2(b.gananciaBruta);
-        cuerpo.push(`Consigue ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
+        cuerpo.push(`Consigue ${beneficiario} -${fmtMonto(perdidaDa)}`);
         acumular(beneficiario, -perdidaDa);
       }
     } else if (j.modalidad === "NINI") {
       // Falló el NINI (el caballo figuró) → pierde el que JUEGA; el "da" cobra la paridad neta.
-      cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
+      cuerpo.push(`Juega ${j.clienteJuega} -${fmtMonto(perdida)}`);
       acumular(j.clienteJuega, -perdida);
       if (beneficiario) {
         const porUno = Number(meta.dividendos?.nini);
@@ -546,19 +560,19 @@ export function relacionResultados(
         const tasa = tasaDeJugada(j.comisionPct);
         const com2 = round2((premioNini - num(j.monto)) * (tasa / 100));
         const netoC2 = round2(premioNini - com2 - num(j.monto));
-        cuerpo.push(`Consigue ${beneficiario} $ +${fmtMonto(netoC2)}`);
+        cuerpo.push(`Consigue ${beneficiario} +${fmtMonto(netoC2)}`);
         acumular(beneficiario, netoC2);
       }
     } else {
       // Jugada genérica fallida → pierde el que JUEGA; el "da" (banquero) cobra
       // la PARIDAD NETA, igual que un NINI fallido, sin importar la modalidad
       // (suma cero: lo que pierde el que JUEGA menos la comisión de la casa).
-      cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
+      cuerpo.push(`Juega ${j.clienteJuega} -${fmtMonto(perdida)}`);
       acumular(j.clienteJuega, -perdida);
       if (beneficiario) {
         const tasa = tasaDeJugada(j.comisionPct);
         const netoDa = round2(perdida - perdida * (tasa / 100));
-        cuerpo.push(`Consigue ${beneficiario} $ +${fmtMonto(netoDa)}`);
+        cuerpo.push(`Consigue ${beneficiario} +${fmtMonto(netoDa)}`);
         acumular(beneficiario, netoDa);
       }
     }
@@ -626,6 +640,7 @@ export type TicketApuestaJugada = {
   estado?: string | null;
   cliente_juega_nombre?: string | null;
   cliente_consigue_nombre?: string | null;
+  nota_auditoria?: string | null;
 };
 
 /**
@@ -645,11 +660,24 @@ export function esVentaDeRemate(nombreJugada: unknown): boolean {
 function mapearJugada(r: TicketApuestaJugada): JugadaRelacion {
   const jugadaCruda = String(r.nombre_jugada ?? "").trim();
   const esNini = parsearNini(jugadaCruda) !== null;
+  let notaAuditoria: Record<string, unknown> = {};
+  if (r.nota_auditoria) {
+    try {
+      const parsed: unknown = JSON.parse(r.nota_auditoria);
+      if (parsed && typeof parsed === "object") notaAuditoria = parsed as Record<string, unknown>;
+    } catch {
+      notaAuditoria = {};
+    }
+  }
+  const saldoRestante = Number(notaAuditoria.saldo_restante);
   return {
     clienteJuega: String(r.cliente_juega_nombre ?? "—"),
     jugada: esNini ? normalizarNini(jugadaCruda) : jugadaCruda,
     caballo: String(r.caballo ?? "").trim(),
     monto: num(r.monto_jugado),
+    observacion: typeof notaAuditoria.observacion === "string" ? notaAuditoria.observacion : null,
+    saldoRestante:
+      notaAuditoria.saldo_restante == null || !Number.isFinite(saldoRestante) ? null : saldoRestante,
     clienteConsigue: r.cliente_consigue_nombre ? String(r.cliente_consigue_nombre) : undefined,
     modalidad: esNini ? "NINI" : "GENERICA",
     cantidadTablas: num(r.cantidad_tablas),
@@ -668,7 +696,7 @@ export async function cargarJugadasDeCarrera(
     let q = supabase
       .from("tickets_apuestas")
       .select(
-        "id, nombre_jugada, caballo, cantidad_tablas, monto_jugado, premio_pagar, premio_por_tabla, comision_porcentaje, estado, cliente_juega_nombre, cliente_consigue_nombre"
+        "id, nombre_jugada, caballo, cantidad_tablas, monto_jugado, premio_pagar, premio_por_tabla, comision_porcentaje, estado, cliente_juega_nombre, cliente_consigue_nombre, nota_auditoria"
       )
       // Mismo emparejamiento de hipódromo que el Reporte de Liquidación
       // (`reportes.ts` usa `.ilike("%hip%")`): el hipódromo puede venir con

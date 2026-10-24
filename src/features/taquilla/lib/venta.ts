@@ -44,12 +44,15 @@ export type VentaJugada = {
   usuario?: string | null;
   /** Clave de idempotencia: reintentar con la misma no vuelve a descontar. */
   idempotencia?: string | null;
+  /** Observación de recorte por saldo, persistida dentro de nota_auditoria. */
+  observacion?: string | null;
 };
 
 export type ResultadoVentaJugada = {
   ok: boolean;
   ticketId?: number;
   saldoRestante?: number;
+  observacion?: string | null;
   yaExistia?: boolean;
   error?: string;
 };
@@ -93,6 +96,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
     p_modalidad: v.modalidad ?? null,
     p_usuario: v.usuario ?? null,
     p_idem: v.idempotencia ?? null,
+    p_observacion: v.observacion ?? null,
   });
   if (error) {
     const texto = error.message ?? String(error);
@@ -103,6 +107,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
     ok: true,
     ticketId: r.ticket_id as number | undefined,
     saldoRestante: r.saldo_restante as number | undefined,
+    observacion: typeof r.observacion === "string" ? r.observacion : null,
     yaExistia: r.ya_existia as boolean | undefined,
   };
 }

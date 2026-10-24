@@ -20,6 +20,7 @@ import {
   MOTIVOS_ANULACION,
   NOTAS_PREDEFINIDAS_EDICION,
   componerNota,
+  leerNotaAuditoria,
   restaurarJugada,
   type JugadaAdmin,
 } from "@/features/jugadas/lib/jugadas";
@@ -44,17 +45,29 @@ type Props = {
   onCerrar: () => void;
 };
 
-const money = (v: number | null | undefined, moneda: string): string =>
-  `${moneda === "USD" ? "$" : "Bs"} ${Number(v ?? 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const money = (v: number | null | undefined, _moneda: string): string =>
+  Number(v ?? 0).toLocaleString("es-VE", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
+function notaSaldo(jugada: JugadaAdmin): string[] {
+  const nota = leerNotaAuditoria(jugada.nota_auditoria);
+  const observacion = typeof nota.observacion === "string" ? nota.observacion.trim() : "";
+  const saldo = Number(nota.saldo_restante);
+  return [
+    observacion,
+    Number.isFinite(saldo)
+      ? `Queda: ${saldo.toLocaleString("es-VE", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+      : "",
+  ].filter(Boolean);
+}
 
 /** Resume el resultado de un recálculo de carrera para el aviso del operador. */
 function textoRecalculo(r: ResRecalcular, accion: string): string {
   const partes = [accion];
   if (r.revertidos > 0) {
-    partes.push(`se revirtieron ${r.revertidos} jugada(s) ya liquidada(s) ($${r.revertidoTotal.toFixed(2)} devuelto a los clientes)`);
+    partes.push(`se revirtieron ${r.revertidos} jugada(s) ya liquidada(s) (${money(r.revertidoTotal, "VES")} devuelto a los clientes)`);
   }
   if (r.reliquidados > 0) {
-    partes.push(`se re-liquidaron ${r.reliquidados} jugada(s) ($${r.abonoTotal.toFixed(2)} abonado)`);
+    partes.push(`se re-liquidaron ${r.reliquidados} jugada(s) (${money(r.abonoTotal, "VES")} abonado)`);
   }
   if (r.errores.length) {
     partes.push(`⚠️ ${r.errores.length} aviso(s): ${r.errores[0]}`);
@@ -307,6 +320,7 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
                 <th className="px-2 py-2 text-left">Caballo</th>
                 <th className="px-2 py-2 text-right">Monto</th>
                 <th className="px-2 py-2 text-right">Premio</th>
+                <th className="px-2 py-2 text-left">Saldo / observación</th>
                 <th className="px-2 py-2 text-left">Estado</th>
                 <th className="px-2 py-2 text-right">Acciones</th>
               </tr>
@@ -314,7 +328,7 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
             <tbody>
               {!cargando && visibles.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-6 text-center text-slate-400">
+                  <td colSpan={8} className="px-3 py-6 text-center text-slate-400">
                     No hay jugadas {soloVigentes ? "vigentes" : ""} para esta carrera.
                   </td>
                 </tr>
@@ -322,6 +336,7 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
               {visibles.map((j) => {
                 const estado = j.anulada ? "Anulado" : j.estado ?? "Pendiente";
                 const enEdicion = edicion?.id === String(j.id);
+                const notas = notaSaldo(j);
                 return (
                   <tr key={String(j.id)} className={`border-t border-line ${j.anulada ? "bg-amber-50/50" : ""}`}>
                     <td className="px-2 py-1.5 font-semibold text-slate-700">{j.cliente_juega_nombre ?? "—"}</td>
@@ -369,6 +384,9 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
                     </td>
                     <td className="px-2 py-1.5 text-right font-bold text-slate-700">
                       {Number(j.premio_pagar ?? 0) > 0 ? money(j.premio_pagar, j.moneda ?? "VES") : "—"}
+                    </td>
+                    <td className="px-2 py-1.5 text-[10px] font-mono text-slate-600">
+                      {notas.length ? notas.join(" · ") : "—"}
                     </td>
                     <td className="px-2 py-1.5">
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase text-slate-600">{estado}</span>

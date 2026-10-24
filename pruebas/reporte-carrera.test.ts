@@ -26,7 +26,7 @@ const CARRERA: CarreraReporte = {
   subtotal: 0,
   filas: [
     // Ticket 0: Perrito juega "2p al 7" y Emy consigue/da. Perrito pierde 100.
-    { id: "2026-10-12-LA RINCONADA-7-j-0", rol: "Juega", cliente: "Perrito Molinas", jugada: "2p", caballo: "7", monto: 100, resultado: -100, esPareo: false },
+    { id: "2026-10-12-LA RINCONADA-7-j-0", rol: "Juega", cliente: "Perrito Molinas", jugada: "2p", caballo: "7", monto: 100, resultado: -100, esPareo: false, observacion: "Excedido 100", saldoRestante: 0 },
     { id: "2026-10-12-LA RINCONADA-7-c-0", rol: "Consigue", cliente: "Emy", jugada: "2p", caballo: "7", monto: 100, resultado: 100, esPareo: false },
     // Ticket 1: Marlene gana con una TABLA FIJA (adelantada).
     { id: "2026-10-12-LA RINCONADA-7-j-1", rol: "Juega", cliente: "Marlene", jugada: "TABLA 2", caballo: "2", monto: 500, resultado: 1200, esPareo: false },
@@ -84,6 +84,8 @@ si(perrito && perrito.da === "Emy", "fila 1: DA = Emy (pareo por índice del tic
 si(perrito && perrito.jugo === "2p" && perrito.aposto === 100, "fila 1: JUGÓ 2p · APOSTÓ 100");
 si(perrito && perrito.resultado === -100, "fila 1: RESULTADO = -100 (perdió)");
 si(perrito && perrito.caballo === "7", "fila 1: lleva el ejemplar (7) para pintar el disco de color");
+si(perrito && perrito.observacion === "Excedido 100" && perrito.saldoRestante === 0,
+  "fila 1: reporta observación progresiva y saldo restante cero");
 si(perrito && !("tipo" in perrito), "fila 1: SIN etiqueta de premio/puestos debajo de la jugada");
 const marleneVivo = d.jugadasVivo[1];
 si(marleneVivo && marleneVivo.juega === "Marlene" && marleneVivo.da === "", "fila 2: Marlene sin pareja (DA vacío)");

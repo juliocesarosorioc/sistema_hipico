@@ -19,6 +19,7 @@
  *  de `Gestión de Jugadas`.
  */
 import { proyectarFila, type FilaProyeccion } from "@/features/taquilla/lib/validar";
+import { evaluarSaldoProgresivoJugadas } from "@/features/gestion/lib/saldo-progresivo";
 
 /** Cliente mínimo con el que se topa el saldo (compatible con `ClienteVenta`). */
 export type ClienteConSaldo = {
@@ -44,6 +45,15 @@ export type ProyeccionEnCurso<C> = {
   cliente1: C | null;
   /** Cliente 2 (dador). Nunca se le descuenta. */
   cliente2: C | null;
+  montoSolicitado: number;
+  montoAceptado: number;
+  montoExcedido: number;
+  saldoAntes: number | null;
+  saldoRestante: number | null;
+  excedido: boolean;
+  observacion: string | null;
+  observacionCorta: string | null;
+  etiquetaRestante: string;
 };
 
 /**
@@ -75,7 +85,16 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
   tasaComision?: number
 ): ProyeccionEnCurso<C>[] {
   const descontado = new Map<string, number>();
-  const out: ProyeccionEnCurso<C>[] = [];
+  const parciales: Array<{
+    f: F;
+    base1: C | null;
+    cliente1: C | null;
+    cliente2: C | null;
+    proyeccion: FilaProyeccion;
+    montoSolicitado: number;
+    valida: boolean;
+  }> = [];
+
   for (const f of filas) {
     const base1 = resolver(f.cliente1);
     const cliente1 = clienteConSaldoDescontado(base1, descontado);
@@ -88,11 +107,59 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
       cliente1,
       cliente2,
     });
-    out.push({ proyeccion, cliente1, cliente2 });
+    const montoSolicitado = Number(String(f.monto ?? "").replace(",", "."));
+    const sinSaldo = !proyeccion.ok && /sin saldo|saldo disponible|autoriza 0/i.test(proyeccion.motivo);
+    parciales.push({
+      f,
+      base1,
+      cliente1,
+      cliente2,
+      proyeccion,
+      montoSolicitado: Number.isFinite(montoSolicitado) ? montoSolicitado : 0,
+      valida: proyeccion.ok || sinSaldo,
+    });
     if (proyeccion.ok && base1) {
       const usado = descontado.get(String(base1.id)) ?? 0;
       descontado.set(String(base1.id), usado + proyeccion.monto);
     }
   }
-  return out;
+
+  const saldosIniciales = new Map<string, number | null>();
+  for (const { f, base1 } of parciales) {
+    if (!base1) continue;
+    const clave = String(base1.id ?? f.cliente1).trim().replace(/\s+/g, " ").toLocaleUpperCase("es-VE");
+    if (String(base1.modo_juego ?? "").trim().toLowerCase() === "libre") {
+      saldosIniciales.set(clave, null);
+    } else if (!saldosIniciales.has(clave)) {
+      const saldo = Number(base1.saldo_actual ?? 0);
+      const aval = Number(base1.aval ?? 0);
+      saldosIniciales.set(clave, Math.max(0, saldo + aval));
+    }
+  }
+  const evaluaciones = evaluarSaldoProgresivoJugadas(
+    parciales.map(({ f, base1, proyeccion, montoSolicitado, valida }, lineaIndice) => ({
+      lineaIndice,
+      jugador: String(base1?.id ?? f.cliente1),
+      contraparte: f.cliente2,
+      montoSolicitado,
+      montoAutorizado: proyeccion.ok ? proyeccion.monto : 0,
+      valida,
+    })),
+    saldosIniciales
+  );
+
+  return parciales.map((fila, i) => ({
+    proyeccion: fila.proyeccion,
+    cliente1: fila.cliente1,
+    cliente2: fila.cliente2,
+    montoSolicitado: evaluaciones[i].montoSolicitado,
+    montoAceptado: evaluaciones[i].montoAceptado,
+    montoExcedido: evaluaciones[i].montoExcedido,
+    saldoAntes: evaluaciones[i].saldoAntes,
+    saldoRestante: evaluaciones[i].saldoRestante,
+    excedido: evaluaciones[i].excedido,
+    observacion: evaluaciones[i].observacion,
+    observacionCorta: evaluaciones[i].observacionCorta,
+    etiquetaRestante: evaluaciones[i].etiquetaRestante,
+  }));
 }

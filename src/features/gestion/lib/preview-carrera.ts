@@ -39,6 +39,7 @@ export type JugadaPersistida = {
   cliente_juega_nombre?: string | null;
   cliente_consigue_nombre?: string | null;
   anulada?: boolean | null;
+  nota_auditoria?: string | null;
 };
 
 /**
@@ -71,6 +72,8 @@ export type TicketSesion = {
   cobro2?: number;
   gananciaProyectada?: number;
   ticketId?: number | string;
+  observacion?: string | null;
+  saldoRestante?: number | null;
 };
 
 /** Una fila lista para pintar en el panel. */
@@ -106,6 +109,8 @@ export type FilaPreviewCarrera = {
   esPremio: boolean;
   /** false si no hay proyección disponible (se pinta «—»). */
   tieneProyeccion: boolean;
+  observacion: string | null;
+  saldoRestante: number | null;
   /** Resultado del que JUEGA (Cliente 1): ✅/✖ y su saldo. */
   lado1: LadoResultado;
   /** Resultado del que DA/CONSIGUE (Cliente 2): ✅/✖ y su saldo. */
@@ -118,6 +123,24 @@ const NUM = (v: unknown): number => {
 };
 
 const TXT = (v: unknown): string => (v == null ? "" : String(v).trim());
+
+function leerDatosSaldo(raw: unknown): { observacion: string | null; saldoRestante: number | null } {
+  let nota: Record<string, unknown> = {};
+  if (raw && typeof raw === "object") nota = raw as Record<string, unknown>;
+  else if (typeof raw === "string" && /^[\[{]/.test(raw.trim())) {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") nota = parsed as Record<string, unknown>;
+    } catch {
+      return { observacion: null, saldoRestante: null };
+    }
+  }
+  const saldo = Number(nota.saldo_restante);
+  return {
+    observacion: typeof nota.observacion === "string" ? nota.observacion.trim() || null : null,
+    saldoRestante: nota.saldo_restante == null || !Number.isFinite(saldo) ? null : saldo,
+  };
+}
 
 /**
  * ¿La fila es una jugada de TAQUILLA? Excluye las modalidades que se venden
@@ -248,6 +271,7 @@ function filaDesdePersistida(j: JugadaPersistida, sesion?: TicketSesion): FilaPr
   const anulada = Boolean(j.anulada);
   const estado = estadoDeFila(j.estado, anulada);
   const ticketId = String(j.id ?? "").trim() || null;
+  const datosSaldo = leerDatosSaldo(j.nota_auditoria);
 
   let premioSaldo = 0;
   let esPremio = false;
@@ -290,6 +314,8 @@ function filaDesdePersistida(j: JugadaPersistida, sesion?: TicketSesion): FilaPr
     premioSaldo,
     esPremio,
     tieneProyeccion,
+    observacion: datosSaldo.observacion ?? sesion?.observacion ?? null,
+    saldoRestante: datosSaldo.saldoRestante ?? sesion?.saldoRestante ?? null,
     lado1,
     lado2,
   };
@@ -317,6 +343,8 @@ function filaDesdeSesion(t: TicketSesion): FilaPreviewCarrera {
     premioSaldo: esPremio ? mejor - monto : -monto,
     esPremio,
     tieneProyeccion: true,
+    observacion: t.observacion ?? null,
+    saldoRestante: t.saldoRestante ?? null,
     lado1,
     lado2,
   };

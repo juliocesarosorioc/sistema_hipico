@@ -121,7 +121,7 @@ console.log("\n== clienteConSaldoDescontado ==");
 // ---------------------------------------------------------------------------
 // 6. El disponible se AGOTA: la fila que lo agota autoriza 0 (no el monto pedido)
 // ---------------------------------------------------------------------------
-console.log("\n== Se agota el disponible: la fila sin saldo se rechaza ==");
+console.log("\n== Se agota el disponible: el espejo muestra exceso con saldo cero ==");
 {
   const filas: FilaDeCarga[] = [
     { jugada: "2p", caballo: "3", monto: "600", cliente1: "Ana", cliente2: "" },
@@ -129,18 +129,20 @@ console.log("\n== Se agota el disponible: la fila sin saldo se rechaza ==");
     { jugada: "2p", caballo: "5", monto: "600", cliente1: "Ana", cliente2: "" },
   ];
   const p = proyectarFilasEnOrden(filas, resolver);
-  const m = p.map((x) => (x.proyeccion.ok ? x.proyeccion.monto : "rechazada"));
-  si(JSON.stringify(m) === JSON.stringify([600, 400, "rechazada"]),
-    "saldo 1000 con tres de 600: 600 · 400 · rechazada", JSON.stringify(m));
+  const m = p.map((x) => x.montoAceptado);
+  si(JSON.stringify(m) === JSON.stringify([600, 400, 0]),
+    "saldo 1000 con tres de 600: acepta 600 · 400 · 0", JSON.stringify(m));
   si(p[1].proyeccion.ok && p[1].proyeccion.reparto?.recortado === true,
     "la segunda queda marcada como recortada");
-  si(!p[2].proyeccion.ok && /autoriza 0|saldo/i.test(p[2].proyeccion.motivo),
-    "la tercera se rechaza diciendo que no hay saldo", JSON.stringify(p[2].proyeccion));
+  si(p[2].montoExcedido === 600 && p[2].observacion === "Sin saldo",
+    "la tercera indica que ya no hay saldo disponible y marca Sin saldo", JSON.stringify(p[2]));
+  si(p[2].saldoRestante === 0 && p[2].etiquetaRestante === "Queda: 0",
+    "la tercera muestra saldo restante cero", JSON.stringify(p[2]));
   si(p[2].cliente1?.saldo_actual === 0,
     "la tercera ve el saldo agotado (0)", String(p[2].cliente1?.saldo_actual));
 }
 
-console.log("\n== Saldo 500 con tres de 300: 300 · 200 · rechazada ==");
+console.log("\n== Saldo 500 con tres de 300: 300 · 200 · 0 ==");
 {
   const cat = [{ id: "leo", nombre: "Leo", saldo_actual: 500, aval: 0, modo_juego: "aval" }];
   const r = (t: string) => cat.find((c) => c.nombre.toLowerCase() === t.trim().toLowerCase()) ?? null;
@@ -150,8 +152,29 @@ console.log("\n== Saldo 500 con tres de 300: 300 · 200 · rechazada ==");
     { jugada: "2p", caballo: "5", monto: "300", cliente1: "Leo", cliente2: "" },
   ];
   const p = proyectarFilasEnOrden(filas, r);
-  const m = p.map((x) => (x.proyeccion.ok ? x.proyeccion.monto : "rechazada"));
-  si(JSON.stringify(m) === JSON.stringify([300, 200, "rechazada"]), "300 · 200 · rechazada", JSON.stringify(m));
+  const m = p.map((x) => x.montoAceptado);
+  si(JSON.stringify(m) === JSON.stringify([300, 200, 0]), "300 · 200 · 0", JSON.stringify(m));
+}
+
+console.log("\n== Cuando el saldo ya quedó en cero, la siguiente línea marca Sin saldo ==");
+{
+  const cat = [{ id: "mario", nombre: "Mario", saldo_actual: 500, aval: 0, modo_juego: "aval" }];
+  const r = (t: string) => cat.find((c) => c.nombre.toLowerCase() === t.trim().toLowerCase()) ?? null;
+  const filas: FilaDeCarga[] = [
+    { jugada: "2p", caballo: "3", monto: "300", cliente1: "Mario", cliente2: "" },
+    { jugada: "2p", caballo: "4", monto: "300", cliente1: "Mario", cliente2: "" },
+    { jugada: "2p", caballo: "5", monto: "300", cliente1: "Mario", cliente2: "" },
+  ];
+  const p = proyectarFilasEnOrden(filas, r);
+  si(JSON.stringify(p.map((x) => x.montoAceptado)) === JSON.stringify([300, 200, 0]),
+    "acepta 300 · 200 · 0 con saldo agotado",
+    JSON.stringify(p.map((x) => x.montoAceptado)));
+  si(p[2].observacion === "Sin saldo" && p[2].montoExcedido === 300 && p[2].saldoRestante === 0,
+    "la línea agotada se marca como Sin saldo, no como Excedido",
+    JSON.stringify(p[2]));
+  si(!p[2].excedido,
+    "la línea agotada NO se marca como excedida pero sí conserva el monto excedido bruto",
+    JSON.stringify(p[2]));
 }
 
 console.log("\n== El aval amplía el disponible pero NO se rebaja ==");
@@ -167,6 +190,24 @@ console.log("\n== El aval amplía el disponible pero NO se rebaja ==");
   si(m[0] === 300 && m[1] === 200, "con aval 500: 300 · 200", JSON.stringify(m));
   si(p[1].cliente1?.saldo_actual === -300 && p[1].cliente1?.aval === 500,
     "el saldo baja a -300 y el aval sigue 500");
+}
+
+console.log("\n== Recorte progresivo exacto y observación corta ==");
+{
+  const cat = [{ id: "eli", nombre: "Eli", saldo_actual: 2000, aval: 0, modo_juego: "aval" }];
+  const r = (t: string) => cat.find((c) => c.nombre.toLowerCase() === t.trim().toLowerCase()) ?? null;
+  const filas: FilaDeCarga[] = [
+    { jugada: "2p", caballo: "3", monto: "1000", cliente1: "Eli", cliente2: "" },
+    { jugada: "2p", caballo: "4", monto: "500", cliente1: "Eli", cliente2: "" },
+    { jugada: "2p", caballo: "5", monto: "600", cliente1: "Eli", cliente2: "" },
+  ];
+  const p = proyectarFilasEnOrden(filas, r);
+  si(JSON.stringify(p.map((x) => x.montoAceptado)) === JSON.stringify([1000, 500, 500]),
+    "acepta 1000 · 500 · recorta a 500", JSON.stringify(p.map((x) => x.montoAceptado)));
+  si(p[2].montoExcedido === 100 && p[2].observacion === "Excedido 100",
+    "persiste la nota visual exacta Excedido 100", JSON.stringify(p[2]));
+  si(p[0].saldoRestante === 1000 && p[1].saldoRestante === 500 && p[2].saldoRestante === 0,
+    "muestra el saldo restante línea por línea", JSON.stringify(p.map((x) => x.saldoRestante)));
 }
 
 // ---------------------------------------------------------------------------

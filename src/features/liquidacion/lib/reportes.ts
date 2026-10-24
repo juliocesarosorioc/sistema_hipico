@@ -59,6 +59,8 @@ export type FilaReporte = {
    * filtro segmentado del Reporte de Liquidación.
    */
   esAdelantada?: boolean;
+  observacion?: string | null;
+  saldoRestante?: number | null;
 };
 
 export type CarreraReporte = {
@@ -590,6 +592,18 @@ async function carreraReporte(
     // Modalidad de TIEMPO: misma lectura para el que JUEGA y el que CONSIGUE
     // (es el mismo ticket, las dos filas se parean por índice).
     const adelantada = esAdelantadaDe(f);
+    let notaAuditoria: Record<string, unknown> = {};
+    if (typeof f.nota_auditoria === "string") {
+      try {
+        const parsed: unknown = JSON.parse(f.nota_auditoria);
+        if (parsed && typeof parsed === "object") notaAuditoria = parsed as Record<string, unknown>;
+      } catch {
+        notaAuditoria = {};
+      }
+    }
+    const saldoRestante = Number(notaAuditoria.saldo_restante);
+    const observacion =
+      typeof notaAuditoria.observacion === "string" ? notaAuditoria.observacion : null;
     filas.push({
       id: `${fecha}-${hipodromo}-${numero}-j-${i}`,
       rol: "Juega",
@@ -602,6 +616,9 @@ async function carreraReporte(
       ejemplar: desglose.ejemplar,
       tipoJugada: desglose.tipo,
       esAdelantada: adelantada,
+      observacion,
+      saldoRestante:
+        notaAuditoria.saldo_restante == null || !Number.isFinite(saldoRestante) ? null : saldoRestante,
     });
 
     if (clienteConsigue) {
@@ -617,6 +634,9 @@ async function carreraReporte(
         ejemplar: desglose.ejemplar,
         tipoJugada: desglose.tipo,
         esAdelantada: adelantada,
+        observacion,
+        saldoRestante:
+          notaAuditoria.saldo_restante == null || !Number.isFinite(saldoRestante) ? null : saldoRestante,
       });
     }
 

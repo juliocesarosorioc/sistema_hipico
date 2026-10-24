@@ -43,6 +43,8 @@ export type TicketMensaje = {
   caballo?: string | null;
   cliente1?: string | null;
   cliente2?: string | null;
+  observacion?: string | null;
+  saldoRestante?: number | null;
 };
 
 export type OpcionesMensajeResultado = {
@@ -150,6 +152,8 @@ export function resultadoDeJugada(
     caballo: String(t.caballo ?? "").trim(),
     monto: montoFinal,
     clienteConsigue: t.cliente2 ? String(t.cliente2) : undefined,
+    observacion: t.observacion ?? null,
+    saldoRestante: t.saldoRestante ?? null,
     modalidad: esNini ? "NINI" : "GENERICA",
     // Premio bruto del ganador (capital + ganancia neta recompuesta con la
     // comisión del motor): totalClienteNeto ya viene neto de comisión.
@@ -206,6 +210,8 @@ export function jugadaRelacionDeTicket(t: TicketMensaje): JugadaRelacion {
     caballo: String(t.caballo ?? "").trim(),
     monto: montoFinal,
     clienteConsigue: t.cliente2 ? String(t.cliente2) : undefined,
+    observacion: t.observacion ?? null,
+    saldoRestante: t.saldoRestante ?? null,
   };
 }
 
