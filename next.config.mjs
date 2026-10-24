@@ -5,6 +5,8 @@ const nextConfig = {
   poweredByHeader: false, // Oculta X-Powered-By: Next.js ante escáneres de hackers
   reactStrictMode: true,
   output: isGhPages ? "export" : undefined,
+  basePath: isGhPages ? "/sistema_hipico" : "",
+  assetPrefix: isGhPages ? "/sistema_hipico/" : "",
   images: {
     unoptimized: true,
   },

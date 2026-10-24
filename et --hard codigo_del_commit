@@ -1,0 +1,81 @@
+[33m0a7b830[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m fix(deploy): configurar basePath y output export para GitHub Pages
+[33m6c5de53[m fix(utils): limpiar duplicados de funciones financieras en utils.ts
+[33m33a4ea6[m feat(fase5): incorporar estado caballo invalidado en modelos y editor de tablas fijas
+[33m8dd8a7a[m feat(fase4): asegurar alternativas como array definido en ResultadoInterpretacionFecha
+[33mcbbf723[m fix(fase3): resolucion final de supabase null check en proyecciones y contabilidad
+[33maf81670[m chore(fase1): eliminar definitivamente la carpeta legacy de la raiz
+[33mab6b89d[m feat(arquitectura): blindaje seguridad, inteligencia hipica con historial, fix carga gacetas, caballo invalidado y contabilidad NIIF
+[33m1f0de68[m feat: Probar Plataforma de Inteligencia
+[33m2f39ba6[m feat: agregar grupo de inteligencia hipica en menu legacy
+[33mc2b1fe7[m feat(inteligencia-hipica): agregar seccion Proyecciones con modal Godet & Actuarial
+[33mddb7feb[m feat(godet): prospectiva actuarial michel godet con parciales 400m, modo en vivo, gualdrapas oficiales y modal pizarra
+[33mbadd814[m feat(pollas): estandarizar selector de hipódromos con SearchableSelect
+[33m524d973[m feat(reportes): mostrar cantidad x monto y paga por tabla, y resumen de retiros
+[33m8b7d1ec[m style(gestion): colocar MODO MANUAL junto a Con Cruces y reducir COM %
+[33med76ff2[m fix(taquilla): aceptar '1P de 2-3' y normalizar proporciones '10a3,5'
+[33m5cb9410[m fix(reportes): mostrar errores al anular desde reporte y toggle anuladas
+[33m1f5cacb[m feat(reportes): editor completo desde carrera para todas las ventas
+[33m702a904[m fix(marcas): mostrar marca y rival con un circulo cada uno
+[33md2b9815[m fix(monitor): la barra de Progreso de la jornada vuelve a avanzar
+[33mad1cac6[m feat(reportes): columna-simbolo de modalidad (en vivo/adelantada) y su edicion en el CRUD
+[33m118d172[m fix(reportes): las jugadas anuladas no suman ni restan en ningun reporte
+[33m67e6350[m feat(fase2): unificar modales editoriale, navegacion por categorias, buscador de hipodromos con bandera/logo y logos realtime
+[33mb893947[m feat(seguridad): FASE 1 - endurecer auth, presets RBAC y aislamiento de Dueno de Grupo
+[33m271278a[m wip: remates dividend calc reference
+[33m1ca0ff2[m chore: sync fixes basePath + anti-hang login/portal
+[33me362fa9[m fix(auth/portal): liberar siempre el boton/cargando aunque falle o se cuelgue
+[33m45c419c[m fix(portal): no saltar a la raiz del dominio (basePath de GitHub Pages)
+[33m8d57594[m fix(portal): /portal es ruta publica (AuthBootstrap lo expulsaba a /login)
+[33mdfe1987[m fix(pages): trailingSlash en el export para que /portal/ no de 404
+[33ma3d66f3[m fix(portal): la contrasena del login no se recorta (maxLength=8 cortaba JUGADOR123)
+[33md3834bc[m fix(portal): CORS en portal-auth para entrar desde GitHub Pages
+[33m8866f70[m fix(logos): guardar y verificar logos de hipodromo y grupo (sin falsos exitos)
+[33mec05fcf[m fix(auth,gestion): logout que no cuelga, llegadas solo si esta liquidada, motivo + recalculo al cambiar el resultado
+[33m6b190ad[m feat(sql): jugador de prueba del portal (jugador_prueba1) en el grupo ARGENTINA
+[33m2a87552[m fix(clientes): bandeja de reclamos ordena por creado_at (tickets_jugadas no tiene created_at)
+[33m5669f50[m test(portal): ventana de reclamos y modal realizar jugada + toggle en grupos (PROMPT #6)
+[33m3f59053[m feat(portal): modal Realizar Jugada y reclamos de jugadas no relacionadas (PROMPT #6)
+[33md2746e2[m test(grupos): blindan visibilidad del principal y atribucion de cuenta entre grupos (PROMPT #5)
+[33m62baa15[m fix(sql): indice de adelantadas sobre fecha_registro (tickets_apuestas no tiene columna fecha)
+[33mbb43660[m fix(sql): indice de cruce de grupos sobre fecha_registro (tickets_apuestas no tiene columna fecha)
+[33mbe6fd9b[m feat(grupos): visibilidad compartida del grupo principal y atribucion de cuenta al grupo origen (PROMPT #5)
+[33m13d5605[m feat(jugadas): modalidad de tiempo en vivo vs jugada adelantada
+[33mb44206b[m feat(portal): bitácora privada en grupos externos, autogestión de perfil y formas de pago múltiples (PROMPT #7)
+[33m2b86892[m fix(liquidacion): no dejar jugadas archivadas en otra jornada sin cobrar ni pagar
+[33m432c39f[m feat(preview): columna Estado solo Liquidada/Pendiente/Anulada y monto en riesgo en gris
+[33m3f191d7[m feat(grupos): pestanas Grupos/Banquero/Tipos y fila de grupo en una linea sin scroll
+[33m0d5c06d[m feat(preview): mostrar simbolo ganó/perdió y saldo por cada jugador en la pre-visualización
+[33mba319cf[m PROMPT #3: grupos en una sola linea, seccion de convenios por tipo de jugada eliminada y reporte de comisiones por convenio rediseñado (detalle por jugada, KPIs y exportaciones WhatsApp/PNG/Excel)
+[33m577dc9f[m PROMPT #2: mensajeria CSS estandarizada + logos reactivos en tiempo real
+[33mbc59e69[m feat(nucleo): estados maestros, edicion total con notas, sync n->nombre de ejemplar y recalculo integro
+[33mcfbed2b[m feat(reporte): MARCA/TABLA FIJA con discos y PP=10/10 en los rotulos
+[33m7b8ae7a[m feat(reporte): rotulos compactos de TABLA FIJA y MARCA en la Jugada
+[33m132a4d1[m fix(reporte): logos de hipodromo y grupo siempre frescos en el reporte
+[33md6c2284[m feat(bloques-1-3): reversion de liquidacion, pre-visualizacion persistente y cobrado por convenio
+[33me61962d[m[33m ([m[1;31morigin/feat/reporte-logos[m[33m, [m[1;32mfeat/reporte-logos[m[33m)[m feat(reporte): rediseno de liquidacion con logos y resultados condicionales
+[33mdbf3a49[m feat(logos): gestor de logos PNG para hipodromos y grupos
+[33m5c241a0[m fix(gestion): restaurar declaracion de carreraLiquidada tras merge roto
+[33mf6a088a[m chore(bloques-3-6): ajustes parciales (cobrado en totales tablas, layout modal comisiones)
+[33m8a3a1d2[m feat(cruces-puestos): agrupar por cliente + soporte permite_cruces; UI grupos/modal responsive y fix guardado comisiones; precarga modal resultados; limpia UI Gestión Jugadas; doc plan Pollas
+[33m16dbb05[m feat(liquidacion): motor maestro idempotente de re-liquidacion post-carrera
+[33m1a2b826[m fix(reporte): tickets PERDEDOR de TABLA FIJA no se forzaban a false (re-evalúan contra pizarra)
+[33mbbb1a16[m fix(liquidacion): registro unico de resultados y pago de toda jugada (tablas fijas incluidas)
+[33m630b605[m fix(tablas-fijas): liquida la jornada correcta en cualquier hipodromo/dia y sella fecha_carrera al vender
+[33ma867473[m fix(tablas-fijas): el pago ya no queda atascado — re-liquidar repara los tickets mal decididos
+[33m13e92dc[m fix(tablas-fijas): snapshot de la venta, pago correcto y comision de la casa
+[33m04e7c93[m feat(grupos): comision por convenio de producto por grupo + reporte
+[33m025a4ff[m fix(pollas): crear polla en bases con la columna vieja hipodromo
+[33mad96d79[m feat(tablas): Enter en Valor baja al siguiente y grilla de correccion alineada
+[33m58d9181[m fix(taquilla): boton de saldos relee la base, dos clientes obligatorios y grupo por defecto en Marcas
+[33m5d77bd7[m ui(tablas): Enter en el valor del ejemplar guarda el cuadro
+[33m328215b[m fix(sql): v_jugadas_monitor expone grupo_cobro_id (error 42703 g.grupo_cobro_id)
+[33m43ae884[m feat(reportes): editar, anular y restaurar la venta desde el reporte (perfil Administrador Principal)
+[33m81ddb73[m fix(jugadas): el Monitor tolera la vista vieja sin grupo_cobro_id (evita 400)
+[33ma1c4a30[m ui(marcas): grupo y cliente se buscan por nombre en el modal de venta
+[33mf87c9ef[m ui(tablas): el modal de cuadros pinta el numero con la paleta hipica canonica
+[33m1e747b7[m feat(tablas): la venta va al grupo de la sesion y el jugador se busca por nombre
+[33m4d712ef[m feat(marcas): boton de reporte de marcas en el panel
+[33m88f053f[m ui(gestion): barra inferior uniforme en una sola linea
+[33m988c03b[m fix(gestion): el semaforo refleja la liquidacion central
+[33m8017d3f[m fix(reportes): la jornada de la jugada es la fecha de la carrera
+[33m5c66599[m fix(tablas): el monitor de tablas publica
