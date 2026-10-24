@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+<<<<<<< HEAD
 import { BuscadorJornada } from "@/shared/components/ui/BuscadorJornada";
 import { SemaforoCarreras } from "@/features/gestion/components/SemaforoCarreras";
 import { PizarraProspectiva } from "@/features/inteligencia/components/PizarraProspectiva";
@@ -405,6 +406,300 @@ function TablaActuarial({ proyeccion }: { proyeccion: ProyeccionCarrera }) {
         los ajustes del día (tren, peso, pista y retiros) sobre esta misma base.
       </p>
     </div>
+=======
+import { supabase } from "@/core/supabase";
+import { HorseSaddleclothSvg } from "@/shared/components/ui/HorseSaddleclothSvg";
+import {
+  generarProspectivaGodet,
+  type EjemplarGodet,
+  type ModoAnalisis,
+  type PistaEnVivo,
+  type SuperficiePista,
+} from "@/features/gaceta/lib/actuarialGodetEngine";
+
+interface CarreraDia {
+  id: string;
+  hipodromo_nombre: string;
+  fecha: string;
+  numero_carrera: number;
+  distancia?: string;
+  superficie?: string;
+  ejemplares: any[];
+  condicion?: string;
+}
+
+type PanelView = "evolucion" | "trackeos" | "apuestas" | "notas" | null;
+
+export function ProyeccionesModule() {
+  const [fecha, setFecha] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [carreras, setCarreras] = useState<CarreraDia[]>([]);
+  const [hipodromoSel, setHipodromoSel] = useState<string>("");
+  const [carreraSelId, setCarreraSelId] = useState<string>("");
+  const [cargando, setCargando] = useState(false);
+  const [retirados, setRetirados] = useState<Set<string>>(new Set());
+  const [modo, setModo] = useState<ModoAnalisis>("previa");
+  const [panelAbierto, setPanelAbierto] = useState<{ ejemplarId: string; view: PanelView } | null>(null);
+  const [superficie, setSuperficie] = useState<SuperficiePista>("dirt_fast");
+  const [sesgo, setSesgo] = useState({ rielInterno: 0, rielExterno: 0, velocistas: 0, rematadores: 0 });
+  const [pesosVivos, setPesosVivos] = useState<Record<string, string>>({});
+  const [notas, setNotas] = useState<Record<string, string>>({});
+  const [pista, setPista] = useState<PistaEnVivo>({
+    sesgoRielInterno: 0,
+    sesgoRielExterno: 0,
+    sesgoVelocistas: 0,
+    sesgoRematadores: 0,
+    brisaRecta: 0,
+    varianteObservada: 0,
+    superficie: "dirt_fast",
+  });
+
+  useEffect(() => {
+    async function cargarJornada() {
+      setCargando(true);
+      try {
+        const { data, error } = await supabase
+          .from("carreras")
+          .select("*")
+          .eq("fecha", fecha)
+          .order("hipodromo_nombre", { ascending: true })
+          .order("numero_carrera", { ascending: true });
+
+        if (!error && data) {
+          setCarreras(data as CarreraDia[]);
+          if (data.length > 0 && !hipodromoSel) {
+            setHipodromoSel(data[0].hipodromo_nombre);
+            setCarreraSelId(data[0].id);
+          }
+        }
+      } finally {
+        setCargando(false);
+      }
+    }
+    cargarJornada();
+  }, [fecha]);
+
+  const hipodromosDisponibles = useMemo(() => Array.from(new Set(carreras.map((c) => c.hipodromo_nombre))), [carreras]);
+  const carrerasDeHipodromo = useMemo(
+    () => carreras.filter((c) => c.hipodromo_nombre === hipodromoSel).sort((a, b) => a.numero_carrera - b.numero_carrera),
+    [carreras, hipodromoSel]
+  );
+  const carreraActiva = useMemo(
+    () => carrerasDeHipodromo.find((c) => c.id === carreraSelId) || carrerasDeHipodromo[0],
+    [carrerasDeHipodromo, carreraSelId]
+  );
+
+  const ejemplaresGodet = useMemo<EjemplarGodet[]>(() => {
+    if (!carreraActiva || !Array.isArray(carreraActiva.ejemplares)) return [];
+    return carreraActiva.ejemplares.map((e: any, idx: number) => {
+      const id = String(e.id || e.nombre || idx);
+      const estilo = e.estilo || (e.numero % 3 === 0 ? "rematador" : e.numero % 2 === 0 ? "perseguidor" : "velocista");
+      const mapEstilo = estilo === "velocista" ? "E1" : estilo === "perseguidor" ? "E2" : "E3";
+      return {
+        id,
+        numero: Number(e.numero || idx + 1),
+        nombre: String(e.nombre || e.ejemplar || `#${e.numero}`).toUpperCase(),
+        stud: e.stud || e.cuadra,
+        pais: e.nacionalidad || e.pais_origen || "VE",
+        tipoCarrera: estilo,
+        estilo: mapEstilo,
+        actuaciones: e.actuaciones || 6,
+        varianzaTTC: 0.12,
+        speedRatingTTC: e.speed_rating || e.beyer || 75,
+        beyer: e.beyer,
+        efectividadYunta: 0.5,
+        diasDescanso: e.dias_descanso || 21,
+        kilosHandicap: e.kilos_handicap || 54,
+        pesoJinete: e.peso_jinete || 54,
+        pesoNeto: e.peso_neto,
+        descargo: e.descargo || 0,
+        pesoOptimoGanadorKg: e.peso_optimo || 480,
+        pesoFisicoHoyKg: pesosVivos[id] ? Number(pesosVivos[id]) : e.peso_fisico_hoy,
+        morningLine: e.morning_line || e.ml,
+        jockey: e.jinete,
+        entrenador: e.entrenador,
+        earlyPace: e.early_pace,
+        latePace: e.late_pace,
+        trackeos: e.trackeos || [],
+        aptitudTurf: e.aptitud_turf || 50,
+        aptitudDirt: e.aptitud_dirt || 50,
+        aptitudWet: e.aptitud_wet || 40,
+        retirado: retirados.has(id) || retirados.has(String(e.numero)),
+      };
+    });
+  }, [carreraActiva, pesosVivos, retirados]);
+
+  const prospectiva = useMemo(
+    () =>
+      generarProspectivaGodet(
+        ejemplaresGodet,
+        modo,
+        { pista: superficie, clima: "seco", cambioJockey: false, cambioEntrenador: false, reaparecida: false, customFactors: [] },
+        { ...pista, superficie },
+        { retirados }
+      ),
+    [ejemplaresGodet, modo, superficie, pista, retirados]
+  );
+
+  const toggleRetiro = useCallback((id: string) => {
+    setRetirados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const restaurarRetirados = useCallback(() => setRetirados(new Set()), []);
+
+  return (
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div>
+          <h1 className="text-xl font-black uppercase tracking-wide text-slate-900">🧭 Inteligencia Hípica · Pizarra Prospectiva Michel Godet</h1>
+          <p className="text-xs text-slate-500">MACTOR + SMIC + Actuario · Tren de Carrera · Retiros en vivo · Pesos · Trackeos · Historial por ejemplar</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold" />
+          <button onClick={restaurarRetirados} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold hover:bg-slate-200">🔄 Restaurar Retirados</button>
+          <button className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-black uppercase text-slate-950 hover:bg-amber-400">⚖️ Cargar/Simular Pesos en Vivo</button>
+          <button className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-black uppercase text-white hover:bg-blue-500">⏱️ Vincular Trackeos</button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {hipodromosDisponibles.map((hip) => (
+          <button key={hip} onClick={() => { setHipodromoSel(hip); const primera = carreras.find((c) => c.hipodromo_nombre === hip); if (primera) setCarreraSelId(primera.id); }} className={`rounded-lg px-4 py-2 text-xs font-bold uppercase ${hipodromoSel === hip ? "bg-slate-900 text-amber-400" : "bg-slate-100 text-slate-600"}`}>🏇 {hip}</button>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {carrerasDeHipodromo.map((c) => (
+          <button key={c.id} onClick={() => setCarreraSelId(c.id)} className={`rounded-md px-3 py-1.5 text-xs font-black ${carreraActiva?.id === c.id ? "bg-blue-600 text-white" : "bg-white border text-slate-700"}`}>Carrera {c.numero_carrera}</button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
+        <span className="text-xs font-bold text-slate-600">Factor de Pista:</span>
+        <select value={superficie} onChange={(e) => setSuperficie(e.target.value as SuperficiePista)} className="rounded-lg border px-2 py-1 text-xs font-semibold">
+          <option value="dirt_fast">Dirt Fast (Normal)</option>
+          <option value="dirt_good">Good</option>
+          <option value="muddy">Muddy / Sloppy (Fango)</option>
+          <option value="turf_firm">Turf Firm (Grama)</option>
+          <option value="turf_yielding">Turf Yielding/Soft</option>
+          <option value="off_turf_fango">Off-the-Turf a Fango</option>
+          <option value="arena">Arena (Venezuela)</option>
+        </select>
+        <span className="text-xs font-bold text-slate-600">Modo:</span>
+        <button onClick={() => setModo("previa")} className={`rounded px-2 py-1 text-xs ${modo === "previa" ? "bg-amber-500 text-slate-900" : "bg-slate-100"}`}>Previa</button>
+        <button onClick={() => setModo("en_vivo")} className={`rounded px-2 py-1 text-xs ${modo === "en_vivo" ? "bg-emerald-500 text-white" : "bg-slate-100"}`}>En Vivo</button>
+        <span className="ml-auto text-xs text-slate-500">Activos: {prospectiva.activos} · Retirados: {prospectiva.retiradosCount}</span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+        <div className="lg:col-span-7 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-950 shadow-lg">
+          <table className="w-full text-left text-xs tabular-nums">
+            <thead>
+              <tr className="border-b border-amber-400/40 text-[9px] uppercase tracking-[0.24em] text-amber-300">
+                <th className="px-3 py-2">Pto</th>
+                <th className="px-3 py-2">#</th>
+                <th className="px-3 py-2">Ejemplar</th>
+                <th className="px-3 py-2">M/L</th>
+                <th className="px-3 py-2">Estilo</th>
+                <th className="px-3 py-2">Peso</th>
+                <th className="px-3 py-2">Score Godet</th>
+                <th className="px-3 py-2">% SMIC</th>
+                <th className="px-3 py-2">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {prospectiva.ordenLlegada.map((row: any) => {
+                const idKey = row.ejemplar.id;
+                const retirado = retirados.has(idKey) || row.ejemplar.retirado;
+                return (
+                  <tr key={idKey} className={`border-b border-slate-800/60 ${retirado ? "opacity-40 line-through" : "hover:bg-slate-900/60"}`}>
+                    <td className="px-3 py-2 text-amber-300">#{row.puestoProyectado}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <HorseSaddleclothSvg numero={row.ejemplar.numero} size={28} />
+                        <span className="font-black text-white">{row.ejemplar.numero}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <button onClick={() => setPanelAbierto({ ejemplarId: idKey, view: "evolucion" })} className="font-semibold text-cyan-300 hover:text-cyan-200">{row.ejemplar.nombre}</button>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        <button onClick={() => setPanelAbierto({ ejemplarId: idKey, view: "evolucion" })} className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] text-slate-300">[📈 Evolución]</button>
+                        <button onClick={() => setPanelAbierto({ ejemplarId: idKey, view: "trackeos" })} className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] text-slate-300">[⏱️ Trackeos ({row.ejemplar.trackeos?.length || 0})]</button>
+                        <button onClick={() => setPanelAbierto({ ejemplarId: idKey, view: "apuestas" })} className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] text-slate-300">[💰 Apuestas]</button>
+                        <button onClick={() => setPanelAbierto({ ejemplarId: idKey, view: "notas" })} className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] text-slate-300">[📝 Notas]</button>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-slate-300">{row.ejemplar.morningLine || "N/A"}</td>
+                    <td className="px-3 py-2"><span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-amber-300">{row.estilo || row.ejemplar.estilo}</span></td>
+                    <td className="px-3 py-2 text-slate-300">{row.ejemplar.pesoNeto || row.ejemplar.kilosHandicap || "-"}{row.ejemplar.descargo ? ` (-${row.ejemplar.descargo})` : ""}</td>
+                    <td className="px-3 py-2 text-amber-400">{row.score.toFixed(1)}</td>
+                    <td className="px-3 py-2 text-emerald-400">{row.probNorm}% {row.overlay && <span className="ml-1 text-[9px] text-yellow-400">OVERLAY</span>}</td>
+                    <td className="px-3 py-2"><button onClick={() => toggleRetiro(idKey)} className="rounded bg-red-900/40 px-2 py-1 text-[9px] text-red-300">{retirado ? "↩️ Reactivar" : "🚫 Retirar"}</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="lg:col-span-5 space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="mb-2 text-sm font-black uppercase text-slate-900">🧠 Dictamen Táctico Godet</h3>
+            <ul className="space-y-1 text-xs text-slate-700">
+              {(prospectiva.dictamen || []).map((d: string, i: number) => (<li key={i}>• {d}</li>))}
+              <li>• MACTOR: E1:{prospectiva.mactor?.grupos?.E1} E2:{prospectiva.mactor?.grupos?.E2} E3:{prospectiva.mactor?.grupos?.E3}</li>
+              <li>• Superficie: {superficie.replace("_", " ").toUpperCase()}</li>
+            </ul>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="mb-2 text-sm font-black uppercase text-slate-900">🎯 Simulación Recta Final (Top Activos)</h3>
+            <div className="space-y-2">
+              {prospectiva.ordenLlegada.slice(0, 5).map((row: any) => (
+                <div key={row.ejemplar.id} className="flex items-center gap-2 rounded-lg bg-slate-50 p-2">
+                  <HorseSaddleclothSvg numero={row.ejemplar.numero} size={24} />
+                  <span className="w-6 text-xs font-black">#{row.ejemplar.numero}</span>
+                  <span className="flex-1 text-xs font-semibold">{row.ejemplar.nombre}</span>
+                  <span className="text-xs text-emerald-700">{row.probNorm}%</span>
+                  <span className="text-[10px] text-slate-500">Remate {row.remate?.ultima200Seg}s</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="mb-2 text-sm font-black uppercase text-slate-900">💡 Jugadas Sugeridas (sin retirados)</h3>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded bg-emerald-50 p-2"><div className="font-bold text-emerald-700">GANADOR</div><div className="text-slate-700">#{prospectiva.ordenLlegada[0]?.ejemplar.numero} {prospectiva.ordenLlegada[0]?.ejemplar.nombre}</div></div>
+              <div className="rounded bg-blue-50 p-2"><div className="font-bold text-blue-700">EXACTA</div><div className="text-slate-700">#{prospectiva.ordenLlegada[0]?.ejemplar.numero} - #{prospectiva.ordenLlegada[1]?.ejemplar.numero}</div></div>
+              <div className="rounded bg-purple-50 p-2"><div className="font-bold text-purple-700">TRIFECTA</div><div className="text-slate-700">#{prospectiva.ordenLlegada[0]?.ejemplar.numero} / #{prospectiva.ordenLlegada[1]?.ejemplar.numero} / #{prospectiva.ordenLlegada[2]?.ejemplar.numero}</div></div>
+              <div className="rounded bg-amber-50 p-2"><div className="font-bold text-amber-700">OVERLAYS</div><div className="text-slate-700">{prospectiva.ordenLlegada.filter((r:any)=>r.overlay).length} detectados</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {panelAbierto && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center">
+          <div className="w-full max-w-3xl rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <h3 className="text-sm font-black uppercase text-slate-900">Expediente Histórico · {panelAbierto.view}</h3>
+              <button onClick={() => setPanelAbierto(null)} className="rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-100">Cerrar</button>
+            </div>
+            <div className="max-h-[70vh] overflow-auto p-4">
+              {panelAbierto.view === "evolucion" && <p className="text-xs text-slate-600">Gráfico interactivo de Evolución Speed Rating/Beyer/Km/h y Peso Físico. (Integrado con historial_ejemplar)</p>}
+              {panelAbierto.view === "trackeos" && <p className="text-xs text-slate-600">Trackeos / Briseos vinculados al ejemplar. Permite agregar trackeos en vivo.</p>}
+              {panelAbierto.view === "apuestas" && <p className="text-xs text-slate-600">Historial de apuestas: Tablas Fijas vendidas, monto en Taquilla/Tercios/Pollas.</p>}
+              {panelAbierto.view === "notas" && (
+                <textarea value={notas[panelAbierto.ejemplarId] || ""} onChange={(e) => setNotas((p) => ({ ...p, [panelAbierto.ejemplarId]: e.target.value }))} className="w-full rounded-lg border p-2 text-xs" rows={6} placeholder="Notas técnicas del analista..." />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+>>>>>>> bd25c19 (feat(inteligencia): integrar pizarra Godet MACTOR/SMIC nacional y DRF con historial por ejemplar, trackeos y tren de carrera)
   );
 }
 

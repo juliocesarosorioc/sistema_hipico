@@ -1,6 +1,7 @@
 "use client";
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 import { RutaProtegida } from "@/shared/components/ui/RutaProtegida";
 import { ProyeccionesModule } from "@/features/inteligencia/components/ProyeccionesModule";
 
@@ -344,4 +345,10 @@ export default function ProyeccionesInteligenciaPage() {
     </section>
 >>>>>>> ab6b89d (feat(arquitectura): blindaje seguridad, inteligencia hipica con historial, fix carga gacetas, caballo invalidado y contabilidad NIIF)
   );
+=======
+import { ProyeccionesModule } from "@/features/inteligencia/components/ProyeccionesModule";
+
+export default function ProyeccionesInteligenciaPage() {
+  return <ProyeccionesModule />;
+>>>>>>> bd25c19 (feat(inteligencia): integrar pizarra Godet MACTOR/SMIC nacional y DRF con historial por ejemplar, trackeos y tren de carrera)
 }

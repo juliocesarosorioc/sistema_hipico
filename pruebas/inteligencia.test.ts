@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // ============================================================================
 // SEGMENTACIÓN DE LA GACETA EN TEXTO + RANKING ACTUARIAL
 // ============================================================================
@@ -219,3 +220,102 @@ igual(diasDesdeUltima(null, "2026-10-04"), 0, "sin última carrera no hay días"
 // ---------------------------------------------------------------------------
 console.log(`\n${pasan} pasaron, ${fallan} fallaron.`);
 if (fallan > 0) process.exit(1);
+=======
+import { describe, expect, it } from "vitest";
+import { generarProspectivaGodet, simularTrenCarrera, type EjemplarGodet } from "@/features/gaceta/lib/actuarialGodetEngine";
+import { dividirYProcesarGacetaCompleta } from "@/features/gaceta/lib/ia";
+
+describe("Inteligencia Hípica - Godet MACTOR/SMIC", () => {
+  const baseEjemplares: EjemplarGodet[] = [
+    { id: "1", numero: 1, nombre: "TANK ABBOTT", tipoCarrera: "velocista", estilo: "E1", earlyPace: 95, latePace: 65, actuaciones: 10, speedRatingTTC: 78, beyer: 82, morningLine: "2-1", pesoNeto: 54, descargo: 0 },
+    { id: "2", numero: 2, nombre: "RAPIDO VENEZOLANO", tipoCarrera: "velocista", estilo: "E1", earlyPace: 93, latePace: 68, actuaciones: 8, speedRatingTTC: 76, beyer: 80, morningLine: "3-1" },
+    { id: "3", numero: 3, nombre: "CLOSER KING", tipoCarrera: "rematador", estilo: "E3", earlyPace: 75, latePace: 92, actuaciones: 12, speedRatingTTC: 80, beyer: 86, morningLine: "4-1" },
+    { id: "4", numero: 4, nombre: "STALKER BOY", tipoCarrera: "perseguidor", estilo: "E2", earlyPace: 82, latePace: 84, actuaciones: 9, speedRatingTTC: 78, beyer: 83, morningLine: "5-1" },
+  ];
+
+  it("clasifica tren de carrera con 2 velocistas E1 (duelo en punta)", () => {
+    const tren = simularTrenCarrera(baseEjemplares);
+    expect(tren.mactor.grupos.E1).toBe(2);
+    expect(tren.escenarios.some((e) => e.tipo === "duelo_suicida")).toBe(true);
+  });
+
+  it("cuando se retira un velocista E1, el otro queda solo en punta (lone speed)", () => {
+    const retirados = new Set(["1"]);
+    const tren = simularTrenCarrera(baseEjemplares, retirados);
+    expect(tren.mactor.grupos.E1).toBe(1);
+    expect(tren.escenarios.some((e) => e.tipo === "retiro_velocista")).toBe(true);
+  });
+
+  it("genera prospectiva Godet con SMIC/MACTOR y favorece rematadores en duelo", () => {
+    const res = generarProspectivaGodet(baseEjemplares, "previa", { pista: "arena", clima: "seco", cambioJockey: false, cambioEntrenador: false, reaparecida: false, customFactors: [] });
+    expect(res.ordenLlegada.length).toBe(4);
+    expect(res.mactor.grupos.E1).toBe(2);
+    // En duelo de velocistas, el rematador (E3) debe recibir ajuste favorable
+    const closer = res.ordenLlegada.find((r) => r.ejemplar.nombre === "CLOSER KING");
+    expect(closer).toBeDefined();
+    expect(closer?.estilo).toBe("E3");
+  });
+
+  it("penaliza caballos de grama si pista cambia a fango/muddy", () => {
+    const turfHorse: EjemplarGodet[] = [
+      { id: "t1", numero: 1, nombre: "GRASS SPECIALIST", estilo: "E2", aptitudTurf: 85, aptitudWet: 25, actuaciones: 10, speedRatingTTC: 80, morningLine: "2-1" },
+      { id: "t2", numero: 2, nombre: "MUD MASTER", estilo: "E2", aptitudTurf: 40, aptitudWet: 88, actuaciones: 10, speedRatingTTC: 78, morningLine: "3-1" },
+    ];
+    const res = generarProspectivaGodet(turfHorse, "en_vivo", { pista: "fango", clima: "lluvioso", cambioJockey: false, cambioEntrenador: false, reaparecida: false, customFactors: [] }, { superficie: "muddy", sesgoRielInterno: 0, sesgoRielExterno: 0, sesgoVelocistas: 0, sesgoRematadores: 0, brisaRecta: 0, varianteObservada: 0 });
+    expect(res.ordenLlegada.length).toBe(2);
+    // MUD MASTER debe tener mayor probabilidad relativa
+    const mud = res.ordenLlegada.find((r) => r.ejemplar.nombre === "MUD MASTER");
+    expect(mud?.probNorm).toBeGreaterThan(30);
+  });
+
+  it("detecta overlays vs morning line", () => {
+    const ej: EjemplarGodet[] = [
+      { id: "o1", numero: 1, nombre: "VALUE HORSE", estilo: "E3", actuaciones: 15, speedRatingTTC: 85, beyer: 90, morningLine: "10-1" },
+      { id: "o2", numero: 2, nombre: "FAVORITE", estilo: "E1", actuaciones: 12, speedRatingTTC: 82, beyer: 86, morningLine: "2-1" },
+    ];
+    const res = generarProspectivaGodet(ej, "previa", { pista: "dirt_fast", clima: "seco", cambioJockey: false, cambioEntrenador: false, reaparecida: false, customFactors: [] });
+    const value = res.ordenLlegada.find((r) => r.ejemplar.nombre === "VALUE HORSE");
+    expect(value).toBeDefined();
+    expect(typeof value?.overlay).toBe("boolean");
+  });
+});
+
+describe("Extracción Gaceta multi-formato", () => {
+  it("divide y procesa gaceta completa por carreras", async () => {
+    const texto = `
+RACE 1
+1 TANK ABBOTT VE 57-3 JOCKEY A TRAINER B
+RACE 2
+2 PRINCESA SUSEJ VE 54 JOCKEY C TRAINER D
+    `;
+    const carreras = await dividirYProcesarGacetaCompleta(texto, async (frag) => {
+      if (frag.includes("RACE 1")) return [{ numero_carrera: 1, ejemplares: [{ numero: 1, nombre: "TANK ABBOTT", jinete: "JOCKEY A", peso: "57-3" }] }];
+      if (frag.includes("RACE 2")) return [{ numero_carrera: 2, ejemplares: [{ numero: 2, nombre: "PRINCESA SUSEJ", jinete: "JOCKEY C", peso: "54" }] }];
+      return [];
+    });
+    expect(carreras.length).toBe(2);
+    expect(carreras[0].numero_carrera).toBe(1);
+    expect(carreras[1].ejemplares[0].nombre).toBe("PRINCESA SUSEJ");
+  });
+
+  it("fusiona ejemplares por número sin duplicados", async () => {
+    const texto = "CARRERA 1\nCARRERA 1 CONT";
+    const llamadas: string[] = [];
+    const carreras = await dividirYProcesarGacetaCompleta(texto, async (frag) => {
+      llamadas.push(frag);
+      if (llamadas.length === 1) return [{ numero_carrera: 1, ejemplares: [{ numero: 1, nombre: "CABALLO A" }] }];
+      return [{ numero_carrera: 1, ejemplares: [{ numero: 1, nombre: "CABALLO A", jinete: "JINETE X" }, { numero: 2, nombre: "CABALLO B" }] }];
+    });
+    expect(carreras.length).toBe(1);
+    expect(carreras[0].ejemplares.length).toBe(2);
+  });
+});
+
+describe("Historial por ejemplar (llave maestra)", () => {
+  it("normalización conceptual nombre_normalizado", () => {
+    const norm = (s: string) => s.toUpperCase().replace(/[^A-Z0-9 ]/g, "").trim().replace(/\s+/g, " ");
+    expect(norm("Tank Abbott!")).toBe("TANK ABBOTT");
+    expect(norm("princesa   susej")).toBe("PRINCESA SUSEJ");
+  });
+});
+>>>>>>> bd25c19 (feat(inteligencia): integrar pizarra Godet MACTOR/SMIC nacional y DRF con historial por ejemplar, trackeos y tren de carrera)

@@ -17,25 +17,106 @@ import {
 } from "@/features/gaceta/lib/numeros";
 import { armarBloques, consolidarPorNumero, segmentarPorCarreras } from "@/features/gaceta/lib/segmentar";
 
+export type TrackeoExtraido = {
+  fecha?: string;
+  jinete?: string;
+  fraccionales_texto?: string;
+  distancia_ejercicio?: string;
+  modalidad_ep_es?: string;
+  remate_200m?: string;
+  comentario?: string;
+  hipodromo?: string;
+  condicion?: string;
+  tiempo?: string;
+  estilo?: string;
+  ranking?: string;
+};
+
+export type ActuacionPrevia = {
+  fecha?: string;
+  codigo_carrera?: string;
+  hipodromo?: string;
+  peso_fisico?: number | string;
+  distancia?: string | number;
+  pp?: number | string;
+  parciales_pos?: string;
+  llegada?: number | string;
+  posicion?: number | string;
+  ks?: string;
+  jinete?: string;
+  dividendo?: string;
+  ganador_o_segundo?: string;
+  cuerpos?: string;
+  serie?: string;
+  tiempo_ganador?: string;
+  tiempo_ejemplar?: string;
+  km_h?: string;
+  condicion_pista?: string;
+  beyer?: number;
+  comentarios?: string;
+};
+
 export type EjemplarExtraido = {
   numero: string | number;
   nombre: string;
   nacionalidad?: string;
+  pais_origen?: string;
   valor?: number;
+<<<<<<< HEAD
   jockey?: string;
   entrenador?: string;
   peso?: number | string;
   medicamento?: string;
   implementos?: string;
+=======
+  peso_programado?: string;
+  peso_bruto?: number;
+  descargo?: number;
+  peso_neto?: number;
+  jinete?: string;
+  entrenador?: string;
+  stud?: string;
+  haras?: string;
+  pedigree?: any;
+  pedigrí?: any;
+  edad?: string | number;
+  sexo?: string;
+  implementos?: string;
+  morning_line?: string;
+  ml?: string;
+  claiming_price?: number | string;
+  peso_lbs?: number;
+  pace_figures?: any;
+  timeformus?: any;
+  early_pace?: number;
+  late_pace?: number;
+  retrospecto?: ActuacionPrevia[];
+  actuaciones_previas?: ActuacionPrevia[];
+  trackeos?: TrackeoExtraido[];
+  works?: TrackeoExtraido[];
+  aptitud_superficie?: any;
+  aptitud_turf?: number;
+  aptitud_dirt?: number;
+  aptitud_wet?: number;
+>>>>>>> bd25c19 (feat(inteligencia): integrar pizarra Godet MACTOR/SMIC nacional y DRF con historial por ejemplar, trackeos y tren de carrera)
 };
 
 export type CarreraExtraida = {
   carrera: number | string;
+  numero_carrera?: number | string;
   hipodromo?: string;
   fecha?: string | null;
-  distancia?: number;
+  hora?: string;
+  codigo_anual?: string;
+  distancia?: number | string;
   superficie?: string;
-  premio?: number;
+  condicion?: string;
+  llamado?: string;
+  premio?: number | string;
+  bolsa?: number | string;
+  beypar?: string;
+  beyer_par?: string;
+  record_pista?: string;
   ejemplares: EjemplarExtraido[];
 };
 
@@ -71,6 +152,7 @@ const HIPODROMOS_USA = [
   "PIMLICO", "SANTA ANITA", "SARATOGA", "TAMPA BAY DOWNS",
 ];
 
+<<<<<<< HEAD
 const SYS = `Eres el transcriptor de la gaceta hípica venezolana. Recibes páginas/imágenes del programa oficial de carreras.
 Extrae TODAS las carreras visibles y sus ejemplares participantes.
 La gaceta numera las carreras de forma CONSECUTIVA del 1 al total (1, 2, 3, …, 13): devuelve TODAS sin omitir ninguna y SIN repetir ni saltar números. Si el programa trae 13 carreras, la respuesta tiene 13 objetos (la última incluida).
@@ -84,6 +166,61 @@ Para cada carrera devuelve:
   - ejemplares: lista con numero (puesto/orden del ejemplar), nombre (MAYÚSCULAS, EXACTO como aparece), nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si NO se indica: USA si el hipódromo es de Estados Unidos, si no VE), valor (monta del ejemplar: SOLO número si aparece, si no 0), jockey, entrenador, peso, medicamento e implementos solo si son legibles (si no, null)
 REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGISTRA TODOS los ejemplares de cada carrera sin omitir ninguno (todos los números de participante que aparezcan). Si un ejemplar aparece repetido entre páginas, mantenlo tal cual. Si el documento no tiene carreras, devuelve {"carreras":[]}.
 PARA EL CAMPO carrera: lee el número de carrera EXACTAMENTE como aparece impreso (puede ser numérico: 1, 2, ..., 13 o romano: I, II, III, IV, V, VI, VII, VIII, IX, X, XI, XII, XIII, XIV...). Convierte los romanos a entero (XIII → 13) y también los ordinales escritos en palabras ("primera" → 1, "segunda" → 2, "decimotercera" → 13, "decimocuarta" → 14): devuélvelos SIEMPRE como entero. Lee el carácter por carácter: distingue 1/7, 0/O, I/1. Devuelve SIEMPRE el entero correcto (ej.: 13, no 10). Prioriza el número que aparece junto a "CARRERA", "RACE", "CLASE" o en la cabecera de esa carrera.`;
+=======
+const SYS = `Eres un transcriptor EXPERTO en Gacetas Hípicas multi-formato: 
+1) FORMATO VENEZOLANO (La Rinconada, Valencia) - Gaceta Hípica/Al Galope
+2) FORMATO AMERICANO DRF (Daily Racing Form) y gacetas americanas (Keeneland, Belmont Park, Gulfstream Park, Saratoga, Aqueduct, Churchill Downs, Santa Anita)
+
+OBJETIVO: Extraer TODAS las carreras visibles con MÁXIMO detalle para análisis actuarial Godet/MACTOR/SMIC.
+
+PARA CADA CARRERA, extrae:
+- carrera/numero_carrera: número exacto (romanos->entero, ordinales->entero). NUNCA omitir ni saltar.
+- hipodromo: MAYÚSCULAS. Incluir nombres completos.
+- fecha: YYYY-MM-DD si aparece
+- hora: si aparece
+- codigo_anual: ej C495 si aparece
+- distancia: metros o furlongs convertidos a formato legible (ej "1100 mts", "6 Furlongs", "1 1/16 Miles")
+- superficie/pista: ARENA, CESPED/TURF, FANGO/MUDDY, TAPETA, DIRT, SYNTHETIC
+- condicion/llamado: texto completo de la condición
+- premio/bolsa: monto si aparece
+- beypar/beyer_par: si aparece
+- record_pista: si aparece
+
+PARA CADA EJEMPLAR, extrae TODO lo posible:
+- numero/gualdrapa: número de programa
+- nombre: MAYÚSCULAS EXACTO
+- pais_origen/nacionalidad: VE, USA, PAN, ARG, BR, etc.
+- peso_programado: formato original (ej "57-3")
+- peso_bruto, descargo, peso_neto: calcular si viene 57-3 -> bruto 57, descargo 3, neto 54
+- jinete: nombre completo
+- entrenador: nombre completo
+- stud/cuadra: nombre
+- haras: si aparece
+- pedigree/pedigri: padre, madre, abuelo materno si aparece
+- edad, sexo
+- implementos: L, V, GR, BB, M, LA, BZ, OT, CC
+- morning_line/ml: cotización (3-1, 5-2, 8-5)
+- claiming_price: si aplica
+- peso_lbs: para USA
+- pace_figures/timeformus: Early/Late si aparece
+- retrospecto/actuaciones_previas: array con {fecha, codigo_carrera, hipodromo, peso_fisico, distancia, pp, parciales_pos, llegada/posicion, ks, jinete, dividendo, ganador_o_segundo, cuerpos, serie, tiempo_ganador, tiempo_ejemplar, km_h, condicion_pista, beyer, comentarios}
+- trackeos/works: array con {fecha, jinete, fraccionales_texto, distancia_ejercicio, modalidad_ep_es, remate_200m, comentario, hipodromo, condicion, tiempo, estilo, ranking}
+- aptitud_superficie: D.Fst, Wet, Synth, Turf, Dst con ratings si aparecen
+- jockey_stats, trainer_stats: si aparecen
+
+EXTRACCIÓN ESPECIAL:
+- En Venezuela: buscar sección "GUÍA DE EJERCICIOS", "GALOPE", "TRACKEOS". Vincular por nombre exacto.
+- En DRF USA: buscar "WORKS:", listar briseos con fecha, pista, distancia, tiempo, notas (Bg, Hg, 1/XX).
+- Extraer parciales fraccionales cuando existan: 400m, 800m, 1000m, etc.
+- Detectar T.G (Tiempo Ganador), T.E (Tiempo Ejemplar), Km/h.
+
+REGLAS:
+- NO inventar datos. Solo lo que se lea explícitamente.
+- Transcribir TODOS los ejemplares sin omitir.
+- Si formato USA y no se indica nacionalidad, usar USA si hipódromo USA reconocido.
+- Si venezolano, usar VE por defecto.
+- Responder ÚNICAMENTE con JSON válido. Sin markdown, sin explicaciones.`;
+>>>>>>> bd25c19 (feat(inteligencia): integrar pizarra Godet MACTOR/SMIC nacional y DRF con historial por ejemplar, trackeos y tren de carrera)
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
