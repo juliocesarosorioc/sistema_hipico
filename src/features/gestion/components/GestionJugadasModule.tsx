@@ -61,6 +61,7 @@ import {
   type FilaPreviewCarrera,
   type LadoResultado,
 } from "@/features/gestion/lib/preview-carrera";
+import { evaluarSaldoProgresivoJugadas, type LineaJugadaProgresivaInput } from "@/features/gestion/lib/saldo-progresivo";
 
 type FilaCarga = {
   jugada: string;
@@ -831,6 +832,50 @@ const hipodromosDelDia = useMemo(() => {
     // `saldoCliente` solo depende de `clientes`, que sí está en las deps.
     [filas, clientes, comisionNum]
   );
+
+  const espejoProgresivo = useMemo(() => {
+    try {
+      const lineasInput: LineaJugadaProgresivaInput[] = filas
+        .map((f, idx) => {
+          const c1 = saldoCliente(f.cliente1);
+          if (!c1) return null;
+          const monto = parseFloat(String(f.monto).replace(",", "."));
+          if (!Number.isFinite(monto) || monto <= 0) return null;
+          const nombre = String(c1.nombre || f.cliente1 || "").trim().toUpperCase();
+          if (!nombre) return null;
+          return {
+            id: String(idx),
+            lineaIndice: idx,
+            jugador: nombre,
+            montoSolicitado: monto,
+            textoOriginal: `${f.jugada} ${f.caballo} ${f.monto} ${f.cliente1} ${f.cliente2}`.trim(),
+          };
+        })
+        .filter(Boolean) as LineaJugadaProgresivaInput[];
+
+      if (lineasInput.length === 0) return [] as any[];
+
+      const saldoInicialPorJugador: Record<string, number> = {};
+      for (const c of clientes) {
+        const nombre = String(c.nombre || "").trim().toUpperCase();
+        if (!nombre) continue;
+        const libre = esClienteLibre(c);
+        if (libre) continue;
+        const disp = limiteDeJugar(c);
+        if (Number.isFinite(disp)) {
+          saldoInicialPorJugador[nombre] = Math.max(0, disp);
+        }
+      }
+
+      // Aplicar ya comprometido por líneas anteriores (mismo criterio que proyectarFilasEnOrden)
+      const usados: Record<string, number> = {};
+      const result = evaluarSaldoProgresivoJugadas(lineasInput, saldoInicialPorJugador);
+      // Ajustar con lo ya comprometido en carga previa si existe? usar lo calculado progresivamente ya cubre
+      return result;
+    } catch {
+      return [];
+    }
+  }, [filas, clientes]);
 
   /**
    * Indicador inline de la celda del cliente: ✅ si el disponible alcanza el
@@ -1961,6 +2006,36 @@ const hipodromosDelDia = useMemo(() => {
           </span>
         </div>
 
+        {espejoProgresivo.length > 0 && (
+          <div className="mb-2 rounded-xl border border-amber-300/40 bg-slate-900 p-2 text-slate-100">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-[9px] font-black uppercase tracking-widest text-amber-300">Espejo de Validación Progresiva</span>
+              <span className="text-[8px] text-slate-400">Línea por línea · Aceptación parcial</span>
+            </div>
+            <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-3">
+              {espejoProgresivo.slice(0, 12).map((r: any) => (
+                <div key={r.lineaIndice} className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-800/70 px-2 py-1">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[9px] text-slate-400">L#{r.lineaIndice + 1}</span>
+                      <span className="truncate text-[9px] font-bold text-slate-200">{r.jugador}</span>
+                    </div>
+                    <div className="text-[8px] text-slate-400">Solic: {Math.round(r.montoSolicitado)} · Acept: {Math.round(r.montoAceptado)}</div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {r.excedido && (
+                      <span className="rounded-full border border-amber-500/40 bg-amber-500/20 px-1.5 py-0.5 text-[8px] font-bold text-amber-300">Excedido {Math.round(r.montoExcedido)}</span>
+                    )}
+                    <span className={`rounded-full border px-1.5 py-0.5 text-[8px] font-mono ${r.excedido ? "border-amber-500/40 text-amber-300" : "border-emerald-500/30 text-emerald-300"}`}>
+                      {r.etiquetaRestante}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <section className="mb-2 rounded-xl border border-amber-300/40 bg-slate-900 p-3 text-slate-100">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -2123,6 +2198,7 @@ const hipodromosDelDia = useMemo(() => {
               const rep = v.ok ? v.reparto : null;
               const recortado = !!rep?.recortado;
               const aviso = avisoSaldo(f, enCurso?.cliente1 ?? null, enCurso?.cliente2 ?? null);
+              const prog = espejoProgresivo.find((p: any) => p.lineaIndice === i);
               return (
                 <tr key={i} className={`align-middle ${f.error ? "bg-red-50" : ""}`} title={f.error ?? undefined}>
                   <td className="gj-celda px-1 py-0.5 text-xs text-slate-400">
@@ -2132,7 +2208,15 @@ const hipodromosDelDia = useMemo(() => {
                           ⚠️ <span className="hidden text-[9px] font-bold">{f.error}</span>
                         </span>
                       ) : (
-                        i + 1
+                        <span className="flex flex-col items-start gap-0.5">
+                          <span>{i + 1}</span>
+                          {prog && (
+                            <span className="flex items-center gap-0.5">
+                              {prog.excedido && <span className="rounded border border-amber-500/40 bg-amber-500/20 px-1 text-[7px] font-bold text-amber-300">Excedido {Math.round(prog.montoExcedido)}</span>}
+                              <span className="rounded border border-slate-300 px-1 text-[7px] font-mono text-slate-500">{prog.etiquetaRestante}</span>
+                            </span>
+                          )}
+                        </span>
                       )}
                     </span>
                   </td>
