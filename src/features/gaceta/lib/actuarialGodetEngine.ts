@@ -139,40 +139,42 @@ export function calcularMACTOR(ejemplares: EjemplarGodet[]) {
 
 export function simularTrenCarrera(ejemplares: EjemplarGodet[], retirados: Set<string> = new Set()) {
   const activos = ejemplares.filter((e) => !e.retirado && !retirados.has(String(e.id)) && !retirados.has(String(e.numero)));
-  const mactor = calcularMACTOR(activos);
+  // Clasificar con datos reales cuando existan
+  const activosClasificados = activos.map((e) => ({ ...e, estilo: e.estilo || clasificarEstiloPorParciales(e) }));
+  const mactor = calcularMACTOR(activosClasificados);
   const escenarios: EscenarioTrenCarrera[] = [];
 
   if (mactor.grupos.E1 >= 2) {
     escenarios.push({
       tipo: "duelo_suicida",
-      descripcion: "Duelo Suicida / Tren Violento: 2 o más velocistas (E1) en disputa - favorece rematadores E3/perseguidores E2",
-      impacto: {},
+      descripcion: "Duelo Suicida / Tren Violento: 2 o más velocistas (E1) en disputa - penaliza punteros, favorece E2/E3 con buen remate",
+      impacto: { penalizaE1: -0.08, bonificaE3: 0.08, bonificaE2: 0.04 },
     });
   } else if (mactor.grupos.E1 === 1) {
     escenarios.push({
       tipo: "todos",
-      descripcion: "Velocista solitario posible según configuración",
-      impacto: {},
+      descripcion: "Un solo velocista E1 - puede intentar unir salida con llegada si parciales son cómodos",
+      impacto: { bonificaE1solo: 0.04 },
     });
   } else if (mactor.grupos.E1 === 0) {
     escenarios.push({
       tipo: "sin_velocistas",
-      descripcion: "Sin velocistas E1: los E2 toman la punta en parciales lentos",
-      impacto: {},
+      descripcion: "Sin velocistas E1: los E2 toman la punta en parciales lentos - ritmo manejable favorece posicionamiento",
+      impacto: { bonificaE2punta: 0.03 },
     });
   }
 
   // Simular retiro de un velocista clave
-  const e1s = activos.filter((e) => (e.estilo || clasificarEstiloPorParciales(e)) === "E1");
+  const e1s = activosClasificados.filter((e) => e.estilo === "E1");
   if (e1s.length >= 2) {
     escenarios.push({
       tipo: "retiro_velocista",
-      descripcion: "Si se retira un velocista clave, el otro E1 queda solo en punta (Lone Speed) con bono táctico",
-      impacto: { loneSpeedBono: 4.2 },
+      descripcion: "Si se retira un velocista clave, el otro E1 queda Solo en Punta (Lone Speed) con bono táctico +3.8 a +4.5 pts Godet",
+      impacto: { loneSpeedBono: 4.3 },
     });
   }
 
-  return { activos, mactor, escenarios };
+  return { activos: activosClasificados, mactor, escenarios };
 }
 
 export function credibilidadBuhlmannStraub(e: EjemplarGodet) {
@@ -299,42 +301,53 @@ export function generarProspectivaGodet(
       const cox = riesgoProporcionalCox(e);
       const parc = parciales400m(e);
       const remate = simularRemateFinal(e, pista);
-      let base = cred.speedAjustado * 0.6 + (100 - cox.hazardRatio * 80);
+      let base = (cred.speedAjustado * 0.65 + (100 - cox.hazardRatio * 75)) * (0.9 + (Number(e.actuaciones || 6) / 40));
 
       // Ajustes por tren de carrera
       if (mactor.grupos.E1 >= 2 && estilo === "E1") {
-        base *= 0.92; // Duelan entre si
-      } else if (mactor.grupos.E1 >= 2 && (estilo === "E3" || estilo === "E2")) {
-        base *= 1.08; // Favorece remate
+        base *= 0.9; // Duelan entre si
+      } else if (mactor.grupos.E1 >= 2 && estilo === "E3") {
+        base *= 1.12; // Favorece remate fuerte
+      } else if (mactor.grupos.E1 >= 2 && estilo === "E2") {
+        base *= 1.06;
       }
       if (mactor.grupos.E1 === 1 && estilo === "E1") {
-        base *= 1.04; // Puntero solitario
+        base *= 1.08; // Puntero solitario / lone speed
       }
       if (mactor.grupos.E1 === 0 && estilo === "E2") {
-        base *= 1.03;
+        base *= 1.05;
+      } else if (mactor.grupos.E1 === 0 && estilo === "E3") {
+        base *= 1.04;
       }
 
       // Trackeos / briseos destacados
       if (e.trackeos && e.trackeos.length > 0) {
         const reciente = e.trackeos[0];
-        if (reciente?.comentario && /fenomeno|tronando|shn/i.test(String(reciente.comentario))) {
-          base *= 1.04;
-        }
-        if (reciente?.distancia_ejercicio && /600|800/.test(String(reciente.distancia_ejercicio))) {
-          base *= 1.02;
-        }
+        const txt = JSON.stringify(reciente).toLowerCase();
+        if (/fenomeno|tronando|shn|bullet/.test(txt)) base *= 1.06;
+        else if (/rem.*12|1\/\d+/.test(txt)) base *= 1.03;
+        if (/600|800/.test(txt)) base *= 1.02;
       }
 
       // Descargo aprendiz
       if (e.descargo && e.descargo >= 3) {
-        base *= 1.02;
+        base *= 1.03;
+      } else if (e.descargo && e.descargo >= 1) {
+        base *= 1.01;
       }
 
-      let prob = Math.max(5, Math.min(95, base / (Math.max(1, activosBase.length) * 0.8)));
+      // Peso físico vs óptimo
+      if (e.pesoFisicoHoyKg && e.pesoOptimoGanadorKg) {
+        const diff = e.pesoFisicoHoyKg - e.pesoOptimoGanadorKg;
+        if (diff < -1) base *= 1.02;
+        if (diff > 2) base *= 0.97;
+      }
+
+      let prob = Math.max(4, Math.min(98, base / (Math.max(1, activosBase.length) * 0.75)));
       prob = aplicarCondicionPista(prob, e, pista);
       const ml = parseMorningLine(e.morningLine);
       const probImpl = ml > 0 ? (1 / ml) * 100 : 0;
-      const overlay = probImpl > 0 && prob > probImpl * 1.1;
+      const overlay = probImpl > 0 && prob > probImpl * 1.08;
 
       return {
         ejemplar: { ...e, estilo },
@@ -362,11 +375,18 @@ export function generarProspectivaGodet(
 
   const dictamen = [];
   if (mactor.grupos.E1 >= 2) {
-    dictamen.push("Planteamiento: Duelo en punta entre velocistas E1 - favorece rematadores (E3) y perseguidores con buen remate.");
+    dictamen.push(`Planteamiento con todos: Duelo en punta entre ${mactor.grupos.E1} velocistas (E1). Favorece rematadores (E3) y perseguidores (E2) con buen cierre.`);
+    dictamen.push("Impacto si se retira un velocista clave: el restante E1 quedaría Solo en Punta (Lone Speed) con bono táctico - revisar probabilidad al marcar retiro.");
   } else if (mactor.grupos.E1 === 1) {
-    dictamen.push("Planteamiento: Velocista solitario posible - puede unir salida con llegada si controla parciales.");
+    dictamen.push("Planteamiento con todos: 1 velocista E1 posible. Si controla parciales cómodos, puede unir salida con llegada.");
   } else if (mactor.grupos.E1 === 0) {
-    dictamen.push("Planteamiento: Sin velocistas - ritmo lento esperado, favorece a los mejor colocados en punta.");
+    dictamen.push("Planteamiento con todos: Sin E1 - ritmo lento esperado. Los E2 mejor ubicados toman la punta y dominan el desarrollo.");
+  }
+  if (pista?.superficie && String(pista.superficie).toLowerCase().includes("mud")) {
+    dictamen.push("Alerta de pista: Cambio a Fango/Muddy - penaliza caballos netamente de grama sin figuraciones en barro; bonifica con aptitud Wet.");
+  }
+  if (pista?.superficie && String(pista.superficie).toLowerCase().includes("turf")) {
+    dictamen.push("Pista de Grama (Turf) - ponderar récord en Turf y ratings Tomlinson.");
   }
 
   return {

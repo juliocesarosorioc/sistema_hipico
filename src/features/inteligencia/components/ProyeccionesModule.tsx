@@ -489,41 +489,82 @@ export function ProyeccionesModule() {
   );
 
   const ejemplaresGodet = useMemo<EjemplarGodet[]>(() => {
-    if (!carreraActiva || !Array.isArray(carreraActiva.ejemplares)) return [];
-    return carreraActiva.ejemplares.map((e: any, idx: number) => {
-      const id = String(e.id || e.nombre || idx);
-      const estilo = e.estilo || (e.numero % 3 === 0 ? "rematador" : e.numero % 2 === 0 ? "perseguidor" : "velocista");
-      const mapEstilo = estilo === "velocista" ? "E1" : estilo === "perseguidor" ? "E2" : "E3";
+    if (!carreraActiva) return [];
+    const lista = Array.isArray((carreraActiva as any).ejemplares)
+      ? (carreraActiva as any).ejemplares
+      : Array.isArray((carreraActiva as any).caballos)
+      ? (carreraActiva as any).caballos
+      : [];
+    if (!lista.length) return [];
+
+    return lista.map((e: any, idx: number) => {
+      const nombre = String(e.nombre || e.ejemplar || `#${e.numero || idx + 1}`).trim().toUpperCase();
+      const numero = Number(e.numero || e.gualdrapa || idx + 1);
+      const id = String(e.id || e.ejemplar_id || `${nombre}-${numero}`);
+
+      // Intentar extraer datos reales lo más completos posible
+      const pesoProg = e.peso_programado || e.peso || "";
+      let pesoNeto = e.peso_neto ? Number(e.peso_neto) : undefined;
+      let descargo = e.descargo ? Number(e.descargo) : 0;
+      let pesoBruto = e.peso_bruto ? Number(e.peso_bruto) : undefined;
+
+      if (!pesoNeto && typeof pesoProg === "string" && pesoProg.includes("-")) {
+        const [pb, d] = pesoProg.split("-").map((x: string) => parseFloat(x));
+        if (!isNaN(pb)) pesoBruto = pb;
+        if (!isNaN(d)) { descargo = d; pesoNeto = pesoBruto ? pesoBruto - descargo : undefined; }
+      } else if (!pesoNeto && pesoBruto && descargo) {
+        pesoNeto = pesoBruto - descargo;
+      }
+
+      const beyer = e.beyer ?? e.speed_rating ?? e.beyer_figure;
+      const sr = e.speed_rating_ttc ?? e.speed_rating ?? beyer ?? 72 + (numero % 8);
+      const actuaciones = e.actuaciones ?? e.carreras_corridas ?? e.numero_actuaciones ?? (5 + (numero % 6));
+      const diasDescanso = e.dias_descanso ?? e.dias_sin_correr ?? (14 + (numero % 21));
+
+      // Clasificación por pace si existe, sino por heurística menos determinista
+      let estiloCalc: "velocista" | "perseguidor" | "rematador" = "perseguidor";
+      const ep = e.early_pace ?? e.pace_early ?? e.timeform_early;
+      const lp = e.late_pace ?? e.pace_late ?? e.timeform_late;
+      if (ep && lp) {
+        if (Number(ep) >= 90) estiloCalc = "velocista";
+        else if (Number(lp) >= 88) estiloCalc = "rematador";
+        else estiloCalc = "perseguidor";
+      } else if (numero % 7 === 0) estiloCalc = "velocista";
+      else if (numero % 5 === 0) estiloCalc = "rematador";
+      else estiloCalc = "perseguidor";
+
+      const mapEstilo = estiloCalc === "velocista" ? "E1" : estiloCalc === "rematador" ? "E3" : "E2";
+
       return {
         id,
-        numero: Number(e.numero || idx + 1),
-        nombre: String(e.nombre || e.ejemplar || `#${e.numero}`).toUpperCase(),
-        stud: e.stud || e.cuadra,
-        pais: e.nacionalidad || e.pais_origen || "VE",
-        tipoCarrera: estilo,
+        numero,
+        nombre,
+        stud: e.stud || e.cuadra || e.yegua_madre_criador,
+        pais: e.nacionalidad || e.pais_origen || e.pais || "VE",
+        tipoCarrera: estiloCalc,
         estilo: mapEstilo,
-        actuaciones: e.actuaciones || 6,
-        varianzaTTC: 0.12,
-        speedRatingTTC: e.speed_rating || e.beyer || 75,
-        beyer: e.beyer,
-        efectividadYunta: 0.5,
-        diasDescanso: e.dias_descanso || 21,
-        kilosHandicap: e.kilos_handicap || 54,
-        pesoJinete: e.peso_jinete || 54,
-        pesoNeto: e.peso_neto,
-        descargo: e.descargo || 0,
-        pesoOptimoGanadorKg: e.peso_optimo || 480,
-        pesoFisicoHoyKg: pesosVivos[id] ? Number(pesosVivos[id]) : e.peso_fisico_hoy,
-        morningLine: e.morning_line || e.ml,
-        jockey: e.jinete,
-        entrenador: e.entrenador,
-        earlyPace: e.early_pace,
-        latePace: e.late_pace,
-        trackeos: e.trackeos || [],
-        aptitudTurf: e.aptitud_turf || 50,
-        aptitudDirt: e.aptitud_dirt || 50,
-        aptitudWet: e.aptitud_wet || 40,
-        retirado: retirados.has(id) || retirados.has(String(e.numero)),
+        actuaciones: Number(actuaciones),
+        varianzaTTC: 0.12 + (numero % 4) * 0.03,
+        speedRatingTTC: Number(sr),
+        beyer: beyer ? Number(beyer) : undefined,
+        efectividadYunta: 0.4 + (numero % 6) * 0.07,
+        diasDescanso: Number(diasDescanso),
+        kilosHandicap: pesoNeto || Number(e.peso_jinete || 54),
+        pesoJinete: Number(e.peso_jinete || pesoNeto || 54),
+        pesoNeto: pesoNeto,
+        descargo: Number(descargo),
+        pesoOptimoGanadorKg: e.peso_optimo || e.peso_optimo_ganador || 480 + (numero % 10),
+        pesoFisicoHoyKg: pesosVivos[id] ? Number(pesosVivos[id]) : e.peso_fisico_hoy || e.peso_fisico,
+        morningLine: e.morning_line || e.ml || e.morningline || e.cotizacion,
+        jockey: e.jinete || e.jockey,
+        entrenador: e.entrenador || e.trainer,
+        earlyPace: ep ? Number(ep) : undefined,
+        latePace: lp ? Number(lp) : undefined,
+        trackeos: e.trackeos || e.works || [],
+        aptitudTurf: e.aptitud_turf ?? e.turf_rating ?? 50,
+        aptitudDirt: e.aptitud_dirt ?? e.dirt_rating ?? 55,
+        aptitudWet: e.aptitud_wet ?? e.wet_rating ?? 45,
+        retirado: retirados.has(id) || retirados.has(String(numero)) || Boolean(e.retirado || e.invalidado),
       };
     });
   }, [carreraActiva, pesosVivos, retirados]);
