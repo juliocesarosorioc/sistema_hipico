@@ -1132,7 +1132,7 @@ const hipodromosDelDia = useMemo(() => {
       if (ticketSesion) eliminarTicket(ticketSesion.id);
       // Los saldos cambiaron (reversión + re-liquidación): refrescar catálogo.
       void recargarClientes();
-      recargarRegistroCentral();
+      void recargarRegistroCentral();
       await recargarJugadasGuardadas();
       const accionTexto = accion.modo === "editar" ? "Jugada corregida" : "Jugada anulada";
       const texto = `✅ ${accionTexto} y carrera recalculada · #${fila.ticketId} · Auditada.`;
@@ -1146,6 +1146,11 @@ const hipodromosDelDia = useMemo(() => {
       setAccionPreview(null);
       setEdicionPreview(null);
       setMotivoPreview("");
+      setOcupadoPreview(false);
+      return;
+    } catch (e) {
+      setAviso(`❌ Error al procesar: ${e instanceof Error ? e.message : String(e)}`);
+      toastPreview("Error al procesar la acción", "error");
     } finally {
       setOcupadoPreview(false);
     }
@@ -1169,7 +1174,7 @@ const hipodromosDelDia = useMemo(() => {
    * o liquidar; el store local solo completa la proyección de las Pendientes.
    */
   const recargarJugadasGuardadas = useCallback(async () => {
-    if (!listoParaCargar) {
+    if (!hipodromo || !carrera || !fecha) {
       setJugadasGuardadas([]);
       return;
     }
@@ -1182,7 +1187,7 @@ const hipodromosDelDia = useMemo(() => {
     } finally {
       setCargandoGuardadas(false);
     }
-  }, [listoParaCargar, hipodromo, carrera, fecha]);
+  }, [hipodromo, carrera, fecha]);
 
   useEffect(() => {
     void recargarJugadasGuardadas();

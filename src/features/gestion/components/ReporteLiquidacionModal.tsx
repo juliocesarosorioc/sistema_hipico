@@ -507,7 +507,7 @@ export default function ReporteLiquidacionModal({
                               : "border-slate-300 bg-white text-slate-600 hover:border-emerald-400 hover:text-emerald-600"
                           }`}
                         >
-                          🏇 {nombreHipodromoParaMostrar(h)} · C{c.carrera}
+                          {nombreHipodromoParaMostrar(h)} · C{c.carrera}
                         </button>
                       );
                     })}
