@@ -183,6 +183,8 @@ export type FilaPizarra = {
   pesoOptimoGanadorKg: number | null;
   descargoKg: number | null;
   descargoLbs: number | null;
+  /** Evidencia disponible que explica el puesto proyectado. */
+  lectura: string[];
 };
 
 export type CarrilRecta = {
@@ -536,6 +538,15 @@ export function construirPizarra(
   ajustes: AjustesPizarra = AJUSTES_POR_DEFECTO,
   distanciaCarrera = 1200
 ): Pizarra {
+  return calcularPizarra(insumos, ajustes, distanciaCarrera, true);
+}
+
+function calcularPizarra(
+  insumos: InsumoPizarra[],
+  ajustes: AjustesPizarra,
+  distanciaCarrera: number,
+  incluirContrafactual: boolean
+): Pizarra {
   const lista = (insumos ?? []).filter((i) => i && i.numero > 0);
   const activosBrutos = lista.filter((i) => !i.retirado);
   const retirados = lista.filter((i) => i.retirado);
@@ -652,6 +663,7 @@ export function construirPizarra(
       pesoOptimoGanadorKg,
       descargoKg: Number.isFinite(descargoKg) && descargoKg > 0 ? descargoKg : null,
       descargoLbs: Number.isFinite(descargoLbs) && descargoLbs > 0 ? descargoLbs : null,
+      lectura: [],
     };
   });
 
@@ -667,16 +679,37 @@ export function construirPizarra(
   let acumulado = 0;
   const conPuesto = ordenadas.map((f, i) => {
     if (i > 0) acumulado += Math.max(0.25, (ordenadas[i - 1].score - f.score) * 0.72);
-    return {
+    const fila = {
       ...f,
       puesto: i + 1,
       probabilidad: Number(((expuestos[i] / totalExp) * 100).toFixed(2)),
       cuerpos: Number(acumulado.toFixed(2)),
       overlay: f.probabilidadImplicita != null && (expuestos[i] / totalExp) * 100 > f.probabilidadImplicita,
     };
+    return { ...fila, lectura: lecturaDeFila(fila) };
   });
 
   const tickets = ticketsRecomendados(conPuesto);
+  const velocistasActivos = estilos
+    .filter((e) => e.estilo === "E1")
+    .map((e) => activosBrutos.find((i) => i.numero === e.numero))
+    .filter((i): i is InsumoPizarra => Boolean(i));
+  const claveRetiro = velocistasActivos.length >= 2 && incluirContrafactual
+    ? [...velocistasActivos].sort(
+        (a, b) =>
+          numero(b.paceEarly) - numero(a.paceEarly) ||
+          numero(b.speedRating) - numero(a.speedRating) ||
+          a.numero - b.numero
+      )[0]?.numero
+    : undefined;
+  const contrafactual = claveRetiro == null
+    ? undefined
+    : calcularPizarra(
+        lista.map((i) => ({ ...i, retirado: i.retirado === true || i.numero === claveRetiro })),
+        ajustes,
+        distanciaCarrera,
+        false
+      );
 
   return {
     activos: conPuesto,
@@ -686,8 +719,58 @@ export function construirPizarra(
     totalActivos: conPuesto.length,
     totalRetirados: retirados.length,
     tickets,
-    informe: informeTactico({ filas: conPuesto, tren, trenTodos, retirados, ajustes }),
+    informe: informeTactico({
+      filas: conPuesto,
+      tren,
+      trenTodos,
+      retirados,
+      ajustes,
+      contrafactual: contrafactual && claveRetiro != null
+        ? {
+            numeroRetirado: claveRetiro,
+            tren: contrafactual.tren,
+            ganador: contrafactual.tickets.ganador,
+          }
+        : undefined,
+    }),
   };
+}
+
+function lecturaDeFila(fila: FilaPizarra): string[] {
+  const señales: string[] = [];
+  if (fila.speedRating > 0) señales.push(`SR ${fila.speedRating}`);
+  if (fila.beyer != null) señales.push(`Beyer ${fila.beyer}`);
+  if (fila.consistencia > 0) señales.push(`consistencia ${fila.consistencia}/100`);
+  if (fila.actuaciones > 0) señales.push(`${fila.winRate.toFixed(1)}% de triunfos en ${fila.actuaciones} actuación(es)`);
+  if (fila.paceEarly != null || fila.paceLate != null) {
+    const parciales = [
+      fila.paceEarly != null ? `Early ${fila.paceEarly}` : null,
+      fila.paceLate != null ? `Late ${fila.paceLate}` : null,
+    ].filter((valor): valor is string => valor != null);
+    señales.push(`ritmo ${fila.estilo} (${parciales.join(" / ")})`);
+  } else {
+    señales.push(`perfil táctico inferido ${fila.estilo}`);
+  }
+  if (fila.ajusteTren > 0) señales.push(`beneficiado por el tren (+${fila.ajusteTren.toFixed(1)})`);
+  if (fila.ajusteTren < 0) señales.push(`perjudicado por el tren (${fila.ajusteTren.toFixed(1)})`);
+  if (fila.ajustePista > 0) señales.push(`ajuste favorable de pista (+${fila.ajustePista.toFixed(1)})`);
+  if (fila.ajustePista < 0) señales.push(`alerta de pista (${fila.ajustePista.toFixed(1)})`);
+  if (fila.notaPeso) señales.push(fila.notaPeso);
+  if (fila.ajusteTrackeo > 0) señales.push(`trabajo reciente destacado (+${fila.ajusteTrackeo.toFixed(1)})`);
+  if (fila.descargoKg != null || fila.descargoLbs != null) {
+    const descargo = fila.descargoKg != null
+      ? `${fila.descargoKg} kg`
+      : `${fila.descargoLbs} lb`;
+    señales.push(`descargo declarado ${descargo}`);
+  }
+  if (fila.probabilidadImplicita != null) {
+    señales.push(
+      fila.overlay
+        ? `posible valor: SMIC ${fila.probabilidad.toFixed(1)}% supera M/L ${fila.probabilidadImplicita.toFixed(1)}%`
+        : `SMIC ${fila.probabilidad.toFixed(1)}% vs M/L ${fila.probabilidadImplicita.toFixed(1)}%`
+    );
+  }
+  return señales.slice(0, 4);
 }
 
 /** Tickets sugeridos a partir del ranking de la pizarra. */
@@ -752,8 +835,13 @@ export function informeTactico(opts: {
   trenTodos?: TrenMactor;
   retirados: InsumoPizarra[];
   ajustes: AjustesPizarra;
+  contrafactual?: {
+    numeroRetirado: number;
+    tren: TrenMactor;
+    ganador: FilaPizarra | null;
+  };
 }): string[] {
-  const { filas, tren, trenTodos = tren, retirados, ajustes } = opts;
+  const { filas, tren, trenTodos = tren, retirados, ajustes, contrafactual } = opts;
   const lineas: string[] = [];
 
   if (retirados.length) {
@@ -779,6 +867,20 @@ export function informeTactico(opts: {
         (b ? `, escoltado por #${b.numero} ${b.nombre} (${b.probabilidad.toFixed(1)}%)` : "") +
         (c ? ` y #${c.numero} ${c.nombre} (${c.probabilidad.toFixed(1)}%)` : "") +
         "."
+    );
+    if (a.lectura.length) {
+      lineas.push(`🧠 Claves del pronóstico para #${a.numero}: ${a.lectura.join(" · ")}.`);
+    }
+  }
+
+  if (contrafactual) {
+    const alternativa = contrafactual.ganador;
+    lineas.push(
+      `🔎 Escenario hipotético — si se retira el E1 #${contrafactual.numeroRetirado}: ` +
+        `${contrafactual.tren.titulo.toLowerCase()}` +
+        (alternativa
+          ? `; la proyección alternativa sería #${alternativa.numero} ${alternativa.nombre} (${alternativa.probabilidad.toFixed(1)}%).`
+          : "; no quedan ejemplares activos para proyectar.")
     );
   }
 

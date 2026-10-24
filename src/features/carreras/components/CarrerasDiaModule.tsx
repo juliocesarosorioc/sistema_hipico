@@ -94,6 +94,7 @@ export function CarrerasDiaModule() {
   const [hipodromo, setHipodromo] = useState("");
   const fecha = useCarrerasDiaStore((s) => s.fechaSeleccionada || hoyLocal());
   const setFecha = useCarrerasDiaStore((s) => s.setFecha);
+  const [fechaInicializada, setFechaInicializada] = useState(false);
   const nombreHipoFiltro = nombrePropioHipodromo(hipodromo, hipodromos);
 
   /** Todas las carreras de `fecha`, sin filtro de hipódromo. */
@@ -112,8 +113,13 @@ export function CarrerasDiaModule() {
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
   }, []);
 
-  // El día arranca en hoy y el filtro en "todos los hipódromos": no se
-  // preselecciona ningún hipódromo, así la jornada completa se ve de entrada.
+  // La jornada abre en la fecha actual aunque el store haya persistido una
+  // fecha anterior; el operador puede cambiarla después desde el selector.
+  useEffect(() => {
+    setFecha(hoyLocal());
+    setFechaInicializada(true);
+  }, [setFecha]);
+
   useEffect(() => {
     let v = true;
     void listarHipodromos().then((r) => {
@@ -139,21 +145,24 @@ export function CarrerasDiaModule() {
       toast(r.error ?? "No se pudo leer las carreras del día.", "error");
       return;
     }
-    setTodas(r.datos ?? []);
+    const carrerasDia = r.datos ?? [];
+    setTodas(carrerasDia);
+    setHipodromo((actual) => actual || carrerasDia[0]?.hipodromo || "");
   }, [fecha, toast]);
 
   useEffect(() => {
+    if (!fechaInicializada) return;
     void refrescar();
-  }, [fecha, refrescar]);
+  }, [fechaInicializada, fecha, refrescar]);
 
-  /** Vista del editor: sin hipódromo seleccionado, todas las de la fecha. */
+  /** La vista del editor siempre queda acotada a un hipódromo seleccionado. */
   const carreras = useMemo(() => {
     // Comparación por clave normalizada, no por texto: el hipódromo llega del
     // selector en una forma ("LARINCONADA") y la fila lo trae como lo escribió
     // el operador ("LA RINCONADA"). Con `===` el editor se quedaba vacío
     // mientras el monitor, que normaliza, sí mostraba la jornada.
     const h = claveHipodromo(hipodromo);
-    return h ? todas.filter((c) => claveHipodromo(c.hipodromo) === h) : todas;
+    return h ? todas.filter((c) => claveHipodromo(c.hipodromo) === h) : [];
   }, [todas, hipodromo]);
 
   /**
@@ -199,7 +208,6 @@ export function CarrerasDiaModule() {
 
   const guardar = async () => {
     const num = Number(modal.carrera) || 0;
-    // El filtro arranca en "todos", pero para guardar hay que elegir uno.
     if (!hipodromo)
       return toast("Elija un hipódromo para registrar la carrera (arriba, en el filtro).", "warning");
     if (!num) return toast("Nº de carrera requerido.", "warning");
@@ -309,10 +317,10 @@ export function CarrerasDiaModule() {
         onFecha={(valor) => setFecha(valor || hoyLocal())}
         hipodromo={hipodromo}
         onHipodromo={setHipodromo}
-        hipodromos={[{ value: "", label: "Todos los hipódromos" }, ...hipodromos]}
+        hipodromos={hipodromos}
         delDia={hipodromosDelDia}
         columnas={7}
-        placeholderHipodromo="Todos los hipódromos"
+        placeholderHipodromo="Seleccione hipódromo"
       />
 
       {/* Ayuda de uso */}

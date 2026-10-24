@@ -398,6 +398,10 @@ export function PizarraProspectiva({ proyeccion, fecha, onAplicarRetiros, aplica
               <Ticket etiqueta="Exacta sin retirados" valor={pizarra.tickets.exacta} tono="text-emerald-700" />
               <Ticket etiqueta="Trifecta sin retirados" valor={pizarra.tickets.trifecta} tono="text-sky-700" />
             </div>
+            <p className="text-[9px] leading-relaxed text-slate-500">
+              Pronóstico probabilístico basado en los datos disponibles; el estilo puede ser inferido cuando faltan
+              parciales oficiales. Es una referencia analítica, no una garantía de resultado.
+            </p>
           </section>
         </div>
       </div>
@@ -582,6 +586,12 @@ function FilaPizarraUI({
             {fila.entrenador ? `Ent. ${fila.entrenador} · ` : ""}
             {fila.beyer ? `Beyer ${fila.beyer}` : `SR ${fila.speedRating || "—"}`} · Consist. {fila.consistencia} · Remate 200 m {fila.remate200Seg.toFixed(2)} s
           </p>
+          {fila.lectura.length > 0 && (
+            <p className="mt-1 max-w-3xl text-[9px] leading-snug text-cyan-200/90">
+              <span className="font-bold uppercase tracking-wide text-cyan-300">Lectura:</span>{" "}
+              {fila.lectura.join(" · ")}
+            </p>
+          )}
         </div>
       </div>
 

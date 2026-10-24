@@ -295,6 +295,18 @@ const duelo = construirPizarra(paces, AJUSTES_POR_DEFECTO, 1400);
 igual(duelo.tren.codigo, "violento", "dos E1 con early pace alto activan duelo en punta");
 igual(duelo.activos[0].numero, 8, "el E3 lidera cuando el duelo favorece el remate");
 si(duelo.informe.some((linea) => linea.includes("Planteamiento con todos")), "el dictamen compara inscritos y retiros");
+si(
+  duelo.informe.some((linea) => linea.includes("Escenario hipotético") && linea.includes("puntero solitario")),
+  "el dictamen proyecta el cambio de tren si se retira un E1 clave"
+);
+si(
+  duelo.activos[0].lectura.some((linea) => linea.includes("ritmo E3")),
+  "el primer lugar incluye evidencia táctica que explica su proyección"
+);
+si(
+  duelo.activos[0].lectura.some((linea) => linea.includes("Beyer") || linea.includes("SR")),
+  "la lectura del ejemplar incluye la figura disponible"
+);
 
 const conRetiro = construirPizarra(
   paces.map((ejemplar) => ({
