@@ -56,6 +56,7 @@
     "../src/features/seguridad/lib/capacidades.ts",
     "../src/features/seguridad/lib/presets.ts",
     "../src/features/seguridad/lib/abac.ts",
+    "../src/features/asistente/lib/contrato.ts",
     "./jerarquia-marcas.test.ts",
     "./carreras-registradas.test.ts",
     "./simulador-liquidacion-marcas.ts",
@@ -129,6 +130,7 @@
     "./ventana-reclamos.test.ts",
     "./jugada-usuario.test.ts",
     "./fase1-seguridad.test.ts",
-    "./anuladas-reportes.test.ts"
+    "./anuladas-reportes.test.ts",
+    "./asistente.test.ts"
   ]
 }
