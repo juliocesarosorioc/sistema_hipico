@@ -164,7 +164,7 @@ export async function revertirLiquidacionCarrera(opts: {
             return;
           }
           const actual = NUM(((c ?? {}) as Record<string, unknown>).saldo_actual);
-          const { error: eUpd } = await sdb.from("clientes").update({ saldo_actual: actual - credito }).eq("id", fid as never);
+          const { error: eUpd } = await sdb.from("clientes").update({ saldo_actual: actual + credito }).eq("id", fid as never);
           if (eUpd) errores.push(`Saldo cliente ${String(fid)}: no se pudo revertir (${eUpd.message})`);
         })()
       : Promise.resolve();
