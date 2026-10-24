@@ -432,6 +432,7 @@ type PanelView = "evolucion" | "trackeos" | "apuestas" | "notas" | null;
 
 export function ProyeccionesModule() {
   const [fecha, setFecha] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [fechaInput, setFechaInput] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [carreras, setCarreras] = useState<CarreraDia[]>([]);
   const [hipodromoSel, setHipodromoSel] = useState<string>("");
   const [carreraSelId, setCarreraSelId] = useState<string>("");
@@ -452,6 +453,10 @@ export function ProyeccionesModule() {
     varianteObservada: 0,
     superficie: "dirt_fast",
   });
+
+  useEffect(() => {
+    setFechaInput(fecha);
+  }, [fecha]);
 
   useEffect(() => {
     async function cargarJornada() {
@@ -600,7 +605,22 @@ export function ProyeccionesModule() {
           <p className="text-xs text-slate-500">MACTOR + SMIC + Actuario · Tren de Carrera · Retiros en vivo · Pesos · Trackeos · Historial por ejemplar</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold" />
+          <input
+            type="date"
+            value={fechaInput}
+            onChange={(e) => setFechaInput(e.target.value)}
+            onBlur={(e) => {
+              if (e.target.value && e.target.value !== fecha) {
+                setFecha(e.target.value);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && fechaInput && fechaInput !== fecha) {
+                setFecha(fechaInput);
+              }
+            }}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold"
+          />
           <button onClick={restaurarRetirados} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold hover:bg-slate-200">🔄 Restaurar Retirados</button>
           <button className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-black uppercase text-slate-950 hover:bg-amber-400">⚖️ Cargar/Simular Pesos en Vivo</button>
           <button className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-black uppercase text-white hover:bg-blue-500">⏱️ Vincular Trackeos</button>

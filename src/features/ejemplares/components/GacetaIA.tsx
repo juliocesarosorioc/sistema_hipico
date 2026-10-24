@@ -49,6 +49,50 @@ function pesoMB(dataUrl: string): number {
   return ((dataUrl.split(",")[1] || "").length * 3) / 4 / 1024 / 1024;
 }
 
+// ---- Extracción de texto de PDF con reconstrucción por líneas (Y/X) ----
+async function extraerTextoPDF(file: File): Promise<string> {
+  try {
+    const lib = await cargarPdfJs();
+    const buffer = await file.arrayBuffer();
+    let doc: any;
+    try {
+      doc = await lib.getDocument({ data: buffer }).promise;
+    } catch {
+      return "";
+    }
+    let textoCompleto = "";
+    try {
+      for (let i = 1; i <= doc.numPages; i++) {
+        const page = await doc.getPage(i);
+        const content = await page.getTextContent();
+        const items: any[] = content.items || [];
+        // Agrupar por Y con tolerancia
+        const grupos = new Map<number, any[]>();
+        for (const item of items) {
+          if (!item.str) continue;
+          const y = Math.round((item.transform?.[5] || 0) / 3) * 3;
+          if (!grupos.has(y)) grupos.set(y, []);
+          grupos.get(y)!.push(item);
+        }
+        // Ordenar por Y descendente (arriba a abajo)
+        const ys = Array.from(grupos.keys()).sort((a, b) => b - a);
+        let paginaTexto = "";
+        for (const y of ys) {
+          const linea = (grupos.get(y) || []).sort((a, b) => (a.transform?.[4] || 0) - (b.transform?.[4] || 0));
+          paginaTexto += linea.map((it) => it.str).join(" ") + "\n";
+        }
+        textoCompleto += paginaTexto + "\n\n";
+        try { page.cleanup(); } catch {}
+      }
+    } finally {
+      try { await doc.destroy(); } catch {}
+    }
+    return textoCompleto;
+  } catch {
+    return "";
+  }
+}
+
 // ---- Renderizado de PDFs a miniaturas (client-side) ----------------------
 // pdfjs renderiza cada página del PDF a un canvas → PNG. Así la vista previa
 // funciona (el <img> no sabe pintar application/pdf) y las páginas seleccionadas

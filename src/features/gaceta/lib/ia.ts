@@ -134,7 +134,7 @@ export const CLAVE_GEMINI_KEY = "club_gemini_key";
 
 // Modelos Flash de respaldo (la app primero consulta a la API cuáles existen
 // hoy). Mismo listado que js/gaceta_helpers.js.
-export const MODELOS_GEMINI = ["gemini-3.6-flash", "gemini-3-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+export const MODELOS_GEMINI = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-3.6-flash", "gemini-3-flash"];
 
 // Familias Flash RETIRADAS por Google (HTTP 404 garantizado en generateContent).
 // Probarlas solo desperdicia intentos y tiempo; se descartan sin llamar.
@@ -433,8 +433,8 @@ function armarBody(contenido: ContenidoLote, estricto: boolean): Record<string, 
     contents: [{ parts: partes }],
     systemInstruction: { parts: [{ text: SYS }] },
     generationConfig: {
-      temperature: estricto ? 0.2 : 0,
-      maxOutputTokens: 8192,
+      temperature: estricto ? 0.1 : 0,
+      maxOutputTokens: 65536,
       responseMimeType: "application/json",
     },
   };
