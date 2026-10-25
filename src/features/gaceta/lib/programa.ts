@@ -7,6 +7,7 @@
  */
 import { supabase } from "@/core/supabase";
 import { ordenarPorNumero } from "@/features/carreras/lib/maestro-nucleo";
+import { fechaJornadaCaracas } from "@/core/utils/fechas";
 
 export type CaballoPrograma = {
   numero: string | number;
@@ -16,13 +17,17 @@ export type CaballoPrograma = {
   ejemplar_id?: string | number | null;
   nuevo?: boolean;
   jockey?: string;
+  entrenador?: string;
   peso?: number | string;
+  medicamento?: string;
+  implementos?: string;
 };
 
 export type CarreraPrograma = {
   hipodromo: string;
   fecha?: string | null;
   carrera: number | null;
+  estado?: string;
   distancia?: number;
   superficie?: string;
   premio?: number;
@@ -39,12 +44,20 @@ export type ProgramaDia = {
 
 export type ResPrograma = { ok: boolean; data?: ProgramaDia | null; error?: string };
 
-/** Fecha local YYYY-MM-DD (misma regla que el legacy hoy()). */
+/**
+ * Fecha de la jornada en ISO `YYYY-MM-DD`, bajo la zona de Caracas (UTC-4).
+ *
+ * ANTES usaba `getFullYear()/getMonth()/getDate()` del reloj LOCAL del
+ * navegador: si el operador tenía el celular en Miami, o si la app corría en
+ * un servidor en UTC, el día se partía al revés. Y un `toISOString()` a las
+ * 20:00 devolvía MAÑANA: las carreras nocturnas se guardaban en el día
+ * siguiente y el operador no las veía en el filtro del día en que se jugaron.
+ *
+ * Ahora DELEGA en `fechaJornadaCaracas`, que es la fuente única de la zona
+ * horaria de la jornada (ver `src/core/utils/fechas.ts`).
+ */
 export function hoyLocal(): string {
-  const d = new Date();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${dd}`;
+  return fechaJornadaCaracas();
 }
 
 function norm(c: unknown): CarreraPrograma {
@@ -58,7 +71,10 @@ function norm(c: unknown): CarreraPrograma {
           valor: Number(cb.valor ?? cb.pts ?? 0) || 0,
           ejemplar_id: (cb.ejemplar_id as string | number | null | undefined) ?? null,
           jockey: cb.jockey ? String(cb.jockey) : undefined,
+          entrenador: cb.entrenador ? String(cb.entrenador) : undefined,
           peso: cb.peso !== undefined ? (cb.peso as string | number) : undefined,
+          medicamento: cb.medicamento ? String(cb.medicamento) : undefined,
+          implementos: cb.implementos ? String(cb.implementos) : undefined,
         }))
       : []
   );
@@ -66,6 +82,7 @@ function norm(c: unknown): CarreraPrograma {
     hipodromo: String(x.hipodromo ?? "").toUpperCase(),
     fecha: x.fecha ? String(x.fecha) : null,
     carrera: x.carrera != null ? Number(x.carrera) || null : null,
+    estado: x.estado ? String(x.estado) : undefined,
     distancia: Number(x.distancia) || 0,
     superficie: String(x.superficie ?? "ARENA").toUpperCase() || "ARENA",
     premio: Number(x.premio) || 0,
@@ -138,15 +155,15 @@ function rpcAusente(e: unknown): boolean {
  * `import()` dinámico a propósito: `carreras/maestro` usa `hoyLocal` de este
  * archivo, así que un import estático sería un ciclo.
  *
- * Nunca hace fallar el guardado del programa: si la matriz no está aplicada, se
- * avisa por consola y el programa queda guardado igual.
+ * La carga del programa no se considera completa si el catálogo central no se
+ * pudo actualizar: carreras y jugadas deben consultar la misma matriz.
  */
 async function registrarCarrerasEnMatriz(
   fecha: string,
   carreras: CarreraPrograma[]
-): Promise<number> {
+): Promise<{ ok: boolean; guardadas: number; error?: string }> {
   const validas = carreras.filter((c) => c.hipodromo && Number(c.carrera) > 0);
-  if (!validas.length) return 0;
+  if (!validas.length) return { ok: true, guardadas: 0 };
   try {
     const { escribirCarrerasMaestro } = await import("@/features/carreras/lib/maestro");
     const res = await escribirCarrerasMaestro(
@@ -154,26 +171,55 @@ async function registrarCarrerasEnMatriz(
         fecha,
         hipodromo: String(c.hipodromo).toUpperCase(),
         carrera: Number(c.carrera),
-        estado: "Programada",
+        estado: c.estado ?? "Programada",
         caballos: c.caballos ?? [],
         distancia: c.distancia ? String(c.distancia) : null,
         superficie: c.superficie ?? null,
         premio: c.premio ?? null,
         origen: "ia",
+        // El programa llega por LOTES: la lista de ejemplares se ACUMULA con la
+        // que ya está guardada (por número de gualdrapa). Sin esto, un lote
+        // parcial borraba los ejemplares del lote anterior y la carrera se
+        // quedaba con la mitad del padrón.
+        fusionar_ejemplares: true,
       }))
     );
     if (!res.ok) {
-      console.warn("No pude registrar el programa en la matriz `carreras`:", res.error);
-      return 0;
+      return {
+        ok: false,
+        guardadas: 0,
+        error: res.error ?? "No se pudo registrar el programa en el catálogo central.",
+      };
     }
-    return res.guardadas ?? 0;
+    return { ok: true, guardadas: res.guardadas ?? 0 };
   } catch (e) {
-    console.warn("Matriz `carreras` no disponible (falta aplicar sql/carreras.sql):", e);
-    return 0;
+    return {
+      ok: false,
+      guardadas: 0,
+      error: e instanceof Error ? e.message : String(e),
+    };
   }
 }
 
-export async function guardarPrograma(p: ProgramaDia, creadoPor?: string): Promise<{ ok: boolean; data?: ProgramaDia; error?: string }> {
+async function confirmarCargaEnCatalogo(
+  fecha: string,
+  carreras: CarreraPrograma[]
+): Promise<{ ok: boolean; error?: string }> {
+  const resultado = await registrarCarrerasEnMatriz(fecha, carreras);
+  if (resultado.ok) return { ok: true };
+  return {
+    ok: false,
+    error:
+      `No se pudo registrar la carga en el catálogo único de carreras: ${resultado.error}. ` +
+      "Reintenta la carga; Gestión y las jugadas solo mostrarán carreras registradas en ese catálogo.",
+  };
+}
+
+export async function guardarPrograma(
+  p: ProgramaDia,
+  creadoPor?: string,
+  opciones: { registrarEnMatriz?: boolean } = {}
+): Promise<{ ok: boolean; data?: ProgramaDia; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
   const fecha = p.fecha || hoyLocal();
   const hipodromos = [...new Set((p.hipodromos || []).map((h) => String(h).toUpperCase().trim()).filter(Boolean))];
@@ -190,15 +236,20 @@ export async function guardarPrograma(p: ProgramaDia, creadoPor?: string): Promi
     });
     if (r.error) {
       if (!rpcAusente(r.error)) {
+        if (opciones.registrarEnMatriz === false) return { ok: false, error: r.error.message };
         // El documento del día (`programa_dia`) no se pudo guardar, pero la
         // MATRIZ —de donde leen TODOS los módulos— se escribe igual: sin esto la
         // carrera quedaría invisible aunque el operador ya la haya cargado.
-        await registrarCarrerasEnMatriz(fecha, carreras);
+        const matriz = await confirmarCargaEnCatalogo(fecha, carreras);
+        if (!matriz.ok) return { ok: false, error: `${r.error.message} ${matriz.error}` };
         return { ok: false, error: r.error.message };
       }
       throw r.error;
     }
-    await registrarCarrerasEnMatriz(fecha, carreras);
+    if (opciones.registrarEnMatriz !== false) {
+      const matriz = await confirmarCargaEnCatalogo(fecha, carreras);
+      if (!matriz.ok) return { ok: false, error: matriz.error };
+    }
     return { ok: true, data: normP };
   } catch (e1) {
     // La RPC no está instalada: caemos al upsert directo para no dejar al
@@ -209,7 +260,10 @@ export async function guardarPrograma(p: ProgramaDia, creadoPor?: string): Promi
     try {
       const { error } = await supabase.from("programa_dia").upsert(normP, { onConflict: "fecha" });
       if (error) return { ok: false, error: error.message };
-      await registrarCarrerasEnMatriz(fecha, carreras);
+      if (opciones.registrarEnMatriz !== false) {
+        const matriz = await confirmarCargaEnCatalogo(fecha, carreras);
+        if (!matriz.ok) return { ok: false, error: matriz.error };
+      }
       return { ok: true, data: normP };
     } catch (e2) {
       return { ok: false, error: e2 instanceof Error ? e2.message : String(e2) };

@@ -45,12 +45,20 @@ si(d.encabezado.llegada.length === 3, "la pizarra 7·2·5 se vuelve 3 discos de 
 si(d.encabezado.llegada[0]?.numero === "7" && d.encabezado.llegada[0]?.puesto === "1º", "1er disco es el 7 con puesto 1º");
 si(d.encabezado.llegada[2]?.numero === "5" && d.encabezado.llegada[2]?.puesto === "3º", "3er disco es el 5 con puesto 3º");
 // ── Colores de gualdrapa: codificación 1–20, fuente única en shared/lib/horseColors ──
-si(colorDiscoNumero(7).includes("bg-orange-500"), "color del disco 7 = naranja (codificación)");
-si(colorDiscoNumero(3).includes("bg-sky-700"), "color del disco 3 = azul (codificación)");
-si(colorDiscoNumero(9).includes("bg-teal-500"), "color del disco 9 = turquesa (codificación)");
-si(colorDiscoNumero(10).includes("bg-purple-700"), "color del disco 10 = morado (codificación)");
-si(colorDiscoNumero(11).includes("bg-slate-400"), "color del disco 11 = gris (codificación)");
-si(colorDiscoNumero(12).includes("bg-emerald-400"), "color del disco 12 = verde claro (codificación)");
+// La paleta viva es la de las GUALDRAPAS OFICIALES (`shared/lib/horseColors.ts`):
+// 7 anaranjado (bg-orange-600), 3 azul rey (bg-blue-700), 9 turquesa (bg-cyan-500),
+// 10 morado (bg-purple-700), 11 gris (bg-slate-500), 12 verde lima (bg-lime-600),
+// 5 verde (bg-green-700), 6 negro/oro (bg-slate-900 + número amarillo).
+// Estas aserciones apuntaban a la paleta ANTERIOR (bg-orange-500, bg-sky-700,
+// bg-teal-500, bg-slate-400, bg-emerald-400/600, bg-slate-800): el cambio a la
+// codificación oficial se hizo en el módulo y el test quedó viejo, así que
+// verificaba algo que la app ya no hace.
+si(colorDiscoNumero(7).includes("bg-orange-600"), "color del disco 7 = anaranjado (gualdrapa oficial)");
+si(colorDiscoNumero(3).includes("bg-blue-700"), "color del disco 3 = azul rey (gualdrapa oficial)");
+si(colorDiscoNumero(9).includes("bg-cyan-500"), "color del disco 9 = turquesa (gualdrapa oficial)");
+si(colorDiscoNumero(10).includes("bg-purple-700"), "color del disco 10 = morado (gualdrapa oficial)");
+si(colorDiscoNumero(11).includes("bg-slate-500"), "color del disco 11 = gris (gualdrapa oficial)");
+si(colorDiscoNumero(12).includes("bg-lime-600"), "color del disco 12 = verde lima (gualdrapa oficial)");
 si(
   colorDiscoNumero(2).includes("bg-white") && colorDiscoNumero(2).includes("border border-slate-300"),
   "el 2 blanco se pinta con borde para no perderse sobre panel blanco"
@@ -59,14 +67,14 @@ si(colorDiscoNumero(15).includes("bg-lime-100"), "el 15 caqui usa su propio colo
 si(colorDiscoNumero(99).includes("bg-slate-700"), "número fuera del rango cae al gris de respaldo (bg-slate-700)");
 // Color del NÚMERO según la codificación (fondo intacto).
 si(
-  colorDiscoNumero(5).includes("bg-emerald-600") && colorDiscoNumero(5).includes("text-white"),
+  colorDiscoNumero(5).includes("bg-green-700") && colorDiscoNumero(5).includes("text-white"),
   "el 5 verde lleva su fondo y número BLANCO"
 );
 si(
   colorDiscoNumero(10).includes("bg-purple-700") && colorDiscoNumero(10).includes("text-white"),
   "el 10 morado lleva su fondo y número BLANCO"
 );
-si(colorDiscoNumero(6).includes("bg-slate-800") && colorDiscoNumero(6).includes("text-yellow-400"), "el 6 negro lleva número AMARILLO");
+si(colorDiscoNumero(6).includes("bg-slate-900") && colorDiscoNumero(6).includes("text-yellow-400"), "el 6 negro lleva número AMARILLO");
 
 // ── 2. Jugadas "en vivo" ──
 si(d.jugadasVivo.length === 2, "una fila por ticket (el CRUCE no cuenta y el Consigue viaja como DA)");

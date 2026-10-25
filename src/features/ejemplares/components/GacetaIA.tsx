@@ -2,14 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CLAVE_GEMINI_KEY, transformarGaceta } from "@/features/gaceta/lib/ia";
-import { guardarHistorialGaceta, registrarEjemplares } from "@/features/gaceta/lib/padron";
-import { sincronizarCarrerasAlCentral } from "@/features/carreras/lib/sincronizar";
+import { CLAVE_GEMINI_KEY, transformarGaceta, transformarGacetaTexto } from "@/features/gaceta/lib/ia";
+import { guardarHistorialGaceta, registrarEjemplares, registrarGacetaEHistorial } from "@/features/gaceta/lib/padron";
+import { sincronizarCarrerasAlCentral, type ResultadoCargaCarrera } from "@/features/carreras/lib/sincronizar";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { emitirToast } from "@/shared/lib/mensajeria";
 import { useConfirmar } from "@/shared/store/useConfirmStore";
+import { useCarrerasDiaStore } from "@/shared/store/useCarrerasDiaStore";
+import { useRegistroCentral } from "@/shared/store/useRegistroCentral";
+import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { CarreraGacetaCard } from "@/features/ejemplares/components/CarreraGacetaCard";
 import { listarHipodromos, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
 import {
@@ -59,6 +62,7 @@ type PdfDoc = {
   numPages: number;
   getPage: (n: number) => Promise<{
     getViewport: (o: { scale: number }) => { width: number; height: number };
+    getTextContent: () => Promise<{ items: Array<{ str?: string; hasEOL?: boolean }> }>;
     render: (p: { canvasContext: CanvasRenderingContext2D; viewport: { width: number; height: number } }) => { promise: Promise<void> };
     cleanup: () => void;
   }>;
@@ -123,8 +127,61 @@ async function renderPdfAPaginas(
   return paginas;
 }
 
-const SQL_AVISO_KEY = "club_gaceta_sql_aviso";
+/**
+ * Extrae el TEXTO de un PDF (capa de texto de pdf.js).
+ *
+ * POR QUÉ EXISTE: la vía de imágenes se trunca. Un PDF de 13 carreras se
+ * manda como imágenes y el modelo entrega las primeras y se queda sin tokens
+ * para las últimas (Belmont 1-3, Charles Town 4-6, Keeneland 4-6: las tres
+ * últimas se perdían). Con el texto se puede PARTIR el documento en bloques
+ * de 2-3 carreras, y cada bloque cierra su respuesta completo.
+ *
+ * Cuando el PDF es una imagen escaneada no tiene capa de texto: ahí se
+ * devuelve cadena vacía y el llamador cae a la vía de imágenes, que es la
+ * única que puede leer un escaneo.
+ *
+ * `tope` limita las páginas leídas (mismo criterio que el render).
+ */
+async function extraerPdfComoTexto(file: File, tope?: number): Promise<string> {
+  const lib = await cargarPdfJs();
+  const buffer = await file.arrayBuffer();
+  let doc: PdfDoc;
+  try {
+    doc = await lib.getDocument({ data: buffer }).promise;
+  } catch (e) {
+    throw new Error(`No se pudo leer el PDF: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  const total = tope && tope > 0 ? Math.min(tope, doc.numPages) : doc.numPages;
+  const paginas: string[] = [];
+  try {
+    for (let i = 1; i <= total; i++) {
+      const page = await doc.getPage(i);
+      try {
+        const contenido = await page.getTextContent();
+        const lineas = (contenido?.items ?? [])
+          .map((it) => `${it.str ?? ""}${it.hasEOL ? "\n" : " "}`)
+          .join("");
+        if (lineas.trim()) paginas.push(lineas);
+      } catch {
+        /* página sin capa de texto: se omite */
+      }
+      try {
+        page.cleanup();
+      } catch {
+        /* noop */
+      }
+    }
+  } finally {
+    try {
+      await doc.destroy();
+    } catch {
+      /* noop */
+    }
+  }
+  return paginas.join("\n\n");
+}
 
+const SQL_AVISO_KEY = "club_gaceta_sql_aviso";
 export function GacetaIA() {
   const [paginas, setPaginas] = useState<PaginaGaceta[]>([]);
   const [seleccionadas, setSeleccionadas] = useState<Set<string>>(new Set());
@@ -136,10 +193,20 @@ export function GacetaIA() {
   const [progreso, setProgreso] = useState<{ hecho: number; total: number } | null>(null);
   const [rango, setRango] = useState("");
   const [topePaginas, setTopePaginas] = useState("");
+  /**
+   * Capa de TEXTO del documento (si el PDF la trae).
+   *
+   * Cuando existe, la transcripción va por bloques de 2-3 carreras: es lo que
+   * evita que las últimas carreras del documento se pierdan por truncamiento.
+   * Cuando no existe (PDF escaneado), se manda la página como imagen.
+   */
+  const [textoDocumento, setTextoDocumento] = useState("");
   /** Fecha de la jornada que se está cargando. Por defecto HOY, pero admite días
    *  FUTUROS: las carreras del documento que no traigan fecha propia se sellan
    *  con esta fecha, para poder cargar/registrar/publicar jornadas posteriores. */
-  const [fechaJornada, setFechaJornada] = useState(() => hoyLocal());
+  const [fechaJornada, setFechaJornada] = useState(
+    () => useCarrerasDiaStore.getState().fechaSeleccionada || hoyLocal()
+  );
   /** Ref con el valor más reciente: la usan la recuperación del registro y la
    *  extracción, que corren una sola vez y no deben depender del estado. */
   const fechaJornadaRef = useRef(fechaJornada);
@@ -150,6 +217,9 @@ export function GacetaIA() {
   const [carreras, setCarreras] = useState<CarreraRegistro[]>([]);
   const [resumen, setResumen] = useState<ResumenPadron>({ nuevos: 0, vinculados: 0 });
   const [registrando, setRegistrando] = useState(false);
+  const [sincronizando, setSincronizando] = useState(false);
+  const [faseRegistro, setFaseRegistro] = useState<"extrayendo" | "registrando" | "listo" | "error" | "">("");
+  const [reporteCarga, setReporteCarga] = useState<ResultadoCargaCarrera[]>([]);
   const [historial, setHistorial] = useState(false);
   const [enviando, setEnviando] = useState(false);
   /** INDICADOR: carreras ya cargadas en el Ensamblaje vs. las del día. */
@@ -179,6 +249,118 @@ export function GacetaIA() {
     const reg = leerRegistro();
     setEnviadasHoy(reg && reg.length ? reg.filter((c) => c.enviada).length : 0);
   }, []);
+
+  const registrarCarrerasEnElDia = useCallback(
+    async (
+      loteCarreras: CarreraRegistro[],
+      fechaDestino?: string,
+      registroAutomatico = false
+    ): Promise<boolean> => {
+      if (!loteCarreras.length) return false;
+      const fecha = fechaDestino || normalizarFechaIso(fechaJornadaRef.current) || hoyLocal();
+      const lote = loteCarreras.map((c) => ({ ...c, fecha }));
+      setSincronizando(true);
+      setFaseRegistro("registrando");
+      setEstado("💾 Registrando automáticamente en Carreras del Día...");
+      setReporteCarga([]);
+      try {
+        try {
+          const resumenPadron = await registrarEjemplares(lote as unknown as Array<Record<string, unknown>>);
+          setResumen({ nuevos: resumenPadron.nuevos, vinculados: resumenPadron.vinculados });
+          if (resumenPadron.errorDb || resumenPadron.fallidos > 0) {
+            toast(
+              `Carreras registradas; padrón de ejemplares parcialmente actualizado: ${resumenPadron.errorDb ?? `${resumenPadron.fallidos} ejemplar(es) fallidos.`}`,
+              "warning"
+            );
+          }
+        } catch (e) {
+          toast(
+            `No se pudieron vincular todos los ejemplares al padrón: ${e instanceof Error ? e.message : String(e)}`,
+            "warning"
+          );
+        }
+        const sincronizacion = await sincronizarCarrerasAlCentral(lote, "gaceta-ia");
+        setReporteCarga(sincronizacion.resultados);
+        if (!sincronizacion.ok || sincronizacion.resultados.some((r) => r.estado === "ERROR")) {
+          throw new Error(sincronizacion.error || "No se pudieron guardar las carreras en la matriz central.");
+        }
+
+        useCarrerasDiaStore.getState().setFecha(fecha);
+        const actualizables = new Set(
+          sincronizacion.resultados
+            .filter((r) => r.estado === "CREADA" || r.estado === "ACTUALIZADA_COMPLETADA")
+            .map((r) => `${claveHipodromo(r.hipodromo)}|${Number(r.carrera)}`)
+        );
+        const loteActualizable = lote.filter((c) =>
+          actualizables.has(`${claveHipodromo(c.hipodromo)}|${Number(c.carrera)}`)
+        );
+        useCarrerasDiaStore.getState().fusionarLote(
+          loteActualizable.map((c) => ({
+            fecha,
+            hipodromo: String(c.hipodromo ?? "").trim().toUpperCase(),
+            carrera: Number(c.carrera) || 0,
+            estado: "Programada" as const,
+            ventas: [],
+            pago: null,
+          }))
+        );
+        const registrarEnCache = useRegistroCentral.getState().registrarCarrera;
+        for (const c of loteActualizable) {
+          const ejemplares = c.ejemplares?.length ? c.ejemplares : c.caballos ?? [];
+          registrarEnCache({
+            fecha,
+            hipodromo: String(c.hipodromo ?? "").trim().toUpperCase(),
+            carrera: Number(c.carrera) || 0,
+            estado: "Programada",
+            origen: "ia",
+            caballos: ejemplares.map((e) => ({
+              numero: String(e.numero),
+              nombre: e.nombre,
+              nacionalidad: e.nacionalidad ?? "VE",
+              jockey: e.jockey,
+              entrenador: e.entrenador,
+              peso: e.peso,
+              medicamento: e.medicamento,
+              implementos: e.implementos,
+            })),
+            distancia: c.distancia != null ? String(c.distancia) : null,
+            superficie: c.superficie ?? null,
+            premio: c.premio ?? null,
+          });
+        }
+        setCarreras((prev) =>
+          prev.map((c) => {
+            const actualizada = lote.find(
+              (n) =>
+                claveHipodromo(n.hipodromo) === claveHipodromo(c.hipodromo) &&
+                Number(n.carrera) === Number(c.carrera)
+            );
+            return actualizada ? { ...actualizada, ejemplares: (actualizada.ejemplares ?? []).map((e) => ({ ...e })) } : c;
+          })
+        );
+        setFaseRegistro("listo");
+        setEstado(`✅ Registradas en el Día (listas en Carreras del Día, Taquilla y Gestión) · ${fecha}`);
+        const conteo = (estado: ResultadoCargaCarrera["estado"]) =>
+          sincronizacion.resultados.filter((r) => r.estado === estado).length;
+        toast(
+          registroAutomatico
+            ? `✅ IA registró ${conteo("CREADA")} nuevas y completó ${conteo("ACTUALIZADA_COMPLETADA")} carreras; ${conteo("PREVIAMENTE_CARGADA")} ya estaban completas (Fecha: ${fecha})`
+            : `✅ Sincronización: ${conteo("CREADA")} nuevas, ${conteo("ACTUALIZADA_COMPLETADA")} completadas, ${conteo("PREVIAMENTE_CARGADA")} sin cambios (Fecha: ${fecha}).`,
+          "success"
+        );
+        return true;
+      } catch (e) {
+        const mensaje = e instanceof Error ? e.message : String(e);
+        setFaseRegistro("error");
+        setEstado(`No se pudieron registrar las carreras en el catálogo central: ${mensaje}`);
+        toast(`❌ No se completó el registro automático: ${mensaje}`, "error");
+        return false;
+      } finally {
+        setSincronizando(false);
+      }
+    },
+    [toast]
+  );
 
   useEffect(() => {
     refrescarContadores();
@@ -289,6 +471,7 @@ export function GacetaIA() {
       setDiag("");
       try {
         const nuevas: PaginaGaceta[] = [];
+        const textos: string[] = [];
         const generar = (dataUrl: string) => ({
           id: `${dataUrl.slice(0, 24)}-${nuevas.length}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           dataUrl,
@@ -299,8 +482,18 @@ export function GacetaIA() {
           try {
             const esPdf = /\.pdf$/i.test(f.name) || f.type === "application/pdf";
             if (esPdf) {
-              setEstado(`Renderizando ${f.name}...`);
               const tope = parseInt(topePaginas, 10);
+              // Capa de texto primero: si el PDF la tiene, se transcribe por
+              // BLOQUES (2-3 carreras por llamada) y no se trunca. Si no la
+              // tiene (PDF escaneado), se sigue con las páginas como imágenes.
+              setEstado(`Leyendo el texto de ${f.name}...`);
+              try {
+                const texto = await extraerPdfComoTexto(f, tope > 0 ? tope : undefined);
+                if (texto.trim().length >= 400) textos.push(texto);
+              } catch {
+                /* sin capa de texto: se usa la vía de imágenes */
+              }
+              setEstado(`Renderizando ${f.name}...`);
               const pag = await renderPdfAPaginas(
                 f,
                 (pag, total) => setEstado(`Renderizando ${f.name} · página ${pag} de ${total}...`),
@@ -315,6 +508,14 @@ export function GacetaIA() {
             setEstado("Error leyendo " + f.name + ": " + (e instanceof Error ? e.message : String(e)));
           }
         }
+        if (textos.length) {
+          setTextoDocumento(textos.join("\n\n"));
+          setEstado(
+            `${nuevas.length} página(s) listas · documento con capa de texto: se transcribirá por bloques (2-3 carreras por llamada) para que no se trunque.`
+          );
+        } else if (nuevas.length) {
+          setEstado(`${nuevas.length} página(s) listas (sin capa de texto: se envía como imágenes).`);
+        }
         if (nuevas.length) {
           setPaginas((prev) => [...prev, ...nuevas]);
           setSeleccionadas((prev) => {
@@ -322,7 +523,6 @@ export function GacetaIA() {
             nuevas.forEach((p) => n.add(p.id));
             return n;
           });
-          setEstado(`${nuevas.length} página(s) listas.`);
         }
       } finally {
         setLeyendo(false);
@@ -370,22 +570,39 @@ export function GacetaIA() {
       return;
     }
     const imgs = paginas.filter((p) => seleccionadas.has(p.id)).map((p) => p.dataUrl);
-    if (!imgs.length) {
+    const hayTexto = textoDocumento.trim().length >= 400;
+    if (!imgs.length && !hayTexto) {
       setEstado("Selecciona al menos una página.");
       toast("Selecciona al menos una página.", "warning");
       return;
     }
     const pesoSel = `${imgs.reduce((a, d) => a + pesoMB(d), 0).toFixed(1)} MB`;
     setTrabajando(true);
-    setEstado(`Transcribiendo ${imgs.length} página(s) (${pesoSel}) con Gemini (gratis)...`);
+    setFaseRegistro("extrayendo");
+    setEstado(
+      hayTexto
+        ? "🤖 Extrayendo ejemplares y carreras con IA..."
+        : `🤖 Extrayendo ejemplares y carreras con IA... · ${imgs.length} página(s) (${pesoSel})`
+    );
     setDiag("");
     try {
-      const res = await transformarGaceta(clave.trim(), imgs, (hecho, total) => setProgreso({ hecho, total }), (s) => setEstado(s));
+      // VÍA DE TEXTO (preferida): el documento se parte en bloques de 2-3
+      // carreras, así ninguna respuesta se trunca. Solo si el PDF no traía
+      // capa de texto se cae a la vía de imágenes.
+      const res = hayTexto
+        ? await transformarGacetaTexto(
+            clave.trim(),
+            textoDocumento,
+            (hecho, total) => setProgreso({ hecho, total }),
+            (s) => setEstado(s)
+          )
+        : await transformarGaceta(clave.trim(), imgs, (hecho, total) => setProgreso({ hecho, total }), (s) => setEstado(s));
       setDiag(res.diag ?? "");
       if (!res.ok) {
         setEstado(res.cuotaTotal ? "Cuota DIARIA gratuita de Gemini agotada. Prueba otra vez mañana o consigue otra clave gratis (aistudio.google.com/apikey)." : res.error ?? "Error transformando.");
         setCarreras([]);
         setResumen({ nuevos: 0, vinculados: 0 });
+        setFaseRegistro("error");
         toast(
           res.cuotaTotal
             ? "Cuota diaria gratuita agotada: cambia de clave o reintenta mañana."
@@ -394,19 +611,23 @@ export function GacetaIA() {
         );
         return;
       }
-      // Entrega inmediata: el resultado SIEMPRE se muestra; el padrón se
-      // vincula por detrás y NO bloquea las cards.
+      // Una extracción parcial se puede registrar, pero se señala como tal.
       if (res.cuotaTotal) toast(`Cuota agotada en parte de Gemini: resultado PARCIAL (${res.carreras.length} carrera(s)).`, "warning");
       // CONTROL DE DUPLICADOS: el mismo PDF (o dos páginas con la misma carrera)
       // no debe generar dos cards idénticas.
       const dedupe = deduplicarCarreras(res.carreras);
+      if (dedupe.lista.length === 0) {
+        setFaseRegistro("error");
+        setEstado("La IA no encontró carreras válidas para registrar.");
+        toast("La IA no encontró carreras válidas para registrar.", "warning");
+        return;
+      }
+      const fechaDestino = normalizarFechaIso(fechaJornadaRef.current) || hoyLocal();
       const lista: CarreraRegistro[] = dedupe.lista.map((c) => ({
         ...c,
-        // Fecha del evento SIEMPRE en ISO estricto (YYYY-MM-DD) antes de
-        // persistir: la IA puede devolver "24/09/2026" o un texto encabezado.
-        // Si el documento no trae fecha, se usa la FECHA DE LA JORNADA elegida
-        // por el operador (permite cargar días futuros, no solo hoy).
-        fecha: c.fecha ? normalizarFechaIso(c.fecha) : fechaJornadaRef.current,
+        // La fecha elegida para la jornada manda sobre fechas inferidas por IA:
+        // evita que un encabezado erróneo o histórico desvíe la carrera.
+        fecha: fechaDestino,
         premio: 100,
         ejemplares: (c.ejemplares || []).map((e) => ({ ...e, valor: 0, pts: 0 })),
         seleccionada: true,
@@ -416,8 +637,7 @@ export function GacetaIA() {
       setCarreras(lista);
       setResumen({ nuevos: 0, vinculados: 0 });
       persistirRegistro(lista);
-      setEstado(`Listo: ${lista.length} carrera(s) transcritas, σ Vinculando padrón…`);
-      toast(`✅ Extraídas ${lista.length} carreras.`, "success");
+      setEstado("💾 Registrando automáticamente en Carreras del Día...");
       if (dedupe.quitadas > 0) {
         toast(
           `🔁 ${dedupe.quitadas} carrera(s) repetida(s) en el documento: no se cargaron dos veces.`,
@@ -429,57 +649,41 @@ export function GacetaIA() {
       }
       refrescarContadores();
 
-      // REGISTRO CENTRAL: al darse de alta en la matriz `carreras`, la extracción
-      // queda DISPONIBLE EN TODOS LOS MÓDULOS (Pollas, Remates, WPS, Marcas,
-      // Dupletas, Tablas Fijas, Gestión de Jugadas y Taquilla). Sin esto la
-      // carrera solo existía en esta pantalla.
-      void sincronizarCarrerasAlCentral(lista, "gaceta-ia")
+      const registrado = await registrarCarrerasEnElDia(lista, fechaDestino, true);
+      if (!registrado) return;
+
+      // Historial (gaceta_procesada) + MEMORIA HISTÓRICA de cada ejemplar, en
+      // segundo plano y sin bloquear. La RPC `rpc_registrar_gaceta_e_historial`
+      // hace las dos cosas: deja constancia de la gaceta procesada y alimenta
+      // el histórico de cada caballo, que es lo que después usa la
+      // proyección (Inteligencia Hípica) para calcular probabilidades.
+      const fecha = lista.find((c) => c.fecha)?.fecha ?? null;
+      registrarGacetaEHistorial(lista, fecha, "desconocido")
         .then((r) => {
-          if (!r.ok) {
-            console.warn("No se pudo publicar en el registro central:", r.error);
-            toast(
-              `La extracción quedó lista, pero no se pudo publicar en el registro central${r.error ? `: ${r.error}` : ""}.`,
-              "warning"
+          if (r.ok) {
+            setEstado(
+              `${res.cuotaTotal ? "PARCIAL · " : ""}Listo: ${lista.length} carrera(s) transcritas · memoria histórica alimentada.`
             );
             return;
           }
-          toast(`🗂️ ${r.guardadas} carrera(s) ya están disponibles en todos los módulos.`, "success");
-        })
-        .catch((e) => {
-          console.warn("Registro central falló:", e?.message || e);
-          toast("La extracción quedó lista, pero no se pudo publicar en el registro central.", "warning");
-        });
-
-      // Historlae (gaceta_procesada) en segundo plano, sin bloquear.
-      const fecha = lista.find((c) => c.fecha)?.fecha ?? null;
-      guardarHistorialGaceta(lista, fecha, "desconocido").catch((e) => {
-        console.warn("No se guardó el historial (gaceta_procesada):", e?.message || e);
-        if (!sessionStorage.getItem(SQL_AVISO_KEY)) {
-          sessionStorage.setItem(SQL_AVISO_KEY, "1");
-          toast("La gaceta se procesó bien, pero el historial no se pudo guardar (falta la tabla o permisos).", "warning");
-        }
-      });
-
-      // Vinculación al padrón en segundo plano (actualiza las insignias ✗/✓/★).
-      void registrarEjemplares(lista as unknown as Array<Record<string, unknown>>)
-        .then((tot) => {
-          setResumen({ nuevos: tot.nuevos, vinculados: tot.vinculados });
-          setCarreras((prev) => prev.map((c) => ({ ...c, ejemplares: (c.ejemplares || []).map((e) => ({ ...e })) })));
-          setEstado(
-            `${res.cuotaTotal ? "PARCIAL · " : ""}Listo: ${lista.length} carrera(s), ${tot.nuevos} ejemplar(es) nuevos registrados.`
-          );
-          if (tot.errorDb) {
-            toast(`Transcripción lista (padrón sin conexión): ${tot.errorDb}. Ejecute el paquete SQL y use "Registrar ejemplares en el padrón".`, "warning");
-          } else if (tot.fallidos > 0) {
-            toast(`Padrón: ${tot.nuevos} nuevo(s), ${tot.vinculados} vinculado(s), ${tot.fallidos} fallido(s).`, "warning");
-          } else {
-            toast(`Padrón: ${tot.nuevos} nuevo(s), ${tot.vinculados} vinculado(s).`, "success");
+          console.warn("No se guardó el historial/memoria:", r.error);
+          if (!sessionStorage.getItem(SQL_AVISO_KEY)) {
+            sessionStorage.setItem(SQL_AVISO_KEY, "1");
+            toast(
+              "La gaceta se procesó bien, pero la memoria histórica no se pudo guardar (falta la RPC o permisos).",
+              "warning"
+            );
           }
         })
         .catch((e) => {
-          console.warn("Padrón en segundo plano falló:", e?.message || e);
-          toast("La transcripción quedó lista, pero la vinculación al padrón falló.", "warning");
+          console.warn("No se guardó el historial (gaceta_procesada):", e?.message || e);
+          if (!sessionStorage.getItem(SQL_AVISO_KEY)) {
+            sessionStorage.setItem(SQL_AVISO_KEY, "1");
+            toast("La gaceta se procesó bien, pero el historial no se pudo guardar (falta la tabla o permisos).", "warning");
+          }
         });
+
+      if (res.cuotaTotal) setEstado(`PARCIAL · ${lista.length} carrera(s) registradas en la jornada ${fechaDestino}.`);
     } catch (e) {
       const msj = e instanceof Error ? e.message : String(e);
       setEstado("Error: " + msj);
@@ -488,7 +692,7 @@ export function GacetaIA() {
       setTrabajando(false);
       setProgreso(null);
     }
-  }, [clave, paginas, seleccionadas, toast]);
+  }, [clave, paginas, seleccionadas, textoDocumento, toast, refrescarContadores, registrarCarrerasEnElDia]);
 
   const registrarEnPadron = useCallback(async () => {
     if (registrando || carreras.length === 0) return;
@@ -651,13 +855,18 @@ export function GacetaIA() {
               <input
                 type="date"
                 value={fechaJornada}
-                onChange={(e) => setFechaJornada(e.target.value || hoyLocal())}
+                onChange={(e) => {
+                  const fecha = e.target.value || hoyLocal();
+                  fechaJornadaRef.current = fecha;
+                  setFechaJornada(fecha);
+                  useCarrerasDiaStore.getState().setFecha(fecha);
+                }}
                 className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
               />
             </label>
             <p className="max-w-md pb-1 text-[10px] leading-snug text-slate-500">
-              Se aplica a las carreras del documento que <b>no traigan fecha</b>. Sirve para cargar, registrar y
-              publicar <b>jornadas de días posteriores</b> (o anteriores) al actual.
+              La fecha seleccionada se asigna a todas las carreras extraídas. Sirve para cargar, registrar y publicar
+              <b> jornadas de días posteriores</b> (o anteriores) al actual.
             </p>
           </div>
           <div
@@ -846,22 +1055,24 @@ export function GacetaIA() {
             variant="default"
             size="lg"
             className="mt-4 w-full"
-            disabled={trabajando || !clave.trim() || seleccionadas.size === 0}
+            disabled={trabajando || !clave.trim() || (seleccionadas.size === 0 && textoDocumento.trim().length < 400)}
             onClick={() => void alTransformar()}
             title={
-              seleccionadas.size === 0
+              seleccionadas.size === 0 && textoDocumento.trim().length < 400
                 ? "Selecciona al menos una página para extraer sus carreras"
-                : `Enviar ${seleccionadas.size} página(s) seleccionada(s) a Gemini`
+                : `Enviar ${textoDocumento.trim().length >= 400 ? "el documento por bloques" : `${seleccionadas.size} página(s) seleccionada(s)`} a Gemini`
             }
           >
-            ✨ Transformar con IA (gratis)
+            ✨ Transformar con IA y Registrar en el Día
           </Button>
           {trabajando && (
             <div className="mt-3 rounded-lg border border-primary-200 bg-primary-500/5 p-3">
               <div className="mb-1 flex items-center justify-between gap-2 text-[9px] font-black uppercase tracking-wide text-primary-700">
                 <span className="inline-flex items-center gap-1.5">
                   <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-primary-300 border-t-primary-700" />
-                  Procesando con la IA…
+                  {faseRegistro === "registrando"
+                    ? "💾 Registrando automáticamente en Carreras del Día…"
+                    : "🤖 Extrayendo ejemplares y carreras con IA…"}
                 </span>
                 {progreso && (
                   <span>
@@ -889,6 +1100,16 @@ export function GacetaIA() {
             <p className={`mt-2 text-center text-[11px] ${/error/i.test(estado) ? "font-bold text-red-500" : "text-slate-500"}`}>
               {estado}
             </p>
+          )}
+          {faseRegistro === "listo" && carreras.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2 w-full"
+              onClick={() => router.push("/carreras")}
+            >
+              Ir a Carreras del Día →
+            </Button>
           )}
           {diag && (
             <pre className="mt-2 max-h-44 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-slate-950 p-2 text-[10px] font-mono text-success-500">
@@ -926,6 +1147,53 @@ export function GacetaIA() {
         )}
       </div>
 
+      {reporteCarga.length > 0 && (
+        <section className="rounded-2xl border border-line bg-surface p-4" aria-label="Auditoría de carga por carrera">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-black uppercase tracking-wider text-slate-700">📊 Auditoría de carga por carrera</h3>
+            <span className="text-[10px] font-semibold text-slate-500">
+              {reporteCarga.filter((r) => r.estado !== "ERROR").length} procesadas · {reporteCarga.filter((r) => r.estado === "ERROR").length} errores
+            </span>
+          </div>
+          <div className="mb-3 flex flex-wrap gap-2">
+            {(["CREADA", "ACTUALIZADA_COMPLETADA", "PREVIAMENTE_CARGADA", "PROTEGIDA", "ERROR"] as const).map((estadoCarga) => {
+              const total = reporteCarga.filter((r) => r.estado === estadoCarga).length;
+              return total > 0 ? (
+                <span key={estadoCarga} className="rounded-full border border-line bg-surfaceAlt px-2 py-1 text-[10px] font-bold text-slate-600">
+                  {estadoCarga.replaceAll("_", " ")}: {total}
+                </span>
+              ) : null;
+            })}
+          </div>
+          <div className="max-h-64 overflow-auto rounded-lg border border-line">
+            <table className="w-full text-left text-xs">
+              <thead className="sticky top-0 bg-surfaceAlt text-[10px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Fecha</th>
+                  <th className="px-3 py-2">Hipódromo</th>
+                  <th className="px-3 py-2">Carrera</th>
+                  <th className="px-3 py-2">Estado</th>
+                  <th className="px-3 py-2">Detalle</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reporteCarga.map((r, i) => (
+                  <tr key={`${r.fecha}|${r.hipodromo}|${r.carrera ?? "documento"}|${i}`} className="border-t border-line">
+                    <td className="whitespace-nowrap px-3 py-2">{r.fecha}</td>
+                    <td className="px-3 py-2">{r.hipodromo}</td>
+                    <td className="px-3 py-2">{r.carrera ?? "—"}</td>
+                    <td className={`whitespace-nowrap px-3 py-2 font-bold ${r.estado === "ERROR" ? "text-red-600" : r.estado === "PROTEGIDA" ? "text-amber-600" : "text-emerald-700"}`}>
+                      {r.estado.replaceAll("_", " ")}
+                    </td>
+                    <td className="min-w-64 px-3 py-2 text-slate-600">{r.motivo}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       {carreras.length > 0 && (
         <div className="rounded-2xl border border-line bg-surface p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -938,6 +1206,15 @@ export function GacetaIA() {
             <div className="flex flex-wrap gap-2">
               <Button variant="default" size="sm" disabled={registrando || historial || enviando} onClick={() => void registrarEnPadron()}>
                 {registrando ? "Vinculando…" : "✔ Registrar en el padrón"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={sincronizando || enviando}
+                onClick={() => void registrarCarrerasEnElDia(carreras)}
+                title="Guarda otra vez los cambios manuales de ejemplares y datos de carrera en la matriz central."
+              >
+                {sincronizando ? "Sincronizando…" : "🔄 Actualizar / Re-sincronizar en Base de Datos"}
               </Button>
               <Button variant="outline" size="sm" disabled={historial || registrando || enviando} onClick={() => void guardarHist()}>
                 {historial ? "Guardando…" : "🗂️ Guardar historial"}
@@ -964,10 +1241,9 @@ export function GacetaIA() {
             ))}
           </div>
           <p className="mt-3 text-[11px] italic leading-relaxed text-slate-500">
-            💡 La IA transcribe la gaceta tal cual: no inventa nombres. Usted revisa Valor, premio, distancia y superficie de
-            cada carrera, y con <b>Cargar en el Ensamblaje</b> (o el envío masivo) decide CUÁNDO llevarlas. Nada se envía solo:
-            los ejemplares se registran en el padrón por nombre + nacionalidad (los homónimos se desambiguan por país; EE.UU.
-            por defecto USA y Venezuela VE).
+            💡 Al terminar la extracción, las carreras se registran en el catálogo central y quedan disponibles en los módulos
+            de la jornada. Revise los datos; use <b>Actualizar / Re-sincronizar</b> si edita una tarjeta. El envío al Ensamblaje
+            sigue siendo una acción aparte.
           </p>
         </div>
       )}

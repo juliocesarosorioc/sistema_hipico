@@ -4,11 +4,23 @@ out/
 dist/
 npm-debug.log*
 *.log
-.env**
 
-# Respaldos locales (datos de negocio; NO se versionan)
+# Variables de entorno
+.env
+.env.*
+!.env.example
+
+# Credenciales/llaves
+*.pem
+*.key
+
+# Respaldos/SQL y dumps
+*.sql.bak
+*.dump
 respaldos/
 _backup_*
+
+# Respaldos locales (datos de negocio; NO se versionan)
 
 # Residuos de desarrollo (salida de comandos, borradores scratch)
 .DS_Store
@@ -21,6 +33,7 @@ tmp.tsx
 *.tsbuildinfo
 .tsbuild-pruebas/
 
+<<<<<<< HEAD
 # Blindaje de Seguridad y Secretos
 .env
 .env.*
@@ -31,3 +44,7 @@ tmp.tsx
 *.dump
 _archivo_scripts_viejos/
 supabase/.temp/
+=======
+# Supabase temp
+supabase/.temp/
+>>>>>>> c0aa4bfb0e0030e9dd95ad4d639ec42acd3ebfc3

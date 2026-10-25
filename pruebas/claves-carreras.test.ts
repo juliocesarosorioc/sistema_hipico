@@ -39,6 +39,8 @@ eq("quita espacios de los bordes", claveHipodromo("  LAUREL  "), "LAUREL");
 eq("quita espacios internos", claveHipodromo("LA urel"), "LAUREL");
 eq("colapsa espacios multiples", claveHipodromo("LA   U   REL"), "LAUREL");
 eq("tolera tabulador", claveHipodromo("LA\tUREL"), "LAUREL");
+eq("normaliza tildes en el nombre", claveHipodromo("Hipódromo del Perú"), "HIPODROMODELPERU");
+eq("normaliza tildes en mayúsculas", claveHipodromo("HIPODROMO DEL PERU"), "HIPODROMODELPERU");
 // Sin hipodromo no hay clave: no debe inventar una fila vacía.
 eq("vacio", claveHipodromo(""), "");
 eq("solo espacios", claveHipodromo("   "), "");
@@ -133,6 +135,11 @@ console.log("\n[6] numerosDeCarrera: numeros unicos y ordenados");
   eq("otro hipodromo", numerosDeCarrera(carreras, "GAMER"), [5]);
   eq("hipodromo inexistente", numerosDeCarrera(carreras, "NOSE"), []);
   eq("sin hipodromo", numerosDeCarrera(carreras, null), []);
+  eq(
+    "una carrera catalogada no se oculta por tener el padron vacio",
+    numerosDeCarrera([{ fecha: "2026-10-22", hipodromo: "BELMONT PARK", carrera: 3, caballos: [] }], "Belmont Park"),
+    [3]
+  );
 }
 
 console.log(`\n${fallan === 0 ? "TODO OK" : "HAY FALLAS"}: ${pasan} pasaron, ${fallan} fallaron\n`);

@@ -622,7 +622,7 @@ body {
 
   /* ==========================================================================
    MÓDULO DE ANÁLISIS HÍPICO PROSPECTIVO (MICHEL GODET + MOTOR ACTUARIAL)
-   Vinculado a src/app/globals.css y legacy/css/style.css de sistema_hipico
+   Vive únicamente en src/app/globals.css (el sistema legacy se eliminó).
    ========================================================================== */
 
 :root {

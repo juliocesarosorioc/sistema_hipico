@@ -145,6 +145,11 @@ pantalla muestra "0 filas" como si no hubiera datos.
     `resultados_carreras` / `programa_dia` / `tablas_fijas`. Sin este script los
     módulos de jugadas muestran el error "La matriz de carreras no está
     disponible". Idempotente y no borra datos.
+    Para recuperar filas históricas que sí existen en la carga original,
+    ejecuta también `carreras_catalogo_desde_jugadas.sql` después de este paso.
+    Hace un backfill idempotente exclusivamente desde `programa_dia`. No crea
+    carreras desde tickets, resultados ni reportes; si no hay carga original,
+    vuelve a cargar la carrera desde su fuente.
 14. `carrera_unica.sql` — **requiere el paso 13**. Deja una sola verdad sobre la
     carrera: crea `carrera_ejemplares` (inscripción 1:N, con trigger que refleja
     `carreras.caballos` para no duplicar), fuerza el resultado 1:1
@@ -262,6 +267,35 @@ pantalla muestra "0 filas" como si no hubiera datos.
     guardan logos llega a todos (el cliente ya lo escucha en
     `useHipodromosStore` → `useRealtimeLogos`). Sin aplicarlo, la app funciona
     igual: queda el refresco local de siempre. Idempotente.
+26. `memoria_historica.sql` — **obligatorio para la Inteligencia Hípica.** Crea
+    `memoria_historica_caballos` (las actuaciones de cada ejemplar), la RPC
+    `rpc_registrar_gaceta_e_historial` (que registra la gaceta procesada Y
+    alimenta el histórico) y la RPC `rpc_obtener_memoria_historica_caballos`
+    (devuelve actuaciones, aciertos, Beyer/Speed Rating, jinete y entrenador
+    habituales y el **Índice de Consistencia Godet**). Sin esto la pantalla de
+    Proyecciones funciona en modo local (lee solo el padrón) y avisa que falta
+    el SQL. Requiere que `public.tiene_capacidad` ya exista (paso 0).
+    Idempotente.
+27. `gaceta_lote_carreras.sql` — **carga de gaceta por lotes.** Crea el índice
+    único `(hipodromo_id, fecha, carrera)` y la RPC
+    `rpc_guardar_lote_carreras_gaceta`, que hace el UPSERT **acumulativo**: los
+    ejemplares del lote se FUSIONAN con los ya guardados por número de gualdrapa
+    y las carreras del hipódromo que no vienen en el lote NO se tocan. Es lo que
+    impide que un lote parcial (Belmont 1-3 y luego Charles Town 4-6) borre lo
+    que ya estaba cargado. Requiere el paso 13 (matriz `carreras`). Idempotente.
+28. `tablas_caballo_invalidado.sql` — estado **INVALIDADO** en Tablas Fijas:
+    columnas `invalidado`/`motivo_invalidacion`, tabla de caballos de la tabla
+    fija sincronizada con el JSONB y la RPC
+    `rpc_toggle_caballo_invalidado_tabla_fija`. Un ejemplar invalidado sigue en
+    la tabla pero no puede ganar ni repartir premio (a diferencia del retirado,
+    que además reembolsa). Idempotente.
+29. `contabilidad_niif.sql` — **Contabilidad NIIF.** Crea `asientos_niif` y
+    `asientos_niif_lineas` (con moneda de operación, moneda de presentación y
+    tasa de cambio histórica según NIC 21), la RPC `rpc_registrar_asiento_niif`
+    (valida `Debe = Haber` EN EL SERVIDOR, es idempotente por clave y NO permite
+    borrar: el reverso es un contra-asiento) y la vista
+    `vw_balance_comprobacion_niif`. Sin esto, la pestaña **📘 Balance NIIF** avisa
+    que falta el SQL y el resto de la contabilidad funciona igual. Idempotente.
 
 
 ### Volver a aplicar si ya los corriste (arreglo de ANULADAS)
@@ -326,6 +360,12 @@ Carreras del Día) leían "qué carreras hay" cruzando hasta cuatro fuentes
 (`"LA RINCONADA"` vs `"RINCONADA"`). Ahora **todos leen la matriz `carreras`** y
 `programa_dia` quedó como documento crudo del importador. Por eso el paso 13 no
 es opcional.
+
+`carreras_catalogo_desde_jugadas.sql` repara filas faltantes únicamente cuando
+la carrera está registrada en `programa_dia`, la carga original. Los tickets,
+resultados y reportes nunca crean entradas del catálogo. La carga nueva escribe
+directamente en `carreras`; si esa escritura falla, se informa el error y debe
+reintentarse la carga antes de usar la carrera.
 
 ## Scripts que NO hay que volver a aplicar
 

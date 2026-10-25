@@ -32,12 +32,15 @@ import { Button } from "@/shared/components/ui/Button";
 import { Guard } from "@/shared/components/ui/Guard";
 import { fmtMoney, type EjemplarTabla } from "@/features/tablas/lib/tipos";
 import { listarClientesVenta, listarGruposVenta, limpiarCacheClientesVenta, comisionJugadasDeGrupo, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, registrarAuditoria, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
+import { actualizarCliente } from "@/features/clientes/lib/clientes";
+import { guardarCrucesCarrera, leerCrucesCarrera, type CrucesCarreraOverride } from "@/features/gestion/lib/cruces-carrera";
+import type { ModalidadesCruce, OpcionesCrucesPuestos } from "@/features/motores/lib/puestos";
 import { tieneCapacidad, usuarioVigente } from "@/features/seguridad/lib/vigente";
 import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/features/tablas/lib/rpc";
 import { registrarCarreraProgramada, leerResultadoOficial } from "@/features/carreras/lib/carreras-dia";
 import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados } from "@/features/carreras/lib/retiros";
-import { claveHipodromo } from "@/features/carreras/lib/claves";
+import { claveHipodromo, numerosDeCarrera } from "@/features/carreras/lib/claves";
 import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { revisarCaballo, maximoDeLaCarrera, type RevisionCaballo } from "@/features/taquilla/lib/caballos";
@@ -207,14 +210,7 @@ export function GestionJugadasModule() {
     [carrerasDe, hipodromo, centralCarrerasDiaAllBase]
   );
   const centralCarrerasDiaAll = centralCarrerasDiaAllBase;
-  const carrerasConEjemplares = useMemo(
-    () =>
-      carrerasDelDia
-        .filter((c) => (c.caballos?.length ?? 0) > 0)
-        .map((c) => Number(c.carrera))
-        .sort((a, b) => a - b),
-    [carrerasDelDia]
-  );
+  const tablas = useTablasFijasStore((s) => s.tablas);
 
   /** Editar jugadas guardadas: la capacidad de corregir/anular jugadas (principal = todo). */
   const puedeEditarJugadas =
@@ -254,6 +250,14 @@ export function GestionJugadasModule() {
   const [gruposMapa, setGruposMapa] = useState<Record<string, boolean>>({});
   /** Grupos de venta completos: fuente de la comisión de las jugadas entre tercios. */
   const [gruposVenta, setGruposVenta] = useState<GrupoVenta[]>([]);
+  const [crucesOverrideCarrera, setCrucesOverrideCarrera] = useState<CrucesCarreraOverride>({});
+  const [cargandoCrucesCarrera, setCargandoCrucesCarrera] = useState(false);
+  const [jugadorCruce, setJugadorCruce] = useState("");
+  const [alcanceCruce, setAlcanceCruce] = useState<"carrera" | "permanente">("carrera");
+  const [borradorCruceJugador, setBorradorCruceJugador] = useState<ModalidadesCruce>({
+    mismoEjemplar: false,
+    diferenteEjemplar: false,
+  });
   const grupoActivo = useAuthStore((s) => s.grupoActivo);
 
   /**
@@ -300,21 +304,14 @@ export function GestionJugadasModule() {
   /**
    * Semáforo: los números de carrera del día.
    *
-   * La fuente es la MISMA que alimenta el padrón de ejemplares (el registro
-   * central). Antes este efecto iba a `listarCarrerasPorDia` —una consulta
-   * distinta— y solo usaba su respuesta cuando el registro central venía
-   * vacío, así que el semáforo y los ejemplares podían señalar carreras
-   * diferentes. Ahora la lista sale de `carrerasDelDia`, ya deduplicada por
-   * clave canónica; `listarCarrerasPorDia` queda como respaldo para el caso en
-   * que la matriz aún no responde (carreras con resultados pero sin catálogo).
+   * El semáforo usa exclusivamente el catálogo central `carreras`. Que una
+   * carrera no tenga ejemplares todavía no significa que no esté registrada.
    */
   useEffect(() => {
     let vivo = true;
     setCarrerasPorDia([]);
-    if (carrerasDelDia.length > 0) {
-      const base = [...new Set(carrerasDelDia.map((c) => Number(c.carrera)).filter((n) => n > 0))].sort(
-        (a, b) => a - b
-      );
+    const base = numerosDeCarrera(carrerasDelDia, hipodromo);
+    if (base.length > 0) {
       setCarrerasPorDia(base);
       return () => {
         vivo = false;
@@ -337,13 +334,6 @@ export function GestionJugadasModule() {
   // El catálogo y sus ejemplares los aporta el REGISTRO CENTRAL (arriba). Este
   // módulo ya no mantiene una segunda consulta: dos copias del mismo catálogo
   // divergen y producían padrones distintos entre módulos.
-
-  useEffect(() => {
-    const conEj = carrerasConEjemplares;
-    if (conEj.length !== carrerasPorDia.length || conEj.some((n: number, i: number) => n !== carrerasPorDia[i])) {
-      setCarrerasPorDia(conEj);
-    }
-  }, [carrerasConEjemplares, carrerasPorDia]);
 
   const [modalPreliminar, setModalPreliminar] = useState(false);
   const [mostrarPlanoPreliminar, setMostrarPlanoPreliminar] = useState(false);
@@ -397,7 +387,6 @@ export function GestionJugadasModule() {
   const tickets = useTaquillaStore((s) => s.tickets);
   const eliminarTicket = useTaquillaStore((s) => s.eliminarTicket);
   const agregarTicket = useTaquillaStore((s) => s.agregarTicket);
-  const tablas = useTablasFijasStore((s) => s.tablas);
 
   /**
    * Hipódromos con carreras CARGADAS en el día elegido (se elige el día
@@ -564,6 +553,122 @@ const hipodromosDelDia = useMemo(() => {
   }, [grupoActivo, clientes]);
 
   const comisionGrupoSesion = comisionJugadasDeGrupo(gruposVenta, grupoSesion);
+  const grupoReglasCruce = useMemo(() => {
+    const grupo = gruposVenta.find((g) => String(g.id) === String(grupoSesion));
+    return {
+      mismoEjemplar: grupo?.cruce_mismo_ejemplar ?? grupo?.permite_cruces ?? false,
+      diferenteEjemplar: grupo?.cruce_diferente_ejemplar ?? grupo?.permite_cruces ?? false,
+    };
+  }, [grupoSesion, gruposVenta]);
+  const opcionesCrucesPuestos = useMemo<OpcionesCrucesPuestos>(() => {
+    const porJugadorPermanente: NonNullable<OpcionesCrucesPuestos["porJugadorPermanente"]> = {};
+    for (const cliente of clientes) {
+      const reglas: Partial<ModalidadesCruce> = {};
+      if (typeof cliente.cruce_mismo_ejemplar === "boolean") reglas.mismoEjemplar = cliente.cruce_mismo_ejemplar;
+      if (typeof cliente.cruce_diferente_ejemplar === "boolean") reglas.diferenteEjemplar = cliente.cruce_diferente_ejemplar;
+      if (Object.keys(reglas).length > 0) porJugadorPermanente[cliente.nombre.trim().toUpperCase()] = reglas;
+    }
+    return {
+      grupo: grupoReglasCruce,
+      porJugadorPermanente,
+      carreraTodosOverride: crucesOverrideCarrera.todos,
+      carreraPorJugadorOverride: crucesOverrideCarrera.porJugador,
+    };
+  }, [clientes, crucesOverrideCarrera, grupoReglasCruce]);
+
+  useEffect(() => {
+    let vivo = true;
+    if (!grupoSesion || !hipodromo || !carrera || !fecha) {
+      setCrucesOverrideCarrera({});
+      setCargandoCrucesCarrera(false);
+      return () => { vivo = false; };
+    }
+    setCargandoCrucesCarrera(true);
+    void leerCrucesCarrera({ grupoId: grupoSesion, fecha, hipodromo, carrera }).then((r) => {
+      if (!vivo) return;
+      setCargandoCrucesCarrera(false);
+      if (!r.ok) {
+        setCrucesOverrideCarrera({});
+        emitirToast(`No se pudieron cargar las excepciones de cruces: ${r.error ?? "error desconocido"}`, "error");
+        return;
+      }
+      setCrucesOverrideCarrera(r.override);
+    });
+    return () => { vivo = false; };
+  }, [carrera, fecha, grupoSesion, hipodromo]);
+
+  useEffect(() => {
+    if (!jugadorCruce) return;
+    const clave = jugadorCruce.trim().toUpperCase();
+    const cliente = clientes.find((c) => c.nombre.trim().toUpperCase() === clave);
+    const porJugador = crucesOverrideCarrera.porJugador?.[clave];
+    const todos = crucesOverrideCarrera.todos;
+    const permanenteMismo = cliente
+      ? cliente.cruce_mismo_ejemplar !== undefined ? cliente.cruce_mismo_ejemplar : cliente.permite_cruces
+      : undefined;
+    const permanenteDiferente = cliente
+      ? cliente.cruce_diferente_ejemplar !== undefined ? cliente.cruce_diferente_ejemplar : cliente.permite_cruces
+      : undefined;
+    setBorradorCruceJugador({
+      mismoEjemplar: alcanceCruce === "permanente"
+        ? permanenteMismo ?? grupoReglasCruce.mismoEjemplar
+        : porJugador?.mismoEjemplar ?? todos?.mismoEjemplar ?? permanenteMismo ?? grupoReglasCruce.mismoEjemplar,
+      diferenteEjemplar: alcanceCruce === "permanente"
+        ? permanenteDiferente ?? grupoReglasCruce.diferenteEjemplar
+        : porJugador?.diferenteEjemplar ?? todos?.diferenteEjemplar ?? permanenteDiferente ?? grupoReglasCruce.diferenteEjemplar,
+    });
+  }, [alcanceCruce, crucesOverrideCarrera, grupoReglasCruce, jugadorCruce, clientes]);
+
+  const guardarOverrideActual = useCallback(async (override: CrucesCarreraOverride) => {
+    if (!grupoSesion) {
+      emitirToast("No se puede guardar la excepción: falta el grupo activo.", "error");
+      return false;
+    }
+    const r = await guardarCrucesCarrera({ grupoId: grupoSesion, fecha, hipodromo, carrera, override });
+    if (!r.ok) {
+      emitirToast(`No se pudo guardar la excepción de esta carrera: ${r.error ?? "error desconocido"}`, "error");
+      return false;
+    }
+    setCrucesOverrideCarrera(override);
+    return true;
+  }, [carrera, fecha, grupoSesion, hipodromo]);
+
+  const guardarReglasJugador = useCallback(async () => {
+    const clave = jugadorCruce.trim().toUpperCase();
+    if (!clave) return;
+    if (alcanceCruce === "carrera") {
+      await guardarOverrideActual({
+        ...crucesOverrideCarrera,
+        porJugador: {
+          ...crucesOverrideCarrera.porJugador,
+          [clave]: { ...borradorCruceJugador },
+        },
+      });
+      return;
+    }
+    const cliente = clientes.find((c) => c.nombre.trim().toUpperCase() === clave);
+    if (!cliente) {
+      emitirToast("No se encontró el jugador para actualizar su ficha permanente.", "error");
+      return;
+    }
+    const r = await actualizarCliente(cliente.id, {
+      cruce_mismo_ejemplar: borradorCruceJugador.mismoEjemplar,
+      cruce_diferente_ejemplar: borradorCruceJugador.diferenteEjemplar,
+    }, cliente);
+    if (!r.ok) {
+      emitirToast(`No se pudo guardar la ficha del jugador: ${r.error ?? "error desconocido"}`, "error");
+      return;
+    }
+    limpiarCacheClientesVenta();
+    setClientes((prev) => prev.map((c) => String(c.id) === String(cliente.id)
+      ? {
+          ...c,
+          cruce_mismo_ejemplar: borradorCruceJugador.mismoEjemplar,
+          cruce_diferente_ejemplar: borradorCruceJugador.diferenteEjemplar,
+        }
+      : c));
+    emitirToast(`Reglas permanentes actualizadas para ${clave}.`, "success");
+  }, [alcanceCruce, borradorCruceJugador, clientes, crucesOverrideCarrera, guardarOverrideActual, jugadorCruce]);
 
   /**
    * Prellena COM % con la comisión GENERAL del grupo (comision_default): es la
@@ -1620,6 +1725,7 @@ const hipodromosDelDia = useMemo(() => {
         cliente2: t.cliente2,
         permiteCruces: conCruces ? permiteCrucesDe(t.cliente1 ?? "") : false,
       })),
+      crucesPuestos: opcionesCrucesPuestos,
       tasaComision: comisionNum,
     });
     setResumen(r);
@@ -1780,14 +1886,14 @@ const hipodromosDelDia = useMemo(() => {
           />
         </div>
         <div className="flex items-end gap-2 pb-1">
-          <label className="flex cursor-pointer items-center gap-2 text-xs font-bold uppercase text-slate-600">
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-bold uppercase text-slate-600" title="Compatibilidad para neteos de productos distintos a Jugadas entre Tercios; los cruces de Puestos se configuran en el panel de esta carrera.">
             <input
               type="checkbox"
               checked={conCruces}
               onChange={(e) => setConCruces(e.target.checked)}
               className="h-4 w-4 accent-primary-500"
             />
-            Con Cruces
+            Con Cruces (otros productos)
           </label>
           <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50/60 px-2 py-1 text-[10px] font-black uppercase text-cyan-700" title="Permite cargar jugadas y registrar carreras aunque la Gaceta IA no haya extraído nada (sin bloquear).">
             <input
@@ -1854,6 +1960,102 @@ const hipodromosDelDia = useMemo(() => {
             </span>
           </span>
         </div>
+
+        <section className="mb-2 rounded-xl border border-amber-300/40 bg-slate-900 p-3 text-slate-100">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-amber-300">⚡ Control de Cruces de esta Carrera</h4>
+              <p className="mt-0.5 text-[9px] text-slate-400">Las excepciones quedan aisladas a {nombreHipodromo} · Carrera {carrera}.</p>
+            </div>
+            {Object.values(crucesOverrideCarrera.todos ?? {}).some((value) => typeof value === "boolean") && (
+              <span className="rounded-full bg-amber-400/15 px-2 py-1 text-[9px] font-black text-amber-300">
+                Excepción activa solo en Carrera {carrera} para todos
+              </span>
+            )}
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="rounded-lg border border-slate-700 bg-slate-800/70 p-2">
+              <p className="mb-1.5 text-[9px] font-bold uppercase text-slate-400">
+                Cruces en esta carrera (todos) · Grupo: {grupoReglasCruce.mismoEjemplar ? "Mismo sí" : "Mismo no"} / {grupoReglasCruce.diferenteEjemplar ? "Diferente sí" : "Diferente no"}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  ["mismoEjemplar", "⚡ Mismo Ejemplar"],
+                  ["diferenteEjemplar", "⚡ Dif. Ejemplar"],
+                ] as const).map(([modalidad, texto]) => {
+                  const activo = crucesOverrideCarrera.todos?.[modalidad] ?? grupoReglasCruce[modalidad];
+                  return (
+                    <button
+                      key={modalidad}
+                      type="button"
+                      disabled={!grupoSesion || cargandoCrucesCarrera}
+                      aria-pressed={activo}
+                      onClick={() => void guardarOverrideActual({
+                        ...crucesOverrideCarrera,
+                        todos: { ...crucesOverrideCarrera.todos, [modalidad]: !activo },
+                      })}
+                      className={`rounded-full border px-2.5 py-1.5 text-[9px] font-black transition disabled:opacity-50 ${
+                        activo ? "border-amber-300 bg-amber-400 text-slate-950" : "border-slate-600 bg-slate-800 text-slate-300 hover:border-amber-300"
+                      }`}
+                    >
+                      {texto} (Solo esta carrera)
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-700 bg-slate-800/70 p-2">
+              <p className="mb-1.5 text-[9px] font-bold uppercase text-slate-400">Cruzar a un jugador en esta carrera o guardar permanente</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={jugadorCruce}
+                  onChange={(e) => setJugadorCruce(e.target.value)}
+                  className="min-w-40 flex-1 rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[10px] text-white"
+                  aria-label="Jugador para configurar cruces"
+                >
+                  <option value="">Buscar jugador…</option>
+                  {clientes.map((cliente) => (
+                    <option key={cliente.id} value={cliente.nombre}>{cliente.nombre}</option>
+                  ))}
+                </select>
+                <label className="flex items-center gap-1 text-[9px] text-slate-300">
+                  <input type="radio" name="alcance-cruce" checked={alcanceCruce === "carrera"} onChange={() => setAlcanceCruce("carrera")} />
+                  Solo Carrera {carrera}
+                </label>
+                <label className="flex items-center gap-1 text-[9px] text-slate-300">
+                  <input type="radio" name="alcance-cruce" checked={alcanceCruce === "permanente"} onChange={() => setAlcanceCruce("permanente")} />
+                  Ficha permanente
+                </label>
+              </div>
+              {jugadorCruce && (
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+                  {([
+                    ["mismoEjemplar", "Cruzar Mismo Ejemplar"],
+                    ["diferenteEjemplar", "Cruzar Diferentes Ejemplares"],
+                  ] as const).map(([modalidad, texto]) => (
+                    <label key={modalidad} className="flex items-center gap-1.5 text-[9px] font-bold text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={borradorCruceJugador[modalidad]}
+                        onChange={(e) => setBorradorCruceJugador((v) => ({ ...v, [modalidad]: e.target.checked }))}
+                        className="accent-amber-400"
+                      />
+                      {texto}
+                    </label>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => void guardarReglasJugador()}
+                    disabled={!grupoSesion && alcanceCruce === "carrera"}
+                    className="ml-auto rounded bg-amber-400 px-2.5 py-1 text-[9px] font-black text-slate-950 hover:bg-amber-300"
+                  >
+                    Guardar {alcanceCruce === "carrera" ? `solo Carrera ${carrera}` : "en ficha"}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
 
         {/* Panel lateral de ejemplares (tabla fija publicada o Carreras del Día) */}
         <div className={caballosDeCarrera.length ? "flex flex-col gap-2 lg:flex-row" : ""}>
@@ -2663,6 +2865,16 @@ const hipodromosDelDia = useMemo(() => {
                       <p className="font-black text-primary-700">{monedaFmt(resumen.gananciaCasa)}</p>
                     </div>
                   </div>
+                  {resumen.procesados.filter((p) => p.resultado.motivo?.includes("⚡ Cruce")).map((p, i) => (
+                    <div key={`${p.comando}-${i}`} className="mt-2 rounded-lg border border-amber-300/50 bg-slate-900 px-3 py-2 text-[10px] text-slate-200">
+                      <span className="mr-2 inline-flex rounded-full bg-amber-400 px-2 py-0.5 font-black text-slate-950">
+                        {p.resultado.motivo?.match(/⚡ Cruce (Mismo Ej\.|Dif\. Ej\.)/)?.[0] ?? "⚡ Cruce"}
+                      </span>
+                      <span className="font-mono text-slate-300">{p.comando}</span>
+                      <p className="mt-1 text-amber-200">{p.resultado.motivo?.split("·").slice(-1)[0]?.trim()}</p>
+                      <p className="mt-0.5 text-[9px] text-slate-400">{p.resultado.motivo?.match(/\((Grupo|Ficha Usuario|Solo Carrera #[^)]+)\)/)?.[1] ?? "Regla aplicada"}</p>
+                    </div>
+                  ))}
                   {resumen.tablasFijas && (resumen.tablasFijas.tablas > 0 || resumen.tablasFijas.error) ? (
                     <p className="mt-2 rounded-lg border border-line bg-gray-50 px-3 py-2 text-[11px] font-semibold text-slate-600">
                       {resumen.tablasFijas.tablas > 0 ? (

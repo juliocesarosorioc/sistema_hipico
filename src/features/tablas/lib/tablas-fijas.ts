@@ -35,6 +35,84 @@ export type ResultadoCerrar = {
   conteo?: number;
 };
 
+/* ============================================================================
+   MOTOR DEL EJEMPLAR DE LA TABLA FIJA — válido / retirado / INVALIDADO
+   ============================================================================
+   Estas reglas son la fuente de verdad del módulo y viven acá (puras, sin
+   Supabase) para que el Monitor, el reporte y la liquidación no puedan
+   discrepar: si un ejemplar está invalidado, NINGÚN camino lo paga como
+   ganador.
+
+   "INVALIDADO" NO es "RETIRADO":
+     · RETIRADO   → sale de la oferta, se reembolsa lo jugado y su valor no
+                    reparte (además el premio se recalcula a la baja).
+     · INVALIDADO → sigue en la oferta (la apuesta se PIERDE, no se devuelve)
+                    pero tampoco reparte y no puede ganar.
+   ============================================================================ */
+
+/** Un ejemplar INVALIDADO no puede ganar ni ser pagado como ganador. */
+export function esInvalidado(c: EjemplarTabla | null | undefined): boolean {
+  return Boolean(c?.invalidado);
+}
+
+/**
+ * Números (texto) de los ejemplares INVALIDADOS de una tabla.
+ *
+ * Es la lista que la liquidación usa para sacarlos de los ganadores y la que
+ * el reporte usa para contarlos aparte.
+ */
+export function numerosInvalidados(caballos: EjemplarTabla[] | null | undefined): string[] {
+  return (caballos ?? [])
+    .filter((c) => esInvalidado(c))
+    .map((c) => String(c.numero ?? "").trim())
+    .filter((n) => n !== "");
+}
+
+/**
+ * GANADORES QUE SÍ PUEDEN COBRAR.
+ *
+ * De la lista declarada por el operador (pizarra) se descartan los ejemplares
+ * invalidados: un descalificado no puede ganar, así que su ticket no puede
+ * quedar como 'Ganador' ni generar un pago.
+ *
+ * Si la lista de ejemplares de la tabla no se pudo leer (vacía), se devuelven
+ * los ganadores tal como vinieron: no se puede decidir con información que no
+ * hay, y bloquear la liquidación por una lectura fallida dejaría la tabla sin
+ * pagar.
+ */
+export function ganadoresEfectivos(
+  caballos: EjemplarTabla[] | null | undefined,
+  ganadores: string | string[] | null | undefined
+): string[] {
+  const declarados = (Array.isArray(ganadores) ? ganadores : String(ganadores ?? "").split(","))
+    .map((g) => String(g ?? "").trim())
+    .filter((g) => g !== "");
+  if (!declarados.length) return [];
+  const lista = caballos ?? [];
+  if (!lista.length) return declarados;
+  const invalidados = new Set(numerosInvalidados(lista));
+  return declarados.filter((g) => !invalidados.has(g));
+}
+
+/**
+ * PAGO POTENCIAL de una apuesta sobre un ejemplar: la parte del premio de la
+ * tabla que le toca según su peso en la base (`premio × valor / base`).
+ *
+ * Un ejemplar INVALIDADO vale CERO: no puede ganar, así que no puede tener
+ * premio potencial (no se le ofrece al jugador una apuesta que la casa no
+ * podría cobrar).
+ */
+export function pagoPotencialEjemplar(opts: {
+  premio: number;
+  base: number;
+  monto: number;
+  invalidado?: boolean;
+}): number {
+  if (opts.invalidado) return 0;
+  if (!opts.monto) return 0;
+  return (opts.premio / (opts.base || 1)) * opts.monto;
+}
+
 /**
  * Auto-cierre de la Tabla Fija publicada de una carrera.
  * Cambia estado → 'Cerrada' para que deje de aparecer como Abierta en el

@@ -72,14 +72,18 @@ export function RutaProtegida({ permiso, algunaDe, children }: Props) {
   useEffect(() => {
     if (pendientes || permitido) return;
     // Fallback: el destino tiene que ser una ruta a la que el usuario sí pueda
-    // llegar. `/dashboard` exige `general:ruta_dashboard`, que no todos los
-    // tipos tienen; mandar ahí a ciegas podía dejar al usuario en un ciclo de
+    // llegar. `/inicio` exige `general:ruta_inicio`, que no todos los tipos
+    // tienen; mandar ahí a ciegas podía dejar al usuario en un ciclo de
     // redirecciones. Se busca la primera ruta registrada que sí posea.
-    const candidatas = ["/dashboard", ...RUTAS_PROTEGIDAS];
-    const destino = candidatas.find((r) => {
-      const caps = capacidadesDeRuta(r);
-      return caps.length > 0 && caps.every((c) => set.has(c));
-    });
+    //
+    // La decisión la toma `rutaPermitida` —la MISMA función que corre el
+    // middleware— en vez de comparar capacidades a mano: así el destino
+    // respeta también las puertas declaradas con `algunas` (basta con una).
+    //
+    // `/dashboard` NO va primero: es un alias que redirige a `/inicio`, así que
+    // usarlo de destino solo agrega un salto intermedio sin sentido.
+    const candidatas = ["/inicio", ...RUTAS_PROTEGIDAS];
+    const destino = candidatas.find((r) => rutaPermitida(r, set));
     router.replace(destino ?? "/login");
   }, [pendientes, permitido, router, permisos]);
 

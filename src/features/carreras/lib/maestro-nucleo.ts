@@ -54,6 +54,11 @@ export type EjemplarMatriz = {
   nombre?: string | null;
   nacionalidad?: string | null;
   retirado?: boolean;
+  jockey?: string | null;
+  entrenador?: string | null;
+  peso?: number | string | null;
+  medicamento?: string | null;
+  implementos?: string | null;
 };
 
 export type EjemplarCarreraCentral = {
@@ -62,6 +67,11 @@ export type EjemplarCarreraCentral = {
   nacionalidad?: string | null;
   /** Retirado según la lista CENTRAL de la carrera. */
   retirado?: boolean;
+  jockey?: string | null;
+  entrenador?: string | null;
+  peso?: number | string | null;
+  medicamento?: string | null;
+  implementos?: string | null;
 };
 
 /** Resultado embebido de la fila maestra (0 o 1 mientras la carrera no corrió). */
@@ -117,7 +127,122 @@ distancia?: string | null;
   premio?: number | null;
   hora?: string | null;
   origen?: string;
+  /**
+   * FUSIONAR los ejemplares con los que ya están guardados, en vez de
+   * reemplazarlos.
+   *
+   * Se usa en las cargas PARCIALES de gaceta: cuando se sube un lote que solo
+   * trae algunas carreras (o una carrera leída a medias), la lista de
+   * ejemplares de esa carrera tiene que QUEDAR ACUMULATIVA. Reemplazarla
+   * borraba los ejemplares que el lote anterior sí había leído, y la carrera
+   * se quedaba con la mitad del padrón.
+   *
+   * La fusión es por NÚMERO DE GUALDRAPA: el número identifica al ejemplar
+   * dentro de la carrera, así que un ejemplar que cambia de nombre conserva
+   * su número y se actualiza en vez de duplicarse.
+   */
+  fusionar_ejemplares?: boolean;
 };
+
+export type ResultadoMergeCarrera = {
+  carrera: EntradaCarrera;
+  cambio: boolean;
+  ejemplaresCompletados: number;
+  camposCompletados: string[];
+};
+
+const tieneDato = (valor: unknown): boolean =>
+  valor !== null && valor !== undefined && String(valor).trim() !== "";
+
+const nombreGenerico = (valor: unknown): boolean =>
+  !tieneDato(valor) || /^(?:EJEMPLAR|CABALLO)\s*\d*$/i.test(String(valor).trim());
+
+/** Enriquece una fila cargada sin reemplazar datos operativos ya existentes. */
+export function fusionarCargaGaceta(
+  existente: FilaCarreraMaestro,
+  nueva: EntradaCarrera
+): ResultadoMergeCarrera {
+  const camposCompletados: string[] = [];
+  const completarCampo = <T>(campo: string, anterior: T | null | undefined, propuesto: T | null | undefined): T | null | undefined => {
+    if (!tieneDato(anterior) && tieneDato(propuesto)) {
+      camposCompletados.push(campo);
+      return propuesto;
+    }
+    return anterior;
+  };
+
+  const existentesPorNumero = new Map<string, EjemplarMatriz>();
+  for (const raw of Array.isArray(existente.caballos) ? existente.caballos : []) {
+    if (!raw || typeof raw !== "object") continue;
+    const ejemplar = raw as EjemplarMatriz;
+    const numero = String(ejemplar.numero ?? "").trim();
+    if (numero && !existentesPorNumero.has(numero)) existentesPorNumero.set(numero, ejemplar);
+  }
+  let ejemplaresCompletados = 0;
+  const nuevosPorNumero = new Map<string, EjemplarMatriz>();
+  for (const raw of Array.isArray(nueva.caballos) ? nueva.caballos : []) {
+    const numero = String(raw.numero ?? "").trim();
+    if (!numero) continue;
+    const previo = existentesPorNumero.get(numero);
+    if (!previo) {
+      nuevosPorNumero.set(numero, raw);
+      ejemplaresCompletados++;
+      camposCompletados.push(`Ejemplar #${numero}`);
+      continue;
+    }
+    const caballo: EjemplarMatriz = { ...previo, numero };
+    let cambio = false;
+    const completar = <T>(campo: keyof EjemplarMatriz, valor: T | null | undefined, reemplazarGenerico = false) => {
+      const anterior = caballo[campo];
+      const falta = !tieneDato(anterior) || (reemplazarGenerico && nombreGenerico(anterior));
+      if (falta && tieneDato(valor)) {
+        (caballo as Record<string, unknown>)[campo] = valor;
+        cambio = true;
+        camposCompletados.push(`#${numero} ${String(campo)}`);
+      }
+    };
+    completar("nombre", raw.nombre, true);
+    completar("nacionalidad", raw.nacionalidad);
+    completar("jockey", raw.jockey);
+    completar("entrenador", raw.entrenador);
+    completar("peso", raw.peso);
+    completar("medicamento", raw.medicamento);
+    completar("implementos", raw.implementos);
+    caballo.retirado = previo.retirado === true || raw.retirado === true;
+    if (cambio) ejemplaresCompletados++;
+    nuevosPorNumero.set(numero, caballo);
+  }
+  for (const [numero, caballo] of existentesPorNumero) {
+    if (!nuevosPorNumero.has(numero)) nuevosPorNumero.set(numero, caballo);
+  }
+
+  const caballoLista = [...nuevosPorNumero.values()];
+  const distancia = completarCampo("distancia", existente.distancia, nueva.distancia);
+  const hora = completarCampo("hora", existente.hora, nueva.hora);
+  const superficie = completarCampo("superficie", existente.superficie, nueva.superficie);
+  const premio = completarCampo("premio", existente.premio, nueva.premio);
+  return {
+    carrera: {
+      ...nueva,
+      fecha: existente.fecha,
+      hipodromo: existente.hipodromo,
+      carrera: existente.carrera,
+      estado: existente.estado ?? nueva.estado,
+      caballos: caballoLista,
+      distancia: distancia ?? null,
+      hora: hora ?? null,
+      superficie: superficie ?? null,
+      premio: premio ?? null,
+      retirados: existente.retirados,
+      invalidado_remate: existente.invalidado_remate,
+      invalidado_polla: existente.invalidado_polla,
+      origen: existente.origen ?? nueva.origen,
+    },
+    cambio: camposCompletados.length > 0,
+    ejemplaresCompletados,
+    camposCompletados,
+  };
+}
 
 /** Carrera ya normalizada: lo que consume toda la plataforma. */
 export type CarreraCatalogo = {
@@ -171,6 +296,11 @@ export function normalizarCaballos(raw: unknown, retirados: Set<string>): Ejempl
           numero,
           nombre: x.nombre != null ? String(x.nombre) : null,
           nacionalidad: x.nacionalidad != null ? String(x.nacionalidad) : null,
+          ...(x.jockey != null ? { jockey: String(x.jockey) } : {}),
+          ...(x.entrenador != null ? { entrenador: String(x.entrenador) } : {}),
+          ...(x.peso != null ? { peso: x.peso as number | string } : {}),
+          ...(x.medicamento != null ? { medicamento: String(x.medicamento) } : {}),
+          ...(x.implementos != null ? { implementos: String(x.implementos) } : {}),
           retirado: x.retirado === true || retirados.has(numero),
         };
       })
@@ -283,8 +413,69 @@ function masReciente(a: string | null | undefined, b: string | null | undefined)
   return a >= b ? a : b;
 }
 
+/**
+ * FUSIÓN ACUMULATIVA de la lista de ejemplares de una carrera.
+ *
+ * La identidad del ejemplar dentro de la carrera es su NÚMERO DE GUALDRAPA.
+ * Cuando llega un lote nuevo:
+ *   - si el número ya existe, se ACTUALIZA (el dato nuevo pisa al viejo si
+ *     viene informado; los campos que el lote no trae se conservan);
+ *   - si el número es nuevo, se agrega;
+ *   - los números que el lote NO trae se CONSERVAN.
+ *
+ * Esto último es lo que arregla la carga parcial: un lote que solo leyó 6 de
+ * los 10 ejemplares no puede borrar los otros 4.
+ *
+ * Es GENÉRICA a propósito: la misma fusión sirve para los ejemplares de la
+ * matriz (`{numero, nombre, nacionalidad, retirado}`) y para los del programa
+ * (`{numero, nombre, nacionalidad, valor, ejemplar_id}`), y no puede perder
+ * los campos extra (el valor y el id del padrón).
+ */
+export function fusionarEjemplaresAcumulativo<T extends Record<string, unknown>>(
+  guardados: unknown,
+  nuevos: unknown
+): T[] {
+  const salida: T[] = [];
+  const porNumero = new Map<string, T>();
+
+  const absorber = (crudo: unknown, esNuevo: boolean) => {
+    if (!Array.isArray(crudo)) return;
+    for (const item of crudo) {
+      if (!item || typeof item !== "object") continue;
+      const x = { ...(item as Record<string, unknown>) };
+      const numero = String(x.numero ?? "").trim();
+      if (!numero) continue;
+      x.numero = numero;
+      const previo = porNumero.get(numero);
+      if (!previo) {
+        const creado = x as T;
+        porNumero.set(numero, creado);
+        salida.push(creado);
+        continue;
+      }
+      // Ya existe: el dato nuevo pisa al viejo SOLO si trae contenido; los
+      // campos que el lote no menciona se conservan del guardado.
+      for (const [k, v] of Object.entries(x)) {
+        if (k === "numero") continue;
+        const vacio = v === null || v === undefined || String(v).trim() === "";
+        if (esNuevo) {
+          if (!vacio) (previo as Record<string, unknown>)[k] = v;
+        } else if (vacio && (previo as Record<string, unknown>)[k] === undefined) {
+          (previo as Record<string, unknown>)[k] = v;
+        }
+      }
+      // El retiro es acumulativo: si alguno de los dos lo tiene marcado, queda.
+      if (x.retirado === true) (previo as Record<string, unknown>).retirado = true;
+    }
+  };
+
+  absorber(guardados, false);
+  absorber(nuevos, true);
+  return ordenarPorNumero(salida as Array<{ numero?: string | number | null }>) as T[];
+}
+
 /** Une dos listas de ejemplares por número, sin perder ni duplicar. */
-function unirEjemplares(a: unknown, b: unknown): EjemplarMatriz[] {
+export function unirEjemplares(a: unknown, b: unknown): EjemplarMatriz[] {
   const salida: EjemplarMatriz[] = [];
   const vistos = new Set<string>();
   for (const crudo of [a, b]) {

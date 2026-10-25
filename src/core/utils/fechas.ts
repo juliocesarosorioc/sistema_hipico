@@ -228,6 +228,7 @@ export function isoAFechaLocal(iso: string): string {
   return `${mm[3]}/${mm[2]}/${mm[1]}`;
 }
 
+<<<<<<< HEAD
 /**
  * Devuelve siempre YYYY-MM-DD en hora oficial de Venezuela/EDT (America/Caracas),
  * evitando que las carreras nocturnas (después de las 8:00 PM) salten al día siguiente por UTC.
@@ -244,3 +245,86 @@ export function obtenerFechaJornadaVzla(fechaInput?: Date | string): string {
     day: "2-digit",
   }).format(d);
 }
+=======
+// ============================================================================
+// ZONA HORARIA DE LA JORNADA — Caracas (UTC-4)
+// ============================================================================
+//
+// POR QUÉ EXISTE ESTE MÓDULO
+//
+// La jornada de carreras no tiene fecha UTC: tiene fecha VENEZOLANA. Una
+// carrera que empieza a las 20:30 en Caracas es del 22 de octubre para el
+// operador, pero `toISOString()` la devuelve como 23 de octubre, porque UTC va
+// cuatro horas ADELANTE. Con ese salto, las carreras nocturnas se guardaban
+// en el día siguiente y desaparecían del filtro del día en que se jugaron:
+// el operador veía "12 de 13" y las premières no aparecían en Taquilla.
+//
+// El error clásico: `new Date().toISOString().slice(0, 10)` a las 21:00 de
+// Caracas devuelve MAÑANA. Y `getFullYear()/getMonth()/getDate()` (que ya
+// usa el reloj local del navegador) devuelve el día correcto SOLO si el
+// navegador del operador está en Venezuela: un celular en Miami o un servidor
+// en UTC partiría el día al revés otra vez.
+//
+// La regla es UNA: la fecha de la jornada SIEMPRE se lee bajo
+// `America/Caracas`, sin importar dónde esté el navegador ni el servidor.
+//
+// NOTA SOBRE EL ESTÁNDAR: Venezuela tiene hora oficial UTC-4 todo el año
+// (desde 2016 no aplica el cambio de horario). Aun así se usa el nombre IANA
+// `America/Caracas` y no un offset fijo, porque si algún día el país vuelve a
+// cambiar la hora, la zona IANA se entera sola y el offset fijo mentiría.
+
+/** Zona horaria de la jornada hípica. */
+export const ZONA_JORNADA = "America/Caracas";
+
+/**
+ * Fecha de la jornada en ISO `YYYY-MM-DD`, calculada bajo `America/Caracas`.
+ *
+ * Acepta un `Date` (por defecto, el ahora) y devuelve SIEMPRE un string
+ * válido de calendario: si el reloj del sistema está en una fecha imposible,
+ * se recurre al día UTC en vez de devolver `NaN-NaN-NaN`.
+ */
+export function fechaJornadaCaracas(fecha: Date = new Date()): string {
+  const d = fecha instanceof Date && !Number.isNaN(fecha.getTime()) ? fecha : new Date();
+  try {
+    // `en-CA` formatea como AAAA-MM-DD, que es justo el ISO que se guarda.
+    const fmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: ZONA_JORNADA,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const out = fmt.format(d);
+    if (esFechaIso(out)) return out;
+  } catch {
+    /* El runtime no conoce la zona: se cae al desfase de Venezuela. */
+  }
+  // Respaldo: Venezuela es UTC-4 fijo. Se resta el desfase en vez de sumar:
+  // la jornada empieza a las 00:00 de Caracas, que son las 04:00 UTC.
+  const desplazado = new Date(d.getTime() - 4 * 60 * 60 * 1000);
+  const iso = `${desplazado.getUTCFullYear()}-${String(desplazado.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    desplazado.getUTCDate()
+  ).padStart(2, "0")}`;
+  return esFechaIso(iso) ? iso : d.toISOString().slice(0, 10);
+}
+
+/**
+ * Hora local de la jornada (HH:MM) bajo `America/Caracas`.
+ *
+ * Se usa para decidir si una carrera "es de hoy": una carrera a las 20:30
+ * sigue siendo del día de HOY aunque en UTC ya sea mañana.
+ */
+export function horaJornadaCaracas(fecha: Date = new Date()): string {
+  const d = fecha instanceof Date && !Number.isNaN(fecha.getTime()) ? fecha : new Date();
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: ZONA_JORNADA,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(d);
+  } catch {
+    const desplazado = new Date(d.getTime() - 4 * 60 * 60 * 1000);
+    return `${String(desplazado.getUTCHours()).padStart(2, "0")}:${String(desplazado.getUTCMinutes()).padStart(2, "0")}`;
+  }
+}
+>>>>>>> c0aa4bfb0e0030e9dd95ad4d639ec42acd3ebfc3

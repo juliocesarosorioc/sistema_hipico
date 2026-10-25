@@ -1,32 +1,111 @@
 # REPORTE DE CULMINACIÓN - Sistema Hípico
 
-## Tareas realizadas (última solicitud)
+## Tareas realizadas (2026-10-23)
 
-1. Sistema Universal e Idempotente de Re-liquidación Post-Carrera (recalcularCarreraCompleta)
-- Implementado en src/features/liquidacion/lib/recalcular.ts
-- Incluye revertir/aplicar con simetría TABLA FIJA%, reliquidarEspecialesDeCarrera, autoReliquidarSiLiquidada
-- Botón 🔄 Recalcular en Gestión de Jugadas
-- Suite: 2076 aserciones OK, 53 archivos, SUITE OK
+### 1. Eliminación definitiva de `legacy/` y limpieza de raíz
+- `legacy/html`, `legacy/css` y `legacy/js` eliminados por completo.
+- Scripts de parcheo de la raíz eliminados: `add_godet_button.js`,
+  `add_godet_mod.js`, `check.js`…`check6.js`, `check_imp.js`,
+  `check_pollas*.js`, `f.cjs`, `f2.cjs`, `find_det.js`, `find_tabla.js`,
+  `fix_card.js`, `fix_imp2.js`, `fix_import.js`, `fix_mod2.js`,
+  `fix_pollas4.js`…`fix_pollas14.js`, `get_pollas.js` y `tmp_patch.js`.
+- `index.html` (redirección a `legacy/html/index.html`) y el prototipo suelto
+  `modal_hipico_godet_ia-v3.html` eliminados.
+- Scripts de auditoría CSS del legacy eliminados (`scripts/audit-css*.cjs`,
+  `check-css*.cjs`, `inspect-layout.cjs`).
+- Colisión de rutas resuelta: `src/app/dashboard/` (duplicado) eliminado; la
+  única fuente es `src/app/(dashboard)/`. Se dejó un alias
+  `src/app/(dashboard)/dashboard/page.tsx` con `redirect("/inicio")` para que
+  los enlaces viejos y las pestañas guardadas no caigan en 404.
+- `tailwind.config.js` escanea solo `src/**`; `package.json` ya no tiene
+  `build:css` (escribía en `legacy/css/tailwind.css`).
 
-2. Regla de cruces (Solo Puestos) condicionada por permite_cruces del grupo
-- Función calcularLiquidacionPuestosCarrera en src/features/motores/lib/puestos.ts
-- netearComisionCruce actualizado para agruparPorCliente y permiteCruces
-- Integración en saldos.ts y pagarYCerrar.ts
-- UI de grupos actualizada
-- Test cruces-puestos.test.ts
+### 2. Blindaje de seguridad en línea
+- `.gitignore`: `.env`, `.env.*` (con `!.env.example`), `*.pem`, `*.key`,
+  `*.sql.bak`, `*.dump`, `supabase/.temp/`.
+- `next.config.mjs`: `poweredByHeader: false`, `reactStrictMode: true` y
+  cabeceras de seguridad (HSTS, `X-Frame-Options`, `nosniff`,
+  `Referrer-Policy`, `Permissions-Policy`, CSP con `*.supabase.co`,
+  `wss://*.supabase.co` y `generativelanguage.googleapis.com`). Compatibilidad
+  condicional con `GITHUB_ACTIONS === "true"`.
+- `src/middleware.ts`: **403** para `.sql`, `.mjs`, `.cjs` y para `/pruebas`
+  y `/sondas`.
 
-3. Integración de Pollas documentada como pendiente
-- Añadida entrada en docs/PLANIFICACION.md
+### 3. "Inteligencia Hípica → Proyecciones" operativa
+- Ruta `/inteligencia-hipica/proyecciones` registrada en el maestro de
+  capacidades (módulo `inteligencia_hipica`) y en `maestro_seed.sql`
+  regenerado.
+- La entrada del menú ya no se esconde en silencio (`visibleSiempre`).
+- Pantalla operativa: lee las carreras del día de la matriz `carreras`, cruza
+  los ejemplares con la memoria histórica (RPC
+  `rpc_obtener_memoria_historica_caballos`, con respaldo local al padrón) y
+  muestra el **ranking de probabilidad actuarial** (Bühlmann-Straub, Índice de
+  Consistencia Godet, riesgo de Cox).
+- Botón que abre `ModalAnalisisActuarialGodet` con los datos REALES de la
+  carrera.
+- `sql/memoria_historica.sql` (nuevo).
 
-4. Guardado de permite_cruces en grupos corregido
-- Ajustado crearGrupo/actualizar para enviar permite_cruces
+### 4. Carga de gaceta completa y acumulativa
+- Segmentación del texto por encabezados de carrera y envío de 2-3 carreras
+  por llamada (`src/features/gaceta/lib/segmentar.ts`).
+- Consolidación en `Map<number, Carrera>`: la carrera partida entre bloques se
+  une; dos carreras con el mismo número no se colapsan.
+- Upsert acumulativo por `(hipodromo_id, fecha, numero_carrera)` con fusión de
+  ejemplares por número de gualdrapa; `sql/gaceta_lote_carreras.sql` (nuevo).
+- El ledger local acumula en vez de reemplazar (`fusionarLote`).
+- Fecha de jornada normalizada bajo `America/Caracas` (UTC-4).
 
-5. Limpieza UI y guardas en Gestión
-- Eliminados botones Preresultado/Preliminar
-- Guard al Reporte Final (bloquea si no hay resultados cargados)
-- Precarga inteligente en CargaResultadosModal
+### 5. Estado "Caballo Invalidado" en Tablas Fijas
+- Tipos, RPC `rpc_toggle_caballo_invalidado_tabla_fija`, botón
+  `🚫 INVALIDADO` / `✔ VÁLIDO` en el editor, insignia en el monitor, y
+  exclusión de los invalidados de premios y liquidaciones.
+- `sql/tablas_caballo_invalidado.sql` (nuevo).
+
+### 6. Contabilidad NIIF
+- `monedaExacta()` y `calcularComisionExacta()` (centavos enteros).
+- `registrarAsientoPartidaDobleNIIF()` (partida doble, tasa histórica NIC 21,
+  `Debe = Haber` validado en cliente y servidor, reverso por contra-asiento sin
+  `DELETE`) y `obtenerBalanceComprobacionNIIF()`.
+- Pestaña **📘 Balance NIIF** con KPIs, filtros y exportación CSV.
+- `sql/contabilidad_niif.sql` (nuevo).
+
+### 7. Bugs reales corregidos de paso
+- `rutaPermitida()`: la rama `algunas` era **código muerto** (el chequeo
+  `if (!p.capacidad) return false` la cortocircuitaba). Toda puerta declarada
+  con `algunas` quedaba cerrada para todo el mundo.
+- `pruebas/reporte-carrera.test.ts`: verificaba la paleta de gualdrapas
+  anterior; la app ya usa la codificación oficial.
+- `ModalAnalisisActuarialGodet` se llamaba con props que no existían
+  (`onClose` en vez de `abierto`/`onCerrar`/`ejemplares`) y el botón que lo
+  abría nunca se conectó.
 
 ## Estado actual
-- npx tsc --noEmit: sin errores
-- node pruebas/correr.cjs: 2076 aserciones OK, 53 archivos, SUITE OK
-- Cambios aplicados y verificados
+- `npx tsc --noEmit`: **0 errores**.
+- `node pruebas/correr.cjs`: **3181 aserciones OK, 0 fallaron · 69 archivos ·
+  SUITE OK**.
+- `npm run validar:sql`: **SQL OK · 12 comprobaciones ok** (Postgres real
+  embebido).
+- `npm run build`: **exit 0**, 37 páginas generadas (incluye
+  `/inteligencia-hipica/proyecciones`).
+
+## Bugs de SQL encontrados por el validador (y corregidos)
+
+Los scripts se aplican a mano en el SQL Editor, así que un error de sintaxis se
+descubría en producción con un mensaje inútil. `pruebas/validar-sql.mjs` los
+corre contra un Postgres real:
+
+| Error | Síntoma | Corrección |
+|---|---|---|
+| `language plpgsql` ausente | `42P13: no language specified` | Añadido a las 3 funciones propias |
+| `end if;` cerrando un `begin ... exception ... end;` | `42601: syntax error at or near "if"` | 4 cierres corregidos |
+| Variable no declarada | `"v_txt_dist" is not a known variable` | Declarada en el `DECLARE` |
+| Texto en columna `integer` | `column "beyer" is of type integer but expression is of type text` | `case` con validación previa |
+| `default` antes de parámetro obligatorio | `input parameters after one with a default value must also have defaults` | Firma reordenada |
+| `"8.000"` leído como 8 | (silencioso: dato corrupto) | Normalización por FORMA del texto |
+
+## SQL pendiente de aplicar en Supabase (a mano)
+1. `sql/memoria_historica.sql` — memoria histórica + RPC de gaceta e historial.
+2. `sql/gaceta_lote_carreras.sql` — carga por lotes acumulativa.
+3. `sql/tablas_caballo_invalidado.sql` — estado INVALIDADO.
+4. `sql/contabilidad_niif.sql` — partida doble y balance de comprobación.
+5. `src/core/db/maestro_seed.sql` — capacidades de `inteligencia_hipica`.

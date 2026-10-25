@@ -2,12 +2,10 @@ const colors = require("tailwindcss/colors");
 
 /** Design System centralizado — paleta semántica (área central en tema claro). */
 module.exports = {
-  content: [
-    "./legacy/html/**/*.html",
-    "./legacy/js/**/*.js",
-    "./index.html",
-    "./src/**/*.{ts,tsx}",
-  ],
+  // Solo se escanea `src/`: el sistema legacy se eliminó y su carpeta ya no
+  // existe. Los globs apuntaban a `./legacy/html` y `./legacy/js`, así que
+  // Tailwind recorría rutas inexistentes en cada build.
+  content: ["./src/**/*.{ts,tsx,js,jsx}"],
   theme: {
     extend: {
       colors: {

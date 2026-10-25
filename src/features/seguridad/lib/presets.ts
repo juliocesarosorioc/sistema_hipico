@@ -72,6 +72,7 @@ export const PRESETS_ROL: PresetRol[] = [
       "reglas_jugadas",
       "whatsapp",
       "operadores",
+      "inteligencia_hipica",
     ],
     extras: ["portal:ruta_portal"],
     color: "border-indigo-400 bg-indigo-50",

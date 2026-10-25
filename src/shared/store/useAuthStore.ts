@@ -157,7 +157,7 @@ export type EstadoAuth = {
   /** Inicia sesión contra Supabase Auth y siembra los permisos del perfil. */
   iniciarSesion: (identificador: string, clave: string) => Promise<boolean>;
   inicializar: () => Promise<void>;
-  salir: () => Promise<void>;
+  salir: (cerrarSesionRemota?: boolean) => Promise<void>;
 };
 
 /**
@@ -573,8 +573,8 @@ export const useAuthStore = create<EstadoAuth>()(
         return carreraCarga;
       },
 
-      salir: async () => {
-        await cerrarSesionSupabase();
+      salir: async (cerrarSesionRemota = true) => {
+        if (cerrarSesionRemota) await cerrarSesionSupabase();
         borrarCookiesDeAcceso();
         limpiarAccesosVigentes();
         guardarGrupoActivo(null);

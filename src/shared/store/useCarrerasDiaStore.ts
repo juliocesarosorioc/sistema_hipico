@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { fechaJornadaCaracas } from "@/core/utils/fechas";
+import { claveHipodromo } from "@/features/carreras/lib/claves";
 
 /** Venta de tablas de una carrera (snapshot por ejemplar vendido). */
 export type VentaTablaRegistrada = {
@@ -34,6 +36,10 @@ export type CarreraDelDia = {
   premio_recalculado?: number;
   aplicado_a_tablas?: boolean;
   cargado_por?: string;
+  cruces_carrera_override?: {
+    todos?: Record<string, boolean>;
+    porJugador?: Record<string, Record<string, boolean>>;
+  };
   ventas: VentaTablaRegistrada[];
   pago?: PagoTablas | null;
   updatedAt?: string;
@@ -41,8 +47,23 @@ export type CarreraDelDia = {
 
 export type CarrerasDiaState = {
   carreras: CarreraDelDia[];
+  fechaSeleccionada: string;
+  setFecha: (fecha: string) => void;
   /** Reemplaza el ledger (al sincronizar con Supabase). */
   setCarreras: (carreras: CarreraDelDia[]) => void;
+  /**
+   * ACUMULA un lote de carreras sin borrar nada de lo que ya está cargado.
+   *
+   * Es la vía que usan las cargas parciales: cuando la Gaceta sube un lote
+   * (por ejemplo Belmont 1-3 y Charles Town 4-6 por separado), las carreras
+   * del OTRO hipódromo ya cargadas no se pueden perder. `setCarreras`
+   * REEMPLAZA el ledger entero y `upsert` pisa una fila: con cualquiera de las
+   * dos, un lote parcial borraba carreras ya registradas.
+   *
+   * Al fusionar se conservan las ventas y el pago ya registrados: son datos
+   * de negocio que la Gaceta no conoce y no puede reconstituir.
+   */
+  fusionarLote: (carreras: CarreraDelDia[]) => void;
   /** Inserta o actualiza por (fecha, hipodromo, carrera). */
   upsert: (c: CarreraDelDia) => void;
   /** Registra la venta de tablas de un ejemplar en la carrera. */
@@ -56,23 +77,61 @@ export type CarrerasDiaState = {
 };
 
 function clave(h: string, c: number | string): string {
-  return `${String(h).trim().toUpperCase()}|${c}`;
+  return `${claveHipodromo(h)}|${c}`;
 }
 
 function hoy(): string {
-  // Día LOCAL (igual que `hoyLocal()`): con `toISOString()` se usa la zona UTC,
-  // y desde las 20:00 (VET) el ledger empezaría a registrar "mañana" mientras
-  // todos los filtros de la UI muestran hoy → carreras de un día en otro.
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  // Día de la JORNADA (Caracas, UTC-4): no el día local de la máquina ni el
+  // día UTC. Con `toISOString()` se usaba la zona UTC y desde las 20:00 (VET)
+  // el ledger empezaba a registrar "mañana" mientras todos los filtros de la
+  // UI muestran hoy → carreras de un día en otro. Ahora la regla vive en
+  // `src/core/utils/fechas.ts` y aquí solo se delega.
+  return fechaJornadaCaracas();
 }
 
 export const useCarrerasDiaStore = create<CarrerasDiaState>()(
   persist(
     (set, get) => ({
       carreras: [],
+      fechaSeleccionada: hoy(),
+
+      setFecha: (fecha) => {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(fecha)) set({ fechaSeleccionada: fecha });
+      },
 
       setCarreras: (carreras) => set({ carreras }),
+
+      /**
+       * Acumula un lote SIN borrar lo que ya está cargado.
+       *
+       * La clave de identidad es (fecha, hipódromo, carrera): una carrera que
+       * ya existe se ACTUALIZA conservando `ventas` y `pago` (datos de negocio
+       * que la carga de gaceta no conoce), y las demás NO se tocan. Así un
+       * lote parcial nunca borra las carreras de otro hipódromo.
+       */
+      fusionarLote: (carreras) =>
+        set((s) => {
+          if (!carreras.length) return {};
+          const copia = [...s.carreras];
+          for (const c of carreras) {
+            const f = c.fecha || hoy();
+            const k = clave(c.hipodromo, c.carrera);
+            const i = copia.findIndex((x) => clave(x.hipodromo, x.carrera) === k && x.fecha === f);
+            const nuevo = { ...c, fecha: f, updatedAt: new Date().toISOString() };
+            if (i === -1) {
+              copia.push(nuevo);
+              continue;
+            }
+            const previa = copia[i];
+            copia[i] = {
+              ...previa,
+              ...nuevo,
+              ventas: nuevo.ventas?.length ? nuevo.ventas : previa.ventas,
+              pago: nuevo.pago ?? previa.pago,
+            };
+          }
+          return { carreras: copia };
+        }),
 
       upsert: (c) =>
         set((s) => {
@@ -157,7 +216,7 @@ export const useCarrerasDiaStore = create<CarrerasDiaState>()(
     }),
     {
       name: "sistema-hipico:carreras-dia",
-      partialize: (s) => ({ carreras: s.carreras }),
+      partialize: (s) => ({ carreras: s.carreras, fechaSeleccionada: s.fechaSeleccionada }),
     }
   )
 );

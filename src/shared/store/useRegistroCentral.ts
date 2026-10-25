@@ -63,6 +63,8 @@ type Estado = {
   versionHipodromos: number;
   /** Invalida las carreras (registro/publicación de una carrera). */
   invalidarCarreras: () => void;
+  /** Siembra el caché central con una carrera que ya se escribió en la matriz. */
+  registrarCarrera: (carrera: CarreraCentral) => void;
   /** Invalida el catálogo (alta/baja/edición de hipódromo). */
   invalidarHipodromos: () => void;
   /** Invalida todo. */
@@ -77,6 +79,29 @@ export const useRegistroCentral = create<Estado>(() => ({
   versionCarreras: 0,
   versionHipodromos: 0,
   invalidarCarreras: () => set((s) => ({ versionCarreras: s.versionCarreras + 1 })),
+  registrarCarrera: (carrera) =>
+    set((s) => {
+      const fecha = String(carrera.fecha ?? "").slice(0, 10);
+      const hipodromo = claveHipodromo(carrera.hipodromo);
+      const numero = numeroCarrera(carrera.carrera);
+      if (!fecha || !hipodromo || !numero) {
+        return { versionCarreras: s.versionCarreras + 1 };
+      }
+      const lista = s.porFecha[fecha] ?? [];
+      const indice = lista.findIndex(
+        (fila) =>
+          claveHipodromo(fila.hipodromo) === hipodromo &&
+          numeroCarrera(fila.carrera) === numero
+      );
+      const actualizada = [...lista];
+      const fila = { ...carrera, fecha, carrera: numero };
+      if (indice < 0) actualizada.push(fila);
+      else actualizada[indice] = { ...actualizada[indice], ...fila };
+      return {
+        porFecha: { ...s.porFecha, [fecha]: actualizada },
+        versionCarreras: s.versionCarreras + 1,
+      };
+    }),
   invalidarHipodromos: () => set((s) => ({ versionHipodromos: s.versionHipodromos + 1 })),
   invalidar: () =>
     set((s) => ({ versionCarreras: s.versionCarreras + 1, versionHipodromos: s.versionHipodromos + 1 })),
@@ -168,6 +193,7 @@ const versionCargadaCarreras = new Map<string, number>();
 /** Carga (o reutiliza) las carreras del día para `fecha`. */
 export async function cargarRegistroCarreras(fecha: string, version = 0): Promise<CarreraCentral[]> {
   const f = fecha || hoyLocal();
+  const claveCarga = `${f}|${version}`;
 
   // Caché RESUELTA (no solo "en vuelo"): si ya se cargó esta fecha con la
   // versión vigente del registro, se devuelve sin consultar. Antes, remontar un
@@ -176,7 +202,7 @@ export async function cargarRegistroCarreras(fecha: string, version = 0): Promis
   const enStore = useRegistroCentral.getState().porFecha[f];
   if (enStore && versionCargadaCarreras.get(f) === version) return enStore;
 
-  const previa = enVueloCarreras.get(f);
+  const previa = enVueloCarreras.get(claveCarga);
   if (previa) return previa;
 
   set((s) => ({ cargando: { ...s.cargando, [f]: true } }));
@@ -184,31 +210,42 @@ export async function cargarRegistroCarreras(fecha: string, version = 0): Promis
   const p = listarCarrerasCentrales(f, "")
     .then(async (r): Promise<CarreraCentral[]> => {
       if (!r.ok) {
-        set((s) => ({ errores: { ...s.errores, [f]: r.error ?? "No se pudieron leer las carreras del día." } }));
+        if (useRegistroCentral.getState().versionCarreras === version) {
+          set((s) => ({ errores: { ...s.errores, [f]: r.error ?? "No se pudieron leer las carreras del día." } }));
+        }
         return [];
       }
-      set((s) => ({ errores: { ...s.errores, [f]: null } }));
+      if (useRegistroCentral.getState().versionCarreras === version) {
+        set((s) => ({ errores: { ...s.errores, [f]: null } }));
+      }
       return completarResultadosDelDia(f, r.datos ?? []);
     })
     .catch((e) => {
-      set((s) => ({
-        errores: { ...s.errores, [f]: e instanceof Error ? e.message : String(e) },
-      }));
+      if (useRegistroCentral.getState().versionCarreras === version) {
+        set((s) => ({
+          errores: { ...s.errores, [f]: e instanceof Error ? e.message : String(e) },
+        }));
+      }
       return [] as CarreraCentral[];
     })
     .then((datos) => {
-      set((s) => ({
-        porFecha: { ...s.porFecha, [f]: datos },
-        cargando: { ...s.cargando, [f]: false },
-      }));
-      // Solo se marca como "cargada" la lectura exitosa: así un fallo de red
-      // se reintenta en el próximo montaje en vez de quedar cacheado vacío.
-      if (useRegistroCentral.getState().errores[f] == null) versionCargadaCarreras.set(f, version);
-      enVueloCarreras.delete(f);
+      const versionVigente = useRegistroCentral.getState().versionCarreras;
+      if (versionVigente === version) {
+        set((s) => ({
+          porFecha: { ...s.porFecha, [f]: datos },
+          cargando: { ...s.cargando, [f]: false },
+        }));
+        // Solo se marca como "cargada" la lectura exitosa: así un fallo de red
+        // se reintenta en el próximo montaje en vez de quedar cacheado vacío.
+        if (useRegistroCentral.getState().errores[f] == null) versionCargadaCarreras.set(f, version);
+      } else if (!enVueloCarreras.has(`${f}|${versionVigente}`)) {
+        set((s) => ({ cargando: { ...s.cargando, [f]: false } }));
+      }
+      enVueloCarreras.delete(claveCarga);
       return datos;
     });
 
-  enVueloCarreras.set(f, p);
+  enVueloCarreras.set(claveCarga, p);
   return p;
 }
 

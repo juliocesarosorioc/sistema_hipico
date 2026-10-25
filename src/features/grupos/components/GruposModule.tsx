@@ -286,7 +286,8 @@ export function GruposModule() {
 
   const [formPrincipal, setFormPrincipal] = useState(false);
 
-  const [formPermiteCruces, setFormPermiteCruces] = useState(true);
+  const [formCruceMismo, setFormCruceMismo] = useState(false);
+  const [formCruceDiferente, setFormCruceDiferente] = useState(false);
 
   const [formDiaInicio, setFormDiaInicio] = useState("1");
 
@@ -522,7 +523,8 @@ export function GruposModule() {
 
       es_principal: formPrincipal,
 
-      permite_cruces: formPermiteCruces,
+      cruce_mismo_ejemplar: formCruceMismo,
+      cruce_diferente_ejemplar: formCruceDiferente,
 
       dia_inicio_semana: parseInt(formDiaInicio) || 1,
 
@@ -551,7 +553,8 @@ export function GruposModule() {
 
     setFormPrincipal(false);
 
-    setFormPermiteCruces(true);
+    setFormCruceMismo(false);
+    setFormCruceDiferente(false);
 
     setFormDiaInicio("1");
 
@@ -669,7 +672,8 @@ export function GruposModule() {
 
       es_principal: editando.es_principal === true,
 
-      permite_cruces: editando.permite_cruces !== false,
+      cruce_mismo_ejemplar: editando.cruce_mismo_ejemplar === true,
+      cruce_diferente_ejemplar: editando.cruce_diferente_ejemplar === true,
 
       dia_inicio_semana: editando.dia_inicio_semana ?? 1,
 
@@ -1280,23 +1284,19 @@ export function GruposModule() {
 
               </div>
 
-              <label className="col-span-3 flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
-
-                <input
-
-                  type="checkbox"
-
-                  checked={formPermiteCruces}
-
-                  onChange={(e) => setFormPermiteCruces(e.target.checked)}
-
-                  className="rounded accent-amber-500"
-
-                />
-
-                Trabaja con Cruces (Solo Puestos): Con cruces, en jugadas de Puestos de una misma carrera (+100 y -50), la comisión se cobra sobre la diferencia neta ganada (50). Sin cruces, se cobra sobre el total ganado (100).
-
-              </label>
+              <section className="col-span-3 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+                <h3 className="mb-2 text-[10px] font-black uppercase tracking-widest text-amber-800">Configuración de Cruces (Tercios)</h3>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-700">
+                    <input type="checkbox" checked={formCruceMismo} onChange={(e) => setFormCruceMismo(e.target.checked)} className="rounded accent-amber-500" />
+                    Cruzar Mismo Ejemplar
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-700">
+                    <input type="checkbox" checked={formCruceDiferente} onChange={(e) => setFormCruceDiferente(e.target.checked)} className="rounded accent-amber-500" />
+                    Cruzar Diferentes Ejemplares
+                  </label>
+                </div>
+              </section>
 
             </div>
 
@@ -1470,16 +1470,8 @@ export function GruposModule() {
 
                       <div className="flex shrink-0 items-center gap-1">
 
-                        <span
-
-                          className={`rounded px-1 py-0.5 text-[8px] font-black ${g.permite_cruces !== false ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}
-
-                          title="Trabaja con cruces (jugadas de Puestos de una misma carrera)"
-
-                        >
-
-                          🔀 {g.permite_cruces !== false ? "Sí" : "No"}
-
+                        <span className="rounded bg-amber-100 px-1 py-0.5 text-[8px] font-black text-amber-800" title="Cruces por modalidad">
+                          ⚡ Mismo {g.cruce_mismo_ejemplar ? "Sí" : "No"} · Dif. {g.cruce_diferente_ejemplar ? "Sí" : "No"}
                         </span>
 
                         <span className="rounded bg-slate-100 px-1 py-0.5 text-[8px] font-bold text-slate-600" title="Clientes del grupo">
@@ -2305,23 +2297,19 @@ export function GruposModule() {
               ) : null}
 
 
-              <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-700">
-
-                <input
-
-                  type="checkbox"
-
-                  checked={editando.permite_cruces !== false}
-
-                  onChange={(e) => setEditando({ ...editando, permite_cruces: e.target.checked })}
-
-                  className="rounded accent-amber-500"
-
-                />
-
-                Trabaja con Cruces (Solo Puestos): Con cruces, en jugadas de Puestos de una misma carrera (+100 y -50), la comisión se cobra sobre la diferencia neta ganada (50). Sin cruces, se cobra sobre el total ganado (100).
-
-              </label>
+              <section className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+                <h3 className="mb-2 text-[10px] font-black uppercase tracking-widest text-amber-800">Configuración de Cruces (Tercios)</h3>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-700">
+                    <input type="checkbox" checked={editando.cruce_mismo_ejemplar === true} onChange={(e) => setEditando({ ...editando, cruce_mismo_ejemplar: e.target.checked })} className="rounded accent-amber-500" />
+                    Cruzar Mismo Ejemplar
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-700">
+                    <input type="checkbox" checked={editando.cruce_diferente_ejemplar === true} onChange={(e) => setEditando({ ...editando, cruce_diferente_ejemplar: e.target.checked })} className="rounded accent-amber-500" />
+                    Cruzar Diferentes Ejemplares
+                  </label>
+                </div>
+              </section>
 
               <div>
 

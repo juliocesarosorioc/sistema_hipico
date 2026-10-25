@@ -3,6 +3,8 @@
 import { useState, useMemo, useEffect } from "react";
 import type { StoredTablaFija } from "@/shared/store/useTablasFijasStore";
 import { colorDeNumero, textoDeNumero, fmtMoney, sumaBase, parseNum, SUPERFICIES, type EjemplarTabla } from "@/features/tablas/lib/tipos";
+import { pagoPotencialEjemplar } from "@/features/tablas/lib/tablas-fijas";
+import { alternarCaballoInvalidadoTablaFija } from "@/features/tablas/lib/rpc";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { Flag, normalizarNacionalidad } from "@/shared/components/ui/BanderaPais";
 import { Button } from "@/shared/components/ui/Button";
@@ -714,6 +716,45 @@ export function MonitorTablas({
     return ok;
   };
 
+  /**
+   * Marca (o habilita) un ejemplar como INVALIDADO en la tabla publicada.
+   *
+   * El botón del grid ya deja el parche en el editor (por eso se siente
+   * inmediato), pero la escritura va por la RPC: es la que valida la
+   * capacidad del operador en el servidor y la que guarda el motivo. Si la
+   * RPC todavía no está instalada, el cambio queda solo en el parche local y se
+   * guarda al presionar "Corregir y guardar" (con el aviso del operador).
+   */
+  const alternarInvalidado = async (indice: number, invalidado: boolean) => {
+    const c = patchCaballos[indice];
+    if (!editando || !c) return;
+    const r = await alternarCaballoInvalidadoTablaFija({
+      tablaId: editando.id,
+      numero: c.numero,
+      invalidado,
+      motivo: invalidado ? "Invalidado en Tabla Fija" : null,
+      // Refresco del estado local: la fila vuelve del servidor y el editor
+      // queda mostrando lo que quedo guardado (no lo que se quiso).
+      alActualizar: (fila) =>
+        setPatchCaballos((cs) =>
+          cs.map((x, j) =>
+            j === indice
+              ? { ...x, invalidado: fila.invalidado, motivo_invalidacion: fila.motivo_invalidacion ?? undefined }
+              : x
+          )
+        ),
+    });
+    if (!r.ok) {
+      setAviso(`⚠️ No se pudo registrar el invalidamiento: ${r.error ?? "sin conexión"}`);
+      return;
+    }
+    setAviso(
+      r.data?.invalidado
+        ? `🚫 Ejemplar ${String(c.numero ?? "")} INVALIDADO: no puede ganar ni ser pagado como ganador.`
+        : `✔ Ejemplar ${String(c.numero ?? "")} habilitado: vuelve a poder ganar.`
+    );
+  };
+
   const ejemplarActual = ejemplarModal
     ? { tabla: ejemplarModal.tabla, ejemplar: (ejemplarModal.tabla.caballos ?? [])[ejemplarModal.indice] }
     : null;
@@ -971,7 +1012,7 @@ export function MonitorTablas({
                   return (
                     <div
                       key={i}
-                      className={`group grid w-full items-center rounded px-1 py-0 text-left transition-colors ${i % 2 === 1 ? "bg-slate-100" : "bg-white"} hover:bg-indigo-200 ${c.retirado ? "opacity-50" : ""}`}
+                      className={`group grid w-full items-center rounded px-1 py-0 text-left transition-colors ${c.invalidado ? "bg-purple-50" : i % 2 === 1 ? "bg-slate-100" : "bg-white"} hover:bg-indigo-200 ${c.retirado ? "opacity-50" : ""}`}
                       style={{ gridTemplateColumns: "1.75rem 1fr 1.25rem 4rem 3.25rem" }}
                     >
                       <button
@@ -987,12 +1028,28 @@ export function MonitorTablas({
                         >
                           {c.numero}
                         </span>
-                        <span className="min-w-0 truncate px-1 text-[14px] font-bold uppercase leading-none text-slate-800">{c.nombre || "Sin nombre"}</span>
+                        {/*
+                          Nombre del ejemplar + INSIGNIA de INVALIDADO.
+                          La insignia va FUERA del texto que se trunca: si
+                          quedara dentro, un nombre largo la cortaria y el
+                          operador no veria que el ejemplar esta descalificado.
+                        */}
+                        <span className="flex min-w-0 items-center gap-1 px-1 text-[14px] font-bold uppercase leading-none text-slate-800">
+                          <span className="min-w-0 truncate">{c.nombre || "Sin nombre"}</span>
+                          {c.invalidado ? (
+                            <span
+                              className="shrink-0 rounded bg-purple-600 px-1 py-px text-[8px] font-black uppercase tracking-wide text-white"
+                              title={`INVALIDADO${c.motivo_invalidacion ? `: ${c.motivo_invalidacion}` : ""}. No puede ganar ni ser pagado como ganador.`}
+                            >
+                              INVALIDADO
+                            </span>
+                          ) : null}
+                        </span>
                         <span className="flex justify-center text-center leading-none">
                           {nac !== "VE" && <Flag nac={nac} size={12} withName={false} />}
                         </span>
                         <span className={`whitespace-nowrap text-right text-[17px] font-black leading-none ${c.retirado ? "text-red-500 line-through" : "text-blue-700"}`}>
-                            {c.retirado ? "RET." : `${fmtPts(valor)}`}
+                            {c.retirado ? "RET." : c.invalidado ? "INV." : `${fmtPts(valor)}`}
                         </span>
                       </button>
                       {/*
@@ -1057,8 +1114,22 @@ export function MonitorTablas({
                 <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 leading-none">
                   🧮 Suma
                   <span className="font-semibold normal-case tracking-normal text-slate-400">
-                    ({(t.caballos ?? []).filter((c) => !c.retirado).length} activos)
+                    {/*
+                      "ACTIVOS" = los ejemplares que de verdad reparten: ni
+                      retirados ni INVALIDADOS (un descalificado no puede
+                      ganar y su valor no esta en la base). Por eso el conteo
+                      tiene que usar la MISMA regla que `sumaBase`.
+                    */}
+                    ({(t.caballos ?? []).filter((c) => !c.retirado && !c.invalidado).length} activos)
                   </span>
+                  {(t.caballos ?? []).some((c) => c.invalidado) ? (
+                    <span
+                      className="font-semibold normal-case tracking-normal text-purple-700"
+                      title="Ejemplares descalificados: no pueden ganar ni ser pagados como ganadores"
+                    >
+                      · {(t.caballos ?? []).filter((c) => c.invalidado).length} invalidado(s)
+                    </span>
+                  ) : null}
                 </span>
                 <span />
                 <span
@@ -1160,7 +1231,9 @@ export function MonitorTablas({
                 <select value={ejemplarVenta} onChange={(e) => setEjemplarVenta(e.target.value)} className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
                   <option value="">— Seleccionar —</option>
                   {(vendiendo.caballos ?? []).map((c, i) => (
-                    <option key={i} value={String(c.numero)}>Nº {c.numero} · {c.nombre}</option>
+                    <option key={i} value={String(c.numero)}>Nº {c.numero} · {c.nombre}
+                      {c.invalidado ? " (INVALIDADO: no puede ganar)" : ""}
+                    </option>
                   ))}
                   <option value="TABLA">Tabla completa (un ticket por ejemplar)</option>
                 </select>
@@ -1407,6 +1480,7 @@ export function MonitorTablas({
                   onChange={(i, patch) => setPatchCaballos((cs) => cs.map((c, j) => (j === i ? { ...c, ...patch } : c)))}
                   onQuitar={(i) => setPatchCaballos((cs) => cs.filter((_, j) => j !== i))}
                   onAgregar={(c) => setPatchCaballos((cs) => [...cs, c])}
+                  onAlternarInvalidado={(i, invalidado) => void alternarInvalidado(i, invalidado)}
                 />
               </fieldset>
 
@@ -1581,14 +1655,23 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
 function pagoPotencialNumerico(t: StoredTablaFija, numero: string, monto: number): number {
   if (!monto || !numero) return 0;
   const premio = t.premio_recalculado ?? 0;
-  return numero === "TABLA" ? premio * monto : (premio / (t.suma_base_tabla ?? 1)) * monto;
+  if (numero === "TABLA") return premio * monto;
+  const c = (t.caballos ?? []).find((x) => String(x.numero) === numero);
+  // Un ejemplar INVALIDADO no puede ganar, asi que no tiene premio potencial:
+  // no se le ofrece una apuesta que la casa no podria cobrar.
+  return pagoPotencialEjemplar({
+    premio,
+    base: t.suma_base_tabla ?? 1,
+    monto,
+    invalidado: Boolean(c?.invalidado),
+  });
 }
 
 function PremioVenta(t: StoredTablaFija, numero: string, monto: string): string {
   const m = parseNum(monto);
   if (!m || !numero) return "—";
-  const premio = t.premio_recalculado ?? 0;
-  return fmtMoney(numero === "TABLA" ? premio * m : (premio / (t.suma_base_tabla ?? 1)) * m, t.moneda);
+  // Misma regla que el cálculo numérico (un INVALIDADO vale 0).
+  return fmtMoney(pagoPotencialNumerico(t, numero, m), t.moneda);
 }
 
 export default MonitorTablas;

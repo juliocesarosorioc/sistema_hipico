@@ -19,6 +19,8 @@ export function claveHipodromo(v: unknown): string {
   return String(v ?? "")
     .trim()
     .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, "");
 }
 
@@ -76,3 +78,10 @@ export function numerosDeCarrera<T extends { hipodromo?: string | null; carrera?
   const lista = carreras.filter((c) => claveHipodromo(c.hipodromo) === hipo);
   return [...new Set(lista.map((c) => numeroCarrera(c.carrera)).filter((n) => n > 0))].sort((a, b) => a - b);
 }
+
+/**
+ * Une las carreras del catálogo central y las tablas fijas del día.
+ *
+ * La presencia de ejemplares no determina si una carrera existe: una carrera
+ * puede estar registrada y tener jugadas aunque todavía no tenga padrón.
+ */

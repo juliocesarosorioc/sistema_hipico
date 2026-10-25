@@ -37,6 +37,7 @@ import {
   ESTADOS_MAESTRO,
   aCarreraCentral,
   dedupFilasMaestro,
+  fusionarEjemplaresAcumulativo,
   hipodromosAEscribir,
   ordenarPorNumero,
 } from "@/features/carreras/lib/maestro-nucleo";
@@ -263,6 +264,53 @@ const preservarInvalidados = (filas: Record<string, unknown>[], claves: string[]
   preservarColumna(filas, claves, "invalidado_remate");
 
 /**
+ * FUSIÓN ACUMULATIVA de los ejemplares de las filas que lo piden.
+ *
+ * Una carga de gaceta llega por LOTES: el operador sube el documento de un
+ * hipódromo y, otro día, el de otro. Con la fila de la matriz reescrita por
+ * completo, el segundo lote borraba los ejemplares del primero, y una carrera
+ * leída a medias (6 de 10 ejemplares) se quedaba con 6.
+ *
+ * Aquí la lista de ejemplares se FUSIONA por número de gualdrapa con la que
+ * ya está guardada: los números nuevos se agregan, los repetidos se actualizan
+ * y los que el lote no trae se conservan.
+ *
+ * Solo se aplica a las filas que lo piden (`fusionar_ejemplares: true`): el
+ * editor manual de la carrera tiene que poder QUITAR un ejemplar, y una
+ * fusión acumulada se lo impediría.
+ */
+async function fusionarEjemplaresGuardados(
+  filas: Record<string, unknown>[],
+  claves: string[]
+): Promise<void> {
+  const pedidas = new Set(claves);
+  if (!pedidas.size || !supabase) return;
+  const fechas = [...new Set(claves.map((c) => c.split("|")[0]))].filter(Boolean);
+  if (!fechas.length) return;
+  try {
+    const { data, error } = await supabase
+      .from("carreras")
+      .select("fecha,hipodromo,carrera,caballos")
+      .in("fecha", fechas);
+    if (error) return;
+    const guardados = new Map<string, unknown>();
+    for (const r of (data ?? []) as Record<string, unknown>[]) {
+      const clave = `${String(r.fecha ?? "").slice(0, 10)}|${claveHipodromo(String(r.hipodromo ?? ""))}|${Number(r.carrera) || 0}`;
+      if (pedidas.has(clave)) guardados.set(clave, r.caballos ?? []);
+    }
+    for (const f of filas) {
+      const clave = `${String(f.fecha ?? "").slice(0, 10)}|${claveHipodromo(String(f.hipodromo ?? ""))}|${Number(f.carrera) || 0}`;
+      if (!pedidas.has(clave)) continue;
+      const previos = guardados.get(clave);
+      if (!previos) continue;
+      f.caballos = fusionarEjemplaresAcumulativo(previos, f.caballos);
+    }
+  } catch {
+    /* sin lectura previa: se escribe el lote tal cual (nunca se pierde la carga) */
+  }
+}
+
+/**
  * Da de alta / actualiza carreras en la matriz (una fila por hipódromo+carrera).
  * Es la vía que usa la IA al guardar el programa: la carrera existe para TODOS
  * los módulos apenas se guarda, sin esperar resultados ni Publicar.
@@ -287,6 +335,7 @@ export async function escribirCarrerasMaestro(
   const vistas = new Set<string>();
   const sinRetirados: string[] = [];
   const sinInvalidados: string[] = [];
+  const aFusionar: string[] = [];
 
   // Texto de hipódromo a escribir por clave canónica: reusa el que ya está
   // guardado (si la carrera existe con otra grafía) para que el `onConflict`
@@ -311,6 +360,7 @@ export async function escribirCarrerasMaestro(
     // guardado, porque el editor de programa de la IA no tiene control de ellos.
     if (e.retirados === undefined) sinRetirados.push(clave);
     if (e.invalidado_remate === undefined) sinInvalidados.push(clave);
+    if (e.fusionar_ejemplares === true) aFusionar.push(clave);
     filas.push({
       fecha,
       hipodromo: hipoEscrito,
@@ -332,6 +382,7 @@ export async function escribirCarrerasMaestro(
   if (!filas.length) return { ok: true, guardadas: 0 };
   if (sinRetirados.length) await preservarRetirados(filas, sinRetirados);
   if (sinInvalidados.length) await preservarInvalidados(filas, sinInvalidados);
+  if (aFusionar.length) await fusionarEjemplaresGuardados(filas, aFusionar);
 
   try {
     const { error } = await supabase

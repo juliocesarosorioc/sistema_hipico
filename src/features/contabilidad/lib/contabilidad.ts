@@ -17,6 +17,7 @@
 import { supabase } from "@/core/supabase";
 import { exigirCapacidad, exigirPermiso, grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import { listarClientes } from "@/features/clientes/lib/clientes";
+import { aNumero, calcularComisionExacta, monedaExacta } from "@/shared/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -117,12 +118,18 @@ export type ResultadoMovimiento = {
 // Utilidades
 // ---------------------------------------------------------------------------
 
-const num = (v: unknown): number => {
-  const n = parseFloat(String(v ?? ""));
-  return Number.isFinite(n) ? n : 0;
-};
+const num = aNumero;
 
-export const round2 = (n: number): number => Math.round(n * 100) / 100;
+/**
+ * Redondeo a dos decimales.
+ *
+ * POR QUÉ NO ES `Math.round(n * 100) / 100`: ese redondeo falla en el medio
+ * centavo exacto (`1.005` daba `1.00` en vez de `1.01`). `monedaExacta`
+ * (src/shared/lib/utils.ts) suma el `Number.EPSILON` que hace falta para que
+ * el medio centavo caiga hacia arriba. Todos los importes de la contabilidad
+ * salen de acá.
+ */
+export const round2 = (n: number): number => monedaExacta(n);
 
 /** ¿El movimiento está expresado en bolívares? */
 export const esVes = (moneda: string | null | undefined): boolean =>
@@ -149,11 +156,27 @@ async function rpcContable(nombre: string, args: Record<string, unknown>): Promi
   return { data, error };
 }
 
-/** Detecta si la RPC no existe (la más común al no haber corrido el SQL). */
+/**
+ * Detecta si la RPC no existe (la más común al no haber corrido el SQL).
+ *
+ * OJO con las variantes del mensaje: PostgREST no siempre dice "does not
+ * exist". Cuando la función está en el archivo SQL pero NO se corrió, el
+ * esquema cacheado responde
+ *   "Could not find the function public.<fn> in the schema cache."
+ * (código PGRST202). Sin esa variante, el operador veía un error crudo de
+ * PostgREST en vez del aviso de "falta instalar el SQL".
+ */
 function esRpcAusente(error: { message: string } | null): boolean {
   if (!error) return false;
   const m = error.message.toLowerCase();
-  return m.includes("does not exist") || m.includes("no existe") || m.includes("not found") || m.includes("404");
+  return (
+    m.includes("does not exist") ||
+    m.includes("no existe") ||
+    m.includes("not found") ||
+    m.includes("could not find") ||
+    m.includes("schema cache") ||
+    m.includes("404")
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -631,6 +654,7 @@ export const MODALIDADES_INGRESO = [
 
 export const TIPOS_CUENTA = ["CORRIENTE", "AHORRO", ""] as const;
 
+<<<<<<< HEAD
 // Agregar al final de: src/features/contabilidad/lib/contabilidad.ts
 import { supabase } from "@/core/supabase";
 
@@ -696,3 +720,515 @@ export async function obtenerBalanceComprobacionNIIF(filtros: {
   if (error) throw new Error(error.message);
   return data ?? [];
 }
+=======
+// ===========================================================================
+//  📘  CONTABILIDAD NIIF — PARTIDA DOBLE, NIC 21 Y PRECISIÓN DECIMAL
+// ---------------------------------------------------------------------------
+//  POR QUÉ EXISTE ESTE BLOQUE
+//
+//  Hasta acá la contabilidad del sistema era "un saldo por cliente": un número
+//  que sube y baja. Sirve para la caja, pero NO alcanza para una contabilidad
+//  NIIF, que exige tres cosas que el legacy no tenía:
+//
+//   1. PARTIDA DOBLE: cada hecho económico deja DOS huellas, una en el debe y
+//      otra en el haber, y el total de ambas tiene que ser EXACTAMENTE el
+//      mismo. Si no cuadra, el asiento no existe.
+//   2. MULTIMONEDA (NIC 21): la operación se hace en una moneda (la de
+//      OPERACIÓN: la del banco, la del cliente) pero la casa presenta en otra
+//      (la de PRESENTACIÓN). El importe original NO se pierde: se guarda junto
+//      con la tasa HISTÓRICA del día (NIC 21.39: la del hecho económico, no
+//      la de hoy ni la del cierre).
+//   3. PRECISIÓN DECIMAL: los importes se cuentan en CENTAVOS ENTEROS, no en
+//      coma flotante (ver `monedaExacta` y `calcularComisionExacta` en
+//      src/shared/lib/utils.ts).
+//
+//  LA FRONTERA DE CONFIANZA
+//  El cuadre se valida DOS veces: acá en el cliente (para no enviar un asiento
+//  descuadrado y para avisarle al operador qué línea falla) y en el SERVIDOR
+//  (que es la garantía real: la RPC `rpc_registrar_asiento_niif` levanta una
+//  excepción si debe ≠ haber). La validación del cliente es una cortesía; la
+//  del servidor, la ley.
+//
+//  LOS REVERSOS NO BORRAN NADA
+//  Un asiento registrado es INMUTABLE. Para corregirlo se registra un
+//  CONTRA-ASIENTO (el inverso: lo que estaba en el debe pasa al haber y
+//  viceversa) que queda en el libro al lado del original. Borrar el asiento
+//  original dejaría el balance descuadrado y sin rastro de por qué. Por eso
+//  en la base NO hay permiso de DELETE y la RPC no expone ningún borrado.
+// ===========================================================================
+
+/** Una línea del asiento: una cuenta y su importe en debe o en haber. */
+export type LineaAsientoNIIF = {
+  /** Código de la cuenta en el plan (p. ej. "1.1.01"). */
+  cuenta: string;
+  /** Nombre de la cuenta en el plan. */
+  nombre_cuenta: string;
+  /** Importe en la MONEDA DE OPERACIÓN del asiento (la del hecho económico). */
+  debe: number;
+  haber: number;
+};
+
+/** Asiento en partida doble, listo para registrarse. */
+export type AsientoNIIF = {
+  /**
+   * Clave de idempotencia. Repetir el registro con la misma clave NO duplica
+   * el asiento: devuelve el que ya estaba (como `p_idem` en
+   * sql/marcas_venta.sql).
+   */
+  clave: string;
+  /** Fecha del hecho económico ("YYYY-MM-DD"). */
+  fecha: string;
+  /** Qué pasó, en palabras (va al libro diario). */
+  concepto: string;
+  /** Moneda en la que se CONTABILIZA (NIC 21.11: moneda de operación). */
+  moneda_operacion: string;
+  /** Moneda en la que se PRESENTA el balance (moneda de presentación). */
+  moneda_presentacion: string;
+  /**
+   * Tasa de cambio HISTÓRICA (NIC 21.39): 1 unidad de `moneda_operacion`
+   * equivale a `tasa_cambio` unidades de `moneda_presentacion`. Es la del día
+   * del hecho económico, NO la de hoy.
+   */
+  tasa_cambio: number;
+  lineas: LineaAsientoNIIF[];
+  /** true si es el contra-asiento que revierte otro asiento. */
+  es_contra_asiento?: boolean;
+  /** Clave del asiento que este contra-asiento revierte. */
+  asiento_origen?: string | null;
+  /** Quién lo registró (auditoría). */
+  usuario?: string | null;
+};
+
+/** Cabecera de un asiento ya registrado (para listados y reversos). */
+export type AsientoNIIFResumen = {
+  id: string;
+  clave: string;
+  fecha: string | null;
+  concepto: string | null;
+  moneda_operacion: string | null;
+  moneda_presentacion: string | null;
+  tasa_cambio: number | null;
+  total_debe: number | null;
+  total_haber: number | null;
+  es_contra_asiento: boolean | null;
+  asiento_origen: string | null;
+};
+
+/** Una cuenta del balance de comprobación. */
+export type FilaBalanceNIIF = {
+  cuenta: string;
+  nombre_cuenta: string;
+  moneda_presentacion: string;
+  total_debe: number;
+  total_haber: number;
+  saldo: number;
+  /** Cantidad de líneas que componen la cuenta. */
+  movimientos: number;
+};
+
+export type ResultadoAsientoNIIF = {
+  ok: boolean;
+  error?: string;
+  id?: string;
+  clave?: string;
+  /** true si el asiento ya existía (no se duplicó). */
+  ya_existia?: boolean;
+  total_debe?: number;
+  total_haber?: number;
+};
+
+/** Filtros del balance de comprobación. */
+export type FiltroBalanceNIIF = {
+  /** Texto libre: busca en el código y en el nombre de la cuenta. */
+  texto?: string;
+  /** Moneda de presentación. */
+  moneda?: string;
+  /** Fecha inicial (inclusive, "YYYY-MM-DD"). */
+  desde?: string;
+  /** Fecha final (inclusive, "YYYY-MM-DD"). */
+  hasta?: string;
+};
+
+const MENSAJE_SIN_RPC_NIIF =
+  "Falta instalar sql/contabilidad_niif.sql en Supabase. Los asientos NIIF se registran solo por la RPC (valida el cuadre en el servidor); no se hacen escrituras parciales.";
+
+/**
+ * Valida el asiento en el cliente ANTES de tocar la base.
+ *
+ * Devuelve la lista de errores (vacía = el asiento está bien). Se llama desde
+ * `registrarAsientoPartidaDobleNIIF`, que LAZA si esta lista no está vacía:
+ * un asiento descuadrado es un error de construcción del dato, no un rechazo
+ * del servidor, y tiene que verse como tal.
+ *
+ * La comparación de totales se hace en CENTAVOS ENTEROS: sumar `0.1` catorce
+ * veces en coma flotante NO da `1.4`, y un asiento que "no cuadra" porque el
+ * lado del debe acumuló error de coma flotante es un asiento que el operador
+ * no puede arreglar (no hay nada que corregir en la pantalla).
+ */
+export function validarAsientoNIIF(asiento: AsientoNIIF): string[] {
+  const errores: string[] = [];
+
+  if (!String(asiento.clave ?? "").trim()) {
+    errores.push("El asiento necesita una clave de idempotencia.");
+  }
+  if (!String(asiento.concepto ?? "").trim()) {
+    errores.push("El asiento necesita un concepto.");
+  }
+  if (!String(asiento.fecha ?? "").trim()) {
+    errores.push("El asiento necesita fecha.");
+  }
+  const operacion = String(asiento.moneda_operacion ?? "").trim().toUpperCase();
+  const presentacion = String(asiento.moneda_presentacion ?? "").trim().toUpperCase();
+  if (!operacion) errores.push("Indique la moneda de operación.");
+  if (!presentacion) errores.push("Indique la moneda de presentación.");
+  if (!(aNumero(asiento.tasa_cambio) > 0)) {
+    errores.push("La tasa de cambio histórica debe ser un número mayor a cero.");
+  }
+
+  const lineas = asiento.lineas ?? [];
+  if (lineas.length < 2) {
+    errores.push("Un asiento en partida doble necesita al menos dos líneas (un debe y un haber).");
+  }
+
+  let centavosDebe = 0;
+  let centavosHaber = 0;
+  lineas.forEach((l, i) => {
+    const n = i + 1;
+    const debe = monedaExacta(l.debe);
+    const haber = monedaExacta(l.haber);
+    if (!String(l.cuenta ?? "").trim()) {
+      errores.push(`La línea ${n} no tiene cuenta.`);
+    }
+    if (debe < 0 || haber < 0) {
+      errores.push(`La línea ${n} no puede tener importes negativos: use un contra-asiento para revertir.`);
+    }
+    if (debe > 0 && haber > 0) {
+      errores.push(`La línea ${n} no puede tener debe y haber a la vez.`);
+    }
+    if (debe === 0 && haber === 0) {
+      errores.push(`La línea ${n} no tiene importe.`);
+    }
+    centavosDebe += Math.round(debe * 100);
+    centavosHaber += Math.round(haber * 100);
+  });
+
+  if (centavosDebe !== centavosHaber) {
+    const dif = (centavosDebe - centavosHaber) / 100;
+    errores.push(
+      `El asiento no cuadra: debe ${(centavosDebe / 100).toFixed(2)} y haber ${(centavosHaber / 100).toFixed(2)} ` +
+        `(diferencia ${dif.toFixed(2)}). No se registró nada.`
+    );
+  }
+
+  return errores;
+}
+
+/**
+ * Registra un asiento en PARTIDA DOBLE.
+ *
+ * Qué hace, en orden:
+ *  1. valida el cuadre en el cliente (lanza si no cuadra: nada llega a la base),
+ *  2. exige la capacidad de escribir movimientos de caja,
+ *  3. convierte los importes a la MONEDA DE PRESENTACIÓN con la tasa
+ *     histórica (NIC 21) usando aritmética exacta,
+ *  4. llama a la RPC `rpc_registrar_asiento_niif`, que vuelve a validar el
+ *     cuadre en el servidor y es idempotente por `clave`.
+ *
+ * NUNCA borra nada: un error se corrige con un contra-asiento
+ * (`registrarContraAsientoNIIF`).
+ */
+export async function registrarAsientoPartidaDobleNIIF(
+  asiento: AsientoNIIF
+): Promise<ResultadoAsientoNIIF> {
+  if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+
+  // 1) Validación ESTRICTA en el cliente. Se LANZA: el error es del dato
+  //    armado, no del servidor, y el que llama tiene que enterarse ya.
+  const errores = validarAsientoNIIF(asiento);
+  if (errores.length > 0) throw new Error(errores.join(" "));
+
+  // 2) Permiso. Escribir un asiento es escribir un movimiento de dinero: usa
+  //    la MISMA capacidad que los depósitos, los retiros y los traslados, para
+  //    que no haya una puerta trasera que esquive el RBAC.
+  //
+  //    Se usa `exigirCapacidad` (RBAC) y NO `exigirPermiso` (RBAC + ABAC): las
+  //    reglas de atributo de esa capacidad están atadas al FORMULARIO de
+  //    movimiento de caja (método de pago, tope del operador, grupo del
+  //    registro) y no a un asiento del libro. Aplicarlas acá rechazaría, por
+  //    omisión, al administrador de grupo y al banquero por el atributo
+  //    `grupo` ausente, que es un fallo de contexto y no una política.
+  try {
+    exigirCapacidad("contabilidad:fn_registrar_movimiento");
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+
+  // 3) Importes exactos y conversión a la moneda de presentación (NIC 21).
+  const tasa = aNumero(asiento.tasa_cambio);
+  const lineas = (asiento.lineas ?? []).map((l) => {
+    const debe = monedaExacta(l.debe);
+    const haber = monedaExacta(l.haber);
+    return {
+      cuenta: String(l.cuenta).trim(),
+      nombre_cuenta: String(l.nombre_cuenta ?? "").trim(),
+      debe,
+      haber,
+      // El importe en moneda de presentación se guarda AL LADO del original:
+      // el libro tiene que poder mostrar las dos cifras (NIC 21.39).
+      debe_presentacion: monedaExacta(debe * tasa),
+      haber_presentacion: monedaExacta(haber * tasa),
+    };
+  });
+
+  const { data, error } = await rpcContable("rpc_registrar_asiento_niif", {
+    p_clave: String(asiento.clave).trim(),
+    p_fecha: asiento.fecha,
+    p_concepto: String(asiento.concepto).trim(),
+    p_moneda_operacion: String(asiento.moneda_operacion).trim().toUpperCase(),
+    p_moneda_presentacion: String(asiento.moneda_presentacion).trim().toUpperCase(),
+    p_tasa_cambio: tasa,
+    p_lineas: lineas,
+    p_es_contra_asiento: Boolean(asiento.es_contra_asiento),
+    p_asiento_origen: asiento.asiento_origen ?? null,
+    p_usuario: asiento.usuario ?? null,
+  });
+  if (error) {
+    if (esRpcAusente(error)) return { ok: false, error: MENSAJE_SIN_RPC_NIIF };
+    return { ok: false, error: error.message };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  return {
+    ok: true,
+    id: r.id != null ? String(r.id) : undefined,
+    clave: r.clave != null ? String(r.clave) : String(asiento.clave).trim(),
+    ya_existia: Boolean(r.ya_existia),
+    total_debe: monedaExacta(r.total_debe),
+    total_haber: monedaExacta(r.total_haber),
+  };
+}
+
+/** Lee un asiento (cabecera + líneas) por su clave de idempotencia. */
+export async function obtenerAsientoNIIFPorClave(clave: string): Promise<AsientoNIIF | null> {
+  if (!supabase || !clave) return null;
+  const { data, error } = await supabase
+    .from("asientos_niif")
+    .select(
+      "id, clave, fecha, concepto, moneda_operacion, moneda_presentacion, tasa_cambio, es_contra_asiento, asiento_origen, asientos_niif_lineas(cuenta, nombre_cuenta, debe, haber)"
+    )
+    .eq("clave", clave)
+    .limit(1);
+  if (error || !data || data.length === 0) return null;
+
+  const r = data[0] as unknown as Record<string, unknown>;
+  const crudos = (r.asientos_niif_lineas ?? []) as Array<Record<string, unknown>>;
+  return {
+    clave: String(r.clave ?? clave),
+    fecha: String(r.fecha ?? new Date().toISOString().slice(0, 10)),
+    concepto: String(r.concepto ?? ""),
+    moneda_operacion: String(r.moneda_operacion ?? "USD"),
+    moneda_presentacion: String(r.moneda_presentacion ?? "USD"),
+    tasa_cambio: aNumero(r.tasa_cambio) || 1,
+    es_contra_asiento: Boolean(r.es_contra_asiento),
+    asiento_origen: r.asiento_origen != null ? String(r.asiento_origen) : null,
+    lineas: crudos.map((l) => ({
+      cuenta: String(l.cuenta ?? ""),
+      nombre_cuenta: String(l.nombre_cuenta ?? ""),
+      debe: monedaExacta(l.debe),
+      haber: monedaExacta(l.haber),
+    })),
+  };
+}
+
+/**
+ * Registra el CONTRA-ASIENTO de un asiento (el reverso).
+ *
+ * POR QUÉ NO SE BORRA: un asiento ya registrado es parte del libro. Si se
+ * borra, el balance queda descuadrado y nadie puede saber después qué se
+ * corrigió ni por qué. El reverso correcto es el asiento INVERSO: lo que
+ * estaba en el debe pasa al haber y viceversa, con la misma tasa histórica,
+ * y queda al lado del original con su clave propia (`REVERSO:<clave>`).
+ *
+ * Como la clave es fija, registrar dos veces el mismo reverso NO duplica nada:
+ * el segundo intento devuelve el contra-asiento que ya estaba.
+ */
+export async function registrarContraAsientoNIIF(
+  claveOriginal: string,
+  opciones?: { fecha?: string; concepto?: string; usuario?: string | null }
+): Promise<ResultadoAsientoNIIF> {
+  const original = await obtenerAsientoNIIFPorClave(claveOriginal);
+  if (!original) {
+    return { ok: false, error: `No existe el asiento "${claveOriginal}".` };
+  }
+  if (original.es_contra_asiento) {
+    return { ok: false, error: `El asiento "${claveOriginal}" ya es un contra-asiento: no se revierte dos veces.` };
+  }
+  return registrarAsientoPartidaDobleNIIF({
+    clave: `REVERSO:${original.clave}`,
+    fecha: opciones?.fecha || original.fecha,
+    concepto: opciones?.concepto || `Reverso de ${original.clave}: ${original.concepto}`,
+    moneda_operacion: original.moneda_operacion,
+    moneda_presentacion: original.moneda_presentacion,
+    tasa_cambio: original.tasa_cambio,
+    es_contra_asiento: true,
+    asiento_origen: original.clave,
+    usuario: opciones?.usuario ?? null,
+    lineas: original.lineas.map((l) => ({
+      cuenta: l.cuenta,
+      nombre_cuenta: l.nombre_cuenta,
+      debe: l.haber,
+      haber: l.debe,
+    })),
+  });
+}
+
+/** Lista los asientos registrados (los más recientes primero). */
+export async function listarAsientosNIIF(limite = 50): Promise<AsientoNIIFResumen[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("asientos_niif")
+    .select(
+      "id, clave, fecha, concepto, moneda_operacion, moneda_presentacion, tasa_cambio, total_debe, total_haber, es_contra_asiento, asiento_origen"
+    )
+    .order("fecha", { ascending: false })
+    .order("creado_at", { ascending: false })
+    .limit(limite);
+  if (error) return [];
+  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+    id: String(r.id ?? ""),
+    clave: String(r.clave ?? ""),
+    fecha: r.fecha != null ? String(r.fecha) : null,
+    concepto: r.concepto != null ? String(r.concepto) : null,
+    moneda_operacion: r.moneda_operacion != null ? String(r.moneda_operacion) : null,
+    moneda_presentacion: r.moneda_presentacion != null ? String(r.moneda_presentacion) : null,
+    tasa_cambio: aNumero(r.tasa_cambio),
+    total_debe: monedaExacta(r.total_debe),
+    total_haber: monedaExacta(r.total_haber),
+    es_contra_asiento: Boolean(r.es_contra_asiento),
+    asiento_origen: r.asiento_origen != null ? String(r.asiento_origen) : null,
+  }));
+}
+
+/**
+ * Balance de comprobación NIIF.
+ *
+ * Sin rango de fechas devuelve lo que trae la vista
+ * `vw_balance_comprobacion_niif`: una fila por cuenta con el total del debe,
+ * el total del haber y el saldo (debe − haber) en la MONEDA DE PRESENTACIÓN.
+ *
+ * CON RANGO DE FECHAS el balance acumulado no sirve (mezclaría saldos de
+ * antes y después del corte), así que se recalcula sobre el DETALLE del
+ * rango: se leen las cabeceras del período, después sus líneas, y se agregan
+ * por cuenta en CENTAVOS ENTEROS. El resultado es el mismo balance, pero del
+ * período pedido.
+ */
+export async function obtenerBalanceComprobacionNIIF(
+  filtros: FiltroBalanceNIIF = {}
+): Promise<FilaBalanceNIIF[]> {
+  if (!supabase) return [];
+
+  if (!filtros.desde && !filtros.hasta) {
+    const { data, error } = await supabase.from("vw_balance_comprobacion_niif").select("*");
+    if (error) return [];
+    const filas = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+      cuenta: String(r.cuenta ?? ""),
+      nombre_cuenta: String(r.nombre_cuenta ?? ""),
+      moneda_presentacion: String(r.moneda_presentacion ?? "USD"),
+      total_debe: monedaExacta(r.total_debe),
+      total_haber: monedaExacta(r.total_haber),
+      saldo: monedaExacta(r.saldo),
+      movimientos: aNumero(r.movimientos),
+    }));
+    return filtrarBalanceNIIF(filas, filtros);
+  }
+
+  // Detalle del período: cabeceras primero (para quedarse con los ids) y
+  // después las líneas de esos asientos.
+  let qCab = supabase.from("asientos_niif").select("id, fecha, moneda_presentacion");
+  if (filtros.desde) qCab = qCab.gte("fecha", filtros.desde);
+  if (filtros.hasta) qCab = qCab.lte("fecha", filtros.hasta);
+  const { data: cab, error: errCab } = await qCab;
+  if (errCab) return [];
+
+  const cabeceras = (cab ?? []) as Array<Record<string, unknown>>;
+  if (cabeceras.length === 0) return [];
+
+  const idDeCabecera = new Map<string, string>();
+  cabeceras.forEach((c) => idDeCabecera.set(String(c.id), String(c.moneda_presentacion ?? "USD")));
+
+  const { data: lins, error: errLins } = await supabase
+    .from("asientos_niif_lineas")
+    .select("asiento_id, cuenta, nombre_cuenta, debe_presentacion, haber_presentacion")
+    .in(
+      "asiento_id",
+      Array.from(idDeCabecera.keys())
+    );
+  if (errLins) return [];
+
+  // Agregado por cuenta, en CENTAVOS ENTEROS (la vista agrega en `numeric`,
+  // que también es decimal exacto: los dos caminos dan el mismo número).
+  const mapa = new Map<
+    string,
+    { cuenta: string; nombre_cuenta: string; moneda: string; debe: number; haber: number; mov: number }
+  >();
+  ((lins ?? []) as Array<Record<string, unknown>>).forEach((l) => {
+    const asientoId = String(l.asiento_id ?? "");
+    const cuenta = String(l.cuenta ?? "");
+    const clave = `${cuenta}|${idDeCabecera.get(asientoId) ?? "USD"}`;
+    const fila = mapa.get(clave) ?? {
+      cuenta,
+      nombre_cuenta: String(l.nombre_cuenta ?? ""),
+      moneda: idDeCabecera.get(asientoId) ?? "USD",
+      debe: 0,
+      haber: 0,
+      mov: 0,
+    };
+    fila.debe += Math.round(monedaExacta(l.debe_presentacion) * 100);
+    fila.haber += Math.round(monedaExacta(l.haber_presentacion) * 100);
+    fila.mov += 1;
+    mapa.set(clave, fila);
+  });
+
+  const filasPeriodo = Array.from(mapa.values()).map((f) => ({
+    cuenta: f.cuenta,
+    nombre_cuenta: f.nombre_cuenta,
+    moneda_presentacion: f.moneda,
+    total_debe: f.debe / 100,
+    total_haber: f.haber / 100,
+    saldo: (f.debe - f.haber) / 100,
+    movimientos: f.mov,
+  }));
+  return filtrarBalanceNIIF(filasPeriodo, filtros);
+}
+/**
+ * Filtra las filas del balance por texto y por moneda.
+ *
+ * Va SEPARADO de la consulta a propósito: el balance son pocas filas (un
+ * renglón por cuenta) y filtrar en memoria es instantánea y exacto. Filtrar
+ * en la base obligaría a repetir la agregación por cada tecla.
+ */
+export function filtrarBalanceNIIF(
+  filas: FilaBalanceNIIF[],
+  filtros: { texto?: string; moneda?: string }
+): FilaBalanceNIIF[] {
+  const texto = String(filtros.texto ?? "").trim().toUpperCase();
+  const moneda = String(filtros.moneda ?? "").trim().toUpperCase();
+  return filas.filter((f) => {
+    if (moneda && f.moneda_presentacion.toUpperCase() !== moneda) return false;
+    if (!texto) return true;
+    return `${f.cuenta} ${f.nombre_cuenta}`.toUpperCase().includes(texto);
+  });
+}
+
+/**
+ * Comisión de un movimiento, calculada con aritmética EXACTA en centavos.
+ *
+ * Se expone acá porque la comisión es el número que más veces se ha reportado
+ * "distinto" según dónde se mirara (la del ticket, la del liquidado y la del
+ * reporte de comisiones): se calcula en UNA sola función y el total cuadra.
+ */
+export function calcularComision(montoBruto: number, porcentaje: number): number {
+  return calcularComisionExacta(montoBruto, porcentaje);
+}
+
+>>>>>>> c0aa4bfb0e0030e9dd95ad4d639ec42acd3ebfc3

@@ -53,6 +53,13 @@ export function normalizarFilas(data: unknown[]): TablaFijaRow[] {
                 nacionalidad: cc.nacionalidad ? String(cc.nacionalidad) : null,
                 valor_ejemplar: cc.valor_ejemplar != null ? parseNum(cc.valor_ejemplar) : null,
                 retirado: Boolean(cc.retirado),
+                // El estado INVALIDADO tambien se conserva (es el invariante
+                // del archivo): si se caera al map, cualquier edicion que
+                // reescribiera el array `caballos` completo dejaria a un
+                // ejemplar descalificado como valido, y la liquidacion le
+                // pagaria el premio de ganador.
+                invalidado: Boolean(cc.invalidado),
+                motivo_invalidacion: cc.motivo_invalidacion ? String(cc.motivo_invalidacion) : undefined,
                 // `ganador` y `ejemplar_id` tambien se conservan. Antes se caian al
                 // map y cualquier edicion que reescribiera el array `caballos`
                 // completo (el CRUD de cuadros) dejaba a todos los ejemplares sin

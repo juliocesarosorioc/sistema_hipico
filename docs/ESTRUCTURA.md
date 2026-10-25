@@ -10,23 +10,23 @@ viejo.
 sistema_hipico/
 ├── src/          # App Next.js (ver abajo)
 ├── docs/         # Documentación (guías, planificación, manuales, arquitectura)
-├── scripts/      # Utilidades de build y auditoría (Node)
+├── scripts/      # Utilidades de build (Node)
+├── pruebas/      # Suite de pruebas (node pruebas/correr.cjs)
 ├── sondas/       # Scripts de diagnóstico puntual (TS)
 ├── supabase/     # Edge Functions (Deno) + SQL
-├── legacy/       # Sistema estático anterior (html/ + css/ + js/), solo referencia
+├── sql/          # SQL operativo para aplicar en Supabase (idempotente)
 ├── respaldos/    # Datos locales (ignorado por git)
-├── index.html    # Entrada que redirige a legacy/html/index.html
 ├── next.config.mjs · tsconfig.json · tailwind.config.js · postcss.config.js
 ├── package.json · package-lock.json · next-env.d.ts · deno.lock · .gitignore
 └── .env.local    # Secretos locales (ignorado por git)
 ```
 
-- **`legacy/`** agrupa el sitio estático anterior (`legacy/html`, `legacy/css`,
-  `legacy/js`). Los HTML se enlazan entre sí con rutas relativas (`../css`,
-  `../js`), que siguen resolviendo dentro de `legacy/`. El código nuevo lo cita
-  solo como referencia histórica.
-- `package.json#build:css` compila `src/input.css` → `legacy/css/tailwind.css`
-  (CSS del sitio legacy).
+- **El sistema legacy (`legacy/html`, `legacy/css`, `legacy/js`) fue ELIMINADO.**
+  La app de Next.js en `src/` es la única implementación: no hay dos sistemas
+  que mantener en paralelo ni rutas que apunten al sitio viejo. El `index.html`
+  de la raíz que redirigía a `legacy/html/index.html` también se eliminó.
+- La Tailwind se compila dentro del pipeline de Next (PostCSS): ya no hace
+  falta `package.json#build:css`, que escribía en `legacy/css/tailwind.css`.
 
 # Estructura del código (`src/`)
 
@@ -93,6 +93,7 @@ import { supabase } from "@/core/supabase";
 | `impresion` | — | Exportación e impresión (Excel, reportes) |
 | `motores` | — | Motores de puestos / oficiales / WPS |
 | `diagnostico` | — | Diagnóstico y reparación de matriz |
+| `inteligencia` | `/inteligencia-hipica/proyecciones` | Proyecciones, memoria histórica y ranking actuarial |
 | `dashboard` | `/inicio` | Dashboard |
 | `auth` | `/login` | Autenticación |
 | `carreras` / `clientes` / ... | | |

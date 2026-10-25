@@ -1757,3 +1757,184 @@ batería de ejercicios).*
 - Motivo: Las Pollas se liquidan por acumulado vía RPC manual club_pagar_acumulado_polla, no por carrera.
 - Acción requerida: Al editar participantes o al ejecutar recalcularCarreraCompleta, determinar si las pollas vinculadas a la carrera deben recalcular posiciones/pote financiero y/o llamar a la RPC correspondiente.
 - Riesgo: Evitar doble cobro/pago; requiere confirmar modelo de datos (ganador de polla, carreras involucradas, estado Pagado/Pendiente).
+
+---
+
+## 2026-10-23 — Limpieza del legacy, Blindaje en línea, Inteligencia Hípica operativa
+
+### Fase 1 · El sistema legacy se eliminó por completo
+
+- `legacy/html`, `legacy/css` y `legacy/js` **ya no existen**. No quedaban como
+  "referencia": eran un segundo sistema, con sus propias rutas, su Tailwind y
+  sus scripts de parcheo.
+- Se borraron los **scripts de parcheo de la raíz** (`add_godot_button.js`,
+  `check*.js`, `fix_pollas*.js`, `f.cjs`, `tmp_patch.js`, etc.), el
+  `index.html` que redirigía a `legacy/html/index.html` y el prototipo suelto
+  `modal_hipico_godet_ia-v3.html` (su módulo ya vive en
+  `src/features/ejemplares/components/ModalAnalisisActuarialGodet.tsx`).
+- Se borraron los scripts de auditoría CSS que solo servían al legacy
+  (`scripts/audit-css*.cjs`, `check-css*.cjs`, `inspect-layout.cjs`).
+- **Colisión de rutas eliminada**: `src/app/dashboard/` (el duplicado) se
+  borró. Ahora la única fuente es el grupo `src/app/(dashboard)/`. Se dejó un
+  alias `src/app/(dashboard)/dashboard/page.tsx` que hace `redirect("/inicio")`:
+  sin él, cualquier enlace viejo o pestaña guardada en `/dashboard` caía en
+  404 y `primeraRutaPermitida()` —que devuelve la PRIMERA ruta abierta— mandaba
+  al operador a un callejón.
+- `tailwind.config.js` escanea SOLO `src/**` (antes apuntaba a carpetas
+  inexistentes) y `package.json` ya no tiene `build:css`, que escribía en
+  `legacy/css/tailwind.css`. La Tailwind se compila dentro del pipeline de
+  Next.
+
+### Fase 2 · Blindaje en línea
+
+- `.gitignore`: `.env`, `.env.*` (con `!.env.example`), `*.pem`, `*.key`,
+  `*.sql.bak`, `*.dump` y `supabase/.temp/`.
+- `next.config.mjs`: `poweredByHeader: false`, `reactStrictMode: true` y
+  cabeceras de seguridad (HSTS, `X-Frame-Options: SAMEORIGIN`, `nosniff`,
+  `Referrer-Policy`, `Permissions-Policy` y CSP que permite
+  `https://*.supabase.co`, `wss://*.supabase.co` y
+  `https://generativelanguage.googleapis.com`). Se omiten en el build estático
+  y en GitHub Actions (`GITHUB_ACTIONS === "true"`): sin servidor no hay quién
+  las emita, y la frontera real sigue siendo Supabase Auth + RLS.
+- `src/middleware.ts`: **403** para cualquier acceso directo a `.sql`, `.mjs`,
+  `.cjs` y a los directorios `/pruebas` y `/sondas`. El segundo patrón del
+  `matcher` existe porque el primero se salta todo lo que tenga un punto: sin
+  él, un `GET /algo.sql` escapaba del middleware.
+
+### Fase 3 · "Inteligencia Hípica → Proyecciones" operativa
+
+- Ruta registrada en el **maestro de capacidades**: módulo `inteligencia_hipica`
+  con `ruta_proyecciones`, `celda_memoria_historica`, `celda_ranking_actuarial`
+  y `modal_analisis_actuarial`. `src/core/db/maestro_seed.sql` se regeneró
+  (`node pruebas/generar-seed-maestro.mjs src/core/db/maestro_seed.sql`).
+- El `<Guard>` del Sidebar ya no **esconde** la entrada: tiene `visibleSiempre`,
+  así que el operador ve el módulo y, si no tiene el permiso, recibe el
+  mensaje de la propia ruta en vez de un menú que calla.
+- `src/features/inteligencia/lib/proyecciones.ts` (PURO): ranking de
+  probabilidad actuarial con **credibilidad Bühlmann-Straub**
+  (`Z = n / (n + 8)`), **Índice de Consistencia Godet** y **riesgo de Cox**.
+  Un ejemplar sin historial entra con la media de la población: no se inventa
+  historial.
+- `src/features/inteligencia/lib/datos.ts` + `ProyeccionesModule.tsx`: la
+  pantalla lee las carreras del día de la matriz `carreras` (la MISMA que ve
+  Taquilla), cruza los ejemplares por nombre con la memoria histórica
+  (RPC `rpc_obtener_memoria_historica_caballos`, con respaldo local al padrón) y
+  muestra el ranking con la probabilidad de cada uno.
+- La pizarra Godet se abre **con los datos reales** de la carrera (antes
+  recibía un arreglo vacío).
+- `sql/memoria_historica.sql`: tabla `memoria_historica_caballos`, RPC
+  `rpc_registrar_gaceta_e_historial` (registra la gaceta Y alimenta el
+  histórico) y `rpc_obtener_memoria_historica_caballos`.
+
+### Fase 4 · La gaceta ya no se carga incompleta
+
+- **Segmentación por bloques** (`src/features/gaceta/lib/segmentar.ts`, PURO):
+  el texto se parte por los encabezados (`RACE X`, `CARRERA X`, ordinales) y se
+  mandan **2 o 3 carreras por llamada**. Es la solución real al truncamiento:
+  antes se mandaba el documento entero y las últimas carreras se perdían
+  (Belmont 1-3 OK, Charles Town 4-6 OK, Keeneland 4-6 perdido).
+- **Consolidación en `Map<number, Carrera>`**: la misma carrera partida entre
+  dos bloques se une con sus ejemplares; dos carreras distintas con el mismo
+  número NO se colapsan (la segunda sale como `colisión` y la reparación
+  final la renumera al hueco).
+- `GacetaIA.tsx` extrae la **capa de texto** del PDF con pdf.js y usa la vía de
+  texto cuando existe; si el PDF es un escaneo (sin capa de texto), cae a la
+  vía de imágenes como antes.
+- **Upsert acumulativo** por `(hipodromo_id, fecha, numero_carrera)`: la lista
+  de ejemplares se FUSIONA por número de gualdrapa con la ya guardada
+  (`fusionarEjemplaresAcumulativo` en `carreras/lib/maestro-nucleo.ts`) y las
+  carreras del hipódromo que no vienen en el lote NO se tocan.
+  `sql/gaceta_lote_carreras.sql` con `rpc_guardar_lote_carreras_gaceta`.
+- El ledger local (`useCarrerasDiaStore`) tiene `fusionarLote`, que ACUMULA:
+  `setCarreras` reemplazaba el ledger entero y un lote parcial borraba las
+  carreras ya cargadas.
+- **Zona horaria de la jornada**: `fechaJornadaCaracas()`
+  (`src/core/utils/fechas.ts`) normaliza SIEMPRE bajo `America/Caracas`
+  (UTC-4). Con `toISOString()`, una carrera de las 20:30 se guardaba en el día
+  siguiente y desaparecía del filtro del día en que se jugó.
+
+### Fase 5 · Estado "Caballo Invalidado" en Tablas Fijas
+
+- `invalidado` / `motivo_invalidacion` en el modelo de caballo
+  (`tablas/lib/tipos.ts`), RPC `rpc_toggle_caballo_invalidado_tabla_fija`
+  (`tablas/lib/rpc.ts`) y `sql/tablas_caballo_invalidado.sql`.
+- Botón `🚫 INVALIDADO` / `✔ VÁLIDO` en `EditorCaballos.tsx` (fila morada y
+  nombre tachado) e insignia `INVALIDADO` en `MonitorTablas.tsx`.
+- **Un invalidado NO es un retirado**: sigue en la tabla pero no puede ganar
+  ni repartir premio, y su apuesta se pierde (no se reembolsa). Como no
+  reparte, sale de `suma_base_tabla` con la misma regla que `sumaBase()`, así
+  que el reparto sigue cuadrando.
+
+### Fase 6 · Contabilidad NIIF
+
+- `monedaExacta()` y `calcularComisionExacta()` en `src/shared/lib/utils.ts`:
+  aritmética en **centavos enteros**, sin errores de coma flotante en
+  comisiones y dividendos.
+- `registrarAsientoPartidaDobleNIIF()` y `obtenerBalanceComprobacionNIIF()`:
+  partida doble con **tasa de cambio histórica (NIC 21)**, validación estricta
+  `Debe = Haber` en el cliente Y en el servidor, idempotencia por clave y
+  **reversos por contra-asiento** (nunca `DELETE`).
+- Pestaña **📘 Balance NIIF** en `ContabilidadTabs.tsx`, con KPIs que dicen si
+  el balance cuadra, filtros (cuenta, moneda, rango de fechas), alta de
+  asientos y exportación CSV. `sql/contabilidad_niif.sql` con la vista
+  `vw_balance_comprobacion_niif`.
+
+### Fase 7 · Bugs reales que aparecieron de paso
+
+- `rutaPermitida()` tenía la rama `algunas` **muerta**: el chequeo
+  `if (!p.capacidad) return false` cortocircuitaba antes de mirarla. Toda
+  puerta declarada con `algunas` quedaba cerrada para todo el mundo. Ahora se
+  evalúan las dos formas antes de negar.
+- `pruebas/reporte-carrera.test.ts` verificaba la paleta de gualdrapas
+  ANTERIOR (`bg-orange-500`, `bg-sky-700`, `bg-teal-500`…) cuando la app ya
+  usa la codificación oficial (`bg-orange-600`, `bg-blue-700`, `bg-cyan-500`):
+  el test estaba viejo, no la app.
+
+### Fase 7 bis · El SQL validado contra un Postgres REAL
+
+Los scripts de `sql/` se aplican a mano en el SQL Editor de Supabase. Los
+errores de sintaxis se descubrían EN PRODUCCIÓN, con un mensaje que no
+decía dónde estaba el problema ("syntax error at or near if").
+
+Se agregó **`pruebas/validar-sql.mjs`** (`npm run validar:sql`): levanta un
+Postgres embebido (UTF8), aplica los scripts sobre un esquema mínimo que
+reproduce la forma real (`usuario_sistema.id` es TEXT y el uuid de Auth va en
+`auth_id`) y ejecuta pruebas FUNCIONALES de lo que crean.
+
+Los errores que encontró — y que estaban en los scripts nuevos:
+
+| Error | Síntoma en el Editor | Por qué rompía |
+|---|---|---|
+| `language plpgsql` ausente | `42P13: no language specified` | Postgres exige el lenguaje en `CREATE FUNCTION` |
+| `end if;` cerrando un `begin ... exception ... end;` | `42601: syntax error at or near "if"` | El parser acepta el `end` y se atraganta con el `if` |
+| Variable no declarada en el `DECLARE` | `"v_txt_dist" is not a known variable` | Se usaba sin declarar |
+| Texto en columna `integer` | `column "beyer" is of type integer but expression is of type text` | `nullif(...)` devuelve TEXT |
+| Parámetro con `default` antes de uno obligatorio | `input parameters after one with a default value must also have defaults` | Postgres rechaza la firma |
+| `"8.000"` leído como 8 | (silencioso: dato corrupto) | En Venezuela el punto es el separador de MILES |
+
+La última es la más importante, porque **no daba error**: el premio de una
+carrera se guardaba como 8 en vez de 8000 y el Índice de Consistencia Godet
+salía mal sin que nada se quejara. Ahora `distancia` y `premio` se normalizan
+según la FORMA del texto antes de castear.
+
+**Lo que la prueba funcional comprueba** (12 aserciones):
+
+- La gaceta registra la participación de cada ejemplar con `puesto = 0` (la
+  carrera todavía no corrió) y **no cuenta como actuación** hasta que hay
+  resultado oficial.
+- Al reprocesar la gaceta con el resultado ya cargado, el `puesto` se
+  rellena desde `resultados_carreras.orden_llegada` (y desde `ganadores` si
+  no hay orden de llegada).
+- `"1.400"` → 1400 metros y `"8.000"` → 8000.
+- El **lote acumulativo**: tras un segundo lote parcial, la carrera que no
+  vino en él no se toca y la que sí vino SUMA ejemplares en vez de
+  reemplazarlos.
+
+### Estado de verificación
+
+- `npx tsc --noEmit` → 0 errores.
+- `node pruebas/correr.cjs` → **3181 aserciones OK, 0 fallaron, 69 archivos**.
+  Incluye `pruebas/inteligencia.test.ts` (segmentación, consolidación y
+  ranking actuarial).
+- `npm run validar:sql` → **SQL OK · 12 comprobaciones ok** (Postgres real).
+- `npm run build` → **exit 0**, 37 páginas generadas.

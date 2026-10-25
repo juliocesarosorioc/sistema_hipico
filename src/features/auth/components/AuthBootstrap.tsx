@@ -32,7 +32,9 @@ export function AuthBootstrap() {
     const alCambiar = (evento: "SIGNED_IN" | "SIGNED_OUT" | "TOKEN_REFRESHED" | "USER_UPDATED" | "PASSWORD_RECOVERY" | "INITIAL_SESSION") => {
       if (!vivo) return;
       if (evento === "SIGNED_OUT") {
-        void salir().then(() => router.replace("/login"));
+        // Supabase ya completó el cierre; no vuelvas a llamar signOut desde
+        // su propio callback (puede bloquear la cola de eventos de Auth).
+        void salir(false).then(() => router.replace("/login"));
         return;
       }
       // Un token renovado puede ser el alta de un usuario nuevo: se re-resuelve
@@ -50,7 +52,7 @@ export function AuthBootstrap() {
         // usarse. La redirección se mira el store, no el evento.
         const s = useAuthStore.getState();
         if (!s.inicializada || !s.sembrada) return;
-        if (esPantallaDeAcceso(ruta)) router.replace("/dashboard");
+        if (esPantallaDeAcceso(ruta)) router.replace("/inicio");
       });
     };
 

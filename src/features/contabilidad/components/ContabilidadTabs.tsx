@@ -16,11 +16,14 @@ import {
   crearMoneda,
   eliminarBanco,
   esVes,
+  filtrarBalanceNIIF,
   guardarBanco,
   guardarTasaReferencia,
   listarHistorialTasas,
   MODALIDADES_EGRESO,
   MODALIDADES_INGRESO,
+  registrarAsientoPartidaDobleNIIF,
+  registrarContraAsientoNIIF,
   registrarDeposito,
   registrarRetiro,
   registrarTasaCambio,
@@ -29,9 +32,11 @@ import {
   saldoBancoUsd,
   totalCaja,
   TIPOS_CUENTA,
+  type AsientoNIIFResumen,
   type BancoRow,
   type ClienteSaldo,
   type DepositoRow,
+  type FilaBalanceNIIF,
   type MonedaRow,
   type TasaCambioRow,
   type TasaReferenciaRow,
@@ -39,6 +44,7 @@ import {
   type TransaccionRow,
 } from "@/features/contabilidad/lib/contabilidad";
 import { emitirToast } from "@/shared/lib/mensajeria";
+import { exportarCSV, monedaExacta } from "@/shared/lib/utils";
 import { useConfirmar } from "@/shared/store/useConfirmStore";
 
 const inp =
@@ -53,6 +59,29 @@ const fechaCorta = (f: string | null) =>
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   emitirToast(msg, tipo);
+
+/**
+ * Descarga la tabla que se está viendo como CSV y avisa al operador.
+ *
+ * POR QUÉ CSV Y NO UNA IMAGEN: estos reportes se revisan y se corrigen en
+ * Excel, no en la pantalla. El CSV sale con el MISMO contenido que la tabla
+ * (ya filtrado), con BOM UTF-8 para que Excel respete los acentos y con
+ * separador `;`, que es el que espera el Excel en español.
+ */
+const exportarTabla = (
+  nombre: string,
+  cabeceras: string[],
+  filas: Array<Array<unknown>>
+): void => {
+  const ok = exportarCSV(nombre, cabeceras, filas);
+  toast(
+    ok ? `CSV generado: ${nombre}.csv` : "No se pudo generar el CSV.",
+    ok ? "success" : "error"
+  );
+};
+
+/** Fecha corta para el CSV: la hora no aporta en un reporte contable. */
+const csvFecha = (f: string | null): string => (f ? String(f).slice(0, 19).replace("T", " ") : "");
 
 // ===========================================================================
 //  📥  INGRESOS / AVALES   (js/depositos.js)
@@ -81,6 +110,7 @@ export function TabIngresos({
   const [bancoId, setBancoId] = useState("");
   const [referencia, setReferencia] = useState("");
   const [nota, setNota] = useState("");
+  const [filtroHistorial, setFiltroHistorial] = useState("");
   const [guardando, setGuardando] = useState(false);
 
   useEffect(() => {
@@ -91,6 +121,19 @@ export function TabIngresos({
   const montoUsd = aUsd(montoNum, moneda, parseFloat(tasa));
   // El aval no es dinero: suma al límite del cliente, no entra a la cuenta.
   const esAval = tipo === "Otorgar Aval";
+
+  /** Historial de ingresos filtrado por cliente, tipo, modalidad o referencia. */
+  const visiblesDepositos = useMemo(() => {
+    const f = filtroHistorial.trim().toUpperCase();
+    if (!f) return depositos;
+    return depositos.filter((d) =>
+      `${d.cliente_nombre ?? ""} ${d.tipo_operacion ?? ""} ${d.modalidad ?? ""} ${
+        d.referencia ?? ""
+      } ${d.nota ?? ""}`
+        .toUpperCase()
+        .includes(f)
+    );
+  }, [depositos, filtroHistorial]);
 
   const visibles = useMemo(() => {
     const f = filtro.trim().toUpperCase();
@@ -292,8 +335,39 @@ export function TabIngresos({
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
-          <div className="border-b border-line px-4 py-2 text-sm font-black uppercase text-slate-700">
-            <span className="mr-1 text-primary-600">🕙</span> Historial de ingresos
+          <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-2">
+            <span className="text-sm font-black uppercase text-slate-700">
+              <span className="mr-1 text-primary-600">🕙</span> Historial de ingresos
+            </span>
+            <div className="flex items-center gap-2">
+              <input
+                value={filtroHistorial}
+                onChange={(e) => setFiltroHistorial(e.target.value.toUpperCase())}
+                placeholder="Filtrar ingresos…"
+                className={`${inp} w-48 py-1`}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  exportarTabla(
+                    "contabilidad_ingresos",
+                    ["Fecha", "Cliente", "Tipo", "Modalidad", "Moneda", "Monto", "Monto USD"],
+                    visiblesDepositos.map((d) => [
+                      csvFecha(d.fecha),
+                      d.cliente_nombre ?? "",
+                      d.tipo_operacion ?? "Normal",
+                      d.modalidad ?? "",
+                      d.moneda ?? "USD",
+                      round2(Number(d.monto ?? 0)).toFixed(2),
+                      round2(Number(d.monto_usd ?? d.monto ?? 0)).toFixed(2),
+                    ])
+                  )
+                }
+              >
+                <span>⬇️</span> CSV
+              </Button>
+            </div>
           </div>
           <div className="max-h-80 overflow-y-auto">
             <table className="w-full text-xs">
@@ -307,7 +381,7 @@ export function TabIngresos({
                 </tr>
               </thead>
               <tbody>
-                {depositos.map((d) => (
+                {visiblesDepositos.map((d) => (
                   <tr key={d.id} className="border-t border-line">
                     <td className={td + " text-slate-500"}>{fechaCorta(d.fecha)}</td>
                     <td className={td + " font-semibold text-slate-700"}>{d.cliente_nombre ?? "—"}</td>
@@ -332,10 +406,12 @@ export function TabIngresos({
                     </td>
                   </tr>
                 ))}
-                {depositos.length === 0 && (
+                {visiblesDepositos.length === 0 && (
                   <tr>
                     <td colSpan={5} className="px-3 py-8 text-center text-slate-400">
-                      Sin ingresos registrados.
+                      {depositos.length === 0
+                        ? "Sin ingresos registrados."
+                        : "Ningún ingreso coincide con el filtro."}
                     </td>
                   </tr>
                 )}
@@ -381,6 +457,7 @@ export function TabCaja({
   const [tipoCuenta, setTipoCuenta] = useState("");
   const [cedula, setCedula] = useState("");
   const [beneficiario, setBeneficiario] = useState("");
+  const [filtro, setFiltro] = useState("");
   const [guardando, setGuardando] = useState(false);
 
   const montoNum = numDe(monto);
@@ -388,6 +465,24 @@ export function TabCaja({
   const total = totalCaja(clientes);
   const conSaldo = clientes.filter((c) => c.saldo_actual !== 0);
   const deudores = clientes.filter((c) => c.saldo_actual < 0);
+
+  /**
+   * Libro mayor filtrado. El filtro es de texto libre sobre TODO lo que
+   * identifica el movimiento (tipo, origen, destino, modalidad, referencia),
+   * porque el operador busca "el retiro de Juan" o "la referencia 12345", no
+   * por un campo y otro.
+   */
+  const visiblesTransacciones = useMemo(() => {
+    const f = filtro.trim().toUpperCase();
+    if (!f) return transacciones;
+    return transacciones.filter((t) =>
+      `${t.tipo_operacion ?? ""} ${t.cliente_origen_nombre ?? ""} ${
+        t.cliente_destino_nombre ?? ""
+      } ${t.modalidad ?? ""} ${t.referencia ?? ""} ${t.nota ?? ""}`
+        .toUpperCase()
+        .includes(f)
+    );
+  }, [transacciones, filtro]);
 
   const guardar = async () => {
     if (!origen) return toast("Debe seleccionar un cliente origen.", "warning");
@@ -624,8 +719,51 @@ export function TabCaja({
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm lg:col-span-2">
-          <div className="border-b border-line px-4 py-2 text-sm font-black uppercase text-slate-700">
-            <span className="mr-1 text-primary-600">📕</span> Libro mayor
+          <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-2">
+            <span className="text-sm font-black uppercase text-slate-700">
+              <span className="mr-1 text-primary-600">📕</span> Libro mayor
+            </span>
+            <div className="flex items-center gap-2">
+              <input
+                value={filtro}
+                onChange={(e) => setFiltro(e.target.value.toUpperCase())}
+                placeholder="Filtrar movimientos…"
+                className={`${inp} w-48 py-1`}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  exportarTabla(
+                    "contabilidad_caja",
+                    [
+                      "Fecha",
+                      "Tipo",
+                      "Origen",
+                      "Destino",
+                      "Modalidad",
+                      "Referencia",
+                      "Moneda",
+                      "Monto",
+                      "Monto USD",
+                    ],
+                    visiblesTransacciones.map((t) => [
+                      csvFecha(t.fecha),
+                      t.tipo_operacion ?? "TRANSFERENCIA",
+                      t.cliente_origen_nombre ?? "",
+                      t.cliente_destino_nombre ?? "",
+                      t.modalidad ?? "",
+                      t.referencia ?? "",
+                      t.moneda ?? "USD",
+                      round2(Number(t.monto ?? 0)).toFixed(2),
+                      round2(Number(t.monto_usd ?? t.monto ?? 0)).toFixed(2),
+                    ])
+                  )
+                }
+              >
+                <span>⬇️</span> CSV
+              </Button>
+            </div>
           </div>
           <div className="max-h-[32rem] overflow-y-auto">
             <table className="w-full text-xs">
@@ -641,7 +779,7 @@ export function TabCaja({
                 </tr>
               </thead>
               <tbody>
-                {transacciones.map((t) => (
+                {visiblesTransacciones.map((t) => (
                   <tr key={t.id} className="border-t border-line">
                     <td className={td + " text-slate-500"}>{fechaCorta(t.fecha)}</td>
                     <td className={td}>
@@ -664,10 +802,12 @@ export function TabCaja({
                     </td>
                   </tr>
                 ))}
-                {transacciones.length === 0 && (
+                {visiblesTransacciones.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-3 py-8 text-center text-slate-400">
-                      Sin movimientos registrados.
+                      {transacciones.length === 0
+                        ? "Sin movimientos registrados."
+                        : "Ningún movimiento coincide con el filtro."}
                     </td>
                   </tr>
                 )}
@@ -787,6 +927,32 @@ export function TabBancos({
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-line px-4 py-2">
+          <span className="text-sm font-black uppercase text-slate-700">
+            <span className="mr-1 text-primary-600">🏦</span> Cuentas bancarias
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              exportarTabla(
+                "contabilidad_bancos",
+                ["Cuenta", "Moneda", "Saldo local", "Equivalente USD"],
+                visibles.map((b) => {
+                  const local = Number(b.saldo_local ?? 0);
+                  return [
+                    b.nombre,
+                    b.moneda_codigo ?? "USD",
+                    round2(local).toFixed(2),
+                    round2(saldoBancoUsd(local, b.moneda_codigo, tasaDe(b.moneda_codigo))).toFixed(2),
+                  ];
+                })
+              )
+            }
+          >
+            <span>⬇️</span> CSV
+          </Button>
+        </div>
         <table className="w-full text-xs">
           <thead className="bg-slate-50">
             <tr>
@@ -898,6 +1064,23 @@ export function TabMonedas({
   const [refTipo, setRefTipo] = useState<"BCV" | "BINANCE" | "EURO">("BCV");
   const [refTasa, setRefTasa] = useState("");
   const [refFecha, setRefFecha] = useState(() => new Date().toISOString().slice(0, 10));
+  const [filtro, setFiltro] = useState("");
+
+  /**
+   * Filtro de texto para las dos tablas de tasas. El histórico se filtra por
+   * la moneda y las referencias por su origen (BCV/BINANCE/EURO): es lo que
+   * el operador busca cuando revisa "cuál era la tasa del dólar ese día".
+   */
+  const visiblesHistorial = useMemo(() => {
+    const f = filtro.trim().toUpperCase();
+    if (!f) return historial;
+    return historial.filter((h) => `${h.monedas?.nombre ?? ""} ${h.monedas?.codigo ?? ""}`.toUpperCase().includes(f));
+  }, [historial, filtro]);
+  const visiblesReferencias = useMemo(() => {
+    const f = filtro.trim().toUpperCase();
+    if (!f) return referencias;
+    return referencias.filter((r) => `${r.tipo} ${r.fecha_aplicar}`.toUpperCase().includes(f));
+  }, [referencias, filtro]);
 
   const guardarTasa = async () => {
     if (!monedaId) return toast("Seleccione la moneda.", "warning");
@@ -1041,8 +1224,35 @@ export function TabMonedas({
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
-          <div className="border-b border-line px-4 py-2 text-sm font-black uppercase text-slate-700">
-            <span className="mr-1 text-primary-600">🕙</span> Histórico de tasas
+          <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-2">
+            <span className="text-sm font-black uppercase text-slate-700">
+              <span className="mr-1 text-primary-600">🕙</span> Histórico de tasas
+            </span>
+            <div className="flex items-center gap-2">
+              <input
+                value={filtro}
+                onChange={(e) => setFiltro(e.target.value.toUpperCase())}
+                placeholder="Filtrar por moneda u origen…"
+                className={`${inp} w-48 py-1`}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  exportarTabla(
+                    "contabilidad_tasas",
+                    ["Fecha", "Moneda", "Tasa"],
+                    visiblesHistorial.map((h) => [
+                      csvFecha(h.fecha_registro),
+                      h.monedas?.nombre ?? "",
+                      round2(Number(h.tasa)).toFixed(2),
+                    ])
+                  )
+                }
+              >
+                <span>⬇️</span> CSV
+              </Button>
+            </div>
           </div>
           <div className="max-h-80 overflow-y-auto">
             <table className="w-full text-xs">
@@ -1054,17 +1264,17 @@ export function TabMonedas({
                 </tr>
               </thead>
               <tbody>
-                {historial.map((h) => (
+                {visiblesHistorial.map((h) => (
                   <tr key={h.id} className="border-t border-line">
                     <td className={td + " text-slate-500"}>{fechaCorta(h.fecha_registro)}</td>
                     <td className={td + " font-semibold text-slate-700"}>{h.monedas?.nombre ?? "—"}</td>
                     <td className={`${td} text-right font-mono font-black`}>{Number(h.tasa).toFixed(2)}</td>
                   </tr>
                 ))}
-                {historial.length === 0 && (
+                {visiblesHistorial.length === 0 && (
                   <tr>
                     <td colSpan={3} className="px-3 py-8 text-center text-slate-400">
-                      Sin tasas registradas.
+                      {historial.length === 0 ? "Sin tasas registradas." : "Ninguna tasa coincide con el filtro."}
                     </td>
                   </tr>
                 )}
@@ -1074,8 +1284,27 @@ export function TabMonedas({
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
-          <div className="border-b border-line px-4 py-2 text-sm font-black uppercase text-slate-700">
-            <span className="mr-1 text-primary-600">📡</span> Tasas de referencia
+          <div className="flex items-center justify-between border-b border-line px-4 py-2">
+            <span className="text-sm font-black uppercase text-slate-700">
+              <span className="mr-1 text-primary-600">📡</span> Tasas de referencia
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                exportarTabla(
+                  "contabilidad_tasas_referencia",
+                  ["A partir de", "Origen", "Tasa"],
+                  visiblesReferencias.map((r) => [
+                    r.fecha_aplicar,
+                    r.tipo,
+                    round2(Number(r.tasa)).toFixed(2),
+                  ])
+                )
+              }
+            >
+              <span>⬇️</span> CSV
+            </Button>
           </div>
           <div className="max-h-80 overflow-y-auto">
             <table className="w-full text-xs">
@@ -1087,17 +1316,629 @@ export function TabMonedas({
                 </tr>
               </thead>
               <tbody>
-                {referencias.map((r) => (
+                {visiblesReferencias.map((r) => (
                   <tr key={r.id} className="border-t border-line">
                     <td className={td + " text-slate-500"}>{r.fecha_aplicar}</td>
                     <td className={td + " font-semibold text-slate-700"}>{r.tipo}</td>
                     <td className={`${td} text-right font-mono font-black`}>{Number(r.tasa).toFixed(2)}</td>
                   </tr>
                 ))}
-                {referencias.length === 0 && (
+                {visiblesReferencias.length === 0 && (
                   <tr>
                     <td colSpan={3} className="px-3 py-8 text-center text-slate-400">
-                      Sin tasas de referencia.
+                      {referencias.length === 0
+                        ? "Sin tasas de referencia."
+                        : "Ninguna tasa coincide con el filtro."}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+//  📘  BALANCE DE COMPROBACIÓN NIIF
+//
+//  Tres cosas que el resto del módulo no tiene:
+//
+//   · PARTIDA DOBLE: cada asiento tiene un debe y un haber que TIENEN que
+//     sumar lo mismo. El formulario muestra la diferencia EN VIVO y la
+//     validación de la base la vuelve a exigir en el servidor.
+//   · MULTIMONEDA (NIC 21): se declara la moneda en la que ocurrió el hecho
+//     económico (operación) y la en la que se presenta el balance, con la tasa
+//     HISTÓRICA del día. El importe original se conserva junto al convertido.
+//   · PRECISIÓN: los importes se suman en CENTAVOS ENTEROS, así que el
+//     total de la tabla es exactamente la suma de sus filas.
+// ===========================================================================
+
+/** Línea del asiento que se está armando en pantalla (todo en texto). */
+type LineaBorrador = {
+  cuenta: string;
+  nombre_cuenta: string;
+  debe: string;
+  haber: string;
+};
+
+const lineaVacia = (): LineaBorrador => ({
+  cuenta: "",
+  nombre_cuenta: "",
+  debe: "",
+  haber: "",
+});
+
+/**
+ * Clave de idempotencia sugerida.
+ *
+ * POR QUÉ LA LLEVA EL USUARIO Y NO EL SISTEMA: la clave es la que garantiza
+ * que un reintento (o un doble clic) NO registre dos veces el mismo hecho.
+ * Si la generara el servidor en cada llamada, la protección no serviría de
+ * nada; tiene que poder reproducirse la misma clave.
+ */
+function claveSugerida(): string {
+  const d = new Date();
+  const sello = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  const azar = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `NIIF-${sello}-${azar}`;
+}
+
+export function TabBalanceNIIF({
+  balance,
+  asientos,
+  monedas,
+  tasaVes,
+  onRango,
+  onHecho,
+}: {
+  balance: FilaBalanceNIIF[];
+  asientos: AsientoNIIFResumen[];
+  monedas: MonedaRow[];
+  tasaVes: number;
+  /** Recarga el balance para un rango de fechas (el acumulado no se puede recortar). */
+  onRango: (rango: { desde?: string; hasta?: string }) => Promise<void>;
+  onHecho: () => Promise<void>;
+}) {
+  const confirmar = useConfirmar();
+
+  // ── Filtros del balance ────────────────────────────────────────────────
+  const [texto, setTexto] = useState("");
+  const [moneda, setMoneda] = useState("");
+  const [desde, setDesde] = useState("");
+  const [hasta, setHasta] = useState("");
+
+  // ── Borrador del asiento ───────────────────────────────────────────────
+  const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10));
+  const [concepto, setConcepto] = useState("");
+  const [clave, setClave] = useState(claveSugerida);
+  const [monedaOperacion, setMonedaOperacion] = useState("USD");
+  const [monedaPresentacion, setMonedaPresentacion] = useState("USD");
+  const [tasa, setTasa] = useState("1");
+  const [lineas, setLineas] = useState<LineaBorrador[]>([lineaVacia(), lineaVacia()]);
+  const [guardando, setGuardando] = useState(false);
+
+  // Cuando la operación es en bolívares, la tasa por defecto es la del día
+  // (la misma que usa el resto del módulo). El operador puede cambiarla: la
+  // que se registra es la HISTÓRICA de ese hecho económico (NIC 21.39).
+  useEffect(() => {
+    setTasa(String(esVes(monedaOperacion) ? tasaVes : 1));
+  }, [monedaOperacion, tasaVes]);
+
+  /** Monedas que se ofrecen en los filtros: las del catálogo + las del módulo. */
+  const codigosMoneda = useMemo(() => {
+    const set = new Set<string>(["USD", "VES"]);
+    monedas.forEach((m) => {
+      if (m.codigo) set.add(m.codigo.toUpperCase());
+    });
+    return Array.from(set);
+  }, [monedas]);
+
+  /** Filas que se ven: el filtro de texto y de moneda es local e instantáneo. */
+  const visibles = useMemo(
+    () => filtrarBalanceNIIF(balance, { texto, moneda }),
+    [balance, texto, moneda]
+  );
+
+  /** Totales del balance, en CENTAVOS ENTEROS (el total es la suma exacta). */
+  const totales = useMemo(() => {
+    let debe = 0;
+    let haber = 0;
+    visibles.forEach((f) => {
+      debe += Math.round(f.total_debe * 100);
+      haber += Math.round(f.total_haber * 100);
+    });
+    return { debe: debe / 100, haber: haber / 100, diferencia: (debe - haber) / 100 };
+  }, [visibles]);
+
+  /** Totales del borrador, con la misma aritmética de centavos. */
+  const totalesBorrador = useMemo(() => {
+    let debe = 0;
+    let haber = 0;
+    lineas.forEach((l) => {
+      debe += Math.round(monedaExacta(l.debe) * 100);
+      haber += Math.round(monedaExacta(l.haber) * 100);
+    });
+    return { debe: debe / 100, haber: haber / 100, diferencia: (debe - haber) / 100 };
+  }, [lineas]);
+
+  const editarLinea = (i: number, campo: keyof LineaBorrador, valor: string) =>
+    setLineas((ls) => ls.map((l, j) => (j === i ? { ...l, [campo]: valor } : l)));
+  const agregarLinea = () => setLineas((ls) => [...ls, lineaVacia()]);
+  const quitarLinea = (i: number) =>
+    setLineas((ls) => (ls.length <= 2 ? ls : ls.filter((_, j) => j !== i)));
+
+  const aplicarRango = async () => {
+    await onRango({ desde: desde || undefined, hasta: hasta || undefined });
+  };
+
+  const limpiarRango = async () => {
+    setDesde("");
+    setHasta("");
+    await onRango({});
+  };
+
+  const registrar = async () => {
+    setGuardando(true);
+    try {
+      const r = await registrarAsientoPartidaDobleNIIF({
+        clave: clave.trim(),
+        fecha,
+        concepto: concepto.trim(),
+        moneda_operacion: monedaOperacion,
+        moneda_presentacion: monedaPresentacion,
+        tasa_cambio: numDe(tasa),
+        lineas: lineas.map((l) => ({
+          cuenta: l.cuenta.trim(),
+          nombre_cuenta: l.nombre_cuenta.trim(),
+          debe: numDe(l.debe),
+          haber: numDe(l.haber),
+        })),
+      });
+      if (!r.ok) {
+        toast(r.error ?? "Error al registrar el asiento.", "error");
+        return;
+      }
+      toast(
+        r.ya_existia
+          ? `El asiento ${r.clave} ya estaba registrado: no se duplicó.`
+          : `Asiento ${r.clave} registrado: debe ${(r.total_debe ?? 0).toFixed(2)} = haber ${(
+              r.total_haber ?? 0
+            ).toFixed(2)}.`,
+        "success"
+      );
+      setClave(claveSugerida());
+      setConcepto("");
+      setLineas([lineaVacia(), lineaVacia()]);
+      await onHecho();
+    } catch (e) {
+      // La validación del cuadre LANZA: el problema es del dato armado, no del
+      // servidor, y el mensaje dice exactamente qué línea hay que corregir.
+      toast((e as Error).message, "error");
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const revertir = async (a: AsientoNIIFResumen) => {
+    const ok = await confirmar({
+      titulo: "Registrar contra-asiento",
+      mensaje:
+        `Se registrará el CONTRA-ASIENTO de "${a.clave}" (${a.concepto ?? "sin concepto"}).\n\n` +
+        "El asiento original NO se borra: queda en el libro al lado del reverso. " +
+        "Un asiento ya registrado es inmutable; la forma correcta de corregirlo es el reverso.",
+      tipo: "warning",
+      textoConfirmar: "Registrar reverso",
+    });
+    if (!ok) return;
+    const r = await registrarContraAsientoNIIF(a.clave);
+    if (!r.ok) return toast(r.error ?? "Error al registrar el reverso.", "error");
+    toast(
+      r.ya_existia ? "El contra-asiento ya estaba registrado." : "Contra-asiento registrado.",
+      "success"
+    );
+    await onHecho();
+  };
+
+  const exportarBalance = () =>
+    exportarTabla(
+      "contabilidad_balance_niif",
+      ["Cuenta", "Nombre", "Moneda", "Debe", "Haber", "Saldo"],
+      [
+        ...visibles.map((f) => [
+          f.cuenta,
+          f.nombre_cuenta,
+          f.moneda_presentacion,
+          f.total_debe.toFixed(2),
+          f.total_haber.toFixed(2),
+          f.saldo.toFixed(2),
+        ]),
+        [
+          "TOTALES",
+          "",
+          "",
+          totales.debe.toFixed(2),
+          totales.haber.toFixed(2),
+          totales.diferencia.toFixed(2),
+        ],
+      ]
+    );
+
+  return (
+    <div className="space-y-4">
+      {/* ── Indicadores: el libro tiene que cuadrar ─────────────────────── */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total debe</p>
+          <p className="text-2xl font-black text-slate-700">{totales.debe.toFixed(2)}</p>
+          <p className="text-[10px] text-slate-400">Suma del debe de las cuentas</p>
+        </div>
+        <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total haber</p>
+          <p className="text-2xl font-black text-slate-700">{totales.haber.toFixed(2)}</p>
+          <p className="text-[10px] text-slate-400">Suma del haber de las cuentas</p>
+        </div>
+        <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Diferencia</p>
+          <p
+            className={`text-2xl font-black ${
+              totales.diferencia === 0 ? "text-emerald-700" : "text-danger-600"
+            }`}
+          >
+            {totales.diferencia.toFixed(2)}
+          </p>
+          <p className="text-[10px] text-slate-400">
+            {totales.diferencia === 0
+              ? "✅ El libro cuadra: debe = haber"
+              : "🚫 El libro NO cuadra: revisá las líneas del período"}
+          </p>
+        </div>
+      </div>
+
+      {/* ── Filtros ──────────────────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-[12rem] flex-1">
+            <label className={lbl}>Filtrar cuenta</label>
+            <input
+              value={texto}
+              onChange={(e) => setTexto(e.target.value.toUpperCase())}
+              placeholder="Código o nombre de la cuenta…"
+              className={inp}
+            />
+          </div>
+          <div>
+            <label className={lbl}>Moneda</label>
+            <select value={moneda} onChange={(e) => setMoneda(e.target.value)} className={`${inp} font-bold`}>
+              <option value="">Todas</option>
+              {codigosMoneda.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={lbl}>Desde</label>
+            <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className={inp} />
+          </div>
+          <div>
+            <label className={lbl}>Hasta</label>
+            <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className={inp} />
+          </div>
+          <Button variant="default" size="sm" onClick={() => void aplicarRango()}>
+            <span>🔎</span> Aplicar rango
+          </Button>
+          {(desde || hasta) && (
+            <Button variant="outline" size="sm" onClick={() => void limpiarRango()}>
+              <span>✖</span> Todo el histórico
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={exportarBalance}>
+            <span>⬇️</span> CSV
+          </Button>
+        </div>
+        <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
+          El balance acumulado no se puede recortar por fecha (mezclaría saldos de antes y después del
+          corte), así que el rango se recalcula sobre el DETALLE del período. Sin rango, el saldo es el
+          acumulado de todo el libro.
+        </p>
+      </div>
+
+      {/* ── Balance de comprobación ─────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+        <div className="border-b border-line px-4 py-2 text-sm font-black uppercase text-slate-700">
+          <span className="mr-1 text-primary-600">⚖️</span> Balance de comprobación
+        </div>
+        <div className="max-h-96 overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-slate-50">
+              <tr>
+                <th className={th}>Cuenta</th>
+                <th className={th}>Nombre</th>
+                <th className={th}>Moneda</th>
+                <th className={th + " text-right"}>Debe</th>
+                <th className={th + " text-right"}>Haber</th>
+                <th className={th + " text-right"}>Saldo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibles.map((f) => (
+                <tr key={`${f.cuenta}-${f.moneda_presentacion}`} className="border-t border-line">
+                  <td className={td + " font-mono font-bold text-slate-700"}>{f.cuenta}</td>
+                  <td className={td + " text-slate-600"}>{f.nombre_cuenta}</td>
+                  <td className={td + " text-slate-500"}>{f.moneda_presentacion}</td>
+                  <td className={td + " text-right font-mono"}>{f.total_debe.toFixed(2)}</td>
+                  <td className={td + " text-right font-mono"}>{f.total_haber.toFixed(2)}</td>
+                  <td
+                    className={`${td} text-right font-mono font-black ${
+                      f.saldo < 0 ? "text-danger-600" : "text-emerald-700"
+                    }`}
+                  >
+                    {f.saldo.toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+              {visibles.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-3 py-8 text-center text-slate-400">
+                    Sin asientos en el período (o sin permiso para verlos).
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-line bg-slate-50">
+                <td className={td + " font-black uppercase text-slate-700"} colSpan={3}>
+                  Totales
+                </td>
+                <td className={td + " text-right font-mono font-black text-slate-700"}>
+                  {totales.debe.toFixed(2)}
+                </td>
+                <td className={td + " text-right font-mono font-black text-slate-700"}>
+                  {totales.haber.toFixed(2)}
+                </td>
+                <td
+                  className={`${td} text-right font-mono font-black ${
+                    totales.diferencia === 0 ? "text-emerald-700" : "text-danger-600"
+                  }`}
+                >
+                  {totales.diferencia.toFixed(2)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Asiento en partida doble + libro de asientos ─────────────────── */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+          <h2 className="mb-3 text-sm font-black uppercase text-slate-700">
+            <span className="mr-1 text-primary-600">📘</span> Registrar asiento (partida doble)
+          </h2>
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className={lbl}>Fecha *</label>
+                <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className={inp} />
+              </div>
+              <div>
+                <label className={lbl}>Clave de idempotencia *</label>
+                <input value={clave} onChange={(e) => setClave(e.target.value)} className={`${inp} font-mono`} />
+              </div>
+            </div>
+            <div>
+              <label className={lbl}>Concepto *</label>
+              <input value={concepto} onChange={(e) => setConcepto(e.target.value)} className={inp} />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className={lbl}>Moneda de operación *</label>
+                <select
+                  value={monedaOperacion}
+                  onChange={(e) => setMonedaOperacion(e.target.value)}
+                  className={`${inp} font-bold`}
+                >
+                  <option value="USD">USD</option>
+                  <option value="VES">VES (Bs)</option>
+                </select>
+              </div>
+              <div>
+                <label className={lbl}>Moneda de presentación *</label>
+                <select
+                  value={monedaPresentacion}
+                  onChange={(e) => setMonedaPresentacion(e.target.value)}
+                  className={`${inp} font-bold`}
+                >
+                  <option value="USD">USD</option>
+                  <option value="VES">VES (Bs)</option>
+                </select>
+              </div>
+              <div>
+                <label className={lbl}>Tasa histórica *</label>
+                <input
+                  value={tasa}
+                  onChange={(e) => setTasa(e.target.value)}
+                  inputMode="decimal"
+                  className={`${inp} text-right font-mono font-bold`}
+                />
+              </div>
+            </div>
+            <p className="text-[10px] leading-relaxed text-slate-400">
+              NIC 21: la tasa es la del DÍA del hecho económico, no la de hoy. Con la operación en Bs y la
+              presentación en USD, la tasa es Bs por 1 USD. El importe original se conserva junto al
+              convertido.
+            </p>
+
+            <div className="overflow-hidden rounded-lg border border-line">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className={th}>Cuenta</th>
+                    <th className={th}>Nombre</th>
+                    <th className={th + " text-right"}>Debe</th>
+                    <th className={th + " text-right"}>Haber</th>
+                    <th className={th} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {lineas.map((l, i) => (
+                    <tr key={i} className="border-t border-line">
+                      <td className={td}>
+                        <input
+                          value={l.cuenta}
+                          onChange={(e) => editarLinea(i, "cuenta", e.target.value)}
+                          placeholder="1.1.01"
+                          className={`${inp} px-2 py-1 font-mono`}
+                        />
+                      </td>
+                      <td className={td}>
+                        <input
+                          value={l.nombre_cuenta}
+                          onChange={(e) => editarLinea(i, "nombre_cuenta", e.target.value)}
+                          placeholder="Caja"
+                          className={`${inp} px-2 py-1`}
+                        />
+                      </td>
+                      <td className={td}>
+                        <input
+                          value={l.debe}
+                          onChange={(e) => editarLinea(i, "debe", e.target.value)}
+                          inputMode="decimal"
+                          className={`${inp} px-2 py-1 text-right font-mono`}
+                        />
+                      </td>
+                      <td className={td}>
+                        <input
+                          value={l.haber}
+                          onChange={(e) => editarLinea(i, "haber", e.target.value)}
+                          inputMode="decimal"
+                          className={`${inp} px-2 py-1 text-right font-mono`}
+                        />
+                      </td>
+                      <td className={td + " text-right"}>
+                        <button
+                          type="button"
+                          onClick={() => quitarLinea(i)}
+                          title="Quitar línea"
+                          className="text-slate-400 hover:text-danger-600"
+                        >
+                          ✖
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div
+              className={`rounded-lg px-3 py-2 text-[11px] font-bold ${
+                totalesBorrador.diferencia === 0
+                  ? "bg-emerald-50 text-emerald-800"
+                  : "bg-amber-50 text-amber-800"
+              }`}
+            >
+              Debe {totalesBorrador.debe.toFixed(2)} · Haber {totalesBorrador.haber.toFixed(2)} ·{" "}
+              {totalesBorrador.diferencia === 0
+                ? "✅ cuadra"
+                : `diferencia ${totalesBorrador.diferencia.toFixed(2)}`}
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="success"
+                size="sm"
+                className="flex-1"
+                disabled={guardando}
+                onClick={() => void registrar()}
+              >
+                <span>✅</span> {guardando ? "Registrando…" : "Registrar asiento"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={agregarLinea}>
+                <span>➕</span> Línea
+              </Button>
+            </div>
+            <p className="text-[10px] leading-relaxed text-slate-400">
+              Un asiento descuadrado NO se registra: la validación corre en el navegador (para avisarte al
+              instante) y otra vez en el servidor (que es la garantía real). Repetir el registro con la misma
+              clave no duplica nada.
+            </p>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-line px-4 py-2">
+            <span className="text-sm font-black uppercase text-slate-700">
+              <span className="mr-1 text-primary-600">🧾</span> Asientos registrados
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                exportarTabla(
+                  "contabilidad_asientos_niif",
+                  ["Fecha", "Clave", "Concepto", "Moneda operación", "Moneda presentación", "Tasa", "Debe", "Haber", "Reverso"],
+                  asientos.map((a) => [
+                    a.fecha ?? "",
+                    a.clave,
+                    a.concepto ?? "",
+                    a.moneda_operacion ?? "",
+                    a.moneda_presentacion ?? "",
+                    round2(Number(a.tasa_cambio ?? 0)).toFixed(2),
+                    round2(Number(a.total_debe ?? 0)).toFixed(2),
+                    round2(Number(a.total_haber ?? 0)).toFixed(2),
+                    a.es_contra_asiento ? "Si" : "No",
+                  ])
+                )
+              }
+            >
+              <span>⬇️</span> CSV
+            </Button>
+          </div>
+          <div className="max-h-[32rem] overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-slate-50">
+                <tr>
+                  <th className={th}>Fecha</th>
+                  <th className={th}>Clave</th>
+                  <th className={th}>Concepto</th>
+                  <th className={th + " text-right"}>Debe</th>
+                  <th className={th + " text-right"}>Haber</th>
+                  <th className={th} />
+                </tr>
+              </thead>
+              <tbody>
+                {asientos.map((a) => (
+                  <tr key={a.id} className="border-t border-line">
+                    <td className={td + " text-slate-500"}>{a.fecha ?? "—"}</td>
+                    <td className={td + " font-mono text-slate-600"}>{a.clave}</td>
+                    <td className={td + " font-semibold text-slate-700"}>
+                      {a.concepto ?? "—"}
+                      {a.es_contra_asiento && (
+                        <span className="ml-1 rounded bg-purple-100 px-1.5 py-0.5 text-[9px] font-black uppercase text-purple-800">
+                          Reverso
+                        </span>
+                      )}
+                    </td>
+                    <td className={td + " text-right font-mono"}>{round2(Number(a.total_debe ?? 0)).toFixed(2)}</td>
+                    <td className={td + " text-right font-mono"}>{round2(Number(a.total_haber ?? 0)).toFixed(2)}</td>
+                    <td className={td + " text-right whitespace-nowrap"}>
+                      {!a.es_contra_asiento && (
+                        <Button variant="outline" size="sm" onClick={() => void revertir(a)}>
+                          <span>↩️</span> Reversar
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {asientos.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-8 text-center text-slate-400">
+                      Todavía no hay asientos NIIF registrados.
                     </td>
                   </tr>
                 )}

@@ -569,9 +569,52 @@ export type EntradaCrucePuestos = {
   bruto: number;
   /** Monto arriesgado en la jugada. */
   monto: number;
+  /** Ejemplar de la jugada; habilita distinguir las dos modalidades de cruce. */
+  caballo?: string;
   /** Jugada anulada/retirada: NO participa del cruce. */
   anulada?: boolean;
 };
+
+export interface ModalidadesCruce {
+  mismoEjemplar: boolean;
+  diferenteEjemplar: boolean;
+}
+
+export interface OpcionesCrucesPuestos {
+  grupo?: Partial<ModalidadesCruce>;
+  porJugadorPermanente?: Record<string, Partial<ModalidadesCruce>>;
+  carreraTodosOverride?: Partial<ModalidadesCruce>;
+  carreraPorJugadorOverride?: Record<string, Partial<ModalidadesCruce>>;
+}
+
+export type OrigenCrucePuestos = "Grupo" | "Ficha Usuario" | "Solo Carrera - Todos" | "Solo Carrera - Jugador";
+
+export type ReglaCrucePuestos = {
+  activo: boolean;
+  origen: OrigenCrucePuestos;
+};
+
+/** Resuelve cada modalidad independientemente, respetando la prioridad por jugador y carrera. */
+export function resolverReglaCrucePuestos(
+  opciones: OpcionesCrucesPuestos,
+  jugador: string,
+  modalidad: keyof ModalidadesCruce
+): ReglaCrucePuestos {
+  const clave = String(jugador ?? "").trim().toUpperCase();
+  const reglasJugador = (reglas: Record<string, Partial<ModalidadesCruce>> | undefined) =>
+    Object.entries(reglas ?? {}).find(([nombre]) => nombre.trim().toUpperCase() === clave)?.[1];
+  const niveles: Array<{ valores?: Partial<ModalidadesCruce>; origen: OrigenCrucePuestos }> = [
+    { valores: clave ? reglasJugador(opciones.carreraPorJugadorOverride) : undefined, origen: "Solo Carrera - Jugador" },
+    { valores: opciones.carreraTodosOverride, origen: "Solo Carrera - Todos" },
+    { valores: clave ? reglasJugador(opciones.porJugadorPermanente) : undefined, origen: "Ficha Usuario" },
+    { valores: opciones.grupo, origen: "Grupo" },
+  ];
+  for (const nivel of niveles) {
+    const valor = nivel.valores?.[modalidad];
+    if (typeof valor === "boolean") return { activo: valor, origen: nivel.origen };
+  }
+  return { activo: false, origen: "Grupo" };
+}
 
 export type LiquidacionCrucePuestosCliente = {
   cliente: string;
@@ -583,11 +626,13 @@ export type LiquidacionCrucePuestosCliente = {
   netoCliente: number; // (ganado − perdido) − comision
   permiteCruces: boolean;
   participantes: number; // cantidad de tickets que participan
+  modalidadesAplicadas: Array<{ modalidad: keyof ModalidadesCruce; origen: OrigenCrucePuestos }>;
+  explicacionCruce?: string;
 };
 
 export function calcularLiquidacionPuestosCarrera(
   entradas: EntradaCrucePuestos[],
-  opts: { permiteCruces: boolean; pctComision: number }
+  opts: (OpcionesCrucesPuestos & { pctComision: number }) | { permiteCruces: boolean; pctComision: number }
 ): LiquidacionCrucePuestosCliente[] {
   const participantes: EntradaCrucePuestos[] = (entradas ?? []).filter((e) => !e.anulada);
   const porCliente = new Map<string, EntradaCrucePuestos[]>();
@@ -599,17 +644,51 @@ export function calcularLiquidacionPuestosCarrera(
     porCliente.set(c, arr);
   }
   const pct = Number(opts.pctComision);
-  const permite = opts.permiteCruces === true;
+  const esLegacy = "permiteCruces" in opts;
   const result: LiquidacionCrucePuestosCliente[] = [];
   for (const [cliente, arr] of porCliente) {
     let ganadoBruto = 0;
     let perdidoBruto = 0;
+    let perdidaCruzada = 0;
+    const modalidadesAplicadas: LiquidacionCrucePuestosCliente["modalidadesAplicadas"] = [];
+    const ganancias = arr
+      .filter((e) => e.ok)
+      .map((e) => ({ entrada: e, disponible: Math.max(0, Number(e.bruto) - Number(e.monto)) }));
+    const perdidas = arr.filter((e) => !e.ok);
     for (const e of arr) {
       if (e.ok) ganadoBruto += e.bruto - e.monto;
       else perdidoBruto += e.monto;
     }
     const neto = ganadoBruto - perdidoBruto;
-    const baseComision = permite ? (neto > 0 ? neto : 0) : ganadoBruto;
+    let baseComision = ganadoBruto;
+    if (esLegacy) {
+      const permite = opts.permiteCruces === true;
+      baseComision = permite ? (neto > 0 ? neto : 0) : ganadoBruto;
+      if (permite && perdidoBruto > 0 && ganadoBruto > 0) {
+        modalidadesAplicadas.push({ modalidad: "mismoEjemplar", origen: "Grupo" });
+      }
+    } else {
+      for (const perdida of perdidas) {
+        let disponible = Number(perdida.monto) || 0;
+        for (const ganancia of ganancias) {
+          if (disponible <= 0 || ganancia.disponible <= 0) continue;
+          const mismo = String(perdida.caballo ?? "").trim().toUpperCase() ===
+            String(ganancia.entrada.caballo ?? "").trim().toUpperCase();
+          const modalidad: keyof ModalidadesCruce = mismo ? "mismoEjemplar" : "diferenteEjemplar";
+          if (!String(perdida.caballo ?? "").trim() || !String(ganancia.entrada.caballo ?? "").trim()) continue;
+          const regla = resolverReglaCrucePuestos(opts, cliente, modalidad);
+          if (!regla.activo) continue;
+          const neteado = Math.min(disponible, ganancia.disponible);
+          disponible -= neteado;
+          ganancia.disponible -= neteado;
+          perdidaCruzada += neteado;
+          if (!modalidadesAplicadas.some((m) => m.modalidad === modalidad && m.origen === regla.origen)) {
+            modalidadesAplicadas.push({ modalidad, origen: regla.origen });
+          }
+        }
+      }
+      baseComision = Math.max(0, ganadoBruto - perdidaCruzada);
+    }
     const comision = baseComision > 0 ? round2(baseComision * (pct / 100)) : 0;
     const netoCliente = round2(neto - comision);
     result.push({
@@ -620,8 +699,12 @@ export function calcularLiquidacionPuestosCarrera(
       baseComision: round2(baseComision),
       comision: round2(comision),
       netoCliente,
-      permiteCruces: permite,
+      permiteCruces: baseComision < ganadoBruto,
       participantes: arr.length,
+      modalidadesAplicadas,
+      explicacionCruce: perdidaCruzada > 0
+        ? `Ganancia ${round2(ganadoBruto)} vs ${round2(perdidaCruzada)} → comisión sobre ${round2(baseComision)}`
+        : undefined,
     });
   }
   return result;

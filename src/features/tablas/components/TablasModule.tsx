@@ -330,6 +330,11 @@ export function TablasModule(props: Props) {
         retirado: !!cb.retirado,
         ganador: !!cb.ganador,
         ejemplar_id: cb.ejemplar_id ?? null,
+        // El estado INVALIDADO viaja con el ejemplar: si se perdiera al
+        // publicar, un ejemplar descalificado volveria a la oferta como
+        // valido y podria cobrar premio de ganador.
+        invalidado: !!cb.invalidado,
+        motivo_invalidacion: cb.motivo_invalidacion ?? undefined,
       };
     }),
     

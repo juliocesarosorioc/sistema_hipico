@@ -7,7 +7,11 @@
 // Caso 3 (Pérdida Neta con Cruces): Gana +50, pierde -100 → Base 0, Comisión 0, Neto -50
 // Caso 4 (Inmunidad de otras jugadas): Marcas no aplican cruce
 // ============================================================================
-import { calcularLiquidacionPuestosCarrera, type EntradaCrucePuestos } from "../src/features/motores/lib/puestos";
+import {
+  calcularLiquidacionPuestosCarrera,
+  resolverReglaCrucePuestos,
+  type EntradaCrucePuestos,
+} from "../src/features/motores/lib/puestos";
 import { netearComisionCruce, type NeteoCruceItem } from "../src/features/betting/lib/bettingEngine";
 
 let pasan = 0;
@@ -68,6 +72,67 @@ const assert = (cond: boolean, msg: string) => {
   for (const [k, v] of g1) {
     assert(Math.abs(v.comisionNeta - 5) < 0.001, `Caso 4a comisión ${v.comisionNeta} != 5`);
   }
+}
+
+// Caso 5: las modalidades se aplican por ejemplar y de forma independiente.
+{
+  const entradas: EntradaCrucePuestos[] = [
+    { cliente: "C1", caballo: "1", ok: true, bruto: 150, monto: 50 },
+    { cliente: "C1", caballo: "1", ok: false, bruto: 0, monto: 50 },
+    { cliente: "C1", caballo: "5", ok: false, bruto: 0, monto: 25 },
+  ];
+  const [r] = calcularLiquidacionPuestosCarrera(entradas, {
+    pctComision: 10,
+    grupo: { mismoEjemplar: true, diferenteEjemplar: false },
+  });
+  assert(r.baseComision === 50, `Caso 5 base ${r.baseComision} != 50`);
+  assert(r.comision === 5, `Caso 5 comisión ${r.comision} != 5`);
+  assert(r.modalidadesAplicadas.some((m) => m.modalidad === "mismoEjemplar"), "Caso 5 debe registrar modalidad mismo ejemplar");
+}
+
+// Caso 6: prioridad estricta: override jugador > override global > ficha > grupo.
+{
+  const opciones = {
+    grupo: { mismoEjemplar: false, diferenteEjemplar: false },
+    porJugadorPermanente: { JUAN: { mismoEjemplar: true, diferenteEjemplar: true } },
+    carreraTodosOverride: { mismoEjemplar: false },
+    carreraPorJugadorOverride: { JUAN: { mismoEjemplar: true } },
+  };
+  const regla = resolverReglaCrucePuestos(opciones, "juan", "mismoEjemplar");
+  assert(regla.activo && regla.origen === "Solo Carrera - Jugador", "Caso 6 debe prevalecer excepción de jugador en carrera");
+  const global = resolverReglaCrucePuestos(opciones, "juan", "diferenteEjemplar");
+  assert(global.activo && global.origen === "Ficha Usuario", "Caso 6 debe heredar la ficha si el override de carrera no define esa modalidad");
+  const globalOverride = resolverReglaCrucePuestos({
+    ...opciones,
+    carreraTodosOverride: { diferenteEjemplar: false },
+  }, "juan", "diferenteEjemplar");
+  assert(!globalOverride.activo && globalOverride.origen === "Solo Carrera - Todos", "Caso 6 debe prevalecer excepción global sobre ficha");
+  const permanente = resolverReglaCrucePuestos(
+    { grupo: { diferenteEjemplar: false }, porJugadorPermanente: { JUAN: { diferenteEjemplar: true } } },
+    "JUAN",
+    "diferenteEjemplar"
+  );
+  assert(permanente.activo && permanente.origen === "Ficha Usuario", "Caso 6 debe aplicar la ficha antes que el grupo");
+  const grupo = resolverReglaCrucePuestos({ grupo: { mismoEjemplar: true } }, "OTRO", "mismoEjemplar");
+  assert(grupo.activo && grupo.origen === "Grupo", "Caso 6 debe usar el grupo cuando no hay overrides");
+}
+
+// Caso 7: Diferentes Ejemplares solo netea si esa modalidad está habilitada.
+{
+  const entradas: EntradaCrucePuestos[] = [
+    { cliente: "C1", caballo: "1", ok: true, bruto: 150, monto: 50 },
+    { cliente: "C1", caballo: "5", ok: false, bruto: 0, monto: 100 },
+  ];
+  const [conDiferentes] = calcularLiquidacionPuestosCarrera(entradas, {
+    pctComision: 10,
+    grupo: { mismoEjemplar: false, diferenteEjemplar: true },
+  });
+  const [sinDiferentes] = calcularLiquidacionPuestosCarrera(entradas, {
+    pctComision: 10,
+    grupo: { mismoEjemplar: false, diferenteEjemplar: false },
+  });
+  assert(conDiferentes.comision === 0, `Caso 7 cruce activo debe dejar comisión 0, recibió ${conDiferentes.comision}`);
+  assert(sinDiferentes.comision === 10, `Caso 7 sin cruce debe cobrar comisión completa 10, recibió ${sinDiferentes.comision}`);
 }
 
 console.log("cruces-puestos:", pasan, "OK /", fallan, "FALLAS");
