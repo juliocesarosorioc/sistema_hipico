@@ -430,6 +430,20 @@ export function calcularReparto(o: OpcionesReparto): Reparto {
 
   /* ── A PREMIO: riesgos en razón P:Q (notación 10a8 / 10a7 / 10/8) ── */
   if (prop && !notacionPP) {
+    // NO PERMITIR JUGAR CONTRA SÍ MISMO
+    const nombre1 = String(o.cliente1?.nombre ?? "").trim().toUpperCase();
+    const nombre2 = String(o.cliente2?.nombre ?? "").trim().toUpperCase();
+    if (nombre1 && nombre2 && nombre1 === nombre2) {
+      return {
+        estructura: "A_PREMIO",
+        montoAutorizado: 0,
+        recortado: true,
+        lado1: armarLado(cab1, 0, o.cliente1),
+        lado2: armarLado(cab2, 0, o.cliente2),
+        proporcion: prop,
+        avisos: [`No se puede jugar contra el mismo cliente (${nombre1}). Cliente 1 y Cliente 2 deben ser distintos.`],
+      };
+    }
     const { p, q } = prop;
     const d1 = disponibleParaJugar(o.cliente1);
     const d2 = disponibleParaJugar(o.cliente2);
@@ -467,7 +481,23 @@ export function calcularReparto(o: OpcionesReparto): Reparto {
     };
   }
 
-  /* ── DADOR o PP: ambos arriesgan lo mismo, tope = mínimo disponible ── */  const d1 = disponibleParaJugar(o.cliente1);
+  /* ── DADOR o PP: ambos arriesgan lo mismo, tope = mínimo disponible ── */
+  // NO PERMITIR JUGAR CONTRA SÍ MISMO
+  const nombre1 = String(o.cliente1?.nombre ?? "").trim().toUpperCase();
+  const nombre2 = String(o.cliente2?.nombre ?? "").trim().toUpperCase();
+  if (nombre1 && nombre2 && nombre1 === nombre2) {
+    return {
+      estructura: esDador ? "DADOR" : "PP",
+      montoAutorizado: 0,
+      recortado: true,
+      lado1: armarLado(cab1, 0, o.cliente1),
+      lado2: armarLado(cab2, 0, o.cliente2),
+      proporcion: null,
+      avisos: [`No se puede jugar contra el mismo cliente (${nombre1}). Cliente 1 y Cliente 2 deben ser distintos.`],
+    };
+  }
+  
+  const d1 = disponibleParaJugar(o.cliente1);
   const d2 = disponibleParaJugar(o.cliente2);
   const l1 = esSinTope(o.cliente1);
   const l2 = esSinTope(o.cliente2);
