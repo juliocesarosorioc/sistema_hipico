@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { BuscadorJornada } from "@/shared/components/ui/BuscadorJornada";
 import { SemaforoCarreras } from "@/features/gestion/components/SemaforoCarreras";
 import { PizarraProspectiva } from "@/features/inteligencia/components/PizarraProspectiva";
+import { ModalAnalisisActuarialGodet } from "@/features/ejemplares/components/ModalAnalisisActuarialGodet";
 import {
   leerCarrerasDeInteligencia,
   proyectarCarrera,
@@ -49,6 +50,7 @@ export function ProyeccionesModule() {
   const [proyectando, setProyectando] = useState(false);
   const [aplicandoRetiros, setAplicandoRetiros] = useState(false);
   const [error, setError] = useState("");
+  const [abrirGodetModal, setAbrirGodetModal] = useState(false);
 
   const activos = useHipodromosActivos();
   const { hipodromosDelDia } = useRegistroCentralOpts(fecha);
@@ -208,9 +210,9 @@ export function ProyeccionesModule() {
         columnas={5}
         disabled={cargando}
         acciones={
-          <Button variant="ghost" size="md" disabled={cargando} onClick={() => void cargarCarreras(fecha)}>
+          <div className="flex items-center gap-2"><button type="button" onClick={() => setAbrirGodetModal(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-yellow-400 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-slate-900 shadow-sm hover:from-amber-400 hover:to-yellow-300">🧭 Motor Godet IA v3 (MACTOR + SMIC + Actuario v4)</button><Button variant="ghost" size="md" disabled={cargando} onClick={() => void cargarCarreras(fecha)}>
             {cargando ? "Cargando…" : "🔄 Actualizar"}
-          </Button>
+          </Button></div>
         }
       >
         <div>
@@ -286,6 +288,7 @@ export function ProyeccionesModule() {
         <TablaActuarial proyeccion={proyeccion} />
       )}
 
+      <ModalAnalisisActuarialGodet abierto={abrirGodetModal} onCerrar={() => setAbrirGodetModal(false)} hipodromo={hipodromo || undefined} carrera={carreraSel?.carrera} fecha={fecha} ejemplares={proyeccion?.ranking.map((r) => ({ numero: r.numero, nombre: r.nombre, jinete: r.jineteHabitual, entrenador: r.entrenadorHabitual, speedRating: r.speedRating })) ?? []} />
       <ToastHost />
     </div>
   );

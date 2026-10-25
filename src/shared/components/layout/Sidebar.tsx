@@ -147,14 +147,6 @@ const CATEGORIAS: Categoria[] = [
       { href: "/inteligencia-hipica/proyecciones", emoji: "📈", txt: "Proyecciones", visibleSiempre: true },
     ],
   },
-  {
-    id: "inteligencia",
-    titulo: "Inteligencia Hípica",
-    emoji: "🧭",
-    items: [
-      { href: "/inteligencia-hipica/proyecciones", emoji: "📈", txt: "Proyecciones" },
-    ],
-  },
 ];
 
 // El href puede traer query (?pestana=auditoria): para comparar contra el

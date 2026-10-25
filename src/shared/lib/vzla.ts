@@ -86,9 +86,8 @@ export function formatoNumero(v: number | string | null | undefined, dec = 2): s
   return n.toLocaleString("es-VE", { minimumFractionDigits: dec, maximumFractionDigits: dec });
 }
 
-export function formatoMoneda(m: string | null | undefined, v: number | string | null | undefined, dec = 2): string {
-  const esVes = String(m ?? "").toUpperCase() === "VES" || String(m ?? "").toUpperCase() === "BS";
-  return (esVes ? "Bs " : "$ ") + formatoNumero(v, dec);
+export function formatoMoneda(_m: string | null | undefined, v: number | string | null | undefined, dec = 2): string {
+  return formatoNumero(v, dec);
 }
 
 /** Construye "+58 4121234567" quitando el 0 nacional inicial. */

@@ -2461,8 +2461,7 @@ const hipodromosDelDia = useMemo(() => {
         )}
 
         {/* Separación Estricta: Área 1 (En Vivo) vs Área 2 (Adelantadas) */}
-        {filasPreview.length > 0 && (
-          <div className="mt-3 grid gap-2 lg:grid-cols-2">
+        <div className="mt-3 grid gap-2 lg:grid-cols-2">
             <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-2.5">
               <p className="text-[10px] font-black uppercase tracking-wide text-emerald-800">
                 ⚡ JUGADAS EN VIVO (CARRERA ACTUAL) ({filasPreviewEnVivo.length})
@@ -2502,7 +2501,6 @@ const hipodromosDelDia = useMemo(() => {
               )}
             </div>
           </div>
-        )}
 
         {/* Visor Interactivo de Reportes WhatsApp (#reporteArea) + Acuse de Recibo */}
         <div id="reporteArea" className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">

@@ -33,18 +33,5 @@ tmp.tsx
 *.tsbuildinfo
 .tsbuild-pruebas/
 
-<<<<<<< HEAD
-# Blindaje de Seguridad y Secretos
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-*.sql.bak
-*.dump
-_archivo_scripts_viejos/
-supabase/.temp/
-=======
 # Supabase temp
 supabase/.temp/
->>>>>>> c0aa4bfb0e0030e9dd95ad4d639ec42acd3ebfc3

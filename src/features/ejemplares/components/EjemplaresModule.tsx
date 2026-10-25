@@ -63,7 +63,7 @@ export function EjemplaresModule() {
           <button
             type="button"
             onClick={() => setAbrirGodet(true)}
-            disabled={ejemplaresGodet.length === 0}
+            disabled={false}
             title={
               ejemplaresGodet.length === 0
                 ? "Carga el padrón de ejemplares para poder proyectar."
