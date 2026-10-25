@@ -1,4 +1,4 @@
-﻿import { liquidarOficial } from "@/features/motores/lib/oficiales";
+import { liquidarOficial } from "@/features/motores/lib/oficiales";
 import { exigirPermiso } from "@/features/seguridad/lib/vigente";
 import { cerrarTablaFija } from "@/features/tablas/lib/tablas-fijas";
 import { upsertResultadoCentral } from "@/features/carreras/lib/carreras-dia";
@@ -16,6 +16,7 @@ import { liquidarDupleta } from "@/features/dupletas/lib/dupletas";
 import { liquidarTablaFija } from "@/features/tablas/lib/rpc";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
+import { redondearCentavos } from "@/shared/lib/dinero";
 import {
   calcularLiquidacionPuestosCarrera,
   type EntradaCrucePuestos,
@@ -397,7 +398,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
 }
 
 function round2(n: number): number {
-  return Math.round(n * 100) / 100;
+  return redondearCentavos(n);
 }
 
 /**

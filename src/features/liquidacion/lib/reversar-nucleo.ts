@@ -33,6 +33,7 @@
 // Relativo a propósito: este archivo se corre en node y las pruebas no resuelven
 // el alias `@/`. Es un hermano en la misma carpeta.
 import { esLiquidada } from "./estados-jugada";
+import { redondearCentavos, sumarDinero } from "../../../shared/lib/dinero";
 
 /** Modalidad de un ticket, derivada de `nombre_jugada`. */
 export type ModalidadReversion = "UNIVERSAL" | "TABLA" | "MARCA" | "DUPLETA";
@@ -81,8 +82,8 @@ export function modalidadDeTicket(nombre: unknown): ModalidadReversion {
  */
 export function creditoARevertir(row: Record<string, unknown>): number {
   const estado = TXT(row.estado);
-  if (estado === "Ganador") return NUM(row.monto_decidido ?? row.premio_pagar);
-  if (estado === "Retirado") return NUM(row.monto_jugado);
+  if (estado === "Ganador") return redondearCentavos(NUM(row.monto_decidido ?? row.premio_pagar));
+  if (estado === "Retirado") return redondearCentavos(NUM(row.monto_jugado));
   return 0;
 }
 
@@ -133,8 +134,8 @@ export function resumirReversion(ops: OperacionReversion[]): ResumenReversion {
   let credito = 0;
   for (const op of ops) {
     porModalidad[op.modalidad].tickets += 1;
-    porModalidad[op.modalidad].credito = Math.round((porModalidad[op.modalidad].credito + op.credito) * 100) / 100;
+    porModalidad[op.modalidad].credito = sumarDinero(porModalidad[op.modalidad].credito, op.credito);
     credito += op.credito;
   }
-  return { tickets: ops.length, credito: Math.round(credito * 100) / 100, porModalidad };
+  return { tickets: ops.length, credito: redondearCentavos(credito), porModalidad };
 }

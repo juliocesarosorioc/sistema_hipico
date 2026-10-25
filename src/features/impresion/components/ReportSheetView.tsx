@@ -160,8 +160,17 @@ export function ReportSheetView({
         <div className="flex h-full w-full items-start justify-center">
           <div ref={sheetRef} style={{ transform: `scale(${scale})`, transformOrigin: "top center" }}>
             <div ref={rootRef} className={`printable-canvas-sheet ${orientacion === "horizontal" ? "is-landscape" : ""} ${tema === "corporativo" ? "rep-corp" : ""}`} style={densityVars}>
-              <header className="rep-cabecera-maestra">
-                <div className="rep-titulos">
+              <header className="rep-cabecera-maestra flex items-center gap-3">
+                {logo && (
+                  <img
+                    src={logo}
+                    alt={title}
+                    crossOrigin="anonymous"
+                    referrerPolicy="no-referrer"
+                    className="h-12 w-12 object-contain border-0 p-0 m-0 bg-transparent shadow-none"
+                  />
+                )}
+                <div className="rep-titulos flex-1">
                   <div className="rep-titulo">{title}</div>
                   {subtitle && <div className="rep-subtitulo">{subtitle}</div>}
                 </div>

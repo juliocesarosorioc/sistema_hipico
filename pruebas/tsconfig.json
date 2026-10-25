@@ -1,4 +1,4 @@
-﻿{
+{
   "//": "Solo para correr las pruebas en node. Hereda los paths del proyecto (@/*) del tsconfig raiz; lo que cambia es que EMITE JS CommonJS ejecutable, porque el proyecto es noEmit + ESM y node no puede correr eso directo.",
   "//outDir": "OBLIGATORIO, y no es cosmetico. Sin esto, un `tsc -p pruebas/tsconfig.json` a pelo deja el .js de cada modulo junto al .ts: aparecieron 23 .js dentro de src/ y `next build` empezo a compilar src/features/seguridad/lib/capacidades.js, que fallo con 'Cannot use import.meta outside a module'. run-marcas.ps1 pasa --outDir por CLI (la CLI gana sobre este valor), asi que los dos caminos quedan cubiertos.",
   "extends": "../tsconfig.json",
@@ -129,6 +129,10 @@
     "./ventana-reclamos.test.ts",
     "./jugada-usuario.test.ts",
     "./fase1-seguridad.test.ts",
-    "./anuladas-reportes.test.ts"
+    "./anuladas-reportes.test.ts",
+    "../src/shared/lib/dinero.ts",
+    "../src/features/taquilla/lib/cruces-y-tapas.ts",
+    "../src/features/saldos/lib/contabilidad-central.ts",
+    "./contabilidad-cruces-7col.test.ts"
   ]
 }

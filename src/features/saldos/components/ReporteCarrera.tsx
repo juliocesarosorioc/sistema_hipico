@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { EmptyState } from '@/shared/components/ui/EmptyState';
 import { colorDiscoNumero, numerosDeCaballo } from '@/features/saldos/lib/discos';
 import { ladosDePareo } from '@/features/taquilla/lib/nomenclatura';
@@ -18,6 +18,7 @@ export type JugadaVivo = {
   da: string;
   apostoDa: number | null;
   resultado: number | null;
+  resultadoDa?: number | null;
   esAdelantada?: boolean;
 };
 
@@ -37,6 +38,17 @@ export type NotaExcedido = {
   nombre: string;
   riesgo: number;
   disponible: number;
+};
+
+export type ObservacionOrdenExceso = {
+  orden: number;
+  jugador: string;
+  jugada: string;
+  montoSolicitado: number;
+  montoAceptado: number;
+  montoExcedido: number;
+  disponibleAntes: number;
+  motivo: string;
 };
 
 export type ReporteCarreraDatos = {
@@ -62,6 +74,7 @@ export type ReporteCarreraDatos = {
     pierden: ResumenFila[];
   };
   notaExcedidos?: NotaExcedido[];
+  observacionesOrdenExceso?: ObservacionOrdenExceso[];
   filtroModalidad?: FiltroModalidadTiempo;
 };
 
@@ -75,8 +88,8 @@ const FormatoDinero = ({ monto }: { monto: number | null | undefined }) => {
   const signo = isPositive ? "+" : "";
 
   return (
-    <span className={`font-bold ${colorClass}`}>
-      {signo}{monto.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
+    <span className={`font-bold tabular-nums ${colorClass}`}>
+      {signo}{monto.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
     </span>
   );
 };
@@ -132,41 +145,58 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
     <table className="w-full text-[10px] leading-tight">
       <thead>
         <tr className="border-b border-slate-300">
-          <th className={TH}>Juega</th>
-          <th className={`${TH} text-right`} title="Monto que arriesga el que juega">Apostó</th>
-          <th className={`${TH} pl-2`}>Jugada</th>
-          <th className={`${TH} pl-2`}>Da</th>
-          <th className={`${TH} text-right`} title="Monto que arriesga el que da">Apostó</th>
-          {mostrarResultado ? <th className={`${TH} text-right`}>Resultado</th> : null}
+          <th className={TH} title="Columna 1: Quien Juega (Jugador 1)">Quien Juega</th>
+          <th className={`${TH} text-right`} title="Columna 2: Monto que arriesga el que juega">Apostó</th>
+          <th className={`${TH} text-right pl-1`} title="Columna 3: Resultado Jugador 1 (Riesgo negativo por decidir / Decidido)">Resultado</th>
+          <th className={`${TH} pl-2`} title="Columna 4: Modalidad y ejemplar(es)">Jugada</th>
+          <th className={`${TH} pl-2`} title="Columna 5: Quien Da (Jugador 2)">Quien Da</th>
+          <th className={`${TH} text-right`} title="Columna 6: Monto que arriesga el que da">Apostó</th>
+          <th className={`${TH} text-right pl-1`} title="Columna 7: Resultado Jugador 2 (Riesgo negativo por decidir / Decidido)">Resultado</th>
         </tr>
       </thead>
       <tbody>
-        {filas.map((j, i) => (
-          <tr key={i} className="border-b border-slate-100 bg-white">
-            <td className="py-[3px] pr-1 font-bold text-slate-800 whitespace-nowrap">{j.juega}</td>
-            <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap">{j.aposto}</td>
-            <td className="py-[3px] pl-2 text-slate-700 whitespace-nowrap">
-              <span className="font-semibold">{j.jugo}</span> <Discos caballo={j.caballo} />
-              {j.esAdelantada ? (
-                <span
-                  title="Jugada adelantada: se cargó ANTES de que corra la carrera."
-                  className="ml-1 rounded bg-amber-400/20 px-1 py-px text-[8px] font-black uppercase leading-none tracking-wide text-amber-700 ring-1 ring-amber-500/40"
-                >
-                  ⏳ ADELANTADA
-                </span>
-              ) : null}
-            </td>
-            <td className="py-[3px] pl-2 text-slate-600 whitespace-nowrap">{j.da || '—'}</td>
-            <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap">
-              {j.apostoDa === null || j.apostoDa === undefined ? '—' : j.apostoDa}
-            </td>
-            {mostrarResultado ? (
-              <td className="py-[3px] text-right whitespace-nowrap">
-                {j.resultado !== null && <FormatoDinero monto={j.resultado} />}
+        {filas.map((j, i) => {
+          const aposto1Num = typeof j.aposto === 'number' ? j.aposto : parseFloat(String(j.aposto ?? '').replace(',', '.')) || 0;
+          const res1 = mostrarResultado
+            ? j.resultado
+            : aposto1Num > 0
+              ? -Math.abs(aposto1Num)
+              : null;
+          const res2 = !j.da
+            ? null
+            : mostrarResultado
+              ? (j.resultadoDa !== undefined ? j.resultadoDa : (j.resultado !== null ? -j.resultado : null))
+              : j.apostoDa != null && j.apostoDa > 0
+                ? -Math.abs(j.apostoDa)
+                : null;
+          return (
+            <tr key={i} className="border-b border-slate-100 bg-white">
+              <td className="py-[3px] pr-1 font-bold text-slate-800 whitespace-nowrap">{j.juega}</td>
+              <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap">{j.aposto}</td>
+              <td className="py-[3px] pl-1 text-right whitespace-nowrap">
+                {res1 !== null ? <FormatoDinero monto={res1} /> : <span className="text-slate-400">—</span>}
               </td>
-            ) : null}
-          </tr>
-        ))}
+              <td className="py-[3px] pl-2 text-slate-700 whitespace-nowrap">
+                <span className="font-semibold">{j.jugo}</span> <Discos caballo={j.caballo} />
+                {j.esAdelantada ? (
+                  <span
+                    title="Jugada adelantada: se cargó ANTES de que corra la carrera."
+                    className="ml-1 rounded bg-amber-400/20 px-1 py-px text-[8px] font-black uppercase leading-none tracking-wide text-amber-700 ring-1 ring-amber-500/40"
+                  >
+                    ⏳ ADELANTADA
+                  </span>
+                ) : null}
+              </td>
+              <td className="py-[3px] pl-2 text-slate-600 whitespace-nowrap">{j.da || '—'}</td>
+              <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap">
+                {j.apostoDa === null || j.apostoDa === undefined ? '—' : j.apostoDa}
+              </td>
+              <td className="py-[3px] pl-1 text-right whitespace-nowrap">
+                {res2 !== null ? <FormatoDinero monto={res2} /> : <span className="text-slate-400">—</span>}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
@@ -187,8 +217,17 @@ function SubSeccion({
       <div className="bg-slate-100 text-slate-500 text-[8px] font-bold tracking-widest px-2 py-[2px] uppercase border-b border-slate-200">
         {titulo}
       </div>
-      <TablaJugadas filas={filas} mostrarResultado={mostrarResultado} />
-      {/* Compatibilidad con test de desglose: <Discos caballo={t.descripcion} /> */}
+      <div className="divide-y divide-slate-100">
+        {filas.map((t, i) => (
+          <div key={i} className="flex items-center justify-between px-2 py-1 text-[10px] bg-white">
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-slate-800">{t.juega}</span>
+              <Discos caballo={t.descripcion} />
+            </div>
+            {mostrarResultado ? <FormatoDinero monto={t.resultado} /> : <FormatoDinero monto={-Math.abs(Number(t.aposto || 0))} />}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -223,24 +262,46 @@ function ListaResumen({ filas }: { filas: ResumenFila[] }) {
   );
 }
 
-function NotaExcedidos({ filas }: { filas: NotaExcedido[] }) {
-  if (!filas.length) return null;
+function NotaExcedidos({
+  filas,
+  observacionesOrden,
+}: {
+  filas: NotaExcedido[];
+  observacionesOrden?: ObservacionOrdenExceso[];
+}) {
+  if (!filas.length && (!observacionesOrden || !observacionesOrden.length)) return null;
   const fmt = (n: number) => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return (
-    <div className="mx-4 mb-2 rounded border border-amber-400 bg-amber-50 px-2 py-1.5 text-[9px] text-amber-900">
-      <p className="font-black uppercase tracking-wide">
-        * Arriesgó más de lo que dispone — a comunicar a todos los jugadores
+    <div className="mx-4 mb-2 rounded border border-amber-400 bg-amber-50 px-2.5 py-2 text-[9px] text-amber-900">
+      <p className="font-black uppercase tracking-wide flex items-center gap-1">
+        <span>📋</span> OBSERVACIONES DE LÍMITE DE SALDO Y ORDEN DE JUEGO
       </p>
-      <ul className="mt-1 space-y-[1px]">
-        {filas.map((n, i) => (
-          <li key={i} className="flex items-center justify-between gap-2">
-            <span className="font-bold text-slate-800">{n.nombre}</span>
-            <span className="tabular-nums">
-              arriesgó {fmt(n.riesgo)} · dispone {fmt(n.disponible)}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {filas.length > 0 && (
+        <ul className="mt-1 space-y-[2px]">
+          {filas.map((n, i) => (
+            <li key={i} className="flex items-center justify-between gap-2">
+              <span className="font-bold text-slate-800">* {n.nombre}</span>
+              <span className="tabular-nums">
+                arriesgó {fmt(n.riesgo)} · dispone {fmt(n.disponible)} (Excedido {fmt(Math.max(0, n.riesgo - n.disponible))})
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {observacionesOrden && observacionesOrden.length > 0 && (
+        <div className="mt-1.5 border-t border-amber-300/70 pt-1 space-y-0.5">
+          {observacionesOrden.map((obs, idx) => (
+            <div key={idx} className="flex flex-wrap items-center justify-between gap-2 text-[8.5px]">
+              <span className="font-bold text-slate-800">
+                Orden #{obs.orden} · {obs.jugador} ({obs.jugada})
+              </span>
+              <span className="tabular-nums text-amber-950">
+                Solicitó {fmt(obs.montoSolicitado)} → Aceptado {fmt(obs.montoAceptado)} · {obs.motivo}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -258,7 +319,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
     );
   }
 
-  const { encabezado, jugadasVivo, adelantadas, resumen, notaExcedidos } = datos;
+  const { encabezado, jugadasVivo, adelantadas, resumen, notaExcedidos, observacionesOrdenExceso } = datos;
   const liquidada = datos.liquidada !== false;
 
   const mitadIndex = Math.ceil(jugadasVivo.length / 2);
@@ -273,16 +334,16 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
   return (
     <div className="max-w-5xl mx-auto bg-white shadow-lg overflow-hidden text-[11px] leading-tight font-sans" id="reporte-imprimible">
 
-      {/* 1. ENCABEZADO */}
+      {/* 1. ENCABEZADO (Logos sin borde ni margen) */}
       <div className="bg-gradient-to-r from-blue-900 via-blue-700 to-blue-600 text-white border-b border-blue-500/30 shadow-md px-4 py-2.5 flex items-center gap-3">
-        <div className="w-14 h-14 shrink-0 rounded-xl bg-white/95 p-1 shadow-inner flex items-center justify-center overflow-hidden">
+        <div className="w-14 h-14 shrink-0 rounded-xl border-0 p-0 m-0 bg-transparent shadow-none flex items-center justify-center overflow-hidden">
           {encabezado.logoHipodromo ? (
             <img
               src={encabezado.logoHipodromo}
               alt={`Logo de ${encabezado.hipodromo}`}
               crossOrigin="anonymous"
               referrerPolicy="no-referrer"
-              className="h-full w-full object-contain p-1"
+              className="h-full w-full object-contain border-0 p-0 m-0 bg-transparent shadow-none"
             />
           ) : (
             <span className="text-2xl leading-none" aria-hidden="true">🏇</span>
@@ -290,7 +351,9 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
         </div>
 
         <div className="min-w-0 flex-1">
-          <h3 className="text-blue-200 text-[9px] font-bold tracking-widest uppercase">Reporte de Liquidación</h3>
+          <h3 className="text-blue-200 text-[9px] font-bold tracking-widest uppercase">
+            {liquidada ? "Reporte de Liquidación" : "Reporte Preliminar de Jugadas (En Riesgo)"}
+          </h3>
           <h1 className="text-lg font-extrabold leading-tight truncate">
             {encabezado.hipodromo} <span className="font-normal text-blue-200">•</span> {encabezado.carrera}
           </h1>
@@ -301,7 +364,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
               title="Filtro de modalidad de tiempo aplicado al reporte"
             >
               {datos.filtroModalidad === "ADELANTADA"
-                ? `⏳ Solo jugadas adelantadas · ${totalAdelantadas} visibles`
+                ? `⏳ Solo jugadas adelantadas · ${jugadasVivo.length} visibles`
                 : `⚡ Solo jugadas en vivo · ${jugadasVivo.length} visibles`}
             </p>
           ) : null}
@@ -314,14 +377,14 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
             </p>
             <p className="text-[8px] font-semibold uppercase tracking-widest text-blue-300">Grupo</p>
           </div>
-          <div className="w-14 h-14 shrink-0 rounded-xl bg-white/95 p-1 shadow-inner flex items-center justify-center overflow-hidden">
+          <div className="w-14 h-14 shrink-0 rounded-xl border-0 p-0 m-0 bg-transparent shadow-none flex items-center justify-center overflow-hidden">
             {encabezado.logoGrupo ? (
               <img
                 src={encabezado.logoGrupo}
                 alt={`Logo de ${encabezado.grupo || "Grupo Hípico"}`}
                 crossOrigin="anonymous"
                 referrerPolicy="no-referrer"
-                className="h-full w-full object-contain p-1"
+                className="h-full w-full object-contain border-0 p-0 m-0 bg-transparent shadow-none"
               />
             ) : (
               <span className="text-2xl leading-none" aria-hidden="true">🏇</span>
@@ -347,7 +410,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
         </div>
       ) : null}
 
-      {/* 3. JUGADAS EN VIVO — solo si hay jugadas en vivo */}
+      {/* 3. TABLA DE 7 COLUMNAS (JUGADAS) */}
       {jugadasVivo.length > 0 && (
         <div className="bg-slate-50 px-4 py-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
           <TablaJugadas filas={jugadasCol1} mostrarResultado={liquidada} />
@@ -355,7 +418,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
         </div>
       )}
 
-      {/* 4. PARADAS ADELANTADAS — segmentadas por parada adelantada */}
+      {/* 4. PARADA ADELANTADAS */}
       {totalAdelantadas > 0 && (
         <div className="px-4 pb-2">
           <div className="bg-blue-800 text-white text-[9px] font-bold tracking-widest px-2 py-1 uppercase rounded-t">
@@ -370,32 +433,32 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
         </div>
       )}
 
-      {/* 5. RESUMEN: GANAN / PIERDEN */}
+      {/* 5. RESUMEN: GANAN (POSITIVOS) / PIERDEN (NEGATIVOS) */}
       {liquidada ? (
         <div className="px-4 pb-2 grid grid-cols-2 gap-3">
           <div className="border border-green-200 rounded-lg overflow-hidden bg-white">
             <div className="bg-green-600 text-white text-[10px] font-bold px-2 py-1 tracking-wide uppercase flex items-center">
-              <span className="mr-1.5">✅</span> Ganan
+              <span className="mr-1.5">🟢</span> Ganan / Positivos (+)
             </div>
             <ListaResumen filas={resumen.ganan} />
           </div>
 
           <div className="border border-red-200 rounded-lg overflow-hidden bg-white">
             <div className="bg-red-700 text-white text-[10px] font-bold px-2 py-1 tracking-wide uppercase flex items-center">
-              <span className="mr-1.5">❌</span> Pierden
+              <span className="mr-1.5">🔴</span> Pierden / Negativos (-)
             </div>
             <ListaResumen filas={resumen.pierden} />
           </div>
         </div>
       ) : null}
 
-      {/* 5b. NOTA AL PIE */}
-      <NotaExcedidos filas={notaExcedidos ?? []} />
+      {/* 5b. OBSERVACIONES DE LÍMITE DE SALDO Y ORDEN DE JUEGO */}
+      <NotaExcedidos filas={notaExcedidos ?? []} observacionesOrden={observacionesOrdenExceso} />
 
-      {/* 6. OBSERVACIONES Y RECOMENDACIONES (FOOTER) */}
+      {/* 6. FOOTER */}
       <div className="px-4 py-1.5 bg-slate-50 border-t border-slate-200 flex justify-between text-[9px] text-slate-500">
         <span>Tilde su jugada y se revisará</span>
-        <span>{jugadasVivo.length + totalAdelantadas} jugadas · Reclamos al privado</span>
+        <span>{jugadasVivo.length} jugadas · Reclamos al privado</span>
       </div>
 
     </div>

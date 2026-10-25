@@ -1,26 +1,57 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
+import {
+  esRolCliente,
+  primeraRutaPermitida,
+  rutaPermitida,
+} from "@/features/seguridad/lib/capacidades";
+import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 
-const RUTAS_PUBLICAS = ["/login", "/portal", "/reset-password", "/"];
+/**
+ * Middleware de protección de rutas. La lista de rutas y las capacidades que
+ * exige cada una salen del REGISTRO MAESTRO (src/lib/seguridad/capacidades.ts):
+ * no hay una segunda lista que mantener acá.
+ *
+ * El store de auth publica cuatro cookies al resolver la sesión:
+ *   hipico_usuario → identificador del usuario (josorioc, operador1...)
+ *   hipico_perfil  → nombre(s) del tipo de usuario
+ *   hipico_permisos → capacidades vigentes separadas por comas
+ *   hipico_acceso  → "ok" | "sin": si la sesión se verificó y el usuario tiene
+ *                    algo con qué entrar, o si entró pero no tiene NADA
+ *
+ * La cuarta cookie es la que evita el bucle de "ingresé el usuario y no me dejó
+ * entrar": sin ella, un usuario sin tipo asignado publicaba perfil y permisos
+ * VACÍOS, el middleware lo mandaba a /login y la pantalla de login —que ve que
+ * hay sesión— lo volvía a mandar a /dashboard, sin fin. Con el sello explícito
+ * cada caso tiene un destino y el operador además lee por qué.
+ *
+ * REGLAS:
+ *  1) El sello `hipico_acceso=sin` manda al login CON motivo: la sesión se
+ *     verificó pero el usuario no tiene nada con qué entrar.
+ *  2) Sin cookies de sesión: al login, sin motivo. No se entra a nada sin haber
+ *     pasado por /login — SALVO /portal, que se autentica con su propio token
+ *     (ver ES_PORTAL) y por eso se resuelve ANTES de este chequeo.
+ *  3) El usuario principal pasa siempre: es el dueño del sistema.
+ *  4) Un usuario "cliente/jugador" puro se queda en /portal.
+ *  5) El resto de las rutas exige la capacidad que el esquema les asigna; una
+ *     ruta que el esquema no conoce se NIEGA.
+ *
+ * ALCANCE — IMPORTANTE:
+ * Este archivo SOLO corre en modo servidor (`next dev` / `next start`). Con
+ * `output: "export"` (build estático, `npm run build:export`) Next elimina el
+ * middleware en tiempo de compilación, así que en ese despliegue la frontera de
+ * seguridad real son:
+ *   1) la sesión de Supabase,
+ *   2) las políticas RLS de la base (src/db/seguridad_maestro.sql), que deben
+ *      validar por auth.uid() y NUNCA con la llave anon, y
+ *   3) los guardas de cliente (RutaProtegida + Guard + AppShell), que son
+ *      experiencia de usuario, NO seguridad: el JS del cliente es descargable.
+ *
+ * Para una herramienta con datos de clientes y saldos, el despliegue con
+ * `npm run build` + `next start` es el que conserva esta capa de servidor.
+ */
 
-export function middleware(request: NextRequest) {
-  const response = NextResponse.next();
-  const { pathname } = request.nextUrl;
+const ES_PUBLICA = (p: string) => p === "/login" || p === "/";
 
-<<<<<<< HEAD
-  // 1. Cabeceras de Seguridad de Nivel Bancario (CSP + Anti-Sniffing + Anti-Iframe)
-  const cspHeader = [
-    "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com",
-    "img-src 'self' blob: data: https://*.supabase.co",
-    "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com",
-    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://generativelanguage.googleapis.com",
-    "frame-ancestors 'self'",
-    "base-uri 'self'",
-    "form-action 'self'",
-  ].join("; ");
-=======
 const BLOQUEAR = (p: string) => {
   return (
     p.endsWith(".sql") ||
@@ -44,24 +75,19 @@ const BLOQUEAR = (p: string) => {
  * lo único que se saltea acá es el requisito de sesión de Supabase.
  */
 const ES_PORTAL = (p: string) => p === "/portal" || p.startsWith("/portal/");
->>>>>>> c0aa4bfb0e0030e9dd95ad4d639ec42acd3ebfc3
 
-  response.headers.set("Content-Security-Policy", cspHeader);
-  response.headers.set("X-Frame-Options", "SAMEORIGIN");
-  response.headers.set("X-Content-Type-Options", "nosniff");
-  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+export function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+  const irA = (destino: string, motivo?: string) => {
+    const url = req.nextUrl.clone();
+    url.pathname = destino;
+    url.search = "";
+    // El motivo viaja en la query para que la pantalla diga POR QUÉ, y no para
+    // autorizar nada: la decisión ya está tomada antes de redirigir.
+    if (motivo) url.searchParams.set("motivo", motivo);
+    return NextResponse.redirect(url);
+  };
 
-<<<<<<< HEAD
-  // 2. Bloqueo de acceso directo a archivos sensibles o scripts internos
-  if (
-    pathname.endsWith(".sql") ||
-    pathname.endsWith(".mjs") ||
-    pathname.endsWith(".cjs") ||
-    pathname.startsWith("/pruebas") ||
-    pathname.startsWith("/sondas")
-  ) {
-    return new NextResponse("Acceso Denegado", { status: 403 });
-=======
   if (BLOQUEAR(pathname)) {
     return new NextResponse("Forbidden", { status: 403 });
   }
@@ -98,16 +124,40 @@ const ES_PORTAL = (p: string) => p === "/portal" || p.startsWith("/portal/");
     permisos = new Set(crudo.split(",").filter(Boolean));
   } catch {
     permisos = new Set();
->>>>>>> c0aa4bfb0e0030e9dd95ad4d639ec42acd3ebfc3
   }
 
-  return response;
+  // 3) El usuario principal entra a todo. Se lee el IDENTIFICADOR, no el perfil:
+  //    el perfil del principal es "admin" (su tipo), igual que el de cualquier
+  //    otro administrador, y comparando el perfil nunca se distinguían.
+  if (esUsuarioPrincipal(usuario)) return NextResponse.next();
+
+  // 4) Cliente/jugador puro: solo el portal.
+  if (esRolCliente(perfil, permisos)) {
+    if (pathname === "/portal" || pathname.startsWith("/portal/")) return NextResponse.next();
+    return irA("/portal");
+  }
+
+  // 5) Cada ruta exige su capacidad. La decisión la toma `rutaPermitida`, la
+  //    MISMA función que usa `RutaProtegida` en el cliente: si las dos capas
+  //    decidieran distinto, el usuario vería la página que el middleware dejó
+  //    pasar o la redirección que el cliente ya había rechazado.
+  //
+  //    Una ruta NO registrada se NIEGA. Antes pasaba de largo: una página nueva
+  //    sin declarar en PUERTAS se abría por URL directa sin comprobar nada.
+  if (!rutaPermitida(pathname, permisos)) {
+    // A la PRIMERA ruta que el usuario puede abrir. `/dashboard` fijo era un
+    // bucle: exige `general:ruta_dashboard`, que un operador de Taquilla o de
+    // Marcas no tiene, así que lo echaba de /dashboard a /dashboard para
+    // siempre. Sin ninguna ruta posible se vuelve al login.
+    const destino = primeraRutaPermitida(permisos);
+    if (!destino) return irA("/login", "sin-accesos");
+    return irA(destino);
+  }
+
+  return NextResponse.next();
 }
 
 export const config = {
-<<<<<<< HEAD
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
-=======
   // Todo el sitio menos la raíz, /login y los archivos estáticos. El portal SÍ
   // pasa por el matcher, pero `middleware()` lo deja pasar sin sesión porque se
   // autentica con su propio token (ver ES_PORTAL).
@@ -118,5 +168,4 @@ export const config = {
   // se escapaba del middleware por el matcher y lo servía el servidor de
   // archivos en vez de recibir el 403 de `BLOQUEAR`.
   matcher: ["/((?!login|_next|favicon.ico|.*\\..*).*)", "/:path*\\.(sql|mjs|cjs)"],
->>>>>>> c0aa4bfb0e0030e9dd95ad4d639ec42acd3ebfc3
 };

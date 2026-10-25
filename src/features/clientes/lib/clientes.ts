@@ -12,6 +12,8 @@ import { supabase } from "@/core/supabase";
 import { resumenDatosPago, type DatosPago } from "@/shared/lib/vzla";
 import { exigirCapacidad, esPrincipalVigente, grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
 import { resumenFormasPago, type FormaPago } from "@/features/clientes/lib/formasPago";
+import { redondearCentavos } from "@/shared/lib/dinero";
+import { sincronizarSaldosRealesClientes } from "@/features/saldos/lib/contabilidad-central";
 // Múltiples formas de pago (PROMPT #7). Se re-exportan desde acá para que el
 // CRUD de clientes sea el único punto de entrada de "cómo se paga un cliente";
 // la implementación pura vive en `formasPago.ts` (sin Supabase, testeable).
@@ -281,7 +283,14 @@ export async function listarClientes(force = false, grupoIdOverride?: string | n
       if (activo) q = q.eq("grupo_id", activo);
       const { data, error } = await q;
       if (error) throw error;
-      lista = (data ?? []) as ClienteRow[];
+      lista = (await sincronizarSaldosRealesClientes(
+        ((data ?? []) as ClienteRow[]).map((c) => ({
+          ...c,
+          saldo_actual: c.saldo_actual != null ? redondearCentavos(c.saldo_actual) : 0,
+          aval: c.aval != null ? redondearCentavos(c.aval) : 0,
+        })),
+        activo
+      )) as ClienteRow[];
     } catch (e) {
       // Antes se devolvía [] en silencio y la cartera aparentaba estar vacía
       // cuando en realidad era un fallo de permisos o de red.

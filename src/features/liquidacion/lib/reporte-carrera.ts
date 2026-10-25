@@ -1,29 +1,25 @@
 /**
  * REPORTE DE CARRERA — arma la plantilla de liquidación (ReporteCarrera) con
- * datos REALES de una carrera ya pagada.
+ * datos REALES de una carrera ya pagada o preliminar.
  *
  * Módulo PURO (sin I/O ni React): recibe una `CarreraReporte` — la que ya
  * produce el motor oficial de `src/lib/liquidacion/reportes.ts` con las filas
  * liquidadas (estado, premio neto, cruce financiero) — y la traduce a
- * `ReporteCarreraDatos`, el contrato de la plantilla imprimible.
- *
- * Se usa en dos puntos:
- *   · Selector de Saldos/Reportes (elegís grupo → día → hipódromo → carrera).
- *   · «Ver Reporte de Liquidación» en PagarCarreraModal, apenas se paga.
- *
- * Convención del pareo JUEGA ↔ DA: `carreraReporte` graba cada ticket como
- * dos filas con id `${fecha}-${hipodromo}-${numero}-j-${i}` (el que JUEGA) y
- * `…-c-${i}` (el que CONSIGUE/DA). Se parean por el índice `i`.
+ * `ReporteCarreraDatos`, el contrato de la plantilla imprimible de 7 columnas.
  */
-import type { ReporteCarreraDatos, JugadaVivo, Adelantada, NotaExcedido } from "@/features/saldos/components/ReporteCarrera";
+import type {
+  ReporteCarreraDatos,
+  JugadaVivo,
+  Adelantada,
+  NotaExcedido,
+  ObservacionOrdenExceso,
+} from "@/features/saldos/components/ReporteCarrera";
 import type { CarreraReporte, FilaReporte } from "@/features/liquidacion/lib/reportes";
 import { pasaFiltroModalidad, type FiltroModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
 import { colorDiscoNumero } from "@/features/saldos/lib/discos";
 import { etiquetaJugada } from "@/features/taquilla/lib/nomenclatura";
+import { redondearCentavos, restarDinero, sumarDinero } from "@/shared/lib/dinero";
 
-// Los colores del disco de ejemplar salen de la fuente única
-// `shared/lib/horseColors` (`discos.ts` sólo los re-exporta empaquetados).
-// Se re-exporta acá para no romper importadores viejos.
 export { colorDiscoNumero };
 
 /** "2026-10-12" → «lun 12 oct 2026» (fecha legible para el encabezado). */
@@ -42,23 +38,23 @@ function indiceTicketDe(id: string): string | null {
   return m ? m[2] : null;
 }
 
-/** El "DA" (cliente que consigue) de cada índice de ticket, con lo que arriesga. */
-function consiguePorJuega(c: CarreraReporte): Map<string, { cliente: string; resultado: number; riesgo: number }> {
-  const mapa = new Map<string, { cliente: string; resultado: number; riesgo: number }>();
+/** El "DA" (cliente que consigue) de cada índice de ticket, con lo que arriesga y su resultado. */
+function consiguePorJuega(c: CarreraReporte): Map<string, { cliente: string; resultado: number | null; riesgo: number }> {
+  const mapa = new Map<string, { cliente: string; resultado: number | null; riesgo: number }>();
   for (const f of c.filas) {
     const i = indiceTicketDe(f.id);
-    if (!i || !f.id.endsWith(`-c-${i}`)) continue; // solo filas "Consigue"
-    // `riesgoDeFila` del lado "da": su parte de la proporción (monto·b/a), no el
-    // neto del que juega. Es el APOSTÓ del DA que pide el reporte.
-    mapa.set(i, { cliente: f.cliente, resultado: f.resultado ?? 0, riesgo: riesgoDeFila(f) });
+    if (!i || !f.id.endsWith(`-c-${i}`)) continue;
+    mapa.set(i, {
+      cliente: f.cliente,
+      resultado: f.resultado ?? null,
+      riesgo: riesgoDeFila(f),
+    });
   }
   return mapa;
 }
 
 /**
  * Tipo de jugada → sección de «Parada Adelantadas» para las que ganaron.
- * Se prefiere el `tipo` explícito de la fila (la columna "Jugada" va compacta y
- * ya no lleva el prefijo de la modalidad); si no viene, se cae al rótulo.
  */
 function seccionAdelantadaDe(
   jugada: string,
@@ -85,21 +81,17 @@ function proporcionDe(jugada: string): { a: number; b: number } | null {
 /**
  * Ítem 10: riesgo REAL de una fila — el monto que ese jugador FINANCIA en la
  * carrera. El que JUEGA arriesga `monto`; el que CONSIGUE (el "da") arriesga su
- * lado de la proporción (`monto · b/a`), que no es el neto del que juega. Sin
- * proporción (PP 10/10, MATCH sin fracción) los dos arriesgan lo mismo.
+ * lado de la proporción (`monto · b/a`).
  */
 export function riesgoDeFila(f: FilaReporte): number {
   if (f.rol === "CRUCE") return 0;
   if (f.rol === "Consigue") {
     const p = proporcionDe(f.jugada);
-    if (p) return Math.round(((f.monto * p.b) / p.a) * 100) / 100;
+    if (p) return redondearCentavos((f.monto * p.b) / p.a);
   }
-  return f.monto;
+  return redondearCentavos(f.monto);
 }
 
-/**
- * Traduce una carrera liquidada a los datos de la plantilla de reporte.
- */
 export type OpcionesReporteCarrera = {
   /** `false` = carrera aún sin pagar: oculta pizarra, resultados y resumen. */
   liquidada?: boolean;
@@ -124,7 +116,7 @@ export function armarReporteCarrera(
     tablas: Adelantada[];
     marcas: Adelantada[];
     tercios: Adelantada[];
-    otras: Adelantada[];
+    otras?: Adelantada[];
   } = {
     tablas: [],
     marcas: [],
@@ -132,9 +124,12 @@ export function armarReporteCarrera(
     otras: [],
   };
   const netoPorCliente = new Map<string, number>();
-  // Ítem 10: total que financia cada jugador en la carrera (bruto de su lado).
   const riesgoPorCliente = new Map<string, number>();
+  const observacionesOrdenExceso: ObservacionOrdenExceso[] = [];
+  const usadoProgresivoPorCliente = new Map<string, number>();
+
   let correlativo = 0;
+  let ordenJuego = 0;
   const filtro: FiltroModalidadTiempo = opciones?.filtroModalidad ?? "TODAS";
 
   for (const f of c.filas) {
@@ -142,6 +137,7 @@ export function armarReporteCarrera(
     if (!pasaFiltroModalidad({ es_adelantada: f.esAdelantada }, filtro)) continue;
     const resultado = f.resultado; // number | null (null = pendiente)
     if (f.rol !== "Consigue") {
+      ordenJuego += 1;
       const i = indiceTicketDe(f.id) ?? `t-${correlativo++}`;
       const cons = consigue.get(i);
       const da = cons?.cliente ?? "";
@@ -150,51 +146,74 @@ export function armarReporteCarrera(
           ? f.jugada
           : etiquetaJugada(f.jugada);
 
-      const seccion = seccionAdelantadaDe(f.jugada, f.tipoJugada);
-      const esAdelantada = f.esAdelantada === true || seccion !== null || /ADELANTAD/i.test(String(f.jugada ?? ""));
+      const apostoJuega = riesgoDeFila(f);
+      const apostoDa = cons ? cons.riesgo : null;
+      const resultadoDa = cons ? cons.resultado : null;
 
-      const itemJugada: Adelantada = {
+      const filaVivo: JugadaVivo = {
         juega: f.cliente,
-        aposto: riesgoDeFila(f),
+        aposto: apostoJuega,
         jugo,
         caballo: f.caballo,
         da,
-        apostoDa: cons ? cons.riesgo : null,
+        apostoDa,
         resultado,
-        esAdelantada,
-        descripcion: (f.ejemplar ?? f.caballo) || undefined,
+        resultadoDa,
+        ...(f.esAdelantada ? { esAdelantada: true } : {}),
       };
 
-      // Las jugadas adelantadas NO se colocan en ambas secciones:
-      // se reflejan exclusivamente en Parada Adelantadas (segmentadas por tipo).
-      // Las jugadas en vivo se colocan exclusivamente en jugadasVivo.
-      if (esAdelantada) {
-        if (seccion) {
-          adelantadas[seccion].push(itemJugada);
-        } else {
-          adelantadas.otras.push(itemJugada);
+      jugadasVivo.push(filaVivo);
+
+      const seccion = seccionAdelantadaDe(f.jugada, f.tipoJugada);
+      if (seccion && resultado !== null && resultado > 0) {
+        adelantadas[seccion].push({
+          ...filaVivo,
+          descripcion: (f.ejemplar ?? f.caballo) || f.jugada,
+        });
+      }
+
+      // Verificación progresiva de límite de saldo por orden de juego (Jugador 1)
+      const dispTotal = disponibleDe?.(f.cliente);
+      if (typeof dispTotal === "number" && Number.isFinite(dispTotal) && apostoJuega > 0) {
+        const yaUsado = usadoProgresivoPorCliente.get(f.cliente) ?? 0;
+        const dispAntes = Math.max(0, restarDinero(dispTotal, yaUsado));
+        if (apostoJuega > dispAntes + 0.001) {
+          const montoAceptado = dispAntes;
+          const montoExcedido = restarDinero(apostoJuega, montoAceptado);
+          observacionesOrdenExceso.push({
+            orden: ordenJuego,
+            jugador: f.cliente,
+            jugada: f.caballo ? `${jugo} (${f.caballo})` : jugo,
+            montoSolicitado: apostoJuega,
+            montoAceptado,
+            montoExcedido,
+            disponibleAntes: dispAntes,
+            motivo:
+              dispAntes <= 0
+                ? "Sin saldo disponible (S/S) según orden de juego"
+                : `Excedido ${Number.isInteger(montoExcedido) ? montoExcedido : montoExcedido.toFixed(2)} sobre su disponible restante`,
+          });
         }
-      } else {
-        jugadasVivo.push(itemJugada);
+        usadoProgresivoPorCliente.set(f.cliente, sumarDinero(yaUsado, apostoJuega));
       }
     }
 
-    riesgoPorCliente.set(f.cliente, (riesgoPorCliente.get(f.cliente) ?? 0) + riesgoDeFila(f));
+    riesgoPorCliente.set(f.cliente, sumarDinero(riesgoPorCliente.get(f.cliente) ?? 0, riesgoDeFila(f)));
 
     if (resultado !== null) {
-      netoPorCliente.set(f.cliente, (netoPorCliente.get(f.cliente) ?? 0) + resultado);
+      netoPorCliente.set(f.cliente, sumarDinero(netoPorCliente.get(f.cliente) ?? 0, resultado));
     }
   }
 
   const notaExcedidos: NotaExcedido[] = [];
 
   const filaResumen = (nombre: string, monto: number, id: number) => {
-    const riesgo = Math.round((riesgoPorCliente.get(nombre) ?? 0) * 100) / 100;
+    const riesgo = redondearCentavos(riesgoPorCliente.get(nombre) ?? 0);
     const disp = disponibleDe?.(nombre);
     const hayTope = typeof disp === "number" && Number.isFinite(disp);
     const excede = hayTope && riesgo > (disp as number) + 0.001;
     if (excede) notaExcedidos.push({ nombre, riesgo, disponible: disp as number });
-    return { id, nombre, monto, riesgo, excede };
+    return { id, nombre, monto: redondearCentavos(monto), riesgo, excede };
   };
 
   const gananRaw = [] as Array<{ nombre: string; neto: number; fila: ReporteCarreraDatos["resumen"]["ganan"][number] }>;
@@ -242,5 +261,6 @@ export function armarReporteCarrera(
     adelantadas,
     resumen: { ganan, pierden },
     notaExcedidos,
+    observacionesOrdenExceso,
   };
 }

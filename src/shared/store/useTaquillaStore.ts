@@ -37,6 +37,8 @@ export type TicketTaquilla = {
   cliente2Id?: string;
   /** UUID del grupo de cobro congelado en la venta. */
   grupoId?: string;
+  /** Marca de modalidad de tiempo: true si la jugada se cargó por adelantado. */
+  es_adelantada?: boolean;
   /** Timestamp (ms) de registro en la sesión. */
   addedAt: number;
 };

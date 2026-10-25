@@ -25,6 +25,8 @@
  * Sin React ni Supabase: testeable en node (pruebas/preview-carrera.test.ts).
  */
 
+import { esAdelantadaDe } from "@/features/jugadas/lib/modalidad-tiempo";
+
 /** Fila mínima de `v_jugadas_carrera` que necesita el panel. */
 export type JugadaPersistida = {
   id: string | number;
@@ -39,6 +41,8 @@ export type JugadaPersistida = {
   cliente_juega_nombre?: string | null;
   cliente_consigue_nombre?: string | null;
   anulada?: boolean | null;
+  es_adelantada?: boolean | null;
+  nota_auditoria?: unknown;
 };
 
 /**
@@ -71,6 +75,7 @@ export type TicketSesion = {
   cobro2?: number;
   gananciaProyectada?: number;
   ticketId?: number | string;
+  esAdelantada?: boolean;
 };
 
 /** Una fila lista para pintar en el panel. */
@@ -110,6 +115,8 @@ export type FilaPreviewCarrera = {
   lado1: LadoResultado;
   /** Resultado del que DA/CONSIGUE (Cliente 2): ✅/✖ y su saldo. */
   lado2: LadoResultado;
+  /** true si la jugada fue cargada como adelantada (⏳ PRE-JUGADA). */
+  esAdelantada?: boolean;
 };
 
 const NUM = (v: unknown): number => {
@@ -292,6 +299,7 @@ function filaDesdePersistida(j: JugadaPersistida, sesion?: TicketSesion): FilaPr
     tieneProyeccion,
     lado1,
     lado2,
+    esAdelantada: esAdelantadaDe(j) || Boolean(sesion?.esAdelantada),
   };
 }
 
@@ -319,6 +327,7 @@ function filaDesdeSesion(t: TicketSesion): FilaPreviewCarrera {
     tieneProyeccion: true,
     lado1,
     lado2,
+    esAdelantada: Boolean(t.esAdelantada),
   };
 }
 

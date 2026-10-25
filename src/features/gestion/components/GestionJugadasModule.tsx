@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { proyectarFila } from "@/features/taquilla/lib/validar";
@@ -55,6 +55,14 @@ import { expandirLineasDobleSplit, revisarCoherenciaLineas } from "@/features/ta
 import { mensajePlanoDeCarrera } from "@/features/taquilla/lib/mensajeResultado";
 import { corregirLineasConIA } from "@/features/taquilla/lib/corregirIA";
 import { listarJugadasDeCarrera, type JugadaAdmin } from "@/features/jugadas/lib/jugadas";
+import { ToggleModalidadTiempo, BadgeAdelantada } from "@/features/jugadas/components/ToggleModalidadTiempo";
+import { marcarTicketsAdelantados } from "@/features/jugadas/lib/marcar-adelantadas";
+import { ModalAnalisisActuarialGodet } from "@/features/ejemplares/components/ModalAnalisisActuarialGodet";
+import {
+  generarTextoPrejugadasWhatsapp,
+  generarTextoSaldosWhatsapp,
+  type FiltroSaldosWhatsapp,
+} from "@/features/liquidacion/lib/reporte-imagen";
 import {
   armarFilasPreview,
   resumenPreview,
@@ -387,6 +395,14 @@ export function GestionJugadasModule() {
   const tickets = useTaquillaStore((s) => s.tickets);
   const eliminarTicket = useTaquillaStore((s) => s.eliminarTicket);
   const agregarTicket = useTaquillaStore((s) => s.agregarTicket);
+  const modalidadTiempo = useTaquillaStore((s) => s.modalidadTiempo);
+  const setModalidadTiempo = useTaquillaStore((s) => s.setModalidadTiempo);
+  const [modalGodetAbierto, setModalGodetAbierto] = useState(false);
+  const [visorWhatsappTipo, setVisorWhatsappTipo] = useState<"prejugadas" | "resultados" | "saldos" | null>(null);
+  const [textoVisorWhatsapp, setTextoVisorWhatsapp] = useState("");
+  const [filtroSaldosWsp, setFiltroSaldosWsp] = useState<FiltroSaldosWhatsapp>("todos");
+  const [separarSaldosWsp, setSepararSaldosWsp] = useState(true);
+  const [acuseReciboOperador, setAcuseReciboOperador] = useState(false);
 
   /**
    * Hipódromos con carreras CARGADAS en el día elegido (se elige el día
@@ -1103,6 +1119,9 @@ const hipodromosDelDia = useMemo(() => {
       setMotivoPreview("");
     } finally {
       setOcupadoPreview(false);
+      setAccionPreview(null);
+      setEdicionPreview(null);
+      setMotivoPreview("");
     }
   };
 
@@ -1149,6 +1168,8 @@ const hipodromosDelDia = useMemo(() => {
     [jugadasGuardadas, ticketsDeCarrera]
   );
   const totalesPreview = useMemo(() => resumenPreview(filasPreview), [filasPreview]);
+  const filasPreviewEnVivo = useMemo(() => filasPreview.filter((f) => !f.esAdelantada), [filasPreview]);
+  const filasPreviewAdelantadas = useMemo(() => filasPreview.filter((f) => f.esAdelantada), [filasPreview]);
 
   // Nombre del grupo "cabecera" de la relación: el grupo de WhatsApp vinculado
   // (p. ej. "MVP FUSION"), que es lo que la casa pone en el encabezado del
@@ -1460,7 +1481,11 @@ const hipodromosDelDia = useMemo(() => {
         cliente1Id: String(c1.id),
         cliente2Id: c2 ? String(c2.id) : undefined,
         grupoId: grupoId ?? undefined,
+        es_adelantada: modalidadTiempo === "ADELANTADA",
       });
+      if (modalidadTiempo === "ADELANTADA" && venta.ticketId) {
+        void marcarTicketsAdelantados([venta.ticketId], true);
+      }
       n += 1;
     }
     if (n === 0) {
@@ -1950,7 +1975,28 @@ const hipodromosDelDia = useMemo(() => {
       ) : (
       <div className="rounded-2xl border border-line bg-surface p-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-xs font-black uppercase tracking-wide text-slate-700">Carga Individual</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-xs font-black uppercase tracking-wide text-slate-700">Carga Individual</h3>
+            <ToggleModalidadTiempo valor={modalidadTiempo} onChange={setModalidadTiempo} />
+            <button
+              type="button"
+              onClick={() => setConCruces((v) => !v)}
+              className={`rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase transition ${
+                conCruces
+                  ? "border-emerald-400 bg-emerald-600 text-white"
+                  : "border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200"
+              }`}
+            >
+              🔀 Modalidad: {conCruces ? "CON CRUCES" : "SIN CRUCES"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalGodetAbierto(true)}
+              className="rounded-lg border border-amber-400/60 bg-slate-900 px-2.5 py-1 text-[10px] font-black uppercase text-amber-300 hover:bg-slate-800"
+            >
+              🧭 Motor IA Godet v3 (MACTOR + SMIC + Actuario v4)
+            </button>
+          </div>
           <span className="flex items-center gap-2">
             <span className="inline-flex min-w-[3.5rem] items-center justify-center rounded-full border-2 border-indigo-200 bg-white px-4 py-1.5 text-2xl font-black uppercase leading-none tracking-widest text-indigo-900 shadow-md md:text-3xl">
               C{carrera}
@@ -2234,6 +2280,16 @@ const hipodromosDelDia = useMemo(() => {
                     <div className="flex flex-col gap-0.5">
                       <span className="block truncate leading-none">
                         {infoCliente(enCurso?.cliente1 ?? null, f.monto, v.ok && v.cliente1 ? v.cliente1.cobroNeto : 0)}
+                        {enCurso && enCurso.cliente1 && Number.isFinite(enCurso.queda) && (
+                          <span className="ml-1 text-[9px] font-bold text-slate-500">
+                            · Queda: {monedaFmt(enCurso.queda)}
+                          </span>
+                        )}
+                        {enCurso?.observacionExceso && (
+                          <span className="ml-1 rounded bg-rose-100 px-1 text-[8px] font-black text-rose-700">
+                            {enCurso.observacionExceso}
+                          </span>
+                        )}
                       </span>
                       <SearchableSelect
                         options={opcionesClientes}
@@ -2380,6 +2436,7 @@ const hipodromosDelDia = useMemo(() => {
                         </td>
                         <td className="h-8 truncate px-1 py-0 align-middle font-mono text-[11px] font-semibold text-slate-700" title={f.jugada}>
                           {f.jugada}
+                          {f.esAdelantada && <BadgeAdelantada className="ml-1" />}
                         </td>
                         <td className="h-8 px-1 py-0 align-middle font-bold text-slate-800">{f.caballo ? f.caballo.toUpperCase() : "—"}</td>
                         <td className="h-8 px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={f.cliente1}>
@@ -2402,6 +2459,254 @@ const hipodromosDelDia = useMemo(() => {
             </div>
           </div>
         )}
+
+        {/* Separación Estricta: Área 1 (En Vivo) vs Área 2 (Adelantadas) */}
+        {filasPreview.length > 0 && (
+          <div className="mt-3 grid gap-2 lg:grid-cols-2">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-2.5">
+              <p className="text-[10px] font-black uppercase tracking-wide text-emerald-800">
+                ⚡ JUGADAS EN VIVO (CARRERA ACTUAL) ({filasPreviewEnVivo.length})
+              </p>
+              {filasPreviewEnVivo.length === 0 ? (
+                <p className="mt-1 text-[10px] text-slate-500">Sin jugadas en vivo registradas en esta carrera.</p>
+              ) : (
+                <ul className="mt-1.5 max-h-32 space-y-1 overflow-y-auto text-[11px]">
+                  {filasPreviewEnVivo.map((f, idx) => (
+                    <li key={f.clave} className="flex items-center justify-between rounded bg-white px-2 py-1 shadow-xs">
+                      <span className="truncate font-semibold text-slate-700">
+                        #{idx + 1} · {f.cliente1} vs {f.cliente2} · <b>{f.jugada}</b> ({f.caballo || "—"})
+                      </span>
+                      <span className="ml-2 shrink-0 font-mono font-bold text-emerald-700">{monedaFmt(f.monto)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-2.5">
+              <p className="text-[10px] font-black uppercase tracking-wide text-amber-800">
+                ⏳ JUGADAS ADELANTADAS (PRE-JUGADAS) ({filasPreviewAdelantadas.length})
+              </p>
+              {filasPreviewAdelantadas.length === 0 ? (
+                <p className="mt-1 text-[10px] text-slate-500">Sin jugadas adelantadas registradas en esta carrera.</p>
+              ) : (
+                <ul className="mt-1.5 max-h-32 space-y-1 overflow-y-auto text-[11px]">
+                  {filasPreviewAdelantadas.map((f, idx) => (
+                    <li key={f.clave} className="flex items-center justify-between rounded bg-white px-2 py-1 shadow-xs">
+                      <span className="truncate font-semibold text-slate-700">
+                        #{idx + 1} · {f.cliente1} vs {f.cliente2} · <b>{f.jugada}</b> ({f.caballo || "—"})
+                      </span>
+                      <span className="ml-2 shrink-0 font-mono font-bold text-amber-700">{monedaFmt(f.monto)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Visor Interactivo de Reportes WhatsApp (#reporteArea) + Acuse de Recibo */}
+        <div id="reporteArea" className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const txt = generarTextoPrejugadasWhatsapp({
+                  grupo: grupoCabecera,
+                  hipodromo: nombreHipodromo,
+                  carrera,
+                  fecha,
+                  retirados: retirados.trim() || undefined,
+                  jugadasEnVivo: filasPreviewEnVivo.map((f) => ({
+                    juega: f.cliente1,
+                    jugada: f.jugada,
+                    caballo: f.caballo,
+                    da: f.cliente2,
+                    monto: f.monto,
+                  })),
+                  jugadasAdelantadas: filasPreviewAdelantadas.map((f) => ({
+                    juega: f.cliente1,
+                    jugada: f.jugada,
+                    caballo: f.caballo,
+                    da: f.cliente2,
+                    monto: f.monto,
+                  })),
+                });
+                setVisorWhatsappTipo("prejugadas");
+                setTextoVisorWhatsapp(txt);
+                setAcuseReciboOperador(false);
+              }}
+              className="rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-[11px] font-black text-indigo-800 hover:bg-indigo-100"
+            >
+              📋 Ver Reporte de Prejugadas (Preliminar WhatsApp)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const txt = preliminarResultadoTexto || planoPreliminarTexto;
+                setVisorWhatsappTipo("resultados");
+                setTextoVisorWhatsapp(txt);
+                setAcuseReciboOperador(false);
+              }}
+              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-[11px] font-black text-emerald-800 hover:bg-emerald-100"
+            >
+              🏁 Ver Preliminar de Resultados WhatsApp
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const txt = generarTextoSaldosWhatsapp({
+                  grupo: grupoCabecera,
+                  hipodromo: nombreHipodromo,
+                  carrera,
+                  fecha,
+                  clientes: clientes.map((c) => ({
+                    nombre: c.nombre,
+                    saldoContable: saldoDeCliente(c),
+                    aval: avalDeCliente(c),
+                    riesgoEnCurso: 0,
+                    disponible: limiteDeJugar(c),
+                    libre: esClienteLibre(c),
+                    tuvoMovimiento: true,
+                  })),
+                  filtro: filtroSaldosWsp,
+                  separarPositivosNegativos: separarSaldosWsp,
+                });
+                setVisorWhatsappTipo("saldos");
+                setTextoVisorWhatsapp(txt);
+                setAcuseReciboOperador(false);
+              }}
+              className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-[11px] font-black text-amber-900 hover:bg-amber-100"
+            >
+              💰 Ver Reporte de Saldos Actualizados WhatsApp
+            </button>
+          </div>
+
+          {visorWhatsappTipo && (
+            <div className="mt-3 space-y-2 rounded-xl border border-slate-300 bg-white p-3">
+              {visorWhatsappTipo === "saldos" && (
+                <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 pb-2 text-xs">
+                  <label className="flex items-center gap-1.5 font-bold text-slate-700">
+                    Filtro de Saldos:
+                    <select
+                      value={filtroSaldosWsp}
+                      onChange={(e) => {
+                        const nuevo = e.target.value as FiltroSaldosWhatsapp;
+                        setFiltroSaldosWsp(nuevo);
+                        setTextoVisorWhatsapp(
+                          generarTextoSaldosWhatsapp({
+                            grupo: grupoCabecera,
+                            hipodromo: nombreHipodromo,
+                            carrera,
+                            fecha,
+                            clientes: clientes.map((c) => ({
+                              nombre: c.nombre,
+                              saldoContable: saldoDeCliente(c),
+                              aval: avalDeCliente(c),
+                              riesgoEnCurso: 0,
+                              disponible: limiteDeJugar(c),
+                              libre: esClienteLibre(c),
+                              tuvoMovimiento: true,
+                            })),
+                            filtro: nuevo,
+                            separarPositivosNegativos: separarSaldosWsp,
+                          })
+                        );
+                      }}
+                      className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold"
+                    >
+                      <option value="todos">Todos los clientes</option>
+                      <option value="min1">Saldos ≥ 1</option>
+                      <option value="min1_libres">Saldos ≥ 1 + libres con movimiento</option>
+                      <option value="min001_libres">Saldos ≥ 0,01 + libres con movimiento</option>
+                    </select>
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-1.5 font-bold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={separarSaldosWsp}
+                      onChange={(e) => {
+                        const sep = e.target.checked;
+                        setSepararSaldosWsp(sep);
+                        setTextoVisorWhatsapp(
+                          generarTextoSaldosWhatsapp({
+                            grupo: grupoCabecera,
+                            hipodromo: nombreHipodromo,
+                            carrera,
+                            fecha,
+                            clientes: clientes.map((c) => ({
+                              nombre: c.nombre,
+                              saldoContable: saldoDeCliente(c),
+                              aval: avalDeCliente(c),
+                              riesgoEnCurso: 0,
+                              disponible: limiteDeJugar(c),
+                              libre: esClienteLibre(c),
+                              tuvoMovimiento: true,
+                            })),
+                            filtro: filtroSaldosWsp,
+                            separarPositivosNegativos: sep,
+                          })
+                        );
+                      }}
+                    />
+                    Separar 🟢 positivos / 🔴 negativos
+                  </label>
+                </div>
+              )}
+              <textarea
+                value={textoVisorWhatsapp}
+                onChange={(e) => setTextoVisorWhatsapp(e.target.value)}
+                rows={10}
+                className="w-full rounded-lg border border-slate-300 bg-slate-50 p-2.5 font-mono text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={acuseReciboOperador}
+                    onChange={(e) => setAcuseReciboOperador(e.target.checked)}
+                    className="h-4 w-4 accent-emerald-600"
+                  />
+                  ✅ Acuse de Recibo: Confirmo lectura y verificación del reporte antes de enviar
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={!acuseReciboOperador}
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(textoVisorWhatsapp);
+                        emitirToast("📋 Reporte copiado al portapapeles para WhatsApp.", "success");
+                      } catch {
+                        emitirToast("No se pudo copiar al portapapeles.", "error");
+                      }
+                    }}
+                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-black text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    📋 Copiar para WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!acuseReciboOperador}
+                    onClick={() => {
+                      const url = `https://wa.me/?text=${encodeURIComponent(textoVisorWhatsapp)}`;
+                      window.open(url, "_blank", "noopener,noreferrer");
+                    }}
+                    className="rounded-lg bg-green-700 px-3 py-1.5 text-xs font-black text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    📲 Abrir en WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVisorWhatsappTipo(null)}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-600 hover:bg-slate-100"
+                  >
+                    ✕ Cerrar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Modal propio ✏️/🗑️ de una jugada del panel (sin window.confirm) */}
         {accionPreview && (
@@ -3133,6 +3438,15 @@ const hipodromosDelDia = useMemo(() => {
           </div>
         </div>
       )}
+
+      <ModalAnalisisActuarialGodet
+        abierto={modalGodetAbierto}
+        onCerrar={() => setModalGodetAbierto(false)}
+        ejemplares={caballosDeCarrera}
+        hipodromo={nombreHipodromo}
+        carrera={carrera}
+        fecha={fecha}
+      />
 
       {/* Evento Enter en barras superiores no debe recargar */}
       <input type="hidden" />

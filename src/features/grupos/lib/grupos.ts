@@ -8,6 +8,8 @@ import { supabase } from "@/core/supabase";
 import { exigirCapacidad, grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
 import { claveDeUsuario, guardarUsuarioSistema, leerUsuariosDelSistema } from "@/features/seguridad/lib/accesos";
 import { disponibleParaJugar, esSinTope, explicarDisponible } from "@/features/taquilla/lib/reparto";
+import { redondearCentavos } from "@/shared/lib/dinero";
+import { sincronizarSaldosRealesClientes } from "@/features/saldos/lib/contabilidad-central";
 
 export type GrupoVenta = {
   id: string | number;
@@ -220,7 +222,14 @@ export async function listarClientesVenta(): Promise<ClienteVenta[]> {
         ].filter(Boolean)),
       ],
     }));
-    cacheClientes = clientes;
+    cacheClientes = await sincronizarSaldosRealesClientes(
+      clientes.map((c) => ({
+        ...c,
+        saldo_actual: c.saldo_actual != null ? redondearCentavos(c.saldo_actual) : null,
+        aval: c.aval != null ? redondearCentavos(c.aval) : null,
+      })),
+      activo
+    );
     cacheClientesGrupo = activo;
     return clientes;
   } catch {

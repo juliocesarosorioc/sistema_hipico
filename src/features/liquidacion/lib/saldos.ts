@@ -24,6 +24,7 @@ import {
   type OpcionesCrucesPuestos,
 } from "@/features/motores/lib/puestos";
 import { cargarOpcionesCrucesPuestos } from "@/features/gestion/lib/cruces-carrera";
+import { redondearCentavos, sumarDinero, restarDinero, formatearMontoSinMoneda } from "@/shared/lib/dinero";
 
 export type LiquidarSaldosInput = {
   hipodromo: string;
@@ -191,9 +192,9 @@ export function decidirTickets(
         if (!res.ok) continue;
         const bruto = res.totalClienteNeto + res.gananciaCasa;
         const share = res.gananciaCasa / oldSum;
-        const nueva = Math.round(grupo.comisionNeta * share * 100) / 100;
-        res.totalClienteNeto = Math.round((bruto - nueva) * 100) / 100;
-        res.balanceBanca = Math.round((NUM(decisiones[i].fila.monto_jugado) - bruto + nueva) * 100) / 100;
+        const nueva = redondearCentavos(grupo.comisionNeta * share);
+        res.totalClienteNeto = restarDinero(bruto, nueva);
+        res.balanceBanca = sumarDinero(restarDinero(NUM(decisiones[i].fila.monto_jugado), bruto), nueva);
         res.gananciaCasa = nueva;
       }
     }
@@ -239,8 +240,8 @@ export function decidirTickets(
               100
             ) / 100;
         asignado += nueva;
-        res.totalClienteNeto = Math.round((bruto - nueva) * 100) / 100;
-        res.balanceBanca = Math.round((NUM(decisiones[i].fila.monto_jugado) - bruto + nueva) * 100) / 100;
+        res.totalClienteNeto = restarDinero(bruto, nueva);
+        res.balanceBanca = sumarDinero(restarDinero(NUM(decisiones[i].fila.monto_jugado), bruto), nueva);
         res.gananciaCasa = nueva;
         if (liquidacion.modalidadesAplicadas.length > 0) {
           const fuente = liquidacion.modalidadesAplicadas.map(({ modalidad, origen }) => {
@@ -470,7 +471,7 @@ export async function aplicarLiquidacionSaldos(
     // (que relee la BD) pagaba de menos toda la comisión y el banquero cobraba/
     // pagaba de menos. El ABONO al saldo del ganador SÍ es neto
     // (totalClienteNeto): es el dinero que recibe en mano.
-    const premioPagar = res.ok ? Math.round((res.totalClienteNeto + res.gananciaCasa) * 100) / 100 : 0;
+    const premioPagar = res.ok ? sumarDinero(res.totalClienteNeto, res.gananciaCasa) : 0;
     const montDecidido = premioPagar;
     const credito = res.ok || esAnulada ? res.totalClienteNeto : 0;
 
@@ -493,7 +494,7 @@ export async function aplicarLiquidacionSaldos(
           const actual = NUM(((c ?? {}) as Record<string, unknown>).saldo_actual);
           const { error: eUpd } = await sdb
             .from("clientes")
-            .update({ saldo_actual: actual + credito })
+            .update({ saldo_actual: sumarDinero(actual, credito) })
             .eq("id", fid as never);
           if (eUpd) errores.push(`Saldo cliente ${String(fid)}: no se pudo acreditar (${eUpd.message})`);
         })()
@@ -517,7 +518,7 @@ export async function aplicarLiquidacionSaldos(
     `Liquidación aplicada: ${decidibles.length} ticket(s) decidido(s) (${ganadores} ganadores` +
     (reembolsos ? `, ${reembolsos} anulados devueltos` : "") +
     `). ` +
-    `Abono total $${abonoTotal.toFixed(2)}.`;
+    `Abono total ${formatearMontoSinMoneda(abonoTotal)}.`;
   let motivo = base;
   if (pendientes.length) {
     motivo =
