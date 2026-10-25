@@ -223,10 +223,20 @@ export function GestionJugadasModule() {
   // fecha o hipódromo se cierra sola, para no liquidar por error. Lo mismo la
   // pizarra cargada: si no se limpia, al cambiar de carrera el flujo unificado
   // finalizaría la carrera nueva con la llegada de la anterior.
+  // Carga SIEMPRE por carrera: al cambiar de hipódromo/fecha/carrera se limpia todo
+  // para evitar mezclar jugadas entre carreras distintas.
   useEffect(() => {
     setReapertura(false);
     setUltimaPizarra(null);
     setPizarraCentral(null);
+    setResumen(null);
+    setFilas([filaVacia()]);
+    setJugadasGuardadas([]);
+    setAviso("");
+    setAccionPreview(null);
+    setEdicionPreview(null);
+    setMotivoPreview("");
+    setOcupadoPreview(false);
   }, [hipodromo, fecha, carrera]);
 
   /**
@@ -1135,7 +1145,7 @@ const hipodromosDelDia = useMemo(() => {
       void recargarRegistroCentral();
       await recargarJugadasGuardadas();
       const accionTexto = accion.modo === "editar" ? "Jugada corregida" : "Jugada anulada";
-      const texto = `✅ ${accionTexto} y carrera recalculada · #${fila.ticketId} · Auditada.`;
+      const texto = `✅ ${accionTexto} y carrera recalculada · #${fila.ticketId} · Auditada. Saldo reintegrado al jugador correctamente.`;
       setAviso(texto);
       toastPreview(texto, "success");
       void registrarAuditoria(
@@ -1700,6 +1710,7 @@ const hipodromosDelDia = useMemo(() => {
       setUltimaPizarra(null);
       recargarRegistroCentral();
       void recargarClientes();
+      void recargarRegistroCentral();
       void recargarJugadasGuardadas();
       setModalReversar(false);
     } finally {
@@ -1819,6 +1830,8 @@ const hipodromosDelDia = useMemo(() => {
       void recargarClientes();
       if (s.errores.length) {
         setAviso(`✅ ${r.motivo}${avisoMarcas} · ⚠️ aviso de saldos: ${s.errores[0]}`);
+        void recargarClientes();
+        void recargarRegistroCentral();
         void recargarJugadasGuardadas();
         if (abrirReporte) setMostrarReporteLiquidacion(true);
         return;
@@ -1826,6 +1839,8 @@ const hipodromosDelDia = useMemo(() => {
     }
     // La liquidación dejó de decidir los tickets: el panel sigue mostrándolos
     // (ahora con ✅ Ganador/Perdedor) desde la base, no desde la sesión.
+    void recargarClientes();
+    void recargarRegistroCentral();
     void recargarJugadasGuardadas();
     setAviso(r.ok ? `✅ ${r.motivo}${avisoMarcas}` : `❌ ${r.motivo}`);
     // Flujo unificado (Liquidar Carrera): el operador confirmó la pizarra y la
