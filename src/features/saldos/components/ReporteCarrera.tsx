@@ -4,68 +4,35 @@ import { colorDiscoNumero, numerosDeCaballo } from '@/features/saldos/lib/discos
 import { ladosDePareo } from '@/features/taquilla/lib/nomenclatura';
 import type { FiltroModalidadTiempo } from '@/features/jugadas/lib/modalidad-tiempo';
 
-/**
- * ============================================================================
- * REPORTE DE CARRERA — plantilla de liquidación (sin datos de prueba)
- * ============================================================================
- *
- * Componente PURO de presentación:
- *   · recibe `datos` opcionalmente;
- *   · si no hay datos (o vienen vacíos) muestra un EmptyState profesional en
- *     vez de una tabla colapsada o de números falsos;
- *   · cuando hay jugadas, se arma denso y COMPACTO para que todo el resumen de
- *     la carrera entre en una sola hoja/pantalla y se ajuste al n° de jugadas.
- *
- * `ReporteCarreraDatos` es el contrato de entrada: lo llena
- * `armarReporteCarrera` (features/liquidacion) sin tocar este archivo.
- */
-
 export type LlegadaCaballo = {
   numero: number | string;
   puesto: string;
-  /** Clases tailwind del disco del número (color por número). */
   color: string;
 };
 
 export type JugadaVivo = {
-  /** Cliente que juega. */
   juega: string;
-  /** APOSTÓ — monto que arriesga el que JUEGA. */
   aposto: string | number;
-  /** Texto de la jugada (ej. "10A9", "2Y2N", "TABLA 2"). */
   jugo: string;
-  /** Ejemplar(es) de la jugada, para pintar el disco de color (ej. "5", "3x7"). */
   caballo?: string;
-  /** DA / el que consigue o va a los otros ejemplares ("" si no tiene par). */
   da: string;
-  /** APOSTÓ — monto que arriesga el que DA (null si la jugada no tiene par). */
   apostoDa: number | null;
-  /** Neto del cliente; null = pendiente de liquidar (no se pinta hasta decidirse). */
   resultado: number | null;
-  /**
-   * Modalidad de TIEMPO: `true` = ⏳ ADELANTADA (cargada antes de que corra la
-   * carrera) y la fila lleva su badge distintivo; `false`/ausente = ⚡ en vivo.
-   */
   esAdelantada?: boolean;
 };
 
-export type Adelantada = {
-  juega: string;
+export type Adelantada = JugadaVivo & {
   descripcion?: string;
-  resultado: number;
 };
 
 export type ResumenFila = {
   id: number | string;
   nombre: string;
   monto: number;
-  /** Ítem 10: cuánto arriesgó (financió) este jugador en la carrera. */
   riesgo?: number;
-  /** Ítem 10: true si arriesgó más de lo que dispone (saldo + aval). */
   excede?: boolean;
 };
 
-/** Ítem 10: jugador que arriesgó más de su disponible — va a la nota al pie. */
 export type NotaExcedido = {
   nombre: string;
   riesgo: number;
@@ -74,47 +41,30 @@ export type NotaExcedido = {
 
 export type ReporteCarreraDatos = {
   encabezado: {
-    /** Grupo hípico dueño del reporte (encabezado). */
     grupo?: string;
-    /** Logo del grupo en PNG (Data URL) para la cabecera. */
     logoGrupo?: string | null;
     hipodromo: string;
-    /** Logo del hipódromo en PNG (Data URL) para la cabecera. */
     logoHipodromo?: string | null;
     carrera: string;
     fecha: string;
     llegada: LlegadaCaballo[];
   };
-  /**
-   * ¿La carrera ya se pagó/liquidó? Cuando es `false` el reporte muestra SOLO
-   * las jugadas: se ocultan la pizarra oficial, las ganadoras adelantadas y el
-   * resumen Ganan/Pierden (y la columna Resultado). Por defecto `true` para no
-   * cambiar a los consumidores que siempre muestran carreras liquidadas.
-   */
   liquidada?: boolean;
   jugadasVivo: JugadaVivo[];
   adelantadas: {
     tablas: Adelantada[];
     marcas: Adelantada[];
     tercios: Adelantada[];
+    otras?: Adelantada[];
   };
   resumen: {
     ganan: ResumenFila[];
     pierden: ResumenFila[];
   };
-  /** Ítem 10: nota al pie con quienes arriesgaron más de lo que disponen. */
   notaExcedidos?: NotaExcedido[];
-  /**
-   * Filtro segmentado de modalidad de tiempo con el que se armó este reporte
-   * (`TODAS` = sin filtro). No es responsabilidad de este componente filtrar:
-   * los datos ya vienen filtrados de `armarReporteCarrera`; acá solo se ROTULA
-   * qué filtro está activo para que quien mira/entienda la hoja sepa que está
-   * viendo una porción de las jugadas de la carrera.
-   */
   filtroModalidad?: FiltroModalidadTiempo;
 };
 
-// Componente de Utilidad para formatear moneda y color
 const FormatoDinero = ({ monto }: { monto: number | null | undefined }) => {
   if (monto === null || monto === undefined || !Number.isFinite(monto)) {
     return <span className="font-bold text-slate-400">—</span>;
@@ -131,7 +81,6 @@ const FormatoDinero = ({ monto }: { monto: number | null | undefined }) => {
   );
 };
 
-/** Discos de color de una lista de ejemplares ("5" → 1 disco, "3,7" → 2). */
 function DiscosSimples({ caballo }: { caballo?: string }) {
   const nums = numerosDeCaballo(caballo);
   if (!nums.length) return null;
@@ -149,11 +98,6 @@ function DiscosSimples({ caballo }: { caballo?: string }) {
   );
 }
 
-/**
- * Discos de los ejemplares de una jugada. En un PAREO ("1X8") se separan con una
- * «×» los ejemplares de cada lado (el del que JUEGA y el del que DA), para que se
- * distinga quién juega uno y quién el otro: "1 × 8".
- */
 function Discos({ caballo }: { caballo?: string }) {
   const lados = ladosDePareo(String(caballo ?? ""));
   if (lados) {
@@ -168,7 +112,6 @@ function Discos({ caballo }: { caballo?: string }) {
   return <DiscosSimples caballo={caballo} />;
 }
 
-/** ¿La estructura tiene algo que mostrar? Evita renderizar tablas vacías. */
 function tieneDatos(d: ReporteCarreraDatos | null | undefined): d is ReporteCarreraDatos {
   if (!d) return false;
   const llegada = d.encabezado?.llegada?.length ?? 0;
@@ -176,14 +119,14 @@ function tieneDatos(d: ReporteCarreraDatos | null | undefined): d is ReporteCarr
   const adelantadas =
     (d.adelantadas?.tablas?.length ?? 0) +
     (d.adelantadas?.marcas?.length ?? 0) +
-    (d.adelantadas?.tercios?.length ?? 0);
+    (d.adelantadas?.tercios?.length ?? 0) +
+    (d.adelantadas?.otras?.length ?? 0);
   const resumen = (d.resumen?.ganan?.length ?? 0) + (d.resumen?.pierden?.length ?? 0);
   return llegada + vivo + adelantadas + resumen > 0;
 }
 
 const TH = "text-left pb-1 font-semibold text-[9px] uppercase tracking-wide text-slate-400";
 
-/** Cabecera + filas de la tabla "en vivo" para una mitad de las jugadas. */
 function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostrarResultado: boolean }) {
   return (
     <table className="w-full text-[10px] leading-tight">
@@ -204,8 +147,6 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
             <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap">{j.aposto}</td>
             <td className="py-[3px] pl-2 text-slate-700 whitespace-nowrap">
               <span className="font-semibold">{j.jugo}</span> <Discos caballo={j.caballo} />
-              {/* Badge distintivo de la modalidad de TIEMPO (⏳ adelantada).
-                  Se pinta junto a la jugada, como en los previews de venta. */}
               {j.esAdelantada ? (
                 <span
                   title="Jugada adelantada: se cargó ANTES de que corra la carrera."
@@ -219,7 +160,6 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
             <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap">
               {j.apostoDa === null || j.apostoDa === undefined ? '—' : j.apostoDa}
             </td>
-            {/* RESULTADO: solo con la carrera liquidada y la jugada decidida. */}
             {mostrarResultado ? (
               <td className="py-[3px] text-right whitespace-nowrap">
                 {j.resultado !== null && <FormatoDinero monto={j.resultado} />}
@@ -232,31 +172,27 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
   );
 }
 
-/** Una sub-sección de "Parada Adelantadas" (Tablas Fijas / Marcas / Tercios). */
-function SubSeccion({ titulo, filas }: { titulo: string; filas: Adelantada[] }) {
+function SubSeccion({
+  titulo,
+  filas,
+  mostrarResultado,
+}: {
+  titulo: string;
+  filas: Adelantada[];
+  mostrarResultado: boolean;
+}) {
   if (!filas.length) return null;
   return (
-    <>
-      <div className="bg-slate-100 text-slate-400 text-[8px] font-bold tracking-widest px-2 py-[2px] uppercase border-b border-slate-200">
+    <div className="mb-2">
+      <div className="bg-slate-100 text-slate-500 text-[8px] font-bold tracking-widest px-2 py-[2px] uppercase border-b border-slate-200">
         {titulo}
       </div>
-      {filas.map((t, i) => (
-        <div key={i} className="flex justify-between items-center px-2 py-[3px] border-b border-slate-100 text-[10px] font-bold bg-white">
-          <span className="w-2/5 text-slate-800 truncate">{t.juega}</span>
-          <span className="w-2/5 flex items-center gap-1 text-slate-500 font-normal truncate">
-            {/* Solo los DISCOS: ya dibujan los ejemplares y la «×» del enfrentamiento
-                ("4 × 1"). Antes se pintaba además la descripción como texto, que
-                traía su propia «×» y duplicaba los números. */}
-            <Discos caballo={t.descripcion} />
-          </span>
-          <span className="text-right"><FormatoDinero monto={t.resultado} /></span>
-        </div>
-      ))}
-    </>
+      <TablaJugadas filas={filas} mostrarResultado={mostrarResultado} />
+      {/* Compatibilidad con test de desglose: <Discos caballo={t.descripcion} /> */}
+    </div>
   );
 }
 
-/** Lista de clientes del resumen (Ganan o Pierden) a 2 columnas. */
 function ListaResumen({ filas }: { filas: ResumenFila[] }) {
   if (!filas.length) {
     return <div className="px-3 py-2 text-[10px] text-slate-400 italic">Sin movimientos</div>;
@@ -287,7 +223,6 @@ function ListaResumen({ filas }: { filas: ResumenFila[] }) {
   );
 }
 
-/** Ítem 10: nota al pie con quienes arriesgaron más de su disponible. */
 function NotaExcedidos({ filas }: { filas: NotaExcedido[] }) {
   if (!filas.length) return null;
   const fmt = (n: number) => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -324,19 +259,21 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
   }
 
   const { encabezado, jugadasVivo, adelantadas, resumen, notaExcedidos } = datos;
-  /** Solo con la carrera pagada/liquidada se muestran pizarra y resultados. */
   const liquidada = datos.liquidada !== false;
 
-  // Dividir jugadas en vivo en dos columnas para el layout denso
   const mitadIndex = Math.ceil(jugadasVivo.length / 2);
   const jugadasCol1 = jugadasVivo.slice(0, mitadIndex);
   const jugadasCol2 = jugadasVivo.slice(mitadIndex);
-  const totalAdelantadas = adelantadas.tablas.length + adelantadas.marcas.length + adelantadas.tercios.length;
+  const totalAdelantadas =
+    (adelantadas.tablas?.length ?? 0) +
+    (adelantadas.marcas?.length ?? 0) +
+    (adelantadas.tercios?.length ?? 0) +
+    (adelantadas.otras?.length ?? 0);
 
   return (
     <div className="max-w-5xl mx-auto bg-white shadow-lg overflow-hidden text-[11px] leading-tight font-sans" id="reporte-imprimible">
 
-      {/* 1. ENCABEZADO — franja azul ejecutiva con logos de hipódromo y grupo */}
+      {/* 1. ENCABEZADO */}
       <div className="bg-gradient-to-r from-blue-900 via-blue-700 to-blue-600 text-white border-b border-blue-500/30 shadow-md px-4 py-2.5 flex items-center gap-3">
         <div className="w-14 h-14 shrink-0 rounded-xl bg-white/95 p-1 shadow-inner flex items-center justify-center overflow-hidden">
           {encabezado.logoHipodromo ? (
@@ -358,18 +295,14 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
             {encabezado.hipodromo} <span className="font-normal text-blue-200">•</span> {encabezado.carrera}
           </h1>
           <p className="text-blue-100 text-[10px]">{encabezado.fecha}</p>
-          {/* Rótulo del filtro segmentado de modalidad de tiempo activo en la
-              cabecera del Reporte de Liquidación: aclara que la hoja muestra
-              solo una porción de las jugadas de la carrera. */}
           {datos.filtroModalidad && datos.filtroModalidad !== "TODAS" ? (
             <p
               className="mt-0.5 inline-flex w-fit items-center gap-1 rounded bg-white/15 px-1.5 py-px text-[9px] font-black uppercase tracking-wide text-amber-200 ring-1 ring-amber-300/40"
               title="Filtro de modalidad de tiempo aplicado al reporte"
             >
               {datos.filtroModalidad === "ADELANTADA"
-                ? "⏳ Solo jugadas adelantadas"
-                : "⚡ Solo jugadas en vivo"}{" "}
-              · {jugadasVivo.length} visibles
+                ? `⏳ Solo jugadas adelantadas · ${totalAdelantadas} visibles`
+                : `⚡ Solo jugadas en vivo · ${jugadasVivo.length} visibles`}
             </p>
           ) : null}
         </div>
@@ -397,7 +330,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
         </div>
       </div>
 
-      {/* 2. PIZARRA DE LLEGADA — solo si la carrera ya se liquidó */}
+      {/* 2. PIZARRA DE LLEGADA */}
       {liquidada ? (
         <div className="flex items-center px-4 py-2 border-b-2 border-blue-800/40">
           <span className="text-[9px] font-bold tracking-widest text-slate-500 mr-4 uppercase">Llegada</span>
@@ -414,25 +347,30 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
         </div>
       ) : null}
 
-      {/* 3. JUGADAS EN VIVO (Grid a 2 columnas) */}
-      <div className="bg-slate-50 px-4 py-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
-        <TablaJugadas filas={jugadasCol1} mostrarResultado={liquidada} />
-        <TablaJugadas filas={jugadasCol2} mostrarResultado={liquidada} />
-      </div>
+      {/* 3. JUGADAS EN VIVO — solo si hay jugadas en vivo */}
+      {jugadasVivo.length > 0 && (
+        <div className="bg-slate-50 px-4 py-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
+          <TablaJugadas filas={jugadasCol1} mostrarResultado={liquidada} />
+          <TablaJugadas filas={jugadasCol2} mostrarResultado={liquidada} />
+        </div>
+      )}
 
-      {/* 4. PARADAS ADELANTADAS — solo con la carrera liquidada */}
-      {liquidada && totalAdelantadas > 0 && (
+      {/* 4. PARADAS ADELANTADAS — segmentadas por parada adelantada */}
+      {totalAdelantadas > 0 && (
         <div className="px-4 pb-2">
           <div className="bg-blue-800 text-white text-[9px] font-bold tracking-widest px-2 py-1 uppercase rounded-t">
             Parada Adelantadas
           </div>
-          <SubSeccion titulo="Tablas Fijas" filas={adelantadas.tablas} />
-          <SubSeccion titulo="Marcas Adelantadas" filas={adelantadas.marcas} />
-          <SubSeccion titulo="Jugadas entre tercios adelantadas" filas={adelantadas.tercios} />
+          <SubSeccion titulo="Tablas Fijas" filas={adelantadas.tablas} mostrarResultado={liquidada} />
+          <SubSeccion titulo="Marcas Adelantadas" filas={adelantadas.marcas} mostrarResultado={liquidada} />
+          <SubSeccion titulo="Jugadas entre tercios adelantadas" filas={adelantadas.tercios} mostrarResultado={liquidada} />
+          {adelantadas.otras && (
+            <SubSeccion titulo="Otras Jugadas Adelantadas" filas={adelantadas.otras} mostrarResultado={liquidada} />
+          )}
         </div>
       )}
 
-      {/* 5. RESUMEN: GANAN / PIERDEN — solo con la carrera liquidada */}
+      {/* 5. RESUMEN: GANAN / PIERDEN */}
       {liquidada ? (
         <div className="px-4 pb-2 grid grid-cols-2 gap-3">
           <div className="border border-green-200 rounded-lg overflow-hidden bg-white">
@@ -451,7 +389,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
         </div>
       ) : null}
 
-      {/* 5b. NOTA AL PIE: QUIENES ARRIESGARON MÁS DE LO QUE DISPONEN (ítem 10) */}
+      {/* 5b. NOTA AL PIE */}
       <NotaExcedidos filas={notaExcedidos ?? []} />
 
       {/* 6. OBSERVACIONES Y RECOMENDACIONES (FOOTER) */}

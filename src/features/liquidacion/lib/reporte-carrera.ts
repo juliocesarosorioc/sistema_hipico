@@ -67,9 +67,9 @@ function seccionAdelantadaDe(
   if (tipo === "TABLA") return "tablas";
   if (tipo === "MARCA") return "marcas";
   const t = String(jugada ?? "").toUpperCase();
-  if (/^TABLA/.test(t)) return "tablas";
-  if (/^MARCAS?/.test(t)) return "marcas";
-  if (/TERCIO|^T\d{1,2}\b|3Y3/.test(t)) return "tercios";
+  if (/TABLA/i.test(t)) return "tablas";
+  if (/MARCA/i.test(t)) return "marcas";
+  if (/TERCIO|^T\d{1,2}\b|3Y3/i.test(t)) return "tercios";
   return null;
 }
 
@@ -99,17 +99,6 @@ export function riesgoDeFila(f: FilaReporte): number {
 
 /**
  * Traduce una carrera liquidada a los datos de la plantilla de reporte.
- *
- * Reglas del armado:
- *   · "En vivo": UNA fila por ticket (la del que JUEGA), con su pareja como
- *     DA cuando la jugada tiene dos clientes (lo que da o va a los otros
- *     ejemplares) y el/los ejemplar(es) de la jugada para pintarlos con color.
- *     Se saltan las filas 🔀 CRUCE.
- *   · "Parada Adelantadas": las filas GANADORAS (resultado > 0) según el tipo
- *     de jugada (Tablas Fijas / Marcas / Tercios).
- *   · "Resumen": neto acumulado por cliente (positivo → Ganan, negativo →
- *     Pierden). Los tickets PENDIENTES (resultado null) NO entran al resumen:
- *     antes caían en «Ganan 0.00» y vaciaban la columna «Pierden».
  */
 export type OpcionesReporteCarrera = {
   /** `false` = carrera aún sin pagar: oculta pizarra, resultados y resumen. */
@@ -118,15 +107,6 @@ export type OpcionesReporteCarrera = {
   logoHipodromo?: string | null;
   /** Logo del grupo hípico (Data URL PNG). */
   logoGrupo?: string | null;
-  /**
-   * Filtro segmentado de modalidad de tiempo (PROMPT #4):
-   *   · `TODAS` (o ausente) → el reporte completo, como siempre;
-   *   · `EN_VIVO`           → solo las jugadas ⚡ en vivo;
-   *   · `ADELANTADA`        → solo las jugadas ⏳ adelantadas.
-   * El filtro se aplica ANTES de acumular filas, riesgo y neto, así que los
-   * subtotales (Ganan/Pierden, riesgo total, Parada Adelantadas) se recalculan
-   * con lo que queda visible.
-   */
   filtroModalidad?: FiltroModalidadTiempo;
 };
 
@@ -140,10 +120,16 @@ export function armarReporteCarrera(
   const consigue = consiguePorJuega(c);
 
   const jugadasVivo: JugadaVivo[] = [];
-  const adelantadas: { tablas: Adelantada[]; marcas: Adelantada[]; tercios: Adelantada[] } = {
+  const adelantadas: {
+    tablas: Adelantada[];
+    marcas: Adelantada[];
+    tercios: Adelantada[];
+    otras: Adelantada[];
+  } = {
     tablas: [],
     marcas: [],
     tercios: [],
+    otras: [],
   };
   const netoPorCliente = new Map<string, number>();
   // Ítem 10: total que financia cada jugador en la carrera (bruto de su lado).
@@ -153,29 +139,21 @@ export function armarReporteCarrera(
 
   for (const f of c.filas) {
     if (f.rol === "CRUCE") continue;
-    // Filtro segmentado de modalidad de tiempo (⏳ adelantadas vs ⚡ en vivo):
-    // una fila filtrada NO entra a nada — ni a la tabla «en vivo», ni al riesgo,
-    // ni al neto del resumen, ni a «Parada Adelantadas» — así que todos los
-    // subtotales quedan recalculados con lo que realmente se ve.
     if (!pasaFiltroModalidad({ es_adelantada: f.esAdelantada }, filtro)) continue;
     const resultado = f.resultado; // number | null (null = pendiente)
     if (f.rol !== "Consigue") {
-      // Solo la fila del que JUEGA va a la tabla "en vivo"; su pareja
-      // (Consigue) ya viaja como DA. Las dos mitades igual suman al resumen.
       const i = indiceTicketDe(f.id) ?? `t-${correlativo++}`;
       const cons = consigue.get(i);
       const da = cons?.cliente ?? "";
-      // `etiquetaJugada` rotula "PP" un MATCH sin fracción (nunca "10/10"); los
-      // ejemplares viajan en `caballo` y la plantilla los pinta "1 × 8" con el
-      // DA al lado, distinguiendo quién juega uno y quién el otro.
-      // Las MARCAS y TABLAS FIJAS ya vienen rotuladas compactas ("2 x 8",
-      // "TABLA FIJA 6"): NO pasan por `etiquetaJugada`, que convertiría el
-      // "2 x 8" de una marca en "PP" al ver el patrón "N x N".
       const jugo =
         f.tipoJugada === "MARCA" || f.tipoJugada === "TABLA"
           ? f.jugada
           : etiquetaJugada(f.jugada);
-      jugadasVivo.push({
+
+      const seccion = seccionAdelantadaDe(f.jugada, f.tipoJugada);
+      const esAdelantada = f.esAdelantada === true || seccion !== null || /ADELANTAD/i.test(String(f.jugada ?? ""));
+
+      const itemJugada: Adelantada = {
         juega: f.cliente,
         aposto: riesgoDeFila(f),
         jugo,
@@ -183,38 +161,33 @@ export function armarReporteCarrera(
         da,
         apostoDa: cons ? cons.riesgo : null,
         resultado,
-        esAdelantada: f.esAdelantada === true,
-      });
+        esAdelantada,
+        descripcion: (f.ejemplar ?? f.caballo) || undefined,
+      };
+
+      // Las jugadas adelantadas NO se colocan en ambas secciones:
+      // se reflejan exclusivamente en Parada Adelantadas (segmentadas por tipo).
+      // Las jugadas en vivo se colocan exclusivamente en jugadasVivo.
+      if (esAdelantada) {
+        if (seccion) {
+          adelantadas[seccion].push(itemJugada);
+        } else {
+          adelantadas.otras.push(itemJugada);
+        }
+      } else {
+        jugadasVivo.push(itemJugada);
+      }
     }
 
-    // El riesgo se acumula para TODA fila decidida o no: "cuánto arriesgó" no
-    // depende de si la jugada ya se liquidó.
     riesgoPorCliente.set(f.cliente, (riesgoPorCliente.get(f.cliente) ?? 0) + riesgoDeFila(f));
 
-    // Los pendientes (resultado null) no suman a nadie: quedan fuera del resumen.
     if (resultado !== null) {
       netoPorCliente.set(f.cliente, (netoPorCliente.get(f.cliente) ?? 0) + resultado);
-    }
-
-    // «Parada Adelantadas»: la mitad del JUEGA que ganó, por tipo de jugada.
-    if (resultado !== null && resultado > 0 && f.rol !== "Consigue") {
-      const seccion = seccionAdelantadaDe(f.jugada, f.tipoJugada);
-      if (seccion) {
-        // BLOQUE 5: la descripción lleva SIEMPRE los ejemplares desglosados
-        // ("2 x 8" en Marcas, "6" en Tablas Fijas); las filas viejas sin
-        // `ejemplar` caen a `caballo`.
-        adelantadas[seccion].push({
-          juega: f.cliente,
-          descripcion: (f.ejemplar ?? f.caballo) || undefined,
-          resultado,
-        });
-      }
     }
   }
 
   const notaExcedidos: NotaExcedido[] = [];
 
-  /** Arma una fila del resumen con su riesgo y el flag de exceso (ítem 10). */
   const filaResumen = (nombre: string, monto: number, id: number) => {
     const riesgo = Math.round((riesgoPorCliente.get(nombre) ?? 0) * 100) / 100;
     const disp = disponibleDe?.(nombre);
@@ -241,7 +214,7 @@ export function armarReporteCarrera(
     return a.nombre.localeCompare(b.nombre, "es");
   });
   pierdenRaw.sort((a, b) => {
-    const rb = a.neto - b.neto; // más pierde (más negativo) primero
+    const rb = a.neto - b.neto;
     if (Math.abs(rb) > 1e-6) return rb > 0 ? 1 : -1;
     return a.nombre.localeCompare(b.nombre, "es");
   });
