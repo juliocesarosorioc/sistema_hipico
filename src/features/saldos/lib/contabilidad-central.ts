@@ -409,3 +409,80 @@ export async function sincronizarSaldosRealesClientes<
 
   return resultado;
 }
+
+/**
+ * Sanea saldos corruptos o huérfanos en BD (ej. Pedro con `-6000` cuando no tiene
+ * movimientos ni jugadas válidas que justifiquen ese saldo negativo).
+ */
+export function sanearSaldoHuerfano(
+  saldoBaseBd: number,
+  tickets: TicketContableRaw[] = [],
+  nombre = "Pedro"
+): { saldoSaneado: number; fueSaneado: boolean } {
+  const r = calcularResumenContableCliente({
+    clienteId: "saneamiento",
+    nombre,
+    saldoEnBase: saldoBaseBd,
+    tickets,
+  });
+  return {
+    saldoSaneado: r.saldoContable,
+    fueSaneado: Boolean(r.reparadoAutomaticamente),
+  };
+}
+
+/**
+ * Wrapper de alto nivel para calcular el estado de cuenta completo de un cliente
+ * (usado por Portal de Clientes, ModalRealizarJugadaUsuario y suites de auditoría).
+ */
+export function calcularEstadoCuentaCliente(params: {
+  id: string | number;
+  nombre: string;
+  grupoId?: string | number | null;
+  grupoNombre?: string | null;
+  saldoBaseBd?: number | string | null;
+  aval?: number | string | null;
+  comisionPct?: number | string | null;
+  libre?: boolean | null;
+  depositos?: number;
+  retiros?: number;
+  movimientos?: TicketContableRaw[];
+  jugadasActivasCarrera?: JugadaActivaSimulacion[];
+}): ResumenContableCliente & {
+  aval: number;
+  fueSaneado: boolean;
+} {
+  const ticketsCombinados: TicketContableRaw[] = [
+    ...(params.movimientos ?? []),
+    ...(params.jugadasActivasCarrera ?? []).map((j) => ({
+      id: j.id,
+      cliente_juega_nombre: j.jugador,
+      cliente_consigue_nombre: j.tercio,
+      jugada: j.jugada,
+      caballo: j.caballo,
+      monto: j.monto,
+      comision_porcentaje: j.comisionPct,
+      estado: j.estado ?? "PENDIENTE",
+      anulada: j.anulada ?? false,
+    })),
+  ];
+
+  const r = calcularResumenContableCliente({
+    clienteId: params.id,
+    nombre: params.nombre,
+    grupoId: params.grupoId,
+    aval: params.aval,
+    saldoEnBase: params.saldoBaseBd,
+    depositos: params.depositos,
+    retiros: params.retiros,
+    tickets: ticketsCombinados,
+    comisionPctDefault: Number(params.comisionPct ?? 5),
+  });
+
+  return {
+    ...r,
+    aval: r.avalVigente,
+    disponibleParaJugar: params.libre ? Number.POSITIVE_INFINITY : r.disponibleParaJugar,
+    fueSaneado: Boolean(r.reparadoAutomaticamente),
+  };
+}

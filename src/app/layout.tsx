@@ -1,18 +1,14 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthBootstrap } from "@/features/auth/components/AuthBootstrap";
 import { AppShell } from "@/shared/components/layout/AppShell";
 import { AvisoSinCredenciales } from "@/shared/components/layout/AvisoSinCredenciales";
 
-// Fuente principal de la plataforma: Inter (mejor legibilidad en interfaces
-// densas con números y tablas). Se sirve autoalojada por next/font; si no hay
-// red en el build, cae a la pila de sistema definida en globals.css.
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
+// Fuente principal de la plataforma: Inter (pila de sistema definida en globals.css,
+// sin depender de descarga externa de Google Fonts en builds sin red).
+const inter = {
+  variable: "font-sans",
+};
 
 export const metadata: Metadata = {
   title: "Club del Dinero — Sistema Hípico",

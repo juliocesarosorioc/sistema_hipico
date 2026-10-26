@@ -5,7 +5,11 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { Guard } from "@/shared/components/ui/Guard";
-import { capacidadesDeRuta } from "@/features/seguridad/lib/capacidades";
+import {
+  capacidadesDeRuta,
+  esRolOperadorExclusivo,
+  esRutaPermitidaOperador,
+} from "@/features/seguridad/lib/capacidades";
 import { WPS_PLANIFICACION, WPS_PLANIFICACION_CORTO } from "@/features/motores/lib/wps-planificacion";
 
 type Item = {
@@ -60,29 +64,56 @@ type Categoria = {
   items: Item[];
 };
 
-const CATEGORIAS: Categoria[] = [
+export const CATEGORIAS_OPERADOR: Categoria[] = [
   {
-    id: "vivo",
-    titulo: "Operaciones en Vivo",
-    emoji: "🎥",
+    id: "operador_exclusivo",
+    titulo: "Módulos Operador",
+    emoji: "🐎",
     items: [
-      { href: "/inicio", emoji: "🏠", txt: "Inicio / Dashboard" },
-      // Monitor de carreras del día: la pantalla que sigue el programa en vivo.
-      { href: "/carreras", emoji: "🏁", txt: "Monitor de Carreras" },
-      { href: "/gestion-jugadas", emoji: "🎟️", txt: "Gestión de Jugadas" },
-      { href: "/taquilla", emoji: "🧾", txt: "Taquilla / Compras" },
-      { href: "/jugadas", emoji: "📈", txt: "Monitor de Jugadas" },
+      { href: "/apuestas", emoji: "🐎🎲", txt: "🐎🎲 Apuestas", visibleSiempre: true },
+      { href: "/saldos-reportes", emoji: "💵📑", txt: "💵📑 Saldos / Reportes", visibleSiempre: true },
+      { href: "/reporte-diario", emoji: "📅", txt: "Reporte Diario", visibleSiempre: true },
+    ],
+  },
+];
+
+export const CATEGORIAS: Categoria[] = [
+  {
+    id: "principal",
+    titulo: "Operación Principal",
+    emoji: "🏠",
+    items: [
+      { href: "/inicio", emoji: "🏠", txt: "🏠 Inicio / Resumen" },
+      { href: "/apuestas", emoji: "🐎", txt: "🐎🎲 Apuestas", visibleSiempre: true },
+      { href: "/saldos-reportes", emoji: "💵", txt: "💵📑 Saldos / Reportes" },
+      { href: "/reporte-diario", emoji: "📑", txt: "Reporte Diario" },
+      { href: "/clientes", emoji: "🧾", txt: "🧾 Clientes" },
+    ],
+  },
+  {
+    id: "carreras_ia",
+    titulo: "Carreras e Inteligencia Hípica",
+    emoji: "🏇",
+    items: [
+      { href: "/carreras", emoji: "🏇", txt: "🏇 Carreras / Gaceta IA" },
+      { href: "/ejemplares", emoji: "🐴", txt: "Ejemplares / Gaceta IA" },
+      {
+        href: "/inteligencia-hipica/proyecciones",
+        emoji: "🧭",
+        txt: "🧭 Inteligencia Hípica (Motor Godet)",
+        visibleSiempre: true,
+      },
     ],
   },
   {
     id: "mercados",
-    titulo: "Mercados y Pizarras",
-    emoji: "📊",
+    titulo: "Pollas, Remates y Tablas Fijas",
+    emoji: "🏆",
     items: [
-      { href: "/tablas-fijas", emoji: "📋", txt: "Tablas Fijas" },
+      { href: "/pollas", emoji: "🏆", txt: "🏆 Pollas / 🔔 Remates / Tablas Fijas" },
       { href: "/remates", emoji: "🔔", txt: "Remates en Vivo" },
+      { href: "/tablas-fijas", emoji: "📋", txt: "Tablas Fijas" },
       { href: "/marcas", emoji: "🏷️", txt: "Marcas" },
-      { href: "/pollas", emoji: "🏆", txt: "Pollas" },
       { href: "/dupleta", emoji: "🎯", txt: "Dupletas" },
       // W.P.S. INACTIVA para todos los usuarios: sin `href` entra a la rama
       // deshabilitada (chip 🚧 + pointer-events-none/opacity-50) y no se ofrece
@@ -91,60 +122,30 @@ const CATEGORIAS: Categoria[] = [
     ],
   },
   {
-    id: "grupo",
-    titulo: "Administración de Grupo y Clientes",
-    emoji: "🗂️",
-    items: [
-      { href: "/clientes", emoji: "👥", txt: "Clientes y Saldos" },
-      // Jugadas entre tercios: jugadas a futuro que se cobran/pagan por tercios.
-      { href: "/reglas-jugadas", emoji: "⚙️", txt: "Jugadas entre Tercios" },
-      { href: "/grupos", emoji: "🗂️", txt: "Grupos y Convenios" },
-      { href: "/operadores", emoji: "🧑‍💼", txt: "Operadores" },
-      { href: "/crear-grupo", emoji: "🧩", txt: "Creación de Grupos" },
-    ],
-  },
-  {
     id: "finanzas",
-    titulo: "Finanzas y Contabilidad",
-    emoji: "💰",
+    titulo: "Contabilidad y Finanzas",
+    emoji: "🏦",
     items: [
-      { href: "/contabilidad/caja", emoji: "💵", txt: "Caja Unificada" },
-      { href: "/contabilidad/bancos", emoji: "🏦", txt: "Bancos Reales" },
+      { href: "/contabilidad/caja", emoji: "🏦", txt: "🏦 Contabilidad / Depósitos / Retiros / Transferencias" },
+      { href: "/contabilidad/bancos", emoji: "💳", txt: "Bancos Reales" },
       { href: "/contabilidad/ingresos", emoji: "📥", txt: "Ingresos / Depósitos" },
       { href: "/contabilidad/monedas", emoji: "💱", txt: "Monedas y Tasas" },
     ],
   },
   {
-    id: "reportes",
-    titulo: "Reportes y Auditoría",
-    emoji: "🧾",
+    id: "portal_config",
+    titulo: "Portal y Configuración",
+    emoji: "⚙️",
     items: [
-      { href: "/reporte-diario", emoji: "📅", txt: "Reporte Diario" },
-      { href: "/saldos-reportes", emoji: "📊", txt: "Liquidación de Carreras" },
-      { href: "/tickets", emoji: "🛟", txt: "Tickets / Reclamos" },
-    ],
-  },
-  {
-    id: "configuracion",
-    titulo: "Configuración y Seguridad",
-    emoji: "🛡️",
-    items: [
+      { href: "/portal", emoji: "🌐", txt: "🌐 Portal Clientes", visibleSiempre: true },
+      { href: "/grupos", emoji: "⚙️", txt: "⚙️ Configuración / Grupos / Usuarios" },
+      { href: "/operadores", emoji: "🧑‍💼", txt: "Operadores" },
       { href: "/hipodromos", emoji: "🗺️", txt: "Hipódromos" },
-      { href: "/ejemplares", emoji: "🐴", txt: "Ejemplares / Gaceta IA" },
+      { href: "/reglas-jugadas", emoji: "🔀", txt: "Jugadas entre Tercios" },
+      { href: "/tickets", emoji: "🛟", txt: "Tickets / Reclamos" },
       { href: "/whatsapp", emoji: "💬", txt: "WhatsApp / Notificaciones" },
       { href: "/seguridad", emoji: "🛡️", txt: "Matriz de Seguridad" },
       { href: "/diagnostico", emoji: "🩺", txt: "Diagnóstico" },
-    ],
-  },
-  {
-    id: "inteligencia",
-    titulo: "Inteligencia Hípica",
-    emoji: "🧭",
-    items: [
-      // `visibleSiempre`: la pantalla existe y el dueño la abrió. Esconderla
-      // porque el usuario no tiene la capacidad deja al operador pensando que
-      // la función no está; es mejor que entre y lea el motivo del rechazo.
-      { href: "/inteligencia-hipica/proyecciones", emoji: "📈", txt: "Proyecciones", visibleSiempre: true },
     ],
   },
 ];
@@ -154,6 +155,9 @@ const CATEGORIAS: Categoria[] = [
 const esActiva = (pathname: string, href?: string) => {
   if (!href) return false;
   const ruta = href.split("?")[0];
+  if (ruta === "/apuestas" && (pathname.startsWith("/apuestas") || pathname.startsWith("/gestion-jugadas"))) {
+    return true;
+  }
   return ruta === "/inicio" ? pathname === "/inicio" : pathname.startsWith(ruta);
 };
 
@@ -193,6 +197,9 @@ export function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const perfiles = useAuthStore((s) => s.perfiles);
+  const modoOperador = useAuthStore((s) => s.modoOperador);
+  const esOperador = esRolOperadorExclusivo(perfiles, modoOperador);
+  const categoriasVisibles = esOperador ? CATEGORIAS_OPERADOR : CATEGORIAS;
 
   const salir = useAuthStore((s) => s.salir);
   const [saliendo, setSaliendo] = useState(false);
@@ -272,13 +279,17 @@ export function Sidebar({
           }`}
         >
           <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-          {perfiles.length ? perfiles.join(" · ") : "Administrador Principal"}
+          {esOperador
+            ? "OPERADOR (Apuestas y Reportes)"
+            : perfiles.length
+              ? perfiles.join(" · ")
+              : "Administrador Principal"}
         </p>
       </div>
 
       {/* Navegación por categorías desplegables */}
       <nav className="flex-1 py-2" aria-label="Navegación">
-        {CATEGORIAS.map((cat) => {
+        {categoriasVisibles.map((cat) => {
           // ¿Hay algún submódulo de esta categoría activo? Si sí, se abre sola
           // aunque el usuario la haya plegado: el menú nunca esconde dónde está
           // parado. En modo riel (compacto) siempre se ve la lista de iconos.

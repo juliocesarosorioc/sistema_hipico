@@ -58,6 +58,11 @@ import { listarJugadasDeCarrera, type JugadaAdmin } from "@/features/jugadas/lib
 import { ToggleModalidadTiempo, BadgeAdelantada } from "@/features/jugadas/components/ToggleModalidadTiempo";
 import { marcarTicketsAdelantados } from "@/features/jugadas/lib/marcar-adelantadas";
 import { ModalAnalisisActuarialGodet } from "@/features/ejemplares/components/ModalAnalisisActuarialGodet";
+import { BarraCarrerasLiquidadas } from "@/features/gestion/components/BarraCarrerasLiquidadas";
+import {
+  notificarTareaEjecutadaOperador,
+  solicitarConfirmacionOperador,
+} from "@/shared/store/useInteraccionOperadorStore";
 import {
   generarTextoPrejugadasWhatsapp,
   generarTextoSaldosWhatsapp,
@@ -1117,6 +1122,14 @@ const hipodromosDelDia = useMemo(() => {
       setAccionPreview(null);
       setEdicionPreview(null);
       setMotivoPreview("");
+      void notificarTareaEjecutadaOperador({
+        titulo: `${accionTexto} exitosamente`,
+        mensaje: `El ticket #${fila.ticketId} de ${nombreHipodromo} C${carrera} (${fecha}) fue ${
+          accion.modo === "editar" ? "corregido" : "anulado"
+        } en la base de datos y los saldos disponibles se recalcularon al instante.`,
+        detalles: [`Motivo registrado: ${motivo}`, `Estado de carrera y saldos actualizados en vivo`],
+        variante: "success",
+      });
     } finally {
       setOcupadoPreview(false);
       setAccionPreview(null);
@@ -1677,6 +1690,14 @@ const hipodromosDelDia = useMemo(() => {
       void recargarClientes();
       void recargarJugadasGuardadas();
       setModalReversar(false);
+      if (r.ok) {
+        void notificarTareaEjecutadaOperador({
+          titulo: "Liquidación Reversada",
+          mensaje: `La liquidación de ${nombreHipodromo} C${carrera} (${fecha}) fue reversada. La carrera volvió a estado ABIERTA y los saldos fueron restituidos.`,
+          detalles: [r.motivo],
+          variante: "warning",
+        });
+      }
     } finally {
       setReversando(false);
     }
@@ -1802,7 +1823,16 @@ const hipodromosDelDia = useMemo(() => {
     // La liquidación dejó de decidir los tickets: el panel sigue mostrándolos
     // (ahora con ✅ Ganador/Perdedor) desde la base, no desde la sesión.
     void recargarJugadasGuardadas();
+    recargarRegistroCentral();
     setAviso(r.ok ? `✅ ${r.motivo}${avisoMarcas}` : `❌ ${r.motivo}`);
+    if (r.ok) {
+      void notificarTareaEjecutadaOperador({
+        titulo: `Carrera C${carrera} Liquidada`,
+        mensaje: `${nombreHipodromo} · Carrera ${carrera} (${fecha}) ha sido liquidada y movida a la barra de Carreras Liquidadas.`,
+        detalles: [`Pizarra oficial: ${piz.pizarra}`, r.motivo],
+        variante: "success",
+      });
+    }
     // Flujo unificado (Liquidar Carrera): el operador confirmó la pizarra y la
     // carrera YA quedó registrada y cerrada acá, así que se salta el modal
     // intermedio «Registrar y Finalizar» y va directo al Reporte. Antes había
@@ -1840,6 +1870,51 @@ const hipodromosDelDia = useMemo(() => {
 
   return (
     <div className="space-y-2 pb-14">
+      {/* Cabecera unificada del módulo 🐎🎲 Apuestas */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-white shadow-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🐎🎲</span>
+          <div>
+            <h1 className="text-sm font-black uppercase tracking-wider text-amber-400">
+              🐎🎲 Apuestas
+            </h1>
+            <p className="text-[10px] font-semibold text-slate-300">
+              Carga en vivo y adelantada · Motor de Cruces y Tapas · Liquidación transaccional
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+          <span className="rounded-md bg-slate-800 px-2 py-1 font-bold text-slate-200">
+            📅 {fecha}
+          </span>
+          {hipodromoElegido && (
+            <span className="rounded-md bg-indigo-600/30 border border-indigo-400/40 px-2 py-1 font-black text-indigo-200">
+              🏇 {nombreHipodromo} · C{carrera}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Barra delgada de Carreras Liquidadas en estricto orden numérico (sustituye sección Boletos) */}
+      <BarraCarrerasLiquidadas
+        fecha={fecha}
+        hipodromo={hipodromo}
+        carreraActiva={carreraConfirmada ? carrera : null}
+        refreshKey={jugadasGuardadas.length + (carreraLiquidada ? 1000 : 0)}
+        onSeleccionarCarrera={(num) => {
+          setCarrera(num);
+          setCarreraConfirmada(true);
+          if (!carrerasPorDia.includes(num)) {
+            setCarrerasPorDia((prev) => [...new Set([...prev, num])].sort((a, b) => a - b));
+          }
+        }}
+        onVerReporteCarrera={(num) => {
+          setCarrera(num);
+          setCarreraConfirmada(true);
+          setMostrarReporteLiquidacion(true);
+        }}
+      />
+
       {/* Inputs superiores */}
       <div className="grid gap-1.5 rounded-xl border border-line bg-surface p-2 lg:grid-cols-7">
         <div>
@@ -1980,7 +2055,24 @@ const hipodromosDelDia = useMemo(() => {
             <ToggleModalidadTiempo valor={modalidadTiempo} onChange={setModalidadTiempo} />
             <button
               type="button"
-              onClick={() => setConCruces((v) => !v)}
+              onClick={async () => {
+                const proximo = !conCruces;
+                const ok = await solicitarConfirmacionOperador({
+                  titulo: `Cambiar modalidad a ${proximo ? "CON CRUCES" : "SIN CRUCES"}`,
+                  mensaje: proximo
+                    ? "¿Confirmás activar la modalidad CON CRUCES para esta carrera? Al liquidar se reembolsará la comisión sobre el monto cruzado min(ganado, perdido) directamente en el neto del jugador."
+                    : "¿Confirmás cambiar a modalidad SIN CRUCES para esta carrera? Cada línea liquidará su comisión individual sin reembolso por cruce.",
+                  textoConfirmar: `Sí, activar ${proximo ? "CON CRUCES" : "SIN CRUCES"}`,
+                  variante: "info",
+                });
+                if (!ok) return;
+                setConCruces(proximo);
+                await notificarTareaEjecutadaOperador({
+                  titulo: `Modalidad actualizada: ${proximo ? "CON CRUCES" : "SIN CRUCES"}`,
+                  mensaje: `La carrera C${carrera} de ${nombreHipodromo} operará ahora en modalidad ${proximo ? "CON CRUCES" : "SIN CRUCES"}.`,
+                  variante: "success",
+                });
+              }}
               className={`rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase transition ${
                 conCruces
                   ? "border-emerald-400 bg-emerald-600 text-white"
@@ -2359,148 +2451,181 @@ const hipodromosDelDia = useMemo(() => {
           </Button>
         </div>
 
-        {/* Pre-visualización PERMANENTE — persistidas (✅) + ventas de la sesión */}
-        {filasPreview.length > 0 && (
-          <div className="mt-3 rounded-xl border border-line bg-gray-50 p-2">
-            <p className="px-1 pb-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
-              🧾 Pre-visualización — jugadas cargadas ({totalesPreview.jugadas}) ·{" "}
-              <span className="normal-case font-semibold text-emerald-700">
-                ✅ {totalesPreview.validadas} validada(s)
-              </span>
-              {totalesPreview.soloSesion > 0 && (
-                <span className="normal-case font-semibold text-amber-600"> · ⏳ {totalesPreview.soloSesion} en sesión</span>
-              )}
-              {cargandoGuardadas && <span className="normal-case font-semibold text-slate-400"> · leyendo…</span>}
-              <span className="ml-2 normal-case font-semibold text-slate-400">✏️ editar · 🗑️ eliminar</span>
-            </p>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-800 text-white">
-                    <th className="w-[4%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">#</th>
-                    <th className="w-[5%] border-r border-slate-700 px-1 py-1 text-center font-bold uppercase">Acc.</th>
-                    <th className="w-[13%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Estado</th>
-                    <th className="w-[18%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Jugada</th>
-                    <th className="w-[7%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Caballo</th>
-                    <th className="w-[26%] border-r border-slate-700 px-1 py-1 text-left font-bold uppercase">Cliente 1 (Juega)</th>
-                    <th className="w-[27%] px-1 py-1 text-left font-bold uppercase">Cliente 2 (Da)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line/70">
-                  {filasPreview.map((f, i) => {
-                    /**
-                     * La columna «Estado» refleja SOLO el ciclo de vida de la
-                     * jugada —nunca si ganó o perdió—: Liquidada, Pendiente o
-                     * Anulada. El detalle de si ganó/perdió cada lado vive en las
-                     * columnas de cliente (✅/✖ + saldo).
-                     */
-                    const badge =
-                      f.estadoLiquidacion === "Anulada"
-                        ? "🚫 Anulada"
-                        : f.estadoLiquidacion === "Liquidada"
-                          ? "✅ Liquidada"
-                          : "⏳ Pendiente";
-                    const badgeClass =
-                      f.estadoLiquidacion === "Anulada"
-                        ? "bg-amber-100 text-amber-700"
-                        : f.estadoLiquidacion === "Liquidada"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-slate-100 text-slate-500";
-                    return (
-                      <tr key={f.clave} className={`align-middle ${f.anulada ? "bg-amber-50/60" : "bg-white"}`}>
-                        <td className="h-8 px-1 py-0 align-middle text-xs text-slate-400">{i + 1}</td>
-                        <td className="h-8 px-1 py-0 align-middle text-center whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => abrirAccionPreview(f, "editar")}
-                            aria-label="Editar jugada"
-                            title="Editar la jugada (monto, nomenclatura o caballo) y recalcular la carrera"
-                            className="text-xs text-slate-400 hover:text-primary-600"
-                          >
-                            ✏️
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => abrirAccionPreview(f, "eliminar")}
-                            aria-label="Eliminar jugada"
-                            title="Anular la jugada y recalcular la carrera"
-                            className="ml-1 text-xs text-slate-400 hover:text-red-500"
-                          >
-                            🗑️
-                          </button>
-                        </td>
-                        <td className="h-8 px-1 py-0 align-middle">
-                          <span className={`inline-block rounded px-1 py-0.5 text-[9px] font-black uppercase ${badgeClass}`}>
-                            {badge}
-                          </span>
-                        </td>
-                        <td className="h-8 truncate px-1 py-0 align-middle font-mono text-[11px] font-semibold text-slate-700" title={f.jugada}>
-                          {f.jugada}
-                          {f.esAdelantada && <BadgeAdelantada className="ml-1" />}
-                        </td>
-                        <td className="h-8 px-1 py-0 align-middle font-bold text-slate-800">{f.caballo ? f.caballo.toUpperCase() : "—"}</td>
-                        <td className="h-8 px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={f.cliente1}>
-                          <span className="flex items-center gap-1 truncate">
-                            <span className="truncate">{f.cliente1 || "—"}</span>
-                            {f.cliente1 ? <SimboloLado lado={f.lado1} money={monedaFmt} /> : null}
-                          </span>
-                        </td>
-                        <td className="h-8 px-1 py-0 align-middle text-xs font-semibold text-slate-700" title={f.cliente2}>
-                          <span className="flex items-center gap-1 truncate">
-                            <span className="truncate">{f.cliente2 || "—"}</span>
-                            {f.cliente2 ? <SimboloLado lado={f.lado2} money={monedaFmt} /> : null}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        {/* Separación Estricta en 2 Tablas de 7 Columnas: En Vivo vs Jugadas Adelantadas */}
+        {(() => {
+          const renderTabla7Columnas = (
+            tituloSeccion: string,
+            subtituloSeccion: string,
+            listaFilas: FilaPreviewCarrera[],
+            esTablaAdelantada: boolean
+          ) => {
+            const borderTheme = esTablaAdelantada
+              ? "border-amber-300 bg-amber-50/40"
+              : "border-emerald-300 bg-emerald-50/30";
+            const headerTheme = esTablaAdelantada
+              ? "bg-amber-900 text-amber-50"
+              : "bg-slate-900 text-white";
 
-        {/* Separación Estricta: Área 1 (En Vivo) vs Área 2 (Adelantadas) */}
-        <div className="mt-3 grid gap-2 lg:grid-cols-2">
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-2.5">
-              <p className="text-[10px] font-black uppercase tracking-wide text-emerald-800">
-                ⚡ JUGADAS EN VIVO (CARRERA ACTUAL) ({filasPreviewEnVivo.length})
-              </p>
-              {filasPreviewEnVivo.length === 0 ? (
-                <p className="mt-1 text-[10px] text-slate-500">Sin jugadas en vivo registradas en esta carrera.</p>
-              ) : (
-                <ul className="mt-1.5 max-h-32 space-y-1 overflow-y-auto text-[11px]">
-                  {filasPreviewEnVivo.map((f, idx) => (
-                    <li key={f.clave} className="flex items-center justify-between rounded bg-white px-2 py-1 shadow-xs">
-                      <span className="truncate font-semibold text-slate-700">
-                        #{idx + 1} · {f.cliente1} vs {f.cliente2} · <b>{f.jugada}</b> ({f.caballo || "—"})
-                      </span>
-                      <span className="ml-2 shrink-0 font-mono font-bold text-emerald-700">{monedaFmt(f.monto)}</span>
-                    </li>
-                  ))}
-                </ul>
+            return (
+              <div className={`mt-3 rounded-xl border ${borderTheme} p-2.5 shadow-xs`}>
+                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 px-1">
+                  <p className="text-[11px] font-black uppercase tracking-wide text-slate-800">
+                    {tituloSeccion} ({listaFilas.length}) ·{" "}
+                    <span className="normal-case font-semibold text-slate-600">{subtituloSeccion}</span>
+                  </p>
+                  <span className="text-[10px] font-semibold text-slate-500">
+                    7 Columnas Oficiales · ✏️ editar · 🗑️ anular
+                  </span>
+                </div>
+                {listaFilas.length === 0 ? (
+                  <p className="rounded-lg bg-white/80 px-3 py-2 text-[11px] font-semibold text-slate-500">
+                    {esTablaAdelantada
+                      ? "Sin jugadas adelantadas (pre-jugadas) registradas en esta carrera."
+                      : "Sin jugadas en vivo registradas en esta carrera."}
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                    <table className="w-full border-collapse text-xs">
+                      <thead>
+                        <tr className={headerTheme}>
+                          <th className="w-[16%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">
+                            1. Quien Juega (Cliente 1)
+                          </th>
+                          <th className="w-[10%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase">
+                            2. Apostó
+                          </th>
+                          <th className="w-[14%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase">
+                            3. Resultado
+                          </th>
+                          <th className="w-[20%] border-r border-slate-700 px-2 py-1.5 text-center font-bold uppercase">
+                            4. Jugada
+                          </th>
+                          <th className="w-[16%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">
+                            5. Quien Da (Cliente 2)
+                          </th>
+                          <th className="w-[10%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase">
+                            6. Apostó
+                          </th>
+                          <th className="w-[14%] px-2 py-1.5 text-right font-bold uppercase">
+                            7. Resultado / Acc.
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {listaFilas.map((f, i) => {
+                          const aposto1 = f.monto;
+                          const aposto2 = f.monto;
+                          const res1Texto =
+                            f.anulada
+                              ? "ANULADA"
+                              : f.lado1.estado === "GANO" && f.lado1.monto != null
+                                ? `+${monedaFmt(Math.abs(f.lado1.monto))}`
+                                : f.lado1.estado === "PERDIO"
+                                  ? `-${monedaFmt(Math.abs(f.lado1.monto ?? aposto1))}`
+                                  : `-${monedaFmt(aposto1)} (Por decidir)`;
+                          const res2Texto =
+                            f.anulada
+                              ? "ANULADA"
+                              : f.lado2.estado === "GANO" && f.lado2.monto != null
+                                ? `+${monedaFmt(Math.abs(f.lado2.monto))}`
+                                : f.lado2.estado === "PERDIO"
+                                  ? `-${monedaFmt(Math.abs(f.lado2.monto ?? aposto2))}`
+                                  : `-${monedaFmt(aposto2)} (Por decidir)`;
+
+                          return (
+                            <tr
+                              key={f.clave}
+                              className={`align-middle ${f.anulada ? "bg-amber-50/70 line-through opacity-75" : "bg-white hover:bg-slate-50"}`}
+                            >
+                              <td className="px-2 py-1.5 font-bold text-slate-800" title={f.cliente1}>
+                                <span className="mr-1 text-[10px] font-normal text-slate-400">#{i + 1}</span>
+                                {f.cliente1 || "—"}
+                              </td>
+                              <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-800">
+                                {monedaFmt(aposto1)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right font-mono text-[11px] font-bold">
+                                <span
+                                  className={
+                                    f.lado1.estado === "GANO"
+                                      ? "text-emerald-700"
+                                      : f.lado1.estado === "PERDIO"
+                                        ? "text-rose-600"
+                                        : "text-amber-700"
+                                  }
+                                >
+                                  {res1Texto}
+                                </span>
+                              </td>
+                              <td className="px-2 py-1.5 text-center font-mono text-[11px] font-black text-indigo-950">
+                                {f.jugada} {f.caballo ? `· #${f.caballo.toUpperCase()}` : ""}
+                                {f.esAdelantada && <BadgeAdelantada className="ml-1" />}
+                              </td>
+                              <td className="px-2 py-1.5 font-bold text-slate-800" title={f.cliente2}>
+                                {f.cliente2 || "—"}
+                              </td>
+                              <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-800">
+                                {monedaFmt(aposto2)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                                <span
+                                  className={`mr-2 font-mono text-[11px] font-bold ${
+                                    f.lado2.estado === "GANO"
+                                      ? "text-emerald-700"
+                                      : f.lado2.estado === "PERDIO"
+                                        ? "text-rose-600"
+                                        : "text-amber-700"
+                                  }`}
+                                >
+                                  {res2Texto}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => abrirAccionPreview(f, "editar")}
+                                  aria-label="Editar jugada"
+                                  title="Editar la jugada y recalcular la carrera"
+                                  className="text-xs text-slate-400 hover:text-primary-600"
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => abrirAccionPreview(f, "eliminar")}
+                                  aria-label="Eliminar jugada"
+                                  title="Anular la jugada y recalcular la carrera"
+                                  className="ml-1 text-xs text-slate-400 hover:text-red-500"
+                                >
+                                  🗑️
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          };
+
+          return (
+            <>
+              {renderTabla7Columnas(
+                "⚡ JUGADAS EN VIVO (CARRERA ACTUAL)",
+                `✅ ${totalesPreview.validadas} validada(s) · Modalidad: ${conCruces ? "CON CRUCES" : "SIN CRUCES"}`,
+                filasPreviewEnVivo,
+                false
               )}
-            </div>
-            <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-2.5">
-              <p className="text-[10px] font-black uppercase tracking-wide text-amber-800">
-                ⏳ JUGADAS ADELANTADAS (PRE-JUGADAS) ({filasPreviewAdelantadas.length})
-              </p>
-              {filasPreviewAdelantadas.length === 0 ? (
-                <p className="mt-1 text-[10px] text-slate-500">Sin jugadas adelantadas registradas en esta carrera.</p>
-              ) : (
-                <ul className="mt-1.5 max-h-32 space-y-1 overflow-y-auto text-[11px]">
-                  {filasPreviewAdelantadas.map((f, idx) => (
-                    <li key={f.clave} className="flex items-center justify-between rounded bg-white px-2 py-1 shadow-xs">
-                      <span className="truncate font-semibold text-slate-700">
-                        #{idx + 1} · {f.cliente1} vs {f.cliente2} · <b>{f.jugada}</b> ({f.caballo || "—"})
-                      </span>
-                      <span className="ml-2 shrink-0 font-mono font-bold text-amber-700">{monedaFmt(f.monto)}</span>
-                    </li>
-                  ))}
-                </ul>
+              {renderTabla7Columnas(
+                "⏳ JUGADAS ADELANTADAS (PRE-JUGADAS)",
+                "Separadas estrictamente de las jugadas en vivo",
+                filasPreviewAdelantadas,
+                true
               )}
-            </div>
-          </div>
+            </>
+          );
+        })()}
 
         {/* Visor Interactivo de Reportes WhatsApp (#reporteArea) + Acuse de Recibo */}
         <div id="reporteArea" className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">

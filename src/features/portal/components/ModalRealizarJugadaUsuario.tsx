@@ -39,6 +39,7 @@ import {
 import { listarConfigMarcas, type ConfigMarcas } from "@/features/marcas/lib/marcas";
 import { calcularRivales } from "@/features/marcas/lib/jerarquia";
 import { realizarJugada, type SesionPortal } from "@/features/portal/lib/portal";
+import { calcularEstadoCuentaCliente } from "@/features/saldos/lib/contabilidad-central";
 import {
   ETIQUETA_TIPO,
   TIPOS_JUGADA,
@@ -66,16 +67,31 @@ const n = (v: unknown): number => {
   return Number.isFinite(x) ? x : 0;
 };
 
-/** Saldo disponible real: saldo + aval, salvo modo libre (sin tope). */
-export function disponibleDe(cliente: SesionPortal["cliente"]): { monto: number | null; etiqueta: string } {
+/** Saldo disponible real: (saldo + aval - riesgoEnCurso) vía Contabilidad Central, salvo modo libre (sin tope). */
+export function disponibleDe(
+  cliente: SesionPortal["cliente"],
+  riesgoEnCurso = 0
+): { monto: number | null; etiqueta: string } {
   if (String(cliente.modo_juego ?? "").toLowerCase().trim() === "libre") {
     return { monto: null, etiqueta: "Modo libre (sin tope de saldo)" };
   }
-  const saldo = n(cliente.saldo_actual);
-  const aval = n(cliente.aval);
+  const estado = calcularEstadoCuentaCliente({
+    id: cliente.id,
+    nombre: cliente.nombre ?? "",
+    saldoBaseBd: n(cliente.saldo_actual),
+    aval: n(cliente.aval),
+    libre: false,
+  });
+  const saldo = estado.saldoContable;
+  const aval = estado.aval;
+  const riesgo = Math.max(0, n(riesgoEnCurso));
+  const disponible = Math.max(0, saldo + aval - riesgo);
   return {
-    monto: saldo + aval,
-    etiqueta: `Saldo ${formatoMoneda("USD", saldo)} + Aval ${formatoMoneda("USD", aval)}`,
+    monto: disponible,
+    etiqueta:
+      riesgo > 0
+        ? `Saldo ${formatoMoneda("USD", saldo)} + Aval ${formatoMoneda("USD", aval)} − Riesgo ${formatoMoneda("USD", riesgo)}`
+        : `Saldo ${formatoMoneda("USD", saldo)} + Aval ${formatoMoneda("USD", aval)}`,
   };
 }
 
@@ -91,7 +107,10 @@ export function ModalRealizarJugadaUsuario({
   onPedirNoRelacionada: () => void;
 }) {
   const cliente = sesion.cliente;
-  const disp = useMemo(() => disponibleDe(cliente), [cliente]);
+  const disp = useMemo(
+    () => disponibleDe(cliente, sesion.resumen?.riesgoEnCurso ?? 0),
+    [cliente, sesion.resumen?.riesgoEnCurso]
+  );
 
   const [tipo, setTipo] = useState<TipoJugada>("TABLA_FIJA");
   const [enviando, setEnviando] = useState(false);

@@ -95,6 +95,13 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
   }, [abierto]);
 
   const salir = useAuthStore((s) => s.salir);
+  const modoOperador = useAuthStore((s) => s.modoOperador);
+  const setModoOperador = useAuthStore((s) => s.setModoOperador);
+  const perfiles = useAuthStore((s) => s.perfiles);
+  const esOperadorFijo =
+    perfiles.length > 0 &&
+    perfiles.every((p) => p.toLowerCase().includes("operador")) &&
+    !perfiles.some((p) => p.toLowerCase().includes("admin"));
 
   const [saliendo, setSaliendo] = useState(false);
 
@@ -209,6 +216,38 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
           </div>
         )}
       </div>
+
+      <button
+        type="button"
+        onClick={() => {
+          if (esOperadorFijo) return;
+          const nuevo = !modoOperador;
+          setModoOperador(nuevo);
+          if (nuevo && typeof window !== "undefined") {
+            const p = window.location.pathname;
+            if (
+              !p.includes("/apuestas") &&
+              !p.includes("/gestion-jugadas") &&
+              !p.includes("/saldos-reportes") &&
+              !p.includes("/reporte-diario")
+            ) {
+              window.location.href = "/apuestas";
+            }
+          }
+        }}
+        title={
+          modoOperador
+            ? "Modo Operador Activo: Solo muestra 🐎🎲 Apuestas y 💵📑 Reportes. Clic para volver a Vista Completa."
+            : "Cambiar a Vista Operador (oculta todo excepto 🐎🎲 Apuestas y 💵📑 Reportes)"
+        }
+        className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-black transition-colors ${
+          modoOperador
+            ? "border-amber-500 bg-amber-500/15 text-amber-800 hover:bg-amber-500/25"
+            : "border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200"
+        }`}
+      >
+        <span>{modoOperador ? "🐎🎲 VISTA: OPERADOR" : "🛡️ VISTA: COMPLETA"}</span>
+      </button>
 
       <SelectorGrupo />
 

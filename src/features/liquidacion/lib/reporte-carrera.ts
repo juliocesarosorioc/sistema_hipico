@@ -19,6 +19,7 @@ import { pasaFiltroModalidad, type FiltroModalidadTiempo } from "@/features/juga
 import { colorDiscoNumero } from "@/features/saldos/lib/discos";
 import { etiquetaJugada } from "@/features/taquilla/lib/nomenclatura";
 import { redondearCentavos, restarDinero, sumarDinero } from "@/shared/lib/dinero";
+import { _reembolsosCruce, type ModalidadCruceCarrera } from "@/features/taquilla/lib/cruces-y-tapas";
 
 export { colorDiscoNumero };
 
@@ -100,6 +101,10 @@ export type OpcionesReporteCarrera = {
   /** Logo del grupo hípico (Data URL PNG). */
   logoGrupo?: string | null;
   filtroModalidad?: FiltroModalidadTiempo;
+  /** Modalidad de cruces al liquidar: cuando es `'con_cruces'` o `true`, aplica el reembolso de comisión directamente al neto del cliente sin pintar filas CRUCE sueltas. */
+  modalidadCruce?: ModalidadCruceCarrera | boolean;
+  /** Porcentaje de comisión para el cálculo de reembolso por cruce (por defecto 5%). */
+  comisionPct?: number;
 };
 
 export function armarReporteCarrera(
@@ -125,6 +130,7 @@ export function armarReporteCarrera(
   };
   const netoPorCliente = new Map<string, number>();
   const riesgoPorCliente = new Map<string, number>();
+  const lineasCruce: Array<{ cliente: string; resultado: number }> = [];
   const observacionesOrdenExceso: ObservacionOrdenExceso[] = [];
   const usadoProgresivoPorCliente = new Map<string, number>();
 
@@ -202,6 +208,20 @@ export function armarReporteCarrera(
 
     if (resultado !== null) {
       netoPorCliente.set(f.cliente, sumarDinero(netoPorCliente.get(f.cliente) ?? 0, resultado));
+      lineasCruce.push({ cliente: f.cliente, resultado });
+    }
+  }
+
+  // Si la modalidad de la carrera es CON CRUCES, calculamos el reembolso de comisión
+  // sobre min(brutoGanado, brutoPerdido) y lo sumamos al neto del cliente sin pintar filas CRUCE sueltas.
+  if (opciones?.modalidadCruce === "con_cruces" || opciones?.modalidadCruce === true) {
+    const comPct = opciones?.comisionPct ?? 5;
+    const { porCliente } = _reembolsosCruce(lineasCruce, "con_cruces", comPct);
+    for (const [, info] of porCliente) {
+      if (info.reembolsoCruce > 0) {
+        const actual = netoPorCliente.get(info.cliente) ?? 0;
+        netoPorCliente.set(info.cliente, sumarDinero(actual, info.reembolsoCruce));
+      }
     }
   }
 

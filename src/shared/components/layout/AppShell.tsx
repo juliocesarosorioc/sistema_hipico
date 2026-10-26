@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { Topbar } from "@/shared/components/layout/Topbar";
 import { Sidebar } from "@/shared/components/layout/Sidebar";
 import { ConfirmHost } from "@/shared/components/ui/ConfirmHost";
-import { BetSlipPanel } from "@/features/betting/components/BetSlipPanel";
+import { ModalConfirmacionYResultado } from "@/shared/components/ui/ModalConfirmacionYResultado";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { esRutaPublica } from "@/features/seguridad/lib/capacidades";
 
@@ -191,9 +191,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Topbar alAlternarMenu={alternarMenu} menuVisible={menuVisible} />
         <main className="flex-1 overflow-y-auto bg-gray-50">{children}</main>
       </div>
-      <BetSlipPanel />
-      {/* Confirmación global: reemplaza a window.confirm en toda la plataforma. */}
+      {/* Confirmación global y acuse de recibo obligatorio del operador */}
       <ConfirmHost />
+      <ModalConfirmacionYResultado />
     </div>
   );
 }

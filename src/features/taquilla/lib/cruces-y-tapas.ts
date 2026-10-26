@@ -619,3 +619,42 @@ export function calcularReembolsosCruce(
     filasCruce,
   };
 }
+
+/**
+ * Alias de compatibilidad `_reembolsosCruce` (Motor `Gestión de Planos`):
+ * Acepta tanto líneas con `{ cliente, brutoGanado, brutoPerdido }` como líneas
+ * con `{ cliente, resultado }` donde `resultado > 0` es ganancia neta (ya descontada
+ * la comisión `comisionPct`) y `resultado < 0` es pérdida bruta.
+ */
+export function _reembolsosCruce(
+  lineas: Array<{
+    cliente: string;
+    brutoGanado?: number;
+    brutoPerdido?: number;
+    resultado?: number | null;
+    comisionCobrada?: number;
+  }>,
+  modalidad: ModalidadCruceCarrera | boolean = "con_cruces",
+  comisionPct = 5
+) {
+  const factorNeto = 1 - Math.max(0, Number(comisionPct)) / 100;
+  const normalizadas: LineaResultadoParaCruce[] = lineas.map((l) => {
+    let brutoGanado = Number(l.brutoGanado ?? 0);
+    let brutoPerdido = Number(l.brutoPerdido ?? 0);
+    if (brutoGanado === 0 && brutoPerdido === 0 && typeof l.resultado === "number") {
+      if (l.resultado > 0) {
+        brutoGanado =
+          factorNeto > 0 ? redondearCentavos(l.resultado / factorNeto) : redondearCentavos(l.resultado);
+      } else if (l.resultado < 0) {
+        brutoPerdido = redondearCentavos(Math.abs(l.resultado));
+      }
+    }
+    return {
+      cliente: l.cliente,
+      brutoGanado,
+      brutoPerdido,
+      comisionCobrada: l.comisionCobrada,
+    };
+  });
+  return calcularReembolsosCruce(normalizadas, modalidad, comisionPct);
+}

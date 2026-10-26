@@ -32,6 +32,8 @@ import { RateLimiterCliente, sanitizarIdentificador } from "@/shared/lib/securit
 export default function PantallaLogin() {
   const router = useRouter();
   const iniciarSesion = useAuthStore((s) => s.iniciarSesion);
+  const entrarComoOperador = useAuthStore((s) => s.entrarComoOperador);
+  const modoOperador = useAuthStore((s) => s.modoOperador);
   const cargando = useAuthStore((s) => s.cargando);
   const errorLogin = useAuthStore((s) => s.errorLogin);
   const inicializada = useAuthStore((s) => s.inicializada);
@@ -104,8 +106,15 @@ export default function PantallaLogin() {
   // seleccionar. La puerta no tiene que desloguear a nadie.
   useEffect(() => {
     if (!inicializada) return;
-    if (usuarioActual && (perfiles.length > 0 || esPrincipal)) router.replace("/inicio");
-  }, [inicializada, usuarioActual, perfiles.length, esPrincipal, router]);
+    if (usuarioActual && (perfiles.length > 0 || esPrincipal)) {
+      const esOp =
+        modoOperador ||
+        (perfiles.length > 0 &&
+          perfiles.every((p) => p.toLowerCase().includes("operador")) &&
+          !esPrincipal);
+      router.replace(esOp ? "/apuestas" : "/inicio");
+    }
+  }, [inicializada, usuarioActual, perfiles, esPrincipal, modoOperador, router]);
 
   const enviar = async (e: FormEvent) => {
     e.preventDefault();
@@ -148,7 +157,13 @@ export default function PantallaLogin() {
         return;
       }
       rateLimiterRef.current.registrarExito();
-      router.replace("/inicio");
+      const st = useAuthStore.getState();
+      const esOp =
+        st.modoOperador ||
+        (st.perfiles.length > 0 &&
+          st.perfiles.every((p) => p.toLowerCase().includes("operador")) &&
+          !st.esPrincipal);
+      router.replace(esOp ? "/apuestas" : "/inicio");
     } catch (err) {
       rateLimiterRef.current.registrarFallo();
       useAuthStore.setState({
@@ -357,17 +372,32 @@ export default function PantallaLogin() {
           </button>
 
           {!recuperando ? (
-            <button
-              type="button"
-              onClick={() => {
-                setRecuperando(true);
-                setErrorRecovery(null);
-                setAvisoRecovery(null);
-              }}
-              className="w-full text-center text-xs font-semibold text-slate-500 underline-offset-2 transition-colors hover:text-emerald-600 hover:underline focus:outline-none focus-visible:underline"
-            >
-              Olvid&eacute; mi contrase&ntilde;a
-            </button>
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  entrarComoOperador();
+                  router.replace("/apuestas");
+                }}
+                className="w-full rounded-lg border-2 border-amber-500 bg-amber-50 py-2.5 text-xs font-black uppercase tracking-wider text-amber-900 shadow-sm transition-colors hover:bg-amber-100"
+              >
+                🐎🎲 Entrar como Operador (Solo Apuestas y Reportes)
+              </button>
+              <p className="text-center text-[10px] font-semibold text-slate-500">
+                Credenciales Operador: usuario <code className="font-mono font-bold text-slate-700">operador</code> · clave <code className="font-mono font-bold text-slate-700">operador2026</code>
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecuperando(true);
+                  setErrorRecovery(null);
+                  setAvisoRecovery(null);
+                }}
+                className="w-full text-center text-xs font-semibold text-slate-500 underline-offset-2 transition-colors hover:text-emerald-600 hover:underline focus:outline-none focus-visible:underline"
+              >
+                Olvid&eacute; mi contrase&ntilde;a
+              </button>
+            </div>
           ) : null}
         </form>
 

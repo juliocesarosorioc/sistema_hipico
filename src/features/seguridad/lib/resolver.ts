@@ -223,27 +223,50 @@ export function baseDeTipo(nombre: string): string[] {
 
   if (n.includes("admin")) return todas;
   if (n.includes("operador") || n.includes("taqui")) {
+    const sinRutas = CAPACIDADES.filter(
+      (x) =>
+        [
+          "general",
+          "clientes",
+          "grupos",
+          "carreras",
+          "gestion_jugadas",
+          "tablas",
+          "taquilla",
+          "tickets",
+          "ejemplares",
+          "marcas",
+          "dupleta",
+          "remates",
+          "pollas",
+        ].includes(x.modulo) &&
+        x.riesgo === "lectura" &&
+        x.tipo !== "ruta"
+    ).map((x) => x.clave);
+
     return [
-      ...lecturaDe("general", "clientes", "grupos", "carreras", "gestion_jugadas", "tablas", "taquilla", "tickets", "ejemplares", "marcas", "dupleta", "remates", "pollas"),
-      ...escrituraDe(...MODULOS_OPERATIVOS),
+      // ÚNICAMENTE las 2 rutas permitidas al Operador: Apuestas y Saldos/Reportes
+      "gestion_jugadas:ruta_gestion",
+      "general:ruta_saldos",
+      ...sinRutas,
+      ...escrituraDe(...MODULOS_OPERATIVOS).filter(
+        (k) => !k.startsWith("jugadas:") && !k.startsWith("clientes:fn_eliminar")
+      ),
       "clientes:celda_acciones",
       "tickets:btn_tomar",
       "gestion_jugadas:btn_cargar",
       "gestion_jugadas:btn_editar_jugada",
+      "gestion_jugadas:btn_quitar_jugada",
+      "gestion_jugadas:btn_retirar_ejemplar",
+      "gestion_jugadas:btn_aplicar_retiros",
+      "gestion_jugadas:btn_modo_manual",
       "gestion_jugadas:btn_cargar_resultados",
       "gestion_jugadas:btn_liquidar",
+      "gestion_jugadas:btn_poblar",
+      "gestion_jugadas:btn_carga_rapida",
+      "gestion_jugadas:btn_corregir_ia",
       "gestion_jugadas:modal_finalizar",
-      "tablas:btn_publicar",
-      "tablas:btn_editar",
-      "tablas:btn_vender",
-      "tablas:btn_imprimir",
-      "tablas:modal_venta",
-      "tablas:modal_cuadro",
       "taquilla:btn_registrar_jugada",
-      "marcas:btn_editar_marcas",
-      "marcas:btn_marcar_debutantes",
-      "pollas:btn_crear_polla",
-      "pollas:btn_registrar_venta",
     ];
   }
   if (n.includes("consulta") || n.includes("audit")) {

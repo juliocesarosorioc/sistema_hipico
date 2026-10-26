@@ -87,10 +87,11 @@ export const PRESETS_ROL: PresetRol[] = [
   },
   {
     id: "operador",
-    nombre: "Operador / Taquilla",
-    descripcion: "Vende jugadas y cobra. No configura, no ve finanzas globales ni el maestro de seguridad.",
-    icono: "🎟️",
-    modulos: ["general", "taquilla", "tablas", "marcas", "dupleta", "carreras", "jugadas", "ejemplares", "tickets"],
+    nombre: "Operador / Apuestas",
+    descripcion: "Acceso exclusivo a 🐎🎲 Apuestas y 💵📑 Reportes. No configura ni ve otros módulos.",
+    icono: "🐎",
+    modulos: ["gestion_jugadas"],
+    extras: ["general:ruta_saldos", "general:celda_saldo_cliente"],
     color: "border-sky-400 bg-sky-50",
   },
   {

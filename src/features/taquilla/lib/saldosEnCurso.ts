@@ -20,6 +20,11 @@
 import { proyectarFila, type FilaProyeccion } from "@/features/taquilla/lib/validar";
 import { disponibleParaJugar, esSinTope } from "@/features/taquilla/lib/reparto";
 import { redondearCentavos, restarDinero, sumarDinero } from "@/shared/lib/dinero";
+import {
+  _comprometidoSimuladoCli,
+  normalizarNombreCliente,
+  type JugadaActivaSimulacion,
+} from "@/features/taquilla/lib/cruces-y-tapas";
 
 /** Cliente mínimo con el que se topa el saldo (compatible con `ClienteVenta`). */
 export type ClienteConSaldo = {
@@ -45,7 +50,7 @@ export type ProyeccionEnCurso<C> = {
   proyeccion: FilaProyeccion;
   /** Cliente 1 con el saldo que le queda tras las filas anteriores. */
   cliente1: C | null;
-  /** Cliente 2 (dador). Nunca se le descuenta. */
+  /** Cliente 2 (dador). Nunca se le descuenta si solo actúa como dador sin jugada previa. */
   cliente2: C | null;
   /** Monto solicitado originalmente en la línea. */
   montoSolicitado: number;
@@ -55,6 +60,12 @@ export type ProyeccionEnCurso<C> = {
   montoExcedido: number;
   /** Saldo + aval disponible restante después de esta línea (Infinity si libre). */
   queda: number;
+  /** Riesgo comprometido simulado de Cliente 1 tras esta fila (considerando tapas/cruces en vivo). */
+  riesgoComprometido?: number;
+  /** Riesgo comprometido simulado de Cliente 2 tras esta fila (cuando hizo tapa como dador). */
+  riesgoComprometidoCliente2?: number;
+  /** Saldo + aval disponible restante de Cliente 2 tras esta línea (cuando hizo tapa como dador). */
+  quedaCliente2?: number;
   /** Observación auditable cuando hubo recorte o falta de saldo ("Excedido X" / "Sin saldo"). */
   observacionExceso: string | null;
 };
@@ -92,7 +103,10 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
 ): ProyeccionEnCurso<C>[] {
   const descontado = new Map<string, number>();
   const ticketsVistos = new Set<string>();
+  const jugadasActivas: JugadaActivaSimulacion[] = [];
+  const clientesConJugadaActiva = new Map<string, C>();
   const out: ProyeccionEnCurso<C>[] = [];
+  const comPct = tasaComision ?? 5;
 
   for (const f of filas) {
     const idTicket = f.id != null && String(f.id).trim() !== "" ? String(f.id).trim() : null;
@@ -100,8 +114,43 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
     if (idTicket) ticketsVistos.add(idTicket);
 
     const base1 = resolver(f.cliente1);
-    const cliente1 = clienteConSaldoDescontado(base1, descontado);
     const cliente2 = resolver(f.cliente2);
+    const montoSolicitado = redondearCentavos(
+      parseFloat(String(f.monto ?? "").replace(",", ".")) || 0
+    );
+
+    // Si base1 ya tiene jugadas en la carrera y esta nueva fila actúa como TAPA
+    // (su riesgo comprometido simulado disminuye respecto al descontado actual),
+    // liberamos el descuento previo para permitir la cobertura en vivo.
+    let mapaDescuentoEfectivo = descontado;
+    if (base1 && montoSolicitado > 0 && jugadasActivas.length > 0) {
+      const clave1 = String(base1.id ?? base1.nombre ?? "").trim().toUpperCase();
+      const nombre1 = String(base1.nombre ?? f.cliente1 ?? "").trim();
+      const usadoActual = descontado.get(clave1) ?? 0;
+      if (usadoActual > 0) {
+        const tentativa: JugadaActivaSimulacion = {
+          id: idTicket ?? `tmp-${out.length + 1}`,
+          jugador: nombre1,
+          tercio: String(cliente2?.nombre ?? f.cliente2 ?? "").trim(),
+          jugada: f.jugada,
+          caballo: f.caballo.trim(),
+          monto: montoSolicitado,
+          comisionPct: comPct,
+        };
+        const riesgoConTentativa = _comprometidoSimuladoCli(
+          nombre1,
+          [...jugadasActivas, tentativa],
+          comPct
+        );
+        if (riesgoConTentativa < usadoActual) {
+          mapaDescuentoEfectivo = new Map(descontado);
+          mapaDescuentoEfectivo.set(clave1, 0);
+          if (base1.id != null) mapaDescuentoEfectivo.set(String(base1.id), 0);
+        }
+      }
+    }
+
+    const cliente1 = clienteConSaldoDescontado(base1, mapaDescuentoEfectivo);
     const proyeccion = proyectarFila({
       jugada: f.jugada,
       caballo: f.caballo.trim(),
@@ -111,9 +160,6 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
       cliente2,
     });
 
-    const montoSolicitado = redondearCentavos(
-      parseFloat(String(f.monto ?? "").replace(",", ".")) || 0
-    );
     const dispAntes = cliente1
       ? esSinTope(cliente1)
         ? Number.POSITIVE_INFINITY
@@ -126,17 +172,70 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
         ? Math.max(0, restarDinero(montoSolicitado, montoAceptado))
         : 0;
 
-    if (proyeccion.ok && base1 && !duplicado) {
-      const clave = String(base1.id ?? base1.nombre ?? "").trim().toUpperCase();
-      const usado = descontado.get(clave) ?? 0;
-      const nuevo = sumarDinero(usado, montoAceptado);
-      descontado.set(clave, nuevo);
-      if (base1.id != null) descontado.set(String(base1.id), nuevo);
+    let riesgoComprometido: number | undefined;
+    let riesgoComprometidoCliente2: number | undefined;
+    let quedaCliente2: number | undefined;
+
+    if (proyeccion.ok && !duplicado && montoAceptado > 0) {
+      const nombreJ1 = String(base1?.nombre ?? f.cliente1 ?? "").trim();
+      const nombreJ2 = String(cliente2?.nombre ?? f.cliente2 ?? "").trim();
+      jugadasActivas.push({
+        id: idTicket ?? `fila-${out.length + 1}`,
+        jugador: nombreJ1,
+        tercio: nombreJ2,
+        jugada: f.jugada,
+        caballo: f.caballo.trim(),
+        monto: montoAceptado,
+        comisionPct: comPct,
+      });
+
+      if (base1) {
+        const clave1 = String(base1.id ?? base1.nombre ?? "").trim().toUpperCase();
+        clientesConJugadaActiva.set(clave1, base1);
+        const riesgoSim1 = _comprometidoSimuladoCli(nombreJ1, jugadasActivas, comPct);
+        riesgoComprometido = riesgoSim1;
+        descontado.set(clave1, riesgoSim1);
+        if (base1.id != null) descontado.set(String(base1.id), riesgoSim1);
+      }
+
+      if (cliente2) {
+        const clave2 = String(cliente2.id ?? cliente2.nombre ?? "").trim().toUpperCase();
+        const riesgoSim2 = _comprometidoSimuladoCli(nombreJ2, jugadasActivas, comPct);
+        riesgoComprometidoCliente2 = riesgoSim2;
+        if (clientesConJugadaActiva.has(clave2)) {
+          descontado.set(clave2, riesgoSim2);
+          if (cliente2.id != null) descontado.set(String(cliente2.id), riesgoSim2);
+        }
+        const dispTotal2 = esSinTope(cliente2)
+          ? Number.POSITIVE_INFINITY
+          : redondearCentavos(disponibleParaJugar(cliente2));
+        quedaCliente2 = Number.isFinite(dispTotal2)
+          ? Math.max(0, restarDinero(dispTotal2, riesgoSim2))
+          : Number.POSITIVE_INFINITY;
+      }
     }
 
-    const queda = Number.isFinite(dispAntes)
-      ? Math.max(0, restarDinero(dispAntes, duplicado ? 0 : montoAceptado))
+    const dispInicial1 = base1
+      ? esSinTope(base1)
+        ? Number.POSITIVE_INFINITY
+        : redondearCentavos(disponibleParaJugar(base1))
       : Number.POSITIVE_INFINITY;
+
+    const queda = base1
+      ? Number.isFinite(dispInicial1)
+        ? Math.max(
+            0,
+            restarDinero(
+              dispInicial1,
+              riesgoComprometido != null
+                ? riesgoComprometido
+                : (descontado.get(String(base1.id ?? base1.nombre ?? "").trim().toUpperCase()) ?? 0)
+            )
+          )
+        : Number.POSITIVE_INFINITY
+      : quedaCliente2 != null
+        ? quedaCliente2
+        : Number.POSITIVE_INFINITY;
 
     let observacionExceso: string | null = null;
     if (cliente1 && !esSinTope(cliente1) && montoSolicitado > 0) {
@@ -158,6 +257,9 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
       montoAceptado,
       montoExcedido,
       queda,
+      riesgoComprometido,
+      riesgoComprometidoCliente2,
+      quedaCliente2,
       observacionExceso,
     });
   }

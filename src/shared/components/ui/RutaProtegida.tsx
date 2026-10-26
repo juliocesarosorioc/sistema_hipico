@@ -3,7 +3,13 @@
 import { useEffect, useMemo, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore } from "@/shared/store/useAuthStore";
-import { capacidadesDeRuta, rutaPermitida, RUTAS_PROTEGIDAS } from "@/features/seguridad/lib/capacidades";
+import {
+  capacidadesDeRuta,
+  esRolOperadorExclusivo,
+  esRutaPermitidaOperador,
+  rutaPermitida,
+  RUTAS_PROTEGIDAS,
+} from "@/features/seguridad/lib/capacidades";
 
 type Props = {
   /**
@@ -40,6 +46,9 @@ export function RutaProtegida({ permiso, algunaDe, children }: Props) {
   const inicializada = useAuthStore((s) => s.inicializada);
   const permisos = useAuthStore((s) => s.permisos);
   const esPrincipal = useAuthStore((s) => s.esPrincipal);
+  const perfiles = useAuthStore((s) => s.perfiles);
+  const modoOperador = useAuthStore((s) => s.modoOperador);
+  const esOperadorRestringido = esRolOperadorExclusivo(perfiles, modoOperador);
 
   // Sin prop, la capacidad sale del registro maestro para esta ruta. Con prop,
   // la prop manda. `algunaDe` tiene prioridad sobre `permiso` (ver la doc).
@@ -67,10 +76,16 @@ export function RutaProtegida({ permiso, algunaDe, children }: Props) {
         : algunaDe !== undefined
           ? exigidas.some((p) => set.has(p))
           : exigidas.every((p) => set.has(p));
-  const permitido = esPrincipal || cumple;
+  const permitido = esOperadorRestringido
+    ? esRutaPermitidaOperador(pathname)
+    : esPrincipal || cumple;
 
   useEffect(() => {
     if (pendientes || permitido) return;
+    if (esOperadorRestringido) {
+      router.replace("/apuestas");
+      return;
+    }
     // Fallback: el destino tiene que ser una ruta a la que el usuario sí pueda
     // llegar. `/inicio` exige `general:ruta_inicio`, que no todos los tipos
     // tienen; mandar ahí a ciegas podía dejar al usuario en un ciclo de

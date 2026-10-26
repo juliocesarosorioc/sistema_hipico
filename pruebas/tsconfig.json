@@ -20,7 +20,6 @@
     "../src/features/inteligencia/lib/pizarra.ts",
     "../src/shared/lib/hipodromos-jornada.ts",
     "../src/features/marcas/lib/jerarquia.ts",
-
     "../src/features/carreras/lib/central.ts",
     "../src/features/marcas/lib/registradas.ts",
     "../src/features/marcas/lib/reporte-marcas-nucleo.ts",
@@ -133,6 +132,8 @@
     "../src/shared/lib/dinero.ts",
     "../src/features/taquilla/lib/cruces-y-tapas.ts",
     "../src/features/saldos/lib/contabilidad-central.ts",
-    "./contabilidad-cruces-7col.test.ts"
+    "./contabilidad-cruces-7col.test.ts",
+    "../src/features/gestion/lib/carreras-liquidadas-orden.ts",
+    "./auditoria-total-apuestas.test.ts"
   ]
 }

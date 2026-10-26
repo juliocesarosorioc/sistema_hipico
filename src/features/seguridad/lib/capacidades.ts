@@ -264,12 +264,12 @@ export const MODULOS_ESQUEMA: ModuloEsquema[] = [
   // --------------------------------------------------------------------------
   {
     clave: "gestion_jugadas",
-    nombre: "Gestión de Jugadas",
-    ruta: "/gestion-jugadas",
+    nombre: "🐎🎲 Apuestas",
+    ruta: "/apuestas",
     icono: "ticket",
-    descripcion: "Carga y operación de jugadas, retiros y liquidación de una carrera.",
+    descripcion: "Carga y operación de apuestas (en vivo y adelantadas), cruces, retiros y liquidación de una carrera.",
     capacidades: [
-      c("gestion_jugadas", "ruta", "ruta_gestion", "Entrar a Gestión de Jugadas", "lectura", "src/app/(dashboard)/gestion-jugadas/page.tsx:1"),
+      c("gestion_jugadas", "ruta", "ruta_gestion", "Entrar a 🐎🎲 Apuestas (antes Gestión de Jugadas)", "lectura", "src/app/(dashboard)/apuestas/page.tsx:1"),
       c("gestion_jugadas", "boton", "btn_cargar", "Cargar jugada(s)", "escritura", "src/components/gestion/GestionJugadasModule.tsx:935"),
       c("gestion_jugadas", "boton", "btn_editar_jugada", "Editar una jugada cargada", "escritura", "src/components/gestion/GestionJugadasModule.tsx:970"),
       c("gestion_jugadas", "boton", "btn_quitar_jugada", "Quitar una jugada", "critico", "src/components/gestion/GestionJugadasModule.tsx:979", {
@@ -750,6 +750,7 @@ export const PUERTAS: Array<{
   { ruta: "/hipodromos", capacidad: "hipodromos:ruta_hipodromos" },
   { ruta: "/ejemplares", capacidad: "ejemplares:ruta_ejemplares" },
   { ruta: "/carreras", capacidad: "carreras:ruta_carreras" },
+  { ruta: "/apuestas", capacidad: "gestion_jugadas:ruta_gestion" },
   { ruta: "/gestion-jugadas", capacidad: "gestion_jugadas:ruta_gestion" },
   { ruta: "/jugadas", capacidad: "jugadas:ruta_jugadas" },
   { ruta: "/tablas-fijas", capacidad: "tablas:ruta_tablas" },
@@ -926,4 +927,52 @@ export function esRolCliente(perfil: string, permisos: Set<string> | string[]): 
   if (!nombres.some((n) => n === "cliente" || n === "jugador")) return false;
   const set = permisos instanceof Set ? permisos : new Set(permisos);
   return ![...set].some((p) => !CAPS_PORTAIL.includes(p));
+}
+
+/**
+ * Rutas estrictamente permitidas para el perfil OPERADOR (`rol === 'OPERADOR'` / Modo Operador):
+ * ÚNICAMENTE tiene acceso y visibilidad a:
+ *  1. `🐎🎲 Apuestas` (`/apuestas`, `/gestion-jugadas`)
+ *  2. `💵📑 Reportes` (`/saldos-reportes`, `/reporte-diario`)
+ */
+export const RUTAS_PERMITIDAS_OPERADOR = [
+  "/apuestas",
+  "/gestion-jugadas",
+  "/saldos-reportes",
+  "/reporte-diario",
+] as const;
+
+/** Módulos visibles en el Sidebar cuando el usuario tiene rol exclusivo OPERADOR. */
+export const MODULOS_VISIBLES_OPERADOR = [
+  { href: "/apuestas", emoji: "🐎🎲", txt: "🐎🎲 Apuestas" },
+  { href: "/saldos-reportes", emoji: "💵📑", txt: "💵📑 Saldos / Reportes" },
+] as const;
+
+/** Determina si la sesión o el modo activo corresponde a un Operador exclusivo. */
+export function esRolOperadorExclusivo(
+  perfiles: string[] | string | null | undefined,
+  modoOperador = false
+): boolean {
+  if (modoOperador) return true;
+  const lista = Array.isArray(perfiles)
+    ? perfiles
+    : String(perfiles ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+  if (lista.length === 0) return false;
+  const normalizados = lista.map((p) => p.trim().toLowerCase());
+  const tieneAdmin = normalizados.some(
+    (p) => p.includes("admin") || p.includes("principal") || p.includes("super") || p.includes("dueno")
+  );
+  if (tieneAdmin) return false;
+  return normalizados.some((p) => p === "operador" || p.includes("operador") || p.includes("taquilla"));
+}
+
+/** Verifica si un pathname está dentro de los dos únicos módulos permitidos al Operador (`Apuestas` y `Reportes`). */
+export function esRutaPermitidaOperador(pathname: string): boolean {
+  const limpia = (pathname || "").split("?")[0];
+  return RUTAS_PERMITIDAS_OPERADOR.some(
+    (r) => limpia === r || limpia.startsWith(`${r}/`)
+  );
 }

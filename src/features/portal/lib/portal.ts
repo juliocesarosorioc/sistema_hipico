@@ -21,6 +21,8 @@ import { supabase } from "@/core/supabase";
 import { TIMEOUT_SESION_MS } from "@/features/auth/lib/sesion";
 import { construirEstadoCuenta, type ClienteRow, type NivelAcordeon, type NotificacionRow, type TicketApuesta } from "@/features/clientes/lib/clientes";
 import { normalizarFormasPago, type FormaPago } from "@/features/clientes/lib/formasPago";
+import { calcularEstadoCuentaCliente } from "@/features/saldos/lib/contabilidad-central";
+import { redondearCentavos } from "@/shared/lib/dinero";
 import {
   normalizarEstadoJugada,
   validarGrupoExterno,
@@ -68,7 +70,13 @@ export {
 
 export type SesionPortal = {
   cliente: ClienteRow;
-  resumen: { saldo: number; incentivo: number; disponible: number };
+  resumen: {
+    saldo: number;
+    incentivo: number;
+    disponible: number;
+    aval?: number;
+    riesgoEnCurso?: number;
+  };
   arbolTickets: NivelAcordeon;
   /** Config del grupo del jugador (ventana de reclamos + ciclo). Puede faltar. */
   grupo?: GrupoPortal | null;
@@ -255,9 +263,45 @@ async function construirSesion(cliente: ClienteRow): Promise<SesionPortal | null
   const { tickets, grupo } = datos;
   const pct = num(cliente.devolucion);
   const arbolTickets = construirEstadoCuenta(tickets, pct);
+  const estadoCentral = calcularEstadoCuentaCliente({
+    id: cliente.id,
+    nombre: cliente.nombre ?? "",
+    saldoBaseBd: cliente.saldo_actual ?? 0,
+    aval: cliente.aval ?? 0,
+    comisionPct: cliente.comision ?? 5,
+    libre: String(cliente.modo_juego ?? "").toLowerCase().trim() === "libre",
+    movimientos: [],
+    jugadasActivasCarrera: tickets
+      .filter((t) => String(t.estado ?? "PENDIENTE").toUpperCase() === "PENDIENTE")
+      .map((t) => ({
+        id: t.id,
+        jugador: cliente.nombre ?? "",
+        jugada: String(t.nombre_jugada ?? "1P"),
+        caballo: String(t.caballo ?? "1"),
+        monto: num(t.monto_jugado),
+        estado: t.estado ?? "PENDIENTE",
+      })),
+  });
+  const saldoReal =
+    tickets.length > 0 && arbolTickets.monto !== 0
+      ? redondearCentavos(arbolTickets.monto)
+      : estadoCentral.saldoContable;
+  const dispReal = Number.isFinite(estadoCentral.disponibleParaJugar)
+    ? estadoCentral.disponibleParaJugar
+    : redondearCentavos(saldoReal + num(cliente.aval) - estadoCentral.riesgoEnCurso);
+
   return {
-    cliente,
-    resumen: { saldo: arbolTickets.monto, incentivo: arbolTickets.dec, disponible: arbolTickets.monto - arbolTickets.dec },
+    cliente: {
+      ...cliente,
+      saldo_actual: estadoCentral.fueSaneado ? estadoCentral.saldoContable : cliente.saldo_actual,
+    },
+    resumen: {
+      saldo: saldoReal,
+      incentivo: arbolTickets.dec,
+      disponible: dispReal,
+      aval: estadoCentral.aval,
+      riesgoEnCurso: estadoCentral.riesgoEnCurso,
+    },
     arbolTickets,
     grupo,
   };
