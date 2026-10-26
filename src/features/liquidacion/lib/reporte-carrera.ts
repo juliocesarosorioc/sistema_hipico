@@ -322,6 +322,7 @@ export function armarReporteCarrera(
         resultado,
         resultadoDa,
         ...(f.esAdelantada ? { esAdelantada: true } : {}),
+        ...(f.horaCarga ? { horaCarga: f.horaCarga } : {}),
       };
 
       jugadasVivo.push(filaVivo);

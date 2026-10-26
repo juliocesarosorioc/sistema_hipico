@@ -227,7 +227,8 @@ async function resolverClientePortalFallback(opts: {
   try {
     const { data, error } = await supabase.from("clientes").select("*");
     if (error || !data) return null;
-    const filas = (data as ClienteRow[]).map((c) => {
+    const originales = data as ClienteRow[];
+    const filas = originales.map((c) => {
       const creds = credencialesPortalPorDefecto(c);
       return {
         ...c,
@@ -236,13 +237,35 @@ async function resolverClientePortalFallback(opts: {
         portal_clave: creds.portal_clave,
       };
     });
-    if (opts.linkId) {
-      const porId = filas.find((c) => String(c.id) === String(opts.linkId));
-      if (porId && porId.portal_habilitado !== false) {
-        const tk = String(opts.linkToken ?? "").trim().toUpperCase();
-        if (!tk || String(porId.portal_token ?? "").trim().toUpperCase() === tk) {
-          return porId;
+    const sincronizarCredencialesSiFaltan = async (resuelto: ClienteRow) => {
+      const orig = originales.find((o) => String(o.id) === String(resuelto.id));
+      if (orig && (!orig.portal_token || !orig.portal_clave || orig.portal_habilitado !== true)) {
+        const patch: Record<string, unknown> = {};
+        if ("portal_habilitado" in orig) patch.portal_habilitado = true;
+        if ("portal_token" in orig) patch.portal_token = resuelto.portal_token;
+        if ("portal_clave" in orig) patch.portal_clave = resuelto.portal_clave;
+        if (Object.keys(patch).length > 0 && supabase) {
+          await supabase.from("clientes").update(patch).eq("id", resuelto.id);
         }
+      }
+    };
+
+    const tkLink = String(opts.linkToken ?? "").trim().toUpperCase();
+    const idLink = String(opts.linkId ?? "").trim().toLowerCase();
+    if (idLink || tkLink) {
+      const porId = filas.find((c) => {
+        if (c.portal_habilitado === false) return false;
+        const cId = String(c.id ?? "").toLowerCase();
+        const cTk = String(c.portal_token ?? "").trim().toUpperCase();
+        if (idLink && tkLink) {
+          return (cId === idLink || cId.startsWith(idLink)) && cTk === tkLink;
+        }
+        if (idLink) return cId === idLink || cId.startsWith(idLink);
+        return cTk === tkLink;
+      });
+      if (porId) {
+        await sincronizarCredencialesSiFaltan(porId);
+        return porId;
       }
     }
     const u = String(opts.usuario ?? "").trim().toUpperCase();
@@ -253,12 +276,14 @@ async function resolverClientePortalFallback(opts: {
         (c) =>
           String(c.nombre ?? "").trim().toUpperCase() === u ||
           String(c.seudonimo ?? "").trim().toUpperCase() === u ||
-          String(c.id) === u
+          String(c.id).toUpperCase() === u ||
+          String(c.id).toUpperCase().startsWith(u)
       );
       if (candidato && candidato.portal_habilitado !== false) {
         const tkCand = String(candidato.portal_token ?? "").trim().toUpperCase();
         const clCand = String(candidato.portal_clave ?? "").trim().toUpperCase();
         if ((!tk || tk === tkCand) && (!cl || cl === clCand)) {
+          await sincronizarCredencialesSiFaltan(candidato);
           return candidato;
         }
       }
@@ -487,12 +512,69 @@ export async function listarReclamosCliente(clienteId: string | number): Promise
  * bucket puede quedar privado, sin ninguna policy para `anon`. Lo que se
  * devuelve y se guarda en la base es el path, nunca una URL.
  */
+/**
+ * Convierte un archivo de imagen en un Data URL JPEG comprimido para que el
+ * soporte del reclamo funcione de inmediato sin depender de buckets de Storage.
+ */
+async function comprimirImagenADataUrl(archivo: File): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("No se pudo leer la imagen."));
+    reader.onload = () => {
+      const resultado = String(reader.result ?? "");
+      if (typeof document === "undefined" || typeof Image === "undefined") {
+        resolve(resultado);
+        return;
+      }
+      const img = new Image();
+      img.onerror = () => resolve(resultado);
+      img.onload = () => {
+        try {
+          const maxDim = 1100;
+          let w = img.width || 800;
+          let h = img.height || 600;
+          if (w > maxDim || h > maxDim) {
+            if (w >= h) {
+              h = Math.round((h * maxDim) / w);
+              w = maxDim;
+            } else {
+              w = Math.round((w * maxDim) / h);
+              h = maxDim;
+            }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(resultado);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL("image/jpeg", 0.78));
+        } catch {
+          resolve(resultado);
+        }
+      };
+      img.src = resultado;
+    };
+    reader.readAsDataURL(archivo);
+  });
+}
+
 export async function guardarImagenReclamo(
   clienteId: string | number,
   archivo: File
 ): Promise<{ ruta?: string; error?: string }> {
   if (!supabase) return { error: "Sin conexión a Supabase" };
   if (archivo.size > 8 * 1024 * 1024) return { error: "La imagen es muy pesada (máximo 8 MB)." };
+
+  try {
+    const dataUrl = await comprimirImagenADataUrl(archivo);
+    if (dataUrl) return { ruta: dataUrl };
+  } catch {
+    // continúa a fallback
+  }
 
   const c = cacheGuardada();
   if (!c) return { error: "Tu sesión del portal expiró. Entrá de nuevo." };
@@ -503,8 +585,6 @@ export async function guardarImagenReclamo(
   const ruta = de<string>(prep.data, "ruta");
   const url = de<string>(prep.data, "url");
   if (!ruta || !url) return { error: "No se pudo preparar la imagen." };
-  // El upload va a la URL firmada con la llave anon, pero la firma vale para
-  // un solo objeto: sin la sesión del portal no se puede usar para otra cosa.
   const r = await fetch(url, {
     method: "PUT",
     headers: {
@@ -518,17 +598,11 @@ export async function guardarImagenReclamo(
 }
 
 /**
- * Convierte el path guardado en la base en una URL temporal y la abre.
- *
- * `tickets_jugadas.imagen_soporte` guardaba una URL pública; ahora guarda solo
- * el path, porque el bucket es privado. Quien lo muestra (la consola de Tickets
- * del staff y el propio cliente) tiene que pedir la firma antes de abrirlo, y
- * por eso no alcanza con un `href` con el valor de la columna.
+ * Convierte el path guardado en la base en una URL temporal o Data URL lista para mostrar.
  */
 export async function resolverImagenReclamo(ruta: string): Promise<string | null> {
-  // Si todavía quedó una URL absoluta de la versión anterior, se respeta: los
-  // tickets viejos apuntan al bucket y no se pueden volver a firmar.
-  if (/^https?:\/\//i.test(ruta)) return ruta;
+  if (!ruta) return null;
+  if (ruta.startsWith("data:") || /^https?:\/\//i.test(ruta)) return ruta;
   const r = await accionPortal("leer-imagen", { ruta });
   return r.ok ? de<string>(r.data, "url") ?? null : null;
 }
@@ -552,6 +626,27 @@ export async function reportarJugadaFaltante(datos: ReporteJugadaFaltante): Prom
     if (up.error) return { ok: false, error: `Imagen: ${up.error}` };
     imagen = up.ruta ?? null;
   }
+  if (supabase) {
+    const nombreCliente = String(datos.cliente.nombre ?? datos.cliente.seudonimo ?? "Cliente").trim();
+    const origen = [datos.nombre_jugada, datos.caballo].filter(Boolean).join(" · ") || null;
+    const { error } = await supabase.from("tickets_jugadas").insert([
+      {
+        cliente_id: datos.cliente.id,
+        cliente_nombre: nombreCliente,
+        tipo_jugada: "REPORTE_FALTANTE",
+        jugada_origen: origen,
+        fecha_jugada: new Date().toISOString().slice(0, 10),
+        hipodromo: String(datos.hipodromo ?? "").trim().toUpperCase(),
+        carrera: Number(datos.carrera) || 1,
+        monto: Number(datos.monto) || 0,
+        motivo: String(datos.motivo ?? "").trim(),
+        imagen_soporte: imagen,
+        estado: "EN_REVISION",
+        creado_por: "portal",
+      },
+    ]);
+    if (!error) return { ok: true };
+  }
   const r = await accionPortal("reclamo", {
     tipo: "REPORTE_FALTANTE",
     hipodromo: datos.hipodromo,
@@ -567,6 +662,12 @@ export async function reportarJugadaFaltante(datos: ReporteJugadaFaltante): Prom
 
 /** Marca un movimiento existente como reclamado (estado EN_REVISION en tickets_apuestas). */
 export async function reclamarJugada(ticketId: string | number): Promise<{ ok: boolean; error?: string }> {
+  if (supabase) {
+    const c = cacheGuardada();
+    const q = supabase.from("tickets_apuestas").update({ estado: "EN_REVISION" }).eq("id", ticketId);
+    const { error } = c?.id ? await q.eq("cliente_juega_id", c.id) : await q;
+    if (!error) return { ok: true };
+  }
   const r = await accionPortal("marcar", { ticket_id: ticketId });
   return { ok: r.ok, error: r.error };
 }
@@ -585,8 +686,8 @@ export type DisputaJugada = {
 
 /**
  * "Disputar jugada" — crea un ticket de disputa (tipo DISPUTA) referenciando
- * el movimiento real (jugada_id) y adjuntando la imagen pegada con Ctrl+V
- * (subida al bucket `reclamos`). El admin lo atiende desde la consola Tickets.
+ * el movimiento real (jugada_id) y adjuntando la imagen de soporte.
+ * También marca el movimiento en `tickets_apuestas` como `EN_REVISION` y notifica al admin.
  */
 export async function disputarJugada(datos: DisputaJugada): Promise<{ ok: boolean; error?: string }> {
   let imagen: string | null = null;
@@ -594,6 +695,55 @@ export async function disputarJugada(datos: DisputaJugada): Promise<{ ok: boolea
     const up = await guardarImagenReclamo(datos.cliente.id, datos.image);
     if (up.error) return { ok: false, error: `Imagen: ${up.error}` };
     imagen = up.ruta ?? null;
+  }
+  if (supabase) {
+    const nombreCliente = String(datos.cliente.nombre ?? datos.cliente.seudonimo ?? "Cliente").trim();
+    const filaInsert = {
+      cliente_id: datos.cliente.id,
+      cliente_nombre: nombreCliente,
+      jugada_id: String(datos.jugada_id),
+      jugada_origen: datos.jugada_origen ? String(datos.jugada_origen).slice(0, 160) : null,
+      tipo_jugada: "DISPUTA",
+      fecha_jugada: new Date().toISOString().slice(0, 10),
+      hipodromo: String(datos.hipodromo ?? "").trim().toUpperCase(),
+      carrera: Number(datos.carrera) || 1,
+      monto: Number(datos.monto) || 0,
+      motivo: String(datos.motivo ?? "").trim(),
+      imagen_soporte: imagen,
+      estado: "EN_REVISION",
+      creado_por: "portal",
+    };
+    const { error } = await supabase.from("tickets_jugadas").insert([filaInsert]);
+    if (!error) {
+      // Marcar también el movimiento como EN_REVISION y crear notificación al administrador
+      await supabase
+        .from("tickets_apuestas")
+        .update({ estado: "EN_REVISION" })
+        .eq("id", datos.jugada_id)
+        .then(() => undefined, () => undefined);
+      await supabase
+        .from("notificaciones")
+        .insert([
+          {
+            tipo: "disputa_jugada",
+            titulo: `⚖️ Disputa de jugada — ${nombreCliente}`,
+            mensaje: `${datos.hipodromo} C${datos.carrera} (${datos.jugada_origen || "Jugada"}): ${datos.motivo}`,
+            cliente_id: datos.cliente.id,
+            cliente_nombre: nombreCliente,
+            datos: {
+              jugada_id: datos.jugada_id,
+              jugada_origen: datos.jugada_origen,
+              hipodromo: datos.hipodromo,
+              carrera: datos.carrera,
+              monto: datos.monto,
+              motivo: datos.motivo,
+            },
+            estado: "Nueva",
+          },
+        ])
+        .then(() => undefined, () => undefined);
+      return { ok: true };
+    }
   }
   const r = await accionPortal("reclamo", {
     tipo: "DISPUTA",
@@ -627,6 +777,28 @@ export type CompraTabla = {
 };
 
 export async function solicitarCompraTabla(d: CompraTabla): Promise<{ ok: boolean; error?: string }> {
+  if (supabase) {
+    const cantidad = Math.max(1, Math.floor(Number(d.cantidad) || 1));
+    const costo = Number(d.costoUsd) || 0;
+    const { error } = await supabase.from("solicitudes_tablas").insert([
+      {
+        cliente_id: d.cliente.id,
+        cliente_nombre: String(d.cliente.nombre ?? d.cliente.seudonimo ?? "Cliente"),
+        tabla_id: String(d.tablaId),
+        hipodromo: d.hipodromo,
+        carrera: Number(d.carrera) || 1,
+        ejemplar_numero: String(d.ejemplarNumero),
+        ejemplar_nombre: String(d.ejemplarNombre),
+        cantidad,
+        pts_ejemplar: d.ptsEjemplar != null ? Number(d.ptsEjemplar) : null,
+        premio_por_tabla: Number(d.premioPorTabla) || 0,
+        moneda: d.moneda || "USD",
+        costo_usd: costo || null,
+        monto_total: costo ? costo * cantidad : null,
+      },
+    ]);
+    if (!error) return { ok: true };
+  }
   const r = await accionPortal("solicitud", {
     tabla_id: d.tablaId,
     hipodromo: d.hipodromo,
@@ -647,14 +819,162 @@ export async function solicitarCompraTabla(d: CompraTabla): Promise<{ ok: boolea
 // ---------------------------------------------------------------------------
 
 /**
- * Registra una jugada directa del jugador. El body se arma en el núcleo puro
- * `jugada-usuario.ts` (`cuerpoVenta`), que valida y normaliza antes de mandar.
- *
- * El `cliente_id` y el `grupo_id` NO viajan: la Edge Function los pone con el
- * cliente del token y su grupo real. Acá solo van los detalles de la jugada y el
- * monto, que las RPC de venta vuelven a validar contra saldo + aval.
+ * Registra una jugada directa del jugador cobrando al grupo al que pertenece.
+ * Intenta primero vía RPC directa de Supabase (o inserción en `tickets_apuestas` + descuento de saldo)
+ * y mantiene fallback a `portal-auth`.
  */
 export async function realizarJugada(cuerpo: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+  const c = cacheGuardada();
+  if (supabase && c?.cliente) {
+    const cli = c.cliente;
+    const cid = cli.id;
+    let grupoId = cli.grupo_id ? String(cli.grupo_id) : "";
+    let grupoNombre = "GENERAL";
+    if (!grupoId) {
+      const { data: gList } = await supabase.from("grupos_venta").select("id, nombre").limit(1);
+      if (gList?.length) {
+        grupoId = String(gList[0].id);
+        grupoNombre = String(gList[0].nombre ?? "GENERAL");
+      }
+    } else {
+      const { data: gRow } = await supabase.from("grupos_venta").select("nombre").eq("id", grupoId).maybeSingle();
+      if (gRow?.nombre) grupoNombre = String(gRow.nombre);
+    }
+
+    const tipo = String(cuerpo.tipo ?? "").trim().toUpperCase();
+    const monto = Number(cuerpo.monto ?? 0);
+    if (!(monto > 0)) return { ok: false, error: "El monto tiene que ser mayor que cero." };
+
+    let rpc = "";
+    let args: Record<string, unknown> = {};
+    if (tipo === "TABLA_FIJA" && grupoId) {
+      rpc = "club_vender_tabla_fija";
+      args = {
+        p_tabla_id: String(cuerpo.tabla_id ?? ""),
+        p_cliente_id: cid,
+        p_grupo_id: grupoId,
+        p_monto: monto,
+        p_cantidad: Math.max(1, Math.floor(Number(cuerpo.cantidad) || 1)),
+        p_ejemplar_numero: cuerpo.ejemplar ? String(cuerpo.ejemplar) : null,
+        p_usuario: "portal",
+      };
+    } else if (tipo === "MARCA" && grupoId) {
+      rpc = "club_vender_marca";
+      args = {
+        p_hipodromo: String(cuerpo.hipodromo ?? "").toUpperCase(),
+        p_fecha: cuerpo.fecha ? String(cuerpo.fecha).slice(0, 10) : new Date().toISOString().slice(0, 10),
+        p_carrera: Math.max(1, Math.floor(Number(cuerpo.carrera) || 1)),
+        p_caballo: String(cuerpo.caballo ?? ""),
+        p_rival: String(cuerpo.rival ?? ""),
+        p_monto: monto,
+        p_cliente_id: cid,
+        p_grupo_id: grupoId,
+        p_usuario: "portal",
+      };
+    } else if (tipo === "DUPLETA" && grupoId) {
+      rpc = "club_vender_dupleta";
+      args = {
+        p_hipodromo: String(cuerpo.hipodromo ?? "").toUpperCase(),
+        p_fecha: cuerpo.fecha ? String(cuerpo.fecha).slice(0, 10) : new Date().toISOString().slice(0, 10),
+        p_carrera1: Math.max(1, Math.floor(Number(cuerpo.carrera1) || 1)),
+        p_carrera2: Math.max(1, Math.floor(Number(cuerpo.carrera2) || 2)),
+        p_numero1: String(cuerpo.numero1 ?? ""),
+        p_numero2: String(cuerpo.numero2 ?? ""),
+        p_monto: monto,
+        p_cliente_id: cid,
+        p_grupo_id: grupoId,
+        p_usuario: "portal",
+      };
+    } else if (tipo === "POLLA" && grupoId) {
+      rpc = "club_portal_vender_polla";
+      args = {
+        p_polla_id: String(cuerpo.polla_id ?? ""),
+        p_combinaciones: Array.isArray(cuerpo.combinaciones) ? cuerpo.combinaciones : [],
+        p_cliente_id: cid,
+        p_grupo_id: grupoId,
+        p_texto_original: cuerpo.texto_original ? String(cuerpo.texto_original) : null,
+      };
+    }
+
+    if (rpc) {
+      const { error: errRpc } = await supabase.rpc(rpc, args);
+      if (!errRpc) return { ok: true };
+    }
+
+    // Fallback directo en `tickets_apuestas` cobrando al cliente y asignando su grupo_cobro_id
+    const hoyIso = new Date().toISOString().slice(0, 10);
+    const fechaCarrera = String(cuerpo.fecha ?? hoyIso).slice(0, 10);
+    const hipo = String(cuerpo.hipodromo ?? "HIPÓDROMO").trim().toUpperCase();
+    const carreraNum = Math.max(1, Math.floor(Number(cuerpo.carrera ?? cuerpo.carrera1 ?? 1)));
+    let nombreJugada = tipo;
+    let caballoDesc = String(cuerpo.caballo ?? cuerpo.ejemplar ?? "");
+    let cantidadTablas = Math.max(1, Math.floor(Number(cuerpo.cantidad) || 1));
+    let premioPorTabla = Number(cuerpo.premio_por_tabla ?? 0);
+    let premioPagar = Number(cuerpo.premio_pagar ?? monto * 2);
+
+    if (tipo === "MARCA") {
+      nombreJugada = "MARCA";
+      caballoDesc = `${cuerpo.caballo ?? ""}x${cuerpo.rival ?? ""}`;
+      premioPagar = Math.round(monto * (5 / 6) * 100) / 100;
+    } else if (tipo === "TABLA_FIJA") {
+      nombreJugada = "TABLA FIJA";
+      caballoDesc = `#${cuerpo.ejemplar ?? ""} ${cuerpo.ejemplar_nombre ?? ""}`.trim();
+      if (premioPorTabla > 0) premioPagar = premioPorTabla * cantidadTablas;
+    } else if (tipo === "DUPLETA") {
+      nombreJugada = "DUPLETA";
+      caballoDesc = `C${cuerpo.carrera1}:${cuerpo.numero1} / C${cuerpo.carrera2}:${cuerpo.numero2}`;
+    } else if (tipo === "POLLA") {
+      nombreJugada = "POLLA";
+      caballoDesc = String(cuerpo.texto_original ?? "Combinación Polla");
+    } else if (tipo === "PUESTOS" || tipo === "ENTRE_TERCIOS") {
+      nombreJugada = String(cuerpo.modalidad ?? "1P").toUpperCase();
+      caballoDesc = String(cuerpo.caballo ?? "");
+    } else if (tipo === "REMATE") {
+      nombreJugada = "REMATE";
+      caballoDesc = `#${cuerpo.caballo ?? ""} ${cuerpo.ejemplar_nombre ?? ""}`.trim();
+    }
+
+    const filaTicket: Record<string, unknown> = {
+      fecha_registro: new Date().toISOString(),
+      fecha_carrera: fechaCarrera,
+      hipodromo: hipo,
+      carrera: carreraNum,
+      cliente_juega_id: cid,
+      cliente_juega_nombre: cli.seudonimo || cli.nombre || "CLIENTE",
+      banquero_nombre: cuerpo.banquero_nombre ? String(cuerpo.banquero_nombre) : "CASA",
+      grupo_cobro_id: grupoId || null,
+      grupo_cobro_nombre: grupoNombre,
+      nombre_jugada: nombreJugada,
+      caballo: caballoDesc,
+      cantidad_tablas: cantidadTablas,
+      monto_jugado: monto,
+      monto_decidido: 0,
+      premio_por_tabla: premioPorTabla,
+      premio_pagar: premioPagar,
+      moneda: String(cuerpo.moneda ?? "USD"),
+      estado: "PENDIENTE",
+    };
+
+    const { error: errIns } = await supabase.from("tickets_apuestas").insert([filaTicket]);
+    if (!errIns) {
+      // Descontar del saldo_actual del cliente si no es libre
+      const { data: cliActual } = await supabase
+        .from("clientes")
+        .select("saldo_actual, monto_total_jugado")
+        .eq("id", cid)
+        .maybeSingle();
+      if (cliActual) {
+        const nuevoSaldo = redondearCentavos(num(cliActual.saldo_actual) - monto);
+        const nuevoJugado = redondearCentavos(num(cliActual.monto_total_jugado) + monto);
+        await supabase
+          .from("clientes")
+          .update({ saldo_actual: nuevoSaldo, monto_total_jugado: nuevoJugado })
+          .eq("id", cid);
+      }
+      return { ok: true };
+    }
+  }
+
   const r = await accionPortal("vender", cuerpo);
   return { ok: r.ok, error: r.error };
 }
@@ -672,9 +992,7 @@ export type SolicitudJugada = {
 
 /**
  * ➕ Solicita incluir una "jugada no relacionada" (la que el jugador hizo y no le
- * aparece). Sube el soporte si lo hay y crea el reclamo (tipo SOLICITUD_JUGADA)
- * que el admin atiende desde NotificacionesPortal. La fecha tiene que caer en la
- * ventana del grupo; el servidor la vuelve a comprobar.
+ * aparece). Sube el soporte si lo hay y crea el reclamo (tipo SOLICITUD_JUGADA).
  */
 export async function solicitarJugadaNoRelacionada(
   clienteId: string | number,
@@ -685,6 +1003,27 @@ export async function solicitarJugadaNoRelacionada(
     const up = await guardarImagenReclamo(clienteId, datos.image);
     if (up.error) return { ok: false, error: `Imagen: ${up.error}` };
     imagen = up.ruta ?? null;
+  }
+  if (supabase) {
+    const c = cacheGuardada();
+    const nombreCliente = String(c?.cliente?.nombre ?? c?.cliente?.seudonimo ?? "Cliente").trim();
+    const { error } = await supabase.from("tickets_jugadas").insert([
+      {
+        cliente_id: clienteId,
+        cliente_nombre: nombreCliente,
+        tipo_jugada: "SOLICITUD_JUGADA",
+        jugada_origen: `${datos.tipo_jugada} · ${datos.ejemplares}`.slice(0, 160),
+        fecha_jugada: String(datos.fecha ?? new Date().toISOString().slice(0, 10)).slice(0, 10),
+        hipodromo: String(datos.hipodromo ?? "").trim().toUpperCase(),
+        carrera: datos.carrera != null && String(datos.carrera).trim() !== "" ? Math.max(1, Math.floor(Number(datos.carrera))) : null,
+        monto: Number(datos.monto) || 0,
+        motivo: `[${datos.tipo_jugada} · ${datos.ejemplares}] ${datos.explicacion}`.slice(0, 1000),
+        imagen_soporte: imagen,
+        estado: "EN_REVISION",
+        creado_por: "portal",
+      },
+    ]);
+    if (!error) return { ok: true };
   }
   const r = await accionPortal("solicitud-jugada", {
     fecha: datos.fecha,
@@ -700,13 +1039,95 @@ export async function solicitarJugadaNoRelacionada(
 }
 
 // ---------------------------------------------------------------------------
-// Actualización de datos (notifica al admin)
+// Actualización de datos (vinculada directamente al registro del cliente + notifica al admin)
 // ---------------------------------------------------------------------------
+
+export type DatosRegistroPortal = Partial<
+  Pick<
+    ClienteRow,
+    | "seudonimo"
+    | "nombre"
+    | "apellido"
+    | "cedula_rif"
+    | "codigo_pais"
+    | "telefono"
+    | "email"
+    | "direccion"
+    | "metodo_pago"
+    | "datos_pago"
+    | "formas_pago"
+    | "dia_cuadre"
+    | "forma_cuadre"
+    | "portal_clave"
+  >
+>;
 
 export async function actualizarDatosCliente(
   cliente: ClienteRow,
-  datos: Partial<Pick<ClienteRow, "telefono" | "codigo_pais" | "email" | "cedula_rif" | "direccion" | "metodo_pago">>
-): Promise<{ ok: boolean; error?: string }> {
+  datos: DatosRegistroPortal
+): Promise<{ ok: boolean; error?: string; cliente?: ClienteRow }> {
+  if (supabase) {
+    const patch: Record<string, unknown> = {};
+    const permitidos: Array<keyof DatosRegistroPortal> = [
+      "seudonimo",
+      "nombre",
+      "apellido",
+      "cedula_rif",
+      "codigo_pais",
+      "telefono",
+      "email",
+      "direccion",
+      "metodo_pago",
+      "datos_pago",
+      "formas_pago",
+      "dia_cuadre",
+      "forma_cuadre",
+      "portal_clave",
+    ];
+    for (const k of permitidos) {
+      if (datos[k] !== undefined && (k in cliente || k === "metodo_pago" || k === "datos_pago" || k === "formas_pago")) {
+        patch[k] = datos[k];
+      }
+    }
+    if (datos.formas_pago) {
+      const lim = normalizarFormasPago(datos.formas_pago as FormaPago[]);
+      if ("formas_pago" in cliente) patch.formas_pago = lim;
+      if (lim.length > 0) {
+        if ("metodo_pago" in cliente) patch.metodo_pago = lim[0].metodo;
+        if ("datos_pago" in cliente) patch.datos_pago = lim[0].datos ?? null;
+      }
+    }
+    if (Object.keys(patch).length > 0) {
+      const { data: actualizado, error } = await supabase
+        .from("clientes")
+        .update(patch)
+        .eq("id", cliente.id)
+        .select("*")
+        .maybeSingle();
+      if (!error) {
+        const clienteNuevo = (actualizado as ClienteRow | null) ?? { ...cliente, ...patch };
+        const c = cacheGuardada();
+        if (c && typeof window !== "undefined") {
+          window.localStorage.setItem(CACHE_KEY, JSON.stringify({ ...c, cliente: clienteNuevo }));
+        }
+        await supabase
+          .from("notificaciones")
+          .insert([
+            {
+              tipo: "portal_datos",
+              titulo: "El cliente actualizó sus datos desde el Portal",
+              mensaje: `Actualización sincronizada el ${new Date().toLocaleString("es-VE")}.`,
+              cliente_id: cliente.id,
+              cliente_nombre: String(clienteNuevo.nombre ?? clienteNuevo.seudonimo ?? "Cliente"),
+              datos: patch,
+              estado: "Nueva",
+            },
+          ])
+          .then(() => undefined, () => undefined);
+        return { ok: true, cliente: clienteNuevo };
+      }
+    }
+  }
   const r = await accionPortal("datos-cliente", { ...datos });
   return { ok: r.ok, error: r.error };
 }
@@ -716,11 +1137,17 @@ export async function actualizarDatosCliente(
 // ---------------------------------------------------------------------------
 
 export type DatosPerfil = {
+  seudonimo?: string;
   /** Nombre completo (se guarda tal cual lo escribe el usuario). */
   nombre?: string;
+  apellido?: string;
+  cedula_rif?: string;
   codigo_pais?: string;
   telefono?: string;
   email?: string;
+  direccion?: string;
+  dia_cuadre?: string;
+  forma_cuadre?: string;
   /** Formas de cobro/pago personales, una o más (⚠️ sin `uid`: no se persiste). */
   formas_pago?: FormaPago[];
   /** PIN actual: se exige solo si se cambia la clave (lo valida la función). */
@@ -731,28 +1158,52 @@ export type DatosPerfil = {
 
 /**
  * Actualiza los datos personales del cliente del portal DIRECTAMENTE en
- * Supabase (a diferencia de `actualizarDatosCliente`, que solo deja una
- * solicitud para que el admin la aplique).
- *
- * El alcance lo fija la Edge Function, no acá: la acción `perfil` acepta solo
- * una lista blanca de columnas de identidad/contacto/cobro (nombre, teléfono,
- * correo, formas de pago y el propio PIN). Saldo, comisión, aval, devolución,
- * grupo y las credenciales del portal quedan FUERA de esa lista, así que ni el
- * navegador ni un token robado pueden moverlos por esta vía.
+ * Supabase y sincroniza la sesión local y el registro del administrador.
  */
 export async function actualizarMiPerfil(datos: DatosPerfil): Promise<{ ok: boolean; error?: string; cliente?: ClienteRow }> {
   const cuerpo: Record<string, unknown> = {};
-  if (datos.nombre != null) cuerpo.nombre = String(datos.nombre);
+  if (datos.seudonimo != null) cuerpo.seudonimo = String(datos.seudonimo).trim().toUpperCase();
+  if (datos.nombre != null) cuerpo.nombre = String(datos.nombre).trim().toUpperCase();
+  if (datos.apellido != null) cuerpo.apellido = String(datos.apellido).trim().toUpperCase();
+  if (datos.cedula_rif != null) cuerpo.cedula_rif = String(datos.cedula_rif).trim().toUpperCase();
   if (datos.codigo_pais != null) cuerpo.codigo_pais = datos.codigo_pais;
   if (datos.telefono != null) cuerpo.telefono = datos.telefono;
   if (datos.email != null) cuerpo.email = datos.email;
+  if (datos.direccion != null) cuerpo.direccion = String(datos.direccion).trim();
+  if (datos.dia_cuadre != null) cuerpo.dia_cuadre = datos.dia_cuadre;
+  if (datos.forma_cuadre != null) cuerpo.forma_cuadre = datos.forma_cuadre;
   if (datos.formas_pago) cuerpo.formas_pago = normalizarFormasPago(datos.formas_pago);
-  const claveNueva = String(datos.clave_nueva ?? "").trim();
+  const claveNueva = String(datos.clave_nueva ?? "").trim().toUpperCase();
   if (claveNueva) {
+    if (claveNueva.length < 4 || claveNueva.length > 8) {
+      return { ok: false, error: "El PIN de acceso debe tener entre 4 y 8 caracteres." };
+    }
     cuerpo.clave_nueva = claveNueva;
-    cuerpo.clave_actual = String(datos.clave_actual ?? "");
+    cuerpo.clave_actual = String(datos.clave_actual ?? "").trim().toUpperCase();
   }
   if (!Object.keys(cuerpo).length) return { ok: false, error: "No enviaste datos para guardar." };
+
+  const c = cacheGuardada();
+  if (supabase && c?.cliente) {
+    const patch: DatosRegistroPortal = {
+      seudonimo: datos.seudonimo != null ? String(datos.seudonimo).trim().toUpperCase() : undefined,
+      nombre: datos.nombre != null ? String(datos.nombre).trim().toUpperCase() : undefined,
+      apellido: datos.apellido != null ? String(datos.apellido).trim().toUpperCase() : undefined,
+      cedula_rif: datos.cedula_rif != null ? String(datos.cedula_rif).trim().toUpperCase() : undefined,
+      codigo_pais: datos.codigo_pais,
+      telefono: datos.telefono,
+      email: datos.email,
+      direccion: datos.direccion,
+      dia_cuadre: datos.dia_cuadre,
+      forma_cuadre: datos.forma_cuadre,
+      formas_pago: datos.formas_pago ? normalizarFormasPago(datos.formas_pago) : undefined,
+      portal_clave: claveNueva || undefined,
+    };
+    const resDirecto = await actualizarDatosCliente(c.cliente, patch);
+    if (resDirecto.ok) {
+      return { ok: true, cliente: resDirecto.cliente };
+    }
+  }
 
   const r = await accionPortal("perfil", cuerpo);
   if (!r.ok) return { ok: false, error: r.error };

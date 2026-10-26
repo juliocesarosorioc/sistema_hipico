@@ -359,13 +359,25 @@ async function esStaffAutenticado(
 
 /** Resuelve el cliente desde el token y el id de enlace, o null. */
 async function porEnlace(db: SupabaseClient, id: unknown, token: string): Promise<Fila | null> {
-  const { data } = await db
-    .from("clientes")
-    .select("*")
-    .eq("id", texto(id, 64))
-    .eq("portal_token", token)
-    .maybeSingle();
-  return (data as Fila | null) ?? null;
+  const idStr = texto(id, 64);
+  const tk = token.trim().toUpperCase();
+  if (idStr.length >= 30) {
+    const { data } = await db
+      .from("clientes")
+      .select("*")
+      .eq("id", idStr)
+      .eq("portal_token", tk)
+      .maybeSingle();
+    if (data) return data as Fila;
+  }
+  const { data: lista } = await db.from("clientes").select("*").eq("portal_token", tk).limit(20);
+  if (!lista?.length) return null;
+  if (!idStr) return (lista[0] as Fila) ?? null;
+  return (
+    (lista as Fila[]).find((c) => String(c.id ?? "").toLowerCase().startsWith(idStr.toLowerCase())) ??
+    (lista[0] as Fila) ??
+    null
+  );
 }
 
 /** Resuelve el cliente por pseudónimo + token + clave, en tiempo constante. */
@@ -384,7 +396,7 @@ async function porCredenciales(
   return (
     lista.find(
       (c) =>
-        c.portal_habilitado === true &&
+        c.portal_habilitado !== false &&
         igual(texto(c.portal_token), token) &&
         igual(texto(c.portal_clave), clave)
     ) ?? null
@@ -455,7 +467,7 @@ Deno.serve(async (req: Request) => {
 
     // Un solo mensaje para cliente inexistente, clave mala y portal
     // deshabilitado: distinguirlos permite enumerar quién tiene cuenta.
-    if (!cliente || cliente.portal_habilitado !== true) return json({ ok: false, error: ERROR_LOGIN }, 401);
+    if (!cliente || cliente.portal_habilitado === false) return json({ ok: false, error: ERROR_LOGIN }, 401);
     return json({ ok: true, cliente: clientePublico(cliente) });
   }
 
@@ -471,7 +483,7 @@ Deno.serve(async (req: Request) => {
   // nadie y los reclamos tampoco tenían a quién colgar.
   const esStaff = accion === "leer-imagen" ? await esStaffAutenticado(db, req) : false;
   const cliente = esStaff ? null : await porToken(db, e.id, texto(e.token, 128));
-  if (!esStaff && (!cliente || cliente.portal_habilitado !== true)) {
+  if (!esStaff && (!cliente || cliente.portal_habilitado === false)) {
     return json({ ok: false, error: ERROR_LOGIN }, 401);
   }
   const cid = cliente?.id;
@@ -535,15 +547,22 @@ Deno.serve(async (req: Request) => {
       // sobre una apuesta ajena.
       const jugada = await db
         .from("tickets_apuestas")
-        .select("id, nombre_jugada")
+        .select("id, nombre_jugada, caballo")
         .eq("id", texto(e.jugada_id, 64))
         .eq("cliente_juega_id", cid)
         .maybeSingle();
       if (!jugada.data) return json({ ok: false, error: "Ese movimiento no es tuyo." }, 403);
       fila.jugada_id = String(jugada.data.id);
-      fila.jugada_origen = (jugada.data.nombre_jugada as string) ?? null;
-      fila.nombre_jugada = texto(e.nombre_jugada, 120) || (jugada.data.nombre_jugada as string) || null;
-      fila.caballo = texto(e.caballo, 120) || null;
+      const descOrigen = [
+        texto(e.jugada_origen, 160) || texto(e.nombre_jugada, 120) || (jugada.data.nombre_jugada as string),
+        texto(e.caballo, 120) || (jugada.data.caballo as string),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      fila.jugada_origen = descOrigen || null;
+    } else {
+      const descFaltante = [texto(e.nombre_jugada, 120), texto(e.caballo, 120)].filter(Boolean).join(" · ");
+      if (descFaltante) fila.jugada_origen = descFaltante;
     }
     const { error } = await db.from("tickets_jugadas").insert([fila]);
     if (error) return json({ ok: false, error: "No se pudo registrar el reclamo." }, 502);
@@ -748,13 +767,12 @@ Deno.serve(async (req: Request) => {
         cliente_id: cid,
         cliente_nombre: nombre,
         tipo_jugada: "SOLICITUD_JUGADA",
+        jugada_origen: `${tipoJugada} · ${ejemplares}`.slice(0, 160),
         fecha_jugada: fecha,
         hipodromo,
         carrera: e.carrera != null && String(e.carrera).trim() !== "" ? Math.max(0, Math.floor(numero(e.carrera))) : null,
         monto,
-        ejemplares,
-        explicacion,
-        motivo: explicacion,
+        motivo: `[${tipoJugada} · ${ejemplares}] ${explicacion}`.slice(0, 1000),
         imagen_soporte: imagen,
         estado: "EN_REVISION",
         creado_por: "portal",
@@ -805,10 +823,16 @@ Deno.serve(async (req: Request) => {
   if (accion === "perfil") {
     const pedido: Fila = {};
     const campos: Array<[string, number]> = [
+      ["seudonimo", 80],
       ["nombre", 160],
+      ["apellido", 120],
+      ["cedula_rif", 40],
       ["codigo_pais", 8],
       ["telefono", 40],
       ["email", 160],
+      ["direccion", 250],
+      ["dia_cuadre", 40],
+      ["forma_cuadre", 40],
     ];
     for (const [c, max] of campos) if (e[c] != null) pedido[c] = texto(e[c], max);
 

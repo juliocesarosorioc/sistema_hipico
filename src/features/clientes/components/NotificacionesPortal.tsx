@@ -20,6 +20,7 @@ import {
 } from "@/features/clientes/lib/clientes";
   import { formatoMoneda } from "@/shared/lib/vzla";
 import { resolverImagenReclamo } from "@/features/portal/lib/portal";
+import { PanelBloqueoJugadasAdmin } from "@/features/portal/components/PanelBloqueoJugadasAdmin";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 
@@ -128,6 +129,8 @@ export function NotificacionesPortal() {
 
   return (
     <div className="space-y-3">
+      <PanelBloqueoJugadasAdmin />
+
       <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 w-fit">
         {(
           [

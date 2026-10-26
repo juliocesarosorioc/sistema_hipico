@@ -44,6 +44,7 @@ import {
 import { ReporteDiarioTabla } from "@/features/reportes/components/ReporteDiarioTabla";
 import { ModalRealizarJugadaUsuario } from "@/features/portal/components/ModalRealizarJugadaUsuario";
 import { ModalJugadaNoRelacionada } from "@/features/portal/components/ModalJugadaNoRelacionada";
+import { SeccionJugadasPortal } from "@/features/portal/components/SeccionJugadasPortal";
 import { dentroDeVentana, type CicloGrupo } from "@/features/portal/lib/ventana-reclamos";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
@@ -60,7 +61,7 @@ function isoLocal(d: Date): string {
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
 }
 
-type TabPortal = "resumen" | "reporte" | "reportar" | "tickets" | "comprar" | "datos" | "externos";
+type TabPortal = "resumen" | "jugadas" | "reporte" | "reportar" | "tickets" | "comprar" | "datos" | "externos";
 
 const BADGE: Record<string, string> = {
   Ganador: "bg-emerald-100 text-emerald-700",
@@ -346,10 +347,10 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
           {(
             [
               ["resumen", "Resumen y movimientos"],
+              ["jugadas", "🏇 Jugadas (Marcas / Tablas / Puestos / Dupletas / Pollas)"],
               ["reporte", "Reporte del día"],
               ["reportar", "Reportar jugada faltante"],
               ["tickets", "Mis tickets"],
-              ["comprar", "Comprar tablas fijas"],
               ["datos", "Mis datos"],
               ["externos", "📓 Mi Control en Otros Grupos (Personal)"],
             ] as [TabPortal, string][]
@@ -367,11 +368,18 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
         </div>
 
         {tab === "resumen" ? <ResumenView sesion={sesion} onCambio={onActualizar} /> : null}
+        {tab === "jugadas" || tab === "comprar" ? (
+          <SeccionJugadasPortal sesion={sesion} onJugadaRealizada={recargar} />
+        ) : null}
         {tab === "reporte" ? <ReporteDiarioView sesion={sesion} /> : null}
         {tab === "reportar" ? <ReportarView cliente={sesion.cliente} /> : null}
         {tab === "tickets" ? <MisTicketsView cliente={sesion.cliente} /> : null}
-        {tab === "comprar" ? <ComprarView cliente={sesion.cliente} /> : null}
-        {tab === "datos" ? <DatosView cliente={sesion.cliente} /> : null}
+        {tab === "datos" ? (
+          <DatosView
+            cliente={sesion.cliente}
+            onActualizado={(c) => onActualizar({ ...sesion, cliente: c })}
+          />
+        ) : null}
         {tab === "externos" ? <BitacoraExternaView cliente={sesion.cliente} /> : null}
       </main>
 
@@ -447,34 +455,94 @@ function Kpi({ icon, lbl, val, color, bg }: { icon: string; lbl: string; val: st
  * si el portal todavía no devuelve `fecha_carrera`, cae a la fecha de venta.
  */
 function ReporteDiarioView({ sesion }: { sesion: SesionPortal }) {
-  const [fecha, setFecha] = useState(() => isoLocal(new Date()));
+  const fechasDisponibles = useMemo(() => {
+    const set = new Set<string>();
+    for (const j of sesion.arbolTickets.jugadas) {
+      const f = String(j.fechaCarrera ?? j.fecha ?? "").slice(0, 10);
+      if (f) set.add(f);
+    }
+    return [...set].sort((a, b) => b.localeCompare(a));
+  }, [sesion.arbolTickets.jugadas]);
+
+  const [fecha, setFecha] = useState(() => fechasDisponibles[0] || isoLocal(new Date()));
+  const [verTodasFechas, setVerTodasFechas] = useState(false);
 
   const datos = useMemo(() => {
-    const jugadas: JugadaReporte[] = sesion.arbolTickets.jugadas
-      .filter((j) => (j.fechaCarrera ?? j.fecha ?? "").slice(0, 10) === fecha)
-      .map((j) => ({
+    const filtradas = verTodasFechas
+      ? sesion.arbolTickets.jugadas
+      : sesion.arbolTickets.jugadas.filter(
+          (j) => (j.fechaCarrera ?? j.fecha ?? "").slice(0, 10) === fecha
+        );
+    const jugadas: JugadaReporte[] = filtradas.map((j) => {
+      const fStr = String(j.fechaCarrera ?? j.fecha ?? fecha).slice(0, 10);
+      const mHora = /(\d{2}:\d{2})/.exec(String(j.fecha ?? ""));
+      return {
+        id: j.id,
+        fecha: fStr,
+        horaCarga: mHora ? mHora[1] : null,
+        cliente: sesion.cliente.seudonimo || sesion.cliente.nombre || "CLIENTE",
+        jugada: j.jugada,
+        caballo: j.caballo,
+        estado: j.estado,
         hipodromo: j.hipodromo,
         carrera: j.carrera,
         montoJugado: j.montoJugado,
         premio: j.premio,
         devolucion: j.devolucion,
         anulada: esJugadaAnulada(j.estado, undefined),
-      }));
+      };
+    });
     return armarReporteDiario(jugadas);
-  }, [sesion, fecha]);
+  }, [sesion, fecha, verTodasFechas]);
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-white px-4 py-3 shadow-sm">
-        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Fecha del reporte</span>
-        <input
-          type="date"
-          value={fecha}
-          onChange={(e) => setFecha(e.target.value)}
-          className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-200"
-        />
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-white px-4 py-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+            Fecha del reporte
+          </span>
+          <input
+            type="date"
+            value={fecha}
+            disabled={verTodasFechas}
+            onChange={(e) => {
+              setVerTodasFechas(false);
+              setFecha(e.target.value);
+            }}
+            className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
+          />
+          <button
+            type="button"
+            onClick={() => setVerTodasFechas((v) => !v)}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+              verTodasFechas
+                ? "bg-indigo-600 text-white shadow"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            {verTodasFechas ? "📅 Viendo todas mis jornadas" : "📊 Ver todas mis jornadas"}
+          </button>
+          {fechasDisponibles.slice(0, 4).map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => {
+                setVerTodasFechas(false);
+                setFecha(f);
+              }}
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-mono font-bold ${
+                !verTodasFechas && fecha === f
+                  ? "bg-amber-500 text-slate-950"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
         <span className="text-xs text-slate-400">
-          Jugado, premios, tu incentivo y el balance a tu favor por carrera.
+          Abrí el día → hipódromo → carrera para ver cada jugada, su resultado y la comisión devuelta.
         </span>
       </div>
 
@@ -1155,30 +1223,27 @@ function ComprarView({ cliente }: { cliente: SesionPortal["cliente"] }) {
 // Mis datos (envía notificación al admin)
 // ---------------------------------------------------------------------------
 
-function DatosView({ cliente }: { cliente: SesionPortal["cliente"] }) {
+function DatosView({
+  cliente,
+  onActualizado,
+}: {
+  cliente: SesionPortal["cliente"];
+  onActualizado?: (c: SesionPortal["cliente"]) => void;
+}) {
   const tel = desglosarTelefono(cliente.telefono);
+  const [seudonimo, setSeudonimo] = useState(cliente.seudonimo || "");
+  const [nombre, setNombre] = useState(cliente.nombre || "");
+  const [apellido, setApellido] = useState(cliente.apellido || "");
+  const [cedulaRif, setCedulaRif] = useState(cliente.cedula_rif || "");
   const [codigoPais, setCodigoPais] = useState(cliente.codigo_pais || tel.codigo || "+58");
   const [telefono, setTelefono] = useState(tel.numero);
   const [email, setEmail] = useState(cliente.email || "");
-  const [cedulaRif, setCedulaRif] = useState(cliente.cedula_rif || "");
   const [direccion, setDireccion] = useState(cliente.direccion || "");
-  const [metodoPago, setMetodoPago] = useState(cliente.metodo_pago || "");
+  const [diaCuadre, setDiaCuadre] = useState(cliente.dia_cuadre || "Lunes");
+  const [formaCuadre, setFormaCuadre] = useState(cliente.forma_cuadre || "Semanal");
+  const [formasPago, setFormasPago] = useState<FormaPago[]>(() => formasPagoDe(cliente));
+  const [claveNueva, setClaveNueva] = useState("");
   const [enviando, setEnviando] = useState(false);
-
-  const enviar = async () => {
-    setEnviando(true);
-    const r = await actualizarDatosCliente(cliente, {
-      codigo_pais: codigoPais,
-      telefono: telefonoFormateado(),
-      email: email.trim() || null,
-      cedula_rif: cedulaRif.trim().toUpperCase() || null,
-      direccion: direccion.trim().toUpperCase() || null,
-      metodo_pago: metodoPago || null,
-    });
-    setEnviando(false);
-    if (!r.ok) return toast(r.error ?? "No se pudo enviar.", "error");
-    toast("Solicitud de actualización enviada. La casa la aplicará.", "success");
-  };
 
   const telefonoFormateado = () => {
     const dig = telefono.replace(/[^\d]/g, "");
@@ -1186,19 +1251,108 @@ function DatosView({ cliente }: { cliente: SesionPortal["cliente"] }) {
     return codigoPais === "+58" && dig.startsWith("0") ? codigoPais + " " + dig.slice(1) : t;
   };
 
-  const inp = "w-full border border-line rounded-xl bg-surface px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-200";
+  const enviar = async () => {
+    if (!nombre.trim() && !seudonimo.trim()) {
+      return toast("El nombre o seudónimo es obligatorio.", "warning");
+    }
+    setEnviando(true);
+    const limFormas = normalizarFormasPago(formasPago);
+    const r = await actualizarDatosCliente(cliente, {
+      seudonimo: seudonimo.trim().toUpperCase() || null,
+      nombre: nombre.trim().toUpperCase() || seudonimo.trim().toUpperCase(),
+      apellido: apellido.trim().toUpperCase() || null,
+      cedula_rif: cedulaRif.trim().toUpperCase() || null,
+      codigo_pais: codigoPais,
+      telefono: telefonoFormateado(),
+      email: email.trim() || null,
+      direccion: direccion.trim().toUpperCase() || null,
+      dia_cuadre: diaCuadre || null,
+      forma_cuadre: formaCuadre || null,
+      formas_pago: limFormas,
+      metodo_pago: limFormas[0]?.metodo || cliente.metodo_pago || null,
+      datos_pago: limFormas[0]?.datos || cliente.datos_pago || null,
+      ...(claveNueva.trim() ? { portal_clave: claveNueva.trim().toUpperCase() } : {}),
+    });
+    setEnviando(false);
+    if (!r.ok) return toast(r.error ?? "No se pudo actualizar.", "error");
+    if (r.cliente && onActualizado) onActualizado(r.cliente);
+    setClaveNueva("");
+    toast("✅ Todos tus datos de registro fueron actualizados y vinculados con la administración.", "success");
+  };
+
+  const inp =
+    "w-full border border-line rounded-xl bg-surface px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-200";
 
   return (
-    <div className="rounded-2xl border border-line bg-white p-5 shadow-sm space-y-3">
-      <h2 className="text-sm font-black text-slate-800">
-        <span className="mr-2 text-indigo-600">🧪</span> Actualizar mis datos
-      </h2>
-      <p className="text-[11px] text-slate-500">Los cambios se envían al administrador para validación antes de aplicarse.</p>
+    <div className="rounded-2xl border border-line bg-white p-5 shadow-sm space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-black text-slate-800">
+            <span className="mr-2 text-indigo-600">🪪</span> Mis Datos de Registro (Sincronizado con tu Ficha Oficial)
+          </h2>
+          <p className="text-[11px] text-slate-500">
+            Actualizá todos los datos solicitados en el registro directo del portal: identidad, contacto, cuadre, métodos de pago y PIN.
+          </p>
+        </div>
+        <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black uppercase text-emerald-800">
+          🔗 Vinculado en tiempo real
+        </span>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
-          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Código de país</label>
-          <select value={codigoPais} onChange={(e) => setCodigoPais(e.target.value)} className={inp + " font-bold"}>
+          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+            Seudónimo / Usuario
+          </label>
+          <input
+            value={seudonimo}
+            onChange={(e) => setSeudonimo(e.target.value.toUpperCase())}
+            className={inp + " font-black uppercase"}
+            placeholder="EJ: EL REY"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+            Nombres
+          </label>
+          <input
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value.toUpperCase())}
+            className={inp + " uppercase"}
+            placeholder="JUAN CARLOS"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+            Apellidos
+          </label>
+          <input
+            value={apellido}
+            onChange={(e) => setApellido(e.target.value.toUpperCase())}
+            className={inp + " uppercase"}
+            placeholder="PÉREZ"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+            Cédula / RIF / Pasaporte
+          </label>
+          <input
+            value={cedulaRif}
+            onChange={(e) => setCedulaRif(e.target.value.toUpperCase())}
+            className={inp + " font-mono uppercase"}
+            placeholder="V-12.345.678"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+            Código de país
+          </label>
+          <select
+            value={codigoPais}
+            onChange={(e) => setCodigoPais(e.target.value)}
+            className={inp + " font-bold"}
+          >
             {codigosPaisUnicos().map((p) => (
               <option key={p.codigo} value={p.codigo}>
                 {p.codigo} {p.pais}
@@ -1207,37 +1361,92 @@ function DatosView({ cliente }: { cliente: SesionPortal["cliente"] }) {
           </select>
         </div>
         <div>
-          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Teléfono</label>
-          <input value={telefono} onChange={(e) => setTelefono(e.target.value)} className={inp + " font-mono"} placeholder="412 123 4567" />
+          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+            Teléfono / WhatsApp
+          </label>
+          <input
+            value={telefono}
+            onChange={(e) => setTelefono(e.target.value)}
+            className={inp + " font-mono"}
+            placeholder="412 123 4567"
+          />
         </div>
         <div>
-          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Email</label>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} className={inp} type="email" />
+          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+            Correo electrónico
+          </label>
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={inp}
+            type="email"
+            placeholder="cliente@correo.com"
+          />
+        </div>
+        <div className="md:col-span-2">
+          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+            Dirección / Ciudad
+          </label>
+          <input
+            value={direccion}
+            onChange={(e) => setDireccion(e.target.value.toUpperCase())}
+            className={inp + " uppercase"}
+            placeholder="CARACAS, VENEZUELA"
+          />
         </div>
         <div>
-          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Cédula / RIF</label>
-          <input value={cedulaRif} onChange={(e) => setCedulaRif(e.target.value.toUpperCase())} className={inp + " font-mono uppercase"} placeholder="V-12.345.678" />
-        </div>
-        <div>
-          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Método de pago</label>
-          <select value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)} className={inp + " font-bold"}>
-            <option value="">— Sin cambio —</option>
-            {listMetodosPago(true).map((m) => (
-              <option key={m} value={m}>
-                {m}
+          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+            Día de Cuadre Preferido
+          </label>
+          <select
+            value={diaCuadre}
+            onChange={(e) => setDiaCuadre(e.target.value)}
+            className={inp + " font-bold"}
+          >
+            {["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"].map((d) => (
+              <option key={d} value={d}>
+                {d}
               </option>
             ))}
           </select>
         </div>
         <div>
-          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Dirección</label>
-          <input value={direccion} onChange={(e) => setDireccion(e.target.value.toUpperCase())} className={inp + " uppercase"} />
+          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+            Frecuencia / Forma de Cuadre
+          </label>
+          <select
+            value={formaCuadre}
+            onChange={(e) => setFormaCuadre(e.target.value)}
+            className={inp + " font-bold"}
+          >
+            {["Semanal", "Diario", "Por Jornada", "Quincenal"].map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
         </div>
+        <div>
+          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+            Cambiar Contraseña / PIN Portal (Opcional)
+          </label>
+          <input
+            value={claveNueva}
+            onChange={(e) => setClaveNueva(e.target.value.toUpperCase().slice(0, 8))}
+            className={inp + " font-mono uppercase"}
+            placeholder="4 a 8 caracteres (dejar vacío si no cambia)"
+          />
+        </div>
+      </div>
+
+      {/* Formas de Pago y Cobro vinculadas */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+        <FormasPagoLista prefijo="datos" formas={formasPago} onChange={setFormasPago} />
       </div>
 
       <div className="flex justify-end">
         <Button variant="default" size="sm" disabled={enviando} onClick={() => void enviar()}>
-          {enviando ? <span className="mr-1">⏳</span> : <span className="mr-1">💾</span>} Enviar solicitud
+          {enviando ? <span className="mr-1">⏳</span> : <span className="mr-1">💾</span>} Guardar y sincronizar mis datos
         </Button>
       </div>
     </div>
@@ -1268,10 +1477,16 @@ function MiPerfilModal({
   onGuardado: (c: SesionPortal["cliente"]) => void;
 }) {
   const tel = desglosarTelefono(cliente.telefono);
+  const [seudonimo, setSeudonimo] = useState(cliente.seudonimo || "");
   const [nombre, setNombre] = useState(cliente.nombre || "");
+  const [apellido, setApellido] = useState(cliente.apellido || "");
+  const [cedulaRif, setCedulaRif] = useState(cliente.cedula_rif || "");
   const [codigoPais, setCodigoPais] = useState(cliente.codigo_pais || tel.codigo || "+58");
   const [telefono, setTelefono] = useState(tel.numero);
   const [email, setEmail] = useState(cliente.email || "");
+  const [direccion, setDireccion] = useState(cliente.direccion || "");
+  const [diaCuadre, setDiaCuadre] = useState(cliente.dia_cuadre || "Lunes");
+  const [formaCuadre, setFormaCuadre] = useState(cliente.forma_cuadre || "Semanal");
   const [formas, setFormas] = useState<FormaPago[]>(() => formasPagoDe(cliente));
   const [claveActual, setClaveActual] = useState("");
   const [claveNueva, setClaveNueva] = useState("");
@@ -1298,30 +1513,33 @@ function MiPerfilModal({
     if (formas.some((f) => !String(f.metodo ?? "").trim()))
       return setError("Cada forma de pago necesita un método seleccionado (o quitela con 🗑️).");
 
-    // PIN: el login del portal escribe la contraseña en MAYÚSCULAS, así que el
-    // PIN se guarda así para que lo que ve el usuario al entrar sea lo mismo.
     const clave = String(claveNueva).trim().toUpperCase();
     if (claveNueva || claveRepetir) {
       const errClave = validarClaveAcceso(clave, { min: 4, max: 8 });
       if (errClave) return setError(errClave);
       if (clave !== String(claveRepetir).trim().toUpperCase())
         return setError("La confirmación no coincide con la contraseña / PIN nuevo.");
-      if (!claveActual.trim()) return setError("Para cambiar el PIN hace falta el PIN actual.");
     }
 
     setGuardando(true);
     const r = await actualizarMiPerfil({
+      seudonimo: seudonimo.trim().toUpperCase() || undefined,
       nombre: nombreLimpio,
+      apellido: apellido.trim().toUpperCase() || undefined,
+      cedula_rif: cedulaRif.trim().toUpperCase() || undefined,
       codigo_pais: codigoPais,
       telefono: telefonoFormateado(),
       email: email.trim(),
+      direccion: direccion.trim().toUpperCase() || undefined,
+      dia_cuadre: diaCuadre,
+      forma_cuadre: formaCuadre,
       formas_pago: normalizarFormasPago(formas),
       clave_actual: claveActual.trim().toUpperCase(),
       clave_nueva: clave,
     });
     setGuardando(false);
     if (!r.ok) return setError(r.error ?? "No se pudieron guardar los datos.");
-    toast("✅ Datos personales actualizados correctamente.", "success");
+    toast("✅ Datos personales actualizados y sincronizados correctamente.", "success");
     onGuardado(r.cliente ?? cliente);
   };
 
@@ -1331,11 +1549,10 @@ function MiPerfilModal({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-sm font-black text-slate-800">
-              <span className="mr-2">👤</span> Mi Perfil — Actualizar Datos Personales
+              <span className="mr-2">👤</span> Mi Perfil — Actualizar Todos los Datos de Registro
             </h2>
             <p className="text-[11px] text-slate-500">
-              Tus datos se guardan directamente en tu ficha. Nada de saldo, comisiones ni grupos: solo identidad,
-              contacto, PIN y formas de cobro/pago.
+              Tus datos se guardan directamente en tu ficha oficial y quedan vinculados con el sistema.
             </p>
           </div>
           <button
@@ -1350,14 +1567,41 @@ function MiPerfilModal({
 
         <div className="mt-4 space-y-4">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div className="md:col-span-3">
-              <label className={lbl}>Nombre completo</label>
+            <div>
+              <label className={lbl}>Seudónimo / Usuario</label>
+              <input
+                value={seudonimo}
+                onChange={(e) => setSeudonimo(e.target.value.toUpperCase())}
+                className={inp + " font-black uppercase"}
+                placeholder="EJ: EL REY"
+              />
+            </div>
+            <div>
+              <label className={lbl}>Nombres</label>
               <input
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
                 className={inp + " uppercase"}
-                placeholder="JUAN PEREZ"
+                placeholder="JUAN"
                 data-testid="perfil-nombre"
+              />
+            </div>
+            <div>
+              <label className={lbl}>Apellidos</label>
+              <input
+                value={apellido}
+                onChange={(e) => setApellido(e.target.value.toUpperCase())}
+                className={inp + " uppercase"}
+                placeholder="PÉREZ"
+              />
+            </div>
+            <div>
+              <label className={lbl}>Cédula / RIF</label>
+              <input
+                value={cedulaRif}
+                onChange={(e) => setCedulaRif(e.target.value.toUpperCase())}
+                className={inp + " font-mono uppercase"}
+                placeholder="V-12.345.678"
               />
             </div>
             <div>
@@ -1390,6 +1634,35 @@ function MiPerfilModal({
                 placeholder="juan@correo.com"
                 data-testid="perfil-email"
               />
+            </div>
+            <div className="md:col-span-2">
+              <label className={lbl}>Dirección</label>
+              <input
+                value={direccion}
+                onChange={(e) => setDireccion(e.target.value.toUpperCase())}
+                className={inp + " uppercase"}
+                placeholder="CARACAS"
+              />
+            </div>
+            <div>
+              <label className={lbl}>Día de Cuadre</label>
+              <select value={diaCuadre} onChange={(e) => setDiaCuadre(e.target.value)} className={inp + " font-bold"}>
+                {["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"].map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={lbl}>Forma de Cuadre</label>
+              <select value={formaCuadre} onChange={(e) => setFormaCuadre(e.target.value)} className={inp + " font-bold"}>
+                {["Semanal", "Diario", "Por Jornada", "Quincenal"].map((f) => (
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

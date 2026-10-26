@@ -14,6 +14,7 @@ import {
 } from "@/features/liquidacion/lib/reportes";
 import {
   categoriaJugadaAdelantada,
+  colorDiscoNumero,
   esJugadaAdelantadaReporte,
 } from "@/features/liquidacion/lib/reporte-carrera";
 import { etiquetaDia } from "@/features/liquidacion/lib/semana";
@@ -846,12 +847,28 @@ export function ReporteModule() {
                                 key={carrera.numero}
                                 className="mt-1.5 rounded border border-gray-300 overflow-hidden shadow-sm"
                               >
-                                <div className="bg-blue-50 border-b border-gray-300 px-2 py-1.5 flex justify-between items-center text-gray-800">
-                                  <div className="font-bold">
-                                    Carrera {carrera.numero}
-                                    {carrera.pizarra && (
-                                      <span className="ml-2 font-mono text-xs text-gray-500">
-                                        Pizarra: <b className="text-black">{carrera.pizarra}</b>
+                                <div className="bg-blue-50 border-b border-gray-300 px-2.5 py-1.5 flex flex-wrap justify-between items-center gap-2 text-gray-800">
+                                  <div className="flex flex-wrap items-center gap-2.5 font-bold">
+                                    <span>🏁 Carrera {carrera.numero}</span>
+                                    {carrera.pizarra ? (
+                                      <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 text-[10px] font-black text-slate-700 border border-blue-200 shadow-sm">
+                                        <span className="text-slate-400 uppercase mr-0.5">Pizarra:</span>
+                                        {carrera.pizarra
+                                          .split(/\s*·\s*/)
+                                          .filter(Boolean)
+                                          .map((num, idx) => (
+                                            <span
+                                              key={idx}
+                                              className={`inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-black shadow-sm border ${colorDiscoNumero(num)}`}
+                                              title={`${idx + 1}º lugar: #${num}`}
+                                            >
+                                              {num}
+                                            </span>
+                                          ))}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200">
+                                        ⏳ Pizarra pendiente
                                       </span>
                                     )}
                                   </div>
@@ -860,6 +877,7 @@ export function ReporteModule() {
                                 <table className="w-full text-left border-collapse">
                                   <thead>
                                     <tr className="border-b border-gray-200 bg-gray-50 text-gray-600 text-[11px] uppercase">
+                                      <th className="py-0.5 px-2 w-16">Hora</th>
                                       <th className="py-0.5 px-2 w-24">Rol</th>
                                       <th className="py-0.5 px-2">Jugada</th>
                                       <th className="py-0.5 px-2 w-20 text-center">Caballo</th>
@@ -876,6 +894,9 @@ export function ReporteModule() {
                                           f.rol === "CRUCE" ? "bg-amber-50" : ""
                                         }`}
                                       >
+                                        <td className="py-0.5 px-2 font-mono text-[10px] font-bold text-slate-500 whitespace-nowrap">
+                                          {f.horaCarga ? `🕒 ${f.horaCarga}` : "—"}
+                                        </td>
                                         <td className="py-0.5 px-2">
                                           {f.rol === "CRUCE" ? (
                                             <span className="bg-amber-500 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded-full">

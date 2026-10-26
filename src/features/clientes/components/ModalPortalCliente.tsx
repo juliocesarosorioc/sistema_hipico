@@ -38,19 +38,35 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
 
   useEffect(() => {
     if (!cliente) return;
-    setHabilitado(Boolean(cliente.portal_habilitado));
-    setToken(cliente.portal_token || generarCodigo(6));
-    setClavePortal(cliente.portal_clave || generarCodigo(4));
-    setMsgRecibido(cliente.portal_habilitado ? "El cliente ya tiene acceso; puede regenerar el código y la contraseña." : "");
+    const habInicial = cliente.portal_habilitado !== false;
+    const tkInicial = cliente.portal_token || generarCodigo(6);
+    const clInicial = cliente.portal_clave || generarCodigo(4);
+    setHabilitado(habInicial);
+    setToken(tkInicial);
+    setClavePortal(clInicial);
+    setMsgRecibido(
+      cliente.portal_habilitado
+        ? "El cliente ya tiene acceso activo; puede copiar el enlace o regenerar las credenciales."
+        : "Se han generado credenciales listas para compartir. Presione Guardar o Enviar por WhatsApp."
+    );
+    // Si el cliente aún no tenía credenciales persistidas en BD, las sincronizamos automáticamente
+    if (!cliente.portal_token || !cliente.portal_clave || cliente.portal_habilitado == null) {
+      guardarPortal(
+        cliente.id,
+        { portal_habilitado: habInicial, portal_token: tkInicial, portal_clave: clInicial },
+        cliente
+      ).catch(() => undefined);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cliente?.id]);
 
   useEffect(() => {
     if (!cliente) return;
-    setLinkLargo(enlacePortalLargo(cliente.id, token));
+    const largo = enlacePortalLargo(cliente.id, token);
+    setLinkLargo(largo);
     setLinkCorto("Generando enlace corto...");
     let vivo = true;
-    acortarEnlace(enlacePortalLargo(cliente.id, token)).then((corto) => {
+    acortarEnlace(largo, cliente.id, token).then((corto) => {
       if (vivo) setLinkCorto(corto);
     });
     return () => {
@@ -63,6 +79,29 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
   const copiar = (texto: string) => {
     if (navigator.clipboard?.writeText) navigator.clipboard.writeText(texto).catch(() => undefined);
     toast("Enlace copiado al portapapeles.", "success");
+  };
+
+  const enviarWhatsApp = async () => {
+    await guardarPortal(
+      cliente.id,
+      { portal_habilitado: true, portal_token: token, portal_clave: clavePortal },
+      cliente
+    ).catch(() => undefined);
+    limpiarCacheClientes();
+    const enlaceFinal = linkCorto && linkCorto.startsWith("http") ? linkCorto : linkLargo;
+    const usuarioTxt = cliente.seudonimo || cliente.nombre || "";
+    const mensaje = [
+      `🏇 *Acceso a tu Portal de Cliente*`,
+      `👤 *Usuario:* ${usuarioTxt}`,
+      `🔑 *Código:* ${token}`,
+      `🔒 *Contraseña:* ${clavePortal}`,
+      `🔗 *Enlace directo:* ${enlaceFinal}`,
+    ].join("\n");
+    const telLimpio = String(cliente.telefono ?? "").replace(/\D+/g, "");
+    const codPais = String(cliente.codigo_pais ?? "").replace(/\D+/g, "");
+    const numWa = telLimpio ? `${codPais && !telLimpio.startsWith(codPais) ? codPais : ""}${telLimpio}` : "";
+    const urlWa = `https://wa.me/${numWa}?text=${encodeURIComponent(mensaje)}`;
+    window.open(urlWa, "_blank", "noopener,noreferrer");
   };
 
   const guardar = async () => {
@@ -162,6 +201,14 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
               <input readOnly value={linkCorto} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[11px] font-mono text-cyan-700 font-bold bg-cyan-50" />
               <button type="button" className="px-2 rounded-lg bg-slate-200 hover:bg-cyan-100 text-slate-600" onClick={() => copiar(linkCorto)} title="Copiar">
                 <span >🗐️</span>
+              </button>
+              <button
+                type="button"
+                className="px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black whitespace-nowrap"
+                onClick={enviarWhatsApp}
+                title="Enviar enlace y credenciales por WhatsApp"
+              >
+                📲 WhatsApp
               </button>
             </div>
           </div>

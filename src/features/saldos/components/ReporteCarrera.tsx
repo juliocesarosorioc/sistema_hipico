@@ -33,6 +33,8 @@ export type JugadaVivo = {
   resultado: number | null;
   resultadoDa?: number | null;
   esAdelantada?: boolean;
+  /** Hora de carga de la jugada (HH:mm). */
+  horaCarga?: string | null;
 };
 
 export type Adelantada = JugadaVivo & {
@@ -202,7 +204,17 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
                 : null;
           return (
             <tr key={i} className="border-b border-slate-100 bg-white h-[26px]">
-              <td className="py-[3px] pr-1 font-bold text-slate-800 whitespace-nowrap truncate align-middle">{j.juega}</td>
+              <td className="py-[3px] pr-1 font-bold text-slate-800 whitespace-nowrap truncate align-middle">
+                <span>{j.juega}</span>
+                {j.horaCarga ? (
+                  <span
+                    className="ml-1 inline-flex items-center rounded bg-slate-100 px-1 py-px text-[8px] font-mono font-bold text-slate-500 border border-slate-200/80"
+                    title={`Hora de carga de la jugada: ${j.horaCarga}`}
+                  >
+                    🕒 {j.horaCarga}
+                  </span>
+                ) : null}
+              </td>
               <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap align-middle">{j.aposto}</td>
               <td className="py-[3px] pl-1 text-right whitespace-nowrap align-middle">
                 {res1 !== null ? <FormatoDinero monto={res1} /> : <span className="text-slate-400">—</span>}
@@ -426,21 +438,42 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
       </div>
 
       {/* 2. PIZARRA DE LLEGADA */}
-      {liquidada ? (
-        <div className="flex items-center px-4 py-2 border-b-2 border-blue-800/40">
-          <span className="text-[9px] font-bold tracking-widest text-slate-500 mr-4 uppercase">Llegada</span>
-          <div className="flex gap-3">
-            {encabezado.llegada.map((caballo, idx) => (
-              <div key={idx} className="flex flex-col items-center">
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg font-black shadow-sm border ${colorDiscoNumero(caballo.numero)}`}>
-                  {caballo.numero}
-                </div>
-                <span className="text-[9px] text-slate-500 mt-0.5 font-bold">{caballo.puesto}</span>
-              </div>
-            ))}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b-2 border-blue-800/40 bg-gradient-to-r from-slate-50 via-white to-slate-50">
+        <div className="flex items-center gap-3">
+          <div className="flex flex-col">
+            <span className="text-[9px] font-black tracking-widest text-blue-900 uppercase flex items-center gap-1">
+              <span>🏁</span> Resultado de la Pizarra
+            </span>
+            <span className="text-[8px] font-semibold text-slate-400 uppercase tracking-wider">
+              Orden Oficial de Llegada
+            </span>
           </div>
+          {encabezado.llegada.length > 0 ? (
+            <div className="flex items-center gap-2.5 pl-2 border-l border-slate-200">
+              {encabezado.llegada.map((caballo, idx) => (
+                <div key={idx} className="flex flex-col items-center">
+                  <div
+                    className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg font-black shadow-sm border ${colorDiscoNumero(caballo.numero)}`}
+                    title={`Puesto ${caballo.puesto}: Ejemplar #${caballo.numero}`}
+                  >
+                    {caballo.numero}
+                  </div>
+                  <span className="text-[9px] text-slate-600 mt-0.5 font-black uppercase">{caballo.puesto}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span className="ml-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[9.5px] font-bold text-amber-800 border border-amber-200">
+              <span>⏳</span> En espera de resultado oficial de pizarra
+            </span>
+          )}
         </div>
-      ) : null}
+        <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-500">
+          <span className="rounded-md bg-slate-100 px-2 py-0.5 border border-slate-200">
+            🕒 Hora de carga incluida por jugada
+          </span>
+        </div>
+      </div>
 
       {/* 3. TABLA DE 7 COLUMNAS (JUGADAS EN VIVO — SIN ADELANTADAS) */}
       {jugadasEnVivoFiltradas.length > 0 && (

@@ -9,6 +9,7 @@ import { ModalPortalCliente } from "@/features/clientes/components/ModalPortalCl
 import { EstadoCuentaAcordeon } from "@/features/clientes/components/EstadoCuentaAcordeon";
 import { CuadernoCliente } from "@/features/clientes/components/CuadernoCliente";
 import { NotificacionesPortal } from "@/features/clientes/components/NotificacionesPortal";
+import { PanelBloqueoJugadasAdmin } from "@/features/portal/components/PanelBloqueoJugadasAdmin";
 import {
   aplicarDevolucionMasiva,
   cargarTicketsCliente,
@@ -172,6 +173,8 @@ export function ClientesModule() {
           </Guard>
         </div>
       </div>
+
+      <PanelBloqueoJugadasAdmin compacto />
 
       <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 w-fit">
         {(

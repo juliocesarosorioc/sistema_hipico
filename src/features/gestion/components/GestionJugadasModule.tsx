@@ -74,6 +74,7 @@ import {
   type LadoResultado,
 } from "@/features/gestion/lib/preview-carrera";
 import { agruparAdelantadasPorSeccion } from "@/features/liquidacion/lib/reporte-carrera";
+import { PanelBloqueoJugadasAdmin } from "@/features/portal/components/PanelBloqueoJugadasAdmin";
 
 type FilaCarga = {
   jugada: string;
@@ -1933,6 +1934,9 @@ const hipodromosDelDia = useMemo(() => {
           )}
         </div>
       </div>
+
+      {/* Control de bloqueo/desbloqueo de modalidades en el Portal de Clientes */}
+      <PanelBloqueoJugadasAdmin compacto />
 
       {/* Inputs superiores */}
       <div className="grid gap-1.5 rounded-xl border border-line bg-surface p-2 lg:grid-cols-7">

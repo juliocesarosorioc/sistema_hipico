@@ -492,17 +492,60 @@ export async function convertirSocio(nombre: string): Promise<{ ok: boolean; err
  * `basePath` heredado del documento o, en último caso, a raíz.
  */
 export function basePathActual(): string {
+  const envBase = (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_BASE_PATH) || "";
+  if (envBase) return envBase.replace(/\/+$/, "");
   if (typeof window === "undefined") return "";
   const p = window.location.pathname.replace(/\/+$/, "");
-  const i = p.lastIndexOf("/portal");
-  if (i >= 0) return p.slice(0, i);
+  const rutasApp = [
+    "/portal",
+    "/clientes",
+    "/taquilla",
+    "/login",
+    "/saldos",
+    "/liquidacion",
+    "/programas",
+    "/jugadas",
+    "/grupos",
+    "/socios",
+    "/roles",
+    "/auditoria",
+    "/transcripcion",
+    "/reportes",
+    "/conciliacion",
+    "/tickets",
+    "/configuracion",
+  ];
+  for (const r of rutasApp) {
+    const idx = p.indexOf(r);
+    if (idx > 0) return p.slice(0, idx);
+    if (idx === 0) break;
+  }
+  if (typeof document !== "undefined") {
+    const script = document.querySelector<HTMLScriptElement>('script[src*="/_next/"]');
+    if (script?.src) {
+      try {
+        const u = new URL(script.src, window.location.origin);
+        const m = u.pathname.indexOf("/_next/");
+        if (m > 0) return u.pathname.slice(0, m);
+      } catch {
+        // ignore
+      }
+    }
+  }
+  if (window.location.hostname.endsWith(".github.io")) {
+    const seg = p.split("/").filter(Boolean)[0];
+    if (seg && !rutasApp.includes(`/${seg}`)) return `/${seg}`;
+    return "/sistema_hipico";
+  }
   return "";
 }
 
 /** Ruta del portal en la SPA (se conserva `?c=&k=` para compat con el legacy). */
 export function urlPortal(): string {
   if (typeof window === "undefined") return "/portal";
-  return `${window.location.origin}${basePathActual()}/portal`;
+  const base = basePathActual();
+  const slashFinal = Boolean(base) || window.location.hostname.endsWith(".github.io");
+  return `${window.location.origin}${base}/portal${slashFinal ? "/" : ""}`;
 }
 
 /** Enlace largo del portal para un cliente. */
@@ -510,16 +553,55 @@ export function enlacePortalLargo(id: string | number, token: string): string {
   return `${urlPortal()}?c=${encodeURIComponent(String(id))}&k=${encodeURIComponent(token)}`;
 }
 
-/** Acorta un enlace con is.gd; si falla devuelve el enlace largo. */
-export async function acortarEnlace(larga: string): Promise<string> {
-  try {
-    const r = await fetch("https://is.gd/create.php?format=simple&url=" + encodeURIComponent(larga));
-    if (!r.ok) return larga;
-    const txt = (await r.text()).trim();
-    return txt.startsWith("http") ? txt : larga;
-  } catch {
-    return larga;
-  }
+/** Enlace compacto directo del portal (usa prefijo corto del ID + código). */
+export function enlacePortalCompacto(id: string | number, token: string): string {
+  const idCorto = String(id ?? "").trim().slice(0, 8);
+  return `${urlPortal()}?c=${encodeURIComponent(idCorto)}&k=${encodeURIComponent(token)}`;
+}
+
+/** Acorta un enlace con is.gd vía JSONP; si falla o bloquea CSP devuelve el enlace compacto directo. */
+export async function acortarEnlace(larga: string, id?: string | number, token?: string): Promise<string> {
+  const fallback = id != null && token ? enlacePortalCompacto(id, token) : larga;
+  if (typeof window === "undefined" || typeof document === "undefined") return fallback;
+  return new Promise<string>((resolve) => {
+    let resuelto = false;
+    const cbName = `__isgd_cb_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const script = document.createElement("script");
+    const timer = window.setTimeout(() => {
+      if (resuelto) return;
+      resuelto = true;
+      limpiar();
+      resolve(fallback);
+    }, 2200);
+
+    const limpiar = () => {
+      window.clearTimeout(timer);
+      try {
+        delete (window as unknown as Record<string, unknown>)[cbName];
+      } catch {
+        (window as unknown as Record<string, unknown>)[cbName] = undefined;
+      }
+      if (script.parentNode) script.parentNode.removeChild(script);
+    };
+
+    (window as unknown as Record<string, unknown>)[cbName] = (resp: { shorturl?: string } | null) => {
+      if (resuelto) return;
+      resuelto = true;
+      limpiar();
+      const url = String(resp?.shorturl ?? "").trim();
+      resolve(url.startsWith("http") ? url : fallback);
+    };
+
+    script.onerror = () => {
+      if (resuelto) return;
+      resuelto = true;
+      limpiar();
+      resolve(fallback);
+    };
+
+    script.src = `https://is.gd/create.php?format=json&callback=${encodeURIComponent(cbName)}&url=${encodeURIComponent(larga)}`;
+    document.head.appendChild(script);
+  });
 }
 
 /** Guarda (o regenera) token/clave/habilitado del portal de un cliente. */

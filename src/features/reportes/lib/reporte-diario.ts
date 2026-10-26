@@ -26,13 +26,37 @@
  * navegador es la última palabra: la base aísla por grupo/cliente.
  */
 import { supabase } from "@/core/supabase";
+import { _reembolsosCruce } from "@/features/taquilla/lib/cruces-y-tapas";
 
 // ---------------------------------------------------------------------------
 // Tipos
 // ---------------------------------------------------------------------------
 
+/** Detalle de una jugada individual dentro de una carrera en la Tabla Dinámica. */
+export type DetalleJugadaReporteDiario = {
+  id: string;
+  fecha: string;
+  horaCarga?: string | null;
+  cliente: string;
+  jugada: string;
+  caballo: string;
+  montoJugado: number;
+  premio: number;
+  resultadoNeto: number;
+  devolucion: number;
+  comisionDevuelta: number;
+  estado: string;
+};
+
 /** Una jugada ya normalizada, lista para sumar. */
 export type JugadaReporte = {
+  id?: string | number;
+  fecha?: string;
+  horaCarga?: string | null;
+  cliente?: string;
+  jugada?: string;
+  caballo?: string;
+  estado?: string;
   hipodromo: string;
   carrera: number;
   montoJugado: number;
@@ -40,18 +64,45 @@ export type JugadaReporte = {
   premio: number;
   /** Incentivo ya calculado para esa jugada (base * devolucion% / 100). */
   devolucion: number;
+  /** Comisión devuelta explícita (si ya viene calculada). */
+  comisionDevuelta?: number;
   /** true si la jugada fue anulada: no cuenta como jugado ni como ticket. */
   anulada: boolean;
 };
 
 /** Una fila de la tabla: una carrera (por hipódromo + número). */
 export type FilaReporteDiario = {
+  fecha?: string;
   hipodromo: string;
   carrera: number;
   tickets: number;
   totalJugado: number;
   totalPremios: number;
   devolucion: number;
+  comisionDevuelta?: number;
+  balance: number;
+  jugadasDetalle?: DetalleJugadaReporteDiario[];
+};
+
+export type HipodromoPivotDiario = {
+  hipodromo: string;
+  carreras: FilaReporteDiario[];
+  tickets: number;
+  totalJugado: number;
+  totalPremios: number;
+  devolucion: number;
+  comisionDevuelta: number;
+  balance: number;
+};
+
+export type DiaPivotDiario = {
+  fecha: string;
+  hipodromos: HipodromoPivotDiario[];
+  tickets: number;
+  totalJugado: number;
+  totalPremios: number;
+  devolucion: number;
+  comisionDevuelta: number;
   balance: number;
 };
 
@@ -60,12 +111,15 @@ export type TotalesReporteDiario = {
   totalJugado: number;
   totalPremios: number;
   devolucion: number;
+  comisionDevuelta?: number;
   balance: number;
 };
 
 export type ReporteDiario = {
   filas: FilaReporteDiario[];
   totales: TotalesReporteDiario;
+  /** Árbol jerárquico para la Tabla Dinámica: Día → Hipódromo → Carrera → Jugadas. */
+  dias?: DiaPivotDiario[];
 };
 
 /** Filtros del reporte. El alcance por rol NO se decide acá: lo fuerza el servidor. */
@@ -125,41 +179,130 @@ function claveCarrera(hipodromo: string, carrera: number): string {
   return `${hipodromo}\u0000${carrera}`;
 }
 
+function claveDiaCarrera(fecha: string, hipodromo: string, carrera: number): string {
+  return `${fecha}\u0000${hipodromo}\u0000${carrera}`;
+}
+
+function resultadoNetoJugada(montoJugado: number, premio: number, estado: string): number {
+  const est = String(estado ?? "").trim().toUpperCase();
+  if (est === "PENDIENTE" || est === "EN_REVISION" || est === "RETIRADO") {
+    return premio > 0 ? centavos(premio - montoJugado) : 0;
+  }
+  if (premio > 0) return centavos(premio - montoJugado);
+  return centavos(-Math.abs(montoJugado));
+}
+
 /**
- * Agrupa las jugadas por hipódromo + carrera y devuelve la tabla y los totales.
+ * Agrupa las jugadas por hipódromo + carrera y además arma el árbol jerárquico
+ * de Tabla Dinámica (Día → Hipódromo → Carrera → Cada Jugada con resultado y comisión devuelta).
  * Las jugadas anuladas no cuentan ni como ticket ni como jugado.
  */
 export function armarReporteDiario(jugadas: JugadaReporte[]): ReporteDiario {
   const mapa = new Map<string, FilaReporteDiario>();
+  const mapaDiaCarrera = new Map<string, FilaReporteDiario>();
 
+  let seq = 0;
   for (const j of jugadas) {
     if (j.anulada) continue;
+    seq += 1;
+    const fecha = String(j.fecha ?? "").trim().slice(0, 10) || "JORNADA";
     const hipodromo = String(j.hipodromo ?? "—").trim() || "—";
     const carrera = Math.trunc(Number(j.carrera) || 0);
     const key = claveCarrera(hipodromo, carrera);
+    const keyDia = claveDiaCarrera(fecha, hipodromo, carrera);
+
+    const monto = Number(j.montoJugado) || 0;
+    const premio = Number(j.premio) || 0;
+    const dev = Number(j.devolucion) || 0;
+    const estado = String(j.estado ?? (premio > 0 ? "GANADOR" : "DECIDIDO")).trim().toUpperCase();
+    const resNeto = resultadoNetoJugada(monto, premio, estado);
+
+    const detalle: DetalleJugadaReporteDiario = {
+      id: String(j.id ?? `jug-${seq}`),
+      fecha,
+      horaCarga: j.horaCarga ?? null,
+      cliente: String(j.cliente ?? "—").trim() || "—",
+      jugada: String(j.jugada ?? "JUGADA").trim() || "JUGADA",
+      caballo: String(j.caballo ?? "—").trim() || "—",
+      montoJugado: centavos(monto),
+      premio: centavos(premio),
+      resultadoNeto: resNeto,
+      devolucion: centavos(dev),
+      comisionDevuelta: centavos(Number(j.comisionDevuelta) || 0),
+      estado,
+    };
 
     let fila = mapa.get(key);
     if (!fila) {
       fila = {
+        fecha,
         hipodromo,
         carrera,
         tickets: 0,
         totalJugado: 0,
         totalPremios: 0,
         devolucion: 0,
+        comisionDevuelta: 0,
         balance: 0,
+        jugadasDetalle: [],
       };
       mapa.set(key, fila);
     }
 
     fila.tickets += 1;
-    fila.totalJugado += Number(j.montoJugado) || 0;
-    fila.totalPremios += Number(j.premio) || 0;
-    fila.devolucion += Number(j.devolucion) || 0;
+    fila.totalJugado += monto;
+    fila.totalPremios += premio;
+    fila.devolucion += dev;
+    fila.jugadasDetalle!.push(detalle);
+
+    let filaDia = mapaDiaCarrera.get(keyDia);
+    if (!filaDia) {
+      filaDia = {
+        fecha,
+        hipodromo,
+        carrera,
+        tickets: 0,
+        totalJugado: 0,
+        totalPremios: 0,
+        devolucion: 0,
+        comisionDevuelta: 0,
+        balance: 0,
+        jugadasDetalle: [],
+      };
+      mapaDiaCarrera.set(keyDia, filaDia);
+    }
+    filaDia.tickets += 1;
+    filaDia.totalJugado += monto;
+    filaDia.totalPremios += premio;
+    filaDia.devolucion += dev;
+    filaDia.jugadasDetalle!.push({ ...detalle });
   }
+
+  const calcularCruceCarrera = (f: FilaReporteDiario) => {
+    const dets = f.jugadasDetalle ?? [];
+    const lineas = dets
+      .filter((d) => d.resultadoNeto !== 0)
+      .map((d) => ({ cliente: d.cliente, resultado: d.resultadoNeto }));
+    const { porCliente, totalReembolsado } = _reembolsosCruce(lineas, "con_cruces", 5);
+    if (totalReembolsado > 0) {
+      // Asignar la comisión devuelta al cliente correspondiente en su primera jugada ganadora de la carrera
+      const asignados = new Set<string>();
+      for (const d of dets) {
+        const claveCli = d.cliente.trim().toUpperCase();
+        const info = porCliente.get(claveCli);
+        if (info && info.reembolsoCruce > 0 && !asignados.has(claveCli) && d.resultadoNeto > 0) {
+          d.comisionDevuelta = centavos((d.comisionDevuelta || 0) + info.reembolsoCruce);
+          asignados.add(claveCli);
+        }
+      }
+    }
+    const sumaExplicita = dets.reduce((acc, d) => acc + (d.comisionDevuelta || 0), 0);
+    f.comisionDevuelta = centavos(Math.max(totalReembolsado, sumaExplicita));
+  };
 
   const filas = [...mapa.values()]
     .map((f) => {
+      calcularCruceCarrera(f);
       f.totalJugado = centavos(f.totalJugado);
       f.totalPremios = centavos(f.totalPremios);
       f.devolucion = centavos(f.devolucion);
@@ -170,7 +313,56 @@ export function armarReporteDiario(jugadas: JugadaReporte[]): ReporteDiario {
       a.hipodromo === b.hipodromo ? a.carrera - b.carrera : a.hipodromo.localeCompare(b.hipodromo)
     );
 
-  return { filas, totales: totalesDe(filas) };
+  // Construir árbol jerárquico Día → Hipódromo → Carrera → Jugadas
+  const porDiaMap = new Map<string, Map<string, FilaReporteDiario[]>>();
+  for (const fDia of mapaDiaCarrera.values()) {
+    calcularCruceCarrera(fDia);
+    fDia.totalJugado = centavos(fDia.totalJugado);
+    fDia.totalPremios = centavos(fDia.totalPremios);
+    fDia.devolucion = centavos(fDia.devolucion);
+    fDia.balance = centavos(fDia.totalJugado - fDia.totalPremios - fDia.devolucion);
+
+    const dKey = fDia.fecha || "JORNADA";
+    if (!porDiaMap.has(dKey)) porDiaMap.set(dKey, new Map());
+    const hipoMap = porDiaMap.get(dKey)!;
+    if (!hipoMap.has(fDia.hipodromo)) hipoMap.set(fDia.hipodromo, []);
+    hipoMap.get(fDia.hipodromo)!.push(fDia);
+  }
+
+  const dias: DiaPivotDiario[] = [...porDiaMap.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([fecha, hipoMap]) => {
+      const hipodromos: HipodromoPivotDiario[] = [...hipoMap.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0], "es"))
+        .map(([hipodromo, carreras]) => {
+          carreras.sort((a, b) => a.carrera - b.carrera);
+          const sub = totalesDe(carreras);
+          return {
+            hipodromo,
+            carreras,
+            tickets: sub.tickets,
+            totalJugado: sub.totalJugado,
+            totalPremios: sub.totalPremios,
+            devolucion: sub.devolucion,
+            comisionDevuelta: sub.comisionDevuelta ?? 0,
+            balance: sub.balance,
+          };
+        });
+      const todasCarrerasDia = hipodromos.flatMap((h) => h.carreras);
+      const subDia = totalesDe(todasCarrerasDia);
+      return {
+        fecha,
+        hipodromos,
+        tickets: subDia.tickets,
+        totalJugado: subDia.totalJugado,
+        totalPremios: subDia.totalPremios,
+        devolucion: subDia.devolucion,
+        comisionDevuelta: subDia.comisionDevuelta ?? 0,
+        balance: subDia.balance,
+      };
+    });
+
+  return { filas, totales: totalesDe(filas), dias };
 }
 
 /** Suma las filas de la tabla para el pie "TOTAL DEL DÍA". */
@@ -180,6 +372,7 @@ export function totalesDe(filas: FilaReporteDiario[]): TotalesReporteDiario {
     totalJugado: 0,
     totalPremios: 0,
     devolucion: 0,
+    comisionDevuelta: 0,
     balance: 0,
   };
   for (const f of filas) {
@@ -187,10 +380,12 @@ export function totalesDe(filas: FilaReporteDiario[]): TotalesReporteDiario {
     t.totalJugado += f.totalJugado;
     t.totalPremios += f.totalPremios;
     t.devolucion += f.devolucion;
+    t.comisionDevuelta = (t.comisionDevuelta ?? 0) + (f.comisionDevuelta ?? 0);
   }
   t.totalJugado = centavos(t.totalJugado);
   t.totalPremios = centavos(t.totalPremios);
   t.devolucion = centavos(t.devolucion);
+  t.comisionDevuelta = centavos(t.comisionDevuelta ?? 0);
   t.balance = centavos(t.totalJugado - t.totalPremios - t.devolucion);
   return t;
 }
@@ -201,8 +396,13 @@ export function totalesDe(filas: FilaReporteDiario[]): TotalesReporteDiario {
 
 /** Fila cruda tal como la devuelve PostgREST (respaldos tipados a propósito). */
 export type TicketCrudo = {
+  id?: string | number | null;
   hipodromo?: string | null;
   carrera?: number | string | null;
+  fecha_carrera?: string | null;
+  fecha_registro?: string | null;
+  nombre_jugada?: string | null;
+  caballo?: string | null;
   monto_jugado?: number | string | null;
   monto_decidido?: number | string | null;
   premio_pagar?: number | string | null;
@@ -210,12 +410,25 @@ export type TicketCrudo = {
   estado?: string | null;
   anulada?: boolean | null;
   cliente_juega_id?: string | number | null;
+  cliente_juega_nombre?: string | null;
 };
 
 const num = (v: unknown): number => {
   const n = typeof v === "string" ? parseFloat(v) : typeof v === "number" ? v : 0;
   return Number.isFinite(n) ? n : 0;
 };
+
+function horaDeRegistro(raw: unknown): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(s)) return s.slice(0, 5);
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) {
+    return d.toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit", hour12: false });
+  }
+  const m = /(\d{2}:\d{2})/.exec(s);
+  return m ? m[1] : null;
+}
 
 /** ¿La jugada está anulada? Se mira la bandera y, si no, el estado. */
 export function esJugadaAnulada(estado: unknown, anulada: unknown): boolean {
@@ -233,11 +446,19 @@ export function normalizarTickets(
   tickets: TicketCrudo[],
   devolucionPorCliente: Map<string, number>
 ): JugadaReporte[] {
-  return tickets.map((t) => {
+  return tickets.map((t, idx) => {
     const base = t.monto_decidido != null ? num(t.monto_decidido) : num(t.monto_jugado);
     const pct = devolucionPorCliente.get(String(t.cliente_juega_id ?? "")) ?? 0;
     const premio = t.premio_pagar != null ? num(t.premio_pagar) : num(t.premio_por_tabla);
+    const fecha = String(t.fecha_carrera ?? t.fecha_registro ?? "").slice(0, 10) || undefined;
     return {
+      id: t.id ?? `tk-${idx}`,
+      fecha,
+      horaCarga: horaDeRegistro(t.fecha_registro),
+      cliente: String(t.cliente_juega_nombre ?? t.cliente_juega_id ?? "—"),
+      jugada: String(t.nombre_jugada ?? "JUGADA"),
+      caballo: String(t.caballo ?? "—"),
+      estado: String(t.estado ?? "PENDIENTE"),
       hipodromo: String(t.hipodromo ?? "—"),
       carrera: Math.trunc(num(t.carrera)),
       montoJugado: num(t.monto_jugado),
@@ -253,7 +474,7 @@ export function normalizarTickets(
 // ---------------------------------------------------------------------------
 
 const COLS_TICKETS =
-  "hipodromo, carrera, fecha_carrera, fecha_registro, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, estado, anulada, cliente_juega_id";
+  "id, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, caballo, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, estado, anulada, cliente_juega_id, cliente_juega_nombre";
 
 /** Fila agregada que devuelve la RPC `club_reporte_diario` (claves snake_case). */
 type FilaRpc = Record<string, unknown>;
@@ -343,6 +564,13 @@ export async function leerReporteDiario(
 ): Promise<ResultadoReporteDiario> {
   if (!supabase) return { ok: false, error: "Supabase no está configurado." };
 
+  // Primero leemos el detalle completo de tickets para alimentar la Tabla Dinámica
+  // jerárquica (Día → Hipódromo → Carrera → Cada jugada con resultado y comisión devuelta).
+  const detalle = await leerPorRespaldo(opts);
+  if (detalle.ok && detalle.datos && detalle.datos.filas.length > 0) {
+    return { ...detalle, respaldo: false };
+  }
+
   try {
     const { data, error } = await supabase.rpc("club_reporte_diario", {
       p_desde: opts.desde,
@@ -357,14 +585,12 @@ export async function leerReporteDiario(
       if (datos) return { ok: true, datos, fuente: "rpc" };
     }
     if (error && !esFuncionAusente(error)) {
-      // Error real del servidor: se intenta el respaldo igual, pero se informa.
-      const respaldo = await leerPorRespaldo(opts);
-      if (respaldo.ok) return respaldo;
+      if (detalle.ok) return detalle;
       return { ok: false, error: error.message };
     }
   } catch {
     /* la RPC no está aplicada: se usa el respaldo */
   }
 
-  return leerPorRespaldo(opts);
+  return detalle;
 }

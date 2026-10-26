@@ -60,6 +60,8 @@ export type FilaReporte = {
    * filtro segmentado del Reporte de Liquidación.
    */
   esAdelantada?: boolean;
+  /** Hora de carga de la jugada en formato HH:mm (extraída de fecha_registro). */
+  horaCarga?: string | null;
 };
 
 export type CarreraReporte = {
@@ -120,6 +122,23 @@ function cifra(v: unknown): number {
 
 function txt(v: unknown): string {
   return String(v ?? "").trim();
+}
+
+/** Extrae la hora de carga (HH:mm) de la jugada a partir de su timestamp de registro. */
+export function formatearHoraCarga(f: Record<string, unknown>): string | null {
+  const raw = txt(f.fecha_registro ?? f.created_at ?? "");
+  if (!raw) return null;
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(raw)) return raw.slice(0, 5);
+  const d = new Date(raw);
+  if (!Number.isNaN(d.getTime())) {
+    return d.toLocaleTimeString("es-VE", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
+  const m = /(\d{2}:\d{2})/.exec(raw);
+  return m ? m[1] : null;
 }
 
 /**
@@ -614,6 +633,7 @@ async function carreraReporte(
     // Modalidad de TIEMPO: misma lectura para el que JUEGA y el que CONSIGUE
     // (es el mismo ticket, las dos filas se parean por índice).
     const adelantada = esAdelantadaDe(f);
+    const horaCarga = formatearHoraCarga(f);
     filas.push({
       id: `${fecha}-${hipodromo}-${numero}-j-${i}`,
       rol: "Juega",
@@ -626,6 +646,7 @@ async function carreraReporte(
       ejemplar: desglose.ejemplar,
       tipoJugada: desglose.tipo,
       esAdelantada: adelantada,
+      horaCarga,
     });
 
     if (clienteConsigue) {
@@ -641,6 +662,7 @@ async function carreraReporte(
         ejemplar: desglose.ejemplar,
         tipoJugada: desglose.tipo,
         esAdelantada: adelantada,
+        horaCarga,
       });
     }
 
