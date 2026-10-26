@@ -1561,37 +1561,6 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
 
   return (
     <div className="legacy-impresion-container p-2">
-      <style dangerouslySetInnerHTML={{ __html: `
-        .legacy-impresion-container { font-family: system-ui, Arial, sans-serif; color: #0f172a; background: #eef2f7; padding: 14px;}
-        .hoja-legacy { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; background: #fff; padding: 8px; border-radius: 10px; }
-        @media print {
-          .hoja-legacy { display: grid !important; grid-template-columns: repeat(5, minmax(0, 1fr)) !important; gap: 1.8mm !important; padding: 1.6mm !important; box-shadow: none !important; border-radius: 0 !important; }
-          .tarjeta-legacy { break-inside: avoid; border-radius: 4px; }
-        }
-        .tarjeta-legacy { background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
-        .enc-legacy { background: #0f172a; color: #fff; padding: 4px 6px; }
-        .l1-legacy { display: flex; align-items: center; gap: 5px; justify-content: space-between; }
-        .hip-legacy { font-size: 10.4px; font-weight: 800; letter-spacing: .32px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
-        .cc-legacy { background: rgba(255,255,255,.16); border-radius: 5px; font-size: 11.2px; font-weight: 900; padding: 1px 5px; white-space: nowrap; flex: none; }
-        .l2-legacy { display: flex; align-items: center; justify-content: space-between; gap: 5px; margin-top: 1.5px; font-size: 8.4px; font-weight: 700; color: #cbd5e1; }
-        .meta-legacy { display: flex; align-items: center; gap: 3px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-        .fecha-legacy { margin-left: auto; white-space: nowrap; font-weight: 800; color: #7dd3fc; }
-        .filas-legacy { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; gap: 1px; padding: 2px 4px; min-height: 0; overflow: hidden; }
-        .fila-legacy { display: flex; align-items: center; gap: 3px; line-height: 1.25em; min-height: 0; border-radius: 3px; }
-        .fila-legacy:nth-of-type(odd) { background: #eef2f7; }
-        /* line-height en UNIDAD, nunca en número: html2canvas calcula la línea
-           base como parseFloat(getComputedStyle().lineHeight)*0.8 y con "1" el
-           texto se dibuja pegado al borde superior (se ve cortado en el PDF). */
-        .num-legacy { width: 1.4em; height: 1.4em; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 0.95em; flex: none; line-height: 1.4em; overflow: visible; }
-        .cab-legacy { flex: 1; font-weight: 700; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 3px; }
-        .cab-legacy.ret-legacy { color: #dc2626; text-decoration: line-through; }
-        .band-legacy { flex: none; display: inline-flex; margin-left: 2px; }
-        .mon-legacy { font-weight: 800; color: #475569; white-space: nowrap; font-size: 0.95em; }
-        .mon-legacy.cero-legacy { color: #94a3b8; }
-        .pie-legacy { display: flex; justify-content: space-between; align-items: center; gap: 5px; border-top: 1.5px solid #94a3b8; background: #f1f5f9; padding: 3px 6px; font-size: 6.8px; font-weight: 700; color: #475569; white-space: nowrap; position: relative; z-index: 2; }
-        .pie-legacy b { color: #047857; font-size: 12px; }
-      `}} />
-
       <div className="hoja-legacy">
         {tablas.map((t) => {
           const ejemplares = t.caballos ?? [];

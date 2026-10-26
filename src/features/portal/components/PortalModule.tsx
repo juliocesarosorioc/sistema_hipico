@@ -139,8 +139,8 @@ export function PortalModule() {
         const r = await entrarPortal({ linkId: autoId, linkToken: autoToken });
         return aplicarLogin(r.ok, r.error, r.sesion);
       }
-      if (!usuario.trim() || !token.trim() || !clave.trim()) {
-        return setErrorLogin("Complete los tres campos para entrar.");
+      if (!usuario.trim()) {
+        return setErrorLogin("Indique el seudónimo o nombre del cliente para entrar.");
       }
       const r = await entrarPortal({ usuario, token, clave });
       aplicarLogin(r.ok, r.error, r.sesion);
@@ -532,8 +532,63 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
     if (re) onCambio(re);
   };
 
+  const f = sesion.fichaUnificada;
+
   return (
     <div className="space-y-3">
+      {f ? (
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 rounded-2xl border border-line bg-white p-3 text-[11px] shadow-sm">
+          <div className="rounded-lg bg-slate-50 p-2">
+            <div className="text-[9px] font-black uppercase text-slate-400">1. Saldo Inicial / Anterior</div>
+            <div className="font-mono font-bold text-slate-800">{formatoMoneda("USD", f.saldoInicial)}</div>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-2">
+            <div className="text-[9px] font-black uppercase text-slate-400">2. Depósitos (+) / Retiros (-)</div>
+            <div className="font-mono font-bold text-slate-800">
+              +{formatoMoneda("USD", f.depositos)} / -{formatoMoneda("USD", f.retiros)}
+            </div>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-2">
+            <div className="text-[9px] font-black uppercase text-amber-600">3. Aval Vigente</div>
+            <div className="font-mono font-bold text-amber-700">{formatoMoneda("USD", f.avalVigente)}</div>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-2">
+            <div className="text-[9px] font-black uppercase text-indigo-600">4. En Vivo / Adelantadas</div>
+            <div className="font-mono font-bold text-indigo-700">
+              {f.jugadasEnVivoCount} en vivo · {f.jugadasAdelantadasCount} adel.
+            </div>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-2">
+            <div className="text-[9px] font-black uppercase text-emerald-600">5. Ganadas / Com. / Reemb. Cruce</div>
+            <div className="font-mono font-bold text-emerald-700">
+              {formatoMoneda("USD", f.jugadasGanadasBruto)} (-{formatoMoneda("USD", f.comisionesCobradas)} / +{formatoMoneda("USD", f.reembolsoCruce)})
+            </div>
+          </div>
+          <div className="rounded-lg bg-emerald-50 p-2">
+            <div className="text-[9px] font-black uppercase text-emerald-700">6. 🎁 Devolución / Incentivo a favor</div>
+            <div className="font-mono font-black text-emerald-700">+{formatoMoneda("USD", f.devolucionIncentivo)}</div>
+          </div>
+          <div className="rounded-lg bg-rose-50 p-2">
+            <div className="text-[9px] font-black uppercase text-rose-600">7. Jugadas Perdidas (-)</div>
+            <div className="font-mono font-bold text-rose-700">-{formatoMoneda("USD", f.jugadasPerdidas)}</div>
+          </div>
+          <div className="rounded-lg bg-amber-50 p-2">
+            <div className="text-[9px] font-black uppercase text-amber-600">8. Riesgo en Curso (-)</div>
+            <div className="font-mono font-bold text-amber-700">-{formatoMoneda("USD", f.riesgoEnCurso)}</div>
+          </div>
+          <div className="rounded-lg bg-slate-100 p-2">
+            <div className="text-[9px] font-black uppercase text-slate-600">9. Saldo Contable Neto</div>
+            <div className="font-mono font-black text-slate-900">{formatoMoneda("USD", f.saldoContable)}</div>
+          </div>
+          <div className="rounded-lg bg-indigo-50 p-2">
+            <div className="text-[9px] font-black uppercase text-indigo-700">10. Disponible Total para Apostar</div>
+            <div className="font-mono font-black text-indigo-800">
+              {Number.isFinite(f.disponibleParaJugar) ? formatoMoneda("USD", f.disponibleParaJugar) : "LIBRE"}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* ➕ Solicitar incluir una jugada que no aparece (PROMPT #6). La fecha
           está restringida por la ventana del grupo. */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 shadow-sm">

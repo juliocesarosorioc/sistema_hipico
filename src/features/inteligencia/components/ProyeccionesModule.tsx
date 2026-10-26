@@ -189,6 +189,35 @@ export function ProyeccionesModule() {
 
   return (
     <div className="flex flex-col gap-3 pb-6">
+      {/* Banner oficial: Motor IA Godet v3 en modo En Construcción */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/50 bg-slate-900 px-4 py-3 text-white shadow-sm">
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-amber-400/15 text-xl">
+            🧭
+          </span>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-xs font-black uppercase tracking-wider text-amber-400">
+                🧭 Motor IA Godet v3 (MACTOR + SMIC + Actuario v4)
+              </h2>
+              <span className="rounded-full border border-amber-400/60 bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-300">
+                🚧 Módulo en Construcción — Próximamente activo
+              </span>
+            </div>
+            <p className="mt-0.5 text-[11px] text-slate-300">
+              Análisis prospectivo de alianzas y conflictos (MACTOR), impactos cruzados (SMIC) y credibilidad actuarial Bühlmann-Straub exclusivo de Inteligencia Hípica.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setAbrirGodetModal(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/50 bg-amber-500/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-amber-300 hover:bg-amber-500/20"
+        >
+          🚧 Vista Previa en Construcción
+        </button>
+      </div>
+
       {/* ---------------------------------------------------------------- */}
       {/* BUSCADOR DE JORNADA — misma grilla que Gestión de Jugadas        */}
       {/* ---------------------------------------------------------------- */}
@@ -210,9 +239,11 @@ export function ProyeccionesModule() {
         columnas={5}
         disabled={cargando}
         acciones={
-          <div className="flex items-center gap-2"><button type="button" onClick={() => setAbrirGodetModal(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-yellow-400 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-slate-900 shadow-sm hover:from-amber-400 hover:to-yellow-300">🧭 Motor Godet IA v3 (MACTOR + SMIC + Actuario v4)</button><Button variant="ghost" size="md" disabled={cargando} onClick={() => void cargarCarreras(fecha)}>
-            {cargando ? "Cargando…" : "🔄 Actualizar"}
-          </Button></div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="md" disabled={cargando} onClick={() => void cargarCarreras(fecha)}>
+              {cargando ? "Cargando…" : "🔄 Actualizar"}
+            </Button>
+          </div>
         }
       >
         <div>

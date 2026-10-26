@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/core/supabase";
 import { SelectorGrupo } from "@/features/grupos/components/SelectorGrupo";
+import { RelojNavegador } from "@/shared/components/layout/RelojNavegador";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 
 /**
@@ -250,6 +251,8 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
       </button>
 
       <SelectorGrupo />
+
+      <RelojNavegador />
 
       <button
         type="button"

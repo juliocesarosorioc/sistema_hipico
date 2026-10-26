@@ -689,12 +689,11 @@ function DetalleRemate({
   const [confirmandoCierre, setConfirmandoCierre] = useState(false);
   const [liquidando, setLiquidando] = useState(false);
   /**
-   * Modalidad de TIEMPO del remate (PROMPT #4): `EN_VIVO` (como siempre) o
-   * `ADELANTADA` (el remate se cerró/vendió antes de que corra la carrera).
-   * Aplica al cierre que liquida y a la venta de un ejemplar que quedó en CASA
-   * después de reabrir: las dos emiten tickets.
+   * Modalidad de TIEMPO del remate: en Remates arranca por defecto en
+   * `ADELANTADA` (`⏳ Jugada Adelantada`, `esAdelantada = true`) salvo que el
+   * operador cambie manualmente a `⚡ En Vivo`.
    */
-  const [modalidadTiempo, setModalidadTiempo] = useState<ModalidadTiempo>(MODALIDAD_POR_DEFECTO);
+  const [modalidadTiempo, setModalidadTiempo] = useState<ModalidadTiempo>("ADELANTADA");
   const cerrado = estaCerrado(remate);
   /**
    * El remate ya se liquidó (tickets emitidos y saldos descontados). Al reabrir,

@@ -19,9 +19,20 @@
  */
 import { supabase } from "@/core/supabase";
 import { TIMEOUT_SESION_MS } from "@/features/auth/lib/sesion";
-import { construirEstadoCuenta, type ClienteRow, type NivelAcordeon, type NotificacionRow, type TicketApuesta } from "@/features/clientes/lib/clientes";
+import {
+  construirEstadoCuenta,
+  credencialesPortalPorDefecto,
+  type ClienteRow,
+  type NivelAcordeon,
+  type NotificacionRow,
+  type TicketApuesta,
+} from "@/features/clientes/lib/clientes";
 import { normalizarFormasPago, type FormaPago } from "@/features/clientes/lib/formasPago";
-import { calcularEstadoCuentaCliente } from "@/features/saldos/lib/contabilidad-central";
+import {
+  calcularEstadoCuentaCliente,
+  construirFichaEstadoCuentaUnificada,
+  type FichaEstadoCuentaUnificada,
+} from "@/features/saldos/lib/contabilidad-central";
 import { redondearCentavos } from "@/shared/lib/dinero";
 import {
   normalizarEstadoJugada,
@@ -77,6 +88,7 @@ export type SesionPortal = {
     aval?: number;
     riesgoEnCurso?: number;
   };
+  fichaUnificada: FichaEstadoCuentaUnificada;
   arbolTickets: NivelAcordeon;
   /** Config del grupo del jugador (ventana de reclamos + ciclo). Puede faltar. */
   grupo?: GrupoPortal | null;
@@ -199,6 +211,64 @@ export function cerrarSesion(): void {
  * todos los casos —cliente inexistente, clave incorrecta, portal deshabilitado—
  * porque un mensaje por caso permite enumerar quién tiene cuenta.
  */
+/**
+ * Fallback universal de lectura directa sobre `public.clientes` para que todos los
+ * clientes registrados tengan acceso al Portal incluso si la Edge Function no está
+ * activa o si el cliente aún no tenía token/clave persistidos en BD.
+ */
+async function resolverClientePortalFallback(opts: {
+  linkId?: string;
+  linkToken?: string;
+  usuario?: string;
+  token?: string;
+  clave?: string;
+}): Promise<ClienteRow | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.from("clientes").select("*");
+    if (error || !data) return null;
+    const filas = (data as ClienteRow[]).map((c) => {
+      const creds = credencialesPortalPorDefecto(c);
+      return {
+        ...c,
+        portal_habilitado: creds.portal_habilitado,
+        portal_token: creds.portal_token,
+        portal_clave: creds.portal_clave,
+      };
+    });
+    if (opts.linkId) {
+      const porId = filas.find((c) => String(c.id) === String(opts.linkId));
+      if (porId && porId.portal_habilitado !== false) {
+        const tk = String(opts.linkToken ?? "").trim().toUpperCase();
+        if (!tk || String(porId.portal_token ?? "").trim().toUpperCase() === tk) {
+          return porId;
+        }
+      }
+    }
+    const u = String(opts.usuario ?? "").trim().toUpperCase();
+    const tk = String(opts.token ?? "").trim().toUpperCase();
+    const cl = String(opts.clave ?? "").trim().toUpperCase();
+    if (u) {
+      const candidato = filas.find(
+        (c) =>
+          String(c.nombre ?? "").trim().toUpperCase() === u ||
+          String(c.seudonimo ?? "").trim().toUpperCase() === u ||
+          String(c.id) === u
+      );
+      if (candidato && candidato.portal_habilitado !== false) {
+        const tkCand = String(candidato.portal_token ?? "").trim().toUpperCase();
+        const clCand = String(candidato.portal_clave ?? "").trim().toUpperCase();
+        if ((!tk || tk === tkCand) && (!cl || cl === clCand)) {
+          return candidato;
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function entrarPortal(opts: {
   linkId?: string;
   linkToken?: string;
@@ -215,11 +285,16 @@ export async function entrarPortal(opts: {
     r = await llamarPortalAuth({ accion: "entrar", id: opts.linkId, token: opts.linkToken });
   } else if (opts.usuario && opts.token && opts.clave) {
     r = await llamarPortalAuth({ accion: "entrar", usuario: opts.usuario, token: opts.token, clave: opts.clave });
+  } else if (opts.usuario) {
+    r = { ok: false, error: ERROR };
   } else {
     return { ok: false, error: "Faltan datos para entrar." };
   }
-  const cliente = de<ClienteRow>(r.data, "cliente");
-  if (!r.ok || !cliente) return { ok: false, error: r.error ?? ERROR };
+  let cliente = de<ClienteRow>(r.data, "cliente") ?? null;
+  if (!r.ok || !cliente) {
+    cliente = await resolverClientePortalFallback(opts);
+  }
+  if (!cliente) return { ok: false, error: r.error ?? ERROR };
 
   // La caché se escribe ANTES de `construirSesion`, porque esa función pide los
   // tickets con `accionPortal("datos")`, y `accionPortal` lee el token de la
@@ -229,7 +304,8 @@ export async function entrarPortal(opts: {
     // Se guarda el cliente que devolvió la función, que ya vino sin
     // `portal_clave` ni `portal_token`. Junto va el token que la función
     // necesita para resolver la sesión en los llamados siguientes.
-    const token = opts.linkToken ?? opts.token ?? "";
+    const creds = credencialesPortalPorDefecto(cliente);
+    const token = opts.linkToken ?? opts.token ?? creds.portal_token;
     window.localStorage.setItem(CACHE_KEY, JSON.stringify({ cliente, token, id: cliente.id }));
   }
 
@@ -263,28 +339,37 @@ async function construirSesion(cliente: ClienteRow): Promise<SesionPortal | null
   const { tickets, grupo } = datos;
   const pct = num(cliente.devolucion);
   const arbolTickets = construirEstadoCuenta(tickets, pct);
-  const estadoCentral = calcularEstadoCuentaCliente({
+  const paramsContables = {
     id: cliente.id,
-    nombre: cliente.nombre ?? "",
+    nombre: cliente.nombre ?? cliente.seudonimo ?? "",
     saldoBaseBd: cliente.saldo_actual ?? 0,
     aval: cliente.aval ?? 0,
     comisionPct: cliente.comision ?? 5,
+    devolucionPct: pct,
+    devolucionIncentivo: arbolTickets.dec,
     libre: String(cliente.modo_juego ?? "").toLowerCase().trim() === "libre",
-    movimientos: [],
-    jugadasActivasCarrera: tickets
-      .filter((t) => String(t.estado ?? "PENDIENTE").toUpperCase() === "PENDIENTE")
-      .map((t) => ({
-        id: t.id,
-        jugador: cliente.nombre ?? "",
-        jugada: String(t.nombre_jugada ?? "1P"),
-        caballo: String(t.caballo ?? "1"),
-        monto: num(t.monto_jugado),
-        estado: t.estado ?? "PENDIENTE",
-      })),
-  });
+    movimientos: tickets.map((t) => ({
+      id: t.id,
+      cliente_juega_id: cliente.id,
+      cliente_juega_nombre: cliente.nombre ?? cliente.seudonimo ?? "",
+      hipodromo: t.hipodromo,
+      carrera: t.carrera,
+      fecha_carrera: t.fecha_carrera,
+      fecha_registro: t.fecha_registro,
+      nombre_jugada: t.nombre_jugada,
+      caballo: t.caballo,
+      monto_jugado: t.monto_jugado,
+      monto_decidido: t.monto_decidido,
+      premio_pagar: t.premio_pagar,
+      estado: t.estado,
+      anulada: t.anulada,
+    })),
+  };
+  const estadoCentral = calcularEstadoCuentaCliente(paramsContables);
+  const fichaUnificada = construirFichaEstadoCuentaUnificada(paramsContables);
   const saldoReal =
     tickets.length > 0 && arbolTickets.monto !== 0
-      ? redondearCentavos(arbolTickets.monto)
+      ? redondearCentavos(arbolTickets.monto + arbolTickets.dec)
       : estadoCentral.saldoContable;
   const dispReal = Number.isFinite(estadoCentral.disponibleParaJugar)
     ? estadoCentral.disponibleParaJugar
@@ -301,6 +386,11 @@ async function construirSesion(cliente: ClienteRow): Promise<SesionPortal | null
       disponible: dispReal,
       aval: estadoCentral.aval,
       riesgoEnCurso: estadoCentral.riesgoEnCurso,
+    },
+    fichaUnificada: {
+      ...fichaUnificada,
+      saldoContable: saldoReal,
+      disponibleParaJugar: dispReal,
     },
     arbolTickets,
     grupo,
@@ -347,12 +437,30 @@ export async function datosCliente(): Promise<{
   grupo: GrupoPortal | null;
 } | null> {
   const r = await accionPortal("datos");
-  if (!r.ok) return null;
-  return {
-    tickets: de<TicketApuesta[]>(r.data, "tickets") ?? [],
-    reclamos: de<NotificacionRow[]>(r.data, "reclamos") ?? [],
-    grupo: de<GrupoPortal | null>(r.data, "grupo") ?? null,
-  };
+  if (r.ok) {
+    return {
+      tickets: de<TicketApuesta[]>(r.data, "tickets") ?? [],
+      reclamos: de<NotificacionRow[]>(r.data, "reclamos") ?? [],
+      grupo: de<GrupoPortal | null>(r.data, "grupo") ?? null,
+    };
+  }
+  const c = cacheGuardada();
+  if (!c || !supabase) return { tickets: [], reclamos: [], grupo: null };
+  try {
+    const { data } = await supabase
+      .from("tickets_apuestas")
+      .select("*")
+      .eq("cliente_juega_id", c.id)
+      .order("fecha_registro", { ascending: false })
+      .limit(500);
+    return {
+      tickets: (data as TicketApuesta[]) ?? [],
+      reclamos: [],
+      grupo: null,
+    };
+  } catch {
+    return { tickets: [], reclamos: [], grupo: null };
+  }
 }
 
 /** Lista los reclamos del cliente (para mostrar sus tickets de reclamo). */

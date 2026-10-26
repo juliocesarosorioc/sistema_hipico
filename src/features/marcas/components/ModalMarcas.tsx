@@ -105,11 +105,11 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
   /** Reporte de marcas jugadas (misma vista que el reporte de Tablas Fijas). */
   const [reporteAbierto, setReporteAbierto] = useState(false);
   /**
-   * Modalidad de TIEMPO de la marca que se está cargando (PROMPT #4): `EN_VIVO`
-   * (comportamiento de siempre) o `ADELANTADA` (cargada antes de correr la
-   * carrera). Estado del modal, no del store: cada apertura arranca ⚡ En Vivo.
+   * Modalidad de TIEMPO de la marca que se está cargando: en Marcas arranca por
+   * defecto en `ADELANTADA` (`⏳ Jugada Adelantada`, `esAdelantada = true`) salvo
+   * que el operador cambie manualmente a `⚡ En Vivo`.
    */
-  const [modalidadTiempo, setModalidadTiempo] = useState<ModalidadTiempo>(MODALIDAD_POR_DEFECTO);
+  const [modalidadTiempo, setModalidadTiempo] = useState<ModalidadTiempo>("ADELANTADA");
 
   const caballos: EjemplarCarreraCentral[] = useMemo(() => carrera.caballos ?? [], [carrera.caballos]);
   const etiqueta = `${nombreHipodromoParaMostrar(carrera.hipodromo)} N${carrera.carrera}`;

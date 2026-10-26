@@ -10,6 +10,10 @@ import {
   type NivelAcordeon,
   type TicketApuesta,
 } from "@/features/clientes/lib/clientes";
+import {
+  construirFichaEstadoCuentaUnificada,
+  type FichaEstadoCuentaUnificada,
+} from "@/features/saldos/lib/contabilidad-central";
 import { formatoMoneda } from "@/shared/lib/vzla";
 
 /** Nodo acordeón recursivo con el mismo criterio de totales del legacy. */
@@ -126,15 +130,15 @@ function ResumenNivel({ nivel, devPct }: { nivel: NivelAcordeon; devPct: number 
   return (
     <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2" style={{ marginLeft: 12 }}>
       {[
-        { lbl: "Total decidido", val: nivel.monto, icon: "🪙", color: "text-slate-800" },
-        { lbl: `Devolución / Incentivo (${devPct}%)`, val: nivel.dec, icon: "％", color: "text-purple-600" },
-        { lbl: "Disponible (mínimo a cubrir)", val: nivel.monto - nivel.dec, icon: "🤲", color: "text-emerald-600" },
+        { lbl: "Total decidido", val: nivel.monto, icon: "🪙", color: "text-slate-800", prefijo: "" },
+        { lbl: `🎁 Devolución / Incentivo a favor (${devPct}%)`, val: nivel.dec, icon: "🎁", color: "text-emerald-600", prefijo: "+" },
+        { lbl: "Saldo Final Cliente (+ Incentivo)", val: nivel.monto + nivel.dec, icon: "🤲", color: "text-emerald-700", prefijo: "" },
       ].map((k) => (
         <div key={k.lbl} className="rounded-xl border border-line bg-white px-4 py-3 flex items-center gap-3">
           <span className={`${k.color} text-lg`}>{k.icon}</span>
           <div>
             <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">{k.lbl}</div>
-            <div className={`text-sm font-black ${k.color}`}>{formatoMoneda("USD", k.val)}</div>
+            <div className={`text-sm font-black ${k.color}`}>{k.prefijo}{formatoMoneda("USD", k.val)}</div>
           </div>
         </div>
       ))}
@@ -158,11 +162,13 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
   const [raiz, setRaiz] = useState<NivelAcordeon | null>(null);
   const [devolucionPct, setDevolucionPct] = useState(0);
   const [totales, setTotales] = useState({ monto: 0, dec: 0 });
+  const [ficha, setFicha] = useState<FichaEstadoCuentaUnificada | null>(null);
 
   const seleccionar = async (c: ClienteRow | null) => {
     onActivo(c);
     if (!c) {
       setRaiz(null);
+      setFicha(null);
       return;
     }
     setCargando(true);
@@ -171,8 +177,35 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
     setDevolucionPct(pct);
     const tickets = await onCargarTickets(c.id);
     const tree = construirEstadoCuenta(tickets, pct);
+    const fichaCalc = construirFichaEstadoCuentaUnificada({
+      id: c.id,
+      nombre: c.nombre ?? c.seudonimo ?? "",
+      saldoBaseBd: c.saldo_actual ?? 0,
+      aval: c.aval ?? 0,
+      comisionPct: c.comision ?? 5,
+      devolucionPct: pct,
+      devolucionIncentivo: tree.dec,
+      libre: String(c.modo_juego ?? "").toLowerCase().trim() === "libre",
+      movimientos: tickets.map((t) => ({
+        id: t.id,
+        cliente_juega_id: c.id,
+        cliente_juega_nombre: c.nombre ?? c.seudonimo ?? "",
+        hipodromo: t.hipodromo,
+        carrera: t.carrera,
+        fecha_carrera: t.fecha_carrera,
+        fecha_registro: t.fecha_registro,
+        nombre_jugada: t.nombre_jugada,
+        caballo: t.caballo,
+        monto_jugado: t.monto_jugado,
+        monto_decidido: t.monto_decidido,
+        premio_pagar: t.premio_pagar,
+        estado: t.estado,
+        anulada: t.anulada,
+      })),
+    });
     setRaiz(tree);
     setTotales({ monto: tree.monto, dec: tree.dec });
+    setFicha(fichaCalc);
     setCargando(false);
   };
 
@@ -248,11 +281,66 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
               </div>
             </div>
             <div className="text-right">
-              <div className="text-[9px] text-slate-300 uppercase">Totales</div>
-              <div className="text-sm font-black">{formatoMoneda("USD", totales.monto)}</div>
-              <div className="text-[10px] font-bold text-purple-300">- {formatoMoneda("USD", totales.dec)}</div>
+              <div className="text-[9px] text-slate-300 uppercase">Totales + Incentivo</div>
+              <div className="text-sm font-black">{formatoMoneda("USD", totales.monto + totales.dec)}</div>
+              <div className="text-[10px] font-bold text-emerald-300">
+                🎁 Devolución / Incentivo a favor: +{formatoMoneda("USD", totales.dec)}
+              </div>
             </div>
           </div>
+
+          {ficha ? (
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 rounded-2xl border border-line bg-white p-3 text-[11px] shadow-sm">
+              <div className="rounded-lg bg-slate-50 p-2">
+                <div className="text-[9px] font-black uppercase text-slate-400">1. Saldo Inicial / Anterior</div>
+                <div className="font-mono font-bold text-slate-800">{formatoMoneda("USD", ficha.saldoInicial)}</div>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-2">
+                <div className="text-[9px] font-black uppercase text-slate-400">2. Depósitos (+) / Retiros (-)</div>
+                <div className="font-mono font-bold text-slate-800">
+                  +{formatoMoneda("USD", ficha.depositos)} / -{formatoMoneda("USD", ficha.retiros)}
+                </div>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-2">
+                <div className="text-[9px] font-black uppercase text-amber-600">3. Aval Vigente</div>
+                <div className="font-mono font-bold text-amber-700">{formatoMoneda("USD", ficha.avalVigente)}</div>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-2">
+                <div className="text-[9px] font-black uppercase text-indigo-600">4. En Vivo / Adelantadas</div>
+                <div className="font-mono font-bold text-indigo-700">
+                  {ficha.jugadasEnVivoCount} en vivo · {ficha.jugadasAdelantadasCount} adel.
+                </div>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-2">
+                <div className="text-[9px] font-black uppercase text-emerald-600">5. Ganadas / Com. / Reemb. Cruce</div>
+                <div className="font-mono font-bold text-emerald-700">
+                  {formatoMoneda("USD", ficha.jugadasGanadasBruto)} (-{formatoMoneda("USD", ficha.comisionesCobradas)} / +{formatoMoneda("USD", ficha.reembolsoCruce)})
+                </div>
+              </div>
+              <div className="rounded-lg bg-emerald-50 p-2">
+                <div className="text-[9px] font-black uppercase text-emerald-700">6. 🎁 Devolución / Incentivo a favor</div>
+                <div className="font-mono font-black text-emerald-700">+{formatoMoneda("USD", ficha.devolucionIncentivo)}</div>
+              </div>
+              <div className="rounded-lg bg-rose-50 p-2">
+                <div className="text-[9px] font-black uppercase text-rose-600">7. Jugadas Perdidas (-)</div>
+                <div className="font-mono font-bold text-rose-700">-{formatoMoneda("USD", ficha.jugadasPerdidas)}</div>
+              </div>
+              <div className="rounded-lg bg-amber-50 p-2">
+                <div className="text-[9px] font-black uppercase text-amber-600">8. Riesgo en Curso (-)</div>
+                <div className="font-mono font-bold text-amber-700">-{formatoMoneda("USD", ficha.riesgoEnCurso)}</div>
+              </div>
+              <div className="rounded-lg bg-slate-100 p-2">
+                <div className="text-[9px] font-black uppercase text-slate-600">9. Saldo Contable Neto</div>
+                <div className="font-mono font-black text-slate-900">{formatoMoneda("USD", ficha.saldoContable)}</div>
+              </div>
+              <div className="rounded-lg bg-indigo-50 p-2">
+                <div className="text-[9px] font-black uppercase text-indigo-700">10. Disponible Total para Apostar</div>
+                <div className="font-mono font-black text-indigo-800">
+                  {Number.isFinite(ficha.disponibleParaJugar) ? formatoMoneda("USD", ficha.disponibleParaJugar) : "LIBRE"}
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="space-y-1">
             {raiz.hijos.map((g, i) => (

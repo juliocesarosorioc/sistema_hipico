@@ -134,6 +134,8 @@
     "../src/features/saldos/lib/contabilidad-central.ts",
     "./contabilidad-cruces-7col.test.ts",
     "../src/features/gestion/lib/carreras-liquidadas-orden.ts",
-    "./auditoria-total-apuestas.test.ts"
+    "../src/features/liquidacion/lib/puestos.ts",
+    "./auditoria-total-apuestas.test.ts",
+    "./auditoria-reforma-integral.test.ts"
   ]
 }

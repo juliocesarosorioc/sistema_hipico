@@ -1362,6 +1362,16 @@ export function GruposModule() {
 
             <div className="flex flex-col gap-2">
 
+              {visiblesGrupos.length > 0 && (
+                <div className="hidden lg:grid lg:grid-cols-12 lg:items-center lg:gap-4 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-600">
+                  <div className="col-span-3">1 · Grupo / Convenio y Estado</div>
+                  <div className="col-span-3">2 · Moneda y % Comisión</div>
+                  <div className="col-span-2">3 · % Incentivo y Modalidad</div>
+                  <div className="col-span-2">4 · Límites / Avales y Participantes</div>
+                  <div className="col-span-2 text-right">5 · Acciones</div>
+                </div>
+              )}
+
               {visiblesGrupos.length === 0 ? (
 
                 <p className="text-xs italic text-slate-400">
@@ -1375,120 +1385,102 @@ export function GruposModule() {
                 visiblesGrupos.map((g) => {
 
                   const esVes = String(g.moneda ?? "").toUpperCase() === "VES";
-
-                  const cuentas = desglosarCuenta(g.cuenta_bancaria);
+                  const conCrucesGrupo = Boolean(g.cruce_mismo_ejemplar || g.cruce_diferente_ejemplar || g.permite_cruces !== false);
+                  const incentivoGrupo = strNum((g as unknown as Record<string, unknown>).devolucion_porcentaje as string | number | null | undefined) || "0";
+                  const cupoGrupo = strNum(g.cupo_tabla) || "100";
 
                   return (
 
                     <div
-
                       key={String(g.id)}
-
-                      className="flex items-center justify-between gap-2 whitespace-nowrap rounded-lg border border-line bg-slate-50 px-2 py-1.5"
-
+                      data-row-legacy="flex items-center justify-between gap-2 whitespace-nowrap rounded-lg border border-line bg-slate-50"
+                      className="grid grid-cols-1 lg:grid-cols-12 items-center gap-3 lg:gap-4 rounded-xl border border-slate-200/90 bg-slate-50/90 px-3 py-2.5 transition-colors hover:bg-white hover:shadow-sm"
                     >
-
-                      {/* Identidad: logo + nombre */}
-
-                      <div className="flex min-w-0 items-center gap-1.5">
-
-                        <LogoDisplay src={g.logo_url} alt={`Logo de ${g.nombre}`} tamano={24} />
-
-                        <span className="truncate text-[11px] font-bold text-slate-800" title={g.nombre}>{g.nombre}</span>
-
-                        {g.es_principal ? (
-
-                          <span className="shrink-0 rounded bg-slate-800 px-1 py-0.5 text-[8px] font-black text-white">PRINCIPAL</span>
-
-                        ) : null}
-
-                      </div>
-
-                      {/* Moneda / ciclo */}
-
-                      <div className="flex shrink-0 items-center gap-1">
-
-                        <span className={`rounded px-1 py-0.5 text-[8px] font-black ${esVes ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
-
-                          {g.moneda ?? "USD"}
-
-                        </span>
-
-                        <span className="rounded bg-slate-200 px-1 py-0.5 text-[8px] font-black text-slate-700" title="Moneda de cuadre">
-
-                          Cuadre: {g.moneda_cuadre || g.moneda || "USD"}
-
-                        </span>
-
-                        <span className="rounded bg-slate-200 px-1 py-0.5 text-[8px] font-bold text-slate-600" title="Ciclo semanal (día inicio → día fin)">
-
-                          🗓️ {etiquetaDia(g.dia_inicio_semana ?? 1)}–{etiquetaDia(g.dia_fin_semana ?? 7)}
-
-                        </span>
-
-                      </div>
-
-                      {/* Badges de % Comisiones por producto (compacto: emoji + valor) */}
-
-                      <div className="flex shrink-0 items-center gap-1">
-
-                        <span className="rounded bg-indigo-50 px-1 py-0.5 text-[8px] font-bold text-indigo-700" title="Comisión Entre Tercios (Puestos) sobre el monto decidido">
-
-                          🎯 {strNum(g.comision_default) || "2.5"}%
-
-                        </span>
-
-                        {CONCEPTOS_CONVENIO.filter((c) => c.propio).map((c) => {
-
-                          const propio = (g as unknown as Record<string, unknown>);
-
-                          const valor = strNum(propio[c.campo] as string | number | null | undefined);
-
-                          return (
-
-                            <span
-
-                              key={c.clave}
-
-                              className={`rounded px-1 py-0.5 text-[8px] font-bold ${valor ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-400"}`}
-
-                              title={valor ? `${c.etiqueta}: ${valor}% por convenio` : `${c.etiqueta}: hereda Puestos (${strNum(g.comision_default) || "2.5"}%)`}
-
-                            >
-
-                              {c.emoji} {valor ? `${valor}%` : "–"}
-
+                      {/* Columna 1: Nombre del Grupo / Convenio y Estado */}
+                      <div className="lg:col-span-3 flex min-w-0 items-center gap-2">
+                        <LogoDisplay src={g.logo_url} alt={`Logo de ${g.nombre}`} tamano={28} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate text-xs font-black text-slate-800" title={g.nombre}>{g.nombre}</span>
+                            {g.es_principal ? (
+                              <span className="shrink-0 rounded bg-slate-800 px-1.5 py-0.5 text-[8px] font-black text-white">PRINCIPAL</span>
+                            ) : null}
+                          </div>
+                          <div className="mt-0.5 flex items-center gap-1.5 text-[9px] font-bold">
+                            <span className={g.activo !== false ? "text-emerald-700" : "text-rose-600"}>
+                              {g.activo !== false ? "● Activo" : "○ Inactivo"}
                             </span>
+                            <span className="text-slate-400">·</span>
+                            <span className="text-slate-500">
+                              🗓️ {etiquetaDia(g.dia_inicio_semana ?? 1)}–{etiquetaDia(g.dia_fin_semana ?? 7)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
 
+                      {/* Columna 2: Moneda interna de cálculo y % de Comisión */}
+                      <div className="lg:col-span-3 flex flex-wrap items-center gap-1">
+                        <span className={`rounded px-1.5 py-0.5 text-[9px] font-black ${esVes ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
+                          {g.moneda ?? "USD"}
+                        </span>
+                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-700" title="Moneda de cuadre">
+                          Cuadre: {g.moneda_cuadre || g.moneda || "USD"}
+                        </span>
+                        <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-black text-indigo-800" title="Comisión Entre Tercios (Puestos) sobre el monto decidido">
+                          🎯 {strNum(g.comision_default) || "2.5"}%
+                        </span>
+                        {CONCEPTOS_CONVENIO.filter((c) => c.propio).map((c) => {
+                          const propio = (g as unknown as Record<string, unknown>);
+                          const valor = strNum(propio[c.campo] as string | number | null | undefined);
+                          return (
+                            <span
+                              key={c.clave}
+                              className={`rounded px-1 py-0.5 text-[8px] font-bold ${valor ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-400"}`}
+                              title={valor ? `${c.etiqueta}: ${valor}% por convenio` : `${c.etiqueta}: hereda Puestos (${strNum(g.comision_default) || "2.5"}%)`}
+                            >
+                              {c.emoji} {valor ? `${valor}%` : "–"}
+                            </span>
                           );
-
                         })}
+                      </div>
+
+                      {/* Columna 3: % de Incentivo / Devolución y Modalidad (Con Cruces / Sin Cruces) */}
+                      <div className="lg:col-span-2 flex flex-wrap items-center gap-1.5">
+                        <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[9px] font-black text-purple-800" title="Porcentaje de Incentivo / Devolución a favor">
+                          🎁 Inc: +{incentivoGrupo}%
+                        </span>
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[9px] font-black ${
+                            conCrucesGrupo ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"
+                          }`}
+                        >
+                          {conCrucesGrupo ? "🔀 Con Cruces" : "🚫 Sin Cruces"} · ⚡ Mismo {g.cruce_mismo_ejemplar ? "Sí" : "No"} · Dif. {g.cruce_diferente_ejemplar ? "Sí" : "No"}
+                        </span>
+                      </div>
+
+                      {/* Columna 4: Límites / Avales y Participantes */}
+
+                      <div className="lg:col-span-2 flex flex-wrap items-center gap-1.5">
+
+                        <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[9px] font-black text-sky-800" title="Límite / Aval base por defecto del grupo">
+                          🛡️ Aval: {cupoGrupo}
+                        </span>
+
+                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-black text-slate-700" title="Participantes / Clientes registrados en el grupo">
+
+                          👥 {conteoPorGrupo.get(String(g.id)) ?? 0} part.
+
+                        </span>
 
                       </div>
 
-                      {/* Estado: cruces + clientes */}
+                      {/* Columna 5: Acciones alineadas a la derecha */}
 
-                      <div className="flex shrink-0 items-center gap-1">
-
-                        <span className="rounded bg-amber-100 px-1 py-0.5 text-[8px] font-black text-amber-800" title="Cruces por modalidad">
-                          ⚡ Mismo {g.cruce_mismo_ejemplar ? "Sí" : "No"} · Dif. {g.cruce_diferente_ejemplar ? "Sí" : "No"}
-                        </span>
-
-                        <span className="rounded bg-slate-100 px-1 py-0.5 text-[8px] font-bold text-slate-600" title="Clientes del grupo">
-
-                          👥 {conteoPorGrupo.get(String(g.id)) ?? 0}
-
-                        </span>
-
-                      </div>
-
-                      {/* Acciones */}
-
-                      <div className="flex shrink-0 items-center gap-0.5">
+                      <div className="lg:col-span-2 flex shrink-0 items-center justify-end gap-1">
 
                         <button
 
-                          className="rounded px-1 py-0.5 text-[11px] font-bold bg-slate-200 text-slate-700 hover:bg-slate-300"
+                          className="rounded px-1.5 py-1 text-[11px] font-bold bg-slate-200 text-slate-700 hover:bg-slate-300"
 
                           onClick={() => {
 
@@ -1508,7 +1500,7 @@ export function GruposModule() {
 
                         <button
 
-                          className="rounded bg-indigo-50 px-1 py-0.5 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100"
+                          className="rounded bg-indigo-50 px-1.5 py-1 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100"
 
                           onClick={() => {
 
@@ -1528,7 +1520,7 @@ export function GruposModule() {
 
                         <button
 
-                          className="rounded bg-emerald-50 px-1 py-0.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
+                          className="rounded bg-emerald-50 px-1.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
 
                           onClick={() => {
 
@@ -1548,7 +1540,7 @@ export function GruposModule() {
 
                         <button
 
-                          className={`rounded px-1 py-0.5 text-[11px] font-bold ${g.activo !== false ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-red-100 text-red-600 hover:bg-red-200"}`}
+                          className={`rounded px-1.5 py-1 text-[11px] font-bold ${g.activo !== false ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-red-100 text-red-600 hover:bg-red-200"}`}
 
                           onClick={() => void toggleGrupo(g)}
 
@@ -1564,7 +1556,7 @@ export function GruposModule() {
 
                           <button
 
-                            className="rounded bg-red-50 px-1 py-0.5 text-[11px] text-red-600 hover:bg-red-100"
+                            className="rounded bg-red-50 px-1.5 py-1 text-[11px] text-red-600 hover:bg-red-100"
 
                             onClick={() => void eliminarGrupo(g)}
 

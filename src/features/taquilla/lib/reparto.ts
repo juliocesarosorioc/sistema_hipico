@@ -177,8 +177,8 @@ export function lookupDisponible(clientes: ClienteDisponible[]): (nombre: string
 
 /** Divisor entre cliente 1 y cliente 2: x · * · por (como palabra suelta). */
 const DIVISOR_LADOS = /\s*(?:x|\*|\bpor\b)\s*/i;
-/** Separadores DENTRO de un mismo lado. El guion es separador, no rango. */
-const SEPARADORES_INTRA = /[\s,\-]+/;
+/** Separadores DENTRO de un mismo lado (espacio, coma, guion, barra, 'y'/'Y'). El guion es separador, no rango. */
+const SEPARADORES_INTRA = /[\s,\-\/yY&]+/;
 
 /* Expresión de ejemplares dividida, para la Carga Rápida.
 
@@ -314,10 +314,10 @@ export function extraerProporcion(jugada: string): { p: number; q: number; base:
   if (/^pp$/i.test(t)) return { p: 10, q: 10, base: "" };
 
   // "10a8 1p" / "10/8 1p": proporción adelante y nomenclatura de puestos después.
-  const mix = /^(\d+(?:\.\d+)?)\s*(?:a|\/)\s*(\d+(?:\.\d+)?)\s+(.+)$/i.exec(t);
+  const mix = /^(\d+(?:[.,]\d+)?)\s*(?:a|\/)\s*(\d+(?:[.,]\d+)?)\s+(.+)$/i.exec(t);
   if (mix) {
-    const p = parseFloat(mix[1]);
-    const q = parseFloat(mix[2]);
+    const p = parseFloat(mix[1].replace(",", "."));
+    const q = parseFloat(mix[2].replace(",", "."));
     const base = mix[3].trim();
     if (p > 0 && q > 0 && base) return { p, q, base };
     return null;

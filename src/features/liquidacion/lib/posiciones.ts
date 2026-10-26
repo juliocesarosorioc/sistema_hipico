@@ -110,3 +110,77 @@ export function dividendosDePizarra(r: {
   if (!Object.keys(porCaballo).length && !Object.keys(matriz).length) return null;
   return { ...porCaballo, ...matriz };
 }
+
+export type ValidacionUnicidadPizarra = {
+  ok: boolean;
+  duplicados: string[];
+  retiradosEnPizarra: string[];
+  mensaje: string | null;
+};
+
+/**
+ * Valida que ningún número de ejemplar se repita en dos o más posiciones de la pizarra
+ * (`1°` a `8°`) y que ningún ejemplar retirado sea asignado como puesto oficial.
+ */
+export function validarPizarraSinDuplicados(
+  posiciones: ReadonlyArray<string | number | null | undefined> | PizarraConPosiciones | null | undefined,
+  retirados?: Iterable<string | number> | null
+): ValidacionUnicidadPizarra {
+  const listaRaw: string[] = Array.isArray(posiciones)
+    ? posiciones.map((v) => String(v ?? "").trim().replace(/^0+(?=\d)/, "")).filter(Boolean)
+    : posicionesDePizarra(posiciones as PizarraConPosiciones | null | undefined).map((v) =>
+        v.replace(/^0+(?=\d)/, "")
+      );
+
+  const setRetirados = new Set<string>();
+  if (retirados) {
+    for (const r of retirados) {
+      const norm = String(r ?? "").trim().replace(/^0+(?=\d)/, "");
+      if (norm) setRetirados.add(norm);
+    }
+  }
+
+  const vistos = new Set<string>();
+  const duplicadosSet = new Set<string>();
+  const retiradosSet = new Set<string>();
+
+  for (const num of listaRaw) {
+    if (!num) continue;
+    if (vistos.has(num)) {
+      duplicadosSet.add(num);
+    } else {
+      vistos.add(num);
+    }
+    if (setRetirados.has(num)) {
+      retiradosSet.add(num);
+    }
+  }
+
+  const duplicados = [...duplicadosSet];
+  const retiradosEnPizarra = [...retiradosSet];
+
+  if (duplicados.length > 0) {
+    return {
+      ok: false,
+      duplicados,
+      retiradosEnPizarra,
+      mensaje: `⚠️ El ejemplar #${duplicados[0]} ya está asignado en otra posición de la pizarra`,
+    };
+  }
+
+  if (retiradosEnPizarra.length > 0) {
+    return {
+      ok: false,
+      duplicados,
+      retiradosEnPizarra,
+      mensaje: `⚠️ El ejemplar #${retiradosEnPizarra[0]} figura como RETIRADO y no puede ocupar puesto en la pizarra`,
+    };
+  }
+
+  return {
+    ok: true,
+    duplicados: [],
+    retiradosEnPizarra: [],
+    mensaje: null,
+  };
+}

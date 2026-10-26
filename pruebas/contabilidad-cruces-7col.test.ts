@@ -278,8 +278,9 @@ const sumaSmic = calcularSMIC(ejemplaresGodet).escenarios.reduce((a, s) => a + s
 si(Math.abs(sumaSmic - 100) <= 1, `Probabilidades SMIC suman 100% (${sumaSmic}%)`);
 
 const gestionSrc = readFileSync(join(process.cwd(), "src", "features", "gestion", "components", "GestionJugadasModule.tsx"), "utf8");
+const proySrc = readFileSync(join(process.cwd(), "src", "features", "inteligencia", "components", "ProyeccionesModule.tsx"), "utf8");
 si(gestionSrc.includes('id="reporteArea"'), "GestionJugadasModule incluye el visor interactivo #reporteArea");
-si(gestionSrc.includes("ModalAnalisisActuarialGodet"), "GestionJugadasModule monta ModalAnalisisActuarialGodet");
+si(proySrc.includes("Motor IA Godet v3"), "ProyeccionesModule aloja Motor IA Godet v3");
 si(gestionSrc.includes("Acuse de Recibo"), "GestionJugadasModule exige Acuse de Recibo del operador");
 
 console.log(`\nRESULTADO — contabilidad, cruces y 7 columnas: ${pasan} ok, ${fallan} fallan\n`);

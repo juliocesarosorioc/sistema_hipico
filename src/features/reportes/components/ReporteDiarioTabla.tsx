@@ -54,9 +54,9 @@ export function ReporteDiarioTabla({ datos, moneda = "USD", perspectiva = "casa"
     ? [
         { etiqueta: "Total Jugado", valor: dinero(totales.totalJugado), acento: "text-indigo-700" },
         { etiqueta: "Total Premios", valor: dinero(totales.totalPremios), acento: "text-emerald-700" },
-        { etiqueta: "Total Devolución / Incentivo", valor: dinero(totales.devolucion), acento: "text-amber-700" },
+        { etiqueta: "🎁 Devolución / Incentivo a favor", valor: `+${dinero(totales.devolucion)}`, acento: "text-emerald-700" },
         {
-          etiqueta: "Balance a tu favor",
+          etiqueta: "Balance a tu favor (+ Incentivo)",
           valor: dinero(balanceTotal),
           acento: balanceTotal >= 0 ? "text-emerald-700" : "text-red-600",
         },
@@ -64,7 +64,7 @@ export function ReporteDiarioTabla({ datos, moneda = "USD", perspectiva = "casa"
     : [
         { etiqueta: "Total Jugado", valor: dinero(totales.totalJugado), acento: "text-indigo-700" },
         { etiqueta: "Total Premios", valor: dinero(totales.totalPremios), acento: "text-emerald-700" },
-        { etiqueta: "Total Devolución Diaria", valor: dinero(totales.devolucion), acento: "text-amber-700" },
+        { etiqueta: "🎁 Devolución / Incentivo a favor", valor: `+${dinero(totales.devolucion)}`, acento: "text-emerald-700" },
         {
           etiqueta: "Balance Neto del Día",
           valor: dinero(balanceTotal),
@@ -111,8 +111,8 @@ export function ReporteDiarioTabla({ datos, moneda = "USD", perspectiva = "casa"
                     <td className="px-3 py-2 text-right font-mono tabular-nums text-emerald-700">
                       {dinero(f.totalPremios)}
                     </td>
-                    <td className="bg-amber-50 px-3 py-2 text-right font-mono tabular-nums font-bold text-amber-700">
-                      {dinero(f.devolucion)}
+                    <td className="bg-emerald-50 px-3 py-2 text-right font-mono tabular-nums font-bold text-emerald-700">
+                      +{dinero(f.devolucion)}
                     </td>
                     <td
                       className={`px-3 py-2 text-right font-mono tabular-nums font-bold ${
@@ -145,8 +145,8 @@ export function ReporteDiarioTabla({ datos, moneda = "USD", perspectiva = "casa"
                   <td className="px-3 py-3 text-right font-mono tabular-nums text-emerald-700">
                     {dinero(totales.totalPremios)}
                   </td>
-                  <td className="bg-amber-100 px-3 py-3 text-right font-mono tabular-nums text-amber-800">
-                    {dinero(totales.devolucion)}
+                  <td className="bg-emerald-100 px-3 py-3 text-right font-mono tabular-nums text-emerald-800">
+                    +{dinero(totales.devolucion)}
                   </td>
                   <td
                     className={`px-3 py-3 text-right font-mono tabular-nums ${

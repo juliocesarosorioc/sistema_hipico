@@ -22,6 +22,19 @@ import {
   calcularComisionExacta,
   calcularProporcionExacta,
 } from "@/shared/lib/dinero";
+import {
+  normalizarJugadaPremio,
+  getMejorPos,
+  extraerEjemplaresMultiples,
+  calcularRiesgoCliente2,
+} from "@/features/liquidacion/lib/puestos";
+
+export {
+  normalizarJugadaPremio,
+  getMejorPos,
+  extraerEjemplaresMultiples,
+  calcularRiesgoCliente2,
+};
 
 export type RolJugada = "juega" | "da";
 
@@ -124,19 +137,28 @@ export const TABLA_JUGADAS: Record<string, ReglaTablaJugada> = (() => {
 
 /** Normaliza el código de una jugada para buscarla en `TABLA_JUGADAS`. */
 export function normalizarCodigoJugada(raw: string | null | undefined): string {
-  const s = String(raw ?? "")
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, "")
-    .replace(/&/g, "Y");
-  if (!s) return "1P";
-  if (s === "10/10" || s === "10A10") return "PP";
-  const mProp = /^10(?:A|\/)(\d+(?:[.,]\d+)?)$/.exec(s);
+  const normPremio = normalizarJugadaPremio(raw);
+  if (!normPremio) return "1P";
+  if (normPremio === "10/10" || normPremio === "10A10") return "PP";
+  return normPremio.replace(/\s+/g, "").replace(/&/g, "Y");
+}
+
+/** Obtiene la regla en `TABLA_JUGADAS` o resuelve dinámicamente cualquier factor decimal `10Ax`. */
+export function obtenerReglaTablaJugada(codigo: string): ReglaTablaJugada | undefined {
+  const cod = normalizarCodigoJugada(codigo);
+  if (TABLA_JUGADAS[cod]) return TABLA_JUGADAS[cod];
+  const mProp = /^10A(\d+(?:\.\d+)?)$/.exec(cod);
   if (mProp) {
-    const num = mProp[1].replace(",", ".");
-    return `10A${num}`;
+    const f = parseFloat(mProp[1]);
+    if (Number.isFinite(f) && f > 0) {
+      return {
+        codigo: cod,
+        tramos: [{ puesto: 1, esNini: false }],
+        factor10Ax: f,
+      };
+    }
   }
-  return s;
+  return undefined;
 }
 
 /** Normaliza el nombre de un cliente para cruces e identificación. */
@@ -161,7 +183,10 @@ export type JugadaActivaSimulacion = {
 };
 
 /**
- * Extrae los ejemplares involucrados en una jugada (`"3"`, `"3x6"`, `"1,2x3"`).
+ * Extrae los ejemplares involucrados en una jugada (`"3"`, `"1y2"`, `"3y4"`, `"3x6"`, `"1,2x3"`).
+ * En jugadas posicionales de puestos (`1P`..`6Y7NY7N`, `2N`, `1Y2N`, etc.), cualquier lista de
+ * ejemplares (`1y2`, `1-2`, `1,2`, `1x2`, `3y4`, `2 5 8`) pertenece íntegramente a Cliente 1 (`c1`),
+ * mientras Cliente 2 actúa como Dador (`c2 = []`).
  */
 export function extraerCaballosJugada(caballoRaw: string | null | undefined, jugadaRaw?: string | null): {
   c1: string[];
@@ -171,9 +196,21 @@ export function extraerCaballosJugada(caballoRaw: string | null | undefined, jug
   const texto = String(caballoRaw ?? "").trim() || String(jugadaRaw ?? "").trim();
   if (!texto) return { c1: ["1"], c2: [], todos: ["1"] };
 
-  const partes = texto.split(/\s*(?:x|\*|\bpor\b)\s*/i);
+  const cod = normalizarCodigoJugada(jugadaRaw);
+  const regla = obtenerReglaTablaJugada(cod);
+  const esPosicionalPuestos =
+    Boolean(regla) && !regla?.esPP && regla?.factor10Ax == null && !/^\d+X\d+$/i.test(String(jugadaRaw ?? "").trim());
+
   const extraerNums = (s: string) =>
-    (s.match(/\d{1,2}/g) ?? []).map((n) => String(Number(n))).filter((n) => Number(n) > 0);
+    extraerEjemplaresMultiples(s).map((n) => String(n));
+
+  if (esPosicionalPuestos) {
+    const c1 = extraerNums(texto);
+    const unicos = c1.length ? [...new Set(c1)] : ["1"];
+    return { c1: unicos, c2: [], todos: unicos };
+  }
+
+  const partes = texto.split(/\s*(?:x|\*|\bpor\b)\s*/i);
 
   if (partes.length >= 2) {
     const c1 = extraerNums(partes[0]);
@@ -199,7 +236,7 @@ export function _rolEfectivo(
   rolOriginal: RolJugada
 ): { c1Canon: string[]; c2Canon: string[]; rol: RolJugada; invertido: boolean } {
   const cod = normalizarCodigoJugada(codigoJugada);
-  const regla = TABLA_JUGADAS[cod];
+  const regla = obtenerReglaTablaJugada(cod);
   const esAsimetrico10Ax = Boolean(regla?.factor10Ax && regla.factor10Ax !== 10);
 
   if (!esAsimetrico10Ax && c1.length === 1 && c2.length === 1 && (cod === "PP" || /^\d+X\d+$/i.test(codigoJugada))) {
@@ -268,7 +305,7 @@ export function evaluarJugadaEnEscenario(
 
   const p1 = posMejor(canon.c1Canon);
   const p2 = posMejor(canon.c2Canon);
-  const regla = TABLA_JUGADAS[cod];
+  const regla = obtenerReglaTablaJugada(cod);
   const factorRival = regla?.factor10Ax != null ? regla.factor10Ax : 10;
   const riesgoJuega = monto;
   const riesgoDa = factorRival !== 10 ? calcularProporcionExacta(monto, factorRival, 10) : monto;

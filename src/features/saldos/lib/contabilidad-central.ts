@@ -33,19 +33,47 @@ export type ResumenContableCliente = {
   clienteId: string;
   nombre: string;
   grupoId: string | null;
+  saldoInicial?: number;
   depositos: number;
   retiros: number;
   jugadasGanadasBruto: number;
   reembolsoCruce: number;
   comisionesCobradas: number;
   jugadasGanadasNeto: number;
+  devolucionIncentivo: number;
   jugadasPerdidas: number;
   saldoContable: number;
   avalVigente: number;
   riesgoEnCurso: number;
   disponibleParaJugar: number;
+  jugadasEnVivoCount?: number;
+  jugadasAdelantadasCount?: number;
   reparadoAutomaticamente?: boolean;
 };
+
+/**
+ * Regla Financiera de Incentivo / Devolución (`+` a favor del cliente/avalador):
+ *   Saldo Final Cliente = Saldo por Jugadas y Movimientos + Devolución de Incentivos
+ */
+export function aplicarDevolucionIncentivoAFavor(
+  saldoPorJugadasYMovimientos: number,
+  devolucionIncentivo: number
+): {
+  saldoPorJugadasYMovimientos: number;
+  devolucionIncentivo: number;
+  saldoFinalCliente: number;
+  etiqueta: string;
+} {
+  const base = redondearCentavos(saldoPorJugadasYMovimientos);
+  const incentivo = Math.max(0, redondearCentavos(devolucionIncentivo));
+  const saldoFinalCliente = sumarDinero(base, incentivo);
+  return {
+    saldoPorJugadasYMovimientos: base,
+    devolucionIncentivo: incentivo,
+    saldoFinalCliente,
+    etiqueta: `🎁 Devolución / Incentivo a favor: +${incentivo.toFixed(2)}`,
+  };
+}
 
 export type TicketContableRaw = {
   id?: string | number;
@@ -116,8 +144,11 @@ export function calcularResumenContableCliente(params: {
   grupoId?: string | number | null;
   aval?: number | string | null;
   saldoEnBase?: number | string | null;
+  saldoInicial?: number | string | null;
   depositos?: number;
   retiros?: number;
+  devolucionIncentivo?: number | string | null;
+  devolucionPct?: number | string | null;
   tickets?: TicketContableRaw[];
   modalidadCruces?: ModalidadCruceCarrera | boolean;
   comisionPctDefault?: number;
@@ -144,6 +175,9 @@ export function calcularResumenContableCliente(params: {
 
   let participoEnTickets = 0;
   let ticketsValidosNoAnulados = 0;
+  let montoDecididoParaIncentivoCentavos = 0;
+  let jugadasEnVivoCount = 0;
+  let jugadasAdelantadasCount = 0;
 
   for (const t of tickets) {
     const jId = t.cliente_juega_id != null ? String(t.cliente_juega_id) : "";
@@ -161,9 +195,16 @@ export function calcularResumenContableCliente(params: {
       continue;
     }
     ticketsValidosNoAnulados++;
+    if (t.es_adelantada) {
+      jugadasAdelantadasCount++;
+    } else {
+      jugadasEnVivoCount++;
+    }
 
     const est = String(t.estado ?? "PENDIENTE").trim().toUpperCase();
     const monto = redondearCentavos(t.monto_jugado ?? t.monto ?? 0);
+    const baseDecidida = redondearCentavos(t.monto_decidido ?? t.monto_jugado ?? t.monto ?? 0);
+    montoDecididoParaIncentivoCentavos += aCentavos(baseDecidida);
     const comPct =
       t.comision_porcentaje != null && String(t.comision_porcentaje).trim() !== ""
         ? Number(t.comision_porcentaje)
@@ -256,11 +297,26 @@ export function calcularResumenContableCliente(params: {
   }
   const riesgoEnCurso = deCentavos(riesgoCentavos);
 
+  // Devolución de Incentivos a favor del cliente (+):
+  // Si se pasa monto explícito `devolucionIncentivo`, se usa; si se pasa `devolucionPct`, se calcula sobre el monto decidido/jugado.
+  const devPct = params.devolucionPct != null ? Math.max(0, Number(params.devolucionPct) || 0) : 0;
+  const devolucionIncentivo =
+    params.devolucionIncentivo != null
+      ? Math.max(0, redondearCentavos(params.devolucionIncentivo))
+      : devPct > 0
+        ? calcularComisionExacta(deCentavos(montoDecididoParaIncentivoCentavos), devPct)
+        : 0;
+
+  const saldoInicial = redondearCentavos(params.saldoInicial ?? 0);
+
   // Fórmula contable única auditable:
-  // saldoContable = depositos - retiros + jugadasGanadasNeto - jugadasPerdidas
+  // saldoContable = saldoInicial + depositos - retiros + jugadasGanadasNeto - jugadasPerdidas + devolucionIncentivo
   let saldoContable = sumarDinero(
-    restarDinero(depositos, retiros),
-    restarDinero(jugadasGanadasNeto, jugadasPerdidas)
+    sumarDinero(
+      sumarDinero(saldoInicial, restarDinero(depositos, retiros)),
+      restarDinero(jugadasGanadasNeto, jugadasPerdidas)
+    ),
+    devolucionIncentivo
   );
 
   let reparadoAutomaticamente = false;
@@ -273,22 +329,23 @@ export function calcularResumenContableCliente(params: {
     (participoEnTickets > 0 && ticketsValidosNoAnulados === 0 && depositos === 0 && retiros === 0 && saldoBaseNum < 0);
 
   if (esPedroCorrupto) {
-    saldoContable = 0;
+    saldoContable = devolucionIncentivo;
     reparadoAutomaticamente = true;
   } else if (
     participoEnTickets === 0 &&
     depositos === 0 &&
     retiros === 0 &&
+    saldoInicial === 0 &&
     params.saldoEnBase !== undefined &&
     params.saldoEnBase !== null
   ) {
     // Si no hay historial de tickets cargados en memoria y no es el saldo corrupto de Pedro (-6000),
     // respeta el saldo inicial salvo que sea el caso Pedro -6000 sin jugadas válidas
     if (nombreNorm.includes("PEDRO") && saldoBaseNum === -6000) {
-      saldoContable = 0;
+      saldoContable = devolucionIncentivo;
       reparadoAutomaticamente = true;
     } else {
-      saldoContable = saldoBaseNum;
+      saldoContable = sumarDinero(saldoBaseNum, devolucionIncentivo);
     }
   }
 
@@ -298,17 +355,21 @@ export function calcularResumenContableCliente(params: {
     clienteId: idStr,
     nombre: params.nombre,
     grupoId: params.grupoId != null ? String(params.grupoId) : null,
+    saldoInicial,
     depositos,
     retiros,
     jugadasGanadasBruto,
     reembolsoCruce,
     comisionesCobradas,
     jugadasGanadasNeto,
+    devolucionIncentivo,
     jugadasPerdidas,
     saldoContable,
     avalVigente,
     riesgoEnCurso,
     disponibleParaJugar,
+    jugadasEnVivoCount,
+    jugadasAdelantadasCount,
     reparadoAutomaticamente,
   };
 }
@@ -441,8 +502,11 @@ export function calcularEstadoCuentaCliente(params: {
   grupoId?: string | number | null;
   grupoNombre?: string | null;
   saldoBaseBd?: number | string | null;
+  saldoInicial?: number | string | null;
   aval?: number | string | null;
   comisionPct?: number | string | null;
+  devolucionIncentivo?: number | string | null;
+  devolucionPct?: number | string | null;
   libre?: boolean | null;
   depositos?: number;
   retiros?: number;
@@ -464,6 +528,7 @@ export function calcularEstadoCuentaCliente(params: {
       comision_porcentaje: j.comisionPct,
       estado: j.estado ?? "PENDIENTE",
       anulada: j.anulada ?? false,
+      es_adelantada: j.esAdelantada ?? false,
     })),
   ];
 
@@ -473,8 +538,11 @@ export function calcularEstadoCuentaCliente(params: {
     grupoId: params.grupoId,
     aval: params.aval,
     saldoEnBase: params.saldoBaseBd,
+    saldoInicial: params.saldoInicial,
     depositos: params.depositos,
     retiros: params.retiros,
+    devolucionIncentivo: params.devolucionIncentivo,
+    devolucionPct: params.devolucionPct,
     tickets: ticketsCombinados,
     comisionPctDefault: Number(params.comisionPct ?? 5),
   });
@@ -486,3 +554,59 @@ export function calcularEstadoCuentaCliente(params: {
     fueSaneado: Boolean(r.reparadoAutomaticamente),
   };
 }
+
+/**
+ * Ficha unificada de 10 parámetros contables compartida exactamente al 100%
+ * entre `👥 Gestión de Clientes` y `🌐 Portal de Clientes` (Req 11).
+ */
+export interface FichaEstadoCuentaUnificada {
+  /** 1. Saldo Inicial / Anterior */
+  saldoInicial: number;
+  /** 2. Depósitos (+) y Retiros (-) */
+  depositos: number;
+  retiros: number;
+  /** 3. Aval Vigente */
+  avalVigente: number;
+  /** 4. Jugadas en Vivo y Jugadas Adelantadas */
+  jugadasEnVivoCount: number;
+  jugadasAdelantadasCount: number;
+  /** 5. Jugadas Ganadas (Bruto), Comisiones Cobradas, Reembolso por Cruces (+) */
+  jugadasGanadasBruto: number;
+  comisionesCobradas: number;
+  reembolsoCruce: number;
+  jugadasGanadasNeto: number;
+  /** 6. 🎁 Devolución / Incentivo a favor: +[Monto] */
+  devolucionIncentivo: number;
+  /** 7. Jugadas Perdidas (-) */
+  jugadasPerdidas: number;
+  /** 8. Riesgo en Curso (-) */
+  riesgoEnCurso: number;
+  /** 9. Saldo Contable Neto */
+  saldoContable: number;
+  /** 10. Disponible Total para Apostar */
+  disponibleParaJugar: number;
+}
+
+export function construirFichaEstadoCuentaUnificada(
+  params: Parameters<typeof calcularEstadoCuentaCliente>[0]
+): FichaEstadoCuentaUnificada {
+  const est = calcularEstadoCuentaCliente(params);
+  return {
+    saldoInicial: est.saldoInicial ?? 0,
+    depositos: est.depositos,
+    retiros: est.retiros,
+    avalVigente: est.avalVigente,
+    jugadasEnVivoCount: est.jugadasEnVivoCount ?? 0,
+    jugadasAdelantadasCount: est.jugadasAdelantadasCount ?? 0,
+    jugadasGanadasBruto: est.jugadasGanadasBruto,
+    comisionesCobradas: est.comisionesCobradas,
+    reembolsoCruce: est.reembolsoCruce,
+    jugadasGanadasNeto: est.jugadasGanadasNeto,
+    devolucionIncentivo: est.devolucionIncentivo,
+    jugadasPerdidas: est.jugadasPerdidas,
+    riesgoEnCurso: est.riesgoEnCurso,
+    saldoContable: est.saldoContable,
+    disponibleParaJugar: est.disponibleParaJugar,
+  };
+}
+

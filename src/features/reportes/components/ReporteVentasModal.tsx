@@ -688,26 +688,6 @@ export function ReporteVentasModal({
         if (e.target === e.currentTarget) onCerrar();
       }}
     >
-      {/* Reglas de impresión: imprime SOLO este reporte, paginando la tabla. */}
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-            @media print {
-              body * { visibility: hidden !important; }
-              .rt-overlay { position: static !important; display: block !important; background: #fff !important; padding: 0 !important; }
-              .rt-imprimible, .rt-imprimible * { visibility: visible !important; }
-              .rt-imprimible { position: static !important; max-height: none !important; max-width: none !important; box-shadow: none !important; border: 0 !important; border-radius: 0 !important; overflow: visible !important; width: 100% !important; }
-              .rt-scroll { overflow: visible !important; max-height: none !important; background: #fff !important; padding: 0 !important; }
-              .rt-no-print { display: none !important; }
-              thead { display: table-header-group; }
-              tfoot { display: table-footer-group; }
-              tr { break-inside: avoid; }
-              @page { size: A4 landscape; margin: 8mm; }
-            }
-          `,
-        }}
-      />
-
       {accion && (
         <ModalAccionJugadaReporte
           key={`${accion.venta.id}-${accion.modo}`}

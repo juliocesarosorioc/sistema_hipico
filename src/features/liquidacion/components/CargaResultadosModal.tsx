@@ -1,8 +1,10 @@
-﻿"use client";
+"use client";
 
 import { getHorseColor } from "@/shared/lib/horseColors";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
+import { validarPizarraSinDuplicados } from "@/features/liquidacion/lib/posiciones";
+export { validarPizarraSinDuplicados };
 import type { EjemplarTabla } from "@/features/tablas/lib/tipos";
 import { colorDeNumero, textoDeNumero } from "@/features/tablas/lib/tipos";
 import { CLAVES_WPS, ETIQUETAS_WPS, PREFIJO_WPS, pagoPorUno } from "@/features/motores/lib/wps";
@@ -120,6 +122,7 @@ export function CargaResultadosModal({
   const [matrizWps, setMatrizWps] = useState<Record<string, string>>({});
   const [mismoRaya, setMismoRaya] = useState(true);
   const [rayaNumero, setRayaNumero] = useState("");
+  const [alertaDuplicado, setAlertaDuplicado] = useState<string | null>(null);
   const hipodromosActivos = useHipodromosActivos();
   const nombreHipo = nombrePropioHipodromo(hipodromo, hipodromosActivos);
   // Casillas de posición en orden (1°, 2°, 3°…): Enter/↓ y ↑ mueven el cursor
@@ -135,6 +138,7 @@ export function CargaResultadosModal({
     setMismoRaya(true);
     setRayaNumero("");
     setMotivo("");
+    setAlertaDuplicado(null);
 
     // Precarga: si ya hay resultados cargados para esta carrera (aunque sea de
     // otra sesión, traídos del central), se rellena TODO el formulario en vez
@@ -316,8 +320,50 @@ export function CargaResultadosModal({
   const llenas = filas.filter((r) => r.numero.trim()).length;
   const primerNumero = filas.find((r) => r.numero.trim())?.numero ?? "";
 
-  const setNumero = (i: number, v: string) =>
-    setFilas((f) => f.map((r, j) => (j === i ? { ...r, numero: v.replace(/[^0-9]/g, "") } : r)));
+  const retiradosSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const c of caballos ?? []) {
+      if ((c as { retirado?: boolean }).retirado) {
+        const n = String(c.numero ?? "").trim().replace(/^0+(?=\d)/, "");
+        if (n) s.add(n);
+      }
+    }
+    return s;
+  }, [caballos]);
+
+  const validacionPizarra = useMemo(
+    () =>
+      validarPizarraSinDuplicados(
+        filas.map((f) => f.numero),
+        retiradosSet
+      ),
+    [filas, retiradosSet]
+  );
+
+  const setNumero = (i: number, v: string) => {
+    const limpio = v.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");
+    if (!limpio) {
+      setAlertaDuplicado(null);
+      setFilas((f) => f.map((r, j) => (j === i ? { ...r, numero: "" } : r)));
+      return;
+    }
+    const yaOcupadoEn = filas.findIndex(
+      (r, j) => j !== i && r.numero.trim().replace(/^0+(?=\d)/, "") === limpio
+    );
+    if (yaOcupadoEn !== -1) {
+      setAlertaDuplicado(`⚠️ El ejemplar #${limpio} ya está asignado en otra posición de la pizarra (${yaOcupadoEn + 1}°)`);
+      // Bloquea la entrada duplicada y limpia la casilla repetida inmediatamente
+      setFilas((f) => f.map((r, j) => (j === i ? { ...r, numero: "" } : r)));
+      return;
+    }
+    if (retiradosSet.has(limpio)) {
+      setAlertaDuplicado(`⚠️ El ejemplar #${limpio} está RETIRADO y no puede asignarse en la pizarra`);
+      setFilas((f) => f.map((r, j) => (j === i ? { ...r, numero: "" } : r)));
+      return;
+    }
+    setAlertaDuplicado(null);
+    setFilas((f) => f.map((r, j) => (j === i ? { ...r, numero: limpio } : r)));
+  };
   const toggleEmpate = (i: number) =>
     setFilas((f) => f.map((r, j) => (j === i ? { ...r, empate: !r.empate } : r)));
 
@@ -353,6 +399,10 @@ export function CargaResultadosModal({
   const confirmar = () => {
     const r = construirResultado();
     if (!r.pizarra.primero) return;
+    if (!validacionPizarra.ok) {
+      setAlertaDuplicado(validacionPizarra.mensaje);
+      return;
+    }
     // Cambiar el resultado de una carrera YA liquidada mueve plata: se exige el
     // motivo. Se vuelve a comprobar acá (y no solo en el botón) para que no haya
     // forma de confirmar un cambio sin justificación.
@@ -444,6 +494,23 @@ export function CargaResultadosModal({
         </div>
 
         <div className="divide-y divide-line px-3">
+          {(alertaDuplicado || validacionPizarra.mensaje) && (
+            <div
+              role="alert"
+              className="my-1.5 flex items-center justify-between gap-2 rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-[10px] font-black text-rose-700"
+            >
+              <span>{alertaDuplicado ?? validacionPizarra.mensaje}</span>
+              {alertaDuplicado && (
+                <button
+                  type="button"
+                  onClick={() => setAlertaDuplicado(null)}
+                  className="text-rose-500 hover:text-rose-800"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          )}
           {llenas < minLugares && (
             <p className="flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 text-[9px] font-semibold text-amber-700">
               ℹ️ Para calcular jugadas de puestos se recomienda cargar al menos {minLugares} lugares (tenés {llenas}).
@@ -636,7 +703,14 @@ export function CargaResultadosModal({
               size="sm"
               onClick={confirmar}
               disabled={faltaMotivo}
-              title={faltaMotivo ? "Escribí el motivo del cambio para poder recalcular la liquidación" : undefined}
+              className={!validacionPizarra.ok || llenas === 0 ? "pointer-events-none opacity-40" : undefined}
+              title={
+                !validacionPizarra.ok
+                  ? validacionPizarra.mensaje ?? "Hay ejemplares duplicados en la pizarra"
+                  : faltaMotivo
+                    ? "Escribí el motivo del cambio para poder recalcular la liquidación"
+                    : undefined
+              }
             >
               {cambioEnLiquidada ? "💾 Guardar y recalcular" : "💾 Confirmar Resultados"}
             </Button>

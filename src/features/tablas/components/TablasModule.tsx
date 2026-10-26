@@ -92,12 +92,11 @@ export function TablasModule(props: Props) {
    *  fecha elegida signifique lo mismo en los dos. */
   const [ejeFecha, setEjeFecha] = useState<EjeFecha>("carrera");
   /**
-   * Modalidad de TIEMPO de la próxima venta (PROMPT #4): `EN_VIVO` (como
-   * siempre) o `ADELANTADA` (la tabla se vendió ANTES de que corra la carrera).
-   * Solo aplica a la VENTA a la taquilla: el ensamblaje y la liquidación no
-   * llevan modalidad de tiempo.
+   * Modalidad de TIEMPO de la próxima venta: en Tablas Fijas arranca por defecto
+   * en `ADELANTADA` (`⏳ Jugada Adelantada`, `esAdelantada = true`) salvo que el
+   * operador cambie manualmente a `⚡ En Vivo`.
    */
-  const [modalidadTiempo, setModalidadTiempo] = useState<ModalidadTiempo>(MODALIDAD_POR_DEFECTO);
+  const [modalidadTiempo, setModalidadTiempo] = useState<ModalidadTiempo>("ADELANTADA");
 
   const openCount = tablas.filter((t) => !t.cerrada).length;
 

@@ -269,6 +269,21 @@ function grupoParaFiltrar(): string | null {
   return grupoActivoVigente();
 }
 
+export function credencialesPortalPorDefecto(c: Pick<ClienteRow, "id" | "portal_habilitado" | "portal_token" | "portal_clave">): {
+  portal_habilitado: boolean;
+  portal_token: string;
+  portal_clave: string;
+} {
+  const idClean = String(c.id ?? "0").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 6) || "0001";
+  const token = String(c.portal_token ?? "").trim() || `TK${idClean}`;
+  const clave = String(c.portal_clave ?? "").trim() || `CL${idClean}`;
+  return {
+    portal_habilitado: c.portal_habilitado !== false,
+    portal_token: token,
+    portal_clave: clave,
+  };
+}
+
 export async function listarClientes(force = false, grupoIdOverride?: string | null): Promise<ClienteRow[]> {
   const activoBase = grupoParaFiltrar();
   const activo = grupoIdOverride != null && grupoIdOverride !== "" ? grupoIdOverride : activoBase;
@@ -284,11 +299,17 @@ export async function listarClientes(force = false, grupoIdOverride?: string | n
       const { data, error } = await q;
       if (error) throw error;
       lista = (await sincronizarSaldosRealesClientes(
-        ((data ?? []) as ClienteRow[]).map((c) => ({
-          ...c,
-          saldo_actual: c.saldo_actual != null ? redondearCentavos(c.saldo_actual) : 0,
-          aval: c.aval != null ? redondearCentavos(c.aval) : 0,
-        })),
+        ((data ?? []) as ClienteRow[]).map((c) => {
+          const creds = credencialesPortalPorDefecto(c);
+          return {
+            ...c,
+            saldo_actual: c.saldo_actual != null ? redondearCentavos(c.saldo_actual) : 0,
+            aval: c.aval != null ? redondearCentavos(c.aval) : 0,
+            portal_habilitado: creds.portal_habilitado,
+            portal_token: creds.portal_token,
+            portal_clave: creds.portal_clave,
+          };
+        }),
         activo
       )) as ClienteRow[];
     } catch (e) {

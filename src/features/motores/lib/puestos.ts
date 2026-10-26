@@ -149,15 +149,22 @@ function resolverJugada(nom: Nomenclatura, caballo: string): Resuelta {
     derecha: [] as string[],
     hayDivisor: false,
   };
-  const ladoA = nom.ladoA.length > 0 ? nom.ladoA : col.izquierda;
-  const ladoB = nom.ladoB.length > 0 ? nom.ladoB : col.derecha;
+  const esPosicionalPizarra =
+    nom.modalidad === "PUESTO_PURO" ||
+    nom.modalidad === "NINI" ||
+    nom.modalidad === "COMBINADA" ||
+    nom.modalidad === "COMPUESTA";
+
+  const todosCol = [...col.izquierda, ...col.derecha];
+  const ladoA = nom.ladoA.length > 0 ? nom.ladoA : esPosicionalPizarra ? todosCol : col.izquierda;
+  const ladoB = nom.ladoB.length > 0 ? nom.ladoB : esPosicionalPizarra ? [] : col.derecha;
 
   let modalidad = nom.modalidad;
 
-  // Un `x` en la columna CABALLO son dos clientes enfrentados, asi que es un
-  // enfrentamiento aunque la columna JUGADA solo traiga la proporcion
-  // (forma legacy "2x3 10/8", o "10/8" con caballo "3x5").
-  if (col.hayDivisor && modalidad !== "MATCHUP" && modalidad !== "MATCHUP_PROPORCION") {
+  // Un `x` en la columna CABALLO son dos clientes enfrentados cuando la jugada es PP o A_PREMIO
+  // (forma legacy "2x3 10/8", o "10/8" con caballo "3x5"). En jugadas posicionales de puestos
+  // (1P, 2P, 2N, 1Y2N) todos los ejemplares listados ("1y2", "1x2", "3y4") pertenecen al jugador (ladoA).
+  if (col.hayDivisor && !esPosicionalPizarra && modalidad !== "MATCHUP" && modalidad !== "MATCHUP_PROPORCION") {
     modalidad = nom.proporcion ? "MATCHUP_PROPORCION" : "MATCHUP";
   }
 

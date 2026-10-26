@@ -12,6 +12,19 @@ import {
   type ClienteRiesgo,
   type Reparto,
 } from "@/features/taquilla/lib/reparto";
+import {
+  normalizarJugadaPremio,
+  getMejorPos,
+  extraerEjemplaresMultiples,
+  calcularRiesgoCliente2,
+} from "@/features/liquidacion/lib/puestos";
+
+export {
+  normalizarJugadaPremio,
+  getMejorPos,
+  extraerEjemplaresMultiples,
+  calcularRiesgoCliente2,
+};
 
 export type Proyeccion = {
   monto: number;
@@ -121,7 +134,9 @@ export function validarComando(
 
   const infoNini = parsearNini(tipo);
   if (infoNini) {
-    const caballoTicket = String(caballo ?? "1").trim().replace(/[^0-9]/g, "") || "1";
+    const ejs = extraerEjemplaresMultiples(caballo ?? "1");
+    const primerCaballo = ejs.length > 0 ? String(ejs[0]) : "1";
+    const caballoTicket = caballoCol || primerCaballo;
     const base: TicketMotor = {
       hipodromo: "",
       carrera: "",
@@ -135,23 +150,17 @@ export function validarComando(
       tipo_jugada: infoNini.modalidad,
       monto,
       puesto_final: 1 as TicketMotor["puesto_final"],
-      pizarra: { primero: "1" },
+      pizarra: { primero: primerCaballo },
       dividendos: null,
     };
-    /* Se proyectan los DOS escenarios reales de un nini, colocando al caballo
-       en posiciones concretas de la pizarra:
-         - GANA: 1er lugar (todo nini con N>=2 se cumple con llegar 1º).
-         - PIERDE: un puesto que NO cumple "llegar < N", es decir N+1.
-       Antes se apoyaba en la liquidacion invertida del nini para simular la
-       perdida; ahora el escenario se arma en la pizarra. */
     const N = infoNini.N;
     const puestoPerdedor = N + 1;
     const pierde =
       puestoPerdedor <= 8
-        ? { ...base, puesto_final: puestoPerdedor as TicketMotor["puesto_final"], pizarra: pizarraCon(caballoTicket, puestoPerdedor) }
+        ? { ...base, puesto_final: puestoPerdedor as TicketMotor["puesto_final"], pizarra: pizarraCon(primerCaballo, puestoPerdedor) }
         : { ...base, puesto_final: "SOC" as TicketMotor["puesto_final"], pizarra: { primero: "" } };
 
-    const rGana = liquidarPuestos({ ...base, pizarra: { primero: caballoTicket } }, tasaComision);
+    const rGana = liquidarPuestos({ ...base, pizarra: { primero: primerCaballo } }, tasaComision);
     const rPierde = liquidarPuestos(pierde, tasaComision);
     const brutoGana = rGana.totalClienteNeto + rGana.gananciaCasa;
     const brutoPierde = rPierde.totalClienteNeto + rPierde.gananciaCasa;
@@ -218,7 +227,11 @@ export function validarComando(
     };
   }
 
+  const ejsCol = extraerEjemplaresMultiples(caballoCol);
+  const cabParaSimular = ejsCol.length > 0 ? String(ejsCol[0]) : null;
+
   for (const pos of POSICIONES) {
+    const pizarraSim = cabParaSimular ? pizarraCon(cabParaSimular, pos) : { primero: String(pos) };
     const ticket: TicketMotor = {
       hipodromo: "",
       carrera: "",
@@ -232,7 +245,7 @@ export function validarComando(
       tipo_jugada: tipo,
       monto,
       puesto_final: pos as TicketMotor["puesto_final"],
-      pizarra: { primero: String(pos) },
+      pizarra: pizarraSim,
       dividendos: null,
     };
     const r = liquidarPuestos(ticket, tasaComision);

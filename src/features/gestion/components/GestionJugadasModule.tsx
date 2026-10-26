@@ -57,7 +57,6 @@ import { corregirLineasConIA } from "@/features/taquilla/lib/corregirIA";
 import { listarJugadasDeCarrera, type JugadaAdmin } from "@/features/jugadas/lib/jugadas";
 import { ToggleModalidadTiempo, BadgeAdelantada } from "@/features/jugadas/components/ToggleModalidadTiempo";
 import { marcarTicketsAdelantados } from "@/features/jugadas/lib/marcar-adelantadas";
-import { ModalAnalisisActuarialGodet } from "@/features/ejemplares/components/ModalAnalisisActuarialGodet";
 import { BarraCarrerasLiquidadas } from "@/features/gestion/components/BarraCarrerasLiquidadas";
 import {
   notificarTareaEjecutadaOperador,
@@ -402,7 +401,6 @@ export function GestionJugadasModule() {
   const agregarTicket = useTaquillaStore((s) => s.agregarTicket);
   const modalidadTiempo = useTaquillaStore((s) => s.modalidadTiempo);
   const setModalidadTiempo = useTaquillaStore((s) => s.setModalidadTiempo);
-  const [modalGodetAbierto, setModalGodetAbierto] = useState(false);
   const [visorWhatsappTipo, setVisorWhatsappTipo] = useState<"prejugadas" | "resultados" | "saldos" | null>(null);
   const [textoVisorWhatsapp, setTextoVisorWhatsapp] = useState("");
   const [filtroSaldosWsp, setFiltroSaldosWsp] = useState<FiltroSaldosWhatsapp>("todos");
@@ -1895,26 +1893,6 @@ const hipodromosDelDia = useMemo(() => {
         </div>
       </div>
 
-      {/* Barra delgada de Carreras Liquidadas en estricto orden numérico (sustituye sección Boletos) */}
-      <BarraCarrerasLiquidadas
-        fecha={fecha}
-        hipodromo={hipodromo}
-        carreraActiva={carreraConfirmada ? carrera : null}
-        refreshKey={jugadasGuardadas.length + (carreraLiquidada ? 1000 : 0)}
-        onSeleccionarCarrera={(num) => {
-          setCarrera(num);
-          setCarreraConfirmada(true);
-          if (!carrerasPorDia.includes(num)) {
-            setCarrerasPorDia((prev) => [...new Set([...prev, num])].sort((a, b) => a - b));
-          }
-        }}
-        onVerReporteCarrera={(num) => {
-          setCarrera(num);
-          setCarreraConfirmada(true);
-          setMostrarReporteLiquidacion(true);
-        }}
-      />
-
       {/* Inputs superiores */}
       <div className="grid gap-1.5 rounded-xl border border-line bg-surface p-2 lg:grid-cols-7">
         <div>
@@ -2080,13 +2058,6 @@ const hipodromosDelDia = useMemo(() => {
               }`}
             >
               🔀 Modalidad: {conCruces ? "CON CRUCES" : "SIN CRUCES"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setModalGodetAbierto(true)}
-              className="rounded-lg border border-amber-400/60 bg-slate-900 px-2.5 py-1 text-[10px] font-black uppercase text-amber-300 hover:bg-slate-800"
-            >
-              🧭 Motor IA Godet v3 (MACTOR + SMIC + Actuario v4)
             </button>
           </div>
           <span className="flex items-center gap-2">
@@ -3562,13 +3533,24 @@ const hipodromosDelDia = useMemo(() => {
         </div>
       )}
 
-      <ModalAnalisisActuarialGodet
-        abierto={modalGodetAbierto}
-        onCerrar={() => setModalGodetAbierto(false)}
-        ejemplares={caballosDeCarrera}
-        hipodromo={nombreHipodromo}
-        carrera={carrera}
+      {/* Panel lateral derecho ocultable de Carreras Liquidadas (deduplicadas y orden cronológico inverso) */}
+      <BarraCarrerasLiquidadas
         fecha={fecha}
+        hipodromo={hipodromo}
+        carreraActiva={carreraConfirmada ? carrera : null}
+        refreshKey={jugadasGuardadas.length + (carreraLiquidada ? 1000 : 0)}
+        onSeleccionarCarrera={(num) => {
+          setCarrera(num);
+          setCarreraConfirmada(true);
+          if (!carrerasPorDia.includes(num)) {
+            setCarrerasPorDia((prev) => [...new Set([...prev, num])].sort((a, b) => a - b));
+          }
+        }}
+        onVerReporteCarrera={(num) => {
+          setCarrera(num);
+          setCarreraConfirmada(true);
+          setMostrarReporteLiquidacion(true);
+        }}
       />
 
       {/* Evento Enter en barras superiores no debe recargar */}

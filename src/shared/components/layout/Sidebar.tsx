@@ -70,8 +70,8 @@ export const CATEGORIAS_OPERADOR: Categoria[] = [
     titulo: "Módulos Operador",
     emoji: "🐎",
     items: [
-      { href: "/apuestas", emoji: "🐎🎲", txt: "🐎🎲 Apuestas", visibleSiempre: true },
-      { href: "/saldos-reportes", emoji: "💵📑", txt: "💵📑 Saldos / Reportes", visibleSiempre: true },
+      { href: "/apuestas", emoji: "🐎", txt: "Apuestas", visibleSiempre: true },
+      { href: "/saldos-reportes", emoji: "💵", txt: "Reportes", visibleSiempre: true },
       { href: "/reporte-diario", emoji: "📅", txt: "Reporte Diario", visibleSiempre: true },
     ],
   },
@@ -81,40 +81,25 @@ export const CATEGORIAS: Categoria[] = [
   {
     id: "principal",
     titulo: "Operación Principal",
-    emoji: "🏠",
+    emoji: "📂",
     items: [
-      { href: "/inicio", emoji: "🏠", txt: "🏠 Inicio / Resumen" },
-      { href: "/apuestas", emoji: "🐎", txt: "🐎🎲 Apuestas", visibleSiempre: true },
-      { href: "/saldos-reportes", emoji: "💵", txt: "💵📑 Saldos / Reportes" },
+      { href: "/inicio", emoji: "🏠", txt: "Inicio (resumen)" },
+      { href: "/apuestas", emoji: "🐎", txt: "Apuestas", visibleSiempre: true },
+      { href: "/saldos-reportes", emoji: "💵", txt: "Reportes" },
       { href: "/reporte-diario", emoji: "📑", txt: "Reporte Diario" },
-      { href: "/clientes", emoji: "🧾", txt: "🧾 Clientes" },
-    ],
-  },
-  {
-    id: "carreras_ia",
-    titulo: "Carreras e Inteligencia Hípica",
-    emoji: "🏇",
-    items: [
-      { href: "/carreras", emoji: "🏇", txt: "🏇 Carreras / Gaceta IA" },
-      { href: "/ejemplares", emoji: "🐴", txt: "Ejemplares / Gaceta IA" },
-      {
-        href: "/inteligencia-hipica/proyecciones",
-        emoji: "🧭",
-        txt: "🧭 Inteligencia Hípica (Motor Godet)",
-        visibleSiempre: true,
-      },
+      { href: "/clientes", emoji: "🧾", txt: "Clientes" },
     ],
   },
   {
     id: "mercados",
-    titulo: "Pollas, Remates y Tablas Fijas",
-    emoji: "🏆",
+    titulo: "Jugadas",
+    emoji: "📂",
     items: [
-      { href: "/pollas", emoji: "🏆", txt: "🏆 Pollas / 🔔 Remates / Tablas Fijas" },
-      { href: "/remates", emoji: "🔔", txt: "Remates en Vivo" },
-      { href: "/tablas-fijas", emoji: "📋", txt: "Tablas Fijas" },
+      { href: "/tablas-fijas", emoji: "📋", txt: "Tablas fijas" },
       { href: "/marcas", emoji: "🏷️", txt: "Marcas" },
+      { href: "/remates", emoji: "🔔", txt: "Remates" },
       { href: "/dupleta", emoji: "🎯", txt: "Dupletas" },
+      { href: "/pollas", emoji: "🏆", txt: "Pollas" },
       // W.P.S. INACTIVA para todos los usuarios: sin `href` entra a la rama
       // deshabilitada (chip 🚧 + pointer-events-none/opacity-50) y no se ofrece
       // como pantalla operativa. El motor no se toca (features/motores/wps.ts).
@@ -123,10 +108,10 @@ export const CATEGORIAS: Categoria[] = [
   },
   {
     id: "finanzas",
-    titulo: "Contabilidad y Finanzas",
+    titulo: "Contabilidad",
     emoji: "🏦",
     items: [
-      { href: "/contabilidad/caja", emoji: "🏦", txt: "🏦 Contabilidad / Depósitos / Retiros / Transferencias" },
+      { href: "/contabilidad/caja", emoji: "🏦", txt: "Contabilidad / Depósitos / Retiros / Transferencias" },
       { href: "/contabilidad/bancos", emoji: "💳", txt: "Bancos Reales" },
       { href: "/contabilidad/ingresos", emoji: "📥", txt: "Ingresos / Depósitos" },
       { href: "/contabilidad/monedas", emoji: "💱", txt: "Monedas y Tasas" },
@@ -137,11 +122,18 @@ export const CATEGORIAS: Categoria[] = [
     titulo: "Portal y Configuración",
     emoji: "⚙️",
     items: [
-      { href: "/portal", emoji: "🌐", txt: "🌐 Portal Clientes", visibleSiempre: true },
-      { href: "/grupos", emoji: "⚙️", txt: "⚙️ Configuración / Grupos / Usuarios" },
+      { href: "/portal", emoji: "🌐", txt: "Portal Clientes", visibleSiempre: true },
+      { href: "/carreras", emoji: "🏇", txt: "Carreras / Gaceta IA" },
+      { href: "/ejemplares", emoji: "🐴", txt: "Ejemplares / Gaceta IA" },
+      {
+        href: "/inteligencia-hipica/proyecciones",
+        emoji: "🧭",
+        txt: "Inteligencia Hípica (Motor Godet)",
+        visibleSiempre: true,
+      },
+      { href: "/grupos", emoji: "⚙️", txt: "Configuración / Grupos / Usuarios" },
       { href: "/operadores", emoji: "🧑‍💼", txt: "Operadores" },
       { href: "/hipodromos", emoji: "🗺️", txt: "Hipódromos" },
-      { href: "/reglas-jugadas", emoji: "🔀", txt: "Jugadas entre Tercios" },
       { href: "/tickets", emoji: "🛟", txt: "Tickets / Reclamos" },
       { href: "/whatsapp", emoji: "💬", txt: "WhatsApp / Notificaciones" },
       { href: "/seguridad", emoji: "🛡️", txt: "Matriz de Seguridad" },
