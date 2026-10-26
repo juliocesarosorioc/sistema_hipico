@@ -12,7 +12,7 @@
  * `nota_auditoria::jsonb->>'fecha_carrera'`, que sellan los RPC de venta.
  */
 import { supabase } from "@/core/supabase";
-import { exigirCapacidad, grupoActivoVigente } from "@/features/seguridad/lib/vigente";
+import { exigirCapacidad, grupoActivoVigente, tieneCapacidad } from "@/features/seguridad/lib/vigente";
 import { nombreDeEjemplarEnMatriz } from "@/features/liquidacion/lib/resolver-ejemplar";
 
 // ---------------------------------------------------------------------------
@@ -49,6 +49,8 @@ export type JugadaAdmin = {
   premio_pagar?: number | null;
   comision_porcentaje?: number | null;
   estado?: string | null;
+  cliente_juega_id?: string | number | null;
+  cliente_consigue_id?: string | number | null;
   cliente_juega_nombre?: string | null;
   cliente_consigue_nombre?: string | null;
   moneda?: string | null;
@@ -148,8 +150,8 @@ export function componerNota(predefinida: string, detalle: string): string {
 }
 
 const COLS_DETALLE_BASE =
-  "id, hipodromo, carrera, nombre_jugada, caballo, ejemplar_numero, monto_jugado, monto_decidido, premio_pagar, comision_porcentaje, estado, cliente_juega_nombre, cliente_consigue_nombre, moneda, nota_auditoria, fecha_registro, anulada, anulada_motivo, anulada_por, anulada_at, pagado_en, pagado_por";
-const COLS_DETALLE = `${COLS_DETALLE_BASE}, es_adelantada`;
+  "id, hipodromo, carrera, cliente_juega_id, nombre_jugada, caballo, ejemplar_numero, monto_jugado, monto_decidido, premio_pagar, comision_porcentaje, estado, cliente_juega_nombre, cliente_consigue_nombre, moneda, nota_auditoria, fecha_registro, anulada, anulada_motivo, anulada_por, anulada_at, pagado_en, pagado_por";
+const COLS_DETALLE = COLS_DETALLE_BASE;
 
 function num(v: unknown): number {
   const n = Number(v);
@@ -340,11 +342,6 @@ export async function listarJugadasDeCarrera(
     };
     let { data, error } = await consultar(Boolean(activo), COLS_DETALLE);
     let aviso: string | undefined;
-    if (error && /es_adelantada/i.test(`${error.code ?? ""} ${error.message ?? ""}`)) {
-      const rSinAdel = await consultar(Boolean(activo), COLS_DETALLE_BASE);
-      data = rSinAdel.data;
-      error = rSinAdel.error;
-    }
     if (error && activo && esColumnaFaltanteGrupo(error)) {
       // Vista vieja en la base (sin `grupo_cobro_id`): se reintenta sin el filtro
       // del administrador para no romper el detalle con un 400.
@@ -356,6 +353,37 @@ export async function listarJugadasDeCarrera(
     if (error) throw error;
     let jugadas = (data ?? []) as unknown as JugadaAdmin[];
     if (fecha) jugadas = jugadas.filter((j) => (fechaCarreraDeJugada(j) ?? "") === String(fecha).slice(0, 10));
+    if (jugadas.length > 0) {
+      try {
+        const ids = jugadas.map((j) => j.id).filter(Boolean);
+        const { data: extras } = await sb
+          .from("tickets_apuestas")
+          .select("id, es_adelantada, cliente_juega_id, anulada")
+          .in("id", ids as never[]);
+        if (Array.isArray(extras) && extras.length > 0) {
+          const mapaExtras = new Map<string, Record<string, unknown>>();
+          for (const ex of extras) {
+            const row = ex as Record<string, unknown>;
+            mapaExtras.set(String(row.id ?? ""), row);
+          }
+          jugadas = jugadas.map((j) => {
+            const ex = mapaExtras.get(String(j.id));
+            if (!ex) return j;
+            return {
+              ...j,
+              es_adelantada:
+                typeof ex.es_adelantada === "boolean"
+                  ? ex.es_adelantada
+                  : j.es_adelantada ?? Boolean(leerNotaAuditoria(j.nota_auditoria).es_adelantada),
+              cliente_juega_id: (ex.cliente_juega_id as string | number | null | undefined) ?? j.cliente_juega_id ?? null,
+              anulada: typeof ex.anulada === "boolean" ? ex.anulada : Boolean(j.anulada),
+            };
+          });
+        }
+      } catch {
+        // Si la tabla no tiene `es_adelantada`, se conserva el respaldo por `nota_auditoria`.
+      }
+    }
     return { ok: true, jugadas, aviso };
   } catch (e) {
     return { ok: false, jugadas: [], error: e instanceof Error ? e.message : String(e) };
@@ -364,7 +392,11 @@ export async function listarJugadasDeCarrera(
 
 async function leerJugada(id: string | number): Promise<JugadaAdmin | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase.from("v_jugadas_carrera").select(COLS_DETALLE).eq("id", id).maybeSingle();
+  const rDirecto = await supabase.from("tickets_apuestas").select("*").eq("id", id).maybeSingle();
+  if (!rDirecto.error && rDirecto.data) {
+    return rDirecto.data as unknown as JugadaAdmin;
+  }
+  const { data, error } = await supabase.from("v_jugadas_carrera").select(COLS_DETALLE_BASE).eq("id", id).maybeSingle();
   if (error || !data) return null;
   return data as unknown as JugadaAdmin;
 }
@@ -425,10 +457,16 @@ export async function editarJugada(
   usuario: string
 ): Promise<Resultado> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase." };
-  try {
-    exigirCapacidad("jugadas:fn_editar_jugada");
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
+  if (
+    !tieneCapacidad("jugadas:fn_editar_jugada") &&
+    !tieneCapacidad("gestion_jugadas:btn_editar_jugada") &&
+    !tieneCapacidad("jugadas:fn_anular_jugada")
+  ) {
+    try {
+      exigirCapacidad("jugadas:fn_editar_jugada");
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
   }
   const antes = await leerJugada(id);
   if (!antes) return { ok: false, error: "La jugada no existe." };
@@ -480,16 +518,22 @@ export async function anularJugada(
 ): Promise<Resultado> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase." };
   if (!motivo.trim()) return { ok: false, error: "Indicá el motivo de la anulación." };
-  try {
-    exigirCapacidad("jugadas:fn_anular_jugada");
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
+  if (
+    !tieneCapacidad("jugadas:fn_anular_jugada") &&
+    !tieneCapacidad("jugadas:fn_editar_jugada") &&
+    !tieneCapacidad("gestion_jugadas:btn_editar_jugada")
+  ) {
+    try {
+      exigirCapacidad("jugadas:fn_anular_jugada");
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
   }
   const antes = await leerJugada(id);
   if (!antes) return { ok: false, error: "La jugada no existe." };
   if (antes.anulada) return { ok: false, error: "Esa jugada ya estaba anulada." };
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from("tickets_apuestas")
     .update({
       anulada: true,
@@ -498,7 +542,36 @@ export async function anularJugada(
       anulada_at: new Date().toISOString(),
     })
     .eq("id", id);
+  if (error && /(anulada_motivo|anulada_por|anulada_at|does not exist|42703)/i.test(`${error.code ?? ""} ${error.message ?? ""}`)) {
+    const rFallback = await supabase
+      .from("tickets_apuestas")
+      .update({ anulada: true })
+      .eq("id", id);
+    error = rFallback.error;
+  }
   if (error) return { ok: false, error: error.message };
+
+  // Reintegrar el monto apostado al saldo_actual del cliente que jugó (la venta lo debitó al cargar).
+  const montoJugado = num(antes.monto_jugado);
+  const clienteJuegaId = antes.cliente_juega_id;
+  if (montoJugado > 0 && clienteJuegaId != null && String(clienteJuegaId).trim() !== "") {
+    try {
+      const { data: cli } = await supabase
+        .from("clientes")
+        .select("saldo_actual")
+        .eq("id", clienteJuegaId as never)
+        .maybeSingle();
+      if (cli) {
+        const saldoActual = num((cli as Record<string, unknown>).saldo_actual);
+        await supabase
+          .from("clientes")
+          .update({ saldo_actual: saldoActual + montoJugado })
+          .eq("id", clienteJuegaId as never);
+      }
+    } catch {
+      // Si el cliente no se puede actualizar por RLS, la anulación del ticket igual queda firme.
+    }
+  }
 
   const fallo = await auditar(antes, id, "ANULAR", motivo, { antes }, imagen, usuario);
   return fallo ? { ok: true, error: `Anulada, pero la auditoría falló: ${fallo}` } : { ok: true };
@@ -506,19 +579,56 @@ export async function anularJugada(
 
 export async function restaurarJugada(id: string | number, motivo: string, usuario: string): Promise<Resultado> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase." };
-  try {
-    exigirCapacidad("jugadas:fn_restaurar_jugada");
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
+  if (
+    !tieneCapacidad("jugadas:fn_restaurar_jugada") &&
+    !tieneCapacidad("jugadas:fn_editar_jugada") &&
+    !tieneCapacidad("gestion_jugadas:btn_editar_jugada") &&
+    !tieneCapacidad("jugadas:fn_anular_jugada")
+  ) {
+    try {
+      exigirCapacidad("jugadas:fn_restaurar_jugada");
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
   }
   const antes = await leerJugada(id);
   if (!antes) return { ok: false, error: "La jugada no existe." };
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from("tickets_apuestas")
     .update({ anulada: false, anulada_motivo: null, anulada_por: null, anulada_at: null })
     .eq("id", id);
+  if (error && /(anulada_motivo|anulada_por|anulada_at|does not exist|42703)/i.test(`${error.code ?? ""} ${error.message ?? ""}`)) {
+    const rFallback = await supabase
+      .from("tickets_apuestas")
+      .update({ anulada: false })
+      .eq("id", id);
+    error = rFallback.error;
+  }
   if (error) return { ok: false, error: error.message };
+
+  if (antes.anulada) {
+    const montoJugado = num(antes.monto_jugado);
+    const clienteJuegaId = antes.cliente_juega_id;
+    if (montoJugado > 0 && clienteJuegaId != null && String(clienteJuegaId).trim() !== "") {
+      try {
+        const { data: cli } = await supabase
+          .from("clientes")
+          .select("saldo_actual")
+          .eq("id", clienteJuegaId as never)
+          .maybeSingle();
+        if (cli) {
+          const saldoActual = num((cli as Record<string, unknown>).saldo_actual);
+          await supabase
+            .from("clientes")
+            .update({ saldo_actual: saldoActual - montoJugado })
+            .eq("id", clienteJuegaId as never);
+        }
+      } catch {
+        // Ignorar si no aplica
+      }
+    }
+  }
 
   const fallo = await auditar(antes, id, "RESTAURAR", motivo, { antes }, null, usuario);
   return fallo ? { ok: true, error: `Restaurada, pero la auditoría falló: ${fallo}` } : { ok: true };

@@ -119,7 +119,7 @@ export async function revertirLiquidacionCarrera(opts: {
       .not("nombre_jugada", "like", "TABLA FIJA%")
       .limit(2000);
     if (error) throw error;
-    filas = data ?? [];
+    filas = (data ?? []).filter((f) => !(f as Record<string, unknown>).anulada);
   } catch (e) {
     return { ...vacio, ok: false, motivo: "No se pudieron leer los tickets decididos.", errores: [(e as Error).message] };
   }
@@ -207,7 +207,7 @@ async function reliquidar(opts: {
   const fecha = opts.fecha || hoyLocal();
   const oficial = await leerResultadoOficial(opts.hipodromo, opts.carrera, fecha);
   const pizarra = pizarraDePuestos(oficial?.puestos ?? []);
-  if (!pizarra) return { ...vacio, ok: false, motivo: "Sin resultado oficial no se puede re-liquidar.", errores: ["Sin resultado oficial."] };
+  if (!pizarra) return { ...vacio, ok: true, motivo: "Carrera abierta sin resultado oficial (se liquidará al cargar la pizarra).", errores: [] };
 
   const s = await aplicarLiquidacionSaldos({
     hipodromo: opts.hipodromo,

@@ -349,7 +349,7 @@ export async function aplicarLiquidacionSaldos(
       .not("nombre_jugada", "like", "TABLA FIJA%")
       .limit(2000);
     if (error) throw error;
-    filas = data ?? [];
+    filas = (data ?? []).filter((f) => !(f as Record<string, unknown>).anulada);
   } catch (e) {
     return { ok: false, motivo: "No se pudieron leer los tickets pendientes.", aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [(e as Error).message] };
   }

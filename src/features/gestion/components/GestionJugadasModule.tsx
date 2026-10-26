@@ -1105,6 +1105,25 @@ const hipodromosDelDia = useMemo(() => {
       // Quita también el ticket de la sesión para que el panel no lo muestre
       // como pendiente de una venta que ya fue corregida/anulada en la base.
       if (ticketSesion) eliminarTicket(ticketSesion.id);
+      if (accion.modo === "eliminar") {
+        setJugadasGuardadas((prev) =>
+          prev.map((j) => (String(j.id) === String(fila.ticketId) ? { ...j, anulada: true } : j))
+        );
+      } else if (campos) {
+        setJugadasGuardadas((prev) =>
+          prev.map((j) =>
+            String(j.id) === String(fila.ticketId)
+              ? {
+                  ...j,
+                  nombre_jugada: campos?.nombre_jugada ?? j.nombre_jugada,
+                  caballo: campos?.caballo ?? j.caballo,
+                  ejemplar_numero: campos?.ejemplar_numero ?? j.ejemplar_numero,
+                  monto_jugado: campos?.monto_jugado ?? j.monto_jugado,
+                }
+              : j
+          )
+        );
+      }
       // Los saldos cambiaron (reversión + re-liquidación): refrescar catálogo.
       void recargarClientes();
       recargarRegistroCentral();
@@ -1131,9 +1150,6 @@ const hipodromosDelDia = useMemo(() => {
       });
     } finally {
       setOcupadoPreview(false);
-      setAccionPreview(null);
-      setEdicionPreview(null);
-      setMotivoPreview("");
     }
   };
 
@@ -1179,8 +1195,8 @@ const hipodromosDelDia = useMemo(() => {
     [jugadasGuardadas, ticketsDeCarrera]
   );
   const totalesPreview = useMemo(() => resumenPreview(filasPreview), [filasPreview]);
-  const filasPreviewEnVivo = useMemo(() => filasPreview.filter((f) => !f.esAdelantada), [filasPreview]);
-  const filasPreviewAdelantadas = useMemo(() => filasPreview.filter((f) => f.esAdelantada), [filasPreview]);
+  const filasPreviewEnVivo = useMemo(() => filasPreview.filter((f) => !f.anulada && !f.esAdelantada), [filasPreview]);
+  const filasPreviewAdelantadas = useMemo(() => filasPreview.filter((f) => !f.anulada && f.esAdelantada), [filasPreview]);
 
   // Nombre del grupo "cabecera" de la relación: el grupo de WhatsApp vinculado
   // (p. ej. "MVP FUSION"), que es lo que la casa pone en el encabezado del
@@ -1892,7 +1908,7 @@ const hipodromosDelDia = useMemo(() => {
   };
 
   return (
-    <div className="space-y-2 pb-14">
+    <div className="w-full max-w-full overflow-x-hidden space-y-2 pb-14">
       {/* Cabecera unificada del módulo 🐎🎲 Apuestas */}
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-white shadow-sm">
         <div className="flex items-center gap-2">
@@ -2194,9 +2210,9 @@ const hipodromosDelDia = useMemo(() => {
         {/* Panel lateral de ejemplares (tabla fija publicada o Carreras del Día) */}
         <div className={caballosDeCarrera.length ? "flex flex-col gap-2 lg:flex-row" : ""}>
           {caballosDeCarrera.length > 0 && (
-            <aside className="shrink-0 rounded-xl border border-line bg-white p-1.5 shadow-sm lg:w-[28%]">
+            <aside className="shrink-0 rounded-xl border border-line bg-white p-1.5 shadow-sm lg:w-[20%]">
               <p className="px-1 pb-1 text-[9px] font-black uppercase leading-none tracking-wide text-slate-500">
-                🐎 Ejemplares registrados ({caballosDeCarrera.length})
+                🐎 Ejemplares ({caballosDeCarrera.length})
               </p>
               <ul className="max-h-60 divide-y divide-line/60 overflow-y-auto">
                 {caballosDeCarrera.map((c, ci) => (
@@ -2209,7 +2225,7 @@ const hipodromosDelDia = useMemo(() => {
                           ? `Quitar el retiro de N°${c.numero} (se propaga a todos los módulos)`
                           : `Retirar N°${c.numero} (se propaga a todos los módulos)`
                       }
-                      className={`flex w-full cursor-pointer items-center gap-1.5 px-1 py-0 text-left leading-none hover:bg-amber-50 ${
+                      className={`flex w-full cursor-pointer items-center gap-1 px-1 py-0 text-left leading-none hover:bg-amber-50 ${
                         c.retirado ? "bg-red-50/60" : ""
                       }`}
                     >
@@ -2234,17 +2250,17 @@ const hipodromosDelDia = useMemo(() => {
               </ul>
             </aside>
           )}
-          <div className={caballosDeCarrera.length ? "min-w-0 flex-1" : "w-full"}>
-            <table className="w-full table-fixed border-collapse text-xs">
+          <div className={caballosDeCarrera.length ? "min-w-0 flex-1 overflow-hidden" : "w-full overflow-hidden"}>
+            <table className="w-full table-fixed border-collapse text-[11px]">
           <thead>
             <tr className="gj-cabecera text-white">
-              <th className="w-[3%] border-r border-slate-700 px-1 py-0.5 text-left text-[10px] font-bold uppercase leading-none">#</th>
-              <th className="w-[3%] border-r border-slate-700 px-1 py-0.5 text-center text-[10px] font-bold uppercase leading-none">X</th>
-              <th className="w-[20%] border-r border-slate-700 px-1 py-0.5 text-left text-[10px] font-bold uppercase leading-none">Jugada</th>
-              <th className="w-[11%] border-r border-slate-700 px-1 py-0.5 text-left text-[10px] font-bold uppercase leading-none">Caballo</th>
-              <th className="w-[11%] border-r border-slate-700 px-1 py-0.5 text-right text-[10px] font-bold uppercase leading-none">Monto</th>
-              <th className="w-[26%] border-r border-slate-700 px-1 py-0.5 text-left text-[10px] font-bold uppercase leading-none">Cliente 1</th>
-              <th className="w-[26%] px-1 py-0.5 text-left text-[10px] font-bold uppercase leading-none">Cliente 2</th>
+              <th className="w-[3%] border-r border-slate-700 px-1 py-0.5 text-left text-[9px] font-bold uppercase leading-none">#</th>
+              <th className="w-[3%] border-r border-slate-700 px-1 py-0.5 text-center text-[9px] font-bold uppercase leading-none">X</th>
+              <th className="w-[16%] border-r border-slate-700 px-1 py-0.5 text-left text-[9px] font-bold uppercase leading-none">Jugada</th>
+              <th className="w-[10%] border-r border-slate-700 px-1 py-0.5 text-left text-[9px] font-bold uppercase leading-none">Caballo</th>
+              <th className="w-[10%] border-r border-slate-700 px-1 py-0.5 text-right text-[9px] font-bold uppercase leading-none">Monto</th>
+              <th className="w-[29%] border-r border-slate-700 px-1 py-0.5 text-left text-[9px] font-bold uppercase leading-none">Cliente 1</th>
+              <th className="w-[29%] px-1 py-0.5 text-left text-[9px] font-bold uppercase leading-none">Cliente 2</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line/70">
@@ -2453,39 +2469,39 @@ const hipodromosDelDia = useMemo(() => {
             listaFilas: FilaPreviewCarrera[],
             headerTheme: string
           ) => (
-            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-              <table className="w-full table-fixed border-collapse text-xs">
+            <div className="w-full overflow-hidden rounded-lg border border-slate-200 bg-white">
+              <table className="w-full table-fixed border-collapse text-[11px]">
                 <colgroup>
                   <col className="w-[16%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[14%]" />
-                  <col className="w-[20%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[18%]" />
                   <col className="w-[16%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[14%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[19%]" />
                 </colgroup>
                 <thead>
                   <tr className={`${headerTheme} h-8`}>
-                    <th className="w-[16%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase align-middle">
-                      1. Quien Juega (Cliente 1)
+                    <th className="w-[16%] border-r border-slate-700 px-1.5 py-1 text-left text-[10px] font-bold uppercase truncate align-middle">
+                      1. Quien Juega
                     </th>
-                    <th className="w-[10%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase align-middle">
+                    <th className="w-[9%] border-r border-slate-700 px-1.5 py-1 text-right text-[10px] font-bold uppercase truncate align-middle">
                       2. Apostó
                     </th>
-                    <th className="w-[14%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase align-middle">
+                    <th className="w-[13%] border-r border-slate-700 px-1.5 py-1 text-right text-[10px] font-bold uppercase truncate align-middle">
                       3. Resultado
                     </th>
-                    <th className="w-[20%] border-r border-slate-700 px-2 py-1.5 text-center font-bold uppercase align-middle">
+                    <th className="w-[18%] border-r border-slate-700 px-1.5 py-1 text-center text-[10px] font-bold uppercase truncate align-middle">
                       4. Jugada
                     </th>
-                    <th className="w-[16%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase align-middle">
-                      5. Quien Da (Cliente 2)
+                    <th className="w-[16%] border-r border-slate-700 px-1.5 py-1 text-left text-[10px] font-bold uppercase truncate align-middle">
+                      5. Quien Da
                     </th>
-                    <th className="w-[10%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase align-middle">
+                    <th className="w-[9%] border-r border-slate-700 px-1.5 py-1 text-right text-[10px] font-bold uppercase truncate align-middle">
                       6. Apostó
                     </th>
-                    <th className="w-[14%] px-2 py-1.5 text-right font-bold uppercase align-middle">
-                      7. Resultado / Acc.
+                    <th className="w-[19%] px-1.5 py-1 text-right text-[10px] font-bold uppercase truncate align-middle">
+                      7. Res. / Acc.
                     </th>
                   </tr>
                 </thead>
@@ -2500,7 +2516,7 @@ const hipodromosDelDia = useMemo(() => {
                           ? `+${monedaFmt(Math.abs(f.lado1.monto))}`
                           : f.lado1.estado === "PERDIO"
                             ? `-${monedaFmt(Math.abs(f.lado1.monto ?? aposto1))}`
-                            : `-${monedaFmt(aposto1)} (Por decidir)`;
+                            : `-${monedaFmt(aposto1)} (Pend.)`;
                     const res2Texto =
                       f.anulada
                         ? "ANULADA"
@@ -2508,21 +2524,21 @@ const hipodromosDelDia = useMemo(() => {
                           ? `+${monedaFmt(Math.abs(f.lado2.monto))}`
                           : f.lado2.estado === "PERDIO"
                             ? `-${monedaFmt(Math.abs(f.lado2.monto ?? aposto2))}`
-                            : `-${monedaFmt(aposto2)} (Por decidir)`;
+                            : `-${monedaFmt(aposto2)} (Pend.)`;
 
                     return (
                       <tr
                         key={f.clave}
                         className={`h-8 align-middle ${f.anulada ? "bg-amber-50/70 line-through opacity-75" : "bg-white hover:bg-slate-50"}`}
                       >
-                        <td className="h-8 px-2 py-1.5 font-bold text-slate-800 truncate align-middle" title={f.cliente1}>
-                          <span className="mr-1 text-[10px] font-normal text-slate-400">#{i + 1}</span>
+                        <td className="h-8 px-1.5 py-1 font-bold text-slate-800 truncate align-middle" title={f.cliente1}>
+                          <span className="mr-1 text-[9px] font-normal text-slate-400">#{i + 1}</span>
                           {f.cliente1 || "—"}
                         </td>
-                        <td className="h-8 px-2 py-1.5 text-right font-mono font-bold text-slate-800 whitespace-nowrap align-middle">
+                        <td className="h-8 px-1.5 py-1 text-right font-mono text-[11px] font-bold text-slate-800 truncate align-middle">
                           {monedaFmt(aposto1)}
                         </td>
-                        <td className="h-8 px-2 py-1.5 text-right font-mono text-[11px] font-bold whitespace-nowrap align-middle">
+                        <td className="h-8 px-1.5 py-1 text-right font-mono text-[10px] font-bold truncate align-middle" title={res1Texto}>
                           <span
                             className={
                               f.lado1.estado === "GANO"
@@ -2535,19 +2551,19 @@ const hipodromosDelDia = useMemo(() => {
                             {res1Texto}
                           </span>
                         </td>
-                        <td className="h-8 px-2 py-1.5 text-center font-mono text-[11px] font-black text-indigo-950 truncate align-middle">
+                        <td className="h-8 px-1.5 py-1 text-center font-mono text-[10px] font-black text-indigo-950 truncate align-middle" title={`${f.jugada} ${f.caballo ? `#${f.caballo}` : ""}`}>
                           {f.jugada} {f.caballo ? `· #${f.caballo.toUpperCase()}` : ""}
                           {f.esAdelantada && <BadgeAdelantada className="ml-1" />}
                         </td>
-                        <td className="h-8 px-2 py-1.5 font-bold text-slate-800 truncate align-middle" title={f.cliente2}>
+                        <td className="h-8 px-1.5 py-1 font-bold text-slate-800 truncate align-middle" title={f.cliente2}>
                           {f.cliente2 || "—"}
                         </td>
-                        <td className="h-8 px-2 py-1.5 text-right font-mono font-bold text-slate-800 whitespace-nowrap align-middle">
+                        <td className="h-8 px-1.5 py-1 text-right font-mono text-[11px] font-bold text-slate-800 truncate align-middle">
                           {monedaFmt(aposto2)}
                         </td>
-                        <td className="h-8 px-2 py-1.5 text-right whitespace-nowrap align-middle">
+                        <td className="h-8 px-1.5 py-1 text-right truncate align-middle" title={res2Texto}>
                           <span
-                            className={`mr-2 font-mono text-[11px] font-bold ${
+                            className={`mr-1 font-mono text-[10px] font-bold ${
                               f.lado2.estado === "GANO"
                                 ? "text-emerald-700"
                                 : f.lado2.estado === "PERDIO"
@@ -2562,7 +2578,7 @@ const hipodromosDelDia = useMemo(() => {
                             onClick={() => abrirAccionPreview(f, "editar")}
                             aria-label="Editar jugada"
                             title="Editar la jugada y recalcular la carrera"
-                            className="text-xs text-slate-400 hover:text-primary-600"
+                            className="text-[11px] text-slate-400 hover:text-primary-600"
                           >
                             ✏️
                           </button>
@@ -2571,7 +2587,7 @@ const hipodromosDelDia = useMemo(() => {
                             onClick={() => abrirAccionPreview(f, "eliminar")}
                             aria-label="Eliminar jugada"
                             title="Anular la jugada y recalcular la carrera"
-                            className="ml-1 text-xs text-slate-400 hover:text-red-500"
+                            className="ml-0.5 text-[11px] text-slate-400 hover:text-red-500"
                           >
                             🗑️
                           </button>
@@ -2942,7 +2958,7 @@ const hipodromosDelDia = useMemo(() => {
       {aviso && <p className="mt-2 text-xs font-semibold text-slate-600">{aviso}</p>}
 
       {/* Barra de comandos flotante (sticky bottom) */}
-      <div className="no-print sticky bottom-0 z-30 -mx-4 border-t border-line bg-slate-900 px-4 py-2.5 shadow-[0_-8px_24px_rgba(0,0,0,0.18)] lg:-mx-6">
+      <div className="no-print sticky bottom-0 z-30 rounded-xl border border-line bg-slate-900 px-3 py-2 shadow-[0_-8px_24px_rgba(0,0,0,0.18)]">
         {/* La re-apertura es un ESTADO, no un botón más: va en su propia franja
             para que la fila de acciones quede pareja y en una sola línea. */}
         {reapertura && (
@@ -2958,7 +2974,7 @@ const hipodromosDelDia = useMemo(() => {
             </button>
           </div>
         )}
-        <div className="flex flex-nowrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={() => {
@@ -3382,7 +3398,12 @@ const hipodromosDelDia = useMemo(() => {
           carrera={carrera}
           fecha={fecha}
           tasaComision={comisionNum}
-          onCerrar={() => setModalEditarJugadas(false)}
+          onCerrar={() => {
+            setModalEditarJugadas(false);
+            void recargarJugadasGuardadas();
+            void recargarClientes();
+            recargarRegistroCentral();
+          }}
         />
       )}
 

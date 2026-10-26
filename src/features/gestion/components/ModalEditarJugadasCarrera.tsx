@@ -211,12 +211,8 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
 
   const confirmarAnulacion = async () => {
     if (!anulando) return;
-    if (!motivoAnular.trim()) {
-      setAviso("⚠️ Indicá el motivo de la anulación.");
-      return;
-    }
-    // Si el motivo es uno de la lista, se prefija para dejar la traza legible.
-    const texto = motivoAnular.trim();
+    // Si no escribió motivo, se usa un motivo por defecto para no bloquear el botón Anular.
+    const texto = motivoAnular.trim() || "Anulación de jugada por el operador";
     setOcupado(true);
     const r = await anularJugadaYRecalcular({
       id: anulando.id,
@@ -233,6 +229,9 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
       setAviso(`❌ ${r.motivo}${r.errores.length ? ` · ${r.errores[0]}` : ""}`);
       return;
     }
+    setJugadas((prev) =>
+      prev.map((j) => (String(j.id) === String(anulando.id) ? { ...j, anulada: true, anulada_motivo: texto } : j))
+    );
     void registrarAuditoria(
       "GESTION_JUGADAS",
       "ANULAR_JUGADA_CARRERA",
