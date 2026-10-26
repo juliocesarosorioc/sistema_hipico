@@ -439,9 +439,12 @@ function sinPermisoWsp(clave: "whatsapp:vincular_grupo" | "whatsapp:enviar_grupo
   }
 }
 
-const URL_FN = process.env.NEXT_PUBLIC_SUPABASE_URL
-  ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1`
-  : "";
+const URL_FN =
+  process.env.NEXT_PUBLIC_WHATSAPP_CLOUD_ENABLED === "true" && process.env.NEXT_PUBLIC_SUPABASE_URL
+    ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1`
+    : "";
+
+let wspFnNoDisponible = false;
 
 /**
  * Llama a una Edge Function de WhatsApp con la sesión del usuario. La función
@@ -450,7 +453,7 @@ const URL_FN = process.env.NEXT_PUBLIC_SUPABASE_URL
  * sesión, no hay red o la respuesta no fue JSON.
  */
 async function llamarWhatsappFn(nombre: string, body: Record<string, unknown>): Promise<ResWhatsappFn | null> {
-  if (!supabase || !URL_FN) return null;
+  if (!supabase || !URL_FN || wspFnNoDisponible) return null;
   try {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token ?? "";
@@ -465,6 +468,7 @@ async function llamarWhatsappFn(nombre: string, body: Record<string, unknown>): 
         body: JSON.stringify(body),
       });
     } catch {
+      wspFnNoDisponible = true;
       return null;
     }
     const txt = await resp.text();

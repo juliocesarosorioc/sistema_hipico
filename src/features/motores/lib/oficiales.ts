@@ -1,4 +1,4 @@
-﻿/**
+/**
  * MotoresOficiales — Liquidación UNIVERSAL con dividendos oficiales.
  *
  * Requisito de la casa (Bloque 3): el motor debe liquidar MATEMÁTICAMENTE
@@ -205,8 +205,14 @@ export function liquidarOficial(
   // liquidarPareo solo conoce la paridad y pagaría de menos al ganador.
   const tipoPP = String(t.tipo_jugada ?? "").toUpperCase();
   const caballoPP = String(t.caballo ?? "").toUpperCase();
-  const traeProporcion = !!parsearNomenclatura(tipoPP)?.proporcion;
-  if (/^PP/.test(tipoPP) || (/[X*]/.test(caballoPP) && !traeProporcion)) {
+  const nomPP = parsearNomenclatura(tipoPP);
+  const traeProporcion = !!nomPP?.proporcion;
+  const esPosicionalPizarra =
+    nomPP?.modalidad === "PUESTO_PURO" ||
+    nomPP?.modalidad === "NINI" ||
+    nomPP?.modalidad === "COMBINADA" ||
+    nomPP?.modalidad === "COMPUESTA";
+  if (/^PP/.test(tipoPP) || (/[X*]/.test(caballoPP) && !traeProporcion && !esPosicionalPizarra)) {
     return liquidarPareo(t, tasa);
   }
 

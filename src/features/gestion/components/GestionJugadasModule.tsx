@@ -1824,10 +1824,14 @@ const hipodromosDelDia = useMemo(() => {
     recargarRegistroCentral();
     setAviso(r.ok ? `✅ ${r.motivo}${avisoMarcas}` : `❌ ${r.motivo}`);
     if (r.ok) {
+      const pizarraTxt =
+        [piz.pizarra.primero, piz.pizarra.segundo, piz.pizarra.tercero, piz.pizarra.cuarto, piz.pizarra.quinto]
+          .filter(Boolean)
+          .join("-") || "Oficial";
       void notificarTareaEjecutadaOperador({
         titulo: `Carrera C${carrera} Liquidada`,
         mensaje: `${nombreHipodromo} · Carrera ${carrera} (${fecha}) ha sido liquidada y movida a la barra de Carreras Liquidadas.`,
-        detalles: [`Pizarra oficial: ${piz.pizarra}`, r.motivo],
+        detalles: [`Pizarra oficial: ${pizarraTxt}`, r.motivo],
         variante: "success",
       });
     }

@@ -300,26 +300,6 @@ export function CargaResultadosModal({
     return `${pos}|raya:${raya}|emp:${emp}|div:${div}|wps:${wps}`;
   };
 
-  if (!abierto) return null;
-
-  /** Hay resultados ya cargados precargados (modo edición). */
-  const precargado = Boolean(inicial && inicial.llenas > 0);
-
-  /**
-   * ¿Se CAMBIÓ algún valor de una carrera que YA está liquidada? Sólo en ese
-   * caso se pide el motivo y se recalcula: si el operador abre el resultado de
-   * una carrera pagada y no toca nada, confirmar no debe pedirle explicaciones
-   * ni mover un centavo.
-   */
-  const cambioEnLiquidada =
-    editandoLiquidada && precargado && firmaDe(construirResultado()) !== firmaDe(inicial);
-
-  /** Falta el motivo: el cambio no se puede confirmar sin justificación. */
-  const faltaMotivo = cambioEnLiquidada && !motivo.trim();
-
-  const llenas = filas.filter((r) => r.numero.trim()).length;
-  const primerNumero = filas.find((r) => r.numero.trim())?.numero ?? "";
-
   const retiradosSet = useMemo(() => {
     const s = new Set<string>();
     for (const c of caballos ?? []) {
@@ -339,6 +319,26 @@ export function CargaResultadosModal({
       ),
     [filas, retiradosSet]
   );
+
+  if (!abierto) return null;
+
+  /** Hay resultados ya cargados precargados (modo edición). */
+  const precargado = Boolean(inicial && inicial.llenas > 0);
+
+  /**
+   * ¿Se CAMBIÓ algún valor de una carrera que YA está liquidada? Sólo en ese
+   * caso se pide el motivo y se recalcula: si el operador abre el resultado de
+   * una carrera pagada y no toca nada, confirmar no debe pedirle explicaciones
+   * ni mover un centavo.
+   */
+  const cambioEnLiquidada =
+    editandoLiquidada && precargado && firmaDe(construirResultado()) !== firmaDe(inicial);
+
+  /** Falta el motivo: el cambio no se puede confirmar sin justificación. */
+  const faltaMotivo = cambioEnLiquidada && !motivo.trim();
+
+  const llenas = filas.filter((r) => r.numero.trim()).length;
+  const primerNumero = filas.find((r) => r.numero.trim())?.numero ?? "";
 
   const setNumero = (i: number, v: string) => {
     const limpio = v.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");

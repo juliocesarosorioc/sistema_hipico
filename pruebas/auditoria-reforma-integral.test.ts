@@ -346,7 +346,21 @@ console.log("=== INICIANDO AUDITORÍA DE REFORMA INTEGRAL (13 REQUERIMIENTOS) ==
     "src/app/globals.css debe centralizar las reglas de impresión y tablas"
   );
 
-  console.log("✔ [6/6] Modalidad ADELANTADA por defecto, Motor Godet en Inteligencia, Reloj, Sidebar y CSS Único OK");
+  // Verificar orden de hooks en CargaResultadosModal.tsx (evitar React error #310 al abrir modal)
+  const cargaModalSrc = fs.readFileSync(
+    path.join(ROOT, "src/features/liquidacion/components/CargaResultadosModal.tsx"),
+    "utf8"
+  );
+  const idxEarlyReturn = cargaModalSrc.indexOf("if (!abierto) return null;");
+  assert.ok(idxEarlyReturn > 0, "CargaResultadosModal debe tener early return cuando !abierto");
+  const despuesEarlyReturn = cargaModalSrc.slice(idxEarlyReturn);
+  assert.equal(
+    /\buse(Memo|State|Effect|Callback|Ref)\s*\(/.test(despuesEarlyReturn),
+    false,
+    "Ningún hook de React (useMemo/useState/useEffect) debe ejecutarse después de 'if (!abierto) return null;'"
+  );
+
+  console.log("✔ [6/6] Modalidad ADELANTADA por defecto, Motor Godet en Inteligencia, Reloj, Sidebar, CSS Único y Hooks de Liquidación OK");
 }
 
 console.log("6 pasaron, 0 fallaron");
