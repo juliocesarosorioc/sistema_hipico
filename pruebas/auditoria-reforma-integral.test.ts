@@ -27,6 +27,10 @@ import {
   calcularEstadoCuentaCliente,
   construirFichaEstadoCuentaUnificada,
 } from "../src/features/saldos/lib/contabilidad-central";
+import {
+  esJugadaAdelantadaReporte,
+  segmentarJugadasReporte,
+} from "../src/features/liquidacion/lib/reporte-carrera";
 
 const ROOT = process.cwd();
 
@@ -360,7 +364,57 @@ console.log("=== INICIANDO AUDITORÍA DE REFORMA INTEGRAL (13 REQUERIMIENTOS) ==
     "Ningún hook de React (useMemo/useState/useEffect) debe ejecutarse después de 'if (!abierto) return null;'"
   );
 
-  console.log("✔ [6/6] Modalidad ADELANTADA por defecto, Motor Godet en Inteligencia, Reloj, Sidebar, CSS Único y Hooks de Liquidación OK");
+  // Verificar segmentación de Jugadas Adelantadas en 7 columnas (igual que Jugadas en Vivo)
+  // y exclusión total de adelantadas (ej. MEMPHIS MARCA 3x6 ⏳ ADELANTADA) de la sección en vivo
+  const segRinconadaC1 = segmentarJugadasReporte([
+    {
+      juega: "MEMPHIS",
+      aposto: 120,
+      resultado: 100,
+      jugo: "MARCA",
+      caballo: "3x6",
+      da: "",
+      apostoDa: null,
+      resultadoDa: null,
+      esAdelantada: true,
+    },
+    {
+      juega: "CARLOS",
+      aposto: 200,
+      resultado: -200,
+      jugo: "1P",
+      caballo: "4",
+      da: "LUIS",
+      apostoDa: 200,
+      resultadoDa: 190,
+      esAdelantada: false,
+    },
+  ]);
+  assert.equal(segRinconadaC1.enVivo.length, 1, "En Vivo solo debe incluir jugadas no adelantadas (CARLOS)");
+  assert.equal(segRinconadaC1.enVivo[0].juega, "CARLOS");
+  assert.equal(
+    segRinconadaC1.enVivo.some((j) => j.juega === "MEMPHIS" || esJugadaAdelantadaReporte(j)),
+    false,
+    "MEMPHIS (MARCA 3x6 ⏳ ADELANTADA) jamás debe aparecer en Jugadas en Vivo"
+  );
+  assert.equal(segRinconadaC1.adelantadas.length, 1, "MEMPHIS debe aparecer únicamente en Jugadas Adelantadas");
+  assert.equal(segRinconadaC1.adelantadas[0].juega, "MEMPHIS");
+  assert.equal(segRinconadaC1.adelantadas[0].aposto, 120);
+  assert.equal(segRinconadaC1.adelantadas[0].resultado, 100);
+  assert.equal(segRinconadaC1.adelantadas[0].jugo, "MARCA");
+  assert.equal(segRinconadaC1.adelantadas[0].caballo, "3x6");
+
+  const reporteCarreraSrc = fs.readFileSync(
+    path.join(ROOT, "src/features/saldos/components/ReporteCarrera.tsx"),
+    "utf8"
+  );
+  assert.ok(
+    reporteCarreraSrc.includes("<TablaJugadas filas={adelantadasCol1}") &&
+      reporteCarreraSrc.includes("<TablaJugadas filas={jugadasCol1}"),
+    "ReporteCarrera debe renderizar la sección de Jugadas Adelantadas con la misma tabla de 7 columnas (TablaJugadas) que Jugadas en Vivo"
+  );
+
+  console.log("✔ [6/6] Modalidad ADELANTADA por defecto, Motor Godet, Reloj, Sidebar, CSS Único, Hooks y Segmentación 7 Col Adelantadas OK");
 }
 
 console.log("6 pasaron, 0 fallaron");

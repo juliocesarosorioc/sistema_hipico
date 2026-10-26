@@ -23,6 +23,63 @@ import { _reembolsosCruce, type ModalidadCruceCarrera } from "@/features/taquill
 
 export { colorDiscoNumero };
 
+/**
+ * Determina si una fila de `JugadaVivo` pertenece a la sección de Jugadas Adelantadas
+ * (`esAdelantada === true`, `MARCA`, `TABLA FIJA`, `TABLA`, `REMATE`, `TERCIO`, etc.).
+ * Las jugadas adelantadas NUNCA deben aparecer en la sección de Jugadas en Vivo.
+ */
+export function esJugadaAdelantadaReporte(j: JugadaVivo): boolean {
+  if (j.esAdelantada) return true;
+  const t = String(j.jugo ?? "").trim().toUpperCase();
+  if (/^(MARCA|TABLA|REMATE|TERCIO|DUPLETA|POLLA)\b/.test(t)) return true;
+  if (/^T\d{1,2}\b|3Y3/.test(t)) return true;
+  return false;
+}
+
+/**
+ * Segmenta las jugadas del reporte en dos listas mutuamente excluyentes con la misma
+ * estructura de 7 columnas (`Quien Juega | Apostó | Resultado | Jugada | Quien Da | Apostó | Resultado`):
+ *   - `enVivo`: únicamente jugadas en vivo (cero adelantadas).
+ *   - `adelantadas`: todas las jugadas adelantadas (`⏳ ADELANTADA`, `MARCA`, `TABLA FIJA`, etc.).
+ */
+export function segmentarJugadasReporte(
+  jugadasVivo: JugadaVivo[],
+  adelantadas?: ReporteCarreraDatos["adelantadas"]
+): { enVivo: JugadaVivo[]; adelantadas: JugadaVivo[] } {
+  const enVivo: JugadaVivo[] = [];
+  const listaAdelantadas: JugadaVivo[] = [];
+  const vistos = new Set<string>();
+
+  const firma = (j: JugadaVivo) =>
+    `${String(j.juega ?? "").trim().toUpperCase()}::${String(j.jugo ?? "").trim().toUpperCase()}::${String(j.caballo ?? "").trim().toUpperCase()}::${String(j.aposto ?? "")}::${String(j.da ?? "").trim().toUpperCase()}`;
+
+  for (const j of jugadasVivo ?? []) {
+    if (esJugadaAdelantadaReporte(j)) {
+      const item: JugadaVivo = { ...j, esAdelantada: true };
+      vistos.add(firma(item));
+      listaAdelantadas.push(item);
+    } else {
+      enVivo.push(j);
+    }
+  }
+
+  const extras: Adelantada[] = [
+    ...(adelantadas?.tablas ?? []),
+    ...(adelantadas?.marcas ?? []),
+    ...(adelantadas?.tercios ?? []),
+    ...(adelantadas?.otras ?? []),
+  ];
+  for (const ex of extras) {
+    const k = firma(ex);
+    if (!vistos.has(k)) {
+      vistos.add(k);
+      listaAdelantadas.push({ ...ex, esAdelantada: true });
+    }
+  }
+
+  return { enVivo, adelantadas: listaAdelantadas };
+}
+
 /** "2026-10-12" → «lun 12 oct 2026» (fecha legible para el encabezado). */
 function diaLegible(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
@@ -174,6 +231,12 @@ export function armarReporteCarrera(
       if (seccion && resultado !== null && resultado > 0) {
         adelantadas[seccion].push({
           ...filaVivo,
+          descripcion: (f.ejemplar ?? f.caballo) || f.jugada,
+        });
+      } else if (f.esAdelantada) {
+        adelantadas.otras?.push({
+          ...filaVivo,
+          esAdelantada: true,
           descripcion: (f.ejemplar ?? f.caballo) || f.jugada,
         });
       }

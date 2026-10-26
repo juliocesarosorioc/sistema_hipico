@@ -3,6 +3,9 @@ import { EmptyState } from '@/shared/components/ui/EmptyState';
 import { colorDiscoNumero, numerosDeCaballo } from '@/features/saldos/lib/discos';
 import { ladosDePareo } from '@/features/taquilla/lib/nomenclatura';
 import type { FiltroModalidadTiempo } from '@/features/jugadas/lib/modalidad-tiempo';
+import { esJugadaAdelantadaReporte, segmentarJugadasReporte } from '@/features/liquidacion/lib/reporte-carrera';
+
+export { esJugadaAdelantadaReporte, segmentarJugadasReporte };
 
 export type LlegadaCaballo = {
   numero: number | string;
@@ -322,14 +325,17 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
   const { encabezado, jugadasVivo, adelantadas, resumen, notaExcedidos, observacionesOrdenExceso } = datos;
   const liquidada = datos.liquidada !== false;
 
-  const mitadIndex = Math.ceil(jugadasVivo.length / 2);
-  const jugadasCol1 = jugadasVivo.slice(0, mitadIndex);
-  const jugadasCol2 = jugadasVivo.slice(mitadIndex);
-  const totalAdelantadas =
-    (adelantadas.tablas?.length ?? 0) +
-    (adelantadas.marcas?.length ?? 0) +
-    (adelantadas.tercios?.length ?? 0) +
-    (adelantadas.otras?.length ?? 0);
+  const { enVivo: jugadasEnVivoFiltradas, adelantadas: jugadasAdelantadasFiltradas } =
+    segmentarJugadasReporte(jugadasVivo, adelantadas);
+
+  const mitadIndex = Math.ceil(jugadasEnVivoFiltradas.length / 2);
+  const jugadasCol1 = jugadasEnVivoFiltradas.slice(0, mitadIndex);
+  const jugadasCol2 = jugadasEnVivoFiltradas.slice(mitadIndex);
+
+  const mitadAdelIndex = Math.ceil(jugadasAdelantadasFiltradas.length / 2);
+  const adelantadasCol1 = jugadasAdelantadasFiltradas.slice(0, mitadAdelIndex);
+  const adelantadasCol2 = jugadasAdelantadasFiltradas.slice(mitadAdelIndex);
+  const totalAdelantadas = jugadasAdelantadasFiltradas.length;
 
   return (
     <div className="max-w-5xl mx-auto bg-white shadow-lg overflow-hidden text-[11px] leading-tight font-sans" id="reporte-imprimible">
@@ -410,26 +416,31 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
         </div>
       ) : null}
 
-      {/* 3. TABLA DE 7 COLUMNAS (JUGADAS) */}
-      {jugadasVivo.length > 0 && (
-        <div className="bg-slate-50 px-4 py-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
-          <TablaJugadas filas={jugadasCol1} mostrarResultado={liquidada} />
-          <TablaJugadas filas={jugadasCol2} mostrarResultado={liquidada} />
+      {/* 3. TABLA DE 7 COLUMNAS (JUGADAS EN VIVO — SIN ADELANTADAS) */}
+      {jugadasEnVivoFiltradas.length > 0 && (
+        <div className="px-4 pt-2 pb-1">
+          <div className="bg-slate-800 text-white text-[9px] font-bold tracking-widest px-2 py-1 uppercase rounded-t flex items-center justify-between">
+            <span>⚡ Jugadas en Vivo</span>
+            <span className="text-[8px] font-semibold text-slate-300">{jugadasEnVivoFiltradas.length} jugada(s)</span>
+          </div>
+          <div className="bg-slate-50 px-2 py-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 border border-t-0 border-slate-200 rounded-b">
+            <TablaJugadas filas={jugadasCol1} mostrarResultado={liquidada} />
+            {jugadasCol2.length > 0 ? <TablaJugadas filas={jugadasCol2} mostrarResultado={liquidada} /> : null}
+          </div>
         </div>
       )}
 
-      {/* 4. PARADA ADELANTADAS */}
+      {/* 4. SECCIÓN DE JUGADAS ADELANTADAS (SEGMENTADA IGUAL QUE JUGADAS EN VIVO: 7 COLUMNAS) */}
       {totalAdelantadas > 0 && (
-        <div className="px-4 pb-2">
-          <div className="bg-blue-800 text-white text-[9px] font-bold tracking-widest px-2 py-1 uppercase rounded-t">
-            Parada Adelantadas
+        <div className="px-4 pb-2 pt-1">
+          <div className="bg-blue-800 text-white text-[9px] font-bold tracking-widest px-2 py-1 uppercase rounded-t flex items-center justify-between">
+            <span>⏳ Jugadas Adelantadas</span>
+            <span className="text-[8px] font-semibold text-blue-200">{totalAdelantadas} jugada(s)</span>
           </div>
-          <SubSeccion titulo="Tablas Fijas" filas={adelantadas.tablas} mostrarResultado={liquidada} />
-          <SubSeccion titulo="Marcas Adelantadas" filas={adelantadas.marcas} mostrarResultado={liquidada} />
-          <SubSeccion titulo="Jugadas entre tercios adelantadas" filas={adelantadas.tercios} mostrarResultado={liquidada} />
-          {adelantadas.otras && (
-            <SubSeccion titulo="Otras Jugadas Adelantadas" filas={adelantadas.otras} mostrarResultado={liquidada} />
-          )}
+          <div className="bg-amber-50/30 px-2 py-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 border border-t-0 border-slate-200 rounded-b">
+            <TablaJugadas filas={adelantadasCol1} mostrarResultado={liquidada} />
+            {adelantadasCol2.length > 0 ? <TablaJugadas filas={adelantadasCol2} mostrarResultado={liquidada} /> : null}
+          </div>
         </div>
       )}
 
@@ -458,7 +469,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
       {/* 6. FOOTER */}
       <div className="px-4 py-1.5 bg-slate-50 border-t border-slate-200 flex justify-between text-[9px] text-slate-500">
         <span>Tilde su jugada y se revisará</span>
-        <span>{jugadasVivo.length} jugadas · Reclamos al privado</span>
+        <span>{jugadasEnVivoFiltradas.length} en vivo · {totalAdelantadas} adelantadas · Reclamos al privado</span>
       </div>
 
     </div>
