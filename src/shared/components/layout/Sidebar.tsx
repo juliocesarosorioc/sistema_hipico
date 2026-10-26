@@ -74,7 +74,7 @@ export const CATEGORIAS_OPERADOR: Categoria[] = [
     items: [
       { href: "/apuestas", emoji: "🐎", txt: "Apuestas", visibleSiempre: true },
       { href: "/saldos-reportes", emoji: "💵", txt: "Reportes", visibleSiempre: true },
-      { href: "/reporte-diario", emoji: "📅", txt: "Reporte Diario", visibleSiempre: true },
+      { href: "/inicio", emoji: "📅", txt: "Inicio", visibleSiempre: true },
     ],
   },
 ];
