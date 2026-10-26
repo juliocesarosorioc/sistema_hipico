@@ -18,7 +18,7 @@ import { rangoSemanaDeGrupo, cicloSemanalDe } from "@/features/liquidacion/lib/s
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { listarCarrerasPorDia } from "@/features/tablas/lib/rpc";
 import { pizarraDesdeNums, esVentaDeRemate } from "@/features/impresion/lib/reportGenerator";
-import { desgloseJugada, esMarca } from "@/features/liquidacion/lib/etiquetas-reporte";
+import { desgloseJugada, esMarca, resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { _reembolsosCruce } from "@/features/taquilla/lib/cruces-y-tapas";
 import { liquidarOficial, puestosDesdeOrdenLlegada } from "@/features/motores/lib/oficiales";
 import {

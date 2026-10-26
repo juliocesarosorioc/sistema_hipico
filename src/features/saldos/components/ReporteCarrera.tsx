@@ -58,12 +58,16 @@ export type NotaExcedido = {
 export type ObservacionOrdenExceso = {
   orden: number;
   jugador: string;
+  contraparte?: string;
+  telefonoJugador?: string | null;
+  telefonoContraparte?: string | null;
   jugada: string;
   montoSolicitado: number;
   montoAceptado: number;
   montoExcedido: number;
   disponibleAntes: number;
   motivo: string;
+  resumenMencion?: string;
 };
 
 export type ReporteCarreraDatos = {
@@ -332,14 +336,30 @@ function NotaExcedidos({
         </ul>
       )}
       {observacionesOrden && observacionesOrden.length > 0 && (
-        <div className="mt-1.5 border-t border-amber-300/70 pt-1 space-y-0.5">
+        <div className="mt-1.5 border-t border-amber-300/70 pt-1 space-y-1">
           {observacionesOrden.map((obs, idx) => (
-            <div key={idx} className="flex flex-wrap items-center justify-between gap-2 text-[8.5px]">
-              <span className="font-bold text-slate-800">
-                Orden #{obs.orden} · {obs.jugador} ({obs.jugada})
+            <div key={idx} className="rounded bg-white/80 px-2 py-1 border border-amber-200 flex flex-wrap items-center justify-between gap-2 text-[9px]">
+              <span className="font-bold text-slate-900">
+                #{obs.orden} ·{" "}
+                {obs.resumenMencion ? (
+                  <span className="font-semibold text-slate-800">{obs.resumenMencion}</span>
+                ) : (
+                  <>
+                    {obs.telefonoJugador ? <span className="text-indigo-700 font-mono">@{obs.telefonoJugador} </span> : null}
+                    {obs.jugador}
+                    {obs.contraparte ? (
+                      <>
+                        {" "}con{" "}
+                        {obs.telefonoContraparte ? <span className="text-indigo-700 font-mono">@{obs.telefonoContraparte} </span> : null}
+                        {obs.contraparte}
+                      </>
+                    ) : null}{" "}
+                    ({obs.jugada})
+                  </>
+                )}
               </span>
-              <span className="tabular-nums text-amber-950">
-                Solicitó {fmt(obs.montoSolicitado)} → Aceptado {fmt(obs.montoAceptado)} · {obs.motivo}
+              <span className="tabular-nums font-bold text-amber-950">
+                Pidió {fmt(obs.montoSolicitado)} → Juegan {fmt(obs.montoAceptado)} ({obs.motivo})
               </span>
             </div>
           ))}
@@ -543,8 +563,8 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
       <NotaExcedidos filas={notaExcedidos ?? []} observacionesOrden={observacionesOrdenExceso} />
 
       {/* 6. FOOTER */}
-      <div className="px-4 py-1.5 bg-slate-50 border-t border-slate-200 flex justify-between text-[9px] text-slate-500">
-        <span>Tilde su jugada y se revisará</span>
+      <div className="px-4 py-1.5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-[9px] text-slate-500">
+        <span>Tilde su jugada y se revisará · © {new Date().getFullYear()} <strong>Inversiones Club Sensación, C.A.</strong> — Propiedad Intelectual Protegida</span>
         <span>{jugadasEnVivoFiltradas.length} en vivo · {totalAdelantadas} adelantadas · Reclamos al privado</span>
       </div>
 

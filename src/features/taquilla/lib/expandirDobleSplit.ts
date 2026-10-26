@@ -33,15 +33,15 @@ export type LineaExpandida = {
  *   Y        → 1y2 · 3y3 · 1y2n
  *   X (pareo)→ 2x3 · 6x7
  *   PP       → pp (a la par)
- *   Barra    → 2/3n · 10/8
- *   A premio → 10a8
+ *   Barra    → 2/3n · 10/8 · 10/2.5 · 10/2,5
+ *   A premio → 10a8 · 10A2.5 · 10a2,5
  * Cualquier otra forma (ej. "1y", "3/") es INCOHERENTE.
  */
 const RE_JUGADA_CANONICA =
-  /^(?:\d+y\d+[pn]?|\d+x\d+|\d+[pn]|pp|\d+\/\d+[pn]?|\d+[aA]\d+)$/i;
+  /^(?:\d+y\d+[pn]?|\d+x\d+|\d+[pn]|pp|\d+(?:[.,]\d+)?\/\d+(?:[.,]\d+)?[pn]?|\d+(?:[.,]\d+)?[aA]\d+(?:[.,]\d+)?)$/i;
 
 /** Misma gramática, sin anclas, para armar el patrón con guion. */
-const PIEZA_JUGADA = String.raw`(?:\d+y\d+[pn]?|\d+x\d+|\d+[pn]|pp|\d+\/\d+[pn]?|\d+[aA]\d+)`;
+const PIEZA_JUGADA = String.raw`(?:\d+y\d+[pn]?|\d+x\d+|\d+[pn]|pp|\d+(?:[.,]\d+)?\/\d+(?:[.,]\d+)?[pn]?|\d+(?:[.,]\d+)?[aA]\d+(?:[.,]\d+)?)`;
 
 /** Patrón compuesto: PIEZA - PIEZA (ej. "1p-1y2", "2y3-3n"). */
 const PATRON_DOBLE = new RegExp(`(${PIEZA_JUGADA})-(${PIEZA_JUGADA})`, "i");
@@ -93,7 +93,7 @@ export type IncoherenciaLinea = {
 export function revisarCoherenciaLineas(lineas: string[]): IncoherenciaLinea[] {
   const salida: IncoherenciaLinea[] = [];
   for (const raw of lineas) {
-    const linea = String(raw ?? "").trim();
+    const linea = String(raw ?? "").trim().replace(/^\s*\d+\s*\)\s*/, "");
     if (!linea || linea.startsWith("#")) continue;
     const motivos = new Set<string>();
 
@@ -116,7 +116,7 @@ export function revisarCoherenciaLineas(lineas: string[]): IncoherenciaLinea[] {
       }
 
       if (esJugadaCoherente(tok)) continue;
-      if (/^\d+\/\d+(?:[.,]\d+)?$/.test(tok)) continue; // proporción de cruce válida
+      if (/^\d+(?:[.,]\d+)?[\/aA]\d+(?:[.,]\d+)?$/.test(tok)) continue; // proporción de cruce / A Premio válida
       motivos.add(`«${tok}»: ${motivoJugadaRota(tok)}`);
     }
 

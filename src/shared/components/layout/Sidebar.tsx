@@ -12,6 +12,7 @@ import {
   esRutaPermitidaOperador,
 } from "@/features/seguridad/lib/capacidades";
 import { WPS_PLANIFICACION, WPS_PLANIFICACION_CORTO } from "@/features/motores/lib/wps-planificacion";
+import { listarGruposVenta } from "@/features/grupos/lib/grupos";
 
 type Item = {
   href?: string;
@@ -192,8 +193,47 @@ export function Sidebar({
   const router = useRouter();
   const perfiles = useAuthStore((s) => s.perfiles);
   const modoOperador = useAuthStore((s) => s.modoOperador);
+  const grupoNombre = useAuthStore((s) => s.grupoNombre);
+  const grupoId = useAuthStore((s) => s.grupoId);
+  const grupoActivo = useAuthStore((s) => s.grupoActivo);
   const esOperador = esRolOperadorExclusivo(perfiles, modoOperador);
   const categoriasVisibles = esOperador ? CATEGORIAS_OPERADOR : CATEGORIAS;
+
+  const [nombreGrupoResuelto, setNombreGrupoResuelto] = useState<string>("");
+  const [logoGrupoResuelto, setLogoGrupoResuelto] = useState<string | null>(null);
+
+  useEffect(() => {
+    let vivo = true;
+    void listarGruposVenta()
+      .then((grupos) => {
+        if (!vivo) return;
+        const idBuscado = grupoId ?? grupoActivo;
+        const encontrado = idBuscado
+          ? grupos.find((g) => String(g.id) === String(idBuscado))
+          : grupos[0];
+        if (encontrado) {
+          setNombreGrupoResuelto(encontrado.nombre || "");
+          setLogoGrupoResuelto((encontrado as { logo_url?: string | null }).logo_url ?? null);
+        } else {
+          setNombreGrupoResuelto("");
+          setLogoGrupoResuelto(null);
+        }
+      })
+      .catch(() => {
+        if (vivo) {
+          setNombreGrupoResuelto("");
+          setLogoGrupoResuelto(null);
+        }
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [grupoId, grupoActivo]);
+
+  const nombreGrupoCabecera =
+    (grupoNombre && grupoNombre.trim()) ||
+    (nombreGrupoResuelto && nombreGrupoResuelto.trim()) ||
+    "Club del Dinero";
 
   const salir = useAuthStore((s) => s.salir);
   const [saliendo, setSaliendo] = useState(false);
@@ -260,15 +300,25 @@ export function Sidebar({
         compacto ? "lg:w-16" : "lg:w-[250px]",
       ].join(" ")}
     >
-      {/* Encabezado — Club del Dinero + perfil */}
+      {/* Encabezado — Nombre del grupo que accede + perfil */}
       <div className="border-b border-slate-700/70 p-5">
         <h1
-          className={`flex items-center gap-2 text-2xl font-bold tracking-wide text-white ${
+          className={`flex items-center gap-2 text-xl font-bold tracking-wide text-white ${
             compacto ? "lg:justify-center" : ""
           }`}
+          title={nombreGrupoCabecera}
         >
-          <span className="shrink-0">🪙</span>
-          <span className={compacto ? "lg:hidden" : ""}>Club del Dinero</span>
+          {logoGrupoResuelto ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoGrupoResuelto}
+              alt={nombreGrupoCabecera}
+              className="h-8 w-8 shrink-0 rounded-lg border border-slate-600 bg-white object-contain p-0.5"
+            />
+          ) : (
+            <span className="shrink-0 text-2xl">🪙</span>
+          )}
+          <span className={`truncate ${compacto ? "lg:hidden" : ""}`}>{nombreGrupoCabecera}</span>
         </h1>
         <p
           className={`mt-2 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 ${

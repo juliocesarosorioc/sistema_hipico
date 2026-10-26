@@ -12,6 +12,7 @@
  * activo e idempotencia por clave.
  */
 import { supabase } from "@/core/supabase";
+import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
 
 const MENSAJE_SIN_RPC =
   "La venta de Taquilla no está activa: ejecutá sql/taquilla_venta.sql en el SQL Editor de Supabase.";
@@ -78,6 +79,7 @@ export function claveIdempotenciaJugada(): string {
 /** Emite el ticket y descuenta el saldo (todo o nada). */
 export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada> {
   if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
+  const dadorResuelto = resolverContraparteModalidad(v.jugada, v.clienteDador, v.modalidad);
   const { data, error } = await supabase.rpc("club_vender_jugada", {
     p_hipodromo: String(v.hipodromo ?? "").trim().toUpperCase(),
     p_fecha: v.fecha,
@@ -87,7 +89,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
     p_monto: Number(v.monto) || 0,
     p_cliente_id: v.clienteId,
     p_grupo_id: v.grupoId || null,
-    p_cliente_dador: v.clienteDador ?? null,
+    p_cliente_dador: dadorResuelto || v.clienteDador || null,
     p_moneda: v.moneda ?? null,
     p_comision: v.comision ?? null,
     p_modalidad: v.modalidad ?? null,

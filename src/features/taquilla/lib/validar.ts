@@ -613,8 +613,10 @@ export type ClasificacionLinea =
  * ilegibles.
  */
 export function clasificarLineaRapida(linea: string): ClasificacionLinea | null {
-  const t = String(linea ?? "").trim();
-  if (!t || t.startsWith("#")) return null;
+  const bruto = String(linea ?? "").trim();
+  if (!bruto || bruto.startsWith("#")) return null;
+  // Quita numeración de lista "1) ", "3) " al inicio si viene de WhatsApp
+  const t = bruto.replace(/^\s*\d+\s*\)\s*/, "");
 
   /* -1) Cruce legacy "2x3 10/8" (pareo + proporción). El extractor de
      expresiones divididas usa el MISMO divisor "x" y se comería el pareo
@@ -745,9 +747,17 @@ export function clasificarLineaRapida(linea: string): ClasificacionLinea | null 
     .filter((_, i) => !usados.has(i))
     .map((k) => k.raw.trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""));
 
+  // Normaliza cualquier proporción A Premio "10A2.5" / "10a2,5" / "10/2,5" a "10/2.5"
+  const jugadaCanon = jugada
+    .toUpperCase()
+    .replace(
+      /\b(\d+(?:[.,]\d+)?)\s*[AA/]\s*(\d+(?:[.,]\d+)?)\b/gi,
+      (_m, p, q) => `${String(p).replace(",", ".")}/${String(q).replace(",", ".")}`
+    );
+
   return {
     ok: true,
-    jugada: jugada.toUpperCase(),
+    jugada: jugadaCanon,
     caballo: caballo.toUpperCase(),
     monto,
     restantes,

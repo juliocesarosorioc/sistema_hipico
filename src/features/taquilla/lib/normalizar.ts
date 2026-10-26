@@ -278,11 +278,19 @@ export function expandirLineaHablada(linea: string): LineaExpandida {
     marca();
     return "pp";
   });
-  // A Premio hablado: "diez a ocho" → "10/8" (canon de barra que el parser ya
-  // reconoce como jugada; "10a8" sigue existiendo como forma tipeada).
-  texto = texto.replace(/\b(\d+(?:[.,]\d+)?)\s+a\s+(\d+(?:[.,]\d+)?)\b/gi, (_m, p, q) => {
+  // A Premio compactado con "A": "10A2.5", "10a2,5", "10A6", "10A2" → "10/2.5",
+  // "10/6", "10/2" (se interpreta directo como exacto sin pedir corrección).
+  texto = texto.replace(/\b(\d+(?:[.,]\d+)?)[aA](\d+(?:[.,]\d+)?)\b/g, (_m, p, q) => {
+    return `${String(p).replace(",", ".")}/${String(q).replace(",", ".")}`;
+  });
+  // A Premio hablado con espacios: "diez a ocho" → "10 a 8" → "10/8".
+  texto = texto.replace(/\b(\d+(?:[.,]\d+)?)\s+[aA]\s+(\d+(?:[.,]\d+)?)\b/gi, (_m, p, q) => {
     marca();
-    return `${p}/${q}`;
+    return `${String(p).replace(",", ".")}/${String(q).replace(",", ".")}`;
+  });
+  // Normaliza coma decimal en proporciones con barra ("10/2,5" → "10/2.5").
+  texto = texto.replace(/\b(\d+(?:[.,]\d+)?)\/(\d+,\d+)\b/g, (_m, p, q) => {
+    return `${String(p).replace(",", ".")}/${String(q).replace(",", ".")}`;
   });
 
   return { texto, huboNumeroPalabra, huboNomenclatura };

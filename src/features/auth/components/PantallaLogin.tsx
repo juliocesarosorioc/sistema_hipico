@@ -471,6 +471,15 @@ export default function PantallaLogin() {
             </div>
           </form>
         ) : null}
+
+        <div className="mt-6 border-t border-slate-200 pt-4 text-center text-[10px] leading-relaxed text-slate-500">
+          <p className="font-black text-slate-700">
+            © {new Date().getFullYear()} Inversiones Club Sensación, C.A.
+          </p>
+          <p className="mt-0.5">
+            Todos los derechos reservados · Propiedad Intelectual, Marca y Software Protegidos · Prohibida su reproducción total o parcial sin autorización expresa.
+          </p>
+        </div>
       </div>
     </main>
   );

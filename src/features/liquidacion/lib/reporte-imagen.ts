@@ -13,6 +13,7 @@
 import { capturarNodo, guardarLienzos, type ImgFormato } from "@/features/impresion/lib/exportar";
 import { formatearMontoSinMoneda, limpiarSimbolosMoneda, redondearCentavos } from "@/shared/lib/dinero";
 import { agruparAdelantadasPorSeccion } from "@/features/liquidacion/lib/reporte-carrera";
+import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
 import type { JugadaVivo, ObservacionOrdenExceso } from "@/features/saldos/components/ReporteCarrera";
 
 export const COLUMNAS_REPORTE_7 = [
@@ -139,7 +140,8 @@ export function generarTextoPrejugadasWhatsapp(params: {
     idx: number
   ) => {
     const cab = j.caballo ? ` (${j.caballo})` : "";
-    const da = j.da ? ` da ${j.da}` : "";
+    const daResuelto = resolverContraparteModalidad(j.jugada, j.da);
+    const da = daResuelto ? ` da ${daResuelto}` : "";
     const quedaTxt =
       typeof j.queda === "number" && Number.isFinite(j.queda)
         ? j.queda > 0
@@ -173,9 +175,13 @@ export function generarTextoPrejugadasWhatsapp(params: {
     Lineas.push("");
     Lineas.push("📋 OBSERVACIONES DE LÍMITE DE SALDO Y ORDEN DE JUEGO:");
     for (const o of obs) {
-      Lineas.push(
-        `• Orden #${o.orden} ${o.jugador} (${o.jugada}): solicitó ${formatearMontoSinMoneda(o.montoSolicitado)} → aceptado ${formatearMontoSinMoneda(o.montoAceptado)} (${o.motivo})`
-      );
+      if (o.resumenMencion) {
+        Lineas.push(`• ${o.resumenMencion}`);
+      } else {
+        Lineas.push(
+          `• Orden #${o.orden} ${o.jugador} (${o.jugada}): solicitó ${formatearMontoSinMoneda(o.montoSolicitado)} → aceptado ${formatearMontoSinMoneda(o.montoAceptado)} (${o.motivo})`
+        );
+      }
     }
   }
 

@@ -31,7 +31,7 @@ import { SemaforoCarreras } from "@/features/gestion/components/SemaforoCarreras
 import { Button } from "@/shared/components/ui/Button";
 import { Guard } from "@/shared/components/ui/Guard";
 import { fmtMoney, type EjemplarTabla } from "@/features/tablas/lib/tipos";
-import { listarClientesVenta, listarGruposVenta, limpiarCacheClientesVenta, comisionJugadasDeGrupo, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, registrarAuditoria, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
+import { listarClientesVenta, listarGruposVenta, limpiarCacheClientesVenta, comisionJugadasDeGrupo, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, registrarAuditoria, telefonoMencionCliente, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { actualizarCliente } from "@/features/clientes/lib/clientes";
 import { guardarCrucesCarrera, leerCrucesCarrera, type CrucesCarreraOverride } from "@/features/gestion/lib/cruces-carrera";
 import type { ModalidadesCruce, OpcionesCrucesPuestos } from "@/features/motores/lib/puestos";
@@ -65,6 +65,7 @@ import {
 import {
   generarTextoPrejugadasWhatsapp,
   generarTextoSaldosWhatsapp,
+  exportarReporteCarreraImagen,
   type FiltroSaldosWhatsapp,
 } from "@/features/liquidacion/lib/reporte-imagen";
 import {
@@ -74,6 +75,8 @@ import {
   type LadoResultado,
 } from "@/features/gestion/lib/preview-carrera";
 import { agruparAdelantadasPorSeccion } from "@/features/liquidacion/lib/reporte-carrera";
+import ReporteCarrera, { type ObservacionOrdenExceso } from "@/features/saldos/components/ReporteCarrera";
+import { ReporteSaldosVisual } from "@/features/saldos/components/ReporteSaldosVisual";
 import { PanelBloqueoJugadasAdmin } from "@/features/portal/components/PanelBloqueoJugadasAdmin";
 
 type FilaCarga = {
@@ -917,34 +920,32 @@ const hipodromosDelDia = useMemo(() => {
   };
 
   /**
-   * Aviso para copiar y enviar al jugador cuando su disponible NO alcanza el
-   * monto pedido. Devuelve null si todos alcanzan (o falta monto/cliente).
-   * Nombra la jugada y, por cada jugador, "a <nombre> le queda <disponible>
-   * en esta su jugada con <monto>".
+   * Aviso resumido con menciones @número de Usuario 1 y Usuario 2 cuando un
+   * jugador juega excedido de su saldo disponible.
    */
+  const [observacionesExcesoCarrera, setObservacionesExcesoCarrera] = useState<ObservacionOrdenExceso[]>([]);
+
   const avisoSaldo = (f: FilaCarga, c1: ClienteVenta | null, c2: ClienteVenta | null): string | null => {
     const montoPedido = parseFloat(String(f.monto).replace(",", "."));
     if (!Number.isFinite(montoPedido) || montoPedido <= 0) return null;
-    const jugadores = [c1, c2]
-      .map((c) => {
-        if (!c) return null;
-        return { nombre: c.nombre, libre: esClienteLibre(c), disponible: limiteDeJugar(c) };
-      })
-      .filter(
-        (x): x is { nombre: string; libre: boolean; disponible: number } => x !== null
-      );
-    if (!jugadores.length) return null;
-    const topados = jugadores.filter((j) => !j.libre && j.disponible < montoPedido);
-    if (!topados.length) return null;
-    const lineaJugador = (j: { nombre: string; libre: boolean; disponible: number }) =>
-      j.libre
-        ? `a ${j.nombre} le queda libre en esta su jugada con ${monedaFmt(montoPedido)}`
-        : `a ${j.nombre} le queda ${monedaFmt(j.disponible)} en esta su jugada con ${monedaFmt(montoPedido)}`;
-    const detalle = jugadores.map(lineaJugador).join("\n");
+    const disp1 = c1 ? (esClienteLibre(c1) ? Number.POSITIVE_INFINITY : Math.max(0, limiteDeJugar(c1))) : Number.POSITIVE_INFINITY;
+    const disp2 = c2 ? (esClienteLibre(c2) ? Number.POSITIVE_INFINITY : Math.max(0, limiteDeJugar(c2))) : Number.POSITIVE_INFINITY;
+    const excede1 = Boolean(c1 && !esClienteLibre(c1) && disp1 < montoPedido);
+    const excede2 = Boolean(c2 && !esClienteLibre(c2) && disp2 < montoPedido);
+    if (!excede1 && !excede2) return null;
+
+    const nom1 = c1?.nombre ?? (f.cliente1.trim() || "Jugador 1");
+    const nom2 = c2?.nombre ?? (f.cliente2.trim() || "Jugador 2");
+    const tel1 = telefonoMencionCliente(c1);
+    const tel2 = telefonoMencionCliente(c2);
+    const menc1 = tel1 ? `@${tel1} (${nom1})` : `@${nom1}`;
+    const menc2 = tel2 ? `@${tel2} (${nom2})` : `@${nom2}`;
+    const montoAceptado = Math.max(0, Math.min(montoPedido, disp1, disp2));
+    const quienExcede = excede1 && excede2 ? `${nom1} y ${nom2}` : excede1 ? nom1 : nom2;
     const jugada = [f.jugada.trim().toUpperCase(), f.caballo.trim() ? `(${f.caballo.trim()})` : ""]
       .filter(Boolean)
       .join(" ");
-    return `${jugada} con ${monedaFmt(montoPedido)}\n${detalle}`;
+    return `${menc1} pidió ${monedaFmt(montoPedido)} con ${menc2} en ${jugada} → solo juegan ${monedaFmt(montoAceptado)} porque ${quienExcede} excede el saldo.`;
   };
 
   const copiarAvisoSaldo = async (i: number, texto: string) => {
@@ -1450,12 +1451,45 @@ const hipodromosDelDia = useMemo(() => {
         continue;
       }
       const v = valida(f, descontado);
+      const c1 = saldoCliente(f.cliente1);
+      const c2 = saldoCliente(f.cliente2);
+      const montoPedidoFila = parseFloat(String(f.monto).replace(",", ".")) || 0;
       if (!v.ok) {
+        if (c1 && montoPedidoFila > 0 && /S\/S|saldo/i.test(v.motivo)) {
+          const tel1 = telefonoMencionCliente(c1);
+          const tel2 = telefonoMencionCliente(c2);
+          const nom1 = c1.nombre;
+          const nom2 = c2?.nombre ?? (f.cliente2.trim() || "Banca");
+          const menc1 = tel1 ? `@${tel1} (${nom1})` : `@${nom1}`;
+          const menc2 = tel2 ? `@${tel2} (${nom2})` : `@${nom2}`;
+          const jugEtiq = f.caballo.trim() ? `${f.jugada.trim().toUpperCase()} (${f.caballo.trim()})` : f.jugada.trim().toUpperCase();
+          const resumenMencion = `${menc1} pidió ${monedaFmt(montoPedidoFila)} con ${menc2} en ${jugEtiq} → solo juegan 0 porque ${nom1} excede el saldo (S/S).`;
+          recortes.push(resumenMencion);
+          setObservacionesExcesoCarrera((prev) => [
+            ...prev,
+            {
+              orden: prev.length + 1,
+              jugador: nom1,
+              contraparte: nom2,
+              telefonoJugador: tel1 || null,
+              telefonoContraparte: tel2 || null,
+              jugada: jugEtiq,
+              montoSolicitado: montoPedidoFila,
+              montoAceptado: 0,
+              montoExcedido: montoPedidoFila,
+              disponibleAntes: 0,
+              motivo: "Sin saldo disponible (S/S)",
+              resumenMencion,
+            },
+          ]);
+          setObservaciones((obsPrev) =>
+            obsPrev.includes(resumenMencion) ? obsPrev : [obsPrev.trim(), resumenMencion].filter(Boolean).join(" · ")
+          );
+        }
         errores.push(`Fila ${filas.indexOf(f) + 1}: ${v.motivo}`);
         indicesError.push(filas.indexOf(f));
         continue;
       }
-      const c1 = saldoCliente(f.cliente1);
       if (!c1) {
         errores.push(`Fila ${filas.indexOf(f) + 1}: el CLIENTE 1 no está en el catálogo (no se puede cobrar).`);
         indicesError.push(filas.indexOf(f));
@@ -1469,7 +1503,6 @@ const hipodromosDelDia = useMemo(() => {
         indicesError.push(filas.indexOf(f));
         continue;
       }
-      const c2 = saldoCliente(f.cliente2);
       if (!c2) {
         errores.push(`Fila ${filas.indexOf(f) + 1}: el CLIENTE 2 no está en el catálogo (se exigen dos clientes).`);
         indicesError.push(filas.indexOf(f));
@@ -1478,8 +1511,35 @@ const hipodromosDelDia = useMemo(() => {
       const grupoId =
         c1.grupo_id != null ? String(c1.grupo_id) : c1.grupos[0] != null ? String(c1.grupos[0]) : null;
       if (v.reparto?.recortado) {
-        recortes.push(
-          `Fila ${filas.indexOf(f) + 1}: ${v.reparto.avisos[0] ?? `Se autoriza ${v.monto} de ${v.montoPedido}.`}`
+        const tel1 = telefonoMencionCliente(c1);
+        const tel2 = telefonoMencionCliente(c2);
+        const nom1 = c1.nombre;
+        const nom2 = c2.nombre;
+        const menc1 = tel1 ? `@${tel1} (${nom1})` : `@${nom1}`;
+        const menc2 = tel2 ? `@${tel2} (${nom2})` : `@${nom2}`;
+        const jugEtiq = f.caballo.trim() ? `${v.tipo} (${f.caballo.trim()})` : v.tipo;
+        const exc = Math.max(0, round2(v.montoPedido - v.monto));
+        const resumenMencion = `${menc1} pidió ${monedaFmt(v.montoPedido)} con ${menc2} en ${jugEtiq} → solo juegan ${monedaFmt(v.monto)} porque ${nom1} excede el saldo.`;
+        recortes.push(resumenMencion);
+        setObservacionesExcesoCarrera((prev) => [
+          ...prev,
+          {
+            orden: prev.length + 1,
+            jugador: nom1,
+            contraparte: nom2,
+            telefonoJugador: tel1 || null,
+            telefonoContraparte: tel2 || null,
+            jugada: jugEtiq,
+            montoSolicitado: v.montoPedido,
+            montoAceptado: v.monto,
+            montoExcedido: exc,
+            disponibleAntes: v.monto,
+            motivo: `Excedido ${monedaFmt(exc)}`,
+            resumenMencion,
+          },
+        ]);
+        setObservaciones((obsPrev) =>
+          obsPrev.includes(resumenMencion) ? obsPrev : [obsPrev.trim(), resumenMencion].filter(Boolean).join(" · ")
         );
       }
       /* Venta transaccional: si falla (saldo, grupo, red), nada se descuenta y
@@ -2684,6 +2744,33 @@ const hipodromosDelDia = useMemo(() => {
             <button
               type="button"
               onClick={() => {
+                const obsEnCurso: ObservacionOrdenExceso[] = proyeccionesCarga
+                  .map((p, idx): ObservacionOrdenExceso | null => {
+                    if (!p.observacionExceso || p.montoSolicitado <= 0) return null;
+                    const nom1 = p.cliente1?.nombre ?? filas[idx]?.cliente1 ?? "Jugador 1";
+                    const nom2 = p.cliente2?.nombre ?? filas[idx]?.cliente2 ?? "Banca";
+                    const tel1 = telefonoMencionCliente(p.cliente1);
+                    const tel2 = telefonoMencionCliente(p.cliente2);
+                    const jug = filas[idx]?.caballo?.trim()
+                      ? `${filas[idx].jugada.toUpperCase()} (${filas[idx].caballo.trim()})`
+                      : (filas[idx]?.jugada ?? "").toUpperCase();
+                    return {
+                      orden: idx + 1,
+                      jugador: nom1,
+                      contraparte: nom2,
+                      telefonoJugador: tel1 || null,
+                      telefonoContraparte: tel2 || null,
+                      jugada: jug,
+                      montoSolicitado: p.montoSolicitado,
+                      montoAceptado: p.montoAceptado,
+                      montoExcedido: p.montoExcedido,
+                      disponibleAntes: p.montoAceptado,
+                      motivo: p.observacionExceso,
+                      resumenMencion: p.observacionMencion ?? undefined,
+                    };
+                  })
+                  .filter((x): x is ObservacionOrdenExceso => x !== null);
+                const todasObs = [...observacionesExcesoCarrera, ...obsEnCurso];
                 const txt = generarTextoPrejugadasWhatsapp({
                   grupo: grupoCabecera,
                   hipodromo: nombreHipodromo,
@@ -2704,6 +2791,7 @@ const hipodromosDelDia = useMemo(() => {
                     da: f.cliente2,
                     monto: f.monto,
                   })),
+                  observacionesExceso: todasObs,
                 });
                 setVisorWhatsappTipo("prejugadas");
                 setTextoVisorWhatsapp(txt);
@@ -2711,7 +2799,7 @@ const hipodromosDelDia = useMemo(() => {
               }}
               className="rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-[11px] font-black text-indigo-800 hover:bg-indigo-100"
             >
-              📋 Ver Reporte de Prejugadas (Preliminar WhatsApp)
+              📋 Ver Reporte de Prejugadas (Preliminar WhatsApp + Imagen)
             </button>
             <button
               type="button"
@@ -2878,6 +2966,125 @@ const hipodromosDelDia = useMemo(() => {
                   </button>
                 </div>
               </div>
+
+              {/* Vista Gráfica Preliminar (misma línea gráfica que el reporte final con observaciones y menciones @número) */}
+              {visorWhatsappTipo === "prejugadas" && (
+                <div className="mt-4 space-y-2 border-t border-slate-200 pt-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2">
+                    <span className="text-xs font-black text-blue-950">
+                      🖼️ Reporte Visual Preliminar de Jugadas (En Vivo + Adelantadas + Observaciones @número)
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void exportarReporteCarreraImagen("PNG", `preliminar-${hipodromo}-c${carrera}-${fecha}`)}
+                        className="rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-black text-white hover:bg-blue-600"
+                      >
+                        📸 Descargar Preliminar PNG
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void exportarReporteCarreraImagen("JPG", `preliminar-${hipodromo}-c${carrera}-${fecha}`)}
+                        className="rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-xs font-black text-blue-800 hover:bg-blue-100"
+                      >
+                        📸 JPG
+                      </button>
+                    </div>
+                  </div>
+                  <ReporteCarrera
+                    datos={{
+                      encabezado: {
+                        grupo: grupoCabecera,
+                        logoGrupo: (gruposVenta.find((g) => String(g.id) === String(grupoSesion)) as { logo_url?: string | null } | undefined)?.logo_url ?? null,
+                        hipodromo: nombreHipodromo,
+                        logoHipodromo: null,
+                        carrera: `Carrera ${carrera}`,
+                        fecha,
+                        llegada: [],
+                      },
+                      liquidada: false,
+                      jugadasVivo: [
+                        ...filasPreviewEnVivo.map((f) => ({
+                          juega: f.cliente1,
+                          aposto: f.monto,
+                          jugo: f.jugada,
+                          caballo: f.caballo,
+                          da: f.cliente2,
+                          apostoDa: f.monto,
+                          resultado: null,
+                          resultadoDa: null,
+                          esAdelantada: false,
+                        })),
+                        ...filasPreviewAdelantadas.map((f) => ({
+                          juega: f.cliente1,
+                          aposto: f.monto,
+                          jugo: f.jugada,
+                          caballo: f.caballo,
+                          da: f.cliente2,
+                          apostoDa: f.monto,
+                          resultado: null,
+                          resultadoDa: null,
+                          esAdelantada: true,
+                        })),
+                      ],
+                      adelantadas: { tablas: [], marcas: [], tercios: [], otras: [] },
+                      resumen: { ganan: [], pierden: [] },
+                      observacionesOrdenExceso: [
+                        ...observacionesExcesoCarrera,
+                        ...proyeccionesCarga
+                          .map((p, idx): ObservacionOrdenExceso | null => {
+                            if (!p.observacionExceso || p.montoSolicitado <= 0) return null;
+                            const nom1 = p.cliente1?.nombre ?? filas[idx]?.cliente1 ?? "Jugador 1";
+                            const nom2 = p.cliente2?.nombre ?? filas[idx]?.cliente2 ?? "Banca";
+                            const tel1 = telefonoMencionCliente(p.cliente1);
+                            const tel2 = telefonoMencionCliente(p.cliente2);
+                            const jug = filas[idx]?.caballo?.trim()
+                              ? `${filas[idx].jugada.toUpperCase()} (${filas[idx].caballo.trim()})`
+                              : (filas[idx]?.jugada ?? "").toUpperCase();
+                            return {
+                              orden: idx + 1,
+                              jugador: nom1,
+                              contraparte: nom2,
+                              telefonoJugador: tel1 || null,
+                              telefonoContraparte: tel2 || null,
+                              jugada: jug,
+                              montoSolicitado: p.montoSolicitado,
+                              montoAceptado: p.montoAceptado,
+                              montoExcedido: p.montoExcedido,
+                              disponibleAntes: p.montoAceptado,
+                              motivo: p.observacionExceso,
+                              resumenMencion: p.observacionMencion ?? undefined,
+                            };
+                          })
+                          .filter((x): x is ObservacionOrdenExceso => x !== null),
+                      ],
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Vista Gráfica de Saldos con Simbología de Alerta y @teléfono visible solo en la imagen */}
+              {visorWhatsappTipo === "saldos" && (
+                <div className="mt-4 border-t border-slate-200 pt-3">
+                  <ReporteSaldosVisual
+                    grupo={grupoCabecera}
+                    logoGrupo={(gruposVenta.find((g) => String(g.id) === String(grupoSesion)) as { logo_url?: string | null } | undefined)?.logo_url ?? null}
+                    hipodromo={nombreHipodromo}
+                    carrera={carrera}
+                    fecha={fecha}
+                    clientes={clientes.map((c) => ({
+                      id: c.id,
+                      nombre: c.nombre,
+                      telefono: telefonoMencionCliente(c) || null,
+                      saldoContable: saldoDeCliente(c),
+                      aval: avalDeCliente(c),
+                      riesgoEnCurso: 0,
+                      disponible: limiteDeJugar(c),
+                      libre: esClienteLibre(c),
+                    }))}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

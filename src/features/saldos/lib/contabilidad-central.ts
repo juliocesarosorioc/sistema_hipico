@@ -390,12 +390,33 @@ export async function sincronizarSaldosRealesClientes<
     saldo?: number | string | null;
     aval?: number | string | null;
     grupo_id?: string | number | null;
+    telefono?: string | null;
+    codigo_pais?: string | null;
   }
 >(clientes: T[], _grupoId?: string | number | null): Promise<T[]> {
   if (!clientes || clientes.length === 0) return clientes;
 
   let tickets: TicketContableRaw[] = [];
+  const telefonosMap = new Map<string, { telefono: string | null; codigo_pais: string | null }>();
   if (supabase) {
+    try {
+      const { data: telRows } = await supabase
+        .from("clientes")
+        .select("id, telefono, codigo_pais")
+        .limit(3000);
+      if (telRows) {
+        for (const row of telRows as Array<{ id?: unknown; telefono?: unknown; codigo_pais?: unknown }>) {
+          if (row.id != null) {
+            telefonosMap.set(String(row.id), {
+              telefono: row.telefono ? String(row.telefono) : null,
+              codigo_pais: row.codigo_pais ? String(row.codigo_pais) : null,
+            });
+          }
+        }
+      }
+    } catch {
+      /* fallback silencioso */
+    }
     try {
       const { data, error } = await supabase
         .from("tickets_apuestas")
@@ -456,9 +477,24 @@ export async function sincronizarSaldosRealesClientes<
           ).catch(() => null)
         );
       }
-      const copia: Record<string, unknown> = { ...c, saldo_actual: 0 };
+      const telInfo = telefonosMap.get(String(c.id));
+      const copia: Record<string, unknown> = {
+        ...c,
+        saldo_actual: 0,
+        telefono: c.telefono ?? telInfo?.telefono ?? null,
+        codigo_pais: c.codigo_pais ?? telInfo?.codigo_pais ?? null,
+      };
       if ("saldo" in c) copia.saldo = 0;
       return copia as T;
+    }
+
+    const telInfo = telefonosMap.get(String(c.id));
+    if (telInfo && (!c.telefono || !c.codigo_pais)) {
+      return {
+        ...c,
+        telefono: c.telefono ?? telInfo.telefono,
+        codigo_pais: c.codigo_pais ?? telInfo.codigo_pais,
+      };
     }
 
     return c;

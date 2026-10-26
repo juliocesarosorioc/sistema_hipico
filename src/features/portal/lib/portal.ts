@@ -934,6 +934,25 @@ export async function realizarJugada(cuerpo: Record<string, unknown>): Promise<{
       caballoDesc = `#${cuerpo.caballo ?? ""} ${cuerpo.ejemplar_nombre ?? ""}`.trim();
     }
 
+    const contrapartePorTipo =
+      tipo === "MARCA"
+        ? "Marcas"
+        : tipo === "TABLA_FIJA"
+          ? "TF"
+          : tipo === "DUPLETA"
+            ? "Dupleta"
+            : tipo === "POLLA"
+              ? "Polla"
+              : tipo === "REMATE"
+                ? "Remate"
+                : /^(?:WIN|W|GANADOR)$/i.test(nombreJugada)
+                  ? "Win"
+                  : /^(?:PLACE|P)$/i.test(nombreJugada)
+                    ? "Place"
+                    : /^(?:SHOW|S)$/i.test(nombreJugada)
+                      ? "Show"
+                      : String(cuerpo.banquero_nombre ?? "CASA");
+
     const filaTicket: Record<string, unknown> = {
       fecha_registro: new Date().toISOString(),
       fecha_carrera: fechaCarrera,
@@ -941,7 +960,8 @@ export async function realizarJugada(cuerpo: Record<string, unknown>): Promise<{
       carrera: carreraNum,
       cliente_juega_id: cid,
       cliente_juega_nombre: cli.seudonimo || cli.nombre || "CLIENTE",
-      banquero_nombre: cuerpo.banquero_nombre ? String(cuerpo.banquero_nombre) : "CASA",
+      cliente_consigue_nombre: contrapartePorTipo,
+      banquero_nombre: contrapartePorTipo,
       grupo_cobro_id: grupoId || null,
       grupo_cobro_nombre: grupoNombre,
       nombre_jugada: nombreJugada,

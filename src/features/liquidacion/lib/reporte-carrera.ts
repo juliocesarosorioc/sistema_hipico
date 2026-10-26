@@ -18,6 +18,7 @@ import type { CarreraReporte, FilaReporte } from "@/features/liquidacion/lib/rep
 import { pasaFiltroModalidad, type FiltroModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
 import { colorDiscoNumero } from "@/features/saldos/lib/discos";
 import { etiquetaJugada } from "@/features/taquilla/lib/nomenclatura";
+import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { redondearCentavos, restarDinero, sumarDinero } from "@/shared/lib/dinero";
 import {
   _reembolsosCruce,
@@ -248,6 +249,10 @@ export type OpcionesReporteCarrera = {
   modalidadCruce?: ModalidadCruceCarrera | boolean;
   /** Porcentaje de comisión para el cálculo de reembolso por cruce (por defecto 5%). */
   comisionPct?: number;
+  /** Lookup opcional de teléfono limpio por nombre de cliente para menciones @número en observaciones. */
+  telefonoDe?: (nombre: string) => string | null | undefined;
+  /** Observaciones adicionales de jugadas recortadas por exceso de saldo durante la carga. */
+  observacionesExcesoExtra?: ObservacionOrdenExceso[];
 };
 
 export function armarReporteCarrera(
@@ -302,7 +307,7 @@ export function armarReporteCarrera(
       ordenJuego += 1;
       const i = indiceTicketDe(f.id) ?? `t-${correlativo++}`;
       const cons = consigue.get(i);
-      const da = cons?.cliente ?? "";
+      const da = resolverContraparteModalidad(f.jugada, cons?.cliente ?? "", f.tipoJugada);
       const jugo =
         f.tipoJugada === "MARCA" || f.tipoJugada === "TABLA"
           ? f.jugada
@@ -349,18 +354,30 @@ export function armarReporteCarrera(
         if (apostoJuega > dispAntes + 0.001) {
           const montoAceptado = dispAntes;
           const montoExcedido = restarDinero(apostoJuega, montoAceptado);
+          const nombreJug1 = nombreVisiblePorClave.get(claveCliente) ?? f.cliente;
+          const nombreJug2 = da || "Banca";
+          const tel1 = (opciones?.telefonoDe?.(nombreJug1) ?? "").replace(/\D+/g, "");
+          const tel2 = (opciones?.telefonoDe?.(nombreJug2) ?? "").replace(/\D+/g, "");
+          const menc1 = tel1 ? `@${tel1} (${nombreJug1})` : `@${nombreJug1}`;
+          const menc2 = tel2 ? `@${tel2} (${nombreJug2})` : `@${nombreJug2}`;
+          const etiquetaJug = f.caballo ? `${jugo} (${f.caballo})` : jugo;
+          const fmtNum = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
           observacionesOrdenExceso.push({
             orden: ordenJuego,
-            jugador: nombreVisiblePorClave.get(claveCliente) ?? f.cliente,
-            jugada: f.caballo ? `${jugo} (${f.caballo})` : jugo,
+            jugador: nombreJug1,
+            contraparte: nombreJug2,
+            telefonoJugador: tel1 || null,
+            telefonoContraparte: tel2 || null,
+            jugada: etiquetaJug,
             montoSolicitado: apostoJuega,
             montoAceptado,
             montoExcedido,
             disponibleAntes: dispAntes,
             motivo:
               dispAntes <= 0
-                ? "Sin saldo disponible (S/S) según orden de juego"
-                : `Excedido ${Number.isInteger(montoExcedido) ? montoExcedido : montoExcedido.toFixed(2)} sobre su disponible restante`,
+                ? `Sin saldo disponible (S/S) según orden de juego`
+                : `Excedido ${fmtNum(montoExcedido)} sobre su disponible restante`,
+            resumenMencion: `${menc1} pidió ${fmtNum(apostoJuega)} con ${menc2} en ${etiquetaJug} → solo juegan ${fmtNum(montoAceptado)} porque ${nombreJug1} excede el saldo (disp. ${fmtNum(dispAntes)}).`,
           });
         }
         usadoProgresivoPorCliente.set(claveCliente, sumarDinero(yaUsado, apostoJuega));
@@ -458,7 +475,10 @@ export function armarReporteCarrera(
     adelantadas,
     resumen: { ganan, pierden },
     notaExcedidos,
-    observacionesOrdenExceso,
+    observacionesOrdenExceso: [
+      ...observacionesOrdenExceso,
+      ...(opciones?.observacionesExcesoExtra ?? []),
+    ],
     asientosBonoCruce,
   };
 }

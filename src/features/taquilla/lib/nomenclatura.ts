@@ -468,8 +468,8 @@ export function etiquetaModalidad(m: ModalidadPuestos): string {
  * ("2x3 10/8") se muestra esa. Fuente única del "PP (10/10)".
  */
 export function proporcionDeclarada(jugada: string): string {
-  const m = /(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)/.exec(String(jugada ?? ""));
-  return m ? `${m[1]}/${m[2]}` : "10/10";
+  const m = /(\d+(?:[.,]\d+)?)\s*[\/aA]\s*(\d+(?:[.,]\d+)?)/.exec(String(jugada ?? ""));
+  return m ? `${m[1].replace(",", ".")}/${m[2].replace(",", ".")}` : "10/10";
 }
 
 /** ¿Es un pareo/MATCH? (la jugada es "NxM"/"N*M", los ejemplares traen "x", o es un PP). */
@@ -510,9 +510,16 @@ export function rotuloPareo(jugada: string, caballo = ""): string {
 export function etiquetaJugada(jugada: string): string {
   const t = String(jugada ?? "").trim();
   if (!t) return "";
-  // Fracción declarada: si es 10/10 (pelo a pelo) se rotula "PP"; cualquier
-  // otra proporción ("10/8", "10/6") se conserva.
-  if (/\d+\s*\/\s*\d+/.test(t)) return proporcionDeclarada(t) === "10/10" ? "PP" : t;
+  // Fracción declarada ("10/8", "10/2.5", "10A2.5", "10a6"): si es 10/10 (pelo a pelo)
+  // se rotula "PP"; cualquier otra proporción se canoniza con barra y punto ("10/2.5").
+  if (/\d+(?:[.,]\d+)?\s*[\/aA]\s*\d+(?:[.,]\d+)?/.test(t)) {
+    const prop = proporcionDeclarada(t);
+    if (prop === "10/10") return "PP";
+    return t.replace(
+      /(\d+(?:[.,]\d+)?)\s*[\/aA]\s*(\d+(?:[.,]\d+)?)/g,
+      (_m, p, q) => `${String(p).replace(",", ".")}/${String(q).replace(",", ".")}`
+    );
+  }
   if (/^\s*pp\b/i.test(t)) return "PP"; // ya es PP
   if (/\d\s*[X*]\s*\d/i.test(t)) return "PP"; // pareo/MATCH sin fracción ("4X7")
   return t;

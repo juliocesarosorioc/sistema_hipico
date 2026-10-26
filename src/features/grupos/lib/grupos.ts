@@ -227,6 +227,8 @@ export async function listarClientesVenta(): Promise<ClienteVenta[]> {
         ...c,
         saldo_actual: c.saldo_actual != null ? redondearCentavos(c.saldo_actual) : null,
         aval: c.aval != null ? redondearCentavos(c.aval) : null,
+        telefono: (c as { telefono?: string | null }).telefono ?? null,
+        codigo_pais: (c as { codigo_pais?: string | null }).codigo_pais ?? null,
       })),
       activo
     );
@@ -1474,4 +1476,23 @@ export async function crearEcosistemaGrupo(
       "El grupo y sus usuarios quedaron creados, pero las cuentas de login no: " +
       "desplegá la edge function `crear-grupo` y reintentá para generar las credenciales.",
   };
+}
+
+
+/**
+ * Devuelve el número de teléfono limpio (solo dígitos, incluyendo código de país si aplica)
+ * para menciones `@número` en WhatsApp y reportes.
+ */
+export function telefonoMencionCliente(
+  c: { telefono?: string | null; codigo_pais?: string | null; nombre?: string | null } | null | undefined
+): string {
+  if (!c) return "";
+  const telLimpio = String(c.telefono ?? "").replace(/\D+/g, "");
+  if (!telLimpio) return "";
+  const codLimpio = String(c.codigo_pais ?? "").replace(/\D+/g, "");
+  const sinCeroInicial = telLimpio.replace(/^0+/, "");
+  if (codLimpio && !sinCeroInicial.startsWith(codLimpio)) {
+    return `${codLimpio}${sinCeroInicial}`;
+  }
+  return sinCeroInicial || telLimpio;
 }

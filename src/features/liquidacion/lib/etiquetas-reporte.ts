@@ -118,3 +118,53 @@ export function desgloseJugada(f: Record<string, unknown>): DesgloseJugada {
   if (esTablaFija(nombre)) return desgloseTablaFija(f);
   return { jugada: nombre, caballo: txt(f.caballo), ejemplar: txt(f.caballo), tipo: null };
 }
+
+
+/**
+ * Resuelve automáticamente el usuario contraparte ("Quien Da" / `cliente_consigue_nombre`)
+ * según la modalidad de la jugada:
+ *  - Marcas → "Marcas"
+ *  - Tablas Fijas → "TF"
+ *  - Dupleta → "Dupleta"
+ *  - Remate → "Remate"
+ *  - Pollas → "Polla"
+ *  - Ganador (WPS) → "Win"
+ *  - Place (WPS) → "Place"
+ *  - Show (WPS) → "Show"
+ */
+export function resolverContraparteModalidad(
+  nombreJugada: unknown,
+  clienteDaActual?: unknown,
+  origen?: unknown
+): string {
+  const jug = txt(nombreJugada).toUpperCase();
+  const orig = txt(origen).toUpperCase();
+  const actual = txt(clienteDaActual);
+
+  if (/^MARCAS?\b/i.test(jug) || orig === "MARCAS" || orig === "MARCA") {
+    return "Marcas";
+  }
+  if (/^(?:TABLA\s*FIJA|TABLAS?\s*FIJAS?|TABLA|TF)\b/i.test(jug) || orig === "TABLAS" || orig === "TABLA_FIJA") {
+    return "TF";
+  }
+  if (/^DUPLETAS?\b/i.test(jug) || orig === "DUPLETAS" || orig === "DUPLETA") {
+    return "Dupleta";
+  }
+  if (/^REMATES?\b/i.test(jug) || orig === "REMATES" || orig === "REMATE") {
+    return "Remate";
+  }
+  if (/^POLLAS?\b/i.test(jug) || orig === "POLLAS" || orig === "POLLA") {
+    return "Polla";
+  }
+  if (/^(?:WIN|W|GANADOR|WPS\s*WIN|WPS\s*W|WPS\s*GANADOR)$/i.test(jug)) {
+    return "Win";
+  }
+  if (/^(?:PLACE|P|PLAC[EÉ]|WPS\s*PLACE|WPS\s*P)$/i.test(jug)) {
+    return "Place";
+  }
+  if (/^(?:SHOW|S|WPS\s*SHOW|WPS\s*S)$/i.test(jug)) {
+    return "Show";
+  }
+
+  return actual;
+}

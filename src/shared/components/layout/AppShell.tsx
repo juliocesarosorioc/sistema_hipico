@@ -7,6 +7,7 @@ import { Topbar } from "@/shared/components/layout/Topbar";
 import { Sidebar } from "@/shared/components/layout/Sidebar";
 import { ConfirmHost } from "@/shared/components/ui/ConfirmHost";
 import { ModalConfirmacionYResultado } from "@/shared/components/ui/ModalConfirmacionYResultado";
+import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { esRutaPublica } from "@/features/seguridad/lib/capacidades";
 
@@ -195,6 +196,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar alAlternarMenu={alternarMenu} menuVisible={menuVisible} />
         <main className="flex-1 overflow-y-auto bg-gray-50">{children}</main>
+        <PieDerechosAutor variante="compacto" />
       </div>
       {/* Confirmación global y acuse de recibo obligatorio del operador */}
       <ConfirmHost />

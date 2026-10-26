@@ -44,8 +44,8 @@ import {
 import { ReporteDiarioTabla } from "@/features/reportes/components/ReporteDiarioTabla";
 import { ModalRealizarJugadaUsuario } from "@/features/portal/components/ModalRealizarJugadaUsuario";
 import { ModalJugadaNoRelacionada } from "@/features/portal/components/ModalJugadaNoRelacionada";
-import { SeccionJugadasPortal } from "@/features/portal/components/SeccionJugadasPortal";
 import { dentroDeVentana, type CicloGrupo } from "@/features/portal/lib/ventana-reclamos";
+import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -273,6 +273,9 @@ function LoginScreen(props: {
             {props.autoEntrar ? "Enlace detectado: entre con el botón para validar el acceso." : "Acceso con las credenciales entregadas por el hipódromo."}
           </p>
         </div>
+        <div className="mt-4">
+          <PieDerechosAutor variante="compacto" className="text-indigo-200/70" />
+        </div>
       </div>
       <ToastHost />
     </div>
@@ -283,8 +286,19 @@ function LoginScreen(props: {
 // Sesión activa
 // ---------------------------------------------------------------------------
 
+const OPCIONES_MENU_PORTAL: { key: TabPortal; icono: string; label: string; badge?: string }[] = [
+  { key: "reporte", icono: "📊", label: "Reporte del Día" },
+  { key: "resumen", icono: "🗒️", label: "Resumen y movimientos" },
+  { key: "externos", icono: "📓", label: "Mi Control en Otros Grupos" },
+  { key: "jugadas", icono: "🏇", label: "Jugadas", badge: "En construcción" },
+  { key: "tickets", icono: "🛟", label: "Mis tickets" },
+];
+
 function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; onActualizar: (s: SesionPortal) => void; onSalir: () => void }) {
-  const [tab, setTab] = useState<TabPortal>("resumen");
+  // 1ra pestaña por defecto: Reporte del Día
+  const [tab, setTab] = useState<TabPortal>("reporte");
+  // Menú ocultable a la izquierda para todas las opciones
+  const [menuAbierto, setMenuAbierto] = useState(true);
   // 👤 Mi Perfil (PROMPT #7): autogestión de datos personales en un modal.
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   // 🐎 Realizar Jugada + ➕ Jugada No Relacionada (PROMPT #6).
@@ -302,86 +316,239 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
     });
   };
 
+  const nombreGrupoActivo =
+    String(sesion.grupo?.nombre ?? "").trim() ||
+    String((sesion.cliente as unknown as { grupo?: string }).grupo ?? "").trim() ||
+    "Club del Dinero";
+
+  const logoGrupoUrl = String(
+    (sesion.grupo as unknown as { logo_url?: string; logo?: string })?.logo_url ??
+      (sesion.grupo as unknown as { logo?: string })?.logo ??
+      ""
+  ).trim();
+
   return (
-    <div className="min-h-screen bg-slate-100">
-      <header className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
+    <div className="min-h-screen bg-slate-100 flex flex-col">
+      <header className="bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-950 text-white border-b border-indigo-500/30 shadow-lg">
+        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-4 py-3.5">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/30 text-lg">
-              <span className="text-indigo-200">👔</span>
-            </div>
-            <div>
-              <div className="text-sm font-black">{sesion.cliente.nombre || sesion.cliente.seudonimo}</div>
-              <div className="text-[10px] text-indigo-200/70 uppercase tracking-wider">Portal del Cliente</div>
-            </div>
+            {/* Botón para mostrar/ocultar el menú lateral izquierdo */}
+            <button
+              type="button"
+              onClick={() => setMenuAbierto((v) => !v)}
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-400/40 bg-indigo-500/20 text-lg text-white transition hover:bg-indigo-500/40"
+              title={menuAbierto ? "Ocultar menú lateral izquierdo" : "Mostrar menú lateral izquierdo"}
+              aria-label="Alternar menú lateral"
+            >
+              {menuAbierto ? "◀" : "☰"}
+            </button>
+
+            {/* Cápsula de nombre de usuario con gráfico de torta de su saldo */}
+            <CapsulaUsuarioConTorta sesion={sesion} nombreGrupo={nombreGrupoActivo} />
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="default"
               size="sm"
-              className="bg-indigo-500 hover:bg-indigo-400"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow"
+              onClick={() => setNoRelAbierta(true)}
+              title="Solicitar incluir jugada no relacionada"
+            >
+              <span className="mr-1">➕</span> Jugada No Relacionada
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              className="bg-indigo-500 hover:bg-indigo-400 font-black"
               onClick={() => setJugadaAbierta(true)}
             >
               <span className="mr-1">🐎</span> Realizar Jugada
             </Button>
-            <Button variant="ghost" size="sm" className="text-indigo-200 hover:bg-indigo-900" onClick={() => setPerfilAbierto(true)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="border border-indigo-400/30 bg-indigo-900/50 text-white hover:bg-indigo-800 font-bold"
+              onClick={() => setPerfilAbierto(true)}
+            >
               <span className="mr-1">👤</span> Mi Perfil
             </Button>
-            <Button variant="ghost" size="sm" className="text-indigo-200 hover:bg-indigo-900" onClick={onSalir}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="border border-rose-400/30 bg-rose-950/50 text-rose-200 hover:bg-rose-900 font-bold"
+              onClick={onSalir}
+            >
               <span className="mr-1">🚪</span> Salir
             </Button>
           </div>
         </div>
 
-        <div className="mx-auto max-w-5xl px-4 pb-5">
+        {/* Totales superiores con números más grandes y alto contraste */}
+        <div className="mx-auto max-w-[1600px] px-4 pb-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Kpi icon="🪙" lbl="Saldo / Total decidido" val={formatoMoneda("USD", sesion.resumen.saldo)} color="text-white" bg="bg-indigo-900/40" />
-            <Kpi icon="％" lbl={`Incentivo (${num(sesion.cliente.devolucion)}%)`} val={formatoMoneda("USD", sesion.resumen.incentivo)} color="text-purple-200" bg="bg-purple-900/40" />
-            <Kpi icon="🤲" lbl="Disponible" val={formatoMoneda("USD", sesion.resumen.disponible)} color="text-emerald-200" bg="bg-emerald-900/40" />
+            <Kpi
+              icon="🪙"
+              lbl="Saldo / Total Decidido"
+              val={formatoMoneda("USD", sesion.resumen.saldo)}
+              color="text-white"
+              bg="bg-slate-900/90 border-indigo-400/40"
+            />
+            <Kpi
+              icon="％"
+              lbl={`Incentivo (${num(sesion.cliente.devolucion)}%)`}
+              val={formatoMoneda("USD", sesion.resumen.incentivo)}
+              color="text-amber-300"
+              bg="bg-indigo-950/90 border-amber-400/40"
+            />
+            <Kpi
+              icon="🤲"
+              lbl="Disponible para Jugar"
+              val={formatoMoneda("USD", sesion.resumen.disponible)}
+              color="text-emerald-300"
+              bg="bg-emerald-950/90 border-emerald-400/40"
+            />
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 py-5 space-y-4">
-        <div className="flex flex-wrap gap-1 rounded-xl bg-white p-1 w-fit max-w-full shadow-sm border border-line">
-          {(
-            [
-              ["resumen", "Resumen y movimientos"],
-              ["jugadas", "🏇 Jugadas (Marcas / Tablas / Puestos / Dupletas / Pollas)"],
-              ["reporte", "Reporte del día"],
-              ["reportar", "Reportar jugada faltante"],
-              ["tickets", "Mis tickets"],
-              ["datos", "Mis datos"],
-              ["externos", "📓 Mi Control en Otros Grupos (Personal)"],
-            ] as [TabPortal, string][]
-          ).map(([k, lbl]) => (
-            <button
-              key={k}
-              onClick={() => setTab(k)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
-                tab === k ? "bg-indigo-600 text-white shadow" : "text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              {lbl}
-            </button>
-          ))}
-        </div>
+      <div className="mx-auto flex w-full max-w-[1600px] flex-1 gap-4 px-4 py-5">
+        {/* Menú ocultable a la izquierda para todas las opciones */}
+        {menuAbierto ? (
+          <aside className="w-64 shrink-0 space-y-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="mb-2 flex items-center justify-between px-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  Menú de Navegación
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMenuAbierto(false)}
+                  className="rounded-lg px-1.5 py-0.5 text-[10px] font-bold text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  title="Ocultar menú"
+                >
+                  Ocultar ◀
+                </button>
+              </div>
+              <nav className="space-y-1">
+                {OPCIONES_MENU_PORTAL.map((op) => {
+                  const activa = tab === op.key;
+                  return (
+                    <button
+                      key={op.key}
+                      type="button"
+                      onClick={() => setTab(op.key)}
+                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-extrabold transition ${
+                        activa
+                          ? "bg-indigo-600 text-white shadow-md"
+                          : "text-slate-700 hover:bg-slate-100"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="text-base leading-none">{op.icono}</span>
+                        <span>{op.label}</span>
+                      </span>
+                      {op.badge ? (
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase ${
+                            activa
+                              ? "bg-amber-300 text-slate-950"
+                              : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {op.badge}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </nav>
 
-        {tab === "resumen" ? <ResumenView sesion={sesion} onCambio={onActualizar} /> : null}
-        {tab === "jugadas" || tab === "comprar" ? (
-          <SeccionJugadasPortal sesion={sesion} onJugadaRealizada={recargar} />
+              <div className="mt-3 border-t border-slate-200 pt-3 space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => setNoRelAbierta(true)}
+                  className="flex w-full items-center gap-2 rounded-xl bg-indigo-50 px-3 py-2 text-left text-[11px] font-extrabold text-indigo-800 hover:bg-indigo-100 transition"
+                >
+                  <span>➕</span>
+                  <span>Solicitar Incluir Jugada No Relacionada</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPerfilAbierto(true)}
+                  className="flex w-full items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-left text-[11px] font-extrabold text-slate-800 hover:bg-slate-200 transition"
+                >
+                  <span>👤</span>
+                  <span>Mi Perfil y Formas de Pago</span>
+                </button>
+              </div>
+            </div>
+          </aside>
         ) : null}
-        {tab === "reporte" ? <ReporteDiarioView sesion={sesion} /> : null}
-        {tab === "reportar" ? <ReportarView cliente={sesion.cliente} /> : null}
-        {tab === "tickets" ? <MisTicketsView cliente={sesion.cliente} /> : null}
-        {tab === "datos" ? (
-          <DatosView
-            cliente={sesion.cliente}
-            onActualizado={(c) => onActualizar({ ...sesion, cliente: c })}
-          />
-        ) : null}
-        {tab === "externos" ? <BitacoraExternaView cliente={sesion.cliente} /> : null}
-      </main>
+
+        {/* Área central de contenido */}
+        <main className="min-w-0 flex-1 space-y-4">
+          {/* Barra compacta superior de pestañas (sincronizada con el menú izquierdo) */}
+          <div className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-white p-1.5 shadow-sm border border-slate-200">
+            {!menuAbierto ? (
+              <button
+                type="button"
+                onClick={() => setMenuAbierto(true)}
+                className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white hover:bg-slate-800"
+              >
+                ☰ Menú
+              </button>
+            ) : null}
+            {OPCIONES_MENU_PORTAL.map((op) => (
+              <button
+                key={op.key}
+                type="button"
+                onClick={() => setTab(op.key)}
+                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-extrabold transition-colors ${
+                  tab === op.key
+                    ? "bg-indigo-600 text-white shadow"
+                    : "text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                <span>{op.icono}</span>
+                <span>{op.label}</span>
+                {op.badge ? (
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase ${
+                      tab === op.key
+                        ? "bg-amber-300 text-slate-950"
+                        : "bg-amber-100 text-amber-800"
+                    }`}
+                  >
+                    {op.badge}
+                  </span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+
+          {/* Vista principal con el Panel del Grupo (Logo en grande fijo a la derecha + QR Grupo + QR Perfil) */}
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
+            <div className="xl:col-span-9 min-w-0 space-y-4">
+              {tab === "reporte" ? <ReporteDiarioView sesion={sesion} /> : null}
+              {tab === "resumen" ? <ResumenView sesion={sesion} onCambio={onActualizar} /> : null}
+              {tab === "externos" ? <BitacoraExternaView cliente={sesion.cliente} /> : null}
+              {tab === "jugadas" || tab === "comprar" ? <SeccionJugadasEnConstruccion /> : null}
+              {tab === "tickets" ? <MisTicketsView cliente={sesion.cliente} /> : null}
+            </div>
+
+            {/* Columna derecha fija: Logo del grupo en grande + QR de su grupo + QR de su perfil */}
+            <div className="xl:col-span-3 xl:sticky xl:top-4">
+              <PanelGrupoFijoDerecha
+                sesion={sesion}
+                nombreGrupo={nombreGrupoActivo}
+                logoUrl={logoGrupoUrl}
+                onAbrirPerfil={() => setPerfilAbierto(true)}
+              />
+            </div>
+          </div>
+        </main>
+      </div>
 
       {/* 👤 Mi Perfil — autogestión (PROMPT #7). Al guardar se actualiza la
           sesión con la fila devuelta por la Edge Function, así el encabezado
@@ -422,9 +589,7 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
         />
       ) : null}
 
-      <footer className="py-6 text-center text-[10px] text-slate-400">
-        Sistema Hípico — Portal de Consulta del Cliente · {new Date().getFullYear()}
-      </footer>
+      <PieDerechosAutor variante="claro" />
       <ToastHost />
     </div>
   );
@@ -432,11 +597,279 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
 
 function Kpi({ icon, lbl, val, color, bg }: { icon: string; lbl: string; val: string; color: string; bg: string }) {
   return (
-    <div className={`rounded-2xl ${bg} border border-white/10 px-4 py-3 flex items-center gap-3`}>
-      <span className={`text-lg leading-none ${color}`}>{icon}</span>
+    <div className={`rounded-2xl ${bg} border px-5 py-3.5 flex items-center gap-3.5 shadow-md`}>
+      <span className={`text-2xl leading-none ${color}`}>{icon}</span>
       <div>
-        <div className="text-[9px] uppercase tracking-wider font-black text-indigo-200/70">{lbl}</div>
-        <div className={`text-lg font-black ${color}`}>{val}</div>
+        <div className="text-[10px] uppercase tracking-widest font-black text-indigo-200">{lbl}</div>
+        <div className={`text-2xl sm:text-3xl font-black font-mono tracking-tight ${color}`}>{val}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Cápsula con el nombre del jugador y un gráfico de torta (pie/donut chart)
+ * que ilustra visualmente la composición de su saldo (Disponible vs Jugado/Riesgo).
+ */
+function CapsulaUsuarioConTorta({
+  sesion,
+  nombreGrupo,
+}: {
+  sesion: SesionPortal;
+  nombreGrupo: string;
+}) {
+  const f = sesion.fichaUnificada;
+  const disponible = Math.max(0, num(sesion.resumen.disponible));
+  const enRiesgo = Math.max(
+    0,
+    num(f?.riesgoEnCurso) + num(f?.jugadasPerdidas)
+  );
+  const incentivo = Math.max(0, num(sesion.resumen.incentivo));
+  const totalBase = Math.max(1, disponible + enRiesgo + incentivo);
+  const pctDisp = Math.min(100, Math.round((disponible / totalBase) * 100));
+  const pctRiesgo = Math.min(100 - pctDisp, Math.round((enRiesgo / totalBase) * 100));
+
+  const r = 16;
+  const c = 2 * Math.PI * r;
+  const dashDisp = (pctDisp / 100) * c;
+  const dashRiesgo = (pctRiesgo / 100) * c;
+
+  return (
+    <div className="flex items-center gap-3 rounded-full border-2 border-indigo-400/50 bg-slate-900/90 px-4 py-1.5 shadow-lg">
+      {/* Gráfico de torta SVG */}
+      <div className="relative flex h-11 w-11 shrink-0 items-center justify-center" title={`Saldo Disponible: ${pctDisp}%`}>
+        <svg viewBox="0 0 40 40" className="h-11 w-11 -rotate-90">
+          <circle cx="20" cy="20" r={r} fill="transparent" stroke="#1e293b" strokeWidth="6" />
+          {/* Segmento Riesgo / Jugado */}
+          <circle
+            cx="20"
+            cy="20"
+            r={r}
+            fill="transparent"
+            stroke="#f59e0b"
+            strokeWidth="6"
+            strokeDasharray={`${dashRiesgo} ${c}`}
+            strokeDashoffset={-dashDisp}
+          />
+          {/* Segmento Disponible */}
+          <circle
+            cx="20"
+            cy="20"
+            r={r}
+            fill="transparent"
+            stroke="#10b981"
+            strokeWidth="6"
+            strokeDasharray={`${dashDisp} ${c}`}
+          />
+        </svg>
+        <span className="absolute text-[9px] font-black font-mono text-emerald-300">
+          {pctDisp}%
+        </span>
+      </div>
+
+      <div className="pr-2">
+        <div className="flex items-center gap-2">
+          <span className="text-sm sm:text-base font-black tracking-tight text-white uppercase">
+            {sesion.cliente.nombre || sesion.cliente.seudonimo}
+          </span>
+          <span className="rounded-full bg-emerald-500/20 border border-emerald-400/40 px-2 py-0.5 text-[10px] font-black text-emerald-300 font-mono">
+            {formatoMoneda("USD", sesion.resumen.disponible)}
+          </span>
+        </div>
+        <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-300">
+          🪙 {nombreGrupo} · Portal del Jugador
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Pestaña "Jugadas" — temporalmente en construcción y con contenido oculto
+ * según requerimiento del administrador.
+ */
+function SeccionJugadasEnConstruccion() {
+  return (
+    <div className="rounded-3xl border-2 border-dashed border-amber-300 bg-gradient-to-br from-amber-50 via-white to-indigo-50 p-10 text-center shadow-sm">
+      <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-3xl bg-amber-100 text-4xl shadow-inner">
+        🚧
+      </div>
+      <span className="inline-block rounded-full bg-amber-200/80 px-3 py-1 text-[11px] font-black uppercase tracking-widest text-amber-900">
+        Sección en Construcción
+      </span>
+      <h2 className="mt-3 text-xl font-black text-slate-900">
+        Módulo de Jugadas Directas
+      </h2>
+      <p className="mx-auto mt-2 max-w-md text-xs font-medium text-slate-600 leading-relaxed">
+        Estamos optimizando esta sección para brindarte una experiencia de compra en vivo más rápida y segura. Mientras tanto, puedes consultar tu <b>Reporte del Día</b> y <b>Resumen y movimientos</b>.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Generador determinístico de matriz QR en SVG (21x21 con patrones de posición
+ * estándar ISO/IEC 18004) para acceso rápido a Grupo y Perfil del Jugador.
+ */
+function QrSvgMatrix({ valor, size = 116 }: { valor: string; size?: number }) {
+  const N = 21;
+  const celdas = useMemo(() => {
+    const grid: boolean[][] = Array.from({ length: N }, () => Array(N).fill(false));
+    const reservado: boolean[][] = Array.from({ length: N }, () => Array(N).fill(false));
+
+    const ponerFinder = (r0: number, c0: number) => {
+      for (let r = -1; r <= 7; r++) {
+        for (let c = -1; c <= 7; c++) {
+          const rr = r0 + r;
+          const cc = c0 + c;
+          if (rr < 0 || rr >= N || cc < 0 || cc >= N) continue;
+          reservado[rr][cc] = true;
+          const borde7 = r >= 0 && r <= 6 && c >= 0 && c <= 6 && (r === 0 || r === 6 || c === 0 || c === 6);
+          const centro3 = r >= 2 && r <= 4 && c >= 2 && c <= 4;
+          grid[rr][cc] = borde7 || centro3;
+        }
+      }
+    };
+
+    ponerFinder(0, 0);
+    ponerFinder(0, N - 7);
+    ponerFinder(N - 7, 0);
+
+    for (let i = 8; i < N - 8; i++) {
+      reservado[6][i] = true;
+      reservado[i][6] = true;
+      grid[6][i] = i % 2 === 0;
+      grid[i][6] = i % 2 === 0;
+    }
+
+    let hash = 2166136261;
+    const texto = valor || "SISTEMA_HIPICO";
+    for (let i = 0; i < texto.length; i++) {
+      hash ^= texto.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+
+    let idx = 0;
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        if (reservado[r][c]) continue;
+        const charCode = texto.charCodeAt(idx % texto.length);
+        const bit = ((hash >>> (idx % 24)) ^ (charCode * (r + 1) + c * 17)) & 1;
+        grid[r][c] = bit === 1;
+        idx++;
+      }
+    }
+    return grid;
+  }, [valor]);
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${N + 2} ${N + 2}`}
+      className="rounded-xl border border-slate-200 bg-white p-1 shadow-sm"
+      role="img"
+      aria-label="Código QR"
+    >
+      <rect width={N + 2} height={N + 2} fill="#ffffff" />
+      {celdas.map((fila, r) =>
+        fila.map((activo, c) =>
+          activo ? (
+            <rect key={`${r}-${c}`} x={c + 1} y={r + 1} width={1} height={1} fill="#0f172a" />
+          ) : null
+        )
+      )}
+    </svg>
+  );
+}
+
+/**
+ * Panel derecho fijo para reportes de usuario: muestra de manera grande y fija
+ * el logo del grupo con el que juega, el código QR de su grupo y el código QR
+ * para acceder directamente a su perfil.
+ */
+function PanelGrupoFijoDerecha({
+  sesion,
+  nombreGrupo,
+  logoUrl,
+  onAbrirPerfil,
+}: {
+  sesion: SesionPortal;
+  nombreGrupo: string;
+  logoUrl: string;
+  onAbrirPerfil: () => void;
+}) {
+  const origen = typeof window !== "undefined" ? window.location.origin + window.location.pathname : "https://juliocesarosorioc.github.io/sistema_hipico/portal";
+  const urlGrupo = `${origen}?grupo=${encodeURIComponent(nombreGrupo)}`;
+  const tokenCliente = String((sesion.cliente as unknown as { link_token?: string }).link_token ?? "");
+  const urlPerfil = tokenCliente
+    ? `${origen}?c=${encodeURIComponent(sesion.cliente.id)}&k=${encodeURIComponent(tokenCliente)}`
+    : `${origen}?c=${encodeURIComponent(sesion.cliente.id)}`;
+
+  const iniciales = nombreGrupo
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
+
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-md space-y-4">
+      {/* Logo grande y fijo del grupo */}
+      <div className="rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-5 text-center text-white shadow-inner">
+        <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">
+          Grupo Oficial Activo
+        </div>
+        <div className="mx-auto my-3 flex h-28 w-28 items-center justify-center overflow-hidden rounded-3xl border-2 border-amber-400/60 bg-white/10 shadow-xl">
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoUrl}
+              alt={nombreGrupo}
+              className="h-full w-full object-contain p-1.5"
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center">
+              <span className="text-3xl leading-none">🪙</span>
+              <span className="mt-1 text-lg font-black tracking-wider text-amber-300">
+                {iniciales || "CD"}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="text-base font-black tracking-tight text-white">
+          {nombreGrupo}
+        </div>
+        <div className="mt-0.5 text-[11px] font-bold text-indigo-200">
+          Jugador: {sesion.cliente.seudonimo || sesion.cliente.nombre}
+        </div>
+      </div>
+
+      {/* QR del Grupo y QR de Mi Perfil */}
+      <div className="grid grid-cols-2 xl:grid-cols-1 gap-3">
+        <div className="flex flex-col items-center rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center">
+          <div className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-slate-700">
+            📱 QR de tu Grupo
+          </div>
+          <QrSvgMatrix valor={urlGrupo} size={112} />
+          <div className="mt-1.5 text-[10px] font-bold text-slate-600">
+            {nombreGrupo}
+          </div>
+        </div>
+
+        <div className="flex flex-col items-center rounded-2xl border border-indigo-200 bg-indigo-50/50 p-3 text-center">
+          <div className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-900">
+            👤 QR Acceso a Mi Perfil
+          </div>
+          <QrSvgMatrix valor={urlPerfil} size={112} />
+          <button
+            type="button"
+            onClick={onAbrirPerfil}
+            className="mt-2 w-full rounded-xl bg-indigo-600 px-3 py-1.5 text-[11px] font-extrabold text-white shadow hover:bg-indigo-500 transition"
+          >
+            Abrir Mi Perfil
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -601,56 +1034,63 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
   };
 
   const f = sesion.fichaUnificada;
+  const mostrarIncentivo =
+    num(sesion.cliente.devolucion) > 0 ||
+    num(sesion.resumen.incentivo) > 0 ||
+    num(f?.devolucionIncentivo) > 0 ||
+    jugadas.some((j) => num(j.devolucion) > 0);
 
   return (
     <div className="space-y-3">
       {f ? (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 rounded-2xl border border-line bg-white p-3 text-[11px] shadow-sm">
-          <div className="rounded-lg bg-slate-50 p-2">
-            <div className="text-[9px] font-black uppercase text-slate-400">1. Saldo Inicial / Anterior</div>
-            <div className="font-mono font-bold text-slate-800">{formatoMoneda("USD", f.saldoInicial)}</div>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 rounded-2xl border border-slate-200 bg-white p-3.5 text-xs shadow-sm">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+            <div className="text-[10px] font-black uppercase text-slate-600">1. Saldo Inicial / Anterior</div>
+            <div className="mt-0.5 text-base sm:text-lg font-mono font-black text-slate-900">{formatoMoneda("USD", f.saldoInicial)}</div>
           </div>
-          <div className="rounded-lg bg-slate-50 p-2">
-            <div className="text-[9px] font-black uppercase text-slate-400">2. Depósitos (+) / Retiros (-)</div>
-            <div className="font-mono font-bold text-slate-800">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+            <div className="text-[10px] font-black uppercase text-slate-600">2. Depósitos (+) / Retiros (-)</div>
+            <div className="mt-0.5 text-sm sm:text-base font-mono font-black text-slate-900">
               +{formatoMoneda("USD", f.depositos)} / -{formatoMoneda("USD", f.retiros)}
             </div>
           </div>
-          <div className="rounded-lg bg-slate-50 p-2">
-            <div className="text-[9px] font-black uppercase text-amber-600">3. Aval Vigente</div>
-            <div className="font-mono font-bold text-amber-700">{formatoMoneda("USD", f.avalVigente)}</div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-2.5">
+            <div className="text-[10px] font-black uppercase text-amber-800">3. Aval Vigente</div>
+            <div className="mt-0.5 text-base sm:text-lg font-mono font-black text-amber-900">{formatoMoneda("USD", f.avalVigente)}</div>
           </div>
-          <div className="rounded-lg bg-slate-50 p-2">
-            <div className="text-[9px] font-black uppercase text-indigo-600">4. En Vivo / Adelantadas</div>
-            <div className="font-mono font-bold text-indigo-700">
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-2.5">
+            <div className="text-[10px] font-black uppercase text-indigo-800">4. En Vivo / Adelantadas</div>
+            <div className="mt-0.5 text-sm sm:text-base font-mono font-black text-indigo-900">
               {f.jugadasEnVivoCount} en vivo · {f.jugadasAdelantadasCount} adel.
             </div>
           </div>
-          <div className="rounded-lg bg-slate-50 p-2">
-            <div className="text-[9px] font-black uppercase text-emerald-600">5. Ganadas / Com. / Reemb. Cruce</div>
-            <div className="font-mono font-bold text-emerald-700">
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5">
+            <div className="text-[10px] font-black uppercase text-emerald-800">5. Ganadas / Com. / Reemb. Cruce</div>
+            <div className="mt-0.5 text-sm sm:text-base font-mono font-black text-emerald-900">
               {formatoMoneda("USD", f.jugadasGanadasBruto)} (-{formatoMoneda("USD", f.comisionesCobradas)} / +{formatoMoneda("USD", f.reembolsoCruce)})
             </div>
           </div>
-          <div className="rounded-lg bg-emerald-50 p-2">
-            <div className="text-[9px] font-black uppercase text-emerald-700">6. 🎁 Devolución / Incentivo a favor</div>
-            <div className="font-mono font-black text-emerald-700">+{formatoMoneda("USD", f.devolucionIncentivo)}</div>
+          {mostrarIncentivo ? (
+            <div className="rounded-xl border border-emerald-300 bg-emerald-100/70 p-2.5">
+              <div className="text-[10px] font-black uppercase text-emerald-900">6. 🎁 Devolución / Incentivo a favor</div>
+              <div className="mt-0.5 text-base sm:text-lg font-mono font-black text-emerald-900">+{formatoMoneda("USD", f.devolucionIncentivo)}</div>
+            </div>
+          ) : null}
+          <div className="rounded-xl border border-rose-200 bg-rose-50 p-2.5">
+            <div className="text-[10px] font-black uppercase text-rose-800">7. Jugadas Perdidas (-)</div>
+            <div className="mt-0.5 text-base sm:text-lg font-mono font-black text-rose-900">-{formatoMoneda("USD", f.jugadasPerdidas)}</div>
           </div>
-          <div className="rounded-lg bg-rose-50 p-2">
-            <div className="text-[9px] font-black uppercase text-rose-600">7. Jugadas Perdidas (-)</div>
-            <div className="font-mono font-bold text-rose-700">-{formatoMoneda("USD", f.jugadasPerdidas)}</div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-2.5">
+            <div className="text-[10px] font-black uppercase text-amber-800">8. Riesgo en Curso (-)</div>
+            <div className="mt-0.5 text-base sm:text-lg font-mono font-black text-amber-900">-{formatoMoneda("USD", f.riesgoEnCurso)}</div>
           </div>
-          <div className="rounded-lg bg-amber-50 p-2">
-            <div className="text-[9px] font-black uppercase text-amber-600">8. Riesgo en Curso (-)</div>
-            <div className="font-mono font-bold text-amber-700">-{formatoMoneda("USD", f.riesgoEnCurso)}</div>
+          <div className="rounded-xl border border-slate-300 bg-slate-100 p-2.5">
+            <div className="text-[10px] font-black uppercase text-slate-700">9. Saldo Contable Neto</div>
+            <div className="mt-0.5 text-lg sm:text-xl font-mono font-black text-slate-950">{formatoMoneda("USD", f.saldoContable)}</div>
           </div>
-          <div className="rounded-lg bg-slate-100 p-2">
-            <div className="text-[9px] font-black uppercase text-slate-600">9. Saldo Contable Neto</div>
-            <div className="font-mono font-black text-slate-900">{formatoMoneda("USD", f.saldoContable)}</div>
-          </div>
-          <div className="rounded-lg bg-indigo-50 p-2">
-            <div className="text-[9px] font-black uppercase text-indigo-700">10. Disponible Total para Apostar</div>
-            <div className="font-mono font-black text-indigo-800">
+          <div className="rounded-xl border border-indigo-300 bg-indigo-100/80 p-2.5">
+            <div className="text-[10px] font-black uppercase text-indigo-900">10. Disponible Total para Apostar</div>
+            <div className="mt-0.5 text-lg sm:text-xl font-mono font-black text-indigo-950">
               {Number.isFinite(f.disponibleParaJugar) ? formatoMoneda("USD", f.disponibleParaJugar) : "LIBRE"}
             </div>
           </div>
@@ -659,50 +1099,54 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
 
       {/* ➕ Solicitar incluir una jugada que no aparece (PROMPT #6). La fecha
           está restringida por la ventana del grupo. */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 shadow-sm">
-        <div className="text-[11px] text-indigo-700 font-bold">
-          ¿No te aparece una jugada que hiciste? Pedí que la incluyan.
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 shadow-sm">
+        <div className="text-xs text-indigo-900 font-extrabold">
+          ¿No te aparece una jugada que hiciste? Solicitá que la incluyan aquí:
         </div>
         <Button variant="default" size="sm" onClick={() => setNoRelAbierta(true)}>
           <span className="mr-1">➕</span> Solicitar Incluir Jugada No Relacionada
         </Button>
       </div>
 
-      <div className="rounded-2xl border border-line bg-white overflow-hidden shadow-sm">
-        <div className="bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-wider text-slate-500 border-b border-line">
-          <span className="mr-1 text-indigo-600">🗒️</span> Últimos movimientos
+      <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+        <div className="bg-slate-900 px-4 py-3 text-xs font-black uppercase tracking-wider text-white border-b border-slate-800">
+          <span className="mr-1 text-amber-400">🗒️</span> Últimos movimientos
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-left text-[9px] font-black uppercase tracking-wider text-slate-400 bg-white">
-                <th className="px-3 py-2">Fecha</th>
-                <th className="px-3 py-2">Hipódromo / Carrera</th>
-                <th className="px-3 py-2">Jugada</th>
-                <th className="px-3 py-2">Caballo</th>
-                <th className="px-3 py-2 text-right">Jugado</th>
-                <th className="px-3 py-2 text-right">Decidido</th>
-                <th className="px-3 py-2 text-right text-purple-600">Incentivo</th>
-                <th className="px-3 py-2">Estado</th>
-                <th className="px-3 py-2"></th>
+              <tr className="text-left text-[10px] font-black uppercase tracking-wider text-slate-700 bg-slate-100">
+                <th className="px-3 py-2.5">Fecha</th>
+                <th className="px-3 py-2.5">Hipódromo / Carrera</th>
+                <th className="px-3 py-2.5">Jugada</th>
+                <th className="px-3 py-2.5">Caballo</th>
+                <th className="px-3 py-2.5 text-right">Jugado</th>
+                <th className="px-3 py-2.5 text-right">Decidido</th>
+                {mostrarIncentivo ? (
+                  <th className="px-3 py-2.5 text-right text-purple-800">Incentivo</th>
+                ) : null}
+                <th className="px-3 py-2.5">Estado</th>
+                <th className="px-3 py-2.5"></th>
               </tr>
             </thead>
             <tbody>
               {jugadas.map((j) => {
                 const reclamable = dentroDeVentana(j.fechaCarrera ?? j.fecha, hoy, ventana, ciclo);
                 return (
-                  <tr key={j.id} className="border-t border-line hover:bg-slate-50">
-                    <td className="px-3 py-2 whitespace-nowrap text-slate-500">{j.fechaTexto}</td>
-                    <td className="px-3 py-2 font-bold text-slate-700">
-                      {nombreHipodromoParaMostrar(j.hipodromo)} <span className="text-slate-400 font-medium">· C{j.carrera}</span>
+                  <tr key={j.id} className="border-t border-slate-200 hover:bg-slate-50">
+                    <td className="px-3 py-2 whitespace-nowrap font-medium text-slate-700">{j.fechaTexto}</td>
+                    <td className="px-3 py-2 font-extrabold text-slate-900">
+                      {nombreHipodromoParaMostrar(j.hipodromo)} <span className="text-slate-600 font-bold">· C{j.carrera}</span>
                     </td>
-                    <td className="px-3 py-2">{j.jugada}</td>
-                    <td className="px-3 py-2">{j.caballo}</td>
-                    <td className="px-3 py-2 text-right font-mono">{formatoMoneda(j.moneda, j.montoJugado)}</td>
-                    <td className="px-3 py-2 text-right font-mono font-bold">{formatoMoneda(j.moneda, j.montoDecidido)}</td>
-                    <td className="px-3 py-2 text-right font-mono font-bold text-purple-600">{formatoMoneda(j.moneda, j.devolucion)}</td>
+                    <td className="px-3 py-2 font-bold text-slate-800">{j.jugada}</td>
+                    <td className="px-3 py-2 font-bold text-slate-900">{j.caballo}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold text-slate-900">{formatoMoneda(j.moneda, j.montoJugado)}</td>
+                    <td className="px-3 py-2 text-right font-mono font-black text-slate-950">{formatoMoneda(j.moneda, j.montoDecidido)}</td>
+                    {mostrarIncentivo ? (
+                      <td className="px-3 py-2 text-right font-mono font-black text-purple-800">{formatoMoneda(j.moneda, j.devolucion)}</td>
+                    ) : null}
                     <td className="px-3 py-2">
-                      <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${BADGE[j.estado] ?? "bg-slate-100 text-slate-600"}`}>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${BADGE[j.estado] ?? "bg-slate-200 text-slate-800"}`}>
                         {j.estado}
                       </span>
                     </td>
@@ -728,7 +1172,7 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
               })}
               {jugadas.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-3 py-10 text-center text-slate-400">
+                  <td colSpan={mostrarIncentivo ? 9 : 8} className="px-3 py-10 text-center text-slate-500 font-semibold">
                     <span className="mr-2">📥</span> Sin movimientos registrados.
                   </td>
                 </tr>

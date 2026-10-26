@@ -26,6 +26,7 @@
  */
 
 import { esAdelantadaDe } from "@/features/jugadas/lib/modalidad-tiempo";
+import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
 import {
   categoriaJugadaAdelantada,
   type CategoriaJugadaAdelantada,
@@ -312,7 +313,7 @@ function filaDesdePersistida(j: JugadaPersistida, sesion?: TicketSesion): FilaPr
     caballo: TXT(j.caballo) || (j.ejemplar_numero != null ? String(j.ejemplar_numero) : ""),
     monto,
     cliente1: TXT(j.cliente_juega_nombre),
-    cliente2: TXT(j.cliente_consigue_nombre),
+    cliente2: resolverContraparteModalidad(nombreJug, j.cliente_consigue_nombre),
     estado,
     estadoLiquidacion: estadoLiquidacionDe(estado),
     validada: true,
@@ -343,7 +344,7 @@ function filaDesdeSesion(t: TicketSesion): FilaPreviewCarrera {
     caballo: TXT(t.caballo),
     monto,
     cliente1: TXT(t.cliente1),
-    cliente2: TXT(t.cliente2),
+    cliente2: resolverContraparteModalidad(nombreJug, t.cliente2),
     estado: "Pendiente",
     estadoLiquidacion: "Pendiente",
     validada: ticketId !== null,

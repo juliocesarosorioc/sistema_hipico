@@ -17,6 +17,7 @@ import { COMISION_CASA, parsearNini, normalizarNini } from "@/features/betting/l
 import { etiquetaJugada, caballoPareoLegible } from "@/features/taquilla/lib/nomenclatura";
 import { liquidarOficial } from "@/features/motores/lib/oficiales";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
+import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { _reembolsosCruce, normalizarNombreCliente } from "@/features/taquilla/lib/cruces-y-tapas";
 import type { TicketMotor } from "@/features/betting/lib/bettingEngine";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
@@ -515,10 +516,10 @@ export function relacionResultados(
         ? balanceJugada(j)
         : balanceDesdePizarra(j, meta.pizarraPuestos ?? [], meta.dividendos ?? null) ??
           balanceJugada(j));
-    // Leg "Juega": arriesga lo financiado. Leg "Consigue" (el "da"): cobra la
+    // Leg "Juega": arriesga lo financiado. Leg "Da": cobra la
     // ganancia neta cuando el que juega NO acierta.
     const perdida = num(j.monto);
-    const beneficiario = j.clienteConsigue || "";
+    const beneficiario = resolverContraparteModalidad(j.jugada, j.clienteConsigue);
     cuerpo.push(
       `${i + 1}) ${etiquetaJugada(j.jugada)} (${caballoPareoLegible(j.caballo)}) con ${fmtMonto(j.monto)}${sufijoSaldo}`
     );
@@ -526,7 +527,7 @@ export function relacionResultados(
     // ni el "da" entrega nada. Se muestra 0/0 y NO se acumula en el cierre.
     if (b.anulada) {
       cuerpo.push(`Juega ${j.clienteJuega} $ +0,00`);
-      if (beneficiario) cuerpo.push(`Consigue ${beneficiario} $ +0,00`);
+      if (beneficiario) cuerpo.push(`Da ${beneficiario} $ +0,00`);
       return;
     }
     // El motor reconoció la POSICIÓN pero falta el dividendo que cuantifica el
@@ -536,7 +537,7 @@ export function relacionResultados(
       cuerpo.push("⚠️ PENDIENTE — falta el dividendo que cuantifica el premio.");
       return;
     }
-    // La jugada es de SUMA CERO entre el que JUEGA y el "da" (Consigue): el que
+    // La jugada es de SUMA CERO entre el que JUEGA y el "da": el que
     // acierta cobra la ganancia neta y el otro entrega el monto financiado. La
     // decisión se toma por el RESULTADO (no por la modalidad): así la compuesta
     // "1Y2N Y 2N", que el motor clasifica GENERICA, también acredita y debita
@@ -548,7 +549,7 @@ export function relacionResultados(
       acumular(j.clienteJuega, round2(b.gananciaNeta));
       if (beneficiario) {
         const perdidaDa = round2(b.gananciaBruta);
-        cuerpo.push(`Consigue ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
+        cuerpo.push(`Da ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
         acumular(beneficiario, -perdidaDa);
       }
     } else if (j.modalidad === "NINI") {
@@ -562,7 +563,7 @@ export function relacionResultados(
         const tasa = tasaDeJugada(j.comisionPct);
         const com2 = round2((premioNini - num(j.monto)) * (tasa / 100));
         const netoC2 = round2(premioNini - com2 - num(j.monto));
-        cuerpo.push(`Consigue ${beneficiario} $ +${fmtMonto(netoC2)}`);
+        cuerpo.push(`Da ${beneficiario} $ +${fmtMonto(netoC2)}`);
         acumular(beneficiario, netoC2);
       }
     } else {
@@ -574,7 +575,7 @@ export function relacionResultados(
       if (beneficiario) {
         const tasa = tasaDeJugada(j.comisionPct);
         const netoDa = round2(perdida - perdida * (tasa / 100));
-        cuerpo.push(`Consigue ${beneficiario} $ +${fmtMonto(netoDa)}`);
+        cuerpo.push(`Da ${beneficiario} $ +${fmtMonto(netoDa)}`);
         acumular(beneficiario, netoDa);
       }
     }
