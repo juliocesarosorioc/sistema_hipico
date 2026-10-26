@@ -12,6 +12,7 @@
  */
 import { capturarNodo, guardarLienzos, type ImgFormato } from "@/features/impresion/lib/exportar";
 import { formatearMontoSinMoneda, limpiarSimbolosMoneda, redondearCentavos } from "@/shared/lib/dinero";
+import { agruparAdelantadasPorSeccion } from "@/features/liquidacion/lib/reporte-carrera";
 import type { JugadaVivo, ObservacionOrdenExceso } from "@/features/saldos/components/ReporteCarrera";
 
 export const COLUMNAS_REPORTE_7 = [
@@ -160,7 +161,11 @@ export function generarTextoPrejugadasWhatsapp(params: {
   if (adelantadas.length > 0) {
     Lineas.push("");
     Lineas.push("⏳ JUGADAS ADELANTADAS (PRE-JUGADAS)");
-    adelantadas.forEach((j, i) => Lineas.push(formatearLinea(j, i)));
+    const secciones = agruparAdelantadasPorSeccion(adelantadas);
+    for (const sec of secciones) {
+      Lineas.push(`▪ ${sec.titulo.toUpperCase()} (${sec.filas.length}):`);
+      sec.filas.forEach((j, i) => Lineas.push(formatearLinea(j, i)));
+    }
   }
 
   const obs = params.observacionesExceso ?? [];

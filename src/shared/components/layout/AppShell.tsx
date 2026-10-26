@@ -77,7 +77,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const usuario = useAuthStore((s) => s.usuario);
 
   useEffect(() => {
-    if (inicializada && usuario && !ES_PORTAL(pathname) && esRolCliente(perfiles, permisos)) {
+    if (!inicializada) return;
+    if (!usuario && !ES_LOGIN(pathname) && !ES_PORTAL(pathname)) {
+      router.replace("/login");
+      return;
+    }
+    if (usuario && !ES_PORTAL(pathname) && esRolCliente(perfiles, permisos)) {
       router.replace("/portal");
     }
   }, [inicializada, usuario, pathname, perfiles, permisos, router]);

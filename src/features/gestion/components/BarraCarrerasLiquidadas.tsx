@@ -35,6 +35,7 @@ type Props = {
   abiertoInicial?: boolean;
   onSeleccionarCarrera?: (carrera: number) => void;
   onVerReporteCarrera?: (carrera: number) => void;
+  onSeleccionarItem?: (item: ItemCarreraLiquidada) => void;
 };
 
 /**
@@ -55,6 +56,7 @@ export function BarraCarrerasLiquidadas({
   abiertoInicial = false,
   onSeleccionarCarrera,
   onVerReporteCarrera,
+  onSeleccionarItem,
 }: Props) {
   const [abierto, setAbierto] = useState(abiertoInicial);
   const carrerasDia = useCarrerasDiaStore((s) => s.carreras);
@@ -219,7 +221,10 @@ export function BarraCarrerasLiquidadas({
                   <div className="flex items-center justify-between gap-2">
                     <button
                       type="button"
-                      onClick={() => onSeleccionarCarrera?.(it.carrera)}
+                      onClick={() => {
+                        onSeleccionarItem?.(it);
+                        onSeleccionarCarrera?.(it.carrera);
+                      }}
                       className="text-left font-black text-emerald-300 hover:underline"
                       title={`Seleccionar ${it.carrera}ª carrera liquidada`}
                     >
@@ -242,7 +247,10 @@ export function BarraCarrerasLiquidadas({
                   <div className="flex items-center justify-end gap-1.5 pt-1">
                     <button
                       type="button"
-                      onClick={() => onSeleccionarCarrera?.(it.carrera)}
+                      onClick={() => {
+                        onSeleccionarItem?.(it);
+                        onSeleccionarCarrera?.(it.carrera);
+                      }}
                       className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-[10px] font-bold text-slate-200 hover:bg-slate-700"
                     >
                       Ir a C{it.carrera}
@@ -250,7 +258,10 @@ export function BarraCarrerasLiquidadas({
                     {onVerReporteCarrera && (
                       <button
                         type="button"
-                        onClick={() => onVerReporteCarrera(it.carrera)}
+                        onClick={() => {
+                          onSeleccionarItem?.(it);
+                          onVerReporteCarrera(it.carrera);
+                        }}
                         className="rounded-lg bg-amber-400 px-2.5 py-1 text-[10px] font-black uppercase text-slate-950 hover:bg-amber-300"
                       >
                         📊 Ver Reporte

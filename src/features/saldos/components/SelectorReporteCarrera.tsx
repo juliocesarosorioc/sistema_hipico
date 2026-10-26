@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { listarGruposAdmin, type GrupoRow } from "@/features/grupos/lib/grupos";
 import {
   construirReporteSemana,
@@ -13,6 +13,10 @@ import { exportarReporteCarreraImagen } from "@/features/liquidacion/lib/reporte
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import { EmptyState } from "@/shared/components/ui/EmptyState";
 import ReporteCarrera, { type ReporteCarreraDatos } from "@/features/saldos/components/ReporteCarrera";
+import {
+  BarraCarrerasLiquidadas,
+  type ItemCarreraLiquidada,
+} from "@/features/gestion/components/BarraCarrerasLiquidadas";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -23,9 +27,9 @@ type CarreraElegible = CarreraReporte & { fecha: string; hipodromo: string };
  * SELECTOR DEL REPORTE DE LIQUIDACIÓN — para dónde se imprime.
  *
  * El usuario elige grupo → el motor oficial lee su semana fiscal y se listan
- * las carreras con movimiento (jugadas/tablas/resultados). Al elegir una, se
- * arma la plantilla `ReporteCarrera` con los datos REALES de esa carrera
- * (mismo motor que el consolidado de Saldos: neteo, cruces, comisiones).
+ * las carreras con movimiento (jugadas/tablas/resultados) en el menú lateral
+ * derecho (`BarraCarrerasLiquidadas`), eliminando la sección de botones que
+ * aparecía arriba.
  */
 export function SelectorReporteCarrera() {
   const [grupos, setGrupos] = useState<GrupoRow[]>([]);
@@ -69,26 +73,50 @@ export function SelectorReporteCarrera() {
     return lista;
   }, [planilla]);
 
-  const elegir = async (c: CarreraElegible) => {
-    setSeleccion(c);
-    // Logos FRESCOS de la cabecera (hipódromo + grupo) resueltos en el momento de
-    // armar el reporte: si se incorporó un logo hace un segundo, sale igual sin
-    // recargar la página.
-    const frescos = await logosFrescosDeCarrera({ hipodromo: c.hipodromo, grupoId, gruposYaLeidos: grupos });
-    const g = grupos.find((x) => String(x.id) === grupoId);
-    setDatos(
-      armarReporteCarrera(c, g?.nombre, undefined, {
-        logoHipodromo: frescos.logoHipodromo,
-        logoGrupo: frescos.logoGrupo,
-      })
-    );
-  };
+  const elegir = useCallback(
+    async (c: CarreraElegible) => {
+      setSeleccion(c);
+      const frescos = await logosFrescosDeCarrera({
+        hipodromo: c.hipodromo,
+        grupoId,
+        gruposYaLeidos: grupos,
+      });
+      const g = grupos.find((x) => String(x.id) === grupoId);
+      setDatos(
+        armarReporteCarrera(c, g?.nombre, undefined, {
+          liquidada: Boolean(c.pizarra),
+          logoHipodromo: frescos.logoHipodromo,
+          logoGrupo: frescos.logoGrupo,
+        })
+      );
+    },
+    [grupoId, grupos]
+  );
+
+  // Auto-seleccionar la carrera más reciente al cargar la semana
+  useEffect(() => {
+    if (!seleccion && carreras.length > 0) {
+      void elegir(carreras[carreras.length - 1]);
+    }
+  }, [carreras, elegir, seleccion]);
+
+  const itemsLiquidadas = useMemo<ItemCarreraLiquidada[]>(() => {
+    return carreras.map((c) => ({
+      fecha: c.fecha,
+      carrera: c.numero,
+      hipodromo: c.hipodromo,
+      pizarra: c.pizarra || "En Riesgo",
+      jugadas: c.filas.length,
+      totalJugadas: c.filas.length,
+      liquidada: true,
+    }));
+  }, [carreras]);
 
   const grupoVigente = grupos.find((g) => String(g.id) === grupoId);
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Barra: grupo + rango */}
+    <div className="relative flex flex-col gap-4">
+      {/* Barra: grupo + selector compacto + rango (sin la lista de píldoras superior) */}
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <label className="flex items-center gap-1.5 font-semibold text-slate-600">
           Grupo
@@ -105,6 +133,37 @@ export function SelectorReporteCarrera() {
             ))}
           </select>
         </label>
+
+        {carreras.length > 0 && (
+          <label className="flex items-center gap-1.5 font-semibold text-slate-600">
+            Carrera
+            <select
+              value={
+                seleccion
+                  ? `${seleccion.fecha}::${seleccion.hipodromo}::${seleccion.numero}`
+                  : ""
+              }
+              onChange={(e) => {
+                const found = carreras.find(
+                  (c) => `${c.fecha}::${c.hipodromo}::${c.numero}` === e.target.value
+                );
+                if (found) void elegir(found);
+              }}
+              className="rounded-lg border border-line bg-white px-2 py-1.5 text-xs font-bold text-slate-800 outline-none"
+            >
+              {carreras.map((c) => (
+                <option
+                  key={`${c.fecha}::${c.hipodromo}::${c.numero}`}
+                  value={`${c.fecha}::${c.hipodromo}::${c.numero}`}
+                >
+                  {c.fecha} · {c.hipodromo} · C{c.numero}
+                  {c.pizarra ? ` (${c.pizarra})` : " (Preliminar)"}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         {(planilla?.desde || planilla?.hasta) && (
           <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono font-semibold text-slate-500">
             {planilla.desde} → {planilla.hasta}
@@ -113,45 +172,54 @@ export function SelectorReporteCarrera() {
         {cargando && <span className="animate-pulse font-semibold text-slate-400">cargando…</span>}
         {!cargando && (
           <span className="font-semibold text-slate-500">
-            {carreras.length} carrera(s) con movimiento
+            {carreras.length} carrera(s) con movimiento · Menú lateral derecho 🏁 Liquidadas
           </span>
         )}
       </div>
 
-      {/* Lista de carreras disponibles */}
-      {carreras.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
-          {carreras.map((c) => {
-            const activa =
-              seleccion != null &&
-              seleccion.fecha === c.fecha &&
-              String(seleccion.hipodromo) === String(c.hipodromo) &&
-              seleccion.numero === c.numero;
-            return (
-              <button
-                key={`${c.fecha}-${c.hipodromo}-${c.numero}`}
-                onClick={() => elegir(c)}
-                className={`rounded-full border px-3 py-1 text-[11px] font-bold transition-colors ${
-                  activa
-                    ? "border-primary-500 bg-primary-500 text-white"
-                    : "border-line bg-white text-slate-600 hover:border-primary-400 hover:text-primary-600"
-                }`}
-                title={`${c.fecha} · ${c.pizarra ?? "sin pizarra"} · ${c.filas.length} fila(s)`}
-              >
-                🏇 {c.hipodromo.toLowerCase()} · C{c.numero}
-                {c.pizarra ? ` — ${c.pizarra}` : ""}
-              </button>
-            );
-          })}
-        </div>
-      ) : (
-        !cargando && (
-          <EmptyState
-            icono="🏇"
-            titulo="Sin carreras con movimiento en la semana fiscal"
-            descripcion={`El grupo ${grupoVigente?.nombre ?? ""} no tiene jugadas, tablas o resultados en el ciclo definido. Cargá una carrera y pagala para que aparezca acá.`.trim()}
-          />
-        )
+      {/* Menú lateral derecho donde se visualizan las carreras que ya han sido liquidadas */}
+      <BarraCarrerasLiquidadas
+        fecha={seleccion?.fecha ?? planilla?.hasta ?? ""}
+        hipodromo={seleccion?.hipodromo ?? ""}
+        carreraActiva={seleccion?.numero ?? null}
+        itemsExtra={itemsLiquidadas}
+        onSeleccionarCarrera={(num) => {
+          const found =
+            carreras.find(
+              (c) =>
+                c.numero === num &&
+                (!seleccion?.hipodromo || c.hipodromo === seleccion.hipodromo)
+            ) || carreras.find((c) => c.numero === num);
+          if (found) void elegir(found);
+        }}
+        onVerReporteCarrera={(num) => {
+          const found =
+            carreras.find(
+              (c) =>
+                c.numero === num &&
+                (!seleccion?.hipodromo || c.hipodromo === seleccion.hipodromo)
+            ) || carreras.find((c) => c.numero === num);
+          if (found) void elegir(found);
+        }}
+        onSeleccionarItem={(it) => {
+          const found =
+            carreras.find(
+              (c) =>
+                c.numero === it.carrera &&
+                String(c.hipodromo).trim().toUpperCase() ===
+                  String(it.hipodromo).trim().toUpperCase() &&
+                (!it.fecha || c.fecha === it.fecha)
+            ) || carreras.find((c) => c.numero === it.carrera);
+          if (found) void elegir(found);
+        }}
+      />
+
+      {!cargando && carreras.length === 0 && (
+        <EmptyState
+          icono="🏇"
+          titulo="Sin carreras con movimiento en la semana fiscal"
+          descripcion={`El grupo ${grupoVigente?.nombre ?? ""} no tiene jugadas, tablas o resultados en el ciclo definido. Cargá una carrera y pagala para que aparezca acá.`.trim()}
+        />
       )}
 
       {/* El reporte de la carrera elegida */}
@@ -205,7 +273,7 @@ export function SelectorReporteCarrera() {
           <EmptyState
             icono="🎟️"
             titulo="Elegí una carrera para generar el reporte"
-            descripcion="Seleccioná una carrera de la lista de arriba: su reporte de liquidación se arma con las jugadas reales, la pizarra de llegada y el resumen Ganan/Pierden."
+            descripcion="Seleccioná una carrera en el menú de la derecha (🏁 Liquidadas) o en el selector superior para ver el reporte de jugadas."
           />
         )}
       </div>

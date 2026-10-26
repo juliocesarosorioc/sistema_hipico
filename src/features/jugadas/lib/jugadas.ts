@@ -60,6 +60,7 @@ export type JugadaAdmin = {
   anulada_at?: string | null;
   pagado_en?: string | null;
   pagado_por?: string | null;
+  es_adelantada?: boolean | null;
 };
 
 export type AuditoriaJugada = {
@@ -146,8 +147,9 @@ export function componerNota(predefinida: string, detalle: string): string {
   return p || d;
 }
 
-const COLS_DETALLE =
+const COLS_DETALLE_BASE =
   "id, hipodromo, carrera, nombre_jugada, caballo, ejemplar_numero, monto_jugado, monto_decidido, premio_pagar, comision_porcentaje, estado, cliente_juega_nombre, cliente_consigue_nombre, moneda, nota_auditoria, fecha_registro, anulada, anulada_motivo, anulada_por, anulada_at, pagado_en, pagado_por";
+const COLS_DETALLE = `${COLS_DETALLE_BASE}, es_adelantada`;
 
 function num(v: unknown): number {
   const n = Number(v);
@@ -325,10 +327,10 @@ export async function listarJugadasDeCarrera(
     // Filtro del super administrador ("ver un grupo"). Un usuario con grupo ya
     // viene acotado por el RLS de la vista (security_invoker = true).
     const activo = grupoActivoVigente();
-    const consultar = (porGrupo: boolean) => {
+    const consultar = (porGrupo: boolean, cols = COLS_DETALLE) => {
       let q = sb
         .from("v_jugadas_carrera")
-        .select(COLS_DETALLE)
+        .select(cols)
         .eq("hipodromo", texto(hipodromo).toUpperCase())
         .eq("carrera", num(carrera))
         .order("fecha_registro")
@@ -336,12 +338,17 @@ export async function listarJugadasDeCarrera(
       if (porGrupo && activo) q = q.eq("grupo_cobro_id", activo);
       return q;
     };
-    let { data, error } = await consultar(Boolean(activo));
+    let { data, error } = await consultar(Boolean(activo), COLS_DETALLE);
     let aviso: string | undefined;
+    if (error && /es_adelantada/i.test(`${error.code ?? ""} ${error.message ?? ""}`)) {
+      const rSinAdel = await consultar(Boolean(activo), COLS_DETALLE_BASE);
+      data = rSinAdel.data;
+      error = rSinAdel.error;
+    }
     if (error && activo && esColumnaFaltanteGrupo(error)) {
       // Vista vieja en la base (sin `grupo_cobro_id`): se reintenta sin el filtro
       // del administrador para no romper el detalle con un 400.
-      const r2 = await consultar(false);
+      const r2 = await consultar(false, COLS_DETALLE_BASE);
       data = r2.data;
       error = r2.error;
       aviso = AVISO_VISTA_VIEJA;

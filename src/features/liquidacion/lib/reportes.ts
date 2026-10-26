@@ -1,4 +1,4 @@
-﻿/**
+/**
  * REPORTE DE SALDOS CONSOLIDADOS POR SEMANA FISCAL (SERVER DATOS REALES)
  * ---------------------------------------------------------------------
  * Árbol anidado  Semana → Día → Hipódromo → Carrera  alimentado por los
@@ -18,7 +18,8 @@ import { rangoSemanaDeGrupo, cicloSemanalDe } from "@/features/liquidacion/lib/s
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { listarCarrerasPorDia } from "@/features/tablas/lib/rpc";
 import { pizarraDesdeNums, esVentaDeRemate } from "@/features/impresion/lib/reportGenerator";
-import { desgloseJugada } from "@/features/liquidacion/lib/etiquetas-reporte";
+import { desgloseJugada, esMarca } from "@/features/liquidacion/lib/etiquetas-reporte";
+import { _reembolsosCruce } from "@/features/taquilla/lib/cruces-y-tapas";
 import { liquidarOficial, puestosDesdeOrdenLlegada } from "@/features/motores/lib/oficiales";
 import {
   numerosPizarra,
@@ -247,6 +248,29 @@ function evaluar(
     const comision = Math.round(gananciaBruta * (tasaEfectiva / 100) * 100) / 100;
     return { neto: Math.round((brutoGuardado - comision) * 100) / 100, comision };
   };
+  const esEspecialPersistencia =
+    esTablaFija || esMarca(nombreJugada) || /^(DUPLETA|REMATE|POLLA)\b/i.test(nombreJugada);
+  const puestosAnticipados = pizarra?.puestos ?? [];
+  if (
+    estado !== "SOLUCIONADO" &&
+    estado !== "RETIRADO" &&
+    estado !== "RECHAZADO" &&
+    !esEspecialPersistencia &&
+    puestosAnticipados.length > 0 &&
+    monto > 0
+  ) {
+    try {
+      const r = liquidarOficial(
+        ticketMotorDe(f, hipodromo, carrera, puestosAnticipados, pizarra?.dividendos ?? null),
+        tasaEfectiva
+      );
+      if (!r.indeterminado) {
+        return { ok: r.ok, bruto: r.totalClienteNeto, comision: r.gananciaCasa, tasa: tasaEfectiva };
+      }
+    } catch {
+      // Si falla el motor oficial, continúa al respaldo por estado persistido
+    }
+  }
   if (estado === "SOLUCIONADO") {
     const d = desglosar(cifra(f.monto_decidido) || cifra(f.premio_pagar));
     return d.neto > 0
@@ -638,7 +662,8 @@ async function carreraReporte(
     const k = claveCruceFinanciero(numero, m.cliente, m.caballo);
     const g = gruposNeteo.get(k);
     if (g && g.conteo >= 2 && g.comisionNeta > 0 && !cruces.has(k)) {
-      cruces.set(k, { cliente: m.clienteNombre || m.cliente, caballo: m.caballo, comision: g.comisionNeta });
+      // Reemplazado íntegramente por el asiento contable interno "Bono por Cruce de jugadas"
+      void cruces;
     }
   });
   for (const base of cruces.values()) {
@@ -651,6 +676,29 @@ async function carreraReporte(
       monto: 0,
       resultado: Math.round(base.comision * 100) / 100,
     });
+  }
+
+  // 🔀 ASIENTO CONTABLE INTERNO: "Bono por Cruce de jugadas" por carrera y cliente.
+  const lineasCruceCarrera = filas
+    .filter((f) => f.rol !== "CRUCE" && f.resultado !== null && Number.isFinite(f.resultado))
+    .map((f) => ({ cliente: f.cliente, resultado: f.resultado as number }));
+  const { porCliente: reembolsosCrucePorCliente } = _reembolsosCruce(
+    lineasCruceCarrera,
+    "con_cruces",
+    tasaComision ?? 5
+  );
+  for (const [claveCliente, info] of reembolsosCrucePorCliente.entries()) {
+    if (info.reembolsoCruce > 0) {
+      filas.push({
+        id: `${fecha}-${hipodromo}-${numero}-bono-cruce-${claveCliente}`,
+        rol: "CRUCE",
+        cliente: info.cliente,
+        jugada: "Bono por Cruce de jugadas",
+        caballo: "",
+        monto: 0,
+        resultado: Math.round(info.reembolsoCruce * 100) / 100,
+      });
+    }
   }
 
   const subtotal = Math.round(filas.reduce((a, f) => a + (f.resultado ?? 0), 0) * 100) / 100;

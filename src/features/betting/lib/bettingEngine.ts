@@ -394,10 +394,10 @@ export function liquidarPareo(
   // 1. Separar los bandos por la "X" (o el "*" de la casa)
   const [strA, strB] = cabPareo.split(/\s*[X*]\s*/);
   
-  // 2. Extraer los caballos de cada bando (Soporta separadores: guion, coma o slash)
-  // Ej: "4-5" -> ["4", "5"]
-  const bandoA = strA.split(/-|,|\//).map((s) => s.trim()).filter(Boolean);
-  const bandoB = strB.split(/-|,|\//).map((s) => s.trim()).filter(Boolean);
+  // 2. Extraer los caballos de cada bando (Soporta separadores: espacio, guion, coma, slash, 'y', '&')
+  // Ej: "4-5" o "1 2 3" -> ["4", "5"] / ["1", "2", "3"]
+  const bandoA = strA.split(/[\s,\-\/yY&]+/).map((s) => s.trim()).filter(Boolean);
+  const bandoB = strB.split(/[\s,\-\/yY&]+/).map((s) => s.trim()).filter(Boolean);
 
   const fila = numerosPizarra(t.pizarra);
 

@@ -25,6 +25,10 @@ import ReporteCarrera, { type ReporteCarreraDatos } from "@/features/saldos/comp
 import ManualLiquidacion from "@/features/gestion/components/ManualLiquidacion";
 import WhatsappReporteCarrera from "@/features/liquidacion/components/WhatsappReporteCarrera";
 import {
+  BarraCarrerasLiquidadas,
+  type ItemCarreraLiquidada,
+} from "@/features/gestion/components/BarraCarrerasLiquidadas";
+import {
   OPCIONES_FILTRO,
   type FiltroModalidadTiempo,
 } from "@/features/jugadas/lib/modalidad-tiempo";
@@ -85,7 +89,7 @@ export default function ReporteLiquidacionModal({
    * abrir para que cada apertura arranque con el reporte completo.
    */
   const [filtroModalidad, setFiltroModalidad] = useState<FiltroModalidadTiempo>("TODAS");
-  const [cargandoDia, setCargandoDia] = useState(false);
+  const [, setCargandoDia] = useState(false);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
   const [manualAbierto, setManualAbierto] = useState(false);
   const [clientes, setClientes] = useState<ClienteRow[]>([]);
@@ -122,10 +126,12 @@ export default function ReporteLiquidacionModal({
 
   const disponibleDe = useMemo(() => lookupDisponible(clientes), [clientes]);
   const crucesSnapshot = useMemo(
-    () => carrerasDia.find((c) =>
-      String(c.hipodromo).trim().toUpperCase() === hipodromo.trim().toUpperCase() &&
-      Number(c.carrera) === Number(carrera)
-    )?.cruces_carrera_override,
+    () =>
+      carrerasDia.find(
+        (c) =>
+          String(c.hipodromo).trim().toUpperCase() === hipodromo.trim().toUpperCase() &&
+          Number(c.carrera) === Number(carrera)
+      )?.cruces_carrera_override,
     [carrera, carrerasDia, hipodromo]
   );
 
@@ -160,7 +166,7 @@ export default function ReporteLiquidacionModal({
     };
   }, [abierto, versionLogos]);
 
-  // Carreras con resultado cargado de la fecha (recientes o pasadas).
+  // Carreras de la fecha (liquidadas o en curso con pre-jugadas).
   useEffect(() => {
     if (!abierto) return;
     let vivo = true;
@@ -168,19 +174,34 @@ export default function ReporteLiquidacionModal({
     cargarCarrerasDelDia(fecha)
       .then((cs) => {
         if (!vivo) return;
-        const conResultado = cs.filter(
-          (c) =>
-            c.fecha === fecha &&
-            ((c.ganadores && c.ganadores.length > 0) || c.estado !== "Programada")
-        );
-        setCarrerasDia(conResultado);
+        const delDia = cs.filter((c) => c.fecha === fecha);
+        if (
+          hipodromoInicial &&
+          carreraInicial &&
+          !delDia.some(
+            (c) =>
+              String(c.hipodromo || "").trim().toUpperCase() ===
+                hipodromoInicial.trim().toUpperCase() &&
+              Number(c.carrera) === Number(carreraInicial)
+          )
+        ) {
+          delDia.push({
+            fecha,
+            hipodromo: hipodromoInicial.trim().toUpperCase(),
+            carrera: carreraInicial,
+            estado: "Programada",
+            ventas: [],
+            ganadores: [],
+          });
+        }
+        setCarrerasDia(delDia);
       })
       .catch(() => vivo && setCarrerasDia([]))
       .finally(() => vivo && setCargandoDia(false));
     return () => {
       vivo = false;
     };
-  }, [abierto, fecha]);
+  }, [abierto, fecha, hipodromoInicial, carreraInicial]);
 
   const hipodromosDisp = useMemo(() => {
     const set = new Set<string>();
@@ -226,7 +247,8 @@ export default function ReporteLiquidacionModal({
   const logoHipodromo = useMemo(() => {
     const buscado = hipodromo.trim().toUpperCase();
     if (!buscado) return null;
-    const url = catalogoHipodromos.find((h) => h.nombre.trim().toUpperCase() === buscado)?.logo_url ?? null;
+    const url =
+      catalogoHipodromos.find((h) => h.nombre.trim().toUpperCase() === buscado)?.logo_url ?? null;
     return conCacheBust(url, versionLogos);
   }, [catalogoHipodromos, hipodromo, versionLogos]);
 
@@ -236,10 +258,16 @@ export default function ReporteLiquidacionModal({
    */
   const liquidada = useMemo(() => {
     const c = carrerasDia.find(
-      (x) => String(x.hipodromo || "").trim().toUpperCase() === hipodromo && Number(x.carrera) === Number(carrera)
+      (x) =>
+        String(x.hipodromo || "").trim().toUpperCase() === hipodromo &&
+        Number(x.carrera) === Number(carrera)
     );
     if (!c) return false;
-    return c.aplicado_a_tablas === true || String(c.estado ?? "").toLowerCase() === "liquidada";
+    return (
+      c.aplicado_a_tablas === true ||
+      String(c.estado ?? "").toLowerCase() === "liquidada" ||
+      (Array.isArray(c.ganadores) && c.ganadores.length > 0)
+    );
   }, [carrerasDia, hipodromo, carrera]);
 
   // Motor: trae la carrera liquidada y los logos FRESCOS en paralelo con el
@@ -286,7 +314,7 @@ export default function ReporteLiquidacionModal({
     }
     setDatos(
       armarReporteCarrera(detalle.reporte, nombreGrupo, disponibleDe, {
-        liquidada,
+        liquidada: liquidada || Boolean(detalle.reporte.pizarra),
         // El fresco manda; si no se pudo leer, cae al catálogo en memoria.
         logoHipodromo: detalle.frescos.logoHipodromo ?? logoHipodromo,
         logoGrupo: detalle.frescos.logoGrupo ?? logoGrupo,
@@ -294,6 +322,32 @@ export default function ReporteLiquidacionModal({
       })
     );
   }, [detalle, nombreGrupo, disponibleDe, liquidada, logoHipodromo, logoGrupo, filtroModalidad]);
+
+  const itemsLiquidadasExtra = useMemo<ItemCarreraLiquidada[]>(() => {
+    return carrerasDia
+      .filter(
+        (c) =>
+          (c.ganadores && c.ganadores.length > 0) ||
+          c.aplicado_a_tablas === true ||
+          String(c.estado ?? "").toLowerCase() === "liquidada"
+      )
+      .map((c) => {
+        const cAny = c as unknown as Record<string, unknown>;
+        return {
+          fecha: c.fecha,
+          carrera: Number(c.carrera),
+          hipodromo: String(c.hipodromo || "").trim().toUpperCase(),
+          pizarra:
+            Array.isArray(c.ganadores) && c.ganadores.length > 0
+              ? c.ganadores.slice(0, 5).join("-")
+              : "Oficial",
+          jugadas: 0,
+          totalJugadas: 0,
+          liquidada: true,
+          liquidada_at: (cAny.liquidada_at ?? cAny.updated_at ?? null) as string | null,
+        };
+      });
+  }, [carrerasDia]);
 
   if (!abierto) return null;
 
@@ -392,7 +446,8 @@ export default function ReporteLiquidacionModal({
                 Toca el MOTOR (armarReporteCarrera), no el render: al elegir una
                 opción se rearma la plantilla con las filas visibles y los
                 subtotales (Ganan/Pierden, riesgo, Parada Adelantadas) ya
-                recalculados. `Todas` es el reporte completo, como siempre. */}            <div
+                recalculados. `Todas` es el reporte completo, como siempre. */}
+            <div
               role="group"
               aria-label="Filtro de modalidad de tiempo de las jugadas"
               className="flex items-center overflow-hidden rounded-md border border-slate-600 bg-slate-800"
@@ -430,7 +485,12 @@ export default function ReporteLiquidacionModal({
               >
                 📖 Manual
               </button>
-              <WhatsappReporteCarrera fecha={fecha} hipodromo={hipodromo} carrera={carrera} grupo={nombreGrupo} />
+              <WhatsappReporteCarrera
+                fecha={fecha}
+                hipodromo={hipodromo}
+                carrera={carrera}
+                grupo={nombreGrupo}
+              />
               <button
                 type="button"
                 onClick={() => descargar("PNG")}
@@ -461,62 +521,22 @@ export default function ReporteLiquidacionModal({
               </button>
             </div>
           </div>
-
-          {/* Carreras con resultado cargado (recientes / pasadas) */}
-          <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1.5">
-            {(() => {
-              const lista = carrerasDia
-                .slice()
-                .sort((a, b) => {
-                  const ha = String(a.hipodromo || "").trim().toUpperCase();
-                  const hb = String(b.hipodromo || "").trim().toUpperCase();
-                  const ca = Number(a.carrera) || 0;
-                  const cb = Number(b.carrera) || 0;
-                  if (ha < hb) return -1;
-                  if (ha > hb) return 1;
-                  if (ca < cb) return -1;
-                  if (ca > cb) return 1;
-                  return 0;
-                })
-                .filter((c) => {
-                  const h = String(c.hipodromo || "").trim().toUpperCase();
-                  return !hipodromo || h === hipodromo;
-                });
-              if (!lista.length) return null;
-              return (
-                <div className="flex flex-col items-end gap-1">
-                  <span className="mr-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                    {cargandoDia ? "cargando…" : `${lista.length} resultado(s) cargado(s)`}
-                  </span>
-                  <div className="flex flex-wrap justify-end gap-1.5">
-                    {lista.map((c) => {
-                      const h = String(c.hipodromo || "").trim().toUpperCase();
-                      const activa = h === hipodromo && Number(c.carrera) === carrera;
-                      return (
-                        <button
-                          key={`${h}-${c.carrera}`}
-                          type="button"
-                          onClick={() => {
-                            setHipodromo(h);
-                            setCarrera(Number(c.carrera));
-                          }}
-                          title={`${nombreHipodromoParaMostrar(h)} · C${c.carrera} · ${c.estado}`}
-                          className={`rounded-full border px-2 py-0.5 text-[10px] font-bold transition-colors ${
-                            activa
-                              ? "border-emerald-500 bg-emerald-500 text-white"
-                              : "border-slate-300 bg-white text-slate-600 hover:border-emerald-400 hover:text-emerald-600"
-                          }`}
-                        >
-                          🏇 {nombreHipodromoParaMostrar(h)} · C{c.carrera}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
         </div>
+
+        {/* Menú lateral derecho de carreras liquidadas (eliminada la sección superior) */}
+        <BarraCarrerasLiquidadas
+          fecha={fecha}
+          hipodromo={hipodromo}
+          nombreHipodromo={hipodromo ? nombreHipodromoParaMostrar(hipodromo) : undefined}
+          carreraActiva={carrera}
+          itemsExtra={itemsLiquidadasExtra}
+          onSeleccionarCarrera={(n) => setCarrera(n)}
+          onVerReporteCarrera={(n) => setCarrera(n)}
+          onSeleccionarItem={(it) => {
+            if (it.hipodromo) setHipodromo(String(it.hipodromo).trim().toUpperCase());
+            setCarrera(it.carrera);
+          }}
+        />
 
         {/* Cuerpo del reporte */}
         <div className="p-4">
@@ -528,18 +548,32 @@ export default function ReporteLiquidacionModal({
             <>
               {crucesSnapshot && (
                 <div className="mx-auto mb-3 flex max-w-5xl flex-wrap items-center gap-1.5 rounded-lg border border-amber-300/50 bg-slate-900 px-3 py-2">
-                  <span className="mr-1 text-[9px] font-black uppercase text-amber-300">⚡ Excepciones conservadas · C{carrera}</span>
-                  {Object.entries(crucesSnapshot.todos ?? {}).filter(([, activo]) => activo).map(([modalidad]) => (
-                    <span key={`todos-${modalidad}`} className="rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-black text-slate-950">
-                      ⚡ Cruce {modalidad === "mismoEjemplar" ? "Mismo Ej." : "Dif. Ej."} (Solo Carrera #{carrera} - Todos)
-                    </span>
-                  ))}
-                  {Object.entries(crucesSnapshot.porJugador ?? {}).flatMap(([jugador, reglas]) =>
-                    Object.entries(reglas).filter(([, activo]) => activo).map(([modalidad]) => (
-                      <span key={`${jugador}-${modalidad}`} className="rounded-full bg-cyan-400/15 px-2 py-0.5 text-[9px] font-black text-cyan-200">
-                        ⚡ Cruce {modalidad === "mismoEjemplar" ? "Mismo Ej." : "Dif. Ej."} (Solo Carrera #{carrera} - Jugador · {jugador})
+                  <span className="mr-1 text-[9px] font-black uppercase text-amber-300">
+                    ⚡ Excepciones conservadas · C{carrera}
+                  </span>
+                  {Object.entries(crucesSnapshot.todos ?? {})
+                    .filter(([, activo]) => activo)
+                    .map(([modalidad]) => (
+                      <span
+                        key={`todos-${modalidad}`}
+                        className="rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-black text-slate-950"
+                      >
+                        ⚡ Cruce {modalidad === "mismoEjemplar" ? "Mismo Ej." : "Dif. Ej."} (Solo
+                        Carrera #{carrera} - Todos)
                       </span>
-                    ))
+                    ))}
+                  {Object.entries(crucesSnapshot.porJugador ?? {}).flatMap(([jugador, reglas]) =>
+                    Object.entries(reglas)
+                      .filter(([, activo]) => activo)
+                      .map(([modalidad]) => (
+                        <span
+                          key={`${jugador}-${modalidad}`}
+                          className="rounded-full bg-cyan-400/15 px-2 py-0.5 text-[9px] font-black text-cyan-200"
+                        >
+                          ⚡ Cruce {modalidad === "mismoEjemplar" ? "Mismo Ej." : "Dif. Ej."} (Solo
+                          Carrera #{carrera} - Jugador · {jugador})
+                        </span>
+                      ))
                   )}
                 </div>
               )}
@@ -551,7 +585,7 @@ export default function ReporteLiquidacionModal({
               titulo={hayCarreras ? "Elegí una carrera" : "Sin resultados cargados en esta fecha"}
               descripcion={
                 hayCarreras
-                  ? "Seleccioná una carrera de la lista de arriba para armar su reporte de liquidación con las jugadas reales, la pizarra de llegada y el resumen Ganan/Pierden."
+                  ? "Seleccioná una carrera en el menú de la derecha (🏁 Liquidadas) o en el selector superior para armar su reporte de liquidación."
                   : "Cambiá la fecha para ver resultados recientes o pasados, o cargá los resultados de una carrera en Gestión de Jugadas."
               }
             />

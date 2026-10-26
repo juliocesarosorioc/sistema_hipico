@@ -33,6 +33,10 @@ import {
   type BloqueDetalleResultado,
 } from "@/features/betting/lib/bettingEngine";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
+import {
+  agruparAdelantadasPorSeccion,
+  esJugadaAdelantadaReporte,
+} from "@/features/liquidacion/lib/reporte-carrera";
 
 /** Forma mínima de un ticket de sesión de la Taquilla (compatible con
  *  `TicketTaquilla` del store; no importa el store para mantener los tests
@@ -43,6 +47,7 @@ export type TicketMensaje = {
   caballo?: string | null;
   cliente1?: string | null;
   cliente2?: string | null;
+  esAdelantada?: boolean;
 };
 
 export type OpcionesMensajeResultado = {
@@ -240,7 +245,57 @@ export function mensajePlanoDeCarrera(opts: OpcionesMensajePlano): string {
     carrera: opts.carrera,
     retirados: opts.retirados?.trim() || undefined,
   };
-  return relacionJugadas(meta, opts.tickets.map(jugadaRelacionDeTicket));
+  const enVivoTickets: TicketMensaje[] = [];
+  const adelantadasTickets: TicketMensaje[] = [];
+  for (const t of opts.tickets) {
+    const { tipo } = dividirComando(t.comando);
+    const esAdel = Boolean(t.esAdelantada) || esJugadaAdelantadaReporte({ jugo: tipo, esAdelantada: t.esAdelantada });
+    if (esAdel) {
+      adelantadasTickets.push(t);
+    } else {
+      enVivoTickets.push(t);
+    }
+  }
+
+  if (adelantadasTickets.length === 0) {
+    return relacionJugadas(meta, opts.tickets.map(jugadaRelacionDeTicket));
+  }
+
+  const baseEnVivo = relacionJugadas(meta, enVivoTickets.map(jugadaRelacionDeTicket));
+  const secciones = agruparAdelantadasPorSeccion(
+    adelantadasTickets.map((t) => {
+      const rel = jugadaRelacionDeTicket(t);
+      return {
+        ...rel,
+        jugo: rel.jugada,
+        esAdelantada: true,
+      };
+    })
+  );
+
+  const lineasAdel: string[] = ["", "⏳ JUGADAS ADELANTADAS (PRE-JUGADAS)"];
+  for (const sec of secciones) {
+    lineasAdel.push(`▪ ${sec.titulo.toUpperCase()} (${sec.filas.length}):`);
+    sec.filas.forEach((j, idx) => {
+      const partes = [j.clienteJuega];
+      if (String(j.jugada ?? "").trim()) partes.push(String(j.jugada).trim());
+      if (String(j.caballo ?? "").trim()) partes.push(`(${String(j.caballo).trim()})`);
+      partes.push(`con ${fmtMonto(j.monto)}`);
+      if (String(j.clienteConsigue ?? "").trim()) partes.push(`da ${String(j.clienteConsigue).trim()}`);
+      lineasAdel.push(`${idx + 1}) Juega ${partes.join(" ")}`);
+    });
+  }
+
+  const sep = "------------------------------";
+  if (baseEnVivo.includes(sep)) {
+    const [antes, despues] = baseEnVivo.split(sep);
+    const despuesActualizado = despues.replace(
+      /Total jugadas:\s*\d+/,
+      `Total jugadas: ${opts.tickets.length}`
+    );
+    return `${antes.trimEnd()}\n${lineasAdel.join("\n")}\n\n${sep}${despuesActualizado}`;
+  }
+  return `${baseEnVivo}\n${lineasAdel.join("\n")}`;
 }
 
 // ============================================================

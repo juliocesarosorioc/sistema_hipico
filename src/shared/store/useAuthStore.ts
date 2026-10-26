@@ -647,7 +647,6 @@ export const useAuthStore = create<EstadoAuth>()(
       },
 
       salir: async (cerrarSesionRemota = true) => {
-        if (cerrarSesionRemota) await cerrarSesionSupabase();
         borrarCookiesDeAcceso();
         limpiarAccesosVigentes();
         guardarGrupoActivo(null);
@@ -658,6 +657,7 @@ export const useAuthStore = create<EstadoAuth>()(
           // AppShell girando para siempre en /login (nadie volvía a llamar a
           // `inicializar`, porque el redirect ya no cambia de ruta).
           inicializada: true,
+          cargando: false,
           sembrada: false,
           usuario: inicioDefault.usuario,
           email: inicioDefault.email,
@@ -666,12 +666,20 @@ export const useAuthStore = create<EstadoAuth>()(
           tipoUsuario: null,
           excepciones: {},
           esPrincipal: false,
+          modoOperador: false,
           grupoId: inicioDefault.grupoId,
           grupoNombre: inicioDefault.grupoNombre,
           veTodosLosGrupos: inicioDefault.veTodosLosGrupos,
           grupoActivo: null,
           errorLogin: null,
         });
+        if (cerrarSesionRemota) {
+          try {
+            await cerrarSesionSupabase();
+          } catch {
+            /* la sesión local ya quedó limpia */
+          }
+        }
       },
     }),
     {

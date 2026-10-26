@@ -89,6 +89,52 @@ export async function conTimeout<T>(promesa: Promise<T>, ms: number, etiqueta: s
 export const TIMEOUT_SESION_MS = 8000;
 
 /**
+ * Resuelve la URL absoluta/relativa hacia `/login` respetando `basePath`
+ * (`/apuestas` en GitHub Pages o `NEXT_PUBLIC_BASE_PATH`), evitando errores 404
+ * cuando se usa `window.location.replace(...)`.
+ */
+export function rutaLoginConBasePath(): string {
+  const envBase = (process.env.NEXT_PUBLIC_BASE_PATH || "").trim().replace(/\/+$/, "");
+  if (envBase) return `${envBase}/login/`;
+  if (typeof window !== "undefined") {
+    const p = window.location.pathname || "";
+    if (p === "/apuestas" || p.startsWith("/apuestas/")) {
+      return "/apuestas/login/";
+    }
+  }
+  return "/login";
+}
+
+/**
+ * Limpia de forma directa e inmediata cualquier token de sesión de Supabase o
+ * del store local en `localStorage` y `sessionStorage`, sin esperar a la red.
+ */
+export function limpiarAlmacenamientoSesionLocal(): void {
+  if (typeof window === "undefined") return;
+  for (const store of [window.localStorage, window.sessionStorage]) {
+    try {
+      const claves: string[] = [];
+      for (let i = 0; i < store.length; i++) {
+        const k = store.key(i);
+        if (k) claves.push(k);
+      }
+      for (const k of claves) {
+        if (
+          k.startsWith("sb-") ||
+          k.includes("supabase.auth.token") ||
+          k === "club_sesion_activa" ||
+          k === "sistema-hipico:auth"
+        ) {
+          store.removeItem(k);
+        }
+      }
+    } catch {
+      /* sinop */
+    }
+  }
+}
+
+/**
  * Verifica las credenciales contra Supabase. No guarda nada del lado del
  * navegador: la sesión la persiste el propio cliente de Supabase.
  */
@@ -151,15 +197,18 @@ export async function sesionActual(): Promise<{ correo: string; id: string } | n
  * sesión local ya no está y el logout termina.
  */
 export async function cerrarSesion(): Promise<void> {
+  limpiarAlmacenamientoSesionLocal();
   if (!supabase) return;
   try {
     await conTimeout(
       supabase.auth.signOut({ scope: "local" }),
-      TIMEOUT_SESION_MS,
+      1500,
       "El cierre de sesión"
     );
   } catch {
-    /* la sesión local ya se limpió en el store; no se bloquea el logout */
+    /* la sesión local ya se limpió directamente; no se bloquea el logout */
+  } finally {
+    limpiarAlmacenamientoSesionLocal();
   }
 }
 

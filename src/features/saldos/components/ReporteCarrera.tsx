@@ -3,9 +3,19 @@ import { EmptyState } from '@/shared/components/ui/EmptyState';
 import { colorDiscoNumero, numerosDeCaballo } from '@/features/saldos/lib/discos';
 import { ladosDePareo } from '@/features/taquilla/lib/nomenclatura';
 import type { FiltroModalidadTiempo } from '@/features/jugadas/lib/modalidad-tiempo';
-import { esJugadaAdelantadaReporte, segmentarJugadasReporte } from '@/features/liquidacion/lib/reporte-carrera';
+import {
+  esJugadaAdelantadaReporte,
+  segmentarJugadasReporte,
+  agruparAdelantadasPorSeccion,
+  categoriaJugadaAdelantada,
+} from '@/features/liquidacion/lib/reporte-carrera';
 
-export { esJugadaAdelantadaReporte, segmentarJugadasReporte };
+export {
+  esJugadaAdelantadaReporte,
+  segmentarJugadasReporte,
+  agruparAdelantadasPorSeccion,
+  categoriaJugadaAdelantada,
+};
 
 export type LlegadaCaballo = {
   numero: number | string;
@@ -79,6 +89,15 @@ export type ReporteCarreraDatos = {
   notaExcedidos?: NotaExcedido[];
   observacionesOrdenExceso?: ObservacionOrdenExceso[];
   filtroModalidad?: FiltroModalidadTiempo;
+  /** Asientos contables internos "Bono por Cruce de jugadas" (no se renderizan en las tablas, solo se contabilizan en el resultado final). */
+  asientosBonoCruce?: Array<{
+    concepto: "Bono por Cruce de jugadas";
+    cliente: string;
+    brutoGanado: number;
+    brutoPerdido: number;
+    baseCruce: number;
+    bonoCruce: number;
+  }>;
 };
 
 const FormatoDinero = ({ monto }: { monto: number | null | undefined }) => {
@@ -141,13 +160,22 @@ function tieneDatos(d: ReporteCarreraDatos | null | undefined): d is ReporteCarr
   return llegada + vivo + adelantadas + resumen > 0;
 }
 
-const TH = "text-left pb-1 font-semibold text-[9px] uppercase tracking-wide text-slate-400";
+const TH = "text-left pb-1 font-semibold text-[9px] uppercase tracking-wide text-slate-400 h-[20px] align-middle";
 
 function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostrarResultado: boolean }) {
   return (
-    <table className="w-full text-[10px] leading-tight">
+    <table className="w-full table-fixed text-[10px] leading-tight">
+      <colgroup>
+        <col className="w-[18%]" />
+        <col className="w-[10%]" />
+        <col className="w-[13%]" />
+        <col className="w-[20%]" />
+        <col className="w-[16%]" />
+        <col className="w-[10%]" />
+        <col className="w-[13%]" />
+      </colgroup>
       <thead>
-        <tr className="border-b border-slate-300">
+        <tr className="border-b border-slate-300 h-[22px]">
           <th className={TH} title="Columna 1: Quien Juega (Jugador 1)">Quien Juega</th>
           <th className={`${TH} text-right`} title="Columna 2: Monto que arriesga el que juega">Apostó</th>
           <th className={`${TH} text-right pl-1`} title="Columna 3: Resultado Jugador 1 (Riesgo negativo por decidir / Decidido)">Resultado</th>
@@ -173,13 +201,13 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
                 ? -Math.abs(j.apostoDa)
                 : null;
           return (
-            <tr key={i} className="border-b border-slate-100 bg-white">
-              <td className="py-[3px] pr-1 font-bold text-slate-800 whitespace-nowrap">{j.juega}</td>
-              <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap">{j.aposto}</td>
-              <td className="py-[3px] pl-1 text-right whitespace-nowrap">
+            <tr key={i} className="border-b border-slate-100 bg-white h-[26px]">
+              <td className="py-[3px] pr-1 font-bold text-slate-800 whitespace-nowrap truncate align-middle">{j.juega}</td>
+              <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap align-middle">{j.aposto}</td>
+              <td className="py-[3px] pl-1 text-right whitespace-nowrap align-middle">
                 {res1 !== null ? <FormatoDinero monto={res1} /> : <span className="text-slate-400">—</span>}
               </td>
-              <td className="py-[3px] pl-2 text-slate-700 whitespace-nowrap">
+              <td className="py-[3px] pl-2 text-slate-700 whitespace-nowrap truncate align-middle">
                 <span className="font-semibold">{j.jugo}</span> <Discos caballo={j.caballo} />
                 {j.esAdelantada ? (
                   <span
@@ -190,11 +218,11 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
                   </span>
                 ) : null}
               </td>
-              <td className="py-[3px] pl-2 text-slate-600 whitespace-nowrap">{j.da || '—'}</td>
-              <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap">
+              <td className="py-[3px] pl-2 text-slate-600 whitespace-nowrap truncate align-middle">{j.da || '—'}</td>
+              <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap align-middle">
                 {j.apostoDa === null || j.apostoDa === undefined ? '—' : j.apostoDa}
               </td>
-              <td className="py-[3px] pl-1 text-right whitespace-nowrap">
+              <td className="py-[3px] pl-1 text-right whitespace-nowrap align-middle">
                 {res2 !== null ? <FormatoDinero monto={res2} /> : <span className="text-slate-400">—</span>}
               </td>
             </tr>
@@ -332,9 +360,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
   const jugadasCol1 = jugadasEnVivoFiltradas.slice(0, mitadIndex);
   const jugadasCol2 = jugadasEnVivoFiltradas.slice(mitadIndex);
 
-  const mitadAdelIndex = Math.ceil(jugadasAdelantadasFiltradas.length / 2);
-  const adelantadasCol1 = jugadasAdelantadasFiltradas.slice(0, mitadAdelIndex);
-  const adelantadasCol2 = jugadasAdelantadasFiltradas.slice(mitadAdelIndex);
+  const seccionesAdelantadas = agruparAdelantadasPorSeccion(jugadasAdelantadasFiltradas);
   const totalAdelantadas = jugadasAdelantadasFiltradas.length;
 
   return (
@@ -430,16 +456,33 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
         </div>
       )}
 
-      {/* 4. SECCIÓN DE JUGADAS ADELANTADAS (SEGMENTADA IGUAL QUE JUGADAS EN VIVO: 7 COLUMNAS) */}
+      {/* 4. SECCIÓN DE JUGADAS ADELANTADAS (SEGMENTADA POR TIPO EN 5 SECCIONES CON MISMO ANCHO/ALTO DE 7 COLUMNAS) */}
       {totalAdelantadas > 0 && (
         <div className="px-4 pb-2 pt-1">
           <div className="bg-blue-800 text-white text-[9px] font-bold tracking-widest px-2 py-1 uppercase rounded-t flex items-center justify-between">
             <span>⏳ Jugadas Adelantadas</span>
             <span className="text-[8px] font-semibold text-blue-200">{totalAdelantadas} jugada(s)</span>
           </div>
-          <div className="bg-amber-50/30 px-2 py-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 border border-t-0 border-slate-200 rounded-b">
-            <TablaJugadas filas={adelantadasCol1} mostrarResultado={liquidada} />
-            {adelantadasCol2.length > 0 ? <TablaJugadas filas={adelantadasCol2} mostrarResultado={liquidada} /> : null}
+          <div className="bg-amber-50/30 border border-t-0 border-slate-200 rounded-b divide-y divide-slate-200">
+            {seccionesAdelantadas.map((sec) => {
+              const mitadAdelIndex = Math.ceil(sec.filas.length / 2);
+              const adelantadasCol1 = sec.filas.slice(0, mitadAdelIndex);
+              const adelantadasCol2 = sec.filas.slice(mitadAdelIndex);
+              return (
+                <div key={sec.categoria} className="px-2 py-2">
+                  <div className="mb-1.5 flex items-center justify-between rounded bg-slate-100 px-2 py-0.5 border border-slate-200">
+                    <span className="text-[8.5px] font-black uppercase tracking-wider text-slate-700">
+                      {sec.titulo}
+                    </span>
+                    <span className="text-[8px] font-bold text-slate-500">{sec.filas.length} jugada(s)</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
+                    <TablaJugadas filas={adelantadasCol1} mostrarResultado={liquidada} />
+                    {adelantadasCol2.length > 0 ? <TablaJugadas filas={adelantadasCol2} mostrarResultado={liquidada} /> : null}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

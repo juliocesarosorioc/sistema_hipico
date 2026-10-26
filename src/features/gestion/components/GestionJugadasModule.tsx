@@ -73,6 +73,7 @@ import {
   type FilaPreviewCarrera,
   type LadoResultado,
 } from "@/features/gestion/lib/preview-carrera";
+import { agruparAdelantadasPorSeccion } from "@/features/liquidacion/lib/reporte-carrera";
 
 type FilaCarga = {
   jugada: string;
@@ -1139,7 +1140,6 @@ const hipodromosDelDia = useMemo(() => {
   const ticketsDeCarrera = useMemo(
     () =>
       tickets.filter((t) => {
-        if (/^TABLA /i.test(t.comando)) return false;
         if (t.carrera !== undefined && t.carrera !== carrera) return false;
         if (t.fecha !== undefined && t.fecha !== fecha) return false;
         if (t.hipodromo !== undefined && hipoKey(t.hipodromo) !== hipoKey(hipodromo)) return false;
@@ -1191,7 +1191,28 @@ const hipodromosDelDia = useMemo(() => {
     [grupoDestinoWhatsapp, nombreHipodromo]
   );
 
-  /** Plano de Jugadas (Ctrl+Q): formato TERCIOS con las jugadas en sesión. */
+  /**
+   * Lista unificada de tickets (sesión + persistidas en BD, incluyendo jugadas
+   * adelantadas: Tercios, Marcas, Tablas, Remates y Dupletas) para los reportes
+   * preliminares (Ctrl+Q / Preliminar de Jugadas y Preliminar de Resultados).
+   */
+  const ticketsParaPreliminar = useMemo(() => {
+    if (filasPreview.length > 0) {
+      return filasPreview
+        .filter((f) => !f.anulada)
+        .map((f) => ({
+          comando: `${f.monto} ${f.jugada}`,
+          monto: f.monto,
+          caballo: f.caballo,
+          cliente1: f.cliente1,
+          cliente2: f.cliente2 || null,
+          esAdelantada: f.esAdelantada,
+        }));
+    }
+    return ticketsDeCarrera;
+  }, [filasPreview, ticketsDeCarrera]);
+
+  /** Plano de Jugadas (Ctrl+Q): formato TERCIOS con las jugadas en vivo y adelantadas. */
   const planoPreliminarTexto = useMemo(
     () =>
       mensajePlanoDeCarrera({
@@ -1200,9 +1221,9 @@ const hipodromosDelDia = useMemo(() => {
         fecha,
         grupo: grupoCabecera,
         retirados: retirados.trim() || undefined,
-        tickets: ticketsDeCarrera,
+        tickets: ticketsParaPreliminar,
       }),
-    [carrera, fecha, grupoCabecera, hipodromo, retirados, ticketsDeCarrera]
+    [carrera, fecha, grupoCabecera, hipodromo, retirados, ticketsParaPreliminar]
   );
 
   /**
@@ -2426,8 +2447,143 @@ const hipodromosDelDia = useMemo(() => {
           </Button>
         </div>
 
-        {/* Separación Estricta en 2 Tablas de 7 Columnas: En Vivo vs Jugadas Adelantadas */}
+        {/* Separación Estricta en 2 Tablas de 7 Columnas: En Vivo vs Jugadas Adelantadas (mismo ancho y altura de campos) */}
         {(() => {
+          const renderBloqueFilas7Columnas = (
+            listaFilas: FilaPreviewCarrera[],
+            headerTheme: string
+          ) => (
+            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+              <table className="w-full table-fixed border-collapse text-xs">
+                <colgroup>
+                  <col className="w-[16%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[14%]" />
+                </colgroup>
+                <thead>
+                  <tr className={`${headerTheme} h-8`}>
+                    <th className="w-[16%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase align-middle">
+                      1. Quien Juega (Cliente 1)
+                    </th>
+                    <th className="w-[10%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase align-middle">
+                      2. Apostó
+                    </th>
+                    <th className="w-[14%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase align-middle">
+                      3. Resultado
+                    </th>
+                    <th className="w-[20%] border-r border-slate-700 px-2 py-1.5 text-center font-bold uppercase align-middle">
+                      4. Jugada
+                    </th>
+                    <th className="w-[16%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase align-middle">
+                      5. Quien Da (Cliente 2)
+                    </th>
+                    <th className="w-[10%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase align-middle">
+                      6. Apostó
+                    </th>
+                    <th className="w-[14%] px-2 py-1.5 text-right font-bold uppercase align-middle">
+                      7. Resultado / Acc.
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {listaFilas.map((f, i) => {
+                    const aposto1 = f.monto;
+                    const aposto2 = f.monto;
+                    const res1Texto =
+                      f.anulada
+                        ? "ANULADA"
+                        : f.lado1.estado === "GANO" && f.lado1.monto != null
+                          ? `+${monedaFmt(Math.abs(f.lado1.monto))}`
+                          : f.lado1.estado === "PERDIO"
+                            ? `-${monedaFmt(Math.abs(f.lado1.monto ?? aposto1))}`
+                            : `-${monedaFmt(aposto1)} (Por decidir)`;
+                    const res2Texto =
+                      f.anulada
+                        ? "ANULADA"
+                        : f.lado2.estado === "GANO" && f.lado2.monto != null
+                          ? `+${monedaFmt(Math.abs(f.lado2.monto))}`
+                          : f.lado2.estado === "PERDIO"
+                            ? `-${monedaFmt(Math.abs(f.lado2.monto ?? aposto2))}`
+                            : `-${monedaFmt(aposto2)} (Por decidir)`;
+
+                    return (
+                      <tr
+                        key={f.clave}
+                        className={`h-8 align-middle ${f.anulada ? "bg-amber-50/70 line-through opacity-75" : "bg-white hover:bg-slate-50"}`}
+                      >
+                        <td className="h-8 px-2 py-1.5 font-bold text-slate-800 truncate align-middle" title={f.cliente1}>
+                          <span className="mr-1 text-[10px] font-normal text-slate-400">#{i + 1}</span>
+                          {f.cliente1 || "—"}
+                        </td>
+                        <td className="h-8 px-2 py-1.5 text-right font-mono font-bold text-slate-800 whitespace-nowrap align-middle">
+                          {monedaFmt(aposto1)}
+                        </td>
+                        <td className="h-8 px-2 py-1.5 text-right font-mono text-[11px] font-bold whitespace-nowrap align-middle">
+                          <span
+                            className={
+                              f.lado1.estado === "GANO"
+                                ? "text-emerald-700"
+                                : f.lado1.estado === "PERDIO"
+                                  ? "text-rose-600"
+                                  : "text-amber-700"
+                            }
+                          >
+                            {res1Texto}
+                          </span>
+                        </td>
+                        <td className="h-8 px-2 py-1.5 text-center font-mono text-[11px] font-black text-indigo-950 truncate align-middle">
+                          {f.jugada} {f.caballo ? `· #${f.caballo.toUpperCase()}` : ""}
+                          {f.esAdelantada && <BadgeAdelantada className="ml-1" />}
+                        </td>
+                        <td className="h-8 px-2 py-1.5 font-bold text-slate-800 truncate align-middle" title={f.cliente2}>
+                          {f.cliente2 || "—"}
+                        </td>
+                        <td className="h-8 px-2 py-1.5 text-right font-mono font-bold text-slate-800 whitespace-nowrap align-middle">
+                          {monedaFmt(aposto2)}
+                        </td>
+                        <td className="h-8 px-2 py-1.5 text-right whitespace-nowrap align-middle">
+                          <span
+                            className={`mr-2 font-mono text-[11px] font-bold ${
+                              f.lado2.estado === "GANO"
+                                ? "text-emerald-700"
+                                : f.lado2.estado === "PERDIO"
+                                  ? "text-rose-600"
+                                  : "text-amber-700"
+                            }`}
+                          >
+                            {res2Texto}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => abrirAccionPreview(f, "editar")}
+                            aria-label="Editar jugada"
+                            title="Editar la jugada y recalcular la carrera"
+                            className="text-xs text-slate-400 hover:text-primary-600"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => abrirAccionPreview(f, "eliminar")}
+                            aria-label="Eliminar jugada"
+                            title="Anular la jugada y recalcular la carrera"
+                            className="ml-1 text-xs text-slate-400 hover:text-red-500"
+                          >
+                            🗑️
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          );
+
           const renderTabla7Columnas = (
             tituloSeccion: string,
             subtituloSeccion: string,
@@ -2440,6 +2596,9 @@ const hipodromosDelDia = useMemo(() => {
             const headerTheme = esTablaAdelantada
               ? "bg-amber-900 text-amber-50"
               : "bg-slate-900 text-white";
+            const seccionesAdelantadas = esTablaAdelantada
+              ? agruparAdelantadasPorSeccion(listaFilas)
+              : [];
 
             return (
               <div className={`mt-3 rounded-xl border ${borderTheme} p-2.5 shadow-xs`}>
@@ -2458,127 +2617,24 @@ const hipodromosDelDia = useMemo(() => {
                       ? "Sin jugadas adelantadas (pre-jugadas) registradas en esta carrera."
                       : "Sin jugadas en vivo registradas en esta carrera."}
                   </p>
-                ) : (
-                  <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                    <table className="w-full border-collapse text-xs">
-                      <thead>
-                        <tr className={headerTheme}>
-                          <th className="w-[16%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">
-                            1. Quien Juega (Cliente 1)
-                          </th>
-                          <th className="w-[10%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase">
-                            2. Apostó
-                          </th>
-                          <th className="w-[14%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase">
-                            3. Resultado
-                          </th>
-                          <th className="w-[20%] border-r border-slate-700 px-2 py-1.5 text-center font-bold uppercase">
-                            4. Jugada
-                          </th>
-                          <th className="w-[16%] border-r border-slate-700 px-2 py-1.5 text-left font-bold uppercase">
-                            5. Quien Da (Cliente 2)
-                          </th>
-                          <th className="w-[10%] border-r border-slate-700 px-2 py-1.5 text-right font-bold uppercase">
-                            6. Apostó
-                          </th>
-                          <th className="w-[14%] px-2 py-1.5 text-right font-bold uppercase">
-                            7. Resultado / Acc.
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200">
-                        {listaFilas.map((f, i) => {
-                          const aposto1 = f.monto;
-                          const aposto2 = f.monto;
-                          const res1Texto =
-                            f.anulada
-                              ? "ANULADA"
-                              : f.lado1.estado === "GANO" && f.lado1.monto != null
-                                ? `+${monedaFmt(Math.abs(f.lado1.monto))}`
-                                : f.lado1.estado === "PERDIO"
-                                  ? `-${monedaFmt(Math.abs(f.lado1.monto ?? aposto1))}`
-                                  : `-${monedaFmt(aposto1)} (Por decidir)`;
-                          const res2Texto =
-                            f.anulada
-                              ? "ANULADA"
-                              : f.lado2.estado === "GANO" && f.lado2.monto != null
-                                ? `+${monedaFmt(Math.abs(f.lado2.monto))}`
-                                : f.lado2.estado === "PERDIO"
-                                  ? `-${monedaFmt(Math.abs(f.lado2.monto ?? aposto2))}`
-                                  : `-${monedaFmt(aposto2)} (Por decidir)`;
-
-                          return (
-                            <tr
-                              key={f.clave}
-                              className={`align-middle ${f.anulada ? "bg-amber-50/70 line-through opacity-75" : "bg-white hover:bg-slate-50"}`}
-                            >
-                              <td className="px-2 py-1.5 font-bold text-slate-800" title={f.cliente1}>
-                                <span className="mr-1 text-[10px] font-normal text-slate-400">#{i + 1}</span>
-                                {f.cliente1 || "—"}
-                              </td>
-                              <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-800">
-                                {monedaFmt(aposto1)}
-                              </td>
-                              <td className="px-2 py-1.5 text-right font-mono text-[11px] font-bold">
-                                <span
-                                  className={
-                                    f.lado1.estado === "GANO"
-                                      ? "text-emerald-700"
-                                      : f.lado1.estado === "PERDIO"
-                                        ? "text-rose-600"
-                                        : "text-amber-700"
-                                  }
-                                >
-                                  {res1Texto}
-                                </span>
-                              </td>
-                              <td className="px-2 py-1.5 text-center font-mono text-[11px] font-black text-indigo-950">
-                                {f.jugada} {f.caballo ? `· #${f.caballo.toUpperCase()}` : ""}
-                                {f.esAdelantada && <BadgeAdelantada className="ml-1" />}
-                              </td>
-                              <td className="px-2 py-1.5 font-bold text-slate-800" title={f.cliente2}>
-                                {f.cliente2 || "—"}
-                              </td>
-                              <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-800">
-                                {monedaFmt(aposto2)}
-                              </td>
-                              <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                                <span
-                                  className={`mr-2 font-mono text-[11px] font-bold ${
-                                    f.lado2.estado === "GANO"
-                                      ? "text-emerald-700"
-                                      : f.lado2.estado === "PERDIO"
-                                        ? "text-rose-600"
-                                        : "text-amber-700"
-                                  }`}
-                                >
-                                  {res2Texto}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => abrirAccionPreview(f, "editar")}
-                                  aria-label="Editar jugada"
-                                  title="Editar la jugada y recalcular la carrera"
-                                  className="text-xs text-slate-400 hover:text-primary-600"
-                                >
-                                  ✏️
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => abrirAccionPreview(f, "eliminar")}
-                                  aria-label="Eliminar jugada"
-                                  title="Anular la jugada y recalcular la carrera"
-                                  className="ml-1 text-xs text-slate-400 hover:text-red-500"
-                                >
-                                  🗑️
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                ) : esTablaAdelantada ? (
+                  <div className="space-y-2.5">
+                    {seccionesAdelantadas.map((sec) => (
+                      <div key={sec.categoria} className="space-y-1">
+                        <div className="flex items-center justify-between rounded-md border border-amber-300/80 bg-amber-100/70 px-2.5 py-1">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-amber-950">
+                            {sec.titulo}
+                          </span>
+                          <span className="text-[10px] font-bold text-amber-800">
+                            {sec.filas.length} jugada(s)
+                          </span>
+                        </div>
+                        {renderBloqueFilas7Columnas(sec.filas, headerTheme)}
+                      </div>
+                    ))}
                   </div>
+                ) : (
+                  renderBloqueFilas7Columnas(listaFilas, headerTheme)
                 )}
               </div>
             );
@@ -2926,13 +2982,9 @@ const hipodromosDelDia = useMemo(() => {
           <button
             type="button"
             onClick={() => {
-              if (!tieneResultadoCargado) {
-                setAviso("⚠️ No hay resultados cargados para esta carrera. Debe cargar el resultado oficial antes de abrir el Reporte Final.");
-                return;
-              }
               setMostrarReporteLiquidacion(true);
             }}
-            title="Reporte final de la carrera liquidada (Ctrl+G)"
+            title="Reporte de jugadas / liquidación de la carrera (Ctrl+G)"
             className={`${BTN_BARRA} bg-emerald-800 text-emerald-50 hover:bg-emerald-700`}
           >
             🧾 Reporte Final

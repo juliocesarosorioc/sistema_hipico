@@ -211,10 +211,15 @@ export type LadosEjemplares = {
 };
 
 function limpiarLado(bruto: string): string[] {
-  return bruto
-    .split(SEPARADORES_INTRA)
-    .map((t) => t.trim())
+  const sinParentesis = String(bruto ?? "")
+    .replace(/[()[\]{}#]/g, " ")
+    .replace(/\b(?:por|el|la|los|las|de|del|y|e)\b/gi, " ");
+  const tokens = sinParentesis
+    .split(/[\s,\-\/yY&.+;]+/)
+    .map((t) => t.trim().replace(/^0+(?=\d)/, ""))
     .filter((t) => /^\d{1,2}$/.test(t));
+  if (tokens.length > 0) return tokens;
+  return (String(bruto ?? "").match(/\d{1,2}/g) ?? []).map((t) => t.replace(/^0+(?=\d)/, ""));
 }
 
 /**
@@ -222,6 +227,7 @@ function limpiarLado(bruto: string): string[] {
  * Devuelve null si no hay nada reconocible.
  *
  *   "1"              → { izquierda:["1"], derecha:[], hayDivisor:false }
+ *   "1 2 3"          → { izquierda:["1","2","3"], derecha:[], hayDivisor:false }
  *   "1-2x3-4"        → { izquierda:["1","2"], derecha:["3","4"], hayDivisor:true }
  *   "12 13 x 14 15"  → { izquierda:["12","13"], derecha:["14","15"] }
  *   "1,2 por 3-4"    → { izquierda:["1","2"], derecha:["3","4"] }
@@ -230,9 +236,15 @@ export function parsearEjemplaresPorCliente(texto: string): LadosEjemplares | nu
   const t = String(texto ?? "").trim();
   if (!t) return null;
 
-  // Más de un divisor no es una notación válida de dos lados.
   const partes = t.split(DIVISOR_LADOS).filter((p) => p.trim() !== "");
-  if (partes.length > 2) return null;
+  if (partes.length === 0) return null;
+
+  // Si hay más de 2 partes separadas por 'x'/'*' (ej. "1x2x3"), todos son ejemplares de una lista multi-caballo
+  if (partes.length > 2) {
+    const todos = partes.flatMap(limpiarLado);
+    if (todos.length === 0) return null;
+    return { izquierda: todos, derecha: [], hayDivisor: false };
+  }
 
   if (partes.length === 1) {
     const izquierda = limpiarLado(partes[0]);

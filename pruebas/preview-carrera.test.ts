@@ -93,7 +93,7 @@ igual(soloSesion[0].monto, 100, "conserva el monto");
 const ventaConId = armarFilasPreview([], [ticketSesion({ ticketId: 500 })]);
 si(ventaConId[0].validada, "una venta de sesión con ticketId ya está validada");
 
-// ── 4. Modalidades especiales fuera del panel ──────────────────────────────
+// ── 4. Modalidades adelantadas clasificadas en el panel ────────────────────
 const especiales = armarFilasPreview(
   [
     persistida({ id: "1", nombre_jugada: "TABLA FIJA (HIPO C4)" }),
@@ -105,8 +105,11 @@ const especiales = armarFilasPreview(
   ],
   []
 );
-igual(especiales.length, 1, "solo la jugada de taquilla entra al panel");
-igual(especiales[0].jugada, "2N", "la jugada que queda es la de taquilla");
+const enVivoEspeciales = especiales.filter((f) => !f.esAdelantada);
+const adelantadasEspeciales = especiales.filter((f) => f.esAdelantada);
+igual(enVivoEspeciales.length, 1, "solo la jugada de taquilla en vivo (2N) entra a Jugadas en Vivo");
+igual(enVivoEspeciales[0].jugada, "2N", "la jugada en vivo que queda es 2N");
+igual(adelantadasEspeciales.length, 5, "las 5 jugadas adelantadas entran a JUGADAS ADELANTADAS (PRE-JUGADAS)");
 
 // ── 5. Resultado: premio vs saldo ──────────────────────────────────────────
 const ganador = armarFilasPreview([persistida({ estado: "Ganador", premio_pagar: 320 })], []);

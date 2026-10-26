@@ -28,9 +28,17 @@ import {
   construirFichaEstadoCuentaUnificada,
 } from "../src/features/saldos/lib/contabilidad-central";
 import {
+  armarReporteCarrera,
   esJugadaAdelantadaReporte,
   segmentarJugadasReporte,
+  agruparAdelantadasPorSeccion,
+  categoriaJugadaAdelantada,
 } from "../src/features/liquidacion/lib/reporte-carrera";
+import { liquidarOficial } from "../src/features/motores/lib/oficiales";
+import { liquidarPuestos } from "../src/features/motores/lib/puestos";
+import { relacionResultados } from "../src/features/impresion/lib/reportGenerator";
+import { mensajePlanoDeCarrera } from "../src/features/taquilla/lib/mensajeResultado";
+import { rutaLoginConBasePath } from "../src/features/auth/lib/sesion";
 
 const ROOT = process.cwd();
 
@@ -414,7 +422,258 @@ console.log("=== INICIANDO AUDITORÍA DE REFORMA INTEGRAL (13 REQUERIMIENTOS) ==
     "ReporteCarrera debe renderizar la sección de Jugadas Adelantadas con la misma tabla de 7 columnas (TablaJugadas) que Jugadas en Vivo"
   );
 
-  console.log("✔ [6/6] Modalidad ADELANTADA por defecto, Motor Godet, Reloj, Sidebar, CSS Único, Hooks y Segmentación 7 Col Adelantadas OK");
+  // 14. La Rinconada 1ra Carrera (25/10/2026) — Asiento contable interno "Bono por Cruce de jugadas" (Caso PARTNER +408,50)
+  const reporteRinconadaC1Partner = armarReporteCarrera({
+    numero: 1,
+    hipodromo: "La Rinconada",
+    fecha: "2026-10-25",
+    pizarra: "3 · 5 · 4 · 1 · 2",
+    subtotal: 0,
+    filas: [
+      // 1) PARTNER 200 (-200,00) | 2Y3N (2) | sam (+190,00)
+      {
+        id: "2026-10-25-La Rinconada-1-j-0",
+        rol: "Juega",
+        cliente: "PARTNER",
+        jugada: "2Y3N",
+        caballo: "2",
+        monto: 200,
+        resultado: -200,
+      },
+      {
+        id: "2026-10-25-La Rinconada-1-c-0",
+        rol: "Consigue",
+        cliente: "sam",
+        jugada: "2Y3N",
+        caballo: "2",
+        monto: 200,
+        resultado: 190,
+      },
+      // 2) SAM 400 (-400,00) | 10/8 (1 2) | PARTNER 320 (+380,00)
+      {
+        id: "2026-10-25-La Rinconada-1-j-1",
+        rol: "Juega",
+        cliente: "SAM",
+        jugada: "10/8",
+        caballo: "1 2",
+        monto: 400,
+        resultado: -400,
+      },
+      {
+        id: "2026-10-25-La Rinconada-1-c-1",
+        rol: "Consigue",
+        cliente: "PARTNER",
+        jugada: "10/8",
+        caballo: "1 2",
+        monto: 400,
+        resultado: 380,
+      },
+      // 3) BG 180 (-180,00) | 10/8 (1 2) | PARTNER 144 (+171,00)
+      {
+        id: "2026-10-25-La Rinconada-1-j-2",
+        rol: "Juega",
+        cliente: "BG",
+        jugada: "10/8",
+        caballo: "1 2",
+        monto: 180,
+        resultado: -180,
+      },
+      {
+        id: "2026-10-25-La Rinconada-1-c-2",
+        rol: "Consigue",
+        cliente: "PARTNER",
+        jugada: "10/8",
+        caballo: "1 2",
+        monto: 180,
+        resultado: 171,
+      },
+      // 4) URIEL 50 (-50,00) | 10/8 (1 2) | PARTNER 40 (+47,50)
+      {
+        id: "2026-10-25-La Rinconada-1-j-3",
+        rol: "Juega",
+        cliente: "URIEL",
+        jugada: "10/8",
+        caballo: "1 2",
+        monto: 50,
+        resultado: -50,
+      },
+      {
+        id: "2026-10-25-La Rinconada-1-c-3",
+        rol: "Consigue",
+        cliente: "PARTNER",
+        jugada: "10/8",
+        caballo: "1 2",
+        monto: 50,
+        resultado: 47.5,
+      },
+    ],
+  });
+
+  const partnerGana = reporteRinconadaC1Partner.resumen.ganan.find((g) => g.nombre === "PARTNER");
+  assert.ok(partnerGana, "PARTNER debe aparecer en el cuadro Ganan / Positivos (+)");
+  assert.equal(partnerGana.riesgo, 704, "PARTNER arriesgó 200 + 320 + 144 + 40 = 704");
+  assert.equal(
+    partnerGana.monto,
+    408.5,
+    "PARTNER debe reflejar +408,50 (630 ganancia bruta - 200 pérdida = 430 netos antes de comisión -> -5% = 408,50 gracias al Bono por Cruce de jugadas de +10,00)"
+  );
+  const asientoPartner = reporteRinconadaC1Partner.asientosBonoCruce?.find((a) => a.cliente === "PARTNER");
+  assert.ok(asientoPartner, "Debe existir internamente el asiento Bono por Cruce de jugadas para PARTNER");
+  assert.equal(asientoPartner.concepto, "Bono por Cruce de jugadas");
+  assert.equal(asientoPartner.brutoGanado, 630);
+  assert.equal(asientoPartner.brutoPerdido, 200);
+  assert.equal(asientoPartner.baseCruce, 200);
+  assert.equal(asientoPartner.bonoCruce, 10);
+  assert.equal(
+    reporteRinconadaC1Partner.jugadasVivo.some((j) => j.jugo.includes("Bono") || j.jugo.includes("CRUCE")),
+    false,
+    "El asiento Bono por Cruce de jugadas NO debe visualizarse como fila en las tablas de jugadas del reporte"
+  );
+
+  // 15. La Rinconada 1ra Carrera (25/10/2026) — Jugada multi-ejemplar: SAM | 50 | 1P (1 2 3) | CLUB (gana el #3)
+  for (const formatoCaballos of ["1 2 3", "1,2,3", "1-2-3", "1y2y3", "1x2x3", "(1 2 3)"]) {
+    const ticketSam = {
+      id: "sam-1p-123",
+      hipodromo: "La Rinconada",
+      carrera: "1",
+      jugada: "1P",
+      tipo_jugada: "1P",
+      fechas: ["2026-10-25"],
+      caballo: formatoCaballos,
+      monto: 50,
+      cruces: 1,
+      cuota: null,
+      total: 50,
+      addedAt: 0,
+      puesto_final: 1,
+      dividendos: null,
+      pizarra: { primero: "3", segundo: "5", tercero: "4", cuarto: "1", quinto: "2" },
+    };
+    const resPuestos = liquidarPuestos(ticketSam, 5);
+    assert.equal(resPuestos.ok, true, `liquidarPuestos debe dar ganador a SAM en 1P con '${formatoCaballos}' cuando gana el #3`);
+    assert.equal(resPuestos.totalClienteNeto, 97.5, "SAM debe recibir 97,50 total (capital 50 + ganancia neta 47,50)");
+    assert.equal(resPuestos.gananciaCasa, 2.5, "Comisión casa 5% de 50 = 2,50");
+
+    const resOficial = liquidarOficial(ticketSam, 5);
+    assert.equal(resOficial.ok, true, `liquidarOficial debe dar ganador a SAM en 1P con '${formatoCaballos}'`);
+    assert.equal(resOficial.totalClienteNeto, 97.5, "Capital (50) + Ganancia neta (47,50) = 97,50");
+    assert.equal(resOficial.gananciaCasa, 2.5, "Comisión casa 5% de 50 = 2,50");
+  }
+
+  // Incluso si en BD la jugada de SAM tenía `ganador: false` (Perdedor), `relacionResultados` con pizarra ["3", "5", "4"]
+  // debe evaluar todos los ejemplares (1, 2, 3) y poner a SAM ganando +47,50 y a CLUB perdiendo -50,00.
+  const txtWhatsAppSam = relacionResultados(
+    {
+      grupo: "LA RINCONADA",
+      hipodromo: "La Rinconada",
+      fecha: new Date("2026-10-25T12:00:00Z"),
+      carrera: 1,
+      pizarraPuestos: ["3", "5", "4", "1", "2"],
+    },
+    [
+      {
+        clienteJuega: "SAM",
+        clienteConsigue: "CLUB",
+        jugada: "1P",
+        caballo: "1 2 3",
+        monto: 50,
+        ganador: false, // simula que en BD estaba mal marcada como perdedora
+        comisionPct: 5,
+      },
+    ]
+  );
+  assert.ok(
+    txtWhatsAppSam.includes("Juega SAM $ +47,50") && txtWhatsAppSam.includes("Consigue CLUB $ -50,00"),
+    "relacionResultados debe corregir la evaluación con la pizarra y mostrar a SAM ganando +47,50 y CLUB perdiendo -50,00"
+  );
+
+  // 16. Segmentación en 5 secciones dentro de Jugadas Adelantadas ("Si las hay")
+  assert.equal(categoriaJugadaAdelantada({ jugo: "2N", esAdelantada: true }), "tercios");
+  assert.equal(categoriaJugadaAdelantada({ jugo: "MARCA 3x6" }), "marcas");
+  assert.equal(categoriaJugadaAdelantada({ jugo: "TABLA FIJA" }), "tablas");
+  assert.equal(categoriaJugadaAdelantada({ jugo: "REMATE" }), "remates");
+  assert.equal(categoriaJugadaAdelantada({ jugo: "DUPLETA" }), "dupletas");
+
+  const gruposAdelantadas = agruparAdelantadasPorSeccion([
+    { juega: "LUIS", jugo: "2N", caballo: "4", aposto: 100, da: "PEDRO", apostoDa: 100, resultado: null, esAdelantada: true },
+    { juega: "MEMPHIS", jugo: "MARCA", caballo: "3x6", aposto: 120, da: "", apostoDa: null, resultado: 100, esAdelantada: true },
+    { juega: "CARLOS", jugo: "TABLA FIJA", caballo: "2", aposto: 50, da: "BANCA", apostoDa: null, resultado: -50, esAdelantada: true },
+    { juega: "ANA", jugo: "REMATE", caballo: "5", aposto: 200, da: "BANCA", apostoDa: null, resultado: 400, esAdelantada: true },
+    { juega: "JOSE", jugo: "DUPLETA", caballo: "1-3", aposto: 80, da: "BANCA", apostoDa: null, resultado: -80, esAdelantada: true },
+  ]);
+  assert.deepEqual(
+    gruposAdelantadas.map((g) => g.titulo),
+    [
+      "Jugadas entre tercios",
+      "Marcas Adelantadas",
+      "Tablas Adelantadas",
+      "Remates Adelantados",
+      "Dupletas Adelantadas",
+    ],
+    "Debe segmentar en las 5 secciones exactas en orden cuando existen jugadas de cada tipo"
+  );
+
+  // 17. Reporte preliminar de jugadas incluye las jugadas adelantadas segmentadas
+  const txtPreliminarConAdelantadas = mensajePlanoDeCarrera({
+    hipodromo: "La Rinconada",
+    carrera: 1,
+    fecha: "2026-10-25",
+    grupo: "LA RINCONADA",
+    tickets: [
+      { comando: "100 1P", monto: 100, caballo: "3", cliente1: "SAM", cliente2: "CLUB", esAdelantada: false },
+      { comando: "120 MARCA", monto: 120, caballo: "3x6", cliente1: "MEMPHIS", cliente2: null, esAdelantada: true },
+      { comando: "50 2N", monto: 50, caballo: "4", cliente1: "LUIS", cliente2: "PEDRO", esAdelantada: true },
+    ],
+  });
+  assert.ok(
+    txtPreliminarConAdelantadas.includes("⏳ JUGADAS ADELANTADAS (PRE-JUGADAS)") &&
+      txtPreliminarConAdelantadas.includes("JUGADAS ENTRE TERCIOS") &&
+      txtPreliminarConAdelantadas.includes("MARCAS ADELANTADAS"),
+    "El reporte preliminar de jugadas debe incluir las jugadas adelantadas segmentadas por sección"
+  );
+
+  // 18. Menú lateral derecho BarraCarrerasLiquidadas en ReporteLiquidacionModal y SelectorReporteCarrera
+  const modalLiqSrc = fs.readFileSync(
+    path.join(ROOT, "src/features/gestion/components/ReporteLiquidacionModal.tsx"),
+    "utf8"
+  );
+  const selectorRepSrc = fs.readFileSync(
+    path.join(ROOT, "src/features/saldos/components/SelectorReporteCarrera.tsx"),
+    "utf8"
+  );
+  assert.ok(
+    modalLiqSrc.includes("<BarraCarrerasLiquidadas") && selectorRepSrc.includes("<BarraCarrerasLiquidadas"),
+    "El reporte de jugadas debe habilitar el menú lateral derecho BarraCarrerasLiquidadas y eliminar la sección superior"
+  );
+
+  // 19. Botón Cerrar Sesión con rutaLoginConBasePath y limpieza inmediata
+  const topbarLogoutSrc = fs.readFileSync(
+    path.join(ROOT, "src/shared/components/layout/Topbar.tsx"),
+    "utf8"
+  );
+  const sidebarLogoutSrc = fs.readFileSync(
+    path.join(ROOT, "src/shared/components/layout/Sidebar.tsx"),
+    "utf8"
+  );
+  assert.ok(
+    topbarLogoutSrc.includes("rutaLoginConBasePath") && sidebarLogoutSrc.includes("rutaLoginConBasePath"),
+    "Topbar y Sidebar deben usar rutaLoginConBasePath() al cerrar sesión para no generar error 404"
+  );
+  assert.equal(typeof rutaLoginConBasePath(), "string");
+
+  // 20. Filtro tipo Tabla Dinámica de las carreras en Saldos Consolidados — Semana Fiscal
+  const reporteModuleSrc = fs.readFileSync(
+    path.join(ROOT, "src/features/saldos/components/ReporteModule.tsx"),
+    "utf8"
+  );
+  assert.ok(
+    reporteModuleSrc.includes("Filtro Tipo Tabla Dinámica de las Carreras") &&
+      reporteModuleSrc.includes("PIVOT_CARRERAS") &&
+      reporteModuleSrc.includes("PIVOT_CLIENTE_CARRERA"),
+    "ReporteModule (Saldos Consolidados — Semana Fiscal) debe incluir el filtro tipo Tabla Dinámica de las carreras"
+  );
+
+  console.log("✔ [6/6] Modalidad ADELANTADA por defecto, Motor Godet, Reloj, Sidebar, CSS Único, Hooks, Segmentación 5 Secciones Adelantadas, Bono por Cruce (+408,50), Multi-ejemplar 1P (1 2 3), Cerrar Sesión y Tabla Dinámica OK");
 }
 
 console.log("6 pasaron, 0 fallaron");

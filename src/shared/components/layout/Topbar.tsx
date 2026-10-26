@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/core/supabase";
 import { SelectorGrupo } from "@/features/grupos/components/SelectorGrupo";
 import { RelojNavegador } from "@/shared/components/layout/RelojNavegador";
 import { useAuthStore } from "@/shared/store/useAuthStore";
+import { rutaLoginConBasePath, limpiarAlmacenamientoSesionLocal } from "@/features/auth/lib/sesion";
 
 /**
  * Barra superior limpia de la SPA (Organismo del layout raíz).
@@ -56,6 +58,7 @@ const fmtMomento = (f: string | null): string => {
  * `public.auditoria`, así que lo que llega a la campana son hechos, no un adorno.
  */
 export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {}) {
+  const router = useRouter();
   const [abierto, setAbierto] = useState(false);
   const [novedades, setNovedades] = useState<Novedad[]>([]);
   const [cargando, setCargando] = useState(false);
@@ -119,21 +122,23 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
   const cerrarSesion = async () => {
     if (saliendo) return;
     setSaliendo(true);
-    try {
-      localStorage.removeItem("club_sesion_activa");
-    } catch {
-      /* sinop */
-    }
+    limpiarAlmacenamientoSesionLocal();
     // El redirect va en un `finally` con corte propio: aunque el borrado remoto
-    // se demore (o no conteste), el botón SIEMPRE termina en /login en vez de
-    // dejar la pantalla girando. `salir()` ya usa el alcance `local` para no
-    // depender de la red, pero el cinturón va además de los tirantes.
+    // se demore (o no conteste), el botón SIEMPRE termina en /login respetando
+    // el basePath (/apuestas en GitHub Pages) en vez de generar un 404.
     try {
       await salir();
     } catch {
       /* aunque falle el borrado remoto, se sale igual para no quedar atrapado */
     } finally {
-      window.location.replace("/login");
+      try {
+        router.replace("/login");
+      } catch {
+        /* sinop */
+      }
+      if (typeof window !== "undefined") {
+        window.location.replace(rutaLoginConBasePath());
+      }
     }
   };
 

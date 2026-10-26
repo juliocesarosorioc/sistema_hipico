@@ -76,7 +76,9 @@ export function posicionesDePizarra(pizarra: PizarraCarrera | null | undefined):
     const bruto = (pizarra as Record<string, unknown>)[campo];
     if (bruto === null || bruto === undefined || bruto === "") return;
     // Puede venir como numero o como string.
-    mapa.set(String(bruto).trim(), i + 1);
+    const limp = String(bruto).trim().replace(/^#/, "").replace(/^0+(?=\d)/, "");
+    if (!limp) return;
+    mapa.set(limp, i + 1);
   });
   return mapa;
 }
@@ -96,7 +98,7 @@ function mejorPosicion(ejemplares: string[], mapa: Map<string, number>): { pos: 
   let pos = Infinity;
   let de: string | null = null;
   for (const ej of ejemplares) {
-    const clave = String(ej).trim();
+    const clave = String(ej).trim().replace(/^#/, "").replace(/^0+(?=\d)/, "");
     if (!clave) continue;
     const p = mapa.has(clave) ? (mapa.get(clave) as number) : Infinity;
     if (p < pos) {
@@ -156,7 +158,13 @@ function resolverJugada(nom: Nomenclatura, caballo: string): Resuelta {
     nom.modalidad === "COMPUESTA";
 
   const todosCol = [...col.izquierda, ...col.derecha];
-  const ladoA = nom.ladoA.length > 0 ? nom.ladoA : esPosicionalPizarra ? todosCol : col.izquierda;
+  const ladoA = esPosicionalPizarra
+    ? [...new Set([...nom.ladoA, ...todosCol])]
+    : !col.hayDivisor
+      ? [...new Set([...nom.ladoA, ...col.izquierda])]
+      : nom.ladoA.length > 0
+        ? nom.ladoA
+        : col.izquierda;
   const ladoB = nom.ladoB.length > 0 ? nom.ladoB : esPosicionalPizarra ? [] : col.derecha;
 
   let modalidad = nom.modalidad;

@@ -26,6 +26,10 @@
  */
 
 import { esAdelantadaDe } from "@/features/jugadas/lib/modalidad-tiempo";
+import {
+  categoriaJugadaAdelantada,
+  type CategoriaJugadaAdelantada,
+} from "@/features/liquidacion/lib/reporte-carrera";
 
 /** Fila mínima de `v_jugadas_carrera` que necesita el panel. */
 export type JugadaPersistida = {
@@ -117,6 +121,8 @@ export type FilaPreviewCarrera = {
   lado2: LadoResultado;
   /** true si la jugada fue cargada como adelantada (⏳ PRE-JUGADA). */
   esAdelantada?: boolean;
+  /** Categoría de la jugada adelantada (tercios, marcas, tablas, remates, dupletas). */
+  categoriaAdelantada?: CategoriaJugadaAdelantada;
 };
 
 const NUM = (v: unknown): number => {
@@ -125,6 +131,18 @@ const NUM = (v: unknown): number => {
 };
 
 const TXT = (v: unknown): string => (v == null ? "" : String(v).trim());
+
+/**
+ * ¿El nombre de jugada corresponde a una modalidad siempre adelantada
+ * (MARCA, TABLA FIJA, TABLA, REMATE, DUPLETA, POLLA, TERCIO, 3Y3)?
+ */
+export function esNombreModalidadAdelantada(nombre: unknown): boolean {
+  const n = TXT(nombre).toUpperCase();
+  if (!n) return false;
+  if (/^(MARCA|TABLA|REMATE|DUPLETA|POLLA|TERCIO)\b/.test(n)) return true;
+  if (/^T\d{1,2}\b|3Y3/.test(n)) return true;
+  return false;
+}
 
 /**
  * ¿La fila es una jugada de TAQUILLA? Excluye las modalidades que se venden
@@ -281,10 +299,16 @@ function filaDesdePersistida(j: JugadaPersistida, sesion?: TicketSesion): FilaPr
   const comisionPct = NUM(j.comision_porcentaje);
   const { lado1, lado2 } = ladosDeLaJugada(monto, estado, NUM(j.premio_pagar), comisionPct);
 
+  const nombreJug = TXT(j.nombre_jugada);
+  const esAdel =
+    esAdelantadaDe(j) ||
+    Boolean(sesion?.esAdelantada) ||
+    esNombreModalidadAdelantada(nombreJug);
+
   return {
-    clave: `db-${ticketId ?? TXT(j.nombre_jugada)}-${TXT(j.caballo)}`,
+    clave: `db-${ticketId ?? nombreJug}-${TXT(j.caballo)}`,
     ticketId,
-    jugada: TXT(j.nombre_jugada),
+    jugada: nombreJug,
     caballo: TXT(j.caballo) || (j.ejemplar_numero != null ? String(j.ejemplar_numero) : ""),
     monto,
     cliente1: TXT(j.cliente_juega_nombre),
@@ -299,7 +323,8 @@ function filaDesdePersistida(j: JugadaPersistida, sesion?: TicketSesion): FilaPr
     tieneProyeccion,
     lado1,
     lado2,
-    esAdelantada: esAdelantadaDe(j) || Boolean(sesion?.esAdelantada),
+    esAdelantada: esAdel,
+    categoriaAdelantada: esAdel ? categoriaJugadaAdelantada(nombreJug) : undefined,
   };
 }
 
@@ -309,10 +334,12 @@ function filaDesdeSesion(t: TicketSesion): FilaPreviewCarrera {
   const esPremio = mejor > monto;
   const ticketId = t.ticketId != null && String(t.ticketId).trim() !== "" ? String(t.ticketId) : null;
   const { lado1, lado2 } = ladosDeLaJugada(monto, "Pendiente", 0, 0);
+  const nombreJug = jugadaSinMonto(t.comando);
+  const esAdel = Boolean(t.esAdelantada) || esNombreModalidadAdelantada(nombreJug);
   return {
-    clave: `ses-${t.id ?? ticketId ?? jugadaSinMonto(t.comando)}`,
+    clave: `ses-${t.id ?? ticketId ?? nombreJug}`,
     ticketId,
-    jugada: jugadaSinMonto(t.comando),
+    jugada: nombreJug,
     caballo: TXT(t.caballo),
     monto,
     cliente1: TXT(t.cliente1),
@@ -327,19 +354,23 @@ function filaDesdeSesion(t: TicketSesion): FilaPreviewCarrera {
     tieneProyeccion: true,
     lado1,
     lado2,
-    esAdelantada: Boolean(t.esAdelantada),
+    esAdelantada: esAdel,
+    categoriaAdelantada: esAdel ? categoriaJugadaAdelantada(nombreJug) : undefined,
   };
 }
 
 /**
  * Arma las filas del panel: primero las persistidas (en el orden que trae la
  * base) y después las ventas de sesión que todavía no aparecen en la lista.
+ * Incluye tanto jugadas en vivo como jugadas adelantadas (Tercios, Marcas,
+ * Tablas, Remates y Dupletas) para que se visualicen en la sección
+ * `⏳ JUGADAS ADELANTADAS (PRE-JUGADAS)`.
  */
 export function armarFilasPreview(
   persistidas: JugadaPersistida[],
   sesion: TicketSesion[]
 ): FilaPreviewCarrera[] {
-  const ticketsSesion = sesion.filter((t) => esJugadaDeTaquilla(t.comando));
+  const ticketsSesion = sesion.filter((t) => TXT(t.comando) !== "");
   const porTicketId = new Map<string, TicketSesion>();
   for (const t of ticketsSesion) {
     if (t.ticketId == null) continue;
@@ -350,7 +381,7 @@ export function armarFilasPreview(
   const idsUsados = new Set<string>();
 
   for (const j of persistidas) {
-    if (!esJugadaDeTaquilla(j.nombre_jugada)) continue;
+    if (!TXT(j.nombre_jugada)) continue;
     const id = String(j.id ?? "").trim();
     const sesionDeFila = id ? porTicketId.get(id) : undefined;
     if (id) idsUsados.add(id);

@@ -17,6 +17,7 @@ import { COMISION_CASA, parsearNini, normalizarNini } from "@/features/betting/l
 import { etiquetaJugada, caballoPareoLegible } from "@/features/taquilla/lib/nomenclatura";
 import { liquidarOficial } from "@/features/motores/lib/oficiales";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
+import { _reembolsosCruce, normalizarNombreCliente } from "@/features/taquilla/lib/cruces-y-tapas";
 import type { TicketMotor } from "@/features/betting/lib/bettingEngine";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 
@@ -460,11 +461,20 @@ export function relacionResultados(
 ): string {
   const cuerpo: string[] = [];
   const balances = new Map<string, number>();
+  const nombreVisiblePorClave = new Map<string, string>();
+  const lineasCruce: Array<{ cliente: string; resultado: number }> = [];
   const sinSaldo: string[] = [];
 
   const acumular = (nombre: string, valor: number) => {
-    if (!nombre) return;
-    balances.set(nombre, (balances.get(nombre) ?? 0) + valor);
+    const clave = normalizarNombreCliente(nombre);
+    if (!clave) return;
+    const existente = nombreVisiblePorClave.get(clave);
+    const limpio = String(nombre ?? "").trim();
+    if (!existente || (existente === existente.toLowerCase() && limpio === limpio.toUpperCase())) {
+      nombreVisiblePorClave.set(clave, limpio);
+    }
+    balances.set(clave, round2((balances.get(clave) ?? 0) + valor));
+    lineasCruce.push({ cliente: nombreVisiblePorClave.get(clave) ?? limpio, resultado: valor });
   };
 
   /** Sufijo de disponible del que financia: ` · Disp *X*` o ` · Disp *S/S*`. */
@@ -489,16 +499,22 @@ export function relacionResultados(
       cuerpo.push("  ⚠️ PENDIENTE — falta el dividendo que cuantifica el premio.");
       return;
     }
-    // Si la jugada YA está decidida como GANADORA (premio pagado), se respeta su
-    // resultado persistido; si no (Pendiente o perdedora), la resuelve el MOTOR
-    // contra la pizarra. Así la Relación de Resultados coincide con el Reporte
-    // de Liquidación en vez de marcar perdedor a todo lo pendiente (la causa de
-    // que saliera INVERTIDA: ganadores en NEGATIVOS y perdedores en POSITIVOS).
+    // Si hay pizarra oficial y la jugada es evaluable por puestos/a premio/nini/pareo,
+    // SIEMPRE evaluamos con `balanceDesdePizarra` primero para que jugadas multi-caballo
+    // (ej. SAM 1P con "1 2 3" donde gana el #3) se liquiden correctamente incluso si en BD
+    // tenían estado perdedor.
+    const nombreJug = String(j.jugada ?? "").trim().toUpperCase();
+    const esEspecial = /^(TABLA|MARCA|DUPLETA|REMATE|POLLA)\b/.test(nombreJug);
+    const bPizarra =
+      !esEspecial && (meta.pizarraPuestos?.length ?? 0) > 0
+        ? balanceDesdePizarra(j, meta.pizarraPuestos ?? [], meta.dividendos ?? null)
+        : null;
     const b =
-      j.ganador === true
+      bPizarra ??
+      (j.ganador === true
         ? balanceJugada(j)
         : balanceDesdePizarra(j, meta.pizarraPuestos ?? [], meta.dividendos ?? null) ??
-          balanceJugada(j);
+          balanceJugada(j));
     // Leg "Juega": arriesga lo financiado. Leg "Consigue" (el "da"): cobra la
     // ganancia neta cuando el que juega NO acierta.
     const perdida = num(j.monto);
@@ -564,10 +580,21 @@ export function relacionResultados(
     }
   });
 
+  // Asiento contable interno "Bono por Cruce de jugadas": no se muestra en el detalle
+  // de jugadas pero se contabiliza en el cierre de POSITIVOS (+) y NEGATIVOS (-).
+  const { porCliente: reembolsosCruce } = _reembolsosCruce(lineasCruce, "con_cruces", 5);
+  for (const [clave, info] of reembolsosCruce.entries()) {
+    if (info.reembolsoCruce > 0) {
+      balances.set(clave, round2((balances.get(clave) ?? 0) + info.reembolsoCruce));
+    }
+  }
+
   const positivos = [...balances.entries()]
+    .map(([clave, v]) => [nombreVisiblePorClave.get(clave) ?? clave, v] as [string, number])
     .filter(([, v]) => v > 0.0001)
     .sort((a, b) => b[1] - a[1]);
   const negativos = [...balances.entries()]
+    .map(([clave, v]) => [nombreVisiblePorClave.get(clave) ?? clave, v] as [string, number])
     .filter(([, v]) => v < -0.0001)
     .sort((a, b) => a[1] - b[1]);
 

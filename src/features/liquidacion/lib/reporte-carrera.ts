@@ -19,18 +19,104 @@ import { pasaFiltroModalidad, type FiltroModalidadTiempo } from "@/features/juga
 import { colorDiscoNumero } from "@/features/saldos/lib/discos";
 import { etiquetaJugada } from "@/features/taquilla/lib/nomenclatura";
 import { redondearCentavos, restarDinero, sumarDinero } from "@/shared/lib/dinero";
-import { _reembolsosCruce, type ModalidadCruceCarrera } from "@/features/taquilla/lib/cruces-y-tapas";
+import {
+  _reembolsosCruce,
+  normalizarNombreCliente,
+  type ModalidadCruceCarrera,
+} from "@/features/taquilla/lib/cruces-y-tapas";
 
 export { colorDiscoNumero };
+
+/**
+ * Asiento contable interno de carrera: "Bono por Cruce de jugadas".
+ * No se visualiza como fila en la tabla de jugadas del reporte, pero sí se
+ * contabiliza en el resultado final de cada jugador (🟢 Ganan / 🔴 Pierden).
+ */
+export type AsientoBonoCruceCarrera = {
+  concepto: "Bono por Cruce de jugadas";
+  cliente: string;
+  brutoGanado: number;
+  brutoPerdido: number;
+  baseCruce: number;
+  bonoCruce: number;
+};
+
+export type CategoriaJugadaAdelantada =
+  | "tercios"
+  | "marcas"
+  | "tablas"
+  | "remates"
+  | "dupletas";
+
+export const SECCIONES_JUGADAS_ADELANTADAS: ReadonlyArray<{
+  id: CategoriaJugadaAdelantada;
+  titulo: string;
+}> = [
+  { id: "tercios", titulo: "Jugadas entre tercios" },
+  { id: "marcas", titulo: "Marcas Adelantadas" },
+  { id: "tablas", titulo: "Tablas Adelantadas" },
+  { id: "remates", titulo: "Remates Adelantados" },
+  { id: "dupletas", titulo: "Dupletas Adelantadas" },
+];
+
+/**
+ * Clasifica una jugada adelantada en una de las 5 secciones oficiales:
+ *   1. Jugadas entre tercios (`tercios`)
+ *   2. Marcas Adelantadas (`marcas`)
+ *   3. Tablas Adelantadas (`tablas`)
+ *   4. Remates Adelantados (`remates`)
+ *   5. Dupletas Adelantadas (`dupletas`)
+ */
+export function categoriaJugadaAdelantada(entrada: unknown): CategoriaJugadaAdelantada {
+  const raw =
+    entrada && typeof entrada === "object"
+      ? ((entrada as { jugo?: unknown; jugada?: unknown }).jugo ??
+          (entrada as { jugada?: unknown }).jugada ??
+          "")
+      : entrada;
+  const t = String(raw ?? "").trim().toUpperCase();
+  if (/^MARCA\b/.test(t) || t.includes("MARCA")) return "marcas";
+  if (/^TABLA\b/.test(t) || t.includes("TABLA")) return "tablas";
+  if (/^(REMATE|POLLA)\b/.test(t) || t.includes("REMATE")) return "remates";
+  if (/^DUPLETA\b/.test(t) || t.includes("DUPLETA")) return "dupletas";
+  return "tercios";
+}
+
+/**
+ * Agrupa las jugadas adelantadas en las 5 secciones oficiales (devolviendo
+ * únicamente las secciones que tienen al menos 1 jugada: "Si las hay").
+ */
+export function agruparAdelantadasPorSeccion<T extends { jugo?: string; jugada?: string }>(
+  filas: T[]
+): Array<{ id: CategoriaJugadaAdelantada; categoria: CategoriaJugadaAdelantada; titulo: string; filas: T[] }> {
+  const mapa = new Map<CategoriaJugadaAdelantada, T[]>();
+  for (const s of SECCIONES_JUGADAS_ADELANTADAS) {
+    mapa.set(s.id, []);
+  }
+  for (const f of filas ?? []) {
+    const cat = categoriaJugadaAdelantada(f.jugo ?? f.jugada ?? "");
+    mapa.get(cat)!.push(f);
+  }
+  return SECCIONES_JUGADAS_ADELANTADAS.map((s) => ({
+    id: s.id,
+    categoria: s.id,
+    titulo: s.titulo,
+    filas: mapa.get(s.id) ?? [],
+  })).filter((s) => s.filas.length > 0);
+}
 
 /**
  * Determina si una fila de `JugadaVivo` pertenece a la sección de Jugadas Adelantadas
  * (`esAdelantada === true`, `MARCA`, `TABLA FIJA`, `TABLA`, `REMATE`, `TERCIO`, etc.).
  * Las jugadas adelantadas NUNCA deben aparecer en la sección de Jugadas en Vivo.
  */
-export function esJugadaAdelantadaReporte(j: JugadaVivo): boolean {
+export function esJugadaAdelantadaReporte(j: {
+  jugo?: string;
+  jugada?: string;
+  esAdelantada?: boolean;
+}): boolean {
   if (j.esAdelantada) return true;
-  const t = String(j.jugo ?? "").trim().toUpperCase();
+  const t = String(j.jugo ?? j.jugada ?? "").trim().toUpperCase();
   if (/^(MARCA|TABLA|REMATE|TERCIO|DUPLETA|POLLA)\b/.test(t)) return true;
   if (/^T\d{1,2}\b|3Y3/.test(t)) return true;
   return false;
@@ -187,9 +273,21 @@ export function armarReporteCarrera(
   };
   const netoPorCliente = new Map<string, number>();
   const riesgoPorCliente = new Map<string, number>();
+  const nombreVisiblePorClave = new Map<string, string>();
   const lineasCruce: Array<{ cliente: string; resultado: number }> = [];
   const observacionesOrdenExceso: ObservacionOrdenExceso[] = [];
   const usadoProgresivoPorCliente = new Map<string, number>();
+
+  const registrarNombreCliente = (raw: string): string => {
+    const clave = normalizarNombreCliente(raw);
+    if (!clave) return "";
+    const existente = nombreVisiblePorClave.get(clave);
+    const limpio = String(raw ?? "").trim();
+    if (!existente || (existente === existente.toLowerCase() && limpio === limpio.toUpperCase())) {
+      nombreVisiblePorClave.set(clave, limpio);
+    }
+    return clave;
+  };
 
   let correlativo = 0;
   let ordenJuego = 0;
@@ -199,6 +297,7 @@ export function armarReporteCarrera(
     if (f.rol === "CRUCE") continue;
     if (!pasaFiltroModalidad({ es_adelantada: f.esAdelantada }, filtro)) continue;
     const resultado = f.resultado; // number | null (null = pendiente)
+    const claveCliente = registrarNombreCliente(f.cliente);
     if (f.rol !== "Consigue") {
       ordenJuego += 1;
       const i = indiceTicketDe(f.id) ?? `t-${correlativo++}`;
@@ -242,16 +341,16 @@ export function armarReporteCarrera(
       }
 
       // Verificación progresiva de límite de saldo por orden de juego (Jugador 1)
-      const dispTotal = disponibleDe?.(f.cliente);
-      if (typeof dispTotal === "number" && Number.isFinite(dispTotal) && apostoJuega > 0) {
-        const yaUsado = usadoProgresivoPorCliente.get(f.cliente) ?? 0;
+      const dispTotal = disponibleDe?.(f.cliente) ?? disponibleDe?.(claveCliente);
+      if (typeof dispTotal === "number" && Number.isFinite(dispTotal) && apostoJuega > 0 && claveCliente) {
+        const yaUsado = usadoProgresivoPorCliente.get(claveCliente) ?? 0;
         const dispAntes = Math.max(0, restarDinero(dispTotal, yaUsado));
         if (apostoJuega > dispAntes + 0.001) {
           const montoAceptado = dispAntes;
           const montoExcedido = restarDinero(apostoJuega, montoAceptado);
           observacionesOrdenExceso.push({
             orden: ordenJuego,
-            jugador: f.cliente,
+            jugador: nombreVisiblePorClave.get(claveCliente) ?? f.cliente,
             jugada: f.caballo ? `${jugo} (${f.caballo})` : jugo,
             montoSolicitado: apostoJuega,
             montoAceptado,
@@ -263,36 +362,49 @@ export function armarReporteCarrera(
                 : `Excedido ${Number.isInteger(montoExcedido) ? montoExcedido : montoExcedido.toFixed(2)} sobre su disponible restante`,
           });
         }
-        usadoProgresivoPorCliente.set(f.cliente, sumarDinero(yaUsado, apostoJuega));
+        usadoProgresivoPorCliente.set(claveCliente, sumarDinero(yaUsado, apostoJuega));
       }
     }
 
-    riesgoPorCliente.set(f.cliente, sumarDinero(riesgoPorCliente.get(f.cliente) ?? 0, riesgoDeFila(f)));
+    if (claveCliente) {
+      riesgoPorCliente.set(claveCliente, sumarDinero(riesgoPorCliente.get(claveCliente) ?? 0, riesgoDeFila(f)));
 
-    if (resultado !== null) {
-      netoPorCliente.set(f.cliente, sumarDinero(netoPorCliente.get(f.cliente) ?? 0, resultado));
-      lineasCruce.push({ cliente: f.cliente, resultado });
+      if (resultado !== null) {
+        netoPorCliente.set(claveCliente, sumarDinero(netoPorCliente.get(claveCliente) ?? 0, resultado));
+        lineasCruce.push({ cliente: nombreVisiblePorClave.get(claveCliente) ?? f.cliente, resultado });
+      }
     }
   }
 
-  // Si la modalidad de la carrera es CON CRUCES, calculamos el reembolso de comisión
-  // sobre min(brutoGanado, brutoPerdido) y lo sumamos al neto del cliente sin pintar filas CRUCE sueltas.
-  if (opciones?.modalidadCruce === "con_cruces" || opciones?.modalidadCruce === true) {
+  // Asiento contable interno por carrera: "Bono por Cruce de jugadas".
+  // Habilitado por defecto salvo que explícitamente se indique `modalidadCruce: "sin_cruces"` o `false`.
+  const conCruces = opciones?.modalidadCruce !== "sin_cruces" && opciones?.modalidadCruce !== false;
+  const asientosBonoCruce: AsientoBonoCruceCarrera[] = [];
+  if (conCruces) {
     const comPct = opciones?.comisionPct ?? 5;
     const { porCliente } = _reembolsosCruce(lineasCruce, "con_cruces", comPct);
-    for (const [, info] of porCliente) {
+    for (const [clave, info] of porCliente) {
       if (info.reembolsoCruce > 0) {
-        const actual = netoPorCliente.get(info.cliente) ?? 0;
-        netoPorCliente.set(info.cliente, sumarDinero(actual, info.reembolsoCruce));
+        const actual = netoPorCliente.get(clave) ?? 0;
+        netoPorCliente.set(clave, sumarDinero(actual, info.reembolsoCruce));
+        asientosBonoCruce.push({
+          concepto: "Bono por Cruce de jugadas",
+          cliente: nombreVisiblePorClave.get(clave) ?? info.cliente,
+          brutoGanado: info.brutoGanado,
+          brutoPerdido: info.brutoPerdido,
+          baseCruce: info.baseCruce,
+          bonoCruce: info.reembolsoCruce,
+        });
       }
     }
   }
 
   const notaExcedidos: NotaExcedido[] = [];
 
-  const filaResumen = (nombre: string, monto: number, id: number) => {
-    const riesgo = redondearCentavos(riesgoPorCliente.get(nombre) ?? 0);
-    const disp = disponibleDe?.(nombre);
+  const filaResumen = (clave: string, monto: number, id: number) => {
+    const nombre = nombreVisiblePorClave.get(clave) ?? clave;
+    const riesgo = redondearCentavos(riesgoPorCliente.get(clave) ?? 0);
+    const disp = disponibleDe?.(nombre) ?? disponibleDe?.(clave);
     const hayTope = typeof disp === "number" && Number.isFinite(disp);
     const excede = hayTope && riesgo > (disp as number) + 0.001;
     if (excede) notaExcedidos.push({ nombre, riesgo, disponible: disp as number });
@@ -302,11 +414,12 @@ export function armarReporteCarrera(
   const gananRaw = [] as Array<{ nombre: string; neto: number; fila: ReporteCarreraDatos["resumen"]["ganan"][number] }>;
   const pierdenRaw = [] as Array<{ nombre: string; neto: number; fila: ReporteCarreraDatos["resumen"]["pierden"][number] }>;
 
-  for (const [nombre, neto] of netoPorCliente) {
+  for (const [clave, neto] of netoPorCliente) {
+    const nombre = nombreVisiblePorClave.get(clave) ?? clave;
     if (neto > 0) {
-      gananRaw.push({ nombre, neto, fila: filaResumen(nombre, neto, 0) });
+      gananRaw.push({ nombre, neto, fila: filaResumen(clave, neto, 0) });
     } else if (neto < 0) {
-      pierdenRaw.push({ nombre, neto, fila: filaResumen(nombre, neto, 0) });
+      pierdenRaw.push({ nombre, neto, fila: filaResumen(clave, neto, 0) });
     }
   }
 
@@ -345,5 +458,6 @@ export function armarReporteCarrera(
     resumen: { ganan, pierden },
     notaExcedidos,
     observacionesOrdenExceso,
+    asientosBonoCruce,
   };
 }

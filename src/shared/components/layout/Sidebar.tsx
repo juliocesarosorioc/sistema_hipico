@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/shared/store/useAuthStore";
+import { rutaLoginConBasePath, limpiarAlmacenamientoSesionLocal } from "@/features/auth/lib/sesion";
 import { Guard } from "@/shared/components/ui/Guard";
 import {
   capacidadesDeRuta,
@@ -188,6 +189,7 @@ export function Sidebar({
   onNavegar,
 }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const perfiles = useAuthStore((s) => s.perfiles);
   const modoOperador = useAuthStore((s) => s.modoOperador);
   const esOperador = esRolOperadorExclusivo(perfiles, modoOperador);
@@ -223,17 +225,20 @@ export function Sidebar({
   const cerrarSesion = async () => {
     if (saliendo) return;
     setSaliendo(true);
-    try {
-      localStorage.removeItem("club_sesion_activa");
-    } catch {
-      /* sinop */
-    }
+    limpiarAlmacenamientoSesionLocal();
     try {
       await salir();
     } catch {
       /* aunque falle el borrado remoto, se sale igual para no quedar atrapado */
     } finally {
-      window.location.replace("/");
+      try {
+        router.replace("/login");
+      } catch {
+        /* sinop */
+      }
+      if (typeof window !== "undefined") {
+        window.location.replace(rutaLoginConBasePath());
+      }
     }
   };
 
