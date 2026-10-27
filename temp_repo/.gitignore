@@ -1,0 +1,37 @@
+node_modules/
+.next/
+out/
+dist/
+npm-debug.log*
+*.log
+
+# Variables de entorno
+.env
+.env.*
+!.env.example
+
+# Credenciales/llaves
+*.pem
+*.key
+
+# Respaldos/SQL y dumps
+*.sql.bak
+*.dump
+respaldos/
+_backup_*
+
+# Respaldos locales (datos de negocio; NO se versionan)
+
+# Residuos de desarrollo (salida de comandos, borradores scratch)
+.DS_Store
+.dev-*.txt
+x.txt
+tmp.tsx
+.opencode/work-state.md
+
+# Salida de compilación TypeScript
+*.tsbuildinfo
+.tsbuild-pruebas/
+
+# Supabase temp
+supabase/.temp/

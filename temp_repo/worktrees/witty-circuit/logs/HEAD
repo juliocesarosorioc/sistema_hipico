@@ -1,0 +1,5 @@
+0000000000000000000000000000000000000000 f6a088a2c77b4a9e2f1118697bded4b66dd35853 Julio <juliocesarosorioc@gmail.com> 1792446660 -0400	
+f6a088a2c77b4a9e2f1118697bded4b66dd35853 5c241a0c7e5c1a4a62f86144472844af1d1add79 Julio <juliocesarosorioc@gmail.com> 1792449750 -0400	commit: fix(gestion): restaurar declaracion de carreraLiquidada tras merge roto
+5c241a0c7e5c1a4a62f86144472844af1d1add79 5c241a0c7e5c1a4a62f86144472844af1d1add79 Julio <juliocesarosorioc@gmail.com> 1792449777 -0400	checkout: moving from 5c241a0c7e5c1a4a62f86144472844af1d1add79 to feat/reporte-logos
+5c241a0c7e5c1a4a62f86144472844af1d1add79 dbf3a496e1aefc097d7c23da7e1a6075602eadd6 Julio <juliocesarosorioc@gmail.com> 1792449792 -0400	commit: feat(logos): gestor de logos PNG para hipodromos y grupos
+dbf3a496e1aefc097d7c23da7e1a6075602eadd6 e61962dc4db52af38f64c095f4ffacc2626227e5 Julio <juliocesarosorioc@gmail.com> 1792449814 -0400	commit: feat(reporte): rediseno de liquidacion con logos y resultados condicionales

@@ -85,7 +85,7 @@ export const CATEGORIAS: Categoria[] = [
     titulo: "Operación Principal",
     emoji: "📂",
     items: [
-      { href: "/inicio", emoji: "🏠", txt: "Inicio (resumen)" },
+      { href: "/inicio", emoji: "🏠", txt: "Inicio" },
       { href: "/apuestas", emoji: "🐎", txt: "Apuestas", visibleSiempre: true },
       { href: "/saldos-reportes", emoji: "💵", txt: "Reportes" },
       { href: "/reporte-diario", emoji: "📑", txt: "Reporte Diario" },

@@ -1,0 +1,13 @@
+0000000000000000000000000000000000000000 ce6d2a7032cbb815ae3d9197335ce4eaed811610 Julio <juliocesarosorioc@gmail.com> 1792774838 -0400	branch: Created from HEAD
+ce6d2a7032cbb815ae3d9197335ce4eaed811610 e9648385067189a300e66e49d67fe518b94cc009 Julio <juliocesarosorioc@gmail.com> 1792774838 -0400	commit: feat: implement hierarchy for wager crossings
+e9648385067189a300e66e49d67fe518b94cc009 266787582f9b2e5751d928e0ab775c2acf8fb66c Julio <juliocesarosorioc@gmail.com> 1792776497 -0400	commit: fix: keep wagered races visible in career list
+266787582f9b2e5751d928e0ab775c2acf8fb66c 712e131000d83043c24ba01a79ed8be4f9137ffc Julio <juliocesarosorioc@gmail.com> 1792783752 -0400	commit: fix: retain registered races without horse data
+712e131000d83043c24ba01a79ed8be4f9137ffc c3ebb16f4f6459efaeacbf2d610972f730ca6641 Julio <juliocesarosorioc@gmail.com> 1792784817 -0400	commit: fix: keep race catalog as single source of truth
+c3ebb16f4f6459efaeacbf2d610972f730ca6641 0bc7ada6c27d4cc10f2dfae295609aba3094e245 Julio <juliocesarosorioc@gmail.com> 1792785545 -0400	commit: fix: use loaded races as sole catalog source
+0bc7ada6c27d4cc10f2dfae295609aba3094e245 f2d6067132251f62bf51aacd29f559bf45b0c758 Julio <juliocesarosorioc@gmail.com> 1792794067 -0400	commit: feat: automatiza registro y auditoría de carreras Gaceta
+f2d6067132251f62bf51aacd29f559bf45b0c758 c0aa4bfb0e0030e9dd95ad4d639ec42acd3ebfc3 Julio <juliocesarosorioc@gmail.com> 1792794264 -0400	commit: fix: avoid auth signout re-entry from callback
+c0aa4bfb0e0030e9dd95ad4d639ec42acd3ebfc3 ebf7b35c5012607aec47eba3aa33c7feb1f2a73a Julio <juliocesarosorioc@gmail.com> 1792799719 -0400	commit: feat: ampliar análisis hípico y expediente
+ebf7b35c5012607aec47eba3aa33c7feb1f2a73a df9b9c19be72c8124c4df7392d52ec419299412f Julio <juliocesarosorioc@gmail.com> 1792853366 -0400	commit: feat: mejorar pronostico tactico en proyecciones
+df9b9c19be72c8124c4df7392d52ec419299412f 3ec1f99814469a1154f9e488d36632736a90b38a Julio <juliocesarosorioc@gmail.com> 1792853814 -0400	commit: 2026 10 24 Actualiza 2
+3ec1f99814469a1154f9e488d36632736a90b38a 243ebd5f279e7592edb4bc3de2789704a2cac042 Julio <juliocesarosorioc@gmail.com> 1792856156 -0400	commit: feat: add permission-aware platform assistant
+243ebd5f279e7592edb4bc3de2789704a2cac042 3e1eff8afe6d967d1ce29d2ad9cbd591ba8331fd Julio <juliocesarosorioc@gmail.com> 1792877141 -0400	commit: feat: progressive saldo validation and preview observaciones

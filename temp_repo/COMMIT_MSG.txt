@@ -1,0 +1,39 @@
+fix(tablas-fijas): snapshot de la venta, pago correcto y comision de la casa
+
+Caso Shaflan (LA RINCONADA C1, 18/10/2026): compro 3 tablas fijas del 9 y el
+resumen de la carrera no mostraba el monto a pagarle; ademas la "Comision de la
+casa" salia inflada.
+
+Causa: la liquidacion de la carrera resolvia los tickets de tabla fija con el
+motor universal. Ese motor lee `nombre_jugada` ("TABLA FIJA (HIPO Cn)"), que NO
+trae el numero de ejemplar, asi que marcaba al ganador como PERDEDOR con premio 0
+y encima le cobraba la comision de "jugada perdedora" (monto x pct) en vez de
+solo sobre la ganancia.
+
+Cambios:
+
+- SQL `club_vender_tabla_fija`: guarda en `nota_auditoria` el snapshot con el
+  PRECIO DE TODOS LOS EJEMPLARES al momento de vender (`valores_congelados`) y su
+  suma (`suma_base_congelada`). Excluye a los ya retirados.
+- SQL `club_liquidar_tabla_fija`: pago = `cantidad_tablas x premio_por_tabla`
+  (regla del legacy js/saldos.js:123), no `premio x pts / base`. Si despues de la
+  venta retiran a un ejemplar, su valor congelado ajusta el premio del ticket ya
+  vendido (`premio x (1 - sumaRetirados/base)`), usando el snapshot. Devuelve
+  `pagado` y `comision` para el resumen.
+- `saldos.ts`: `aplicarLiquidacionSaldos` EXCLUYE los tickets `TABLA FIJA%`
+  (como ya hacia con `MARCA %`); las liquida su RPC.
+- `pagarYCerrar.ts`: al liquidar la carrera se liquidan por RPC las tablas fijas
+  ABIERTAS de esa jornada/hipodromo/carrera y se expone `tablasFijas`
+  (pagado + comision) en el resumen.
+- `rpc.ts`: `liquidarTablaFija` devuelve `pagado` y `comision`.
+- `GestionJugadasModule.tsx`: el modal "Liquidar" muestra la linea "Tablas fijas:
+  N tabla(s) - a pagar X - comision Y" con el monto que se le paga a cada jugador.
+- `retiros-nucleo.ts` / `retiros.ts`: se extrae `premioConRetiros()` (formula
+  pura, testeable) para que la propagacion de retiros y su prueba calculen igual.
+- `pruebas/tablas-fijas-liquidacion.test.ts`: blinda el snapshot, la formula de
+  pago, el ajuste por retiros, la exclusion del motor universal y el resumen.
+
+Verificacion: `npx tsc --noEmit` sin errores; `node pruebas/correr.cjs` →
+53 archivos, 2047 aserciones, SUITE OK.
+
+SQL a aplicar a mano en Supabase SQL Editor: `sql/tablas_venta.sql`.

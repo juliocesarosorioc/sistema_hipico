@@ -1,0 +1,24 @@
+[core]
+	repositoryformatversion = 0
+	filemode = false
+	bare = false
+	logallrefupdates = true
+	symlinks = false
+	ignorecase = true
+[remote "origin"]
+	url = git@github.com:juliocesarosorioc/sistema_hipico.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "main"]
+	remote = origin
+	vscode-merge-base = origin/main
+	merge = refs/heads/main
+[branch "feat/reporte-logos"]
+	remote = origin
+	merge = refs/heads/feat/reporte-logos
+[branch "feat/jerarquia-cruces"]
+	vscode-merge-base = origin/main
+	remote = origin
+	merge = refs/heads/feat/jerarquia-cruces
+[branch "gh-pages"]
+	remote = origin
+	merge = refs/heads/gh-pages

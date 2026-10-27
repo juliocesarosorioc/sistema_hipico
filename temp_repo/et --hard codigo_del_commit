@@ -1,0 +1,362 @@
+[33m0a7b830[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m fix(deploy): configurar basePath y output export para GitHub Pages
+[33m6c5de53[m fix(utils): limpiar duplicados de funciones financieras en utils.ts
+[33m33a4ea6[m feat(fase5): incorporar estado caballo invalidado en modelos y editor de tablas fijas
+[33m8dd8a7a[m feat(fase4): asegurar alternativas como array definido en ResultadoInterpretacionFecha
+[33mcbbf723[m fix(fase3): resolucion final de supabase null check en proyecciones y contabilidad
+[33maf81670[m chore(fase1): eliminar definitivamente la carpeta legacy de la raiz
+[33mab6b89d[m feat(arquitectura): blindaje seguridad, inteligencia hipica con historial, fix carga gacetas, caballo invalidado y contabilidad NIIF
+[33m1f0de68[m feat: Probar Plataforma de Inteligencia
+[33m2f39ba6[m feat: agregar grupo de inteligencia hipica en menu legacy
+[33mc2b1fe7[m feat(inteligencia-hipica): agregar seccion Proyecciones con modal Godet & Actuarial
+[33mddb7feb[m feat(godet): prospectiva actuarial michel godet con parciales 400m, modo en vivo, gualdrapas oficiales y modal pizarra
+[33mbadd814[m feat(pollas): estandarizar selector de hipódromos con SearchableSelect
+[33m524d973[m feat(reportes): mostrar cantidad x monto y paga por tabla, y resumen de retiros
+[33m8b7d1ec[m style(gestion): colocar MODO MANUAL junto a Con Cruces y reducir COM %
+[33med76ff2[m fix(taquilla): aceptar '1P de 2-3' y normalizar proporciones '10a3,5'
+[33m5cb9410[m fix(reportes): mostrar errores al anular desde reporte y toggle anuladas
+[33m1f5cacb[m feat(reportes): editor completo desde carrera para todas las ventas
+[33m702a904[m fix(marcas): mostrar marca y rival con un circulo cada uno
+[33md2b9815[m fix(monitor): la barra de Progreso de la jornada vuelve a avanzar
+[33mad1cac6[m feat(reportes): columna-simbolo de modalidad (en vivo/adelantada) y su edicion en el CRUD
+[33m118d172[m fix(reportes): las jugadas anuladas no suman ni restan en ningun reporte
+[33m67e6350[m feat(fase2): unificar modales editoriale, navegacion por categorias, buscador de hipodromos con bandera/logo y logos realtime
+[33mb893947[m feat(seguridad): FASE 1 - endurecer auth, presets RBAC y aislamiento de Dueno de Grupo
+[33m271278a[m wip: remates dividend calc reference
+[33m1ca0ff2[m chore: sync fixes basePath + anti-hang login/portal
+[33me362fa9[m fix(auth/portal): liberar siempre el boton/cargando aunque falle o se cuelgue
+[33m45c419c[m fix(portal): no saltar a la raiz del dominio (basePath de GitHub Pages)
+[33m8d57594[m fix(portal): /portal es ruta publica (AuthBootstrap lo expulsaba a /login)
+[33mdfe1987[m fix(pages): trailingSlash en el export para que /portal/ no de 404
+[33ma3d66f3[m fix(portal): la contrasena del login no se recorta (maxLength=8 cortaba JUGADOR123)
+[33md3834bc[m fix(portal): CORS en portal-auth para entrar desde GitHub Pages
+[33m8866f70[m fix(logos): guardar y verificar logos de hipodromo y grupo (sin falsos exitos)
+[33mec05fcf[m fix(auth,gestion): logout que no cuelga, llegadas solo si esta liquidada, motivo + recalculo al cambiar el resultado
+[33m6b190ad[m feat(sql): jugador de prueba del portal (jugador_prueba1) en el grupo ARGENTINA
+[33m2a87552[m fix(clientes): bandeja de reclamos ordena por creado_at (tickets_jugadas no tiene created_at)
+[33m5669f50[m test(portal): ventana de reclamos y modal realizar jugada + toggle en grupos (PROMPT #6)
+[33m3f59053[m feat(portal): modal Realizar Jugada y reclamos de jugadas no relacionadas (PROMPT #6)
+[33md2746e2[m test(grupos): blindan visibilidad del principal y atribucion de cuenta entre grupos (PROMPT #5)
+[33m62baa15[m fix(sql): indice de adelantadas sobre fecha_registro (tickets_apuestas no tiene columna fecha)
+[33mbb43660[m fix(sql): indice de cruce de grupos sobre fecha_registro (tickets_apuestas no tiene columna fecha)
+[33mbe6fd9b[m feat(grupos): visibilidad compartida del grupo principal y atribucion de cuenta al grupo origen (PROMPT #5)
+[33m13d5605[m feat(jugadas): modalidad de tiempo en vivo vs jugada adelantada
+[33mb44206b[m feat(portal): bitácora privada en grupos externos, autogestión de perfil y formas de pago múltiples (PROMPT #7)
+[33m2b86892[m fix(liquidacion): no dejar jugadas archivadas en otra jornada sin cobrar ni pagar
+[33m432c39f[m feat(preview): columna Estado solo Liquidada/Pendiente/Anulada y monto en riesgo en gris
+[33m3f191d7[m feat(grupos): pestanas Grupos/Banquero/Tipos y fila de grupo en una linea sin scroll
+[33m0d5c06d[m feat(preview): mostrar simbolo ganó/perdió y saldo por cada jugador en la pre-visualización
+[33mba319cf[m PROMPT #3: grupos en una sola linea, seccion de convenios por tipo de jugada eliminada y reporte de comisiones por convenio rediseñado (detalle por jugada, KPIs y exportaciones WhatsApp/PNG/Excel)
+[33m577dc9f[m PROMPT #2: mensajeria CSS estandarizada + logos reactivos en tiempo real
+[33mbc59e69[m feat(nucleo): estados maestros, edicion total con notas, sync n->nombre de ejemplar y recalculo integro
+[33mcfbed2b[m feat(reporte): MARCA/TABLA FIJA con discos y PP=10/10 en los rotulos
+[33m7b8ae7a[m feat(reporte): rotulos compactos de TABLA FIJA y MARCA en la Jugada
+[33m132a4d1[m fix(reporte): logos de hipodromo y grupo siempre frescos en el reporte
+[33md6c2284[m feat(bloques-1-3): reversion de liquidacion, pre-visualizacion persistente y cobrado por convenio
+[33me61962d[m[33m ([m[1;31morigin/feat/reporte-logos[m[33m, [m[1;32mfeat/reporte-logos[m[33m)[m feat(reporte): rediseno de liquidacion con logos y resultados condicionales
+[33mdbf3a49[m feat(logos): gestor de logos PNG para hipodromos y grupos
+[33m5c241a0[m fix(gestion): restaurar declaracion de carreraLiquidada tras merge roto
+[33mf6a088a[m chore(bloques-3-6): ajustes parciales (cobrado en totales tablas, layout modal comisiones)
+[33m8a3a1d2[m feat(cruces-puestos): agrupar por cliente + soporte permite_cruces; UI grupos/modal responsive y fix guardado comisiones; precarga modal resultados; limpia UI Gestión Jugadas; doc plan Pollas
+[33m16dbb05[m feat(liquidacion): motor maestro idempotente de re-liquidacion post-carrera
+[33m1a2b826[m fix(reporte): tickets PERDEDOR de TABLA FIJA no se forzaban a false (re-evalúan contra pizarra)
+[33mbbb1a16[m fix(liquidacion): registro unico de resultados y pago de toda jugada (tablas fijas incluidas)
+[33m630b605[m fix(tablas-fijas): liquida la jornada correcta en cualquier hipodromo/dia y sella fecha_carrera al vender
+[33ma867473[m fix(tablas-fijas): el pago ya no queda atascado — re-liquidar repara los tickets mal decididos
+[33m13e92dc[m fix(tablas-fijas): snapshot de la venta, pago correcto y comision de la casa
+[33m04e7c93[m feat(grupos): comision por convenio de producto por grupo + reporte
+[33m025a4ff[m fix(pollas): crear polla en bases con la columna vieja hipodromo
+[33mad96d79[m feat(tablas): Enter en Valor baja al siguiente y grilla de correccion alineada
+[33m58d9181[m fix(taquilla): boton de saldos relee la base, dos clientes obligatorios y grupo por defecto en Marcas
+[33m5d77bd7[m ui(tablas): Enter en el valor del ejemplar guarda el cuadro
+[33m328215b[m fix(sql): v_jugadas_monitor expone grupo_cobro_id (error 42703 g.grupo_cobro_id)
+[33m43ae884[m feat(reportes): editar, anular y restaurar la venta desde el reporte (perfil Administrador Principal)
+[33m81ddb73[m fix(jugadas): el Monitor tolera la vista vieja sin grupo_cobro_id (evita 400)
+[33ma1c4a30[m ui(marcas): grupo y cliente se buscan por nombre en el modal de venta
+[33mf87c9ef[m ui(tablas): el modal de cuadros pinta el numero con la paleta hipica canonica
+[33m1e747b7[m feat(tablas): la venta va al grupo de la sesion y el jugador se busca por nombre
+[33m4d712ef[m feat(marcas): boton de reporte de marcas en el panel
+[33m88f053f[m ui(gestion): barra inferior uniforme en una sola linea
+[33m988c03b[m fix(gestion): el semaforo refleja la liquidacion central
+[33m8017d3f[m fix(reportes): la jornada de la jugada es la fecha de la carrera
+[33m5c66599[m fix(tablas): el monitor de tablas publicadas abre en el dia actual
+[33m76c34c2[m sql(jugadas): mover jugadas del 17/10/2026 a ARGENTINA con comision 5%
+[33m292cec2[m feat(grupos): historial de comisiones por fecha de vigencia
+[33mfb14af9[m feat(pollas): premios por porcentaje con minimo y caballos que no valen
+[33m1e6ed75[m fix(saldos): filtro por dia y rango independiente en el consolidado
+[33m077b7bb[m sql(pollas): agregar columnas faltantes en la tabla viva (hipodromo_id, grupo_id, notas)
+[33m28cef8c[m sql(jugadas): mover jugadas de Valencia C9 del 18/10 al 17/10 en grupo ARGENTINA
+[33m11eed8a[m fix(reportes): filtrar tablas fijas vendidas por el dia de la carrera
+[33mda0c245[m test(comision): actualizar expectativas para default 5%
+[33mf442be1[m fix(comision): ajustar comision default a 5% para jugadas entre tercios
+[33m96da923[m fix(gestion,liquidacion,reportes): corregir edición caballo (un solo ejemplar), usar comisión por grupo, filtrar anuladas y segmentar reportes por grupo; feat(marcas): mejorar botón reporte
+[33mf4226a4[m fix(gestion): mejorar UX edición de caballo (no repetir ejemplar/caballo)
+[33maa37ad6[m feat(gestion): recalcular carrera completa al corregir/anular/restaurar jugadas (revertir + re-liquidar). usa mismo decisor, excluye anuladas y conserva premio de tabla del ticket
+[33me2ab03b[m feat(gestion): editar jugadas guardadas de una carrera (aunque este cerrada) + paleta 1-20 unificada
+[33me0dd06b[m feat(gestion): mostrar botón editar carrera cerrada siempre (sin condiciones)
+[33mcec9154[m feat(gestion): mostrar/permitir editar resultado cerrado para josorioc sin restricción de permiso
+[33m604e256[m feat(gestion): mostrar editar carrera cerrada cuando hay pizarra central
+[33m3f4e141[m fix(tablas): normaliza hipodromo al marcar tabla como Cerrada
+[33m2d7cf75[m fix(gestion): la carrera se cierra siempre al confirmar los resultados
+[33m8a19379[m fix(colores): texto oscuro AA en las gualdrapas 5, 8, 9 y 10
+[33m923e41d[m fix(pruebas): correr.cjs contaba mal los resumenes que dicen «N pasan, M fallan»
+[33ma7bfcdf[m feat(colores): gualdrapas oficiales 1-12 como unica fuente en toda la app
+[33mc82517a[m fix(rls): politicas de gaceta_procesada para authenticated
+[33mf2cc45b[m feat(gestion): resultados en blanco, confirmar cierra la carrera y confirmacion al modificar jugadas
+[33m488f846[m feat(marcas): reporte de marcas jugadas en el modal de Marcas
+[33m1d4a472[m feat(tablas): agrupacion dual por fecha de venta vs fecha de carrera
+[33mff9b20a[m feat(clientes): cuaderno manual de jugadas del cliente entre varios grupos
+[33m050f08a[m feat(inicio): cerrar y reabrir un dia concreto de la Semana Activa
+[33mc209d7e[m feat(tablas-fijas): el reporte muestra todos los dias por defecto
+[33me1843ed[m feat(marcas,gestion): carga de resultados unificada y semaforo manual correcto
+[33mcb0ae80[m fix(gestion): refresca saldos tras pagar — arregla "cargar más jugadas no se toma"
+[33md4eecfd[m feat(gestion): observaciones y saldo ajustado (S/S) en la Relación; editar resultados ya pagados
+[33m7f71799[m feat(reporte-diario): agrega reporte diario por carrera (admin + portal)
+[33m83a9511[m feat(reportes): reestructurar tabla de jugadas del Reporte de Liquidacion
+[33mee9e97b[m feat(gestion): preliminar con saldo ajustado (S/S), observaciones y botón unificado
+[33mf7a8ae8[m fix(comision): conserva el 0% (ya no lo coacciona a 2,5%/5%)
+[33m79081cf[m fix(grupos): quita "Clientes por Grupo" y arregla el RLS de banquero_convenio
+[33mec58e61[m feat(tablas): reporte de tablas fijas vendidas desde el monitor
+[33m80a801d[m fix(reportes): pareo se muestra PP + ejemplares '1 X 8' (nunca 10/10); el 'da' descuenta comision igual que WhatsApp
+[33mb27106b[m feat(grupos): centralizar comision de Jugadas entre Tercios en el % del grupo; precargar/editar resultados; fix alta de clientes (comision NOT NULL)
+[33mb19b136[m fix(reportes): paridad WhatsApp vs Reporte de Liquidacion (misma data)
+[33m6d53285[m fix(whatsapp): dedup tickets_apuestas al generar mensaje; ui(marcas): aclarar no jugables; ui(gestion): unificar botón Resultados
+[33m51aa534[m perf: bundle dinamico, N+1 de liquidacion, cache de registro y memo del Monitor
+[33md503bdc[m feat(gestion-jugadas): arranque en blanco + guard hipodromo/carrera, semaforo verde y filas mas compactas
+[33m83d4ae6[m fix(marcas): el editor de marcas abre con la fecha seleccionada (antes caia en hoy y traia la config de otra carrera)
+[33m5909b8a[m fix(reporte): llegada usa colorDiscoNumero para discos de ejemplares
+[33m063a939[m fix(reporte): resultados cargados como menú vertical a la derecha, filtrado por hipódromo y ordenado
+[33m76d35a5[m fix(reporte): mover 'resultados cargados' a la derecha y ordenar por hipódromo+carrera
+[33mcd4fb8c[m fix(clientes): detectar 0 filas al guardar/eliminar; limpiar cache cruzado con grupos; permitir filtro por grupo en listarClientes. feat(reporte): ordenar positivos desc y negativos asc. fix(reporte): filtrar cartera por grupo en liquidación; discos de llegada más grandes con color de caballo.
+[33m95f5b80[m docs: marcar Pollas, Ingresos/Avales y tsbuildinfo como hechos en la planificacion
+[33mc744ba2[m Taquilla: BetSlip persiste la venta en tickets_apuestas (contexto + cliente + venderJugada)
+[33m388e2f7[m docs: registrar el fix de saldos por fecha de jornada (item 2)
+[33md6b91a3[m saldos: liquidar por la fecha de la jornada, no por hoy
+[33m66917f7[m Item 7: match sin fraccion se juega PP (jugada=PP, caballo=expresion)
+[33m610d049[m carga rapida: interpretar las jugadas a premio con A y decimal (punto o coma) y clasificarlas como Jugadas a Premio; test de las 19 lineas (item 6)
+[33m434fdcb[m docs: marcar los items 1, 3, 4 y 5 como hechos en la planificacion
+[33mbcfa0a3[m historial: inbox de pendientes (carreras con jugadas sin resultado) con acceso al reporte, tomado del monitor (item 4)
+[33m8eab7fb[m jugadas: el monitor muestra el progreso de la jornada por hipodromo (programadas, con resultado, liquidadas) desde el registro central (item 3)
+[33m977ea2a[m gestion: reabrir una carrera ya liquidada para agregar jugadas y liquidar solo lo agregado, con capacidad y auditoria (item 1)
+[33md5f329e[m grupos: el listado de grupos va primero sin tope y el alta pasa a un modal (item 5)
+[33m1c65079[m saldos: el rotulo de pareo en el reporte muestra la proporcion (PP (10/10) si no declara fraccion)
+[33mb29b4f6[m gestion: Historial lista los resultados cargados del dia, filtrados por hipodromo, y abre el reporte de la carrera (item 11)
+[33m5c46f60[m liquidacion: el reporte de carrera muestra cuanto arriesgo cada jugador con asterisco y nota al pie si excede su disponible (item 10)
+[33mdbfcdef[m pruebas: migrar la suite y los scripts auxiliares a la estructura feature-first
+[33m370642c[m planificacion: items 10 y 11 (arriesgo en el reporte de liquidacion e HISTORIAL de resultados)
+[33mc729ad4[m whatsapp: la relacion de resultados liquida con el motor contra la pizarra (no premio_pagar)
+[33m529a006[m argentina: actualizar avales y modo de juego de 24 jugadores (sql)
+[33m9e98a64[m reporte: lee cliente_consigue_* (vuelve a mostrar el DA y los ganadores)
+[33m9ec6694[m jugadas: PP=10/10 para MATCH sin fraccion (carga individual) y planificacion
+[33m0308968[m carga manual: color por estado y fecha de la jornada; planificacion
+[33m9c6f03a[m resultados: navegacion por teclado y copia del reporte a WhatsApp
+[33m56195e0[m dupleta: hipodromos con nombre propio y buscables
+[33m04fe7f6[m docs: changelog del reporte por carrera (da, colores, whatsapp)
+[33m442e889[m reporte: cargar una vez abre el reporte con whatsapp
+[33m524248f[m reporte carrera: muestra al que da, colores y una hoja
+[33m931b356[m sql mvp: clientes y saldos del grupo (75)
+[33m9725354[m fix tablas: la fecha ya no limita, cada tarjeta se publica en su dia
+[33m00514d7[m prueba commit
+[33m46ec966[m fix(ia): corrige lectura del numero de carrera (romanos y ordinales escritos)
+[33m9d872c6[m fix(remates): toma las carreras recien cargadas sin recargar + docs
+[33meadf5a4[m feat(realtime): publica la matriz carreras y refresca los modulos al instante
+[33mb997e3f[m docs: actualizar rutas internas a la estructura feature-first (core/shared/features)
+[33mc5cdd83[m fix(repo): restaura sql/ (73 scripts), pruebas/ (56 tests) y el workflow de GitHub Pages, eliminados en bb259d3
+[33m1cabab6[m chore(estructura): consolida el sitio legacy en legacy/ y limpia la raiz
+[33m2b7a5de[m feat(liquidacion): reporte de liquidacion filtrable en Gestion de Jugadas + manual del motor y etiqueta universal
+[33m00631c7[m feat(jornadas): permite cargar/registrar/publicar carreras de dias posteriores (fecha de jornada en Gaceta IA y recarga del programa al cambiar la fecha)
+[33m891787b[m fix(carreras): el cargador de IA da de alta las carreras en el registro central (matriz carreras) para que aparezcan en todos los modulos
+[33m19818ad[m chore(limpieza): elimina respaldos redundantes (recuperables en git), mueve backup de datos a respaldos/ (ignorado), borra scratch (tmp.tsx, x.txt, tsbuildinfo, out/) y ordena .gitignore
+[33m9c44321[m refactor(estructura): reorganiza src en core/shared/features (feature-first); agrupa componentes+lib por dominio, reescribe imports/aliases y documenta docs/ESTRUCTURA.md
+[33meb5a62b[m refactor(estructura): bloque 1 - mueve store/ui/types/utils a shared/ y core/, actualiza imports y aliases webpack
+[33m2bdb534[m fix(gestion): HistorialReporte con datos reales (depositos, transferencias y carreras con resultado por fecha) en vez de arrays quemados
+[33mbb259d3[m chore(optimize): remove non-runtime files (tests, SQL/migrations, bot, CI, opencode state); keep src/, public/, configs, legacy js/html/css
+[33mb09a37b[m feat(whatsapp): envia Tablas y Marcas al grupo vinculado por la Cloud API
+[33m7c116e1[m fix(jugadas): estima por bloques la COMPUESTA con COMBINADA anidada (1P Y 1Y2N)
+[33mcdf2e84[m Taquilla: match (4x7) + tope de saldo en orden; preliminar y reporte en imagen
+[33mbe03956[m sql: carga MVP actualizada a 120 clientes con saldos corregidos y marca libre (OK/aviso)
+[33m334370c[m feat(profesionalizacion): fases 1-4 (mocks, EmptyState, blindaje josorioc, creacion de grupos)
+[33m2c614da[m feat(mensajes): la cabecera muestra el nombre del grupo de WhatsApp
+[33m0b85657[m fix(resultados): premio_pagar vuelve a ser el BRUTO (mensaje del grupo + banquero)
+[33m64b7bef[m fix: liquidacion de resultados en NINI combinados, anuladas y devolucion de saldos
+[33me9c0b09[m feat: modulos Reglas de Jugadas y Operadores + Carga Rapida con IA
+[33mddc31df[m sql: ARGENTINA carga + nombre unico por grupo + mueve los mal ubicados en PRINCIPAL
+[33m45cc1e6[m sql: ARGENTINA respeta clientes_nombre_key (no rompe con nombres en otros grupos)
+[33mea4072c[m sql: registra clientes, saldos y avales del grupo ARGENTINA (idempotente)
+[33m4b5a6e9[m sql: carga de clientes y saldos del grupo MVP (idempotente)
+[33m2ca2e88[m hipodromos: nombre propio con inicial mayuscula + logout real (auth.signOut)
+[33mf88aa7e[m UI: fuente Inter + nombres de hipodromos en formato propio en todos los modulos
+[33md9d4e64[m pollas/remates: filtro por grupo tolerante + migracion pollas.grupo_id
+[33m39e3c1c[m gunbold: asignar grupo de venta al usuario + quitar permisos destructivos de Clientes
+[33m7786f4e[m Aislamiento y filtro por grupo en todos los modulos + editar precio por combinacion en Dupleta
+[33m6a98fc2[m Taquilla: 1*6 = caballo 1 contra 6 (mismo motor para x y *), alias 10/8 y 3/3
+[33mc6a7e2f[m Resultados: paridad del 'da' en toda derrota, bruto del rival en acierto, pareo con '*' y caballo '10a8 1*6'
+[33m7e55296[m fix(resultados): cierre POSITIVOS/NEGATIVOS con signo (+/-) en cada cliente
+[33m642e29e[m fix(resultados): liquidacion suma cero Juega/Consigue; compuesta '1Y2N Y 2N' ya acredita al ganador (antes invertida) y el acierto debita -monto al da; cierre con centavos
+[33me666371[m feat(carga-individual): quita la linea final 'Por saldo de' del aviso (ya lo dicen las lineas por jugador)
+[33m1a5df4e[m feat(carga-individual): aviso de saldo con formato 'a <nombre> le queda <disponible> en esta su jugada con <monto>' y boton global para copiar todos los avisos
+[33m12543d5[m feat(carga-individual): quita etiquetas de modalidad en Jugada/Caballo, separa saldo y monto autorizado en filas mas altas, y agrega copiar aviso 'Por saldo de <menor>' cuando el saldo no alcanza
+[33m84d3600[m fix(carga-individual): pasa la columna CABALLO al motor; las compuestas (1y2n y 2n) ya no cotizan en 0
+[33m8190d1d[m fix(carga-rapida): ignora el indice de lista N) del plano para no romper el match de clientes
+[33m90d9429[m fix(sql): limpiar_fks_argentina descubre FKs reales a clientes (sin tablas/columnas inventadas); restaurar solo borra ARGENTINA
+[33md8d028b[m fix(sql): limpiar_fks_argentina no borra por cliente1_id/cliente2_id (no existen; 42703)
+[33ma39c6a6[m feat(plano): relación de jugadas en formato TERCIOS (🐎, FECHA/HIPÓDROMO, numeradas, plano referencial)
+[33m0f8fb6a[m feat(taquilla): jugadas compuestas con guion coherentes + alerta de incoherencia
+[33ma85e6fe[m fix: expandir guiones combinados tipo 1p-1y2
+[33m4b656a2[m feat(taquilla): expandir guiones combinados (1p-1y2) en carga rápida
+[33m807b347[m feat(taquilla): motor p/n con normalización, división 50/50 y liquidación
+[33mbc7efde[m feat(taquilla): añadir procesador/liquidador de jugadas por puestos (p/n) con fraccionamiento 50/50
+[33m9720828[m fix(gestion): hacer Carga Rápida más visible (z-index, ancho y alto)
+[33m59cf7d3[m fix(gestion): permitir cambiar carrera manualmente y evitar auto-reset; ajustar selector carrera
+[33m1c7e2e6[m sql: script para limpiar FKs antes de restaurar clientes ARGENTINA
+[33m271a80e[m fix: corregir template literal en PlanoPreliminar
+[33m24163d1[m feat(gestion): agregar HistorialReporte y botón/atajo Ctrl+H
+[33m278f4ee[m feat(gestion): integrar PlanoPreliminar en GestionJugadasModule (Ctrl+Q y botón)
+[33m2e39435[m feat(gestion): agregar componente PlanoPreliminar con barra de filtros, botonera y plano de texto
+[33m32a932e[m sql: crear grupo MVP y cargar clientes con saldos (libre/pozo)
+[33m7daae7c[m sql: actualizar saldos/aval clientes ARGENTINA desde hoja
+[33m453dab1[m sql: restaurar clientes asignados al grupo ARGENTINA
+[33m88323b3[m sql: script para restaurar clientes asignados al grupo ARGENTINA
+[33md3a2b57[m fix(clientes): conservar columnas al crear cliente (evita 400 en REST con RLS) + ajustes
+[33mb69b945[m feat(gestion-jugadas): generar mensaje WhatsApp de resultados al cargar pizarra + modal preview con copiar/enviar; mensajeResultadoDeCarrera usando motor universal; extiende reportGenerator para pendiente; agrega test mensaje-resultado
+[33m4220067[m Taquilla persistente (BetSlip a tickets_apuestas) + WhatsApp Cloud API, normalizador y maestro
+[33md884d39[m Deploy automatico a GitHub Pages (basePath /sistema_hipico + workflow)
+[33m88d76c2[m Barrido pre-publicacion: pizarra de resultados unica en todos los modulos, ejemplares ordenados 1..N, nombres propios de hipodromo y limpieza del repo
+[33m52619b7[m Actualización 06/10/2026
+[33m7c5179c[m Actualización 20261005
+[33m8b8b0ff[m ﻿Quita los decimales de los puntos en pantalla y en impresion; el calculo intacto
+[33m608444d[m Retira el modulo Marcas de punta a punta y arregla la comision de sus grupos
+[33m9b3b58f[m Reembolso por retiro en transaccion y liquidacion que ya lee tickets
+[33med51a14[m Tablas fijas: liquidacion con pago sobre pts congelado y comision del grupo sobre la ganancia
+[33m98f0b88[m Tablas fijas: la venta ahora es una transaccion con ticket, saldo y contador
+[33maa42a2d[m Impresion: sin decimales en los valores de ejemplares y mas ancho para los nombres
+[33m747fc84[m Clientes y Grupos: lectura para el taquillero, escritura solo admin
+[33ma4ae426[m Puestos: un solo motor para las 5 modalidades
+[33m1f7897a[m Taquilla: notacion de ejemplares por cliente y tope de riesgo por saldo
+[33mf632b45[m Ordena las carreras de Tablas Fjas por numero y arregla los badges de ejemplar
+[33m4f6eb68[m Agrega migracion para unificar la data de carreras con sus resultados
+[33me800bad[m Compacta Gestión de Jugadas y armoniza su cabecera con la gualdrapa
+[33m7e12d7c[m Aplica la paleta de gualdrapas a los numeros de ejemplar en todos los modulos
+[33mf68a693[m Unifica la paleta de gualdrapas en una sola fuente canonica
+[33m5b781a3[m carreras: el filtro arranca en todos los hipodromos y el dia en hoy
+[33mfc3ed30[m carreras: monitor de hipodromos con filtro y CSS centralizado
+[33m28ae65c[m dupletas: bandera de la matriz un 80% mas grande
+[33m49314ec[m dupletas: sigla de pais, fondos alternos, bandera +30% y premio +30%
+[33mb58fe35[m ejemplares: fusiona Carreras del Dia como pestana del modulo
+[33m01ea623[m dupletas: primera columna en una sola linea y centrada verticalmente
+[33mc5b91ad[m marcas: quita el modal de pago 120/100
+[33m6103fb7[m contabilidad: ingresos/avales, caja unificada, bancos y monedas
+[33m035e832[m clientes: se habilitan las opciones faltantes del modal y se evitan perdidas de datos
+[33md20f97b[m grupos: rpc con p_datos jsonb y sidebar protegido por permiso
+[33m253ef3d[m gestion y dupletas: colores por contenedor, retiro al presionar, dia primero y 120/100
+[33m883377a[m retiros: servicio central que propaga a tablas, marcas, dupletas y gestion
+[33m0687580[m carreras del dia: editor central por hipodromo y fecha con ejemplares solo por numero
+[33m71711d4[m dupletas: hipodromos por whitelist VE+USA, sin carreras repetidas y matriz en blanco al deseleccionar
+[33ma02c36c[m hipodromos: incluir los de Estados Unidos en la data (whitelist VE + USA)
+[33ma2e51b9[m marcas: completar sección — filas compactas, formato MARCA NV, jugadas posibles/no posibles, condición debutantes con detección y observación, modal de venta con datos reales de grupo/cliente
+[33m16f1b8a[m dupletas: auto-genera la matriz al elegir las carreras y preview inmediato de los caballos
+[33m3d0035b[m dupletas: contenedor superior más compacto (menos interlineado y espacio entre campos)
+[33m2d1a1f4[m dupletas: número de caballos horizontales siempre arriba (uniforme)
+[33m3267972[m feat(dupletas): nombres +30% (17px), horizontal en 2 líneas, vertical con bandera/nacionalidad bajo el nombre y notas marginales de retiros
+[33mec81493[m feat(dupletas): horizontal nombre hasta 2 líneas + bandera/nacionalidad al final; vertical columna ensanchada con nombre en 1 línea y bandera/nacionalidad debajo
+[33m3aa9c95[m fix(dupletas): mayor holgura en el ancho de columna con factor 1.12 + margen 16 para que el nombre no se corte y quepa en una sola línea
+[33m4880b66[m feat(dupletas): nombres de los ejemplares más grandes (13px + bandera 17) para lectura en pantalla
+[33m08285d0[m feat(dupletas): nombres igual que antes y caballos horizontales alineados al centro vertical de la celda
+[33mb19764c[m feat(dupletas): la matriz siempre cabe sin barras de desplazamiento y nombres intercalados en contraste
+[33m19c4f0c[m feat(dupletas): número del vertical a la izquierda seguido del nombre, horizontal centrado con nombre al fondo y nombre del jugador más grande
+[33maab49e8[m feat(dupletas): columnas horizontales de ancho dinámico (nombre en una línea) y número centrado arriba en la vertical
+[33m01e8aa9[m feat(dupletas): matriz ajustada y exportación PDF/PNG en una hoja horizontal
+[33mb17f460[m feat(dupletas): UX/UI de la matriz — nombres completos, montos 2× y contraste por celdas
+[33m75aeef7[m fix(tablas): Monitor solo muestra las tablas del día y botón de Ensamblaje dentro de su sección
+[33m599daa7[m feat(tablas): acciones del Ensamblaje en menú desplegable único
+[33m6bd5f56[m feat(impresion, tablas): PDF nítido SIN pérdida + selector de día en Hipódromos del Día
+[33mf749b7c[m feat(gestion/tablas): venta directa a la taquilla, limpieza Gestión de Jugadas y semáforo
+[33me8f45c5[m Carga de resultados compacta: dividendos POR CABALLO (WIN/PLACE/SHOW) opcional según el pool que paga cada lugar (1° W+P+S, 2° P+S, 3° S; empatados comparten), se eliminan las casillas de marcas y premio por tabla (marcas pagan por orden final; tabla/remate al que cruza la raya, premio calculado automáticamente), y dividendoDe resuelve por caballo con respaldo global
+[33m6d67fc2[m Monitor de Tablas Publicadas: se elimina el bloque 'Carreras del Día' y se sustituye por columnas de 'Hipódromos del Día' ordenadas alfabéticamente (carreras + estado por hipódromo) que filtran el monitor; MonitorTablas soporta filtro de hipódromo controlado por el padre
+[33mc538f02[m Carga de resultados: pizarra sin límite de lugares (min 1, recomendado 5 VZ / 4 americana), pools WIN/PLACE/SHOW habilitados por caballo según empates (1° W+P+S, 2° P+S, 3° S), opción de estipular el caballo que cruzó la raya primero (tablas/remates pagan a ese aunque sea bajado), y sin celdas 'puestos' ni 'nini' (se pagan por orden de llegada)
+[33m124d72e[m Clientes/Gestión de Clientes y Agencias: port completo del legacy — nuevo tab Reporte de Cuadre Semanal (filtro por día, Debe a la Tasa = saldo x tasa en Bs), columna Agencia con conteo de afiliados (Agencia N), botón Recargar cartera y validación de seudónimo duplicado al registrar
+[33m0b99e85[m Fix imprimir tablas: filtro hipódromo comparaba clave normalizada (sin espacios) vs valor crudo -> vaciaba el resultado; ahora se normaliza en ambos lados. Interlineado de impresión más compacto (gap 1px, line-height 1, menos padding) en modal y legacy
+[33m90afda8[m Edición tablas: seamla siempre al final de la tabla (no de los caballos), label Suma del tamaño del nombre, monto clarito azul argento (#74ACDF), dist/superficie/fecha -1 punto, botones Editar y Eliminar explícitos para todas las tablas (ensamblaje)
+[33m664fc22[m Impresión de tablas: banderas solo fuera de la pista de casa (americano sin bandera del caballo), bandera a la derecha del nombre, filas con contraste zebra, monto PREMIO/TABLA +5px alineado a la derecha, hipódromo +3, carrera +4, dist/superficie/fecha +2 (modal y vista legacy)
+[33m27b095a[m Vista de edición tablas: filas cebra + hover oscuro, tamaños de letra ajustados (hipódromo +5, ejemplares +2, valor +3, dist/superficie/fecha +3, carrera -5), frase MONTO A PAGAR TABLA sin / (+3)
+[33m3debfc0[m Impresión/edición tablas: fix modal sin datos (RPC SECURITY DEFINER siempre + filtro en memoria), hoja sin sumatoria y con opción vertical/horizontal, chips más compactos y botón Eliminar por tabla
+[33m1d36d59[m Tablas Fijas: impresión en 2 pasos con filtros, plantillas WhatsApp editables, edición sin símbolo de moneda +2/+3px, Editor de caballos y cupos por grupo, y paridad Grupos/Convenios (tabla_grupos, auditoría con RPC fallback, CRUD Tipos de Jugada)
+[33md651218[m Impresión: orientación de hoja A4 (vertical/horizontal) y export a PNG/PDF parametrizable
+[33mf4c8964[m Monitor Tablas: filtros en cascada hipódromo/fecha con limpieza de huérfanos y vista de impresión filtrada
+[33m6f909f2[m Impresión Tablas Fijas: matriz 15/hoja (5x3 A4) + reporte por jugador/grupo/nivel con datos reales y filtros hipódromo/día
+[33m5d8b96a[m Eliminar la Impresión de Tablas Fijas: se borran el motor de impresión (src/lib/impresion), el modal ConfigImpresionModal, el botón Imprimir Tablas del Monitor y sus referencias en TablasModule
+[33m1540143[m Ampliar el campo de nombre del reporte de tablas fijas a todo el ancho del renglón: grilla minmax(0,1fr) con overflow visible, sin ellipsis ni recortes (también el nombre del hipódromo), tipografía del nombre más grande y columna de valor reservada
+[33m8ac8fc9[m Fix reporte de saldos: mostrar los días donde solo se cargaron tablas fijas (sin tickets ni resultados) — la carrera existe en tablas_fijas, así el 27 de La Rinconada aparece
+[33m16d1a74[m Fix reporte de saldos: descubrir TODOS los días con actividad (tablas fijas y tickets por fecha del evento o fecha_creacion, además de Gaceta y resultados) para que no aparezca solo la fecha de hoy
+[33m36a142a[m Reportes dinámicos anidados: /saldos-reportes con datos reales (árbol Semana→Día→Hipódromo→Carrera sobre los saldos consolidados), integración de la lógica de Pareos (PP) por aproximación/proporción en el motor oficial (liquidarOficial → liquidarPareo), renderizado de Cruces netos (🔀 CRUCE por cliente+caballo vía netearComisionCruce) y cableo del acceso rápido en el Dashboard
+[33m4ba06cb[m Restructuración de la Impresión de Tablas Fijas al modelo legacy (impresion_tablas.js): recarga SIEMPRE la última versión de valores desde Supabase via RPC club_listar_tablas_fijas_publicadas con detección RLS, filtros hipódromo/día sobre datos frescos en lugar del store, y corrección del cálculo de páginas del PDF del reporte por jugador
+[33mf4686e6[m Migración 1:1 del Dashboard de Grupos, widget de Semana Activa editable y actualización de backlog de módulos pendientes
+[33mefc93dc[m Fix: quitar prop persistirEliminacion muerta en tablas-fijas que rompia el build (referencia a supabase global inexistente; la eliminacion ya la resuelve TablasModule via eliminarTablaFija)
+[33md7cafd8[m Fix: Monitor Tablas Impresión
+[33m0fbce14[m Fix Monitor Tablas Fijas
+[33m0a21d08[m Fix: Impresión Tablas Fijas
+[33mbf708bb[m Fix: Tablas
+[33mbcb5f65[m Fix: Tablas Fijas Impresión y Filtro de Fecha en Cascada
+[33m352cdab[m FIx: Impresión de tablas 2pm
+[33m504607b[m Mejoras: Tablas Fijas e Impresión de Tablas
+[33m76a53fe[m Mejora: Creación modal Venta Marcas
+[33me7979d5[m Fix: Ajuste de Modulo de MArcas Visualmente
+[33m6aa3213[m Fix: Funcion de formato de fecha en tablas
+[33m1f87691[m 20256-09-25-12-25
+[33ma6a45dd[m Fix: diseño de impresion y destaque de numero de carrera
+[33me72edb7[m fix: soporte para pareos multiples 2v2 y 3v3
+[33m1f12d18[m feat: modulo de saldos y reportes"
+[33mf057cd0[m feat: Creación del Dashboard de Inicio con módulos
+[33med2d3ed[m Fix: Normalización de fechas ISO 8601 en AI/Supabase y adición de ciclos de facturación personalizados por grupo
+[33meae6b1a[m Mejora UX/UI: Destaque visual de alto contraste para los números de carrera en todos los módulos
+[33m45765c2[m Feat: Extracción de fecha automática en Gaceta IA y control de estado global por fecha en módulos de apuestas
+[33m1588cbb[m Fix RLS, UX de Taquilla congelada en tabla, definición algorítmica de Cruces vs Pareos y jerarquía de permisos
+[33md4f8c4a[m Fix: Motor de impresion Tablas Fijas (html2canvas) reparado a estandar legacy, filtro por fecha y eliminacion segura de tablas
+[33m3f073b3[m Feat UX: Diccionario de colores hípicos y renderizado de chips numéricos coloreados en Marcas
+[33me4e36ae[m Refactor: UX densa en Marcas, filas dinámicas por carrera registrada y reglas de liquidación 120/100 integradas al motor
+[33mcff804c[m Fix UI: Eliminación de scrollbar en tablas publicadas (h-auto) y alineación estricta (shrink-0) en vista de impresión
+[33m357b154[m Feat: Unificacion BD con credenciales legacy + Modo Manual (bypass Gaceta) en Taquilla y Ensamblaje + publicacion tolerante al esquema real de tablas_fijas y fallback al Programa del Dia
+[33m932f00f[m Fix UI: Ancho fijo y uniforme (w-7 shrink-0) para contenedores numéricos garantizando alineación vertical
+[33m5cf6273[m Migración 1:1 de los módulos Clientes y Grupos desde legacy, con conexión viva a Supabase
+[33m29f3b55[m Fix: DECLARE table_name en runbook de estabilización
+[33m23447a8[m Feat: UX Taquilla, panel lateral de ejemplares por carrera y autocompletado de clientes en BD
+[33mbee811b[m Feat: Taquilla contextualizada por Fecha, Semáforo dinámico y aislamiento de jugadas por carrera
+[33m1bee8fb[m Fix: Filtro de hipódromos activos en Taquilla y redirección de botón hacia Gaceta IA
+[33m55457fb[m Restauración del motor de impresión client-side (html2canvas/jspdf) y vista densa para exportación
+[33mbad396b[m Liquidacion Universal (B3) + Cierre flujo Tickets (B1)
+[33med369b8[m Modulo de Tickets por Solucionar + Runbook SQL
+[33m15f5104[m Fix: Limpieza de carreras extraídas tras envío y registro automático (UPSERT) de ejemplares en el Padrón
+[33m29ba1ba[m Fix Crítico: Conexión de botones Publicar a Supabase, saneamiento de payload y limpieza de estado
+[33m20c636d[m Creación del módulo Marcas: UI tabular, condiciones editables y regla 120/100 en engine
+[33m4f0cff7[m Creación del módulo Dupleta: Matriz cruzada de carreras interactiva
+[33m8670cc0[m Fix UX: Grid 4 columnas, columna de banderas, tabIndex optimizado y limpieza de leading-zeros
+[33m393d498[m Refactor: Motor heurístico por tokens para parser universal de Carga Rápida
+[33m53bc99b[m Motor NINI completo (engine, despacho, liquidacion con caballo y reporte) + checklist visible en Gaceta IA
+[33md0556a8[m Colapsable del boleto de apuestas: ocultar/mostrar el panel lateral con estado persistente
+[33m8512519[m Fix: filtro de modelos Gemini en Gaceta IA (excluye -tts/-embedding y valida generateContent)
+[33md965e56[m Implementación de reportes de texto exactos para relaciones, resultados y saldos
+[33mb187a7f[m Fix: worker de pdf.js por CDN en Gaceta IA (workerSrc indefinido rompía la precarga de PDFs)
+[33meec44e1[m Fix: hidratación de Guard (hydration mismatch en enlaces RBAC de la Sidebar)
+[33ma15ba02[m Migración Gestión de Clientes, Portal interactivo, estados de cuenta dinámicos y reclamos con imágenes
+[33mc6b749a[m Migración del Centro de WhatsApp: Buscador de clientes, plantillas dinámicas y conexión API
+[33m31be5ec[m Refactor: Saldo inline (eliminación de columnas DISP), alineación estricta, edición de filas, resolución de ejemplares y resultados dinámicos
+[33m606a5bf[m Integración de Modal de Venta/Retiro en Tablas Fijas y centralización de estado de carreras
+[33m619d161[m Migración 1:1 del frontend y lógica del módulo Ejemplares/Gaceta desde el código legacy
+[33m7ab28d8[m Fix: Desbloqueo de Caballo/Monto y cálculo proporcional (ej. 10/8) en engine
+[33ma9ffe6f[m Fix: Filtrado de hipódromos eliminados/inactivos en selectores de toda el app
+[33m15bb2f6[m Fix: Auto-detección de jugadas por sintaxis y compresión de tabla sin scroll
+[33m83c55f3[m Refactor: Motor de Gaceta IA 100% client-side clonado del legacy
+[33mea029c1[m Fix: Reparación del flujo de subida de archivos en Gaceta IA
+[33m97e7cd6[m Implementación de Carga Rápida y Manual con ajuste responsive
+[33m3571219[m Fix: Restauracion de vista previa y seleccion de paginas en GacetaIA
+[33m75ac885[m Integracion completa de Ejemplares y modulo de carga de programa diario
+[33m9ec94ba[m Migracion visual del modulo de Hipodromos
+[33m381f9ad[m RBAC: módulo de administración de accesos (matriz perfiles/permisos) + Guard en botones
+[33m5b8cc94[m RBAC: componente Guard y protección de rutas
+[33m980a26d[m RBAC: useAuthStore con permisos en memoria + hasPermission
+[33m122e00f[m RBAC: esquema de datos y matriz de permisos (Supabase)
+[33m58a4371[m clonación UI Tablas Fijas + auto-cierre en liquidación
+[33m3412a2b[m feat(spa): modulo Gestion de Jugadas/Taquilla (carga individual 10 col, semaforo, atajos, liquidacion 8 posiciones + dead heat)
+[33mc36cf73[m feat(spa): Tablas Fijas - integracion Supabase/Zustand (publicar/editar/venta/liquidar con auto-cierre reactivo)
+[33m5781903[m feat(spa): modulo Tablas Fijas - UI/Estructura (Ensamblaje + Monitor + impresion + ruta /tablas-fijas)
+[33m0ac38f8[m feat(spa): layout 3 zonas clon del legacy + fix ruta /dashboard - Sidebar izquierdo 250px oscuro (Club del Dinero + Administrador Principal, grupos GRUPOS del legacy con modulos futuros marcados 'pronto'), Topbar limpio solo notificaciones+logout (reemplaza Navbar), area central tematica clara bg-gray-50 con tarjetas blancas (tokens background/surface/surfaceAlt/line a gray-50/white/gray-100/gray-200), contrastes oscurecidos en Button/Input/dashboard/taquilla/ejemplares, BetSlipPanel derecho persistente; FIX: (dashboard)/page.tsx no era /dashboard (los grupos no aportan segmento de URL, colisionaba con redirect de /) -> ruta real app/dashboard/* para que / redirija y renderice (antes 404)
+[33m92d5c46[m feat(spa): auto-cierre de tabla fija al liquidar carrera - cerrarTablaFija (UPDATE tablas_fijas estado='Cerrada' por hipodromo/carrera), useTablasFijasStore (caché UI sincronizada sin refrescar), hook liquidarCarreraYCerrarTabla (procesa tickets con motor + cierra BD), PagarCarreraModal integrado en Taquilla

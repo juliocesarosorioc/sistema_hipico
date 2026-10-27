@@ -1,0 +1,3 @@
+feat(reporte): rediseno de liquidacion con logos y resultados condicionales
+
+Badges cuadrados, columna Jugada y desglose de ejemplares; cabecera azul con logos de hipodromo/grupo; llegada, pizarra y decisiones solo cuando la carrera esta liquidada.
