@@ -71,6 +71,13 @@ const BADGE: Record<string, string> = {
   Pendiente: "bg-amber-100 text-amber-700",
   EN_REVISION: "bg-amber-100 text-amber-700",
   Retirado: "bg-slate-200 text-slate-600",
+  RETIRADO: "bg-slate-200 text-slate-600",
+  Empate: "bg-slate-200 text-slate-700",
+  EMPATE: "bg-slate-200 text-slate-700",
+  GANADOR: "bg-emerald-100 text-emerald-700",
+  PERDEDOR: "bg-red-100 text-red-700",
+  PENDIENTE: "bg-amber-100 text-amber-700",
+  "SIN DECISIÓN": "bg-amber-100 text-amber-800",
 };
 
 /**

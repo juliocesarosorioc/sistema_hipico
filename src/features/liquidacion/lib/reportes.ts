@@ -1337,6 +1337,22 @@ export function desglosarTicketEnFilasUnificadas(
           ? null
           : Math.round((ev.bruto - monto) * 100) / 100;
 
+  const numEjemplarTicket =
+    txt(f.ejemplar_numero) || (/^\d+$/.test(txt(f.caballo)) ? txt(f.caballo) : "");
+  const esJugadaNini =
+    /\b[1-5]N\b/i.test(txt(f.nombre_jugada)) || /\b[1-5]N\b/i.test(desglose.jugada);
+  const retiradosOficialesSet = new Set(
+    filtrarRetiradosSinLlegada(pizarra?.retirados, pizarra?.puestos, pizarra?.puestosRaya)
+  );
+  const ejemplarEnLlegada = Boolean(
+    numEjemplarTicket &&
+      (pizarra?.puestos?.includes(numEjemplarTicket) ||
+        pizarra?.puestosRaya?.includes(numEjemplarTicket))
+  );
+  const ejemplarRetiradoOficial = Boolean(
+    numEjemplarTicket && !ejemplarEnLlegada && retiradosOficialesSet.has(numEjemplarTicket)
+  );
+
   const resolverEstadoFila = (res: number | null): string => {
     if (anulada) return "ANULADA";
     if (res === null) return "PENDIENTE";
@@ -1345,7 +1361,16 @@ export function desglosarTicketEnFilasUnificadas(
     if (desglose.tipo === "MARCA" && ((pizarra?.puestos?.length ?? 0) > 0 || /SIN\s+DECISI/i.test(estadoRaw))) {
       return "SIN DECISIÓN";
     }
-    if (estadoRaw === "RETIRADO") return "RETIRADO";
+    if (esJugadaNini && !ejemplarRetiradoOficial) return "EMPATE";
+    if (ejemplarRetiradoOficial) return "RETIRADO";
+    if (
+      estadoRaw === "RETIRADO" &&
+      !esJugadaNini &&
+      !ejemplarEnLlegada &&
+      (pizarra?.puestos?.length ?? 0) === 0
+    ) {
+      return "RETIRADO";
+    }
     return "EMPATE";
   };
 

@@ -644,7 +644,15 @@ export function JugadasModule() {
                   </thead>
                   <tbody>
                     {detalle.map((j) => {
-                      const estadoInterno = j.anulada ? "Anulado" : j.estado ?? "Pendiente";
+                      const esEmpateNini =
+                        !j.anulada &&
+                        j.estado === "Retirado" &&
+                        /\b[1-5]N\b/i.test(String(j.nombre_jugada ?? ""));
+                      const estadoInterno = j.anulada
+                        ? "Anulado"
+                        : esEmpateNini
+                          ? "Empate (0/0)"
+                          : j.estado ?? "Pendiente";
                       const maestro = estadoMaestro(j);
                       return (
                         <tr key={String(j.id)} className={`border-t border-line ${j.anulada ? "bg-amber-50/50" : ""}`}>

@@ -898,11 +898,7 @@ function FragmentHipodromo({
           const balCarrera = balanceDe(c, esCliente);
           const detalles = c.jugadasDetalle ?? [];
           const infoPizarra = obtenerPizarra(fecha, hipo.hipodromo, c.carrera);
-          const retDeDetalles = detalles
-            .filter((d) => String(d.estado ?? "").toUpperCase() === "RETIRADO")
-            .map((d) => String(d.caballo ?? "").trim())
-            .filter((n) => /^\d+$/.test(n));
-          const retiradosUnidos = unirRetirados(infoPizarra.retirados, retDeDetalles);
+          const retiradosUnidos = unirRetirados(infoPizarra.retirados);
           return (
             <FragmentCarrera
               key={cKey}
