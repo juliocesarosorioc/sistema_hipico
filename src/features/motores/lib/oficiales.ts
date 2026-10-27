@@ -154,9 +154,10 @@ export function liquidarTabla(
   const tipo = String(t.tipo_jugada ?? "").trim().toUpperCase();
   if (!/^TABLA/.test(tipo)) return null;
   const n = /N(\d+)/.exec(tipo);
-  const ejemplar = n ? n[1] : null;
+  const cabNum = t.caballo != null && /^\d+$/.test(String(t.caballo).trim()) ? String(t.caballo).trim() : null;
+  const ejemplar = n ? n[1] : cabNum;
   const esCompleta = tipo.includes("TABLA COMPLETA");
-  const cruce = t.pizarra.primero_raya ?? t.pizarra.primero;
+  const cruce = t.pizarra.primero_raya || t.pizarra.orden_llegada_raya?.[0] || t.pizarra.primero;
   const gana = esCompleta || (!!ejemplar && String(cruce) === ejemplar);
   if (!gana) {
     return {
@@ -222,7 +223,20 @@ export function liquidarOficial(
   const wps = liquidarWps(t, tasa);
   if (wps) return wps;
 
-  const base = liquidarPuestos(t, tasa);
+  // Regla de negocio: Remates (al igual que Tablas Fijas) se liquidan con el Orden de Llegada en Raya
+  let ticketEvaluar = t;
+  if (/^REMATE\b/i.test(tipoPP) && (t.pizarra?.primero_raya || t.pizarra?.orden_llegada_raya?.length)) {
+    const raya = t.pizarra.orden_llegada_raya?.length
+      ? t.pizarra.orden_llegada_raya
+      : [String(t.pizarra.primero_raya)];
+    const pizarraRaya = { ...t.pizarra };
+    ORDEN_PIZARRA.forEach((campo, idx) => {
+      if (raya[idx]) (pizarraRaya as Record<string, unknown>)[campo] = raya[idx];
+    });
+    ticketEvaluar = { ...t, pizarra: pizarraRaya };
+  }
+
+  const base = liquidarPuestos(ticketEvaluar, tasa);
 
   const mult = dividendoDe(t);
   if (!base.ok || mult == null) return base;

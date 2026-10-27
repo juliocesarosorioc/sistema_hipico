@@ -272,7 +272,7 @@ igual(resumenConAnulada.monto, 100, "la anulada NO suma al monto del panel");
     [persistida({ id: "tf2", nombre_jugada: "TABLA FIJA", caballo: "7", monto_jugado: 100, premio_pagar: 500, estado: "Ganador", cliente_consigue_nombre: "BANCA_TF", comision_porcentaje: 5 })],
     []
   );
-  igual(tfGana[0].cliente2, "BANCA_TF", "Tabla Fija respeta el usuario asignado a TF");
+  igual(tfGana[0].cliente2, "TF", "Tabla Fija imputa siempre al usuario del sistema TF");
   igual(tfGana[0].lado1.monto, 500, "Tabla Fija ganadora: jugador gana 500 íntegros");
   igual(tfGana[0].lado2.monto, 525, "Tabla Fija ganadora: TF pierde 500 más 5% comisión (525)");
 

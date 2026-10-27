@@ -240,7 +240,8 @@ export function relacionJugadas(meta: MetaCarrera, jugadas: JugadaRelacion[]): s
     if (jugada) partes.push(jugada);
     if (String(j.caballo ?? "").trim()) partes.push(`(${caballoPareoLegible(String(j.caballo))})`);
     partes.push(`con ${fmtMonto(j.monto)}`);
-    if (String(j.clienteConsigue ?? "").trim()) partes.push(`da ${String(j.clienteConsigue).trim()}`);
+    const beneficiario = resolverContraparteModalidad(j.jugada, j.clienteConsigue);
+    if (String(beneficiario ?? "").trim()) partes.push(`da ${String(beneficiario).trim()}`);
     return `${i + 1}) Juega ${partes.join(" ")}`;
   });
   return [
@@ -746,7 +747,11 @@ function mapearJugada(r: TicketApuestaJugada): JugadaRelacion {
     jugada: esNini ? normalizarNini(jugadaCruda) : jugadaCruda,
     caballo: String(r.caballo ?? "").trim(),
     monto: num(r.monto_jugado),
-    clienteConsigue: r.cliente_consigue_nombre ? String(r.cliente_consigue_nombre) : undefined,
+    clienteConsigue:
+      resolverContraparteModalidad(
+        jugadaCruda,
+        r.cliente_consigue_nombre ? String(r.cliente_consigue_nombre) : undefined
+      ) || undefined,
     modalidad: esNini ? "NINI" : "GENERICA",
     cantidadTablas: num(r.cantidad_tablas),
     premioPorTabla: num(r.premio_por_tabla),

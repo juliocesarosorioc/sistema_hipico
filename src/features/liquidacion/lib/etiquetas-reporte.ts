@@ -178,19 +178,19 @@ export function resolverContraparteModalidad(
     actualUpper === "POLLA";
 
   if (/^MARCAS?\b/i.test(jug) || orig === "MARCAS" || orig === "MARCA") {
-    return !esGenerico ? actual : "MARCAS";
+    return "MARCAS";
   }
   if (/^(?:TABLA\s*FIJA|TABLAS?\s*FIJAS?|TF)\b/i.test(jug) || orig === "TABLA" || orig === "TABLAS" || orig === "TABLA_FIJA") {
-    return !esGenerico ? actual : "TF";
+    return "TF";
   }
   if (/^DUPLETAS?\b/i.test(jug) || orig === "DUPLETAS" || orig === "DUPLETA") {
-    return !esGenerico ? actual : "DUPLETA";
+    return "DUPLETA";
   }
   if (/^REMATES?\b/i.test(jug) || orig === "REMATES" || orig === "REMATE") {
-    return !esGenerico ? actual : "REMATES";
+    return "REMATES";
   }
   if (/^POLLAS?\b/i.test(jug) || orig === "POLLAS" || orig === "POLLA") {
-    return !esGenerico ? actual : "POLLAS";
+    return "POLLAS";
   }
   if (/^(?:WIN|W|GANADOR|WPS\s*WIN|WPS\s*W|WPS\s*GANADOR)$/i.test(jug)) {
     return !esGenerico ? actual : "Win";

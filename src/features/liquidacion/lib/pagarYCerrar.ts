@@ -14,6 +14,7 @@ import { aplicarLiquidacionSaldos, type ResumenSaldos } from "@/features/liquida
 import { liquidarMarcas } from "@/features/marcas/lib/marcas";
 import { liquidarDupleta } from "@/features/dupletas/lib/dupletas";
 import { liquidarTablaFija } from "@/features/tablas/lib/rpc";
+import { calcularFinanzasRemate } from "@/features/remates/lib/core";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { redondearCentavos } from "@/shared/lib/dinero";
@@ -718,7 +719,124 @@ export async function liquidarJugadasDeCarrera(opts: {
     dupletas = { ok: false, liquidadas: 0, pagado: 0, error: (e as Error).message };
   }
 
+  try {
+    await liquidarRematesDeCarrera(opts.hipodromo, carrera, opts.pizarra, fecha);
+  } catch {
+    /* best-effort */
+  }
+
   return { tablasFijas, marcas, dupletas };
+}
+
+/**
+ * Liquida los REMATES de la carrera utilizando el Orden de Llegada en Raya
+ * (`primero_raya` / `orden_llegada_raya[0]`, que por defecto es igual al 1° Oficial).
+ */
+export async function liquidarRematesDeCarrera(
+  hipodromo: string,
+  carrera: number,
+  pizarra: PizarraCarrera,
+  fecha: string
+): Promise<{ ok: boolean; liquidados: number; pagado: number }> {
+  const ganadorRaya = String(
+    pizarra.primero_raya || pizarra.orden_llegada_raya?.[0] || pizarra.primero || ""
+  ).trim();
+  if (!ganadorRaya || !supabase) return { ok: true, liquidados: 0, pagado: 0 };
+
+  const dia = String(fecha).slice(0, 10);
+  const clave = claveHipodromo(hipodromo);
+  let premioPorRemate = new Map<string, number>();
+  let premioDefault = 0;
+
+  try {
+    const { data: rematesData } = await supabase
+      .from("remates")
+      .select("id, hipodromo, carrera, fecha, incentivo, incentivo_pct, comision_pct")
+      .eq("carrera", carrera)
+      .eq("fecha", dia)
+      .limit(50);
+
+    const rematesCarrera = ((rematesData ?? []) as Array<Record<string, unknown>>).filter(
+      (r) => claveHipodromo(String(r.hipodromo ?? "")) === clave
+    );
+
+    for (const rem of rematesCarrera) {
+      const remId = String(rem.id ?? "");
+      if (!remId) continue;
+      const { data: cabData } = await supabase
+        .from("remate_caballos")
+        .select("monto_usd")
+        .eq("remate_id", remId);
+      const fin = calcularFinanzasRemate(
+        (cabData ?? []) as Array<{ monto_usd: number }>,
+        Number(rem.incentivo) || 0,
+        Number(rem.comision_pct ?? 20),
+        Number(rem.incentivo_pct) || 0
+      );
+      if (fin.premioGanador > 0) {
+        premioPorRemate.set(remId, fin.premioGanador);
+        if (!premioDefault) premioDefault = fin.premioGanador;
+      }
+    }
+
+    const { data: ticketsData } = await supabase
+      .from("tickets_apuestas")
+      .select("id, caballo, ejemplar_numero, monto_jugado, premio_pagar, estado, nota_auditoria")
+      .eq("carrera", carrera)
+      .ilike("hipodromo", `%${hipodromo.trim()}%`)
+      .like("nombre_jugada", "REMATE%")
+      .or(filtroDiaJornada(dia));
+
+    let liquidados = 0;
+    let pagado = 0;
+    for (const tk of (ticketsData ?? []) as Array<Record<string, unknown>>) {
+      const est = String(tk.estado ?? "").trim().toUpperCase();
+      if (est === "RETIRADO" || est === "ANULADO" || est === "ANULADA") continue;
+      const ej = String(tk.ejemplar_numero ?? tk.caballo ?? "").trim();
+      const esGanadorRaya = ej !== "" && ej === ganadorRaya;
+      let remIdNota = "";
+      try {
+        const notaObj = typeof tk.nota_auditoria === "string" ? JSON.parse(tk.nota_auditoria) : tk.nota_auditoria;
+        if (notaObj && typeof notaObj === "object") {
+          remIdNota = String((notaObj as Record<string, unknown>).remate_id ?? "");
+        }
+      } catch {
+        /* ignore */
+      }
+      const premio = (remIdNota && premioPorRemate.get(remIdNota)) || premioDefault || Number(tk.premio_pagar) || 0;
+      if (esGanadorRaya && premio > 0) {
+        await supabase
+          .from("tickets_apuestas")
+          .update({
+            estado: "Ganador",
+            premio_pagar: premio,
+            monto_decidido: premio,
+            cliente_consigue_nombre: "REMATES",
+            banquero_nombre: "REMATES",
+            cliente_consigue_id: null,
+            banquero_cliente_id: null,
+          })
+          .eq("id", tk.id);
+        pagado += premio;
+      } else {
+        await supabase
+          .from("tickets_apuestas")
+          .update({
+            estado: "Perdedor",
+            premio_pagar: 0,
+            cliente_consigue_nombre: "REMATES",
+            banquero_nombre: "REMATES",
+            cliente_consigue_id: null,
+            banquero_cliente_id: null,
+          })
+          .eq("id", tk.id);
+      }
+      liquidados += 1;
+    }
+    return { ok: true, liquidados, pagado: round2(pagado) };
+  } catch {
+    return { ok: false, liquidados: 0, pagado: 0 };
+  }
 }
 
 /**

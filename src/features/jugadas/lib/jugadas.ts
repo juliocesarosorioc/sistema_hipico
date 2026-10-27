@@ -14,6 +14,10 @@
 import { supabase } from "@/core/supabase";
 import { exigirCapacidad, grupoActivoVigente, tieneCapacidad } from "@/features/seguridad/lib/vigente";
 import { nombreDeEjemplarEnMatriz } from "@/features/liquidacion/lib/resolver-ejemplar";
+import {
+  resolverContraparteModalidad,
+  USUARIOS_SISTEMA_MODALIDADES,
+} from "@/features/liquidacion/lib/etiquetas-reporte";
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -368,9 +372,18 @@ export async function listarJugadasDeCarrera(
           }
           jugadas = jugadas.map((j) => {
             const ex = mapaExtras.get(String(j.id));
-            if (!ex) return j;
-            return {
+            const contraparteCanonica = resolverContraparteModalidad(
+              j.nombre_jugada,
+              j.cliente_consigue_nombre,
+              origenDeJugada(j)
+            );
+            const base = {
               ...j,
+              cliente_consigue_nombre: contraparteCanonica || j.cliente_consigue_nombre,
+            };
+            if (!ex) return base;
+            return {
+              ...base,
               es_adelantada:
                 typeof ex.es_adelantada === "boolean"
                   ? ex.es_adelantada
@@ -382,6 +395,41 @@ export async function listarJugadasDeCarrera(
         }
       } catch {
         // Si la tabla no tiene `es_adelantada`, se conserva el respaldo por `nota_auditoria`.
+      }
+      // Normalizar contraparte para modalidades del sistema (MARCAS, TF, REMATES, DUPLETA, POLLAS)
+      // y corregir en segundo plano cualquier fila heredada en BD que tuviera otro nombre (ej. SAM).
+      const porCorregirEnBd: Array<{ id: string; contraparte: string }> = [];
+      jugadas = jugadas.map((j) => {
+        const contraparteCanonica = resolverContraparteModalidad(
+          j.nombre_jugada,
+          j.cliente_consigue_nombre,
+          origenDeJugada(j)
+        );
+        if (
+          (USUARIOS_SISTEMA_MODALIDADES as readonly string[]).includes(contraparteCanonica) &&
+          texto(j.cliente_consigue_nombre).toUpperCase() !== contraparteCanonica
+        ) {
+          porCorregirEnBd.push({ id: String(j.id), contraparte: contraparteCanonica });
+        }
+        return {
+          ...j,
+          cliente_consigue_nombre: contraparteCanonica || j.cliente_consigue_nombre,
+        };
+      });
+      if (porCorregirEnBd.length > 0) {
+        void Promise.all(
+          porCorregirEnBd.map(({ id, contraparte }) =>
+            sb
+              .from("tickets_apuestas")
+              .update({
+                cliente_consigue_nombre: contraparte,
+                banquero_nombre: contraparte,
+                cliente_consigue_id: null,
+                banquero_cliente_id: null,
+              })
+              .eq("id", id)
+          )
+        ).catch(() => {});
       }
     }
     return { ok: true, jugadas, aviso };

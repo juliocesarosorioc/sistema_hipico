@@ -192,9 +192,12 @@ export function calcularResumenContableCliente(params: {
       t.cliente_consigue_nombre ?? t.tercio ?? t.contraparte
     );
     const cNom = normalizarNombreCliente(contraparteResuelta);
+    const esModalidadSistema = (USUARIOS_SISTEMA_MODALIDADES as readonly string[]).includes(cNom);
 
     const esJugador = (idStr && jId === idStr) || (nombreNorm && jNom === nombreNorm);
-    const esDador = (idStr && cId === idStr) || (nombreNorm && cNom === nombreNorm);
+    const esDador = esModalidadSistema
+      ? Boolean(nombreNorm && cNom === nombreNorm)
+      : Boolean((idStr && cId === idStr) || (nombreNorm && cNom === nombreNorm));
 
     if (!esJugador && !esDador) continue;
     participoEnTickets++;
@@ -507,6 +510,41 @@ export async function sincronizarSaldosRealesClientes<
   }
 
   const promesasCuracion: Promise<unknown>[] = [];
+
+  if (supabase && tickets.length > 0) {
+    const idsPorModalidad = new Map<string, Array<string | number>>();
+    for (const t of tickets) {
+      const contraparteResuelta = resolverContraparteModalidad(
+        t.nombre_jugada ?? t.jugada,
+        t.cliente_consigue_nombre ?? t.tercio ?? t.contraparte
+      );
+      if ((USUARIOS_SISTEMA_MODALIDADES as readonly string[]).includes(contraparteResuelta)) {
+        const actual = normalizarNombreCliente(t.cliente_consigue_nombre ?? "");
+        if (actual !== contraparteResuelta && t.id != null) {
+          const lista = idsPorModalidad.get(contraparteResuelta) ?? [];
+          lista.push(t.id);
+          idsPorModalidad.set(contraparteResuelta, lista);
+        }
+        t.cliente_consigue_nombre = contraparteResuelta;
+        t.cliente_consigue_id = null;
+      }
+    }
+    for (const [nombreSistema, ids] of idsPorModalidad.entries()) {
+      promesasCuracion.push(
+        Promise.resolve(
+          supabase
+            .from("tickets_apuestas")
+            .update({
+              cliente_consigue_nombre: nombreSistema,
+              banquero_nombre: nombreSistema,
+              cliente_consigue_id: null,
+              banquero_cliente_id: null,
+            })
+            .in("id", ids)
+        ).catch(() => {})
+      );
+    }
+  }
 
   // Asegurar que existan los 5 usuarios del sistema por modalidad:
   // MARCAS, TF, REMATES, DUPLETA, POLLAS

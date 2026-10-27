@@ -465,6 +465,22 @@ function evaluar(
     return { neto: Math.round((brutoGuardado - comision) * 100) / 100, comision };
   };
   const esEspecialPersistencia = /^(DUPLETA|REMATE|POLLA)\b/i.test(nombreJugada);
+  const esRemate = /^REMATE\b/i.test(nombreJugada);
+  if (esRemate) {
+    const puestosRaya = (pizarra?.puestosRaya?.length ? pizarra.puestosRaya : pizarra?.puestos) ?? [];
+    const numEjemplar = txt(f.ejemplar_numero) || (/^\d+$/.test(txt(f.caballo)) ? txt(f.caballo) : "");
+    if (puestosRaya.length > 0 && numEjemplar) {
+      const ganoEnRaya = txt(puestosRaya[0]) === numEjemplar;
+      if (!ganoEnRaya) {
+        return { ok: false, bruto: 0, comision: 0, tasa: tasaEfectiva };
+      }
+      const brutoRemate = cifra(f.premio_pagar) || cifra(f.monto_decidido);
+      if (brutoRemate > monto) {
+        const d = desglosar(brutoRemate);
+        return { ok: true, bruto: d.neto, comision: d.comision, tasa: tasaEfectiva };
+      }
+    }
+  }
   const puestosAnticipados = pizarra?.puestos ?? [];
   if (
     estado !== "SOLUCIONADO" &&
