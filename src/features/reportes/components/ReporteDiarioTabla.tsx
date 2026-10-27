@@ -561,7 +561,7 @@ export function GraficosReporteDiario({
               🏇 Resultados por Hipódromo
             </h4>
             <p className="text-[10px] font-semibold text-slate-300">
-              Rendimiento neto y volumen jugado por circuito
+              Ganancia o pérdida neta por circuito
             </p>
           </div>
           <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[10px] font-black text-indigo-200">
@@ -574,48 +574,47 @@ export function GraficosReporteDiario({
             Sin actividad por hipódromo en este rango.
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {(() => {
-              const maxAbs = Math.max(...resumenPorHipodromo.map((h) => Math.max(Math.abs(h.neto), h.jugado, 1)));
+              const maxAbs = Math.max(...resumenPorHipodromo.map((h) => Math.abs(h.neto)), 1);
               return resumenPorHipodromo.map((h) => {
-                const pctJugado = Math.max(8, Math.round((h.jugado / maxAbs) * 100));
-                const pctNeto = Math.max(8, Math.round((Math.abs(h.neto) / maxAbs) * 100));
-                const positivo = h.neto >= 0;
+                const gana = h.neto >= 0;
+                const pct = Math.max(6, Math.round((Math.abs(h.neto) / maxAbs) * 100));
                 return (
-                  <div key={h.hipodromo} className="rounded-xl border border-white/10 bg-white/5 p-2">
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="truncate font-black text-white">🏇 {h.hipodromo}</span>
+                  <div key={h.hipodromo} className="rounded-xl border border-white/10 bg-white/5 px-2 py-1.5">
+                    <div className="flex items-center justify-between gap-2">
                       <span
-                        className={`font-mono text-xs font-black tabular-nums ${
-                          positivo ? "text-emerald-400" : "text-rose-400"
+                        className="min-w-0 truncate text-[9px] font-bold uppercase tracking-wide text-slate-400"
+                        title={h.hipodromo}
+                      >
+                        {h.hipodromo}
+                      </span>
+                      <span
+                        className={`shrink-0 rounded px-1 text-[8px] font-black ${
+                          gana ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"
+                        }`}
+                      >
+                        {gana ? "GANA" : "PIERDE"}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-800">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            gana
+                              ? "bg-gradient-to-r from-emerald-500 to-teal-300"
+                              : "bg-gradient-to-r from-rose-600 to-orange-400"
+                          }`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <span
+                        className={`w-[86px] shrink-0 text-right font-mono text-[10px] font-black tabular-nums ${
+                          gana ? "text-emerald-300" : "text-rose-300"
                         }`}
                       >
                         {h.neto > 0 ? `+${dinero(h.neto)}` : dinero(h.neto)}
                       </span>
-                    </div>
-                    <div className="mt-1.5 space-y-1">
-                      <div className="flex items-center gap-2 text-[10px] text-slate-300">
-                        <span className="w-14 shrink-0">Jugado</span>
-                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
-                          <div
-                            className="h-full rounded-full bg-indigo-400 transition-all"
-                            style={{ width: `${pctJugado}%` }}
-                          />
-                        </div>
-                        <span className="w-16 text-right font-mono font-bold">{dinero(h.jugado)}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-[10px] text-slate-300">
-                        <span className="w-14 shrink-0">{positivo ? "Ganancia" : "Pérdida"}</span>
-                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
-                          <div
-                            className={`h-full rounded-full transition-all ${
-                              positivo ? "bg-emerald-400" : "bg-rose-500"
-                            }`}
-                            style={{ width: `${pctNeto}%` }}
-                          />
-                        </div>
-                        <span className="w-16 text-right font-mono font-bold">{h.tickets} jug.</span>
-                      </div>
                     </div>
                   </div>
                 );
@@ -633,7 +632,7 @@ export function GraficosReporteDiario({
               📅 Resultados por Día
             </h4>
             <p className="text-[10px] font-semibold text-slate-500">
-              Evolución diaria de ganancias y jugadas
+              Ganancia o pérdida neta por jornada
             </p>
           </div>
           <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-[10px] font-black text-indigo-800">
@@ -648,23 +647,34 @@ export function GraficosReporteDiario({
         ) : (
           <div className="space-y-2.5">
             {(() => {
-              const maxDia = Math.max(...resumenPorDia.map((d) => Math.max(Math.abs(d.neto), d.jugado, 1)));
+              const maxDia = Math.max(...resumenPorDia.map((d) => Math.abs(d.neto)), 1);
               return resumenPorDia.map((d) => {
                 const pct = Math.max(10, Math.round((Math.abs(d.neto) / maxDia) * 100));
                 const pos = d.neto >= 0;
                 return (
-                  <div key={d.fecha} className="rounded-xl border border-slate-200 bg-slate-50/70 p-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-black text-slate-800">📅 {d.fecha}</span>
-                      <span
-                        className={`font-mono text-xs font-black tabular-nums ${
-                          pos ? "text-emerald-700" : "text-rose-600"
-                        }`}
-                      >
-                        {d.neto > 0 ? `+${dinero(d.neto)}` : dinero(d.neto)}
+                  <div key={d.fecha} className="rounded-xl border border-slate-200 bg-slate-50/70 px-2 py-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate text-[10px] font-black text-slate-800">
+                        📅 {d.fecha}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        <span
+                          className={`rounded px-1 text-[8px] font-black ${
+                            pos ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                          }`}
+                        >
+                          {pos ? "GANA" : "PIERDE"}
+                        </span>
+                        <span
+                          className={`font-mono text-[10px] font-black tabular-nums ${
+                            pos ? "text-emerald-700" : "text-rose-600"
+                          }`}
+                        >
+                          {d.neto > 0 ? `+${dinero(d.neto)}` : dinero(d.neto)}
+                        </span>
                       </span>
                     </div>
-                    <div className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+                    <div className="mt-1 h-3 w-full overflow-hidden rounded-full bg-slate-200">
                       <div
                         className={`h-full rounded-full ${
                           pos
@@ -674,7 +684,7 @@ export function GraficosReporteDiario({
                         style={{ width: `${pct}%` }}
                       />
                     </div>
-                    <div className="mt-1 flex items-center justify-between text-[10px] font-bold text-slate-500">
+                    <div className="mt-1 flex items-center justify-between text-[9px] font-bold text-slate-500">
                       <span>Apostado: {dinero(d.jugado)}</span>
                       <span>Premios: {dinero(d.premios)}</span>
                       <span>{d.tickets} ticket(s)</span>
