@@ -19,6 +19,9 @@ import { liquidarOficial } from "@/features/motores/lib/oficiales";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { _reembolsosCruce, normalizarNombreCliente } from "@/features/taquilla/lib/cruces-y-tapas";
+import { calcularEstadoCuentaCliente } from "@/features/saldos/lib/contabilidad-central";
+
+export { calcularEstadoCuentaCliente };
 import type { TicketMotor } from "@/features/betting/lib/bettingEngine";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 
@@ -281,6 +284,21 @@ export type BalanceJugada = {
  */
 export function balanceJugada(j: JugadaRelacion): BalanceJugada {
   const esGanador = j.ganador === true;
+  if (
+    !esGanador &&
+    num(j.monto) > 0 &&
+    Math.abs(num(j.premioPotencial) - num(j.monto)) < 0.01 &&
+    /\b[2345]N\b/i.test(String(j.jugada ?? ""))
+  ) {
+    return {
+      jugada: j,
+      premioPotencial: 0,
+      gananciaBruta: 0,
+      comision: 0,
+      gananciaNeta: 0,
+      anulada: true,
+    };
+  }
   let premioPotencial = esGanador
     ? num(j.premioPotencial) || num(j.cantidadTablas) * num(j.premioPorTabla)
     : 0;
@@ -535,6 +553,56 @@ export function relacionResultados(
     // se acumula en el cierre (antes caía en el `else` y se cobraba como perdida).
     if (b.indeterminado) {
       cuerpo.push("⚠️ PENDIENTE — falta el dividendo que cuantifica el premio.");
+      return;
+    }
+    const esTablaFija = /^TABLA\s+FIJA\b|^TF\b|^TABLA$/i.test(nombreJug);
+    const esMarca = /^MARCAS?\b/i.test(nombreJug);
+    if (esTablaFija) {
+      const tasa = tasaDeJugada(j.comisionPct);
+      const pagoTabla = round2(
+        num(j.premioPotencial) > 0
+          ? num(j.premioPotencial)
+          : num(j.cantidadTablas) * num(j.premioPorTabla) || num(j.monto)
+      );
+      if (j.ganador === true) {
+        cuerpo.push(`Juega ${j.clienteJuega} $ +${fmtMonto(pagoTabla)}`);
+        acumular(j.clienteJuega, pagoTabla);
+        if (beneficiario) {
+          const perdidaDa = round2(pagoTabla + (pagoTabla * tasa) / 100);
+          cuerpo.push(`Da ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
+          acumular(beneficiario, -perdidaDa);
+        }
+      } else {
+        cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
+        acumular(j.clienteJuega, -perdida);
+        if (beneficiario) {
+          const netoDa = round2(perdida - (perdida * tasa) / 100);
+          cuerpo.push(`Da ${beneficiario} $ +${fmtMonto(netoDa)}`);
+          acumular(beneficiario, netoDa);
+        }
+      }
+      return;
+    }
+    if (esMarca) {
+      const tasa = tasaDeJugada(j.comisionPct);
+      const pagoMarca = round2((perdida * 5) / 6);
+      if (j.ganador === true) {
+        cuerpo.push(`Juega ${j.clienteJuega} $ +${fmtMonto(pagoMarca)}`);
+        acumular(j.clienteJuega, pagoMarca);
+        if (beneficiario) {
+          const perdidaDa = round2(pagoMarca + (pagoMarca * tasa) / 100);
+          cuerpo.push(`Da ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
+          acumular(beneficiario, -perdidaDa);
+        }
+      } else {
+        cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
+        acumular(j.clienteJuega, -perdida);
+        if (beneficiario) {
+          const netoDa = round2(perdida - (perdida * tasa) / 100);
+          cuerpo.push(`Da ${beneficiario} $ +${fmtMonto(netoDa)}`);
+          acumular(beneficiario, netoDa);
+        }
+      }
       return;
     }
     // La jugada es de SUMA CERO entre el que JUEGA y el "da": el que

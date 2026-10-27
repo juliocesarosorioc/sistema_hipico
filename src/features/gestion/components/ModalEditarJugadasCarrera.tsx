@@ -319,7 +319,17 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
                 </tr>
               )}
               {visibles.map((j) => {
-                const estado = j.anulada ? "Anulado" : j.estado ?? "Pendiente";
+                const esEmpateNini =
+                  !j.anulada &&
+                  (j.estado === "Retirado" || j.estado === "Perdedor") &&
+                  Number(j.monto_jugado ?? 0) > 0 &&
+                  Math.abs(Number(j.premio_pagar ?? 0) - Number(j.monto_jugado ?? 0)) < 0.01 &&
+                  /\b[2345]N\b/i.test(String(j.nombre_jugada ?? ""));
+                const estado = j.anulada
+                  ? "Anulado"
+                  : esEmpateNini
+                    ? "Empate (0/0)"
+                    : j.estado ?? "Pendiente";
                 const enEdicion = edicion?.id === String(j.id);
                 return (
                   <tr key={String(j.id)} className={`border-t border-line ${j.anulada ? "bg-amber-50/50" : ""}`}>

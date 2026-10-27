@@ -40,6 +40,8 @@ import { reabrirRemate } from "@/features/remates/lib/remates";
 import { listarRemates } from "@/features/remates/lib/remates";
 import { listarPollas, cambiarEstadoPolla } from "@/features/pollas/lib/pollas";
 import { modalidadDeTicket, planearReversion, resumirReversion } from "@/features/liquidacion/lib/reversar-nucleo";
+import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
+import { useCarrerasDiaStore } from "@/shared/store/useCarrerasDiaStore";
 
 const NUM = (v: unknown): number => {
   const n = parseFloat(String(v ?? ""));
@@ -278,6 +280,46 @@ export async function reversarLiquidacionCarrera(opts: ReversarInput): Promise<R
     if (!central.ok && central.error) errores.push(`Resultado central: ${central.error}`);
   } catch (e) {
     errores.push(`Resultado central: ${(e as Error).message}`);
+  }
+
+  // 5b) Reabrir Tablas Fijas en BD y sincronizar stores locales (useTablasFijasStore + useCarrerasDiaStore)
+  // para que el Semáforo pase de Rojo (Liquidada) a Amarillo (Con jugadas) o Verde (Abierta) de inmediato.
+  try {
+    const { data: tablasRows } = await supabase
+      .from("tablas_fijas")
+      .select("id, hipodromo, carrera, fecha, fecha_creacion, estado")
+      .eq("carrera", carrera)
+      .or(`fecha.eq.${dia},fecha.is.null`)
+      .limit(100);
+    const clave = claveHipodromo(hipodromo);
+    const idsReabrir = ((tablasRows ?? []) as Array<Record<string, unknown>>)
+      .filter((t) => claveHipodromo(String(t.hipodromo ?? "")) === clave)
+      .filter((t) => String(t.fecha ?? t.fecha_creacion ?? "").slice(0, 10) === dia)
+      .filter((t) => String(t.estado ?? "").toLowerCase() === "cerrada")
+      .map((t) => t.id);
+    if (idsReabrir.length > 0) {
+      await supabase.from("tablas_fijas").update({ estado: "Abierta" }).in("id", idsReabrir as never[]);
+    }
+  } catch {
+    // best-effort
+  }
+  try {
+    useTablasFijasStore.getState().marcarAbierta(hipodromo, carrera);
+    const prevCarrera = useCarrerasDiaStore.getState().estadoDe(hipodromo, carrera, dia);
+    if (prevCarrera) {
+      useCarrerasDiaStore.getState().upsert({
+        ...prevCarrera,
+        fecha: dia,
+        hipodromo,
+        carrera,
+        estado: "Programada",
+        ganadores: [],
+        aplicado_a_tablas: false,
+        pago: null,
+      });
+    }
+  } catch {
+    // best-effort en entorno node/test
   }
 
   const tickets = universales + esp.tickets;

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Carreras del Día — servicio CENTRAL de la jornada.
  * Fuente de verdad: la MATRIZ `carreras` (sql/carreras.sql; unique
  * fecha+hipódromo+carrera) — el ÚNICO lugar del que se listan las carreras que
@@ -95,6 +95,7 @@ export type CarreraCentral = {
    * exponen aqui para que la carrera CENTRAL sea de verdad la unica fuente.
    */
   ganadores?: string[];
+  orden_llegada_raya?: string[];
   /** El resultado ya se aplico a las tablas fijas de la jornada. */
   aplicado_a_tablas?: boolean;
 };

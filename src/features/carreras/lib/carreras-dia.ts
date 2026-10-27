@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Centralización de resultados de carreras del día.
  * La tabla public.resultados_carreras (paquete SQL, RLS off) es la fuente de
  * verdad compartida entre módulos: los resultados + pizarra se persistén aquí
@@ -80,6 +80,8 @@ export type ResultadoOficial = {
   carrera: number | string;
   /** Orden de llegada (1º, 2º, 3º…); cae a `ganadores` si no hay orden oficial. */
   puestos: string[];
+  /** Orden de llegada en raya (1º, 2º, 3º…) si hubo distanciamiento; por defecto igual a `puestos`. */
+  puestosRaya?: string[];
   /** Pagos por $1 (`dividendos`): claves "win", "nini", "tabla", "win:7"… */
   dividendos: Record<string, number> | null;
 };
@@ -107,12 +109,25 @@ export async function leerResultadoOficial(
     // normalizan a la lista 1º..8º que entiende la pizarra.
     const oficial = puestosDesdeOrdenLlegada(r.orden_llegada);
     const puestos = oficial.length ? oficial : puestosDesdeOrdenLlegada(r.ganadores);
+    let puestosRaya: string[] = puestos;
+    if (Array.isArray(r.orden_llegada) && r.orden_llegada.length > 0) {
+      const p0 = r.orden_llegada[0] as Record<string, unknown> | null;
+      if (p0 && typeof p0 === "object") {
+        if (Array.isArray(p0.orden_llegada_raya) && p0.orden_llegada_raya.length > 0) {
+          puestosRaya = p0.orden_llegada_raya.map((x) => String(x ?? "").trim()).filter(Boolean);
+        } else if (typeof p0.primero_raya === "string" && p0.primero_raya.trim() && p0.primero_raya.trim() !== puestos[0]) {
+          const pr = p0.primero_raya.trim();
+          puestosRaya = [pr, ...puestos.filter((n) => n !== pr)];
+        }
+      }
+    }
     const div = r.dividendos;
     return {
       fecha: String(r.fecha ?? fecha ?? "").slice(0, 10),
       hipodromo: String(r.hipodromo ?? hip).toUpperCase(),
       carrera: (r.carrera ?? carrera) as number | string,
       puestos,
+      puestosRaya,
       dividendos: div && typeof div === "object" && !Array.isArray(div) ? (div as Record<string, number>) : null,
     };
   } catch {

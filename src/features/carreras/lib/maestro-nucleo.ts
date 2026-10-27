@@ -277,6 +277,7 @@ verificado_at?: string | null;
   updated_at?: string | null;
   /** Pizarra oficial en orden de llegada. */
   ganadores?: string[];
+  orden_llegada_raya?: string[];
   /** El resultado ya se aplicó a las tablas fijas. */
   aplicado_a_tablas?: boolean;
 };
@@ -321,7 +322,10 @@ export function normalizarGanadores(raw: unknown): string[] {
   return raw
     .map((g) => {
       if (g == null) return "";
-      if (typeof g === "object") return String((g as { numero?: unknown }).numero ?? "").trim();
+      if (typeof g === "object") {
+        if ((g as { raya?: unknown }).raya === true) return "";
+        return String((g as { numero?: unknown }).numero ?? "").trim();
+      }
       return String(g).trim();
     })
     .filter(Boolean);
@@ -388,6 +392,21 @@ export function aCarreraCentral(m: FilaCarreraMaestro): CarreraCatalogo {
     verificado_at: m.verificado_at != null ? String(m.verificado_at) : null,
     updated_at: m.updated_at != null ? String(m.updated_at) : null,
     ganadores: normalizarGanadores(res?.ganadores ?? res?.orden_llegada),
+    ...(() => {
+      if (!Array.isArray(res?.orden_llegada)) return {};
+      const itemsRaya = (res.orden_llegada as Array<Record<string, unknown>>)
+        .filter((x) => x && typeof x === "object" && x.raya === true)
+        .sort((a, b) => Number(a.puesto ?? 1) - Number(b.puesto ?? 1))
+        .map((x) => String(x.numero ?? "").trim())
+        .filter(Boolean);
+      const of = normalizarGanadores(res?.ganadores ?? res?.orden_llegada);
+      if (itemsRaya.length === 0) return {};
+      const ordenRaya =
+        itemsRaya.length > 1
+          ? itemsRaya
+          : [itemsRaya[0], ...of.filter((n) => n !== itemsRaya[0])];
+      return ordenRaya.join(",") !== of.join(",") ? { orden_llegada_raya: ordenRaya } : {};
+    })(),
     aplicado_a_tablas: res?.aplicado_a_tablas === true,
   };
 }

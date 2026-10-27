@@ -25,8 +25,9 @@ import {
   normalizarNombreCliente,
   type ModalidadCruceCarrera,
 } from "@/features/taquilla/lib/cruces-y-tapas";
+import { calcularEstadoCuentaCliente, calcularResumenContableCliente } from "@/features/saldos/lib/contabilidad-central";
 
-export { colorDiscoNumero };
+export { colorDiscoNumero, calcularEstadoCuentaCliente, calcularResumenContableCliente };
 
 /**
  * Asiento contable interno de carrera: "Bono por Cruce de jugadas".
@@ -230,7 +231,13 @@ function proporcionDe(jugada: string): { a: number; b: number } | null {
  */
 export function riesgoDeFila(f: FilaReporte): number {
   if (f.rol === "CRUCE") return 0;
+  if (typeof f.riesgo === "number" && Number.isFinite(f.riesgo) && f.riesgo >= 0) {
+    return redondearCentavos(f.riesgo);
+  }
   if (f.rol === "Consigue") {
+    if (f.tipoJugada === "MARCA" || /^MARCAS?\b/i.test(String(f.jugada ?? "").trim())) {
+      return redondearCentavos((f.monto * 5) / 6);
+    }
     const p = proporcionDe(f.jugada);
     if (p) return redondearCentavos((f.monto * p.b) / p.a);
   }
@@ -262,6 +269,7 @@ export function armarReporteCarrera(
   opciones?: OpcionesReporteCarrera
 ): ReporteCarreraDatos {
   const puestos = (c.pizarra ?? "").split(/\s*·\s*/).filter(Boolean);
+  const puestosRaya = (c.pizarraRaya ?? "").split(/\s*·\s*/).filter(Boolean);
   const consigue = consiguePorJuega(c);
 
   const jugadasVivo: JugadaVivo[] = [];
@@ -468,6 +476,15 @@ export function armarReporteCarrera(
         puesto: `${idx + 1}º`,
         color: colorDiscoNumero(puesto),
       })),
+      ...(puestosRaya.length > 0 && puestosRaya.join(",") !== puestos.join(",")
+        ? {
+            llegadaRaya: puestosRaya.map((puesto, idx) => ({
+              numero: puesto,
+              puesto: `${idx + 1}º`,
+              color: colorDiscoNumero(puesto),
+            })),
+          }
+        : {}),
     },
     liquidada: opciones?.liquidada !== false,
     filtroModalidad: filtro,

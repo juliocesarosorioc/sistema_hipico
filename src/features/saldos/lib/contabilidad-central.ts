@@ -215,7 +215,51 @@ export function calcularResumenContableCliente(params: {
       String(t.carrera ?? "1").trim(),
     ].join("::");
 
+    const nombreJugRaw = String(t.nombre_jugada ?? t.jugada ?? "").trim().toUpperCase();
+    const esTablaFija = /^TABLA\s+FIJA\b|^TF\b|^TABLA$/i.test(nombreJugRaw);
+    const esMarca = /^MARCAS?\b/i.test(nombreJugRaw);
+
     if (est === "GANADOR" || est === "GANO" || est === "SOLUCIONADO") {
+      if (esTablaFija) {
+        const premRaw = redondearCentavos(t.premio_pagar ?? 0);
+        const decRaw = redondearCentavos(t.monto_decidido ?? 0);
+        const pagoTabla = redondearCentavos(
+          premRaw > monto ? premRaw : premRaw > 0 ? premRaw : decRaw > 0 ? decRaw : monto
+        );
+        if (esJugador) {
+          ganadasBrutoCentavos += aCentavos(pagoTabla);
+          const arr = lineasPorCarrera.get(raceKey) ?? [];
+          arr.push({ cliente: params.nombre, brutoGanado: pagoTabla, brutoPerdido: 0 });
+          lineasPorCarrera.set(raceKey, arr);
+        }
+        if (esDador) {
+          const comTabla = calcularComisionExacta(pagoTabla, comPct);
+          const perdidaTf = sumarDinero(pagoTabla, comTabla);
+          perdidasCentavos += aCentavos(perdidaTf);
+          const arr = lineasPorCarrera.get(raceKey) ?? [];
+          arr.push({ cliente: params.nombre, brutoGanado: 0, brutoPerdido: perdidaTf });
+          lineasPorCarrera.set(raceKey, arr);
+        }
+        continue;
+      }
+      if (esMarca) {
+        const pagoMarca = redondearCentavos((monto * 5) / 6);
+        if (esJugador) {
+          ganadasBrutoCentavos += aCentavos(pagoMarca);
+          const arr = lineasPorCarrera.get(raceKey) ?? [];
+          arr.push({ cliente: params.nombre, brutoGanado: pagoMarca, brutoPerdido: 0 });
+          lineasPorCarrera.set(raceKey, arr);
+        }
+        if (esDador) {
+          const comMarca = calcularComisionExacta(pagoMarca, comPct);
+          const perdidaMarca = sumarDinero(pagoMarca, comMarca);
+          perdidasCentavos += aCentavos(perdidaMarca);
+          const arr = lineasPorCarrera.get(raceKey) ?? [];
+          arr.push({ cliente: params.nombre, brutoGanado: 0, brutoPerdido: perdidaMarca });
+          lineasPorCarrera.set(raceKey, arr);
+        }
+        continue;
+      }
       // Ganó el lado Juega
       const premioTotal = redondearCentavos(t.premio_pagar ?? t.monto_decidido ?? monto * 2);
       const gananciaBrutaJuega = Math.max(0, restarDinero(premioTotal, monto));
@@ -239,6 +283,15 @@ export function calcularResumenContableCliente(params: {
         lineasPorCarrera.set(raceKey, arr);
       }
     } else if (est === "PERDEDOR" || est === "PERDIO") {
+      // Corrección de causa raíz: Empate NINI (2N en 2°, 3N en 3°, 4N en 4°, 5N en 5°)
+      // devuelve el capital (`premio_pagar === monto`) → es empate 0/0, no pérdida.
+      if (
+        monto > 0 &&
+        Math.abs(redondearCentavos(t.premio_pagar ?? 0) - monto) < 0.01 &&
+        /\b[2345]N\b/i.test(nombreJugRaw)
+      ) {
+        continue;
+      }
       // Perdió el lado Juega (ganó el lado Da/Consigue)
       if (esJugador) {
         perdidasCentavos += aCentavos(monto);

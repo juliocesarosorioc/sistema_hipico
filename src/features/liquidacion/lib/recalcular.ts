@@ -37,6 +37,9 @@ import type { Remate } from "@/features/remates/lib/core";
 import { editarJugada, anularJugada, type EditablesJugada } from "@/features/jugadas/lib/jugadas";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 import { cargarOpcionesCrucesPuestos } from "@/features/gestion/lib/cruces-carrera";
+import { sincronizarSaldosRealesClientes } from "@/features/saldos/lib/contabilidad-central";
+
+export { sincronizarSaldosRealesClientes };
 
 export type ResRecalcular = {
   ok: boolean;
@@ -558,4 +561,85 @@ export async function autoReliquidarSiLiquidada(opts: {
   if (!oficial?.puestos?.length) return { reliquidada: false, resumen: null };
   const resumen = await recalcularCarreraCompleta(opts);
   return { reliquidada: true, resumen };
+}
+
+
+/**
+ * Recalcula TODAS las carreras con resultado oficial de una jornada completa
+ * (ej. "2026-10-25") usando el motor SSOT de `puestos.ts` y sincroniza los
+ * saldos reales de los clientes en `contabilidad-central.ts`.
+ */
+export async function recalcularJornadaCompleta(
+  fecha = "2026-10-25",
+  opts?: { tasaComision?: number | null; usuario?: string | null }
+): Promise<{
+  ok: boolean;
+  fecha: string;
+  carrerasRecalculadas: number;
+  resultados: Array<{ hipodromo: string; carrera: number; resumen: ResRecalcularCompleto }>;
+  errores: string[];
+}> {
+  const dia = String(fecha || hoyLocal()).slice(0, 10);
+  if (!supabase) {
+    return {
+      ok: false,
+      fecha: dia,
+      carrerasRecalculadas: 0,
+      resultados: [],
+      errores: ["Sin conexión a Supabase."],
+    };
+  }
+  const errores: string[] = [];
+  const resultados: Array<{ hipodromo: string; carrera: number; resumen: ResRecalcularCompleto }> = [];
+  try {
+    const { data, error } = await supabase
+      .from("resultados_carreras")
+      .select("hipodromo, carrera")
+      .eq("fecha", dia)
+      .order("hipodromo", { ascending: true })
+      .order("carrera", { ascending: true });
+    if (error) {
+      return {
+        ok: false,
+        fecha: dia,
+        carrerasRecalculadas: 0,
+        resultados: [],
+        errores: [error.message],
+      };
+    }
+    const vistos = new Set<string>();
+    for (const r of (data ?? []) as Array<{ hipodromo?: unknown; carrera?: unknown }>) {
+      const hip = String(r.hipodromo ?? "").trim().toUpperCase();
+      const car = Number(r.carrera) || 0;
+      if (!hip || car <= 0) continue;
+      const k = `${hip}::${car}`;
+      if (vistos.has(k)) continue;
+      vistos.add(k);
+      const resumen = await recalcularCarreraCompleta({
+        hipodromo: hip,
+        carrera: car,
+        fecha: dia,
+        tasaComision: opts?.tasaComision ?? null,
+        usuario: opts?.usuario ?? null,
+      });
+      resultados.push({ hipodromo: hip, carrera: car, resumen });
+      if (resumen.errores.length) errores.push(...resumen.errores);
+    }
+    await sincronizarSaldosRealesClientes([]);
+    return {
+      ok: errores.length === 0,
+      fecha: dia,
+      carrerasRecalculadas: resultados.length,
+      resultados,
+      errores,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      fecha: dia,
+      carrerasRecalculadas: resultados.length,
+      resultados,
+      errores: [(e as Error).message],
+    };
+  }
 }

@@ -37,6 +37,9 @@ import {
   agruparAdelantadasPorSeccion,
   esJugadaAdelantadaReporte,
 } from "@/features/liquidacion/lib/reporte-carrera";
+import { calcularEstadoCuentaCliente } from "@/features/saldos/lib/contabilidad-central";
+
+export { calcularEstadoCuentaCliente };
 
 /** Forma mínima de un ticket de sesión de la Taquilla (compatible con
  *  `TicketTaquilla` del store; no importa el store para mantener los tests

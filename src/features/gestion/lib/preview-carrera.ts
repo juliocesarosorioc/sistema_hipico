@@ -31,6 +31,10 @@ import {
   categoriaJugadaAdelantada,
   type CategoriaJugadaAdelantada,
 } from "@/features/liquidacion/lib/reporte-carrera";
+import { evaluarPuestoPorPosicion } from "@/features/motores/lib/puestos";
+import { esJugadaAnuladaOExcluida } from "@/features/saldos/lib/contabilidad-central";
+
+export { esJugadaAnuladaOExcluida };
 
 /** Fila mínima de `v_jugadas_carrera` que necesita el panel. */
 export type JugadaPersistida = {
@@ -93,6 +97,10 @@ export type FilaPreviewCarrera = {
   jugada: string;
   caballo: string;
   monto: number;
+  /** Monto apostado / arriesgado por Quien Juega (Cliente 1). */
+  aposto1?: number;
+  /** Monto apostado / arriesgado por Quien Da (Cliente 2 / TF / Marcas). */
+  aposto2?: number;
   cliente1: string;
   cliente2: string;
   /** Pendiente | Ganador | Perdedor | Retirado | Anulada. */
@@ -218,62 +226,156 @@ function ladosDeLaJugada(
   monto: number,
   estadoFila: string,
   premioPagar: number,
-  comisionPct: number
-): { lado1: LadoResultado; lado2: LadoResultado } {
-  const arriesga = (): LadoResultado => ({ estado: "ARRIESGA", liquidada: false, signo: 0, monto });
+  comisionPct: number,
+  nombreJugada?: string
+): { lado1: LadoResultado; lado2: LadoResultado; aposto1: number; aposto2: number } {
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const jugTxt = TXT(nombreJugada).toUpperCase();
+  const esTablaFija = /^TABLA\s+FIJA\b|^TF\b|^TABLA$/i.test(jugTxt);
+  const esMarca = /^MARCAS?\b/i.test(jugTxt);
+
+  const pagoTabla = esTablaFija
+    ? round2(premioPagar > monto ? premioPagar : premioPagar > 0 ? premioPagar : monto)
+    : 0;
+  const pagoMarca = esMarca ? round2((monto * 5) / 6) : 0;
+
+  const aposto1 = round2(monto);
+  const aposto2 = esTablaFija ? pagoTabla : esMarca ? pagoMarca : round2(monto);
+
+  const arriesga1 = (): LadoResultado => ({ estado: "ARRIESGA", liquidada: false, signo: 0, monto: aposto1 });
+  const arriesga2 = (): LadoResultado => ({ estado: "ARRIESGA", liquidada: false, signo: 0, monto: aposto2 });
 
   if (estadoFila === "Anulada") {
     const lado: LadoResultado = { estado: "ANULADA", liquidada: true, signo: 0, monto: 0 };
-    return { lado1: lado, lado2: lado };
+    return { lado1: lado, lado2: lado, aposto1, aposto2 };
   }
   if (estadoFila === "Retirado") {
     const lado: LadoResultado = { estado: "RETIRADO", liquidada: true, signo: 0, monto: 0 };
-    return { lado1: lado, lado2: lado };
+    return { lado1: lado, lado2: lado, aposto1, aposto2 };
   }
 
-  // Carrera YA liquidada: el estado manda. Un ticket 'Ganador' SIEMPRE es ✅ y
-  // un 'Perdedor' SIEMPRE es ✖, aunque el premio quede por debajo del monto
-  // (break-even o premio incompleto): antes se exigía `premio_pagar > monto`, así
-  // que un ganador sin premio —o con el dividendo aún sin cargar— se pintaba como
-  // perdedor y "no se le pagaba al ganador".
   if (estadoFila === "Ganador" || estadoFila === "Perdedor") {
     const gano = estadoFila === "Ganador";
+    const pct = comisionPct > 0 ? comisionPct : 5;
+
+    if (esTablaFija) {
+      if (gano) {
+        return {
+          lado1: { estado: "GANO", liquidada: true, signo: 1, monto: pagoTabla },
+          lado2: {
+            estado: "PERDIO",
+            liquidada: true,
+            signo: -1,
+            monto: round2(pagoTabla + (pagoTabla * pct) / 100),
+          },
+          aposto1,
+          aposto2,
+        };
+      }
+      return {
+        lado1: { estado: "PERDIO", liquidada: true, signo: -1, monto: aposto1 },
+        lado2: {
+          estado: "GANO",
+          liquidada: true,
+          signo: 1,
+          monto: round2(Math.max(0, aposto1 - (aposto1 * pct) / 100)),
+        },
+        aposto1,
+        aposto2,
+      };
+    }
+
+    if (esMarca) {
+      if (gano) {
+        return {
+          lado1: { estado: "GANO", liquidada: true, signo: 1, monto: pagoMarca },
+          lado2: {
+            estado: "PERDIO",
+            liquidada: true,
+            signo: -1,
+            monto: round2(pagoMarca + (pagoMarca * pct) / 100),
+          },
+          aposto1,
+          aposto2,
+        };
+      }
+      return {
+        lado1: { estado: "PERDIO", liquidada: true, signo: -1, monto: aposto1 },
+        lado2: {
+          estado: "GANO",
+          liquidada: true,
+          signo: 1,
+          monto: round2(Math.max(0, aposto1 - (aposto1 * pct) / 100)),
+        },
+        aposto1,
+        aposto2,
+      };
+    }
+
     // Ganancia bruta sobre la que se cobra la comisión (nunca negativa).
-    const gananciaBruta = gano ? Math.max(0, Math.round((premioPagar - monto) * 100) / 100) : 0;
-    const comision = Math.round(gananciaBruta * (comisionPct / 100) * 100) / 100;
-    const netoJuega = Math.round((gananciaBruta - comision) * 100) / 100; // ganancia NETA del que juega
-    // El que da, en espejo: entrega el neto del jugador + la comisión si perdió
-    // el jugador; cobra el monto menos la comisión si el jugador falló.
+    const gananciaBruta = gano ? Math.max(0, round2(premioPagar - monto)) : 0;
+    const comision = round2(gananciaBruta * (comisionPct / 100));
+    const netoJuega = round2(gananciaBruta - comision); // ganancia NETA del que juega
     const ladoJuegaGano: LadoResultado = { estado: "GANO", liquidada: true, signo: 1, monto: Math.max(0, netoJuega) };
     const ladoJuegaPerdio: LadoResultado = { estado: "PERDIO", liquidada: true, signo: -1, monto };
     const ladoDaGano: LadoResultado = {
       estado: "GANO",
       liquidada: true,
       signo: 1,
-      monto: Math.round(Math.max(0, monto - monto * (comisionPct / 100)) * 100) / 100,
+      monto: round2(Math.max(0, monto - monto * (comisionPct / 100))),
     };
     const ladoDaPerdio: LadoResultado = {
       estado: "PERDIO",
       liquidada: true,
       signo: -1,
-      monto: Math.round(Math.max(0, premioPagar - monto) * 100) / 100,
+      monto: round2(Math.max(0, premioPagar - monto)),
     };
     return gano
-      ? { lado1: ladoJuegaGano, lado2: ladoDaPerdio }
-      : { lado1: ladoJuegaPerdio, lado2: ladoDaGano };
+      ? { lado1: ladoJuegaGano, lado2: ladoDaPerdio, aposto1, aposto2 }
+      : { lado1: ladoJuegaPerdio, lado2: ladoDaGano, aposto1, aposto2 };
   }
 
-  // Pendiente: SIEMPRE el monto en riesgo (gris), en ambos lados. Aunque la
-  // sesión tenga una proyección, la carrera todavía NO se liquidó, así que no
-  // corresponde pintar ✅/✖: eso es exclusivo de una carrera liquidada.
-  return { lado1: arriesga(), lado2: arriesga() };
+  return { lado1: arriesga1(), lado2: arriesga2(), aposto1, aposto2 };
 }
 
-function filaDesdePersistida(j: JugadaPersistida, sesion?: TicketSesion): FilaPreviewCarrera {
+function filaDesdePersistida(
+  j: JugadaPersistida,
+  sesion?: TicketSesion,
+  pizarraPuestos?: string[]
+): FilaPreviewCarrera {
   const monto = NUM(j.monto_jugado);
   const anulada = Boolean(j.anulada);
-  const estado = estadoDeFila(j.estado, anulada);
+  let estado = estadoDeFila(j.estado, anulada);
   const ticketId = String(j.id ?? "").trim() || null;
+  const nombreJug = TXT(j.nombre_jugada);
+  const caballo = TXT(j.caballo) || (j.ejemplar_numero != null ? String(j.ejemplar_numero) : "");
+  const comisionPct = NUM(j.comision_porcentaje);
+
+  // Corrección de causa raíz para Empate NINI (2N en 2°, 3N en 3°, 4N en 4°, 5N en 5°):
+  // Si hay pizarra oficial (o si el ticket quedó con estado "Perdedor" pero premio_pagar === monto),
+  // en el empate NINI ni gana ni pierde nadie (0 / 0 = Retirado/Empate).
+  if (!anulada && (estado === "Ganador" || estado === "Perdedor") && esJugadaDeTaquilla(nombreJug)) {
+    if (pizarraPuestos && pizarraPuestos.length > 0 && caballo) {
+      const idx = pizarraPuestos.findIndex((p) => String(p).trim() === caballo);
+      const pos = idx >= 0 ? idx + 1 : 99;
+      const r = evaluarPuestoPorPosicion(
+        nombreJug,
+        pos,
+        monto,
+        comisionPct > 0 ? comisionPct : 5
+      );
+      if (r && !r.ok && Math.abs(r.totalClienteNeto - monto) < 0.01) {
+        estado = "Retirado";
+      }
+    } else if (
+      estado === "Perdedor" &&
+      monto > 0 &&
+      Math.abs(NUM(j.premio_pagar) - monto) < 0.01 &&
+      /\b[2345]N\b/i.test(nombreJug)
+    ) {
+      estado = "Retirado";
+    }
+  }
 
   let premioSaldo = 0;
   let esPremio = false;
@@ -297,21 +399,27 @@ function filaDesdePersistida(j: JugadaPersistida, sesion?: TicketSesion): FilaPr
     }
   }
 
-  const comisionPct = NUM(j.comision_porcentaje);
-  const { lado1, lado2 } = ladosDeLaJugada(monto, estado, NUM(j.premio_pagar), comisionPct);
+  const { lado1, lado2, aposto1, aposto2 } = ladosDeLaJugada(
+    monto,
+    estado,
+    NUM(j.premio_pagar),
+    comisionPct,
+    nombreJug
+  );
 
-  const nombreJug = TXT(j.nombre_jugada);
   const esAdel =
     esAdelantadaDe(j) ||
     Boolean(sesion?.esAdelantada) ||
     esNombreModalidadAdelantada(nombreJug);
 
   return {
-    clave: `db-${ticketId ?? nombreJug}-${TXT(j.caballo)}`,
+    clave: `db-${ticketId ?? nombreJug}-${caballo}`,
     ticketId,
     jugada: nombreJug,
-    caballo: TXT(j.caballo) || (j.ejemplar_numero != null ? String(j.ejemplar_numero) : ""),
+    caballo,
     monto,
+    aposto1,
+    aposto2,
     cliente1: TXT(j.cliente_juega_nombre),
     cliente2: resolverContraparteModalidad(nombreJug, j.cliente_consigue_nombre),
     estado,
@@ -334,8 +442,8 @@ function filaDesdeSesion(t: TicketSesion): FilaPreviewCarrera {
   const mejor = mejorCobreDe(t);
   const esPremio = mejor > monto;
   const ticketId = t.ticketId != null && String(t.ticketId).trim() !== "" ? String(t.ticketId) : null;
-  const { lado1, lado2 } = ladosDeLaJugada(monto, "Pendiente", 0, 0);
   const nombreJug = jugadaSinMonto(t.comando);
+  const { lado1, lado2, aposto1, aposto2 } = ladosDeLaJugada(monto, "Pendiente", 0, 0, nombreJug);
   const esAdel = Boolean(t.esAdelantada) || esNombreModalidadAdelantada(nombreJug);
   return {
     clave: `ses-${t.id ?? ticketId ?? nombreJug}`,
@@ -343,6 +451,8 @@ function filaDesdeSesion(t: TicketSesion): FilaPreviewCarrera {
     jugada: nombreJug,
     caballo: TXT(t.caballo),
     monto,
+    aposto1,
+    aposto2,
     cliente1: TXT(t.cliente1),
     cliente2: resolverContraparteModalidad(nombreJug, t.cliente2),
     estado: "Pendiente",
@@ -369,7 +479,8 @@ function filaDesdeSesion(t: TicketSesion): FilaPreviewCarrera {
  */
 export function armarFilasPreview(
   persistidas: JugadaPersistida[],
-  sesion: TicketSesion[]
+  sesion: TicketSesion[],
+  pizarraPuestos?: string[]
 ): FilaPreviewCarrera[] {
   const ticketsSesion = sesion.filter((t) => TXT(t.comando) !== "");
   const porTicketId = new Map<string, TicketSesion>();
@@ -386,7 +497,7 @@ export function armarFilasPreview(
     const id = String(j.id ?? "").trim();
     const sesionDeFila = id ? porTicketId.get(id) : undefined;
     if (id) idsUsados.add(id);
-    filas.push(filaDesdePersistida(j, sesionDeFila));
+    filas.push(filaDesdePersistida(j, sesionDeFila, pizarraPuestos));
   }
 
   for (const t of ticketsSesion) {

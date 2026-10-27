@@ -1,6 +1,10 @@
 import type { TicketMotor, ResultadoMotor } from "@/features/betting/lib/bettingEngine";
 import { parsearNini } from "@/features/betting/lib/bettingEngine";
-import { liquidarPuestos } from "@/features/motores/lib/puestos";
+import {
+  liquidarPuestos,
+  validarPuesto,
+  minimoCorredoresRequeridos,
+} from "@/features/motores/lib/puestos";
 import { liquidarWps, tipoWps } from "@/features/motores/lib/wps";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 import {
@@ -24,6 +28,8 @@ export {
   getMejorPos,
   extraerEjemplaresMultiples,
   calcularRiesgoCliente2,
+  validarPuesto,
+  minimoCorredoresRequeridos,
 };
 
 export type Proyeccion = {
@@ -40,7 +46,8 @@ export type ValidacionComando =
   | { ok: true; tipo: string; monto: number; simulada: ResultadoMotor; proyeccion: Proyeccion }
   | { ok: false; motivo: string };
 
-const REGLA_VIOLADA = /BLOQUEO DE PIZARRA|malformado|inválido|sin motor registrado|modalidad sin motor/i;
+const REGLA_VIOLADA =
+  /BLOQUEO DE PIZARRA|Nomenclatura inválida|Nomenclatura no reconocida|malformado|inválido|sin motor registrado|modalidad sin motor|riesgo bilateral/i;
 
 const POSICIONES = [1, 2, 3, 4, 5, 6, 7, 8];
 
@@ -112,7 +119,8 @@ function pizarraCon(caballo: string, puesto: number): PizarraCarrera {
 export function validarComando(
   texto: string,
   tasaComision?: number | null,
-  caballo?: string
+  caballo?: string,
+  nCorredores?: number | null
 ): ValidacionComando {
   const t = String(texto ?? "").trim();
   const m = /^(\d+(?:\.\d+)?)\s+(.+?)\s*$/i.exec(t);
@@ -124,6 +132,14 @@ export function validarComando(
     return { ok: false, motivo: "El monto debe ser un número mayor a $0." };
   }
   const tipo = m[2].trim().toUpperCase();
+
+  // Regla 1: Prohibición absoluta de 1N y validación de riesgo bilateral según N_corredores
+  if (!tipoWps(tipo)) {
+    const valPuesto = validarPuesto(tipo, nCorredores);
+    if (!valPuesto.ok) {
+      return { ok: false, motivo: valPuesto.error ?? "Jugada inválida por reglas de puestos." };
+    }
+  }
 
   /* Columna CABALLO tal cual (puede traer divisor "1,2x3"): es la que alimenta
      al motor cuando la nomenclatura NO trae sus propios ejemplares ("2n",
@@ -754,6 +770,14 @@ export function clasificarLineaRapida(linea: string): ClasificacionLinea | null 
       /\b(\d+(?:[.,]\d+)?)\s*[AA/]\s*(\d+(?:[.,]\d+)?)\b/gi,
       (_m, p, q) => `${String(p).replace(",", ".")}/${String(q).replace(",", ".")}`
     );
+
+  // Regla 1: Prohibición absoluta de 1N (Primer Nini)
+  if (/(?:^|[^0-9])1\s*N(?![A-Z])/i.test(jugadaCanon)) {
+    return {
+      ok: false,
+      motivo: `La jugada "${jugadaCanon}" es inválida: NO EXISTE 1N (Regla 1: Riesgo Bilateral).`,
+    };
+  }
 
   return {
     ok: true,

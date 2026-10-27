@@ -25,6 +25,9 @@ import {
   normalizarNombreCliente,
   type JugadaActivaSimulacion,
 } from "@/features/taquilla/lib/cruces-y-tapas";
+import { calcularEstadoCuentaCliente } from "@/features/saldos/lib/contabilidad-central";
+
+export { calcularEstadoCuentaCliente };
 
 /** Cliente mínimo con el que se topa el saldo (compatible con `ClienteVenta`). */
 export type ClienteConSaldo = {

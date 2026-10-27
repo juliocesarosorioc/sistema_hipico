@@ -205,7 +205,12 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   const usaModalidadesPuestos = opts.crucesPuestos !== undefined;
   const indicesLegados = procesados
     .map((_, i) => i)
-    .filter((i) => !usaModalidadesPuestos || !esJugadaDePuestos(metadatos[i].tipo));
+    .filter((i) => !usaModalidadesPuestos || !esJugadaDePuestos(metadatos[i].tipo))
+    .filter((i) => {
+      const r = procesados[i].resultado;
+      // Empate NINI (devuelve capital: !ok && totalClienteNeto === monto) no es pérdida para el cruce
+      return !(metadatos[i].monto > 0 && !r.ok && Math.abs(r.totalClienteNeto - metadatos[i].monto) < 0.01);
+    });
   const items: NeteoCruceItem[] = indicesLegados.map((i) => ({
     cliente: metadatos[i].cliente1 ?? "",
     caballo: metadatos[i].caballo,
@@ -261,15 +266,21 @@ export async function liquidarCarreraYCerrarTabla(opts: {
       indicesPorJugador.set(nombre, idxs);
     }
     for (const [jugador, idxs] of indicesPorJugador) {
-      const entradas: EntradaCrucePuestos[] = idxs.map((i) => ({
-        cliente: jugador,
-        caballo: metadatos[i].caballo,
-        ok: procesados[i].resultado.ok,
-        bruto: procesados[i].resultado.ok
-          ? procesados[i].resultado.totalClienteNeto + procesados[i].resultado.gananciaCasa
-          : 0,
-        monto: metadatos[i].monto,
-      }));
+      const entradas: EntradaCrucePuestos[] = idxs
+        .filter((i) => {
+          const r = procesados[i].resultado;
+          // Empate NINI (0/0, devuelve capital) no cuenta como pérdida en el cruce
+          return !(metadatos[i].monto > 0 && !r.ok && Math.abs(r.totalClienteNeto - metadatos[i].monto) < 0.01);
+        })
+        .map((i) => ({
+          cliente: jugador,
+          caballo: metadatos[i].caballo,
+          ok: procesados[i].resultado.ok,
+          bruto: procesados[i].resultado.ok
+            ? procesados[i].resultado.totalClienteNeto + procesados[i].resultado.gananciaCasa
+            : 0,
+          monto: metadatos[i].monto,
+        }));
       const liquidacion = calcularLiquidacionPuestosCarrera(entradas, {
         ...opts.crucesPuestos,
         pctComision: Number(tasaComision ?? 5),
@@ -497,7 +508,11 @@ export async function liquidarTablasFijasDeCarrera(
   fecha: string,
   usuario?: string | null
 ): Promise<{ ok: boolean; tablas: number; pagado: number; comision: number; error?: string }> {
-  const ganador = String(pizarra.primero ?? "").trim();
+  // Regla de negocio: Tablas Fijas y Remates se liquidan por el Orden de Llegada en Raya
+  // (el caballo que cruzó la raya primero), aun cuando haya distanciamiento en el Orden Oficial.
+  const ganador = String(
+    pizarra.primero_raya || pizarra.orden_llegada_raya?.[0] || pizarra.primero || ""
+  ).trim();
   // Dead heat: ganan TODOS los que empataron (la RPC acepta "1,3,4"). Sin
   // ganadores no se toca nada (la tabla queda pendiente a decisión manual).
   const empates = Array.isArray(pizarra.empates) ? pizarra.empates.map((e) => String(e).trim()) : [];

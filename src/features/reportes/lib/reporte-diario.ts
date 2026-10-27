@@ -27,6 +27,9 @@
  */
 import { supabase } from "@/core/supabase";
 import { _reembolsosCruce } from "@/features/taquilla/lib/cruces-y-tapas";
+import { aplicarDevolucionIncentivoAFavor, calcularResumenContableCliente } from "@/features/saldos/lib/contabilidad-central";
+
+export { aplicarDevolucionIncentivoAFavor, calcularResumenContableCliente };
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -185,7 +188,7 @@ function claveDiaCarrera(fecha: string, hipodromo: string, carrera: number): str
 
 function resultadoNetoJugada(montoJugado: number, premio: number, estado: string): number {
   const est = String(estado ?? "").trim().toUpperCase();
-  if (est === "PENDIENTE" || est === "EN_REVISION" || est === "RETIRADO") {
+  if (est === "PENDIENTE" || est === "EN_REVISION" || est === "RETIRADO" || est === "EMPATE") {
     return premio > 0 ? centavos(premio - montoJugado) : 0;
   }
   if (premio > 0) return centavos(premio - montoJugado);

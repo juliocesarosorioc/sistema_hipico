@@ -1,9 +1,12 @@
-﻿/**
+/**
  * Motor de pago inmediato: en esta Fase 2 solo se liquidan NINI y REMATE
  * (con el 1er lugar de la pizarra). TABLA, GANADOR y PUESTOS quedan
  * pendientes — exigen dividendos oficiales (Fase siguiente del plan).
  */
 import type { BetSlipEntry } from "@/shared/store/bet-slip";
+import { esJugadaAnuladaOExcluida } from "@/features/saldos/lib/contabilidad-central";
+
+export { esJugadaAnuladaOExcluida };
 
 export type PizarraCarrera = {
   primero: string;
@@ -22,6 +25,9 @@ export type PizarraCarrera = {
    *  raya primero. Por defecto (ausente) se asume = primero (orden de llegada).
    */
   primero_raya?: string;
+  /** Orden de llegada completo en raya (1º, 2º, 3º…) cuando hubo distanciamiento
+   *  y difiere de la pizarra oficial. Por defecto es igual al orden oficial. */
+  orden_llegada_raya?: string[];
 };
 
 export type PayloadPagar = {

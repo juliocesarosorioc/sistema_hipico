@@ -207,5 +207,31 @@ si(
 );
 si(resultadoConsigueDe(100, { ok: null, bruto: 0, comision: 0, tasa: 5 }) === null, "ticket pendiente: el «da» queda null");
 
+// ── 8. Pizarra Oficial vs. Orden de Llegada en Raya (Distanciamiento) ───────
+{
+  const igualRaya = armarReporteCarrera({
+    hipodromo: "La Rinconada",
+    numero: 3,
+    fecha: "2026-10-12",
+    pizarra: "7 · 2 · 5",
+    pizarraRaya: "7 · 2 · 5",
+    filas: [],
+    totales: { apostado: 0, cobrado: 0, pagado: 0, comision: 0, neto: 0 },
+  });
+  si(igualRaya.encabezado.llegadaRaya === undefined, "cuando Orden de Llegada = Orden Oficial, llegadaRaya se omite");
+
+  const conDistanciamiento = armarReporteCarrera({
+    hipodromo: "La Rinconada",
+    numero: 3,
+    fecha: "2026-10-12",
+    pizarra: "2 · 7 · 5",
+    pizarraRaya: "7 · 2 · 5",
+    filas: [],
+    totales: { apostado: 0, cobrado: 0, pagado: 0, comision: 0, neto: 0 },
+  });
+  si(Array.isArray(conDistanciamiento.encabezado.llegadaRaya) && conDistanciamiento.encabezado.llegadaRaya.length === 3, "cuando hay distanciamiento, llegadaRaya trae los 3 ejemplares de la raya");
+  si(conDistanciamiento.encabezado.llegada[0].numero === "2" && conDistanciamiento.encabezado.llegadaRaya?.[0].numero === "7", "Pizarra Oficial tiene 1º=#2 y Orden de Llegada (Raya) tiene 1º=#7");
+}
+
 console.log(`\n${pasan} pasan, ${fallan} fallan.`);
 if (fallan > 0) process.exit(1);

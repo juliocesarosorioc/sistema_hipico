@@ -243,5 +243,57 @@ igual(resumenConAnulada.monto, 100, "la anulada NO suma al monto del panel");
   si(!filas.some((f) => /Ganador|Perdedor/.test(f.estadoLiquidacion)), "nunca aparece Ganador/Perdedor en el estado");
 }
 
+// ── 9. Empate NINI (2N en 2°, 3N en 3°), Tablas Fijas (TF) y Marcas (5/6) ──
+{
+  // Empate NINI: 2N llega 2° -> 0 / 0 (RETIRADO / Empate), ni gana ni pierde nadie
+  const empateNini = armarFilasPreview(
+    [persistida({ id: "n1", nombre_jugada: "2N", caballo: "4", monto_jugado: 1000, estado: "Perdedor", premio_pagar: 1000, comision_porcentaje: 5 })],
+    [],
+    ["7", "4", "1", "2", "5"]
+  );
+  igual(empateNini[0].estado, "Retirado", "2N en 2° puesto se corrige a Retirado (Empate 0/0)");
+  igual(empateNini[0].lado1.estado, "RETIRADO", "2N en 2° puesto: lado1 es RETIRADO (0)");
+  igual(empateNini[0].lado2.estado, "RETIRADO", "2N en 2° puesto: lado2 es RETIRADO (0)");
+  igual(empateNini[0].lado1.monto, 0, "2N en 2° puesto: lado1 monto 0");
+  igual(empateNini[0].lado2.monto, 0, "2N en 2° puesto: lado2 monto 0");
+
+  // Tabla Fija (TF): Jugador apuesta 100, premio 500, comisión 5%
+  const tfPierde = armarFilasPreview(
+    [persistida({ id: "tf1", nombre_jugada: "TABLA FIJA", caballo: "3", monto_jugado: 100, premio_pagar: 500, estado: "Perdedor", cliente_consigue_nombre: "", comision_porcentaje: 5 })],
+    []
+  );
+  igual(tfPierde[0].cliente2, "TF", "Tabla Fija sin contraparte asignada usa TF");
+  igual(tfPierde[0].aposto1, 100, "Tabla Fija: jugador apostó 100");
+  igual(tfPierde[0].aposto2, 500, "Tabla Fija: TF arriesga el premio a pagar (500)");
+  igual(tfPierde[0].lado1.monto, 100, "Tabla Fija perdedora: jugador pierde 100");
+  igual(tfPierde[0].lado2.monto, 95, "Tabla Fija perdedora: TF gana 100 menos 5% comisión (95)");
+
+  const tfGana = armarFilasPreview(
+    [persistida({ id: "tf2", nombre_jugada: "TABLA FIJA", caballo: "7", monto_jugado: 100, premio_pagar: 500, estado: "Ganador", cliente_consigue_nombre: "BANCA_TF", comision_porcentaje: 5 })],
+    []
+  );
+  igual(tfGana[0].cliente2, "BANCA_TF", "Tabla Fija respeta el usuario asignado a TF");
+  igual(tfGana[0].lado1.monto, 500, "Tabla Fija ganadora: jugador gana 500 íntegros");
+  igual(tfGana[0].lado2.monto, 525, "Tabla Fija ganadora: TF pierde 500 más 5% comisión (525)");
+
+  // Marcas (proporción 5/6): Jugador juega 6, paga 5, comisión 5%
+  const marcaGana = armarFilasPreview(
+    [persistida({ id: "m1", nombre_jugada: "MARCA 1", caballo: "1", monto_jugado: 6, premio_pagar: 11, estado: "Ganador", cliente_consigue_nombre: "", comision_porcentaje: 5 })],
+    []
+  );
+  igual(marcaGana[0].cliente2, "Marcas", "Marca sin contraparte asignada usa Marcas");
+  igual(marcaGana[0].aposto1, 6, "Marca: jugador apostó 6");
+  igual(marcaGana[0].aposto2, 5, "Marca: Marcas arriesga proporción 5/6 (5)");
+  igual(marcaGana[0].lado1.monto, 5, "Marca ganadora: jugador gana proporción 5/6 (5)");
+  igual(marcaGana[0].lado2.monto, 5.25, "Marca ganadora: Marcas pierde 5 más 5% comisión (5.25)");
+
+  const marcaPierde = armarFilasPreview(
+    [persistida({ id: "m2", nombre_jugada: "MARCA 2", caballo: "2", monto_jugado: 6, premio_pagar: 0, estado: "Perdedor", cliente_consigue_nombre: "", comision_porcentaje: 5 })],
+    []
+  );
+  igual(marcaPierde[0].lado1.monto, 6, "Marca perdedora: jugador pierde 6");
+  igual(marcaPierde[0].lado2.monto, 5.7, "Marca perdedora: Marcas gana 6 menos 5% comisión (5.70)");
+}
+
 console.log(`\n${pasan} ok / ${fallan} fallaron`);
 if (fallan > 0) process.exitCode = 1;

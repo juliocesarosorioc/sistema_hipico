@@ -25,6 +25,9 @@ import {
 } from "@/features/motores/lib/puestos";
 import { cargarOpcionesCrucesPuestos } from "@/features/gestion/lib/cruces-carrera";
 import { redondearCentavos, sumarDinero, restarDinero, formatearMontoSinMoneda } from "@/shared/lib/dinero";
+import { calcularEstadoCuentaCliente, calcularResumenContableCliente } from "@/features/saldos/lib/contabilidad-central";
+
+export { calcularEstadoCuentaCliente, calcularResumenContableCliente };
 
 export type LiquidarSaldosInput = {
   hipodromo: string;
@@ -151,6 +154,11 @@ export function decidirTickets(
     esJugadaDePuestos(String(decisiones[i].fila.nombre_jugada ?? decisiones[i].fila.tipo_jugada ?? ""));
   const items: NeteoCruceItem[] = decisiones
     .filter((_, i) => !usaModalidadesPuestos || !esPuestos(i))
+    .filter(({ fila, res }) => {
+      const m = NUM(fila.monto_jugado);
+      // Empate NINI (devuelve capital: !ok && totalClienteNeto === monto) no es pérdida para el cruce
+      return !(m > 0 && !res.ok && Math.abs(res.totalClienteNeto - m) < 0.01);
+    })
     .map(({ fila, res }) => ({
     cliente: String(fila.cliente_juega_id ?? "").trim(),
     caballo: String(fila.caballo ?? "").trim(),
@@ -210,15 +218,21 @@ export function decidirTickets(
       porJugador.set(nombre, lista);
     }
     for (const [jugador, idxs] of porJugador) {
-      const entradas: EntradaCrucePuestos[] = idxs.map((i) => ({
-        cliente: jugador,
-        caballo: String(decisiones[i].fila.caballo ?? "").trim(),
-        ok: decisiones[i].res.ok,
-        bruto: decisiones[i].res.ok
-          ? decisiones[i].res.totalClienteNeto + decisiones[i].res.gananciaCasa
-          : 0,
-        monto: NUM(decisiones[i].fila.monto_jugado),
-      }));
+      const entradas: EntradaCrucePuestos[] = idxs
+        .filter((i) => {
+          const m = NUM(decisiones[i].fila.monto_jugado);
+          const r = decisiones[i].res;
+          return !(m > 0 && !r.ok && Math.abs(r.totalClienteNeto - m) < 0.01);
+        })
+        .map((i) => ({
+          cliente: jugador,
+          caballo: String(decisiones[i].fila.caballo ?? "").trim(),
+          ok: decisiones[i].res.ok,
+          bruto: decisiones[i].res.ok
+            ? decisiones[i].res.totalClienteNeto + decisiones[i].res.gananciaCasa
+            : 0,
+          monto: NUM(decisiones[i].fila.monto_jugado),
+        }));
       const tasa = tasaComisionDeFila(decisiones[idxs[0]].fila, input.tasaComision);
       const liquidacion = calcularLiquidacionPuestosCarrera(entradas, {
         ...input.crucesPuestos,

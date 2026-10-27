@@ -10,6 +10,8 @@ export type TablasFijasState = {
   setTablas: (tablas: TablaFijaRow[]) => void;
   /** Marca como Cerrada la tabla de (hipodromo, carrera) — sin refrescar página. */
   marcarCerrada: (hipodromo: string, carrera: number | string) => void;
+  /** Marca como Abierta la tabla de (hipodromo, carrera) al reversar liquidación. */
+  marcarAbierta: (hipodromo: string, carrera: number | string) => void;
 };
 
 /**
@@ -39,6 +41,21 @@ export const useTablasFijasStore = create<TablasFijasState>()(
             const nc = Number(carrera) || 0;
             if (th === hip && tc === nc) {
               return { ...t, estado: "Cerrada", cerrada: true };
+            }
+            return t;
+          }),
+        }));
+      },
+
+      marcarAbierta: (hipodromo, carrera) => {
+        const hip = String(hipodromo ?? "").toUpperCase().replace(/\s+/g, "");
+        set((s) => ({
+          tablas: s.tablas.map((t) => {
+            const th = String(t.hipodromo ?? "").toUpperCase().replace(/\s+/g, "");
+            const tc = Number(t.carrera) || 0;
+            const nc = Number(carrera) || 0;
+            if (th === hip && tc === nc) {
+              return { ...t, estado: "Abierta", cerrada: false };
             }
             return t;
           }),

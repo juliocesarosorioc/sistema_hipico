@@ -19,6 +19,11 @@ import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { listarCarrerasPorDia } from "@/features/tablas/lib/rpc";
 import { pizarraDesdeNums, esVentaDeRemate } from "@/features/impresion/lib/reportGenerator";
 import { desgloseJugada, esMarca, resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
+import { extraerOrdenLlegadaRaya, hayDistanciamientoPizarra } from "@/features/liquidacion/lib/posiciones";
+import { rivalesDeNota } from "@/features/marcas/lib/reporte-marcas-nucleo";
+import { calcularEstadoCuentaCliente, aplicarDevolucionIncentivoAFavor } from "@/features/saldos/lib/contabilidad-central";
+
+export { calcularEstadoCuentaCliente, aplicarDevolucionIncentivoAFavor };
 import { _reembolsosCruce } from "@/features/taquilla/lib/cruces-y-tapas";
 import { liquidarOficial, puestosDesdeOrdenLlegada } from "@/features/motores/lib/oficiales";
 import {
@@ -38,6 +43,8 @@ export type FilaReporte = {
   jugada: string;
   caballo: string;
   monto: number;
+  /** Riesgo explícito de la fila (ej. en Marcas el que Da arriesga monto * 5/6; en Tablas Fijas arriesga el premio de la tabla). */
+  riesgo?: number;
   /** Resultado NETO de la casa sobre esa fila; null = pendiente de liquidar. */
   resultado: number | null;
   esPareo?: boolean;
@@ -69,6 +76,8 @@ export type CarreraReporte = {
   hipodromo: string;
   fecha: string;
   pizarra: string | null;
+  /** Orden de llegada en raya (1º · 2º · 3º…) cuando difiere de la pizarra oficial por distanciamiento. */
+  pizarraRaya?: string | null;
   filas: FilaReporte[];
   subtotal: number;
 };
@@ -195,10 +204,17 @@ function ticketMotorDe(
   const pizarra = pizarraDesdeNums(puestos);
   const tipo = txt(f.nombre_jugada).toUpperCase();
   const monto = cifra(f.monto_jugado);
+  const rawCab = txt(f.caballo);
+  const caballo =
+    /\d/.test(rawCab)
+      ? rawCab
+      : f.ejemplar_numero != null && txt(f.ejemplar_numero) !== ""
+        ? txt(f.ejemplar_numero)
+        : rawCab;
   return {
     hipodromo,
     carrera: String(carrera),
-    caballo: txt(f.caballo),
+    caballo,
     fechas: [],
     id: "reporte-" + txt(f.id),
     cruces: 1,
@@ -207,7 +223,7 @@ function ticketMotorDe(
     addedAt: 0,
     tipo_jugada: tipo,
     monto,
-    puesto_final: puestoFinalDe(txt(f.caballo), puestos),
+    puesto_final: puestoFinalDe(caballo, puestos),
     pizarra,
     // Sin esto el motor oficial liquidaba siempre a la par de la casa (2x/120x):
     // los dividendos que carga la casa se guardaban y NADIE los leia.
@@ -217,6 +233,40 @@ function ticketMotorDe(
   };
 }
 
+function premioCongeladoDeNota(nota: unknown): number {
+  if (!nota) return 0;
+  try {
+    const obj = typeof nota === "string" ? JSON.parse(nota) : nota;
+    if (obj && typeof obj === "object") {
+      const r = obj as Record<string, unknown>;
+      return cifra(r.premio_congelado) || cifra(r.premio_por_tabla) || 0;
+    }
+  } catch {
+    /* ignore */
+  }
+  return 0;
+}
+
+export function pagoPotencialTablaFija(f: Record<string, unknown>): number {
+  const pagado = cifra(f.premio_pagar) || cifra(f.monto_decidido);
+  if (pagado > 0) return Math.round(pagado * 100) / 100;
+  const cant = Math.max(1, cifra(f.cantidad_tablas) || 1);
+  const unit = cifra(f.premio_por_tabla) || premioCongeladoDeNota(f.nota_auditoria);
+  if (unit > 0) return Math.round(cant * unit * 100) / 100;
+  const monto = cifra(f.monto_jugado);
+  return Math.round(monto * 2 * 100) / 100;
+}
+
+export type EvaluacionTicketReporte = {
+  ok: boolean | null;
+  bruto: number;
+  comision: number;
+  tasa: number;
+  riesgoDa?: number;
+  resultadoJuega?: number | null;
+  resultadoDa?: number | null;
+};
+
 /** Evalúa un ticket: null = pendiente sin pizarra; true/false = decidido. */
 function evaluar(
   f: Record<string, unknown>,
@@ -224,7 +274,7 @@ function evaluar(
   carrera: string | number,
   pizarra: PizarraCarrera | null,
   tasaComision?: number | null
-): { ok: boolean | null; bruto: number; comision: number; tasa: number } {
+): EvaluacionTicketReporte {
   const estado = txt(f.estado).toUpperCase();
   const monto = cifra(f.monto_jugado);
   // Una jugada ANULADA es NEUTRA en el reporte: se devolvió el capital, así que
@@ -233,19 +283,10 @@ function evaluar(
   // Ganador/Perdedor/Retirado): sin este corte, la anulada se evaluaba como
   // jugada vigente e inflaba el subtotal y el resumen de la carrera.
   if (f.anulada === true || estado === "ANULADO" || estado === "ANULADA") {
-    return { ok: false, bruto: 0, comision: 0, tasa: 0 };
+    return { ok: false, bruto: 0, comision: 0, tasa: 0, resultadoJuega: 0, resultadoDa: 0 };
   }
   const nombreJugada = txt(f.nombre_jugada).toUpperCase();
   const esTablaFija = nombreJugada.startsWith("TABLA FIJA");
-  // Tasa de comisión EFECTIVA del ticket: la propia es la que manda; solo si
-  // falta se usa la del grupo (o 5% por defecto). Es la MISMA prioridad que usa
-  // la relación de WhatsApp (`balanceDesdePizarra` → `j.comisionPct`), que era
-  // justo la que antes NO se le pasaba al motor en la vía de tickets PENDIENTES:
-  // el reporte liquidaba con la tasa por defecto y el mensaje con la del ticket,
-  // y de ahí que suministraran importes distintos.
-  // Un 0% EXPLÍCITO en el ticket es válido (`pct > 0` lo confundía con "falta
-  // el dato" y lo subía al default). Solo se respalda si el campo viene
-  // ausente/vacío, nunca por valer 0.
   const tienePct =
     f.comision_porcentaje != null && String(f.comision_porcentaje).trim() !== "";
   const pct = cifra(f.comision_porcentaje);
@@ -254,6 +295,148 @@ function evaluar(
     : Number.isFinite(Number(tasaComision)) && Number(tasaComision) >= 0
       ? Number(tasaComision)
       : 5;
+  const tasaGrupoModalidad =
+    cifra(f.banquero_comision_porcentaje) > 0
+      ? cifra(f.banquero_comision_porcentaje)
+      : pct > 0
+        ? pct
+        : Number.isFinite(Number(tasaComision)) && Number(tasaComision) >= 0
+          ? Number(tasaComision)
+          : 5;
+
+  // ── REGLA CONTABLE DE MARCAS (Proporción 5/6) ──
+  // Quien Juega arriesga `monto` y si gana cobra exactamente la proporción 5/6 sin descuento de comisión.
+  // Quien Da (usuario asignado a Marcas / "Marcas") arriesga `monto * 5 / 6`:
+  //   - Si gana el Jugador: Marcas pierde `pagoMarca + comisionGrupo(pagoMarca)`.
+  //   - Si pierde el Jugador: Marcas gana `monto - comisionGrupo(monto)`.
+  if (esMarca(nombreJugada)) {
+    const pagoMarca = Math.round(((monto * 5) / 6) * 100) / 100;
+    if (estado === "RETIRADO" || estado === "EMPATE") {
+      return {
+        ok: false,
+        bruto: monto,
+        comision: 0,
+        tasa: tasaGrupoModalidad,
+        riesgoDa: pagoMarca,
+        resultadoJuega: 0,
+        resultadoDa: 0,
+      };
+    }
+    let ganaMarca: boolean | null = null;
+    if (estado === "GANADOR" || estado === "GANO" || estado === "SOLUCIONADO") {
+      ganaMarca = true;
+    } else if (estado === "PERDEDOR" || estado === "PERDIO") {
+      ganaMarca = false;
+    } else if ((pizarra?.puestos?.length ?? 0) > 0) {
+      const numElegido = txt(f.ejemplar_numero) || (txt(f.caballo).match(/\d+/)?.[0] ?? "");
+      const rivales = rivalesDeNota(f.nota_auditoria);
+      if (numElegido && rivales.length > 0) {
+        const posElegido = pizarra!.puestos.findIndex((p) => txt(p) === numElegido);
+        const posRivales = rivales.map((rv) => pizarra!.puestos.findIndex((p) => txt(p) === String(rv).trim()));
+        if (posElegido !== -1 && posRivales.every((pr) => pr !== -1)) {
+          ganaMarca = posRivales.every((pr) => posElegido < pr);
+        }
+      }
+    }
+    if (ganaMarca === true) {
+      const comGrupo = Math.round(pagoMarca * (tasaGrupoModalidad / 100) * 100) / 100;
+      return {
+        ok: true,
+        bruto: Math.round((monto + pagoMarca) * 100) / 100,
+        comision: comGrupo,
+        tasa: tasaGrupoModalidad,
+        riesgoDa: pagoMarca,
+        resultadoJuega: pagoMarca,
+        resultadoDa: -Math.round((pagoMarca + comGrupo) * 100) / 100,
+      };
+    }
+    if (ganaMarca === false) {
+      const comGrupo = Math.round(monto * (tasaGrupoModalidad / 100) * 100) / 100;
+      return {
+        ok: false,
+        bruto: 0,
+        comision: 0,
+        tasa: tasaGrupoModalidad,
+        riesgoDa: pagoMarca,
+        resultadoJuega: -monto,
+        resultadoDa: Math.round((monto - comGrupo) * 100) / 100,
+      };
+    }
+    return {
+      ok: null,
+      bruto: 0,
+      comision: 0,
+      tasa: tasaGrupoModalidad,
+      riesgoDa: pagoMarca,
+      resultadoJuega: null,
+      resultadoDa: null,
+    };
+  }
+
+  // ── REGLA CONTABLE DE TABLAS FIJAS (TF / Usuario asignado a Tablas Fijas) ──
+  // Se evalúa por Orden de Llegada en Raya (`puestosRaya[0]`).
+  // Quien Juega arriesga `monto` y si gana cobra `pagoTabla` sin descuento de comisión.
+  // Quien Da (TF) arriesga `pagoTabla`:
+  //   - Si gana el Jugador: TF pierde `pagoTabla + comisionGrupo(pagoTabla)`.
+  //   - Si pierde el Jugador: TF gana `monto - comisionGrupo(monto)`.
+  if (esTablaFija) {
+    const pagoTabla = pagoPotencialTablaFija(f);
+    if (estado === "RETIRADO" || estado === "EMPATE") {
+      return {
+        ok: false,
+        bruto: monto,
+        comision: 0,
+        tasa: tasaGrupoModalidad,
+        riesgoDa: pagoTabla,
+        resultadoJuega: 0,
+        resultadoDa: 0,
+      };
+    }
+    const puestosRaya = (pizarra?.puestosRaya?.length ? pizarra.puestosRaya : pizarra?.puestos) ?? [];
+    const numEjemplar = txt(f.ejemplar_numero) || (/^\d+$/.test(txt(f.caballo)) ? txt(f.caballo) : "");
+    let ganaTabla: boolean | null = null;
+    if (puestosRaya.length > 0 && numEjemplar) {
+      ganaTabla = txt(puestosRaya[0]) === numEjemplar;
+    } else if (estado === "GANADOR" || estado === "GANO" || estado === "SOLUCIONADO") {
+      ganaTabla = true;
+    } else if (estado === "PERDEDOR" || estado === "PERDIO") {
+      ganaTabla = false;
+    }
+    if (ganaTabla === true) {
+      const comGrupo = Math.round(pagoTabla * (tasaGrupoModalidad / 100) * 100) / 100;
+      return {
+        ok: true,
+        bruto: Math.round((monto + pagoTabla) * 100) / 100,
+        comision: comGrupo,
+        tasa: tasaGrupoModalidad,
+        riesgoDa: pagoTabla,
+        resultadoJuega: pagoTabla,
+        resultadoDa: -Math.round((pagoTabla + comGrupo) * 100) / 100,
+      };
+    }
+    if (ganaTabla === false) {
+      const comGrupo = Math.round(monto * (tasaGrupoModalidad / 100) * 100) / 100;
+      return {
+        ok: false,
+        bruto: 0,
+        comision: 0,
+        tasa: tasaGrupoModalidad,
+        riesgoDa: pagoTabla,
+        resultadoJuega: -monto,
+        resultadoDa: Math.round((monto - comGrupo) * 100) / 100,
+      };
+    }
+    return {
+      ok: null,
+      bruto: 0,
+      comision: 0,
+      tasa: tasaGrupoModalidad,
+      riesgoDa: pagoTabla,
+      resultadoJuega: null,
+      resultadoDa: null,
+    };
+  }
+
   // `premio_pagar` / `monto_decidido` se persisten BRUTOS (capital + ganancia,
   // como los escriben la liquidación legacy y `aplicarLiquidacionSaldos`). Este
   // reporte trabaja internamente con el NETO del ganador (lo que recibe) y con
@@ -267,12 +450,10 @@ function evaluar(
     const comision = Math.round(gananciaBruta * (tasaEfectiva / 100) * 100) / 100;
     return { neto: Math.round((brutoGuardado - comision) * 100) / 100, comision };
   };
-  const esEspecialPersistencia =
-    esTablaFija || esMarca(nombreJugada) || /^(DUPLETA|REMATE|POLLA)\b/i.test(nombreJugada);
+  const esEspecialPersistencia = /^(DUPLETA|REMATE|POLLA)\b/i.test(nombreJugada);
   const puestosAnticipados = pizarra?.puestos ?? [];
   if (
     estado !== "SOLUCIONADO" &&
-    estado !== "RETIRADO" &&
     estado !== "RECHAZADO" &&
     !esEspecialPersistencia &&
     puestosAnticipados.length > 0 &&
@@ -302,20 +483,14 @@ function evaluar(
       ? { ok: true, bruto: d.neto, comision: d.comision, tasa: tasaEfectiva }
       : { ok: null, bruto: 0, comision: 0, tasa: tasaEfectiva };
   }
-  if (esTablaFija && (estado === "PERDEDOR" || estado === "PERDIO")) {
-    // Tablas fijas: el fallo del legacy NO marcaba el Nº de ejemplar ("TABLA FIJA (HIPO Cn)")
-    // y los dejaba 'Perdedor' con premio 0 cuando sí podían ser ganadoras. La decisión
-    // correcta la toma `club_liquidar_tabla_fija` (ejemplar exacto). En el reporte
-    // NO forzamos false: los tickets PERDEDOR de tabla fija deben seguir evaluándose
-    // contra la pizarra con el ejemplar, para que "9" aparezca como ganador.
-    // No hacer nada aquí: cae al motor oficial si hay pizarra.
+  if (estado === "RETIRADO" || estado === "EMPATE") {
+    // Un ticket en estado RETIRADO / EMPATE (ej. Nini que llegó exactamente en
+    // el puesto N, o ejemplar retirado con devolución de capital) recupera el
+    // 100% del monto apostado: ni gana ni pierde ninguno de los dos lados (0/0).
+    return { ok: false, bruto: monto, comision: 0, tasa: tasaEfectiva };
   }
-  if (estado === "PERDEDOR" || estado === "PERDIO" || estado === "RETIRADO" || estado === "RECHAZADO" || estado === "ANULADO") {
-    if (esTablaFija && (estado === "PERDEDOR" || estado === "PERDIO")) {
-      // ya tratamos: no retornar false automático
-    } else {
-      return { ok: false, bruto: 0, comision: 0, tasa: tasaEfectiva };
-    }
+  if (estado === "PERDEDOR" || estado === "PERDIO" || estado === "RECHAZADO" || estado === "ANULADO") {
+    return { ok: false, bruto: 0, comision: 0, tasa: tasaEfectiva };
   }
   const puestos = pizarra?.puestos ?? [];
   if (puestos.length && monto > 0) {
@@ -324,9 +499,6 @@ function evaluar(
         ticketMotorDe(f, hipodromo, carrera, puestos, pizarra?.dividendos ?? null),
         tasaEfectiva
       );
-      // El motor ganó por posición pero no hay dividendo con el que cuantificar
-      // el premio: es PENDIENTE, no una derrota. Contarlo como `ok: false`
-      // reportaba $0 pagado sobre una jugada que la casa tiene que pagar.
       if (r.indeterminado) return { ok: null, bruto: 0, comision: 0, tasa: tasaEfectiva };
       return { ok: r.ok, bruto: r.totalClienteNeto, comision: r.gananciaCasa, tasa: tasaEfectiva };
     } catch {
@@ -349,36 +521,41 @@ function evaluar(
  */
 export function resultadoConsigueDe(
   monto: number,
-  ev: { ok: boolean | null; bruto: number; comision: number; tasa: number }
+  ev: EvaluacionTicketReporte
 ): number | null {
+  if (ev.resultadoDa !== undefined) return ev.resultadoDa;
   if (ev.ok === null) return null;
-  if (ev.bruto > 0) return Math.round((monto - ev.bruto - ev.comision) * 100) / 100;
-  return Math.round((monto - monto * (ev.tasa / 100)) * 100) / 100;
+  const brutoTotalJuega = ev.bruto + ev.comision;
+  if (Math.abs(brutoTotalJuega - monto) < 0.005) return 0;
+  if (brutoTotalJuega > monto) {
+    return Math.round((monto - brutoTotalJuega) * 100) / 100;
+  }
+  const perdida = Math.max(0, monto - brutoTotalJuega);
+  return Math.round((perdida - perdida * (ev.tasa / 100)) * 100) / 100;
 }
 
 /* ─────────────────────────── consultas ─────────────────────────── */
 
 /** Pizarra oficial de una carrera tal como la cargo la casa. */
 type PizarraCarrera = {
-  /** Orden de llegada (1º, 2º, 3º…): `orden_llegada` si existe, si no `ganadores`. */
+  /** Orden de llegada oficial (1º, 2º, 3º…): `orden_llegada` si existe, si no `ganadores`. */
   puestos: string[];
+  /** Orden de llegada en raya (1º, 2º, 3º…) para Tablas Fijas y Remates. */
+  puestosRaya: string[];
   /** Pagos por $1 (`dividendos`): los usa el motor oficial de liquidacion. */
   dividendos: Record<string, number> | null;
 };
 
 /** Normaliza una fila de `resultados_carreras` a la pizarra que usa el motor. */
 function normalizarPizarra(r: { ganadores?: unknown; orden_llegada?: unknown; dividendos?: unknown }): PizarraCarrera | null {
-  // `orden_llegada` es [{numero,puesto}] y `ganadores` es text[]; el
-  // normalizador entiende ambas formas además del mapa {puesto: ejemplar}.
-  // Se prefiere el orden oficial y se cae a ganadores para no perder las
-  // carreras cargadas antes de que existiera la columna.
   const oficial = puestosDesdeOrdenLlegada(r.orden_llegada);
   const puestos = oficial.length ? oficial : puestosDesdeOrdenLlegada(r.ganadores);
+  const puestosRaya = extraerOrdenLlegadaRaya(r.orden_llegada, puestos);
   const div = r.dividendos;
   const dividendos =
     div && typeof div === "object" && !Array.isArray(div) ? (div as Record<string, number>) : null;
   if (!puestos.length && !dividendos) return null;
-  return { puestos, dividendos };
+  return { puestos, puestosRaya, dividendos };
 }
 
 async function leerPizarra(fecha: string, hipodromo: string, carrera: number | string): Promise<PizarraCarrera | null> {
@@ -626,10 +803,23 @@ async function carreraReporte(
     // como estaba para no activar el CRUCE financiero (feature pendiente).
     const clienteJuega = txt(f.cliente_juega);
     const clienteJuegaNombre = txt(f.cliente_juega_nombre) || txt(f.cliente_juega_id) || clienteJuega;
-    const clienteConsigue = txt(f.cliente_consigue_nombre) || txt(f.cliente_consigue_id);
-    const clienteConsigueNombre = txt(f.cliente_consigue_nombre) || clienteConsigue;
+    const clienteConsigueRaw =
+      txt(f.banquero_nombre) ||
+      txt(f.cliente_consigue_nombre) ||
+      txt(f.cliente_consigue_id) ||
+      txt(f.banquero_cliente_id);
+    const clienteConsigueNombre = resolverContraparteModalidad(
+      f.nombre_jugada,
+      clienteConsigueRaw,
+      desglose.tipo
+    );
 
-    const resultadoJuega = ev.ok === null ? null : Math.round((ev.bruto - monto) * 100) / 100;
+    const resultadoJuega =
+      ev.resultadoJuega !== undefined
+        ? ev.resultadoJuega
+        : ev.ok === null
+          ? null
+          : Math.round((ev.bruto - monto) * 100) / 100;
     // Modalidad de TIEMPO: misma lectura para el que JUEGA y el que CONSIGUE
     // (es el mismo ticket, las dos filas se parean por índice).
     const adelantada = esAdelantadaDe(f);
@@ -641,6 +831,7 @@ async function carreraReporte(
       jugada: desglose.jugada,
       caballo: desglose.caballo,
       monto,
+      riesgo: monto,
       resultado: resultadoJuega,
       esPareo,
       ejemplar: desglose.ejemplar,
@@ -649,14 +840,15 @@ async function carreraReporte(
       horaCarga,
     });
 
-    if (clienteConsigue) {
+    if (clienteConsigueNombre) {
       filas.push({
         id: `${fecha}-${hipodromo}-${numero}-c-${i}`,
         rol: "Consigue",
-        cliente: clienteConsigueNombre || clienteConsigue,
+        cliente: clienteConsigueNombre,
         jugada: desglose.jugada,
         caballo: desglose.caballo,
         monto,
+        riesgo: ev.riesgoDa,
         resultado: resultadoConsigueDe(monto, ev),
         esPareo,
         ejemplar: desglose.ejemplar,
@@ -667,14 +859,19 @@ async function carreraReporte(
     }
 
     // Bruto ANTES de comisión (como en pagarYCerrar): neto + comisión casa.
-    neteoItems.push({
-      cliente: clienteJuega,
-      caballo,
-      monto,
-      bruto: ev.ok ? Math.round((ev.bruto + ev.comision) * 100) / 100 : 0,
-      ok: ev.ok === true,
-    });
-    meta.push({ cliente: clienteJuega, clienteNombre: clienteJuegaNombre, caballo });
+    // Excluir empates Nini (donde bruto + comision === monto) para que no se
+    // cuenten como pérdidas en el neteo de cruces.
+    const esEmpateNini = ev.ok === false && Math.abs(ev.bruto + ev.comision - monto) < 0.01;
+    if (!esEmpateNini) {
+      neteoItems.push({
+        cliente: clienteJuega,
+        caballo,
+        monto,
+        bruto: ev.ok ? Math.round((ev.bruto + ev.comision) * 100) / 100 : Math.round((ev.bruto + ev.comision) * 100) / 100,
+        ok: ev.ok === true,
+      });
+      meta.push({ cliente: clienteJuega, clienteNombre: clienteJuegaNombre, caballo });
+    }
   });
 
   // 🔀 CRUCE FINANCIERO: comisión NETA por (cliente, caballo) con ≥2 tickets.
@@ -725,11 +922,14 @@ async function carreraReporte(
 
   const subtotal = Math.round(filas.reduce((a, f) => a + (f.resultado ?? 0), 0) * 100) / 100;
   const puestos = pizarra?.puestos ?? [];
+  const puestosRaya = pizarra?.puestosRaya ?? [];
+  const pizarraRaya = hayDistanciamientoPizarra(puestos, puestosRaya) ? puestosRaya.join(" · ") : null;
   return {
     numero,
     hipodromo,
     fecha,
     pizarra: puestos.length ? puestos.join(" · ") : null,
+    pizarraRaya,
     filas,
     subtotal,
   };

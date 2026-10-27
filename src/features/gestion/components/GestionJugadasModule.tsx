@@ -18,7 +18,8 @@ import {
 import { reversarLiquidacionCarrera } from "@/features/liquidacion/lib/reversar";
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
 import { venderJugada, claveIdempotenciaJugada } from "@/features/taquilla/lib/venta";
-import { dividendosDePizarra, pizarraDePosiciones } from "@/features/liquidacion/lib/posiciones";
+import { dividendosDePizarra, pizarraDePosiciones, posicionesDePizarra, posicionesRayaDePizarra } from "@/features/liquidacion/lib/posiciones";
+import { colorDiscoNumero } from "@/features/saldos/lib/discos";
 import { PREFIJO_WPS } from "@/features/motores/lib/wps";
 import { guardarPizarraCentral } from "@/features/liquidacion/lib/pizarraCentral";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
@@ -1191,10 +1192,31 @@ const hipodromosDelDia = useMemo(() => {
     void recargarJugadasGuardadas();
   }, [recargarJugadasGuardadas]);
 
+  /** Pizarra Oficial y Orden de Llegada (Raya) vigentes para la carrera actual. */
+  const pizarraPuestosActual = useMemo<string[]>(() => {
+    if (centralDeCarrera?.ganadores && centralDeCarrera.ganadores.length > 0) {
+      return centralDeCarrera.ganadores.map(String).filter(Boolean);
+    }
+    if (ultimaPizarra?.pizarra) {
+      return posicionesDePizarra(ultimaPizarra.pizarra);
+    }
+    return [];
+  }, [centralDeCarrera, ultimaPizarra]);
+
+  const pizarraRayaActual = useMemo<string[]>(() => {
+    if (centralDeCarrera?.orden_llegada_raya && centralDeCarrera.orden_llegada_raya.length > 0) {
+      return centralDeCarrera.orden_llegada_raya.map(String).filter(Boolean);
+    }
+    if (ultimaPizarra?.pizarra) {
+      return posicionesRayaDePizarra(ultimaPizarra.pizarra);
+    }
+    return pizarraPuestosActual;
+  }, [centralDeCarrera, ultimaPizarra, pizarraPuestosActual]);
+
   /** Filas del panel: persistidas (✅) + ventas de la sesión sin duplicar. */
   const filasPreview = useMemo(
-    () => armarFilasPreview(jugadasGuardadas, ticketsDeCarrera),
-    [jugadasGuardadas, ticketsDeCarrera]
+    () => armarFilasPreview(jugadasGuardadas, ticketsDeCarrera, pizarraPuestosActual),
+    [jugadasGuardadas, ticketsDeCarrera, pizarraPuestosActual]
   );
   const totalesPreview = useMemo(() => resumenPreview(filasPreview), [filasPreview]);
   const filasPreviewEnVivo = useMemo(() => filasPreview.filter((f) => !f.anulada && !f.esAdelantada), [filasPreview]);
@@ -1782,6 +1804,9 @@ const hipodromosDelDia = useMemo(() => {
       setReapertura(false);
       setPizarraCentral(null);
       setUltimaPizarra(null);
+      if (filasPreview.some((f) => !f.anulada) || r.tickets > 0) {
+        setJugadasPorCarrera((prev) => (prev.includes(carrera) ? prev : [...prev, carrera]));
+      }
       recargarRegistroCentral();
       void recargarClientes();
       void recargarJugadasGuardadas();
@@ -2107,6 +2132,11 @@ const hipodromosDelDia = useMemo(() => {
             carreras={carrerasPorDia}
             activa={carreraConfirmada ? carrera : null}
             manual={modoManual}
+            carrerasConJugadas={
+              filasPreview.some((f) => !f.anulada) && !jugadasPorCarrera.includes(carrera)
+                ? [...jugadasPorCarrera, carrera]
+                : jugadasPorCarrera
+            }
             onSeleccionar={(n) => {
               setCarrera(n);
               setCarreraConfirmada(true);
@@ -2571,24 +2601,28 @@ const hipodromosDelDia = useMemo(() => {
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {listaFilas.map((f, i) => {
-                    const aposto1 = f.monto;
-                    const aposto2 = f.monto;
+                    const aposto1 = f.aposto1 ?? f.monto;
+                    const aposto2 = f.aposto2 ?? f.monto;
                     const res1Texto =
                       f.anulada
                         ? "ANULADA"
-                        : f.lado1.estado === "GANO" && f.lado1.monto != null
-                          ? `+${monedaFmt(Math.abs(f.lado1.monto))}`
-                          : f.lado1.estado === "PERDIO"
-                            ? `-${monedaFmt(Math.abs(f.lado1.monto ?? aposto1))}`
-                            : `-${monedaFmt(aposto1)} (Pend.)`;
+                        : f.lado1.estado === "RETIRADO"
+                          ? `${monedaFmt(0)} (Empate)`
+                          : f.lado1.estado === "GANO" && f.lado1.monto != null
+                            ? `+${monedaFmt(Math.abs(f.lado1.monto))}`
+                            : f.lado1.estado === "PERDIO"
+                              ? `-${monedaFmt(Math.abs(f.lado1.monto ?? aposto1))}`
+                              : `-${monedaFmt(aposto1)} (Pend.)`;
                     const res2Texto =
                       f.anulada
                         ? "ANULADA"
-                        : f.lado2.estado === "GANO" && f.lado2.monto != null
-                          ? `+${monedaFmt(Math.abs(f.lado2.monto))}`
-                          : f.lado2.estado === "PERDIO"
-                            ? `-${monedaFmt(Math.abs(f.lado2.monto ?? aposto2))}`
-                            : `-${monedaFmt(aposto2)} (Pend.)`;
+                        : f.lado2.estado === "RETIRADO"
+                          ? `${monedaFmt(0)} (Empate)`
+                          : f.lado2.estado === "GANO" && f.lado2.monto != null
+                            ? `+${monedaFmt(Math.abs(f.lado2.monto))}`
+                            : f.lado2.estado === "PERDIO"
+                              ? `-${monedaFmt(Math.abs(f.lado2.monto ?? aposto2))}`
+                              : `-${monedaFmt(aposto2)} (Pend.)`;
 
                     return (
                       <tr
@@ -2609,7 +2643,9 @@ const hipodromosDelDia = useMemo(() => {
                                 ? "text-emerald-700"
                                 : f.lado1.estado === "PERDIO"
                                   ? "text-rose-600"
-                                  : "text-amber-700"
+                                  : f.lado1.estado === "RETIRADO"
+                                    ? "text-slate-600"
+                                    : "text-amber-700"
                             }
                           >
                             {res1Texto}
@@ -2632,7 +2668,9 @@ const hipodromosDelDia = useMemo(() => {
                                 ? "text-emerald-700"
                                 : f.lado2.estado === "PERDIO"
                                   ? "text-rose-600"
-                                  : "text-amber-700"
+                                  : f.lado2.estado === "RETIRADO"
+                                    ? "text-slate-600"
+                                    : "text-amber-700"
                             }`}
                           >
                             {res2Texto}
@@ -2680,6 +2718,17 @@ const hipodromosDelDia = useMemo(() => {
               ? agruparAdelantadasPorSeccion(listaFilas)
               : [];
 
+            const carreraLiquidadaVista =
+              centralDeCarrera?.estado === "liquidada" ||
+              (centralDeCarrera?.ganadores?.length ?? 0) > 0 ||
+              filasPreview.some((f) => f.estadoLiquidacion === "Liquidada");
+            const mostrarPizarraEnVivo =
+              !esTablaAdelantada && carreraLiquidadaVista && pizarraPuestosActual.length > 0;
+            const hayDistanciamientoEnVivo =
+              mostrarPizarraEnVivo &&
+              pizarraRayaActual.length > 0 &&
+              pizarraRayaActual.join(",") !== pizarraPuestosActual.join(",");
+
             return (
               <div className={`mt-3 rounded-xl border ${borderTheme} p-2.5 shadow-xs`}>
                 <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 px-1">
@@ -2691,6 +2740,74 @@ const hipodromosDelDia = useMemo(() => {
                     7 Columnas Oficiales · ✏️ editar · 🗑️ anular
                   </span>
                 </div>
+
+                {mostrarPizarraEnVivo && (
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-3 py-2 shadow-2xs">
+                    <div className="flex flex-wrap items-center gap-4">
+                      {/* Pizarra Oficial (siempre visible cuando la carrera está liquidada) */}
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex flex-col">
+                          <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-blue-900">
+                            <span>🏁</span> Pizarra Oficial
+                          </span>
+                          <span className="text-[8.5px] font-semibold uppercase tracking-wider text-slate-500">
+                            {hayDistanciamientoEnVivo ? "Puestos · Marcas · WPS" : "Orden Oficial de Llegada"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 border-l border-slate-200 pl-2.5">
+                          {pizarraPuestosActual.map((num, idx) => (
+                            <div key={`of-${idx}-${num}`} className="flex flex-col items-center">
+                              <div
+                                className={`flex h-7 w-7 items-center justify-center rounded-md border text-xs font-black shadow-2xs ${colorDiscoNumero(num)}`}
+                                title={`Puesto Oficial ${idx + 1}º: Ejemplar #${num}`}
+                              >
+                                {num}
+                              </div>
+                              <span className="mt-0.5 text-[8.5px] font-black uppercase text-slate-600">
+                                {idx + 1}º
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Orden de Llegada en Raya (solo cuando difiere de la Pizarra Oficial) */}
+                      {hayDistanciamientoEnVivo && (
+                        <div className="flex items-center gap-2.5 rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-1">
+                          <div className="flex flex-col">
+                            <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-amber-900">
+                              <span>🏇</span> Orden de Llegada (Raya)
+                            </span>
+                            <span className="text-[8.5px] font-bold uppercase tracking-wider text-amber-700">
+                              ⚖️ Distanciamiento · Tablas Fijas / Remates
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 border-l border-amber-200 pl-2">
+                            {pizarraRayaActual.map((num, idx) => (
+                              <div key={`raya-${idx}-${num}`} className="flex flex-col items-center">
+                                <div
+                                  className={`flex h-6.5 w-6.5 items-center justify-center rounded-md border text-xs font-black shadow-2xs ${colorDiscoNumero(num)}`}
+                                  title={`Cruza la Raya ${idx + 1}º: Ejemplar #${num}`}
+                                >
+                                  {num}
+                                </div>
+                                <span className="mt-0.5 text-[8px] font-black uppercase text-amber-800">
+                                  {idx + 1}º
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {hayDistanciamientoEnVivo && (
+                      <span className="rounded-md border border-amber-300 bg-amber-100 px-2 py-0.5 text-[9.5px] font-black text-amber-900">
+                        ⚖️ Distanciamiento Oficial
+                      </span>
+                    )}
+                  </div>
+                )}
                 {listaFilas.length === 0 ? (
                   <p className="rounded-lg bg-white/80 px-3 py-2 text-[11px] font-semibold text-slate-500">
                     {esTablaAdelantada

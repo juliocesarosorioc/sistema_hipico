@@ -1,6 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/core/supabase";
+import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
+import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
 import { useCarrerasDiaStore, type CarreraDelDia } from "@/shared/store/useCarrerasDiaStore";
@@ -19,6 +22,8 @@ type Props = {
   onSeleccionar: (carrera: number) => void;
   /** Modo Manual (bypass Gaceta): habilita elegir carreras no registradas. */
   manual?: boolean;
+  /** Números de carrera que tienen jugadas cargadas (sesión o BD del módulo padre). */
+  carrerasConJugadas?: number[];
 };
 
 export type EstadoCarrera = "inactiva" | "abierta" | "con_jugadas" | "cerrada";
@@ -54,7 +59,7 @@ const MANUAL_TOTAL = 12;
  * pestaña, así que una carrera liquidada desde otra sesión/dispositivo se veía
  * verde. El central también aporta `aplicado_a_tablas` y los ganadores.
  */
-export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSeleccionar, manual }: Props) {
+export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSeleccionar, manual, carrerasConJugadas }: Props) {
   const tablas = useTablasFijasStore((s) => s.tablas);
   const tickets = useTaquillaStore((s) => s.tickets);
   const carrerasDia = useCarrerasDiaStore((s) => s.carreras);
@@ -65,6 +70,44 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
   // liquidación compartida. El hook deduplica la consulta con el módulo padre.
   const { carrerasDe } = useRegistroCentralOpts(fecha);
   const centrales = useMemo(() => carrerasDe(hipodromo), [carrerasDe, hipodromo]);
+
+  // Carreras con jugadas persistidas en BD (`tickets_apuestas`) para [fecha + hipódromo].
+  // Garantiza que al reversar una liquidación o recargar la página, las carreras que
+  // tienen jugadas cargadas se pinten en AMARILLO (`con_jugadas`).
+  const [carrerasBdConJugadas, setCarrerasBdConJugadas] = useState<number[]>([]);
+  useEffect(() => {
+    let vivo = true;
+    const sb = supabase;
+    const dia = String(fecha ?? "").slice(0, 10);
+    const claveHipo = claveHipodromo(hipodromo);
+    if (!sb || !dia || !claveHipo) {
+      setCarrerasBdConJugadas([]);
+      return () => { vivo = false; };
+    }
+    void (async () => {
+      try {
+        const { data } = await sb
+          .from("tickets_apuestas")
+          .select("carrera, hipodromo, estado, anulada")
+          .or(filtroDiaJornada(dia))
+          .limit(3000);
+        if (!vivo) return;
+        const setNums = new Set<number>();
+        for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+          if (Boolean(r.anulada)) continue;
+          const est = String(r.estado ?? "").trim().toLowerCase();
+          if (est.startsWith("anul")) continue;
+          if (claveHipodromo(String(r.hipodromo ?? "")) !== claveHipo) continue;
+          const num = Number(r.carrera);
+          if (Number.isFinite(num) && num > 0) setNums.add(num);
+        }
+        setCarrerasBdConJugadas([...setNums]);
+      } catch {
+        // best-effort
+      }
+    })();
+    return () => { vivo = false; };
+  }, [fecha, hipodromo, centrales, carrerasConJugadas?.length]);
 
   const porCarrera = (n: number): { estado: EstadoCarrera; tieneVentas: boolean } => {
     // TODO el cruce va acotado a `fecha`: una tabla o un registro del día
@@ -77,24 +120,40 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
     );
     const registrada = carreras.includes(n);
     // El estado CENTRAL manda: `aplicado_a_tablas`/`ganadores` los escribe la
-    // liquidación en `resultados_carreras`, compartida por todos. El ledger
-    // local (`registro`) solo aporta si esta pestaña fue la que finalizó.
+    // liquidación en `resultados_carreras`, compartida por todos. Si el central
+    // explícitamente indica que la carrera está "programada" (p. ej. tras reversar
+    // la liquidación), una copia vieja en localStorage (`tabla.cerrada` o `registro.estado`)
+    // NO debe forzarla a roja.
     const central = centrales.find((c) => Number(c.carrera) === n);
     const estCentral = String(central?.estado ?? "").toLowerCase();
-    const liquidada =
-      Boolean(tabla?.cerrada) ||
-      String(tabla?.estado ?? "").toLowerCase() === "cerrada" ||
-      String(registro?.estado ?? "").toLowerCase() === "liquidada" ||
-      estCentral === "liquidada" ||
-      estCentral === "cerrada" ||
-      central?.aplicado_a_tablas === true ||
-      (central?.ganadores?.length ?? 0) > 0;
-    const conVentas = tickets.some(
-      (tk) =>
-        tk.carrera === n &&
-        (!tk.hipodromo || hipoKey(tk.hipodromo) === hipo) &&
-        (!tk.fecha || tk.fecha === fecha)
-    );
+    const centralReabierta =
+      central != null &&
+      estCentral === "programada" &&
+      !central.aplicado_a_tablas &&
+      (central.ganadores?.length ?? 0) === 0;
+
+    const liquidada = centralReabierta
+      ? false
+      : Boolean(tabla?.cerrada) ||
+        String(tabla?.estado ?? "").toLowerCase() === "cerrada" ||
+        String(registro?.estado ?? "").toLowerCase() === "liquidada" ||
+        estCentral === "liquidada" ||
+        estCentral === "cerrada" ||
+        central?.aplicado_a_tablas === true ||
+        (central?.ganadores?.length ?? 0) > 0;
+
+    const conVentas =
+      tickets.some(
+        (tk) =>
+          tk.carrera === n &&
+          (!tk.hipodromo || hipoKey(tk.hipodromo) === hipo) &&
+          (!tk.fecha || tk.fecha === fecha)
+      ) ||
+      Boolean(carrerasConJugadas?.includes(n)) ||
+      carrerasBdConJugadas.includes(n) ||
+      (Number((tabla as { cantidad_vendida?: number } | undefined)?.cantidad_vendida ?? 0) > 0) ||
+      (registro?.ventas?.length ?? 0) > 0;
+
     if (liquidada) return { estado: "cerrada", tieneVentas: conVentas };
     if (conVentas) return { estado: "con_jugadas", tieneVentas: true };
     if (registrada || tabla) return { estado: "abierta", tieneVentas: false };

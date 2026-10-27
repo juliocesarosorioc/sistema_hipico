@@ -140,30 +140,40 @@ export function resolverContraparteModalidad(
   const jug = txt(nombreJugada).toUpperCase();
   const orig = txt(origen).toUpperCase();
   const actual = txt(clienteDaActual);
+  const actualUpper = actual.toUpperCase();
+  const esGenerico =
+    !actual ||
+    actualUpper === "—" ||
+    actualUpper === "-" ||
+    actualUpper === "BANCA" ||
+    actualUpper === "CASA" ||
+    actualUpper === "CLUB" ||
+    actualUpper === "ADMIN" ||
+    actualUpper === "TAQUILLA";
 
   if (/^MARCAS?\b/i.test(jug) || orig === "MARCAS" || orig === "MARCA") {
-    return "Marcas";
+    return !esGenerico ? actual : "Marcas";
   }
-  if (/^(?:TABLA\s*FIJA|TABLAS?\s*FIJAS?|TABLA|TF)\b/i.test(jug) || orig === "TABLAS" || orig === "TABLA_FIJA") {
-    return "TF";
+  if (/^(?:TABLA\s*FIJA|TABLAS?\s*FIJAS?|TF)\b/i.test(jug) || orig === "TABLA" || orig === "TABLAS" || orig === "TABLA_FIJA") {
+    return !esGenerico ? actual : "TF";
   }
   if (/^DUPLETAS?\b/i.test(jug) || orig === "DUPLETAS" || orig === "DUPLETA") {
-    return "Dupleta";
+    return !esGenerico ? actual : "Dupleta";
   }
   if (/^REMATES?\b/i.test(jug) || orig === "REMATES" || orig === "REMATE") {
-    return "Remate";
+    return !esGenerico ? actual : "Remate";
   }
   if (/^POLLAS?\b/i.test(jug) || orig === "POLLAS" || orig === "POLLA") {
-    return "Polla";
+    return !esGenerico ? actual : "Polla";
   }
   if (/^(?:WIN|W|GANADOR|WPS\s*WIN|WPS\s*W|WPS\s*GANADOR)$/i.test(jug)) {
-    return "Win";
+    return !esGenerico ? actual : "Win";
   }
   if (/^(?:PLACE|P|PLAC[EÉ]|WPS\s*PLACE|WPS\s*P)$/i.test(jug)) {
-    return "Place";
+    return !esGenerico ? actual : "Place";
   }
   if (/^(?:SHOW|S|WPS\s*SHOW|WPS\s*S)$/i.test(jug)) {
-    return "Show";
+    return !esGenerico ? actual : "Show";
   }
 
   return actual;

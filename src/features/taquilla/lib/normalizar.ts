@@ -29,6 +29,9 @@
  */
 
 import { clasificarLineaRapida } from "@/features/taquilla/lib/validar";
+import { validarPuesto } from "@/features/motores/lib/puestos";
+
+export { validarPuesto };
 
 export type ConfianzaCampo = "exacto" | "aproximado" | "sin";
 

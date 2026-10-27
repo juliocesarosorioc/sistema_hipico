@@ -27,6 +27,9 @@
  */
 import { supabase } from "@/core/supabase";
 import { exigirCapacidad } from "@/features/seguridad/lib/vigente";
+import { validarPuesto } from "@/features/motores/lib/puestos";
+
+export { validarPuesto };
 
 export type TipoCalculo = "POR_UNIDAD" | "POR_TABLA";
 export type ComisionBase = "PREMIO" | "MONTO";
@@ -123,6 +126,9 @@ export async function listarTiposJugada(): Promise<ResListarTipos> {
 function preparar(datos: DatosTipoJugada): DatosTipoJugada {
   const nombre = String(datos.nombre ?? "").trim().toUpperCase();
   if (!nombre) throw new Error("El nombre de la jugada es obligatorio.");
+  if (/(?:^|[^0-9])1\s*N(?![A-Z])/i.test(nombre)) {
+    throw new Error("La jugada 1N no existe (Regla 1: Principio de Riesgo Bilateral).");
+  }
   if (!(COMISION_BASES as string[]).includes(datos.comision_base)) throw new Error("Base de comisión inválida.");
   if (!(TIPOS_CALCULO as string[]).includes(datos.tipo_calculo)) throw new Error("Tipo de cálculo inválido.");
   const pct = Number(datos.comision_porcentaje);

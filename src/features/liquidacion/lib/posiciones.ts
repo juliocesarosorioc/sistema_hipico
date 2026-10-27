@@ -80,16 +80,81 @@ export function pizarraDePosiciones(
  * se podía reconstruir por el fallback `ganadores`.
  */
 export function ordenLlegadaDePizarra(
-  pizarra: PizarraConPosiciones | null | undefined
-): Array<{ numero: string; puesto: number }> {
+  pizarra: (PizarraConPosiciones & { primero_raya?: string; orden_llegada_raya?: string[] }) | null | undefined
+): Array<{ numero: string; puesto: number; primero_raya?: string; orden_llegada_raya?: string[] }> {
   if (!pizarra) return [];
-  const out: Array<{ numero: string; puesto: number }> = [];
+  const out: Array<{ numero: string; puesto: number; primero_raya?: string; orden_llegada_raya?: string[] }> = [];
   CAMPOS_POSICION.forEach((campo, i) => {
     const v = pizarra[campo];
     if (typeof v === "string" && v.trim() !== "") out.push({ numero: v.trim(), puesto: i + 1 });
     else if (typeof v === "number" && Number.isFinite(v)) out.push({ numero: String(v), puesto: i + 1 });
   });
+  if (out.length > 0) {
+    const oficial = out.map((x) => x.numero);
+    const raya = posicionesRayaDePizarra(pizarra);
+    if (raya.length > 0 && raya.join(",") !== oficial.join(",")) {
+      out[0] = {
+        ...out[0],
+        primero_raya: raya[0],
+        orden_llegada_raya: raya,
+      };
+    }
+  }
   return out;
+}
+
+/**
+ * Devuelve el Orden de Llegada en Raya (para Tablas Fijas y Remates).
+ * Por defecto el Orden de Llegada es idéntico al Orden Oficial, pero si hubo
+ * distanciamiento (`orden_llegada_raya` o `primero_raya`), devuelve el orden en raya.
+ */
+export function posicionesRayaDePizarra(
+  pizarra: (PizarraConPosiciones & { primero_raya?: string; orden_llegada_raya?: string[] }) | null | undefined
+): string[] {
+  const oficial = posicionesDePizarra(pizarra);
+  if (!pizarra) return oficial;
+  if (Array.isArray(pizarra.orden_llegada_raya)) {
+    const limpios = pizarra.orden_llegada_raya
+      .map((x) => String(x ?? "").trim())
+      .filter((x) => x !== "" && !/^0+$/.test(x));
+    if (limpios.length > 0) return limpios;
+  }
+  const primRaya = String(pizarra.primero_raya ?? "").trim();
+  if (primRaya && !/^0+$/.test(primRaya) && primRaya !== oficial[0]) {
+    const resto = oficial.filter((n) => n !== primRaya);
+    return [primRaya, ...resto];
+  }
+  return oficial;
+}
+
+/**
+ * Extrae el Orden de Llegada en Raya desde `resultados_carreras.orden_llegada`
+ * (si hubo distanciamiento guardado en el primer elemento) o devuelve `oficial` por defecto.
+ */
+export function extraerOrdenLlegadaRaya(orden_llegada: unknown, oficial: string[] = []): string[] {
+  if (Array.isArray(orden_llegada) && orden_llegada.length > 0) {
+    const primero = orden_llegada[0];
+    if (primero && typeof primero === "object") {
+      const obj = primero as Record<string, unknown>;
+      if (Array.isArray(obj.orden_llegada_raya)) {
+        const raya = obj.orden_llegada_raya
+          .map((x) => String(x ?? "").trim())
+          .filter(Boolean);
+        if (raya.length > 0) return raya;
+      }
+      const primRaya = String(obj.primero_raya ?? "").trim();
+      if (primRaya && primRaya !== oficial[0]) {
+        return [primRaya, ...oficial.filter((n) => n !== primRaya)];
+      }
+    }
+  }
+  return oficial;
+}
+
+/** Determina si la Pizarra Oficial difiere del Orden de Llegada (hubo distanciamiento). */
+export function hayDistanciamientoPizarra(oficial: ReadonlyArray<string>, raya?: ReadonlyArray<string> | null): boolean {
+  if (!raya || raya.length === 0 || oficial.length === 0) return false;
+  return oficial.map((x) => String(x).trim()).join(",") !== raya.map((x) => String(x).trim()).join(",");
 }
 
 /**

@@ -94,6 +94,9 @@ function norm(entrada: unknown): string {
     .replace(/\s+/g, " ");
   // "1p de 2-3", "1p del 2 y 3" -> quitar "de/del"
   s = s.replace(/\bdel\b/g, " ").replace(/\bde\b/g, " ").replace(/\s+/g, " ").trim();
+  // Expandir formas compactas de bloque pegadas sin espacios: ej. "1py1y2n" -> "1p y 1y2n", "1y2ny2n" -> "1y2n y 2n"
+  s = s.replace(/^([1-8][pn])y([1-8][y/][1-8][pn]?)$/i, "$1 y $2");
+  s = s.replace(/^([1-8][y/][1-8][pn]?)y([1-8][pn])$/i, "$1 y $2");
   return s;
 }
 
@@ -143,39 +146,113 @@ function esListaDeExemplares(t: string): boolean {
   return parsearListaEjemplares(t) !== null;
 }
 
+/**
+ * Regla 4 (Escalera Estricta de Progresión para Jugadas en Bloque):
+ *   1P ➔ 1Y2N ➔ 2N ➔ 2Y2N ➔ 2P ➔ 2Y3N ➔ 3N ➔ 3Y3N ➔ 3P ➔ 3Y4N ➔ 4N ➔ 4Y4N ➔ 4P ➔ 4Y5N ➔ 5N ➔ 5Y5N ➔ 5P ...
+ * Un bloque debe unir exactamente una jugada Individual y su jugada Combinada adyacente en la escalera.
+ * Cualquier salto de peldaño (ej. 1P Y 2/2N, 1/2N Y 2P, 2N Y 2/3N) es rechazado.
+ */
+function validarYAjustarBloqueEscalera(
+  a: Nomenclatura,
+  b: Nomenclatura
+): [Nomenclatura, Nomenclatura] | null {
+  const aEsHoja = (a.modalidad === "PUESTO_PURO" || a.modalidad === "NINI") && a.puesto != null && !a.bloques;
+  const bEsHoja = (b.modalidad === "PUESTO_PURO" || b.modalidad === "NINI") && b.puesto != null && !b.bloques;
+  const aEsComb = a.modalidad === "COMBINADA" && a.bloques?.length === 2;
+  const bEsComb = b.modalidad === "COMBINADA" && b.bloques?.length === 2;
+
+  if (!((aEsHoja && bEsComb) || (aEsComb && bEsHoja))) {
+    return null;
+  }
+
+  const hoja = aEsHoja ? a : b;
+  const comb = aEsComb ? a : b;
+  const pHoja = hoja.puesto as number;
+  const niniHoja = hoja.esNini;
+  const [c1, c2] = comb.bloques as [Nomenclatura, Nomenclatura];
+  const p1 = c1.puesto as number;
+  const p2 = c2.puesto as number;
+
+  // Escalón 1: XP con X/(X+1)N (ej. 1P Y 1/2N, 1P Y 1Y2N, o shorthand 1P Y 1/2)
+  if (!niniHoja && p1 === pHoja && p2 === pHoja + 1 && !c1.esNini) {
+    return [a, b];
+  }
+
+  // Escalón 2: X/(X+1)N con (X+1)N (ej. 1/2N Y 2N, 1Y2N Y 2N, o shorthand 1/2 Y 2N)
+  if (niniHoja && pHoja >= 2 && p1 === pHoja - 1 && p2 === pHoja && !c1.esNini) {
+    if (!c2.esNini) {
+      const c2Ajustado: Nomenclatura = {
+        ...c2,
+        modalidad: "NINI",
+        esNini: true,
+        fuente: p2 + "n",
+      };
+      const combAjustado: Nomenclatura = {
+        ...comb,
+        bloques: [c1, c2Ajustado],
+      };
+      return aEsComb ? [combAjustado, b] : [a, combAjustado];
+    }
+    return [a, b];
+  }
+
+  // Escalón 3: XN con X/XN (ej. 2N Y 2/2N, 2N Y 2Y2N)
+  if (niniHoja && pHoja >= 2 && p1 === pHoja && p2 === pHoja && c1.esNini !== c2.esNini) {
+    return [a, b];
+  }
+
+  // Escalón 4: X/XN con XP (ej. 2/2N Y 2P, 2Y2N Y 2P)
+  if (!niniHoja && pHoja >= 2 && p1 === pHoja && p2 === pHoja && c1.esNini !== c2.esNini) {
+    return [a, b];
+  }
+
+  return null;
+}
+
 function interno(texto: string): Nomenclatura | null {
   const t = norm(texto);
   if (!t) return null;
 
-  /* --- COMPUESTA / ANIDADA: "1/2n y 2n", "2n y 2/2n" (separador con espacio) --- */
-  const comp = /^(\S+)\s+(?:y|&)\s+(\S+)$/.exec(t);
-  if (comp && !esListaDeExemplares(comp[1]) && !esListaDeExemplares(comp[2])) {
-    const a = interno(comp[1]);
-    const b = interno(comp[2]);
-    if (a && b) {
-      return {
-        modalidad: "COMPUESTA",
-        puesto: null,
-        esNini: false,
-        proporcion: null,
-        ladoA: [...a.ladoA, ...b.ladoA],
-        ladoB: [...a.ladoB, ...b.ladoB],
-        bloques: [a, b],
-        fuente: t,
-      };
-    }
-  }
-
-  /* --- COMBINADA: "1y2n", "1 y 2n", "1/2n" (50/50 por tramo) ---
-     Se representa como dos bloques, igual que la COMPUESTA, porque cada tramo
-     puede traer su propio sufijo (1y2n = 1p + 2n). El motor reparte 50/50 y
-     suma; `tramos` queda solo para el bloqueo de pizarra P2==P1|P1+1. */
+  /* --- COMBINADA: "1y2n", "1 y 2n", "1/2n", "1p y 2n", "2/2n", "2n/2p", "2n y 2p", "1/2", "1p y 2p" (50/50 por tramo) ---
+     Se evalúa ANTES que COMPUESTA para que sinónimos con espacio como "1P Y 2N", "2N Y 2P", "1P Y 2P"
+     se normalicen exactamente como COMBINADA de dos condiciones simples. */
   const comb = /^([1-8])\s*([pn]?)\s*[y/]\s*([1-8])\s*([pn]?)$/.exec(t);
   if (comb) {
     const p1 = parseInt(comb[1], 10);
     const p2 = parseInt(comb[3], 10);
-    const s1 = (comb[2] || "p").toLowerCase() === "n";
-    const s2 = (comb[4] || "p").toLowerCase() === "n";
+    const raw1 = (comb[2] || "").toLowerCase();
+    const raw2 = (comb[4] || "").toLowerCase();
+
+    let s1: boolean;
+    let s2: boolean;
+
+    if (p1 === p2) {
+      // Regla 1: 1N no existe -> 1/1N o 1/1 es inválida
+      if (p1 === 1) return null;
+      // Regla 3: X/XN = XYXN = XN/XP = XP/XN = XN Y XP = XP Y XN (o XYX como 3y3)
+      if (raw1 === "n" && (raw2 === "p" || raw2 === "")) {
+        s1 = true;
+        s2 = false;
+      } else if ((raw1 === "p" || raw1 === "") && raw2 === "n") {
+        s1 = false;
+        s2 = true;
+      } else if (raw1 === "" && raw2 === "") {
+        s1 = false;
+        s2 = true;
+      } else {
+        // Rechaza redundantes como 2p/2p o 2n/2n
+        return null;
+      }
+    } else if (p2 === p1 + 1) {
+      // Regla 3: X/(X+1)N o X/(X+1)P -> el primer peldaño siempre es XP (no existe 1N/2N ni 2N/3P)
+      if (raw1 === "n") return null;
+      s1 = false;
+      s2 = raw2 === "n";
+    } else {
+      // Saltos de peldaño prohibidos (ej. 1/3N, 1P Y 3N, 1P Y 3P)
+      return null;
+    }
+
     return {
       modalidad: "COMBINADA",
       puesto: Math.max(p1, p2),
@@ -212,6 +289,28 @@ function interno(texto: string): Nomenclatura | null {
     };
   }
 
+  /* --- COMPUESTA / BLOQUE EN ESCALERA: "1p y 1/2n", "1/2n y 2n", "2n y 2/2n", "2/2n y 2p" --- */
+  const comp = /^(\S+)\s+(?:y|&)\s+(\S+)$/.exec(t);
+  if (comp && !esListaDeExemplares(comp[1]) && !esListaDeExemplares(comp[2])) {
+    const a = interno(comp[1]);
+    const b = interno(comp[2]);
+    if (a && b) {
+      const parEscalera = validarYAjustarBloqueEscalera(a, b);
+      if (!parEscalera) return null;
+      const [aOk, bOk] = parEscalera;
+      return {
+        modalidad: "COMPUESTA",
+        puesto: null,
+        esNini: false,
+        proporcion: null,
+        ladoA: [...aOk.ladoA, ...bOk.ladoA],
+        ladoB: [...aOk.ladoB, ...bOk.ladoB],
+        bloques: [aOk, bOk],
+        fuente: t,
+      };
+    }
+  }
+
   /* --- Condicion + "el/la" + lista: "2n el 3, 4 y 8" · "1p el 5" · "PP el 5" ---
      También acepta "1p 2-3", "1p 2 y 3" (sin "el/la"). */
   const conLista = new RegExp(
@@ -235,10 +334,13 @@ function interno(texto: string): Nomenclatura | null {
         };
       }
       const n = parseInt(cab.charAt(0), 10);
+      const esNini = cab.charAt(1).toLowerCase() === "n";
+      // Regla 1: NO EXISTE 1N
+      if (n === 1 && esNini) return null;
       return {
-        modalidad: cab.charAt(1).toLowerCase() === "n" ? "NINI" : "PUESTO_PURO",
+        modalidad: esNini ? "NINI" : "PUESTO_PURO",
         puesto: n,
-        esNini: cab.charAt(1).toLowerCase() === "n",
+        esNini,
         proporcion: null,
         ladoA: lista,
         ladoB: [],
@@ -364,6 +466,8 @@ function interno(texto: string): Nomenclatura | null {
   if (simple) {
     const n = parseInt(simple[1], 10);
     const suf = simple[2].toLowerCase();
+    // Regla 1: NO EXISTE 1N (Primer Nini)
+    if (n === 1 && suf === "n") return null;
     return {
       modalidad: suf === "n" ? "NINI" : "PUESTO_PURO",
       puesto: n,
@@ -437,6 +541,8 @@ export function canonicalizarA_Premio(codigo: string): string {
   // Normalizar a formato casa con coma decimal: "10/3,5"
   return `${j}/${r.replace(".", ",")}`;
 }
+
+export const canonicalizarJugada = canonicalizarA_Premio;
 
 /**
  * Clasifica el CÓDIGO de una jugada en la etiqueta universal de la casa.

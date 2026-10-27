@@ -181,6 +181,10 @@ export function pizarraDesdeResultadoOficial(of: ResultadoOficial): PizarraResul
     const n = String(puestos[i] ?? "").trim();
     if (n) pizarra[campo] = n;
   });
+  if (Array.isArray(of.puestosRaya) && of.puestosRaya.length > 0 && of.puestosRaya.join(",") !== puestos.join(",")) {
+    pizarra.primero_raya = of.puestosRaya[0];
+    pizarra.orden_llegada_raya = of.puestosRaya;
+  }
 
   const dividendos: Record<string, number> = {};
   const matrizWps: Record<string, number> = {};

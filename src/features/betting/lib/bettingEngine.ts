@@ -51,6 +51,9 @@ export function parsearNini(tipoJugada: string): NiniInfo | null {
     .map((x) => parseInt(x, 10))
     .filter((n) => Number.isFinite(n) && n >= 1 && n <= 8);
   if (nums.length === 0) return null;
+  // Regla 1: NO EXISTE la jugada 1N (Primer Nini)
+  if (nums[nums.length - 1] === 1) return null;
+  if (nums.length === 2 && nums[1] !== nums[0] && nums[1] !== nums[0] + 1) return null;
   return {
     modalidad: `${nums.join("y")}N`,
     N: Math.max(...nums),
@@ -286,6 +289,8 @@ export type TicketMotor = BetSlipEntry & {
   premio_por_tabla?: number | null;
   /** Proporción de un Pareo (PP), ej. "10/8". Sin proporción = PARIDAD. */
   proporcion?: string | null;
+  /** Cantidad de ejemplares efectivos en carrera (inscritos menos retirados) para Regla 1 (Riesgo Bilateral). */
+  n_corredores?: number | null;
 };
 
 /** Veredicto de UN bloque de una COMBINADA/COMPUESTA (hoja o anidada). */

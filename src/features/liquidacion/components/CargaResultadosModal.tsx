@@ -122,6 +122,7 @@ export function CargaResultadosModal({
   const [matrizWps, setMatrizWps] = useState<Record<string, string>>({});
   const [mismoRaya, setMismoRaya] = useState(true);
   const [rayaNumero, setRayaNumero] = useState("");
+  const [filasRaya, setFilasRaya] = useState<string[]>([]);
   const [alertaDuplicado, setAlertaDuplicado] = useState<string | null>(null);
   const hipodromosActivos = useHipodromosActivos();
   const nombreHipo = nombrePropioHipodromo(hipodromo, hipodromosActivos);
@@ -137,6 +138,7 @@ export function CargaResultadosModal({
     setMatrizWps({});
     setMismoRaya(true);
     setRayaNumero("");
+    setFilasRaya(Array.from({ length: minLugares }, () => ""));
     setMotivo("");
     setAlertaDuplicado(null);
 
@@ -156,11 +158,24 @@ export function CargaResultadosModal({
         }))
       );
 
-      // Raya: solo cambia si el 1º de la pizarra no es el que cruzó la raya.
-      const raya = String(p.primero_raya ?? "").trim();
-      if (raya && raya !== nums[0]) {
+      // Raya: cambia si el 1º de la pizarra o el orden de llegada en raya difiere del orden oficial.
+      const ordenRayaIni = Array.isArray(p.orden_llegada_raya)
+        ? (p.orden_llegada_raya as unknown[]).map((x) => String(x ?? "").trim())
+        : [];
+      const raya = String(p.primero_raya ?? ordenRayaIni[0] ?? "").trim();
+      const hayDiferenciaRaya =
+        (raya && raya !== nums[0]) ||
+        (ordenRayaIni.filter(Boolean).length > 0 &&
+          ordenRayaIni.filter(Boolean).join(",") !== nums.filter(Boolean).join(","));
+
+      if (hayDiferenciaRaya) {
         setMismoRaya(false);
-        setRayaNumero(raya);
+        setRayaNumero(raya || nums[0] || "");
+        setFilasRaya(
+          Array.from({ length: nFilas }, (_, i) => ordenRayaIni[i] ?? (i === 0 ? raya : nums[i] ?? ""))
+        );
+      } else {
+        setFilasRaya(Array.from({ length: nFilas }, (_, i) => nums[i] ?? ""));
       }
 
       if (inicial.dividendos && Object.keys(inicial.dividendos).length) {
@@ -244,7 +259,18 @@ export function CargaResultadosModal({
       if (nombre) pizarra[nombre] = r.numero.trim();
       if (r.empate) empates.push(i + 1);
     });
-    if (!mismoRaya && rayaNumero.trim()) pizarra.primero_raya = rayaNumero.trim();
+    let ordenRayaFinal: string[] | undefined = undefined;
+    if (!mismoRaya) {
+      const listaRaya = filasRaya.map((x) => x.trim()).filter(Boolean);
+      const primRaya = (rayaNumero.trim() || listaRaya[0] || "").trim();
+      if (primRaya) pizarra.primero_raya = primRaya;
+      if (listaRaya.length > 0) {
+        ordenRayaFinal = listaRaya;
+      } else if (primRaya) {
+        const oficiales = filas.map((r) => r.numero.trim()).filter(Boolean);
+        ordenRayaFinal = [primRaya, ...oficiales.filter((x) => x !== primRaya)];
+      }
+    }
 
     const divFinal: Record<string, number> = {};
     if (usoDividendos) {
@@ -269,7 +295,11 @@ export function CargaResultadosModal({
       });
     }
     return {
-      pizarra: { ...pizarra, empates: empates.length ? empates : undefined } as PizarraCarrera,
+      pizarra: {
+        ...pizarra,
+        empates: empates.length ? empates : undefined,
+        ...(ordenRayaFinal && ordenRayaFinal.length ? { orden_llegada_raya: ordenRayaFinal } : {}),
+      } as PizarraCarrera,
       empates,
       llenas: nLlenas,
       dividendos: usoDividendos && Object.keys(divFinal).length ? divFinal : null,
@@ -288,6 +318,9 @@ export function CargaResultadosModal({
     const p = (r.pizarra ?? {}) as Record<string, unknown>;
     const pos = ORDENES.map(({ nombre }) => String(p[nombre] ?? "").trim()).join(",");
     const raya = String(p.primero_raya ?? "").trim();
+    const ordenRaya = Array.isArray(p.orden_llegada_raya)
+      ? (p.orden_llegada_raya as unknown[]).map((x) => String(x ?? "").trim()).filter(Boolean).join(",")
+      : "";
     const emp = [...(r.empates ?? [])].sort((a, b) => a - b).join(",");
     const div = Object.entries(r.dividendos ?? {})
       .sort(([a], [b]) => a.localeCompare(b))
@@ -297,7 +330,7 @@ export function CargaResultadosModal({
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => `${k}=${v}`)
       .join(";");
-    return `${pos}|raya:${raya}|emp:${emp}|div:${div}|wps:${wps}`;
+    return `${pos}|raya:${raya}|ordenRaya:${ordenRaya}|emp:${emp}|div:${div}|wps:${wps}`;
   };
 
   const retiradosSet = useMemo(() => {
@@ -457,37 +490,95 @@ export function CargaResultadosModal({
           </div>
         )}
 
-        {/* Cruzó la raya primero — TABLAS y REMATES pagan a ese caballo */}
+        {/* Orden de Llegada (Raya) vs Orden Oficial (Pizarra Oficial) */}
         <div className="border-b border-line bg-cyan-50/70 px-3 py-2">
-          <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-cyan-800">
+          <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-cyan-800 cursor-pointer">
             <input
               type="checkbox"
               checked={mismoRaya}
-              onChange={(e) => setMismoRaya(e.target.checked)}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setMismoRaya(checked);
+                if (!checked) {
+                  setFilasRaya((prev) => {
+                    const base = filas.map((f) => f.numero.trim());
+                    const tieneDatos = prev.some((x) => x.trim() !== "");
+                    const next = tieneDatos
+                      ? Array.from({ length: filas.length }, (_, idx) => prev[idx] ?? base[idx] ?? "")
+                      : base;
+                    if (!rayaNumero.trim() && next[0]) setRayaNumero(next[0]);
+                    return next;
+                  });
+                }
+              }}
               className="h-3.5 w-3.5 accent-cyan-600"
             />
-            El orden de llegada = cruce de la raya (TABLAS/REMATES pagan al 1º)
+            Orden de Llegada (Raya) = Orden Oficial (sin distanciamiento)
           </label>
           {mismoRaya ? (
             <p className="mt-0.5 text-[9px] italic text-slate-500">
-              Si el ganador fue “bajado”/descalificado y cambia el orden oficial, desmarcá y estipulá su número para que
-              TABLAS y REMATES sigan pagándole.
+              Por defecto el Orden de Llegada es igual al Orden Oficial. Si hubo distanciamiento, desmarcá esta casilla:
+              <b> Tablas Fijas y Remates</b> se liquidan por el Orden de Llegada (Raya) y las demás jugadas por el Orden Oficial.
             </p>
           ) : (
-            <div className="mt-1.5 flex flex-wrap items-end gap-2">
-              <label className="flex flex-col gap-0.5 text-[8px] font-bold uppercase text-slate-500">
-                Nº del caballo que cruzó la raya primero
-                <input
-                  value={rayaNumero}
-                  onChange={(e) => setRayaNumero(e.target.value.replace(/[^0-9]/g, ""))}
-                  inputMode="numeric"
-                  placeholder={primerNumero || "Nº"}
-                  style={rayaNumero ? { borderColor: getHorseColor(rayaNumero).hex } : undefined}
-                  className="w-20 rounded-lg border-2 bg-white px-1.5 py-1 font-mono text-xs font-black text-slate-900 placeholder:text-slate-300 outline-none focus:ring-1 focus:ring-cyan-500"
-                />
-              </label>
-              <p className="max-w-[220px] text-[9px] italic text-slate-500">
-                Este caballo cobra TABLAS y REMATES; los puestos (WIN/PLACE/SHOW) pagan por el orden de llegada oficial.
+            <div className="mt-2 space-y-2 rounded-xl border border-amber-300 bg-amber-50/80 p-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[9.5px] font-black uppercase tracking-wider text-amber-900">
+                  🏇 Orden de Llegada en Raya (Tablas Fijas y Remates)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const copia = filas.map((f) => f.numero.trim());
+                    setFilasRaya(copia);
+                    setRayaNumero(copia[0] ?? "");
+                  }}
+                  className="rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[8.5px] font-bold text-amber-800 hover:bg-amber-100"
+                >
+                  🔄 Copiar Orden Oficial
+                </button>
+              </div>
+              <div className="grid grid-cols-5 gap-1.5">
+                {Array.from({ length: Math.max(filas.length, minLugares) }, (_, idx) => {
+                  const val = idx === 0 ? (filasRaya[0] || rayaNumero) : (filasRaya[idx] ?? "");
+                  return (
+                    <label key={idx} className="flex flex-col items-center gap-0.5">
+                      <span className="text-[8.5px] font-black uppercase text-amber-800">
+                        {idx + 1}° Raya
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <span
+                          className="grid h-5 w-5 shrink-0 place-items-center rounded text-[9px] font-black"
+                          style={{
+                            backgroundColor: val ? colorDeNumero(val) : "#e2e8f0",
+                            color: val ? textoDeNumero(val) : "#94a3b8",
+                          }}
+                        >
+                          {val || idx + 1}
+                        </span>
+                        <input
+                          value={val}
+                          onChange={(e) => {
+                            const limpio = e.target.value.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");
+                            if (idx === 0) setRayaNumero(limpio);
+                            setFilasRaya((prev) => {
+                              const len = Math.max(prev.length, filas.length, minLugares);
+                              const arr = Array.from({ length: len }, (_, k) => prev[k] ?? "");
+                              arr[idx] = limpio;
+                              return arr;
+                            });
+                          }}
+                          inputMode="numeric"
+                          placeholder={idx === 0 ? primerNumero || "1º" : `${idx + 1}º`}
+                          className="w-10 rounded-md border border-amber-300 bg-white px-1 py-0.5 text-center font-mono text-[11px] font-black text-slate-900 outline-none focus:ring-1 focus:ring-amber-500"
+                        />
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-[8.5px] font-semibold text-amber-800">
+                ⚖️ <b>1° en Raya ({rayaNumero || filasRaya[0] || "—"})</b> gana Tablas Fijas y Remates · Las demás jugadas (Puestos, Marcas, WPS, Dupletas) se liquidan con la Pizarra Oficial de abajo.
               </p>
             </div>
           )}

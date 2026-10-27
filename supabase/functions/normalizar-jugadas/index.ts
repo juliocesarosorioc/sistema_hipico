@@ -9,19 +9,6 @@
 //
 // Si no hay IA configurada, la función responde `{ ok: false, error }` y la UI
 // se queda con el normalizador local. Nunca es un requisito para vender.
-//
-// ---------------------------------------------------------------------------
-// INSTALAR (opcional)
-// ---------------------------------------------------------------------------
-//   npx supabase secrets set IA_API_KEY="..." \
-//                         IA_MODELO="gpt-4o-mini" \
-//                         IA_BASE_URL="https://api.openai.com/v1"   # opcional
-//   npx supabase functions deploy normalizar-jugadas
-//
-// La autorización la hace ESTA función con `auth.getUser` + la RPC
-// `tiene_capacidad('gestion_jugadas:fn_corregir_ia')`, igual que las funciones
-// de WhatsApp. El modelo no ve datos de la base: solo el bloque pegado, la lista
-// de nombres de clientes y el padrón de la carrera.
 // ============================================================================
 
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
@@ -88,7 +75,8 @@ async function corregirConIA(
     "Devolvés, para CADA línea, la misma jugada reescrita en notación canónica y en el MISMO orden:",
     "  <MONTO> <JUGADA> <N° CABALLO> <CLIENTE 1> [da <CLIENTE 2>]",
     "Reglas:",
-    "- JUGADA: pp, 2p, 3p, 3y3, 2y3, 10/8, 2x3, etc. (según lo que se jugó).",
+    "- JUGADA: pp, 1p, 2n, 2p, 3n, 3p, 4n, 4p, 5n, 5p, combinadas 50/50 (1/2n, 2/2n, 1/2, 2/3n, 3/3n, 2/3, 3/4n, 4/4n, 3/4, 4/5n, 5/5n, 4/5), bloques en escalera (1p y 1/2n, 1/2n y 2n, 2n y 2/2n, 2/2n y 2p, 2p y 2/3n, 2/3n y 3n, 3n y 3/3n, 3/3n y 3p, 3p y 3/4n, 3/4n y 4n, 4n y 4/4n, 4/4n y 4p), 10/8, 2x3, etc.",
+    "- PROHIBICIÓN ESTRICTA: NO EXISTE la jugada 1N (Primer Nini) en ninguna modalidad.",
     "- MONTO: solo dígitos, sin puntos de miles ni símbolos. 'cien'→100, 'cincuenta y cinco'→55.",
     "- CABALLO: el número de programa (una o dos cifras). Si dan el nombre del ejemplar, poné su número.",
     "- CLIENTE 1 es quien JUEGA; CLIENTE 2 (tras 'da') es quien DA. Usá SOLO nombres de la lista de clientes.",

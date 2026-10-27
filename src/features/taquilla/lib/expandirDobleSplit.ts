@@ -18,6 +18,8 @@
  * corrección en el modal.
  */
 
+import { validarPuesto } from "@/features/motores/lib/puestos";
+
 export type LineaExpandida = {
   linea: string;
   cliente1: string;
@@ -51,7 +53,11 @@ const MONTO_REGEX = /\d+(?:[.,]\d+)?$/;
 
 /** ¿La jugada respeta la gramática canónica de la casa? */
 export function esJugadaCoherente(jugada: string): boolean {
-  return RE_JUGADA_CANONICA.test(String(jugada ?? "").trim());
+  const s = String(jugada ?? "").trim();
+  if (!s) return false;
+  // Regla 1: 1N está estrictamente prohibida
+  if (/(?:^|[^0-9])1\s*n(?![a-z])/i.test(s)) return false;
+  return RE_JUGADA_CANONICA.test(s) || validarPuesto(s).ok;
 }
 
 /** Mismo patrón canónico, sin anclas, para detectar la pieza suelta de un guion. */
