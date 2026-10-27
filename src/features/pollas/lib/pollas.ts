@@ -218,18 +218,46 @@ export type ProgramaDePolla = {
  * de otra versión del programa y dar un ganador que no existe.
  */
 export async function leerProgramaDePolla(fecha?: string): Promise<Res<ProgramaDePolla>> {
-  const leido = await leerCarrerasMaestro(fecha ?? hoyLocal());
+  const dia = (fecha ?? hoyLocal()).slice(0, 10);
+  const leido = await leerCarrerasMaestro(dia);
   if (!leido.ok) {
     return { ok: false, error: leido.error ?? "No pude leer el programa del día." };
   }
   const carreras = leido.filas.map(aCarreraDePolla);
-  const resultados: ResultadoCarrera[] = leido.filas.map((m) => {
+  const mapaResultados = new Map<string, string[]>();
+  for (const m of leido.filas) {
     const c = aCarreraCentral(m);
-    return {
-      clave: claveDeCarrera(c.fecha, c.hipodromo, c.carrera),
-      ganadores: (c.ganadores ?? []).map((g) => String(g).trim()).filter(Boolean),
-    };
-  });
+    const k = claveDeCarrera(c.fecha, c.hipodromo, c.carrera);
+    const g = (c.ganadores ?? []).map((x) => String(x).trim()).filter(Boolean);
+    if (g.length) mapaResultados.set(k, g);
+  }
+  if (supabase) {
+    try {
+      const { puestosDesdeOrdenLlegada } = await import("@/features/motores/lib/oficiales");
+      const { data: resOficial } = await supabase
+        .from("resultados_carreras")
+        .select("hipodromo, carrera, ganadores, orden_llegada")
+        .eq("fecha", dia);
+      for (const r of (resOficial ?? []) as Array<Record<string, unknown>>) {
+        const k = claveDeCarrera(dia, String(r.hipodromo ?? ""), Number(r.carrera) || 0);
+        const oficial = puestosDesdeOrdenLlegada(r.orden_llegada);
+        const puestos = (oficial.length ? oficial : puestosDesdeOrdenLlegada(r.ganadores))
+          .map((x) => String(x).trim())
+          .filter(Boolean);
+        if (puestos.length) mapaResultados.set(k, puestos);
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+  const clavesTodas = new Set<string>([
+    ...carreras.map((c) => c.clave),
+    ...mapaResultados.keys(),
+  ]);
+  const resultados: ResultadoCarrera[] = [...clavesTodas].map((clave) => ({
+    clave,
+    ganadores: mapaResultados.get(clave) ?? [],
+  }));
   return { ok: true, datos: { carreras, resultados } };
 }
 

@@ -20,10 +20,14 @@ import {
   usuarioDeJugada,
   fechaCarreraDeJugada,
   MOTIVOS_ANULACION,
+  NOTAS_PREDEFINIDAS_EDICION,
+  componerNota,
   type FilaMonitorJugada,
   type JugadaAdmin,
   type AuditoriaJugada,
 } from "@/features/jugadas/lib/jugadas";
+import { corregirJugadaYRecalcular, anularJugadaYRecalcular } from "@/features/liquidacion/lib/recalcular";
+import { listarClientes, type Cliente } from "@/features/clientes/lib/clientes";
 import {
   estadoMaestro,
   ETIQUETA_ESTADO,
@@ -267,26 +271,50 @@ export function JugadasModule() {
 
   const guardarEdicion = async (campos: Parameters<typeof editarJugada>[1], motivo: string): Promise<void> => {
     if (!editando) return;
-    const r = await editarJugada(editando.id, campos, motivo, usuario);
+    const hipOrig = String(editando.hipodromo ?? seleccion?.hipodromo ?? "");
+    const carOrig = Number(editando.carrera ?? seleccion?.carrera ?? 1);
+    const fecOrig = String(editando.fecha_carrera ?? seleccion?.fecha_carrera ?? fecha);
+    const r = await corregirJugadaYRecalcular({
+      id: editando.id,
+      campos,
+      motivo,
+      usuario,
+      hipodromo: hipOrig,
+      carrera: carOrig,
+      fecha: fecOrig,
+    });
     if (!r.ok) {
-      toast(r.error ?? "No se pudo guardar.", "error");
+      toast(r.motivo ?? "No se pudo guardar.", "error");
       return;
     }
-    toast(r.error ?? "Jugada corregida.", r.error ? "warning" : "success");
+    toast("Jugada corregida y recalculada con los nuevos valores.", "success");
     setEditando(null);
     await refrescar();
+    recargarCentral();
   };
 
   const confirmarAnulacion = async (motivo: string, imagen: string | null): Promise<void> => {
     if (!anulando) return;
-    const r = await anularJugada(anulando.id, motivo, imagen, usuario);
+    const hipOrig = String(anulando.hipodromo ?? seleccion?.hipodromo ?? "");
+    const carOrig = Number(anulando.carrera ?? seleccion?.carrera ?? 1);
+    const fecOrig = String(anulando.fecha_carrera ?? seleccion?.fecha_carrera ?? fecha);
+    const r = await anularJugadaYRecalcular({
+      id: anulando.id,
+      motivo,
+      imagen,
+      usuario,
+      hipodromo: hipOrig,
+      carrera: carOrig,
+      fecha: fecOrig,
+    });
     if (!r.ok) {
-      toast(r.error ?? "No se pudo anular.", "error");
+      toast(r.motivo ?? "No se pudo anular.", "error");
       return;
     }
-    toast(r.error ?? "Jugada anulada.", r.error ? "warning" : "success");
+    toast("Jugada anulada y carrera recalculada.", "success");
     setAnulando(null);
     await refrescar();
+    recargarCentral();
   };
 
   const accionSimple = async (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) => {
@@ -723,42 +751,106 @@ function ModalEditar({
   onCancelar: () => void;
   onGuardar: (campos: Parameters<typeof editarJugada>[1], motivo: string) => Promise<void>;
 }) {
+  const [clientesCatalogo, setClientesCatalogo] = useState<Cliente[]>([]);
+  const [jugador1, setJugador1] = useState(jugada.cliente_juega_nombre ?? "");
+  const [jugador2, setJugador2] = useState(jugada.cliente_consigue_nombre ?? "");
+  const [carrera, setCarrera] = useState(jugada.carrera != null ? String(jugada.carrera) : "1");
+  const [hipodromo, setHipodromo] = useState(jugada.hipodromo ?? "");
+  const [fechaCarrera, setFechaCarrera] = useState(jugada.fecha_carrera ?? hoyLocal());
+  const [esAdelantada, setEsAdelantada] = useState(Boolean(jugada.es_adelantada));
   const [nombre, setNombre] = useState(jugada.nombre_jugada ?? "");
-  const [caballo, setCaballo] = useState(jugada.caballo ?? "");
+  const [caballo, setCaballo] = useState(jugada.caballo ?? (jugada.ejemplar_numero != null ? String(jugada.ejemplar_numero) : ""));
   const [ejemplar, setEjemplar] = useState(jugada.ejemplar_numero != null ? String(jugada.ejemplar_numero) : "");
   const [monto, setMonto] = useState(jugada.monto_jugado != null ? String(jugada.monto_jugado) : "");
   const [decidido, setDecidido] = useState(jugada.monto_decidido != null ? String(jugada.monto_decidido) : "");
   const [premio, setPremio] = useState(jugada.premio_pagar != null ? String(jugada.premio_pagar) : "");
   const [estado, setEstado] = useState(jugada.estado ?? "Pendiente");
-  const [motivo, setMotivo] = useState("");
+  const [notaPredefinida, setNotaPredefinida] = useState<string>(NOTAS_PREDEFINIDAS_EDICION[0]);
+  const [motivoLibre, setMotivoLibre] = useState("");
   const [guardando, setGuardando] = useState(false);
 
+  useEffect(() => {
+    void listarClientes().then(setClientesCatalogo).catch(() => {});
+  }, []);
+
   const guardar = async () => {
-    if (!motivo.trim()) return toast("Indicá el motivo de la corrección.", "warning");
+    const notaBase = notaPredefinida === "OTRO" ? "" : notaPredefinida;
+    const motivoFinal = componerNota(notaBase, motivoLibre);
+    if (!motivoFinal) return toast("Indicá el motivo de la corrección.", "warning");
+    if (!jugador1.trim()) return toast("El Jugador 1 (Quien Juega) es obligatorio.", "warning");
+    if (!nombre.trim()) return toast("La jugada no puede quedar vacía.", "warning");
+    const cabFinal = caballo.trim() || ejemplar.trim();
+    if (!cabFinal || !/\d/.test(cabFinal)) {
+      return toast("Condición sine qua non: el ejemplar es obligatorio.", "warning");
+    }
+    const carreraNum = Number(carrera);
+    if (!Number.isFinite(carreraNum) || carreraNum < 1) {
+      return toast("La carrera debe ser mayor o igual a 1.", "warning");
+    }
     setGuardando(true);
     await onGuardar(
       {
-        nombre_jugada: nombre.trim(),
-        caballo: caballo.trim(),
-        ejemplar_numero: ejemplar.trim() === "" ? null : Number(ejemplar),
+        cliente_juega_nombre: jugador1.trim().toUpperCase(),
+        cliente_consigue_nombre: jugador2.trim() ? jugador2.trim().toUpperCase() : null,
+        carrera: carreraNum,
+        hipodromo: hipodromo.trim().toUpperCase() || null,
+        fecha_carrera: fechaCarrera.trim() || null,
+        es_adelantada: esAdelantada,
+        nombre_jugada: nombre.trim().toUpperCase(),
+        caballo: cabFinal.toUpperCase(),
+        ejemplar_numero: ejemplar.trim() !== "" ? Number(ejemplar) : /^\d+$/.test(cabFinal) ? Number(cabFinal) : null,
         monto_jugado: monto.trim() === "" ? null : Number(monto),
         monto_decidido: decidido.trim() === "" ? null : Number(decidido),
         premio_pagar: premio.trim() === "" ? null : Number(premio),
         estado,
       },
-      motivo
+      motivoFinal
     );
     setGuardando(false);
   };
 
   return (
     <Overlay onCerrar={onCancelar} titulo={`Corregir jugada · ${jugada.cliente_juega_nombre ?? ""}`}>
+      <datalist id="clientes-monitor-datalist">
+        {clientesCatalogo.map((c) => (
+          <option key={c.id} value={c.nombre ?? ""} />
+        ))}
+      </datalist>
       <div className="grid grid-cols-2 gap-3">
-        <Campo label="Jugada">
-          <input value={nombre} onChange={(e) => setNombre(e.target.value)} className={inputClase} />
+        <Campo label="Jugador 1 (Quien Juega)">
+          <input list="clientes-monitor-datalist" value={jugador1} onChange={(e) => setJugador1(e.target.value.toUpperCase())} className={inputClase} />
         </Campo>
-        <Campo label="Caballo">
-          <input value={caballo} onChange={(e) => setCaballo(e.target.value)} className={inputClase} />
+        <Campo label="Jugador 2 (Quien Da / Taquilla)">
+          <input list="clientes-monitor-datalist" value={jugador2} onChange={(e) => setJugador2(e.target.value.toUpperCase())} placeholder="TAQUILLA" className={inputClase} />
+        </Campo>
+        <Campo label="Carrera N°">
+          <input value={carrera} onChange={(e) => setCarrera(e.target.value.replace(/\D/g, ""))} className={inputClase} />
+        </Campo>
+        <Campo label="Hipódromo">
+          <input value={hipodromo} onChange={(e) => setHipodromo(e.target.value.toUpperCase())} className={inputClase} />
+        </Campo>
+        <Campo label="Fecha Carrera">
+          <input type="date" value={fechaCarrera} onChange={(e) => setFechaCarrera(e.target.value)} className={inputClase} />
+        </Campo>
+        <Campo label="Modalidad">
+          <select value={esAdelantada ? "adelantada" : "envivo"} onChange={(e) => setEsAdelantada(e.target.value === "adelantada")} className={inputClase}>
+            <option value="envivo">En Vivo</option>
+            <option value="adelantada">Adelantada</option>
+          </select>
+        </Campo>
+        <Campo label="Jugada">
+          <input value={nombre} onChange={(e) => setNombre(e.target.value.toUpperCase())} className={inputClase} />
+        </Campo>
+        <Campo label="Ejemplar / Caballo (Obligatorio)">
+          <input
+            value={caballo}
+            onChange={(e) => {
+              const v = e.target.value;
+              setCaballo(v);
+              if (/^\d+$/.test(v.trim())) setEjemplar(v.trim());
+            }}
+            className={inputClase}
+          />
         </Campo>
         <Campo label="Nº ejemplar">
           <input value={ejemplar} onChange={(e) => setEjemplar(e.target.value.replace(/\D/g, ""))} className={inputClase} />
@@ -778,15 +870,30 @@ function ModalEditar({
         <Campo label="Monto decidido">
           <input value={decidido} onChange={(e) => setDecidido(e.target.value.replace(/[^\d.]/g, ""))} className={inputClase} />
         </Campo>
-        <Campo label="Premio a pagar">
+        <Campo label="Premio a pagar" className="col-span-2">
           <input value={premio} onChange={(e) => setPremio(e.target.value.replace(/[^\d.]/g, ""))} className={inputClase} />
         </Campo>
-        <Campo label="Motivo (obligatorio)" className="col-span-2">
-          <input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Por qué se corrige" className={inputClase} />
+        <Campo label="Motivo predeterminado" className="col-span-2">
+          <select value={notaPredefinida} onChange={(e) => setNotaPredefinida(e.target.value)} className={inputClase}>
+            {NOTAS_PREDEFINIDAS_EDICION.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+            <option value="OTRO">✍️ Otro (introducir libremente)</option>
+          </select>
+        </Campo>
+        <Campo label={notaPredefinida === "OTRO" ? "Motivo libre (obligatorio)" : "Observación / detalle adicional (opcional)"} className="col-span-2">
+          <input
+            value={motivoLibre}
+            onChange={(e) => setMotivoLibre(e.target.value)}
+            placeholder={notaPredefinida === "OTRO" ? "Escriba el motivo de la modificación…" : "Detalle adicional para la auditoría…"}
+            className={inputClase}
+          />
         </Campo>
       </div>
-      <p className="mt-2 text-[10px] text-amber-600">
-        Cambiar montos o premios no ajusta el saldo del cliente por sí solo: verificalo en contabilidad.
+      <p className="mt-2 text-[10px] font-semibold text-indigo-700">
+        Al guardar, se actualizan todos los campos, se ajustan los saldos de los jugadores y se recalcula la carrera automáticamente.
       </p>
       <div className="mt-4 flex justify-end gap-2">
         <Button variant="outline" size="sm" onClick={onCancelar}>
@@ -830,7 +937,8 @@ function ModalAnular({
   };
 
   const confirmar = async () => {
-    const texto = detalle.trim() ? `${motivo}: ${detalle.trim()}` : motivo;
+    const base = motivo === "OTRO" ? "" : motivo;
+    const texto = base && detalle.trim() ? `${base}: ${detalle.trim()}` : detalle.trim() || base || "Anulación de jugada";
     setProcesando(true);
     await onConfirmar(texto, imagen);
     setProcesando(false);
@@ -839,21 +947,22 @@ function ModalAnular({
   return (
     <Overlay onCerrar={onCancelar} titulo={`Anular jugada · ${jugada.cliente_juega_nombre ?? ""}`}>
       <div className="space-y-3">
-        <Campo label="Motivo (auditable)">
+        <Campo label="Motivo predeterminado (auditable)">
           <select value={motivo} onChange={(e) => setMotivo(e.target.value)} className={inputClase}>
             {MOTIVOS_ANULACION.map((m) => (
               <option key={m} value={m}>
                 {m}
               </option>
             ))}
+            <option value="OTRO">✍️ Otro (introducir libremente)</option>
           </select>
         </Campo>
-        <Campo label="Observación">
+        <Campo label={motivo === "OTRO" ? "Introducir motivo libremente (obligatorio)" : "Observación / detalle libre"}>
           <textarea
             value={detalle}
             onChange={(e) => setDetalle(e.target.value)}
             rows={3}
-            placeholder="Detalle adicional para el registro"
+            placeholder={motivo === "OTRO" ? "Escriba el motivo de la anulación…" : "Detalle adicional para el registro"}
             className={inputClase}
           />
         </Campo>

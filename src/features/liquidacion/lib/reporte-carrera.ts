@@ -486,6 +486,7 @@ export function armarReporteCarrera(
             })),
           }
         : {}),
+      ...(c.retirados && c.retirados.length > 0 ? { retirados: c.retirados } : {}),
     },
     liquidada: opciones?.liquidada !== false,
     filtroModalidad: filtro,

@@ -15,6 +15,7 @@ import { resumenFormasPago, type FormaPago } from "@/features/clientes/lib/forma
 import { redondearCentavos } from "@/shared/lib/dinero";
 import { sincronizarSaldosRealesClientes } from "@/features/saldos/lib/contabilidad-central";
 import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
+import { extraerFechaCarreraTicket } from "@/features/liquidacion/lib/fecha";
 // Múltiples formas de pago (PROMPT #7). Se re-exportan desde acá para que el
 // CRUD de clientes sea el único punto de entrada de "cómo se paga un cliente";
 // la implementación pura vive en `formasPago.ts` (sin Supabase, testeable).
@@ -28,6 +29,8 @@ export {
   MONEDAS_PAGO,
   type FormaPago,
 } from "@/features/clientes/lib/formasPago";
+
+export type Cliente = ClienteRow;
 
 export type ClienteRow = {
   id: string | number;
@@ -338,15 +341,33 @@ export function limpiarCacheClientes(): void {
   cacheClientesGrupo = undefined;
 }
 
-export async function crearCliente(payload: Partial<ClienteRow>): Promise<{ ok: boolean; error?: string }> {
+export async function crearCliente(payload: Partial<ClienteRow>): Promise<{ ok: boolean; id?: string; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
     exigirCapacidad("clientes:fn_guardar_cliente");
-    // Mismo filtro que en la edición: sin ser principal no se crea a nadie
-    // dentro de un grupo de venta, aunque el parche lo pida.
-    const { error } = await supabase
+    const procesado = sinCamposDelPrincipal(payload as Record<string, unknown>) as Partial<ClienteRow>;
+    const nombreNorm = String(procesado.nombre ?? "").trim().toUpperCase();
+    if (!nombreNorm) {
+      return { ok: false, error: "El nombre del cliente es obligatorio." };
+    }
+    const grupoDestino = procesado.grupo_id != null ? String(procesado.grupo_id) : (grupoActivoVigente() || grupoVigente() || null);
+    const existentes = await listarClientes(true, grupoDestino);
+    const duplicado = existentes.find((c) => {
+      const mismoGrupo = !grupoDestino || !c.grupo_id || String(c.grupo_id) === String(grupoDestino);
+      if (!mismoGrupo) return false;
+      return String(c.nombre ?? "").trim().toUpperCase() === nombreNorm;
+    });
+    if (duplicado) {
+      return {
+        ok: false,
+        error: `⚠️ Ya existe el cliente "${nombreNorm}" en este grupo. No puede haber dos clientes iguales en el mismo grupo.`,
+      };
+    }
+    const { data, error } = await supabase
       .from("clientes")
-      .insert([sinCamposDelPrincipal(payload as Record<string, unknown>) as Partial<ClienteRow>]);
+      .insert([{ ...procesado, nombre: nombreNorm }])
+      .select("id")
+      .maybeSingle();
     if (error) {
       const pideCruces = "cruce_mismo_ejemplar" in payload || "cruce_diferente_ejemplar" in payload;
       return {
@@ -356,8 +377,8 @@ export async function crearCliente(payload: Partial<ClienteRow>): Promise<{ ok: 
           : error.message,
       };
     }
-    limpiarCacheClientes();
-    return { ok: true };
+    limpiarCachéClientesTodo();
+    return { ok: true, id: data?.id != null ? String(data.id) : undefined };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
@@ -376,14 +397,15 @@ export function sinCamposDelPrincipal(
   patch: Record<string, unknown>,
   esPrincipal = esPrincipalVigente()
 ): Record<string, unknown> {
-  if (esPrincipal) return patch;
-  // Un usuario CON grupo no puede elegir a qué grupo va el cliente: siempre es
-  // el suyo. Esto no es solo cosmético: la policy de `clientes` exige que la
-  // fila quede en el grupo del usuario (sql/rls_por_grupo.sql), así que mandar
-  // otro `grupo_id` (o ninguno) haría rebotar el alta en la base.
-  const yo = grupoVigente();
+  const grupoSeleccionado = grupoActivoVigente() || grupoVigente();
+  if (esPrincipal) {
+    if (!patch.grupo_id && grupoSeleccionado) {
+      return { ...patch, grupo_id: grupoSeleccionado };
+    }
+    return patch;
+  }
+  const yo = grupoVigente() || grupoActivoVigente();
   if (yo) return { ...patch, grupo_id: yo };
-  // Sin grupo asignado (ve todo): no se le deja inventar uno.
   const { grupo_id: _omitido, ...resto } = patch;
   return resto;
 }
@@ -414,6 +436,29 @@ export async function actualizarCliente(
     const seguro = soloColumnasExistentes(sinCamposDelPrincipal(patch), fila);
     if (seguro && Object.keys(seguro).length === 0) {
       return { ok: false, error: "No hay campos a guardar (revisa los permisos o el cliente editado)." };
+    }
+    if ("nombre" in seguro && seguro.nombre) {
+      const nombreNorm = String(seguro.nombre).trim().toUpperCase();
+      const grupoDestino =
+        (seguro.grupo_id != null ? String(seguro.grupo_id) : null) ||
+        (fila?.grupo_id != null ? String(fila.grupo_id) : null) ||
+        grupoActivoVigente() ||
+        grupoVigente() ||
+        null;
+      const existentes = await listarClientes(true, grupoDestino);
+      const duplicado = existentes.find((c) => {
+        if (String(c.id) === String(id)) return false;
+        const mismoGrupo = !grupoDestino || !c.grupo_id || String(c.grupo_id) === String(grupoDestino);
+        if (!mismoGrupo) return false;
+        return String(c.nombre ?? "").trim().toUpperCase() === nombreNorm;
+      });
+      if (duplicado) {
+        return {
+          ok: false,
+          error: `⚠️ Ya existe el cliente "${nombreNorm}" en este grupo. No puede haber dos clientes iguales en el mismo grupo.`,
+        };
+      }
+      seguro.nombre = nombreNorm;
     }
     const { data, error } = await supabase.from("clientes").update(seguro).eq("id", id).select("id");
     if (error) return { ok: false, error: error.message };
@@ -479,7 +524,7 @@ export async function convertirSocio(nombre: string): Promise<{ ok: boolean; err
         .insert([{ nombre, seudonimo: nombre, es_socio: true, modo_juego: "aval" }]);
       if (error) return { ok: false, error: error.message };
     }
-    limpiarCacheClientes();
+    limpiarCachéClientesTodo();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
@@ -627,7 +672,7 @@ export async function guardarPortal(
       exigirCapacidad("clientes:fn_guardar_cliente");
     const { error } = await supabase.from("clientes").update(payload).eq("id", id);
     if (error) return { ok: false, error: error.message };
-    limpiarCacheClientes();
+    limpiarCachéClientesTodo();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
@@ -707,7 +752,7 @@ export async function aplicarNotificacion(n: NotificacionRow, atendidaPor: strin
       .from("notificaciones")
       .update({ estado: "Aplicada", atendida_por: atendidaPor, atendida_at: new Date().toISOString() })
       .eq("id", n.id as string);
-    limpiarCacheClientes();
+    limpiarCachéClientesTodo();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
@@ -981,16 +1026,19 @@ export function construirEstadoCuenta(tickets: TicketApuesta[], devolucionPct: n
     const dec = baseVigente * (devolucionPct / 100);
     const moneda = (t.moneda ?? "USD").toUpperCase();
     const grupo = t.grupo_cobro_nombre || "Directo";
-    const semana = claveSemana(t.fecha_registro);
-    const dia = t.fecha_registro ? new Date(t.fecha_registro).toLocaleDateString("es-VE", { dateStyle: "short" }) : "—";
+    // Imputación estricta al DÍA DE LA CARRERA (`fecha_carrera`), sin importar cuándo fue registrada.
+    const isoCarrera = t.fecha_carrera ? String(t.fecha_carrera).slice(0, 10) : null;
+    const refFecha = isoCarrera ? `${isoCarrera}T12:00:00` : t.fecha_registro;
+    const semana = claveSemana(refFecha);
+    const dia = refFecha ? new Date(refFecha).toLocaleDateString("es-VE", { dateStyle: "short" }) : "—";
     const hipodromo = String(t.hipodromo ?? "—").toUpperCase();
     const carrera = num(t.carrera) || 0;
 
     const jugada: JugadaItem = {
       id: String(t.id),
-      fecha: t.fecha_registro ?? null,
-      fechaTexto: fmtFechaHora(t.fecha_registro),
-      fechaCarrera: t.fecha_carrera ?? null,
+      fecha: isoCarrera ?? t.fecha_registro ?? null,
+      fechaTexto: isoCarrera ? fmtFecha(`${isoCarrera}T12:00:00`) : fmtFechaHora(t.fecha_registro),
+      fechaCarrera: isoCarrera ?? (t.fecha_registro ? String(t.fecha_registro).slice(0, 10) : null),
       hipodromo,
       carrera,
       grupo,
@@ -1059,12 +1107,15 @@ export async function cargarTicketsCliente(clienteId: string | number): Promise<
     const { data, error } = await supabase
       .from("tickets_apuestas")
       .select(
-        "id, fecha_registro, hipodromo, carrera, nombre_jugada, caballo, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, anulada, grupo_cobro_nombre, grupo_cobro_id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, comision_porcentaje, comision_pagada"
+        "id, fecha_registro, fecha_carrera, nota_auditoria, hipodromo, carrera, nombre_jugada, caballo, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, anulada, grupo_cobro_nombre, grupo_cobro_id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, comision_porcentaje, comision_pagada"
       )
       .order("fecha_registro", { ascending: false })
       .limit(1500);
     if (error) throw error;
-    const filas = (data ?? []) as TicketApuesta[];
+    const filas = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+      ...(r as unknown as TicketApuesta),
+      fecha_carrera: extraerFechaCarreraTicket(r) || (r.fecha_carrera as string | null) || null,
+    }));
     return filas.filter((t) => {
       const jId = t.cliente_juega_id != null ? String(t.cliente_juega_id).trim() : "";
       const cId = t.cliente_consigue_id != null ? String(t.cliente_consigue_id).trim() : "";

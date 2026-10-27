@@ -102,18 +102,26 @@ body {
   .mon-chip {
     @apply rounded px-1 py-0.5 text-[8px] font-black uppercase;
   }
-  /* Un color por estado de la carrera. */
+  /* Un color por estado de la carrera (4 estados claros):
+   * - Azul: no hay carrera registrada
+   * - Verde: carrera registrada (sin jugadas)
+   * - Amarillo: hay jugadas registradas en la carrera pero no ha sido liquidada
+   * - Rojo: carrera ya liquidada
+   */
+  .mon-chip-sin-registro {
+    @apply bg-blue-600 text-white;
+  }
   .mon-chip-programada {
-    @apply bg-emerald-100 text-emerald-700;
+    @apply bg-emerald-600 text-white;
   }
   .mon-chip-resultados {
-    @apply bg-amber-200 text-amber-800;
+    @apply bg-amber-400 text-slate-950;
   }
   .mon-chip-liquidada {
-    @apply bg-slate-200 text-slate-600;
+    @apply bg-red-600 text-white;
   }
   .mon-chip-retirada {
-    @apply bg-yellow-400 text-slate-900;
+    @apply bg-amber-400 text-slate-950;
   }
 }
 

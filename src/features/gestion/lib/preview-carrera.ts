@@ -147,6 +147,8 @@ export type FilaPreviewCarrera = {
   esAdelantada?: boolean;
   /** Categoría de la jugada adelantada (tercios, marcas, tablas, remates, dupletas). */
   categoriaAdelantada?: CategoriaJugadaAdelantada;
+  /** true cuando una Marca no se decide en la pizarra oficial (ninguno entró en pizarra / empate sin decisión). */
+  sinDecision?: boolean;
 };
 
 const NUM = (v: unknown): number => {
@@ -377,10 +379,11 @@ function filaDesdePersistida(
     : undefined;
   const comisionPct = NUM(j.comision_porcentaje);
 
+  let sinDecision = false;
   // Evaluación en vivo de MARCAS según el resultado de la carrera (`pizarraPuestos`):
   // Si la jugada de Marca aún figura como Pendiente (o para verificar contra la pizarra),
   // se evalúa el ejemplar jugado contra sus rivales para mostrar su pago y cobro exactos.
-  if (!anulada && estado !== "Retirado" && /^MARCAS?\b/i.test(nombreJug) && pizarraPuestos && pizarraPuestos.length > 0) {
+  if (!anulada && /^MARCAS?\b/i.test(nombreJug) && pizarraPuestos && pizarraPuestos.length > 0) {
     const numElegido = (j.ejemplar_numero != null ? String(j.ejemplar_numero).trim() : "") || (caballo.match(/\d+/)?.[0] ?? "");
     let rivales: string[] = [];
     try {
@@ -408,8 +411,16 @@ function filaDesdePersistida(
         estado = "Ganador";
       } else if (posRivales.some((pr) => pr !== -1 && (posElegido === -1 || pr <= posElegido))) {
         estado = "Perdedor";
+      } else if (posElegido === -1 && posRivales.every((pr) => pr === -1)) {
+        estado = "Retirado";
+        sinDecision = true;
       }
+    } else if (estado === "Retirado" || estado === "Pendiente") {
+      estado = "Retirado";
+      sinDecision = true;
     }
+  } else if (!anulada && /^MARCAS?\b/i.test(nombreJug) && estado === "Retirado") {
+    sinDecision = true;
   }
   // Si hay pizarra oficial (o si el ticket quedó con estado "Perdedor" pero premio_pagar === monto),
   // en el empate NINI ni gana ni pierde nadie (0 / 0 = Retirado/Empate).
@@ -495,6 +506,7 @@ function filaDesdePersistida(
     lado2,
     esAdelantada: esAdel,
     categoriaAdelantada: esAdel ? categoriaJugadaAdelantada(nombreJug) : undefined,
+    ...(sinDecision ? { sinDecision: true } : {}),
   };
 }
 

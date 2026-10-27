@@ -635,16 +635,25 @@ export function relacionResultados(
       const tasa = tasaDeJugada(j.comisionPct);
       const pagoMarca = round2((perdida * 5) / 6);
       const pareo = extraerPareoMarca({ jugada: j.jugada, caballo: j.caballo });
-      let ganoMarca = j.ganador === true;
+      let ganoMarca: boolean | null = j.ganador === true ? true : j.ganador === false ? false : null;
       if ((meta.pizarraPuestos?.length ?? 0) > 0 && pareo.elegido && pareo.rivales.length > 0) {
         const puestos = meta.pizarraPuestos!;
         const posElegido = puestos.findIndex((p) => String(p).trim() === pareo.elegido);
         const posRivales = pareo.rivales.map((rv) => puestos.findIndex((p) => String(p).trim() === rv));
-        if (posElegido !== -1 && posRivales.every((pr) => pr === -1 || posElegido < pr)) {
+        if (posElegido === -1 && posRivales.every((pr) => pr === -1)) {
+          ganoMarca = null;
+        } else if (posElegido !== -1 && posRivales.every((pr) => pr === -1 || posElegido < pr)) {
           ganoMarca = true;
         } else if (posRivales.some((pr) => pr !== -1 && (posElegido === -1 || pr <= posElegido))) {
           ganoMarca = false;
         }
+      }
+      if (ganoMarca === null) {
+        destino.push(`Juega ${j.clienteJuega} SIN DECISIÓN`);
+        if (beneficiario) {
+          destino.push(`Da ${beneficiario} SIN DECISIÓN`);
+        }
+        return;
       }
       if (ganoMarca) {
         destino.push(`Juega ${j.clienteJuega} $ +${fmtMonto(pagoMarca)}`);

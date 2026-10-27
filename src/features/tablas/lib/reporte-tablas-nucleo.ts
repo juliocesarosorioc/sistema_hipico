@@ -127,7 +127,7 @@ export type FiltrosVenta = {
   jugador?: string;
 };
 
-export type EstadoReporte = "Ganador" | "Perdedor" | "Pendiente" | "Retirado" | "Invalidado" | "Otro";
+export type EstadoReporte = "Ganador" | "Perdedor" | "Pendiente" | "Retirado" | "Invalidado" | "Sin Decisión" | "Otro";
 
 const texto = (v: unknown): string => (v == null ? "" : String(v).trim());
 
@@ -147,6 +147,7 @@ export function estadoNormalizado(e: unknown): EstadoReporte {
   if (s.startsWith("retir")) return "Retirado";
   // Un ejemplar INVALIDADO no es un retirado: no se reembolsa, pierde.
   if (s.startsWith("inval")) return "Invalidado";
+  if (s.includes("sin decisi") || s.startsWith("empat") || s.startsWith("reinteg")) return "Sin Decisión";
   if (s.startsWith("pend")) return "Pendiente";
   return "Otro";
 }
@@ -256,7 +257,7 @@ export function normalizarVenta(row: Record<string, unknown>): VentaTablaReporte
     moneda: texto(row.moneda).toUpperCase() || "USD",
     anulada: row.anulada === true,
     adelantada: esAdelantadaDe(row),
-    fecha: fechaDeNota(row.nota_auditoria) || texto(row.fecha_registro).slice(0, 10),
+    fecha: fechaDeNota(row.nota_auditoria) || texto(row.fecha_carrera).slice(0, 10) || texto(row.fecha_registro).slice(0, 10),
     fechaVenta: diaLocalDeVenta(row.fecha_registro),
     tablaId: tablaIdDeNota(row.nota_auditoria),
     // Lo marca el cargador de tablas fijas, que cruza la venta con los
@@ -338,6 +339,10 @@ export function totalesDe(ventas: VentaTablaReporte[]): TotalesReporte {
         } else {
           t.cobrado += cobradoDeVenta(v);
         }
+        break;
+      case "Sin Decisión":
+        t.retirados += 1;
+        t.reembolsado += v.monto;
         break;
       case "Pendiente":
         t.pendientes += 1;

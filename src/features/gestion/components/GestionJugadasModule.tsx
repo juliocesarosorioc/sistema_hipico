@@ -62,8 +62,15 @@ import ModalEditarJugadasCarrera from "@/features/gestion/components/ModalEditar
 import { expandirLineasDobleSplit, revisarCoherenciaLineas } from "@/features/taquilla/lib/expandirDobleSplit";
 import { mensajePlanoDeCarrera } from "@/features/taquilla/lib/mensajeResultado";
 import { corregirLineasConIA } from "@/features/taquilla/lib/corregirIA";
-import { listarJugadasDeCarrera, type JugadaAdmin } from "@/features/jugadas/lib/jugadas";
-import { ToggleModalidadTiempo, BadgeAdelantada } from "@/features/jugadas/components/ToggleModalidadTiempo";
+import {
+  listarJugadasDeCarrera,
+  NOTAS_PREDEFINIDAS_EDICION,
+  MOTIVOS_ANULACION,
+  componerNota,
+  type JugadaAdmin,
+} from "@/features/jugadas/lib/jugadas";
+import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
+import { ModalGestionRapidaSaldo } from "@/features/contabilidad/components/ModalGestionRapidaSaldo";
 import { marcarTicketsAdelantados } from "@/features/jugadas/lib/marcar-adelantadas";
 import { BarraCarrerasLiquidadas } from "@/features/gestion/components/BarraCarrerasLiquidadas";
 import {
@@ -114,9 +121,15 @@ type AccionPreview = {
 
 /** Campos editables de una jugada guardada (modal ✏️ del panel). */
 type EdicionPreview = {
+  jugador1: string;
+  jugador2: string;
+  carrera: string;
+  esAdelantada: boolean;
   jugada: string;
   caballo: string;
   monto: string;
+  notaPredefinida: string;
+  motivoLibre: string;
 };
 
 /** Aviso visual (ToastHost global) para las acciones del panel. */
@@ -209,8 +222,10 @@ export function GestionJugadasModule() {
   /** Acción (✏️ editar / 🗑️ eliminar) sobre una fila del panel, con su modal. */
   const [accionPreview, setAccionPreview] = useState<AccionPreview | null>(null);
   const [motivoPreview, setMotivoPreview] = useState("");
+  const [notaAnularPreview, setNotaAnularPreview] = useState<string>(MOTIVOS_ANULACION[0]);
   const [edicionPreview, setEdicionPreview] = useState<EdicionPreview | null>(null);
   const [ocupadoPreview, setOcupadoPreview] = useState(false);
+  const [modalSaldoRapido, setModalSaldoRapido] = useState(false);
 
   const { carreras: centralCarrerasDiaAllBase, carrerasDe, recargar: recargarRegistroCentral } =
     useRegistroCentralOpts(fecha);
@@ -285,6 +300,10 @@ export function GestionJugadasModule() {
     diferenteEjemplar: false,
   });
   const grupoActivo = useAuthStore((s) => s.grupoActivo);
+  const veTodosLosGrupos = useAuthStore((s) => s.veTodosLosGrupos);
+  const setGrupoActivo = useAuthStore((s) => s.setGrupoActivo);
+  /** El usuario/grupo Principal ("Todos los grupos") es solo de gestión y no puede registrar jugadas directamente. */
+  const principalSinGrupoSeleccionado = Boolean(veTodosLosGrupos && !grupoActivo);
 
   /**
    * Relee los saldos del catálogo. Es CLAVE refrescarlos después de cada venta y
@@ -295,11 +314,6 @@ export function GestionJugadasModule() {
    */
   const recargarClientes = useCallback(async () => {
     try {
-      /* BUG reportado («el botón de actualizar saldo no funciona»): el catálogo
-         de clientes se cacheaba en el módulo y `listarClientesVenta()` devolvía
-         la copia vieja sin tocar la base, así que este refresco (y el que corre
-         tras cada venta/liquidación) no traía los saldos reales. Hay que
-         invalidar el caché ANTES de releer. */
       limpiarCacheClientesVenta();
       const c = await listarClientesVenta();
       setClientes(c);
@@ -307,6 +321,10 @@ export function GestionJugadasModule() {
       /* sin conexión: se conserva el catálogo actual */
     }
   }, []);
+
+  useEffect(() => {
+    void recargarClientes();
+  }, [grupoActivo, recargarClientes]);
 
   useEffect(() => {
     let vivo = true;
@@ -1015,9 +1033,20 @@ const hipodromosDelDia = useMemo(() => {
   const abrirAccionPreview = (fila: FilaPreviewCarrera, modo: "editar" | "eliminar") => {
     setAccionPreview({ fila, modo });
     setMotivoPreview("");
+    setNotaAnularPreview(MOTIVOS_ANULACION[0]);
     setEdicionPreview(
       modo === "editar"
-        ? { jugada: fila.jugada, caballo: fila.caballo, monto: fila.monto ? String(fila.monto) : "" }
+        ? {
+            jugador1: fila.cliente1 || "",
+            jugador2: fila.cliente2 || "",
+            carrera: String(carrera),
+            esAdelantada: Boolean(fila.esAdelantada),
+            jugada: fila.jugada,
+            caballo: fila.caballo,
+            monto: fila.monto ? String(fila.monto) : "",
+            notaPredefinida: NOTAS_PREDEFINIDAS_EDICION[0],
+            motivoLibre: "",
+          }
         : null
     );
   };
@@ -1038,28 +1067,65 @@ const hipodromosDelDia = useMemo(() => {
     const accion = accionPreview;
     if (!accion || ocupadoPreview) return;
     const fila = accion.fila;
-    const motivo = motivoPreview.trim() || (accion.modo === "editar" ? "Corrección desde pre-visualización" : "Anulación desde pre-visualización");
+    const motivo =
+      accion.modo === "editar"
+        ? componerNota(
+            edicionPreview?.notaPredefinida === "OTRO" ? "" : edicionPreview?.notaPredefinida ?? "",
+            edicionPreview?.motivoLibre || motivoPreview
+          ) || "Corrección desde pre-visualización"
+        : componerNota(
+            notaAnularPreview === "OTRO" ? "" : notaAnularPreview,
+            motivoPreview
+          ) || "Anulación desde pre-visualización";
     const esPersistida = !!fila.ticketId;
     const ticketSesion = ticketSesionDeFila(fila);
 
-    let campos: { nombre_jugada?: string | null; caballo?: string | null; ejemplar_numero?: number | null; monto_jugado?: number | null } | null = null;
+    let campos: {
+      cliente_juega_nombre?: string | null;
+      cliente_consigue_nombre?: string | null;
+      carrera?: number | null;
+      es_adelantada?: boolean | null;
+      nombre_jugada?: string | null;
+      caballo?: string | null;
+      ejemplar_numero?: number | null;
+      monto_jugado?: number | null;
+    } | null = null;
     if (accion.modo === "editar") {
       if (!edicionPreview) return;
+      const jugador1 = edicionPreview.jugador1.trim().toUpperCase();
+      if (!jugador1) {
+        setAviso("⚠️ El Jugador 1 (Quien Juega) no puede quedar vacío.");
+        return;
+      }
       const nombre = edicionPreview.jugada.trim().toUpperCase();
       if (!nombre) {
         setAviso("⚠️ La jugada (nomenclatura) no puede quedar vacía.");
         return;
       }
-      const monto = Number(edicionPreview.monto.replace(",", "."));
-      if (!Number.isFinite(monto) || monto < 0) {
-        setAviso("⚠️ El monto no es válido.");
+      const caballo = edicionPreview.caballo.trim().toUpperCase();
+      if (!caballo || !/\d/.test(caballo)) {
+        setAviso("⚠️ Condición sine qua non: toda jugada debe tener ejemplar (número de caballo).");
         return;
       }
-      const caballo = edicionPreview.caballo.trim().toUpperCase();
+      const carreraNueva = Number(edicionPreview.carrera) || carrera;
+      if (!Number.isFinite(carreraNueva) || carreraNueva < 1) {
+        setAviso("⚠️ El número de carrera no es válido.");
+        return;
+      }
+      const monto = Number(edicionPreview.monto.replace(",", "."));
+      if (!Number.isFinite(monto) || monto <= 0) {
+        setAviso("⚠️ El monto debe ser mayor a 0.");
+        return;
+      }
+      const mCabNum = caballo.match(/\b(\d{1,2})\b/);
       campos = {
+        cliente_juega_nombre: jugador1,
+        cliente_consigue_nombre: edicionPreview.jugador2.trim() ? edicionPreview.jugador2.trim().toUpperCase() : null,
+        carrera: carreraNueva,
+        es_adelantada: edicionPreview.esAdelantada,
         nombre_jugada: nombre,
-        caballo: caballo || null,
-        ejemplar_numero: /^[0-9]+$/.test(caballo) ? Number(caballo) : null,
+        caballo,
+        ejemplar_numero: /^[0-9]+$/.test(caballo) ? Number(caballo) : mCabNum ? Number(mCabNum[1]) : null,
         monto_jugado: monto,
       };
     }
@@ -1069,9 +1135,18 @@ const hipodromosDelDia = useMemo(() => {
       if (!esPersistida) {
         // Solo sesión: no hay nada que anular en la base.
         if (ticketSesion) eliminarTicket(ticketSesion.id);
-        if (accion.modo === "editar" && ticketSesion) {
-          setFilas((f) => [desarmarTicket(ticketSesion), ...f]);
-          setAviso(`✏️ “${ticketSesion.comando}” devuelto a la tabla para corregirlo.`);
+        if (accion.modo === "editar" && edicionPreview) {
+          setFilas((f) => [
+            {
+              jugada: edicionPreview.jugada.trim().toUpperCase(),
+              caballo: edicionPreview.caballo.trim().toUpperCase(),
+              monto: edicionPreview.monto.trim(),
+              cliente1: edicionPreview.jugador1.trim(),
+              cliente2: edicionPreview.jugador2.trim(),
+            },
+            ...f,
+          ]);
+          setAviso(`✏️ Jugada devuelta a la tabla con los valores editados para cargarla.`);
         } else {
           setAviso(`🗑️ “${fila.jugada}” quitada de la sesión.`);
         }
@@ -1113,8 +1188,6 @@ const hipodromosDelDia = useMemo(() => {
         return;
       }
 
-      // Quita también el ticket de la sesión para que el panel no lo muestre
-      // como pendiente de una venta que ya fue corregida/anulada en la base.
       if (ticketSesion) eliminarTicket(ticketSesion.id);
       if (accion.modo === "eliminar") {
         setJugadasGuardadas((prev) =>
@@ -1126,6 +1199,11 @@ const hipodromosDelDia = useMemo(() => {
             String(j.id) === String(fila.ticketId)
               ? {
                   ...j,
+                  cliente_juega_nombre: campos?.cliente_juega_nombre ?? j.cliente_juega_nombre,
+                  cliente_consigue_nombre:
+                    campos?.cliente_consigue_nombre !== undefined ? campos.cliente_consigue_nombre : j.cliente_consigue_nombre,
+                  carrera: campos?.carrera ?? j.carrera,
+                  es_adelantada: campos?.es_adelantada ?? j.es_adelantada,
                   nombre_jugada: campos?.nombre_jugada ?? j.nombre_jugada,
                   caballo: campos?.caballo ?? j.caballo,
                   ejemplar_numero: campos?.ejemplar_numero ?? j.ejemplar_numero,
@@ -1135,7 +1213,6 @@ const hipodromosDelDia = useMemo(() => {
           )
         );
       }
-      // Los saldos cambiaron (reversión + re-liquidación): refrescar catálogo.
       void recargarClientes();
       recargarRegistroCentral();
       await recargarJugadasGuardadas();
@@ -1220,6 +1297,12 @@ const hipodromosDelDia = useMemo(() => {
     }
     return pizarraPuestosActual;
   }, [centralDeCarrera, ultimaPizarra, pizarraPuestosActual]);
+
+  const retiradosPizarraActual = useMemo<string[]>(() => {
+    const deCentral = (centralDeCarrera?.retirados ?? []).map((x) => String(x).trim()).filter(Boolean);
+    if (deCentral.length > 0) return deCentral;
+    return parsearRetirados(retirados).map((x) => String(x).trim()).filter(Boolean);
+  }, [centralDeCarrera, retirados]);
 
   /** Filas del panel: persistidas (✅) + ventas de la sesión sin duplicar. */
   const filasPreview = useMemo(
@@ -1468,22 +1551,26 @@ const hipodromosDelDia = useMemo(() => {
    * saldo+aval), no el tipeado.
    */
   const cargarAtaquilla = async () => {
+    if (principalSinGrupoSeleccionado) {
+      setAviso(
+        "⛔ El usuario/grupo Principal («Todos los grupos») es solo de gestión y no puede registrar jugadas. Seleccione primero un grupo activo en el selector superior."
+      );
+      emitirToast("Seleccione un grupo activo para registrar jugadas.", "warning");
+      return;
+    }
     if (!(await confirmarCargaAdicional())) return;
     let n = 0;
     const errores: string[] = [];
     const indicesError: number[] = [];
     const recortes: string[] = [];
-    /* Saldo del CLIENTE 1 ya comprometido por filas ANTERIORES de esta misma
-       carga (solo el que juega se debita: ver sql/taquilla_venta.sql). Se suma
-       recién cuando la venta se confirma, para no topar una fila por algo que
-       otra no llegó a cobrar. */
     const descontado = new Map<string, number>();
     for (const f of filas) {
       if (!f.jugada.trim() && !f.monto.trim()) continue;
-      /* Antes de la nomenclatura: un caballo que no corre no se puede cobrar
-         liquidar. Se revisa igual con el campo vacio (no molesta: ahi la
-         revision devuelve ok) para que un numero mal escrito con la jugada
-         todavia vacia no se cuele al autocomplete. */
+      if (!f.caballo.trim() || !/\d/.test(f.caballo)) {
+        errores.push(`Fila ${filas.indexOf(f) + 1}: falta el ejemplar (condición sine qua non: toda jugada debe indicar caballo).`);
+        indicesError.push(filas.indexOf(f));
+        continue;
+      }
       const rc = revisionCaballo(f.caballo);
       if (!rc.ok) {
         errores.push(`Fila ${filas.indexOf(f) + 1}: ${rc.motivo}`);
@@ -1535,9 +1622,6 @@ const hipodromosDelDia = useMemo(() => {
         indicesError.push(filas.indexOf(f));
         continue;
       }
-      /* Regla de la casa: SIEMPRE hay 2 clientes (quién juega + quién da). El
-         CLIENTE 2 dejó de ser informativo: sin un segundo cliente en el catálogo
-         la jugada NO se carga (antes se vendía solo con el CLIENTE 1). */
       if (!f.cliente2.trim()) {
         errores.push(`Fila ${filas.indexOf(f) + 1}: falta el CLIENTE 2 (dador). Las jugadas se cargan con DOS clientes.`);
         indicesError.push(filas.indexOf(f));
@@ -1549,7 +1633,13 @@ const hipodromosDelDia = useMemo(() => {
         continue;
       }
       const grupoId =
-        c1.grupo_id != null ? String(c1.grupo_id) : c1.grupos[0] != null ? String(c1.grupos[0]) : null;
+        grupoActivo != null && String(grupoActivo).trim() !== ""
+          ? String(grupoActivo)
+          : c1.grupo_id != null
+            ? String(c1.grupo_id)
+            : c1.grupos[0] != null
+              ? String(c1.grupos[0])
+              : null;
       if (v.reparto?.recortado) {
         const tel1 = telefonoMencionCliente(c1);
         const tel2 = telefonoMencionCliente(c2);
@@ -2029,6 +2119,14 @@ const hipodromosDelDia = useMemo(() => {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+          <button
+            type="button"
+            onClick={() => setModalSaldoRapido(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-emerald-600 px-3 py-1 text-xs font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-emerald-500"
+            title="Incrementar o disminuir saldo de un cliente adjuntando capture de comprobante"
+          >
+            <span>💵</span> Gestión Rápida de Saldos
+          </button>
           <span className="rounded-md bg-slate-800 px-2 py-1 font-bold text-slate-200">
             📅 {fecha}
           </span>
@@ -2039,6 +2137,39 @@ const hipodromosDelDia = useMemo(() => {
           )}
         </div>
       </div>
+
+      {principalSinGrupoSeleccionado && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-amber-400 bg-amber-50 px-3.5 py-2.5 text-xs font-bold text-amber-950 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-base">⚠️</span>
+            <span>
+              El usuario/grupo <b>Principal («Todos los grupos»)</b> es solo de gestión y <b>no puede registrar jugadas</b>. Seleccione un grupo activo para cargar jugadas y movimientos a ese grupo:
+            </span>
+          </div>
+          <select
+            value={grupoActivo ?? ""}
+            onChange={(e) => setGrupoActivo(e.target.value || null)}
+            className="rounded-lg border-2 border-amber-500 bg-white px-3 py-1 text-xs font-black uppercase text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          >
+            <option value="">— Seleccionar grupo de trabajo —</option>
+            {gruposVenta.map((g) => (
+              <option key={String(g.id)} value={String(g.id)}>
+                {g.nombre}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {modalSaldoRapido && (
+        <ModalGestionRapidaSaldo
+          abierto={modalSaldoRapido}
+          onCerrar={() => setModalSaldoRapido(false)}
+          onGuardado={() => {
+            void recargarClientes();
+          }}
+        />
+      )}
 
       {/* Control de bloqueo/desbloqueo de modalidades en el Portal de Clientes */}
       <PanelBloqueoJugadasAdmin compacto />
@@ -2548,11 +2679,23 @@ const hipodromosDelDia = useMemo(() => {
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Guard permiso="gestion_jugadas:btn_carga_rapida">
-            <Button size="sm" variant="ghost" onClick={() => setModalCargaRapida(true)} className="z-10">
-              ⚡ Carga Rápida <span className="ml-1 rounded bg-warning-500/20 px-1.5 text-[9px] font-black text-warning-700">texto</span>
+            <Button
+              size="md"
+              onClick={() => setModalCargaRapida(true)}
+              className="z-10 !border-2 !border-amber-400 !bg-gradient-to-r !from-amber-400 !via-amber-500 !to-orange-500 !px-4 !py-2 !text-sm !font-black !uppercase !tracking-wide !text-slate-950 shadow-lg shadow-amber-500/30 transition-all hover:scale-[1.02] hover:!brightness-105"
+            >
+              ⚡ Carga Rápida <span className="ml-1.5 rounded-md bg-slate-950 px-2 py-0.5 text-[10px] font-black text-amber-300">TEXTO</span>
             </Button>
           </Guard>
           <Button size="sm" onClick={() => setFilas((f) => [...f, filaVacia()])}>＋ Agregar fila</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setModalSaldoRapido(true)}
+            className="!border-emerald-400 !bg-emerald-50 !font-black !text-emerald-800 hover:!bg-emerald-100"
+          >
+            💵 Gestión Rápida de Saldos
+          </Button>
           {(() => {
             const avisos = filas
               .map((f, i) => avisoSaldo(f, proyeccionesCarga[i]?.cliente1 ?? null, proyeccionesCarga[i]?.cliente2 ?? null))
@@ -2620,26 +2763,33 @@ const hipodromosDelDia = useMemo(() => {
                   {listaFilas.map((f, i) => {
                     const aposto1 = f.aposto1 ?? f.monto;
                     const aposto2 = f.aposto2 ?? f.monto;
+                    const esFilaMarcaSinDecision =
+                      (f.categoriaAdelantada === "marcas" || esMarca(f.jugada)) &&
+                      (f.sinDecision || (f.lado1.estado === "RETIRADO" && f.estadoLiquidacion === "Liquidada"));
                     const res1Texto =
                       f.anulada
                         ? "ANULADA"
-                        : f.lado1.estado === "RETIRADO"
-                          ? `${monedaFmt(0)} (Empate)`
-                          : f.lado1.estado === "GANO" && f.lado1.monto != null
-                            ? `+${monedaFmt(Math.abs(f.lado1.monto))}`
-                            : f.lado1.estado === "PERDIO"
-                              ? `-${monedaFmt(Math.abs(f.lado1.monto ?? aposto1))}`
-                              : `-${monedaFmt(aposto1)} (Pend.)`;
+                        : esFilaMarcaSinDecision
+                          ? "SIN DECISIÓN"
+                          : f.lado1.estado === "RETIRADO"
+                            ? `${monedaFmt(0)} (Empate)`
+                            : f.lado1.estado === "GANO" && f.lado1.monto != null
+                              ? `+${monedaFmt(Math.abs(f.lado1.monto))}`
+                              : f.lado1.estado === "PERDIO"
+                                ? `-${monedaFmt(Math.abs(f.lado1.monto ?? aposto1))}`
+                                : `-${monedaFmt(aposto1)} (Pend.)`;
                     const res2Texto =
                       f.anulada
                         ? "ANULADA"
-                        : f.lado2.estado === "RETIRADO"
-                          ? `${monedaFmt(0)} (Empate)`
-                          : f.lado2.estado === "GANO" && f.lado2.monto != null
-                            ? `+${monedaFmt(Math.abs(f.lado2.monto))}`
-                            : f.lado2.estado === "PERDIO"
-                              ? `-${monedaFmt(Math.abs(f.lado2.monto ?? aposto2))}`
-                              : `-${monedaFmt(aposto2)} (Pend.)`;
+                        : esFilaMarcaSinDecision
+                          ? "SIN DECISIÓN"
+                          : f.lado2.estado === "RETIRADO"
+                            ? `${monedaFmt(0)} (Empate)`
+                            : f.lado2.estado === "GANO" && f.lado2.monto != null
+                              ? `+${monedaFmt(Math.abs(f.lado2.monto))}`
+                              : f.lado2.estado === "PERDIO"
+                                ? `-${monedaFmt(Math.abs(f.lado2.monto ?? aposto2))}`
+                                : `-${monedaFmt(aposto2)} (Pend.)`;
 
                     return (
                       <tr
@@ -2758,7 +2908,6 @@ const hipodromosDelDia = useMemo(() => {
                             return (
                               <>
                                 {f.jugada} {f.caballo ? `· #${f.caballo.toUpperCase()}` : ""}
-                                {f.esAdelantada && <BadgeAdelantada className="ml-1" />}
                               </>
                             );
                           })()}
@@ -2877,6 +3026,24 @@ const hipodromosDelDia = useMemo(() => {
                             </div>
                           ))}
                         </div>
+                        {retiradosPizarraActual.length > 0 && (
+                          <div className="flex items-center gap-1.5 border-l border-rose-200 pl-2.5">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-rose-700">
+                              RET:
+                            </span>
+                            <div className="flex flex-wrap items-center gap-1">
+                              {retiradosPizarraActual.map((num, idx) => (
+                                <div
+                                  key={`ret-of-${idx}-${num}`}
+                                  className={`flex h-7 w-7 items-center justify-center rounded-md border text-xs font-black shadow-2xs ${colorDiscoNumero(num)}`}
+                                  title={`Retirado: Ejemplar #${num}`}
+                                >
+                                  {num}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Orden de Llegada en Raya (solo cuando difiere de la Pizarra Oficial) */}
@@ -3228,6 +3395,7 @@ const hipodromosDelDia = useMemo(() => {
                         carrera: `Carrera ${carrera}`,
                         fecha,
                         llegada: [],
+                        retirados: retiradosPizarraActual,
                       },
                       liquidada: false,
                       jugadasVivo: [
@@ -3320,57 +3488,157 @@ const hipodromosDelDia = useMemo(() => {
         {/* Modal propio ✏️/🗑️ de una jugada del panel (sin window.confirm) */}
         {accionPreview && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4">
-            <div className="w-full max-w-lg rounded-2xl border border-line bg-white p-4 shadow-2xl">
+            <div className="w-full max-w-xl rounded-2xl border border-line bg-white p-4 shadow-2xl">
+              <datalist id="clientes-preview-editar-datalist">
+                {clientes.map((c) => (
+                  <option key={c.id} value={c.nombre} />
+                ))}
+              </datalist>
               <p className="text-sm font-black text-slate-800">
-                {accionPreview.modo === "editar" ? "✏️ Editar jugada cargada" : "🗑️ Eliminar jugada cargada"}
+                {accionPreview.modo === "editar" ? "✏️ Editar jugada cargada (todos los campos)" : "🗑️ Eliminar jugada cargada"}
               </p>
               <p className="mt-1 text-xs font-semibold text-slate-500">
                 {nombreHipodromo} C{carrera} · {fecha} · Ticket #{accionPreview.fila.ticketId ?? "sesión"}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">
-                La jugada se {accionPreview.modo === "editar" ? "corrige" : "anula"} en la base y la carrera se recalcula
+                La jugada se {accionPreview.modo === "editar" ? "corrige con todos los valores nuevos, ajusta los saldos de los jugadores" : "anula"} en la base y la carrera se recalcula
                 automáticamente (revierte y vuelve a liquidar si estaba pagada).
               </p>
 
               {accionPreview.modo === "editar" && edicionPreview && (
-                <div className="mt-3 grid grid-cols-6 gap-2">
-                  <label className="col-span-3 block text-[10px] font-black uppercase text-slate-500">
-                    Jugada
+                <div className="mt-3 space-y-2.5">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <label className="block text-[10px] font-black uppercase text-slate-500">
+                      Jugador 1 (Quien Juega)
+                      <input
+                        list="clientes-preview-editar-datalist"
+                        value={edicionPreview.jugador1}
+                        onChange={(e) => setEdicionPreview((v) => (v ? { ...v, jugador1: e.target.value.toUpperCase() } : v))}
+                        className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-bold uppercase text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      />
+                    </label>
+                    <label className="block text-[10px] font-black uppercase text-slate-500">
+                      Jugador 2 (Quien Da / Contraparte)
+                      <input
+                        list="clientes-preview-editar-datalist"
+                        value={edicionPreview.jugador2}
+                        onChange={(e) => setEdicionPreview((v) => (v ? { ...v, jugador2: e.target.value.toUpperCase() } : v))}
+                        placeholder="TAQUILLA"
+                        className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-bold uppercase text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                    <label className="col-span-1 block text-[10px] font-black uppercase text-slate-500">
+                      Carrera N°
+                      <input
+                        type="number"
+                        min={1}
+                        max={25}
+                        value={edicionPreview.carrera}
+                        onChange={(e) => setEdicionPreview((v) => (v ? { ...v, carrera: e.target.value.replace(/\D/g, "") } : v))}
+                        className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-bold text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      />
+                    </label>
+                    <label className="col-span-2 block text-[10px] font-black uppercase text-slate-500">
+                      Jugada
+                      <input
+                        value={edicionPreview.jugada}
+                        onChange={(e) => setEdicionPreview((v) => (v ? { ...v, jugada: e.target.value.toUpperCase() } : v))}
+                        className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-bold uppercase text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      />
+                    </label>
+                    <label className="col-span-1 block text-[10px] font-black uppercase text-slate-500">
+                      Ejemplar *
+                      <input
+                        value={edicionPreview.caballo}
+                        onChange={(e) => setEdicionPreview((v) => (v ? { ...v, caballo: e.target.value.toUpperCase() } : v))}
+                        className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-bold uppercase text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      />
+                    </label>
+                    <label className="col-span-1 block text-[10px] font-black uppercase text-slate-500">
+                      Monto
+                      <input
+                        inputMode="decimal"
+                        value={edicionPreview.monto}
+                        onChange={(e) => setEdicionPreview((v) => (v ? { ...v, monto: e.target.value } : v))}
+                        className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-bold text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="inline-flex items-center gap-2 text-xs font-bold text-slate-700">
                     <input
-                      value={edicionPreview.jugada}
-                      onChange={(e) => setEdicionPreview((v) => (v ? { ...v, jugada: e.target.value } : v))}
-                      className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      type="checkbox"
+                      checked={edicionPreview.esAdelantada}
+                      onChange={(e) => setEdicionPreview((v) => (v ? { ...v, esAdelantada: e.target.checked } : v))}
                     />
+                    Modalidad Adelantada (Pre-jugada)
                   </label>
-                  <label className="col-span-1 block text-[10px] font-black uppercase text-slate-500">
-                    Caballo
-                    <input
-                      value={edicionPreview.caballo}
-                      onChange={(e) => setEdicionPreview((v) => (v ? { ...v, caballo: e.target.value } : v))}
+
+                  <label className="block text-[10px] font-black uppercase text-slate-500">
+                    Motivo de modificación (listado predeterminado)
+                    <select
+                      value={edicionPreview.notaPredefinida}
+                      onChange={(e) => setEdicionPreview((v) => (v ? { ...v, notaPredefinida: e.target.value } : v))}
                       className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                    />
+                    >
+                      {NOTAS_PREDEFINIDAS_EDICION.map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                      <option value="OTRO">✍️ Otro (introducir libremente)</option>
+                    </select>
                   </label>
-                  <label className="col-span-2 block text-[10px] font-black uppercase text-slate-500">
-                    Monto
+
+                  <label className="block text-[10px] font-black uppercase text-slate-500">
+                    {edicionPreview.notaPredefinida === "OTRO"
+                      ? "Introducir motivo libremente (obligatorio)"
+                      : "Detalle adicional / observación libre (opcional)"}
                     <input
-                      inputMode="decimal"
-                      value={edicionPreview.monto}
-                      onChange={(e) => setEdicionPreview((v) => (v ? { ...v, monto: e.target.value } : v))}
+                      value={edicionPreview.motivoLibre}
+                      onChange={(e) => setEdicionPreview((v) => (v ? { ...v, motivoLibre: e.target.value } : v))}
+                      placeholder={
+                        edicionPreview.notaPredefinida === "OTRO"
+                          ? "Escriba el motivo de la modificación…"
+                          : "Ej.: monto mal tipeado / cliente equivocado"
+                      }
                       className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     />
                   </label>
                 </div>
               )}
 
-              <label className="mt-3 block text-[10px] font-black uppercase text-slate-500">
-                Motivo (queda en auditoría)
-                <input
-                  value={motivoPreview}
-                  onChange={(e) => setMotivoPreview(e.target.value)}
-                  placeholder="Ej.: monto mal tipeado / cliente equivocado"
-                  className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                />
-              </label>
+              {accionPreview.modo === "eliminar" && (
+                <div className="mt-3 space-y-2">
+                  <label className="block text-[10px] font-black uppercase text-slate-500">
+                    Motivo de anulación (listado predeterminado)
+                    <select
+                      value={notaAnularPreview}
+                      onChange={(e) => setNotaAnularPreview(e.target.value)}
+                      className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    >
+                      {MOTIVOS_ANULACION.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                      <option value="OTRO">✍️ Otro (introducir libremente)</option>
+                    </select>
+                  </label>
+                  <label className="block text-[10px] font-black uppercase text-slate-500">
+                    {notaAnularPreview === "OTRO" ? "Introducir motivo libremente (obligatorio)" : "Observación adicional (opcional)"}
+                    <input
+                      value={motivoPreview}
+                      onChange={(e) => setMotivoPreview(e.target.value)}
+                      placeholder="Detalle de la anulación…"
+                      className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    />
+                  </label>
+                </div>
+              )}
 
               <div className="mt-4 flex justify-end gap-2">
                 <Button variant="ghost" size="sm" onClick={cerrarAccionPreview} disabled={ocupadoPreview}>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listarGruposAdmin, type GrupoRow } from "@/features/grupos/lib/grupos";
+import { listarClientes, type ClienteRow } from "@/features/clientes/lib/clientes";
 import {
   construirReporteSemana,
   resumirReporte,
@@ -53,7 +54,11 @@ function TotalBadge({ v, small }: { v: number; small?: boolean }) {
   );
 }
 
-export type VistaTablaDinamica = "JERARQUIA" | "PIVOT_CARRERAS" | "PIVOT_CLIENTE_CARRERA";
+export type VistaTablaDinamica =
+  | "JERARQUIA"
+  | "PIVOT_CARRERAS"
+  | "PIVOT_CLIENTE_CARRERA"
+  | "RESUMEN_4_COLUMNAS";
 export type FiltroModalidadPivot =
   | "TODAS"
   | "EN_VIVO"
@@ -92,6 +97,8 @@ function cumpleResultadoPivot(f: FilaReporte, filtro: FiltroResultadoPivot): boo
 export function ReporteModule() {
   const [grupos, setGrupos] = useState<GrupoRow[]>([]);
   const [grupoId, setGrupoId] = useState<string>("");
+  const [clientesGrupo, setClientesGrupo] = useState<ClienteRow[]>([]);
+  const [fuenteSaldos4Col, setFuenteSaldos4Col] = useState<"JORNADA" | "CARTERA">("JORNADA");
   // Por defecto SIEMPRE el día de hoy (rango de un solo día), no la semana
   // fiscal completa: al abrir el monitor lo que interesa es la jornada en curso.
   const [desde, setDesde] = useState<string>(() => hoyLocal());
@@ -160,6 +167,13 @@ export function ReporteModule() {
       })
       .catch(() => setGrupos([]));
   }, []);
+
+  useEffect(() => {
+    if (!grupoId) return;
+    listarClientes(true, grupoId)
+      .then((cs) => setClientesGrupo(cs))
+      .catch(() => setClientesGrupo([]));
+  }, [grupoId]);
 
   const cargar = useCallback(async () => {
     const g = grupos.find((x) => String(x.id) === grupoId);
@@ -339,6 +353,7 @@ export function ReporteModule() {
     }> = [];
 
     const clientesMap = new Map<string, Record<string, number>>();
+    let comisionSemanaAcum = 0;
 
     for (const d of rpt?.dias ?? []) {
       for (const h of d.hipodromos) {
@@ -350,6 +365,7 @@ export function ReporteModule() {
           let apostado = 0;
           let ganan = 0;
           let pierden = 0;
+          let sumaResultadosCarrera = 0;
 
           for (const f of c.filas) {
             const cli = String(f.cliente ?? "").trim().toUpperCase();
@@ -357,6 +373,7 @@ export function ReporteModule() {
               const actual = clientesMap.get(cli) ?? {};
               actual[clave] = redondearCentavos((actual[clave] ?? 0) + f.resultado);
               clientesMap.set(cli, actual);
+              sumaResultadosCarrera = redondearCentavos(sumaResultadosCarrera + f.resultado);
             }
 
             if (f.jugada === "Bono por Cruce de jugadas") continue;
@@ -374,6 +391,11 @@ export function ReporteModule() {
             } else if ((f.resultado ?? 0) < 0) {
               pierden = redondearCentavos(pierden + (f.resultado ?? 0));
             }
+          }
+
+          // En las jugadas liquidadas, la diferencia entre lo que pierden y lo que ganan los jugadores es la comisión retenida por la casa/grupo
+          if (sumaResultadosCarrera < 0) {
+            comisionSemanaAcum = redondearCentavos(comisionSemanaAcum + Math.abs(sumaResultadosCarrera));
           }
 
           filasCarreras.push({
@@ -403,8 +425,52 @@ export function ReporteModule() {
       })
       .sort((a, b) => b.netoTotal - a.netoTotal || a.cliente.localeCompare(b.cliente, "es"));
 
-    return { filasCarreras, filasClientes };
+    return { filasCarreras, filasClientes, comisionSemana: comisionSemanaAcum };
   }, [rpt]);
+
+  // Resumen de 4 columnas: Nombre de Usuario (Saldos Positivos) | Saldo | Nombre de Usuario (Saldos Negativos) | Saldo
+  const resumenCuatroColumnas = useMemo(() => {
+    const usarCartera =
+      fuenteSaldos4Col === "CARTERA" ||
+      (datosTablaDinamica.filasClientes.length === 0 && clientesGrupo.length > 0);
+
+    const base: Array<{ nombre: string; saldo: number }> = usarCartera
+      ? clientesGrupo.map((c) => ({
+          nombre: String(c.nombre ?? c.seudonimo ?? c.id).trim().toUpperCase(),
+          saldo: redondearCentavos(Number(c.saldo_actual) || 0),
+        }))
+      : datosTablaDinamica.filasClientes.map((fc) => ({
+          nombre: fc.cliente,
+          saldo: fc.netoTotal,
+        }));
+
+    const positivos = base
+      .filter((x) => x.saldo > 0.004)
+      .sort((a, b) => b.saldo - a.saldo || a.nombre.localeCompare(b.nombre, "es"));
+    const negativos = base
+      .filter((x) => x.saldo < -0.004)
+      .sort((a, b) => a.saldo - b.saldo || a.nombre.localeCompare(b.nombre, "es"));
+
+    const totalPagar = redondearCentavos(positivos.reduce((acc, x) => acc + x.saldo, 0));
+    const totalCobrar = redondearCentavos(
+      negativos.reduce((acc, x) => acc + Math.abs(x.saldo), 0)
+    );
+    const maxFilas = Math.max(positivos.length, negativos.length);
+    const filasPareadas = Array.from({ length: maxFilas }, (_, idx) => ({
+      pos: positivos[idx] ?? null,
+      neg: negativos[idx] ?? null,
+    }));
+
+    return {
+      positivos,
+      negativos,
+      filasPareadas,
+      totalPagar,
+      totalCobrar,
+      comisionSemana: datosTablaDinamica.comisionSemana,
+      usandoCartera: usarCartera,
+    };
+  }, [fuenteSaldos4Col, datosTablaDinamica, clientesGrupo]);
 
   const resumen = resumirReporte(rpt);
   const hoy = hoyLocal();
@@ -489,6 +555,9 @@ export function ReporteModule() {
                 🔀 Cruces: <b>{resumen.cruces}</b>
               </span>
             )}
+            <span className="rounded bg-amber-400/20 border border-amber-300/40 px-2 py-0.5 font-bold text-amber-200">
+              💰 Comisión de la Semana: {fmtMonto(resumenCuatroColumnas.comisionSemana)} USD
+            </span>
             {rpt && (
               <span className="ml-auto font-bold">
                 Total filtrado: <TotalBadge v={rpt.totalSemana} />
@@ -532,6 +601,17 @@ export function ReporteModule() {
               }`}
             >
               📋 Detalle por Carrera
+            </button>
+            <button
+              type="button"
+              onClick={() => setVistaPivot("RESUMEN_4_COLUMNAS")}
+              className={`px-2.5 py-1 font-bold transition ${
+                vistaPivot === "RESUMEN_4_COLUMNAS"
+                  ? "bg-amber-400 text-slate-950"
+                  : "text-slate-300 hover:bg-slate-700"
+              }`}
+            >
+              📑 Resumen Saldos (4 Columnas)
             </button>
             <button
               type="button"
@@ -721,15 +801,126 @@ export function ReporteModule() {
           </div>
         )}
 
-        {(!rpt || rpt.dias.length === 0) && !planilla?.error && (
-          <div className="p-8 text-center text-gray-400 text-sm">
-            {cargando
-              ? "Consultando saldos consolidados…"
-              : hayFiltrosActivos
-                ? "No hay carreras ni jugadas que coincidan con el filtro de la tabla dinámica."
-                : "Sin actividad de tickets en el rango consultado."}
+        {/* REPORTE RESUMEN DE 4 COLUMNAS (SALDOS POSITIVOS / SALDOS NEGATIVOS + COMISIÓN DE LA SEMANA) */}
+        {(vistaPivot === "RESUMEN_4_COLUMNAS" ||
+          resumenCuatroColumnas.filasPareadas.length > 0) && (
+          <div className="m-3 rounded-xl border border-slate-300 bg-white shadow-sm overflow-hidden">
+            {/* Parte superior: Comisión de la Semana */}
+            <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 px-4 py-3 text-white flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">
+                  📑 Reporte Resumen de Saldos (4 Columnas)
+                </div>
+                <div className="text-base sm:text-lg font-black flex items-center gap-2 mt-0.5">
+                  <span>💰 Comisión de la Semana:</span>
+                  <span className="rounded-lg bg-amber-400 px-2.5 py-0.5 text-slate-950 font-mono">
+                    ${fmtMonto(resumenCuatroColumnas.comisionSemana)} USD
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setFuenteSaldos4Col("JORNADA")}
+                  className={`rounded-md px-2.5 py-1 font-bold transition ${
+                    !resumenCuatroColumnas.usandoCartera
+                      ? "bg-emerald-500 text-slate-950"
+                      : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  }`}
+                >
+                  Saldos del Rango ({datosTablaDinamica.filasClientes.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFuenteSaldos4Col("CARTERA")}
+                  className={`rounded-md px-2.5 py-1 font-bold transition ${
+                    resumenCuatroColumnas.usandoCartera
+                      ? "bg-emerald-500 text-slate-950"
+                      : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  }`}
+                >
+                  Cartera General ({clientesGrupo.length})
+                </button>
+              </div>
+            </div>
+
+            {/* Tabla de 4 columnas */}
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 border-b-2 border-slate-300 text-[11px] font-black uppercase tracking-wide">
+                    <th className="py-2.5 px-3 text-left text-emerald-900 bg-emerald-50/70 border-r border-slate-200">
+                      Nombre de Usuario (Saldos Positivos)
+                    </th>
+                    <th className="py-2.5 px-3 text-right text-emerald-900 bg-emerald-50/70 border-r-2 border-slate-300 w-36">
+                      Saldo (+)
+                    </th>
+                    <th className="py-2.5 px-3 text-left text-rose-900 bg-rose-50/70 border-r border-slate-200">
+                      Nombre de Usuario (Saldos Negativos)
+                    </th>
+                    <th className="py-2.5 px-3 text-right text-rose-900 bg-rose-50/70 w-36">
+                      Saldo (-)
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {resumenCuatroColumnas.filasPareadas.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-slate-400 font-semibold">
+                        Sin usuarios con saldos positivos o negativos en la selección actual.
+                      </td>
+                    </tr>
+                  ) : (
+                    resumenCuatroColumnas.filasPareadas.map((par, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="py-1.5 px-3 font-bold text-slate-800 border-r border-slate-200">
+                          {par.pos ? par.pos.nombre : "—"}
+                        </td>
+                        <td className="py-1.5 px-3 text-right font-mono font-black text-emerald-700 border-r-2 border-slate-300">
+                          {par.pos ? `+${fmtMonto(par.pos.saldo)}` : "—"}
+                        </td>
+                        <td className="py-1.5 px-3 font-bold text-slate-800 border-r border-slate-200">
+                          {par.neg ? par.neg.nombre : "—"}
+                        </td>
+                        <td className="py-1.5 px-3 text-right font-mono font-black text-rose-600">
+                          {par.neg ? fmtMonto(par.neg.saldo) : "—"}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-slate-400 bg-slate-900 text-white font-black text-xs sm:text-sm">
+                    <td className="py-2.5 px-3 uppercase tracking-wide text-emerald-300 border-r border-slate-700">
+                      Total a Pagar ({resumenCuatroColumnas.positivos.length} usuarios)
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-emerald-300 border-r-2 border-slate-600">
+                      +${fmtMonto(resumenCuatroColumnas.totalPagar)}
+                    </td>
+                    <td className="py-2.5 px-3 uppercase tracking-wide text-rose-300 border-r border-slate-700">
+                      Total a Cobrar ({resumenCuatroColumnas.negativos.length} usuarios)
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-rose-300">
+                      -${fmtMonto(resumenCuatroColumnas.totalCobrar)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </div>
         )}
+
+        {(!rpt || rpt.dias.length === 0) &&
+          !planilla?.error &&
+          vistaPivot !== "RESUMEN_4_COLUMNAS" && (
+            <div className="p-8 text-center text-gray-400 text-sm">
+              {cargando
+                ? "Consultando saldos consolidados…"
+                : hayFiltrosActivos
+                  ? "No hay carreras ni jugadas que coincidan con el filtro de la tabla dinámica."
+                  : "Sin actividad de tickets en el rango consultado."}
+            </div>
+          )}
 
         {/* VISTA 1: TABLA DINÁMICA RESUMEN POR CARRERAS */}
         {rpt && rpt.dias.length > 0 && vistaPivot === "PIVOT_CARRERAS" && (
@@ -927,6 +1118,19 @@ export function ReporteModule() {
                                               {num}
                                             </span>
                                           ))}
+                                        {carrera.retirados && carrera.retirados.length > 0 && (
+                                          <span className="ml-1.5 inline-flex items-center gap-1 pl-1.5 border-l border-slate-200">
+                                            <span className="text-rose-700 font-black">RET:</span>
+                                            {carrera.retirados.map((numRet, idxR) => (
+                                              <span
+                                                key={`ret-${idxR}-${numRet}`}
+                                                className={`inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-black shadow-sm border ${colorDiscoNumero(numRet)}`}
+                                              >
+                                                {numRet}
+                                              </span>
+                                            ))}
+                                          </span>
+                                        )}
                                       </span>
                                     ) : (
                                       <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200">
@@ -987,7 +1191,16 @@ export function ReporteModule() {
                                             {f.monto > 0 ? fmtMonto(f.monto) : ""}
                                           </td>
                                           <td className="py-0.5 px-2 text-right">
-                                            <Signo v={f.resultado} vacio={f.rol === "CRUCE"} />
+                                            {f.resultado === 0 &&
+                                            carrera.pizarra &&
+                                            (f.tipoJugada === "MARCA" ||
+                                              /^MARCAS?\b/i.test(String(f.jugada ?? ""))) ? (
+                                              <span className="inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-amber-800 border border-amber-300">
+                                                SIN DECISIÓN
+                                              </span>
+                                            ) : (
+                                              <Signo v={f.resultado} vacio={f.rol === "CRUCE"} />
+                                            )}
                                           </td>
                                         </tr>
                                       ))}

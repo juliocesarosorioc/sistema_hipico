@@ -20,6 +20,7 @@
  * (las columnas nuevas de `grupos_venta`).
  */
 import { supabase } from "@/core/supabase";
+import { extraerFechaCarreraTicket } from "@/features/liquidacion/lib/fecha";
 import { desgloseJugada } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { grupoDeCuenta } from "./atribucion-grupo";
 import {
@@ -88,6 +89,8 @@ export function montoDeTicket(t: FilaTicket): number {
 
 /** Fecha del detalle: la de la carrera; si es heredada/nula, la de la venta. */
 export function fechaDeTicket(t: FilaTicket): string {
+  const fcNota = extraerFechaCarreraTicket(t as unknown as Record<string, unknown>);
+  if (fcNota) return fcNota;
   const fc = String(t.fecha_carrera ?? "").slice(0, 10);
   if (fc) return fc;
   return String(t.fecha_registro ?? "").slice(0, 10);
@@ -230,8 +233,8 @@ export async function cargarReporteComisiones(
     const { data, error } = await supabase
       .from("tickets_apuestas")
       .select("*")
-      .gte("fecha_registro", desde)
-      .lte("fecha_registro", finDeDia(hasta))
+      .or(`and(fecha_carrera.gte.${desde},fecha_carrera.lte.${hasta}),and(fecha_carrera.is.null,fecha_registro.gte.${desde}T00:00:00,fecha_registro.lte.${finDeDia(hasta)}),nota_auditoria.ilike.%fecha_carrera%`)
+
       .order("fecha_registro", { ascending: true })
       .range(p * PAGINA, p * PAGINA + PAGINA - 1);
     if (error) {
@@ -239,6 +242,8 @@ export async function cargarReporteComisiones(
     }
     const filas = (data ?? []) as FilaTicket[];
     for (const t of filas) {
+      const fc = fechaDeTicket(t);
+      if (fc && (fc < desde || fc > hasta)) continue;
       acumularTicket(t, ventas);
       // Detalle: solo las jugadas clasificables y con grupo de cobro. Las
       // anuladas se excluyen (capital devuelto: no mueven dinero).

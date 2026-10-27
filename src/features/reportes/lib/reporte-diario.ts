@@ -26,6 +26,7 @@
  * navegador es la última palabra: la base aísla por grupo/cliente.
  */
 import { supabase } from "@/core/supabase";
+import { extraerFechaCarreraTicket, filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { _reembolsosCruce } from "@/features/taquilla/lib/cruces-y-tapas";
 import { aplicarDevolucionIncentivoAFavor, calcularResumenContableCliente } from "@/features/saldos/lib/contabilidad-central";
 
@@ -414,6 +415,7 @@ export type TicketCrudo = {
   anulada?: boolean | null;
   cliente_juega_id?: string | number | null;
   cliente_juega_nombre?: string | null;
+  nota_auditoria?: unknown;
 };
 
 const num = (v: unknown): number => {
@@ -453,7 +455,10 @@ export function normalizarTickets(
     const base = t.monto_decidido != null ? num(t.monto_decidido) : num(t.monto_jugado);
     const pct = devolucionPorCliente.get(String(t.cliente_juega_id ?? "")) ?? 0;
     const premio = t.premio_pagar != null ? num(t.premio_pagar) : num(t.premio_por_tabla);
-    const fecha = String(t.fecha_carrera ?? t.fecha_registro ?? "").slice(0, 10) || undefined;
+    const fecha =
+      extraerFechaCarreraTicket(t as Record<string, unknown>) ||
+      String(t.fecha_carrera ?? t.fecha_registro ?? "").slice(0, 10) ||
+      undefined;
     return {
       id: t.id ?? `tk-${idx}`,
       fecha,
@@ -477,7 +482,7 @@ export function normalizarTickets(
 // ---------------------------------------------------------------------------
 
 const COLS_TICKETS =
-  "id, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, caballo, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, estado, anulada, cliente_juega_id, cliente_juega_nombre";
+  "id, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, caballo, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, estado, anulada, cliente_juega_id, cliente_juega_nombre, nota_auditoria";
 
 /** Fila agregada que devuelve la RPC `club_reporte_diario` (claves snake_case). */
 type FilaRpc = Record<string, unknown>;
@@ -522,11 +527,15 @@ function leerRespuestaRpc(data: unknown): ReporteDiario | null {
 async function leerPorRespaldo(opts: OpcionesReporteDiario): Promise<ResultadoReporteDiario> {
   if (!supabase) return { ok: false, error: "Supabase no está configurado." };
 
-  // Fecha de la carrera; las filas heredadas sin fecha caen a la de registro.
-  const orFecha = [
-    `and(fecha_carrera.gte.${opts.desde},fecha_carrera.lte.${opts.hasta})`,
-    `and(fecha_carrera.is.null,fecha_registro.gte.${opts.desde}T00:00:00,fecha_registro.lte.${opts.hasta}T23:59:59)`,
-  ].join(",");
+  // Fecha de la carrera (incluyendo jugadas registradas cualquier día para carreras dentro del rango).
+  const orFecha =
+    opts.desde === opts.hasta
+      ? filtroDiaJornada(opts.desde)
+      : [
+          `and(fecha_carrera.gte.${opts.desde},fecha_carrera.lte.${opts.hasta})`,
+          `and(fecha_carrera.is.null,fecha_registro.gte.${opts.desde}T00:00:00,fecha_registro.lte.${opts.hasta}T23:59:59)`,
+          `nota_auditoria.ilike.%fecha_carrera%`,
+        ].join(",");
 
   let q = supabase
     .from("tickets_apuestas")
@@ -540,7 +549,11 @@ async function leerPorRespaldo(opts: OpcionesReporteDiario): Promise<ResultadoRe
   const { data, error } = await q;
   if (error) return { ok: false, error: error.message };
 
-  const tickets = (data ?? []) as TicketCrudo[];
+  const tickets = ((data ?? []) as TicketCrudo[]).filter((t) => {
+    const fc = extraerFechaCarreraTicket(t as Record<string, unknown>);
+    if (!fc) return true;
+    return fc >= opts.desde && fc <= opts.hasta;
+  });
 
   // % de devolución de cada cliente que aparece. El RLS de `clientes` ya recorta
   // lo que el usuario puede ver, así que no se piden clientes ajenos.

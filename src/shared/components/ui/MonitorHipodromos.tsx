@@ -30,11 +30,12 @@ export type GrupoHipodromo = {
   carreras: CarreraMonitor[];
 };
 
-/** Un color por estado. La fuente de verdad es el sufijo `mon-chip-*`. */
-export function claseEstadoCarrera(estado?: string | null): string {
+/** Un color por estado (4 colores oficiales del semáforo de carreras). */
+export function claseEstadoCarrera(estado?: string | null, ventas?: number): string {
   const e = (estado ?? "").toLowerCase();
-  if (e.includes("liquid")) return "mon-chip-liquidada";
-  if (e.includes("resultado")) return "mon-chip-resultados";
+  if (e.includes("liquid") || e.includes("cerrad")) return "mon-chip-liquidada";
+  if (e.includes("jugada") || e.includes("resultado") || (ventas != null && ventas > 0)) return "mon-chip-resultados";
+  if (e.includes("sin") || e.includes("inactiv") || e.includes("no_registrad")) return "mon-chip-sin-registro";
   if (e.includes("retira")) return "mon-chip-retirada";
   return "mon-chip-programada";
 }
@@ -148,7 +149,7 @@ export function MonitorHipodromos({
                     .map((c) => (
                       <span
                         key={String(c.id ?? c.carrera)}
-                        className={`mon-chip ${claseEstadoCarrera(c.estado)}`}
+                        className={`mon-chip ${claseEstadoCarrera(c.estado, c.ventas)}`}
                         title={`${nombreHipo} C${c.carrera} · ${c.estado ?? "Programada"} · ${c.ventas ?? 0} venta(s)`}
                       >
                         C{c.carrera}

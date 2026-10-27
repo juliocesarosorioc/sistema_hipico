@@ -119,6 +119,18 @@ export async function venderDupleta(v: VentaDupleta): Promise<ResultadoVentaDupl
     const texto = error.message ?? String(error);
     return { ok: false, error: /club_vender_dupleta|not found|404/i.test(texto) ? MENSAJE_SIN_RPC : texto };
   }
+  const rVenta = (data ?? {}) as Record<string, unknown>;
+  const fechaCarrera = String(v.fecha ?? "").trim().slice(0, 10);
+  if (rVenta.ticket_id != null && /^\d{4}-\d{2}-\d{2}$/.test(fechaCarrera)) {
+    try {
+      await supabase
+        .from("tickets_apuestas")
+        .update({ fecha_carrera: fechaCarrera } as never)
+        .eq("id", rVenta.ticket_id as never);
+    } catch {
+      /* best-effort */
+    }
+  }
   const r = (data ?? {}) as Record<string, unknown>;
   return {
     ok: true,

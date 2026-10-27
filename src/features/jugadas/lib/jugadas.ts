@@ -59,6 +59,7 @@ export type JugadaAdmin = {
   cliente_consigue_nombre?: string | null;
   moneda?: string | null;
   nota_auditoria?: string | null;
+  fecha_carrera?: string | null;
   fecha_registro?: string | null;
   anulada?: boolean | null;
   anulada_motivo?: string | null;
@@ -86,6 +87,9 @@ export type AuditoriaJugada = {
 };
 
 export type EditablesJugada = {
+  hipodromo?: string | null;
+  carrera?: number | null;
+  fecha_carrera?: string | null;
   nombre_jugada?: string | null;
   caballo?: string | null;
   /**
@@ -108,6 +112,7 @@ export type EditablesJugada = {
   monto_jugado?: number | null;
   monto_decidido?: number | null;
   premio_pagar?: number | null;
+  comision_porcentaje?: number | null;
   estado?: string | null;
   /**
    * Modalidad de tiempo (ver `modalidad-tiempo.ts`): `true` = ⏳ adelantada
@@ -140,8 +145,11 @@ export const NOTAS_PREDEFINIDAS_EDICION = [
   "Corrección de monto por error de transcripción",
   "Cambio de jugador / cliente asignado",
   "Corrección de número de ejemplar",
+  "Cambio de carrera o modalidad de jugada",
   "Ajuste de condición / puestos acordados",
+  "Solicitud o reclamo de jugador verificado",
   "Anulación solicitada antes de la partida",
+  "Otro (introducir libremente)",
 ] as const;
 
 /**
@@ -531,6 +539,65 @@ export async function editarJugada(
   }
   if (Object.keys(payload).length === 0) return { ok: false, error: "No hay cambios para guardar." };
 
+  // Condición sine qua non: toda jugada debe conservar un ejemplar válido.
+  const caballoResultante = String(
+    payload.caballo !== undefined
+      ? (payload.caballo ?? "")
+      : payload.ejemplar_numero !== undefined
+        ? (payload.ejemplar_numero ?? "")
+        : (antes.caballo ?? antes.ejemplar_numero ?? "")
+  ).trim();
+  if (!caballoResultante || !/\d/.test(caballoResultante)) {
+    return {
+      ok: false,
+      error: "⚠️ No puede guardarse una jugada sin ejemplar (condición sine qua non).",
+    };
+  }
+
+  // Sincronizar nota_auditoria si cambia fecha_carrera o es_adelantada
+  if ("fecha_carrera" in payload || "es_adelantada" in payload) {
+    const notaObj = { ...leerNotaAuditoria(antes.nota_auditoria) };
+    if ("fecha_carrera" in payload && payload.fecha_carrera) {
+      notaObj.fecha_carrera = String(payload.fecha_carrera).slice(0, 10);
+    }
+    if ("es_adelantada" in payload) {
+      notaObj.es_adelantada = Boolean(payload.es_adelantada);
+    }
+    payload.nota_auditoria = JSON.stringify(notaObj);
+  }
+
+  // Resolver IDs de clientes si se modificó cliente_juega_nombre o cliente_consigue_nombre sin pasar el ID
+  if ("cliente_juega_nombre" in payload && !("cliente_juega_id" in payload) && payload.cliente_juega_nombre) {
+    try {
+      const { data: cJuega } = await supabase
+        .from("clientes")
+        .select("id, nombre")
+        .ilike("nombre", String(payload.cliente_juega_nombre).trim())
+        .limit(1)
+        .maybeSingle();
+      if (cJuega?.id != null) {
+        payload.cliente_juega_id = String(cJuega.id);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if ("cliente_consigue_nombre" in payload && !("cliente_consigue_id" in payload) && payload.cliente_consigue_nombre) {
+    try {
+      const { data: cDa } = await supabase
+        .from("clientes")
+        .select("id, nombre")
+        .ilike("nombre", String(payload.cliente_consigue_nombre).trim())
+        .limit(1)
+        .maybeSingle();
+      if (cDa?.id != null) {
+        payload.cliente_consigue_id = String(cDa.id);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   // -------------------------------------------------------------------------
   // SINCRONIZACIÓN nº → nombre del ejemplar (BUG CRÍTICO)
   // -------------------------------------------------------------------------
@@ -557,8 +624,78 @@ export async function editarJugada(
     }
   }
 
-  const { error } = await supabase.from("tickets_apuestas").update(payload).eq("id", id);
+  let { error } = await supabase.from("tickets_apuestas").update(payload).eq("id", id);
+  if (error && /(fecha_carrera|es_adelantada|banquero_nombre|does not exist|42703)/i.test(`${error.code ?? ""} ${error.message ?? ""}`)) {
+    const copia = { ...payload };
+    delete copia.fecha_carrera;
+    delete copia.es_adelantada;
+    delete copia.banquero_nombre;
+    const rFallback = await supabase.from("tickets_apuestas").update(copia).eq("id", id);
+    error = rFallback.error;
+  }
   if (error) return { ok: false, error: error.message };
+
+  // Ajustar el saldo por el stake (monto_jugado) si cambió el monto o cambió el Jugador 1 (cliente_juega_id)
+  if (!antes.anulada) {
+    const montoViejo = num(antes.monto_jugado);
+    const montoNuevo = payload.monto_jugado !== undefined ? num(payload.monto_jugado) : montoViejo;
+    const idViejo = antes.cliente_juega_id != null ? String(antes.cliente_juega_id).trim() : "";
+    const idNuevo =
+      payload.cliente_juega_id !== undefined
+        ? String(payload.cliente_juega_id ?? "").trim()
+        : idViejo;
+
+    try {
+      if (idViejo && idNuevo && idViejo === idNuevo) {
+        const diff = montoNuevo - montoViejo;
+        if (Math.abs(diff) >= 0.01) {
+          const { data: cli } = await supabase
+            .from("clientes")
+            .select("saldo_actual")
+            .eq("id", idViejo as never)
+            .maybeSingle();
+          if (cli) {
+            const actual = num((cli as Record<string, unknown>).saldo_actual);
+            await supabase
+              .from("clientes")
+              .update({ saldo_actual: actual - diff })
+              .eq("id", idViejo as never);
+          }
+        }
+      } else {
+        if (idViejo && montoViejo > 0) {
+          const { data: cliV } = await supabase
+            .from("clientes")
+            .select("saldo_actual")
+            .eq("id", idViejo as never)
+            .maybeSingle();
+          if (cliV) {
+            const actualV = num((cliV as Record<string, unknown>).saldo_actual);
+            await supabase
+              .from("clientes")
+              .update({ saldo_actual: actualV + montoViejo })
+              .eq("id", idViejo as never);
+          }
+        }
+        if (idNuevo && montoNuevo > 0) {
+          const { data: cliN } = await supabase
+            .from("clientes")
+            .select("saldo_actual")
+            .eq("id", idNuevo as never)
+            .maybeSingle();
+          if (cliN) {
+            const actualN = num((cliN as Record<string, unknown>).saldo_actual);
+            await supabase
+              .from("clientes")
+              .update({ saldo_actual: actualN - montoNuevo })
+              .eq("id", idNuevo as never);
+          }
+        }
+      }
+    } catch {
+      /* best-effort en ajuste de stake */
+    }
+  }
 
   const fallo = await auditar(antes, id, "EDITAR", motivo, { antes, despues: payload }, null, usuario);
   return fallo ? { ok: true, error: `Cambio aplicado, pero la auditoría falló: ${fallo}` } : { ok: true };

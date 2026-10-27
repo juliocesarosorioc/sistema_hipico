@@ -182,12 +182,14 @@ function BadgeEstado({ estado }: { estado: string }) {
         ? "bg-rose-100 text-rose-700 ring-rose-300"
         : e === "Retirado"
           ? "bg-amber-100 text-amber-700 ring-amber-300"
-          : e === "Pendiente"
+          : e === "Sin Decisión"
+            ? "bg-amber-100 text-amber-800 ring-amber-300"
+            : e === "Pendiente"
             ? "bg-slate-100 text-slate-600 ring-slate-300"
             : "bg-slate-100 text-slate-400 ring-slate-200";
   return (
     <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide ring-1 ${cls}`}>
-      {e}
+      {e === "Sin Decisión" ? "SIN DECISIÓN" : e}
     </span>
   );
 }

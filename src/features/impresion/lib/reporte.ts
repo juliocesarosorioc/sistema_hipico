@@ -14,6 +14,7 @@
  */
 import { supabase } from "@/core/supabase";
 import { parseNum } from "@/features/tablas/lib/tipos";
+import { filtroDiaJornada, perteneceADiaJornada } from "@/features/liquidacion/lib/fecha";
 import { esc, fsAuto, col, fmt, monCode, fmtFecha, hoy, hipoKey, type Orientacion, DIM_PAGINA } from "@/features/impresion/lib/util";
 
 export type EjemplarJugador = {
@@ -94,13 +95,16 @@ export async function cargarReporteJugadores(filtros?: { dia?: string; hipodromo
     let sel = supabase
       .from("tickets_apuestas")
       .select(
-        "id,fecha_registro,hipodromo,carrera,ejemplar_numero,caballo,cantidad_tablas,monto_jugado,monto_decidido,cliente_juega_nombre,grupo,moneda,estado,anulada"
+        "id,fecha_registro,fecha_carrera,nota_auditoria,hipodromo,carrera,ejemplar_numero,caballo,cantidad_tablas,monto_jugado,monto_decidido,cliente_juega_nombre,grupo,moneda,estado,anulada"
       )
       .order("fecha_registro");
-    if (dia) sel = sel.like("fecha_registro", `${dia}%`);
+    if (dia) sel = sel.or(filtroDiaJornada(dia));
     if (hipo) sel = sel.ilike("hipodromo", hipo);
     const { data, error } = await sel;
-    if (!error) tickets = (data ?? []) as TicketCrudo[];
+    if (!error) {
+      const raw = (data ?? []) as Array<Record<string, unknown>>;
+      tickets = (dia ? raw.filter((r) => perteneceADiaJornada(r, dia)) : raw) as TicketCrudo[];
+    }
   } catch {
     tickets = [];
   }

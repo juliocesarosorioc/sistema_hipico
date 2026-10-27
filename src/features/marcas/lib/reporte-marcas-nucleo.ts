@@ -55,9 +55,17 @@ export function rivalesDeNota(raw: unknown): string[] {
  * mostraría el número dos veces.
  */
 export function etiquetaMarca(row: Record<string, unknown>): string {
-  const numero = texto(row.ejemplar_numero) || texto(row.caballo);
+  const numsCab = (texto(row.caballo).match(/\d+/g) ?? []).map((x) => x.trim());
+  const numero = texto(row.ejemplar_numero) || numsCab[0] || texto(row.caballo);
   const base = numero ? `MARCA ${numero}` : "MARCA";
-  const rivales = rivalesDeNota(row.nota_auditoria);
+  let rivales = rivalesDeNota(row.nota_auditoria);
+  if (!rivales.length && numsCab.length >= 2) {
+    rivales = numsCab.filter((n, idx) => idx > 0 && n !== numero);
+  }
+  if (!rivales.length) {
+    const numsJug = (texto(row.nombre_jugada).match(/\d+/g) ?? []).map((x) => x.trim());
+    rivales = numsJug.filter((n) => n !== numero);
+  }
   return rivales.length ? `${base} x ${rivales.join(" x ")}` : base;
 }
 
@@ -68,9 +76,8 @@ export function normalizarMarca(row: Record<string, unknown>): VentaTablaReporte
     ...v,
     // El matchup es la esencia de la jugada: se muestra en la columna Ejemplar.
     caballo: etiquetaMarca(row),
-    // El día del reporte es el de la CARRERA (columna dedicada); `normalizarVenta`
-    // ya trae la fecha de la nota o, en su defecto, la de la venta.
-    fecha: texto(row.fecha_carrera).slice(0, 10) || v.fecha,
+    // El día del reporte es el de la CARRERA (`nota_auditoria.fecha_carrera` o `fecha_carrera`).
+    fecha: v.fecha || texto(row.fecha_carrera).slice(0, 10),
   };
 }
 

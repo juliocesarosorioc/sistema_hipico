@@ -1,27 +1,21 @@
 /**
  * Carga de las Tablas Fijas VENDIDAS de un día para el Reporte del Monitor.
  *
- * Cada venta de tabla fija escribe uno o más tickets en `tickets_apuestas`
- * (uno por ejemplar jugado, ver sql/tablas_venta.sql) con
- * `nombre_jugada = 'TABLA FIJA (HIPO Cn)'`. Acá se leen TODOS los del día en
- * UNA sola consulta y se normalizan; los filtros por grupo/hipódromo/carrera/
- * jugador se aplican en memoria (ver reporte-tablas-nucleo.ts), así cambiar un
- * filtro no vuelve a la base.
- *
- * El día es el de la CARRERA, no el de la venta: el reporte agrupa por la
- * jornada que corre (igual que el récord de Marcas y el Reporte Diario). La
- * columna `fecha_carrera` la mantiene el trigger `trg_tickets_fecha_carrera`
- * (sql/fecha_carrera_tickets.sql); para las filas heredadas sin columna se cae a
- * la ventana local de `fecha_registro` (`ventanaDiaLocal`).
+ * Filtra por el DÍA DE LA CARRERA (`filtroDiaJornada` + `perteneceADiaJornada`)
+ * y sincroniza el estado de cada venta con los resultados oficiales cargados en
+ * Gestión de Jugadas (`resultados_carreras`), evaluando por el 1° en Raya.
  */
 import { supabase } from "@/core/supabase";
-import { ventanaDiaLocal } from "@/features/liquidacion/lib/fecha";
+import { filtroDiaJornada, perteneceADiaJornada } from "@/features/liquidacion/lib/fecha";
 import {
   normalizarVenta,
   type VentaTablaReporte,
 } from "@/features/tablas/lib/reporte-tablas-nucleo";
 import { numerosInvalidados } from "@/features/tablas/lib/tablas-fijas";
 import type { EjemplarTabla } from "@/features/tablas/lib/tipos";
+import { puestosDesdeOrdenLlegada } from "@/features/motores/lib/oficiales";
+import { extraerOrdenLlegadaRaya } from "@/features/liquidacion/lib/posiciones";
+import { claveHipodromo } from "@/features/carreras/lib/claves";
 
 export type ResultadoCargaVentas = {
   ok: boolean;
@@ -29,23 +23,51 @@ export type ResultadoCargaVentas = {
   error?: string;
 };
 
-/**
- * Marca las ventas cuyo ejemplar quedo INVALIDADO (descalificado) en la tabla
- * fija de la que salieron.
- *
- * El ticket no sabe nada del invalidamiento: lo sabe la TABLA (el array
- * `caballos`). Por eso se cruzan las dos cosas: la venta lleva el id de su
- * tabla en la nota de auditoria, y de ahi se leen los ejemplares invalidados.
- *
- * Sin esta marca el reporte contaria al descalificado como ganador (o como
- * perdedor normal) y no se veria por que ese ticket no cobro.
- */
+type ResultadoTablaMapa = {
+  ganadorRaya: string;
+  retirados: Set<string>;
+};
+
+async function leerResultadosTablasDia(dia: string): Promise<Map<string, ResultadoTablaMapa>> {
+  const mapa = new Map<string, ResultadoTablaMapa>();
+  if (!supabase || !dia) return mapa;
+  try {
+    let { data, error } = await supabase
+      .from("resultados_carreras")
+      .select("hipodromo, carrera, ganadores, orden_llegada, retirados")
+      .eq("fecha", dia);
+    if (error && /retirados/i.test(error.message)) {
+      const r2 = await supabase
+        .from("resultados_carreras")
+        .select("hipodromo, carrera, ganadores, orden_llegada")
+        .eq("fecha", dia);
+      data = r2.data as typeof data;
+      error = r2.error;
+    }
+    if (error || !data) return mapa;
+    for (const r of data as Array<Record<string, unknown>>) {
+      const k = `${claveHipodromo(r.hipodromo)}|${Number(r.carrera) || 0}`;
+      const oficial = puestosDesdeOrdenLlegada(r.orden_llegada);
+      const puestos = oficial.length ? oficial : puestosDesdeOrdenLlegada(r.ganadores);
+      const puestosRaya = extraerOrdenLlegadaRaya(r.orden_llegada, puestos);
+      const ganadorRaya = String(puestosRaya[0] ?? puestos[0] ?? "").trim();
+      const rawRet = String(r.retirados ?? "").trim();
+      const rets =
+        rawRet && !/NO\s+HUBO\s+RETIRO/i.test(rawRet)
+          ? (rawRet.match(/\d+/g) ?? []).map((x) => x.trim()).filter(Boolean)
+          : [];
+      mapa.set(k, { ganadorRaya, retirados: new Set(rets) });
+    }
+  } catch {
+    /* best-effort */
+  }
+  return mapa;
+}
+
 async function marcarInvalidados(ventas: VentaTablaReporte[]): Promise<VentaTablaReporte[]> {
   if (!supabase) return ventas;
   const ids = [...new Set(ventas.map((v) => v.tablaId ?? "").filter((x) => x !== ""))];
   if (!ids.length) return ventas;
-  // `tablas_fijas.id` es bigint: los ids que no son numero no son de una
-  // tabla fija y se dejan fuera de la consulta.
   const numIds = ids.map((x) => Number(x)).filter((n) => Number.isFinite(n));
   if (!numIds.length) return ventas;
   try {
@@ -66,7 +88,6 @@ async function marcarInvalidados(ventas: VentaTablaReporte[]): Promise<VentaTabl
       invalidado: invalidados.get(v.tablaId ?? "")?.has(v.numero) ?? false,
     }));
   } catch {
-    // Best-effort: sin la cruce el reporte sale como antes (sin la marca).
     return ventas;
   }
 }
@@ -75,22 +96,55 @@ export async function cargarVentasTablasFijas(fecha: string): Promise<ResultadoC
   if (!supabase) return { ok: false, ventas: [], error: "Sin credenciales Supabase (.env.local)." };
   const dia = String(fecha ?? "").slice(0, 10);
   if (!dia) return { ok: false, ventas: [], error: "Indique el día del reporte." };
-  const { desde, hasta } = ventanaDiaLocal(dia);
   try {
-    const { data, error } = await supabase
-      .from("tickets_apuestas")
-      .select("*")
-      // Día de la carrera; si la fila es heredada y la columna viene nula, cae al
-      // día de la venta (misma ventana local que usa la liquidación).
-      .or(`fecha_carrera.eq.${dia},and(fecha_carrera.is.null,fecha_registro.gte.${desde},fecha_registro.lt.${hasta})`)
-      .ilike("nombre_jugada", "TABLA FIJA%")
-      .order("fecha_registro");
+    const [{ data, error }, resultadosDia] = await Promise.all([
+      supabase
+        .from("tickets_apuestas")
+        .select("*")
+        .or(filtroDiaJornada(dia))
+        .ilike("nombre_jugada", "TABLA FIJA%")
+        .order("fecha_registro"),
+      leerResultadosTablasDia(dia),
+    ]);
     if (error) return { ok: false, ventas: [], error: error.message };
-    const ventas = ((data ?? []) as Record<string, unknown>[]).map(normalizarVenta);
-    return {
-      ok: true,
-      ventas: await marcarInvalidados(ventas),
-    };
+
+    const filasDia = ((data ?? []) as Record<string, unknown>[]).filter((row) =>
+      perteneceADiaJornada(row, dia)
+    );
+    const conInvalidados = await marcarInvalidados(filasDia.map(normalizarVenta));
+
+    const ventas = conInvalidados.map((v) => {
+      if (v.anulada) return v;
+      const k = `${claveHipodromo(v.hipodromo)}|${Number(v.carrera) || 0}`;
+      const res = resultadosDia.get(k);
+      if (!res) return v;
+      const numEj = String(v.numero ?? "").trim() || (v.caballo.match(/\d+/)?.[0] ?? "");
+      if (numEj && res.retirados.has(numEj)) {
+        return { ...v, estado: "Retirado", pagado: 0, comision: 0 };
+      }
+      if (res.ganadorRaya && numEj) {
+        if (v.invalidado) {
+          return { ...v, estado: "Invalidado", pagado: 0 };
+        }
+        if (res.ganadorRaya === numEj) {
+          const premioCalc =
+            v.pagado > 0
+              ? v.pagado
+              : v.premioPorTabla > 0
+                ? Math.round(v.premioPorTabla * (v.cantidad || 1) * 100) / 100
+                : Math.round(v.monto * 2 * 100) / 100;
+          const com =
+            v.comision > 0
+              ? v.comision
+              : Math.round(premioCalc * ((v.comisionPct || 0) / 100) * 100) / 100;
+          return { ...v, estado: "Ganador", pagado: premioCalc, comision: com };
+        }
+        return { ...v, estado: "Perdedor", pagado: 0, comision: 0 };
+      }
+      return v;
+    });
+
+    return { ok: true, ventas };
   } catch (e) {
     return { ok: false, ventas: [], error: e instanceof Error ? e.message : String(e) };
   }

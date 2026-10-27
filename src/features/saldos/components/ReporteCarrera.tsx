@@ -42,6 +42,8 @@ export type JugadaVivo = {
   resultado: number | null;
   resultadoDa?: number | null;
   esAdelantada?: boolean;
+  /** true cuando una Marca no se decidió en la pizarra oficial. */
+  sinDecision?: boolean;
   /** Hora de carga de la jugada (HH:mm). */
   horaCarga?: string | null;
 };
@@ -89,6 +91,7 @@ export type ReporteCarreraDatos = {
     fecha: string;
     llegada: LlegadaCaballo[];
     llegadaRaya?: LlegadaCaballo[];
+    retirados?: (number | string)[];
   };
   liquidada?: boolean;
   jugadasVivo: JugadaVivo[];
@@ -216,6 +219,10 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
               : j.apostoDa != null && j.apostoDa > 0
                 ? -Math.abs(j.apostoDa)
                 : null;
+          const jugoStr = String(j.jugo ?? "").trim();
+          const esMarcaSinDecision =
+            mostrarResultado &&
+            (Boolean(j.sinDecision) || (esMarca(jugoStr) && res1 === 0));
           return (
             <tr key={i} className="border-b border-slate-100 bg-white h-[26px]">
               <td className="py-[3px] pr-1 font-bold text-slate-800 whitespace-nowrap truncate align-middle">
@@ -223,11 +230,18 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
               </td>
               <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap align-middle">{j.aposto}</td>
               <td className="py-[3px] pl-1 text-right whitespace-nowrap align-middle">
-                {res1 !== null ? <FormatoDinero monto={res1} /> : <span className="text-slate-400">—</span>}
+                {esMarcaSinDecision ? (
+                  <span className="inline-block rounded bg-slate-200 px-1 py-0.5 text-[8.5px] font-black uppercase text-slate-700">
+                    SIN DECISIÓN
+                  </span>
+                ) : res1 !== null ? (
+                  <FormatoDinero monto={res1} />
+                ) : (
+                  <span className="text-slate-400">—</span>
+                )}
               </td>
               <td className="py-[3px] pl-2 text-slate-700 whitespace-nowrap truncate align-middle">
                 {(() => {
-                  const jugoStr = String(j.jugo ?? "").trim();
                   if (esMarca(jugoStr)) {
                     const pareoCab = extraerPareoMarca({
                       jugada: jugoStr,
@@ -253,14 +267,6 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
                   return (
                     <>
                       <span className="font-semibold">{j.jugo}</span> <Discos caballo={j.caballo} />
-                      {j.esAdelantada ? (
-                        <span
-                          title="Jugada adelantada: se cargó ANTES de que corra la carrera."
-                          className="ml-1 rounded bg-amber-400/20 px-1 py-px text-[8px] font-black uppercase leading-none tracking-wide text-amber-700 ring-1 ring-amber-500/40"
-                        >
-                          ⏳ ADELANTADA
-                        </span>
-                      ) : null}
                     </>
                   );
                 })()}
@@ -270,7 +276,15 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
                 {j.apostoDa === null || j.apostoDa === undefined ? '—' : j.apostoDa}
               </td>
               <td className="py-[3px] pl-1 text-right whitespace-nowrap align-middle">
-                {res2 !== null ? <FormatoDinero monto={res2} /> : <span className="text-slate-400">—</span>}
+                {esMarcaSinDecision ? (
+                  <span className="inline-block rounded bg-slate-200 px-1 py-0.5 text-[8.5px] font-black uppercase text-slate-700">
+                    SIN DECISIÓN
+                  </span>
+                ) : res2 !== null ? (
+                  <FormatoDinero monto={res2} />
+                ) : (
+                  <span className="text-slate-400">—</span>
+                )}
               </td>
             </tr>
           );
@@ -491,6 +505,9 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
       {/* 2. PIZARRA DE LLEGADA */}
       {(() => {
         const llegadaRaya = encabezado.llegadaRaya ?? [];
+        const retiradosLista = (encabezado.retirados ?? [])
+          .map((x) => String(x ?? "").trim())
+          .filter(Boolean);
         const hayOrdenDiferente =
           llegadaRaya.length > 0 &&
           encabezado.llegada.length > 0 &&
@@ -528,6 +545,24 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
                   <span className="ml-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[9.5px] font-bold text-amber-800 border border-amber-200">
                     <span>⏳</span> En espera de resultado oficial de pizarra
                   </span>
+                )}
+                {retiradosLista.length > 0 && (
+                  <div className="flex items-center gap-1.5 pl-2.5 border-l border-rose-200">
+                    <span className="text-[10px] font-black tracking-wider text-rose-700 uppercase">
+                      RET:
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {retiradosLista.map((num, idx) => (
+                        <div
+                          key={`ret-${idx}-${num}`}
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center text-base font-black shadow-sm border ${colorDiscoNumero(num)}`}
+                          title={`Retirado: Ejemplar #${num}`}
+                        >
+                          {num}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
 

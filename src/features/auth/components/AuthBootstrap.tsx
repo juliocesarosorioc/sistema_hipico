@@ -52,7 +52,7 @@ export function AuthBootstrap() {
         // usarse. La redirección se mira el store, no el evento.
         const s = useAuthStore.getState();
         if (!s.inicializada || !s.sembrada) return;
-        if (esPantallaDeAcceso(ruta)) router.replace("/inicio");
+        if (esPantallaDeAcceso(ruta)) router.replace(s.modoOperador ? "/apuestas" : "/inicio");
       });
     };
 
@@ -64,7 +64,11 @@ export function AuthBootstrap() {
       // expulsaba a "/login" (redirección inútil, y una de los parpadeos que se quejaba el login) y, peor, entrar a `/reset-password` desde el
       // enlace del correo —que justamente llega SIN sesión— expulsaba también:
       // la recuperación de contraseña se rompía sola.
-      if (!s && !esRutaPublica(ruta)) router.replace("/login");
+      const st = useAuthStore.getState();
+      const sesionOpLocal =
+        st.modoOperador ||
+        (typeof window !== "undefined" && localStorage.getItem("hipico_sesion_operador_local") === "1");
+      if (!s && !sesionOpLocal && !esRutaPublica(ruta)) router.replace("/login");
     })();
 
     // El cliente de Supabase notifica por canal; el evento de storage cubre el

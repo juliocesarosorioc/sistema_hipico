@@ -8,6 +8,7 @@ import { SelectorGrupo } from "@/features/grupos/components/SelectorGrupo";
 import { RelojNavegador } from "@/shared/components/layout/RelojNavegador";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { rutaLoginConBasePath, limpiarAlmacenamientoSesionLocal } from "@/features/auth/lib/sesion";
+import { ModalGestionRapidaSaldo } from "@/features/contabilidad/components/ModalGestionRapidaSaldo";
 
 /**
  * Barra superior limpia de la SPA (Organismo del layout raíz).
@@ -60,6 +61,7 @@ const fmtMomento = (f: string | null): string => {
 export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {}) {
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
+  const [modalSaldoOperador, setModalSaldoOperador] = useState(false);
   const [novedades, setNovedades] = useState<Novedad[]>([]);
   const [cargando, setCargando] = useState(false);
 
@@ -226,25 +228,20 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
       <button
         type="button"
         onClick={() => {
-          if (esOperadorFijo) return;
+          if (esOperadorFijo) {
+            router.push("/apuestas");
+            return;
+          }
           const nuevo = !modoOperador;
           setModoOperador(nuevo);
-          if (nuevo && typeof window !== "undefined") {
-            const p = window.location.pathname;
-            if (
-              !p.includes("/apuestas") &&
-              !p.includes("/gestion-jugadas") &&
-              !p.includes("/saldos-reportes") &&
-              !p.includes("/reporte-diario")
-            ) {
-              window.location.href = "/apuestas";
-            }
+          if (nuevo) {
+            router.push("/apuestas");
           }
         }}
         title={
           modoOperador
             ? "Modo Operador Activo: Solo muestra 🐎🎲 Apuestas y 💵📑 Reportes. Clic para volver a Vista Completa."
-            : "Cambiar a Vista Operador (oculta todo excepto 🐎🎲 Apuestas y 💵📑 Reportes)"
+            : "Cambiar a Vista Operador (ingresa directo a la vista de operador en 🐎🎲 Apuestas)"
         }
         className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-black transition-colors ${
           modoOperador
@@ -254,6 +251,18 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
       >
         <span>{modoOperador ? "🐎🎲 VISTA: OPERADOR" : "🛡️ VISTA: COMPLETA"}</span>
       </button>
+
+      {modoOperador && (
+        <button
+          type="button"
+          onClick={() => setModalSaldoOperador(true)}
+          title="Gestión rápida de saldos de clientes (Incrementar / Disminuir con capture de comprobante)"
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg border-2 border-emerald-600 bg-emerald-600 px-3 text-[11px] font-black text-white shadow-sm transition hover:bg-emerald-700"
+        >
+          <span>💵</span>
+          <span>Gestión Rápida de Saldos</span>
+        </button>
+      )}
 
       <SelectorGrupo />
 
@@ -267,6 +276,11 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
         <span aria-hidden="true">⏻</span>
         <span className="hidden sm:inline">Cerrar Sesión</span>
       </button>
+
+      <ModalGestionRapidaSaldo
+        abierto={modalSaldoOperador}
+        onCerrar={() => setModalSaldoOperador(false)}
+      />
     </header>
   );
 }

@@ -267,9 +267,12 @@ export async function venderMarca(v: VentaMarcas): Promise<ResultadoVentaMarcas>
   const r = (data ?? {}) as Record<string, unknown>;
   if (r.ticket_id != null) {
     try {
+      const fechaCarrera = String(v.fecha ?? "").trim().slice(0, 10);
+      const patchMarca: Record<string, unknown> = { cliente_consigue_nombre: "MARCAS" };
+      if (/^\d{4}-\d{2}-\d{2}$/.test(fechaCarrera)) patchMarca.fecha_carrera = fechaCarrera;
       await supabase
         .from("tickets_apuestas")
-        .update({ cliente_consigue_nombre: "MARCAS" })
+        .update(patchMarca as never)
         .eq("id", r.ticket_id as never);
     } catch {
       /* best-effort */
@@ -552,14 +555,14 @@ export async function liquidarMarcas(
     } else if (pRivales.some((pr) => pr !== null && (pCab === null || pr <= pCab))) {
       gana = false;
     } else {
-      // Ninguno de los dos ejemplares entró en pizarra → se reintegra (0/0).
+      // Ninguno de los dos ejemplares entró en pizarra → SIN DECISIÓN, se reintegra (0/0).
       liquidados += 1;
       reintegrados += 1;
       acumularJugador(t.cliente_juega_id, monto);
       await sdb
         .from("tickets_apuestas")
         .update({
-          estado: "Retirado",
+          estado: "Sin Decisión",
           premio_pagar: 0,
           monto_decidido: 0,
           comision_pagada: 0,

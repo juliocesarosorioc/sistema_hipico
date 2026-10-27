@@ -658,6 +658,22 @@ export async function cerrarRemateLiquidando(remateId: string): Promise<Resultad
       return { ok: false, error: mensajeErrorCierre(texto, MENSAJE_SIN_RPC_CIERRE) };
     }
     const r = (data ?? {}) as Record<string, unknown>;
+    try {
+      const { data: remRow } = await supabase
+        .from("remates")
+        .select("fecha")
+        .eq("id", remateId)
+        .maybeSingle();
+      const fc = String((remRow as { fecha?: string } | null)?.fecha ?? "").trim().slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(fc)) {
+        await supabase
+          .from("tickets_apuestas")
+          .update({ fecha_carrera: fc } as never)
+          .ilike("nota_auditoria", `%${remateId}%`);
+      }
+    } catch {
+      /* best-effort */
+    }
     return {
       ok: true,
       tickets: Number(r.tickets ?? 0),

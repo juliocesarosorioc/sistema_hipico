@@ -15,7 +15,7 @@
 import { supabase } from "@/core/supabase";
 import { hoyLocal, leerProgramaPorFecha } from "@/features/gaceta/lib/programa";
 import { rangoSemanaDeGrupo, cicloSemanalDe } from "@/features/liquidacion/lib/semana";
-import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
+import { filtroDiaJornada, perteneceADiaJornada } from "@/features/liquidacion/lib/fecha";
 import { listarCarrerasPorDia } from "@/features/tablas/lib/rpc";
 import { pizarraDesdeNums, esVentaDeRemate } from "@/features/impresion/lib/reportGenerator";
 import {
@@ -85,6 +85,8 @@ export type CarreraReporte = {
   pizarra: string | null;
   /** Orden de llegada en raya (1º · 2º · 3º…) cuando difiere de la pizarra oficial por distanciamiento. */
   pizarraRaya?: string | null;
+  /** Ejemplares retirados oficialmente en la carrera. */
+  retirados?: string[];
   filas: FilaReporte[];
   subtotal: number;
 };
@@ -318,7 +320,12 @@ function evaluar(
   //   - Si pierde el Jugador: Marcas gana `monto - comisionGrupo(monto)`.
   if (esMarca(nombreJugada)) {
     const pagoMarca = Math.round(((monto * 5) / 6) * 100) / 100;
-    if (estado === "RETIRADO" || estado === "EMPATE") {
+    if (
+      estado === "RETIRADO" ||
+      estado === "EMPATE" ||
+      estado === "SIN DECISION" ||
+      estado === "SIN DECISIÓN"
+    ) {
       return {
         ok: false,
         bruto: monto,
@@ -345,6 +352,18 @@ function evaluar(
       if (numElegido && rivales.length > 0) {
         const posElegido = pizarra!.puestos.findIndex((p) => txt(p) === numElegido);
         const posRivales = rivales.map((rv) => pizarra!.puestos.findIndex((p) => txt(p) === String(rv).trim()));
+        if (posElegido === -1 && posRivales.every((pr) => pr === -1)) {
+          // Ninguno de los ejemplares de la marca entró en pizarra oficial → SIN DECISIÓN (0 / 0)
+          return {
+            ok: false,
+            bruto: monto,
+            comision: 0,
+            tasa: tasaGrupoModalidad,
+            riesgoDa: pagoMarca,
+            resultadoJuega: 0,
+            resultadoDa: 0,
+          };
+        }
         if (posElegido !== -1 && posRivales.every((pr) => pr === -1 || posElegido < pr)) {
           ganaMarca = true;
         } else if (posRivales.some((pr) => pr !== -1 && (posElegido === -1 || pr <= posElegido))) {
@@ -581,32 +600,57 @@ type PizarraCarrera = {
   puestosRaya: string[];
   /** Pagos por $1 (`dividendos`): los usa el motor oficial de liquidacion. */
   dividendos: Record<string, number> | null;
+  /** Ejemplares retirados oficialmente en la carrera. */
+  retirados: string[];
 };
 
 /** Normaliza una fila de `resultados_carreras` a la pizarra que usa el motor. */
-function normalizarPizarra(r: { ganadores?: unknown; orden_llegada?: unknown; dividendos?: unknown }): PizarraCarrera | null {
+function normalizarPizarra(r: {
+  ganadores?: unknown;
+  orden_llegada?: unknown;
+  dividendos?: unknown;
+  retirados?: unknown;
+}): PizarraCarrera | null {
   const oficial = puestosDesdeOrdenLlegada(r.orden_llegada);
   const puestos = oficial.length ? oficial : puestosDesdeOrdenLlegada(r.ganadores);
   const puestosRaya = extraerOrdenLlegadaRaya(r.orden_llegada, puestos);
   const div = r.dividendos;
   const dividendos =
     div && typeof div === "object" && !Array.isArray(div) ? (div as Record<string, number>) : null;
-  if (!puestos.length && !dividendos) return null;
-  return { puestos, puestosRaya, dividendos };
+  const rawRet = String(r.retirados ?? "").trim();
+  const retirados =
+    rawRet && !/NO\s+HUBO\s+RETIRO/i.test(rawRet)
+      ? [...new Set((rawRet.match(/\d+/g) ?? []).map((x) => x.trim()).filter(Boolean))]
+      : [];
+  if (!puestos.length && !dividendos && !retirados.length) return null;
+  return { puestos, puestosRaya, dividendos, retirados };
 }
 
 async function leerPizarra(fecha: string, hipodromo: string, carrera: number | string): Promise<PizarraCarrera | null> {
   if (!supabase) return null;
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("resultados_carreras")
-      .select("ganadores, orden_llegada, dividendos")
+      .select("ganadores, orden_llegada, dividendos, retirados")
       .eq("fecha", fecha)
       .eq("carrera", carrera)
       .ilike("hipodromo", `%${hipodromo}%`)
       .maybeSingle();
+    if (error && /retirados/i.test(error.message)) {
+      const r2 = await supabase
+        .from("resultados_carreras")
+        .select("ganadores, orden_llegada, dividendos")
+        .eq("fecha", fecha)
+        .eq("carrera", carrera)
+        .ilike("hipodromo", `%${hipodromo}%`)
+        .maybeSingle();
+      data = r2.data as typeof data;
+      error = r2.error;
+    }
     if (error || !data) return null;
-    return normalizarPizarra(data as { ganadores?: unknown; orden_llegada?: unknown; dividendos?: unknown });
+    return normalizarPizarra(
+      data as { ganadores?: unknown; orden_llegada?: unknown; dividendos?: unknown; retirados?: unknown }
+    );
   } catch {
     return null;
   }
@@ -633,11 +677,160 @@ async function leerTickets(fecha: string, hipodromo: string, carrera: string | n
       // if no active group, RLS applies
     }
     const { data, error } = await q;
-    if (error) return [];
-    return (data ?? []) as Record<string, unknown>[];
+    const base = error
+      ? []
+      : ((data ?? []) as Record<string, unknown>[]).filter((r) => perteneceADiaJornada(r, dia));
+    const extras = await leerJugadasModulosExtrasHipodromo(dia, hipodromo, String(carrera), base);
+    return [...base, ...(extras.get(claveCarrera(carrera)) ?? [])];
   } catch {
     return [];
   }
+}
+
+/**
+ * Importa jugadas registradas en módulos con tablas propias (`remates` + `remate_caballos`
+ * aún no volcadas a `tickets_apuestas`, y `pollas` + `polla_ventas`) vinculadas a la
+ * fecha de la carrera `dia`, para que TODOS los módulos alimenten el reporte del día
+ * de la carrera sin importar cuándo se hayan registrado.
+ */
+async function leerJugadasModulosExtrasHipodromo(
+  dia: string,
+  hipodromo: string,
+  carreraFiltro: string | null,
+  ticketsExistentes: Record<string, unknown>[]
+): Promise<Map<string, Record<string, unknown>[]>> {
+  const extras = new Map<string, Record<string, unknown>[]>();
+  if (!supabase || !dia) return extras;
+  const activo = grupoActivoVigente();
+  const idsCaballosRemateEnTickets = new Set<string>();
+  for (const t of ticketsExistentes) {
+    const rawNota = String(t.nota_auditoria ?? "");
+    const m = /"remate_caballo_id"\s*:\s*"([^"]+)"/.exec(rawNota);
+    if (m?.[1]) idsCaballosRemateEnTickets.add(m[1]);
+  }
+
+  // 1) Remates de la fecha `dia` cuyas pujas con comprador aún no tienen ticket en `tickets_apuestas`
+  try {
+    let qr = supabase
+      .from("remates")
+      .select("id, nombre, hipodromo, carrera, fecha, comision_pct, grupo_id")
+      .eq("fecha", dia)
+      .ilike("hipodromo", `%${hipodromo}%`);
+    if (carreraFiltro) qr = qr.eq("carrera", carreraFiltro);
+    if (activo) qr = qr.eq("grupo_id", activo);
+    const { data: remates } = await qr;
+    const listaRemates = (remates ?? []) as Array<Record<string, unknown>>;
+    if (listaRemates.length > 0) {
+      const remateIds = listaRemates.map((r) => String(r.id ?? "")).filter(Boolean);
+      const mapaRem = new Map(listaRemates.map((r) => [String(r.id ?? ""), r]));
+      const { data: cabs } = await supabase
+        .from("remate_caballos")
+        .select("id, remate_id, numero, ejemplar_numero, nombre, monto_usd, cliente_id, clientes(nombre)")
+        .in("remate_id", remateIds)
+        .not("cliente_id", "is", null)
+        .gt("monto_usd", 0);
+      for (const c of (cabs ?? []) as Array<Record<string, unknown>>) {
+        const cabId = String(c.id ?? "");
+        if (!cabId || idsCaballosRemateEnTickets.has(cabId)) continue;
+        const rem = mapaRem.get(String(c.remate_id ?? ""));
+        if (!rem) continue;
+        const k = claveCarrera(rem.carrera);
+        if (!k) continue;
+        const cliObj = c.clientes as { nombre?: unknown } | null;
+        const numEj = String(c.ejemplar_numero ?? c.numero ?? "").trim();
+        const sint: Record<string, unknown> = {
+          id: `rem-cab-${cabId}`,
+          fecha_registro: `${dia}T12:00:00.000Z`,
+          fecha_carrera: dia,
+          hipodromo: String(rem.hipodromo ?? hipodromo).toUpperCase(),
+          carrera: Number(rem.carrera) || rem.carrera,
+          nombre_jugada: `REMATE ${String(rem.hipodromo ?? hipodromo).toUpperCase()} (C${rem.carrera})`,
+          caballo: numEj || String(c.nombre ?? ""),
+          ejemplar_numero: Number(numEj) || null,
+          monto_jugado: Number(c.monto_usd) || 0,
+          monto_decidido: Number(c.monto_usd) || 0,
+          premio_pagar: 0,
+          cliente_juega_id: c.cliente_id,
+          cliente_juega_nombre: cliObj?.nombre != null ? String(cliObj.nombre) : String(c.cliente_id ?? ""),
+          cliente_consigue_nombre: "REMATES",
+          comision_porcentaje: Number(rem.comision_pct) || 0,
+          estado: "Pendiente",
+          nota_auditoria: JSON.stringify({
+            origen: "REMATE",
+            remate_id: rem.id,
+            remate_caballo_id: cabId,
+            fecha_carrera: dia,
+          }),
+        };
+        const arr = extras.get(k);
+        if (arr) arr.push(sint);
+        else extras.set(k, [sint]);
+      }
+    }
+  } catch {
+    /* best-effort */
+  }
+
+  // 2) Pollas de la fecha `dia` (ventas en `polla_ventas`)
+  try {
+    let qp = supabase.from("pollas").select("id, nombre, fecha, grupo_id, comision_pct, carreras").eq("fecha", dia);
+    if (activo) qp = qp.eq("grupo_id", activo);
+    const { data: pollas } = await qp;
+    const listaPollas = (pollas ?? []) as Array<Record<string, unknown>>;
+    const pollasHipo = listaPollas.filter((p) => {
+      const carrs = Array.isArray(p.carreras) ? (p.carreras as Array<Record<string, unknown>>) : [];
+      return carrs.some((c) => txt(c.hipodromo).toUpperCase().includes(txt(hipodromo).toUpperCase()));
+    });
+    if (pollasHipo.length > 0) {
+      const pollaIds = pollasHipo.map((p) => String(p.id ?? "")).filter(Boolean);
+      const mapaPolla = new Map(pollasHipo.map((p) => [String(p.id ?? ""), p]));
+      const { data: ventasP } = await supabase
+        .from("polla_ventas")
+        .select("id, polla_id, cliente_id, pagado, combinaciones, texto_original, fecha_registro, clientes(nombre)")
+        .in("polla_id", pollaIds);
+      for (const vp of (ventasP ?? []) as Array<Record<string, unknown>>) {
+        const polla = mapaPolla.get(String(vp.polla_id ?? ""));
+        if (!polla) continue;
+        const carrs = Array.isArray(polla.carreras) ? (polla.carreras as Array<Record<string, unknown>>) : [];
+        const primeraHipo =
+          carrs.find((c) => txt(c.hipodromo).toUpperCase().includes(txt(hipodromo).toUpperCase())) ?? carrs[0];
+        const numCarrera = primeraHipo?.carrera ?? 1;
+        const k = claveCarrera(numCarrera);
+        if (carreraFiltro && k !== claveCarrera(carreraFiltro)) continue;
+        const cliObj = vp.clientes as { nombre?: unknown } | null;
+        const sint: Record<string, unknown> = {
+          id: `polla-v-${vp.id}`,
+          fecha_registro: vp.fecha_registro ?? `${dia}T12:00:00.000Z`,
+          fecha_carrera: dia,
+          hipodromo: String(primeraHipo?.hipodromo ?? hipodromo).toUpperCase(),
+          carrera: Number(numCarrera) || 1,
+          nombre_jugada: `POLLA ${String(polla.nombre ?? "").toUpperCase()} (${vp.combinaciones ?? 1} comb.)`,
+          caballo: txt(vp.texto_original) || "POLLA",
+          monto_jugado: Number(vp.pagado) || 0,
+          monto_decidido: Number(vp.pagado) || 0,
+          premio_pagar: 0,
+          cliente_juega_id: vp.cliente_id,
+          cliente_juega_nombre: cliObj?.nombre != null ? String(cliObj.nombre) : String(vp.cliente_id ?? ""),
+          cliente_consigue_nombre: "POLLA",
+          comision_porcentaje: Number(polla.comision_pct) || 0,
+          estado: "Pendiente",
+          nota_auditoria: JSON.stringify({
+            origen: "POLLA",
+            polla_id: polla.id,
+            venta_id: vp.id,
+            fecha_carrera: dia,
+          }),
+        };
+        const arr = extras.get(k);
+        if (arr) arr.push(sint);
+        else extras.set(k, [sint]);
+      }
+    }
+  } catch {
+    /* best-effort */
+  }
+
+  return extras;
 }
 
 /** Hipódromos con actividad del día (Gaceta + tablas fijas + tickets + resultados). */
@@ -680,9 +873,33 @@ async function hipodromosDelDia(fecha: string): Promise<string[]> {
       const dia = String(fecha ?? "").slice(0, 10);
       const { data: tk2, error: e2 } = await supabase
         .from("tickets_apuestas")
-        .select("hipodromo")
+        .select("hipodromo, fecha_carrera, fecha_registro, nota_auditoria")
         .or(filtroDiaJornada(dia));
-      if (!e2) for (const r of (tk2 ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+      if (!e2) {
+        for (const r of (tk2 ?? []) as Array<Record<string, unknown>>) {
+          if (perteneceADiaJornada(r, dia) && txt(r.hipodromo)) {
+            set.add(txt(r.hipodromo).toUpperCase());
+          }
+        }
+      }
+      // Remates del día
+      const { data: rems } = await supabase.from("remates").select("hipodromo").eq("fecha", dia);
+      for (const r of (rems ?? []) as Array<{ hipodromo?: unknown }>) {
+        if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+      }
+      // Dupletas del día
+      const { data: dups } = await supabase.from("dupletas").select("hipodromo").eq("fecha", dia);
+      for (const r of (dups ?? []) as Array<{ hipodromo?: unknown }>) {
+        if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+      }
+      // Pollas del día
+      const { data: pols } = await supabase.from("pollas").select("carreras").eq("fecha", dia);
+      for (const r of (pols ?? []) as Array<{ carreras?: unknown }>) {
+        const carrs = Array.isArray(r.carreras) ? (r.carreras as Array<{ hipodromo?: unknown }>) : [];
+        for (const c of carrs) {
+          if (txt(c.hipodromo)) set.add(txt(c.hipodromo).toUpperCase());
+        }
+      }
     } catch {
       /* sin tabla */
     }
@@ -743,12 +960,20 @@ async function leerTicketsHipodromo(fecha: string, hipodromo: string): Promise<M
       if (activo) q = q.eq("grupo_cobro_id", activo);
     }
     const { data, error } = await q;
-    if (error) return porCarrera;
-    for (const row of (data ?? []) as Record<string, unknown>[]) {
+    const filasValidas = error
+      ? []
+      : ((data ?? []) as Record<string, unknown>[]).filter((r) => perteneceADiaJornada(r, dia));
+    for (const row of filasValidas) {
       const k = claveCarrera(row.carrera);
       const lista = porCarrera.get(k);
       if (lista) lista.push(row);
       else porCarrera.set(k, [row]);
+    }
+    const extras = await leerJugadasModulosExtrasHipodromo(dia, hipodromo, null, filasValidas);
+    for (const [k, rowsExtra] of extras.entries()) {
+      const lista = porCarrera.get(k);
+      if (lista) lista.push(...rowsExtra);
+      else porCarrera.set(k, [...rowsExtra]);
     }
     return porCarrera;
   } catch {
@@ -760,11 +985,20 @@ async function leerPizarrasHipodromo(fecha: string, hipodromo: string): Promise<
   const porCarrera = new Map<string, PizarraCarrera | null>();
   if (!supabase) return porCarrera;
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("resultados_carreras")
-      .select("carrera, ganadores, orden_llegada, dividendos")
+      .select("carrera, ganadores, orden_llegada, dividendos, retirados")
       .eq("fecha", fecha)
       .ilike("hipodromo", `%${hipodromo}%`);
+    if (error && /retirados/i.test(error.message)) {
+      const r2 = await supabase
+        .from("resultados_carreras")
+        .select("carrera, ganadores, orden_llegada, dividendos")
+        .eq("fecha", fecha)
+        .ilike("hipodromo", `%${hipodromo}%`);
+      data = r2.data as typeof data;
+      error = r2.error;
+    }
     if (error) return porCarrera;
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
       const k = claveCarrera(row.carrera);
@@ -967,6 +1201,7 @@ async function carreraReporte(
     fecha,
     pizarra: puestos.length ? puestos.join(" · ") : null,
     pizarraRaya,
+    retirados: pizarra?.retirados ?? [],
     filas,
     subtotal,
   };
@@ -1033,14 +1268,26 @@ export async function reportesCarrerasLote(
 
 async function hipodromoReporte(fecha: string, hipodromo: string, tasaComision?: number | null): Promise<HipodromoReporte> {
   const carreras: CarreraReporte[] = [];
-  const numeros = [...new Set(await listarCarrerasPorDia(fecha, hipodromo))].sort((a, b) => a - b);
-  // 3 consultas para TODO el hipódromo (no 3 por carrera): ver
-  // `leerTicketsHipodromo`. Es el fix del N+1 del reporte semanal.
-  const [ticketsPorCarrera, pizarrasPorCarrera, tablasPorCarrera] = await Promise.all([
+  const [numerosMaestro, ticketsPorCarrera, pizarrasPorCarrera, tablasPorCarrera] = await Promise.all([
+    listarCarrerasPorDia(fecha, hipodromo),
     leerTicketsHipodromo(fecha, hipodromo),
     leerPizarrasHipodromo(fecha, hipodromo),
     leerTablasHipodromo(fecha, hipodromo),
   ]);
+  const setNumeros = new Set<number>(numerosMaestro);
+  for (const k of ticketsPorCarrera.keys()) {
+    const n = Number(k);
+    if (Number.isFinite(n) && n > 0) setNumeros.add(n);
+  }
+  for (const k of pizarrasPorCarrera.keys()) {
+    const n = Number(k);
+    if (Number.isFinite(n) && n > 0) setNumeros.add(n);
+  }
+  for (const k of tablasPorCarrera) {
+    const n = Number(k);
+    if (Number.isFinite(n) && n > 0) setNumeros.add(n);
+  }
+  const numeros = [...setNumeros].sort((a, b) => a - b);
   for (const numero of numeros) {
     const k = claveCarrera(numero);
     const c = await carreraReporte(fecha, hipodromo, numero, tasaComision, {

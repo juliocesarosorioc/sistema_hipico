@@ -42,7 +42,67 @@ export function ventanaDiaLocal(dia: string): { desde: string; hasta: string } {
 export function filtroDiaJornada(dia: string): string {
   const d = String(dia ?? "").slice(0, 10);
   const { desde, hasta } = ventanaDiaLocal(d);
-  return `fecha_carrera.eq.${d},and(fecha_carrera.is.null,fecha_registro.gte.${desde},fecha_registro.lt.${hasta})`;
+  return `fecha_carrera.eq.${d},nota_auditoria.ilike.%${d}%,and(fecha_carrera.is.null,fecha_registro.gte.${desde},fecha_registro.lt.${hasta})`;
+}
+
+/**
+ * Extrae la fecha de la carrera (YYYY-MM-DD) de un ticket de `tickets_apuestas`.
+ *
+ * Prioridad:
+ *   1. `nota_auditoria.fecha_carrera` (todas las RPC de venta la sellan con la
+ *      fecha exacta de la carrera, incluso si la columna `fecha_carrera` quedó
+ *      nula o fue rellenada con `fecha_registro::date`).
+ *   2. Columna `fecha_carrera` / `fecha_evento`.
+ *   3. Fecha calendario local de `fecha_registro` como último respaldo.
+ */
+export function extraerFechaCarreraTicket(row: Record<string, unknown> | null | undefined): string {
+  if (!row) return "";
+  const rawNota = row.nota_auditoria;
+  if (rawNota) {
+    if (typeof rawNota === "object") {
+      const obj = rawNota as Record<string, unknown>;
+      const fc = String(obj.fecha_carrera ?? obj.fecha ?? "").trim().slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(fc)) return fc;
+    } else if (typeof rawNota === "string") {
+      const m = /"fecha_carrera"\s*:\s*"(\d{4}-\d{2}-\d{2})"/.exec(rawNota);
+      if (m?.[1]) return m[1];
+      try {
+        const parsed = JSON.parse(rawNota) as Record<string, unknown>;
+        const fc = String(parsed?.fecha_carrera ?? parsed?.fecha ?? "").trim().slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(fc)) return fc;
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  const colFc = String(row.fecha_carrera ?? row.fecha_evento ?? "").trim().slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(colFc)) return colFc;
+
+  const reg = String(row.fecha_registro ?? "").trim();
+  if (!reg) return "";
+  const dt = new Date(reg);
+  if (!Number.isNaN(dt.getTime())) {
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, "0");
+    const d = String(dt.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  return reg.slice(0, 10);
+}
+
+/**
+ * Confirma si un ticket pertenece efectivamente a la jornada `dia` (YYYY-MM-DD),
+ * descartando falsos positivos de `fecha_registro` cuando la jugada se registró
+ * otro día para una carrera de otra fecha.
+ */
+export function perteneceADiaJornada(
+  row: Record<string, unknown> | null | undefined,
+  dia: string
+): boolean {
+  const d = String(dia ?? "").trim().slice(0, 10);
+  if (!d) return true;
+  const fc = extraerFechaCarreraTicket(row);
+  return fc === d;
 }
 
 /**

@@ -373,6 +373,15 @@ export function proyectarFila(opts: {
 
   const modalidad = detectarModalidad(jugada);
   const pareo = PAREO_RE.exec(jugada);
+  const caballoTrim = String(opts.caballo ?? "").trim();
+
+  // Condición sine qua non: toda jugada debe tener ejemplar (en la columna caballo o en el pareo NxM).
+  if (!pareo && (!caballoTrim || !/\d/.test(caballoTrim))) {
+    return {
+      ok: false,
+      motivo: "Falta el ejemplar (caballo): es condición indispensable para cargar la jugada.",
+    };
+  }
 
   /* ── Reparto de riesgo: el monto se TOPA por el saldo disponible ──
      Se calcula siempre (aunque no haya clientes) para que la fila muestre
@@ -755,6 +764,15 @@ export function clasificarLineaRapida(linea: string): ClasificacionLinea | null 
       caballo = tokens[cabIdx].limpio;
       usados.add(cabIdx);
     }
+  }
+  if (!caballo && RE_PAREO_A.test(jugada.split(/\s+/)[0] ?? "")) {
+    caballo = jugada.split(/\s+/)[0];
+  }
+  if (!caballo || !/\d/.test(caballo)) {
+    return {
+      ok: false,
+      motivo: `Falta el ejemplar (caballo) en "${t}": no puede cargarse jugada sin ejemplar (condición sine qua non).`,
+    };
   }
 
   // 6) SOBRANTES — lo que no entró en JUGADA/CABALLO/MONTO. NO se asignan

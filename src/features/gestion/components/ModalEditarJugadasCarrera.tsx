@@ -32,6 +32,7 @@ import {
 import { nombreOficialDeCaballoSuelto } from "@/features/liquidacion/lib/resolver-ejemplar";
 import { registrarAuditoria } from "@/features/grupos/lib/grupos";
 import { usuarioVigente } from "@/features/seguridad/lib/vigente";
+import { listarClientes, type Cliente } from "@/features/clientes/lib/clientes";
 
 type Props = {
   hipodromo: string;
@@ -67,12 +68,24 @@ const MOTIVOS: readonly string[] = MOTIVOS_ANULACION;
 
 type Edicion = {
   id: string;
+  /** Jugador 1 (Quien Juega). */
+  jugador1: string;
+  /** Jugador 2 (Quien Da / Consigue). */
+  jugador2: string;
+  /** Carrera destino (número). */
+  carrera: string;
+  /** Hipódromo destino. */
+  hipodromo: string;
+  /** Fecha de la carrera destino (YYYY-MM-DD). */
+  fechaCarrera: string;
+  /** Modalidad adelantada o en vivo. */
+  esAdelantada: boolean;
   /** Nomenclatura de la jugada (nombre_jugada: "GANADOR", "2P", "TABLA 2"…). */
   nombre: string;
   /** El ÚNICO ejemplar/caballo que se juega (texto: "7", "1-2"…). */
   caballo: string;
   monto: string;
-  /** Nota predefinida elegida (una de las 5) + detalle libre, para la auditoría. */
+  /** Nota predefinida elegida (o "OTRO" para introducir libremente) + detalle libre, para la auditoría. */
   nota: string;
   detalle: string;
   /** Nombre OFICIAL resuelto del padrón al cambiar el Nº ("" = no se pudo). */
@@ -86,11 +99,14 @@ type Edicion = {
  */
 function ejemplarDeCaballo(caballo: string): number | null {
   const t = caballo.trim();
-  return /^[0-9]+$/.test(t) ? Number(t) : null;
+  if (/^[0-9]+$/.test(t)) return Number(t);
+  const m = t.match(/\b(\d{1,2})\b/);
+  return m ? Number(m[1]) : null;
 }
 
 export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, carrera, fecha, tasaComision, onCerrar }: Props) {
   const [jugadas, setJugadas] = useState<JugadaAdmin[]>([]);
+  const [clientesCatalogo, setClientesCatalogo] = useState<Cliente[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
@@ -106,7 +122,11 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
   const cargar = useCallback(async () => {
     setCargando(true);
     setError("");
-    const r = await listarJugadasDeCarrera(hipodromo, carrera, fecha);
+    const [r, cli] = await Promise.all([
+      listarJugadasDeCarrera(hipodromo, carrera, fecha),
+      listarClientes().catch(() => [] as Cliente[]),
+    ]);
+    setClientesCatalogo(cli);
     if (!r.ok) {
       setError(r.error ?? "No se pudieron leer las jugadas.");
       setJugadas([]);
@@ -124,12 +144,19 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
   const totalVigente = visibles.reduce((a, j) => a + Number(j.monto_jugado ?? 0), 0);
 
   const empezarEdicion = (j: JugadaAdmin) => {
+    const cabStr = j.caballo?.trim() || (j.ejemplar_numero != null ? String(j.ejemplar_numero) : "");
     setEdicion({
       id: String(j.id),
+      jugador1: j.cliente_juega_nombre ?? "",
+      jugador2: j.cliente_consigue_nombre ?? "",
+      carrera: String(j.carrera ?? carrera),
+      hipodromo: String(j.hipodromo ?? hipodromo),
+      fechaCarrera: String(j.fecha_carrera ?? fecha),
+      esAdelantada: Boolean(j.es_adelantada),
       nombre: j.nombre_jugada ?? "",
-      caballo: j.caballo ?? "",
+      caballo: cabStr,
       monto: j.monto_jugado != null ? String(j.monto_jugado) : "",
-      nota: "",
+      nota: NOTAS_PREDEFINIDAS_EDICION[0],
       detalle: "",
       nombreOficial: "",
     });
@@ -144,47 +171,67 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
    */
   const cambiarEjemplar = async (valor: string) => {
     if (!edicion) return;
-    const limpio = valor.replace(/\D/g, "");
-    // Si el campo `caballo` era el número viejo (solo dígitos), se reemplaza por
-    // el número nuevo; si era un nombre, se reemplaza por el nombre oficial.
-    const caballoEraNumero = /^[0-9]*$/.test(edicion.caballo.trim());
-    setEdicion({ ...edicion, caballo: caballoEraNumero ? limpio : edicion.caballo, nombreOficial: "" });
+    setEdicion({ ...edicion, caballo: valor, nombreOficial: "" });
+    const limpio = valor.trim();
     if (!/^[0-9]+$/.test(limpio)) return;
-    const nombre = await nombreOficialDeCaballoSuelto({ fecha, hipodromo, carrera, caballo: limpio });
+    const carreraDest = Number(edicion.carrera) || carrera;
+    const hipDest = edicion.hipodromo.trim() || hipodromo;
+    const fechaDest = edicion.fechaCarrera.trim() || fecha;
+    const nombre = await nombreOficialDeCaballoSuelto({
+      fecha: fechaDest,
+      hipodromo: hipDest,
+      carrera: carreraDest,
+      caballo: limpio,
+    });
     if (nombre) {
-      setEdicion((prev) => (prev ? { ...prev, caballo: nombre, nombreOficial: nombre } : prev));
+      setEdicion((prev) => (prev ? { ...prev, nombreOficial: nombre } : prev));
     }
   };
 
   const guardarEdicion = async () => {
     if (!edicion) return;
-    const motivoFinal = componerNota(edicion.nota, edicion.detalle) || motivo.trim();
+    const notaBase = edicion.nota === "OTRO" ? "" : edicion.nota;
+    const motivoFinal = componerNota(notaBase, edicion.detalle || motivo);
     if (!motivoFinal) {
-      setAviso("⚠️ Indicá el motivo de la corrección (queda auditado).");
+      setAviso("⚠️ Indicá el motivo de la corrección (seleccioná una opción o introducí el motivo libremente).");
+      return;
+    }
+    if (!edicion.jugador1.trim()) {
+      setAviso("⚠️ El Jugador 1 (Quien Juega) no puede quedar vacío.");
       return;
     }
     if (!edicion.nombre.trim()) {
       setAviso("⚠️ La jugada (nomenclatura) no puede quedar vacía.");
       return;
     }
-    const monto = Number(String(edicion.monto).replace(",", "."));
-    if (edicion.monto.trim() !== "" && (!Number.isFinite(monto) || monto < 0)) {
-      setAviso("⚠️ El monto no es válido.");
+    const caballo = edicion.caballo.trim().toUpperCase();
+    if (!caballo || !/\d/.test(caballo)) {
+      setAviso("⚠️ Condición sine qua non: toda jugada debe tener ejemplar (número de caballo).");
       return;
     }
-    const caballo = edicion.caballo.trim().toUpperCase();
+    const carreraNueva = Number(edicion.carrera);
+    if (!Number.isFinite(carreraNueva) || carreraNueva < 1) {
+      setAviso("⚠️ El número de carrera debe ser mayor o igual a 1.");
+      return;
+    }
+    const monto = Number(String(edicion.monto).replace(",", "."));
+    if (edicion.monto.trim() === "" || !Number.isFinite(monto) || monto <= 0) {
+      setAviso("⚠️ El monto jugado debe ser mayor a 0.");
+      return;
+    }
     setOcupado(true);
     const r = await corregirJugadaYRecalcular({
       id: edicion.id,
       campos: {
-        monto_jugado: edicion.monto.trim() === "" ? null : monto,
-        // Un solo caballo: `caballo` (texto) y `ejemplar_numero` (entero) se
-        // derivan del MISMO valor, igual que en la venta. Antes se editaba solo
-        // `caballo` y `ejemplar_numero` quedaba viejo → el renglón mostraba dos
-        // caballos distintos. Además, si se cambió el Nº, `caballo` ya trae el
-        // NOMBRE OFICIAL resuelto del padrón.
+        cliente_juega_nombre: edicion.jugador1.trim().toUpperCase(),
+        cliente_consigue_nombre: edicion.jugador2.trim() ? edicion.jugador2.trim().toUpperCase() : null,
+        carrera: carreraNueva,
+        hipodromo: edicion.hipodromo.trim().toUpperCase() || hipodromo,
+        fecha_carrera: edicion.fechaCarrera.trim() || fecha,
+        es_adelantada: edicion.esAdelantada,
+        monto_jugado: monto,
         nombre_jugada: edicion.nombre.trim().toUpperCase(),
-        caballo: caballo === "" ? null : caballo,
+        caballo,
         ejemplar_numero: ejemplarDeCaballo(edicion.caballo),
       },
       motivo: motivoFinal,
@@ -204,14 +251,13 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
       "EDITAR_JUGADA_CARRERA",
       `Jugada #${edicion.id} corregida y carrera recalculada en ${nombreHipodromo} C${carrera} (${fecha}) por ${usuario}. Motivo: ${motivoFinal}`
     );
-    setAviso(`✅ ${textoRecalculo(r, "Corrección guardada.")} · Auditada.`);
+    setAviso(`✅ ${textoRecalculo(r, "Corrección guardada y recalculada con los nuevos valores.")} · Auditada.`);
     setEdicion(null);
     await cargar();
   };
 
   const confirmarAnulacion = async () => {
     if (!anulando) return;
-    // Si no escribió motivo, se usa un motivo por defecto para no bloquear el botón Anular.
     const texto = motivoAnular.trim() || "Anulación de jugada por el operador";
     setOcupado(true);
     const r = await anularJugadaYRecalcular({
@@ -251,8 +297,6 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
       setAviso(`❌ ${r.error ?? "No se pudo restaurar."}`);
       return;
     }
-    // Al volver al motor, la carrera se rehace para que premios y comisión
-    // cuadren con el nuevo conjunto de jugadas.
     const rec = await recalcularCarrera({ hipodromo, carrera, fecha, tasaComision });
     setOcupado(false);
     void registrarAuditoria(
@@ -266,14 +310,20 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-      <div className="flex max-h-[92vh] w-full max-w-5xl flex-col rounded-2xl border border-line bg-white shadow-2xl">
+      <div className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-2xl border border-line bg-white shadow-2xl">
+        <datalist id="clientes-editar-carrera-datalist">
+          {clientesCatalogo.map((c) => (
+            <option key={c.id} value={c.nombre ?? ""} />
+          ))}
+        </datalist>
+
         <div className="flex items-center justify-between border-b border-line bg-slate-800 px-4 py-3 text-white">
           <div>
             <h3 className="text-xs font-black uppercase">
               ✏️ Editar jugadas guardadas · {nombreHipodromo} C{carrera}
             </h3>
             <p className="text-[10px] font-semibold text-slate-300">
-              Fecha {fecha} · corrige o anula las jugadas YA registradas (aunque la carrera esté cerrada). Todo queda auditado.
+              Fecha {fecha} · permite modificar Jugadores, Carrera, Ejemplar, Jugada y Monto; recalcula todo con los valores nuevos.
             </p>
           </div>
           <button type="button" onClick={onCerrar} className="text-slate-300 hover:text-white" aria-label="Cerrar">
@@ -301,9 +351,11 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
           <table className="w-full border-collapse text-xs">
             <thead className="sticky top-0 bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-2 py-2 text-left">Cliente</th>
+                <th className="px-2 py-2 text-left">Jugador 1 (Juega)</th>
+                <th className="px-2 py-2 text-left">Jugador 2 (Da)</th>
+                <th className="px-2 py-2 text-center">Carrera</th>
                 <th className="px-2 py-2 text-left">Jugada</th>
-                <th className="px-2 py-2 text-left">Caballo</th>
+                <th className="px-2 py-2 text-left">Ejemplar</th>
                 <th className="px-2 py-2 text-right">Monto</th>
                 <th className="px-2 py-2 text-right">Premio</th>
                 <th className="px-2 py-2 text-left">Estado</th>
@@ -313,7 +365,7 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
             <tbody>
               {!cargando && visibles.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-6 text-center text-slate-400">
+                  <td colSpan={9} className="px-3 py-6 text-center text-slate-400">
                     No hay jugadas {soloVigentes ? "vigentes" : ""} para esta carrera.
                   </td>
                 </tr>
@@ -332,15 +384,54 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
                     : j.estado ?? "Pendiente";
                 const enEdicion = edicion?.id === String(j.id);
                 return (
-                  <tr key={String(j.id)} className={`border-t border-line ${j.anulada ? "bg-amber-50/50" : ""}`}>
-                    <td className="px-2 py-1.5 font-semibold text-slate-700">{j.cliente_juega_nombre ?? "—"}</td>
+                  <tr key={String(j.id)} className={`border-t border-line ${enEdicion ? "bg-indigo-50/60" : j.anulada ? "bg-amber-50/50" : ""}`}>
+                    <td className="px-2 py-1.5 font-semibold text-slate-700">
+                      {enEdicion ? (
+                        <input
+                          list="clientes-editar-carrera-datalist"
+                          value={edicion.jugador1}
+                          onChange={(e) => setEdicion({ ...edicion, jugador1: e.target.value.toUpperCase() })}
+                          placeholder="QUIEN JUEGA"
+                          className="w-32 rounded border border-indigo-300 bg-white px-1.5 py-0.5 text-xs font-bold uppercase"
+                        />
+                      ) : (
+                        j.cliente_juega_nombre ?? "—"
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 font-semibold text-slate-600">
+                      {enEdicion ? (
+                        <input
+                          list="clientes-editar-carrera-datalist"
+                          value={edicion.jugador2}
+                          onChange={(e) => setEdicion({ ...edicion, jugador2: e.target.value.toUpperCase() })}
+                          placeholder="TAQUILLA / QUIEN DA"
+                          className="w-32 rounded border border-indigo-300 bg-white px-1.5 py-0.5 text-xs font-bold uppercase"
+                        />
+                      ) : (
+                        j.cliente_consigue_nombre || "TAQUILLA"
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 text-center font-bold text-slate-700">
+                      {enEdicion ? (
+                        <input
+                          type="number"
+                          min={1}
+                          max={25}
+                          value={edicion.carrera}
+                          onChange={(e) => setEdicion({ ...edicion, carrera: e.target.value.replace(/\D/g, "") })}
+                          className="w-14 rounded border border-indigo-300 bg-white px-1 py-0.5 text-center text-xs font-bold"
+                        />
+                      ) : (
+                        `C${j.carrera ?? carrera}`
+                      )}
+                    </td>
                     <td className="px-2 py-1.5 text-slate-600">
                       {enEdicion ? (
                         <input
                           value={edicion.nombre}
-                          onChange={(e) => setEdicion({ ...edicion, nombre: e.target.value })}
+                          onChange={(e) => setEdicion({ ...edicion, nombre: e.target.value.toUpperCase() })}
                           placeholder="jugada (ej. 2P)"
-                          className="w-24 rounded border border-line px-1 py-0.5 text-xs"
+                          className="w-24 rounded border border-indigo-300 bg-white px-1.5 py-0.5 text-xs font-bold uppercase"
                         />
                       ) : (
                         j.nombre_jugada ?? "—"
@@ -352,8 +443,8 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
                           <input
                             value={edicion.caballo}
                             onChange={(e) => void cambiarEjemplar(e.target.value)}
-                            placeholder="Nº / caballo"
-                            className="w-28 rounded border border-line px-1 py-0.5 text-xs"
+                            placeholder="Nº / ejemplar"
+                            className="w-24 rounded border border-indigo-300 bg-white px-1.5 py-0.5 text-xs font-bold uppercase"
                           />
                           {edicion.nombreOficial && (
                             <span className="mt-0.5 block text-[9px] font-bold text-emerald-600">
@@ -370,7 +461,7 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
                         <input
                           value={edicion.monto}
                           onChange={(e) => setEdicion({ ...edicion, monto: e.target.value })}
-                          className="w-24 rounded border border-line px-1 py-0.5 text-right text-xs"
+                          className="w-24 rounded border border-indigo-300 bg-white px-1.5 py-0.5 text-right text-xs font-bold"
                         />
                       ) : (
                         money(j.monto_jugado, j.moneda ?? "VES")
@@ -417,51 +508,121 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
         </div>
 
         {edicion && (
-          <div className="border-t border-line bg-slate-50 px-4 py-2">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="border-t border-indigo-200 bg-indigo-50/70 px-4 py-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase text-indigo-900">
+                ✏️ Editando todos los campos de la jugada #{edicion.id}
+              </span>
+              <label className="inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-800">
+                <input
+                  type="checkbox"
+                  checked={edicion.esAdelantada}
+                  onChange={(e) => setEdicion({ ...edicion, esAdelantada: e.target.checked })}
+                />
+                Modalidad Adelantada
+              </label>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               <div>
-                <label className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">
-                  Nota predefinida
+                <label className="mb-0.5 block text-[10px] font-black uppercase tracking-wide text-slate-600">
+                  Jugador 1 (Quien Juega)
+                </label>
+                <input
+                  list="clientes-editar-carrera-datalist"
+                  value={edicion.jugador1}
+                  onChange={(e) => setEdicion({ ...edicion, jugador1: e.target.value.toUpperCase() })}
+                  className="w-full rounded border border-line bg-white px-2 py-1 text-xs font-bold uppercase"
+                />
+              </div>
+              <div>
+                <label className="mb-0.5 block text-[10px] font-black uppercase tracking-wide text-slate-600">
+                  Jugador 2 (Quien Da)
+                </label>
+                <input
+                  list="clientes-editar-carrera-datalist"
+                  value={edicion.jugador2}
+                  onChange={(e) => setEdicion({ ...edicion, jugador2: e.target.value.toUpperCase() })}
+                  placeholder="TAQUILLA"
+                  className="w-full rounded border border-line bg-white px-2 py-1 text-xs font-bold uppercase"
+                />
+              </div>
+              <div>
+                <label className="mb-0.5 block text-[10px] font-black uppercase tracking-wide text-slate-600">
+                  Carrera N°
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={25}
+                  value={edicion.carrera}
+                  onChange={(e) => setEdicion({ ...edicion, carrera: e.target.value.replace(/\D/g, "") })}
+                  className="w-full rounded border border-line bg-white px-2 py-1 text-xs font-bold"
+                />
+              </div>
+              <div>
+                <label className="mb-0.5 block text-[10px] font-black uppercase tracking-wide text-slate-600">
+                  Jugada
+                </label>
+                <input
+                  value={edicion.nombre}
+                  onChange={(e) => setEdicion({ ...edicion, nombre: e.target.value.toUpperCase() })}
+                  className="w-full rounded border border-line bg-white px-2 py-1 text-xs font-bold uppercase"
+                />
+              </div>
+              <div>
+                <label className="mb-0.5 block text-[10px] font-black uppercase tracking-wide text-slate-600">
+                  Ejemplar (Obligatorio)
+                </label>
+                <input
+                  value={edicion.caballo}
+                  onChange={(e) => void cambiarEjemplar(e.target.value)}
+                  className="w-full rounded border border-line bg-white px-2 py-1 text-xs font-bold uppercase"
+                />
+              </div>
+              <div>
+                <label className="mb-0.5 block text-[10px] font-black uppercase tracking-wide text-slate-600">
+                  Monto
+                </label>
+                <input
+                  value={edicion.monto}
+                  onChange={(e) => setEdicion({ ...edicion, monto: e.target.value })}
+                  className="w-full rounded border border-line bg-white px-2 py-1 text-xs font-bold"
+                />
+              </div>
+            </div>
+
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div>
+                <label className="mb-0.5 block text-[10px] font-black uppercase tracking-wide text-slate-600">
+                  Motivo de modificación (listado predeterminado)
                 </label>
                 <select
-                  value={NOTAS_PREDEFINIDAS_EDICION.includes(edicion.nota as (typeof NOTAS_PREDEFINIDAS_EDICION)[number]) ? edicion.nota : ""}
+                  value={edicion.nota}
                   onChange={(e) => setEdicion({ ...edicion, nota: e.target.value })}
-                  className="w-full rounded border border-line px-2 py-1 text-xs"
+                  className="w-full rounded border border-line bg-white px-2 py-1 text-xs font-semibold"
                 >
-                  <option value="">— Elegir nota —</option>
                   {NOTAS_PREDEFINIDAS_EDICION.map((n) => (
                     <option key={n} value={n}>
                       {n}
                     </option>
                   ))}
+                  <option value="OTRO">✍️ Otro (introducir libremente)</option>
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">
-                  Detalle adicional (opcional)
+                <label className="mb-0.5 block text-[10px] font-black uppercase tracking-wide text-slate-600">
+                  {edicion.nota === "OTRO" ? "Introducir motivo libremente (obligatorio)" : "Detalle adicional / observación libre (opcional)"}
                 </label>
                 <input
                   value={edicion.detalle}
                   onChange={(e) => setEdicion({ ...edicion, detalle: e.target.value })}
-                  placeholder="Texto adicional para la auditoría"
-                  className="w-full rounded border border-line px-2 py-1 text-xs"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">
-                  Motivo libre (si no elegís nota)
-                </label>
-                <input
-                  value={motivo}
-                  onChange={(e) => setMotivo(e.target.value)}
-                  placeholder="Ej. error de carga del operador"
-                  className="w-full rounded border border-line px-2 py-1 text-xs"
+                  placeholder={edicion.nota === "OTRO" ? "Escriba el motivo de la modificación…" : "Observación adicional para la auditoría…"}
+                  className="w-full rounded border border-line bg-white px-2 py-1 text-xs font-semibold"
                 />
               </div>
             </div>
-            <p className="mt-1 text-[9px] font-semibold text-slate-400">
-              La nota elegida + el detalle se guardan como motivo de la auditoría. Si la carrera está liquidada, al
-              guardar se recalcula completa.
+            <p className="mt-1 text-[10px] font-semibold text-indigo-800">
+              Al guardar, la jugada toma todos los valores nuevos, ajusta los saldos de los jugadores involucrados y recalcula la carrera automáticamente.
             </p>
           </div>
         )}

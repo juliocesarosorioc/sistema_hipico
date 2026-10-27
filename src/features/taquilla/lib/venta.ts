@@ -13,6 +13,8 @@
  */
 import { supabase } from "@/core/supabase";
 import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
+import { grupoDeVentaVigente } from "@/features/grupos/lib/grupos";
+import { veTodosLosGruposVigente } from "@/features/seguridad/lib/vigente";
 
 const MENSAJE_SIN_RPC =
   "La venta de Taquilla no está activa: ejecutá sql/taquilla_venta.sql en el SQL Editor de Supabase.";
@@ -79,16 +81,31 @@ export function claveIdempotenciaJugada(): string {
 /** Emite el ticket y descuenta el saldo (todo o nada). */
 export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada> {
   if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
+  const caballoLimpio = String(v.caballo ?? "").trim();
+  if (!caballoLimpio || !/\d/.test(caballoLimpio)) {
+    return {
+      ok: false,
+      error: "⚠️ No puede cargarse una jugada que no tenga ejemplar (condición sine qua non).",
+    };
+  }
+  const grupoSeleccionado = grupoDeVentaVigente();
+  if (veTodosLosGruposVigente() && !grupoSeleccionado) {
+    return {
+      ok: false,
+      error: "⚠️ El usuario o grupo principal es solo de gestión y no puede registrar jugadas. Seleccione un grupo primero.",
+    };
+  }
+  const grupoEfectivo = grupoSeleccionado || v.grupoId || null;
   const dadorResuelto = resolverContraparteModalidad(v.jugada, v.clienteDador, v.modalidad);
   const { data, error } = await supabase.rpc("club_vender_jugada", {
     p_hipodromo: String(v.hipodromo ?? "").trim().toUpperCase(),
     p_fecha: v.fecha,
     p_carrera: Number(v.carrera) || 0,
     p_jugada: String(v.jugada ?? "").trim(),
-    p_caballo: String(v.caballo ?? "").trim(),
+    p_caballo: caballoLimpio,
     p_monto: Number(v.monto) || 0,
     p_cliente_id: v.clienteId,
-    p_grupo_id: v.grupoId || null,
+    p_grupo_id: grupoEfectivo,
     p_cliente_dador: dadorResuelto || v.clienteDador || null,
     p_moneda: v.moneda ?? null,
     p_comision: v.comision ?? null,
@@ -101,6 +118,17 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
     return { ok: false, error: /club_vender_jugada|not found|404/i.test(texto) ? MENSAJE_SIN_RPC : texto };
   }
   const r = (data ?? {}) as Record<string, unknown>;
+  const fechaCarrera = String(v.fecha ?? "").trim().slice(0, 10);
+  if (r.ticket_id != null && /^\d{4}-\d{2}-\d{2}$/.test(fechaCarrera)) {
+    try {
+      await supabase
+        .from("tickets_apuestas")
+        .update({ fecha_carrera: fechaCarrera } as never)
+        .eq("id", r.ticket_id as never);
+    } catch {
+      /* best-effort si la columna fecha_carrera aún no existe */
+    }
+  }
   return {
     ok: true,
     ticketId: r.ticket_id as number | undefined,

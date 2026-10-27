@@ -32,6 +32,24 @@ const CLAVE_ACCESO = "hipico_acceso";
  * Vacío/ausente = "todos".
  */
 const CLAVE_GRUPO_ACTIVO = "hipico_grupo_activo";
+const CLAVE_MODO_OPERADOR = "hipico_modo_operador";
+const CLAVE_SESION_OPERADOR_LOCAL = "hipico_sesion_operador_local";
+
+function leerModoOperadorGuardado(): boolean {
+  try {
+    return typeof window !== "undefined" && localStorage.getItem(CLAVE_MODO_OPERADOR) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function leerSesionOperadorLocal(): boolean {
+  try {
+    return typeof window !== "undefined" && localStorage.getItem(CLAVE_SESION_OPERADOR_LOCAL) === "1";
+  } catch {
+    return false;
+  }
+}
 
 function leerGrupoActivoGuardado(): string | null {
   try {
@@ -327,6 +345,10 @@ export function mensajeSinAcceso(identificador: string, falloLectura: boolean): 
 async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promise<void> {
   const sesion = await sesionActual();
   if (!sesion) {
+    if (leerSesionOperadorLocal()) {
+      useAuthStore.getState().entrarComoOperador();
+      return;
+    }
     limpiarAccesosVigentes();
     set({
       inicializada: true,
@@ -339,6 +361,7 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
       tipoUsuario: null,
       excepciones: {},
       esPrincipal: false,
+      modoOperador: false,
       grupoId: inicioDefault.grupoId,
       grupoNombre: inicioDefault.grupoNombre,
       veTodosLosGrupos: inicioDefault.veTodosLosGrupos,
@@ -402,6 +425,7 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
     tipoUsuario: a.tipoUsuario,
     excepciones: a.excepciones,
     esPrincipal: a.esPrincipal,
+    modoOperador: leerModoOperadorGuardado(),
     permisos: a.permisos,
     perfiles: a.perfiles,
     grupoId: a.grupoId,
@@ -450,8 +474,11 @@ export const useAuthStore = create<EstadoAuth>()(
       setModoOperador: (activo) => {
         try {
           if (typeof window !== "undefined") {
-            if (activo) localStorage.setItem("hipico_modo_operador", "1");
-            else localStorage.removeItem("hipico_modo_operador");
+            if (activo) localStorage.setItem(CLAVE_MODO_OPERADOR, "1");
+            else {
+              localStorage.removeItem(CLAVE_MODO_OPERADOR);
+              localStorage.removeItem(CLAVE_SESION_OPERADOR_LOCAL);
+            }
           }
         } catch {
           /* sinop */
@@ -468,6 +495,8 @@ export const useAuthStore = create<EstadoAuth>()(
           activo: true,
           capacidades: capsOperador,
         };
+        const grupoActivo = leerGrupoActivoGuardado();
+        setGrupoActivoVigente(grupoActivo);
         publicarPermisosEnCookies(["OPERADOR"], capsOperador, "operador");
         setAccesosVigentes({
           permisos: capsOperador,
@@ -481,7 +510,8 @@ export const useAuthStore = create<EstadoAuth>()(
         });
         try {
           if (typeof window !== "undefined") {
-            localStorage.setItem("hipico_modo_operador", "1");
+            localStorage.setItem(CLAVE_MODO_OPERADOR, "1");
+            localStorage.setItem(CLAVE_SESION_OPERADOR_LOCAL, "1");
           }
         } catch {
           /* sinop */
@@ -500,6 +530,7 @@ export const useAuthStore = create<EstadoAuth>()(
           perfiles: ["OPERADOR"],
           modoOperador: true,
           veTodosLosGrupos: true,
+          grupoActivo,
         });
       },
 
@@ -650,6 +681,14 @@ export const useAuthStore = create<EstadoAuth>()(
         borrarCookiesDeAcceso();
         limpiarAccesosVigentes();
         guardarGrupoActivo(null);
+        try {
+          if (typeof window !== "undefined") {
+            localStorage.removeItem(CLAVE_MODO_OPERADOR);
+            localStorage.removeItem(CLAVE_SESION_OPERADOR_LOCAL);
+          }
+        } catch {
+          /* sinop */
+        }
         set({
           // `inicializada: true` a propósito. La sesión ESTÁ verificada: lo que
           // se verificó es que no hay ninguna. Antes se ponía en false, que

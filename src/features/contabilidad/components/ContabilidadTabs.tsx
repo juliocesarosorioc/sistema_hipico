@@ -46,6 +46,13 @@ import {
 import { emitirToast } from "@/shared/lib/mensajeria";
 import { exportarCSV, monedaExacta } from "@/shared/lib/utils";
 import { useConfirmar } from "@/shared/store/useConfirmStore";
+import { crearCliente } from "@/features/clientes/lib/clientes";
+import {
+  CONCEPTO_RESUMEN_DUENO,
+  completarMovimientoOperadorPendiente,
+  listarMovimientosOperadorPendientes,
+  type MovimientoOperadorPendiente,
+} from "@/features/contabilidad/lib/movimientos-operador";
 
 const inp =
   "w-full border border-line rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary-500 bg-surface";
@@ -83,6 +90,253 @@ const exportarTabla = (
 /** Fecha corta para el CSV: la hora no aporta en un reporte contable. */
 const csvFecha = (f: string | null): string => (f ? String(f).slice(0, 19).replace("T", " ") : "");
 
+/**
+ * Bandeja para el Administrador del Grupo con los movimientos de saldo cargados
+ * desde la Vista de Operador ("Por instrucciones del Dueño del grupo (Resumen)")
+ * pendientes por registrar banco, referencia, día y demás información.
+ */
+function BandejaMovimientosOperadorPendientes({
+  bancos,
+  onCompletado,
+}: {
+  bancos: BancoRow[];
+  onCompletado: () => Promise<void>;
+}) {
+  const [pendientes, setPendientes] = useState<MovimientoOperadorPendiente[]>([]);
+  const [activo, setActivo] = useState<MovimientoOperadorPendiente | null>(null);
+  const [verImagen, setVerImagen] = useState<string | null>(null);
+  const [bancoId, setBancoId] = useState("");
+  const [referencia, setReferencia] = useState("");
+  const [fechaMov, setFechaMov] = useState(() => new Date().toISOString().slice(0, 10));
+  const [modalidad, setModalidad] = useState(CONCEPTO_RESUMEN_DUENO);
+  const [nota, setNota] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  const cargar = async () => {
+    const lista = await listarMovimientosOperadorPendientes();
+    setPendientes(lista);
+  };
+
+  useEffect(() => {
+    void cargar();
+    const handler = () => void cargar();
+    window.addEventListener("hipico:movimientos-operador-actualizados", handler);
+    return () => window.removeEventListener("hipico:movimientos-operador-actualizados", handler);
+  }, []);
+
+  if (pendientes.length === 0) return null;
+
+  const abrirCompletar = (m: MovimientoOperadorPendiente) => {
+    setActivo(m);
+    setBancoId(m.banco_id ?? "");
+    setReferencia(m.referencia && m.referencia !== "PENDIENTE" ? m.referencia : "");
+    setFechaMov(m.fecha_creacion ? m.fecha_creacion.slice(0, 10) : new Date().toISOString().slice(0, 10));
+    setModalidad(CONCEPTO_RESUMEN_DUENO);
+    setNota("");
+  };
+
+  const guardarDatos = async () => {
+    if (!activo) return;
+    const bObj = bancos.find((b) => String(b.id) === String(bancoId));
+    if (!bancoId) {
+      toast("Seleccione el banco del movimiento.", "warning");
+      return;
+    }
+    if (!referencia.trim()) {
+      toast("Indique la referencia del comprobante.", "warning");
+      return;
+    }
+    setGuardando(true);
+    const res = await completarMovimientoOperadorPendiente({
+      movimiento: activo,
+      banco_id: bancoId,
+      banco_nombre: bObj?.nombre ?? "BANCO",
+      referencia: referencia.trim(),
+      fecha_movimiento: fechaMov,
+      modalidad: modalidad || CONCEPTO_RESUMEN_DUENO,
+      nota: nota.trim(),
+    });
+    setGuardando(false);
+    if (!res.ok) {
+      toast(res.error ?? "No se pudo completar el movimiento.", "error");
+      return;
+    }
+    toast(`✅ Movimiento de ${activo.cliente_nombre} completado con banco, referencia y fecha.`, "success");
+    setActivo(null);
+    await cargar();
+    await onCompletado();
+  };
+
+  return (
+    <div className="mb-4 rounded-2xl border-2 border-amber-400 bg-amber-50/90 p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <span className="inline-block rounded-full bg-amber-500 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">
+            ⏳ Pendientes de Operador ({pendientes.length})
+          </span>
+          <h3 className="mt-1 text-xs font-black uppercase tracking-wide text-amber-950">
+            Movimientos por Instrucciones del Dueño del Grupo (Resumen) · Pendientes por Completar Datos
+          </h3>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        {pendientes.map((m) => (
+          <div
+            key={m.id}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-white px-3.5 py-2.5 text-xs shadow-xs"
+          >
+            <div className="space-y-0.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`rounded px-2 py-0.5 text-[10px] font-black uppercase ${
+                    m.tipo === "INGRESO"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-rose-100 text-rose-800"
+                  }`}
+                >
+                  {m.tipo === "INGRESO" ? "➕ Ingreso" : "➖ Egreso"}
+                </span>
+                <span className="font-black text-slate-900">{m.cliente_nombre}</span>
+                <span className="font-mono font-black text-indigo-700">${m.monto.toFixed(2)}</span>
+                <span className="text-[10px] font-bold text-slate-500">
+                  (Saldo: ${m.saldo_anterior.toFixed(2)} → ${m.saldo_nuevo.toFixed(2)})
+                </span>
+              </div>
+              <p className="text-[10px] font-semibold text-slate-500">
+                📋 {m.concepto} · Cargado por <strong>{m.operador}</strong> el {fechaCorta(m.fecha_creacion)}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {m.comprobante_imagen && (
+                <button
+                  type="button"
+                  onClick={() => setVerImagen(m.comprobante_imagen)}
+                  className="rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-[10px] font-black text-indigo-800 hover:bg-indigo-100"
+                >
+                  🖼️ Ver Capture
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => abrirCompletar(m)}
+                className="rounded-lg bg-amber-600 px-3 py-1.5 text-[10px] font-black text-white shadow-xs hover:bg-amber-700"
+              >
+                ✏️ Registrar Banco, Referencia y Día
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {activo && (
+        <div className="mt-3 rounded-xl border-2 border-indigo-400 bg-white p-4 shadow-md">
+          <div className="mb-2 flex items-center justify-between">
+            <h4 className="text-xs font-black uppercase text-indigo-950">
+              Completar Datos Bancarios · {activo.cliente_nombre} ({activo.tipo === "INGRESO" ? "Ingreso" : "Egreso"} ${activo.monto.toFixed(2)})
+            </h4>
+            <button
+              type="button"
+              onClick={() => setActivo(null)}
+              className="text-xs font-bold text-slate-500 hover:text-slate-800"
+            >
+              ✕ Cerrar
+            </button>
+          </div>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <label className={lbl}>Banco *</label>
+              <select value={bancoId} onChange={(e) => setBancoId(e.target.value)} className={`${inp} font-bold`}>
+                <option value="">— Seleccione Banco —</option>
+                {bancos.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.nombre} ({b.moneda_codigo ?? "USD"})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={lbl}>N° de Referencia *</label>
+              <input
+                value={referencia}
+                onChange={(e) => setReferencia(e.target.value)}
+                placeholder="Ej: 00492817"
+                className={inp}
+              />
+            </div>
+            <div>
+              <label className={lbl}>Día del Movimiento *</label>
+              <input
+                type="date"
+                value={fechaMov}
+                onChange={(e) => setFechaMov(e.target.value)}
+                className={inp}
+              />
+            </div>
+            <div>
+              <label className={lbl}>Modalidad / Concepto</label>
+              <select value={modalidad} onChange={(e) => setModalidad(e.target.value)} className={`${inp} font-bold`}>
+                <option value={CONCEPTO_RESUMEN_DUENO}>{CONCEPTO_RESUMEN_DUENO}</option>
+                {(activo.tipo === "INGRESO" ? MODALIDADES_INGRESO : MODALIDADES_EGRESO).map((mod) => (
+                  <option key={mod} value={mod}>
+                    {mod}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+            <input
+              value={nota}
+              onChange={(e) => setNota(e.target.value)}
+              placeholder="Observación o detalle adicional del movimiento..."
+              className={`${inp} max-w-md`}
+            />
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setActivo(null)}>
+                Cancelar
+              </Button>
+              <Button variant="success" size="sm" disabled={guardando} onClick={() => void guardarDatos()}>
+                {guardando ? "Guardando..." : "✅ Guardar Banco, Referencia y Día"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {verImagen && (
+        <div
+          className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/75 p-4"
+          onClick={() => setVerImagen(null)}
+        >
+          <div
+            className="max-w-2xl overflow-hidden rounded-2xl bg-white p-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-black uppercase text-slate-800">
+                📸 Capture de Comprobante Adjunto por el Operador
+              </span>
+              <button
+                type="button"
+                onClick={() => setVerImagen(null)}
+                className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-200"
+              >
+                ✕ Cerrar
+              </button>
+            </div>
+            <img
+              src={verImagen}
+              alt="Capture comprobante"
+              className="max-h-[75vh] w-full rounded-xl border border-slate-200 object-contain"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ===========================================================================
 //  📥  INGRESOS / AVALES   (js/depositos.js)
 // ===========================================================================
@@ -112,6 +366,8 @@ export function TabIngresos({
   const [nota, setNota] = useState("");
   const [filtroHistorial, setFiltroHistorial] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [mostrarListaCliente, setMostrarListaCliente] = useState(false);
+  const [registrandoClienteRapido, setRegistrandoClienteRapido] = useState(false);
 
   useEffect(() => {
     if (esVes(moneda)) setTasa(String(tasaVes));
@@ -139,6 +395,48 @@ export function TabIngresos({
     const f = filtro.trim().toUpperCase();
     return f ? clientes.filter((c) => c.nombre.toUpperCase().includes(f)) : clientes;
   }, [clientes, filtro]);
+
+  const clienteSeleccionadoObj = useMemo(
+    () => clientes.find((c) => String(c.id) === String(clienteId)) ?? null,
+    [clientes, clienteId]
+  );
+
+  const existeExactoEnGrupo = useMemo(() => {
+    const f = filtro.trim().toUpperCase();
+    if (!f) return true;
+    return clientes.some((c) => c.nombre.trim().toUpperCase() === f);
+  }, [clientes, filtro]);
+
+  const registrarClienteDirecto = async () => {
+    const nombreNuevo = filtro.trim().toUpperCase();
+    if (!nombreNuevo) return;
+    if (existeExactoEnGrupo) {
+      toast(`⚠️ El cliente "${nombreNuevo}" ya existe en este grupo. No puede haber dos clientes iguales en el mismo grupo.`, "warning");
+      return;
+    }
+    setRegistrandoClienteRapido(true);
+    try {
+      const res = await crearCliente({
+        nombre: nombreNuevo,
+        seudonimo: nombreNuevo,
+        modo_juego: "aval",
+        saldo_actual: 0,
+        aval: 0,
+      });
+      if (!res.ok) {
+        toast(res.error ?? "No se pudo registrar el cliente.", "error");
+        return;
+      }
+      toast(`✅ Cliente "${nombreNuevo}" registrado directamente en el grupo.`, "success");
+      await onHecho();
+      if (res.id) {
+        setClienteId(String(res.id));
+      }
+      setMostrarListaCliente(false);
+    } finally {
+      setRegistrandoClienteRapido(false);
+    }
+  };
 
   const guardar = async () => {
     if (!clienteId) return toast("Debe seleccionar un cliente.", "warning");
@@ -176,29 +474,78 @@ export function TabIngresos({
   };
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
-        <h2 className="mb-3 text-sm font-black uppercase text-slate-700">
-          <span className="mr-1 text-emerald-600">➕</span> Registrar ingreso
-        </h2>
-        <div className="space-y-2">
-          <div>
-            <label className={lbl}>Cliente *</label>
-            <input
-              value={filtro}
-              onChange={(e) => setFiltro(e.target.value.toUpperCase())}
-              placeholder="Buscar cliente…"
-              className={inp}
-            />
-            <select value={clienteId} onChange={(e) => setClienteId(e.target.value)} className={`${inp} mt-1 font-bold`}>
-              <option value="">— Seleccione —</option>
-              {visibles.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nombre} · saldo ${round2(c.saldo_actual)}
-                </option>
-              ))}
-            </select>
-          </div>
+    <div className="space-y-4">
+      <BandejaMovimientosOperadorPendientes bancos={bancos} onCompletado={onHecho} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+          <h2 className="mb-3 text-sm font-black uppercase text-slate-700">
+            <span className="mr-1 text-emerald-600">➕</span> Registrar ingreso
+          </h2>
+          <div className="space-y-2">
+            <div className="relative">
+              <label className={lbl}>Cliente * (búsqueda automática al escribir)</label>
+              <input
+                value={filtro}
+                onFocus={() => setMostrarListaCliente(true)}
+                onChange={(e) => {
+                  const val = e.target.value.toUpperCase();
+                  setFiltro(val);
+                  setMostrarListaCliente(true);
+                  const exacto = clientes.find((c) => c.nombre.trim().toUpperCase() === val.trim());
+                  setClienteId(exacto ? String(exacto.id) : "");
+                }}
+                placeholder="Escriba el nombre del cliente…"
+                className={`${inp} font-bold`}
+              />
+              {clienteSeleccionadoObj && (
+                <div className="mt-1 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-900">
+                  <span>✅ {clienteSeleccionadoObj.nombre}</span>
+                  <span>Saldo: ${round2(clienteSeleccionadoObj.saldo_actual).toFixed(2)}</span>
+                </div>
+              )}
+              {mostrarListaCliente && (filtro.trim().length > 0 || !clienteSeleccionadoObj) && (
+                <div className="mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                  {visibles.slice(0, 30).map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setClienteId(String(c.id));
+                        setFiltro(c.nombre);
+                        setMostrarListaCliente(false);
+                      }}
+                      className={`flex w-full items-center justify-between border-b border-slate-100 px-3 py-1.5 text-left text-xs font-bold transition hover:bg-emerald-50 ${
+                        String(clienteId) === String(c.id) ? "bg-emerald-50 text-emerald-900" : "text-slate-800"
+                      }`}
+                    >
+                      <span>{c.nombre}</span>
+                      <span className="font-mono text-[11px] text-slate-600">
+                        saldo ${round2(c.saldo_actual).toFixed(2)}
+                      </span>
+                    </button>
+                  ))}
+                  {filtro.trim().length > 0 && !existeExactoEnGrupo && (
+                    <div className="border-t border-amber-200 bg-amber-50 p-2.5">
+                      <p className="text-[10px] font-bold text-amber-900">
+                        El cliente <strong>«{filtro.trim()}»</strong> no existe en este grupo.
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          disabled={registrandoClienteRapido}
+                          onClick={() => void registrarClienteDirecto()}
+                          className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[10px] font-black text-white shadow-xs hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          {registrandoClienteRapido
+                            ? "Registrando..."
+                            : `➕ Registrar «${filtro.trim()}» en este grupo`}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           <div>
             <label className={lbl}>Tipo de operación</label>
             <select value={tipo} onChange={(e) => setTipo(e.target.value as TipoDeposito)} className={`${inp} font-bold`}>
@@ -420,6 +767,7 @@ export function TabIngresos({
           </div>
         </div>
       </div>
+      </div>
     </div>
   );
 }
@@ -527,6 +875,7 @@ export function TabCaja({
 
   return (
     <div className="space-y-4">
+      <BandejaMovimientosOperadorPendientes bancos={bancos} onCompletado={onHecho} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Saldo en caja</p>

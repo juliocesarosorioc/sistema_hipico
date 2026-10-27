@@ -286,14 +286,53 @@ export async function corregirJugadaYRecalcular(opts: {
   tasaComision?: number | null;
 }): Promise<ResRecalcular> {
   const rev = await revertirLiquidacionCarrera(opts);
+  const hipoDestino = opts.campos.hipodromo ? String(opts.campos.hipodromo).trim().toUpperCase() : opts.hipodromo;
+  const carreraDestino = opts.campos.carrera != null ? Number(opts.campos.carrera) : Number(opts.carrera);
+  const fechaDestino = opts.campos.fecha_carrera ? String(opts.campos.fecha_carrera).slice(0, 10) : opts.fecha;
+  const cambioDeCarrera =
+    hipoDestino.toUpperCase() !== String(opts.hipodromo).trim().toUpperCase() ||
+    carreraDestino !== Number(opts.carrera) ||
+    (fechaDestino && opts.fecha && fechaDestino !== String(opts.fecha).slice(0, 10));
+
+  if (cambioDeCarrera) {
+    await revertirLiquidacionCarrera({
+      hipodromo: hipoDestino,
+      carrera: carreraDestino,
+      fecha: fechaDestino,
+      tasaComision: opts.tasaComision,
+    });
+  }
+
   const edit = await editarJugada(opts.id, opts.campos, opts.motivo, opts.usuario);
   if (!edit.ok) {
     // Si la corrección falla, no se deja la carrera revertida: se re-liquida.
     const re = await reliquidar(opts);
+    if (cambioDeCarrera) {
+      await reliquidar({
+        hipodromo: hipoDestino,
+        carrera: carreraDestino,
+        fecha: fechaDestino,
+        tasaComision: opts.tasaComision,
+      });
+    }
     return { ...re, ok: false, motivo: `No se pudo corregir la jugada: ${edit.error ?? "error"}`, revertidos: rev.revertidos, revertidoTotal: rev.revertidoTotal, errores: [...rev.errores, edit.error ?? "error desconocido"] };
   }
   const re = await reliquidar(opts);
   const esp = await reliquidarEspecialesDeCarrera(opts);
+  if (cambioDeCarrera) {
+    await reliquidar({
+      hipodromo: hipoDestino,
+      carrera: carreraDestino,
+      fecha: fechaDestino,
+      tasaComision: opts.tasaComision,
+    });
+    await reliquidarEspecialesDeCarrera({
+      hipodromo: hipoDestino,
+      carrera: carreraDestino,
+      fecha: fechaDestino,
+      usuario: opts.usuario,
+    });
+  }
   return {
     ok: rev.ok && re.ok,
     motivo: `Corrección aplicada y carrera recalculada. ${re.motivo}${esp.motivo ? ` ${esp.motivo}` : ""}`,
