@@ -39,7 +39,10 @@ import {
   esJugadaAnulada,
   type JugadaReporte,
 } from "@/features/reportes/lib/reporte-diario";
-import { ReporteDiarioTabla } from "@/features/reportes/components/ReporteDiarioTabla";
+import {
+  GraficosReporteDiario,
+  ReporteDiarioTabla,
+} from "@/features/reportes/components/ReporteDiarioTabla";
 import { ModalRealizarJugadaUsuario } from "@/features/portal/components/ModalRealizarJugadaUsuario";
 import { SeccionJugadasPortal } from "@/features/portal/components/SeccionJugadasPortal";
 import { ModalJugadaNoRelacionada } from "@/features/portal/components/ModalJugadaNoRelacionada";
@@ -475,31 +478,20 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
             />
           </div>
 
-          {/* Vista principal con el Panel del Grupo (Logo en grande fijo a la derecha + QR Grupo + QR Perfil) */}
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
-            <div className="xl:col-span-9 min-w-0 space-y-4">
-              {tab === "reporte" ? <ReporteDiarioView sesion={sesion} /> : null}
-              {tab === "resumen" ? <ResumenView sesion={sesion} onCambio={onActualizar} /> : null}
-              {tab === "externos" ? <BitacoraExternaView cliente={sesion.cliente} /> : null}
-              {tab === "jugadas" || tab === "comprar" ? (
-                <SeccionJugadasPortal
-                  sesion={sesion}
-                  modalidadInicial="marcas"
-                  onJugadaRealizada={recargar}
-                />
-              ) : null}
-              {tab === "tickets" ? <MisTicketsView cliente={sesion.cliente} /> : null}
-            </div>
-
-            {/* Columna derecha fija: Logo del grupo en grande + QR de su grupo + QR de su perfil */}
-            <div className="xl:col-span-3 xl:sticky xl:top-4">
-              <PanelGrupoFijoDerecha
+          {/* Vista principal a todo el ancho. Los QR se eliminaron: en el reporte
+              su columna la ocupan los gráficos. */}
+          <div className="min-w-0 space-y-4">
+            {tab === "reporte" ? <ReporteDiarioView sesion={sesion} /> : null}
+            {tab === "resumen" ? <ResumenView sesion={sesion} onCambio={onActualizar} /> : null}
+            {tab === "externos" ? <BitacoraExternaView cliente={sesion.cliente} /> : null}
+            {tab === "jugadas" || tab === "comprar" ? (
+              <SeccionJugadasPortal
                 sesion={sesion}
-                nombreGrupo={nombreGrupoActivo}
-                logoUrl={logoGrupoUrl}
-                onAbrirPerfil={() => setPerfilAbierto(true)}
+                modalidadInicial="marcas"
+                onJugadaRealizada={recargar}
               />
-            </div>
+            ) : null}
+            {tab === "tickets" ? <MisTicketsView cliente={sesion.cliente} /> : null}
           </div>
         </main>
       </div>
@@ -638,165 +630,6 @@ function CapsulaUsuarioConTorta({
   );
 }
 
-/**
- * Generador determinístico de matriz QR en SVG (21x21 con patrones de posición
- * estándar ISO/IEC 18004) para acceso rápido a Grupo y Perfil del Jugador.
- */
-function QrSvgMatrix({ valor, size = 116 }: { valor: string; size?: number }) {
-  const N = 21;
-  const celdas = useMemo(() => {
-    const grid: boolean[][] = Array.from({ length: N }, () => Array(N).fill(false));
-    const reservado: boolean[][] = Array.from({ length: N }, () => Array(N).fill(false));
-
-    const ponerFinder = (r0: number, c0: number) => {
-      for (let r = -1; r <= 7; r++) {
-        for (let c = -1; c <= 7; c++) {
-          const rr = r0 + r;
-          const cc = c0 + c;
-          if (rr < 0 || rr >= N || cc < 0 || cc >= N) continue;
-          reservado[rr][cc] = true;
-          const borde7 = r >= 0 && r <= 6 && c >= 0 && c <= 6 && (r === 0 || r === 6 || c === 0 || c === 6);
-          const centro3 = r >= 2 && r <= 4 && c >= 2 && c <= 4;
-          grid[rr][cc] = borde7 || centro3;
-        }
-      }
-    };
-
-    ponerFinder(0, 0);
-    ponerFinder(0, N - 7);
-    ponerFinder(N - 7, 0);
-
-    for (let i = 8; i < N - 8; i++) {
-      reservado[6][i] = true;
-      reservado[i][6] = true;
-      grid[6][i] = i % 2 === 0;
-      grid[i][6] = i % 2 === 0;
-    }
-
-    let hash = 2166136261;
-    const texto = valor || "SISTEMA_HIPICO";
-    for (let i = 0; i < texto.length; i++) {
-      hash ^= texto.charCodeAt(i);
-      hash = Math.imul(hash, 16777619);
-    }
-
-    let idx = 0;
-    for (let r = 0; r < N; r++) {
-      for (let c = 0; c < N; c++) {
-        if (reservado[r][c]) continue;
-        const charCode = texto.charCodeAt(idx % texto.length);
-        const bit = ((hash >>> (idx % 24)) ^ (charCode * (r + 1) + c * 17)) & 1;
-        grid[r][c] = bit === 1;
-        idx++;
-      }
-    }
-    return grid;
-  }, [valor]);
-
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${N + 2} ${N + 2}`}
-      className="rounded-xl border border-slate-200 bg-white p-1 shadow-sm"
-      role="img"
-      aria-label="Código QR"
-    >
-      <rect width={N + 2} height={N + 2} fill="#ffffff" />
-      {celdas.map((fila, r) =>
-        fila.map((activo, c) =>
-          activo ? (
-            <rect key={`${r}-${c}`} x={c + 1} y={r + 1} width={1} height={1} fill="#0f172a" />
-          ) : null
-        )
-      )}
-    </svg>
-  );
-}
-
-/**
- * Panel derecho fijo para reportes de usuario: muestra de manera grande y fija
- * el logo del grupo con el que juega, el código QR de su grupo y el código QR
- * para acceder directamente a su perfil.
- */
-function PanelGrupoFijoDerecha({
-  sesion,
-  nombreGrupo,
-  logoUrl,
-  onAbrirPerfil,
-}: {
-  sesion: SesionPortal;
-  nombreGrupo: string;
-  logoUrl: string;
-  onAbrirPerfil: () => void;
-}) {
-  const origen = typeof window !== "undefined" ? window.location.origin + window.location.pathname : "https://juliocesarosorioc.github.io/sistema_hipico/portal";
-  const urlGrupo = `${origen}?grupo=${encodeURIComponent(nombreGrupo)}`;
-  const tokenCliente = String((sesion.cliente as unknown as { link_token?: string }).link_token ?? "");
-  const urlPerfil = tokenCliente
-    ? `${origen}?c=${encodeURIComponent(sesion.cliente.id)}&k=${encodeURIComponent(tokenCliente)}`
-    : `${origen}?c=${encodeURIComponent(sesion.cliente.id)}`;
-
-  const iniciales = nombreGrupo
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? "")
-    .join("");
-
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-md space-y-4">
-      {/* Espacio del logo: SOLO el logo del grupo, a tamaño completo de la imagen */}
-      <div className="overflow-hidden rounded-2xl ring-1 ring-slate-200">
-        {logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={logoUrl} alt={nombreGrupo} className="block h-auto max-h-56 w-full object-contain" />
-        ) : (
-          <div className="flex h-32 flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white">
-            <span className="text-3xl leading-none">🪙</span>
-            <span className="mt-1 text-lg font-black tracking-wider text-amber-300">
-              {iniciales || "CD"}
-            </span>
-          </div>
-        )}
-      </div>
-      <div className="text-center text-base font-black tracking-tight text-slate-900">
-        {nombreGrupo}
-      </div>
-      <div className="mt-0.5 text-center text-[11px] font-bold text-slate-500">
-        Jugador: {sesion.cliente.seudonimo || sesion.cliente.nombre}
-      </div>
-
-      {/* QR del Grupo y QR de Mi Perfil */}
-      <div className="grid grid-cols-2 xl:grid-cols-1 gap-3">
-        <div className="flex flex-col items-center rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center">
-          <div className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-slate-700">
-            📱 QR de tu Grupo
-          </div>
-          <QrSvgMatrix valor={urlGrupo} size={112} />
-          <div className="mt-1.5 text-[10px] font-bold text-slate-600">
-            {nombreGrupo}
-          </div>
-        </div>
-
-        <div className="flex flex-col items-center rounded-2xl border border-indigo-200 bg-indigo-50/50 p-3 text-center">
-          <div className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-900">
-            👤 QR Acceso a Mi Perfil
-          </div>
-          <QrSvgMatrix valor={urlPerfil} size={112} />
-          <button
-            type="button"
-            onClick={onAbrirPerfil}
-            className="mt-2 w-full rounded-xl bg-indigo-600 px-3 py-1.5 text-[11px] font-extrabold text-white shadow hover:bg-indigo-500 transition"
-          >
-            Abrir Mi Perfil
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Reporte del día (por hipódromo + carrera, en formato cliente)
 // ---------------------------------------------------------------------------
@@ -810,6 +643,13 @@ function PanelGrupoFijoDerecha({
  * si el portal todavía no devuelve `fecha_carrera`, cae a la fecha de venta.
  */
 function ReporteDiarioView({ sesion }: { sesion: SesionPortal }) {
+  // Igual que en el menú lateral: el logo y el nombre salen de la data del grupo.
+  const logoGrupoUrl = String(sesion.grupo?.logo_url ?? "").trim();
+  const nombreGrupo =
+    String(sesion.grupo?.nombre ?? "").trim() ||
+    String((sesion.cliente as unknown as { grupo?: string }).grupo ?? "").trim() ||
+    "Club del Dinero";
+
   const fechasDisponibles = useMemo(() => {
     const set = new Set<string>();
     for (const j of sesion.arbolTickets.jugadas) {
@@ -901,8 +741,25 @@ function ReporteDiarioView({ sesion }: { sesion: SesionPortal }) {
         </span>
       </div>
 
-      <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
-        <ReporteDiarioTabla datos={datos} perspectiva="cliente" />
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-12 xl:items-start">
+        <div className="min-w-0 rounded-2xl border border-line bg-white p-3 shadow-sm xl:col-span-9">
+          <ReporteDiarioTabla datos={datos} perspectiva="cliente" mostrarGraficos={false} />
+        </div>
+
+        {/* Los gráficos ocupan la columna donde antes estaban los QR */}
+        <div className="min-w-0 space-y-3 xl:col-span-3">
+          {logoGrupoUrl ? (
+            <div className="overflow-hidden rounded-2xl border border-line bg-white p-2 shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={logoGrupoUrl}
+                alt={nombreGrupo}
+                className="block h-auto max-h-40 w-full object-contain"
+              />
+            </div>
+          ) : null}
+          <GraficosReporteDiario datos={datos} perspectiva="cliente" />
+        </div>
       </div>
     </div>
   );
