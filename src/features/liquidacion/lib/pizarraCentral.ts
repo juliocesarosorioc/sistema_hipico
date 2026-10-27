@@ -10,7 +10,7 @@ import {
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 import { PREFIJO_WPS } from "@/features/motores/lib/wps";
 import { leerRetirosCarrera } from "@/features/carreras/lib/retiros";
-import type { ResultadoOficial } from "@/features/carreras/lib/carreras-dia";
+import { jornadaDeCarrera, type ResultadoOficial } from "@/features/carreras/lib/carreras-dia";
 import type { PizarraResultados } from "@/features/liquidacion/components/CargaResultadosModal";
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
 import { liquidarJugadasDeCarrera, type ResumenJugadas } from "@/features/liquidacion/lib/pagarYCerrar";
@@ -71,7 +71,7 @@ export async function guardarPizarraCentral(opts: {
   }
   if (!supabase) return { ok: true };
 
-  const fecha = opts.fecha ?? hoyLocal();
+  const fecha = opts.fecha || (await jornadaDeCarrera(hip, n)) || hoyLocal();
   const retirados = await leerRetirosCarrera(fecha, hip, n);
 
   // `ganadores` es la lista de llegadas (1º..8º) que consumen las jugadas de

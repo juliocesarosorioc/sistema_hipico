@@ -107,7 +107,7 @@ export async function leerProgramaPorFecha(fecha: string): Promise<ResPrograma> 
   try {
     const viaRpc = await supabase.rpc("club_leer_programa_dia");
     if (!viaRpc.error && Array.isArray(viaRpc.data) && viaRpc.data.length) {
-      const fila = viaRpc.data.find((x: Record<string, unknown>) => String(x.fecha) === fecha) ?? viaRpc.data[0];
+      const fila = viaRpc.data.find((x: Record<string, unknown>) => String(x.fecha ?? "").slice(0, 10) === fecha);
       return { ok: true, data: build(fila) };
     }
   } catch {

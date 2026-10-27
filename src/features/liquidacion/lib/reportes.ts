@@ -633,6 +633,19 @@ export function unirRetirados(...listas: Array<string[] | undefined | null>): st
   return [...set].sort((a, b) => Number(a) - Number(b));
 }
 
+export function filtrarRetiradosSinLlegada(
+  retirados: string[] | undefined | null,
+  puestos?: string[] | null,
+  puestosRaya?: string[] | null
+): string[] {
+  const enLlegada = new Set(
+    [...(puestos ?? []), ...(puestosRaya ?? [])]
+      .map((x) => String(x ?? "").trim())
+      .filter(Boolean)
+  );
+  return unirRetirados(retirados).filter((n) => !enLlegada.has(n));
+}
+
 /** Normaliza una fila de `resultados_carreras` a la pizarra que usa el motor. */
 export function normalizarPizarra(r: {
   ganadores?: unknown;
@@ -646,7 +659,11 @@ export function normalizarPizarra(r: {
   const div = r.dividendos;
   const dividendos =
     div && typeof div === "object" && !Array.isArray(div) ? (div as Record<string, number>) : null;
-  const retirados = extraerNumerosRetiradosDeTexto(r.retirados);
+  const retirados = filtrarRetiradosSinLlegada(
+    extraerNumerosRetiradosDeTexto(r.retirados),
+    puestos,
+    puestosRaya
+  );
   if (!puestos.length && !dividendos && !retirados.length) return null;
   return { puestos, puestosRaya, dividendos, retirados };
 }
@@ -709,11 +726,17 @@ export async function leerPizarra(fecha: string, hipodromo: string, carrera: num
         }
       }
     }
-    const retiradosFinal = unirRetirados(basePizarra?.retirados, retExtra);
+    const puestosFinal = basePizarra?.puestos ?? [];
+    const puestosRayaFinal = basePizarra?.puestosRaya ?? [];
+    const retiradosFinal = filtrarRetiradosSinLlegada(
+      unirRetirados(basePizarra?.retirados, retExtra),
+      puestosFinal,
+      puestosRayaFinal
+    );
     if (!basePizarra && !retiradosFinal.length) return null;
     return {
-      puestos: basePizarra?.puestos ?? [],
-      puestosRaya: basePizarra?.puestosRaya ?? [],
+      puestos: puestosFinal,
+      puestosRaya: puestosRayaFinal,
       dividendos: basePizarra?.dividendos ?? null,
       retirados: retiradosFinal,
     };
@@ -899,7 +922,7 @@ export async function leerJugadasModulosExtrasHipodromo(
   return extras;
 }
 
-/** Hipódromos con actividad del día (Gaceta + tablas fijas + tickets + resultados). */
+/** Hipódromos con actividad del día (Matriz carreras + Gaceta + tablas fijas + tickets). */
 async function hipodromosDelDia(fecha: string): Promise<string[]> {
   const set = new Set<string>();
   const prog = await leerProgramaPorFecha(fecha);
@@ -908,16 +931,21 @@ async function hipodromosDelDia(fecha: string): Promise<string[]> {
   const sig = sumarDias(fecha, 1);
   if (supabase) {
     try {
-      const { data: res, error } = await supabase
-        .from("resultados_carreras")
+      // MATRIZ MAESTRA DE CARRERAS: hipódromos oficialmente programados en la fecha.
+      const { data: carrs, error } = await supabase
+        .from("carreras")
         .select("hipodromo")
         .eq("fecha", fecha);
-      if (!error) for (const r of (res ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+      if (!error) {
+        for (const r of (carrs ?? []) as Array<{ hipodromo?: unknown }>) {
+          if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+        }
+      }
     } catch {
       /* sin tabla */
     }
     try {
-      // TABLAS FIJAS: fecha del evento, o creadas durante el día.
+      // TABLAS FIJAS: fecha del evento, o heredadas sin fecha creadas durante el día.
       const { data: tabs, error } = await supabase
         .from("tablas_fijas")
         .select("hipodromo")
@@ -925,7 +953,8 @@ async function hipodromosDelDia(fecha: string): Promise<string[]> {
       if (!error) for (const r of (tabs ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
       const { data: tabs2 } = await supabase
         .from("tablas_fijas")
-        .select("hipodromo")
+        .select("hipodromo, fecha")
+        .is("fecha", null)
         .gte("fecha_creacion", `${fecha}T00:00:00`)
         .lt("fecha_creacion", `${sig}T00:00:00`);
       for (const r of (tabs2 ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
@@ -1097,7 +1126,11 @@ export async function leerPizarrasHipodromo(fecha: string, hipodromo: string): P
       if (!k || nums.length === 0) return;
       const prev = porCarrera.get(k);
       if (prev) {
-        prev.retirados = unirRetirados(prev.retirados, nums);
+        prev.retirados = filtrarRetiradosSinLlegada(
+          unirRetirados(prev.retirados, nums),
+          prev.puestos,
+          prev.puestosRaya
+        );
       } else {
         porCarrera.set(k, { puestos: [], puestosRaya: [], dividendos: null, retirados: unirRetirados(nums) });
       }
@@ -1154,7 +1187,7 @@ export async function leerPizarrasPorFechas(fechas: string[]): Promise<Map<strin
           puestos: [...parcial.puestos],
           puestosRaya: [...parcial.puestosRaya],
           dividendos: parcial.dividendos,
-          retirados: [...parcial.retirados],
+          retirados: filtrarRetiradosSinLlegada(parcial.retirados, parcial.puestos, parcial.puestosRaya),
         });
       } else {
         if (!prev.puestos.length && parcial.puestos.length) {
@@ -1162,7 +1195,11 @@ export async function leerPizarrasPorFechas(fechas: string[]): Promise<Map<strin
           prev.puestosRaya = [...parcial.puestosRaya];
         }
         if (!prev.dividendos && parcial.dividendos) prev.dividendos = parcial.dividendos;
-        prev.retirados = unirRetirados(prev.retirados, parcial.retirados);
+        prev.retirados = filtrarRetiradosSinLlegada(
+          unirRetirados(prev.retirados, parcial.retirados),
+          prev.puestos,
+          prev.puestosRaya
+        );
       }
     }
   };
@@ -1414,8 +1451,12 @@ async function carreraReporte(
   const pizarra = datos ? datos.pizarra : await leerPizarra(fecha, hipodromo, numero);
   const tickets = datos ? datos.tickets : await leerTickets(fecha, hipodromo, numero);
   const enTablas = datos ? datos.enTablas : await carreraExisteEnTablas(fecha, hipodromo, numero);
-  // La carrera aparece si tiene jugadas, resultados o siquiera sus tablas
-  // publicadas (cargadas por el operador aunque aún no tengan tickets).
+  if (!tickets.length && !enTablas && !datos) {
+    const carrerasMaestro = await listarCarrerasPorDia(fecha, hipodromo);
+    if (!carrerasMaestro.includes(Number(numero))) return null;
+  }
+  // La carrera aparece si tiene jugadas, resultados de una carrera registrada en
+  // la jornada o sus tablas publicadas (cargadas por el operador aunque aún no tengan tickets).
   if (!tickets.length && !enTablas && !pizarra?.puestos.length) return null;
 
   const filas: FilaReporte[] = [];
@@ -1569,17 +1610,13 @@ async function carreraReporte(
   const puestos = pizarra?.puestos ?? [];
   const puestosRaya = pizarra?.puestosRaya ?? [];
   const pizarraRaya = hayDistanciamientoPizarra(puestos, puestosRaya) ? puestosRaya.join(" · ") : null;
-  const retDeTickets = tickets
-    .filter((t) => t.anulada !== true && txt(t.estado).toUpperCase() === "RETIRADO")
-    .map((t) => txt(t.ejemplar_numero) || txt(t.caballo))
-    .filter((n) => /^\d+$/.test(n));
   return {
     numero,
     hipodromo,
     fecha,
     pizarra: puestos.length ? puestos.join(" · ") : null,
     pizarraRaya,
-    retirados: unirRetirados(pizarra?.retirados, retDeTickets),
+    retirados: filtrarRetiradosSinLlegada(pizarra?.retirados, puestos, puestosRaya),
     filas,
     subtotal,
   };
@@ -1657,14 +1694,13 @@ async function hipodromoReporte(fecha: string, hipodromo: string, tasaComision?:
     const n = Number(k);
     if (Number.isFinite(n) && n > 0) setNumeros.add(n);
   }
-  for (const k of pizarrasPorCarrera.keys()) {
-    const n = Number(k);
-    if (Number.isFinite(n) && n > 0) setNumeros.add(n);
-  }
   for (const k of tablasPorCarrera) {
     const n = Number(k);
     if (Number.isFinite(n) && n > 0) setNumeros.add(n);
   }
+  // NUNCA inventar carreras desde filas huérfanas de `resultados_carreras`
+  // si la carrera no existe en el catálogo maestro (`carreras`), en `tablas_fijas`
+  // ni tiene jugadas reales (`ticketsPorCarrera`) en esa fecha.
   const numeros = [...setNumeros].sort((a, b) => a - b);
   for (const numero of numeros) {
     const k = claveCarrera(numero);

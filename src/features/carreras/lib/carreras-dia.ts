@@ -95,6 +95,7 @@ export async function leerResultadoOficial(
   const hip = String(hipodromo ?? "").trim().toUpperCase();
   if (!hip) return null;
   try {
+    const fechaEfectiva = fecha || (await jornadaDeCarrera(hip, carrera));
     const q = supabase
       .from("resultados_carreras")
       .select("fecha, hipodromo, carrera, ganadores, orden_llegada, dividendos")
@@ -102,7 +103,7 @@ export async function leerResultadoOficial(
       .ilike("hipodromo", `%${hip}%`)
       .order("fecha", { ascending: false })
       .limit(1);
-    const { data, error } = fecha ? await q.eq("fecha", fecha) : await q;
+    const { data, error } = fechaEfectiva ? await q.eq("fecha", fechaEfectiva) : await q;
     if (error || !data?.length) return null;
     const r = data[0] as { fecha?: unknown; hipodromo?: unknown; carrera?: unknown; ganadores?: unknown; orden_llegada?: unknown; dividendos?: unknown };
     // `orden_llegada` es [{numero,puesto}] y `ganadores` es text[]: ambos se

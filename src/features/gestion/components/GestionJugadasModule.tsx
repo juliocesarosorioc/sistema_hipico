@@ -1299,6 +1299,9 @@ const hipodromosDelDia = useMemo(() => {
   }, [centralDeCarrera, ultimaPizarra, pizarraPuestosActual]);
 
   const retiradosPizarraActual = useMemo<string[]>(() => {
+    const enLlegada = new Set(
+      [...pizarraPuestosActual, ...pizarraRayaActual].map((x) => String(x).trim()).filter(Boolean)
+    );
     const deCentral = (centralDeCarrera?.retirados ?? []).map((x) => String(x).trim()).filter(Boolean);
     const deCaballos = caballosDeCarrera
       .filter((c) => c.retirado)
@@ -1310,14 +1313,10 @@ const hipodromosDelDia = useMemo(() => {
       .map((c) => String(c.numero).trim())
       .filter(Boolean);
     const deInput = parsearRetirados(retirados).map((x) => String(x).trim()).filter(Boolean);
-    const deTickets = jugadasGuardadas
-      .filter((j) => !j.anulada && String(j.estado ?? "").trim().toUpperCase() === "RETIRADO")
-      .map((j) => String(j.ejemplar_numero ?? j.caballo ?? "").trim())
-      .filter((n) => /^\d+$/.test(n));
     return parsearRetirados(
-      [...deCentral, ...deCaballos, ...deTablaOficial, ...deTablaCaballos, ...deInput, ...deTickets].join(",")
-    );
-  }, [centralDeCarrera, caballosDeCarrera, tablaDeCarrera, retirados, jugadasGuardadas]);
+      [...deCentral, ...deCaballos, ...deTablaOficial, ...deTablaCaballos, ...deInput].join(",")
+    ).filter((n) => !enLlegada.has(n));
+  }, [centralDeCarrera, caballosDeCarrera, tablaDeCarrera, retirados, pizarraPuestosActual, pizarraRayaActual]);
 
   /** Filas del panel: persistidas (✅) + ventas de la sesión sin duplicar. */
   const filasPreview = useMemo(
@@ -3886,6 +3885,7 @@ const hipodromosDelDia = useMemo(() => {
               const cen = await guardarPizarraCentral({
                 hipodromo,
                 carrera,
+                fecha,
                 cargado_por: "GESTION-JUGADAS",
                 r,
                 // El resultado central se reescribe; la plata la mueve el
@@ -3939,6 +3939,7 @@ const hipodromosDelDia = useMemo(() => {
             const cen = await guardarPizarraCentral({
               hipodromo,
               carrera,
+              fecha,
               cargado_por: "GESTION-JUGADAS",
               r,
               // La liquidación (tablas fijas, marcas, dupletas y saldos) la corre

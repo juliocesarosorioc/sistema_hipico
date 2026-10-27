@@ -178,6 +178,7 @@ export default function ReporteLiquidacionModal({
         if (
           hipodromoInicial &&
           carreraInicial &&
+          (!fechaInicial || fecha === fechaInicial) &&
           !delDia.some(
             (c) =>
               String(c.hipodromo || "").trim().toUpperCase() ===
@@ -214,7 +215,13 @@ export default function ReporteLiquidacionModal({
 
   // Cascada fecha → hipódromo.
   useEffect(() => {
-    if (!hipodromosDisp.length) return;
+    if (!hipodromosDisp.length) {
+      setHipodromo("");
+      setCarrera(0);
+      setDetalle(null);
+      setDatos(null);
+      return;
+    }
     setHipodromo((prev) => (prev && hipodromosDisp.includes(prev) ? prev : hipodromosDisp[0]));
   }, [hipodromosDisp]);
 
@@ -230,7 +237,12 @@ export default function ReporteLiquidacionModal({
 
   // Cascada hipódromo → carrera.
   useEffect(() => {
-    if (!carrerasDisp.length) return;
+    if (!carrerasDisp.length) {
+      setCarrera(0);
+      setDetalle(null);
+      setDatos(null);
+      return;
+    }
     setCarrera((prev) => (prev && carrerasDisp.includes(prev) ? prev : carrerasDisp[0]));
   }, [carrerasDisp]);
 

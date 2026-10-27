@@ -126,6 +126,8 @@ export function BarraCarrerasLiquidadas({
     }
 
     for (const t of tablas) {
+      const fechaTabla = String(t.fecha || t.fecha_creacion || "").slice(0, 10);
+      if (fechaTabla && fechaTabla !== fecha) continue;
       if (hipo && hipoKey(t.hipodromo) !== hipo) continue;
       const esCerrada = Boolean(t.cerrada) || String(t.estado ?? "").toLowerCase() === "cerrada";
       if (!esCerrada) continue;

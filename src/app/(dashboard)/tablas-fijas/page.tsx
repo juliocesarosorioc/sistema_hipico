@@ -59,6 +59,7 @@ export default function TablasFijasPage() {
           const cen = await guardarPizarraCentral({
             hipodromo: t.hipodromo ?? "",
             carrera: t.carrera ?? 0,
+            fecha: t.fecha ? String(t.fecha).slice(0, 10) : undefined,
             cargado_por: "TABLAS-FIJAS",
             r,
           });
