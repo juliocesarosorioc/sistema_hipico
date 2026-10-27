@@ -597,6 +597,25 @@ export async function revertirResultadoCentral(input: {
 
   if (!supabase) return { ok: true };
   const sdb = supabase;
+  // Asegurar que tanto `resultados_carreras` como `carreras` vuelvan a "Programada"
+  try {
+    await sdb
+      .from("resultados_carreras")
+      .update({
+        estado: "Programada",
+        ganadores: [],
+        aplicado_a_tablas: false,
+        orden_llegada: null,
+        dividendos: null,
+        premio_oficial: null,
+        premio_recalculado: null,
+      })
+      .eq("fecha", f)
+      .ilike("hipodromo", hip)
+      .eq("carrera", carrera);
+  } catch {
+    /* best-effort */
+  }
   // 1) RPC dedicada (permiso de reversión validado en el servidor).
   try {
     const { error } = await sdb.rpc("club_revertir_resultado_carrera", {

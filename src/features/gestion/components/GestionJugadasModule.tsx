@@ -253,6 +253,7 @@ export function GestionJugadasModule() {
    */
   useEffect(() => {
     setCarreraConfirmada(false);
+    setJugadasPorCarrera([]);
   }, [hipodromo, fecha]);
 
   /** Opciones del Autocomplete CLIENTE 1/CLIENTE 2 (value = nombre real en BD). */
@@ -1222,6 +1223,17 @@ const hipodromosDelDia = useMemo(() => {
   const filasPreviewEnVivo = useMemo(() => filasPreview.filter((f) => !f.anulada && !f.esAdelantada), [filasPreview]);
   const filasPreviewAdelantadas = useMemo(() => filasPreview.filter((f) => !f.anulada && f.esAdelantada), [filasPreview]);
 
+  useEffect(() => {
+    if (cargandoGuardadas) return;
+    const tieneActivas = filasPreview.some((f) => !f.anulada);
+    setJugadasPorCarrera((prev) => {
+      if (tieneActivas) {
+        return prev.includes(carrera) ? prev : [...prev, carrera];
+      }
+      return prev.includes(carrera) ? prev.filter((c) => c !== carrera) : prev;
+    });
+  }, [filasPreview, carrera, cargandoGuardadas]);
+
   // Nombre del grupo "cabecera" de la relación: el grupo de WhatsApp vinculado
   // (p. ej. "MVP FUSION"), que es lo que la casa pone en el encabezado del
   // mensaje. Si todavía no hay grupo vinculado, cae al hipódromo. En el modal se
@@ -1362,11 +1374,6 @@ const hipodromosDelDia = useMemo(() => {
    */
   const consolidarManual = async () => {
     await asegurarHipodromo(hipodromo).catch(() => null);
-    const r = await registrarCarreraProgramada({ fecha, hipodromo, carrera }).catch(() => null);
-    if (r && !r.ok) {
-      setAviso("⚠️ No se pudo persistir la carrera manual en BD: " + (r.error ?? "desconocido"));
-    }
-    setCarrerasPorDia((c) => (c.includes(carrera) ? c : [...c, carrera].sort((a, b) => a - b)));
   };
 
   /**
@@ -1806,6 +1813,8 @@ const hipodromosDelDia = useMemo(() => {
       setUltimaPizarra(null);
       if (filasPreview.some((f) => !f.anulada) || r.tickets > 0) {
         setJugadasPorCarrera((prev) => (prev.includes(carrera) ? prev : [...prev, carrera]));
+      } else {
+        setJugadasPorCarrera((prev) => prev.filter((c) => c !== carrera));
       }
       recargarRegistroCentral();
       void recargarClientes();
@@ -2140,9 +2149,6 @@ const hipodromosDelDia = useMemo(() => {
             onSeleccionar={(n) => {
               setCarrera(n);
               setCarreraConfirmada(true);
-              if (!carrerasPorDia.includes(n)) {
-                setCarrerasPorDia((prev) => [...new Set([...prev, n])].sort((a, b) => a - b));
-              }
             }}
           />
         </>

@@ -29,10 +29,13 @@ type Props = {
 export type EstadoCarrera = "inactiva" | "abierta" | "con_jugadas" | "cerrada";
 
 const COLORES: Record<EstadoCarrera, { chip: string; label: string; txt: string }> = {
-  inactiva: { chip: "border-line bg-surface text-slate-400", label: "Sin registro", txt: "text-slate-400" },
-  // Registrada SIN jugadas = VERDE (condición del dueño). Antes iba en azul.
+  // Sin carrera registrada y sin jugadas = AZUL.
+  inactiva: { chip: "border-sky-500/60 bg-sky-500/15 text-sky-700", label: "Sin registro", txt: "text-sky-700" },
+  // Registrada SIN jugadas = VERDE.
   abierta: { chip: "border-emerald-500/60 bg-emerald-500/15 text-emerald-700", label: "Registrada", txt: "text-emerald-700" },
+  // Con jugadas cargadas (no liquidada) = AMARILLO.
   con_jugadas: { chip: "border-warning-500/70 bg-warning-500/20 text-warning-700", label: "Con jugadas", txt: "text-warning-700" },
+  // Liquidada = ROJO.
   cerrada: { chip: "border-danger-500/70 bg-danger-500/15 text-danger-600", label: "Liquidada", txt: "text-danger-600" },
 };
 
@@ -88,8 +91,9 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
       try {
         const { data } = await sb
           .from("tickets_apuestas")
-          .select("carrera, hipodromo, estado, anulada")
-          .or(filtroDiaJornada(dia))
+          .select("carrera, hipodromo, estado, anulada, nota_auditoria, fecha_registro")
+          .ilike("hipodromo", `%${hipodromo.trim()}%`)
+          .order("id", { ascending: false })
           .limit(3000);
         if (!vivo) return;
         const setNums = new Set<number>();
@@ -98,6 +102,16 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
           const est = String(r.estado ?? "").trim().toLowerCase();
           if (est.startsWith("anul")) continue;
           if (claveHipodromo(String(r.hipodromo ?? "")) !== claveHipo) continue;
+          let fechaTicket = String(r.fecha_registro ?? "").slice(0, 10);
+          try {
+            const nota = typeof r.nota_auditoria === "string" ? JSON.parse(r.nota_auditoria) : r.nota_auditoria;
+            if (nota && typeof nota === "object" && (nota as Record<string, unknown>).fecha_carrera) {
+              fechaTicket = String((nota as Record<string, unknown>).fecha_carrera).slice(0, 10);
+            }
+          } catch {
+            /* ignore */
+          }
+          if (fechaTicket && fechaTicket !== dia) continue;
           const num = Number(r.carrera);
           if (Number.isFinite(num) && num > 0) setNums.add(num);
         }
@@ -113,18 +127,25 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
     // TODO el cruce va acotado a `fecha`: una tabla o un registro del día
     // anterior con el mismo (hipódromo, carrera) jamás puede pintar el chip de HOY.
     const tabla = tablas.find(
-      (t) => hipoKey(t.hipodromo) === hipo && t.carrera === n && (diaDeLaTabla(t) || fecha) === fecha
+      (t) => hipoKey(t.hipodromo) === hipo && t.carrera === n && diaDeLaTabla(t) === fecha
     );
     const registro = carrerasDia.find(
       (c: CarreraDelDia) => hipoKey(c.hipodromo) === hipo && c.carrera === n && c.fecha === fecha
     );
-    const registrada = carreras.includes(n);
     // El estado CENTRAL manda: `aplicado_a_tablas`/`ganadores` los escribe la
     // liquidación en `resultados_carreras`, compartida por todos. Si el central
     // explícitamente indica que la carrera está "programada" (p. ej. tras reversar
     // la liquidación), una copia vieja en localStorage (`tabla.cerrada` o `registro.estado`)
     // NO debe forzarla a roja.
     const central = centrales.find((c) => Number(c.carrera) === n);
+    const esPlaceholderManualSinCaballos =
+      central != null &&
+      String(central.origen ?? "").toLowerCase() === "manual" &&
+      (central.caballos?.length ?? 0) === 0 &&
+      !central.hora &&
+      !central.distancia;
+    const registrada = (carreras.includes(n) && !esPlaceholderManualSinCaballos) || Boolean(tabla);
+
     const estCentral = String(central?.estado ?? "").toLowerCase();
     const centralReabierta =
       central != null &&
@@ -146,8 +167,8 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
       tickets.some(
         (tk) =>
           tk.carrera === n &&
-          (!tk.hipodromo || hipoKey(tk.hipodromo) === hipo) &&
-          (!tk.fecha || tk.fecha === fecha)
+          Boolean(tk.hipodromo && hipoKey(tk.hipodromo) === hipo) &&
+          Boolean(tk.fecha && tk.fecha === fecha)
       ) ||
       Boolean(carrerasConJugadas?.includes(n)) ||
       carrerasBdConJugadas.includes(n) ||
@@ -156,11 +177,12 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
 
     if (liquidada) return { estado: "cerrada", tieneVentas: conVentas };
     if (conVentas) return { estado: "con_jugadas", tieneVentas: true };
-    if (registrada || tabla) return { estado: "abierta", tieneVentas: false };
+    if (registrada) return { estado: "abierta", tieneVentas: false };
     return { estado: "inactiva", tieneVentas: false };
   };
 
-  const maxCarrera = carreras.length ? Math.max(...carreras) : 0;
+  const todosNumeros = [...carreras, ...carrerasBdConJugadas, ...(carrerasConJugadas ?? [])];
+  const maxCarrera = todosNumeros.length ? Math.max(...todosNumeros) : 0;
   const total = manual ? Math.max(MANUAL_TOTAL, maxCarrera, activa ?? 0) : maxCarrera;
   const vacio = !manual && maxCarrera === 0;
 
@@ -168,12 +190,12 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
     <div className="rounded-2xl border border-line bg-surface p-3">
       <div className="mb-2 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-500">
         <span className="font-black uppercase tracking-wide"><span className="normal-case">{nombreMostrar}</span> · CARRERAS DEL {fecha}</span>
-        <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full border border-line bg-surface" /> Sin registro</span>
+        <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-sky-500" /> Sin registro</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Registrada (sin jugadas)</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-warning-500" /> Con jugadas</span>
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-danger-500" /> Liquidada</span>
         {manual && (
-          <span className="rounded-full bg-cyan-500/15 px-2 py-0.5 font-black uppercase text-cyan-700">
+          <span className="rounded-full bg-sky-500/15 px-2 py-0.5 font-black uppercase text-sky-700">
             ✍️ Modo Manual — carreras sin Gaceta habilitadas
           </span>
         )}
@@ -186,15 +208,10 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
       ) : (
         <div className="flex flex-wrap gap-1.5">
           {Array.from({ length: total }, (_, i) => i + 1).map((n) => {
-            const existe = manual || carreras.includes(n);
-            const { estado } = porCarrera(n);
+            const { estado, tieneVentas } = porCarrera(n);
+            const existe = manual || carreras.includes(n) || tieneVentas;
             const c = COLORES[estado];
             const activaEsta = activa !== null && n === activa;
-            // En Modo Manual una carrera puede NO estar registrada en BD. El
-            // estilo cian "sin registro" es SOLO para ese caso: si la carrera ya
-            // tiene jugadas (amarillo) o ya se liquidó (rojo), manda el estado.
-            // Antes el cian pisaba SIEMPRE, así que una manual con jugadas se
-            // veía igual que una vacía y el operador no sabía dónde ya cargó.
             const manualSinRegistro = manual && !carreras.includes(n) && estado === "inactiva";
             return (
               <button
@@ -202,13 +219,11 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
                 type="button"
                 onClick={() => existe && onSeleccionar(n)}
                 disabled={!existe}
-                title={existe ? (manualSinRegistro ? `C${n} (manual — sin registro en BD)` : c.label) : `C${n} sin registro para ${fecha}`}
+                title={existe ? (manualSinRegistro ? `C${n} (sin carrera registrada)` : c.label) : `C${n} sin registro para ${fecha}`}
                 className={`grid h-9 w-9 place-items-center rounded-lg border-2 text-xs font-black transition-transform ${
                   !existe
-                    ? "cursor-not-allowed border-dashed border-line bg-gray-50 text-slate-300"
-                    : manualSinRegistro
-                      ? "hover:scale-105 border-dashed border-cyan-400 bg-cyan-50 text-cyan-700"
-                      : `hover:scale-105 ${c.chip}`
+                    ? `cursor-not-allowed ${COLORES.inactiva.chip} opacity-75`
+                    : `hover:scale-105 ${c.chip}`
                 } ${activaEsta ? "ring-4 ring-indigo-500 ring-offset-2" : ""}`}
               >
                 {n}

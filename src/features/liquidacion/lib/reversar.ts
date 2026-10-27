@@ -120,6 +120,25 @@ async function revertirEspecialesDeCarrera(opts: {
   out.dupletas = resumen.porModalidad.DUPLETA.tickets;
 
   const updates: Promise<unknown>[] = [];
+  let deltaReversionMarcas = 0;
+
+  for (const f of filas) {
+    if (modalidadDeTicket(f) === "MARCA") {
+      const est = String(f.estado ?? "").trim().toUpperCase();
+      const monto = NUM(f.monto_jugado);
+      const tasa = f.comision_porcentaje != null && String(f.comision_porcentaje).trim() !== "" ? NUM(f.comision_porcentaje) : 5;
+      if (est === "GANADOR") {
+        const pagoMarca = Math.round(((monto * 5) / 6) * 100) / 100;
+        const comGrupo = Math.round(pagoMarca * (tasa / 100) * 100) / 100;
+        deltaReversionMarcas = Math.round((deltaReversionMarcas + (pagoMarca + comGrupo)) * 100) / 100;
+      } else if (est === "PERDEDOR") {
+        const comGrupo = Math.round(monto * (tasa / 100) * 100) / 100;
+        const cobroNeto = Math.round((monto - comGrupo) * 100) / 100;
+        deltaReversionMarcas = Math.round((deltaReversionMarcas - cobroNeto) * 100) / 100;
+      }
+    }
+  }
+
   for (const op of plan) {
     const credito = op.credito;
     if (credito > 0 && op.clienteId != null) {
@@ -149,6 +168,31 @@ async function revertirEspecialesDeCarrera(opts: {
       })
     );
   }
+
+  if (Math.abs(deltaReversionMarcas) >= 0.005) {
+    updates.push(
+      (async () => {
+        try {
+          const { data: cliM } = await sdb
+            .from("clientes")
+            .select("id, saldo_actual")
+            .ilike("nombre", "MARCAS")
+            .limit(1)
+            .maybeSingle();
+          if (cliM?.id != null) {
+            const act = NUM((cliM as Record<string, unknown>).saldo_actual);
+            await sdb
+              .from("clientes")
+              .update({ saldo_actual: Math.round((act + deltaReversionMarcas) * 100) / 100 })
+              .eq("id", cliM.id as never);
+          }
+        } catch {
+          /* best-effort */
+        }
+      })()
+    );
+  }
+
   await Promise.all(updates);
   return out;
 }

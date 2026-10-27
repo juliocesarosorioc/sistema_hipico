@@ -233,7 +233,7 @@ export async function listarClientesVenta(): Promise<ClienteVenta[]> {
       activo
     );
     cacheClientesGrupo = activo;
-    return clientes;
+    return cacheClientes;
   } catch {
     // No se cachea un fallo (RLS/red): devolver vacio y permitir reintento.
     return [];

@@ -265,6 +265,16 @@ export async function venderMarca(v: VentaMarcas): Promise<ResultadoVentaMarcas>
     return { ok: false, error: /club_vender_marca|not found|404/i.test(texto) ? MENSAJE_SIN_RPC : texto };
   }
   const r = (data ?? {}) as Record<string, unknown>;
+  if (r.ticket_id != null) {
+    try {
+      await supabase
+        .from("tickets_apuestas")
+        .update({ cliente_consigue_nombre: "MARCAS" })
+        .eq("id", r.ticket_id as never);
+    } catch {
+      /* best-effort */
+    }
+  }
   return {
     ok: true,
     ticketId: r.ticket_id as number | undefined,
@@ -311,31 +321,100 @@ export type ResultadoLiquidacionMarcas = {
  * usuario no ve los tickets (RLS), se devuelve vacio y la RPC sigue siendo la
  * que decide.
  */
-async function faltantesParaLiquidarMarcas(
+/**
+ * Extrae los rivales de una jugada de Marca desde `nota_auditoria.rivales_snapshot`
+ * o como respaldo desde el texto de `caballo` / `nombre_jugada` (ej. "2 x 8", "MARCA 2 vs 8").
+ */
+function extraerRivalesTicketMarca(t: Record<string, unknown>, cabElegido: string): string[] {
+  let nota: unknown = t.nota_auditoria;
+  if (typeof nota === "string") {
+    try {
+      nota = JSON.parse(nota);
+    } catch {
+      nota = null;
+    }
+  }
+  if (nota && typeof nota === "object" && Array.isArray((nota as Record<string, unknown>).rivales_snapshot)) {
+    const snap = ((nota as Record<string, unknown>).rivales_snapshot as unknown[])
+      .map((r) => numeroCaballoMarca(r))
+      .filter((n): n is string => Boolean(n && n !== cabElegido));
+    if (snap.length > 0) return snap;
+  }
+  const numsCab = (String(t.caballo ?? "").match(/\d+/g) ?? []).map((x) => x.trim());
+  const rivalesCab = numsCab.filter((n, idx) => idx > 0 && n !== cabElegido);
+  if (rivalesCab.length > 0) return rivalesCab;
+  const numsJug = (String(t.nombre_jugada ?? "").match(/\d+/g) ?? []).map((x) => x.trim());
+  return numsJug.filter((n) => n !== cabElegido);
+}
+
+/**
+ * Liquida las marcas de una carrera contra el orden de llegada / pizarra oficial,
+ * ejecutando el PAGO (al jugador ganador) y COBRO (al usuario del sistema `MARCAS`)
+ * según el resultado de la carrera.
+ */
+export async function liquidarMarcas(
   hipodromo: string,
   carrera: number,
   fecha: string
-): Promise<string[]> {
-  if (!supabase) return [];
+): Promise<ResultadoLiquidacionMarcas> {
+  if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
+  try {
+    exigirCapacidad("marcas:fn_liquidar_marcas");
+  } catch (e) {
+    return { ok: false, error: (e as Error).message } as ResultadoLiquidacionMarcas;
+  }
+
+  const sdb = supabase;
   const hip = String(hipodromo ?? "").trim().toUpperCase();
   const dia = String(fecha ?? "").slice(0, 10);
   const nCarrera = Number(carrera) || 0;
-  if (!hip || !dia || !nCarrera) return [];
+  if (!hip || !dia || !nCarrera) {
+    return { ok: false, error: "Hipódromo, fecha o carrera inválidos." };
+  }
 
-  const { data: res, error: er } = await supabase
+  // 1) Leer resultado oficial de la carrera (`orden_llegada`, `ganadores`, `retirados`, `caballos`).
+  const { data: res, error: er } = await sdb
     .from("resultados_carreras")
-    .select("orden_llegada,retirados,caballos")
-    .ilike("hipodromo", hip)
+    .select("orden_llegada, ganadores, retirados, caballos")
+    .ilike("hipodromo", `%${hip}%`)
     .eq("fecha", dia)
     .eq("carrera", nCarrera)
     .maybeSingle();
-  if (er || !res) return [];
-  const orden = Array.isArray(res.orden_llegada)
-    ? (res.orden_llegada as Array<{ numero: string; puesto: number | string }>)
-    : [];
-  if (!orden.length) return [];
 
-  // Retirados: los flags por caballo y el texto libre, igual que la RPC.
+  if (er || !res) {
+    return { ok: false, error: er?.message ?? "La carrera aún no tiene resultado cargado." };
+  }
+
+  const puestos = new Map<string, number>();
+  const ordenArr = Array.isArray(res.orden_llegada)
+    ? (res.orden_llegada as Array<unknown>)
+    : [];
+  ordenArr.forEach((item, idx) => {
+    if (item && typeof item === "object") {
+      const obj = item as Record<string, unknown>;
+      const num = String(obj.numero ?? "").trim();
+      const p = Number(obj.puesto ?? idx + 1);
+      if (num && Number.isFinite(p) && p > 0 && !puestos.has(num)) {
+        puestos.set(num, p);
+      }
+    } else {
+      const num = String(item ?? "").trim();
+      if (num && !puestos.has(num)) {
+        puestos.set(num, idx + 1);
+      }
+    }
+  });
+  if (puestos.size === 0 && Array.isArray(res.ganadores)) {
+    (res.ganadores as Array<unknown>).forEach((g, idx) => {
+      const num = String(g ?? "").trim();
+      if (num && !puestos.has(num)) puestos.set(num, idx + 1);
+    });
+  }
+
+  if (puestos.size === 0) {
+    return { ok: false, error: "La carrera no tiene orden de llegada ni pizarra oficial cargada." };
+  }
+
   const retirados = new Set<string>();
   for (const c of (Array.isArray(res.caballos) ? res.caballos : []) as Array<Record<string, unknown>>) {
     if (c.retirado === true) {
@@ -345,79 +424,238 @@ async function faltantesParaLiquidarMarcas(
   }
   for (const m of String(res.retirados ?? "").match(/\d+/g) ?? []) retirados.add(m);
 
-  const { data: tickets, error: et } = await supabase
-    .from("v_jugadas_carrera")
-    .select("caballo,ejemplar_numero,nota_auditoria")
-    .ilike("hipodromo", hip)
+  // 2) Leer tickets de MARCA pendientes de la carrera.
+  const { data: rawTickets, error: et } = await sdb
+    .from("tickets_apuestas")
+    .select("*")
+    .ilike("hipodromo", `%${hip}%`)
     .eq("carrera", nCarrera)
-    .eq("estado", "Pendiente")
-    .ilike("nombre_jugada", "MARCA %")
-    .or(filtroDiaJornada(dia));
-  if (et || !tickets?.length) return [];
+    .ilike("nombre_jugada", "MARCA%")
+    .limit(1000);
 
-  const requeridos: string[] = [];
-  for (const t of tickets as Array<Record<string, unknown>>) {
-    const cab = numeroCaballoMarca(t.caballo, t.ejemplar_numero);
-    if (cab && !retirados.has(cab)) requeridos.push(cab);
+  if (et) return { ok: false, error: et.message };
 
-    let nota: unknown = t.nota_auditoria;
-    if (typeof nota === "string") {
-      try {
-        nota = JSON.parse(nota);
-      } catch {
-        nota = null;
+  const ticketsPendientes = ((rawTickets ?? []) as Array<Record<string, unknown>>).filter((t) => {
+    if (Boolean(t.anulada)) return false;
+    const est = String(t.estado ?? "").trim().toUpperCase();
+    if (est !== "PENDIENTE" && est !== "ACTIVA" && est !== "ABIERTA" && est !== "") return false;
+    let fechaTicket = String(t.fecha_registro ?? "").slice(0, 10);
+    try {
+      const nota = typeof t.nota_auditoria === "string" ? JSON.parse(t.nota_auditoria) : t.nota_auditoria;
+      if (nota && typeof nota === "object" && (nota as Record<string, unknown>).fecha_carrera) {
+        fechaTicket = String((nota as Record<string, unknown>).fecha_carrera).slice(0, 10);
+      }
+    } catch {
+      /* ignore */
+    }
+    return !fechaTicket || fechaTicket === dia;
+  });
+
+  if (ticketsPendientes.length === 0) {
+    return { ok: true, liquidados: 0, ganadores: 0, perdedores: 0, reintegrados: 0, gananciaTotal: 0 };
+  }
+
+  // 3) Asegurar usuario `MARCAS` en `public.clientes` para imputarle el pago/cobro.
+  let idUsuarioMarcas: string | number | null = null;
+  let saldoUsuarioMarcas = 0;
+  try {
+    const { data: cliMarcas } = await sdb
+      .from("clientes")
+      .select("id, saldo_actual")
+      .ilike("nombre", "MARCAS")
+      .limit(1)
+      .maybeSingle();
+    if (cliMarcas?.id != null) {
+      idUsuarioMarcas = cliMarcas.id as string | number;
+      saldoUsuarioMarcas = Number(cliMarcas.saldo_actual ?? 0) || 0;
+    } else {
+      const grupoSample = ticketsPendientes.find((t) => t.grupo_cobro_id != null)?.grupo_cobro_id ?? null;
+      const { data: creado } = await sdb
+        .from("clientes")
+        .insert([
+          {
+            nombre: "MARCAS",
+            seudonimo: "MARCAS",
+            modo_juego: "libre",
+            libre: true,
+            saldo_actual: 0,
+            aval: 0,
+            ...(grupoSample != null ? { grupo_id: grupoSample } : {}),
+          },
+        ])
+        .select("id, saldo_actual")
+        .maybeSingle();
+      if (creado?.id != null) {
+        idUsuarioMarcas = creado.id as string | number;
+        saldoUsuarioMarcas = Number(creado.saldo_actual ?? 0) || 0;
       }
     }
-    const rivales =
-      nota && typeof nota === "object" && Array.isArray((nota as Record<string, unknown>).rivales_snapshot)
-        ? ((nota as Record<string, unknown>).rivales_snapshot as unknown[])
-        : [];
-    for (const r of rivales) {
-      const n = numeroCaballoMarca(r);
-      if (n && !retirados.has(n)) requeridos.push(n);
+  } catch {
+    /* best-effort */
+  }
+
+  // 4) Evaluar cada ticket de Marca y acumular deltas de saldo por jugador y para `MARCAS`.
+  let liquidados = 0;
+  let ganadores = 0;
+  let perdedores = 0;
+  let reintegrados = 0;
+  let gananciaCasaTotal = 0;
+  let deltaUsuarioMarcas = 0;
+  const deltaPorJugador = new Map<string, number>();
+
+  const acumularJugador = (clienteId: unknown, delta: number) => {
+    if (clienteId == null || !Number.isFinite(delta) || Math.abs(delta) < 0.005) return;
+    const k = String(clienteId);
+    deltaPorJugador.set(k, Math.round(((deltaPorJugador.get(k) ?? 0) + delta) * 100) / 100);
+  };
+
+  for (const t of ticketsPendientes) {
+    const idTicket = t.id;
+    const monto = Math.round((Number(t.monto_jugado ?? 0) || 0) * 100) / 100;
+    const tasaCom =
+      t.comision_porcentaje != null && String(t.comision_porcentaje).trim() !== ""
+        ? Number(t.comision_porcentaje)
+        : 5;
+    const cab = numeroCaballoMarca(t.caballo, t.ejemplar_numero) ?? "";
+    const rivales = extraerRivalesTicketMarca(t, cab);
+
+    const hayRetiro = (cab && retirados.has(cab)) || rivales.some((rv) => retirados.has(rv));
+    if (hayRetiro) {
+      liquidados += 1;
+      reintegrados += 1;
+      acumularJugador(t.cliente_juega_id, monto);
+      await sdb
+        .from("tickets_apuestas")
+        .update({
+          estado: "Retirado",
+          premio_pagar: 0,
+          monto_decidido: 0,
+          comision_pagada: 0,
+          cliente_consigue_nombre: "MARCAS",
+          ...(idUsuarioMarcas != null ? { cliente_consigue_id: idUsuarioMarcas } : {}),
+        })
+        .eq("id", idTicket as never);
+      continue;
+    }
+
+    const pCab = cab && puestos.has(cab) ? puestos.get(cab)! : null;
+    const pRivales = rivales.map((rv) => (puestos.has(rv) ? puestos.get(rv)! : null));
+
+    // Regla de decisión:
+    // - Gana el ejemplar jugado si figura en la llegada/pizarra y todos sus rivales
+    //   llegaron detrás de él o quedaron fuera de la pizarra.
+    // - Pierde el ejemplar jugado si algún rival figura en la llegada/pizarra delante
+    //   (o empatado) con él, o si el rival entró en pizarra y el jugado quedó fuera.
+    let gana: boolean | null = null;
+    if (pCab !== null && (pRivales.length === 0 || pRivales.every((pr) => pr === null || pCab < pr))) {
+      gana = true;
+    } else if (pRivales.some((pr) => pr !== null && (pCab === null || pr <= pCab))) {
+      gana = false;
+    } else {
+      // Ninguno de los dos ejemplares entró en pizarra → se reintegra (0/0).
+      liquidados += 1;
+      reintegrados += 1;
+      acumularJugador(t.cliente_juega_id, monto);
+      await sdb
+        .from("tickets_apuestas")
+        .update({
+          estado: "Retirado",
+          premio_pagar: 0,
+          monto_decidido: 0,
+          comision_pagada: 0,
+          cliente_consigue_nombre: "MARCAS",
+          ...(idUsuarioMarcas != null ? { cliente_consigue_id: idUsuarioMarcas } : {}),
+        })
+        .eq("id", idTicket as never);
+      continue;
+    }
+
+    if (gana) {
+      // PAGO DE LA MARCA: Jugador cobra proporción 5/6 íntegra (+ recupera su capital `monto`).
+      // Usuario `MARCAS` paga `pagoMarca + comisionGrupo(pagoMarca)`.
+      const pagoMarca = Math.round(((monto * 5) / 6) * 100) / 100;
+      const bruto = Math.round((monto + pagoMarca) * 100) / 100;
+      const comGrupo = Math.round(pagoMarca * (tasaCom / 100) * 100) / 100;
+
+      liquidados += 1;
+      ganadores += 1;
+      gananciaCasaTotal = Math.round((gananciaCasaTotal + comGrupo) * 100) / 100;
+      acumularJugador(t.cliente_juega_id, bruto);
+      deltaUsuarioMarcas = Math.round((deltaUsuarioMarcas - (pagoMarca + comGrupo)) * 100) / 100;
+
+      await sdb
+        .from("tickets_apuestas")
+        .update({
+          estado: "Ganador",
+          premio_pagar: bruto,
+          monto_decidido: bruto,
+          comision_pagada: comGrupo,
+          cliente_consigue_nombre: "MARCAS",
+          ...(idUsuarioMarcas != null ? { cliente_consigue_id: idUsuarioMarcas } : {}),
+        })
+        .eq("id", idTicket as never);
+    } else {
+      // COBRO DE LA MARCA: Jugador pierde `monto` (ya descontado al vender).
+      // Usuario `MARCAS` cobra `monto - comisionGrupo(monto)`.
+      const comGrupo = Math.round(monto * (tasaCom / 100) * 100) / 100;
+      const cobroNetoMarcas = Math.round((monto - comGrupo) * 100) / 100;
+
+      liquidados += 1;
+      perdedores += 1;
+      gananciaCasaTotal = Math.round((gananciaCasaTotal + comGrupo) * 100) / 100;
+      deltaUsuarioMarcas = Math.round((deltaUsuarioMarcas + cobroNetoMarcas) * 100) / 100;
+
+      await sdb
+        .from("tickets_apuestas")
+        .update({
+          estado: "Perdedor",
+          premio_pagar: 0,
+          monto_decidido: 0,
+          comision_pagada: comGrupo,
+          cliente_consigue_nombre: "MARCAS",
+          ...(idUsuarioMarcas != null ? { cliente_consigue_id: idUsuarioMarcas } : {}),
+        })
+        .eq("id", idTicket as never);
     }
   }
-  return faltantesEnOrden(orden, requeridos);
-}
 
-  /** Liquida las marcas de una carrera contra el orden de llegada oficial. */
-export async function liquidarMarcas(
-  hipodromo: string,
-  carrera: number,
-  fecha: string
-  ): Promise<ResultadoLiquidacionMarcas> {
-    if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
+  // 5) Aplicar pagos a los jugadores ganadores/reintegrados en `public.clientes`.
+  for (const [clienteId, delta] of deltaPorJugador.entries()) {
     try {
-      exigirCapacidad("marcas:fn_liquidar_marcas");
-    } catch (e) {
-      return { ok: false, error: (e as Error).message } as ResultadoLiquidacionMarcas;
+      const { data: cli } = await sdb
+        .from("clientes")
+        .select("saldo_actual")
+        .eq("id", clienteId as never)
+        .maybeSingle();
+      const actual = Number((cli as { saldo_actual?: unknown } | null)?.saldo_actual ?? 0) || 0;
+      await sdb
+        .from("clientes")
+        .update({ saldo_actual: Math.round((actual + delta) * 100) / 100 })
+        .eq("id", clienteId as never);
+    } catch {
+      /* best-effort */
     }
+  }
 
-    const faltan = await faltantesParaLiquidarMarcas(hipodromo, carrera, fecha);
-    if (faltan.length) {
-      return {
-        ok: false,
-        error:
-          `Faltan en el orden de llegada los caballos ${faltan.join(", ")}. ` +
-          "Edita el resultado y agrega sus puestos: la liquidación de marcas " +
-          "necesita saber quién llegó delante de quién.",
-      };
+  // 6) Aplicar pago/cobro neto al usuario `MARCAS` en `public.clientes`.
+  if (idUsuarioMarcas != null && Math.abs(deltaUsuarioMarcas) >= 0.005) {
+    try {
+      await sdb
+        .from("clientes")
+        .update({ saldo_actual: Math.round((saldoUsuarioMarcas + deltaUsuarioMarcas) * 100) / 100 })
+        .eq("id", idUsuarioMarcas as never);
+    } catch {
+      /* best-effort */
     }
+  }
 
-    const { data, error } = await supabase.rpc("club_liquidar_marca", {
-      p_hipodromo: String(hipodromo ?? "").trim().toUpperCase(),
-      p_carrera: Number(carrera) || 0,
-      p_fecha: fecha,
-    });
-    if (error) return { ok: false, error: error.message };
-    const r = (data ?? {}) as Record<string, unknown>;
   return {
     ok: true,
-    liquidados: r.liquidados as number | undefined,
-    ganadores: r.ganadores as number | undefined,
-    perdedores: r.perdedores as number | undefined,
-    reintegrados: r.reintegrados as number | undefined,
-    gananciaTotal: r.ganancia as number | undefined,
+    liquidados,
+    ganadores,
+    perdedores,
+    reintegrados,
+    gananciaTotal: gananciaCasaTotal,
   };
 }
 

@@ -211,14 +211,6 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
             <tr key={i} className="border-b border-slate-100 bg-white h-[26px]">
               <td className="py-[3px] pr-1 font-bold text-slate-800 whitespace-nowrap truncate align-middle">
                 <span>{j.juega}</span>
-                {j.horaCarga ? (
-                  <span
-                    className="ml-1 inline-flex items-center rounded bg-slate-100 px-1 py-px text-[8px] font-mono font-bold text-slate-500 border border-slate-200/80"
-                    title={`Hora de carga de la jugada: ${j.horaCarga}`}
-                  >
-                    🕒 {j.horaCarga}
-                  </span>
-                ) : null}
               </td>
               <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap align-middle">{j.aposto}</td>
               <td className="py-[3px] pl-1 text-right whitespace-nowrap align-middle">

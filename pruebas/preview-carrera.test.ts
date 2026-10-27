@@ -281,7 +281,7 @@ igual(resumenConAnulada.monto, 100, "la anulada NO suma al monto del panel");
     [persistida({ id: "m1", nombre_jugada: "MARCA 1", caballo: "1", monto_jugado: 6, premio_pagar: 11, estado: "Ganador", cliente_consigue_nombre: "", comision_porcentaje: 5 })],
     []
   );
-  igual(marcaGana[0].cliente2, "Marcas", "Marca sin contraparte asignada usa Marcas");
+  igual(marcaGana[0].cliente2, "MARCAS", "Marca sin contraparte asignada usa MARCAS");
   igual(marcaGana[0].aposto1, 6, "Marca: jugador apostó 6");
   igual(marcaGana[0].aposto2, 5, "Marca: Marcas arriesga proporción 5/6 (5)");
   igual(marcaGana[0].lado1.monto, 5, "Marca ganadora: jugador gana proporción 5/6 (5)");
@@ -293,6 +293,65 @@ igual(resumenConAnulada.monto, 100, "la anulada NO suma al monto del panel");
   );
   igual(marcaPierde[0].lado1.monto, 6, "Marca perdedora: jugador pierde 6");
   igual(marcaPierde[0].lado2.monto, 5.7, "Marca perdedora: Marcas gana 6 menos 5% comisión (5.70)");
+
+  // Marcas evaluadas contra pizarra (pago y cobro según resultado, aun con rival fuera de los 5 primeros)
+  const marcaPizarraGana = armarFilasPreview(
+    [
+      persistida({
+        id: "m3",
+        nombre_jugada: "MARCA 2",
+        caballo: "2",
+        monto_jugado: 60,
+        premio_pagar: 0,
+        estado: "Pendiente",
+        cliente_consigue_nombre: "",
+        comision_porcentaje: 5,
+        nota_auditoria: JSON.stringify({ rivales_snapshot: ["8"] }),
+      }),
+    ],
+    [],
+    ["1", "2", "3", "4", "5"] // #2 llegó 2° y #8 fuera de pizarra → gana #2
+  );
+  igual(marcaPizarraGana[0].cliente2, "MARCAS", "Marca se imputa al usuario MARCAS");
+  igual(marcaPizarraGana[0].estado, "Ganador", "Marca donde elegido entra en pizarra y rival no → Ganador");
+  igual(marcaPizarraGana[0].lado1.monto, 50, "Marca ganadora por pizarra: jugador cobra 50 (5/6 de 60)");
+  igual(marcaPizarraGana[0].lado2.monto, 52.5, "Marca ganadora por pizarra: MARCAS paga 50 + 5% comisión (52.5)");
+
+  const marcaPizarraPierde = armarFilasPreview(
+    [
+      persistida({
+        id: "m4",
+        nombre_jugada: "MARCA 8",
+        caballo: "8",
+        monto_jugado: 60,
+        premio_pagar: 0,
+        estado: "Pendiente",
+        cliente_consigue_nombre: "",
+        comision_porcentaje: 5,
+        nota_auditoria: JSON.stringify({ rivales_snapshot: ["2"] }),
+      }),
+    ],
+    [],
+    ["1", "2", "3", "4", "5"] // #2 llegó 2° y #8 fuera de pizarra → pierde #8
+  );
+  igual(marcaPizarraPierde[0].estado, "Perdedor", "Marca donde rival entra en pizarra y elegido no → Perdedor");
+  igual(marcaPizarraPierde[0].lado1.monto, 60, "Marca perdedora por pizarra: jugador pierde 60");
+  igual(marcaPizarraPierde[0].lado2.monto, 57, "Marca perdedora por pizarra: MARCAS cobra 60 - 5% comisión (57)");
+
+  // Imputación de usuarios por modalidad: TF, REMATES, DUPLETA, POLLAS
+  const modalidades = armarFilasPreview(
+    [
+      persistida({ id: "mod1", nombre_jugada: "TABLA FIJA", caballo: "1", monto_jugado: 10, estado: "Pendiente", cliente_consigue_nombre: "" }),
+      persistida({ id: "mod2", nombre_jugada: "REMATE 1", caballo: "1", monto_jugado: 10, estado: "Pendiente", cliente_consigue_nombre: "" }),
+      persistida({ id: "mod3", nombre_jugada: "DUPLETA 1-2", caballo: "1-2", monto_jugado: 10, estado: "Pendiente", cliente_consigue_nombre: "" }),
+      persistida({ id: "mod4", nombre_jugada: "POLLA", caballo: "1", monto_jugado: 10, estado: "Pendiente", cliente_consigue_nombre: "" }),
+    ],
+    []
+  );
+  igual(modalidades[0].cliente2, "TF", "Tablas se imputan a TF");
+  igual(modalidades[1].cliente2, "REMATES", "Remates se imputan a REMATES");
+  igual(modalidades[2].cliente2, "DUPLETA", "Dupletas se imputan a DUPLETA");
+  igual(modalidades[3].cliente2, "POLLAS", "Pollas se imputan a POLLAS");
 }
 
 console.log(`\n${pasan} ok / ${fallan} fallaron`);

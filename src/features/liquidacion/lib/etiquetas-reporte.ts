@@ -121,13 +121,28 @@ export function desgloseJugada(f: Record<string, unknown>): DesgloseJugada {
 
 
 /**
+ * Usuarios del sistema por modalidad a los que se les imputan las jugadas
+ * correspondientes (Marcas → MARCAS, Tablas → TF, Remates → REMATES,
+ * Dupletas → DUPLETA, Pollas → POLLAS).
+ */
+export const USUARIOS_SISTEMA_MODALIDADES = [
+  "MARCAS",
+  "TF",
+  "REMATES",
+  "DUPLETA",
+  "POLLAS",
+] as const;
+
+export type UsuarioSistemaModalidad = (typeof USUARIOS_SISTEMA_MODALIDADES)[number];
+
+/**
  * Resuelve automáticamente el usuario contraparte ("Quien Da" / `cliente_consigue_nombre`)
  * según la modalidad de la jugada:
- *  - Marcas → "Marcas"
+ *  - Marcas → "MARCAS"
  *  - Tablas Fijas → "TF"
- *  - Dupleta → "Dupleta"
- *  - Remate → "Remate"
- *  - Pollas → "Polla"
+ *  - Dupletas → "DUPLETA"
+ *  - Remates → "REMATES"
+ *  - Pollas → "POLLAS"
  *  - Ganador (WPS) → "Win"
  *  - Place (WPS) → "Place"
  *  - Show (WPS) → "Show"
@@ -149,22 +164,33 @@ export function resolverContraparteModalidad(
     actualUpper === "CASA" ||
     actualUpper === "CLUB" ||
     actualUpper === "ADMIN" ||
-    actualUpper === "TAQUILLA";
+    actualUpper === "TAQUILLA" ||
+    actualUpper === "MARCAS" ||
+    actualUpper === "MARCA" ||
+    actualUpper === "TF" ||
+    actualUpper === "TABLA FIJA" ||
+    actualUpper === "TABLAS FIJAS" ||
+    actualUpper === "REMATES" ||
+    actualUpper === "REMATE" ||
+    actualUpper === "DUPLETA" ||
+    actualUpper === "DUPLETAS" ||
+    actualUpper === "POLLAS" ||
+    actualUpper === "POLLA";
 
   if (/^MARCAS?\b/i.test(jug) || orig === "MARCAS" || orig === "MARCA") {
-    return !esGenerico ? actual : "Marcas";
+    return !esGenerico ? actual : "MARCAS";
   }
   if (/^(?:TABLA\s*FIJA|TABLAS?\s*FIJAS?|TF)\b/i.test(jug) || orig === "TABLA" || orig === "TABLAS" || orig === "TABLA_FIJA") {
     return !esGenerico ? actual : "TF";
   }
   if (/^DUPLETAS?\b/i.test(jug) || orig === "DUPLETAS" || orig === "DUPLETA") {
-    return !esGenerico ? actual : "Dupleta";
+    return !esGenerico ? actual : "DUPLETA";
   }
   if (/^REMATES?\b/i.test(jug) || orig === "REMATES" || orig === "REMATE") {
-    return !esGenerico ? actual : "Remate";
+    return !esGenerico ? actual : "REMATES";
   }
   if (/^POLLAS?\b/i.test(jug) || orig === "POLLAS" || orig === "POLLA") {
-    return !esGenerico ? actual : "Polla";
+    return !esGenerico ? actual : "POLLAS";
   }
   if (/^(?:WIN|W|GANADOR|WPS\s*WIN|WPS\s*W|WPS\s*GANADOR)$/i.test(jug)) {
     return !esGenerico ? actual : "Win";
@@ -175,6 +201,12 @@ export function resolverContraparteModalidad(
   if (/^(?:SHOW|S|WPS\s*SHOW|WPS\s*S)$/i.test(jug)) {
     return !esGenerico ? actual : "Show";
   }
+
+  if (actualUpper === "MARCAS" || actualUpper === "MARCA") return "MARCAS";
+  if (actualUpper === "TF" || actualUpper === "TABLA FIJA" || actualUpper === "TABLAS FIJAS") return "TF";
+  if (actualUpper === "REMATES" || actualUpper === "REMATE") return "REMATES";
+  if (actualUpper === "DUPLETA" || actualUpper === "DUPLETAS") return "DUPLETA";
+  if (actualUpper === "POLLAS" || actualUpper === "POLLA") return "POLLAS";
 
   return actual;
 }

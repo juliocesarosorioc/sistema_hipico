@@ -14,6 +14,7 @@ import { exigirCapacidad, esPrincipalVigente, grupoActivoVigente, grupoVigente }
 import { resumenFormasPago, type FormaPago } from "@/features/clientes/lib/formasPago";
 import { redondearCentavos } from "@/shared/lib/dinero";
 import { sincronizarSaldosRealesClientes } from "@/features/saldos/lib/contabilidad-central";
+import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
 // Múltiples formas de pago (PROMPT #7). Se re-exportan desde acá para que el
 // CRUD de clientes sea el único punto de entrada de "cómo se paga un cliente";
 // la implementación pura vive en `formasPago.ts` (sin Supabase, testeable).
@@ -161,6 +162,12 @@ export type TicketApuesta = {
   anulada?: boolean | null;
   grupo_cobro_nombre?: string | null;
   grupo_cobro_id?: string | number | null;
+  cliente_juega_id?: string | number | null;
+  cliente_juega_nombre?: string | null;
+  cliente_consigue_id?: string | number | null;
+  cliente_consigue_nombre?: string | null;
+  comision_porcentaje?: number | string | null;
+  comision_pagada?: number | string | null;
 };
 
 export type NotificacionRow = {
@@ -1035,24 +1042,38 @@ export function construirEstadoCuenta(tickets: TicketApuesta[], devolucionPct: n
   return raiz;
 }
 
-/** Trae los tickets de apuestas de un cliente para el estado de cuenta. */
+/** Trae los tickets de apuestas de un cliente para el estado de cuenta (tanto donde juega como donde da / se le imputa la modalidad). */
 export async function cargarTicketsCliente(clienteId: string | number): Promise<TicketApuesta[]> {
   if (!supabase) return [];
   try {
-    // OJO: se ordena por fecha_registro, no por created_at. La tabla
-    // tickets_apuestas NO tiene created_at (verificado en vivo), asi que pedirla
-    // hacia fallar la consulta entera y el catch devolvia [] en silencio: el
-    // estado de cuenta salia vacio sin avisar nada.
+    const idStr = String(clienteId ?? "").trim();
+    const clienteMem = cacheClientes?.find((c) => String(c.id) === idStr);
+    const nomCliente = String(
+      clienteMem?.nombre ??
+        clienteMem?.seudonimo ??
+        (idStr.startsWith("sys-") ? idStr.slice(4) : "")
+    )
+      .trim()
+      .toUpperCase();
+
     const { data, error } = await supabase
       .from("tickets_apuestas")
       .select(
-        "id, fecha_registro, hipodromo, carrera, nombre_jugada, caballo, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, anulada, grupo_cobro_nombre, grupo_cobro_id"
+        "id, fecha_registro, hipodromo, carrera, nombre_jugada, caballo, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, anulada, grupo_cobro_nombre, grupo_cobro_id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, comision_porcentaje, comision_pagada"
       )
-      .eq("cliente_juega_id", clienteId)
       .order("fecha_registro", { ascending: false })
-      .limit(500);
+      .limit(1500);
     if (error) throw error;
-    return (data ?? []) as TicketApuesta[];
+    const filas = (data ?? []) as TicketApuesta[];
+    return filas.filter((t) => {
+      const jId = t.cliente_juega_id != null ? String(t.cliente_juega_id).trim() : "";
+      const cId = t.cliente_consigue_id != null ? String(t.cliente_consigue_id).trim() : "";
+      if (idStr && !idStr.startsWith("sys-") && (jId === idStr || cId === idStr)) return true;
+      if (!nomCliente) return false;
+      const jNom = String(t.cliente_juega_nombre ?? "").trim().toUpperCase();
+      const cNom = resolverContraparteModalidad(t.nombre_jugada, t.cliente_consigue_nombre).trim().toUpperCase();
+      return jNom === nomCliente || cNom === nomCliente;
+    });
   } catch {
     return [];
   }

@@ -28,6 +28,10 @@ import {
   type LineaResultadoParaCruce,
   type ModalidadCruceCarrera,
 } from "@/features/taquilla/lib/cruces-y-tapas";
+import {
+  resolverContraparteModalidad,
+  USUARIOS_SISTEMA_MODALIDADES,
+} from "@/features/liquidacion/lib/etiquetas-reporte";
 
 export type ResumenContableCliente = {
   clienteId: string;
@@ -183,7 +187,11 @@ export function calcularResumenContableCliente(params: {
     const jId = t.cliente_juega_id != null ? String(t.cliente_juega_id) : "";
     const jNom = normalizarNombreCliente(t.cliente_juega_nombre ?? t.jugador);
     const cId = t.cliente_consigue_id != null ? String(t.cliente_consigue_id) : "";
-    const cNom = normalizarNombreCliente(t.cliente_consigue_nombre ?? t.tercio ?? t.contraparte);
+    const contraparteResuelta = resolverContraparteModalidad(
+      t.nombre_jugada ?? t.jugada,
+      t.cliente_consigue_nombre ?? t.tercio ?? t.contraparte
+    );
+    const cNom = normalizarNombreCliente(contraparteResuelta);
 
     const esJugador = (idStr && jId === idStr) || (nombreNorm && jNom === nombreNorm);
     const esDador = (idStr && cId === idStr) || (nombreNorm && cNom === nombreNorm);
@@ -447,7 +455,7 @@ export async function sincronizarSaldosRealesClientes<
     codigo_pais?: string | null;
   }
 >(clientes: T[], _grupoId?: string | number | null): Promise<T[]> {
-  if (!clientes || clientes.length === 0) return clientes;
+  if (!clientes) return [];
 
   let tickets: TicketContableRaw[] = [];
   const telefonosMap = new Map<string, { telefono: string | null; codigo_pais: string | null }>();
@@ -499,9 +507,90 @@ export async function sincronizarSaldosRealesClientes<
   }
 
   const promesasCuracion: Promise<unknown>[] = [];
-  const resultado = clientes.map((c) => {
+
+  // Asegurar que existan los 5 usuarios del sistema por modalidad:
+  // MARCAS, TF, REMATES, DUPLETA, POLLAS
+  const todosGrupos = [
+    ...new Set(
+      [
+        _grupoId != null && String(_grupoId) !== "" ? String(_grupoId) : null,
+        ...clientes.map((c) => (c.grupo_id != null ? String(c.grupo_id) : null)),
+      ].filter((g): g is string => Boolean(g))
+    ),
+  ];
+  const grupoDefault = _grupoId != null && String(_grupoId) !== "" ? _grupoId : (clientes.find((c) => c.grupo_id != null)?.grupo_id ?? null);
+
+  const listaBase: T[] = clientes.map((c) => {
+    const canon = resolverContraparteModalidad("", c.nombre ?? "");
+    if ((USUARIOS_SISTEMA_MODALIDADES as readonly string[]).includes(canon)) {
+      return {
+        ...c,
+        nombre: canon,
+        ...( "seudonimo" in c ? { seudonimo: canon } : {} ),
+        ...( "libre" in c ? { libre: true } : {} ),
+        ...( "modo_juego" in c ? { modo_juego: "libre" } : {} ),
+      };
+    }
+    return c;
+  });
+
+  const presentes = new Set(listaBase.map((c) => normalizarNombreCliente(c.nombre)));
+  for (const sysName of USUARIOS_SISTEMA_MODALIDADES) {
+    if (presentes.has(sysName)) continue;
+    let nuevoId: string | number = `sys-${sysName.toLowerCase()}`;
+    if (supabase) {
+      try {
+        const { data: ya } = await supabase
+          .from("clientes")
+          .select("id")
+          .ilike("nombre", sysName)
+          .limit(1)
+          .maybeSingle();
+        if (ya?.id != null) {
+          nuevoId = ya.id as string | number;
+        } else {
+          const { data: ins } = await supabase
+            .from("clientes")
+            .insert([
+              {
+                nombre: sysName,
+                seudonimo: sysName,
+                modo_juego: "libre",
+                libre: true,
+                saldo_actual: 0,
+                aval: 0,
+                ...(grupoDefault != null ? { grupo_id: grupoDefault } : {}),
+              },
+            ])
+            .select("id")
+            .maybeSingle();
+          if (ins?.id != null) nuevoId = ins.id as string | number;
+        }
+      } catch {
+        /* best-effort si RLS restringe el insert directo */
+      }
+    }
+    listaBase.push({
+      id: nuevoId,
+      nombre: sysName,
+      seudonimo: sysName,
+      saldo_actual: 0,
+      aval: 0,
+      libre: true,
+      modo_juego: "libre",
+      grupo_id: grupoDefault,
+      grupos: todosGrupos,
+      portal_habilitado: false,
+      portal_token: `TK${sysName}`,
+      portal_clave: `CL${sysName}`,
+    } as unknown as T);
+    presentes.add(sysName);
+  }
+
+  const resultado = listaBase.map((c) => {
     const nombre = String(c.nombre ?? "").trim();
     const nombreNorm = normalizarNombreCliente(nombre);
+    const esUsuarioModalidad = (USUARIOS_SISTEMA_MODALIDADES as readonly string[]).includes(nombreNorm);
     const saldoRaw = c.saldo_actual ?? c.saldo ?? 0;
     const saldoNum = redondearCentavos(saldoRaw);
 
@@ -513,6 +602,26 @@ export async function sincronizarSaldosRealesClientes<
       saldoEnBase: saldoNum,
       tickets,
     });
+
+    if (esUsuarioModalidad && tickets.length > 0 && (resumen.jugadasGanadasBruto > 0 || resumen.jugadasPerdidas > 0)) {
+      const saldoImputado = resumen.saldoContable;
+      if (Math.abs(saldoImputado - saldoNum) >= 0.01 && supabase && c.id != null && !String(c.id).startsWith("sys-")) {
+        promesasCuracion.push(
+          Promise.resolve(
+            supabase
+              .from("clientes")
+              .update({ saldo_actual: saldoImputado })
+              .eq("id", c.id as never)
+          ).catch(() => null)
+        );
+      }
+      const copiaSys: Record<string, unknown> = {
+        ...c,
+        saldo_actual: saldoImputado,
+      };
+      if ("saldo" in c) copiaSys.saldo = saldoImputado;
+      return copiaSys as T;
+    }
 
     // Auto-curación inmediata del caso Pedro (-6000) o cliente con todas sus jugadas anuladas
     const debeCurarAPedroCero =

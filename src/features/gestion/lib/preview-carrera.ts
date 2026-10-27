@@ -351,7 +351,40 @@ function filaDesdePersistida(
   const caballo = TXT(j.caballo) || (j.ejemplar_numero != null ? String(j.ejemplar_numero) : "");
   const comisionPct = NUM(j.comision_porcentaje);
 
-  // Corrección de causa raíz para Empate NINI (2N en 2°, 3N en 3°, 4N en 4°, 5N en 5°):
+  // Evaluación en vivo de MARCAS según el resultado de la carrera (`pizarraPuestos`):
+  // Si la jugada de Marca aún figura como Pendiente (o para verificar contra la pizarra),
+  // se evalúa el ejemplar jugado contra sus rivales para mostrar su pago y cobro exactos.
+  if (!anulada && estado !== "Retirado" && /^MARCAS?\b/i.test(nombreJug) && pizarraPuestos && pizarraPuestos.length > 0) {
+    const numElegido = (j.ejemplar_numero != null ? String(j.ejemplar_numero).trim() : "") || (caballo.match(/\d+/)?.[0] ?? "");
+    let rivales: string[] = [];
+    try {
+      const nota = typeof j.nota_auditoria === "string" ? JSON.parse(j.nota_auditoria) : j.nota_auditoria;
+      if (nota && typeof nota === "object" && Array.isArray((nota as Record<string, unknown>).rivales_snapshot)) {
+        rivales = ((nota as Record<string, unknown>).rivales_snapshot as unknown[])
+          .map((x) => (String(x ?? "").match(/\d+/)?.[0] ?? "").trim())
+          .filter((n) => Boolean(n && n !== numElegido));
+      }
+    } catch {
+      /* ignore */
+    }
+    if (rivales.length === 0) {
+      const numsCab = (caballo.match(/\d+/g) ?? []).map((x) => x.trim());
+      rivales = numsCab.filter((n, idx) => idx > 0 && n !== numElegido);
+    }
+    if (rivales.length === 0) {
+      const numsJug = (nombreJug.match(/\d+/g) ?? []).map((x) => x.trim());
+      rivales = numsJug.filter((n) => n !== numElegido);
+    }
+    if (numElegido && rivales.length > 0) {
+      const posElegido = pizarraPuestos.findIndex((p) => String(p).trim() === numElegido);
+      const posRivales = rivales.map((rv) => pizarraPuestos.findIndex((p) => String(p).trim() === rv));
+      if (posElegido !== -1 && posRivales.every((pr) => pr === -1 || posElegido < pr)) {
+        estado = "Ganador";
+      } else if (posRivales.some((pr) => pr !== -1 && (posElegido === -1 || pr <= posElegido))) {
+        estado = "Perdedor";
+      }
+    }
+  }
   // Si hay pizarra oficial (o si el ticket quedó con estado "Perdedor" pero premio_pagar === monto),
   // en el empate NINI ni gana ni pierde nadie (0 / 0 = Retirado/Empate).
   if (!anulada && (estado === "Ganador" || estado === "Perdedor") && esJugadaDeTaquilla(nombreJug)) {

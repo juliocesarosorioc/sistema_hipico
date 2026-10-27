@@ -323,19 +323,33 @@ function evaluar(
       };
     }
     let ganaMarca: boolean | null = null;
-    if (estado === "GANADOR" || estado === "GANO" || estado === "SOLUCIONADO") {
-      ganaMarca = true;
-    } else if (estado === "PERDEDOR" || estado === "PERDIO") {
-      ganaMarca = false;
-    } else if ((pizarra?.puestos?.length ?? 0) > 0) {
+    if ((pizarra?.puestos?.length ?? 0) > 0) {
       const numElegido = txt(f.ejemplar_numero) || (txt(f.caballo).match(/\d+/)?.[0] ?? "");
-      const rivales = rivalesDeNota(f.nota_auditoria);
+      let rivales = rivalesDeNota(f.nota_auditoria);
+      if (rivales.length === 0) {
+        const numsCab = (txt(f.caballo).match(/\d+/g) ?? []).map((x) => x.trim());
+        if (numsCab.length >= 2) {
+          rivales = numsCab.filter((n, idx) => idx > 0 && n !== numElegido);
+        } else {
+          const numsJug = (txt(f.nombre_jugada).match(/\d+/g) ?? []).map((x) => x.trim());
+          rivales = numsJug.filter((n) => n !== numElegido);
+        }
+      }
       if (numElegido && rivales.length > 0) {
         const posElegido = pizarra!.puestos.findIndex((p) => txt(p) === numElegido);
         const posRivales = rivales.map((rv) => pizarra!.puestos.findIndex((p) => txt(p) === String(rv).trim()));
-        if (posElegido !== -1 && posRivales.every((pr) => pr !== -1)) {
-          ganaMarca = posRivales.every((pr) => posElegido < pr);
+        if (posElegido !== -1 && posRivales.every((pr) => pr === -1 || posElegido < pr)) {
+          ganaMarca = true;
+        } else if (posRivales.some((pr) => pr !== -1 && (posElegido === -1 || pr <= posElegido))) {
+          ganaMarca = false;
         }
+      }
+    }
+    if (ganaMarca === null) {
+      if (estado === "GANADOR" || estado === "GANO" || estado === "SOLUCIONADO") {
+        ganaMarca = true;
+      } else if (estado === "PERDEDOR" || estado === "PERDIO") {
+        ganaMarca = false;
       }
     }
     if (ganaMarca === true) {
@@ -597,9 +611,7 @@ async function leerTickets(fecha: string, hipodromo: string, carrera: string | n
     }
     const { data, error } = await q;
     if (error) return [];
-    return (data ?? []).filter(
-      (r) => !esVentaDeRemate((r as { nombre_jugada?: unknown }).nombre_jugada)
-    ) as Record<string, unknown>[];
+    return (data ?? []) as Record<string, unknown>[];
   } catch {
     return [];
   }
@@ -710,7 +722,6 @@ async function leerTicketsHipodromo(fecha: string, hipodromo: string): Promise<M
     const { data, error } = await q;
     if (error) return porCarrera;
     for (const row of (data ?? []) as Record<string, unknown>[]) {
-      if (esVentaDeRemate(row.nombre_jugada)) continue;
       const k = claveCarrera(row.carrera);
       const lista = porCarrera.get(k);
       if (lista) lista.push(row);
