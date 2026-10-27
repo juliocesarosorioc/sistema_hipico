@@ -13,8 +13,6 @@ import {
   eliminarGrupoExterno,
   eliminarJugadaExterna,
   entrarPortal,
-  ESTADO_POR_DEFECTO,
-  ESTADOS_JUGADA_EXTERNA,
   guardarGrupoExterno,
   guardarJugadaExterna,
   listarGruposExternos,
@@ -24,7 +22,6 @@ import {
   reportarJugadaFaltante,
   reclamarJugada,
   resolverImagenReclamo,
-  resumenGrupoExterno,
   solicitarCompraTabla,
   type GrupoExterno,
   type JugadaExterna,
@@ -35,14 +32,19 @@ import { FormasPagoLista } from "@/features/clientes/components/DatosPagoForm";
 import { formasPagoDe, normalizarFormasPago, type FormaPago } from "@/features/clientes/lib/clientes";
 import { codigosPaisUnicos, desglosarTelefono, formatoMoneda, listMetodosPago } from "@/shared/lib/vzla";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
+import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
 import { encuestarTicket, listarMisTickets, type TicketDisputa } from "@/features/tickets/lib/tickets";
 import {
   armarReporteDiario,
   esJugadaAnulada,
   type JugadaReporte,
 } from "@/features/reportes/lib/reporte-diario";
-import { ReporteDiarioTabla } from "@/features/reportes/components/ReporteDiarioTabla";
+import {
+  GraficosReporteDiario,
+  ReporteDiarioTabla,
+} from "@/features/reportes/components/ReporteDiarioTabla";
 import { ModalRealizarJugadaUsuario } from "@/features/portal/components/ModalRealizarJugadaUsuario";
+import { SeccionJugadasPortal } from "@/features/portal/components/SeccionJugadasPortal";
 import { ModalJugadaNoRelacionada } from "@/features/portal/components/ModalJugadaNoRelacionada";
 import { dentroDeVentana, type CicloGrupo } from "@/features/portal/lib/ventana-reclamos";
 import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
@@ -290,7 +292,7 @@ const OPCIONES_MENU_PORTAL: { key: TabPortal; icono: string; label: string; badg
   { key: "reporte", icono: "📊", label: "Reporte del Día" },
   { key: "resumen", icono: "🗒️", label: "Resumen y movimientos" },
   { key: "externos", icono: "📓", label: "Mi Control en Otros Grupos" },
-  { key: "jugadas", icono: "🏇", label: "Jugadas", badge: "En construcción" },
+  { key: "jugadas", icono: "⚔️", label: "Jugadas" },
   { key: "tickets", icono: "🛟", label: "Mis tickets" },
 ];
 
@@ -321,102 +323,35 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
     String((sesion.cliente as unknown as { grupo?: string }).grupo ?? "").trim() ||
     "Club del Dinero";
 
-  const logoGrupoUrl = String(
-    (sesion.grupo as unknown as { logo_url?: string; logo?: string })?.logo_url ??
-      (sesion.grupo as unknown as { logo?: string })?.logo ??
-      ""
-  ).trim();
+  // Logo del grupo: sale de la data de la sesión (`grupos_venta.logo_url`, que
+  // la Edge Function `portal-auth` devuelve junto con la config del grupo).
+  const logoGrupoUrl = String(sesion.grupo?.logo_url ?? "").trim();
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col">
-      <header className="bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-950 text-white border-b border-indigo-500/30 shadow-lg">
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-4 py-3.5">
-          <div className="flex items-center gap-3">
-            {/* Botón para mostrar/ocultar el menú lateral izquierdo */}
-            <button
-              type="button"
-              onClick={() => setMenuAbierto((v) => !v)}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-400/40 bg-indigo-500/20 text-lg text-white transition hover:bg-indigo-500/40"
-              title={menuAbierto ? "Ocultar menú lateral izquierdo" : "Mostrar menú lateral izquierdo"}
-              aria-label="Alternar menú lateral"
-            >
-              {menuAbierto ? "◀" : "☰"}
-            </button>
-
-            {/* Cápsula de nombre de usuario con gráfico de torta de su saldo */}
-            <CapsulaUsuarioConTorta sesion={sesion} nombreGrupo={nombreGrupoActivo} />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="default"
-              size="sm"
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow"
-              onClick={() => setNoRelAbierta(true)}
-              title="Solicitar incluir jugada no relacionada"
-            >
-              <span className="mr-1">➕</span> Jugada No Relacionada
-            </Button>
-            <Button
-              variant="default"
-              size="sm"
-              className="bg-indigo-500 hover:bg-indigo-400 font-black"
-              onClick={() => setJugadaAbierta(true)}
-            >
-              <span className="mr-1">🐎</span> Realizar Jugada
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="border border-indigo-400/30 bg-indigo-900/50 text-white hover:bg-indigo-800 font-bold"
-              onClick={() => setPerfilAbierto(true)}
-            >
-              <span className="mr-1">👤</span> Mi Perfil
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="border border-rose-400/30 bg-rose-950/50 text-rose-200 hover:bg-rose-900 font-bold"
-              onClick={onSalir}
-            >
-              <span className="mr-1">🚪</span> Salir
-            </Button>
-          </div>
-        </div>
-
-        {/* Totales superiores con números más grandes y alto contraste */}
-        <div className="mx-auto max-w-[1600px] px-4 pb-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Kpi
-              icon="🪙"
-              lbl="Saldo / Total Decidido"
-              val={formatoMoneda("USD", sesion.resumen.saldo)}
-              color="text-white"
-              bg="bg-slate-900/90 border-indigo-400/40"
-            />
-            <Kpi
-              icon="％"
-              lbl={`Incentivo (${num(sesion.cliente.devolucion)}%)`}
-              val={formatoMoneda("USD", sesion.resumen.incentivo)}
-              color="text-amber-300"
-              bg="bg-indigo-950/90 border-amber-400/40"
-            />
-            <Kpi
-              icon="🤲"
-              lbl="Disponible para Jugar"
-              val={formatoMoneda("USD", sesion.resumen.disponible)}
-              color="text-emerald-300"
-              bg="bg-emerald-950/90 border-emerald-400/40"
-            />
-          </div>
-        </div>
-      </header>
-
+    <div className="min-h-screen overflow-x-hidden bg-slate-100 flex flex-col">
       <div className="mx-auto flex w-full max-w-[1600px] flex-1 gap-4 px-4 py-5">
         {/* Menú ocultable a la izquierda para todas las opciones */}
         {menuAbierto ? (
           <aside className="w-64 shrink-0 space-y-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+              {/* Espacio del logo: SOLO el logo del grupo, a tamaño completo de la imagen */}
+              <div className="-m-3 mb-3 overflow-hidden rounded-t-2xl bg-slate-950">
+                {logoGrupoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={logoGrupoUrl}
+                    alt={nombreGrupoActivo}
+                    className="block h-auto max-h-44 w-full object-contain"
+                  />
+                ) : (
+                  <span className="flex h-24 items-center justify-center px-2 text-center text-xs font-black uppercase tracking-widest text-white">
+                    {nombreGrupoActivo}
+                  </span>
+                )}
+              </div>
+              <div className="mb-2 flex justify-center">
+                <CapsulaUsuarioConTorta sesion={sesion} nombreGrupo={nombreGrupoActivo} />
+              </div>
               <div className="mb-2 flex items-center justify-between px-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                   Menú de Navegación
@@ -467,6 +402,14 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
               <div className="mt-3 border-t border-slate-200 pt-3 space-y-1.5">
                 <button
                   type="button"
+                  onClick={() => setJugadaAbierta(true)}
+                  className="flex w-full items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-left text-[11px] font-extrabold text-white hover:bg-indigo-500 transition"
+                >
+                  <span>🐎</span>
+                  <span>Realizar Jugada</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setNoRelAbierta(true)}
                   className="flex w-full items-center gap-2 rounded-xl bg-indigo-50 px-3 py-2 text-left text-[11px] font-extrabold text-indigo-800 hover:bg-indigo-100 transition"
                 >
@@ -479,7 +422,15 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
                   className="flex w-full items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-left text-[11px] font-extrabold text-slate-800 hover:bg-slate-200 transition"
                 >
                   <span>👤</span>
-                  <span>Mi Perfil y Formas de Pago</span>
+                  <span>Mi Perfil</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onSalir}
+                  className="flex w-full items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-left text-[11px] font-extrabold text-rose-700 hover:bg-rose-100 transition"
+                >
+                  <span>🚪</span>
+                  <span>Salir</span>
                 </button>
               </div>
             </div>
@@ -488,64 +439,59 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
 
         {/* Área central de contenido */}
         <main className="min-w-0 flex-1 space-y-4">
-          {/* Barra compacta superior de pestañas (sincronizada con el menú izquierdo) */}
-          <div className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-white p-1.5 shadow-sm border border-slate-200">
-            {!menuAbierto ? (
+          {/* Botón para recuperar el menú lateral cuando está oculto (no es una barra) */}
+          {!menuAbierto ? (
+            <div>
               <button
                 type="button"
                 onClick={() => setMenuAbierto(true)}
-                className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white hover:bg-slate-800"
+                className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white shadow-md hover:bg-slate-800"
+                title="Abrir menú"
               >
                 ☰ Menú
               </button>
-            ) : null}
-            {OPCIONES_MENU_PORTAL.map((op) => (
-              <button
-                key={op.key}
-                type="button"
-                onClick={() => setTab(op.key)}
-                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-extrabold transition-colors ${
-                  tab === op.key
-                    ? "bg-indigo-600 text-white shadow"
-                    : "text-slate-700 hover:bg-slate-100"
-                }`}
-              >
-                <span>{op.icono}</span>
-                <span>{op.label}</span>
-                {op.badge ? (
-                  <span
-                    className={`rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase ${
-                      tab === op.key
-                        ? "bg-amber-300 text-slate-950"
-                        : "bg-amber-100 text-amber-800"
-                    }`}
-                  >
-                    {op.badge}
-                  </span>
-                ) : null}
-              </button>
-            ))}
+            </div>
+          ) : null}
+
+          {/* Totales: saldo, incentivo y disponible (antes vivian en la barra superior) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Kpi
+              icon="🪙"
+              lbl="Saldo / Total Decidido"
+              val={formatoMoneda("USD", sesion.resumen.saldo)}
+              color="text-slate-900"
+              bg="bg-white"
+            />
+            <Kpi
+              icon="％"
+              lbl={`Incentivo (${num(sesion.cliente.devolucion)}%)`}
+              val={formatoMoneda("USD", sesion.resumen.incentivo)}
+              color="text-amber-600"
+              bg="bg-white"
+            />
+            <Kpi
+              icon="🤲"
+              lbl="Disponible para Jugar"
+              val={formatoMoneda("USD", sesion.resumen.disponible)}
+              color="text-emerald-700"
+              bg="bg-white"
+            />
           </div>
 
-          {/* Vista principal con el Panel del Grupo (Logo en grande fijo a la derecha + QR Grupo + QR Perfil) */}
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
-            <div className="xl:col-span-9 min-w-0 space-y-4">
-              {tab === "reporte" ? <ReporteDiarioView sesion={sesion} /> : null}
-              {tab === "resumen" ? <ResumenView sesion={sesion} onCambio={onActualizar} /> : null}
-              {tab === "externos" ? <BitacoraExternaView cliente={sesion.cliente} /> : null}
-              {tab === "jugadas" || tab === "comprar" ? <SeccionJugadasEnConstruccion /> : null}
-              {tab === "tickets" ? <MisTicketsView cliente={sesion.cliente} /> : null}
-            </div>
-
-            {/* Columna derecha fija: Logo del grupo en grande + QR de su grupo + QR de su perfil */}
-            <div className="xl:col-span-3 xl:sticky xl:top-4">
-              <PanelGrupoFijoDerecha
+          {/* Vista principal a todo el ancho. Los QR se eliminaron: en el reporte
+              su columna la ocupan los gráficos. */}
+          <div className="min-w-0 space-y-4">
+            {tab === "reporte" ? <ReporteDiarioView sesion={sesion} /> : null}
+            {tab === "resumen" ? <ResumenView sesion={sesion} onCambio={onActualizar} /> : null}
+            {tab === "externos" ? <BitacoraExternaView cliente={sesion.cliente} /> : null}
+            {tab === "jugadas" || tab === "comprar" ? (
+              <SeccionJugadasPortal
                 sesion={sesion}
-                nombreGrupo={nombreGrupoActivo}
-                logoUrl={logoGrupoUrl}
-                onAbrirPerfil={() => setPerfilAbierto(true)}
+                modalidadInicial="marcas"
+                onJugadaRealizada={recargar}
               />
-            </div>
+            ) : null}
+            {tab === "tickets" ? <MisTicketsView cliente={sesion.cliente} /> : null}
           </div>
         </main>
       </div>
@@ -600,7 +546,7 @@ function Kpi({ icon, lbl, val, color, bg }: { icon: string; lbl: string; val: st
     <div className={`rounded-2xl ${bg} border px-5 py-3.5 flex items-center gap-3.5 shadow-md`}>
       <span className={`text-2xl leading-none ${color}`}>{icon}</span>
       <div>
-        <div className="text-[10px] uppercase tracking-widest font-black text-indigo-200">{lbl}</div>
+        <div className="text-[10px] uppercase tracking-widest font-black text-slate-500">{lbl}</div>
         <div className={`text-2xl sm:text-3xl font-black font-mono tracking-tight ${color}`}>{val}</div>
       </div>
     </div>
@@ -684,197 +630,6 @@ function CapsulaUsuarioConTorta({
   );
 }
 
-/**
- * Pestaña "Jugadas" — temporalmente en construcción y con contenido oculto
- * según requerimiento del administrador.
- */
-function SeccionJugadasEnConstruccion() {
-  return (
-    <div className="rounded-3xl border-2 border-dashed border-amber-300 bg-gradient-to-br from-amber-50 via-white to-indigo-50 p-10 text-center shadow-sm">
-      <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-3xl bg-amber-100 text-4xl shadow-inner">
-        🚧
-      </div>
-      <span className="inline-block rounded-full bg-amber-200/80 px-3 py-1 text-[11px] font-black uppercase tracking-widest text-amber-900">
-        Sección en Construcción
-      </span>
-      <h2 className="mt-3 text-xl font-black text-slate-900">
-        Módulo de Jugadas Directas
-      </h2>
-      <p className="mx-auto mt-2 max-w-md text-xs font-medium text-slate-600 leading-relaxed">
-        Estamos optimizando esta sección para brindarte una experiencia de compra en vivo más rápida y segura. Mientras tanto, puedes consultar tu <b>Reporte del Día</b> y <b>Resumen y movimientos</b>.
-      </p>
-    </div>
-  );
-}
-
-/**
- * Generador determinístico de matriz QR en SVG (21x21 con patrones de posición
- * estándar ISO/IEC 18004) para acceso rápido a Grupo y Perfil del Jugador.
- */
-function QrSvgMatrix({ valor, size = 116 }: { valor: string; size?: number }) {
-  const N = 21;
-  const celdas = useMemo(() => {
-    const grid: boolean[][] = Array.from({ length: N }, () => Array(N).fill(false));
-    const reservado: boolean[][] = Array.from({ length: N }, () => Array(N).fill(false));
-
-    const ponerFinder = (r0: number, c0: number) => {
-      for (let r = -1; r <= 7; r++) {
-        for (let c = -1; c <= 7; c++) {
-          const rr = r0 + r;
-          const cc = c0 + c;
-          if (rr < 0 || rr >= N || cc < 0 || cc >= N) continue;
-          reservado[rr][cc] = true;
-          const borde7 = r >= 0 && r <= 6 && c >= 0 && c <= 6 && (r === 0 || r === 6 || c === 0 || c === 6);
-          const centro3 = r >= 2 && r <= 4 && c >= 2 && c <= 4;
-          grid[rr][cc] = borde7 || centro3;
-        }
-      }
-    };
-
-    ponerFinder(0, 0);
-    ponerFinder(0, N - 7);
-    ponerFinder(N - 7, 0);
-
-    for (let i = 8; i < N - 8; i++) {
-      reservado[6][i] = true;
-      reservado[i][6] = true;
-      grid[6][i] = i % 2 === 0;
-      grid[i][6] = i % 2 === 0;
-    }
-
-    let hash = 2166136261;
-    const texto = valor || "SISTEMA_HIPICO";
-    for (let i = 0; i < texto.length; i++) {
-      hash ^= texto.charCodeAt(i);
-      hash = Math.imul(hash, 16777619);
-    }
-
-    let idx = 0;
-    for (let r = 0; r < N; r++) {
-      for (let c = 0; c < N; c++) {
-        if (reservado[r][c]) continue;
-        const charCode = texto.charCodeAt(idx % texto.length);
-        const bit = ((hash >>> (idx % 24)) ^ (charCode * (r + 1) + c * 17)) & 1;
-        grid[r][c] = bit === 1;
-        idx++;
-      }
-    }
-    return grid;
-  }, [valor]);
-
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${N + 2} ${N + 2}`}
-      className="rounded-xl border border-slate-200 bg-white p-1 shadow-sm"
-      role="img"
-      aria-label="Código QR"
-    >
-      <rect width={N + 2} height={N + 2} fill="#ffffff" />
-      {celdas.map((fila, r) =>
-        fila.map((activo, c) =>
-          activo ? (
-            <rect key={`${r}-${c}`} x={c + 1} y={r + 1} width={1} height={1} fill="#0f172a" />
-          ) : null
-        )
-      )}
-    </svg>
-  );
-}
-
-/**
- * Panel derecho fijo para reportes de usuario: muestra de manera grande y fija
- * el logo del grupo con el que juega, el código QR de su grupo y el código QR
- * para acceder directamente a su perfil.
- */
-function PanelGrupoFijoDerecha({
-  sesion,
-  nombreGrupo,
-  logoUrl,
-  onAbrirPerfil,
-}: {
-  sesion: SesionPortal;
-  nombreGrupo: string;
-  logoUrl: string;
-  onAbrirPerfil: () => void;
-}) {
-  const origen = typeof window !== "undefined" ? window.location.origin + window.location.pathname : "https://juliocesarosorioc.github.io/sistema_hipico/portal";
-  const urlGrupo = `${origen}?grupo=${encodeURIComponent(nombreGrupo)}`;
-  const tokenCliente = String((sesion.cliente as unknown as { link_token?: string }).link_token ?? "");
-  const urlPerfil = tokenCliente
-    ? `${origen}?c=${encodeURIComponent(sesion.cliente.id)}&k=${encodeURIComponent(tokenCliente)}`
-    : `${origen}?c=${encodeURIComponent(sesion.cliente.id)}`;
-
-  const iniciales = nombreGrupo
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? "")
-    .join("");
-
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-md space-y-4">
-      {/* Logo grande y fijo del grupo */}
-      <div className="rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-5 text-center text-white shadow-inner">
-        <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">
-          Grupo Oficial Activo
-        </div>
-        <div className="mx-auto my-3 flex h-28 w-28 items-center justify-center overflow-hidden rounded-3xl border-2 border-amber-400/60 bg-white/10 shadow-xl">
-          {logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={logoUrl}
-              alt={nombreGrupo}
-              className="h-full w-full object-contain p-1.5"
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center">
-              <span className="text-3xl leading-none">🪙</span>
-              <span className="mt-1 text-lg font-black tracking-wider text-amber-300">
-                {iniciales || "CD"}
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="text-base font-black tracking-tight text-white">
-          {nombreGrupo}
-        </div>
-        <div className="mt-0.5 text-[11px] font-bold text-indigo-200">
-          Jugador: {sesion.cliente.seudonimo || sesion.cliente.nombre}
-        </div>
-      </div>
-
-      {/* QR del Grupo y QR de Mi Perfil */}
-      <div className="grid grid-cols-2 xl:grid-cols-1 gap-3">
-        <div className="flex flex-col items-center rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center">
-          <div className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-slate-700">
-            📱 QR de tu Grupo
-          </div>
-          <QrSvgMatrix valor={urlGrupo} size={112} />
-          <div className="mt-1.5 text-[10px] font-bold text-slate-600">
-            {nombreGrupo}
-          </div>
-        </div>
-
-        <div className="flex flex-col items-center rounded-2xl border border-indigo-200 bg-indigo-50/50 p-3 text-center">
-          <div className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-900">
-            👤 QR Acceso a Mi Perfil
-          </div>
-          <QrSvgMatrix valor={urlPerfil} size={112} />
-          <button
-            type="button"
-            onClick={onAbrirPerfil}
-            className="mt-2 w-full rounded-xl bg-indigo-600 px-3 py-1.5 text-[11px] font-extrabold text-white shadow hover:bg-indigo-500 transition"
-          >
-            Abrir Mi Perfil
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Reporte del día (por hipódromo + carrera, en formato cliente)
 // ---------------------------------------------------------------------------
@@ -888,6 +643,13 @@ function PanelGrupoFijoDerecha({
  * si el portal todavía no devuelve `fecha_carrera`, cae a la fecha de venta.
  */
 function ReporteDiarioView({ sesion }: { sesion: SesionPortal }) {
+  // Igual que en el menú lateral: el logo y el nombre salen de la data del grupo.
+  const logoGrupoUrl = String(sesion.grupo?.logo_url ?? "").trim();
+  const nombreGrupo =
+    String(sesion.grupo?.nombre ?? "").trim() ||
+    String((sesion.cliente as unknown as { grupo?: string }).grupo ?? "").trim() ||
+    "Club del Dinero";
+
   const fechasDisponibles = useMemo(() => {
     const set = new Set<string>();
     for (const j of sesion.arbolTickets.jugadas) {
@@ -979,8 +741,25 @@ function ReporteDiarioView({ sesion }: { sesion: SesionPortal }) {
         </span>
       </div>
 
-      <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
-        <ReporteDiarioTabla datos={datos} perspectiva="cliente" />
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-12 xl:items-start">
+        <div className="min-w-0 rounded-2xl border border-line bg-white p-3 shadow-sm xl:col-span-9">
+          <ReporteDiarioTabla datos={datos} perspectiva="cliente" mostrarGraficos={false} />
+        </div>
+
+        {/* Los gráficos ocupan la columna donde antes estaban los QR */}
+        <div className="min-w-0 space-y-3 xl:col-span-3">
+          {logoGrupoUrl ? (
+            <div className="overflow-hidden rounded-2xl border border-line bg-white p-2 shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={logoGrupoUrl}
+                alt={nombreGrupo}
+                className="block h-auto max-h-40 w-full object-contain"
+              />
+            </div>
+          ) : null}
+          <GraficosReporteDiario datos={datos} perspectiva="cliente" />
+        </div>
       </div>
     </div>
   );
@@ -2211,7 +1990,6 @@ type FormJugadaExterna = {
   tipo_jugada: string;
   ejemplares: string;
   monto: string;
-  estado: string;
 };
 
 const formaJugadaVacia = (): FormJugadaExterna => ({
@@ -2221,7 +1999,6 @@ const formaJugadaVacia = (): FormJugadaExterna => ({
   tipo_jugada: "JUGADA",
   ejemplares: "",
   monto: "",
-  estado: ESTADO_POR_DEFECTO,
 });
 
 /**
@@ -2229,9 +2006,8 @@ const formaJugadaVacia = (): FormJugadaExterna => ({
  * grupos que NO están en la plataforma.
  *
  * El usuario crea sus grupos externos (nombre, moneda, % de comisión), anota
- * sus jugadas (fecha, hipódromo, carrera, tipo de jugada, ejemplares, monto y
- * estado PENDIENTE / GANÓ / PERDIÓ / ANULADA) y ve el resumen calculado con la
- * comisión de ese grupo.
+ * sus jugadas (fecha, hipódromo, carrera, tipo de jugada, jugada, monto) y ve
+ * el resumen calculado con el signo del monto: positivo = ganó, negativo = perdió.
  *
  * AISLAMIENTO: todo vive en `portal_grupos_externos` / `portal_jugadas_externas`
  * (RLS sin políticas, solo la Edge Function con service_role). No hay ninguna
@@ -2255,6 +2031,8 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
   const [form, setForm] = useState<FormJugadaExterna>(formaJugadaVacia);
   const [editJugadaId, setEditJugadaId] = useState<string | number | null>(null);
   const [guardandoJugada, setGuardandoJugada] = useState(false);
+  const [filtroHipodromo, setFiltroHipodromo] = useState("");
+  const [catalogoHipodromos, setCatalogoHipodromos] = useState<string[]>([]);
 
   const inp =
     "w-full border border-line rounded-xl bg-surface px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-200";
@@ -2262,7 +2040,104 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
 
   const grupo = grupos.find((g) => String(g.id) === grupoId) ?? null;
   const monedaGrupo = String(grupo?.moneda ?? "USD").toUpperCase() || "USD";
-  const resumen = useMemo(() => resumenGrupoExterno(jugadas, grupo?.comision_pct ?? 0), [jugadas, grupo]);
+
+  // El MONTO es el resultado de la jugada: positivo = ganó, negativo = perdió.
+  // Las filas viejas guardaban el monto apostado en positivo + estado; se
+  // siguen leyendo bien: PERDIÓ con monto positivo cuenta como pérdida y
+  // PENDIENTE no entra en el neto.
+  const montoFirmado = (j: JugadaExterna): number => {
+    const m = num(j.monto);
+    const e = normalizarEstadoJugada(j.estado);
+    if (e === "ANULADA" || e === "PENDIENTE") return 0;
+    if (e === "PERDIÓ") return -Math.abs(m);
+    return m;
+  };
+  const estadoSegunMonto = (monto: number | string | null | undefined): string => {
+    const m = num(monto);
+    return m < 0 ? "PERDIÓ" : m > 0 ? "GANÓ" : "PENDIENTE";
+  };
+  /** Deja solo dígitos, un punto decimal y el signo negativo al inicio. */
+  const soloMontoFirmado = (v: string): string => {
+    const negativo = v.trim().startsWith("-");
+    const digitos = v.replace(/[^\d.]/g, "");
+    return (negativo ? "-" : "") + digitos;
+  };
+
+  const resumen = useMemo(() => {
+    let ganado = 0;
+    let perdido = 0;
+    let pendiente = 0;
+    let ganadas = 0;
+    let perdidas = 0;
+    let anuladas = 0;
+    let pendientes = 0;
+    for (const j of jugadas) {
+      const e = normalizarEstadoJugada(j.estado);
+      if (e === "ANULADA") {
+        anuladas += 1;
+        continue;
+      }
+      if (e === "PENDIENTE") {
+        pendientes += 1;
+        pendiente += Math.abs(num(j.monto));
+        continue;
+      }
+      const m = montoFirmado(j);
+      if (m < 0) {
+        perdidas += 1;
+        perdido += Math.abs(m);
+      } else {
+        ganadas += 1;
+        ganado += m;
+      }
+    }
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    return {
+      jugadas: jugadas.length,
+      ganado: r2(ganado),
+      perdido: r2(perdido),
+      neto: r2(ganado - perdido),
+      pendiente: r2(pendiente),
+      ganadas,
+      perdidas,
+      anuladas,
+      pendientes,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jugadas]);
+
+  const hipodromosRegistrados = useMemo(() => {
+    const set = new Set<string>();
+    // Los registrados en el catálogo de hipódromos (fuente principal)...
+    for (const h of catalogoHipodromos) {
+      const n = String(h ?? "").trim().toUpperCase();
+      if (n) set.add(n);
+    }
+    // ...más los que ya aparecen en las jugadas anotadas (datos viejos).
+    for (const j of jugadas) {
+      const h = String(j.hipodromo ?? "").trim().toUpperCase();
+      if (h) set.add(h);
+    }
+    return Array.from(set).sort();
+  }, [catalogoHipodromos, jugadas]);
+
+  // Catálogo de hipódromos registrados (el filtro solo ofrece los registrados).
+  useEffect(() => {
+    let vivo = true;
+    void (async () => {
+      const r = await listarHipodromos();
+      if (!vivo || !r.ok) return;
+      setCatalogoHipodromos((r.data ?? []).map((h) => String(h.nombre ?? "")));
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  const jugadasFiltradas = useMemo(() => {
+    if (!filtroHipodromo) return jugadas;
+    return jugadas.filter((j) => String(j.hipodromo ?? "").trim().toUpperCase() === filtroHipodromo);
+  }, [jugadas, filtroHipodromo]);
 
   // Grupos externos del cliente (una sola vez al montar).
   useEffect(() => {
@@ -2365,6 +2240,10 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
 
   const guardarJugada = async () => {
     if (!grupo) return toast("Primero seleccioná o creá un grupo externo.", "warning");
+    // El monto firmado define el resultado: negativo pierde, positivo gana.
+    if (num(form.monto) === 0) {
+      return toast("Escribí un monto distinto de cero: positivo si ganaste, negativo si perdiste.", "warning");
+    }
     setGuardandoJugada(true);
     const r = await guardarJugadaExterna({
       id: editJugadaId ?? undefined,
@@ -2375,7 +2254,7 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
       tipo_jugada: form.tipo_jugada,
       ejemplares: form.ejemplares,
       monto: form.monto,
-      estado: form.estado,
+      estado: estadoSegunMonto(form.monto),
     });
     setGuardandoJugada(false);
     if (!r.ok) return toast(r.error ?? "No se pudo registrar la jugada.", "error");
@@ -2394,13 +2273,13 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
       carrera: j.carrera != null ? String(j.carrera) : "",
       tipo_jugada: String(j.tipo_jugada ?? "JUGADA"),
       ejemplares: String(j.ejemplares ?? ""),
-      monto: j.monto != null ? String(num(j.monto)) : "",
-      estado: normalizarEstadoJugada(j.estado),
+      // Se edita el monto firmado: negativo si la jugada quedó como pérdida.
+      monto: j.monto != null ? String(montoFirmado(j) || Math.abs(num(j.monto))) : "",
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const cambiarEstado = async (j: JugadaExterna, estado: string) => {
+  const cambiarEstado = async (j: JugadaExterna, estado: string, monto?: number) => {
     const r = await guardarJugadaExterna({
       id: j.id,
       grupo_externo_id: j.grupo_externo_id,
@@ -2409,7 +2288,7 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
       carrera: j.carrera ?? undefined,
       tipo_jugada: String(j.tipo_jugada ?? ""),
       ejemplares: String(j.ejemplares ?? ""),
-      monto: j.monto ?? undefined,
+      monto: monto ?? j.monto ?? undefined,
       estado,
     });
     if (!r.ok) return toast(r.error ?? "No se pudo cambiar el estado.", "error");
@@ -2440,7 +2319,7 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
             </h2>
             <p className="text-[11px] text-slate-500">
               Tu libro privado para jugar en grupos que no están en el sistema. Creá tus grupos (nombre, moneda y %
-              de comisión) y anotá cada jugada con su estado.
+              de comisión) y anotá cada jugada: monto positivo si ganaste, negativo si perdiste.
             </p>
           </div>
           <Button variant="default" size="sm" onClick={abrirAltaGrupo} data-testid="bitacora-alta-grupo">
@@ -2496,8 +2375,8 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
               </div>
             </div>
             <p className="text-[10px] text-slate-500">
-              La comisión se usa para calcular el premio: <b>premio = monto × (2 − comisión%)</b>. Ej.: con 10% y
-              $10 apostados, el grupo devuelve $19.
+              La comisión es una referencia del grupo. El resultado de cada jugada lo define el monto:{" "}
+              <b>positivo = ganó</b>, <b>negativo = perdió</b>.
             </p>
             <div className="flex justify-end gap-2">
               <Button
@@ -2548,11 +2427,11 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
 
         {/* Resumen de la bitácora del grupo seleccionado */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <ResumenBitacora icon="💸" lbl="Apostado (sin anuladas)" val={formatoMoneda(monedaGrupo, resumen.apostado)} color="text-slate-800" />
-          <ResumenBitacora icon="🏆" lbl="Premios (par − comisión)" val={formatoMoneda(monedaGrupo, resumen.premios)} color="text-emerald-700" />
+          <ResumenBitacora icon="🏆" lbl="Ganado (monto +)" val={formatoMoneda(monedaGrupo, resumen.ganado)} color="text-emerald-700" />
+          <ResumenBitacora icon="💸" lbl="Perdido (monto −)" val={formatoMoneda(monedaGrupo, resumen.perdido)} color="text-red-600" />
           <ResumenBitacora
             icon="⚖️"
-            lbl="Neto"
+            lbl="Neto (ganado − perdido)"
             val={formatoMoneda(monedaGrupo, resumen.neto)}
             color={resumen.neto >= 0 ? "text-emerald-700" : "text-red-600"}
           />
@@ -2560,7 +2439,7 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
         </div>
         <div className="text-[10px] text-slate-400">
           {resumen.jugadas} jugada(s) · {resumen.ganadas} ganada(s) · {resumen.perdidas} perdida(s) ·{" "}
-          {resumen.anuladas} anulada(s) · Neto = premios − apostado.
+          {resumen.anuladas} anulada(s) · Neto = ganado − perdido.
         </div>
       </div>
 
@@ -2570,22 +2449,28 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
           <span className="mr-2">🧾</span> {editJugadaId ? "Editar jugada" : "Registrar jugada"}
         </h2>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-          <div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="w-36">
             <label className={lbl}>Fecha</label>
             <input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} className={inp} data-testid="bitacora-fecha" />
           </div>
-          <div>
+          <div className="w-40">
             <label className={lbl}>Hipódromo</label>
             <input
               value={form.hipodromo}
               onChange={(e) => setForm({ ...form, hipodromo: e.target.value.toUpperCase() })}
               className={inp + " uppercase"}
               placeholder="LA PARAGUAITA"
+              list="bitacora-hipodromos"
               data-testid="bitacora-hipodromo"
             />
+            <datalist id="bitacora-hipodromos">
+              {hipodromosRegistrados.map((h) => (
+                <option key={h} value={h} />
+              ))}
+            </datalist>
           </div>
-          <div>
+          <div className="w-24">
             <label className={lbl}>Carrera</label>
             <input
               value={form.carrera}
@@ -2596,53 +2481,33 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
               data-testid="bitacora-carrera"
             />
           </div>
-          <div>
-            <label className={lbl}>Tipo de jugada</label>
-            <select value={form.tipo_jugada} onChange={(e) => setForm({ ...form, tipo_jugada: e.target.value })} className={inp + " font-bold"} data-testid="bitacora-tipo">
-              {["JUGADA", "TRIO", "SUPERTRIFECTA", "EXACTA", "QUINIELA", "WIN", "PLACE", "OTRO"].map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="md:col-span-2">
-            <label className={lbl}>Ejemplares</label>
+          <div className="flex-1 min-w-[200px]">
+            <label className={lbl}>Jugada</label>
             <input
               value={form.ejemplares}
               onChange={(e) => setForm({ ...form, ejemplares: e.target.value.toUpperCase() })}
               className={inp + " uppercase"}
-              placeholder="1-5 EL MAGO, 8 REYAZUL"
+              placeholder="1P DEL 4"
               data-testid="bitacora-ejemplares"
             />
           </div>
-          <div>
-            <label className={lbl}>Monto</label>
+          <div className="w-36">
+            <label className={lbl}>Monto (+ gana / − pierde)</label>
             <input
               value={form.monto}
-              onChange={(e) => setForm({ ...form, monto: e.target.value.replace(/[^\d.]/g, "") })}
+              onChange={(e) => setForm({ ...form, monto: soloMontoFirmado(e.target.value) })}
               className={inp + " text-right font-mono"}
-              placeholder="10"
+              placeholder="50 o -50"
               inputMode="decimal"
               data-testid="bitacora-monto"
             />
           </div>
-          <div>
-            <label className={lbl}>Estado</label>
-            <select
-              value={form.estado}
-              onChange={(e) => setForm({ ...form, estado: e.target.value })}
-              className={inp + " font-bold"}
-              data-testid="bitacora-estado"
-            >
-              {ESTADOS_JUGADA_EXTERNA.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
+
+        <p className="text-[10px] text-slate-500">
+          Monto <span className="font-black text-emerald-700">positivo = ganó</span> ·{" "}
+          <span className="font-black text-red-600">negativo = perdió</span>. El estado se calcula solo con el signo.
+        </p>
 
         <div className="flex justify-end gap-2">
           {editJugadaId ? (
@@ -2667,9 +2532,27 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
 
       {/* Listado de jugadas */}
       <div className="rounded-2xl border border-line bg-white p-5 shadow-sm space-y-3">
-        <h2 className="text-sm font-black text-slate-800">
-          <span className="mr-2">📒</span> Mis jugadas anotadas
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-black text-slate-800">
+            <span className="mr-2">📒</span> Mis jugadas anotadas
+          </h2>
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Hipódromo</label>
+            <select
+              value={filtroHipodromo}
+              onChange={(e) => setFiltroHipodromo(e.target.value)}
+              className="rounded-xl border border-line bg-surface px-3 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-200"
+              data-testid="bitacora-filtro-hipodromo"
+            >
+              <option value="">Todos</option>
+              {hipodromosRegistrados.map((h) => (
+                <option key={h} value={h}>
+                  {h}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
 
         {cargandoJugadas ? (
           <p className="text-[11px] text-slate-400">Cargando jugadas…</p>
@@ -2685,47 +2568,58 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
                   <th className="px-3 py-2">Fecha</th>
                   <th className="px-3 py-2">Hipódromo</th>
                   <th className="px-3 py-2">Carrera</th>
-                  <th className="px-3 py-2">Tipo de jugada</th>
-                  <th className="px-3 py-2">Ejemplares</th>
+                  <th className="px-3 py-2">Jugada</th>
                   <th className="px-3 py-2 text-right">Monto</th>
                   <th className="px-3 py-2">Estado</th>
                   <th className="px-3 py-2 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {jugadas.map((j, i) => {
+                {jugadasFiltradas.map((j, i) => {
                   const estado = normalizarEstadoJugada(j.estado);
+                  const anulada = estado === "ANULADA";
+                  const firmado = montoFirmado(j);
+                  const montoMostrado = anulada ? Math.abs(num(j.monto)) : firmado;
+                  const tonoMonto = anulada
+                    ? "text-slate-400 line-through"
+                    : firmado < 0
+                      ? "text-red-600"
+                      : firmado > 0
+                        ? "text-emerald-700"
+                        : "text-slate-500";
+                  const etiquetaEstado = anulada
+                    ? "ANULADA"
+                    : firmado < 0
+                      ? "PERDIÓ"
+                      : firmado > 0
+                        ? "GANÓ"
+                        : "PENDIENTE";
+                  const tonoEstado = anulada
+                    ? "border-slate-200 bg-slate-100 text-slate-500"
+                    : firmado < 0
+                      ? "border-red-200 bg-red-50 text-red-600"
+                      : firmado > 0
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-amber-200 bg-amber-50 text-amber-700";
                   return (
                     <tr key={String(j.id)} className="hover:bg-slate-50/70" data-testid={`bitacora-fila-${i}`}>
                       <td className={FILA_JUGADA + " font-mono"}>{String(j.fecha ?? "").slice(0, 10)}</td>
                       <td className={FILA_JUGADA + " font-bold text-slate-700"}>{String(j.hipodromo ?? "") || "—"}</td>
                       <td className={FILA_JUGADA + " text-right font-mono"}>{j.carrera != null ? String(j.carrera) : "—"}</td>
-                      <td className={FILA_JUGADA}>{String(j.tipo_jugada ?? "") || "—"}</td>
                       <td className={FILA_JUGADA + " max-w-[220px] truncate"} title={String(j.ejemplares ?? "")}>
                         {String(j.ejemplares ?? "") || "—"}
                       </td>
-                      <td className={FILA_JUGADA + " text-right font-mono font-bold"}>{formatoMoneda(monedaGrupo, num(j.monto))}</td>
+                      <td className={FILA_JUGADA + " text-right font-mono font-bold " + tonoMonto}>
+                        {firmado > 0 && !anulada ? "+" : ""}
+                        {formatoMoneda(monedaGrupo, montoMostrado)}
+                      </td>
                       <td className={FILA_JUGADA}>
-                        <select
-                          value={estado}
-                          onChange={(e) => void cambiarEstado(j, e.target.value)}
-                          className={`rounded-lg border px-2 py-1 text-[10px] font-black uppercase tracking-wider outline-none ${
-                            estado === "GANÓ"
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                              : estado === "PERDIÓ"
-                                ? "border-red-200 bg-red-50 text-red-600"
-                                : estado === "ANULADA"
-                                  ? "border-slate-200 bg-slate-100 text-slate-500"
-                                  : "border-amber-200 bg-amber-50 text-amber-700"
-                          }`}
+                        <span
+                          className={`rounded-lg border px-2 py-1 text-[10px] font-black uppercase tracking-wider ${tonoEstado}`}
                           data-testid={`bitacora-${i}-estado`}
                         >
-                          {ESTADOS_JUGADA_EXTERNA.map((s) => (
-                            <option key={s} value={s}>
-                              {s}
-                            </option>
-                          ))}
-                        </select>
+                          {etiquetaEstado}
+                        </span>
                       </td>
                       <td className={FILA_JUGADA + " text-right whitespace-nowrap"}>
                         <button
@@ -2736,6 +2630,21 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
                           data-testid={`bitacora-${i}-editar`}
                         >
                           ✏️
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void cambiarEstado(
+                              j,
+                              anulada ? estadoSegunMonto(montoFirmado(j) || num(j.monto)) : "ANULADA",
+                              anulada ? montoFirmado(j) || Math.abs(num(j.monto)) : undefined
+                            )
+                          }
+                          title={anulada ? "Reactivar jugada" : "Anular jugada"}
+                          className="mr-1 rounded border border-line px-1.5 py-1 transition hover:bg-slate-100"
+                          data-testid={`bitacora-${i}-anular`}
+                        >
+                          {anulada ? "♻️" : "🚫"}
                         </button>
                         <button
                           type="button"
@@ -2757,8 +2666,9 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
 
         {jugadas.length ? (
           <p className="text-[10px] text-slate-400">
-            {resumen.jugadas} anotación(es) · Apostado {formatoMoneda(monedaGrupo, resumen.apostado)} · Neto{" "}
-            {formatoMoneda(monedaGrupo, resumen.neto)} · Pendiente {formatoMoneda(monedaGrupo, resumen.pendiente)}
+            {resumen.jugadas} anotación(es) · Ganado {formatoMoneda(monedaGrupo, resumen.ganado)} · Perdido{" "}
+            {formatoMoneda(monedaGrupo, resumen.perdido)} · Neto {formatoMoneda(monedaGrupo, resumen.neto)} · Pendiente{" "}
+            {formatoMoneda(monedaGrupo, resumen.pendiente)}
           </p>
         ) : null}
       </div>
@@ -2766,7 +2676,7 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
   );
 }
 
-/** Caja de resumen de la bitácora (Apostado / Premios / Neto / Pendiente). */
+/** Caja de resumen de la bitácora (Ganado / Perdido / Neto / Pendiente). */
 function ResumenBitacora({ icon, lbl, val, color }: { icon: string; lbl: string; val: string; color: string }) {
   return (
     <div className="rounded-xl border border-line bg-slate-50 px-3 py-2">

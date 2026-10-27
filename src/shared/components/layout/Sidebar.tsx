@@ -88,7 +88,6 @@ export const CATEGORIAS: Categoria[] = [
       { href: "/inicio", emoji: "🏠", txt: "Inicio" },
       { href: "/apuestas", emoji: "🐎", txt: "Apuestas", visibleSiempre: true },
       { href: "/saldos-reportes", emoji: "💵", txt: "Reportes" },
-      { href: "/reporte-diario", emoji: "📑", txt: "Reporte Diario" },
       { href: "/clientes", emoji: "🧾", txt: "Clientes" },
     ],
   },
@@ -113,10 +112,10 @@ export const CATEGORIAS: Categoria[] = [
     titulo: "Contabilidad",
     emoji: "🏦",
     items: [
-      { href: "/contabilidad/caja", emoji: "🏦", txt: "Contabilidad / Depósitos / Retiros / Transferencias" },
-      { href: "/contabilidad/bancos", emoji: "💳", txt: "Bancos Reales" },
-      { href: "/contabilidad/ingresos", emoji: "📥", txt: "Ingresos / Depósitos" },
-      { href: "/contabilidad/monedas", emoji: "💱", txt: "Monedas y Tasas" },
+      // Sin submenús: una sola entrada que abre el módulo financiero completo
+      // (depósitos, retiros, transferencias, bancos, monedas y tasas viven
+      // dentro de sus pestañas).
+      { href: "/contabilidad/caja", emoji: "🏦", txt: "Operaciones Financieras" },
     ],
   },
   {
@@ -125,12 +124,11 @@ export const CATEGORIAS: Categoria[] = [
     emoji: "⚙️",
     items: [
       { href: "/portal", emoji: "🌐", txt: "Portal Clientes", visibleSiempre: true },
-      { href: "/carreras", emoji: "🏇", txt: "Carreras / Gaceta IA" },
-      { href: "/ejemplares", emoji: "🐴", txt: "Ejemplares / Gaceta IA" },
+      { href: "/carreras", emoji: "🏇", txt: "Registrar Carreras IA" },
       {
         href: "/inteligencia-hipica/proyecciones",
         emoji: "🧭",
-        txt: "Inteligencia Hípica (Motor Godet)",
+        txt: "Inteligencia Hípica",
         visibleSiempre: true,
       },
       { href: "/grupos", emoji: "⚙️", txt: "Configuración / Grupos / Usuarios" },

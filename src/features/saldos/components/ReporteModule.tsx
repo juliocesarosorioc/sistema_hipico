@@ -107,6 +107,8 @@ export function ReporteModule() {
   const [filtroDia, setFiltroDia] = useState<string>("TODOS");
   const [filtroHipodromo, setFiltroHipodromo] = useState<string>("TODOS");
   const [carrerasSeleccionadas, setCarrerasSeleccionadas] = useState<number[]>([]);
+  // Carreras desplegadas en la vista jerárquica (por defecto: contraídas).
+  const [carrerasAbiertas, setCarrerasAbiertas] = useState<Set<string>>(new Set());
   const [filtroCliente, setFiltroCliente] = useState<string>("");
   const [filtroRol, setFiltroRol] = useState<string>("TODOS");
   const [filtroModalidad, setFiltroModalidad] = useState<FiltroModalidadPivot>("TODAS");
@@ -125,6 +127,16 @@ export function ReporteModule() {
     setCarrerasSeleccionadas((prev) =>
       prev.includes(num) ? prev.filter((x) => x !== num) : [...prev, num].sort((a, b) => a - b)
     );
+  }, []);
+
+  // Abre/cierra el detalle de una carrera en la vista jerárquica.
+  const alternarCarreraDetalle = useCallback((clave: string) => {
+    setCarrerasAbiertas((prev) => {
+      const s = new Set(prev);
+      if (s.has(clave)) s.delete(clave);
+      else s.add(clave);
+      return s;
+    });
   }, []);
 
   const limpiarFiltrosPivot = useCallback(() => {
@@ -160,6 +172,8 @@ export function ReporteModule() {
     });
     if (id !== solicitud.current) return;
     setPlanilla(r);
+    // Nuevo reporte: las carreras vuelven a quedar contraídas.
+    setCarrerasAbiertas(new Set());
     setCargando(false);
   }, [grupos, grupoId, desde, hasta]);
 
@@ -395,6 +409,19 @@ export function ReporteModule() {
   const resumen = resumirReporte(rpt);
   const hoy = hoyLocal();
 
+  // Claves de todas las carreras del reporte, para el botón global de contraer/expandir.
+  const clavesCarreras = useMemo(() => {
+    const claves: string[] = [];
+    for (const d of rpt?.dias ?? []) {
+      for (const h of d.hipodromos) {
+        for (const c of h.carreras) claves.push(`C-${d.fecha}-${h.nombre}-${c.numero}`);
+      }
+    }
+    return claves;
+  }, [rpt]);
+  const todasCarrerasAbiertas =
+    clavesCarreras.length > 0 && clavesCarreras.every((k) => carrerasAbiertas.has(k));
+
   return (
     <div className="p-4 max-w-6xl mx-auto min-h-screen bg-gray-100 font-sans text-sm">
       {/* CABECERA */}
@@ -529,6 +556,24 @@ export function ReporteModule() {
               🧮 Matriz Cliente × Carrera
             </button>
           </div>
+
+          {/* Contraer/expandir todas las carreras de la vista jerárquica */}
+          {vistaPivot === "JERARQUIA" && clavesCarreras.length > 0 && (
+            <button
+              type="button"
+              onClick={() =>
+                setCarrerasAbiertas(todasCarrerasAbiertas ? new Set() : new Set(clavesCarreras))
+              }
+              className="rounded bg-slate-700 px-2 py-1 text-[11px] font-bold text-slate-100 hover:bg-slate-600"
+              title={
+                todasCarrerasAbiertas
+                  ? "Contraer todas las carreras"
+                  : "Desplegar todas las carreras"
+              }
+            >
+              {todasCarrerasAbiertas ? "▾ Contraer carreras" : "▸ Expandir carreras"}
+            </button>
+          )}
         </div>
 
         {/* Controles de Segmentación Dinámica (Día, Hipódromo, Cliente, Rol, Modalidad, Resultado) */}
@@ -842,14 +887,31 @@ export function ReporteModule() {
                             const filasVisibles = carrera.filas.filter(
                               (f) => f.jugada !== "Bono por Cruce de jugadas"
                             );
+                            const claveCarrera = `C-${dia.fecha}-${hipo.nombre}-${carrera.numero}`;
+                            const abiertaCarrera = carrerasAbiertas.has(claveCarrera);
                             return (
                               <div
                                 key={carrera.numero}
                                 className="mt-1.5 rounded border border-gray-300 overflow-hidden shadow-sm"
                               >
-                                <div className="bg-blue-50 border-b border-gray-300 px-2.5 py-1.5 flex flex-wrap justify-between items-center gap-2 text-gray-800">
+                                <button
+                                  type="button"
+                                  onClick={() => alternarCarreraDetalle(claveCarrera)}
+                                  title={
+                                    abiertaCarrera
+                                      ? "Contraer las jugadas de esta carrera"
+                                      : "Desplegar las jugadas de esta carrera"
+                                  }
+                                  className="w-full bg-blue-50 border-b border-gray-300 px-2.5 py-1.5 flex flex-wrap justify-between items-center gap-2 text-left text-gray-800 hover:bg-blue-100 transition-colors"
+                                >
                                   <div className="flex flex-wrap items-center gap-2.5 font-bold">
+                                    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-blue-200 text-[10px] font-black text-blue-900">
+                                      {abiertaCarrera ? "▾" : "▸"}
+                                    </span>
                                     <span>🏁 Carrera {carrera.numero}</span>
+                                    <span className="rounded bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-500 border border-blue-200">
+                                      {filasVisibles.length} jugada(s)
+                                    </span>
                                     {carrera.pizarra ? (
                                       <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 text-[10px] font-black text-slate-700 border border-blue-200 shadow-sm">
                                         <span className="text-slate-400 uppercase mr-0.5">Pizarra:</span>
@@ -873,63 +935,65 @@ export function ReporteModule() {
                                     )}
                                   </div>
                                   <TotalBadge v={carrera.subtotal} small />
-                                </div>
-                                <table className="w-full text-left border-collapse">
-                                  <thead>
-                                    <tr className="border-b border-gray-200 bg-gray-50 text-gray-600 text-[11px] uppercase">
-                                      <th className="py-0.5 px-2 w-16">Hora</th>
-                                      <th className="py-0.5 px-2 w-24">Rol</th>
-                                      <th className="py-0.5 px-2">Jugada</th>
-                                      <th className="py-0.5 px-2 w-20 text-center">Caballo</th>
-                                      <th className="py-0.5 px-2">Cliente</th>
-                                      <th className="py-0.5 px-2 w-24 text-right">Monto</th>
-                                      <th className="py-0.5 px-2 w-28 text-right">Resultado</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {filasVisibles.map((f) => (
-                                      <tr
-                                        key={f.id}
-                                        className={`border-b border-gray-100 last:border-0 hover:bg-gray-50 ${
-                                          f.rol === "CRUCE" ? "bg-amber-50" : ""
-                                        }`}
-                                      >
-                                        <td className="py-0.5 px-2 font-mono text-[10px] font-bold text-slate-500 whitespace-nowrap">
-                                          {f.horaCarga ? `🕒 ${f.horaCarga}` : "—"}
-                                        </td>
-                                        <td className="py-0.5 px-2">
-                                          {f.rol === "CRUCE" ? (
-                                            <span className="bg-amber-500 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded-full">
-                                              🔀 {f.rol}
-                                            </span>
-                                          ) : (
-                                            <span className="bg-gray-500 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded-full">
-                                              {f.rol}
-                                            </span>
-                                          )}
-                                        </td>
-                                        <td className="py-0.5 px-2 font-medium text-gray-800">
-                                          {etiquetaJugada(f.jugada)}
-                                          {rotuloPareo(f.jugada, f.caballo) && (
-                                            <span className="ml-1 rounded bg-blue-600 text-white text-[9px] font-bold px-1 py-0.5">
-                                              {rotuloPareo(f.jugada, f.caballo)}
-                                            </span>
-                                          )}
-                                        </td>
-                                        <td className="py-0.5 px-2 text-center font-bold text-gray-700">
-                                          {caballoPareoLegible(f.caballo) || "—"}
-                                        </td>
-                                        <td className="py-0.5 px-2 text-gray-500 text-xs">{f.cliente}</td>
-                                        <td className="py-0.5 px-2 text-right text-gray-600">
-                                          {f.monto > 0 ? fmtMonto(f.monto) : ""}
-                                        </td>
-                                        <td className="py-0.5 px-2 text-right">
-                                          <Signo v={f.resultado} vacio={f.rol === "CRUCE"} />
-                                        </td>
+                                </button>
+                                {abiertaCarrera && (
+                                  <table className="w-full text-left border-collapse">
+                                    <thead>
+                                      <tr className="border-b border-gray-200 bg-gray-50 text-gray-600 text-[11px] uppercase">
+                                        <th className="py-0.5 px-2 w-16">Hora</th>
+                                        <th className="py-0.5 px-2 w-24">Rol</th>
+                                        <th className="py-0.5 px-2">Jugada</th>
+                                        <th className="py-0.5 px-2 w-20 text-center">Caballo</th>
+                                        <th className="py-0.5 px-2">Cliente</th>
+                                        <th className="py-0.5 px-2 w-24 text-right">Monto</th>
+                                        <th className="py-0.5 px-2 w-28 text-right">Resultado</th>
                                       </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
+                                    </thead>
+                                    <tbody>
+                                      {filasVisibles.map((f) => (
+                                        <tr
+                                          key={f.id}
+                                          className={`border-b border-gray-100 last:border-0 hover:bg-gray-50 ${
+                                            f.rol === "CRUCE" ? "bg-amber-50" : ""
+                                          }`}
+                                        >
+                                          <td className="py-0.5 px-2 font-mono text-[10px] font-bold text-slate-500 whitespace-nowrap">
+                                            {f.horaCarga ? `🕒 ${f.horaCarga}` : "—"}
+                                          </td>
+                                          <td className="py-0.5 px-2">
+                                            {f.rol === "CRUCE" ? (
+                                              <span className="bg-amber-500 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded-full">
+                                                🔀 {f.rol}
+                                              </span>
+                                            ) : (
+                                              <span className="bg-gray-500 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded-full">
+                                                {f.rol}
+                                              </span>
+                                            )}
+                                          </td>
+                                          <td className="py-0.5 px-2 font-medium text-gray-800">
+                                            {etiquetaJugada(f.jugada)}
+                                            {rotuloPareo(f.jugada, f.caballo) && (
+                                              <span className="ml-1 rounded bg-blue-600 text-white text-[9px] font-bold px-1 py-0.5">
+                                                {rotuloPareo(f.jugada, f.caballo)}
+                                              </span>
+                                            )}
+                                          </td>
+                                          <td className="py-0.5 px-2 text-center font-bold text-gray-700">
+                                            {caballoPareoLegible(f.caballo) || "—"}
+                                          </td>
+                                          <td className="py-0.5 px-2 text-gray-500 text-xs">{f.cliente}</td>
+                                          <td className="py-0.5 px-2 text-right text-gray-600">
+                                            {f.monto > 0 ? fmtMonto(f.monto) : ""}
+                                          </td>
+                                          <td className="py-0.5 px-2 text-right">
+                                            <Signo v={f.resultado} vacio={f.rol === "CRUCE"} />
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                )}
                               </div>
                             );
                           })}

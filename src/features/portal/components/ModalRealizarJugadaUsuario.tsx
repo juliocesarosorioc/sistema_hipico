@@ -9,7 +9,6 @@
  * del Administrador y permitiendo solicitar el desbloqueo cuando corresponda.
  */
 
-import { Button } from "@/shared/components/ui/Button";
 import { SeccionJugadasPortal } from "@/features/portal/components/SeccionJugadasPortal";
 import type { SesionPortal } from "@/features/portal/lib/portal";
 
@@ -17,14 +16,18 @@ type Props = {
   sesion: SesionPortal;
   onCerrar: () => void;
   onRealizada: () => void;
-  onPedirNoRelacionada: () => void;
+  /**
+   * Se mantiene por compatibilidad con el llamador, pero el botón "Reportar
+   * jugada no relacionada" ya no se muestra acá: el portal tiene su propia
+   * entrada en el menú lateral.
+   */
+  onPedirNoRelacionada?: () => void;
 };
 
 export function ModalRealizarJugadaUsuario({
   sesion,
   onCerrar,
   onRealizada,
-  onPedirNoRelacionada,
 }: Props) {
   return (
     <div
@@ -49,14 +52,6 @@ export function ModalRealizarJugadaUsuario({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onPedirNoRelacionada}
-              className="border-indigo-400/50 text-indigo-100 hover:bg-indigo-900"
-            >
-              ➕ Reportar jugada no relacionada
-            </Button>
             <button
               type="button"
               onClick={onCerrar}

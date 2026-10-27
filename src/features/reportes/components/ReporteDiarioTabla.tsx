@@ -31,6 +31,8 @@ type Props = {
   perspectiva?: "casa" | "cliente";
   /** Mapa opcional de pizarras por clave `${fecha}|${hipodromo}|${carrera}` o `${hipodromo}|${carrera}`. */
   pizarras?: Record<string, string[]>;
+  /** Si es false, la tabla ocupa todo el ancho y no dibuja el panel de gráficos. */
+  mostrarGraficos?: boolean;
 };
 
 /** Balance desde el punto de vista de quien mira el reporte. */
@@ -54,9 +56,9 @@ const numero = (n: number): string => n.toLocaleString("en-US");
 
 function Kpi({ etiqueta, valor, acento }: { etiqueta: string; valor: string; acento: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
-      <div className="text-[10px] font-black uppercase tracking-wider text-slate-600">{etiqueta}</div>
-      <div className={`mt-1 text-2xl sm:text-3xl font-black tabular-nums tracking-tight ${acento}`}>{valor}</div>
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+      <div className="text-[9px] font-black uppercase tracking-wider text-slate-600">{etiqueta}</div>
+      <div className={`mt-0.5 text-lg sm:text-xl font-black tabular-nums tracking-tight ${acento}`}>{valor}</div>
     </div>
   );
 }
@@ -70,7 +72,7 @@ function ContenedoresEjemplares({ caballo }: { caballo?: string | null }) {
   const pintarDisco = (num: string, k: string) => (
     <span
       key={k}
-      className={`inline-flex h-6 min-w-[1.5rem] px-1.5 rounded-md items-center justify-center text-[11px] font-black shadow-xs border ${colorDiscoNumero(num)}`}
+      className={`inline-flex h-5 min-w-[1.25rem] shrink-0 px-1 rounded items-center justify-center text-[10px] font-black shadow-xs border ${colorDiscoNumero(num)}`}
       title={`Ejemplar #${num}`}
     >
       #{num}
@@ -82,9 +84,9 @@ function ContenedoresEjemplares({ caballo }: { caballo?: string | null }) {
     const der = numerosDeCaballo(pareo.da);
     if (izq.length && der.length) {
       return (
-        <span className="inline-flex flex-wrap items-center gap-1">
+        <span className="inline-flex flex-nowrap items-center gap-1 whitespace-nowrap">
           {izq.map((n, i) => pintarDisco(n, `i-${i}`))}
-          <span className="text-[10px] font-black text-slate-500 px-0.5">vs</span>
+          <span className="text-[9px] font-black text-slate-500 px-0.5">vs</span>
           {der.map((n, i) => pintarDisco(n, `d-${i}`))}
         </span>
       );
@@ -94,14 +96,14 @@ function ContenedoresEjemplares({ caballo }: { caballo?: string | null }) {
   const nums = numerosDeCaballo(raw);
   if (nums.length > 0) {
     return (
-      <span className="inline-flex flex-wrap items-center gap-1">
+      <span className="inline-flex flex-nowrap items-center gap-1 whitespace-nowrap">
         {nums.map((n, i) => pintarDisco(n, `n-${i}`))}
       </span>
     );
   }
 
   return (
-    <span className="inline-flex items-center rounded-md border border-slate-300 bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-bold text-slate-800">
+    <span className="inline-flex items-center rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-800">
       {raw}
     </span>
   );
@@ -111,21 +113,21 @@ function ContenedoresEjemplares({ caballo }: { caballo?: string | null }) {
 function PizarraCarreraBadges({ puestos }: { puestos: string[] }) {
   if (!puestos || puestos.length === 0) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[9.5px] font-bold text-amber-800">
+      <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[9px] font-bold text-amber-800">
         ⏳ Pizarra pendiente
       </span>
     );
   }
   return (
-    <div className="inline-flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1">
-      <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 mr-0.5">
+    <div className="inline-flex shrink-0 flex-nowrap items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5">
+      <span className="mr-0.5 text-[8.5px] font-black uppercase tracking-wider text-slate-500">
         🏁 Pizarra:
       </span>
       {puestos.slice(0, 5).map((numCab, idx) => (
         <span key={`${numCab}-${idx}`} className="inline-flex items-center gap-0.5">
-          <span className="text-[9px] font-black text-slate-500">{idx + 1}º</span>
+          <span className="text-[8.5px] font-black leading-none text-slate-500">{idx + 1}º</span>
           <span
-            className={`inline-flex h-5 min-w-[1.35rem] px-1 rounded items-center justify-center text-[10px] font-black shadow-2xs border ${colorDiscoNumero(numCab)}`}
+            className={`inline-flex h-4 min-w-[1.1rem] items-center justify-center rounded border px-0.5 text-[9px] font-black leading-none shadow-2xs ${colorDiscoNumero(numCab)}`}
             title={`${idx + 1}º lugar: Ejemplar #${numCab}`}
           >
             {numCab}
@@ -188,7 +190,13 @@ function construirArbolDias(datos: ReporteDiario): DiaPivotDiario[] {
   });
 }
 
-export function ReporteDiarioTabla({ datos, moneda = "USD", perspectiva = "casa", pizarras }: Props) {
+export function ReporteDiarioTabla({
+  datos,
+  moneda = "USD",
+  perspectiva = "casa",
+  pizarras,
+  mostrarGraficos = true,
+}: Props) {
   const esCliente = perspectiva === "cliente";
   const { filas, totales } = datos;
   const dinero = (v: number) => formatoDinero(v, moneda);
@@ -365,46 +373,20 @@ export function ReporteDiarioTabla({ datos, moneda = "USD", perspectiva = "casa"
         },
       ];
 
-  // Datos agregados para los gráficos laterales (por Hipódromo y por Día)
-  const resumenPorHipodromo = useMemo(() => {
-    const mapa = new Map<string, { hipodromo: string; jugado: number; premios: number; neto: number; tickets: number }>();
-    for (const d of diasArbol) {
-      for (const h of d.hipodromos) {
-        const prev = mapa.get(h.hipodromo) ?? { hipodromo: h.hipodromo, jugado: 0, premios: 0, neto: 0, tickets: 0 };
-        prev.jugado += h.totalJugado;
-        prev.premios += h.totalPremios;
-        prev.neto += balanceDe(h, esCliente);
-        prev.tickets += h.tickets;
-        mapa.set(h.hipodromo, prev);
-      }
-    }
-    return [...mapa.values()].sort((a, b) => Math.abs(b.neto) - Math.abs(a.neto) || b.jugado - a.jugado);
-  }, [diasArbol, esCliente]);
-
-  const resumenPorDia = useMemo(() => {
-    return diasArbol.map((d) => ({
-      fecha: d.fecha,
-      jugado: d.totalJugado,
-      premios: d.totalPremios,
-      neto: balanceDe(d, esCliente),
-      tickets: d.tickets,
-    }));
-  }, [diasArbol, esCliente]);
-
   return (
     <div className="space-y-4">
-      <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${kpis.length >= 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
+      <div className={`grid grid-cols-1 gap-2 sm:grid-cols-2 ${kpis.length >= 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         {kpis.map((k) => (
           <Kpi key={k.etiqueta} etiqueta={k.etiqueta} valor={k.valor} acento={k.acento} />
         ))}
       </div>
 
       {/* Barra de controles de Tabla Dinámica */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2">
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
+        <div className="flex items-center gap-2 text-[11px] font-bold text-slate-800">
           <span>📊</span>
           <span>Tabla Dinámica:</span>
-          <span className="rounded bg-indigo-100 px-2 py-0.5 text-[10px] font-black uppercase text-indigo-900">
+          <span className="rounded bg-indigo-100 px-2 py-0.5 text-[9px] font-black uppercase text-indigo-900">
             Día → Hipódromo → Carrera (con Pizarra) → Jugadas
           </span>
         </div>
@@ -413,14 +395,14 @@ export function ReporteDiarioTabla({ datos, moneda = "USD", perspectiva = "casa"
             <button
               type="button"
               onClick={expandirTodo}
-              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-100"
+              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-700 hover:bg-slate-100"
             >
               📂 Expandir todo
             </button>
             <button
               type="button"
               onClick={contraerTodo}
-              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-100"
+              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-700 hover:bg-slate-100"
             >
               📁 Contraer todo
             </button>
@@ -428,20 +410,24 @@ export function ReporteDiarioTabla({ datos, moneda = "USD", perspectiva = "casa"
         )}
       </div>
 
-      {/* Layout Principal: Tabla Dinámica a la izquierda + Gráficos Interactivos a la derecha */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        <div className="xl:col-span-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      {/* Layout Principal: Tabla Dinámica (a todo el ancho si no hay gráficos) */}
+      <div className={`grid grid-cols-1 gap-4 ${mostrarGraficos ? "xl:grid-cols-12" : ""}`}>
+        <div
+          className={`overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ${
+            mostrarGraficos ? "xl:col-span-8" : ""
+          }`}
+        >
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-xs">
               <thead>
-                <tr className="bg-slate-100 text-left text-[10px] font-black uppercase tracking-wider text-slate-600">
-                  <th className="px-3 py-2.5">Estructura (Día / Hipódromo / Carrera)</th>
-                  <th className="px-3 py-2.5 text-right">Jugadas</th>
-                  <th className="px-3 py-2.5 text-right">Total Jugado</th>
-                  <th className="px-3 py-2.5 text-right">Total Premios</th>
-                  {mostrarDevolucion && <th className="px-3 py-2.5 text-right">Incentivo</th>}
-                  {mostrarComisionDevuelta && <th className="px-3 py-2.5 text-right">Comisión Devuelta</th>}
-                  <th className="px-3 py-2.5 text-right">Balance Neto</th>
+                <tr className="bg-slate-100 text-left text-[9px] font-black uppercase tracking-wider text-slate-600">
+                  <th className="whitespace-nowrap px-2 py-1">Día / Hipódromo / Carrera</th>
+                  <th className="whitespace-nowrap px-2 py-1 text-right">Jugadas</th>
+                  <th className="whitespace-nowrap px-2 py-1 text-right">Total Jugado</th>
+                  <th className="whitespace-nowrap px-2 py-1 text-right">Total Premios</th>
+                  {mostrarDevolucion && <th className="whitespace-nowrap px-2 py-1 text-right">Incentivo</th>}
+                  {mostrarComisionDevuelta && <th className="whitespace-nowrap px-2 py-1 text-right">Comisión Devuelta</th>}
+                  <th className="whitespace-nowrap px-2 py-1 text-right">Balance Neto</th>
                 </tr>
               </thead>
               <tbody>
@@ -480,25 +466,25 @@ export function ReporteDiarioTabla({ datos, moneda = "USD", perspectiva = "casa"
 
               {filas.length > 0 ? (
                 <tfoot>
-                  <tr className="border-t-2 border-slate-300 bg-slate-100 text-sm font-black text-slate-900">
-                    <td className="px-3 py-3 uppercase tracking-wide">Total consolidado</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-base">{numero(totales.tickets)}</td>
-                    <td className="px-3 py-3 text-right font-mono tabular-nums text-base">{dinero(totales.totalJugado)}</td>
-                    <td className="px-3 py-3 text-right font-mono tabular-nums text-base text-emerald-700">
+                  <tr className="border-t-2 border-slate-300 bg-slate-100 text-xs font-black text-slate-900">
+                    <td className="whitespace-nowrap px-2 py-1 uppercase tracking-wide">Total consolidado</td>
+                    <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums text-xs">{numero(totales.tickets)}</td>
+                    <td className="whitespace-nowrap px-2 py-1 text-right font-mono tabular-nums text-xs">{dinero(totales.totalJugado)}</td>
+                    <td className="whitespace-nowrap px-2 py-1 text-right font-mono tabular-nums text-xs text-emerald-700">
                       {dinero(totales.totalPremios)}
                     </td>
                     {mostrarDevolucion && (
-                      <td className="bg-emerald-100 px-3 py-3 text-right font-mono tabular-nums text-emerald-800">
+                      <td className="whitespace-nowrap bg-emerald-100 px-2 py-1 text-right font-mono tabular-nums text-emerald-800">
                         +{dinero(totales.devolucion)}
                       </td>
                     )}
                     {mostrarComisionDevuelta && (
-                      <td className="bg-amber-50 px-3 py-3 text-right font-mono tabular-nums text-amber-800">
+                      <td className="whitespace-nowrap bg-amber-50 px-2 py-1 text-right font-mono tabular-nums text-amber-800">
                         {totalComisionDevuelta > 0 ? `+${dinero(totalComisionDevuelta)}` : "—"}
                       </td>
                     )}
                     <td
-                      className={`px-3 py-3 text-right font-mono tabular-nums text-base ${
+                      className={`whitespace-nowrap px-2 py-1 text-right font-mono tabular-nums text-xs ${
                         balanceTotal >= 0 ? "text-emerald-700" : "text-rose-600"
                       }`}
                     >
@@ -511,144 +497,204 @@ export function ReporteDiarioTabla({ datos, moneda = "USD", perspectiva = "casa"
           </div>
         </div>
 
-        {/* PANEL DERECHO DE GRÁFICOS (POR HIPÓDROMO Y POR DÍA) */}
-        <div className="xl:col-span-4 space-y-4">
-          {/* GRÁFICO 1: RESULTADOS POR HIPÓDROMO */}
-          <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 p-4 text-white shadow-md">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h4 className="text-xs font-black uppercase tracking-wider text-amber-400">
-                  🏇 Resultados por Hipódromo
-                </h4>
-                <p className="text-[10px] font-semibold text-slate-300">
-                  Rendimiento neto y volumen jugado por circuito
-                </p>
-              </div>
-              <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[10px] font-black text-indigo-200">
-                {resumenPorHipodromo.length} circuito(s)
-              </span>
-            </div>
-
-            {resumenPorHipodromo.length === 0 ? (
-              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-6 text-center text-xs text-slate-400">
-                Sin actividad por hipódromo en este rango.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {(() => {
-                  const maxAbs = Math.max(...resumenPorHipodromo.map((h) => Math.max(Math.abs(h.neto), h.jugado, 1)));
-                  return resumenPorHipodromo.map((h) => {
-                    const pctJugado = Math.max(8, Math.round((h.jugado / maxAbs) * 100));
-                    const pctNeto = Math.max(8, Math.round((Math.abs(h.neto) / maxAbs) * 100));
-                    const positivo = h.neto >= 0;
-                    return (
-                      <div key={h.hipodromo} className="rounded-xl border border-white/10 bg-white/5 p-2.5">
-                        <div className="flex items-center justify-between gap-2 text-xs">
-                          <span className="truncate font-black text-white">🏇 {h.hipodromo}</span>
-                          <span
-                            className={`font-mono text-sm font-black tabular-nums ${
-                              positivo ? "text-emerald-400" : "text-rose-400"
-                            }`}
-                          >
-                            {h.neto > 0 ? `+${dinero(h.neto)}` : dinero(h.neto)}
-                          </span>
-                        </div>
-                        <div className="mt-1.5 space-y-1">
-                          <div className="flex items-center gap-2 text-[10px] text-slate-300">
-                            <span className="w-14 shrink-0">Jugado</span>
-                            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
-                              <div
-                                className="h-full rounded-full bg-indigo-400 transition-all"
-                                style={{ width: `${pctJugado}%` }}
-                              />
-                            </div>
-                            <span className="w-16 text-right font-mono font-bold">{dinero(h.jugado)}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-[10px] text-slate-300">
-                            <span className="w-14 shrink-0">{positivo ? "Ganancia" : "Pérdida"}</span>
-                            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
-                              <div
-                                className={`h-full rounded-full transition-all ${
-                                  positivo ? "bg-emerald-400" : "bg-rose-500"
-                                }`}
-                                style={{ width: `${pctNeto}%` }}
-                              />
-                            </div>
-                            <span className="w-16 text-right font-mono font-bold">
-                              {h.tickets} jug.
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
-            )}
+        {mostrarGraficos ? (
+          <div className="xl:col-span-4">
+            <GraficosReporteDiario datos={datos} moneda={moneda} perspectiva={perspectiva} />
           </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
-          {/* GRÁFICO 2: RESULTADOS POR DÍA */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-md">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h4 className="text-xs font-black uppercase tracking-wider text-slate-900">
-                  📅 Resultados por Día
-                </h4>
-                <p className="text-[10px] font-semibold text-slate-500">
-                  Evolución diaria de ganancias y jugadas
-                </p>
-              </div>
-              <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-[10px] font-black text-indigo-800">
-                {resumenPorDia.length} día(s)
-              </span>
-            </div>
+/**
+ * Gráficos del reporte (por Hipódromo y por Día). Se exportan aparte para que
+ * el Portal pueda colocarlos en su propia columna (donde antes estaban los QR)
+ * y la tabla quede a todo el ancho.
+ */
+export function GraficosReporteDiario({
+  datos,
+  moneda = "USD",
+  perspectiva = "casa",
+}: {
+  datos: ReporteDiario;
+  moneda?: string;
+  perspectiva?: "casa" | "cliente";
+}) {
+  const esCliente = perspectiva === "cliente";
+  const dinero = (v: number) => formatoDinero(v, moneda);
+  const diasArbol = useMemo(() => construirArbolDias(datos), [datos]);
 
-            {resumenPorDia.length === 0 ? (
-              <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-6 text-center text-xs text-slate-400">
-                Sin jornadas registradas para graficar.
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {(() => {
-                  const maxDia = Math.max(...resumenPorDia.map((d) => Math.max(Math.abs(d.neto), d.jugado, 1)));
-                  return resumenPorDia.map((d) => {
-                    const pct = Math.max(10, Math.round((Math.abs(d.neto) / maxDia) * 100));
-                    const pos = d.neto >= 0;
-                    return (
-                      <div key={d.fecha} className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-black text-slate-800">📅 {d.fecha}</span>
-                          <span
-                            className={`font-mono text-sm font-black tabular-nums ${
-                              pos ? "text-emerald-700" : "text-rose-600"
-                            }`}
-                          >
-                            {d.neto > 0 ? `+${dinero(d.neto)}` : dinero(d.neto)}
-                          </span>
-                        </div>
-                        <div className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
-                          <div
-                            className={`h-full rounded-full ${
-                              pos
-                                ? "bg-gradient-to-r from-emerald-500 to-teal-400"
-                                : "bg-gradient-to-r from-rose-600 to-orange-500"
-                            }`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        <div className="mt-1 flex items-center justify-between text-[10px] font-bold text-slate-500">
-                          <span>Apostado: {dinero(d.jugado)}</span>
-                          <span>Premios: {dinero(d.premios)}</span>
-                          <span>{d.tickets} ticket(s)</span>
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
-            )}
+  // Datos agregados para los gráficos (por Hipódromo y por Día)
+  const resumenPorHipodromo = useMemo(() => {
+    const mapa = new Map<string, { hipodromo: string; jugado: number; premios: number; neto: number; tickets: number }>();
+    for (const d of diasArbol) {
+      for (const h of d.hipodromos) {
+        const prev = mapa.get(h.hipodromo) ?? { hipodromo: h.hipodromo, jugado: 0, premios: 0, neto: 0, tickets: 0 };
+        prev.jugado += h.totalJugado;
+        prev.premios += h.totalPremios;
+        prev.neto += balanceDe(h, esCliente);
+        prev.tickets += h.tickets;
+        mapa.set(h.hipodromo, prev);
+      }
+    }
+    return [...mapa.values()].sort((a, b) => Math.abs(b.neto) - Math.abs(a.neto) || b.jugado - a.jugado);
+  }, [diasArbol, esCliente]);
+
+  const resumenPorDia = useMemo(() => {
+    return diasArbol.map((d) => ({
+      fecha: d.fecha,
+      jugado: d.totalJugado,
+      premios: d.totalPremios,
+      neto: balanceDe(d, esCliente),
+      tickets: d.tickets,
+    }));
+  }, [diasArbol, esCliente]);
+
+  return (
+    <div className="space-y-4">
+      {/* GRÁFICO 1: RESULTADOS POR HIPÓDROMO */}
+      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 p-3 text-white shadow-md">
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h4 className="text-xs font-black uppercase tracking-wider text-amber-400">
+              🏇 Resultados por Hipódromo
+            </h4>
+            <p className="text-[10px] font-semibold text-slate-300">
+              Ganancia o pérdida neta por circuito
+            </p>
           </div>
+          <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[10px] font-black text-indigo-200">
+            {resumenPorHipodromo.length} circuito(s)
+          </span>
         </div>
+
+        {resumenPorHipodromo.length === 0 ? (
+          <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-6 text-center text-xs text-slate-400">
+            Sin actividad por hipódromo en este rango.
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {(() => {
+              const maxAbs = Math.max(...resumenPorHipodromo.map((h) => Math.abs(h.neto)), 1);
+              return resumenPorHipodromo.map((h) => {
+                const gana = h.neto >= 0;
+                const pct = Math.max(6, Math.round((Math.abs(h.neto) / maxAbs) * 100));
+                return (
+                  <div key={h.hipodromo} className="rounded-xl border border-white/10 bg-white/5 px-2 py-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className="min-w-0 truncate text-[9px] font-bold uppercase tracking-wide text-slate-400"
+                        title={h.hipodromo}
+                      >
+                        {h.hipodromo}
+                      </span>
+                      <span
+                        className={`shrink-0 rounded px-1 text-[8px] font-black ${
+                          gana ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"
+                        }`}
+                      >
+                        {gana ? "GANA" : "PIERDE"}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-800">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            gana
+                              ? "bg-gradient-to-r from-emerald-500 to-teal-300"
+                              : "bg-gradient-to-r from-rose-600 to-orange-400"
+                          }`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <span
+                        className={`w-[86px] shrink-0 text-right font-mono text-[10px] font-black tabular-nums ${
+                          gana ? "text-emerald-300" : "text-rose-300"
+                        }`}
+                      >
+                        {h.neto > 0 ? `+${dinero(h.neto)}` : dinero(h.neto)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        )}
+      </div>
+
+      {/* GRÁFICO 2: RESULTADOS POR DÍA */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-md">
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h4 className="text-xs font-black uppercase tracking-wider text-slate-900">
+              📅 Resultados por Día
+            </h4>
+            <p className="text-[10px] font-semibold text-slate-500">
+              Ganancia o pérdida neta por jornada
+            </p>
+          </div>
+          <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-[10px] font-black text-indigo-800">
+            {resumenPorDia.length} día(s)
+          </span>
+        </div>
+
+        {resumenPorDia.length === 0 ? (
+          <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-6 text-center text-xs text-slate-400">
+            Sin jornadas registradas para graficar.
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {(() => {
+              const maxDia = Math.max(...resumenPorDia.map((d) => Math.abs(d.neto)), 1);
+              return resumenPorDia.map((d) => {
+                const pct = Math.max(10, Math.round((Math.abs(d.neto) / maxDia) * 100));
+                const pos = d.neto >= 0;
+                return (
+                  <div key={d.fecha} className="rounded-xl border border-slate-200 bg-slate-50/70 px-2 py-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate text-[10px] font-black text-slate-800">
+                        📅 {d.fecha}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        <span
+                          className={`rounded px-1 text-[8px] font-black ${
+                            pos ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                          }`}
+                        >
+                          {pos ? "GANA" : "PIERDE"}
+                        </span>
+                        <span
+                          className={`font-mono text-[10px] font-black tabular-nums ${
+                            pos ? "text-emerald-700" : "text-rose-600"
+                          }`}
+                        >
+                          {d.neto > 0 ? `+${dinero(d.neto)}` : dinero(d.neto)}
+                        </span>
+                      </span>
+                    </div>
+                    <div className="mt-1 h-3 w-full overflow-hidden rounded-full bg-slate-200">
+                      <div
+                        className={`h-full rounded-full ${
+                          pos
+                            ? "bg-gradient-to-r from-emerald-500 to-teal-400"
+                            : "bg-gradient-to-r from-rose-600 to-orange-500"
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-[9px] font-bold text-slate-500">
+                      <span>Apostado: {dinero(d.jugado)}</span>
+                      <span>Premios: {dinero(d.premios)}</span>
+                      <span>{d.tickets} ticket(s)</span>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -692,7 +738,7 @@ function FragmentDia({
         onClick={onToggleDia}
         className="cursor-pointer border-t-2 border-slate-300 bg-slate-900 text-white hover:bg-slate-800 transition-colors"
       >
-        <td className="px-3 py-2.5 font-black">
+        <td className="whitespace-nowrap px-2 py-1 font-black">
           <div className="flex items-center gap-2">
             <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-white/15 text-xs">
               {diaAbierto ? "▾" : "▸"}
@@ -703,23 +749,23 @@ function FragmentDia({
             </span>
           </div>
         </td>
-        <td className="px-3 py-2.5 text-right font-bold tabular-nums">{numero(dia.tickets)}</td>
-        <td className="px-3 py-2.5 text-right font-mono font-bold tabular-nums">{dinero(dia.totalJugado)}</td>
-        <td className="px-3 py-2.5 text-right font-mono font-bold tabular-nums text-emerald-300">
+        <td className="whitespace-nowrap px-2 py-1 text-right font-bold tabular-nums">{numero(dia.tickets)}</td>
+        <td className="whitespace-nowrap px-2 py-1 text-right font-mono font-bold tabular-nums">{dinero(dia.totalJugado)}</td>
+        <td className="whitespace-nowrap px-2 py-1 text-right font-mono font-bold tabular-nums text-emerald-300">
           {dinero(dia.totalPremios)}
         </td>
         {mostrarDevolucion && (
-          <td className="px-3 py-2.5 text-right font-mono font-bold tabular-nums text-emerald-300">
+          <td className="whitespace-nowrap px-2 py-1 text-right font-mono font-bold tabular-nums text-emerald-300">
             +{dinero(dia.devolucion)}
           </td>
         )}
         {mostrarComisionDevuelta && (
-          <td className="px-3 py-2.5 text-right font-mono font-bold tabular-nums text-amber-300">
+          <td className="whitespace-nowrap px-2 py-1 text-right font-mono font-bold tabular-nums text-amber-300">
             {dia.comisionDevuelta > 0 ? `+${dinero(dia.comisionDevuelta)}` : "—"}
           </td>
         )}
         <td
-          className={`px-3 py-2.5 text-right font-mono font-black tabular-nums ${
+          className={`whitespace-nowrap px-2 py-1 text-right font-mono font-black tabular-nums ${
             balDia >= 0 ? "text-emerald-300" : "text-rose-300"
           }`}
         >
@@ -791,7 +837,7 @@ function FragmentHipodromo({
         onClick={onToggleHipo}
         className="cursor-pointer border-t border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100/80 transition-colors"
       >
-        <td className="pl-6 pr-3 py-2 font-black text-indigo-950">
+        <td className="whitespace-nowrap pl-4 pr-2 py-1 font-black text-indigo-950">
           <div className="flex items-center gap-2">
             <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-indigo-200 text-[10px] text-indigo-900">
               {hipoAbierto ? "▾" : "▸"}
@@ -802,25 +848,25 @@ function FragmentHipodromo({
             </span>
           </div>
         </td>
-        <td className="px-3 py-2 text-right font-bold tabular-nums text-indigo-900">{numero(hipo.tickets)}</td>
-        <td className="px-3 py-2 text-right font-mono font-bold tabular-nums text-indigo-950">
+        <td className="whitespace-nowrap px-2 py-1 text-right font-bold tabular-nums text-indigo-900">{numero(hipo.tickets)}</td>
+        <td className="whitespace-nowrap px-2 py-1 text-right font-mono font-bold tabular-nums text-indigo-950">
           {dinero(hipo.totalJugado)}
         </td>
-        <td className="px-3 py-2 text-right font-mono font-bold tabular-nums text-emerald-700">
+        <td className="whitespace-nowrap px-2 py-1 text-right font-mono font-bold tabular-nums text-emerald-700">
           {dinero(hipo.totalPremios)}
         </td>
         {mostrarDevolucion && (
-          <td className="px-3 py-2 text-right font-mono font-bold tabular-nums text-emerald-700">
+          <td className="whitespace-nowrap px-2 py-1 text-right font-mono font-bold tabular-nums text-emerald-700">
             +{dinero(hipo.devolucion)}
           </td>
         )}
         {mostrarComisionDevuelta && (
-          <td className="px-3 py-2 text-right font-mono font-bold tabular-nums text-amber-700">
+          <td className="whitespace-nowrap px-2 py-1 text-right font-mono font-bold tabular-nums text-amber-700">
             {hipo.comisionDevuelta > 0 ? `+${dinero(hipo.comisionDevuelta)}` : "—"}
           </td>
         )}
         <td
-          className={`px-3 py-2 text-right font-mono font-black tabular-nums ${
+          className={`whitespace-nowrap px-2 py-1 text-right font-mono font-black tabular-nums ${
             balHipo >= 0 ? "text-emerald-700" : "text-rose-600"
           }`}
         >
@@ -889,37 +935,34 @@ function FragmentCarrera({
         onClick={onToggleCarrera}
         className="cursor-pointer border-t border-slate-200 bg-white hover:bg-slate-50 transition-colors"
       >
-        <td className="pl-10 pr-3 py-2.5 font-bold text-slate-900">
-          <div className="flex flex-wrap items-center gap-2">
+        <td className="whitespace-nowrap pl-8 pr-2 py-1 font-bold text-slate-900">
+          <div className="flex flex-nowrap items-center gap-2">
             <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-slate-200 text-[10px] text-slate-700">
               {carreraAbierta ? "▾" : "▸"}
             </span>
             <span className="font-black text-indigo-950">🏁 Carrera #{carrera.carrera}</span>
             <PizarraCarreraBadges puestos={puestosPizarra} />
-            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 border border-slate-200">
-              {carreraAbierta ? "Ocultar jugadas" : `Ver ${carrera.tickets} jugada(s)`}
-            </span>
           </div>
         </td>
-        <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-700">{numero(carrera.tickets)}</td>
-        <td className="px-3 py-2 text-right font-mono font-bold tabular-nums text-slate-900">
+        <td className="whitespace-nowrap px-2 py-1 text-right font-bold tabular-nums text-slate-700">{numero(carrera.tickets)}</td>
+        <td className="whitespace-nowrap px-2 py-1 text-right font-mono font-bold tabular-nums text-slate-900">
           {dinero(carrera.totalJugado)}
         </td>
-        <td className="px-3 py-2 text-right font-mono font-bold tabular-nums text-emerald-700">
+        <td className="whitespace-nowrap px-2 py-1 text-right font-mono font-bold tabular-nums text-emerald-700">
           {dinero(carrera.totalPremios)}
         </td>
         {mostrarDevolucion && (
-          <td className="bg-emerald-50/70 px-3 py-2 text-right font-mono tabular-nums font-bold text-emerald-700">
+          <td className="bg-emerald-50/70 px-3 py-1.5 text-right font-mono tabular-nums font-bold text-emerald-700">
             +{dinero(carrera.devolucion)}
           </td>
         )}
         {mostrarComisionDevuelta && (
-          <td className="bg-amber-50/70 px-3 py-2 text-right font-mono tabular-nums font-bold text-amber-700">
+          <td className="bg-amber-50/70 px-3 py-1.5 text-right font-mono tabular-nums font-bold text-amber-700">
             {comDev > 0 ? `+${dinero(comDev)}` : "—"}
           </td>
         )}
         <td
-          className={`px-3 py-2 text-right font-mono tabular-nums font-black ${
+          className={`whitespace-nowrap px-2 py-1 text-right font-mono tabular-nums font-black ${
             balCarrera >= 0 ? "text-emerald-700" : "text-rose-600"
           }`}
         >
@@ -930,10 +973,10 @@ function FragmentCarrera({
       {/* NIVEL 4: CADA JUGADA DE LA CARRERA CON CONTENEDORES DE CABALLOS */}
       {carreraAbierta && (
         <tr className="bg-slate-50/90 border-t border-slate-200">
-          <td colSpan={totalCols} className="pl-10 pr-4 py-2.5">
+          <td colSpan={totalCols} className="whitespace-nowrap pl-8 pr-2 py-1">
             {detalles.length > 0 ? (
               <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-                <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-700 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200">
+                <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-700 flex flex-nowrap items-center justify-between gap-2 border-b border-slate-200">
                   <span>
                     🎟️ Detalle de Jugadas — {carrera.hipodromo} · Carrera #{carrera.carrera}
                   </span>
@@ -943,18 +986,18 @@ function FragmentCarrera({
                     </span>
                   )}
                 </div>
-                <table className="w-full text-xs">
+                <table className="w-full text-[10px]">
                   <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50 text-[10px] font-black uppercase text-slate-600">
-                      <th className="px-2.5 py-1.5 text-left">Hora</th>
-                      {!esCliente && <th className="px-2.5 py-1.5 text-left">Jugador</th>}
-                      <th className="px-2.5 py-1.5 text-left">Jugada</th>
-                      <th className="px-2.5 py-1.5 text-left">Contenedores / Ejemplares</th>
-                      <th className="px-2.5 py-1.5 text-right">Apostó</th>
-                      <th className="px-2.5 py-1.5 text-right">Premio</th>
-                      <th className="px-2.5 py-1.5 text-right">Resultado</th>
-                      {mostrarDevolucion && <th className="px-2.5 py-1.5 text-right">Incentivo</th>}
-                      {mostrarComisionDevuelta && <th className="px-2.5 py-1.5 text-right">Comisión Devuelta</th>}
+                    <tr className="border-b border-slate-200 bg-slate-50 text-[9px] font-black uppercase text-slate-600">
+                      <th className="whitespace-nowrap px-2 py-1 text-left">Hora</th>
+                      {!esCliente && <th className="whitespace-nowrap px-2 py-1 text-left">Jugador</th>}
+                      <th className="whitespace-nowrap px-2 py-1 text-left">Jugada</th>
+                      <th className="whitespace-nowrap px-2 py-1 text-left">Ejemplares</th>
+                      <th className="whitespace-nowrap px-2 py-1 text-right">Apostó</th>
+                      <th className="whitespace-nowrap px-2 py-1 text-right">Premio</th>
+                      <th className="whitespace-nowrap px-2 py-1 text-right">Resultado</th>
+                      {mostrarDevolucion && <th className="whitespace-nowrap px-2 py-1 text-right">Incentivo</th>}
+                      {mostrarComisionDevuelta && <th className="whitespace-nowrap px-2 py-1 text-right">Comisión Devuelta</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -963,23 +1006,23 @@ function FragmentCarrera({
                         d.estado === "PENDIENTE" || (d.resultadoNeto === 0 && d.premio === 0);
                       return (
                         <tr key={d.id} className="hover:bg-indigo-50/30">
-                          <td className="px-2.5 py-2 font-mono text-[11px] font-bold text-slate-600 whitespace-nowrap">
+                          <td className="whitespace-nowrap px-2 py-1 font-mono text-[10px] font-bold text-slate-600">
                             {d.horaCarga ? `🕒 ${d.horaCarga}` : "—"}
                           </td>
                           {!esCliente && (
-                            <td className="px-2.5 py-2 font-bold text-slate-800">{d.cliente}</td>
+                            <td className="whitespace-nowrap px-2 py-1 font-bold text-slate-800">{d.cliente}</td>
                           )}
-                          <td className="px-2.5 py-2 font-black text-indigo-950">{d.jugada}</td>
-                          <td className="px-2.5 py-2">
+                          <td className="whitespace-nowrap px-2 py-1 font-black text-indigo-950">{d.jugada}</td>
+                          <td className="whitespace-nowrap px-2 py-1">
                             <ContenedoresEjemplares caballo={d.caballo} />
                           </td>
-                          <td className="px-2.5 py-2 text-right font-mono font-bold tabular-nums text-slate-800">
+                          <td className="whitespace-nowrap px-2 py-1 text-right font-mono font-bold tabular-nums text-slate-800">
                             {dinero(d.montoJugado)}
                           </td>
-                          <td className="px-2.5 py-2 text-right font-mono font-bold tabular-nums text-emerald-700">
+                          <td className="whitespace-nowrap px-2 py-1 text-right font-mono font-bold tabular-nums text-emerald-700">
                             {d.premio > 0 ? dinero(d.premio) : "—"}
                           </td>
-                          <td className="px-2.5 py-2 text-right font-mono tabular-nums font-black">
+                          <td className="whitespace-nowrap px-2 py-1 text-right font-mono tabular-nums font-black">
                             {esPend ? (
                               <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
                                 ⏳ Pendiente
@@ -991,12 +1034,12 @@ function FragmentCarrera({
                             )}
                           </td>
                           {mostrarDevolucion && (
-                            <td className="px-2.5 py-2 text-right font-mono tabular-nums text-emerald-700">
+                            <td className="whitespace-nowrap px-2 py-1 text-right font-mono tabular-nums text-emerald-700">
                               {d.devolucion > 0 ? `+${dinero(d.devolucion)}` : "—"}
                             </td>
                           )}
                           {mostrarComisionDevuelta && (
-                            <td className="px-2.5 py-2 text-right font-mono tabular-nums font-bold">
+                            <td className="whitespace-nowrap px-2 py-1 text-right font-mono tabular-nums font-bold">
                               {d.comisionDevuelta > 0 ? (
                                 <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-900 border border-amber-300">
                                   +{dinero(d.comisionDevuelta)}
@@ -1013,7 +1056,7 @@ function FragmentCarrera({
                 </table>
               </div>
             ) : (
-              <div className="text-xs italic text-slate-400 py-2">
+              <div className="text-xs italic text-slate-400 py-1.5">
                 Resumen consolidado de {carrera.tickets} jugada(s) en esta carrera.
               </div>
             )}
