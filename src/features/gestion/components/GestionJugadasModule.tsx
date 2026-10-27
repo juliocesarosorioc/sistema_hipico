@@ -1300,9 +1300,24 @@ const hipodromosDelDia = useMemo(() => {
 
   const retiradosPizarraActual = useMemo<string[]>(() => {
     const deCentral = (centralDeCarrera?.retirados ?? []).map((x) => String(x).trim()).filter(Boolean);
-    if (deCentral.length > 0) return deCentral;
-    return parsearRetirados(retirados).map((x) => String(x).trim()).filter(Boolean);
-  }, [centralDeCarrera, retirados]);
+    const deCaballos = caballosDeCarrera
+      .filter((c) => c.retirado)
+      .map((c) => String(c.numero).trim())
+      .filter(Boolean);
+    const deTablaOficial = parsearRetirados(String(tablaDeCarrera?.retirados_oficiales ?? ""));
+    const deTablaCaballos = (tablaDeCarrera?.caballos ?? [])
+      .filter((c) => c.retirado)
+      .map((c) => String(c.numero).trim())
+      .filter(Boolean);
+    const deInput = parsearRetirados(retirados).map((x) => String(x).trim()).filter(Boolean);
+    const deTickets = jugadasGuardadas
+      .filter((j) => !j.anulada && String(j.estado ?? "").trim().toUpperCase() === "RETIRADO")
+      .map((j) => String(j.ejemplar_numero ?? j.caballo ?? "").trim())
+      .filter((n) => /^\d+$/.test(n));
+    return parsearRetirados(
+      [...deCentral, ...deCaballos, ...deTablaOficial, ...deTablaCaballos, ...deInput, ...deTickets].join(",")
+    );
+  }, [centralDeCarrera, caballosDeCarrera, tablaDeCarrera, retirados, jugadasGuardadas]);
 
   /** Filas del panel: persistidas (✅) + ventas de la sesión sin duplicar. */
   const filasPreview = useMemo(

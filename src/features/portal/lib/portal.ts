@@ -20,6 +20,7 @@
 import { supabase } from "@/core/supabase";
 import { TIMEOUT_SESION_MS } from "@/features/auth/lib/sesion";
 import {
+  cargarTicketsCliente,
   construirEstadoCuenta,
   credencialesPortalPorDefecto,
   type ClienteRow,
@@ -361,11 +362,11 @@ export async function reanudarSesion(): Promise<SesionPortal | null> {
  * cero y podía pensar que le habían vaciado la cuenta.
  */
 async function construirSesion(cliente: ClienteRow): Promise<SesionPortal | null> {
-  const datos = await datosCliente();
+  const datos = await datosCliente(cliente);
   if (datos === null) return null;
   const { tickets, grupo } = datos;
   const pct = num(cliente.devolucion);
-  const arbolTickets = construirEstadoCuenta(tickets, pct);
+  const arbolTickets = construirEstadoCuenta(tickets, pct, cliente);
   const paramsContables = {
     id: cliente.id,
     nombre: cliente.nombre ?? cliente.seudonimo ?? "",
@@ -377,8 +378,10 @@ async function construirSesion(cliente: ClienteRow): Promise<SesionPortal | null
     libre: String(cliente.modo_juego ?? "").toLowerCase().trim() === "libre",
     movimientos: tickets.map((t) => ({
       id: t.id,
-      cliente_juega_id: cliente.id,
-      cliente_juega_nombre: cliente.nombre ?? cliente.seudonimo ?? "",
+      cliente_juega_id: t.cliente_juega_id ?? null,
+      cliente_juega_nombre: t.cliente_juega_nombre ?? "",
+      cliente_consigue_id: t.cliente_consigue_id ?? t.banquero_cliente_id ?? null,
+      cliente_consigue_nombre: t.banquero_nombre ?? t.cliente_consigue_nombre ?? "",
       hipodromo: t.hipodromo,
       carrera: t.carrera,
       fecha_carrera: t.fecha_carrera,
@@ -388,16 +391,15 @@ async function construirSesion(cliente: ClienteRow): Promise<SesionPortal | null
       monto_jugado: t.monto_jugado,
       monto_decidido: t.monto_decidido,
       premio_pagar: t.premio_pagar,
+      comision_porcentaje: t.comision_porcentaje,
+      comision_pagada: t.comision_pagada,
       estado: t.estado,
       anulada: t.anulada,
     })),
   };
   const estadoCentral = calcularEstadoCuentaCliente(paramsContables);
   const fichaUnificada = construirFichaEstadoCuentaUnificada(paramsContables);
-  const saldoReal =
-    tickets.length > 0 && arbolTickets.monto !== 0
-      ? redondearCentavos(arbolTickets.monto + arbolTickets.dec)
-      : estadoCentral.saldoContable;
+  const saldoReal = estadoCentral.saldoContable;
   const dispReal = Number.isFinite(estadoCentral.disponibleParaJugar)
     ? estadoCentral.disponibleParaJugar
     : redondearCentavos(saldoReal + num(cliente.aval) - estadoCentral.riesgoEnCurso);
@@ -443,51 +445,66 @@ async function accionPortal(
 }
 
 /**
- /**
- * Tickets del cliente. `null` = la consulta fallo; `[]` = el cliente no
- * tiene tickets. La diferencia importa: en el primer caso hay que avisar, en
- * el segundo se muestra una cuenta en cero sin drama.
+ * Tickets del cliente (unificados con `cargarTicketsCliente`: tanto Juega como Consigue).
  */
 export async function listarTicketsCliente(clienteId: string | number): Promise<TicketApuesta[] | null> {
+  const c = sesionGuardada();
+  const directos = await cargarTicketsCliente(clienteId, c);
+  if (directos.length > 0) return directos;
   const r = await accionPortal("datos");
-  if (!r.ok) return null;
+  if (!r.ok) return directos;
   return de<TicketApuesta[]>(r.data, "tickets") ?? [];
 }
 
 /**
- * Todos los datos de la acción `datos` en una sola llamada: tickets, reclamos y
- * la config del grupo. `null` = falló (mismo criterio que listarTicketsCliente).
+ * Todos los datos de la acción `datos` unificados con `cargarTicketsCliente`
+ * (que consulta todas las jugadas donde el usuario participa como `Juega` o `Consigue`,
+ * por ID o por nombre/seudónimo, junto con las pizarras oficiales de cada carrera).
  */
-export async function datosCliente(): Promise<{
+export async function datosCliente(clienteParam?: ClienteRow | null): Promise<{
   tickets: TicketApuesta[];
   reclamos: NotificacionRow[];
   grupo: GrupoPortal | null;
 } | null> {
-  const r = await accionPortal("datos");
-  if (r.ok) {
-    return {
-      tickets: de<TicketApuesta[]>(r.data, "tickets") ?? [],
-      reclamos: de<NotificacionRow[]>(r.data, "reclamos") ?? [],
-      grupo: de<GrupoPortal | null>(r.data, "grupo") ?? null,
-    };
-  }
   const c = cacheGuardada();
-  if (!c || !supabase) return { tickets: [], reclamos: [], grupo: null };
-  try {
-    const { data } = await supabase
-      .from("tickets_apuestas")
-      .select("*")
-      .eq("cliente_juega_id", c.id)
-      .order("fecha_registro", { ascending: false })
-      .limit(500);
-    return {
-      tickets: (data as TicketApuesta[]) ?? [],
-      reclamos: [],
-      grupo: null,
-    };
-  } catch {
-    return { tickets: [], reclamos: [], grupo: null };
+  const clienteRef = clienteParam ?? c?.cliente ?? null;
+  const idCliente = clienteRef?.id ?? c?.id;
+
+  const [r, ticketsUnificados] = await Promise.all([
+    accionPortal("datos"),
+    idCliente != null ? cargarTicketsCliente(idCliente, clienteRef) : Promise.resolve([] as TicketApuesta[]),
+  ]);
+
+  const mapaTickets = new Map<string, TicketApuesta>();
+  if (r.ok) {
+    for (const t of de<TicketApuesta[]>(r.data, "tickets") ?? []) {
+      mapaTickets.set(String(t.id), t);
+    }
   }
+  // `ticketsUnificados` incluye tanto `Juega` como `Consigue`, todas las columnas y `_pizarra`.
+  for (const t of ticketsUnificados) {
+    mapaTickets.set(String(t.id), t);
+  }
+
+  let grupo = r.ok ? (de<GrupoPortal | null>(r.data, "grupo") ?? null) : null;
+  if (!grupo && supabase && clienteRef?.grupo_id) {
+    try {
+      const { data: gData } = await supabase
+        .from("grupos_venta")
+        .select("id, nombre, ventana_reclamos, dia_inicio_semana, dia_fin_semana, moneda, logo_url")
+        .eq("id", clienteRef.grupo_id)
+        .maybeSingle();
+      if (gData) grupo = gData as GrupoPortal;
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  return {
+    tickets: [...mapaTickets.values()],
+    reclamos: r.ok ? (de<NotificacionRow[]>(r.data, "reclamos") ?? []) : [],
+    grupo,
+  };
 }
 
 /** Lista los reclamos del cliente (para mostrar sus tickets de reclamo). */

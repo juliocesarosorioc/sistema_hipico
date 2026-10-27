@@ -364,8 +364,15 @@ export function aCarreraCentral(m: FilaCarreraMaestro): CarreraCatalogo {
   const res = primerResultado(m);
   // El retiro manda la fila de resultados si la hay (es la lista oficial);
   // si no, el que tiene la propia fila de la matriz.
-  const retiradosCentral = res?.retirados != null ? String(res.retirados) : m.retirados;
-  const retirados = parsearRetirados(String(retiradosCentral ?? ""));
+  const retRes = parsearRetirados(String(res?.retirados ?? ""));
+  const retMat = parsearRetirados(String(m.retirados ?? ""));
+  const retCab = Array.isArray(m.caballos)
+    ? (m.caballos as Array<Record<string, unknown>>)
+        .filter((c) => c && typeof c === "object" && c.retirado === true)
+        .map((c) => String(c.numero ?? c.dorsal ?? "").trim())
+        .filter(Boolean)
+    : [];
+  const retirados = parsearRetirados([...retRes, ...retMat, ...retCab].join(","));
   return {
     id: m.id ?? undefined,
     fecha: String(m.fecha ?? "").slice(0, 10),

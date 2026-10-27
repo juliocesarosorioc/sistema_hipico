@@ -802,8 +802,7 @@ export function ReporteModule() {
         )}
 
         {/* REPORTE RESUMEN DE 4 COLUMNAS (SALDOS POSITIVOS / SALDOS NEGATIVOS + COMISIÓN DE LA SEMANA) */}
-        {(vistaPivot === "RESUMEN_4_COLUMNAS" ||
-          resumenCuatroColumnas.filasPareadas.length > 0) && (
+        {vistaPivot === "RESUMEN_4_COLUMNAS" && (
           <div className="m-3 rounded-xl border border-slate-300 bg-white shadow-sm overflow-hidden">
             {/* Parte superior: Comisión de la Semana */}
             <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 px-4 py-3 text-white flex flex-wrap items-center justify-between gap-3">

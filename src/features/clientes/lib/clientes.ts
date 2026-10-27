@@ -16,6 +16,12 @@ import { redondearCentavos } from "@/shared/lib/dinero";
 import { sincronizarSaldosRealesClientes } from "@/features/saldos/lib/contabilidad-central";
 import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { extraerFechaCarreraTicket } from "@/features/liquidacion/lib/fecha";
+import {
+  buscarPizarraEnMapa,
+  desglosarTicketEnFilasUnificadas,
+  leerPizarrasPorFechas,
+  type PizarraCarrera,
+} from "@/features/liquidacion/lib/reportes";
 // Múltiples formas de pago (PROMPT #7). Se re-exportan desde acá para que el
 // CRUD de clientes sea el único punto de entrada de "cómo se paga un cliente";
 // la implementación pura vive en `formasPago.ts` (sin Supabase, testeable).
@@ -169,8 +175,14 @@ export type TicketApuesta = {
   cliente_juega_nombre?: string | null;
   cliente_consigue_id?: string | number | null;
   cliente_consigue_nombre?: string | null;
+  banquero_cliente_id?: string | number | null;
+  banquero_nombre?: string | null;
   comision_porcentaje?: number | string | null;
   comision_pagada?: number | string | null;
+  nota_auditoria?: unknown;
+  ejemplar_numero?: number | string | null;
+  es_adelantada?: boolean | null;
+  _pizarra?: PizarraCarrera | null;
 };
 
 export type NotificacionRow = {
@@ -960,6 +972,10 @@ export type JugadaItem = {
   id: string;
   fecha: string | null;
   fechaTexto: string;
+  /** Hora de carga de la jugada (HH:mm). */
+  horaCarga?: string | null;
+  /** Rol del jugador en la jugada ("Juega" o "Consigue"). */
+  rol?: "Juega" | "Consigue";
   /** Fecha de la carrera (YYYY-MM-DD), para el reporte diario. */
   fechaCarrera: string | null;
   hipodromo: string;
@@ -972,6 +988,8 @@ export type JugadaItem = {
   montoJugado: number;
   montoDecidido: number;
   premio: number;
+  /** Resultado neto calculado con el motor oficial de `reportes.ts` (perspectiva del cliente). */
+  resultadoNeto?: number;
   moneda: string;
   estado: string;
   /** Devolución / Incentivo calculado sobre el monto decidido/jugado. */
@@ -982,10 +1000,21 @@ export type NivelAcordeon = { titulo: string; subtitulo?: string; monto: number;
 
 /**
  * Construye la jerarquía Grupo > Semana > Día > Hipódromo > Carrera > Jugada
- * para el estado de cuenta dinámico del cliente.
- * El "monto decidido" (monto_decidido ?? monto_jugado) es la base del cálculo.
+ * para el estado de cuenta dinámico del cliente y el Portal de Usuario,
+ * usando el MISMO motor unificado (`desglosarTicketEnFilasUnificadas`) que
+ * los Reportes Finales de Carreras (`reportes.ts`).
  */
-export function construirEstadoCuenta(tickets: TicketApuesta[], devolucionPct: number): NivelAcordeon {
+export function construirEstadoCuenta(
+  tickets: TicketApuesta[],
+  devolucionPct: number,
+  clienteActual?: {
+    id?: string | number | null;
+    nombre?: string | null;
+    seudonimo?: string | null;
+    comision?: number | string | null;
+  } | null,
+  pizarrasMap?: Map<string, PizarraCarrera>
+): NivelAcordeon {
   const raiz: NivelAcordeon = { titulo: "Total", monto: 0, dec: 0, hijos: [], jugadas: [] };
 
   const nodo = (titulo: string, subtitulo?: string): NivelAcordeon => ({
@@ -1017,113 +1046,202 @@ export function construirEstadoCuenta(tickets: TicketApuesta[], devolucionPct: n
     n.jugadas.push(jugada);
   };
 
+  const get = (cache: Map<string, NivelAcordeon>, k: string, titulo: string, subtitulo?: string): NivelAcordeon => {
+    let n = cache.get(k);
+    if (!n) {
+      n = nodo(titulo, subtitulo);
+      cache.set(k, n);
+    }
+    return n;
+  };
+
+  const cliId = clienteActual?.id != null ? String(clienteActual.id).trim() : "";
+  const cliNombres = new Set(
+    [
+      clienteActual?.nombre,
+      clienteActual?.seudonimo,
+      cliId.startsWith("sys-") ? cliId.slice(4) : "",
+    ]
+      .map((s) => String(s ?? "").trim().toUpperCase())
+      .filter(Boolean)
+  );
+  const tieneIdentidadCliente = Boolean((cliId && !cliId.startsWith("sys-")) || cliNombres.size > 0);
+  const tasaComisionCliente =
+    clienteActual?.comision != null && String(clienteActual.comision).trim() !== ""
+      ? num(clienteActual.comision)
+      : null;
+
+  const coincideLado = (ladoId: string, ladoNombre: string): boolean => {
+    if (cliId && !cliId.startsWith("sys-") && ladoId && ladoId === cliId) return true;
+    const nomNorm = String(ladoNombre ?? "").trim().toUpperCase();
+    return Boolean(nomNorm && cliNombres.has(nomNorm));
+  };
+
   for (const t of tickets) {
+    const rec = t as unknown as Record<string, unknown>;
     const base = t.monto_decidido != null ? num(t.monto_decidido) : num(t.monto_jugado);
-    // Una jugada ANULADA se devolvió: no suma ni resta en el estado de cuenta.
-    // Se listan igual (con su estado) pero su base y su devolución van en 0.
     const anulada = t.anulada === true;
     const baseVigente = anulada ? 0 : base;
     const dec = baseVigente * (devolucionPct / 100);
     const moneda = (t.moneda ?? "USD").toUpperCase();
     const grupo = t.grupo_cobro_nombre || "Directo";
     // Imputación estricta al DÍA DE LA CARRERA (`fecha_carrera`), sin importar cuándo fue registrada.
-    const isoCarrera = t.fecha_carrera ? String(t.fecha_carrera).slice(0, 10) : null;
+    const isoExtraida = extraerFechaCarreraTicket(rec);
+    const isoCarrera = isoExtraida || (t.fecha_carrera ? String(t.fecha_carrera).slice(0, 10) : null);
     const refFecha = isoCarrera ? `${isoCarrera}T12:00:00` : t.fecha_registro;
     const semana = claveSemana(refFecha);
     const dia = refFecha ? new Date(refFecha).toLocaleDateString("es-VE", { dateStyle: "short" }) : "—";
     const hipodromo = String(t.hipodromo ?? "—").toUpperCase();
     const carrera = num(t.carrera) || 0;
 
-    const jugada: JugadaItem = {
-      id: String(t.id),
-      fecha: isoCarrera ?? t.fecha_registro ?? null,
-      fechaTexto: isoCarrera ? fmtFecha(`${isoCarrera}T12:00:00`) : fmtFechaHora(t.fecha_registro),
-      fechaCarrera: isoCarrera ?? (t.fecha_registro ? String(t.fecha_registro).slice(0, 10) : null),
-      hipodromo,
-      carrera,
-      grupo,
-      semana,
-      dia,
-      caballo: t.caballo ?? "—",
-      jugada: t.nombre_jugada ?? "Jugada",
-      montoJugado: num(t.monto_jugado),
-      montoDecidido: baseVigente,
-      premio: t.premio_pagar != null ? num(t.premio_pagar) : num(t.premio_por_tabla),
-      moneda,
-      estado: t.estado ?? "—",
-      devolucion: dec,
-    };
+    const pizarra =
+      t._pizarra ??
+      buscarPizarraEnMapa(
+        pizarrasMap,
+        isoCarrera ?? String(t.fecha_registro ?? "").slice(0, 10),
+        hipodromo,
+        carrera
+      );
 
-    // Grupo (si aplica) > Semana > Día > Hipódromo > Carrera > Jugada
-    const get = (cache: Map<string, NivelAcordeon>, k: string, titulo: string, subtitulo?: string): NivelAcordeon => {
-      let n = cache.get(k);
-      if (!n) {
-        n = nodo(titulo, subtitulo);
-        cache.set(k, n);
+    const { juega, consigue } = desglosarTicketEnFilasUnificadas(rec, pizarra, tasaComisionCliente);
+
+    let lados: Array<typeof juega> = [];
+    if (tieneIdentidadCliente) {
+      const esJ = coincideLado(juega.clienteId, juega.clienteNombre);
+      const esC = Boolean(consigue && coincideLado(consigue.clienteId, consigue.clienteNombre));
+      if (esJ) lados.push(juega);
+      if (esC && consigue) lados.push(consigue);
+      if (lados.length === 0) {
+        // Si el ticket llegó filtrado para este cliente pero sin match literal, determinar lado por ID/nombre
+        if (consigue && cliId && String(t.cliente_consigue_id ?? "") === cliId) {
+          lados.push(consigue);
+        } else {
+          lados.push(juega);
+        }
       }
-      return n;
-    };
+    } else {
+      lados = [juega];
+    }
 
-    const g = get(construir.grupos, grupo, grupo);
-    const s = get(construir.semanas, `${grupo}|${semana}`, semana, "Semana");
-    const d = get(construir.dias, `${grupo}|${semana}|${dia}`, dia, "Día");
-    const h = get(construir.hipodromos, `${grupo}|${semana}|${dia}|${hipodromo}`, hipodromo);
-    const c = get(construir.carreras, `${grupo}|${semana}|${dia}|${hipodromo}|${carrera}`, `Carrera ${carrera}`, hipodromo);
+    for (const fila of lados) {
+      const idJugada = lados.length > 1 ? `${t.id}-${fila.rol === "Consigue" ? "c" : "j"}` : String(t.id);
+      const jugada: JugadaItem = {
+        id: idJugada,
+        fecha: t.fecha_registro ?? isoCarrera ?? null,
+        fechaTexto: isoCarrera ? fmtFecha(`${isoCarrera}T12:00:00`) : fmtFechaHora(t.fecha_registro),
+        horaCarga: fila.horaCarga,
+        rol: fila.rol,
+        fechaCarrera: isoCarrera ?? (t.fecha_registro ? String(t.fecha_registro).slice(0, 10) : null),
+        hipodromo,
+        carrera,
+        grupo,
+        semana,
+        dia,
+        caballo: fila.caballo || t.caballo || "—",
+        jugada: fila.jugada || t.nombre_jugada || "Jugada",
+        montoJugado: fila.monto,
+        montoDecidido: baseVigente,
+        premio: fila.premio,
+        resultadoNeto: fila.resultado ?? 0,
+        moneda,
+        estado: fila.estado,
+        devolucion: dec,
+      };
 
-    // Enlazar solo la primera vez para evitar duplicados.
-    if (g.jugadas.length === 0 && !g.hijos.some((x) => x.titulo === s.titulo && x.subtitulo === s.subtitulo)) g.hijos.push(s);
-    if (!s.hijos.some((x) => x.titulo === d.titulo && x.subtitulo === d.subtitulo)) s.hijos.push(d);
-    if (!d.hijos.some((x) => x.titulo === h.titulo && !x.subtitulo)) d.hijos.push(h);
-    if (!h.hijos.some((x) => x.titulo === c.titulo)) h.hijos.push(c);
+      const g = get(construir.grupos, grupo, grupo);
+      const s = get(construir.semanas, `${grupo}|${semana}`, semana, "Semana");
+      const d = get(construir.dias, `${grupo}|${semana}|${dia}`, dia, "Día");
+      const h = get(construir.hipodromos, `${grupo}|${semana}|${dia}|${hipodromo}`, hipodromo);
+      const c = get(
+        construir.carreras,
+        `${grupo}|${semana}|${dia}|${hipodromo}|${carrera}`,
+        `Carrera ${carrera}`,
+        hipodromo
+      );
 
-    acumular(g, baseVigente, dec, jugada);
-    acumular(s, baseVigente, dec, jugada);
-    acumular(d, baseVigente, dec, jugada);
-    acumular(h, baseVigente, dec, jugada);
-    acumular(c, baseVigente, dec, jugada);
-    raiz.monto += baseVigente;
-    raiz.dec += dec;
-    raiz.jugadas.push(jugada);
+      if (g.jugadas.length === 0 && !g.hijos.some((x) => x.titulo === s.titulo && x.subtitulo === s.subtitulo)) g.hijos.push(s);
+      if (!s.hijos.some((x) => x.titulo === d.titulo && x.subtitulo === d.subtitulo)) s.hijos.push(d);
+      if (!d.hijos.some((x) => x.titulo === h.titulo && !x.subtitulo)) d.hijos.push(h);
+      if (!h.hijos.some((x) => x.titulo === c.titulo)) h.hijos.push(c);
+
+      acumular(g, baseVigente, dec, jugada);
+      acumular(s, baseVigente, dec, jugada);
+      acumular(d, baseVigente, dec, jugada);
+      acumular(h, baseVigente, dec, jugada);
+      acumular(c, baseVigente, dec, jugada);
+      raiz.monto += baseVigente;
+      raiz.dec += dec;
+      raiz.jugadas.push(jugada);
+    }
   }
 
   raiz.hijos = [...construir.grupos.values()];
   return raiz;
 }
 
-/** Trae los tickets de apuestas de un cliente para el estado de cuenta (tanto donde juega como donde da / se le imputa la modalidad). */
-export async function cargarTicketsCliente(clienteId: string | number): Promise<TicketApuesta[]> {
+/** Trae los tickets de apuestas de un cliente para el estado de cuenta (tanto donde juega como donde da / se le imputa la modalidad), incluyendo sus pizarras oficiales. */
+export async function cargarTicketsCliente(
+  clienteId: string | number,
+  clienteInfo?: { nombre?: string | null; seudonimo?: string | null } | null
+): Promise<TicketApuesta[]> {
   if (!supabase) return [];
   try {
     const idStr = String(clienteId ?? "").trim();
     const clienteMem = cacheClientes?.find((c) => String(c.id) === idStr);
-    const nomCliente = String(
-      clienteMem?.nombre ??
-        clienteMem?.seudonimo ??
-        (idStr.startsWith("sys-") ? idStr.slice(4) : "")
-    )
-      .trim()
-      .toUpperCase();
+    const nombresCliente = new Set(
+      [
+        clienteInfo?.nombre,
+        clienteInfo?.seudonimo,
+        clienteMem?.nombre,
+        clienteMem?.seudonimo,
+        idStr.startsWith("sys-") ? idStr.slice(4) : "",
+      ]
+        .map((x) => String(x ?? "").trim().toUpperCase())
+        .filter(Boolean)
+    );
 
     const { data, error } = await supabase
       .from("tickets_apuestas")
-      .select(
-        "id, fecha_registro, fecha_carrera, nota_auditoria, hipodromo, carrera, nombre_jugada, caballo, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, anulada, grupo_cobro_nombre, grupo_cobro_id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, comision_porcentaje, comision_pagada"
-      )
+      .select("*")
       .order("fecha_registro", { ascending: false })
-      .limit(1500);
+      .limit(10000);
     if (error) throw error;
     const filas = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
       ...(r as unknown as TicketApuesta),
       fecha_carrera: extraerFechaCarreraTicket(r) || (r.fecha_carrera as string | null) || null,
     }));
-    return filas.filter((t) => {
+    const filtrados = filas.filter((t) => {
       const jId = t.cliente_juega_id != null ? String(t.cliente_juega_id).trim() : "";
-      const cId = t.cliente_consigue_id != null ? String(t.cliente_consigue_id).trim() : "";
+      const cId =
+        t.cliente_consigue_id != null
+          ? String(t.cliente_consigue_id).trim()
+          : t.banquero_cliente_id != null
+            ? String(t.banquero_cliente_id).trim()
+            : "";
       if (idStr && !idStr.startsWith("sys-") && (jId === idStr || cId === idStr)) return true;
-      if (!nomCliente) return false;
+      if (nombresCliente.size === 0) return false;
       const jNom = String(t.cliente_juega_nombre ?? "").trim().toUpperCase();
-      const cNom = resolverContraparteModalidad(t.nombre_jugada, t.cliente_consigue_nombre).trim().toUpperCase();
-      return jNom === nomCliente || cNom === nomCliente;
+      const cRaw = String(t.banquero_nombre ?? t.cliente_consigue_nombre ?? "").trim();
+      const cNom = resolverContraparteModalidad(t.nombre_jugada, cRaw).trim().toUpperCase();
+      return nombresCliente.has(jNom) || nombresCliente.has(cNom) || nombresCliente.has(cRaw.toUpperCase());
+    });
+
+    const fechas = [
+      ...new Set(
+        filtrados
+          .map((t) => String(t.fecha_carrera ?? t.fecha_registro ?? "").slice(0, 10))
+          .filter((f) => /^\d{4}-\d{2}-\d{2}$/.test(f))
+      ),
+    ];
+    const pizarras = await leerPizarrasPorFechas(fechas);
+    return filtrados.map((t) => {
+      const f = String(t.fecha_carrera ?? t.fecha_registro ?? "").slice(0, 10);
+      const h = String(t.hipodromo ?? "");
+      const c = Number(t.carrera) || 0;
+      return {
+        ...t,
+        _pizarra: buscarPizarraEnMapa(pizarras, f, h, c),
+      };
     });
   } catch {
     return [];

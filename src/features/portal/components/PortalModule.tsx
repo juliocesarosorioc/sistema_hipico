@@ -674,7 +674,8 @@ function ReporteDiarioView({ sesion }: { sesion: SesionPortal }) {
       return {
         id: j.id,
         fecha: fStr,
-        horaCarga: mHora ? mHora[1] : null,
+        horaCarga: j.horaCarga ?? (mHora ? mHora[1] : null),
+        rol: j.rol,
         cliente: sesion.cliente.seudonimo || sesion.cliente.nombre || "CLIENTE",
         jugada: j.jugada,
         caballo: j.caballo,
@@ -683,6 +684,7 @@ function ReporteDiarioView({ sesion }: { sesion: SesionPortal }) {
         carrera: j.carrera,
         montoJugado: j.montoJugado,
         premio: j.premio,
+        resultadoNeto: j.resultadoNeto,
         devolucion: j.devolucion,
         anulada: esJugadaAnulada(j.estado, undefined),
       };

@@ -15,7 +15,12 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/core/supabase";
 import { colorDiscoNumero, numerosDeCaballo } from "@/features/saldos/lib/discos";
 import { ladosDePareo } from "@/features/taquilla/lib/nomenclatura";
-import { puestosDesdeOrdenLlegada } from "@/features/motores/lib/oficiales";
+import {
+  buscarPizarraEnMapa,
+  leerPizarrasPorFechas,
+  unirRetirados,
+  type PizarraCarrera,
+} from "@/features/liquidacion/lib/reportes";
 import {
   formatoDinero,
   type DiaPivotDiario,
@@ -40,6 +45,7 @@ function balanceDe(
   fila: {
     totalJugado: number;
     totalPremios: number;
+    resultadoNetoTotal?: number;
     devolucion: number;
     comisionDevuelta?: number;
     balance: number;
@@ -47,9 +53,14 @@ function balanceDe(
   esCliente: boolean
 ): number {
   const comDev = fila.comisionDevuelta ?? 0;
-  return esCliente
-    ? fila.totalPremios + fila.devolucion + comDev - fila.totalJugado
-    : fila.balance - comDev;
+  if (esCliente) {
+    const baseNeto =
+      fila.resultadoNetoTotal !== undefined
+        ? fila.resultadoNetoTotal
+        : fila.totalPremios - fila.totalJugado;
+    return Math.round((baseNeto + fila.devolucion + comDev) * 100) / 100;
+  }
+  return Math.round((fila.balance - comDev) * 100) / 100;
 }
 
 const numero = (n: number): string => n.toLocaleString("en-US");
@@ -109,9 +120,10 @@ function ContenedoresEjemplares({ caballo }: { caballo?: string | null }) {
   );
 }
 
-/** Renderiza la pizarra de llegada de una carrera con contenedores de números de caballos. */
-function PizarraCarreraBadges({ puestos }: { puestos: string[] }) {
-  if (!puestos || puestos.length === 0) {
+/** Renderiza la pizarra de llegada de una carrera con contenedores de números de caballos y retirados. */
+function PizarraCarreraBadges({ puestos, retirados }: { puestos: string[]; retirados?: string[] }) {
+  const rets = (retirados ?? []).filter(Boolean);
+  if ((!puestos || puestos.length === 0) && rets.length === 0) {
     return (
       <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[9px] font-bold text-amber-800">
         ⏳ Pizarra pendiente
@@ -120,20 +132,40 @@ function PizarraCarreraBadges({ puestos }: { puestos: string[] }) {
   }
   return (
     <div className="inline-flex shrink-0 flex-nowrap items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5">
-      <span className="mr-0.5 text-[8.5px] font-black uppercase tracking-wider text-slate-500">
-        🏁 Pizarra:
-      </span>
-      {puestos.slice(0, 5).map((numCab, idx) => (
-        <span key={`${numCab}-${idx}`} className="inline-flex items-center gap-0.5">
-          <span className="text-[8.5px] font-black leading-none text-slate-500">{idx + 1}º</span>
-          <span
-            className={`inline-flex h-4 min-w-[1.1rem] items-center justify-center rounded border px-0.5 text-[9px] font-black leading-none shadow-2xs ${colorDiscoNumero(numCab)}`}
-            title={`${idx + 1}º lugar: Ejemplar #${numCab}`}
-          >
-            {numCab}
+      {puestos && puestos.length > 0 ? (
+        <>
+          <span className="mr-0.5 text-[8.5px] font-black uppercase tracking-wider text-slate-500">
+            🏁 Pizarra:
           </span>
+          {puestos.slice(0, 5).map((numCab, idx) => (
+            <span key={`${numCab}-${idx}`} className="inline-flex items-center gap-0.5">
+              <span className="text-[8.5px] font-black leading-none text-slate-500">{idx + 1}º</span>
+              <span
+                className={`inline-flex h-4 min-w-[1.1rem] items-center justify-center rounded border px-0.5 text-[9px] font-black leading-none shadow-2xs ${colorDiscoNumero(numCab)}`}
+                title={`${idx + 1}º lugar: Ejemplar #${numCab}`}
+              >
+                {numCab}
+              </span>
+            </span>
+          ))}
+        </>
+      ) : (
+        <span className="text-[8.5px] font-bold text-amber-700">⏳ Pizarra pendiente</span>
+      )}
+      {rets.length > 0 && (
+        <span className="ml-1 inline-flex items-center gap-0.5 border-l border-slate-200 pl-1">
+          <span className="text-[8.5px] font-black uppercase text-rose-700">RET:</span>
+          {rets.map((numRet, idxR) => (
+            <span
+              key={`ret-${idxR}-${numRet}`}
+              className={`inline-flex h-4 min-w-[1.1rem] items-center justify-center rounded border px-0.5 text-[9px] font-black leading-none shadow-2xs ${colorDiscoNumero(numRet)}`}
+              title={`Ejemplar retirado #${numRet}`}
+            >
+              {numRet}
+            </span>
+          ))}
         </span>
-      ))}
+      )}
     </div>
   );
 }
@@ -203,35 +235,16 @@ export function ReporteDiarioTabla({
 
   const diasArbol = useMemo(() => construirArbolDias(datos), [datos]);
 
-  // Carga automática de pizarras desde `resultados_carreras` para las fechas del reporte
-  const [pizarrasBd, setPizarrasBd] = useState<Record<string, string[]>>({});
+  // Carga automática de pizarras y retirados unificados (`resultados_carreras`, `carreras`, `tablas_fijas`)
+  const [pizarrasMapBd, setPizarrasMapBd] = useState<Map<string, PizarraCarrera>>(new Map());
   useEffect(() => {
     let vivo = true;
     const fechas = [...new Set(diasArbol.map((d) => d.fecha).filter((f) => /^\d{4}-\d{2}-\d{2}$/.test(f)))];
     if (!supabase || fechas.length === 0) return;
-    Promise.resolve(
-      supabase
-        .from("resultados_carreras")
-        .select("fecha, hipodromo, carrera, ganadores, orden_llegada")
-        .in("fecha", fechas)
-    )
-      .then(({ data }) => {
-        if (!vivo || !data) return;
-        const mapa: Record<string, string[]> = {};
-        for (const r of data as Array<Record<string, unknown>>) {
-          const f = String(r.fecha ?? "").slice(0, 10);
-          const h = String(r.hipodromo ?? "").trim().toUpperCase();
-          const c = String(r.carrera ?? "").trim();
-          let puestos = puestosDesdeOrdenLlegada(r.orden_llegada);
-          if (!puestos.length && Array.isArray(r.ganadores)) {
-            puestos = (r.ganadores as unknown[]).map((x) => String(x ?? "").trim()).filter(Boolean);
-          }
-          if (puestos.length > 0) {
-            mapa[`${f}|${h}|${c}`] = puestos;
-            mapa[`${h}|${c}`] = puestos;
-          }
-        }
-        setPizarrasBd(mapa);
+    leerPizarrasPorFechas(fechas)
+      .then((mapa) => {
+        if (!vivo) return;
+        setPizarrasMapBd(mapa);
       })
       .catch(() => null);
     return () => {
@@ -239,11 +252,14 @@ export function ReporteDiarioTabla({
     };
   }, [diasArbol]);
 
-  const obtenerPizarra = (fecha: string, hipodromo: string, carrera: number): string[] => {
+  const obtenerPizarra = (fecha: string, hipodromo: string, carrera: number): { puestos: string[]; retirados: string[] } => {
     const h = hipodromo.trim().toUpperCase();
     const k1 = `${fecha}|${h}|${carrera}`;
     const k2 = `${h}|${carrera}`;
-    return pizarras?.[k1] ?? pizarras?.[k2] ?? pizarrasBd[k1] ?? pizarrasBd[k2] ?? [];
+    const pBd = buscarPizarraEnMapa(pizarrasMapBd, fecha, hipodromo, carrera);
+    const puestos = pizarras?.[k1] ?? pizarras?.[k2] ?? pBd?.puestos ?? [];
+    const retirados = pBd?.retirados ?? [];
+    return { puestos, retirados };
   };
 
   // Estados de expansión de la Tabla Dinámica (Día → Hipódromo → Carrera)
@@ -726,7 +742,7 @@ function FragmentDia({
   totalCols: number;
   dinero: (v: number) => string;
   balDia: number;
-  obtenerPizarra: (fecha: string, hipodromo: string, carrera: number) => string[];
+  obtenerPizarra: (fecha: string, hipodromo: string, carrera: number) => { puestos: string[]; retirados: string[] };
   onToggleDia: () => void;
   onToggleHipo: (k: string) => void;
   onToggleCarrera: (k: string) => void;
@@ -827,7 +843,7 @@ function FragmentHipodromo({
   totalCols: number;
   dinero: (v: number) => string;
   balHipo: number;
-  obtenerPizarra: (fecha: string, hipodromo: string, carrera: number) => string[];
+  obtenerPizarra: (fecha: string, hipodromo: string, carrera: number) => { puestos: string[]; retirados: string[] };
   onToggleHipo: () => void;
   onToggleCarrera: (k: string) => void;
 }) {
@@ -881,12 +897,18 @@ function FragmentHipodromo({
           const carreraAbierta = carrerasAbiertas.has(cKey);
           const balCarrera = balanceDe(c, esCliente);
           const detalles = c.jugadasDetalle ?? [];
-          const puestosPizarra = obtenerPizarra(fecha, hipo.hipodromo, c.carrera);
+          const infoPizarra = obtenerPizarra(fecha, hipo.hipodromo, c.carrera);
+          const retDeDetalles = detalles
+            .filter((d) => String(d.estado ?? "").toUpperCase() === "RETIRADO")
+            .map((d) => String(d.caballo ?? "").trim())
+            .filter((n) => /^\d+$/.test(n));
+          const retiradosUnidos = unirRetirados(infoPizarra.retirados, retDeDetalles);
           return (
             <FragmentCarrera
               key={cKey}
               carrera={c}
-              puestosPizarra={puestosPizarra}
+              puestosPizarra={infoPizarra.puestos}
+              retiradosPizarra={retiradosUnidos}
               carreraAbierta={carreraAbierta}
               esCliente={esCliente}
               mostrarDevolucion={mostrarDevolucion}
@@ -906,6 +928,7 @@ function FragmentHipodromo({
 function FragmentCarrera({
   carrera,
   puestosPizarra,
+  retiradosPizarra,
   carreraAbierta,
   esCliente,
   mostrarDevolucion,
@@ -918,6 +941,7 @@ function FragmentCarrera({
 }: {
   carrera: FilaReporteDiario;
   puestosPizarra: string[];
+  retiradosPizarra: string[];
   carreraAbierta: boolean;
   esCliente: boolean;
   mostrarDevolucion: boolean;
@@ -941,7 +965,7 @@ function FragmentCarrera({
               {carreraAbierta ? "▾" : "▸"}
             </span>
             <span className="font-black text-indigo-950">🏁 Carrera #{carrera.carrera}</span>
-            <PizarraCarreraBadges puestos={puestosPizarra} />
+            <PizarraCarreraBadges puestos={puestosPizarra} retirados={retiradosPizarra} />
           </div>
         </td>
         <td className="whitespace-nowrap px-2 py-1 text-right font-bold tabular-nums text-slate-700">{numero(carrera.tickets)}</td>
@@ -990,6 +1014,7 @@ function FragmentCarrera({
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50 text-[9px] font-black uppercase text-slate-600">
                       <th className="whitespace-nowrap px-2 py-1 text-left">Hora</th>
+                      <th className="whitespace-nowrap px-2 py-1 text-left">Rol</th>
                       {!esCliente && <th className="whitespace-nowrap px-2 py-1 text-left">Jugador</th>}
                       <th className="whitespace-nowrap px-2 py-1 text-left">Jugada</th>
                       <th className="whitespace-nowrap px-2 py-1 text-left">Ejemplares</th>
@@ -1002,12 +1027,28 @@ function FragmentCarrera({
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {detalles.map((d) => {
+                      const estUpper = String(d.estado ?? "").toUpperCase();
+                      const esSinDecision = /SIN\s+DECISI/i.test(estUpper);
+                      const esEmpateORetirado = estUpper === "RETIRADO" || estUpper === "EMPATE";
                       const esPend =
-                        d.estado === "PENDIENTE" || (d.resultadoNeto === 0 && d.premio === 0);
+                        estUpper === "PENDIENTE" ||
+                        (!esSinDecision && !esEmpateORetirado && d.resultadoNeto === 0 && d.premio === 0);
+                      const rolFila = d.rol ?? "Juega";
                       return (
                         <tr key={d.id} className="hover:bg-indigo-50/30">
                           <td className="whitespace-nowrap px-2 py-1 font-mono text-[10px] font-bold text-slate-600">
                             {d.horaCarga ? `🕒 ${d.horaCarga}` : "—"}
+                          </td>
+                          <td className="whitespace-nowrap px-2 py-1">
+                            <span
+                              className={`inline-block rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
+                                rolFila === "Consigue"
+                                  ? "bg-slate-600 text-white"
+                                  : "bg-indigo-100 text-indigo-800"
+                              }`}
+                            >
+                              {rolFila}
+                            </span>
                           </td>
                           {!esCliente && (
                             <td className="whitespace-nowrap px-2 py-1 font-bold text-slate-800">{d.cliente}</td>
@@ -1023,7 +1064,15 @@ function FragmentCarrera({
                             {d.premio > 0 ? dinero(d.premio) : "—"}
                           </td>
                           <td className="whitespace-nowrap px-2 py-1 text-right font-mono tabular-nums font-black">
-                            {esPend ? (
+                            {esSinDecision ? (
+                              <span className="rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase text-amber-800">
+                                SIN DECISIÓN
+                              </span>
+                            ) : esEmpateORetirado ? (
+                              <span className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-[9px] font-black uppercase text-slate-600">
+                                {estUpper} ($0.00)
+                              </span>
+                            ) : esPend ? (
                               <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
                                 ⏳ Pendiente
                               </span>

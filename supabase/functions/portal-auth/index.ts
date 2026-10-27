@@ -490,17 +490,31 @@ Deno.serve(async (req: Request) => {
 
   // --- lectura: sus apuestas y sus reclamos --------------------------------
   if (accion === "datos") {
-    // fecha_registro y no created_at: tickets_apuestas no tiene created_at
-    // (verificado en vivo), y pedirlo rompía la consulta.
+    const nomCli = String(cliente?.nombre ?? "").trim().toUpperCase();
+    const seuCli = String(cliente?.seudonimo ?? "").trim().toUpperCase();
+    const filtrosOr: string[] = [];
+    if (cid != null) {
+      filtrosOr.push(`cliente_juega_id.eq.${cid}`);
+      filtrosOr.push(`cliente_consigue_id.eq.${cid}`);
+    }
+    if (nomCli) {
+      filtrosOr.push(`cliente_juega_nombre.ilike.${nomCli}`);
+      filtrosOr.push(`cliente_consigue_nombre.ilike.${nomCli}`);
+    }
+    if (seuCli && seuCli !== nomCli) {
+      filtrosOr.push(`cliente_juega_nombre.ilike.${seuCli}`);
+      filtrosOr.push(`cliente_consigue_nombre.ilike.${seuCli}`);
+    }
+
     const [apuestas, reclamos, grupo] = await Promise.all([
       db
         .from("tickets_apuestas")
         .select(
-          "id, fecha_registro, fecha_carrera, hipodromo, carrera, nombre_jugada, caballo, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, grupo_cobro_nombre, grupo_cobro_id"
+          "id, fecha_registro, fecha_carrera, nota_auditoria, hipodromo, carrera, nombre_jugada, caballo, ejemplar_numero, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, anulada, es_adelantada, grupo_cobro_nombre, grupo_cobro_id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, comision_porcentaje, comision_pagada"
         )
-        .eq("cliente_juega_id", cid)
+        .or(filtrosOr.join(","))
         .order("fecha_registro", { ascending: false })
-        .limit(500),
+        .limit(2000),
       db.from("notificaciones").select("*").eq("cliente_id", cid).order("created_at", { ascending: false }).limit(50),
       // Config del grupo del jugador (ventana de reclamos + ciclo semanal). El
       // portal la necesita para restringir la fecha de la "jugada no

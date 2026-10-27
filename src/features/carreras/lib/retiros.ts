@@ -335,19 +335,58 @@ export async function leerRetirosCarrera(
   const clave = claveHipodromo(hipodromo);
   const n = num(carrera) || 0;
   if (!clave || !n) return [];
+  const acumulados: string[] = [];
   try {
-    const { data, error } = await supabase
-      .from("resultados_carreras")
-      .select("hipodromo, retirados")
-      .eq("fecha", fecha)
-      .eq("carrera", n);
-    if (error) return [];
-    const fila = ((data ?? []) as Array<{ hipodromo?: string | null; retirados?: unknown }>).find(
-      (f) => claveHipodromo(f.hipodromo) === clave
-    );
-    if (!fila) return [];
-    return parsearRetirados(String(fila.retirados ?? ""));
+    const [resR, carR, tabR] = await Promise.all([
+      supabase.from("resultados_carreras").select("hipodromo, retirados").eq("fecha", fecha).eq("carrera", n),
+      supabase.from("carreras").select("hipodromo, retirados, caballos").eq("fecha", fecha).eq("carrera", n),
+      supabase
+        .from("tablas_fijas")
+        .select("hipodromo, retirados_oficiales, caballos")
+        .eq("fecha", fecha)
+        .eq("carrera", n),
+    ]);
+    for (const f of (resR.data ?? []) as Array<{ hipodromo?: string | null; retirados?: unknown }>) {
+      if (claveHipodromo(f.hipodromo) === clave) {
+        acumulados.push(...parsearRetirados(String(f.retirados ?? "")));
+      }
+    }
+    for (const f of (carR.data ?? []) as Array<{
+      hipodromo?: string | null;
+      retirados?: unknown;
+      caballos?: unknown;
+    }>) {
+      if (claveHipodromo(f.hipodromo) === clave) {
+        acumulados.push(...parsearRetirados(String(f.retirados ?? "")));
+        if (Array.isArray(f.caballos)) {
+          for (const c of f.caballos as Array<Record<string, unknown>>) {
+            if (c && typeof c === "object" && c.retirado === true) {
+              const numCab = String(c.numero ?? c.dorsal ?? "").trim();
+              if (numCab) acumulados.push(numCab);
+            }
+          }
+        }
+      }
+    }
+    for (const f of (tabR.data ?? []) as Array<{
+      hipodromo?: string | null;
+      retirados_oficiales?: unknown;
+      caballos?: unknown;
+    }>) {
+      if (claveHipodromo(f.hipodromo) === clave) {
+        acumulados.push(...parsearRetirados(String(f.retirados_oficiales ?? "")));
+        if (Array.isArray(f.caballos)) {
+          for (const c of f.caballos as Array<Record<string, unknown>>) {
+            if (c && typeof c === "object" && c.retirado === true) {
+              const numCab = String(c.numero ?? c.dorsal ?? "").trim();
+              if (numCab) acumulados.push(numCab);
+            }
+          }
+        }
+      }
+    }
+    return parsearRetirados(acumulados.join(","));
   } catch {
-    return [];
+    return parsearRetirados(acumulados.join(","));
   }
 }

@@ -593,7 +593,7 @@ export function resultadoConsigueDe(
 /* ─────────────────────────── consultas ─────────────────────────── */
 
 /** Pizarra oficial de una carrera tal como la cargo la casa. */
-type PizarraCarrera = {
+export type PizarraCarrera = {
   /** Orden de llegada oficial (1º, 2º, 3º…): `orden_llegada` si existe, si no `ganadores`. */
   puestos: string[];
   /** Orden de llegada en raya (1º, 2º, 3º…) para Tablas Fijas y Remates. */
@@ -604,8 +604,37 @@ type PizarraCarrera = {
   retirados: string[];
 };
 
+export function extraerNumerosRetiradosDeTexto(raw: unknown): string[] {
+  const s = String(raw ?? "").trim();
+  if (!s || /NO\s+HUBO\s+RETIRO/i.test(s)) return [];
+  return [...new Set((s.match(/\d+/g) ?? []).map((x) => x.trim()).filter(Boolean))];
+}
+
+export function extraerNumerosRetiradosDeCaballos(caballos: unknown): string[] {
+  if (!Array.isArray(caballos)) return [];
+  const out: string[] = [];
+  for (const c of caballos as Array<Record<string, unknown>>) {
+    if (c && typeof c === "object" && c.retirado === true) {
+      const n = String(c.numero ?? c.dorsal ?? "").trim();
+      if (/^\d+$/.test(n)) out.push(n);
+    }
+  }
+  return out;
+}
+
+export function unirRetirados(...listas: Array<string[] | undefined | null>): string[] {
+  const set = new Set<string>();
+  for (const l of listas) {
+    for (const item of l ?? []) {
+      const n = String(item ?? "").trim();
+      if (/^\d+$/.test(n)) set.add(n);
+    }
+  }
+  return [...set].sort((a, b) => Number(a) - Number(b));
+}
+
 /** Normaliza una fila de `resultados_carreras` a la pizarra que usa el motor. */
-function normalizarPizarra(r: {
+export function normalizarPizarra(r: {
   ganadores?: unknown;
   orden_llegada?: unknown;
   dividendos?: unknown;
@@ -617,40 +646,77 @@ function normalizarPizarra(r: {
   const div = r.dividendos;
   const dividendos =
     div && typeof div === "object" && !Array.isArray(div) ? (div as Record<string, number>) : null;
-  const rawRet = String(r.retirados ?? "").trim();
-  const retirados =
-    rawRet && !/NO\s+HUBO\s+RETIRO/i.test(rawRet)
-      ? [...new Set((rawRet.match(/\d+/g) ?? []).map((x) => x.trim()).filter(Boolean))]
-      : [];
+  const retirados = extraerNumerosRetiradosDeTexto(r.retirados);
   if (!puestos.length && !dividendos && !retirados.length) return null;
   return { puestos, puestosRaya, dividendos, retirados };
 }
 
-async function leerPizarra(fecha: string, hipodromo: string, carrera: number | string): Promise<PizarraCarrera | null> {
+export async function leerPizarra(fecha: string, hipodromo: string, carrera: number | string): Promise<PizarraCarrera | null> {
   if (!supabase) return null;
   try {
-    let { data, error } = await supabase
-      .from("resultados_carreras")
-      .select("ganadores, orden_llegada, dividendos, retirados")
-      .eq("fecha", fecha)
-      .eq("carrera", carrera)
-      .ilike("hipodromo", `%${hipodromo}%`)
-      .maybeSingle();
-    if (error && /retirados/i.test(error.message)) {
+    const [resR, carR, tabR] = await Promise.all([
+      supabase
+        .from("resultados_carreras")
+        .select("ganadores, orden_llegada, dividendos, retirados")
+        .eq("fecha", fecha)
+        .eq("carrera", carrera)
+        .ilike("hipodromo", `%${hipodromo}%`),
+      supabase
+        .from("carreras")
+        .select("retirados, caballos")
+        .eq("fecha", fecha)
+        .eq("carrera", carrera)
+        .ilike("hipodromo", `%${hipodromo}%`),
+      supabase
+        .from("tablas_fijas")
+        .select("retirados_oficiales, caballos")
+        .eq("fecha", fecha)
+        .eq("carrera", carrera)
+        .ilike("hipodromo", `%${hipodromo}%`),
+    ]);
+    let data = resR.data as Array<Record<string, unknown>> | null;
+    if (resR.error && /retirados/i.test(resR.error.message)) {
       const r2 = await supabase
         .from("resultados_carreras")
         .select("ganadores, orden_llegada, dividendos")
         .eq("fecha", fecha)
         .eq("carrera", carrera)
-        .ilike("hipodromo", `%${hipodromo}%`)
-        .maybeSingle();
-      data = r2.data as typeof data;
-      error = r2.error;
+        .ilike("hipodromo", `%${hipodromo}%`);
+      data = r2.data as Array<Record<string, unknown>> | null;
     }
-    if (error || !data) return null;
-    return normalizarPizarra(
-      data as { ganadores?: unknown; orden_llegada?: unknown; dividendos?: unknown; retirados?: unknown }
-    );
+    const retExtra: string[] = [];
+    for (const row of (carR.data ?? []) as Array<Record<string, unknown>>) {
+      retExtra.push(...extraerNumerosRetiradosDeTexto(row.retirados));
+      retExtra.push(...extraerNumerosRetiradosDeCaballos(row.caballos));
+    }
+    for (const row of (tabR.data ?? []) as Array<Record<string, unknown>>) {
+      retExtra.push(...extraerNumerosRetiradosDeTexto(row.retirados_oficiales));
+      retExtra.push(...extraerNumerosRetiradosDeCaballos(row.caballos));
+    }
+    let basePizarra: PizarraCarrera | null = null;
+    for (const row of data ?? []) {
+      const norm = normalizarPizarra(row);
+      if (norm) {
+        if (!basePizarra) {
+          basePizarra = norm;
+        } else {
+          if (!basePizarra.puestos.length && norm.puestos.length) {
+            basePizarra.puestos = norm.puestos;
+            basePizarra.puestosRaya = norm.puestosRaya;
+          }
+          if (!basePizarra.dividendos && norm.dividendos) basePizarra.dividendos = norm.dividendos;
+          basePizarra.retirados = unirRetirados(basePizarra.retirados, norm.retirados);
+        }
+      }
+    }
+    const retiradosFinal = unirRetirados(basePizarra?.retirados, retExtra);
+    if (!basePizarra && !retiradosFinal.length) return null;
+    return {
+      puestos: basePizarra?.puestos ?? [],
+      puestosRaya: basePizarra?.puestosRaya ?? [],
+      dividendos: basePizarra?.dividendos ?? null,
+      retirados: retiradosFinal,
+    };
   } catch {
     return null;
   }
@@ -693,7 +759,7 @@ async function leerTickets(fecha: string, hipodromo: string, carrera: string | n
  * fecha de la carrera `dia`, para que TODOS los módulos alimenten el reporte del día
  * de la carrera sin importar cuándo se hayan registrado.
  */
-async function leerJugadasModulosExtrasHipodromo(
+export async function leerJugadasModulosExtrasHipodromo(
   dia: string,
   hipodromo: string,
   carreraFiltro: string | null,
@@ -981,33 +1047,341 @@ async function leerTicketsHipodromo(fecha: string, hipodromo: string): Promise<M
   }
 }
 
-async function leerPizarrasHipodromo(fecha: string, hipodromo: string): Promise<Map<string, PizarraCarrera | null>> {
+export async function leerPizarrasHipodromo(fecha: string, hipodromo: string): Promise<Map<string, PizarraCarrera | null>> {
   const porCarrera = new Map<string, PizarraCarrera | null>();
   if (!supabase) return porCarrera;
   try {
-    let { data, error } = await supabase
-      .from("resultados_carreras")
-      .select("carrera, ganadores, orden_llegada, dividendos, retirados")
-      .eq("fecha", fecha)
-      .ilike("hipodromo", `%${hipodromo}%`);
-    if (error && /retirados/i.test(error.message)) {
+    const [resR, carR, tabR] = await Promise.all([
+      supabase
+        .from("resultados_carreras")
+        .select("carrera, ganadores, orden_llegada, dividendos, retirados")
+        .eq("fecha", fecha)
+        .ilike("hipodromo", `%${hipodromo}%`),
+      supabase
+        .from("carreras")
+        .select("carrera, retirados, caballos")
+        .eq("fecha", fecha)
+        .ilike("hipodromo", `%${hipodromo}%`),
+      supabase
+        .from("tablas_fijas")
+        .select("carrera, retirados_oficiales, caballos")
+        .eq("fecha", fecha)
+        .ilike("hipodromo", `%${hipodromo}%`),
+    ]);
+    let data = resR.data as Array<Record<string, unknown>> | null;
+    if (resR.error && /retirados/i.test(resR.error.message)) {
       const r2 = await supabase
         .from("resultados_carreras")
         .select("carrera, ganadores, orden_llegada, dividendos")
         .eq("fecha", fecha)
         .ilike("hipodromo", `%${hipodromo}%`);
-      data = r2.data as typeof data;
-      error = r2.error;
+      data = r2.data as Array<Record<string, unknown>> | null;
     }
-    if (error) return porCarrera;
-    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    for (const row of data ?? []) {
       const k = claveCarrera(row.carrera);
-      if (!porCarrera.has(k)) porCarrera.set(k, normalizarPizarra(row));
+      if (!k) continue;
+      const norm = normalizarPizarra(row);
+      const prev = porCarrera.get(k);
+      if (!prev) {
+        porCarrera.set(k, norm);
+      } else if (norm) {
+        porCarrera.set(k, {
+          puestos: prev.puestos.length ? prev.puestos : norm.puestos,
+          puestosRaya: prev.puestosRaya.length ? prev.puestosRaya : norm.puestosRaya,
+          dividendos: prev.dividendos ?? norm.dividendos,
+          retirados: unirRetirados(prev.retirados, norm.retirados),
+        });
+      }
+    }
+    const agregarRetiradosExtra = (k: string, nums: string[]) => {
+      if (!k || nums.length === 0) return;
+      const prev = porCarrera.get(k);
+      if (prev) {
+        prev.retirados = unirRetirados(prev.retirados, nums);
+      } else {
+        porCarrera.set(k, { puestos: [], puestosRaya: [], dividendos: null, retirados: unirRetirados(nums) });
+      }
+    };
+    for (const row of (carR.data ?? []) as Array<Record<string, unknown>>) {
+      const k = claveCarrera(row.carrera);
+      agregarRetiradosExtra(k, [
+        ...extraerNumerosRetiradosDeTexto(row.retirados),
+        ...extraerNumerosRetiradosDeCaballos(row.caballos),
+      ]);
+    }
+    for (const row of (tabR.data ?? []) as Array<Record<string, unknown>>) {
+      const k = claveCarrera(row.carrera);
+      agregarRetiradosExtra(k, [
+        ...extraerNumerosRetiradosDeTexto(row.retirados_oficiales),
+        ...extraerNumerosRetiradosDeCaballos(row.caballos),
+      ]);
     }
     return porCarrera;
   } catch {
     return porCarrera;
   }
+}
+
+/**
+ * Carga en lote todas las pizarras (con retirados unificados de `resultados_carreras`,
+ * `carreras` y `tablas_fijas`) para un conjunto de fechas. Se indexa por
+ * `${fecha}|${hipodromoCanónico}|${carrera}` y `${fecha}|${hipodromoRaw}|${carrera}`.
+ */
+export async function leerPizarrasPorFechas(fechas: string[]): Promise<Map<string, PizarraCarrera>> {
+  const mapa = new Map<string, PizarraCarrera>();
+  if (!supabase || fechas.length === 0) return mapa;
+  const fechasValidas = [...new Set(fechas.map((f) => String(f ?? "").slice(0, 10)).filter((f) => /^\d{4}-\d{2}-\d{2}$/.test(f)))];
+  if (fechasValidas.length === 0) return mapa;
+
+  const normHipo = (h: unknown) =>
+    String(h ?? "")
+      .trim()
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^A-Z0-9]/g, "");
+
+  const fusionar = (f: string, hRaw: unknown, carrRaw: unknown, parcial: PizarraCarrera) => {
+    const c = claveCarrera(carrRaw);
+    const hTxt = txt(hRaw).toUpperCase();
+    const hCan = normHipo(hRaw);
+    if (!f || !c || (!hTxt && !hCan)) return;
+    for (const hKey of new Set([hTxt, hCan].filter(Boolean))) {
+      const k = `${f}|${hKey}|${c}`;
+      const prev = mapa.get(k);
+      if (!prev) {
+        mapa.set(k, {
+          puestos: [...parcial.puestos],
+          puestosRaya: [...parcial.puestosRaya],
+          dividendos: parcial.dividendos,
+          retirados: [...parcial.retirados],
+        });
+      } else {
+        if (!prev.puestos.length && parcial.puestos.length) {
+          prev.puestos = [...parcial.puestos];
+          prev.puestosRaya = [...parcial.puestosRaya];
+        }
+        if (!prev.dividendos && parcial.dividendos) prev.dividendos = parcial.dividendos;
+        prev.retirados = unirRetirados(prev.retirados, parcial.retirados);
+      }
+    }
+  };
+
+  try {
+    const [resR, carR, tabR] = await Promise.all([
+      supabase
+        .from("resultados_carreras")
+        .select("fecha, hipodromo, carrera, ganadores, orden_llegada, dividendos, retirados")
+        .in("fecha", fechasValidas),
+      supabase
+        .from("carreras")
+        .select("fecha, hipodromo, carrera, retirados, caballos")
+        .in("fecha", fechasValidas),
+      supabase
+        .from("tablas_fijas")
+        .select("fecha, hipodromo, carrera, retirados_oficiales, caballos")
+        .in("fecha", fechasValidas),
+    ]);
+    for (const row of (resR.data ?? []) as Array<Record<string, unknown>>) {
+      const f = String(row.fecha ?? "").slice(0, 10);
+      const norm = normalizarPizarra(row);
+      if (norm) fusionar(f, row.hipodromo, row.carrera, norm);
+    }
+    for (const row of (carR.data ?? []) as Array<Record<string, unknown>>) {
+      const f = String(row.fecha ?? "").slice(0, 10);
+      const ret = unirRetirados(
+        extraerNumerosRetiradosDeTexto(row.retirados),
+        extraerNumerosRetiradosDeCaballos(row.caballos)
+      );
+      if (ret.length) fusionar(f, row.hipodromo, row.carrera, { puestos: [], puestosRaya: [], dividendos: null, retirados: ret });
+    }
+    for (const row of (tabR.data ?? []) as Array<Record<string, unknown>>) {
+      const f = String(row.fecha ?? "").slice(0, 10);
+      const ret = unirRetirados(
+        extraerNumerosRetiradosDeTexto(row.retirados_oficiales),
+        extraerNumerosRetiradosDeCaballos(row.caballos)
+      );
+      if (ret.length) fusionar(f, row.hipodromo, row.carrera, { puestos: [], puestosRaya: [], dividendos: null, retirados: ret });
+    }
+  } catch {
+    /* best-effort */
+  }
+  return mapa;
+}
+
+export function buscarPizarraEnMapa(
+  mapa: Map<string, PizarraCarrera> | undefined | null,
+  fecha: string,
+  hipodromo: string,
+  carrera: number | string
+): PizarraCarrera | null {
+  if (!mapa || mapa.size === 0) return null;
+  const f = String(fecha ?? "").slice(0, 10);
+  const c = claveCarrera(carrera);
+  const hTxt = txt(hipodromo).toUpperCase();
+  const hCan = hTxt.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "");
+  return mapa.get(`${f}|${hTxt}|${c}`) ?? mapa.get(`${f}|${hCan}|${c}`) ?? null;
+}
+
+export type FilaTicketUnificada = {
+  id: string;
+  ticketId: string;
+  rol: "Juega" | "Consigue";
+  clienteId: string;
+  clienteNombre: string;
+  fechaCarrera: string;
+  horaCarga: string | null;
+  hipodromo: string;
+  carrera: number;
+  jugada: string;
+  caballo: string;
+  ejemplar?: string;
+  tipoJugada?: "TABLA" | "MARCA" | null;
+  esAdelantada: boolean;
+  monto: number;
+  riesgo: number;
+  premio: number;
+  resultado: number | null;
+  estado: string;
+  anulada: boolean;
+};
+
+/**
+ * MOTOR UNIFICADO DE DESGLOSE POR TICKET (Juega + Consigue):
+ * Usa exactamente la misma lógica que `carreraReporte` (Reportes Finales de Carreras)
+ * para producir las filas `Juega` y `Consigue` de cualquier ticket, garantizando
+ * que todos los reportes del sistema (Reporte Final de Carrera, Reporte Diario Admin,
+ * Portal de Usuario y Estado de Cuenta) muestren exactamente las mismas jugadas,
+ * descripciones, montos y resultados netos.
+ */
+export function desglosarTicketEnFilasUnificadas(
+  f: Record<string, unknown>,
+  pizarra: PizarraCarrera | null,
+  tasaComision?: number | null
+): { juega: FilaTicketUnificada; consigue: FilaTicketUnificada | null } {
+  const idBase = txt(f.id) || "tk";
+  const hipodromo = txt(f.hipodromo).toUpperCase() || "—";
+  const carrera = Number(claveCarrera(f.carrera)) || 0;
+  const fechaCarrera =
+    txt(f.fecha_carrera).slice(0, 10) ||
+    (() => {
+      const m = /"fecha_carrera"\s*:\s*"(\d{4}-\d{2}-\d{2})"/.exec(String(f.nota_auditoria ?? ""));
+      return m?.[1] ?? "";
+    })() ||
+    txt(f.fecha_registro).slice(0, 10);
+  const horaCarga = formatearHoraCarga(f);
+  const adelantada = esAdelantadaDe(f);
+  const estadoRaw = txt(f.estado).toUpperCase();
+  const anulada = f.anulada === true || estadoRaw === "ANULADO" || estadoRaw === "ANULADA";
+  const monto = cifra(f.monto_jugado);
+  const desglose = desgloseJugada(f);
+  const ev = evaluar(f, hipodromo, carrera, pizarra, tasaComision);
+
+  const clienteJuegaId = txt(f.cliente_juega_id);
+  const clienteJuegaNombre = txt(f.cliente_juega_nombre) || clienteJuegaId || txt(f.cliente_juega) || "—";
+
+  const clienteConsigueId = txt(f.cliente_consigue_id) || txt(f.banquero_cliente_id);
+  const clienteConsigueRaw =
+    txt(f.banquero_nombre) ||
+    txt(f.cliente_consigue_nombre) ||
+    clienteConsigueId;
+  const clienteConsigueNombre = resolverContraparteModalidad(
+    f.nombre_jugada,
+    clienteConsigueRaw,
+    desglose.tipo
+  );
+
+  const resultadoJuega =
+    anulada
+      ? 0
+      : ev.resultadoJuega !== undefined
+        ? ev.resultadoJuega
+        : ev.ok === null
+          ? null
+          : Math.round((ev.bruto - monto) * 100) / 100;
+
+  const resolverEstadoFila = (res: number | null): string => {
+    if (anulada) return "ANULADA";
+    if (res === null) return "PENDIENTE";
+    if (res > 0) return "GANADOR";
+    if (res < 0) return "PERDEDOR";
+    if (desglose.tipo === "MARCA" && ((pizarra?.puestos?.length ?? 0) > 0 || /SIN\s+DECISI/i.test(estadoRaw))) {
+      return "SIN DECISIÓN";
+    }
+    if (estadoRaw === "RETIRADO") return "RETIRADO";
+    return "EMPATE";
+  };
+
+  const estadoJuega = resolverEstadoFila(resultadoJuega);
+  const premioJuega =
+    anulada || resultadoJuega === null
+      ? 0
+      : resultadoJuega > 0
+        ? Math.round((monto + resultadoJuega) * 100) / 100
+        : resultadoJuega === 0 && (estadoJuega === "RETIRADO" || estadoJuega === "EMPATE")
+          ? monto
+          : 0;
+
+  const filaJuega: FilaTicketUnificada = {
+    id: `${idBase}-j`,
+    ticketId: idBase,
+    rol: "Juega",
+    clienteId: clienteJuegaId,
+    clienteNombre: clienteJuegaNombre,
+    fechaCarrera,
+    horaCarga,
+    hipodromo,
+    carrera,
+    jugada: desglose.jugada,
+    caballo: desglose.caballo,
+    ejemplar: desglose.ejemplar,
+    tipoJugada: desglose.tipo,
+    esAdelantada: adelantada,
+    monto,
+    riesgo: monto,
+    premio: premioJuega,
+    resultado: resultadoJuega,
+    estado: estadoJuega,
+    anulada,
+  };
+
+  let filaConsigue: FilaTicketUnificada | null = null;
+  if (clienteConsigueNombre) {
+    const resConsigue = anulada ? 0 : resultadoConsigueDe(monto, ev);
+    const estadoConsigue = resolverEstadoFila(resConsigue);
+    const premioConsigue =
+      anulada || resConsigue === null
+        ? 0
+        : resConsigue > 0
+          ? Math.round((monto + resConsigue) * 100) / 100
+          : resConsigue === 0 && (estadoConsigue === "RETIRADO" || estadoConsigue === "EMPATE")
+            ? monto
+            : 0;
+    filaConsigue = {
+      id: `${idBase}-c`,
+      ticketId: idBase,
+      rol: "Consigue",
+      clienteId: clienteConsigueId,
+      clienteNombre: clienteConsigueNombre,
+      fechaCarrera,
+      horaCarga,
+      hipodromo,
+      carrera,
+      jugada: desglose.jugada,
+      caballo: desglose.caballo,
+      ejemplar: desglose.ejemplar,
+      tipoJugada: desglose.tipo,
+      esAdelantada: adelantada,
+      monto,
+      riesgo: ev.riesgoDa ?? monto,
+      premio: premioConsigue,
+      resultado: resConsigue,
+      estado: estadoConsigue,
+      anulada,
+    };
+  }
+
+  return { juega: filaJuega, consigue: filaConsigue };
 }
 
 async function leerTablasHipodromo(fecha: string, hipodromo: string): Promise<Set<string>> {
@@ -1195,13 +1569,17 @@ async function carreraReporte(
   const puestos = pizarra?.puestos ?? [];
   const puestosRaya = pizarra?.puestosRaya ?? [];
   const pizarraRaya = hayDistanciamientoPizarra(puestos, puestosRaya) ? puestosRaya.join(" · ") : null;
+  const retDeTickets = tickets
+    .filter((t) => t.anulada !== true && txt(t.estado).toUpperCase() === "RETIRADO")
+    .map((t) => txt(t.ejemplar_numero) || txt(t.caballo))
+    .filter((n) => /^\d+$/.test(n));
   return {
     numero,
     hipodromo,
     fecha,
     pizarra: puestos.length ? puestos.join(" · ") : null,
     pizarraRaya,
-    retirados: pizarra?.retirados ?? [],
+    retirados: unirRetirados(pizarra?.retirados, retDeTickets),
     filas,
     subtotal,
   };

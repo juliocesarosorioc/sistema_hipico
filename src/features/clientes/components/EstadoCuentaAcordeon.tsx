@@ -176,7 +176,7 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
     const pct = parseFloat(String(c.devolucion ?? "")) || 0;
     setDevolucionPct(pct);
     const tickets = await onCargarTickets(c.id);
-    const tree = construirEstadoCuenta(tickets, pct);
+    const tree = construirEstadoCuenta(tickets, pct, c);
     const fichaCalc = construirFichaEstadoCuentaUnificada({
       id: c.id,
       nombre: c.nombre ?? c.seudonimo ?? "",

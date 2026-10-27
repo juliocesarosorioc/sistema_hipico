@@ -315,7 +315,14 @@ export async function cargarCarrerasDelDia(fecha?: string): Promise<CarreraDelDi
         const c = aCarreraCentral(fila);
         const prev = porClave.get(claveCarrera(c.hipodromo, c.carrera));
         if (prev) {
-          res.push(prev);
+          const retPrev = (String(prev.retirados ?? "")
+            .replace(/NO\s+HUBO\s+RETIROS?/gi, "")
+            .match(/\d+/g) ?? []).map((x) => x.trim());
+          const retUnidos = [...new Set([...retPrev, ...(c.retirados ?? [])].filter(Boolean))];
+          res.push({
+            ...prev,
+            retirados: retUnidos.length > 0 ? retUnidos.join(", ") : prev.retirados,
+          });
           continue;
         }
         const propio = String(fila.estado ?? "").trim();
