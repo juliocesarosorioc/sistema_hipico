@@ -2144,8 +2144,18 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
   }, []);
 
   const jugadasFiltradas = useMemo(() => {
-    if (!filtroHipodromo) return jugadas;
-    return jugadas.filter((j) => String(j.hipodromo ?? "").trim().toUpperCase() === filtroHipodromo);
+    const base = !filtroHipodromo
+      ? jugadas
+      : jugadas.filter((j) => String(j.hipodromo ?? "").trim().toUpperCase() === filtroHipodromo);
+    return [...base].sort((a, b) => {
+      const fA = String(a.fecha ?? "");
+      const fB = String(b.fecha ?? "");
+      if (fB !== fA) return fB.localeCompare(fA);
+      const hA = String(a.hipodromo ?? "");
+      const hB = String(b.hipodromo ?? "");
+      if (hA !== hB) return hA.localeCompare(hB, "es");
+      return (Number(a.carrera) || 0) - (Number(b.carrera) || 0);
+    });
   }, [jugadas, filtroHipodromo]);
 
   // Grupos externos del cliente (una sola vez al montar).

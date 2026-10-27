@@ -1736,6 +1736,7 @@ async function hipodromoReporte(fecha: string, hipodromo: string, tasaComision?:
     });
     if (c) carreras.push(c);
   }
+  carreras.sort((a, b) => Number(a.numero) - Number(b.numero));
   const subtotal = Math.round(carreras.reduce((a, c) => a + c.subtotal, 0) * 100) / 100;
   return { nombre: hipodromo, carreras, subtotal };
 }

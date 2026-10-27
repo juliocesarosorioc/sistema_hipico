@@ -1175,6 +1175,33 @@ export function construirEstadoCuenta(
     }
   }
 
+  const numCarreraDeTitulo = (t: string): number =>
+    Number(String(t ?? "").replace(/\D+/g, "")) || 0;
+  const compararJugadaPorCarrera = (a: JugadaItem, b: JugadaItem): number => {
+    const fA = String(a.fechaCarrera || a.fecha || "").slice(0, 10);
+    const fB = String(b.fechaCarrera || b.fecha || "").slice(0, 10);
+    if (fB !== fA) return fB.localeCompare(fA);
+    const hCmp = String(a.hipodromo ?? "").localeCompare(String(b.hipodromo ?? ""), "es");
+    if (hCmp !== 0) return hCmp;
+    return (Number(a.carrera) || 0) - (Number(b.carrera) || 0);
+  };
+
+  for (const h of construir.hipodromos.values()) {
+    h.hijos.sort((a, b) => numCarreraDeTitulo(a.titulo) - numCarreraDeTitulo(b.titulo));
+    h.jugadas.sort(compararJugadaPorCarrera);
+  }
+  for (const d of construir.dias.values()) {
+    d.hijos.sort((a, b) => a.titulo.localeCompare(b.titulo, "es"));
+    d.jugadas.sort(compararJugadaPorCarrera);
+  }
+  for (const s of construir.semanas.values()) {
+    s.jugadas.sort(compararJugadaPorCarrera);
+  }
+  for (const g of construir.grupos.values()) {
+    g.jugadas.sort(compararJugadaPorCarrera);
+  }
+  raiz.jugadas.sort(compararJugadaPorCarrera);
+
   raiz.hijos = [...construir.grupos.values()];
   return raiz;
 }

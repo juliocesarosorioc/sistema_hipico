@@ -174,7 +174,12 @@ export default function HistorialReporte() {
             : rep?.pizarra
               ? rep.pizarra.split(/[·|]/).map((s) => s.trim()).filter(Boolean)
               : [];
-        return { hipodromo: c.hipodromo, carrera: c.carrera, pizarra, detalle: rep } as CarreraHistorial;
+        return { hipodromo: c.hipodromo, carrera: Number(c.carrera), pizarra, detalle: rep } as CarreraHistorial;
+      });
+      detalle.sort((a, b) => {
+        const cmpH = a.hipodromo.localeCompare(b.hipodromo, "es");
+        if (cmpH !== 0) return cmpH;
+        return Number(a.carrera) - Number(b.carrera);
       });
       setCarreras(detalle);
       // Ítem 4: PENDIENTES de la jornada = carreras con jugadas y sin resultado.
@@ -182,9 +187,15 @@ export default function HistorialReporte() {
       try {
         const mon = await listarMonitorJugadas();
         setPendientes(
-          mon.filas.filter(
-            (fila) => fila.fecha_carrera === f && fila.total_jugadas > 0 && !fila.resultado_cargado
-          )
+          mon.filas
+            .filter(
+              (fila) => fila.fecha_carrera === f && fila.total_jugadas > 0 && !fila.resultado_cargado
+            )
+            .sort((a, b) => {
+              const cmpH = a.hipodromo.localeCompare(b.hipodromo, "es");
+              if (cmpH !== 0) return cmpH;
+              return Number(a.carrera) - Number(b.carrera);
+            })
         );
       } catch {
         setPendientes([]);

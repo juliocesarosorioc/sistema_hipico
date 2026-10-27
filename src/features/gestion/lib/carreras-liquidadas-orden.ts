@@ -103,12 +103,12 @@ export function deduplicarYOrdenarCarrerasLiquidadas(
   }
 
   return [...mapa.values()].sort((a, b) => {
-    const tsA = timestampLiquidacionMs(a);
-    const tsB = timestampLiquidacionMs(b);
-    if (tsB !== tsA) return tsB - tsA;
     const fA = String(a.fecha ?? "");
     const fB = String(b.fecha ?? "");
     if (fB !== fA) return fB.localeCompare(fA);
+    const hA = normalizarHipodromoClave(a.hipodromo);
+    const hB = normalizarHipodromoClave(b.hipodromo);
+    if (hA !== hB) return hA.localeCompare(hB, "es");
     return Number(a.carrera) - Number(b.carrera);
   });
 }

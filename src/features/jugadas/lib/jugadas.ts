@@ -250,7 +250,13 @@ function agruparMonitor(filas: FilaMonitorJugada[]): FilaMonitorJugada[] {
     );
     prev.origenes = orig.size ? [...orig].join(", ") : null;
   }
-  return [...mapa.values()];
+  return [...mapa.values()].sort((a, b) => {
+    const fh = (b.fecha_carrera ?? "").localeCompare(a.fecha_carrera ?? "");
+    if (fh !== 0) return fh;
+    const cmpHip = a.hipodromo.localeCompare(b.hipodromo, "es");
+    if (cmpHip !== 0) return cmpHip;
+    return Number(a.carrera) - Number(b.carrera);
+  });
 }
 
 /**

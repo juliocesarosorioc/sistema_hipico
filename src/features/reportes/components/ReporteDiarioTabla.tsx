@@ -172,7 +172,17 @@ function PizarraCarreraBadges({ puestos, retirados }: { puestos: string[]; retir
 
 /** Construye el árbol de días de respaldo si `datos.dias` no vino precalculado (ej. desde RPC). */
 function construirArbolDias(datos: ReporteDiario): DiaPivotDiario[] {
-  if (datos.dias && datos.dias.length > 0) return datos.dias;
+  if (datos.dias && datos.dias.length > 0) {
+    return datos.dias.map((d) => ({
+      ...d,
+      hipodromos: [...d.hipodromos]
+        .sort((a, b) => a.hipodromo.localeCompare(b.hipodromo, "es"))
+        .map((h) => ({
+          ...h,
+          carreras: [...h.carreras].sort((a, b) => Number(a.carrera) - Number(b.carrera)),
+        })),
+    }));
+  }
   if (!datos.filas.length) return [];
 
   const porDia = new Map<string, Map<string, FilaReporteDiario[]>>();
@@ -184,8 +194,13 @@ function construirArbolDias(datos: ReporteDiario): DiaPivotDiario[] {
     hMap.get(f.hipodromo)!.push(f);
   }
 
-  return [...porDia.entries()].map(([fecha, hMap]) => {
-    const hipodromos: HipodromoPivotDiario[] = [...hMap.entries()].map(([hipodromo, carreras]) => {
+  return [...porDia.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([fecha, hMap]) => {
+    const hipodromos: HipodromoPivotDiario[] = [...hMap.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], "es"))
+      .map(([hipodromo, carrerasRaw]) => {
+      const carreras = [...carrerasRaw].sort((a, b) => Number(a.carrera) - Number(b.carrera));
       const tickets = carreras.reduce((a, c) => a + c.tickets, 0);
       const totalJugado = carreras.reduce((a, c) => a + c.totalJugado, 0);
       const totalPremios = carreras.reduce((a, c) => a + c.totalPremios, 0);

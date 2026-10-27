@@ -464,11 +464,14 @@ export function filtrarVentas(ventas: VentaTablaReporte[], filtros: FiltrosVenta
 /** Ordena filas por una métrica; desempata por etiqueta. */
 export function ordenarFilas(
   filas: FilaReporte[],
-  key: keyof TotalesReporte,
+  key: keyof TotalesReporte | "etiqueta",
   dir: "asc" | "desc"
 ): FilaReporte[] {
   const signo = dir === "asc" ? 1 : -1;
   return [...filas].sort((a, b) => {
+    if (key === "etiqueta") {
+      return a.etiqueta.localeCompare(b.etiqueta, "es", { numeric: true }) * signo;
+    }
     const d = (a[key] - b[key]) * signo;
     if (d !== 0) return d;
     return a.etiqueta.localeCompare(b.etiqueta, "es", { numeric: true });

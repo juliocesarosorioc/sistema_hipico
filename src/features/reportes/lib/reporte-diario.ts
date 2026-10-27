@@ -338,7 +338,9 @@ export function armarReporteDiario(jugadas: JugadaReporte[]): ReporteDiario {
       return f;
     })
     .sort((a, b) =>
-      a.hipodromo === b.hipodromo ? a.carrera - b.carrera : a.hipodromo.localeCompare(b.hipodromo)
+      a.hipodromo === b.hipodromo
+        ? Number(a.carrera) - Number(b.carrera)
+        : a.hipodromo.localeCompare(b.hipodromo, "es")
     );
 
   // Construir árbol jerárquico Día → Hipódromo → Carrera → Jugadas
@@ -364,7 +366,7 @@ export function armarReporteDiario(jugadas: JugadaReporte[]): ReporteDiario {
       const hipodromos: HipodromoPivotDiario[] = [...hipoMap.entries()]
         .sort((a, b) => a[0].localeCompare(b[0], "es"))
         .map(([hipodromo, carreras]) => {
-          carreras.sort((a, b) => a.carrera - b.carrera);
+          carreras.sort((a, b) => Number(a.carrera) - Number(b.carrera));
           const sub = totalesDe(carreras);
           return {
             hipodromo,
@@ -643,7 +645,11 @@ function leerRespuestaRpc(data: unknown): ReporteDiario | null {
       devolucion,
       balance: centavos(totalJugado - totalPremios - devolucion),
     };
-  });
+  }).sort((a, b) =>
+    a.hipodromo === b.hipodromo
+      ? Number(a.carrera) - Number(b.carrera)
+      : a.hipodromo.localeCompare(b.hipodromo, "es")
+  );
   // Los totales se recalculan de las filas para que el pie siempre cuadre con
   // la tabla, aunque la RPC los mande redondeados aparte.
   return { filas, totales: totalesDe(filas) };

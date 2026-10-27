@@ -150,7 +150,7 @@ export type ReporteVentasModalProps = {
   tablasVivo?: readonly string[];
 };
 
-type Orden = { key: keyof TotalesReporte; dir: "asc" | "desc" };
+type Orden = { key: keyof TotalesReporte | "etiqueta"; dir: "asc" | "desc" };
 
 const DIM_LABEL: Record<DimensionReporte, string> = {
   grupo: "Grupo",
@@ -676,8 +676,8 @@ export function ReporteVentasModal({
     setRecarga((n) => n + 1);
   };
 
-  const onOrdenar = (k: keyof TotalesReporte) =>
-    setOrden((o) => (o.key === k ? { key: k, dir: o.dir === "desc" ? "asc" : "desc" } : { key: k, dir: "desc" }));
+  const onOrdenar = (k: keyof TotalesReporte | "etiqueta") =>
+    setOrden((o) => (o.key === k ? { key: k, dir: o.dir === "desc" ? "asc" : "desc" } : { key: k, dir: k === "etiqueta" ? "asc" : "desc" }));
 
   if (!abierto) return null;
 
@@ -811,6 +811,7 @@ export function ReporteVentasModal({
                 onClick={() => {
                   setDimension(d);
                   setFilaAbierta(null);
+                  if (d === "carrera") setOrden({ key: "etiqueta", dir: "asc" });
                 }}
                 className={`rounded px-1.5 py-0.5 text-[10px] font-black uppercase transition-colors ${
                   dimension === d ? tema.activo : "text-slate-500 hover:bg-slate-100"
@@ -953,8 +954,13 @@ export function ReporteVentasModal({
               <table className="w-full border-collapse text-[11px]">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-100">
-                    <th className="px-2 py-1.5 text-left text-[9px] font-black uppercase tracking-wide text-slate-500">
+                    <th
+                      onClick={() => onOrdenar("etiqueta")}
+                      title={`Ordenar por ${DIM_LABEL[dimension]}`}
+                      className={`cursor-pointer select-none px-2 py-1.5 text-left text-[9px] font-black uppercase tracking-wide transition-colors ${tema.hover} ${orden.key === "etiqueta" ? tema.acento : "text-slate-500"}`}
+                    >
                       {DIM_LABEL[dimension]}
+                      {orden.key === "etiqueta" && <span className="ml-0.5">{orden.dir === "desc" ? "▼" : "▲"}</span>}
                     </th>
                     <ThOrden label="En riesgo" k="enRiesgo" orden={orden} onOrdenar={onOrdenar} tema={tema} />
                     <ThOrden label="Tickets" k="tickets" orden={orden} onOrdenar={onOrdenar} tema={tema} />
