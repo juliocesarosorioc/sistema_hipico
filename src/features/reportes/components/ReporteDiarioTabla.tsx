@@ -111,21 +111,21 @@ function ContenedoresEjemplares({ caballo }: { caballo?: string | null }) {
 function PizarraCarreraBadges({ puestos }: { puestos: string[] }) {
   if (!puestos || puestos.length === 0) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[9.5px] font-bold text-amber-800">
+      <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[9px] font-bold text-amber-800">
         ⏳ Pizarra pendiente
       </span>
     );
   }
   return (
-    <div className="inline-flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1">
-      <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 mr-0.5">
+    <div className="inline-flex shrink-0 flex-nowrap items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5">
+      <span className="mr-0.5 text-[8.5px] font-black uppercase tracking-wider text-slate-500">
         🏁 Pizarra:
       </span>
       {puestos.slice(0, 5).map((numCab, idx) => (
         <span key={`${numCab}-${idx}`} className="inline-flex items-center gap-0.5">
-          <span className="text-[9px] font-black text-slate-500">{idx + 1}º</span>
+          <span className="text-[8.5px] font-black leading-none text-slate-500">{idx + 1}º</span>
           <span
-            className={`inline-flex h-5 min-w-[1.35rem] px-1 rounded items-center justify-center text-[10px] font-black shadow-2xs border ${colorDiscoNumero(numCab)}`}
+            className={`inline-flex h-4 min-w-[1.1rem] items-center justify-center rounded border px-0.5 text-[9px] font-black leading-none shadow-2xs ${colorDiscoNumero(numCab)}`}
             title={`${idx + 1}º lugar: Ejemplar #${numCab}`}
           >
             {numCab}
