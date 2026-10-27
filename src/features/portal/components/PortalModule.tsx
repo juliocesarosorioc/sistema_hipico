@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { listarTablasPublicadas } from "@/features/tablas/lib/rpc";
@@ -1004,9 +1004,7 @@ function DisputarModal({
   const [previa, setPrevia] = useState<string | null>(null);
   const [aviso, setAviso] = useState("");
 
-  const areaRef = (el: HTMLDivElement | null) => {
-    if (el) el.focus();
-  };
+  const pasteAreaRef = useRef<HTMLDivElement | null>(null);
 
   const onPaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -1046,6 +1044,7 @@ function DisputarModal({
         <div>
           <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Motivo de la disputa *</label>
           <textarea
+            autoFocus
             value={motivo}
             onChange={(e) => setMotivo(e.target.value.toUpperCase())}
             className="w-full border border-line rounded-xl bg-surface px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-200 resize-none uppercase"
@@ -1055,7 +1054,7 @@ function DisputarModal({
         </div>
 
         <div
-          ref={areaRef}
+          ref={pasteAreaRef}
           tabIndex={0}
           onPaste={onPaste}
           className="rounded-xl border-2 border-dashed border-amber-300 bg-amber-50/40 p-4 text-center outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"

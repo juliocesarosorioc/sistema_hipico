@@ -48,6 +48,7 @@ import {
   type EstadoBloqueoJugadas,
   type ModalidadPortalJugada,
 } from "@/features/portal/lib/bloqueo-jugadas";
+import { MonitorTablasCliente } from "@/features/portal/components/MonitorTablasCliente";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -311,12 +312,10 @@ export function SeccionJugadasPortal({
       ) : (
         <>
           {modalidad === "tablas_fijas" && (
-            <ModalidadTablasFijasPorCaballo
+            <MonitorTablasCliente
               sesion={sesion}
               tablas={tablas}
               bloqueada={estaBloqueada}
-              enviando={enviando}
-              setEnviando={setEnviando}
               onPedirDesbloqueo={pedirDesbloqueo}
               onRealizada={onJugadaRealizada}
             />

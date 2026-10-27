@@ -38,6 +38,8 @@ type Props = {
   error?: string | null;
   onCorregir: () => void;
   onConfirmar: () => void;
+  tituloModal?: string;
+  textoBotonConfirmar?: string;
 };
 
 const ESTILO: Record<TicketVentaModalidad, { cab: string; badge: string; etiqueta: string }> = {
@@ -51,7 +53,16 @@ function money(n: number, moneda?: string | null): string {
   return moneda && moneda.toUpperCase() !== "USD" ? `${s} ${moneda}` : `$${s}`;
 }
 
-export function TicketVentaPreview({ abierto, ticket, confirmando, error, onCorregir, onConfirmar }: Props) {
+export function TicketVentaPreview({
+  abierto,
+  ticket,
+  confirmando,
+  error,
+  onCorregir,
+  onConfirmar,
+  tituloModal,
+  textoBotonConfirmar,
+}: Props) {
   if (!abierto || !ticket) return null;
   const e = ESTILO[ticket.modalidad];
   const filas: Array<[string, string]> = [
@@ -81,7 +92,7 @@ export function TicketVentaPreview({ abierto, ticket, confirmando, error, onCorr
           <div className="flex items-center gap-2">
             <span className="text-lg">🧾</span>
             <div>
-              <h3 className="text-sm font-black uppercase tracking-wide">Ticket de venta</h3>
+              <h3 className="text-sm font-black uppercase tracking-wide">{tituloModal || "Ticket de venta"}</h3>
               <p className="text-[10px] font-semibold opacity-80">Revisá la jugada antes de confirmar</p>
             </div>
           </div>
@@ -143,7 +154,7 @@ export function TicketVentaPreview({ abierto, ticket, confirmando, error, onCorr
             ✏️ Corregir
           </Button>
           <Button variant="success" size="md" className="flex-1" onClick={onConfirmar} disabled={confirmando}>
-            {confirmando ? "Registrando…" : "✅ Confirmar venta"}
+            {confirmando ? "Registrando…" : (textoBotonConfirmar || "✅ Confirmar venta")}
           </Button>
         </div>
       </div>
