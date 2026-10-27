@@ -13,7 +13,15 @@
 import { capturarNodo, guardarLienzos, type ImgFormato } from "@/features/impresion/lib/exportar";
 import { formatearMontoSinMoneda, limpiarSimbolosMoneda, redondearCentavos } from "@/shared/lib/dinero";
 import { agruparAdelantadasPorSeccion } from "@/features/liquidacion/lib/reporte-carrera";
-import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
+import {
+  esMarca,
+  esTablaFija,
+  extraerNumeroTablaFija,
+  extraerPareoMarca,
+  extraerPrecioUnitarioTabla,
+  formatearPrecioCorto,
+  resolverContraparteModalidad,
+} from "@/features/liquidacion/lib/etiquetas-reporte";
 import type { JugadaVivo, ObservacionOrdenExceso } from "@/features/saldos/components/ReporteCarrera";
 
 export const COLUMNAS_REPORTE_7 = [
@@ -61,7 +69,16 @@ export function construirFilas7Columnas(
           : aposto2 != null
             ? -Math.abs(aposto2)
             : null;
-    const jugadaTxt = f.caballo ? `${f.jugo} (${f.caballo})`.trim() : String(f.jugo ?? "").trim();
+    const jugoStr = String(f.jugo ?? "").trim();
+    const jugadaTxt = esMarca(jugoStr)
+      ? extraerPareoMarca({ jugada: jugoStr, caballo: f.caballo }).etiquetaTexto
+      : esTablaFija(jugoStr) || /^TABLA\b|^TF\b/i.test(jugoStr)
+        ? `${extraerNumeroTablaFija({ jugada: jugoStr, caballo: f.caballo })} a ${formatearPrecioCorto(
+            f.precioTabla && f.precioTabla > 0 ? f.precioTabla : aposto1
+          )}`
+        : f.caballo
+          ? `${jugoStr} (${f.caballo})`.trim()
+          : jugoStr;
 
     return {
       quienJuega: f.juega,
@@ -113,6 +130,8 @@ export function generarTextoPrejugadasWhatsapp(params: {
     jugada: string;
     caballo: string;
     monto: number;
+    precioTabla?: number;
+    cantidadTablas?: number;
     da?: string;
     queda?: number;
     observacionExceso?: string | null;
@@ -133,15 +152,14 @@ export function generarTextoPrejugadasWhatsapp(params: {
       jugada: string;
       caballo: string;
       monto: number;
+      precioTabla?: number;
+      cantidadTablas?: number;
       da?: string;
       queda?: number;
       observacionExceso?: string | null;
     },
     idx: number
   ) => {
-    const cab = j.caballo ? ` (${j.caballo})` : "";
-    const daResuelto = resolverContraparteModalidad(j.jugada, j.da);
-    const da = daResuelto ? ` da ${daResuelto}` : "";
     const quedaTxt =
       typeof j.queda === "number" && Number.isFinite(j.queda)
         ? j.queda > 0
@@ -149,6 +167,19 @@ export function generarTextoPrejugadasWhatsapp(params: {
           : ` · *S/S*`
         : "";
     const obsTxt = j.observacionExceso ? ` [${j.observacionExceso}]` : "";
+    if (esMarca(j.jugada)) {
+      const pareoTxt = extraerPareoMarca({ jugada: j.jugada, caballo: j.caballo }).etiquetaTexto;
+      return `${idx + 1}) Juega ${j.juega} MARCA ${pareoTxt} con ${formatearMontoSinMoneda(j.monto)}${quedaTxt}${obsTxt}`;
+    }
+    if (esTablaFija(j.jugada) || /^TABLA\b|^TF\b/i.test(j.jugada)) {
+      const numCab = extraerNumeroTablaFija({ jugada: j.jugada, caballo: j.caballo });
+      const precio = extraerPrecioUnitarioTabla({ ...j, monto_jugado: j.monto });
+      const daResuelto = resolverContraparteModalidad(j.jugada, j.da);
+      return `${idx + 1}) Juega ${j.juega} TABLA FIJA DEL ${numCab} a ${formatearPrecioCorto(precio)} c/u ${formatearMontoSinMoneda(j.monto)} da ${daResuelto}${quedaTxt}${obsTxt}`;
+    }
+    const cab = j.caballo ? ` (${j.caballo})` : "";
+    const daResuelto = resolverContraparteModalidad(j.jugada, j.da);
+    const da = daResuelto ? ` da ${daResuelto}` : "";
     return `${idx + 1}) Juega ${j.juega} ${j.jugada}${cab} con ${formatearMontoSinMoneda(j.monto)}${da}${quedaTxt}${obsTxt}`;
   };
 

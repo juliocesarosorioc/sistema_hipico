@@ -4,8 +4,15 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { proyectarFila } from "@/features/taquilla/lib/validar";
 import { clienteConSaldoDescontado, proyectarFilasEnOrden } from "@/features/taquilla/lib/saldosEnCurso";
 import { normalizarLineaRapida, type ConfianzaCampo } from "@/features/taquilla/lib/normalizar";
-import { rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
+import { ladosDePareo, rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
 import { HorseBadge } from "@/shared/components/ui/HorseChips";
+import {
+  esMarca,
+  esTablaFija,
+  extraerNumeroTablaFija,
+  extraerPareoMarca,
+  formatearPrecioCorto,
+} from "@/features/liquidacion/lib/etiquetas-reporte";
 import { useTaquillaStore, type TicketTaquilla } from "@/shared/store/useTaquillaStore";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
@@ -19,7 +26,7 @@ import { reversarLiquidacionCarrera } from "@/features/liquidacion/lib/reversar"
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
 import { venderJugada, claveIdempotenciaJugada } from "@/features/taquilla/lib/venta";
 import { dividendosDePizarra, pizarraDePosiciones, posicionesDePizarra, posicionesRayaDePizarra } from "@/features/liquidacion/lib/posiciones";
-import { colorDiscoNumero } from "@/features/saldos/lib/discos";
+import { colorDiscoNumero, numerosDeCaballo } from "@/features/saldos/lib/discos";
 import { PREFIJO_WPS } from "@/features/motores/lib/wps";
 import { guardarPizarraCentral } from "@/features/liquidacion/lib/pizarraCentral";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
@@ -1259,6 +1266,10 @@ const hipodromosDelDia = useMemo(() => {
           cliente1: f.cliente1,
           cliente2: f.cliente2 || null,
           esAdelantada: f.esAdelantada,
+          precioTabla: f.precioTabla,
+          cantidadTablas: f.cantidadTablas,
+          premioPotencial: f.aposto2,
+          ganador: f.estado === "Ganador" ? true : f.estado === "Perdedor" ? false : undefined,
         }));
     }
     return ticketsDeCarrera;
@@ -1307,13 +1318,13 @@ const hipodromosDelDia = useMemo(() => {
             retirados: retirados.trim() || undefined,
             pizarra: ultimaPizarra.pizarra,
             dividendos: ultimaPizarra.dividendos ?? null,
-            tickets: ticketsDeCarrera,
+            tickets: ticketsParaPreliminar,
             tasaComision: comisionNum,
             saldos: saldosAjustados,
             observaciones: observaciones.trim() || undefined,
           })
         : "",
-    [carrera, comisionNum, fecha, grupoCabecera, hipodromo, observaciones, retirados, saldosAjustados, ticketsDeCarrera, ultimaPizarra]
+    [carrera, comisionNum, fecha, grupoCabecera, hipodromo, observaciones, retirados, saldosAjustados, ticketsParaPreliminar, ultimaPizarra]
   );
 
   const generarMensajeResultados = useCallback(
@@ -1326,7 +1337,7 @@ const hipodromosDelDia = useMemo(() => {
         retirados: retirados.trim() || undefined,
         pizarra: pizarra.pizarra,
         dividendos: pizarra.dividendos ?? null,
-        tickets: ticketsDeCarrera,
+        tickets: ticketsParaPreliminar,
         tasaComision: comisionNum,
         saldos: saldosAjustados,
         observaciones: observaciones.trim() || undefined,
@@ -1334,7 +1345,7 @@ const hipodromosDelDia = useMemo(() => {
       setMensajeWhatsapp(msg);
       return msg;
     },
-    [carrera, comisionNum, fecha, grupoCabecera, hipodromo, observaciones, retirados, saldosAjustados, ticketsDeCarrera]
+    [carrera, comisionNum, fecha, grupoCabecera, hipodromo, observaciones, retirados, saldosAjustados, ticketsParaPreliminar]
   );
 
   const totalInvertidoSesion = useMemo(
@@ -2658,8 +2669,99 @@ const hipodromosDelDia = useMemo(() => {
                           </span>
                         </td>
                         <td className="h-8 px-1.5 py-1 text-center font-mono text-[10px] font-black text-indigo-950 truncate align-middle" title={`${f.jugada} ${f.caballo ? `#${f.caballo}` : ""}`}>
-                          {f.jugada} {f.caballo ? `· #${f.caballo.toUpperCase()}` : ""}
-                          {f.esAdelantada && <BadgeAdelantada className="ml-1" />}
+                          {(() => {
+                            const esFilaMarca = f.categoriaAdelantada === "marcas" || esMarca(f.jugada);
+                            const esFilaTabla =
+                              f.categoriaAdelantada === "tablas" ||
+                              esTablaFija(f.jugada) ||
+                              /^TABLA\b|^TF\b/i.test(f.jugada);
+
+                            if (esFilaMarca) {
+                              const pareoCab = extraerPareoMarca({
+                                jugada: f.jugada,
+                                caballo: f.caballo,
+                              }).caballoPareo;
+                              const lados = ladosDePareo(String(pareoCab || f.caballo || ""));
+                              if (lados) {
+                                const numsA = numerosDeCaballo(lados.juega);
+                                const numsB = numerosDeCaballo(lados.da);
+                                return (
+                                  <span className="inline-flex items-center justify-center gap-0.5 align-middle">
+                                    {numsA.map((n, idx) => (
+                                      <span
+                                        key={`ma-${n}-${idx}`}
+                                        className={`inline-flex h-5 min-w-[20px] items-center justify-center rounded border px-1 text-[10px] font-black leading-none shadow-2xs ${colorDiscoNumero(n)}`}
+                                      >
+                                        {n}
+                                      </span>
+                                    ))}
+                                    <span className="mx-1 font-sans text-[10px] font-black text-slate-700">
+                                      x
+                                    </span>
+                                    {numsB.map((n, idx) => (
+                                      <span
+                                        key={`mb-${n}-${idx}`}
+                                        className={`inline-flex h-5 min-w-[20px] items-center justify-center rounded border px-1 text-[10px] font-black leading-none shadow-2xs ${colorDiscoNumero(n)}`}
+                                      >
+                                        {n}
+                                      </span>
+                                    ))}
+                                  </span>
+                                );
+                              }
+                              const numsSolos = numerosDeCaballo(pareoCab || f.caballo);
+                              return (
+                                <span className="inline-flex items-center justify-center gap-0.5 align-middle">
+                                  {numsSolos.map((n, idx) => (
+                                    <span
+                                      key={`ms-${n}-${idx}`}
+                                      className={`inline-flex h-5 min-w-[20px] items-center justify-center rounded border px-1 text-[10px] font-black leading-none shadow-2xs ${colorDiscoNumero(n)}`}
+                                    >
+                                      {n}
+                                    </span>
+                                  ))}
+                                </span>
+                              );
+                            }
+
+                            if (esFilaTabla) {
+                              const numCab = extraerNumeroTablaFija({
+                                jugada: f.jugada,
+                                caballo: f.caballo,
+                              });
+                              const nums = numerosDeCaballo(numCab || f.caballo);
+                              const precio =
+                                f.precioTabla && f.precioTabla > 0
+                                  ? f.precioTabla
+                                  : f.aposto1 ?? f.monto;
+                              return (
+                                <span className="inline-flex items-center justify-center gap-1 align-middle">
+                                  {nums.length > 0 ? (
+                                    nums.map((n, idx) => (
+                                      <span
+                                        key={`tf-${n}-${idx}`}
+                                        className={`inline-flex h-5 min-w-[20px] items-center justify-center rounded border px-1 text-[10px] font-black leading-none shadow-2xs ${colorDiscoNumero(n)}`}
+                                      >
+                                        {n}
+                                      </span>
+                                    ))
+                                  ) : (
+                                    <span className="font-bold text-slate-800">{numCab || f.caballo}</span>
+                                  )}
+                                  <span className="font-sans text-[10px] font-black text-slate-800">
+                                    a {formatearPrecioCorto(precio)}
+                                  </span>
+                                </span>
+                              );
+                            }
+
+                            return (
+                              <>
+                                {f.jugada} {f.caballo ? `· #${f.caballo.toUpperCase()}` : ""}
+                                {f.esAdelantada && <BadgeAdelantada className="ml-1" />}
+                              </>
+                            );
+                          })()}
                         </td>
                         <td className="h-8 px-1.5 py-1 font-bold text-slate-800 truncate align-middle" title={f.cliente2}>
                           {f.cliente2 || "—"}
@@ -2911,6 +3013,8 @@ const hipodromosDelDia = useMemo(() => {
                     juega: f.cliente1,
                     jugada: f.jugada,
                     caballo: f.caballo,
+                    precioTabla: f.precioTabla,
+                    cantidadTablas: f.cantidadTablas,
                     da: f.cliente2,
                     monto: f.monto,
                   })),
@@ -3140,11 +3244,12 @@ const hipodromosDelDia = useMemo(() => {
                         })),
                         ...filasPreviewAdelantadas.map((f) => ({
                           juega: f.cliente1,
-                          aposto: f.monto,
+                          aposto: f.aposto1 ?? f.monto,
                           jugo: f.jugada,
                           caballo: f.caballo,
+                          precioTabla: f.precioTabla,
                           da: f.cliente2,
-                          apostoDa: f.monto,
+                          apostoDa: f.aposto2 ?? f.monto,
                           resultado: null,
                           resultadoDa: null,
                           esAdelantada: true,

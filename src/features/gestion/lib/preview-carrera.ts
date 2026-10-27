@@ -26,11 +26,19 @@
  */
 
 import { esAdelantadaDe } from "@/features/jugadas/lib/modalidad-tiempo";
-import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
+import {
+  esMarca,
+  esTablaFija,
+  extraerNumeroTablaFija,
+  extraerPareoMarca,
+  extraerPrecioUnitarioTabla,
+  resolverContraparteModalidad,
+} from "@/features/liquidacion/lib/etiquetas-reporte";
 import {
   categoriaJugadaAdelantada,
   type CategoriaJugadaAdelantada,
 } from "@/features/liquidacion/lib/reporte-carrera";
+import { pagoPotencialTablaFija } from "@/features/liquidacion/lib/reportes";
 import { evaluarPuestoPorPosicion } from "@/features/motores/lib/puestos";
 import { esJugadaAnuladaOExcluida } from "@/features/saldos/lib/contabilidad-central";
 
@@ -44,6 +52,9 @@ export type JugadaPersistida = {
   ejemplar_numero?: number | null;
   monto_jugado?: number | null;
   premio_pagar?: number | null;
+  cantidad_tablas?: number | string | null;
+  premio_por_tabla?: number | string | null;
+  pts_ejemplar?: number | string | null;
   /** Tasa de comisión del ticket (%), la que retiene la casa sobre la ganancia. */
   comision_porcentaje?: number | null;
   estado?: string | null;
@@ -97,6 +108,10 @@ export type FilaPreviewCarrera = {
   jugada: string;
   caballo: string;
   monto: number;
+  /** Precio unitario del ejemplar en Tabla Fija (ej. 38 en "5 a 38"). */
+  precioTabla?: number;
+  /** Cantidad de tablas compradas en Tabla Fija. */
+  cantidadTablas?: number;
   /** Monto apostado / arriesgado por Quien Juega (Cliente 1). */
   aposto1?: number;
   /** Monto apostado / arriesgado por Quien Da (Cliente 2 / TF / Marcas). */
@@ -348,7 +363,18 @@ function filaDesdePersistida(
   let estado = estadoDeFila(j.estado, anulada);
   const ticketId = String(j.id ?? "").trim() || null;
   const nombreJug = TXT(j.nombre_jugada);
-  const caballo = TXT(j.caballo) || (j.ejemplar_numero != null ? String(j.ejemplar_numero) : "");
+  const jRec = j as unknown as Record<string, unknown>;
+  const esJugMarca = esMarca(nombreJug);
+  const esJugTabla = esTablaFija(nombreJug);
+  const caballo = esJugMarca
+    ? extraerPareoMarca(jRec).caballoPareo
+    : esJugTabla
+      ? extraerNumeroTablaFija(jRec)
+      : TXT(j.caballo) || (j.ejemplar_numero != null ? String(j.ejemplar_numero) : "");
+  const precioTabla = esJugTabla ? extraerPrecioUnitarioTabla(jRec) : undefined;
+  const cantidadTablas = esJugTabla
+    ? Math.max(1, NUM(j.cantidad_tablas) || (precioTabla && precioTabla > 0 ? Math.round(monto / precioTabla) : 1))
+    : undefined;
   const comisionPct = NUM(j.comision_porcentaje);
 
   // Evaluación en vivo de MARCAS según el resultado de la carrera (`pizarraPuestos`):
@@ -435,7 +461,7 @@ function filaDesdePersistida(
   const { lado1, lado2, aposto1, aposto2 } = ladosDeLaJugada(
     monto,
     estado,
-    NUM(j.premio_pagar),
+    esJugTabla ? pagoPotencialTablaFija(jRec) : NUM(j.premio_pagar),
     comisionPct,
     nombreJug
   );
@@ -451,6 +477,8 @@ function filaDesdePersistida(
     jugada: nombreJug,
     caballo,
     monto,
+    ...(precioTabla !== undefined ? { precioTabla } : {}),
+    ...(cantidadTablas !== undefined ? { cantidadTablas } : {}),
     aposto1,
     aposto2,
     cliente1: TXT(j.cliente_juega_nombre),

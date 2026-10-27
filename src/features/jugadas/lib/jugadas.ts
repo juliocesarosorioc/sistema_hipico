@@ -67,6 +67,9 @@ export type JugadaAdmin = {
   pagado_en?: string | null;
   pagado_por?: string | null;
   es_adelantada?: boolean | null;
+  cantidad_tablas?: number | null;
+  premio_por_tabla?: number | null;
+  pts_ejemplar?: number | null;
 };
 
 export type AuditoriaJugada = {
@@ -362,7 +365,7 @@ export async function listarJugadasDeCarrera(
         const ids = jugadas.map((j) => j.id).filter(Boolean);
         const { data: extras } = await sb
           .from("tickets_apuestas")
-          .select("id, es_adelantada, cliente_juega_id, anulada")
+          .select("id, es_adelantada, cliente_juega_id, anulada, cantidad_tablas, premio_por_tabla, pts_ejemplar")
           .in("id", ids as never[]);
         if (Array.isArray(extras) && extras.length > 0) {
           const mapaExtras = new Map<string, Record<string, unknown>>();
@@ -390,6 +393,9 @@ export async function listarJugadasDeCarrera(
                   : j.es_adelantada ?? Boolean(leerNotaAuditoria(j.nota_auditoria).es_adelantada),
               cliente_juega_id: (ex.cliente_juega_id as string | number | null | undefined) ?? j.cliente_juega_id ?? null,
               anulada: typeof ex.anulada === "boolean" ? ex.anulada : Boolean(j.anulada),
+              cantidad_tablas: ex.cantidad_tablas != null ? num(ex.cantidad_tablas) : j.cantidad_tablas ?? null,
+              premio_por_tabla: ex.premio_por_tabla != null ? num(ex.premio_por_tabla) : j.premio_por_tabla ?? null,
+              pts_ejemplar: ex.pts_ejemplar != null ? num(ex.pts_ejemplar) : j.pts_ejemplar ?? null,
             };
           });
         }

@@ -19,6 +19,8 @@ import {
   type JugadaPersistida,
   type TicketSesion,
 } from "../src/features/gestion/lib/preview-carrera";
+import { generarTextoPrejugadasWhatsapp } from "../src/features/liquidacion/lib/reporte-imagen";
+import { relacionResultados } from "../src/features/impresion/lib/reportGenerator";
 
 let pasan = 0;
 let fallan = 0;
@@ -352,6 +354,113 @@ igual(resumenConAnulada.monto, 100, "la anulada NO suma al monto del panel");
   igual(modalidades[1].cliente2, "REMATES", "Remates se imputan a REMATES");
   igual(modalidades[2].cliente2, "DUPLETA", "Dupletas se imputan a DUPLETA");
   igual(modalidades[3].cliente2, "POLLAS", "Pollas se imputan a POLLAS");
+
+  // Visualización de Marcas (Ejemplar A x Ejemplar B) y Tablas Fijas (Ejemplar A a Precio)
+  igual(marcaPizarraPierde[0].caballo, "8x2", "Marca preserva ambos ejemplares (8x2) desde rivales_snapshot");
+
+  const tablaConPrecio = armarFilasPreview(
+    [
+      persistida({
+        id: "tf5",
+        nombre_jugada: "TABLA FIJA (LA RINCONADA C5)",
+        caballo: "GRAN AVELINA",
+        ejemplar_numero: 5,
+        monto_jugado: 114,
+        cantidad_tablas: 3,
+        pts_ejemplar: 38,
+        premio_por_tabla: 100,
+        estado: "Pendiente",
+        cliente_juega_nombre: "SHAFLAN",
+        cliente_consigue_nombre: "",
+      }),
+    ],
+    []
+  );
+  igual(tablaConPrecio[0].caballo, "5", "Tabla Fija expone número del ejemplar (5) en vez del nombre");
+  igual(tablaConPrecio[0].precioTabla, 38, "Tabla Fija expone precio unitario (38)");
+  igual(tablaConPrecio[0].cantidadTablas, 3, "Tabla Fija expone cantidad de tablas (3)");
+
+  // Mensajes de WhatsApp resumidos (Pre-jugadas y Resultados)
+  const txtPreWsp = generarTextoPrejugadasWhatsapp({
+    grupo: "PRINCIPAL",
+    hipodromo: "La Rinconada",
+    carrera: 5,
+    fecha: "2026-10-25",
+    jugadasEnVivo: [],
+    jugadasAdelantadas: [
+      {
+        juega: "NADAL",
+        jugada: "MARCA",
+        caballo: "8x2",
+        monto: 60,
+        da: "MARCAS",
+      },
+      {
+        juega: "SHAFLAN",
+        jugada: "TABLA FIJA (LA RINCONADA C5)",
+        caballo: "5",
+        precioTabla: 38,
+        cantidadTablas: 3,
+        monto: 114,
+        da: "TF",
+      },
+    ],
+  });
+  ok(
+    txtPreWsp.includes("1) Juega NADAL MARCA 8 X 2 con 60,00"),
+    "WhatsApp Prejugadas muestra Marca resumida: 1) Juega NADAL MARCA 8 X 2 con 60,00"
+  );
+  ok(
+    txtPreWsp.includes("1) Juega SHAFLAN TABLA FIJA DEL 5 a 38 c/u 114,00 da TF"),
+    "WhatsApp Prejugadas muestra Tabla Fija resumida: 1) Juega SHAFLAN TABLA FIJA DEL 5 a 38 c/u 114,00 da TF"
+  );
+
+  const txtResWsp = relacionResultados(
+    {
+      grupo: "PRINCIPAL",
+      hipodromo: "La Rinconada",
+      carrera: 5,
+      fecha: new Date("2026-10-25T12:00:00"),
+      pizarra: "6 · 7 · 5 · 2 · 4",
+      pizarraPuestos: ["6", "7", "5", "2", "4"],
+    },
+    [
+      {
+        clienteJuega: "SHAFLAN",
+        jugada: "TABLA FIJA",
+        caballo: "5",
+        monto: 114,
+        cantidadTablas: 3,
+        premioPorTabla: 100,
+        precioPorTablaUnitario: 38,
+        comisionPct: 5,
+        esAdelantada: true,
+        ganador: false,
+      },
+      {
+        clienteJuega: "NADAL",
+        jugada: "MARCA",
+        caballo: "8x2",
+        monto: 60,
+        comisionPct: 0,
+        esAdelantada: true,
+        ganador: false,
+      },
+      {
+        clienteJuega: "GAETANO",
+        clienteConsigue: "SAM",
+        jugada: "2Y3",
+        caballo: "7",
+        monto: 50,
+        comisionPct: 5,
+        ganador: true,
+      },
+    ]
+  );
+  ok(
+    txtResWsp.includes("JUGADAS ADELANTADAS\n1) TABLA FIJA DEL 5 A 38\nJuega SHAFLAN $ -114,00\nDa TF $ +108,30\n2) MARCA 8 X 2 con 60,00\nJuega NADAL $ -60,00\nDa MARCAS $ +60,00"),
+    "WhatsApp Resultados agrupa JUGADAS ADELANTADAS al final con formato resumido exacto"
+  );
 }
 
 console.log(`\n${pasan} ok / ${fallan} fallaron`);

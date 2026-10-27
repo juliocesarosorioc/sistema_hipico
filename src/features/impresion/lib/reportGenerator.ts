@@ -17,7 +17,16 @@ import { COMISION_CASA, parsearNini, normalizarNini } from "@/features/betting/l
 import { etiquetaJugada, caballoPareoLegible } from "@/features/taquilla/lib/nomenclatura";
 import { liquidarOficial } from "@/features/motores/lib/oficiales";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
-import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
+import {
+  esMarca,
+  esTablaFija,
+  extraerNumeroTablaFija,
+  extraerPareoMarca,
+  extraerPrecioUnitarioTabla,
+  formatearPrecioCorto,
+  resolverContraparteModalidad,
+} from "@/features/liquidacion/lib/etiquetas-reporte";
+import { esAdelantadaDe } from "@/features/jugadas/lib/modalidad-tiempo";
 import { _reembolsosCruce, normalizarNombreCliente } from "@/features/taquilla/lib/cruces-y-tapas";
 import { calcularEstadoCuentaCliente } from "@/features/saldos/lib/contabilidad-central";
 
@@ -41,6 +50,8 @@ export type MetaCarrera = {
   /** Números de los ejemplares (hasta 8 puestos) en orden de llegada, para
    *  resolver NINIS contra la pizarra oficial con el motor matemático. */
   pizarraPuestos?: string[];
+  /** Orden de llegada en raya (1º, 2º, 3º…) para Tablas Fijas y Remates cuando hay distanciamiento. */
+  pizarraRaya?: string[];
   /** Pagos por $1 que cargo la casa en `resultados_carreras.dividendos`.
    *  Si falta la clave de la modalidad se conserva la paridad de la casa. */
   dividendos?: Record<string, number> | null;
@@ -61,10 +72,14 @@ export type JugadaRelacion = {
   modalidad?: "NINI" | "GENERICA";
   cantidadTablas?: number;
   premioPorTabla?: number;
+  /** Precio unitario del ejemplar en Tabla Fija (ej. 38 en "DEL 5 A 38"). */
+  precioPorTablaUnitario?: number;
   /** Premio potencial bruto (tokenTable columna premio_potencial). */
   premioPotencial?: number;
   /** Comisión en porcentaje (por defecto COMISION_CASA.rate → 5%). */
   comisionPct?: number;
+  /** Indica si la jugada es adelantada (pre-jugada). */
+  esAdelantada?: boolean;
   /**
    * Si la jugada acertó (aplica a la Relación de Resultados).
    *
@@ -479,7 +494,10 @@ export function relacionResultados(
   jugadas: JugadaRelacion[],
   opts?: { saldos?: Record<string, number>; observaciones?: string }
 ): string {
-  const cuerpo: string[] = [];
+  const cuerpoEnVivo: string[] = [];
+  const cuerpoAdelantadas: string[] = [];
+  let idxEnVivo = 0;
+  let idxAdelantada = 0;
   const balances = new Map<string, number>();
   const nombreVisiblePorClave = new Map<string, string>();
   const lineasCruce: Array<{ cliente: string; resultado: number }> = [];
@@ -508,23 +526,50 @@ export function relacionResultados(
     return " · Disp *S/S*";
   };
 
-  jugadas.forEach((j, i) => {
+  jugadas.forEach((j) => {
     const sufijoSaldo = sufijoSaldoDe(j);
+    const nombreJug = String(j.jugada ?? "").trim().toUpperCase();
+    const esJugTablaFija = /^TABLA\s*FIJA\b|^TF\b|^TABLA$/i.test(nombreJug);
+    const esJugMarca = /^MARCAS?\b/i.test(nombreJug);
+    const esAdelantada =
+      Boolean(j.esAdelantada) ||
+      esJugTablaFija ||
+      esJugMarca ||
+      /^(DUPLETA|REMATE|POLLA|TERCIO)\b/i.test(nombreJug);
+    const destino = esAdelantada ? cuerpoAdelantadas : cuerpoEnVivo;
+    const numOrden = esAdelantada ? ++idxAdelantada : ++idxEnVivo;
+
+    const encabezadoJugada = (): string => {
+      if (esJugTablaFija) {
+        const numCab = extraerNumeroTablaFija({ jugada: j.jugada, caballo: j.caballo });
+        const precioUnit = extraerPrecioUnitarioTabla({
+          jugada: j.jugada,
+          caballo: j.caballo,
+          monto: j.monto,
+          precioPorTablaUnitario: j.precioPorTablaUnitario,
+          cantidadTablas: j.cantidadTablas,
+        });
+        return `${numOrden}) TABLA FIJA DEL ${numCab} A ${formatearPrecioCorto(precioUnit)}${sufijoSaldo}`;
+      }
+      if (esJugMarca) {
+        const pareoTxt = extraerPareoMarca({ jugada: j.jugada, caballo: j.caballo }).etiquetaTexto;
+        return `${numOrden}) MARCA ${pareoTxt} con ${fmtMonto(j.monto)}${sufijoSaldo}`;
+      }
+      return `${numOrden}) ${etiquetaJugada(j.jugada)} (${caballoPareoLegible(j.caballo)}) con ${fmtMonto(j.monto)}${sufijoSaldo}`;
+    };
+
     // Jugada aún no decidible (falta el dato que cuantifica el premio): se
     // lista con aviso y NO se acumula en el cierre de clientes.
     if (j.ganador === "pendiente") {
-      cuerpo.push(
-        `${i + 1}) ${etiquetaJugada(j.jugada)} (${caballoPareoLegible(j.caballo)}) con ${fmtMonto(j.monto)}${sufijoSaldo}`
-      );
-      cuerpo.push("  ⚠️ PENDIENTE — falta el dividendo que cuantifica el premio.");
+      destino.push(encabezadoJugada());
+      destino.push("  ⚠️ PENDIENTE — falta el dividendo que cuantifica el premio.");
       return;
     }
     // Si hay pizarra oficial y la jugada es evaluable por puestos/a premio/nini/pareo,
     // SIEMPRE evaluamos con `balanceDesdePizarra` primero para que jugadas multi-caballo
     // (ej. SAM 1P con "1 2 3" donde gana el #3) se liquiden correctamente incluso si en BD
     // tenían estado perdedor.
-    const nombreJug = String(j.jugada ?? "").trim().toUpperCase();
-    const esEspecial = /^(TABLA|MARCA|DUPLETA|REMATE|POLLA)\b/.test(nombreJug);
+    const esEspecial = /^(TABLA|TF|MARCA|DUPLETA|REMATE|POLLA)\b/.test(nombreJug);
     const bPizarra =
       !esEspecial && (meta.pizarraPuestos?.length ?? 0) > 0
         ? balanceDesdePizarra(j, meta.pizarraPuestos ?? [], meta.dividendos ?? null)
@@ -539,68 +584,82 @@ export function relacionResultados(
     // ganancia neta cuando el que juega NO acierta.
     const perdida = num(j.monto);
     const beneficiario = resolverContraparteModalidad(j.jugada, j.clienteConsigue);
-    cuerpo.push(
-      `${i + 1}) ${etiquetaJugada(j.jugada)} (${caballoPareoLegible(j.caballo)}) con ${fmtMonto(j.monto)}${sufijoSaldo}`
-    );
+    destino.push(encabezadoJugada());
     // ANULADA: el motor devolvió el capital, así que ni el que JUEGA gana/pierde
     // ni el "da" entrega nada. Se muestra 0/0 y NO se acumula en el cierre.
     if (b.anulada) {
-      cuerpo.push(`Juega ${j.clienteJuega} $ +0,00`);
-      if (beneficiario) cuerpo.push(`Da ${beneficiario} $ +0,00`);
+      destino.push(`Juega ${j.clienteJuega} $ +0,00`);
+      if (beneficiario) destino.push(`Da ${beneficiario} $ +0,00`);
       return;
     }
     // El motor reconoció la POSICIÓN pero falta el dividendo que cuantifica el
     // premio (p. ej. matriz W/P/S sin cargar): NO es una derrota. Se avisa y no
     // se acumula en el cierre (antes caía en el `else` y se cobraba como perdida).
     if (b.indeterminado) {
-      cuerpo.push("⚠️ PENDIENTE — falta el dividendo que cuantifica el premio.");
+      destino.push("⚠️ PENDIENTE — falta el dividendo que cuantifica el premio.");
       return;
     }
-    const esTablaFija = /^TABLA\s+FIJA\b|^TF\b|^TABLA$/i.test(nombreJug);
-    const esMarca = /^MARCAS?\b/i.test(nombreJug);
-    if (esTablaFija) {
+    if (esJugTablaFija) {
       const tasa = tasaDeJugada(j.comisionPct);
       const pagoTabla = round2(
         num(j.premioPotencial) > 0
           ? num(j.premioPotencial)
           : num(j.cantidadTablas) * num(j.premioPorTabla) || num(j.monto)
       );
-      if (j.ganador === true) {
-        cuerpo.push(`Juega ${j.clienteJuega} $ +${fmtMonto(pagoTabla)}`);
+      const puestosEval = meta.pizarraRaya?.length ? meta.pizarraRaya : meta.pizarraPuestos;
+      const numCab = extraerNumeroTablaFija({ jugada: j.jugada, caballo: j.caballo });
+      const ganoTabla =
+        puestosEval && puestosEval.length > 0 && /^\d+$/.test(numCab)
+          ? String(puestosEval[0]).trim() === numCab
+          : j.ganador === true;
+      if (ganoTabla) {
+        destino.push(`Juega ${j.clienteJuega} $ +${fmtMonto(pagoTabla)}`);
         acumular(j.clienteJuega, pagoTabla);
         if (beneficiario) {
           const perdidaDa = round2(pagoTabla + (pagoTabla * tasa) / 100);
-          cuerpo.push(`Da ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
+          destino.push(`Da ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
           acumular(beneficiario, -perdidaDa);
         }
       } else {
-        cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
+        destino.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
         acumular(j.clienteJuega, -perdida);
         if (beneficiario) {
           const netoDa = round2(perdida - (perdida * tasa) / 100);
-          cuerpo.push(`Da ${beneficiario} $ +${fmtMonto(netoDa)}`);
+          destino.push(`Da ${beneficiario} $ +${fmtMonto(netoDa)}`);
           acumular(beneficiario, netoDa);
         }
       }
       return;
     }
-    if (esMarca) {
+    if (esJugMarca) {
       const tasa = tasaDeJugada(j.comisionPct);
       const pagoMarca = round2((perdida * 5) / 6);
-      if (j.ganador === true) {
-        cuerpo.push(`Juega ${j.clienteJuega} $ +${fmtMonto(pagoMarca)}`);
+      const pareo = extraerPareoMarca({ jugada: j.jugada, caballo: j.caballo });
+      let ganoMarca = j.ganador === true;
+      if ((meta.pizarraPuestos?.length ?? 0) > 0 && pareo.elegido && pareo.rivales.length > 0) {
+        const puestos = meta.pizarraPuestos!;
+        const posElegido = puestos.findIndex((p) => String(p).trim() === pareo.elegido);
+        const posRivales = pareo.rivales.map((rv) => puestos.findIndex((p) => String(p).trim() === rv));
+        if (posElegido !== -1 && posRivales.every((pr) => pr === -1 || posElegido < pr)) {
+          ganoMarca = true;
+        } else if (posRivales.some((pr) => pr !== -1 && (posElegido === -1 || pr <= posElegido))) {
+          ganoMarca = false;
+        }
+      }
+      if (ganoMarca) {
+        destino.push(`Juega ${j.clienteJuega} $ +${fmtMonto(pagoMarca)}`);
         acumular(j.clienteJuega, pagoMarca);
         if (beneficiario) {
           const perdidaDa = round2(pagoMarca + (pagoMarca * tasa) / 100);
-          cuerpo.push(`Da ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
+          destino.push(`Da ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
           acumular(beneficiario, -perdidaDa);
         }
       } else {
-        cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
+        destino.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
         acumular(j.clienteJuega, -perdida);
         if (beneficiario) {
           const netoDa = round2(perdida - (perdida * tasa) / 100);
-          cuerpo.push(`Da ${beneficiario} $ +${fmtMonto(netoDa)}`);
+          destino.push(`Da ${beneficiario} $ +${fmtMonto(netoDa)}`);
           acumular(beneficiario, netoDa);
         }
       }
@@ -614,16 +673,16 @@ export function relacionResultados(
     if (b.gananciaNeta > 0) {
       // Acertó el que JUEGA → cobra la ganancia neta; el "da" entrega SU riesgo,
       // que es el BRUTO de la jugada: el monto a la par, y 8/10·monto en "10a8".
-      cuerpo.push(`Juega ${j.clienteJuega} $ +${fmtMonto(b.gananciaNeta)}`);
+      destino.push(`Juega ${j.clienteJuega} $ +${fmtMonto(b.gananciaNeta)}`);
       acumular(j.clienteJuega, round2(b.gananciaNeta));
       if (beneficiario) {
         const perdidaDa = round2(b.gananciaBruta);
-        cuerpo.push(`Da ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
+        destino.push(`Da ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
         acumular(beneficiario, -perdidaDa);
       }
     } else if (j.modalidad === "NINI") {
       // Falló el NINI (el caballo figuró) → pierde el que JUEGA; el "da" cobra la paridad neta.
-      cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
+      destino.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
       acumular(j.clienteJuega, -perdida);
       if (beneficiario) {
         const porUno = Number(meta.dividendos?.nini);
@@ -632,19 +691,19 @@ export function relacionResultados(
         const tasa = tasaDeJugada(j.comisionPct);
         const com2 = round2((premioNini - num(j.monto)) * (tasa / 100));
         const netoC2 = round2(premioNini - com2 - num(j.monto));
-        cuerpo.push(`Da ${beneficiario} $ +${fmtMonto(netoC2)}`);
+        destino.push(`Da ${beneficiario} $ +${fmtMonto(netoC2)}`);
         acumular(beneficiario, netoC2);
       }
     } else {
       // Jugada genérica fallida → pierde el que JUEGA; el "da" (banquero) cobra
       // la PARIDAD NETA, igual que un NINI fallido, sin importar la modalidad
       // (suma cero: lo que pierde el que JUEGA menos la comisión de la casa).
-      cuerpo.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
+      destino.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
       acumular(j.clienteJuega, -perdida);
       if (beneficiario) {
         const tasa = tasaDeJugada(j.comisionPct);
         const netoDa = round2(perdida - perdida * (tasa / 100));
-        cuerpo.push(`Da ${beneficiario} $ +${fmtMonto(netoDa)}`);
+        destino.push(`Da ${beneficiario} $ +${fmtMonto(netoDa)}`);
         acumular(beneficiario, netoDa);
       }
     }
@@ -687,9 +746,10 @@ export function relacionResultados(
   return [
     cabeceraCarrera(meta),
     "",
-    ...cuerpo,
+    ...cuerpoEnVivo,
     "",
     ...cierre,
+    ...(cuerpoAdelantadas.length > 0 ? ["", "JUGADAS ADELANTADAS", ...cuerpoAdelantadas] : []),
     "",
     pieEstricto(jugadas.length),
     ...notas,
@@ -715,14 +775,19 @@ export type TicketApuestaJugada = {
   id: string;
   nombre_jugada?: string | null;
   caballo?: string | null;
+  ejemplar_numero?: number | string | null;
   cantidad_tablas?: number | string | null;
   monto_jugado?: number | string | null;
   premio_pagar?: number | string | null;
   premio_por_tabla?: number | string | null;
+  pts_ejemplar?: number | string | null;
   comision_porcentaje?: number | string | null;
   estado?: string | null;
   cliente_juega_nombre?: string | null;
   cliente_consigue_nombre?: string | null;
+  nota_auditoria?: unknown;
+  es_adelantada?: boolean | null;
+  anulada?: boolean | null;
 };
 
 /**
@@ -740,12 +805,23 @@ export function esVentaDeRemate(nombreJugada: unknown): boolean {
 }
 
 function mapearJugada(r: TicketApuestaJugada): JugadaRelacion {
+  const rRec = r as unknown as Record<string, unknown>;
   const jugadaCruda = String(r.nombre_jugada ?? "").trim();
-  const esNini = parsearNini(jugadaCruda) !== null;
+  const esJugMarca = esMarca(jugadaCruda);
+  const esJugTabla = esTablaFija(jugadaCruda);
+  const esNini = !esJugMarca && !esJugTabla && parsearNini(jugadaCruda) !== null;
+  const caballo = esJugMarca
+    ? extraerPareoMarca(rRec).caballoPareo
+    : esJugTabla
+      ? extraerNumeroTablaFija(rRec)
+      : String(r.caballo ?? "").trim();
+  const precioPorTablaUnitario = esJugTabla ? extraerPrecioUnitarioTabla(rRec) : undefined;
+  const estadoStr = String(r.estado ?? "").trim().toUpperCase();
+  const ganoPorEstado = estadoStr === "GANADOR" || estadoStr === "GANO" || estadoStr === "SOLUCIONADO";
   return {
     clienteJuega: String(r.cliente_juega_nombre ?? "—"),
-    jugada: esNini ? normalizarNini(jugadaCruda) : jugadaCruda,
-    caballo: String(r.caballo ?? "").trim(),
+    jugada: esJugMarca ? "MARCA" : esJugTabla ? "TABLA FIJA" : esNini ? normalizarNini(jugadaCruda) : jugadaCruda,
+    caballo,
     monto: num(r.monto_jugado),
     clienteConsigue:
       resolverContraparteModalidad(
@@ -755,9 +831,11 @@ function mapearJugada(r: TicketApuestaJugada): JugadaRelacion {
     modalidad: esNini ? "NINI" : "GENERICA",
     cantidadTablas: num(r.cantidad_tablas),
     premioPorTabla: num(r.premio_por_tabla),
+    ...(precioPorTablaUnitario !== undefined ? { precioPorTablaUnitario } : {}),
     premioPotencial: num(r.premio_pagar),
     comisionPct: r.comision_porcentaje != null ? num(r.comision_porcentaje) : undefined,
-    ganador: num(r.premio_pagar) > 0,
+    esAdelantada: esAdelantadaDe(rRec) || esJugMarca || esJugTabla,
+    ganador: num(r.premio_pagar) > 0 || ganoPorEstado,
   };
 }
 
@@ -765,44 +843,50 @@ export async function cargarJugadasDeCarrera(
   filtro: FiltroCarrera
 ): Promise<JugadaRelacion[]> {
   if (!supabase) return [];
+  const sb = supabase;
   try {
-    let q = supabase
-      .from("tickets_apuestas")
-      .select(
-        "id, nombre_jugada, caballo, cantidad_tablas, monto_jugado, premio_pagar, premio_por_tabla, comision_porcentaje, estado, cliente_juega_nombre, cliente_consigue_nombre"
-      )
-      // Mismo emparejamiento de hipódromo que el Reporte de Liquidación
-      // (`reportes.ts` usa `.ilike("%hip%")`): el hipódromo puede venir con
-      // variantes de mayúsculas/espacios y la comparación exacta dejaba la
-      // lista vacía o distinta a la del reporte.
-      .ilike("hipodromo", `%${String(filtro.hipodromo).trim().toUpperCase()}%`)
-      .eq("carrera", num(filtro.carrera))
-      .order("fecha_registro", { ascending: true });
-    // Acotar a la MISMA ventana de fecha que el Reporte de Liquidación. Sin
-    // esto, la relación de resultados mezclaba tickets de otras fechas con el
-    // mismo hipódromo + N° de carrera (datos distintos al reporte).
-    if (filtro.fecha) {
-      q = q.or(filtroDiaJornada(String(filtro.fecha)));
+    const consultar = (cols: string) => {
+      let q = sb
+        .from("tickets_apuestas")
+        .select(cols)
+        .ilike("hipodromo", `%${String(filtro.hipodromo).trim().toUpperCase()}%`)
+        .eq("carrera", num(filtro.carrera))
+        .order("fecha_registro", { ascending: true });
+      if (filtro.fecha) {
+        q = q.or(filtroDiaJornada(String(filtro.fecha)));
+      }
+      if (filtro.soloPendientes) {
+        q = q.eq("estado", "Pendiente");
+      }
+      return q;
+    };
+    const colsExtendidas =
+      "id, nombre_jugada, caballo, ejemplar_numero, cantidad_tablas, monto_jugado, premio_pagar, premio_por_tabla, pts_ejemplar, comision_porcentaje, estado, cliente_juega_nombre, cliente_consigue_nombre, nota_auditoria, es_adelantada, anulada";
+    const colsBase =
+      "id, nombre_jugada, caballo, ejemplar_numero, cantidad_tablas, monto_jugado, premio_pagar, premio_por_tabla, comision_porcentaje, estado, cliente_juega_nombre, cliente_consigue_nombre, nota_auditoria";
+    let { data, error } = await consultar(colsExtendidas);
+    if (error) {
+      const r2 = await consultar(colsBase);
+      data = r2.data;
+      error = r2.error;
     }
-    if (filtro.soloPendientes) {
-      q = q.eq("estado", "Pendiente");
-    }
-    const { data, error } = await q;
     if (error) throw error;
-    // VENTAS DE REMATE fuera: no son apuestas de la carrera (misma regla que el
-    // Reporte de Liquidación vía `esVentaDeRemate`).
-    const filas = (data ?? []).filter(
-      (r) => !esVentaDeRemate((r as { nombre_jugada?: unknown }).nombre_jugada)
-    );
+    // VENTAS DE REMATE y ANULADAS fuera: no son apuestas vigentes de la carrera.
+    const filas = ((data ?? []) as unknown as Array<Record<string, unknown>>).filter((rec) => {
+      if (rec.anulada === true) return false;
+      const est = String(rec.estado ?? "").trim().toUpperCase();
+      if (est === "ANULADA" || est === "ANULADO") return false;
+      return !esVentaDeRemate(rec.nombre_jugada);
+    });
 
     // Evitar duplicados por ID (defensa ante escrituras dobles en tickets_apuestas)
     const vistos = new Set<string>();
     const unicas: Array<Record<string, unknown>> = [];
     for (const r of filas) {
-      const id = String((r as { id?: unknown }).id ?? "").trim();
+      const id = String(r.id ?? "").trim();
       if (id && vistos.has(id)) continue;
       if (id) vistos.add(id);
-      unicas.push(r as Record<string, unknown>);
+      unicas.push(r);
     }
 
     return unicas

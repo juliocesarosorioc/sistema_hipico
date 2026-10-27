@@ -18,7 +18,12 @@ import { rangoSemanaDeGrupo, cicloSemanalDe } from "@/features/liquidacion/lib/s
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { listarCarrerasPorDia } from "@/features/tablas/lib/rpc";
 import { pizarraDesdeNums, esVentaDeRemate } from "@/features/impresion/lib/reportGenerator";
-import { desgloseJugada, esMarca, resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
+import {
+  desgloseJugada,
+  esMarca,
+  extraerPrecioUnitarioTabla,
+  resolverContraparteModalidad,
+} from "@/features/liquidacion/lib/etiquetas-reporte";
 import { extraerOrdenLlegadaRaya, hayDistanciamientoPizarra } from "@/features/liquidacion/lib/posiciones";
 import { rivalesDeNota } from "@/features/marcas/lib/reporte-marcas-nucleo";
 import { calcularEstadoCuentaCliente, aplicarDevolucionIncentivoAFavor } from "@/features/saldos/lib/contabilidad-central";
@@ -43,6 +48,8 @@ export type FilaReporte = {
   jugada: string;
   caballo: string;
   monto: number;
+  /** Precio unitario del ejemplar en Tabla Fija (ej. 38 en "5 a 38"). */
+  precioTabla?: number;
   /** Riesgo explícito de la fila (ej. en Marcas el que Da arriesga monto * 5/6; en Tablas Fijas arriesga el premio de la tabla). */
   riesgo?: number;
   /** Resultado NETO de la casa sobre esa fila; null = pendiente de liquidar. */
@@ -851,6 +858,7 @@ async function carreraReporte(
     // (es el mismo ticket, las dos filas se parean por índice).
     const adelantada = esAdelantadaDe(f);
     const horaCarga = formatearHoraCarga(f);
+    const precioTabla = desglose.tipo === "TABLA" ? extraerPrecioUnitarioTabla(f) : undefined;
     filas.push({
       id: `${fecha}-${hipodromo}-${numero}-j-${i}`,
       rol: "Juega",
@@ -858,6 +866,7 @@ async function carreraReporte(
       jugada: desglose.jugada,
       caballo: desglose.caballo,
       monto,
+      ...(precioTabla !== undefined ? { precioTabla } : {}),
       riesgo: monto,
       resultado: resultadoJuega,
       esPareo,
@@ -875,6 +884,7 @@ async function carreraReporte(
         jugada: desglose.jugada,
         caballo: desglose.caballo,
         monto,
+        ...(precioTabla !== undefined ? { precioTabla } : {}),
         riesgo: ev.riesgoDa,
         resultado: resultadoConsigueDe(monto, ev),
         esPareo,

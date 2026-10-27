@@ -55,6 +55,7 @@ export default function WhatsappReporteCarrera({ fecha, hipodromo, carrera, grup
       fecha: fecha ? new Date(`${fecha}T12:00:00`) : new Date(),
       pizarra: oficial?.puestos?.length ? oficial.puestos.join(" · ") : "",
       pizarraPuestos: oficial?.puestos ?? [],
+      pizarraRaya: oficial?.puestosRaya ?? oficial?.puestos ?? [],
       dividendos: oficial?.dividendos ?? null,
     };
     // La MISMA fecha que el Reporte de Liquidación: sin acotar por día, la

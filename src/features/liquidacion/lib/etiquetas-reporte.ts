@@ -121,6 +121,120 @@ export function desgloseJugada(f: Record<string, unknown>): DesgloseJugada {
 
 
 /**
+ * Extrae el pareo de una Marca ("Ejemplar A x Ejemplar B") desde una fila de BD o preview.
+ */
+export function extraerPareoMarca(f: Record<string, unknown>): {
+  elegido: string;
+  rivales: string[];
+  caballoPareo: string;
+  etiquetaTexto: string;
+} {
+  const nombre = txt(f.nombre_jugada ?? f.jugada ?? f.jugo);
+  const rawCab = txt(f.caballo);
+  const partesPareo = rawCab.split(/\s*[xX×]\s*/).filter(Boolean);
+  let elegidos = numerosDe(f.ejemplar_numero);
+  if (!elegidos.length && partesPareo.length >= 1) elegidos = numerosDe(partesPareo[0]);
+  if (!elegidos.length) elegidos = numerosDe(rawCab);
+  if (!elegidos.length) elegidos = numerosDe(nombre.replace(/^MARCAS?\s*#?/i, ""));
+
+  let rivales = rivalesDeNota(f.nota_auditoria);
+  if (!rivales.length && partesPareo.length >= 2) {
+    rivales = numerosDe(partesPareo.slice(1).join(","));
+  }
+  if (!rivales.length) {
+    const partesNombre = nombre.replace(/^MARCAS?\s*#?/i, "").split(/\s*[xX×]\s*/).filter(Boolean);
+    if (partesNombre.length >= 2) {
+      rivales = numerosDe(partesNombre.slice(1).join(","));
+    }
+  }
+  const elegido = elegidos.join(",");
+  const caballoPareo = rivales.length ? `${elegido}x${rivales.join(",")}` : elegido || rawCab;
+  const etiquetaTexto = rivales.length
+    ? `${elegidos.join(", ")} X ${rivales.join(", ")}`
+    : elegidos.join(", ") || rawCab;
+  return {
+    elegido,
+    rivales,
+    caballoPareo,
+    etiquetaTexto,
+  };
+}
+
+/**
+ * Extrae el número del ejemplar de una Tabla Fija (priorizando `ejemplar_numero`
+ * sobre el nombre del caballo guardado en `caballo`).
+ */
+export function extraerNumeroTablaFija(f: Record<string, unknown>): string {
+  const numExplicito = txt(f.ejemplar_numero);
+  if (numExplicito && /^\d+$/.test(numExplicito)) return numExplicito;
+  const cab = txt(f.caballo);
+  if (cab && /^\d+$/.test(cab)) return cab;
+  const nom = txt(f.nombre_jugada ?? f.jugada ?? f.jugo);
+  const mDel = /\bDEL\s+#?(\d{1,2})\b/i.exec(nom) ?? /\b#(\d{1,2})\b/.exec(nom);
+  if (mDel) return mDel[1];
+  const mCab = /^#?(\d{1,2})\b/.exec(cab);
+  if (mCab) return mCab[1];
+  return numExplicito || cab;
+}
+
+/**
+ * Extrae el precio unitario del ejemplar en una Tabla Fija (`pts_ejemplar`,
+ * `nota_auditoria.pts_congelado`, `valores_congelados`, o `monto / cantidad_tablas`).
+ */
+export function extraerPrecioUnitarioTabla(f: Record<string, unknown>): number {
+  const cifra = (v: unknown): number => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0;
+  };
+  const directo = cifra(f.precioTabla ?? f.precioPorTablaUnitario ?? f.pts_ejemplar ?? f.pts);
+  if (directo > 0) return directo;
+
+  const numEjemplar = extraerNumeroTablaFija(f);
+  const rawNota = f.nota_auditoria;
+  if (rawNota) {
+    try {
+      const obj = typeof rawNota === "string" ? JSON.parse(rawNota) : rawNota;
+      if (obj && typeof obj === "object") {
+        const r = obj as Record<string, unknown>;
+        const congelado = cifra(r.pts_congelado ?? r.pts_ejemplar ?? r.valor_ejemplar);
+        if (congelado > 0) return congelado;
+        if (numEjemplar && Array.isArray(r.valores_congelados)) {
+          for (const item of r.valores_congelados) {
+            if (item && typeof item === "object") {
+              const it = item as Record<string, unknown>;
+              if (txt(it.numero) === numEjemplar) {
+                const val = cifra(it.valor ?? it.valor_ejemplar);
+                if (val > 0) return val;
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const monto = cifra(f.monto_jugado ?? f.monto ?? f.aposto);
+  const cant = cifra(f.cantidad_tablas ?? f.cantidadTablas ?? f.cantidad);
+  if (monto > 0 && cant > 1) {
+    return Math.round((monto / cant) * 100) / 100;
+  }
+  return monto;
+}
+
+/**
+ * Formatea un precio unitario corto (ej. `38` → `"38"`, `38.5` → `"38,50"`).
+ */
+export function formatearPrecioCorto(n: number | null | undefined): string {
+  const v = Number(n ?? 0);
+  if (!Number.isFinite(v) || v <= 0) return "0";
+  const r = Math.round(v * 100) / 100;
+  if (Number.isInteger(r)) return String(r);
+  return r.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
  * Usuarios del sistema por modalidad a los que se les imputan las jugadas
  * correspondientes (Marcas → MARCAS, Tablas → TF, Remates → REMATES,
  * Dupletas → DUPLETA, Pollas → POLLAS).

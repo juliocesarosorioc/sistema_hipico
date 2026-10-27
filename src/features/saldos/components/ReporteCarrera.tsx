@@ -2,6 +2,13 @@ import React from 'react';
 import { EmptyState } from '@/shared/components/ui/EmptyState';
 import { colorDiscoNumero, numerosDeCaballo } from '@/features/saldos/lib/discos';
 import { ladosDePareo } from '@/features/taquilla/lib/nomenclatura';
+import {
+  esMarca,
+  esTablaFija,
+  extraerNumeroTablaFija,
+  extraerPareoMarca,
+  formatearPrecioCorto,
+} from '@/features/liquidacion/lib/etiquetas-reporte';
 import type { FiltroModalidadTiempo } from '@/features/jugadas/lib/modalidad-tiempo';
 import {
   esJugadaAdelantadaReporte,
@@ -28,6 +35,8 @@ export type JugadaVivo = {
   aposto: string | number;
   jugo: string;
   caballo?: string;
+  /** Precio unitario del ejemplar en Tabla Fija (ej. 38 en "5 a 38"). */
+  precioTabla?: number;
   da: string;
   apostoDa: number | null;
   resultado: number | null;
@@ -146,7 +155,7 @@ function Discos({ caballo }: { caballo?: string }) {
     return (
       <span className="inline-flex items-center gap-0.5 align-middle">
         <DiscosSimples caballo={lados.juega} />
-        <span className="px-0.5 text-[9px] font-black text-slate-400">×</span>
+        <span className="px-0.5 text-[9px] font-black text-slate-600">x</span>
         <DiscosSimples caballo={lados.da} />
       </span>
     );
@@ -217,15 +226,44 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
                 {res1 !== null ? <FormatoDinero monto={res1} /> : <span className="text-slate-400">—</span>}
               </td>
               <td className="py-[3px] pl-2 text-slate-700 whitespace-nowrap truncate align-middle">
-                <span className="font-semibold">{j.jugo}</span> <Discos caballo={j.caballo} />
-                {j.esAdelantada ? (
-                  <span
-                    title="Jugada adelantada: se cargó ANTES de que corra la carrera."
-                    className="ml-1 rounded bg-amber-400/20 px-1 py-px text-[8px] font-black uppercase leading-none tracking-wide text-amber-700 ring-1 ring-amber-500/40"
-                  >
-                    ⏳ ADELANTADA
-                  </span>
-                ) : null}
+                {(() => {
+                  const jugoStr = String(j.jugo ?? "").trim();
+                  if (esMarca(jugoStr)) {
+                    const pareoCab = extraerPareoMarca({
+                      jugada: jugoStr,
+                      caballo: j.caballo,
+                    }).caballoPareo;
+                    return <Discos caballo={pareoCab || j.caballo} />;
+                  }
+                  if (esTablaFija(jugoStr) || /^TABLA\b|^TF\b/i.test(jugoStr)) {
+                    const numCab = extraerNumeroTablaFija({
+                      jugada: jugoStr,
+                      caballo: j.caballo,
+                    });
+                    const precio = j.precioTabla && j.precioTabla > 0 ? j.precioTabla : aposto1Num;
+                    return (
+                      <span className="inline-flex items-center gap-1 align-middle">
+                        <Discos caballo={numCab || j.caballo} />
+                        <span className="font-bold text-slate-800">
+                          a {formatearPrecioCorto(precio)}
+                        </span>
+                      </span>
+                    );
+                  }
+                  return (
+                    <>
+                      <span className="font-semibold">{j.jugo}</span> <Discos caballo={j.caballo} />
+                      {j.esAdelantada ? (
+                        <span
+                          title="Jugada adelantada: se cargó ANTES de que corra la carrera."
+                          className="ml-1 rounded bg-amber-400/20 px-1 py-px text-[8px] font-black uppercase leading-none tracking-wide text-amber-700 ring-1 ring-amber-500/40"
+                        >
+                          ⏳ ADELANTADA
+                        </span>
+                      ) : null}
+                    </>
+                  );
+                })()}
               </td>
               <td className="py-[3px] pl-2 text-slate-600 whitespace-nowrap truncate align-middle">{j.da || '—'}</td>
               <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap align-middle">
@@ -527,9 +565,6 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
                   ⚖️ Distanciamiento Oficial
                 </span>
               )}
-              <span className="rounded-md bg-slate-100 px-2 py-0.5 border border-slate-200">
-                🕒 Hora de carga incluida por jugada
-              </span>
             </div>
           </div>
         );

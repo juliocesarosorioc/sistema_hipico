@@ -37,6 +37,15 @@ import {
   agruparAdelantadasPorSeccion,
   esJugadaAdelantadaReporte,
 } from "@/features/liquidacion/lib/reporte-carrera";
+import {
+  esMarca,
+  esTablaFija,
+  extraerNumeroTablaFija,
+  extraerPareoMarca,
+  extraerPrecioUnitarioTabla,
+  formatearPrecioCorto,
+  resolverContraparteModalidad,
+} from "@/features/liquidacion/lib/etiquetas-reporte";
 import { calcularEstadoCuentaCliente } from "@/features/saldos/lib/contabilidad-central";
 
 export { calcularEstadoCuentaCliente };
@@ -51,6 +60,10 @@ export type TicketMensaje = {
   cliente1?: string | null;
   cliente2?: string | null;
   esAdelantada?: boolean;
+  precioTabla?: number;
+  cantidadTablas?: number;
+  premioPotencial?: number;
+  ganador?: boolean;
 };
 
 export type OpcionesMensajeResultado = {
@@ -149,8 +162,8 @@ export function resultadoDeJugada(
 
   const res = liquidarOficial(ticket, tasaComision);
 
-  let ganador: JugadaRelacion["ganador"] = res.ok;
-  if (res.indeterminado) ganador = "pendiente";
+  let ganador: JugadaRelacion["ganador"] = t.ganador !== undefined ? t.ganador : res.ok;
+  if (t.ganador === undefined && res.indeterminado) ganador = "pendiente";
 
   const relacion: JugadaRelacion = {
     clienteJuega: String(t.cliente1 ?? "—"),
@@ -159,9 +172,16 @@ export function resultadoDeJugada(
     monto: montoFinal,
     clienteConsigue: t.cliente2 ? String(t.cliente2) : undefined,
     modalidad: esNini ? "NINI" : "GENERICA",
+    ...(t.precioTabla !== undefined ? { precioPorTablaUnitario: t.precioTabla } : {}),
+    ...(t.cantidadTablas !== undefined ? { cantidadTablas: t.cantidadTablas } : {}),
+    ...(t.esAdelantada !== undefined ? { esAdelantada: t.esAdelantada } : {}),
     // Premio bruto del ganador (capital + ganancia neta recompuesta con la
     // comisión del motor): totalClienteNeto ya viene neto de comisión.
-    ...(res.ok ? { premioPotencial: Number(res.totalClienteNeto) + Number(res.gananciaCasa) } : {}),
+    ...(res.ok
+      ? { premioPotencial: Number(res.totalClienteNeto) + Number(res.gananciaCasa) }
+      : t.premioPotencial !== undefined
+        ? { premioPotencial: t.premioPotencial }
+        : {}),
     comisionPct:
       tasaComision != null && Number(tasaComision) >= 0 ? Number(tasaComision) : undefined,
     ganador,
@@ -214,6 +234,9 @@ export function jugadaRelacionDeTicket(t: TicketMensaje): JugadaRelacion {
     caballo: String(t.caballo ?? "").trim(),
     monto: montoFinal,
     clienteConsigue: t.cliente2 ? String(t.cliente2) : undefined,
+    ...(t.precioTabla !== undefined ? { precioPorTablaUnitario: t.precioTabla } : {}),
+    ...(t.cantidadTablas !== undefined ? { cantidadTablas: t.cantidadTablas } : {}),
+    ...(t.esAdelantada !== undefined ? { esAdelantada: t.esAdelantada } : {}),
   };
 }
 
@@ -280,11 +303,33 @@ export function mensajePlanoDeCarrera(opts: OpcionesMensajePlano): string {
   for (const sec of secciones) {
     lineasAdel.push(`▪ ${sec.titulo.toUpperCase()} (${sec.filas.length}):`);
     sec.filas.forEach((j, idx) => {
+      const jugStr = String(j.jugada ?? "").trim();
+      if (esMarca(jugStr)) {
+        const pareoTxt = extraerPareoMarca({ jugada: jugStr, caballo: j.caballo }).etiquetaTexto;
+        lineasAdel.push(`${idx + 1}) Juega ${j.clienteJuega} MARCA ${pareoTxt} con ${fmtMonto(j.monto)}`);
+        return;
+      }
+      if (esTablaFija(jugStr) || /^TABLA\b|^TF\b/i.test(jugStr)) {
+        const numCab = extraerNumeroTablaFija({ jugada: jugStr, caballo: j.caballo });
+        const precio = extraerPrecioUnitarioTabla({
+          jugada: jugStr,
+          caballo: j.caballo,
+          monto: j.monto,
+          precioPorTablaUnitario: j.precioPorTablaUnitario,
+          cantidadTablas: j.cantidadTablas,
+        });
+        const daResuelto = resolverContraparteModalidad(jugStr, j.clienteConsigue);
+        lineasAdel.push(
+          `${idx + 1}) Juega ${j.clienteJuega} TABLA FIJA DEL ${numCab} a ${formatearPrecioCorto(precio)} c/u ${fmtMonto(j.monto)} da ${daResuelto}`
+        );
+        return;
+      }
       const partes = [j.clienteJuega];
-      if (String(j.jugada ?? "").trim()) partes.push(String(j.jugada).trim());
+      if (jugStr) partes.push(jugStr);
       if (String(j.caballo ?? "").trim()) partes.push(`(${String(j.caballo).trim()})`);
       partes.push(`con ${fmtMonto(j.monto)}`);
-      if (String(j.clienteConsigue ?? "").trim()) partes.push(`da ${String(j.clienteConsigue).trim()}`);
+      const daResuelto = resolverContraparteModalidad(jugStr, j.clienteConsigue);
+      if (daResuelto) partes.push(`da ${daResuelto}`);
       lineasAdel.push(`${idx + 1}) Juega ${partes.join(" ")}`);
     });
   }
@@ -399,8 +444,25 @@ function lineaJugadaConVeredicto(
   veredicto: VeredictoJugada,
   sufijo = ""
 ): string {
+  const jugStr = String(j.jugada ?? "").trim();
+  if (esMarca(jugStr)) {
+    const pareoTxt = extraerPareoMarca({ jugada: jugStr, caballo: j.caballo }).etiquetaTexto;
+    return `${i + 1}) Juega ${j.clienteJuega} MARCA ${pareoTxt} con ${fmtMonto(j.monto)} → ${EMOJI_VEREDICTO[veredicto]} ${veredicto}${sufijo}`;
+  }
+  if (esTablaFija(jugStr) || /^TABLA\b|^TF\b/i.test(jugStr)) {
+    const numCab = extraerNumeroTablaFija({ jugada: jugStr, caballo: j.caballo });
+    const precio = extraerPrecioUnitarioTabla({
+      jugada: jugStr,
+      caballo: j.caballo,
+      monto: j.monto,
+      precioPorTablaUnitario: j.precioPorTablaUnitario,
+      cantidadTablas: j.cantidadTablas,
+    });
+    const daResuelto = resolverContraparteModalidad(jugStr, j.clienteConsigue);
+    return `${i + 1}) Juega ${j.clienteJuega} TABLA FIJA DEL ${numCab} a ${formatearPrecioCorto(precio)} c/u ${fmtMonto(j.monto)} da ${daResuelto} → ${EMOJI_VEREDICTO[veredicto]} ${veredicto}${sufijo}`;
+  }
   const partes = [j.clienteJuega];
-  if (String(j.jugada ?? "").trim()) partes.push(String(j.jugada).trim());
+  if (jugStr) partes.push(jugStr);
   if (String(j.caballo ?? "").trim()) partes.push(`(${String(j.caballo).trim()})`);
   partes.push(`con ${fmtMonto(j.monto)}`);
   if (String(j.clienteConsigue ?? "").trim()) partes.push(`da ${String(j.clienteConsigue).trim()}`);

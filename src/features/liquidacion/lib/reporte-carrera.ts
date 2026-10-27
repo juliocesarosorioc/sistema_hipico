@@ -330,6 +330,7 @@ export function armarReporteCarrera(
         aposto: apostoJuega,
         jugo,
         caballo: f.caballo,
+        ...(f.precioTabla !== undefined ? { precioTabla: f.precioTabla } : {}),
         da,
         apostoDa,
         resultado,
