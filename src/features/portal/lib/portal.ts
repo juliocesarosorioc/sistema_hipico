@@ -103,6 +103,8 @@ export type GrupoPortal = {
   dia_inicio_semana?: number | null;
   dia_fin_semana?: number | null;
   moneda?: string | null;
+  /** Logo del grupo (columna `logo_url` de `grupos_venta`). */
+  logo_url?: string | null;
 };
 
 const CACHE_KEY = "portal.cliente";

@@ -13,19 +13,15 @@ import {
   eliminarGrupoExterno,
   eliminarJugadaExterna,
   entrarPortal,
-  ESTADO_POR_DEFECTO,
-  ESTADOS_JUGADA_EXTERNA,
   guardarGrupoExterno,
   guardarJugadaExterna,
   listarGruposExternos,
   listarJugadasExternas,
   normalizarEstadoJugada,
-  premioGrupoExterno,
   reanudarSesion,
   reportarJugadaFaltante,
   reclamarJugada,
   resolverImagenReclamo,
-  resumenGrupoExterno,
   solicitarCompraTabla,
   type GrupoExterno,
   type JugadaExterna,
@@ -293,7 +289,7 @@ const OPCIONES_MENU_PORTAL: { key: TabPortal; icono: string; label: string; badg
   { key: "reporte", icono: "📊", label: "Reporte del Día" },
   { key: "resumen", icono: "🗒️", label: "Resumen y movimientos" },
   { key: "externos", icono: "📓", label: "Mi Control en Otros Grupos" },
-  { key: "jugadas", icono: "⚔️", label: "Marcas" },
+  { key: "jugadas", icono: "⚔️", label: "Jugadas" },
   { key: "tickets", icono: "🛟", label: "Mis tickets" },
 ];
 
@@ -324,29 +320,28 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
     String((sesion.cliente as unknown as { grupo?: string }).grupo ?? "").trim() ||
     "Club del Dinero";
 
-  const logoGrupoUrl = String(
-    (sesion.grupo as unknown as { logo_url?: string; logo?: string })?.logo_url ??
-      (sesion.grupo as unknown as { logo?: string })?.logo ??
-      ""
-  ).trim();
+  // Logo del grupo: sale de la data de la sesión (`grupos_venta.logo_url`, que
+  // la Edge Function `portal-auth` devuelve junto con la config del grupo).
+  const logoGrupoUrl = String(sesion.grupo?.logo_url ?? "").trim();
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col">
+    <div className="min-h-screen overflow-x-hidden bg-slate-100 flex flex-col">
       <div className="mx-auto flex w-full max-w-[1600px] flex-1 gap-4 px-4 py-5">
         {/* Menú ocultable a la izquierda para todas las opciones */}
         {menuAbierto ? (
           <aside className="w-64 shrink-0 space-y-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-              {/* Encabezado del menu: el logo del grupo llena todo el espacio */}
-              <div className="-m-3 mb-3 flex h-24 items-center justify-center overflow-hidden rounded-t-2xl bg-slate-950 p-2">
+              {/* Espacio del logo: SOLO el logo del grupo, a tamaño completo de la imagen */}
+              <div className="-m-3 mb-3 overflow-hidden rounded-t-2xl bg-slate-950">
                 {logoGrupoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={logoGrupoUrl}
                     alt={nombreGrupoActivo}
-                    className="h-full w-full object-contain"
+                    className="block h-auto max-h-44 w-full object-contain"
                   />
                 ) : (
-                  <span className="px-2 text-center text-xs font-black uppercase tracking-widest text-white">
+                  <span className="flex h-24 items-center justify-center px-2 text-center text-xs font-black uppercase tracking-widest text-white">
                     {nombreGrupoActivo}
                   </span>
                 )}
@@ -441,6 +436,20 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
 
         {/* Área central de contenido */}
         <main className="min-w-0 flex-1 space-y-4">
+          {/* Botón para recuperar el menú lateral cuando está oculto (no es una barra) */}
+          {!menuAbierto ? (
+            <div>
+              <button
+                type="button"
+                onClick={() => setMenuAbierto(true)}
+                className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white shadow-md hover:bg-slate-800"
+                title="Abrir menú"
+              >
+                ☰ Menú
+              </button>
+            </div>
+          ) : null}
+
           {/* Totales: saldo, incentivo y disponible (antes vivian en la barra superior) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Kpi
@@ -464,45 +473,6 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
               color="text-emerald-700"
               bg="bg-white"
             />
-          </div>
-
-          {/* Barra compacta superior de pestañas (sincronizada con el menú izquierdo) */}
-          <div className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-white p-1.5 shadow-sm border border-slate-200">
-            {!menuAbierto ? (
-              <button
-                type="button"
-                onClick={() => setMenuAbierto(true)}
-                className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white hover:bg-slate-800"
-              >
-                ☰ Menú
-              </button>
-            ) : null}
-            {OPCIONES_MENU_PORTAL.map((op) => (
-              <button
-                key={op.key}
-                type="button"
-                onClick={() => setTab(op.key)}
-                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-extrabold transition-colors ${
-                  tab === op.key
-                    ? "bg-indigo-600 text-white shadow"
-                    : "text-slate-700 hover:bg-slate-100"
-                }`}
-              >
-                <span>{op.icono}</span>
-                <span>{op.label}</span>
-                {op.badge ? (
-                  <span
-                    className={`rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase ${
-                      tab === op.key
-                        ? "bg-amber-300 text-slate-950"
-                        : "bg-amber-100 text-amber-800"
-                    }`}
-                  >
-                    {op.badge}
-                  </span>
-                ) : null}
-              </button>
-            ))}
           </div>
 
           {/* Vista principal con el Panel del Grupo (Logo en grande fijo a la derecha + QR Grupo + QR Perfil) */}
@@ -776,34 +746,25 @@ function PanelGrupoFijoDerecha({
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-md space-y-4">
-      {/* Logo grande y fijo del grupo */}
-      <div className="rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-5 text-center text-white shadow-inner">
-        <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">
-          Grupo Oficial Activo
-        </div>
-        <div className="mx-auto my-3 flex h-28 w-28 items-center justify-center overflow-hidden rounded-3xl border-2 border-amber-400/60 bg-white/10 shadow-xl">
-          {logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={logoUrl}
-              alt={nombreGrupo}
-              className="h-full w-full object-contain p-1.5"
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center">
-              <span className="text-3xl leading-none">🪙</span>
-              <span className="mt-1 text-lg font-black tracking-wider text-amber-300">
-                {iniciales || "CD"}
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="text-base font-black tracking-tight text-white">
-          {nombreGrupo}
-        </div>
-        <div className="mt-0.5 text-[11px] font-bold text-indigo-200">
-          Jugador: {sesion.cliente.seudonimo || sesion.cliente.nombre}
-        </div>
+      {/* Espacio del logo: SOLO el logo del grupo, a tamaño completo de la imagen */}
+      <div className="overflow-hidden rounded-2xl ring-1 ring-slate-200">
+        {logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={logoUrl} alt={nombreGrupo} className="block h-auto max-h-56 w-full object-contain" />
+        ) : (
+          <div className="flex h-32 flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white">
+            <span className="text-3xl leading-none">🪙</span>
+            <span className="mt-1 text-lg font-black tracking-wider text-amber-300">
+              {iniciales || "CD"}
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="text-center text-base font-black tracking-tight text-slate-900">
+        {nombreGrupo}
+      </div>
+      <div className="mt-0.5 text-center text-[11px] font-bold text-slate-500">
+        Jugador: {sesion.cliente.seudonimo || sesion.cliente.nombre}
       </div>
 
       {/* QR del Grupo y QR de Mi Perfil */}
@@ -2172,7 +2133,6 @@ type FormJugadaExterna = {
   tipo_jugada: string;
   ejemplares: string;
   monto: string;
-  estado: string;
 };
 
 const formaJugadaVacia = (): FormJugadaExterna => ({
@@ -2182,7 +2142,6 @@ const formaJugadaVacia = (): FormJugadaExterna => ({
   tipo_jugada: "JUGADA",
   ejemplares: "",
   monto: "",
-  estado: ESTADO_POR_DEFECTO,
 });
 
 /**
@@ -2190,9 +2149,8 @@ const formaJugadaVacia = (): FormJugadaExterna => ({
  * grupos que NO están en la plataforma.
  *
  * El usuario crea sus grupos externos (nombre, moneda, % de comisión), anota
- * sus jugadas (fecha, hipódromo, carrera, tipo de jugada, ejemplares, monto y
- * estado PENDIENTE / GANÓ / PERDIÓ / ANULADA) y ve el resumen calculado con la
- * comisión de ese grupo.
+ * sus jugadas (fecha, hipódromo, carrera, tipo de jugada, jugada, monto) y ve
+ * el resumen calculado con el signo del monto: positivo = ganó, negativo = perdió.
  *
  * AISLAMIENTO: todo vive en `portal_grupos_externos` / `portal_jugadas_externas`
  * (RLS sin políticas, solo la Edge Function con service_role). No hay ninguna
@@ -2225,7 +2183,71 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
 
   const grupo = grupos.find((g) => String(g.id) === grupoId) ?? null;
   const monedaGrupo = String(grupo?.moneda ?? "USD").toUpperCase() || "USD";
-  const resumen = useMemo(() => resumenGrupoExterno(jugadas, grupo?.comision_pct ?? 0), [jugadas, grupo]);
+
+  // El MONTO es el resultado de la jugada: positivo = ganó, negativo = perdió.
+  // Las filas viejas guardaban el monto apostado en positivo + estado; se
+  // siguen leyendo bien: PERDIÓ con monto positivo cuenta como pérdida y
+  // PENDIENTE no entra en el neto.
+  const montoFirmado = (j: JugadaExterna): number => {
+    const m = num(j.monto);
+    const e = normalizarEstadoJugada(j.estado);
+    if (e === "ANULADA" || e === "PENDIENTE") return 0;
+    if (e === "PERDIÓ") return -Math.abs(m);
+    return m;
+  };
+  const estadoSegunMonto = (monto: number | string | null | undefined): string => {
+    const m = num(monto);
+    return m < 0 ? "PERDIÓ" : m > 0 ? "GANÓ" : "PENDIENTE";
+  };
+  /** Deja solo dígitos, un punto decimal y el signo negativo al inicio. */
+  const soloMontoFirmado = (v: string): string => {
+    const negativo = v.trim().startsWith("-");
+    const digitos = v.replace(/[^\d.]/g, "");
+    return (negativo ? "-" : "") + digitos;
+  };
+
+  const resumen = useMemo(() => {
+    let ganado = 0;
+    let perdido = 0;
+    let pendiente = 0;
+    let ganadas = 0;
+    let perdidas = 0;
+    let anuladas = 0;
+    let pendientes = 0;
+    for (const j of jugadas) {
+      const e = normalizarEstadoJugada(j.estado);
+      if (e === "ANULADA") {
+        anuladas += 1;
+        continue;
+      }
+      if (e === "PENDIENTE") {
+        pendientes += 1;
+        pendiente += Math.abs(num(j.monto));
+        continue;
+      }
+      const m = montoFirmado(j);
+      if (m < 0) {
+        perdidas += 1;
+        perdido += Math.abs(m);
+      } else {
+        ganadas += 1;
+        ganado += m;
+      }
+    }
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    return {
+      jugadas: jugadas.length,
+      ganado: r2(ganado),
+      perdido: r2(perdido),
+      neto: r2(ganado - perdido),
+      pendiente: r2(pendiente),
+      ganadas,
+      perdidas,
+      anuladas,
+      pendientes,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jugadas]);
 
   const hipodromosRegistrados = useMemo(() => {
     const set = new Set<string>();
@@ -2361,6 +2383,10 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
 
   const guardarJugada = async () => {
     if (!grupo) return toast("Primero seleccioná o creá un grupo externo.", "warning");
+    // El monto firmado define el resultado: negativo pierde, positivo gana.
+    if (num(form.monto) === 0) {
+      return toast("Escribí un monto distinto de cero: positivo si ganaste, negativo si perdiste.", "warning");
+    }
     setGuardandoJugada(true);
     const r = await guardarJugadaExterna({
       id: editJugadaId ?? undefined,
@@ -2371,7 +2397,7 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
       tipo_jugada: form.tipo_jugada,
       ejemplares: form.ejemplares,
       monto: form.monto,
-      estado: form.estado,
+      estado: estadoSegunMonto(form.monto),
     });
     setGuardandoJugada(false);
     if (!r.ok) return toast(r.error ?? "No se pudo registrar la jugada.", "error");
@@ -2390,13 +2416,13 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
       carrera: j.carrera != null ? String(j.carrera) : "",
       tipo_jugada: String(j.tipo_jugada ?? "JUGADA"),
       ejemplares: String(j.ejemplares ?? ""),
-      monto: j.monto != null ? String(num(j.monto)) : "",
-      estado: normalizarEstadoJugada(j.estado),
+      // Se edita el monto firmado: negativo si la jugada quedó como pérdida.
+      monto: j.monto != null ? String(montoFirmado(j) || Math.abs(num(j.monto))) : "",
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const cambiarEstado = async (j: JugadaExterna, estado: string) => {
+  const cambiarEstado = async (j: JugadaExterna, estado: string, monto?: number) => {
     const r = await guardarJugadaExterna({
       id: j.id,
       grupo_externo_id: j.grupo_externo_id,
@@ -2405,7 +2431,7 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
       carrera: j.carrera ?? undefined,
       tipo_jugada: String(j.tipo_jugada ?? ""),
       ejemplares: String(j.ejemplares ?? ""),
-      monto: j.monto ?? undefined,
+      monto: monto ?? j.monto ?? undefined,
       estado,
     });
     if (!r.ok) return toast(r.error ?? "No se pudo cambiar el estado.", "error");
@@ -2436,7 +2462,7 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
             </h2>
             <p className="text-[11px] text-slate-500">
               Tu libro privado para jugar en grupos que no están en el sistema. Creá tus grupos (nombre, moneda y %
-              de comisión) y anotá cada jugada con su estado.
+              de comisión) y anotá cada jugada: monto positivo si ganaste, negativo si perdiste.
             </p>
           </div>
           <Button variant="default" size="sm" onClick={abrirAltaGrupo} data-testid="bitacora-alta-grupo">
@@ -2492,8 +2518,8 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
               </div>
             </div>
             <p className="text-[10px] text-slate-500">
-              La comisión se usa para calcular el premio: <b>premio = monto × (2 − comisión%)</b>. Ej.: con 10% y
-              $10 apostados, el grupo devuelve $19.
+              La comisión es una referencia del grupo. El resultado de cada jugada lo define el monto:{" "}
+              <b>positivo = ganó</b>, <b>negativo = perdió</b>.
             </p>
             <div className="flex justify-end gap-2">
               <Button
@@ -2544,11 +2570,11 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
 
         {/* Resumen de la bitácora del grupo seleccionado */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <ResumenBitacora icon="💸" lbl="Apostado (sin anuladas)" val={formatoMoneda(monedaGrupo, resumen.apostado)} color="text-slate-800" />
-          <ResumenBitacora icon="🏆" lbl="Premios (par − comisión)" val={formatoMoneda(monedaGrupo, resumen.premios)} color="text-emerald-700" />
+          <ResumenBitacora icon="🏆" lbl="Ganado (monto +)" val={formatoMoneda(monedaGrupo, resumen.ganado)} color="text-emerald-700" />
+          <ResumenBitacora icon="💸" lbl="Perdido (monto −)" val={formatoMoneda(monedaGrupo, resumen.perdido)} color="text-red-600" />
           <ResumenBitacora
             icon="⚖️"
-            lbl="Neto"
+            lbl="Neto (ganado − perdido)"
             val={formatoMoneda(monedaGrupo, resumen.neto)}
             color={resumen.neto >= 0 ? "text-emerald-700" : "text-red-600"}
           />
@@ -2556,7 +2582,7 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
         </div>
         <div className="text-[10px] text-slate-400">
           {resumen.jugadas} jugada(s) · {resumen.ganadas} ganada(s) · {resumen.perdidas} perdida(s) ·{" "}
-          {resumen.anuladas} anulada(s) · Neto = premios − apostado.
+          {resumen.anuladas} anulada(s) · Neto = ganado − perdido.
         </div>
       </div>
 
@@ -2599,46 +2625,32 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
             />
           </div>
           <div className="flex-1 min-w-[200px]">
-            <label className={lbl}>Ejemplares</label>
+            <label className={lbl}>Jugada</label>
             <input
               value={form.ejemplares}
               onChange={(e) => setForm({ ...form, ejemplares: e.target.value.toUpperCase() })}
               className={inp + " uppercase"}
-              placeholder="1-5 EL MAGO"
+              placeholder="1P DEL 4"
               data-testid="bitacora-ejemplares"
             />
           </div>
-          <div className="w-32">
-            <label className={lbl}>Monto</label>
+          <div className="w-36">
+            <label className={lbl}>Monto (+ gana / − pierde)</label>
             <input
               value={form.monto}
-              onChange={(e) => setForm({ ...form, monto: e.target.value.replace(/[^\d.]/g, "") })}
+              onChange={(e) => setForm({ ...form, monto: soloMontoFirmado(e.target.value) })}
               className={inp + " text-right font-mono"}
-              placeholder="10"
+              placeholder="50 o -50"
               inputMode="decimal"
               data-testid="bitacora-monto"
             />
           </div>
-          <div className="w-64">
-            <label className={lbl}>Monto + Lo que gana - Lo que pierde</label>
-            <div
-              className="flex items-center justify-between gap-1.5 rounded-xl border border-line bg-slate-50 px-3 py-2.5 text-[11px] font-mono text-slate-700"
-              data-testid="bitacora-resumen-jugada"
-            >
-              <span title="Monto apostado" className="font-black">
-                {formatoMoneda(monedaGrupo, num(form.monto))}
-              </span>
-              <span className="text-slate-300">+</span>
-              <span title="Lo que gana si acierta" className="font-black text-emerald-600">
-                {formatoMoneda(monedaGrupo, premioGrupoExterno(form.monto, grupo?.comision_pct ?? 0))}
-              </span>
-              <span className="text-slate-300">-</span>
-              <span title="Lo que pierde si falla" className="font-black text-red-500">
-                {formatoMoneda(monedaGrupo, num(form.monto))}
-              </span>
-            </div>
-          </div>
         </div>
+
+        <p className="text-[10px] text-slate-500">
+          Monto <span className="font-black text-emerald-700">positivo = ganó</span> ·{" "}
+          <span className="font-black text-red-600">negativo = perdió</span>. El estado se calcula solo con el signo.
+        </p>
 
         <div className="flex justify-end gap-2">
           {editJugadaId ? (
@@ -2699,7 +2711,7 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
                   <th className="px-3 py-2">Fecha</th>
                   <th className="px-3 py-2">Hipódromo</th>
                   <th className="px-3 py-2">Carrera</th>
-                  <th className="px-3 py-2">Ejemplares</th>
+                  <th className="px-3 py-2">Jugada</th>
                   <th className="px-3 py-2 text-right">Monto</th>
                   <th className="px-3 py-2">Estado</th>
                   <th className="px-3 py-2 text-right">Acciones</th>
@@ -2708,6 +2720,30 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
               <tbody>
                 {jugadasFiltradas.map((j, i) => {
                   const estado = normalizarEstadoJugada(j.estado);
+                  const anulada = estado === "ANULADA";
+                  const firmado = montoFirmado(j);
+                  const montoMostrado = anulada ? Math.abs(num(j.monto)) : firmado;
+                  const tonoMonto = anulada
+                    ? "text-slate-400 line-through"
+                    : firmado < 0
+                      ? "text-red-600"
+                      : firmado > 0
+                        ? "text-emerald-700"
+                        : "text-slate-500";
+                  const etiquetaEstado = anulada
+                    ? "ANULADA"
+                    : firmado < 0
+                      ? "PERDIÓ"
+                      : firmado > 0
+                        ? "GANÓ"
+                        : "PENDIENTE";
+                  const tonoEstado = anulada
+                    ? "border-slate-200 bg-slate-100 text-slate-500"
+                    : firmado < 0
+                      ? "border-red-200 bg-red-50 text-red-600"
+                      : firmado > 0
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-amber-200 bg-amber-50 text-amber-700";
                   return (
                     <tr key={String(j.id)} className="hover:bg-slate-50/70" data-testid={`bitacora-fila-${i}`}>
                       <td className={FILA_JUGADA + " font-mono"}>{String(j.fecha ?? "").slice(0, 10)}</td>
@@ -2716,28 +2752,17 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
                       <td className={FILA_JUGADA + " max-w-[220px] truncate"} title={String(j.ejemplares ?? "")}>
                         {String(j.ejemplares ?? "") || "—"}
                       </td>
-                      <td className={FILA_JUGADA + " text-right font-mono font-bold"}>{formatoMoneda(monedaGrupo, num(j.monto))}</td>
+                      <td className={FILA_JUGADA + " text-right font-mono font-bold " + tonoMonto}>
+                        {firmado > 0 && !anulada ? "+" : ""}
+                        {formatoMoneda(monedaGrupo, montoMostrado)}
+                      </td>
                       <td className={FILA_JUGADA}>
-                        <select
-                          value={estado}
-                          onChange={(e) => void cambiarEstado(j, e.target.value)}
-                          className={`rounded-lg border px-2 py-1 text-[10px] font-black uppercase tracking-wider outline-none ${
-                            estado === "GANÓ"
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                              : estado === "PERDIÓ"
-                                ? "border-red-200 bg-red-50 text-red-600"
-                                : estado === "ANULADA"
-                                  ? "border-slate-200 bg-slate-100 text-slate-500"
-                                  : "border-amber-200 bg-amber-50 text-amber-700"
-                          }`}
+                        <span
+                          className={`rounded-lg border px-2 py-1 text-[10px] font-black uppercase tracking-wider ${tonoEstado}`}
                           data-testid={`bitacora-${i}-estado`}
                         >
-                          {ESTADOS_JUGADA_EXTERNA.map((s) => (
-                            <option key={s} value={s}>
-                              {s}
-                            </option>
-                          ))}
-                        </select>
+                          {etiquetaEstado}
+                        </span>
                       </td>
                       <td className={FILA_JUGADA + " text-right whitespace-nowrap"}>
                         <button
@@ -2748,6 +2773,21 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
                           data-testid={`bitacora-${i}-editar`}
                         >
                           ✏️
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void cambiarEstado(
+                              j,
+                              anulada ? estadoSegunMonto(montoFirmado(j) || num(j.monto)) : "ANULADA",
+                              anulada ? montoFirmado(j) || Math.abs(num(j.monto)) : undefined
+                            )
+                          }
+                          title={anulada ? "Reactivar jugada" : "Anular jugada"}
+                          className="mr-1 rounded border border-line px-1.5 py-1 transition hover:bg-slate-100"
+                          data-testid={`bitacora-${i}-anular`}
+                        >
+                          {anulada ? "♻️" : "🚫"}
                         </button>
                         <button
                           type="button"
@@ -2769,8 +2809,9 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
 
         {jugadas.length ? (
           <p className="text-[10px] text-slate-400">
-            {resumen.jugadas} anotación(es) · Apostado {formatoMoneda(monedaGrupo, resumen.apostado)} · Neto{" "}
-            {formatoMoneda(monedaGrupo, resumen.neto)} · Pendiente {formatoMoneda(monedaGrupo, resumen.pendiente)}
+            {resumen.jugadas} anotación(es) · Ganado {formatoMoneda(monedaGrupo, resumen.ganado)} · Perdido{" "}
+            {formatoMoneda(monedaGrupo, resumen.perdido)} · Neto {formatoMoneda(monedaGrupo, resumen.neto)} · Pendiente{" "}
+            {formatoMoneda(monedaGrupo, resumen.pendiente)}
           </p>
         ) : null}
       </div>
@@ -2778,7 +2819,7 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
   );
 }
 
-/** Caja de resumen de la bitácora (Apostado / Premios / Neto / Pendiente). */
+/** Caja de resumen de la bitácora (Ganado / Perdido / Neto / Pendiente). */
 function ResumenBitacora({ icon, lbl, val, color }: { icon: string; lbl: string; val: string; color: string }) {
   return (
     <div className="rounded-xl border border-line bg-slate-50 px-3 py-2">

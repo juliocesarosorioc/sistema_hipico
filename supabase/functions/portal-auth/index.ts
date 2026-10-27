@@ -508,7 +508,7 @@ Deno.serve(async (req: Request) => {
       cliente?.grupo_id
         ? db
             .from("grupos_venta")
-            .select("id, nombre, ventana_reclamos, dia_inicio_semana, dia_fin_semana, moneda")
+            .select("id, nombre, ventana_reclamos, dia_inicio_semana, dia_fin_semana, moneda, logo_url")
             .eq("id", cliente.grupo_id)
             .maybeSingle()
         : Promise.resolve({ data: null }),
