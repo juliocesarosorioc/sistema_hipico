@@ -123,15 +123,16 @@ const cabecerasSeguridad = [
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  ...(esExportEstatico ? { output: "export", trailingSlash } : {}),
+  ...(esExportEstatico
+    ? { output: "export", trailingSlash }
+    : {
+        async headers() {
+          if (enGitHubActions) return [];
+          return cabecerasSeguridad;
+        },
+      }),
   ...(basePath ? { basePath, assetPrefix: basePath } : {}),
   images: { unoptimized: true },
-  async headers() {
-    // Sin servidor no hay quién emita cabeceras: se omiten en el export
-    // estático y en el pipeline de GitHub Pages (que es un export).
-    if (esExportEstatico || enGitHubActions) return [];
-    return cabecerasSeguridad;
-  },
   webpack: (config) => {
     config.resolve.alias = {
       ...(config.resolve.alias || {}),
