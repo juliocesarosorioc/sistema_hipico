@@ -21,6 +21,7 @@ import {
   fusionarCarrerasSinPerder,
   mismaCarreraExtraida,
   numeroDeCarrera,
+  numeroDeValida,
   repararNumerosCarreras,
   type CarreraMinima,
 } from "@/features/gaceta/lib/numeros";
@@ -53,6 +54,16 @@ igual(numeroDeCarrera("decimotercera"), 13, "\"decimotercera\" (ordinal)");
 igual(numeroDeCarrera("DECIMOTERCERA carrera"), 13, "ordinal en mayúsculas");
 igual(numeroDeCarrera("undécima"), 11, "ordinal con tilde");
 igual(numeroDeCarrera("CARRERA 13"), 13, "\"CARRERA 13\"");
+igual(numeroDeCarrera("7ma. CARRERA"), 7, "\"7ma. CARRERA\"");
+igual(numeroDeCarrera("7ª CARRERA"), 7, "\"7ª CARRERA\"");
+igual(numeroDeCarrera("7a CARRERA"), 7, "\"7a CARRERA\"");
+igual(numeroDeCarrera("7 CARRERA"), 7, "\"7 CARRERA\"");
+igual(numeroDeCarrera("SÉPTIMA CARRERA"), 7, "\"SÉPTIMA CARRERA\"");
+igual(numeroDeCarrera("1ª VÁLIDA (7ª CARRERA)"), 7, "\"1ª VÁLIDA (7ª CARRERA)\" prioriza carrera general 7");
+igual(numeroDeCarrera("7ª CARRERA - 1ª VÁLIDA PARA EL 5 Y 6"), 7, "\"7ª CARRERA - 1ª VÁLIDA\" prioriza carrera general 7");
+igual(numeroDeValida("1ª VÁLIDA"), 1, "\"1ª VÁLIDA\" detecta válida 1");
+igual(numeroDeValida("PRIMERA VÁLIDA PARA EL 5 Y 6"), 1, "\"PRIMERA VÁLIDA PARA EL 5 Y 6\" detecta válida 1");
+igual(numeroDeValida("6ª VÁLIDA"), 6, "\"6ª VÁLIDA\" detecta válida 6");
 igual(numeroDeCarrera(0), null, "0 → null");
 igual(numeroDeCarrera(""), null, "vacío → null");
 

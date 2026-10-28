@@ -71,17 +71,24 @@ const HIPODROMOS_USA = [
 
 const SYS = `Eres el transcriptor de la gaceta hípica venezolana. Recibes páginas/imágenes del programa oficial de carreras.
 Extrae TODAS las carreras visibles y sus ejemplares participantes.
-La gaceta numera las carreras de forma CONSECUTIVA del 1 al total (1, 2, 3, …, 13): devuelve TODAS sin omitir ninguna y SIN repetir ni saltar números. Si el programa trae 13 carreras, la respuesta tiene 13 objetos (la última incluida).
+La gaceta numera las carreras de forma CONSECUTIVA del 1 al total (1, 2, 3, …, 12 o 13): devuelve TODAS sin omitir ninguna y SIN repetir ni saltar números. Si el programa trae 12 o 13 carreras, la respuesta tiene 12 o 13 objetos (la última incluida).
 Para cada carrera devuelve:
-  - carrera: número de la carrera (entero)
-  - hipodromo: nombre del hipódromo (MAYÚSCULAS; ej: LA RINCONADA, SANTA RITA). Si no se lee usa "".
+  - carrera: número de la carrera (entero general correlativo)
+  - hipodromo: nombre del hipódromo (MAYÚSCULAS; ej: LA RINCONADA, SANTA RITA, VALENCIA). Si no se lee usa "".
   - fecha: fecha de la jornada en formato YYYY-MM-DD si aparece, si no null
   - distancia: distancia de la carrera en metros (entero) si se lee, si no 0
   - superficie: una de ARENA, CESPED, FANGO, TAPETA u otra si se lee explícita; si no ARENA
   - premio: número si se lee (ej: 15000), si no 0
   - ejemplares: lista con numero (puesto/orden del ejemplar), nombre (MAYÚSCULAS, EXACTO como aparece), nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si NO se indica: USA si el hipódromo es de Estados Unidos, si no VE), valor (monta del ejemplar: SOLO número si aparece, si no 0), jockey, entrenador, peso, medicamento e implementos solo si son legibles (si no, null)
 REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGISTRA TODOS los ejemplares de cada carrera sin omitir ninguno (todos los números de participante que aparezcan). Si un ejemplar aparece repetido entre páginas, mantenlo tal cual. Si el documento no tiene carreras, devuelve {"carreras":[]}.
-PARA EL CAMPO carrera: lee el número de carrera EXACTAMENTE como aparece impreso (puede ser numérico: 1, 2, ..., 13 o romano: I, II, III, IV, V, VI, VII, VIII, IX, X, XI, XII, XIII, XIV...). Convierte los romanos a entero (XIII → 13) y también los ordinales escritos en palabras ("primera" → 1, "segunda" → 2, "decimotercera" → 13, "decimocuarta" → 14): devuélvelos SIEMPRE como entero. Lee el carácter por carácter: distingue 1/7, 0/O, I/1. Devuelve SIEMPRE el entero correcto (ej.: 13, no 10). Prioriza el número que aparece junto a "CARRERA", "RACE", "CLASE" o en la cabecera de esa carrera.`;
+PARA EL CAMPO carrera: lee el número de carrera EXACTAMENTE como aparece impreso (puede ser numérico: 1, 2, ..., 14 o romano: I, II, ..., XIV). Convierte los romanos a entero (XIII → 13) y los ordinales escritos a entero ("primera" → 1, "séptima" → 7, "decimotercera" → 13).
+ATENCIÓN ESPECIAL HIPÓDROMOS DE VENEZUELA (LA RINCONADA / VALENCIA):
+En los programas de carreras de Venezuela, las carreras del bloque de apuestas "5 y 6" se titulan como "1ª VÁLIDA", "2ª VÁLIDA", "3ª VÁLIDA", "4ª VÁLIDA", "5ª VÁLIDA" y "6ª VÁLIDA".
+1. En La Rinconada, la "1ª VÁLIDA" corresponde habitualmente a la SÉPTIMA CARRERA (Carrera 7) del programa general (las carreras 1 a 6 son ordinarias no válidas, y la 1ª Válida es la 7ª carrera; o carrera 5 si hay 4 no válidas).
+2. NUNCA devuelvas carrera: 1 para la 1ª Válida si ya hubo carreras previas en la reunión.
+3. El campo "carrera" debe ser SIEMPRE el número correlativo general del programa oficial (ej: Carrera 1, 2, 3, 4, 5, 6, 7 [1ª Válida], 8 [2ª Válida], 9 [3ª Válida], 10 [4ª Válida], 11 [5ª Válida], 12 [6ª Válida]).
+4. Si la cabecera dice "1ª VÁLIDA" o "1ª VÁLIDA (7ª CARRERA)" o "SÉPTIMA CARRERA - 1ª VÁLIDA", el número de carrera es 7 (o el correlativo correspondiente).
+5. Extrae la 7ª carrera con TODOS sus ejemplares participantes exactamente igual que las demás carreras; NUNCA la omitas ni la unas con la 1ª carrera.`;
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

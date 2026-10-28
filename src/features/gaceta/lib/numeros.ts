@@ -77,6 +77,32 @@ function romanoAEntero(token: string): number | null {
 }
 
 /**
+ * Detecta si una cadena o valor representa explícitamente una VÁLIDA del 5 y 6 (Venezuela):
+ *   "1ª VÁLIDA", "1a. VÁLIDA", "1ra valida", "PRIMERA VÁLIDA", "2ª VÁLIDA", etc.
+ * Devuelve el número de válida (1..6) o null si no es una válida.
+ */
+export function numeroDeValida(valor: unknown): number | null {
+  const s = String(valor ?? "").trim();
+  if (!s) return null;
+  const matchValida =
+    s.match(/(?:v[aá]lida)\s*(?:n[º°.]?\s*)?#?\s*(\d+)/i) ||
+    s.match(/(\d+)\s*(?:[ª°aA]|ra|da|ta|ma)?\.?\s*(?:v[aá]lida)/i);
+  if (matchValida) {
+    const n = parseInt(matchValida[1], 10);
+    if (n >= 1 && n <= 6) return n;
+  }
+  const matchValidaOrd =
+    s.match(/([A-Za-zÁÉÍÓÚÑáéíóúñ]+)\s+(?:v[aá]lida)/i) ||
+    s.match(/(?:v[aá]lida)\s+([A-Za-zÁÉÍÓÚÑáéíóúñ]+)/i);
+  if (matchValidaOrd) {
+    const k = normalizarTexto(matchValidaOrd[1]);
+    const n = ORDINALES[k];
+    if (n && n >= 1 && n <= 6) return n;
+  }
+  return null;
+}
+
+/**
  * Número de carrera como ENTERO, venga como venga:
  *   13 | "13" | "13ª" | "N° 13" | "XIII" | "decimotercera" | "CARRERA 13" → 13
  * Devuelve null si no se puede leer un número positivo (entonces quien llame
@@ -89,24 +115,52 @@ export function numeroDeCarrera(valor: unknown): number | null {
   const s = String(valor ?? "").trim();
   if (!s) return null;
 
-  // 1) Cualquier dígito arábigo (cubre "13", "13ª", "CARRERA 13", "N° 13").
-  const arabigo = s.match(/\d+/);
-  if (arabigo) {
-    const n = parseInt(arabigo[0], 10);
+  // 1) Si menciona explícitamente "carrera" o "race" con un número arábigo u ordinal:
+  //    Ej: "1ª VÁLIDA (7ª CARRERA)", "7ma CARRERA", "CARRERA 7", "RACE 7", "7ª CARRERA - 1ª VÁLIDA"
+  //    Prioriza el número de carrera general sobre el número de válida (7 sobre 1).
+  const matchCarreraNum =
+    s.match(/(?:carrera|race|car\.?)\s*(?:n[º°.]?\s*)?#?\s*(\d+)/i) ||
+    s.match(/(\d+)\s*(?:[ª°aA]|ra|da|ta|ma)?\.?\s*(?:carrera|race)/i);
+  if (matchCarreraNum) {
+    const n = parseInt(matchCarreraNum[1], 10);
     if (n > 0) return n;
   }
 
-  // 2) Un romano suelto (cubre "XIII", "XIV", "(VII)").
-  for (const tok of s.split(/[^A-Za-z]+/)) {
+  // 2) Ordinal escrito con la palabra carrera: ej "séptima carrera", "carrera séptima"
+  const matchCarreraOrd =
+    s.match(/([A-Za-zÁÉÍÓÚÑáéíóúñ]+)\s+(?:carrera|race)/i) ||
+    s.match(/(?:carrera|race)\s+([A-Za-zÁÉÍÓÚÑáéíóúñ]+)/i);
+  if (matchCarreraOrd) {
+    const k = normalizarTexto(matchCarreraOrd[1]);
+    const n = ORDINALES[k];
+    if (n) return n;
+  }
+
+  // Si menciona explícitamente "válida" y NO menciona "carrera/race":
+  // ej: "2ª VÁLIDA PARA EL 5 Y 6" o "1ª VÁLIDA". No asignar un número de carrera
+  // arbitrario aquí; se delega a numeroDeValida() para resolver su correlativo.
+  if (/v[aá]lida/i.test(s) && !/(?:carrera|race)/i.test(s)) {
+    return null;
+  }
+
+  // 3) Un romano suelto (cubre "XIII", "XIV", "(VII)"). Se buscan palabras completas sin romper tildes.
+  for (const tok of s.split(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]+/)) {
     const r = romanoAEntero(tok);
     if (r) return r;
   }
 
-  // 3) Un ordinal escrito (cubre "decimotercera", "DECIMOTERCERA carrera").
+  // 4) Un ordinal escrito suelto (cubre "decimotercera", "DECIMOTERCERA", "septima").
   const candidatos = [normalizarTexto(s), ...s.split(/\s+/).map(normalizarTexto)];
   for (const k of candidatos) {
     const n = ORDINALES[k];
     if (n) return n;
+  }
+
+  // 5) Cualquier dígito arábigo (cubre "13", "13ª", "N° 13", "7").
+  const arabigo = s.match(/\d+/);
+  if (arabigo) {
+    const n = parseInt(arabigo[0], 10);
+    if (n > 0) return n;
   }
 
   return null;

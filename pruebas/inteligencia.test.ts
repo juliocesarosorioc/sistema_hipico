@@ -89,6 +89,25 @@ ok(
   segs.some((s) => s.numero == null && s.texto.includes("PROGRAMA OFICIAL"))
 );
 
+// Test específico: Septima carrera de La Rinconada / 1ra Válida para el 5 y 6
+const DOC_RINCONADA = `PROGRAMA OFICIAL LA RINCONADA
+6ª CARRERA
+1200 metros
+1 CABALLO SEIS
+
+7ª CARRERA - 1ª VÁLIDA PARA EL 5 Y 6 (HORA: 3:30 PM)
+1200 metros. Premio Bs. 15.000
+1 PURASANGRE SIETE
+2 CAMPEON SIETE
+
+2ª VÁLIDA PARA EL 5 Y 6
+1400 metros
+1 CABALLO OCHO`;
+
+const segsRinconada = segmentarPorCarreras(DOC_RINCONADA);
+const numsRinconada = segsRinconada.filter((s) => s.numero != null).map((s) => s.numero);
+igual(numsRinconada, [6, 7, 8], "La Rinconada detecta la 7ª carrera y las válidas correctamente");
+
 // Un texto SIN encabezados no se pierde: se devuelve entero.
 const sinEncabezado = segmentarPorCarreras("SOLO TEXTO SUELTO SIN CARRERAS");
 igual(sinEncabezado.length, 1, "un texto sin encabezados se devuelve como un bloque");

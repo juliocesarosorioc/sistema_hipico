@@ -28,7 +28,7 @@
  *
  * Todo es PURO: sin red, sin reloj, sin base. Se puede probar en node.
  */
-import { numeroDeCarrera } from "@/features/gaceta/lib/numeros";
+import { numeroDeCarrera, numeroDeValida } from "@/features/gaceta/lib/numeros";
 
 /** Segmento del documento que corresponde a UNA carrera. */
 export type SegmentoCarrera = {
@@ -64,10 +64,10 @@ export type BloqueCarrera = {
  * carrera, no un encabezado.
  */
 const RE_ENCABEZADO =
-  /^[ \t]*(?:(?:RACE|CARRERA|CARRERA|CAR\.?)[ \t]*(?:N[º°.]?[ \t]*)?#?[ \t]*([A-Za-z0-9ÁÉÍÓÚÑáéíóúñ]{1,14})\b)|(?:([A-Za-zÁÉÍÓÚÑáéíóúñ]{1,20})[ \t]+(?:CARRERA|RACE)\b)/gim;
+  /^[ \t]*(?:(?:(?:RACE|CARRERA|CAR\.?)[ \t]*(?:N[º°.]?[ \t]*)?#?[ \t]*([A-Za-z0-9ÁÉÍÓÚÑáéíóúñ]{1,14})\b)|(?:([A-Za-z0-9ÁÉÍÓÚÑáéíóúñºª.]{1,20})[ \t]+(?:CARRERA|RACE)\b)|(?:([0-9]{1,2}(?:[ª°aA]|ra|da|ta|ma)?\.?|PRIMERA|SEGUNDA|TERCERA|CUARTA|QUINTA|SEXTA)[ \t]+(?:V[AÁ]LIDA|VALIDA)\b))/gim;
 
-/** Tope de caracteres de un encabezado: más de esto ya es una frase. */
-const MAX_ENCABEZADO = 60;
+/** Tope de caracteres de un encabezado: suficiente para líneas con hora/distancia. */
+const MAX_ENCABEZADO = 120;
 
 /**
  * Parte el texto en segmentos, uno por carrera.
@@ -94,11 +94,26 @@ export function segmentarPorCarreras(texto: string): SegmentoCarrera[] {
     const largoLinea = (finLinea === -1 ? t.length : finLinea) - m.index;
     if (largoLinea > MAX_ENCABEZADO) continue;
 
-    const token = m[1] ?? m[2] ?? "";
-    // `numeroDeCarrera` normaliza dígitos, romanos y ordinales escritos.
-    const numero = numeroDeCarrera(token);
-    // Un encabezado que no aporta número sirve igual como separador: sin él,
-    // dos carreras quedarían pegadas en un solo segmento.
+    const linea = t.slice(m.index, finLinea === -1 ? t.length : finLinea).trim();
+    // Prioriza el número de carrera general que aparezca en la línea completa
+    let numero = numeroDeCarrera(linea);
+    if (numero == null) {
+      const token = m[1] ?? m[2] ?? "";
+      numero = numeroDeCarrera(token);
+    }
+    // Si la línea es una Válida del 5 y 6 (ej. 1ª Válida) y no trajo número general explícito:
+    if (numero == null) {
+      const numVal = numeroDeValida(linea) ?? numeroDeValida(m[3] ? `${m[3]} valida` : "");
+      if (numVal != null) {
+        // En Venezuela (La Rinconada / Valencia), continúa la secuencia correlativa:
+        const ultNum = cortes.filter((c) => c.numero != null).map((c) => c.numero!).pop();
+        if (ultNum != null && ultNum >= 4) {
+          numero = ultNum + 1;
+        } else if (numVal === 1) {
+          numero = 7;
+        }
+      }
+    }
     cortes.push({ numero, inicio: m.index, fin: -1 });
   }
 
