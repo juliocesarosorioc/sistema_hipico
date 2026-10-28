@@ -14,6 +14,7 @@
 import { supabase } from "@/core/supabase";
 import { claveDeUsuario } from "@/features/seguridad/lib/accesos";
 import { guardarHipodromosDeOperador, CLAVE_HIPODROMOS } from "@/features/operadores/lib/operadores";
+import { basePathActual } from "@/features/auth/lib/sesion";
 
 export type OperadorGrupo = {
   id: string; // nombre de usuario para acceso celular
@@ -317,6 +318,15 @@ export async function alternarEstadoOperador(
 }
 
 /**
+ * Resuelve la URL canónica de login para compartir con el operador.
+ */
+export function urlLoginOperador(): string {
+  if (typeof window === "undefined") return "https://app.sistemahipico.com/login/";
+  const base = basePathActual();
+  return `${window.location.origin}${base}/login/`;
+}
+
+/**
  * Genera un texto formateado para compartir las credenciales del operador por WhatsApp.
  */
 export function generarMensajeWhatsappOperador(opts: {
@@ -326,7 +336,7 @@ export function generarMensajeWhatsappOperador(opts: {
   nombre?: string;
   urlLogin?: string;
 }): string {
-  const url = opts.urlLogin || (typeof window !== "undefined" ? `${window.location.origin}/login` : "https://app.sistemahipico.com/login");
+  const url = opts.urlLogin || urlLoginOperador();
   const nombreTxt = opts.nombre ? `\n👤 *Operador:* ${opts.nombre}` : "";
 
   return (

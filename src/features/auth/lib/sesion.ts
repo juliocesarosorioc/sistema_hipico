@@ -89,19 +89,56 @@ export async function conTimeout<T>(promesa: Promise<T>, ms: number, etiqueta: s
 export const TIMEOUT_SESION_MS = 8000;
 
 /**
- * Resuelve la URL absoluta/relativa hacia `/login` respetando `basePath`
- * (`/apuestas` en GitHub Pages o `NEXT_PUBLIC_BASE_PATH`), evitando errores 404
- * cuando se usa `window.location.replace(...)`.
+ * Detecta el prefijo base real de la aplicación en ejecución.
+ */
+export function basePathActual(): string {
+  const envBase = (process.env.NEXT_PUBLIC_BASE_PATH || "").trim().replace(/\/+$/, "");
+  if (envBase) return envBase;
+  if (typeof window === "undefined") return "";
+  const p = window.location.pathname || "";
+  const rutasApp = [
+    "/inicio",
+    "/dashboard",
+    "/apuestas",
+    "/gestion-jugadas",
+    "/tablas-fijas",
+    "/marcas",
+    "/remates",
+    "/dupleta",
+    "/pollas",
+    "/clientes",
+    "/grupos",
+    "/hipodromos",
+    "/ejemplares",
+    "/inteligencia-hipica",
+    "/saldos-reportes",
+    "/contabilidad",
+    "/seguridad",
+    "/taquilla",
+    "/portal",
+    "/login",
+    "/reset-password",
+  ];
+  for (const r of rutasApp) {
+    const idx = p.indexOf(r);
+    if (idx > 0) return p.slice(0, idx);
+    if (idx === 0) break;
+  }
+  if (window.location.hostname.endsWith(".github.io")) {
+    const seg = p.split("/").filter(Boolean)[0];
+    if (seg && !rutasApp.includes(`/${seg}`)) return `/${seg}`;
+    return "/sistema_hipico";
+  }
+  return "";
+}
+
+/**
+ * Resuelve la URL absoluta/relativa hacia `/login` respetando `basePath`,
+ * evitando errores 404 cuando se usa `window.location.replace(...)`.
  */
 export function rutaLoginConBasePath(): string {
-  const envBase = (process.env.NEXT_PUBLIC_BASE_PATH || "").trim().replace(/\/+$/, "");
-  if (envBase) return `${envBase}/login/`;
-  if (typeof window !== "undefined") {
-    const p = window.location.pathname || "";
-    if (p === "/apuestas" || p.startsWith("/apuestas/")) {
-      return "/apuestas/login/";
-    }
-  }
+  const base = basePathActual();
+  if (base) return `${base}/login/`;
   return "/login";
 }
 

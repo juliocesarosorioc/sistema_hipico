@@ -36,6 +36,7 @@ const CLAVE_ACCESO = "hipico_acceso";
 const CLAVE_GRUPO_ACTIVO = "hipico_grupo_activo";
 const CLAVE_MODO_OPERADOR = "hipico_modo_operador";
 const CLAVE_SESION_OPERADOR_LOCAL = "hipico_sesion_operador_local";
+const CLAVE_OPERADOR_ACTUAL = "hipico_operador_actual";
 
 function leerModoOperadorGuardado(): boolean {
   try {
@@ -350,6 +351,18 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
   const sesion = await sesionActual();
   if (!sesion) {
     if (leerSesionOperadorLocal()) {
+      try {
+        const rawOp = typeof window !== "undefined" ? localStorage.getItem(CLAVE_OPERADOR_ACTUAL) : null;
+        if (rawOp) {
+          const op = JSON.parse(rawOp);
+          if (op && op.id) {
+            useAuthStore.getState().entrarComoOperadorGrupo(op);
+            return;
+          }
+        }
+      } catch {
+        /* fallback al operador genérico */
+      }
       useAuthStore.getState().entrarComoOperador();
       return;
     }
@@ -563,6 +576,7 @@ export const useAuthStore = create<EstadoAuth>()(
           if (typeof window !== "undefined") {
             localStorage.setItem(CLAVE_MODO_OPERADOR, "1");
             localStorage.setItem(CLAVE_SESION_OPERADOR_LOCAL, "1");
+            localStorage.setItem(CLAVE_OPERADOR_ACTUAL, JSON.stringify(op));
             if (op.grupoId) localStorage.setItem("hipico_grupo_activo", op.grupoId);
           }
         } catch {
@@ -636,8 +650,14 @@ export const useAuthStore = create<EstadoAuth>()(
                 }
               }
 
-              if (coincide && opEncontrado) {
-                get().entrarComoOperadorGrupo(opEncontrado);
+              if (coincide) {
+                const opFinal = opEncontrado || {
+                  id: idLimpio,
+                  nombre: idLimpio.toUpperCase(),
+                  grupoId: "",
+                  grupoNombre: "Operador Móvil",
+                };
+                get().entrarComoOperadorGrupo(opFinal);
                 return true;
               }
             } catch {
@@ -785,6 +805,7 @@ export const useAuthStore = create<EstadoAuth>()(
           if (typeof window !== "undefined") {
             localStorage.removeItem(CLAVE_MODO_OPERADOR);
             localStorage.removeItem(CLAVE_SESION_OPERADOR_LOCAL);
+            localStorage.removeItem(CLAVE_OPERADOR_ACTUAL);
           }
         } catch {
           /* sinop */

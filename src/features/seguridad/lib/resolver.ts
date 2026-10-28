@@ -19,7 +19,7 @@
  * una capacidad que no está en ninguna matriz simplemente no se ve.
  */
 
-import { CAPACIDADES, CAPACIDADES_POR_CLAVE } from "@/features/seguridad/lib/capacidades";
+import { CAPACIDADES, CAPACIDADES_POR_CLAVE } from "./capacidades";
 import type { Decision, ExcepcionUsuario, TipoUsuario } from "@/features/seguridad/lib/tipos";
 
 /**
