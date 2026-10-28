@@ -136,6 +136,9 @@
     "../src/features/gestion/lib/carreras-liquidadas-orden.ts",
     "../src/features/liquidacion/lib/puestos.ts",
     "./auditoria-total-apuestas.test.ts",
-    "./auditoria-reforma-integral.test.ts"
+    "./auditoria-reforma-integral.test.ts",
+    "../src/features/inteligencia/lib/analista-venezuela-v4.ts",
+    "../src/features/inteligencia/lib/optimizador-5y6.ts",
+    "./inteligencia-venezuela-5y6-completo.test.ts"
   ]
 }
