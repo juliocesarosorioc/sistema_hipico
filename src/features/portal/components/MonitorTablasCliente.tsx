@@ -745,16 +745,18 @@ function ModalEjemplarCliente({
   const grupoAgotado = cupoRestanteGrupo !== null && cupoRestanteGrupo <= 0;
 
   // Notificar al admin si el cupo del caballo está agotado
-  if (caballoAgotado && !notificadoAgotado) {
-    setNotificadoAgotado(true);
-    void comunicarCupoAgotadoAdmin({
-      tabla,
-      caballoNumero: num,
-      caballoNombre: ejemplar.nombre || `Ejemplar #${num}`,
-      grupoId: sesion.grupo?.id,
-      grupoNombre: sesion.grupo?.nombre,
-    });
-  }
+  useEffect(() => {
+    if (caballoAgotado && !notificadoAgotado) {
+      setNotificadoAgotado(true);
+      void comunicarCupoAgotadoAdmin({
+        tabla,
+        caballoNumero: num,
+        caballoNombre: ejemplar.nombre || `Ejemplar #${num}`,
+        grupoId: sesion.grupo?.id,
+        grupoNombre: sesion.grupo?.nombre,
+      });
+    }
+  }, [caballoAgotado, notificadoAgotado, tabla, num, ejemplar.nombre, sesion.grupo?.id, sesion.grupo?.nombre]);
 
   const superaLimiteSaldo = !esLibre && costoTotal > maxMonto;
   const superaLimiteCupo = cantNum > limiteEfectivoTablas;

@@ -48,7 +48,7 @@ export function MonitorMarcasCliente({
   } | null>(null);
 
   // Obtener carreras del central para traer nombres de caballos
-  const { carreras: carrerasCentrales, recargar: recargarCentrales } = useRegistroCentralOpts(fecha);
+  const { carreras: carrerasCentrales } = useRegistroCentralOpts(fecha);
 
   const cargarConfigs = useCallback(async () => {
     setCargando(true);
@@ -64,8 +64,7 @@ export function MonitorMarcasCliente({
 
   useEffect(() => {
     void cargarConfigs();
-    void recargarCentrales();
-  }, [cargarConfigs, recargarCentrales]);
+  }, [cargarConfigs]);
 
   // Lista de hipódromos únicos
   const hipodromosDisponibles = useMemo(() => {

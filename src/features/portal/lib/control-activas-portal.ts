@@ -100,11 +100,13 @@ export function leerConfigActivasCache(): ConfigActivasPortal {
   }
 }
 
-function guardarConfigActivasCache(cfg: ConfigActivasPortal): void {
+function guardarConfigActivasCache(cfg: ConfigActivasPortal, notificar = true): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
-    window.dispatchEvent(new CustomEvent("config-activas-portal-cambio", { detail: cfg }));
+    if (notificar) {
+      window.dispatchEvent(new CustomEvent("config-activas-portal-cambio", { detail: cfg }));
+    }
   } catch {
     // ignore
   }
@@ -128,7 +130,7 @@ export async function leerConfigActivasPortal(): Promise<ConfigActivasPortal> {
 
     if (!error && data && data.length > 0 && data[0]?.datos) {
       const remoto = normalizarConfig(data[0].datos);
-      guardarConfigActivasCache(remoto);
+      guardarConfigActivasCache(remoto, false);
       return remoto;
     }
   } catch {

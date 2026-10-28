@@ -28,7 +28,7 @@
  * módulos filtrando jornadas distintas se pisan la lista entre sí — que es
  * justo el síntoma de "esta carrera aparece en unos módulos y en otros no".
  */
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useCallback } from "react";
 import { create } from "zustand";
 import { listarHipodromos, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
 import { listarCarrerasCentrales, type CarreraCentral } from "@/features/carreras/lib/central";
@@ -408,6 +408,11 @@ export function useRegistroCentralOpts(fecha?: string): RegistroCentral {
     [porHipodromo]
   );
 
+  const recargar = useCallback(
+    () => set((s) => ({ versionCarreras: s.versionCarreras + 1 })),
+    []
+  );
+
   return {
     fecha: f,
     hipodromos,
@@ -424,7 +429,7 @@ export function useRegistroCentralOpts(fecha?: string): RegistroCentral {
     hipodromosDelDia,
     cargando,
     error: errorCarreras,
-    recargar: () => set((s) => ({ versionCarreras: s.versionCarreras + 1 })),
+    recargar,
   };
 }
 

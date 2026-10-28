@@ -406,11 +406,11 @@ igual(resumenConAnulada.monto, 100, "la anulada NO suma al monto del panel");
       },
     ],
   });
-  ok(
+  si(
     txtPreWsp.includes("1) Juega NADAL MARCA 8 X 2 con 60,00"),
     "WhatsApp Prejugadas muestra Marca resumida: 1) Juega NADAL MARCA 8 X 2 con 60,00"
   );
-  ok(
+  si(
     txtPreWsp.includes("1) Juega SHAFLAN TABLA FIJA DEL 5 a 38 c/u 114,00 da TF"),
     "WhatsApp Prejugadas muestra Tabla Fija resumida: 1) Juega SHAFLAN TABLA FIJA DEL 5 a 38 c/u 114,00 da TF"
   );
@@ -457,7 +457,7 @@ igual(resumenConAnulada.monto, 100, "la anulada NO suma al monto del panel");
       },
     ]
   );
-  ok(
+  si(
     txtResWsp.includes("JUGADAS ADELANTADAS\n1) TABLA FIJA DEL 5 A 38\nJuega SHAFLAN $ -114,00\nDa TF $ +108,30\n2) MARCA 8 X 2 con 60,00\nJuega NADAL $ -60,00\nDa MARCAS $ +60,00"),
     "WhatsApp Resultados agrupa JUGADAS ADELANTADAS al final con formato resumido exacto"
   );
