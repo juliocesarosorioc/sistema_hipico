@@ -9,6 +9,7 @@ import {
   guardarLimitesMarcas,
   ampliarCupoMarca,
   modificarOrdenMarcas,
+  esMonedaBolivares,
   type AnalisisRiesgoMarcas,
   type AnalisisMarcaItem,
   type LimitesMarcas,
@@ -56,9 +57,9 @@ export function ControlRiesgoMarcasModal({
   const [motivoOrden, setMotivoOrden] = useState("Rebalanceo de jerarquía por exposición al riesgo");
   const [guardandoOrden, setGuardandoOrden] = useState(false);
 
-  // Estado para editar límites de la plataforma y grupo
+  // Estado para editar límites de la plataforma y grupo (120 para 100 USD / 120.000 para 100.000 VES)
   const [limiteGeneralInput, setLimiteGeneralInput] = useState("120");
-  const [limiteGrupoInput, setLimiteGrupoInput] = useState("60");
+  const [limiteGrupoInput, setLimiteGrupoInput] = useState("120");
   const [guardandoLimites, setGuardandoLimites] = useState(false);
 
   const cargarDatos = useCallback(async () => {
@@ -70,8 +71,11 @@ export function ControlRiesgoMarcasModal({
       setAnalisis(data);
       if (data) {
         setNuevoOrdenMarcas([...data.marcasConfiguradas]);
-        setLimiteGeneralInput(String(data.limites.limite_general_plataforma ?? 120));
-        setLimiteGrupoInput(String(data.limites.limite_por_grupo ?? 60));
+        const esBs = esMonedaBolivares(data.moneda);
+        const defGen = esBs ? 120000 : 120;
+        const defGrp = esBs ? 120000 : 120;
+        setLimiteGeneralInput(String(data.limites.limite_general_plataforma ?? defGen));
+        setLimiteGrupoInput(String(data.limites.limite_por_grupo ?? defGrp));
       }
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : "Error al cargar análisis de riesgo.");
@@ -269,7 +273,11 @@ export function ControlRiesgoMarcasModal({
           <div className="rounded-xl bg-white/5 p-2.5 border border-white/10">
             <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">Límite Plataforma</div>
             <div className="text-lg font-black text-cyan-300">
-              ${analisis?.limites.limite_general_plataforma ?? 120}
+              {esMonedaBolivares(analisis?.moneda) ? "Bs. " : "$"}
+              {(
+                analisis?.limites.limite_general_plataforma ??
+                (esMonedaBolivares(analisis?.moneda) ? 120000 : 120)
+              ).toLocaleString("es-VE")}
             </div>
             <div className="text-[10px] text-slate-400">Por marca individual</div>
           </div>
@@ -277,9 +285,13 @@ export function ControlRiesgoMarcasModal({
           <div className="rounded-xl bg-white/5 p-2.5 border border-white/10">
             <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">Límite Grupo</div>
             <div className="text-lg font-black text-amber-300">
-              ${analisis?.limites.limite_por_grupo ?? 60}
+              {esMonedaBolivares(analisis?.moneda) ? "Bs. " : "$"}
+              {(
+                analisis?.limites.limite_por_grupo ??
+                (esMonedaBolivares(analisis?.moneda) ? 120000 : 120)
+              ).toLocaleString("es-VE")}
             </div>
-            <div className="text-[10px] text-slate-400">Por marca / grupo</div>
+            <div className="text-[10px] text-slate-400">Por marca / grupo ({esMonedaBolivares(analisis?.moneda) ? "120.000 para 100.000" : "120 para 100"})</div>
           </div>
         </div>
 
@@ -583,16 +595,42 @@ export function ControlRiesgoMarcasModal({
               {tabActiva === "limites" && (
                 <div className="space-y-4 max-w-xl mx-auto">
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
-                    <h3 className="text-sm font-black text-slate-900">
-                      Configuración de Límites por Marca en la Carrera
-                    </h3>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-sm font-black text-slate-900">
+                        Configuración de Límites por Marca en la Carrera
+                      </h3>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLimiteGeneralInput("120");
+                            setLimiteGrupoInput("120");
+                          }}
+                          className="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100"
+                          title="Fijar por defecto para Dólares: $120 para 100"
+                        >
+                          💵 Defecto USD ($120)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLimiteGeneralInput("120000");
+                            setLimiteGrupoInput("120000");
+                          }}
+                          className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800 hover:bg-amber-100"
+                          title="Fijar por defecto para Bolívares: Bs. 120.000 para 100.000"
+                        >
+                          🇻🇪 Defecto VES (Bs. 120.000)
+                        </button>
+                      </div>
+                    </div>
 
                     <div>
                       <label className="text-xs font-black text-slate-800 block mb-1">
-                        Límite General de la Plataforma por Marca ($)
+                        Límite General de la Plataforma por Marca
                       </label>
                       <p className="text-[11px] text-slate-500 mb-1.5">
-                        Monto máximo acumulado que la casa aceptará en total para cada caballo en esta carrera.
+                        Monto máximo acumulado que la casa aceptará en total para cada caballo en esta carrera ($120 USD / Bs. 120.000 VES).
                       </p>
                       <input
                         type="number"
@@ -605,10 +643,10 @@ export function ControlRiesgoMarcasModal({
 
                     <div>
                       <label className="text-xs font-black text-slate-800 block mb-1">
-                        Límite por Grupo por Marca ($)
+                        Límite por Grupo por Marca (120 para 100 USD / 120.000 para 100.000 VES)
                       </label>
                       <p className="text-[11px] text-slate-500 mb-1.5">
-                        Monto máximo que un grupo individual puede jugar en cada marca antes de bloquear la venta.
+                        Monto máximo que un grupo individual puede jugar en cada marca antes de bloquear la venta ($120 en USD o Bs. 120.000 en Bolívares).
                       </p>
                       <input
                         type="number"

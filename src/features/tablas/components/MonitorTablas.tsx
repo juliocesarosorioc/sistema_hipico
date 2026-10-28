@@ -195,13 +195,18 @@ export function MonitorTablas({
     }
     const grupos = await listarGruposVenta().catch(() => []);
     setPatchCupos(
-      grupos.map((g) => ({
-        tabla_id: t.id,
-        grupo_id: g.id,
-        grupo_nombre: g.nombre,
-        cupos: g.cupo_tabla ?? 100,
-        max: null,
-      }))
+      grupos.map((g) => {
+        const esBs =
+          String(g.moneda ?? t.moneda ?? "").toUpperCase().includes("VES") ||
+          String(g.moneda ?? "").toUpperCase().includes("BS");
+        return {
+          tabla_id: t.id,
+          grupo_id: g.id,
+          grupo_nombre: g.nombre,
+          cupos: g.cupo_tabla ?? (esBs ? 3000 : 3),
+          max: esBs ? 1000 : 3,
+        };
+      })
     );
   };
   const [aviso, setAviso] = useState("");

@@ -16,6 +16,7 @@ import {
 import {
   verificarCupoMarcaDisponible,
   calcularPagoBrutoMarca,
+  esMonedaBolivares,
 } from "@/features/marcas/lib/control-riesgo-marcas";
 
 type CarreraData = {
@@ -64,8 +65,19 @@ export function ModalCompraMarcasCliente({
 
   const clienteId = sesion.cliente.id;
   const nombreJugador = sesion.cliente.nombre || sesion.cliente.seudonimo || "Cliente";
-  const grupoId = (sesion as unknown as { grupo?: { id?: string | number; nombre?: string } }).grupo?.id ?? sesion.cliente.grupo_id;
-  const nombreGrupo = (sesion as unknown as { grupo?: { id?: string | number; nombre?: string } }).grupo?.nombre ?? "Mi Grupo";
+  const grupoId = (sesion as unknown as { grupo?: { id?: string | number; nombre?: string; moneda?: string } }).grupo?.id ?? sesion.cliente.grupo_id;
+  const nombreGrupo = (sesion as unknown as { grupo?: { id?: string | number; nombre?: string; moneda?: string } }).grupo?.nombre ?? "Mi Grupo";
+  const monedaGrupo = (sesion as unknown as { grupo?: { id?: string | number; nombre?: string; moneda?: string } }).grupo?.moneda ?? "USD";
+  const esBs = esMonedaBolivares(monedaGrupo);
+  const simboloMoneda = esBs ? "Bs. " : "$";
+  const proporcionTexto = esBs ? "Proporción 120.000 para 100.000" : "Proporción 120 para 100";
+
+  // Inicializar monto según la moneda al abrir
+  useEffect(() => {
+    if (abierto) {
+      setMonto(esBs ? "60000" : "12");
+    }
+  }, [abierto, esBs]);
 
   // Lista de marcas y NV
   const listaMarcas = useMemo(() => (cfg ? separarNumeros(cfg.marcas) : []), [cfg]);
@@ -130,6 +142,7 @@ export function ModalCompraMarcasCliente({
       grupoNombre: nombreGrupo,
       jugadorNombre: nombreJugador,
       montoAComprar: m,
+      moneda: monedaGrupo,
     }).then((res) => {
       if (cancel) return;
       setCupoPermitido(res.permitido);
@@ -160,16 +173,23 @@ export function ModalCompraMarcasCliente({
       setErrorPreview("Indica un monto válido mayor a cero.");
       return;
     }
-    if (montoNum % 6 !== 0) {
-      setErrorPreview("En Marcas las jugadas deben ser en múltiplos de 6 (ej. $6, $12, $18, $24, $30, $60).");
-      return;
+    if (esBs) {
+      if (montoNum % 6000 !== 0 && montoNum % 6 !== 0) {
+        setErrorPreview("En Marcas en Bolívares las jugadas deben ser en múltiplos de Bs. 6.000 (ej. Bs. 6.000, 12.000, 24.000, 60.000, 120.000).");
+        return;
+      }
+    } else {
+      if (montoNum % 6 !== 0) {
+        setErrorPreview("En Marcas las jugadas deben ser en múltiplos de $6 (ej. $6, $12, $18, $24, $30, $60, $120).");
+        return;
+      }
     }
     if (!cupoPermitido) {
       setErrorPreview(cupoMotivo || "Cupo agotado para esta marca.");
       return;
     }
     if (saldoJugador !== null && montoNum > saldoJugador) {
-      setErrorPreview(`Saldo insuficiente. Tu saldo/aval disponible es $${saldoJugador.toFixed(2)}.`);
+      setErrorPreview(`Saldo insuficiente. Tu saldo/aval disponible es ${simboloMoneda}${saldoJugador.toLocaleString("es-VE", { minimumFractionDigits: 2 })}.`);
       return;
     }
 
@@ -182,11 +202,11 @@ export function ModalCompraMarcasCliente({
       fecha,
       carrera: carr,
       titulo: `MARCA #${caballo} vs #${rival}`,
-      detalle: `Matchup: #${caballo} (${cabData?.nombre || "Ejemplar"}) vs #${rival} (${rivData?.nombre || "Rival"}) · Proporción 120 para 100`,
+      detalle: `Matchup: #${caballo} (${cabData?.nombre || "Ejemplar"}) vs #${rival} (${rivData?.nombre || "Rival"}) · ${proporcionTexto}`,
       jugador: nombreJugador,
       grupo: nombreGrupo,
       monto: montoNum,
-      moneda: "USD",
+      moneda: esBs ? "VES" : "USD",
       pago: pagoPotencial,
       saldoAntes: saldoJugador ?? undefined,
       saldoDespues: saldoJugador !== null ? Math.max(0, saldoJugador - montoNum) : undefined,
@@ -236,7 +256,7 @@ export function ModalCompraMarcasCliente({
           <div className="bg-gradient-to-r from-indigo-900 via-blue-900 to-slate-900 px-5 py-3.5 text-white flex items-center justify-between">
             <div>
               <div className="text-[10px] font-black uppercase tracking-wider text-cyan-300">
-                Compra de Marcas · Proporción 120 para 100
+                Compra de Marcas · {proporcionTexto}
               </div>
               <h3 className="text-base font-black">
                 {nombreHipodromoParaMostrar(hipo)} · Carrera {carr}
@@ -256,12 +276,13 @@ export function ModalCompraMarcasCliente({
             {/* Banner de Proporción y Saldo */}
             <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
               <div className="text-amber-900">
-                <span className="font-black">⚔️ Regla de Marcas:</span> Juega <b>$120</b> para ganar{" "}
-                <b>$100</b> netos (en múltiplos de 6). Tu ejemplar debe llegar por delante del rival elegido.
+                <span className="font-black">⚔️ Regla de Marcas:</span> Juega{" "}
+                <b>{esBs ? "Bs. 120.000" : "$120"}</b> para ganar{" "}
+                <b>{esBs ? "Bs. 100.000" : "$100"}</b> netos (en múltiplos de {esBs ? "Bs. 6.000" : "6"}). Tu ejemplar debe llegar por delante del rival elegido.
               </div>
               {saldoJugador !== null && (
                 <div className="rounded-lg bg-white px-2.5 py-1 font-black text-slate-800 border border-amber-200">
-                  Saldo: ${saldoJugador.toFixed(2)}
+                  Saldo: {simboloMoneda}{saldoJugador.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
                 </div>
               )}
             </div>
@@ -350,26 +371,29 @@ export function ModalCompraMarcasCliente({
               </div>
             )}
 
-            {/* PASO 3: MONTO EN MULTIPLOS DE 6 */}
+            {/* PASO 3: MONTO */}
             {caballo && rival && (
               <div className="space-y-2">
                 <label className="text-xs font-black uppercase tracking-wider text-slate-700 block">
-                  3. Monto a Jugar ($) · Múltiplos de 6
+                  3. Monto a Jugar ({simboloMoneda.trim()}) · {esBs ? "Múltiplos de Bs. 6.000" : "Múltiplos de 6"}
                 </label>
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
-                    min="6"
-                    step="6"
+                    min={esBs ? "6000" : "6"}
+                    step={esBs ? "6000" : "6"}
                     value={monto}
                     onChange={(e) => setMonto(e.target.value)}
                     className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
-                  <span className="text-xs font-bold text-slate-500 whitespace-nowrap">USD</span>
+                  <span className="text-xs font-bold text-slate-500 whitespace-nowrap">{esBs ? "VES" : "USD"}</span>
                 </div>
 
                 <div className="flex flex-wrap gap-1.5">
-                  {[6, 12, 18, 24, 30, 60, 120].map((val) => (
+                  {(esBs
+                    ? [6000, 12000, 24000, 30000, 60000, 120000]
+                    : [6, 12, 18, 24, 30, 60, 120]
+                  ).map((val) => (
                     <button
                       key={val}
                       type="button"
@@ -380,7 +404,7 @@ export function ModalCompraMarcasCliente({
                           : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
                       }`}
                     >
-                      ${val}
+                      {simboloMoneda}{val.toLocaleString("es-VE")}
                     </button>
                   ))}
                 </div>
@@ -396,8 +420,8 @@ export function ModalCompraMarcasCliente({
                   <div className="flex justify-between items-center">
                     <span className="font-bold text-slate-600">Premio a cobrar si gana:</span>
                     <span className="text-sm font-black text-emerald-700">
-                      ${pagoPotencial.toFixed(2)} (+$
-                      {gananciaNeta.toFixed(2)} neta)
+                      {simboloMoneda}{pagoPotencial.toLocaleString("es-VE", { minimumFractionDigits: 2 })} (+
+                      {simboloMoneda}{gananciaNeta.toLocaleString("es-VE", { minimumFractionDigits: 2 })} neta)
                     </span>
                   </div>
                 </div>

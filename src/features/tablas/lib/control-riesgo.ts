@@ -3,7 +3,7 @@
 import { supabase } from "@/core/supabase";
 import type { TablaFijaRow } from "@/features/tablas/lib/tablas-fijas";
 import { parseNum, type EjemplarTabla } from "@/features/tablas/lib/tipos";
-import { listarCuposTabla, guardarCuposTabla, registrarAuditoria, type CupoTablaGrupo } from "@/features/grupos/lib/grupos";
+import { listarCuposTabla, guardarCuposTabla, listarGruposVenta, registrarAuditoria, type CupoTablaGrupo } from "@/features/grupos/lib/grupos";
 import { diaDeCarrera } from "@/features/carreras/lib/agruparHipodromos";
 
 export type CompradorEjemplar = {
@@ -99,8 +99,24 @@ export async function obtenerAnalisisRiesgoTabla(
     }
   }
 
-  // 2. Cargar cupos por grupo
-  const cuposGrupos = await listarCuposTabla(tabla.id).catch(() => []);
+  // 2. Cargar cupos por grupo (con defaults según moneda: 3 para USD, 3.000 / 1.000 para VES)
+  let cuposGrupos = await listarCuposTabla(tabla.id).catch(() => []);
+  if (cuposGrupos.length === 0) {
+    const grupos = await listarGruposVenta().catch(() => []);
+    cuposGrupos = grupos.map((g) => {
+      const esBs =
+        String(g.moneda ?? moneda ?? "").toUpperCase().includes("VES") ||
+        String(g.moneda ?? "").toUpperCase().includes("BS");
+      return {
+        tabla_id: tabla.id,
+        grupo_id: g.id,
+        grupo_nombre: g.nombre,
+        cupos: g.cupo_tabla ?? (esBs ? 3000 : 3),
+        max: esBs ? 1000 : 3,
+        cantidad_vendida: 0,
+      };
+    });
+  }
 
   // 3. Agrupar compras por caballo
   const comprasPorCaballo = new Map<string, CompradorEjemplar[]>();

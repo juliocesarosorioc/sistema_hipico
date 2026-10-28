@@ -95,8 +95,17 @@ export function CreacionGruposModule() {
   const [moneda, setMoneda] = useState("USD");
   const [monedaCuadre, setMonedaCuadre] = useState("USD");
   const [convenio, setConvenio] = useState<ValoresConvenio>(() => valoresConvenioInicial("2.5"));
-  const [cupo, setCupo] = useState("100");
+  const [cupo, setCupo] = useState("3");
   const [responsable, setResponsable] = useState("");
+
+  const cambiarMoneda = (nueva: string) => {
+    setMoneda(nueva);
+    if (nueva === "VES") {
+      if (cupo === "3" || cupo === "100") setCupo("3000");
+    } else if (nueva === "USD") {
+      if (cupo === "3000" || cupo === "100") setCupo("3");
+    }
+  };
 
   // Paso 2 — administrador
   const [admin, setAdmin] = useState<OperadorForm>(operadorVacio());
@@ -246,7 +255,7 @@ export function CreacionGruposModule() {
     setMoneda("USD");
     setMonedaCuadre("USD");
     setConvenio(valoresConvenioInicial("2.5"));
-    setCupo("100");
+    setCupo("3");
     setResponsable("");
     setAdmin(operadorVacio());
     setNOperadores(2);
@@ -454,7 +463,7 @@ export function CreacionGruposModule() {
               Moneda
               <select
                 value={moneda}
-                onChange={(e) => setMoneda(e.target.value)}
+                onChange={(e) => cambiarMoneda(e.target.value)}
                 className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
               >
                 <option value="USD">USD</option>

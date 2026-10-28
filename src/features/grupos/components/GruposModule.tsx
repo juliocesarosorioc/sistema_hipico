@@ -256,7 +256,16 @@ export function GruposModule() {
 
   const [formMonedaCuadre, setFormMonedaCuadre] = useState("USD");
 
-  const [formCupo, setFormCupo] = useState("100");
+  const [formCupo, setFormCupo] = useState("3");
+
+  const cambiarFormMoneda = (nueva: string) => {
+    setFormMoneda(nueva);
+    if (nueva === "VES") {
+      if (formCupo === "3" || formCupo === "100") setFormCupo("3000");
+    } else if (nueva === "USD") {
+      if (formCupo === "3000" || formCupo === "100") setFormCupo("3");
+    }
+  };
 
   /**
 
@@ -501,7 +510,7 @@ export function GruposModule() {
 
       moneda_cuadre: formMonedaCuadre,
 
-      cupo_tabla: parseInt(formCupo) || 100,
+      cupo_tabla: parseInt(formCupo) || (formMoneda === "VES" ? 3000 : 3),
 
       comision_default: convenio.comision_default ?? porcentajeDeEntrada(formConvenio.entre_tercios),
 
@@ -561,6 +570,12 @@ export function GruposModule() {
     setFormDiaFin("7");
 
     setFormConvenio(valoresConvenioInicial("2.5"));
+
+    setFormMoneda("USD");
+
+    setFormMonedaCuadre("USD");
+
+    setFormCupo("3");
 
     setModalGrupo(false);
 
@@ -1078,7 +1093,7 @@ export function GruposModule() {
 
                 <label className={etiqueta}>Moneda de Venta</label>
 
-                <select value={formMoneda} onChange={(e) => setFormMoneda(e.target.value)} className={inp + " font-bold"}>
+                <select value={formMoneda} onChange={(e) => cambiarFormMoneda(e.target.value)} className={inp + " font-bold"}>
 
                   <option value="USD">USD ($)</option>
 
@@ -2062,7 +2077,17 @@ export function GruposModule() {
 
                     value={editando.moneda ?? "USD"}
 
-                    onChange={(e) => setEditando({ ...editando, moneda: e.target.value })}
+                    onChange={(e) => {
+                      const m = e.target.value;
+                      const esBs = m === "VES";
+                      const cupoActual = editando.cupo_tabla;
+                      const reajustar = cupoActual == null || cupoActual === 100 || cupoActual === 3 || cupoActual === 3000;
+                      setEditando({
+                        ...editando,
+                        moneda: m,
+                        cupo_tabla: reajustar ? (esBs ? 3000 : 3) : cupoActual,
+                      });
+                    }}
 
                     className={inp + " font-bold"}
 
@@ -2108,9 +2133,14 @@ export function GruposModule() {
 
                     min={1}
 
-                    value={editando.cupo_tabla ?? 100}
+                    value={editando.cupo_tabla ?? (editando.moneda === "VES" ? 3000 : 3)}
 
-                    onChange={(e) => setEditando({ ...editando, cupo_tabla: parseInt(e.target.value) || 100 })}
+                    onChange={(e) =>
+                      setEditando({
+                        ...editando,
+                        cupo_tabla: parseInt(e.target.value) || (editando.moneda === "VES" ? 3000 : 3),
+                      })
+                    }
 
                     className={inp + " font-bold text-right"}
 

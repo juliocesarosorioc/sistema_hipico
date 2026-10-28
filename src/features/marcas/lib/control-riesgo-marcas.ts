@@ -55,6 +55,7 @@ export type AnalisisRiesgoMarcas = {
   hipodromo: string;
   carrera: number;
   fecha: string;
+  moneda?: string;
   totalRecaudado: number;
   totalJugadas: number;
   marcasConfiguradas: string[];
@@ -69,16 +70,30 @@ export type AnalisisRiesgoMarcas = {
   limites: LimitesMarcas;
 };
 
-/** Valores por defecto si la carrera no tiene límites fijados */
+/** Valores por defecto si la carrera no tiene límites fijados para grupos en Dólares (USD: 120 para 100) */
 export const LIMITES_MARCAS_DEFECTO: LimitesMarcas = {
   limite_general_plataforma: 120, // $120 por marca en la plataforma
-  limite_por_grupo: 60,           // $60 por grupo
+  limite_por_grupo: 120,          // $120 por grupo (proporción 120 para 100)
   cupos_por_marca: {},
   cupos_por_grupo: {},
 };
 
+/** Valores por defecto para grupos en Bolívares (VES / Bs.: 120.000 para 100.000) */
+export const LIMITES_MARCAS_DEFECTO_BS: LimitesMarcas = {
+  limite_general_plataforma: 120000, // Bs. 120.000 por marca en la plataforma
+  limite_por_grupo: 120000,          // Bs. 120.000 por grupo (proporción 120.000 para 100.000)
+  cupos_por_marca: {},
+  cupos_por_grupo: {},
+};
+
+/** Determina si una moneda corresponde a Bolívares */
+export function esMonedaBolivares(moneda?: string | null): boolean {
+  const m = String(moneda ?? "").trim().toUpperCase();
+  return m === "VES" || m === "BS" || m === "BOLIVARES" || m.includes("VES") || m.includes("BS");
+}
+
 /**
- * Calcula el pago bruto de una jugada de Marcas (120/100, proporción 11/6).
+ * Calcula el pago bruto de una jugada de Marcas (120/100 o 120.000/100.000, proporción 11/6).
  */
 export function calcularPagoBrutoMarca(monto: number): number {
   const gananciaNeta = (monto * 100) / 120;
@@ -86,20 +101,21 @@ export function calcularPagoBrutoMarca(monto: number): number {
 }
 
 /**
- * Normaliza los límites de una carrera combinando valores guardados con los de defecto.
+ * Normaliza los límites de una carrera combinando valores guardados con los de defecto según la moneda.
  */
-export function normalizarLimitesMarcas(raw: unknown): LimitesMarcas {
-  if (!raw || typeof raw !== "object") return { ...LIMITES_MARCAS_DEFECTO };
+export function normalizarLimitesMarcas(raw: unknown, moneda?: string): LimitesMarcas {
+  const def = esMonedaBolivares(moneda) ? LIMITES_MARCAS_DEFECTO_BS : LIMITES_MARCAS_DEFECTO;
+  if (!raw || typeof raw !== "object") return { ...def };
   const obj = raw as Record<string, unknown>;
   return {
     limite_general_plataforma:
       typeof obj.limite_general_plataforma === "number"
         ? obj.limite_general_plataforma
-        : LIMITES_MARCAS_DEFECTO.limite_general_plataforma,
+        : def.limite_general_plataforma,
     limite_por_grupo:
       typeof obj.limite_por_grupo === "number"
         ? obj.limite_por_grupo
-        : LIMITES_MARCAS_DEFECTO.limite_por_grupo,
+        : def.limite_por_grupo,
     cupos_por_marca: (obj.cupos_por_marca ?? {}) as LimitesMarcas["cupos_por_marca"],
     cupos_por_grupo: (obj.cupos_por_grupo ?? {}) as LimitesMarcas["cupos_por_grupo"],
   };
@@ -130,12 +146,10 @@ export async function obtenerAnalisisRiesgoMarcas(
   const cfg = (cfgRow ?? {}) as ConfigMarcas & { limites?: unknown };
   const marcasLista = separarNumeros(cfg.marcas ?? "");
   const nvLista = separarNumeros(cfg.nv ?? "");
-  const limites = normalizarLimitesMarcas(cfg.limites);
-
   // 2. Obtener tickets jugados de Marcas en esta carrera
   const { data: tickets } = await supabase
     .from("tickets_apuestas")
-    .select("id, cliente_juega_nombre, grupo_cobro_nombre, caballo, monto_jugado, premio_pagar, fecha_registro, nota_auditoria")
+    .select("id, cliente_juega_nombre, grupo_cobro_nombre, caballo, monto_jugado, premio_pagar, fecha_registro, nota_auditoria, moneda")
     .eq("hipodromo", hipo)
     .eq("carrera", carr)
     .ilike("nombre_jugada", "MARCA%")
@@ -145,6 +159,10 @@ export async function obtenerAnalisisRiesgoMarcas(
     // Excluir cancelados o anulados si aplica
     return t.monto_jugado != null && Number(t.monto_jugado) > 0;
   });
+
+  const esBs = ticketsValidos.some((t) => esMonedaBolivares(t.moneda as string));
+  const moneda = esBs ? "VES" : "USD";
+  const limites = normalizarLimitesMarcas(cfg.limites, moneda);
 
   const totalRecaudado = ticketsValidos.reduce((acc, t) => acc + Number(t.monto_jugado || 0), 0);
   const totalJugadas = ticketsValidos.length;
@@ -256,6 +274,7 @@ export async function obtenerAnalisisRiesgoMarcas(
     hipodromo: hipo,
     carrera: carr,
     fecha,
+    moneda,
     totalRecaudado,
     totalJugadas,
     marcasConfiguradas: marcasLista,
@@ -550,6 +569,7 @@ export async function verificarCupoMarcaDisponible(opts: {
   grupoNombre?: string;
   jugadorNombre?: string;
   montoAComprar: number;
+  moneda?: string;
 }): Promise<{
   permitido: boolean;
   motivo?: string;
@@ -566,6 +586,25 @@ export async function verificarCupoMarcaDisponible(opts: {
     const cabStr = String(opts.caballoNumero);
     const monto = Number(opts.montoAComprar) || 0;
 
+    // Determinar moneda del grupo / apuesta
+    let moneda = opts.moneda;
+    if (!moneda && opts.grupoId) {
+      try {
+        const { data: grpRow } = await supabase
+          .from("grupos_venta")
+          .select("moneda")
+          .eq("id", opts.grupoId)
+          .maybeSingle();
+        if (grpRow?.moneda) moneda = grpRow.moneda;
+      } catch {
+        /* fallback */
+      }
+    }
+    const esBs = esMonedaBolivares(moneda);
+    const defaultGen = esBs ? 120000 : 120;
+    const defaultGrp = esBs ? 120000 : 120;
+    const simbolo = esBs ? "Bs. " : "$";
+
     // 1. Obtener la configuración de la carrera y sus límites
     const { data: cfgRow } = await supabase
       .from("marcas_carrera")
@@ -575,13 +614,13 @@ export async function verificarCupoMarcaDisponible(opts: {
       .eq("carrera", carr)
       .maybeSingle();
 
-    const limites = normalizarLimitesMarcas(cfgRow?.limites);
+    const limites = normalizarLimitesMarcas(cfgRow?.limites, esBs ? "VES" : "USD");
     const cupoEspecifico = limites.cupos_por_marca?.[cabStr];
 
     const limitePlatBase =
       typeof cupoEspecifico?.max_monto === "number"
         ? cupoEspecifico.max_monto
-        : (limites.limite_general_plataforma ?? 120);
+        : (limites.limite_general_plataforma ?? defaultGen);
     const extraAutorizado = Number(cupoEspecifico?.ampliacion_autorizada) || 0;
     const limitePlataformaEfectivo = limitePlatBase + extraAutorizado;
 
@@ -590,7 +629,7 @@ export async function verificarCupoMarcaDisponible(opts: {
     const limiteGrupoEfectivo =
       typeof cupoGrupoEspecifico?.max_monto === "number"
         ? cupoGrupoEspecifico.max_monto
-        : (limites.limite_por_grupo ?? 60);
+        : (limites.limite_por_grupo ?? defaultGrp);
 
     // 2. Consultar acumulado ya jugado en esta marca
     const { data: tickets } = await supabase
@@ -632,7 +671,7 @@ export async function verificarCupoMarcaDisponible(opts: {
 
       return {
         permitido: false,
-        motivo: `Límite de grupo alcanzado para la Marca #${cabStr}. Disponible para tu grupo: $${disponibleGrp}.`,
+        motivo: `Límite de grupo alcanzado para la Marca #${cabStr}. Disponible para tu grupo: ${simbolo}${disponibleGrp.toLocaleString("es-VE")}.`,
         limitePlataforma: limitePlataformaEfectivo,
         limiteGrupo: limiteGrupoEfectivo,
         disponiblePlataforma: disponiblePlat,
@@ -655,7 +694,7 @@ export async function verificarCupoMarcaDisponible(opts: {
 
       return {
         permitido: false,
-        motivo: `Cupo de la plataforma agotado para la Marca #${cabStr}. Disponible: $${disponiblePlat}.`,
+        motivo: `Cupo de la plataforma agotado para la Marca #${cabStr}. Disponible: ${simbolo}${disponiblePlat.toLocaleString("es-VE")}.`,
         limitePlataforma: limitePlataformaEfectivo,
         limiteGrupo: limiteGrupoEfectivo,
         disponiblePlataforma: disponiblePlat,

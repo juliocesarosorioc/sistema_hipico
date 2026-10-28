@@ -529,18 +529,44 @@ export function ControlRiesgoTablasModal({
           {/* TAB 2: GESTIÓN DE CUPOS POR GRUPO DE VENTA */}
           {tabActiva === "grupos" && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-600">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-600">
                 <span>
-                  Control de tablas por grupo: asigná el cupo total de tablas que cada grupo puede comercializar y el máximo por jugador.
+                  Control de tablas por grupo (Por defecto: 3 en Dólares · 3.000 grupo y 1.000 jugador en Bolívares).
                 </span>
-                <Button
-                  size="sm"
-                  onClick={() => void ejecutarGuardarGrupos()}
-                  disabled={guardandoGrupos}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-black"
-                >
-                  {guardandoGrupos ? "Guardando…" : "💾 Guardar Cupos de Grupos"}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCuposGruposEdit((prev) =>
+                        prev.map((x) => ({ ...x, cupos: 3, max: 3 }))
+                      );
+                    }}
+                    className="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100"
+                    title="Aplicar valores por defecto para Dólares: 3 tablas fijas"
+                  >
+                    💵 Defecto USD (3 tablas)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCuposGruposEdit((prev) =>
+                        prev.map((x) => ({ ...x, cupos: 3000, max: 1000 }))
+                      );
+                    }}
+                    className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800 hover:bg-amber-100"
+                    title="Aplicar valores por defecto para Bolívares: 3.000 grupo / 1.000 jugador"
+                  >
+                    🇻🇪 Defecto VES (3.000 / 1.000)
+                  </button>
+                  <Button
+                    size="sm"
+                    onClick={() => void ejecutarGuardarGrupos()}
+                    disabled={guardandoGrupos}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-black"
+                  >
+                    {guardandoGrupos ? "Guardando…" : "💾 Guardar Cupos de Grupos"}
+                  </Button>
+                </div>
               </div>
 
               {cuposGruposEdit.length === 0 ? (

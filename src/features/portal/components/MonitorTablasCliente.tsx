@@ -661,14 +661,31 @@ function ModalEjemplarCliente({
 
         if (!activo) return;
 
-        // Cupos del grupo del usuario
+        // Cupos del grupo del usuario (por defecto: 3 para USD; 3.000 grupo y 1.000 jugador para VES)
         const gid = sesion.grupo?.id ? String(sesion.grupo.id) : String(sesion.cliente.grupo_id ?? "");
         const miGrupoCupo = cupos.find((g) => String(g.grupo_id) === gid);
+        const esBs =
+          String(sesion.grupo?.moneda ?? tabla.moneda ?? "").toUpperCase().includes("VES") ||
+          String(sesion.grupo?.moneda ?? "").toUpperCase().includes("BS");
+        const defaultCupoGrupo = esBs ? 3000 : 3;
+        const defaultMaxJugador = esBs ? 1000 : 3;
 
         if (miGrupoCupo) {
-          setLimiteGrupoTablas(miGrupoCupo.cupos !== null && miGrupoCupo.cupos !== undefined ? Number(miGrupoCupo.cupos) : null);
-          setMaxTablasJugador(miGrupoCupo.max !== null && miGrupoCupo.max !== undefined ? Number(miGrupoCupo.max) : null);
+          setLimiteGrupoTablas(
+            miGrupoCupo.cupos !== null && miGrupoCupo.cupos !== undefined
+              ? Number(miGrupoCupo.cupos)
+              : defaultCupoGrupo
+          );
+          setMaxTablasJugador(
+            miGrupoCupo.max !== null && miGrupoCupo.max !== undefined
+              ? Number(miGrupoCupo.max)
+              : defaultMaxJugador
+          );
           setVendidasGrupo(Number(miGrupoCupo.cantidad_vendida ?? 0));
+        } else {
+          setLimiteGrupoTablas(defaultCupoGrupo);
+          setMaxTablasJugador(defaultMaxJugador);
+          setVendidasGrupo(0);
         }
 
         // Conteo de tablas vendidas en este caballo
