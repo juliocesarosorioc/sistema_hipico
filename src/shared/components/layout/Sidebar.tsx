@@ -132,7 +132,6 @@ export const CATEGORIAS: Categoria[] = [
         visibleSiempre: true,
       },
       { href: "/grupos", emoji: "⚙️", txt: "Configuración / Grupos / Usuarios" },
-      { href: "/operadores", emoji: "🧑‍💼", txt: "Operadores" },
       { href: "/hipodromos", emoji: "🗺️", txt: "Hipódromos" },
       { href: "/tickets", emoji: "🛟", txt: "Tickets / Reclamos" },
       { href: "/whatsapp", emoji: "💬", txt: "WhatsApp / Notificaciones" },

@@ -2,6 +2,8 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { supabase } from "@/core/supabase";
+import { obtenerClaveCacheLocal } from "@/features/grupos/lib/operadores-grupo";
 import {
   cerrarSesion as cerrarSesionSupabase,
   conTimeout,
@@ -183,6 +185,8 @@ export type EstadoAuth = {
   setModoOperador: (activo: boolean) => void;
   /** Inicia sesión directa con perfil de Operador (`operador` / `operador2026`). */
   entrarComoOperador: () => void;
+  /** Inicia sesión directa de un operador de grupo asignado. */
+  entrarComoOperadorGrupo: (op: { id: string; nombre: string; grupoId: string; grupoNombre?: string }) => void;
   /** Inicia sesión contra Supabase Auth y siembra los permisos del perfil. */
   iniciarSesion: (identificador: string, clave: string) => Promise<boolean>;
   inicializar: () => Promise<void>;
@@ -534,6 +538,56 @@ export const useAuthStore = create<EstadoAuth>()(
         });
       },
 
+      entrarComoOperadorGrupo: (op) => {
+        const capsOperador = baseDeTipo("operador");
+        const tipoOp: TipoUsuario = {
+          id: 2,
+          nombre: "OPERADOR",
+          descripcion: `Operador de ${op.grupoNombre || "Taquilla Móvil"}`,
+          activo: true,
+          capacidades: capsOperador,
+        };
+        setGrupoActivoVigente(op.grupoId || null);
+        publicarPermisosEnCookies(["OPERADOR"], capsOperador, op.id);
+        setAccesosVigentes({
+          permisos: capsOperador,
+          esPrincipal: false,
+          usuario: op.id,
+          tipoUsuario: "OPERADOR",
+          atributos: {},
+          grupoId: op.grupoId,
+          grupoNombre: op.grupoNombre || "",
+          veTodos: false,
+        });
+        try {
+          if (typeof window !== "undefined") {
+            localStorage.setItem(CLAVE_MODO_OPERADOR, "1");
+            localStorage.setItem(CLAVE_SESION_OPERADOR_LOCAL, "1");
+            if (op.grupoId) localStorage.setItem("hipico_grupo_activo", op.grupoId);
+          }
+        } catch {
+          /* sinop */
+        }
+        set({
+          cargando: false,
+          errorLogin: null,
+          sembrada: true,
+          inicializada: true,
+          usuario: op.id,
+          email: `${op.id}@sistemahipico.local`,
+          tipoUsuario: tipoOp,
+          excepciones: {},
+          esPrincipal: false,
+          permisos: capsOperador,
+          perfiles: ["OPERADOR"],
+          modoOperador: true,
+          veTodosLosGrupos: false,
+          grupoId: op.grupoId,
+          grupoNombre: op.grupoNombre || "",
+          grupoActivo: op.grupoId || null,
+        });
+      },
+
       iniciarSesion: async (identificador, clave) => {
         set({ cargando: true, errorLogin: null });
         const idLimpio = (identificador ?? "").trim().toLowerCase().split("@")[0];
@@ -544,6 +598,52 @@ export const useAuthStore = create<EstadoAuth>()(
         try {
           const r = await login(identificador, clave);
           if (!r.ok) {
+            // Comprobar si es un operador asignado a un grupo por su usuario y clave celular
+            try {
+              const claveCache = obtenerClaveCacheLocal(idLimpio);
+              let coincide = Boolean(claveCache && claveCache === clave);
+              let opEncontrado: { id: string; nombre: string; grupoId: string; grupoNombre?: string } | null = null;
+
+              if (supabase) {
+                const { data: uFila } = await supabase
+                  .from("usuario_sistema")
+                  .select("id, nombre, activo, grupo_id, clave_acceso")
+                  .eq("id", idLimpio)
+                  .maybeSingle();
+
+                if (uFila && uFila.activo !== false) {
+                  const claveBD = (uFila as Record<string, unknown>).clave_acceso
+                    ? String((uFila as Record<string, unknown>).clave_acceso)
+                    : null;
+                  if (claveBD && claveBD === clave) coincide = true;
+
+                  if (coincide && uFila.grupo_id) {
+                    const { data: gFila } = await supabase
+                      .from("grupos_venta")
+                      .select("nombre")
+                      .eq("id", uFila.grupo_id)
+                      .maybeSingle();
+
+                    opEncontrado = {
+                      id: String(uFila.id),
+                      nombre: String(uFila.nombre ?? uFila.id),
+                      grupoId: String(uFila.grupo_id),
+                      grupoNombre: (gFila as Record<string, unknown>)?.nombre
+                        ? String((gFila as Record<string, unknown>).nombre)
+                        : undefined,
+                    };
+                  }
+                }
+              }
+
+              if (coincide && opEncontrado) {
+                get().entrarComoOperadorGrupo(opEncontrado);
+                return true;
+              }
+            } catch {
+              /* fallback normal */
+            }
+
             set({ cargando: false, errorLogin: r.error });
             return false;
           }

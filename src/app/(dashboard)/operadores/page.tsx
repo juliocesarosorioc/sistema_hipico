@@ -1,5 +1,5 @@
-import { OperadoresModule } from "@/features/operadores/components/OperadoresModule";
+import { redirect } from "next/navigation";
 
 export default function OperadoresPage() {
-  return <OperadoresModule />;
+  redirect("/grupos");
 }

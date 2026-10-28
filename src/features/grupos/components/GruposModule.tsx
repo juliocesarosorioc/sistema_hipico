@@ -90,6 +90,7 @@ import { CamposComisionesConvenio } from "@/features/grupos/components/CamposCom
 import { PanelVisibilidadPrincipal } from "@/features/grupos/components/PanelVisibilidadPrincipal";
 
 import { ReporteComisionesConvenioModal } from "@/features/grupos/components/ReporteComisionesConvenioModal";
+import { PestanaOperadoresGrupo } from "@/features/grupos/components/PestanaOperadoresGrupo";
 
 import {
 
@@ -239,7 +240,7 @@ export function GruposModule() {
 
 
   const [editando, setEditando] = useState<GrupoRow | null>(null);
-
+  const [pestanaModalGrupo, setPestanaModalGrupo] = useState<"convenio" | "operadores">("convenio");
   const [modalGrupo, setModalGrupo] = useState(false);
 
   const [guardando, setGuardando] = useState(false);
@@ -1494,11 +1495,25 @@ export function GruposModule() {
                       <div className="lg:col-span-2 flex shrink-0 items-center justify-end gap-1">
 
                         <button
+                          className="rounded px-2 py-1 text-[11px] font-bold bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 flex items-center gap-1 shadow-xs"
+                          onClick={() => {
+                            setPestanaModalGrupo("operadores");
+                            setEditarComisiones(false);
+                            setEditando(g);
+                          }}
+                          title="Gestionar operadores de acceso celular asignados a este grupo"
+                        >
+                          <span>📱</span>
+                          <span className="hidden xl:inline">Operadores</span>
+                        </button>
+
+                        <button
 
                           className="rounded px-1.5 py-1 text-[11px] font-bold bg-slate-200 text-slate-700 hover:bg-slate-300"
 
                           onClick={() => {
 
+                            setPestanaModalGrupo("convenio");
                             setEditarComisiones(false);
 
                             setEditando(g);
@@ -1519,6 +1534,7 @@ export function GruposModule() {
 
                           onClick={() => {
 
+                            setPestanaModalGrupo("convenio");
                             setEditando(g);
 
                             setEditarComisiones(true);
@@ -2026,23 +2042,48 @@ export function GruposModule() {
 
               <span>
 
-                <span className="mr-2">✏️</span> Editar Grupo y Convenio
+                <span className="mr-2">✏️</span> Grupo: {editando.nombre}
 
               </span>
 
               <button className="text-slate-300 hover:text-white" onClick={() => setEditando(null)} aria-label="Cerrar">
 
-                <span >✕</span>
+                <span>✕</span>
 
               </button>
 
             </div>
 
-            {/* Cuerpo con scroll propio: el pie con "Guardar" queda anclado
+            {/* Pestañas del Modal */}
+            <div className="flex border-b border-slate-200 bg-slate-100 px-4 pt-2 gap-2 sm:px-5">
+              <button
+                type="button"
+                onClick={() => setPestanaModalGrupo("convenio")}
+                className={`px-3 py-2 text-xs font-black uppercase tracking-wider rounded-t-lg transition-colors border-b-2 flex items-center gap-1.5 ${
+                  pestanaModalGrupo === "convenio"
+                    ? "bg-white text-indigo-700 border-indigo-600 shadow-sm"
+                    : "text-slate-600 border-transparent hover:text-slate-900 hover:bg-slate-200/60"
+                }`}
+              >
+                <span>🏢</span> Ficha y Convenio
+              </button>
+              <button
+                type="button"
+                onClick={() => setPestanaModalGrupo("operadores")}
+                className={`px-3 py-2 text-xs font-black uppercase tracking-wider rounded-t-lg transition-colors border-b-2 flex items-center gap-1.5 ${
+                  pestanaModalGrupo === "operadores"
+                    ? "bg-white text-indigo-700 border-indigo-600 shadow-sm"
+                    : "text-slate-600 border-transparent hover:text-slate-900 hover:bg-slate-200/60"
+                }`}
+              >
+                <span>📱</span> Operadores Celular
+              </button>
+            </div>
 
-                abajo y SIEMPRE visible, por denso que sea el formulario. */}
-
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+            {/* Contenido según la pestaña activa del modal */}
+            {pestanaModalGrupo === "convenio" ? (
+              <>
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
 
               <div>
 
@@ -2435,6 +2476,23 @@ export function GruposModule() {
               </Button>
 
             </div>
+          </>
+        ) : (
+          <>
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              <PestanaOperadoresGrupo
+                grupoId={editando.id}
+                grupoNombre={editando.nombre}
+                onActualizado={() => void recargar()}
+              />
+            </div>
+            <div className="flex shrink-0 justify-end gap-3 border-t border-line bg-slate-50 p-4">
+              <Button size="sm" onClick={() => setEditando(null)} className="bg-slate-800 text-white font-bold">
+                Listo / Cerrar
+              </Button>
+            </div>
+          </>
+        )}
 
           </div>
 
