@@ -475,40 +475,23 @@ export function SimuladorPistaCarrera2D({
                     </g>
                   </svg>
 
-                  {/* ETIQUETA FLOTANTE CON CARACTERÍSTICAS TÉCNICAS Y NÚMERO (SIN NOMBRE REPETIDO) */}
+                  {/* Insignia minimalista solo con el número oficial de carrera (sin nombres ni valores en la pista) */}
                   <div
-                    className={`absolute -top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap rounded-lg px-2 py-0.5 text-[10px] font-black shadow-lg border flex items-center gap-1.5 transition-all ${
-                      estaSeleccionado
-                        ? "bg-slate-950 text-amber-300 border-amber-400 ring-2 ring-amber-400"
-                        : esGanador
-                        ? "bg-emerald-950 text-emerald-200 border-emerald-400"
-                        : "bg-slate-900/95 text-slate-100 border-slate-700"
+                    className={`absolute -top-4 left-1/2 transform -translate-x-1/2 transition-transform ${
+                      estaSeleccionado ? "scale-125 z-30" : "scale-100"
                     }`}
                   >
-                    <span className="text-xs">{medalla}</span>
                     <span
                       style={{
                         backgroundColor: gualdrapa.bg,
                         color: gualdrapa.text,
                         borderColor: gualdrapa.border,
                       }}
-                      className="inline-grid h-5 w-5 place-items-center rounded font-mono font-black text-[10px] border shadow-xs"
-                      title={`Número #${ejemplar.numero} en esta carrera`}
+                      className="inline-grid h-5 w-5 place-items-center rounded-full font-mono font-black text-[10px] border-2 border-white/90 shadow-md"
+                      title={`Ejemplar #${ejemplar.numero} (${medalla})`}
                     >
                       {ejemplar.numero}
                     </span>
-                    <span className="font-black text-amber-400">{ejemplar.estilo}</span>
-                    <span className="opacity-30">|</span>
-                    <span className="font-mono text-cyan-300">SR:{ejemplar.speedRatingTTC}</span>
-                    <span className="opacity-30">|</span>
-                    <span className="text-slate-300">{ejemplar.kilos}kg</span>
-                    <span className="opacity-30">|</span>
-                    {item.ordenLlegadaProyectado === 1 ? (
-                      <span className="text-emerald-400 font-black">+{item.cuerposVentaja?.toFixed(1) ?? "1.0"}cp</span>
-                    ) : (
-                      <span className="text-slate-400">-{item.cuerposVentaja?.toFixed(1) ?? "0.0"}cp</span>
-                    )}
-                    {favorecidoTendenciaTarde && <span title="Favorecido por sesgo de pista">⚡</span>}
                   </div>
                 </div>
               </div>

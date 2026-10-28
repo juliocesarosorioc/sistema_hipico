@@ -296,7 +296,7 @@ ok("ModalImportarGacetaPdf usa filas de alto uniforme", modalGacetaSrc.includes(
 ok("ModalImportarGacetaPdf pasa divisaTexto y studNombre a DivisaStudSvg", modalGacetaSrc.includes("divisaTexto={ej.ejemplar.divisaTexto") && modalGacetaSrc.includes("mostrarGualdrapa={false}"));
 ok("ModalImportarGacetaPdf tiene contenedor de número agrandado", modalGacetaSrc.includes("h-7 w-7 min-w-[28px]"));
 
-ok("SimuladorPistaCarrera2D muestra características sin repetir nombre", pistaSrc.includes("speedRatingTTC") && pistaSrc.includes("kilos") && pistaSrc.includes("SIN NOMBRE REPETIDO"));
+ok("SimuladorPistaCarrera2D muestra solo el número sin nombres ni valores en la pista", pistaSrc.includes("sin nombres ni valores en la pista") && !pistaSrc.includes("font-mono text-cyan-300"));
 ok("SimuladorPistaCarrera2D agranda gualdrapa oficial en el lomo", pistaSrc.includes("CONTENEDOR AGRANDADO") && pistaSrc.includes('width="23"'));
 
 ok("GraficoSimulacionDinamica incluye simulación animada en vista cuerpos", graficoSimSrc.includes("animandoLlegada") && graficoSimSrc.includes("Simular Llegada"));
