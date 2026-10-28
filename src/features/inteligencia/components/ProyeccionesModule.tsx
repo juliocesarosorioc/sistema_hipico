@@ -262,6 +262,37 @@ export function ProyeccionesModule() {
     }
   };
 
+  /**
+   * Actualización automática del informe de inteligencia al cambiar de carrera
+   * o al alterarse los factores tácticos y condiciones de pista.
+   */
+  useEffect(() => {
+    if (!resultadoCarreraV4) {
+      setInformeCarrera(null);
+      return;
+    }
+
+    let cancelado = false;
+    setGenerandoInforme(true);
+
+    void generarInformeCarreraIA(resultadoCarreraV4)
+      .then((inf) => {
+        if (!cancelado) {
+          setInformeCarrera(inf);
+          setGenerandoInforme(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelado) {
+          setGenerandoInforme(false);
+        }
+      });
+
+    return () => {
+      cancelado = true;
+    };
+  }, [resultadoCarreraV4]);
+
   /** Aplicar tendencia de la tarde a toda la jornada */
   const handleAplicarTendencia = () => {
     aplicarTendenciaTarde({
@@ -685,7 +716,7 @@ export function ProyeccionesModule() {
                     className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 font-bold text-xs"
                   >
                     <span>🤖</span>
-                    <span>{generandoInforme ? "Redactando…" : "Informe Experto IA"}</span>
+                    <span>{generandoInforme ? "Actualizando…" : "Regenerar Informe IA"}</span>
                   </Button>
 
                   <Button
