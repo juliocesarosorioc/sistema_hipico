@@ -16,6 +16,7 @@ import { EjemplarModal, type VentaRapidaItem } from "@/features/tablas/component
 import { EditorCaballos } from "@/features/tablas/components/EditorCaballos";
 import { CuadroModal } from "@/features/tablas/components/CuadroModal";
 import { ReporteTablasFijasModal } from "@/features/tablas/components/ReporteTablasFijasModal";
+import { ControlRiesgoTablasModal } from "@/features/tablas/components/ControlRiesgoTablasModal";
 import { listarCuposTabla, guardarCuposTabla, listarGruposVenta, listarClientesVenta, esClienteLibre, grupoDeVentaVigente, type CupoTablaGrupo, type GrupoVenta, type ClienteVenta } from "@/features/grupos/lib/grupos";
 import { listarBanquerosGrupo } from "@/features/liquidacion/lib/banqueros";
 import { useCarrerasCentrales } from "@/features/carreras/lib/useCarrerasCentrales";
@@ -202,6 +203,7 @@ export function MonitorTablas({
   const [aviso, setAviso] = useState("");
   const [confirmarEliminar, setConfirmarEliminar] = useState<StoredTablaFija | null>(null);
   const [ejemplarModal, setEjemplarModal] = useState<{ tabla: StoredTablaFija; indice: number } | null>(null);
+  const [tablaControlRiesgo, setTablaControlRiesgo] = useState<StoredTablaFija | null>(null);
   const [opcionesVenta, setOpcionesVenta] = useState<{ grupos: GrupoVenta[]; clientes: ClienteVenta[] }>({
     grupos: [],
     clientes: [],
@@ -883,6 +885,20 @@ export function MonitorTablas({
           >
             📈 Reporte
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const primera = filtradas[0] ?? tablas[0] ?? null;
+              if (primera) setTablaControlRiesgo(primera);
+            }}
+            disabled={filtradas.length === 0 && tablas.length === 0}
+            title="Herramienta de Control de Riesgo, Cupos y Pérdida Máxima por Carrera y Ejemplar"
+            aria-label="Control de Riesgo y Cupos"
+            className="inline-flex items-center gap-1 rounded-lg border border-purple-300 bg-gradient-to-r from-purple-700 to-indigo-700 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-sm transition-colors hover:from-purple-600 hover:to-indigo-600 disabled:opacity-50"
+          >
+            🛡️ Control de Riesgo y Cupos
+          </button>
         </div>
       </div>
 
@@ -955,6 +971,17 @@ export function MonitorTablas({
                           🏁
                         </button>
                       </Guard>
+                      <Guard algunaDe={["tablas:btn_control_riesgo", "tablas:btn_editar"]}>
+                        <button
+                          type="button"
+                          onClick={() => setTablaControlRiesgo(t)}
+                          title="Control de riesgo, máximos por ejemplar y gestión de cupos por grupo"
+                          aria-label="Control de riesgo y cupos"
+                          className={BTN_CRUDA + " bg-purple-600 hover:bg-purple-500"}
+                        >
+                          🛡️
+                        </button>
+                      </Guard>
                       {onEliminar && (
                         <Guard permiso="tablas:btn_eliminar">
                           <button
@@ -1000,6 +1027,19 @@ export function MonitorTablas({
                 <span>🐴 Ejemplares</span>
                 <span className="rounded-full bg-slate-100 px-1.5 text-[9px] font-black text-slate-600">{(t.caballos ?? []).length}</span>
               </div>
+
+              {Array.isArray(t.caballos) && t.caballos.some((c) => (c.max_tablas ?? 0) > 0) && (
+                <div className="mx-1 mb-1 flex items-center justify-between rounded bg-purple-50 px-1.5 py-0.5 text-[9px] font-bold text-purple-700 border border-purple-200">
+                  <span className="flex items-center gap-1">🛡️ Riesgo & Cupos activos</span>
+                  <button
+                    type="button"
+                    onClick={() => setTablaControlRiesgo(t)}
+                    className="font-black text-purple-900 underline hover:text-purple-600"
+                  >
+                    Gestionar
+                  </button>
+                </div>
+              )}
 
               <div className="flex-1 px-1 py-0">
                 {(t.caballos ?? []).map((c, i) => {
@@ -1539,6 +1579,21 @@ export function MonitorTablas({
         fechaInicial={fechaFiltro}
         hipodromoInicial={hipodromoFiltro}
         carreraInicial={carreraFiltro}
+      />
+
+      <ControlRiesgoTablasModal
+        abierto={tablaControlRiesgo !== null}
+        tabla={tablaControlRiesgo}
+        onCerrar={() => setTablaControlRiesgo(null)}
+        onActualizado={(caballosActualizados) => {
+          if (!tablaControlRiesgo) return;
+          if (caballosActualizados && onEditar) {
+            onEditar(tablaControlRiesgo, { caballos: caballosActualizados });
+          }
+          if (caballosActualizados) {
+            setTablaControlRiesgo((prev) => (prev ? { ...prev, caballos: caballosActualizados } : null));
+          }
+        }}
       />
     </div>
   );

@@ -33,6 +33,10 @@ export type EjemplarTabla = {
    * reportes puedan explicar la decisión.
    */
   motivo_invalidacion?: string;
+  /** Límite máximo de tablas que se pueden vender en este ejemplar (control de riesgo). */
+  max_tablas?: number | null;
+  /** Tablas extras autorizadas por el administrador. */
+  tablas_autorizadas_extra?: number;
 };
 
 export type TablaGrupo = {

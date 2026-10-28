@@ -372,6 +372,9 @@ export const MODULOS_ESQUEMA: ModuloEsquema[] = [
         descripcion: "Genera el boleto de venta de la tabla.",
       }),
       c("tablas", "boton", "btn_liquidar", "Liquidar la tabla", "critico", "src/components/tablas/MonitorTablas.tsx:662"),
+      c("tablas", "boton", "btn_control_riesgo", "Control de riesgo y cupos", "escritura", "src/features/tablas/components/MonitorTablas.tsx", {
+        descripcion: "Abre la matriz de riesgo financiero, cupos por grupo y límites por ejemplar.",
+      }),
       c("tablas", "boton", "btn_eliminar", "Eliminar la tabla publicada", "critico", "src/components/tablas/MonitorTablas.tsx:665"),
       c("tablas", "boton", "btn_imprimir", "Imprimir las tablas publicadas", "escritura", "src/components/tablas/TablasModule.tsx:607"),
       c("tablas", "modal", "modal_venta", "Modal de venta de la tabla", "escritura", "src/components/tablas/MonitorTablas.tsx:746"),

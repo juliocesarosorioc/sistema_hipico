@@ -713,6 +713,21 @@ export async function listarNotificaciones(limite = 40): Promise<NotificacionRow
 /** Resumen de una notificación de datos (teléfono, email, método, etc.). */
 export function resumenNotificacion(n: NotificacionRow): string {
   const d = (n.datos ?? {}) as Record<string, unknown>;
+
+  if (n.tipo === "alerta_cupo_agotado") {
+    const hipo = d.hipodromo ? String(d.hipodromo) : "";
+    const carr = d.carrera ? String(d.carrera) : "";
+    const cab = d.caballo_nombre ? `#${d.caballo_numero} ${d.caballo_nombre}` : `#${d.caballo_numero}`;
+    let res = `<span class="font-bold text-red-600">🚨 CUPO AGOTADO:</span> ${cab} en ${hipo} C${carr}`;
+    if (Array.isArray(d.compradores) && d.compradores.length > 0) {
+      const lista = d.compradores
+        .map((c: any) => `${c.jugador_nombre || c.cliente_nombre || "Jugador"} (${c.cantidad || 1} tab)`)
+        .join(", ");
+      res += `<div class="mt-1 text-xs text-slate-600"><b>Compradores:</b> ${lista}</div>`;
+    }
+    return res;
+  }
+
   const partes: string[] = [];
   const etiqueta = (k: string): string =>
     ({ telefono: "Tlf", email: "Email", cedula_rif: "Cédula/RIF", direccion: "Dirección", metodo_pago: "Método", codigo_pais: "País" })[k] ?? k;

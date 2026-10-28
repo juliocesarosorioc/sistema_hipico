@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import type { TablaFijaRow } from "@/features/tablas/lib/tablas-fijas";
 import { colorDeNumero, textoDeNumero, parseNum, type EjemplarTabla } from "@/features/tablas/lib/tipos";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
@@ -13,6 +13,12 @@ import { Card } from "@/shared/components/ui/Card";
 import { formatoMoneda } from "@/shared/lib/vzla";
 import { TicketVentaPreview, type TicketVentaModel } from "@/features/tickets/components/TicketVentaPreview";
 import { realizarJugada, solicitarCompraTabla, type SesionPortal } from "@/features/portal/lib/portal";
+import { listarCuposTabla, type CupoTablaGrupo } from "@/features/grupos/lib/grupos";
+import {
+  comunicarCupoAgotadoAdmin,
+  extraerNumeroCaballo,
+} from "@/features/tablas/lib/control-riesgo";
+import { supabase } from "@/core/supabase";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
   if (typeof window !== "undefined") {
@@ -619,8 +625,12 @@ function ModalEjemplarCliente({
 }) {
   const [cantidad, setCantidad] = useState("1");
   const [aviso, setAviso] = useState("");
-
-  if (!abierto || !tabla || !ejemplar) return null;
+  const [limiteGrupoTablas, setLimiteGrupoTablas] = useState<number | null>(null);
+  const [maxTablasJugador, setMaxTablasJugador] = useState<number | null>(null);
+  const [vendidasGrupo, setVendidasGrupo] = useState<number>(0);
+  const [vendidasCaballo, setVendidasCaballo] = useState<number>(0);
+  const [cargandoLimites, setCargandoLimites] = useState(true);
+  const [notificadoAgotado, setNotificadoAgotado] = useState(false);
 
   const num = String(ejemplar.numero ?? "");
   const valorUnitario = parseNum(ejemplar.valor_ejemplar);
@@ -629,19 +639,128 @@ function ModalEjemplarCliente({
   const costoTotal = valorUnitario * cantNum;
   const premioPagar = premioTabla * cantNum;
 
+  // Cargar límites del grupo y ventas actuales del caballo
+  useEffect(() => {
+    let activo = true;
+    async function cargarLimites() {
+      setCargandoLimites(true);
+      try {
+        const [cupos, ticketsRes] = await Promise.all([
+          listarCuposTabla(tabla.id).catch(() => [] as CupoTablaGrupo[]),
+          supabase
+            ? supabase
+                .from("tickets_apuestas")
+                .select("caballo, cantidad_tablas, grupo_cobro_id, estado, anulada")
+                .eq("hipodromo", String(tabla.hipodromo ?? "").toUpperCase())
+                .eq("carrera", Number(tabla.carrera ?? 1))
+                .ilike("nombre_jugada", "TABLA%")
+            : Promise.resolve({ data: null, error: null }),
+        ]);
+
+        if (!activo) return;
+
+        // Cupos del grupo del usuario
+        const gid = sesion.grupo?.id ? String(sesion.grupo.id) : String(sesion.cliente.grupo_id ?? "");
+        const miGrupoCupo = cupos.find((g) => String(g.grupo_id) === gid);
+
+        if (miGrupoCupo) {
+          setLimiteGrupoTablas(miGrupoCupo.cupos !== null && miGrupoCupo.cupos !== undefined ? Number(miGrupoCupo.cupos) : null);
+          setMaxTablasJugador(miGrupoCupo.max !== null && miGrupoCupo.max !== undefined ? Number(miGrupoCupo.max) : null);
+          setVendidasGrupo(Number(miGrupoCupo.cantidad_vendida ?? 0));
+        }
+
+        // Conteo de tablas vendidas en este caballo
+        let totalVendidasCab = 0;
+        let vendidasEsteGrupo = 0;
+        if (ticketsRes?.data) {
+          for (const t of ticketsRes.data as Array<Record<string, unknown>>) {
+            if (t.anulada || t.estado === "ANULADA") continue;
+            const cNum = extraerNumeroCaballo(String(t.caballo ?? ""));
+            const cCant = Math.max(1, Math.floor(Number(t.cantidad_tablas ?? 1)));
+            if (cNum === num) {
+              totalVendidasCab += cCant;
+            }
+            if (gid && String(t.grupo_cobro_id ?? "") === gid) {
+              vendidasEsteGrupo += cCant;
+            }
+          }
+        }
+        setVendidasCaballo(totalVendidasCab);
+        if (vendidasEsteGrupo > 0) setVendidasGrupo(vendidasEsteGrupo);
+      } catch {
+        /* best-effort */
+      } finally {
+        if (activo) setCargandoLimites(false);
+      }
+    }
+    void cargarLimites();
+    return () => {
+      activo = false;
+    };
+  }, [tabla.id, tabla.hipodromo, tabla.carrera, sesion.grupo, sesion.cliente.grupo_id, num]);
+
+  if (!abierto || !tabla || !ejemplar) return null;
+
   // Control de saldo y límites autorizados por el grupo
   const esLibre = Boolean(sesion.cliente?.libre);
   const disponible = Number(sesion.resumen?.disponible ?? 0);
   const maxMonto = esLibre ? Number.POSITIVE_INFINITY : Math.max(0, disponible);
 
-  const superaLimite = !esLibre && costoTotal > maxMonto;
+  // Cupo máximo por ejemplar (si se configuró en la tabla)
+  const maxCaballo = typeof (ejemplar as Record<string, unknown>).max_tablas === "number"
+    ? Number((ejemplar as Record<string, unknown>).max_tablas)
+    : null;
+  const cupoRestanteCaballo = maxCaballo !== null ? Math.max(0, maxCaballo - vendidasCaballo) : null;
+  const cupoRestanteGrupo = limiteGrupoTablas !== null && limiteGrupoTablas > 0 ? Math.max(0, limiteGrupoTablas - vendidasGrupo) : null;
+  const maxPorJugador = maxTablasJugador !== null && maxTablasJugador > 0 ? maxTablasJugador : null;
+
+  // Límite de compra efectivo
+  const limitesEfectivos: number[] = [];
+  if (cupoRestanteCaballo !== null) limitesEfectivos.push(cupoRestanteCaballo);
+  if (cupoRestanteGrupo !== null) limitesEfectivos.push(cupoRestanteGrupo);
+  if (maxPorJugador !== null) limitesEfectivos.push(maxPorJugador);
+  if (!esLibre && valorUnitario > 0) limitesEfectivos.push(Math.floor(disponible / valorUnitario));
+
+  const limiteEfectivoTablas = limitesEfectivos.length > 0 ? Math.max(0, Math.min(...limitesEfectivos)) : 999;
+  const caballoAgotado = cupoRestanteCaballo !== null && cupoRestanteCaballo <= 0;
+  const grupoAgotado = cupoRestanteGrupo !== null && cupoRestanteGrupo <= 0;
+
+  // Notificar al admin si el cupo del caballo está agotado
+  if (caballoAgotado && !notificadoAgotado) {
+    setNotificadoAgotado(true);
+    void comunicarCupoAgotadoAdmin({
+      tabla,
+      caballoNumero: num,
+      caballoNombre: ejemplar.nombre || `Ejemplar #${num}`,
+      grupoId: sesion.grupo?.id,
+      grupoNombre: sesion.grupo?.nombre,
+    });
+  }
+
+  const superaLimiteSaldo = !esLibre && costoTotal > maxMonto;
+  const superaLimiteCupo = cantNum > limiteEfectivoTablas;
+  const bloqueado = caballoAgotado || grupoAgotado || superaLimiteSaldo || superaLimiteCupo || cantNum <= 0;
 
   const procederCompra = () => {
     if (cantNum <= 0) {
       setAviso("La cantidad de tablas debe ser mayor a 0.");
       return;
     }
-    if (superaLimite) {
+    if (caballoAgotado) {
+      setAviso("El cupo para este ejemplar está agotado. Se ha notificado al Administrador.");
+      return;
+    }
+    if (grupoAgotado) {
+      setAviso("El cupo de tablas asignado a tu grupo para esta carrera se ha agotado.");
+      return;
+    }
+    if (superaLimiteCupo) {
+      setAviso(
+        `Solo podés comprar hasta ${limiteEfectivoTablas} tabla(s) según el límite disponible de tu grupo para el momento de la compra.`
+      );
+      return;
+    }
+    if (superaLimiteSaldo) {
       setAviso(
         `El costo total (${formatoMoneda(tabla.moneda || "USD", costoTotal)}) supera el monto disponible autorizado por tu grupo (${formatoMoneda(tabla.moneda || "USD", maxMonto)}).`
       );
@@ -672,6 +791,30 @@ function ModalEjemplarCliente({
             </p>
           )}
 
+          {/* Banner de cupo agotado para el caballo */}
+          {caballoAgotado && (
+            <div className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-xs text-rose-800 space-y-1">
+              <div className="flex items-center gap-1.5 font-black uppercase text-rose-900">
+                <span>🚫</span> Cupo Agotado para este Ejemplar
+              </div>
+              <p className="text-[11px] leading-tight">
+                Se alcanzó el cupo máximo de tablas autorizadas para este caballo. Ya se le comunicó al Administrador Principal quién ha comprado y cuántas tablas para gestionar la autorización de venta adicional.
+              </p>
+            </div>
+          )}
+
+          {/* Banner de cupo agotado para el grupo */}
+          {!caballoAgotado && grupoAgotado && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
+              <div className="flex items-center gap-1.5 font-black uppercase">
+                <span>⚠️</span> Límite de Grupo Agotado
+              </div>
+              <p className="text-[11px] leading-tight">
+                Tu grupo ({nombreGrupo}) ha completado su cupo total de tablas para esta carrera ({limiteGrupoTablas} tablas).
+              </p>
+            </div>
+          )}
+
           {/* Identidad del ejemplar */}
           <div className="flex items-center gap-3">
             <span
@@ -698,10 +841,12 @@ function ModalEjemplarCliente({
                   ? "bg-red-100 text-red-600"
                   : ejemplar.invalidado
                     ? "bg-purple-100 text-purple-700"
-                    : "bg-emerald-100 text-emerald-700"
+                    : caballoAgotado
+                      ? "bg-rose-100 text-rose-700 border border-rose-300"
+                      : "bg-emerald-100 text-emerald-700"
               }`}
             >
-              {ejemplar.retirado ? "Retirado" : ejemplar.invalidado ? "Invalidado" : "Activo"}
+              {ejemplar.retirado ? "Retirado" : ejemplar.invalidado ? "Invalidado" : caballoAgotado ? "Cupo Agotado" : "Activo"}
             </span>
           </div>
 
@@ -725,16 +870,10 @@ function ModalEjemplarCliente({
             </div>
           </div>
 
-          {/*
-            IMPORTANTE (REQUISITO EXPLICITO DEL USUARIO):
-            "SIN LA OPCIÓN DE RETIRAR EJEMPLAR"
-            Se omite completamente el botón de Retirar/Rehabilitar ejemplar.
-          */}
-
           {/* SECCIÓN DE COMPRA */}
           <div className="border-t border-slate-100 pt-3 space-y-3">
             <span className="block text-xs font-black uppercase tracking-wider text-slate-600">
-              🛒 Datos de la Compra
+              🛒 Datos de la Compra y Límites
             </span>
 
             {/* GRUPO PRESELECCIONADO */}
@@ -769,30 +908,72 @@ function ModalEjemplarCliente({
               </div>
             </div>
 
-            {/* MONTO QUE AUTORIZA EL GRUPO */}
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs flex items-center justify-between">
-              <span className="font-bold text-slate-600">Monto disponible autorizado:</span>
-              <span className="font-mono font-black text-slate-900">
-                {esLibre ? "LIBRE (Sin límite)" : formatoMoneda("USD", disponible)}
-              </span>
+            {/* INFORMACIÓN DE CUPOS Y LÍMITES VIGENTES */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600 font-semibold">Disponible financiero:</span>
+                <span className="font-mono font-black text-slate-900">
+                  {esLibre ? "LIBRE (Sin límite)" : formatoMoneda("USD", disponible)}
+                </span>
+              </div>
+
+              {/* Límite de grupo al momento de la compra */}
+              {limiteGrupoTablas !== null && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600 font-semibold">Cupo restante del grupo:</span>
+                  <span className={`font-mono font-black ${cupoRestanteGrupo === 0 ? "text-rose-600" : "text-indigo-700"}`}>
+                    {cupoRestanteGrupo} de {limiteGrupoTablas} tablas
+                  </span>
+                </div>
+              )}
+
+              {/* Límite por jugador si aplica */}
+              {maxPorJugador !== null && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600 font-semibold">Máximo por jugador:</span>
+                  <span className="font-mono font-black text-slate-800">
+                    hasta {maxPorJugador} tabla(s)
+                  </span>
+                </div>
+              )}
+
+              {/* Límite del ejemplar si aplica */}
+              {maxCaballo !== null && (
+                <div className="flex items-center justify-between border-t border-slate-200 pt-1">
+                  <span className="text-slate-600 font-semibold">Cupo restante en este caballo:</span>
+                  <span className={`font-mono font-black ${caballoAgotado ? "text-rose-600" : "text-purple-700"}`}>
+                    {cupoRestanteCaballo} de {maxCaballo} tablas ({vendidasCaballo} vendidas)
+                  </span>
+                </div>
+              )}
+
+              {/* Límite máximo permitido para esta compra */}
+              <div className="flex items-center justify-between border-t border-slate-200 pt-1 text-[11px]">
+                <span className="text-slate-700 font-black uppercase">Máximo a comprar en este momento:</span>
+                <span className="font-mono font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+                  {limiteEfectivoTablas} tabla(s)
+                </span>
+              </div>
             </div>
 
             {/* CANTIDAD DE TABLAS */}
             <div>
               <label className="mb-0.5 block text-[10px] font-bold uppercase text-slate-500">
-                Cantidad de Tablas a Comprar
+                Cantidad de Tablas a Comprar (Máx: {limiteEfectivoTablas})
               </label>
               <input
                 type="number"
                 min={1}
+                max={limiteEfectivoTablas > 0 ? limiteEfectivoTablas : 1}
                 value={cantidad}
+                disabled={bloqueado && limiteEfectivoTablas <= 0}
                 onChange={(e) => setCantidad(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key !== "Enter") return;
                   e.preventDefault();
-                  procederCompra();
+                  if (!bloqueado) procederCompra();
                 }}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-right text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-right text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-100 disabled:text-slate-400"
               />
             </div>
 
@@ -812,7 +993,13 @@ function ModalEjemplarCliente({
               </div>
             </div>
 
-            {superaLimite && (
+            {superaLimiteCupo && (
+              <p className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-[11px] font-bold text-rose-700">
+                ⚠️ Solo podés comprar hasta {limiteEfectivoTablas} tabla(s) según el límite de grupo y ejemplar disponible para este momento.
+              </p>
+            )}
+
+            {!superaLimiteCupo && superaLimiteSaldo && (
               <p className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-[11px] font-bold text-rose-700">
                 ⚠️ El costo total ({formatoMoneda(tabla.moneda || "USD", costoTotal)}) supera el monto máximo que autoriza tu grupo ({formatoMoneda(tabla.moneda || "USD", maxMonto)}).
               </p>
@@ -832,11 +1019,11 @@ function ModalEjemplarCliente({
           <Button
             variant="success"
             size="md"
-            disabled={superaLimite || cantNum <= 0 || Boolean(ejemplar.retirado || ejemplar.invalidado)}
+            disabled={bloqueado || cantNum <= 0 || Boolean(ejemplar.retirado || ejemplar.invalidado)}
             onClick={procederCompra}
-            className="bg-emerald-600 hover:bg-emerald-500 font-black text-xs"
+            className="bg-emerald-600 hover:bg-emerald-500 font-black text-xs disabled:opacity-50"
           >
-            🛒 Comprar ahora
+            {caballoAgotado ? "🚫 Cupo agotado" : "🛒 Comprar ahora"}
           </Button>
         </div>
       </div>
