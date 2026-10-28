@@ -25,6 +25,10 @@ import { guardarCarreraCentral } from "@/features/carreras/lib/central";
 import { esFechaIso } from "@/core/utils/fechas";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { diaDeCarrera, type EjeFecha } from "@/features/carreras/lib/agruparHipodromos";
+import {
+  esTablaActivaEnPortal,
+  alternarTablaActivaPortal,
+} from "@/features/portal/lib/control-activas-portal";
 
 /** Monedas permitidas al corregir una tabla (el símbolo nunca se muestra). */
 const OPCIONES_MONEDA = ["USD", "VES", "BS", "EUR"];
@@ -204,6 +208,18 @@ export function MonitorTablas({
   const [confirmarEliminar, setConfirmarEliminar] = useState<StoredTablaFija | null>(null);
   const [ejemplarModal, setEjemplarModal] = useState<{ tabla: StoredTablaFija; indice: number } | null>(null);
   const [tablaControlRiesgo, setTablaControlRiesgo] = useState<StoredTablaFija | null>(null);
+  const [activasVersion, setActivasVersion] = useState(0);
+
+  useEffect(() => {
+    const handler = () => setActivasVersion((v) => v + 1);
+    window.addEventListener("config-activas-portal-cambio", handler);
+    return () => window.removeEventListener("config-activas-portal-cambio", handler);
+  }, []);
+
+  const toggleActivaPortal = async (tablaId: string | number) => {
+    await alternarTablaActivaPortal(tablaId);
+    setActivasVersion((v) => v + 1);
+  };
   const [opcionesVenta, setOpcionesVenta] = useState<{ grupos: GrupoVenta[]; clientes: ClienteVenta[] }>({
     grupos: [],
     clientes: [],
@@ -982,6 +998,24 @@ export function MonitorTablas({
                           🛡️
                         </button>
                       </Guard>
+                      <button
+                        type="button"
+                        onClick={() => void toggleActivaPortal(t.id)}
+                        title={
+                          esTablaActivaEnPortal(t.id)
+                            ? "Activa para venta en Portal (clic para ocultar a los jugadores)"
+                            : "Oculta en Portal (clic para activar y mostrar a los jugadores)"
+                        }
+                        aria-label="Activar o desactivar en portal"
+                        className={
+                          BTN_CRUDA +
+                          (esTablaActivaEnPortal(t.id)
+                            ? " bg-teal-600 hover:bg-teal-500 text-white"
+                            : " bg-slate-400 hover:bg-slate-300 text-slate-800 opacity-60")
+                        }
+                      >
+                        {esTablaActivaEnPortal(t.id) ? "👁️" : "🙈"}
+                      </button>
                       {onEliminar && (
                         <Guard permiso="tablas:btn_eliminar">
                           <button
@@ -1016,6 +1050,18 @@ export function MonitorTablas({
                   >
                     🧾 {diaDeLaTabla(t, "venta") || "—"}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => void toggleActivaPortal(t.id)}
+                    className={`rounded px-1.5 py-px text-[9px] font-black uppercase tracking-wider transition-colors cursor-pointer ${
+                      esTablaActivaEnPortal(t.id)
+                        ? "bg-teal-500/40 text-teal-100 ring-1 ring-teal-300/50"
+                        : "bg-black/30 text-slate-300 ring-1 ring-slate-400/30 opacity-70"
+                    }`}
+                    title="Clic para activar/desactivar visibilidad y venta en el Portal de Usuarios"
+                  >
+                    {esTablaActivaEnPortal(t.id) ? "🟢 Portal: Activa" : "⚪ Portal: Oculta"}
+                  </button>
                 </div>
                 <div className="mt-0.5 flex items-center justify-between rounded bg-white/20 px-1.5 py-px leading-none">
                   <span className="text-[11px] font-black uppercase tracking-wider opacity-90">💰 MONTO A PAGAR TABLA</span>

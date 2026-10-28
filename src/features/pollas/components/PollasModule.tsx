@@ -52,6 +52,10 @@ import { useReporteEnVivo } from "@/features/reportes/lib/useReporteEnVivo";
 import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
 import { MODALIDAD_POR_DEFECTO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
 import { marcarVentaPollaAdelantada } from "@/features/jugadas/lib/marcar-adelantadas";
+import {
+  esPollaActivaEnPortal,
+  alternarPollaActivaPortal,
+} from "@/features/portal/lib/control-activas-portal";
 
 /** Tablas que cambian cuando se vende, se paga o se liquida una Polla. */
 const TABLAS_VIVO_POLLA = [
@@ -460,6 +464,15 @@ function TarjetaPolla({
   const [cargando, setCargando] = useState(true);
   const [cobraA, setCobraA] = useState("");
   const [montoAporte, setMontoAporte] = useState("");
+  const [activaPortalTick, setActivaPortalTick] = useState(0);
+
+  useEffect(() => {
+    const onCambio = () => setActivaPortalTick((t) => t + 1);
+    window.addEventListener("config-activas-portal-cambio", onCambio);
+    return () => window.removeEventListener("config-activas-portal-cambio", onCambio);
+  }, []);
+
+  const activaPortal = useMemo(() => esPollaActivaEnPortal(polla.id), [polla.id, activaPortalTick]);
 
   const config = useMemo(() => configDePolla(polla), [polla]);
 
@@ -604,7 +617,33 @@ function TarjetaPolla({
             {formato(polla.precioUnitario)} por combinación
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant={activaPortal ? "success" : "outline"}
+            className={
+              activaPortal
+                ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600"
+                : "text-slate-600 border-slate-300 hover:bg-slate-100"
+            }
+            onClick={async () => {
+              const nueva = await alternarPollaActivaPortal(polla.id);
+              setActivaPortalTick((t) => t + 1);
+              toast(
+                nueva
+                  ? `🟢 Polla "${polla.nombre}" activada en portal.`
+                  : `⚪ Polla "${polla.nombre}" oculta en portal.`,
+                nueva ? "success" : "info"
+              );
+            }}
+            title={
+              activaPortal
+                ? "Polla visible en portal de clientes (clic para ocultar)"
+                : "Polla oculta en portal de clientes (clic para activar)"
+            }
+          >
+            {activaPortal ? "🟢 Portal: Activa" : "⚪ Portal: Oculta"}
+          </Button>
           <Guard permiso="pollas:btn_crear_polla">
             <Button size="sm" variant="outline" onClick={onEditar}>
               Configurar

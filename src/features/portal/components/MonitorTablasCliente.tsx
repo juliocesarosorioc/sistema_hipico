@@ -18,6 +18,7 @@ import {
   comunicarCupoAgotadoAdmin,
   extraerNumeroCaballo,
 } from "@/features/tablas/lib/control-riesgo";
+import { esTablaActivaEnPortal } from "@/features/portal/lib/control-activas-portal";
 import { supabase } from "@/core/supabase";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
@@ -130,6 +131,7 @@ export function MonitorTablasCliente({
   const filtradas = useMemo(() => {
     return abiertas
       .filter((t) => {
+        if (!esTablaActivaEnPortal(t.id)) return false;
         if (fechaFiltro && diaDeLaTabla(t, ejeFecha) !== fechaFiltro) return false;
         if (hipodromoFiltro && t.hipodromo !== hipodromoFiltro) return false;
         if (carreraFiltro && String(t.carrera ?? "").trim() !== carreraFiltro) return false;

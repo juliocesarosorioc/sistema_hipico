@@ -13,6 +13,10 @@ import {
   type AnalisisMarcaItem,
   type LimitesMarcas,
 } from "@/features/marcas/lib/control-riesgo-marcas";
+import {
+  esMarcaActivaEnPortal,
+  alternarMarcaActivaPortal,
+} from "@/features/portal/lib/control-activas-portal";
 
 type Props = {
   abierto: boolean;
@@ -36,6 +40,7 @@ export function ControlRiesgoMarcasModal({
   const [cargando, setCargando] = useState(false);
   const [aviso, setAviso] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [activasVersion, setActivasVersion] = useState(0);
 
   // Submodal para ampliar cupo de una marca específica
   const [ampliandoMarca, setAmpliandoMarca] = useState<AnalisisMarcaItem | null>(null);
@@ -210,13 +215,31 @@ export function ControlRiesgoMarcasModal({
               </h2>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onCerrar}
-            className="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-bold text-white hover:bg-white/20"
-          >
-            ✕ Cerrar
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                await alternarMarcaActivaPortal(hipodromo, carrera, fecha);
+                setActivasVersion((v) => v + 1);
+                onActualizado?.();
+              }}
+              className={`rounded-lg px-2.5 py-1 text-xs font-black transition-all ${
+                esMarcaActivaEnPortal(hipodromo, carrera, fecha)
+                  ? "bg-teal-500 text-white hover:bg-teal-400 shadow-sm"
+                  : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+              }`}
+              title="Clic para activar/desactivar visibilidad y venta en el Portal de Usuarios"
+            >
+              {esMarcaActivaEnPortal(hipodromo, carrera, fecha) ? "🟢 Visible en Portal" : "⚪ Oculta en Portal"}
+            </button>
+            <button
+              type="button"
+              onClick={onCerrar}
+              className="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-bold text-white hover:bg-white/20"
+            >
+              ✕ Cerrar
+            </button>
+          </div>
         </div>
 
         {/* METRICAS DE RIESGO SUPERIORES */}

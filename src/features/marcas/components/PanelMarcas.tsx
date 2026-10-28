@@ -30,6 +30,10 @@ import { ModalMarcas } from "@/features/marcas/components/ModalMarcas";
 import { ModalMarcasEditor } from "@/features/marcas/components/ModalMarcasEditor";
 import { ReporteMarcasJugadasModal } from "@/features/marcas/components/ReporteMarcasJugadasModal";
 import { ControlRiesgoMarcasModal } from "@/features/marcas/components/ControlRiesgoMarcasModal";
+import {
+  esMarcaActivaEnPortal,
+  alternarMarcaActivaPortal,
+} from "@/features/portal/lib/control-activas-portal";
 import { usePizarraOficial } from "@/features/marcas/lib/usePizarraOficial";
 import type { PizarraMarca } from "@/features/marcas/lib/marcas";
 
@@ -139,6 +143,18 @@ export function PanelMarcas() {
     carrera: number;
     fecha: string;
   } | null>(null);
+  const [activasVersion, setActivasVersion] = useState(0);
+
+  useEffect(() => {
+    const handler = () => setActivasVersion((v) => v + 1);
+    window.addEventListener("config-activas-portal-cambio", handler);
+    return () => window.removeEventListener("config-activas-portal-cambio", handler);
+  }, []);
+
+  const toggleActivaPortalMarca = async (hipo: string, carr: number, f: string) => {
+    await alternarMarcaActivaPortal(hipo, carr, f);
+    setActivasVersion((v) => v + 1);
+  };
   /** Raíz de exportación (fuera de pantalla) con las hojas A4 de marcas. */
   const exportRootRef = useRef<HTMLDivElement>(null);
   /** Etiqueta de progreso mientras se captura PNG / JPG / PDF. */
@@ -752,6 +768,22 @@ export function PanelMarcas() {
                                 className={`${botonCls} bg-purple-600 text-white hover:bg-purple-500`}
                               >
                                 🛡️
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void toggleActivaPortalMarca(c.hipodromo, c.carrera, fecha)}
+                                title={
+                                  esMarcaActivaEnPortal(c.hipodromo, c.carrera, fecha)
+                                    ? "Visible en Portal de Usuarios (clic para ocultar a los clientes)"
+                                    : "Oculta en Portal de Usuarios (clic para activar y mostrar a los clientes)"
+                                }
+                                className={`${botonCls} ${
+                                  esMarcaActivaEnPortal(c.hipodromo, c.carrera, fecha)
+                                    ? "bg-teal-600 text-white hover:bg-teal-500"
+                                    : "bg-slate-300 text-slate-600 hover:bg-slate-400 opacity-60"
+                                }`}
+                              >
+                                {esMarcaActivaEnPortal(c.hipodromo, c.carrera, fecha) ? "👁️" : "🙈"}
                               </button>
                               <button
                                 type="button"

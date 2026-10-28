@@ -12,6 +12,7 @@ import {
   type ConfigMarcas,
 } from "@/features/marcas/lib/marcas";
 import { ModalCompraMarcasCliente } from "@/features/portal/components/ModalCompraMarcasCliente";
+import { esMarcaActivaEnPortal } from "@/features/portal/lib/control-activas-portal";
 import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
 import { type CarreraCentral } from "@/features/carreras/lib/central";
 
@@ -76,6 +77,7 @@ export function MonitorMarcasCliente({
   // Filtrar configuraciones
   const filtradas = useMemo(() => {
     return configs.filter((c) => {
+      if (!esMarcaActivaEnPortal(c.hipodromo, c.carrera, c.fecha)) return false;
       if (hipodromoFiltro !== "TODOS" && c.hipodromo !== hipodromoFiltro) return false;
       return true;
     });

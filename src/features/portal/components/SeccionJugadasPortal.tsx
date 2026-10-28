@@ -50,6 +50,15 @@ import {
 } from "@/features/portal/lib/bloqueo-jugadas";
 import { MonitorTablasCliente } from "@/features/portal/components/MonitorTablasCliente";
 import { MonitorMarcasCliente } from "@/features/portal/components/MonitorMarcasCliente";
+import { BannerJugadasActivasPortal } from "@/features/portal/components/BannerJugadasActivasPortal";
+import {
+  esTablaActivaEnPortal,
+  esMarcaActivaEnPortal,
+  esRemateActivoEnPortal,
+  esDupletaActivaEnPortal,
+  esPollaActivaEnPortal,
+  esPuestoActivoEnPortal,
+} from "@/features/portal/lib/control-activas-portal";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -60,7 +69,7 @@ const hoyIso = (): string => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
-type RematePortalRow = {
+export type RematePortalRow = {
   id: string;
   hipodromo: string;
   carrera: number;
@@ -200,6 +209,17 @@ export function SeccionJugadasPortal({
 
   return (
     <div className="space-y-4">
+      {/* Banner Informativo de Jugadas Activas en Vivo */}
+      <BannerJugadasActivasPortal
+        tablas={tablas}
+        marcas={marcas}
+        dupletas={dupletas}
+        pollas={pollas}
+        remates={remates}
+        modalidadActiva={modalidad}
+        onSeleccionarModalidad={(m) => setModalidad(m)}
+      />
+
       {/* Encabezado de la Sección de Jugadas */}
       <div className="rounded-2xl bg-gradient-to-r from-indigo-950 via-indigo-900 to-slate-900 p-4 text-white shadow-md">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -346,7 +366,7 @@ export function SeccionJugadasPortal({
           {modalidad === "remates" && (
             <ModalidadRematesPortal
               sesion={sesion}
-              remates={remates}
+              remates={remates.filter((r) => esRemateActivoEnPortal(r.id))}
               bloqueada={estaBloqueada}
               enviando={enviando}
               setEnviando={setEnviando}
@@ -358,7 +378,10 @@ export function SeccionJugadasPortal({
           {modalidad === "dupletas" && (
             <ModalidadDupletasPortal
               sesion={sesion}
-              dupletas={dupletas}
+              dupletas={dupletas.filter((d) => {
+                const k = `${String(d.hipodromo).trim().toUpperCase()}|${d.fecha}|${d.carrera1}|${d.carrera2}`;
+                return esDupletaActivaEnPortal(k);
+              })}
               bloqueada={estaBloqueada}
               enviando={enviando}
               setEnviando={setEnviando}
@@ -370,7 +393,7 @@ export function SeccionJugadasPortal({
           {modalidad === "pollas" && (
             <ModalidadPollasPortal
               sesion={sesion}
-              pollas={pollas}
+              pollas={pollas.filter((p) => esPollaActivaEnPortal(p.id))}
               bloqueada={estaBloqueada}
               enviando={enviando}
               setEnviando={setEnviando}
@@ -1198,8 +1221,12 @@ function ModalidadPuestosPortal({
   const [monto, setMonto] = useState("20");
 
   const MODALIDADES_PUESTO = ["1P", "2P", "3P", "10/8", "10/9", "10/7", "10/6", "NINI", "1Y2N", "2Y3N"];
+  const carreraActivaEnPortal = esPuestoActivoEnPortal(hipo, carrera);
 
   const registrarPuesto = async () => {
+    if (!carreraActivaEnPortal) {
+      return toast("Esta carrera no está activa para la venta de Puestos en este momento.", "warning");
+    }
     if (bloqueada) {
       return toast("La venta de Puestos está bloqueada. Solicitá el desbloqueo al Administrador.", "warning");
     }
@@ -1307,6 +1334,13 @@ function ModalidadPuestosPortal({
           </div>
         </div>
 
+        {!carreraActivaEnPortal && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800 font-bold flex items-center gap-2">
+            <span>⏸️ Carrera en pausa</span>
+            <span className="font-normal">La carrera {carrera} de {hipo} no está activa para la venta de puestos en este momento.</span>
+          </div>
+        )}
+
         <div className="flex justify-end">
           {bloqueada ? (
             <Button
@@ -1319,7 +1353,7 @@ function ModalidadPuestosPortal({
           ) : (
             <Button
               size="sm"
-              disabled={enviando || !caballos.trim()}
+              disabled={enviando || !caballos.trim() || !carreraActivaEnPortal}
               onClick={() => void registrarPuesto()}
               className="bg-indigo-600 hover:bg-indigo-500 text-white font-black"
             >

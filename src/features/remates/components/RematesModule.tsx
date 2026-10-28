@@ -23,6 +23,10 @@ import { clienteDelUsuario } from "@/features/seguridad/lib/accesos";
 import { enviarAutomaticoSiActivo, plantillaPorId, reemplazarVarsTablas } from "@/features/whatsapp/lib/whatsapp";
 import { CargaResultadosRapida } from "@/features/liquidacion/components/CargaResultadosRapida";
 import { ReporteRematesModal } from "@/features/remates/components/ReporteRematesModal";
+import {
+  esRemateActivoEnPortal,
+  alternarRemateActivoPortal,
+} from "@/features/portal/lib/control-activas-portal";
 import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
 import { MODALIDAD_POR_DEFECTO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
 import { marcarTicketsRecientesDe, ultimoTicketId } from "@/features/jugadas/lib/marcar-adelantadas";
@@ -208,6 +212,13 @@ export function RematesModule() {
   >([]);
   const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
   const [clientes, setClientes] = useState<ClienteRow[]>([]);
+  const [activasVersion, setActivasVersion] = useState(0);
+
+  useEffect(() => {
+    const handler = () => setActivasVersion((v) => v + 1);
+    window.addEventListener("config-activas-portal-cambio", handler);
+    return () => window.removeEventListener("config-activas-portal-cambio", handler);
+  }, []);
 
   const confirmar = useConfirmar();
 
@@ -297,6 +308,17 @@ export function RematesModule() {
           />
           {seleccionado && (
             <>
+              <Button
+                variant={esRemateActivoEnPortal(seleccionado.id) ? "success" : "outline"}
+                size="md"
+                onClick={async () => {
+                  await alternarRemateActivoPortal(seleccionado.id);
+                  setActivasVersion((v) => v + 1);
+                }}
+                title="Activar/desactivar este remate en el portal de usuarios"
+              >
+                {esRemateActivoEnPortal(seleccionado.id) ? "🟢 Portal: Activo" : "⚪ Portal: Oculto"}
+              </Button>
               <Button
                 variant="outline"
                 size="md"
@@ -537,6 +559,25 @@ function ListaRemates({
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await alternarRemateActivoPortal(r.id);
+                        }}
+                        title={
+                          esRemateActivoEnPortal(r.id)
+                            ? "Activo para venta en Portal (clic para ocultar a los clientes)"
+                            : "Oculto en Portal (clic para activar y mostrar a los clientes)"
+                        }
+                        className={`rounded px-2 py-1 text-xs font-black border transition-colors ${
+                          esRemateActivoEnPortal(r.id)
+                            ? "border-teal-500 bg-teal-50 text-teal-700 hover:bg-teal-100"
+                            : "border-slate-300 bg-slate-100 text-slate-500 hover:bg-slate-200"
+                        }`}
+                      >
+                        {esRemateActivoEnPortal(r.id) ? "🟢 Portal" : "⚪ Oculto"}
+                      </button>
                       <Button variant="outline" size="sm" onClick={() => onVer(r)}>
                         📊 Ver
                       </Button>

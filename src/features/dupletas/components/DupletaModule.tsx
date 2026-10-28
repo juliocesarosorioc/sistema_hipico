@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
@@ -33,6 +33,11 @@ import { ReporteDupletasModal } from "@/features/dupletas/components/ReporteDupl
 import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
 import { MODALIDAD_POR_DEFECTO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
 import { marcarTicketsAdelantados } from "@/features/jugadas/lib/marcar-adelantadas";
+import {
+  esDupletaActivaEnPortal,
+  alternarDupletaActivaPortal,
+  claveDupletaPortal,
+} from "@/features/portal/lib/control-activas-portal";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 const inputSel =
@@ -185,6 +190,13 @@ export function DupletaModule() {
    * venta que salga de esta pantalla, incluida la reventa por ajuste de precio.
    */
   const [modalidadTiempo, setModalidadTiempo] = useState<ModalidadTiempo>(MODALIDAD_POR_DEFECTO);
+  const [, setActivasPortalTick] = useState(0);
+
+  useEffect(() => {
+    const onCambio = () => setActivasPortalTick((t) => t + 1);
+    window.addEventListener("config-activas-portal-cambio", onCambio);
+    return () => window.removeEventListener("config-activas-portal-cambio", onCambio);
+  }, []);
 
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
     emitirToast(msg, tipo);
@@ -1128,6 +1140,38 @@ export function DupletaModule() {
               <span className="normal-case">{nombreHip(matriz.hipodromo)}</span> · {matriz.fecha} · Carrera {matriz.carrera1} × Carrera {matriz.carrera2}
             </h4>
             <span className="flex items-center gap-2">
+              {(() => {
+                const clave = claveDupletaPortal(matriz.hipodromo, matriz.fecha, matriz.carrera1, matriz.carrera2);
+                const activa = esDupletaActivaEnPortal(clave);
+                return (
+                  <Button
+                    variant={activa ? "success" : "outline"}
+                    size="sm"
+                    className={
+                      activa
+                        ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600"
+                        : "text-slate-600 border-slate-300 hover:bg-slate-100"
+                    }
+                    onClick={async () => {
+                      const nueva = await alternarDupletaActivaPortal(clave);
+                      setActivasPortalTick((t) => t + 1);
+                      toast(
+                        nueva
+                          ? "🟢 Dupleta activada en portal de clientes."
+                          : "⚪ Dupleta oculta en portal de clientes.",
+                        nueva ? "success" : "info"
+                      );
+                    }}
+                    title={
+                      activa
+                        ? "Dupleta activa en portal de clientes (clic para pausar/ocultar)"
+                        : "Dupleta oculta en portal de clientes (clic para activar)"
+                    }
+                  >
+                    {activa ? "🟢 Portal: Activa" : "⚪ Portal: Oculta"}
+                  </Button>
+                );
+              })()}
               <span
                 className="rounded-full bg-emerald-600 px-3 py-1 text-sm font-black uppercase tracking-wide text-white shadow-sm"
                 title="Monto a pagar configurado en la dupleta. Es un dato fijo: no se suma ni se resta con las ventas."
@@ -1490,7 +1534,38 @@ export function DupletaModule() {
                             ${recaudado.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
                           </td>
                           <td className="px-3 py-2">
-                            <div className="flex justify-end gap-1.5">
+                            <div className="flex justify-end items-center gap-1.5">
+                              {(() => {
+                                const claveG = claveDupletaPortal(g.hipodromo, g.fecha, g.carrera1, g.carrera2);
+                                const activaPortal = esDupletaActivaEnPortal(claveG);
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const nueva = await alternarDupletaActivaPortal(claveG);
+                                      setActivasPortalTick((t) => t + 1);
+                                      toast(
+                                        nueva
+                                          ? `🟢 C${g.carrera1}×C${g.carrera2} activa en portal.`
+                                          : `⚪ C${g.carrera1}×C${g.carrera2} oculta en portal.`,
+                                        nueva ? "success" : "info"
+                                      );
+                                    }}
+                                    className={`rounded px-2 py-1 text-[11px] font-black uppercase transition-all ${
+                                      activaPortal
+                                        ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+                                        : "border border-slate-300 bg-slate-100 text-slate-500 hover:bg-slate-200"
+                                    }`}
+                                    title={
+                                      activaPortal
+                                        ? "Dupleta visible en portal (clic para ocultar)"
+                                        : "Dupleta oculta en portal (clic para activar)"
+                                    }
+                                  >
+                                    {activaPortal ? "🟢 Portal" : "⚪ Oculta"}
+                                  </button>
+                                );
+                              })()}
                               <Button variant="default" size="sm" onClick={() => cargarGuardada(g)} title="Cargar en la matriz">
                                 {activa ? "✔ Cargada" : "📂 Cargar"}
                               </Button>
