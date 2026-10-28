@@ -53,7 +53,12 @@ export type ResultadoGaceta = {
 export const CLAVE_GEMINI_KEY = "club_gemini_key";
 
 // Modelos Flash de respaldo estables (con cuota oficial y alta disponibilidad).
-export const MODELOS_GEMINI = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+export const MODELOS_GEMINI = [
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-8b",
+  "gemini-2.0-flash-lite",
+];
 
 // Modelos experimentales, inestables o que devuelven 503/429/404 al invocar generateContent
 const FLASH_EXCLUIDOS = /image|preview|tuned|babbage|-tts|embedding|gemini-3\./i;

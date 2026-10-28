@@ -295,7 +295,14 @@ async function persistirFila(
       const raw = op.data as { id?: number | string } | null;
       return { id: modo === "insert" ? raw?.id : id };
     }
-    const col = columnaInexistente(op.error.message || "");
+    const msg = op.error.message || "";
+    if (/row-level security/i.test(msg)) {
+      return {
+        error:
+          "Permiso denegado por RLS en 'tablas_fijas'. Ejecuta el script sql/reparar_rls_tablas_fijas_y_carreras.sql en el SQL Editor de Supabase para autorizar la publicación.",
+      };
+    }
+    const col = columnaInexistente(msg);
     if (!col || !(col in actual)) return { error: op.error.message };
     delete actual[col];
   }
