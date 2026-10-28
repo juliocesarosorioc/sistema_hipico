@@ -135,13 +135,13 @@ function parseLineas(t: string, hipo: string): Caballo[] {
  * `overflow-x-auto` con grids `min-w` para no desbordar el layout principal.
  */
 export function CargaPrograma() {
-  const [fecha, setFecha] = useState(() => hoyLocal());
+  const [fecha, setFecha] = useState("");
   const [hipodromo, setHipodromo] = useState("");
   const hipodromosActivos = useHipodromosActivos();
   const [padron, setPadron] = useState<OpcionPadron[]>([]);
   const [programa, setPrograma] = useState<ProgramaDia | null>(null);
   const [carreras, setCarreras] = useState<CarreraPrograma[]>([]);
-  const [cargando, setCargando] = useState(true);
+  const [cargando, setCargando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [guardado, setGuardado] = useState<string>("");
   const [modo, setModo] = useState<"rapida" | "manual">("rapida");
@@ -174,6 +174,11 @@ export function CargaPrograma() {
   // cargar/editar días distintos de hoy (incluidos los FUTUROS). Antes solo se
   // leía el de hoy al montar y cambiar la fecha no traía el programa correcto.
   useEffect(() => {
+    if (!fecha) {
+      setPrograma(null);
+      setCargando(false);
+      return;
+    }
     let vivo = true;
     setCargando(true);
     void leerProgramaPorFecha(fecha).then((prog) => {
@@ -268,6 +273,7 @@ export function CargaPrograma() {
   };
 
   const guardar = async () => {
+    if (!fecha) return toast("Seleccione la fecha de la jornada.", "warning");
     const hipo = hipodromo.trim().toUpperCase();
     if (!hipo) return toast("Seleccione o escriba el hipódromo.", "warning");
     if (!carreras.length) return toast("Agregue al menos una carrera al programa.", "warning");
@@ -322,7 +328,7 @@ export function CargaPrograma() {
             label="Fecha de la jornada"
             type="date"
             value={fecha}
-            onChange={(e) => setFecha(e.target.value || hoyLocal())}
+            onChange={(e) => setFecha(e.target.value)}
           />
           <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
             <span>Hipódromo</span>
@@ -330,7 +336,7 @@ export function CargaPrograma() {
           </label>
           <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-2">
             <div className="flex-1" />
-            <Button variant="outline" size="md" onClick={() => void cargarPrograma(fecha)}>
+            <Button variant="outline" size="md" disabled={!fecha} onClick={() => void cargarPrograma(fecha)}>
               ⟳ Recargar
             </Button>
           </div>
@@ -346,9 +352,16 @@ export function CargaPrograma() {
         {guardado && <p className="mt-2 text-[11px] font-bold text-success-600">✔ {guardado}</p>}
       </Card>
 
-      {!hipodromo.trim() ? (
+      {!fecha ? (
         <Card className="p-8 text-center">
-          <p className="text-sm font-bold text-slate-600">🏇 Seleccione fecha y hipódromo para comenzar</p>
+          <span className="text-3xl">📅</span>
+          <p className="mt-2 text-sm font-bold text-slate-700">Seleccione una fecha de la jornada</p>
+          <p className="mt-1 text-xs text-slate-500">No se cargará ningún programa de forma automática. Elija una fecha para comenzar.</p>
+        </Card>
+      ) : !hipodromo.trim() ? (
+        <Card className="p-8 text-center">
+          <span className="text-3xl">🏇</span>
+          <p className="mt-2 text-sm font-bold text-slate-700">Seleccione un hipódromo para comenzar</p>
           <p className="mt-1 text-xs text-slate-500">Se desplegará la matriz de carreras y ejemplares del día.</p>
         </Card>
       ) : cargando ? (

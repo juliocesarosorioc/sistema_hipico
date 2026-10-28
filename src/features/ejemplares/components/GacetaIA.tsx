@@ -205,7 +205,7 @@ export function GacetaIA() {
    *  FUTUROS: las carreras del documento que no traigan fecha propia se sellan
    *  con esta fecha, para poder cargar/registrar/publicar jornadas posteriores. */
   const [fechaJornada, setFechaJornada] = useState(
-    () => useCarrerasDiaStore.getState().fechaSeleccionada || hoyLocal()
+    () => useCarrerasDiaStore.getState().fechaSeleccionada || ""
   );
   /** Ref con el valor más reciente: la usan la recuperación del registro y la
    *  extracción, que corren una sola vez y no deben depender del estado. */
@@ -257,7 +257,12 @@ export function GacetaIA() {
       registroAutomatico = false
     ): Promise<boolean> => {
       if (!loteCarreras.length) return false;
-      const fecha = fechaDestino || normalizarFechaIso(fechaJornadaRef.current) || hoyLocal();
+      const fecha = fechaDestino || normalizarFechaIso(fechaJornadaRef.current);
+      if (!fecha) {
+        setEstado("⚠️ Debe seleccionar la fecha de la jornada antes de registrar.");
+        toast("Debe seleccionar la fecha de la jornada antes de registrar.", "warning");
+        return false;
+      }
       const lote = loteCarreras.map((c) => ({ ...c, fecha }));
       setSincronizando(true);
       setFaseRegistro("registrando");
@@ -622,7 +627,13 @@ export function GacetaIA() {
         toast("La IA no encontró carreras válidas para registrar.", "warning");
         return;
       }
-      const fechaDestino = normalizarFechaIso(fechaJornadaRef.current) || hoyLocal();
+      const fechaDestino = normalizarFechaIso(fechaJornadaRef.current);
+      if (!fechaDestino) {
+        setFaseRegistro("error");
+        setEstado("⚠️ Por favor seleccione la fecha de la jornada antes de procesar.");
+        toast("Por favor seleccione la fecha de la jornada antes de procesar.", "warning");
+        return;
+      }
       const lista: CarreraRegistro[] = dedupe.lista.map((c) => ({
         ...c,
         // La fecha elegida para la jornada manda sobre fechas inferidas por IA:
@@ -856,10 +867,10 @@ export function GacetaIA() {
                 type="date"
                 value={fechaJornada}
                 onChange={(e) => {
-                  const fecha = e.target.value || hoyLocal();
+                  const fecha = e.target.value;
                   fechaJornadaRef.current = fecha;
                   setFechaJornada(fecha);
-                  useCarrerasDiaStore.getState().setFecha(fecha);
+                  if (fecha) useCarrerasDiaStore.getState().setFecha(fecha);
                 }}
                 className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
               />

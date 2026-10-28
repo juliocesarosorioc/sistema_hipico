@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { getHorseColor } from "@/shared/lib/horseColors";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -92,7 +92,7 @@ export function CarrerasDiaModule() {
   const hipodromos = useMemo(() => opcionesHipodromo(catalogo), [catalogo]);
   const versionLogos = useVersionLogos();
   const [hipodromo, setHipodromo] = useState("");
-  const fecha = useCarrerasDiaStore((s) => s.fechaSeleccionada || hoyLocal());
+  const fecha = useCarrerasDiaStore((s) => s.fechaSeleccionada);
   const setFecha = useCarrerasDiaStore((s) => s.setFecha);
   const nombreHipoFiltro = nombrePropioHipodromo(hipodromo, hipodromos);
 
@@ -132,6 +132,11 @@ export function CarrerasDiaModule() {
    * instantáneo y ambos paneles siempre muestran la misma data.
    */
   const refrescar = useCallback(async () => {
+    if (!fecha) {
+      setTodas([]);
+      setCargando(false);
+      return;
+    }
     setCargando(true);
     const r = await listarCarrerasCentrales(fecha, "");
     setCargando(false);
@@ -200,6 +205,8 @@ export function CarrerasDiaModule() {
   const guardar = async () => {
     const num = Number(modal.carrera) || 0;
     // El filtro arranca en "todos", pero para guardar hay que elegir uno.
+    if (!fecha)
+      return toast("Seleccione primero una fecha en el buscador.", "warning");
     if (!hipodromo)
       return toast("Elija un hipódromo para registrar la carrera (arriba, en el filtro).", "warning");
     if (!num) return toast("Nº de carrera requerido.", "warning");
@@ -306,7 +313,7 @@ export function CarrerasDiaModule() {
       </div>
       <BuscadorJornada
         fecha={fecha}
-        onFecha={(valor) => setFecha(valor || hoyLocal())}
+        onFecha={(valor) => setFecha(valor || "")}
         hipodromo={hipodromo}
         onHipodromo={setHipodromo}
         hipodromos={[{ value: "", label: "Todos los hipódromos" }, ...hipodromos]}
@@ -329,8 +336,8 @@ export function CarrerasDiaModule() {
           filtro={hipodromo}
           onFiltro={(h) => setHipodromo(h)}
           fecha={fecha}
-          onFecha={(f) => setFecha(f || hoyLocal())}
-          vacio={`Sin carreras registradas en la fecha ${fecha}. Regístralas con el formulario de abajo o desde Ejemplares y Gaceta.`}
+          onFecha={(f) => setFecha(f || "")}
+          vacio={!fecha ? "Selecciona una fecha en el buscador de arriba para consultar el monitor." : `Sin carreras registradas en la fecha ${fecha}. Regístralas con el formulario de abajo o desde Ejemplares y Gaceta.`}
         />
       </div>
 
@@ -395,7 +402,7 @@ export function CarrerasDiaModule() {
               placeholder="14:30"
               className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
             />
-            <Button variant="success" size="sm" className="mt-1 w-full" onClick={() => void guardar()} disabled={guardando || !hipodromo}>
+            <Button variant="success" size="sm" className="mt-1 w-full" onClick={() => void guardar()} disabled={guardando || !hipodromo || !fecha}>
               {guardando ? "Guardando…" : "💾 Registrar Carrera"}
             </Button>
           </label>
@@ -446,7 +453,11 @@ export function CarrerasDiaModule() {
                     {sinEjemplares.length > 0 && !verSinEjemplares ? (
                       <>⚠️ Las {carreras.length} carreras del filtro no tienen ejemplares: mostralas para cargárselos.</>
                     ) : (
-                      <>⚠️ No hay carreras registradas para {nombreHipodromoParaMostrar(hipodromo) || "este hipódromo"} · {fecha}.</>
+                      !fecha ? (
+                        <>📅 Selecciona una fecha en el buscador de arriba para consultar o registrar carreras.</>
+                      ) : (
+                        <>⚠️ No hay carreras registradas para {nombreHipodromoParaMostrar(hipodromo) || "este hipódromo"} · {fecha}.</>
+                      )
                     )}
                   </td>
                 </tr>
