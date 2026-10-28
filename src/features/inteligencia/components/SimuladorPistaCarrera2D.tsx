@@ -25,6 +25,7 @@ import {
   X_MIN_CHUTE_RECTA_FINAL,
   obtenerHitoDistancia,
   calcularPosicionEnOvalo,
+  calcularDinamicaSincronizadaCarrera,
 } from "@/features/inteligencia/lib/geometria-ovalo-rinconada";
 
 // Re-exportamos para compatibilidad de tipos o utilidades si se requieren externamente
@@ -39,6 +40,7 @@ export {
   DIST_SALIDA_CODO_A_META,
   obtenerHitoDistancia,
   calcularPosicionEnOvalo,
+  calcularDinamicaSincronizadaCarrera,
 };
 
 type Props = {
@@ -163,10 +165,19 @@ export function SimuladorPistaCarrera2D({
   const saltarAFase = (fase: FaseCarrera) => {
     setReproduciendo(false);
     setFaseActiva(fase);
-    if (fase === "PARTIDA") setProgreso(0);
-    else if (fase === "CODO") setProgreso(40);
-    else if (fase === "RECTA") setProgreso(80);
-    else if (fase === "META") setProgreso(100);
+    if (fase === "PARTIDA") {
+      setProgreso(0);
+    } else if (fase === "CODO") {
+      // Salto al codo (aprox 800m restantes de carrera)
+      const progCodo = distanciaCarrera > 800 ? ((distanciaCarrera - 800) / distanciaCarrera) * 100 : 40;
+      setProgreso(Math.max(15, Math.min(65, Number(progCodo.toFixed(1)))));
+    } else if (fase === "RECTA") {
+      // Salto a la recta final (aprox 300m restantes de carrera)
+      const progRecta = distanciaCarrera > 300 ? ((distanciaCarrera - 300) / distanciaCarrera) * 100 : 80;
+      setProgreso(Math.max(60, Math.min(90, Number(progRecta.toFixed(1)))));
+    } else if (fase === "META") {
+      setProgreso(100);
+    }
   };
 
   const desfaseMetaPorEjemplar = useMemo(() => {
@@ -176,9 +187,23 @@ export function SimuladorPistaCarrera2D({
     });
   }, [ranking]);
 
-  // Posiciones calculadas en riguroso simultáneo 1:1
+  // Posiciones calculadas en riguroso simultáneo 1:1 con sincronía total en distancias
   const posicionesCalculadas = useMemo(() => {
-    const avanceFraccion = Math.max(0, Math.min(1, progreso / 100));
+    const u = Math.max(0, Math.min(1, progreso / 100));
+
+    // Dinámica sincronizada en tiempo real para todos los participantes
+    const estadosDinamicos = calcularDinamicaSincronizadaCarrera(
+      progreso,
+      distanciaCarrera,
+      ranking.map((r) => ({
+        numero: r.ejemplar.numero,
+        estilo: r.ejemplar.estilo,
+        ordenLlegadaProyectado: r.ordenLlegadaProyectado,
+        cuerposVentaja: r.cuerposVentaja,
+      }))
+    );
+
+    const mapaEstados = new Map(estadosDinamicos.map((e) => [e.numero, e]));
 
     return ranking.map((item, index) => {
       const { ejemplar, ordenLlegadaProyectado, favorecidoTendenciaTarde } = item;
@@ -196,58 +221,46 @@ export function SimuladorPistaCarrera2D({
       else lambdaObjetivoRiel = 0.52;
 
       let lambdaActual = lambdaPartida;
-      if (avanceFraccion <= 0) {
+      if (u <= 0) {
         lambdaActual = lambdaPartida;
-      } else if (avanceFraccion < 0.25) {
-        const tCierre = avanceFraccion / 0.25;
+      } else if (u < 0.25) {
+        const tCierre = u / 0.25;
         lambdaActual = lambdaPartida + tCierre * (lambdaObjetivoRiel - lambdaPartida);
-      } else if (avanceFraccion < 0.75) {
+      } else if (u < 0.75) {
         lambdaActual = lambdaObjetivoRiel;
       } else {
-        const tMeta = (avanceFraccion - 0.75) / 0.25;
+        const tMeta = (u - 0.75) / 0.25;
         const lambdaAbanicoMeta = 0.12 + (index / Math.max(1, ranking.length - 1)) * 0.76;
         lambdaActual = lambdaObjetivoRiel * (1 - tMeta) + lambdaAbanicoMeta * tMeta;
       }
 
-      let factorAvanceIndividual = avanceFraccion;
-      if (estilo === "E1" && avanceFraccion < 0.6) {
-        factorAvanceIndividual = Math.min(1, avanceFraccion * 1.07);
-      } else if (estilo === "E3" && avanceFraccion < 0.5) {
-        factorAvanceIndividual = avanceFraccion * 0.94;
-      } else if (estilo === "E3" && avanceFraccion >= 0.7) {
-        const tRemate = (avanceFraccion - 0.7) / 0.3;
-        factorAvanceIndividual = 0.7 + tRemate * 0.3;
-      }
-
-      const metrosTotales = distanciaCarrera;
-      const desfaseFinal = desfaseMetaPorEjemplar[index];
-      const distanciaRecorrida = factorAvanceIndividual * metrosTotales;
-      const distanciaRestante = Math.max(0, metrosTotales - distanciaRecorrida + desfaseFinal * avanceFraccion);
-
-      const pos = calcularPosicionEnOvalo(distanciaRestante, lambdaActual, distanciaCarrera);
-
-      // Posición en la pista recta central: vinculada exactamente al avance simultáneo
-      const porcentajeAvanceCentral = Math.max(
-        0,
-        Math.min(100, (distanciaRecorrida / metrosTotales) * 100)
-      );
+      const estado = mapaEstados.get(ejemplar.numero)!;
+      const pos = calcularPosicionEnOvalo(estado.distanciaRestante, lambdaActual, distanciaCarrera);
 
       return {
         item,
         puertaSalida,
-        distanciaRestante,
+        distanciaRestante: estado.distanciaRestante,
+        distanciaRecorrida: estado.distanciaRecorrida,
+        porcentajeAvanceCentral: estado.porcentajeAvanceCentral,
+        posXCentral: estado.posXCentral,
+        esLiderActual: estado.esLiderActual,
         x: pos.x,
         y: pos.y,
         anguloDeg: pos.anguloDeg,
         tramo: pos.tramo,
-        porcentajeAvanceCentral,
         carrilIndex: index,
         esGanador: ordenLlegadaProyectado === 1,
         esPlacero: ordenLlegadaProyectado <= 3,
         favorecidoTendenciaTarde,
       };
     });
-  }, [ranking, progreso, distanciaCarrera, desfaseMetaPorEjemplar]);
+  }, [ranking, progreso, distanciaCarrera]);
+
+  // Ejemplar que actualmente va liderando la carrera en tiempo real (menor distancia restante a meta)
+  const liderActual = useMemo(() => {
+    return posicionesCalculadas.find((p) => p.esLiderActual) ?? posicionesCalculadas[0] ?? null;
+  }, [posicionesCalculadas]);
 
   const partidorEnOvalo = useMemo(() => {
     return GATERAS_14.map((puerta) => {
@@ -721,27 +734,43 @@ export function SimuladorPistaCarrera2D({
                   ⚡ PISTA RECTA CENTRAL · DESARROLLO SIN COLISIÓN
                 </text>
                 <text x="546" y="17" textAnchor="end" fill="#94A3B8" fontSize="8.5" fontWeight="bold">
-                  PROGRESO: {progreso.toFixed(0)}% · {distanciaCarrera}M
+                  {liderActual
+                    ? `👑 LÍDER: #${liderActual.item.ejemplar.numero} (${liderActual.item.ejemplar.nombre}) · RESTAN: ${liderActual.distanciaRestante.toFixed(0)}M`
+                    : `PROGRESO: ${progreso.toFixed(0)}% · ${distanciaCarrera}M`}
                 </text>
 
-                {/* Tramos verticales: Salida, 1000m, 300m y Meta */}
+                {/* Tramos verticales sincronizados con las distancias exactas de la carrera */}
                 {/* 1. Salida PP (X = 35) */}
                 <line x1="35" y1="28" x2="35" y2="195" stroke="#334155" strokeWidth="1" strokeDasharray="3 3" />
                 <text x="35" y="192" textAnchor="middle" fill="#64748B" fontSize="8" fontWeight="bold">
-                  🚪 PP
+                  🚪 PP ({distanciaCarrera}m)
                 </text>
 
-                {/* 2. 1000m (X = 195) */}
-                <line x1="195" y1="28" x2="195" y2="195" stroke="#334155" strokeWidth="1" strokeDasharray="3 3" />
-                <text x="195" y="192" textAnchor="middle" fill="#64748B" fontSize="8" fontWeight="bold">
-                  ⚡ 1000m
-                </text>
+                {/* 2. Checkpoint 1.000m (si la carrera es mayor a 1.000m) */}
+                {distanciaCarrera > 1000 && (() => {
+                  const x1000 = 35 + ((distanciaCarrera - 1000) / distanciaCarrera) * 480;
+                  return (
+                    <g key="cp-1000m">
+                      <line x1={x1000} y1="28" x2={x1000} y2="195" stroke="#334155" strokeWidth="1" strokeDasharray="3 3" />
+                      <text x={x1000} y="192" textAnchor="middle" fill="#64748B" fontSize="8" fontWeight="bold">
+                        ⚡ 1000m
+                      </text>
+                    </g>
+                  );
+                })()}
 
-                {/* 3. 300m (X = 385) */}
-                <line x1="385" y1="28" x2="385" y2="195" stroke="#334155" strokeWidth="1" strokeDasharray="3 3" />
-                <text x="385" y="192" textAnchor="middle" fill="#64748B" fontSize="8" fontWeight="bold">
-                  🔄 300m
-                </text>
+                {/* 3. Checkpoint 300m (si la carrera es mayor a 350m) */}
+                {distanciaCarrera > 350 && (() => {
+                  const x300 = 35 + ((distanciaCarrera - 300) / distanciaCarrera) * 480;
+                  return (
+                    <g key="cp-300m">
+                      <line x1={x300} y1="28" x2={x300} y2="195" stroke="#334155" strokeWidth="1" strokeDasharray="3 3" />
+                      <text x={x300} y="192" textAnchor="middle" fill="#64748B" fontSize="8" fontWeight="bold">
+                        🔄 300m
+                      </text>
+                    </g>
+                  );
+                })()}
 
                 {/* 4. META (X = 515) */}
                 <line x1="515" y1="28" x2="515" y2="195" stroke="#EF4444" strokeWidth="2.5" />
@@ -749,7 +778,7 @@ export function SimuladorPistaCarrera2D({
                   🏁 META
                 </text>
 
-                {/* Micro-carriles horizontales independientes sincronizados en riguroso simultáneo */}
+                {/* Micro-carriles horizontales independientes sincronizados en riguroso simultáneo 1:1 */}
                 {posicionesCalculadas.map((p) => {
                   const cloth = COLORES_GUALDRAPA[p.item.ejemplar.numero] || { bg: "#3B82F6", text: "#FFF", border: "#1D4ED8" };
                   const maxCarriles = Math.max(8, posicionesCalculadas.length);
@@ -757,7 +786,8 @@ export function SimuladorPistaCarrera2D({
                   const yCarril = 34 + p.carrilIndex * pasoY;
                   const anchoCarrera = 480;
                   const posX = 35 + (p.porcentajeAvanceCentral / 100) * anchoCarrera;
-                  const esLider = p.item.ordenLlegadaProyectado === 1;
+                  const esLider = p.item.ejemplar.numero === liderActual?.item.ejemplar.numero;
+                  const estaSeleccionado = caballoSeleccionado === p.item.ejemplar.numero;
 
                   return (
                     <g key={`recta-num-${p.item.ejemplar.numero}`}>
@@ -767,6 +797,19 @@ export function SimuladorPistaCarrera2D({
                         className="cursor-pointer transition-transform duration-75"
                         onClick={() => setCaballoSeleccionado(p.item.ejemplar.numero)}
                       >
+                        {estaSeleccionado && (
+                          <rect
+                            x="-13"
+                            y="-7"
+                            width="26"
+                            height="20"
+                            rx="4.5"
+                            fill="none"
+                            stroke="#FACC15"
+                            strokeWidth="2"
+                            strokeDasharray="3 2"
+                          />
+                        )}
                         <rect
                           x="-10"
                           y="-5"
@@ -774,7 +817,7 @@ export function SimuladorPistaCarrera2D({
                           height="16"
                           rx="3"
                           fill={cloth.bg}
-                          stroke={cloth.border || "#0F172A"}
+                          stroke={estaSeleccionado ? "#FACC15" : cloth.border || "#0F172A"}
                           strokeWidth={esLider ? 2 : 1}
                         />
                         {esLider && (
@@ -842,10 +885,10 @@ export function SimuladorPistaCarrera2D({
               {/* (Sin punteros, sin textos de PP, sin elementos distractores)  */}
               {/* ------------------------------------------------------------- */}
               {posicionesCalculadas.map(({ item, x, y }) => {
-                const { ejemplar, ordenLlegadaProyectado } = item;
+                const { ejemplar } = item;
                 const gualdrapa = COLORES_GUALDRAPA[ejemplar.numero] || { bg: "#3B82F6", text: "#FFF", border: "#1D4ED8" };
                 const estaSeleccionado = caballoSeleccionado === ejemplar.numero;
-                const esLiderActual = ordenLlegadaProyectado === 1;
+                const esLiderActual = ejemplar.numero === liderActual?.item.ejemplar.numero;
 
                 return (
                   <g

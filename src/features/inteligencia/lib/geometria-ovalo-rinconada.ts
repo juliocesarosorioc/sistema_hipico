@@ -183,3 +183,84 @@ export function calcularPosicionEnOvalo(
   const y = Y_CENTRO + rEfectivo;
   return { x, y, anguloDeg: 0, tramo: "SALIDA_1800M" };
 }
+
+export type EstiloCarreraSincronizada = "E1" | "E2" | "E3";
+
+export interface InputDinamicaEjemplar {
+  numero: number;
+  estilo: EstiloCarreraSincronizada | string;
+  ordenLlegadaProyectado: number;
+  cuerposVentaja: number;
+}
+
+export interface EstadoEjemplarSincronizado {
+  numero: number;
+  distanciaRestante: number;
+  distanciaRecorrida: number;
+  porcentajeAvanceCentral: number;
+  posXCentral: number;
+  esLiderActual: boolean;
+}
+
+/**
+ * Calcula la dinámica de carrera y la sincronía total 1:1 de distancias
+ * entre el óvalo exterior y la pista recta central.
+ * Ambos trazados leen exactamente la misma variable `distanciaRestante`.
+ */
+export function calcularDinamicaSincronizadaCarrera(
+  progresoPorcentaje: number, // 0 a 100
+  distanciaCarreraMetros: number,
+  participantes: InputDinamicaEjemplar[]
+): EstadoEjemplarSincronizado[] {
+  const u = Math.max(0, Math.min(1, progresoPorcentaje / 100));
+  const D = distanciaCarreraMetros;
+
+  const resultadosPrevios = participantes.map((p) => {
+    const estilo = (p.estilo || "E2").toUpperCase();
+    const orden = p.ordenLlegadaProyectado;
+    const desfaseFinal = p.cuerposVentaja * 2.4; // 1 cuerpo ≈ 2.4m
+
+    // Variación dinámica según estilo táctico:
+    let deltaEstilo = 0;
+    if (estilo === "E1") {
+      // Puntero: acelera y saca ventaja inicial (pico en u ≈ 0.35)
+      deltaEstilo = 4.5 * Math.sin(Math.PI * u) * Math.max(0, 1 - u * 0.75);
+    } else if (estilo === "E3") {
+      // Atropellador: corre contenido al inicio (-4m) y remata al final
+      if (u < 0.6) {
+        deltaEstilo = -4.0 * Math.sin(Math.PI * (u / 0.6));
+      } else {
+        const tRemate = (u - 0.6) / 0.4;
+        const bonoGanador = orden === 1 ? 5.5 : 2.5;
+        deltaEstilo = -4.0 * (1 - tRemate) + bonoGanador * Math.sin(Math.PI * tRemate * 0.5);
+      }
+    } else {
+      // E2 Colocado: ritmo sostenido
+      deltaEstilo = 1.0 * Math.sin(Math.PI * u);
+    }
+
+    const margenProgresivo = desfaseFinal * Math.pow(u, 1.25);
+    let dRecorrida = u * D + deltaEstilo - margenProgresivo;
+    dRecorrida = Math.max(0, Math.min(D - (u >= 1 ? desfaseFinal : 0), dRecorrida));
+
+    const dRestante = Math.max(0, D - dRecorrida);
+    const pctCentral = Math.max(0, Math.min(100, ((D - dRestante) / D) * 100));
+    const posXCentral = 35 + (pctCentral / 100) * 480;
+
+    return {
+      numero: p.numero,
+      distanciaRestante: dRestante,
+      distanciaRecorrida: D - dRestante,
+      porcentajeAvanceCentral: pctCentral,
+      posXCentral,
+      esLiderActual: false,
+    };
+  });
+
+  // Determinar el líder actual en tiempo real (el de menor distancia restante)
+  const menorDistancia = Math.min(...resultadosPrevios.map((r) => r.distanciaRestante));
+  return resultadosPrevios.map((r) => ({
+    ...r,
+    esLiderActual: Math.abs(r.distanciaRestante - menorDistancia) < 0.001,
+  }));
+}

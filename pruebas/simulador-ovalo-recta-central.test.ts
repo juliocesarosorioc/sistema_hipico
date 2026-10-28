@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { parsearLineaParticipanteGaceta, parsearFilaRetrospecto } from "@/features/inteligencia/lib/extractor-gaceta-venezuela";
 import { parsearLineaTraqueo, convertirTiempoQuintosADecimal, calcularCalidadWorkout } from "@/features/inteligencia/lib/extractor-traqueos-venezuela";
 import { evaluarFactorPuestoPartida, COLORES_GUALDRAPA, simularCarreraV4 } from "@/features/inteligencia/lib/analista-venezuela-v4";
-import { obtenerHitoDistancia, ANCHO_PISTA } from "@/features/inteligencia/lib/geometria-ovalo-rinconada";
+import { obtenerHitoDistancia, ANCHO_PISTA, calcularDinamicaSincronizadaCarrera } from "@/features/inteligencia/lib/geometria-ovalo-rinconada";
 
 console.log("🏇 INICIANDO SUITE DE PRUEBAS: SIMULADOR ÓVALO, RECTA CENTRAL, FACTOR PP Y TRAQUEOS (ih_*)...");
 
@@ -179,4 +179,56 @@ console.log("🏇 INICIANDO SUITE DE PRUEBAS: SIMULADOR ÓVALO, RECTA CENTRAL, F
   console.log("  ✔ Rayas de distancias cada 100m son rectas y perpendiculares entre baranda interior y exterior: OK");
 }
 
-console.log("\n🎉 TODAS LAS PRUEBAS DE SIMULADOR DE ÓVALO CON RECTA CENTRAL, PP Y TRAQUEOS PASARON EXITOSAMENTE (7/7).\n");
+// 8. SINCRONÍA TOTAL 1:1 EN DISTANCIAS Y DINÁMICA DE CARRERA
+{
+  const participantes = [
+    { numero: 1, estilo: "E1", ordenLlegadaProyectado: 2, cuerposVentaja: 1.5 },
+    { numero: 2, estilo: "E3", ordenLlegadaProyectado: 1, cuerposVentaja: 0 },
+  ];
+  const D = 1400;
+
+  // A. Partida (progreso = 0%): ambos ejemplares están en la partida (dRestante = D, posX = 35)
+  const inicio = calcularDinamicaSincronizadaCarrera(0, D, participantes);
+  assert.equal(inicio[0].distanciaRestante, D);
+  assert.equal(inicio[1].distanciaRestante, D);
+  assert.equal(inicio[0].porcentajeAvanceCentral, 0);
+  assert.equal(inicio[1].porcentajeAvanceCentral, 0);
+  assert.equal(inicio[0].posXCentral, 35);
+  assert.equal(inicio[1].posXCentral, 35);
+
+  // B. Mitad de carrera (progreso = 40%): el puntero E1 (#1) va liderando con menor distancia restante
+  const mitad = calcularDinamicaSincronizadaCarrera(40, D, participantes);
+  assert.ok(
+    mitad[0].distanciaRestante < mitad[1].distanciaRestante,
+    "El puntero E1 debe ir liderando en la primera mitad"
+  );
+  assert.ok(
+    mitad[0].posXCentral > mitad[1].posXCentral,
+    "El puntero E1 debe ir más adelante en la pista recta central sincronizadamente"
+  );
+  assert.equal(mitad[0].esLiderActual, true, "El puntero E1 debe tener corona de líder actual");
+  assert.equal(mitad[1].esLiderActual, false);
+
+  // C. Sentencia / Meta (progreso = 100%): el atropellador E3 (#2) gana y cruza en 0m restantes (X = 515)
+  const meta = calcularDinamicaSincronizadaCarrera(100, D, participantes);
+  assert.equal(meta[1].distanciaRestante, 0, "El ganador debe cruzar la meta en distancia 0m");
+  assert.equal(meta[1].porcentajeAvanceCentral, 100);
+  assert.equal(meta[1].posXCentral, 515, "El ganador debe estar exactamente en la línea de META (X = 515)");
+  assert.equal(meta[1].esLiderActual, true, "El ganador debe ser el líder final");
+
+  // El 2do lugar (#1) debe finalizar a exactamente 1.5 cuerpos (3.6 metros) en ambas pistas
+  const desfaseEsperadoMetros = 1.5 * 2.4; // 3.6m
+  assert.ok(
+    Math.abs(meta[0].distanciaRestante - desfaseEsperadoMetros) < 0.001,
+    `El 2do lugar debe finalizar a ${desfaseEsperadoMetros}m, finalizó a ${meta[0].distanciaRestante}m`
+  );
+  const posXEsperado = 35 + ((D - desfaseEsperadoMetros) / D) * 480;
+  assert.ok(
+    Math.abs(meta[0].posXCentral - posXEsperado) < 0.001,
+    `La posición en la recta central debe coincidir exactamente con el desfase en metros`
+  );
+
+  console.log("  ✔ Sincronía total 1:1 en distancias y dinámica de estilos tácticos (Puntero vs Atropellador): OK");
+}
+
+console.log("\n🎉 TODAS LAS PRUEBAS DE SIMULADOR DE ÓVALO CON RECTA CENTRAL, PP Y TRAQUEOS PASARON EXITOSAMENTE (8/8).\n");
