@@ -29,6 +29,7 @@ import {
 import { ModalMarcas } from "@/features/marcas/components/ModalMarcas";
 import { ModalMarcasEditor } from "@/features/marcas/components/ModalMarcasEditor";
 import { ReporteMarcasJugadasModal } from "@/features/marcas/components/ReporteMarcasJugadasModal";
+import { ControlRiesgoMarcasModal } from "@/features/marcas/components/ControlRiesgoMarcasModal";
 import { usePizarraOficial } from "@/features/marcas/lib/usePizarraOficial";
 import type { PizarraMarca } from "@/features/marcas/lib/marcas";
 
@@ -133,6 +134,11 @@ export function PanelMarcas() {
    * el operador entra a arreglar la jornada completa desde el boton general.
    */
   const [editor, setEditor] = useState<{ hipodromo: string; carrera: number | null; fecha: string } | null>(null);
+  const [carreraControlRiesgo, setCarreraControlRiesgo] = useState<{
+    hipodromo: string;
+    carrera: number;
+    fecha: string;
+  } | null>(null);
   /** Raíz de exportación (fuera de pantalla) con las hojas A4 de marcas. */
   const exportRootRef = useRef<HTMLDivElement>(null);
   /** Etiqueta de progreso mientras se captura PNG / JPG / PDF. */
@@ -735,6 +741,20 @@ export function PanelMarcas() {
                               </button>
                               <button
                                 type="button"
+                                onClick={() =>
+                                  setCarreraControlRiesgo({
+                                    hipodromo: c.hipodromo,
+                                    carrera: c.carrera,
+                                    fecha,
+                                  })
+                                }
+                                title="Control de riesgo, matriz de pérdida, cupos por grupo y jerarquía"
+                                className={`${botonCls} bg-purple-600 text-white hover:bg-purple-500`}
+                              >
+                                🛡️
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => setEditor({ hipodromo: c.hipodromo, carrera: c.carrera, fecha })}
                                 title={
                                   cfg
@@ -924,6 +944,17 @@ export function PanelMarcas() {
             </div>
           </div>
         </div>
+      )}
+
+      {carreraControlRiesgo && (
+        <ControlRiesgoMarcasModal
+          abierto={carreraControlRiesgo !== null}
+          hipodromo={carreraControlRiesgo.hipodromo}
+          carrera={carreraControlRiesgo.carrera}
+          fecha={carreraControlRiesgo.fecha}
+          onCerrar={() => setCarreraControlRiesgo(null)}
+          onActualizado={() => void refrescar()}
+        />
       )}
 
       {/* Raíz de exportación: hoja A4 de marcas FUERA de pantalla, sin escala,

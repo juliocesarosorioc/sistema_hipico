@@ -49,6 +49,7 @@ import {
   type ModalidadPortalJugada,
 } from "@/features/portal/lib/bloqueo-jugadas";
 import { MonitorTablasCliente } from "@/features/portal/components/MonitorTablasCliente";
+import { MonitorMarcasCliente } from "@/features/portal/components/MonitorMarcasCliente";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -322,12 +323,9 @@ export function SeccionJugadasPortal({
           )}
 
           {modalidad === "marcas" && (
-            <ModalidadMarcasMultiplo6
+            <MonitorMarcasCliente
               sesion={sesion}
-              marcas={marcas}
               bloqueada={estaBloqueada}
-              enviando={enviando}
-              setEnviando={setEnviando}
               onPedirDesbloqueo={pedirDesbloqueo}
               onRealizada={onJugadaRealizada}
             />

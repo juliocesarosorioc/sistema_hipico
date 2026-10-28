@@ -728,6 +728,25 @@ export function resumenNotificacion(n: NotificacionRow): string {
     return res;
   }
 
+  if (n.tipo === "alerta_cupo_marca_agotado") {
+    const hipo = d.hipodromo ? String(d.hipodromo) : "";
+    const carr = d.carrera ? String(d.carrera) : "";
+    const cab = `#${d.caballo_numero}`;
+    const limDesc = d.tipo_limite === "GRUPO" ? "Límite de Grupo" : "Tope General de Plataforma";
+    let res = `<span class="font-bold text-red-600">🚨 MARCA AL TOPE (${limDesc}):</span> Marca ${cab} en ${hipo} C${carr}`;
+    if (d.total_acumulado) {
+      res += ` (Acumulado: $${d.total_acumulado})`;
+    }
+    if (Array.isArray(d.compradores) && d.compradores.length > 0) {
+      const lista = d.compradores
+        .map((c: any) => `${c.jugador || "Jugador"} (${c.grupo || "Grupo"}, $${c.monto})`)
+        .slice(0, 4)
+        .join(", ");
+      res += `<div class="mt-1 text-xs text-slate-600"><b>Jugadores:</b> ${lista}</div>`;
+    }
+    return res;
+  }
+
   const partes: string[] = [];
   const etiqueta = (k: string): string =>
     ({ telefono: "Tlf", email: "Email", cedula_rif: "Cédula/RIF", direccion: "Dirección", metodo_pago: "Método", codigo_pais: "País" })[k] ?? k;
