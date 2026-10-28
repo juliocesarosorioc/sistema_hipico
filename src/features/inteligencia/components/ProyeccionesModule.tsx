@@ -8,7 +8,6 @@ import { ModalAnalisisActuarialGodet } from "@/features/ejemplares/components/Mo
 import { ModalCuadroMaestro5y6 } from "@/features/inteligencia/components/ModalCuadroMaestro5y6";
 import { ModalImportarGacetaPdf } from "@/features/inteligencia/components/ModalImportarGacetaPdf";
 import { GraficoSimulacionDinamica } from "@/features/inteligencia/components/GraficoSimulacionDinamica";
-import { SimuladorPistaDesarrollo } from "@/features/inteligencia/components/SimuladorPistaDesarrollo";
 import { FichaExpedienteEjemplar } from "@/features/inteligencia/components/FichaExpedienteEjemplar";
 import {
   simularCarreraV4,
@@ -771,14 +770,6 @@ export function ProyeccionesModule() {
                   </div>
                 </Card>
               )}
-
-              {/* SIMULADOR DE ÓVALO CON PISTA RECTA CENTRAL DE NÚMEROS EN EL INFIELD */}
-              <SimuladorPistaDesarrollo
-                resultado={resultadoCarreraV4}
-                distancia={carreraSel?.distancia ? Number(carreraSel.distancia) : 1200}
-                hipodromo={carreraSel?.hipodromo || hipodromo}
-                onSeleccionarEjemplar={(res) => setEjemplarExpediente(res.ejemplar)}
-              />
 
               {/* MODAL / FICHA DE EXPEDIENTE DEL EJEMPLAR */}
               {ejemplarExpediente && (
