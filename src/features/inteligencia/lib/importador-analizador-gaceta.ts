@@ -347,6 +347,8 @@ export function convertirCarrerasExtraidasACatalogo(
       numero: String(ej.numero ?? idx + 1),
       nombre: String(ej.nombre || "").trim().toUpperCase(),
       nacionalidad: ej.nacionalidad ?? "VE",
+      pp: ej.pp ?? null,
+      puestoPista: ej.pp ?? null,
       retirado: false,
       jockey: ej.jockey ?? null,
       entrenador: ej.entrenador ?? null,
@@ -434,6 +436,8 @@ export function analizarCarrerasGacetaV4(params: {
         {
           numero: cab.numero,
           nombre: cab.nombre,
+          pp: cab.pp ?? cab.puestoPista,
+          puestoPista: cab.puestoPista ?? cab.pp,
           jockey: cab.jockey,
           entrenador: cab.entrenador,
           peso: cab.peso,

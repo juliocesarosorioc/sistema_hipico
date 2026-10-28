@@ -173,6 +173,8 @@ export function ProyeccionesModule() {
         {
           numero: cab.numero,
           nombre: cab.nombre,
+          pp: cab.pp ?? cab.puestoPista,
+          puestoPista: cab.puestoPista ?? cab.pp,
           jockey: cab.jockey || (cab as unknown as { jinete?: string }).jinete,
           entrenador: cab.entrenador,
           peso: cab.peso || (cab as unknown as { kilos?: number }).kilos,
@@ -216,6 +218,8 @@ export function ProyeccionesModule() {
           {
             numero: cab.numero,
             nombre: cab.nombre,
+            pp: cab.pp ?? cab.puestoPista,
+            puestoPista: cab.puestoPista ?? cab.pp,
             jockey: cab.jockey || (cab as unknown as { jinete?: string }).jinete,
             entrenador: cab.entrenador,
             peso: cab.peso || (cab as unknown as { kilos?: number }).kilos,
@@ -778,7 +782,8 @@ export function ProyeccionesModule() {
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="border-b border-line bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500">
-                        <th className="py-2.5 px-3">Gualdrapa / Divisa</th>
+                        <th className="py-2.5 px-3">Gualdrapa</th>
+                        <th className="py-2.5 px-3 text-center font-mono text-emerald-700">PP</th>
                         <th className="py-2.5 px-3">Ejemplar & Profesional</th>
                         <th className="py-2.5 px-3 text-center">Estilo</th>
                         <th className="py-2.5 px-3 text-center">Speed Rating</th>
@@ -832,6 +837,16 @@ export function ProyeccionesModule() {
                                   </div>
                                 );
                               })()}
+                            </td>
+
+                            {/* PP (Puesto de Partida en las 14 Gateras) */}
+                            <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                              <span
+                                className="rounded-md bg-emerald-50 text-emerald-900 border border-emerald-300 font-mono font-black px-2 py-0.5 text-xs shadow-xs"
+                                title={`Puesto de Partida Oficial PP #${ej.puestoPista || num} en el partidor`}
+                              >
+                                🚪 PP {ej.puestoPista || num}
+                              </span>
                             </td>
 
                             {/* Nombre del Ejemplar y Profesionales */}

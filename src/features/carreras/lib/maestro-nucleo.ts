@@ -53,6 +53,8 @@ export type EjemplarMatriz = {
   numero: string | number;
   nombre?: string | null;
   nacionalidad?: string | null;
+  pp?: number | string | null;
+  puestoPista?: number | string | null;
   retirado?: boolean;
   jockey?: string | null;
   entrenador?: string | null;
@@ -65,6 +67,8 @@ export type EjemplarCarreraCentral = {
   numero: string;
   nombre?: string | null;
   nacionalidad?: string | null;
+  pp?: number | string | null;
+  puestoPista?: number | string | null;
   /** Retirado según la lista CENTRAL de la carrera. */
   retirado?: boolean;
   jockey?: string | null;
@@ -293,10 +297,12 @@ export function normalizarCaballos(raw: unknown, retirados: Set<string>): Ejempl
       .map((c) => {
         const x = (c ?? {}) as Record<string, unknown>;
         const numero = String(x.numero ?? "").trim();
+        const pp = x.pp != null ? (Number(x.pp) || String(x.pp).trim()) : (x.puestoPista != null ? (Number(x.puestoPista) || String(x.puestoPista).trim()) : null);
         return {
           numero,
           nombre: x.nombre != null ? String(x.nombre) : null,
           nacionalidad: x.nacionalidad != null ? String(x.nacionalidad) : null,
+          ...(pp != null ? { pp, puestoPista: pp } : {}),
           ...(x.jockey != null ? { jockey: String(x.jockey) } : {}),
           ...(x.entrenador != null ? { entrenador: String(x.entrenador) } : {}),
           ...(x.peso != null ? { peso: x.peso as number | string } : {}),

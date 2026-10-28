@@ -10,7 +10,7 @@
  */
 import { getHorseColor } from "@/shared/lib/horseColors";
 import { interpretarFecha } from "@/core/utils/fechas";
-import { mismaCarreraExtraida } from "@/features/gaceta/lib/numeros";
+import { mismaCarreraExtraida, numeroDeCarrera } from "@/features/gaceta/lib/numeros";
 import type { DraftCarrera } from "@/features/tablas/lib/tipos";
 
 export const SUPERFICIES = ["ARENA", "CESPED", "FANGO", "TAPETA", "OTRA"] as const;
@@ -442,6 +442,8 @@ export function limpiarTodoRegistro(): void {
  *  mapeando caballos/ejemplares → EjemplarTabla. Igual que el legacy
  *  construirCardsGaceta → listaHors + crearCardCarrera. */
 export function aDraftCarrera(pre: CarreraRegistro, sufijo = ""): DraftCarrera {
+  const numEntero = numeroDeCarrera(pre.carrera);
+  const numFinal = numEntero ? String(numEntero) : String(pre.carrera ?? "").trim() || "1";
   const caballos = listaHors(pre)
     .map((c) => ({
       numero: String(c.numero ?? ""),

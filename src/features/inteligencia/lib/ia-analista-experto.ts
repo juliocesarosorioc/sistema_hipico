@@ -36,20 +36,32 @@ export async function generarInformeCarreraIA(
   const tercero = carrera.ranking[2];
   const sorpresa = carrera.sorpresaRecomendada5y6;
 
-  const velCount = carrera.ranking.filter((r) => r.ejemplar.estilo === "E1").length;
-  const remCount = carrera.ranking.filter((r) => r.ejemplar.estilo === "E3").length;
+  const punteros = carrera.ranking.filter((r) => r.ejemplar.estilo === "E1");
+  const colocados = carrera.ranking.filter((r) => r.ejemplar.estilo === "E2");
+  const rematadores = carrera.ranking.filter((r) => r.ejemplar.estilo === "E3");
+
+  const formatearCab = (r: (typeof carrera.ranking)[0]) => {
+    const pp = r.ejemplar.puestoPista || r.ejemplar.numero;
+    return `#${r.ejemplar.numero} ${r.ejemplar.nombre} (PP: ${pp})`;
+  };
+
+  const listaPunteros = punteros.map(formatearCab).join(", ");
+  const listaColocados = colocados.map(formatearCab).join(", ");
+  const listaRematadores = rematadores.map(formatearCab).join(", ");
 
   let planteamiento = "";
-  if (velCount >= 3) {
-    planteamiento = `Carrera con tren violento en los primeros 400m y 800m. La presencia de ${velCount} velocistas natos generará desgaste en punta, abriendo camino a los ejemplares con remate efectivo en los 250m finales.`;
-  } else if (velCount <= 1) {
-    planteamiento = `Poco desgaste inicial esperado. El tren de carrera favorece la punta libre, permitiendo al puntero conservar reservas de energía para intentar la victoria de tiro a tiro.`;
+  if (punteros.length >= 3) {
+    planteamiento = `Carrera con tren violento en los primeros 400m y 800m. Los ejemplares velocistas ${listaPunteros} buscarán cerrar hacia la baranda interior desde la partida, lo que generará fuerte desgaste en punta. Esta lucha beneficiará el remate de ${listaRematadores || "los atropelladores"} en los 250m finales.`;
+  } else if (punteros.length === 1) {
+    planteamiento = `Poco desgaste inicial esperado. El puntero ${listaPunteros} cuenta con ventaja táctica para tomar el riel con desahogo y marcar el ritmo de la carrera, mientras ${listaColocados || "los perseguidores"} correrán a la expectativa.`;
+  } else if (punteros.length > 1) {
+    planteamiento = `Duelo en la vanguardia entre ${listaPunteros}, quienes buscarán la baranda interior en el giro del codo. Detrás de ellos, ${listaColocados} vendrán colocados acechando para lanzar su ataque a la entrada de la recta final.`;
   } else {
-    planteamiento = `Tren de carrera equilibrado a ritmo honrado. La clase y el Speed Rating TTC Bühlmann-Straub serán determinantes en el tramo decisivo de la recta final.`;
+    planteamiento = `Carrera sin puntero nato definido. Se proyecta que ${formatearCab(carrera.ranking[0])} asumirá la iniciativa táctica pegado a la baranda, seguido de cerca por ${listaColocados || "el lote"}, mientras que ${listaRematadores || "los rematadores"} definirán en los metros decisivos.`;
   }
 
   const analisisFav = primero
-    ? `Defiende el primer orden de proyección con ${primero.probabilidadSMIC}% de probabilidad y score actuarial de ${primero.scoreGodetTotal} pts. ${
+    ? `Defiende el primer orden de proyección con ${primero.probabilidadSMIC}% de probabilidad y score actuarial de ${primero.scoreGodetTotal} pts. ${formatearCab(primero)} saldrá desde la puerta PP: ${primero.ejemplar.puestoPista || primero.ejemplar.numero}. ${
         primero.favorecidoTendenciaTarde ? "Se encuentra ampliamente favorecido por la tendencia de la tarde observada en cancha. " : ""
       }${
         primero.bonoPesoOptimo ? "Presenta peso físico óptimo en balanza respecto a su histórico. " : ""
@@ -59,21 +71,23 @@ export async function generarInformeCarreraIA(
     : "Sin favorito claro.";
 
   const enemigo = segundo
-    ? `El principal rival es #${segundo.ejemplar.numero} ${segundo.ejemplar.nombre} (${segundo.probabilidadSMIC}%), quien proyecta cruzar a ${primero?.cuerposVentaja ?? "1.0"} cuerpos y posee ${segundo.ejemplar.efectividadJineteEntrenador ? `un ${(segundo.ejemplar.efectividadJineteEntrenador * 100).toFixed(0)}% de efectividad en su yunta` : "condiciones para comprometer la llegada"}.`
+    ? `El principal rival es ${formatearCab(segundo)} (${segundo.probabilidadSMIC}%), quien proyecta cruzar a ${primero?.cuerposVentaja ?? "1.0"} cuerpos y posee ${segundo.ejemplar.efectividadJineteEntrenador ? `un ${(segundo.ejemplar.efectividadJineteEntrenador * 100).toFixed(0)}% de efectividad en su yunta` : "condiciones para comprometer la llegada"}.`
     : "Lote abierto.";
 
   const lance = sorpresa
-    ? `Lance de excelente dividendo: #${sorpresa.ejemplar.numero} ${sorpresa.ejemplar.nombre} (Morning Line ${sorpresa.ejemplar.morningLine}). Posee capacidad de remate para meterse en la trifecta o dar el batacazo.`
+    ? `Lance de excelente dividendo: ${formatearCab(sorpresa)} (Morning Line ${sorpresa.ejemplar.morningLine}). Posee capacidad de remate para meterse en la trifecta o dar el batacazo.`
     : undefined;
 
   const conclusion = primero?.esLinea5y6
-    ? `Recomendación: LÍNEA FIJA imperdible. Su superioridad actuarial y tren favorable le otorgan amplia ventaja.`
+    ? `Recomendación: LÍNEA FIJA imperdible para ${formatearCab(primero)}. Su superioridad actuarial y tren favorable le otorgan amplia ventaja hacia la meta.`
     : primero?.esMorocha5y6 && segundo
-    ? `Recomendación: DUPLA OBLIGATORIA entre #${primero.ejemplar.numero} ${primero.ejemplar.nombre} y #${segundo.ejemplar.numero} ${segundo.ejemplar.nombre}.`
-    : `Recomendación: Cuadro abierto. Incluir a #${primero?.ejemplar.numero} en primer orden con cobertura de #${segundo?.ejemplar.numero} y #${tercero?.ejemplar.numero}.`;
+    ? `Recomendación: DUPLA OBLIGATORIA entre ${formatearCab(primero)} y ${formatearCab(segundo)}.`
+    : `Recomendación: Cuadro abierto. Incluir a ${primero ? formatearCab(primero) : "primer favorito"} en primer orden con cobertura de ${segundo ? formatearCab(segundo) : "segundo orden"}${tercero ? ` y ${formatearCab(tercero)}` : ""}.`;
+
+  const hipoNombre = String(carrera.hipodromo || "LA RINCONADA").trim().toUpperCase();
 
   return {
-    titulo: `INFORME PROSPECTIVO · ${carrera.hipodromo} C${carrera.carreraNumero} (${carrera.distancia}M)`,
+    titulo: `INFORME PROSPECTIVO · ${hipoNombre} C${carrera.carreraNumero} (${carrera.distancia}M)`,
     planteamientoTactico: planteamiento,
     analisisFavorito: analisisFav,
     enemigoPrincipal: enemigo,

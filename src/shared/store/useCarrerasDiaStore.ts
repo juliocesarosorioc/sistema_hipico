@@ -93,10 +93,10 @@ export const useCarrerasDiaStore = create<CarrerasDiaState>()(
   persist(
     (set, get) => ({
       carreras: [],
-      fechaSeleccionada: "",
+      fechaSeleccionada: hoy(),
 
       setFecha: (fecha) => {
-        if (!fecha || /^\d{4}-\d{2}-\d{2}$/.test(fecha)) set({ fechaSeleccionada: fecha });
+        if (!fecha || /^\d{4}-\d{2}-\d{2}$/.test(fecha)) set({ fechaSeleccionada: fecha || hoy() });
       },
 
       setCarreras: (carreras) => set({ carreras }),

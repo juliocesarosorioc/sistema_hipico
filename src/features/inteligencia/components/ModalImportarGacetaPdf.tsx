@@ -553,6 +553,7 @@ export function ModalImportarGacetaPdf({
                       <tr className="text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-700 h-9">
                         <th className="py-1.5 px-2.5 text-center whitespace-nowrap">Pos Llegada</th>
                         <th className="py-1.5 px-2.5 text-center whitespace-nowrap"># Carrera</th>
+                        <th className="py-1.5 px-2 text-center text-emerald-400 font-mono font-bold">PP</th>
                         <th className="py-1.5 px-2.5">Ejemplar</th>
                         <th className="py-1.5 px-2.5">Jinete / Entrenador</th>
                         <th className="py-1.5 px-2 text-center">Score Godet</th>
@@ -589,6 +590,14 @@ export function ModalImportarGacetaPdf({
                                 {num}
                               </span>
                             </td>
+                            <td className="py-2.5 px-2 text-center align-middle">
+                              <span
+                                className="rounded bg-emerald-950 text-emerald-300 border border-emerald-500/50 px-1.5 py-0.5 text-xs font-mono font-bold"
+                                title={`Puesto de Partida Oficial PP #${ej.ejemplar.puestoPista || num}`}
+                              >
+                                🚪 PP {ej.ejemplar.puestoPista || num}
+                              </span>
+                            </td>
                             <td className="py-2.5 px-2.5 align-middle">
                               <div>
                                 <span className="font-black text-white uppercase block leading-tight">
@@ -605,6 +614,14 @@ export function ModalImportarGacetaPdf({
                               </span>
                               <span className="text-[10px] text-slate-500">
                                 {ej.ejemplar.entrenador || "—"}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-2 text-center align-middle">
+                              <span
+                                className="rounded bg-emerald-950 text-emerald-300 border border-emerald-500/50 px-1.5 py-0.5 text-xs font-mono font-bold"
+                                title={`Puesto de Partida Oficial PP #${ej.ejemplar.puestoPista || num}`}
+                              >
+                                🚪 PP {ej.ejemplar.puestoPista || num}
                               </span>
                             </td>
                             <td className="py-2.5 px-2 text-center font-mono font-bold text-amber-400 align-middle">
@@ -659,16 +676,6 @@ export function ModalImportarGacetaPdf({
               </Button>
 
               <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleSincronizarConBD}
-                  disabled={guardandoEnBd}
-                  className="text-xs border-slate-700 text-slate-200 hover:bg-slate-800 flex items-center gap-1.5"
-                >
-                  <span>💾</span>
-                  <span>{guardandoEnBd ? "Guardando en BD..." : "Guardar en Catálogo Central"}</span>
-                </Button>
 
                 {onAbrirCuadro5y6 && (
                   <Button

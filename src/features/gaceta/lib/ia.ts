@@ -21,6 +21,7 @@ export type EjemplarExtraido = {
   numero: string | number;
   nombre: string;
   nacionalidad?: string;
+  pp?: number | string;
   valor?: number;
   jockey?: string;
   entrenador?: string;
@@ -79,7 +80,13 @@ Para cada carrera devuelve:
   - distancia: distancia de la carrera en metros (entero) si se lee, si no 0
   - superficie: una de ARENA, CESPED, FANGO, TAPETA u otra si se lee explícita; si no ARENA
   - premio: número si se lee (ej: 15000), si no 0
-  - ejemplares: lista con numero (puesto/orden del ejemplar), nombre (MAYÚSCULAS, EXACTO como aparece), nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si NO se indica: USA si el hipódromo es de Estados Unidos, si no VE), valor (monta del ejemplar: SOLO número si aparece, si no 0), jockey, entrenador, peso, medicamento e implementos solo si son legibles (si no, null)
+  - ejemplares: lista con:
+    - numero (número oficial / de gualdrapa del ejemplar)
+    - pp (número del puesto de pista / puerta de partida impreso en la columna "PP" o "P.P.", entero del 1 al 14 si se lee; si no aparece, null o el mismo número)
+    - nombre (MAYÚSCULAS, EXACTO como aparece)
+    - nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si NO se indica: USA si el hipódromo es de Estados Unidos, si no VE)
+    - valor (monta del ejemplar: SOLO número si aparece, si no 0)
+    - jockey, entrenador, peso, medicamento e implementos solo si son legibles (si no, null)
 REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGISTRA TODOS los ejemplares de cada carrera sin omitir ninguno (todos los números de participante que aparezcan). Si un ejemplar aparece repetido entre páginas, mantenlo tal cual. Si el documento no tiene carreras, devuelve {"carreras":[]}.
 PARA EL CAMPO carrera: lee el número de carrera EXACTAMENTE como aparece impreso (puede ser numérico: 1, 2, ..., 14 o romano: I, II, ..., XIV). Convierte los romanos a entero (XIII → 13) y los ordinales escritos a entero ("primera" → 1, "séptima" → 7, "decimotercera" → 13).
 ATENCIÓN ESPECIAL HIPÓDROMOS DE VENEZUELA (LA RINCONADA / VALENCIA):

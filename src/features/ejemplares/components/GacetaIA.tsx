@@ -13,6 +13,7 @@ import { useConfirmar } from "@/shared/store/useConfirmStore";
 import { useCarrerasDiaStore } from "@/shared/store/useCarrerasDiaStore";
 import { useRegistroCentral } from "@/shared/store/useRegistroCentral";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
+import { numeroDeCarrera } from "@/features/gaceta/lib/numeros";
 import { CarreraGacetaCard } from "@/features/ejemplares/components/CarreraGacetaCard";
 import { listarHipodromos, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
 import {
@@ -205,7 +206,7 @@ export function GacetaIA() {
    *  FUTUROS: las carreras del documento que no traigan fecha propia se sellan
    *  con esta fecha, para poder cargar/registrar/publicar jornadas posteriores. */
   const [fechaJornada, setFechaJornada] = useState(
-    () => useCarrerasDiaStore.getState().fechaSeleccionada || ""
+    () => useCarrerasDiaStore.getState().fechaSeleccionada || hoyLocal()
   );
   /** Ref con el valor más reciente: la usan la recuperación del registro y la
    *  extracción, que corren una sola vez y no deben depender del estado. */
@@ -385,10 +386,27 @@ export function GacetaIA() {
   useEffect(() => {
     const guardadas = leerRegistro();
     if (!guardadas || !guardadas.length) return;
+
+    const diaActual = fechaJornadaRef.current || hoyLocal();
+    const guardadasHoy = guardadas.filter((c) => {
+      const f = c.fecha ? (normalizarFechaIso(c.fecha) || "").slice(0, 10) : "";
+      return f === diaActual;
+    });
+
+    if (!guardadasHoy.length) {
+      limpiarTodoRegistro();
+      setCarreras([]);
+      setEstado("");
+      return;
+    }
+
+    if (guardadasHoy.length !== guardadas.length) {
+      persistirRegistro(guardadasHoy);
+    }
     // Un registro guardado con versiones viejas puede traer repetidas: se
     // normaliza una sola vez al abrir y se vuelve a persistir sin duplicados.
-    const arr = deduplicarCarreras(guardadas).lista;
-    if (arr.length !== guardadas.length) persistirRegistro(arr);
+    const arr = deduplicarCarreras(guardadasHoy).lista;
+    if (arr.length !== guardadasHoy.length) persistirRegistro(arr);
     if (!arr.length) return;
     const pendientes = arr.filter((c) => !c.enviada);
     const enviadas = arr.length - pendientes.length;

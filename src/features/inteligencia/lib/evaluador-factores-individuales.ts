@@ -138,6 +138,8 @@ export function estimarEfectividadEntrenador(entrenador?: string): number {
 export type DatosEntradaCaballo = {
   numero: number | string;
   nombre?: string | null;
+  pp?: number | string | null;
+  puestoPista?: number | string | null;
   jockey?: string | null;
   entrenador?: string | null;
   peso?: number | string | null;
@@ -162,6 +164,9 @@ export function construirEjemplarAnalisisIndividual(
   lineaEnVivo?: LineaPista | null
 ): EjemplarAnalisisV4 {
   const numeroOficial = Number(cab.numero) || idxEnCarrera + 1;
+  const ppRaw = cab.pp ?? cab.puestoPista ?? (cab as unknown as { puesto_pista?: unknown }).puesto_pista;
+  const ppNum = Number(ppRaw);
+  const puestoPista = Number.isFinite(ppNum) && ppNum > 0 ? Math.min(14, Math.max(1, Math.round(ppNum))) : Math.min(14, Math.max(1, numeroOficial));
   const nombreLimpio = String(cab.nombre || "").trim().toUpperCase() || `EJEMPLAR #${numeroOficial}`;
   const jineteLimpio = String(cab.jockey || "").trim().toUpperCase() || "Jinete Oficial";
   const entrenadorLimpio = String(cab.entrenador || "").trim().toUpperCase() || "Entrenador Oficial";
@@ -276,7 +281,7 @@ export function construirEjemplarAnalisisIndividual(
     id: String(cab.numero ?? idxEnCarrera + 1),
     numero: numeroOficial,
     nombre: nombreLimpio,
-    puestoPista: numeroOficial,
+    puestoPista,
     jinete: jineteLimpio,
     kilos: kilosAsignados,
     entrenador: entrenadorLimpio,
