@@ -8,7 +8,6 @@ import {
   type EstiloCarrera,
   COLORES_GUALDRAPA,
 } from "@/features/inteligencia/lib/analista-venezuela-v4";
-import { CamisaJockeySvg } from "@/features/inteligencia/components/CamisaJockeySvg";
 
 type Props = {
   resultado: ResultadoCarreraV4;
@@ -100,51 +99,64 @@ export function SimuladorPistaCarrera2D({
     if (fase === "META") setProgreso(100);
   };
 
-  // Calcular la posición X (0% a 92%) y el carril Y de cada caballo según la fase y el tren de carrera
+  // Calcular la posición X (alineados en partida -> fotofinish en la llegada) y carril Y
   const posicionesCalculadas = useMemo(() => {
+    // 1. Desfase acumulado en la meta de Fotofinish:
+    // El 1° (índice 0) llega exactamente en la raya roja (90.5%).
+    // Los siguientes quedan rezagados acumulativamente según sus cuerpos de ventaja,
+    // garantizando que cada puesto quede inequívocamente detrás del anterior.
+    let acumuladoDistanciaMeta = 0;
+    const offsetsMeta: number[] = [];
+
+    for (let i = 0; i < ranking.length; i++) {
+      if (i === 0) {
+        offsetsMeta.push(90.5);
+      } else {
+        const cuerpos = Math.max(ranking[i].cuerposVentaja || 0.5, 0.25);
+        // Desfase visible: mínimo 2.2% entre puestos para que el orden en la raya sea nítido
+        const separacion = Math.max(cuerpos * 2.5, 2.2);
+        acumuladoDistanciaMeta += separacion;
+        offsetsMeta.push(Math.max(90.5 - acumuladoDistanciaMeta, 12));
+      }
+    }
+
     return ranking.map((item, index) => {
-      const { ejemplar, ordenLlegadaProyectado, cuerposVentaja, favorecidoTendenciaTarde } = item;
+      const { ejemplar, ordenLlegadaProyectado, favorecidoTendenciaTarde } = item;
       const estilo = ejemplar.estilo;
 
-      // 1. Posición Teórica Inicial (Planteamiento del Tren de Carrera a la Partida)
-      // Velocistas (E1) adelante, Colocados (E2) en medio, Rematadores (E3) atrás
-      let offsetInicial = 0;
-      if (estilo === "E1") {
-        offsetInicial = 25 - (ejemplar.numero % 3) * 3; // En la delantera
-      } else if (estilo === "E2") {
-        offsetInicial = 14 - (ejemplar.numero % 3) * 3; // En persecución
-      } else {
-        offsetInicial = 3 - (ejemplar.numero % 3) * 2;  // Al fondo del lote
-      }
+      // Tren intermedio (400m a 800m): velocistas E1 en punta, E2 colocados, E3 rematadores
+      let offsetTrenMedio = 36;
+      if (estilo === "E1") offsetTrenMedio = 48 - (index % 3) * 2;
+      else if (estilo === "E2") offsetTrenMedio = 38 - (index % 3) * 2;
+      else offsetTrenMedio = 26 - (index % 3) * 2;
 
-      // 2. Posición Teórica Final (Orden de Llegada en la Meta)
-      // El 1° cruza la meta (90%), los demás quedan rezagados según sus cuerpos de ventaja
-      const cuerpos = cuerposVentaja ?? index * 1.5;
-      const offsetLlegada = Math.max(90 - cuerpos * 2.8, 15);
+      const posMetaFinal = offsetsMeta[index];
 
-      // 3. Posición X Interpolada según el progreso
-      let posX = 0;
-      if (progreso < 30) {
-        // Fase de Partida / Acomodo inicial
+      // Posición X según progreso:
+      // A progreso = 0: TODOS los caballos alineados exactamente en 6.5% (gateras de partida)
+      let posX = 6.5;
+
+      if (progreso <= 0) {
+        posX = 6.5; // Alineación perfecta de salida
+      } else if (progreso < 30) {
+        // Fase 1: Partida y primeros metros — salen juntos y se van acomodando al tren
         const t = progreso / 30;
-        posX = (offsetInicial * 0.4) + t * (offsetInicial * 0.6 + 15);
-      } else if (progreso < 80) {
-        // Fase de Codo y Curva: se produce el agrupamiento y aceleración
-        const t = (progreso - 30) / 50;
-        const posMedia = offsetInicial + (offsetLlegada - offsetInicial) * 0.5;
-        posX = offsetInicial * 0.6 + 15 + t * (posMedia);
+        posX = 6.5 + t * (offsetTrenMedio - 6.5);
+      } else if (progreso < 75) {
+        // Fase 2: Codo y curva — desarrollo del tren hacia la recta
+        const t = (progreso - 30) / 45;
+        const posEntradaRecta = offsetTrenMedio + (posMetaFinal - offsetTrenMedio) * 0.65;
+        posX = offsetTrenMedio + t * (posEntradaRecta - offsetTrenMedio);
       } else {
-        // Fase de Recta Final y Fotofinish
-        const t = (progreso - 80) / 20;
-        const posEntradaRecta = offsetInicial + (offsetLlegada - offsetInicial) * 0.7;
-        posX = posEntradaRecta + t * (offsetLlegada - posEntradaRecta);
+        // Fase 3: Recta final y definición de Fotofinish (75% a 100%)
+        const t = (progreso - 75) / 25;
+        const posEntradaRecta = offsetTrenMedio + (posMetaFinal - offsetTrenMedio) * 0.65;
+        posX = posEntradaRecta + t * (posMetaFinal - posEntradaRecta);
       }
 
-      // Asegurar límites dentro de la pista (5% a 92%)
-      posX = Math.min(Math.max(posX, 4), 92);
+      posX = Math.min(Math.max(posX, 6.5), 90.5);
 
-      // 4. Carril Y (Separación limpia en la pista para evitar superposiciones en la llegada)
-      // Cada caballo tiene su propio andarivel en la pista (de 16% a 84%)
+      // Posición Y: Andariveles independientes sin superposición
       const totalEjemplares = Math.max(ranking.length, 1);
       const pasoVertical = totalEjemplares > 1 ? 66 / (totalEjemplares - 1) : 0;
       const posYAndarivel = 17 + index * pasoVertical;
@@ -158,7 +170,6 @@ export function SimuladorPistaCarrera2D({
         carrilYBase = 50;
       }
 
-      // En la recta y llegada hacia la meta, se abren limpiamente a sus andariveles para que no se superpongan
       const factorLlegada = Math.min(Math.max((progreso - 30) / 70, 0), 1);
       const posY = carrilYBase * (1 - factorLlegada) + posYAndarivel * factorLlegada;
 
@@ -463,17 +474,17 @@ export function SimuladorPistaCarrera2D({
                     {/* Bota del Jockey */}
                     <path d="M 50 46 L 54 48 L 52 51 Z" fill="#0F172A" />
 
-                    {/* Torso del Jockey (Inclinado hacia adelante en zancada) */}
-                    <g transform="translate(42, 17) rotate(12) scale(0.44)">
-                      <CamisaJockeySvg
-                        numero={ejemplar.numero}
-                        divisaTexto={ejemplar.divisaTexto}
-                        studNombre={ejemplar.stud}
-                        size={52}
-                        mostrarGualdrapa={false}
-                        permitirEdicionIa={false}
-                      />
-                    </g>
+                    {/* Torso del Jockey (Inclinado en zancada aerodinámica) */}
+                    <path
+                      d="M 44 26 L 56 22 L 64 36 L 52 40 Z"
+                      fill="#1E293B"
+                      stroke="#0F172A"
+                      strokeWidth="1.2"
+                    />
+                    {/* Casco y Gafas del Jockey */}
+                    <circle cx="58" cy="18" r="6.5" fill="#334155" stroke="#0F172A" strokeWidth="1.2" />
+                    <path d="M 54 18 C 54 18 60 20 66 18" stroke="#F8FAFC" strokeWidth="2.5" strokeLinecap="round" />
+                    <rect x="58" y="15" width="5" height="3" rx="1" fill="#38BDF8" />
                   </svg>
                 </div>
               </div>
@@ -559,70 +570,80 @@ export function SimuladorPistaCarrera2D({
       </div>
 
       {/* 4. TARJETA DE DETALLE TÉCNICO Y DIVISA DEL EJEMPLAR EN EL ORDEN PROYECTADO */}
-      {caballoActivo && (
-        <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-indigo-50/40 p-3.5 shadow-xs flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            {/* Camisa y Gualdrapa con el Diseñador IA */}
-            <div className="scale-110">
-              <CamisaJockeySvg
-                numero={caballoActivo.ejemplar.numero}
-                divisaTexto={caballoActivo.ejemplar.divisaTexto}
-                studNombre={caballoActivo.ejemplar.stud}
-                size={44}
-                mostrarGualdrapa={true}
-                permitirEdicionIa={true}
-              />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="rounded bg-slate-900 text-white font-mono px-1.5 py-0.2 text-[10px] font-black">
-                  Llegada: {caballoActivo.ordenLlegadaProyectado}° Lugar
-                </span>
-                <h4 className="text-sm font-black uppercase text-slate-900">
-                  #{caballoActivo.ejemplar.numero} {caballoActivo.ejemplar.nombre}
-                </h4>
-                {caballoActivo.favorecidoTendenciaTarde && (
-                  <span className="rounded-full bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.2 text-[9px] font-black">
-                    ⚡ Favorecido por Tendencia
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-slate-500">
-                Jinete: <b>{caballoActivo.ejemplar.jinete || "N/A"}</b> | Stud: <b>{caballoActivo.ejemplar.stud || "Tradicional"}</b> | Estilo: <b>{caballoActivo.ejemplar.estilo}</b>
-              </p>
-            </div>
-          </div>
+      {caballoActivo && (() => {
+        const gualdrapaActiva = COLORES_GUALDRAPA[caballoActivo.ejemplar.numero] || {
+          bg: "#3B82F6",
+          text: "#FFFFFF",
+          border: "#1D4ED8",
+          nombreColor: "Azul",
+        };
 
-          <div className="flex items-center gap-3 text-right">
-            <div>
-              <span className="text-[10px] font-black uppercase text-slate-400 block">
-                Probabilidad SMIC
+        return (
+          <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-indigo-50/40 p-3.5 shadow-xs flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              {/* Contenedor de Gualdrapa Oficial con Número */}
+              <span
+                style={{
+                  backgroundColor: gualdrapaActiva.bg,
+                  color: gualdrapaActiva.text,
+                  borderColor: gualdrapaActiva.border,
+                }}
+                className="inline-grid h-11 w-11 min-w-[44px] place-items-center rounded-xl font-mono font-black text-lg border-2 shadow-sm shrink-0"
+                title={`Ejemplar #${caballoActivo.ejemplar.numero} (${gualdrapaActiva.nombreColor})`}
+              >
+                {caballoActivo.ejemplar.numero}
               </span>
-              <span className="text-base font-black text-indigo-700">
-                {caballoActivo.probabilidadSMIC.toFixed(1)}%
-              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded bg-slate-900 text-white font-mono px-1.5 py-0.2 text-[10px] font-black">
+                    Llegada: {caballoActivo.ordenLlegadaProyectado}° Lugar
+                  </span>
+                  <h4 className="text-sm font-black uppercase text-slate-900">
+                    #{caballoActivo.ejemplar.numero} {caballoActivo.ejemplar.nombre}
+                  </h4>
+                  {caballoActivo.favorecidoTendenciaTarde && (
+                    <span className="rounded-full bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.2 text-[9px] font-black">
+                      ⚡ Favorecido por Tendencia
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Jinete: <b>{caballoActivo.ejemplar.jinete || "N/A"}</b> | Stud: <b>{caballoActivo.ejemplar.stud || "Tradicional"}</b> | Estilo: <b>{caballoActivo.ejemplar.estilo}</b>
+                </p>
+              </div>
             </div>
-            <div className="border-l border-slate-200 pl-3">
-              <span className="text-[10px] font-black uppercase text-slate-400 block">
-                Cuerpos Proyectados
-              </span>
-              <span className="text-base font-black text-slate-800">
-                {caballoActivo.ordenLlegadaProyectado === 1
-                  ? "Ganador"
-                  : `+${(caballoActivo.cuerposVentaja ?? 2.5).toFixed(1)} cpos`}
-              </span>
-            </div>
-            <div className="border-l border-slate-200 pl-3">
-              <span className="text-[10px] font-black uppercase text-slate-400 block">
-                Score Godet v4
-              </span>
-              <span className="text-base font-black text-emerald-700">
-                {caballoActivo.scoreGodetTotal.toFixed(1)} pts
-              </span>
+
+            <div className="flex items-center gap-3 text-right">
+              <div>
+                <span className="text-[10px] font-black uppercase text-slate-400 block">
+                  Probabilidad SMIC
+                </span>
+                <span className="text-base font-black text-indigo-700">
+                  {caballoActivo.probabilidadSMIC.toFixed(1)}%
+                </span>
+              </div>
+              <div className="border-l border-slate-200 pl-3">
+                <span className="text-[10px] font-black uppercase text-slate-400 block">
+                  Cuerpos Proyectados
+                </span>
+                <span className="text-base font-black text-slate-800">
+                  {caballoActivo.ordenLlegadaProyectado === 1
+                    ? "Ganador"
+                    : `+${(caballoActivo.cuerposVentaja ?? 2.5).toFixed(1)} cpos`}
+                </span>
+              </div>
+              <div className="border-l border-slate-200 pl-3">
+                <span className="text-[10px] font-black uppercase text-slate-400 block">
+                  Score Godet v4
+                </span>
+                <span className="text-base font-black text-emerald-700">
+                  {caballoActivo.scoreGodetTotal.toFixed(1)} pts
+                </span>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

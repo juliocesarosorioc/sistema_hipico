@@ -248,7 +248,7 @@ const pistaSrc = readFileSync(
 );
 ok("SimuladorPistaCarrera2D contiene riel interior y baranda", pistaSrc.includes("BARANDA INTERIOR") && pistaSrc.includes("BARANDA EXTERIOR"));
 ok("SimuladorPistaCarrera2D contiene sprite vectorial de purasangre en galope", pistaSrc.includes("SPRITE VECTORIAL DEL PURASANGRE EN PLENO GALOPE"));
-ok("SimuladorPistaCarrera2D integra CamisaJockeySvg con la divisa", pistaSrc.includes("CamisaJockeySvg") && pistaSrc.includes("divisaTexto"));
+ok("SimuladorPistaCarrera2D prioriza purasangre y gualdrapa oficial eliminando camisas", !pistaSrc.includes("CamisaJockeySvg") && pistaSrc.includes("COLORES_GUALDRAPA"));
 ok("SimuladorPistaCarrera2D tiene fases de carrera (Partida, Codo, Recta, Meta)", pistaSrc.includes("Partida") && pistaSrc.includes("Codo") && pistaSrc.includes("Fotofinish"));
 
 const graficoSimSrc = readFileSync(
@@ -262,7 +262,7 @@ const modalGodetSrc = readFileSync(
   "utf8"
 );
 ok("ModalAnalisisActuarialGodet incluye pestaña de Pista & Simulación 2D", modalGodetSrc.includes("Pista & Simulación 2D") && modalGodetSrc.includes("SimuladorPistaCarrera2D"));
-ok("ModalAnalisisActuarialGodet incluye CamisaJockeySvg en tabla", modalGodetSrc.includes("CamisaJockeySvg"));
+ok("ModalAnalisisActuarialGodet incluye contenedor de gualdrapa oficial en tabla sin camisas", modalGodetSrc.includes("COLORES_GUALDRAPA") && !modalGodetSrc.includes("CamisaJockeySvg"));
 
 // -------------------------------------------------------------
 // [9] MEJORAS DE UX/UI: MODELOS ESTABLES, DIVISAS, ANIMACIÓN Y FILAS UNIFORMES
@@ -293,13 +293,13 @@ const modalGacetaSrc = readFileSync(
   "utf8"
 );
 ok("ModalImportarGacetaPdf usa filas de alto uniforme", modalGacetaSrc.includes("h-14 min-h-[56px]"));
-ok("ModalImportarGacetaPdf pasa divisaTexto y studNombre a DivisaStudSvg", modalGacetaSrc.includes("divisaTexto={ej.ejemplar.divisaTexto") && modalGacetaSrc.includes("mostrarGualdrapa={false}"));
-ok("ModalImportarGacetaPdf tiene contenedor de número agrandado", modalGacetaSrc.includes("h-7 w-7 min-w-[28px]"));
+ok("ModalImportarGacetaPdf elimina camisas y prioriza gualdrapas oficiales", !modalGacetaSrc.includes("DivisaStudSvg") && modalGacetaSrc.includes("COLORES_GUALDRAPA"));
+ok("ModalImportarGacetaPdf tiene contenedor de número agrandado", modalGacetaSrc.includes("min-w-[32px]") || modalGacetaSrc.includes("min-w-[28px]"));
 
 ok("SimuladorPistaCarrera2D muestra solo las figuras con el color de contenedor sin etiquetas flotantes", pistaSrc.includes("SPRITE VECTORIAL DEL PURASANGRE EN PLENO GALOPE CON COLOR DE CONTENEDOR") && !pistaSrc.includes("font-mono text-cyan-300"));
 ok("SimuladorPistaCarrera2D agranda gualdrapa oficial en el lomo", pistaSrc.includes("CONTENEDOR AGRANDADO") && pistaSrc.includes('width="26"'));
 
-ok("GraficoSimulacionDinamica incluye simulación animada en vista cuerpos", graficoSimSrc.includes("animandoLlegada") && graficoSimSrc.includes("Simular Llegada"));
+ok("GraficoSimulacionDinamica incluye simulación de carrera horizontal en vista cuerpos", graficoSimSrc.includes("animandoLlegada") && graficoSimSrc.includes("posHorizontal") && !graficoSimSrc.includes("animate-bounce"));
 ok("GraficoSimulacionDinamica tiene filas uniformes en vista cuerpos", graficoSimSrc.includes("h-14 min-h-[56px]"));
 
 // -------------------------------------------------------------

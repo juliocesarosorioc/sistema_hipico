@@ -2,9 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { HorseSaddleclothSvg } from "@/shared/components/ui/HorseSaddleclothSvg";
-import { CamisaJockeySvg } from "@/features/inteligencia/components/CamisaJockeySvg";
 import { SimuladorPistaCarrera2D } from "@/features/inteligencia/components/SimuladorPistaCarrera2D";
-import type { ResultadoCarreraV4, EstiloCarrera } from "@/features/inteligencia/lib/analista-venezuela-v4";
+import {
+  type ResultadoCarreraV4,
+  type EstiloCarrera,
+  COLORES_GUALDRAPA,
+} from "@/features/inteligencia/lib/analista-venezuela-v4";
 import {
   generarProspectivaGodet,
   type EjemplarGodet,
@@ -298,22 +301,32 @@ export function ModalAnalisisActuarialGodet({
                     </tr>
                   </thead>
                   <tbody>
-                    {res.ordenLlegada.map((row) => (
-                      <tr key={row.ejemplar.id} className="border-b border-slate-800/60 hover:bg-slate-800/40">
-                        <td className="px-3 py-2 font-black text-amber-300">#{row.puestoProyectado}</td>
-                        <td className="px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            <CamisaJockeySvg
-                              numero={row.ejemplar.numero}
-                              divisaTexto={row.ejemplar.stud}
-                              size={28}
-                              mostrarGualdrapa={true}
-                              permitirEdicionIa={true}
-                            />
-                            <span className="font-black">{row.ejemplar.numero}</span>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 font-bold text-white">{row.ejemplar.nombre}</td>
+                    {res.ordenLlegada.map((row) => {
+                      const num = Number(row.ejemplar.numero);
+                      const gualdrapa = COLORES_GUALDRAPA[num] || {
+                        bg: "#3B82F6",
+                        text: "#FFFFFF",
+                        border: "#1D4ED8",
+                        nombreColor: "Azul",
+                      };
+
+                      return (
+                        <tr key={row.ejemplar.id} className="border-b border-slate-800/60 hover:bg-slate-800/40">
+                          <td className="px-3 py-2 font-black text-amber-300">#{row.puestoProyectado}</td>
+                          <td className="px-3 py-2">
+                            <span
+                              style={{
+                                backgroundColor: gualdrapa.bg,
+                                color: gualdrapa.text,
+                                borderColor: gualdrapa.border,
+                              }}
+                              className="inline-grid h-7 w-7 min-w-[28px] place-items-center rounded-lg font-mono font-black text-xs border shadow-sm"
+                              title={`Número oficial #${num} (${gualdrapa.nombreColor})`}
+                            >
+                              {num}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 font-bold text-white">{row.ejemplar.nombre}</td>
                         <td className="px-3 py-2 text-[10px] font-bold uppercase text-cyan-300">
                           {row.ejemplar.tipoCarrera}
                         </td>
@@ -336,7 +349,8 @@ export function ModalAnalisisActuarialGodet({
                         </td>
                         <td className="px-3 py-2 font-bold text-amber-200">{row.remate.ultima200Seg}s</td>
                       </tr>
-                    ))}
+                    );
+                  })}
                   </tbody>
                 </table>
               </div>

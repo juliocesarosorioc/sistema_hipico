@@ -8,7 +8,6 @@ import { ModalAnalisisActuarialGodet } from "@/features/ejemplares/components/Mo
 import { ModalCuadroMaestro5y6 } from "@/features/inteligencia/components/ModalCuadroMaestro5y6";
 import { ModalImportarGacetaPdf } from "@/features/inteligencia/components/ModalImportarGacetaPdf";
 import { GraficoSimulacionDinamica } from "@/features/inteligencia/components/GraficoSimulacionDinamica";
-import { DivisaStudSvg } from "@/features/inteligencia/components/DivisaStudSvg";
 import {
   simularCarreraV4,
   COLORES_GUALDRAPA,
@@ -808,19 +807,31 @@ export function ProyeccionesModule() {
                               item.ordenLlegadaProyectado === 1 ? "bg-amber-50/40" : ""
                             }`}
                           >
-                            {/* Gualdrapa y Camiseta SVG */}
+                            {/* Número Oficial con su Contenedor de Gualdrapa Reglamentaria */}
                             <td className="py-2.5 px-3 whitespace-nowrap">
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono font-black text-sm text-slate-800">
-                                  #{num}
-                                </span>
-                                <DivisaStudSvg
-                                  numero={num}
-                                  divisaTexto={ej.divisaTexto}
-                                  studNombre={ej.stud}
-                                  className="h-8 w-8"
-                                />
-                              </div>
+                              {(() => {
+                                const gualdrapa = COLORES_GUALDRAPA[num] || {
+                                  bg: "#3B82F6",
+                                  text: "#FFFFFF",
+                                  border: "#1D4ED8",
+                                  nombreColor: "Azul",
+                                };
+                                return (
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      style={{
+                                        backgroundColor: gualdrapa.bg,
+                                        color: gualdrapa.text,
+                                        borderColor: gualdrapa.border,
+                                      }}
+                                      className="inline-grid h-8 w-8 min-w-[32px] place-items-center rounded-lg font-mono font-black text-sm border-2 shadow-sm"
+                                      title={`Ejemplar #${num} (${gualdrapa.nombreColor})`}
+                                    >
+                                      {num}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
                             </td>
 
                             {/* Nombre del Ejemplar y Profesionales */}

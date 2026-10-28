@@ -8,8 +8,6 @@ import {
   type EstiloCarrera,
   COLORES_GUALDRAPA,
 } from "@/features/inteligencia/lib/analista-venezuela-v4";
-import { DivisaStudSvg } from "@/features/inteligencia/components/DivisaStudSvg";
-import { CamisaJockeySvg } from "@/features/inteligencia/components/CamisaJockeySvg";
 import { SimuladorPistaCarrera2D } from "@/features/inteligencia/components/SimuladorPistaCarrera2D";
 
 type Props = {
@@ -78,6 +76,25 @@ export function GraficoSimulacionDinamica({
       (a, b) => a.ordenLlegadaProyectado - b.ordenLlegadaProyectado
     );
   }, [resultado.ranking]);
+
+  // Offsets de llegada teórica calculados estrictamente acumulativos hacia atrás desde la meta (88%):
+  // Garantiza que el fotofinish sea inequívoco: cada puesto posterior queda físicamente detrás del anterior.
+  const offsetsMetaLlegada = useMemo(() => {
+    const mapa: Record<number, number> = {};
+    let acumuladoDistancia = 0;
+    ranking.forEach((r, idx) => {
+      if (idx === 0) {
+        mapa[r.ejemplar.numero] = 88; // El líder toca la sentencia de fotofinish exactamente en 88%
+      } else {
+        const cpos = Math.max(r.cuerposVentaja || 0.5, 0.25);
+        // Cada puesto se separa acumulativamente un mínimo de 3.2%
+        const separacion = Math.max(cpos * 2.6, 3.2);
+        acumuladoDistancia += separacion;
+        mapa[r.ejemplar.numero] = Math.max(8, 88 - acumuladoDistancia);
+      }
+    });
+    return mapa;
+  }, [ranking]);
 
   const maxProb = useMemo(() => {
     return Math.max(...ranking.map((r) => r.probabilidadSMIC), 1);
@@ -322,16 +339,10 @@ export function GraficoSimulacionDinamica({
                           color: gualdrapa.text,
                           borderColor: gualdrapa.border,
                         }}
-                        className="inline-grid h-6 w-6 place-items-center rounded-md font-black text-xs border shadow-xs"
+                        className="inline-grid h-7 w-7 place-items-center rounded-lg font-mono font-black text-xs border shadow-xs shrink-0"
                       >
                         {num}
                       </span>
-                      <DivisaStudSvg
-                        numero={num}
-                        divisaTexto={r.ejemplar.divisaTexto}
-                        studNombre={r.ejemplar.stud}
-                        className="h-6 w-6"
-                      />
                       <div>
                         <span className="font-black text-slate-900 block uppercase leading-tight group-hover:text-amber-600 transition-colors">
                           {r.ejemplar.nombre}
@@ -408,15 +419,33 @@ export function GraficoSimulacionDinamica({
                 <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-300 font-mono">
                   {resultado.distancia}m · {resultado.hipodromo}
                 </span>
+                <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
+                  Avance: {progresoLlegada.toFixed(0)}%
+                </span>
               </div>
 
-              {/* Controles de Animación de Llegada */}
+              {/* Controles de Animación de Carrera (De Partida a Meta) */}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => {
-                    if (progresoLlegada >= 100) setProgresoLlegada(0);
-                    setAnimandoLlegada(!animandoLlegada);
+                    setAnimandoLlegada(false);
+                    setProgresoLlegada(0);
+                  }}
+                  className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all"
+                  title="Alinear todos los ejemplares en las gateras de salida"
+                >
+                  ⏮️ Partida
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (progresoLlegada >= 100) {
+                      setProgresoLlegada(0);
+                      setAnimandoLlegada(true);
+                    } else {
+                      setAnimandoLlegada(!animandoLlegada);
+                    }
                   }}
                   className={`px-3 py-1 rounded-lg text-xs font-black shadow-sm flex items-center gap-1.5 transition-all ${
                     animandoLlegada
@@ -424,7 +453,15 @@ export function GraficoSimulacionDinamica({
                       : "bg-emerald-600 hover:bg-emerald-500 text-white"
                   }`}
                 >
-                  <span>{animandoLlegada ? "⏸️ Pausar" : progresoLlegada >= 100 ? "🔁 Repetir Simulación" : "▶️ Simular Llegada"}</span>
+                  <span>
+                    {animandoLlegada
+                      ? "⏸️ Pausar"
+                      : progresoLlegada >= 100
+                      ? "🔁 Repetir Carrera"
+                      : progresoLlegada === 0
+                      ? "▶️ Iniciar Carrera"
+                      : "▶️ Reanudar"}
+                  </span>
                 </button>
                 <div className="flex items-center bg-slate-800 rounded-md border border-slate-700 p-0.5 text-[10px] font-bold">
                   {[1, 2].map((v) => (
@@ -443,7 +480,7 @@ export function GraficoSimulacionDinamica({
               </div>
             </div>
 
-            {/* Pista gráfica de simulación de llegada con carriles de alto uniforme */}
+            {/* Pista gráfica de simulación de carrera con avance horizontal continuo de izquierda a derecha */}
             <div className="relative py-2 px-1 space-y-1.5 overflow-hidden">
               {ranking.map((r, idx) => {
                 const num = r.ejemplar.numero;
@@ -451,51 +488,43 @@ export function GraficoSimulacionDinamica({
                   bg: "#3B82F6",
                   text: "#FFFFFF",
                   border: "#1D4ED8",
+                  nombreColor: "Azul",
                 };
-                // Separación teórica en cuerpos respecto al líder (0 a ~15 cuerpos)
-                const desfaseCuerpos = idx === 0 ? 0 : r.cuerposVentaja;
-                // Posición final objetivo (% de separación desde la meta a la derecha)
-                const margenMetaObjetivo = Math.min(80, desfaseCuerpos * 5.8);
-                
-                // Si está animando, interpolar el avance hacia la meta
-                const factorAvance = progresoLlegada / 100;
-                const posActual = 92 - factorAvance * (92 - margenMetaObjetivo);
+
+                // Posición horizontal de izquierda a derecha:
+                // En progresoLlegada = 0%: todos están alineados en las gateras de salida (left: 2%)
+                // En progresoLlegada = 100%: fotofinish exacto con cuerpos de ventaja acumulativos
+                const posPartida = 2; // % gatera de salida a la izquierda
+                const posMetaFinal = offsetsMetaLlegada[num] ?? 88; // % sobre la sentencia de meta
+                const t = Math.max(0, Math.min(1, progresoLlegada / 100));
+                const posHorizontal = posPartida + (posMetaFinal - posPartida) * t;
 
                 return (
                   <div
                     key={num}
                     className="flex items-center gap-3 h-14 min-h-[56px] bg-slate-950/70 border border-slate-800/80 rounded-xl px-3 hover:bg-slate-800/50 transition-colors"
                   >
-                    {/* Panel Izquierdo: Número oficial agrandado + Camisa + Características técnicas (Sin nombre repetido) */}
-                    <div className="flex items-center gap-2.5 w-72 sm:w-80 shrink-0">
+                    {/* Panel Izquierdo: Número oficial con contenedor de gualdrapa + Características técnicas (Sin nombre repetido) */}
+                    <div className="flex items-center gap-2.5 w-64 sm:w-72 shrink-0">
                       {/* Puesto proyectado de llegada */}
                       <span className="font-mono text-xs font-bold text-slate-400 w-5 text-center">
                         #{r.ordenLlegadaProyectado}
                       </span>
 
-                      {/* Contenedor del número agrandado (# de carrera oficial) */}
+                      {/* Contenedor oficial de la gualdrapa con su número */}
                       <span
                         style={{
                           backgroundColor: gualdrapa.bg,
                           color: gualdrapa.text,
                           borderColor: gualdrapa.border,
                         }}
-                        className="inline-grid h-8 w-8 min-w-[32px] place-items-center rounded-lg font-mono font-black text-xs sm:text-sm border shadow-sm shrink-0"
-                        title={`Número oficial #${num} de carrera`}
+                        className="inline-grid h-8 w-8 min-w-[32px] place-items-center rounded-lg font-mono font-black text-xs sm:text-sm border-2 shadow-sm shrink-0"
+                        title={`Ejemplar #${num} (${gualdrapa.nombreColor})`}
                       >
                         {num}
                       </span>
 
-                      {/* Camisa Jockey sin duplicar número */}
-                      <DivisaStudSvg
-                        numero={num}
-                        divisaTexto={r.ejemplar.divisaTexto || r.ejemplar.stud}
-                        studNombre={r.ejemplar.stud}
-                        className="h-8 w-8 shrink-0"
-                        mostrarGualdrapa={false}
-                      />
-
-                      {/* Características técnicas del caballo (sin repetir nombre) */}
+                      {/* Características técnicas del ejemplar (sin repetir nombre) */}
                       <div className="flex flex-col text-[10px] leading-tight overflow-hidden">
                         <div className="flex items-center gap-1.5 font-bold">
                           <span className="text-amber-400">{r.ejemplar.estilo}</span>
@@ -516,23 +545,27 @@ export function GraficoSimulacionDinamica({
                       </div>
                     </div>
 
-                    {/* Panel Derecho: Pista animada solo con el caballo y su gualdrapa visible */}
+                    {/* Panel Derecho: Pista de carrera con avance horizontal de izquierda a derecha (sin saltos verticales) */}
                     <div className="relative flex-1 h-12 bg-amber-950/30 rounded-lg overflow-hidden border border-amber-900/30 flex items-center">
-                      {/* Suelo de pista */}
+                      {/* Suelo de pista con textura */}
                       <div className="absolute inset-0 bg-gradient-to-r from-amber-950/20 via-amber-900/30 to-amber-950/40" />
 
-                      {/* Línea de Meta (Derecha) */}
-                      <div className="absolute right-3 top-0 bottom-0 w-1.5 bg-gradient-to-b from-red-600 via-white to-red-600 z-10 shadow-sm" />
+                      {/* Gateras de Salida (Izquierda) */}
+                      <div className="absolute left-2 top-0 bottom-0 w-1 bg-amber-500/40 z-10" />
 
-                      {/* Caballo al galope con animación fluida (solo el caballo y su gualdrapa con número) */}
+                      {/* Línea de Sentencia Fotofinish (Derecha) */}
+                      <div className="absolute right-4 top-0 bottom-0 w-1.5 bg-gradient-to-b from-red-600 via-white to-red-600 z-10 shadow-sm" />
+
+                      {/* Caballo purasangre desplazándose horizontalmente por la pista de izquierda a derecha */}
                       <div
-                        className="absolute flex items-center transition-all duration-150 ease-linear z-20"
+                        className="absolute flex items-center z-20 pointer-events-none"
                         style={{
-                          right: animandoLlegada ? `${posActual}%` : `${margenMetaObjetivo}%`,
+                          left: `${posHorizontal}%`,
+                          transition: animandoLlegada ? "none" : "left 0.25s ease-out",
                         }}
                       >
-                        {/* Avatar SVG grande del caballo purasangre en galope con gualdrapa y número nítidos */}
-                        <div className={`relative flex items-center ${animandoLlegada ? "animate-bounce" : ""}`} style={{ animationDuration: "0.38s" }}>
+                        {/* Avatar SVG grande del purasangre con gualdrapa y número nítidos (sin saltos verticales) */}
+                        <div className="relative flex items-center">
                           <svg width="68" height="46" viewBox="0 0 105 75" fill="none" className="drop-shadow-md">
                             {/* Patas traseras */}
                             <path d="M 14 60 L 25 42 L 36 38 L 25 64 Z" fill="#78350F" stroke="#451A03" strokeWidth="1.2" />
@@ -541,7 +574,7 @@ export function GraficoSimulacionDinamica({
                             <path d="M 18 34 C 8 30 3 38 1 48 C 8 44 15 40 20 38 Z" fill="#451A03" />
                             {/* Torso muscular */}
                             <path d="M 26 36 C 38 28 56 28 68 32 C 76 35 80 43 76 50 C 68 56 46 56 30 50 Z" fill="#854D0E" stroke="#451A03" strokeWidth="1.5" />
-                            {/* Cuello y cabeza */}
+                            {/* Cuello y cabeza orientados al avance hacia la meta */}
                             <path d="M 66 32 L 80 20 L 92 18 L 98 24 L 92 28 L 78 38 Z" fill="#854D0E" stroke="#451A03" strokeWidth="1.5" />
                             {/* Patas delanteras */}
                             <path d="M 68 48 L 80 58 L 92 60 L 88 56 L 76 48 Z" fill="#78350F" stroke="#451A03" strokeWidth="1.2" />
@@ -602,12 +635,17 @@ export function GraficoSimulacionDinamica({
           <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
               <div className="flex items-center gap-2">
-                <DivisaStudSvg
-                  numero={detalleEjemplar.ejemplar.numero}
-                  divisaTexto={detalleEjemplar.ejemplar.divisaTexto}
-                  studNombre={detalleEjemplar.ejemplar.stud}
-                  className="h-8 w-8"
-                />
+                <span
+                  style={{
+                    backgroundColor: COLORES_GUALDRAPA[detalleEjemplar.ejemplar.numero]?.bg || "#3B82F6",
+                    color: COLORES_GUALDRAPA[detalleEjemplar.ejemplar.numero]?.text || "#FFFFFF",
+                    borderColor: COLORES_GUALDRAPA[detalleEjemplar.ejemplar.numero]?.border || "#1D4ED8",
+                  }}
+                  className="inline-grid h-8 w-8 min-w-[32px] place-items-center rounded-lg font-mono font-black text-sm border-2 shadow-sm shrink-0"
+                  title={`Ejemplar #${detalleEjemplar.ejemplar.numero}`}
+                >
+                  {detalleEjemplar.ejemplar.numero}
+                </span>
                 <div>
                   <h4 className="text-xs font-black uppercase text-slate-900">
                     {detalleEjemplar.ejemplar.nombre} (Puesto #{detalleEjemplar.ejemplar.numero})

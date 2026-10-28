@@ -3,14 +3,13 @@
 import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { Card } from "@/shared/components/ui/Card";
-import { DivisaStudSvg } from "@/features/inteligencia/components/DivisaStudSvg";
 import {
   generarCuadroMaestro5y6,
   ESTRATEGIAS_META,
   type Estrategia5y6,
   type CuadroMaestro5y6Resultado,
 } from "@/features/inteligencia/lib/optimizador-5y6";
-import { ResultadoCarreraV4 } from "@/features/inteligencia/lib/analista-venezuela-v4";
+import { ResultadoCarreraV4, COLORES_GUALDRAPA } from "@/features/inteligencia/lib/analista-venezuela-v4";
 import { generarInformeCuadro5y6IA, type InformeCuadro5y6IA } from "@/features/inteligencia/lib/ia-analista-experto";
 import { useInteligenciaHipicaStore } from "@/features/inteligencia/store/useInteligenciaHipicaStore";
 
@@ -231,6 +230,12 @@ export function ModalCuadroMaestro5y6({
                       const num = item.ejemplar.numero;
                       const seleccionado = valida.seleccionados.includes(num);
                       const retirado = Boolean(item.ejemplar.retirado);
+                      const gualdrapa = COLORES_GUALDRAPA[num] || {
+                        bg: "#3B82F6",
+                        text: "#FFFFFF",
+                        border: "#1D4ED8",
+                        nombreColor: "Azul",
+                      };
 
                       return (
                         <div
@@ -252,16 +257,20 @@ export function ModalCuadroMaestro5y6({
                               onChange={() => !retirado && alternarStore(valida.numeroValida, num)}
                               className="rounded accent-amber-500"
                             />
-                            <DivisaStudSvg
-                              numero={num}
-                              divisaTexto={item.ejemplar.divisaTexto}
-                              studNombre={item.ejemplar.stud}
-                              className="h-6 w-6"
-                              mostrarGualdrapa={false}
-                            />
+                            {/* Contenedor oficial de gualdrapa con número (sin camisa) */}
+                            <span
+                              style={{
+                                backgroundColor: gualdrapa.bg,
+                                color: gualdrapa.text,
+                                borderColor: gualdrapa.border,
+                              }}
+                              className="inline-grid h-6 w-6 min-w-[24px] place-items-center rounded-md font-mono font-black text-xs border shadow-xs shrink-0"
+                              title={`Ejemplar #${num} (${gualdrapa.nombreColor})`}
+                            >
+                              {num}
+                            </span>
                             <div className="truncate">
-                              <div className="flex items-center gap-1 font-bold text-white truncate text-[11px]">
-                                <span>#{num}</span>
+                              <div className="font-bold text-white truncate text-[11px]">
                                 <span className="truncate">{item.ejemplar.nombre}</span>
                               </div>
                               <div className="text-[9.5px] text-slate-400 truncate">

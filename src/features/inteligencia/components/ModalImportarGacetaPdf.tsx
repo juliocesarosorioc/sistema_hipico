@@ -13,7 +13,6 @@ import {
 import type { CarreraCatalogo } from "@/features/carreras/lib/maestro-nucleo";
 import type { CarreraExtraida } from "@/features/gaceta/lib/ia";
 import { COLORES_GUALDRAPA } from "@/features/inteligencia/lib/analista-venezuela-v4";
-import { DivisaStudSvg } from "@/features/inteligencia/components/DivisaStudSvg";
 import { sincronizarCarrerasAlCentral } from "@/features/carreras/lib/sincronizar";
 import { emitirToast } from "@/shared/lib/mensajeria";
 
@@ -554,7 +553,7 @@ export function ModalImportarGacetaPdf({
                       <tr className="text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-700 h-9">
                         <th className="py-1.5 px-2.5 text-center whitespace-nowrap">Pos Llegada</th>
                         <th className="py-1.5 px-2.5 text-center whitespace-nowrap"># Carrera</th>
-                        <th className="py-1.5 px-2.5">Divisa / Ejemplar</th>
+                        <th className="py-1.5 px-2.5">Ejemplar</th>
                         <th className="py-1.5 px-2.5">Jinete / Entrenador</th>
                         <th className="py-1.5 px-2 text-center">Score Godet</th>
                         <th className="py-1.5 px-2 text-center">Prob %</th>
@@ -584,29 +583,20 @@ export function ModalImportarGacetaPdf({
                                   color: gualdrapa.text,
                                   borderColor: gualdrapa.border,
                                 }}
-                                className="inline-grid h-7 w-7 min-w-[28px] place-items-center rounded-lg font-black text-xs sm:text-sm border shadow-sm"
+                                className="inline-grid h-8 w-8 min-w-[32px] place-items-center rounded-lg font-mono font-black text-xs sm:text-sm border shadow-sm"
                                 title={`Número de ejemplar #${num} en esta carrera`}
                               >
                                 {num}
                               </span>
                             </td>
                             <td className="py-2.5 px-2.5 align-middle">
-                              <div className="flex items-center gap-2.5">
-                                <DivisaStudSvg
-                                  numero={num}
-                                  divisaTexto={ej.ejemplar.divisaTexto || ej.ejemplar.stud}
-                                  studNombre={ej.ejemplar.stud}
-                                  className="h-7 w-7 shrink-0"
-                                  mostrarGualdrapa={false}
-                                />
-                                <div>
-                                  <span className="font-black text-white uppercase block leading-tight">
-                                    {ej.ejemplar.nombre}
-                                  </span>
-                                  <span className="text-[10px] text-slate-400">
-                                    {ej.ejemplar.estilo} · Kilos: {ej.ejemplar.kilos}kg
-                                  </span>
-                                </div>
+                              <div>
+                                <span className="font-black text-white uppercase block leading-tight">
+                                  {ej.ejemplar.nombre}
+                                </span>
+                                <span className="text-[10px] text-slate-400">
+                                  {ej.ejemplar.estilo} · Kilos: {ej.ejemplar.kilos}kg
+                                </span>
                               </div>
                             </td>
                             <td className="py-2.5 px-2.5 text-slate-300 align-middle">
