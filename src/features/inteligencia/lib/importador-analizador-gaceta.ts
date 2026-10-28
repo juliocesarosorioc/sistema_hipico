@@ -22,6 +22,7 @@ import {
   type EjemplarAnalisisV4,
   type EstiloCarrera,
 } from "@/features/inteligencia/lib/analista-venezuela-v4";
+import { construirEjemplarAnalisisIndividual } from "@/features/inteligencia/lib/evaluador-factores-individuales";
 
 // Tipos para pdfjs-dist cargado dinámicamente en el cliente
 type PdfLib = {
@@ -429,36 +430,24 @@ export function analizarCarrerasGacetaV4(params: {
     const numValida = esValida ? numC - inicioValidas + 1 : undefined;
 
     const ejs: EjemplarAnalisisV4[] = (c.caballos || []).map((cab, idx) => {
-      const n = Number(cab.numero) || idx + 1;
-      const estilo: EstiloCarrera = n % 3 === 1 ? "E1" : n % 3 === 2 ? "E2" : "E3";
-
-      return {
-        id: String(cab.numero ?? idx + 1),
-        numero: n,
-        nombre: cab.nombre || `EJEMPLAR #${n}`,
-        puestoPista: n,
-        jinete: cab.jockey || "Jinete Oficial",
-        kilos: Number(cab.peso) || 54,
-        entrenador: cab.entrenador || "Entrenador Oficial",
-        stud: (cab as unknown as { stud?: string }).stud || "STUD PRINCIPAL",
-        morningLine: 2.5 + (n % 6) * 1.5,
-        speedRatingTTC: 70 + (n % 8) * 3,
-        estilo,
-        actuacionesPrevias: 5 + (n % 4),
-        diasSinCorrer: 14 + (n % 5) * 7,
-        pesoOptimoKg: 475 + (n % 7) * 4,
-        pesoHoyKg: null,
-        implementos: cab.implementos || "BB, LA",
-        efectividadJineteEntrenador: 0.18 + (n % 5) * 0.05,
-        tendenciaTramoFinal: n % 2 === 0 ? "ATROPELLA" : "SE_MANTIENE",
-        retirado: Boolean(cab.retirado),
-        ultimoTraqueo: {
-          distancia: 1000,
-          tiempo: `${60 + (n % 4)}.${n % 5}`,
-          remate: `12.${n % 4}`,
-          calificacion: n % 3 === 0 ? "E" : "MB",
+      return construirEjemplarAnalisisIndividual(
+        {
+          numero: cab.numero,
+          nombre: cab.nombre,
+          jockey: cab.jockey,
+          entrenador: cab.entrenador,
+          peso: cab.peso,
+          medicamento: cab.medicamento,
+          implementos: cab.implementos,
+          stud: (cab as unknown as { stud?: string }).stud,
+          divisaTexto: (cab as unknown as { divisaTexto?: string }).divisaTexto,
+          retirado: cab.retirado,
         },
-      };
+        idx,
+        numC,
+        Number(c.distancia) || 1200,
+        c.hipodromo
+      );
     });
 
     const resCarrera = simularCarreraV4({

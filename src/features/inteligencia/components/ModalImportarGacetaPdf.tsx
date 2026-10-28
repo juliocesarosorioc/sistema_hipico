@@ -551,11 +551,11 @@ export function ModalImportarGacetaPdf({
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
-                      <tr className="text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-700">
-                        <th className="py-1.5 px-2">Pos</th>
-                        <th className="py-1.5 px-2">#</th>
-                        <th className="py-1.5 px-2">Divisa / Ejemplar</th>
-                        <th className="py-1.5 px-2">Jinete / Entrenador</th>
+                      <tr className="text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-700 h-9">
+                        <th className="py-1.5 px-2.5 text-center whitespace-nowrap">Pos Llegada</th>
+                        <th className="py-1.5 px-2.5 text-center whitespace-nowrap"># Carrera</th>
+                        <th className="py-1.5 px-2.5">Divisa / Ejemplar</th>
+                        <th className="py-1.5 px-2.5">Jinete / Entrenador</th>
                         <th className="py-1.5 px-2 text-center">Score Godet</th>
                         <th className="py-1.5 px-2 text-center">Prob %</th>
                         <th className="py-1.5 px-2 text-center">Speed Fig</th>
@@ -573,25 +573,32 @@ export function ModalImportarGacetaPdf({
                         };
 
                         return (
-                          <tr key={num} className="hover:bg-slate-700/30">
-                            <td className="py-2 px-2 font-mono font-bold text-slate-400">
+                          <tr key={num} className="hover:bg-slate-700/30 h-14 min-h-[56px] transition-colors">
+                            <td className="py-2.5 px-2.5 font-mono font-bold text-center text-slate-400 align-middle">
                               #{ej.ordenLlegadaProyectado}
                             </td>
-                            <td className="py-2 px-2">
+                            <td className="py-2.5 px-2.5 text-center align-middle">
                               <span
                                 style={{
                                   backgroundColor: gualdrapa.bg,
                                   color: gualdrapa.text,
                                   borderColor: gualdrapa.border,
                                 }}
-                                className="inline-grid h-6 w-6 place-items-center rounded-md font-black text-xs border shadow-xs"
+                                className="inline-grid h-7 w-7 min-w-[28px] place-items-center rounded-lg font-black text-xs sm:text-sm border shadow-sm"
+                                title={`Número de ejemplar #${num} en esta carrera`}
                               >
                                 {num}
                               </span>
                             </td>
-                            <td className="py-2 px-2">
-                              <div className="flex items-center gap-2">
-                                <DivisaStudSvg numero={num} className="h-6 w-6" />
+                            <td className="py-2.5 px-2.5 align-middle">
+                              <div className="flex items-center gap-2.5">
+                                <DivisaStudSvg
+                                  numero={num}
+                                  divisaTexto={ej.ejemplar.divisaTexto || ej.ejemplar.stud}
+                                  studNombre={ej.ejemplar.stud}
+                                  className="h-7 w-7 shrink-0"
+                                  mostrarGualdrapa={false}
+                                />
                                 <div>
                                   <span className="font-black text-white uppercase block leading-tight">
                                     {ej.ejemplar.nombre}
@@ -602,7 +609,7 @@ export function ModalImportarGacetaPdf({
                                 </div>
                               </div>
                             </td>
-                            <td className="py-2 px-2 text-slate-300">
+                            <td className="py-2.5 px-2.5 text-slate-300 align-middle">
                               <span className="block leading-tight font-medium">
                                 {ej.ejemplar.jinete || "—"}
                               </span>
@@ -610,21 +617,21 @@ export function ModalImportarGacetaPdf({
                                 {ej.ejemplar.entrenador || "—"}
                               </span>
                             </td>
-                            <td className="py-2 px-2 text-center font-mono font-bold text-amber-400">
+                            <td className="py-2.5 px-2 text-center font-mono font-bold text-amber-400 align-middle">
                               {ej.scoreGodetTotal.toFixed(1)}
                             </td>
-                            <td className="py-2 px-2 text-center font-mono font-bold text-white">
+                            <td className="py-2.5 px-2 text-center font-mono font-bold text-white align-middle">
                               {ej.probabilidadSMIC.toFixed(1)}%
                             </td>
-                            <td className="py-2 px-2 text-center font-mono text-slate-300">
+                            <td className="py-2.5 px-2 text-center font-mono text-slate-300 align-middle">
                               {ej.ejemplar.speedRatingTTC}
                             </td>
-                            <td className="py-2 px-2 text-center font-mono text-slate-400">
+                            <td className="py-2.5 px-2 text-center font-mono text-slate-400 align-middle">
                               {ej.ordenLlegadaProyectado === 1
                                 ? `+${ej.cuerposVentaja.toFixed(1)} cpos`
                                 : `-${ej.cuerposVentaja.toFixed(1)} cpos`}
                             </td>
-                            <td className="py-2 px-2 text-right">
+                            <td className="py-2.5 px-2.5 text-right align-middle">
                               {ej.esLinea5y6 && (
                                 <span className="rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 px-1.5 py-0.5 text-[9px] font-black uppercase">
                                   Línea Fija

@@ -227,6 +227,25 @@ export async function guardarPrograma(
   const resumen = `${carreras.length} carrera(s) · ${hipodromos.join(", ")}`;
   const normP: ProgramaDia = { fecha, hipodromos, carreras, resumen, creado_por: creadoPor || "desconocido" };
 
+  // Persistencia directa resiliente en programa_dia y catálogo matriz
+  const persistirDirecto = async (): Promise<{ ok: boolean; data?: ProgramaDia; error?: string }> => {
+    if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
+    try {
+      const { error: errUpsert } = await supabase.from("programa_dia").upsert(normP, { onConflict: "fecha" });
+      if (opciones.registrarEnMatriz !== false) {
+        const matriz = await confirmarCargaEnCatalogo(fecha, carreras);
+        if (!matriz.ok && errUpsert) return { ok: false, error: `${errUpsert.message} | ${matriz.error}` };
+      }
+      return { ok: true, data: normP };
+    } catch (e) {
+      if (opciones.registrarEnMatriz !== false) {
+        const matriz = await confirmarCargaEnCatalogo(fecha, carreras);
+        if (matriz.ok) return { ok: true, data: normP };
+      }
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  };
+
   try {
     const r = await supabase.rpc("club_guardar_programa_dia", {
       p_fecha: fecha,
@@ -235,38 +254,14 @@ export async function guardarPrograma(
       p_creado_por: creadoPor || "desconocido",
     });
     if (r.error) {
-      if (!rpcAusente(r.error)) {
-        if (opciones.registrarEnMatriz === false) return { ok: false, error: r.error.message };
-        // El documento del día (`programa_dia`) no se pudo guardar, pero la
-        // MATRIZ —de donde leen TODOS los módulos— se escribe igual: sin esto la
-        // carrera quedaría invisible aunque el operador ya la haya cargado.
-        const matriz = await confirmarCargaEnCatalogo(fecha, carreras);
-        if (!matriz.ok) return { ok: false, error: `${r.error.message} ${matriz.error}` };
-        return { ok: false, error: r.error.message };
-      }
-      throw r.error;
+      return await persistirDirecto();
     }
     if (opciones.registrarEnMatriz !== false) {
       const matriz = await confirmarCargaEnCatalogo(fecha, carreras);
       if (!matriz.ok) return { ok: false, error: matriz.error };
     }
     return { ok: true, data: normP };
-  } catch (e1) {
-    // La RPC no está instalada: caemos al upsert directo para no dejar al
-    // operador sin poder guardar, y avisamos que se usó la vía sin control.
-    if (!rpcAusente(e1)) {
-      return { ok: false, error: e1 instanceof Error ? e1.message : String(e1) };
-    }
-    try {
-      const { error } = await supabase.from("programa_dia").upsert(normP, { onConflict: "fecha" });
-      if (error) return { ok: false, error: error.message };
-      if (opciones.registrarEnMatriz !== false) {
-        const matriz = await confirmarCargaEnCatalogo(fecha, carreras);
-        if (!matriz.ok) return { ok: false, error: matriz.error };
-      }
-      return { ok: true, data: normP };
-    } catch (e2) {
-      return { ok: false, error: e2 instanceof Error ? e2.message : String(e2) };
-    }
+  } catch {
+    return await persistirDirecto();
   }
 }

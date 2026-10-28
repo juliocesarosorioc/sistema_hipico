@@ -18,6 +18,7 @@ import {
   type LineaPista,
   type EstiloCarrera,
 } from "@/features/inteligencia/lib/analista-venezuela-v4";
+import { construirEjemplarAnalisisIndividual } from "@/features/inteligencia/lib/evaluador-factores-individuales";
 import {
   generarInformeCarreraIA,
   type InformeCarreraIA,
@@ -157,7 +158,7 @@ export function ProyeccionesModule() {
   );
 
   /**
-   * Transforma una CarreraCatalogo en EjemplarAnalisisV4[] para el motor v4
+   * Transforma una CarreraCatalogo en EjemplarAnalisisV4[] para el motor v4 evaluando factores individuales
    */
   const ejemplaresAnalisis = useMemo<EjemplarAnalisisV4[]>(() => {
     if (!carreraSel || !carreraSel.caballos) return [];
@@ -169,39 +170,26 @@ export function ProyeccionesModule() {
       const liveW = pesosEnVivo[key] ?? null;
       const liveLinea = lineasEnVivo[key] ?? null;
 
-      // Inferencia o cálculo de estilo E1, E2, E3
-      const estilo: EstiloCarrera = num % 3 === 1 ? "E1" : num % 3 === 2 ? "E2" : "E3";
-
-      return {
-        id: String(cab.numero ?? idx),
-        numero: num,
-        nombre: cab.nombre || `EJEMPLAR #${num}`,
-        puestoPista: num,
-        jinete: cab.jockey || (cab as unknown as { jinete?: string }).jinete || "Jinete Oficial",
-        kilos: Number(cab.peso || (cab as unknown as { kilos?: number }).kilos) || 54,
-        entrenador: cab.entrenador || "Entrenador Oficial",
-        stud: (cab as unknown as { stud?: string }).stud || "STUD PRINCIPAL",
-        morningLine: 2.5 + (num % 6) * 1.5,
-        speedRatingTTC: 70 + (num % 8) * 3,
-        estilo,
-        actuacionesPrevias: 5 + (num % 4),
-        diasSinCorrer: 14 + (num % 5) * 7,
-        pesoOptimoKg: 475 + (num % 7) * 4,
-        pesoHoyKg: liveW,
-        implementos: "BB, LA",
-        cambioImplementos: num === 2 ? "+Gr" : num === 4 ? "-CC" : undefined,
-        efectividadJineteEntrenador: 0.18 + (num % 5) * 0.05,
-        tendenciaTramoFinal: num % 2 === 0 ? "ATROPELLA" : "SE_MANTIENE",
-        lineaPistaEstimada: liveLinea,
-        retirado: Boolean(cab.retirado),
-        ultimoTraqueo: {
-          distancia: 1000,
-          tiempo: `${60 + (num % 4)}.${num % 5}`,
-          remate: `12.${num % 4}`,
-          calificacion: num % 3 === 0 ? "E" : "MB",
-          observacion: num % 2 === 0 ? "VOLANDO EN SILLA" : "CÓMODO POR CENTRO DE CANCHA",
+      return construirEjemplarAnalisisIndividual(
+        {
+          numero: cab.numero,
+          nombre: cab.nombre,
+          jockey: cab.jockey || (cab as unknown as { jinete?: string }).jinete,
+          entrenador: cab.entrenador,
+          peso: cab.peso || (cab as unknown as { kilos?: number }).kilos,
+          medicamento: (cab as unknown as { medicamento?: string }).medicamento,
+          implementos: (cab as unknown as { implementos?: string }).implementos,
+          stud: (cab as unknown as { stud?: string }).stud,
+          divisaTexto: (cab as unknown as { divisaTexto?: string }).divisaTexto,
+          retirado: cab.retirado,
         },
-      };
+        idx,
+        Number(carreraSel.carrera) || 1,
+        Number(carreraSel.distancia) || 1200,
+        carreraSel.hipodromo,
+        liveW,
+        liveLinea
+      );
     });
   }, [carreraSel, fecha, pesosEnVivo, lineasEnVivo]);
 
@@ -221,28 +209,29 @@ export function ProyeccionesModule() {
     });
   }, [carreraSel, ejemplaresAnalisis, fecha, tendenciaTarde, modoAnalitico, formPista]);
 
-  /** Simulación de todas las carreras de la jornada para el Cuadro Maestro 5y6 */
+  /** Simulación de todas las carreras de la jornada para el Cuadro Maestro 5y6 con factores individuales */
   const carrerasValidas5y6 = useMemo<ResultadoCarreraV4[]>(() => {
     return carrerasDelHipodromo.map((c) => {
-      const ejs: EjemplarAnalisisV4[] = (c.caballos ?? []).map((cab, idx) => ({
-        id: String(cab.numero ?? idx),
-        numero: Number(cab.numero) || idx + 1,
-        nombre: cab.nombre || `EJEMPLAR #${cab.numero}`,
-        puestoPista: Number(cab.numero) || idx + 1,
-        jinete: cab.jockey || (cab as unknown as { jinete?: string }).jinete || "Jinete Oficial",
-        kilos: Number(cab.peso || (cab as unknown as { kilos?: number }).kilos) || 54,
-        entrenador: cab.entrenador || "Entrenador Oficial",
-        stud: (cab as unknown as { stud?: string }).stud,
-        morningLine: 2.5 + (idx % 6) * 1.5,
-        speedRatingTTC: 70 + (idx % 8) * 3,
-        estilo: (idx % 3 === 0 ? "E1" : idx % 2 === 0 ? "E2" : "E3") as EstiloCarrera,
-        actuacionesPrevias: 6,
-        diasSinCorrer: 21,
-        pesoOptimoKg: 480,
-        efectividadJineteEntrenador: 0.22,
-        tendenciaTramoFinal: "ATROPELLA",
-        retirado: Boolean(cab.retirado),
-      }));
+      const ejs: EjemplarAnalisisV4[] = (c.caballos ?? []).map((cab, idx) => {
+        return construirEjemplarAnalisisIndividual(
+          {
+            numero: cab.numero,
+            nombre: cab.nombre,
+            jockey: cab.jockey || (cab as unknown as { jinete?: string }).jinete,
+            entrenador: cab.entrenador,
+            peso: cab.peso || (cab as unknown as { kilos?: number }).kilos,
+            medicamento: (cab as unknown as { medicamento?: string }).medicamento,
+            implementos: (cab as unknown as { implementos?: string }).implementos,
+            stud: (cab as unknown as { stud?: string }).stud,
+            divisaTexto: (cab as unknown as { divisaTexto?: string }).divisaTexto,
+            retirado: cab.retirado,
+          },
+          idx,
+          Number(c.carrera) || 1,
+          Number(c.distancia) || 1200,
+          c.hipodromo
+        );
+      });
 
       return simularCarreraV4({
         hipodromo: c.hipodromo,

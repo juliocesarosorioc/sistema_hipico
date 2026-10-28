@@ -18,7 +18,7 @@ export function DivisaStudSvg({
   divisaTexto,
   studNombre,
   className = "h-10 w-10",
-  mostrarGualdrapa = true,
+  mostrarGualdrapa = false,
 }: Props) {
   return (
     <CamisaJockeySvg

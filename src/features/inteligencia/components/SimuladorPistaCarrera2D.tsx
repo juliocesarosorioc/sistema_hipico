@@ -361,85 +361,89 @@ export function SimuladorPistaCarrera2D({
                 {/* SPRITE VECTORIAL DEL PURASANGRE EN PLENO GALOPE CON JOCKEY Y CAMISA IA */}
                 <div className="relative flex items-center">
                   <svg
-                    width="62"
-                    height="46"
-                    viewBox="0 0 100 75"
+                    width="76"
+                    height="56"
+                    viewBox="0 0 110 82"
                     fill="none"
                     xmlns="http://www.w3.org/2000/svg"
-                    className={`drop-shadow-md transition-transform ${reproduciendo ? "animate-bounce" : ""}`}
-                    style={{ animationDuration: "0.45s" }}
+                    className={`drop-shadow-lg transition-transform ${reproduciendo ? "animate-bounce" : ""}`}
+                    style={{ animationDuration: "0.42s" }}
                   >
-                    {/* Patas Traseras en Impulso */}
+                    {/* Patas Traseras en Impulso Atlético */}
                     <path
-                      d="M 12 58 L 22 42 L 32 38 L 22 62 L 14 65 Z"
+                      d="M 12 65 L 24 46 L 36 42 L 24 70 L 14 74 Z"
                       fill="#78350F"
                       stroke="#451A03"
                       strokeWidth="1.5"
                     />
                     <path
-                      d="M 22 52 L 28 42 L 36 40 L 26 56 Z"
+                      d="M 24 58 L 30 46 L 40 44 L 28 62 Z"
                       fill="#92400E"
                     />
-                    {/* Cola al Viento */}
+                    {/* Cola Larga al Viento */}
                     <path
-                      d="M 18 32 C 8 28 4 36 2 46 C 8 42 14 38 20 36 Z"
+                      d="M 20 36 C 8 32 3 40 1 52 C 8 47 16 42 22 40 Z"
                       fill="#451A03"
                     />
-                    {/* Torso / Lomo Muscular */}
+                    {/* Torso / Lomo Muscular del Purasangre */}
                     <path
-                      d="M 24 34 C 36 28 54 28 66 32 C 74 35 78 42 74 48 C 66 54 44 54 28 48 C 22 44 20 38 24 34 Z"
+                      d="M 26 38 C 40 30 60 30 74 34 C 82 38 86 46 82 54 C 74 60 50 60 32 54 C 24 50 22 42 26 38 Z"
                       fill="#854D0E"
                       stroke="#451A03"
-                      strokeWidth="1.5"
+                      strokeWidth="1.6"
                     />
-                    {/* Cuello y Cabeza noble en estiramiento de galope */}
+                    {/* Cuello Potente y Cabeza Noble en Extensión de Galope */}
                     <path
-                      d="M 64 32 L 78 20 L 88 18 L 94 24 L 88 28 L 74 38 Z"
+                      d="M 72 34 L 88 22 L 98 20 L 105 26 L 98 31 L 82 42 Z"
                       fill="#854D0E"
                       stroke="#451A03"
-                      strokeWidth="1.5"
+                      strokeWidth="1.6"
                     />
-                    {/* Crin */}
+                    {/* Crin y Mechones */}
                     <path
-                      d="M 68 28 L 74 22 L 78 19 L 75 25 L 70 30 Z"
+                      d="M 76 30 L 84 24 L 88 21 L 85 27 L 80 32 Z"
                       fill="#451A03"
                     />
-                    {/* Bocado y Brida */}
+                    {/* Bocado, Brida y Riendas */}
                     <path
-                      d="M 88 22 L 92 26 L 86 28"
+                      d="M 98 24 L 103 28 L 96 30"
                       stroke="#FACC15"
-                      strokeWidth="1"
-                    />
-                    <line x1="86" y1="26" x2="62" y2="34" stroke="#451A03" strokeWidth="1" />
-
-                    {/* Patas Delanteras en Máxima Zancada */}
-                    <path
-                      d="M 64 46 L 76 56 L 88 58 L 84 54 L 72 46 Z"
-                      fill="#78350F"
-                      stroke="#451A03"
-                      strokeWidth="1.5"
-                    />
-                    <path
-                      d="M 58 48 L 68 58 L 76 60 L 72 54 L 62 46 Z"
-                      fill="#92400E"
-                    />
-
-                    {/* Gualdrapa Oficial (#1 al #16) en el lomo */}
-                    <rect
-                      x="36"
-                      y="32"
-                      width="18"
-                      height="12"
-                      rx="2.5"
-                      fill={gualdrapa.bg}
-                      stroke="#0F172A"
                       strokeWidth="1.2"
                     />
+                    <line x1="96" y1="28" x2="68" y2="38" stroke="#451A03" strokeWidth="1.2" />
+
+                    {/* Patas Delanteras en Máxima Zancada hacia la Meta */}
+                    <path
+                      d="M 70 52 L 84 63 L 98 66 L 94 61 L 80 52 Z"
+                      fill="#78350F"
+                      stroke="#451A03"
+                      strokeWidth="1.5"
+                    />
+                    <path
+                      d="M 64 54 L 76 65 L 86 68 L 82 61 L 70 52 Z"
+                      fill="#92400E"
+                    />
+
+                    {/* Cascos Reforzados */}
+                    <polygon points="12,72 16,74 12,76" fill="#0F172A" />
+                    <polygon points="94,64 99,66 95,68" fill="#0F172A" />
+
+                    {/* Gualdrapa Oficial (#1 al #16) en el lomo - CONTENEDOR AGRANDADO */}
+                    <rect
+                      x="40"
+                      y="35"
+                      width="23"
+                      height="15"
+                      rx="3"
+                      fill={gualdrapa.bg}
+                      stroke="#0F172A"
+                      strokeWidth="1.4"
+                    />
                     <text
-                      x="45"
-                      y="41"
+                      x="51.5"
+                      y="46.5"
                       textAnchor="middle"
-                      fontSize="9"
+                      fontSize="11"
                       fontWeight="900"
                       fill={gualdrapa.text}
                       fontFamily="monospace"
@@ -447,44 +451,64 @@ export function SimuladorPistaCarrera2D({
                       {ejemplar.numero}
                     </text>
 
-                    {/* JOCKEY / JINETE EN POSTURA DE CARRERA */}
+                    {/* JOCKEY / JINETE EN POSTURA AERODINÁMICA */}
                     {/* Pierna del Jockey con estribo */}
                     <path
-                      d="M 44 34 L 40 42 L 46 44 L 48 36 Z"
+                      d="M 50 37 L 45 46 L 52 48 L 54 39 Z"
                       fill="#F8FAFC"
                       stroke="#0F172A"
-                      strokeWidth="1"
+                      strokeWidth="1.1"
                     />
                     {/* Bota del Jockey */}
-                    <path d="M 44 42 L 48 44 L 46 47 Z" fill="#0F172A" />
+                    <path d="M 50 46 L 54 48 L 52 51 Z" fill="#0F172A" />
 
-                    {/* Torso del Jockey (Inclinado hacia adelante en galope) */}
-                    <g transform="translate(38, 16) rotate(10) scale(0.38)">
+                    {/* Torso del Jockey (Inclinado hacia adelante en zancada) */}
+                    <g transform="translate(42, 17) rotate(12) scale(0.44)">
                       <CamisaJockeySvg
                         numero={ejemplar.numero}
                         divisaTexto={ejemplar.divisaTexto}
                         studNombre={ejemplar.stud}
-                        size={48}
+                        size={52}
                         mostrarGualdrapa={false}
                         permitirEdicionIa={false}
                       />
                     </g>
                   </svg>
 
-                  {/* ETIQUETA FLOTANTE DEL EJEMPLAR */}
+                  {/* ETIQUETA FLOTANTE CON CARACTERÍSTICAS TÉCNICAS Y NÚMERO (SIN NOMBRE REPETIDO) */}
                   <div
-                    className={`absolute -top-7 left-1/2 transform -translate-x-1/2 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[9px] font-black shadow-md border flex items-center gap-1 transition-all ${
+                    className={`absolute -top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap rounded-lg px-2 py-0.5 text-[10px] font-black shadow-lg border flex items-center gap-1.5 transition-all ${
                       estaSeleccionado
                         ? "bg-slate-950 text-amber-300 border-amber-400 ring-2 ring-amber-400"
                         : esGanador
-                        ? "bg-emerald-900 text-white border-emerald-400"
-                        : "bg-slate-900/90 text-white border-slate-700"
+                        ? "bg-emerald-950 text-emerald-200 border-emerald-400"
+                        : "bg-slate-900/95 text-slate-100 border-slate-700"
                     }`}
                   >
-                    <span>{medalla}</span>
-                    <span className="font-mono">#{ejemplar.numero}</span>
-                    <span className="truncate max-w-[80px]">{ejemplar.nombre}</span>
-                    {favorecidoTendenciaTarde && <span>⚡</span>}
+                    <span className="text-xs">{medalla}</span>
+                    <span
+                      style={{
+                        backgroundColor: gualdrapa.bg,
+                        color: gualdrapa.text,
+                        borderColor: gualdrapa.border,
+                      }}
+                      className="inline-grid h-5 w-5 place-items-center rounded font-mono font-black text-[10px] border shadow-xs"
+                      title={`Número #${ejemplar.numero} en esta carrera`}
+                    >
+                      {ejemplar.numero}
+                    </span>
+                    <span className="font-black text-amber-400">{ejemplar.estilo}</span>
+                    <span className="opacity-30">|</span>
+                    <span className="font-mono text-cyan-300">SR:{ejemplar.speedRatingTTC}</span>
+                    <span className="opacity-30">|</span>
+                    <span className="text-slate-300">{ejemplar.kilos}kg</span>
+                    <span className="opacity-30">|</span>
+                    {item.ordenLlegadaProyectado === 1 ? (
+                      <span className="text-emerald-400 font-black">+{item.cuerposVentaja?.toFixed(1) ?? "1.0"}cp</span>
+                    ) : (
+                      <span className="text-slate-400">-{item.cuerposVentaja?.toFixed(1) ?? "0.0"}cp</span>
+                    )}
+                    {favorecidoTendenciaTarde && <span title="Favorecido por sesgo de pista">⚡</span>}
                   </div>
                 </div>
               </div>

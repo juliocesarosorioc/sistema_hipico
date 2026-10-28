@@ -51,13 +51,11 @@ export type ResultadoGaceta = {
 
 export const CLAVE_GEMINI_KEY = "club_gemini_key";
 
-// Modelos Flash de respaldo (la app primero consulta a la API cuáles existen
-// hoy). Mismo listado que js/gaceta_helpers.js.
-export const MODELOS_GEMINI = ["gemini-3.6-flash", "gemini-3-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+// Modelos Flash de respaldo estables (con cuota oficial y alta disponibilidad).
+export const MODELOS_GEMINI = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
 
-// Familias Flash RETIRADAS por Google (HTTP 404 garantizado en generateContent).
-// Probarlas solo desperdicia intentos y tiempo; se descartan sin llamar.
-const FLASH_RETIRADOS = /^gemini-(?:1\.\d|2\.\d)-.*flash/i;
+// Modelos experimentales, inestables o que devuelven 503/429/404 al invocar generateContent
+const FLASH_EXCLUIDOS = /image|preview|tuned|babbage|-tts|embedding|gemini-3\./i;
 
 const NACIONALIDADES = ["VE", "USA", "BR", "AR", "CL", "MX", "PA", "PE", "CO", "EC", "UY", "OTRA"];
 
@@ -198,14 +196,13 @@ async function listaModelosFlash(clave: string): Promise<string[]> {
     const datos = (await r.json()) as { models?: Array<{ name: string; supportedGenerationMethods?: string[] }> };
     const flash = (datos.models || [])
       .map((m) => ({ name: m.name.replace("models/", ""), metodos: m.supportedGenerationMethods ?? null }))
-      // Solo modelos que sirven para transcribir la gaceta: Flash de chat.
-      // Se descarta cualquier nombre que no acepte generateContent (p.ej. los
-      // modelos TTS gemini-3.x-flash-tts y -lite-tts SIEMPRE dan HTTP 400) y
-      // audio/imagen/preview/tuned/embedding.
+      // Solo modelos que sirven para transcribir la gaceta: Flash de chat y visión estables.
+      // Se descartan gemini-3.* (generan 503/429 continuos), modelos TTS (dan HTTP 400),
+      // y audio/imagen/preview/tuned/embedding.
       .filter(
         (m) =>
           /flash/i.test(m.name) &&
-          !/(?:-tts|image|preview|tuned|babbage|embedding)/i.test(m.name) &&
+          !FLASH_EXCLUIDOS.test(m.name) &&
           (m.metodos == null || m.metodos.length === 0 || m.metodos.includes("generateContent"))
       )
       .map((m) => m.name);
@@ -216,9 +213,6 @@ async function listaModelosFlash(clave: string): Promise<string[]> {
     };
     const lite = (n: string) => /-lite/i.test(n);
     flash.sort((a, b) => ver(b) - ver(a) || (lite(a) ? 1 : 0) - (lite(b) ? 1 : 0));
-    // Nota: supportedGenerationMethods es opcional en la respuesta; filtrar
-    // SOLO por el nombre evita que una respuesta sin ese campo deje la lista
-    // vacía y degrade la experiencia (ya se descartan TTS/imagen arriba).
     return flash;
   } catch {
     return [];
@@ -226,13 +220,11 @@ async function listaModelosFlash(clave: string): Promise<string[]> {
 }
 
 /** Cada familia de Flash tiene SU PROPIA cuota gratuita diaria. Se ordenan
- *  primero por familia vieja y luego por versión dentro de la familia.
- *  Se excluyen los modelos Flash retirados (404) y los no aptos (imagen/tts). */
+ *  por estabilidad (2.5 -> 2.0 -> 1.5). Se excluyen modelos experimentales
+ *  gemini-3.x con errores 503/429 y los no aptos (imagen/tts). */
 function elegirModelos(descubiertos: string[]): string[] {
   const unicos = [...new Set(descubiertos.concat(MODELOS_GEMINI))].filter(
-    (m) =>
-      !/image|preview|tuned|babbage|-tts|embedding/i.test(m) &&
-      !FLASH_RETIRADOS.test(m)
+    (m) => !FLASH_EXCLUIDOS.test(m)
   );
   const porFamilia: Record<string, string[]> = {};
   for (const m of unicos) {
@@ -240,7 +232,8 @@ function elegirModelos(descubiertos: string[]): string[] {
     const fam = v.slice(0, 1);
     (porFamilia[fam] = porFamilia[fam] || []).push(m);
   }
-  const orden = ["1", "2", "3"];
+  // Familia 2 es la más rápida y con visión multimodal completa; luego familia 1
+  const orden = ["2", "1"];
   const out: string[] = [];
   for (const fam of orden) {
     const ms = (porFamilia[fam] || []).sort((a, b) => {

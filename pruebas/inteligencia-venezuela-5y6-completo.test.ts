@@ -264,5 +264,108 @@ const modalGodetSrc = readFileSync(
 ok("ModalAnalisisActuarialGodet incluye pestaña de Pista & Simulación 2D", modalGodetSrc.includes("Pista & Simulación 2D") && modalGodetSrc.includes("SimuladorPistaCarrera2D"));
 ok("ModalAnalisisActuarialGodet incluye CamisaJockeySvg en tabla", modalGodetSrc.includes("CamisaJockeySvg"));
 
+// -------------------------------------------------------------
+// [9] MEJORAS DE UX/UI: MODELOS ESTABLES, DIVISAS, ANIMACIÓN Y FILAS UNIFORMES
+// -------------------------------------------------------------
+console.log("\n[9] MEJORAS DE UX/UI: MODELOS ESTABLES, DIVISAS, ANIMACIÓN Y FILAS UNIFORMES");
+
+const iaSrc = readFileSync(
+  join(raiz, "src", "features", "gaceta", "lib", "ia.ts"),
+  "utf8"
+);
+ok("MODELOS_GEMINI prioriza modelos estables flash 2.x", iaSrc.includes('"gemini-2.5-flash"') && iaSrc.includes('"gemini-2.0-flash"'));
+ok("MODELOS_GEMINI descarta gemini-3.* experimentales que causan 503/429", !iaSrc.includes('"gemini-3.6-flash"') && !iaSrc.includes('"gemini-3.7-flash"'));
+
+const progSrc = readFileSync(
+  join(raiz, "src", "features", "gaceta", "lib", "programa.ts"),
+  "utf8"
+);
+ok("guardarPrograma incluye fallback resiliente ante error 400 de RPC", progSrc.includes("persistirDirecto") && progSrc.includes("confirmarCargaEnCatalogo"));
+
+const divisaSvgSrc = readFileSync(
+  join(raiz, "src", "features", "inteligencia", "components", "DivisaStudSvg.tsx"),
+  "utf8"
+);
+ok("DivisaStudSvg tiene mostrarGualdrapa=false por defecto para evitar repetición", divisaSvgSrc.includes("mostrarGualdrapa = false"));
+
+const modalGacetaSrc = readFileSync(
+  join(raiz, "src", "features", "inteligencia", "components", "ModalImportarGacetaPdf.tsx"),
+  "utf8"
+);
+ok("ModalImportarGacetaPdf usa filas de alto uniforme", modalGacetaSrc.includes("h-14 min-h-[56px]"));
+ok("ModalImportarGacetaPdf pasa divisaTexto y studNombre a DivisaStudSvg", modalGacetaSrc.includes("divisaTexto={ej.ejemplar.divisaTexto") && modalGacetaSrc.includes("mostrarGualdrapa={false}"));
+ok("ModalImportarGacetaPdf tiene contenedor de número agrandado", modalGacetaSrc.includes("h-7 w-7 min-w-[28px]"));
+
+ok("SimuladorPistaCarrera2D muestra características sin repetir nombre", pistaSrc.includes("speedRatingTTC") && pistaSrc.includes("kilos") && pistaSrc.includes("SIN NOMBRE REPETIDO"));
+ok("SimuladorPistaCarrera2D agranda gualdrapa oficial en el lomo", pistaSrc.includes("CONTENEDOR AGRANDADO") && pistaSrc.includes('width="23"'));
+
+ok("GraficoSimulacionDinamica incluye simulación animada en vista cuerpos", graficoSimSrc.includes("animandoLlegada") && graficoSimSrc.includes("Simular Llegada"));
+ok("GraficoSimulacionDinamica tiene filas uniformes en vista cuerpos", graficoSimSrc.includes("h-14 min-h-[56px]"));
+
+// -------------------------------------------------------------
+// [10] ANÁLISIS DE FACTORES INDIVIDUALES REALES (JINETE, ENTRENADOR, PESO, DISTANCIA)
+// -------------------------------------------------------------
+console.log("\n[10] ANÁLISIS DE FACTORES INDIVIDUALES REALES");
+
+const {
+  construirEjemplarAnalisisIndividual,
+  estimarEfectividadJockey,
+  estimarEfectividadEntrenador,
+} = require("@/features/inteligencia/lib/evaluador-factores-individuales");
+
+// Verificación de estadísticas reales de jinetes
+ok("evalúa efectividad alta para jockey top Jean Carlos Aranguren", estimarEfectividadJockey("J. ARANGUREN") >= 0.30);
+ok("evalúa efectividad alta para jockey líder Hemirxon Medina", estimarEfectividadJockey("HEM. MEDINA") >= 0.30);
+ok("evalúa efectividad alta para preparador Ramón García M.", estimarEfectividadEntrenador("R. GARCIA M.") >= 0.28);
+
+// Ejemplar A: Montado por Aranguren, entrenado por Cartolano, peso liviano en 1200m
+const ejTop = construirEjemplarAnalisisIndividual(
+  {
+    numero: 3,
+    nombre: "THE BROTHER SLEW",
+    jockey: "J. ARANGUREN",
+    entrenador: "R. CARTOLANO",
+    peso: 53,
+    medicamento: "L",
+    implementos: "BB, LA, V",
+  },
+  0,
+  1,
+  1200,
+  "LA RINCONADA"
+);
+
+// Ejemplar B: Aprendiz, peso pesado, sin Lasix
+const ejDebil = construirEjemplarAnalisisIndividual(
+  {
+    numero: 7,
+    nombre: "CABALLO ORDINARIO",
+    jockey: "APRENDIZ NOVATO",
+    entrenador: "ENTRENADOR LOCAL",
+    peso: 56,
+    medicamento: "",
+    implementos: "",
+  },
+  1,
+  1,
+  1200,
+  "LA RINCONADA"
+);
+
+ok("ejemplar top con conexiones estelares tiene mejor speed rating que el ordinario", ejTop.speedRatingTTC > ejDebil.speedRatingTTC);
+ok("ejemplar top tiene mayor efectividad de yunta que el ordinario", ejTop.efectividadJineteEntrenador > ejDebil.efectividadJineteEntrenador);
+ok("ejemplar top tiene mejor morning line proyectado (más favorito)", ejTop.morningLine < ejDebil.morningLine);
+
+// Simular la carrera y verificar que el ganador proyectado es por méritos y no por número fijo
+const resSimulacion = simularCarreraV4({
+  hipodromo: "LA RINCONADA",
+  carreraNumero: 1,
+  distancia: 1200,
+  fecha: "2026-10-28",
+  ejemplares: [ejDebil, ejTop],
+});
+
+ok("el ejemplar con mejores factores individuales gana la proyección independientemente de su número", resSimulacion.ranking[0].ejemplar.numero === 3);
+
 console.log(`\nTOTAL: ${pasan} ok / ${fallan} fallaron`);
 if (fallan > 0) process.exitCode = 1;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   type ResultadoCarreraV4,
   type ResultadoEjemplarV4,
@@ -42,6 +42,35 @@ export function GraficoSimulacionDinamica({
   });
 
   const [vistaGrafico, setVistaGrafico] = useState<"pista" | "probabilidad" | "radar" | "cuerpos">("pista");
+  const [animandoLlegada, setAnimandoLlegada] = useState(false);
+  const [progresoLlegada, setProgresoLlegada] = useState(100);
+  const [velocidadLlegada, setVelocidadLlegada] = useState(1);
+  const requestLlegadaRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!animandoLlegada) {
+      if (requestLlegadaRef.current) cancelAnimationFrame(requestLlegadaRef.current);
+      return;
+    }
+    let lastTime = performance.now();
+    const anim = (now: number) => {
+      const dt = (now - lastTime) / 1000;
+      lastTime = now;
+      setProgresoLlegada((prev) => {
+        const next = prev + dt * 25 * velocidadLlegada;
+        if (next >= 100) {
+          setAnimandoLlegada(false);
+          return 100;
+        }
+        return next;
+      });
+      requestLlegadaRef.current = requestAnimationFrame(anim);
+    };
+    requestLlegadaRef.current = requestAnimationFrame(anim);
+    return () => {
+      if (requestLlegadaRef.current) cancelAnimationFrame(requestLlegadaRef.current);
+    };
+  }, [animandoLlegada, velocidadLlegada]);
 
   // Ordenar para el gráfico de barras por orden proyectado
   const ranking = useMemo(() => {
@@ -364,67 +393,171 @@ export function GraficoSimulacionDinamica({
       )}
 
       {/* ============================================================== */}
-      {/* VISTA 2: CUERPOS DE VENTAJA Y TREN DE CARRERA TEÓRICO           */}
+      {/* VISTA 2: CUERPOS DE VENTAJA Y TREN DE CARRERA TEÓRICO (ANIMADO) */}
       {/* ============================================================== */}
       {vistaGrafico === "cuerpos" && (
         <div className="space-y-3 pt-1">
-          <div className="bg-slate-900 text-white p-4 rounded-xl space-y-3">
-            <div className="flex items-center justify-between text-xs border-b border-slate-800 pb-2">
-              <span className="font-black uppercase tracking-wider text-amber-400">
-                🏁 Línea de Llegada Teórica y Separación en Cuerpos
-              </span>
-              <span className="text-[11px] text-slate-400">
-                Distancia: <b>{resultado.distancia}m</b> · Hipódromo: <b>{resultado.hipodromo}</b>
-              </span>
-            </div>
-
-            {/* Pista gráfica con caballos ubicados por cuerpos */}
-            <div className="relative py-6 px-2 border-b border-slate-800/80">
-              <div className="absolute right-0 top-0 bottom-0 w-1 bg-amber-400/80 dashed" />
-              <div className="absolute right-2 top-1 text-[9px] font-black uppercase text-amber-400">
-                Meta
+          <div className="bg-slate-900 text-white p-4 rounded-2xl space-y-3 shadow-lg border border-slate-800">
+            {/* Cabecera con Controles de Animación */}
+            <div className="flex flex-wrap items-center justify-between gap-3 text-xs border-b border-slate-800 pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                  <span>🏁</span>
+                  <span>Llegada Teórica y Separación en Cuerpos</span>
+                </span>
+                <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-300 font-mono">
+                  {resultado.distancia}m · {resultado.hipodromo}
+                </span>
               </div>
 
-              <div className="space-y-3">
-                {ranking.map((r, idx) => {
-                  const num = r.ejemplar.numero;
-                  const gualdrapa = COLORES_GUALDRAPA[num] || {
-                    bg: "#3B82F6",
-                    text: "#FFFFFF",
-                    border: "#1D4ED8",
-                  };
-                  // Cuerpos de distancia desde el líder (0 a ~15 cuerpos)
-                  const desfaseCuerpos = idx === 0 ? 0 : r.cuerposVentaja;
-                  const margenDerecha = Math.min(85, desfaseCuerpos * 5.5);
+              {/* Controles de Animación de Llegada */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (progresoLlegada >= 100) setProgresoLlegada(0);
+                    setAnimandoLlegada(!animandoLlegada);
+                  }}
+                  className={`px-3 py-1 rounded-lg text-xs font-black shadow-sm flex items-center gap-1.5 transition-all ${
+                    animandoLlegada
+                      ? "bg-amber-600 hover:bg-amber-500 text-white"
+                      : "bg-emerald-600 hover:bg-emerald-500 text-white"
+                  }`}
+                >
+                  <span>{animandoLlegada ? "⏸️ Pausar" : progresoLlegada >= 100 ? "🔁 Repetir Simulación" : "▶️ Simular Llegada"}</span>
+                </button>
+                <div className="flex items-center bg-slate-800 rounded-md border border-slate-700 p-0.5 text-[10px] font-bold">
+                  {[1, 2].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setVelocidadLlegada(v)}
+                      className={`px-1.5 py-0.5 rounded ${
+                        velocidadLlegada === v ? "bg-amber-500 text-slate-950 font-black" : "text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      {v}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
 
-                  return (
-                    <div key={num} className="flex items-center justify-end relative h-7">
-                      <div
-                        className="absolute flex items-center gap-1.5 transition-all duration-500"
-                        style={{ right: `${margenDerecha}%` }}
+            {/* Pista gráfica de simulación de llegada con carriles de alto uniforme */}
+            <div className="relative py-2 px-1 space-y-1.5 overflow-hidden">
+              {ranking.map((r, idx) => {
+                const num = r.ejemplar.numero;
+                const gualdrapa = COLORES_GUALDRAPA[num] || {
+                  bg: "#3B82F6",
+                  text: "#FFFFFF",
+                  border: "#1D4ED8",
+                };
+                // Separación teórica en cuerpos respecto al líder (0 a ~15 cuerpos)
+                const desfaseCuerpos = idx === 0 ? 0 : r.cuerposVentaja;
+                // Posición final objetivo (% de separación desde la meta a la derecha)
+                const margenMetaObjetivo = Math.min(80, desfaseCuerpos * 5.8);
+                
+                // Si está animando, interpolar el avance hacia la meta
+                const factorAvance = progresoLlegada / 100;
+                const posActual = 92 - factorAvance * (92 - margenMetaObjetivo);
+
+                return (
+                  <div
+                    key={num}
+                    className="flex items-center gap-3 h-14 min-h-[56px] bg-slate-950/70 border border-slate-800/80 rounded-xl px-3 hover:bg-slate-800/50 transition-colors"
+                  >
+                    {/* Panel Izquierdo: Número oficial agrandado + Camisa + Características técnicas (Sin nombre repetido) */}
+                    <div className="flex items-center gap-2.5 w-72 sm:w-80 shrink-0">
+                      {/* Puesto proyectado de llegada */}
+                      <span className="font-mono text-xs font-bold text-slate-400 w-5 text-center">
+                        #{r.ordenLlegadaProyectado}
+                      </span>
+
+                      {/* Contenedor del número agrandado (# de carrera oficial) */}
+                      <span
+                        style={{
+                          backgroundColor: gualdrapa.bg,
+                          color: gualdrapa.text,
+                          borderColor: gualdrapa.border,
+                        }}
+                        className="inline-grid h-8 w-8 min-w-[32px] place-items-center rounded-lg font-mono font-black text-xs sm:text-sm border shadow-sm shrink-0"
+                        title={`Número oficial #${num} de carrera`}
                       >
-                        <span
-                          style={{
-                            backgroundColor: gualdrapa.bg,
-                            color: gualdrapa.text,
-                            borderColor: gualdrapa.border,
-                          }}
-                          className="grid h-6 w-6 place-items-center rounded-md font-black text-xs border shadow-xs"
-                        >
-                          {num}
-                        </span>
-                        <span className="text-[11px] font-bold text-white whitespace-nowrap bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700">
-                          {r.ejemplar.nombre} ({idx === 0 ? "PUNTA" : `-${r.cuerposVentaja.toFixed(1)} cpos`})
-                        </span>
+                        {num}
+                      </span>
+
+                      {/* Camisa Jockey sin duplicar número */}
+                      <DivisaStudSvg
+                        numero={num}
+                        divisaTexto={r.ejemplar.divisaTexto || r.ejemplar.stud}
+                        studNombre={r.ejemplar.stud}
+                        className="h-8 w-8 shrink-0"
+                        mostrarGualdrapa={false}
+                      />
+
+                      {/* Características técnicas del caballo (sin repetir nombre) */}
+                      <div className="flex flex-col text-[10px] leading-tight overflow-hidden">
+                        <div className="flex items-center gap-1.5 font-bold">
+                          <span className="text-amber-400">{r.ejemplar.estilo}</span>
+                          <span className="text-slate-500">·</span>
+                          <span className="text-cyan-300 font-mono">SR:{r.ejemplar.speedRatingTTC}</span>
+                          <span className="text-slate-500">·</span>
+                          <span className="text-slate-300">{r.ejemplar.kilos}kg</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-[9px] text-slate-400 mt-0.5 font-mono">
+                          <span className="text-emerald-400 font-bold">{r.probabilidadSMIC.toFixed(1)}% prob</span>
+                          <span>·</span>
+                          {idx === 0 ? (
+                            <span className="text-amber-400 font-bold">LÍDER</span>
+                          ) : (
+                            <span className="text-rose-300">-{r.cuerposVentaja.toFixed(1)} cpos</span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+
+                    {/* Panel Derecho: Pista animada con caballo galopando hacia la meta */}
+                    <div className="relative flex-1 h-10 bg-amber-950/30 rounded-lg overflow-hidden border border-amber-900/30 flex items-center">
+                      {/* Suelo de pista */}
+                      <div className="absolute inset-0 bg-gradient-to-r from-amber-950/20 via-amber-900/30 to-amber-950/40" />
+
+                      {/* Línea de Meta (Derecha) */}
+                      <div className="absolute right-3 top-0 bottom-0 w-1.5 bg-gradient-to-b from-red-600 via-white to-red-600 z-10 shadow-sm" />
+
+                      {/* Caballo al galope con animación fluida */}
+                      <div
+                        className="absolute flex items-center transition-all duration-150 ease-linear z-20"
+                        style={{
+                          right: animandoLlegada ? `${posActual}%` : `${margenMetaObjetivo}%`,
+                        }}
+                      >
+                        {/* Avatar SVG del caballo con gualdrapa oficial agrandada */}
+                        <div className={`relative flex items-center ${animandoLlegada ? "animate-bounce" : ""}`} style={{ animationDuration: "0.35s" }}>
+                          <svg width="44" height="30" viewBox="0 0 100 70" fill="none" className="drop-shadow-sm">
+                            <path d="M 15 54 L 26 38 L 38 34 L 26 60 Z" fill="#78350F" />
+                            <path d="M 28 32 C 40 26 58 26 70 30 C 76 34 80 40 76 46 C 68 52 46 52 30 46 Z" fill="#854D0E" stroke="#451A03" strokeWidth="1.5" />
+                            <path d="M 66 30 L 80 18 L 90 16 L 96 22 L 90 26 L 76 36 Z" fill="#854D0E" stroke="#451A03" strokeWidth="1.5" />
+                            <path d="M 66 44 L 78 54 L 90 56 L 86 52 L 74 44 Z" fill="#78350F" />
+                            {/* Gualdrapa agrandada */}
+                            <rect x="36" y="30" width="22" height="14" rx="2.5" fill={gualdrapa.bg} stroke="#0F172A" strokeWidth="1" />
+                            <text x="47" y="41" textAnchor="middle" fontSize="10" fontWeight="900" fill={gualdrapa.text} fontFamily="monospace">
+                              {num}
+                            </text>
+                          </svg>
+                          {/* Insignia de cuerpos */}
+                          <span className="text-[9px] font-mono font-bold bg-slate-900/90 text-amber-300 border border-slate-700 px-1 rounded ml-1 whitespace-nowrap">
+                            {idx === 0 ? "META" : `-${r.cuerposVentaja.toFixed(1)}`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
-            <p className="text-[10px] text-slate-400 italic text-center">
-              * La escala representa la separación teórica en cuerpos de ventaja (1 cuerpo ≈ 0.20s en 1200m).
+            <p className="text-[10px] text-slate-400 italic text-center pt-1">
+              * 1 cuerpo de ventaja equivale aproximadamente a 0.20 segundos en distancias de 1200m a 1400m.
             </p>
           </div>
         </div>
