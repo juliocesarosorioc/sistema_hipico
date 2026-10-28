@@ -334,21 +334,18 @@ export function SimuladorPistaCarrera2D({
           </div>
 
           {/* CABALLITOS CORRIENDO EN LA PISTA */}
-          {posicionesCalculadas.map(({ item, posX, posY, esGanador, favorecidoTendenciaTarde }) => {
+          {posicionesCalculadas.map(({ item, posX, posY, favorecidoTendenciaTarde }) => {
             const { ejemplar, ordenLlegadaProyectado } = item;
             const gualdrapa = COLORES_GUALDRAPA[ejemplar.numero] || { bg: "#3B82F6", text: "#FFF" };
             const estaSeleccionado = caballoSeleccionado === ejemplar.numero;
-
-            // Medalla de llegada
-            const medalla =
-              ordenLlegadaProyectado === 1 ? "🥇" : ordenLlegadaProyectado === 2 ? "🥈" : ordenLlegadaProyectado === 3 ? "🥉" : `${ordenLlegadaProyectado}°`;
 
             return (
               <div
                 key={ejemplar.numero}
                 onClick={() => setCaballoSeleccionado(ejemplar.numero)}
+                title={`#${ejemplar.numero} ${ejemplar.nombre} (${ordenLlegadaProyectado}° lugar)`}
                 className={`absolute cursor-pointer transition-all duration-300 ease-out transform -translate-x-1/2 -translate-y-1/2 group z-10 ${
-                  estaSeleccionado ? "z-30 scale-110" : "hover:z-20 hover:scale-105"
+                  estaSeleccionado ? "z-30 scale-120 drop-shadow-[0_0_8px_rgba(250,204,21,0.8)]" : "hover:z-20 hover:scale-108"
                 }`}
                 style={{
                   left: `${posX}%`,
@@ -358,7 +355,7 @@ export function SimuladorPistaCarrera2D({
                 {/* Sombra de Galope sobre la Arena */}
                 <div className="absolute -bottom-1 left-2 h-2.5 w-12 bg-black/45 rounded-full blur-[2px] transform group-hover:scale-110 transition-transform" />
 
-                {/* SPRITE VECTORIAL DEL PURASANGRE EN PLENO GALOPE CON JOCKEY Y CAMISA IA */}
+                {/* SPRITE VECTORIAL DEL PURASANGRE EN PLENO GALOPE CON COLOR DE CONTENEDOR */}
                 <div className="relative flex items-center">
                   <svg
                     width="76"
@@ -474,25 +471,6 @@ export function SimuladorPistaCarrera2D({
                       />
                     </g>
                   </svg>
-
-                  {/* Insignia minimalista solo con el número oficial de carrera (sin nombres ni valores en la pista) */}
-                  <div
-                    className={`absolute -top-4 left-1/2 transform -translate-x-1/2 transition-transform ${
-                      estaSeleccionado ? "scale-125 z-30" : "scale-100"
-                    }`}
-                  >
-                    <span
-                      style={{
-                        backgroundColor: gualdrapa.bg,
-                        color: gualdrapa.text,
-                        borderColor: gualdrapa.border,
-                      }}
-                      className="inline-grid h-5 w-5 place-items-center rounded-full font-mono font-black text-[10px] border-2 border-white/90 shadow-md"
-                      title={`Ejemplar #${ejemplar.numero} (${medalla})`}
-                    >
-                      {ejemplar.numero}
-                    </span>
-                  </div>
                 </div>
               </div>
             );
