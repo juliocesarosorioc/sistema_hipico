@@ -20,6 +20,15 @@ type Props = {
 
 type FaseCarrera = "PARTIDA" | "CODO" | "RECTA" | "META";
 
+// 14 Gateras Oficiales (La Rinconada / Valencia): Gatera 1 pegada al Riel (abajo), Gatera 14 a la Baranda Exterior (arriba)
+const GATERAS_14 = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1] as const;
+
+export function calcularYPuertaPartida(puerta: number): number {
+  const pClamped = Math.min(14, Math.max(1, puerta));
+  // Puerta 1 (Riel) en Y = 88.5%, Puerta 14 (Exterior) en Y = 11.5%
+  return 88.5 - ((pClamped - 1) / 13) * 77;
+}
+
 export function SimuladorPistaCarrera2D({
   resultado,
   factorPistaActual = "NORMAL",
@@ -124,6 +133,14 @@ export function SimuladorPistaCarrera2D({
       const { ejemplar, ordenLlegadaProyectado, favorecidoTendenciaTarde } = item;
       const estilo = ejemplar.estilo;
 
+      // Puerta de partida reglamentaria asignada (1 al 14 según puestoPista o número de carrera)
+      const puertaSalida = Math.min(
+        14,
+        Math.max(1, ejemplar.puestoPista || ejemplar.numero || (index + 1))
+      );
+      // Coordenada Y en su gatera de partida (Gatera 1 = Riel abajo en 88.5%, Gatera 14 = Exterior arriba en 11.5%)
+      const posYPartida = calcularYPuertaPartida(puertaSalida);
+
       // Tren intermedio (400m a 800m): velocistas E1 en punta, E2 colocados, E3 rematadores
       let offsetTrenMedio = 36;
       if (estilo === "E1") offsetTrenMedio = 48 - (index % 3) * 2;
@@ -133,15 +150,15 @@ export function SimuladorPistaCarrera2D({
       const posMetaFinal = offsetsMeta[index];
 
       // Posición X según progreso:
-      // A progreso = 0: TODOS los caballos alineados exactamente en 6.5% (gateras de partida)
-      let posX = 6.5;
+      // A progreso = 0: dentro de su gatera en el partidor (6.2%)
+      let posX = 6.2;
 
       if (progreso <= 0) {
-        posX = 6.5; // Alineación perfecta de salida
+        posX = 6.2; // Ubicado perfectamente dentro de su gatera de salida
       } else if (progreso < 30) {
-        // Fase 1: Partida y primeros metros — salen juntos y se van acomodando al tren
+        // Fase 1: Apertura de compuertas y primeros metros — salida explosiva desde su puerta
         const t = progreso / 30;
-        posX = 6.5 + t * (offsetTrenMedio - 6.5);
+        posX = 6.2 + t * (offsetTrenMedio - 6.2);
       } else if (progreso < 75) {
         // Fase 2: Codo y curva — desarrollo del tren hacia la recta
         const t = (progreso - 30) / 45;
@@ -154,27 +171,46 @@ export function SimuladorPistaCarrera2D({
         posX = posEntradaRecta + t * (posMetaFinal - posEntradaRecta);
       }
 
-      posX = Math.min(Math.max(posX, 6.5), 90.5);
+      posX = Math.min(Math.max(posX, 6.2), 90.5);
 
-      // Posición Y: Andariveles independientes sin superposición
-      const totalEjemplares = Math.max(ranking.length, 1);
-      const pasoVertical = totalEjemplares > 1 ? 66 / (totalEjemplares - 1) : 0;
-      const posYAndarivel = 17 + index * pasoVertical;
-
+      // Carril táctico durante la carrera (Riel = 72%, Centro = 50%, Afuera = 28%)
+      // Nota: Riel está abajo (cerca de 88.5%), Exterior arriba (cerca de 11.5%)
       let carrilYBase = 50;
-      if (ejemplar.lineaPistaEstimada === "RIEL" || ejemplar.puestoPista <= 3) {
-        carrilYBase = 26;
-      } else if (ejemplar.lineaPistaEstimada === "AFUERA" || ejemplar.puestoPista >= 7) {
-        carrilYBase = 74;
+      if (ejemplar.lineaPistaEstimada === "RIEL" || puertaSalida <= 3) {
+        carrilYBase = 72;
+      } else if (ejemplar.lineaPistaEstimada === "AFUERA" || puertaSalida >= 8) {
+        carrilYBase = 28;
       } else {
         carrilYBase = 50;
       }
 
-      const factorLlegada = Math.min(Math.max((progreso - 30) / 70, 0), 1);
-      const posY = carrilYBase * (1 - factorLlegada) + posYAndarivel * factorLlegada;
+      // Andarivel final en la meta (distribuidos uniformemente para no solaparse en fotofinish)
+      const totalEjemplares = Math.max(ranking.length, 1);
+      const pasoVertical = totalEjemplares > 1 ? 66 / (totalEjemplares - 1) : 0;
+      const posYAndarivel = 17 + index * pasoVertical;
+
+      // Evolución vertical Y:
+      // A progreso = 0: exactamente dentro de su puerta de partida 1 al 14 (posYPartida)
+      // 0 < progreso < 30: sale de su gatera y se acomoda hacia su carril táctico
+      // 30 <= progreso < 75: corre en su carril táctico
+      // 75 <= progreso <= 100: abre hacia su andarivel para el fotofinish nítido
+      let posY = posYPartida;
+      if (progreso <= 0) {
+        posY = posYPartida;
+      } else if (progreso < 30) {
+        const tSalida = progreso / 30;
+        posY = posYPartida + tSalida * (carrilYBase - posYPartida);
+      } else if (progreso < 75) {
+        posY = carrilYBase;
+      } else {
+        const tMeta = (progreso - 75) / 25;
+        posY = carrilYBase * (1 - tMeta) + posYAndarivel * tMeta;
+      }
 
       return {
         item,
+        puertaSalida,
+        posYPartida,
         posX,
         posY,
         esGanador: ordenLlegadaProyectado === 1,
@@ -277,7 +313,7 @@ export function SimuladorPistaCarrera2D({
       {/* 2. LA PISTA DE CARRERAS ISOMÉTRICA CON CABALLITOS ANIMADOS */}
       <div className="relative overflow-hidden rounded-2xl border-2 border-slate-700 bg-slate-950 p-2 shadow-inner select-none">
         {/* Contenedor SVG/CSS de la Pista */}
-        <div className={`relative h-72 sm:h-80 w-full rounded-xl ${estiloPista.arenaBg} shadow-2xl overflow-hidden`}>
+        <div className={`relative h-[420px] sm:h-[480px] w-full rounded-xl ${estiloPista.arenaBg} shadow-2xl overflow-hidden`}>
           {/* Suelo y Textura de Arena Batida */}
           <div
             className="absolute inset-0 opacity-40 mix-blend-overlay"
@@ -285,7 +321,7 @@ export function SimuladorPistaCarrera2D({
           />
 
           {/* Baranda Exterior (Tope Superior) */}
-          <div className="absolute top-0 left-0 right-0 h-4 border-b-2 border-white/80 bg-white/30 flex items-center justify-around">
+          <div className="absolute top-0 left-0 right-0 h-4 border-b-2 border-white/80 bg-white/30 flex items-center justify-around z-10">
             <span className="text-[9px] font-black uppercase text-white/90 tracking-widest">
               BARANDA EXTERIOR — LÍNEAS 7+
             </span>
@@ -293,27 +329,99 @@ export function SimuladorPistaCarrera2D({
 
           {/* Líneas Divisorias de Carril Discontinuas */}
           {/* Carril 3: Abierto (entre 66% y 100%) */}
-          <div className="absolute top-[33%] left-0 right-0 h-[2px] border-b border-dashed border-white/35" />
+          <div className="absolute top-[33%] left-0 right-0 h-[2px] border-b border-dashed border-white/35 z-0" />
           {/* Carril 2: Media Cancha / Centro (entre 33% y 66%) */}
-          <div className="absolute top-[66%] left-0 right-0 h-[2px] border-b border-dashed border-white/35" />
+          <div className="absolute top-[66%] left-0 right-0 h-[2px] border-b border-dashed border-white/35 z-0" />
 
           {/* Baranda Interior / Riel (Tope Inferior) */}
-          <div className="absolute bottom-0 left-0 right-0 h-4 border-t-2 border-white/80 bg-white/30 flex items-center justify-around">
+          <div className="absolute bottom-0 left-0 right-0 h-4 border-t-2 border-white/80 bg-white/30 flex items-center justify-around z-10">
             <span className="text-[9px] font-black uppercase text-white/90 tracking-widest">
               BARANDA INTERIOR / EL RIEL — LÍNEAS 1-3
             </span>
           </div>
 
-          {/* Postes de Distancia Verticales */}
-          {/* Gateras de Partida (Extremo Izquierdo) */}
-          <div className="absolute top-4 bottom-4 left-3 w-8 border-r-2 border-emerald-400/80 bg-emerald-950/40 flex flex-col justify-around items-center">
-            <span className="text-[9px] font-black text-emerald-300 transform -rotate-90">
-              GATERAS
-            </span>
+          {/* ========================================================= */}
+          {/* APARATO DE PARTIDAS OFICIAL: 14 GATERAS INDIVIDUALES     */}
+          {/* ========================================================= */}
+          <div className="absolute top-4 bottom-4 left-0.5 w-11 sm:w-14 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-r-2 border-emerald-400/90 shadow-2xl z-20 flex flex-col justify-between">
+            {/* Viga Superior del Partidor */}
+            <div className="h-4 bg-emerald-950 border-b border-emerald-500/60 flex items-center justify-center px-0.5">
+              <span className="text-[7.5px] sm:text-[8px] font-mono font-black text-emerald-300 uppercase tracking-tighter truncate">
+                14 GATERAS
+              </span>
+            </div>
+
+            {/* Los 14 cajones individuales de partida (de G14 arriba a G1 abajo al Riel) */}
+            <div className="relative flex-1 py-1">
+              {GATERAS_14.map((numGatera) => {
+                const gualdrapaGatera = COLORES_GUALDRAPA[numGatera] || {
+                  bg: "#3B82F6",
+                  text: "#FFFFFF",
+                  border: "#1D4ED8",
+                  nombreColor: "Azul",
+                };
+                // Verificar si hay un ejemplar de esta carrera asignado a esta gatera
+                const ejemplarEnGatera = ranking.find((r) => {
+                  const pPista = r.ejemplar.puestoPista || r.ejemplar.numero;
+                  return pPista === numGatera;
+                });
+                const yPct = calcularYPuertaPartida(numGatera);
+
+                return (
+                  <div
+                    key={numGatera}
+                    className="absolute left-1 right-1 transform -translate-y-1/2 flex items-center justify-between"
+                    style={{ top: `${yPct}%` }}
+                    title={
+                      ejemplarEnGatera
+                        ? `Gatera #${numGatera}: #${ejemplarEnGatera.ejemplar.numero} ${ejemplarEnGatera.ejemplar.nombre}`
+                        : `Gatera #${numGatera} (Vacía)`
+                    }
+                  >
+                    {/* Chapa del Número de Gatera Oficial (1 al 14) */}
+                    <span
+                      style={{
+                        backgroundColor: gualdrapaGatera.bg,
+                        color: gualdrapaGatera.text,
+                        borderColor: gualdrapaGatera.border,
+                      }}
+                      className={`inline-grid h-5 w-5 sm:h-5.5 sm:w-5.5 place-items-center rounded-sm font-mono font-black text-[10px] sm:text-[11px] border shadow-xs transition-transform ${
+                        ejemplarEnGatera ? "scale-105 ring-1 ring-emerald-400" : "opacity-45"
+                      }`}
+                    >
+                      {numGatera}
+                    </span>
+
+                    {/* Compuerta Mecánica Delantera de la Gatera */}
+                    <div
+                      className={`h-4 sm:h-4.5 w-3 sm:w-4 rounded-r-xs border-r-2 flex items-center justify-center transition-all duration-300 ${
+                        progreso <= 0
+                          ? "bg-gradient-to-r from-emerald-800 to-emerald-600 border-amber-400 shadow-xs"
+                          : "bg-emerald-950/30 border-emerald-700/40 opacity-30 transform translate-x-1"
+                      }`}
+                      title={progreso <= 0 ? "Compuerta Cerrada (Esperando Partida)" : "Compuerta Abierta"}
+                    >
+                      {progreso <= 0 ? (
+                        <span className="text-[7px] text-amber-300 font-bold">🔒</span>
+                      ) : (
+                        <span className="text-[6.5px] text-emerald-400 font-bold">⚡</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Base Inferior del Partidor */}
+            <div className="h-3.5 bg-slate-950 border-t border-slate-700 flex items-center justify-center">
+              <span className="text-[7px] font-mono font-bold text-slate-400">
+                INH
+              </span>
+            </div>
           </div>
 
           {/* Poste 800m (35%) */}
-          <div className="absolute top-4 bottom-4 left-[35%] w-px border-r border-dotted border-white/40 flex flex-col justify-between">
+          <div className="absolute top-4 bottom-4 left-[35%] w-px border-r border-dotted border-white/40 flex flex-col justify-between z-10">
             <span className="bg-amber-400 text-slate-950 text-[8px] font-black px-1 rounded shadow-xs">
               800m
             </span>
@@ -323,7 +431,7 @@ export function SimuladorPistaCarrera2D({
           </div>
 
           {/* Poste 400m / Entrada a la Recta (65%) */}
-          <div className="absolute top-4 bottom-4 left-[65%] w-px border-r border-dashed border-yellow-400/70 flex flex-col justify-between">
+          <div className="absolute top-4 bottom-4 left-[65%] w-px border-r border-dashed border-yellow-400/70 flex flex-col justify-between z-10">
             <span className="bg-yellow-400 text-slate-950 text-[8px] font-black px-1 rounded shadow-xs">
               400m (Recta)
             </span>
@@ -577,6 +685,10 @@ export function SimuladorPistaCarrera2D({
           border: "#1D4ED8",
           nombreColor: "Azul",
         };
+        const puertaPartidaActiva = Math.min(
+          14,
+          Math.max(1, caballoActivo.ejemplar.puestoPista || caballoActivo.ejemplar.numero || 1)
+        );
 
         return (
           <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-indigo-50/40 p-3.5 shadow-xs flex flex-wrap items-center justify-between gap-4">
@@ -597,6 +709,9 @@ export function SimuladorPistaCarrera2D({
                 <div className="flex items-center gap-2">
                   <span className="rounded bg-slate-900 text-white font-mono px-1.5 py-0.2 text-[10px] font-black">
                     Llegada: {caballoActivo.ordenLlegadaProyectado}° Lugar
+                  </span>
+                  <span className="rounded bg-emerald-100 text-emerald-900 border border-emerald-300 font-mono px-1.5 py-0.2 text-[10px] font-bold">
+                    🚪 Gatera #{puertaPartidaActiva}
                   </span>
                   <h4 className="text-sm font-black uppercase text-slate-900">
                     #{caballoActivo.ejemplar.numero} {caballoActivo.ejemplar.nombre}

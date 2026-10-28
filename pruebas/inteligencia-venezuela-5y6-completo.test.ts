@@ -250,6 +250,8 @@ ok("SimuladorPistaCarrera2D contiene riel interior y baranda", pistaSrc.includes
 ok("SimuladorPistaCarrera2D contiene sprite vectorial de purasangre en galope", pistaSrc.includes("SPRITE VECTORIAL DEL PURASANGRE EN PLENO GALOPE"));
 ok("SimuladorPistaCarrera2D prioriza purasangre y gualdrapa oficial eliminando camisas", !pistaSrc.includes("CamisaJockeySvg") && pistaSrc.includes("COLORES_GUALDRAPA"));
 ok("SimuladorPistaCarrera2D tiene fases de carrera (Partida, Codo, Recta, Meta)", pistaSrc.includes("Partida") && pistaSrc.includes("Codo") && pistaSrc.includes("Fotofinish"));
+ok("SimuladorPistaCarrera2D incluye aparato de partidas con 14 gateras", pistaSrc.includes("14 GATERAS") && pistaSrc.includes("GATERAS_14"));
+ok("SimuladorPistaCarrera2D ubica a cada ejemplar en su puerta de partida 1 al 14", pistaSrc.includes("calcularYPuertaPartida") && pistaSrc.includes("puertaSalida"));
 
 const graficoSimSrc = readFileSync(
   join(raiz, "src", "features", "inteligencia", "components", "GraficoSimulacionDinamica.tsx"),
