@@ -17,6 +17,7 @@ type Props = {
   carrera?: number | string;
   fecha?: string;
   onImportarEjemplaresGaceta?: (nuevos: Array<{ numero: number; nombre: string }>) => void;
+  onAbrirImportadorPdf?: () => void;
 };
 
 export function ModalAnalisisActuarialGodet({
@@ -27,6 +28,7 @@ export function ModalAnalisisActuarialGodet({
   carrera,
   fecha,
   onImportarEjemplaresGaceta,
+  onAbrirImportadorPdf,
 }: Props) {
   const [modo, setModo] = useState<ModoAnalisis>("previa");
   const [pesosHoy, setPesosHoy] = useState<Record<string, string>>({});
@@ -129,6 +131,16 @@ export function ModalAnalisisActuarialGodet({
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {onAbrirImportadorPdf && (
+              <button
+                type="button"
+                onClick={onAbrirImportadorPdf}
+                className="rounded-lg bg-gradient-to-r from-amber-500 to-yellow-400 px-3 py-1 text-[10px] font-black uppercase text-slate-950 shadow-sm hover:from-amber-400 hover:to-yellow-300 flex items-center gap-1.5 transition-all"
+              >
+                <span>📄</span>
+                <span>Importar Gaceta PDF con IA</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setModo("previa")}
@@ -406,7 +418,33 @@ export function ModalAnalisisActuarialGodet({
           )}
 
           {tab === "gaceta" && (
-            <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+            <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+              {onAbrirImportadorPdf && (
+                <div className="rounded-xl border border-amber-500/40 bg-gradient-to-r from-amber-500/15 via-yellow-500/10 to-indigo-500/15 p-4 flex flex-wrap items-center justify-between gap-3 shadow-md">
+                  <div className="flex items-center gap-3">
+                    <span className="grid h-10 w-10 place-items-center rounded-xl bg-amber-500 text-slate-950 font-black text-xl shadow-xs">
+                      📄
+                    </span>
+                    <div>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-amber-400">
+                        Extracción Inteligente de Gaceta Hípica (PDF / Imagen)
+                      </h4>
+                      <p className="text-[11px] text-slate-300">
+                        Sube el archivo PDF oficial para que la IA transcriba y proyecte automáticamente todos los factores de la reunión.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onAbrirImportadorPdf}
+                    className="rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 px-4 py-2 text-xs font-black uppercase text-slate-950 shadow-md hover:from-amber-400 hover:to-yellow-300 transition-all flex items-center gap-2"
+                  >
+                    <span>🚀</span>
+                    <span>Abrir Extractor de Gaceta PDF con IA</span>
+                  </button>
+                </div>
+              )}
+
               <p className="text-xs font-bold text-amber-300">
                 📥 Importación rápida de ejemplares desde Gaceta / Retrospecto para {hipodromo || "el hipódromo activo"} C{carrera || 1}
               </p>

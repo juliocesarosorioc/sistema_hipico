@@ -7,6 +7,7 @@ import { PizarraProspectiva } from "@/features/inteligencia/components/PizarraPr
 import { ModalAnalisisActuarialGodet } from "@/features/ejemplares/components/ModalAnalisisActuarialGodet";
 import { ModalCuadroMaestro5y6 } from "@/features/inteligencia/components/ModalCuadroMaestro5y6";
 import { ModalImportarGacetaPdf } from "@/features/inteligencia/components/ModalImportarGacetaPdf";
+import { GraficoSimulacionDinamica } from "@/features/inteligencia/components/GraficoSimulacionDinamica";
 import { DivisaStudSvg } from "@/features/inteligencia/components/DivisaStudSvg";
 import {
   simularCarreraV4,
@@ -351,10 +352,10 @@ export function ProyeccionesModule() {
             <Button
               size="sm"
               onClick={() => setAbrirImportarGacetaModal(true)}
-              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 font-black text-white text-xs shadow-sm flex items-center gap-1.5"
+              className="bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 font-black text-slate-950 text-xs shadow-md border border-amber-300 flex items-center gap-1.5 px-3 py-1.5"
             >
-              <span>📄</span>
-              <span>Importar Gaceta PDF</span>
+              <span className="text-sm">📄</span>
+              <span>Importar Gaceta PDF con IA</span>
             </Button>
 
             <Button
@@ -584,6 +585,14 @@ export function ProyeccionesModule() {
             disabled={cargando}
             acciones={
               <div className="flex items-center gap-2">
+                <Button
+                  size="md"
+                  onClick={() => setAbrirImportarGacetaModal(true)}
+                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-sm flex items-center gap-1.5"
+                >
+                  <span>📄</span>
+                  <span>Importar Gaceta PDF</span>
+                </Button>
                 <Button variant="ghost" size="md" disabled={cargando} onClick={() => void cargarCarreras(fecha)}>
                   {cargando ? "Cargando…" : "🔄 Actualizar"}
                 </Button>
@@ -736,6 +745,44 @@ export function ProyeccionesModule() {
                   </div>
                 </Card>
               )}
+
+              {/* PANEL GRÁFICO DINÁMICO DE SIMULACIÓN Y RADAR */}
+              <GraficoSimulacionDinamica
+                resultado={resultadoCarreraV4}
+                factorPistaActual={formPista}
+                onCambiarPista={(p) => {
+                  setFormPista(p);
+                  aplicarTendenciaTarde({
+                    factorPista: p,
+                    varianteSegundos: p === "LIGERA" ? -0.6 : p === "PESADA" ? 1.2 : 0.0,
+                    carrilDominante: formCarril,
+                    estiloDominante: formEstilo,
+                  });
+                }}
+                carrilActual={formCarril}
+                onCambiarCarril={(c) => {
+                  setFormCarril(c);
+                  aplicarTendenciaTarde({
+                    factorPista: formPista,
+                    varianteSegundos: formPista === "LIGERA" ? -0.6 : formPista === "PESADA" ? 1.2 : 0.0,
+                    carrilDominante: c,
+                    estiloDominante: formEstilo,
+                  });
+                }}
+                estiloActual={formEstilo}
+                onCambiarEstilo={(e) => {
+                  setFormEstilo(e);
+                  aplicarTendenciaTarde({
+                    factorPista: formPista,
+                    varianteSegundos: formPista === "LIGERA" ? -0.6 : formPista === "PESADA" ? 1.2 : 0.0,
+                    carrilDominante: formCarril,
+                    estiloDominante: e,
+                  });
+                }}
+                tendenciaActiva={tendenciaTarde.activa}
+                onAplicarTendencia={handleAplicarTendencia}
+                onLimpiarTendencia={limpiarTendenciaTarde}
+              />
 
               {/* TABLA PRINCIPAL DEL RANKING CON 22 FACTORES, GUALDRAPAS Y DIVISAS */}
               <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
@@ -924,6 +971,10 @@ export function ProyeccionesModule() {
             hipodromo={hipodromo || undefined}
             carrera={carreraSel?.carrera}
             fecha={fecha}
+            onAbrirImportadorPdf={() => {
+              setAbrirGodetModal(false);
+              setAbrirImportarGacetaModal(true);
+            }}
             ejemplares={
               resultadoCarreraV4?.ranking.map((r) => ({
                 numero: r.ejemplar.numero,
