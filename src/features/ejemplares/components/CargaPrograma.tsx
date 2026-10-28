@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/shared/components/ui/Card";
 import { Button } from "@/shared/components/ui/Button";
 import { Input } from "@/shared/components/ui/Input";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { BuscadorPadron, type OpcionPadron } from "@/features/ejemplares/components/BuscadorPadron";
@@ -323,12 +324,11 @@ export function CargaPrograma() {
       {/* Filtros principales */}
       <Card className="w-full p-4">
         <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Input
+          <DateInput
             id="fecha-programa"
             label="Fecha de la jornada"
-            type="date"
             value={fecha}
-            onChange={(e) => setFecha(e.target.value)}
+            onFechaChange={setFecha}
           />
           <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
             <span>Hipódromo</span>

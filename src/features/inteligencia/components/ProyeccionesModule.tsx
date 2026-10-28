@@ -8,6 +8,8 @@ import { ModalAnalisisActuarialGodet } from "@/features/ejemplares/components/Mo
 import { ModalCuadroMaestro5y6 } from "@/features/inteligencia/components/ModalCuadroMaestro5y6";
 import { ModalImportarGacetaPdf } from "@/features/inteligencia/components/ModalImportarGacetaPdf";
 import { GraficoSimulacionDinamica } from "@/features/inteligencia/components/GraficoSimulacionDinamica";
+import { SimuladorPistaDesarrollo } from "@/features/inteligencia/components/SimuladorPistaDesarrollo";
+import { FichaExpedienteEjemplar } from "@/features/inteligencia/components/FichaExpedienteEjemplar";
 import {
   simularCarreraV4,
   COLORES_GUALDRAPA,
@@ -56,6 +58,7 @@ export function ProyeccionesModule() {
   const [abrirGodetModal, setAbrirGodetModal] = useState(false);
   const [abrirCuadro5y6Modal, setAbrirCuadro5y6Modal] = useState(false);
   const [abrirImportarGacetaModal, setAbrirImportarGacetaModal] = useState(false);
+  const [ejemplarExpediente, setEjemplarExpediente] = useState<EjemplarAnalisisV4 | null>(null);
   const [informeCarrera, setInformeCarrera] = useState<InformeCarreraIA | null>(null);
   const [generandoInforme, setGenerandoInforme] = useState(false);
 
@@ -767,6 +770,25 @@ export function ProyeccionesModule() {
                     </div>
                   </div>
                 </Card>
+              )}
+
+              {/* SIMULADOR DE ÓVALO CON PISTA RECTA CENTRAL DE NÚMEROS EN EL INFIELD */}
+              <SimuladorPistaDesarrollo
+                resultado={resultadoCarreraV4}
+                distancia={carreraSel?.distancia ? Number(carreraSel.distancia) : 1200}
+                hipodromo={carreraSel?.hipodromo || hipodromo}
+                onSeleccionarEjemplar={(res) => setEjemplarExpediente(res.ejemplar)}
+              />
+
+              {/* MODAL / FICHA DE EXPEDIENTE DEL EJEMPLAR */}
+              {ejemplarExpediente && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-fadeIn">
+                  <FichaExpedienteEjemplar
+                    ejemplar={ejemplarExpediente}
+                    distanciaCarrera={carreraSel?.distancia ? Number(carreraSel.distancia) : 1200}
+                    onCerrar={() => setEjemplarExpediente(null)}
+                  />
+                </div>
               )}
 
               {/* PANEL GRÁFICO DINÁMICO DE SIMULACIÓN Y RADAR */}

@@ -24,7 +24,10 @@ export type EjemplarAnalisisV4 = {
   id: string;
   numero: number;
   nombre: string;
-  puestoPista: number;
+  puestoPista: number; // PP actual en el partidor
+  puestoPistaAnterior?: number; // PP en su carrera anterior
+  tropiezosAnteriores?: string[]; // ej: ["PMal", "TPart", "CAfPa"]
+  historialPP?: Array<{ puestoPista: number; speedRatingTTC?: number; distancia?: number; tropiezo?: string }>;
   jinete: string;
   kilos: number;
   jineteAnterior?: string;
@@ -199,15 +202,39 @@ export function evaluarEjemplarV4(
     factores["F5_PesoBalanza"] = 4.0;
   }
 
-  // F6. Puesto de Pista (PP) vs Distancia (0 - 5 pts)
+  // F6. Puesto de Pista (PP) Biomecánico y Táctico (0 - 8 pts)
+  // Evalúa: Rendimiento por franja (Interior 1-4, Medio 5-9, Exterior 10-14),
+  // y cambio favorable respecto al PP anterior (ΔPP y tropiezos superados).
   const pp = e.puestoPista;
+  let puntosPP = 3.5;
+
+  // Rendimiento base según la distancia
   if (distanciaCarrera >= 1600 && pp <= 4) {
-    factores["F6_PuestoPista"] = 4.8;
+    puntosPP = 4.8;
   } else if (distanciaCarrera <= 1200 && pp >= 6 && pp <= 11) {
-    factores["F6_PuestoPista"] = 4.5;
-  } else {
-    factores["F6_PuestoPista"] = 3.2;
+    puntosPP = 4.5;
+  } else if (distanciaCarrera >= 1300 && distanciaCarrera <= 1500 && pp >= 5 && pp <= 10) {
+    puntosPP = 4.6;
   }
+
+  // Bonificación por corrección de tropiezo en PP previo:
+  // Si partió mal encajonado en PP 1-2 en su anterior y hoy sale por un puesto limpio (PP 5-11)
+  const tropiezos = e.tropiezosAnteriores ?? [];
+  const tuvoProblemasInternos = tropiezos.some((t) => ["PMAL", "SMAL", "TPART", "T800F"].includes(t.toUpperCase()));
+  if (e.puestoPistaAnterior && e.puestoPistaAnterior <= 2 && tuvoProblemasInternos && pp >= 5 && pp <= 11) {
+    puntosPP += 1.5;
+    badges.push("🚪 PP Aliviado (+1.5)");
+  }
+
+  // Bonificación en tiros de 2 o 4 curvas (1800m a 2400m) si corrió abierto desde PP 12-14
+  // y hoy mejora a un puesto interno/medio (PP 1-7) ahorrando terreno en el primer codo:
+  const corrioAbierto = tropiezos.some((t) => ["CAFPA", "CAFTC"].includes(t.toUpperCase()));
+  if (distanciaCarrera >= 1800 && e.puestoPistaAnterior && e.puestoPistaAnterior >= 12 && corrioAbierto && pp <= 7) {
+    puntosPP += 1.8;
+    badges.push("🎯 Ahorro de Curva PP 1-7 (+1.8)");
+  }
+
+  factores["F6_PuestoPista"] = Number(Math.min(8.0, puntosPP).toFixed(2));
 
   // F7. Estilo y Tren de Carrera (0 - 7 pts)
   if (e.estilo === "E1") {
@@ -501,4 +528,68 @@ export function interpretarDivisaCMG(texto?: string): {
   }
 
   return { colorCamisa: camisa, colorMangas: mangas, colorGorro: gorro };
+}
+
+/**
+ * Evalúa el factor biomecánico del Puesto de Partida (PP Actual vs. PP Histórico vs. N° Programa)
+ */
+export function evaluarFactorPuestoPartida(
+  puestoPistaActual: number,
+  distanciaCarrera: number,
+  puestoPistaAnterior?: number,
+  tropiezosAnteriores?: string[]
+): {
+  zonaAparato: "INTERIOR" | "MEDIO" | "EXTERIOR";
+  puntosPP: number;
+  bonoAlivio: boolean;
+  bonoCurvaAhorro: boolean;
+  descripcion: string;
+} {
+  const zonaAparato =
+    puestoPistaActual <= 4 ? "INTERIOR" : puestoPistaActual <= 9 ? "MEDIO" : "EXTERIOR";
+
+  let puntosPP = 3.5;
+  if (distanciaCarrera >= 1600 && puestoPistaActual <= 4) puntosPP = 4.8;
+  else if (distanciaCarrera <= 1200 && puestoPistaActual >= 6 && puestoPistaActual <= 11) puntosPP = 4.5;
+  else if (distanciaCarrera >= 1300 && distanciaCarrera <= 1500 && puestoPistaActual >= 5 && puestoPistaActual <= 10) puntosPP = 4.6;
+
+  let bonoAlivio = false;
+  let bonoCurvaAhorro = false;
+  const trop = (tropiezosAnteriores ?? []).map((t) => t.toUpperCase());
+
+  // Alivio de tropiezos internos
+  if (
+    puestoPistaAnterior &&
+    puestoPistaAnterior <= 2 &&
+    trop.some((t) => ["PMAL", "SMAL", "TPART", "T800F"].includes(t)) &&
+    puestoPistaActual >= 5 &&
+    puestoPistaActual <= 11
+  ) {
+    puntosPP += 1.5;
+    bonoAlivio = true;
+  }
+
+  // Ahorro de curva en tiros largos
+  if (
+    distanciaCarrera >= 1800 &&
+    puestoPistaAnterior &&
+    puestoPistaAnterior >= 12 &&
+    trop.some((t) => ["CAFPA", "CAFTC"].includes(t)) &&
+    puestoPistaActual <= 7
+  ) {
+    puntosPP += 1.8;
+    bonoCurvaAhorro = true;
+  }
+
+  const descripciones: string[] = [`Zona ${zonaAparato} (PP ${puestoPistaActual})`];
+  if (bonoAlivio) descripciones.push("Mejora sustancial: sale de encajonamiento previo (+1.5)");
+  if (bonoCurvaAhorro) descripciones.push("Ahorro de terreno en 1er codo (+1.8)");
+
+  return {
+    zonaAparato,
+    puntosPP: Number(Math.min(8.0, puntosPP).toFixed(2)),
+    bonoAlivio,
+    bonoCurvaAhorro,
+    descripcion: descripciones.join(" · "),
+  };
 }

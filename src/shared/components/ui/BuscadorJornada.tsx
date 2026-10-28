@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { SearchableSelect, type OpcionSelect } from "@/shared/components/ui/SearchableSelect";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import { ordenarHipodromosDeLaJornada } from "@/shared/lib/hipodromos-jornada";
 
 /**
@@ -98,12 +99,11 @@ export function BuscadorJornada({
         <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">
           1 · Fecha 📅
         </label>
-        <input
-          type="date"
+        <DateInput
           value={fecha}
           disabled={disabled}
-          onChange={(e) => onFecha(e.target.value)}
-          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-slate-400"
+          onFechaChange={onFecha}
+          className="py-1 px-2 text-[13px]"
         />
       </div>
 

@@ -435,6 +435,12 @@ function FilaPizarraUI({
             <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] font-bold text-white">
               #{fila.numero}
             </span>
+            <span
+              className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[9px] font-extrabold text-amber-300"
+              title="Puesto de Partida (PP) en el aparato de salidas"
+            >
+              🚪 PP {(fila as unknown as { puestoPista?: number }).puestoPista || fila.numero}
+            </span>
             <strong className="truncate text-xs font-black text-white md:text-sm">{fila.nombre}</strong>
             <span className={`rounded border px-1 py-0.5 font-mono text-[9px] font-bold ${estilo.cls}`} title={estilo.detalle}>
               {estilo.label}

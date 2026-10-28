@@ -12,6 +12,7 @@
  * Lo usan hoy Tablas Fijas (Monitor de Tablas Publicadas) y Carreras del Día.
  */
 import type { ReactNode } from "react";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { nombrePropioHipodromo } from "@/features/hipodromos/lib/nombre";
@@ -84,16 +85,15 @@ export function MonitorHipodromos({
         <div className="flex items-center gap-2">
           <label className="mon-control">
             {ejeFecha === "venta" ? "🧾 Venta" : ejeFecha === "carrera" ? "🏇 Carrera" : "📅 Día"}
-            <input
-              type="date"
+            <DateInput
               value={fecha}
-              onChange={(e) => onFecha(permitirTodos ? e.target.value : e.target.value || hoyLocal())}
+              onFechaChange={(val) => onFecha(permitirTodos ? val : val || hoyLocal())}
               title={
                 ejeFecha === "venta"
                   ? "Selecciona el día de VENTA de los Hipódromos"
                   : "Selecciona el día de CARRERA de los Hipódromos"
               }
-              className="mon-input"
+              className="mon-input py-0.5 px-1.5 text-[12px]"
             />
           </label>
           {permitirTodos && (

@@ -141,6 +141,9 @@
     "../src/features/inteligencia/lib/optimizador-5y6.ts",
     "../src/core/types/pdfjs-dist.d.ts",
     "../src/features/inteligencia/lib/importador-analizador-gaceta.ts",
-    "./inteligencia-venezuela-5y6-completo.test.ts"
+    "../src/features/inteligencia/lib/extractor-gaceta-venezuela.ts",
+    "../src/features/inteligencia/lib/extractor-traqueos-venezuela.ts",
+    "./inteligencia-venezuela-5y6-completo.test.ts",
+    "./simulador-ovalo-recta-central.test.ts"
   ]
 }
