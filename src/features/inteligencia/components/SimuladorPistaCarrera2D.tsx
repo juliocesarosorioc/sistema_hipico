@@ -143,20 +143,24 @@ export function SimuladorPistaCarrera2D({
       // Asegurar límites dentro de la pista (5% a 92%)
       posX = Math.min(Math.max(posX, 4), 92);
 
-      // 4. Carril Y (Línea de Carrera / Carril de Pista)
-      // Carril 1 (Riel): 24% | Carril 2 (Centro): 50% | Carril 3 (Afuera): 76%
+      // 4. Carril Y (Separación limpia en la pista para evitar superposiciones en la llegada)
+      // Cada caballo tiene su propio andarivel en la pista (de 16% a 84%)
+      const totalEjemplares = Math.max(ranking.length, 1);
+      const pasoVertical = totalEjemplares > 1 ? 66 / (totalEjemplares - 1) : 0;
+      const posYAndarivel = 17 + index * pasoVertical;
+
       let carrilYBase = 50;
       if (ejemplar.lineaPistaEstimada === "RIEL" || ejemplar.puestoPista <= 3) {
-        carrilYBase = 24;
+        carrilYBase = 26;
       } else if (ejemplar.lineaPistaEstimada === "AFUERA" || ejemplar.puestoPista >= 7) {
-        carrilYBase = 76;
+        carrilYBase = 74;
       } else {
         carrilYBase = 50;
       }
 
-      // Añadir una pequeña dispersión para que los caballos no se superpongan exactamente
-      const dispersion = ((index % 3) - 1) * 7;
-      const posY = Math.min(Math.max(carrilYBase + dispersion, 16), 84);
+      // En la recta y llegada hacia la meta, se abren limpiamente a sus andariveles para que no se superpongan
+      const factorLlegada = Math.min(Math.max((progreso - 30) / 70, 0), 1);
+      const posY = carrilYBase * (1 - factorLlegada) + posYAndarivel * factorLlegada;
 
       return {
         item,
@@ -425,22 +429,22 @@ export function SimuladorPistaCarrera2D({
                     <polygon points="12,72 16,74 12,76" fill="#0F172A" />
                     <polygon points="94,64 99,66 95,68" fill="#0F172A" />
 
-                    {/* Gualdrapa Oficial (#1 al #16) en el lomo - CONTENEDOR AGRANDADO */}
+                    {/* Gualdrapa Oficial (#1 al #16) en el lomo - CONTENEDOR AGRANDADO Y NÍTIDO */}
                     <rect
-                      x="40"
-                      y="35"
-                      width="23"
-                      height="15"
-                      rx="3"
+                      x="38"
+                      y="33"
+                      width="26"
+                      height="18"
+                      rx="3.5"
                       fill={gualdrapa.bg}
                       stroke="#0F172A"
-                      strokeWidth="1.4"
+                      strokeWidth="2"
                     />
                     <text
-                      x="51.5"
+                      x="51"
                       y="46.5"
                       textAnchor="middle"
-                      fontSize="11"
+                      fontSize="13"
                       fontWeight="900"
                       fill={gualdrapa.text}
                       fontFamily="monospace"

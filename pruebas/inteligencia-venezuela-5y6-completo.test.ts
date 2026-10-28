@@ -297,7 +297,7 @@ ok("ModalImportarGacetaPdf pasa divisaTexto y studNombre a DivisaStudSvg", modal
 ok("ModalImportarGacetaPdf tiene contenedor de número agrandado", modalGacetaSrc.includes("h-7 w-7 min-w-[28px]"));
 
 ok("SimuladorPistaCarrera2D muestra solo las figuras con el color de contenedor sin etiquetas flotantes", pistaSrc.includes("SPRITE VECTORIAL DEL PURASANGRE EN PLENO GALOPE CON COLOR DE CONTENEDOR") && !pistaSrc.includes("font-mono text-cyan-300"));
-ok("SimuladorPistaCarrera2D agranda gualdrapa oficial en el lomo", pistaSrc.includes("CONTENEDOR AGRANDADO") && pistaSrc.includes('width="23"'));
+ok("SimuladorPistaCarrera2D agranda gualdrapa oficial en el lomo", pistaSrc.includes("CONTENEDOR AGRANDADO") && pistaSrc.includes('width="26"'));
 
 ok("GraficoSimulacionDinamica incluye simulación animada en vista cuerpos", graficoSimSrc.includes("animandoLlegada") && graficoSimSrc.includes("Simular Llegada"));
 ok("GraficoSimulacionDinamica tiene filas uniformes en vista cuerpos", graficoSimSrc.includes("h-14 min-h-[56px]"));

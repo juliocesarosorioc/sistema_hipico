@@ -516,38 +516,42 @@ export function GraficoSimulacionDinamica({
                       </div>
                     </div>
 
-                    {/* Panel Derecho: Pista animada con caballo galopando hacia la meta */}
-                    <div className="relative flex-1 h-10 bg-amber-950/30 rounded-lg overflow-hidden border border-amber-900/30 flex items-center">
+                    {/* Panel Derecho: Pista animada solo con el caballo y su gualdrapa visible */}
+                    <div className="relative flex-1 h-12 bg-amber-950/30 rounded-lg overflow-hidden border border-amber-900/30 flex items-center">
                       {/* Suelo de pista */}
                       <div className="absolute inset-0 bg-gradient-to-r from-amber-950/20 via-amber-900/30 to-amber-950/40" />
 
                       {/* Línea de Meta (Derecha) */}
                       <div className="absolute right-3 top-0 bottom-0 w-1.5 bg-gradient-to-b from-red-600 via-white to-red-600 z-10 shadow-sm" />
 
-                      {/* Caballo al galope con animación fluida */}
+                      {/* Caballo al galope con animación fluida (solo el caballo y su gualdrapa con número) */}
                       <div
                         className="absolute flex items-center transition-all duration-150 ease-linear z-20"
                         style={{
                           right: animandoLlegada ? `${posActual}%` : `${margenMetaObjetivo}%`,
                         }}
                       >
-                        {/* Avatar SVG del caballo con gualdrapa oficial agrandada */}
-                        <div className={`relative flex items-center ${animandoLlegada ? "animate-bounce" : ""}`} style={{ animationDuration: "0.35s" }}>
-                          <svg width="44" height="30" viewBox="0 0 100 70" fill="none" className="drop-shadow-sm">
-                            <path d="M 15 54 L 26 38 L 38 34 L 26 60 Z" fill="#78350F" />
-                            <path d="M 28 32 C 40 26 58 26 70 30 C 76 34 80 40 76 46 C 68 52 46 52 30 46 Z" fill="#854D0E" stroke="#451A03" strokeWidth="1.5" />
-                            <path d="M 66 30 L 80 18 L 90 16 L 96 22 L 90 26 L 76 36 Z" fill="#854D0E" stroke="#451A03" strokeWidth="1.5" />
-                            <path d="M 66 44 L 78 54 L 90 56 L 86 52 L 74 44 Z" fill="#78350F" />
-                            {/* Gualdrapa agrandada */}
-                            <rect x="36" y="30" width="22" height="14" rx="2.5" fill={gualdrapa.bg} stroke="#0F172A" strokeWidth="1" />
-                            <text x="47" y="41" textAnchor="middle" fontSize="10" fontWeight="900" fill={gualdrapa.text} fontFamily="monospace">
+                        {/* Avatar SVG grande del caballo purasangre en galope con gualdrapa y número nítidos */}
+                        <div className={`relative flex items-center ${animandoLlegada ? "animate-bounce" : ""}`} style={{ animationDuration: "0.38s" }}>
+                          <svg width="68" height="46" viewBox="0 0 105 75" fill="none" className="drop-shadow-md">
+                            {/* Patas traseras */}
+                            <path d="M 14 60 L 25 42 L 36 38 L 25 64 Z" fill="#78350F" stroke="#451A03" strokeWidth="1.2" />
+                            <path d="M 24 54 L 30 42 L 38 40 L 28 58 Z" fill="#92400E" />
+                            {/* Cola */}
+                            <path d="M 18 34 C 8 30 3 38 1 48 C 8 44 15 40 20 38 Z" fill="#451A03" />
+                            {/* Torso muscular */}
+                            <path d="M 26 36 C 38 28 56 28 68 32 C 76 35 80 43 76 50 C 68 56 46 56 30 50 Z" fill="#854D0E" stroke="#451A03" strokeWidth="1.5" />
+                            {/* Cuello y cabeza */}
+                            <path d="M 66 32 L 80 20 L 92 18 L 98 24 L 92 28 L 78 38 Z" fill="#854D0E" stroke="#451A03" strokeWidth="1.5" />
+                            {/* Patas delanteras */}
+                            <path d="M 68 48 L 80 58 L 92 60 L 88 56 L 76 48 Z" fill="#78350F" stroke="#451A03" strokeWidth="1.2" />
+                            <path d="M 62 50 L 72 60 L 82 62 L 78 56 L 66 50 Z" fill="#92400E" />
+                            {/* GUALDRAPA OFICIAL AGRANDADA CON NÚMERO BIEN NÍTIDO */}
+                            <rect x="36" y="31" width="26" height="17" rx="3.5" fill={gualdrapa.bg} stroke="#0F172A" strokeWidth="1.8" />
+                            <text x="49" y="44" textAnchor="middle" fontSize="13" fontWeight="900" fill={gualdrapa.text} fontFamily="monospace">
                               {num}
                             </text>
                           </svg>
-                          {/* Insignia de cuerpos */}
-                          <span className="text-[9px] font-mono font-bold bg-slate-900/90 text-amber-300 border border-slate-700 px-1 rounded ml-1 whitespace-nowrap">
-                            {idx === 0 ? "META" : `-${r.cuerposVentaja.toFixed(1)}`}
-                          </span>
                         </div>
                       </div>
                     </div>
