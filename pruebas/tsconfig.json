@@ -143,6 +143,7 @@
     "../src/features/inteligencia/lib/importador-analizador-gaceta.ts",
     "../src/features/inteligencia/lib/extractor-gaceta-venezuela.ts",
     "../src/features/inteligencia/lib/extractor-traqueos-venezuela.ts",
+    "../src/features/inteligencia/lib/geometria-ovalo-rinconada.ts",
     "./inteligencia-venezuela-5y6-completo.test.ts",
     "./simulador-ovalo-recta-central.test.ts"
   ]

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { parsearLineaParticipanteGaceta, parsearFilaRetrospecto } from "@/features/inteligencia/lib/extractor-gaceta-venezuela";
 import { parsearLineaTraqueo, convertirTiempoQuintosADecimal, calcularCalidadWorkout } from "@/features/inteligencia/lib/extractor-traqueos-venezuela";
 import { evaluarFactorPuestoPartida, COLORES_GUALDRAPA, simularCarreraV4 } from "@/features/inteligencia/lib/analista-venezuela-v4";
+import { obtenerHitoDistancia, ANCHO_PISTA } from "@/features/inteligencia/lib/geometria-ovalo-rinconada";
 
 console.log("🏇 INICIANDO SUITE DE PRUEBAS: SIMULADOR ÓVALO, RECTA CENTRAL, FACTOR PP Y TRAQUEOS (ih_*)...");
 
@@ -153,4 +154,29 @@ console.log("🏇 INICIANDO SUITE DE PRUEBAS: SIMULADOR ÓVALO, RECTA CENTRAL, F
   console.log("  ✔ Simulación integrada con ranking proyectado y factores duales: OK");
 }
 
-console.log("\n🎉 TODAS LAS PRUEBAS DE SIMULADOR DE ÓVALO CON RECTA CENTRAL, PP Y TRAQUEOS PASARON EXITOSAMENTE (6/6).\n");
+// 7. RAYAS DE DISTANCIA RECTAS Y PERPENDICULARES ENTRE BARANDA INTERIOR Y BARANDA EXTERIOR
+{
+  for (let m = 0; m <= 1800; m += 100) {
+    const { posRiel, posExt } = obtenerHitoDistancia(m);
+    const dx = posExt.x - posRiel.x;
+    const dy = posExt.y - posRiel.y;
+    const longitudRaya = Math.hypot(dx, dy);
+
+    // Cada raya debe cruzar exactamente el ancho de la pista (70m)
+    assert.ok(
+      Math.abs(longitudRaya - ANCHO_PISTA) < 0.001,
+      `La raya en el hito ${m}m debe medir exactamente ANCHO_PISTA (${ANCHO_PISTA}), midió ${longitudRaya}`
+    );
+
+    // En las rectas (inferior 0..360m y enfrente 860..1260m): la raya debe ser vertical pura (dx === 0)
+    if (m <= 360 || (m >= 860 && m <= 1260) || m >= 1760) {
+      assert.ok(
+        Math.abs(dx) < 0.001,
+        `En tramo recto (${m}m), la raya debe ser recta vertical (dx=0), pero dx fue ${dx}`
+      );
+    }
+  }
+  console.log("  ✔ Rayas de distancias cada 100m son rectas y perpendiculares entre baranda interior y exterior: OK");
+}
+
+console.log("\n🎉 TODAS LAS PRUEBAS DE SIMULADOR DE ÓVALO CON RECTA CENTRAL, PP Y TRAQUEOS PASARON EXITOSAMENTE (7/7).\n");
