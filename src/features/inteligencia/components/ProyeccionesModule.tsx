@@ -6,6 +6,7 @@ import { SemaforoCarreras } from "@/features/gestion/components/SemaforoCarreras
 import { PizarraProspectiva } from "@/features/inteligencia/components/PizarraProspectiva";
 import { ModalAnalisisActuarialGodet } from "@/features/ejemplares/components/ModalAnalisisActuarialGodet";
 import { ModalCuadroMaestro5y6 } from "@/features/inteligencia/components/ModalCuadroMaestro5y6";
+import { ModalImportarGacetaPdf } from "@/features/inteligencia/components/ModalImportarGacetaPdf";
 import { DivisaStudSvg } from "@/features/inteligencia/components/DivisaStudSvg";
 import {
   simularCarreraV4,
@@ -53,6 +54,7 @@ export function ProyeccionesModule() {
   // Modales
   const [abrirGodetModal, setAbrirGodetModal] = useState(false);
   const [abrirCuadro5y6Modal, setAbrirCuadro5y6Modal] = useState(false);
+  const [abrirImportarGacetaModal, setAbrirImportarGacetaModal] = useState(false);
   const [informeCarrera, setInformeCarrera] = useState<InformeCarreraIA | null>(null);
   const [generandoInforme, setGenerandoInforme] = useState(false);
 
@@ -97,6 +99,19 @@ export function ProyeccionesModule() {
     }
     setCarreras(res.carreras);
   }, []);
+
+  /** Inyecta carreras importadas directamente desde el PDF/Gaceta */
+  const handleCarrerasImportadas = useCallback(
+    (nuevas: CarreraCatalogo[], f: string, hip: string) => {
+      setFecha(f);
+      setHipodromo(hip);
+      setCarreras(nuevas);
+      if (nuevas.length > 0) {
+        setCarreraActiva(Number(nuevas[0].carrera) || 1);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     void cargarCarreras(fecha);
@@ -335,6 +350,15 @@ export function ProyeccionesModule() {
           <div className="flex items-center gap-2">
             <Button
               size="sm"
+              onClick={() => setAbrirImportarGacetaModal(true)}
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 font-black text-white text-xs shadow-sm flex items-center gap-1.5"
+            >
+              <span>📄</span>
+              <span>Importar Gaceta PDF</span>
+            </Button>
+
+            <Button
+              size="sm"
               onClick={() => setAbrirCuadro5y6Modal(true)}
               className="bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 font-black text-slate-950 text-xs shadow-sm flex items-center gap-1.5"
             >
@@ -429,6 +453,35 @@ export function ProyeccionesModule() {
               </div>
             )}
           </div>
+
+          {/* ================================================================== */}
+          {/* MODO 1: BANNER TÁCTICO DE IMPORTACIÓN DE GACETA PDF & TOMATIEMPOS  */}
+          {/* ================================================================== */}
+          {modoAnalitico === "anticipado" && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-blue-900/5 via-indigo-900/5 to-amber-900/5 border border-indigo-200/80 p-3 shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="grid h-8 w-8 place-items-center rounded-xl bg-indigo-600 text-white font-black text-sm shadow-xs">
+                  📄
+                </span>
+                <div>
+                  <h4 className="text-xs font-black uppercase text-indigo-950">
+                    Estudio Anticipado con Gaceta Hípica & Tomatiempos INH
+                  </h4>
+                  <p className="text-[11px] text-indigo-800">
+                    Importa el documento PDF de la reunión para extraer retrospectos, briseos de cancha, pesos y proyectar los 22 factores con IA.
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => setAbrirImportarGacetaModal(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-xs flex items-center gap-1.5"
+              >
+                <span>📥</span>
+                <span>Subir Gaceta PDF</span>
+              </Button>
+            </div>
+          )}
 
           {/* ================================================================== */}
           {/* PANEL TÁCTICO EN VIVO: ⚡ TENDENCIA DE LA TARDE                   */}
@@ -570,6 +623,31 @@ export function ProyeccionesModule() {
               activa={carreraActiva}
               onSeleccionar={(n) => setCarreraActiva(n)}
             />
+          )}
+
+          {/* ESTADO CUANDO NO HAY CARRERAS CARGADAS AÚN */}
+          {hipodromo && carrerasDelHipodromo.length === 0 && !cargando && (
+            <Card className="rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/40 p-8 text-center space-y-3">
+              <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-indigo-100 text-2xl text-indigo-600">
+                📄
+              </div>
+              <div>
+                <h4 className="text-sm font-black uppercase tracking-wider text-slate-800">
+                  No hay carreras cargadas para {hipodromo} el {fecha}
+                </h4>
+                <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
+                  Importa el archivo oficial de la Gaceta Hípica en PDF para transcribir con IA y proyectar automáticamente los 22 factores actuariales.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => setAbrirImportarGacetaModal(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-md mx-auto flex items-center gap-1.5"
+              >
+                <span>📥</span>
+                <span>Importar Gaceta Hípica PDF</span>
+              </Button>
+            </Card>
           )}
 
           {/* ============================================================== */}
@@ -865,6 +943,16 @@ export function ProyeccionesModule() {
             fecha={fecha}
             hipodromo={hipodromo || "LA RINCONADA"}
             carrerasValidas={carrerasValidas5y6}
+          />
+
+          {/* MODAL DE IMPORTACIÓN, EXTRACCIÓN Y ANÁLISIS DE GACETA PDF */}
+          <ModalImportarGacetaPdf
+            abierto={abrirImportarGacetaModal}
+            onCerrar={() => setAbrirImportarGacetaModal(false)}
+            fechaDefault={fecha}
+            hipodromoDefault={hipodromo || "LA RINCONADA"}
+            onCarrerasImportadas={handleCarrerasImportadas}
+            onAbrirCuadro5y6={() => setAbrirCuadro5y6Modal(true)}
           />
         </>
       )}

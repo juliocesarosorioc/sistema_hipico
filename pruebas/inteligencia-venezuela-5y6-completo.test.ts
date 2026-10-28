@@ -24,6 +24,11 @@ import {
 import {
   generarCuadroMaestro5y6,
 } from "../src/features/inteligencia/lib/optimizador-5y6";
+import {
+  convertirCarrerasExtraidasACatalogo,
+  analizarCarrerasGacetaV4,
+} from "../src/features/inteligencia/lib/importador-analizador-gaceta";
+import type { CarreraExtraida } from "../src/features/gaceta/lib/ia";
 
 let pasan = 0;
 let fallan = 0;
@@ -171,6 +176,46 @@ const sqlSrc = readFileSync(
 );
 ok("todas las tablas usan prefijo ih_", sqlSrc.includes("ih_ejemplares") && sqlSrc.includes("ih_carreras_programa") && sqlSrc.includes("ih_cuadros_maestros_5y6"));
 ok("no altera tablas operativas (sin alter table apuestas ni tickets)", !sqlSrc.includes("ALTER TABLE public.tickets_apuestas") && !sqlSrc.includes("ALTER TABLE public.clientes"));
+
+console.log("\n[7] HERRAMIENTA IMPORTADOR, EXTRACTOR Y ANALIZADOR DE GACETA HÍPICA PDF");
+const modalPdfSrc = readFileSync(
+  join(raiz, "src", "features", "inteligencia", "components", "ModalImportarGacetaPdf.tsx"),
+  "utf8"
+);
+ok("componente modal de Gaceta PDF existe", modalPdfSrc.includes("Herramienta de Importación, Extracción y Análisis de Gaceta PDF"));
+ok("integrado en ProyeccionesModule", moduloSrc.includes("ModalImportarGacetaPdf") && moduloSrc.includes("Importar Gaceta PDF"));
+
+// Prueba de conversión de carreras extraídas a catálogo
+const mockExtraidas: CarreraExtraida[] = Array.from({ length: 10 }, (_, i) => ({
+  carrera: i + 1,
+  hipodromo: "LA RINCONADA",
+  fecha: "2026-10-28",
+  distancia: 1200,
+  superficie: "ARENA",
+  premio: 5000,
+  ejemplares: [
+    { numero: 1, nombre: `CABALLO A-${i + 1}`, jockey: "J. Perez", peso: 54 },
+    { numero: 2, nombre: `CABALLO B-${i + 1}`, jockey: "M. Rodriguez", peso: 53 },
+    { numero: 3, nombre: `CABALLO C-${i + 1}`, jockey: "F. Quevedo", peso: 55 },
+    { numero: 4, nombre: `CABALLO D-${i + 1}`, jockey: "K. Briceno", peso: 52 },
+  ],
+}));
+
+const catalogoGaceta = convertirCarrerasExtraidasACatalogo(mockExtraidas, "2026-10-28", "LA RINCONADA");
+ok("convierte todas las carreras extraídas a catálogo", catalogoGaceta.length === 10);
+ok("cada carrera tiene sus ejemplares formateados", (catalogoGaceta[0].caballos || []).length === 4);
+
+// Prueba de análisis automático v4 de la Gaceta extraída
+const resumenGacetaV4 = analizarCarrerasGacetaV4({
+  carreras: catalogoGaceta,
+  fecha: "2026-10-28",
+});
+
+ok("analiza las 10 carreras completas con Motor v4", resumenGacetaV4.totalCarreras === 10);
+ok("detecta exactamente 6 válidas del 5y6 (C5 a C10)", resumenGacetaV4.carrerasValidas5y6.length === 6);
+ok("la primera válida corresponde a la carrera 5", resumenGacetaV4.carrerasValidas5y6[0].carreraNumero === 5);
+ok("la sexta válida corresponde a la carrera 10", resumenGacetaV4.carrerasValidas5y6[5].carreraNumero === 10);
+ok("calcula rankings y scores Godet v4 para cada carrera", resumenGacetaV4.carrerasAnalizadas.every((c) => c.ranking.length > 0));
 
 console.log(`\nTOTAL: ${pasan} ok / ${fallan} fallaron`);
 if (fallan > 0) process.exitCode = 1;
