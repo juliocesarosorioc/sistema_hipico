@@ -23,82 +23,81 @@ type FaseCarrera = "PARTIDA" | "CODO" | "RECTA" | "META";
  * ============================================================================
  * GEOMETRÍA PARAMÉTRICA DE LA PISTA DE CARRERAS DE 1.800 METROS (LA RINCONADA)
  * ============================================================================
- * - Perímetro total de la pista = 1.800 metros.
- * - Sentido antihorario reglamentario (la baranda interior queda a la izquierda).
- * - Componentes del óvalo (viewBox 0 0 1000 560):
- *     1. Recta Final (inferior, Y = 455, avance de Oeste a Este): Meta en X = 650.
+ * - Perímetro total de la pista = exactamente 1.800 metros.
+ * - Sentido antihorario reglamentario (la baranda interior / riel queda a la izquierda del avance).
+ * - Componentes del óvalo en coordenadas SVG (viewBox 0 0 1000 560):
+ *     1. Recta Final (inferior, Y = Y_CENTRO + R, avance de Oeste a Este): Meta en X = 620.
  *     2. Primer Codo (derecha, centro en X=700, Y=280).
- *     3. Recta de Enfrente / Opuesta (superior, Y = 105, avance de Este a Oeste).
- *     4. Codo Final / Curva de los 800m (izquierda, centro en X=300, Y=280).
+ *     3. Recta de Enfrente / Opuesta (superior, Y = Y_CENTRO - R, avance de Este a Oeste).
+ *     4. Codo Final / Curva de los 800m a 400m (izquierda, centro en X=300, Y=280).
+ *
+ * REGLA ESTRICTA DE ANCHO DE PISTA:
+ * "La pista de carrera no puede ser más ancha que la cantidad de gateras".
+ * El partidor oficial cuenta con 14 gateras contiguas que van exactamente desde
+ * la baranda interior (Riel: Gatera 1) hasta la baranda exterior (Gatera 14).
+ * El ancho de la pista = 14 * ANCHO_GATERA (35 metros en total).
  * ============================================================================
  */
 
-// Dimensiones geométricas base en píxeles (1 unidad gráfica ≈ 1 metro real)
+export const CANT_GATERAS = 14;
+export const ANCHO_GATERA = 2.5; // Metros que ocupa transversalmente cada cajón
+export const ANCHO_PISTA = CANT_GATERAS * ANCHO_GATERA; // Exactamente 35 metros de ancho
+
 const X_CENTRO_IZQ = 300;
 const X_CENTRO_DER = 700;
 const Y_CENTRO = 280;
-const LONG_RECTA = 400; // de X=300 a X=700 (400 metros de recta)
+const LONG_RECTA = 400; // Recta final y opuesta (de X=300 a X=700)
 
-// Radios radiales de la pista
-const R_RIEL = 135;       // Baranda interior (El Riel)
-const R_EXTERIOR = 215;   // Baranda exterior
-const ANCHO_PISTA = R_EXTERIOR - R_RIEL; // 80 metros de ancho
-const R_MEDIO = (R_RIEL + R_EXTERIOR) / 2; // 175m
+// Para que el perímetro sea exactamente 1.800m:
+// 2 * 400m (rectas) + 2 * PI * R_MEDIO (semicírculos) = 1.800m => R_MEDIO = 500 / PI ≈ 159.155m
+const R_MEDIO = 500 / Math.PI;
 
-// Longitudes reales del óvalo de 1.800m:
-// 2 rectas de 400m = 800m
-// 2 semicírculos de radio 175m = 2 * PI * 175 ≈ 1.100m
-// Perímetro gráfico ≈ 1.900m -> Factor de escala a exactamente 1.800 metros:
-const PERIMETRO_PISTA_GRAFICO = 2 * LONG_RECTA + 2 * Math.PI * R_MEDIO;
-const FACTOR_METRO = PERIMETRO_PISTA_GRAFICO / 1800;
+// Radios radiales de la pista ajustados milimétricamente al ancho de las 14 gateras
+export const R_RIEL = R_MEDIO - ANCHO_PISTA / 2;       // 141.655m (Baranda Interior - El Riel)
+export const R_EXTERIOR = R_MEDIO + ANCHO_PISTA / 2;   // 176.655m (Baranda Exterior)
 
-// Ubicación de la Meta en la Recta Final: X = 630, Y = 455 (a 70m antes del primer codo)
-const X_META = 630;
-const DISTANCIA_META_DESDE_SALIDA_CODO = X_META - X_CENTRO_IZQ; // 330m
+// Ubicación oficial de la Meta en la Recta Final: X = 620
+export const X_META = 620;
+export const DISTANCIA_META_DESDE_SALIDA_CODO = X_META - X_CENTRO_IZQ; // 320m
 
 /**
- * Calcula las coordenadas (x, y) y ángulo de rotación (en grados) para cualquier
- * distancia que reste hasta la meta (distanciaRestante en metros) y posición transversal
- * (lambdaRiel: 0 = baranda interior, 1 = baranda exterior).
+ * Calcula las coordenadas (x, y) y ángulo tangencial de avance para cualquier
+ * distancia que reste hasta la meta (en metros) y posición transversal lambda:
+ * lambdaRiel = 0.0 -> Pegado a la Baranda Interior (El Riel)
+ * lambdaRiel = 1.0 -> Pegado a la Baranda Exterior
  */
 export function calcularPosicionEnOvalo(
   distanciaRestanteMetros: number,
-  lambdaRiel: number = 0.2 // Por defecto pegado a la baranda interior
+  lambdaRiel: number = 0.15
 ): { x: number; y: number; anguloDeg: number; tramo: string } {
-  // Ajuste de radio según la posición del ejemplar en la pista
-  const rEfectivo = R_RIEL + Math.max(0.08, Math.min(0.92, lambdaRiel)) * ANCHO_PISTA;
+  const lambdaClamped = Math.max(0, Math.min(1, lambdaRiel));
+  const rEfectivo = R_RIEL + lambdaClamped * ANCHO_PISTA;
   const longSemicirculo = Math.PI * rEfectivo;
   const perimetroTotal = 2 * LONG_RECTA + 2 * longSemicirculo;
 
-  // Distancia gráfica recorrida hacia atrás desde la meta
-  const dGrafica = Math.max(0, distanciaRestanteMetros) * FACTOR_METRO;
+  // Distancia hacia atrás desde la sentencia de meta (módulo perímetro)
+  const dGrafica = Math.max(0, distanciaRestanteMetros);
   const dMod = ((dGrafica % perimetroTotal) + perimetroTotal) % perimetroTotal;
 
-  // Coordenadas locales de la meta:
-  // La meta está en la recta final inferior a distancia D_meta desde el final del codo izquierdo
-  const dMetaDesdeCodoIzq = DISTANCIA_META_DESDE_SALIDA_CODO;
-
-  // Tramo 1: Recta Final (desde entrada a la recta hasta la meta)
-  if (dMod <= dMetaDesdeCodoIzq) {
+  // 1. Recta Final (desde salida de codo final en X=300 hasta la meta en X=620)
+  if (dMod <= DISTANCIA_META_DESDE_SALIDA_CODO) {
     const x = X_META - dMod;
     const y = Y_CENTRO + rEfectivo;
     return { x, y, anguloDeg: 0, tramo: "RECTA_FINAL" };
   }
 
-  // Tramo 2: Codo Final (Curva de los 800m a 400m)
-  const dEnCodoIzq = dMod - dMetaDesdeCodoIzq;
+  // 2. Codo Final (curva de los 800m a 400m, extremo izquierdo)
+  const dEnCodoIzq = dMod - DISTANCIA_META_DESDE_SALIDA_CODO;
   if (dEnCodoIzq <= longSemicirculo) {
     const fraccion = dEnCodoIzq / longSemicirculo;
-    // Ángulo desde pi/2 (abajo) hacia 3pi/2 (arriba) en sentido horario hacia atrás
-    const angulo = Math.PI / 2 + fraccion * Math.PI;
-    const x = X_CENTRO_IZQ + rEfectivo * Math.cos(angulo);
-    const y = Y_CENTRO + rEfectivo * Math.sin(angulo);
-    // Dirección tangente de avance: perpendicular en sentido antihorario
-    const anguloDeg = (angulo - Math.PI / 2) * (180 / Math.PI);
+    const theta = Math.PI / 2 + fraccion * Math.PI;
+    const x = X_CENTRO_IZQ + rEfectivo * Math.cos(theta);
+    const y = Y_CENTRO + rEfectivo * Math.sin(theta);
+    const anguloDeg = (theta - Math.PI / 2) * (180 / Math.PI);
     return { x, y, anguloDeg, tramo: "CODO_FINAL" };
   }
 
-  // Tramo 3: Recta de Enfrente / Backstretch (de X=300 a X=700 en la parte superior)
+  // 3. Recta de Enfrente / Opuesta (superior, de X=300 a X=700)
   const dEnRectaOpuesta = dEnCodoIzq - longSemicirculo;
   if (dEnRectaOpuesta <= LONG_RECTA) {
     const x = X_CENTRO_IZQ + dEnRectaOpuesta;
@@ -106,25 +105,25 @@ export function calcularPosicionEnOvalo(
     return { x, y, anguloDeg: 180, tramo: "RECTA_ENFRENTE" };
   }
 
-  // Tramo 4: Primer Codo (Curva después de la meta)
+  // 4. Primer Codo (curva de los 1600m a 1200m, extremo derecho)
   const dEnPrimerCodo = dEnRectaOpuesta - LONG_RECTA;
   if (dEnPrimerCodo <= longSemicirculo) {
     const fraccion = dEnPrimerCodo / longSemicirculo;
-    const angulo = (3 * Math.PI) / 2 + fraccion * Math.PI;
-    const x = X_CENTRO_DER + rEfectivo * Math.cos(angulo);
-    const y = Y_CENTRO + rEfectivo * Math.sin(angulo);
-    const anguloDeg = (angulo - Math.PI / 2) * (180 / Math.PI);
+    const phi = -Math.PI / 2 + fraccion * Math.PI;
+    const x = X_CENTRO_DER + rEfectivo * Math.cos(phi);
+    const y = Y_CENTRO + rEfectivo * Math.sin(phi);
+    const anguloDeg = (180 + (phi + Math.PI / 2) * (180 / Math.PI)) % 360;
     return { x, y, anguloDeg, tramo: "PRIMER_CODO" };
   }
 
-  // Tramo 5: Tramo de Recta Final después del primer codo antes de la meta
+  // 5. Recta Final antes de la meta (después de salir del primer codo)
   const dResto = dEnPrimerCodo - longSemicirculo;
   const x = X_CENTRO_DER - dResto;
   const y = Y_CENTRO + rEfectivo;
-  return { x, y, anguloDeg: 0, tramo: "RECTA_FINAL" };
+  return { x, y, anguloDeg: 0, tramo: "RECTA_FINAL_PRE_META" };
 }
 
-/** Puestos de partida oficiales (1 al 14) */
+/** Puestos de partida oficiales del 1 al 14 */
 export const GATERAS_14 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const;
 
 export function SimuladorPistaCarrera2D({
@@ -135,7 +134,7 @@ export function SimuladorPistaCarrera2D({
   tendenciaActiva = false,
   className = "",
 }: Props) {
-  // Estado para ocultar/mostrar la pista según preferencia del usuario
+  // Estado para ocultar / mostrar la pista según preferencia del usuario
   const [mostrarPista, setMostrarPista] = useState<boolean>(true);
 
   // Distancia oficial de la carrera (ej: 1200m, 1400m, 1600m, 1800m)
@@ -144,12 +143,13 @@ export function SimuladorPistaCarrera2D({
     return Number.isFinite(d) && d >= 800 && d <= 2400 ? d : 1400;
   }, [resultado.distancia]);
 
-  // Progreso de carrera: 0% (alineados en las 14 gateras) a 100% (sentencia en la meta)
-  const [progreso, setProgreso] = useState<number>(100);
+  // Progreso de carrera: inicia en 0% (alineados en las 14 gateras de salida)
+  const [progreso, setProgreso] = useState<number>(0);
   const [reproduciendo, setReproduciendo] = useState<boolean>(false);
   const [velocidad, setVelocidad] = useState<number>(1);
   const [caballoSeleccionado, setCaballoSeleccionado] = useState<number | null>(null);
-  const [faseActiva, setFaseActiva] = useState<FaseCarrera>("META");
+  const [faseActiva, setFaseActiva] = useState<FaseCarrera>("PARTIDA");
+
   const requestRef = useRef<number | null>(null);
   const ultimoTiempoRef = useRef<number | null>(null);
 
@@ -167,15 +167,22 @@ export function SimuladorPistaCarrera2D({
     }
   }, [ranking, caballoSeleccionado]);
 
+  // Reiniciar a la partida al cambiar de carrera o distancia
+  useEffect(() => {
+    setProgreso(0);
+    setReproduciendo(false);
+    setFaseActiva("PARTIDA");
+  }, [resultado.carreraNumero, distanciaCarrera]);
+
   // Sincronizar fases hípicas según el porcentaje de avance
   useEffect(() => {
-    if (progreso < 15) setFaseActiva("PARTIDA");
+    if (progreso < 12) setFaseActiva("PARTIDA");
     else if (progreso < 65) setFaseActiva("CODO");
     else if (progreso < 95) setFaseActiva("RECTA");
     else setFaseActiva("META");
   }, [progreso]);
 
-  // Motor de animación a 60 FPS ULTRA-ARMÓNICO:
+  // Motor de animación a 60 FPS ultra-armónico
   useEffect(() => {
     if (!reproduciendo) {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
@@ -191,7 +198,7 @@ export function SimuladorPistaCarrera2D({
       ultimoTiempoRef.current = tiempoActual;
 
       setProgreso((prev) => {
-        // Velocidad suave: ~10 segundos de simulación a 1x para recorrer el óvalo
+        // Recorrido suave y realista del óvalo (~10 segundos a 1x)
         const incremento = delta * 10 * velocidad;
         if (prev + incremento >= 100) {
           setReproduciendo(false);
@@ -212,18 +219,17 @@ export function SimuladorPistaCarrera2D({
     };
   }, [reproduciendo, velocidad]);
 
-  // Navegación rápida entre fases oficiales
+  // Navegación rápida entre fases hípicas
   const saltarAFase = useCallback((fase: FaseCarrera) => {
     setReproduciendo(false);
     if (fase === "PARTIDA") setProgreso(0);
     if (fase === "CODO") setProgreso(45);
-    if (fase === "RECTA") setProgreso(78);
+    if (fase === "RECTA") setProgreso(80);
     if (fase === "META") setProgreso(100);
   }, []);
 
-  // Metros restantes para cada ejemplar a lo largo del óvalo de 1.800m
+  // Metros restantes y trayectoria de cada ejemplar en el óvalo de 1.800m
   const posicionesCalculadas = useMemo(() => {
-    // Desfase en metros en la sentencia de meta para cada ejemplar (1 cuerpo ≈ 2.5 metros)
     let acumuladoMetrosAtras = 0;
     const desfaseMetaPorEjemplar: number[] = [];
 
@@ -232,7 +238,7 @@ export function SimuladorPistaCarrera2D({
         desfaseMetaPorEjemplar.push(0);
       } else {
         const cuerpos = Math.max(ranking[i].cuerposVentaja || 0.5, 0.25);
-        acumuladoMetrosAtras += cuerpos * 2.5;
+        acumuladoMetrosAtras += cuerpos * 2.5; // 1 cuerpo ≈ 2.5 metros
         desfaseMetaPorEjemplar.push(acumuladoMetrosAtras);
       }
     }
@@ -243,53 +249,46 @@ export function SimuladorPistaCarrera2D({
       const { ejemplar, ordenLlegadaProyectado, favorecidoTendenciaTarde } = item;
       const estilo = ejemplar.estilo;
 
-      // Puerta oficial asignada por la columna PP (1 al 14)
+      // Puesto de partida oficial PP (1 al 14)
       const puertaSalida = Math.min(
         14,
         Math.max(1, ejemplar.puestoPista || (ejemplar as unknown as { pp?: number }).pp || ejemplar.numero || (index + 1))
       );
 
-      // Posición transversal en la gatera al partir:
-      // Puerta 1 en la baranda interior (lambda = 0.12); Puerta 14 en la baranda exterior (lambda = 0.88)
-      const lambdaPartida = 0.12 + ((puertaSalida - 1) / 13) * 0.76;
+      // Posición transversal exacta en el partidor:
+      // Cada cajón ocupa ANCHO_GATERA. La gatera 1 está junto al riel, la 14 junto a la baranda exterior.
+      const lambdaPartida = (puertaSalida - 0.5) / 14;
 
       // =======================================================================
-      // REGLA FUNDAMENTAL DE PISTA:
+      // REGLA FUNDAMENTAL DE LA PISTA:
       // "Los caballos en la pista de carreras tienden a acercarse a la baranda interior para correr"
       // =======================================================================
-      // Al salir de las gateras, todos los ejemplares convergen hacia la baranda interior (riel).
-      // Punteros E1: pegados al riel (lambda = 0.12 a 0.16)
-      // Colocados E2: segunda línea (lambda = 0.22 a 0.28)
-      // Rematadores E3: tercera línea (lambda = 0.34 a 0.40)
-      let lambdaObjetivoRiel = 0.14;
-      if (estilo === "E1") lambdaObjetivoRiel = 0.14;
+      // Punteros E1: pegados al riel interior (carril 1, lambda = 0.08 a 0.12)
+      // Colocados E2: segunda línea (carril 2, lambda = 0.20 a 0.28)
+      // Rematadores E3: tercera línea (carril 3, lambda = 0.38 a 0.48)
+      let lambdaObjetivoRiel = 0.10;
+      if (estilo === "E1") lambdaObjetivoRiel = 0.10;
       else if (estilo === "E2") lambdaObjetivoRiel = 0.24;
-      else lambdaObjetivoRiel = 0.35;
+      else lambdaObjetivoRiel = 0.42;
 
-      // En la recta final (últimos metros hacia la meta), los rematadores se abren
       let lambdaActual = lambdaPartida;
       if (avanceFraccion <= 0) {
         lambdaActual = lambdaPartida;
-      } else if (avanceFraccion < 0.30) {
-        // Fase de cierre hacia la baranda interior
-        const tCierre = avanceFraccion / 0.30;
+      } else if (avanceFraccion < 0.25) {
+        // En los primeros 150m tras la largada, convergen hacia el riel interior
+        const tCierre = avanceFraccion / 0.25;
         lambdaActual = lambdaPartida + tCierre * (lambdaObjetivoRiel - lambdaPartida);
       } else if (avanceFraccion < 0.75) {
-        // Corriendo pegados a la baranda interior por el codo y recta opuesta
+        // Recorrido por el codo y recta de enfrente pegados a la baranda interior
         lambdaActual = lambdaObjetivoRiel;
       } else {
-        // En la recta final, abanico de llegada para fotofinish claro
+        // En la recta final, abanico de pase fotofinish
         const tMeta = (avanceFraccion - 0.75) / 0.25;
-        const lambdaAndarivelMeta = 0.12 + (index / Math.max(1, ranking.length - 1)) * 0.70;
-        lambdaActual = lambdaObjetivoRiel * (1 - tMeta) + lambdaAndarivelMeta * tMeta;
+        const lambdaAbanicoMeta = 0.08 + (index / Math.max(1, ranking.length - 1)) * 0.76;
+        lambdaActual = lambdaObjetivoRiel * (1 - tMeta) + lambdaAbanicoMeta * tMeta;
       }
 
-      // Distancia recorrida por este ejemplar según su proyección actuarial
-      const metrosTotalesCarrera = distanciaCarrera;
-      const desfaseFinal = desfaseMetaPorEjemplar[index];
-      
-      // Dinámica de carrera por estilos tácticos:
-      // E1 lidera en la primera mitad; E3 remata en el tramo final
+      // Dinámica de avance según estilo táctico
       let factorAvanceIndividual = avanceFraccion;
       if (estilo === "E1" && avanceFraccion < 0.6) {
         factorAvanceIndividual = Math.min(1, avanceFraccion * 1.08);
@@ -300,11 +299,12 @@ export function SimuladorPistaCarrera2D({
         factorAvanceIndividual = 0.7 + tRemate * 0.3;
       }
 
+      const metrosTotalesCarrera = distanciaCarrera;
+      const desfaseFinal = desfaseMetaPorEjemplar[index];
       const distanciaRecorrida = factorAvanceIndividual * metrosTotalesCarrera;
-      // Metros restantes hasta la meta:
-      const distanciaRestante = Math.max(0, metrosTotalesCarrera - distanciaRecorrida + desfaseFinal * (avanceFraccion));
+      const distanciaRestante = Math.max(0, metrosTotalesCarrera - distanciaRecorrida + desfaseFinal * avanceFraccion);
 
-      // Mapeo a coordenadas exactas del óvalo de 1.800m
+      // Coordenadas en el óvalo de 1.800m
       const pos = calcularPosicionEnOvalo(distanciaRestante, lambdaActual);
 
       return {
@@ -322,21 +322,29 @@ export function SimuladorPistaCarrera2D({
     });
   }, [ranking, progreso, distanciaCarrera]);
 
-  // Coordenadas del aparato de 14 gateras en el óvalo según la distancia de la carrera
+  // Aparato de 14 Gateras en el poste oficial de salida de la distancia
+  // Abarca exactamente desde la Baranda Interior (Gatera 1) a la Baranda Exterior (Gatera 14)
   const partidorEnOvalo = useMemo(() => {
     return GATERAS_14.map((puerta) => {
-      const lambdaGatera = 0.12 + ((puerta - 1) / 13) * 0.76;
+      const lambdaGatera = (puerta - 0.5) / 14;
       const pos = calcularPosicionEnOvalo(distanciaCarrera, lambdaGatera);
-      return { puerta, ...pos };
+      return { puerta, lambdaGatera, ...pos };
     });
   }, [distanciaCarrera]);
 
-  // Marcadores de distancia alrededor del óvalo de 1.800m
+  // Límites de la estructura física del partidor (de baranda a baranda)
+  const extremosPartidor = useMemo(() => {
+    const riel = calcularPosicionEnOvalo(distanciaCarrera, 0);
+    const exterior = calcularPosicionEnOvalo(distanciaCarrera, 1);
+    return { riel, exterior };
+  }, [distanciaCarrera]);
+
+  // Marcadores de distancia alrededor del circuito oficial de 1.800m
   const marcadoresOvalo = useMemo(() => {
     const metros = [1800, 1600, 1400, 1200, 1000, 800, 600, 400, 200, 0];
     return metros.map((m) => {
-      const posRiel = calcularPosicionEnOvalo(m, 0.02);
-      const posExt = calcularPosicionEnOvalo(m, 0.98);
+      const posRiel = calcularPosicionEnOvalo(m, 0);
+      const posExt = calcularPosicionEnOvalo(m, 1);
       return { metro: m, posRiel, posExt };
     });
   }, []);
@@ -353,13 +361,13 @@ export function SimuladorPistaCarrera2D({
           </span>
           <div>
             <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
-              <span>Pista de Carreras Ovalada (Circuito Oficial 1.800 Metros)</span>
+              <span>Pista de Carreras Ovalada (Óvalo Oficial 1.800 Metros)</span>
               <span className="rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.2 text-[9px] font-black">
-                DISTANCIA: {distanciaCarrera}M · ÓVALO LA RINCONADA
+                DISTANCIA: {distanciaCarrera}M · 14 GATERAS DE ANCHO EXACTO
               </span>
             </h3>
             <p className="text-[11px] text-slate-500">
-              Circuito cerrado de 1.800m con baranda interior (riel), codos reglamentarios y gateras en el poste de {distanciaCarrera}m.
+              Circuito de 1.800m cerrado con baranda interior (riel). El ancho de la pista coincide exactamente con el partidor de 14 gateras.
             </p>
           </div>
         </div>
@@ -431,41 +439,42 @@ export function SimuladorPistaCarrera2D({
               xmlns="http://www.w3.org/2000/svg"
             >
               <defs>
-                {/* Textura de Arena para la Pista */}
-                <pattern id="arenaPattern" width="20" height="20" patternUnits="userSpaceOnUse">
-                  <rect width="20" height="20" fill="#92400E" />
-                  <circle cx="4" cy="4" r="1.2" fill="#B45309" opacity="0.6" />
-                  <circle cx="14" cy="12" r="1" fill="#78350F" opacity="0.8" />
-                  <circle cx="10" cy="18" r="0.8" fill="#F59E0B" opacity="0.4" />
+                {/* Textura de Arena Oficial para la Pista */}
+                <pattern id="arenaPatternV4" width="24" height="24" patternUnits="userSpaceOnUse">
+                  <rect width="24" height="24" fill="#92400E" />
+                  <circle cx="5" cy="5" r="1.5" fill="#B45309" opacity="0.7" />
+                  <circle cx="17" cy="14" r="1.2" fill="#78350F" opacity="0.8" />
+                  <circle cx="12" cy="21" r="1.0" fill="#F59E0B" opacity="0.5" />
+                  <circle cx="21" cy="7" r="0.8" fill="#D97706" opacity="0.6" />
                 </pattern>
 
-                {/* Gradiente para el Espejo de Agua central de La Rinconada */}
-                <linearGradient id="lagoRinconada" x1="0%" y1="0%" x2="100%" y2="100%">
+                {/* Lago Interior Tradicional de La Rinconada */}
+                <linearGradient id="lagoRinconadaV4" x1="0%" y1="0%" x2="100%" y2="100%">
                   <stop offset="0%" stopColor="#0284C7" stopOpacity="0.85" />
                   <stop offset="50%" stopColor="#0369A1" stopOpacity="0.9" />
                   <stop offset="100%" stopColor="#075985" stopOpacity="0.95" />
                 </linearGradient>
 
-                {/* Sombra suave para los purasangres */}
-                <filter id="horseShadow" x="-20%" y="-20%" width="140%" height="140%">
-                  <feDropShadow dx="2" dy="4" stdDeviation="3" floodOpacity="0.6" floodColor="#000" />
+                {/* Sombra de los purasangres */}
+                <filter id="horseShadowV4" x="-25%" y="-25%" width="150%" height="150%">
+                  <feDropShadow dx="1.5" dy="3" stdDeviation="2.5" floodOpacity="0.6" floodColor="#000" />
                 </filter>
               </defs>
 
-              {/* FONDO EXTERIOR: Grama/Instalaciones del Hipódromo */}
+              {/* FONDO EXTERIOR: Grama e Instalaciones */}
               <rect width="1000" height="560" fill="#14532D" />
-              <rect x="10" y="10" width="980" height="540" rx="40" fill="#166534" stroke="#15803D" strokeWidth="2" />
+              <rect x="10" y="10" width="980" height="540" rx="36" fill="#166534" stroke="#15803D" strokeWidth="2" />
 
-              {/* TRIBUNA PRINCIPAL Y PALCO DE HONOR (Sector Inferior) */}
-              <rect x="420" y="525" width="400" height="25" rx="5" fill="#1E293B" stroke="#475569" strokeWidth="1.5" />
-              <text x="620" y="542" textAnchor="middle" fill="#94A3B8" fontSize="10" fontWeight="900" letterSpacing="2">
-                TRIBUNA MONUMENTAL · LA RINCONADA
+              {/* TRIBUNA MONUMENTAL Y PALCO DE HONOR (Sector Inferior Frente a la Meta) */}
+              <rect x="360" y="524" width="460" height="26" rx="6" fill="#0F172A" stroke="#334155" strokeWidth="1.5" />
+              <text x="590" y="541" textAnchor="middle" fill="#94A3B8" fontSize="10" fontWeight="900" letterSpacing="2">
+                TRIBUNA MONUMENTAL · HIPÓDROMO LA RINCONADA
               </text>
 
               {/* ------------------------------------------------------------- */}
-              {/* LA PISTA DE ARENA DEL ÓVALO (TRAZADO CONTINUO DE 1.800M)     */}
+              {/* LA PISTA DE ARENA DEL ÓVALO (ANCHO EXACTO DE 14 GATERAS)      */}
               {/* ------------------------------------------------------------- */}
-              {/* Cuerpo de Arena de la Pista (Espacio entre baranda exterior e interior) */}
+              {/* Cuerpo de Arena: va de R_EXTERIOR a R_RIEL */}
               <path
                 d={`
                   M 300 ${Y_CENTRO - R_EXTERIOR}
@@ -475,12 +484,27 @@ export function SimuladorPistaCarrera2D({
                   A ${R_EXTERIOR} ${R_EXTERIOR} 0 0 1 300 ${Y_CENTRO - R_EXTERIOR}
                   Z
                 `}
-                fill="url(#arenaPattern)"
+                fill="url(#arenaPatternV4)"
                 stroke="#B45309"
                 strokeWidth="2"
               />
 
-              {/* Carril de Media Pista (Línea Discontinua Blanca) */}
+              {/* BARANDA EXTERIOR (Línea continua blanca perimetral) */}
+              <path
+                d={`
+                  M 300 ${Y_CENTRO - R_EXTERIOR}
+                  L 700 ${Y_CENTRO - R_EXTERIOR}
+                  A ${R_EXTERIOR} ${R_EXTERIOR} 0 0 1 700 ${Y_CENTRO + R_EXTERIOR}
+                  L 300 ${Y_CENTRO + R_EXTERIOR}
+                  A ${R_EXTERIOR} ${R_EXTERIOR} 0 0 1 300 ${Y_CENTRO - R_EXTERIOR}
+                `}
+                fill="none"
+                stroke="#FFFFFF"
+                strokeWidth="3"
+                opacity="0.95"
+              />
+
+              {/* LÍNEA GUÍA CENTRAL DISCONTINUA (Media Pista) */}
               <path
                 d={`
                   M 300 ${Y_CENTRO - R_MEDIO}
@@ -491,29 +515,14 @@ export function SimuladorPistaCarrera2D({
                 `}
                 fill="none"
                 stroke="#FFFFFF"
-                strokeWidth="1.5"
-                strokeDasharray="8 8"
-                opacity="0.35"
-              />
-
-              {/* BARANDA EXTERIOR (Línea blanca continua perimetral) */}
-              <path
-                d={`
-                  M 300 ${Y_CENTRO - R_EXTERIOR}
-                  L 700 ${Y_CENTRO - R_EXTERIOR}
-                  A ${R_EXTERIOR} ${R_EXTERIOR} 0 0 1 700 ${Y_CENTRO + R_EXTERIOR}
-                  L 300 ${Y_CENTRO + R_EXTERIOR}
-                  A ${R_EXTERIOR} ${R_EXTERIOR} 0 0 1 300 ${Y_CENTRO - R_EXTERIOR}
-                `}
-                fill="none"
-                stroke="#FFFFFF"
-                strokeWidth="3.5"
+                strokeWidth="1"
+                strokeDasharray="6 6"
+                opacity="0.3"
               />
 
               {/* ------------------------------------------------------------- */}
-              {/* ZONA INTERIOR DEL ÓVALO (INFIELD / ESPOJO DE AGUA / GRAMA)    */}
+              {/* INFIELD / ZONA INTERIOR CON LAGO ARTIFICIAL Y GRAMA           */}
               {/* ------------------------------------------------------------- */}
-              {/* Recorte del Infield Interior */}
               <path
                 d={`
                   M 300 ${Y_CENTRO - R_RIEL}
@@ -526,18 +535,18 @@ export function SimuladorPistaCarrera2D({
                 fill="#15803D"
               />
 
-              {/* Espejo de Agua Central (Lago Tradicional del Hipódromo) */}
-              <ellipse cx="500" cy="280" rx="130" ry="55" fill="url(#lagoRinconada)" stroke="#38BDF8" strokeWidth="2" />
-              <text x="500" y="278" textAnchor="middle" fill="#E0F2FE" fontSize="9" fontWeight="900" opacity="0.85">
+              {/* Lago Artificial Central del Infield */}
+              <ellipse cx="500" cy="280" rx="125" ry="50" fill="url(#lagoRinconadaV4)" stroke="#38BDF8" strokeWidth="2" />
+              <text x="500" y="278" textAnchor="middle" fill="#E0F2FE" fontSize="9" fontWeight="900" opacity="0.9">
                 LAGO ARTIFICIAL INH
               </text>
-              <text x="500" y="292" textAnchor="middle" fill="#BAE6FD" fontSize="8" fontWeight="bold" opacity="0.75">
-                CIRCUITO 1.800 METROS
+              <text x="500" y="291" textAnchor="middle" fill="#BAE6FD" fontSize="7.5" fontWeight="bold" opacity="0.8">
+                CIRCUITO OFICIAL 1.800 METROS
               </text>
 
-              {/* Pizarra Electrónica Central de Tiempos y Parciales */}
-              <rect x="440" y="200" width="120" height="24" rx="4" fill="#0F172A" stroke="#334155" strokeWidth="1.5" />
-              <text x="500" y="215" textAnchor="middle" fill="#FACC15" fontSize="9" fontWeight="900" fontFamily="monospace">
+              {/* Tablero Electrónico Central de Progreso */}
+              <rect x="430" y="200" width="140" height="26" rx="5" fill="#0F172A" stroke="#334155" strokeWidth="1.5" />
+              <text x="500" y="217" textAnchor="middle" fill="#FACC15" fontSize="10" fontWeight="900" fontFamily="monospace">
                 PROG: {progreso.toFixed(0)}% · {distanciaCarrera}M
               </text>
 
@@ -552,40 +561,39 @@ export function SimuladorPistaCarrera2D({
                 `}
                 fill="none"
                 stroke="#FFFFFF"
-                strokeWidth="4"
+                strokeWidth="3.5"
                 className="drop-shadow-sm"
               />
 
               {/* ------------------------------------------------------------- */}
-              {/* SEÑALIZACIONES OFICIALES Y METROS ALREDEDOR DEL ÓVALO         */}
+              {/* LÍNEA DE META / SENTENCIA (EN LA RECTA FINAL X=620)           */}
               {/* ------------------------------------------------------------- */}
-              {/* Línea de META / SENTENCIA (en la Recta Final en X=630) */}
-              <g id="lineaMeta">
+              <g id="lineaMetaSentencia">
                 <line
                   x1={X_META}
-                  y1={Y_CENTRO + R_RIEL - 4}
+                  y1={Y_CENTRO + R_RIEL - 3}
                   x2={X_META}
-                  y2={Y_CENTRO + R_EXTERIOR + 4}
+                  y2={Y_CENTRO + R_EXTERIOR + 3}
                   stroke="#EF4444"
-                  strokeWidth="5"
+                  strokeWidth="4"
                 />
                 <line
                   x1={X_META}
-                  y1={Y_CENTRO + R_RIEL - 4}
+                  y1={Y_CENTRO + R_RIEL - 3}
                   x2={X_META}
-                  y2={Y_CENTRO + R_EXTERIOR + 4}
+                  y2={Y_CENTRO + R_EXTERIOR + 3}
                   stroke="#FFFFFF"
                   strokeWidth="2"
                   strokeDasharray="4 4"
                 />
                 {/* Cartel de META */}
-                <rect x={X_META - 22} y={Y_CENTRO + R_EXTERIOR + 8} width="44" height="18" rx="4" fill="#DC2626" stroke="#FFFFFF" strokeWidth="1.5" />
-                <text x={X_META} y={Y_CENTRO + R_EXTERIOR + 20} textAnchor="middle" fill="#FFFFFF" fontSize="9" fontWeight="900">
+                <rect x={X_META - 20} y={Y_CENTRO + R_EXTERIOR + 6} width="40" height="17" rx="3" fill="#DC2626" stroke="#FFFFFF" strokeWidth="1.5" />
+                <text x={X_META} y={Y_CENTRO + R_EXTERIOR + 18} textAnchor="middle" fill="#FFFFFF" fontSize="8.5" fontWeight="900">
                   META 🏁
                 </text>
               </g>
 
-              {/* Postes Oficiales de Distancia (800m, 400m, 200m, 1200m, 1400m) */}
+              {/* Postes Oficiales de Distancia (800m, 400m, 200m, 1200m, 1600m) */}
               {marcadoresOvalo.map(({ metro, posRiel, posExt }) => {
                 if (metro === 0 || metro === 1800) return null;
                 return (
@@ -596,16 +604,16 @@ export function SimuladorPistaCarrera2D({
                       x2={posExt.x}
                       y2={posExt.y}
                       stroke="#FACC15"
-                      strokeWidth="1.5"
+                      strokeWidth="1.2"
                       strokeDasharray="3 3"
                     />
-                    <circle cx={posExt.x} cy={posExt.y} r="3" fill="#FACC15" />
+                    <circle cx={posExt.x} cy={posExt.y} r="2.5" fill="#FACC15" />
                     <text
                       x={posExt.x}
-                      y={posExt.y + (posExt.y > Y_CENTRO ? 12 : -8)}
+                      y={posExt.y + (posExt.y > Y_CENTRO ? 11 : -7)}
                       textAnchor="middle"
                       fill="#FEF08A"
-                      fontSize="8"
+                      fontSize="7.5"
                       fontWeight="900"
                       className="font-mono"
                     >
@@ -616,9 +624,21 @@ export function SimuladorPistaCarrera2D({
               })}
 
               {/* ------------------------------------------------------------- */}
-              {/* APARATO DE PARTIDAS (14 GATERAS) UBICADO EN LA DISTANCIA      */}
+              {/* APARATO DE PARTIDAS (14 GATERAS DE ANCHO EXACTO A LA PISTA)   */}
               {/* ------------------------------------------------------------- */}
               <g id="aparatoPartidas14Gateras">
+                {/* Viga estructural metálica transversal del partidor de baranda a baranda */}
+                <line
+                  x1={extremosPartidor.riel.x}
+                  y1={extremosPartidor.riel.y}
+                  x2={extremosPartidor.exterior.x}
+                  y2={extremosPartidor.exterior.y}
+                  stroke="#334155"
+                  strokeWidth="5"
+                  strokeLinecap="round"
+                />
+
+                {/* 14 Cajones Oficiales de Gateras (Ocupan exactamente el ancho de la calzada) */}
                 {partidorEnOvalo.map(({ puerta, x, y, anguloDeg }) => {
                   const gualdrapa = COLORES_GUALDRAPA[puerta] || { bg: "#3B82F6", text: "#FFF" };
                   const tieneCaballo = ranking.some(
@@ -630,25 +650,26 @@ export function SimuladorPistaCarrera2D({
                       key={puerta}
                       transform={`translate(${x}, ${y}) rotate(${anguloDeg})`}
                     >
-                      <title>{`Gatera PP #${puerta}`}</title>
-                      {/* Cajón de Salida con Número de Gatera */}
+                      <title>{`Gatera PP #${puerta} ${tieneCaballo ? "(Ejemplar asignado)" : "(Vacante)"}`}</title>
+                      {/* Cajón de Salida */}
                       <rect
-                        x="-7"
-                        y="-6"
-                        width="14"
-                        height="12"
-                        rx="2"
+                        x="-5"
+                        y="-1.25"
+                        width="10"
+                        height="2.5"
+                        rx="0.5"
                         fill={gualdrapa.bg}
-                        stroke={tieneCaballo ? "#10B981" : "#1E293B"}
-                        strokeWidth={tieneCaballo ? "1.8" : "1"}
-                        className={tieneCaballo ? "filter drop-shadow-sm" : "opacity-60"}
+                        stroke={tieneCaballo ? "#22C55E" : "#475569"}
+                        strokeWidth={tieneCaballo ? "0.8" : "0.4"}
+                        className={tieneCaballo ? "filter drop-shadow-xs" : "opacity-70"}
                       />
+                      {/* Número de Gatera */}
                       <text
                         x="0"
-                        y="3"
+                        y="0.75"
                         textAnchor="middle"
                         fill={gualdrapa.text}
-                        fontSize="7"
+                        fontSize="2.2"
                         fontWeight="900"
                         fontFamily="monospace"
                       >
@@ -658,20 +679,20 @@ export function SimuladorPistaCarrera2D({
                   );
                 })}
 
-                {/* Letrero del Partidor */}
+                {/* Letrero del Partidor en la Baranda Exterior */}
                 {(() => {
-                  const posLetrero = calcularPosicionEnOvalo(distanciaCarrera, 1.06);
+                  const posLetrero = calcularPosicionEnOvalo(distanciaCarrera, 1.08);
                   return (
                     <text
                       x={posLetrero.x}
-                      y={posLetrero.y + (posLetrero.y > Y_CENTRO ? 14 : -10)}
+                      y={posLetrero.y + (posLetrero.y > Y_CENTRO ? 13 : -9)}
                       textAnchor="middle"
                       fill="#34D399"
-                      fontSize="9"
+                      fontSize="8.5"
                       fontWeight="900"
-                      letterSpacing="1"
+                      letterSpacing="0.8"
                     >
-                      PARTIDA {distanciaCarrera}M (14 GATERAS PP)
+                      PARTIDOR {distanciaCarrera}M (14 GATERAS)
                     </text>
                   );
                 })()}
@@ -691,48 +712,48 @@ export function SimuladorPistaCarrera2D({
                     transform={`translate(${x}, ${y}) rotate(${anguloDeg})`}
                     onClick={() => setCaballoSeleccionado(ejemplar.numero)}
                     className="cursor-pointer"
-                    filter="url(#horseShadow)"
+                    filter="url(#horseShadowV4)"
                   >
-                    {/* Sombra de Galope sobre la Arena */}
-                    <ellipse cx="-4" cy="3" rx="14" ry="5" fill="#000000" opacity="0.4" />
+                    {/* Sombra de galope sobre la arena */}
+                    <ellipse cx="-2" cy="1" rx="8" ry="3" fill="#000000" opacity="0.45" />
 
-                    {/* Aura de selección dorada si está seleccionado */}
+                    {/* Resaltado si está seleccionado */}
                     {estaSeleccionado && (
-                      <circle cx="0" cy="0" r="16" fill="none" stroke="#FACC15" strokeWidth="2.5" strokeDasharray="3 2" className="animate-spin" />
+                      <circle cx="0" cy="0" r="10" fill="none" stroke="#FACC15" strokeWidth="1.8" strokeDasharray="3 2" className="animate-spin" />
                     )}
 
-                    {/* Miniatura del Purasangre estilizado con dirección de avance */}
-                    <g transform="scale(0.38) translate(-40, -30)">
+                    {/* Purasangre Estilizado con Jockey y Gualdrapa Oficial */}
+                    <g transform="scale(0.22) translate(-35, -25)">
                       {/* Cuerpo del Caballo */}
                       <path
-                        d="M 15 45 L 35 25 L 65 25 L 85 40 L 75 55 L 25 55 Z"
+                        d="M 10 40 L 30 20 L 58 20 L 76 35 L 68 48 L 20 48 Z"
                         fill="#78350F"
                         stroke="#451A03"
                         strokeWidth="2"
                       />
                       {/* Cuello y Cabeza hacia adelante */}
                       <path
-                        d="M 65 25 L 82 10 L 95 12 L 92 22 L 78 35 Z"
+                        d="M 58 20 L 74 6 L 86 8 L 84 18 L 70 30 Z"
                         fill="#854D0E"
                         stroke="#451A03"
                         strokeWidth="2"
                       />
-                      {/* Gualdrapa Oficial con Número */}
+                      {/* Gualdrapa Oficial con Número del Ejemplar */}
                       <rect
-                        x="36"
-                        y="20"
-                        width="26"
-                        height="20"
-                        rx="4"
+                        x="30"
+                        y="16"
+                        width="24"
+                        height="18"
+                        rx="3"
                         fill={gualdrapa.bg}
                         stroke="#0F172A"
-                        strokeWidth="2.5"
+                        strokeWidth="2"
                       />
                       <text
-                        x="49"
-                        y="35"
+                        x="42"
+                        y="30"
                         textAnchor="middle"
-                        fontSize="15"
+                        fontSize="14"
                         fontWeight="900"
                         fill={gualdrapa.text}
                         fontFamily="monospace"
@@ -740,27 +761,27 @@ export function SimuladorPistaCarrera2D({
                         {ejemplar.numero}
                       </text>
                       {/* Casco del Jockey */}
-                      <circle cx="56" cy="12" r="7" fill="#1E293B" stroke="#F8FAFC" strokeWidth="1.5" />
+                      <circle cx="48" cy="8" r="6" fill="#0F172A" stroke="#F8FAFC" strokeWidth="1.5" />
                     </g>
 
-                    {/* Chapa flotante con Puesto de Partida PP y Número */}
-                    <g transform="translate(0, -18)">
+                    {/* Badge Flotante con Número y PP */}
+                    <g transform="translate(0, -11)">
                       <rect
-                        x="-18"
-                        y="-7"
-                        width="36"
-                        height="13"
-                        rx="3"
+                        x="-14"
+                        y="-5"
+                        width="28"
+                        height="10"
+                        rx="2"
                         fill="#0F172A"
                         stroke={estaSeleccionado ? "#FACC15" : "#334155"}
-                        strokeWidth="1.2"
+                        strokeWidth="1"
                       />
                       <text
                         x="0"
                         y="2.5"
                         textAnchor="middle"
                         fill="#FFFFFF"
-                        fontSize="7"
+                        fontSize="6"
                         fontWeight="900"
                         fontFamily="monospace"
                       >
@@ -783,7 +804,7 @@ export function SimuladorPistaCarrera2D({
                 Pista Ovalada de 1.800m Oculta
               </p>
               <p className="text-[11px] text-slate-500">
-                Fase actual: <b>{faseActiva}</b> ({progreso.toFixed(0)}%) · Distancia: <b>{distanciaCarrera}m</b> · {ranking.length} ejemplares en competencia
+                Fase: <b>{faseActiva}</b> ({progreso.toFixed(0)}%) · Distancia: <b>{distanciaCarrera}m</b> · Partidor de 14 gateras
               </p>
             </div>
           </div>
@@ -810,24 +831,32 @@ export function SimuladorPistaCarrera2D({
             ⏮️ Partida ({distanciaCarrera}m)
           </button>
 
-          {/* Botón Play/Pause */}
+          {/* Botón Principal de Simulación */}
           <button
             type="button"
             onClick={() => {
               if (progreso >= 100) setProgreso(0);
               setReproduciendo(!reproduciendo);
             }}
-            className={`px-4 py-1.5 rounded-xl font-black text-xs text-white shadow-sm transition-all flex items-center gap-1.5 ${
+            className={`px-4 py-2 rounded-xl font-black text-xs text-white shadow-md transition-all flex items-center gap-1.5 ${
               reproduciendo
-                ? "bg-amber-600 hover:bg-amber-500"
-                : "bg-indigo-600 hover:bg-indigo-500"
+                ? "bg-amber-600 hover:bg-amber-500 animate-pulse"
+                : progreso >= 100
+                ? "bg-slate-900 hover:bg-slate-800"
+                : "bg-emerald-600 hover:bg-emerald-500"
             }`}
           >
-            <span>{reproduciendo ? "⏸️" : "▶️"}</span>
-            <span>{reproduciendo ? "Pausar" : progreso >= 100 ? "Repetir Recorrido" : "Simular Carrera"}</span>
+            <span>{reproduciendo ? "⏸️" : "🏇"}</span>
+            <span>
+              {reproduciendo
+                ? "Pausar Carrera"
+                : progreso >= 100
+                ? "🔁 Repetir Carrera"
+                : "▶️ Simular Carrera (Óvalo 1.800m)"}
+            </span>
           </button>
 
-          {/* Velocidades */}
+          {/* Selector de Velocidad */}
           <div className="flex items-center bg-white rounded-lg border border-slate-200 p-0.5 text-xs font-bold">
             {[1, 2, 4].map((v) => (
               <button
@@ -859,10 +888,10 @@ export function SimuladorPistaCarrera2D({
               setReproduciendo(false);
               setProgreso(Number(e.target.value));
             }}
-            className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+            className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
           />
           <span className="text-[10px] font-black uppercase text-slate-700 font-mono">
-            {progreso < 15
+            {progreso < 12
               ? `Partida ${distanciaCarrera}m`
               : progreso < 65
               ? "Codo 800m (Riel Interior)"
@@ -872,7 +901,7 @@ export function SimuladorPistaCarrera2D({
           </span>
         </div>
 
-        {/* Selector de Ejemplar Activo para Zoom */}
+        {/* Selector de Ejemplar Activo para Enfoque */}
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] font-bold text-slate-500">Ver Ejemplar:</span>
           <select
@@ -906,9 +935,8 @@ export function SimuladorPistaCarrera2D({
         );
 
         return (
-          <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-indigo-50/40 p-3.5 shadow-xs flex flex-wrap items-center justify-between gap-4">
+          <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-emerald-50/30 p-3.5 shadow-xs flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              {/* Contenedor de Gualdrapa Oficial con Número */}
               <span
                 style={{
                   backgroundColor: gualdrapaActiva.bg,

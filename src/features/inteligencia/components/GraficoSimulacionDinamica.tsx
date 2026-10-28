@@ -143,7 +143,7 @@ export function GraficoSimulacionDinamica({
             }`}
           >
             <span>🏇</span>
-            <span>Simulación en Pista</span>
+            <span>Óvalo 1.800m (Simulación)</span>
           </button>
           <button
             type="button"
