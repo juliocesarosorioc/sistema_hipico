@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { HorseSaddleclothSvg } from "@/shared/components/ui/HorseSaddleclothSvg";
+import { CamisaJockeySvg } from "@/features/inteligencia/components/CamisaJockeySvg";
+import { SimuladorPistaCarrera2D } from "@/features/inteligencia/components/SimuladorPistaCarrera2D";
+import type { ResultadoCarreraV4, EstiloCarrera } from "@/features/inteligencia/lib/analista-venezuela-v4";
 import {
   generarProspectivaGodet,
   type EjemplarGodet,
@@ -40,8 +43,8 @@ export function ModalAnalisisActuarialGodet({
     brisaRecta: 0,
     varianteObservada: 0,
   });
-  const [tab, setTab] = useState<"pizarra" | "mactor" | "smic" | "micmac" | "actuarial" | "parciales" | "gaceta">(
-    "pizarra"
+  const [tab, setTab] = useState<"simulacion" | "pizarra" | "mactor" | "smic" | "micmac" | "actuarial" | "parciales" | "gaceta">(
+    "simulacion"
   );
   const [textoGacetaImport, setTextoGacetaImport] = useState("");
   const [ejemplaresImportadosLocal, setEjemplaresImportadosLocal] = useState<
@@ -91,6 +94,66 @@ export function ModalAnalisisActuarialGodet({
       ),
     [lista, modo, pista]
   );
+
+  const resultadoV4ParaSimulacion = useMemo<ResultadoCarreraV4>(() => {
+    const rankingV4 = res.ordenLlegada.map((r, idx) => ({
+      ejemplar: {
+        id: String(r.ejemplar.id || r.ejemplar.numero),
+        numero: r.ejemplar.numero,
+        nombre: r.ejemplar.nombre,
+        puestoPista: r.ejemplar.numero,
+        jinete: "Jinete Oficial",
+        kilos: r.ejemplar.kilosHandicap ?? 54,
+        entrenador: "Entrenador Oficial",
+        stud: r.ejemplar.stud,
+        divisaTexto: r.ejemplar.stud,
+        morningLine: 2.0 + idx * 0.8,
+        speedRatingTTC: r.ejemplar.speedRatingTTC ?? 75,
+        varianzaTTC: r.ejemplar.varianzaTTC ?? 0.15,
+        estilo: (r.ejemplar.tipoCarrera === "rematador"
+          ? "E3"
+          : r.ejemplar.tipoCarrera === "perseguidor"
+          ? "E2"
+          : "E1") as EstiloCarrera,
+        actuacionesPrevias: r.ejemplar.actuaciones ?? 5,
+        diasSinCorrer: r.ejemplar.diasDescanso ?? 21,
+        pesoOptimoKg: r.ejemplar.pesoOptimoGanadorKg || 450,
+        pesoHoyKg: r.ejemplar.pesoFisicoHoyKg,
+        efectividadJineteEntrenador: r.ejemplar.efectividadYunta ?? 0.45,
+        tendenciaTramoFinal: (r.ejemplar.tipoCarrera === "rematador" ? "ATROPELLA" : "SE_MANTIENE") as "ATROPELLA" | "SE_MANTIENE",
+        lineaPistaEstimada: (r.ejemplar.numero <= 3 ? "RIEL" : r.ejemplar.numero >= 7 ? "AFUERA" : "CENTRO") as "RIEL" | "AFUERA" | "CENTRO",
+      },
+      ordenLlegadaProyectado: r.puestoProyectado,
+      scoreGodetTotal: r.score,
+      probabilidadSMIC: r.probNorm,
+      cuerposVentaja: idx === 0 ? 0 : idx * 1.5,
+      favorecidoTendenciaTarde: false,
+      bonoPesoOptimo: false,
+      alertaPeso: false,
+      deltaPesoKg: null,
+      esLinea5y6: idx === 0 && r.probNorm >= 38,
+      esMorocha5y6: idx <= 1,
+      esSorpresaOverlay: false,
+      badges: [],
+      detallesFactores: {},
+    }));
+
+    return {
+      carreraNumero: Number(carrera ?? 1),
+      hipodromo: hipodromo || "LA RINCONADA",
+      distancia: 1200,
+      fecha: fecha || new Date().toISOString().split("T")[0],
+      esValida5y6: false,
+      escenarioDominanteSMIC: {
+        codigo: "E_DOMINANTE",
+        titulo: res.smic?.escenarioDominante?.titulo || "Escenario Base",
+        descripcion: res.smic?.escenarioDominante?.descripcion || "Proyección estándar",
+        probabilidadPct: res.smic?.escenarioDominante?.probabilidadPct || 50,
+      },
+      tendenciaTardeAplicada: false,
+      ranking: rankingV4,
+    };
+  }, [carrera, hipodromo, fecha, res.ordenLlegada, res.smic?.escenarioDominante]);
 
   if (!abierto) return null;
 
@@ -172,6 +235,7 @@ export function ModalAnalisisActuarialGodet({
         <nav className="flex flex-wrap gap-1.5 border-b border-slate-800 bg-slate-900/60 px-6 py-2">
           {(
             [
+              ["simulacion", "🏇 Pista & Simulación 2D"],
               ["pizarra", "🏁 Pizarra Prospectiva"],
               ["mactor", "♟️ MACTOR (Actores E1/E2/E3)"],
               ["smic", "🎲 SMIC (Escenarios Cruzados)"],
@@ -195,6 +259,17 @@ export function ModalAnalisisActuarialGodet({
         </nav>
 
         <div className="flex-1 overflow-auto px-6 py-4">
+          {tab === "simulacion" && (
+            <div className="space-y-4">
+              <SimuladorPistaCarrera2D
+                resultado={resultadoV4ParaSimulacion}
+                factorPistaActual={pista.varianteObservada < -0.3 ? "LIGERA" : pista.varianteObservada > 0.6 ? "PESADA" : "NORMAL"}
+                carrilActual={pista.sesgoRielInterno > 0 ? "RIEL" : pista.sesgoRielExterno > 0 ? "AFUERA" : "CENTRO"}
+                estiloActual={pista.sesgoVelocistas > 0 ? "E1" : pista.sesgoRematadores > 0 ? "E3" : "E2"}
+              />
+            </div>
+          )}
+
           {tab === "pizarra" && (
             <div className="space-y-4">
               {res.smic?.escenarioDominante && (
@@ -228,7 +303,13 @@ export function ModalAnalisisActuarialGodet({
                         <td className="px-3 py-2 font-black text-amber-300">#{row.puestoProyectado}</td>
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-2">
-                            <HorseSaddleclothSvg numero={row.ejemplar.numero} studColor="#f59e0b" size={30} />
+                            <CamisaJockeySvg
+                              numero={row.ejemplar.numero}
+                              divisaTexto={row.ejemplar.stud}
+                              size={28}
+                              mostrarGualdrapa={true}
+                              permitirEdicionIa={true}
+                            />
                             <span className="font-black">{row.ejemplar.numero}</span>
                           </div>
                         </td>

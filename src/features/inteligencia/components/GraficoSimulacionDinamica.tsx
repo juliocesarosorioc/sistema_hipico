@@ -9,6 +9,8 @@ import {
   COLORES_GUALDRAPA,
 } from "@/features/inteligencia/lib/analista-venezuela-v4";
 import { DivisaStudSvg } from "@/features/inteligencia/components/DivisaStudSvg";
+import { CamisaJockeySvg } from "@/features/inteligencia/components/CamisaJockeySvg";
+import { SimuladorPistaCarrera2D } from "@/features/inteligencia/components/SimuladorPistaCarrera2D";
 
 type Props = {
   resultado: ResultadoCarreraV4;
@@ -39,7 +41,7 @@ export function GraficoSimulacionDinamica({
     return resultado.ranking[0]?.ejemplar.numero ?? 1;
   });
 
-  const [vistaGrafico, setVistaGrafico] = useState<"probabilidad" | "radar" | "cuerpos">("probabilidad");
+  const [vistaGrafico, setVistaGrafico] = useState<"pista" | "probabilidad" | "radar" | "cuerpos">("pista");
 
   // Ordenar para el gráfico de barras por orden proyectado
   const ranking = useMemo(() => {
@@ -85,6 +87,18 @@ export function GraficoSimulacionDinamica({
 
         {/* Pestañas de Vista Gráfica */}
         <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+          <button
+            type="button"
+            onClick={() => setVistaGrafico("pista")}
+            className={`rounded-lg px-2.5 py-1 transition-all flex items-center gap-1.5 ${
+              vistaGrafico === "pista"
+                ? "bg-emerald-600 text-white shadow-xs font-black"
+                : "text-slate-700 hover:text-slate-900 font-bold"
+            }`}
+          >
+            <span>🏇</span>
+            <span>Simulación en Pista</span>
+          </button>
           <button
             type="button"
             onClick={() => setVistaGrafico("probabilidad")}
@@ -224,6 +238,19 @@ export function GraficoSimulacionDinamica({
       </div>
 
       {/* ============================================================== */}
+      {/* VISTA 0: SIMULACIÓN EN PISTA ISOMÉTRICA CON CABALLITO Y CAMISA */}
+      {/* ============================================================== */}
+      {vistaGrafico === "pista" && (
+        <SimuladorPistaCarrera2D
+          resultado={resultado}
+          factorPistaActual={factorPistaActual}
+          carrilActual={carrilActual}
+          estiloActual={estiloActual}
+          tendenciaActiva={tendenciaActiva}
+        />
+      )}
+
+      {/* ============================================================== */}
       {/* VISTA 1: BARRAS DINÁMICAS DE PROBABILIDAD SMIC                  */}
       {/* ============================================================== */}
       {vistaGrafico === "probabilidad" && (
@@ -270,7 +297,12 @@ export function GraficoSimulacionDinamica({
                       >
                         {num}
                       </span>
-                      <DivisaStudSvg numero={num} className="h-6 w-6" />
+                      <DivisaStudSvg
+                        numero={num}
+                        divisaTexto={r.ejemplar.divisaTexto}
+                        studNombre={r.ejemplar.stud}
+                        className="h-6 w-6"
+                      />
                       <div>
                         <span className="font-black text-slate-900 block uppercase leading-tight group-hover:text-amber-600 transition-colors">
                           {r.ejemplar.nombre}
@@ -433,7 +465,12 @@ export function GraficoSimulacionDinamica({
           <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
               <div className="flex items-center gap-2">
-                <DivisaStudSvg numero={detalleEjemplar.ejemplar.numero} className="h-8 w-8" />
+                <DivisaStudSvg
+                  numero={detalleEjemplar.ejemplar.numero}
+                  divisaTexto={detalleEjemplar.ejemplar.divisaTexto}
+                  studNombre={detalleEjemplar.ejemplar.stud}
+                  className="h-8 w-8"
+                />
                 <div>
                   <h4 className="text-xs font-black uppercase text-slate-900">
                     {detalleEjemplar.ejemplar.nombre} (Puesto #{detalleEjemplar.ejemplar.numero})

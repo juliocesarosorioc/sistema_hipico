@@ -28,6 +28,10 @@ import {
   convertirCarrerasExtraidasACatalogo,
   analizarCarrerasGacetaV4,
 } from "../src/features/inteligencia/lib/importador-analizador-gaceta";
+import {
+  interpretarDivisaAvanzada,
+  buscarColorEnTexto,
+} from "../src/features/inteligencia/lib/disenador-camisas-ia";
 import type { CarreraExtraida } from "../src/features/gaceta/lib/ia";
 
 let pasan = 0;
@@ -216,6 +220,49 @@ ok("detecta exactamente 6 válidas del 5y6 (C5 a C10)", resumenGacetaV4.carreras
 ok("la primera válida corresponde a la carrera 5", resumenGacetaV4.carrerasValidas5y6[0].carreraNumero === 5);
 ok("la sexta válida corresponde a la carrera 10", resumenGacetaV4.carrerasValidas5y6[5].carreraNumero === 10);
 ok("calcula rankings y scores Godet v4 para cada carrera", resumenGacetaV4.carrerasAnalizadas.every((c) => c.ranking.length > 0));
+
+console.log("\n[8] DISEÑADOR DE CAMISAS IA Y SIMULACIÓN EN PISTA 2D CON CABALLITO");
+// Prueba 1: Diseñador sintáctico de camisas con patrones de Gaceta
+const d1 = interpretarDivisaAvanzada("C: AZUL CON ESTRELLAS BLANCAS, M: ROJAS, G: AMARILLA");
+ok("detecta patrón estrellas en el cuerpo", d1.patronCuerpo === "ESTRELLAS");
+ok("detecta color primario azul en el cuerpo", d1.colorCuerpoPrincipal === "#1D4ED8");
+ok("detecta color secundario blanco en estrellas", d1.colorCuerpoSecundario === "#FFFFFF");
+ok("detecta mangas rojas", d1.colorMangasPrincipal === "#DC2626");
+ok("detecta gorro amarillo", d1.colorGorro === "#EAB308");
+
+const d2 = interpretarDivisaAvanzada("BLANCO CON BANDA ROJA, MANGAS Y GORRA AZUL");
+ok("detecta banda diagonal en el cuerpo", d2.patronCuerpo === "BANDA_DIAGONAL");
+ok("detecta color blanco principal y rojo en la banda", d2.colorCuerpoPrincipal === "#FFFFFF" && d2.colorCuerpoSecundario === "#DC2626");
+
+const d3 = interpretarDivisaAvanzada("AMARILLO Y NEGRO A CUADROS, GORRA NEGRA");
+ok("detecta patrón cuadros / damero", d3.patronCuerpo === "CUADROS");
+
+const d4 = interpretarDivisaAvanzada("VERDE CON ROMBOS BLANCOS, MANGAS CON AROS BLANCOS, GORRA VERDE");
+ok("detecta patrón rombos en cuerpo", d4.patronCuerpo === "ROMBOS");
+ok("detecta patrón aros / anillos en mangas", d4.patronMangas === "AROS_ANILLOS");
+
+// Prueba 2: Existencia e integración de componentes
+const pistaSrc = readFileSync(
+  join(raiz, "src", "features", "inteligencia", "components", "SimuladorPistaCarrera2D.tsx"),
+  "utf8"
+);
+ok("SimuladorPistaCarrera2D contiene riel interior y baranda", pistaSrc.includes("BARANDA INTERIOR") && pistaSrc.includes("BARANDA EXTERIOR"));
+ok("SimuladorPistaCarrera2D contiene sprite vectorial de purasangre en galope", pistaSrc.includes("SPRITE VECTORIAL DEL PURASANGRE EN PLENO GALOPE"));
+ok("SimuladorPistaCarrera2D integra CamisaJockeySvg con la divisa", pistaSrc.includes("CamisaJockeySvg") && pistaSrc.includes("divisaTexto"));
+ok("SimuladorPistaCarrera2D tiene fases de carrera (Partida, Codo, Recta, Meta)", pistaSrc.includes("Partida") && pistaSrc.includes("Codo") && pistaSrc.includes("Fotofinish"));
+
+const graficoSimSrc = readFileSync(
+  join(raiz, "src", "features", "inteligencia", "components", "GraficoSimulacionDinamica.tsx"),
+  "utf8"
+);
+ok("GraficoSimulacionDinamica incluye SimuladorPistaCarrera2D como vista principal", graficoSimSrc.includes("SimuladorPistaCarrera2D") && graficoSimSrc.includes("Simulación en Pista"));
+
+const modalGodetSrc = readFileSync(
+  join(raiz, "src", "features", "ejemplares", "components", "ModalAnalisisActuarialGodet.tsx"),
+  "utf8"
+);
+ok("ModalAnalisisActuarialGodet incluye pestaña de Pista & Simulación 2D", modalGodetSrc.includes("Pista & Simulación 2D") && modalGodetSrc.includes("SimuladorPistaCarrera2D"));
+ok("ModalAnalisisActuarialGodet incluye CamisaJockeySvg en tabla", modalGodetSrc.includes("CamisaJockeySvg"));
 
 console.log(`\nTOTAL: ${pasan} ok / ${fallan} fallaron`);
 if (fallan > 0) process.exitCode = 1;
