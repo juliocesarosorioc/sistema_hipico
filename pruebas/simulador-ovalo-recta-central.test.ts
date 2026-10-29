@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { parsearLineaParticipanteGaceta, parsearFilaRetrospecto } from "@/features/inteligencia/lib/extractor-gaceta-venezuela";
 import { parsearLineaTraqueo, convertirTiempoQuintosADecimal, calcularCalidadWorkout } from "@/features/inteligencia/lib/extractor-traqueos-venezuela";
 import { evaluarFactorPuestoPartida, COLORES_GUALDRAPA, simularCarreraV4 } from "@/features/inteligencia/lib/analista-venezuela-v4";
-import { obtenerHitoDistancia, ANCHO_PISTA, calcularDinamicaSincronizadaCarrera } from "@/features/inteligencia/lib/geometria-ovalo-rinconada";
+import {
+  obtenerHitoDistancia,
+  ANCHO_PISTA,
+  calcularDinamicaSincronizadaCarrera,
+  obtenerHitosPistaCentral,
+  calcularCronometrajeYParcialesINH,
+  formatearTiempoQuintos,
+} from "@/features/inteligencia/lib/geometria-ovalo-rinconada";
 
 console.log("🏇 INICIANDO SUITE DE PRUEBAS: SIMULADOR ÓVALO, RECTA CENTRAL, FACTOR PP Y TRAQUEOS (ih_*)...");
 
@@ -231,4 +238,53 @@ console.log("🏇 INICIANDO SUITE DE PRUEBAS: SIMULADOR ÓVALO, RECTA CENTRAL, F
   console.log("  ✔ Sincronía total 1:1 en distancias y dinámica de estilos tácticos (Puntero vs Atropellador): OK");
 }
 
-console.log("\n🎉 TODAS LAS PRUEBAS DE SIMULADOR DE ÓVALO CON RECTA CENTRAL, PP Y TRAQUEOS PASARON EXITOSAMENTE (8/8).\n");
+// 9. HITOS DE DISTANCIAS EN PISTA CENTRAL, CRONOMETROS Y PARCIALES CADA 400M CON REMATE FINAL (REGLA INH)
+{
+  const D = 1400;
+
+  // A. Hitos en Pista Central
+  const hitos = obtenerHitosPistaCentral(D);
+  assert.ok(hitos.length >= 14, "Debe tener al menos 14 hitos cada 100m para 1400m");
+  
+  // Verificar hitos de 400m
+  const hitos400 = hitos.filter(h => h.esParcial400);
+  assert.equal(hitos400.length, 3, "Para 1400m debe haber 3 parciales de 400m (400m, 800m, 1200m)");
+  assert.equal(hitos400[0].distanciaRecorrida, 400);
+  assert.equal(hitos400[1].distanciaRecorrida, 800);
+  assert.equal(hitos400[2].distanciaRecorrida, 1200);
+
+  // B. Cronómetros y parciales oficiales INH en progreso
+  // Progreso en 600m recorridos
+  const crono600 = calcularCronometrajeYParcialesINH(D, 600, 85);
+  assert.equal(crono600.parciales400m.length, 3, "Debe listar 3 parciales para 1400m");
+  assert.equal(crono600.parciales400m[0].alcanzado, true, "El 1° parcial (400m) debe estar alcanzado");
+  assert.equal(crono600.parciales400m[1].alcanzado, false, "El 2° parcial (800m) no debe estar alcanzado");
+  assert.ok(crono600.parciales400m[0].tiempoQuintos.includes("\""), "Formato de quintos oficial (ej 23\"1)");
+
+  // Progreso al 100% (1400m recorridos - Cruzó la sentencia)
+  const cronoFinal = calcularCronometrajeYParcialesINH(D, 1400, 85);
+  assert.equal(cronoFinal.parciales400m.every(p => p.alcanzado), true, "Todos los parciales de 400m completados");
+  assert.ok(cronoFinal.remateFinal !== null, "Debe existir detalle de remate");
+  assert.equal(cronoFinal.remateFinal!.metrosRemate, 200, "Para 1400m, la diferencia del remate de los últimos metros debe ser 200m (1400 - 1200)");
+  assert.equal(cronoFinal.remateFinal!.alcanzado, true, "El remate debe estar completado al cruzar la meta");
+  assert.ok(cronoFinal.tiempoFinalTotalQuintos.includes("\"") || cronoFinal.tiempoFinalTotalQuintos.includes(":"), "Tiempo final en formato quintos venezolano");
+  
+  // Caso 1800m
+  const crono1800 = calcularCronometrajeYParcialesINH(1800, 1800, 85);
+  assert.equal(crono1800.parciales400m.length, 4, "Para 1800m debe haber 4 parciales de 400m (400, 800, 1200, 1600)");
+  assert.equal(crono1800.remateFinal!.metrosRemate, 200, "Para 1800m, el remate debe ser los últimos 200m (1800 - 1600)");
+
+  // Caso 1500m
+  const crono1500 = calcularCronometrajeYParcialesINH(1500, 1500, 85);
+  assert.equal(crono1500.parciales400m.length, 3, "Para 1500m debe haber 3 parciales de 400m (400, 800, 1200)");
+  assert.equal(crono1500.remateFinal!.metrosRemate, 300, "Para 1500m, el remate debe ser los últimos 300m (1500 - 1200)");
+
+  // Formateador de quintos
+  assert.equal(formatearTiempoQuintos(23.2), '23"1');
+  assert.equal(formatearTiempoQuintos(46.4), '46"2');
+  assert.equal(formatearTiempoQuintos(72.0), '1:12"');
+
+  console.log("  ✔ Hitos métricos, cronómetros oficiales INH y parciales cada 400m con remate: OK");
+}
+
+console.log("\n🎉 TODAS LAS PRUEBAS DE SIMULADOR DE ÓVALO CON RECTA CENTRAL, PP, TRAQUEOS Y PARCIALES PASARON EXITOSAMENTE (9/9).\n");

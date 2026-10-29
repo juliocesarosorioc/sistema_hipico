@@ -26,6 +26,8 @@ import {
   obtenerHitoDistancia,
   calcularPosicionEnOvalo,
   calcularDinamicaSincronizadaCarrera,
+  calcularCronometrajeYParcialesINH,
+  obtenerHitosPistaCentral,
 } from "@/features/inteligencia/lib/geometria-ovalo-rinconada";
 
 // Re-exportamos para compatibilidad de tipos o utilidades si se requieren externamente
@@ -41,6 +43,8 @@ export {
   obtenerHitoDistancia,
   calcularPosicionEnOvalo,
   calcularDinamicaSincronizadaCarrera,
+  calcularCronometrajeYParcialesINH,
+  obtenerHitosPistaCentral,
 };
 
 type Props = {
@@ -262,6 +266,18 @@ export function SimuladorPistaCarrera2D({
     return posicionesCalculadas.find((p) => p.esLiderActual) ?? posicionesCalculadas[0] ?? null;
   }, [posicionesCalculadas]);
 
+  // Hitos métricos de distancia en la Pista Central (cada 100m, con parciales cada 400m)
+  const hitosPistaCentral = useMemo(() => {
+    return obtenerHitosPistaCentral(distanciaCarrera);
+  }, [distanciaCarrera]);
+
+  // Cronometraje y parciales oficiales simulados INH (cada 400m y remate final)
+  const cronometrajeINH = useMemo(() => {
+    const distLider = liderActual?.distanciaRecorrida ?? 0;
+    const srGanador = ranking[0]?.ejemplar.speedRatingTTC ?? 85;
+    return calcularCronometrajeYParcialesINH(distanciaCarrera, distLider, srGanador);
+  }, [distanciaCarrera, liderActual?.distanciaRecorrida, ranking]);
+
   const partidorEnOvalo = useMemo(() => {
     return GATERAS_14.map((puerta) => {
       const lambdaGatera = (puerta - 0.5) / 14;
@@ -401,6 +417,107 @@ export function SimuladorPistaCarrera2D({
           )}
         </div>
       </div>
+
+      {/* 1.1 PANEL DE CRONOMETRAJE Y PARCIALES OFICIALES INH (CADA 400M + REMATE) */}
+      {mostrarPista && (
+        <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5 text-white shadow-md">
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
+            {/* Reloj Principal / Cronómetro Digital en Vivo */}
+            <div className="flex items-center gap-2.5 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800 shadow-inner">
+              <span className="text-base">⏱️</span>
+              <div>
+                <div className="text-[9px] uppercase tracking-wider font-bold text-slate-400">
+                  Cronómetro en Vivo
+                </div>
+                <div className="font-mono text-base font-black text-amber-400 tracking-wider flex items-baseline gap-1">
+                  <span>{cronometrajeINH.cronometroDigital}</span>
+                  <span className="text-xs text-amber-300 font-bold">
+                    ({cronometrajeINH.tiempoTranscurridoQuintos})
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Badges de Parciales cada 400 Metros */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {cronometrajeINH.parciales400m.map((parcial, idx) => (
+                <div
+                  key={parcial.id}
+                  className={`flex flex-col items-center justify-center px-2.5 py-1 rounded-lg border font-mono transition-all ${
+                    parcial.alcanzado
+                      ? "bg-emerald-950/70 border-emerald-500/60 text-emerald-300 shadow-xs ring-1 ring-emerald-500/30"
+                      : "bg-slate-900/60 border-slate-800 text-slate-500"
+                  }`}
+                >
+                  <span className="text-[8.5px] uppercase font-bold text-slate-400">
+                    {idx + 1}° P. ({parcial.etiquetaCorta})
+                  </span>
+                  <span className={`text-xs font-black ${parcial.alcanzado ? "text-emerald-300" : "text-slate-600"}`}>
+                    {parcial.tiempoActualVisible}
+                  </span>
+                  <span className="text-[8px] text-slate-500">
+                    {parcial.alcanzado ? parcial.tiempoDecimal : `${parcial.distanciaMetros}m`}
+                  </span>
+                </div>
+              ))}
+
+              {/* Remate de los últimos metros (Diferencia de metros) */}
+              {cronometrajeINH.remateFinal && (
+                <div
+                  className={`flex flex-col items-center justify-center px-2.5 py-1 rounded-lg border font-mono transition-all ${
+                    cronometrajeINH.remateFinal.alcanzado
+                      ? "bg-amber-950/70 border-amber-500/70 text-amber-300 shadow-xs ring-1 ring-amber-500/30"
+                      : "bg-slate-900/60 border-slate-800 text-slate-500"
+                  }`}
+                >
+                  <span className="text-[8.5px] uppercase font-bold text-amber-400/90">
+                    ⚡ Remate ({cronometrajeINH.remateFinal.metrosRemate}m)
+                  </span>
+                  <span
+                    className={`text-xs font-black ${
+                      cronometrajeINH.remateFinal.alcanzado ? "text-amber-300" : "text-slate-600"
+                    }`}
+                  >
+                    {cronometrajeINH.remateFinal.alcanzado
+                      ? cronometrajeINH.remateFinal.tiempoRemateQuintos
+                      : '--"--'}
+                  </span>
+                  <span className="text-[8px] text-slate-500">
+                    {cronometrajeINH.remateFinal.alcanzado
+                      ? cronometrajeINH.remateFinal.tiempoRemateDecimal
+                      : `Últimos ${cronometrajeINH.remateFinal.metrosRemate}m`}
+                  </span>
+                </div>
+              )}
+
+              {/* Tiempo Final Total (Meta) */}
+              <div
+                className={`flex flex-col items-center justify-center px-2.5 py-1 rounded-lg border font-mono transition-all ${
+                  cronometrajeINH.carreraFinalizada
+                    ? "bg-rose-950/70 border-rose-500/70 text-rose-200 shadow-xs ring-1 ring-rose-500/30"
+                    : "bg-slate-900/60 border-slate-800 text-slate-500"
+                }`}
+              >
+                <span className="text-[8.5px] uppercase font-bold text-rose-400">
+                  🏁 Final ({distanciaCarrera}m)
+                </span>
+                <span
+                  className={`text-xs font-black ${
+                    cronometrajeINH.carreraFinalizada ? "text-rose-200" : "text-slate-600"
+                  }`}
+                >
+                  {cronometrajeINH.carreraFinalizada ? cronometrajeINH.tiempoFinalTotalQuintos : '--"--'}
+                </span>
+                <span className="text-[8px] text-slate-500">
+                  {cronometrajeINH.carreraFinalizada
+                    ? `${cronometrajeINH.tiempoFinalTotalSegundos.toFixed(1)}s`
+                    : "Oficial"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 2. PISTA DE CARRERAS: ÓVALO + CHUTES RECORTADOS (+50M) + PISTA RECTA CENTRAL PERFECTAMENTE EN EL CENTRO */}
       {mostrarPista && (
@@ -728,55 +845,134 @@ export function SimuladorPistaCarrera2D({
                   className="filter drop-shadow-xl"
                 />
 
-                {/* Barra de título */}
+                {/* Barra de título con Cronómetro Digital en el Infield */}
                 <rect x="0" y="0" width="560" height="26" rx="14" fill="#0F172A" />
-                <text x="14" y="17" fill="#FACC15" fontSize="10" fontWeight="900" letterSpacing="0.05em">
-                  ⚡ PISTA RECTA CENTRAL · DESARROLLO SIN COLISIÓN
+                <text x="14" y="17" fill="#FACC15" fontSize="9.5" fontWeight="900" letterSpacing="0.05em">
+                  ⚡ PISTA RECTA CENTRAL
+                </text>
+                <text x="280" y="17" textAnchor="middle" fill="#38BDF8" fontSize="10" fontWeight="900" fontFamily="monospace">
+                  ⏱️ {cronometrajeINH.cronometroDigital} ({cronometrajeINH.tiempoTranscurridoQuintos})
                 </text>
                 <text x="546" y="17" textAnchor="end" fill="#94A3B8" fontSize="8.5" fontWeight="bold">
                   {liderActual
-                    ? `👑 LÍDER: #${liderActual.item.ejemplar.numero} (${liderActual.item.ejemplar.nombre}) · RESTAN: ${liderActual.distanciaRestante.toFixed(0)}M`
-                    : `PROGRESO: ${progreso.toFixed(0)}% · ${distanciaCarrera}M`}
+                    ? `👑 #${liderActual.item.ejemplar.numero} · RESTAN: ${liderActual.distanciaRestante.toFixed(0)}M`
+                    : `PP ${distanciaCarrera}M`}
                 </text>
 
-                {/* Tramos verticales sincronizados con las distancias exactas de la carrera */}
-                {/* 1. Salida PP (X = 35) */}
-                <line x1="35" y1="28" x2="35" y2="195" stroke="#334155" strokeWidth="1" strokeDasharray="3 3" />
-                <text x="35" y="192" textAnchor="middle" fill="#64748B" fontSize="8" fontWeight="bold">
-                  🚪 PP ({distanciaCarrera}m)
-                </text>
-
-                {/* 2. Checkpoint 1.000m (si la carrera es mayor a 1.000m) */}
-                {distanciaCarrera > 1000 && (() => {
-                  const x1000 = 35 + ((distanciaCarrera - 1000) / distanciaCarrera) * 480;
+                {/* ------------------------------------------------------------- */}
+                {/* HITOS DE DISTANCIA CADA 100M Y PARCIALES CADA 400M EN PISTA   */}
+                {/* ------------------------------------------------------------- */}
+                {/* Zona de Remate de los últimos metros (resaltada al fondo) */}
+                {cronometrajeINH.remateFinal && (() => {
+                  const xInicioRemate =
+                    35 + ((distanciaCarrera - cronometrajeINH.remateFinal.metrosRemate) / distanciaCarrera) * 480;
+                  const anchoRemate = 515 - xInicioRemate;
                   return (
-                    <g key="cp-1000m">
-                      <line x1={x1000} y1="28" x2={x1000} y2="195" stroke="#334155" strokeWidth="1" strokeDasharray="3 3" />
-                      <text x={x1000} y="192" textAnchor="middle" fill="#64748B" fontSize="8" fontWeight="bold">
-                        ⚡ 1000m
+                    <g key="zona-remate-bg" opacity="0.32">
+                      <rect
+                        x={xInicioRemate}
+                        y="28"
+                        width={anchoRemate}
+                        height="167"
+                        fill="#78350F"
+                        stroke="#F59E0B"
+                        strokeWidth="1.2"
+                        strokeDasharray="4 2"
+                      />
+                      <text
+                        x={xInicioRemate + anchoRemate / 2}
+                        y="40"
+                        textAnchor="middle"
+                        fill="#FDE68A"
+                        fontSize="7.5"
+                        fontWeight="900"
+                        letterSpacing="0.06em"
+                      >
+                        ⚡ REMATE {cronometrajeINH.remateFinal.metrosRemate}M
                       </text>
                     </g>
                   );
                 })()}
 
-                {/* 3. Checkpoint 300m (si la carrera es mayor a 350m) */}
-                {distanciaCarrera > 350 && (() => {
-                  const x300 = 35 + ((distanciaCarrera - 300) / distanciaCarrera) * 480;
-                  return (
-                    <g key="cp-300m">
-                      <line x1={x300} y1="28" x2={x300} y2="195" stroke="#334155" strokeWidth="1" strokeDasharray="3 3" />
-                      <text x={x300} y="192" textAnchor="middle" fill="#64748B" fontSize="8" fontWeight="bold">
-                        🔄 300m
-                      </text>
-                    </g>
-                  );
-                })()}
+                {/* Líneas verticales de hitos métricos a lo largo de toda la pista */}
+                {hitosPistaCentral.map((h) => {
+                  if (h.distanciaRestante === 0) {
+                    // Disco de META
+                    return (
+                      <g key="hito-meta">
+                        <line x1="515" y1="28" x2="515" y2="195" stroke="#EF4444" strokeWidth="2.5" />
+                        <text x="515" y="193" textAnchor="middle" fill="#EF4444" fontSize="8.5" fontWeight="900">
+                          🏁 META
+                        </text>
+                      </g>
+                    );
+                  }
 
-                {/* 4. META (X = 515) */}
-                <line x1="515" y1="28" x2="515" y2="195" stroke="#EF4444" strokeWidth="2.5" />
-                <text x="515" y="192" textAnchor="middle" fill="#EF4444" fontSize="9" fontWeight="900">
-                  🏁 META
-                </text>
+                  if (h.distanciaRestante === distanciaCarrera) {
+                    // Partida
+                    return (
+                      <g key="hito-partida">
+                        <line x1="35" y1="28" x2="35" y2="195" stroke="#10B981" strokeWidth="2" strokeDasharray="3 3" />
+                        <text x="35" y="193" textAnchor="middle" fill="#10B981" fontSize="8" fontWeight="bold">
+                          🚪 PP ({distanciaCarrera}m)
+                        </text>
+                      </g>
+                    );
+                  }
+
+                  if (h.esParcial400) {
+                    // Parcial oficial cada 400 metros
+                    const parcialAsociado = cronometrajeINH.parciales400m.find((p) => p.distanciaMetros === h.distanciaRecorrida);
+                    return (
+                      <g key={`hito-parcial-${h.distanciaRecorrida}`}>
+                        <line
+                          x1={h.x}
+                          y1="28"
+                          x2={h.x}
+                          y2="195"
+                          stroke={parcialAsociado?.alcanzado ? "#10B981" : "#F59E0B"}
+                          strokeWidth="1.8"
+                          strokeDasharray="4 2"
+                        />
+                        {/* Etiqueta superior de parcial */}
+                        <rect x={h.x - 17} y="28" width="34" height="11" rx="2" fill="#0F172A" stroke="#F59E0B" strokeWidth="0.8" />
+                        <text x={h.x} y="36.5" textAnchor="middle" fill="#FEF08A" fontSize="7" fontWeight="900">
+                          {h.distanciaRecorrida}m
+                        </text>
+                        {/* Etiqueta inferior de metros restantes */}
+                        <text x={h.x} y="193" textAnchor="middle" fill="#FEF08A" fontSize="7.5" fontWeight="bold">
+                          {h.distanciaRestante}m
+                        </text>
+                      </g>
+                    );
+                  }
+
+                  // Hito mayor (cada 200m)
+                  if (h.esMayor) {
+                    return (
+                      <g key={`hito-mayor-${h.distanciaRestante}`} opacity="0.65">
+                        <line x1={h.x} y1="28" x2={h.x} y2="195" stroke="#475569" strokeWidth="1" strokeDasharray="3 3" />
+                        <text x={h.x} y="193" textAnchor="middle" fill="#94A3B8" fontSize="7" fontWeight="bold">
+                          {h.distanciaRestante}m
+                        </text>
+                      </g>
+                    );
+                  }
+
+                  // Hito menor (cada 100m)
+                  return (
+                    <line
+                      key={`hito-menor-${h.distanciaRestante}`}
+                      x1={h.x}
+                      y1="28"
+                      x2={h.x}
+                      y2="195"
+                      stroke="#1E293B"
+                      strokeWidth="0.6"
+                      strokeDasharray="2 3"
+                    />
+                  );
+                })}
 
                 {/* Micro-carriles horizontales independientes sincronizados en riguroso simultáneo 1:1 */}
                 {posicionesCalculadas.map((p) => {
@@ -794,7 +990,7 @@ export function SimuladorPistaCarrera2D({
                       <line x1="30" y1={yCarril + 6} x2="525" y2={yCarril + 6} stroke="#1E293B" strokeWidth="0.7" />
                       <g
                         transform={`translate(${posX}, ${yCarril})`}
-                        className="cursor-pointer transition-transform duration-75"
+                        className={`cursor-pointer ${reproduciendo ? "" : "transition-transform duration-100"}`}
                         onClick={() => setCaballoSeleccionado(p.item.ejemplar.numero)}
                       >
                         {estaSeleccionado && (
@@ -893,7 +1089,7 @@ export function SimuladorPistaCarrera2D({
                 return (
                   <g
                     key={ejemplar.numero}
-                    className="cursor-pointer transition-transform duration-75"
+                    className={`cursor-pointer ${reproduciendo ? "" : "transition-transform duration-100"}`}
                     onClick={() => setCaballoSeleccionado(ejemplar.numero)}
                   >
                     {/* CÍRCULO CONTENEDOR CON NÚMERO */}

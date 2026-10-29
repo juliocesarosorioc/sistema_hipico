@@ -264,3 +264,251 @@ export function calcularDinamicaSincronizadaCarrera(
     esLiderActual: Math.abs(r.distanciaRestante - menorDistancia) < 0.001,
   }));
 }
+
+/**
+ * Convierte un tiempo en segundos a formato venezolano tradicional de quintos de segundo.
+ * En La Rinconada y la Gaceta Hípica: 1 segundo = 5 quintos (cada quinto = 0.2s).
+ * Ejemplos:
+ *  - 23.2s -> '23"1'
+ *  - 46.4s -> '46"2'
+ *  - 71.8s -> '1:11"4'
+ *  - 84.4s -> '1:24"2'
+ *  - 12.6s -> '12"3'
+ */
+export function formatearTiempoQuintos(segundosDecimal: number): string {
+  if (segundosDecimal <= 0 || !Number.isFinite(segundosDecimal)) return '--"--';
+  const totalSeg = Math.max(0, segundosDecimal);
+  const minutos = Math.floor(totalSeg / 60);
+  const segRestantes = totalSeg - minutos * 60;
+  const segEnteros = Math.floor(segRestantes);
+  const decimas = segRestantes - segEnteros;
+  const quintos = Math.min(4, Math.round(decimas * 5));
+
+  const quintosStr = quintos === 0 ? "" : `${quintos}`;
+  const segStr = minutos > 0 ? segEnteros.toString().padStart(2, "0") : segEnteros.toString();
+
+  if (minutos > 0) {
+    return `${minutos}:${segStr}"${quintosStr}`;
+  }
+  return `${segStr}"${quintosStr}`;
+}
+
+/**
+ * Formato digital de cronómetro deportivo: MM:SS.d
+ */
+export function formatearCronometroDigital(segundosDecimal: number): string {
+  if (segundosDecimal <= 0 || !Number.isFinite(segundosDecimal)) return "00:00.0";
+  const totalSeg = Math.max(0, segundosDecimal);
+  const minutos = Math.floor(totalSeg / 60);
+  const seg = totalSeg - minutos * 60;
+  const segEnteros = Math.floor(seg);
+  const decima = Math.floor((seg - segEnteros) * 10);
+  return `${minutos.toString().padStart(2, "0")}:${segEnteros.toString().padStart(2, "0")}.${decima}`;
+}
+
+export interface ParcialDetalle {
+  id: string;
+  distanciaMetros: number;     // 400, 800, 1200, 1600...
+  etiqueta: string;            // '1° Parcial (400m)', '2° Parcial (800m)', etc.
+  etiquetaCorta: string;       // '400m', '800m'
+  tiempoAcumuladoSegundos: number; // Tiempo oficial simulado cuando el puntero pasa
+  tiempoQuintos: string;       // ej: 23"1, 46"2
+  tiempoDecimal: string;       // ej: 23.2s
+  alcanzado: boolean;          // true si el líder ya cruzó este hito
+  tiempoActualVisible: string; // congelado si alcanzado, o en progreso
+}
+
+export interface RemateDetalle {
+  metrosRemate: number;        // Diferencia de metros finales (ej: 200m en 1400m, 300m en 1500m)
+  tiempoRemateSegundos: number; // Diferencia de tiempo: tiempoFinal - tiempoUltimo400
+  tiempoRemateQuintos: string; // ej: 12"3
+  tiempoRemateDecimal: string; // ej: 12.6s
+  alcanzado: boolean;
+}
+
+export interface CronometrajeCarreraINH {
+  distanciaCarrera: number;
+  tiempoTranscurridoSegundos: number;
+  cronometroDigital: string;
+  tiempoTranscurridoQuintos: string;
+  parciales400m: ParcialDetalle[];
+  remateFinal: RemateDetalle | null;
+  tiempoFinalTotalSegundos: number;
+  tiempoFinalTotalQuintos: string;
+  carreraFinalizada: boolean;
+}
+
+/**
+ * Calcula los parciales oficiales cada 400 metros y el remate de los últimos metros
+ * según el reglamento y práctica oficial de La Rinconada (INH).
+ */
+export function calcularCronometrajeYParcialesINH(
+  distanciaCarreraMetros: number,
+  distanciaRecorridaLider: number,
+  speedRatingPromedio: number = 85
+): CronometrajeCarreraINH {
+  const D = Math.max(400, distanciaCarreraMetros);
+  const dRec = Math.max(0, Math.min(D, distanciaRecorridaLider));
+
+  // Factor de velocidad según Speed Rating (85 base = 1.0; 90 = 1.015; 80 = 0.985)
+  const factorSR = 1.0 + (speedRatingPromedio - 85) * 0.003;
+
+  // Tiempos base por cada tramo de 400m en La Rinconada:
+  // 1° 400m: 23.2s (salida de parado del aparato)
+  // 2° 400m (400 a 800m): 22.8s (en carrera lanzada)
+  // 3° 400m (800 a 1200m): 24.8s (giro de curva / recta)
+  // 4° 400m (1200 a 1600m): 26.0s (resistencia)
+  // 5° 400m (1600 a 2000m): 27.2s
+  const tiemposTramos400 = [23.2, 22.8, 24.8, 26.0, 27.2, 28.0].map((t) => t / factorSR);
+
+  // Generamos los parciales cada 400 metros estrictamente mientras d <= D
+  const parciales: ParcialDetalle[] = [];
+  let tiempoAcumulado = 0;
+  let distAcum = 0;
+  let tramoIndex = 0;
+
+  while (distAcum + 400 <= D) {
+    distAcum += 400;
+    const tTramo = tiemposTramos400[tramoIndex] ?? (27.5 / factorSR);
+    tiempoAcumulado += tTramo;
+    tramoIndex++;
+
+    const alcanzado = dRec >= distAcum;
+    parciales.push({
+      id: `parcial-${distAcum}`,
+      distanciaMetros: distAcum,
+      etiqueta: `${parciales.length + 1}° Parcial (${distAcum}m)`,
+      etiquetaCorta: `${distAcum}m`,
+      tiempoAcumuladoSegundos: Number(tiempoAcumulado.toFixed(2)),
+      tiempoQuintos: formatearTiempoQuintos(tiempoAcumulado),
+      tiempoDecimal: `${tiempoAcumulado.toFixed(1)}s`,
+      alcanzado,
+      tiempoActualVisible: alcanzado ? formatearTiempoQuintos(tiempoAcumulado) : '--"--',
+    });
+  }
+
+  // Remate de los últimos metros:
+  // "los parciales son cada 400 metros, y la diferencia es el remate de los últimos metros"
+  const metrosRemate = D - distAcum;
+  let tiempoRemate = 0;
+
+  if (metrosRemate > 0) {
+    // Velocidad del tramo final (aprox 15.5 m/s ajustado por SR)
+    const velocidadFinal = 15.5 * factorSR;
+    tiempoRemate = Number((metrosRemate / velocidadFinal).toFixed(2));
+  } else if (distAcum === D && parciales.length > 0) {
+    // Si la distancia es múltiplo exacto de 400 (ej: 1200m o 1600m), el remate son los últimos 400m
+    const ultimoParcial = parciales[parciales.length - 1];
+    const penultimoTiempo = parciales.length > 1 ? parciales[parciales.length - 2].tiempoAcumuladoSegundos : 0;
+    tiempoRemate = Number((ultimoParcial.tiempoAcumuladoSegundos - penultimoTiempo).toFixed(2));
+  }
+
+  const tiempoFinalTotal = Number((tiempoAcumulado + (metrosRemate > 0 ? tiempoRemate : 0)).toFixed(2));
+  const carreraFinalizada = dRec >= D;
+
+  // Tiempo transcurrido actual del líder
+  let tiempoTranscurrido = 0;
+  if (dRec <= 0) {
+    tiempoTranscurrido = 0;
+  } else if (carreraFinalizada) {
+    tiempoTranscurrido = tiempoFinalTotal;
+  } else {
+    // Interpolación proporcional a lo largo de los tramos
+    let dAcumPrev = 0;
+    let tAcumPrev = 0;
+
+    for (const p of parciales) {
+      if (dRec <= p.distanciaMetros) {
+        const fraccionTramo = (dRec - dAcumPrev) / (p.distanciaMetros - dAcumPrev);
+        tiempoTranscurrido = tAcumPrev + fraccionTramo * (p.tiempoAcumuladoSegundos - tAcumPrev);
+        break;
+      }
+      dAcumPrev = p.distanciaMetros;
+      tAcumPrev = p.tiempoAcumuladoSegundos;
+    }
+
+    if (dRec > distAcum && metrosRemate > 0) {
+      const fraccionRemate = (dRec - distAcum) / metrosRemate;
+      tiempoTranscurrido = tiempoAcumulado + fraccionRemate * tiempoRemate;
+    }
+  }
+
+  const remateFinal: RemateDetalle | null =
+    metrosRemate > 0
+      ? {
+          metrosRemate,
+          tiempoRemateSegundos: tiempoRemate,
+          tiempoRemateQuintos: formatearTiempoQuintos(tiempoRemate),
+          tiempoRemateDecimal: `${tiempoRemate.toFixed(1)}s`,
+          alcanzado: carreraFinalizada,
+        }
+      : null;
+
+  return {
+    distanciaCarrera: D,
+    tiempoTranscurridoSegundos: Number(tiempoTranscurrido.toFixed(2)),
+    cronometroDigital: formatearCronometroDigital(tiempoTranscurrido),
+    tiempoTranscurridoQuintos: formatearTiempoQuintos(tiempoTranscurrido),
+    parciales400m: parciales,
+    remateFinal,
+    tiempoFinalTotalSegundos: tiempoFinalTotal,
+    tiempoFinalTotalQuintos: formatearTiempoQuintos(tiempoFinalTotal),
+    carreraFinalizada,
+  };
+}
+
+export interface HitoPistaCentral {
+  distanciaRestante: number; // metros hacia la meta
+  distanciaRecorrida: number; // metros recorridos desde la salida
+  x: number;                  // coordenada x en el viewBox de la pista central (35 a 515)
+  esMayor: boolean;           // hito destacado (cada 200m o parcial de 400m)
+  esParcial400: boolean;      // hito de 400m (400, 800, 1200, 1600)
+  esRemateInicio: boolean;    // inicio del remate final
+  etiqueta: string;           // texto de la marca (ej: '1400m', '1200m', '1000m', 'META')
+  etiquetaParcial?: string;   // '⏱️ 400m', '⏱️ 800m'
+}
+
+/**
+ * Genera todos los hitos de distancia a lo largo de la pista central
+ * desde la partida hasta la meta, incluyendo las marcas de parciales cada 400m.
+ */
+export function obtenerHitosPistaCentral(distanciaCarreraMetros: number): HitoPistaCentral[] {
+  const D = Math.max(400, distanciaCarreraMetros);
+  const hitos: HitoPistaCentral[] = [];
+  const paso = 100; // Hito cada 100 metros
+
+  const dUltimo400 = Math.floor(D / 400) * 400;
+  const metrosRemate = D - dUltimo400;
+
+  for (let dRest = D; dRest >= 0; dRest -= paso) {
+    const dRec = D - dRest;
+    const fraccion = dRec / D;
+    const x = 35 + fraccion * 480;
+
+    const esParcial400 = dRec > 0 && dRec % 400 === 0 && dRec < D;
+    const esRemateInicio = dRec === dUltimo400 && metrosRemate > 0;
+    const esMayor = dRest % 200 === 0 || dRest === 0 || dRest === D || esParcial400;
+
+    let etiqueta = `${dRest}m`;
+    if (dRest === D) etiqueta = `PP (${D}m)`;
+    else if (dRest === 0) etiqueta = `META`;
+
+    let etiquetaParcial: string | undefined;
+    if (esParcial400) {
+      etiquetaParcial = `⏱️ ${dRec}m`;
+    }
+
+    hitos.push({
+      distanciaRestante: dRest,
+      distanciaRecorrida: dRec,
+      x: Number(x.toFixed(2)),
+      esMayor,
+      esParcial400,
+      esRemateInicio,
+      etiqueta,
+      etiquetaParcial,
+    });
+  }
+
+  return hitos;
+}
