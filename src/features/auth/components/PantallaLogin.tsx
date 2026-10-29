@@ -392,9 +392,6 @@ export default function PantallaLogin() {
               >
                 🐎🎲 Entrar como Operador (Solo Apuestas y Reportes)
               </button>
-              <p className="text-center text-[10px] font-semibold text-slate-500">
-                Credenciales Operador: usuario <code className="font-mono font-bold text-slate-700">operador</code> · clave <code className="font-mono font-bold text-slate-700">operador2026</code>
-              </p>
               <button
                 type="button"
                 onClick={() => {
