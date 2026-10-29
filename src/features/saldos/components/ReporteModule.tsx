@@ -637,14 +637,14 @@ export function ReporteModule() {
               value={desde}
               onFechaChange={(val) => setDesde(val)}
               placeholder="Desde"
-              className="w-32 py-1 text-sm text-white bg-blue-900 border-blue-700"
+              className="w-36 py-1 text-xs text-white bg-blue-900 border-blue-700 [&_input]:text-white [&_input]:placeholder:text-blue-300 [&_span]:text-blue-200 [&_button]:text-blue-200 hover:[&_button]:text-white hover:[&_button]:bg-blue-800"
             />
             <span className="text-blue-200">→</span>
             <DateInput
               value={hasta}
               onFechaChange={(val) => setHasta(val)}
               placeholder="Hasta"
-              className="w-32 py-1 text-sm text-white bg-blue-900 border-blue-700"
+              className="w-36 py-1 text-xs text-white bg-blue-900 border-blue-700 [&_input]:text-white [&_input]:placeholder:text-blue-300 [&_span]:text-blue-200 [&_button]:text-blue-200 hover:[&_button]:text-white hover:[&_button]:bg-blue-800"
             />
             <button
               onClick={cargar}

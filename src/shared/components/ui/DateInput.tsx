@@ -361,7 +361,7 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
   }
 
   return (
-    <div ref={contenedorRef} className="relative flex flex-col gap-1 w-auto max-w-full">
+    <div ref={contenedorRef} className="relative inline-flex flex-col gap-0.5 w-auto max-w-full">
       {label ? (
         <label htmlFor={inputId} className="text-[11px] font-semibold text-slate-600 block">
           {label}
@@ -370,69 +370,71 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
 
       {/* Contenedor unificado: DÍA / MES / AÑO con bordes limpios y botón calendario */}
       <div
-        className={`relative inline-flex items-center rounded-md border border-line bg-surface px-2 py-1 text-[13px] text-slate-900 font-medium
+        className={`relative inline-flex items-center justify-between rounded-md border border-line bg-surface px-1.5 py-0.5 text-xs text-slate-900 font-medium
           focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-500
           disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-slate-400 ${className}`}
       >
-        {/* Campo DÍA */}
-        <input
-          id={inputId}
-          ref={diaRef}
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          maxLength={2}
-          autoComplete="off"
-          disabled={disabled}
-          placeholder="DD"
-          value={dia}
-          onChange={handleDiaChange}
-          onKeyDown={handleDiaKeyDown}
-          onPaste={handlePaste}
-          onFocus={(e) => e.target.select()}
-          className="w-6 text-center bg-transparent outline-none font-bold text-slate-900 placeholder:text-slate-400"
-          {...rest}
-        />
+        <div className="flex items-center">
+          {/* Campo DÍA */}
+          <input
+            id={inputId}
+            ref={diaRef}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={2}
+            autoComplete="off"
+            disabled={disabled}
+            placeholder="DD"
+            value={dia}
+            onChange={handleDiaChange}
+            onKeyDown={handleDiaKeyDown}
+            onPaste={handlePaste}
+            onFocus={(e) => e.target.select()}
+            className="w-[1.25rem] text-center bg-transparent outline-none font-bold text-slate-900 placeholder:text-slate-400 p-0 text-xs"
+            {...rest}
+          />
 
-        <span className="text-slate-400 font-bold select-none px-0.5">/</span>
+          <span className="text-slate-400 font-bold select-none px-0.5 text-[11px]">/</span>
 
-        {/* Campo MES */}
-        <input
-          ref={mesRef}
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          maxLength={2}
-          autoComplete="off"
-          disabled={disabled}
-          placeholder="MM"
-          value={mes}
-          onChange={handleMesChange}
-          onKeyDown={handleMesKeyDown}
-          onPaste={handlePaste}
-          onFocus={(e) => e.target.select()}
-          className="w-6 text-center bg-transparent outline-none font-bold text-slate-900 placeholder:text-slate-400"
-        />
+          {/* Campo MES */}
+          <input
+            ref={mesRef}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={2}
+            autoComplete="off"
+            disabled={disabled}
+            placeholder="MM"
+            value={mes}
+            onChange={handleMesChange}
+            onKeyDown={handleMesKeyDown}
+            onPaste={handlePaste}
+            onFocus={(e) => e.target.select()}
+            className="w-[1.25rem] text-center bg-transparent outline-none font-bold text-slate-900 placeholder:text-slate-400 p-0 text-xs"
+          />
 
-        <span className="text-slate-400 font-bold select-none px-0.5">/</span>
+          <span className="text-slate-400 font-bold select-none px-0.5 text-[11px]">/</span>
 
-        {/* Campo AÑO */}
-        <input
-          ref={anioRef}
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          maxLength={4}
-          autoComplete="off"
-          disabled={disabled}
-          placeholder="AAAA"
-          value={anio}
-          onChange={handleAnioChange}
-          onKeyDown={handleAnioKeyDown}
-          onPaste={handlePaste}
-          onFocus={(e) => e.target.select()}
-          className="w-11 text-center bg-transparent outline-none font-bold text-slate-900 placeholder:text-slate-400"
-        />
+          {/* Campo AÑO */}
+          <input
+            ref={anioRef}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={4}
+            autoComplete="off"
+            disabled={disabled}
+            placeholder="AAAA"
+            value={anio}
+            onChange={handleAnioChange}
+            onKeyDown={handleAnioKeyDown}
+            onPaste={handlePaste}
+            onFocus={(e) => e.target.select()}
+            className="w-[2.25rem] text-center bg-transparent outline-none font-bold text-slate-900 placeholder:text-slate-400 p-0 text-xs"
+          />
+        </div>
 
         {/* Botón calendario para abrir consulta emergente de Año, Mes y Día */}
         <button
@@ -450,11 +452,11 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
           }}
           aria-label="Abrir consulta de fecha (Año, Mes, Día)"
           title="Abrir selector de fecha (Año, Mes, Día)"
-          className={`ml-1.5 p-1 rounded transition-colors disabled:opacity-40 ${
+          className={`ml-1 shrink-0 p-0.5 rounded transition-colors disabled:opacity-40 flex items-center justify-center ${
             abierto ? "text-indigo-600 bg-indigo-50" : "text-slate-400 hover:text-indigo-600 hover:bg-slate-100"
           }`}
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
