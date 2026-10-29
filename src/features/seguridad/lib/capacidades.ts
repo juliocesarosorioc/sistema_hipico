@@ -933,22 +933,40 @@ export function esRolCliente(perfil: string, permisos: Set<string> | string[]): 
 }
 
 /**
- * Rutas estrictamente permitidas para el perfil OPERADOR (`rol === 'OPERADOR'` / Modo Operador):
- * ÚNICAMENTE tiene acceso y visibilidad a:
- *  1. `🐎🎲 Apuestas` (`/apuestas`, `/gestion-jugadas`)
- *  2. `💵📑 Reportes` (`/saldos-reportes`, `/reporte-diario`)
+ * Rutas permitidas por defecto para el perfil OPERADOR (`rol === 'OPERADOR'` / Modo Operador):
+ * Acceso y visibilidad completa a todos los módulos de Operación Principal y Jugadas,
+ * vinculado estrictamente a su grupo de venta asignado:
+ *  1. Operación Principal: `/inicio`, `/dashboard`, `/apuestas`, `/gestion-jugadas`, `/saldos-reportes`, `/reporte-diario`, `/clientes`, `/tickets`
+ *  2. Jugadas: `/tablas-fijas`, `/marcas`, `/remates`, `/dupleta`, `/pollas`
  */
 export const RUTAS_PERMITIDAS_OPERADOR = [
+  "/inicio",
+  "/dashboard",
   "/apuestas",
   "/gestion-jugadas",
   "/saldos-reportes",
   "/reporte-diario",
+  "/clientes",
+  "/tickets",
+  "/tablas-fijas",
+  "/marcas",
+  "/remates",
+  "/dupleta",
+  "/pollas",
 ] as const;
 
-/** Módulos visibles en el Sidebar cuando el usuario tiene rol exclusivo OPERADOR. */
+/** Módulos visibles en el Sidebar cuando el usuario tiene rol exclusivo OPERADOR (Operación Principal y Jugadas). */
 export const MODULOS_VISIBLES_OPERADOR = [
-  { href: "/apuestas", emoji: "🐎🎲", txt: "🐎🎲 Apuestas" },
-  { href: "/saldos-reportes", emoji: "💵📑", txt: "💵📑 Saldos / Reportes" },
+  { href: "/inicio", emoji: "🏠", txt: "Inicio" },
+  { href: "/apuestas", emoji: "🐎", txt: "Apuestas" },
+  { href: "/saldos-reportes", emoji: "💵", txt: "Reportes" },
+  { href: "/clientes", emoji: "🧾", txt: "Clientes" },
+  { href: "/tickets", emoji: "🎫", txt: "Tickets" },
+  { href: "/tablas-fijas", emoji: "📋", txt: "Tablas fijas" },
+  { href: "/marcas", emoji: "🏷️", txt: "Marcas" },
+  { href: "/remates", emoji: "🔔", txt: "Remates" },
+  { href: "/dupleta", emoji: "🎯", txt: "Dupletas" },
+  { href: "/pollas", emoji: "🏆", txt: "Pollas" },
 ] as const;
 
 /** Determina si la sesión o el modo activo corresponde a un Operador exclusivo. */

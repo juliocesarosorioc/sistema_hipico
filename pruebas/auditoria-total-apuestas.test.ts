@@ -348,39 +348,56 @@ console.log("\n[5] Control de Acceso para OPERADOR: visibilidad y rutas exclusiv
   ok("esRolOperadorExclusivo reconoce modoOperador=true", esRolOperadorExclusivo(["Admin"], true));
   ok("esRolOperadorExclusivo NO restringe a Admin en vista completa", !esRolOperadorExclusivo(["Admin"], false));
 
-  eq("Operador solo tiene 2 módulos principales visibles (Apuestas y Saldos/Reportes)", MODULOS_VISIBLES_OPERADOR.length, 2);
-  eq("Módulo 1 del Operador es 🐎🎲 Apuestas", MODULOS_VISIBLES_OPERADOR[0].txt, "🐎🎲 Apuestas");
-  eq("Módulo 2 del Operador es 💵📑 Saldos / Reportes", MODULOS_VISIBLES_OPERADOR[1].txt, "💵📑 Saldos / Reportes");
+  eq("Operador tiene 10 módulos principales visibles (Operación Principal y Jugadas)", MODULOS_VISIBLES_OPERADOR.length, 10);
+  ok("Módulos visibles contienen /inicio", MODULOS_VISIBLES_OPERADOR.some((m) => m.href === "/inicio"));
+  ok("Módulos visibles contienen /apuestas", MODULOS_VISIBLES_OPERADOR.some((m) => m.href === "/apuestas"));
+  ok("Módulos visibles contienen /saldos-reportes", MODULOS_VISIBLES_OPERADOR.some((m) => m.href === "/saldos-reportes"));
+  ok("Módulos visibles contienen /clientes", MODULOS_VISIBLES_OPERADOR.some((m) => m.href === "/clientes"));
+  ok("Módulos visibles contienen /tickets", MODULOS_VISIBLES_OPERADOR.some((m) => m.href === "/tickets"));
+  ok("Módulos visibles contienen /tablas-fijas", MODULOS_VISIBLES_OPERADOR.some((m) => m.href === "/tablas-fijas"));
+  ok("Módulos visibles contienen /marcas", MODULOS_VISIBLES_OPERADOR.some((m) => m.href === "/marcas"));
+  ok("Módulos visibles contienen /remates", MODULOS_VISIBLES_OPERADOR.some((m) => m.href === "/remates"));
+  ok("Módulos visibles contienen /dupleta", MODULOS_VISIBLES_OPERADOR.some((m) => m.href === "/dupleta"));
+  ok("Módulos visibles contienen /pollas", MODULOS_VISIBLES_OPERADOR.some((m) => m.href === "/pollas"));
 
-  // Verificación de bloqueo de navegación por ruta
-  ok("Operador puede navegar a /apuestas", esRutaPermitidaOperador("/apuestas"));
-  ok("Operador puede navegar a /gestion-jugadas", esRutaPermitidaOperador("/gestion-jugadas"));
-  ok("Operador puede navegar a /saldos-reportes", esRutaPermitidaOperador("/saldos-reportes"));
-  ok("Operador puede navegar a /reporte-diario", esRutaPermitidaOperador("/reporte-diario"));
-
-  const rutasBloqueadas = [
+  // Verificación de acceso a rutas de Operación Principal y Jugadas
+  const rutasPermitidasOperador = [
     "/inicio",
     "/dashboard",
+    "/apuestas",
+    "/gestion-jugadas",
+    "/saldos-reportes",
+    "/reporte-diario",
     "/clientes",
+    "/tickets",
+    "/tablas-fijas",
+    "/marcas",
+    "/remates",
+    "/dupleta",
+    "/pollas",
+  ];
+  const capsOperador = new Set(baseDeTipo("operador"));
+  for (const r of rutasPermitidasOperador) {
+    ok(`Operador puede navegar a ${r}`, esRutaPermitidaOperador(r));
+    ok(`baseDeTipo('operador') abre ${r}`, rutaPermitida(r, capsOperador));
+  }
+
+  // Rutas administrativas y de configuración bloqueadas
+  const rutasBloqueadas = [
     "/grupos",
     "/contabilidad",
     "/contabilidad/caja",
     "/seguridad",
     "/hipodromos",
-    "/ejemplares",
-    "/pollas",
-    "/remates",
-    "/tablas-fijas",
+    "/diagnostico",
+    "/whatsapp",
   ];
-  const capsOperador = new Set(baseDeTipo("operador"));
   for (const r of rutasBloqueadas) {
     ok(
       `Ruta ${r} está bloqueada para el perfil OPERADOR tanto en guard como en capacidades`,
       !esRutaPermitidaOperador(r) && !rutaPermitida(r, capsOperador)
     );
   }
-  ok("baseDeTipo('operador') abre /apuestas", rutaPermitida("/apuestas", capsOperador));
-  ok("baseDeTipo('operador') abre /saldos-reportes", rutaPermitida("/saldos-reportes", capsOperador));
 }
 
 // ============================================================================

@@ -245,9 +245,18 @@ export function baseDeTipo(nombre: string): string[] {
     ).map((x) => x.clave);
 
     return [
-      // ÚNICAMENTE las 2 rutas permitidas al Operador: Apuestas y Saldos/Reportes
+      // Módulos de Operación Principal y Jugadas permitidos por defecto al Operador
+      "general:ruta_inicio",
+      "general:ruta_dashboard",
       "gestion_jugadas:ruta_gestion",
       "general:ruta_saldos",
+      "clientes:ruta_clientes",
+      "tickets:ruta_tickets",
+      "tablas:ruta_tablas",
+      "marcas:ruta_marcas",
+      "remates:ruta_remates",
+      "dupleta:ruta_dupleta",
+      "pollas:ruta_pollas",
       ...sinRutas,
       ...escrituraDe(...MODULOS_OPERATIVOS).filter(
         (k) => !k.startsWith("jugadas:") && !k.startsWith("clientes:fn_eliminar")

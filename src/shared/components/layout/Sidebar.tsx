@@ -70,12 +70,27 @@ type Categoria = {
 
 export const CATEGORIAS_OPERADOR: Categoria[] = [
   {
-    id: "operador_exclusivo",
-    titulo: "Módulos Operador",
-    emoji: "🐎",
+    id: "principal",
+    titulo: "Operación Principal",
+    emoji: "📂",
     items: [
+      { href: "/inicio", emoji: "🏠", txt: "Inicio", visibleSiempre: true },
       { href: "/apuestas", emoji: "🐎", txt: "Apuestas", visibleSiempre: true },
       { href: "/saldos-reportes", emoji: "💵", txt: "Reportes", visibleSiempre: true },
+      { href: "/clientes", emoji: "🧾", txt: "Clientes", visibleSiempre: true },
+      { href: "/tickets", emoji: "🎫", txt: "Tickets", visibleSiempre: true },
+    ],
+  },
+  {
+    id: "mercados",
+    titulo: "Jugadas",
+    emoji: "📂",
+    items: [
+      { href: "/tablas-fijas", emoji: "📋", txt: "Tablas fijas", visibleSiempre: true },
+      { href: "/marcas", emoji: "🏷️", txt: "Marcas", visibleSiempre: true },
+      { href: "/remates", emoji: "🔔", txt: "Remates", visibleSiempre: true },
+      { href: "/dupleta", emoji: "🎯", txt: "Dupletas", visibleSiempre: true },
+      { href: "/pollas", emoji: "🏆", txt: "Pollas", visibleSiempre: true },
     ],
   },
 ];

@@ -312,8 +312,8 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
         }}
         title={
           modoOperador
-            ? "Modo Operador Activo: Solo muestra 🐎🎲 Apuestas y 💵📑 Reportes. Clic para volver a Vista Completa."
-            : "Cambiar a Vista Operador (ingresa directo a la vista de operador en 🐎🎲 Apuestas)"
+            ? "Modo Operador Activo: Módulos de Operación Principal y Jugadas vinculados a su grupo. Clic para volver a Vista Completa."
+            : "Cambiar a Vista Operador (ingresa directo a la vista de operador)"
         }
         className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-black transition-colors ${
           modoOperador

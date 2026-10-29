@@ -19,7 +19,7 @@ import {
 } from "@/features/seguridad/lib/resolver";
 import { atributosDeUsuario, claveDeUsuario, leerTipoDeUsuario, permisosIndividuales } from "@/features/seguridad/lib/accesos";
 import { leerMiGrupo } from "@/features/seguridad/lib/grupo-usuario";
-import { CAPACIDADES_POR_CLAVE } from "@/features/seguridad/lib/capacidades";
+import { CAPACIDADES_POR_CLAVE, esRolOperadorExclusivo } from "@/features/seguridad/lib/capacidades";
 import { limpiarAccesosVigentes, setAccesosVigentes, setGrupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import type { ExcepcionUsuario, TipoUsuario } from "@/features/seguridad/lib/tipos";
 
@@ -289,13 +289,14 @@ async function aplicarAccesos(identificador: string): Promise<ResolucionAccesos>
   const perfiles = tipo ? [tipo.nombre] : principal ? ["admin"] : [];
   publicarPermisosEnCookies(perfiles, permisos, id);
   // Un principal ve todos, tenga o no grupo asignado.
-  const veTodosLosGrupos = resolucion.total || (miGrupo?.veTodos ?? true);
+  // Un operador solo se vincula estrictamente a su grupo asignado: nunca ve todos los grupos.
+  const esOperador = esRolOperadorExclusivo(perfiles);
+  const veTodosLosGrupos = !esOperador && (resolucion.total || (miGrupo?.veTodos ?? true));
   const grupoId = miGrupo?.grupoId ?? "";
   const grupoNombre = miGrupo?.grupoNombre ?? "";
-  // El filtro "ver un grupo / todos" es SOLO para quien ve todos. Un usuario con
-  // grupo no elige: la base ya lo acota a lo suyo, y dejarle un filtro activo
-  // (residual de otra sesión) le escondería datos suyos.
-  const grupoActivo = veTodosLosGrupos ? leerGrupoActivoGuardado() : null;
+  // El filtro "ver un grupo / todos" es SOLO para quien ve todos. Un operador con
+  // grupo solo se vincula a su grupo:
+  const grupoActivo = veTodosLosGrupos ? leerGrupoActivoGuardado() : (grupoId || null);
   setGrupoActivoVigente(grupoActivo);
   // Espejo para las funciones de escritura de src/lib, que no son componentes y
   // no pueden leer el store (ver src/lib/seguridad/vigente.ts).
@@ -487,6 +488,15 @@ export const useAuthStore = create<EstadoAuth>()(
       errorLogin: null,
 
       setGrupoActivo: (grupoId) => {
+        // Un operador solo se vincula a su propio grupo y no puede alternar grupos
+        const esOp = esRolOperadorExclusivo(get().perfiles, get().modoOperador);
+        if (esOp && get().grupoId) {
+          const miGrupoId = String(get().grupoId).trim();
+          guardarGrupoActivo(miGrupoId);
+          setGrupoActivoVigente(miGrupoId);
+          set({ grupoActivo: miGrupoId, veTodosLosGrupos: false });
+          return;
+        }
         const idLimpio =
           grupoId &&
           grupoId !== "null" &&
@@ -557,7 +567,9 @@ export const useAuthStore = create<EstadoAuth>()(
           permisos: capsOperador,
           perfiles: ["OPERADOR"],
           modoOperador: true,
-          veTodosLosGrupos: true,
+          veTodosLosGrupos: false,
+          grupoId: grupoActivo ?? "",
+          grupoNombre: "Mi Grupo",
           grupoActivo,
         });
       },
