@@ -44,7 +44,8 @@ export function SelectorGrupo() {
   if (!veTodos) return null;
 
   const cambiar = (valor: string) => {
-    setGrupoActivo(valor || null);
+    const v = valor && valor.trim() !== "" ? valor.trim() : null;
+    setGrupoActivo(v);
     // Las pantallas ya cargaron con el filtro anterior: la recarga es la forma
     // más simple (y sin fugas) de que todas relean. El grupo elegido queda
     // guardado en localStorage, así que sobrevive a la recarga.
@@ -62,10 +63,10 @@ export function SelectorGrupo() {
       <select
         value={grupoActivo ?? ""}
         onChange={(e) => cambiar(e.target.value)}
-        className="max-w-[10rem] bg-transparent text-xs font-bold text-slate-700 outline-none"
+        className="max-w-[13rem] bg-transparent text-xs font-bold text-slate-700 outline-none"
         aria-label="Grupo que se está mirando"
       >
-        <option value="">Todos los grupos</option>
+        <option value="">🌐 Principal («Todos los grupos»)</option>
         {grupos.map((g) => (
           <option key={String(g.id)} value={String(g.id)}>
             {g.nombre}

@@ -57,7 +57,8 @@ function leerSesionOperadorLocal(): boolean {
 function leerGrupoActivoGuardado(): string | null {
   try {
     const v = localStorage.getItem(CLAVE_GRUPO_ACTIVO);
-    return v ? v : null;
+    if (!v || v === "null" || v === "undefined" || v.trim() === "") return null;
+    return v.trim();
   } catch {
     return null;
   }
@@ -65,8 +66,11 @@ function leerGrupoActivoGuardado(): string | null {
 
 function guardarGrupoActivo(g: string | null): void {
   try {
-    if (g) localStorage.setItem(CLAVE_GRUPO_ACTIVO, g);
-    else localStorage.removeItem(CLAVE_GRUPO_ACTIVO);
+    if (g && g !== "null" && g !== "undefined" && g.trim() !== "") {
+      localStorage.setItem(CLAVE_GRUPO_ACTIVO, g.trim());
+    } else {
+      localStorage.removeItem(CLAVE_GRUPO_ACTIVO);
+    }
   } catch {
     /* sinop */
   }
@@ -483,9 +487,16 @@ export const useAuthStore = create<EstadoAuth>()(
       errorLogin: null,
 
       setGrupoActivo: (grupoId) => {
-        guardarGrupoActivo(grupoId);
-        setGrupoActivoVigente(grupoId);
-        set({ grupoActivo: grupoId });
+        const idLimpio =
+          grupoId &&
+          grupoId !== "null" &&
+          grupoId !== "undefined" &&
+          String(grupoId).trim() !== ""
+            ? String(grupoId).trim()
+            : null;
+        guardarGrupoActivo(idLimpio);
+        setGrupoActivoVigente(idLimpio);
+        set({ grupoActivo: idLimpio });
       },
 
       setModoOperador: (activo) => {
