@@ -54,6 +54,15 @@ import {
   type CategoriaJugada,
 } from "@/features/taquilla/lib/nomenclatura";
 import { parsearEjemplaresPorCliente } from "@/features/taquilla/lib/reparto";
+import {
+  aCentavos,
+  deCentavos,
+  redondearCentavos,
+  sumarDinero,
+  restarDinero,
+  calcularComisionExacta,
+  calcularProporcionExacta,
+} from "@/shared/lib/dinero";
 
 export {
   parsearNomenclatura,
@@ -90,6 +99,696 @@ export const ESCALERA_PROGRESION_PUESTOS = [
   "5Y5N",
   "5P",
 ] as const;
+
+export type ReglaTablaJugada = {
+  codigo: string;
+  /** Tramos posicionales: cada tramo define [puestoLimite, esNini]. */
+  tramos: Array<{ puesto: number; esNini: boolean }>;
+  /** Si es proporción 10Ax, numerador del lado que da (ej. 8 en 10A8). */
+  factor10Ax?: number;
+  esPP?: boolean;
+};
+
+/**
+ * Tabla oficial de jugadas de puestos y proporciones (44 combinaciones oficiales + PP + 10Ax).
+ * Factores exactos: 1, 0.75, 0.50, 0.25, 0, -0.25, -0.50, -0.75, -1.
+ */
+export const TABLA_JUGADAS: Record<string, ReglaTablaJugada> = (() => {
+  const tabla: Record<string, ReglaTablaJugada> = {};
+  const registrarConAliases = (regla: ReglaTablaJugada, aliases: string[]) => {
+    tabla[regla.codigo] = regla;
+    for (const al of aliases) {
+      tabla[al] = regla;
+    }
+  };
+
+  for (let p = 1; p <= 6; p++) {
+    const n = p + 1;
+    // Individuales: pP, nN, nP
+    registrarConAliases(
+      {
+        codigo: `${p}P`,
+        tramos: [{ puesto: p, esNini: false }],
+      },
+      []
+    );
+    registrarConAliases(
+      {
+        codigo: `${n}N`,
+        tramos: [{ puesto: n, esNini: true }],
+      },
+      []
+    );
+    registrarConAliases(
+      {
+        codigo: `${n}P`,
+        tramos: [{ puesto: n, esNini: false }],
+      },
+      []
+    );
+
+    // Combinadas (50% / 50% -> 2 tramos):
+    // 1) p/nN = pYnN = pP Y nN (50% pP + 50% nN) -> Regla 1: expandir 1/2 -> 1Y2N, 2/3 -> 2Y3N
+    registrarConAliases(
+      {
+        codigo: `${p}Y${n}N`,
+        tramos: [
+          { puesto: p, esNini: false },
+          { puesto: n, esNini: true },
+        ],
+      },
+      [`${p}/${n}N`, `${p}PY${n}N`, `${p}P/${n}N`, `${p}/${n}`, `${p}Y${n}`]
+    );
+
+    // 2) n/nN = nYnN = nN/nP = nP/nN = nNYnP = nPYnN (50% nN + 50% nP)
+    registrarConAliases(
+      {
+        codigo: `${n}Y${n}N`,
+        tramos: [
+          { puesto: n, esNini: true },
+          { puesto: n, esNini: false },
+        ],
+      },
+      [`${n}/${n}N`, `${n}N/${n}P`, `${n}P/${n}N`, `${n}NY${n}P`, `${n}PY${n}N`, `${n}Y${n}`, `${n}/${n}`]
+    );
+
+    // 3) p/n = p/nP = pYn = pYnP = pPYnP (50% pP + 50% nP)
+    registrarConAliases(
+      {
+        codigo: `${p}Y${n}P`,
+        tramos: [
+          { puesto: p, esNini: false },
+          { puesto: n, esNini: false },
+        ],
+      },
+      [`${p}/${n}P`, `${p}PY${n}P`, `${p}P/${n}P`, `${p}PY${n}`]
+    );
+
+    // Bloques en Escalera (Regla 4 -> 4 cuartos de 25% cada uno: 75%/25% y 25%/75%):
+    // Escalón 1: pP Y p/nN -> 75% pP + 25% nN
+    registrarConAliases(
+      {
+        codigo: `${p}PY${p}Y${n}N`,
+        tramos: [
+          { puesto: p, esNini: false },
+          { puesto: p, esNini: false },
+          { puesto: p, esNini: false },
+          { puesto: n, esNini: true },
+        ],
+      },
+      [`${p}PY${p}/${n}N`, `${p}Y${n}NY${p}P`, `${p}/${n}NY${p}P`, `${p}PY${p}P/${n}N`, `${p}P/${n}NY${p}P`]
+    );
+
+    // Escalón 2: p/nN Y nN -> 25% pP + 75% nN
+    registrarConAliases(
+      {
+        codigo: `${p}Y${n}NY${n}N`,
+        tramos: [
+          { puesto: p, esNini: false },
+          { puesto: n, esNini: true },
+          { puesto: n, esNini: true },
+          { puesto: n, esNini: true },
+        ],
+      },
+      [`${p}/${n}NY${n}N`, `${n}NY${p}Y${n}N`, `${n}NY${p}/${n}N`, `${p}/${n}Y${n}N`, `${p}Y${n}Y${n}N`, `${n}NY${p}Y${n}`]
+    );
+
+    // Escalón 3: nN Y n/nN -> 75% nN + 25% nP
+    registrarConAliases(
+      {
+        codigo: `${n}NY${n}Y${n}N`,
+        tramos: [
+          { puesto: n, esNini: true },
+          { puesto: n, esNini: true },
+          { puesto: n, esNini: true },
+          { puesto: n, esNini: false },
+        ],
+      },
+      [`${n}NY${n}/${n}N`, `${n}Y${n}NY${n}N`, `${n}/${n}NY${n}N`, `${n}NY${n}N/${n}P`, `${n}NY${n}NY${n}P`]
+    );
+
+    // Escalón 4: n/nN Y nP -> 25% nN + 75% nP
+    registrarConAliases(
+      {
+        codigo: `${n}Y${n}NY${n}P`,
+        tramos: [
+          { puesto: n, esNini: true },
+          { puesto: n, esNini: false },
+          { puesto: n, esNini: false },
+          { puesto: n, esNini: false },
+        ],
+      },
+      [`${n}/${n}NY${n}P`, `${n}PY${n}Y${n}N`, `${n}PY${n}/${n}N`, `${n}N/${n}PY${n}P`, `${n}NY${n}PY${n}P`]
+    );
+  }
+
+  tabla["PP"] = {
+    codigo: "PP",
+    tramos: [{ puesto: 1, esNini: false }],
+    esPP: true,
+  };
+
+  const factores = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
+  for (const f of factores) {
+    const keyA = `10A${f}`;
+    const keySlash = `10/${f}`;
+    const regla: ReglaTablaJugada = {
+      codigo: keyA,
+      tramos: [{ puesto: 1, esNini: false }],
+      factor10Ax: f,
+    };
+    tabla[keyA] = regla;
+    tabla[keySlash] = regla;
+  }
+
+  return tabla;
+})();
+
+/**
+ * Normaliza cualquier variante de jugada A Premio (`10a7`, `10/7`, `10A3.5`, `10/3,5`, `10a3,5`, `10a3.5`)
+ * al formato canónico `10A<factor>` con punto decimal (`10A7`, `10A3.5`).
+ */
+export function normalizarJugadaPremio(jugadaRaw: string | null | undefined): string {
+  const texto = String(jugadaRaw ?? "").trim();
+  const matchPremio = /^10\s*[aA\/]\s*(\d+(?:[.,]\d+)?)$/.exec(texto);
+  if (matchPremio) {
+    const factor = matchPremio[1].replace(",", ".");
+    return `10A${factor}`;
+  }
+  return texto.toUpperCase().replace(/\s+/g, "");
+}
+
+/** Normaliza el código de una jugada para buscarla en `TABLA_JUGADAS` o el motor SSOT. */
+export function normalizarCodigoJugada(raw: string | null | undefined): string {
+  const normPremio = normalizarJugadaPremio(raw);
+  if (!normPremio) return "1P";
+  if (normPremio === "10/10" || normPremio === "10A10") return "PP";
+  let s = normPremio.replace(/\s+/g, "").replace(/&/g, "Y");
+  // Expandir 1/2 -> 1Y2N, 2/3 -> 2Y3N, etc.
+  s = s.replace(/^(\d+)\/(\d+)$/, (_m, p, n) => `${p}Y${n}N`);
+  return s;
+}
+
+function tramosDesdeNomenclatura(nom: Nomenclatura): Array<{ puesto: number; esNini: boolean }> {
+  if (!nom.bloques || nom.bloques.length === 0) {
+    return [{ puesto: nom.puesto ?? 1, esNini: nom.esNini }];
+  }
+  const tieneSubBloques = nom.bloques.some((b) => b.bloques && b.bloques.length > 0);
+  if (!tieneSubBloques) {
+    return nom.bloques.map((b) => ({ puesto: b.puesto ?? 1, esNini: b.esNini }));
+  }
+  const cuartos: Array<{ puesto: number; esNini: boolean }> = [];
+  for (const b of nom.bloques) {
+    if (b.bloques && b.bloques.length > 0) {
+      for (const sub of b.bloques) {
+        cuartos.push({ puesto: sub.puesto ?? 1, esNini: sub.esNini });
+      }
+    } else {
+      cuartos.push({ puesto: b.puesto ?? 1, esNini: b.esNini });
+      cuartos.push({ puesto: b.puesto ?? 1, esNini: b.esNini });
+    }
+  }
+  return cuartos;
+}
+
+/** Obtiene la regla en `TABLA_JUGADAS` o resuelve dinámicamente desde la nomenclatura SSOT. */
+export function obtenerReglaTablaJugada(codigo: string): ReglaTablaJugada | undefined {
+  const cod = normalizarCodigoJugada(codigo);
+  if (TABLA_JUGADAS[cod]) return TABLA_JUGADAS[cod];
+  const mProp = /^10A(\d+(?:\.\d+)?)$/.exec(cod);
+  if (mProp) {
+    const f = parseFloat(mProp[1]);
+    if (Number.isFinite(f) && f > 0) {
+      return {
+        codigo: cod,
+        tramos: [{ puesto: 1, esNini: false }],
+        factor10Ax: f,
+      };
+    }
+  }
+  const nom = parsearNomenclatura(cod);
+  if (nom && (nom.modalidad === "PUESTO_PURO" || nom.modalidad === "NINI" || nom.modalidad === "COMBINADA" || nom.modalidad === "COMPUESTA")) {
+    return {
+      codigo: cod,
+      tramos: tramosDesdeNomenclatura(nom),
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Busca una jugada en `TABLA_JUGADAS` reconociendo también componentes invertidos
+ * (ej. `1Y2NY1P` -> `1PY1Y2N`, `2NY1Y2N` -> `1Y2NY2N`).
+ */
+export function buscarJugadaPorComponentes(jugada: string): ReglaTablaJugada | undefined {
+  const directa = obtenerReglaTablaJugada(jugada);
+  if (directa) return directa;
+
+  const cod = normalizarCodigoJugada(jugada);
+  const partes = cod.split("Y").filter(Boolean);
+  if (partes.length === 2) {
+    const inv = `${partes[1]}Y${partes[0]}`;
+    const rInv = obtenerReglaTablaJugada(inv);
+    if (rInv) return rInv;
+  } else if (partes.length === 3) {
+    const p = partes;
+    const permuts = [
+      `${p[0]}Y${p[2]}Y${p[1]}`,
+      `${p[1]}Y${p[0]}Y${p[2]}`,
+      `${p[1]}Y${p[2]}Y${p[0]}`,
+      `${p[2]}Y${p[0]}Y${p[1]}`,
+      `${p[2]}Y${p[1]}Y${p[0]}`,
+    ];
+    for (const perm of permuts) {
+      const r = obtenerReglaTablaJugada(perm);
+      if (r) return r;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Extrae el arreglo de números de ejemplares desde cualquier formato
+ * (`"1y2"`, `"3y4"`, `"1-2"`, `"1,2"`, `"1 2"`).
+ */
+export function extraerEjemplaresMultiples(
+  caballoRaw: string | number | Array<string | number> | null | undefined
+): number[] {
+  if (Array.isArray(caballoRaw)) {
+    const nums = caballoRaw
+      .flatMap((x) => extraerEjemplaresMultiples(x))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    return [...new Set(nums)];
+  }
+  const texto = String(caballoRaw ?? "").trim();
+  if (!texto) return [];
+  const partes = texto
+    .replace(/\b(?:por|el|la|los|las|de|del)\b/gi, " ")
+    .split(/[\s,yY\-\/\*xX&]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const resultado: number[] = [];
+  for (const p of partes) {
+    if (/^\d{1,2}$/.test(p)) {
+      const n = Number(p);
+      if (Number.isFinite(n) && n > 0 && !resultado.includes(n)) {
+        resultado.push(n);
+      }
+    }
+  }
+  return resultado;
+}
+
+const ORDEN_CAMPOS_PIZARRA_SSOT = [
+  "primero",
+  "segundo",
+  "tercero",
+  "cuarto",
+  "quinto",
+  "sexto",
+  "septimo",
+  "octavo",
+] as const;
+
+/**
+ * Convierte cualquier representación de pizarra en un `Map<string, number>`
+ * donde la clave es el número de ejemplar y el valor es su posición de llegada (1..8..).
+ */
+export function construirMapaPosicionesPizarra(
+  pizarra:
+    | PizarraCarrera
+    | Map<string | number, number>
+    | Array<string | number>
+    | Record<string, unknown>
+    | null
+    | undefined
+): Map<string, number> {
+  const mapa = new Map<string, number>();
+  if (!pizarra) return mapa;
+
+  if (pizarra instanceof Map) {
+    for (const [k, v] of pizarra.entries()) {
+      const pos = Number(v);
+      if (Number.isFinite(pos) && pos > 0) {
+        mapa.set(String(Number(k)), pos);
+      }
+    }
+    return mapa;
+  }
+
+  if (Array.isArray(pizarra)) {
+    pizarra.forEach((cab, idx) => {
+      const num = Number(String(cab ?? "").trim());
+      if (Number.isFinite(num) && num > 0 && !mapa.has(String(num))) {
+        mapa.set(String(num), idx + 1);
+      }
+    });
+    return mapa;
+  }
+
+  const obj = pizarra as Record<string, unknown>;
+  let tieneCamposNombrados = false;
+  ORDEN_CAMPOS_PIZARRA_SSOT.forEach((campo, idx) => {
+    const val = obj[campo];
+    if (val !== undefined && val !== null && String(val).trim() !== "") {
+      tieneCamposNombrados = true;
+      const num = Number(String(val).trim());
+      if (Number.isFinite(num) && num > 0) {
+        mapa.set(String(num), idx + 1);
+      } else {
+        mapa.set(String(val).trim(), idx + 1);
+      }
+    }
+  });
+
+  if (!tieneCamposNombrados) {
+    for (const [k, v] of Object.entries(obj)) {
+      if (k === "empates" || k === "primero_raya") continue;
+      const pos = Number(v);
+      const cab = Number(k);
+      if (Number.isFinite(cab) && cab > 0 && Number.isFinite(pos) && pos > 0) {
+        mapa.set(String(cab), pos);
+      }
+    }
+  }
+
+  return mapa;
+}
+
+/**
+ * Regla de evaluación por la mejor posición del grupo (`getMejorPos`):
+ * Devuelve la mejor posición de llegada (la menor numéricamente) alcanzada por cualquiera de ellos.
+ * Si ninguno figura en pizarra, devuelve `99`.
+ */
+export function getMejorPos(
+  ejemplares: string | number | Array<string | number>,
+  pizarra:
+    | PizarraCarrera
+    | Map<string | number, number>
+    | Array<string | number>
+    | Record<string, unknown>
+    | null
+    | undefined
+): number {
+  const lista = extraerEjemplaresMultiples(ejemplares);
+  if (lista.length === 0) return 99;
+  const mapa = construirMapaPosicionesPizarra(pizarra);
+  const posiciones = lista.map((num) => mapa.get(String(num)) ?? 99);
+  return Math.min(...posiciones);
+}
+
+/**
+ * Calcula el riesgo exacto del Cliente 2 (dador) para una jugada (incluyendo `10Ax` / `10/x` con decimales).
+ * En `10Ax`: `riesgoCliente2 = monto * (parseFloat(factor) * 10 / 100)` = `monto * (factor / 10)`.
+ */
+export function calcularRiesgoCliente2(monto: number, jugadaRaw: string): number {
+  const m = redondearCentavos(monto);
+  if (m <= 0) return 0;
+  const norm = normalizarJugadaPremio(jugadaRaw);
+  const match = /^10A(\d+(?:\.\d+)?)$/.exec(norm);
+  if (match) {
+    const factor = parseFloat(match[1]);
+    if (Number.isFinite(factor) && factor > 0) {
+      return calcularProporcionExacta(m, factor, 10);
+    }
+  }
+  return m;
+}
+
+/**
+ * Calcula el factor multiplicador exacto de una jugada de puestos, premio o PP.
+ * Retorna valores exactos en `{1, 0.75, 0.50, 0.25, 0, -0.25, -0.50, -0.75, -1}` o factor porcentual en `10Ax`.
+ */
+export function calcularMultiplicadorJugada(
+  jugada: string,
+  mejorPos: number,
+  opts?: {
+    retirado?: boolean;
+    p2?: number;
+  }
+): number {
+  if (opts?.retirado) return 0;
+  const regla = buscarJugadaPorComponentes(jugada) ?? obtenerReglaTablaJugada(jugada);
+  if (!regla) return 0;
+
+  // Jugadas A Premio (10Ax)
+  if (regla.factor10Ax != null) {
+    const pct = regla.factor10Ax / 10;
+    if (opts?.p2 != null) {
+      if (mejorPos < opts.p2) return pct;
+      if (opts.p2 < mejorPos) return -1;
+      return 0;
+    }
+    if (mejorPos === 1) return pct;
+    return -1;
+  }
+
+  // Jugadas PP (Para-Para / Mano a Mano)
+  if (regla.esPP || normalizarCodigoJugada(jugada) === "PP") {
+    if (opts?.p2 != null) {
+      if (mejorPos < opts.p2) return 1;
+      if (opts.p2 < mejorPos) return -1;
+      return 0;
+    }
+    if (mejorPos === 1) return 1;
+    return -1;
+  }
+
+  // Jugadas de puestos estándar de la escalera (1P..6Y7NY7N)
+  const tramos = regla.tramos;
+  if (!tramos || tramos.length === 0) return 0;
+
+  let suma = 0;
+  for (const t of tramos) {
+    if (t.esNini) {
+      if (mejorPos < t.puesto) suma += 1;
+      else if (mejorPos === t.puesto) suma += 0;
+      else suma -= 1;
+    } else {
+      if (mejorPos <= t.puesto) suma += 1;
+      else suma -= 1;
+    }
+  }
+
+  return round2(suma / tramos.length);
+}
+
+/**
+ * Evalúa una jugada de puestos o a premio (`1P`..`6Y7NY7N`, `PP`, `10Ax`, `10/x`)
+ * soportando múltiples ejemplares (ej. `1P` con `1y2`, `2P` con `3y4`) y devolviendo
+ * el resultado exacto de liquidación para Cliente 1 (Quien Juega) y Cliente 2 (Quien Da).
+ */
+export function logicaGanancias(params: {
+  jugada: string;
+  caballo: string | number | Array<string | number>;
+  monto: number;
+  pizarra:
+    | PizarraCarrera
+    | Map<string | number, number>
+    | Array<string | number>
+    | Record<string, unknown>;
+  comisionPct?: number;
+  retirados?: Array<string | number>;
+}): {
+  codigoNormalizado: string;
+  ejemplares: number[];
+  mejorPos: number;
+  ganaJugador1: boolean;
+  ganaJugador2: boolean;
+  empate: boolean;
+  riesgoJugador1: number;
+  riesgoJugador2: number;
+  netoJugador1: number;
+  netoJugador2: number;
+} {
+  const codigoNormalizado = normalizarCodigoJugada(params.jugada);
+  const ejemplares = extraerEjemplaresMultiples(params.caballo);
+  const mapa = construirMapaPosicionesPizarra(params.pizarra);
+  const comPct = params.comisionPct ?? 5;
+  const monto = redondearCentavos(params.monto);
+
+  const regla = buscarJugadaPorComponentes(codigoNormalizado) ?? obtenerReglaTablaJugada(codigoNormalizado);
+  const factorRival = regla?.factor10Ax != null ? regla.factor10Ax : 10;
+  const riesgoJugador1 = monto;
+  const riesgoJugador2 =
+    factorRival !== 10 ? calcularProporcionExacta(monto, factorRival, 10) : monto;
+
+  // Verificación de Retirados (Regla 5):
+  const pizarraObj = params.pizarra as Record<string, unknown>;
+  const retiradosRaw = params.retirados ?? (Array.isArray(pizarraObj?.retirados) ? pizarraObj.retirados : []);
+  const listaRetirados = retiradosRaw.map((x) =>
+    Number(String(x).trim().replace(/^#/, ""))
+  );
+  const algunoRetirado = ejemplares.some((e) => listaRetirados.includes(e));
+
+  if (algunoRetirado) {
+    return {
+      codigoNormalizado,
+      ejemplares,
+      mejorPos: 99,
+      ganaJugador1: false,
+      ganaJugador2: false,
+      empate: true,
+      riesgoJugador1: 0,
+      riesgoJugador2: 0,
+      netoJugador1: 0,
+      netoJugador2: 0,
+    };
+  }
+
+  // Parseo de caballos si es mano a mano (AxB)
+  const caballoStr =
+    typeof params.caballo === "string"
+      ? params.caballo
+      : Array.isArray(params.caballo)
+        ? params.caballo.join("y")
+        : String(params.caballo ?? "");
+
+  const partesManoAMano = caballoStr.split(/\s*(?:x|\*|\bpor\b)\s*/i);
+  const esMatchup = partesManoAMano.length >= 2 && (regla?.esPP || regla?.factor10Ax != null);
+
+  if (esMatchup) {
+    const c1 = extraerEjemplaresMultiples(partesManoAMano[0]);
+    const c2 = extraerEjemplaresMultiples(partesManoAMano[1]);
+    const p1 = c1.length ? Math.min(...c1.map((n) => mapa.get(String(n)) ?? 99)) : 99;
+    const p2 = c2.length ? Math.min(...c2.map((n) => mapa.get(String(n)) ?? 99)) : 99;
+    const mult = calcularMultiplicadorJugada(codigoNormalizado, p1, { p2 });
+
+    if (mult > 0) {
+      const brutoGanado = redondearCentavos(riesgoJugador2 * mult);
+      const com = calcularComisionExacta(brutoGanado, comPct);
+      const neto1 = restarDinero(brutoGanado, com);
+      return {
+        codigoNormalizado,
+        ejemplares,
+        mejorPos: p1,
+        ganaJugador1: true,
+        ganaJugador2: false,
+        empate: false,
+        riesgoJugador1,
+        riesgoJugador2,
+        netoJugador1: neto1,
+        netoJugador2: -brutoGanado,
+      };
+    } else if (mult < 0) {
+      const brutoGanadoDa = riesgoJugador1;
+      const com = calcularComisionExacta(brutoGanadoDa, comPct);
+      const neto2 = restarDinero(brutoGanadoDa, com);
+      return {
+        codigoNormalizado,
+        ejemplares,
+        mejorPos: p1,
+        ganaJugador1: false,
+        ganaJugador2: true,
+        empate: false,
+        riesgoJugador1,
+        riesgoJugador2,
+        netoJugador1: -brutoGanadoDa,
+        netoJugador2: neto2,
+      };
+    } else {
+      return {
+        codigoNormalizado,
+        ejemplares,
+        mejorPos: p1,
+        ganaJugador1: false,
+        ganaJugador2: false,
+        empate: true,
+        riesgoJugador1,
+        riesgoJugador2,
+        netoJugador1: 0,
+        netoJugador2: 0,
+      };
+    }
+  }
+
+  // Jugada posicional de puestos o proporción sobre c1
+  const mejorPos = getMejorPos(ejemplares, mapa);
+  const tramos = regla?.tramos ?? [{ puesto: 1, esNini: false }];
+  const nTramos = tramos.length;
+
+  const centavosJuegaTotal = aCentavos(riesgoJugador1);
+  const centavosDaTotal = aCentavos(riesgoJugador2);
+  let centavosBrutoJuega = 0;
+  let centavosBrutoDa = 0;
+
+  for (let i = 0; i < nTramos; i++) {
+    const t = tramos[i];
+    const cJ =
+      i === nTramos - 1
+        ? centavosJuegaTotal - Math.floor(centavosJuegaTotal / nTramos) * (nTramos - 1)
+        : Math.floor(centavosJuegaTotal / nTramos);
+    const cD =
+      i === nTramos - 1
+        ? centavosDaTotal - Math.floor(centavosDaTotal / nTramos) * (nTramos - 1)
+        : Math.floor(centavosDaTotal / nTramos);
+
+    if (t.esNini) {
+      if (mejorPos < t.puesto) {
+        centavosBrutoJuega += cD;
+      } else if (mejorPos === t.puesto) {
+        // Empate en nini
+      } else {
+        centavosBrutoDa += cJ;
+      }
+    } else {
+      if (mejorPos <= t.puesto) {
+        centavosBrutoJuega += cD;
+      } else {
+        centavosBrutoDa += cJ;
+      }
+    }
+  }
+
+  const netoBrutoCentavos = centavosBrutoJuega - centavosBrutoDa;
+  if (netoBrutoCentavos > 0) {
+    const brutoGanado = deCentavos(netoBrutoCentavos);
+    const com = calcularComisionExacta(brutoGanado, comPct);
+    const neto1 = restarDinero(brutoGanado, com);
+    return {
+      codigoNormalizado,
+      ejemplares,
+      mejorPos,
+      ganaJugador1: true,
+      ganaJugador2: false,
+      empate: false,
+      riesgoJugador1,
+      riesgoJugador2,
+      netoJugador1: neto1,
+      netoJugador2: -brutoGanado,
+    };
+  } else if (netoBrutoCentavos < 0) {
+    const brutoGanadoDa = deCentavos(-netoBrutoCentavos);
+    const com = calcularComisionExacta(brutoGanadoDa, comPct);
+    const neto2 = restarDinero(brutoGanadoDa, com);
+    return {
+      codigoNormalizado,
+      ejemplares,
+      mejorPos,
+      ganaJugador1: false,
+      ganaJugador2: true,
+      empate: false,
+      riesgoJugador1,
+      riesgoJugador2,
+      netoJugador1: -brutoGanadoDa,
+      netoJugador2: neto2,
+    };
+  }
+
+  return {
+    codigoNormalizado,
+    ejemplares,
+    mejorPos,
+    ganaJugador1: false,
+    ganaJugador2: false,
+    empate: true,
+    riesgoJugador1,
+    riesgoJugador2,
+    netoJugador1: 0,
+    netoJugador2: 0,
+  };
+}
 
 export interface ValidationResult {
   ok: boolean;
@@ -668,6 +1367,30 @@ export function liquidarPuestos(
   }
 
   const r = resolverJugada(nom, String(t.caballo ?? ""));
+
+  // Verificación de ejemplares retirados (Regla 5):
+  const pizarraObj = t.pizarra as Record<string, unknown> | undefined;
+  const retiradosRaw = (t as Record<string, unknown>).retirados ?? pizarraObj?.retirados;
+  const listaRetirados = (Array.isArray(retiradosRaw) ? retiradosRaw : []).map((x) =>
+    String(x).trim().replace(/^#/, "").replace(/^0+(?=\d)/, "")
+  );
+  if (listaRetirados.length > 0) {
+    const todosCaballos = [...r.ladoA, ...r.ladoB].map((c) =>
+      String(c).trim().replace(/^#/, "").replace(/^0+(?=\d)/, "")
+    );
+    const hayRetirado = todosCaballos.some((c) => listaRetirados.includes(c));
+    if (hayRetirado) {
+      return finalizar(
+        false,
+        `ANULADA / RETIRADO: Uno o más ejemplares apostados figuran como retirados. Se devuelve el capital íntegro.`,
+        t.monto,
+        t.monto,
+        tasa,
+        0
+      );
+    }
+  }
+
   const mapa = posicionesDePizarra(t.pizarra);
   const empate1 = hayEmpateEn(t.pizarra, 1);
   const bote = boteDe(t.monto, r.proporcion);
@@ -975,6 +1698,14 @@ export const Puestos = {
   evaluarPorPosicion: evaluarPuestoPorPosicion,
   aplicarComision,
   escalera: ESCALERA_PROGRESION_PUESTOS,
+  tabla: TABLA_JUGADAS,
+  multiplicador: calcularMultiplicadorJugada,
+  logicaGanancias,
+  normalizarPremio: normalizarJugadaPremio,
+  normalizarCodigo: normalizarCodigoJugada,
+  extraerEjemplares: extraerEjemplaresMultiples,
+  mejorPos: getMejorPos,
+  riesgoCliente2: calcularRiesgoCliente2,
 };
 
 /* El nombre canonico es "puestos". Los alias se conservan para que cualquier

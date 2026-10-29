@@ -6,10 +6,27 @@ import {
   parsearNomenclatura,
   validarPuesto,
   evaluarPuestoPorPosicion,
+  TABLA_JUGADAS,
+  calcularMultiplicadorJugada,
+  extraerEjemplaresMultiples,
+  getMejorPos,
+  normalizarCodigoJugada,
+  normalizarJugadaPremio,
+  logicaGanancias,
   type Nomenclatura,
 } from "@/features/motores/lib/puestos";
 
-export { validarPuesto, evaluarPuestoPorPosicion };
+export {
+  validarPuesto,
+  evaluarPuestoPorPosicion,
+  TABLA_JUGADAS,
+  calcularMultiplicadorJugada,
+  extraerEjemplaresMultiples,
+  getMejorPos,
+  normalizarCodigoJugada,
+  normalizarJugadaPremio,
+  logicaGanancias,
+};
 
 export type MontosPorModalidad = Record<string, number>;
 

@@ -27,239 +27,32 @@ import {
   getMejorPos,
   extraerEjemplaresMultiples,
   calcularRiesgoCliente2,
-} from "@/features/liquidacion/lib/puestos";
-import { parsearNomenclatura, type Nomenclatura } from "@/features/motores/lib/puestos";
+  TABLA_JUGADAS,
+  type ReglaTablaJugada,
+  normalizarCodigoJugada,
+  obtenerReglaTablaJugada,
+  buscarJugadaPorComponentes,
+  calcularMultiplicadorJugada,
+  parsearNomenclatura,
+  type Nomenclatura,
+} from "@/features/motores/lib/puestos";
 
 export {
   normalizarJugadaPremio,
   getMejorPos,
   extraerEjemplaresMultiples,
   calcularRiesgoCliente2,
+  TABLA_JUGADAS,
+  type ReglaTablaJugada,
+  normalizarCodigoJugada,
+  obtenerReglaTablaJugada,
+  buscarJugadaPorComponentes,
+  calcularMultiplicadorJugada,
 };
 
 export type RolJugada = "juega" | "da";
 
 export type ModalidadCruceCarrera = "con_cruces" | "sin_cruces";
-
-export type ReglaTablaJugada = {
-  codigo: string;
-  /** Tramos posicionales: cada tramo define [puestoLimite, esNini]. */
-  tramos: Array<{ puesto: number; esNini: boolean }>;
-  /** Si es proporción 10Ax, numerador del lado que da (ej. 8 en 10A8). */
-  factor10Ax?: number;
-  esPP?: boolean;
-};
-
-/**
- * Tabla oficial de jugadas de puestos y proporciones (`1P` hasta `6Y7NY7N`, `PP` y `10A1`..`10A9.5`).
- * Cumple Regla 1 (sin 1N), Regla 2 (Individuales), Regla 3 (Combinadas 50%/50%) y Regla 4 (Bloques 75%/25% y 25%/75%).
- */
-export const TABLA_JUGADAS: Record<string, ReglaTablaJugada> = (() => {
-  const tabla: Record<string, ReglaTablaJugada> = {};
-  const registrarConAliases = (regla: ReglaTablaJugada, aliases: string[]) => {
-    tabla[regla.codigo] = regla;
-    for (const al of aliases) {
-      tabla[al] = regla;
-    }
-  };
-
-  for (let p = 1; p <= 6; p++) {
-    const n = p + 1;
-    // Individuales: pP, nN, nP
-    registrarConAliases(
-      {
-        codigo: `${p}P`,
-        tramos: [{ puesto: p, esNini: false }],
-      },
-      []
-    );
-    registrarConAliases(
-      {
-        codigo: `${n}N`,
-        tramos: [{ puesto: n, esNini: true }],
-      },
-      []
-    );
-    registrarConAliases(
-      {
-        codigo: `${n}P`,
-        tramos: [{ puesto: n, esNini: false }],
-      },
-      []
-    );
-
-    // Combinadas (50% / 50% -> 2 tramos):
-    // 1) p/nN = pYnN = pP Y nN (50% pP + 50% nN)
-    registrarConAliases(
-      {
-        codigo: `${p}Y${n}N`,
-        tramos: [
-          { puesto: p, esNini: false },
-          { puesto: n, esNini: true },
-        ],
-      },
-      [`${p}/${n}N`, `${p}PY${n}N`, `${p}P/${n}N`]
-    );
-
-    // 2) n/nN = nYnN = nN/nP = nP/nN = nNYnP = nPYnN (50% nN + 50% nP)
-    registrarConAliases(
-      {
-        codigo: `${n}Y${n}N`,
-        tramos: [
-          { puesto: n, esNini: true },
-          { puesto: n, esNini: false },
-        ],
-      },
-      [`${n}/${n}N`, `${n}N/${n}P`, `${n}P/${n}N`, `${n}NY${n}P`, `${n}PY${n}N`, `${n}Y${n}`, `${n}/${n}`]
-    );
-
-    // 3) p/n = p/nP = pYn = pYnP = pPYnP (50% pP + 50% nP)
-    registrarConAliases(
-      {
-        codigo: `${p}Y${n}P`,
-        tramos: [
-          { puesto: p, esNini: false },
-          { puesto: n, esNini: false },
-        ],
-      },
-      [`${p}/${n}P`, `${p}Y${n}`, `${p}/${n}`, `${p}PY${n}P`, `${p}P/${n}P`, `${p}PY${n}`]
-    );
-
-    // Bloques en Escalera (Regla 4 -> 4 cuartos de 25% cada uno: 75%/25% y 25%/75%):
-    // Escalón 1: pP Y p/nN -> 75% pP + 25% nN
-    registrarConAliases(
-      {
-        codigo: `${p}PY${p}Y${n}N`,
-        tramos: [
-          { puesto: p, esNini: false },
-          { puesto: p, esNini: false },
-          { puesto: p, esNini: false },
-          { puesto: n, esNini: true },
-        ],
-      },
-      [`${p}PY${p}/${n}N`, `${p}Y${n}NY${p}P`, `${p}/${n}NY${p}P`]
-    );
-
-    // Escalón 2: p/nN Y nN -> 25% pP + 75% nN
-    registrarConAliases(
-      {
-        codigo: `${p}Y${n}NY${n}N`,
-        tramos: [
-          { puesto: p, esNini: false },
-          { puesto: n, esNini: true },
-          { puesto: n, esNini: true },
-          { puesto: n, esNini: true },
-        ],
-      },
-      [`${p}/${n}NY${n}N`, `${n}NY${p}Y${n}N`, `${n}NY${p}/${n}N`, `${p}/${n}Y${n}N`, `${p}Y${n}Y${n}N`]
-    );
-
-    // Escalón 3: nN Y n/nN -> 75% nN + 25% nP
-    registrarConAliases(
-      {
-        codigo: `${n}NY${n}Y${n}N`,
-        tramos: [
-          { puesto: n, esNini: true },
-          { puesto: n, esNini: true },
-          { puesto: n, esNini: true },
-          { puesto: n, esNini: false },
-        ],
-      },
-      [`${n}NY${n}/${n}N`, `${n}Y${n}NY${n}N`, `${n}/${n}NY${n}N`, `${n}NY${n}N/${n}P`, `${n}NY${n}NY${n}P`]
-    );
-
-    // Escalón 4: n/nN Y nP -> 25% nN + 75% nP
-    registrarConAliases(
-      {
-        codigo: `${n}Y${n}NY${n}P`,
-        tramos: [
-          { puesto: n, esNini: true },
-          { puesto: n, esNini: false },
-          { puesto: n, esNini: false },
-          { puesto: n, esNini: false },
-        ],
-      },
-      [`${n}/${n}NY${n}P`, `${n}PY${n}Y${n}N`, `${n}PY${n}/${n}N`, `${n}N/${n}PY${n}P`, `${n}NY${n}PY${n}P`]
-    );
-  }
-
-  tabla["PP"] = {
-    codigo: "PP",
-    tramos: [{ puesto: 1, esNini: false }],
-    esPP: true,
-  };
-
-  const factores = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
-  for (const f of factores) {
-    const keyA = `10A${f}`;
-    const keySlash = `10/${f}`;
-    const regla: ReglaTablaJugada = {
-      codigo: keyA,
-      tramos: [{ puesto: 1, esNini: false }],
-      factor10Ax: f,
-    };
-    tabla[keyA] = regla;
-    tabla[keySlash] = regla;
-  }
-
-  return tabla;
-})();
-
-/** Normaliza el código de una jugada para buscarla en `TABLA_JUGADAS`. */
-export function normalizarCodigoJugada(raw: string | null | undefined): string {
-  const normPremio = normalizarJugadaPremio(raw);
-  if (!normPremio) return "1P";
-  if (normPremio === "10/10" || normPremio === "10A10") return "PP";
-  return normPremio.replace(/\s+/g, "").replace(/&/g, "Y");
-}
-
-function tramosDesdeNomenclatura(nom: Nomenclatura): Array<{ puesto: number; esNini: boolean }> {
-  if (!nom.bloques || nom.bloques.length === 0) {
-    return [{ puesto: nom.puesto ?? 1, esNini: nom.esNini }];
-  }
-  const tieneSubBloques = nom.bloques.some((b) => b.bloques && b.bloques.length > 0);
-  if (!tieneSubBloques) {
-    return nom.bloques.map((b) => ({ puesto: b.puesto ?? 1, esNini: b.esNini }));
-  }
-  // Jugada en Bloque (50% Individual + 50% Combinada -> 2 cuartos para la hoja y 1 cuarto para cada sub-hoja)
-  const cuartos: Array<{ puesto: number; esNini: boolean }> = [];
-  for (const b of nom.bloques) {
-    if (b.bloques && b.bloques.length > 0) {
-      for (const sub of b.bloques) {
-        cuartos.push({ puesto: sub.puesto ?? 1, esNini: sub.esNini });
-      }
-    } else {
-      cuartos.push({ puesto: b.puesto ?? 1, esNini: b.esNini });
-      cuartos.push({ puesto: b.puesto ?? 1, esNini: b.esNini });
-    }
-  }
-  return cuartos;
-}
-
-/** Obtiene la regla en `TABLA_JUGADAS` o resuelve dinámicamente desde el SSOT (`puestos.ts`). */
-export function obtenerReglaTablaJugada(codigo: string): ReglaTablaJugada | undefined {
-  const cod = normalizarCodigoJugada(codigo);
-  if (TABLA_JUGADAS[cod]) return TABLA_JUGADAS[cod];
-  const mProp = /^10A(\d+(?:\.\d+)?)$/.exec(cod);
-  if (mProp) {
-    const f = parseFloat(mProp[1]);
-    if (Number.isFinite(f) && f > 0) {
-      return {
-        codigo: cod,
-        tramos: [{ puesto: 1, esNini: false }],
-        factor10Ax: f,
-      };
-    }
-  }
-  const nom = parsearNomenclatura(codigo);
-  if (nom && (nom.modalidad === "PUESTO_PURO" || nom.modalidad === "NINI" || nom.modalidad === "COMBINADA" || nom.modalidad === "COMPUESTA")) {
-    return {
-      codigo: cod,
-      tramos: tramosDesdeNomenclatura(nom),
-    };
-  }
-  return undefined;
-}
 
 /** Normaliza el nombre de un cliente para cruces e identificación. */
 export function normalizarNombreCliente(nombre: unknown): string {
