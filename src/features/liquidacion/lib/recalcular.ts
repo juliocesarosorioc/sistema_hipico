@@ -37,7 +37,12 @@ import type { Remate } from "@/features/remates/lib/core";
 import { editarJugada, anularJugada, type EditablesJugada } from "@/features/jugadas/lib/jugadas";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 import { cargarOpcionesCrucesPuestos } from "@/features/gestion/lib/cruces-carrera";
-import { sincronizarSaldosRealesClientes } from "@/features/saldos/lib/contabilidad-central";
+import {
+  sincronizarSaldosRealesClientes,
+  calcularIncentivoCarreraCliente,
+  type TicketContableRaw,
+} from "@/features/saldos/lib/contabilidad-central";
+import { restarDinero, sumarDinero } from "@/shared/lib/dinero";
 
 export { sincronizarSaldosRealesClientes };
 
@@ -186,6 +191,51 @@ export async function revertirLiquidacionCarrera(opts: {
     );
   }
   await Promise.all(updates);
+
+  // ── REVERSIÓN SIMÉTRICA DE INCENTIVOS SILENCIOSOS CARRERA A CARRERA ──
+  const clientesReversion = [
+    ...new Set(
+      decisiones
+        .map((d) => (d.fila as Record<string, unknown>).cliente_juega_id)
+        .filter((id): id is string | number => id != null)
+    ),
+  ];
+
+  if (clientesReversion.length > 0) {
+    try {
+      const { data: dbClientes } = await sdb
+        .from("clientes")
+        .select("id, nombre, saldo_actual, devolucion")
+        .in("id", clientesReversion as string[]);
+
+      if (dbClientes && dbClientes.length > 0) {
+        for (const cli of dbClientes as Array<Record<string, unknown>>) {
+          const devPct = Math.max(0, Number(cli.devolucion) || 0);
+          if (devPct <= 0) continue;
+
+          const ticketsCli: TicketContableRaw[] = decisiones
+            .filter((d) => String((d.fila as Record<string, unknown>).cliente_juega_id) === String(cli.id))
+            .map((d) => ({
+              ...(d.fila as unknown as TicketContableRaw),
+              estado: !d.res.ok && d.res.totalClienteNeto > 0 ? "Retirado" : d.res.ok ? "Ganador" : "Perdedor",
+              monto_decidido: d.res.ok ? sumarDinero(d.res.totalClienteNeto, d.res.gananciaCasa) : (((d.fila as Record<string, unknown>).monto_jugado as number) ?? 0),
+            }));
+
+          const inc = calcularIncentivoCarreraCliente(ticketsCli, devPct);
+          if (inc > 0) {
+            const actual = NUM(cli.saldo_actual);
+            const nuevoSaldo = restarDinero(actual, inc);
+            await sdb
+              .from("clientes")
+              .update({ saldo_actual: nuevoSaldo })
+              .eq("id", cli.id as never);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Error revirtiendo incentivos silenciosos en carrera:", e);
+    }
+  }
   return {
     ok: errores.length === 0,
     motivo: `Revertidos ${revertidos} ticket(s) · $${revertidoTotal.toFixed(2)} devuelto a los clientes.`,

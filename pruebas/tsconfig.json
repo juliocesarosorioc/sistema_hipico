@@ -150,6 +150,7 @@
     "../src/features/motores/lib/wps-incentivos.ts",
     "./wps-incentivos-venezuela.test.ts",
     "../src/features/contabilidad/lib/plan-cuentas.ts",
-    "./plan-cuentas-partida-doble.test.ts"
+    "./plan-cuentas-partida-doble.test.ts",
+    "./incentivos-carrera-silenciosos.test.ts"
   ]
 }

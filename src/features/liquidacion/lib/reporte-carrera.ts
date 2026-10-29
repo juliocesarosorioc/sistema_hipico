@@ -307,7 +307,14 @@ export function armarReporteCarrera(
   const filtro: FiltroModalidadTiempo = opciones?.filtroModalidad ?? "TODAS";
 
   for (const f of c.filas) {
-    if (f.rol === "CRUCE") continue;
+    if (
+      f.rol === "CRUCE" ||
+      (f.tipoJugada as string) === "INCENTIVO" ||
+      (f.tipoJugada as string) === "DEVOLUCION" ||
+      /INCENTIVO|DEVOLUCION/i.test(f.jugada ?? "")
+    ) {
+      continue;
+    }
     if (!pasaFiltroModalidad({ es_adelantada: f.esAdelantada }, filtro)) continue;
     const resultado = f.resultado; // number | null (null = pendiente)
     const claveCliente = registrarNombreCliente(f.cliente);

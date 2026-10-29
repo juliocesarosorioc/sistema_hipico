@@ -13,7 +13,19 @@ import { resumenDatosPago, type DatosPago } from "@/shared/lib/vzla";
 import { exigirCapacidad, esPrincipalVigente, grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
 import { resumenFormasPago, type FormaPago } from "@/features/clientes/lib/formasPago";
 import { redondearCentavos } from "@/shared/lib/dinero";
-import { sincronizarSaldosRealesClientes, esJugadaPuestosParaIncentivo } from "@/features/saldos/lib/contabilidad-central";
+import {
+  sincronizarSaldosRealesClientes,
+  esJugadaPuestosParaIncentivo,
+  calcularIncentivoCarreraCliente,
+  calcularResultadoLiquidacionClienteCarrera,
+  type ResultadoLiquidacionClienteCarrera,
+} from "@/features/saldos/lib/contabilidad-central";
+
+export {
+  calcularIncentivoCarreraCliente,
+  calcularResultadoLiquidacionClienteCarrera,
+  type ResultadoLiquidacionClienteCarrera,
+};
 import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { extraerFechaCarreraTicket } from "@/features/liquidacion/lib/fecha";
 import {

@@ -34,6 +34,21 @@ import {
 } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { esJugadaDePuestos } from "@/features/betting/lib/bettingEngine";
 
+export interface ResultadoLiquidacionClienteCarrera {
+  clienteId: string;
+  clienteNombre: string;
+  carreraId?: string | null;
+  carreraNumero?: number | null;
+  hipodromo?: string | null;
+  fecha?: string | null;
+  /** Ganancias netas menos pérdidas de las jugadas de la carrera (+ reembolso por cruce si aplica). Consumido por el Resumen de Jugadas de la Carrera. */
+  netoJugadasCarrera: number;
+  /** Monto de incentivo/devolución generado en esa carrera específica. */
+  incentivoCarrera: number;
+  /** Monto total sumado al saldo contable real y disponible del cliente (netoJugadasCarrera + incentivoCarrera). */
+  impactoSaldoTotalCarrera: number;
+}
+
 export type ResumenContableCliente = {
   clienteId: string;
   nombre: string;
@@ -47,6 +62,9 @@ export type ResumenContableCliente = {
   jugadasGanadasNeto: number;
   devolucionIncentivo: number;
   jugadasPerdidas: number;
+  netoJugadasCarrera: number;
+  incentivoCarrera: number;
+  impactoSaldoTotalCarrera: number;
   saldoContable: number;
   avalVigente: number;
   riesgoEnCurso: number;
@@ -249,7 +267,7 @@ export function calcularResumenContableCliente(params: {
 
     const est = String(t.estado ?? "PENDIENTE").trim().toUpperCase();
     const monto = redondearCentavos(t.monto_jugado ?? t.monto ?? 0);
-    const baseDecidida = redondearCentavos(t.monto_decidido ?? t.monto_jugado ?? t.monto ?? 0);
+    const baseDecidida = monto > 0 ? monto : redondearCentavos(t.monto_decidido ?? 0);
     const nombreJugRaw = String(t.nombre_jugada ?? t.jugada ?? "").trim().toUpperCase();
 
     // Regla de Negocio: La devolución/incentivo se calcula en base al monto decidido gane o pierda.
@@ -425,14 +443,15 @@ export function calcularResumenContableCliente(params: {
 
   const saldoInicial = redondearCentavos(params.saldoInicial ?? 0);
 
+  const netoJugadasCarrera = restarDinero(jugadasGanadasNeto, jugadasPerdidas);
+  const incentivoCarrera = devolucionIncentivo;
+  const impactoSaldoTotalCarrera = sumarDinero(netoJugadasCarrera, incentivoCarrera);
+
   // Fórmula contable única auditable:
-  // saldoContable = saldoInicial + depositos - retiros + jugadasGanadasNeto - jugadasPerdidas + devolucionIncentivo
+  // saldoContable = saldoInicial + depositos - retiros + impactoSaldoTotalCarrera (netoJugadasCarrera + incentivoCarrera)
   let saldoContable = sumarDinero(
-    sumarDinero(
-      sumarDinero(saldoInicial, restarDinero(depositos, retiros)),
-      restarDinero(jugadasGanadasNeto, jugadasPerdidas)
-    ),
-    devolucionIncentivo
+    sumarDinero(saldoInicial, restarDinero(depositos, retiros)),
+    impactoSaldoTotalCarrera
   );
 
   let reparadoAutomaticamente = false;
@@ -481,6 +500,9 @@ export function calcularResumenContableCliente(params: {
     reembolsoCruce,
     comisionesCobradas,
     jugadasGanadasNeto,
+    netoJugadasCarrera,
+    incentivoCarrera,
+    impactoSaldoTotalCarrera,
     devolucionIncentivo,
     jugadasPerdidas,
     saldoContable,
@@ -490,6 +512,88 @@ export function calcularResumenContableCliente(params: {
     jugadasEnVivoCount,
     jugadasAdelantadasCount,
     reparadoAutomaticamente,
+  };
+}
+
+/**
+ * Calcula de manera pura el incentivo/devolución ganado por un cliente en una carrera
+ * específica sobre el monto decidido en jugadas de puestos (gane o pierda).
+ */
+export function calcularIncentivoCarreraCliente(
+  ticketsDeCarrera: TicketContableRaw[],
+  devolucionPct: number | string | null = 0
+): number {
+  const pct = Math.max(0, Number(devolucionPct) || 0);
+  if (pct <= 0 || !ticketsDeCarrera?.length) return 0;
+
+  let montoDecididoCentavos = 0;
+  for (const t of ticketsDeCarrera) {
+    if (esJugadaAnuladaOExcluida(t)) continue;
+    const est = String(t.estado ?? "").trim().toUpperCase();
+    const esDecidida =
+      est === "GANADOR" ||
+      est === "GANO" ||
+      est === "SOLUCIONADO" ||
+      est === "PERDEDOR" ||
+      est === "PERDIO";
+    if (!esDecidida) continue;
+
+    const nombreJugRaw = String(t.nombre_jugada ?? t.jugada ?? "").trim().toUpperCase();
+    if (
+      !esJugadaPuestosParaIncentivo(
+        nombreJugRaw,
+        (t as Record<string, unknown>).modalidad as string,
+        (t as Record<string, unknown>).origen as string
+      )
+    ) {
+      continue;
+    }
+
+    const monto = redondearCentavos(t.monto_jugado ?? t.monto ?? 0);
+    const baseDecidida = monto > 0 ? monto : redondearCentavos(t.monto_decidido ?? 0);
+    montoDecididoCentavos += aCentavos(baseDecidida);
+  }
+
+  return calcularComisionExacta(deCentavos(montoDecididoCentavos), pct);
+}
+
+/**
+ * Separa explícitamente el resultado de liquidación de un cliente en una carrera:
+ * - `netoJugadasCarrera`: resultado puro de las jugadas (+ cruces). Consumido por el Resumen de Jugadas.
+ * - `incentivoCarrera`: bonificación acumulada silenciosa en esa carrera.
+ * - `impactoSaldoTotalCarrera`: impacto real sumado al saldo/disponible del usuario.
+ */
+export function calcularResultadoLiquidacionClienteCarrera(params: {
+  clienteId: string | number;
+  clienteNombre: string;
+  carreraId?: string | null;
+  carreraNumero?: number | null;
+  hipodromo?: string | null;
+  fecha?: string | null;
+  devolucionPct?: number | string | null;
+  ticketsDeCarrera: TicketContableRaw[];
+  modalidadCruces?: ModalidadCruceCarrera | boolean;
+  comisionPctDefault?: number;
+}): ResultadoLiquidacionClienteCarrera {
+  const resumen = calcularResumenContableCliente({
+    clienteId: params.clienteId,
+    nombre: params.clienteNombre,
+    tickets: params.ticketsDeCarrera,
+    devolucionPct: params.devolucionPct,
+    modalidadCruces: params.modalidadCruces,
+    comisionPctDefault: params.comisionPctDefault,
+  });
+
+  return {
+    clienteId: String(params.clienteId),
+    clienteNombre: params.clienteNombre,
+    carreraId: params.carreraId ?? null,
+    carreraNumero: params.carreraNumero ?? null,
+    hipodromo: params.hipodromo ?? null,
+    fecha: params.fecha ?? null,
+    netoJugadasCarrera: resumen.netoJugadasCarrera,
+    incentivoCarrera: resumen.incentivoCarrera,
+    impactoSaldoTotalCarrera: resumen.impactoSaldoTotalCarrera,
   };
 }
 
@@ -687,12 +791,19 @@ export async function sincronizarSaldosRealesClientes<
     const saldoRaw = c.saldo_actual ?? c.saldo ?? 0;
     const saldoNum = redondearCentavos(saldoRaw);
 
+    const devolucionRaw =
+      (c as Record<string, unknown>).devolucion ??
+      (c as Record<string, unknown>).devolucion_porcentaje ??
+      0;
+    const devolucionPct = Math.max(0, Number(devolucionRaw) || 0);
+
     const resumen = calcularResumenContableCliente({
       clienteId: c.id,
       nombre,
       grupoId: c.grupo_id,
       aval: c.aval,
       saldoEnBase: saldoNum,
+      devolucionPct,
       tickets,
     });
 

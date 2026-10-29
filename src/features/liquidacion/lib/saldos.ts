@@ -25,9 +25,15 @@ import {
 } from "@/features/motores/lib/puestos";
 import { cargarOpcionesCrucesPuestos } from "@/features/gestion/lib/cruces-carrera";
 import { redondearCentavos, sumarDinero, restarDinero, formatearMontoSinMoneda } from "@/shared/lib/dinero";
-import { calcularEstadoCuentaCliente, calcularResumenContableCliente } from "@/features/saldos/lib/contabilidad-central";
+import {
+  calcularEstadoCuentaCliente,
+  calcularResumenContableCliente,
+  calcularIncentivoCarreraCliente,
+  type TicketContableRaw,
+} from "@/features/saldos/lib/contabilidad-central";
+import { generarAsientoDevolucionIncentivo } from "@/features/contabilidad/lib/plan-cuentas";
 
-export { calcularEstadoCuentaCliente, calcularResumenContableCliente };
+export { calcularEstadoCuentaCliente, calcularResumenContableCliente, calcularIncentivoCarreraCliente };
 
 export type LiquidarSaldosInput = {
   hipodromo: string;
@@ -526,6 +532,67 @@ export async function aplicarLiquidacionSaldos(
   });
 
   await Promise.all(updates);
+
+  // ── ACREDITACIÓN SILENCIOSA DE INCENTIVOS CARRERA A CARRERA ──
+  // Cada vez que se liquida una carrera, se calcula el incentivo ganado por cada
+  // cliente en esa carrera específica y se suma de inmediato a su saldo real.
+  const clientesParticipantes = [
+    ...new Set(
+      decidibles
+        .map((d) => d.fila.cliente_juega_id)
+        .filter((id): id is string | number => id != null)
+    ),
+  ];
+
+  if (clientesParticipantes.length > 0) {
+    try {
+      const { data: dbClientes } = await sdb
+        .from("clientes")
+        .select("id, nombre, saldo_actual, devolucion, grupo_id")
+        .in("id", clientesParticipantes as string[]);
+
+      if (dbClientes && dbClientes.length > 0) {
+        for (const cli of dbClientes as Array<Record<string, unknown>>) {
+          const devPct = Math.max(0, Number(cli.devolucion) || 0);
+          if (devPct <= 0) continue;
+
+          const ticketsCli: TicketContableRaw[] = decidibles
+            .filter((d) => String(d.fila.cliente_juega_id) === String(cli.id))
+            .map((d) => ({
+              ...(d.fila as unknown as TicketContableRaw),
+              estado: !d.res.ok && d.res.totalClienteNeto > 0 ? "Retirado" : d.res.ok ? "Ganador" : "Perdedor",
+              monto_decidido: d.res.ok ? sumarDinero(d.res.totalClienteNeto, d.res.gananciaCasa) : ((d.fila.monto_jugado as number) ?? 0),
+            }));
+
+          const inc = calcularIncentivoCarreraCliente(ticketsCli, devPct);
+          if (inc > 0) {
+            const actual = NUM(cli.saldo_actual);
+            const nuevoSaldo = sumarDinero(actual, inc);
+            await sdb
+              .from("clientes")
+              .update({ saldo_actual: nuevoSaldo })
+              .eq("id", cli.id as never);
+
+            try {
+              await generarAsientoDevolucionIncentivo({
+                grupoId: cli.grupo_id ? String(cli.grupo_id) : null,
+                fecha: dia,
+                clienteId: String(cli.id),
+                clienteNombre: String(cli.nombre ?? "Cliente"),
+                montoIncentivo: inc,
+                referenciaId: `${dia}:${input.hipodromo}:C${input.carrera}`,
+                usuario: "SISTEMA_LIQUIDACION",
+              });
+            } catch {
+              /* ignore non-blocking accounting error */
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Error acreditando incentivos silenciosos en carrera:", e);
+    }
+  }
 
   const ganadores = decidibles.filter((d) => d.res.ok).length;
   const base =
