@@ -62,6 +62,7 @@ import {
   ipSesionGuardada,
 } from "@/features/portal/lib/portal";
 import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
+import { ModalActualizacionObligatoriaContacto } from "@/features/portal/components/ModalActualizacionObligatoriaContacto";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -397,6 +398,29 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
   const [jugadaAbierta, setJugadaAbierta] = useState(false);
   const [noRelAbierta, setNoRelAbierta] = useState(false);
 
+  // Verificación obligatoria de teléfono y correo para la primera vez o jugadores sin datos mínimos
+  const [contactoActualizadoLocal, setContactoActualizadoLocal] = useState<boolean>(() => {
+    try {
+      const c = sesion.cliente;
+      const idClave = c?.id || c?.seudonimo || "";
+      return typeof window !== "undefined" && Boolean(idClave) && localStorage.getItem(`portal_contacto_verificado_${idClave}`) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  const requiereActualizarContacto = useMemo(() => {
+    const c = sesion.cliente;
+    if (!c) return false;
+    const telDigits = String(c.telefono ?? "").replace(/[^\d]/g, "");
+    const emailValido = Boolean(c.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(c.email).trim()));
+
+    if (!contactoActualizadoLocal) {
+      if (telDigits.length < 7 || !emailValido) return true;
+    }
+    return telDigits.length < 7 || !emailValido;
+  }, [sesion.cliente, contactoActualizadoLocal]);
+
   const ciclo: CicloGrupo = {
     diaInicio: num(sesion.grupo?.dia_inicio_semana) || 1,
     diaFin: num(sesion.grupo?.dia_fin_semana) || 7,
@@ -692,6 +716,26 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
           onCerrar={() => setNoRelAbierta(false)}
         />
       ) : null}
+
+      {/* Modal Obligatorio de Actualización de Teléfono y Correo la primera vez */}
+      {requiereActualizarContacto && (
+        <ModalActualizacionObligatoriaContacto
+          cliente={sesion.cliente}
+          nombreGrupo={nombreGrupoActivo}
+          onGuardado={(c) => {
+            try {
+              const idClave = c.id || c.seudonimo || "";
+              if (idClave) {
+                localStorage.setItem(`portal_contacto_verificado_${idClave}`, "1");
+              }
+            } catch {
+              /* sinop */
+            }
+            setContactoActualizadoLocal(true);
+            onActualizar({ ...sesion, cliente: c });
+          }}
+        />
+      )}
 
       <PieDerechosAutor variante="claro" />
       <ToastHost />

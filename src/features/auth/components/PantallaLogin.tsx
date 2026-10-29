@@ -149,6 +149,14 @@ export default function PantallaLogin() {
       return;
     }
 
+    if (!recaptchaToken) {
+      useAuthStore.setState({
+        cargando: false,
+        errorLogin: "Por favor complete la verificación de seguridad reCAPTCHA antes de iniciar sesión.",
+      });
+      return;
+    }
+
     try {
       const ok = await iniciarSesion(usuarioSanitizado, clave);
       if (!ok) {
@@ -243,7 +251,7 @@ export default function PantallaLogin() {
           />
           <div>
             <label htmlFor="usuario" className="mb-1 block text-xs font-bold text-slate-700">
-              Usuario
+              Nombre de Usuario
             </label>
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -264,24 +272,10 @@ export default function PantallaLogin() {
                 required
                 value={usuario}
                 onChange={(e) => setUsuario(e.target.value)}
-                placeholder="Usuario"
+                placeholder="Ingresa tu nombre de usuario"
                 className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-3 text-sm font-medium text-slate-700 outline-none transition-colors focus:border-emerald-500"
               />
             </div>
-            {/* Con qué correo se verifica realmente.
-             *
-             * El login acepta el usuario corto y le pega el dominio de
-             * `NEXT_PUBLIC_AUTH_DOMAIN`. Si ese dominio no es el con el que se
-             * dio de alta la cuenta en Supabase, el ingreso falla siempre y el
-             * mensaje dice "usuario o contraseña incorrectos", que manda a
-             * revisar la contraseña cuando el problema es otro. Mostrar el
-             * correo resuelto lo deja a la vista sin pedirle nada a nadie. */}
-            {correoResuelto ? (
-              <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-                Se verifica como{" "}
-                <span className="font-mono font-bold text-slate-600">{correoResuelto}</span>
-              </p>
-            ) : null}
           </div>
 
           <div>
