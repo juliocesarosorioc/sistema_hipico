@@ -34,7 +34,6 @@ import { activarProteccionAntiClonacion } from "@/shared/lib/anti-clonacion";
 export default function PantallaLogin() {
   const router = useRouter();
   const iniciarSesion = useAuthStore((s) => s.iniciarSesion);
-  const entrarComoOperador = useAuthStore((s) => s.entrarComoOperador);
   const modoOperador = useAuthStore((s) => s.modoOperador);
   const cargando = useAuthStore((s) => s.cargando);
   const errorLogin = useAuthStore((s) => s.errorLogin);
@@ -381,17 +380,7 @@ export default function PantallaLogin() {
           </button>
 
           {!recuperando ? (
-            <div className="space-y-2 pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  entrarComoOperador();
-                  router.replace("/apuestas");
-                }}
-                className="w-full rounded-lg border-2 border-amber-500 bg-amber-50 py-2.5 text-xs font-black uppercase tracking-wider text-amber-900 shadow-sm transition-colors hover:bg-amber-100"
-              >
-                🐎🎲 Entrar como Operador (Solo Apuestas y Reportes)
-              </button>
+            <div className="pt-2">
               <button
                 type="button"
                 onClick={() => {
