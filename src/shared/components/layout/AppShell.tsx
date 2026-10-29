@@ -7,6 +7,7 @@ import { Topbar } from "@/shared/components/layout/Topbar";
 import { Sidebar } from "@/shared/components/layout/Sidebar";
 import { ConfirmHost } from "@/shared/components/ui/ConfirmHost";
 import { ModalConfirmacionYResultado } from "@/shared/components/ui/ModalConfirmacionYResultado";
+import { WidgetAsistenteIa } from "@/features/soporte/components/WidgetAsistenteIa";
 import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { esRutaPublica } from "@/features/seguridad/lib/capacidades";
@@ -201,6 +202,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* Confirmación global y acuse de recibo obligatorio del operador */}
       <ConfirmHost />
       <ModalConfirmacionYResultado />
+      {/* Widget Asistente Inteligente de Soporte & Escalamiento de Incidencias */}
+      <WidgetAsistenteIa />
     </div>
   );
 }

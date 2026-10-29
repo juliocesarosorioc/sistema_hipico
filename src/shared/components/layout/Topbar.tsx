@@ -12,6 +12,7 @@ import { ModalGestionRapidaSaldo } from "@/features/contabilidad/components/Moda
 import { conCacheBust } from "@/shared/lib/logos";
 import { useVersionLogos } from "@/shared/store/useHipodromosStore";
 import { listarGruposVenta } from "@/features/grupos/lib/grupos";
+import { AlertaTicketsTopbar } from "@/features/soporte/components/AlertaTicketsTopbar";
 
 /**
  * Barra superior limpia de la SPA (Organismo del layout raíz).
@@ -232,6 +233,9 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
 
       {/* Controles y módulos de la barra superior */}
       <div className="flex items-center gap-2 min-w-0 overflow-x-auto">
+
+      {/* Alerta interactiva de Tickets de Incidencias para Administradores y Dueños */}
+      <AlertaTicketsTopbar />
 
       {/* Campana de novedades: auditoría reciente del sistema. */}
       <div className="relative" data-campana>

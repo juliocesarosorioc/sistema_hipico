@@ -15,6 +15,7 @@ import { useAuthStore } from "@/shared/store/useAuthStore";
     type TicketDisputa,
   } from "@/features/tickets/lib/tickets";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
+import { ModalGestionTicketsAdmin } from "@/features/soporte/components/ModalGestionTicketsAdmin";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -55,6 +56,7 @@ export function TicketsModule() {
   const [tabla, setTabla] = useState("todas");
   const [cargando, setCargando] = useState(true);
   const [resolviendo, setResolviendo] = useState<TicketDisputa | null>(null);
+  const [modalIncidenciasIa, setModalIncidenciasIa] = useState(false);
   const usuario = useAuthStore((s) => s.usuario);
 
   const cargar = useCallback(async () => {
@@ -114,9 +116,19 @@ export function TicketsModule() {
             Disputas del portal y reclamos de jugadas. Flujo: <b>CREADO</b> → <b>EN REVISIÓN</b> → <b>SOLUCIONADO</b>.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void cargar()}>
-          <span className="mr-1">🔄</span> Recargar
-        </Button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setModalIncidenciasIa(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border-2 border-amber-500 bg-amber-500/10 hover:bg-amber-500 hover:text-slate-950 px-3 py-1.5 text-xs font-black text-amber-600 transition shadow-xs"
+          >
+            <span>🤖</span>
+            <span>Centro de Incidencias Operativas IA</span>
+          </button>
+          <Button variant="outline" size="sm" onClick={() => void cargar()}>
+            <span className="mr-1">🔄</span> Recargar
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -168,6 +180,11 @@ export function TicketsModule() {
       {resolviendo ? (
         <ResolverModal t={resolviendo} onCerrar={() => setResolviendo(null)} onResolver={(d) => void resolver(resolviendo, d)} />
       ) : null}
+
+      <ModalGestionTicketsAdmin
+        abierto={modalIncidenciasIa}
+        onCerrar={() => setModalIncidenciasIa(false)}
+      />
 
       <ToastHost />
     </div>
