@@ -71,6 +71,48 @@ export type FiltroModalidadPivot =
   | "DUPLETAS";
 export type FiltroResultadoPivot = "TODOS" | "GANADORES" | "PERDEDORES" | "PENDIENTES";
 
+export type TipoJugadorSaldo = "aval" | "libre" | "pozo";
+export type FiltroTipoJugadorSaldo = "TODOS" | "AVAL" | "LIBRE" | "POZO";
+
+export function obtenerTipoJugador(cliente: { modo_juego?: string | null; libre?: boolean | null }): TipoJugadorSaldo {
+  if (cliente.libre || String(cliente.modo_juego || "").toLowerCase().trim() === "libre") return "libre";
+  if (String(cliente.modo_juego || "").toLowerCase().trim() === "pozo") return "pozo";
+  return "aval";
+}
+
+export function infoTipoJugador(tipo: TipoJugadorSaldo) {
+  switch (tipo) {
+    case "libre":
+      return {
+        tipo: "libre" as const,
+        icono: "🔓",
+        etiqueta: "Jugador Libre",
+        colorTexto: "text-sky-700",
+        badgeCls: "bg-sky-100 text-sky-800 border-sky-300",
+        descripcion: "Saldo actual positivo o negativo libre (sin tope de aval)",
+      };
+    case "pozo":
+      return {
+        tipo: "pozo" as const,
+        icono: "💰",
+        etiqueta: "Jugador con Pozo",
+        colorTexto: "text-emerald-700",
+        badgeCls: "bg-emerald-100 text-emerald-800 border-emerald-300",
+        descripcion: "Saldo actual positivo de pozo",
+      };
+    case "aval":
+    default:
+      return {
+        tipo: "aval" as const,
+        icono: "🛡️",
+        etiqueta: "Jugador Avalado",
+        colorTexto: "text-amber-700",
+        badgeCls: "bg-amber-100 text-amber-900 border-amber-300",
+        descripcion: "Saldo actual positivo o negativo / aval",
+      };
+  }
+}
+
 function cumpleModalidadPivot(f: FilaReporte, filtro: FiltroModalidadPivot): boolean {
   if (filtro === "TODAS") return true;
   const esAdel = esJugadaAdelantadaReporte({
@@ -121,6 +163,7 @@ export function ReporteModule() {
   const [filtroRol, setFiltroRol] = useState<string>("TODOS");
   const [filtroModalidad, setFiltroModalidad] = useState<FiltroModalidadPivot>("TODAS");
   const [filtroResultado, setFiltroResultado] = useState<FiltroResultadoPivot>("TODOS");
+  const [filtroTipoJugador, setFiltroTipoJugador] = useState<FiltroTipoJugadorSaldo>("TODOS");
 
   const alternar = useCallback((k: string) => {
     setAbiertos((prev) => {
@@ -155,6 +198,7 @@ export function ReporteModule() {
     setFiltroRol("TODOS");
     setFiltroModalidad("TODAS");
     setFiltroResultado("TODOS");
+    setFiltroTipoJugador("TODOS");
   }, []);
 
   useEffect(() => {
@@ -234,7 +278,26 @@ export function ReporteModule() {
     filtroCliente.trim() !== "" ||
     filtroRol !== "TODOS" ||
     filtroModalidad !== "TODAS" ||
-    filtroResultado !== "TODOS";
+    filtroResultado !== "TODOS" ||
+    filtroTipoJugador !== "TODOS";
+
+  const mapaInfoClientes = useMemo(() => {
+    const map = new Map<string, { modo: TipoJugadorSaldo; libre: boolean; aval: number; saldoActual: number; icono: string; etiqueta: string }>();
+    for (const c of clientesGrupo) {
+      const key = String(c.nombre ?? c.seudonimo ?? c.id).trim().toUpperCase();
+      const tipo = obtenerTipoJugador(c);
+      const meta = infoTipoJugador(tipo);
+      map.set(key, {
+        modo: tipo,
+        libre: Boolean(c.libre || tipo === "libre"),
+        aval: Number(c.aval) || 0,
+        saldoActual: redondearCentavos(Number(c.saldo_actual) || 0),
+        icono: meta.icono,
+        etiqueta: meta.etiqueta,
+      });
+    }
+    return map;
+  }, [clientesGrupo]);
 
   // Reporte filtrado dinámicamente según los segmentadores de la Tabla Dinámica
   const rpt: ReporteSemana | null = useMemo(() => {
@@ -268,6 +331,17 @@ export function ReporteModule() {
             }
             if (!cumpleResultadoPivot(f, filtroResultado)) {
               return false;
+            }
+            if (filtroTipoJugador !== "TODOS") {
+              const cliKey = String(f.cliente ?? "").trim().toUpperCase();
+              const info = mapaInfoClientes.get(cliKey);
+              const tipo = info?.modo ?? "aval";
+              if (filtroTipoJugador === "AVAL" && tipo !== "aval") return false;
+              if (filtroTipoJugador === "LIBRE" && tipo !== "libre") return false;
+              if (filtroTipoJugador === "POZO") {
+                if (tipo !== "pozo") return false;
+                if ((info?.saldoActual ?? 0) <= 0.004) return false;
+              }
             }
             return true;
           });
@@ -417,7 +491,7 @@ export function ReporteModule() {
       }
     }
 
-    const filasClientes = [...clientesMap.entries()]
+    let filasClientes = [...clientesMap.entries()]
       .map(([cliente, porCarrera]) => {
         const netoTotal = redondearCentavos(
           Object.values(porCarrera).reduce((acc, v) => acc + v, 0)
@@ -425,6 +499,17 @@ export function ReporteModule() {
         return { cliente, porCarrera, netoTotal };
       })
       .sort((a, b) => b.netoTotal - a.netoTotal || a.cliente.localeCompare(b.cliente, "es"));
+
+    if (filtroTipoJugador !== "TODOS") {
+      filasClientes = filasClientes.filter((fc) => {
+        const info = mapaInfoClientes.get(fc.cliente);
+        const tipo = info?.modo ?? "aval";
+        if (filtroTipoJugador === "AVAL") return tipo === "aval";
+        if (filtroTipoJugador === "LIBRE") return tipo === "libre";
+        if (filtroTipoJugador === "POZO") return tipo === "pozo" && (fc.netoTotal > 0.004 || (info?.saldoActual ?? 0) > 0.004);
+        return true;
+      });
+    }
 
     return { filasCarreras, filasClientes, comisionSemana: comisionSemanaAcum };
   }, [rpt]);
@@ -435,20 +520,49 @@ export function ReporteModule() {
       fuenteSaldos4Col === "CARTERA" ||
       (datosTablaDinamica.filasClientes.length === 0 && clientesGrupo.length > 0);
 
-    const base: Array<{ nombre: string; saldo: number }> = usarCartera
-      ? clientesGrupo.map((c) => ({
-          nombre: String(c.nombre ?? c.seudonimo ?? c.id).trim().toUpperCase(),
-          saldo: redondearCentavos(Number(c.saldo_actual) || 0),
-        }))
-      : datosTablaDinamica.filasClientes.map((fc) => ({
-          nombre: fc.cliente,
-          saldo: fc.netoTotal,
-        }));
+    const base: Array<{
+      nombre: string;
+      saldo: number;
+      tipo: TipoJugadorSaldo;
+      icono: string;
+      etiqueta: string;
+    }> = usarCartera
+      ? clientesGrupo.map((c) => {
+          const tipo = obtenerTipoJugador(c);
+          const meta = infoTipoJugador(tipo);
+          return {
+            nombre: String(c.nombre ?? c.seudonimo ?? c.id).trim().toUpperCase(),
+            saldo: redondearCentavos(Number(c.saldo_actual) || 0),
+            tipo,
+            icono: meta.icono,
+            etiqueta: meta.etiqueta,
+          };
+        })
+      : datosTablaDinamica.filasClientes.map((fc) => {
+          const cliMeta = mapaInfoClientes.get(fc.cliente);
+          const tipo = cliMeta?.modo ?? "aval";
+          const meta = infoTipoJugador(tipo);
+          return {
+            nombre: fc.cliente,
+            saldo: fc.netoTotal,
+            tipo,
+            icono: meta.icono,
+            etiqueta: meta.etiqueta,
+          };
+        });
 
-    const positivos = base
+    const baseFiltrada = base.filter((x) => {
+      if (filtroTipoJugador === "TODOS") return true;
+      if (filtroTipoJugador === "AVAL") return x.tipo === "aval";
+      if (filtroTipoJugador === "LIBRE") return x.tipo === "libre";
+      if (filtroTipoJugador === "POZO") return x.tipo === "pozo" && x.saldo > 0.004;
+      return true;
+    });
+
+    const positivos = baseFiltrada
       .filter((x) => x.saldo > 0.004)
       .sort((a, b) => b.saldo - a.saldo || a.nombre.localeCompare(b.nombre, "es"));
-    const negativos = base
+    const negativos = baseFiltrada
       .filter((x) => x.saldo < -0.004)
       .sort((a, b) => a.saldo - b.saldo || a.nombre.localeCompare(b.nombre, "es"));
 
@@ -470,8 +584,10 @@ export function ReporteModule() {
       totalCobrar,
       comisionSemana: datosTablaDinamica.comisionSemana,
       usandoCartera: usarCartera,
+      totalJugadores: base.length,
+      totalFiltrados: baseFiltrada.length,
     };
-  }, [fuenteSaldos4Col, datosTablaDinamica, clientesGrupo]);
+  }, [fuenteSaldos4Col, datosTablaDinamica, clientesGrupo, filtroTipoJugador, mapaInfoClientes]);
 
   const resumen = resumirReporte(rpt);
   const hoy = hoyLocal();
@@ -656,7 +772,7 @@ export function ReporteModule() {
         </div>
 
         {/* Controles de Segmentación Dinámica (Día, Hipódromo, Cliente, Rol, Modalidad, Resultado) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-2 text-xs">
           <label className="flex flex-col gap-0.5">
             <span className="text-[10px] font-bold uppercase text-slate-400">Día Fiscal</span>
             <select
@@ -751,6 +867,20 @@ export function ReporteModule() {
               <option value="PENDIENTES">⏳ Pendientes</option>
             </select>
           </label>
+
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-bold uppercase text-slate-400">Tipo de Jugador / Saldo</span>
+            <select
+              value={filtroTipoJugador}
+              onChange={(e) => setFiltroTipoJugador(e.target.value as FiltroTipoJugadorSaldo)}
+              className="rounded border border-slate-700 bg-slate-800 px-2 py-1 font-semibold text-white"
+            >
+              <option value="TODOS">Todos los tipos</option>
+              <option value="AVAL">🛡️ Jugadores Avalados (+/-)</option>
+              <option value="LIBRE">🔓 Jugadores Libres (+/-)</option>
+              <option value="POZO">💰 Jugadores con Pozo (+)</option>
+            </select>
+          </label>
         </div>
 
         {/* Segmentador (Slicer) multi-carrera tipo Tabla Dinámica */}
@@ -840,6 +970,60 @@ export function ReporteModule() {
                   Cartera General ({clientesGrupo.length})
                 </button>
               </div>
+
+              {/* Filtros por modalidad de saldo / jugador */}
+              <div className="flex flex-wrap items-center gap-1.5 text-xs pt-1 border-t border-slate-800">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 mr-1">
+                  Filtrar modalidad:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFiltroTipoJugador("TODOS")}
+                  className={`rounded-md px-2 py-0.5 text-[11px] font-bold transition ${
+                    filtroTipoJugador === "TODOS"
+                      ? "bg-slate-200 text-slate-900 shadow-sm"
+                      : "bg-slate-800 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Todos ({resumenCuatroColumnas.totalJugadores})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroTipoJugador("AVAL")}
+                  className={`rounded-md px-2 py-0.5 text-[11px] font-bold transition ${
+                    filtroTipoJugador === "AVAL"
+                      ? "bg-amber-400 text-slate-950 font-black shadow-sm"
+                      : "bg-slate-800 text-amber-300 hover:bg-slate-700"
+                  }`}
+                  title="Se muestra el saldo actual sea positivo o negativo / aval"
+                >
+                  🛡️ Jugadores Avalados (+/-)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroTipoJugador("LIBRE")}
+                  className={`rounded-md px-2 py-0.5 text-[11px] font-bold transition ${
+                    filtroTipoJugador === "LIBRE"
+                      ? "bg-sky-400 text-slate-950 font-black shadow-sm"
+                      : "bg-slate-800 text-sky-300 hover:bg-slate-700"
+                  }`}
+                  title="Se muestra el saldo actual sea positivo o negativo libre"
+                >
+                  🔓 Jugadores Libres (+/-)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroTipoJugador("POZO")}
+                  className={`rounded-md px-2 py-0.5 text-[11px] font-bold transition ${
+                    filtroTipoJugador === "POZO"
+                      ? "bg-emerald-400 text-slate-950 font-black shadow-sm"
+                      : "bg-slate-800 text-emerald-300 hover:bg-slate-700"
+                  }`}
+                  title="Se muestra el saldo actual positivo de pozo"
+                >
+                  💰 Jugadores con Pozo (+)
+                </button>
+              </div>
             </div>
 
             {/* Tabla de 4 columnas */}
@@ -872,13 +1056,27 @@ export function ReporteModule() {
                     resumenCuatroColumnas.filasPareadas.map((par, idx) => (
                       <tr key={idx} className="hover:bg-slate-50">
                         <td className="py-1.5 px-3 font-bold text-slate-800 border-r border-slate-200">
-                          {par.pos ? par.pos.nombre : "—"}
+                          {par.pos ? (
+                            <div className="flex items-center gap-1.5">
+                              <span title={par.pos.etiqueta} className="text-sm shrink-0">
+                                {par.pos.icono}
+                              </span>
+                              <span className="truncate">{par.pos.nombre}</span>
+                            </div>
+                          ) : "—"}
                         </td>
                         <td className="py-1.5 px-3 text-right font-mono font-black text-emerald-700 border-r-2 border-slate-300">
                           {par.pos ? `+${fmtMonto(par.pos.saldo)}` : "—"}
                         </td>
                         <td className="py-1.5 px-3 font-bold text-slate-800 border-r border-slate-200">
-                          {par.neg ? par.neg.nombre : "—"}
+                          {par.neg ? (
+                            <div className="flex items-center gap-1.5">
+                              <span title={par.neg.etiqueta} className="text-sm shrink-0">
+                                {par.neg.icono}
+                              </span>
+                              <span className="truncate">{par.neg.nombre}</span>
+                            </div>
+                          ) : "—"}
                         </td>
                         <td className="py-1.5 px-3 text-right font-mono font-black text-rose-600">
                           {par.neg ? fmtMonto(par.neg.saldo) : "—"}
@@ -904,6 +1102,44 @@ export function ReporteModule() {
                   </tr>
                 </tfoot>
               </table>
+            </div>
+
+            {/* Leyenda de tipos de jugadores */}
+            <div className="mt-3.5 rounded-xl border border-slate-700 bg-slate-900/90 p-3.5 text-xs text-slate-300">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-amber-300">
+                  📌 Leyenda de Modalidades de Jugadores en Reporte de Saldos:
+                </span>
+              </div>
+              <div className="grid gap-2.5 sm:grid-cols-3">
+                <div className="flex items-start gap-2 rounded-lg border border-sky-500/30 bg-sky-950/40 p-2.5">
+                  <span className="text-lg shrink-0">🔓</span>
+                  <div>
+                    <div className="text-xs font-black text-sky-300 uppercase">Jugadores Libres</div>
+                    <p className="text-[11px] text-sky-200/80 mt-0.5">
+                      Saldo actual sea positivo o negativo libre (sin tope de aval).
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-950/40 p-2.5">
+                  <span className="text-lg shrink-0">🛡️</span>
+                  <div>
+                    <div className="text-xs font-black text-amber-300 uppercase">Jugadores Avalados</div>
+                    <p className="text-[11px] text-amber-200/80 mt-0.5">
+                      Saldo actual sea positivo o negativo / aval asignado.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-950/40 p-2.5">
+                  <span className="text-lg shrink-0">💰</span>
+                  <div>
+                    <div className="text-xs font-black text-emerald-300 uppercase">Jugadores con Pozo</div>
+                    <p className="text-[11px] text-emerald-200/80 mt-0.5">
+                      Saldo actual positivo de pozo acumulado.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -986,7 +1222,17 @@ export function ReporteModule() {
                 {datosTablaDinamica.filasClientes.map((row) => (
                   <tr key={row.cliente} className="hover:bg-blue-50/40">
                     <td className="py-1.5 px-2.5 font-black text-slate-800 sticky left-0 bg-white">
-                      {row.cliente}
+                      {(() => {
+                        const meta = mapaInfoClientes.get(row.cliente);
+                        return (
+                          <div className="flex items-center gap-1.5">
+                            <span title={meta?.etiqueta} className="text-sm shrink-0">
+                              {meta?.icono ?? "🛡️"}
+                            </span>
+                            <span className="truncate">{row.cliente}</span>
+                          </div>
+                        );
+                      })()}
                     </td>
                     {datosTablaDinamica.filasCarreras.map((fc) => {
                       const val = row.porCarrera[fc.clave] ?? null;
@@ -1244,6 +1490,26 @@ export function ReporteModule() {
             </div>
           </>
         )}
+
+        {/* Leyenda general al final de la lista */}
+        <div className="bg-slate-100 p-3 border-t border-slate-300 text-xs text-slate-700">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-black uppercase tracking-wider text-slate-800">
+              📌 Leyenda:
+            </span>
+            <div className="flex flex-wrap items-center gap-4 text-[11px]">
+              <span className="inline-flex items-center gap-1 font-semibold">
+                <span>🔓</span> <b>Jugadores Libres:</b> Saldo actual (+/-) libre
+              </span>
+              <span className="inline-flex items-center gap-1 font-semibold">
+                <span>🛡️</span> <b>Jugadores Avalados:</b> Saldo actual (+/-) / aval
+              </span>
+              <span className="inline-flex items-center gap-1 font-semibold">
+                <span>💰</span> <b>Jugadores con Pozo:</b> Saldo actual (+) de pozo
+              </span>
+            </div>
+          </div>
+        </div>
 
         <div className="bg-gray-50 p-3 border-t border-gray-300 text-center text-[10px] text-gray-500">
           ✨ Reporte de saldos consolidados · motor oficial (NINI, PP, PAREO, TABLAS, CRUCE NETO) ·

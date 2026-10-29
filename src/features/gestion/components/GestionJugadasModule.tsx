@@ -3614,6 +3614,7 @@ const hipodromosDelDia = useMemo(() => {
                       riesgoEnCurso: 0,
                       disponible: limiteDeJugar(c),
                       libre: esClienteLibre(c),
+                      modoJuego: (c as { modo_juego?: string }).modo_juego || (esClienteLibre(c) ? "libre" : "aval"),
                     }))}
                   />
                 </div>

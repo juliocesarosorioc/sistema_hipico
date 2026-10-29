@@ -15,7 +15,28 @@ export type JugadorSaldoVisual = {
   riesgoEnCurso: number;
   disponible: number;
   libre?: boolean;
+  modoJuego?: string;
 };
+
+export type FiltroModalidadSaldo = "TODOS" | "AVAL" | "LIBRE" | "POZO";
+
+export function obtenerModalidadJugadorVisual(c: JugadorSaldoVisual): "libre" | "pozo" | "aval" {
+  if (c.modoJuego === "pozo") return "pozo";
+  if (c.modoJuego === "libre" || c.libre) return "libre";
+  return "aval";
+}
+
+export function infoModalidadJugadorVisual(tipo: "libre" | "pozo" | "aval") {
+  switch (tipo) {
+    case "libre":
+      return { icono: "🔓", etiqueta: "Jugadores Libres", desc: "Saldo actual libre (+ / -)", badge: "bg-sky-100 text-sky-800 border-sky-300" };
+    case "pozo":
+      return { icono: "💰", etiqueta: "Jugadores con Pozo", desc: "Saldo actual positivo de pozo", badge: "bg-purple-100 text-purple-800 border-purple-300" };
+    case "aval":
+    default:
+      return { icono: "🛡️", etiqueta: "Jugadores Avalados", desc: "Saldo actual (+ / -) / aval", badge: "bg-emerald-100 text-emerald-800 border-emerald-300" };
+  }
+}
 
 export type ReporteSaldosVisualProps = {
   grupo: string;
@@ -119,6 +140,7 @@ export function ReporteSaldosVisual({
   clientes,
 }: ReporteSaldosVisualProps) {
   const [exportando, setExportando] = useState(false);
+  const [filtroModalidad, setFiltroModalidad] = useState<FiltroModalidadSaldo>("TODOS");
 
   const descargarImagen = async (formato: ImgFormato) => {
     const el = document.getElementById("reporte-saldos-imprimible");
@@ -133,8 +155,22 @@ export function ReporteSaldosVisual({
     }
   };
 
+  // Filtrado según requerimiento:
+  // - AVAL: Saldo actual sea positivo o negativo / aval
+  // - LIBRE: Saldo actual sea positivo o negativo libre
+  // - POZO: Saldo actual positivo de pozo
+  const clientesFiltrados = clientes.filter((c) => {
+    const mod = obtenerModalidadJugadorVisual(c);
+    if (filtroModalidad === "AVAL") return mod === "aval";
+    if (filtroModalidad === "LIBRE") return mod === "libre";
+    if (filtroModalidad === "POZO") {
+      return mod === "pozo" && redondearCentavos(c.saldoContable) > 0.004;
+    }
+    return true;
+  });
+
   // Ordenar: primero los que están en alerta/crítico/agotado o por orden alfabético dentro de su grupo
-  const enriquecidos = clientes
+  const enriquecidos = clientesFiltrados
     .map((c) => ({ ...c, sem: clasificarAlertaSaldo(c) }))
     .sort((a, b) => {
       const ordenNivel: Record<NivelAlertaSaldo, number> = {
@@ -170,15 +206,23 @@ export function ReporteSaldosVisual({
       {lista.map((c, idx) => {
         const disp = redondearCentavos(c.disponible);
         const telLimpio = String(c.telefono ?? "").replace(/\D+/g, "");
+        const modJugador = obtenerModalidadJugadorVisual(c);
+        const infoMod = infoModalidadJugadorVisual(modJugador);
         return (
           <div
             key={`${c.id ?? c.nombre}-${idx}`}
             className={`grid grid-cols-12 items-center gap-1 px-2.5 py-1.5 text-[10px] ${c.sem.rowCls}`}
           >
             <div className="col-span-5 min-w-0">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 min-w-0">
                 <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-slate-200 text-[8px] font-black text-slate-700">
                   {offset + idx + 1}
+                </span>
+                <span
+                  className="inline-flex shrink-0 text-[11px] cursor-help"
+                  title={`${infoMod.etiqueta}: ${infoMod.desc}`}
+                >
+                  {infoMod.icono}
                 </span>
                 <span className="truncate font-black text-slate-900">{c.nombre}</span>
               </div>
@@ -235,11 +279,62 @@ export function ReporteSaldosVisual({
 
   return (
     <div className="space-y-2">
-      {/* Barra de exportación de imagen */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-2">
-        <div className="text-xs font-bold text-indigo-950">
-          🖼️ Vista Gráfica de Saldos (el número de teléfono <code className="font-mono">@número</code> se visualiza únicamente en esta imagen)
+      {/* Barra de controles: filtros por modalidad y botones de exportación */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-indigo-50/70 p-2.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-bold text-indigo-950 mr-1">Filtro Modalidad:</span>
+          <button
+            type="button"
+            onClick={() => setFiltroModalidad("TODOS")}
+            className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+              filtroModalidad === "TODOS"
+                ? "bg-indigo-700 text-white shadow-sm ring-2 ring-indigo-300"
+                : "bg-white text-indigo-900 border border-indigo-200 hover:bg-indigo-100"
+            }`}
+          >
+            🌐 Todos ({clientes.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFiltroModalidad("AVAL")}
+            className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+              filtroModalidad === "AVAL"
+                ? "bg-emerald-700 text-white shadow-sm ring-2 ring-emerald-300"
+                : "bg-white text-emerald-900 border border-emerald-300 hover:bg-emerald-50"
+            }`}
+            title="Muestra el saldo actual sea positivo o negativo / aval asignado"
+          >
+            <span>🛡️</span>
+            <span>Jugadores Avalados ({clientes.filter((c) => obtenerModalidadJugadorVisual(c) === "aval").length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFiltroModalidad("LIBRE")}
+            className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+              filtroModalidad === "LIBRE"
+                ? "bg-sky-700 text-white shadow-sm ring-2 ring-sky-300"
+                : "bg-white text-sky-900 border border-sky-300 hover:bg-sky-50"
+            }`}
+            title="Muestra el saldo actual sea positivo o negativo libre"
+          >
+            <span>🔓</span>
+            <span>Jugadores Libres ({clientes.filter((c) => obtenerModalidadJugadorVisual(c) === "libre").length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFiltroModalidad("POZO")}
+            className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+              filtroModalidad === "POZO"
+                ? "bg-purple-700 text-white shadow-sm ring-2 ring-purple-300"
+                : "bg-white text-purple-900 border border-purple-300 hover:bg-purple-50"
+            }`}
+            title="Muestra el saldo actual positivo de pozo"
+          >
+            <span>💰</span>
+            <span>Jugadores con Pozo ({clientes.filter((c) => obtenerModalidadJugadorVisual(c) === "pozo" && redondearCentavos(c.saldoContable) > 0.004).length})</span>
+          </button>
         </div>
+
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -293,6 +388,13 @@ export function ReporteSaldosVisual({
               {hipodromo ? `${hipodromo}` : "Jornada Activa"}
               {carrera ? ` · Carrera ${carrera}` : ""}
               {fecha ? ` · ${fecha}` : ""}
+              {filtroModalidad !== "TODOS" && (
+                <span className="ml-2 inline-flex items-center gap-1 rounded bg-white/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-200">
+                  {filtroModalidad === "AVAL" && "🛡️ Jugadores Avalados (+/-)"}
+                  {filtroModalidad === "LIBRE" && "🔓 Jugadores Libres (+/-)"}
+                  {filtroModalidad === "POZO" && "💰 Jugadores con Pozo (> 0)"}
+                </span>
+              )}
             </p>
           </div>
 
@@ -340,12 +442,43 @@ export function ReporteSaldosVisual({
           {col2.length > 0 ? renderColumna(col2, col1.length) : null}
         </div>
 
+        {/* 3.1 LEYENDA DETALLADA DE MODALIDADES DE JUGADORES */}
+        <div className="border-t border-slate-200 bg-slate-100/70 px-4 py-3">
+          <div className="text-[10px] font-black uppercase tracking-wider text-slate-700 mb-2 flex items-center gap-1">
+            <span>📌</span>
+            <span>Leyenda de Modalidades de Jugadores</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[9.5px]">
+            <div className="flex items-start gap-2 rounded-lg border border-sky-200 bg-white p-2.5 text-sky-950 shadow-sm">
+              <span className="text-xl leading-none">🔓</span>
+              <div>
+                <strong className="font-extrabold text-sky-900 block text-[10px]">Jugadores Libres</strong>
+                <span className="text-slate-600">Muestra el saldo actual sea positivo o negativo libre (sin cupo asignado).</span>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-white p-2.5 text-emerald-950 shadow-sm">
+              <span className="text-xl leading-none">🛡️</span>
+              <div>
+                <strong className="font-extrabold text-emerald-900 block text-[10px]">Jugadores Avalados</strong>
+                <span className="text-slate-600">Muestra el saldo actual sea positivo o negativo / aval asignado.</span>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 rounded-lg border border-purple-200 bg-white p-2.5 text-purple-950 shadow-sm">
+              <span className="text-xl leading-none">💰</span>
+              <div>
+                <strong className="font-extrabold text-purple-900 block text-[10px]">Jugadores con Pozo</strong>
+                <span className="text-slate-600">Muestra el saldo actual positivo de pozo acumulado a favor.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* 4. PIE DE PÁGINA DE DERECHOS DE AUTOR */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-900 px-4 py-2 text-[9px] text-slate-300">
           <span>
             © {new Date().getFullYear()} <strong className="font-black text-amber-400">Inversiones Club Sensación, C.A.</strong> — Todos los derechos reservados · Propiedad Intelectual Protegida
           </span>
-          <span>Total jugadores: {enriquecidos.length} · Recargas y avales por administración</span>
+          <span>Total jugadores mostrados: {enriquecidos.length} · Recargas y avales por administración</span>
         </div>
       </div>
     </div>
