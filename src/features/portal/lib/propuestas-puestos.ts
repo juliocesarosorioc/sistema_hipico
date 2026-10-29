@@ -29,6 +29,13 @@ import {
   type DatosJugada,
   type RolJugada,
 } from "@/features/portal/lib/gramatica-concrecion-hipica";
+import {
+  MENSAJE_CARRERA_CERRADA,
+  esCarreraCerradaOEnPartida,
+  type EstadoOperativoCarrera,
+} from "@/features/portal/lib/bloqueo-jugadas";
+
+export { MENSAJE_CARRERA_CERRADA };
 
 export type PropuestaPuesto = {
   id: number;
@@ -62,13 +69,19 @@ export type EstadoMesa = {
   /** Avisos de límite ("Juan hasta 300") para las observaciones del reporte. */
   limites: string[];
   siguienteId: number;
+  /** Estado operativo de la carrera actual ('ABIERTA' | 'CERRADA' | 'LIQUIDADA' | ...). */
+  estadoCarrera?: EstadoOperativoCarrera;
+  /** true si la carrera ya cerró o dio la partida. */
+  carreraCerrada?: boolean;
+  /** Hora de partida programada para validación automática. */
+  horaPartida?: string | Date | number | null;
 };
 
 export type ResultadoMesa = {
   estado: EstadoMesa;
   /** true si la acción hizo algo (publicó o concretó). */
   ok: boolean;
-  /** true si se rechazó por falta de saldo. */
+  /** true si se rechazó por falta de saldo o por carrera cerrada. */
   bloqueado: boolean;
   /** Mensajes del Agente, EXACTOS, en el orden en que se emiten. */
   mensajes: string[];
@@ -84,13 +97,107 @@ const redondear = (n: number): number => Math.round(n * 100) / 100;
 /** Frases EXACTAS del Agente. */
 export const frases = {
   atento: (nombre: string, disponible: number) => `Atento "${nombre}", disponible ${fmt(disponible)}`,
+  atentoConIcono: (nombre: string, disponible: number) => `⚠️ Atento '${nombre}', disponible ${fmt(disponible)}.`,
   hasta: (nombre: string, disponible: number) => `${nombre} hasta ${fmt(disponible)}`,
   sinSaldo: (nombre: string) => `${nombre} sin saldo disponible`,
+  sinSaldoConIcono: (nombre: string) => `⛔ ${nombre} sin saldo disponible.`,
+  carreraCerrada: () => MENSAJE_CARRERA_CERRADA,
 } as const;
 
+export const notificarSinSaldo = (nombre: string): string => frases.sinSaldoConIcono(nombre);
+export const notificarAjusteDisponible = (nombre: string, disponible: number): string =>
+  frases.atentoConIcono(nombre, disponible);
+
 /** Mesa nueva con el disponible de cada jugador. */
-export function crearMesa(disponibles: Record<string, number> = {}): EstadoMesa {
-  return { disponibles: { ...disponibles }, propuestas: [], concreciones: [], limites: [], siguienteId: 1 };
+export function crearMesa(
+  disponibles: Record<string, number> = {},
+  opciones?: {
+    estadoCarrera?: EstadoOperativoCarrera;
+    carreraCerrada?: boolean;
+    horaPartida?: string | Date | number | null;
+  }
+): EstadoMesa {
+  return {
+    disponibles: { ...disponibles },
+    propuestas: [],
+    concreciones: [],
+    limites: [],
+    siguienteId: 1,
+    estadoCarrera: opciones?.estadoCarrera ?? "ABIERTA",
+    carreraCerrada: opciones?.carreraCerrada ?? false,
+    horaPartida: opciones?.horaPartida ?? null,
+  };
+}
+
+/** Actualiza de forma inmutable el estado de la carrera en la mesa. */
+export function fijarEstadoCarreraMesa(
+  estado: EstadoMesa,
+  estadoCarrera: EstadoOperativoCarrera | boolean,
+  opciones?: { horaPartida?: string | Date | number | null }
+): EstadoMesa {
+  const nuevo = copiar(estado);
+  if (typeof estadoCarrera === "boolean") {
+    nuevo.carreraCerrada = estadoCarrera;
+    nuevo.estadoCarrera = estadoCarrera ? "CERRADA" : "ABIERTA";
+  } else {
+    nuevo.estadoCarrera = estadoCarrera;
+    nuevo.carreraCerrada = esCarreraCerradaOEnPartida(estadoCarrera);
+  }
+  if (opciones?.horaPartida !== undefined) {
+    nuevo.horaPartida = opciones.horaPartida;
+  }
+  return nuevo;
+}
+
+/**
+ * Incrementa o descuenta el saldo disponible de un jugador en caliente
+ * (ej. cuando se aprueba un cobro/depósito o se ejecuta un pago a ganador)
+ * y emite las notificaciones oficiales si queda sin fondos.
+ */
+export function actualizarSaldoMesaEnCaliente(
+  estado: EstadoMesa,
+  params: {
+    jugador: string;
+    monto: number;
+    operacion: "ABONO" | "DESCUENTO" | "FIJAR";
+  }
+): {
+  estado: EstadoMesa;
+  jugador: string;
+  saldoAnterior: number;
+  nuevoSaldo: number;
+  sinSaldo: boolean;
+  notificaciones: string[];
+} {
+  const clave = claveDe(estado, params.jugador);
+  const anterior = disponibleDe(estado, clave);
+  const delta = redondear(Math.abs(Number(params.monto) || 0));
+  let nuevoSaldo = anterior;
+  if (params.operacion === "ABONO") {
+    nuevoSaldo = redondear(anterior + delta);
+  } else if (params.operacion === "DESCUENTO") {
+    nuevoSaldo = redondear(anterior - delta);
+  } else {
+    nuevoSaldo = redondear(Number(params.monto) || 0);
+  }
+
+  const nuevoEstado = copiar(estado);
+  nuevoEstado.disponibles[clave] = nuevoSaldo;
+
+  const notificaciones: string[] = [];
+  const sinSaldo = nuevoSaldo <= 0;
+  if (sinSaldo) {
+    notificaciones.push(frases.sinSaldoConIcono(clave));
+  }
+
+  return {
+    estado: nuevoEstado,
+    jugador: clave,
+    saldoAnterior: anterior,
+    nuevoSaldo,
+    sinSaldo,
+    notificaciones,
+  };
 }
 
 /** Clave real del jugador en la mesa (sin distinguir mayúsculas). */
@@ -119,13 +226,44 @@ const bloqueo = (estado: EstadoMesa, mensaje: string): ResultadoMesa => ({
   mensajes: [mensaje],
 });
 
+function verificarMesaCerrada(
+  estado: EstadoMesa,
+  override?: {
+    estadoCarrera?: EstadoOperativoCarrera | null;
+    cerrada?: boolean | null;
+    horaPartida?: string | Date | number | null;
+    ahora?: Date | number | null;
+  }
+): boolean {
+  return esCarreraCerradaOEnPartida({
+    estado: override?.estadoCarrera ?? estado.estadoCarrera,
+    cerrada: override?.cerrada ?? estado.carreraCerrada,
+    horaPartida: override?.horaPartida ?? estado.horaPartida,
+    ahora: override?.ahora,
+  });
+}
+
 /**
  * PROPONER. Topa con el disponible: nunca publica el exceso.
  */
 export function proponer(
   estado: EstadoMesa,
-  p: { autor: string; rol: RolJugada; jugada: string; caballos: string; monto: number }
+  p: {
+    autor: string;
+    rol: RolJugada;
+    jugada: string;
+    caballos: string;
+    monto: number;
+    estadoCarrera?: EstadoOperativoCarrera | null;
+    cerrada?: boolean | null;
+    horaPartida?: string | Date | number | null;
+    ahora?: Date | number | null;
+    formatoConIcono?: boolean;
+  }
 ): ResultadoMesa {
+  if (verificarMesaCerrada(estado, p)) {
+    return bloqueo(estado, MENSAJE_CARRERA_CERRADA);
+  }
   const clave = claveDe(estado, p.autor);
   const nombre = clave;
   const monto = redondear(Number(p.monto));
@@ -133,14 +271,21 @@ export function proponer(
     return { estado, ok: false, bloqueado: false, mensajes: ["Indica un monto mayor que 0."] };
   }
   const disponible = disponibleDe(estado, clave);
-  if (disponible <= 0) return bloqueo(estado, frases.sinSaldo(nombre));
+  if (disponible <= 0) {
+    return bloqueo(
+      estado,
+      p.formatoConIcono ? frases.sinSaldoConIcono(nombre) : frases.sinSaldo(nombre)
+    );
+  }
 
   const publicado = Math.min(monto, disponible);
   const mensajes: string[] = [];
   const limites: string[] = [];
   if (monto > disponible) {
     // El aviso lleva el disponible ANTES de descontar lo publicado.
-    const aviso = frases.atento(nombre, disponible);
+    const aviso = p.formatoConIcono
+      ? frases.atentoConIcono(nombre, disponible)
+      : frases.atento(nombre, disponible);
     mensajes.push(aviso);
     limites.push(aviso);
   }
@@ -168,8 +313,20 @@ export function proponer(
  */
 export function concretar(
   estado: EstadoMesa,
-  c: { jugador: string; propuestaId?: number; monto?: number }
+  c: {
+    jugador: string;
+    propuestaId?: number;
+    monto?: number;
+    estadoCarrera?: EstadoOperativoCarrera | null;
+    cerrada?: boolean | null;
+    horaPartida?: string | Date | number | null;
+    ahora?: Date | number | null;
+    formatoConIcono?: boolean;
+  }
 ): ResultadoMesa {
+  if (verificarMesaCerrada(estado, c)) {
+    return bloqueo(estado, MENSAJE_CARRERA_CERRADA);
+  }
   const clave = claveDe(estado, c.jugador);
   const nombre = clave;
   const propuesta =
@@ -183,7 +340,12 @@ export function concretar(
     return { estado, ok: false, bloqueado: false, mensajes: [`${nombre} no puede concretar su propia propuesta.`] };
   }
   const disponible = disponibleDe(estado, clave);
-  if (disponible <= 0) return bloqueo(estado, frases.sinSaldo(nombre));
+  if (disponible <= 0) {
+    return bloqueo(
+      estado,
+      c.formatoConIcono ? frases.sinSaldoConIcono(nombre) : frases.sinSaldo(nombre)
+    );
+  }
 
   const pedido = Math.min(c.monto !== undefined && c.monto > 0 ? redondear(c.monto) : propuesta.montoAbierto, propuesta.montoAbierto);
   const amarrado = Math.min(pedido, disponible);
@@ -219,14 +381,41 @@ export function concretar(
  * concreción ("J", "Ponte"…) o una propuesta ("consigo 1p 2-5 300"). Si el texto
  * no se entiende, responde con la aclaratoria y NO toca el estado.
  */
-export function procesarMensajeMesa(estado: EstadoMesa, entrada: { jugador: string; texto: string }): ResultadoMesa {
+export function procesarMensajeMesa(
+  estado: EstadoMesa,
+  entrada: {
+    jugador: string;
+    texto: string;
+    estadoCarrera?: EstadoOperativoCarrera | null;
+    cerrada?: boolean | null;
+    horaPartida?: string | Date | number | null;
+    ahora?: Date | number | null;
+    formatoConIcono?: boolean;
+  }
+): ResultadoMesa {
+  if (verificarMesaCerrada(estado, entrada)) {
+    return bloqueo(estado, MENSAJE_CARRERA_CERRADA);
+  }
   const conc = parsearConcrecion(entrada.texto);
-  if (conc.ok) return concretar(estado, { jugador: entrada.jugador, monto: conc.monto });
+  if (conc.ok) {
+    return concretar(estado, {
+      jugador: entrada.jugador,
+      monto: conc.monto,
+      formatoConIcono: entrada.formatoConIcono,
+    });
+  }
 
   const parseo = parsearMensajeJugada(entrada.texto);
   if (!parseo.ok) return { estado, ok: false, bloqueado: false, mensajes: [parseo.aclaratoria] };
   const d: DatosJugada = parseo.datos;
-  return proponer(estado, { autor: entrada.jugador, rol: d.rol, jugada: d.jugada, caballos: d.caballos, monto: d.monto });
+  return proponer(estado, {
+    autor: entrada.jugador,
+    rol: d.rol,
+    jugada: d.jugada,
+    caballos: d.caballos,
+    monto: d.monto,
+    formatoConIcono: entrada.formatoConIcono,
+  });
 }
 
 /** Observaciones del reporte de WhatsApp con los límites alcanzados ("Juan hasta 300"). */

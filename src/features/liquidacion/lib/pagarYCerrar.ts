@@ -391,6 +391,12 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   if (cierre.ok) {
     useTablasFijasStore.getState().marcarCerrada(hipodromo, carrera);
   }
+  marcarEstadoCarreraEnMemoria({
+    hipodromo,
+    carrera,
+    fecha,
+    estado: "LIQUIDADA",
+  });
 
   return {
     ok: true,
@@ -923,6 +929,20 @@ export async function liquidarDupletasDeCarrera(
   }
   return { ok: errores.length === 0, liquidadas, pagado: round2(pagado), error: errores[0] };
 }
+
+import {
+  MENSAJE_CARRERA_CERRADA,
+  esCarreraCerradaOEnPartida,
+  verificarEstadoCarreraParaJugada,
+  marcarEstadoCarreraEnMemoria,
+} from "@/features/portal/lib/bloqueo-jugadas";
+
+export {
+  MENSAJE_CARRERA_CERRADA,
+  esCarreraCerradaOEnPartida,
+  verificarEstadoCarreraParaJugada,
+  marcarEstadoCarreraEnMemoria,
+};
 
 export {
   parsearComandoPizarra,

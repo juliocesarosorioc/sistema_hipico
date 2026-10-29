@@ -21,6 +21,7 @@ import {
 import {
   generarAsientoDepositoCliente,
   generarAsientoRetiroCliente,
+  type AsientoContableRegistrado,
 } from "@/features/contabilidad/lib/plan-cuentas";
 import { formasPagoDe, type FormaPago } from "@/features/clientes/lib/formasPago";
 
@@ -390,7 +391,7 @@ export async function registrarPagoComprobante(
       }
     }
 
-    // Partida Doble: DEBE 2.1.01.001 Saldo Acreedor Cliente / HABER 1.1.02.001 Banco Pozo
+    // Partida Doble: DEBE 2.1.01.001 Saldo Acreedor Cliente / HABER 1.1.02.xxx Banco Emisor
     try {
       await generarAsientoRetiroCliente({
         grupoId: params.grupoId,
@@ -399,6 +400,7 @@ export async function registrarPagoComprobante(
         clienteNombre: params.clienteNombre,
         monto: montoBase,
         referencia: ref,
+        bancoCodigo: resolverCodigoCuentaBancoPorMetodo(params.metodoPago),
         usuario: params.operador || "Administrador",
       });
     } catch {
@@ -517,6 +519,7 @@ export async function aprobarPagoCliente(
       clienteNombre: pago.cliente_nombre,
       monto: pago.monto_equivalente_base,
       referencia: pago.referencia_bancaria,
+      bancoCodigo: resolverCodigoCuentaBancoPorMetodo(pago.metodo_pago),
       usuario: operador,
     });
   } catch {
@@ -830,3 +833,129 @@ export function formatearReciboWhatsappGanador(params: {
     `🖼️ Comprobante disponible en tu Portal de Cliente`,
   ].join("\n");
 }
+
+/**
+ * Resuelve la cuenta contable del Plan Único de Cuentas (PUC-NIIF) según el método de pago.
+ */
+export function resolverCodigoCuentaBancoPorMetodo(metodoPago?: string | null): string {
+  const m = String(metodoPago || "").trim().toUpperCase();
+  if (m.includes("ZELLE") || m.includes("USDT") || m.includes("CRIPTO") || m.includes("PAYPAL")) {
+    return "1.1.02.003"; // Pasarelas Internacionales y Cripto (Zelle / USDT)
+  }
+  if (m.includes("EFECTIVO") || m.includes("CAJA") || m.includes("DIVISA")) {
+    return "1.1.01.001"; // Caja General y Efectivo Divisas
+  }
+  if (m.includes("MOVIL") || m.includes("MÓVIL") || m.includes("TRANSFERENCIA")) {
+    return "1.1.02.001"; // Banco Pozo Principal Operativo
+  }
+  return "1.1.02.001";
+}
+
+/**
+ * Ejecuta de forma atómica una operación contable confirmada por el operador
+ * a través del Agente IA Copiloto (Cobro a cliente o Pago a ganador):
+ * - Registra el comprobante en `pagos_comprobantes` (y lo aprueba de inmediato si lo confirma el operador).
+ * - Genera el asiento contable de Partida Doble (`Debe === Haber`).
+ * - Calcula el nuevo saldo en caliente y emite alertas si el usuario queda sin fondos.
+ */
+export async function ejecutarOperacionContableConfirmada(params: {
+  grupoId?: string | null;
+  clienteId?: string | null;
+  clienteNombre: string;
+  direccionFlujo: DireccionFlujoPago;
+  metodoPago: string;
+  referenciaBancaria: string;
+  monto: number;
+  comprobanteUrl: string;
+  saldoActualCliente?: number;
+  operador?: string | null;
+}): Promise<{
+  ok: boolean;
+  pago?: PagoComprobanteRow;
+  asiento?: AsientoContableRegistrado;
+  saldoAnterior: number;
+  nuevoSaldo: number;
+  notificaciones: string[];
+  error?: string;
+}> {
+  const saldoAnt = redondearCentavos(Number(params.saldoActualCliente ?? 0));
+  const monto = redondearCentavos(Math.abs(Number(params.monto) || 0));
+  const clienteId = String(params.clienteId || `cli-${params.clienteNombre.trim().toLowerCase().replace(/\s+/g, "-")}`);
+  const bancoCta = resolverCodigoCuentaBancoPorMetodo(params.metodoPago);
+
+  const reg = await registrarPagoComprobante({
+    grupoId: params.grupoId ?? null,
+    clienteId,
+    clienteNombre: params.clienteNombre,
+    direccionFlujo: params.direccionFlujo,
+    metodoPago: params.metodoPago,
+    referenciaBancaria: params.referenciaBancaria,
+    montoMonedaOrigen: monto,
+    monedaOrigen: "VES",
+    tasaCambio: 1,
+    comprobanteUrl: params.comprobanteUrl,
+    operador: params.operador || "Operador IA",
+  });
+
+  if (!reg.ok || !reg.pago) {
+    return {
+      ok: false,
+      saldoAnterior: saldoAnt,
+      nuevoSaldo: saldoAnt,
+      notificaciones: [],
+      error: reg.error || "No se pudo registrar la operación contable.",
+    };
+  }
+
+  let asiento: AsientoContableRegistrado | undefined;
+  let nuevoSaldo = saldoAnt;
+
+  if (params.direccionFlujo === "PAGO_A_GANADOR") {
+    // Egreso: disminuye el saldo acreedor del ganador
+    nuevoSaldo = restarDinero(saldoAnt, monto);
+    const resAsiento = await generarAsientoRetiroCliente({
+      grupoId: params.grupoId ?? null,
+      clienteId,
+      clienteNombre: params.clienteNombre,
+      monto,
+      referencia: params.referenciaBancaria,
+      bancoCodigo: bancoCta,
+      usuario: params.operador || "Operador IA",
+    });
+    asiento = resAsiento.asiento;
+  } else {
+    // Ingreso / Cobro confirmado por el operador: aprueba y acredita de forma atómica
+    await aprobarPagoCliente(reg.pago.id, params.operador || "Operador IA");
+    nuevoSaldo = sumarDinero(saldoAnt, monto);
+    const resAsiento = await generarAsientoDepositoCliente({
+      grupoId: params.grupoId ?? null,
+      clienteId,
+      clienteNombre: params.clienteNombre,
+      monto,
+      referencia: params.referenciaBancaria,
+      bancoCodigo: bancoCta,
+      usuario: params.operador || "Operador IA",
+    });
+    asiento = resAsiento.asiento;
+  }
+
+  if (asiento && reg.pago) {
+    reg.pago.asiento_contable_id = asiento.id;
+    reg.pago.estado = "APROBADO";
+  }
+
+  const notificaciones: string[] = [];
+  if (nuevoSaldo <= 0) {
+    notificaciones.push(`⛔ ${params.clienteNombre} sin saldo disponible.`);
+  }
+
+  return {
+    ok: true,
+    pago: reg.pago,
+    asiento,
+    saldoAnterior: saldoAnt,
+    nuevoSaldo,
+    notificaciones,
+  };
+}
+

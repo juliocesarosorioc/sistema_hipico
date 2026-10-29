@@ -1018,4 +1018,108 @@ export function construirFichaEstadoCuentaUnificada(
 // ============================================================================
 export * from "@/features/contabilidad/lib/plan-cuentas";
 
+const fmtMontoAlerta = (n: number): string =>
+  Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, "");
+
+export function formatearAlertaSinSaldo(nombre: string): string {
+  return `⛔ ${String(nombre).trim()} sin saldo disponible.`;
+}
+
+export function formatearAlertaAtentoDisponible(nombre: string, disponible: number): string {
+  return `⚠️ Atento '${String(nombre).trim()}', disponible ${fmtMontoAlerta(disponible)}.`;
+}
+
+/**
+ * Incrementa (por cobro/depósito aprobado) o descuenta (por pago a ganador o apuesta)
+ * el saldo de un cliente en caliente dentro del mapa global de saldos, devolviendo
+ * las alertas transparentes del Agente IA Copiloto.
+ */
+export function aplicarIncrementoODescuentoEnCaliente(params: {
+  saldos: Record<string, number>;
+  cliente: string;
+  monto: number;
+  tipo: "INCREMENTO" | "DESCUENTO" | "AJUSTE_PROPUESTA";
+}): {
+  saldos: Record<string, number>;
+  cliente: string;
+  saldoAnterior: number;
+  nuevoSaldo: number;
+  montoEfectivo: number;
+  notificaciones: string[];
+} {
+  const buscado = String(params.cliente ?? "").trim().toLowerCase();
+  const clave =
+    Object.keys(params.saldos).find((k) => k.trim().toLowerCase() === buscado) ??
+    String(params.cliente ?? "").trim();
+  const saldoAnterior = redondearCentavos(Number(params.saldos[clave] ?? 0));
+  const monto = redondearCentavos(Math.abs(Number(params.monto) || 0));
+  const siguientes = { ...params.saldos };
+  const notificaciones: string[] = [];
+
+  if (params.tipo === "INCREMENTO") {
+    const nuevoSaldo = sumarDinero(saldoAnterior, monto);
+    siguientes[clave] = nuevoSaldo;
+    if (nuevoSaldo <= 0) {
+      notificaciones.push(formatearAlertaSinSaldo(clave));
+    }
+    return {
+      saldos: siguientes,
+      cliente: clave,
+      saldoAnterior,
+      nuevoSaldo,
+      montoEfectivo: monto,
+      notificaciones,
+    };
+  }
+
+  if (params.tipo === "DESCUENTO") {
+    const nuevoSaldo = restarDinero(saldoAnterior, monto);
+    siguientes[clave] = nuevoSaldo;
+    if (nuevoSaldo <= 0) {
+      notificaciones.push(formatearAlertaSinSaldo(clave));
+    }
+    return {
+      saldos: siguientes,
+      cliente: clave,
+      saldoAnterior,
+      nuevoSaldo,
+      montoEfectivo: monto,
+      notificaciones,
+    };
+  }
+
+  // AJUSTE_PROPUESTA
+  if (saldoAnterior <= 0) {
+    notificaciones.push(formatearAlertaSinSaldo(clave));
+    return {
+      saldos: siguientes,
+      cliente: clave,
+      saldoAnterior,
+      nuevoSaldo: saldoAnterior,
+      montoEfectivo: 0,
+      notificaciones,
+    };
+  }
+
+  const montoEfectivo = Math.min(monto, saldoAnterior);
+  if (monto > saldoAnterior) {
+    notificaciones.push(formatearAlertaAtentoDisponible(clave, saldoAnterior));
+  }
+  const nuevoSaldo = restarDinero(saldoAnterior, montoEfectivo);
+  siguientes[clave] = nuevoSaldo;
+  if (nuevoSaldo <= 0) {
+    notificaciones.push(formatearAlertaSinSaldo(clave));
+  }
+
+  return {
+    saldos: siguientes,
+    cliente: clave,
+    saldoAnterior,
+    nuevoSaldo,
+    montoEfectivo,
+    notificaciones,
+  };
+}
+
+
 

@@ -1,7 +1,12 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { consultarAsistenteIa } from "../lib/asistenteIa";
+import {
+  consultarAsistenteIa,
+  consultarCopilotoTransaccional,
+  obtenerSesionCopilotoGlobal,
+  detectarIntencionContableInicial,
+} from "../lib/asistenteIa";
 import {
   crearTicketIncidencia,
   obtenerTodosLosTickets,
@@ -105,8 +110,25 @@ export function WidgetAsistenteIa() {
     setTextoInput("");
     setEscribiendoIa(true);
 
-    // Simula procesamiento inteligente de la IA con la base de conocimiento
-    setTimeout(() => {
+    // Simula procesamiento inteligente de la IA con la base de conocimiento y FSM contable
+    setTimeout(async () => {
+      const sesionActual = obtenerSesionCopilotoGlobal();
+      const intencionContable = detectarIntencionContableInicial(mensajeAEnviar);
+      if (sesionActual.flujoContable || intencionContable.esContable) {
+        const resCopiloto = await consultarCopilotoTransaccional(mensajeAEnviar, {
+          operador: usuario || "Operador",
+        });
+        const nuevoMsgIa: MensajeChat = {
+          id: `ia-${Date.now()}`,
+          remitente: "ia",
+          texto: resCopiloto.mensaje,
+          fecha: new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" }),
+        };
+        setMensajes((prev) => [...prev, nuevoMsgIa]);
+        setEscribiendoIa(false);
+        return;
+      }
+
       const res = consultarAsistenteIa(mensajeAEnviar, rolActual);
 
       const nuevoMsgIa: MensajeChat = {

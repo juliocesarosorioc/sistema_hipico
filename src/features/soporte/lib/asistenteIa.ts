@@ -6,6 +6,48 @@
  */
 
 import { ConsultaIaRespuesta, CategoriaTicket, PrioridadTicket } from "../types/soporte";
+import {
+  crearSesionAgente,
+  procesarTurnoAgente,
+  detectarIntencionContableInicial,
+  type EstadoAgenteTransaccional,
+  type RespuestaTurnoAgente,
+} from "@/features/ia-copiloto/lib/agente-transaccional";
+import type { EstadoOperativoCarrera } from "@/features/portal/lib/bloqueo-jugadas";
+
+let sesionCopilotoGlobal: EstadoAgenteTransaccional = crearSesionAgente();
+
+export function obtenerSesionCopilotoGlobal(): EstadoAgenteTransaccional {
+  return sesionCopilotoGlobal;
+}
+
+export function reiniciarSesionCopilotoGlobal(
+  opciones?: Parameters<typeof crearSesionAgente>[0]
+): EstadoAgenteTransaccional {
+  sesionCopilotoGlobal = crearSesionAgente(opciones);
+  return sesionCopilotoGlobal;
+}
+
+export async function consultarCopilotoTransaccional(
+  mensaje: string,
+  opciones?: {
+    jugador?: string;
+    operador?: string;
+    comprobanteUrl?: string | null;
+    estadoCarrera?: EstadoOperativoCarrera | null;
+    cerrada?: boolean | null;
+    horaPartida?: string | Date | number | null;
+  }
+): Promise<RespuestaTurnoAgente> {
+  const res = await procesarTurnoAgente(sesionCopilotoGlobal, {
+    texto: mensaje,
+    ...opciones,
+  });
+  sesionCopilotoGlobal = res.estado;
+  return res;
+}
+
+export { detectarIntencionContableInicial };
 
 interface ReglaConocimiento {
   patrones: RegExp[];

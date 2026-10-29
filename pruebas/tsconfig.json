@@ -155,6 +155,8 @@
     "./plan-cuentas-partida-doble.test.ts",
     "./incentivos-carrera-silenciosos.test.ts",
     "./pagos-comprobantes-ganadores.test.ts",
-    "./agente-bloques-limites-pizarra.test.ts"
+    "./agente-bloques-limites-pizarra.test.ts",
+    "../src/features/ia-copiloto/lib/agente-transaccional.ts",
+    "./agente-contabilidad-y-cierre.test.ts"
   ]
 }
