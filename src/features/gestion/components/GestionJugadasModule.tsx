@@ -2212,6 +2212,11 @@ const hipodromosDelDia = useMemo(() => {
             title="Abrir panel de control de cruces de esta carrera"
           >
             <span>⚡</span> Control de Cruces
+            {conCruces && (
+              <span className="rounded-full bg-emerald-500/30 px-1.5 py-0.2 text-[9px] font-black text-emerald-300 border border-emerald-400/40">
+                🔀 CON CRUCES
+              </span>
+            )}
             {Object.values(crucesOverrideCarrera.todos ?? {}).some((v) => typeof v === "boolean") && (
               <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" title="Excepción activa para esta carrera" />
             )}
@@ -2413,34 +2418,6 @@ const hipodromosDelDia = useMemo(() => {
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-xs font-black uppercase tracking-wide text-slate-700">Carga Individual</h3>
             <ToggleModalidadTiempo valor={modalidadTiempo} onChange={setModalidadTiempo} />
-            <button
-              type="button"
-              onClick={async () => {
-                const proximo = !conCruces;
-                const ok = await solicitarConfirmacionOperador({
-                  titulo: `Cambiar modalidad a ${proximo ? "CON CRUCES" : "SIN CRUCES"}`,
-                  mensaje: proximo
-                    ? "¿Confirmás activar la modalidad CON CRUCES para esta carrera? Al liquidar se reembolsará la comisión sobre el monto cruzado min(ganado, perdido) directamente en el neto del jugador."
-                    : "¿Confirmás cambiar a modalidad SIN CRUCES para esta carrera? Cada línea liquidará su comisión individual sin reembolso por cruce.",
-                  textoConfirmar: `Sí, activar ${proximo ? "CON CRUCES" : "SIN CRUCES"}`,
-                  variante: "info",
-                });
-                if (!ok) return;
-                setConCruces(proximo);
-                await notificarTareaEjecutadaOperador({
-                  titulo: `Modalidad actualizada: ${proximo ? "CON CRUCES" : "SIN CRUCES"}`,
-                  mensaje: `La carrera C${carrera} de ${nombreHipodromo} operará ahora en modalidad ${proximo ? "CON CRUCES" : "SIN CRUCES"}.`,
-                  variante: "success",
-                });
-              }}
-              className={`rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase transition ${
-                conCruces
-                  ? "border-emerald-400 bg-emerald-600 text-white"
-                  : "border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200"
-              }`}
-            >
-              🔀 Modalidad: {conCruces ? "CON CRUCES" : "SIN CRUCES"}
-            </button>
           </div>
           <span className="flex items-center gap-2">
             <span className="inline-flex min-w-[3.5rem] items-center justify-center rounded-full border-2 border-indigo-200 bg-white px-4 py-1.5 text-2xl font-black uppercase leading-none tracking-widest text-indigo-900 shadow-md md:text-3xl">
@@ -2516,25 +2493,41 @@ const hipodromosDelDia = useMemo(() => {
               </div>
 
               <div className="max-h-[80vh] overflow-y-auto p-5 text-slate-100 space-y-4">
-                {/* Con Cruces (otros productos) trasladado a este modal */}
-                <div className="rounded-xl border border-amber-400/40 bg-slate-800/90 p-3.5 flex items-center justify-between gap-3 shadow-md">
-                  <div>
-                    <span className="text-xs font-black text-amber-300 uppercase tracking-wide flex items-center gap-1.5">
-                      <span>🔀</span> Con Cruces (otros productos)
-                    </span>
-                    <p className="text-[11px] text-slate-300 mt-0.5">
-                      Compatibilidad para neteos de productos distintos a Jugadas entre Tercios. Al liquidar reembolsa la comisión sobre el monto cruzado.
+                {/* Con Cruces (otros productos) incorporado al modal de control de cruces */}
+                <div className="rounded-xl border border-amber-400/50 bg-slate-800/95 p-4 shadow-lg space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700/60 pb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">🔀</span>
+                      <div>
+                        <h4 className="text-xs font-black text-amber-300 uppercase tracking-wide">
+                          Modalidad Con Cruces (Otros Productos)
+                        </h4>
+                        <p className="text-[11px] text-slate-300">
+                          Reembolsa la comisión sobre el monto cruzado en el saldo del jugador al liquidar.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setConCruces(!conCruces)}
+                      className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-1.5 text-xs font-black uppercase tracking-wider transition ${
+                        conCruces
+                          ? "border-emerald-400 bg-emerald-600 text-white shadow-md shadow-emerald-900/30"
+                          : "border-slate-600 bg-slate-700 text-slate-300 hover:bg-slate-600"
+                      }`}
+                    >
+                      <span className={`h-2.5 w-2.5 rounded-full ${conCruces ? "bg-white animate-pulse" : "bg-slate-400"}`} />
+                      <span>{conCruces ? "CON CRUCES (ACTIVO)" : "SIN CRUCES (INACTIVO)"}</span>
+                    </button>
+                  </div>
+                  <div className="text-[11px] text-slate-400 space-y-1">
+                    <p>
+                      • <b className="text-slate-200">CON CRUCES:</b> Si un cliente gana y pierde en la misma carrera con productos combinados o cruzados, la comisión se calcula sobre la ganancia neta o se reembolsa el monto cruzado (Cuenta PUC: <code className="text-amber-300 font-mono">5.1.01.001</code>).
+                    </p>
+                    <p>
+                      • <b className="text-slate-200">SIN CRUCES:</b> Cada jugada ganadora aporta su comisión individual a la casa sin deducción por cruce.
                     </p>
                   </div>
-                  <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-amber-400/50 bg-amber-500/20 px-3 py-1.5 text-xs font-black uppercase text-amber-300 transition hover:bg-amber-500/30">
-                    <input
-                      type="checkbox"
-                      checked={conCruces}
-                      onChange={(e) => setConCruces(e.target.checked)}
-                      className="h-4 w-4 accent-amber-400 rounded"
-                    />
-                    <span>{conCruces ? "ACTIVO" : "INACTIVO"}</span>
-                  </label>
                 </div>
                 {Object.values(crucesOverrideCarrera.todos ?? {}).some((value) => typeof value === "boolean") && (
                   <div className="rounded-lg bg-amber-400/15 border border-amber-400/30 px-3 py-2 text-xs font-black text-amber-300 flex items-center gap-2">

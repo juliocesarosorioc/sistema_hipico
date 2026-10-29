@@ -29,11 +29,11 @@ type Props = {
 export type EstadoCarrera = "inactiva" | "abierta" | "con_jugadas" | "cerrada";
 
 const COLORES: Record<EstadoCarrera, { chip: string; label: string; txt: string }> = {
-  // Azul cuando no hay carrera registrada.
+  // Azul casi gris con letra más oscura cuando no hay carrera registrada.
   inactiva: {
-    chip: "border-blue-700 bg-blue-600 text-white shadow-xs",
-    label: "No hay carrera registrada (Azul)",
-    txt: "text-blue-600",
+    chip: "border-slate-400 bg-slate-300 text-slate-900 shadow-xs",
+    label: "No hay carrera registrada (Azul-gris)",
+    txt: "text-slate-800",
   },
   // Verde cuando la carrera ha sido registrada (sin jugadas aún).
   abierta: {
@@ -205,7 +205,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
     <div className="rounded-2xl border border-line bg-surface p-3">
       <div className="mb-2 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-600">
         <span className="font-black uppercase tracking-wide"><span className="normal-case">{nombreMostrar}</span> · CARRERAS DEL {fecha}</span>
-        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-blue-600" /> Azul: Sin carrera registrada</span>
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm border border-slate-400 bg-slate-300" /> Azul-gris: Sin carrera registrada</span>
         <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-emerald-600" /> Verde: Carrera registrada</span>
         <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-amber-400 ring-1 ring-amber-500" /> Amarillo: Con jugadas (sin liquidar)</span>
         <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-red-600" /> Rojo: Liquidada</span>
