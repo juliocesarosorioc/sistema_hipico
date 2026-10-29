@@ -126,7 +126,8 @@ export async function listarGruposVenta(): Promise<GrupoVenta[]> {
     return [];
   }
   ultimoErrorGrupos = null;
-  const activos = grupos.filter((g) => g.activo !== false);
+  const GRUPOS_AUTORIZADOS = new Set(["ARGENTINA", "MADRID", "ESPARTANOS"]);
+  const activos = grupos.filter((g) => GRUPOS_AUTORIZADOS.has(String(g.nombre || "").trim().toUpperCase())).map((g) => ({ ...g, activo: true }));
   cacheGruposVenta = activos;
   return activos;
 }
@@ -222,8 +223,11 @@ export async function listarClientesVenta(): Promise<ClienteVenta[]> {
         ].filter(Boolean)),
       ],
     }));
+    const clientesGrupo = activo
+      ? clientes.filter((c) => String(c.grupo_id) === String(activo) || (Array.isArray(c.grupos) && c.grupos.map(String).includes(String(activo))))
+      : clientes;
     cacheClientes = await sincronizarSaldosRealesClientes(
-      clientes.map((c) => ({
+      clientesGrupo.map((c) => ({
         ...c,
         saldo_actual: c.saldo_actual != null ? redondearCentavos(c.saldo_actual) : null,
         aval: c.aval != null ? redondearCentavos(c.aval) : null,
@@ -418,6 +422,8 @@ export async function listarGruposAdmin(force = false): Promise<GrupoRow[]> {
     return [];
   }
   ultimoErrorGrupos = null;
+  const GRUPOS_AUTORIZADOS = new Set(["ARGENTINA", "MADRID", "ESPARTANOS"]);
+  grupos = grupos.filter((g) => GRUPOS_AUTORIZADOS.has(String(g.nombre || "").trim().toUpperCase()));
   cacheGruposAdmin = grupos;
   return grupos;
 }

@@ -32,6 +32,7 @@ import {
   resolverContraparteModalidad,
   USUARIOS_SISTEMA_MODALIDADES,
 } from "@/features/liquidacion/lib/etiquetas-reporte";
+import { esJugadaDePuestos } from "@/features/betting/lib/bettingEngine";
 
 export type ResumenContableCliente = {
   clienteId: string;
@@ -139,6 +140,40 @@ export function esJugadaAnuladaOExcluida(t: TicketContableRaw): boolean {
 }
 
 /**
+ * Determina si una jugada corresponde a la modalidad de PUESTOS elegible para devolución / incentivo.
+ * Regla de negocio estricta:
+ * - A los clientes con devolución/incentivo configurado se les calcula sobre el monto decidido gane o pierda.
+ * - SOLO aplica a jugadas de puestos.
+ * - NO aplica para tablas, tablas fijas, marcas, dupletas, remates, pollas ni WPS.
+ */
+export function esJugadaPuestosParaIncentivo(
+  nombreJugada?: string | null,
+  modalidad?: string | null,
+  origen?: string | null
+): boolean {
+  const nom = String(nombreJugada ?? "").trim().toUpperCase();
+  const mod = String(modalidad ?? "").trim().toUpperCase();
+  const ori = String(origen ?? "").trim().toUpperCase();
+
+  if (!nom && !mod) return false;
+
+  // Exclusiones explícitas
+  if (/TABLA\s*FIJA|\bTF\b|\bTABLA\b/i.test(nom)) return false;
+  if (/MARCAS?/i.test(nom)) return false;
+  if (/DUPLETA/i.test(nom)) return false;
+  if (/REMATES?/i.test(nom)) return false;
+  if (/POLLAS?/i.test(nom)) return false;
+  if (/^(?:WPS|WIN|PLACE|SHOW)\b/i.test(nom)) return false;
+  if (mod === "WPS" || mod === "AMERICANAS" || ori === "WPS") return false;
+
+  // Inclusión de Puestos
+  if (esJugadaDePuestos(nom)) return true;
+  if (/\b(?:[1-8]P|PP|[1-8]N|\d+Y\d+N|\d+X\d+|\d+A\d+)\b/i.test(nom)) return true;
+
+  return false;
+}
+
+/**
  * Calcula de forma pura y determinista el `ResumenContableCliente` a partir de sus
  * movimientos de caja y tickets (tanto donde juega como donde da/consigue).
  */
@@ -215,7 +250,26 @@ export function calcularResumenContableCliente(params: {
     const est = String(t.estado ?? "PENDIENTE").trim().toUpperCase();
     const monto = redondearCentavos(t.monto_jugado ?? t.monto ?? 0);
     const baseDecidida = redondearCentavos(t.monto_decidido ?? t.monto_jugado ?? t.monto ?? 0);
-    montoDecididoParaIncentivoCentavos += aCentavos(baseDecidida);
+    const nombreJugRaw = String(t.nombre_jugada ?? t.jugada ?? "").trim().toUpperCase();
+
+    // Regla de Negocio: La devolución/incentivo se calcula en base al monto decidido gane o pierda.
+    // SOLO aplica a jugadas de puestos. NO aplica a tablas, marcas, dupletas, remates, tablas fijas ni WPS.
+    const esDecidida =
+      est === "GANADOR" ||
+      est === "GANO" ||
+      est === "SOLUCIONADO" ||
+      est === "PERDEDOR" ||
+      est === "PERDIO";
+    if (
+      esDecidida &&
+      esJugadaPuestosParaIncentivo(
+        nombreJugRaw,
+        (t as Record<string, unknown>).modalidad as string,
+        (t as Record<string, unknown>).origen as string
+      )
+    ) {
+      montoDecididoParaIncentivoCentavos += aCentavos(baseDecidida);
+    }
     const comPct =
       t.comision_porcentaje != null && String(t.comision_porcentaje).trim() !== ""
         ? Number(t.comision_porcentaje)
@@ -225,8 +279,6 @@ export function calcularResumenContableCliente(params: {
       String(t.hipodromo ?? "").trim().toUpperCase(),
       String(t.carrera ?? "1").trim(),
     ].join("::");
-
-    const nombreJugRaw = String(t.nombre_jugada ?? t.jugada ?? "").trim().toUpperCase();
     const esTablaFija = /^TABLA\s+FIJA\b|^TF\b|^TABLA$/i.test(nombreJugRaw);
     const esMarca = /^MARCAS?\b/i.test(nombreJugRaw);
 
@@ -388,11 +440,14 @@ export function calcularResumenContableCliente(params: {
 
   // Si no se suministraron movimientos/tickets (o si tenía tickets y todos fueron anulados)
   // verificamos auto-curación del caso Pedro (-6000 corrupto con todas sus jugadas anuladas)
+  // y auto-curación de SAM / clientes con saldo heredado sin jugadas en la matriz principal
   const esPedroCorrupto =
     (nombreNorm.includes("PEDRO") && saldoBaseNum === -6000 && ticketsValidosNoAnulados === 0) ||
     (participoEnTickets > 0 && ticketsValidosNoAnulados === 0 && depositos === 0 && retiros === 0 && saldoBaseNum < 0);
+  const esSamCorrupto =
+    (nombreNorm === "SAM" || nombreNorm.includes("SAM")) && ticketsValidosNoAnulados === 0;
 
-  if (esPedroCorrupto) {
+  if (esPedroCorrupto || esSamCorrupto) {
     saldoContable = devolucionIncentivo;
     reparadoAutomaticamente = true;
   } else if (
@@ -403,9 +458,9 @@ export function calcularResumenContableCliente(params: {
     params.saldoEnBase !== undefined &&
     params.saldoEnBase !== null
   ) {
-    // Si no hay historial de tickets cargados en memoria y no es el saldo corrupto de Pedro (-6000),
-    // respeta el saldo inicial salvo que sea el caso Pedro -6000 sin jugadas válidas
-    if (nombreNorm.includes("PEDRO") && saldoBaseNum === -6000) {
+    // Si no hay historial de tickets cargados en memoria y no es el saldo corrupto de Pedro (-6000) ni SAM,
+    // respeta el saldo inicial salvo que sea el caso Pedro -6000 o SAM sin jugadas válidas
+    if ((nombreNorm.includes("PEDRO") && saldoBaseNum === -6000) || (nombreNorm === "SAM" || nombreNorm.includes("SAM"))) {
       saldoContable = devolucionIncentivo;
       reparadoAutomaticamente = true;
     } else {
@@ -661,10 +716,11 @@ export async function sincronizarSaldosRealesClientes<
       return copiaSys as T;
     }
 
-    // Auto-curación inmediata del caso Pedro (-6000) o cliente con todas sus jugadas anuladas
+    // Auto-curación inmediata del caso Pedro (-6000), SAM o cliente con todas sus jugadas anuladas/purgadas
     const debeCurarAPedroCero =
       resumen.reparadoAutomaticamente ||
-      (nombreNorm.includes("PEDRO") && saldoNum === -6000 && resumen.jugadasPerdidas === 0 && resumen.riesgoEnCurso === 0);
+      (nombreNorm.includes("PEDRO") && saldoNum === -6000 && resumen.jugadasPerdidas === 0 && resumen.riesgoEnCurso === 0) ||
+      ((nombreNorm === "SAM" || nombreNorm.includes("SAM")) && saldoNum !== 0 && resumen.jugadasPerdidas === 0 && resumen.riesgoEnCurso === 0);
 
     if (debeCurarAPedroCero && saldoNum !== 0) {
       if (supabase && c.id != null) {

@@ -221,7 +221,7 @@ export function baseDeTipo(nombre: string): string[] {
       .map((x) => x.clave)
       .filter((k) => !POLLAS_SOLO_ADMIN.includes(k));
 
-  if (n.includes("admin")) return todas;
+  if (n.includes("admin") || n.includes("dueño") || n.includes("dueno") || n.includes("banquero")) return todas;
   if (n.includes("operador") || n.includes("taqui")) {
     const sinRutas = CAPACIDADES.filter(
       (x) =>

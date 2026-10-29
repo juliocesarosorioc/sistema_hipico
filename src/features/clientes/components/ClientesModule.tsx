@@ -23,6 +23,8 @@ import {
   type ClienteRow,
 } from "@/features/clientes/lib/clientes";
 import { formatoMoneda } from "@/shared/lib/vzla";
+import { listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -49,6 +51,62 @@ type Tab = "cartera" | "estado" | "cuaderno" | "cuadre" | "notificaciones";
  *  - Notificaciones: solicitudes de datos del portal + reclamos de jugadas.
  */
 export function ClientesModule() {
+  const esPrincipal = useAuthStore((s) => s.esPrincipal);
+  const miGrupoId = useAuthStore((s) => s.grupoId);
+  const grupoActivo = useAuthStore((s) => s.grupoActivo);
+  const veTodos = useAuthStore((s) => s.veTodosLosGrupos);
+  const tipoUsuario = useAuthStore((s) => s.tipoUsuario);
+  const perfiles = useAuthStore((s) => s.perfiles);
+
+  const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
+  const [grupoConsultado, setGrupoConsultado] = useState<string>(() => {
+    return grupoActivo || miGrupoId || "";
+  });
+
+  const esAdminDeGrupo = useMemo(() => {
+    if (esPrincipal) return true;
+    const t = (tipoUsuario?.nombre || "").toLowerCase();
+    const p = perfiles.join(" ").toLowerCase();
+    return (
+      t.includes("admin") ||
+      t.includes("dueño") ||
+      t.includes("dueno") ||
+      t.includes("banquero") ||
+      p.includes("admin") ||
+      p.includes("dueño") ||
+      p.includes("dueno") ||
+      Boolean(miGrupoId)
+    );
+  }, [esPrincipal, tipoUsuario, perfiles, miGrupoId]);
+
+  useEffect(() => {
+    let activo = true;
+    listarGruposVenta().then((gs) => {
+      if (!activo) return;
+      const validos = gs.filter((g) => g.activo !== false);
+      setGrupos(validos);
+      if (esPrincipal) {
+        if (grupoActivo) {
+          setGrupoConsultado(grupoActivo);
+        } else if (validos.length > 0) {
+          const principal = validos.find((g) => g.es_principal) || validos[0];
+          setGrupoConsultado(String(principal.id));
+          useAuthStore.getState().setGrupoActivo(String(principal.id));
+        }
+      } else if (miGrupoId) {
+        setGrupoConsultado(miGrupoId);
+      }
+    });
+    return () => {
+      activo = false;
+    };
+  }, [esPrincipal, grupoActivo, miGrupoId]);
+
+  useEffect(() => {
+    if (esPrincipal && grupoActivo && grupoActivo !== grupoConsultado) {
+      setGrupoConsultado(grupoActivo);
+    }
+  }, [esPrincipal, grupoActivo, grupoConsultado]);
   const [tab, setTab] = useState<Tab>("cartera");
   const [clientes, setClientes] = useState<ClienteRow[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -74,17 +132,18 @@ export function ClientesModule() {
   const [clienteEstado, setClienteEstado] = useState<ClienteRow | null>(null);
   const [socioConvertir, setSocioConvertir] = useState("");
 
-  const recargar = async () => {
+  const recargar = async (gid?: string) => {
     setCargando(true);
-    const cs = await listarClientes(true);
+    const target = gid !== undefined ? gid : grupoConsultado;
+    const cs = await listarClientes(true, target || null);
     setClientes(cs);
     setErrorCarga(errorClientes());
     setCargando(false);
   };
 
   useEffect(() => {
-    void recargar();
-  }, []);
+    void recargar(grupoConsultado);
+  }, [grupoConsultado]);
 
   const visibles = useMemo(() => {
     let v = clientes;
@@ -157,9 +216,38 @@ export function ClientesModule() {
     <div className="space-y-4">
       {/* Encabezado + pestañas */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-black text-slate-800">
-          <span className="mr-2 text-primary-600">👥</span> Gestión de Clientes
-        </h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-black text-slate-800">
+            <span className="mr-2 text-primary-600">👥</span> Gestión de Clientes
+          </h1>
+          {esPrincipal ? (
+            <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs">
+              <span className="font-bold text-amber-900">📁 Grupo:</span>
+              <select
+                value={grupoConsultado}
+                onChange={(e) => {
+                  const nuevo = e.target.value;
+                  setGrupoConsultado(nuevo);
+                  useAuthStore.getState().setGrupoActivo(nuevo);
+                }}
+                className="bg-transparent font-black text-amber-950 outline-none cursor-pointer"
+              >
+                {grupos.map((g) => (
+                  <option key={String(g.id)} value={String(g.id)}>
+                    {g.nombre} {g.es_principal ? "★" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
+              <span>📁 Mi Grupo:</span>
+              <span className="font-black text-slate-900">
+                {grupos.find((g) => String(g.id) === String(miGrupoId))?.nombre || "Grupo asignado"}
+              </span>
+            </div>
+          )}
+        </div>
         <div className="flex gap-2">
           <Guard permiso="clientes:btn_crear" disabled>
             <Button variant="default" size="sm" onClick={() => setAbrirNuevo(true)}>
@@ -515,8 +603,8 @@ export function ClientesModule() {
       )}
 
       {/* Modales */}
-      {abrirNuevo ? <ModalCliente onClose={() => setAbrirNuevo(false)} onGuardado={() => void recargar()} /> : null}
-      {editando ? <ModalCliente cliente={editando} onClose={() => setEditando(null)} onGuardado={() => void recargar()} /> : null}
+      {abrirNuevo ? <ModalCliente grupoIdPorDefecto={grupoConsultado} onClose={() => setAbrirNuevo(false)} onGuardado={() => void recargar(grupoConsultado)} /> : null}
+      {editando ? <ModalCliente cliente={editando} grupoIdPorDefecto={grupoConsultado} onClose={() => setEditando(null)} onGuardado={() => void recargar(grupoConsultado)} /> : null}
       {portalDe ? <ModalPortalCliente cliente={portalDe} onClose={() => setPortalDe(null)} onGuardado={() => void recargar()} /> : null}
 
       {/* Confirmar eliminación */}

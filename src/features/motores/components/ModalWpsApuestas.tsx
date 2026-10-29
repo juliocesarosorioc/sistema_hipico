@@ -41,7 +41,7 @@ export function ModalWpsApuestas({
   gruposDisponibles = [],
   onCargarApuestas,
 }: ModalWpsApuestasProps) {
-  const [pestana, setPestana] = useState<"apuestas" | "config" | "tabla_ve">("apuestas");
+  const [pestana, setPestana] = useState<"apuestas" | "config" | "tabla_ve">("config");
   const [grupoConfigId, setGrupoConfigId] = useState<string>(grupoId ? String(grupoId) : "global");
 
   // Estado de apuestas

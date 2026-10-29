@@ -90,6 +90,7 @@ export const CATEGORIAS: Categoria[] = [
       { href: "/apuestas", emoji: "🐎", txt: "Apuestas", visibleSiempre: true },
       { href: "/saldos-reportes", emoji: "💵", txt: "Reportes" },
       { href: "/clientes", emoji: "🧾", txt: "Clientes" },
+      { href: "/tickets", emoji: "🎫", txt: "Tickets", visibleSiempre: true },
     ],
   },
   {
@@ -102,7 +103,6 @@ export const CATEGORIAS: Categoria[] = [
       { href: "/remates", emoji: "🔔", txt: "Remates" },
       { href: "/dupleta", emoji: "🎯", txt: "Dupletas" },
       { href: "/pollas", emoji: "🏆", txt: "Pollas" },
-      { href: "/apuestas?modal=wps", emoji: "🏇", txt: "W.P.S.", badge: "⚡ Activo", titulo: "Win / Place / Show con Incentivos y Tabla Venezuela" },
     ],
   },
   {

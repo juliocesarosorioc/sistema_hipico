@@ -30,6 +30,7 @@
 
 import { clasificarLineaRapida } from "@/features/taquilla/lib/validar";
 import { validarPuesto } from "@/features/motores/lib/puestos";
+import { parsearLineaWps } from "@/features/motores/lib/wps-incentivos";
 
 export { validarPuesto };
 
@@ -596,6 +597,30 @@ export function normalizarLineaRapida(
      vacío y la fila salta a "revisar"). Se quita SOLO "N)" al inicio: el monto
      usa punto decimal ("10.000,00") y las jugadas "1-2x3-4" no se tocan. */
   const t = bruto.replace(/^\s*\d+\s*\)\s*/, "");
+
+  // 0) Interpretación directa e instantánea de apuestas Win, Place, Show (WPS)
+  const wpsItems = parsearLineaWps(t);
+  if (wpsItems.length === 1) {
+    const ap = wpsItems[0];
+    const clienteMatch = resolverClientes([ap.jugador], contexto.clientes);
+    const nombreCliente = clienteMatch.cliente1 || ap.jugador;
+    return {
+      ok: true,
+      jugada: ap.modalidad,
+      caballo: ap.ejemplar,
+      monto: String(ap.monto),
+      cliente1: nombreCliente,
+      cliente2: "",
+      confianza: {
+        jugada: "exacto",
+        caballo: "exacto",
+        monto: "exacto",
+        cliente1: clienteMatch.cliente1 ? "exacto" : "aproximado",
+        cliente2: "exacto",
+      },
+      correcciones: [`Modalidad WPS (${ap.modalidad})`],
+    };
+  }
 
   const exp = expandirLineaHablada(t);
   const clas = clasificarLineaRapida(exp.texto);

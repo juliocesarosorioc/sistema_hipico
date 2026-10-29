@@ -22,6 +22,8 @@ import {
 } from "@/features/liquidacion/lib/cierres";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { contarTicketsPendientes, EVENTO_TICKETS_ACTUALIZADOS } from "@/features/soporte/lib/ticketsStorage";
+import { ModalGestionTicketsAdmin } from "@/features/soporte/components/ModalGestionTicketsAdmin";
 
 type Acceso = { emoji: string; txt: string; href?: string };
 
@@ -36,13 +38,13 @@ const ACCESOS: Acceso[] = [
   { emoji: "🎟️", txt: "Apuestas", href: "/gestion-jugadas" },
   { emoji: "🧾", txt: "Saldos / Reportes", href: "/saldos-reportes" },
   { emoji: "👥", txt: "Clientes", href: "/clientes" },
+  { emoji: "🎫", txt: "Tickets de Soporte", href: "/tickets" },
   { emoji: "🗺️", txt: "Hipódromos", href: "/hipodromos" },
   { emoji: "📥", txt: "Depósitos", href: "/contabilidad/ingresos" },
   { emoji: "💵", txt: "Retiros", href: "/contabilidad/caja" },
   { emoji: "🔄", txt: "Transferencias", href: "/contabilidad/caja" },
   { emoji: "💱", txt: "Monedas", href: "/contabilidad/monedas" },
   { emoji: "🏦", txt: "Bancos", href: "/contabilidad/bancos" },
-  { emoji: "🏇", txt: "Winner / Place / Show", href: "/taquilla?modalidad=wps" },
   { emoji: "🏆", txt: "Pollas", href: "/pollas" },
   { emoji: "🔔", txt: "Remates", href: "/remates" },
   { emoji: "🛡️", txt: "Seguridad y Accesos", href: "/seguridad" },
@@ -226,6 +228,31 @@ export function DashboardGrupos() {
   // comprobarlo; acá se evita que el resto de la operación vea un control que no
   // puede usar.
   const esPrincipal = useAuthStore((s) => s.esPrincipal);
+  const perfiles = useAuthStore((s) => s.perfiles);
+  const [ticketsPendientes, setTicketsPendientes] = useState(0);
+  const [modalTicketsAbierto, setModalTicketsAbierto] = useState(false);
+
+  const esAdmin = Boolean(
+    esPrincipal ||
+    perfiles.some(
+      (p) =>
+        p.toLowerCase().includes("admin") ||
+        p.toLowerCase().includes("super") ||
+        p.toLowerCase().includes("principal")
+    )
+  );
+
+  const actualizarTickets = useCallback(() => {
+    const cant = contarTicketsPendientes(esAdmin, esAdmin ? null : grupoId);
+    setTicketsPendientes(cant);
+  }, [esAdmin, grupoId]);
+
+  useEffect(() => {
+    actualizarTickets();
+    window.addEventListener(EVENTO_TICKETS_ACTUALIZADOS, actualizarTickets);
+    return () => window.removeEventListener(EVENTO_TICKETS_ACTUALIZADOS, actualizarTickets);
+  }, [actualizarTickets]);
+
   const [editandoVigente, setEditandoVigente] = useState(false);
   const [inicioVigente, setInicioVigente] = useState("");
 
@@ -329,18 +356,64 @@ export function DashboardGrupos() {
         <h1 className="text-xl font-black text-slate-800">
           <span className="mr-2 text-amber-500">🥧</span> Centro de Control del Grupo
         </h1>
-        <select
-          value={grupoId}
-          onChange={(e) => setGrupoId(e.target.value)}
-          className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-bold uppercase text-slate-700 outline-none"
-          aria-label="Grupo de venta"
-        >
-          {grupos.map((g) => (
-            <option key={String(g.id)} value={String(g.id)}>
-              {g.nombre} {g.es_principal ? "· PRINCIPAL" : ""}
-            </option>
-          ))}
-        </select>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Tecla Actualizar */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void recargar();
+              void recargarCierres();
+              actualizarTickets();
+            }}
+            title="Actualizar datos y cierres del Centro de Control"
+          >
+            <span className="mr-1">🔄</span> Actualizar
+          </Button>
+
+          {/* Mensajería de Tickets creada al lado de la tecla Actualizar */}
+          {ticketsPendientes > 0 ? (
+            <button
+              type="button"
+              onClick={() => setModalTicketsAbierto(true)}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-400 bg-rose-50 px-2.5 text-xs font-black text-rose-700 shadow-sm transition hover:bg-rose-100 cursor-pointer"
+              title="Tickets e incidencias pendientes por resolver. Clic para abrir el panel de atención."
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600"></span>
+              </span>
+              <span className="tracking-tight">🚨 Tickets:</span>
+              <span className="rounded-full bg-rose-600 px-1.5 py-0.2 text-[10px] font-black leading-none text-white">
+                {ticketsPendientes}
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setModalTicketsAbierto(true)}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-xs font-bold text-slate-700 transition hover:bg-surfaceAlt cursor-pointer shadow-xs"
+              title="Centro de Solución de Tickets e Incidencias (Sin pendientes)"
+            >
+              <span>🎫</span>
+              <span>Tickets</span>
+            </button>
+          )}
+
+          <select
+            value={grupoId}
+            onChange={(e) => setGrupoId(e.target.value)}
+            className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-bold uppercase text-slate-700 outline-none"
+            aria-label="Grupo de venta"
+          >
+            {grupos.map((g) => (
+              <option key={String(g.id)} value={String(g.id)}>
+                {g.nombre} {g.es_principal ? "· PRINCIPAL" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* ---------- SEMANA ACTIVA ---------- */}
@@ -735,6 +808,11 @@ export function DashboardGrupos() {
       )}
 
       <ToastHost />
+
+      <ModalGestionTicketsAdmin
+        abierto={modalTicketsAbierto}
+        onCerrar={() => setModalTicketsAbierto(false)}
+      />
     </div>
   );
 }

@@ -10,11 +10,10 @@ import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModal
 import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
 import { WPS_PLANIFICACION, CLASE_WPS_BLOQUEADA } from "@/features/motores/lib/wps-planificacion";
 
-type Modalidad = "puestos" | "wps" | "remates" | "dupletas";
+type Modalidad = "puestos" | "remates" | "dupletas";
 
 const MODALIDADES: Array<{ id: Modalidad; label: string }> = [
   { id: "puestos", label: "Puestos" },
-  { id: "wps", label: "Win / Place / Show" },
   { id: "remates", label: "Remates" },
   { id: "dupletas", label: "Dupletas" },
 ];
@@ -28,14 +27,14 @@ const MODALIDADES: Array<{ id: Modalidad; label: string }> = [
  * llega con el enlace viejo `?modalidad=wps`, este panel explica el estado en
  * vez de dejar la carga de jugadas americana operando.
  */
-const PENDIENTE: Record<Exclude<Modalidad, "puestos" | "dupletas">, { titulo: string; texto: string }> = {
+const PENDIENTE: Record<string, { titulo: string; texto: string }> = {
   remates: {
     titulo: "Remates",
     texto: "RematesEngine en construcción: pote neto recirculante (Paso 4 del plan de migración).",
   },
   wps: {
     titulo: "W.P.S. — Win / Place / Show",
-    texto: `${WPS_PLANIFICACION}. Esta modalidad todavía no está habilitada para los usuarios: usá Puestos para tus jugadas de la carrera.`,
+    texto: `${WPS_PLANIFICACION}. Modal independiente (disponible desde el menú lateral).`,
   },
 };
 
@@ -71,7 +70,7 @@ export function TaquillaModule() {
 
         <div className="flex flex-wrap gap-1.5 border-b border-line pb-3">
           {MODALIDADES.map((m) => {
-            const esWps = m.id === "wps";
+            const esWps = (m.id as string) === "wps";
             const activa = modalidad === m.id;
             return (
               <button

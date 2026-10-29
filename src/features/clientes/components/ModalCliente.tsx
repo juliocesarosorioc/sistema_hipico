@@ -39,6 +39,7 @@ const FORMAS_CUADRE = ["SALDO EN CONTADO", "EFECTIVO DIRECTO", "COMPENSACIÓN AV
 type Props = {
   /** null = alta nueva; ClienteRow = edición. */
   cliente?: ClienteRow | null;
+  grupoIdPorDefecto?: string | null;
   onClose: () => void;
   onGuardado: () => void;
 };
@@ -198,7 +199,7 @@ function Insignia({ icono, texto, tono }: { icono: string; texto: string; tono: 
  * formulario con secciones, iconos y rejilla uniforme, y las validaciones se
  * aplican igual en alta y en edición.
  */
-export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
+export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose, onGuardado }: Props) {
   const esEdicion = cliente != null;
   const [clientes, setClientes] = useState<ClienteRow[]>([]);
 
@@ -236,7 +237,25 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
   // todas sus jugadas, así que el campo no se abre a quien solo pueda crear
   // clientes. Se lee del store para que aparezca y desaparezca con la sesión y el
   // modal no quede con la decisión de un usuario anterior.
-  const puedeAsignarGrupo = useAuthStore((s) => s.esPrincipal);
+  const esPrincipal = useAuthStore((s) => s.esPrincipal);
+  const miGrupoId = useAuthStore((s) => s.grupoId);
+  const grupoActivo = useAuthStore((s) => s.grupoActivo);
+  const esAdminGrupo = useAuthStore((s) => {
+    const t = (s.tipoUsuario?.nombre || "").toLowerCase();
+    const p = s.perfiles.join(" ").toLowerCase();
+    return (
+      s.esPrincipal ||
+      t.includes("admin") ||
+      t.includes("dueño") ||
+      t.includes("dueno") ||
+      t.includes("banquero") ||
+      p.includes("admin") ||
+      p.includes("dueño") ||
+      p.includes("dueno") ||
+      Boolean(s.grupoId)
+    );
+  });
+  const puedeAsignarGrupo = esPrincipal || esAdminGrupo;
   const modoLibre = modo === "libre";
 
   useEffect(() => {
@@ -295,7 +314,7 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
     void listarClientes().then(setClientes);
     // Los grupos solo se piden si el campo se va a mostrar: son datos de
     // comerciales que un operador no tiene por qué tener en memoria.
-    if (puedeAsignarGrupo) void listarGruposVenta().then(setGrupos);
+    void listarGruposVenta().then(setGrupos);
   }, [puedeAsignarGrupo]);
 
   const socios = useMemo(() => clientes.filter((c) => c.es_socio === true), [clientes]);
@@ -396,11 +415,13 @@ export function ModalCliente({ cliente = null, onClose, onGuardado }: Props) {
     // `null` sacaba al cliente de su grupo cada vez que un operador guardaba
     // cualquier otro dato. Para eso el campo se omite del parche y no se manda
     // como null. En el alta no hay grupo previo que preservar, así que va null.
-    const extra = puedeAsignarGrupo
-      ? { grupo_id: grupoId || null }
-      : esEdicion
-        ? {}
-        : { grupo_id: null };
+    const grupoAsignado = puedeAsignarGrupo
+      ? (grupoId || grupoIdPorDefecto || miGrupoId || null)
+      : (miGrupoId || grupoIdPorDefecto || null);
+
+    const extra = esEdicion
+      ? (puedeAsignarGrupo ? { grupo_id: grupoId || null } : {})
+      : { grupo_id: grupoAsignado };
     const r = esEdicion
       ? await actualizarCliente(
           cliente!.id,

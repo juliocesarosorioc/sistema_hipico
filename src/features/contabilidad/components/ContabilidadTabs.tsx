@@ -353,6 +353,7 @@ export function TabIngresos({
   const [filtro, setFiltro] = useState("");
   const [clienteId, setClienteId] = useState("");
   const [tipo, setTipo] = useState<TipoDeposito>("Normal");
+  const [fechaAsiento, setFechaAsiento] = useState(() => new Date().toISOString().slice(0, 10));
   const [monto, setMonto] = useState("");
   const [moneda, setMoneda] = useState<"USD" | "VES">("USD");
   const [tasa, setTasa] = useState(String(tasaVes));
@@ -455,6 +456,7 @@ export function TabIngresos({
       banco_id: bancoId || null,
       referencia: referencia.trim() || null,
       nota: nota.trim() || null,
+      fecha_asiento: fechaAsiento,
     });
     setGuardando(false);
     if (!r.ok) return toast(r.error ?? "Error al registrar.", "error");
@@ -549,6 +551,17 @@ export function TabIngresos({
               <option value="Otorgar Aval">Otorgar Aval</option>
               <option value="Pagar Aval">Pagar Aval</option>
             </select>
+          </div>
+          <div>
+            <label className={lbl}>Fecha del Asiento (Operación Contable) *</label>
+            <DateInput
+              value={fechaAsiento}
+              onFechaChange={(val) => setFechaAsiento(val)}
+              className={inp}
+            />
+            <p className="mt-0.5 text-[9px] text-slate-500">
+              * Fecha contable manual. La fecha del movimiento se registra internamente en el sistema al guardar.
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -695,9 +708,10 @@ export function TabIngresos({
                 onClick={() =>
                   exportarTabla(
                     "contabilidad_ingresos",
-                    ["Fecha", "Cliente", "Tipo", "Modalidad", "Moneda", "Monto", "Monto USD"],
+                    ["Fecha Asiento", "Fecha Movimiento", "Cliente", "Tipo", "Modalidad", "Moneda", "Monto", "Monto USD"],
                     visiblesDepositos.map((d) => [
-                      csvFecha(d.fecha),
+                      d.fecha_asiento ? String(d.fecha_asiento).slice(0, 10) : (d.fecha ? String(d.fecha).slice(0, 10) : ""),
+                      csvFecha(d.fecha_movimiento ?? d.fecha),
                       d.cliente_nombre ?? "",
                       d.tipo_operacion ?? "Normal",
                       d.modalidad ?? "",
@@ -716,7 +730,8 @@ export function TabIngresos({
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-slate-50">
                 <tr>
-                  <th className={th}>Fecha</th>
+                  <th className={th}>Fecha Asiento</th>
+                  <th className={th}>Fecha Movimiento</th>
                   <th className={th}>Cliente</th>
                   <th className={th}>Tipo</th>
                   <th className={th}>Modalidad</th>
@@ -726,7 +741,12 @@ export function TabIngresos({
               <tbody>
                 {visiblesDepositos.map((d) => (
                   <tr key={d.id} className="border-t border-line">
-                    <td className={td + " text-slate-500"}>{fechaCorta(d.fecha)}</td>
+                    <td className={td + " font-mono font-bold text-slate-700"}>
+                      {d.fecha_asiento ? String(d.fecha_asiento).slice(0, 10) : (d.fecha ? String(d.fecha).slice(0, 10) : "—")}
+                    </td>
+                    <td className={td + " text-[11px] text-slate-500"}>
+                      {fechaCorta(d.fecha_movimiento ?? d.fecha)}
+                    </td>
                     <td className={td + " font-semibold text-slate-700"}>{d.cliente_nombre ?? "—"}</td>
                     <td className={td}>
                       <span
@@ -751,7 +771,7 @@ export function TabIngresos({
                 ))}
                 {visiblesDepositos.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-3 py-8 text-center text-slate-400">
+                    <td colSpan={6} className="px-3 py-8 text-center text-slate-400">
                       {depositos.length === 0
                         ? "Sin ingresos registrados."
                         : "Ningún ingreso coincide con el filtro."}
@@ -786,6 +806,7 @@ export function TabCaja({
   onHecho: () => Promise<void>;
 }) {
   const [modo, setModo] = useState<"traslado" | "retiro">("traslado");
+  const [fechaAsiento, setFechaAsiento] = useState(() => new Date().toISOString().slice(0, 10));
 
   const [origen, setOrigen] = useState("");
   const [destino, setDestino] = useState("");
@@ -840,6 +861,7 @@ export function TabCaja({
             destino_id: destino,
             monto: montoNum,
             nota: nota.trim() || null,
+            fecha_asiento: fechaAsiento,
           })
         : await registrarRetiro({
             origen_id: origen,
@@ -854,6 +876,7 @@ export function TabCaja({
             cedula_rif: cedula.trim().toUpperCase() || null,
             beneficiario: beneficiario.trim() || null,
             nota: nota.trim() || null,
+            fecha_asiento: fechaAsiento,
           });
     setGuardando(false);
     if (!r.ok) return toast(r.error ?? "Error al registrar.", "error");
@@ -924,6 +947,17 @@ export function TabCaja({
             ))}
           </div>
           <div className="space-y-2">
+            <div>
+              <label className={lbl}>Fecha del Asiento (Operación Contable) *</label>
+              <DateInput
+                value={fechaAsiento}
+                onFechaChange={(val) => setFechaAsiento(val)}
+                className={inp}
+              />
+              <p className="mt-0.5 text-[9px] text-slate-500">
+                * Fecha contable manual. La fecha del movimiento se registra internamente en el sistema al guardar.
+              </p>
+            </div>
             <div>
               <label className={lbl}>Cliente origen *</label>
               <select value={origen} onChange={(e) => setOrigen(e.target.value)} className={`${inp} font-bold`}>
@@ -1082,7 +1116,8 @@ export function TabCaja({
                   exportarTabla(
                     "contabilidad_caja",
                     [
-                      "Fecha",
+                      "Fecha Asiento",
+                      "Fecha Movimiento",
                       "Tipo",
                       "Origen",
                       "Destino",
@@ -1093,7 +1128,8 @@ export function TabCaja({
                       "Monto USD",
                     ],
                     visiblesTransacciones.map((t) => [
-                      csvFecha(t.fecha),
+                      t.fecha_asiento ? String(t.fecha_asiento).slice(0, 10) : (t.fecha ? String(t.fecha).slice(0, 10) : ""),
+                      csvFecha(t.fecha_movimiento ?? t.fecha),
                       t.tipo_operacion ?? "TRANSFERENCIA",
                       t.cliente_origen_nombre ?? "",
                       t.cliente_destino_nombre ?? "",
@@ -1114,7 +1150,8 @@ export function TabCaja({
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-slate-50">
                 <tr>
-                  <th className={th}>Fecha</th>
+                  <th className={th}>Fecha Asiento</th>
+                  <th className={th}>Fecha Movimiento</th>
                   <th className={th}>Tipo</th>
                   <th className={th}>Origen</th>
                   <th className={th}>Destino</th>
@@ -1126,7 +1163,12 @@ export function TabCaja({
               <tbody>
                 {visiblesTransacciones.map((t) => (
                   <tr key={t.id} className="border-t border-line">
-                    <td className={td + " text-slate-500"}>{fechaCorta(t.fecha)}</td>
+                    <td className={td + " font-mono font-bold text-slate-700"}>
+                      {t.fecha_asiento ? String(t.fecha_asiento).slice(0, 10) : (t.fecha ? String(t.fecha).slice(0, 10) : "—")}
+                    </td>
+                    <td className={td + " text-[11px] text-slate-500"}>
+                      {fechaCorta(t.fecha_movimiento ?? t.fecha)}
+                    </td>
                     <td className={td}>
                       <span
                         className={`rounded px-1.5 py-0.5 text-[9px] font-black uppercase ${
@@ -1149,7 +1191,7 @@ export function TabCaja({
                 ))}
                 {visiblesTransacciones.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-3 py-8 text-center text-slate-400">
+                    <td colSpan={8} className="px-3 py-8 text-center text-slate-400">
                       {transacciones.length === 0
                         ? "Sin movimientos registrados."
                         : "Ningún movimiento coincide con el filtro."}
@@ -2067,8 +2109,9 @@ export function TabBalanceNIIF({
           <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className={lbl}>Fecha *</label>
+                <label className={lbl}>Fecha del Asiento (Operación Contable) *</label>
                 <DateInput value={fecha} onFechaChange={(val) => setFecha(val)} className={inp} />
+                <p className="mt-0.5 text-[9px] text-slate-500">* Fecha contable manual del asiento.</p>
               </div>
               <div>
                 <label className={lbl}>Clave de idempotencia *</label>
@@ -2248,7 +2291,7 @@ export function TabBalanceNIIF({
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-slate-50">
                 <tr>
-                  <th className={th}>Fecha</th>
+                  <th className={th}>Fecha Asiento</th>
                   <th className={th}>Clave</th>
                   <th className={th}>Concepto</th>
                   <th className={th + " text-right"}>Debe</th>

@@ -32,6 +32,7 @@ import { normalizarFormasPago, type FormaPago } from "@/features/clientes/lib/fo
 import {
   calcularEstadoCuentaCliente,
   construirFichaEstadoCuentaUnificada,
+  sincronizarSaldosRealesClientes,
   type FichaEstadoCuentaUnificada,
 } from "@/features/saldos/lib/contabilidad-central";
 import { redondearCentavos } from "@/shared/lib/dinero";
@@ -453,7 +454,26 @@ export async function reanudarSesion(): Promise<SesionPortal | null> {
  * con listas vacías y el mismo aspecto, que es peor: el usuario veía su saldo en
  * cero y podía pensar que le habían vaciado la cuenta.
  */
-async function construirSesion(cliente: ClienteRow): Promise<SesionPortal | null> {
+async function construirSesion(clienteParam: ClienteRow): Promise<SesionPortal | null> {
+  let cliente = clienteParam;
+  // Sincronización en tiempo real con la matriz principal de la base de datos:
+  // Nunca confiar en caché estática de localStorage para el saldo contable.
+  if (supabase && clienteParam.id != null) {
+    try {
+      const { data: cDb } = await supabase
+        .from("clientes")
+        .select("*")
+        .eq("id", clienteParam.id)
+        .maybeSingle();
+      if (cDb) {
+        const saneados = await sincronizarSaldosRealesClientes([cDb as ClienteRow], cDb.grupo_id);
+        cliente = saneados[0] ?? (cDb as ClienteRow);
+      }
+    } catch {
+      /* fallback con clienteParam */
+    }
+  }
+
   const datos = await datosCliente(cliente);
   if (datos === null) return null;
   const { tickets, grupo } = datos;
@@ -496,11 +516,28 @@ async function construirSesion(cliente: ClienteRow): Promise<SesionPortal | null
     ? estadoCentral.disponibleParaJugar
     : redondearCentavos(saldoReal + num(cliente.aval) - estadoCentral.riesgoEnCurso);
 
+  const clienteFinal = {
+    ...cliente,
+    saldo_actual: estadoCentral.fueSaneado ? estadoCentral.saldoContable : cliente.saldo_actual,
+  };
+
+  // Refrescar caché local con los datos saneados
+  if (typeof window !== "undefined") {
+    try {
+      const cGuardada = cacheGuardada();
+      if (cGuardada) {
+        window.localStorage.setItem(
+          CACHE_KEY,
+          JSON.stringify({ ...cGuardada, cliente: clienteFinal })
+        );
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+
   return {
-    cliente: {
-      ...cliente,
-      saldo_actual: estadoCentral.fueSaneado ? estadoCentral.saldoContable : cliente.saldo_actual,
-    },
+    cliente: clienteFinal,
     resumen: {
       saldo: saldoReal,
       incentivo: arbolTickets.dec,

@@ -27,49 +27,54 @@ export function SelectorGrupo() {
   useEffect(() => {
     if (!veTodos) return;
     let vivo = true;
-    // Best-effort: si la lista de grupos no se puede leer, el selector sigue
-    // mostrando "Todos los grupos" y no rompe la barra.
     listarGruposVenta()
       .then((g) => {
-        if (vivo) setGrupos(g);
+        if (!vivo) return;
+        const gruposValidos = g.filter((x) => x.activo !== false);
+        setGrupos(gruposValidos);
+        // Si no hay grupo activo seleccionado o el actual no es válido, seleccionar el grupo principal
+        if (gruposValidos.length > 0) {
+          const actualExiste = gruposValidos.some((x) => String(x.id) === String(grupoActivo));
+          if (!grupoActivo || !actualExiste) {
+            const principal = gruposValidos.find((x) => x.es_principal) || gruposValidos[0];
+            setGrupoActivo(String(principal.id));
+          }
+        }
       })
       .catch(() => {
-        /* sin grupos: queda solo "Todos" */
+        /* sin grupos */
       });
     return () => {
       vivo = false;
     };
-  }, [veTodos]);
+  }, [veTodos, grupoActivo, setGrupoActivo]);
 
   if (!veTodos) return null;
 
   const cambiar = (valor: string) => {
     const v = valor && valor.trim() !== "" ? valor.trim() : null;
+    if (!v) return;
     setGrupoActivo(v);
-    // Las pantallas ya cargaron con el filtro anterior: la recarga es la forma
-    // más simple (y sin fugas) de que todas relean. El grupo elegido queda
-    // guardado en localStorage, así que sobrevive a la recarga.
     limpiarCacheClientes();
     window.location.reload();
   };
 
   return (
     <label
-      className="inline-flex h-9 items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 text-xs font-bold text-slate-700"
-      title="Ver todos los grupos o filtrar por uno"
+      className="inline-flex h-9 items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 text-xs font-bold text-slate-800"
+      title="Grupo activo seleccionado"
     >
-      <span aria-hidden="true">🗂️</span>
-      <span className="hidden sm:inline">Grupo</span>
+      <span aria-hidden="true">📁</span>
+      <span className="hidden sm:inline">Grupo:</span>
       <select
-        value={grupoActivo ?? ""}
+        value={grupoActivo ?? (grupos[0] ? String(grupos[0].id) : "")}
         onChange={(e) => cambiar(e.target.value)}
-        className="max-w-[13rem] bg-transparent text-xs font-bold text-slate-700 outline-none"
-        aria-label="Grupo que se está mirando"
+        className="max-w-[13rem] bg-transparent text-xs font-black text-slate-900 outline-none cursor-pointer"
+        aria-label="Grupo activo seleccionado"
       >
-        <option value="">🌐 Principal («Todos los grupos»)</option>
         {grupos.map((g) => (
-          <option key={String(g.id)} value={String(g.id)}>
-            {g.nombre}
+          <option key={String(g.id)} value={String(g.id)} className="bg-white text-slate-900 font-bold">
+            {g.nombre} {g.es_principal ? "★" : ""}
           </option>
         ))}
       </select>

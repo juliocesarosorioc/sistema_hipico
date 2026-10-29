@@ -14,6 +14,7 @@
  */
 import { supabase } from "@/core/supabase";
 import type { ClienteRow } from "@/features/clientes/lib/clientes";
+import { crearTicketIncidencia } from "@/features/soporte/lib/ticketsStorage";
 
 export type ModalidadPortalJugada =
   | "marcas"
@@ -219,6 +220,7 @@ export async function solicitarDesbloqueoJugada(opts: {
     .join(" · ");
 
   try {
+    // 1. Guardar en notificaciones para auditoría y persistencia multi-dispositivo
     const { error } = await supabase.from("notificaciones").insert([
       {
         tipo: "solicitud_desbloqueo",
@@ -239,6 +241,30 @@ export async function solicitarDesbloqueoJugada(opts: {
         estado: "Nueva",
       },
     ]);
+
+    // 2. Crear inmediatamente el Ticket de Incidencia Oficial para la barra de Tickets Pendientes
+    try {
+      crearTicketIncidencia({
+        titulo: `🔓 Solicitud de desbloqueo: ${etiqueta}`,
+        descripcion: `El jugador ${nombreCliente} solicita desbloquear la modalidad ${etiqueta}${
+          contexto ? ` (${contexto})` : ""
+        }.${opts.nota ? ` Nota del jugador: ${opts.nota}` : ""}`,
+        categoria: "desbloqueo",
+        prioridad: "alta",
+        emisor: {
+          id: String(opts.cliente.id),
+          nombre: nombreCliente,
+          rol: "cliente",
+          grupoId: opts.cliente.grupo_id ? String(opts.cliente.grupo_id) : null,
+          grupoNombre: null,
+          telefono: opts.cliente.telefono || undefined,
+        },
+        destinatario: "admin",
+      });
+    } catch {
+      // Ignorar si el storage local falla, la notificación en BD ya fue creada
+    }
+
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (e) {

@@ -6,6 +6,7 @@ export type CategoriaTicket =
   | "duda_plataforma"
   | "disputa_jugada"
   | "ajuste_saldo"
+  | "desbloqueo"
   | "carrera_liquidacion"
   | "error_sistema"
   | "otro";

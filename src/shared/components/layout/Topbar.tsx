@@ -12,7 +12,6 @@ import { ModalGestionRapidaSaldo } from "@/features/contabilidad/components/Moda
 import { conCacheBust } from "@/shared/lib/logos";
 import { useVersionLogos } from "@/shared/store/useHipodromosStore";
 import { listarGruposVenta } from "@/features/grupos/lib/grupos";
-import { AlertaTicketsTopbar } from "@/features/soporte/components/AlertaTicketsTopbar";
 
 /**
  * Barra superior limpia de la SPA (Organismo del layout raíz).
@@ -187,7 +186,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
   const total = novedades.length;
 
   return (
-    <header className="sticky top-0 z-40 flex h-[50px] shrink-0 items-center justify-between gap-2 border-b border-line bg-surface/90 px-3 sm:px-4 backdrop-blur">
+    <header className="sticky top-0 z-40 flex h-[50px] shrink-0 items-center justify-between gap-2 border-b border-line bg-surface/90 px-3 sm:px-4 backdrop-blur overflow-hidden">
       {/* ESPACIO SUPERIOR IZQUIERDO: Menú + LOGO DEL GRUPO */}
       <div className="flex items-center gap-2 min-w-0 shrink-0">
         {alAlternarMenu && (
@@ -231,11 +230,8 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
         </div>
       </div>
 
-      {/* Controles y módulos de la barra superior */}
-      <div className="flex items-center gap-2 min-w-0 overflow-x-auto">
-
-      {/* Alerta interactiva de Tickets de Incidencias para Administradores y Dueños */}
-      <AlertaTicketsTopbar />
+      {/* Controles y módulos de la barra superior sin desbordamiento */}
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
 
       {/* Campana de novedades: auditoría reciente del sistema. */}
       <div className="relative" data-campana>
@@ -327,18 +323,6 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
       >
         <span>{modoOperador ? "🐎🎲 VISTA: OPERADOR" : "🛡️ VISTA: COMPLETA"}</span>
       </button>
-
-      {modoOperador && (
-        <button
-          type="button"
-          onClick={() => setModalSaldoOperador(true)}
-          title="Gestión rápida de saldos de clientes (Incrementar / Disminuir con capture de comprobante)"
-          className="inline-flex h-8 items-center gap-1.5 rounded-lg border-2 border-emerald-600 bg-emerald-600 px-3 text-[11px] font-black text-white shadow-sm transition hover:bg-emerald-700"
-        >
-          <span>💵</span>
-          <span>Gestión Rápida de Saldos</span>
-        </button>
-      )}
 
       <SelectorGrupo />
 

@@ -15,7 +15,9 @@ import { useRegistroCentral } from "@/shared/store/useRegistroCentral";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { numeroDeCarrera } from "@/features/gaceta/lib/numeros";
 import { CarreraGacetaCard } from "@/features/ejemplares/components/CarreraGacetaCard";
-import { listarHipodromos, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
+import { listarHipodromos, publicarTablasLote, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
+import type { TablaFijaRow } from "@/features/tablas/lib/tablas-fijas";
+import { supabase } from "@/core/supabase";
 import {
   acumularEnEnsamblaje,
   cargadasEnEnsamblaje,
@@ -183,6 +185,66 @@ async function extraerPdfComoTexto(file: File, tope?: number): Promise<string> {
 }
 
 const SQL_AVISO_KEY = "club_gaceta_sql_aviso";
+
+export type ResultadoInformeCarga = {
+  hipodromo: string;
+  fecha: string;
+  totalCarreras: number;
+  creadas: number;
+  actualizadas: number;
+  previamenteCargadas: number;
+  tablasPublicadas: number;
+  ejemplaresNuevos: number;
+  ejemplaresVinculados: number;
+  eraGacetaPrevia: boolean;
+};
+
+function convertirCarreraATablaFija(c: CarreraRegistro, fechaIso: string): TablaFijaRow {
+  const hipo = String(c.hipodromo ?? "").trim().toUpperCase();
+  const numCarrera = Number(c.carrera) || 1;
+  const ejemplares = (c.ejemplares?.length ? c.ejemplares : c.caballos ?? []).map((e) => {
+    let nac = e.nacionalidad ? String(e.nacionalidad).toUpperCase() : "";
+    if (!nac) {
+      const esAmericano = /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN/i.test(hipo);
+      nac = esAmericano ? "US" : "VE";
+    }
+    return {
+      numero: String(e.numero),
+      nombre: String(e.nombre || "").trim().toUpperCase(),
+      nacionalidad: nac,
+      valor_ejemplar: Number(e.valor) || 0,
+      retirado: false,
+      ganador: false,
+      ejemplar_id: e.ejemplar_id ?? null,
+      invalidado: false,
+    };
+  });
+
+  return {
+    id: `gaceta-${hipo}-${numCarrera}-${fechaIso}`,
+    hipodromo: hipo,
+    hipodromo_id: null,
+    carrera: numCarrera,
+    fecha: fechaIso,
+    fecha_creacion: new Date().toISOString(),
+    estado: "Abierta",
+    premio_original: Number(c.premio) || 100,
+    premio_recalculado: Number(c.premio) || 100,
+    suma_base_tabla: ejemplares.reduce((acc, curr) => acc + (curr.valor_ejemplar || 0), 0),
+    limite_ventas: 0,
+    cantidad_vendida: 0,
+    moneda: "USD",
+    tasa_cambio: null,
+    distancia_carrera: c.distancia != null ? String(c.distancia) : null,
+    superficie: (c.superficie || "ARENA").toUpperCase(),
+    retirados_oficiales: null,
+    comision_grupo: 0,
+    grupo_venta: null,
+    caballos: ejemplares,
+    tabla_grupos: null,
+  };
+}
+
 export function GacetaIA() {
   const [paginas, setPaginas] = useState<PaginaGaceta[]>([]);
   const [seleccionadas, setSeleccionadas] = useState<Set<string>>(new Set());
@@ -245,6 +307,37 @@ export function GacetaIA() {
    * Indicador "cargadas vs pendientes": refresca cuántas carreras hay ya en el
    * buzón del Ensamblaje y cuántas del día se mandaron desde la Gaceta.
    */
+  const [informeResultado, setInformeResultado] = useState<ResultadoInformeCarga | null>(null);
+  const [alertaGacetaPrevia, setAlertaGacetaPrevia] = useState<{
+    existe: boolean;
+    carreras: number;
+    hipodromo: string;
+    fecha: string;
+  } | null>(null);
+
+  const verificarGacetaExistente = useCallback(async (hipo: string, f: string) => {
+    if (!supabase || !hipo.trim() || !f.trim()) return;
+    try {
+      const { count } = await supabase
+        .from("tablas_fijas")
+        .select("id", { count: "exact", head: true })
+        .ilike("hipodromo", hipo.trim())
+        .eq("fecha", f.trim());
+      if (count && count > 0) {
+        setAlertaGacetaPrevia({
+          existe: true,
+          carreras: count,
+          hipodromo: hipo.trim().toUpperCase(),
+          fecha: f.trim(),
+        });
+      } else {
+        setAlertaGacetaPrevia(null);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const refrescarContadores = useCallback(() => {
     setCargadas(cargadasEnEnsamblaje());
     const reg = leerRegistro();
@@ -334,6 +427,26 @@ export function GacetaIA() {
             premio: c.premio ?? null,
           });
         }
+        // PUBLICACIÓN AUTOMÁTICA DIRECTA DE JUGADAS EN LA PLATAFORMA (TABLAS FIJAS)
+        // Elimina el reproceso manual de ensamblaje: las tablas de jugadas se crean y se publican automáticamente.
+        let tablasPublicadas = 0;
+        try {
+          const tablasLote = lote.map((c) => convertirCarreraATablaFija(c, fecha));
+          const resPublicacion = await publicarTablasLote(tablasLote);
+          tablasPublicadas = resPublicacion.okCount;
+        } catch (errTablas) {
+          console.warn("Aviso en publicación automática de tablas:", errTablas);
+        }
+
+        // Marcar en almacenamiento local como enviadas y aplicadas
+        const carrerasActualizadas = lote.map((c) => ({
+          ...c,
+          enviada: true,
+          aplicada: true,
+        }));
+        persistirRegistro(carrerasActualizadas);
+        refrescarContadores();
+
         setCarreras((prev) =>
           prev.map((c) => {
             const actualizada = lote.find(
@@ -341,17 +454,33 @@ export function GacetaIA() {
                 claveHipodromo(n.hipodromo) === claveHipodromo(c.hipodromo) &&
                 Number(n.carrera) === Number(c.carrera)
             );
-            return actualizada ? { ...actualizada, ejemplares: (actualizada.ejemplares ?? []).map((e) => ({ ...e })) } : c;
+            return actualizada ? { ...actualizada, enviada: true, aplicada: true, ejemplares: (actualizada.ejemplares ?? []).map((e) => ({ ...e })) } : c;
           })
         );
         setFaseRegistro("listo");
-        setEstado(`✅ Registradas en el Día (listas en Carreras del Día, Taquilla y Gestión) · ${fecha}`);
+        setEstado(`✅ Carreras y jugadas registradas y publicadas en la plataforma · ${fecha}`);
         const conteo = (estado: ResultadoCargaCarrera["estado"]) =>
           sincronizacion.resultados.filter((r) => r.estado === estado).length;
+
+        // Disparar mensaje y reporte detallado de resultado para informar
+        const info: ResultadoInformeCarga = {
+          hipodromo: lote[0]?.hipodromo ? String(lote[0].hipodromo).toUpperCase() : "HIPÓDROMO",
+          fecha,
+          totalCarreras: lote.length,
+          creadas: conteo("CREADA"),
+          actualizadas: conteo("ACTUALIZADA_COMPLETADA"),
+          previamenteCargadas: conteo("PREVIAMENTE_CARGADA"),
+          tablasPublicadas: tablasPublicadas || lote.length,
+          ejemplaresNuevos: resumen.nuevos,
+          ejemplaresVinculados: resumen.vinculados,
+          eraGacetaPrevia: conteo("PREVIAMENTE_CARGADA") > 0 || conteo("ACTUALIZADA_COMPLETADA") > 0,
+        };
+        setInformeResultado(info);
+
         toast(
           registroAutomatico
-            ? `✅ IA registró ${conteo("CREADA")} nuevas y completó ${conteo("ACTUALIZADA_COMPLETADA")} carreras; ${conteo("PREVIAMENTE_CARGADA")} ya estaban completas (Fecha: ${fecha})`
-            : `✅ Sincronización: ${conteo("CREADA")} nuevas, ${conteo("ACTUALIZADA_COMPLETADA")} completadas, ${conteo("PREVIAMENTE_CARGADA")} sin cambios (Fecha: ${fecha}).`,
+            ? `✅ IA registró ${conteo("CREADA")} nuevas, completó ${conteo("ACTUALIZADA_COMPLETADA")} carreras y publicó ${tablasPublicadas || lote.length} tablas de jugadas (Fecha: ${fecha})`
+            : `✅ Sincronización y publicación: ${conteo("CREADA")} nuevas, ${tablasPublicadas || lote.length} tablas fijas activas (Fecha: ${fecha}).`,
           "success"
         );
         return true;
@@ -678,6 +807,10 @@ export function GacetaIA() {
       }
       refrescarContadores();
 
+      if (lista[0]?.hipodromo) {
+        void verificarGacetaExistente(lista[0].hipodromo, fechaDestino);
+      }
+
       const registrado = await registrarCarrerasEnElDia(lista, fechaDestino, true);
       if (!registrado) return;
 
@@ -898,6 +1031,21 @@ export function GacetaIA() {
               <b> jornadas de días posteriores</b> (o anteriores) al actual.
             </p>
           </div>
+
+          {alertaGacetaPrevia?.existe && (
+            <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 shadow-sm flex items-start gap-2.5">
+              <span className="text-xl">⚠️</span>
+              <div>
+                <p className="font-black uppercase tracking-wide">
+                  Gaceta detectada previamente en la plataforma
+                </p>
+                <p className="text-[11px] mt-0.5 text-amber-800">
+                  Ya existen <b>{alertaGacetaPrevia.carreras} carreras/tablas registradas</b> para <b>{alertaGacetaPrevia.hipodromo}</b> en la fecha <b>{alertaGacetaPrevia.fecha}</b>.
+                  Al procesar, el sistema actualizará automáticamente las carreras y jugadas existentes sin duplicar registros.
+                </p>
+              </div>
+            </div>
+          )}
           <div
             onClick={() => inputRef.current?.click()}
             onDragOver={(e) => e.preventDefault()}
@@ -1318,6 +1466,110 @@ export function GacetaIA() {
               >
                 Siguiente ▶
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL INFORMATIVO CON EL RESULTADO DE LA CARGA DE GACETA IA */}
+      {informeResultado && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-in fade-in duration-150"
+        >
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-emerald-500/40 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-emerald-100 bg-emerald-50 px-5 py-3.5">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">🏇</span>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wide text-emerald-950">
+                    Carga y Registro con IA Finalizado
+                  </h3>
+                  <p className="text-[11px] text-emerald-700">
+                    Carreras y jugadas activadas automáticamente en la plataforma
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInformeResultado(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-emerald-100 hover:text-slate-700"
+                aria-label="Cerrar modal de informe"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="flex items-center justify-between rounded-xl bg-slate-50 border border-slate-200 p-3">
+                <div>
+                  <span className="text-[10px] font-black uppercase text-slate-500">Hipódromo</span>
+                  <p className="text-sm font-black text-slate-900">{informeResultado.hipodromo}</p>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-black uppercase text-slate-500">Fecha Jornada</span>
+                  <p className="text-sm font-mono font-bold text-slate-900">{informeResultado.fecha}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-2.5 text-center">
+                  <span className="text-[10px] font-black uppercase text-emerald-800">Carreras Creadas</span>
+                  <p className="text-xl font-black text-emerald-700">{informeResultado.creadas}</p>
+                </div>
+                <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-2.5 text-center">
+                  <span className="text-[10px] font-black uppercase text-sky-800">Actualizadas</span>
+                  <p className="text-xl font-black text-sky-700">{informeResultado.actualizadas}</p>
+                </div>
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-2.5 text-center">
+                  <span className="text-[10px] font-black uppercase text-indigo-800">Tablas Publicadas</span>
+                  <p className="text-xl font-black text-indigo-700">{informeResultado.tablasPublicadas}</p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-line bg-slate-50/80 p-3 text-xs text-slate-700 space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span>🐎 Ejemplares vinculados en Padrón:</span>
+                  <span className="font-bold font-mono text-emerald-700">+{informeResultado.ejemplaresVinculados}</span>
+                </div>
+                {informeResultado.ejemplaresNuevos > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span>✨ Nuevos ejemplares registrados:</span>
+                    <span className="font-bold font-mono text-emerald-700">+{informeResultado.ejemplaresNuevos}</span>
+                  </div>
+                )}
+                {informeResultado.previamenteCargadas > 0 && (
+                  <div className="flex justify-between items-center text-amber-800">
+                    <span>ℹ️ Carreras completas previas (sin cambios):</span>
+                    <span className="font-bold font-mono">{informeResultado.previamenteCargadas}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-xs text-emerald-900">
+                ✅ <b>Sin reproceso:</b> Las carreras y tablas fijas ya están publicadas en la base de datos y disponibles de inmediato para realizar apuestas en <b>Taquilla, Gestión de Jugadas, Marcas y Portal</b>. No es necesario acudir a Ensamblaje.
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setInformeResultado(null)}
+              >
+                Cerrar
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  setInformeResultado(null);
+                  router.push("/apuestas");
+                }}
+              >
+                Ir a Apuestas 🐎🎲
+              </Button>
             </div>
           </div>
         </div>

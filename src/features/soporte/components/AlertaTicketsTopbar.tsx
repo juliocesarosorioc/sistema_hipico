@@ -63,32 +63,27 @@ export function AlertaTicketsTopbar() {
           <button
             type="button"
             onClick={() => setModalAbierto(true)}
-            className="group relative inline-flex h-8 items-center gap-2 rounded-lg border-2 border-red-500 bg-red-600/90 hover:bg-red-600 px-3 text-[11px] font-black text-white shadow-lg shadow-red-500/20 transition-all hover:scale-102 cursor-pointer animate-pulse"
-            title="¡Tienes tickets de incidencias pendientes de solución! Haz clic para abrir el modal y responder."
+            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-rose-400 bg-rose-50 px-3 text-xs font-black text-rose-700 shadow-sm transition-all hover:bg-rose-100 hover:border-rose-500 cursor-pointer"
+            title="¡Tienes tickets de incidencias pendientes de solución! Haz clic para abrir el centro de atención."
           >
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600"></span>
             </span>
-            <span className="flex items-center gap-1 tracking-tight">
-              <span>🚨 TICKET{pendientes > 1 ? "S" : ""}:</span>
-              <span className="rounded-full bg-white/20 px-1.5 py-0.2 text-[10px] font-black">
-                {pendientes} PENDIENTE{pendientes > 1 ? "S" : ""}
-              </span>
-            </span>
-            <span className="hidden xl:inline text-[9px] font-bold uppercase tracking-wider text-red-100 group-hover:underline">
-              · Responder aquí →
+            <span className="tracking-tight">🚨 Tickets:</span>
+            <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-black leading-none text-white">
+              {pendientes} {pendientes === 1 ? "pendiente" : "pendientes"}
             </span>
           </button>
         ) : (
           <button
             type="button"
             onClick={() => setModalAbierto(true)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 px-2.5 text-[11px] font-bold text-slate-300 hover:border-slate-600 hover:bg-slate-800 hover:text-white transition"
+            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-line bg-surface px-3 text-xs font-bold text-slate-700 transition-colors hover:bg-surfaceAlt cursor-pointer shadow-xs"
             title="Centro de Solución de Incidencias y Tickets (Sin pendientes)"
           >
             <span>🎫</span>
-            <span className="hidden md:inline">Tickets</span>
+            <span>Tickets</span>
           </button>
         )}
       </div>

@@ -13,7 +13,7 @@ import { resumenDatosPago, type DatosPago } from "@/shared/lib/vzla";
 import { exigirCapacidad, esPrincipalVigente, grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
 import { resumenFormasPago, type FormaPago } from "@/features/clientes/lib/formasPago";
 import { redondearCentavos } from "@/shared/lib/dinero";
-import { sincronizarSaldosRealesClientes } from "@/features/saldos/lib/contabilidad-central";
+import { sincronizarSaldosRealesClientes, esJugadaPuestosParaIncentivo } from "@/features/saldos/lib/contabilidad-central";
 import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { extraerFechaCarreraTicket } from "@/features/liquidacion/lib/fecha";
 import {
@@ -283,11 +283,14 @@ export function errorClientes(): string | null {
 }
 
 /**
- * Grupo que se está mirando para la cartera. Para un usuario normal es null
- * (el aislamiento lo hace el RLS de la base). Para el super administrador es el
- * grupo elegido en el selector, o null = "todos".
+ * Grupo que se está mirando para la cartera.
+ * Para un usuario de grupo: estrictamente su propio grupo.
+ * Para el super administrador: estrictamente el grupo seleccionado.
  */
 function grupoParaFiltrar(): string | null {
+  if (!esPrincipalVigente()) {
+    return grupoVigente() || null;
+  }
   return grupoActivoVigente();
 }
 
@@ -307,17 +310,45 @@ export function credencialesPortalPorDefecto(c: Pick<ClienteRow, "id" | "portal_
 }
 
 export async function listarClientes(force = false, grupoIdOverride?: string | null): Promise<ClienteRow[]> {
-  const activoBase = grupoParaFiltrar();
-  const activo = grupoIdOverride != null && grupoIdOverride !== "" ? grupoIdOverride : activoBase;
-  // La caché se invalida sola cuando cambia el grupo que se está mirando: si no,
-  // elegir "ARGENTINA" después de "todos" mostraría la lista vieja.
+  let activo = grupoIdOverride != null && grupoIdOverride !== "" ? grupoIdOverride : grupoParaFiltrar();
+
+  // AISLAMIENTO ESTRICTO:
+  // 1. Un grupo no puede ver los usuarios/clientes de otro.
+  if (!esPrincipalVigente()) {
+    const miGrupo = grupoVigente();
+    if (miGrupo) activo = miGrupo;
+    if (!activo) return [];
+  }
+
+  // 2. El principal SOLO puede ver los usuarios/clientes del grupo seleccionado.
+  if (esPrincipalVigente() && !activo && supabase) {
+    try {
+      const { data: gData } = await supabase
+        .from("grupos_venta")
+        .select("id")
+        .eq("activo", true)
+        .order("es_principal", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (gData?.id) {
+        activo = String(gData.id);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Si aún no hay grupo seleccionado o asignado, no mostrar clientes de otros grupos
+  if (!activo) return [];
+
+  // La caché se invalida sola cuando cambia el grupo que se está mirando
   if (cacheClientes && !force && cacheClientesGrupo === activo) return cacheClientes;
   let lista: ClienteRow[] = [];
   ultimoErrorClientes = null;
   if (supabase) {
     try {
-      let q = supabase.from("clientes").select("*").order("nombre");
-      if (activo) q = q.eq("grupo_id", activo);
+      // Filtrar SIEMPRE por el grupo_id activo
+      const q = supabase.from("clientes").select("*").eq("grupo_id", activo).order("nombre");
       const { data, error } = await q;
       if (error) throw error;
       lista = (await sincronizarSaldosRealesClientes(
@@ -416,7 +447,7 @@ export function sinCamposDelPrincipal(
     }
     return patch;
   }
-  const yo = grupoVigente() || grupoActivoVigente();
+  const yo = patch.grupo_id || grupoVigente() || grupoActivoVigente();
   if (yo) return { ...patch, grupo_id: yo };
   const { grupo_id: _omitido, ...resto } = patch;
   return resto;
@@ -1116,7 +1147,22 @@ export function construirEstadoCuenta(
     const base = t.monto_decidido != null ? num(t.monto_decidido) : num(t.monto_jugado);
     const anulada = t.anulada === true;
     const baseVigente = anulada ? 0 : base;
-    const dec = baseVigente * (devolucionPct / 100);
+    const estUpper = String(t.estado ?? "").trim().toUpperCase();
+    const esDecidido =
+      estUpper === "GANADOR" ||
+      estUpper === "GANO" ||
+      estUpper === "SOLUCIONADO" ||
+      estUpper === "PERDEDOR" ||
+      estUpper === "PERDIO";
+    const aplicaIncentivo =
+      !anulada &&
+      esDecidido &&
+      esJugadaPuestosParaIncentivo(
+        t.nombre_jugada,
+        (t as Record<string, unknown>).modalidad as string,
+        (t as Record<string, unknown>).origen as string
+      );
+    const dec = aplicaIncentivo ? baseVigente * (devolucionPct / 100) : 0;
     const moneda = (t.moneda ?? "USD").toUpperCase();
     const grupo = t.grupo_cobro_nombre || "Directo";
     // Imputación estricta al DÍA DE LA CARRERA (`fecha_carrera`), sin importar cuándo fue registrada.

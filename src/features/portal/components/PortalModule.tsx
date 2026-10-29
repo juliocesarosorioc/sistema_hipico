@@ -989,8 +989,8 @@ function ReporteDiarioView({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-12 xl:items-start">
-        <div className="min-w-0 rounded-2xl border border-line bg-white p-3 shadow-sm xl:col-span-9">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-12 xl:items-start w-full max-w-full overflow-hidden">
+        <div className="min-w-0 w-full max-w-full overflow-hidden rounded-2xl border border-line bg-white p-3 shadow-sm xl:col-span-9">
           <ReporteDiarioTabla datos={datos} perspectiva="cliente" mostrarGraficos={false} />
         </div>
 

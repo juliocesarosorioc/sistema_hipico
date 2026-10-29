@@ -14,6 +14,12 @@ import {
   EVENTO_TICKETS_ACTUALIZADOS,
 } from "../lib/ticketsStorage";
 import { useAuthStore } from "@/shared/store/useAuthStore";
+import { supabase } from "@/core/supabase";
+import {
+  guardarBloqueosJugadas,
+  leerBloqueosJugadasCache,
+  type ModalidadPortalJugada,
+} from "@/features/portal/lib/bloqueo-jugadas";
 
 interface Props {
   abierto: boolean;
@@ -54,6 +60,17 @@ export function ModalGestionTicketsAdmin({
   const [filtroPrioridad, setFiltroPrioridad] = useState<PrioridadTicket | "todas">("todas");
   const [busqueda, setBusqueda] = useState("");
   const [ticketSeleccionadoId, setTicketSeleccionadoId] = useState<string | null>(null);
+  const [vistaMobile, setVistaMobile] = useState<"lista" | "detalle">("lista");
+
+  // Cerrar con tecla Escape
+  useEffect(() => {
+    if (!abierto) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCerrar();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [abierto, onCerrar]);
 
   // Formulario de respuesta
   const [textoRespuesta, setTextoRespuesta] = useState("");
@@ -145,24 +162,34 @@ export function ModalGestionTicketsAdmin({
   if (!abierto) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 p-2 sm:p-4 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 text-slate-100 shadow-2xl">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCerrar();
+      }}
+      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/85 p-1.5 sm:p-4 backdrop-blur-md animate-in fade-in duration-150 overflow-hidden"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex h-[92vh] max-h-[860px] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 text-slate-100 shadow-2xl min-w-0 mx-2 sm:mx-auto"
+      >
         {/* ENCABEZADO DEL MODAL */}
-        <header className="flex shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900/90 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 text-xl border border-amber-500/40 shadow-inner">
+        <header className="flex shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900/90 px-3 py-2.5 sm:px-6 min-w-0 gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-lg border border-amber-500/40 shadow-inner">
               🎫
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-black tracking-tight text-white">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                <h2 className="text-sm sm:text-base font-black tracking-tight text-white truncate">
                   Centro de Solución de Incidencias & Tickets
                 </h2>
-                <span className="rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-400 border border-amber-500/20">
+                <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-400 border border-amber-500/20 shrink-0">
                   {esAdmin ? "Administrador Principal" : "Gestión de Grupo"}
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-[11px] text-slate-400 truncate hidden sm:block">
                 Atención a operadores, dudas especializadas y resolución de contingencias operativas.
               </p>
             </div>
@@ -170,11 +197,14 @@ export function ModalGestionTicketsAdmin({
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={onCerrar}
-              className="grid h-8 w-8 place-items-center rounded-lg border border-slate-700 bg-slate-800 text-slate-300 transition hover:bg-slate-700 hover:text-white"
-              title="Cerrar ventana"
+              className="flex items-center gap-1.5 rounded-lg border border-red-500/40 bg-red-500/20 px-3 py-1.5 text-xs font-black text-red-300 transition hover:bg-red-500 hover:text-white cursor-pointer shadow-sm"
+              title="Cerrar ventana (Esc)"
+              aria-label="Cerrar ventana"
             >
-              ✕
+              <span>✕</span>
+              <span className="hidden sm:inline">Cerrar</span>
             </button>
           </div>
         </header>
@@ -229,7 +259,7 @@ export function ModalGestionTicketsAdmin({
           </div>
 
           {/* Buscador interactivo */}
-          <div className="relative min-w-[220px]">
+          <div className="relative w-full sm:w-64 min-w-0">
             <input
               type="text"
               value={busqueda}
@@ -252,9 +282,11 @@ export function ModalGestionTicketsAdmin({
         </div>
 
         {/* CUERPO PRINCIPAL: MASTER-DETAIL */}
-        <div className="grid flex-1 grid-cols-1 md:grid-cols-12 overflow-hidden">
-          {/* PANEL IZQUIERDO: LISTA DE TICKETS (col 4 o 5) */}
-          <div className="md:col-span-5 lg:col-span-4 border-r border-slate-800 bg-slate-950/60 overflow-y-auto">
+        <div className="grid flex-1 grid-cols-1 md:grid-cols-12 overflow-hidden min-h-0 min-w-0">
+          {/* PANEL IZQUIERDO: LISTA DE TICKETS */}
+          <div className={`md:col-span-5 lg:col-span-4 min-w-0 min-h-0 border-r border-slate-800 bg-slate-950/60 overflow-y-auto ${vistaMobile === "detalle" ? "hidden md:block" : "block"}`}>
+            {/* En móvil: indicador de lista */}
+            <div className="md:hidden px-4 py-2 bg-slate-900 border-b border-slate-800 text-[11px] font-bold text-slate-400">📋 Selecciona un ticket para ver detalle</div>
             {tickets.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-8 text-center text-slate-500">
                 <span className="text-3xl mb-2">🎉</span>
@@ -273,7 +305,7 @@ export function ModalGestionTicketsAdmin({
                   return (
                     <div
                       key={t.id}
-                      onClick={() => setTicketSeleccionadoId(t.id)}
+                      onClick={() => { setTicketSeleccionadoId(t.id); setVistaMobile("detalle"); }}
                       className={`cursor-pointer p-3.5 transition ${
                         seleccionado
                           ? "bg-slate-800/90 border-l-4 border-amber-500"
@@ -334,19 +366,26 @@ export function ModalGestionTicketsAdmin({
             )}
           </div>
 
-          {/* PANEL DERECHO: DETALLE Y CONVERSACIÓN DEL TICKET (col 7 u 8) */}
-          <div className="md:col-span-7 lg:col-span-8 flex flex-col h-full bg-slate-900/30 overflow-hidden">
+          {/* PANEL DERECHO: DETALLE Y CONVERSACIÓN DEL TICKET */}
+          <div className={`md:col-span-7 lg:col-span-8 min-w-0 min-h-0 flex-col h-full bg-slate-900/30 overflow-hidden ${vistaMobile === "lista" ? "hidden md:flex" : "flex"}`}>
+                {/* Botón móvil para regresar a la lista */}
+                <div className="md:hidden shrink-0 border-b border-slate-800 bg-slate-900 px-3 py-2 flex items-center justify-between">
+                  <button type="button" onClick={() => setVistaMobile("lista")} className="flex items-center gap-1.5 text-xs font-bold text-amber-400 hover:text-amber-300">
+                    <span>←</span> Volver a la lista
+                  </button>
+                  <button type="button" onClick={onCerrar} className="text-xs text-red-400 font-bold">✕ Cerrar</button>
+                </div>
             {ticketActivo ? (
-              <div className="flex flex-col h-full overflow-hidden">
+              <div className="flex flex-col h-full overflow-hidden min-h-0 min-w-0">
                 {/* CABECERA DEL DETALLE */}
                 <div className="shrink-0 border-b border-slate-800 bg-slate-950/70 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
                     <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm font-black text-amber-400">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-mono text-xs sm:text-sm font-black text-amber-400 shrink-0">
                           {ticketActivo.codigo}
                         </span>
-                        <h3 className="text-sm sm:text-base font-black text-white">
+                        <h3 className="text-xs sm:text-sm font-black text-white truncate" title={ticketActivo.titulo}>
                           {ticketActivo.titulo}
                         </h3>
                       </div>
@@ -396,8 +435,57 @@ export function ModalGestionTicketsAdmin({
                   </div>
                 </div>
 
+                {/* ACCIÓN DIRECTA PARA SOLICITUDES DE DESBLOQUEO */}
+                {ticketActivo.categoria === "desbloqueo" && ticketActivo.estado !== "resuelto" && (
+                  <div className="mx-4 mt-3 rounded-xl border border-emerald-500/40 bg-emerald-950/60 p-3 flex flex-wrap items-center justify-between gap-2 shadow-inner">
+                    <div className="text-xs text-emerald-200">
+                      <span className="font-black text-white">🔓 Solicitud de Desbloqueo:</span> El cliente solicita habilitar la modalidad para jugar en el portal.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const desc = (ticketActivo.titulo + " " + ticketActivo.descripcion).toLowerCase();
+                        let modKey: ModalidadPortalJugada | null = null;
+                        if (desc.includes("marca")) modKey = "marcas";
+                        else if (desc.includes("tabla")) modKey = "tablas_fijas";
+                        else if (desc.includes("puesto")) modKey = "puestos";
+                        else if (desc.includes("remate")) modKey = "remates";
+                        else if (desc.includes("dupleta")) modKey = "dupletas";
+                        else if (desc.includes("polla")) modKey = "pollas";
+
+                        if (modKey) {
+                          const actual = leerBloqueosJugadasCache();
+                          await guardarBloqueosJugadas({ ...actual, [modKey]: false });
+                        }
+                        const nombreAdmin = usuario || "Administrador";
+                        responderTicket(
+                          ticketActivo.id,
+                          "🔓 Modalidad desbloqueada exitosamente para la venta en el portal.",
+                          { id: usuario || "admin", nombre: nombreAdmin, rol: "admin" }
+                        );
+                        cambiarEstadoTicket(
+                          ticketActivo.id,
+                          "resuelto",
+                          "Modalidad desbloqueada a petición del usuario.",
+                          { id: usuario || "admin", nombre: nombreAdmin, rol: "admin" }
+                        );
+                        if (supabase) {
+                          await supabase
+                            .from("notificaciones")
+                            .update({ estado: "Atendida" })
+                            .eq("tipo", "solicitud_desbloqueo")
+                            .eq("cliente_nombre", ticketActivo.emisor.nombre);
+                        }
+                      }}
+                      className="rounded-lg bg-emerald-500 hover:bg-emerald-400 px-3 py-1.5 text-xs font-black text-slate-950 transition cursor-pointer shadow-md"
+                    >
+                      🔓 Desbloquear Modalidad Ahora
+                    </button>
+                  </div>
+                )}
+
                 {/* HILO DE MENSAJES Y CONVERSACIÓN */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3.5">
+                <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 space-y-3 min-h-0 min-w-0">
                   {ticketActivo.mensajes.map((m) => {
                     const esIa = m.autorRol === "ia" || m.esIa;
                     const esAdminOdueno = m.autorRol === "admin" || m.autorRol === "dueno";
@@ -440,7 +528,7 @@ export function ModalGestionTicketsAdmin({
                               : "bg-slate-800 text-slate-100 border border-slate-700 rounded-bl-xs"
                           }`}
                         >
-                          <p className="whitespace-pre-line">{m.texto}</p>
+                          <p className="whitespace-pre-line break-words">{m.texto}</p>
                         </div>
                       </div>
                     );
@@ -448,7 +536,7 @@ export function ModalGestionTicketsAdmin({
                 </div>
 
                 {/* ÁREA DE RESPUESTA Y PLANTILLAS RÁPIDAS */}
-                <div className="shrink-0 border-t border-slate-800 bg-slate-950/80 p-3 sm:p-4">
+                <div className="shrink-0 border-t border-slate-800 bg-slate-950/80 p-2.5 sm:p-3 min-w-0">
                   {/* Plantillas sugeridas en 1 clic */}
                   <div className="mb-2">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">

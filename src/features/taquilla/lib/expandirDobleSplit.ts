@@ -19,6 +19,7 @@
  */
 
 import { validarPuesto } from "@/features/motores/lib/puestos";
+import { parsearLineaWps } from "@/features/motores/lib/wps-incentivos";
 
 export type LineaExpandida = {
   linea: string;
@@ -55,6 +56,7 @@ const MONTO_REGEX = /\d+(?:[.,]\d+)?$/;
 export function esJugadaCoherente(jugada: string): boolean {
   const s = String(jugada ?? "").trim();
   if (!s) return false;
+  if (/^(?:win|place|show|wps)$/i.test(s)) return true;
   // Regla 1: 1N está estrictamente prohibida
   if (/(?:^|[^0-9])1\s*n(?![a-z])/i.test(s)) return false;
   return RE_JUGADA_CANONICA.test(s) || validarPuesto(s).ok;
@@ -101,6 +103,8 @@ export function revisarCoherenciaLineas(lineas: string[]): IncoherenciaLinea[] {
   for (const raw of lineas) {
     const linea = String(raw ?? "").trim().replace(/^\s*\d+\s*\)\s*/, "");
     if (!linea || linea.startsWith("#")) continue;
+    // Si la línea es una jugada WPS válida, es 100% coherente
+    if (parsearLineaWps(linea).length > 0) continue;
     const motivos = new Set<string>();
 
     for (const bruto of linea.split(/\s+/)) {

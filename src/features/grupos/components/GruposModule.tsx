@@ -1,3 +1,4 @@
+import Link from "next/link";
 "use client";
 
 
@@ -240,7 +241,22 @@ export function GruposModule() {
 
 
   const [editando, setEditando] = useState<GrupoRow | null>(null);
-  const [pestanaModalGrupo, setPestanaModalGrupo] = useState<"convenio" | "operadores">("convenio");
+  const [pestanaModalGrupo, setPestanaModalGrupo] = useState<"convenio" | "participantes" | "operadores">("convenio");
+  const [busquedaParticipante, setBusquedaParticipante] = useState("");
+
+  const participantesDelGrupo = useMemo(() => {
+    if (!editando) return [];
+    const gid = String(editando.id);
+    return clientes.filter((c) => String(c.grupo_id) === gid);
+  }, [editando, clientes]);
+
+  const participantesFiltrados = useMemo(() => {
+    const q = busquedaParticipante.trim().toLowerCase();
+    if (!q) return participantesDelGrupo;
+    return participantesDelGrupo.filter(
+      (c) => (c.nombre || "").toLowerCase().includes(q) || String(c.id).toLowerCase().includes(q)
+    );
+  }, [participantesDelGrupo, busquedaParticipante]);
   const [modalGrupo, setModalGrupo] = useState(false);
 
   const [guardando, setGuardando] = useState(false);
@@ -1460,8 +1476,11 @@ export function GruposModule() {
                         })}
                       </div>
 
-                      {/* Columna 3: % de Incentivo / Devolución y Modalidad (Con Cruces / Sin Cruces) */}
+                      {/* Columna 3: Configuración Operativa (Aval, Incentivo y Cruces) */}
                       <div className="lg:col-span-2 flex flex-wrap items-center gap-1.5">
+                        <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[9px] font-black text-sky-800" title="Límite / Aval base por defecto del grupo">
+                          🛡️ Aval: {cupoGrupo}
+                        </span>
                         <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[9px] font-black text-purple-800" title="Porcentaje de Incentivo / Devolución a favor">
                           🎁 Inc: +{incentivoGrupo}%
                         </span>
@@ -1469,43 +1488,47 @@ export function GruposModule() {
                           className={`rounded px-1.5 py-0.5 text-[9px] font-black ${
                             conCrucesGrupo ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"
                           }`}
+                          title="Permisos de cruces de ejemplares"
                         >
-                          {conCrucesGrupo ? "🔀 Con Cruces" : "🚫 Sin Cruces"} · ⚡ Mismo {g.cruce_mismo_ejemplar ? "Sí" : "No"} · Dif. {g.cruce_diferente_ejemplar ? "Sí" : "No"}
+                          {conCrucesGrupo ? "🔀 Cruces" : "🚫 Sin Cruces"}
                         </span>
                       </div>
 
-                      {/* Columna 4: Límites / Avales y Participantes */}
-
+                      {/* Columna 4: Accesos y Comunidad (Participantes y Operadores diferenciados) */}
                       <div className="lg:col-span-2 flex flex-wrap items-center gap-1.5">
-
-                        <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[9px] font-black text-sky-800" title="Límite / Aval base por defecto del grupo">
-                          🛡️ Aval: {cupoGrupo}
-                        </span>
-
-                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-black text-slate-700" title="Participantes / Clientes registrados en el grupo">
-
-                          👥 {conteoPorGrupo.get(String(g.id)) ?? 0} part.
-
-                        </span>
-
-                      </div>
-
-                      {/* Columna 5: Acciones alineadas a la derecha */}
-
-                      <div className="lg:col-span-2 flex shrink-0 items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPestanaModalGrupo("participantes");
+                            setEditarComisiones(false);
+                            setBusquedaParticipante("");
+                            setEditando(g);
+                          }}
+                          className="rounded-lg bg-indigo-50 border border-indigo-200 px-2 py-1 text-[10.5px] font-black text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                          title="Ver participantes de este grupo en el modal"
+                        >
+                          <span>👥</span>
+                          <span>{conteoPorGrupo.get(String(g.id)) ?? 0}</span>
+                          <span className="hidden sm:inline">part.</span>
+                        </button>
 
                         <button
-                          className="rounded px-2 py-1 text-[11px] font-bold bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 flex items-center gap-1 shadow-xs"
+                          type="button"
                           onClick={() => {
                             setPestanaModalGrupo("operadores");
                             setEditarComisiones(false);
                             setEditando(g);
                           }}
-                          title="Gestionar operadores de acceso celular asignados a este grupo"
+                          className="rounded-lg bg-emerald-50 border border-emerald-200 px-2 py-1 text-[10.5px] font-black text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300 flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                          title="Gestionar operadores móviles de acceso celular"
                         >
                           <span>📱</span>
-                          <span className="hidden xl:inline">Operadores</span>
+                          <span className="hidden sm:inline">Operadores</span>
                         </button>
+                      </div>
+
+                      {/* Columna 5: Acciones de Grupo alineadas a la derecha */}
+                      <div className="lg:col-span-2 flex shrink-0 items-center justify-end gap-1">
 
                         <button
 
@@ -2055,11 +2078,11 @@ export function GruposModule() {
             </div>
 
             {/* Pestañas del Modal */}
-            <div className="flex border-b border-slate-200 bg-slate-100 px-4 pt-2 gap-2 sm:px-5">
+            <div className="flex border-b border-slate-200 bg-slate-100 px-4 pt-2 gap-2 sm:px-5 overflow-x-auto">
               <button
                 type="button"
                 onClick={() => setPestanaModalGrupo("convenio")}
-                className={`px-3 py-2 text-xs font-black uppercase tracking-wider rounded-t-lg transition-colors border-b-2 flex items-center gap-1.5 ${
+                className={`px-3 py-2 text-xs font-black uppercase tracking-wider rounded-t-lg transition-colors border-b-2 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                   pestanaModalGrupo === "convenio"
                     ? "bg-white text-indigo-700 border-indigo-600 shadow-sm"
                     : "text-slate-600 border-transparent hover:text-slate-900 hover:bg-slate-200/60"
@@ -2069,8 +2092,22 @@ export function GruposModule() {
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  setPestanaModalGrupo("participantes");
+                  setBusquedaParticipante("");
+                }}
+                className={`px-3 py-2 text-xs font-black uppercase tracking-wider rounded-t-lg transition-colors border-b-2 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  pestanaModalGrupo === "participantes"
+                    ? "bg-white text-indigo-700 border-indigo-600 shadow-sm"
+                    : "text-slate-600 border-transparent hover:text-slate-900 hover:bg-slate-200/60"
+                }`}
+              >
+                <span>👥</span> Participantes ({participantesDelGrupo.length})
+              </button>
+              <button
+                type="button"
                 onClick={() => setPestanaModalGrupo("operadores")}
-                className={`px-3 py-2 text-xs font-black uppercase tracking-wider rounded-t-lg transition-colors border-b-2 flex items-center gap-1.5 ${
+                className={`px-3 py-2 text-xs font-black uppercase tracking-wider rounded-t-lg transition-colors border-b-2 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                   pestanaModalGrupo === "operadores"
                     ? "bg-white text-indigo-700 border-indigo-600 shadow-sm"
                     : "text-slate-600 border-transparent hover:text-slate-900 hover:bg-slate-200/60"
@@ -2477,6 +2514,101 @@ export function GruposModule() {
 
             </div>
           </>
+        ) : pestanaModalGrupo === "participantes" ? (
+          <>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+              {/* Banner informativo de participantes */}
+              <div className="rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/80 via-sky-50/60 to-white p-3.5 shadow-2xs">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <span className="text-2xl leading-none">👥</span>
+                    <div>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-indigo-950">
+                        Participantes y Clientes de {editando.nombre}
+                      </h4>
+                      <p className="text-[11px] text-indigo-800 leading-snug">
+                        Jugadores con cuenta activa pertenecientes a este grupo. Sus jugadas y balances computan exclusivamente para {editando.nombre}.
+                      </p>
+                    </div>
+                  </div>
+                  <Link
+                    href="/clientes"
+                    className="rounded-lg bg-indigo-600 hover:bg-indigo-500 font-bold text-xs text-white px-3 py-1.5 shadow-xs flex items-center gap-1.5 transition"
+                  >
+                    <span>👥</span> Ir a Cartera de Clientes
+                  </Link>
+                </div>
+              </div>
+
+              {/* Buscador y estadísticas */}
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                <div className="relative flex-1 min-w-[220px] max-w-sm">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
+                  <input
+                    type="text"
+                    value={busquedaParticipante}
+                    onChange={(e) => setBusquedaParticipante(e.target.value)}
+                    placeholder="Buscar participante por nombre…"
+                    className="w-full rounded-lg border border-slate-300 py-1.5 pl-8 pr-7 text-xs outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white"
+                  />
+                  {busquedaParticipante && (
+                    <button
+                      onClick={() => setBusquedaParticipante("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 text-xs font-black text-slate-600">
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 border border-slate-200">
+                    Total: {participantesFiltrados.length} participante(s)
+                  </span>
+                </div>
+              </div>
+
+              {/* Listado limpio en cuadrícula */}
+              {participantesFiltrados.length === 0 ? (
+                <div className="flex flex-col items-center justify-center p-10 text-center text-slate-400 rounded-xl border border-dashed border-slate-200 bg-slate-50/50">
+                  <span className="text-3xl mb-2">👤</span>
+                  <p className="text-xs font-bold text-slate-600">No se encontraron participantes en este grupo.</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Puedes crear o asignar clientes a este grupo desde el módulo de Clientes.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[380px] overflow-y-auto pr-1">
+                  {participantesFiltrados.map((c) => (
+                    <div
+                      key={String(c.id)}
+                      className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 hover:shadow-2xs transition"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="h-8 w-8 rounded-lg bg-indigo-100 text-indigo-700 font-black text-xs flex items-center justify-center shrink-0">
+                          {c.nombre.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <h5 className="text-xs font-black text-slate-800 truncate" title={c.nombre}>
+                            {c.nombre}
+                          </h5>
+                          <span className="text-[9.5px] text-slate-400 font-mono">
+                            ID: {String(c.id).slice(0, 8)}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[9px] font-black border border-emerald-200 shrink-0">
+                        ● Activo
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex shrink-0 justify-end gap-3 border-t border-line bg-slate-50 p-4">
+              <Button size="sm" onClick={() => setEditando(null)} className="bg-slate-800 text-white font-bold cursor-pointer">
+                Listo / Cerrar
+              </Button>
+            </div>
+          </>
         ) : (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
@@ -2487,7 +2619,7 @@ export function GruposModule() {
               />
             </div>
             <div className="flex shrink-0 justify-end gap-3 border-t border-line bg-slate-50 p-4">
-              <Button size="sm" onClick={() => setEditando(null)} className="bg-slate-800 text-white font-bold">
+              <Button size="sm" onClick={() => setEditando(null)} className="bg-slate-800 text-white font-bold cursor-pointer">
                 Listo / Cerrar
               </Button>
             </div>

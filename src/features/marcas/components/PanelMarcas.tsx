@@ -527,27 +527,7 @@ export function PanelMarcas() {
         }
       />
 
-      {/* OBSERVACION DE LA CASA.
-          `PROPORCION` es la MISMA constante que usan `calcularRivales` y la RPC
-          `club_vender_marca`, asi que el cartel no puede desincronizarse del
-          calculo real. Antes esta proporcion solo vivia como texto de 11px
-          pegado al campo "Monto", dentro del modal de venta: en plena ventana
-          el operador no lo veia y vendia sin saber la proporcion. */}
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-xl border-2 border-amber-400 bg-gradient-to-r from-amber-50 via-amber-50 to-yellow-100 px-4 py-3">
-        <div className="flex items-baseline gap-2">
-          <span className="text-[11px] font-bold uppercase tracking-widest text-amber-700">
-            Observación
-          </span>
-          <span className="text-2xl font-black leading-none text-amber-900">
-            {PROPORCION} para 100
-          </span>
-        </div>
-        <p className="text-xs font-semibold text-amber-800">
-          Se juega <b className="font-black">{PROPORCION}</b> para ganar{" "}
-          <b className="font-black">100</b>: la ganancia neta es 100/{PROPORCION} del monto. Aplica a
-          todas las carreras de la hoja.
-        </p>
-      </div>
+
 
       {conAvisos.length > 0 && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -598,12 +578,12 @@ export function PanelMarcas() {
                       que la jornada se pueda leer de un vistazo. */}
                   <thead>
                     <tr className="border-b border-line bg-surface text-[9px] uppercase tracking-wider text-slate-500">
-                      <th className="px-2.5 py-1 text-left font-bold">Carrera</th>
-                      <th className={`px-2.5 py-1 text-left font-bold ${sepCls}`}>Marca</th>
-                      <th className={`px-2.5 py-1 text-left font-bold ${sepCls}`}>NV</th>
-                      <th className={`px-2.5 py-1 text-left font-bold ${sepCls}`}>No valen</th>
-                      <th className={`px-2.5 py-1 text-left font-bold ${sepCls}`}>Deb.</th>
-                      <th className="border-l-2 border-slate-300 py-1 pl-2.5 pr-2.5 text-left font-bold">
+                      <th className="w-6 min-w-[24px] max-w-[28px] px-1 py-0.5 text-center font-bold" title="Carrera">C.</th>
+                      <th className={`px-2.5 py-0.5 text-left font-bold ${sepCls}`}>Marca</th>
+                      <th className={`px-2.5 py-0.5 text-left font-bold ${sepCls}`}>NV</th>
+                      <th className={`px-2.5 py-0.5 text-left font-bold ${sepCls}`}>No valen</th>
+                      <th className="border-l-4 border-slate-300 py-0.5 pl-3.5 pr-2.5 text-left font-bold text-violet-700">Deb.</th>
+                      <th className="border-l-2 border-slate-300 py-0.5 pl-2.5 pr-2.5 text-left font-bold">
                         Acciones
                       </th>
                     </tr>
@@ -627,22 +607,22 @@ export function PanelMarcas() {
                           key={`${c.hipodromo}-${c.carrera}`}
                           onClick={() => setAbierta(c)}
                           title={problema ? (rev?.mensaje ?? "Configuracion con problemas") : "Abrir ventas de esta carrera"}
-                          className={`h-[26px] cursor-pointer text-[10px] leading-tight transition-colors hover:bg-amber-50 [&+tr]:border-t [&+tr]:border-line/70 ${
+                          className={`h-[21px] cursor-pointer text-[10px] leading-tight transition-colors hover:bg-amber-50 [&+tr]:border-t [&+tr]:border-line/70 ${
                             !cfg
                               ? i % 2 === 0
                                 ? "bg-slate-50 text-slate-400"
                                 : "bg-white text-slate-400"
                               : cerrada
                                 ? i % 2 === 0
-                                  ? "bg-slate-100 text-slate-500"
-                                  : "bg-slate-50 text-slate-500"
-                                : i % 2 === 0
-                                  ? "bg-white text-slate-800"
-                                  : "bg-slate-50/70 text-slate-800"
+                                ? "bg-slate-100 text-slate-500"
+                                : "bg-slate-50 text-slate-500"
+                              : i % 2 === 0
+                                ? "bg-white text-slate-800"
+                                : "bg-slate-50/70 text-slate-800"
                           }`}
                         >
-                          <td className="whitespace-nowrap px-2.5 py-[3px]">
-                            <span className="flex items-center justify-start gap-[1px] font-black tabular-nums text-[12px] leading-none">
+                          <td className="w-6 min-w-[24px] max-w-[28px] whitespace-nowrap px-1 py-[1px] text-center">
+                            <span className="flex items-center justify-center gap-[1px] font-black tabular-nums text-[11px] leading-none">
                               {c.carrera}
                               {problema ? (
                                 <span className="text-[9px] font-bold leading-none text-amber-600">
@@ -652,7 +632,7 @@ export function PanelMarcas() {
                             </span>
                           </td>
 
-                          <td className={`px-2.5 py-[3px] ${sepCls}`}>
+                          <td className={`px-2.5 py-[1px] ${sepCls}`}>
                             <span className="flex min-h-[19px] flex-wrap items-center justify-start gap-[2px]">
                               {marcas.length === 0 ? (
                                 <span className="text-[11px] text-slate-400">—</span>
@@ -669,7 +649,7 @@ export function PanelMarcas() {
                             </span>
                           </td>
 
-                          <td className={`px-2.5 py-[3px] ${sepCls}`}>
+                          <td className={`px-2.5 py-[1px] ${sepCls}`}>
                             <span className="flex min-h-[19px] items-center justify-start">
                               {nvs.length > 0 ? (
                                 <span className={`${chipCls} border-red-300 bg-red-100 text-red-700`}>
@@ -687,7 +667,7 @@ export function PanelMarcas() {
                               que buscar el numero en otra columna. La columna se
                               titula "No valen", asi que el color ya no tiene que
                               codificar el veto ademas del caballo. */}
-                          <td className={`px-2.5 py-[3px] ${sepCls}`}>
+                          <td className={`px-2.5 py-[1px] ${sepCls}`}>
                             <span className="flex min-h-[19px] flex-wrap items-center justify-start gap-[2px]">
                               {nvs.length === 0 ? (
                                 <span className="text-[11px] text-slate-400">—</span>
@@ -707,7 +687,7 @@ export function PanelMarcas() {
                             </span>
                           </td>
 
-                          <td className={`px-2.5 py-[3px] ${sepCls}`}>
+                          <td className="border-l-4 border-slate-300 py-[1px] pl-3.5 pr-2.5">
                             <span className="flex min-h-[1.4rem] flex-col items-start justify-center">
                               {!cfg ? (
                                 <span className="text-[11px] text-slate-400">—</span>
@@ -732,18 +712,8 @@ export function PanelMarcas() {
                             </span>
                           </td>
 
-                          {/* Las acciones no son una sexta columna de datos: son el
-                              mando de la fila. La linea gruesa las separa del dato
-                              sin soltarlas de la carrera a la que pertenecen, y la
-                              fila entera abre las ventas.
-
-                              Los CUATRO botones se dibujan siempre, activo o no.
-                              Antes el de abrir/cerrar y el de borrar solo
-                              aparecian con configuracion, y esa fila se corria: el
-                              caja acababa pulsando el boton de la venta de la fila
-                              de al lado. */}
                           <td
-                            className="border-l-2 border-slate-300 py-[3px] pl-2.5 pr-2.5"
+                            className="border-l-2 border-slate-300 py-[1px] pl-2.5 pr-2.5"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <span className={mandoCls}>
@@ -833,6 +803,26 @@ export function PanelMarcas() {
                       );
                     })}
                   </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={4} className="pt-2 pb-1 pr-2 align-top">
+                        <div className="rounded-lg border border-amber-400 bg-gradient-to-r from-amber-50 via-amber-50 to-yellow-100 p-2 shadow-sm">
+                          <div className="flex items-baseline gap-2 mb-0.5">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                              Observación
+                            </span>
+                            <span className="text-base font-black leading-none text-amber-900">
+                              {PROPORCION} para 100
+                            </span>
+                          </div>
+                          <p className="text-[10px] font-medium leading-tight text-amber-900">
+                            Se juega <b className="font-bold">{PROPORCION}</b> para ganar <b className="font-bold">100</b>: la ganancia neta es 100/{PROPORCION} del monto. Aplica a todas las carreras de la hoja.
+                          </p>
+                        </div>
+                      </td>
+                      <td colSpan={2} />
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>

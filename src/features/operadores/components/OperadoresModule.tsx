@@ -21,6 +21,7 @@ import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { listarOperadores, guardarHipodromosDeOperador, type Operador } from "@/features/operadores/lib/operadores";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
 import { estaBorrado, type Hipodromo } from "@/features/hipodromos/lib/tipos";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 
 export function OperadoresModule() {
   const [operadores, setOperadores] = useState<Operador[]>([]);
@@ -46,13 +47,23 @@ export function OperadoresModule() {
     void refrescar();
   }, [refrescar]);
 
+  const miGrupoId = useAuthStore((s) => s.grupoId);
+  const grupoActivo = useAuthStore((s) => s.grupoActivo);
+  const veTodosLosGrupos = useAuthStore((s) => s.veTodosLosGrupos);
+
   const filtrados = useMemo(() => {
+    let lista = operadores;
+    if (!veTodosLosGrupos) {
+      lista = lista.filter((o) => o.grupoId && String(o.grupoId) === String(miGrupoId));
+    } else if (grupoActivo) {
+      lista = lista.filter((o) => o.grupoId && String(o.grupoId) === String(grupoActivo));
+    }
     const q = busqueda.trim().toLowerCase();
-    if (!q) return operadores;
-    return operadores.filter(
+    if (!q) return lista;
+    return lista.filter(
       (o) => (o.nombre ?? "").toLowerCase().includes(q) || o.id.toLowerCase().includes(q)
     );
-  }, [operadores, busqueda]);
+  }, [operadores, busqueda, veTodosLosGrupos, miGrupoId, grupoActivo]);
 
   const abrirAsignacion = (o: Operador) => {
     setEditando(o);

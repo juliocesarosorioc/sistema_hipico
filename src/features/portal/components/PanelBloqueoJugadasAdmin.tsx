@@ -139,11 +139,6 @@ export function PanelBloqueoJugadasAdmin({ compacto = false }: { compacto?: bool
               ? `🔒 ${cantBloqueadas} bloqueada(s)`
               : "🔓 Todas habilitadas"}
           </span>
-          {solicitudes.length > 0 && (
-            <span className="animate-pulse rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-black text-white">
-              🔔 {solicitudes.length} solicitud(es) de desbloqueo
-            </span>
-          )}
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -213,47 +208,6 @@ export function PanelBloqueoJugadasAdmin({ compacto = false }: { compacto?: bool
             })}
           </div>
 
-          {solicitudes.length > 0 && (
-            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-2">
-              <div className="text-[11px] font-black uppercase tracking-wider text-amber-900 flex items-center justify-between">
-                <span>🔔 Solicitudes de desbloqueo enviadas por los jugadores ({solicitudes.length})</span>
-                <button
-                  type="button"
-                  onClick={() => void cargar()}
-                  className="text-[10px] font-bold text-amber-700 underline"
-                >
-                  Refrescar
-                </button>
-              </div>
-              <div className="divide-y divide-amber-200/70">
-                {solicitudes.map((sol) => (
-                  <div key={sol.id} className="py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <div>
-                      <span className="font-black text-slate-900">{sol.cliente_nombre || "Jugador"}</span>
-                      <span className="mx-1.5 text-slate-400">·</span>
-                      <span className="text-slate-700">{sol.mensaje || sol.titulo}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Button
-                        size="sm"
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white"
-                        onClick={() => void atenderSolicitud(sol, true)}
-                      >
-                        🔓 Desbloquear ahora
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void atenderSolicitud(sol, false)}
-                      >
-                        Descartar
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>

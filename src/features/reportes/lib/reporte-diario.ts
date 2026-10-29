@@ -35,9 +35,13 @@ import {
   type PizarraCarrera,
 } from "@/features/liquidacion/lib/reportes";
 import { _reembolsosCruce } from "@/features/taquilla/lib/cruces-y-tapas";
-import { aplicarDevolucionIncentivoAFavor, calcularResumenContableCliente } from "@/features/saldos/lib/contabilidad-central";
+import {
+  aplicarDevolucionIncentivoAFavor,
+  calcularResumenContableCliente,
+  esJugadaPuestosParaIncentivo,
+} from "@/features/saldos/lib/contabilidad-central";
 
-export { aplicarDevolucionIncentivoAFavor, calcularResumenContableCliente };
+export { aplicarDevolucionIncentivoAFavor, calcularResumenContableCliente, esJugadaPuestosParaIncentivo };
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -509,20 +513,37 @@ export function normalizarTickets(
         extraerFechaCarreraTicket(t as Record<string, unknown>) ||
         String(t.fecha_carrera ?? t.fecha_registro ?? "").slice(0, 10) ||
         undefined;
+      const estadoUpper = String(t.estado ?? "PENDIENTE").trim().toUpperCase();
+      const esDecidido =
+        estadoUpper === "GANADOR" ||
+        estadoUpper === "GANO" ||
+        estadoUpper === "SOLUCIONADO" ||
+        estadoUpper === "PERDEDOR" ||
+        estadoUpper === "PERDIO";
+      const anulada = esJugadaAnulada(t.estado, t.anulada);
+      const nombreJug = String(t.nombre_jugada ?? "JUGADA");
+      const aplicaIncentivo =
+        !anulada &&
+        esDecidido &&
+        esJugadaPuestosParaIncentivo(
+          nombreJug,
+          (t as Record<string, unknown>).modalidad as string,
+          (t as Record<string, unknown>).origen as string
+        );
       return {
         id: t.id ?? `tk-${idx}`,
         fecha,
         horaCarga: horaDeRegistro(t.fecha_registro),
         cliente: String(t.cliente_juega_nombre ?? t.cliente_juega_id ?? "—"),
-        jugada: String(t.nombre_jugada ?? "JUGADA"),
+        jugada: nombreJug,
         caballo: String(t.caballo ?? "—"),
-        estado: String(t.estado ?? "PENDIENTE"),
+        estado: estadoUpper,
         hipodromo: String(t.hipodromo ?? "—"),
         carrera: Math.trunc(num(t.carrera)),
         montoJugado: num(t.monto_jugado),
         premio,
-        devolucion: base * (pct / 100),
-        anulada: esJugadaAnulada(t.estado, t.anulada),
+        devolucion: aplicaIncentivo ? base * (pct / 100) : 0,
+        anulada,
       };
     });
   }
@@ -561,6 +582,21 @@ export function normalizarTickets(
         devolucionPorCliente.get(juega.clienteId) ??
         devolucionPorCliente.get(juega.clienteNombre.toUpperCase()) ??
         0;
+      const estJUpper = String(juega.estado ?? "").trim().toUpperCase();
+      const esDecJ =
+        estJUpper === "GANADOR" ||
+        estJUpper === "GANO" ||
+        estJUpper === "SOLUCIONADO" ||
+        estJUpper === "PERDEDOR" ||
+        estJUpper === "PERDIO";
+      const aplicaIncJ =
+        !juega.anulada &&
+        esDecJ &&
+        esJugadaPuestosParaIncentivo(
+          juega.jugada,
+          (t as Record<string, unknown>).modalidad as string,
+          (t as Record<string, unknown>).origen as string
+        );
       out.push({
         id: `${t.id ?? idx}-j`,
         fecha,
@@ -575,7 +611,7 @@ export function normalizarTickets(
         montoJugado: juega.monto,
         premio: juega.premio,
         resultadoNeto: juega.resultado ?? 0,
-        devolucion: juega.anulada ? 0 : base * (pctJ / 100),
+        devolucion: aplicaIncJ ? base * (pctJ / 100) : 0,
         anulada: juega.anulada,
       });
     }
@@ -585,6 +621,21 @@ export function normalizarTickets(
         devolucionPorCliente.get(consigue.clienteId) ??
         devolucionPorCliente.get(consigue.clienteNombre.toUpperCase()) ??
         0;
+      const estCUpper = String(consigue.estado ?? "").trim().toUpperCase();
+      const esDecC =
+        estCUpper === "GANADOR" ||
+        estCUpper === "GANO" ||
+        estCUpper === "SOLUCIONADO" ||
+        estCUpper === "PERDEDOR" ||
+        estCUpper === "PERDIO";
+      const aplicaIncC =
+        !consigue.anulada &&
+        esDecC &&
+        esJugadaPuestosParaIncentivo(
+          consigue.jugada,
+          (t as Record<string, unknown>).modalidad as string,
+          (t as Record<string, unknown>).origen as string
+        );
       out.push({
         id: `${t.id ?? idx}-c`,
         fecha,
@@ -599,7 +650,7 @@ export function normalizarTickets(
         montoJugado: consigue.monto,
         premio: consigue.premio,
         resultadoNeto: consigue.resultado ?? 0,
-        devolucion: consigue.anulada ? 0 : base * (pctC / 100),
+        devolucion: aplicaIncC ? base * (pctC / 100) : 0,
         anulada: consigue.anulada,
       });
     }

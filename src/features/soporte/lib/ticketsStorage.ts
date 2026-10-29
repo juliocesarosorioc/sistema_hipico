@@ -4,6 +4,7 @@
  * y fallback estructurado para operadores, dueños de grupo y administradores.
  */
 
+import { supabase } from "@/core/supabase";
 import {
   TicketIncidencia,
   EstadoTicket,
@@ -16,89 +17,82 @@ import {
 const CLAVE_STORAGE = "hipico_tickets_soporte_v2";
 export const EVENTO_TICKETS_ACTUALIZADOS = "hipico_tickets_actualizados";
 
-// Tickets de demostración iniciales para que el Administrador y Dueño vean el funcionamiento de inmediato
-const TICKETS_SEMILLA: TicketIncidencia[] = [
-  {
-    id: "tk-seed-001",
-    codigo: "INC-26-0101",
-    titulo: "Duda sobre liquidación de jugada 2P con ejemplares 3y4",
-    descripcion: "El operador pregunta cómo se reparte si el ejemplar 4 llega segundo y el 3 llega primero.",
-    categoria: "disputa_jugada",
-    prioridad: "media",
-    estado: "abierto",
-    emisor: {
-      id: "usr-op-1",
-      nombre: "Carlos Taquilla 1",
-      rol: "operador",
-      grupoId: "grp-1",
-      grupoNombre: "Club del Dinero",
-      telefono: "+58 412 1234567",
-    },
-    destinatario: "dueno_grupo",
-    mensajes: [
-      {
-        id: "msg-1",
-        autorId: "usr-op-1",
-        autorNombre: "Carlos Taquilla 1",
-        autorRol: "usuario",
-        texto: "Buenas tardes, tengo una duda con la jugada 2P de 3y4 en la carrera 3 de La Rinconada. El 3 ganó y el 4 llegó segundo. ¿Cómo liquida?",
-        fecha: new Date(Date.now() - 3600000 * 3).toISOString(),
-      },
-      {
-        id: "msg-2",
-        autorId: "ia-bot",
-        autorNombre: "Asistente IA",
-        autorRol: "ia",
-        esIa: true,
-        texto: "En jugadas de puestos con varios ejemplares (3y4), el sistema toma la mejor posición alcanzada (1° lugar). Dado que mejorPos <= 2, la jugada resulta ganadora (+1 factor).",
-        fecha: new Date(Date.now() - 3600000 * 2.9).toISOString(),
-      },
-      {
-        id: "msg-3",
-        autorId: "usr-op-1",
-        autorNombre: "Carlos Taquilla 1",
-        autorRol: "usuario",
-        texto: "Entendido, pero el cliente insiste en que le paguen doble porque metió los dos en la pizarra. ¿Puede el dueño confirmar la política del grupo?",
-        fecha: new Date(Date.now() - 3600000 * 2).toISOString(),
-      },
-    ],
-    fechaCreacion: new Date(Date.now() - 3600000 * 3).toISOString(),
-    fechaActualizacion: new Date(Date.now() - 3600000 * 2).toISOString(),
-  },
-  {
-    id: "tk-seed-002",
-    codigo: "INC-26-0102",
-    titulo: "Solicitud de ajuste de saldo por transferencia no acreditada",
-    descripcion: "El operador reporta que un cliente avalado realizó un pago bancario y solicita acreditar Bs. 500 al cupo.",
-    categoria: "ajuste_saldo",
-    prioridad: "urgente",
-    estado: "abierto",
-    emisor: {
-      id: "usr-op-2",
-      nombre: "María Taquilla Central",
-      rol: "operador",
-      grupoId: "grp-1",
-      grupoNombre: "Club del Dinero",
-      telefono: "+58 414 9876543",
-    },
-    destinatario: "admin",
-    mensajes: [
-      {
-        id: "msg-4",
-        autorId: "usr-op-2",
-        autorNombre: "María Taquilla Central",
-        autorRol: "usuario",
-        texto: "URGENTE: El cliente Pedro Pérez (Avalado) envió capture de pago móvil por Bs. 500,00 ref #98321. Por favor verificar y liberar el saldo en taquilla.",
-        fecha: new Date(Date.now() - 3600000 * 1).toISOString(),
-      },
-    ],
-    fechaCreacion: new Date(Date.now() - 3600000 * 1).toISOString(),
-    fechaActualizacion: new Date(Date.now() - 3600000 * 1).toISOString(),
-  },
-];
+// Sin semillas ficticias para no generar alertas falsas al operador/administrador
+const TICKETS_SEMILLA: TicketIncidencia[] = [];
 
 // Memoria de respaldo para entornos sin window (pruebas unitarias, SSR)
-let memoriaSsr: TicketIncidencia[] = [...TICKETS_SEMILLA];
+let memoriaSsr: TicketIncidencia[] = [];
+
+let sincronizacionEnCurso = false;
+
+/**
+ * Sincroniza solicitudes de desbloqueo pendientes de la base de datos Supabase con la lista de tickets.
+ */
+export async function sincronizarTicketsConSupabase(): Promise<void> {
+  if (typeof window === "undefined" || !supabase || sincronizacionEnCurso) return;
+  sincronizacionEnCurso = true;
+  try {
+    const { data, error } = await supabase
+      .from("notificaciones")
+      .select("id, titulo, mensaje, cliente_id, cliente_nombre, datos, created_at, estado")
+      .eq("tipo", "solicitud_desbloqueo")
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (error || !data) return;
+
+    const ticketsActuales = obtenerTodosLosTickets();
+    let huboCambios = false;
+
+    for (const noti of data) {
+      const idTicket = `desb-${noti.id}`;
+      const existe = ticketsActuales.some((t) => t.id === idTicket);
+      if (!existe) {
+        const d = (noti.datos && typeof noti.datos === "object" ? noti.datos : {}) as Record<string, unknown>;
+        const estadoNoti = String(noti.estado || "Nueva").toLowerCase();
+        const nuevo: TicketIncidencia = {
+          id: idTicket,
+          codigo: `DESB-${String(noti.id).padStart(4, "0")}`,
+          titulo: noti.titulo || `🔓 Solicitud de desbloqueo: ${d.etiqueta || "Jugada"}`,
+          descripcion: noti.mensaje || `El cliente ${noti.cliente_nombre || "Jugador"} solicita desbloquear la modalidad.`,
+          categoria: "desbloqueo",
+          prioridad: "alta",
+          estado: estadoNoti === "atendida" || estadoNoti === "resuelta" ? "resuelto" : "abierto",
+          emisor: {
+            id: String(noti.cliente_id || "cli-0"),
+            nombre: String(noti.cliente_nombre || "Cliente"),
+            rol: "cliente",
+            grupoId: null,
+            grupoNombre: null,
+          },
+          destinatario: "admin",
+          mensajes: [
+            {
+              id: `msg-${idTicket}-1`,
+              autorId: String(noti.cliente_id || "cli-0"),
+              autorNombre: String(noti.cliente_nombre || "Cliente"),
+              autorRol: "usuario",
+              texto: noti.mensaje || "Solicitud de desbloqueo de modalidad.",
+              fecha: noti.created_at || new Date().toISOString(),
+            },
+          ],
+          fechaCreacion: noti.created_at || new Date().toISOString(),
+          fechaActualizacion: noti.created_at || new Date().toISOString(),
+        };
+        ticketsActuales.unshift(nuevo);
+        huboCambios = true;
+      }
+    }
+
+    if (huboCambios) {
+      guardarTickets(ticketsActuales);
+    }
+  } catch {
+    // ignore
+  } finally {
+    sincronizacionEnCurso = false;
+  }
+}
 
 /**
  * Lee la lista completa de tickets almacenados.
@@ -110,15 +104,16 @@ export function obtenerTodosLosTickets(): TicketIncidencia[] {
     const raw = localStorage.getItem(CLAVE_STORAGE);
     if (!raw) {
       localStorage.setItem(CLAVE_STORAGE, JSON.stringify(TICKETS_SEMILLA));
-      return TICKETS_SEMILLA;
+      return [];
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      return parsed;
+      // Filtrar tickets de demo para que no ensucien la consola de administración
+      return parsed.filter((t) => !String(t.id).startsWith("tk-seed-"));
     }
-    return TICKETS_SEMILLA;
+    return [];
   } catch {
-    return TICKETS_SEMILLA;
+    return [];
   }
 }
 
@@ -202,6 +197,9 @@ export function obtenerTicketPorId(idOCodigo: string): TicketIncidencia | null {
  * Cuenta los tickets que requieren atención inmediata (abiertos o en proceso).
  */
 export function contarTicketsPendientes(esAdmin: boolean, grupoId?: string | null): number {
+  if (typeof window !== "undefined") {
+    void sincronizarTicketsConSupabase();
+  }
   const tickets = listarTickets({
     estado: "todos",
     esAdmin,

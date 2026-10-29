@@ -21,6 +21,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { useAuthStore } from "@/shared/store/useAuthStore";
+import { contarTicketsPendientes, EVENTO_TICKETS_ACTUALIZADOS } from "@/features/soporte/lib/ticketsStorage";
+import { ModalGestionTicketsAdmin } from "@/features/soporte/components/ModalGestionTicketsAdmin";
 import {
   TabBancos,
   TabBalanceNIIF,
@@ -93,6 +96,32 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
    * preguntarle a la base el detalle del período.
    */
   const [rango, setRango] = useState<{ desde?: string; hasta?: string }>({});
+  const esPrincipal = useAuthStore((s) => s.esPrincipal);
+  const perfiles = useAuthStore((s) => s.perfiles);
+  const grupoActivo = useAuthStore((s) => s.grupoActivo);
+  const [ticketsPendientes, setTicketsPendientes] = useState(0);
+  const [modalTicketsAbierto, setModalTicketsAbierto] = useState(false);
+
+  const esAdmin = Boolean(
+    esPrincipal ||
+    perfiles.some(
+      (p) =>
+        p.toLowerCase().includes("admin") ||
+        p.toLowerCase().includes("super") ||
+        p.toLowerCase().includes("principal")
+    )
+  );
+
+  const actualizarTickets = useCallback(() => {
+    const cant = contarTicketsPendientes(esAdmin, esAdmin ? null : grupoActivo);
+    setTicketsPendientes(cant);
+  }, [esAdmin, grupoActivo]);
+
+  useEffect(() => {
+    actualizarTickets();
+    window.addEventListener(EVENTO_TICKETS_ACTUALIZADOS, actualizarTickets);
+    return () => window.removeEventListener(EVENTO_TICKETS_ACTUALIZADOS, actualizarTickets);
+  }, [actualizarTickets]);
 
   /**
    * Última pestaña pedida por el operador. Se guarda aparte de la URL porque
@@ -177,18 +206,50 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
         <h1 className="text-xl font-black text-slate-800">
           <span className="mr-2 text-primary-600">🪙</span> Contabilidad
         </h1>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            void (async () => {
-              await cargar();
-              await recargarBalance();
-            })()
-          }
-        >
-          <span>🔄</span> Actualizar
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              void (async () => {
+                await cargar();
+                await recargarBalance();
+                actualizarTickets();
+              })()
+            }
+          >
+            <span>🔄</span> Actualizar
+          </Button>
+
+          {/* Mensajería de Tickets creada al lado de la tecla Actualizar */}
+          {ticketsPendientes > 0 ? (
+            <button
+              type="button"
+              onClick={() => setModalTicketsAbierto(true)}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-400 bg-rose-50 px-2.5 text-xs font-black text-rose-700 shadow-sm transition hover:bg-rose-100 cursor-pointer"
+              title="Tickets e incidencias pendientes por resolver. Clic para abrir el panel de atención."
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600"></span>
+              </span>
+              <span className="tracking-tight">🚨 Tickets:</span>
+              <span className="rounded-full bg-rose-600 px-1.5 py-0.2 text-[10px] font-black leading-none text-white">
+                {ticketsPendientes}
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setModalTicketsAbierto(true)}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-xs font-bold text-slate-700 transition hover:bg-surfaceAlt cursor-pointer shadow-xs"
+              title="Centro de Solución de Tickets e Incidencias (Sin pendientes)"
+            >
+              <span>🎫</span>
+              <span>Tickets</span>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2 border-b border-line">
@@ -253,6 +314,11 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
       )}
 
       <ToastHost />
+
+      <ModalGestionTicketsAdmin
+        abierto={modalTicketsAbierto}
+        onCerrar={() => setModalTicketsAbierto(false)}
+      />
     </div>
   );
 }

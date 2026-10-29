@@ -28,7 +28,7 @@ import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
 import { venderJugada, claveIdempotenciaJugada } from "@/features/taquilla/lib/venta";
 import { dividendosDePizarra, pizarraDePosiciones, posicionesDePizarra, posicionesRayaDePizarra } from "@/features/liquidacion/lib/posiciones";
 import { colorDiscoNumero, numerosDeCaballo } from "@/features/saldos/lib/discos";
-import { PREFIJO_WPS } from "@/features/motores/lib/wps";
+import { PREFIJO_WPS, tipoWps } from "@/features/motores/lib/wps";
 import { guardarPizarraCentral } from "@/features/liquidacion/lib/pizarraCentral";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { emitirToast } from "@/shared/lib/mensajeria";
@@ -95,7 +95,7 @@ import ReporteCarrera, { type ObservacionOrdenExceso } from "@/features/saldos/c
 import { ReporteSaldosVisual } from "@/features/saldos/components/ReporteSaldosVisual";
 import { PanelBloqueoJugadasAdmin } from "@/features/portal/components/PanelBloqueoJugadasAdmin";
 import { ModalWpsApuestas } from "@/features/motores/components/ModalWpsApuestas";
-import type { ApuestaWpsParseada } from "@/features/motores/lib/wps-incentivos";
+import { parsearLineaWps, type ApuestaWpsParseada } from "@/features/motores/lib/wps-incentivos";
 
 type FilaCarga = {
   jugada: string;
@@ -307,6 +307,13 @@ export function GestionJugadasModule() {
   const esPrincipal = useAuthStore((s) => s.esPrincipal);
   const usuarioSesion = useAuthStore((s) => s.usuario);
   const setGrupoActivo = useAuthStore((s) => s.setGrupoActivo);
+
+  const modoOperador = useAuthStore((s) => s.modoOperador);
+  const perfiles = useAuthStore((s) => s.perfiles);
+  const esOperadorFijo =
+    perfiles.length > 0 &&
+    perfiles.every((p) => p.toLowerCase().includes("operador")) &&
+    !perfiles.some((p) => p.toLowerCase().includes("admin"));
 
   const [modalControlCruces, setModalControlCruces] = useState(false);
   const [modalWps, setModalWps] = useState(false);
@@ -864,6 +871,13 @@ const hipodromosDelDia = useMemo(() => {
       const res = expandirLineasDobleSplit([t]);
       if (res.length === 2) {
         for (const r of res) expandidas.push(r.linea);
+        continue;
+      }
+      const resWps = parsearLineaWps(t);
+      if (resWps.length > 1) {
+        for (const w of resWps) {
+          expandidas.push(`${w.jugador} ${w.modalidad.toLowerCase()} ${w.ejemplar} ${w.monto}`);
+        }
         continue;
       }
       expandidas.push(l);
@@ -1668,12 +1682,13 @@ const hipodromosDelDia = useMemo(() => {
         indicesError.push(filas.indexOf(f));
         continue;
       }
-      if (!f.cliente2.trim()) {
+      const esWpsFila = v.modalidad === "AMERICANAS" || Boolean(tipoWps(v.tipo || f.jugada));
+      if (!esWpsFila && !f.cliente2.trim()) {
         errores.push(`Fila ${filas.indexOf(f) + 1}: falta el CLIENTE 2 (dador). Las jugadas se cargan con DOS clientes.`);
         indicesError.push(filas.indexOf(f));
         continue;
       }
-      if (!c2) {
+      if (!esWpsFila && !c2) {
         errores.push(`Fila ${filas.indexOf(f) + 1}: el CLIENTE 2 no está en el catálogo (se exigen dos clientes).`);
         indicesError.push(filas.indexOf(f));
         continue;
@@ -1688,9 +1703,9 @@ const hipodromosDelDia = useMemo(() => {
               : null;
       if (v.reparto?.recortado) {
         const tel1 = telefonoMencionCliente(c1);
-        const tel2 = telefonoMencionCliente(c2);
+        const tel2 = c2 ? telefonoMencionCliente(c2) : null;
         const nom1 = c1.nombre;
-        const nom2 = c2.nombre;
+        const nom2 = c2 ? c2.nombre : "CASA";
         const menc1 = tel1 ? `@${tel1} (${nom1})` : `@${nom1}`;
         const menc2 = tel2 ? `@${tel2} (${nom2})` : `@${nom2}`;
         const jugEtiq = f.caballo.trim() ? `${v.tipo} (${f.caballo.trim()})` : v.tipo;
@@ -1729,7 +1744,7 @@ const hipodromosDelDia = useMemo(() => {
         monto: v.monto,
         clienteId: String(c1.id),
         grupoId,
-        clienteDador: f.cliente2.trim() || c2?.nombre || null,
+        clienteDador: f.cliente2.trim() || c2?.nombre || (esWpsFila ? "CASA" : null),
         comision: comisionNum,
         // El banquero se negocia por modalidad: las americanas W/P/S van como
         // 'WPS' (el `origen` del ticket sigue siendo 'TAQUILLA').
@@ -1821,7 +1836,7 @@ const hipodromosDelDia = useMemo(() => {
           p.confianza.monto === "sin" ||
           p.confianza.caballo === "sin" ||
           (conCatalogo && p.confianza.cliente1 === "sin") ||
-          (conCatalogo && !p.cliente2.trim());
+          (!/^(?:WIN|PLACE|SHOW)$/i.test(p.jugada) && conCatalogo && !p.cliente2.trim());
         filasNuevas.push({
           jugada: p.jugada,
           caballo: p.caballo,
@@ -2189,14 +2204,6 @@ const hipodromosDelDia = useMemo(() => {
           )}
 
           {/* Botón para abrir el Modal de Control de Cruces */}
-          <button
-            type="button"
-            onClick={() => setModalWps(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-400/50 bg-indigo-600 px-3 py-1 text-xs font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-indigo-500"
-            title="Abrir modal de apuestas e incentivos W.P.S. (Win, Place, Show)"
-          >
-            <span>🏇</span> WPS (Win·Place·Show)
-          </button>
 
           <button
             type="button"
@@ -2210,14 +2217,16 @@ const hipodromosDelDia = useMemo(() => {
             )}
           </button>
 
-          <button
-            type="button"
-            onClick={() => setModalSaldoRapido(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-emerald-600 px-3 py-1 text-xs font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-emerald-500"
-            title="Incrementar o disminuir saldo de un cliente adjuntando capture de comprobante"
-          >
-            <span>💵</span> Gestión Rápida de Saldos
-          </button>
+          {!modoOperador && !esOperadorFijo && (
+            <button
+              type="button"
+              onClick={() => setModalSaldoRapido(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-emerald-600 px-3 py-1 text-xs font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-emerald-500"
+              title="Incrementar o disminuir saldo de un cliente adjuntando capture de comprobante"
+            >
+              <span>💵</span> Gestión Rápida de Saldos
+            </button>
+          )}
           <span className="rounded-md bg-slate-800 px-2 py-1 font-bold text-slate-200">
             📅 {fecha}
           </span>
@@ -2343,15 +2352,7 @@ const hipodromosDelDia = useMemo(() => {
           />
         </div>
         <div className="flex items-end gap-2 pb-1">
-          <label className="flex cursor-pointer items-center gap-2 text-xs font-bold uppercase text-slate-600" title="Compatibilidad para neteos de productos distintos a Jugadas entre Tercios; los cruces de Puestos se configuran en el panel de esta carrera.">
-            <input
-              type="checkbox"
-              checked={conCruces}
-              onChange={(e) => setConCruces(e.target.checked)}
-              className="h-4 w-4 accent-primary-500"
-            />
-            Con Cruces (otros productos)
-          </label>
+          
           <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50/60 px-2 py-1 text-[10px] font-black uppercase text-cyan-700" title="Permite cargar jugadas y registrar carreras aunque la Gaceta IA no haya extraído nada (sin bloquear).">
             <input
               type="checkbox"
@@ -2515,6 +2516,26 @@ const hipodromosDelDia = useMemo(() => {
               </div>
 
               <div className="max-h-[80vh] overflow-y-auto p-5 text-slate-100 space-y-4">
+                {/* Con Cruces (otros productos) trasladado a este modal */}
+                <div className="rounded-xl border border-amber-400/40 bg-slate-800/90 p-3.5 flex items-center justify-between gap-3 shadow-md">
+                  <div>
+                    <span className="text-xs font-black text-amber-300 uppercase tracking-wide flex items-center gap-1.5">
+                      <span>🔀</span> Con Cruces (otros productos)
+                    </span>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      Compatibilidad para neteos de productos distintos a Jugadas entre Tercios. Al liquidar reembolsa la comisión sobre el monto cruzado.
+                    </p>
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-amber-400/50 bg-amber-500/20 px-3 py-1.5 text-xs font-black uppercase text-amber-300 transition hover:bg-amber-500/30">
+                    <input
+                      type="checkbox"
+                      checked={conCruces}
+                      onChange={(e) => setConCruces(e.target.checked)}
+                      className="h-4 w-4 accent-amber-400 rounded"
+                    />
+                    <span>{conCruces ? "ACTIVO" : "INACTIVO"}</span>
+                  </label>
+                </div>
                 {Object.values(crucesOverrideCarrera.todos ?? {}).some((value) => typeof value === "boolean") && (
                   <div className="rounded-lg bg-amber-400/15 border border-amber-400/30 px-3 py-2 text-xs font-black text-amber-300 flex items-center gap-2">
                     <span>⚠️</span>

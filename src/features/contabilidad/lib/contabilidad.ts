@@ -36,7 +36,11 @@ export type BancoRow = {
 
 export type DepositoRow = {
   id: number;
+  /** Fecha manual de la operación contable (asiento). */
   fecha: string | null;
+  fecha_asiento?: string | null;
+  /** Fecha interna del sistema en que se realizó en la plataforma. */
+  fecha_movimiento?: string | null;
   cliente_id: string | null;
   cliente_nombre: string | null;
   tipo_operacion: string | null;
@@ -53,7 +57,11 @@ export type DepositoRow = {
 
 export type TransaccionRow = {
   id: number;
+  /** Fecha manual de la operación contable (asiento). */
   fecha: string | null;
+  fecha_asiento?: string | null;
+  /** Fecha interna del sistema en que se realizó en la plataforma. */
+  fecha_movimiento?: string | null;
   tipo_operacion: string | null;
   cliente_origen_id: string | null;
   cliente_origen_nombre: string | null;
@@ -489,6 +497,8 @@ export async function registrarDeposito(p: {
   banco_id?: string | null;
   referencia?: string | null;
   nota?: string | null;
+  /** Fecha manual del asiento contable elegida por el operador. */
+  fecha_asiento?: string | null;
 }): Promise<ResultadoMovimiento> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   if (!p.cliente_id) return { ok: false, error: "Debe seleccionar un cliente." };
@@ -501,12 +511,9 @@ export async function registrarDeposito(p: {
     }
   exigirPermiso("contabilidad:fn_registrar_movimiento", {
     monto: p.monto,
-    // "Otorgar Aval" no tiene modalidad de pago externa (es una garantía
-    // interna): sin este respaldo, `metodo_pago: ""` no está en METODOS_PAGO y
-    // la regla ABAC rechaza un aval legítimo como "no reconocido".
     metodo_pago: normMetodo(p.modalidad) || "otro",
   });
-    const { data, error } = await rpcContable("club_registrar_deposito", {
+  const { data, error } = await rpcContable("club_registrar_deposito", {
     p_cliente_id: p.cliente_id,
     p_tipo: p.tipo_operacion,
     p_monto: p.monto,
@@ -521,6 +528,34 @@ export async function registrarDeposito(p: {
   if (error) {
     if (esRpcAusente(error)) return { ok: false, error: MENSAJE_SIN_RPC };
     return { ok: false, error: error.message };
+  }
+
+  // Actualización de fecha_asiento (manual) y fecha_movimiento (timestamp interno de plataforma)
+  const fechaAsiento = p.fecha_asiento || new Date().toISOString().slice(0, 10);
+  const fechaMovimiento = new Date().toISOString();
+  if (supabase) {
+    try {
+      const { data: depReciente } = await supabase
+        .from("depositos")
+        .select("id")
+        .eq("cliente_id", p.cliente_id)
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (depReciente?.id) {
+        await supabase
+          .from("depositos")
+          .update({
+            fecha: fechaAsiento,
+            fecha_asiento: fechaAsiento,
+            fecha_movimiento: fechaMovimiento,
+          } as Record<string, unknown>)
+          .eq("id", depReciente.id);
+      }
+    } catch {
+      /* best-effort */
+    }
   }
   const r = (data ?? {}) as Record<string, unknown>;
   return {
@@ -537,6 +572,8 @@ export async function registrarTraslado(p: {
   destino_id: string;
   monto: number;
   nota?: string | null;
+  /** Fecha manual del asiento contable elegida por el operador. */
+  fecha_asiento?: string | null;
 }): Promise<ResultadoMovimiento> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   if (!p.origen_id) return { ok: false, error: "Debe seleccionar un cliente origen." };
@@ -546,10 +583,6 @@ export async function registrarTraslado(p: {
 
   exigirPermiso("contabilidad:fn_registrar_movimiento", {
     monto: p.monto,
-    // El traslado no sale de la casa: el saldo viaja de un cliente a otro sin
-    // pasar por una modalidad externa. Para la regla es una transferencia
-    // interna, y por eso se pasa fija en vez de leerse de la entrada (que no
-    // tiene el campo). El tope de monto sí aplica igual.
     metodo_pago: "transferencia",
   });
   const { data, error } = await rpcContable("club_registrar_traslado", {
@@ -562,6 +595,34 @@ export async function registrarTraslado(p: {
     if (esRpcAusente(error)) return { ok: false, error: MENSAJE_SIN_RPC };
     return { ok: false, error: error.message };
   }
+
+  const fechaAsiento = p.fecha_asiento || new Date().toISOString().slice(0, 10);
+  const fechaMovimiento = new Date().toISOString();
+  if (supabase) {
+    try {
+      const { data: trxReciente } = await supabase
+        .from("transacciones")
+        .select("id")
+        .eq("cliente_origen_id", p.origen_id)
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (trxReciente?.id) {
+        await supabase
+          .from("transacciones")
+          .update({
+            fecha: fechaAsiento,
+            fecha_asiento: fechaAsiento,
+            fecha_movimiento: fechaMovimiento,
+          } as Record<string, unknown>)
+          .eq("id", trxReciente.id);
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+
   const r = (data ?? {}) as Record<string, unknown>;
   return { ok: true, saldo_nuevo: num(r.origen_nuevo) };
 }
@@ -580,6 +641,8 @@ export async function registrarRetiro(p: {
   cedula_rif?: string | null;
   beneficiario?: string | null;
   nota?: string | null;
+  /** Fecha manual del asiento contable elegida por el operador. */
+  fecha_asiento?: string | null;
 }): Promise<ResultadoMovimiento> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   if (!p.origen_id) return { ok: false, error: "Debe seleccionar un cliente origen." };
@@ -610,6 +673,34 @@ export async function registrarRetiro(p: {
     if (esRpcAusente(error)) return { ok: false, error: MENSAJE_SIN_RPC };
     return { ok: false, error: error.message };
   }
+
+  const fechaAsiento = p.fecha_asiento || new Date().toISOString().slice(0, 10);
+  const fechaMovimiento = new Date().toISOString();
+  if (supabase) {
+    try {
+      const { data: trxReciente } = await supabase
+        .from("transacciones")
+        .select("id")
+        .eq("cliente_origen_id", p.origen_id)
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (trxReciente?.id) {
+        await supabase
+          .from("transacciones")
+          .update({
+            fecha: fechaAsiento,
+            fecha_asiento: fechaAsiento,
+            fecha_movimiento: fechaMovimiento,
+          } as Record<string, unknown>)
+          .eq("id", trxReciente.id);
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+
   const r = (data ?? {}) as Record<string, unknown>;
   return { ok: true, monto_usd: num(r.monto_usd), saldo_nuevo: num(r.saldo_nuevo) };
 }

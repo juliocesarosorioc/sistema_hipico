@@ -118,6 +118,8 @@ export default function SeguridadModule() {
   const esPrincipal = useAuthStore((s) => s.esPrincipal);
   const miUsuario = useAuthStore((s) => s.usuario);
   const veTodosLosGrupos = useAuthStore((s) => s.veTodosLosGrupos);
+  const miGrupoId = useAuthStore((s) => s.grupoId);
+  const grupoActivo = useAuthStore((s) => s.grupoActivo);
 
   const [pestana, setPestana] = useState<Pestana>("esquema");
   // Permite abrir una pestaña directa: /seguridad?pestana=auditoria (lo usa el
@@ -136,6 +138,16 @@ export default function SeguridadModule() {
   const [presetAplicado, setPresetAplicado] = useState<string | null>(null);
   const [tipos, setTipos] = useState<TipoUsuario[]>(tiposPorDefecto());
   const [usuarios, setUsuarios] = useState<UsuarioAlta[]>([]);
+
+  const usuariosVisibles = useMemo(() => {
+    if (!veTodosLosGrupos) {
+      return usuarios.filter((u) => u.grupoId && String(u.grupoId) === String(miGrupoId));
+    }
+    if (grupoActivo) {
+      return usuarios.filter((u) => u.grupoId && String(u.grupoId) === String(grupoActivo));
+    }
+    return usuarios;
+  }, [usuarios, veTodosLosGrupos, miGrupoId, grupoActivo]);
   const [tipoSel, setTipoSel] = useState<string>("");
   const [borrador, setBorrador] = useState<Set<string>>(new Set());
   const [usuarioSel, setUsuarioSel] = useState<string>("");
@@ -867,7 +879,7 @@ export default function SeguridadModule() {
         <div className="grid gap-2 lg:grid-cols-[17rem_1fr]">
           <aside className="rounded-lg border border-slate-200 bg-white p-2">
             <p className="mb-1.5 text-[10px] font-black uppercase text-slate-400">Usuarios del sistema</p>
-            {usuarios.map((u) => (
+            {usuariosVisibles.map((u) => (
               <button
                 key={u.id}
                 onClick={() => setUsuarioSel(u.id)}

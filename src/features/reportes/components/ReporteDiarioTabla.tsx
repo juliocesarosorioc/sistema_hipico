@@ -448,17 +448,17 @@ export function ReporteDiarioTabla({
             mostrarGraficos ? "xl:col-span-8" : ""
           }`}
         >
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+          <div className={esCliente ? "w-full max-w-full overflow-hidden" : "overflow-x-auto"}>
+            <table className="w-full text-[11px] sm:text-xs">
               <thead>
-                <tr className="bg-slate-100 text-left text-[9px] font-black uppercase tracking-wider text-slate-600">
-                  <th className="whitespace-nowrap px-2 py-1">Día / Hipódromo / Carrera</th>
-                  <th className="whitespace-nowrap px-2 py-1 text-right">Jugadas</th>
-                  <th className="whitespace-nowrap px-2 py-1 text-right">Total Jugado</th>
-                  <th className="whitespace-nowrap px-2 py-1 text-right">Total Premios</th>
-                  {mostrarDevolucion && <th className="whitespace-nowrap px-2 py-1 text-right">Incentivo</th>}
-                  {mostrarComisionDevuelta && <th className="whitespace-nowrap px-2 py-1 text-right">Comisión Devuelta</th>}
-                  <th className="whitespace-nowrap px-2 py-1 text-right">Balance Neto</th>
+                <tr className="bg-slate-100 text-left text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-600">
+                  <th className="px-1.5 sm:px-2 py-1.5">{esCliente ? "Fecha / Carrera" : "Día / Hipódromo / Carrera"}</th>
+                  <th className="px-1.5 sm:px-2 py-1.5 text-right">{esCliente ? "Jug." : "Jugadas"}</th>
+                  <th className="px-1.5 sm:px-2 py-1.5 text-right">{esCliente ? "Jugado" : "Total Jugado"}</th>
+                  <th className="px-1.5 sm:px-2 py-1.5 text-right">{esCliente ? "Premios" : "Total Premios"}</th>
+                  {mostrarDevolucion && <th className="px-1.5 sm:px-2 py-1.5 text-right">Incentivo</th>}
+                  {mostrarComisionDevuelta && <th className="px-1.5 sm:px-2 py-1.5 text-right">{esCliente ? "Com. Dev." : "Comisión Devuelta"}</th>}
+                  <th className="px-1.5 sm:px-2 py-1.5 text-right">{esCliente ? "Neto" : "Balance Neto"}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1008,7 +1008,7 @@ function FragmentCarrera({
       {/* NIVEL 4: CADA JUGADA DE LA CARRERA CON CONTENEDORES DE CABALLOS */}
       {carreraAbierta && (
         <tr className="bg-slate-50/90 border-t border-slate-200">
-          <td colSpan={totalCols} className="whitespace-nowrap pl-8 pr-2 py-1">
+          <td colSpan={totalCols} className={esCliente ? "p-1 sm:pl-8 sm:pr-2 sm:py-1" : "whitespace-nowrap pl-8 pr-2 py-1"}>
             {detalles.length > 0 ? (
               <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
                 <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-700 flex flex-nowrap items-center justify-between gap-2 border-b border-slate-200">
@@ -1017,11 +1017,71 @@ function FragmentCarrera({
                   </span>
                   {mostrarComisionDevuelta && comDev > 0 && (
                     <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-800 border border-amber-300">
-                      🔀 Comisión devuelta por cruce aplicada: +{dinero(comDev)}
+                      🔀 Comisión devuelta: +{dinero(comDev)}
                     </span>
                   )}
                 </div>
-                <table className="w-full text-[10px]">
+
+                {/* Vista móvil para cliente sin desbordamiento lateral */}
+                {esCliente && (
+                  <div className="block sm:hidden divide-y divide-slate-100 bg-white">
+                    {detalles.map((d) => {
+                      const estUpper = String(d.estado ?? "").toUpperCase();
+                      const esSinDecision = /SIN\s+DECISI/i.test(estUpper);
+                      const esEmpateORetirado = estUpper === "RETIRADO" || estUpper === "EMPATE";
+                      const esPend =
+                        estUpper === "PENDIENTE" ||
+                        (!esSinDecision && !esEmpateORetirado && d.resultadoNeto === 0 && d.premio === 0);
+                      const rolFila = d.rol ?? "Juega";
+
+                      return (
+                        <div key={d.id} className="p-2 flex flex-col gap-1 text-[11px]">
+                          <div className="flex items-center justify-between gap-1">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className={`rounded-full px-1.5 py-0.2 text-[8px] font-black uppercase ${
+                                rolFila === "Consigue" ? "bg-slate-700 text-white" : "bg-indigo-100 text-indigo-900"
+                              }`}>
+                                {rolFila}
+                              </span>
+                              <span className="font-black text-indigo-950 truncate">{d.jugada}</span>
+                              <ContenedoresEjemplares caballo={d.caballo} />
+                            </div>
+                            <span className="font-mono text-[9px] text-slate-400 shrink-0">
+                              {d.horaCarga ? `🕒 ${d.horaCarga}` : ""}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 pt-0.5 text-[11px]">
+                            <div className="text-slate-600">
+                              Apostó: <b className="font-mono tabular-nums text-slate-900">{dinero(d.montoJugado)}</b>
+                              {d.premio > 0 && <> · Prem: <b className="font-mono tabular-nums text-emerald-700">{dinero(d.premio)}</b></>}
+                            </div>
+                            <div className="font-mono font-black tabular-nums text-right">
+                              {esSinDecision ? (
+                                <span className="text-amber-800 text-[10px]">SIN DECISIÓN</span>
+                              ) : esEmpateORetirado ? (
+                                <span className="text-slate-600 text-[10px]">{estUpper}</span>
+                              ) : esPend ? (
+                                <span className="text-amber-800 text-[10px]">⏳ Pendiente</span>
+                              ) : d.resultadoNeto > 0 ? (
+                                <span className="text-emerald-700">+{dinero(d.resultadoNeto)}</span>
+                              ) : (
+                                <span className="text-rose-600">{dinero(d.resultadoNeto)}</span>
+                              )}
+                            </div>
+                          </div>
+                          {(d.devolucion > 0 || d.comisionDevuelta > 0) && (
+                            <div className="flex items-center gap-2 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                              {d.devolucion > 0 && <span>🎁 Inc: +{dinero(d.devolucion)}</span>}
+                              {d.comisionDevuelta > 0 && <span>🔀 Com: +{dinero(d.comisionDevuelta)}</span>}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <table className={`${esCliente ? "hidden sm:table" : "table"} w-full text-[10px]`}>
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50 text-[9px] font-black uppercase text-slate-600">
                       <th className="whitespace-nowrap px-2 py-1 text-left">Hora</th>
